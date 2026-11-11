@@ -323,6 +323,9 @@ impl Session {
                 if let Some(l) = v.live_layout {
                     self.editor.live_layout = l;
                 }
+                if let Some(c) = v.control_labels {
+                    self.editor.control_labels = c;
+                }
                 let p = &mut self.presentation;
                 if let Some(t) = v.theme {
                     (p.chrome, p.chrome_set) = (t, true);

@@ -248,7 +248,7 @@ impl Counters {
         let over = numbering.nums.get(&num_id).and_then(|n| n.start_overrides.get(&(ilvl as i64)));
         vals[ilvl] = match over {
             Some(&s) if self.overrides_applied.insert((num_id, ilvl as i64)) => Some(s),
-            _ => Some(vals[ilvl].map_or(level.start, |v| v + 1)),
+            _ => Some(vals[ilvl].map_or(level.start, |v| v.saturating_add(1))),
         };
         for k in ilvl + 1..9 {
             let restart = levels[k].and_then(|l| l.restart);
@@ -332,6 +332,9 @@ fn repeated(v: i64, set: &[String]) -> String {
     if v <= 0 {
         return String::new();
     }
+    if v > REPEAT_LIMIT {
+        return v.to_string();
+    }
     let n = (v - 1) as usize;
     set[n % set.len()].repeat(n / set.len() + 1)
 }
@@ -341,10 +344,18 @@ fn digits(v: i64, zero: u32) -> String {
     v.to_string().chars().map(|c| c.to_digit(10).and_then(|d| char::from_u32(zero + d)).unwrap_or(c)).collect()
 }
 
+/// Values past which letters and roman numerals are written as decimal: the value comes from the file, and each
+/// repetition is another character, so `i64::MAX` would be an allocation of petabytes.
+// ponytail: a safety bound, not Word's behaviour for huge list values; replace with Word's if it is ever measured.
+const REPEAT_LIMIT: i64 = 1_000_000;
+
 /// a … z, aa, bb, … (the letter repeated).
 fn letters(v: i64, base: u8) -> String {
     if v <= 0 {
         return String::new();
+    }
+    if v > REPEAT_LIMIT {
+        return v.to_string();
     }
     let n = (v - 1) as usize;
     let c = (base + (n % 26) as u8) as char;
@@ -352,7 +363,7 @@ fn letters(v: i64, base: u8) -> String {
 }
 
 pub fn roman(mut v: i64) -> String {
-    if v <= 0 {
+    if v <= 0 || v > REPEAT_LIMIT {
         return v.to_string();
     }
     const T: [(i64, &str); 13] = [
@@ -416,21 +427,23 @@ const ONES: [&str; 20] = [
 const TENS: [&str; 10] = ["", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"];
 
 pub fn cardinal(v: i64) -> String {
-    if v < 0 {
-        return format!("minus {}", cardinal(-v));
-    }
+    // Unsigned, so `i64::MIN` has a magnitude.
+    if v < 0 { format!("minus {}", cardinal_of(v.unsigned_abs())) } else { cardinal_of(v as u64) }
+}
+
+fn cardinal_of(v: u64) -> String {
     if v < 20 {
         return ONES[v as usize].into();
     }
     if v < 100 {
         let t = TENS[(v / 10) as usize];
-        return if v % 10 == 0 { t.into() } else { format!("{t}-{}", ONES[(v % 10) as usize]) };
+        return if v.is_multiple_of(10) { t.into() } else { format!("{t}-{}", ONES[(v % 10) as usize]) };
     }
     for (unit, name) in [(1_000_000_000, "billion"), (1_000_000, "million"), (1000, "thousand"), (100, "hundred")] {
         if v >= unit {
             let rest = v % unit;
-            let head = format!("{} {name}", cardinal(v / unit));
-            return if rest == 0 { head } else { format!("{head} {}", cardinal(rest)) };
+            let head = format!("{} {name}", cardinal_of(v / unit));
+            return if rest == 0 { head } else { format!("{head} {}", cardinal_of(rest)) };
         }
     }
     v.to_string()
@@ -479,6 +492,9 @@ mod tests {
         assert_eq!(format_number(1, "cardinalText"), "One");
         assert_eq!(format_number(14, "ordinalText"), "Fourteenth");
         assert_eq!(cardinal(14), "fourteen");
+        assert!(cardinal(i64::MIN).starts_with("minus nine billion"));
+        assert_eq!(format_number(i64::MAX, "lowerLetter"), i64::MAX.to_string());
+        assert_eq!(format_number(i64::MAX, "upperRoman"), i64::MAX.to_string());
         assert_eq!(ordinal_text(20), "twentieth");
         assert_eq!(ordinal_text(21), "twenty-first");
         assert_eq!(format_number(29, "russianLower"), "я");

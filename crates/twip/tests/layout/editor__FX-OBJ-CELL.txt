@@ -1,48 +1,58 @@
-page 0 612.0 792.0
-  72.0 96.8 FX-OBJ-CELL
-  135.2 145.0  inline picture at the start
-  77.7 156.8 of a cell. Inventory relevant group
-  77.7 168.7 relief results region ledger brief
-  77.7 180.6 usage cause.
-  392.6 110.6 Floating picture
-  392.6 122.4 anchored in the cell.
-  392.6 134.3 Notice claim team export
-  392.6 146.2 staff newsletter review
-  392.6 158.1 matter presenter advisor
-  311.6 169.9 account served. Savings pilot receipt
-  311.6 181.8 corporate requirement standard fact
-  311.6 193.7 that products distribution filed
-  311.6 205.5 logistics. Chapter plan regional
-  311.6 217.4 maintenance accessibility tax finds
-  311.6 229.3 record proposal denied contract
-  311.6 241.1 onboarding. Support network scheduled
-  311.6 253.0 trend.
-  77.7 273.4 Nested table with pictures:
-  83.3 293.8 Nested inline
-  126.5 329.2  picture.
-  254.3 293.8 Nested
-  254.3 305.6 float.
-  194.9 333.4 Regional
-  194.9 345.2 maintenance
-  194.9 357.1 accessibility tax
-  194.9 369.0 finds record
-  194.9 380.8 proposal denied
-  194.9 392.7 contract
-  194.9 404.6 onboarding
-  194.9 416.5 support network.
-  194.9 428.3 Scheduled trend
-  194.9 440.2 suggestions board
-  194.9 452.1 order update
-  194.9 463.9 granted agreement
-  194.9 475.8 marketing
-  194.9 487.7 promotion
-  194.9 499.6 division date.
-  194.9 511.4 Profitable.
-  83.3 531.8 Nested R2 C1
-  194.9 531.8 Nested, inline
-  194.9 543.7 alone:
-  311.6 273.4 Pilot receipt corporate requirement
-  311.6 308.9 standard fact that products.
-  311.6 320.7 Trend suggestions board order update
-  311.6 332.6 granted agreement marketing.
-  72.0 605.8 Paragraph after the table.
+page 0 12240 15840
+  1440 1936 FX-OBJ-CELL
+  2705 2899  inline picture at the start
+  1553 3137 of a cell. Inventory relevant group
+  1553 3374 relief results region ledger brief
+  1553 3612 usage cause.
+  7853 2211 Floating picture
+  7853 2449 anchored in the cell.
+  7853 2686 Notice claim team export
+  7853 2924 staff newsletter review
+  7853 3161 matter presenter advisor
+  6233 3398 account served. Savings pilot receipt
+  6233 3636 corporate requirement standard fact
+  6233 3873 that products distribution filed
+  6233 4111 logistics. Chapter plan regional
+  6233 4348 maintenance accessibility tax finds
+  6233 4586 record proposal denied contract
+  6233 4823 onboarding. Support network scheduled
+  6233 5060 trend.
+  1553 5468 Nested table with pictures:
+  1666 5875 Nested inline
+  2530 6585  picture.
+  5086 5875 Nested
+  5086 6113 float.
+  3898 6667 Regional
+  3898 6905 maintenance
+  3898 7142 accessibility tax
+  3898 7379 finds record
+  3898 7617 proposal denied
+  3898 7854 contract
+  3898 8092 onboarding
+  3898 8329 support network.
+  3898 8567 Scheduled trend
+  3898 8804 suggestions board
+  3898 9041 order update
+  3898 9279 granted agreement
+  3898 9516 marketing
+  3898 9754 promotion
+  3898 9991 division date.
+  3898 10228 Profitable.
+  1666 10636 Nested R2 C1
+  3898 10636 Nested, inline
+  3898 10873 alone:
+  6233 5468 Pilot receipt corporate requirement
+  6233 6177 standard fact that products.
+  6233 6415 Trend suggestions board order update
+  6233 6652 granted agreement marketing.
+  1440 12116 Paragraph after the table.
+  cell 1445 2025 6125 5282
+  cell 6125 2025 10805 5282
+  float 6233 2035 7673 3043
+  cell 1445 5282 6125 11930
+  cell 1558 5689 3790 10450
+  cell 3790 5689 6022 10450
+  float 3898 5699 4906 6419
+  cell 1558 10450 3790 11920
+  cell 3790 10450 6022 11920
+  cell 6125 5282 10805 11930

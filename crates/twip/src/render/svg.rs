@@ -16,10 +16,10 @@ use skia_safe::{PathBuilder, PathFillType, Point, RRect, Rect, TileMode};
 // ponytail: parsed again on every draw; cache the tree per image if large SVGs show up in profiles.
 pub fn draw(canvas: &Canvas, bytes: &[u8], dst: Rect) -> bool {
     let Ok(text) = std::str::from_utf8(bytes) else { return false };
-    let opts = roxmltree::ParsingOptions { allow_dtd: true, ..Default::default() };
+    let opts = roxmltree::ParsingOptions { allow_dtd: entities_bounded(text), ..Default::default() };
     let Ok(doc) = Document::parse_with_options(text.trim_start_matches('\u{feff}'), opts) else { return false };
     let root = doc.root_element();
-    if root.tag_name().name() != "svg" {
+    if root.tag_name().name() != "svg" || deeper_than(&doc, crate::docx::xml::MAX_DEPTH) {
         return false;
     }
     let (w, h) = (dst.width(), dst.height());
@@ -43,6 +43,31 @@ pub fn draw(canvas: &Canvas, bytes: &[u8], dst: Rect) -> bool {
     svg.children(canvas, root, &Style::default(), inner);
     canvas.restore();
     true
+}
+
+/// Whether the text a doctype's entities expand to stays small, so the doctype may be read (illustration tools
+/// declare their namespaces as entities). roxmltree resolves at most 255 references inside each reference, and no
+/// entity's value is longer than the doctype, so each `&` expands to at most 256 doctypes.
+fn entities_bounded(text: &str) -> bool {
+    const MAX_EXPANDED: usize = 1 << 26;
+    let Some(start) = text.find("<!DOCTYPE") else { return true };
+    let doctype = text[start..].find("]>").unwrap_or(text.len() - start);
+    text.matches('&').count().saturating_mul(256).saturating_mul(doctype) <= MAX_EXPANDED
+}
+
+/// Whether the tree nests elements deeper than `max`, which the painter's recursion couldn't walk. Counted on the
+/// tree, not the text: entities may hold elements.
+fn deeper_than(doc: &Document, max: usize) -> bool {
+    // In document order every parent comes before its children, so each node's depth is its parent's, already known.
+    let mut depth = vec![0usize; doc.descendants().count()];
+    for n in doc.descendants() {
+        let d = n.parent().map_or(0, |p| depth[p.id().get_usize()]) + usize::from(n.is_element());
+        if d > max {
+            return true;
+        }
+        depth[n.id().get_usize()] = d;
+    }
+    false
 }
 
 /// An SVG drawn at `w` × `h` pixels as a PNG: the fallback picture Word writes beside an SVG.
@@ -750,6 +775,21 @@ pub(crate) mod tests {
         let m = transform("translate(10 20) scale(2)").expect("a transform");
         assert_eq!(m.map_point((1.0, 1.0)), Point::new(12.0, 22.0));
         assert!(!draw(skia_safe::surfaces::raster_n32_premul((4, 4)).unwrap().canvas(), b"<html/>", Rect::from_wh(4.0, 4.0)));
+    }
+
+    #[test]
+    fn entity_bombs_and_deep_trees_are_not_drawn() {
+        let canvas = || skia_safe::surfaces::raster_n32_premul((4, 4)).unwrap();
+        let svg = |body: &str| format!(r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4 4">{body}</svg>"#);
+        // Illustration tools' namespace entities read.
+        let named = r#"<!DOCTYPE svg [<!ENTITY ns_svg "http://www.w3.org/2000/svg">]><svg xmlns="&ns_svg;"/>"#;
+        assert!(entities_bounded(named) && draw(canvas().canvas(), named.as_bytes(), Rect::from_wh(4.0, 4.0)));
+        // 64 KB of entity referenced 250 times a reference: the doctype isn't read, so the file isn't drawn.
+        let a = "x".repeat(1 << 16);
+        let bomb = format!(r#"<!DOCTYPE svg [<!ENTITY a "{a}"><!ENTITY b "{}">]>{}"#, "&a;".repeat(250), svg(&"&b;".repeat(20)));
+        assert!(!entities_bounded(&bomb) && !draw(canvas().canvas(), bomb.as_bytes(), Rect::from_wh(4.0, 4.0)));
+        let deep = svg(&format!("{}{}", "<g>".repeat(10_000), "</g>".repeat(10_000)));
+        assert!(!draw(canvas().canvas(), deep.as_bytes(), Rect::from_wh(4.0, 4.0)));
     }
 
     fn aspect_of(v: &str) -> Option<(f32, f32, bool)> {

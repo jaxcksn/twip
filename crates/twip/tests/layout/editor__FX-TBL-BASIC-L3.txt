@@ -1,51 +1,96 @@
-page 0 612.0 792.0
-  89.0 82.3 A1, the document starts
-  89.0 94.2 with this table
-  386.6 82.3 C1
-  237.8 114.5 First paragraph of the
-  237.8 126.4 cell.
-  237.8 146.3 Second paragraph.
-  237.8 186.0 Fourth paragraph, after
-  237.8 197.9 an empty one.
-  89.0 218.3 A3
-  237.8 218.3 B3
-  83.3 238.6 Paragraph between the first and second tables.
-  89.0 259.0 T2 R1 C1
-  237.8 259.0 T2 R1 C2
-  386.6 259.0 T2 R1 C3
-  89.0 279.4 T2 R2 C1
-  237.8 279.4 T2 R2 C2
-  386.6 279.4 T2 R2 C3
-  89.0 299.8 T2 R3 C1
-  237.8 299.8 T2 R3 C2
-  386.6 299.8 T2 R3 C3
-  89.0 340.5 T3 R1 C1
-  239.0 340.5 T3 R1 C2
-  89.0 360.9 T3 R2 C1
-  239.0 360.9 T3 R2 C2
-  83.3 381.2 The second and third tables above are separated by an empty paragraph, so they
-  83.3 393.1 stay two tables (with none, Word joins them).
-  89.0 413.5 T4 R1 C1
-  237.8 413.5 T4 R1 C2
-  386.6 413.5 T4 R1 C3
-  89.0 433.8 T4 R2 C1
-  237.8 433.8 T4 R2 C2
-  386.6 433.8 T4 R2 C3
-  89.0 474.6 T5 R1 C1
-  237.8 474.6 T5 R1 C2
-  386.6 474.6 T5 R1 C3
-  89.0 495.0 T5 R2 C1
-  237.8 495.0 T5 R2 C2
-  386.6 495.0 T5 R2 C3
-  83.3 515.3 The fourth and fifth tables above are separated only by an empty paragraph.
-  83.3 535.2 Paragraph before the last table.
-  89.0 555.6 End R1 C1
-  237.8 555.6 End R1 C2
-  386.6 555.6 End R1 C3
-  89.0 575.9 End R2 C1
-  237.8 575.9 End R2 C2
-  386.6 575.9 End R2 C3
-  89.0 596.3 End R3 C1
-  237.8 596.3 End R3 C2
-  386.6 596.3 End R3 C3
-  72.0 617.7 Paragraph after the wrapper table.
+page 0 12240 15840
+  1779 1646 A1, the document starts
+  1779 1883 with this table
+  7731 1646 C1
+  4755 2291 First paragraph of the
+  4755 2528 cell.
+  4755 2926 Second paragraph.
+  4755 3721 Fourth paragraph, after
+  4755 3958 an empty one.
+  1779 4365 A3
+  4755 4365 B3
+  1666 4773 Paragraph between the first and second tables.
+  1779 5180 T2 R1 C1
+  4755 5180 T2 R1 C2
+  7731 5180 T2 R1 C3
+  1779 5588 T2 R2 C1
+  4755 5588 T2 R2 C2
+  7731 5588 T2 R2 C3
+  1779 5995 T2 R3 C1
+  4755 5995 T2 R3 C2
+  7731 5995 T2 R3 C3
+  1779 6810 T3 R1 C1
+  4779 6810 T3 R1 C2
+  1779 7217 T3 R2 C1
+  4779 7217 T3 R2 C2
+  1666 7625 The second and third tables above are separated by an empty paragraph, so they
+  1666 7862 stay two tables (with none, Word joins them).
+  1779 8270 T4 R1 C1
+  4755 8270 T4 R1 C2
+  7731 8270 T4 R1 C3
+  1779 8677 T4 R2 C1
+  4755 8677 T4 R2 C2
+  7731 8677 T4 R2 C3
+  1779 9492 T5 R1 C1
+  4755 9492 T5 R1 C2
+  7731 9492 T5 R1 C3
+  1779 9899 T5 R2 C1
+  4755 9899 T5 R2 C2
+  7731 9899 T5 R2 C3
+  1666 10307 The fourth and fifth tables above are separated only by an empty paragraph.
+  1666 10704 Paragraph before the last table.
+  1779 11111 End R1 C1
+  4755 11111 End R1 C2
+  7731 11111 End R1 C3
+  1779 11519 End R2 C1
+  4755 11519 End R2 C2
+  7731 11519 End R2 C3
+  1779 11926 End R3 C1
+  4755 11926 End R3 C2
+  7731 11926 End R3 C3
+  1440 12354 Paragraph after the wrapper table.
+  cell 1445 1440 10589 12168
+  cell 1558 1450 10486 12158
+  cell 1671 1460 4647 2105
+  cell 4647 1460 7623 2105
+  cell 7623 1460 10599 2105
+  cell 1671 2105 4647 4179
+  cell 4647 2105 7623 4179
+  cell 7623 2105 10599 4179
+  cell 1671 4179 4647 4587
+  cell 4647 4179 7623 4587
+  cell 7623 4179 10599 4587
+  cell 1671 4994 4647 5402
+  cell 4647 4994 7623 5402
+  cell 7623 4994 10599 5402
+  cell 1671 5402 4647 5809
+  cell 4647 5402 7623 5809
+  cell 7623 5402 10599 5809
+  cell 1671 5809 4647 6216
+  cell 4647 5809 7623 6216
+  cell 7623 5809 10599 6216
+  cell 1671 6624 4671 7031
+  cell 4671 6624 7671 7031
+  cell 1671 7031 4671 7439
+  cell 4671 7031 7671 7439
+  cell 1671 8084 4647 8491
+  cell 4647 8084 7623 8491
+  cell 7623 8084 10599 8491
+  cell 1671 8491 4647 8898
+  cell 4647 8491 7623 8898
+  cell 7623 8491 10599 8898
+  cell 1671 9306 4647 9713
+  cell 4647 9306 7623 9713
+  cell 7623 9306 10599 9713
+  cell 1671 9713 4647 10121
+  cell 4647 9713 7623 10121
+  cell 7623 9713 10599 10121
+  cell 1671 10925 4647 11333
+  cell 4647 10925 7623 11333
+  cell 7623 10925 10599 11333
+  cell 1671 11333 4647 11740
+  cell 4647 11333 7623 11740
+  cell 7623 11333 10599 11740
+  cell 1671 11740 4647 12148
+  cell 4647 11740 7623 12148
+  cell 7623 11740 10599 12148

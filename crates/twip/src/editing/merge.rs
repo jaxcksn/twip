@@ -541,33 +541,57 @@ impl Editor {
         Ok(self.commit(tx, None, fonts))
     }
 
+    /// The labelled regions shown: those the selection is in and the one under the pointer. None while read-only or
+    /// with `controlLabels` off.
     pub(super) fn region_views(&mut self, pages: std::ops::Range<usize>) -> Vec<super::view::RegionView> {
-        if self.mode != super::Mode::Design {
+        if self.mode == super::Mode::ReadOnly || !self.control_labels {
             return Vec::new();
         }
-        let mut ids = self.sections_at(&self.selection.clone());
+        let mut ids = self.regions_at(&self.selection.clone());
         if let Some(c) = self.hover_region.filter(|c| !ids.contains(c)) {
             ids.push(c);
         }
         ids.into_iter().filter_map(|c| self.region_view(c, pages.clone())).collect()
     }
 
-    fn sections_at(&self, sel: &Selection) -> Vec<ControlId> {
-        elements::context(&self.doc, &self.index, sel)
-            .into_iter()
-            .filter_map(|(x, _)| if let ElementId::Control(c) = x { Some(c) } else { None })
-            .filter(|c| self.doc.controls.get(c).is_some_and(|k| k.props.kind == ControlKind::RepeatingSection))
-            .collect()
+    /// The regions a selection is in, innermost first: every repeating section, the innermost other control, and a
+    /// shown sub-template. A control whose `w15:appearance` is `hidden` has none, and neither do repeating items.
+    fn regions_at(&self, sel: &Selection) -> Vec<ElementId> {
+        let mut inner = false;
+        let mut take = |x: ElementId| match x {
+            ElementId::Control(c) => {
+                let props = &self.doc.controls.get(&c)?.props;
+                let hidden = props.rest.iter().any(|(n, xml)| n == "appearance" && xml.contains("\"hidden\""));
+                match props.kind {
+                    ControlKind::RepeatingSection => Some(x),
+                    ControlKind::RepeatingItem | ControlKind::Other => None,
+                    _ if hidden || inner => None,
+                    _ => {
+                        inner = true;
+                        Some(x)
+                    }
+                }
+            }
+            ElementId::Field(f) => self.reference_expanded(f).then_some(x).filter(|_| self.references.by_field.contains_key(&f)),
+        };
+        // A selected picture is its picture control's.
+        let picture = match sel {
+            Selection::Object(o) => self.picture_control_at(*o).map(ElementId::Control),
+            _ => None,
+        };
+        let context = elements::context(&self.doc, &self.index, sel).into_iter().map(|(x, _)| x);
+        picture.into_iter().chain(context).filter_map(&mut take).collect()
     }
 
     pub(super) fn set_hover(&mut self, x: f64, y: f64) {
         self.hover = Some((x, y));
-        if self.mode != super::Mode::Design {
+        if self.mode == super::Mode::ReadOnly {
             self.hover_region = None;
             return;
         }
-        let under = self.hit_laid_out(x, y).and_then(|p| self.sections_at(&Selection::Caret(p)).first().copied());
-        let on_tab = |e: &mut Editor, c: ControlId| {
+        let shown = self.expansion_at(x, y).map(|(f, _)| ElementId::Field(f));
+        let under = shown.or_else(|| self.hit_laid_out(x, y).and_then(|p| self.regions_at(&Selection::Caret(p)).first().copied()));
+        let on_tab = |e: &mut Editor, c: ElementId| {
             let Some((page, px, py)) = e.stack().page_at(x, y) else { return false };
             e.region_view(c, page..page + 1).is_some_and(|g| {
                 let (p, t) = g.title_rect;
@@ -581,40 +605,56 @@ impl Editor {
         };
     }
 
-    fn region_view(&mut self, c: ControlId, pages: std::ops::Range<usize>) -> Option<super::view::RegionView> {
-        let w = self.locate(ElementId::Control(c))?;
+    /// Which region the pointer is over, so that a move onto or off one draws a frame.
+    pub fn hover_region(&self) -> Option<ElementId> {
+        self.hover_region
+    }
+
+    fn region_view(&mut self, x: ElementId, pages: std::ops::Range<usize>) -> Option<super::view::RegionView> {
         let mut rects: Vec<(usize, [f64; 4])> = Vec::new();
         let mut grow = |page: usize, r: [f64; 4]| match rects.iter_mut().find(|(p, _)| *p == page) {
             Some((_, u)) => *u = [u[0].min(r[0]), u[1].min(r[1]), u[2].max(r[2]), u[3].max(r[3])],
             None => rects.push((page, r)),
         };
-        match &w {
-            Where::Rows { table, range } => {
-                for page in pages {
-                    let Some(geo) = self.pages.page(page, &self.index) else { continue };
-                    for cell in &geo.cells {
-                        if let Some(&(t, row, _)) = cell.chain.last()
-                            && t == *table
-                            && range.contains(&row)
-                        {
-                            grow(page, cell.rect);
+        let title = match x {
+            ElementId::Field(f) => {
+                for (page, r) in self.expansion_rects(f, pages) {
+                    grow(page, r);
+                }
+                self.references.by_field.get(&f)?.name.clone()
+            }
+            ElementId::Control(c) => {
+                match self.locate(x)? {
+                    Where::Rows { table, range } => {
+                        for page in pages {
+                            let Some(geo) = self.pages.page(page, &self.index) else { continue };
+                            for cell in &geo.cells {
+                                if let Some(&(t, row, _)) = cell.chain.last()
+                                    && t == table
+                                    && range.contains(&row)
+                                {
+                                    grow(page, cell.rect);
+                                }
+                            }
+                        }
+                    }
+                    w => {
+                        let (a, b) = self.element_range(&w)?;
+                        for (page, r) in self.range_rects(a, b, pages) {
+                            grow(page, r);
                         }
                     }
                 }
+                let props = self.doc.controls.get(&c).map(|k| k.props.clone()).unwrap_or_default();
+                let fallback = (props.kind == ControlKind::RepeatingSection).then(|| "Repeating section".to_string());
+                props.alias.or(props.tag).or(fallback).unwrap_or_default()
             }
-            _ => {
-                let (a, b) = self.element_range(&w)?;
-                for (page, r) in self.range_rects(a, b, pages) {
-                    grow(page, r);
-                }
-            }
-        }
+        };
         let &(page, first) = rects.first()?;
-        let props = self.doc.controls.get(&c).map(|k| k.props.clone()).unwrap_or_default();
-        let title = props.alias.or(props.tag).unwrap_or_else(|| "Repeating section".into());
+        // An untitled control's tab is a bare handle, as Word draws it.
         let width = 6.0 * title.chars().count() as f64 + 10.0;
         Some(super::view::RegionView {
-            id: elements::id_str(ElementId::Control(c)),
+            id: elements::id_str(x),
             rects,
             title_rect: (page, [first[0], first[1] - 14.0, first[0] + width, first[1]]),
             title,
@@ -1321,6 +1361,10 @@ impl Editor {
                 if let Inline::FieldBegin { label, .. } = &mut p.inlines[k] {
                     *label = new;
                 }
+            }
+            // A sub-template's paragraph is also drawn in the body, laid out apart from it.
+            if self.index.para_slot(para).is_some_and(|s| matches!(self.index.story(s.container), StoryId::BuildingBlock(_))) {
+                self.expansions_stale = true;
             }
             hints.push(super::step::para_hint(&self.index, para, 0));
         }

@@ -259,6 +259,8 @@ impl Session {
     /// engine recognises the gestures (a secondary press is `contextClick`) and runs each one's binding.
     pub fn pointer(&mut self, kind: PointerKind, at: Point, button: PointerButton, clicks: u8, mods: Modifiers) {
         if self.ruler_pointer(kind, at, button, clicks, mods) {
+            // The hovered marker's tooltip.
+            self.deliver_requests();
             return;
         }
         if kind == PointerKind::Down {
@@ -333,6 +335,7 @@ impl Session {
         let at = p.ruler_drag.as_ref().map(|d| d.now).or(p.ruler_hover.map(|h| h.at));
         if let Some(at) = at {
             self.ruler_pointer(PointerKind::Move, at, PointerButton::Primary, 0, mods);
+            self.deliver_requests();
         }
     }
 
@@ -487,14 +490,15 @@ impl Session {
             PointerKind::Up => K::Up,
             PointerKind::Cancel | PointerKind::Leave => K::Cancel,
         };
-        let hovered = self.editor.table_hover();
+        let (hovered, region) = (self.editor.table_hover(), self.editor.hover_region());
         let _ = self.apply_with(Origin::User, |e, fonts| {
             e.pointer_input(kind, x, y, clicks, mods, fonts);
             Outcome::Unchanged("pointer input")
         });
-        // A border, object or table drag moves its guide with no new state, and a table's handles follow the
-        // pointer: a frame shows them.
-        if kind == K::Move && (self.editor.dragging() || self.editor.table_hover() != hovered) {
+        // A border, object or table drag moves its guide with no new state, and a table's handles and a hovered
+        // control's label follow the pointer: a frame shows them.
+        let moved = self.editor.table_hover() != hovered || self.editor.hover_region() != region;
+        if kind == K::Move && (self.editor.dragging() || moved) {
             self.presentation.want_frame();
         }
     }

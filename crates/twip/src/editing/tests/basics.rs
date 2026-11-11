@@ -2286,3 +2286,18 @@ fn hyphenation_settings_change_undo_and_save_in_schema_order() {
     assert_eq!((s.auto_hyphenation, s.consecutive_hyphen_limit, s.do_not_hyphenate_caps), (false, 0, false));
     assert!(matches!(e.execute(Command::SetHyphenationZone(Points(-1.0)), fonts()), super::super::commands::Outcome::Refused(_)));
 }
+
+#[test]
+fn a_list_reapplied_after_backspacing_out_indents_again() {
+    let mut e = open("FX-TEXT.docx");
+    let para = super::super::tests::para_id(&e, 1);
+    e.set_caret_for_benchmark(Selection::Caret(super::super::position::Position::text(StoryId::Body, para, Unit(0))));
+    let ind = |e: &super::super::Editor| e.index.para(&e.doc, para).map(|p| (p.style.ind_left, p.style.ind_first));
+    e.execute(Command::SetList(Some(crate::api::command::ListKind::Numbered)), fonts());
+    let listed = ind(&e);
+    e.execute(crate::editing::tests::del(Dir::Back, false), fonts());
+    e.execute(crate::editing::tests::del(Dir::Back, false), fonts());
+    assert_ne!(ind(&e), listed, "backspace took the list off");
+    e.execute(Command::SetList(Some(crate::api::command::ListKind::Numbered)), fonts());
+    assert_eq!(ind(&e), listed);
+}

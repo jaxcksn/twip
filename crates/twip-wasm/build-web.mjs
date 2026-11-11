@@ -2,7 +2,8 @@
 // and Dawn's emscripten port once (into .web-deps, not target/: CI's rust-cache deletes the files under target/ that
 // aren't cargo's before saving), then runs the emscripten cargo build with them. Needs emsdk's emcc on PATH (CI:
 // setup-emsdk; locally: emsdk_env).
-// Usage: node build-web.mjs [--debug]
+// `test` runs the layout snapshot check (crates/twip/src/layout/tests/output.rs) in the module under Node instead.
+// Usage: node build-web.mjs [--debug | test]
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync, readdirSync } from 'node:fs';
@@ -19,7 +20,8 @@ const root = resolve(import.meta.dirname, '../..');
 mkdirSync(join(root, '.web-deps'), { recursive: true });
 // The real path, so worktrees that link .web-deps to one folder hand Skia's build the same paths (and share its cache).
 const deps = realpathSync(join(root, '.web-deps'));
-const release = !process.argv.includes('--debug');
+const test = process.argv.includes('test');
+const release = !test && !process.argv.includes('--debug');
 
 const download = async (url, to) => {
   if (existsSync(to)) return;
@@ -71,18 +73,20 @@ const env = {
   AR_wasm32_unknown_emscripten: `emar${exe}`,
   // em++ links the C++ shim's standard library.
   CARGO_TARGET_WASM32_UNKNOWN_EMSCRIPTEN_LINKER: `em++${exe}`,
+  CARGO_TARGET_WASM32_UNKNOWN_EMSCRIPTEN_RUNNER: 'node',
 };
+const args = test
+  ? ['test', '-p', 'twip', '--lib', '--target', 'wasm32-unknown-emscripten', 'layout_output']
+  : ['build', '-p', 'twip-wasm', '--target', 'wasm32-unknown-emscripten', ...(release ? ['--release'] : [])];
 const build = () =>
-  execFileSync('cargo', ['build', '-p', 'twip-wasm', '--target', 'wasm32-unknown-emscripten', ...(release ? ['--release'] : [])], {
-    cwd: root, env, encoding: 'utf8', stdio: ['inherit', 'inherit', 'pipe'],
-  });
+  execFileSync('cargo', args, { cwd: root, env, encoding: 'utf8', stdio: ['inherit', 'inherit', 'pipe'] });
 try {
   process.stderr.write(build() ?? '');
 } catch (e) {
   process.stderr.write(e.stderr ?? '');
   // When its build script re-runs, skia-bindings unpacks the archive again and fails on the earlier unpack ("The
   // directory is not empty", then it attempts a source build). Clear that unpack and its fingerprint, then retry.
-  if (!/directory is not empty/i.test(e.stderr ?? '')) throw new Error('web build failed');
+  if (!/directory is not empty/i.test(e.stderr ?? '')) throw new Error(`web ${args[0]} failed`);
   // Build scripts and fingerprints live in the build directory, which may be set apart from the target directory.
   const dir = process.env.CARGO_BUILD_BUILD_DIR ?? process.env.CARGO_TARGET_DIR ?? join(root, 'target');
   const out = join(dir, 'wasm32-unknown-emscripten', release ? 'release' : 'debug');

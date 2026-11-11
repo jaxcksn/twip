@@ -14,6 +14,7 @@ import {
   type DataParts,
   type Elements,
   type MountedElements,
+  type ReferenceRule,
   type SubTemplates,
 } from './services/elements.js';
 import { createFind, type Find } from './services/find.js';
@@ -45,6 +46,15 @@ export interface SessionOptions {
   dictionaries?: Dictionary[];
   /** Turns tracking on after open, unless the document locks it. */
   trackChanges?: boolean;
+  /**
+   * What design mode shows for each field code ({@link Commands.setFieldLabels}), in place from each open's first
+   * layout. The commands still change them for the open document.
+   */
+  fieldLabels?: Record<string, string>;
+  /** The application's own field types ({@link Commands.setApplicationFieldTypes}), in place from each open. */
+  applicationFieldTypes?: string[];
+  /** Which fields are sub-template references ({@link Commands.setSubTemplateRules}), in place from each open. */
+  subTemplateRules?: ReferenceRule[];
 }
 
 /** Options for {@link Editor.mount}. */
@@ -205,10 +215,10 @@ export class Session {
 
   /** Creates a session on the page's engine: on this thread, or in the page's engine worker. */
   static async start(options: SessionOptions = {}, execution: 'main' | 'worker' = 'main'): Promise<Session> {
-    const { readOnly, mode, author, language, trackChanges } = options;
+    const { readOnly, mode, author, language, trackChanges, fieldLabels, applicationFieldTypes, subTemplateRules } = options;
     const transport = execution === 'worker' ? workerTransport() : await directTransport();
     useEngine(transport);
-    const id = await transport.createSession({ readOnly, mode, author, language, trackChanges });
+    const id = await transport.createSession({ readOnly, mode, author, language, trackChanges, fieldLabels, applicationFieldTypes, subTemplateRules });
     try {
       const state = (await transport.call(id, Method.State)) as EditorState;
       const catalog = (await transport.call(id, Method.Catalog).catch((e: unknown) => {

@@ -1,29 +1,50 @@
-page 0 612.0 792.0
-  72.0 96.8 4.3-4.11 Filters and sorts
-  72.0 126.1 FX-MERGE-REGIONS
-  72.0 139.3 Rows of the details table repeat; the first detail's detail cell holds a table whose
-  72.0 151.2 rows repeat too.
-  77.7 171.6 Detail
-  257.6 171.6 Detail
-  401.6 171.6 Cost
-  77.7 191.9 «Description»
-  257.6 191.9 Detail 1
-  263.3 212.3 Code
-  329.9 212.3 Count
-  263.3 232.7 «Code»
-  329.9 232.7 Count 1
-  263.3 253.1 «Code»
-  329.9 253.1 Count 2
-  401.6 191.9 «Cost»
-  77.7 273.9 «Description»
-  257.6 273.9 Detail 2
-  401.6 273.9 «Cost»
-  77.7 294.3 «Description»
-  257.6 294.3 Detail 3
-  401.6 294.3 «Cost»
-  72.0 314.7 Two paragraphs repeat as one item:
-  72.0 334.5 Name: «Name»
-  72.0 354.4 Role: «Role»
-  72.0 374.3 A labels row: one row, three cells, content only in the first.
-  77.7 394.7 «Address»
-  72.0 415.0 After the regions.
+page 0 12240 15840
+  1440 1936 4.3-4.11 Filters and sorts
+  1440 2521 FX-MERGE-REGIONS
+  1440 2787 Rows of the details table repeat; the first detail's detail cell holds a table whose
+  1440 3024 rows repeat too.
+  1553 3431 Detail
+  5153 3431 Detail
+  8033 3431 Cost
+  1553 3839 «Description»
+  5153 3839 Detail 1
+  5266 4246 Code
+  6598 4246 Count
+  5266 4654 «Code»
+  6598 4654 Count 1
+  5266 5061 «Code»
+  6598 5061 Count 2
+  8033 3839 «Cost»
+  1553 5479 «Description»
+  5153 5479 Detail 2
+  8033 5479 «Cost»
+  1553 5886 «Description»
+  5153 5886 Detail 3
+  8033 5886 «Cost»
+  1440 6293 Two paragraphs repeat as one item:
+  1440 6691 Name: «Name»
+  1440 7088 Role: «Role»
+  1440 7486 A labels row: one row, three cells, content only in the first.
+  1553 7893 «Address»
+  1440 8301 After the regions.
+  cell 1445 3245 5045 3653
+  cell 5045 3245 7925 3653
+  cell 7925 3245 10805 3653
+  cell 1445 3653 5045 5293
+  cell 5045 3653 7925 5293
+  cell 5158 4060 6490 4468
+  cell 6490 4060 7822 4468
+  cell 5158 4468 6490 4875
+  cell 6490 4468 7822 4875
+  cell 5158 4875 6490 5283
+  cell 6490 4875 7822 5283
+  cell 7925 3653 10805 5293
+  cell 1445 5293 5045 5700
+  cell 5045 5293 7925 5700
+  cell 7925 5293 10805 5700
+  cell 1445 5700 5045 6107
+  cell 5045 5700 7925 6107
+  cell 7925 5700 10805 6107
+  cell 1445 7707 4565 8115
+  cell 4565 7707 7685 8115
+  cell 7685 7707 10805 8115

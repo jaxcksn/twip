@@ -11,9 +11,14 @@ namespace Twip;
 /// <param name="Language">The BCP 47 language for text with no language.</param>
 /// <param name="Dictionaries">Spelling dictionaries to load.</param>
 /// <param name="TrackChanges">Turn change tracking on after open, unless the document locks it.</param>
+/// <param name="FieldLabels">What design mode shows for each field code, as SetFieldLabelsAsync sets them, from each open's first layout.</param>
+/// <param name="ApplicationFieldTypes">The application's own field types, as SetApplicationFieldTypesAsync sets them, from each open.</param>
+/// <param name="SubTemplateRules">Which fields are sub-template references, as SetSubTemplateRulesAsync sets them, from each open.</param>
 public sealed record EditorSessionOptions(
     Author? Author = null, bool ReadOnly = false, EditorMode Mode = EditorMode.Editing, FontLibrary? Fonts = null,
-    string Language = "en-US", IReadOnlyList<Dictionary>? Dictionaries = null, bool TrackChanges = false);
+    string Language = "en-US", IReadOnlyList<Dictionary>? Dictionaries = null, bool TrackChanges = false,
+    IReadOnlyDictionary<string, string>? FieldLabels = null, IReadOnlyList<string>? ApplicationFieldTypes = null,
+    IReadOnlyList<ReferenceRule>? SubTemplateRules = null);
 
 /// <summary>The person making edits.</summary>
 /// <param name="Name">The display name.</param>

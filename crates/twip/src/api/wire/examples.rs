@@ -1013,6 +1013,7 @@ fn commands() -> Vec<Command> {
             appearance: Some(DocumentAppearance::DarkWithLightPage),
             detail: Some(MeasureDetail::Full),
             object_grid: Some(ObjectGrid::Always),
+            control_labels: Some(false),
             field_shading: Some(FieldShading::Always),
             cursor_overrides: Some(vec![
                 CursorOverride { on: CursorTarget::Action(PressAction::Toggle), cursor: Cursor::Pointer },
@@ -1955,6 +1956,14 @@ fn session_options() -> SessionOptions {
             hyphenation: None,
         }],
         track_changes: true,
+        field_labels: BTreeMap::from([("MERGEFIELD Customer.Name".into(), "Customer name".into())]),
+        application_field_types: vec!["MERGECOUNT".into()],
+        sub_template_rules: vec![ReferenceRule {
+            field_type: "MERGETEMPLATE".into(),
+            argument: None,
+            category: "Merge sub-templates".into(),
+            gallery: None,
+        }],
     }
 }
 

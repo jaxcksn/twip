@@ -185,6 +185,34 @@ fn a_resolved_reference_shows_its_body_in_place() {
     assert!(cycle.size.1 > 20.0);
 }
 
+#[test]
+fn new_labels_redraw_the_shown_bodies() {
+    use std::io::Read;
+    // The fixture's sub-template fields, with their results emptied so that design mode labels them.
+    let bytes = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-SUBTEMPLATES.docx")).unwrap();
+    let mut xml = String::new();
+    zip::ZipArchive::new(std::io::Cursor::new(&bytes[..])).unwrap().by_name("word/glossary/document.xml").unwrap().read_to_string(&mut xml).unwrap();
+    for r in ["«Fee»", "«Name»", "«Amount»"] {
+        xml = xml.replace(&format!(">{r}</w:t>"), "></w:t>");
+    }
+    let bytes =
+        crate::docx::write::repackage(&bytes, &[("word/glossary/document.xml".into(), xml.into_bytes())], zip::CompressionMethod::Deflated).unwrap();
+    let mut e = Editor::open(&bytes, fonts()).unwrap();
+    e.set_mode(super::super::Mode::Design);
+    e.execute(super::super::sub_templates::rules("SUBTEMPLATE", "Sub-templates"), fonts());
+    let drawn = |e: &mut Editor| {
+        e.complete(fonts());
+        crate::layout::dump::page_text(&e.snapshot(), e.document())
+    };
+    let first = drawn(&mut e);
+    assert!(first.contains("«Fee»") && first.contains("«Fee.Name»"), "the first labels");
+    let labels = [("MERGEFIELD Fee", "Fee label"), ("MERGEFIELD Fee.Name", "Name label")].map(|(c, l)| (c.to_string(), l.to_string()));
+    e.execute(Command::SetFieldLabels(crate::api::command::FieldLabels { labels: labels.into_iter().collect(), merge: None }), fonts());
+    let text = drawn(&mut e);
+    assert!(text.contains("Fee label"), "in a shown paragraph body");
+    assert!(text.contains("Name label"), "in a shown row");
+}
+
 fn click_line(e: &mut Editor, para: ParaId, clicks: u8) {
     use super::super::input::PointerKind;
     use super::super::keymap::Mods;
@@ -629,4 +657,16 @@ fn the_body_is_replaced_from_a_docx_keeping_the_sub_templates() {
         .map(|x| (x.code, x.props.map(|p| format!("{:?} {:?}", p.kind, p.tag))))
         .collect();
     assert_eq!(template, violation.1);
+}
+
+#[test]
+fn a_selected_shown_body_is_labelled_with_its_sub_template() {
+    let (mut e, reference) = expanded();
+    assert!(e.view(0..1).regions.is_empty(), "nothing selected, nothing hovered");
+    click_line(&mut e, reference, 1);
+    let regions = e.view(0..1).regions;
+    let g = regions.iter().find(|g| g.title == "Violation").expect("the sub-template's label");
+    let (_, line_top, line_bottom) = line_of(&mut e, reference);
+    let (_, r) = g.rects[0];
+    assert!(r[1] >= line_top - 0.5 && r[3] <= line_bottom + 0.5 && r[3] - r[1] > 60.0, "around the shown body: {r:?}");
 }

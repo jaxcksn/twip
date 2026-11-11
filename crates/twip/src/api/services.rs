@@ -2728,9 +2728,11 @@ pub enum TooltipKind {
     Revision,
     /// A comment.
     Comment,
+    /// A ruler marker, the tab type box, or where a click on the ruler adds a stop.
+    Ruler,
 }
 
-/// A tooltip to show over the document.
+/// A tooltip to show over the document or its rulers.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Tooltip {

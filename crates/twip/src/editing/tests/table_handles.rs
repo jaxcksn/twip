@@ -125,6 +125,10 @@ fn each_zone_from_a_point() {
     let last = d.rows[3];
     assert_eq!(hover(&mut e, last[2] + 3.0 * PX, last[3] + 3.0 * PX), z(TableZone::Resize), "the resize handle");
     assert_eq!(hover(&mut e, d.edges[1], mid(d.rows[1])), z(TableZone::Border(1)), "column border 1");
+    // A row border is marked like a column border: a dashed line across the table.
+    assert_eq!(hover(&mut e, cell.0, d.rows[1][3]), z(TableZone::RowBorder(1)), "row 2's bottom border");
+    let mark = e.view(0..1).table.and_then(|h| h.mark);
+    assert_eq!(mark, Some(crate::editing::view::TableMark::RowBorder { y: d.rows[1][3], left: x0, right: d.rows[1][2] }));
     assert_eq!(hover(&mut e, 300.0, 700.0), None, "away");
     assert_eq!(e.view(0..1).table, None, "no handles");
     assert_eq!(hover(&mut e, d.edges[1], y0 - 12.0 * PX), None, "above, hidden again");
@@ -193,10 +197,9 @@ fn a_column_border_drag_shows_the_two_widths_and_the_change() {
         e.view(0..1)
             .measures
             .into_iter()
-            .filter_map(|(_, m)| match m {
-                Measure::Dimension { label, tone, .. } | Measure::Status { label, tone, .. } => Some((label, tone)),
-                Measure::Chip { label, .. } => Some((label, Tone::Muted)),
-                Measure::Hint { .. } => None,
+            .map(|(_, m)| match m {
+                Measure::Dimension { label, tone, .. } | Measure::Status { label, tone, .. } => (label, tone),
+                Measure::Chip { label, .. } => (label, Tone::Muted),
             })
             .collect()
     };

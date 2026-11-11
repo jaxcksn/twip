@@ -190,7 +190,9 @@ pub struct Editor {
     style_part: Option<&'static str>,
     /// The lists applied or defined in this session, newest first, by gallery.
     recent_lists: Vec<(crate::api::services::ListGalleryKind, Vec<crate::api::command::ListLevel>)>,
-    hover_region: Option<crate::docx::ControlId>,
+    hover_region: Option<crate::docx::ElementId>,
+    /// Controls and shown sub-templates are labelled while selected or hovered (`setViewOptions`'s `controlLabels`).
+    pub control_labels: bool,
     comments: comments::State,
     review_list: revisions::index::List,
     author: (Rc<str>, Option<crate::docx::review::Identity>),
@@ -346,6 +348,7 @@ impl Editor {
             style_part: None,
             recent_lists: Vec::new(),
             hover_region: None,
+            control_labels: true,
             comments: comments::State::default(),
             review_list: Default::default(),
             author: ("Author".into(), None),
@@ -897,6 +900,9 @@ impl Editor {
         if tx.kept < 0 {
             return Err("a content control that can't be deleted");
         }
+        if self.nests_too_deep(tx) {
+            return Err("tables nested deeper than a saved document can be opened");
+        }
         if tx.pictures && !self.picture_writes && self.loses_protected_picture() {
             return Err("a protected picture");
         }
@@ -904,6 +910,26 @@ impl Editor {
             crate::prof::time("edit:renumber", || self.renumber(tx));
         }
         Ok(())
+    }
+
+    /// Whether the blocks or rows the transaction put in nest tables deeper than [`MAX_TABLE_DEPTH`], counting the
+    /// cells they went into.
+    fn nests_too_deep(&self, tx: &Tx) -> bool {
+        let cells = |rows: &[crate::docx::Row]| rows.iter().flat_map(|r| &r.cells).map(|c| table_depth(&c.blocks)).max().unwrap_or(0);
+        tx.undo.iter().any(|s| match s {
+            // The inverse's range is where the new blocks or rows are.
+            Step::Blocks { container, range, .. } => self
+                .index
+                .blocks(&self.doc, *container)
+                .and_then(|b| b.get(range.clone()))
+                .is_some_and(|b| self.index.chain(*container).len() + table_depth(b) > MAX_TABLE_DEPTH),
+            Step::Rows { table, range, .. } => self.index.table_slot(*table).is_some_and(|slot| {
+                let Some(Block::Table(t)) = self.index.blocks(&self.doc, slot.container).and_then(|b| b.get(slot.block)) else { return false };
+                let rows = t.rows.get(range.clone()).unwrap_or_default();
+                self.index.chain(slot.container).len() + 1 + cells(rows) > MAX_TABLE_DEPTH
+            }),
+            _ => false,
+        })
     }
 
     fn effects(&mut self, tx: &mut Tx) {
@@ -2145,7 +2171,7 @@ impl Editor {
                 let mods = if self.modes.extend > 0 && clicks == 1 { keymap::Mods { shift: true, ..mods } } else { mods };
                 self.goal_x = None;
                 self.history.break_typing();
-                if self.mode == Mode::Design && self.region_title_click(x, y, fonts) {
+                if self.region_title_click(x, y, fonts) {
                     return;
                 }
                 if !mods.shift && self.expansion_click(x, y, clicks, fonts) {
@@ -2986,6 +3012,17 @@ impl Editor {
         }
         Some(out).filter(|t| t.chars().count() <= limit)
     }
+}
+
+/// The deepest table nesting an edit may make. The reader refuses parts nested deeper than
+/// [`crate::docx::xml::MAX_DEPTH`] elements, three a table level, so a document nested deeper would save but not open.
+// ponytail: counts table levels only; a text box in a cell costs more element levels than a table and isn't counted.
+const MAX_TABLE_DEPTH: usize = 30;
+
+/// How many tables deep blocks go: 0 for paragraphs, 1 for a table of paragraphs.
+fn table_depth(blocks: &[Block]) -> usize {
+    let cells = |t: &crate::docx::Table| t.rows.iter().flat_map(|r| &r.cells).map(|c| table_depth(&c.blocks)).max().unwrap_or(0);
+    blocks.iter().map(|b| if let Block::Table(t) = b { 1 + cells(t) } else { 0 }).max().unwrap_or(0)
 }
 
 fn first_para_of(b: &Block) -> Option<ParaId> {

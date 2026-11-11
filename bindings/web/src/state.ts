@@ -553,6 +553,8 @@ export interface ViewState {
   detail: MeasureDetail;
   /** When the objects' dot grid shows. */
   objectGrid: ObjectGrid;
+  /** Content controls and shown sub-templates are labelled while selected or hovered. */
+  controlLabels: boolean;
   /** When fields are shaded. */
   fieldShading: FieldShading;
   /** The pointer shapes shown over elements instead of the editor's own; absent when none are set. */

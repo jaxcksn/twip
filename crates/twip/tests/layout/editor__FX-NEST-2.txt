@@ -1,22 +1,40 @@
-page 0 612.0 792.0
-  72.0 96.8 FX-NEST-2
-  77.7 110.6 Text before the inner table.
-  83.3 130.9 Inner A R1 C1
-  194.9 130.9 Inner A R1 C2
-  83.3 151.3 Inner A R2 C1
-  194.9 151.3 Inner A R2 C2
-  77.7 171.7 Text after the inner table.
-  317.3 111.1 Only content R1 C1
-  428.9 111.1 Only content R1 C2
-  317.3 131.4 Only content R2 C1
-  428.9 131.4 Only content R2 C2
-  77.7 192.1 Plain outer cell
-  311.6 192.1 Outer text, then an inner table of 3
-  311.6 203.9 rows:
-  317.3 224.3 Inner B R1
-  428.9 224.3 x
-  317.3 244.7 Inner B R2
-  428.9 244.7 x
-  317.3 265.0 Inner B R3
-  428.9 265.0 x
-  72.0 285.9 Paragraph after the outer table.
+page 0 12240 15840
+  1440 1936 FX-NEST-2
+  1553 2211 Text before the inner table.
+  1666 2619 Inner A R1 C1
+  3898 2619 Inner A R1 C2
+  1666 3026 Inner A R2 C1
+  3898 3026 Inner A R2 C2
+  1553 3434 Text after the inner table.
+  6346 2221 Only content R1 C1
+  8578 2221 Only content R1 C2
+  6346 2629 Only content R2 C1
+  8578 2629 Only content R2 C2
+  1553 3841 Plain outer cell
+  6233 3841 Outer text, then an inner table of 3
+  6233 4078 rows:
+  6346 4486 Inner B R1
+  8578 4486 x
+  6346 4893 Inner B R2
+  8578 4893 x
+  6346 5301 Inner B R3
+  8578 5301 x
+  1440 5718 Paragraph after the outer table.
+  cell 1445 2025 6125 3655
+  cell 1558 2433 3790 2840
+  cell 3790 2433 6022 2840
+  cell 1558 2840 3790 3248
+  cell 3790 2840 6022 3248
+  cell 6125 2025 10805 3655
+  cell 6238 2035 8470 2443
+  cell 8470 2035 10702 2443
+  cell 6238 2443 8470 2850
+  cell 8470 2443 10702 2850
+  cell 1445 3655 6125 5532
+  cell 6125 3655 10805 5532
+  cell 6238 4300 8470 4707
+  cell 8470 4300 10702 4707
+  cell 6238 4707 8470 5115
+  cell 8470 4707 10702 5115
+  cell 6238 5115 8470 5522
+  cell 8470 5115 10702 5522

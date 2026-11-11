@@ -730,6 +730,26 @@ impl Editor {
         found
     }
 
+    /// Where a shown sub-template is drawn on `pages`: one rect per page.
+    pub(super) fn expansion_rects(&mut self, f: FieldId, pages: std::ops::Range<usize>) -> Vec<(usize, [f64; 4])> {
+        let snapshot = self.layout.snapshot();
+        let mut out = Vec::new();
+        for page in pages {
+            let Some((frag, _)) = snapshot.page(page) else { continue };
+            for child in frag.children.iter() {
+                let crate::layout::fragment::PageChild::Body(b) = child else { continue };
+                let (bx, by) = b.offset;
+                crate::layout::traverse::lines_in(&b.children, &mut |_, l, dx, dy| {
+                    for (r, e) in l.line.expansions.iter().filter(|(_, e)| e.field == f) {
+                        let (x0, y0) = (r[0] + dx + l.x + bx, r[1] + dy + l.y + by);
+                        out.push((page, [x0, y0, x0 + e.size.0, y0 + e.size.1]));
+                    }
+                });
+            }
+        }
+        out
+    }
+
     pub(super) fn expansion_click(&mut self, x: f64, y: f64, clicks: u8, fonts: &Fonts) -> bool {
         let Some((f, part)) = self.expansion_at(x, y) else { return false };
         if clicks >= 2 {

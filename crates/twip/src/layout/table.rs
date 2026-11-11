@@ -955,6 +955,19 @@ fn twips(x: f64) -> i64 {
     (x * 20.0).round() as i64
 }
 
+/// The units of the field begins whose label stands in for an empty result.
+fn label_units(inlines: &[crate::docx::Inline]) -> Vec<u32> {
+    let starts: Vec<u32> = inlines.iter().scan(0u32, |at, i| Some(std::mem::replace(at, *at + i.units() as u32))).collect();
+    crate::docx::fields::spans(inlines)
+        .into_iter()
+        .filter(|s| {
+            matches!(&inlines[s.begin], crate::docx::Inline::FieldBegin { kind: None, view: crate::docx::FieldView::Result, label: Some(_), .. })
+                && s.sep.is_none_or(|sep| sep + 1 == s.end)
+        })
+        .map(|s| starts[s.begin])
+        .collect()
+}
+
 fn content_widths_uncached(blocks: &[LaidBlock], env: &StoryEnv, fixed: bool, memos: &mut Memos) -> Result<(i64, i64, i64), Yield> {
     let (mut mn, mut mx, mut hard) = (0i64, 0i64, 0i64);
     let old = env.ctx.env.text.compat == Compat::Legacy;
@@ -1000,6 +1013,7 @@ fn content_widths_uncached(blocks: &[LaidBlock], env: &StoryEnv, fixed: bool, me
                         }
                     }
                 }
+                let labels = label_units(&p.inlines);
                 let mut word = 0.0f64;
                 let mut first = numbered.then_some(start0);
                 for (i, pc) in pieces.iter().enumerate() {
@@ -1029,7 +1043,9 @@ fn content_widths_uncached(blocks: &[LaidBlock], env: &StoryEnv, fixed: bool, me
                         _ => {
                             word += pc.width;
                             let joined = old && text_of(pc).starts_with('-') && tail[i + 1];
-                            if pc.break_after && !joined {
+                            // A design-mode label isn't in the document: it wraps in the cell rather than widen it.
+                            let label = pc.src.is_some_and(|u| labels.contains(&u.0));
+                            if (pc.break_after || label) && !joined {
                                 mn = mn.max(up(word + ind));
                                 word = 0.0;
                             }

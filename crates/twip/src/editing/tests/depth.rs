@@ -10,7 +10,9 @@ use super::super::keymap::Mods;
 use super::{fonts, open};
 use crate::docx::{Block, Document, Table};
 
-const DEPTH: usize = 100;
+/// The deepest table nesting a document may have and still open: the reader refuses parts nested deeper than
+/// [`crate::docx::xml::MAX_DEPTH`] elements, three a table level.
+const DEPTH: usize = 30;
 
 fn deep_document() -> Document {
     let base = open("FX-NEST-2.docx");
@@ -52,7 +54,7 @@ fn state(e: &mut Editor) -> Value {
 }
 
 #[test]
-fn a_hundred_levels_of_nesting_edit_undo_save_and_reopen() {
+fn thirty_levels_of_nesting_edit_undo_save_and_reopen() {
     std::thread::Builder::new().stack_size(8 << 20).spawn(run).expect("thread").join().expect("no panic");
 }
 
@@ -81,6 +83,10 @@ fn run() {
     }
     let st = state(&mut e);
     assert_eq!(st["caret"]["chain"].as_array().map(Vec::len), Some(DEPTH), "the caret is in the innermost cell");
+    // One more level would save a document the reader refuses.
+    let table = Command::InsertTable(crate::api::command::TableSize { rows: 1, columns: 1 });
+    assert!(matches!(e.execute(table, fonts()), super::super::Outcome::Unchanged(_)), "no table past the deepest level");
+    assert_eq!(state(&mut e)["dump"], original, "the refused table leaves the document as it was");
 
     for c in "xyz".chars() {
         e.execute(Command::InsertText(c.to_string()), fonts());

@@ -42,6 +42,8 @@ pub struct Session {
     mode: Mode,
     language: String,
     track_changes: bool,
+    /// The field settings from the options, run on each document before its first layout is seen.
+    field_setup: Vec<super::command::Command>,
     /// The last transaction record's id.
     records: u64,
     /// Table gridlines show where cells have no borders.
@@ -67,9 +69,26 @@ pub struct Session {
     autocorrect: crate::editing::autocorrect::AutoCorrect,
 }
 
+/// The commands that apply `options`' field settings: rules and types first, as labels depend on them.
+fn field_setup(options: &SessionOptions) -> Vec<super::command::Command> {
+    use super::command::{ApplicationFieldTypes, Command, FieldLabels, SubTemplateRules};
+    let mut out = Vec::new();
+    if !options.sub_template_rules.is_empty() {
+        out.push(Command::SetSubTemplateRules(SubTemplateRules { rules: options.sub_template_rules.clone() }));
+    }
+    if !options.application_field_types.is_empty() {
+        out.push(Command::SetApplicationFieldTypes(ApplicationFieldTypes { types: options.application_field_types.clone() }));
+    }
+    if !options.field_labels.is_empty() {
+        out.push(Command::SetFieldLabels(FieldLabels { labels: options.field_labels.clone(), merge: None }));
+    }
+    out
+}
+
 impl Session {
     pub(crate) fn new(id: SessionId, options: SessionOptions, fonts: FontLibrary, shared: Rc<Shared>) -> Session {
         let editor = documents::blank(&fonts);
+        let field_setup = field_setup(&options);
         let mut s = Session {
             id,
             editor,
@@ -81,6 +100,7 @@ impl Session {
             mode: options.mode,
             language: options.language,
             track_changes: options.track_changes,
+            field_setup,
             records: 0,
             gridlines: false,
             formatting_marks: false,
@@ -130,6 +150,10 @@ impl Session {
         let mode = self.editor_mode();
         self.editor.set_mode(mode);
         self.editor.set_hyphenation(self.services.hyphenation.clone());
+        let fonts = self.fonts.fonts();
+        for c in &self.field_setup {
+            self.editor.execute(c.clone(), &fonts);
+        }
         self.services.document_replaced(self.editor.document());
         self.editor.set_author(&self.author.name, self.author.identity.clone());
         if self.track_changes {

@@ -1,30 +1,53 @@
-page 0 612.0 792.0
-  72.0 80.8 Body paragraph 1.
-  72.0 100.7 Body paragraph 2.
-  72.0 120.5 Body paragraph 3.
-  85.1 85.2 A1, the document starts
-  85.1 97.0 with this table
-  397.1 85.2 C1
-  241.1 117.4 First paragraph of the
-  241.1 129.3 cell.
-  241.1 149.1 Second paragraph.
-  241.1 188.9 Fourth paragraph, after
-  241.1 200.7 an empty one.
-  85.1 221.1 A3
-  241.1 221.1 B3
-  79.5 241.5 Paragraph between the first and second tables.
-  85.1 261.9 T2 R1 C1
-  241.1 261.9 T2 R1 C2
-  397.1 261.9 T2 R1 C3
-  85.1 282.2 T2 R2 C1
-  241.1 282.2 T2 R2 C2
-  397.1 282.2 T2 R2 C3
-  85.1 302.6 T2 R3 C1
-  241.1 302.6 T2 R3 C2
-  397.1 302.6 T2 R3 C3
-  85.1 343.3 T3 R1 C1
-  235.1 343.3 T3 R1 C2
-  85.1 363.7 T3 R2 C1
-  235.1 363.7 T3 R2 C2
-  79.5 384.1 The second and third tables above are separated by an empty paragraph, so they
-  79.5 396.0 stay two tables (with none, Word joins them).
+page 0 12240 15840
+  1440 1616 Body paragraph 1.
+  1440 2013 Body paragraph 2.
+  1440 2411 Body paragraph 3.
+  1702 1703 A1, the document starts
+  1702 1940 with this table
+  7942 1703 C1
+  4822 2348 First paragraph of the
+  4822 2585 cell.
+  4822 2983 Second paragraph.
+  4822 3778 Fourth paragraph, after
+  4822 4015 an empty one.
+  1702 4422 A3
+  4822 4422 B3
+  1589 4830 Paragraph between the first and second tables.
+  1702 5237 T2 R1 C1
+  4822 5237 T2 R1 C2
+  7942 5237 T2 R1 C3
+  1702 5645 T2 R2 C1
+  4822 5645 T2 R2 C2
+  7942 5645 T2 R2 C3
+  1702 6052 T2 R3 C1
+  4822 6052 T2 R3 C2
+  7942 6052 T2 R3 C3
+  1702 6867 T3 R1 C1
+  4702 6867 T3 R1 C2
+  1702 7274 T3 R2 C1
+  4702 7274 T3 R2 C2
+  1589 7682 The second and third tables above are separated by an empty paragraph, so they
+  1589 7919 stay two tables (with none, Word joins them).
+  float 1440 1440 10800 13680
+  cell 1594 1517 4714 2162
+  cell 4714 1517 7834 2162
+  cell 7834 1517 10954 2162
+  cell 1594 2162 4714 4236
+  cell 4714 2162 7834 4236
+  cell 7834 2162 10954 4236
+  cell 1594 4236 4714 4644
+  cell 4714 4236 7834 4644
+  cell 7834 4236 10954 4644
+  cell 1594 5051 4714 5459
+  cell 4714 5051 7834 5459
+  cell 7834 5051 10954 5459
+  cell 1594 5459 4714 5866
+  cell 4714 5459 7834 5866
+  cell 7834 5459 10954 5866
+  cell 1594 5866 4714 6273
+  cell 4714 5866 7834 6273
+  cell 7834 5866 10954 6273
+  cell 1594 6681 4594 7088
+  cell 4594 6681 7594 7088
+  cell 1594 7088 4594 7496
+  cell 4594 7088 7594 7496

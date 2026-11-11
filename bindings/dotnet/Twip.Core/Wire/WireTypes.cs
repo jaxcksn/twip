@@ -11,7 +11,10 @@ internal sealed record RulerVisibility(bool Horizontal, bool Vertical);
 
 internal sealed record SessionOptionsWire(
     Author Author, bool ReadOnly, EditorMode Mode, string Language, bool TrackChanges,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<Dictionary>? Dictionaries = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<Dictionary>? Dictionaries = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyDictionary<string, string>? FieldLabels = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? ApplicationFieldTypes = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<ReferenceRule>? SubTemplateRules = null);
 
 internal sealed record EngineOptionsWire(string Fonts);
 

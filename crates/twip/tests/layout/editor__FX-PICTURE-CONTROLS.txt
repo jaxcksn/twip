@@ -1,23 +1,25 @@
-page 0 612.0 792.0
-  72.0 96.8 FX-PICTURE-CONTROLS
-  72.0 137.3 Sign:  here.
-  72.0 202.0 Secure:
-  261.0 202.0 The meeting forecast hereby vendors practical
-  72.0 213.9 schedule
-  261.0 213.9 state entry estimate management action. Budget
-  72.0 225.8 inventory
-  261.0 225.8 relevant group relief results region ledger brief
-  72.0 237.6 usage
-  261.0 237.6 cause colleague. Partner section notice claim
-  72.0 249.5 team export.
-  72.0 269.4 Boxed: Pilot receipt corporate requirement
-  441.0 269.4 standard fact
-  72.0 281.2 that products distribution filed logistics
-  441.0 281.2 chapter. Plan
-  72.0 293.1 regional maintenance accessibility tax
-  441.0 293.1 finds record
-  72.0 305.0 proposal denied contract onboarding
-  441.0 305.0 support. Network
-  72.0 316.8 scheduled trend suggestions board order.
-  72.0 363.9 Locked:
-  72.0 383.8 After the controls.
+page 0 12240 15840
+  1440 1936 FX-PICTURE-CONTROLS
+  1440 2745 Sign:  here.
+  1440 4040 Secure:
+  5220 4040 The meeting forecast hereby vendors practical
+  1440 4278 schedule
+  5220 4278 state entry estimate management action. Budget
+  1440 4515 inventory
+  5220 4515 relevant group relief results region ledger brief
+  1440 4752 usage
+  5220 4752 cause colleague. Partner section notice claim
+  1440 4990 team export.
+  1440 5387 Boxed: Pilot receipt corporate requirement
+  8820 5387 standard fact
+  1440 5625 that products distribution filed logistics
+  8820 5625 chapter. Plan
+  1440 5862 regional maintenance accessibility tax
+  8820 5862 finds record
+  1440 6100 proposal denied contract onboarding
+  8820 6100 support. Network
+  1440 6337 scheduled trend suggestions board order.
+  1440 7278 Locked:
+  1440 7676 After the controls.
+  float 2880 3864 5040 4584
+  float 6480 5211 8640 5931

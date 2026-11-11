@@ -11,6 +11,63 @@ pub const WP14: &str = "http://schemas.microsoft.com/office/word/2010/wordproces
 pub const W15: &str = "http://schemas.microsoft.com/office/word/2012/wordml";
 pub const MC: &str = "http://schemas.openxmlformats.org/markup-compatibility/2006";
 
+/// How deep a part's elements may nest. The readers, the layout and the SVG painter walk nested elements by recursion,
+/// one stack frame or more per level, so a part nested deeper than this is refused instead of overflowing the stack.
+/// Nested tables cost the most (three elements a level): 30 levels of text fit, which a debug build lays out on a 1 MB
+/// stack, where it overflowed at 45 and an optimised build at 85.
+// ponytail: a depth bound over recursive walkers; walk iteratively if real documents need deeper nesting.
+pub const MAX_DEPTH: usize = 96;
+
+/// Whether well-formed XML text nests elements deeper than `max`: start tags open a level, end tags close one, and
+/// comments, CDATA sections, processing instructions and declarations are skipped. Without a doctype no entity can
+/// add elements, so the text is the whole tree.
+pub fn too_deep(text: &str, max: usize) -> bool {
+    let b = text.as_bytes();
+    let find = |from: usize, pat: &[u8]| b[from.min(b.len())..].windows(pat.len()).position(|w| w == pat).map(|k| from + k);
+    let (mut depth, mut i) = (0usize, 0usize);
+    while let Some(k) = b[i..].iter().position(|&c| c == b'<').map(|k| i + k) {
+        let rest = &b[k + 1..];
+        let skip_to = |pat: &[u8]| find(k + 1, pat).map(|e| e + pat.len());
+        let next = if rest.starts_with(b"/") {
+            depth = depth.saturating_sub(1);
+            Some(k + 2)
+        } else if rest.starts_with(b"!--") {
+            skip_to(b"-->")
+        } else if rest.starts_with(b"![CDATA[") {
+            skip_to(b"]]>")
+        } else if rest.starts_with(b"?") {
+            skip_to(b"?>")
+        } else if rest.starts_with(b"!") {
+            skip_to(b">")
+        } else {
+            // A start tag: to its `>`, past quoted attribute values (which may hold `>`).
+            let mut j = k + 1;
+            let mut quote = None;
+            while j < b.len() && (quote.is_some() || b[j] != b'>') {
+                match (quote, b[j]) {
+                    (None, q @ (b'"' | b'\'')) => quote = Some(q),
+                    (Some(q), c) if c == q => quote = None,
+                    _ => {}
+                }
+                j += 1;
+            }
+            if j == b.len() {
+                break;
+            }
+            if b[j - 1] != b'/' {
+                depth += 1;
+                if depth > max {
+                    return true;
+                }
+            }
+            Some(j + 1)
+        };
+        let Some(n) = next else { break };
+        i = n;
+    }
+    false
+}
+
 pub fn is(n: Node, ns: &str, name: &str) -> bool {
     n.is_element() && n.tag_name().name() == name && n.tag_name().namespace() == Some(ns)
 }
@@ -109,4 +166,23 @@ pub fn color(s: Option<&str>) -> Option<u32> {
         return None;
     }
     u32::from_str_radix(s, 16).ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::too_deep;
+
+    #[test]
+    fn depth_counts_elements_only() {
+        let nested = |n: usize| format!("{}{}", "<a>".repeat(n), "</a>".repeat(n));
+        assert!(!too_deep(&nested(3), 3));
+        assert!(too_deep(&nested(4), 3));
+        // Empty elements, end tags, quoted `>` and `/>`, comments, CDATA and declarations add nothing.
+        let flat = r#"<?xml version="1.0"?><!-- <a><a> --><a x="/>" y='>'><b/><b></b><![CDATA[<a><a>]]><c/></a>"#;
+        assert!(!too_deep(flat, 2));
+        assert!(too_deep(flat, 1));
+        // Unterminated text ends the count without a panic.
+        assert!(!too_deep("<a><b", 3));
+        assert!(!too_deep("<a><!--", 3));
+    }
 }

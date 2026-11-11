@@ -7,6 +7,7 @@ use std::rc::Rc;
 
 use serde::{Deserialize, Serialize};
 
+use super::command::ReferenceRule;
 use super::event::Event;
 use super::fonts::FontLibrary;
 use super::record::Author;
@@ -51,6 +52,12 @@ pub struct SessionOptions {
     pub dictionaries: Vec<Dictionary>,
     /// Turns tracking on after each open, unless the document's protection decides.
     pub track_changes: bool,
+    /// What design mode shows for each field code, as `setFieldLabels` sets them, from the first layout of each open.
+    pub field_labels: BTreeMap<String, String>,
+    /// The application's own field types, as `setApplicationFieldTypes` sets them, from each open.
+    pub application_field_types: Vec<String>,
+    /// Which fields are sub-template references, as `setSubTemplateRules` sets them, from each open.
+    pub sub_template_rules: Vec<ReferenceRule>,
 }
 
 impl Default for SessionOptions {
@@ -62,6 +69,9 @@ impl Default for SessionOptions {
             language: "en-US".into(),
             dictionaries: Vec::new(),
             track_changes: false,
+            field_labels: BTreeMap::new(),
+            application_field_types: Vec::new(),
+            sub_template_rules: Vec::new(),
         }
     }
 }

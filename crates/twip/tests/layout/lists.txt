@@ -1,65 +1,65 @@
-page 0 612.0 792.0
-  72.0 92.8 Lists Fixture
-  72.0 110.8 Bulleted list, three levels
-  90.0 126.1 •Fruit
-  108.0 138.0 oApples
-  126.0 151.2 ▪Granny Smith
-  126.0 164.5 ▪Honeycrisp
-  108.0 176.4 oPears
-  90.0 189.7 •Vegetables
-  108.0 201.5 oCarrots
-  90.0 214.8 •Grains, with a longer item that wraps onto a second line so the hanging indent
-  108.0 226.7 of the bullet text is visible in the layout.
-  72.0 246.6 Numbered list 1. / a. / i.
-  90.0 260.4 1.Prepare the workspace
-  108.0 272.3 a.Clear the desk
-  108.0 284.2 b.Gather the tools
-  126.0 296.0 i.Screwdriver
-  126.0 307.9 ii.Measuring tape
-  90.0 319.8 2.Assemble the frame
-  108.0 331.7 a.Attach the side panels
-  90.0 343.5 3.Inspect the result
-  72.0 363.4 List interrupted by a normal paragraph, then continued
-  90.0 377.3 1.First step before the interruption
-  90.0 389.1 2.Second step before the interruption
-  72.0 409.0 This normal paragraph interrupts the list; the next item continues the numbering at
-  72.0 420.9 3.
-  90.0 440.8 3.Third step, numbering continued
-  90.0 452.6 4.Fourth step
-  72.0 472.5 Same list style restarted at 1
-  90.0 486.4 1.Restarted list item one
-  90.0 498.2 2.Restarted list item two
-  90.0 510.1 3.Restarted list item three
-  72.0 530.0 Roman numeral list
-  90.0 543.8 I.Introduction
-  90.0 555.7 II.Methods
-  108.0 567.6 A.Sampling
-  108.0 579.5 B.Analysis
-  90.0 591.3 III.Results
-  90.0 603.2 IV.Discussion
-  72.0 623.1 List with a custom start value (starts at 5)
-  90.0 636.9 5.Item five
-  90.0 648.8 6.Item six
-  108.0 660.7 (a)Sub-item (a)
-  108.0 672.6 (b)Sub-item (b)
-  90.0 684.4 7.Item seven
-page 1 612.0 792.0
-  72.0 80.8 Multilevel heading list 1 / 1.1 / 1.1.1 (linked to Heading 1-3)
-  72.0 114.7 1Introduction
-  72.0 131.9 Body text under the heading.
-  72.0 153.4 1.1Purpose
-  72.0 169.8 Body text under the heading.
-  72.0 191.3 1.2Audience
-  72.0 207.7 Body text under the heading.
-  72.0 228.4 1.2.1Internal readers
-  72.0 244.6 Body text under the heading.
-  72.0 265.2 1.2.2External partners
-  72.0 281.4 Body text under the heading.
-  72.0 315.2 2Requirements
-  72.0 332.5 Body text under the heading.
-  72.0 354.0 2.1Functional
-  72.0 370.4 Body text under the heading.
-  72.0 391.1 2.1.1Editing
-  72.0 407.2 Body text under the heading.
-  72.0 428.7 2.2Non-functional
-  72.0 445.1 Body text under the heading.
+page 0 12240 15840
+  1440 1856 Lists Fixture
+  1440 2216 Bulleted list, three levels
+  1800 2522 •Fruit
+  2160 2759 oApples
+  2520 3025 ▪Granny Smith
+  2520 3290 ▪Honeycrisp
+  2160 3528 oPears
+  1800 3793 •Vegetables
+  2160 4031 oCarrots
+  1800 4296 •Grains, with a longer item that wraps onto a second line so the hanging indent
+  2160 4534 of the bullet text is visible in the layout.
+  1440 4931 Numbered list 1. / a. / i.
+  1800 5209 1.Prepare the workspace
+  2160 5446 a.Clear the desk
+  2160 5683 b.Gather the tools
+  2520 5921 i.Screwdriver
+  2520 6158 ii.Measuring tape
+  1800 6396 2.Assemble the frame
+  2160 6633 a.Attach the side panels
+  1800 6871 3.Inspect the result
+  1440 7268 List interrupted by a normal paragraph, then continued
+  1800 7545 1.First step before the interruption
+  1800 7783 2.Second step before the interruption
+  1440 8180 This normal paragraph interrupts the list; the next item continues the numbering at
+  1440 8418 3.
+  1800 8815 3.Third step, numbering continued
+  1800 9052 4.Fourth step
+  1440 9450 Same list style restarted at 1
+  1800 9727 1.Restarted list item one
+  1800 9965 2.Restarted list item two
+  1800 10202 3.Restarted list item three
+  1440 10600 Roman numeral list
+  1800 10877 I.Introduction
+  1800 11114 II.Methods
+  2160 11352 A.Sampling
+  2160 11589 B.Analysis
+  1800 11827 III.Results
+  1800 12064 IV.Discussion
+  1440 12461 List with a custom start value (starts at 5)
+  1800 12739 5.Item five
+  1800 12976 6.Item six
+  2160 13214 (a)Sub-item (a)
+  2160 13451 (b)Sub-item (b)
+  1800 13689 7.Item seven
+page 1 12240 15840
+  1440 1616 Multilevel heading list 1 / 1.1 / 1.1.1 (linked to Heading 1-3)
+  1440 2293 1Introduction
+  1440 2639 Body text under the heading.
+  1440 3068 1.1Purpose
+  1440 3397 Body text under the heading.
+  1440 3826 1.2Audience
+  1440 4155 Body text under the heading.
+  1440 4568 1.2.1Internal readers
+  1440 4891 Body text under the heading.
+  1440 5305 1.2.2External partners
+  1440 5628 Body text under the heading.
+  1440 6305 2Requirements
+  1440 6650 Body text under the heading.
+  1440 7080 2.1Functional
+  1440 7408 Body text under the heading.
+  1440 7822 2.1.1Editing
+  1440 8145 Body text under the heading.
+  1440 8574 2.2Non-functional
+  1440 8903 Body text under the heading.

@@ -342,3 +342,25 @@ fn picture_control_wrap_converts_both_ways() {
 fn size_of(e: &Editor, c: ControlId) -> Option<(f64, f64)> {
     e.picture_control_size(c).map(|s| (s.width.0, s.height.0))
 }
+
+/// A selected picture control shows its label above it, as Word does, in editing mode too; `controlLabels` off, or
+/// the control's own `w15:appearance` hidden, shows none.
+#[test]
+fn a_selected_picture_control_shows_its_label() {
+    let mut r = Run::open(FX, "picture-label");
+    pick(&mut r, "Placeholder:Signature.X");
+    let (c, props) = control(&r.e, "Placeholder:Signature.X");
+    let title = props.alias.clone().or(props.tag.clone()).expect("a title");
+    let regions = r.e.view(0..2).regions;
+    let g = regions.iter().find(|g| g.id == crate::editing::elements::id_str(crate::docx::ElementId::Control(c))).expect("its region");
+    assert_eq!(g.title, title);
+    let (_, first) = g.rects[0];
+    assert!(first[3] - first[1] > 20.0, "the box is the picture's: {first:?}");
+    assert_eq!(g.title_rect.1[3], first[1], "the tab sits on the box's top");
+    r.e.control_labels = false;
+    assert!(r.e.view(0..2).regions.is_empty(), "labels off");
+    r.e.control_labels = true;
+    let k = r.e.doc.controls.get_mut(&c).expect("the control");
+    k.props.rest.push(("appearance".into(), r#"<w15:appearance w15:val="hidden"/>"#.into()));
+    assert!(r.e.view(0..2).regions.iter().all(|g| g.title != title), "hidden by the control");
+}

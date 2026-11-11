@@ -1,11 +1,11 @@
-page 0 612.0 792.0
-  72.0 80.8 Direct Calibri.
-  72.0 100.7 Bold Calibri.
-  72.0 120.5 Times New Roman.
-  72.0 140.4 Styled Calibri.
-  72.0 160.3 Theme Calibri.
-  72.0 180.2 Default Calibri.
-  90.0 201.4 •A Calibri bullet.
-  72.0 221.3 Marked.
-  72.0 242.6 Symbol: •
-  72.0 263.0 Before. Locked Calibri. After.
+page 0 12240 15840
+  1440 1616 Direct Calibri.
+  1440 2013 Bold Calibri.
+  1440 2411 Times New Roman.
+  1440 2808 Styled Calibri.
+  1440 3206 Theme Calibri.
+  1440 3603 Default Calibri.
+  1800 4029 •A Calibri bullet.
+  1440 4426 Marked.
+  1440 4852 Symbol: •
+  1440 5260 Before. Locked Calibri. After.

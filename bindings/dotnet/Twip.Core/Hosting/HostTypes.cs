@@ -27,6 +27,8 @@ namespace Twip
         Revision,
         /// <summary>A comment.</summary>
         Comment,
+        /// <summary>A ruler marker, the tab type box, or where a click on the ruler adds a stop.</summary>
+        Ruler,
     }
 
     /// <summary>A tooltip to show.</summary>

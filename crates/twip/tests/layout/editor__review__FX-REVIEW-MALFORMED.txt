@@ -1,6 +1,6 @@
-page 0 612.0 792.0
-  72.0 80.8 start no id
-  72.0 100.7 an end with no start
-  72.0 120.5 no author kept
-  72.0 140.4 anchored
-  72.0 160.3 orphan
+page 0 12240 15840
+  1440 1616 start no id
+  1440 2013 an end with no start
+  1440 2411 no author kept
+  1440 2808 anchored
+  1440 3206 orphan

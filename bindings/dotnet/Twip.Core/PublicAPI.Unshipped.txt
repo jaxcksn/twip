@@ -920,13 +920,17 @@ Twip.EditorSession.Warning -> System.EventHandler<Twip.WarningEventArgs!>?
 Twip.EditorSession.WordAdded -> System.EventHandler<Twip.WordAddedEventArgs!>?
 Twip.EditorSessionOptions
 Twip.EditorSessionOptions.<Clone>$() -> Twip.EditorSessionOptions!
+Twip.EditorSessionOptions.ApplicationFieldTypes.get -> System.Collections.Generic.IReadOnlyList<string!>?
+Twip.EditorSessionOptions.ApplicationFieldTypes.init -> void
 Twip.EditorSessionOptions.Author.get -> Twip.Author?
 Twip.EditorSessionOptions.Author.init -> void
-Twip.EditorSessionOptions.Deconstruct(out Twip.Author? Author, out bool ReadOnly, out Twip.EditorMode Mode, out Twip.FontLibrary? Fonts, out string! Language, out System.Collections.Generic.IReadOnlyList<Twip.Dictionary!>? Dictionaries, out bool TrackChanges) -> void
+Twip.EditorSessionOptions.Deconstruct(out Twip.Author? Author, out bool ReadOnly, out Twip.EditorMode Mode, out Twip.FontLibrary? Fonts, out string! Language, out System.Collections.Generic.IReadOnlyList<Twip.Dictionary!>? Dictionaries, out bool TrackChanges, out System.Collections.Generic.IReadOnlyDictionary<string!, string!>? FieldLabels, out System.Collections.Generic.IReadOnlyList<string!>? ApplicationFieldTypes, out System.Collections.Generic.IReadOnlyList<Twip.ReferenceRule!>? SubTemplateRules) -> void
 Twip.EditorSessionOptions.Dictionaries.get -> System.Collections.Generic.IReadOnlyList<Twip.Dictionary!>?
 Twip.EditorSessionOptions.Dictionaries.init -> void
-Twip.EditorSessionOptions.EditorSessionOptions(Twip.Author? Author = null, bool ReadOnly = false, Twip.EditorMode Mode = Twip.EditorMode.Editing, Twip.FontLibrary? Fonts = null, string! Language = "en-US", System.Collections.Generic.IReadOnlyList<Twip.Dictionary!>? Dictionaries = null, bool TrackChanges = false) -> void
+Twip.EditorSessionOptions.EditorSessionOptions(Twip.Author? Author = null, bool ReadOnly = false, Twip.EditorMode Mode = Twip.EditorMode.Editing, Twip.FontLibrary? Fonts = null, string! Language = "en-US", System.Collections.Generic.IReadOnlyList<Twip.Dictionary!>? Dictionaries = null, bool TrackChanges = false, System.Collections.Generic.IReadOnlyDictionary<string!, string!>? FieldLabels = null, System.Collections.Generic.IReadOnlyList<string!>? ApplicationFieldTypes = null, System.Collections.Generic.IReadOnlyList<Twip.ReferenceRule!>? SubTemplateRules = null) -> void
 Twip.EditorSessionOptions.Equals(Twip.EditorSessionOptions? other) -> bool
+Twip.EditorSessionOptions.FieldLabels.get -> System.Collections.Generic.IReadOnlyDictionary<string!, string!>?
+Twip.EditorSessionOptions.FieldLabels.init -> void
 Twip.EditorSessionOptions.Fonts.get -> Twip.FontLibrary?
 Twip.EditorSessionOptions.Fonts.init -> void
 Twip.EditorSessionOptions.Language.get -> string!
@@ -935,6 +939,8 @@ Twip.EditorSessionOptions.Mode.get -> Twip.EditorMode
 Twip.EditorSessionOptions.Mode.init -> void
 Twip.EditorSessionOptions.ReadOnly.get -> bool
 Twip.EditorSessionOptions.ReadOnly.init -> void
+Twip.EditorSessionOptions.SubTemplateRules.get -> System.Collections.Generic.IReadOnlyList<Twip.ReferenceRule!>?
+Twip.EditorSessionOptions.SubTemplateRules.init -> void
 Twip.EditorSessionOptions.TrackChanges.get -> bool
 Twip.EditorSessionOptions.TrackChanges.init -> void
 Twip.EditorShortcuts
@@ -4715,7 +4721,7 @@ Twip.DocumentAppearance.Dark = 1 -> Twip.DocumentAppearance
 Twip.DocumentAppearance.DarkWithLightPage = 2 -> Twip.DocumentAppearance
 Twip.DocumentAppearance.Light = 0 -> Twip.DocumentAppearance
 Twip.EditorCommands.SetRulerTabTypeAsync(Twip.TabSelector value, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-Twip.EditorCommands.SetViewOptionsAsync(bool? formattingMarks = null, bool? gridlines = null, bool? textBoundaries = null, bool? liveLayout = null, Twip.ChromeTheme? theme = null, Twip.ColorValue? accent = null, Twip.DocumentAppearance? appearance = null, Twip.MeasureDetail? detail = null, Twip.ObjectGrid? objectGrid = null, Twip.ThemeColors? themeColors = null, Twip.FieldShading? fieldShading = null, System.Collections.Generic.IReadOnlyList<Twip.CursorOverride!>? cursorOverrides = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetViewOptionsAsync(bool? formattingMarks = null, bool? gridlines = null, bool? textBoundaries = null, bool? liveLayout = null, Twip.ChromeTheme? theme = null, Twip.ColorValue? accent = null, Twip.DocumentAppearance? appearance = null, Twip.MeasureDetail? detail = null, Twip.ObjectGrid? objectGrid = null, Twip.ThemeColors? themeColors = null, Twip.FieldShading? fieldShading = null, System.Collections.Generic.IReadOnlyList<Twip.CursorOverride!>? cursorOverrides = null, bool? controlLabels = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.ShowTabStopAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.ShowTabTypesAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorSession.PopoverClosed -> System.EventHandler?
@@ -4843,7 +4849,7 @@ static Twip.ChromeTheme.Light.get -> Twip.ChromeTheme!
 static Twip.ChromeTheme.operator !=(Twip.ChromeTheme? left, Twip.ChromeTheme? right) -> bool
 static Twip.ChromeTheme.operator ==(Twip.ChromeTheme? left, Twip.ChromeTheme? right) -> bool
 static Twip.EditorOperation.SetRulerTabType(Twip.TabSelector value) -> Twip.EditorOperation!
-static Twip.EditorOperation.SetViewOptions(bool? formattingMarks = null, bool? gridlines = null, bool? textBoundaries = null, bool? liveLayout = null, Twip.ChromeTheme? theme = null, Twip.ColorValue? accent = null, Twip.DocumentAppearance? appearance = null, Twip.MeasureDetail? detail = null, Twip.ObjectGrid? objectGrid = null, Twip.ThemeColors? themeColors = null, Twip.FieldShading? fieldShading = null, System.Collections.Generic.IReadOnlyList<Twip.CursorOverride!>? cursorOverrides = null) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetViewOptions(bool? formattingMarks = null, bool? gridlines = null, bool? textBoundaries = null, bool? liveLayout = null, Twip.ChromeTheme? theme = null, Twip.ColorValue? accent = null, Twip.DocumentAppearance? appearance = null, Twip.MeasureDetail? detail = null, Twip.ObjectGrid? objectGrid = null, Twip.ThemeColors? themeColors = null, Twip.FieldShading? fieldShading = null, System.Collections.Generic.IReadOnlyList<Twip.CursorOverride!>? cursorOverrides = null, bool? controlLabels = null) -> Twip.EditorOperation!
 static Twip.EditorOperation.ShowTabStop() -> Twip.EditorOperation!
 static Twip.EditorOperation.ShowTabTypes() -> Twip.EditorOperation!
 static Twip.HighContrastColors.operator !=(Twip.HighContrastColors? left, Twip.HighContrastColors? right) -> bool
@@ -6560,3 +6566,6 @@ Twip.CommandId.SetConsecutiveHyphenLimit = 213 -> Twip.CommandId
 Twip.CommandId.SetHyphenateCaps = 214 -> Twip.CommandId
 Twip.CommandId.SetHyphenationZone = 212 -> Twip.CommandId
 Twip.WarningCode.PictureBulletUndecodable = 17 -> Twip.WarningCode
+Twip.TooltipKind.Ruler = 4 -> Twip.TooltipKind
+Twip.ViewState.ControlLabels.get -> bool
+Twip.ViewState.ControlLabels.init -> void

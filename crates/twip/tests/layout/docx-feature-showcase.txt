@@ -1,400 +1,559 @@
-page 0 612.0 792.0
-  72.0 282.4 DOCX Feature Showcase
-  72.0 313.0 A tour of WordprocessingML: typography, layout,
-  72.0 330.3 tables, objects and review
-  72.0 363.1 This single file exercises styles, numbering, sections, fields, footnotes,
-  72.0 376.9 comments, tracked changes, charts, shapes, equations and a deliberately
-  72.0 390.8 difficult table — everything an editor needs to get right.
-  77.4 432.9 DOCUMENT
-  187.4 432.9 Feature showcase / editor fidelity demo
-  77.4 444.9 VERSION
-  187.4 444.9 1.0
-  77.4 456.9 DATE
-  187.4 456.9 October 26, 2026
-  77.4 468.9 PAGE SIZE
-  187.4 468.9 US Letter, portrait + one landscape section
-  114.3 522.7 Tip: open the Navigation pane — every heading is a real outline level.
-page 1 612.0 792.0
-  72.0 86.4 Contents
-  72.0 113.5 1Welcome.................................................................3
-  72.0 131.1 2Typography..............................................................3
-  72.0 148.8 3Paragraph Formatting....................................................4
-  83.0 166.4 3.1Alignment...........................................................4
-  83.0 184.1 3.2Indentation & Spacing................................................4
-  83.0 201.7 3.3Borders & Shading....................................................4
-  83.0 219.4 3.4Tab Stops & Leaders...................................................5
-  72.0 237.0 4Lists...................................................................5
-  72.0 254.7 5Tables..................................................................6
-  83.0 272.3 5.1AutoFit to Contents..................................................6
-  83.0 290.0 5.2AutoFit to Window....................................................6
-  72.0 307.6 6Images & Objects.........................................................7
-  83.0 325.3 6.1Floating Image with Square Wrap.......................................7
-  83.0 342.9 6.2Native Chart.........................................................7
-  83.0 360.6 6.3Shapes & Text Box.....................................................8
-  83.0 378.2 6.4Equations...........................................................8
-  72.0 395.9 7Links, Notes & Fields....................................................8
-  72.0 413.5 8Review & Collaboration...................................................8
-  72.0 431.2 9The Complex Table........................................................9
-  72.0 448.8 10Multi-Column Layout..................................................10
-  72.0 43.2 Even page headerDOCX Feature Showcase
-  263.9 745.2 Page 2  •  Section 2
-page 2 612.0 792.0
-  72.0 86.4 1Welcome
-  95.0 115.0 ocuments are more than text. This showcase is built to stress the parts of the
-  95.0 127.6 Office Open XML format that matter most to a rich editor: inheritance through
-  95.0 140.3 styles, multi-level numbering, section breaks with different page geometry,
-  95.0 152.9 and objects that float, wrap and anchor. Want to skip ahead? Jump to the complex
-  72.0 165.6 table, or read on for the full tour.1
-  84.0 185.2 Each heading below is numbered by a real list definition attached to the Heading
-  84.0 197.9 styles, so renumbering, the Table of Contents and the Navigation pane stay in
-  84.0 210.5 sync automatically.
-  72.0 246.8 2Typography
-  72.0 275.4 Run-level properties applied directly to text. Each row of this borderless specimen
-  72.0 288.0 table isolates one family of character formatting.
-  77.4 310.2 WEIGHT & SLANT
-  197.4 310.7 Bold  ·  Italic  ·  Bold italic
-  77.4 329.4 UNDERLINES
-  197.4 329.8 single  double  thick  dotted  dashed  wavy  words only
-  77.4 348.5 STRIKE
-  197.4 349.0 Strikethrough   Double strikethrough
-  77.4 370.8 BASELINE
-  197.4 371.1 E = mc2     H2O     xn+1     raised & lowered
-  77.4 394.0 CASE
-  197.4 394.8 SMALL CAPS   ·   ALL CAPS   ·   Hidden text follows: ✓
-  77.4 414.2 HIGHLIGHT
-  197.4 414.6  yellow   green   cyan   magenta   shading
-  77.4 433.3 COLOR
-  197.4 433.8 Navy Teal Coral Gold Gray
-  77.4 454.2 SPACING & SCALE
-  197.4 455.3 Expanded   Condensed   Scaled 150%   Kerned AVATAR
-  77.4 477.9 EFFECTS
-  197.4 480.5 Emboss   Imprint   Emphasis dots
-  77.4 499.9 FONTS
-  197.4 500.4 Georgia Consolas Segoe UI Cambria Calibri
-  77.4 528.9 SIZES
-  197.4 533.1 8 11 14 20 28
-  77.4 557.8 CHAR STYLES
-  197.4 558.2 Press Ctrl + S to save — Accent Emphasis is a character style.
-  77.4 580.0 SYMBOLS
-  197.4 581.6   ✓     Unicode: ★ → © ™ ½ π ∞
-  135.4 626.6 “Typography is what language looks like.”  — Ellen Lupton
-  72.0 705.3 1Footnotes are stored in word/footnotes.xml and referenced by id from the body.
-  72.0 139.0 D
-  72.0 43.2 DOCX Feature ShowcaseOdd page header
-  263.9 745.2 Page 3  •  Section 2
-page 3 612.0 792.0
-  72.0 86.4 3Paragraph Formatting
-  72.0 123.4 3.1Alignment
-  72.0 142.1 Left aligned. The default for most body text, with a ragged right edge.
-  154.2 161.8 Centered. Useful for titles, captions and pull quotes.
-  224.3 181.4 Right aligned. Common for dates, signatures and numbers.
-  72.0 201.0 Justified. Documents are more than text: they are structure, rhythm and intent. Every
-  72.0 213.7 heading, list and table on this page is real Word markup, so an editor that round-trips
-  72.0 226.3 it faithfully preserves the author's intent as well as the words. Justification
-  72.0 239.0 stretches inter-word spacing so both edges line up, which is why a good layout engine
-  72.0 251.6 matters.
-  72.0 280.7 3.2Indentation & Spacing
-  108.0 299.4 First-line indent. Documents are more than text: they are structure, rhythm
-  72.0 312.0 and intent. Every heading, list and table on this page is real Word markup, so an
-  72.0 324.7 editor that round-trips it faithfully preserves the author's intent as well as the
-  72.0 337.3 words.
-  72.0 357.0 Hanging indent. Lupton, E. (2010). Thinking with Type: A Critical Guide for
-  108.0 369.6 Designers, Writers, Editors, & Students (2nd ed.). Princeton Architectural
-  108.0 382.3 Press. Bibliographies use this pattern.
-  144.0 401.9 Left + right indent, 1.5 line spacing. Documents are more
-  144.0 418.4 than text: they are structure, rhythm and intent. Every
-  144.0 434.9 heading, list and table on this page is real Word markup,
-  144.0 451.4 so an editor that round-trips it faithfully preserves the
-  144.0 467.9 author's intent as well as the words.
-  72.0 502.4 Double spacing, 18 pt before. Line pitch is set with w:line="480" and
-  72.0 524.4 w:lineRule="auto".
-  72.0 562.8 3.3Borders & Shading
-  84.0 582.5 Callout style. A paragraph style with a thick left border, tinted shading and
-  84.0 595.2 inset indents — no table required.
-  78.0 626.1 Boxed paragraph with a double border on all four sides and a warm fill.
-  84.0 655.8 function greet(name) {
-  84.0 665.3   return `Hello, ${name}!`;  // code block via paragraph style
-  84.0 674.8 }
-  72.0 43.2 Even page headerDOCX Feature Showcase
-  263.9 745.2 Page 4  •  Section 2
-page 4 612.0 792.0
-  72.0 83.2 3.4Tab Stops & Leaders
-  72.0 101.9 Espresso...............................................................$3.50
-  72.0 117.6 Flat white..............................................................$4.75
-  72.0 133.2 Seasonal pour-over.....................................................$12.00
-  72.0 164.5 LeftCenter------------------1,234.56
-  72.0 179.1 AlphaMiddle----------------------7.5
-  72.0 193.8 OmegaMid-----------------------42.125
-  72.0 210.8 Above: a center tab and a decimal tab with a hyphen leader — numbers align on the decimal point.
-  72.0 246.4 4Lists
-  72.0 277.0 MULTI-LEVEL BULLETS
-  90.0 294.1 ●Level one uses a teal disc
-  108.0 315.1 ○Level two uses a coral ring
-  126.0 336.2 ▪Level three uses a gray square
-  108.0 357.2 ○Back to level two
-  90.0 378.3 ●And back to level one
-  72.0 401.0 MIXED NUMBERING FORMATS
-  90.0 416.6 1.Plan the release
-  108.0 436.3 a)Freeze features
-  108.0 455.9 b)Cut the branch
-  126.0 475.6 i.Tag the build
-  126.0 495.2 ii.Sign the artifacts
-  90.0 514.9 2.Ship it
-  72.0 537.5 LEGAL OUTLINE
-  90.0 553.2 1.Definitions
-  118.8 572.8 1.1.“Agreement” means this document.
-  118.8 592.4 1.2.“Party” means a signatory.
-  154.8 612.1 1.2.1.Includes successors and assigns.
-  90.0 631.7 2.Term and termination
-  72.0 654.4 CUSTOM BULLET GLYPHS
-  90.0 671.5 ➔Arrow bullets for calls to action
-  90.0 692.5 ➔Also great for next steps
-  90.0 713.6 ★Star bullets for highlights
-  72.0 43.2 DOCX Feature ShowcaseOdd page header
-  263.9 745.2 Page 5  •  Section 2
-page 5 612.0 792.0
-  72.0 80.8 UPPER-ROMAN PHASES
-  90.0 96.4 I.Discovery
-  90.0 116.1 II.Design
-  90.0 135.7 III.Delivery
-  72.0 158.4 CHECKLIST (CONTENT-CONTROL CHECKBOXES)
-  90.0 175.5 ☑  Styles and numbering survive a round trip
-  90.0 193.2 ☑  Section breaks keep their orientation
-  90.0 210.9 ☐  Tracked changes accepted/rejected correctly
-  90.0 228.6 ☐  Comments anchored to the right range
-  72.0 265.6 5Tables
-  72.0 294.2 Three layout algorithms, then a stress-test table in the landscape section that
-  72.0 306.8 follows.
-  72.0 335.9 5.1AutoFit to Contents
-  77.7 357.1 Action
-  202.8 357.1 Windows
-  290.8 357.1 macOS
-  77.7 374.2 Bold
-  202.8 374.2 Ctrl + B
-  290.8 374.2 Cmd + B
-  77.7 391.4 Insert footnote
-  202.8 391.4 Ctrl + Alt + F
-  290.8 391.4 Cmd + Opt + F
-  77.7 408.5 Toggle Track Changes
-  202.8 408.5 Ctrl + Shift + E
-  290.8 408.5 Cmd + Shift + E
-  77.7 425.7 Update fields
-  202.8 425.2 F9
-  290.8 425.7 Fn + F9
-  108.7 442.2 Table 1 — Shortcut reference — autofit to contents, repeating header row, zebra shading
-  72.0 470.6 5.2AutoFit to Window
-  77.4 492.8 Mode
-  194.4 492.8 Behavior
-  77.4 509.9 AutoFit to
-  77.4 522.6 contents
-  194.4 509.9 Columns shrink-wrap their content; table width is auto (see
-  194.4 522.6 the shortcut table above).
-  77.4 546.0 AutoFit to window
-  194.4 539.7 Table width is 100% of the text column, so it reflows when
-  194.4 552.4 margins or orientation change — like this one.
-  77.4 582.1 Fixed column width
-  194.4 569.5 Columns are locked in twips with w:tblLayout
-  194.4 582.1 w:type="fixed"; long content wraps instead of widening the
-  194.4 594.8 column.
-  173.9 612.3 Table 2 — Layout modes — percentage width, outer rules only
-  72.0 43.2 Even page headerDOCX Feature Showcase
-  263.9 745.2 Page 6  •  Section 2
-page 6 612.0 792.0
-  72.0 86.4 6Images & Objects
-  72.0 123.4 6.1Floating Image with Square Wrap
-  72.0 142.1 This geometric tile is anchored to this paragraph and
-  72.0 154.8 floats against the right margin with square wrapping.
-  72.0 167.4 Documents are more than text: they are structure, rhythm
-  72.0 180.0 and intent. Every heading, list and table on this page is
-  72.0 192.7 real Word markup, so an editor that round-trips it
-  72.0 205.3 faithfully preserves the author's intent as well as the
-  72.0 218.0 words. Documents are more than text: they are structure,
-  72.0 230.6 rhythm and intent. Every heading, list and table on this
-  72.0 243.3 page is real Word markup, so an editor that round-trips it
-  72.0 255.9 faithfully preserves the author's intent as well as the
-  72.0 268.6 words.
-  72.0 288.2 Text continues to flow around the picture until it clears the bottom edge. Moving the
-  72.0 300.9 anchor paragraph moves the picture with it, and changing the wrap mode to tight,
-  72.0 313.5 through or top-and-bottom changes how lines are shortened. Documents are more than
-  72.0 326.2 text: they are structure, rhythm and intent. Every heading, list and table on this
-  72.0 338.8 page is real Word markup, so an editor that round-trips it faithfully preserves the
-  72.0 351.5 author's intent as well as the words.
-  72.0 380.5 6.2Native Chart
-  74.5 628.3 Figure 1 — A combo chart: clustered columns on the primary axis, a line on the secondary axis (Edit Data
-  277.6 638.6 opens Excel)
-  72.0 43.2 DOCX Feature ShowcaseOdd page header
-  263.9 745.2 Page 7  •  Section 2
-page 7 612.0 792.0
-  72.0 83.2 6.3Shapes & Text Box
-  72.0 242.6 6.4Equations
-  112.7 299.0 Equation 1 — Office Math (OMML) — quadratic formula and the sum of the first n integers
-  72.0 334.5 7Links, Notes & Fields
-  72.0 363.1 External hyperlink: Open XML SDK — WordprocessingML overview.
-  72.0 382.8 Internal hyperlink to a bookmark: the complex table in the landscape section.
-  72.0 402.4 Footnotes appear at the bottom of the page2 and endnotes collect at the end of the
-  72.0 415.1 document.i
-  72.0 434.7 Fields: this is page 8 of 10; the file name is showcase.docx; and today is November 8,
-  72.0 447.4 2026.
-  72.0 483.6 8Review & Collaboration
-  72.0 512.2 Comments anchor to a range: this sentence has a reviewer comment attached, and so
-  72.0 524.9 does this phrase.
-  72.0 544.5 Tracked changes: the launch is planned for FridayMonday morning after a final sign-
-  72.0 557.2 off from the whole release team.
-  84.0 576.8 Two authors appear above, so a good editor shows them in distinct colors and
-  84.0 589.5 attributes each revision correctly.
-  72.0 705.3 2A second footnote with formatting and a link to ECMA-376.
-  129.8 124.6 Draft
-  308.7 123.8 Review
-  465.1 124.6 Publish
-  79.6 174.5 Text box: a VML text box holding its own paragraphs. Shapes above are DrawingML
-  79.6 187.2 with text bodies, so both object models are represented.
-  72.0 43.2 Even page headerDOCX Feature Showcase
-  263.9 745.2 Page 8  •  Section 2
-page 8 792.0 612.0
-  72.0 94.4 9The Complex Table
-  72.0 124.4 A landscape section with a fixed-layout table that combines: a diagonally split corner cell spanning 2×2, three-
-  72.0 137.7 level column headers that repeat on every page, vertical region labels spanning multiple rows, a nested table inside
-  72.0 150.4 a row-spanning cell, a bulleted list inside a cell, a six-column horizontal span with pattern shading, per-cell
-  72.0 163.0 border overrides and a double-ruled totals row.
-  182.9 193.9 Product
-  77.5 204.2 Region
-  259.8 190.6 Q1 2026
-  369.8 190.6 Q2 2026
-  479.8 190.6 Q3 2026
-  606.5 199.3 Notes & KPIs
-  237.3 213.1 UNITS
-  288.5 213.1 REVENUE
-  347.3 213.1 UNITS
-  398.5 213.1 REVENUE
-  457.3 213.1 UNITS
-  508.5 213.1 REVENUE
-  142.5 235.7 Widgets
-  240.0 235.5 1,240
-  294.5 235.5 $86.8K
-  350.0 235.5 1,310
-  404.5 235.5 $91.7K
-  460.0 235.5 1,405
-  514.5 235.5 $98.4K
-  557.5 229.9 Nested table inside a row-spanning
-  557.5 240.3 cell:
-  563.1 254.1 Top rep
-  668.5 254.1 Avery K.
-  563.1 265.0 QoQ growth
-  680.6 265.0 +8.1%
-  563.1 275.8 Churn
-  685.5 275.8 1.2%
-  142.5 263.2 Gadgets
-  251.0 263.0 860
-  294.5 263.0 $60.2K
-  361.0 263.0 905
-  404.5 263.0 $63.4K
-  471.0 263.0 990
-  514.5 263.0 $69.3K
-  142.5 290.7 Gizmos
-  251.0 290.5 410
-  294.5 290.5 $32.8K
-  361.0 290.5 455
-  404.5 290.5 $36.4K
-  471.0 290.5 520
-  514.5 290.5 $41.6K
-  142.5 318.2 Widgets
-  251.0 318.0 980
-  294.5 318.0 $68.6K
-  350.0 318.0 1,020
-  404.5 318.0 $71.4K
-  460.0 318.0 1,100
-  514.5 318.0 $77.0K
-  575.5 315.4 ●Gadgets dipped in Q2
-  575.5 335.8 ●Recovered with Q3 promo
-  593.5 356.2 ○+15% QoQ
-  142.5 352.0 Gadgets
-  251.0 351.8 640
-  294.5 351.8 $44.8K
-  361.0 351.8 610
-  404.5 351.8 $42.7K
-  471.0 351.8 702
-  514.5 351.8 $49.1K
-  142.5 400.3 Prototypes
-  275.3 400.3 Launching Q4 2026 — no sales recorded yet
-  557.5 394.7 Pilot with three design partners;
-  557.5 405.0 see comment on the roadmap.
-  142.5 442.3 Widgets
-  240.0 442.1 1,520
-  289.0 442.1 $106.4K
-  350.0 442.1 1,600
-  399.0 442.1 $112.0K
-  460.0 442.1 1,712
-  509.0 442.1 $119.8K
-  557.5 441.8 Largest unit volume of any region
-  142.5 469.8 Services
-  256.5 469.6 75
-  289.0 469.6 $150.0K
-  366.5 469.6 82
-  399.0 469.6 $164.0K
-  476.5 469.6 91
-  509.0 469.6 $182.0K
-  557.5 464.2 High-margin: revenue per unit ≈
-  557.5 474.5 $2,000
-  164.6 500.5 ALL REGIONS
-  240.0 500.3 5,725
-  289.0 500.3 $549.6K
-  350.0 500.3 5,982
-  399.0 500.3 $581.6K
-  460.0 500.3 6,520
-  509.0 500.3 $637.2K
-  557.5 500.1 Year-to-date, Q1–Q3
-  116.1 524.3 Table 3 — Quarterly regional performance — row/column spans, nested table, vertical text, diagonal border, pattern shading
-  72.0 43.2 Landscape section · watermark lives in this header
-  353.9 565.2 Page 9  •  Section 3
-page 9 612.0 792.0
-  72.0 92.4 10Multi-Column Layout
-  72.0 121.0 This section switches to two newspaper
-  72.0 133.6 columns separated by a vertical rule.
-  72.0 146.3 Documents are more than text: they are
-  72.0 158.9 structure, rhythm and intent. Every
-  72.0 171.6 heading, list and table on this page is
-  72.0 184.2 real Word markup, so an editor that
-  72.0 196.9 round-trips it faithfully preserves the
-  72.0 209.5 author's intent as well as the words.
-  72.0 222.2 Documents are more than text: they are
-  72.0 234.8 structure, rhythm and intent. Every
-  72.0 247.5 heading, list and table on this page is
-  72.0 260.1 real Word markup, so an editor that
-  72.0 272.8 round-trips it faithfully preserves the
-  72.0 285.4 author's intent as well as the words.
-  72.0 305.1 Text flows down the first column and
-  72.0 317.7 continues at the top of the second.
-  72.0 330.4 Documents are more than text: they are
-  72.0 343.0 structure, rhythm and intent. Every
-  72.0 355.7 heading, list and table on this page is
-  72.0 368.3 real Word markup, so an editor that
-  72.0 381.0 round-trips it faithfully preserves the
-  72.0 393.6 author's intent as well as the words.
-  84.0 413.3 Pull quote: columns, sections and
-  84.0 425.9 page geometry all live in w:sectPr.
-  72.0 448.6 An explicit column break ends this
-  72.0 462.7 column early →
-  319.5 100.4 Second column. Documents are more than
-  319.5 113.1 text: they are structure, rhythm and
-  319.5 125.7 intent. Every heading, list and table on
-  319.5 138.4 this page is real Word markup, so an
-  319.5 151.0 editor that round-trips it faithfully
-  319.5 163.7 preserves the author's intent as well as
-  319.5 176.3 the words. Documents are more than text:
-  319.5 189.0 they are structure, rhythm and intent.
-  319.5 201.6 Every heading, list and table on this
-  319.5 214.3 page is real Word markup, so an editor
-  319.5 226.9 that round-trips it faithfully
-  319.5 239.6 preserves the author's intent as well as
-  319.5 252.2 the words.
-  319.5 271.9 Closing thoughts. If your editor
-  319.5 284.5 renders every page of this file the way
-  319.5 297.2 Word does — and saves it back without
-  319.5 309.8 losing a single property — it is handling
-  319.5 322.5 the hard parts of DOCX.
-  374.1 359.2 ✓  End of showcase
-  72.0 483.0 iEndnotes live in word/endnotes.xml and
-  72.0 499.6 are placed at the end of the document by
-  72.0 512.3 default.
-  72.0 43.2 Even page headerDOCX Feature Showcase
-  261.4 745.2 Page 10  •  Section 4
+page 0 12240 15840
+  1440 5649 DOCX Feature Showcase
+  1440 6261 A tour of WordprocessingML: typography, layout,
+  1440 6606 tables, objects and review
+  1440 7263 This single file exercises styles, numbering, sections, fields, footnotes,
+  1440 7539 comments, tracked changes, charts, shapes, equations and a deliberately
+  1440 7815 difficult table — everything an editor needs to get right.
+  1548 8659 DOCUMENT
+  3748 8659 Feature showcase / editor fidelity demo
+  1548 8899 VERSION
+  3748 8899 1.0
+  1548 9139 DATE
+  3748 9139 October 26, 2026
+  1548 9379 PAGE SIZE
+  3748 9379 US Letter, portrait + one landscape section
+  2286 10454 Tip: open the Navigation pane — every heading is a real outline level.
+  cell 1440 8499 3640 8729
+  cell 3640 8499 10800 8729
+  cell 1440 8729 3640 8969
+  cell 3640 8729 10800 8969
+  cell 1440 8969 3640 9209
+  cell 3640 8969 10800 9209
+  cell 1440 9209 3640 9449
+  cell 3640 9209 10800 9449
+  float 1440 10059 10800 10749
+page 1 12240 15840
+  1440 1728 Contents
+  1440 2270 1Welcome.................................................................3
+  1440 2623 2Typography..............................................................3
+  1440 2976 3Paragraph Formatting....................................................4
+  1660 3329 3.1Alignment...........................................................4
+  1660 3682 3.2Indentation & Spacing................................................4
+  1660 4035 3.3Borders & Shading....................................................4
+  1660 4388 3.4Tab Stops & Leaders...................................................5
+  1440 4741 4Lists...................................................................5
+  1440 5094 5Tables..................................................................6
+  1660 5447 5.1AutoFit to Contents..................................................6
+  1660 5800 5.2AutoFit to Window....................................................6
+  1440 6153 6Images & Objects.........................................................7
+  1660 6506 6.1Floating Image with Square Wrap.......................................7
+  1660 6859 6.2Native Chart.........................................................7
+  1660 7212 6.3Shapes & Text Box.....................................................8
+  1660 7565 6.4Equations...........................................................8
+  1440 7918 7Links, Notes & Fields....................................................8
+  1440 8271 8Review & Collaboration...................................................8
+  1440 8624 9The Complex Table........................................................9
+  1440 8977 10Multi-Column Layout..................................................10
+  1440 864 Even page headerDOCX Feature Showcase
+  5277 14903 Page 2  •  Section 2
+page 2 12240 15840
+  1440 1728 1Welcome
+  1900 2300 ocuments are more than text. This showcase is built to stress the parts of the
+  1900 2553 Office Open XML format that matter most to a rich editor: inheritance through
+  1900 2806 styles, multi-level numbering, section breaks with different page geometry,
+  1900 3059 and objects that float, wrap and anchor. Want to skip ahead? Jump to the complex
+  1440 3312 table, or read on for the full tour.1
+  1680 3705 Each heading below is numbered by a real list definition attached to the Heading
+  1680 3958 styles, so renumbering, the Table of Contents and the Navigation pane stay in
+  1680 4211 sync automatically.
+  1440 4936 2Typography
+  1440 5508 Run-level properties applied directly to text. Each row of this borderless specimen
+  1440 5761 table isolates one family of character formatting.
+  1548 6205 WEIGHT & SLANT
+  3948 6214 Bold  ·  Italic  ·  Bold italic
+  1548 6588 UNDERLINES
+  3948 6597 single  double  thick  dotted  dashed  wavy  words only
+  1548 6971 STRIKE
+  3948 6980 Strikethrough   Double strikethrough
+  1548 7415 BASELINE
+  3948 7423 E = mc2     H2O     xn+1     raised & lowered
+  1548 7880 CASE
+  3948 7897 SMALL CAPS   ·   ALL CAPS   ·   Hidden text follows: ✓
+  1548 8284 HIGHLIGHT
+  3948 8293  yellow   green   cyan   magenta   shading
+  1548 8667 COLOR
+  3948 8676 Navy Teal Coral Gold Gray
+  1548 9084 SPACING & SCALE
+  3948 9107 Expanded   Condensed   Scaled 150%   Kerned AVATAR
+  1548 9559 EFFECTS
+  3948 9611 Emboss   Imprint   Emphasis dots
+  1548 9999 FONTS
+  3948 10008 Georgia Consolas Segoe UI Cambria Calibri
+  1548 10577 SIZES
+  3948 10663 8 11 14 20 28
+  1548 11156 CHAR STYLES
+  3948 11165 Press Ctrl + S to save — Accent Emphasis is a character style.
+  1548 11600 SYMBOLS
+  3948 11632   ✓     Unicode: ★ → © ™ ½ π ∞
+  2708 12533 “Typography is what language looks like.”  — Ellen Lupton
+  1440 14106 1Footnotes are stored in word/footnotes.xml and referenced by id from the body.
+  1440 2780 D
+  1440 864 DOCX Feature ShowcaseOdd page header
+  5277 14903 Page 3  •  Section 2
+  cell 1440 5978 3840 6351
+  cell 3840 5978 10800 6351
+  cell 1440 6351 3840 6734
+  cell 3840 6351 10800 6734
+  cell 1440 6734 3840 7117
+  cell 3840 6734 10800 7117
+  cell 1440 7117 3840 7622
+  cell 3840 7117 10800 7622
+  cell 1440 7622 3840 8047
+  cell 3840 7622 10800 8047
+  cell 1440 8047 3840 8430
+  cell 3840 8047 10800 8430
+  cell 1440 8430 3840 8813
+  cell 3840 8430 10800 8813
+  cell 1440 8813 3840 9265
+  cell 3840 8813 10800 9265
+  cell 1440 9265 3840 9762
+  cell 3840 9265 10800 9762
+  cell 1440 9762 3840 10145
+  cell 3840 9762 10800 10145
+  cell 1440 10145 3840 10919
+  cell 3840 10145 10800 10919
+  cell 1440 10919 3840 11302
+  cell 3840 10919 10800 11302
+  cell 1440 11302 3840 11807
+  cell 3840 11302 10800 11807
+  float 1440 2124 1900 2944
+page 3 12240 15840
+  1440 1728 3Paragraph Formatting
+  1440 2468 3.1Alignment
+  1440 2842 Left aligned. The default for most body text, with a ragged right edge.
+  3084 3235 Centered. Useful for titles, captions and pull quotes.
+  4486 3628 Right aligned. Common for dates, signatures and numbers.
+  1440 4021 Justified. Documents are more than text: they are structure, rhythm and intent. Every
+  1440 4274 heading, list and table on this page is real Word markup, so an editor that round-trips
+  1440 4527 it faithfully preserves the author's intent as well as the words. Justification
+  1440 4780 stretches inter-word spacing so both edges line up, which is why a good layout engine
+  1440 5033 matters.
+  1440 5614 3.2Indentation & Spacing
+  2160 5988 First-line indent. Documents are more than text: they are structure, rhythm
+  1440 6241 and intent. Every heading, list and table on this page is real Word markup, so an
+  1440 6494 editor that round-trips it faithfully preserves the author's intent as well as the
+  1440 6747 words.
+  1440 7140 Hanging indent. Lupton, E. (2010). Thinking with Type: A Critical Guide for
+  2160 7393 Designers, Writers, Editors, & Students (2nd ed.). Princeton Architectural
+  2160 7646 Press. Bibliographies use this pattern.
+  2880 8039 Left + right indent, 1.5 line spacing. Documents are more
+  2880 8369 than text: they are structure, rhythm and intent. Every
+  2880 8699 heading, list and table on this page is real Word markup,
+  2880 9029 so an editor that round-trips it faithfully preserves the
+  2880 9359 author's intent as well as the words.
+  1440 10049 Double spacing, 18 pt before. Line pitch is set with w:line="480" and
+  1440 10489 w:lineRule="auto".
+  1440 11257 3.3Borders & Shading
+  1680 11651 Callout style. A paragraph style with a thick left border, tinted shading and
+  1680 11904 inset indents — no table required.
+  1560 12522 Boxed paragraph with a double border on all four sides and a warm fill.
+  1680 13116 function greet(name) {
+  1680 13306   return `Hello, ${name}!`;  // code block via paragraph style
+  1680 13496 }
+  1440 864 Even page headerDOCX Feature Showcase
+  5277 14903 Page 4  •  Section 2
+page 4 12240 15840
+  1440 1664 3.4Tab Stops & Leaders
+  1440 2038 Espresso...............................................................$3.50
+  1440 2351 Flat white..............................................................$4.75
+  1440 2664 Seasonal pour-over.....................................................$12.00
+  1440 3290 LeftCenter------------------1,234.56
+  1440 3583 AlphaMiddle----------------------7.5
+  1440 3876 OmegaMid-----------------------42.125
+  1440 4217 Above: a center tab and a decimal tab with a hyphen leader — numbers align on the decimal point.
+  1440 4928 4Lists
+  1440 5540 MULTI-LEVEL BULLETS
+  1800 5881 ●Level one uses a teal disc
+  2160 6302 ○Level two uses a coral ring
+  2520 6724 ▪Level three uses a gray square
+  2160 7145 ○Back to level two
+  1800 7566 ●And back to level one
+  1440 8019 MIXED NUMBERING FORMATS
+  1800 8332 1.Plan the release
+  2160 8725 a)Freeze features
+  2160 9118 b)Cut the branch
+  2520 9511 i.Tag the build
+  2520 9904 ii.Sign the artifacts
+  1800 10297 2.Ship it
+  1440 10750 LEGAL OUTLINE
+  1800 11063 1.Definitions
+  2376 11456 1.1.“Agreement” means this document.
+  2376 11849 1.2.“Party” means a signatory.
+  3096 12242 1.2.1.Includes successors and assigns.
+  1800 12635 2.Term and termination
+  1440 13088 CUSTOM BULLET GLYPHS
+  1800 13429 ➔Arrow bullets for calls to action
+  1800 13850 ➔Also great for next steps
+  1800 14272 ★Star bullets for highlights
+  1440 864 DOCX Feature ShowcaseOdd page header
+  5277 14903 Page 5  •  Section 2
+page 5 12240 15840
+  1440 1616 UPPER-ROMAN PHASES
+  1800 1929 I.Discovery
+  1800 2322 II.Design
+  1800 2715 III.Delivery
+  1440 3168 CHECKLIST (CONTENT-CONTROL CHECKBOXES)
+  1800 3509 ☑  Styles and numbering survive a round trip
+  1800 3864 ☑  Section breaks keep their orientation
+  1800 4218 ☐  Tracked changes accepted/rejected correctly
+  1800 4573 ☐  Comments anchored to the right range
+  1440 5311 5Tables
+  1440 5883 Three layout algorithms, then a stress-test table in the landscape section that
+  1440 6136 follows.
+  1440 6717 5.1AutoFit to Contents
+  1553 7141 Action
+  4057 7141 Windows
+  5815 7141 macOS
+  1553 7484 Bold
+  4057 7484 Ctrl + B
+  5815 7484 Cmd + B
+  1553 7827 Insert footnote
+  4057 7827 Ctrl + Alt + F
+  5815 7827 Cmd + Opt + F
+  1553 8170 Toggle Track Changes
+  4057 8170 Ctrl + Shift + E
+  5815 8170 Cmd + Shift + E
+  1553 8513 Update fields
+  4057 8504 F9
+  5815 8513 Fn + F9
+  2174 8844 Table 1 — Shortcut reference — autofit to contents, repeating header row, zebra shading
+  1440 9411 5.2AutoFit to Window
+  1548 9855 Mode
+  3888 9855 Behavior
+  1548 10198 AutoFit to
+  1548 10451 contents
+  3888 10198 Columns shrink-wrap their content; table width is auto (see
+  3888 10451 the shortcut table above).
+  1548 10921 AutoFit to window
+  3888 10794 Table width is 100% of the text column, so it reflows when
+  3888 11047 margins or orientation change — like this one.
+  1548 11643 Fixed column width
+  3888 11390 Columns are locked in twips with w:tblLayout
+  3888 11643 w:type="fixed"; long content wraps instead of widening the
+  3888 11896 column.
+  3479 12247 Table 2 — Layout modes — percentage width, outer rules only
+  1440 864 Even page headerDOCX Feature Showcase
+  5277 14903 Page 6  •  Section 2
+  cell 1445 6915 3949 7258
+  cell 3949 6915 5707 7258
+  cell 5707 6915 7357 7258
+  cell 1445 7258 3949 7601
+  cell 3949 7258 5707 7601
+  cell 5707 7258 7357 7601
+  cell 1445 7601 3949 7944
+  cell 3949 7601 5707 7944
+  cell 5707 7601 7357 7944
+  cell 1445 7944 3949 8287
+  cell 3949 7944 5707 8287
+  cell 5707 7944 7357 8287
+  cell 1445 8287 3949 8630
+  cell 3949 8287 5707 8630
+  cell 5707 8287 7357 8630
+  cell 1440 9609 3780 9972
+  cell 3780 9609 10800 9972
+  cell 1440 9972 3780 10568
+  cell 3780 9972 10800 10568
+  cell 1440 10568 3780 11164
+  cell 3780 10568 10800 11164
+  cell 1440 11164 3780 12013
+  cell 3780 11164 10800 12013
+page 6 12240 15840
+  1440 1728 6Images & Objects
+  1440 2468 6.1Floating Image with Square Wrap
+  1440 2842 This geometric tile is anchored to this paragraph and
+  1440 3095 floats against the right margin with square wrapping.
+  1440 3348 Documents are more than text: they are structure, rhythm
+  1440 3601 and intent. Every heading, list and table on this page is
+  1440 3854 real Word markup, so an editor that round-trips it
+  1440 4107 faithfully preserves the author's intent as well as the
+  1440 4360 words. Documents are more than text: they are structure,
+  1440 4613 rhythm and intent. Every heading, list and table on this
+  1440 4866 page is real Word markup, so an editor that round-trips it
+  1440 5119 faithfully preserves the author's intent as well as the
+  1440 5372 words.
+  1440 5765 Text continues to flow around the picture until it clears the bottom edge. Moving the
+  1440 6018 anchor paragraph moves the picture with it, and changing the wrap mode to tight,
+  1440 6271 through or top-and-bottom changes how lines are shortened. Documents are more than
+  1440 6524 text: they are structure, rhythm and intent. Every heading, list and table on this
+  1440 6777 page is real Word markup, so an editor that round-trips it faithfully preserves the
+  1440 7030 author's intent as well as the words.
+  1440 7611 6.2Native Chart
+  1490 12566 Figure 1 — A combo chart: clustered columns on the primary axis, a line on the secondary axis (Edit Data
+  5553 12773 opens Excel)
+  1440 864 DOCX Feature ShowcaseOdd page header
+  5277 14903 Page 7  •  Section 2
+  float 8250 2666 10800 5216
+page 7 12240 15840
+  1440 1664 6.3Shapes & Text Box
+  1440 4852 6.4Equations
+  2255 5980 Equation 1 — Office Math (OMML) — quadratic formula and the sum of the first n integers
+  1440 6691 7Links, Notes & Fields
+  1440 7263 External hyperlink: Open XML SDK — WordprocessingML overview.
+  1440 7656 Internal hyperlink to a bookmark: the complex table in the landscape section.
+  1440 8049 Footnotes appear at the bottom of the page2 and endnotes collect at the end of the
+  1440 8302 document.i
+  1440 8695 Fields: this is page 8 of 10; the file name is showcase.docx; and today is November 9,
+  1440 8948 2026.
+  1440 9673 8Review & Collaboration
+  1440 10245 Comments anchor to a range: this sentence has a reviewer comment attached, and so
+  1440 10498 does this phrase.
+  1440 10891 Tracked changes: the launch is planned for FridayMonday morning after a final sign-
+  1440 11144 off from the whole release team.
+  1680 11537 Two authors appear above, so a good editor shows them in distinct colors and
+  1680 11790 attributes each revision correctly.
+  1440 14106 2A second footnote with formatting and a link to ECMA-376.
+  2595 2491 Draft
+  6174 2476 Review
+  9303 2491 Publish
+  1592 3491 Text box: a VML text box holding its own paragraphs. Shapes above are DrawingML
+  1592 3743 with text bodies, so both object models are represented.
+  1440 864 Even page headerDOCX Feature Showcase
+  5277 14903 Page 8  •  Section 2
+  float 1575 1912 4275 2962
+  float 5670 1897 7470 2947
+  float 8865 1912 10665 2962
+  float 1440 3235 10800 4315
+page 8 15840 12240
+  1440 1888 9The Complex Table
+  1440 2488 A landscape section with a fixed-layout table that combines: a diagonally split corner cell spanning 2×2, three-
+  1440 2755 level column headers that repeat on every page, vertical region labels spanning multiple rows, a nested table inside
+  1440 3008 a row-spanning cell, a bulleted list inside a cell, a six-column horizontal span with pattern shading, per-cell
+  1440 3261 border overrides and a double-ruled totals row.
+  3657 3878 Product
+  1550 4085 Region
+  5195 3813 Q1 2026
+  7395 3813 Q2 2026
+  9595 3813 Q3 2026
+  12130 3986 Notes & KPIs
+  4747 4261 UNITS
+  5770 4261 REVENUE
+  6947 4261 UNITS
+  7970 4261 REVENUE
+  9147 4261 UNITS
+  10170 4261 REVENUE
+  2850 4714 Widgets
+  4800 4710 1,240
+  5890 4710 $86.8K
+  7000 4710 1,310
+  8090 4710 $91.7K
+  9200 4710 1,405
+  10290 4710 $98.4K
+  11150 4599 Nested table inside a row-spanning
+  11150 4806 cell:
+  11263 5083 Top rep
+  13369 5083 Avery K.
+  11263 5300 QoQ growth
+  13612 5300 +8.1%
+  11263 5517 Churn
+  13711 5517 1.2%
+  2850 5264 Gadgets
+  5020 5260 860
+  5890 5260 $60.2K
+  7220 5260 905
+  8090 5260 $63.4K
+  9420 5260 990
+  10290 5260 $69.3K
+  2850 5814 Gizmos
+  5020 5810 410
+  5890 5810 $32.8K
+  7220 5810 455
+  8090 5810 $36.4K
+  9420 5810 520
+  10290 5810 $41.6K
+  2850 6364 Widgets
+  5020 6360 980
+  5890 6360 $68.6K
+  7000 6360 1,020
+  8090 6360 $71.4K
+  9200 6360 1,100
+  10290 6360 $77.0K
+  11510 6309 ●Gadgets dipped in Q2
+  11510 6716 ●Recovered with Q3 promo
+  11870 7123 ○+15% QoQ
+  2850 7040 Gadgets
+  5020 7035 640
+  5890 7035 $44.8K
+  7220 7035 610
+  8090 7035 $42.7K
+  9420 7035 702
+  10290 7035 $49.1K
+  2850 8006 Prototypes
+  5506 8006 Launching Q4 2026 — no sales recorded yet
+  11150 7893 Pilot with three design partners;
+  11150 8100 see comment on the roadmap.
+  2850 8846 Widgets
+  4800 8841 1,520
+  5780 8841 $106.4K
+  7000 8841 1,600
+  7980 8841 $112.0K
+  9200 8841 1,712
+  10180 8841 $119.8K
+  11150 8837 Largest unit volume of any region
+  2850 9396 Services
+  5130 9391 75
+  5780 9391 $150.0K
+  7330 9391 82
+  7980 9391 $164.0K
+  9530 9391 91
+  10180 9391 $182.0K
+  11150 9283 High-margin: revenue per unit ≈
+  11150 9490 $2,000
+  3293 10011 ALL REGIONS
+  4800 10006 5,725
+  5780 10006 $549.6K
+  7000 10006 5,982
+  7980 10006 $581.6K
+  9200 10006 6,520
+  10180 10006 $637.2K
+  11150 10002 Year-to-date, Q1–Q3
+  2322 10485 Table 3 — Quarterly regional performance — row/column spans, nested table, vertical text, diagonal border, pattern shading
+  1440 864 Landscape section · watermark lives in this header
+  7077 11303 Page 9  •  Section 3
+  cell 1450 3478 4450 4385
+  cell 4450 3478 6650 4038
+  cell 6650 3478 8850 4038
+  cell 8850 3478 11050 4038
+  cell 11050 3478 14410 4385
+  cell 1450 4038 4450 4385
+  cell 4450 4038 5450 4385
+  cell 5450 4038 6650 4385
+  cell 6650 4038 7650 4385
+  cell 7650 4038 8850 4385
+  cell 8850 4038 9850 4385
+  cell 9850 4038 11050 4385
+  cell 11050 4038 14410 4385
+  cell 1450 4385 2750 6035
+  cell 2750 4385 4450 4935
+  cell 4450 4385 5450 4935
+  cell 5450 4385 6650 4935
+  cell 6650 4385 7650 4935
+  cell 7650 4385 8850 4935
+  cell 8850 4385 9850 4935
+  cell 9850 4385 11050 4935
+  cell 11050 4385 14410 6035
+  cell 11155 4929 12655 5146
+  cell 12655 4929 14215 5146
+  cell 11155 5146 12655 5363
+  cell 12655 5146 14215 5363
+  cell 11155 5363 12655 5580
+  cell 12655 5363 14215 5580
+  cell 1450 4935 2750 5485
+  cell 2750 4935 4450 5485
+  cell 4450 4935 5450 5485
+  cell 5450 4935 6650 5485
+  cell 6650 4935 7650 5485
+  cell 7650 4935 8850 5485
+  cell 8850 4935 9850 5485
+  cell 9850 4935 11050 5485
+  cell 11050 4935 14410 5485
+  cell 1450 5485 2750 6035
+  cell 2750 5485 4450 6035
+  cell 4450 5485 5450 6035
+  cell 5450 5485 6650 6035
+  cell 6650 5485 7650 6035
+  cell 7650 5485 8850 6035
+  cell 8850 5485 9850 6035
+  cell 9850 5485 11050 6035
+  cell 11050 5485 14410 6035
+  cell 1450 6035 2750 7135
+  cell 2750 6035 4450 6585
+  cell 4450 6035 5450 6585
+  cell 5450 6035 6650 6585
+  cell 6650 6035 7650 6585
+  cell 7650 6035 8850 6585
+  cell 8850 6035 9850 6585
+  cell 9850 6035 11050 6585
+  cell 11050 6035 14410 7386
+  cell 1450 6585 2750 7386
+  cell 2750 6585 4450 7386
+  cell 4450 6585 5450 7386
+  cell 5450 6585 6650 7386
+  cell 6650 6585 7650 7386
+  cell 7650 6585 8850 7386
+  cell 8850 6585 9850 7386
+  cell 9850 6585 11050 7386
+  cell 11050 6585 14410 7386
+  cell 1450 7386 2750 8516
+  cell 2750 7386 4450 8516
+  cell 4450 7386 11050 8516
+  cell 11050 7386 14410 8516
+  cell 1450 8516 2750 9616
+  cell 2750 8516 4450 9066
+  cell 4450 8516 5450 9066
+  cell 5450 8516 6650 9066
+  cell 6650 8516 7650 9066
+  cell 7650 8516 8850 9066
+  cell 8850 8516 9850 9066
+  cell 9850 8516 11050 9066
+  cell 11050 8516 14410 9066
+  cell 1450 9066 2750 9616
+  cell 2750 9066 4450 9616
+  cell 4450 9066 5450 9616
+  cell 5450 9066 6650 9616
+  cell 6650 9066 7650 9616
+  cell 7650 9066 8850 9616
+  cell 8850 9066 9850 9616
+  cell 9850 9066 11050 9616
+  cell 11050 9066 14410 9616
+  cell 1450 9616 4450 10261
+  cell 4450 9616 5450 10261
+  cell 5450 9616 6650 10261
+  cell 6650 9616 7650 10261
+  cell 7650 9616 8850 10261
+  cell 8850 9616 9850 10261
+  cell 9850 9616 11050 10261
+  cell 11050 9616 14410 10261
+  float 2642 5488 13199 6752
+page 9 12240 15840
+  1440 1848 10Multi-Column Layout
+  1440 2420 This section switches to two newspaper
+  1440 2673 columns separated by a vertical rule.
+  1440 2926 Documents are more than text: they are
+  1440 3179 structure, rhythm and intent. Every
+  1440 3432 heading, list and table on this page is
+  1440 3685 real Word markup, so an editor that
+  1440 3938 round-trips it faithfully preserves the
+  1440 4191 author's intent as well as the words.
+  1440 4444 Documents are more than text: they are
+  1440 4697 structure, rhythm and intent. Every
+  1440 4950 heading, list and table on this page is
+  1440 5203 real Word markup, so an editor that
+  1440 5456 round-trips it faithfully preserves the
+  1440 5709 author's intent as well as the words.
+  1440 6102 Text flows down the first column and
+  1440 6355 continues at the top of the second.
+  1440 6608 Documents are more than text: they are
+  1440 6861 structure, rhythm and intent. Every
+  1440 7114 heading, list and table on this page is
+  1440 7367 real Word markup, so an editor that
+  1440 7620 round-trips it faithfully preserves the
+  1440 7873 author's intent as well as the words.
+  1680 8266 Pull quote: columns, sections and
+  1680 8519 page geometry all live in w:sectPr.
+  1440 8972 An explicit column break ends this
+  1440 9253 column early →
+  6390 2009 Second column. Documents are more than
+  6390 2262 text: they are structure, rhythm and
+  6390 2515 intent. Every heading, list and table on
+  6390 2768 this page is real Word markup, so an
+  6390 3021 editor that round-trips it faithfully
+  6390 3274 preserves the author's intent as well as
+  6390 3527 the words. Documents are more than text:
+  6390 3780 they are structure, rhythm and intent.
+  6390 4033 Every heading, list and table on this
+  6390 4286 page is real Word markup, so an editor
+  6390 4539 that round-trips it faithfully
+  6390 4792 preserves the author's intent as well as
+  6390 5045 the words.
+  6390 5438 Closing thoughts. If your editor
+  6390 5691 renders every page of this file the way
+  6390 5944 Word does — and saves it back without
+  6390 6197 losing a single property — it is handling
+  6390 6450 the hard parts of DOCX.
+  7483 7184 ✓  End of showcase
+  1440 9659 iEndnotes live in word/endnotes.xml and
+  1440 9992 are placed at the end of the document by
+  1440 10245 default.
+  1440 864 Even page headerDOCX Feature Showcase
+  5228 14903 Page 10  •  Section 4

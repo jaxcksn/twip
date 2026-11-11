@@ -22,6 +22,10 @@ here changes how a document behaves. Element info reports a reference's `name` a
 (the field shares its paragraph) or `notInBody` (it is in a header, footer, note or text box). A declared field shows
 its stored result and is never read as a bookmark reference.
 
+The command sets the rules for the open document. To have them, the application field types and the design-mode
+labels in place from each open's first layout, give them when mounting: `subTemplateRules`, `applicationFieldTypes`
+and `fieldLabels` in the session options.
+
 ## The inline view
 
 A resolved reference alone in its paragraph shows its sub-template's body in its place, laid out at the paragraph's
