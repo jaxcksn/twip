@@ -1,0 +1,89 @@
+page 0 12240 15840
+  1440 1936 Frames that may not overlap
+  5959 2201 Inventory relevant group relief results
+  9219 2439 region ledger
+  9219 2676 brief usage
+  9219 2914 cause
+  1440 3151 colleague partner. Section notice claim
+  9219 3151 team export
+  1440 3388 staff newsletter review matter presenter advisor account. Served savings pilot
+  1440 3626 receipt corporate requirement standard fact that products distribution filed.
+  1440 3863 Logistics chapter plan regional maintenance accessibility tax finds record
+  1440 4101 proposal denied contract. Onboarding support network scheduled trend suggestions
+  1440 4338 board order update granted agreement marketing. Promotion division date profitable
+  1440 4576 insights the meeting forecast hereby vendors practical schedule. State entry
+  1440 4813 estimate management action budget inventory relevant.
+  1440 5210 Notice claim team export staff newsletter review
+  1440 5448 matter presenter advisor account served. Savings
+  1440 5685 pilot receipt corporate requirement standard
+  1440 5923 fact that products distribution filed logistics.
+  1440 6160 Chapter plan regional maintenance accessibility tax finds record proposal denied
+  1440 6397 contract onboarding. Support network scheduled trend suggestions board order
+  1440 6635 update granted agreement marketing promotion. Division date profitable insights
+  1440 6872 the meeting forecast hereby vendors practical schedule state.
+  1440 7270 Two
+  5220 7270 pictures with allowOverlap 0: the later one
+  1440 7507 moves.
+  7380 7507 Pilot receipt corporate
+  7380 7745 requirement standard fact
+  1440 7982 that
+  7380 7982 products distribution filed
+  1440 8219 logistics
+  7380 8219 chapter. Plan regional
+  1440 8457 maintenance accessibility tax
+  7380 8457 finds record proposal denied
+  1440 8694 contract onboarding support.
+  7380 8694 Network scheduled trend
+  1440 8932 suggestions board order update granted agreement marketing promotion division.
+  1440 9169 Date profitable insights the meeting forecast hereby vendors practical schedule
+  1440 9406 state entry. Estimate management action budget inventory relevant group relief
+  1440 9644 results region ledger brief.
+  1440 10041 Regional maintenance accessibility tax finds record proposal denied contract
+  1440 10279 onboarding support network. Scheduled trend suggestions board order update granted
+  1440 10516 agreement marketing promotion division date. Profitable insights the meeting
+  1440 10754 forecast hereby vendors practical schedule state entry estimate. Management action
+  1440 10991 budget inventory.
+  5118 11388 A bare text box (no fill, no outline) with tight
+  5173 11626 wrap: the body wraps around its lines, the
+  5173 11863 selected lines around their ink. Trend
+  5364 12101 suggestions board order update granted
+  5364 12338 agreement marketing promotion division date
+  5364 12575 profitable. Insights the meeting forecast
+  5364 12813 hereby vendors practical schedule state entry
+  5364 13050 estimate management. Action budget inventory
+  5364 13288 relevant group relief results region ledger
+  5364 13525 brief usage cause. Colleague partner section
+  1440 13763 notice claim team export staff newsletter review matter presenter. Advisor account
+  1440 14000 served savings pilot receipt corporate requirement standard fact that products.
+  1440 14237 Distribution filed logistics chapter plan regional maintenance accessibility tax
+  2879 2211 The first frame.
+  6139 2571 The second frame, over
+  6139 2808 the first, with
+  6139 3046 suppressOverlap: it
+  7199 5220 A third frame,
+  7199 5457 overlapping without the
+  7199 5695 flag, stays.
+  7919 5420 A fourth frame over it, no
+  7919 5657 flag either.
+  1440 11388 textboxTightWrap allLines: the
+  1440 11608 body wraps this box's lines.
+  1440 11828 Inventory relevant group relief
+  1440 12048 results region ledger brief.
+  1440 12268 Short line.
+  1440 12488 textboxTightWrap
+  1440 12708 firstAndLastLine: the body wraps
+  1440 12928 this box's lines. Inventory
+  1440 13148 relevant group relief results
+  1440 13368 region ledger brief.
+  1440 13588 Middle line of three.
+  float 2879 2025 5779 2745
+  float 6139 2385 9039 3105
+  float 7199 5034 10099 5754
+  float 7919 5234 10819 5954
+  float 2880 7094 5040 8246
+  float 5040 7526 7200 8678
+  float 1440 11212 5184 13516
+page 1 12240 15840
+  1440 1616 finds record proposal. Denied contract onboarding support network scheduled trend
+  1440 1853 suggestions board order update granted. Agreement marketing promotion division
+  1440 2091 date profitable.

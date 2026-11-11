@@ -410,6 +410,15 @@ page 8 15840 12240
   2322 10485 Table 3 — Quarterly regional performance — row/column spans, nested table, vertical text, diagonal border, pattern shading
   1440 864 Landscape section · watermark lives in this header
   7077 11303 Page 9  •  Section 3
+  turned 1888 4826 0 -1 NO
+  turned 2149 4826 0 -1 RT
+  turned 2410 4745 0 -1 H
+  turned 1888 6476 0 -1 SO
+  turned 2149 6476 0 -1 UT
+  turned 2410 6395 0 -1 H
+  turned 2149 8278 0 -1 WEST
+  turned 2018 8957 0 -1 EA
+  turned 2280 8957 0 -1 ST
   cell 1450 3478 4450 4385
   cell 4450 3478 6650 4038
   cell 6650 3478 8850 4038

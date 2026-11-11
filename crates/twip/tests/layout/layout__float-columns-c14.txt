@@ -1,0 +1,305 @@
+page 0 12240 15840
+  1440 1936 Floats in columns
+  1440 2201 The meeting forecast hereby vendors
+  1440 2439 practical schedule state entry
+  1440 2676 estimate management action. Budget
+  1440 2914 inventory relevant group relief
+  1440 3151 results region ledger brief usage
+  1440 3388 cause colleague. Partner section
+  1440 3626 notice claim team export staff
+  1440 3863 newsletter review matter presenter
+  1440 4101 advisor. Account served savings pilot
+  1440 4338 receipt corporate requirement
+  1440 4576 standard fact that products
+  1440 4813 distribution. Filed logistics chapter
+  1440 5050 plan regional maintenance
+  1440 5288 accessibility tax finds record
+  1440 5525 proposal denied.
+  1440 5923 Inventory relevant group relief
+  1440 6160 results region ledger brief usage
+  1440 6397 cause colleague partner. Section
+  1440 6635 notice claim team export staff
+  1440 6872 newsletter review matter presenter
+  1440 7110 advisor account. Served savings pilot
+  1440 7347 receipt corporate requirement
+  1440 7585 standard fact that products
+  1440 7822 distribution filed. Logistics chapter
+  1440 8059 plan regional maintenance
+  1440 8297 accessibility tax finds record
+  1440 8534 proposal denied contract. Onboarding
+  1440 8772 support network scheduled trend
+  1440 9009 suggestions board order update
+  1440 9246 granted agreement marketing.
+  1440 9644 Notice claim team export staff
+  1440 9881 newsletter review matter presenter
+  1440 10119 advisor account served. Savings pilot
+  1440 10356 receipt corporate requirement
+  1440 10594 standard fact that products
+  1440 10831 distribution filed logistics. Chapter
+  1440 11068 plan regional maintenance
+  1440 11306 accessibility tax finds record
+  1440 11543 proposal denied contract onboarding.
+  1440 11781 Support network scheduled trend
+  1440 12018 suggestions board order update
+  1440 12255 granted agreement marketing
+  1440 12493 promotion. Division date profitable
+  1440 12730 insights the meeting forecast hereby
+  1440 12968 vendors practical schedule state.
+  1440 13365 Pilot receipt corporate requirement
+  1440 13603 standard fact that products
+  1440 13840 distribution filed logistics chapter.
+  1440 14077 Plan regional maintenance
+  1440 14315 accessibility tax finds record
+  6480 1616 proposal denied contract onboarding
+  6480 1853 support. Network scheduled trend
+  6480 2091 suggestions board order update
+  6480 2328 granted agreement marketing promotion
+  6480 2566 division. Date profitable insights
+  6480 2803 the meeting forecast hereby vendors
+  6480 3041 practical schedule state entry.
+  6480 3278 Estimate management action budget
+  6480 3515 inventory relevant group relief
+  6480 3753 results region ledger brief.
+  6480 4150 A tall float anchored near the column
+  9252 4388 bottom:
+  9252 4625 compat 15
+  9252 4862 moves it up to
+  9252 5100 the column
+  9252 5337 bottom, or
+  9252 5575 the anchor
+  9252 5812 paragraph to
+  9252 6050 the next
+  9252 6287 column. Trend
+  9252 6524 suggestions
+  9252 6762 board order
+  9252 6999 update
+  9252 7237 granted
+  9252 7474 agreement
+  9252 7711 marketing
+  9252 7949 promotion
+  6480 8186 division date profitable. Insights
+  6480 8424 the meeting forecast hereby vendors
+  6480 8661 practical schedule state entry
+  6480 8899 estimate management. Action budget
+  6480 9136 inventory relevant group relief
+  6480 9373 results region ledger brief usage
+  6480 9611 cause. Colleague partner section
+  6480 9848 notice.
+  6480 10246 Regional maintenance accessibility
+  6480 10483 tax finds record proposal denied
+  6480 10720 contract onboarding support network.
+  6480 10958 Scheduled trend suggestions board
+  6480 11195 order update granted agreement
+  6480 11433 marketing promotion division date.
+  6480 11670 Profitable insights the meeting
+  6480 11908 forecast hereby vendors practical
+  6480 12145 schedule state entry estimate.
+  6480 12382 Management action budget inventory
+  6480 12620 relevant group relief results region
+  6480 12857 ledger brief usage. Cause colleague.
+  6480 13255 Trend suggestions board order update
+  6480 13492 granted agreement marketing promotion
+  6480 13729 division date profitable. Insights
+  6480 13967 the meeting forecast hereby vendors
+  6480 14204 practical schedule state entry
+  float 6768 4406 9072 7862
+page 1 12240 15840
+  1440 1616 estimate management. Action budget
+  1440 1853 inventory relevant group relief
+  1440 2091 results region ledger brief usage
+  1440 2328 cause. Colleague partner section
+  1440 2566 notice claim team export staff
+  1440 2803 newsletter review matter presenter.
+  1440 3041 Advisor account.
+  1440 3438 The meeting forecast hereby vendors
+  1440 3675 practical schedule state entry
+  1440 3913 estimate management action. Budget
+  1440 4150 inventory relevant group relief
+  1440 4388 results region ledger brief usage
+  1440 4625 cause colleague. Partner section
+  1440 4862 notice claim team export staff
+  1440 5100 newsletter review matter presenter
+  1440 5337 advisor. Account served savings pilot
+  1440 5575 receipt corporate requirement
+  1440 5812 standard fact that products
+  1440 6050 distribution. Filed logistics.
+  1440 6447 A float anchored in the second
+  1440 6684 column that reaches back over
+  1440 6922 the first column wraps both
+  1440 7159 columns' text. The meeting
+  1440 7397 forecast hereby vendors
+  1440 7634 practical schedule state entry
+  1440 7871 estimate management action.
+  1440 8109 Budget inventory relevant group
+  1440 8346 relief results region ledger brief
+  1440 8584 usage cause colleague. Partner
+  1440 8821 section notice claim team export.
+  1440 9219 Notice claim team export staff
+  1440 9456 newsletter review matter presenter
+  1440 9693 advisor account served. Savings pilot
+  1440 9931 receipt corporate requirement
+  1440 10168 standard fact that products
+  1440 10406 distribution filed logistics. Chapter
+  1440 10643 plan regional maintenance
+  1440 10880 accessibility tax finds record
+  1440 11118 proposal denied contract onboarding.
+  1440 11355 Support network scheduled trend
+  1440 11593 suggestions board order update
+  1440 11830 granted agreement marketing
+  1440 12068 promotion. Division date.
+  1440 12465 Pilot receipt corporate requirement
+  1440 12702 standard fact that products
+  1440 12940 distribution filed logistics chapter.
+  1440 13177 Plan regional maintenance
+  1440 13415 accessibility tax finds record
+  1440 13652 proposal denied contract onboarding
+  1440 13889 support. Network scheduled trend
+  1440 14127 suggestions board order update
+  6480 1616 granted agreement marketing promotion
+  6480 1853 division. Date profitable insights
+  6480 2091 the meeting forecast hereby vendors
+  6480 2328 practical schedule state entry.
+  6480 2566 Estimate management.
+  6480 2963 Regional maintenance accessibility
+  6480 3201 tax finds record proposal denied
+  6480 3438 contract onboarding support network.
+  6480 3675 Scheduled trend suggestions board
+  6480 3913 order update granted agreement
+  6480 4150 marketing promotion division date.
+  6480 4388 Profitable insights the meeting
+  6480 4625 forecast hereby vendors practical
+  6480 4862 schedule state entry estimate.
+  6480 5100 Management action budget inventory
+  6480 5337 relevant group relief results region
+  6480 5575 ledger brief usage. Cause colleague.
+  float 5184 6271 6912 7711
+page 2 12240 15840
+  1440 1616 The meeting forecast hereby vendors
+  1440 1853 practical schedule state entry
+  1440 2091 estimate management action. Budget
+  1440 2328 inventory relevant group relief
+  1440 2566 results region ledger brief usage
+  1440 2803 cause colleague. Partner section
+  1440 3041 notice claim team export staff
+  1440 3278 newsletter review matter presenter
+  1440 3515 advisor. Account served savings pilot
+  1440 3753 receipt corporate requirement
+  1440 3990 standard fact that products
+  1440 4228 distribution. Filed logistics chapter
+  1440 4465 plan regional maintenance
+  1440 4702 accessibility tax finds record
+  1440 4940 proposal denied. Contract onboarding
+  1440 5177 support network scheduled trend
+  1440 5415 suggestions board order update.
+  1440 5812 Inventory relevant group relief
+  1440 6050 results region ledger brief usage
+  1440 6287 cause colleague partner. Section
+  1440 6524 notice claim team export staff
+  1440 6762 newsletter review matter presenter
+  1440 6999 advisor account. Served savings pilot
+  1440 7237 receipt corporate requirement
+  1440 7474 standard fact that products
+  1440 7711 distribution filed. Logistics chapter
+  1440 7949 plan regional maintenance
+  1440 8186 accessibility tax finds record
+  1440 8424 proposal denied contract. Onboarding
+  1440 8661 support network scheduled trend
+  1440 8899 suggestions board order update
+  1440 9136 granted agreement marketing.
+  1440 9373 Promotion division date profitable
+  1440 9611 insights the meeting forecast hereby
+  1440 9848 vendors.
+  1440 10246 Notice claim team export staff
+  1440 10483 newsletter review matter presenter
+  1440 10720 advisor account served. Savings pilot
+  1440 10958 receipt corporate requirement
+  1440 11195 standard fact that products
+  1440 11433 distribution filed logistics. Chapter
+  1440 11670 plan regional maintenance
+  1440 11908 accessibility tax finds record
+  1440 12145 proposal denied contract onboarding.
+  1440 12382 Support network scheduled trend
+  1440 12620 suggestions board order update
+  1440 12857 granted agreement marketing
+  1440 13095 promotion. Division date profitable
+  1440 13332 insights the meeting forecast hereby
+  1440 13569 vendors practical schedule state.
+  1440 13807 Entry estimate management action
+  1440 14044 budget inventory relevant group
+  1440 14282 relief results.
+  6480 1616 Pilot receipt corporate requirement
+  6480 1853 standard fact that products
+  6480 2091 distribution filed logistics chapter.
+  6480 2328 Plan regional maintenance
+  6480 2566 accessibility tax finds record
+  6480 2803 proposal denied contract onboarding
+  6480 3041 support. Network scheduled trend
+  6480 3278 suggestions board order update
+  6480 3515 granted agreement marketing promotion
+  6480 3753 division. Date profitable insights
+  6480 3990 the meeting forecast hereby vendors
+  6480 4228 practical schedule state entry.
+  6480 4465 Estimate management action budget
+  6480 4702 inventory relevant group relief
+  6480 4940 results region ledger brief. Usage
+  6480 5177 cause colleague partner section
+  6480 5415 notice claim team export staff.
+  8964 5812 A float taller
+  8964 6050 than the rest of
+  8964 6287 the column:
+  8964 6524 compat 15 can't
+  8964 6762 move it up, so
+  8964 6999 the anchor
+  8964 7237 paragraph moves
+  8964 7474 to the next
+  8964 7711 column.
+  8964 7949 Inventory
+  8964 8186 relevant group
+  8964 8424 relief results
+  8964 8661 region ledger
+  8964 8899 brief usage
+  8964 9136 cause colleague
+  8964 9373 partner.
+  8964 9611 Section notice
+  8964 9848 claim team
+  8964 10086 export staff
+  8964 10323 newsletter
+  8964 10560 review matter
+  8964 10798 presenter
+  8964 11035 advisor
+  8964 11273 account. Served
+  8964 11510 savings pilot
+  8964 11748 receipt
+  8964 11985 corporate
+  8964 12222 requirement.
+  8964 12620 Regional
+  8964 12857 maintenance
+  8964 13095 accessibility
+  8964 13332 tax finds record
+  8964 13569 proposal denied
+  8964 13807 contract
+  8964 14044 onboarding
+  8964 14282 support
+  float 6480 5636 8784 14996
+page 3 12240 15840
+  1440 1616 network. Scheduled trend suggestions
+  1440 1853 board order update granted agreement
+  1440 2091 marketing promotion division date.
+  1440 2328 Profitable insights the meeting
+  1440 2566 forecast hereby vendors practical
+  1440 2803 schedule state entry estimate.
+  1440 3041 Management action budget inventory
+  1440 3278 relevant group relief results region
+  1440 3515 ledger brief usage. Cause colleague.
+  1440 3913 Trend suggestions board order update
+  1440 4150 granted agreement marketing promotion
+  1440 4388 division date profitable. Insights
+  1440 4625 the meeting forecast hereby vendors
+  1440 4862 practical schedule state entry
+  1440 5100 estimate management. Action budget
+  1440 5337 inventory relevant group relief
+  1440 5575 results region ledger brief usage
+  1440 5812 cause. Colleague partner section
+  1440 6050 notice claim team export staff
+  1440 6287 newsletter review matter presenter.
+  1440 6524 Advisor account.

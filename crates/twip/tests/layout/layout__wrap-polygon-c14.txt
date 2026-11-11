@@ -1,0 +1,69 @@
+page 0 12240 15840
+  1440 1936 Tight and through wrapping around the polygon
+  1857 2201 Tight wrap around a triangle on the left: each line starts at the diagonal, not at
+  2095 2439 the box's right edge. Inventory relevant group relief results region ledger
+  2332 2676 brief usage cause colleague partner. Section notice claim team export staff
+  2570 2914 newsletter review matter presenter advisor account. Served savings pilot
+  2807 3151 receipt corporate requirement standard fact that products
+  3045 3388 distribution filed. Logistics chapter plan regional maintenance
+  3282 3626 accessibility tax finds record proposal denied contract.
+  3519 3863 Onboarding support network scheduled trend suggestions board
+  3757 4101 order update granted agreement marketing. Promotion division
+  3994 4338 date profitable insights the meeting forecast hereby vendors
+  4232 4576 practical schedule. State entry estimate management
+  4469 4813 action budget inventory relevant group relief results
+  4500 5050 region. Ledger brief usage cause colleague partner.
+  1440 5448 Notice claim team export staff newsletter review matter presenter advisor account
+  1440 5685 served. Savings pilot receipt corporate requirement standard fact that products
+  1440 5923 distribution filed logistics. Chapter plan regional maintenance accessibility tax
+  1440 6160 finds record proposal denied contract onboarding. Support network scheduled trend.
+  1440 6557 Through wrap around a notched polygon on the right: the
+  1440 6795 lines reach into the notch. Pilot receipt corporate
+  1440 7032 requirement standard fact that products distribution
+  1440 7270 filed logistics chapter. Plan regional maintenance
+  1440 7507 accessibility tax finds record proposal denied contract
+  1440 7745 onboarding support. Network scheduled trend
+  1440 7982 suggestions board order update granted agreement
+  1440 8219 marketing promotion division. Date profitable insights
+  1440 8457 the meeting forecast hereby vendors practical schedule
+  1440 8694 state entry. Estimate management action budget
+  1440 8932 inventory relevant group relief results region ledger
+  8606 8932 brief. Usage
+  1440 9169 cause colleague partner section notice claim team
+  8368 9169 export staff
+  1440 9406 newsletter review. Matter presenter advisor account
+  8131 9406 served savings pilot
+  1440 9644 receipt corporate requirement standard fact. That products distribution filed
+  1440 9881 logistics chapter.
+  1440 10279 Regional maintenance accessibility tax finds record proposal denied contract
+  1440 10516 onboarding support network. Scheduled trend suggestions board order update granted
+  1440 10754 agreement marketing promotion division date. Profitable insights the meeting
+  1440 10991 forecast hereby vendors practical schedule state entry estimate. Management action
+  1440 11228 budget inventory.
+  1440 11626 A rectangular polygon with
+  7380 11626 18pt distances above and
+  1440 11863 below: compat 14 drops them.
+  7380 11863 Trend suggestions board order
+  1440 12101 update granted agreement
+  7380 12101 marketing promotion division
+  1440 12338 date profitable. Insights
+  7380 12338 the meeting forecast hereby
+  1440 12575 vendors practical schedule
+  7380 12575 state entry estimate
+  1440 12813 management. Action budget
+  7380 12813 inventory relevant group
+  1440 13050 relief results region ledger
+  7380 13050 brief usage cause. Colleague
+  1440 13288 partner section notice claim
+  7380 13288 team export staff newsletter
+  1440 13525 review matter presenter. Advisor account served savings pilot receipt corporate
+  1440 13763 requirement standard fact that products. Distribution filed logistics chapter plan
+  1440 14000 regional maintenance accessibility tax finds.
+  float 1440 2025 4320 4905
+  float 7920 6381 10800 9261
+  float 4896 11450 7200 13178
+page 1 12240 15840
+  1440 1616 The meeting forecast hereby vendors practical schedule state entry estimate
+  1440 1853 management action. Budget inventory relevant group relief results region ledger
+  1440 2091 brief usage cause colleague. Partner section notice claim team export staff
+  1440 2328 newsletter review matter presenter advisor. Account served savings pilot.

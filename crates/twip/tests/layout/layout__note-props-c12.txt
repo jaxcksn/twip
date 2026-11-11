@@ -1,0 +1,87 @@
+page 0 12240 15840
+  1440 1936 Note properties in sections
+  1440 2201 Section 1: footnotes beneath the text, lower-roman from iiiiii, and an endnoteI.
+  1440 2439 Inventory relevant group relief results region ledger brief usage cause colleague
+  1440 2676 partner. Section notice claim team export staff newsletter review matter presenter
+  1440 2914 advisor account. Served savings pilot receipt corporate requirement standard fact
+  1440 3151 that products distribution filed. Logistics chapter plan regional.
+  1440 3548 A second footnoteiv and a second endnoteII.
+  1440 3946 Section 1 ends here; its endnotes follow.
+  1440 4487 I Endnote I, at the section end.
+  1440 4687 II Endnote II.
+  1440 5110 iii Footnote iii.
+  1440 5310 iv Footnote iv.
+page 1 12240 15840
+  1440 1616 Section 2: upper-letter footnotes restarting on each pageA, an endnotee. Notice
+  1440 1853 claim team export staff newsletter review matter presenter advisor account served.
+  1440 2091 Savings pilot receipt corporate requirement standard fact that products
+  1440 2328 distribution filed logistics. Chapter plan regional maintenance accessibility
+  1440 2566 tax.
+  1440 2963 Regional maintenance accessibility tax finds record proposal denied contract
+  1440 3201 onboarding support network. Scheduled trend suggestions board order update granted
+  1440 3438 agreement marketing promotion division date. Profitable insights the meeting
+  1440 3675 forecast hereby vendors practical schedule state entry estimate. Management action
+  1440 3913 budget inventory relevant group relief results region ledger brief usage. Cause
+  1440 4150 colleague partner section notice claim team export staff newsletter review matter.
+  1440 4388 Presenter advisor account served savings pilot receipt corporate requirement
+  1440 4625 standard fact that. Products distribution filed logistics chapter plan regional
+  1440 4862 maintenance accessibility tax finds record. Proposal denied contract onboarding
+  1440 5100 support network scheduled trend suggestions board order update. Granted agreement
+  1440 5337 marketing promotion division date profitable insights the meeting forecast hereby.
+  1440 5575 Vendors practical.
+  1440 5972 Trend suggestions board order update granted agreement marketing promotion
+  1440 6210 division date profitable. Insights the meeting forecast hereby vendors practical
+  1440 6447 schedule state entry estimate management. Action budget inventory relevant group
+  1440 6684 relief results region ledger brief usage cause. Colleague partner section notice
+  1440 6922 claim team export staff newsletter review matter presenter. Advisor account served
+  1440 7159 savings pilot receipt corporate requirement standard fact that products.
+  1440 7397 Distribution filed logistics chapter plan regional maintenance accessibility tax
+  1440 7634 finds record proposal. Denied contract onboarding support network scheduled trend
+  1440 7871 suggestions board order update granted. Agreement marketing promotion division
+  1440 8109 date profitable insights the meeting forecast hereby vendors. Practical schedule
+  1440 8346 state entry estimate management action budget inventory relevant group relief.
+  1440 8584 Results region.
+  1440 8981 The meeting forecast hereby vendors practical schedule state entry estimate
+  1440 9219 management action. Budget inventory relevant group relief results region ledger
+  1440 9456 brief usage cause colleague. Partner section notice claim team export staff
+  1440 9693 newsletter review matter presenter advisor. Account served savings pilot receipt
+  1440 9931 corporate requirement standard fact that products distribution. Filed logistics
+  1440 10168 chapter plan regional maintenance accessibility tax finds record proposal denied.
+  1440 10406 Contract onboarding support network scheduled trend suggestions board order update
+  1440 10643 granted agreement. Marketing promotion division date profitable insights the
+  1440 10880 meeting forecast hereby vendors practical. Schedule state entry estimate
+  1440 11118 management action budget inventory relevant group relief results. Region ledger
+  1440 11355 brief usage cause colleague partner section notice claim team export. Staff
+  1440 11593 newsletter.
+  1440 11990 Inventory relevant group relief results region ledger brief usage cause colleague
+  1440 12228 partner. Section notice claim team export staff newsletter review matter presenter
+  1440 12465 advisor account. Served savings pilot receipt corporate requirement standard fact
+  1440 12702 that products distribution filed. Logistics chapter plan regional maintenance
+  1440 12940 accessibility tax finds record proposal denied contract. Onboarding support
+  1440 13177 network scheduled trend suggestions board order update granted agreement
+  1440 13415 marketing. Promotion division date profitable insights the meeting forecast hereby
+  1440 13652 vendors practical schedule. State entry estimate management action budget
+  1440 13889 inventory relevant group relief results region. Ledger brief usage cause colleague
+  1440 14303 A Footnote A on page 2.
+page 2 12240 15840
+  1440 1616 partner section notice claim team export staff. Newsletter review matter presenter
+  1440 1853 advisor account served savings pilot receipt corporate requirement. Standard fact.
+  1440 2251 Notice claim team export staff newsletter review matter presenter advisor account
+  1440 2488 served. Savings pilot receipt corporate requirement standard fact that products
+  1440 2726 distribution filed logistics. Chapter plan regional maintenance accessibility tax
+  1440 2963 finds record proposal denied contract onboarding. Support network scheduled trend
+  1440 3201 suggestions board order update granted agreement marketing promotion. Division
+  1440 3438 date profitable insights the meeting forecast hereby vendors practical schedule
+  1440 3675 state. Entry estimate management action budget inventory relevant group relief
+  1440 3913 results region ledger. Brief usage cause colleague partner section notice claim
+  1440 4150 team export staff newsletter. Review matter presenter advisor account served
+  1440 4388 savings pilot receipt corporate requirement standard. Fact that products
+  1440 4625 distribution filed logistics chapter plan regional maintenance accessibility tax.
+  1440 4862 Finds record.
+  1440 5260 A footnote on the next pageA, and an endnotee. Pilot receipt corporate requirement
+  1440 5497 standard fact that products distribution filed logistics chapter. Plan regional
+  1440 5735 maintenance accessibility tax finds record proposal denied contract onboarding
+  1440 5972 support. Network scheduled trend suggestions board order.
+  1440 6514 e Endnote e, referenced on page 2.
+  1440 6714 e Section 2's endnotes are lower-letter from e, restarting on each page.
+  1440 14303 A Footnote A again: the numbering restarted.

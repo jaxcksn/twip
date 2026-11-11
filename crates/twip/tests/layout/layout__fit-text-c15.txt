@@ -1,0 +1,18 @@
+page 0 12240 15840
+  1440 1616 S00 abcdef|end of the first line, which is special in compat 15.
+  1440 2173 Fitted text
+  1440 2439 Expanded: abc def| then the rest of the line. Inventory
+  1440 2676 relevant group relief results region ledger brief usage cause colleague partner.
+  1440 2914 Section notice claim team export staff newsletter review.
+  1440 3311 Squeezed: a region much wider than its target| Notice claim team export staff newsletter review matter
+  1440 3548 presenter advisor account served. Savings pilot receipt corporate requirement
+  1440 3786 standard fact that.
+  1440 4183 Two runs, one region: first second| Pilot receipt corporate
+  1440 4421 requirement standard fact that products distribution filed logistics chapter. Plan
+  1440 4658 regional maintenance accessibility tax finds record proposal.
+  1440 5056 S00 abcdefghij|end
+  1440 5453 S00
+  1440 5690 abcdef|end
+  1440 6088 A region wider than the line:
+  1440 6325 xxxxxxxxxx
+  1440 6563 after it.

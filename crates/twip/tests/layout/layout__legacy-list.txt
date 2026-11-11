@@ -1,0 +1,14 @@
+page 0 12240 15840
+  1440 1936 Legacy list levels
+  1800 2201 1.Legacy level, space 6pt, indent 36pt: the text 36pt after the number's
+  2160 2439 start. Inventory relevant group relief results region ledger brief usage
+  2160 2676 cause colleague partner. Section notice claim team export staff newsletter
+  2160 2914 review.
+  1800 3151 2.Second item at that level.
+  1800 3388 1.Legacy level, space 18pt, indent 18pt: number width plus 18pt.
+  2759 3626 1.Legacy level, centred number.
+  2878 3863 1.Legacy level, right-aligned number.
+  1440 4101 The same indents without w:legacy, for comparison:
+  1800 4498 1.A normal level: the tab after the number goes to the hanging indent. Notice
+  2160 4736 claim team export staff newsletter review matter presenter advisor account
+  2160 4973 served. Savings pilot receipt corporate requirement standard fact that.

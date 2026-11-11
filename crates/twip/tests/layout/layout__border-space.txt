@@ -1,0 +1,31 @@
+page 0 12240 15840
+  1440 1936 Border w:space
+  1440 2211 Top and bottom borders with w:space 0 (kept as 0pt).
+  1440 2619 Plain paragraph between.
+  1440 3046 Top and bottom borders with w:space 1 (kept as 1pt).
+  1440 3474 Plain paragraph between.
+  1440 3961 Top and bottom borders with w:space 4 (kept as 4pt).
+  1440 4448 Plain paragraph between.
+  1440 5336 Top and bottom borders with w:space 24 (kept as 24pt).
+  1440 6223 Plain paragraph between.
+  1440 7251 Top and bottom borders with w:space 31 (kept as 31pt).
+  1440 8278 Plain paragraph between.
+  1440 8686 Top and bottom borders with w:space 32 (kept as 0pt).
+  1440 9093 Plain paragraph between.
+  1440 9660 Top and bottom borders with w:space 40 (kept as 8pt).
+  1440 10228 Plain paragraph between.
+  1440 11195 Top and bottom borders with w:space 60 (kept as 28pt).
+  1440 12163 Plain paragraph between.
+  1440 13190 Top and bottom borders with w:space 255 (kept as 31pt).
+  1440 14217 Plain paragraph between.
+page 1 12240 15840
+  1440 1616 Left and right borders with w:space 12 and 40 (8pt): the text keeps its indents, the
+  1440 1853 lines drawn outside them.
+  1440 2251 Page borders measured from the text: w:space 4, 31, 40 (clamped to 31) and 255 (31).
+page 2 12240 15840
+  1440 1616 Page borders measured from the page edge, 24pt in. Regional maintenance
+  1440 1853 accessibility tax finds record proposal denied contract onboarding support
+  1440 2091 network. Scheduled trend suggestions board order update granted agreement
+  1440 2328 marketing promotion division date. Profitable insights the meeting forecast hereby
+  1440 2566 vendors practical schedule state entry estimate. Management action budget
+  1440 2803 inventory.

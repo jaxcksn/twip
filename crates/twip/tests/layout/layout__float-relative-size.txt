@@ -1,0 +1,86 @@
+page 0 12240 15840
+  1440 1936 Relative size and position
+  6300 2201 Inventory relevant group relief results
+  6300 2439 region ledger brief usage cause
+  6300 2676 colleague partner. Section notice claim
+  6300 2914 team export staff newsletter review
+  1440 3151 matter presenter advisor account. Served savings pilot receipt corporate
+  1440 3388 requirement standard fact that products distribution filed. Logistics chapter plan
+  1440 3626 regional maintenance accessibility tax finds record proposal denied contract.
+  1440 3863 Onboarding support.
+  1440 4261 Notice claim team export staff newsletter review matter
+  1440 4498 presenter advisor account served. Savings pilot receipt
+  1440 4736 corporate requirement standard fact that products
+  1440 4973 distribution filed logistics. Chapter plan regional
+  1440 5210 maintenance accessibility tax finds record proposal denied
+  1440 5448 contract onboarding. Support network scheduled trend
+  1440 5685 suggestions board order update granted agreement marketing
+  1440 5923 promotion. Division date.
+  1440 6320 Pilot receipt
+  5688 6320 corporate requirement standard fact that
+  1440 6557 products
+  5688 6557 distribution filed logistics chapter. Plan
+  1440 6795 regional
+  5688 6795 maintenance accessibility tax finds record
+  1440 7032 proposal denied
+  5688 7032 contract onboarding support. Network
+  1440 7270 scheduled trend suggestions board order update granted agreement marketing
+  1440 7507 promotion division. Date profitable insights the meeting forecast hereby vendors
+  1440 7745 practical schedule state entry. Estimate management.
+  1440 8142 A box 80% of the left margin wide, in that margin. Regional maintenance
+  1440 8379 accessibility tax finds record proposal denied contract onboarding support
+  1440 8617 network. Scheduled trend suggestions board order update granted agreement
+  1440 8854 marketing promotion division date. Profitable insights the meeting forecast hereby
+  1440 9092 vendors practical schedule state entry estimate. Management action budget
+  1440 9329 inventory.
+  1440 9726 A picture 40% of the
+  8172 9726 margin wide keeps its
+  1440 9964 aspect ratio (its
+  8172 9964 relative height
+  1440 10201 doesn't apply). Trend
+  8172 10201 suggestions board
+  1440 10439 order update granted
+  8172 10439 agreement marketing
+  1440 10676 promotion division
+  8172 10676 date profitable.
+  1440 10914 Insights the meeting
+  8172 10914 forecast hereby
+  1440 11151 vendors practical
+  8172 11151 schedule state entry
+  1440 11388 estimate management.
+  8172 11388 Action budget
+  1440 11626 inventory relevant
+  8172 11626 group relief results
+  1440 11863 region ledger brief
+  8172 11863 usage cause. Colleague
+  1440 12101 partner section
+  8172 12101 notice.
+  1440 12498 A VML box 40% of the
+  8172 12498 margin wide at 30% of
+  1440 12735 it. The meeting
+  8172 12735 forecast hereby
+  1440 12973 vendors practical
+  8172 12973 schedule state entry
+  1440 13210 estimate management
+  8172 13210 action. Budget
+  1440 13448 inventory relevant group relief results region ledger brief usage cause colleague.
+  1440 13685 Partner section notice claim team export staff newsletter review matter presenter
+  1440 13923 advisor. Account served savings pilot.
+  1589 2278 50% of the margin width
+  8537 4338 30% of the page, 10% high
+  3929 6397 At 25% of the
+  3929 6634 margin
+  149 8219 Left
+  149 8456 margin,
+  149 8694 80%
+  float 1440 2025 6120 2745
+  float 8388 4085 12060 5669
+  float 3780 6144 5508 6864
+  float 0 7966 1152 8686
+  float 4248 9550 7992 12358
+  float 4248 12322 7992 13122
+page 1 12240 15840
+  1440 1616 Inventory relevant group relief results region ledger brief usage cause colleague
+  1440 1853 partner. Section notice claim team export staff newsletter review matter presenter
+  1440 2091 advisor account. Served savings pilot receipt corporate requirement standard fact
+  1440 2328 that products distribution filed. Logistics chapter plan regional.

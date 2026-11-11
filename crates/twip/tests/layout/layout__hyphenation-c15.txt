@@ -1,0 +1,84 @@
+page 0 12240 15840
+  1440 1936 Automatic hyphenation
+  1440 2201 Hyphenated, at most two hyphens in a row, a
+  1440 2439 36pt zone (compat 14): representative hyphe-
+  1440 2676 nation international administration respon-
+  1440 2914 sibilities organisational considerations
+  1440 3151 notwithstanding comprehensive interpre-
+  1440 3388 tation documentation telecommunication cha-
+  1440 3626 racteristically representative hyphenation
+  1440 3863 international administration responsibili-
+  1440 4101 ties organisational considerations not-
+  1440 4338 withstanding comprehensive interpretation
+  1440 4576 documentation telecommunication characte-
+  1440 4813 ristically
+  1440 5210 CAPITALS AREN'T HYPHENATED: REPRESENTATIVE
+  1440 5448 HYPHENATION INTERNATIONAL ADMINISTRATION
+  1440 5685 RESPONSIBILITIES ORGANISATIONAL
+  1440 5923 CONSIDERATIONS NOTWITHSTANDING
+  1440 6160 COMPREHENSIVE INTERPRETATION DOCUMENTATION
+  1440 6397 TELECOMMUNICATION CHARACTERISTICALLY
+  1440 6795 A word marked noProof isn't: representative
+  1440 7032 documentation representative hyphenation
+  1440 7270 international administration responsibili-
+  1440 7507 ties organisational considerations not-
+  1440 7745 withstanding comprehensive interpretation
+  1440 7982 documentation telecommunication characte-
+  1440 8219 ristically
+  1440 8617 representative hyphenation international administration responsibilities
+  1440 8854 organisational considerations notwithstanding comprehensive interpretation
+  1440 9092 documentation telecommunication characteristically representative hyphenation
+  1440 9329 international administration responsibilities organisational considerations
+  1440 9566 notwithstanding comprehensive interpretation documentation telecommunication
+  1440 9804 characteristically representative hyphenation international administration
+  1440 10041 responsibilities organisational considerations notwithstanding comprehensive
+  1440 10279 interpretation documentation telecommunication characteristically
+  1440 10676 representative hyphenation international administration responsibilities
+  1440 10914 organisational considerations notwithstanding comprehensive interpretation
+  1440 11151 documentation telecommunication characteristically representative hyphenation
+  1440 11388 international administration responsibilities organisational considerations
+  1440 11626 notwithstanding comprehensive interpretation documentation telecommunication
+  1440 11863 characteristically representative hyphenation international administration
+  1440 12101 responsibilities organisational considerations notwithstanding comprehensive
+  1440 12338 interpretation documentation telecommunication characteristically
+  1440 12735 representative hyphenation international administration responsibilities
+  1440 12973 organisational considerations notwithstanding comprehensive interpretation
+  1440 13210 documentation telecommunication characteristically representative hyphenation
+  1440 13448 international administration responsibilities organisational considerations
+  1440 13685 notwithstanding comprehensive interpretation documentation telecommunication
+  1440 13923 characteristically representative hyphenation international administration
+page 1 12240 15840
+  1440 1616 responsibilities organisational considerations notwithstanding comprehensive
+  1440 1853 interpretation documentation telecommunication characteristically
+  1440 2251 representative hyphenation international administration responsibilities
+  1440 2488 organisational considerations notwithstanding comprehensive interpretation
+  1440 2726 documentation telecommunication characteristically representative hyphenation
+  1440 2963 international administration responsibilities organisational considerations
+  1440 3201 notwithstanding comprehensive interpretation documentation telecommunication
+  1440 3438 characteristically representative hyphenation international administration
+  1440 3675 responsibilities organisational considerations notwithstanding comprehensive
+  1440 3913 interpretation documentation telecommunication characteristically
+  1440 4310 representative hyphenation international administration responsibilities
+  1440 4548 organisational considerations notwithstanding comprehensive interpretation
+  1440 4785 documentation telecommunication characteristically representative hyphenation
+  1440 5022 international administration responsibilities organisational considerations
+  1440 5260 notwithstanding comprehensive interpretation documentation telecommunication
+  1440 5497 characteristically representative hyphenation international administration
+  1440 5735 responsibilities organisational considerations notwithstanding comprehensive
+  1440 5972 interpretation documentation telecommunication characteristically
+  1440 6370 representative hyphenation international administration responsibilities
+  1440 6607 organisational considerations notwithstanding comprehensive interpretation
+  1440 6844 documentation telecommunication characteristically representative hyphenation
+  1440 7082 international administration responsibilities organisational considerations
+  1440 7319 notwithstanding comprehensive interpretation documentation telecommunication
+  1440 7557 characteristically representative hyphenation international administration
+  1440 7794 responsibilities organisational considerations notwithstanding comprehensive
+  1440 8031 interpretation documentation telecommunication characteristically
+  1440 8429 representative hyphenation international administration responsibilities
+  1440 8666 organisational considerations notwithstanding comprehensive interpretation
+  1440 8904 documentation telecommunication characteristically representative hyphenation
+  1440 9141 international administration responsibilities organisational considerations
+  1440 9379 notwithstanding comprehensive interpretation documentation telecommunication
+  1440 9616 characteristically representative hyphenation international administration
+  1440 9853 responsibilities organisational considerations notwithstanding comprehensive
+  1440 10091 interpretation documentation telecommunication characteristically
