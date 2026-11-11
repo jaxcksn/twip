@@ -182,6 +182,20 @@ fn each_page_footnotes_count_from_their_page() {
 }
 
 #[test]
+fn compat_14_each_page_endnotes_count_from_their_reference_page() {
+    let brk = r#"<w:p><w:r><w:br w:type="page"/></w:r></w:p>"#;
+    let pr = r#"<w:endnotePr><w:numRestart w:val="eachPage"/></w:endnotePr>"#;
+    let body = para("a", &["e1", "e2"]) + brk + &para("b", &["e3"]) + &sect(pr, true);
+    let pages = |settings: &str| -> Option<Vec<String>> {
+        Some(super::page_chars(&notes_doc(&body, settings)?).iter().map(|p| p.iter().map(|c| c.0).collect()).collect())
+    };
+    let Some(c12) = pages("") else { return };
+    assert!(c12[0].starts_with("aiii") && c12[1].starts_with("biN"), "{c12:?}");
+    let Some(c15) = pages(C15) else { return };
+    assert!(c15[0].starts_with("a88") && c15[1].starts_with("b8"), "{c15:?}");
+}
+
+#[test]
 fn compat_14_note_waits_for_the_next_page_behind_its_line() {
     let c15 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
     let body = |with: Option<usize>| {

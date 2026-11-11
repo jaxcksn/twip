@@ -107,8 +107,8 @@ pub struct JobNotes {
     /// The section each endnote follows (by `endnotes`' order).
     ends: Vec<usize>,
     separator: Vec<Block>,
-    /// The automatic footnotes numbered by page, in reference order, with their section's start and format.
-    paged: Vec<(i64, i64, String)>,
+    /// The automatic notes numbered by page, in reference order, with their section's start and format.
+    paged: Vec<(NoteKind, i64, i64, String)>,
 }
 
 impl JobNotes {
@@ -135,12 +135,10 @@ impl JobNotes {
                 let fmt = p.fmt.as_deref().unwrap_or(if k == 0 { "decimal" } else { "lowerRoman" });
                 let mut number = crate::docx::numbering::format_number(p.start + count[k], fmt);
                 if p.restart == NoteRestart::EachPage && !custom {
-                    match kind {
-                        NoteKind::Foot => paged.push((id, p.start, fmt.to_string())),
-                        // ponytail: compat ≤ 14 endnotes restarting each page count on continuously; per-page needs the
-                        // reference's page (endnotes show no area there).
-                        NoteKind::End if doc.settings.compat() == crate::docx::Compat::Generic => number = "8".into(),
-                        NoteKind::End => {}
+                    if kind == NoteKind::End && doc.settings.compat() == crate::docx::Compat::Generic {
+                        number = "8".into();
+                    } else {
+                        paged.push((kind, id, p.start, fmt.to_string()));
                     }
                 }
                 numbers.insert((kind, id), number);
@@ -169,23 +167,23 @@ impl JobNotes {
 }
 
 impl JobNotes {
-    /// The numbers of the footnotes restarting each page, counted on the pages their references landed on, where they
-    /// differ from the current ones.
+    /// The numbers of the notes restarting each page, counted per kind on the pages their references landed on, where
+    /// they differ from the current ones.
     fn renumbered(&self, pages: &[PageRecord]) -> Option<HashMap<(NoteKind, i64), String>> {
         if self.paged.is_empty() {
             return None;
         }
-        // A footnote's first part is drawn on its reference's page.
-        let page_of = |id: i64| pages.iter().position(|pg| pg.effects.notes_shown.iter().any(|n| (n.0, n.1) == (NoteKind::Foot, id)));
-        let mut count: HashMap<usize, i64> = HashMap::new();
+        // A footnote's first part is drawn on its reference's page; an endnote's reference is shown there.
+        let page_of = |kind, id| pages.iter().position(|pg| pg.effects.notes_shown.iter().any(|n| (n.0, n.1) == (kind, id)));
+        let mut count: HashMap<(NoteKind, usize), i64> = HashMap::new();
         let mut changed = HashMap::new();
-        for (id, start, fmt) in &self.paged {
-            let Some(pi) = page_of(*id) else { continue };
-            let c = count.entry(pi).or_insert(0);
+        for &(kind, id, start, ref fmt) in &self.paged {
+            let Some(pi) = page_of(kind, id) else { continue };
+            let c = count.entry((kind, pi)).or_insert(0);
             let n = crate::docx::numbering::format_number(start + *c, fmt);
             *c += 1;
-            if self.numbers.get(&(NoteKind::Foot, *id)) != Some(&n) {
-                changed.insert((NoteKind::Foot, *id), n);
+            if self.numbers.get(&(kind, id)) != Some(&n) {
+                changed.insert((kind, id), n);
             }
         }
         (!changed.is_empty()).then_some(changed)

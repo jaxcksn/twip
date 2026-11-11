@@ -1643,6 +1643,12 @@ impl<'d> PageFill<'d, '_> {
                 _ => (l, pb.fragment(i, p, self.ctx.fonts)),
             };
             lines.push(PlacedLine { x: 0.0, y: yy, line });
+            // An endnote's reference shows on its line's page (numbers restarting each page count from there).
+            // ponytail: references in table cells aren't recorded, so they count on continuously; record them where
+            // the rows are placed if documents need it.
+            for (kind, id) in pb.notes(i).into_iter().filter(|r| r.0 == NoteKind::End) {
+                self.at.effects.notes_shown.push((kind, id, self.note_numbers.get(&(kind, id)).cloned().unwrap_or_default()));
+            }
             self.line_number(carry, style, col, yy + l.baseline, &mut numbers);
             yy += l.pitch;
             if matches!(l.hard, Some(Kind::PageBreak | Kind::ColumnBreak)) {
