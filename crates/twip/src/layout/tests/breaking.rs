@@ -1735,3 +1735,22 @@ fn a_compat_14_line_blocked_by_a_frame_goes_just_below_it() {
     // The frames end at 1689, 2289, 2889, 3489 twips: one line below each, 30pt apart.
     assert!(y.len() == 4 && y.windows(2).all(|w| (w[1] - w[0] - 30.0).abs() < 0.5), "{y:?}");
 }
+
+/// Compat 12 settings with the options in place of `{}`.
+const C12_WITH: &str = r#"<w:compat>{}<w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="12"/></w:compat>"#;
+
+#[test]
+fn no_extra_line_spacing_puts_an_exact_lines_baseline_at_its_ascent() {
+    let p = r#"<w:p><w:pPr><w:spacing w:line="400" w:lineRule="exact"/></w:pPr><w:r><w:t>Exact</w:t></w:r></w:p>"#;
+    let Some(off) = baselines("", ARIAL_11, p) else { return };
+    let on = baselines(&C12_WITH.replace("{}", "<w:noExtraLineSpacing/>"), ARIAL_11, p).expect("Arial");
+    assert!((off[0].3 - 72.0 - 16.0).abs() < 0.01 && (on[0].3 - 72.0 - 10.32).abs() < 0.01, "{off:?} {on:?}");
+}
+
+#[test]
+fn suppress_bottom_spacing_lets_an_exact_line_into_the_room_under_its_text() {
+    let body = r#"<w:p><w:pPr><w:spacing w:after="0" w:line="433" w:lineRule="exact"/></w:pPr><w:r><w:t>x</w:t></w:r></w:p>"#.repeat(31);
+    let Some(off) = baselines("", ARIAL_11, &body) else { return };
+    let on = baselines(&C12_WITH.replace("{}", "<w:suppressBottomSpacing/>"), ARIAL_11, &body).expect("Arial");
+    assert_eq!((off.len(), on.len()), (29, 30));
+}

@@ -141,6 +141,8 @@ pub struct Frame {
     /// The hanging indent is a tab stop: for any tab, for a list number's tab.
     pub hang_stop: bool,
     pub number_hang_stop: bool,
+    pub exact_on_top: bool,
+    pub exact_extra_after: bool,
 }
 
 impl Frame {
@@ -166,6 +168,8 @@ impl Frame {
             strict_kinsoku: e.strict_kinsoku,
             hang_stop: !e.no_tab_hang_ind,
             number_hang_stop: !e.no_tab_hang_ind && !e.no_number_hang_stop,
+            exact_on_top: e.exact_on_top,
+            exact_extra_after: e.exact_extra_after,
         }
     }
 }
@@ -1791,7 +1795,11 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
         LineRule::Exact => {
             line.pitch = style.line;
             let x = Lu::round_half_up(style.line).0;
-            line.baseline = Lu(x - x / 5).to_pt();
+            let down = if frame.exact_on_top { (x - Lu::round_half_up(asc).0).max(0) } else { x / 5 };
+            line.baseline = Lu(x - down).to_pt();
+            if frame.exact_extra_after {
+                line.below = (Lu(down).to_pt() - desc).max(0.0);
+            }
         }
     }
     // Document grid
