@@ -193,6 +193,12 @@ fn compat_14_each_page_endnotes_count_from_their_reference_page() {
     assert!(c12[0].starts_with("aiii") && c12[1].starts_with("biN"), "{c12:?}");
     let Some(c15) = pages(C15) else { return };
     assert!(c15[0].starts_with("a88") && c15[1].starts_with("b8"), "{c15:?}");
+    // A reference in a table cell counts on its row's page too.
+    let cell = format!(r#"<w:tbl><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:tc>{}</w:tc></w:tr></w:tbl><w:p/>"#, para("b", &["e3"]));
+    let body = para("a", &["e1", "e2"]) + brk + &cell + &sect(pr, true);
+    let tabled = super::page_chars(&notes_doc(&body, "").expect("lays out"));
+    let tabled: Vec<String> = tabled.iter().map(|p| p.iter().map(|c| c.0).collect()).collect();
+    assert!(tabled[1].starts_with("biN"), "{tabled:?}");
 }
 
 #[test]

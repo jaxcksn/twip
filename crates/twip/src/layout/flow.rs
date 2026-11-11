@@ -788,6 +788,13 @@ impl<'d> PageFill<'d, '_> {
         Ok(self.separator_story("footnote:continuationNotice", width, memos)?.map_or(0.0, |s| s.height))
     }
 
+    /// Records the endnote references among `refs` as shown on this page (numbers restarting each page count from there).
+    fn show_endnote_refs(&mut self, refs: impl IntoIterator<Item = (NoteKind, i64)>) {
+        for (kind, id) in refs.into_iter().filter(|r| r.0 == NoteKind::End) {
+            self.at.effects.notes_shown.push((kind, id, self.note_numbers.get(&(kind, id)).cloned().unwrap_or_default()));
+        }
+    }
+
     /// Adds the footnotes `refs` of a line ending at `line_bottom` to `area`, the parts that don't fit to `rest`; whether
     /// the line fits. `defer`: the line starts its paragraph's part in the column (or may not be parted from it), so in
     /// compat ≤ 14 a note that can't start here waits whole for the next page when a new note before it on the page
@@ -1643,12 +1650,7 @@ impl<'d> PageFill<'d, '_> {
                 _ => (l, pb.fragment(i, p, self.ctx.fonts)),
             };
             lines.push(PlacedLine { x: 0.0, y: yy, line });
-            // An endnote's reference shows on its line's page (numbers restarting each page count from there).
-            // ponytail: references in table cells aren't recorded, so they count on continuously; record them where
-            // the rows are placed if documents need it.
-            for (kind, id) in pb.notes(i).into_iter().filter(|r| r.0 == NoteKind::End) {
-                self.at.effects.notes_shown.push((kind, id, self.note_numbers.get(&(kind, id)).cloned().unwrap_or_default()));
-            }
+            self.show_endnote_refs(pb.notes(i));
             self.line_number(carry, style, col, yy + l.baseline, &mut numbers);
             yy += l.pitch;
             if matches!(l.hard, Some(Kind::PageBreak | Kind::ColumnBreak)) {
@@ -2528,6 +2530,11 @@ impl<'d> PageFill<'d, '_> {
         let below_content = pos.at.at_start() && !*empty;
         let mut keep: Option<(usize, usize, f64, NoteArea, usize)> = None;
         let mut opened = None;
+        // The note references of the rows placed, by their index in `rows`.
+        let mut row_refs: Vec<(usize, (NoteKind, i64))> = Vec::new();
+        let cell_refs = |parts: &[CellPart], k: usize| -> Vec<(usize, (NoteKind, i64))> {
+            parts.iter().flat_map(|cu| cu.units.iter().flat_map(|u| u.notes.iter().map(move |&r| (k, r)))).collect()
+        };
         while pos.at.index() < n {
             let ri = pos.at.index();
             let row = &tb.rows[ri];
@@ -2591,6 +2598,7 @@ impl<'d> PageFill<'d, '_> {
                 if rest.is_none() {
                     placed.push((ri, *y, rows.len()));
                 }
+                row_refs.extend(cell_refs(&parts, rows.len()));
                 rows.push(match &rest {
                     None if carries => draw_row(tb, ri, at_x, *y, height, Some(&parts), last),
                     None => {
@@ -2677,16 +2685,19 @@ impl<'d> PageFill<'d, '_> {
                     move_floats(Some(&mut redrawn), &page_floats, &frames, tb.rows[rs].top_border, up(rs));
                     rows[idx] = redrawn;
                 }
+                row_refs.extend(cell_refs(&fitted, rows.len()));
                 rows.push(draw_row(tb, ri, at_x, *y, h, Some(&fitted), true));
                 move_floats(rows.last_mut(), &page_floats, &frames, row.top_border, up(ri));
                 *y += h + tb.bottom_border;
                 *empty = false;
                 pos.at = At::RowPart { row: ri, rest: Rc::new(left) };
+                self.show_endnote_refs(row_refs.into_iter().map(|r| r.1));
                 finish(rows, out, at_x, opened, false);
                 self.table_obstacle(pos.block, tb, at_x, part_top, *y, flow_y, settled);
                 return Ok(self.text_goes_on(fp.is_some(), pos, carry, y, empty, (flow_y, was_empty)));
             }
             if at_top {
+                row_refs.extend(cell_refs(&parts, rows.len()));
                 rows.push(draw_row(tb, ri, at_x, *y, height, Some(&parts), last));
                 move_floats(rows.last_mut(), &page_floats, &frames, row.top_border, up(ri));
                 *y += height + if last { tb.bottom_border } else { 0.0 };
@@ -2700,6 +2711,7 @@ impl<'d> PageFill<'d, '_> {
                 *area = area0;
                 carry.note_rest.truncate(notes0);
                 rows.truncate(kidx);
+                row_refs.retain(|r| r.0 < kidx);
                 if rows.is_empty() && below_content {
                     pos.at = At::Start;
                     return Ok(Stop::Full);
@@ -2722,10 +2734,12 @@ impl<'d> PageFill<'d, '_> {
             if split {
                 *y += tb.bottom_border;
             }
+            self.show_endnote_refs(row_refs.into_iter().map(|r| r.1));
             finish(rows, out, at_x, opened, true);
             self.table_obstacle(pos.block, tb, at_x, part_top, *y, flow_y, settled);
             return Ok(self.text_goes_on(fp.is_some() && split, pos, carry, y, empty, (flow_y, was_empty)));
         }
+        self.show_endnote_refs(row_refs.into_iter().map(|r| r.1));
         finish(rows, out, at_x, opened, false);
         if fp.is_some() {
             self.table_obstacle(pos.block, tb, at_x, part_top, *y, flow_y, settled);
