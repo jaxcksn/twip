@@ -665,11 +665,11 @@ fn compat_12_breaks_a_word_too_long_for_the_piece_beside_a_vertical_table_and_co
 #[test]
 fn compat_12_places_a_vertical_table_after_lines_that_jumped_an_earlier_one_by_their_room() {
     let pc = "pc amber1 garden2 quietly3 holds4 seven5 bright6 copper7 lanterns8 over9 narrow10 wooden11 bridges12";
-    let fill = |w1: u32, w2: u32| {
+    let fill = |pa: &str, w1: u32, w2: u32| {
         // Cell margins of 108 tw: compat 12 moves each table 5.4pt back.
         let mar = r#"<w:tblPr><w:tblCellMar><w:left w:w="108" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar>"#;
         let table = |p: &str, rows: usize, w: u32| exact_table(p, &vec![263; rows], w).replacen("<w:tblPr>", mar, 1);
-        let body = format!("{}{}{}{}{}", para("pa", ""), table("r", 49, w1), para("pb", ""), table("s", 8, w2), para(pc, ""));
+        let body = format!("{}{}{}{}{}", if pa.is_empty() { String::new() } else { para(pa, "") }, table("r", 49, w1), para("pb", ""), table("s", 8, w2), para(pc, ""));
         let mut doc = inch_section(&body)?;
         doc.settings.compat_mode = 12;
         let s0 = cells_on(&doc, 0).iter().find(|c| c.0 == "s0").map(|c| c.1);
@@ -677,13 +677,16 @@ fn compat_12_places_a_vertical_table_after_lines_that_jumped_an_earlier_one_by_t
     };
     let at = |runs: &[(String, [f64; 2], [f64; 2])], t: &str| runs.iter().find(|r| r.0 == t).map(|r| r.1).expect("a line");
     // As wide as the earlier table: it stays after the lines, those that meet it go below it.
-    let Some((s0, runs)) = fill(3000, 3000) else { return };
+    let Some((s0, runs)) = fill("pa", 3000, 3000) else { return };
     assert!(s0.is_some() && at(&runs, "pb")[1] > 170.0, "{s0:?} {runs:?}");
     // Narrower, the earlier table's far edge past the middle across: the lines go across past it again.
-    let (s0, runs) = fill(4000, 3000).unwrap();
+    let (s0, runs) = fill("pa", 4000, 3000).unwrap();
     let s0 = s0.expect("on the first page");
     assert!((at(&runs, "pb")[1] - 72.0).abs() < 0.01 && at(&runs, "pb")[0] < s0 - 9.0, "{s0} {runs:?}");
     // Wider still: it goes to the next page and the lines stay past the earlier table.
-    let (s0, runs) = fill(5000, 3000).unwrap();
+    let (s0, runs) = fill("pa", 5000, 3000).unwrap();
     assert!(s0.is_none() && (at(&runs, "pb")[1] - 72.0).abs() < 0.01, "{runs:?}");
+    // After an earlier table that starts the stack it stays, the text after it below it.
+    let (s0, runs) = fill("", 4000, 3000).unwrap();
+    assert!(s0.is_some() && runs.iter().any(|r| r.0.starts_with("pc") && r.1[1] > 170.0), "{s0:?} {runs:?}");
 }

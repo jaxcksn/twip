@@ -2824,7 +2824,9 @@ impl<'d> PageFill<'d, '_> {
                 };
                 let second = self.at.starts.iter().map(|s| s.0).filter(|&s| s > e + EPS && s < *y - EPS).fold(*y, f64::min);
                 let (top, bottom) = (col.top.to_pt(), col.bottom.to_pt());
-                let clears = y0 - above >= second - EPS || br - bl + above + below >= e - top - EPS;
+                // ponytail: an earlier table at the stack's start keeps it there too; Word then draws the line between
+                // them over it and the earlier table further out, which isn't modelled.
+                let clears = y0 - above >= second - EPS || br - bl + above + below >= e - top - EPS || o.rect[1] <= top + EPS;
                 if !clears {
                     let fits = y0 + br - bl + below + (*y - e) <= bottom + EPS;
                     if e + lead > (top + bottom) / 2.0 + EPS || !fits {
