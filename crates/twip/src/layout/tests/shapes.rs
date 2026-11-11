@@ -280,3 +280,11 @@ fn a_vml_floats_wrap_distances_round_to_twips_and_default_to_nine_points_beside(
     let f = vml_float("mso-wrap-distance-top:0.03in;mso-wrap-distance-left:0pt;mso-wrap-distance-right:24px", "", square, 15);
     assert_eq!(f.dist, [2.15, 0.0, 0.0, 18.0]);
 }
+
+#[test]
+fn a_vml_float_reads_its_overlap_and_cell_flags() {
+    let f = vml_float("", r#"o:allowoverlap="f" o:allowincell="false""#, "", 14);
+    assert!(!f.allow_overlap && !f.layout_in_cell);
+    let f = vml_float("", r#"o:allowoverlap="t""#, "", 14);
+    assert!(f.allow_overlap && f.layout_in_cell);
+}

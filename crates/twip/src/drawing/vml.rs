@@ -23,6 +23,9 @@ pub struct VmlObject<'a, 'i> {
     pub textbox: Option<(Node<'a, 'i>, [f64; 4], u8)>,
     pub wrap: Option<(String, String)>,
     pub alt: String,
+    /// `o:allowoverlap`, `o:allowincell` (on when absent).
+    pub allow_overlap: bool,
+    pub allow_in_cell: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -1023,7 +1026,15 @@ pub fn read<'a, 'i>(pict: Node<'a, 'i>, ctx: &mut Ctx) -> Option<VmlObject<'a, '
         .map(|w| (w.attribute("type").unwrap_or("").to_string(), w.attribute("side").unwrap_or("both").to_string()));
     let mut shape = shape;
     shape.xfrm.off = [Emu(0); 2];
-    Some(VmlObject { textbox: textbox(el, &st), shape, wrap, alt: el.attribute("alt").unwrap_or("").to_string(), style: st })
+    Some(VmlObject {
+        textbox: textbox(el, &st),
+        shape,
+        wrap,
+        alt: el.attribute("alt").unwrap_or("").to_string(),
+        allow_overlap: on(el.attribute((O, "allowoverlap")), true),
+        allow_in_cell: on(el.attribute((O, "allowincell")), true),
+        style: st,
+    })
 }
 
 #[cfg(test)]
