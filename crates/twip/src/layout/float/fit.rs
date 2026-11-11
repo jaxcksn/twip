@@ -7,34 +7,8 @@ use super::{Contour, EPS, Placed, Side, Wrap};
 pub fn intervals(floats: &[Placed], x0: f64, x1: f64, top: f64, bottom: f64, legacy: bool) -> Option<Vec<(f64, f64)>> {
     let mut free = vec![(x0, x1)];
     for f in floats.iter().filter(|f| f.in_band(top, bottom)) {
-        if f.excl[2] <= x0 + EPS || f.excl[0] >= x1 - EPS {
-            continue;
-        }
-        if f.wrap == Wrap::TopAndBottom {
-            return None;
-        }
-        let spans = match &f.contour {
-            Some(c) => covered(c, f.dist, top, bottom),
-            None => vec![(f.excl[0], f.excl[2])],
-        };
-        let (Some(&(l, _)), Some(&(_, r))) = (spans.first(), spans.last()) else { continue };
-        let side = match f.side {
-            Side::Largest => {
-                if (l - x0) >= (x1 - r) - EPS {
-                    Side::Left
-                } else {
-                    Side::Right
-                }
-            }
-            s => s,
-        };
         let gap = f.gap(legacy);
-        let blocks = match side {
-            Side::Left => vec![(l, f64::INFINITY)],
-            Side::Right => vec![(f64::NEG_INFINITY, r)],
-            _ => spans,
-        };
-        for block in blocks {
+        for block in blocks(f, x0, x1, top, bottom)? {
             let mut next = Vec::new();
             for (a, b) in free {
                 if block.1 <= a + EPS || block.0 >= b - EPS {
@@ -46,6 +20,72 @@ pub fn intervals(floats: &[Placed], x0: f64, x1: f64, top: f64, bottom: f64, leg
                 }
                 if block.1 < b - EPS && b - block.1 >= gap - EPS {
                     next.push((block.1, b));
+                }
+            }
+            free = next;
+        }
+    }
+    Some(free)
+}
+
+/// What a float in the band takes of `[x0, x1]`; `None` for one that takes the whole line.
+fn blocks(f: &Placed, x0: f64, x1: f64, top: f64, bottom: f64) -> Option<Vec<(f64, f64)>> {
+    if f.excl[2] <= x0 + EPS || f.excl[0] >= x1 - EPS {
+        return Some(Vec::new());
+    }
+    if f.wrap == Wrap::TopAndBottom {
+        return None;
+    }
+    let spans = match &f.contour {
+        Some(c) => covered(c, f.dist, top, bottom),
+        None => vec![(f.excl[0], f.excl[2])],
+    };
+    let (Some(&(l, _)), Some(&(_, r))) = (spans.first(), spans.last()) else { return Some(Vec::new()) };
+    let side = match f.side {
+        Side::Largest => {
+            if (l - x0) >= (x1 - r) - EPS {
+                Side::Left
+            } else {
+                Side::Right
+            }
+        }
+        s => s,
+    };
+    Some(match side {
+        Side::Left => vec![(l, f64::INFINITY)],
+        Side::Right => vec![(f64::NEG_INFINITY, r)],
+        _ => spans,
+    })
+}
+
+/// Compat ≤ 14: the pieces of `[x0, x1]` a line from `top` gets, each with where it ends, the floats taken in the
+/// order given. A float starting no more than `slack` below the top cuts the line, and the pieces it meets end at its
+/// bottom at the latest, those cut from them included; a lower float ends the pieces it meets at its top. `bottom`
+/// is the band a contour is cut over. `None` when a float takes the whole line.
+pub fn strip(floats: &[&Placed], x0: f64, x1: f64, top: f64, bottom: f64, slack: f64) -> Option<Vec<(f64, f64, f64)>> {
+    let mut free = vec![(x0, x1, f64::INFINITY)];
+    for f in floats.iter().filter(|f| f.wrap != Wrap::None && f.excl[3] > top + EPS) {
+        let meets = |a: f64, b: f64| f.excl[0] < b - EPS && f.excl[2] > a + EPS;
+        if f.excl[1] > top + slack + EPS {
+            for p in free.iter_mut().filter(|p| meets(p.0, p.1)) {
+                p.2 = p.2.min(f.excl[1]);
+            }
+            continue;
+        }
+        let gap = f.gap(true);
+        for block in blocks(f, x0, x1, top, bottom)? {
+            let mut next = Vec::new();
+            for (a, b, end) in free {
+                if block.1 <= a + EPS || block.0 >= b - EPS {
+                    next.push((a, b, end));
+                    continue;
+                }
+                let end = end.min(f.excl[3]);
+                if block.0 > a + EPS && block.0 - a >= gap - EPS {
+                    next.push((a, block.0, end));
+                }
+                if block.1 < b - EPS && b - block.1 >= gap - EPS {
+                    next.push((block.1, b, end));
                 }
             }
             free = next;

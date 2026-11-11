@@ -221,7 +221,7 @@ pub fn avoid(f: &mut Placed, placed: &[Placed], (left_margin, page_w): (f64, f64
     false
 }
 
-pub use fit::{intervals, next_edge, steps};
+pub use fit::{intervals, next_edge, steps, strip};
 pub use position::{h_pos, sized, v_pos};
 
 #[cfg(test)]

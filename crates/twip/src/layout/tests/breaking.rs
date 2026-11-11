@@ -1759,7 +1759,7 @@ fn three_line_frame(x: u32, w: u32, at: &str, sup: &str, t: &str) -> String {
     )
 }
 
-const FRAME_BODY: &str = "Body text runs on beside the box so that every line shows where the wrap edge lies, and the words are short enough to fill each gap well. Body text runs on beside the box so that every line shows where the wrap edge lies.";
+const FRAME_BODY: &str = "Body text runs on beside the box so that every line shows where the wrap edge lies, and the words are short enough to fill each gap well. Body text runs on beside the box so that every line shows where the wrap edge lies, and the words are short enough to fill each gap well. Body text runs on beside the box.";
 
 /// The lines of a lead line, `frames` and a body paragraph: x and baseline in twips, and the text.
 fn after_frames(frames: &str) -> Option<Vec<(f64, f64, String)>> {
@@ -1800,6 +1800,25 @@ fn a_compat_14_frame_placed_apart_from_others_starts_at_the_nearest_twip() {
     let Some(cut) = fourth("<w:suppressOverlap/>") else { return };
     assert!(cut.len() == 2 && (cut[1] - 8819.0).abs() < 0.5, "{cut:?}");
     assert_eq!(fourth("").unwrap().len(), 1);
+}
+
+/// The body lines after a lead line and `frames`: x and baseline in twips, and the text.
+fn body_after_frames(frames: &str) -> Option<Vec<(f64, f64, String)>> {
+    Some(after_frames(frames)?.into_iter().filter(|x| !x.2.starts_with(['A', 'B', 'L']) || x.2.starts_with("Body")).collect())
+}
+
+#[test]
+fn a_compat_14_line_keeps_the_end_of_the_float_that_cut_it_first() {
+    // A at x 3200 leaves two pieces of the lines beside it; B starts at 2450 in the third body line. With A placed
+    // first the right piece ends at A's bottom and the line goes there; with B first it ends at B's and the line stays,
+    // right of B.
+    let a = three_line_frame(3200, 2880, r#"w:vAnchor="page" w:y="1693""#, "", "A");
+    let b = three_line_frame(4640, 2880, r#"w:vAnchor="page" w:y="2451""#, "", "B");
+    let third = |frames: String| body_after_frames(&frames).map(|l| l.into_iter().filter(|x| x.1 > 2300.0).map(|x| (x.0, x.1)).next().expect("drawn"));
+    let Some((x, y)) = third(b.clone() + &a) else { return };
+    assert!((y - 2405.2).abs() < 0.5 && (x - 7699.0).abs() < 0.5, "{x} {y}");
+    let (x, y) = third(a + &b).unwrap();
+    assert!((y - 2657.2).abs() < 1.5 && (x - 1440.0).abs() < 0.5, "{x} {y}");
 }
 
 #[test]
