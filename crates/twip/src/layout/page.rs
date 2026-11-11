@@ -770,11 +770,12 @@ pub fn layout_body(
     let mut bottoms = Vec::new();
     let mut stop = Stop::Full;
     let mut known = Vec::new();
-    let shared = cols.len() > 1 && env.ctx.env.text.compat == Compat::Generic;
+    let generic = env.ctx.env.text.compat == Compat::Generic;
+    let geometry = note_columns(if generic { s.footnote_columns } else { 0 }, &space.area, cols);
+    let shared = generic && (cols.len() > 1 || geometry.len() > 1);
     // Compat 15: the page's footnote area, started by an earlier section on the page, takes this section's notes too.
     let held = if shared { carry.page_notes.take() } else { None };
     let beneath = held.as_ref().map_or(s.notes[0].beneath, |h| h.1);
-    let geometry: Vec<(f64, f64)> = cols.iter().map(|c| (c.x, c.width)).collect();
     let stream_area = |reserve: f64| match &held {
         Some((a, _)) => NoteArea { shared: Some(reserve), ..a.clone() },
         None => NoteArea { shared: Some(reserve), cols: geometry.clone(), ..Default::default() },
@@ -975,6 +976,16 @@ pub fn layout_body(
     };
     let fragment = Rc::new(BoxFragment { kind: BoxKind::Body, id: Some(FragmentId::next()), offset: (0.0, 0.0), size, children });
     Ok(PageBody { fragment, end: PageToken { section: space.section, flow: pos, state: carry }, section_end, effects })
+}
+
+/// The footnote area's columns (x, width): with `w15:footnoteColumns` (`n` > 0) n even columns 36pt apart across the
+/// text width, else the section's.
+fn note_columns(n: u32, area: &BodyArea, cols: &[ColumnSpace]) -> Vec<(f64, f64)> {
+    if n == 0 {
+        return cols.iter().map(|c| (c.x, c.width)).collect();
+    }
+    let w = (area.width - f64::from(n - 1) * 36.0) / f64::from(n);
+    (0..n).map(|k| (area.left + f64::from(k) * (w + 36.0), w)).collect()
 }
 
 // Vertical alignment

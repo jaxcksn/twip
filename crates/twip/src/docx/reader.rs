@@ -1282,6 +1282,7 @@ impl Reader {
             no_endnote: false,
             text_flow: 0,
             rtl_gutter: false,
+            footnote_columns: 0,
             blocks: Vec::new(),
             change: None,
         }
@@ -1328,6 +1329,11 @@ impl Reader {
         }
         sec.title_pg = flag(s, "titlePg").unwrap_or(false);
         sec.rtl_gutter = flag(s, "rtlGutter").unwrap_or(false);
+        sec.footnote_columns = s
+            .children()
+            .find(|c| c.tag_name().namespace() == Some(W15) && c.tag_name().name() == "footnoteColumns")
+            .and_then(|c| int(attr(c, "val")))
+            .map_or(0, |n| n.clamp(0, 45) as u32);
         for (name, slot) in [("headerReference", 0), ("footerReference", 1)] {
             for r in children(s, name) {
                 let idx = match attr(r, "type") {

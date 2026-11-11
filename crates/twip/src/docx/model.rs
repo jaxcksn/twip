@@ -1092,6 +1092,8 @@ pub struct Section {
     pub text_flow: u8,
     /// `w:rtlGutter`: the gutter is on the right.
     pub rtl_gutter: bool,
+    /// `w15:footnoteColumns`: the footnote area's column count (0 when absent).
+    pub footnote_columns: u32,
     pub blocks: Vec<Block>,
     /// A tracked change of the section's properties.
     pub change: Option<Rc<SectionChange>>,

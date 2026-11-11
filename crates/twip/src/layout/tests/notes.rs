@@ -256,6 +256,17 @@ fn compat_15_footnote_area_has_the_first_reference_columns() {
 }
 
 #[test]
+fn compat_15_footnote_columns_spread_a_one_column_sections_notes() {
+    let fc = r#"<w15:footnoteColumns xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml" w:val="2"/>"#;
+    let xs = |settings: &str| {
+        let doc = notes_doc(&(para("A", &["f1"]) + &para("B", &["f2"]) + &sect(fc, true)), settings)?;
+        Some(super::page_chars(&doc)[0].iter().filter(|c| c.0 == 'N').map(|c| c.1.round()).collect::<Vec<_>>())
+    };
+    let (Some(c15), Some(c12)) = (xs(C15), xs("")) else { return };
+    assert_eq!((c15, c12), (vec![72.0, 324.0], vec![72.0, 72.0]), "two columns of (468 - 36) / 2 in compat 15 only");
+}
+
+#[test]
 fn compat_15_notes_wrap_at_the_width_of_their_area_column() {
     let words = "alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa";
     let extra: String = (10..=11).map(|i| format!(r#"<w:footnote w:id="{i}"><w:p><w:r><w:t>{words}</w:t></w:r></w:p></w:footnote>"#)).collect();
