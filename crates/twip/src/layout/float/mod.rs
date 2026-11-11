@@ -43,6 +43,8 @@ pub struct Placed {
     pub allow_overlap: bool,
     pub float: Rc<Float>,
     pub settled: bool,
+    /// It met text laid out before its paragraph on the page: that text wraps it when the page is filled again.
+    pub collided: bool,
     pub contour: Option<Contour>,
     /// The distances text keeps from it: top, bottom, left, right.
     pub dist: [f64; 4],
@@ -107,6 +109,7 @@ impl Placed {
             allow_overlap: f.allow_overlap,
             float: f.clone(),
             settled: true,
+            collided: true,
             contour,
             dist: f.dist,
             early_right: None,
@@ -272,6 +275,7 @@ mod tests {
             allow_overlap: true,
             float,
             settled: true,
+            collided: true,
             contour: None,
             dist: [0.0; 4],
             early_right: None,

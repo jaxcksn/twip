@@ -2028,3 +2028,26 @@ fn a_later_tables_alignment_and_margins_are_its_rows_exceptions_and_another_styl
     let Some(crate::docx::Block::Table(u)) = again.sections[0].blocks.get(1) else { panic!("a table") };
     assert_eq!((u.rows[1].jc, u.rows[1].cells[0].margins), (t.rows[1].jc, t.rows[1].cells[0].margins));
 }
+
+#[test]
+fn a_float_below_the_text_before_its_paragraph_doesnt_wrap_that_text_when_the_page_is_filled_again() {
+    // The first fill lays the first paragraph out without its own float, so the second paragraph's float starts
+    // higher there than where it ends up; it met no earlier text, so the next fill doesn't wrap the first paragraph
+    // around it, and the second paragraph keeps its place on the page.
+    let c15 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+    let float = |cy: u32| {
+        format!(
+            r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="0" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV><wp:extent cx="1270000" cy="{cy}"/><wp:wrapSquare wrapText="bothSides"/><a:graphic><a:graphicData><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#
+        )
+    };
+    let body = format!(
+        r#"<w:p><w:pPr><w:spacing w:before="8560"/></w:pPr>{}<w:r><w:t>Short words. {}</w:t></w:r></w:p><w:p>{}<w:r><w:t>Beside the second float.</w:t></w:r></w:p>"#,
+        float(762000),
+        "x".repeat(65),
+        float(1524000)
+    );
+    let Some(l) = page_baselines(c15, ARIAL_12, &body, 0) else { return };
+    let long = l.iter().find(|x| x.1.starts_with("xxx")).expect("the long word");
+    assert!((long.3 - 560.0 - 10.86).abs() < 1.0, "{l:?}");
+    assert!(l.iter().any(|x| x.1.starts_with("Beside")), "{l:?}");
+}

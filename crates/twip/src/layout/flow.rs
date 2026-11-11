@@ -1413,6 +1413,13 @@ impl<'d> PageFill<'d, '_> {
         }
     }
 
+    /// The floats of the last fill that wrap the text at `block`: one anchored further on only if it met the text laid
+    /// out before its paragraph; one that didn't is placed below that text and wraps only what follows it.
+    fn known_at(&self, block: usize) -> impl Iterator<Item = &Placed> {
+        let si = self.sec.index;
+        self.at.known.iter().filter(move |f| f.collided || (f.key.0, f.key.1) <= (si, block))
+    }
+
     fn record(&mut self, p: &Paragraph, first_part: bool) {
         let id = para_id(p);
         if !self.at.effects.paras.contains(&id) {
@@ -1475,7 +1482,7 @@ impl<'d> PageFill<'d, '_> {
             Compat::Generic => bottom - pb.lines.last().map_or(0.0, |l| l.below),
             Compat::Legacy => bottom + space_after(&self.ctx.env.text, p.para_style_in(self.ctx.env.text.review.view)),
         };
-        let affected = self.fixed.iter().chain(&self.at.known).any(|f| {
+        let affected = self.fixed.iter().chain(self.known_at(pos.block)).any(|f| {
             let reach = if f.key.2 == float::TABLE_PIECE { text_bottom } else { bottom };
             f.wrap != Wrap::None && f.excl[3] > *y + EPS && f.excl[1] < reach - EPS && f.excl[0] < col.x + col.width - EPS && f.excl[2] > col.x + EPS
         });
@@ -1844,7 +1851,7 @@ impl<'d> PageFill<'d, '_> {
         let after = space_after(&self.ctx.env.text, style);
         let at_top = *empty;
         let top = *y + self.para_gap(p, pos, carry, *empty) - if at_top { self.top_lift(style, pb) } else { 0.0 };
-        let mut floats: Vec<Placed> = self.fixed.iter().chain(&self.at.known).cloned().collect();
+        let mut floats: Vec<Placed> = self.fixed.iter().chain(self.known_at(pos.block)).cloned().collect();
         for f in floats.iter_mut().filter(|f| f.key.0 == self.sec.index && f.key.1 > pos.block) {
             if let Some(r) = f.early_right {
                 (f.rect[2], f.excl[2]) = (r, r);
@@ -2182,7 +2189,12 @@ impl<'d> PageFill<'d, '_> {
                     continue;
                 }
             }
-            anchors.push(self.wrapped(Placed::new((si, bi, pb.from + k), owner, f, x, fy, h), memos)?);
+            let mut a = self.wrapped(Placed::new((si, bi, pb.from + k), owner, f, x, fy, h), memos)?;
+            // Text laid out before the paragraph in this column ends at `*y` (with its space after in compat ≤ 14);
+            // a float wholly below it, or beside the column, doesn't meet it. Earlier columns count as met.
+            let reach = *y + if compat == Compat::Legacy { carry.prev_after } else { 0.0 };
+            a.collided = self.column > 0 || a.excl[1] < reach - EPS && a.excl[0] < cx1 - EPS && a.excl[2] > cx0 + EPS;
+            anchors.push(a);
         }
         // Pagination
         let nb = bands.len();
@@ -2765,7 +2777,7 @@ impl<'d> PageFill<'d, '_> {
         let Some(Block::Table(t)) = self.sec.blocks.get(bi) else { return Ok(None) };
         let Some(ri) = tb.rows.iter().position(|r| !r.hidden) else { return Ok(None) };
         let si = self.sec.index;
-        let floats: Vec<Placed> = self.fixed.iter().chain(&self.at.known).filter(|f| (f.key.0, f.key.1) != (si, bi)).cloned().collect();
+        let floats: Vec<Placed> = self.fixed.iter().chain(self.known_at(bi)).filter(|f| (f.key.0, f.key.1) != (si, bi)).cloned().collect();
         if tb.rtl || floats.is_empty() {
             return Ok(None);
         }
