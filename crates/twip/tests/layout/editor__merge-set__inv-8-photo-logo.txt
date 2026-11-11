@@ -1,4 +1,4 @@
-page 0 612.0 792.0
-  72.0 96.8 8, 3.4 Photo and logo
-  72.0 137.3 Recipient photo:
-  72.0 184.3 Store logo:
+page 0 12240 15840
+  1440 1936 8, 3.4 Photo and logo
+  1440 2745 Recipient photo:
+  1440 3687 Store logo:

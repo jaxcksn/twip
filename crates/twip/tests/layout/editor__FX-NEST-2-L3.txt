@@ -1,27 +1,47 @@
-page 0 612.0 792.0
-  72.0 96.8 FX-NEST-2
-  89.0 111.6 Text before the inner table.
-  94.6 131.9 Inner A R1 C1
-  200.8 131.9 Inner A R1 C2
-  94.6 152.3 Inner A R2 C1
-  200.8 152.3 Inner A R2 C2
-  89.0 172.7 Text after the inner table.
-  317.8 112.1 Only content R1
-  317.8 123.9 C1
-  424.0 112.1 Only content R1
-  424.0 123.9 C2
-  317.8 144.3 Only content R2
-  317.8 156.2 C1
-  424.0 144.3 Only content R2
-  424.0 156.2 C2
-  89.0 193.1 Plain outer cell
-  312.1 193.1 Outer text, then an inner table of 3
-  312.1 204.9 rows:
-  317.8 225.3 Inner B R1
-  424.0 225.3 x
-  317.8 245.7 Inner B R2
-  424.0 245.7 x
-  317.8 266.0 Inner B R3
-  424.0 266.0 x
-  83.3 286.9 Paragraph after the outer table.
-  72.0 307.8 Paragraph after the wrapper table.
+page 0 12240 15840
+  1440 1936 FX-NEST-2
+  1779 2231 Text before the inner table.
+  1892 2639 Inner A R1 C1
+  4016 2639 Inner A R1 C2
+  1892 3046 Inner A R2 C1
+  4016 3046 Inner A R2 C2
+  1779 3454 Text after the inner table.
+  6356 2241 Only content R1
+  6356 2479 C1
+  8480 2241 Only content R1
+  8480 2479 C2
+  6356 2886 Only content R2
+  6356 3124 C1
+  8480 2886 Only content R2
+  8480 3124 C2
+  1779 3861 Plain outer cell
+  6243 3861 Outer text, then an inner table of 3
+  6243 4098 rows:
+  6356 4506 Inner B R1
+  8480 4506 x
+  6356 4913 Inner B R2
+  8480 4913 x
+  6356 5321 Inner B R3
+  8480 5321 x
+  1666 5738 Paragraph after the outer table.
+  1440 6156 Paragraph after the wrapper table.
+  cell 1445 2025 10589 5970
+  cell 1558 2035 10486 5960
+  cell 1671 2045 6135 3675
+  cell 1784 2453 3908 2860
+  cell 3908 2453 6032 2860
+  cell 1784 2860 3908 3268
+  cell 3908 2860 6032 3268
+  cell 6135 2045 10599 3675
+  cell 6248 2055 8372 2700
+  cell 8372 2055 10496 2700
+  cell 6248 2700 8372 3345
+  cell 8372 2700 10496 3345
+  cell 1671 3675 6135 5552
+  cell 6135 3675 10599 5552
+  cell 6248 4320 8372 4727
+  cell 8372 4320 10496 4727
+  cell 6248 4727 8372 5135
+  cell 8372 4727 10496 5135
+  cell 6248 5135 8372 5542
+  cell 8372 5135 10496 5542

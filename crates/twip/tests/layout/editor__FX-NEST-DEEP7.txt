@@ -1,40 +1,68 @@
-page 0 612.0 792.0
-  72.0 96.8 FX-NEST-DEEP, nesting depth 7
-  77.7 110.6 Level 1, before
-  83.3 130.9 Level 2, before
-  89.0 151.3 Level 3, before
-  94.6 171.7 Level 4, before
-  100.3 192.1 Level 5, before
-  105.9 212.4 Level 6, before
-  111.6 232.8 Level 7,
-  111.6 244.7 before
-  111.6 264.5 Level 7,
-  111.6 276.4 after
-  199.8 232.8 L7
-  111.6 296.8 Level 7, row 2
-  199.8 296.8 x
-  105.9 317.1 Level 6, after
-  249.9 212.4 L6
-  105.9 337.5 Level 6, row 2
-  249.9 337.5 x
-  100.3 357.9 Level 5, after
-  300.1 192.1 L5
-  100.3 378.3 Level 5, row 2
-  300.1 378.3 x
-  94.6 398.6 Level 4, after
-  350.2 171.7 L4
-  94.6 419.0 Level 4, row 2
-  350.2 419.0 x
-  89.0 439.4 Level 3, after
-  400.3 151.3 L3
-  89.0 459.7 Level 3, row 2
-  400.3 459.7 x
-  83.3 480.1 Level 2, after
-  450.5 130.9 L2
-  83.3 500.5 Level 2, row 2
-  450.5 500.5 x
-  77.7 520.9 Level 1, after
-  500.6 110.6 L1
-  77.7 541.2 Level 1, row 2
-  500.6 541.2 x
-  72.0 561.6 Paragraph after the outer table.
+page 0 12240 15840
+  1440 1936 FX-NEST-DEEP, nesting depth 7
+  1553 2211 Level 1, before
+  1666 2619 Level 2, before
+  1779 3026 Level 3, before
+  1892 3434 Level 4, before
+  2005 3841 Level 5, before
+  2118 4248 Level 6, before
+  2231 4656 Level 7,
+  2231 4893 before
+  2231 5291 Level 7,
+  2231 5528 after
+  3995 4656 L7
+  2231 5936 Level 7, row 2
+  3995 5936 x
+  2118 6343 Level 6, after
+  4998 4248 L6
+  2118 6750 Level 6, row 2
+  4998 6750 x
+  2005 7158 Level 5, after
+  6001 3841 L5
+  2005 7565 Level 5, row 2
+  6001 7565 x
+  1892 7973 Level 4, after
+  7004 3434 L4
+  1892 8380 Level 4, row 2
+  7004 8380 x
+  1779 8787 Level 3, after
+  8007 3026 L3
+  1779 9195 Level 3, row 2
+  8007 9195 x
+  1666 9602 Level 2, after
+  9010 2619 L2
+  1666 10010 Level 2, row 2
+  9010 10010 x
+  1553 10417 Level 1, after
+  10013 2211 L1
+  1553 10825 Level 1, row 2
+  10013 10825 x
+  1440 11232 Paragraph after the outer table.
+  cell 1445 2025 9905 10639
+  cell 1558 2433 8902 9824
+  cell 1671 2840 7899 9009
+  cell 1784 3248 6896 8194
+  cell 1897 3655 5893 7379
+  cell 2010 4062 4890 6564
+  cell 2123 4470 3887 5750
+  cell 3887 4470 4787 5750
+  cell 2123 5750 3887 6157
+  cell 3887 5750 4787 6157
+  cell 4890 4062 5790 6564
+  cell 2010 6564 4890 6972
+  cell 4890 6564 5790 6972
+  cell 5893 3655 6793 7379
+  cell 1897 7379 5893 7787
+  cell 5893 7379 6793 7787
+  cell 6896 3248 7796 8194
+  cell 1784 8194 6896 8601
+  cell 6896 8194 7796 8601
+  cell 7899 2840 8799 9009
+  cell 1671 9009 7899 9416
+  cell 7899 9009 8799 9416
+  cell 8902 2433 9802 9824
+  cell 1558 9824 8902 10231
+  cell 8902 9824 9802 10231
+  cell 9905 2025 10805 10639
+  cell 1445 10639 9905 11046
+  cell 9905 10639 10805 11046

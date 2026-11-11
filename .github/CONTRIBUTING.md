@@ -166,8 +166,9 @@ The code is the documentation. A comment in the engine names a part of the code 
   Scopes are optional: `layout`, `editing`, `drawing`, `render`, `pdf`, `ffi`, `dotnet`, `web`, `angular`, `react`, `harness`, `docs`,
   `release`, `deps`. The list lives in the `commitlint` key of `package.json`.
   A change to layout output that alters where text lands on the page is a behaviour change. Mark it `fix(layout)` and
-  say what moves. `crates/twip/tests/layout` holds every fixture's layout (pages, and each drawn line's start,
-  baseline and text, laid out with the bundled stand-in fonts), and `twip:test` fails when one changes. The failure
+  say what moves. `crates/twip/tests/layout` holds every fixture's layout in twips (pages; each drawn line's start,
+  baseline and text; picture, float and table cell rectangles; laid out with the bundled stand-in fonts), and
+  `twip:test` fails when one changes. The failure
   draws each changed page in `target/layout-diff/index.html` (red: before, green: after); CI uploads it as the
   `layout-diff-<os>` artifact on the run's summary page. When the change is intended, run
   `TWIP_WRITE_LAYOUT=1 cargo test -p twip --lib layout_output` and commit the snapshots with it. A pull request that

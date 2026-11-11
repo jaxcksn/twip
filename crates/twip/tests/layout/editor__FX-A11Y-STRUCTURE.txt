@@ -1,53 +1,69 @@
-page 0 612.0 792.0
-  72.0 96.8 Introduction
-  72.0 110.1 Inventory relevant group relief results region ledger brief usage cause colleague
-  72.0 121.9 partner. Section notice claim team export staff newsletter review matter presenter
-  72.0 133.8 advisor account. Served savings pilot receipt corporate requirement standard fact
-  72.0 145.7 that products distribution filed. Logistics chapter plan regional maintenance
-  72.0 157.6 accessibility tax finds record proposal denied contract. Onboarding support
-  72.0 169.4 network scheduled trend suggestions board order update granted agreement
-  72.0 181.3 marketing. 1
-  72.0 204.8 Lists
-  90.0 217.2 1.First item
-  90.0 229.1 2.Second item
-  126.0 240.9 –Nested bullet one
-  126.0 252.8 –Nested bullet two
-  90.0 264.7 3.Third item
-  72.0 288.1 Tables
-  77.7 301.1 Name
-  233.7 301.1 Role
-  389.6 301.1 Office
-  77.7 321.4 Ada
-  233.7 321.4 Chair
-  389.6 321.4 North
-  77.7 341.8 Grace
-  233.7 341.8 Clerk
-  77.7 362.2 Both offices share one budget
-  389.6 362.2 Inner table:
-  395.3 382.6 Inner one
-  467.9 382.6 Inner two
-  395.3 402.9 Inner
-  395.3 414.8 three
-  467.9 402.9 Inner four
-  72.0 447.3 Links and pictures
-  72.0 459.7 Read the agenda and the minutes.
-  144.0 524.8  The board seal, then a divider:
-  72.0 544.6 This paragraph anchors a text box. Regional maintenance
-  72.0 556.5 accessibility tax finds record proposal denied contract
-  72.0 568.4 onboarding support network. Scheduled trend
-  72.0 580.3 suggestions board order update granted agreement.
-  72.0 602.9 Notes and comments
-  72.0 615.1 A second note2 and an endnotei.
-  72.0 634.9 The meeting is on the first Monday of the month.
-  72.0 705.1 1 The first footnote.
-  72.0 715.1 2 The second footnote.
-  403.4 548.5 Text box paragraph.
-  72.0 44.8 Board minutes, first page
-page 1 612.0 792.0
-  72.0 81.6 Languages
-  72.0 93.8 Bonjour à tous, la séance est ouverte.
-  487.8 113.6 שלום לכולם
-  72.0 133.5 Last paragraph.
-  72.0 169.4 i The endnote.
-  72.0 44.8 Board minutes
-  72.0 753.8 Confidential
+page 0 12240 15840
+  1440 1936 Introduction
+  1440 2201 Inventory relevant group relief results region ledger brief usage cause colleague
+  1440 2439 partner. Section notice claim team export staff newsletter review matter presenter
+  1440 2676 advisor account. Served savings pilot receipt corporate requirement standard fact
+  1440 2914 that products distribution filed. Logistics chapter plan regional maintenance
+  1440 3151 accessibility tax finds record proposal denied contract. Onboarding support
+  1440 3388 network scheduled trend suggestions board order update granted agreement
+  1440 3626 marketing. 1
+  1440 4095 Lists
+  1800 4344 1.First item
+  1800 4581 2.Second item
+  2520 4819 –Nested bullet one
+  2520 5056 –Nested bullet two
+  1800 5294 3.Third item
+  1440 5763 Tables
+  1553 6021 Name
+  4673 6021 Role
+  7793 6021 Office
+  1553 6429 Ada
+  4673 6429 Chair
+  7793 6429 North
+  1553 6836 Grace
+  4673 6836 Clerk
+  1553 7244 Both offices share one budget
+  7793 7244 Inner table:
+  7906 7651 Inner one
+  9358 7651 Inner two
+  7906 8059 Inner
+  7906 8296 three
+  9358 8059 Inner four
+  1440 8945 Links and pictures
+  1440 9194 Read the agenda and the minutes.
+  2880 10495  The board seal, then a divider:
+  1440 10893 This paragraph anchors a text box. Regional maintenance
+  1440 11130 accessibility tax finds record proposal denied contract
+  1440 11368 onboarding support network. Scheduled trend
+  1440 11605 suggestions board order update granted agreement.
+  1440 12059 Notes and comments
+  1440 12301 A second note2 and an endnotei.
+  1440 12699 The meeting is on the first Monday of the month.
+  1440 14103 1 The first footnote.
+  1440 14303 2 The second footnote.
+  8069 10970 Text box paragraph.
+  1440 896 Board minutes, first page
+  cell 1445 5835 4565 6243
+  cell 4565 5835 7685 6243
+  cell 7685 5835 10805 6243
+  cell 1445 6243 4565 6650
+  cell 4565 6243 7685 6650
+  cell 7685 6243 10805 7058
+  cell 1445 6650 4565 7058
+  cell 4565 6650 7685 7058
+  cell 7685 6650 10805 7058
+  cell 1445 7058 7685 8527
+  cell 7685 7058 10805 8527
+  cell 7798 7465 9250 7873
+  cell 9250 7465 10702 7873
+  cell 7798 7873 9250 8517
+  cell 9250 7873 10702 8517
+  float 7920 10717 10800 11581
+page 1 12240 15840
+  1440 1632 Languages
+  1440 1875 Bonjour à tous, la séance est ouverte.
+  9755 2272 שלום לכולם
+  1440 2670 Last paragraph.
+  1440 3389 i The endnote.
+  1440 896 Board minutes
+  1440 15076 Confidential

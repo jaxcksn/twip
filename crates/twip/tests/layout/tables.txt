@@ -1,360 +1,670 @@
-page 0 612.0 792.0
-  72.0 92.8 Tables Fixture
-  72.0 116.4 A. Simple grid (Table Grid)
-  77.7 133.3 Region
-  194.5 133.3 Q1
-  311.3 133.3 Q2
-  428.2 133.3 Q3
-  77.7 145.7 North
-  194.5 145.7 1,200
-  311.3 145.7 1,350
-  428.2 145.7 1,410
-  77.7 158.1 South
-  194.5 158.1 980
-  311.3 158.1 1,020
-  428.2 158.1 1,105
-  72.0 191.9 B. Built-in table style (Grid Table 4 - Accent 1), header row and banded rows
-  77.7 208.8 Product
-  194.5 208.8 Units
-  311.3 208.8 Price
-  428.2 208.8 Total
-  77.7 221.2 Notebook
-  282.4 221.2 120
-  393.2 221.2 2.50
-  498.0 221.2 300.00
-  77.7 233.6 Pen
-  282.4 233.6 480
-  393.2 233.6 0.75
-  498.0 233.6 360.00
-  77.7 246.0 Stapler
-  288.4 246.0 35
-  393.2 246.0 8.90
-  498.0 246.0 311.50
-  77.7 258.3 Folder
-  282.4 258.3 260
-  393.2 258.3 1.20
-  498.0 258.3 312.00
-  77.7 270.7 Tape
-  288.4 270.7 90
-  393.2 270.7 3.10
-  498.0 270.7 279.00
-  72.0 304.5 C. Merged cells, shading, custom borders, vertical alignment, fixed widths,
-  72.0 318.6 nested table
-  213.9 337.2 Merged header across four columns
-  78.5 408.4 Tall
-  150.5 349.6 Top-left aligned (default)
-  312.5 367.7 Centered
-  312.5 379.6 vertically
-  429.5 397.7 Bottom vertically
-  165.9 410.1 Right-aligned paragraph
-  312.8 410.1 Centered paragraph
-  435.2 410.6 n3
-  488.0 410.6 n4
-  429.5 431.0 Nested table:
-  150.5 455.2 Shaded cell
-  312.5 455.2 Shaded, white bold
-  312.5 467.1 text
-  429.5 455.2 Plain
-  78.5 479.5 Notes
-  150.5 479.5 Cell with two paragraphs.
-  150.5 491.3 Second paragraph in the
-  150.5 503.2 same cell.
-  312.5 479.5 Merged horizontally across two columns
-  72.0 538.8 D. Long table with repeating header row and rows that split across pages
-  72.0 555.2 The table below has 60 data rows; row 1 repeats at the top of each page, and some rows
-  72.0 567.1 hold long multi-line text.
-  77.7 587.5 #
-  113.7 587.5 Item
-  221.7 587.5 Description
-  473.6 587.5 Amount
-  77.7 599.8 1
-  113.7 599.8 Line item 1
-  221.7 599.8 Standard entry for item number 1.
-  504.6 599.8 17.25
-  77.7 612.2 2
-  113.7 612.2 Line item 2
-  221.7 612.2 Standard entry for item number 2.
-  504.6 612.2 34.50
-  77.7 624.6 3
-  113.7 624.6 Line item 3
-  221.7 624.6 Standard entry for item number 3.
-  504.6 624.6 51.75
-  77.7 637.0 4
-  113.7 637.0 Line item 4
-  221.7 637.0 Standard entry for item number 4.
-  504.6 637.0 69.00
-  77.7 649.3 5
-  113.7 649.3 Line item 5
-  221.7 649.3 Standard entry for item number 5.
-  504.6 649.3 86.25
-  77.7 661.7 6
-  113.7 661.7 Line item 6
-  221.7 661.7 Standard entry for item number 6.
-  498.5 661.7 103.50
-  77.7 674.1 7
-  113.7 674.1 Line item 7
-  221.7 674.1 Standard entry for item number 7.
-  498.5 674.1 120.75
-  77.7 686.4 8
-  113.7 686.4 Line item 8
-  221.7 686.4 Standard entry for item number 8.
-  498.5 686.4 138.00
-  77.7 698.8 9
-  113.7 698.8 Line item 9
-  221.7 698.8 Standard entry for item number 9.
-  498.5 698.8 155.25
-  77.7 711.2 10
-  113.7 711.2 Line item 10
-  221.7 711.2 Standard entry for item number 10.
-  498.5 711.2 172.50
-page 1 612.0 792.0
-  77.7 81.3 #
-  113.7 81.3 Item
-  221.7 81.3 Description
-  473.6 81.3 Amount
-  77.7 93.7 11
-  113.7 93.7 Line item 11
-  221.7 93.7 Maintenance of the older buildings remains
-  221.7 105.5 the largest unplanned cost, and a phased
-  221.7 117.4 renovation schedule is now under
-  221.7 129.3 discussion. A detailed audit of travel
-  221.7 141.2 expenses revealed modest savings, mostly
-  221.7 153.0 from booking flights earlier and
-  221.7 164.9 consolidating hotel contracts. Shipping
-  221.7 176.8 delays in the spring were traced to a single
-  221.7 188.6 warehouse whose inventory system had not
-  221.7 200.5 been updated in several years. Shipping
-  221.7 212.4 delays in the spring were traced to a single
-  221.7 224.3 warehouse whose inventory system had not
-  221.7 236.1 been updated in several years.
-  498.5 93.7 189.75
-  77.7 248.5 12
-  113.7 248.5 Line item 12
-  221.7 248.5 Standard entry for item number 12.
-  498.5 248.5 207.00
-  77.7 260.9 13
-  113.7 260.9 Line item 13
-  221.7 260.9 Standard entry for item number 13.
-  498.5 260.9 224.25
-  77.7 273.2 14
-  113.7 273.2 Line item 14
-  221.7 273.2 Standard entry for item number 14.
-  498.5 273.2 241.50
-  77.7 285.6 15
-  113.7 285.6 Line item 15
-  221.7 285.6 Standard entry for item number 15.
-  498.5 285.6 258.75
-  77.7 298.0 16
-  113.7 298.0 Line item 16
-  221.7 298.0 Standard entry for item number 16.
-  498.5 298.0 276.00
-  77.7 310.3 17
-  113.7 310.3 Line item 17
-  221.7 310.3 Standard entry for item number 17.
-  498.5 310.3 293.25
-  77.7 322.7 18
-  113.7 322.7 Line item 18
-  221.7 322.7 Standard entry for item number 18.
-  498.5 322.7 310.50
-  77.7 335.1 19
-  113.7 335.1 Line item 19
-  221.7 335.1 Standard entry for item number 19.
-  498.5 335.1 327.75
-  77.7 347.5 20
-  113.7 347.5 Line item 20
-  221.7 347.5 Standard entry for item number 20.
-  498.5 347.5 345.00
-  77.7 359.8 21
-  113.7 359.8 Line item 21
-  221.7 359.8 Standard entry for item number 21.
-  498.5 359.8 362.25
-  77.7 372.2 22
-  113.7 372.2 Line item 22
-  221.7 372.2 Standard entry for item number 22.
-  498.5 372.2 379.50
-  77.7 384.6 23
-  113.7 384.6 Line item 23
-  221.7 384.6 Standard entry for item number 23.
-  498.5 384.6 396.75
-  77.7 396.9 24
-  113.7 396.9 Line item 24
-  221.7 396.9 Standard entry for item number 24.
-  498.5 396.9 414.00
-  77.7 409.3 25
-  113.7 409.3 Line item 25
-  221.7 409.3 Standard entry for item number 25.
-  498.5 409.3 431.25
-  77.7 421.7 26
-  113.7 421.7 Line item 26
-  221.7 421.7 Standard entry for item number 26.
-  498.5 421.7 448.50
-  77.7 434.1 27
-  113.7 434.1 Line item 27
-  221.7 434.1 Standard entry for item number 27.
-  498.5 434.1 465.75
-  77.7 446.4 28
-  113.7 446.4 Line item 28
-  221.7 446.4 Standard entry for item number 28.
-  498.5 446.4 483.00
-  77.7 458.8 29
-  113.7 458.8 Line item 29
-  221.7 458.8 Standard entry for item number 29.
-  498.5 458.8 500.25
-  77.7 471.2 30
-  113.7 471.2 Line item 30
-  221.7 471.2 Standard entry for item number 30.
-  498.5 471.2 517.50
-  77.7 483.5 31
-  113.7 483.5 Line item 31
-  221.7 483.5 Standard entry for item number 31.
-  498.5 483.5 534.75
-  77.7 495.9 32
-  113.7 495.9 Line item 32
-  221.7 495.9 Maintenance of the older buildings remains
-  221.7 507.8 the largest unplanned cost, and a phased
-  221.7 519.7 renovation schedule is now under
-  221.7 531.5 discussion. The pilot program in three
-  221.7 543.4 schools showed that students who used the
-  221.7 555.3 reading tool practiced more often and with
-  221.7 567.1 greater confidence. The board approved a
-  221.7 579.0 revised budget that shifts funding from
-  221.7 590.9 print advertising toward community
-  221.7 602.7 outreach and training programs. Customer
-  221.7 614.6 feedback consistently praised the new
-  221.7 626.5 onboarding guide, although several readers
-  221.7 638.4 asked for more worked examples. Customer
-  221.7 650.2 feedback consistently praised the new
-  221.7 662.1 onboarding guide, although several readers
-  221.7 674.0 asked for more worked examples. Our
-  221.7 685.8 partners in the northern district
-  221.7 697.7 requested clearer documentation of the
-  221.7 709.6 warranty process and faster replacement of
-  498.5 495.9 552.00
-page 2 612.0 792.0
-  77.7 81.3 #
-  113.7 81.3 Item
-  221.7 81.3 Description
-  473.6 81.3 Amount
-  221.7 93.7 parts. Every department submitted its
-  221.7 105.5 annual plan on time, which allowed the
-  221.7 117.4 finance office to publish the consolidated
-  221.7 129.3 forecast early. Maintenance of the older
-  221.7 141.2 buildings remains the largest unplanned
-  221.7 153.0 cost, and a phased renovation schedule is
-  221.7 164.9 now under discussion. Every department
-  221.7 176.8 submitted its annual plan on time, which
-  221.7 188.6 allowed the finance office to publish the
-  221.7 200.5 consolidated forecast early.
-  77.7 212.9 33
-  113.7 212.9 Line item 33
-  221.7 212.9 Standard entry for item number 33.
-  498.5 212.9 569.25
-  77.7 225.3 34
-  113.7 225.3 Line item 34
-  221.7 225.3 Standard entry for item number 34.
-  498.5 225.3 586.50
-  77.7 237.6 35
-  113.7 237.6 Line item 35
-  221.7 237.6 Standard entry for item number 35.
-  498.5 237.6 603.75
-  77.7 250.0 36
-  113.7 250.0 Line item 36
-  221.7 250.0 Standard entry for item number 36.
-  498.5 250.0 621.00
-  77.7 262.4 37
-  113.7 262.4 Line item 37
-  221.7 262.4 Standard entry for item number 37.
-  498.5 262.4 638.25
-  77.7 274.7 38
-  113.7 274.7 Line item 38
-  221.7 274.7 Standard entry for item number 38.
-  498.5 274.7 655.50
-  77.7 287.1 39
-  113.7 287.1 Line item 39
-  221.7 287.1 Standard entry for item number 39.
-  498.5 287.1 672.75
-  77.7 299.5 40
-  113.7 299.5 Line item 40
-  221.7 299.5 Standard entry for item number 40.
-  498.5 299.5 690.00
-  77.7 311.8 41
-  113.7 311.8 Line item 41
-  221.7 311.8 Standard entry for item number 41.
-  498.5 311.8 707.25
-  77.7 324.2 42
-  113.7 324.2 Line item 42
-  221.7 324.2 Standard entry for item number 42.
-  498.5 324.2 724.50
-  77.7 336.6 43
-  113.7 336.6 Line item 43
-  221.7 336.6 Standard entry for item number 43.
-  498.5 336.6 741.75
-  77.7 349.0 44
-  113.7 349.0 Line item 44
-  221.7 349.0 Standard entry for item number 44.
-  498.5 349.0 759.00
-  77.7 361.3 45
-  113.7 361.3 Line item 45
-  221.7 361.3 Standard entry for item number 45.
-  498.5 361.3 776.25
-  77.7 373.7 46
-  113.7 373.7 Line item 46
-  221.7 373.7 Standard entry for item number 46.
-  498.5 373.7 793.50
-  77.7 386.1 47
-  113.7 386.1 Line item 47
-  221.7 386.1 Standard entry for item number 47.
-  498.5 386.1 810.75
-  77.7 398.4 48
-  113.7 398.4 Line item 48
-  221.7 398.4 Standard entry for item number 48.
-  498.5 398.4 828.00
-  77.7 410.8 49
-  113.7 410.8 Line item 49
-  221.7 410.8 Standard entry for item number 49.
-  498.5 410.8 845.25
-  77.7 423.2 50
-  113.7 423.2 Line item 50
-  221.7 423.2 Standard entry for item number 50.
-  498.5 423.2 862.50
-  77.7 435.6 51
-  113.7 435.6 Line item 51
-  221.7 435.6 Standard entry for item number 51.
-  498.5 435.6 879.75
-  77.7 447.9 52
-  113.7 447.9 Line item 52
-  221.7 447.9 Standard entry for item number 52.
-  498.5 447.9 897.00
-  77.7 460.3 53
-  113.7 460.3 Line item 53
-  221.7 460.3 Standard entry for item number 53.
-  498.5 460.3 914.25
-  77.7 472.7 54
-  113.7 472.7 Line item 54
-  221.7 472.7 Standard entry for item number 54.
-  498.5 472.7 931.50
-  77.7 485.0 55
-  113.7 485.0 Line item 55
-  221.7 485.0 Standard entry for item number 55.
-  498.5 485.0 948.75
-  77.7 497.4 56
-  113.7 497.4 Line item 56
-  221.7 497.4 Standard entry for item number 56.
-  498.5 497.4 966.00
-  77.7 509.8 57
-  113.7 509.8 Line item 57
-  221.7 509.8 Standard entry for item number 57.
-  498.5 509.8 983.25
-  77.7 522.2 58
-  113.7 522.2 Line item 58
-  221.7 522.2 Standard entry for item number 58.
-  486.4 522.2 1,000.50
-  77.7 534.5 59
-  113.7 534.5 Line item 59
-  221.7 534.5 Standard entry for item number 59.
-  486.4 534.5 1,017.75
-  77.7 546.9 60
-  113.7 546.9 Line item 60
-  221.7 546.9 Standard entry for item number 60.
-  486.4 546.9 1,035.00
-  72.0 559.3 End of tables fixture.
+page 0 12240 15840
+  1440 1856 Tables Fixture
+  1440 2328 A. Simple grid (Table Grid)
+  1553 2667 Region
+  3890 2667 Q1
+  6227 2667 Q2
+  8565 2667 Q3
+  1553 2914 North
+  3890 2914 1,200
+  6227 2914 1,350
+  8565 2914 1,410
+  1553 3161 South
+  3890 3161 980
+  6227 3161 1,020
+  8565 3161 1,105
+  1440 3838 B. Built-in table style (Grid Table 4 - Accent 1), header row and banded rows
+  1553 4177 Product
+  3890 4177 Units
+  6227 4177 Price
+  8565 4177 Total
+  1553 4424 Notebook
+  5648 4424 120
+  7865 4424 2.50
+  9961 4424 300.00
+  1553 4672 Pen
+  5648 4672 480
+  7865 4672 0.75
+  9961 4672 360.00
+  1553 4919 Stapler
+  5769 4919 35
+  7865 4919 8.90
+  9961 4919 311.50
+  1553 5166 Folder
+  5648 5166 260
+  7865 5166 1.20
+  9961 5166 312.00
+  1553 5414 Tape
+  5769 5414 90
+  7865 5414 3.10
+  9961 5414 279.00
+  1440 6091 C. Merged cells, shading, custom borders, vertical alignment, fixed widths,
+  1440 6371 nested table
+  4278 6745 Merged header across four columns
+  1571 8167 Tall
+  3011 6992 Top-left aligned (default)
+  6251 7355 Centered
+  6251 7592 vertically
+  8591 7955 Bottom vertically
+  3318 8202 Right-aligned paragraph
+  6257 8202 Centered paragraph
+  8704 8212 n3
+  9761 8212 n4
+  8591 8620 Nested table:
+  3011 9105 Shaded cell
+  6251 9105 Shaded, white bold
+  6251 9342 text
+  8591 9105 Plain
+  1571 9589 Notes
+  3011 9589 Cell with two paragraphs.
+  3011 9827 Second paragraph in the
+  3011 10064 same cell.
+  6251 9589 Merged horizontally across two columns
+  1440 10776 D. Long table with repeating header row and rows that split across pages
+  1440 11105 The table below has 60 data rows; row 1 repeats at the top of each page, and some rows
+  1440 11342 hold long multi-line text.
+  1553 11749 #
+  2273 11749 Item
+  4433 11749 Description
+  9473 11749 Amount
+  1553 11997 1
+  2273 11997 Line item 1
+  4433 11997 Standard entry for item number 1.
+  10092 11997 17.25
+  1553 12244 2
+  2273 12244 Line item 2
+  4433 12244 Standard entry for item number 2.
+  10092 12244 34.50
+  1553 12492 3
+  2273 12492 Line item 3
+  4433 12492 Standard entry for item number 3.
+  10092 12492 51.75
+  1553 12739 4
+  2273 12739 Line item 4
+  4433 12739 Standard entry for item number 4.
+  10092 12739 69.00
+  1553 12987 5
+  2273 12987 Line item 5
+  4433 12987 Standard entry for item number 5.
+  10092 12987 86.25
+  1553 13234 6
+  2273 13234 Line item 6
+  4433 13234 Standard entry for item number 6.
+  9971 13234 103.50
+  1553 13481 7
+  2273 13481 Line item 7
+  4433 13481 Standard entry for item number 7.
+  9971 13481 120.75
+  1553 13729 8
+  2273 13729 Line item 8
+  4433 13729 Standard entry for item number 8.
+  9971 13729 138.00
+  1553 13976 9
+  2273 13976 Line item 9
+  4433 13976 Standard entry for item number 9.
+  9971 13976 155.25
+  1553 14224 10
+  2273 14224 Line item 10
+  4433 14224 Standard entry for item number 10.
+  9971 14224 172.50
+  cell 1445 2481 3782 2728
+  cell 3782 2481 6119 2728
+  cell 6119 2481 8457 2728
+  cell 8457 2481 10795 2728
+  cell 1445 2728 3782 2975
+  cell 3782 2728 6119 2975
+  cell 6119 2728 8457 2975
+  cell 8457 2728 10795 2975
+  cell 1445 2975 3782 3223
+  cell 3782 2975 6119 3223
+  cell 6119 2975 8457 3223
+  cell 8457 2975 10795 3223
+  cell 1445 3991 3782 4238
+  cell 3782 3991 6119 4238
+  cell 6119 3991 8457 4238
+  cell 8457 3991 10795 4238
+  cell 1445 4238 3782 4486
+  cell 3782 4238 6119 4486
+  cell 6119 4238 8457 4486
+  cell 8457 4238 10795 4486
+  cell 1445 4486 3782 4733
+  cell 3782 4486 6119 4733
+  cell 6119 4486 8457 4733
+  cell 8457 4486 10795 4733
+  cell 1445 4733 3782 4980
+  cell 3782 4733 6119 4980
+  cell 6119 4733 8457 4980
+  cell 8457 4733 10795 4980
+  cell 1445 4980 3782 5228
+  cell 3782 4980 6119 5228
+  cell 6119 4980 8457 5228
+  cell 8457 4980 10795 5228
+  cell 1445 5228 3782 5475
+  cell 3782 5228 6119 5475
+  cell 6119 5228 8457 5475
+  cell 8457 5228 10795 5475
+  cell 1463 6524 10823 6806
+  cell 1463 6806 2903 9403
+  cell 2903 6806 6143 8016
+  cell 6143 6806 8483 8016
+  cell 8483 6806 10823 8016
+  cell 1463 8016 2903 8919
+  cell 2903 8016 6143 8919
+  cell 6143 8016 8483 8919
+  cell 8483 8016 10823 8919
+  cell 8596 8026 9653 8434
+  cell 9653 8026 10710 8434
+  cell 1463 8919 2903 9403
+  cell 2903 8919 6143 9403
+  cell 6143 8919 8483 9403
+  cell 8483 8919 10823 9403
+  cell 1463 9403 2903 10126
+  cell 2903 9403 6143 10126
+  cell 6143 9403 10823 10126
+  cell 1445 11563 2165 11811
+  cell 2165 11563 4325 11811
+  cell 4325 11563 9365 11811
+  cell 9365 11563 10805 11811
+  cell 1445 11811 2165 12058
+  cell 2165 11811 4325 12058
+  cell 4325 11811 9365 12058
+  cell 9365 11811 10805 12058
+  cell 1445 12058 2165 12306
+  cell 2165 12058 4325 12306
+  cell 4325 12058 9365 12306
+  cell 9365 12058 10805 12306
+  cell 1445 12306 2165 12553
+  cell 2165 12306 4325 12553
+  cell 4325 12306 9365 12553
+  cell 9365 12306 10805 12553
+  cell 1445 12553 2165 12801
+  cell 2165 12553 4325 12801
+  cell 4325 12553 9365 12801
+  cell 9365 12553 10805 12801
+  cell 1445 12801 2165 13048
+  cell 2165 12801 4325 13048
+  cell 4325 12801 9365 13048
+  cell 9365 12801 10805 13048
+  cell 1445 13048 2165 13295
+  cell 2165 13048 4325 13295
+  cell 4325 13048 9365 13295
+  cell 9365 13048 10805 13295
+  cell 1445 13295 2165 13543
+  cell 2165 13295 4325 13543
+  cell 4325 13295 9365 13543
+  cell 9365 13295 10805 13543
+  cell 1445 13543 2165 13790
+  cell 2165 13543 4325 13790
+  cell 4325 13543 9365 13790
+  cell 9365 13543 10805 13790
+  cell 1445 13790 2165 14038
+  cell 2165 13790 4325 14038
+  cell 4325 13790 9365 14038
+  cell 9365 13790 10805 14038
+  cell 1445 14038 2165 14285
+  cell 2165 14038 4325 14285
+  cell 4325 14038 9365 14285
+  cell 9365 14038 10805 14285
+page 1 12240 15840
+  1553 1626 #
+  2273 1626 Item
+  4433 1626 Description
+  9473 1626 Amount
+  1553 1873 11
+  2273 1873 Line item 11
+  4433 1873 Maintenance of the older buildings remains
+  4433 2111 the largest unplanned cost, and a phased
+  4433 2348 renovation schedule is now under
+  4433 2586 discussion. A detailed audit of travel
+  4433 2823 expenses revealed modest savings, mostly
+  4433 3061 from booking flights earlier and
+  4433 3298 consolidating hotel contracts. Shipping
+  4433 3535 delays in the spring were traced to a single
+  4433 3773 warehouse whose inventory system had not
+  4433 4010 been updated in several years. Shipping
+  4433 4248 delays in the spring were traced to a single
+  4433 4485 warehouse whose inventory system had not
+  4433 4722 been updated in several years.
+  9971 1873 189.75
+  1553 4970 12
+  2273 4970 Line item 12
+  4433 4970 Standard entry for item number 12.
+  9971 4970 207.00
+  1553 5217 13
+  2273 5217 Line item 13
+  4433 5217 Standard entry for item number 13.
+  9971 5217 224.25
+  1553 5465 14
+  2273 5465 Line item 14
+  4433 5465 Standard entry for item number 14.
+  9971 5465 241.50
+  1553 5712 15
+  2273 5712 Line item 15
+  4433 5712 Standard entry for item number 15.
+  9971 5712 258.75
+  1553 5960 16
+  2273 5960 Line item 16
+  4433 5960 Standard entry for item number 16.
+  9971 5960 276.00
+  1553 6207 17
+  2273 6207 Line item 17
+  4433 6207 Standard entry for item number 17.
+  9971 6207 293.25
+  1553 6454 18
+  2273 6454 Line item 18
+  4433 6454 Standard entry for item number 18.
+  9971 6454 310.50
+  1553 6702 19
+  2273 6702 Line item 19
+  4433 6702 Standard entry for item number 19.
+  9971 6702 327.75
+  1553 6949 20
+  2273 6949 Line item 20
+  4433 6949 Standard entry for item number 20.
+  9971 6949 345.00
+  1553 7197 21
+  2273 7197 Line item 21
+  4433 7197 Standard entry for item number 21.
+  9971 7197 362.25
+  1553 7444 22
+  2273 7444 Line item 22
+  4433 7444 Standard entry for item number 22.
+  9971 7444 379.50
+  1553 7691 23
+  2273 7691 Line item 23
+  4433 7691 Standard entry for item number 23.
+  9971 7691 396.75
+  1553 7939 24
+  2273 7939 Line item 24
+  4433 7939 Standard entry for item number 24.
+  9971 7939 414.00
+  1553 8186 25
+  2273 8186 Line item 25
+  4433 8186 Standard entry for item number 25.
+  9971 8186 431.25
+  1553 8434 26
+  2273 8434 Line item 26
+  4433 8434 Standard entry for item number 26.
+  9971 8434 448.50
+  1553 8681 27
+  2273 8681 Line item 27
+  4433 8681 Standard entry for item number 27.
+  9971 8681 465.75
+  1553 8929 28
+  2273 8929 Line item 28
+  4433 8929 Standard entry for item number 28.
+  9971 8929 483.00
+  1553 9176 29
+  2273 9176 Line item 29
+  4433 9176 Standard entry for item number 29.
+  9971 9176 500.25
+  1553 9423 30
+  2273 9423 Line item 30
+  4433 9423 Standard entry for item number 30.
+  9971 9423 517.50
+  1553 9671 31
+  2273 9671 Line item 31
+  4433 9671 Standard entry for item number 31.
+  9971 9671 534.75
+  1553 9918 32
+  2273 9918 Line item 32
+  4433 9918 Maintenance of the older buildings remains
+  4433 10156 the largest unplanned cost, and a phased
+  4433 10393 renovation schedule is now under
+  4433 10630 discussion. The pilot program in three
+  4433 10868 schools showed that students who used the
+  4433 11105 reading tool practiced more often and with
+  4433 11343 greater confidence. The board approved a
+  4433 11580 revised budget that shifts funding from
+  4433 11818 print advertising toward community
+  4433 12055 outreach and training programs. Customer
+  4433 12292 feedback consistently praised the new
+  4433 12530 onboarding guide, although several readers
+  4433 12767 asked for more worked examples. Customer
+  4433 13005 feedback consistently praised the new
+  4433 13242 onboarding guide, although several readers
+  4433 13479 asked for more worked examples. Our
+  4433 13717 partners in the northern district
+  4433 13954 requested clearer documentation of the
+  4433 14192 warranty process and faster replacement of
+  9971 9918 552.00
+  cell 1445 1440 2165 1687
+  cell 2165 1440 4325 1687
+  cell 4325 1440 9365 1687
+  cell 9365 1440 10805 1687
+  cell 1445 1687 2165 4784
+  cell 2165 1687 4325 4784
+  cell 4325 1687 9365 4784
+  cell 9365 1687 10805 4784
+  cell 1445 4784 2165 5031
+  cell 2165 4784 4325 5031
+  cell 4325 4784 9365 5031
+  cell 9365 4784 10805 5031
+  cell 1445 5031 2165 5279
+  cell 2165 5031 4325 5279
+  cell 4325 5031 9365 5279
+  cell 9365 5031 10805 5279
+  cell 1445 5279 2165 5526
+  cell 2165 5279 4325 5526
+  cell 4325 5279 9365 5526
+  cell 9365 5279 10805 5526
+  cell 1445 5526 2165 5774
+  cell 2165 5526 4325 5774
+  cell 4325 5526 9365 5774
+  cell 9365 5526 10805 5774
+  cell 1445 5774 2165 6021
+  cell 2165 5774 4325 6021
+  cell 4325 5774 9365 6021
+  cell 9365 5774 10805 6021
+  cell 1445 6021 2165 6268
+  cell 2165 6021 4325 6268
+  cell 4325 6021 9365 6268
+  cell 9365 6021 10805 6268
+  cell 1445 6268 2165 6516
+  cell 2165 6268 4325 6516
+  cell 4325 6268 9365 6516
+  cell 9365 6268 10805 6516
+  cell 1445 6516 2165 6763
+  cell 2165 6516 4325 6763
+  cell 4325 6516 9365 6763
+  cell 9365 6516 10805 6763
+  cell 1445 6763 2165 7011
+  cell 2165 6763 4325 7011
+  cell 4325 6763 9365 7011
+  cell 9365 6763 10805 7011
+  cell 1445 7011 2165 7258
+  cell 2165 7011 4325 7258
+  cell 4325 7011 9365 7258
+  cell 9365 7011 10805 7258
+  cell 1445 7258 2165 7505
+  cell 2165 7258 4325 7505
+  cell 4325 7258 9365 7505
+  cell 9365 7258 10805 7505
+  cell 1445 7505 2165 7753
+  cell 2165 7505 4325 7753
+  cell 4325 7505 9365 7753
+  cell 9365 7505 10805 7753
+  cell 1445 7753 2165 8000
+  cell 2165 7753 4325 8000
+  cell 4325 7753 9365 8000
+  cell 9365 7753 10805 8000
+  cell 1445 8000 2165 8248
+  cell 2165 8000 4325 8248
+  cell 4325 8000 9365 8248
+  cell 9365 8000 10805 8248
+  cell 1445 8248 2165 8495
+  cell 2165 8248 4325 8495
+  cell 4325 8248 9365 8495
+  cell 9365 8248 10805 8495
+  cell 1445 8495 2165 8743
+  cell 2165 8495 4325 8743
+  cell 4325 8495 9365 8743
+  cell 9365 8495 10805 8743
+  cell 1445 8743 2165 8990
+  cell 2165 8743 4325 8990
+  cell 4325 8743 9365 8990
+  cell 9365 8743 10805 8990
+  cell 1445 8990 2165 9237
+  cell 2165 8990 4325 9237
+  cell 4325 8990 9365 9237
+  cell 9365 8990 10805 9237
+  cell 1445 9237 2165 9485
+  cell 2165 9237 4325 9485
+  cell 4325 9237 9365 9485
+  cell 9365 9237 10805 9485
+  cell 1445 9485 2165 9732
+  cell 2165 9485 4325 9732
+  cell 4325 9485 9365 9732
+  cell 9365 9485 10805 9732
+  cell 1445 9732 2165 14253
+  cell 2165 9732 4325 14253
+  cell 4325 9732 9365 14253
+  cell 9365 9732 10805 14253
+page 2 12240 15840
+  1553 1626 #
+  2273 1626 Item
+  4433 1626 Description
+  9473 1626 Amount
+  4433 1873 parts. Every department submitted its
+  4433 2111 annual plan on time, which allowed the
+  4433 2348 finance office to publish the consolidated
+  4433 2586 forecast early. Maintenance of the older
+  4433 2823 buildings remains the largest unplanned
+  4433 3061 cost, and a phased renovation schedule is
+  4433 3298 now under discussion. Every department
+  4433 3535 submitted its annual plan on time, which
+  4433 3773 allowed the finance office to publish the
+  4433 4010 consolidated forecast early.
+  1553 4258 33
+  2273 4258 Line item 33
+  4433 4258 Standard entry for item number 33.
+  9971 4258 569.25
+  1553 4505 34
+  2273 4505 Line item 34
+  4433 4505 Standard entry for item number 34.
+  9971 4505 586.50
+  1553 4752 35
+  2273 4752 Line item 35
+  4433 4752 Standard entry for item number 35.
+  9971 4752 603.75
+  1553 5000 36
+  2273 5000 Line item 36
+  4433 5000 Standard entry for item number 36.
+  9971 5000 621.00
+  1553 5247 37
+  2273 5247 Line item 37
+  4433 5247 Standard entry for item number 37.
+  9971 5247 638.25
+  1553 5495 38
+  2273 5495 Line item 38
+  4433 5495 Standard entry for item number 38.
+  9971 5495 655.50
+  1553 5742 39
+  2273 5742 Line item 39
+  4433 5742 Standard entry for item number 39.
+  9971 5742 672.75
+  1553 5990 40
+  2273 5990 Line item 40
+  4433 5990 Standard entry for item number 40.
+  9971 5990 690.00
+  1553 6237 41
+  2273 6237 Line item 41
+  4433 6237 Standard entry for item number 41.
+  9971 6237 707.25
+  1553 6484 42
+  2273 6484 Line item 42
+  4433 6484 Standard entry for item number 42.
+  9971 6484 724.50
+  1553 6732 43
+  2273 6732 Line item 43
+  4433 6732 Standard entry for item number 43.
+  9971 6732 741.75
+  1553 6979 44
+  2273 6979 Line item 44
+  4433 6979 Standard entry for item number 44.
+  9971 6979 759.00
+  1553 7227 45
+  2273 7227 Line item 45
+  4433 7227 Standard entry for item number 45.
+  9971 7227 776.25
+  1553 7474 46
+  2273 7474 Line item 46
+  4433 7474 Standard entry for item number 46.
+  9971 7474 793.50
+  1553 7721 47
+  2273 7721 Line item 47
+  4433 7721 Standard entry for item number 47.
+  9971 7721 810.75
+  1553 7969 48
+  2273 7969 Line item 48
+  4433 7969 Standard entry for item number 48.
+  9971 7969 828.00
+  1553 8216 49
+  2273 8216 Line item 49
+  4433 8216 Standard entry for item number 49.
+  9971 8216 845.25
+  1553 8464 50
+  2273 8464 Line item 50
+  4433 8464 Standard entry for item number 50.
+  9971 8464 862.50
+  1553 8711 51
+  2273 8711 Line item 51
+  4433 8711 Standard entry for item number 51.
+  9971 8711 879.75
+  1553 8959 52
+  2273 8959 Line item 52
+  4433 8959 Standard entry for item number 52.
+  9971 8959 897.00
+  1553 9206 53
+  2273 9206 Line item 53
+  4433 9206 Standard entry for item number 53.
+  9971 9206 914.25
+  1553 9453 54
+  2273 9453 Line item 54
+  4433 9453 Standard entry for item number 54.
+  9971 9453 931.50
+  1553 9701 55
+  2273 9701 Line item 55
+  4433 9701 Standard entry for item number 55.
+  9971 9701 948.75
+  1553 9948 56
+  2273 9948 Line item 56
+  4433 9948 Standard entry for item number 56.
+  9971 9948 966.00
+  1553 10196 57
+  2273 10196 Line item 57
+  4433 10196 Standard entry for item number 57.
+  9971 10196 983.25
+  1553 10443 58
+  2273 10443 Line item 58
+  4433 10443 Standard entry for item number 58.
+  9729 10443 1,000.50
+  1553 10690 59
+  2273 10690 Line item 59
+  4433 10690 Standard entry for item number 59.
+  9729 10690 1,017.75
+  1553 10938 60
+  2273 10938 Line item 60
+  4433 10938 Standard entry for item number 60.
+  9729 10938 1,035.00
+  1440 11185 End of tables fixture.
+  cell 1445 1440 2165 1687
+  cell 2165 1440 4325 1687
+  cell 4325 1440 9365 1687
+  cell 9365 1440 10805 1687
+  cell 1445 1687 2165 4072
+  cell 2165 1687 4325 4072
+  cell 4325 1687 9365 4072
+  cell 9365 1687 10805 4072
+  cell 1445 4072 2165 4319
+  cell 2165 4072 4325 4319
+  cell 4325 4072 9365 4319
+  cell 9365 4072 10805 4319
+  cell 1445 4319 2165 4566
+  cell 2165 4319 4325 4566
+  cell 4325 4319 9365 4566
+  cell 9365 4319 10805 4566
+  cell 1445 4566 2165 4814
+  cell 2165 4566 4325 4814
+  cell 4325 4566 9365 4814
+  cell 9365 4566 10805 4814
+  cell 1445 4814 2165 5061
+  cell 2165 4814 4325 5061
+  cell 4325 4814 9365 5061
+  cell 9365 4814 10805 5061
+  cell 1445 5061 2165 5309
+  cell 2165 5061 4325 5309
+  cell 4325 5061 9365 5309
+  cell 9365 5061 10805 5309
+  cell 1445 5309 2165 5556
+  cell 2165 5309 4325 5556
+  cell 4325 5309 9365 5556
+  cell 9365 5309 10805 5556
+  cell 1445 5556 2165 5804
+  cell 2165 5556 4325 5804
+  cell 4325 5556 9365 5804
+  cell 9365 5556 10805 5804
+  cell 1445 5804 2165 6051
+  cell 2165 5804 4325 6051
+  cell 4325 5804 9365 6051
+  cell 9365 5804 10805 6051
+  cell 1445 6051 2165 6298
+  cell 2165 6051 4325 6298
+  cell 4325 6051 9365 6298
+  cell 9365 6051 10805 6298
+  cell 1445 6298 2165 6546
+  cell 2165 6298 4325 6546
+  cell 4325 6298 9365 6546
+  cell 9365 6298 10805 6546
+  cell 1445 6546 2165 6793
+  cell 2165 6546 4325 6793
+  cell 4325 6546 9365 6793
+  cell 9365 6546 10805 6793
+  cell 1445 6793 2165 7041
+  cell 2165 6793 4325 7041
+  cell 4325 6793 9365 7041
+  cell 9365 6793 10805 7041
+  cell 1445 7041 2165 7288
+  cell 2165 7041 4325 7288
+  cell 4325 7041 9365 7288
+  cell 9365 7041 10805 7288
+  cell 1445 7288 2165 7535
+  cell 2165 7288 4325 7535
+  cell 4325 7288 9365 7535
+  cell 9365 7288 10805 7535
+  cell 1445 7535 2165 7783
+  cell 2165 7535 4325 7783
+  cell 4325 7535 9365 7783
+  cell 9365 7535 10805 7783
+  cell 1445 7783 2165 8030
+  cell 2165 7783 4325 8030
+  cell 4325 7783 9365 8030
+  cell 9365 7783 10805 8030
+  cell 1445 8030 2165 8278
+  cell 2165 8030 4325 8278
+  cell 4325 8030 9365 8278
+  cell 9365 8030 10805 8278
+  cell 1445 8278 2165 8525
+  cell 2165 8278 4325 8525
+  cell 4325 8278 9365 8525
+  cell 9365 8278 10805 8525
+  cell 1445 8525 2165 8773
+  cell 2165 8525 4325 8773
+  cell 4325 8525 9365 8773
+  cell 9365 8525 10805 8773
+  cell 1445 8773 2165 9020
+  cell 2165 8773 4325 9020
+  cell 4325 8773 9365 9020
+  cell 9365 8773 10805 9020
+  cell 1445 9020 2165 9267
+  cell 2165 9020 4325 9267
+  cell 4325 9020 9365 9267
+  cell 9365 9020 10805 9267
+  cell 1445 9267 2165 9515
+  cell 2165 9267 4325 9515
+  cell 4325 9267 9365 9515
+  cell 9365 9267 10805 9515
+  cell 1445 9515 2165 9762
+  cell 2165 9515 4325 9762
+  cell 4325 9515 9365 9762
+  cell 9365 9515 10805 9762
+  cell 1445 9762 2165 10010
+  cell 2165 9762 4325 10010
+  cell 4325 9762 9365 10010
+  cell 9365 9762 10805 10010
+  cell 1445 10010 2165 10257
+  cell 2165 10010 4325 10257
+  cell 4325 10010 9365 10257
+  cell 9365 10010 10805 10257
+  cell 1445 10257 2165 10504
+  cell 2165 10257 4325 10504
+  cell 4325 10257 9365 10504
+  cell 9365 10257 10805 10504
+  cell 1445 10504 2165 10752
+  cell 2165 10504 4325 10752
+  cell 4325 10504 9365 10752
+  cell 9365 10504 10805 10752
+  cell 1445 10752 2165 10999
+  cell 2165 10752 4325 10999
+  cell 4325 10752 9365 10999
+  cell 9365 10752 10805 10999

@@ -1,25 +1,44 @@
-page 0 612.0 792.0
-  72.0 80.8 Body paragraph 1.
-  72.0 100.7 Body paragraph 2.
-  72.0 120.5 Body paragraph 3.
-  79.5 100.7 FX-NEST-2
-  85.1 114.4 Text before the inner table.
-  90.8 134.8 Inner A R1 C1
-  202.4 134.8 Inner A R1 C2
-  90.8 155.2 Inner A R2 C1
-  202.4 155.2 Inner A R2 C2
-  85.1 175.5 Text after the inner table.
-  324.8 114.9 Only content R1 C1
-  436.4 114.9 Only content R1 C2
-  324.8 135.3 Only content R2 C1
-  436.4 135.3 Only content R2 C2
-  85.1 195.9 Plain outer cell
-  319.1 195.9 Outer text, then an inner table of 3
-  319.1 207.8 rows:
-  324.8 228.1 Inner B R1
-  436.4 228.1 x
-  324.8 248.5 Inner B R2
-  436.4 248.5 x
-  324.8 268.9 Inner B R3
-  436.4 268.9 x
-  79.5 289.8 Paragraph after the outer table.
+page 0 12240 15840
+  1440 1616 Body paragraph 1.
+  1440 2013 Body paragraph 2.
+  1440 2411 Body paragraph 3.
+  1589 2013 FX-NEST-2
+  1702 2288 Text before the inner table.
+  1815 2696 Inner A R1 C1
+  4047 2696 Inner A R1 C2
+  1815 3103 Inner A R2 C1
+  4047 3103 Inner A R2 C2
+  1702 3511 Text after the inner table.
+  6495 2298 Only content R1 C1
+  8727 2298 Only content R1 C2
+  6495 2706 Only content R2 C1
+  8727 2706 Only content R2 C2
+  1702 3918 Plain outer cell
+  6382 3918 Outer text, then an inner table of 3
+  6382 4155 rows:
+  6495 4563 Inner B R1
+  8727 4563 x
+  6495 4970 Inner B R2
+  8727 4970 x
+  6495 5378 Inner B R3
+  8727 5378 x
+  1589 5795 Paragraph after the outer table.
+  float 1440 1440 10800 13680
+  cell 1594 2102 6274 3732
+  cell 1707 2510 3939 2917
+  cell 3939 2510 6171 2917
+  cell 1707 2917 3939 3325
+  cell 3939 2917 6171 3325
+  cell 6274 2102 10954 3732
+  cell 6387 2112 8619 2520
+  cell 8619 2112 10851 2520
+  cell 6387 2520 8619 2927
+  cell 8619 2520 10851 2927
+  cell 1594 3732 6274 5609
+  cell 6274 3732 10954 5609
+  cell 6387 4377 8619 4784
+  cell 8619 4377 10851 4784
+  cell 6387 4784 8619 5192
+  cell 8619 4784 10851 5192
+  cell 6387 5192 8619 5599
+  cell 8619 5192 10851 5599

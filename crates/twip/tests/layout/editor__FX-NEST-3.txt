@@ -1,38 +1,65 @@
-page 0 612.0 792.0
-  72.0 96.8 FX-NEST-3
-  77.7 110.6 Level 1, before
-  83.3 130.9 A: L2 before L3
-  89.0 151.3 L3 R1
-  89.0 163.2 C1
-  139.4 151.3 L3 R1
-  139.4 163.2 C2
-  89.0 183.6 L3 R2
-  89.0 195.4 C1
-  139.4 183.6 L3 R2
-  139.4 195.4 C2
-  83.3 215.8 L2 after L3
-  194.9 130.9 A L2 R1 C2
-  83.3 236.2 A L2 R2 C1
-  194.9 236.2 A L2 R2 C2
-  77.7 256.5 Level 1, after
-  311.6 110.6 Two sibling inner tables:
-  317.3 130.9 Sibling 1 R1 C1
-  428.9 130.9 Sibling 1 R1 C2
-  317.3 151.3 Sibling 1 R2 C1
-  428.9 151.3 Sibling 1 R2 C2
-  311.6 171.7 Between the siblings
-  317.3 192.1 Sibling 2 R1 C1
-  428.9 192.1 Sibling 2 R1 C2
-  317.3 212.4 Sibling 2 R2 C1
-  428.9 212.4 Sibling 2 R2 C2
-  77.7 276.9 Horizontally merged cell with an inner table:
-  83.3 297.3 Merged: L2 before L3
-  89.0 317.6 L3 R1 C1
-  197.9 317.6 L3 R1 C2
-  89.0 338.0 L3 R2 C1
-  197.9 338.0 L3 R2 C2
-  83.3 358.4 L2 after L3
-  311.9 297.3 Merged L2 R1 C2
-  83.3 378.8 Merged L2 R2 C1
-  311.9 378.8 Merged L2 R2 C2
-  72.0 399.6 Paragraph after the outer table.
+page 0 12240 15840
+  1440 1936 FX-NEST-3
+  1553 2211 Level 1, before
+  1666 2619 A: L2 before L3
+  1779 3026 L3 R1
+  1779 3264 C1
+  2787 3026 L3 R1
+  2787 3264 C2
+  1779 3671 L3 R2
+  1779 3908 C1
+  2787 3671 L3 R2
+  2787 3908 C2
+  1666 4316 L2 after L3
+  3898 2619 A L2 R1 C2
+  1666 4723 A L2 R2 C1
+  3898 4723 A L2 R2 C2
+  1553 5131 Level 1, after
+  6233 2211 Two sibling inner tables:
+  6346 2619 Sibling 1 R1 C1
+  8578 2619 Sibling 1 R1 C2
+  6346 3026 Sibling 1 R2 C1
+  8578 3026 Sibling 1 R2 C2
+  6233 3434 Between the siblings
+  6346 3841 Sibling 2 R1 C1
+  8578 3841 Sibling 2 R1 C2
+  6346 4248 Sibling 2 R2 C1
+  8578 4248 Sibling 2 R2 C2
+  1553 5538 Horizontally merged cell with an inner table:
+  1666 5946 Merged: L2 before L3
+  1779 6353 L3 R1 C1
+  3957 6353 L3 R1 C2
+  1779 6760 L3 R2 C1
+  3957 6760 L3 R2 C2
+  1666 7168 L2 after L3
+  6238 5946 Merged L2 R1 C2
+  1666 7575 Merged L2 R2 C1
+  6238 7575 Merged L2 R2 C2
+  1440 7993 Paragraph after the outer table.
+  cell 1445 2025 6125 5352
+  cell 1558 2433 3790 4537
+  cell 1671 2840 2679 3485
+  cell 2679 2840 3687 3485
+  cell 1671 3485 2679 4130
+  cell 2679 3485 3687 4130
+  cell 3790 2433 6022 4537
+  cell 1558 4537 3790 4945
+  cell 3790 4537 6022 4945
+  cell 6125 2025 10805 5352
+  cell 6238 2433 8470 2840
+  cell 8470 2433 10702 2840
+  cell 6238 2840 8470 3248
+  cell 8470 2840 10702 3248
+  cell 6238 3655 8470 4062
+  cell 8470 3655 10702 4062
+  cell 6238 4062 8470 4470
+  cell 8470 4062 10702 4470
+  cell 1445 5352 10805 7807
+  cell 1558 5760 6130 7389
+  cell 1671 6167 3849 6574
+  cell 3849 6167 6027 6574
+  cell 1671 6574 3849 6982
+  cell 3849 6574 6027 6982
+  cell 6130 5760 10702 7389
+  cell 1558 7389 6130 7797
+  cell 6130 7389 10702 7797

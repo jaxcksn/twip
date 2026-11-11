@@ -1,51 +1,53 @@
-page 0 612.0 792.0
-  72.0 92.8 Objects Fixture
-  72.0 128.8 Inline pictures
-  72.0 146.1 A 300 x 200 px PNG (225 x 150 pt at 96 dpi) inline in its own centered paragraph:
-  72.0 324.8 A 200 x 200 px JPEG (150 x 150 pt) sits inline on this text line:
-  222.0 477.9  and the text continues after it on the same baseline.
-  72.0 511.8 Floating picture with square wrapping
-  72.0 529.0 Customer feedback consistently praised the new onboarding
-  72.0 540.9 guide, although several readers asked for more worked
-  72.0 552.8 examples. The pilot program in three schools showed that
-  72.0 564.7 students who used the reading tool practiced more often and
-  72.0 576.5 with greater confidence. Our partners in the northern
-  72.0 588.4 district requested clearer documentation of the warranty
-  72.0 600.3 process and faster replacement of parts. Field technicians
-  72.0 612.1 reported that the updated diagnostic tablets reduced the
-  72.0 624.0 average service call by nearly fifteen minutes.
-  72.0 643.9 Over the next two quarters the team will focus on reliability, accessibility, and
-  72.0 655.7 the long list of small improvements users requested. Shipping delays in the spring
-  72.0 667.6 were traced to a single warehouse whose inventory system had not been updated in
-  72.0 679.5 several years. A detailed audit of travel expenses revealed modest savings, mostly
-  72.0 691.4 from booking flights earlier and consolidating hotel contracts. Over the next two
-  72.0 703.2 quarters the team will focus on reliability, accessibility, and the long list of
-  72.0 715.1 small improvements users requested. Engineering completed the migration of the
-page 1 612.0 792.0
-  72.0 80.8 billing service ahead of schedule, freeing two developers for the reporting
-  72.0 92.7 project.
-  72.0 126.5 Floating picture with top-and-bottom wrapping
-  72.0 143.8 Customer feedback consistently praised the new onboarding guide, although several
-  72.0 155.7 readers asked for more worked examples. The board approved a revised budget that
-  72.0 279.8 shifts funding from print advertising toward community outreach and training
-  72.0 291.7 programs.
-  72.0 311.6 Every department submitted its annual plan on time, which allowed the finance
-  72.0 323.4 office to publish the consolidated forecast early. Over the next two quarters the
-  72.0 335.3 team will focus on reliability, accessibility, and the long list of small
-  72.0 347.2 improvements users requested. Every department submitted its annual plan on time,
-  72.0 359.0 which allowed the finance office to publish the consolidated forecast early.
-  72.0 392.9 Hyperlinks
-  72.0 410.2 External link: Contoso documentation. Internal link: jump to Notes and symbols.
-  72.0 444.1 Footnotes and endnotes
-  72.0 461.3 The annual figures were audited externally1 and the regional totals were reconciled2
-  72.0 473.2 before publicationi. Engineering completed the migration of the billing service
-  72.0 485.1 ahead of schedule, freeing two developers for the reporting project. The committee
-  72.0 496.9 reviewed the quarterly figures and found that regional sales had grown steadily
-  72.0 508.8 across every product line.
-  72.0 542.7 Notes and symbols
-  72.0 561.4 Wingdings (Insert Symbol):  ✓  ☑   Symbol font:   ∑    (smiley, check, phone,
-  72.0 573.8 checked box, pointing hand; alpha, beta, sum, infinity, greater-or-equal).
-  72.0 593.6 This document intentionally contains no equations (no OMath).
-  72.0 640.6 i Endnote: this document is a synthetic layout test fixture.
-  72.0 705.1 1 Audit performed by an independent firm in the first quarter.
-  72.0 715.1 2 Reconciliation covered all six regions; see the appendix for details.
+page 0 12240 15840
+  1440 1856 Objects Fixture
+  1440 2576 Inline pictures
+  1440 2921 A 300 x 200 px PNG (225 x 150 pt at 96 dpi) inline in its own centered paragraph:
+  1440 6497 A 200 x 200 px JPEG (150 x 150 pt) sits inline on this text line:
+  4440 9558  and the text continues after it on the same baseline.
+  1440 10235 Floating picture with square wrapping
+  1440 10581 Customer feedback consistently praised the new onboarding
+  1440 10818 guide, although several readers asked for more worked
+  1440 11056 examples. The pilot program in three schools showed that
+  1440 11293 students who used the reading tool practiced more often and
+  1440 11530 with greater confidence. Our partners in the northern
+  1440 11768 district requested clearer documentation of the warranty
+  1440 12005 process and faster replacement of parts. Field technicians
+  1440 12243 reported that the updated diagnostic tablets reduced the
+  1440 12480 average service call by nearly fifteen minutes.
+  1440 12878 Over the next two quarters the team will focus on reliability, accessibility, and
+  1440 13115 the long list of small improvements users requested. Shipping delays in the spring
+  1440 13352 were traced to a single warehouse whose inventory system had not been updated in
+  1440 13590 several years. A detailed audit of travel expenses revealed modest savings, mostly
+  1440 13827 from booking flights earlier and consolidating hotel contracts. Over the next two
+  1440 14065 quarters the team will focus on reliability, accessibility, and the long list of
+  1440 14302 small improvements users requested. Engineering completed the migration of the
+  float 8550 10405 10800 12655
+page 1 12240 15840
+  1440 1616 billing service ahead of schedule, freeing two developers for the reporting
+  1440 1853 project.
+  1440 2531 Floating picture with top-and-bottom wrapping
+  1440 2876 Customer feedback consistently praised the new onboarding guide, although several
+  1440 3114 readers asked for more worked examples. The board approved a revised budget that
+  1440 5596 shifts funding from print advertising toward community outreach and training
+  1440 5834 programs.
+  1440 6231 Every department submitted its annual plan on time, which allowed the finance
+  1440 6469 office to publish the consolidated forecast early. Over the next two quarters the
+  1440 6706 team will focus on reliability, accessibility, and the long list of small
+  1440 6944 improvements users requested. Every department submitted its annual plan on time,
+  1440 7181 which allowed the finance office to publish the consolidated forecast early.
+  1440 7858 Hyperlinks
+  1440 8204 External link: Contoso documentation. Internal link: jump to Notes and symbols.
+  1440 8881 Footnotes and endnotes
+  1440 9226 The annual figures were audited externally1 and the regional totals were reconciled2
+  1440 9464 before publicationi. Engineering completed the migration of the billing service
+  1440 9701 ahead of schedule, freeing two developers for the reporting project. The committee
+  1440 9939 reviewed the quarterly figures and found that regional sales had grown steadily
+  1440 10176 across every product line.
+  1440 10854 Notes and symbols
+  1440 11227 Wingdings (Insert Symbol):  ✓  ☑   Symbol font:   ∑    (smiley, check, phone,
+  1440 11475 checked box, pointing hand; alpha, beta, sum, infinity, greater-or-equal).
+  1440 11873 This document intentionally contains no equations (no OMath).
+  1440 12811 i Endnote: this document is a synthetic layout test fixture.
+  1440 14103 1 Audit performed by an independent firm in the first quarter.
+  1440 14303 2 Reconciliation covered all six regions; see the appendix for details.
+  float 4920 3500 7320 5300

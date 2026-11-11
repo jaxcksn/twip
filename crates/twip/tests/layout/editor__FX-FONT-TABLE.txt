@@ -1,10 +1,10 @@
-page 0 612.0 792.0
-  72.0 80.8 Garamond text.
-  72.0 100.7 Garamond bold text.
-  72.0 120.5 Consolas text.
-  72.0 140.4 Mystery Sans text.
-  72.0 160.3 Zzyzx Unknown text.
-  90.0 181.6 •A Symbol bullet.
-  90.0 194.8 ▪A Wingdings bullet.
-  72.0 214.7 CJK: 漢 end.
-  72.0 236.9 Shared: “quoted” § 10° → end.
+page 0 12240 15840
+  1440 1616 Garamond text.
+  1440 2013 Garamond bold text.
+  1440 2411 Consolas text.
+  1440 2808 Mystery Sans text.
+  1440 3206 Zzyzx Unknown text.
+  1800 3631 •A Symbol bullet.
+  1800 3897 ▪A Wingdings bullet.
+  1440 4294 CJK: 漢 end.
+  1440 4737 Shared: “quoted” § 10° → end.

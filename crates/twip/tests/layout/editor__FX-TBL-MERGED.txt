@@ -1,48 +1,84 @@
-page 0 612.0 792.0
-  72.0 96.8 FX-TBL-MERGED
-  77.7 110.6 Col 1
-  155.7 110.6 Col 2
-  233.7 110.6 Col 3
-  311.6 110.6 Col 4
-  389.6 110.6 Col 5
-  467.6 110.6 Col 6
-  77.7 130.9 Span 2
-  233.7 130.9 Span 2
-  389.6 130.9 1
-  467.6 130.9 1
-  77.7 151.3 Vertical
-  77.7 163.2 merge over 3
-  77.7 175.1 rows
-  155.7 151.3 1
-  233.7 151.3 Span 3
-  467.6 151.3 1
-  155.7 171.7 Span 2 + vertical merge
-  155.7 183.6 over 2 rows
-  311.6 171.7 1
-  389.6 171.7 1
-  467.6 171.7 1
-  311.6 192.1 1
-  389.6 192.1 Span 2
-  155.7 212.4 gridBefore
-  155.7 224.3 1 /
-  155.7 236.2 gridAfter 1
-  233.7 212.4 1
-  311.6 212.4 1
-  389.6 212.4 1
-  233.7 256.5 gridBefore 2
-  389.6 256.5 1
-  467.6 256.5 1
-  77.7 276.9 gridAfter 3
-  155.7 276.9 1
-  233.7 276.9 1
-  77.7 297.3 Span 3, taller: Notice claim team export
-  77.7 309.1 staff newsletter review matter
-  77.7 321.0 presenter advisor account served.
-  77.7 332.9 Savings pilot receipt corporate
-  77.7 344.8 requirement standard fact that products
-  77.7 356.6 distribution filed logistics. Chapter
-  77.7 368.5 plan regional maintenance
-  77.7 380.4 accessibility tax.
-  311.6 297.3 Span 3
-  77.7 400.7 Span 6
-  72.0 421.1 Paragraph after the table.
+page 0 12240 15840
+  1440 1936 FX-TBL-MERGED
+  1553 2211 Col 1
+  3113 2211 Col 2
+  4673 2211 Col 3
+  6233 2211 Col 4
+  7793 2211 Col 5
+  9353 2211 Col 6
+  1553 2619 Span 2
+  4673 2619 Span 2
+  7793 2619 1
+  9353 2619 1
+  1553 3026 Vertical
+  1553 3264 merge over 3
+  1553 3501 rows
+  3113 3026 1
+  4673 3026 Span 3
+  9353 3026 1
+  3113 3434 Span 2 + vertical merge
+  3113 3671 over 2 rows
+  6233 3434 1
+  7793 3434 1
+  9353 3434 1
+  6233 3841 1
+  7793 3841 Span 2
+  3113 4248 gridBefore
+  3113 4486 1 /
+  3113 4723 gridAfter 1
+  4673 4248 1
+  6233 4248 1
+  7793 4248 1
+  4673 5131 gridBefore 2
+  7793 5131 1
+  9353 5131 1
+  1553 5538 gridAfter 3
+  3113 5538 1
+  4673 5538 1
+  1553 5946 Span 3, taller: Notice claim team export
+  1553 6183 staff newsletter review matter
+  1553 6420 presenter advisor account served.
+  1553 6658 Savings pilot receipt corporate
+  1553 6895 requirement standard fact that products
+  1553 7133 distribution filed logistics. Chapter
+  1553 7370 plan regional maintenance
+  1553 7607 accessibility tax.
+  6233 5946 Span 3
+  1553 8015 Span 6
+  1440 8422 Paragraph after the table.
+  cell 1445 2025 3005 2433
+  cell 3005 2025 4565 2433
+  cell 4565 2025 6125 2433
+  cell 6125 2025 7685 2433
+  cell 7685 2025 9245 2433
+  cell 9245 2025 10805 2433
+  cell 1445 2433 4565 2840
+  cell 4565 2433 7685 2840
+  cell 7685 2433 9245 2840
+  cell 9245 2433 10805 2840
+  cell 1445 2840 3005 4062
+  cell 3005 2840 4565 3248
+  cell 4565 2840 9245 3248
+  cell 9245 2840 10805 3248
+  cell 1445 3248 3005 3655
+  cell 3005 3248 6125 4062
+  cell 6125 3248 7685 3655
+  cell 7685 3248 9245 3655
+  cell 9245 3248 10805 3655
+  cell 1445 3655 3005 4062
+  cell 3005 3655 6125 4062
+  cell 6125 3655 7685 4062
+  cell 7685 3655 10805 4062
+  cell 3005 4062 4565 4945
+  cell 4565 4062 6125 4945
+  cell 6125 4062 7685 4945
+  cell 7685 4062 9245 4945
+  cell 4565 4945 7685 5352
+  cell 7685 4945 9245 5352
+  cell 9245 4945 10805 5352
+  cell 1445 5352 3005 5760
+  cell 3005 5352 4565 5760
+  cell 4565 5352 6125 5760
+  cell 1445 5760 6125 7829
+  cell 6125 5760 10805 7829
+  cell 1445 7829 10805 8236

@@ -1,17 +1,31 @@
-page 0 612.0 792.0
-  72.0 96.8 FX-REPEAT-REGION
-  72.0 110.1 Rows 2-4 are a repeating section content control.
-  77.7 130.4 Name
-  257.6 130.4 Date
-  401.6 130.4 Done
-  77.7 150.8 Item 1
-  257.6 150.8 2026-01-01
-  401.6 152.2 ☐ done
-  77.7 173.1 Item 2
-  257.6 173.1 2026-02-01
-  401.6 174.5 ☒ done
-  77.7 195.4 Item 3
-  257.6 195.4 2026-03-01
-  401.6 196.9 ☐ done
-  77.7 217.8 Picture content control:
-  72.0 281.1 Paragraph after the table.
+page 0 12240 15840
+  1440 1936 FX-REPEAT-REGION
+  1440 2201 Rows 2-4 are a repeating section content control.
+  1553 2609 Name
+  5153 2609 Date
+  8033 2609 Done
+  1553 3016 Item 1
+  5153 3016 2026-01-01
+  8033 3044 ☐ done
+  1553 3463 Item 2
+  5153 3463 2026-02-01
+  8033 3491 ☒ done
+  1553 3909 Item 3
+  5153 3909 2026-03-01
+  8033 3937 ☐ done
+  1553 4355 Picture content control:
+  1440 5623 Paragraph after the table.
+  cell 1445 2423 5045 2830
+  cell 5045 2423 7925 2830
+  cell 7925 2423 10805 2830
+  cell 1445 2830 5045 3277
+  cell 5045 2830 7925 3277
+  cell 7925 2830 10805 3277
+  cell 1445 3277 5045 3723
+  cell 5045 3277 7925 3723
+  cell 7925 3277 10805 3723
+  cell 1445 3723 5045 4169
+  cell 5045 3723 7925 4169
+  cell 7925 3723 10805 4169
+  cell 1445 4169 5045 5437
+  cell 5045 4169 10805 5437

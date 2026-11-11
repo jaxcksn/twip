@@ -1,49 +1,86 @@
-page 0 612.0 792.0
-  72.0 96.8 FX-TBL-MERGED
-  83.3 111.1 Col 1
-  159.5 111.1 Col 2
-  235.7 111.1 Col 3
-  311.9 111.1 Col 4
-  388.1 111.1 Col 5
-  464.3 111.1 Col 6
-  83.3 131.4 Span 2
-  235.7 131.4 Span 2
-  388.1 131.4 1
-  464.3 131.4 1
-  83.3 151.8 Vertical
-  83.3 163.7 merge over
-  83.3 175.6 3 rows
-  159.5 151.8 1
-  235.7 151.8 Span 3
-  464.3 151.8 1
-  159.5 172.2 Span 2 + vertical merge
-  159.5 184.1 over 2 rows
-  311.9 172.2 1
-  388.1 172.2 1
-  464.3 172.2 1
-  311.9 192.6 1
-  388.1 192.6 Span 2
-  159.5 212.9 gridBefore
-  159.5 224.8 1 /
-  159.5 236.7 gridAfter 1
-  235.7 212.9 1
-  311.9 212.9 1
-  388.1 212.9 1
-  235.7 257.0 gridBefore 2
-  388.1 257.0 1
-  464.3 257.0 1
-  83.3 277.4 gridAfter 3
-  159.5 277.4 1
-  235.7 277.4 1
-  83.3 297.8 Span 3, taller: Notice claim team
-  83.3 309.6 export staff newsletter review matter
-  83.3 321.5 presenter advisor account served.
-  83.3 333.4 Savings pilot receipt corporate
-  83.3 345.3 requirement standard fact that
-  83.3 357.1 products distribution filed
-  83.3 369.0 logistics. Chapter plan regional
-  83.3 380.9 maintenance accessibility tax.
-  311.9 297.8 Span 3
-  83.3 401.2 Span 6
-  77.7 421.6 Paragraph after the table.
-  72.0 442.0 Paragraph after the wrapper table.
+page 0 12240 15840
+  1440 1936 FX-TBL-MERGED
+  1666 2221 Col 1
+  3190 2221 Col 2
+  4714 2221 Col 3
+  6238 2221 Col 4
+  7762 2221 Col 5
+  9286 2221 Col 6
+  1666 2629 Span 2
+  4714 2629 Span 2
+  7762 2629 1
+  9286 2629 1
+  1666 3036 Vertical
+  1666 3274 merge over
+  1666 3511 3 rows
+  3190 3036 1
+  4714 3036 Span 3
+  9286 3036 1
+  3190 3444 Span 2 + vertical merge
+  3190 3681 over 2 rows
+  6238 3444 1
+  7762 3444 1
+  9286 3444 1
+  6238 3851 1
+  7762 3851 Span 2
+  3190 4258 gridBefore
+  3190 4496 1 /
+  3190 4733 gridAfter 1
+  4714 4258 1
+  6238 4258 1
+  7762 4258 1
+  4714 5141 gridBefore 2
+  7762 5141 1
+  9286 5141 1
+  1666 5548 gridAfter 3
+  3190 5548 1
+  4714 5548 1
+  1666 5956 Span 3, taller: Notice claim team
+  1666 6193 export staff newsletter review matter
+  1666 6430 presenter advisor account served.
+  1666 6668 Savings pilot receipt corporate
+  1666 6905 requirement standard fact that
+  1666 7143 products distribution filed
+  1666 7380 logistics. Chapter plan regional
+  1666 7617 maintenance accessibility tax.
+  6238 5956 Span 3
+  1666 8025 Span 6
+  1553 8432 Paragraph after the table.
+  1440 8840 Paragraph after the wrapper table.
+  cell 1445 2025 10589 8654
+  cell 1558 2035 3082 2443
+  cell 3082 2035 4606 2443
+  cell 4606 2035 6130 2443
+  cell 6130 2035 7654 2443
+  cell 7654 2035 9178 2443
+  cell 9178 2035 10702 2443
+  cell 1558 2443 4606 2850
+  cell 4606 2443 7654 2850
+  cell 7654 2443 9178 2850
+  cell 9178 2443 10702 2850
+  cell 1558 2850 3082 4072
+  cell 3082 2850 4606 3258
+  cell 4606 2850 9178 3258
+  cell 9178 2850 10702 3258
+  cell 1558 3258 3082 3665
+  cell 3082 3258 6130 4072
+  cell 6130 3258 7654 3665
+  cell 7654 3258 9178 3665
+  cell 9178 3258 10702 3665
+  cell 1558 3665 3082 4072
+  cell 3082 3665 6130 4072
+  cell 6130 3665 7654 4072
+  cell 7654 3665 10702 4072
+  cell 3082 4072 4606 4955
+  cell 4606 4072 6130 4955
+  cell 6130 4072 7654 4955
+  cell 7654 4072 9178 4955
+  cell 4606 4955 7654 5362
+  cell 7654 4955 9178 5362
+  cell 9178 4955 10702 5362
+  cell 1558 5362 3082 5770
+  cell 3082 5362 4606 5770
+  cell 4606 5362 6130 5770
+  cell 1558 5770 6130 7839
+  cell 6130 5770 10702 7839
+  cell 1558 7839 10702 8246

@@ -1,113 +1,113 @@
-page 0 612.0 792.0
-  72.0 92.8 Text Basics Fixture
-  72.0 128.8 1. Fonts and sizes
-  72.0 148.5 Calibri 11pt is the body font of this document. Cambria 14pt serif text. Times New
-  72.0 171.6 Roman 8pt small print. Arial 24pt back to Calibri 11pt.
-  72.0 195.1 Courier New 11pt: The quick brown fox jumps over the lazy dog 0123456789.
-  72.0 214.9 Georgia 11pt: The quick brown fox jumps over the lazy dog 0123456789.
-  72.0 234.8 Segoe UI 11pt: The quick brown fox jumps over the lazy dog 0123456789.
-  72.0 254.7 Verdana 11pt: The quick brown fox jumps over the lazy dog 0123456789.
-  72.0 274.6 Tahoma 11pt: The quick brown fox jumps over the lazy dog 0123456789.
-  72.0 304.8 Sizes in one paragraph: eight eleven fourteen twenty-four and back.
-  72.0 342.3 2. Character formatting
-  72.0 359.6 Plain, bold, italic, bold italic, single underline, double underline, dotted
-  72.0 371.5 underline, wave underline, strikethrough, double strikethrough.
-  72.0 391.3 E = mc2 and H2O; SMALL CAPS TEXT; ALL CAPS TEXT; red text, blue text, yellow highlight,
-  72.0 403.2 green highlight, expanded by 3pt, condensed by 1pt.
-  72.0 437.1 3. Alignment
-  72.0 454.3 Left aligned paragraph. This is the default alignment for body text in most
-  72.0 466.2 documents.
-  202.3 486.1 Centered paragraph with a short line.
-  254.5 506.0 Right aligned paragraph ending at the right margin.
-  72.0 525.8 Justified: Customer feedback consistently praised the new onboarding guide,
-  72.0 537.7 although several readers asked for more worked examples. Shipping delays in the
-  72.0 549.6 spring were traced to a single warehouse whose inventory system had not been updated
-  72.0 561.4 in several years. The board approved a revised budget that shifts funding from print
-  72.0 573.3 advertising toward community outreach and training programs. Every department
-  72.0 585.2 submitted its annual plan on time, which allowed the finance office to publish the
-  72.0 597.1 consolidated forecast early. Our partners in the northern district requested
-  72.0 608.9 clearer documentation of the warranty process and faster replacement of parts.
-  72.0 642.8 4. Line spacing
-  72.0 660.1 Single: Every department submitted its annual plan on time, which allowed the
-  72.0 671.1 finance office to publish the consolidated forecast early. A detailed audit of
-  72.0 682.1 travel expenses revealed modest savings, mostly from booking flights earlier and
-  72.0 693.1 consolidating hotel contracts.
-page 1 612.0 792.0
-  72.0 80.8 Multiple 1.15: Engineering completed the migration of the billing service ahead of
-  72.0 93.4 schedule, freeing two developers for the reporting project. Over the next two
-  72.0 106.1 quarters the team will focus on reliability, accessibility, and the long list of
-  72.0 118.7 small improvements users requested.
-  72.0 139.4 One and a half: Every department submitted its annual plan on time, which allowed
-  72.0 155.9 the finance office to publish the consolidated forecast early. Maintenance of the
-  72.0 172.4 older buildings remains the largest unplanned cost, and a phased renovation
-  72.0 188.9 schedule is now under discussion.
-  72.0 213.4 Double: A detailed audit of travel expenses revealed modest savings, mostly from
-  72.0 235.4 booking flights earlier and consolidating hotel contracts. Engineering completed
-  72.0 257.4 the migration of the billing service ahead of schedule, freeing two developers for
-  72.0 279.4 the reporting project.
-  72.0 315.0 Exactly 18pt: The pilot program in three schools showed that students who used the
-  72.0 333.0 reading tool practiced more often and with greater confidence. Field technicians
-  72.0 351.0 reported that the updated diagnostic tablets reduced the average service call by
-  72.0 369.0 nearly fifteen minutes.
-  72.0 398.4 At least 20pt: A detailed audit of travel expenses revealed modest savings, mostly
-  72.0 418.4 from booking flights earlier and consolidating hotel contracts. The pilot program
-  72.0 438.4 in three schools showed that students who used the reading tool practiced more often
-  72.0 458.4 and with greater confidence.
-  72.0 491.4 5. Space before and after
-  72.0 508.7 Space before 0pt, after 0pt.
-  72.0 520.5 Space before 0pt, after 0pt (adjacent to the previous paragraph).
-  72.0 544.4 Space before 12pt, after 6pt.
-  72.0 580.3 Space before 24pt, after 24pt.
-  72.0 616.1 Space before 6pt, after 0pt.
-  72.0 650.0 6. Indents
-  108.0 667.3 First-line indent 0.5in: The pilot program in three schools showed that
-  72.0 679.2 students who used the reading tool practiced more often and with greater
-  72.0 691.0 confidence. Shipping delays in the spring were traced to a single warehouse whose
-  72.0 702.9 inventory system had not been updated in several years. A detailed audit of travel
-page 2 612.0 792.0
-  72.0 80.8 expenses revealed modest savings, mostly from booking flights earlier and
-  72.0 92.7 consolidating hotel contracts.
-  72.0 112.5 Hanging indent 0.5in: The board approved a revised budget that shifts funding from
-  108.0 124.4 print advertising toward community outreach and training programs. The board
-  108.0 136.3 approved a revised budget that shifts funding from print advertising toward
-  108.0 148.2 community outreach and training programs. The committee reviewed the
-  108.0 160.0 quarterly figures and found that regional sales had grown steadily across
-  108.0 171.9 every product line.
-  144.0 191.8 Left 1in and right 1in indents: Maintenance of the older
-  144.0 203.6 buildings remains the largest unplanned cost, and a
-  144.0 215.5 phased renovation schedule is now under discussion. Every
-  144.0 227.4 department submitted its annual plan on time, which
-  144.0 239.3 allowed the finance office to publish the consolidated
-  144.0 251.1 forecast early. Every department submitted its annual
-  144.0 263.0 plan on time, which allowed the finance office to publish
-  144.0 274.9 the consolidated forecast early.
-  72.0 308.7 7. Borders and shading
-  72.0 326.8 Box border around this paragraph. The board approved a revised budget that shifts
-  72.0 338.6 funding from print advertising toward community outreach and training programs.
-  72.0 350.5 The committee reviewed the quarterly figures and found that regional sales had
-  72.0 362.4 grown steadily across every product line.
-  72.0 383.0 Bottom border only, 1.5pt, like a section rule.
-  72.0 404.4 Shaded paragraph (light blue background). Maintenance of the older buildings
-  72.0 416.2 remains the largest unplanned cost, and a phased renovation schedule is now under
-  72.0 428.1 discussion. A detailed audit of travel expenses revealed modest savings, mostly
-  72.0 440.0 from booking flights earlier and consolidating hotel contracts.
-  72.0 460.3 Box border plus shading combined.
-  72.0 494.7 8. Tab stops
-  108.0 512.0 LeftCenter....................Right with dots
-  108.0 531.8 Item onemiddle................................12
-  108.0 551.7 Item twocentered text............................345
-  72.0 571.6 Price list (decimal tab with dot leader):
-  108.0 583.5 Coffee.................................3.50
-  108.0 603.3 Sandwich..............................12.95
-  108.0 623.2 Family platter........................124.00
-  108.0 643.1 Water.....................................75
-  72.0 662.9 Default tab stops:onetwothree(every 0.5in)
-page 3 612.0 792.0
-  72.0 84.8 9. Line break and contextual spacing
-  72.0 102.1 First line of a paragraph,
-  72.0 113.9 second line after a manual line break (Shift+Enter),
-  72.0 125.8 third line.
-  90.0 148.1 Compact Note one: consecutive paragraphs of this style have no space between them.
-  90.0 157.8 Compact Note two: the 12pt before/after is suppressed between same-style paragraphs.
-  90.0 167.5 Compact Note three: but space still appears before the first and after the last.
-  72.0 190.8 Normal paragraph after the notes.
+page 0 12240 15840
+  1440 1856 Text Basics Fixture
+  1440 2576 1. Fonts and sizes
+  1440 2969 Calibri 11pt is the body font of this document. Cambria 14pt serif text. Times New
+  1440 3431 Roman 8pt small print. Arial 24pt back to Calibri 11pt.
+  1440 3901 Courier New 11pt: The quick brown fox jumps over the lazy dog 0123456789.
+  1440 4299 Georgia 11pt: The quick brown fox jumps over the lazy dog 0123456789.
+  1440 4696 Segoe UI 11pt: The quick brown fox jumps over the lazy dog 0123456789.
+  1440 5094 Verdana 11pt: The quick brown fox jumps over the lazy dog 0123456789.
+  1440 5491 Tahoma 11pt: The quick brown fox jumps over the lazy dog 0123456789.
+  1440 6097 Sizes in one paragraph: eight eleven fourteen twenty-four and back.
+  1440 6847 2. Character formatting
+  1440 7192 Plain, bold, italic, bold italic, single underline, double underline, dotted
+  1440 7429 underline, wave underline, strikethrough, double strikethrough.
+  1440 7827 E = mc2 and H2O; SMALL CAPS TEXT; ALL CAPS TEXT; red text, blue text, yellow highlight,
+  1440 8064 green highlight, expanded by 3pt, condensed by 1pt.
+  1440 8742 3. Alignment
+  1440 9087 Left aligned paragraph. This is the default alignment for body text in most
+  1440 9324 documents.
+  4046 9722 Centered paragraph with a short line.
+  5091 10119 Right aligned paragraph ending at the right margin.
+  1440 10517 Justified: Customer feedback consistently praised the new onboarding guide,
+  1440 10754 although several readers asked for more worked examples. Shipping delays in the
+  1440 10991 spring were traced to a single warehouse whose inventory system had not been updated
+  1440 11229 in several years. The board approved a revised budget that shifts funding from print
+  1440 11466 advertising toward community outreach and training programs. Every department
+  1440 11704 submitted its annual plan on time, which allowed the finance office to publish the
+  1440 11941 consolidated forecast early. Our partners in the northern district requested
+  1440 12179 clearer documentation of the warranty process and faster replacement of parts.
+  1440 12856 4. Line spacing
+  1440 13201 Single: Every department submitted its annual plan on time, which allowed the
+  1440 13421 finance office to publish the consolidated forecast early. A detailed audit of
+  1440 13641 travel expenses revealed modest savings, mostly from booking flights earlier and
+  1440 13861 consolidating hotel contracts.
+page 1 12240 15840
+  1440 1616 Multiple 1.15: Engineering completed the migration of the billing service ahead of
+  1440 1869 schedule, freeing two developers for the reporting project. Over the next two
+  1440 2122 quarters the team will focus on reliability, accessibility, and the long list of
+  1440 2375 small improvements users requested.
+  1440 2788 One and a half: Every department submitted its annual plan on time, which allowed
+  1440 3118 the finance office to publish the consolidated forecast early. Maintenance of the
+  1440 3448 older buildings remains the largest unplanned cost, and a phased renovation
+  1440 3778 schedule is now under discussion.
+  1440 4268 Double: A detailed audit of travel expenses revealed modest savings, mostly from
+  1440 4708 booking flights earlier and consolidating hotel contracts. Engineering completed
+  1440 5148 the migration of the billing service ahead of schedule, freeing two developers for
+  1440 5588 the reporting project.
+  1440 6300 Exactly 18pt: The pilot program in three schools showed that students who used the
+  1440 6660 reading tool practiced more often and with greater confidence. Field technicians
+  1440 7020 reported that the updated diagnostic tablets reduced the average service call by
+  1440 7380 nearly fifteen minutes.
+  1440 7968 At least 20pt: A detailed audit of travel expenses revealed modest savings, mostly
+  1440 8368 from booking flights earlier and consolidating hotel contracts. The pilot program
+  1440 8768 in three schools showed that students who used the reading tool practiced more often
+  1440 9168 and with greater confidence.
+  1440 9828 5. Space before and after
+  1440 10173 Space before 0pt, after 0pt.
+  1440 10411 Space before 0pt, after 0pt (adjacent to the previous paragraph).
+  1440 10888 Space before 12pt, after 6pt.
+  1440 11606 Space before 24pt, after 24pt.
+  1440 12323 Space before 6pt, after 0pt.
+  1440 13000 6. Indents
+  2160 13346 First-line indent 0.5in: The pilot program in three schools showed that
+  1440 13583 students who used the reading tool practiced more often and with greater
+  1440 13821 confidence. Shipping delays in the spring were traced to a single warehouse whose
+  1440 14058 inventory system had not been updated in several years. A detailed audit of travel
+page 2 12240 15840
+  1440 1616 expenses revealed modest savings, mostly from booking flights earlier and
+  1440 1853 consolidating hotel contracts.
+  1440 2251 Hanging indent 0.5in: The board approved a revised budget that shifts funding from
+  2160 2488 print advertising toward community outreach and training programs. The board
+  2160 2726 approved a revised budget that shifts funding from print advertising toward
+  2160 2963 community outreach and training programs. The committee reviewed the
+  2160 3201 quarterly figures and found that regional sales had grown steadily across
+  2160 3438 every product line.
+  2880 3835 Left 1in and right 1in indents: Maintenance of the older
+  2880 4073 buildings remains the largest unplanned cost, and a
+  2880 4310 phased renovation schedule is now under discussion. Every
+  2880 4548 department submitted its annual plan on time, which
+  2880 4785 allowed the finance office to publish the consolidated
+  2880 5022 forecast early. Every department submitted its annual
+  2880 5260 plan on time, which allowed the finance office to publish
+  2880 5497 the consolidated forecast early.
+  1440 6175 7. Borders and shading
+  1440 6535 Box border around this paragraph. The board approved a revised budget that shifts
+  1440 6772 funding from print advertising toward community outreach and training programs.
+  1440 7010 The committee reviewed the quarterly figures and found that regional sales had
+  1440 7247 grown steadily across every product line.
+  1440 7660 Bottom border only, 1.5pt, like a section rule.
+  1440 8087 Shaded paragraph (light blue background). Maintenance of the older buildings
+  1440 8325 remains the largest unplanned cost, and a phased renovation schedule is now under
+  1440 8562 discussion. A detailed audit of travel expenses revealed modest savings, mostly
+  1440 8799 from booking flights earlier and consolidating hotel contracts.
+  1440 9207 Box border plus shading combined.
+  1440 9894 8. Tab stops
+  2160 10240 LeftCenter....................Right with dots
+  2160 10637 Item onemiddle................................12
+  2160 11034 Item twocentered text............................345
+  1440 11432 Price list (decimal tab with dot leader):
+  2160 11669 Coffee.................................3.50
+  2160 12067 Sandwich..............................12.95
+  2160 12464 Family platter........................124.00
+  2160 12861 Water.....................................75
+  1440 13259 Default tab stops:onetwothree(every 0.5in)
+page 3 12240 15840
+  1440 1696 9. Line break and contextual spacing
+  1440 2041 First line of a paragraph,
+  1440 2279 second line after a manual line break (Shift+Enter),
+  1440 2516 third line.
+  1800 2962 Compact Note one: consecutive paragraphs of this style have no space between them.
+  1800 3156 Compact Note two: the 12pt before/after is suppressed between same-style paragraphs.
+  1800 3350 Compact Note three: but space still appears before the first and after the last.
+  1440 3816 Normal paragraph after the notes.
