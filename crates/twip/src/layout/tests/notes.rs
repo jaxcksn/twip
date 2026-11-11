@@ -649,7 +649,7 @@ fn note_in_balanced(cols: &str, body: usize, r: usize, lines: usize, breaks: boo
     let line = |s: String, k: usize| p(format!(r#"<w:r><w:t>{s}</w:t></w:r>{}"#, if k == r { r#"<w:r><w:footnoteReference w:id="10"/></w:r>"# } else { "" }));
     let mut b: String = (1..=body).map(|k| line(format!("P{k:03}"), k)).collect();
     b += &sect(&format!("{pr}{cols}"), false);
-    b += &((1..=tail).map(|k| line(format!("T{k:03}"), 0)).collect::<String>() + &sect(&format!(r#"<w:type w:val="continuous"/>{pr}"#), true));
+    b += &((1..=tail).map(|k| line(format!("N{k:03}"), 0)).collect::<String>() + &sect(&format!(r#"<w:type w:val="continuous"/>{pr}"#), true));
     let pages = super::page_chars(&notes_doc_with(&b, "", &extra)?);
     Some(
         pages
@@ -710,7 +710,7 @@ fn compat_14_a_note_cut_at_a_balanced_sections_end_balances_on_its_last_page() {
     let Some((first, _)) = note_pages(cols) else { return };
     let Some(pages) = note_in_balanced(cols, 10, 10, first + 21, false, 5) else { return };
     let q = |k: usize| find(&pages, &format!("Q{:03}", first + k));
-    let (Some((1, a)), Some((1, b)), Some((1, c)), Some((1, t))) = (q(11), q(12), q(21), find(&pages, "T001")) else { panic!("{pages:?}") };
+    let (Some((1, a)), Some((1, b)), Some((1, c)), Some((1, t))) = (q(11), q(12), q(21), find(&pages, "N001")) else { panic!("{pages:?}") };
     assert!(a.1 < 200.0 && b.1 > 300.0 && c.1 == b.1 && b.2 < a.2, "11 + 10: {:?}", pages[1]);
     assert!(t.1 < 200.0 && t.2 > a.2, "the next section below the notes: {:?}", pages[1]);
 }
@@ -720,5 +720,5 @@ fn compat_14_a_section_after_a_note_that_fills_its_last_page_starts_on_the_next(
     let cols = r#"<w:cols w:num="2" w:space="720"/>"#;
     let Some((first, full)) = note_pages(cols) else { return };
     let Some(pages) = note_in_balanced(cols, 10, 10, first + full, false, 5) else { return };
-    let (Some((1, _)), Some((2, _))) = (find(&pages, &format!("Q{:03}", first + full)), find(&pages, "T001")) else { panic!("{pages:?}") };
+    let (Some((1, _)), Some((2, _))) = (find(&pages, &format!("Q{:03}", first + full)), find(&pages, "N001")) else { panic!("{pages:?}") };
 }
