@@ -608,3 +608,28 @@ fn compat_15_a_cut_note_goes_on_in_the_next_sections_layout_before_its_text() {
     assert!(end > cut && next == end + 1, "the text after the note's last page: {text:?}");
     assert!(pages[cut + 1].iter().all(|c| c.1 < 300.0), "one column: {:?}", text[cut + 1]);
 }
+
+#[test]
+fn a_continuation_notice_takes_note_room_under_a_cut_note() {
+    let lines: String = (1..=10).map(|i| format!(r#"<w:r>{}<w:t>N{i:02}</w:t></w:r>"#, if i > 1 { "<w:br/>" } else { "" })).collect();
+    let extra = format!(r#"<w:footnote w:type="continuationNotice" w:id="11"><w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>Cont</w:t></w:r></w:p></w:footnote><w:footnote w:id="10"><w:p>{lines}</w:p></w:footnote>"#);
+    let line = |k: usize, r: usize| format!(r#"<w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>P{k:02}</w:t></w:r>{}</w:p>"#, if k == r { r#"<w:r><w:footnoteReference w:id="10"/></w:r>"# } else { "" });
+    let body = |r: usize| (1..=80).map(|k| line(k, r)).collect::<String>() + &sect("", true);
+    let listed = r#"<w:footnotePr><w:footnote w:id="11"/></w:footnotePr>"#;
+    let page1 = |r: usize, settings: &str| -> Option<String> {
+        Some(super::page_chars(&notes_doc_with(&body(r), settings, &extra)?)[0].iter().map(|c| c.0).collect())
+    };
+    let Some(plain) = page1(0, "") else { return };
+    let last = (1..=80).rev().find(|k| plain.contains(&format!("P{k:02}"))).expect("page 1 has lines");
+    let count = |s: &str| (1..=10).filter(|i| s.contains(&format!("N{i:02}"))).count();
+    let body_end = |s: &str| (1..=80).rev().find(|k| s.contains(&format!("P{k:02}")));
+    // Compat 15: a cut note is cut in the room the notice leaves, which is drawn under it.
+    let r = last - 6;
+    let (Some(off), Some(on)) = (page1(r, C15), page1(r, &format!("{listed}{C15}"))) else { return };
+    assert!(count(&off) > 2 && count(&on) == count(&off) - 1 && on.contains("Cont") && !off.contains("Cont"), "{off}\n{on}");
+    // Compat ≤ 14: its room is held under a whole note too, so the page's text ends a line sooner; nothing is drawn.
+    let r = last - 20;
+    let (Some(off), Some(on)) = (page1(r, ""), page1(r, listed)) else { return };
+    assert!(count(&off) == 10 && count(&on) == 10 && !on.contains("Cont"), "{off}\n{on}");
+    assert_eq!(body_end(&on).map(|k| k + 1), body_end(&off));
+}

@@ -66,6 +66,10 @@ pub struct NoteArea {
     pub kept: f64,
     /// A note in the area goes on on the next page.
     pub cut: bool,
+    /// Room held at the bottom for the continuation notice: compat ≤ 14 on every area, compat 15 once a note is cut.
+    pub notice: f64,
+    /// The area draws the continuation notice under its cut note.
+    pub noticed: bool,
 }
 
 /// The space shared between two notes in an area: the gap between them is the later one's space before or the
@@ -90,7 +94,7 @@ impl NoteArea {
         if self.below {
             return 0.0;
         }
-        self.sep + self.shared.map_or(self.height, |r| self.height.max(r)) + self.kept
+        self.sep + self.shared.map_or(self.height, |r| self.height.max(r)) + self.kept + self.notice
     }
 }
 
@@ -779,6 +783,11 @@ impl<'d> PageFill<'d, '_> {
         Ok(s)
     }
 
+    /// The height of the footnote continuation notice, 0 without one.
+    fn notice_height(&mut self, width: f64, memos: &mut Memos) -> Result<f64, Yield> {
+        Ok(self.separator_story("footnote:continuationNotice", width, memos)?.map_or(0.0, |s| s.height))
+    }
+
     /// Adds the footnotes `refs` of a line ending at `line_bottom` to `area`, the parts that don't fit to `rest`; whether
     /// the line fits. `defer`: the line starts its paragraph's part in the column (or may not be parted from it), so in
     /// compat ≤ 14 a note that can't start here waits whole for the next page when a new note before it on the page
@@ -803,6 +812,9 @@ impl<'d> PageFill<'d, '_> {
         let mut a = area.clone();
         if a.sep == 0.0 {
             a.sep = self.separator(false, col.width, memos)?.height;
+            if self.ctx.env.text.compat == Compat::Legacy && a.shared.is_none() {
+                a.notice = self.notice_height(col.width, memos)?;
+            }
         }
         if a.shared.is_some() {
             // ponytail: after a note is cut, a later line's notes move it to the next page; where the body after the
@@ -874,7 +886,12 @@ impl<'d> PageFill<'d, '_> {
                 new_rest.push(NotePart { kind: k, id, units: units.clone() });
                 continue;
             }
-            let room = col.bottom.to_pt() - line_bottom - a.total();
+            let mut room = col.bottom.to_pt() - line_bottom - a.total();
+            // A note cut here is cut in the room the continuation notice leaves.
+            let notice = if total > room + EPS && !a.noticed { self.notice_height(col.width, memos)? } else { a.notice };
+            if total > room + EPS {
+                room -= notice - a.notice;
+            }
             let first_para = units.iter().take_while(|x| x.block == units[0].block).count();
             let min = if units.first().is_some_and(|x| x.widow) { 2.min(first_para) } else { 1.min(first_para) };
             let min_h = units.get(min.saturating_sub(1)).map_or(0.0, |x| x.top + x.height);
@@ -901,6 +918,7 @@ impl<'d> PageFill<'d, '_> {
             let part = NotePart { kind: k, id, units: units[..fit].to_vec() };
             a.height += note_extent(&part) - note_join(a.parts.last(), &part);
             a.parts.push(part);
+            (a.notice, a.noticed) = (notice, notice > 0.0);
             new_rest.push(NotePart { kind: k, id, units: rebase(&units[fit..]) });
         }
         *area = a;
@@ -915,6 +933,9 @@ impl<'d> PageFill<'d, '_> {
         }
         area.cont = true;
         area.sep = self.separator(true, col.width, memos)?.height;
+        if self.ctx.env.text.compat == Compat::Legacy {
+            area.notice = self.notice_height(col.width, memos)?;
+        }
         let mut rest = Vec::new();
         for part in std::mem::take(&mut carry.note_rest) {
             // In a later column of the page the note goes on at that column's width.
@@ -980,6 +1001,7 @@ impl<'d> PageFill<'d, '_> {
             size: (width, sep.height),
             children: sep_children.into(),
         }));
+        let mut end = (x0, top + sep.height);
         for (x, parts) in cols {
             let mut y = top + sep.height;
             for (i, part) in parts.iter().enumerate() {
@@ -995,7 +1017,14 @@ impl<'d> PageFill<'d, '_> {
                     children: nc.into(),
                 }));
                 y += note_extent(part);
+                end = (*x, y);
             }
+        }
+        // The continuation notice, an ordinary paragraph under the cut note's last line.
+        if area.noticed
+            && let Some(n) = self.separator_story("footnote:continuationNotice", width, memos)?
+        {
+            place_units(&n.units, end.0, end.1, &mut children);
         }
         Ok(Child::Box(BoxFragment { kind: BoxKind::Notes, id: None, offset: (0.0, 0.0), size: (width, area.total()), children: children.into() }))
     }
@@ -1038,7 +1067,7 @@ impl<'d> PageFill<'d, '_> {
         let cols = if area.cols.is_empty() { vec![(col.x, col.width)] } else { area.cols.clone() };
         let (first, last) = (cols[0], cols[cols.len() - 1]);
         let span = ColumnSpace { x: first.0, width: last.0 + last.1 - first.0, ..*col };
-        let h = area.sep + area.height;
+        let h = area.sep + area.height + area.notice;
         let y = self.note_top(h, &span, text) + 0.15;
         if self.beneath() {
             self.at.notes_bottom = self.at.notes_bottom.max(y - 0.15 + h);
