@@ -26,6 +26,8 @@ pub struct VmlObject<'a, 'i> {
     /// `o:allowoverlap`, `o:allowincell` (on when absent).
     pub allow_overlap: bool,
     pub allow_in_cell: bool,
+    /// `wrapcoords`: the wrap polygon's points, in 21600ths of the shape's box.
+    pub wrap_coords: Option<Vec<(f64, f64)>>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -1026,6 +1028,8 @@ pub fn read<'a, 'i>(pict: Node<'a, 'i>, ctx: &mut Ctx) -> Option<VmlObject<'a, '
         .map(|w| (w.attribute("type").unwrap_or("").to_string(), w.attribute("side").unwrap_or("both").to_string()));
     let mut shape = shape;
     shape.xfrm.off = [Emu(0); 2];
+    let nums: Vec<f64> = el.attribute("wrapcoords").unwrap_or("").split([' ', ',']).filter_map(|v| v.trim().parse().ok()).collect();
+    let wrap_coords = (nums.len() >= 4).then(|| nums.chunks_exact(2).map(|p| (p[0] / 21600.0, p[1] / 21600.0)).collect());
     Some(VmlObject {
         textbox: textbox(el, &st),
         shape,
@@ -1033,6 +1037,7 @@ pub fn read<'a, 'i>(pict: Node<'a, 'i>, ctx: &mut Ctx) -> Option<VmlObject<'a, '
         alt: el.attribute("alt").unwrap_or("").to_string(),
         allow_overlap: on(el.attribute((O, "allowoverlap")), true),
         allow_in_cell: on(el.attribute((O, "allowincell")), true),
+        wrap_coords,
         style: st,
     })
 }

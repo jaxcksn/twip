@@ -296,3 +296,11 @@ fn a_compat_15_vml_float_is_behind_the_text_only_without_wrapping() {
     assert!(!behind(square, 15) && behind("", 15) && behind(r#"<w10:wrap type="none"/>"#, 15));
     assert!(behind(square, 14));
 }
+
+#[test]
+fn a_tight_vml_float_wraps_around_its_wrap_coordinates() {
+    let coords = r#"wrapcoords="0 0 21600 0 10800 21600 0 0""#;
+    let f = vml_float("", coords, r#"<w10:wrap type="tight"/>"#, 15);
+    assert_eq!(f.poly.as_deref(), Some(&[(0.0, 0.0), (1.0, 0.0), (0.5, 1.0), (0.0, 0.0)][..]));
+    assert!(vml_float("", coords, r#"<w10:wrap type="square"/>"#, 15).poly.is_none());
+}

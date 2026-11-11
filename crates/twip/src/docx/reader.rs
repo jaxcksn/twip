@@ -2195,6 +2195,7 @@ impl Reader {
         let dist = std::array::from_fn(|i| (st.wrap_dist[i].unwrap_or(dflt[i]) * 20.0).round() / 20.0);
         // Compat 15: a VML float is behind the text only without wrapping.
         let behind = st.z < 0 && (self.res.styles.compat != Compat::Generic || wrap == "none");
+        let poly = v.wrap_coords.filter(|_| matches!(wrap.as_str(), "tight" | "through")).map(Rc::from);
         self.float_order += 1;
         out.push(Inline::Float(
             Box::new(Float {
@@ -2216,7 +2217,7 @@ impl Reader {
                 wrap_text: wrap_text.into(),
                 dist,
                 effect: [0.0; 4],
-                poly: None,
+                poly,
                 behind,
                 allow_overlap: v.allow_overlap,
                 layout_in_cell: v.allow_in_cell,
