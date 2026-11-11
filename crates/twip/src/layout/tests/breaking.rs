@@ -1822,6 +1822,17 @@ fn a_compat_14_line_keeps_the_end_of_the_float_that_cut_it_first() {
 }
 
 #[test]
+fn a_compat_14_line_after_one_fitted_with_a_slack_stays_in_its_pieces() {
+    // B placed first: the third body line stays right of B in a piece ending at B's bottom (3208.94 tw); the next three
+    // lines keep that piece, though B alone leaves a piece left of it too.
+    let a = three_line_frame(2880, 2880, r#"w:vAnchor="page" w:y="1693""#, "", "A");
+    let b = three_line_frame(4320, 2880, r#"w:vAnchor="page" w:y="2451""#, "", "B");
+    let Some(l) = body_after_frames(&(b + &a)) else { return };
+    let beside: Vec<(f64, f64)> = l.iter().filter(|x| x.1 > 2300.0 && x.1 < 3200.0).map(|x| (x.0, x.1)).collect();
+    assert!(beside.len() == 4 && beside.iter().all(|x| (x.0 - 7379.0).abs() < 0.5), "{beside:?}");
+}
+
+#[test]
 fn a_compat_14_line_blocked_by_a_frame_goes_just_below_it() {
     // Frames leaving only a piece too narrow for text: each body line goes to the bottom of the frame it meets.
     let frame = |y: u32| {

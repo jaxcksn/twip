@@ -1858,9 +1858,14 @@ impl<'d> PageFill<'d, '_> {
         let mut yy = top;
         let mut s = 0;
         let mut guard = 0;
-        // Compat ≤ 14 takes the floats in the order they were placed.
+        // Compat ≤ 14 takes the floats in the order they were placed. The strip a line was fitted into with a slack
+        // (its pieces and where they end) serves the next lines too while it ends below their top, by at least that
+        // slack when it was fitted in one piece.
+        // ponytail: a strip found with no slack isn't kept (the next line's own query gives the same pieces where
+        // measured), and it resets with each paragraph.
         let mut ordered: Vec<&Placed> = floats.iter().collect();
         ordered.sort_by_key(|f| f.key);
+        let mut strip_at: Option<(Vec<(f64, f64)>, f64, f64)> = None;
         while (s < n || bands.is_empty()) && guard < 4000 {
             guard += 1;
             let mut h = est;
@@ -1872,6 +1877,7 @@ impl<'d> PageFill<'d, '_> {
             let here: &[Placed] = if yy >= col.bottom.to_pt() - EPS { &[] } else { &floats };
             let mut uncut: Option<Vec<Placed>> = None;
             let mut forced: Option<Vec<(f64, f64)>> = None;
+            let mut fitted: Option<(Vec<(f64, f64)>, f64, f64, f64)> = None;
             let mut moved = None;
             let order: &[&Placed] = if here.is_empty() { &[] } else { &ordered };
             let end_of = |ok: &[(f64, f64, f64)]| ok.iter().map(|p| p.2).fold(f64::INFINITY, f64::min);
@@ -1907,7 +1913,10 @@ impl<'d> PageFill<'d, '_> {
                 None
             };
             let pieces_of = |ok: &[(f64, f64, f64)]| ok.iter().map(|p| (p.0, p.1)).collect::<Vec<(f64, f64)>>();
-            if compat == Compat::Legacy {
+            let reuse = compat == Compat::Legacy && strip_at.as_ref().is_some_and(|(_, end, least)| end - yy > EPS && end - yy >= least - EPS);
+            if reuse {
+                forced = strip_at.as_ref().map(|x| x.0.clone());
+            } else if compat == Compat::Legacy {
                 let near = || here.iter().filter(|f| f.in_band(yy, yy + h) && f.excl[2] > cx0 + EPS && f.excl[0] < cx1 - EPS);
                 let over: Vec<Placed> = near().filter(|f| f.excl[1] <= yy + EPS).cloned().collect();
                 let e = over.iter().map(|f| f.excl[3]).fold(f64::INFINITY, f64::min);
@@ -1924,6 +1933,7 @@ impl<'d> PageFill<'d, '_> {
                     let slack = one.unwrap_or(h);
                     match query(yy, slack, h) {
                         Some((t, ok)) => {
+                            fitted = Some((pieces_of(&ok), end_of(&ok), one.map_or(0.0, |_| slack), t - yy));
                             forced = Some(pieces_of(&ok));
                             moved = Some(t);
                         }
@@ -2010,6 +2020,11 @@ impl<'d> PageFill<'d, '_> {
                     let clear = segs.last().and_then(|l| Some((crate::layout::line::clear_of(sp, pieces, l)?, l.xs.first().copied().unwrap_or(0.0))));
                     if segs.last().is_some_and(|l| !l.hyphen) {
                         frame.word_from = Some(e);
+                    }
+                    if let Some((iv, end, stay, _)) = fitted {
+                        strip_at = Some((iv, end, stay));
+                    } else if !reuse {
+                        strip_at = None;
                     }
                     bands.push((yy, segs));
                     let next = yy + ph;
