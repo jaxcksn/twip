@@ -9,7 +9,9 @@ use crate::api::event::Event;
 use crate::api::input::{ClipboardData, Point};
 use crate::api::record::Origin;
 use crate::api::review::CommentAnchor;
-use crate::api::services::{AccessibleNode, ClientPoint, ClientRect, HitResult, PageRect, RulerAxis, RulerUnit, RulerView, TabSelector, Tooltip};
+use crate::api::services::{
+    AccessibleNode, ClientPoint, ClientRect, HitResult, PageRect, RulerAxis, RulerUnit, RulerView, TabSelector, Tooltip, TooltipKind,
+};
 use crate::api::value::{Color, ElementId};
 use crate::editing::commands::Outcome;
 use crate::editing::elements;
@@ -562,6 +564,7 @@ pub(super) fn fill_state(s: &Session, state: &mut crate::api::state::State) {
     state.view.field_shading = s.field_shading;
     state.view.cursor_overrides.clone_from(&s.cursor_overrides);
     state.view.live_layout = s.editor.live_layout;
+    state.view.control_labels = s.editor.control_labels;
     let (t, rgb) = (&p.renderer.theme, |c: skia_safe::Color| Color((u32::from(c.r()) << 16) | (u32::from(c.g()) << 8) | u32::from(c.b())));
     state.view.background = rgb(p.renderer.background.unwrap_or(t.tokens.desk));
     state.view.theme = p.chrome;
@@ -693,21 +696,24 @@ impl Session {
         tabs.min_by(|a, b| (centre(*a) - x).abs().total_cmp(&(centre(*b) - x).abs()))
     }
 
-    /// What the rulers measure now: the drag under way's dimension line or chip, else the hovered marker's hint (none
-    /// while a popover is open).
+    /// What the rulers measure now: the drag under way's dimension line or chip.
     pub(super) fn ruler_measures(&self) -> Vec<crate::editing::view::RulerMeasure> {
-        use crate::services::ruler::{drag_measures, hint, hit};
         let p = &self.presentation;
-        if let Some(d) = &p.ruler_drag {
-            return match d.marker.filter(|_| d.moved) {
-                Some(m) => drag_measures(&d.view, m, d.value(), d.removing, p.detail, d.free),
-                None => Vec::new(),
-            };
+        let Some(d) = &p.ruler_drag else { return Vec::new() };
+        match d.marker.filter(|_| d.moved) {
+            Some(m) => crate::services::ruler::drag_measures(&d.view, m, d.value(), d.removing, p.detail, d.free),
+            None => Vec::new(),
         }
-        let Some(h) = p.ruler_hover.filter(|_| p.popover.is_none()) else { return Vec::new() };
+    }
+
+    /// The hovered ruler marker's tooltip, for the host to show (none during a drag or while a popover is open).
+    fn ruler_tooltip(&self) -> Option<Tooltip> {
+        use crate::services::ruler::{hint, hit};
+        let p = &self.presentation;
+        let h = p.ruler_hover.filter(|_| p.popover.is_none() && p.ruler_drag.is_none())?;
         let view = self.ruler_view();
-        let Some(on) = hit(&view, p.rulers, h.at.x, h.at.y) else { return Vec::new() };
-        hint(&view, on, p.tab_selector, h.free, p.width).into_iter().collect()
+        let (rect, text) = hint(&view, hit(&view, p.rulers, h.at.x, h.at.y)?, p.tab_selector, h.free)?;
+        Some(Tooltip { kind: TooltipKind::Ruler, text, at: ClientPoint { client_x: h.at.x, client_y: h.at.y }, rect })
     }
 
     /// Where a click on the empty ruler under the pointer adds a tab stop of the box's type (page points), drawn as
@@ -806,7 +812,8 @@ impl Session {
         }
         self.element_feedback();
         let view = self.editor.view(0..0);
-        let hovered = self.editor.hover_tooltip();
+        let ruler = self.ruler_tooltip();
+        let hovered = if ruler.is_some() { None } else { self.editor.hover_tooltip() };
         let cursor = self.cursor_override().unwrap_or(view.cursor);
         let s = &mut self.presentation.sink;
         if s.cursor != Some(cursor) {
@@ -836,6 +843,7 @@ impl Session {
             let rect = ClientRect { left, top, width, height };
             Some(Tooltip { kind, text: t.text, at: ClientPoint { client_x: left, client_y: top + height }, rect })
         });
+        let tooltip = ruler.or(tooltip);
         let tooltip_changed = s.tooltip != tooltip;
         s.tooltip.clone_from(&tooltip);
         let revision = a11y_key(&self.editor);
@@ -1599,10 +1607,7 @@ mod tests {
             s.ruler_measures()
                 .into_iter()
                 .map(|m| match m {
-                    RulerMeasure::Dimension { label, .. }
-                    | RulerMeasure::Chip { label, .. }
-                    | RulerMeasure::Hint { label, .. }
-                    | RulerMeasure::Status { label, .. } => label,
+                    RulerMeasure::Dimension { label, .. } | RulerMeasure::Chip { label, .. } | RulerMeasure::Status { label, .. } => label,
                 })
                 .collect()
         }
@@ -1667,28 +1672,29 @@ mod tests {
         }
 
         #[test]
-        fn hovering_the_ruler_hints_and_shows_the_ghost_stop_a_click_adds() {
+        fn hovering_the_ruler_hands_the_host_a_tooltip_and_shows_the_ghost_stop_a_click_adds() {
             let (mut engine, id, _) = ruled();
             let s = engine.session(id).expect("a session");
+            let tip = |s: &Session| s.ruler_tooltip().map(|t| t.text);
             at(s, K::Move, x(0.0), 5.0, false);
-            assert_eq!(
-                s.ruler_measures(),
-                [RulerMeasure::Hint { at: x(0.0) - 6.0, label: "First line · 0.00″ — indents only the first line".into() }]
-            );
+            let t = s.ruler_tooltip().expect("a tooltip");
+            assert_eq!((t.kind, t.text.as_str()), (super::super::TooltipKind::Ruler, "First line · 0.00″ — indents only the first line"));
+            assert_eq!((t.at.client_x, t.at.client_y), (x(0.0), 5.0), "at the pointer");
+            assert!(s.ruler_measures().is_empty(), "the ruler draws no hint of its own");
             at(s, K::Move, 5.0, 5.0, false);
-            assert_eq!(labels(s), ["Tab type: Left — click to change"]);
+            assert_eq!(tip(s).as_deref(), Some("Tab type: Left — click to change"));
             at(s, K::Move, x(468.0), 5.0, false);
-            assert_eq!(labels(s), ["Right margin · 1.00″ — drag to change"]);
+            assert_eq!(tip(s).as_deref(), Some("Right margin · 1.00″ — drag to change"));
             assert_eq!(s.ruler_hovered(&s.ruler_view()), Some(Marker::TextEnd), "the margin's handle tints");
             // Over the empty ruler, the ghost of the stop sits where the click adds it.
             at(s, K::Move, x(146.0), 10.0, false);
             assert_eq!(s.ruler_ghost(&s.ruler_view()), Some(72.0 + 144.0));
-            assert_eq!(labels(s), ["Click to add a left tab · 2.00″"]);
+            assert_eq!(tip(s).as_deref(), Some("Click to add a left tab · 2.00″"));
             click(s, x(146.0), 10.0);
             assert_eq!(tabs(s), [(144.0, TabAlignment::Left, TabLeader::None)]);
             // Off the ruler, nothing shows.
             at(s, K::Move, 300.0, 300.0, false);
-            assert!(s.ruler_measures().is_empty() && s.ruler_ghost(&s.ruler_view()).is_none());
+            assert!(tip(s).is_none() && s.ruler_ghost(&s.ruler_view()).is_none());
         }
 
         #[test]

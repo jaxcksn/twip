@@ -2451,6 +2451,10 @@ pub struct ViewOptions {
     /// When the dot grid objects snap to shows (unrelated to `gridlines`, the table gridlines).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub object_grid: Option<super::services::ObjectGrid>,
+    /// Labels content controls and shown sub-templates while the caret is in them or the pointer is over them.
+    /// Default: on. A control whose `w15:appearance` is `hidden` is never labelled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub control_labels: Option<bool>,
     /// When fields are shaded. Default: when selected.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub field_shading: Option<super::services::FieldShading>,

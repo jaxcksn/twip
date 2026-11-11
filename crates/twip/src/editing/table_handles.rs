@@ -55,7 +55,7 @@ impl Editor {
         if let Some((_, table, border, ..)) = self.border_at(x, y, fonts) {
             let zone = match border {
                 Border::Column(k) => Some(TableZone::Border(k)),
-                Border::Row(_) => None,
+                Border::Row(r) => Some(TableZone::RowBorder(r)),
                 Border::Handle => Some(TableZone::Resize),
             };
             return Some(TableHover { table, zone });
@@ -246,6 +246,7 @@ impl Editor {
                 rows.iter().find(|x| x.row == r).map(|x| TableMark::SelectRow { y0: x.rect[1], y1: x.rect[3], left: x0 })
             }
             Some(TableZone::Border(k)) => rows.iter().find_map(|r| edge(r, k)).map(|x| TableMark::Border { x, top: y0, bottom: y1 }),
+            Some(TableZone::RowBorder(r)) => rows.iter().find(|x| x.row == r).map(|x| TableMark::RowBorder { y: x.rect[3], left: x0, right: x1 }),
             Some(TableZone::Move | TableZone::Resize) | None => None,
         };
         Some(TableHandles { page, corner: first.map(|r| [r.rect[0], r.rect[1]]), end: live.then_some([last.rect[2], last.rect[3]]), mark })

@@ -67,7 +67,7 @@ impl Renderer {
             }
             canvas.draw_points(skia_safe::canvas::PointMode::Polygon, &pts, &wave);
         }
-        // Design-mode regions: a dashed boundary and a title tab above its top left.
+        // Labelled regions (content controls, shown sub-templates): a dashed boundary and a title tab above its top left.
         for g in &view.regions {
             let mut line = Paint::default();
             line.set_anti_alias(true);
@@ -379,8 +379,6 @@ impl Renderer {
                 Measure::Status { at, label, tone: c } => {
                     canvas.draw_str(label, (at[0].0 as f32, (at[1].0 + 8.0 * u) as f32), &label_font, &fill(tone(*c)));
                 }
-                // The ruler draws its own hints.
-                Measure::Hint { .. } => {}
             }
         }
     }
@@ -453,6 +451,7 @@ impl Renderer {
                 triangle([(tip - 7.0 * u, cy - 5.0 * u), (tip - 7.0 * u, cy + 5.0 * u), (tip, cy)]);
             }
             Some(TableMark::Border { x, top, bottom }) => _ = line((x, top - 4.0 * u), (x, bottom + 4.0 * u), &dashed),
+            Some(TableMark::RowBorder { y, left, right }) => _ = line((left - 4.0 * u, y), (right + 4.0 * u, y), &dashed),
             None => {}
         }
         if let Some([x, y]) = t.corner {

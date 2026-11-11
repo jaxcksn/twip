@@ -53,7 +53,7 @@ operations reject, new ones reject, and `destroy()` still works.
 | `commentAnchors` | `CommentAnchorsChanged` | Where visible comments sit, after layout, zoom or scrolling. Mounted or attached only. |
 | `balloonsLaidOut` | `BalloonsLaidOut` (on `DocumentEditor`) | The SDK placed the attached balloons. Mounted only. |
 | `rulerChanged` | `RulerChanged` | The ruler model or its mapping to the viewport changed. Coalesced per frame. Mounted or attached only. |
-| `tooltip` | `TooltipChanged` | The pointer is over a link, an element mark, a revision or a comment (`null` hides it). Mounted or attached only. |
+| `tooltip` | `TooltipChanged` | The pointer is over a link, an element mark, a revision, a comment or a ruler marker (`null` hides it). Mounted or attached only. |
 | `elementHover` | `ElementHovered` | The pointer moved onto another field or content control, or the hovered one's boxes moved (`null` when it left). Mounted or attached only. |
 | `elementClick` | `ElementClicked` | A click on a field or content control, after the editor's own action (a checkbox toggles first). Mounted or attached only. |
 | `elementSelect` | `ElementSelected` | The selection moved into another field or content control, or its boxes moved (`null` when it is in none). Mounted or attached only. |
