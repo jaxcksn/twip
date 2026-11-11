@@ -809,13 +809,26 @@ impl<'d> PageFill<'d, '_> {
             }
             let room = col.bottom.to_pt() - line_bottom - a.sep;
             let widths: Vec<f64> = if a.cols.is_empty() { vec![col.width] } else { a.cols.iter().map(|c| c.1).collect() };
+            // With columns the page's text up to the line can be spread over them, which leaves the area the room under
+            // it: before the last column, notes that need more than the room under the line make it wait for a later
+            // column; a cut note fills the room the spread text leaves.
+            let cs = &self.sec.section.section_in(self.ctx.env.text.review.view).columns;
+            let n = if cs.equal || cs.cols.is_empty() { cs.num } else { cs.cols.len() }.max(1);
+            let full = col.bottom.to_pt() - col.top.to_pt();
+            let used = self.column as f64 * (full - area.total()) + line_bottom - col.top.to_pt();
+            let spread = (widths.len() > 1 && n > 1).then(|| full - used / n as f64 - a.sep);
+            let waits = self.column + 1 < n && spread.is_some_and(|s| s > room + EPS);
             let mut wrap = |p: &NotePart, w: f64| self.rewrap(p, w, memos);
             let mut cut = Vec::new();
             let h = if widths.len() > 1 { stream_height(&a.parts, &widths, room, &mut wrap)? } else { Some(stacked(&a.parts)).filter(|&h| h <= room + EPS) };
+            if h.is_none() && waits {
+                return Ok(false);
+            }
             match h {
                 Some(h) => a.height = h,
                 // Compat 15: the line's last note goes on on the next page when its first part fits.
                 None => {
+                    let room = spread.map_or(room, |s| s.min(room));
                     let (cols, tallest, over) = stream_flow(&a.parts, &widths, room, &mut wrap)?;
                     let last = a.parts.last().expect("the line's notes");
                     let Some(first) = over.first().filter(|o| (o.kind, o.id) == (last.kind, last.id)) else { return Ok(false) };
@@ -830,7 +843,8 @@ impl<'d> PageFill<'d, '_> {
                     cut = over;
                 }
             }
-            if !col.bottom.holds(line_bottom + a.total()) {
+            // A cut area is as high as it is, whatever an earlier fill of the page reserved.
+            if !col.bottom.holds(line_bottom + if a.cut { a.sep + a.height + a.kept } else { a.total() }) {
                 return Ok(false);
             }
             *area = a;

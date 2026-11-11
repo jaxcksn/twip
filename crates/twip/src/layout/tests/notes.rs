@@ -538,3 +538,27 @@ fn compat_14_a_note_going_on_in_a_later_column_takes_its_width() {
     let right = page.iter().map(|c| c.1).fold(0.0, f64::max);
     assert!(right > 330.0, "the note goes on under column 2 at its width: {right}");
 }
+
+/// A two-column section of 200 lines, the `k`th referencing a note of `n` one-line paragraphs, `settings` the
+/// document's: each page's text.
+fn long_note_in_columns(k: usize, n: usize, settings: &str) -> Option<Vec<String>> {
+    let long: String = (1..=n).map(|i| format!("<w:p><w:pPr><w:spacing w:after=\"0\"/></w:pPr><w:r><w:t>Q{i:03}</w:t></w:r></w:p>")).collect();
+    let extra = format!(r#"<w:footnote w:id="10">{long}</w:footnote>"#);
+    let mut b = String::new();
+    for i in 1..=200 {
+        let r = if i == k { r#"<w:r><w:footnoteReference w:id="10"/></w:r>"# } else { "" };
+        b += &format!(r#"<w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>P{i:03}</w:t></w:r>{r}</w:p>"#);
+    }
+    b += &sect(r#"<w:cols w:num="2" w:space="720"/>"#, true);
+    Some(super::page_chars(&notes_doc_with(&b, settings, &extra)?).iter().map(|p| p.iter().map(|c| c.0).collect()).collect())
+}
+
+#[test]
+fn compat_15_a_note_that_fits_the_page_stays_whole_as_the_text_moves_on() {
+    let Some(plain) = long_note_in_columns(0, 24, C15) else { return };
+    let col = (1..=200).find(|k| !plain[0].contains(&format!("P{k:03}"))).expect("a page") / 2;
+    // Near the end of column 1: too little room under the line, enough with the text spread over both columns.
+    let Some(pages) = long_note_in_columns(col - 4, 24, C15) else { return };
+    let on = |s: &str| pages.iter().position(|p| p.contains(s));
+    assert_eq!([on(&format!("P{:03}", col - 4)), on("Q001"), on("Q024")], [Some(0); 3], "{pages:?}");
+}
