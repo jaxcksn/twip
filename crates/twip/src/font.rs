@@ -568,6 +568,11 @@ impl Fonts {
         self.symbol_fallback = std::cell::OnceCell::new();
     }
 
+    /// The families searched, in order, for a character a run's font lacks, before the symbol fallback.
+    pub fn set_character_fallback(&mut self, families: Vec<String>) {
+        self.set_settings(|s| s.character_fallback = families);
+    }
+
     /// Changes the settings, and drops everything resolved with the old ones.
     pub(crate) fn set_settings(&mut self, f: impl FnOnce(&mut FontSettings)) {
         f(&mut Arc::make_mut(&mut self.catalog).settings);

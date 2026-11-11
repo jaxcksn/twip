@@ -9,7 +9,19 @@ pub mod presets;
 pub mod roundtrip;
 pub mod units;
 
+use twip::internal::font::Fonts;
 use twip::internal::layout::hyphenate::{Hyphenation, Patterns};
+
+/// The families searched for a character a run's font lacks, as Word on Windows draws symbols and emoji; the bundled
+/// symbol face comes after them.
+pub const CHARACTER_FALLBACK: [&str; 2] = ["Segoe UI Symbol", "Segoe UI Emoji"];
+
+/// The system's fonts with [`CHARACTER_FALLBACK`]: what the layout commands lay out with.
+pub fn system_fonts() -> Fonts {
+    let mut fonts = Fonts::system();
+    fonts.set_character_fallback(CHARACTER_FALLBACK.map(String::from).to_vec());
+    fonts
+}
 
 /// Takes every `--hyphenation <lang>=<patterns file>` out of `args`: the host's hyphenation patterns (a `hyph_*.dic`
 /// file per BCP 47 language, as a session's dictionaries give them), or None when there are none.
@@ -27,6 +39,15 @@ pub fn hyphenation(args: &mut Vec<String>) -> Result<Option<Hyphenation>, String
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn symbols_fall_back_to_segoe_ui_symbol() {
+        // Where it is installed (Windows): a check mark the run's font lacks draws in it, not in the bundled face.
+        let fonts = super::system_fonts();
+        if fonts.is_installed("Segoe UI Symbol") {
+            assert_eq!(fonts.fallback('\u{2713}', false, false).expect("a face").family, "Segoe UI Symbol");
+        }
+    }
+
     #[test]
     fn hyphenation_takes_its_options_out() {
         let file = std::env::temp_dir().join("twip-tools-hyph-test.dic");

@@ -35,7 +35,7 @@ fn main() {
             let Some((out, paths)) = a.split_first() else {
                 return exit_on_error(Err("usage: dump [--hyphenation <lang>=<patterns file>]... <out dir> <docx or folders...>".into()));
             };
-            let fonts = twip::internal::font::Fonts::system();
+            let fonts = cli::system_fonts();
             let result = cli::dump::run(std::path::Path::new(out), paths, |doc| {
                 let mut doc = doc.clone();
                 doc.review.view = twip::internal::docx::review::MarkupView::NoMarkup;
@@ -128,7 +128,7 @@ fn main() {
             }
             None => None,
         };
-        let fonts = twip::internal::font::Fonts::system();
+        let fonts = cli::system_fonts();
         golden::run(&a, &fonts, hyphenation.as_ref(), std::path::Path::new("golden-report.txt"), features.as_ref());
         return;
     }
@@ -136,7 +136,7 @@ fn main() {
         // twip diff <fixture.docx> [page row]
         let a: Vec<String> = args.skip(1).collect();
         let want = (a.len() >= 3).then(|| (a[1].parse().unwrap_or(1), a[2].parse().unwrap_or(1)));
-        golden::diff(std::path::Path::new(&a[0]), &twip::internal::font::Fonts::system(), want);
+        golden::diff(std::path::Path::new(&a[0]), &cli::system_fonts(), want);
         return;
     }
     if args.peek().map(String::as_str) == Some("rows") {
@@ -144,13 +144,13 @@ fn main() {
         let a: Vec<String> = args.skip(1).collect();
         let page = a.get(1).and_then(|s| s.parse().ok()).unwrap_or(1);
         let from = a.get(2).and_then(|s| s.parse().ok()).unwrap_or(1);
-        golden::rows_of(std::path::Path::new(&a[0]), &twip::internal::font::Fonts::system(), page, from);
+        golden::rows_of(std::path::Path::new(&a[0]), &cli::system_fonts(), page, from);
         return;
     }
     if args.peek().map(String::as_str) == Some("pairs") {
         // twip pairs <fixture.docx> <out.txt>: page row k n x_ours x_word per matched character
         let a: Vec<String> = args.skip(1).collect();
-        golden::pairs(std::path::Path::new(&a[0]), &twip::internal::font::Fonts::system(), std::path::Path::new(&a[1]));
+        golden::pairs(std::path::Path::new(&a[0]), &cli::system_fonts(), std::path::Path::new(&a[1]));
         return;
     }
     if args.peek().map(String::as_str) == Some("metrics") {
@@ -179,6 +179,7 @@ fn main() {
         let a: Vec<String> = a.into_iter().filter(|x| x != "--vulkan" && !x.starts_with("--")).collect();
         use twip::api::input::{Key, Modifiers};
         let mut engine = twip::api::engine::Engine::new(twip::api::fonts::FontLibrary::system());
+        engine.fonts().set_character_fallback(cli::CHARACTER_FALLBACK.map(String::from).to_vec());
         let id = engine.create_session(Default::default());
         let e = engine.session(id).expect("a session");
         println!("warnings {:?}", e.open(&std::fs::read(&a[0]).expect("read document")).expect("open document"));
