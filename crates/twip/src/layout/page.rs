@@ -888,8 +888,11 @@ pub fn layout_body(
         .collect();
     let next_shares = stop == Stop::Done && space.next_continuous;
     // The area passes to the next section on the page, drawn after the page's last text.
+    // Compat 15: the first section on the page with a footnote reference (on this page or an earlier one) gives the
+    // page's footnote area its columns, notes on this page or not.
+    let starts_area = |a: &NoteArea| !a.parts.is_empty() || held.is_some() || sec.blocks.blocks.iter().any(|b| super::document::has_footnote_refs(b));
     let (stream, passed) = match stream {
-        Some(a) if next_shares && space.hold_notes && !a.parts.is_empty() => {
+        Some(a) if next_shares && space.hold_notes && starts_area(&a) => {
             // Across columns a later section's notes keep flowing through the columns; in one column they stack.
             let shared = (a.cols.len() > 1).then_some(0.0);
             (None, Some((NoteArea { shared, ..a }, beneath)))

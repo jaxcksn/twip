@@ -291,6 +291,14 @@ impl JobNotes {
     }
 }
 
+/// The block holds a footnote reference.
+pub fn has_footnote_refs(b: &Block) -> bool {
+    match b {
+        Block::Para(p) => p.inlines.iter().any(|i| matches!(i, Inline::NoteRef { kind: NoteKind::Foot, .. })),
+        Block::Table(t) => t.rows.iter().flat_map(|r| r.cells.iter()).flat_map(|c| c.blocks.iter()).any(has_footnote_refs),
+    }
+}
+
 pub fn has_note_refs(b: &Block) -> bool {
     match b {
         Block::Para(p) => p.inlines.iter().any(|i| matches!(i, Inline::NoteRef { .. })),

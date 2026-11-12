@@ -775,3 +775,28 @@ fn compat_15_each_page_endnotes_take_footnote_keys() {
     assert!(with("A1").starts_with("A188"), "references: the footnote's own number, the endnotes' 8: {p:?}");
     assert!(with("End A").starts_with('1') && with("End B").starts_with('8'), "marks: {p:?}");
 }
+
+#[test]
+fn compat_15_footnote_area_takes_the_columns_of_the_first_section_on_the_page_with_a_reference() {
+    // S1's reference is on page 1; on page 2 its rest comes first, so the note of the two-column S2 below it is
+    // wrapped across the page.
+    let words = "alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa";
+    let extra: String = (10..=11).map(|i| format!(r#"<w:footnote w:id="{i}"><w:p><w:r><w:t>{words}</w:t></w:r></w:p></w:footnote>"#)).collect();
+    let fill: String = (0..30).map(|k| para(&format!("Line {k}"), &[])).collect();
+    let cols = r#"<w:type w:val="continuous"/><w:cols w:num="2" w:space="720"/>"#;
+    let body = para("A", &["f10"]) + &fill + &sect("", false) + &para("C", &["f11"]) + &para("D", &[]) + &sect(cols, true);
+    let Some(doc) = notes_doc_with(&body, C15, &extra) else { return };
+    let pages = super::page_chars(&doc);
+    let page = pages.get(1).map_or(&[][..], |p| &p[..]);
+    let below = page.iter().find(|c| c.0 == 'D').map_or(f64::INFINITY, |c| c.2 + 1.0);
+    // The widest note line on page 2.
+    let mut lines: Vec<(f64, f64, f64)> = Vec::new();
+    for &(_, x, y) in page.iter().filter(|c| c.2 > below && c.0 != ' ') {
+        match lines.iter_mut().find(|l| (l.0 - y).abs() < 0.01) {
+            Some(l) => (l.1, l.2) = (l.1.min(x), l.2.max(x)),
+            None => lines.push((y, x, x)),
+        }
+    }
+    let widest = lines.iter().map(|l| l.2 - l.1).fold(0.0, f64::max);
+    assert!(widest > 250.0, "S2's note is wrapped across the page: {lines:?}");
+}

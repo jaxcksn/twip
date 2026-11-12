@@ -1120,6 +1120,7 @@ impl<'d> PageFill<'d, '_> {
             r?
         } else {
             let mut area = NoteArea::default();
+            let received = carry.page_notes.is_some();
             if let Some((held, beneath)) = carry.page_notes.take() {
                 area = held;
                 self.at.beneath = Some(beneath);
@@ -1132,7 +1133,10 @@ impl<'d> PageFill<'d, '_> {
                 self.fill_body(&mut pos, &mut carry, col, page_empty, &mut area, &mut out, memos)?
             };
             let text = r.1 + if pos.at.at_start() { carry.prev_after } else { 0.0 };
-            if r.0 == Stop::Done && self.hold_notes && !area.parts.is_empty() {
+            // Compat 15: the first section on the page with a footnote reference (on this page or an earlier one)
+            // gives the page's footnote area its columns, notes on this page or not.
+            let starts_area = || !area.parts.is_empty() || received || self.sec.blocks.blocks.iter().any(|b| super::document::has_footnote_refs(b));
+            if r.0 == Stop::Done && self.hold_notes && starts_area() {
                 if area.cols.is_empty() {
                     area.cols = vec![(col.x, col.width)];
                 }
