@@ -266,6 +266,7 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
         para_count: 0,
         float_order: 0,
         pending_hidden: None,
+        pending_spec: None,
         uncounted: false,
         part: main.clone(),
         rels: rels.clone(),
@@ -797,6 +798,9 @@ struct Reader {
     para_count: u64,
     float_order: usize,
     pending_hidden: Option<Paragraph>,
+    /// Compat 15: the empty paragraph whose `w:specVanish` mark started the pending join; its alignment and indents
+    /// go to the joined paragraph.
+    pending_spec: Option<Rc<ParaStyle>>,
     uncounted: bool,
     part: String,
     rels: HashMap<String, (String, String)>,
@@ -1511,6 +1515,7 @@ impl Reader {
         let src = self.record.then(|| Rc::new(ParaSrc { ranges: vec![n.range()], segs, simple, lossy }));
         let para = Paragraph { style: para_style, mark: mark.clone(), list, inlines, src, id: next_para_id(), div: None, controls: Vec::new() };
 
+        let spec = self.pending_spec.take();
         let mut para = match self.pending_hidden.take() {
             // A vanished mark joins the paragraph to the next: the first one's indents, alignment, tabs and space
             // before (unless it is empty), the first one's borders and shading, the last one's other properties; in
@@ -1521,7 +1526,11 @@ impl Reader {
                 let at = prev.inlines.iter().map(Inline::units).sum::<usize>() as u32;
                 let mut style = (*para.style).clone();
                 let first = &prev.style;
-                // An empty paragraph before the mark gives nothing.
+                // An empty paragraph before the mark gives nothing, except in compat 15 with `w:specVanish`: its
+                // alignment and indents (the first of a chain of them).
+                if let (0, Some(s)) = (at, &spec) {
+                    (style.ind_left, style.ind_right, style.ind_first, style.jc) = (s.ind_left, s.ind_right, s.ind_first, s.jc);
+                }
                 if at > 0 {
                     (style.ind_left, style.ind_right, style.ind_first, style.jc) = (first.ind_left, first.ind_right, first.ind_first, first.jc);
                     (style.space_before, style.before_auto) = (first.space_before, first.before_auto);
@@ -1562,6 +1571,11 @@ impl Reader {
             None => para,
         };
         if mark.hidden {
+            let spec_vanish = mark_rpr_node.and_then(|r| child(r, "specVanish")).is_some_and(on_off);
+            let empty = para.inlines.iter().map(Inline::units).sum::<usize>() == 0;
+            if spec_vanish && empty && self.res.styles.compat == Compat::Generic {
+                self.pending_spec = Some(spec.unwrap_or_else(|| para.style.clone()));
+            }
             para.mark = mark;
             self.pending_hidden = Some(para);
             return None;

@@ -20,5 +20,5 @@ page 0 12240 15840
   1440 6427 marketing promotion. Division date.
   1440 6855 A mark with specVanish but no vanish ends its paragraph.
   1440 7252 The next paragraph starts its own line.
-  1791 7650 An empty paragraph before a vanished mark gives nothing: this paragraph keeps its
-  9051 7887 own properties.
+  1440 7650 An empty paragraph before a vanished mark gives nothing: this paragraph keeps its
+  1440 7887 own properties.

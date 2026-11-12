@@ -2175,3 +2175,18 @@ fn a_leading_page_break_starts_the_paragraph_again_after_it() {
     let line = numbered_page("", ARIAL_11, &body("", "<w:br/>"), "", 0).unwrap();
     assert!((line[0].0 - 144.0).abs() < 0.01, "{line:?}");
 }
+
+#[test]
+fn compat_15_takes_an_empty_spec_vanish_paragraphs_alignment_and_indents() {
+    let body = |spec: &str| {
+        format!(
+            r#"<w:p><w:pPr><w:ind w:left="720"/><w:jc w:val="center"/><w:rPr><w:vanish/>{spec}</w:rPr></w:pPr></w:p><w:p><w:pPr><w:ind w:left="2160"/><w:jc w:val="right"/></w:pPr><w:r><w:t>One line.</w:t></w:r></w:p>"#
+        )
+    };
+    let x = |m: u32, spec: &str| baselines(&mode(m), ARIAL_11, &body(spec)).map(|l| (l[0].0, l[0].2));
+    let Some(right) = x(15, "") else { return };
+    let centred = x(15, "<w:specVanish/>").unwrap();
+    // Centred between 108 and 540: the line as wide as the right-aligned one, which ends at 540.
+    assert!((centred.0 - (324.0 - (540.0 - right.0) / 2.0)).abs() < 0.5, "{centred:?} {right:?}");
+    assert_eq!(x(12, "<w:specVanish/>").unwrap(), right, "compat 12 skips it");
+}
