@@ -538,8 +538,34 @@ mod tests {
     use crate::editing::tests::scenarios::Run;
     use crate::render::{Frame, Renderer};
 
+    /// A 640 × 820 frame of `view`, drawn by Skia or by twip-graphics (`graphics`), from scratch.
+    fn frame_pixels(view: &crate::editing::view::View, images: &[Vec<u8>], f: &Frame, graphics: bool) -> Vec<u8> {
+        let mut px = vec![0u8; 640 * 820 * 4];
+        if graphics {
+            let mut g = crate::render::graphics::Graphics::default();
+            g.draw(&Renderer::default(), view, images, f);
+            let mut t = twip_graphics::cpu::Target::new(&mut px, 640, 820, 640 * 4, twip_graphics::cpu::Format::Rgba8).expect("the buffer fits");
+            g.present(&mut t);
+            return px;
+        }
+        let mut s = skia_safe::surfaces::raster_n32_premul((640, 820)).expect("a raster surface");
+        Renderer::default().draw(s.canvas(), view, images, f);
+        let info = s.image_info();
+        assert!(s.read_pixels(&info, &mut px, 640 * 4, (0, 0)));
+        px
+    }
+
     #[test]
     fn a_dragged_float_draws_its_ghost_where_the_drag_puts_it() {
+        a_dragged_float_draws_its_ghost_where_the_drag_puts_it_on(false);
+    }
+
+    #[test]
+    fn a_dragged_float_draws_its_ghost_where_the_drag_puts_it_with_graphics() {
+        a_dragged_float_draws_its_ghost_where_the_drag_puts_it_on(true);
+    }
+
+    fn a_dragged_float_draws_its_ghost_where_the_drag_puts_it_on(graphics: bool) {
         // The frame with the drag's ghost differs from the one without only inside the box the drag puts it in.
         let mut r = Run::open("FX-OBJ.docx", "ghost-pixels");
         r.e.live_layout = false;
@@ -550,14 +576,7 @@ mod tests {
         let mut view = r.e.view(0..1);
         let g = view.ghost.expect("a ghost");
         let images = r.e.document().images.clone();
-        let pixels = |view: &crate::editing::view::View| {
-            let mut s = skia_safe::surfaces::raster_n32_premul((640, 820)).expect("a raster surface");
-            Renderer::default().draw(s.canvas(), view, &images, &f);
-            let info = s.image_info();
-            let mut px = vec![0u8; 640 * 820 * 4];
-            assert!(s.read_pixels(&info, &mut px, 640 * 4, (0, 0)));
-            px
-        };
+        let pixels = |view: &crate::editing::view::View| frame_pixels(view, &images, &f, graphics);
         let with = pixels(&view);
         view.ghost = None;
         let without = pixels(&view);
@@ -582,6 +601,15 @@ mod tests {
 
     #[test]
     fn table_handles_draw_where_the_view_puts_them() {
+        table_handles_draw_where_the_view_puts_them_on(false);
+    }
+
+    #[test]
+    fn table_handles_draw_where_the_view_puts_them_with_graphics() {
+        table_handles_draw_where_the_view_puts_them_on(true);
+    }
+
+    fn table_handles_draw_where_the_view_puts_them_on(graphics: bool) {
         // A table at (100, 100)-(300, 200): the move handle 20 px above and left of it, the resize handle at its lower
         // right, a "+" above x 150 with its dashed line down the table, and a resize preview. At 1 px per point each
         // changes pixels in its own box, and only there.
@@ -589,14 +617,7 @@ mod tests {
         let mut r = Run::open("FX-OBJ.docx", "table-pixels");
         let f = Frame { origin_x: 0.0, origin_y: 0.0, width: 640.0, height: 820.0, dpr: 1.0, px_per_pt: 1.0, caret: false };
         let images = r.e.document().images.clone();
-        let pixels = |view: &crate::editing::view::View| {
-            let mut s = skia_safe::surfaces::raster_n32_premul((640, 820)).expect("a raster surface");
-            Renderer::default().draw(s.canvas(), view, &images, &f);
-            let info = s.image_info();
-            let mut px = vec![0u8; 640 * 820 * 4];
-            assert!(s.read_pixels(&info, &mut px, 640 * 4, (0, 0)));
-            px
-        };
+        let pixels = |view: &crate::editing::view::View| frame_pixels(view, &images, &f, graphics);
         let plain = r.e.view(0..1);
         let [ox, oy, ..] = plain.stack.pages[0];
         let changed = |view: &crate::editing::view::View| {
@@ -623,19 +644,21 @@ mod tests {
 
     #[test]
     fn guides_the_grid_and_chips_draw_where_the_view_puts_them() {
+        guides_the_grid_and_chips_draw_where_the_view_puts_them_on(false);
+    }
+
+    #[test]
+    fn guides_the_grid_and_chips_draw_where_the_view_puts_them_with_graphics() {
+        guides_the_grid_and_chips_draw_where_the_view_puts_them_on(true);
+    }
+
+    fn guides_the_grid_and_chips_draw_where_the_view_puts_them_on(graphics: bool) {
         // A guide down x 100, the grid, and a chip at (225, 225) pt: each changes pixels there, and only there.
         use crate::editing::view::{Axis, Grid, GuideLine, Guides, Measure, Pt, Px};
         let mut r = Run::open("FX-OBJ.docx", "guide-pixels");
         let f = Frame { origin_x: 0.0, origin_y: 0.0, width: 640.0, height: 820.0, dpr: 1.0, px_per_pt: 1.0, caret: false };
         let images = r.e.document().images.clone();
-        let pixels = |view: &crate::editing::view::View| {
-            let mut s = skia_safe::surfaces::raster_n32_premul((640, 820)).expect("a raster surface");
-            Renderer::default().draw(s.canvas(), view, &images, &f);
-            let info = s.image_info();
-            let mut px = vec![0u8; 640 * 820 * 4];
-            assert!(s.read_pixels(&info, &mut px, 640 * 4, (0, 0)));
-            px
-        };
+        let pixels = |view: &crate::editing::view::View| frame_pixels(view, &images, &f, graphics);
         let plain = r.e.view(0..1);
         let [ox, oy, ..] = plain.stack.pages[0];
         let changed = |view: &crate::editing::view::View| {

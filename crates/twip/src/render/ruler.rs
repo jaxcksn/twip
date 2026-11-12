@@ -435,9 +435,18 @@ mod tests {
         }
     }
 
-    /// The rulers drawn on a grey viewport 400 by 300, as RGBA.
+    /// The rulers drawn on a grey viewport 400 by 300, as RGBA: by Skia, or by twip-graphics while
+    /// [`GRAPHICS`] is set on this thread.
     fn draw(theme: &Theme, f: &RulerFrame) -> Vec<u8> {
         let mut pixels = vec![0u8; 400 * 300 * 4];
+        if GRAPHICS.get() {
+            let mut g = crate::render::graphics::Graphics::default();
+            g.clear_with(Color::from_rgb(0x80, 0x80, 0x80));
+            g.ruler(&view(), theme, f);
+            let mut t = twip_graphics::cpu::Target::new(&mut pixels, 400, 300, 400 * 4, twip_graphics::cpu::Format::Rgba8).expect("the buffer fits");
+            g.present(&mut t);
+            return pixels;
+        }
         let info = skia_safe::ImageInfo::new((400, 300), skia_safe::ColorType::RGBA8888, skia_safe::AlphaType::Premul, None);
         let mut surface = skia_safe::surfaces::wrap_pixels(&info, &mut pixels, 400 * 4, None).expect("a surface");
         surface.canvas().clear(Color::from_rgb(0x80, 0x80, 0x80));
@@ -446,12 +455,27 @@ mod tests {
         pixels
     }
 
+    thread_local! {
+        /// The rulers under test are twip-graphics' (each test runs on its own thread).
+        static GRAPHICS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    }
+
     fn at(pixels: &[u8], x: usize, y: usize) -> [u8; 4] {
         pixels[(y * 400 + x) * 4..][..4].try_into().unwrap_or_default()
     }
 
     #[test]
     fn the_rulers_draw_on_the_paper_with_hatched_margins() {
+        the_rulers_draw_on_the_paper_with_hatched_margins_on();
+    }
+
+    #[test]
+    fn the_rulers_draw_on_the_paper_with_hatched_margins_with_graphics() {
+        GRAPHICS.set(true);
+        the_rulers_draw_on_the_paper_with_hatched_margins_on();
+    }
+
+    fn the_rulers_draw_on_the_paper_with_hatched_margins_on() {
         let theme = Theme::default();
         let p = draw(&theme, &frame(&[], None));
         // The text area is the paper strip, 2 to 16 px down the band, floating on the desk; the document below is
@@ -479,6 +503,16 @@ mod tests {
 
     #[test]
     fn a_dragged_marker_is_drawn_where_the_drag_puts_it_in_accent() {
+        a_dragged_marker_is_drawn_where_the_drag_puts_it_in_accent_on();
+    }
+
+    #[test]
+    fn a_dragged_marker_is_drawn_where_the_drag_puts_it_in_accent_with_graphics() {
+        GRAPHICS.set(true);
+        a_dragged_marker_is_drawn_where_the_drag_puts_it_in_accent_on();
+    }
+
+    fn a_dragged_marker_is_drawn_where_the_drag_puts_it_in_accent_on() {
         let theme = Theme::default();
         let drag = Dragged { marker: Marker::Tab(144.0), at: 72.0 + 198.0, removing: false };
         let p = draw(&theme, &frame(&[], Some(drag)));
@@ -496,6 +530,16 @@ mod tests {
 
     #[test]
     fn measurements_draw_over_the_document() {
+        measurements_draw_over_the_document_on();
+    }
+
+    #[test]
+    fn measurements_draw_over_the_document_with_graphics() {
+        GRAPHICS.set(true);
+        measurements_draw_over_the_document_on();
+    }
+
+    fn measurements_draw_over_the_document_on() {
         let theme = Theme::default();
         let dimension = RulerMeasure::Dimension { from: [10.0, 60.0], to: [350.0, 60.0], label: "First line 1.00″".into(), tone: Tone::Accent };
         let chip = RulerMeasure::Chip { at: [100.0, 34.0], label: "First line 0.50″".into() };

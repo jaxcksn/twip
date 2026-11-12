@@ -49,8 +49,15 @@ wuff = "0.2.9"
 aes = "0.8.4"
 sha2 = { version = "0.10.9", default-features = false }
 getrandom = "0.4.3"
+# Twip's 2D graphics (crates/twip-graphics): image probing and decoding now, the whole screen path later. Published
+# with Twip at exactly its version (release-please keeps the pin in step).
+twip-graphics = { path = "../twip-graphics", version = "=0.1.1" } # x-release-please-version
 
 [features]
+default = ["skia-screen"]
+# CPU frames (`HostSurface::frame_rgba`) are drawn with Skia, as before twip-graphics. Without it they are drawn with
+# twip-graphics. GPU frames are drawn with Skia either way.
+skia-screen = []
 # Test inspection surface: the editor's semantic state as JSON. Never in production builds.
 inspect = []
 # Stage timers and the reuse report (`prof.rs`) for diagnostic benchmark runs. Never in production builds.

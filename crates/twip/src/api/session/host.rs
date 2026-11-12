@@ -238,15 +238,17 @@ impl FrameCounters {
         self.stats.last_frame_ms = ms;
     }
 
-    fn stats(&self, retained: &crate::render::retained::Retained) -> FrameStats {
+    /// The frames' statistics, the retained page content counted over both screens (a session draws with one; GPU
+    /// frames stay on Skia).
+    fn stats(&self, retained: &crate::render::retained::Retained, pictures: &crate::render::graphics::retained::Retained) -> FrameStats {
         let mut sorted: Vec<f64> = self.times.iter().copied().collect();
         sorted.sort_by(f64::total_cmp);
         let p95 = sorted.get(((sorted.len().saturating_sub(1)) as f64 * 0.95).round() as usize).copied().unwrap_or(0.0);
         FrameStats {
             p95_frame_ms: p95,
-            pages_recorded: retained.counts.recorded,
-            pages_reused: retained.counts.reused,
-            recording_bytes: retained.bytes() as u64,
+            pages_recorded: retained.counts.recorded + pictures.counts.recorded,
+            pages_reused: retained.counts.reused + pictures.counts.reused,
+            recording_bytes: (retained.bytes() + pictures.bytes()) as u64,
             ..self.stats
         }
     }
@@ -300,9 +302,43 @@ impl RulerDrag {
     }
 }
 
+/// A frame ready to draw: where it goes, the view it shows and the rulers' view, for `width` x `height` device pixels.
+struct PreparedFrame {
+    f: Frame,
+    view: crate::editing::view::View,
+    ruler: RulerView,
+    width: f64,
+    height: f64,
+}
+
+impl Session {
+    /// The rulers' frame for `frame`: the bands, the interaction state, and `measures`.
+    fn ruler_frame<'a>(&'a self, frame: &PreparedFrame, measures: &'a [crate::editing::view::RulerMeasure]) -> crate::render::ruler::RulerFrame<'a> {
+        let (p, f) = (&self.presentation, &frame.f);
+        crate::render::ruler::RulerFrame {
+            bands: p.rulers,
+            width: frame.width / f.dpr,
+            height: frame.height / f.dpr,
+            dpr: f.dpr,
+            selector: p.tab_selector,
+            guide: p.ruler_drag.as_ref().and_then(RulerDrag::guide),
+            drag: p.ruler_drag.as_ref().and_then(RulerDrag::shown),
+            ghost: self.ruler_ghost(&frame.ruler),
+            hover: self.ruler_hovered(&frame.ruler),
+            popover: p.popover.as_ref(),
+            measures,
+            page: p.renderer.page_theme(),
+        }
+    }
+}
+
 /// The host's view of a session: viewport size, scroll and zoom, and the renderer's caches.
 pub(super) struct Presentation {
     renderer: Renderer,
+    /// The twip-graphics screen, and whether CPU frames use it (the build's default: without the `skia-screen`
+    /// feature).
+    graphics: crate::render::graphics::Graphics,
+    graphics_screen: bool,
     width: f64,
     height: f64,
     dpr: f64,
@@ -356,6 +392,8 @@ impl Default for Presentation {
         static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         Presentation {
             renderer: Renderer::retaining(),
+            graphics: crate::render::graphics::Graphics::default(),
+            graphics_screen: !cfg!(feature = "skia-screen"),
             width: 0.0,
             height: 0.0,
             dpr: 1.0,
@@ -458,6 +496,8 @@ impl Presentation {
     pub(super) fn clear(&mut self) {
         self.renderer.clear_images();
         self.renderer.retained.clear();
+        self.graphics.clear_images();
+        self.graphics.retained.clear();
         self.sink.a11y = None;
     }
 
@@ -1029,20 +1069,15 @@ impl HostSurface<'_> {
         if width == 0 || height == 0 || pixels.len() < row * height as usize {
             return Err(Error::invalid("the pixel buffer is smaller than width x height x 4"));
         }
-        let (w, h) = (i32::try_from(width).map_err(|_| Error::invalid("width"))?, i32::try_from(height).map_err(|_| Error::invalid("height"))?);
-        let info = skia_safe::ImageInfo::new((w, h), skia_safe::ColorType::RGBA8888, skia_safe::AlphaType::Premul, None);
-        let Some(mut surface) = skia_safe::surfaces::wrap_pixels(&info, pixels, row, None) else {
-            return Err(Error::invalid("the pixel buffer can't be drawn into"));
-        };
-        self.draw(surface.canvas(), f64::from(width), f64::from(height));
-        drop(surface);
+        let started = std::time::Instant::now();
+        self.draw_cpu(pixels, width, height)?;
+        self.session.presentation.counters.frame(started.elapsed().as_secs_f64() * 1e3);
         if self.session.presentation.verify {
             let mut again = vec![0u8; pixels.len()];
-            if let Some(mut direct) = skia_safe::surfaces::wrap_pixels(&info, &mut again, row, None) {
-                self.session.presentation.renderer.direct = true;
-                self.draw_frame(direct.canvas(), f64::from(width), f64::from(height));
-                self.session.presentation.renderer.direct = false;
-            }
+            self.session.presentation.renderer.direct = true;
+            let drawn = self.draw_cpu(&mut again, width, height);
+            self.session.presentation.renderer.direct = false;
+            drawn?;
             if again[..] != pixels[..row * height as usize] {
                 let p = &mut self.session.presentation;
                 p.verify_failures += 1;
@@ -1064,6 +1099,30 @@ impl HostSurface<'_> {
         Ok(self.frame_info())
     }
 
+    /// Tests and tools: CPU frames drawn with twip-graphics (`true`) or Skia, whatever the build's default.
+    #[doc(hidden)]
+    pub fn set_graphics_screen(&mut self, on: bool) {
+        self.session.presentation.graphics_screen = on;
+    }
+
+    /// Draws the viewport into `pixels` on the CPU: with twip-graphics, or with Skia while the Skia screen is kept
+    /// (the `skia-screen` feature, or [`HostSurface::set_graphics_screen`]).
+    fn draw_cpu(&mut self, pixels: &mut [u8], width: u32, height: u32) -> Result<(), Error> {
+        let row = width as usize * 4;
+        if !self.session.presentation.graphics_screen {
+            let (w, h) = (i32::try_from(width).map_err(|_| Error::invalid("width"))?, i32::try_from(height).map_err(|_| Error::invalid("height"))?);
+            let info = skia_safe::ImageInfo::new((w, h), skia_safe::ColorType::RGBA8888, skia_safe::AlphaType::Premul, None);
+            let Some(mut surface) = skia_safe::surfaces::wrap_pixels(&info, pixels, row, None) else {
+                return Err(Error::invalid("the pixel buffer can't be drawn into"));
+            };
+            self.draw_frame(surface.canvas(), f64::from(width), f64::from(height));
+            return Ok(());
+        }
+        let mut target = twip_graphics::cpu::Target::new(pixels, width, height, row, twip_graphics::cpu::Format::Rgba8)
+            .map_err(|e| Error::invalid(format!("the pixel buffer can't be drawn into: {e}")))?;
+        self.draw_graphics(&mut target, f64::from(width), f64::from(height));
+        Ok(())
+    }
     /// Test builds and tools: each CPU frame ([`HostSurface::frame_rgba`]) is drawn a second time from scratch,
     /// past the retained page content, and compared pixel for pixel.
     #[doc(hidden)]
@@ -1158,10 +1217,11 @@ impl HostSurface<'_> {
     /// What the frames have cost so far.
     pub fn frame_stats(&self) -> FrameStats {
         let p = &self.session.presentation;
-        p.counters.stats(&p.renderer.retained)
+        p.counters.stats(&p.renderer.retained, &p.graphics.retained)
     }
 
-    fn draw_frame(&mut self, canvas: &skia_safe::Canvas, width: f64, height: f64) {
+    /// A frame laid out and its view built, ready to draw: `width` x `height` device pixels.
+    fn prepare_frame(&mut self, width: f64, height: f64) -> PreparedFrame {
         self.session.sync_view_settings();
         let s = &mut *self.session;
         let p = &mut s.presentation;
@@ -1183,7 +1243,32 @@ impl HostSurface<'_> {
         view.field_shading = field_shading;
         p.renderer.gridlines = s.gridlines;
         p.renderer.page_colour = s.editor.document().page_colour;
-        p.renderer.draw(canvas, &view, &s.editor.document().images, &f);
+        drop(fonts);
+        let ruler = s.ruler_view();
+        PreparedFrame { f, view, ruler, width, height }
+    }
+
+    /// After a frame is drawn: the rulers' view reported when it changed, the comments' anchors placed, and the
+    /// requests the layout made delivered.
+    fn finish_frame(&mut self, frame: PreparedFrame) {
+        let s = &mut *self.session;
+        // Coalesced per frame: the view as this frame shows it, when it changed.
+        if s.presentation.ruler_seen.as_ref() != Some(&frame.ruler) {
+            s.presentation.ruler_seen = Some(frame.ruler.clone());
+            s.emit(Event::RulerChanged(frame.ruler));
+        }
+        let stack = s.editor.stack();
+        s.set_comment_anchors(&frame.view, &stack, frame.f.px_per_pt);
+        // The pages just laid out may have placed the caret.
+        crate::prof::time("frame:deliver", || s.deliver_requests());
+    }
+
+    fn draw_frame(&mut self, canvas: &skia_safe::Canvas, width: f64, height: f64) {
+        let frame = self.prepare_frame(width, height);
+        let s = &mut *self.session;
+        let (f, view) = (&frame.f, &frame.view);
+        let p = &mut s.presentation;
+        crate::prof::time("frame:draw", || p.renderer.draw(canvas, view, &s.editor.document().images, f));
         if p.markup_pane > 0.0 {
             let left = (view.stack.width * f.px_per_pt + f.origin_x) * f.dpr;
             let r = skia_safe::Rect::from_xywh(left as f32, 0.0, (p.markup_pane * f.dpr) as f32, height as f32);
@@ -1204,41 +1289,58 @@ impl HostSurface<'_> {
                 canvas.draw_points(skia_safe::canvas::PointMode::Polygon, &points, &line);
             }
         }
-        drop(fonts);
         // The rulers sit over the viewport's top and left edges, the document scrolling under them.
         // shortcut: revealing the selection doesn't allow for them, so a caret scrolled to the top edge can sit under
         // the horizontal ruler.
-        let ruler = s.ruler_view();
-        let p = &s.presentation;
-        if p.rulers != Bands::default() {
+        if s.presentation.rulers != Bands::default() {
             let measures = s.ruler_measures();
-            let frame = crate::render::ruler::RulerFrame {
+            let rf = s.ruler_frame(&frame, &measures);
+            crate::render::ruler::paint(&frame.ruler, &s.presentation.renderer.theme, canvas, &rf);
+        }
+        self.finish_frame(frame);
+    }
+
+    /// [`HostSurface::draw_frame`] with twip-graphics: the same frame, recorded and drawn into `target` on the CPU.
+    fn draw_graphics(&mut self, target: &mut twip_graphics::cpu::Target<'_>, width: f64, height: f64) {
+        let frame = self.prepare_frame(width, height);
+        let s = &mut *self.session;
+        let (f, view) = (&frame.f, &frame.view);
+        let p = &mut s.presentation;
+        crate::prof::time("frame:draw", || p.graphics.draw(&p.renderer, view, &s.editor.document().images, f));
+        if p.markup_pane > 0.0 {
+            let left = (view.stack.width * f.px_per_pt + f.origin_x) * f.dpr;
+            p.graphics.pane([left, 0.0, left + p.markup_pane * f.dpr, height], p.pane_color());
+        }
+        // The balloons' leaders, over everything: from each comment's text to its card, one device pixel wide.
+        if !p.leaders.is_empty() {
+            p.graphics.leaders(&p.leaders, f, f.dpr.round().max(1.0), p.renderer.palette().leaders);
+        }
+        // The rulers sit over the viewport's top and left edges, the document scrolling under them.
+        if s.presentation.rulers != Bands::default() {
+            let measures = s.ruler_measures();
+            let (ghost, hover) = (s.ruler_ghost(&frame.ruler), s.ruler_hovered(&frame.ruler));
+            let p = &mut s.presentation;
+            // Built from the presentation's fields here, not by `Session::ruler_frame`: the graphics state is borrowed
+            // mutably beside it.
+            let rf = crate::render::ruler::RulerFrame {
                 bands: p.rulers,
-                width: width / f.dpr,
-                height: height / f.dpr,
+                width: frame.width / f.dpr,
+                height: frame.height / f.dpr,
                 dpr: f.dpr,
                 selector: p.tab_selector,
                 guide: p.ruler_drag.as_ref().and_then(RulerDrag::guide),
                 drag: p.ruler_drag.as_ref().and_then(RulerDrag::shown),
-                ghost: s.ruler_ghost(&ruler),
-                hover: s.ruler_hovered(&ruler),
+                ghost,
+                hover,
                 popover: p.popover.as_ref(),
                 measures: &measures,
                 page: p.renderer.page_theme(),
             };
-            crate::render::ruler::paint(&ruler, &p.renderer.theme, canvas, &frame);
+            p.graphics.ruler(&frame.ruler, &p.renderer.theme, &rf);
         }
-        // Coalesced per frame: the view as this frame shows it, when it changed.
-        if s.presentation.ruler_seen.as_ref() != Some(&ruler) {
-            s.presentation.ruler_seen = Some(ruler.clone());
-            s.emit(Event::RulerChanged(ruler));
-        }
-        let stack = s.editor.stack();
-        s.set_comment_anchors(&view, &stack, f.px_per_pt);
-        // The pages just laid out may have placed the caret.
-        s.deliver_requests();
+        crate::prof::time("frame:raster", || s.presentation.graphics.present(target));
+        self.finish_frame(frame);
     }
-
     /// The document's size and the caret after the last frame: `caret_visible` is whether the frame drew the caret
     /// (focused, collapsed, in the blink's visible phase).
     pub fn frame_info(&mut self) -> FrameInfo {
@@ -1344,7 +1446,9 @@ impl HostSurface<'_> {
 
     /// The memory the session keeps its pages' drawing in.
     pub fn set_paint_budget(&mut self, budget: PaintBudget) {
-        self.session.presentation.renderer.retained.budget = usize::try_from(budget.recordings).unwrap_or(usize::MAX);
+        let budget = usize::try_from(budget.recordings).unwrap_or(usize::MAX);
+        self.session.presentation.renderer.retained.budget = budget;
+        self.session.presentation.graphics.retained.budget = budget;
     }
 
     /// The colours of what the editor draws over the document.

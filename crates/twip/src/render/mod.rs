@@ -5,6 +5,7 @@
 use std::collections::HashMap;
 
 pub mod appearance;
+pub mod graphics;
 mod overlay;
 pub mod preview;
 pub mod retained;
@@ -108,14 +109,14 @@ pub(crate) fn font_mgr() -> FontMgr {
     MGR.get_or_init(|| Shared(FontMgr::custom_empty().unwrap_or_default())).0.clone()
 }
 
+/// The chrome faces' font files, by [`ChromeFace`]: both screens draw from these bytes.
+pub(crate) const CHROME_FONTS: [&[u8]; 2] =
+    [include_bytes!("chrome_fonts/jetbrains-mono-500.ttf"), include_bytes!("chrome_fonts/jetbrains-mono-600.ttf")];
+
 /// A chrome typeface, made once per thread.
 pub fn chrome_typeface(face: ChromeFace) -> Option<Typeface> {
     thread_local! {
-        static FACES: [Option<Typeface>; 2] = [
-            &include_bytes!("chrome_fonts/jetbrains-mono-500.ttf")[..],
-            include_bytes!("chrome_fonts/jetbrains-mono-600.ttf"),
-        ]
-        .map(|b| font_mgr().new_from_data(Data::new_copy(b), 0));
+        static FACES: [Option<Typeface>; 2] = CHROME_FONTS.map(|b| font_mgr().new_from_data(Data::new_copy(b), 0));
     }
     FACES.with(|f| f[face as usize].clone())
 }
@@ -165,7 +166,12 @@ impl Renderer {
     }
 
     pub(super) fn ink(&self, c: u32) -> Color {
-        rgb(if self.own_colours { c } else { self.appearance.map(c) })
+        self.ink_for(self.own_colours, c)
+    }
+
+    /// A document colour as drawn: through the appearance's mapping, unless the item keeps its own colours (`own`).
+    pub(crate) fn ink_for(&self, own: bool, c: u32) -> Color {
+        rgb(if own { c } else { self.appearance.map(c) })
     }
 
     /// Forgets decoded pictures (a new document).

@@ -87,15 +87,15 @@ fn picture_adjust(adjust: &[crate::drawing::paint::ResolvedBlipAdjust], paint: &
     }
 }
 
-fn sigma(radius: f64) -> f32 {
+pub(super) fn sigma(radius: f64) -> f32 {
     (radius * SIGMA_PER_RADIUS) as f32
 }
 
 const SIGMA_PER_RADIUS: f64 = 0.5;
-const GLOW_GROW: f64 = 0.5;
-const GLOW_SOFT: f64 = 0.5;
-const SOFT_ERODE: f64 = 0.85;
-const SOFT_FADE: f64 = 0.64;
+pub(super) const GLOW_GROW: f64 = 0.5;
+pub(super) const GLOW_SOFT: f64 = 0.5;
+pub(super) const SOFT_ERODE: f64 = 0.85;
+pub(super) const SOFT_FADE: f64 = 0.64;
 
 fn reach(s: &ShapeItem, m: &Matrix) -> Rect {
     let [x0, y0, x1, y1] = s.rect;
@@ -187,7 +187,7 @@ fn colour(c: Rgba) -> Color {
     Color::from_argb(c.a, c.r, c.g, c.b)
 }
 
-fn shaded(c: Rgba, mode: PathFill) -> Rgba {
+pub(super) fn shaded(c: Rgba, mode: PathFill) -> Rgba {
     let (k, white) = match mode {
         PathFill::Darken => (0.6, 0.0),
         PathFill::DarkenLess => (0.8, 0.0),
@@ -518,7 +518,7 @@ impl Renderer {
 const TWO_STOP_BLEND: [f64; 17] =
     [0.0, 0.018, 0.0472, 0.0843, 0.1404, 0.209, 0.2927, 0.3873, 0.4934, 0.5922, 0.6913, 0.778, 0.8485, 0.9054, 0.949, 0.9779, 1.0];
 
-fn gradient_at(stops: &[(f64, Rgba)], t: f64) -> Rgba {
+pub(super) fn gradient_at(stops: &[(f64, Rgba)], t: f64) -> Rgba {
     let (Some(first), Some(last)) = (stops.first(), stops.last()) else { return Rgba::default() };
     if t <= first.0 {
         return first.1;
@@ -621,7 +621,7 @@ fn gradient(canvas: &Canvas, path: &Path, stops: &[(f64, Rgba)], kind: GradientK
     }
 }
 
-fn dash_lengths(d: PresetDash) -> &'static [f64] {
+pub(super) fn dash_lengths(d: PresetDash) -> &'static [f64] {
     match d {
         PresetDash::Solid => &[],
         PresetDash::Dot => &[1.0, 3.0],
@@ -689,7 +689,7 @@ fn band(path: &Path, line: &ResolvedLine, d: f64) -> Path {
     b.detach()
 }
 
-fn bands(line: &ResolvedLine) -> Vec<(f64, f64)> {
+pub(super) fn bands(line: &ResolvedLine) -> Vec<(f64, f64)> {
     let mut v = match line.compound {
         Compound::Single => vec![(-0.5, 0.5)],
         Compound::Double => vec![(-0.5, -1.0 / 6.0), (1.0 / 6.0, 0.5)],

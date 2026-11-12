@@ -25,6 +25,12 @@ codegen-units = 1
 # The C API's library overrides this to unwind (crates/twip-capi/build-native.mjs), so its entry points catch panics.
 panic = "abort"
 
+# twip-graphics' pixel kernels need the optimiser's full inlining: at "s" its benchmarks ran 3 to 5 times slower (a
+# text frame 3.08 ms against 0.80 ms), for 21 KB more gzipped wasm at 3 (373 KB against 394 KB, the renderer alone;
+# Windows, 2026-11-11). `bench` inherits this.
+[profile.release.package.twip-graphics]
+opt-level = 3
+
 # Benchmarks keep release's opt-level but skip its whole-program LTO and single codegen unit, which make every
 # `cargo bench` rebuild take minutes; compare benchmark numbers with each other, not with the shipped library's.
 # Line tables let a sampling profiler attribute benchmark time to source lines (CONTRIBUTING.md, Profiling).

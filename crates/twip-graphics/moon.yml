@@ -1,0 +1,9 @@
+$schema: '../../.moon/cache/schemas/project.json'
+language: rust
+tags: [engine]
+
+tasks:
+  # Unit tests and the golden images, at every SIMD level. The crate has no Skia, so plain cargo builds it everywhere.
+  test:
+    command: cargo test -p twip-graphics
+    inputs: ['src/**/*', 'tests/**/*', 'benches/**/*', 'Cargo.toml']

@@ -90,6 +90,10 @@ jobs:
       # Trusted publishing (OIDC): a short-lived token for this run.
       - id: auth
         uses: rust-lang/crates-io-auth-action@v1
+      # twip depends on twip-graphics at exactly its version, so it goes first.
+      - run: cargo publish -p twip-graphics
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
       - run: cargo publish -p twip
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}

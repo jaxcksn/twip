@@ -1,5 +1,7 @@
 //! Frames through the API session as an SDK draws them: a 1000 x 800 CSS px viewport at 1x on `big.docx`, its whole
-//! layout done (the background layout timer has run by the time a user scrolls or selects).
+//! layout done (the background layout timer has run by the time a user scrolls or selects). Each is drawn by both CPU
+//! screens, Skia's and twip-graphics', in one run, so they compare on the same machine state: a `SCREEN` of 0 is
+//! Skia's, 1 twip-graphics'.
 
 use std::cell::{Cell, RefCell};
 
@@ -11,12 +13,16 @@ use twip::api::input::{Key, Modifiers};
 const W: u32 = 1000;
 const H: u32 = 800;
 
-/// The engine (it owns the session) and the session, focused and fully laid out, its first frame drawn.
-fn session(pixels: &mut [u8]) -> (Engine, SessionId) {
+/// The CPU screens a frame is drawn with.
+const SCREENS: [&str; 2] = ["skia", "graphics"];
+
+/// The engine (it owns the session) and the session, focused and fully laid out, its first frame drawn by `screen`.
+fn session(pixels: &mut [u8], screen: &str) -> (Engine, SessionId) {
     let mut engine = Engine::new(FontLibrary::system());
     let id = engine.create_session(SessionOptions::default());
     let s = engine.session(id).expect("the session was just created");
     s.open(&super::fixture("big.docx")).expect("the fixture opens");
+    s.host().set_graphics_screen(screen == "graphics");
     s.host().set_size(f64::from(W), f64::from(H), 1.0);
     s.host().set_focus(true);
     while s.host().idle() {}
@@ -26,10 +32,10 @@ fn session(pixels: &mut [u8]) -> (Engine, SessionId) {
 
 /// An unchanged frame on the first screen and one a few pages in, with the pages' drawing kept (`retained`) or
 /// drawn from scratch.
-#[divan::bench(args = [(0.0, true), (0.0, false), (3000.0, true), (3000.0, false)])]
-fn unchanged(bencher: Bencher, (scroll, retained): (f64, bool)) {
+#[divan::bench(args = [(0.0, true), (0.0, false), (3000.0, true), (3000.0, false)], consts = [0, 1])]
+fn unchanged<const SCREEN: usize>(bencher: Bencher, (scroll, retained): (f64, bool)) {
     let mut pixels = vec![0u8; (W * H * 4) as usize];
-    let (mut engine, id) = session(&mut pixels);
+    let (mut engine, id) = session(&mut pixels, SCREENS[SCREEN]);
     let s = engine.session(id).expect("the session");
     s.host().set_scroll(0.0, scroll);
     s.host().set_retained(retained);
@@ -38,10 +44,10 @@ fn unchanged(bencher: Bencher, (scroll, retained): (f64, bool)) {
 
 /// A frame 200 CSS px further down, from the first page to the last and back. Budget: under 8.3 ms, one 120 Hz
 /// frame.
-#[divan::bench(sample_size = 1)]
-fn scroll(bencher: Bencher) {
+#[divan::bench(args = SCREENS, sample_size = 1)]
+fn scroll(bencher: Bencher, screen: &str) {
     let mut pixels = vec![0u8; (W * H * 4) as usize];
-    let (mut engine, id) = session(&mut pixels);
+    let (mut engine, id) = session(&mut pixels, screen);
     let s = engine.session(id).expect("the session");
     let height = s.host().frame_rgba(&mut pixels, W, H).expect("a frame").content_height;
     let (mut y, mut step) = (0.0, 200.0);
@@ -57,12 +63,27 @@ fn scroll(bencher: Bencher) {
         .bench_local_values(|()| s.borrow_mut().host().frame_rgba(&mut pixels.borrow_mut(), W, H).expect("a frame"));
 }
 
+/// A character typed on the first page, then the frame after it: the edited page's drawing recorded again, the others
+/// kept. Budget: under 8.3 ms, one 120 Hz frame.
+#[divan::bench(args = SCREENS, sample_size = 1)]
+fn typed(bencher: Bencher, screen: &str) {
+    let mut pixels = vec![0u8; (W * H * 4) as usize];
+    let (mut engine, id) = session(&mut pixels, screen);
+    let s = engine.session(id).expect("the session");
+    let (s, pixels) = (RefCell::new(s), RefCell::new(pixels));
+    bencher
+        .with_inputs(|| {
+            s.borrow_mut().text("a");
+        })
+        .bench_local_values(|()| s.borrow_mut().host().frame_rgba(&mut pixels.borrow_mut(), W, H).expect("a frame"));
+}
+
 /// A selection extended a line with Shift+Down (the state and events it makes), then the frame after it; the
 /// selection collapses back to the start every 60 lines.
-#[divan::bench(args = ["input", "frame"], sample_size = 1)]
-fn select_line(bencher: Bencher, part: &str) {
+#[divan::bench(args = ["input", "frame"], consts = [0, 1], sample_size = 1)]
+fn select_line<const SCREEN: usize>(bencher: Bencher, part: &str) {
     let mut pixels = vec![0u8; (W * H * 4) as usize];
-    let (mut engine, id) = session(&mut pixels);
+    let (mut engine, id) = session(&mut pixels, SCREENS[SCREEN]);
     let s = engine.session(id).expect("the session");
     let shift = Modifiers { shift: true, ..Modifiers::default() };
     let (s, pixels, n) = (RefCell::new(s), RefCell::new(pixels), Cell::new(0));

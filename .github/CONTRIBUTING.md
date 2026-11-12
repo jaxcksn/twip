@@ -64,6 +64,7 @@ Check it with `emcc --version`.
 | `crates/twip` | The engine: layout, editing, rendering. `twip::api` is the contract every SDK follows. |
 | `crates/twip-capi` | The C ABI over `twip::api` (internal, `include/twip.h`): the native library `twip` the .NET SDK loads. |
 | `crates/twip-wasm` | Builds the C ABI as an emscripten module for the web, with `twip-host.js` for its callbacks. |
+| `crates/twip-graphics` | The 2D renderer replacing Skia: pictures recorded once, drawn on the CPU (and later the GPU and PDF). Internal; published with `twip` at its exact version. |
 | `crates/twip-tools` | Developer tools: golden comparisons, dumps, round trips, renders (`cargo run -p twip-tools`). |
 | `bindings/web` | `@twip/web`, the TypeScript SDK, written by hand over the wasm module. |
 | `bindings/dotnet` | `Twip.Core` and `Twip.WinForms`, the .NET SDK, written by hand over the C ABI. |
@@ -116,7 +117,7 @@ not in CI). Compare their numbers with `main`'s on the same machine.
 
 The tasks: `root:hygiene` (planning ids, the CI plan), `root:format`, `root:lint` (clippy), `root:contract-scripts`;
 `twip:test` (the unit tests, including the wire fixture check, and the rust contract runner), `twip:example` (the
-Rust API end to end), `twip-capi:test`; `web:test` (builds the wasm module with emsdk, then the unit, wire, contract and API report checks),
+Rust API end to end), `twip-graphics:test` (the renderer's unit and golden image tests), `twip-capi:test`; `web:test` (builds the wasm module with emsdk, then the unit, wire, contract and API report checks),
 `web:browser-test`, `web:latency` (the latency budgets, on a quiet machine with a GPU; not in CI); `dotnet:build`, `dotnet:test` (builds twip-capi, then the wire, contract and Native AOT smoke
 tests); `docs:build` and `docs:examples` (the guides' TypeScript and C# examples). `cargo fmt --all` fixes what
 `root:format` reports.
@@ -138,6 +139,27 @@ samply record cargo bench -p twip -- editing::typing   # opens a flame graph in 
 On macOS, Instruments' Time Profiler works too: run `dsymutil <bench binary>` first so it finds the line tables, then
 `xcrun xctrace record --template 'Time Profiler' --launch -- <bench binary> --bench <filter>`. Run directly, the
 binary needs `--bench`; without it Divan runs each benchmark once, as a test. Linux `perf` works as well.
+
+## twip-graphics
+
+`crates/twip-graphics` holds itself to more than the engine does:
+
+- No `unsafe` at all (`unsafe_code = "forbid"`). SIMD goes through `fearless_simd`, and every kernel gives the same
+  bytes at every instruction set level: integer pixel arithmetic, no fused multiply-add, no approximate or relaxed
+  instructions, no `f32` reductions. The golden tests run each scene at the detected level, the baseline and the
+  scalar fallback.
+- No allocation per frame, per line or per glyph once warm: buffers are reused, and a test counts a steady frame's
+  allocations.
+- The CPU backend is deterministic and is the reference. Every drawing feature lands with a golden image
+  (`tests/golden.rs`); `TWIP_GRAPHICS_BLESS=1 cargo test -p twip-graphics --test golden` rewrites them, to be reviewed
+  before they are kept. GPU features are checked against the CPU's output (`tests/gpu.rs`, with `--features gpu`).
+- GPU code uses only what WebGL 2 also has: no compute, no storage buffers, no push constants.
+- No shortcut rests on a guess that a case is rare: do it as Skia does, measure, or mark it `// shortcut:` with what is
+  missing and where it lands.
+- Comments say what the code does, and name the source of an algorithm in its module's header (keeping the licence
+  notice of any copied code).
+- A new dependency must replace something substantial to write, keep the wasm build small, and pass `cargo deny`.
+- Benchmarks: `cargo bench -p twip-graphics`, last, compared with the previous numbers on the same machine.
 
 ## Comments
 
