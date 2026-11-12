@@ -2238,6 +2238,13 @@ impl Reader {
         // Compat 15: a VML float is behind the text only without wrapping.
         let behind = st.z < 0 && (self.res.styles.compat != Compat::Generic || wrap == "none");
         let poly = v.wrap_coords.filter(|_| matches!(wrap.as_str(), "tight" | "through")).map(Rc::from);
+        let line = shape.sp().and_then(|s| s.line.as_ref()).or_else(|| shape.pic().and_then(|p| p.line.as_ref()));
+        let pen = line.filter(|l| !matches!(l.fill, Some(crate::drawing::paint::Fill::None))).map(|l| l.width.map_or(15.0, |w| w.0 as f64 / 635.0));
+        let (h_align, v_align) = (align(&st.h_align), align(&st.v_align));
+        let effect = vml_effect(
+            pen,
+            (h_align.is_none() && v_align.is_none()).then(|| [st.x, st.y, st.x + st.w, st.y + st.h].map(|v| (v * 20.0).trunc())),
+        );
         self.float_order += 1;
         out.push(Inline::Float(
             Box::new(Float {
@@ -2250,15 +2257,15 @@ impl Reader {
                 lock_aspect: false,
                 text_box,
                 h_relative: h_relative.into(),
-                h_align: align(&st.h_align),
+                h_align,
                 h_offset: twips(st.x),
                 v_relative: v_relative.into(),
-                v_align: align(&st.v_align),
+                v_align,
                 v_offset: twips(st.y),
                 wrap,
                 wrap_text: wrap_text.into(),
                 dist,
-                effect: [0.0; 4],
+                effect,
                 poly,
                 behind,
                 allow_overlap: v.allow_overlap,
@@ -3001,5 +3008,37 @@ impl crate::drawing::read::Source for DrawingSource<'_, '_> {
         }
         let mut ctx = crate::drawing::read::Ctx { source: &mut NoImages, unknown_presets: Vec::new() };
         crate::drawing::read::diagram_drawing(&xml, &mut ctx)
+    }
+}
+
+/// A VML shape's effect extents, points: its bounds with its line (`pen`, its width in twips, `None` unstroked) on the
+/// 96-dpi pixel grid of its position frame, past its box (`[l, t, r, b]`, twips, in that frame) on each side. Half the
+/// pen, at least half a pixel, goes out on each side, the bottom a pixel further; an unstroked shape's edges go to the
+/// nearest pixel.
+// ponytail: an aligned shape gets none; its frame position is known only once it is placed.
+fn vml_effect(pen: Option<f64>, rect: Option<[f64; 4]>) -> [f64; 4] {
+    let Some([l, t, r, b]) = rect else { return [0.0; 4] };
+    let px = |v: f64| v / 15.0;
+    let bounds = match pen {
+        Some(w) => {
+            let h = (w / 30.0).max(0.5);
+            [(px(l) - h).floor(), (px(t) - h).floor(), (px(r) + h).ceil(), (px(b) + h).floor() + 1.0]
+        }
+        None => [px(l).round(), px(t).round(), px(r).round(), px(b).round()],
+    }
+    .map(|v| v * 15.0);
+    [l - bounds[0], t - bounds[1], bounds[2] - r, bounds[3] - b].map(|e| e.max(0.0) / 20.0)
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn a_vml_shapes_effect_extents_reach_its_lines_pixel_bounds() {
+        let tw = |e: [f64; 4]| e.map(|v| (v * 20.0 * 1000.0).round() / 1000.0);
+        assert_eq!(tw(super::vml_effect(Some(15.0), Some([2002.0, 0.0, 3442.0, 800.0]))), [22.0, 15.0, 8.0, 10.0]);
+        assert_eq!(tw(super::vml_effect(Some(15.0), Some([2007.0, 0.0, 3459.0, 800.0])))[2], 21.0);
+        assert_eq!(tw(super::vml_effect(Some(60.0), Some([2000.0, 0.0, 3440.0, 800.0])))[2], 40.0);
+        assert_eq!(tw(super::vml_effect(None, Some([2002.0, 0.0, 3442.0, 800.0]))), [7.0, 0.0, 0.0, 0.0]);
+        assert_eq!(super::vml_effect(Some(15.0), None), [0.0; 4]);
     }
 }
