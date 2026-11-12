@@ -30,8 +30,10 @@ gif = "0.14.2"
 # until it is planned.
 wgpu = { version = "30.0.1", default-features = false, features = ["std", "wgsl", "webgpu"], optional = true }
 
-# The PDF writer (feature `pdf`): pictures written as PDF pages, with fonts subset and tagged structure.
-krilla = { version = "0.8.2", default-features = false, features = ["raster-images"], optional = true }
+# The PDF writer (feature `pdf`): PDF's objects and content streams written as typst writes them, and their streams
+# compressed (miniz_oxide is flate2's backend, already in Twip).
+pdf-writer = { version = "0.15.0", optional = true }
+miniz_oxide = { version = "0.9", optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 wgpu = { version = "30.0.1", default-features = false, features = ["dx12", "vulkan", "metal"], optional = true }
@@ -60,7 +62,7 @@ harness = false
 [features]
 # The wgpu backend (src/gpu/). Off by default so CPU-only builds (tests, musl, headless) never compile wgpu.
 gpu = ["dep:wgpu"]
-pdf = ["dep:krilla"]
+pdf = ["dep:pdf-writer", "dep:miniz_oxide"]
 
 [lints.rust]
 unsafe_code = "forbid"

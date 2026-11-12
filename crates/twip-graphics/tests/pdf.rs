@@ -1,7 +1,8 @@
 //! The PDF writer against the CPU backend: each scene written as a one-page PDF, the page rendered by hayro (a PDF
 //! rasteriser) and compared with the CPU backend's drawing, both at 2 pixels per point over white. Two rasterisers'
 //! anti-aliasing differ, so a pixel may differ by up to 64 in a channel; beyond that, at most 1% of the pixels.
-//! hayro doesn't composite PDF blend modes, so scenes that use them aren't compared. A failure writes
+//! hayro doesn't composite PDF blend modes, so scenes that use them aren't compared. hayro's hinting is off: the
+//! embedded subsets carry no hinting programs, so it would auto-hint them, which the CPU backend doesn't. A failure writes
 //! `tests/out/<name>.pdf`, `<name>.pdf.png` and `<name>.pdf-diff.png`.
 
 #![cfg(feature = "pdf")]
@@ -34,7 +35,13 @@ fn rendered(pdf: Vec<u8>) -> (Vec<u8>, (u32, u32)) {
     let pages = pdf.pages();
     let page = pages.first().expect("a page");
     let settings = hayro::PixmapSettings { x_scale: SCALE as f32, y_scale: SCALE as f32, bg_color: WHITE };
-    let pixmap = hayro::render(page, &hayro::RenderCache::new(), &InterpreterSettings::default(), &hayro::RenderSettings::default(), &settings);
+    let pixmap = hayro::render(
+        page,
+        &hayro::RenderCache::new(),
+        &InterpreterSettings::default(),
+        &hayro::RenderSettings { hinting: false, ..hayro::RenderSettings::default() },
+        &settings,
+    );
     let size = (u32::from(pixmap.width()), u32::from(pixmap.height()));
     (pixmap.data_as_u8_slice().to_vec(), size)
 }
@@ -50,11 +57,11 @@ fn cpu(picture: &Picture, resources: &Resources, (w, h): (u32, u32)) -> Vec<u8> 
 
 /// Writes `picture` as a PDF page of `size` points, renders it, and checks it against the CPU backend.
 fn same(name: &str, size: (u32, u32), picture: &Picture, resources: &Resources) {
-    same_from(name, size, picture, resources, 0);
+    same_from(name, size, picture, resources, 0, 1);
 }
 
-/// [`same`], comparing the rows from `top` (points) down.
-fn same_from(name: &str, size: (u32, u32), picture: &Picture, resources: &Resources, top: u32) {
+/// [`same`], comparing the rows from `top` (points) down, with `percent` of the pixels allowed past 64.
+fn same_from(name: &str, size: (u32, u32), picture: &Picture, resources: &Resources, top: u32, percent: usize) {
     let written = write(resources, &[page(picture, size)], &[], &[], &Info::default()).expect("writes");
     let (ours, got) = rendered(written.bytes.clone());
     let theirs = cpu(picture, resources, size);
@@ -76,7 +83,7 @@ fn same_from(name: &str, size: (u32, u32), picture: &Picture, resources: &Resour
         .collect();
     let pixels = (got.0 * got.1) as usize;
     eprintln!("{name}: {over} pixels over 64 (of {pixels}), worst {worst}, {} bytes", written.bytes.len());
-    if over * 100 > pixels || std::env::var_os("TWIP_GRAPHICS_DIFF").is_some() {
+    if over * 100 > pixels * percent || std::env::var_os("TWIP_GRAPHICS_DIFF").is_some() {
         let out = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("out");
         std::fs::create_dir_all(&out).expect("the output folder");
         std::fs::write(out.join(format!("{name}.pdf")), &written.bytes).expect("the PDF");
@@ -89,7 +96,7 @@ fn same_from(name: &str, size: (u32, u32), picture: &Picture, resources: &Resour
         png(format!("{name}.pdf.png"), &ours);
         png(format!("{name}.pdf-diff.png"), &diff);
     }
-    assert!(over * 100 <= pixels, "{name}: {over} pixels differ by more than 64");
+    assert!(over * 100 <= pixels * percent, "{name}: {over} pixels differ by more than 64");
 }
 
 #[test]
@@ -151,14 +158,15 @@ fn layers() {
     same("layers", (128, 144), &scenes::layers(), &Resources::default());
 }
 
-/// The CFF outlines' row only: krilla writes colour glyphs itself, as Type 3 glyphs, and hayro samples their bitmaps
-/// (CBDT, sbix) and draws COLRv1 sweeps' extend modes differently from Skia and the CPU backend, which this comparison
-/// can't tell apart from a fault. Those glyphs are checked by eye in `tests/out` (`TWIP_GRAPHICS_DIFF=1`).
+/// The CFF outlines' row only, allowing 2%: the CPU backend's colour glyphs are drawn into the PDF as images by the
+/// same backend, but hayro samples images differently; and the CFF glyphs are Type 3 outlines, which hayro fills as
+/// paths, without the mask gamma the CPU backend gives glyph coverage (as Skia does), so their stems' edges differ
+/// more than text's.
 #[test]
 fn colour_glyphs() {
     let mut res = Resources::default();
     let picture = scenes::colour_glyphs(&mut res);
-    same_from("colour-glyphs", (256, 240), &picture, &res, 205);
+    same_from("colour-glyphs", (256, 240), &picture, &res, 205, 2);
 }
 
 /// What Twip composites with Porter-Duff modes, which the writer turns into soft masks: a compound line (bands
@@ -239,11 +247,11 @@ fn structure_outline_and_metadata() {
         ..Info::default()
     };
     let written = write(&Resources::default(), &[Page { width: 100.0, height: 60.0, parts }], &structure, &outline, &info).expect("writes");
-    assert!(written.archival, "PDF/A-2b holds for plain drawing");
+    assert!(written.archival, "PDF/A-2b is claimed");
     let text = String::from_utf8_lossy(&written.bytes);
     // The heading and the paragraph are marked content 0 and 1; the rule, an artifact, is no structure's.
-    for key in ["/StructTreeRoot", "/MarkInfo", "/Outlines", "/S/H1/P", "/K[0]", "/S/P/P", "/K[1]", "/S/Document", "pdfaid:part", "(A test)"] {
+    for key in ["/StructTreeRoot", "/MarkInfo", "/Outlines", "/S/H1/P", "/MCID 0", "/S/P/P", "/MCID 1", "/S/Document", "pdfaid:part", "(A test)"] {
         assert!(text.contains(key), "{key} is written");
     }
-    assert!(!text.contains("/K[2]"), "the artifact isn't tagged");
+    assert!(!text.contains("/MCID 2"), "the artifact isn't tagged");
 }
