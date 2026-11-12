@@ -88,6 +88,9 @@ pub struct Style {
     pub origin: StyleOrigin,
     /// The `w:style` element as written: what saving writes for it, and what edits change.
     pub raw: String,
+    /// A table style whose properties start from Word's defaults, not its base: it was read before its base and kept
+    /// what it had then ([`Styles::parse`]).
+    pub frozen: bool,
 }
 
 impl Style {
@@ -135,7 +138,79 @@ impl Style {
             regions,
             origin: StyleOrigin::Document,
             raw: text[n.range()].to_string(),
+            frozen: false,
         })
+    }
+}
+
+/// Reading styles.xml in order, Word keeps each style's full properties once worked out, and works them out again
+/// after the last style only for those whose own properties were stored since. A table style worked out while its base
+/// wasn't read yet keeps what it had then: Word's defaults and its own properties.
+#[derive(Default)]
+struct Expansions {
+    /// Per style read: its base if read before it, and whether its properties are worked out.
+    read: HashMap<String, (Option<String>, bool)>,
+}
+
+impl Expansions {
+    /// Works the style's properties out, and its bases' that aren't on the way.
+    fn expand(&mut self, id: &str) {
+        let mut cur = Some(id.to_string());
+        let mut seen = 0;
+        while let Some(e) = cur.take().and_then(|c| self.read.get_mut(&c)).filter(|e| !e.1 && seen < 32) {
+            e.1 = true;
+            cur = e.0.clone();
+            seen += 1;
+        }
+    }
+
+    fn clear(&mut self, id: &str) {
+        if let Some(e) = self.read.get_mut(id) {
+            e.1 = false;
+        }
+    }
+
+    /// Replays the reader's steps for a table style: own run, paragraph and table properties are stored at its first
+    /// `w:tblStylePr` and at its end, and each region is applied. Whether its run properties take Word's built-in
+    /// defaults (stored at a region while its base is missing).
+    fn table_style(&mut self, n: Node, id: &str) -> bool {
+        let (mut rpr, mut ppr, mut tbl, mut builtin) = (false, false, false, false);
+        let set = |c: Node| c.children().any(|e| e.is_element());
+        for c in n.children().filter(|c| c.is_element()) {
+            match c.tag_name().name() {
+                "rPr" => rpr |= set(c),
+                "pPr" => ppr |= set(c),
+                "tblPr" | "trPr" | "tcPr" => tbl |= set(c),
+                "tblStylePr" => {
+                    if rpr {
+                        if self.read.get(id).is_some_and(|e| e.0.is_none()) {
+                            builtin = true;
+                            self.expand(id);
+                        } else {
+                            self.clear(id);
+                        }
+                    }
+                    if ppr {
+                        self.clear(id);
+                    }
+                    if tbl {
+                        self.expand(id);
+                    }
+                    (rpr, ppr, tbl) = (false, false, false);
+                    if attr(c, "type") != Some("wholeTable") && set(c) {
+                        self.expand(id);
+                    }
+                }
+                _ => {}
+            }
+        }
+        if tbl {
+            self.expand(id);
+        }
+        if ppr || rpr {
+            self.clear(id);
+        }
+        builtin
     }
 }
 
@@ -309,9 +384,20 @@ impl Styles {
             }
             None => s.app_defaults(),
         }
+        let mut expansions = Expansions::default();
         for n in children(root, "style") {
-            let Some(style) = Style::parse(n, text, &colours) else { continue };
+            let Some(mut style) = Style::parse(n, text, &colours) else { continue };
             let (kind, default) = (style.kind, style.default);
+            let base = style.based_on.clone().filter(|b| *b != style.id && expansions.read.contains_key(b));
+            expansions.read.entry(style.id.clone()).or_insert((base, false));
+            if kind == StyleKind::Table && expansions.table_style(n, &style.id) {
+                // Word's built-in run properties, the document's fonts kept.
+                let r = &mut style.base.rpr;
+                r.size = r.size.or(Some(10.0));
+                r.color = r.color.or(Some(None));
+                r.spacing = r.spacing.or(Some(0.0));
+                r.scale = r.scale.or(Some(100.0));
+            }
             if kind == StyleKind::Paragraph {
                 s.paragraph_order.push(style.id.clone());
                 if default {
@@ -325,6 +411,12 @@ impl Styles {
         }
         if s.default_paragraph.is_none() && s.by_id.get("Normal").is_some_and(|st| st.kind == StyleKind::Paragraph) {
             s.default_paragraph = Some("Normal".into());
+        }
+        // Worked out with its base missing: frozen. The styles on one take what it has.
+        for (id, (base, done)) in expansions.read {
+            if let Some(st) = s.by_id.get_mut(&id).filter(|st| st.kind == StyleKind::Table && st.based_on.is_some()) {
+                st.frozen = done && base.is_none();
+            }
         }
         s
     }
@@ -468,7 +560,7 @@ impl Styles {
                 break;
             }
             out.push(s);
-            cur = s.based_on.as_deref().and_then(|b| self.by_id.get(b));
+            cur = s.based_on.as_deref().filter(|_| !s.frozen).and_then(|b| self.by_id.get(b));
         }
         out.reverse();
         out
@@ -505,8 +597,11 @@ impl Styles {
             out.tr.merge(&r.tr);
         };
         for s in &chain {
-            // A style's own cell borders don't apply.
-            let tc = TcProps { borders: Borders::default(), ..s.base.tc.clone() };
+            // A style's own cell borders and `noWrap` don't apply; its own table borders replace its base's.
+            let tc = TcProps { borders: Borders::default(), no_wrap: None, ..s.base.tc.clone() };
+            if s.base.tbl.borders != Borders::default() {
+                out.tbl.borders = Borders::default();
+            }
             add(&Region { tc, ..s.base.clone() }, &mut out);
             rprs.push(&s.base.rpr);
         }

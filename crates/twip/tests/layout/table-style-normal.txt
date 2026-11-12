@@ -1,11 +1,11 @@
 page 0 12240 15840
   1440 1632 Body text XXXX (Normal, 12 pt)
   1440 1840 1. Table Grid style, Normal paragraph:
-  1548 2082 Cell text XXXX
+  1445 2082 Cell text XXXX
   1440 2300 2. No table style, Normal paragraph:
   1440 2532 Cell text XXXX
   1440 2740 3. Table Grid style, Body paragraph (based on Normal):
-  1548 2982 Cell text XXXX
+  1445 2982 Cell text XXXX
   1440 3200 4. Table style with 18 pt rPr, Normal paragraph:
   1548 3528 Cell text XXXX
   1440 3760 5. Table style with 18 pt rPr, Body paragraph:

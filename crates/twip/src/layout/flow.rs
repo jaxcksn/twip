@@ -2898,7 +2898,10 @@ impl<'d> PageFill<'d, '_> {
                 {
                     // The width the row reports: from the piece's start to its last cell's content right edge, or with
                     // `layoutRawTableWidth` from its first cell's left edge to its last cell's right edge.
-                    let reported = if text.raw_table_width { z.x + z.w - a.x } else { l.x0 + shift + z.x + z.w - z.margins[3] };
+                    // ponytail: a table relaid at the piece's width counts as pulled left by its margin, unset indent
+                    // or not.
+                    let x0 = if relaid.is_some() { l.x0.min(-a.margins[1]) } else { l.x0 };
+                    let reported = if text.raw_table_width { z.x + z.w - a.x } else { x0 + shift + z.x + z.w - z.margins[3] };
                     if reported <= w + EPS {
                         return Ok(Some((u + shift, top, relaid)));
                     }

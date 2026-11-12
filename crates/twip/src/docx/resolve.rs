@@ -540,4 +540,30 @@ mod tests {
         assert!(styles.table_region(Some("T1"), &[]).tc.borders.left.is_none());
         assert!(styles.table_region(Some("T1"), &["firstRow"]).tc.borders.left.is_some());
     }
+
+    #[test]
+    fn a_table_style_read_before_its_base_keeps_only_its_own_properties() {
+        let normal = r#"<w:style w:type="table" w:default="1" w:styleId="TableNormal"><w:tblPr><w:tblInd w:w="0" w:type="dxa"/><w:tblCellMar><w:left w:w="108" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar><w:tblBorders><w:left w:val="single" w:sz="4" w:space="0" w:color="000000"/></w:tblBorders></w:tblPr></w:style>"#;
+        let region = |styles: &str, id: &str| {
+            let xml = format!(r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">{styles}</w:styles>"#);
+            Styles::parse(Some(&xml), Default::default()).table_region(Some(id), &[])
+        };
+        let own = r#"<w:style w:type="table" w:styleId="T"><w:basedOn w:val="TableNormal"/><w:tblPr><w:tblBorders><w:top w:val="single" w:sz="4" w:space="0" w:color="000000"/></w:tblBorders></w:tblPr></w:style>"#;
+        // Base read first: its margins and indent; its own borders replace the base's set.
+        let after = region(&format!("{normal}{own}"), "T");
+        assert_eq!((after.tbl.margins.left, after.tbl.ind.is_some()), (Some(5.4), true));
+        assert!(after.tbl.borders.top.is_some() && after.tbl.borders.left.is_none());
+        // Base read later: frozen, nothing from it.
+        let before = region(&format!("{own}{normal}"), "T");
+        assert_eq!((before.tbl.margins.left, before.tbl.ind.is_some()), (None, false));
+        // Its own run properties stored after the table ones work it out again with its base.
+        let rpr = own.replace("</w:tblPr></w:style>", "</w:tblPr><w:rPr><w:b/></w:rPr></w:style>");
+        assert_eq!(region(&format!("{rpr}{normal}"), "T").tbl.margins.left, Some(5.4));
+        // Run properties met at a region while the base is missing take Word's 10pt.
+        let region_first = r#"<w:style w:type="table" w:styleId="R"><w:rPr><w:b/></w:rPr><w:tblStylePr w:type="firstRow"><w:rPr><w:i/></w:rPr></w:tblStylePr></w:style>"#;
+        assert_eq!(region(&format!("{region_first}{normal}"), "R").rpr.size, Some(10.0));
+        // A style's own noWrap doesn't apply.
+        let nowrap = r#"<w:style w:type="table" w:styleId="N"><w:tcPr><w:noWrap/></w:tcPr></w:style>"#;
+        assert_eq!(region(&format!("{normal}{nowrap}"), "N").tc.no_wrap, None);
+    }
 }

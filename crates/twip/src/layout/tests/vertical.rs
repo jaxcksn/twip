@@ -61,9 +61,10 @@ fn a_tbrl_cell_runs_down_with_its_lines_stacked_from_the_right() {
     let runs = turned_runs(&doc);
     assert!(runs.len() >= 3, "{runs:?}");
     assert!(runs.iter().all(|r| r.2 == [0.0, 1.0]), "the text runs down: {runs:?}");
-    // The first line against the content's right (1440 + 1500 - 108 twips), its ascent in.
+    // The first line against the content's right (1440 + 1500 - 10 twips: no table style, so no pull left), its
+    // ascent in.
     let first = runs[0].1;
-    assert!((first[0] - (146.0 - 10.49)).abs() < 0.3, "{first:?}");
+    assert!((first[0] - (146.5 - 10.49)).abs() < 0.3, "{first:?}");
     // Lines are a vertical line apart: Arial 11 with an em/64 more ascent and descent, 259.85 twips.
     assert!(((runs[0].1[0] - runs[1].1[0]) - 12.99).abs() < 0.05, "{runs:?}");
     // Each line starts at the row's content top and is no longer than the row's content is high.
@@ -76,8 +77,8 @@ fn a_btlr_cell_runs_up_from_the_content_bottom_with_its_lines_stacked_from_the_l
     let runs = turned_runs(&doc);
     assert!(runs.len() >= 3 && runs.iter().all(|r| r.2 == [0.0, -1.0]), "{runs:?}");
     assert!(runs[1].1[0] > runs[0].1[0], "lines stack to the right: {runs:?}");
-    // The first baseline its ascent right of the content's left (1440 + 108 twips).
-    assert!((runs[0].1[0] - (72.0 + 10.49)).abs() < 0.3, "{runs:?}");
+    // The first baseline its ascent right of the content's left (1440 + 10 twips).
+    assert!((runs[0].1[0] - (72.5 + 10.49)).abs() < 0.3, "{runs:?}");
 }
 
 #[test]
