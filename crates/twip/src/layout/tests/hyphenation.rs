@@ -258,3 +258,14 @@ fn compat_15_a_line_at_the_limit_ending_at_an_optional_hyphen_isnt_counted() {
     let Some([p1, _]) = courier_lines(&settings, 0, &t) else { return };
     assert_eq!(&p1[..3], [format!("{} zza-", "y".repeat(25)), format!("ttttt {}-", "q".repeat(20)), format!("qqqqqq {} zza-", "y".repeat(18))], "{p1:?}");
 }
+
+#[test]
+fn a_line_fits_text_up_to_its_width_rounded_to_layout_units() {
+    // 25 Courier New glyphs at 20.5pt are 1259725 lu; the 6151 tw line is 1259724.8 lu, rounded 1259725.
+    if !super::fonts().is_installed("Courier New") {
+        return;
+    }
+    let t = format!("<w:r><w:t>{}</w:t></w:r>", "x".repeat(40));
+    let Some([p1, _]) = courier(&track_settings(15, false, ""), r#"<w:ind w:right="3209"/>"#, 41, "a1t", 0, &t) else { return };
+    assert_eq!(p1[0].len(), 25, "{p1:?}");
+}

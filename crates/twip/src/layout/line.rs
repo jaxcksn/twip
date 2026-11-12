@@ -1133,7 +1133,7 @@ fn fit_line(
             _ if past_custom => f64::INFINITY,
             _ => right,
         };
-        let over = right_edge > limit + EPS && !forced && p.kind != Kind::ListNumber && !(pen <= limit + EPS && pending.is_none() && hangs(i));
+        let over = past(right_edge - left, limit - left) && !forced && p.kind != Kind::ListNumber && !(pen <= limit + EPS && pending.is_none() && hangs(i));
         let word = breaks.last().map_or(start, |b| b.0);
         let room: f64 = match squeeze {
             _ if !over => 0.0,
@@ -1165,7 +1165,7 @@ fn fit_line(
                     }
                     let hy = hyphen_width(sp, &pieces[at - 1]);
                     let pen_at = xs[at - 1 - start] + if auto { ws[at - 1 - start] } else { 0.0 };
-                    let fits = pen_at + hy <= right + EPS;
+                    let fits = !past(pen_at + hy - left, right - left);
                     let legacy = auto && frame.compat == Compat::Legacy;
                     if legacy {
                         let word = (start..at).rev().find(|&k| pieces[k].kind != Kind::Text).map_or(start, |k| k + 1);
@@ -1451,6 +1451,11 @@ fn choose_end(ends: &[End]) -> Option<End> {
 /// A line's width in layout units, rounded half up.
 fn line_column(width: f64) -> f64 {
     (width * LU_PER_PT + 0.5).floor()
+}
+
+/// Text `width` wide doesn't fit a line `column` wide: compared in layout units, the column rounded half up.
+fn past(width: f64, column: f64) -> bool {
+    width * LU_PER_PT > line_column(column) + LU_EPS
 }
 
 /// Compat 15 asks the run of a word's first letter whether the word is proofed.
