@@ -867,8 +867,13 @@ pub fn layout_body(
                 if (stable && (notes - reserve).abs() < EPS) || attempt >= attempts {
                     return Ok(true);
                 }
-                if end.is_none() && known.iter().any(|k| !found.iter().any(|f| f.key == k.key)) {
-                    end = Some(pos.clone());
+                // A float gone from the page takes its anchor paragraph with it: the page ends before that paragraph
+                // when it starts on the page, else where this fill ended.
+                if end.is_none()
+                    && let Some(k) = known.iter().find(|k| !found.iter().any(|f| f.key == k.key))
+                {
+                    let starts_here = k.key.0 == sec.index && (k.key.1 > saved.0.block || k.key.1 == saved.0.block && saved.0.at.at_start());
+                    end = Some(if starts_here { FlowToken { block: k.key.1, at: super::token::At::Start } } else { pos.clone() });
                     drops += 1;
                 }
                 known = found.into_iter().filter(|f| f.settled).collect();

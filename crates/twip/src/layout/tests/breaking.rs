@@ -400,6 +400,17 @@ fn a_compat_14_float_on_whole_twips_wraps_the_line_whose_space_after_it_starts_i
 }
 
 #[test]
+fn a_float_that_cannot_stay_with_its_anchor_leaves_the_text_before_it_in_place() {
+    // A top-and-bottom picture taller than the rest of the page: its anchor paragraph goes to the next page, and the
+    // line it met on the whole twip it was placed at stays where it was.
+    let float = r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="0" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV><wp:extent cx="914400" cy="8255000"/><wp:wrapTopAndBottom/><a:graphic><a:graphicData><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#;
+    let body = format!(r#"<w:p><w:r><w:t>Lead</w:t></w:r></w:p><w:p><w:r><w:t>Lead</w:t></w:r></w:p><w:p><w:r><w:t>Before</w:t></w:r></w:p><w:p>{float}<w:r><w:t>Anchor</w:t></w:r></w:p>"#);
+    let rpr = r#"<w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="21"/>"#;
+    let Some(first) = page_baselines("", rpr, &body, 0) else { return };
+    assert!(first.iter().any(|l| l.1 == "Before") && !first.iter().any(|l| l.1 == "Anchor"), "{first:?}");
+}
+
+#[test]
 fn a_compat_14_float_anchored_beside_another_counts_its_column_offset_from_the_lines_piece() {
     let pic = |x: u32, w: u32, h: u32, dr: u32| {
         format!(
