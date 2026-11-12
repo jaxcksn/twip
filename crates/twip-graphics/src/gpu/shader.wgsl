@@ -16,8 +16,12 @@
 struct Globals {
     // The pass's target size, pixels.
     size: vec2<f32>,
-    // The device pixel at the target's top left (a layer's region's).
+    // The point of the instances' space at the target's top left: a layer region's top left, less the offset a kept
+    // picture is drawn at.
     origin: vec2<f32>,
+    // Where the instances' ramp rows (x) and colour filter rows (y) start in this frame's textures.
+    bases: vec2<u32>,
+    pad: vec2<u32>,
 }
 
 @group(0) @binding(0) var<uniform> globals: Globals;
@@ -30,6 +34,8 @@ struct Globals {
 @group(0) @binding(3) var filters: texture_2d<f32>;
 // Colour glyphs' masks: premultiplied RGBA.
 @group(0) @binding(4) var colour_atlas: texture_2d_array<f32>;
+// Coverage kept between frames (glyph masks), as `atlas` holds this frame's.
+@group(0) @binding(5) var kept: texture_2d_array<f32>;
 @group(1) @binding(0) var image: texture_2d<f32>;
 @group(1) @binding(1) var image_sampler: sampler;
 // The destination under a general blend's quad, from its top left.
@@ -42,7 +48,7 @@ struct Instance {
     // A rect: its fractional edges. A mask: its quad's top left pixel (xy) and that pixel's atlas texel (zw).
     @location(1) edges: vec4<f32>,
     @location(2) color: vec4<f32>,
-    // 0: a rect. 1: a mask on atlas page `page`.
+    // 0: a rect. 1: a mask on page `page` of this frame's atlas; 2: of the kept atlas.
     @location(3) kind: u32,
     @location(4) page: u32,
     // The paint's kind (bits 0-3), its extend (4-5), the output (8-9: 0 the paint, 1 destination-in's erase, 2
@@ -179,7 +185,7 @@ fn layer(p: vec2<f32>, origin: vec2<f32>, opacity: u32, chain: u32) -> vec4<f32>
     var px = textureLoad(image, vec2<i32>(floor(p) - origin), 0);
     let count = chain >> 24u;
     if count > 0u {
-        px = filtered(px, chain & 0xFFFFFFu, count);
+        px = filtered(px, (chain & 0xFFFFFFu) + globals.bases.y, count);
     }
     return scaled(px, opacity);
 }
@@ -212,7 +218,8 @@ fn paint(v: Varyings, p: vec2<f32>) -> vec4<f32> {
     // The pixel's centre in the paint's space.
     let q = vec2<f32>(v.xform0.x * p.x + v.xform0.z * p.y + v.xform1.x, v.xform0.y * p.x + v.xform0.w * p.y + v.xform1.y);
     let extend = (v.paint >> 4u) & 3u;
-    let row = v.paint >> 16u;
+    let level = v.paint >> 16u;
+    let row = level + globals.bases.x;
     if kind == 1u {
         let t = dot(q - v.params.xy, v.params.zw) * v.xform1.z;
         return ramp(t, extend, row);
@@ -230,12 +237,12 @@ fn paint(v: Varyings, p: vec2<f32>) -> vec4<f32> {
     }
     // An image: the level's pixels are the image's times its scale; sampled at the level the paint chose.
     let uv = q * v.xform1.zw / v.params.xy;
-    let px = textureSampleLevel(image, image_sampler, uv, f32(row));
+    let px = textureSampleLevel(image, image_sampler, uv, f32(level));
     let count = v.chain >> 24u;
     if count == 0u {
         return px;
     }
-    return filtered(px, v.chain & 0xFFFFFFu, count);
+    return filtered(px, (v.chain & 0xFFFFFFu) + globals.bases.y, count);
 }
 
 // The instance's coverage of the pixel centred at `p` (device pixels).
@@ -248,6 +255,9 @@ fn coverage(v: Varyings, p: vec2<f32>) -> f32 {
         return span.x * span.y;
     }
     let texel = vec2<i32>(floor(p) - v.edges.xy + v.edges.zw);
+    if v.kind == 2u {
+        return textureLoad(kept, texel, i32(v.page), 0).r;
+    }
     return textureLoad(atlas, texel, i32(v.page), 0).r;
 }
 

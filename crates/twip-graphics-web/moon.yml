@@ -1,0 +1,12 @@
+$schema: '../../.moon/cache/schemas/project.json'
+language: rust
+tags: [engine]
+
+tasks:
+  # twip-graphics' GPU comparisons for the browser, into target/twip-graphics-web (run by web:graphics-test). Needs the
+  # wasm-bindgen CLI at the crate's wasm-bindgen version (build.mjs).
+  build:
+    command: node build.mjs
+    inputs: ['src/**/*', 'index.html', 'build.mjs', 'Cargo.toml', '/crates/twip-graphics/src/**/*', '/crates/twip-graphics/tests/**/*']
+    options:
+      runInCI: false

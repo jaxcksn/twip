@@ -1,7 +1,11 @@
 //! An atlas: square pages of texels (8-bit coverage, or colour glyphs' RGBA), packed with a shelf allocator (rows of
 //! slots as tall as the first slot that opened them), kept on the CPU and uploaded to the pages of a texture array.
-//! Glyph masks, path masks and clip-applied coverage live in one; colour glyphs in another. The shader reads a texel
-//! per pixel, unfiltered, so slots need no padding.
+//! The shader reads a texel per pixel, unfiltered, so slots need no padding.
+//!
+//! A kept atlas holds what lasts between frames (glyph masks, colour glyphs, the masks of prepared pictures) in at
+//! most `limit` pages. When it is full, the page least recently used goes whole: its epoch moves on, so whatever
+//! remembers a slot on it (with the epoch it was placed at) sees it is gone. A page used in the current frame is never
+//! evicted. A frame's own masks go in an atlas cleared each frame, without a limit.
 
 /// Where a slot is: its page, and its top left texel.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -27,6 +31,10 @@ struct Page {
     pixels: Vec<u8>,
     /// The rows written since the last upload: `top..bottom`, empty when `top >= bottom`.
     dirty: (u32, u32),
+    /// How many times the page has been evicted.
+    epoch: u32,
+    /// The frame that last used it.
+    used: u64,
 }
 
 /// The atlas's pages, `size` texels square, of `texel` bytes each.
@@ -34,12 +42,47 @@ struct Page {
 pub(super) struct Atlas {
     size: u32,
     texel: usize,
+    limit: usize,
     pages: Vec<Page>,
+    /// The current frame.
+    clock: u64,
+    /// Pages evicted so far.
+    evictions: u64,
 }
 
 impl Atlas {
-    pub fn new(size: u32, texel: usize) -> Atlas {
-        Atlas { size, texel, pages: Vec::new() }
+    /// An atlas of at most `limit` pages, evicting the least recently used past it.
+    pub fn new(size: u32, texel: usize, limit: usize) -> Atlas {
+        Atlas { size, texel, limit, pages: Vec::new(), clock: 0, evictions: 0 }
+    }
+
+    /// Starts a frame: pages used from now on are this frame's, and can't be evicted until the next.
+    pub fn begin_frame(&mut self) {
+        self.clock += 1;
+    }
+
+    /// Marks `page` used by this frame.
+    pub fn touch(&mut self, page: u32) {
+        if let Some(p) = self.pages.get_mut(page as usize) {
+            p.used = self.clock;
+        }
+    }
+
+    /// `page`'s epoch: a slot placed on it at another epoch is gone.
+    pub fn epoch(&self, page: u32) -> u32 {
+        self.pages.get(page as usize).map_or(u32::MAX, |p| p.epoch)
+    }
+
+    /// How many pages have been evicted so far.
+    pub fn evictions(&self) -> u64 {
+        self.evictions
+    }
+
+    /// Marks every page's rows for upload: their texture was made again.
+    pub fn dirty_all(&mut self) {
+        for p in &mut self.pages {
+            p.dirty = (0, p.top);
+        }
     }
 
     pub fn pages(&self) -> usize {
@@ -55,21 +98,36 @@ impl Atlas {
         }
     }
 
-    /// A `w × h` slot, on the first page with room (a new page when none has); `None` when it is larger than a page.
+    /// A `w × h` slot, used by this frame: on the first page with room, else a new page, else (at the limit) on the
+    /// least recently used page, evicted. `None` when it is larger than a page, or every page is full and used by this
+    /// frame.
     pub fn alloc(&mut self, w: u32, h: u32) -> Option<Slot> {
         if w == 0 || h == 0 || w > self.size || h > self.size {
             return None;
         }
+        let clock = self.clock;
         for (i, page) in self.pages.iter_mut().enumerate() {
             if let Some((x, y)) = place(page, self.size, w, h) {
+                page.used = clock;
                 return Some(Slot { page: i as u32, x, y });
             }
         }
-        let n = self.size as usize;
-        self.pages.push(Page { shelves: Vec::new(), top: 0, pixels: vec![0; n * n * self.texel], dirty: (u32::MAX, 0) });
-        let page = self.pages.last_mut()?;
+        let i = if self.pages.len() < self.limit {
+            let n = self.size as usize;
+            self.pages.push(Page { shelves: Vec::new(), top: 0, pixels: vec![0; n * n * self.texel], dirty: (u32::MAX, 0), epoch: 0, used: 0 });
+            self.pages.len() - 1
+        } else {
+            let (i, page) = self.pages.iter_mut().enumerate().filter(|(_, p)| p.used < clock).min_by_key(|(_, p)| p.used)?;
+            page.shelves.clear();
+            page.top = 0;
+            page.epoch += 1;
+            self.evictions += 1;
+            i
+        };
+        let page = &mut self.pages[i];
+        page.used = clock;
         let (x, y) = place(page, self.size, w, h)?;
-        Some(Slot { page: (self.pages.len() - 1) as u32, x, y })
+        Some(Slot { page: i as u32, x, y })
     }
 
     /// Row `row` of slot `at`, `w` texels wide, to write into.
@@ -115,7 +173,7 @@ mod tests {
 
     #[test]
     fn slots_pack_on_shelves_without_overlapping() {
-        let mut a = Atlas::new(64, 1);
+        let mut a = Atlas::new(64, 1, usize::MAX);
         let slots: Vec<(Slot, u32, u32)> = (0..40).map(|i| (3 + i % 7, 2 + i % 5)).filter_map(|(w, h)| a.alloc(w, h).map(|s| (s, w, h))).collect();
         assert_eq!(slots.len(), 40, "all fit in one or two pages");
         for (i, (s, w, h)) in slots.iter().enumerate() {
@@ -127,24 +185,42 @@ mod tests {
         }
         assert_eq!(a.alloc(65, 1), None, "larger than a page");
         // A full page opens the next.
-        let mut b = Atlas::new(16, 1);
+        let mut b = Atlas::new(16, 1, usize::MAX);
         assert_eq!(b.alloc(16, 16).map(|s| s.page), Some(0));
         assert_eq!(b.alloc(1, 1).map(|s| s.page), Some(1));
     }
 
     #[test]
     fn written_rows_are_uploaded_once() {
-        let mut a = Atlas::new(8, 1);
+        let mut a = Atlas::new(8, 1, usize::MAX);
         let s = a.alloc(2, 3).expect("a slot");
         a.row(s, 1, 2).copy_from_slice(&[7, 9]);
         let dirty: Vec<(u32, u32, u32, usize)> = a.take_dirty().map(|(p, y, n, px)| (p, y, n, px.len())).collect();
         assert_eq!(dirty, [(0, s.y + 1, 1, 8)]);
         assert_eq!(a.take_dirty().count(), 0);
         // Four bytes a texel: rows and uploads are four times as long.
-        let mut c = Atlas::new(8, 4);
+        let mut c = Atlas::new(8, 4, usize::MAX);
         let s = c.alloc(2, 3).expect("a slot");
         assert_eq!(c.row(s, 2, 2).len(), 8);
         let dirty: Vec<(u32, u32, usize)> = c.take_dirty().map(|(_, y, n, px)| (y, n, px.len())).collect();
         assert_eq!(dirty, [(s.y + 2, 1, 32)]);
+    }
+
+    #[test]
+    fn a_full_kept_atlas_evicts_its_least_recently_used_page() {
+        let mut a = Atlas::new(16, 1, 2);
+        a.begin_frame();
+        let first = a.alloc(16, 16).expect("page 0");
+        a.begin_frame();
+        let second = a.alloc(16, 16).expect("page 1");
+        assert_eq!((first.page, second.page), (0, 1));
+        // Both pages are full; page 0 was used longest ago, so it goes, and its epoch moves on.
+        a.begin_frame();
+        a.touch(1);
+        assert_eq!(a.epoch(0), 0);
+        let third = a.alloc(8, 8).expect("page 0 again");
+        assert_eq!((third.page, a.epoch(0), a.epoch(1)), (0, 1, 0));
+        // Every page is full and used by this frame: nothing is evicted.
+        assert_eq!(a.alloc(16, 16), None);
     }
 }

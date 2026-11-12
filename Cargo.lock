@@ -1515,6 +1515,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "twip-graphics-web"
+version = "0.1.1"
+dependencies = [
+ "font-test-data",
+ "png",
+ "skrifa",
+ "twip-graphics",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "wgpu",
+]
+
+[[package]]
 name = "twip-tools"
 version = "0.1.1"
 dependencies = [

@@ -266,3 +266,196 @@ fn record_line(b: Bencher) {
         rec.finish()
     });
 }
+
+/// A keystroke's recording: the typed line recorded again, and its page assembled again from its line pictures (the
+/// other 45 kept) and the rest of its drawing. Budget: at most 0.2 ms.
+#[divan::bench]
+fn record_keystroke(b: Bencher) {
+    let text = Text::new();
+    let glyphs = lines(&text);
+    let mut rec = Recorder::new();
+    let mut kept: Vec<Picture> = glyphs
+        .iter()
+        .enumerate()
+        .map(|(i, g)| {
+            line(&mut rec, &text, g, i, 90.0 + i as f64 * 13.8);
+            rec.finish()
+        })
+        .collect();
+    let rest = page(&mut rec, &text, &[]);
+    let mut k = 0;
+    b.bench_local(|| {
+        k += 1;
+        line(&mut rec, &text, &glyphs[(23 + k) % glyphs.len()], 23, 90.0 + 23.0 * 13.8);
+        kept[23] = rec.finish();
+        rec.fill_rect(Rect::new(0.0, 0.0, 612.0, 792.0), aliased(Color::WHITE));
+        for l in &kept {
+            rec.picture(l, Affine::IDENTITY);
+        }
+        rec.picture(&rest, Affine::IDENTITY);
+        rec.finish()
+    });
+}
+
+/// The GPU's preparation: what the renderer does on the CPU each frame, and the encoding of its passes (the GPU's own
+/// time is not counted: each frame waits for the last before it, outside the timing). Skipped without a hardware GPU.
+#[cfg(feature = "gpu")]
+mod gpu {
+    use std::future::Future;
+    use std::sync::{Arc, OnceLock};
+    use std::task::{Context as TaskContext, Poll, Wake, Waker};
+
+    use divan::Bencher;
+    use twip_graphics::Resources;
+    use twip_graphics::gpu::{Context, Renderer};
+    use twip_graphics::kurbo::{Affine, Rect};
+    use twip_graphics::paint::Color;
+    use twip_graphics::scene::{Picture, Recorder};
+
+    use super::{Text, aliased, line, lines};
+
+    fn block_on<F: Future>(future: F) -> F::Output {
+        struct Thread(std::thread::Thread);
+        impl Wake for Thread {
+            fn wake(self: Arc<Self>) {
+                self.0.unpark();
+            }
+        }
+        let waker = Waker::from(Arc::new(Thread(std::thread::current())));
+        let mut cx = TaskContext::from_waker(&waker);
+        let mut future = std::pin::pin!(future);
+        loop {
+            match future.as_mut().poll(&mut cx) {
+                Poll::Ready(v) => return v,
+                Poll::Pending => std::thread::park(),
+            }
+        }
+    }
+
+    fn context() -> Option<&'static Context> {
+        static CONTEXT: OnceLock<Option<Context>> = OnceLock::new();
+        CONTEXT.get_or_init(|| block_on(Context::new(None)).ok()).as_ref()
+    }
+
+    /// The benchmark page with each text line a picture of its own (as Twip keeps lines), placed in the page's.
+    fn page(text: &Text, lines: &[Picture]) -> Picture {
+        let mut rec = Recorder::new();
+        rec.fill_rect(Rect::new(0.0, 0.0, 612.0, 792.0), aliased(Color::WHITE));
+        for l in lines {
+            rec.picture(l, Affine::IDENTITY);
+        }
+        let rest = super::page(&mut Recorder::new(), text, &[]);
+        rec.picture(&rest, Affine::IDENTITY);
+        rec.finish()
+    }
+
+    fn line_pictures(text: &Text) -> Vec<Picture> {
+        lines(text)
+            .iter()
+            .enumerate()
+            .map(|(i, glyphs)| {
+                let mut rec = Recorder::new();
+                line(&mut rec, text, glyphs, i, 90.0 + i as f64 * 13.8);
+                rec.finish()
+            })
+            .collect()
+    }
+
+    const VIEWPORT: (u32, u32) = (1000, 800);
+    const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
+
+    /// A frame as Twip records one: a picture of its own placing `pages` down the viewport, scrolled `scroll` pixels, each
+    /// page's origin on a whole pixel.
+    fn frame(pages: &[&Picture], scroll: i32) -> Picture {
+        let mut rec = Recorder::new();
+        rec.fill_rect(Rect::new(0.0, 0.0, f64::from(VIEWPORT.0), f64::from(VIEWPORT.1)), aliased(Color::rgb(0xE8_E8E8)));
+        let k = 96.0 / 72.0;
+        for (i, p) in pages.iter().enumerate() {
+            let y = 16 + i as i32 * (1056 + 16) - scroll;
+            rec.picture(p, Affine::translate((92.0, f64::from(y))) * Affine::scale(k));
+        }
+        rec.finish()
+    }
+
+    /// Prepares and encodes `next()`'s frames into a viewport-sized target, timing each after the last has finished.
+    fn run(b: Bencher, ctx: &Context, resources: &Resources, mut next: impl FnMut() -> Picture) {
+        let target = ctx.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("bench target"),
+            size: wgpu::Extent3d { width: VIEWPORT.0, height: VIEWPORT.1, depth_or_array_layers: 1 },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let view = target.create_view(&wgpu::TextureViewDescriptor::default());
+        let mut renderer = Renderer::new(ctx, FORMAT);
+        let draw = |renderer: &mut Renderer, picture: &Picture| {
+            let draws = [twip_graphics::cpu::Draw { picture, transform: Affine::IDENTITY }];
+            let frame = twip_graphics::cpu::Frame { clear: None, draws: &draws };
+            let prepared = renderer.prepare(ctx, resources, &frame, VIEWPORT).expect("not lost");
+            let mut encoder = ctx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+            renderer.render(&mut encoder, &view, &prepared);
+            ctx.queue.submit([encoder.finish()]);
+        };
+        // Warm: the pages kept, their glyphs placed.
+        for _ in 0..3 {
+            let p = next();
+            draw(&mut renderer, &p);
+        }
+        b.with_inputs(|| {
+            ctx.device.poll(wgpu::PollType::wait_indefinitely()).expect("the GPU finishes");
+            next()
+        })
+        .bench_local_values(|p| draw(&mut renderer, &p));
+    }
+
+    /// Scrolling two kept pages by whole pixels: no page is prepared again, each frame only places them. Budget:
+    /// at most 0.5 ms of the renderer's CPU time.
+    #[divan::bench]
+    fn gpu_prepare_scroll(b: Bencher) {
+        let Some(ctx) = context() else { return };
+        let text = Text::new();
+        let lines = line_pictures(&text);
+        let (one, two) = (page(&text, &lines), page(&text, &lines));
+        let mut scroll = 0;
+        run(b, ctx, &text.resources, || {
+            scroll = (scroll + 3) % 500;
+            frame(&[&one, &two], scroll)
+        });
+    }
+
+    /// A keystroke's frame: the page recorded again with one new line, its other lines kept. Budget: well under a
+    /// millisecond (the line's preparation and the page's walk).
+    #[divan::bench]
+    fn gpu_prepare_edit_one_line(b: Bencher) {
+        let Some(ctx) = context() else { return };
+        let text = Text::new();
+        let mut lines = line_pictures(&text);
+        let glyphs = super::lines(&text);
+        let mut k = 0;
+        run(b, ctx, &text.resources, || {
+            // Line 23 typed into: a new picture each time, as each keystroke records the line again.
+            k += 1;
+            let mut rec = Recorder::new();
+            let typed = &glyphs[(23 + k) % glyphs.len()];
+            line(&mut rec, &text, typed, 23, 90.0 + 23.0 * 13.8);
+            lines[23] = rec.finish();
+            let p = page(&text, &lines);
+            frame(&[&p], 0)
+        });
+    }
+
+    /// For comparison: the page prepared from nothing each frame (a new picture each time, its lines too). Budget:
+    /// none; it is what keeping pictures saves.
+    #[divan::bench]
+    fn gpu_prepare_page(b: Bencher) {
+        let Some(ctx) = context() else { return };
+        let text = Text::new();
+        run(b, ctx, &text.resources, || {
+            let p = super::page(&mut Recorder::new(), &text, &lines(&text));
+            frame(&[&p], 0)
+        });
+    }
+}

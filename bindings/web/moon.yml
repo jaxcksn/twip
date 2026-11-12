@@ -35,6 +35,15 @@ tasks:
     inputs: ['browser/**/*', 'playwright.config.mjs']
     options:
       cache: false
+  # twip-graphics' GPU comparisons on WebGPU (graphics/gpu.spec.mjs), with the module they run. They need a hardware
+  # GPU (the renderer turns down software adapters), which CI's runners lack: run locally.
+  graphics-test:
+    command: pnpm exec playwright test --config playwright.graphics.config.mjs
+    deps: ['twip-graphics-web:build']
+    inputs: ['graphics/**/*', 'playwright.graphics.config.mjs']
+    options:
+      cache: false
+      runInCI: false
   # The latency budgets (browser/latency.spec.ts) hold on a quiet machine with a GPU, not beside other tasks: run alone.
   latency:
     command: pnpm exec playwright test browser/latency.spec.ts

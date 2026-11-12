@@ -152,7 +152,10 @@ binary needs `--bench`; without it Divan runs each benchmark once, as a test. Li
   allocations.
 - The CPU backend is deterministic and is the reference. Every drawing feature lands with a golden image
   (`tests/golden.rs`); `TWIP_GRAPHICS_BLESS=1 cargo test -p twip-graphics --test golden` rewrites them, to be reviewed
-  before they are kept. GPU features are checked against the CPU's output (`tests/gpu.rs`, with `--features gpu`).
+  before they are kept. GPU features are checked against the CPU's output: natively by `tests/gpu.rs` (with
+  `--features gpu`; `TWIP_GRAPHICS_GPU=1` fails instead of skipping without a GPU), and on WebGPU in headless Edge by
+  `moon run web:graphics-test`. That needs the wasm-bindgen CLI at the locked version:
+  `cargo install wasm-bindgen-cli --version 0.2.129 --locked`.
 - GPU code uses only what WebGL 2 also has: no compute, no storage buffers, no push constants.
 - No shortcut rests on a guess that a case is rare: do it as Skia does, measure, or mark it `// shortcut:` with what is
   missing and where it lands.
