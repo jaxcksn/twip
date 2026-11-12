@@ -2547,8 +2547,8 @@ impl Reader {
 
     // ---------------- tables ----------------
 
-    /// Whether the table `m` right after the tables `run` is one table with them: neither floats, both have the same
-    /// style and run the same way, and their grids are the same or have no column without a width (their edges then
+    /// Whether the table `m` right after the tables `run` is one table with them: neither floats or both float with the
+    /// same position, both have the same style and run the same way, and their grids are the same or have no column without a width (their edges then
     /// merge).
     fn joins(&self, run: &[Node], m: Node) -> bool {
         let kind = |t: Node| {
@@ -2556,11 +2556,11 @@ impl Reader {
             let style = self.res.styles.table_style(direct.style.as_deref()).map(str::to_string);
             let mut tbl = self.res.styles.table_region(style.as_deref(), &[]).tbl.clone();
             tbl.merge(&direct);
-            (tbl.floating.is_some(), style, tbl.bidi_visual.unwrap_or(false))
+            (tbl.floating, style, tbl.bidi_visual.unwrap_or(false))
         };
         let grids: Vec<Vec<f64>> = run.iter().copied().chain([m]).map(table_grid).collect();
         let first = kind(run[0]);
-        !first.0 && kind(m) == first && (grids.iter().all(|g| *g == grids[0]) || grids.iter().flatten().all(|w| *w > 0.0))
+        kind(m) == first && (grids.iter().all(|g| *g == grids[0]) || grids.iter().flatten().all(|w| *w > 0.0))
     }
 
     /// One table from `ts`, tables with nothing between them: the first one's properties and grid, every table's

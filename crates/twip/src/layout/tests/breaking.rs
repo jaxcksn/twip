@@ -2133,6 +2133,14 @@ fn a_floating_or_differently_directed_table_stays_apart_from_the_one_before() {
     assert_eq!(plain, 1);
     assert_eq!(tables(r#"<w:tblpPr w:vertAnchor="text" w:tblpY="200"/>"#), Some(2));
     assert_eq!(tables("<w:bidiVisual/>"), Some(2));
+    // Two floating tables join when their positions are the same.
+    let floats = |second: &str| {
+        let first = r#"<w:tblpPr w:vertAnchor="text" w:tblpX="200" w:tblpY="200"/>"#;
+        let body = back_to_back(&[&[("aa", 2000)], &[("ba", 2000)]], "", second).replacen("<w:tblPr>", &format!("<w:tblPr>{first}"), 1);
+        test_doc(COMPAT_15, ARIAL_12, &body, "").map(|d| d.sections[0].blocks.iter().filter(|b| matches!(b, crate::docx::Block::Table(_))).count())
+    };
+    assert_eq!(floats(r#"<w:tblpPr w:vertAnchor="text" w:tblpX="200" w:tblpY="200"/>"#), Some(1));
+    assert_eq!(floats(r#"<w:tblpPr w:vertAnchor="text" w:tblpX="5000" w:tblpY="200"/>"#), Some(2));
 }
 
 #[test]
