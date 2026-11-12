@@ -343,7 +343,9 @@ impl Style {
     /// more, it holds all of the glyph's ink, hinted or not.
     pub fn ink(self, em: kurbo::Rect) -> kurbo::Rect {
         let grow = self.outset() + HINT_REACH;
-        self.skew().transform_rect_bbox(em).inflate(grow, grow)
+        // Unskewed (most text), the box is the em box itself: the identity's bounding box, without mapping corners.
+        let b = if self.skew_x == 0.0 { em.abs() } else { self.skew().transform_rect_bbox(em) };
+        b.inflate(grow, grow)
     }
 }
 
@@ -477,9 +479,28 @@ pub(crate) struct GlyphMask {
     used: u64,
 }
 
-/// Glyph masks by key, least recently used dropped past the byte budget.
+/// A strike's place in its [`GlyphCache`]: valid until the cache's next trim (a run's glyphs, within a frame).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct StrikeId(usize);
+
+/// One strike's masks: a key with no glyph and no bin (what a run's glyphs share), and its masks by glyph and bin.
+#[derive(Debug)]
+struct Strike {
+    key: GlyphKey,
+    masks: FastMap<u64, GlyphMask>,
+}
+
+/// A glyph and its bin, as a strike's key for its mask.
+fn in_strike(glyph: u32, bin: [u8; 2]) -> u64 {
+    u64::from(glyph) << 4 | u64::from(bin[0]) << 2 | u64::from(bin[1])
+}
+
+/// Glyph masks by key, least recently used dropped past the byte budget. Masks are grouped in strikes, as Skia's are:
+/// a run finds its strike once and each glyph is then a small key in a small map, where one map for every glyph made
+/// each lookup a cache miss.
 pub(crate) struct GlyphCache {
-    masks: FastMap<GlyphKey, GlyphMask>,
+    strikes: Vec<Strike>,
+    strike_ids: FastMap<GlyphKey, usize>,
     /// Light hinting instances by face and pixels per em (1/64), for axis-aligned text at a uniform scale.
     hinters: FastMap<(FontId, i32), Option<HintingInstance>>,
     /// Whether masks of axis-aligned text are hinted: always, except in tests that compare the two.
@@ -494,14 +515,15 @@ pub(crate) struct GlyphCache {
 
 impl fmt::Debug for GlyphCache {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("GlyphCache").field("masks", &self.masks.len()).field("bytes", &self.bytes).finish()
+        f.debug_struct("GlyphCache").field("strikes", &self.strikes.len()).field("bytes", &self.bytes).finish()
     }
 }
 
 impl Default for GlyphCache {
     fn default() -> Self {
         GlyphCache {
-            masks: FastMap::default(),
+            strikes: Vec::new(),
+            strike_ids: FastMap::default(),
             hinters: FastMap::default(),
             hint: true,
             clock: 0,
@@ -515,12 +537,32 @@ impl Default for GlyphCache {
 }
 
 impl GlyphCache {
+    /// The strike for `key`'s run: everything in it but the glyph and the bin.
+    pub fn strike(&mut self, key: GlyphKey) -> StrikeId {
+        let key = GlyphKey { glyph: 0, bin: [0, 0], ..key };
+        let strikes = &mut self.strikes;
+        StrikeId(*self.strike_ids.entry(key).or_insert_with(|| {
+            strikes.push(Strike { key, masks: FastMap::default() });
+            strikes.len() - 1
+        }))
+    }
+
     /// The mask for `key`, rasterised now if it isn't cached. An unknown face or glyph gives an empty mask.
+    #[cfg(test)]
     pub fn mask(&mut self, fonts: &FontRegistry, raster: &mut Rasterizer, key: GlyphKey) -> &GlyphMask {
+        let strike = self.strike(key);
+        self.mask_in(fonts, raster, strike, key.glyph, key.bin)
+    }
+
+    /// The mask for `glyph` at `bin` in `strike`, rasterised now if it isn't cached. An unknown face or glyph gives an
+    /// empty mask.
+    pub fn mask_in(&mut self, fonts: &FontRegistry, raster: &mut Rasterizer, strike: StrikeId, glyph: u32, bin: [u8; 2]) -> &GlyphMask {
         self.clock += 1;
         let clock = self.clock;
-        let GlyphCache { masks, hinters, hint, bytes, outliner, verbs, points, .. } = self;
-        let mask = masks.entry(key).or_insert_with(|| {
+        let GlyphCache { strikes, hinters, hint, bytes, outliner, verbs, points, .. } = self;
+        let strike = &mut strikes[strike.0];
+        let key = GlyphKey { glyph, bin, ..strike.key };
+        let mask = strike.masks.entry(in_strike(glyph, bin)).or_insert_with(|| {
             // Hinting assumes the pixel grid: axis-aligned, a uniform scale, no skew.
             let [a, b, c, d] = key.matrix;
             let hinting = (*hint && b == 0 && c == 0 && a == d && a > 0 && key.skew == 0)
@@ -539,16 +581,31 @@ impl GlyphCache {
         if self.bytes <= self.budget {
             return;
         }
-        let mut by_age: Vec<(u64, GlyphKey)> = self.masks.iter().map(|(k, m)| (m.used, *k)).collect();
-        by_age.sort_unstable_by_key(|(used, _)| *used);
-        for (_, key) in by_age {
+        let mut by_age: Vec<(u64, usize, u64)> =
+            self.strikes.iter().enumerate().flat_map(|(i, s)| s.masks.iter().map(move |(&k, m)| (m.used, i, k))).collect();
+        by_age.sort_unstable_by_key(|&(used, ..)| used);
+        for (_, i, key) in by_age {
             if self.bytes <= self.budget / 2 {
                 break;
             }
-            if let Some(m) = self.masks.remove(&key) {
+            if let Some(m) = self.strikes[i].masks.remove(&key) {
                 self.bytes -= m.data.len() + std::mem::size_of::<GlyphMask>();
             }
         }
+        // Empty strikes go too, which moves the others: their ids are renumbered.
+        self.strikes.retain(|s| !s.masks.is_empty());
+        self.strike_ids = self.strikes.iter().enumerate().map(|(i, s)| (s.key, i)).collect();
+    }
+
+    #[cfg(test)]
+    fn len(&self) -> usize {
+        self.strikes.iter().map(|s| s.masks.len()).sum()
+    }
+
+    #[cfg(test)]
+    fn has(&self, key: GlyphKey) -> bool {
+        let strike = GlyphKey { glyph: 0, bin: [0, 0], ..key };
+        self.strike_ids.get(&strike).is_some_and(|&i| self.strikes[i].masks.contains_key(&in_strike(key.glyph, key.bin)))
     }
 }
 
@@ -692,7 +749,7 @@ mod tests {
         let plain = cache.mask(&fonts, &mut raster, k).data.clone();
         assert!(plain.contains(&255), "a 16 px 'a' has fully covered pixels");
         assert_eq!(cache.mask(&fonts, &mut raster, k).data, plain);
-        assert_eq!(cache.masks.len(), 1, "the second request hit the cache");
+        assert_eq!(cache.len(), 1, "the second request hit the cache");
         assert_ne!(cache.mask(&fonts, &mut raster, GlyphKey { bin: [2, 0], ..k }).data, plain, "half a pixel right");
         let space = GlyphKey { glyph: glyph(&data, ' '), ..k };
         assert_eq!(cache.mask(&fonts, &mut raster, space).width, 0, "a space has no ink");
@@ -766,8 +823,15 @@ mod tests {
         }
         cache.trim();
         assert!(cache.bytes <= 4096);
-        assert!(cache.masks.contains_key(&key(font, w, 39)), "the newest survives");
-        assert!(!cache.masks.contains_key(&key(font, w, 10)), "the oldest goes");
+        assert!(cache.has(key(font, w, 39)), "the newest survives");
+        assert!(!cache.has(key(font, w, 10)), "the oldest goes");
+        // The strikes left were renumbered: a survivor is still found, and a dropped one is made again.
+        let (n, bytes) = (cache.len(), cache.bytes);
+        let survivor = cache.mask(&fonts, &mut raster, key(font, w, 39)).data.clone();
+        assert_eq!((cache.len(), cache.bytes), (n, bytes), "a hit");
+        assert_eq!(survivor, GlyphCache::default().mask(&fonts, &mut raster, key(font, w, 39)).data);
+        assert!(cache.mask(&fonts, &mut raster, key(font, w, 10)).width > 0);
+        assert_eq!(cache.len(), n + 1);
     }
 
     #[test]

@@ -595,6 +595,7 @@ impl Renderer {
         };
         let matrix = m.map(|v| (v * 64.0).round() as i32);
         let key = GlyphKey { font: run.font, glyph: 0, matrix, bin: [0, 0], skew: style.skew_x.to_bits(), bold: style.bold.to_bits(), lum };
+        let strike = self.glyphs.strike(key);
         // Glyph origins land on quarter pixels; an axis-aligned run's baseline rounds to a whole pixel, as in Skia.
         let axis_aligned = t.b == 0.0 && t.c == 0.0;
         let inside = interior(clip);
@@ -604,7 +605,7 @@ impl Renderer {
             let qy = if axis_aligned { o.y.round() as i32 * 4 } else { (o.y * 4.0).round() as i32 };
             let bin = [qx.rem_euclid(4) as u8, qy.rem_euclid(4) as u8];
             let glyph_key = GlyphKey { glyph: g.id, bin, ..key };
-            let mask = self.glyphs.mask(fonts, &mut self.raster, glyph_key);
+            let mask = self.glyphs.mask_in(fonts, &mut self.raster, strike, g.id, bin);
             if mask.failed {
                 self.stats.failed_glyphs += 1;
             }

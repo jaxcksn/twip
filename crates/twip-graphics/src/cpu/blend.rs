@@ -85,39 +85,55 @@ fn mask_block_kernel<S: Simd>(simd: S, dst: &mut [u8], dst_stride: usize, cov: &
     }
 }
 
-/// Each byte of `p` times `k`, as [`mul`] rounds it: two bytes per multiply, in 16-bit lanes (red and blue, then
-/// green and alpha), `div255` lane by lane. A lane's product is at most 255 · 255 + 128, and with its high byte added
-/// at most 65407, so no lane carries into the next.
-#[inline(always)]
-fn scale_swar(p: u32, k: u32) -> u32 {
-    const LANES: u32 = 0x00FF_00FF;
-    let rb = (p & LANES) * k + 0x0080_0080;
-    let ag = ((p >> 8) & LANES) * k + 0x0080_0080;
-    let rb = ((rb + ((rb >> 8) & LANES)) >> 8) & LANES;
-    let ag = (ag + ((ag >> 8) & LANES)) & !LANES;
-    rb | ag
-}
-
-/// Each byte of `a` plus the same byte of `b`, saturating at 255.
-#[inline(always)]
-fn add_saturating_swar(a: u32, b: u32) -> u32 {
-    const LANES: u32 = 0x00FF_00FF;
-    let sat = |x: u32| (x | (((x & 0x0100_0100) >> 8) * 0xFF)) & LANES;
-    sat((a & LANES) + (b & LANES)) | (sat(((a >> 8) & LANES) + ((b >> 8) & LANES)) << 8)
-}
-
-/// `over` of `s` at each pixel's coverage, a pixel as one `u32`: the source scaled, then the destination by the
-/// source's inverse alpha, added. The same bytes as `over(d, s.map(|v| mul(v, c)))`; no coverage leaves a pixel.
+/// `over` of `s` at each pixel's coverage: the source scaled, then the destination by the source's inverse alpha,
+/// added. The same bytes as `over(d, s.map(|v| mul(v, c)))`; no coverage leaves a pixel.
+///
+/// Eight pixels at a time with no branch inside, so the level's vector instructions take them together (on NEON,
+/// interleaved loads split the channels); the last few are padded to a block, since a glyph's rows are often shorter
+/// than one. A block with no coverage is skipped and one fully covered by an opaque source is stored: most of a glyph
+/// mask is one or the other.
 #[inline(always)]
 fn over_row(dst: &mut [u8], cov: &[u8], s: [u8; 4]) {
-    let s = u32::from_le_bytes(s);
-    for (d, &c) in dst.as_chunks_mut::<4>().0.iter_mut().zip(cov) {
-        if c == 0 {
-            continue;
+    const N: usize = 8;
+    #[inline(always)]
+    fn block(d: &mut [[u8; 4]; N], c: &[u8; N], s: [u8; 4]) {
+        if *c == [0; N] {
+            return;
         }
-        let src = scale_swar(s, u32::from(c));
-        let inv = 255 - (src >> 24);
-        *d = add_saturating_swar(src, scale_swar(u32::from_le_bytes(*d), inv)).to_le_bytes();
+        if s[3] == 255 && *c == [255; N] {
+            *d = [s; N];
+            return;
+        }
+        let s16 = s.map(u16::from);
+        for (d, &c) in d.iter_mut().zip(c) {
+            let k = u16::from(c);
+            let inv = 255 - div255(s16[3] * k);
+            for (d, &s) in d.iter_mut().zip(&s16) {
+                *d = (div255(s * k) + div255(u16::from(*d) * inv)).min(255) as u8;
+            }
+        }
+    }
+    let px = dst.as_chunks_mut::<4>().0;
+    let n = px.len().min(cov.len());
+    let (blocks, px_tail) = px[..n].as_chunks_mut::<N>();
+    let (covs, cov_tail) = cov[..n].as_chunks::<N>();
+    for (d, c) in blocks.iter_mut().zip(covs) {
+        block(d, c, s);
+    }
+    if !px_tail.is_empty() {
+        // Fixed-length copies: a few pixels each, where `copy_from_slice` calls `memcpy`.
+        let (mut d, mut c) = ([[0; 4]; N], [0; N]);
+        for i in 0..N {
+            if let (Some(p), Some(&k)) = (px_tail.get(i), cov_tail.get(i)) {
+                (d[i], c[i]) = (*p, k);
+            }
+        }
+        block(&mut d, &c, s);
+        for (i, d) in d.into_iter().enumerate() {
+            if let Some(p) = px_tail.get_mut(i) {
+                *p = d;
+            }
+        }
     }
 }
 
@@ -413,21 +429,15 @@ mod tests {
     }
 
     #[test]
-    fn the_two_lane_arithmetic_is_the_byte_arithmetic() {
-        // Every byte value at every coverage, in each of the four byte positions, scaled and added.
-        for k in 0..=255u32 {
-            for v in 0..=255u32 {
-                for at in 0..4 {
-                    let p = v << (8 * at);
-                    assert_eq!(scale_swar(p, k), u32::from(mul(v as u8, k as u8)) << (8 * at), "{v} × {k} at byte {at}");
-                    let q = k << (8 * at);
-                    assert_eq!(add_saturating_swar(p, q), u32::from((v as u8).saturating_add(k as u8)) << (8 * at), "{v} + {k}");
-                }
-            }
-        }
-        // And whole pixels: the same bytes as `over`.
-        let (px, cov) = sample();
-        for s in px.as_chunks::<4>().0.iter().step_by(7) {
+    fn over_row_is_over() {
+        // The same bytes as `over`, with whole blocks of no and full coverage among the others, and opaque sources
+        // (the blocks that are skipped or stored).
+        let (px, mut cov) = sample();
+        cov[32..64].fill(0);
+        cov[96..128].fill(255);
+        cov[200..216].fill(255);
+        let opaque = [[0, 0, 0, 255], [255, 255, 255, 255], [10, 200, 30, 255]];
+        for s in px.as_chunks::<4>().0.iter().step_by(7).chain(&opaque) {
             let mut a = px.clone();
             let mut b = px.clone();
             over_row(&mut a, &cov, *s);

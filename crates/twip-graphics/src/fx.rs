@@ -10,12 +10,14 @@ pub(crate) type FastMap<K, V> = HashMap<K, V, BuildHasherDefault<FxHasher>>;
 pub(crate) struct FxHasher(u64);
 
 impl FxHasher {
+    #[inline]
     fn add(&mut self, v: u64) {
         self.0 = (self.0.rotate_left(5) ^ v).wrapping_mul(0x517c_c1b7_2722_0a95);
     }
 }
 
 impl Hasher for FxHasher {
+    #[inline]
     fn write(&mut self, bytes: &[u8]) {
         for chunk in bytes.chunks(8) {
             let mut word = [0u8; 8];
@@ -23,21 +25,27 @@ impl Hasher for FxHasher {
             self.add(u64::from_le_bytes(word));
         }
     }
+    #[inline]
     fn write_u8(&mut self, v: u8) {
         self.add(v as u64);
     }
+    #[inline]
     fn write_u32(&mut self, v: u32) {
         self.add(v as u64);
     }
+    #[inline]
     fn write_i32(&mut self, v: i32) {
         self.add(v as u32 as u64);
     }
+    #[inline]
     fn write_u64(&mut self, v: u64) {
         self.add(v);
     }
+    #[inline]
     fn write_usize(&mut self, v: usize) {
         self.add(v as u64);
     }
+    #[inline]
     fn finish(&self) -> u64 {
         self.0
     }

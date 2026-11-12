@@ -683,6 +683,7 @@ impl Prepare {
         let lum = color.map_or(4, |c| luminance_level(c.r, c.g, c.b, c.a));
         let matrix = m.map(|v| (v * 64.0).round() as i32);
         let key = GlyphKey { font: run.font, glyph: 0, matrix, bin: [0, 0], skew: style.skew_x.to_bits(), bold: style.bold.to_bits(), lum };
+        let strike = self.glyphs.strike(key);
         let axis_aligned = t.b == 0.0 && t.c == 0.0;
         let inside = interior(clip);
         for g in glyphs {
@@ -691,7 +692,7 @@ impl Prepare {
             let qy = if axis_aligned { o.y.round() as i32 * 4 } else { (o.y * 4.0).round() as i32 };
             let key = GlyphKey { glyph: g.id, bin: [qx.rem_euclid(4) as u8, qy.rem_euclid(4) as u8], ..key };
             let origin = (qx.div_euclid(4), qy.div_euclid(4));
-            let mask = self.glyphs.mask(fonts, &mut self.raster, key);
+            let mask = self.glyphs.mask_in(fonts, &mut self.raster, strike, key.glyph, key.bin);
             if mask.failed {
                 self.stats.failed_glyphs += 1;
             }
@@ -716,7 +717,7 @@ impl Prepare {
             let slot = if uncut {
                 let Prepare { placed, atlas, glyphs: cache, raster, .. } = self;
                 let at = *placed.entry(key).or_insert_with(|| {
-                    let mask = cache.mask(fonts, raster, key);
+                    let mask = cache.mask_in(fonts, raster, strike, key.glyph, key.bin);
                     let (w, h) = (mask.width, mask.height);
                     let slot = atlas.alloc(w, h)?;
                     for row in 0..h {
@@ -729,7 +730,7 @@ impl Prepare {
             } else {
                 let (w, h) = (vis.width() as u32, (vis.y1 - vis.y0) as u32);
                 let Prepare { atlas, glyphs: cache, raster, masks, level, .. } = self;
-                let mask = cache.mask(fonts, raster, key);
+                let mask = cache.mask_in(fonts, raster, strike, key.glyph, key.bin);
                 atlas.alloc(w, h).inspect(|&slot| {
                     for row in 0..h {
                         let y = vis.y0 + row as i32;
