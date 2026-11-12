@@ -120,11 +120,18 @@ fn a_line_inside_a_word_hyphenates_the_rest_of_it_as_a_word() {
 /// `fill` filler lines, then `t`, in Courier New 10 pt, 30 characters a line and 51 lines a page; the lines of the
 /// first two pages.
 fn courier_lines(settings: &str, fill: usize, t: &str) -> Option<[Vec<String>; 2]> {
-    let ppr = r#"<w:pPr><w:widowControl w:val="0"/><w:spacing w:after="0" w:line="250" w:lineRule="exact"/><w:ind w:right="5699"/></w:pPr>"#;
+    courier(settings, r#"<w:ind w:right="5699"/>"#, 20, "a1t", fill, t)
+}
+
+/// `fill` filler lines, then `t`, in Courier New at `sz` half-points with the paragraph properties `ppr` and the
+/// patterns `pat`; the lines of the first two pages.
+fn courier(settings: &str, ppr: &str, sz: u32, pat: &str, fill: usize, t: &str) -> Option<[Vec<String>; 2]> {
+    let ppr = format!(r#"<w:pPr><w:widowControl w:val="0"/><w:spacing w:after="0" w:line="250" w:lineRule="exact"/>{ppr}</w:pPr>"#);
     let fill: String = (0..fill).map(|k| format!("<w:p>{ppr}<w:r><w:t>Fill {k}</w:t></w:r></w:p>")).collect();
-    let rpr = r#"<w:rFonts w:ascii="Courier New" w:hAnsi="Courier New"/><w:sz w:val="20"/><w:lang w:val="en-US"/>"#;
-    let mut d = super::breaking::test_doc(settings, rpr, &format!("{fill}<w:p>{ppr}{t}</w:p>"), "")?;
-    d.hyphenation = Some(Hyphenation::default().with("en-US", Patterns::parse("UTF-8\nLEFTHYPHENMIN 2\nRIGHTHYPHENMIN 3\na1t")));
+    let rpr = format!(r#"<w:rFonts w:ascii="Courier New" w:hAnsi="Courier New"/><w:sz w:val="{sz}"/><w:lang w:val="en-US"/>"#);
+    let mut d = super::breaking::test_doc(settings, &rpr, &format!("{fill}<w:p>{ppr}{t}</w:p>"), "")?;
+    let pat = format!("UTF-8\nLEFTHYPHENMIN 2\nRIGHTHYPHENMIN 3\n{pat}");
+    d.hyphenation = Some(Hyphenation::default().with("en-US", Patterns::parse(&pat)));
     let pages = page_chars(&d);
     let lines = |k: usize| {
         let mut out: Vec<(f64, String)> = Vec::new();
@@ -199,4 +206,55 @@ fn a_word_without_proofing_isnt_hyphenated() {
     assert_eq!(first(15, "", np).as_deref(), Some("The plain cart ran representa-"));
     assert_eq!(first(12, np, "").as_deref(), Some("The plain cart ran representa-"));
     assert_eq!(first(12, "", np).as_deref(), Some("The plain cart ran"));
+}
+
+/// The first page's lines of `t` in Courier New 10 pt, justified (`jc`) in compat 15 with the right indent `ind`.
+fn justified_lines(jc: &str, auto: bool, ind: u32, t: &str) -> Option<Vec<String>> {
+    if !super::fonts().is_installed("Courier New") {
+        return None;
+    }
+    let ppr = format!(r#"<w:jc w:val="{jc}"/><w:ind w:right="{ind}"/>"#);
+    let run = format!(r#"<w:r><w:t xml:space="preserve">{t}</w:t></w:r>"#);
+    courier(&track_settings(15, auto, ""), &ppr, 20, ".rep1re1sen1ta1tive.", 0, &run).map(|[p1, _]| p1)
+}
+
+#[test]
+fn compat_15_justified_text_ends_lines_at_hyphenation_points() {
+    // `representa-` fits the 3661 tw line unshrunk; the word end before it would stretch past its tolerance.
+    let Some(lines) = justified_lines("both", true, 5699, "The plain cart ran representative bottom text.") else { return };
+    assert_eq!(lines[0], "The plain cart ran representa-", "{lines:?}");
+    // Thirteen `ab`, a double space and `representative`: a hyphenation point pays for its flag, so the line takes
+    // `rep-` only once the word end would stretch about as far as the point's demerits.
+    let t = format!("{}ab  representative and more words to follow.", "ab ".repeat(12));
+    let first = |w: u32| justified_lines("both", true, 9360 - w, &t).map(|l| l[0].clone());
+    assert_eq!(first(5101).as_deref(), Some(&*format!("{}ab", "ab ".repeat(12))));
+    assert_eq!(first(5281).as_deref(), Some(&*format!("{}ab  rep-", "ab ".repeat(12))));
+}
+
+#[test]
+fn compat_15_distributed_text_stretches_every_glyph_but_the_last() {
+    // Sixty letters, then `b`: the long word alone stretches less than the two words shrink only with the glyphs'
+    // share of the stretch.
+    let t = format!("{} b more", "x".repeat(60));
+    let first = |jc: &str| justified_lines(jc, false, 9360 - 7412, &t).map(|l| l[0].clone());
+    let Some(both) = first("both") else { return };
+    assert_eq!(both, format!("{} b", "x".repeat(60)));
+    assert_eq!(first("distribute"), Some("x".repeat(60)));
+}
+
+#[test]
+fn compat_15_a_line_at_the_limit_ending_at_an_optional_hyphen_isnt_counted() {
+    // Limit 1: line 1 ends at a point, line 2 (at the limit) at an optional hyphen; line 3 may take a point again.
+    let t = format!(
+        r#"<w:r><w:t xml:space="preserve">{} zzattttt {}</w:t><w:softHyphen/><w:t xml:space="preserve">qqqqqq {} zzattttt end</w:t></w:r>"#,
+        "y".repeat(25),
+        "q".repeat(20),
+        "y".repeat(18)
+    );
+    if !super::fonts().is_installed("Courier New") {
+        return;
+    }
+    let settings = track_settings(15, true, "").replace("<w:compat>", r#"<w:consecutiveHyphenLimit w:val="1"/><w:compat>"#);
+    let Some([p1, _]) = courier_lines(&settings, 0, &t) else { return };
+    assert_eq!(&p1[..3], [format!("{} zza-", "y".repeat(25)), format!("ttttt {}-", "q".repeat(20)), format!("qqqqqq {} zza-", "y".repeat(18))], "{p1:?}");
 }

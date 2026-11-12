@@ -564,27 +564,30 @@ pub fn break_paragraph(sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, mar
     let justify_smart = matches!(style.jc, Jc::Both | Jc::Distribute) && frame.compat == Compat::Generic && !frame.no_wrap;
     let mut start = 0;
     let n = pieces.len();
-    let mut planned: Vec<usize> = Vec::new();
-    if justify_smart {
-        planned = plan_justified(pieces, style, frame, continued);
-    }
     let with_tabs = justify_smart && pieces.iter().any(|p| p.kind == Kind::Tab);
     let mut first = !continued;
     let mut hyphens = 0;
     let mut word_from = None;
     let all = *frame;
     loop {
-        let frame = &Frame { hyphenate: all.hyphenate && (all.hyphen_limit <= 0 || hyphens < all.hyphen_limit), word_from, ..all };
+        let at_limit = all.hyphen_limit > 0 && hyphens >= all.hyphen_limit;
+        let frame = &Frame { hyphenate: all.hyphenate && !at_limit, word_from, ..all };
         let style = line_style(style, pieces, start);
         let right = frame.width - style.ind_right;
         let wrap_right = if frame.no_wrap { f64::INFINITY } else { right + wp_extension(style, frame) };
         let left = style.ind_left + if first { style.ind_first } else { 0.0 };
-        let limit_end =
-            if with_tabs { justified_tab_end(sp, pieces, start, left, right, style, frame) } else { planned.iter().copied().find(|&e| e > start) };
-        let fit = fit_line(sp, pieces, start, left, wrap_right, style, frame, limit_end, false);
+        let planned = match justify_smart {
+            false => None,
+            true if with_tabs => justified_tab_end(sp, pieces, start, left, right, style, frame),
+            true => justified_end(sp, pieces, start, right - left, style, frame),
+        };
+        let mut fit = fit_line(sp, pieces, start, left, wrap_right, style, frame, planned.map(|e| e.0), false);
+        fit.hyphen |= planned.is_some_and(|e| e.1);
         let end = fit.end.max(start + 1).min(n.max(start + 1));
         let is_last = end >= n;
-        hyphens = if fit.hyphen { hyphens + 1 } else { 0 };
+        // Compat 15: a line at the limit that ends at an optional hyphen starts the count again.
+        let counts = fit.hyphen && !(at_limit && frame.compat == Compat::Generic);
+        hyphens = if counts { hyphens + 1 } else { 0 };
         if !fit.hyphen {
             word_from = Some(end);
         }
@@ -709,8 +712,8 @@ pub fn band(
         let planned = if matches!(style.jc, Jc::Both | Jc::Distribute) && frame.compat == Compat::Generic && s < n {
             let seg_end = segment_end(pieces, s);
             if !pieces[s..seg_end].iter().any(|p| p.kind == Kind::Tab) {
-                match justified_line(pieces, s, seg_end, right - left) {
-                    LineChoice::End(e) => Some(e),
+                match justified_line(sp, pieces, s, seg_end, right - left, style, frame) {
+                    LineChoice::End(e, hyphen) => Some((e, hyphen)),
                     _ => None,
                 }
             } else if a <= EPS && b >= frame.width - EPS {
@@ -721,7 +724,8 @@ pub fn band(
         } else {
             None
         };
-        let fit = fit_line(sp, pieces, s, left, right, style, frame, planned, !force && planned.is_none());
+        let mut fit = fit_line(sp, pieces, s, left, right, style, frame, planned.map(|e| e.0), !force && planned.is_none());
+        fit.hyphen |= planned.is_some_and(|e| e.1);
         if fit.end <= s && s < n {
             continue;
         }
@@ -955,20 +959,10 @@ fn fit_line(
     }
     let mut pending: Option<Pending> = None;
     let mut breaks: Vec<(usize, bool)> = Vec::new();
-    // A line that starts inside a word hyphenates the rest of it as a word: from the line start in compat ≤ 14, from
-    // where it was last broken between letters in compat 15. `pieces` ends the paragraph's pieces.
     let n = pieces.len();
     let (all, o) = (&sp.pieces[..], sp.pieces.len() - n);
-    let in_word = |k: usize| k > 0 && k < all.len() && all[k].kind == Kind::Text && all[k - 1].kind == Kind::Text && !all[k - 1].break_after;
-    let at = o + start;
-    let word_start = (0..=at).rev().find(|&k| !in_word(k)).unwrap_or(0);
-    // A word continued from an earlier page counts as broken at a hyphen when it was broken at a point.
-    let broke = frame.word_from.map(|w| w + o).unwrap_or(if word_start < o && !all[o - 1].auto_hyphen { o } else { 0 });
-    let from = if frame.compat == Compat::Legacy { at } else { broke.clamp(word_start, at) };
-    let part = (frame.hyphenate && from > word_start).then(|| {
-        let (e, at) = sp.points_from(all, from);
-        (e - o, at.into_iter().map(|k| k - o).collect::<Vec<_>>())
-    });
+    let in_word = |k: usize| in_word(all, k);
+    let points = Points::new(sp, pieces, start, frame);
     let mut leaders: Vec<(usize, Leader)> = Vec::new();
     let mut squeeze: Option<(usize, f64)> = None;
     let mut past_custom = false;
@@ -1225,12 +1219,7 @@ fn fit_line(
         drift += p.break_extra;
         if p.break_after {
             breaks.push((i + 1, p.soft_hyphen));
-        } else if frame.hyphenate
-            && match &part {
-                Some((e, at)) if i < *e => !p.glued && at.contains(&i),
-                _ => p.auto_hyphen,
-            }
-        {
+        } else if points.at(pieces, i) {
             breaks.push((i + 1, true));
         } else if between(i) && !refused(i + 1) {
             breaks.push((i + 1, false));
@@ -1245,6 +1234,43 @@ fn fit_line(
     }
     let hyphen = i < n && i > start && pieces[i - 1].soft_hyphen;
     Fit { end: i, xs, widths: ws, hard: None, hyphen, leaders }
+}
+
+fn in_word(all: &[Piece], k: usize) -> bool {
+    k > 0 && k < all.len() && all[k].kind == Kind::Text && all[k - 1].kind == Kind::Text && !all[k - 1].break_after
+}
+
+/// The automatic hyphenation points a line may end at. A line that starts inside a word hyphenates the rest of it as
+/// a word: from the line start in compat ≤ 14, from where it was last broken between letters in compat 15.
+struct Points {
+    part: Option<(usize, Vec<usize>)>,
+    on: bool,
+}
+
+impl Points {
+    /// For the line at `start` of `pieces`, which end the paragraph's pieces.
+    fn new(sp: &ShapedPara, pieces: &[Piece], start: usize, frame: &Frame) -> Points {
+        let (all, o) = (&sp.pieces[..], sp.pieces.len() - pieces.len());
+        let at = o + start;
+        let word_start = (0..=at).rev().find(|&k| !in_word(all, k)).unwrap_or(0);
+        // A word continued from an earlier page counts as broken at a hyphen when it was broken at a point.
+        let broke = frame.word_from.map(|w| w + o).unwrap_or(if word_start < o && !all[o - 1].auto_hyphen { o } else { 0 });
+        let from = if frame.compat == Compat::Legacy { at } else { broke.clamp(word_start, at) };
+        let part = (frame.hyphenate && from > word_start).then(|| {
+            let (e, at) = sp.points_from(all, from);
+            (e - o, at.into_iter().map(|k| k - o).collect::<Vec<_>>())
+        });
+        Points { part, on: frame.hyphenate }
+    }
+
+    /// The line may break after piece `i`.
+    fn at(&self, pieces: &[Piece], i: usize) -> bool {
+        self.on
+            && match &self.part {
+                Some((e, at)) if i < *e => !pieces[i].glued && at.contains(&i),
+                _ => pieces[i].auto_hyphen,
+            }
+    }
 }
 
 // Hyphenation zone
@@ -1297,43 +1323,27 @@ fn hyphen_width(sp: &ShapedPara, p: &Piece) -> f64 {
 }
 
 // Justified line ends
-fn plan_justified(pieces: &[Piece], style: &ParaStyle, frame: &Frame, continued: bool) -> Vec<usize> {
-    let mut ends = Vec::new();
-    let right = frame.width - style.ind_right;
-    let mut seg_start = 0;
-    let mut first_line = !continued;
-    while seg_start < pieces.len() {
-        let seg_end = segment_end(pieces, seg_start);
-        if pieces[seg_start..seg_end].iter().any(|p| p.kind == Kind::Tab) {
-            return Vec::new();
-        }
-        let mut pos = seg_start;
-        loop {
-            let column = right - style.ind_left - if first_line { style.ind_first } else { 0.0 };
-            match justified_line(pieces, pos, seg_end, column) {
-                LineChoice::Empty => break,
-                LineChoice::Last => {
-                    first_line = false;
-                    break;
-                }
-                LineChoice::Abort => return Vec::new(),
-                LineChoice::End(end) => {
-                    first_line = false;
-                    ends.push(end);
-                    pos = end;
-                }
-            }
-        }
-        seg_start = seg_end;
-        if seg_end < pieces.len() {
-            ends.push(seg_end);
-        }
+/// The compat 15 justified end of the line at `start` and whether it ends at a hyphenation point; None leaves the
+/// line to [`fit_line`].
+fn justified_end(sp: &ShapedPara, pieces: &[Piece], start: usize, column: f64, style: &ParaStyle, frame: &Frame) -> Option<(usize, bool)> {
+    let seg_end = segment_end(pieces, start);
+    match justified_line(sp, pieces, start, seg_end, column, style, frame) {
+        LineChoice::End(e, hyphen) => Some((e, hyphen)),
+        LineChoice::Last | LineChoice::Empty => (seg_end < pieces.len()).then_some((seg_end, false)),
+        LineChoice::Abort => None,
     }
-    ends
 }
 
 #[allow(clippy::too_many_arguments, reason = "the same inputs as fit_line, which it runs per end")]
-fn justified_tab_end(sp: &ShapedPara, pieces: &[Piece], start: usize, left: f64, right: f64, style: &ParaStyle, frame: &Frame) -> Option<usize> {
+fn justified_tab_end(
+    sp: &ShapedPara,
+    pieces: &[Piece],
+    start: usize,
+    left: f64,
+    right: f64,
+    style: &ParaStyle,
+    frame: &Frame,
+) -> Option<(usize, bool)> {
     if pieces.iter().any(|p| p.kind == Kind::Tab && p.object.is_some()) {
         return None;
     }
@@ -1343,11 +1353,13 @@ fn justified_tab_end(sp: &ShapedPara, pieces: &[Piece], start: usize, left: f64,
         return None;
     }
     let lu = |x: f64| x * LU_PER_PT;
-    let end_at = |e: usize| -> (f64, i64, i64) {
+    let column = line_column(right - left);
+    let points = Points::new(sp, pieces, start, frame);
+    let point = |e: usize| e < seg_end && (pieces[e - 1].soft_hyphen || points.at(pieces, e - 1) && proofed(sp, pieces, e - 1));
+    let end_at = |e: usize| -> End {
         let all = fit_line(sp, pieces, start, left, right, style, frame, Some(e), false);
         let ink = (start..e).rev().find(|&k| !matches!(pieces[k].kind, Kind::Space | Kind::Anchor));
-        let x = ink.map_or(left, |k| all.xs[k - start] + all.widths[k - start])
-            + if pieces[e - 1].soft_hyphen { hyphen_width(sp, &pieces[e - 1]) } else { 0.0 };
+        let x = ink.map_or(left, |k| all.xs[k - start] + all.widths[k - start]) + if point(e) { hyphen_width(sp, &pieces[e - 1]) } else { 0.0 };
         let from = (start..e).rev().find(|&k| pieces[k].kind == Kind::Tab).map_or(start, |t| t + 1);
         let first = (from..e).find(|&k| pieces[k].kind != Kind::Space).unwrap_or(e);
         let last = ink.map_or(first, |k| k + 1);
@@ -1357,32 +1369,25 @@ fn justified_tab_end(sp: &ShapedPara, pieces: &[Piece], start: usize, left: f64,
             shrink += (w + 2) >> 2;
             stretch += (w + 1) >> 1;
         }
-        (lu(x) - lu(right), shrink, stretch)
+        End { at: e, over: lu(x - left).round() - column, shrink, stretch, point: point(e) }
     };
     let is_end = |e: usize| (pieces[e - 1].break_after || pieces[e - 1].kind == Kind::Tab) && pieces[e].kind != Kind::Space;
-    let is_end = |e: usize| e == seg_end || is_end(e);
-    let longest = (greedy.end + 1..=seg_end)
-        .filter(|&e| is_end(e))
-        .take_while(|&e| !pieces[greedy.end..e].iter().any(|p| p.kind == Kind::Tab))
-        .take_while(|&e| {
-            let (over, shrink, _) = end_at(e);
-            over <= shrink as f64 + LU_EPS
-        })
-        .last()?;
-    let demerits = |e: usize| {
-        let (over, shrink, stretch) = end_at(e);
-        end_demerits(over, shrink, stretch)
-    };
-    let mut best = longest;
-    let mut best_cost = demerits(longest);
-    for e in (greedy.end..longest).rev().filter(|&e| e == greedy.end || is_end(e)) {
-        let c = demerits(e);
-        if c.is_some_and(|c| best_cost.is_none_or(|b| c < b)) {
-            best = e;
-            best_cost = c;
+    let is_end = |e: usize| e == seg_end || is_end(e) || point(e);
+    // From the last word end the greedy line reaches; no end past another tab.
+    let lo = (start + 1..=greedy.end).rev().find(|&e| is_end(e) && !point(e)).unwrap_or(greedy.end);
+    let mut ends: Vec<End> = Vec::new();
+    for e in (lo..=seg_end).filter(|&e| e == lo || is_end(e)) {
+        if e > greedy.end && pieces[greedy.end..e].iter().any(|p| p.kind == Kind::Tab) {
+            break;
         }
+        let end = end_at(e);
+        if end.over > end.shrink as f64 + LU_EPS {
+            break;
+        }
+        ends.push(end);
     }
-    (best != greedy.end).then_some(best)
+    let best = choose_end(&ends)?;
+    (best.at != greedy.end).then_some((best.at, best.point))
 }
 
 fn segment_end(pieces: &[Piece], from: usize) -> usize {
@@ -1397,14 +1402,7 @@ enum LineChoice {
     Empty,
     Last,
     Abort,
-    End(usize),
-}
-
-#[derive(Clone, Copy, Default)]
-struct Gap {
-    width: f64,
-    shrink: i64,
-    stretch: i64,
+    End(usize, bool),
 }
 
 const LU_EPS: f64 = 1e-6;
@@ -1418,79 +1416,132 @@ fn end_demerits(over: f64, shrink: i64, stretch: i64) -> Option<i64> {
     (l <= 4700).then(|| (1000 + l * l * l / 100_000).pow(2))
 }
 
-fn justified_line(pieces: &[Piece], from: usize, seg_end: usize, column: f64) -> LineChoice {
-    let mut words: Vec<(usize, usize, f64)> = Vec::new();
-    let mut gaps: Vec<Gap> = Vec::new();
-    let mut k = from;
-    let mut gap = Gap::default();
-    let mut joined = false;
-    while k < seg_end {
+/// A line end the compat 15 justified breaker weighs: where the line ends, how far its natural width runs past the
+/// column (layout units, the hyphen of a hyphenation point included), the shrink and stretch of its spaces, and
+/// whether it ends at a hyphenation point.
+#[derive(Clone, Copy)]
+struct End {
+    at: usize,
+    over: f64,
+    shrink: i64,
+    stretch: i64,
+    point: bool,
+}
+
+/// What a line ending at a hyphenation point (automatic or optional) pays on top of its demerits.
+const POINT_DEMERITS: i64 = 103_693_489;
+
+/// The compat 15 justified choice among a line's ends, in text order and each fitting with its spaces shrunk: the
+/// longest, then each end before it down to the last word end that fits unshrunk; the cheapest wins, the first of
+/// equals. None without an end.
+fn choose_end(ends: &[End]) -> Option<End> {
+    let longest = ends.len().checked_sub(1)?;
+    let word = ends.iter().rposition(|e| !e.point && e.over <= LU_EPS).unwrap_or(0);
+    let cost = |e: &End| end_demerits(e.over, e.shrink, e.stretch).map(|d| d + if e.point { POINT_DEMERITS } else { 0 });
+    let (mut best, mut best_cost) = (ends[longest], cost(&ends[longest]));
+    for e in ends[word.min(longest)..longest].iter().rev() {
+        let c = cost(e);
+        if c.is_some_and(|c| best_cost.is_none_or(|b| c < b)) {
+            (best, best_cost) = (*e, c);
+        }
+    }
+    Some(best)
+}
+
+/// A line's width in layout units, rounded half up.
+fn line_column(width: f64) -> f64 {
+    (width * LU_PER_PT + 0.5).floor()
+}
+
+/// Compat 15 asks the run of a word's first letter whether the word is proofed.
+fn proofed(sp: &ShapedPara, pieces: &[Piece], i: usize) -> bool {
+    let all = &sp.pieces[..];
+    let w = (0..=all.len() - pieces.len() + i).rev().find(|&k| !in_word(all, k)).unwrap_or(0);
+    !sp.styles[all[w].style as usize].run.no_proof
+}
+
+/// The compat 15 justified end of a line without tabs from `from`, in a column `column` points wide. Its ends are the
+/// word ends and the hyphenation points: the automatic ones the line may take and every optional hyphen.
+fn justified_line(sp: &ShapedPara, pieces: &[Piece], from: usize, seg_end: usize, column: f64, style: &ParaStyle, frame: &Frame) -> LineChoice {
+    let points = Points::new(sp, pieces, from, frame);
+    let lu = |w: f64| (w * LU_PER_PT).round();
+    // Distributed text: every glyph but the line's last stretches by a 32nd of its font's average character width.
+    let glyph_stretch = |p: &Piece| -> i64 {
+        let st = &sp.styles[p.style as usize];
+        match (&st.face, style.jc) {
+            (Some(f), Jc::Distribute) => ((f.avg_width * st.size * LU_PER_PT).round() as i64 + 16) >> 5,
+            _ => 0,
+        }
+    };
+    let column = line_column(column);
+    let mut ends: Vec<End> = Vec::new();
+    let (mut natural, mut content, mut shrink, mut stretch, mut glyphs, mut last_glyph) = (0.0, 0.0, 0, 0, 0, 0);
+    let (mut word, mut seen) = (false, false);
+    // The end of the word before the spaces being read: a space that doesn't break joins the words.
+    let mut word_end: Option<usize> = None;
+    let end_word = |ends: &mut Vec<End>, at: usize, natural: f64, shrink: i64, stretch: i64| {
+        ends.push(End { at, over: natural - column, shrink, stretch, point: false });
+        ends.len() - 1
+    };
+    for k in from..seg_end {
         let p = &pieces[k];
-        if matches!(p.kind, Kind::Space) {
-            let w = (p.width * LU_PER_PT).round() as i64;
-            gap.width += p.width + p.break_extra;
-            gap.shrink += (w + 2) >> 2;
-            gap.stretch += (w + 1) >> 1;
-            joined |= !p.break_after;
-            k += 1;
-            continue;
-        }
-        if matches!(p.kind, Kind::LineBreak | Kind::PageBreak | Kind::ColumnBreak | Kind::Anchor) {
-            k += 1;
-            continue;
-        }
-        let ws = k;
-        let mut w = 0.0;
-        while k < seg_end && !matches!(pieces[k].kind, Kind::Space | Kind::LineBreak | Kind::PageBreak | Kind::ColumnBreak) {
-            w += pieces[k].width + pieces[k].break_extra;
-            k += 1;
-            if pieces[k - 1].break_after && !pieces[k - 1].soft_hyphen {
-                break;
+        match p.kind {
+            Kind::Space => {
+                if std::mem::take(&mut word) {
+                    word_end = Some(end_word(&mut ends, k, natural, shrink, stretch + glyphs - last_glyph));
+                }
+                natural += lu(p.width) + lu(p.break_extra);
+                if seen {
+                    let w = lu(p.width) as i64;
+                    shrink += (w + 2) >> 2;
+                    stretch += (w + 1) >> 1;
+                }
+                if !p.break_after
+                    && let Some(j) = word_end.take()
+                {
+                    ends.remove(j);
+                }
+            }
+            Kind::LineBreak | Kind::PageBreak | Kind::ColumnBreak => {
+                if std::mem::take(&mut word) {
+                    end_word(&mut ends, k, natural, shrink, stretch + glyphs - last_glyph);
+                }
+            }
+            Kind::Anchor if !word => {}
+            _ => {
+                (word, seen, word_end) = (true, true, None);
+                natural += lu(p.width) + lu(p.break_extra);
+                content = natural;
+                if !p.soft_hyphen {
+                    last_glyph = glyph_stretch(p);
+                    glyphs += last_glyph;
+                }
+                if k + 1 < seg_end && (p.soft_hyphen || points.at(pieces, k) && proofed(sp, pieces, k)) {
+                    let over = natural + lu(hyphen_width(sp, p)) - column;
+                    ends.push(End { at: k + 1, over, shrink, stretch: stretch + glyphs, point: true });
+                } else if p.break_after && !p.soft_hyphen {
+                    word = false;
+                    word_end = Some(end_word(&mut ends, k + 1, natural, shrink, stretch + glyphs - last_glyph));
+                }
             }
         }
-        if joined && let (Some(last), Some(g)) = (words.last_mut(), gaps.last_mut()) {
-            last.1 = k;
-            last.2 += gap.width + w;
-            g.shrink += gap.shrink;
-            g.stretch += gap.stretch;
-        } else {
-            gaps.push(if words.is_empty() { Gap { width: gap.width, ..Gap::default() } } else { gap });
-            words.push((ws, k, w));
-        }
-        gap = Gap::default();
-        joined = false;
     }
-    if words.is_empty() {
+    if word {
+        end_word(&mut ends, seg_end, natural, shrink, stretch + glyphs - last_glyph);
+    }
+    if !seen {
         return LineChoice::Empty;
     }
-    let column = column * LU_PER_PT;
-    let natural = |e: usize| -> f64 { (0..e).map(|j| (words[j].2 + gaps[j].width) * LU_PER_PT).sum() };
-    let shrink = |e: usize| -> i64 { gaps[1..e].iter().map(|g| g.shrink).sum() };
-    let stretch = |e: usize| -> i64 { gaps[1..e].iter().map(|g| g.stretch).sum() };
-    let fits = |e: usize| natural(e) <= column + LU_EPS;
-    if fits(words.len()) {
+    if content <= column + LU_EPS {
         return LineChoice::Last;
     }
-    let longest = (1..=words.len()).take_while(|&e| natural(e) - column <= shrink(e) as f64 + LU_EPS).last().unwrap_or(0);
-    let greedy = (1..=words.len()).take_while(|&e| fits(e)).last().unwrap_or(0);
-    if longest == 0 {
-        return LineChoice::Abort;
-    }
-    let demerits = |e: usize| end_demerits(natural(e) - column, shrink(e), stretch(e));
-    let mut best = longest;
-    let mut best_cost = demerits(longest);
-    for e in (greedy.max(1)..longest).rev() {
-        let c = demerits(e);
-        if c.is_some_and(|c| best_cost.is_none_or(|b| c < b)) {
-            best = e;
-            best_cost = c;
-        }
-    }
-    let mut end = words[best - 1].1;
-    while end < seg_end && pieces[end].kind == Kind::Space {
+    let fitting = ends.iter().take_while(|e| e.over <= e.shrink as f64 + LU_EPS).count();
+    let Some(best) = choose_end(&ends[..fitting]) else { return LineChoice::Abort };
+    let mut end = best.at;
+    while !best.point && end < seg_end && pieces[end].kind == Kind::Space {
         end += 1;
     }
-    LineChoice::End(end)
+    LineChoice::End(end, best.point)
 }
 
 // Alignment
