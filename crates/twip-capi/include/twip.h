@@ -245,16 +245,9 @@ void twip_surface(TwipEngine* engine, uint32_t session, double width, double hei
 void twip_scroll(TwipEngine* engine, uint32_t session, double x, double y);
 /* CPU pixels: width x height device pixels, RGBA, premultiplied, rows packed. info may be null. */
 int32_t twip_frame_rgba(TwipEngine* engine, uint32_t session, uint8_t* pixels, uint32_t width, uint32_t height, TwipFrameInfo* info);
-/* Browser GPU frames: WebGPU first, then WebGL 2; twip_frame_rgba is the fallback. Natively these fail
- * TWIP_E_UNAVAILABLE (twip_gpu_instance returns 0). */
-uintptr_t twip_gpu_instance(void);
-int32_t twip_attach_webgpu(uintptr_t instance, uintptr_t device, uintptr_t queue);
-int32_t twip_frame_webgpu(TwipEngine* engine, uint32_t session, uintptr_t texture, uint32_t bgra, uint32_t height, TwipFrameInfo* info);
-int32_t twip_attach_webgl(TwipEngine* engine, uint32_t session);
-int32_t twip_frame_webgl(TwipEngine* engine, uint32_t session, uint32_t width, uint32_t height, TwipFrameInfo* info);
-/* Native GPU frames: Graphite into the host's window. On Windows window is an HWND (Dawn: D3D12, then D3D11, then
- * Vulkan); on macOS a CAMetalLayer (Metal), whose device, pixel format and drawable size the engine sets. twip_attach_window returns the backend (1 D3D12, 2 D3D11, 3 Vulkan,
- * 4 Metal) or fails TWIP_E_UNAVAILABLE; twip_frame_rgba is the fallback.
+/* Native GPU frames: twip-graphics on wgpu into the host's window. On Windows window is an HWND (D3D12, then Vulkan);
+ * on macOS a CAMetalLayer (Metal), whose device, pixel format and drawable size the engine sets. twip_attach_window
+ * returns the backend (1 D3D12, 3 Vulkan, 4 Metal) or fails TWIP_E_UNAVAILABLE; twip_frame_rgba is the fallback.
  * After a device loss twip_frame_window fails TWIP_E_UNAVAILABLE; the next twip_attach_window makes a new device.
  * twip_test_lose_gpu loses the device as a driver reset would, for tests. */
 int32_t twip_attach_window(TwipEngine* engine, uint32_t session, void* window);

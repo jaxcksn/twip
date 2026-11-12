@@ -33,11 +33,6 @@ fn main() {
         "twip_surface",
         "twip_scroll",
         "twip_frame_rgba",
-        "twip_gpu_instance",
-        "twip_attach_webgpu",
-        "twip_frame_webgpu",
-        "twip_attach_webgl",
-        "twip_frame_webgl",
         "twip_timer_fired",
     ];
     let exports: Vec<String> = exports.iter().map(|e| format!("_{e}")).collect();

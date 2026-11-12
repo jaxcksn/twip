@@ -7,7 +7,7 @@ mod overlay;
 pub mod retained;
 pub mod ruler;
 mod shape;
-mod svg;
+pub(crate) mod svg;
 
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -53,11 +53,6 @@ pub struct Graphics {
     els: Vec<PathEl>,
     /// Glyph runs carry their characters and clusters, so a PDF's text extracts as the document's.
     pub with_text: bool,
-}
-
-/// A Skia colour as twip-graphics takes it.
-pub(crate) fn colour(c: skia_safe::Color) -> Color {
-    Color::rgba(c.r(), c.g(), c.b(), c.a())
 }
 
 fn rect([x0, y0, x1, y1]: [f64; 4]) -> kurbo::Rect {
@@ -123,10 +118,10 @@ impl Graphics {
             let d = |v: f64, o: f64| (v * k + o) * f.dpr;
             [d(x, f.origin_x).floor() + 1.0, d(y, f.origin_y).floor() + 1.0, d(x + w, f.origin_x).ceil() - 1.0, d(y + h, f.origin_y).ceil() - 1.0]
         });
-        desk(&mut rec, papers, f.width, f.height, colour(r.background.unwrap_or(r.theme.tokens.desk)));
+        desk(&mut rec, papers, f.width, f.height, r.background.unwrap_or(r.theme.tokens.desk));
         self.clear = None;
         let device = Affine::scale(f.dpr) * Affine::translate((f.origin_x, f.origin_y));
-        let paper = aliased(colour(r.ink_for(false, r.page_colour.unwrap_or(0xFF_FFFF))));
+        let paper = aliased(r.ink_for(false, r.page_colour.unwrap_or(0xFF_FFFF)));
         let shadow_k = r.theme.tokens.shadow;
         let mut kept = std::mem::take(&mut self.retained);
         for i in view.pages_visible.clone() {
@@ -138,7 +133,7 @@ impl Graphics {
             rec.fill_rect(p, paper);
             rec.push_transform(Affine::translate((p.x0, p.y0)) * Affine::scale(k));
             if r.retain && !r.direct {
-                let inputs = super::retained::Inputs { gridlines: r.gridlines, appearance: r.appearance };
+                let inputs = retained::Inputs { gridlines: r.gridlines, appearance: r.appearance };
                 let picture = kept.picture(page, inputs, |content| self.page(content, r, page, images));
                 if let Some(picture) = picture {
                     rec.picture(&picture, Affine::IDENTITY);
@@ -158,25 +153,25 @@ impl Graphics {
     }
 
     /// The markup pane over the frame: `r` (device pixels) in `c`.
-    pub fn pane(&mut self, r: [f64; 4], c: skia_safe::Color) {
-        self.frame.fill_rect(rect(r), aliased(colour(c)));
+    pub fn pane(&mut self, r: [f64; 4], c: Color) {
+        self.frame.fill_rect(rect(r), aliased(c));
     }
 
     /// The balloons' leaders over everything: polylines in content CSS px (`f` scrolls and scales them), `width`
     /// device pixels wide, in `c`.
-    pub fn leaders(&mut self, lines: &[Vec<crate::api::input::Point>], f: &Frame, width: f64, c: skia_safe::Color) {
+    pub fn leaders(&mut self, lines: &[Vec<crate::api::input::Point>], f: &Frame, width: f64, c: Color) {
         let mut rec = std::mem::take(&mut self.frame);
         let to = |q: &crate::api::input::Point| ((q.x + f.origin_x) * f.dpr, (q.y + f.origin_y) * f.dpr);
         for line in lines {
-            self.polyline(&mut rec, line.iter().map(to), &pen(width), colour(c));
+            self.polyline(&mut rec, line.iter().map(to), &pen(width), c);
         }
         self.frame = rec;
     }
 
     /// Tests: the colour the next frame starts from, for a frame that draws no pages.
     #[cfg(test)]
-    pub(crate) fn clear_with(&mut self, c: skia_safe::Color) {
-        self.clear = Some(colour(c));
+    pub(crate) fn clear_with(&mut self, c: Color) {
+        self.clear = Some(c);
     }
 
     /// Draws the rulers over the frame ([`ruler::paint`]).
@@ -289,7 +284,7 @@ impl Graphics {
 
     /// One page item, in the page's points.
     fn item(&mut self, rec: &mut Recorder, r: &Renderer, own: bool, item: &Item, images: &[Vec<u8>]) {
-        let ink = |c: u32| colour(r.ink_for(own, c));
+        let ink = |c: u32| r.ink_for(own, c);
         match item {
             Item::Rect { rect: rc, colour } => rec.fill_rect(rect(*rc), ink(*colour)),
             Item::Glyphs(g) => {

@@ -59,11 +59,10 @@ jobs:
           save-if: ${{ env.FULL == 'true' }}
           cache-directories: |
             .web-deps
-            .native-deps
-      # Skia links FreeType and Fontconfig; metric-compatible stand-ins for the fonts documents use (Calibri, Cambria,
-      # Arial, Times New Roman, Courier New); and qpdf and poppler, which open protected PDFs as readers do.
+      # Metric-compatible stand-ins for the fonts documents use (Calibri, Cambria, Arial, Times New Roman, Courier
+      # New); and qpdf and poppler, which open protected PDFs as readers do.
       - if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libfreetype6-dev libfontconfig1-dev fonts-crosextra-carlito fonts-crosextra-caladea fonts-liberation qpdf poppler-utils
+        run: sudo apt-get update && sudo apt-get install -y fonts-crosextra-carlito fonts-crosextra-caladea fonts-liberation qpdf poppler-utils
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'

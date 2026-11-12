@@ -10,17 +10,12 @@ You need:
 - **Node 24+** and **pnpm** (`corepack enable`).
 - **.NET 10 SDK**: for the .NET SDK and the docs' C# examples.
 - **emsdk 6.0.8**: for the WebAssembly build, which `web:test` and everything else in `bindings/web` needs. `emcc`
-  must be on `PATH` (see below). Use exactly 6.0.8: the prebuilt browser Skia was built with it, and linking needs
-  the same version.
+  must be on `PATH` (see below).
 
-Skia is never built from source. Native builds use skia-safe's prebuilts, except on Windows:
-`node crates/twip-capi/build-native.mjs` downloads the pinned Skia (a
-[twip-skia-dawn](https://github.com/jaxcksn/twip-skia-dawn) release). It passes other cargo arguments through
-(`node crates/twip-capi/build-native.mjs test --workspace`). Native windows draw on the GPU with twip-graphics on wgpu
-(D3D12 or Vulkan on Windows, Metal on macOS), which needs nothing prebuilt. D3D12 needs DXC (`dxcompiler.dll`, found
-as Windows finds DLLs); without it, Windows draws with Vulkan.
-On Linux musl (Alpine) the same script downloads the pinned musl Skia from twip-skia-dawn (built without Dawn, so it
-draws with the CPU), because skia-safe publishes no musl prebuilts.
+Twip links no C or C++ library: `node crates/twip-capi/build-native.mjs` is the plain cargo build of the native
+library (it passes other cargo arguments through: `node crates/twip-capi/build-native.mjs test --workspace`). Native
+windows draw on the GPU with twip-graphics on wgpu (D3D12 or Vulkan on Windows, Metal on macOS). D3D12 needs DXC
+(`dxcompiler.dll`, found as Windows finds DLLs); without it, Windows draws with Vulkan.
 
 Then:
 
@@ -63,7 +58,7 @@ Check it with `emcc --version`.
 | `crates/twip` | The engine: layout, editing, rendering. `twip::api` is the contract every SDK follows. |
 | `crates/twip-capi` | The C ABI over `twip::api` (internal, `include/twip.h`): the native library `twip` the .NET SDK loads. |
 | `crates/twip-wasm` | Builds the C ABI as an emscripten module for the web, with `twip-host.js` for its callbacks. |
-| `crates/twip-graphics` | The 2D renderer replacing Skia: pictures recorded once, drawn on the CPU (and later the GPU and PDF). Internal; published with `twip` at its exact version. |
+| `crates/twip-graphics` | The 2D renderer: pictures recorded once, drawn on the CPU (and the GPU and PDF). Internal; published with `twip` at its exact version. |
 | `crates/twip-tools` | Developer tools: golden comparisons, dumps, round trips, renders (`cargo run -p twip-tools`). |
 | `bindings/web` | `@twip/web`, the TypeScript SDK, written by hand over the wasm module. |
 | `bindings/dotnet` | `Twip.Core` and `Twip.WinForms`, the .NET SDK, written by hand over the C ABI. |

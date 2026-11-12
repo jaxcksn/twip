@@ -1,31 +1,18 @@
-//! The renderer: paints snapshot pages and the editor's view overlays with Skia onto a host canvas.
-//! It reads layout's paint traversal and `editing::view` only, and holds no
-//! editing state: everything it draws for the editor comes from one [`View`], built from the snapshot it paints.
-
-use std::collections::HashMap;
+//! The renderer's look and the screen: what pages and the editor's view overlays are drawn in (the theme, the
+//! overlay colours, the document's appearance) and how frames are laid over the pages, drawn by [`graphics`] with
+//! twip-graphics. It reads layout's paint traversal and `editing::view` only, and holds no editing state: everything
+//! it draws for the editor comes from one [`View`], built from the snapshot it paints.
 
 pub mod appearance;
 pub mod graphics;
-mod overlay;
 pub mod preview;
-pub mod retained;
 pub mod ruler;
-mod shape;
 pub mod svg;
 pub mod theme;
-#[cfg(target_os = "emscripten")]
-pub mod web;
 #[cfg(twip_window)]
 pub mod window;
 
-use skia_safe::font_arguments::{VariationPosition, variation_position::Coordinate};
-use skia_safe::{Canvas, Color, Data, Font, FontArguments, FontMgr, FourByteTag, Image, Paint, Point, RRect, Rect, Typeface, font::Edging};
-
-use crate::editing::view::View;
-use crate::font::Face;
-use crate::layout::fragment::{ImageKey, Item};
-use crate::layout::traverse::paint;
-
+pub use theme::Color;
 /// Where and how a frame is drawn: the scroll origin (CSS px), the canvas size, device pixels per CSS pixel and CSS
 /// pixels per point.
 #[derive(Clone, Copy, Debug)]
@@ -40,21 +27,15 @@ pub struct Frame {
     pub caret: bool,
 }
 
-/// Skia objects made from the layout's faces and the document's pictures, kept between frames.
+/// What frames are drawn in: the desk, the page's colour and the document's appearance, the chrome's theme and the
+/// overlay colours, and whether page content is kept between frames.
 #[derive(Default)]
 pub struct Renderer {
-    typefaces: HashMap<(usize, u32, u32), Option<Typeface>>,
-    images: HashMap<ImageKey, Option<Image>>,
-    /// Skia paths of the shapes drawn, by geometry.
-    paths: shape::PathCache,
     pub background: Option<Color>,
     /// Table gridlines (cell edges without borders) show, on screen only.
     pub gridlines: bool,
-    /// Glyph runs carry their characters (text blobs with clusters), so a PDF's text extracts as the document's.
-    pub with_text: bool,
-    /// Keep each page's content and draw it again from that ([`retained`]): on screen, not for PDF export.
+    /// Keep each page's content and draw it again from that ([`graphics::retained`]): on screen, not for PDF export.
     pub retain: bool,
-    pub retained: retained::Retained,
     /// Draw everything from scratch, past any retained page content: what a verified frame is compared with.
     pub direct: bool,
     /// The chrome's colours.
@@ -63,7 +44,6 @@ pub struct Renderer {
     pub overlay_colours: Option<Palette>,
     pub appearance: appearance::Appearance,
     pub page_colour: Option<u32>,
-    own_colours: bool,
 }
 
 /// The colours of the overlays the host can set. By default the lines and marks are at least 3:1 against the page,
@@ -92,37 +72,12 @@ pub enum ChromeFace {
     Mono600,
 }
 
-/// The font manager typefaces are made from font data with. On Linux it is Skia's FreeType alone: Fontconfig's (the
-/// system manager) starts the system FreeType when it scans fonts, and FreeType 2.14 then loads the system HarfBuzz
-/// for every library in the process. Windows and macOS draw with their own font services. One manager serves the
-/// process: making one asks the system for every installed family (on macOS, a round trip to the font server that
-/// all threads queue on).
-pub(crate) fn font_mgr() -> FontMgr {
-    struct Shared(FontMgr);
-    // SAFETY: none of the three managers (Skia m153: SkFontMgr_Custom, SkFontMgr_Mac, SkFontMgr_DirectWrite) changes
-    // after it's made but DirectWrite's typeface cache, which a mutex guards. Typefaces from data go through CoreText,
-    // DirectWrite, or the one FreeType scanner Skia already shares process-wide behind a mutex. The reference count is
-    // atomic. skia-safe leaves `FontMgr` unmarked.
-    unsafe impl Send for Shared {}
-    unsafe impl Sync for Shared {}
-    static MGR: std::sync::OnceLock<Shared> = std::sync::OnceLock::new();
-    MGR.get_or_init(|| Shared(FontMgr::custom_empty().unwrap_or_default())).0.clone()
-}
-
 /// The chrome faces' font files, by [`ChromeFace`]: both screens draw from these bytes.
 pub(crate) const CHROME_FONTS: [&[u8]; 2] =
     [include_bytes!("chrome_fonts/jetbrains-mono-500.ttf"), include_bytes!("chrome_fonts/jetbrains-mono-600.ttf")];
 
-/// A chrome typeface, made once per thread.
-pub fn chrome_typeface(face: ChromeFace) -> Option<Typeface> {
-    thread_local! {
-        static FACES: [Option<Typeface>; 2] = CHROME_FONTS.map(|b| font_mgr().new_from_data(Data::new_copy(b), 0));
-    }
-    FACES.with(|f| f[face as usize].clone())
-}
-
 pub fn rgb(c: u32) -> Color {
-    Color::from_rgb((c >> 16) as u8, (c >> 8) as u8, c as u8)
+    Color::rgb(c)
 }
 
 impl Renderer {
@@ -165,44 +120,9 @@ impl Renderer {
         }
     }
 
-    pub(super) fn ink(&self, c: u32) -> Color {
-        self.ink_for(self.own_colours, c)
-    }
-
     /// A document colour as drawn: through the appearance's mapping, unless the item keeps its own colours (`own`).
     pub(crate) fn ink_for(&self, own: bool, c: u32) -> Color {
         rgb(if own { c } else { self.appearance.map(c) })
-    }
-
-    /// Forgets decoded pictures (a new document).
-    pub fn clear_images(&mut self) {
-        self.images.clear();
-    }
-
-    /// Draws `face`'s glyphs from `data` (a single-face font file) instead of its own file: PDF export's subsets.
-    pub fn set_face_data(&mut self, face: &Face, data: &[u8]) {
-        let key = (std::sync::Arc::as_ptr(&face.data) as usize, face.index, face.instance);
-        self.typefaces.insert(key, font_mgr().new_from_data(Data::new_copy(data), 0));
-    }
-
-    fn typeface(&mut self, face: &Face) -> Option<Typeface> {
-        let key = (std::sync::Arc::as_ptr(&face.data) as usize, face.index, face.instance);
-        self.typefaces
-            .entry(key)
-            .or_insert_with(|| {
-                let typeface = font_mgr().new_from_data(Data::new_copy(&face.data), face.index)?;
-                if face.variations.is_empty() {
-                    return Some(typeface);
-                }
-                let coordinates: Vec<Coordinate> = face
-                    .variations
-                    .iter()
-                    .map(|&(t, value)| Coordinate { axis: FourByteTag::from_chars(t[0] as char, t[1] as char, t[2] as char, t[3] as char), value })
-                    .collect();
-                let arguments = FontArguments::new().set_variation_design_position(VariationPosition { coordinates: &coordinates });
-                typeface.clone_with_arguments(&arguments).or(Some(typeface))
-            })
-            .clone()
     }
 
     /// The pages a frame shows.
@@ -220,162 +140,12 @@ impl Renderer {
             _ => 0..0,
         }
     }
-
-    /// Draws a frame: the visible pages, then the view's overlays over them.
-    pub fn draw(&mut self, canvas: &Canvas, view: &View, images: &[Vec<u8>], f: &Frame) {
-        canvas.clear(self.background.unwrap_or(self.theme.tokens.desk));
-        canvas.save();
-        canvas.scale((f.dpr as f32, f.dpr as f32));
-        canvas.translate((f.origin_x as f32, f.origin_y as f32));
-        let k = f.px_per_pt;
-        let mut shadow = Paint::default();
-        shadow.set_anti_alias(true);
-        // Page colour
-        self.own_colours = false;
-        let mut paper = Paint::default();
-        paper.set_color(self.ink(self.page_colour.unwrap_or(0xFF_FFFF)));
-        let shadow_k = self.theme.tokens.shadow;
-        for i in view.pages_visible.clone() {
-            let Some(page) = view.snapshot.pages().get(i) else { continue };
-            let [x, y, w, h] = view.stack.pages[i];
-            let r = Rect::from_xywh((x * k) as f32, (y * k) as f32, (w * k) as f32, (h * k) as f32);
-            // The shadow only shows around the paper: clipping the paper out saves filling its whole area four times.
-            canvas.save();
-            canvas.clip_rect(r, skia_safe::ClipOp::Difference, false);
-            for (inflate, drop, alpha) in [(4.0, 3.0, 6), (3.0, 2.5, 10), (2.0, 2.0, 14), (1.0, 1.0, 22)] {
-                shadow.set_color(Color::from_argb((alpha as f32 * shadow_k).min(255.0) as u8, 0, 0, 0));
-                let s = Rect::new(r.left - inflate, r.top - inflate + drop, r.right + inflate, r.bottom + inflate + drop);
-                canvas.draw_rrect(RRect::new_rect_xy(s, inflate + 2.0, inflate + 2.0), &shadow);
-            }
-            canvas.restore();
-            canvas.draw_rect(r, &paper);
-            canvas.save();
-            canvas.translate((r.left, r.top));
-            canvas.scale((k as f32, k as f32));
-            if self.retain && !self.direct {
-                let mut kept = std::mem::take(&mut self.retained);
-                let inputs = retained::Inputs { gridlines: self.gridlines, appearance: self.appearance };
-                kept.draw(canvas, page, inputs, (w, h), |c| {
-                    paint(page, &mut |p| {
-                        self.own_colours = p.own_colours;
-                        self.item(c, &p.absolute(), images)
-                    });
-                });
-                self.retained = kept;
-            } else {
-                paint(page, &mut |p| {
-                    self.own_colours = p.own_colours;
-                    self.item(canvas, &p.absolute(), images)
-                });
-            }
-            self.own_colours = false;
-            self.overlays(canvas, view, images, i, f);
-            canvas.restore();
-        }
-        canvas.restore();
-        if self.retain {
-            self.retained.trim();
-        }
-    }
-
-    /// Draws one page item; the canvas is in page points.
-    pub fn draw_item(&mut self, canvas: &Canvas, item: &Item, images: &[Vec<u8>]) {
-        self.item(canvas, item, images);
-    }
-
-    fn item(&mut self, canvas: &Canvas, item: &Item, images: &[Vec<u8>]) {
-        let mut paint = Paint::default();
-        paint.set_anti_alias(true);
-        match item {
-            Item::Rect { rect: [x0, y0, x1, y1], colour } => {
-                paint.set_color(self.ink(*colour));
-                canvas.draw_rect(Rect::new(*x0 as f32, *y0 as f32, *x1 as f32, *y1 as f32), &paint);
-            }
-            Item::Glyphs(r) => {
-                if r.glyphs.is_empty() {
-                    return;
-                }
-                let Some(tf) = self.typeface(&r.face) else { return };
-                let mut font = Font::from_typeface(tf, r.size as f32);
-                font.set_subpixel(true).set_edging(Edging::AntiAlias).set_embolden(r.face.sim_bold);
-                if r.face.sim_italic {
-                    font.set_skew_x(-0.2);
-                }
-                paint.set_color(self.ink(r.colour.unwrap_or(0)));
-                if self.with_text && draw_text(canvas, r, &font, &paint) {
-                    return;
-                }
-                let ids: Vec<u16> = r.glyphs.iter().map(|g| g.0 as u16).collect();
-                let at: Vec<Point> = r.glyphs.iter().map(|g| Point::new(g.1 as f32, r.baseline as f32)).collect();
-                canvas.draw_glyphs_at(&ids, at.as_slice(), Point::new(0.0, 0.0), &font, &paint);
-            }
-            Item::Gridline { line: [x0, y0, x1, y1] } => {
-                if !self.gridlines {
-                    return;
-                }
-                paint.set_color(self.ink(0x9D_C3E6)).set_style(skia_safe::PaintStyle::Stroke).set_stroke_width(0.75);
-                paint.set_path_effect(skia_safe::PathEffect::dash(&[2.25, 1.5], 0.0));
-                canvas.draw_line((*x0 as f32, *y0 as f32), (*x1 as f32, *y1 as f32), &paint);
-            }
-            Item::Shape(s) => self.shape(canvas, s, images),
-            Item::Turned(t) => {
-                canvas.save();
-                canvas.rotate(t.deg as f32, Some(Point::new(t.centre[0] as f32, t.centre[1] as f32)));
-                for i in &t.items {
-                    self.item(canvas, i, images);
-                }
-                canvas.restore();
-            }
-            Item::Image { rect: [x0, y0, x1, y1], key } => {
-                let dst = Rect::new(*x0 as f32, *y0 as f32, *x1 as f32, *y1 as f32);
-                if let Some(bytes) = key.index.and_then(|i| images.get(i)).filter(|b| crate::docx::image::is_svg(b))
-                    && svg::draw(canvas, bytes, dst)
-                {
-                    return;
-                }
-                let image = self
-                    .images
-                    .entry(*key)
-                    .or_insert_with(|| key.index.and_then(|i| images.get(i)).and_then(|b| Image::from_encoded(Data::new_copy(b))))
-                    .clone();
-                match image {
-                    Some(img) => {
-                        canvas.draw_image_rect(&img, None, dst, &paint);
-                    }
-                    None => {
-                        // A picture Skia can't decode (EMF/WMF), or a placeholder without data: a light frame.
-                        let mut frame = Paint::default();
-                        frame.set_color(self.ink(0xC8_C8C8)).set_style(skia_safe::PaintStyle::Stroke);
-                        canvas.draw_rect(dst, &frame);
-                    }
-                }
-            }
-        }
-    }
-}
-
-/// Draws a glyph run as a text blob carrying its characters and clusters (Skia's PDF backend writes them as the
-/// glyphs' Unicode, or ActualText where a cluster is not one character per glyph). False when the run's characters
-/// can't be matched to its glyphs.
-fn draw_text(canvas: &Canvas, r: &crate::layout::fragment::GlyphRun, font: &Font, paint: &Paint) -> bool {
-    let Some(clusters) = graphics::clusters(r) else { return false };
-    let text: String = r.chars.iter().map(|c| c.0).collect();
-    let mut b = skia_safe::TextBlobBuilder::new();
-    let (ids, xs, utf8, cl) = b.alloc_run_text_pos_h(font, r.glyphs.len(), r.baseline as f32, text.len(), None);
-    for (k, &(g, x)) in r.glyphs.iter().enumerate() {
-        ids[k] = g as u16;
-        xs[k] = x as f32;
-    }
-    utf8.copy_from_slice(text.as_bytes());
-    cl.copy_from_slice(&clusters);
-    let Some(blob) = b.make() else { return false };
-    canvas.draw_text_blob(&blob, (0, 0), paint);
-    true
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use theme::rgb8;
 
     /// WCAG relative luminance.
     fn luminance(c: Color) -> f64 {
@@ -383,15 +153,15 @@ mod tests {
             let v = f64::from(v) / 255.0;
             if v <= 0.040_45 { v / 12.92 } else { ((v + 0.055) / 1.055).powf(2.4) }
         };
-        0.2126 * lin(c.r()) + 0.7152 * lin(c.g()) + 0.0722 * lin(c.b())
+        0.2126 * lin(c.r) + 0.7152 * lin(c.g) + 0.0722 * lin(c.b)
     }
 
     #[test]
     fn marks_on_a_dark_page_hold_against_it() {
         let r = Renderer { appearance: appearance::Appearance::Dark { page: appearance::PageMode::Dark }, ..Renderer::default() };
-        let page = r.ink(0xFF_FFFF);
+        let page = r.ink_for(false, 0xFF_FFFF);
         for c in [0xE6_0000, 0x00_78D4, 0xD1_3438, 0xC1_9C00] {
-            assert!(theme::contrast(r.ink(c), page) >= 3.0, "{c:06X} on the dark page");
+            assert!(theme::contrast(r.ink_for(false, c), page) >= 3.0, "{c:06X} on the dark page");
         }
     }
 
@@ -399,7 +169,7 @@ mod tests {
     fn the_caret_is_black_or_white_against_the_page() {
         let mut r = Renderer::default();
         let mut dark = theme::Theme::new(theme::Scheme::Dark, theme::AZURE);
-        dark.tokens.ink = Color::from_rgb(0xE6, 0xED, 0xF3);
+        dark.tokens.ink = rgb8(0xE6, 0xED, 0xF3);
         r.set_theme(dark);
         assert_eq!(r.caret(), Color::BLACK, "on the white page, whatever the chrome's text colour");
         r.appearance = appearance::Appearance::Dark { page: appearance::PageMode::Dark };
@@ -407,7 +177,7 @@ mod tests {
         r.appearance = appearance::Appearance::Light;
         r.page_colour = Some(0x10_2030);
         assert_eq!(r.caret(), Color::WHITE, "on a dark page colour");
-        r.overlay_colours = Some(Palette { marks: Color::RED, ..Palette::default() });
+        r.overlay_colours = Some(Palette { marks: theme::rgb(0xFF_0000), ..Palette::default() });
         assert_eq!(r.caret(), Color::WHITE, "whatever the host's overlay colours");
     }
 
@@ -425,7 +195,7 @@ mod tests {
     #[test]
     fn overlay_colours_the_host_set_outlast_a_theme_change() {
         let mut r = Renderer::default();
-        let mine = Palette { marks: Color::RED, ..Palette::default() };
+        let mine = Palette { marks: theme::rgb(0xFF_0000), ..Palette::default() };
         r.overlay_colours = Some(mine);
         r.set_theme(theme::Theme::new(theme::Scheme::Dark, theme::AZURE));
         assert_eq!(r.palette(), mine, "the host's colours stay");
@@ -438,10 +208,10 @@ mod tests {
 
     #[test]
     fn the_chrome_faces_load_and_draw_their_symbols() {
-        for face in [ChromeFace::Mono500, ChromeFace::Mono600] {
-            let tf = chrome_typeface(face).unwrap_or_else(|| panic!("{face:?} loads"));
+        for (face, data) in [ChromeFace::Mono500, ChromeFace::Mono600].into_iter().zip(CHROME_FONTS) {
+            let f = crate::font::shipped(data, "chrome").unwrap_or_else(|| panic!("{face:?} loads"));
             for c in ['0', 'A', 'z', '″', '×', 'Δ', '→', '·', '−', '°', '▾'] {
-                assert_ne!(tf.unichar_to_glyph(c as i32), 0, "{face:?} has {c}");
+                assert!(f.glyph(c).is_some_and(|g| g != 0), "{face:?} has {c}");
             }
         }
     }
@@ -452,7 +222,7 @@ mod tests {
         // (`the_default_selection_keeps_black_text_readable`).
         let p = Palette::default();
         for (name, c) in [("object", p.object), ("drop", p.drop), ("marks", p.marks), ("leaders", p.leaders)] {
-            for back in [Color::WHITE, Color::from_rgb(0xf3, 0xf3, 0xf3)] {
+            for back in [Color::WHITE, rgb8(0xf3, 0xf3, 0xf3)] {
                 let (a, b) = (luminance(c), luminance(back));
                 let ratio = (a.max(b) + 0.05) / (a.min(b) + 0.05);
                 assert!(ratio >= 3.0, "{name} against {back:?}: {ratio:.2}");

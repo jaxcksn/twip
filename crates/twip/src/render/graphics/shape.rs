@@ -12,14 +12,14 @@ use twip_graphics::paint::{BlendMode, Brush, Color, ColorFilter, Extend, ImagePa
 use twip_graphics::scene::{Clip, Filter, Layer, Recorder};
 
 use super::{Graphics, blended, pen, rect_path};
-use crate::drawing::colour::Rgba;
+use crate::drawing::colour::{Rgba, linear_to_srgb, srgb_to_linear};
 use crate::drawing::geom::{Geom, PathFill, Seg};
 use crate::drawing::paint::{
-    BlipMode, Cap, Dash, GradientKind, GradientPath, Join, Paint as Fill, RectAlign, ResolvedBlipAdjust, ResolvedLine, ResolvedShadow, TileFlip,
+    BlipMode, Cap, Compound, Dash, GradientKind, GradientPath, Join, Paint as Fill, PresetDash, RectAlign, ResolvedBlipAdjust, ResolvedLine,
+    ResolvedShadow, TileFlip,
 };
 use crate::drawing::units::Pct;
 use crate::layout::fragment::{ImageKey, ShapeItem};
-use crate::render::shape::{GLOW_GROW, GLOW_SOFT, SOFT_ERODE, SOFT_FADE, bands, dash_lengths, gradient_at, shaded, sigma};
 
 /// Shapes' outlines as paths, by geometry (the entry holds the geometry, so its address isn't reused).
 #[derive(Default)]
@@ -778,4 +778,110 @@ fn with_ends(path: &BezPath, line: &ResolvedLine) -> Vec<BezPath> {
         place(t, seg.end(), -direction(seg, 1.0));
     }
     regions
+}
+
+fn sigma(radius: f64) -> f32 {
+    (radius * SIGMA_PER_RADIUS) as f32
+}
+
+const SIGMA_PER_RADIUS: f64 = 0.5;
+const GLOW_GROW: f64 = 0.5;
+const GLOW_SOFT: f64 = 0.5;
+const SOFT_ERODE: f64 = 0.85;
+const SOFT_FADE: f64 = 0.64;
+
+fn shaded(c: Rgba, mode: PathFill) -> Rgba {
+    let (k, white) = match mode {
+        PathFill::Darken => (0.6, 0.0),
+        PathFill::DarkenLess => (0.8, 0.0),
+        PathFill::Lighten => (0.6, 0.4),
+        PathFill::LightenLess => (0.8, 0.2),
+        PathFill::Norm | PathFill::None => return c,
+    };
+    let f = |v: u8| (f64::from(v) * k + 255.0 * white).round() as u8;
+    Rgba { r: f(c.r), g: f(c.g), b: f(c.b), a: c.a }
+}
+
+const TWO_STOP_BLEND: [f64; 17] =
+    [0.0, 0.018, 0.0472, 0.0843, 0.1404, 0.209, 0.2927, 0.3873, 0.4934, 0.5922, 0.6913, 0.778, 0.8485, 0.9054, 0.949, 0.9779, 1.0];
+
+fn gradient_at(stops: &[(f64, Rgba)], t: f64) -> Rgba {
+    let (Some(first), Some(last)) = (stops.first(), stops.last()) else { return Rgba::default() };
+    if t <= first.0 {
+        return first.1;
+    }
+    if t >= last.0 {
+        return last.1;
+    }
+    let i = stops.iter().position(|(p, _)| *p >= t).unwrap_or(stops.len() - 1).max(1);
+    let ((p0, a), (p1, b)) = (stops[i - 1], stops[i]);
+    let f = if p1 > p0 { (t - p0) / (p1 - p0) } else { 1.0 };
+    let mix = |x: u8, y: u8, f: f64| f64::from(x) + (f64::from(y) - f64::from(x)) * f;
+    if stops.len() == 2 {
+        let at = f.clamp(0.0, 1.0) * 16.0;
+        let k = (at.floor() as usize).min(15);
+        let e = TWO_STOP_BLEND[k] + (TWO_STOP_BLEND[k + 1] - TWO_STOP_BLEND[k]) * (at - k as f64);
+        let lin = |x: u8, y: u8| {
+            let (x, y) = (srgb_to_linear(f64::from(x) / 255.0), srgb_to_linear(f64::from(y) / 255.0));
+            (linear_to_srgb((x + (y - x) * e).clamp(0.0, 1.0)) * 255.0).round() as u8
+        };
+        return Rgba { r: lin(a.r, b.r), g: lin(a.g, b.g), b: lin(a.b, b.b), a: mix(a.a, b.a, f).round() as u8 };
+    }
+    let m = |x: u8, y: u8| mix(x, y, f).round() as u8;
+    Rgba { r: m(a.r, b.r), g: m(a.g, b.g), b: m(a.b, b.b), a: m(a.a, b.a) }
+}
+
+fn dash_lengths(d: PresetDash) -> &'static [f64] {
+    match d {
+        PresetDash::Solid => &[],
+        PresetDash::Dot => &[1.0, 3.0],
+        PresetDash::Dash => &[4.0, 3.0],
+        PresetDash::LgDash => &[8.0, 3.0],
+        PresetDash::DashDot => &[4.0, 3.0, 1.0, 3.0],
+        PresetDash::LgDashDot => &[8.0, 3.0, 1.0, 3.0],
+        PresetDash::LgDashDotDot => &[8.0, 3.0, 1.0, 3.0, 1.0, 3.0],
+        PresetDash::SysDash => &[3.0, 1.0],
+        PresetDash::SysDot => &[1.0, 1.0],
+        PresetDash::SysDashDot => &[3.0, 1.0, 1.0, 1.0],
+        PresetDash::SysDashDotDot => &[3.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+    }
+}
+
+fn bands(line: &ResolvedLine) -> Vec<(f64, f64)> {
+    let mut v = match line.compound {
+        Compound::Single => vec![(-0.5, 0.5)],
+        Compound::Double => vec![(-0.5, -1.0 / 6.0), (1.0 / 6.0, 0.5)],
+        Compound::ThickThin => vec![(-0.5, 0.1), (0.3, 0.5)],
+        Compound::ThinThick => vec![(-0.5, -0.3), (-0.1, 0.5)],
+        Compound::Triple => vec![(-0.5, -1.0 / 3.0), (-1.0 / 6.0, 1.0 / 6.0), (1.0 / 3.0, 0.5)],
+    };
+    if line.inset {
+        v = v.into_iter().map(|(a, b)| (a + 0.5, b + 0.5)).collect();
+    }
+    v
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shaded_fills_move_toward_black_and_white() {
+        let c = Rgba::rgb(0x4472C4);
+        assert_eq!(shaded(c, PathFill::Darken), Rgba::rgb(0x294476));
+        assert_eq!(shaded(c, PathFill::DarkenLess), Rgba::rgb(0x365B9D));
+        assert_eq!(shaded(c, PathFill::Lighten), Rgba::rgb(0x8FAADC));
+        assert_eq!(shaded(c, PathFill::LightenLess), Rgba::rgb(0x698ED0));
+        assert_eq!(shaded(c, PathFill::Norm), c);
+    }
+
+    #[test]
+    fn two_stops_blend_along_the_curve_in_linear_light_and_more_stops_linearly() {
+        let (a, b) = (Rgba::rgb(0x156082), Rgba::rgb(0xFFC000));
+        let mid = gradient_at(&[(0.0, a), (1.0, b)], 0.5);
+        assert!((i32::from(mid.r) - 187).abs() <= 1 && (i32::from(mid.g) - 154).abs() <= 1 && (i32::from(mid.b) - 94).abs() <= 1, "{mid:?}");
+        let three = gradient_at(&[(0.0, Rgba::rgb(0x000000)), (0.5, Rgba::rgb(0x808080)), (1.0, Rgba::rgb(0xFFFFFF))], 0.25);
+        assert_eq!(three.r, 64);
+        assert_eq!(gradient_at(&[(0.2, a), (0.8, b)], 0.0), a);
+    }
 }

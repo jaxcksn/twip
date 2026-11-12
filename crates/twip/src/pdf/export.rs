@@ -298,8 +298,8 @@ pub fn export(
 /// `data` (a single-face TrueType file) with only the outlines of `chars`' glyphs: the bundled chrome fonts
 /// (`twip-tools chrome-fonts`). `None` for a file Skia can't read or a CFF face.
 pub fn subset_chars(data: &[u8], chars: &str) -> Option<Vec<u8>> {
-    let face = crate::render::font_mgr().new_from_data(skia_safe::Data::new_copy(data), 0)?;
-    let used: BTreeSet<u16> = chars.chars().map(|c| face.unichar_to_glyph(c as i32)).filter(|&g| g != 0).collect();
+    let face = crate::font::shipped(data, "subset")?;
+    let used: BTreeSet<u16> = chars.chars().filter_map(|c| face.glyph(c)).filter(|&g| g != 0).map(|g| g as u16).collect();
     twip_graphics::pdf::subset_truetype(data, 0, &used)
 }
 

@@ -8,7 +8,7 @@ use twip_graphics::kurbo::{self, Affine};
 use twip_graphics::paint::Color;
 use twip_graphics::scene::{Clip, Recorder};
 
-use super::{Graphics, chrome_face, colour, dashed, measure, pen, rect_path};
+use super::{Graphics, chrome_face, dashed, measure, pen, rect_path};
 use crate::api::services::{Popover, RulerView, TabSelector};
 use crate::api::value::TabAlignment;
 use crate::editing::view::{RulerMeasure, Tone};
@@ -123,8 +123,8 @@ impl Graphics {
 // shortcut: one built-in look; a painter plugin will replace this function.
 pub(super) fn paint(g: &mut Graphics, rec: &mut Recorder, view: &RulerView, theme: &Theme, f: &RulerFrame) {
     let t = &theme.tokens;
-    let accent = colour(theme.accent.solid);
-    let (ink, ink2, ink3, paper, line, desk) = (colour(t.ink), colour(t.ink2), colour(t.ink3), colour(t.paper), colour(t.line), colour(t.desk));
+    let accent = theme.accent.solid;
+    let (ink, ink2, ink3, paper, line, desk) = (t.ink, t.ink2, t.ink3, t.paper, t.line, t.desk);
     let band = BAND;
     let (w, h) = (f.width, f.height);
     let (major, minor, per) = marks(view.unit);
@@ -189,7 +189,7 @@ pub(super) fn paint(g: &mut Graphics, rec: &mut Recorder, view: &RulerView, them
         // The margins' handles tint while hovered.
         for m in [Marker::TextStart, Marker::TextEnd].into_iter().filter(|m| f.hover == Some(*m)) {
             let at = x(if m == Marker::TextStart { start } else { end });
-            fill(rec, at - 4.0, S0, at + 4.0, S1, colour(theme.accent.soft));
+            fill(rec, at - 4.0, S0, at + 4.0, S1, theme.accent.soft);
         }
         // Table column markers: hatched boxes, accent while dragged.
         for (i, b) in r.table_columns.iter().enumerate() {
@@ -281,7 +281,7 @@ pub(super) fn paint(g: &mut Graphics, rec: &mut Recorder, view: &RulerView, them
         });
         for m in [Marker::Top, Marker::Bottom].into_iter().filter(|m| f.hover == Some(*m)) {
             let at = y(if m == Marker::Top { top } else { bottom });
-            fill(rec, S0, at - 4.0, S1, at + 4.0, colour(theme.accent.soft));
+            fill(rec, S0, at - 4.0, S1, at + 4.0, theme.accent.soft);
         }
         for (i, b) in r.table_rows.iter().enumerate() {
             let m = Marker::TableRow(i as u32);
@@ -305,7 +305,7 @@ pub(super) fn paint(g: &mut Graphics, rec: &mut Recorder, view: &RulerView, them
     if let Some((horizontal, at)) = f.guide {
         let guide = dashed(1.0, 3.0, 3.0);
         let at = at + 0.5;
-        let c = colour(f.page.accent.solid);
+        let c = f.page.accent.solid;
         if horizontal {
             rec.line((at, band).into(), (at, h).into(), &guide, c);
         } else {
@@ -326,13 +326,11 @@ fn measures(g: &mut Graphics, rec: &mut Recorder, view: &RulerView, theme: &Them
     let (Some(value), Some(chip)) = (chrome_face(ChromeFace::Mono600), chrome_face(ChromeFace::Mono500)) else { return };
     let (h, v) = (view.horizontal, view.vertical);
     let client = |p: [f64; 2]| (h.origin + p[0] * h.scale, v.origin + p[1] * v.scale);
-    let tone = |tone: Tone| {
-        colour(match tone {
-            Tone::Accent => theme.accent.solid,
-            Tone::Muted => t.ink2,
-        })
+    let tone = |tone: Tone| match tone {
+        Tone::Accent => theme.accent.solid,
+        Tone::Muted => t.ink2,
     };
-    let (paper, ink) = (colour(t.paper), colour(t.ink));
+    let (paper, ink) = (t.paper, t.ink);
     for m in measures {
         match m {
             RulerMeasure::Dimension { from, to, label: text, tone: c } => {

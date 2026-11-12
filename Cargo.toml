@@ -14,10 +14,6 @@ rust-version = "1.88"
 [profile.dev]
 debug = "line-tables-only"
 
-# Skia compiles at the same level in both profiles, so one prebuilt Skia archive serves debug and release.
-[profile.dev.package.skia-bindings]
-opt-level = "s"
-
 [profile.release]
 opt-level = "s"
 lto = true

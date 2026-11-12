@@ -1,4 +1,4 @@
-//! The developer tools: `twip-tools <command> ...` (golden, dump, dumpdiff, roundtrip, render, oracle, pdf, presets, chrome-fonts, autocorrect-list, ...). Native only; the
+//! The developer tools: `twip-tools <command> ...` (golden, dump, dumpdiff, roundtrip, render, pdf, presets, chrome-fonts, autocorrect-list, ...). Native only; the
 //! browser module is `twip-wasm`. Speed is measured by the engine's Divan benchmarks (`cargo bench -p twip`).
 
 #[cfg(target_os = "emscripten")]
@@ -20,8 +20,6 @@ fn exit_on_error(result: Result<(), String>) {
 
 #[cfg(not(target_os = "emscripten"))]
 fn main() {
-    use skia_safe::{AlphaType, ColorType, EncodedImageFormat, ImageInfo};
-
     let mut args = std::env::args().skip(1).peekable();
     match args.peek().map(String::as_str) {
         Some("dump") => {
@@ -71,33 +69,6 @@ fn main() {
                 keywords: flag("--keywords").map(|k| k.split(',').map(str::to_string).collect()).unwrap_or_default(),
             };
             return exit_on_error(cli::pdf::run(std::path::Path::new(docx), std::path::Path::new(out), &options));
-        }
-        Some("oracle") => {
-            // twip oracle <docx> <out dir> [scale]: every page drawn by the Skia renderer and by twip-graphics at
-            // `scale` px per point (default 1), side by side with a diff, and how far they differ (cli/oracle.rs).
-            let a: Vec<String> = args.skip(1).collect();
-            let (Some(docx), Some(out)) = (a.first(), a.get(1)) else {
-                return exit_on_error(Err("usage: oracle <docx> <out dir> [scale]".into()));
-            };
-            let scale = a.get(2).and_then(|s| s.parse::<f32>().ok()).filter(|s| *s > 0.0).unwrap_or(1.0);
-            let result = cli::oracle::run(std::path::Path::new(docx), std::path::Path::new(out), scale);
-            return exit_on_error(result.map(|pages| {
-                let pct = |n: usize, of: usize| 100.0 * n as f64 / of.max(1) as f64;
-                for (i, p) in pages.iter().enumerate() {
-                    println!(
-                        "page {:3}: {:7} ink px, {:6.2}% differ by > 16, {:6.2}% by > 64, largest {}; {} image px, {:.2}% by > 64",
-                        i + 1,
-                        p.ink,
-                        pct(p.over16, p.ink),
-                        pct(p.over64, p.ink),
-                        p.max,
-                        p.image,
-                        pct(p.image_over64, p.image)
-                    );
-                }
-                let (ink, o16, o64) = pages.iter().fold((0, 0, 0), |(a, b, c), p| (a + p.ink, b + p.over16, c + p.over64));
-                println!("all {} pages: {:.2}% of ink px differ by > 16, {:.2}% by > 64 (into {out})", pages.len(), pct(o16, ink), pct(o64, ink));
-            }));
         }
         Some("autocorrect-list") => {
             // twip autocorrect-list <dir> <out dir>: the shipped AutoCorrect lists (cli/autocorrect.rs).
@@ -182,9 +153,8 @@ fn main() {
         return;
     }
     if args.peek().map(String::as_str) == Some("render") {
-        // twip render <doc.docx> <out.png> [zoom] [text] [--gpu | --skia | --graphics]: the editor's view of a document
-        // (a CPU frame, drawn by the build's CPU screen or the one named; or the window's frame, drawn by twip-graphics
-        // on the GPU), with `text` typed at the start of the first paragraph.
+        // twip render <doc.docx> <out.png> [zoom] [text] [--gpu]: the editor's view of a document (a CPU frame, or the
+        // window's frame drawn on the GPU), with `text` typed at the start of the first paragraph.
         // `--appearance=dark|darkWithLightPage|light` and `--theme=dark|light` set the view options of the same names.
         let a: Vec<String> = args.skip(1).collect();
         let gpu = a.iter().any(|x| x == "--gpu");
@@ -194,7 +164,6 @@ fn main() {
             theme: flag("theme").map(|v| serde_json::from_str(&v).expect("a theme: light or dark")),
             ..Default::default()
         };
-        let screen = if a.iter().any(|x| x == "--skia") { Some(false) } else { a.iter().any(|x| x == "--graphics").then_some(true) };
         let a: Vec<String> = a.into_iter().filter(|x| !x.starts_with("--")).collect();
         use twip::api::input::{Key, Modifiers};
         let mut engine = twip::api::engine::Engine::new(twip::api::fonts::FontLibrary::system());
@@ -215,22 +184,20 @@ fn main() {
         let f = e.host().frame_info();
         let (w, h) = (f.content_width, f.content_height.min(8000.0));
         e.host().set_size(w, h, 1.0);
-        let info = ImageInfo::new((w.ceil() as i32, (h.ceil() as i32).min(8000)), ColorType::RGBA8888, AlphaType::Premul, None);
-        if let Some(on) = screen {
-            e.host().set_graphics_screen(on);
-        }
-        let (pw, ph) = (info.width() as u32, info.height() as u32);
+        let (pw, ph) = (w.ceil() as u32, (h.ceil() as u32).min(8000));
         let mut pixels = vec![0u8; pw as usize * ph as usize * 4];
         if gpu {
             e.host().frame_gpu_rgba(&mut pixels, pw, ph).expect("a GPU frame");
         } else {
             e.host().frame_rgba(&mut pixels, pw, ph).expect("a CPU frame");
         }
-        let image = skia_safe::images::raster_from_data(&info, skia_safe::Data::new_copy(&pixels), info.min_row_bytes()).expect("image from pixels");
-        let png = image.encode(None, EncodedImageFormat::PNG, None).expect("PNG encode");
-        std::fs::write(&a[1], png.as_bytes()).expect("write PNG");
+        // The frame is opaque (the desk and the pages), so its premultiplied pixels are straight RGBA.
+        let file = std::io::BufWriter::new(std::fs::File::create(&a[1]).expect("create the PNG"));
+        let mut encoder = png::Encoder::new(file, pw, ph);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.write_header().and_then(|mut w| w.write_image_data(&pixels)).expect("write PNG");
         println!("{}: wrote {}", if gpu { "GPU" } else { "CPU raster" }, a[1]);
         return;
     }
-    exit_on_error(Err("usage: twip-tools <dump|dumpdiff|roundtrip|units|golden|diff|rows|pairs|metrics|render|oracle> ...".into()));
+    exit_on_error(Err("usage: twip-tools <dump|dumpdiff|roundtrip|units|golden|diff|rows|pairs|metrics|render> ...".into()));
 }

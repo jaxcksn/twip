@@ -5,16 +5,13 @@
 //! percentage geometry lays itself out at whatever size the picture has. Text, `use`, masks, filters, patterns and
 //! style sheets aren't drawn.
 //!
-//! [`walk`] reads the file and replays what it draws into a [`Sink`], in kurbo's geometry; [`draw`] is the Skia
-//! screen's sink, `render::graphics::svg` the twip-graphics screen's.
+//! [`walk`] reads the file and replays what it draws into a [`Sink`], in kurbo's geometry; `render::graphics::svg`
+//! records it into a picture.
 
 use std::collections::HashMap;
 
 use roxmltree::{Document, Node};
-use skia_safe::gradient::{Colors, Gradient, Interpolation, shaders};
-use skia_safe::{AlphaType, Canvas, ClipOp, Color, Color4f, ColorType, ImageInfo, Matrix, Paint, PaintCap, PaintJoin, PaintStyle};
-use skia_safe::{PathBuilder, PathFillType, Point as SkPoint, Rect, TileMode};
-use twip_graphics::kurbo::{self, Affine, BezPath, Cap, Join, PathEl, Point, Shape};
+use twip_graphics::kurbo::{self, Affine, BezPath, Cap, Join, Point, Shape};
 
 /// Where an SVG draws, in the picture's space: a backend's canvas.
 pub trait Sink {
@@ -65,12 +62,6 @@ pub enum Spread {
     Repeat,
 }
 
-/// Draws an SVG into `dst` (the picture's box, which is its viewport); false when the bytes aren't an SVG.
-pub fn draw(canvas: &Canvas, bytes: &[u8], dst: Rect) -> bool {
-    let dst = kurbo::Rect::new(f64::from(dst.left), f64::from(dst.top), f64::from(dst.right), f64::from(dst.bottom));
-    walk(&mut SkiaSink(canvas), bytes, dst)
-}
-
 /// Reads an SVG and draws it into `dst` (the picture's box, which is its viewport) through `sink`; false when the
 /// bytes aren't an SVG.
 // ponytail: parsed again on every draw; cache the tree per image if large SVGs show up in profiles.
@@ -105,116 +96,6 @@ pub fn walk(sink: &mut impl Sink, bytes: &[u8], dst: kurbo::Rect) -> bool {
     true
 }
 
-/// The Skia screen's sink: a canvas.
-struct SkiaSink<'a>(&'a Canvas);
-
-/// A kurbo path as a Skia path, filled by `even_odd` or the non-zero rule.
-fn skia_path(path: &BezPath, even_odd: bool) -> skia_safe::Path {
-    let mut b = PathBuilder::new();
-    let p = |q: Point| SkPoint::new(q.x as f32, q.y as f32);
-    for el in path.elements() {
-        match *el {
-            PathEl::MoveTo(a) => _ = b.move_to(p(a)),
-            PathEl::LineTo(a) => _ = b.line_to(p(a)),
-            PathEl::QuadTo(c, a) => _ = b.quad_to(p(c), p(a)),
-            PathEl::CurveTo(c0, c1, a) => _ = b.cubic_to(p(c0), p(c1), p(a)),
-            PathEl::ClosePath => _ = b.close(),
-        }
-    }
-    let mut path = b.detach();
-    path.set_fill_type(if even_odd { PathFillType::EvenOdd } else { PathFillType::Winding });
-    path
-}
-
-fn skia_matrix(m: Affine) -> Matrix {
-    let [a, b, c, d, e, f] = m.as_coeffs().map(|v| v as f32);
-    Matrix::new_all(a, c, e, b, d, f, 0.0, 0.0, 1.0)
-}
-
-impl SkiaSink<'_> {
-    fn paint(brush: &Brush) -> Paint {
-        let mut p = Paint::default();
-        p.set_anti_alias(true);
-        match brush {
-            Brush::Solid([r, g, b, a]) => _ = p.set_color4f(Color4f::new(*r, *g, *b, *a), None),
-            Brush::Gradient(g) => {
-                let pos: Vec<f32> = g.stops.iter().map(|s| s.0).collect();
-                let cols: Vec<Color4f> = g.stops.iter().map(|(_, [r, gr, b, a])| Color4f::new(*r, *gr, *b, *a)).collect();
-                let mode = match g.spread {
-                    Spread::Pad => TileMode::Clamp,
-                    Spread::Reflect => TileMode::Mirror,
-                    Spread::Repeat => TileMode::Repeat,
-                };
-                let grad = Gradient::new(Colors::new(&cols, Some(pos.as_slice()), mode, None), Interpolation::default());
-                let m = skia_matrix(g.transform);
-                let sk = |q: Point| SkPoint::new(q.x as f32, q.y as f32);
-                p.set_shader(match g.kind {
-                    GradientKind::Linear { start, end } => shaders::linear_gradient((sk(start), sk(end)), &grad, Some(&m)),
-                    GradientKind::Radial { centre, radius } => shaders::radial_gradient((sk(centre), radius as f32), &grad, Some(&m)),
-                });
-            }
-        }
-        p
-    }
-}
-
-impl Sink for SkiaSink<'_> {
-    fn save(&mut self) {
-        self.0.save();
-    }
-
-    fn restore(&mut self) {
-        self.0.restore();
-    }
-
-    fn transform(&mut self, m: Affine) {
-        self.0.concat(&skia_matrix(m));
-    }
-
-    fn clip_rect(&mut self, r: kurbo::Rect) {
-        self.0.clip_rect(Rect::new(r.x0 as f32, r.y0 as f32, r.x1 as f32, r.y1 as f32), None, true);
-    }
-
-    fn clip_path(&mut self, path: &BezPath, even_odd: bool) {
-        self.0.clip_path(&skia_path(path, even_odd), ClipOp::Intersect, true);
-    }
-
-    fn begin_layer(&mut self, opacity: f32) {
-        self.0.save_layer_alpha_f(None, opacity);
-    }
-
-    fn end_layer(&mut self) {
-        self.0.restore();
-    }
-
-    fn fill(&mut self, path: &BezPath, even_odd: bool, brush: &Brush) {
-        let mut p = Self::paint(brush);
-        p.set_style(PaintStyle::Fill);
-        self.0.draw_path(&skia_path(path, even_odd), &p);
-    }
-
-    fn stroke(&mut self, path: &BezPath, stroke: &kurbo::Stroke, brush: &Brush) {
-        let mut p = Self::paint(brush);
-        let cap = match stroke.start_cap {
-            Cap::Butt => PaintCap::Butt,
-            Cap::Round => PaintCap::Round,
-            Cap::Square => PaintCap::Square,
-        };
-        let join = match stroke.join {
-            Join::Bevel => PaintJoin::Bevel,
-            Join::Miter => PaintJoin::Miter,
-            Join::Round => PaintJoin::Round,
-        };
-        p.set_style(PaintStyle::Stroke).set_stroke_width(stroke.width as f32).set_stroke_cap(cap).set_stroke_join(join);
-        p.set_stroke_miter(stroke.miter_limit as f32);
-        if !stroke.dash_pattern.is_empty() {
-            let d: Vec<f32> = stroke.dash_pattern.iter().map(|v| *v as f32).collect();
-            p.set_path_effect(skia_safe::PathEffect::dash(&d, stroke.dash_offset as f32));
-        }
-        self.0.draw_path(&skia_path(path, false), &p);
-    }
-}
-
 /// Whether the text a doctype's entities expand to stays small, so the doctype may be read (illustration tools
 /// declare their namespaces as entities). roxmltree resolves at most 255 references inside each reference, and no
 /// entity's value is longer than the doctype, so each `&` expands to at most 256 doctypes.
@@ -242,20 +123,37 @@ fn deeper_than(doc: &Document, max: usize) -> bool {
 
 /// An SVG drawn at `w` × `h` pixels as a PNG: the fallback picture Word writes beside an SVG.
 pub fn fallback_png(bytes: &[u8], w: i32, h: i32) -> Option<Vec<u8>> {
-    let (w, h) = (w.clamp(1, 2048), h.clamp(1, 2048));
-    let mut s = skia_safe::surfaces::raster_n32_premul((w, h))?;
-    s.canvas().clear(Color::TRANSPARENT);
-    if !draw(s.canvas(), bytes, Rect::from_wh(w as f32, h as f32)) {
+    let (w, h) = (w.clamp(1, 2048) as u32, h.clamp(1, 2048) as u32);
+    Some(png(w, h, &rgba(bytes, w, h)?))
+}
+
+/// An SVG drawn at `w` × `h` pixels by twip-graphics on the CPU: unpremultiplied RGBA, rows packed. `None` when the
+/// bytes aren't an SVG.
+pub(crate) fn rgba(bytes: &[u8], w: u32, h: u32) -> Option<Vec<u8>> {
+    use twip_graphics::cpu::{Draw, Format, Frame, Renderer, Target};
+    let mut rec = twip_graphics::scene::Recorder::new();
+    if !super::graphics::svg::draw(&mut rec, bytes, kurbo::Rect::new(0.0, 0.0, f64::from(w), f64::from(h))) {
         return None;
     }
-    let info = ImageInfo::new((w, h), ColorType::RGBA8888, AlphaType::Unpremul, None);
-    let mut px = vec![0u8; (w * h * 4) as usize];
-    s.read_pixels(&info, &mut px, (w * 4) as usize, (0, 0)).then_some(())?;
-    Some(png(w as u32, h as u32, &px))
+    let picture = rec.finish();
+    let mut px = vec![0u8; w as usize * h as usize * 4];
+    let mut target = Target::new(&mut px, w, h, w as usize * 4, Format::Rgba8).ok()?;
+    let draws = [Draw { picture: &picture, transform: Affine::IDENTITY }];
+    let clear = Some(twip_graphics::paint::Color::TRANSPARENT);
+    Renderer::new().render(&mut target, &twip_graphics::Resources::default(), &Frame { clear, draws: &draws });
+    for p in px.as_chunks_mut::<4>().0 {
+        let a = p[3];
+        if a != 0 && a != 255 {
+            for c in &mut p[..3] {
+                *c = ((u32::from(*c) * 255 + u32::from(a) / 2) / u32::from(a)).min(255) as u8;
+            }
+        }
+    }
+    Some(px)
 }
 
 /// RGBA pixels as a PNG.
-fn png(w: u32, h: u32, rgba: &[u8]) -> Vec<u8> {
+pub(crate) fn png(w: u32, h: u32, rgba: &[u8]) -> Vec<u8> {
     use std::io::Write;
     let mut raw = Vec::with_capacity(rgba.len() + h as usize);
     for row in rgba.chunks(w as usize * 4) {
@@ -890,15 +788,15 @@ pub(crate) mod tests {
   </svg>
 </svg>"##;
 
-    /// RGBA pixels (unpremultiplied) of the SVG drawn at `w` × `h` by Skia.
+    /// RGBA pixels (unpremultiplied) of the SVG drawn at `w` × `h`.
     pub(crate) fn pixels(svg: &str, w: i32, h: i32) -> Vec<[u8; 4]> {
-        let png = fallback_png(svg.as_bytes(), w, h).expect("draws");
-        let img = skia_safe::Image::from_encoded(skia_safe::Data::new_copy(&png)).expect("a PNG");
-        assert_eq!((img.width(), img.height()), (w, h));
-        let info = ImageInfo::new((w, h), ColorType::RGBA8888, AlphaType::Unpremul, None);
-        let mut px = vec![0u8; (w * h * 4) as usize];
-        assert!(img.read_pixels(&info, &mut px, (w * 4) as usize, (0, 0), skia_safe::image::CachingHint::Allow));
+        let px = rgba(svg.as_bytes(), w as u32, h as u32).expect("draws");
         px.chunks(4).map(|c| [c[0], c[1], c[2], c[3]]).collect()
+    }
+
+    /// Whether the bytes draw as an SVG.
+    fn draws(bytes: &[u8]) -> bool {
+        rgba(bytes, 4, 4).is_some()
     }
 
     /// The sizes the adaptive placeholder is checked at.
@@ -955,22 +853,21 @@ pub(crate) mod tests {
         assert_eq!(aspect_of("xMinYMax slice"), Some((0.0, 1.0, true)));
         let m = transform("translate(10 20) scale(2)").expect("a transform");
         assert_eq!(m * Point::new(1.0, 1.0), Point::new(12.0, 22.0));
-        assert!(!draw(skia_safe::surfaces::raster_n32_premul((4, 4)).unwrap().canvas(), b"<html/>", Rect::from_wh(4.0, 4.0)));
+        assert!(!draws(b"<html/>"));
     }
 
     #[test]
     fn entity_bombs_and_deep_trees_are_not_drawn() {
-        let canvas = || skia_safe::surfaces::raster_n32_premul((4, 4)).unwrap();
         let svg = |body: &str| format!(r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4 4">{body}</svg>"#);
         // Illustration tools' namespace entities read.
         let named = r#"<!DOCTYPE svg [<!ENTITY ns_svg "http://www.w3.org/2000/svg">]><svg xmlns="&ns_svg;"/>"#;
-        assert!(entities_bounded(named) && draw(canvas().canvas(), named.as_bytes(), Rect::from_wh(4.0, 4.0)));
+        assert!(entities_bounded(named) && draws(named.as_bytes()));
         // 64 KB of entity referenced 250 times a reference: the doctype isn't read, so the file isn't drawn.
         let a = "x".repeat(1 << 16);
         let bomb = format!(r#"<!DOCTYPE svg [<!ENTITY a "{a}"><!ENTITY b "{}">]>{}"#, "&a;".repeat(250), svg(&"&b;".repeat(20)));
-        assert!(!entities_bounded(&bomb) && !draw(canvas().canvas(), bomb.as_bytes(), Rect::from_wh(4.0, 4.0)));
+        assert!(!entities_bounded(&bomb) && !draws(bomb.as_bytes()));
         let deep = svg(&format!("{}{}", "<g>".repeat(10_000), "</g>".repeat(10_000)));
-        assert!(!draw(canvas().canvas(), deep.as_bytes(), Rect::from_wh(4.0, 4.0)));
+        assert!(!draws(deep.as_bytes()));
     }
 
     fn aspect_of(v: &str) -> Option<(f32, f32, bool)> {

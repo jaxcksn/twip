@@ -6,7 +6,7 @@ use twip_graphics::kurbo::{self, Affine};
 use twip_graphics::paint::{BlendMode, Color};
 use twip_graphics::scene::{Clip, Layer, Recorder};
 
-use super::{Graphics, aliased, chrome_face, colour, dashed, measure, pen, rect, rect_path};
+use super::{Graphics, aliased, chrome_face, dashed, measure, pen, rect, rect_path};
 use crate::editing::view::{MarkKind, SelectionView, View};
 use crate::layout::fragment::Item;
 use crate::render::{ChromeFace, Frame, Renderer};
@@ -22,17 +22,17 @@ impl Graphics {
     pub(super) fn overlays(&mut self, rec: &mut Recorder, r: &Renderer, view: &View, images: &[Vec<u8>], i: usize, f: &Frame) {
         let k = f.px_per_pt;
         let (page, palette) = (r.page_theme(), r.palette());
-        let ink = |c: u32| colour(r.ink_for(false, c));
+        let ink = |c: u32| r.ink_for(false, c);
         // A light page: the tint multiplied under the text, which keeps its colour; a dark one darkens under multiply,
         // so the accent is laid over it.
-        let highlight = aliased(colour(palette.selection));
+        let highlight = aliased(palette.selection);
         let highlight = if page.is_dark() { highlight } else { twip_graphics::paint::Paint { blend: BlendMode::Multiply, ..highlight } };
         let fade = aliased(ink(0xFF_FFFF).with_alpha(130));
-        let object = colour(palette.object);
+        let object = palette.object;
         let outline = pen(0.75);
         // Object chrome: 1 px lines, the page's colour behind handles.
         let hair = pen(1.0 / k);
-        let paper = colour(r.page());
+        let paper = r.page();
         // Field shading: multiplied under the text on a light page, screened over a dark one.
         // shortcut: a highlight inside a field is tinted by the shading; drawing it beneath the page's items would
         // leave the highlight untouched.
@@ -69,7 +69,7 @@ impl Graphics {
         }
         // The correction just made: a dashed accent underline, and its options button (16 x 12 px) under it.
         if let Some(c) = &view.correction {
-            let accent = colour(page.accent.solid);
+            let accent = page.accent.solid;
             for (_, [x0, _, x1, y1]) in c.rects.iter().filter(|(pg, _)| *pg == i) {
                 rec.line((*x0, y1 - 0.5).into(), (*x1, y1 - 0.5).into(), &dashed(0.75, 2.25, 1.5), accent);
             }
@@ -104,7 +104,7 @@ impl Graphics {
             self.polyline(rec, wave(x0, x1, y1 - 1.5 * amp, step, amp), &pen(2.0 / px), c.with_alpha(255));
         }
         if let Some(c) = view.drop.as_ref().filter(|c| c.page == i) {
-            rec.line((c.x, c.top).into(), (c.x, c.bottom).into(), &dashed(0.75, 1.5, 1.5), aliased(colour(palette.drop)));
+            rec.line((c.x, c.top).into(), (c.x, c.bottom).into(), &dashed(0.75, 1.5, 1.5), aliased(palette.drop));
         }
         if let Some((_, [x0, y0, x1, y1])) = view.guide.filter(|(pg, _)| *pg == i) {
             rec.line((x0, y0).into(), (x1, y1).into(), &outline, aliased(object));
@@ -212,7 +212,7 @@ impl Graphics {
         // The caret: a bar at the insertion point, at least one device pixel wide, last so nothing covers it.
         if let Some(c) = view.caret.as_ref().filter(|c| f.caret && c.page == i && matches!(view.selection, SelectionView::None)) {
             let width = f.dpr.round().max(1.0) / (k * f.dpr);
-            rec.fill_rect(kurbo::Rect::new(c.x, c.top, c.x + width, c.bottom), aliased(colour(r.caret())));
+            rec.fill_rect(kurbo::Rect::new(c.x, c.top, c.x + width, c.bottom), aliased(r.caret()));
         }
     }
 
@@ -221,14 +221,14 @@ impl Graphics {
     fn object_feedback(&mut self, rec: &mut Recorder, r: &Renderer, view: &View, i: usize, f: &Frame) {
         use crate::editing::view::{Axis, Measure, Tone};
         let u = 1.0 / f.px_per_pt.max(0.01);
-        let (t, accent) = (r.page_theme().tokens, colour(r.palette().object));
+        let (t, accent) = (r.page_theme().tokens, r.palette().object);
         let line = |dash: Option<[f64; 2]>| match dash {
             Some([on, off]) => dashed(u, on * u, off * u),
             None => pen(u),
         };
         for (_, g) in view.guides.iter().filter(|(p, _)| *p == i) {
             if let (Some(grid), Some(page)) = (g.grid, view.snapshot.pages().get(i)) {
-                let (step, dot) = (grid.step.0.max(1.0), colour(t.ink3));
+                let (step, dot) = (grid.step.0.max(1.0), t.ink3);
                 let first = |o: f64| o - (o / step).floor() * step;
                 let mut y = first(grid.origin[1].0);
                 while y <= page.h {
@@ -255,14 +255,14 @@ impl Graphics {
         if let Some(o) = view.original.filter(|o| o.page == i) {
             let [x0, y0, x1, y1] = o.rect;
             rec.push_transform(Affine::rotate_about(o.rot.to_radians(), kurbo::Point::new((x0 + x1) / 2.0, (y0 + y1) / 2.0)));
-            rec.stroke_path(&rect_path(rect(o.rect)), &line(Some([3.0, 3.0])), colour(t.ink3));
+            rec.stroke_path(&rect_path(rect(o.rect)), &line(Some([3.0, 3.0])), t.ink3);
             rec.pop();
         }
         let (Some(mono5), Some(mono6)) = (chrome_face(ChromeFace::Mono500), chrome_face(ChromeFace::Mono600)) else { return };
         let size = 10.0 * u;
         let tone = |tone: Tone| match tone {
             Tone::Accent => accent,
-            Tone::Muted => colour(t.ink2),
+            Tone::Muted => t.ink2,
         };
         for (_, m) in view.measures.iter().filter(|(p, _)| *p == i) {
             match m {
@@ -275,7 +275,7 @@ impl Graphics {
                     }
                     let w = measure(&mono6, label, size);
                     let (mx, top) = ((x0 + x1) / 2.0 - w / 2.0, y0 - 5.0 * u);
-                    rec.fill_rect(kurbo::Rect::new(mx - 4.0 * u, top, mx + w + 4.0 * u, top + 10.0 * u), colour(t.paper));
+                    rec.fill_rect(kurbo::Rect::new(mx - 4.0 * u, top, mx + w + 4.0 * u, top + 10.0 * u), t.paper);
                     self.text(rec, &mono6, label, mx, top + 8.0 * u, size, c);
                 }
                 // The ink chip with paper text: 4 x 7 px padding, 2 px corners.
@@ -283,8 +283,8 @@ impl Graphics {
                     let (x, y) = (at[0].pt().0, at[1].pt().0);
                     let w = measure(&mono5, label, size);
                     let chip = kurbo::RoundedRect::new(x, y, x + w + 14.0 * u, y + 18.0 * u, 2.0 * u);
-                    self.draw_shape(rec, chip, None, colour(t.ink));
-                    self.text(rec, &mono5, label, x + 7.0 * u, y + 12.5 * u, size, colour(t.paper));
+                    self.draw_shape(rec, chip, None, t.ink);
+                    self.text(rec, &mono5, label, x + 7.0 * u, y + 12.5 * u, size, t.paper);
                 }
                 Measure::Status { at, label, tone: c } => self.text(rec, &mono6, label, at[0].0, at[1].0 + 8.0 * u, size, tone(*c)),
             }
@@ -299,7 +299,7 @@ impl Graphics {
     fn table_affordances(&mut self, rec: &mut Recorder, r: &Renderer, view: &View, i: usize, f: &Frame) {
         use crate::editing::view::TableMark;
         let u = 1.0 / f.px_per_pt.max(0.01);
-        let (soft, solid) = (colour(r.page_theme().accent.soft), colour(r.palette().object));
+        let (soft, solid) = (r.page_theme().accent.soft, r.palette().object);
         let (thin, dash) = (pen(u), dashed(u, 3.0 * u, 3.0 * u));
         let line = |rec: &mut Recorder, a: (f64, f64), b: (f64, f64), s: &kurbo::Stroke| rec.line(a.into(), b.into(), s, solid);
         // A box `s` px square at a page point: an accent border, the page showing through.
@@ -373,7 +373,7 @@ impl Graphics {
             return;
         }
         let px = (f.px_per_pt * f.dpr).max(0.01);
-        let ink = colour(r.palette().marks);
+        let ink = r.palette().marks;
         let line = pen(1.0 / px);
         let face = self.fallback.clone();
         for m in view.formatting_marks.iter().filter(|m| m.page == i) {

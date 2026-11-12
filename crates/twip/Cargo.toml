@@ -7,28 +7,6 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
-# Prebuilt Skia is downloaded for the native feature set (graphite + vulkan + default pdf); the web set (graphite on
-# Dawn + ganesh/gl) is prebuilt by github.com/jaxcksn/twip-skia-dawn, so changing the emscripten line below needs a
-# new release there.
-[target.'cfg(not(any(target_os = "emscripten", target_os = "macos")))'.dependencies]
-skia-safe = { version = "0.153.3", features = ["graphite", "vulkan"] }
-
-# macOS draws with Graphite on Metal: rust-skia publishes this set's prebuilt Skia for both Mac architectures.
-[target.'cfg(target_os = "macos")'.dependencies]
-skia-safe = { version = "0.153.3", features = ["graphite", "metal"] }
-
-# Linux draws with Skia's own FreeType (no HarfBuzz in it), not the system's: the system FreeType 2.14 (Ubuntu 26.04)
-# loads the system HarfBuzz globally when it starts, which takes over the HarfBuzz calls of a host's other libraries
-# (HarfBuzzSharp). No prebuilt Skia for this set: build-native.mjs downloads twip-skia-dawn's.
-[target.'cfg(target_os = "linux")'.dependencies]
-skia-safe = { version = "0.153.3", features = ["embed-freetype"] }
-
-[target.'cfg(target_os = "emscripten")'.dependencies]
-skia-safe = { version = "0.153.3", features = ["graphite", "ganesh", "gl"] }
-
-[build-dependencies]
-cc = "1"
-
 [dependencies]
 harfrust = "0.15.0"
 roxmltree = "0.21.1"
@@ -49,7 +27,7 @@ wuff = "0.2.9"
 aes = "0.8.4"
 sha2 = { version = "0.10.9", default-features = false }
 getrandom = "0.4.3"
-# Twip's 2D graphics (crates/twip-graphics): image probing and decoding now, the whole screen path later. Published
+# Twip's 2D graphics (crates/twip-graphics): the screen, image decoding and PDF. Published
 # with Twip at exactly its version (release-please keeps the pin in step).
 twip-graphics = { path = "../twip-graphics", version = "=0.1.1", features = ["pdf"] } # x-release-please-version
 
@@ -58,10 +36,6 @@ twip-graphics = { path = "../twip-graphics", version = "=0.1.1", features = ["pd
 twip-graphics = { path = "../twip-graphics", version = "=0.1.1", features = ["gpu", "pdf"] } # x-release-please-version
 
 [features]
-default = ["skia-screen"]
-# CPU frames (`HostSurface::frame_rgba`) are drawn with Skia, as before twip-graphics. Without it they are drawn with
-# twip-graphics. GPU frames are drawn with Skia either way.
-skia-screen = []
 # Test inspection surface: the editor's semantic state as JSON. Never in production builds.
 inspect = []
 # Stage timers and the reuse report (`prof.rs`) for diagnostic benchmark runs. Never in production builds.
@@ -78,7 +52,7 @@ type_complexity = "allow"
 # The benchmarks (benches/engine): `cargo bench -p twip`.
 divan = "0.1.21"
 
-# One benchmark binary, so `cargo bench` links Skia once.
+# One benchmark binary.
 [[bench]]
 name = "engine"
 harness = false

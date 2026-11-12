@@ -153,8 +153,8 @@ internal static unsafe partial class TwipNative
     static TwipNative() => NativeLibrary.SetDllImportResolver(typeof(TwipNative).Assembly, Resolve);
 
     /// <summary>
-    /// Loads the library as the runtime would, and on Linux turns a failure into one that names the packages the
-    /// library needs: the loader's message names the missing file, not where it comes from.
+    /// Loads the library as the runtime would, and on Linux turns a failure into one that says what the library
+    /// needs: the loader's message names the missing file, not where it comes from.
     /// </summary>
     private static nint Resolve(string name, System.Reflection.Assembly assembly, DllImportSearchPath? path)
     {
@@ -166,9 +166,8 @@ internal static unsafe partial class TwipNative
         catch (DllNotFoundException e)
         {
             throw new DllNotFoundException(
-                $"{e.Message} Twip needs FreeType, Fontconfig and libstdc++, and fonts to draw with: on Alpine, " +
-                "`apk add fontconfig freetype libstdc++` and a font package such as `font-liberation`; on Debian " +
-                "and Ubuntu, `apt-get install libfreetype6 libfontconfig1`.", e);
+                $"{e.Message} Twip's library needs only the C runtime (glibc, or musl on Alpine) and fonts to draw " +
+                "with: on Alpine, a font package such as `font-liberation`.", e);
         }
     }
 #endif

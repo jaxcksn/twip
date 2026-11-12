@@ -17,8 +17,9 @@ fn states(path: &Path, mode: usize) -> Vec<Value> {
     let mut r = Run::open(s["fixture"].as_str().unwrap_or(""), s["id"].as_str().unwrap_or("?"));
     match mode {
         1 => {
-            let mut renderer = Renderer::default();
-            let mut surface = skia_safe::surfaces::raster_n32_premul((480, 360)).expect("a raster surface");
+            let renderer = Renderer::default();
+            let mut graphics = crate::render::graphics::Graphics::default();
+            let mut pixels = vec![0u8; 480 * 360 * 4];
             r.frame = Some(Box::new(move |e| {
                 let f = Frame { origin_x: 0.0, origin_y: 0.0, width: 480.0, height: 360.0, dpr: 1.0, px_per_pt: 4.0 / 3.0, caret: false };
                 let visible = Renderer::visible(&e.stack(), &f);
@@ -26,7 +27,10 @@ fn states(path: &Path, mode: usize) -> Vec<Value> {
                     e.ensure_page(visible.end - 1, crate::editing::tests::fonts());
                 }
                 let view = e.view(visible);
-                renderer.draw(surface.canvas(), &view, &e.document().images, &f);
+                graphics.draw(&renderer, &view, &e.document().images, &f);
+                let mut target =
+                    twip_graphics::cpu::Target::new(&mut pixels, 480, 360, 480 * 4, twip_graphics::cpu::Format::Rgba8).expect("the buffer fits");
+                graphics.present(&mut target);
             }));
         }
         2 => {

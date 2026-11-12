@@ -1260,11 +1260,11 @@ fn blue_pixels(s: &mut crate::api::session::Session) -> usize {
     let view = s.editor.view(0..1);
     let images = s.editor.document().images.clone();
     let f = Frame { origin_x: 0.0, origin_y: 0.0, width: 700.0, height: 900.0, dpr: 1.0, px_per_pt: 1.0, caret: false };
-    let mut surface = skia_safe::surfaces::raster_n32_premul((700, 900)).expect("a raster surface");
-    Renderer::default().draw(surface.canvas(), &view, &images, &f);
-    let info = skia_safe::ImageInfo::new((700, 900), skia_safe::ColorType::RGBA8888, skia_safe::AlphaType::Unpremul, None);
+    let mut g = crate::render::graphics::Graphics::default();
+    g.draw(&Renderer::default(), &view, &images, &f);
     let mut px = vec![0u8; 700 * 900 * 4];
-    assert!(surface.read_pixels(&info, &mut px, 700 * 4, (0, 0)));
+    let mut target = twip_graphics::cpu::Target::new(&mut px, 700, 900, 700 * 4, twip_graphics::cpu::Format::Rgba8).expect("the buffer fits");
+    g.present(&mut target);
     px.chunks(4).filter(|p| p[0].abs_diff(0x3F) < 10 && p[1].abs_diff(0x51) < 10 && p[2].abs_diff(0xB5) < 10).count()
 }
 
@@ -3004,7 +3004,6 @@ fn gpu_frames_draw_as_cpu_frames() {
         let s = engine.session(id).expect("a session");
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures").join(fixture);
         s.open(&std::fs::read(path).expect("the fixture")).expect("opens");
-        s.host().set_graphics_screen(true);
         let (w, h) = (700u32, 500u32);
         s.host().set_size(f64::from(w), f64::from(h), 1.5);
         let (mut cpu, mut gpu) = (vec![0u8; (w * h * 4) as usize], vec![0u8; (w * h * 4) as usize]);
