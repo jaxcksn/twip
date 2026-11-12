@@ -269,3 +269,17 @@ fn a_line_fits_text_up_to_its_width_rounded_to_layout_units() {
     let Some([p1, _]) = courier(&track_settings(15, false, ""), r#"<w:ind w:right="3209"/>"#, 41, "a1t", 0, &t) else { return };
     assert_eq!(p1[0].len(), 25, "{p1:?}");
 }
+
+#[test]
+fn compat_15_a_word_broken_between_letters_at_a_page_end_goes_on_as_a_fragment() {
+    // `pres` ends page 1 between letters, at a point whose hyphen doesn't fit: page 2 hyphenates `ident` alone,
+    // which has no points.
+    if !super::fonts().is_installed("Courier New") {
+        return;
+    }
+    let t = format!("<w:r><w:t>{}president</w:t></w:r>", "abcd ".repeat(50));
+    let settings = track_settings(15, true, &track_setting("allowHyphenationAtTrackBottom", true));
+    let Some([p1, p2]) = courier(&settings, r#"<w:ind w:right="8820"/>"#, 20, ".pres1i1dent.", 0, &t) else { return };
+    assert_eq!(p1.last().map(String::as_str), Some("pres"), "{p1:?}");
+    assert_eq!(p2[..2], ["iden", "t"], "{p2:?}");
+}

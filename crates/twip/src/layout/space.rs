@@ -84,6 +84,8 @@ pub struct ParaSpace {
     pub x0: f64,
     pub env: TextEnv,
     pub fit: bool,
+    /// The line before `start`, on an earlier page or column, broke between letters rather than at a hyphen.
+    pub letter_break: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

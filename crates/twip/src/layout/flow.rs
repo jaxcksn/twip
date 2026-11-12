@@ -201,7 +201,7 @@ pub fn para_space(
             (if from > 0 { super::line::continued_key(style) } else { p }, n)
         }
     };
-    ParaSpace { width, start: from, borders, x0, env: ctx.env.text.clone(), fit: false }
+    ParaSpace { width, start: from, borders, x0, env: ctx.env.text.clone(), fit: false, letter_break: false }
 }
 
 pub fn note_cut(units: &[StoryUnit], room: f64) -> usize {
@@ -670,7 +670,7 @@ impl<'d> PageFill<'d, '_> {
         bi: usize,
         end: usize,
         width: f64,
-        from: usize,
+        (from, letter_break): (usize, bool),
         x0: f64,
         memos: &mut Memos,
     ) -> Result<Rc<ParaLines>, Yield> {
@@ -696,6 +696,7 @@ impl<'d> PageFill<'d, '_> {
         }
         let shaped = shape(p, &space, self.ctx.fonts, memos)?;
         let mut ps = para_space(style, prev, next, width, from, x0, &self.ctx);
+        ps.letter_break = from > 0 && letter_break;
         if from > 0 && shaped.pieces[..from.min(shaped.pieces.len())].iter().all(|q| matches!(q.kind, Kind::PageBreak | Kind::ColumnBreak)) {
             ps.borders.0 = super::line::neighbour_borders(style, prev, None).0;
         }
@@ -1276,7 +1277,7 @@ impl<'d> PageFill<'d, '_> {
                             || bi == 0 && self.sec.section.break_kind == crate::docx::SectionBreak::Continuous;
                         return Ok((Stop::Page, y));
                     }
-                    let pb = self.para_lines(&laid, bi, end, col.width, pos.at.index(), col.x, memos)?;
+                    let pb = self.para_lines(&laid, bi, end, col.width, (pos.at.index(), carry.letter_break), col.x, memos)?;
                     let placed = self.place_para(p, &pb, pos, carry, &col, &mut y, &mut empty, area, out, memos)?;
                     if pos.block > bi {
                         pos.block = end + 1;
@@ -1403,7 +1404,7 @@ impl<'d> PageFill<'d, '_> {
             None => Ok(true),
             Some(Block::Para(_)) => {
                 let Some((laid, end)) = self.laid(bi) else { unreachable!("a paragraph block") };
-                let pb = self.para_lines(&laid, bi, end, col.width, 0, col.x, memos)?;
+                let pb = self.para_lines(&laid, bi, end, col.width, (0, false), col.x, memos)?;
                 let s = laid.para().para_style_in(self.ctx.env.text.review.view);
                 let g = match &carry.prev {
                     Some(ps) => gap(&self.ctx.env.text, ps, carry.prev_after, s, space_before(&self.ctx.env.text, s)),
@@ -1657,7 +1658,7 @@ impl<'d> PageFill<'d, '_> {
         let last = match &pb.lines[take - 1] {
             l if text.bottom_unhyphenated && text.hyphenation.is_some() && take < n && l.hyphen && !pb.pieces()[l.end - 1].soft_hyphen => {
                 let env = super::env::TextEnv { hyphenation: None, ..text.clone() };
-                let space = ParaSpace { width: pb.width, start: pb.from + l.start, borders: pb.borders.clone(), x0: pb.x0, env, fit: false };
+                let space = ParaSpace { width: pb.width, start: pb.from + l.start, borders: pb.borders.clone(), x0: pb.x0, env, fit: false, letter_break: false };
                 Some(break_lines(&pb.shaped, p, &space, self.ctx.fonts, memos)?)
             }
             _ => None,
@@ -1690,7 +1691,8 @@ impl<'d> PageFill<'d, '_> {
         if done {
             pos.next_block();
         } else {
-            pos.at = At::Piece(last.map_or(pb.from + pb.lines[take].start, |a| a.from + a.lines[0].end));
+            pos.at = At::Piece(last.as_ref().map_or(pb.from + pb.lines[take].start, |a| a.from + a.lines[0].end));
+            carry.letter_break = !last.as_ref().map_or(&pb.lines[take - 1], |a| &a.lines[0]).hyphen;
         }
         if notes_continue && stop_kind.is_none() && !(self.hold_notes && self.at_section_end(pos)) {
             carry.keep_top = false;
@@ -1872,7 +1874,9 @@ impl<'d> PageFill<'d, '_> {
                 (f.rect[2], f.excl[2]) = (r, r);
             }
         }
-        let space = ParaSpace { width: col.width, start: pb.from, borders: (None, None), x0: col.x, env: self.ctx.env.text.clone(), fit: false };
+        let letter_break = !first_part && carry.letter_break;
+        let env = self.ctx.env.text.clone();
+        let space = ParaSpace { width: col.width, start: pb.from, borders: (None, None), x0: col.x, env, fit: false, letter_break };
         let mut frame = Frame::new(&space);
         let sp: &ShapedPara = &pb.shaped;
         let pieces = pb.pieces();
@@ -2338,6 +2342,7 @@ impl<'d> PageFill<'d, '_> {
             pos.next_block();
         } else {
             pos.at = At::Piece(pb.from + after_break.unwrap_or_else(|| bands[take].1[0].start));
+            carry.letter_break = !take.checked_sub(1).and_then(|k| bands[k].1.last()).is_some_and(|l| l.hyphen);
         }
         if notes_continue && stop_kind.is_none() {
             carry.keep_top = false;

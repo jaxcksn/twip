@@ -926,7 +926,7 @@ fn vertical_width(blocks: &[Block], env: &StoryEnv, memos: &mut Memos) -> Result
         let space = laid.shape_space_in(env.fields, env.notes, &env.ctx, true);
         let shaped = shape(p, &space, env.ctx.fonts, memos)?;
         let s = p.para_style_in(view);
-        let ps = ParaSpace { width: 1e9, start: 0, borders: neighbour_borders(s, None, None), x0: 0.0, env: env.ctx.env.text.clone(), fit: false };
+        let ps = ParaSpace { width: 1e9, start: 0, borders: neighbour_borders(s, None, None), x0: 0.0, env: env.ctx.env.text.clone(), fit: false, letter_break: false };
         let pb = break_lines(&shaped, p, &ps, env.ctx.fonts, memos)?;
         w += twips(s.space_before + s.space_after);
         let pieces = pb.pieces();
@@ -979,7 +979,7 @@ fn content_widths_uncached(blocks: &[LaidBlock], env: &StoryEnv, fixed: bool, me
                 let shaped = shape(p, &space, env.ctx.fonts, memos)?;
                 let s = p.para_style_in(env.ctx.env.text.review.view);
                 let ps =
-                    ParaSpace { width: 1e9, start: 0, borders: neighbour_borders(s, None, None), x0: 0.0, env: env.ctx.env.text.clone(), fit: false };
+                    ParaSpace { width: 1e9, start: 0, borders: neighbour_borders(s, None, None), x0: 0.0, env: env.ctx.env.text.clone(), fit: false, letter_break: false };
                 let pb = break_lines(&shaped, p, &ps, env.ctx.fonts, memos)?;
                 let ind = if old { s.ind_left + s.ind_right + s.ind_first.min(0.0) } else { s.ind_left + s.ind_right };
                 let pieces = pb.pieces();

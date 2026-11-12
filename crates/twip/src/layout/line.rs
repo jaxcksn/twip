@@ -162,7 +162,7 @@ impl Frame {
             hyphenate: e.hyphenation.is_some(),
             hyphen_zone: e.hyphenation.as_ref().filter(|_| e.compat == Compat::Legacy).map_or(0.0, |h| h.zone),
             hyphen_limit: e.hyphenation.as_ref().map_or(0, |h| h.limit),
-            word_from: None,
+            word_from: space.letter_break.then_some(0),
             vertical: e.vertical.is_some(),
             centred: e.vertical.is_some_and(|v| v.upright),
             breaking_rules: e.breaking_rules,
@@ -567,7 +567,7 @@ pub fn break_paragraph(sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, mar
     let with_tabs = justify_smart && pieces.iter().any(|p| p.kind == Kind::Tab);
     let mut first = !continued;
     let mut hyphens = 0;
-    let mut word_from = None;
+    let mut word_from = frame.word_from;
     let all = *frame;
     loop {
         let at_limit = all.hyphen_limit > 0 && hyphens >= all.hyphen_limit;

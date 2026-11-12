@@ -80,6 +80,8 @@ pub struct FlowState {
     pub upright_at: Option<f64>,
     /// The rest of a floating table the text after went on beside: it opens the next column.
     pub table_rest: Option<FlowToken>,
+    /// The paragraph going on from the last column broke there between letters rather than at a hyphen.
+    pub letter_break: bool,
 }
 
 impl Default for FlowState {
@@ -96,6 +98,7 @@ impl Default for FlowState {
             page_notes: None,
             upright_at: None,
             table_rest: None,
+            letter_break: false,
         }
     }
 }
@@ -121,6 +124,7 @@ impl PartialEq for FlowState {
             && self.upright_at == o.upright_at
             && self.table_rest.is_none()
             && o.table_rest.is_none()
+            && self.letter_break == o.letter_break
     }
 }
 

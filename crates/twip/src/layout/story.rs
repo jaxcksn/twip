@@ -252,6 +252,7 @@ pub fn layout_with(
                     x0: 0.0,
                     env: TextEnv { line_grid, ..text.clone() },
                     fit: ends.fit,
+                    letter_break: false,
                 };
                 let lines = break_lines(&shaped, p, &ps, env.ctx.fonts, memos)?;
                 let (mut before, mut after) = (space_before(text, style), space_after(text, style));
