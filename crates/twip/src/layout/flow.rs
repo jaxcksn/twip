@@ -2187,6 +2187,12 @@ impl<'d> PageFill<'d, '_> {
                 match f.h_align.as_deref() {
                     Some("left") => x += style.ind_left,
                     Some("right") => x -= style.ind_right,
+                    // From a line that starts beside another paragraph's float: from where its piece starts.
+                    None => {
+                        let others: Vec<Placed> = floats.iter().chain(&self.at.found).filter(|o| (o.key.0, o.key.1) != (si, bi)).cloned().collect();
+                        let piece = float::intervals(&others, cx0, cx1, line_top, line_top + bands[b].1[0].pitch, true);
+                        x += piece.and_then(|iv| iv.first().map(|p| p.0)).unwrap_or(cx0) - cx0;
+                    }
                     _ => {}
                 }
             }
@@ -2223,6 +2229,14 @@ impl<'d> PageFill<'d, '_> {
                     anchors.push(a);
                     continue;
                 }
+            }
+            // Compat ≤ 14: one that met the table just before its paragraph stays where it met it when the page is filled
+            // again.
+            // ponytail: only after a table, whose rows can move down from under it; Word freezes every float that meets
+            // earlier text, which needs the attempts to place floats in flow order.
+            let after_table = bi > 0 && matches!(self.sec.blocks.get(bi - 1), Some(Block::Table(_)));
+            if let Some(k) = self.at.known.iter().find(|o| o.key == (si, bi, pb.from + k) && o.collided).filter(|_| compat == Compat::Legacy && after_table) {
+                (x, fy) = (k.rect[0], k.rect[1]);
             }
             let mut a = self.wrapped(Placed::new((si, bi, pb.from + k), owner, f, x, fy, h), memos)?;
             // Text laid out before the paragraph in this column ends at `*y` (with its space after in compat ≤ 14);
@@ -2404,7 +2418,61 @@ impl<'d> PageFill<'d, '_> {
         }
         // A vertical section's upright tables have their own placement.
         let floating = matches!(self.sec.blocks.get(pos.block), Some(Block::Table(t)) if t.floating.is_some());
-        let spot = if pos.at.at_start() && !floating && self.ctx.env.text.vertical.is_none() { self.beside_floats(pos.block, tb, col, *y, memos)? } else { None };
+        let page_floats = match self.sec.blocks.get(pos.block) {
+            Some(Block::Table(t)) if self.ctx.env.text.compat == Compat::Legacy => page_floats(t, &self.ctx),
+            _ => HashMap::new(),
+        };
+        let frames = Frames {
+            page_w: self.page_w,
+            page_h: self.page_h,
+            margin: [self.margins.0, self.margins.1, self.margins.2, self.sec.section.section_in(self.ctx.env.text.review.view).bottom],
+            column: (col.x, col.width),
+            compat: self.ctx.env.text.compat,
+            cell: false,
+            odd: self.odd,
+        };
+        // Compat ≤ 14: the floats of the first row placed from the page, each from the row top, the first row's
+        // over it and the later rows' below it.
+        let row_floats: Vec<(&Float, ParaId, f64, f64)> = match (tb.rows.first(), self.sec.blocks.get(pos.block)) {
+            (Some(_), Some(Block::Table(t))) if !floating && pos.at.at_start() && !page_floats.is_empty() => t
+                .rows
+                .first()
+                .into_iter()
+                .flat_map(|row| row.cells.iter())
+                .flat_map(|c| c.blocks.iter())
+                .filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None })
+                .flat_map(|p| p.inlines.iter().map(move |i| (para_id(p), i)))
+                .filter_map(|(id, i)| if let Inline::Float(f, _) = i { page_floats.get(&f.id).map(|f| (*f, id)) } else { None })
+                .filter(|(f, _)| {
+                    matches!(f.wrap.as_str(), "square" | "topAndBottom")
+                        && f.h_relative == "column"
+                        && f.v_relative == "paragraph"
+                        && f.h_align.is_none()
+                        && f.v_align.is_none()
+                })
+                .map(|(f, id)| (f, id, f.v_offset - f.dist[0], f.v_offset + f.h + f.dist[1]))
+                .collect(),
+            _ => Vec::new(),
+        };
+        let first_h = tb.rows.first().map_or(0.0, |r| r.height);
+        // The row goes beside those over it when the table fits the first piece they leave, else below them; they
+        // keep their place, and wrap the text after the table.
+        let y0 = *y;
+        let mut over: Vec<Placed> = row_floats
+            .iter()
+            .filter(|(_, _, top, _)| *top < first_h)
+            .enumerate()
+            .map(|(k, (f, id, _, _))| {
+                let mut a = Placed::new((self.sec.index, pos.block, k), *id, &Rc::new((*f).clone()), float::h_pos(f, &frames), y0 + f.v_offset, f.h);
+                a.collided = false;
+                a
+            })
+            .collect();
+        let spot = if pos.at.at_start() && !floating && self.ctx.env.text.vertical.is_none() {
+            self.beside_floats(pos.block, tb, col, *y, &over, memos)?
+        } else {
+            None
+        };
         let (beside, relaid) = match spot {
             Some((x, top, relaid)) => {
                 *y = top;
@@ -2412,6 +2480,7 @@ impl<'d> PageFill<'d, '_> {
             }
             None => (None, None),
         };
+        let lift = if over.is_empty() { 0.0 } else { *y - y0 };
         let tb: &TableLayout = relaid.as_deref().unwrap_or(tb);
         let mut rows = Vec::new();
         // A spaced table's outer frame is closed at the top and bottom of each part.
@@ -2520,57 +2589,17 @@ impl<'d> PageFill<'d, '_> {
                 *y += hh;
             }
         }
-        let page_floats = match self.sec.blocks.get(pos.block) {
-            Some(Block::Table(t)) if self.ctx.env.text.compat == Compat::Legacy => page_floats(t, &self.ctx),
-            _ => HashMap::new(),
+        let later: Vec<(f64, f64)> = {
+            let (l, r) = (at_x + tb.x0, at_x + tb.x0 + tb.cols.iter().sum::<f64>());
+            row_floats
+                .iter()
+                .filter(|(f, _, top, _)| *top >= first_h && {
+                    let x = float::h_pos(f, &frames);
+                    x < r && x + f.w > l
+                })
+                .map(|(_, _, top, bottom)| (y0 + top, y0 + bottom))
+                .collect()
         };
-        let frames = Frames {
-            page_w: self.page_w,
-            page_h: self.page_h,
-            margin: [self.margins.0, self.margins.1, self.margins.2, self.sec.section.section_in(self.ctx.env.text.review.view).bottom],
-            column: (col.x, col.width),
-            compat: self.ctx.env.text.compat,
-            cell: false,
-            odd: self.odd,
-        };
-        let mut later: Vec<(f64, f64)> = Vec::new();
-        let lift = match (tb.rows.first(), self.sec.blocks.get(pos.block)) {
-            (Some(r0), Some(Block::Table(t))) if fp.is_none() && pos.at.at_start() && !page_floats.is_empty() => {
-                let (l, r) = (at_x + tb.x0, at_x + tb.x0 + tb.cols.iter().sum::<f64>());
-                let mut lift = 0.0f64;
-                for f in t
-                    .rows
-                    .first()
-                    .into_iter()
-                    .flat_map(|row| row.cells.iter())
-                    .flat_map(|c| c.blocks.iter())
-                    .filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None })
-                    .flat_map(|p| p.inlines.iter())
-                    .filter_map(|i| if let Inline::Float(f, _) = i { page_floats.get(&f.id).copied() } else { None })
-                    .filter(|f| {
-                        matches!(f.wrap.as_str(), "square" | "topAndBottom")
-                            && f.h_relative == "column"
-                            && f.v_relative == "paragraph"
-                            && f.h_align.is_none()
-                            && f.v_align.is_none()
-                    })
-                    .filter(|f| {
-                        let x = float::h_pos(f, &frames);
-                        x < r && x + f.w > l
-                    })
-                {
-                    let (top, bottom) = (f.v_offset - f.dist[0], f.v_offset + f.h + f.dist[1]);
-                    if top < r0.height {
-                        lift = lift.max(bottom);
-                    } else {
-                        later.push((*y + top, *y + bottom));
-                    }
-                }
-                lift
-            }
-            _ => 0.0,
-        };
-        *y += lift;
         let up = |r: usize| if r == 0 { lift } else { 0.0 };
         let mut placed_here = 0;
         let mut placed: Vec<(usize, f64, usize)> = Vec::new();
@@ -2740,6 +2769,7 @@ impl<'d> PageFill<'d, '_> {
                 *empty = false;
                 pos.at = At::RowPart { row: ri, rest: Rc::new(left) };
                 self.show_endnote_refs(row_refs.into_iter().map(|r| r.1));
+                self.at.found.append(&mut over);
                 finish(rows, out, at_x, opened, false);
                 self.table_obstacle(pos.block, tb, at_x, part_top, *y, flow_y, settled);
                 return Ok(self.text_goes_on(fp.is_some(), pos, carry, y, empty, (flow_y, was_empty)));
@@ -2783,11 +2813,17 @@ impl<'d> PageFill<'d, '_> {
                 *y += tb.bottom_border;
             }
             self.show_endnote_refs(row_refs.into_iter().map(|r| r.1));
+            if !rows.is_empty() {
+                self.at.found.append(&mut over);
+            }
             finish(rows, out, at_x, opened, true);
             self.table_obstacle(pos.block, tb, at_x, part_top, *y, flow_y, settled);
             return Ok(self.text_goes_on(fp.is_some() && split, pos, carry, y, empty, (flow_y, was_empty)));
         }
         self.show_endnote_refs(row_refs.into_iter().map(|r| r.1));
+        if !rows.is_empty() {
+            self.at.found.append(&mut over);
+        }
         finish(rows, out, at_x, opened, false);
         if fp.is_some() {
             self.table_obstacle(pos.block, tb, at_x, part_top, *y, flow_y, settled);
@@ -2808,19 +2844,21 @@ impl<'d> PageFill<'d, '_> {
         tb: &TableLayout,
         col: &ColumnSpace,
         y: f64,
+        own: &[Placed],
         memos: &mut Memos,
     ) -> Result<Option<(f64, f64, Option<Rc<TableLayout>>)>, Yield> {
         let Some(Block::Table(t)) = self.sec.blocks.get(bi) else { return Ok(None) };
         let Some(ri) = tb.rows.iter().position(|r| !r.hidden) else { return Ok(None) };
         let si = self.sec.index;
-        let floats: Vec<Placed> = self.fixed.iter().chain(self.known_at(bi)).filter(|f| (f.key.0, f.key.1) != (si, bi)).cloned().collect();
+        let floats: Vec<Placed> =
+            self.fixed.iter().chain(self.known_at(bi)).filter(|f| (f.key.0, f.key.1) != (si, bi)).chain(own).cloned().collect();
         if tb.rtl || floats.is_empty() {
             return Ok(None);
         }
         let text = &self.ctx.env.text;
         let legacy = text.compat == Compat::Legacy;
         let (cx0, cx1) = (col.x, col.x + col.width);
-        let (mut top, h) = (y, tb.rows[ri].height);
+        let (mut top, h) = (y, tb.rows[ri].height + if tb.is_last(ri) { tb.bottom_border } else { 0.0 });
         let mut moved = false;
         while top < col.bottom.to_pt() - EPS {
             if let Some((u, r)) = float::intervals(&floats, cx0, cx1, top, top + h, legacy).and_then(|iv| iv.first().copied()) {

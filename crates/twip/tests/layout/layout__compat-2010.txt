@@ -46,45 +46,38 @@ page 0 12240 15840
   float 1440 7746 3744 9906
   float 1440 10237 2880 11677
 page 1 12240 15840
-  1440 2506 Float in a cell
-  5160 2506 Same style
-  5160 2765 Same style
-  1440 3194 A float turned 90 degrees: compat 12 wraps its
-  9252 3194 unturned
-  1440 3453 frame, the other modes the turned box. Trend
-  9252 3453 suggestions
-  1440 3712 board order update granted agreement marketing
-  9252 3712 promotion
-  1440 3971 division date profitable. Insights the meeting
-  9252 3971 forecast
-  1440 4230 hereby vendors practical schedule state entry
-  9252 4230 estimate
-  1440 4489 management. Action budget inventory relevant group
-  9252 4489 relief
-  1440 4748 results region ledger brief usage cause. Colleague
-  9252 4748 partner
-  1440 5007 section notice claim team export staff newsletter
-  9252 5007 review
-  1440 5266 matter presenter. Advisor account.
-  1440 5781 A line with a picture  and 1.5 line spacing; its mark is 24pt. The meeting
-  1440 6141 forecast hereby vendors practical schedule state entry estimate management
-  1440 6501 action. Budget inventory relevant group relief results region ledger brief
-  1440 6861 usage cause colleague. Partner section notice claim team export.
-  1440 7349 Exactly 20pt lines: the options move the baseline and the room below it.
-  1440 7749 Inventory relevant group relief results region ledger brief usage cause
-  1440 8149 colleague partner. Section notice claim team export staff newsletter review
-  1440 8549 matter presenter advisor account. Served savings pilot receipt corporate
-  1440 8949 requirement.
-  1440 9501 Automatic spacing before and after.
-  1440 10040 Automatic spacing again.
-  1440 10639 Small caps, RAISED TEXT, and spaced letters Notice claim team export staff
-  1440 10899 newsletter review matter presenter advisor account served. Savings pilot
-  1440 11158 receipt corporate requirement standard fact that products distribution
-  1440 11417 filed logistics. Chapter plan regional maintenance accessibility tax.
-  1440 11836 A paragraph ending in a page break.
-  cell 1332 2304 4332 2992
-  cell 4332 2304 7332 2992
-  float 8208 1994 9072 4874
+  2916 1642 Float in a cell
+  6636 1642 Same style
+  6636 1901 Same style
+  2916 2330 A float turned 90 degrees: compat 12 wraps its
+  1440 2589 unturned frame, the other modes the turned box. Trend suggestions
+  1440 2848 board order update granted agreement marketing promotion
+  1440 3107 division date profitable. Insights the meeting forecast hereby
+  1440 3366 vendors practical schedule state entry estimate management.
+  1440 3625 Action budget inventory relevant group relief results region
+  1440 3884 ledger brief usage cause. Colleague partner section notice claim
+  1440 4143 team export staff newsletter review matter presenter. Advisor
+  1440 4402 account.
+  1440 4917 A line with a picture  and 1.5 line spacing; its mark is 24pt. The meeting
+  1440 5277 forecast hereby vendors practical schedule state entry estimate management
+  1440 5637 action. Budget inventory relevant group relief results region ledger brief
+  1440 5997 usage cause colleague. Partner section notice claim team export.
+  1440 6485 Exactly 20pt lines: the options move the baseline and the room below it.
+  1440 6885 Inventory relevant group relief results region ledger brief usage cause
+  1440 7285 colleague partner. Section notice claim team export staff newsletter review
+  1440 7685 matter presenter advisor account. Served savings pilot receipt corporate
+  1440 8085 requirement.
+  1440 8637 Automatic spacing before and after.
+  1440 9176 Automatic spacing again.
+  1440 9775 Small caps, RAISED TEXT, and spaced letters Notice claim team export staff
+  1440 10035 newsletter review matter presenter advisor account served. Savings pilot
+  1440 10294 receipt corporate requirement standard fact that products distribution
+  1440 10553 filed logistics. Chapter plan regional maintenance accessibility tax.
+  1440 10972 A paragraph ending in a page break.
+  cell 2808 1440 5808 2128
+  cell 5808 1440 8808 2128
+  float 1584 1584 2736 2304
+  float 9684 1130 10548 4010
 page 2 12240 15840
   1440 1632 Page-break-before with 24pt space before: compat 15 drops it at the page top.
   1440 2243 An exact line at the top of a page after a break. Pilot receipt corporate

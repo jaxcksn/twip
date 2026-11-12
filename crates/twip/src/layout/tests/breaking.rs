@@ -395,6 +395,31 @@ fn a_compat_14_float_on_whole_twips_wraps_the_line_whose_space_after_it_starts_i
 }
 
 #[test]
+fn a_compat_14_float_anchored_beside_another_counts_its_column_offset_from_the_lines_piece() {
+    let pic = |x: u32, w: u32, h: u32, dr: u32| {
+        format!(
+            r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="{dr}" simplePos="0" relativeHeight="0" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>{x}</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV><wp:extent cx="{w}" cy="{h}"/><wp:wrapSquare wrapText="bothSides"/><a:graphic><a:graphicData><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#
+        )
+    };
+    let body = format!(
+        r#"<w:p>{}<w:r><w:t>One.</w:t></w:r></w:p><w:p>{}<w:r><w:t>{}</w:t></w:r></w:p>"#,
+        pic(0, 914400, 1143000, 114300),
+        pic(1905000, 635000, 317500, 0),
+        "Alpha bravo charlie delta echo. ".repeat(6)
+    );
+    // Float B 150pt from the column: from the line's piece (153pt, beside A) in compat 12, from the column in compat 15.
+    let second_piece = |settings: &str| {
+        let l = baselines(settings, ARIAL_12, &body)?;
+        let y = l.iter().find(|x| x.1.starts_with("Alpha"))?.3;
+        l.iter().filter(|x| (x.3 - y).abs() < 0.01).map(|x| x.0).nth(1)
+    };
+    let c15 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+    let Some(c12) = second_piece("") else { return };
+    assert!((c12 - 353.0).abs() < 0.01, "{c12}");
+    assert!((second_piece(c15).unwrap() - 272.0).abs() < 0.01);
+}
+
+#[test]
 fn a_compat_14_column_aligned_float_counts_from_the_paragraph_indent() {
     let float = r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="0" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:align>left</wp:align></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV><wp:extent cx="508000" cy="1270000"/><wp:wrapSquare wrapText="bothSides"/><a:graphic><a:graphicData><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#;
     let p = format!(r#"<w:p><w:pPr><w:ind w:left="720"/></w:pPr>{float}<w:r><w:t>Beside the float.</w:t></w:r></w:p>"#);

@@ -432,17 +432,19 @@ mod floats {
     }
 
     #[test]
-    fn float_14_a_body_level_float_over_the_first_row_moves_the_table_below_it() {
-        let cell = |in_cell: &str| {
+    fn float_14_a_body_level_float_over_the_first_row_takes_the_table_beside_it_when_it_fits_else_below() {
+        let cell = |in_cell: &str, w: u32| {
             let b = text_box(r#"<wp:wrapSquare wrapText="bothSides"/>"#, 40.0, "Boxed")
                 .replace(r#"layoutInCell="1""#, &format!(r#"layoutInCell="{in_cell}""#));
             let body = format!(
-                r#"<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="5000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="5000" w:type="dxa"/></w:tcPr>{b}<w:p><w:r><w:t>Cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#
+                r#"<w:tbl><w:tblPr><w:tblW w:w="{w}" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="{w}"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="{w}" w:type="dxa"/></w:tcPr>{b}<w:p><w:r><w:t>Cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#
             );
-            baseline_of(&doc(&body), "Cell").expect("the cell text")
+            start_of(&doc(&body), "Cell")
         };
-        let (outside, inside) = (cell("0"), cell("1"));
-        assert!((outside - inside - 40.0).abs() < 0.01, "outside {outside} vs inside {inside}");
+        // The box takes 100pt of the 468pt column: a 250pt table goes beside it, a 420pt one below it.
+        let (inside, beside, below) = (cell("1", 5000), cell("0", 5000), cell("0", 8400));
+        assert!((beside.0 - inside.0 - 100.0).abs() < 0.01 && (beside.1 - inside.1).abs() < 0.01, "beside {beside:?} vs inside {inside:?}");
+        assert!((below.0 - inside.0).abs() < 0.01 && (below.1 - inside.1 - 40.0).abs() < 0.01, "below {below:?} vs inside {inside:?}");
     }
 
     #[test]
