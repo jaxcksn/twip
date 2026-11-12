@@ -1433,6 +1433,17 @@ impl<'d> PageFill<'d, '_> {
         }
     }
 
+    /// The space after the paragraph at `block` that its next paragraph keeps: none between paragraphs of one style
+    /// with contextual spacing.
+    fn after_kept(&self, block: usize, style: &ParaStyle) -> f64 {
+        let text = &self.ctx.env.text;
+        let after = space_after(text, style);
+        match self.sec.blocks.neighbours(block, block, text.review.view).1 {
+            Some(next) => gap(text, style, after, next, 0.0),
+            None => after,
+        }
+    }
+
     /// The floats of the last fill that wrap the text at `block`: one anchored further on only if it met the text laid
     /// out before its paragraph; one that didn't is placed below that text and wraps only what follows it.
     fn known_at(&self, block: usize) -> impl Iterator<Item = &Placed> {
@@ -1500,7 +1511,7 @@ impl<'d> PageFill<'d, '_> {
         let bottom = *y + self.para_gap(p, pos, carry, *empty) + pb.lines.iter().map(|l| l.pitch).sum::<f64>();
         let text_bottom = match self.ctx.env.text.compat {
             Compat::Generic => bottom - pb.lines.last().map_or(0.0, |l| l.below),
-            Compat::Legacy => bottom + space_after(&self.ctx.env.text, p.para_style_in(self.ctx.env.text.review.view)),
+            Compat::Legacy => bottom + self.after_kept(pos.block, p.para_style_in(self.ctx.env.text.review.view)),
         };
         let affected = self.fixed.iter().chain(self.known_at(pos.block)).any(|f| {
             let reach = if f.key.2 == float::TABLE_PIECE || self.ctx.env.text.compat == Compat::Legacy { text_bottom } else { bottom };
@@ -1870,6 +1881,7 @@ impl<'d> PageFill<'d, '_> {
         let style = p.para_style_in(self.ctx.env.text.review.view);
         let first_part = pos.at.at_start();
         let after = space_after(&self.ctx.env.text, style);
+        let kept_after = self.after_kept(pos.block, style);
         let at_top = *empty;
         let top = *y + self.para_gap(p, pos, carry, *empty) - if at_top { self.top_lift(style, pb) } else { 0.0 };
         let mut floats: Vec<Placed> = self.fixed.iter().chain(self.known_at(pos.block)).cloned().collect();
@@ -2048,7 +2060,7 @@ impl<'d> PageFill<'d, '_> {
                                     }
                                 }
                                 // Compat ≤ 14 tests the paragraph's last line with its space after.
-                                let tail = if compat == Compat::Legacy && e >= n { after } else { 0.0 };
+                                let tail = if compat == Compat::Legacy && e >= n { kept_after } else { 0.0 };
                                 let (ph, segs_below) = (segs[0].pitch + tail, segs[0].below + tail);
                                 let done = (ph - h).abs() < EPS && (segs_below - below).abs() < EPS || attempt == 1;
                                 got = Some((segs, e));
@@ -2243,7 +2255,8 @@ impl<'d> PageFill<'d, '_> {
             let mut a = self.wrapped(Placed::new((si, bi, pb.from + k), owner, f, x, fy, h), memos)?;
             // Text laid out before the paragraph in this column ends at `*y` (with its space after in compat ≤ 14);
             // a float wholly below it, or beside the column, doesn't meet it. Earlier columns count as met.
-            let reach = *y + if compat == Compat::Legacy { carry.prev_after } else { 0.0 };
+            let kept = carry.prev.as_ref().map_or(carry.prev_after, |ps| gap(&self.ctx.env.text, ps, carry.prev_after, style, 0.0));
+            let reach = *y + if compat == Compat::Legacy { kept } else { 0.0 };
             a.collided = self.column > 0 || a.excl[1] < reach - EPS && a.excl[0] < cx1 - EPS && a.excl[2] > cx0 + EPS;
             a.restarts = a.collided || a.excl[1] < line_top + bands[b].1[0].pitch - EPS && a.excl[0] < cx1 - EPS && a.excl[2] > cx0 + EPS;
             anchors.push(a);

@@ -392,6 +392,11 @@ fn a_compat_14_float_on_whole_twips_wraps_the_line_whose_space_after_it_starts_i
     let c15 = lines(c15, rpr, &body).unwrap();
     assert!((c12[0].0 - 153.0).abs() < 0.01, "{c12:?}");
     assert!((c15[0].0 - 72.0).abs() < 0.01, "{c15:?}");
+    // A 12pt line ends 0.98 tw into a twip, so the float starts below it; between paragraphs of one style with
+    // contextual spacing the space after isn't kept, so the float doesn't meet the line there either.
+    let contextual = body.replace(r#"<w:spacing w:after="160"/>"#, r#"<w:spacing w:after="160"/><w:contextualSpacing/>"#).replace("<w:p><w:r><w:drawing>", "<w:p><w:pPr><w:contextualSpacing/></w:pPr><w:r><w:drawing>");
+    let kept = lines("", ARIAL_12, &contextual).unwrap();
+    assert!((kept[0].0 - 72.0).abs() < 0.01, "{kept:?}");
 }
 
 #[test]
