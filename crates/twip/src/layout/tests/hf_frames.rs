@@ -144,6 +144,39 @@ fn with_header(body: &str, header: &str, compat: u32) -> Option<crate::docx::Doc
 }
 
 #[test]
+fn a_paragraph_float_counts_from_above_the_paragraphs_space_before() {
+    // A text box 0pt below its paragraph, in a header's and in the body's second paragraph: the paragraph's space
+    // before moves its text, not the box.
+    let ns = r#"xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape""#;
+    let boxed = |c: char| {
+        format!(
+            r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="1" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>3048000</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV><wp:extent cx="1270000" cy="635000"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/><wp:docPr id="1" name="B"/><a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:wsp><wps:cNvSpPr txBox="1"/><wps:spPr><a:prstGeom prst="rect"/></wps:spPr><wps:txbx><w:txbxContent><w:p><w:r><w:t>{c}</w:t></w:r></w:p></w:txbxContent></wps:txbx><wps:bodyPr/></wps:wsp></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#
+        )
+    };
+    let paras = |before: u32, text: char, c: char| {
+        format!(
+            r#"<w:p><w:pPr><w:spacing w:before="0" w:after="0"/></w:pPr><w:r><w:t>a</w:t></w:r></w:p><w:p><w:pPr><w:spacing w:before="{before}" w:after="0"/></w:pPr>{}<w:r><w:t>{text}</w:t></w:r></w:p>"#,
+            boxed(c)
+        )
+    };
+    let ys = |before: u32| {
+        let body = format!(
+            r#"<w:document {W} {ns}><w:body>{}<w:sectPr><w:headerReference w:type="default" r:id="rId2"/><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="2880" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:body></w:document>"#,
+            paras(before, 'b', 'Y')
+        );
+        let header = format!(r#"<w:hdr {W} {ns}>{}</w:hdr>"#, paras(before, 'h', 'Z'));
+        let doc = with_header(&body, &header, 15).expect("reads");
+        let page = &super::page_chars(&doc)[0];
+        let y = |ch: char| page.iter().find(|c| c.0 == ch).map(|c| c.2).expect("drawn");
+        [y('b'), y('Y'), y('h'), y('Z')]
+    };
+    let (flat, spaced) = (ys(0), ys(480));
+    assert!((spaced[0] - flat[0] - 24.0).abs() < 0.01 && (spaced[2] - flat[2] - 24.0).abs() < 0.01, "{flat:?} {spaced:?}");
+    assert!((spaced[1] - flat[1]).abs() < 0.01, "body box: {flat:?} {spaced:?}");
+    assert!((spaced[3] - flat[3]).abs() < 0.01, "header box: {flat:?} {spaced:?}");
+}
+
+#[test]
 fn a_header_float_wraps_the_body_text_of_its_page() {
     let beside = |wrap: &str| {
         let doc = header_float(wrap, 3810000, "Head", 12)?;

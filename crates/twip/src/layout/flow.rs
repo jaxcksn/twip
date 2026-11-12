@@ -779,6 +779,7 @@ impl<'d> PageFill<'d, '_> {
                     height: h,
                     float_bottom: 0.0,
                     frozen: Vec::new(),
+                    origins: Vec::new(),
                 }
             }),
         };
@@ -2184,6 +2185,10 @@ impl<'d> PageFill<'d, '_> {
         let anchor = para_id(p);
         let mut anchors: Vec<Placed> = Vec::new();
         let mut forced: Option<usize> = None;
+        // Text laid out before the paragraph in this column ends at `*y`, then the space after it keeps.
+        let kept = carry.prev.as_ref().map_or(carry.prev_after, |ps| gap(&self.ctx.env.text, ps, carry.prev_after, style, 0.0));
+        // The paragraph's top is above its space before: where that text and its kept space after end.
+        let origin = if at_top { *y } else { *y + kept };
         let band_of = |k: usize| bands.iter().position(|(_, segs)| segs.iter().any(|l| k >= l.start && k < l.end.max(l.start + 1)));
         for (k, q) in pieces.iter().enumerate() {
             let (Kind::Anchor, Some(Object::Float(f))) = (q.kind, sp.object(pb.from + k)) else { continue };
@@ -2193,7 +2198,7 @@ impl<'d> PageFill<'d, '_> {
             let f = &self.fit_frame(f, col.width, memos)?;
             let h = self.float_height(f, memos)?;
             let line_top = bands[b].0;
-            let para_top = if first_part { top } else { bands[0].0 };
+            let para_top = if first_part { origin } else { bands[0].0 };
             let mut x = float::h_pos(f, &frames);
             if compat == Compat::Legacy && f.h_relative == "column" {
                 match f.h_align.as_deref() {
@@ -2253,9 +2258,8 @@ impl<'d> PageFill<'d, '_> {
                 (x, fy) = (k.rect[0], k.rect[1]);
             }
             let mut a = self.wrapped(Placed::new((si, bi, pb.from + k), owner, f, x, fy, h), memos)?;
-            // Text laid out before the paragraph in this column ends at `*y` (with its space after in compat ≤ 14);
-            // a float wholly below it, or beside the column, doesn't meet it. Earlier columns count as met.
-            let kept = carry.prev.as_ref().map_or(carry.prev_after, |ps| gap(&self.ctx.env.text, ps, carry.prev_after, style, 0.0));
+            // That text (with its space after in compat ≤ 14): a float wholly below it, or beside the column, doesn't
+            // meet it. Earlier columns count as met.
             let reach = *y + if compat == Compat::Legacy { kept } else { 0.0 };
             a.collided = self.column > 0 || a.excl[1] < reach - EPS && a.excl[0] < cx1 - EPS && a.excl[2] > cx0 + EPS;
             a.restarts = a.collided || a.excl[1] < line_top + bands[b].1[0].pitch - EPS && a.excl[0] < cx1 - EPS && a.excl[2] > cx0 + EPS;

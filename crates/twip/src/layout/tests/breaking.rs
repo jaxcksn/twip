@@ -2196,7 +2196,7 @@ fn a_float_below_the_text_before_its_paragraph_doesnt_wrap_that_text_when_the_pa
         )
     };
     let body = format!(
-        r#"<w:p><w:pPr><w:spacing w:before="8560"/></w:pPr>{}<w:r><w:t>Short words. {}</w:t></w:r></w:p><w:p>{}<w:r><w:t>Beside the second float.</w:t></w:r></w:p>"#,
+        r#"<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="8560" w:lineRule="exact"/></w:pPr></w:p><w:p><w:pPr><w:spacing w:before="0"/></w:pPr>{}<w:r><w:t>Short words. {}</w:t></w:r></w:p><w:p>{}<w:r><w:t>Beside the second float.</w:t></w:r></w:p>"#,
         float(762000),
         "x".repeat(65),
         float(1524000)

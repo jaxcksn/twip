@@ -56,6 +56,8 @@ pub struct StoryLayout {
     pub float_bottom: f64,
     /// A header's or footer's floats that keep where they were first placed on the page, by block and float.
     pub frozen: Vec<((usize, usize), [f64; 4])>,
+    /// Each paragraph's top above its space before, by block.
+    pub origins: Vec<(usize, f64)>,
 }
 
 impl PartialEq for StoryLayout {
@@ -234,6 +236,7 @@ pub fn layout_with(
     let mut wrapping: Vec<(usize, usize, f64, f64)> = Vec::new();
     let mut float_bottom = 0.0f64;
     let mut held = 0.0f64;
+    let mut origins = Vec::new();
     let mut tables: Vec<Placed> = Vec::new();
     for (bi, b) in blocks.iter().enumerate() {
         // The part of a paragraph starting at a later line goes on without its space before.
@@ -277,6 +280,14 @@ pub fn layout_with(
                     Some(_) if !contextual => gap_plain(text, prev_after, before),
                     Some(ps) => gap(text, ps, prev_after, style, before),
                 };
+                // The paragraph's top, which `paragraph` floats count from, is above its space before.
+                let kept = match prev {
+                    Some(ps) if contextual && from == 0 => gap(text, ps, prev_after, style, 0.0),
+                    Some(_) if from == 0 => prev_after,
+                    _ => 0.0,
+                };
+                let origin = y + kept;
+                origins.push((bi, origin));
                 y += g;
                 let id = para_id(p);
                 let para_top = y;
@@ -296,7 +307,7 @@ pub fn layout_with(
                             continue;
                         }
                         let h = float_height(f, env, memos)?;
-                        let (fx, fy) = (float::h_pos(f, &fr), float::v_pos(f, h, &fr, para_top, para_top));
+                        let (fx, fy) = (float::h_pos(f, &fr), float::v_pos(f, h, &fr, origin, para_top));
                         own.push((k, Placed::new((0, bi, k), id, f, fx, fy, h)));
                     }
                 }
@@ -338,7 +349,7 @@ pub fn layout_with(
                             let h = float_height(f, env, memos)?;
                             let (fx, fy) = match own.iter().find(|(o, _)| *o == k) {
                                 Some((_, a)) => (a.rect[0], a.rect[1] - y),
-                                None => (super::float::h_pos(f, &fr), super::float::v_pos(f, h, &fr, para_top, y) - y),
+                                None => (super::float::h_pos(f, &fr), super::float::v_pos(f, h, &fr, origin, y) - y),
                             };
                             if f.in_cell(text.compat) {
                                 float_bottom = float_bottom.max(y + fy + h);
@@ -415,7 +426,7 @@ pub fn layout_with(
         y += prev_after;
     }
     unwrapped_floats(&mut units, &wrapping);
-    Ok(StoryLayout { units, height: y.max(held), float_bottom, frozen: Vec::new() })
+    Ok(StoryLayout { units, height: y.max(held), float_bottom, frozen: Vec::new(), origins })
 }
 
 // Cell floats
@@ -1160,7 +1171,7 @@ fn float_rects(
     for (bi, b) in blocks.iter().enumerate() {
         let Block::Para(p) = b else { continue };
         let Some(u) = story.units.iter().find(|u| u.block == bi) else { continue };
-        let para_top = top + u.top - if bi == 0 { space_before(&env.ctx.env.text, p.para_style_in(env.ctx.env.text.review.view)) } else { 0.0 };
+        let para_top = top + story.origins.iter().find(|o| o.0 == bi).map_or(u.top, |o| o.1);
         for (k, f) in env.ctx.floats_of(p).iter().enumerate() {
             let sized = super::float::sized(f, fr);
             let f = sized.as_ref().unwrap_or(f);
