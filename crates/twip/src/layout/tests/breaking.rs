@@ -535,6 +535,26 @@ fn a_floating_tables_obstacle_counts_a_missing_border_as_a_thin_one() {
 }
 
 #[test]
+fn a_floating_tables_obstacle_takes_nothing_for_a_table_nil_and_tblpx_codes_align_it() {
+    let table = |x: &str, tbl: &str, tc: &str| {
+        format!(
+            r#"<w:tbl><w:tblPr><w:tblpPr w:leftFromText="180" w:rightFromText="180" w:vertAnchor="text" w:horzAnchor="margin" w:tblpX="{x}" w:tblpY="0"/><w:tblW w:w="1440" w:type="dxa"/>{tbl}<w:tblLayout w:type="fixed"/><w:tblCellMar><w:left w:w="108" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid><w:gridCol w:w="1440"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="1440" w:type="dxa"/>{tc}</w:tcPr><w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p><w:r><w:t>Words beside the table on the right side.</w:t></w:r></w:p>"#
+        )
+    };
+    let c15 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+    let right = |body: String| lines(c15, ARIAL_12, &body).map(|l| l.iter().find(|(_, t, _)| t.starts_with("Words")).expect("text beside the table").0);
+    let nil = |side: &str| format!(r#"<w:{side} w:val="nil"/>"#);
+    let Some(table_nil) = right(table("200", &format!("<w:tblBorders>{}</w:tblBorders>", nil("right")), "")) else { return };
+    // 1639 + 1440 + 180 tw: no part for the table's nil; a cell's nil is missing, 0.75pt.
+    assert!((table_nil - 162.95).abs() < 0.01, "{table_nil}");
+    let cell_nil = right(table("200", &format!("<w:tblBorders>{}</w:tblBorders>", nil("right")), &format!("<w:tcBorders>{}</w:tcBorders>", nil("right")))).unwrap();
+    assert!((cell_nil - 163.7).abs() < 0.01, "{cell_nil}");
+    // `tblpX` -4 centres the table: text goes on left of it.
+    let centred = right(table("-4", "", "")).unwrap();
+    assert!((centred - 72.0).abs() < 0.01, "{centred}");
+}
+
+#[test]
 fn a_compat_14_table_in_the_flow_drops_when_its_text_box_meets_the_earlier_tables_obstacle() {
     let table = |x: u32, rows: usize, label: &str| {
         let row = format!(r#"<w:tr><w:trPr><w:trHeight w:val="200" w:hRule="exact"/></w:trPr><w:tc><w:tcPr><w:tcW w:w="1440" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="200" w:lineRule="exact"/></w:pPr><w:r><w:t>{label}</w:t></w:r></w:p></w:tc></w:tr>"#);

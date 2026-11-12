@@ -505,7 +505,9 @@ impl Styles {
             out.tr.merge(&r.tr);
         };
         for s in &chain {
-            add(&s.base, &mut out);
+            // A style's own cell borders don't apply.
+            let tc = TcProps { borders: Borders::default(), ..s.base.tc.clone() };
+            add(&Region { tc, ..s.base.clone() }, &mut out);
             rprs.push(&s.base.rpr);
         }
         for name in REGION_ORDER.iter().filter(|n| active.contains(n)) {

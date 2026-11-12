@@ -529,4 +529,15 @@ mod tests {
         assert!(!unset(r#"w:eastAsia="Calibri""#, r#"w:eastAsiaTheme="minorEastAsia""#));
         assert!(!unset(r#"w:eastAsia="Calibri""#, ""));
     }
+
+    #[test]
+    fn a_table_styles_own_cell_borders_do_not_apply_but_a_regions_do() {
+        let bd = r#"<w:tcPr><w:tcBorders><w:left w:val="single" w:sz="24" w:space="0" w:color="000000"/></w:tcBorders></w:tcPr>"#;
+        let xml = format!(
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="table" w:styleId="T1"><w:tblPr/>{bd}<w:tblStylePr w:type="firstRow">{bd}</w:tblStylePr></w:style></w:styles>"#
+        );
+        let styles = Styles::parse(Some(&xml), Default::default());
+        assert!(styles.table_region(Some("T1"), &[]).tc.borders.left.is_none());
+        assert!(styles.table_region(Some("T1"), &["firstRow"]).tc.borders.left.is_some());
+    }
 }

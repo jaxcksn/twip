@@ -973,6 +973,20 @@ pub struct TablePos {
     pub never_overlap: bool,
 }
 
+impl TablePos {
+    /// The alignment `tblpXSpec` gives, else the one `tblpX` codes: 0 left, -4 centre, -8 right, -12 inside (left on
+    /// a first page), -16 outside.
+    // ponytail: inside and outside as on an odd page without mirrored margins.
+    pub fn x_align(&self) -> Option<Jc> {
+        self.x_spec.or(match (self.x * 20.0).round() as i64 {
+            0 | -12 => Some(Jc::Left),
+            -4 => Some(Jc::Center),
+            -8 | -16 => Some(Jc::Right),
+            _ => None,
+        })
+    }
+}
+
 impl TblProps {
     pub fn parse(e: Option<Node>, tc: &ThemeColours) -> TblProps {
         let mut p = TblProps::default();

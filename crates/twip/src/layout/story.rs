@@ -392,7 +392,7 @@ pub fn layout_with(
                 match fp {
                     Some(_) if text.compat == Compat::Legacy => {}
                     Some(fp) => {
-                        let (bl, br) = super::table::float_box(&tl, false);
+                        let (bl, br) = super::table::float_box(&tl, t, false);
                         let f = super::flow::table_float(t.id, br - bl, h, super::flow::table_dist(&fp, false), !fp.never_overlap);
                         tables.push(Placed::new((0, bi, float::TABLE_PIECE), ParaId(t.id), &f, bl, top, h));
                     }

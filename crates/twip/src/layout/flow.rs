@@ -2514,7 +2514,7 @@ impl<'d> PageFill<'d, '_> {
         let legacy = self.ctx.env.text.compat == Compat::Legacy;
         let unsplit = fp.is_some() && legacy && self.ctx.env.text.do_not_break_wrapped_tables;
         let mut at_x = match fp {
-            Some(fp) if fp.h_page => match fp.x_spec {
+            Some(fp) if fp.h_page => match fp.x_align() {
                 Some(Jc::Center) => (self.page_w - col.width) / 2.0,
                 Some(Jc::Right) => self.page_w - col.width,
                 _ => 0.0,
@@ -2539,14 +2539,17 @@ impl<'d> PageFill<'d, '_> {
                 (_, None) => t0 + fp.y - 0.05,
             }
             .max(0.0);
-            let (bl, br) = super::table::float_box(tb, legacy);
+            let (bl, br) = match self.sec.blocks.get(pos.block) {
+                Some(Block::Table(t)) => super::table::float_box(tb, t, legacy),
+                _ => (0.0, 0.0),
+            };
             let [dt, db, ..] = fp.dist;
             // Compat ≤ 14 puts a table placed in the flow, from the nearest twip, below an earlier table whose obstacle
             // its text box (a twip left of `tblpX`, the indent added to its width) reaches.
             let in_flow = legacy && fp.v_anchor == TableAnchor::Text && fp.y == 0.0;
             let tables: Vec<Placed> = self.at.found.iter().filter(|o| o.key.2 == float::TABLE_PIECE).cloned().collect();
             let (c0, c1) = super::table::cells_box(tb);
-            let shift = if fp.x_spec.is_none() && !fp.h_text { 0.05 } else { 0.0 };
+            let shift = if fp.x_align().is_none() && !fp.h_text { 0.05 } else { 0.0 };
             let ind = match self.sec.blocks.get(pos.block) {
                 Some(Block::Table(t)) => t.ind,
                 _ => 0.0,
@@ -3152,12 +3155,12 @@ impl<'d> PageFill<'d, '_> {
         }
         let legacy = self.ctx.env.text.compat == Compat::Legacy;
         let in_flow = legacy && fp.v_anchor == TableAnchor::Text && fp.y == 0.0;
-        let (bl, br) = super::table::float_box(tb, legacy);
+        let (bl, br) = super::table::float_box(tb, t, legacy);
         let f = table_float(t.id, br - bl, bottom - top, table_dist(&fp, in_flow), !fp.never_overlap);
         let mut o = Placed::new((self.sec.index, bi, float::TABLE_PIECE), ParaId(t.id), &f, at_x + bl, top, bottom - top);
         o.excl[1] = o.excl[1].max(flow_y.min(top));
         // One twip left of `tblpX`, in either mode.
-        if fp.x_spec.is_none() && !fp.h_text {
+        if fp.x_align().is_none() && !fp.h_text {
             o.excl[0] -= 0.05;
             o.excl[2] -= 0.05;
         }

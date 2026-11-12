@@ -771,14 +771,41 @@ pub fn outer_box(tb: &TableLayout) -> (f64, f64) {
     sides_box(tb, half_border, |w| w / 2.0)
 }
 
-/// A floating table's box as the text beside it sees it: past each row's last cell a missing border counts 0.75pt,
-/// a drawn one half its width. Compat ≤ 14 also counts the first cell's left side that way; compat 15 keeps the
-/// table's left edge.
-pub fn float_box(tb: &TableLayout, legacy: bool) -> (f64, f64) {
-    fn part(w: f64) -> f64 {
+/// A floating table's box as the text beside it sees it: past each row's last cell its border's part ([`part`]).
+/// Compat ≤ 14 also counts the first cell's left side that way; compat 15 keeps the table's left edge.
+pub fn float_box(tb: &TableLayout, t: &Table, legacy: bool) -> (f64, f64) {
+    fn width(w: f64) -> f64 {
         if w > 0.0 { w / 2.0 } else { 0.75 }
     }
-    sides_box(tb, if legacy { part } else { half_border }, part)
+    if tb.rtl {
+        // ponytail: right to left counts a border set nowhere and an undrawn one alike.
+        return sides_box(tb, if legacy { width } else { half_border }, width);
+    }
+    let parts = tb.rows.iter().enumerate().filter_map(|(ri, r)| {
+        let (a, z) = (r.cells.first()?, r.cells.last()?);
+        let own = |c: &CellBox| t.rows.get(ri).and_then(|m| m.cells.get(c.index));
+        let rb = row_borders(t, ri);
+        let left = if legacy { part(own(a).map(|c| &c.left), &rb[1]) } else { half_border(bw(drawn_edges(tb, a)[1])) };
+        Some((tb.x0 + a.x - left, tb.x0 + z.x + z.w + part(own(z).map(|c| &c.right), &rb[3])))
+    });
+    parts.fold((f64::INFINITY, f64::NEG_INFINITY), |(l, r), (a, z)| (l.min(a), r.max(z)))
+}
+
+/// What a floating table's outer border on one side adds to its box: half a drawn line; nothing for a `nil` set on
+/// the table, a `none` in a colour or a line of no width; 0.75pt for one set nowhere, a `none` in the automatic
+/// colour or a cell's own `nil`.
+fn part(own: Option<&Option<Border>>, table: &Option<Border>) -> f64 {
+    let (b, cell) = match own {
+        Some(Some(b)) => (Some(b), true),
+        _ => (table.as_ref(), false),
+    };
+    match b {
+        None => 0.75,
+        Some(b) if b.style == "nil" => if cell { 0.75 } else { 0.0 },
+        Some(b) if b.style == "none" => if b.color.is_some() { 0.0 } else { 0.75 },
+        Some(b) if b.visible() => thick(b) / 2.0,
+        Some(_) => 0.0,
+    }
 }
 
 /// The rows' widest extent between the first cell's left and the last cell's right margin.
@@ -2005,10 +2032,12 @@ fn assemble(
             };
             t.rows.iter().zip(geo).filter_map(|(r, gs)| gs.last().map(|g| (r, g))).map(row_w).fold(0.0, f64::max) + ind
         };
-        x0 = match fp.x_spec {
+        x0 = match fp.x_align() {
             Some(Jc::Center) => (text_w - frame()) / 2.0 + e0 + ind,
             Some(Jc::Right) => text_w - frame() + e0 + ind,
             Some(_) => e0 + ind,
+            // A frame left of the page starts at its edge.
+            None if fp.h_page => fp.x.max(0.05) + e0 + ind,
             None => fp.x + e0 + ind,
         };
     }
