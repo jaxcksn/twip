@@ -2553,6 +2553,7 @@ impl<'d> PageFill<'d, '_> {
             _ => beside.unwrap_or(col.x),
         };
         let mut settled = true;
+        let mut first: Option<(usize, f64)> = None;
         if let Some(fp) = fp
             && pos.at.at_start()
         {
@@ -2570,6 +2571,22 @@ impl<'d> PageFill<'d, '_> {
                 (_, None) => t0 + fp.y - 0.05,
             }
             .max(0.0);
+            // A page-anchored table's first part holds the rows that fit from where it stands in the flow to the
+            // column bottom, and it is moved up so they end on the paper.
+            // ponytail: whole rows only, and only `tblpY` against the page.
+            if fp.v_anchor == TableAnchor::Page && fp.y_spec.is_none() {
+                let mut part = (0, tb.bottom_border);
+                for r in tb.rows.iter().filter(|r| !r.hidden) {
+                    if !col.bottom.holds(flow_y + part.1 + r.height) {
+                        break;
+                    }
+                    part = (part.0 + 1, part.1 + r.height);
+                }
+                if part.0 > 0 {
+                    top = top.min(self.page_h - part.1).max(0.0);
+                    first = Some(part);
+                }
+            }
             let (bl, br) = match self.sec.blocks.get(pos.block) {
                 Some(Block::Table(t)) => super::table::float_box(tb, t, legacy),
                 _ => (0.0, 0.0),
@@ -2606,13 +2623,37 @@ impl<'d> PageFill<'d, '_> {
             if unsplit && !*empty && !col.bottom.holds(*y + h) {
                 return Ok(Stop::Full);
             }
+            // Compat 15: one placed above where it stands that doesn't hold every row in its first part goes to the
+            // next page (where the text after it goes on is as for a split table).
+            if let Some((n, _)) = first
+                && !legacy
+                && !*empty
+                && *y + 0.05 < flow_y - EPS
+                && n < tb.rows.iter().filter(|r| !r.hidden).count()
+            {
+                if self.ctx.env.text.text_after_table_break {
+                    carry.prev = None;
+                    carry.prev_after = 0.0;
+                    carry.balanced_after = 0.0;
+                }
+                return Ok(self.text_goes_on(true, pos, carry, y, empty, (flow_y, was_empty)));
+            }
         }
+        // An exact row is cut to the column's own height, whatever bottom the table's first part has.
+        let column_h = if unsplit { f64::INFINITY } else { col.bottom.to_pt() - col.top.to_pt() };
         let tall;
-        let col = if unsplit {
-            tall = ColumnSpace { bottom: Lu::MAX, ..*col };
-            &tall
-        } else {
-            col
+        let col = match first {
+            _ if unsplit => {
+                tall = ColumnSpace { bottom: Lu::MAX, ..*col };
+                &tall
+            }
+            // Compat ≤ 14 draws the first part whole, past the column bottom; compat 15 cuts it there.
+            Some((_, hn)) => {
+                let end = Lu::round_half_up(*y + hn + 0.01);
+                tall = ColumnSpace { bottom: if legacy { end } else { end.min(col.bottom) }, ..*col };
+                &tall
+            }
+            None => col,
         };
         let part_top = *y;
         carry.prev = None;
@@ -2687,7 +2728,7 @@ impl<'d> PageFill<'d, '_> {
             let carries = carried.iter().any(Option::is_some);
             let height = if rest.is_some() { part_height(row, &parts) } else { row.height };
             let height = if row.exact && rest.is_none() && self.ctx.env.text.compat == Compat::Legacy {
-                height.min((col.bottom.to_pt() - col.top.to_pt() - row.top_border - tb.bottom_border).max(0.0))
+                height.min((column_h - row.top_border - tb.bottom_border).max(0.0))
             } else {
                 height
             };

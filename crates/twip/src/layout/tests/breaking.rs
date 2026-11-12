@@ -2083,6 +2083,43 @@ fn compat_15_text_after_a_split_floating_table_can_stay_beside_its_first_part() 
     assert_eq!(page_of_a01(12, true), Some(1));
 }
 
+#[test]
+fn a_page_anchored_table_holds_the_rows_that_fit_below_where_it_stands() {
+    // `before` lines of 252 twips, then 70 rows of 263 at `tblpY` against the page: (page, baseline) of R01 and the
+    // pages of the first part's last row and the row after it.
+    let place = |compat: u32, before: u32, y: u32, last: u32| {
+        let p = |t: String| format!(r#"<w:p><w:pPr><w:spacing w:after="0" w:line="252" w:lineRule="exact"/></w:pPr><w:r><w:t>{t}</w:t></w:r></w:p>"#);
+        let row = |k: u32| format!(r#"<w:tr><w:trPr><w:trHeight w:val="263" w:hRule="exact"/></w:trPr><w:tc><w:tcPr><w:tcW w:w="1500" w:type="dxa"/></w:tcPr>{}</w:tc></w:tr>"#, p(format!("R{k:02}")));
+        let rows: String = (1..=70).map(row).collect();
+        let lines: String = (1..=before).map(|k| p(format!("B{k:02}"))).collect();
+        let body = format!(
+            r#"{lines}<w:tbl><w:tblPr><w:tblpPr w:leftFromText="180" w:rightFromText="180" w:vertAnchor="page" w:horzAnchor="margin" w:tblpY="{y}"/><w:tblW w:w="1500" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="1500"/></w:tblGrid>{rows}</w:tbl>{}"#,
+            p("A01".into())
+        );
+        let settings = format!(r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="{compat}"/></w:compat>"#);
+        let doc = test_doc(&settings, ARIAL_12, &body, "")?;
+        let pages = super::page_chars(&doc);
+        let find = |t: &str| {
+            pages.iter().enumerate().find_map(|(k, pg)| {
+                let s: String = pg.iter().map(|c| c.0).collect();
+                s.find(t).map(|i| (k, pg[s[..i].chars().count()].2))
+            })
+        };
+        let r01 = find("R01")?;
+        Some((r01.0, r01.1, find(&format!("R{last:02}"))?.0, find(&format!("R{:02}", last + 1))?.0))
+    };
+    let Some((page, y, a, b)) = place(15, 5, 7200, 38) else { return };
+    // The rows that fit from the flow end at the paper's bottom edge: the table moves up from 360pt.
+    assert_eq!((page, a, b), (0, 0, 1));
+    assert!(y < 300.0, "{y}");
+    // Compat 12 draws all those rows, past the bottom margin.
+    let (_, _, a, b) = place(12, 5, 7200, 44).unwrap();
+    assert_eq!((a, b), (0, 1));
+    // Above where it stands and not whole: compat 15 sends it to the next page, compat 12 keeps it.
+    assert_eq!(place(15, 10, 1440, 49).map(|r| (r.0, r.2, r.3)), Some((1, 1, 2)));
+    assert_eq!(place(12, 10, 1440, 39).map(|r| (r.0, r.2, r.3)), Some((0, 0, 1)));
+}
+
 /// Fixed tables of one row each, `cells` (text, width in twips) per table, back to back; `between` is written
 /// between them and `tbl_pr` into the second one's properties.
 fn back_to_back(tables: &[&[(&str, u32)]], between: &str, tbl_pr: &str) -> String {
