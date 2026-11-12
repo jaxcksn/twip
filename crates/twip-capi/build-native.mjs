@@ -1,11 +1,10 @@
-// Builds the native library the .NET and Swift SDKs load (target/release/twip.dll, libtwip.so or libtwip.dylib). On
-// Windows it first downloads the prebuilt Skia with Graphite on Dawn once (into .native-deps, not target/: CI's
-// rust-cache deletes the files under target/ that aren't cargo's before saving), so the library draws on the GPU. On
-// Linux it downloads the prebuilt Linux Skia the same way (no Dawn there: it draws with the CPU), because skia-safe
-// publishes none with Skia's own FreeType (crates/twip/Cargo.toml's Linux skia-safe line). On macOS skia-bindings
-// downloads rust-skia's Graphite on Metal Skia itself, and the Metal shim compiles against the Skia headers that
-// skia-bindings ships. Elsewhere it is the plain cargo build. Other cargo commands get the same environment (CI's
-// clippy and tests on Windows).
+// Builds the native library the .NET and Swift SDKs load (target/release/twip.dll, libtwip.so or libtwip.dylib). Its
+// GPU frames are twip-graphics on wgpu, which needs nothing prebuilt; Skia (CPU frames while `skia-screen` stays, and
+// PDF) does. On Windows it first downloads the prebuilt Skia once (into .native-deps, not target/: CI's rust-cache
+// deletes the files under target/ that aren't cargo's before saving). On Linux it downloads the prebuilt Linux Skia the
+// same way, because skia-safe publishes none with Skia's own FreeType (crates/twip/Cargo.toml's Linux skia-safe line).
+// On macOS skia-bindings downloads rust-skia's Skia itself. Elsewhere it is the plain cargo build. Other cargo commands
+// get the same environment (CI's clippy and tests on Windows).
 // Usage: node build-native.mjs [cargo arguments]
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -15,7 +14,7 @@ import { join, resolve } from 'node:path';
 const MUSL = process.platform === 'linux' && !process.report.getReport().header.glibcVersionRuntime;
 // The prebuilt Skia, by platform (jaxcksn/twip-skia-dawn releases from its build-windows, build-linux and build-musl
 // workflows, built for skia-safe 0.153.3 with the features in crates/twip/Cargo.toml's skia-safe lines). The Windows
-// archive carries Dawn; the Linux ones don't.
+// archive also carries Dawn, which nothing links now.
 const SKIA = {
   'win32-x64': '0.153.3-windows-20ce3e1',
   'linux-x64': '0.153.3-linux-x86_64-30a1ae3',
@@ -23,7 +22,7 @@ const SKIA = {
   'linux-musl-x64': '0.153.3-musl-x86_64-30a1ae3',
   'linux-musl-arm64': '0.153.3-musl-aarch64-30a1ae3',
 }[`${process.platform}${MUSL ? '-musl' : ''}-${process.arch}`];
-// Dawn's combined library in the archive.
+// A file of the Windows archive's, there once it is unpacked.
 const DAWN_LIB = 'dawn_combined.lib';
 // Windows' own tar: Git's GNU tar on PATH reads the D: of a path as a remote host.
 const TAR = process.platform === 'win32' ? join(process.env.SystemRoot, 'System32', 'tar.exe') : 'tar';
@@ -61,7 +60,7 @@ if (SKIA && process.platform === 'linux') {
 } else if (SKIA) {
   const deps = realpathSync(join(root, '.native-deps'));
   const archive = join(deps, `skia-${SKIA}.tar.gz`);
-  // skia-bindings unpacks the archive itself; the Dawn shim needs its headers and Dawn's library.
+  // Unpacked here to repack its files alone (below).
   const unpacked = join(deps, `skia-${SKIA}`);
   if (!existsSync(join(unpacked, 'skia-binaries', DAWN_LIB))) {
     const tmp = `${unpacked}.${process.pid}`;
@@ -90,13 +89,6 @@ if (SKIA && process.platform === 'linux') {
     settle(`${slim}.${process.pid}`, slim);
   }
   env.SKIA_BINARIES_URL = `file://${slim.replaceAll('\\', '/')}`;
-  env.TWIP_DAWN_DIR = join(unpacked, 'skia-binaries');
-}
-if (process.platform === 'darwin') {
-  // The Skia source in the skia-bindings crate: the headers of the prebuilt Skia it links.
-  const metadata = JSON.parse(execFileSync('cargo', ['metadata', '--format-version', '1'], { cwd: root, maxBuffer: 1 << 28 }));
-  const bindings = metadata.packages.find((p) => p.name === 'skia-bindings');
-  env.SKIA_INCLUDE_DIR = join(bindings.manifest_path, '..', 'skia');
 }
 const args = process.argv.slice(2);
 // The library unwinds panics, which the release profile otherwise aborts on: its entry points catch them and report

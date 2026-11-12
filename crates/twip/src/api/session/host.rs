@@ -1120,7 +1120,7 @@ impl HostSurface<'_> {
         }
         let mut target = twip_graphics::cpu::Target::new(pixels, width, height, row, twip_graphics::cpu::Format::Rgba8)
             .map_err(|e| Error::invalid(format!("the pixel buffer can't be drawn into: {e}")))?;
-        self.draw_graphics(&mut target, f64::from(width), f64::from(height));
+        self.draw_graphics(f64::from(width), f64::from(height), |g| g.present(&mut target));
         Ok(())
     }
     /// Test builds and tools: each CPU frame ([`HostSurface::frame_rgba`]) is drawn a second time from scratch,
@@ -1160,7 +1160,7 @@ impl HostSurface<'_> {
     }
 
     /// Draws this session's frames into `window` with the GPU from now on (an `HWND` on Windows, a `CAMetalLayer` on
-    /// macOS): the backend (1 D3D12, 2 D3D11, 3 Vulkan, 4 Metal), or `None` when there is no usable GPU or this build
+    /// macOS): the backend (1 D3D12, 3 Vulkan, 4 Metal), or `None` when there is no usable GPU or this build
     /// has none (draw with [`HostSurface::frame_rgba`]).
     /// # Safety
     /// `window` is a live window or layer that outlives the attach ([`HostSurface::detach_window`], or the session's
@@ -1197,12 +1197,36 @@ impl HostSurface<'_> {
         #[cfg(twip_window)]
         {
             let key = self.session.presentation.serial;
-            if crate::render::window::frame(key, width, height, |c| self.draw(c, f64::from(width), f64::from(height))) {
+            let started = std::time::Instant::now();
+            let drawn = self.draw_graphics(f64::from(width), f64::from(height), |g| crate::render::window::frame(key, width, height, g));
+            if drawn {
+                self.session.presentation.counters.frame(started.elapsed().as_secs_f64() * 1e3);
                 return Ok(self.frame_info());
             }
         }
         let _ = (width, height);
         Err(Error::unavailable("no GPU window is attached"))
+    }
+
+    /// Tests and tools: the viewport drawn as [`HostSurface::frame_window`] draws it, on the GPU, into `pixels` (as
+    /// [`HostSurface::frame_rgba`] fills them) instead of a window. Fails `unavailable` with no usable GPU, or in a
+    /// build without one.
+    #[doc(hidden)]
+    pub fn frame_gpu_rgba(&mut self, pixels: &mut [u8], width: u32, height: u32) -> Result<FrameInfo, Error> {
+        let row = width as usize * 4;
+        if width == 0 || height == 0 || pixels.len() < row * height as usize {
+            return Err(Error::invalid("the pixel buffer is smaller than width x height x 4"));
+        }
+        #[cfg(twip_window)]
+        {
+            let key = self.session.presentation.serial;
+            let drawn = self.draw_graphics(f64::from(width), f64::from(height), |g| crate::render::window::pixels(key, width, height, g));
+            if let Some(drawn) = drawn {
+                pixels[..drawn.len()].copy_from_slice(&drawn);
+                return Ok(self.frame_info());
+            }
+        }
+        Err(Error::unavailable("no GPU to draw with"))
     }
 
     /// Draws the viewport on `canvas`, `width` x `height` device pixels: the GPU paths hand their canvas here.
@@ -1301,7 +1325,8 @@ impl HostSurface<'_> {
     }
 
     /// [`HostSurface::draw_frame`] with twip-graphics: the same frame, recorded and drawn into `target` on the CPU.
-    fn draw_graphics(&mut self, target: &mut twip_graphics::cpu::Target<'_>, width: f64, height: f64) {
+    /// Records a frame with twip-graphics, `width` x `height` device pixels, and draws it with `present`.
+    fn draw_graphics<R>(&mut self, width: f64, height: f64, present: impl FnOnce(&mut crate::render::graphics::Graphics) -> R) -> R {
         let frame = self.prepare_frame(width, height);
         let s = &mut *self.session;
         let (f, view) = (&frame.f, &frame.view);
@@ -1338,8 +1363,9 @@ impl HostSurface<'_> {
             };
             p.graphics.ruler(&frame.ruler, &p.renderer.theme, &rf);
         }
-        crate::prof::time("frame:raster", || s.presentation.graphics.present(target));
+        let presented = crate::prof::time("frame:raster", || present(&mut s.presentation.graphics));
         self.finish_frame(frame);
+        presented
     }
     /// The document's size and the caret after the last frame: `caret_visible` is whether the frame drew the caret
     /// (focused, collapsed, in the blink's visible phase).

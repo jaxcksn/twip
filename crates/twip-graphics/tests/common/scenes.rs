@@ -43,6 +43,36 @@ pub fn rects() -> Picture {
     rec.finish()
 }
 
+/// The fill rules: three nested squares wound the same way, and a five-point star, each filled non-zero (left) and
+/// even-odd (right); then a ring clip by the even-odd rule (two circles wound alike), over a filled rect.
+pub fn fill_rules() -> Picture {
+    use twip_graphics::scene::FillRule;
+    let mut rec = Recorder::new();
+    let mut nested = BezPath::new();
+    for (a, b) in [(4.0, 52.0), (14.0, 42.0), (22.0, 34.0)] {
+        nested.extend(rect(a, a, b, b).path_elements(0.1));
+    }
+    let star: Vec<(f64, f64)> = (0..5)
+        .map(|i| {
+            let a = std::f64::consts::PI * (0.5 + 0.8 * i as f64);
+            (28.0 + 24.0 * a.cos(), 84.0 - 24.0 * a.sin())
+        })
+        .collect();
+    let mut star = polyline(&star);
+    star.close_path();
+    for (dx, rule) in [(0.0, FillRule::NonZero), (64.0, FillRule::EvenOdd)] {
+        let at = Affine::translate((dx, 0.0));
+        rec.fill_path_rule((at * nested.clone()).elements(), rule, BLUE);
+        rec.fill_path_rule((at * star.clone()).elements(), rule, RED);
+    }
+    let mut ring = kurbo::Circle::new((64.0, 136.0), 24.0).to_path(0.01);
+    ring.extend(kurbo::Circle::new((64.0, 136.0), 12.0).to_path(0.01));
+    rec.push_clip(Clip::EvenOdd(ring.elements()));
+    rec.fill_rect(rect(30.0, 106.0, 98.0, 166.0), GREEN);
+    rec.pop();
+    rec.finish()
+}
+
 /// Uniform, per-corner, oversized and tiny radii, and a circle.
 pub fn rrects() -> Picture {
     let mut rec = Recorder::new();

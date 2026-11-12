@@ -334,11 +334,12 @@ impl Renderer {
                     rrect_path(rect, radii, &mut self.verbs, &mut self.points);
                     self.with_paint(target, res, lists, paint, t, |r, target, src, aa| r.fill_scratch_path(target, t, &clip, src, aa));
                 }
-                Cmd::Path { path, paint } => {
+                Cmd::Path { path, paint } | Cmd::EvenOddPath { path, paint } => {
+                    let even_odd = matches!(cmd, Cmd::EvenOddPath { .. });
                     let (verbs, points) = (&lists.verbs[path.verbs.range()], &lists.points[path.points.range()]);
                     self.with_paint(target, res, lists, paint, t, |r, target, src, aa| {
                         let mut s = Scratch { level: r.level, masks: &r.masks, row: &mut r.row, colors: &mut r.colors, columns: &mut r.columns };
-                        fill_path(&mut r.raster, &mut s, target, verbs, points, t, &clip, src, aa);
+                        fill_path(&mut r.raster, &mut s, target, verbs, points, t, &clip, src, aa, even_odd);
                     });
                 }
                 Cmd::Glyphs { run, paint } => {
@@ -543,7 +544,7 @@ impl Renderer {
     /// Fills the path in `self.verbs` and `self.points`.
     fn fill_scratch_path(&mut self, target: &mut Target<'_>, t: Transform, clip: &Clip, src: Source<'_>, aa: bool) {
         let mut s = Scratch { level: self.level, masks: &self.masks, row: &mut self.row, colors: &mut self.colors, columns: &mut self.columns };
-        fill_path(&mut self.raster, &mut s, target, &self.verbs, &self.points, t, clip, src, aa);
+        fill_path(&mut self.raster, &mut s, target, &self.verbs, &self.points, t, clip, src, aa, false);
     }
 
     /// Draws a glyph run from cached masks, at any transform, or (when its em is over 256 pixels across, as Skia
@@ -947,8 +948,9 @@ fn fill_path(
     clip: &Clip,
     src: Source<'_>,
     aa: bool,
+    even_odd: bool,
 ) {
-    raster.fill(verbs, points, t, clip.bounds, aa, |y, x, cov| {
+    raster.fill(verbs, points, t, clip.bounds, aa, even_odd, |y, x, cov| {
         apply_clip(s.level, clip, s.masks, y, x, cov);
         s.paint(target, y, x, cov, src);
     });

@@ -14,12 +14,11 @@ You need:
   the same version.
 
 Skia is never built from source. Native builds use skia-safe's prebuilts, except on Windows:
-`node crates/twip-capi/build-native.mjs` downloads the pinned Skia with Graphite on Dawn (a
-[twip-skia-dawn](https://github.com/jaxcksn/twip-skia-dawn) release), so the native library draws on the GPU (D3D12,
-D3D11 or Vulkan). On macOS skia-safe's own prebuilt has Graphite on Metal, and the same script points the Metal shim
-at the Skia headers the skia-bindings crate ships. It passes other cargo arguments through
-(`node crates/twip-capi/build-native.mjs test --workspace`); a plain cargo build on Windows or macOS draws with the CPU
-only.
+`node crates/twip-capi/build-native.mjs` downloads the pinned Skia (a
+[twip-skia-dawn](https://github.com/jaxcksn/twip-skia-dawn) release). It passes other cargo arguments through
+(`node crates/twip-capi/build-native.mjs test --workspace`). Native windows draw on the GPU with twip-graphics on wgpu
+(D3D12 or Vulkan on Windows, Metal on macOS), which needs nothing prebuilt. D3D12 needs DXC (`dxcompiler.dll`, found
+as Windows finds DLLs); without it, Windows draws with Vulkan.
 On Linux musl (Alpine) the same script downloads the pinned musl Skia from twip-skia-dawn (built without Dawn, so it
 draws with the CPU), because skia-safe publishes no musl prebuilts.
 

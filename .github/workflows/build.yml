@@ -53,7 +53,7 @@ jobs:
       # Skia links FreeType and Fontconfig.
       - if: runner.os == 'Linux' && !matrix.alpine
         run: sudo apt-get update && sudo apt-get install -y libfreetype6-dev libfontconfig1-dev
-      # On Windows with the prebuilt Skia that draws on the GPU (Graphite on Dawn).
+      # On Windows with the pinned prebuilt Skia (build-native.mjs).
       - if: ${{ !matrix.alpine }}
         run: node crates/twip-capi/build-native.mjs
       # In Alpine, rustup installs the toolchain rust-toolchain.toml pins for the container's musl host.

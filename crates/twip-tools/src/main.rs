@@ -182,12 +182,12 @@ fn main() {
         return;
     }
     if args.peek().map(String::as_str) == Some("render") {
-        // twip render <doc.docx> <out.png> [zoom] [text] [--vulkan | --skia | --graphics]: the editor's view of a document
-        // (a CPU frame, drawn by the build's CPU screen or the one named; or Graphite on the first Vulkan device), with
-        // `text` typed at the start of the first paragraph.
+        // twip render <doc.docx> <out.png> [zoom] [text] [--gpu | --skia | --graphics]: the editor's view of a document
+        // (a CPU frame, drawn by the build's CPU screen or the one named; or the window's frame, drawn by twip-graphics
+        // on the GPU), with `text` typed at the start of the first paragraph.
         // `--appearance=dark|darkWithLightPage|light` and `--theme=dark|light` set the view options of the same names.
         let a: Vec<String> = args.skip(1).collect();
-        let gpu = a.iter().any(|x| x == "--vulkan");
+        let gpu = a.iter().any(|x| x == "--gpu");
         let flag = |name: &str| a.iter().find_map(|x| x.strip_prefix(&format!("--{name}="))).map(|v| format!("\"{v}\""));
         let options = twip::api::command::ViewOptions {
             appearance: flag("appearance").map(|v| serde_json::from_str(&v).expect("an appearance: light, dark or darkWithLightPage")),
@@ -216,102 +216,21 @@ fn main() {
         let (w, h) = (f.content_width, f.content_height.min(8000.0));
         e.host().set_size(w, h, 1.0);
         let info = ImageInfo::new((w.ceil() as i32, (h.ceil() as i32).min(8000)), ColorType::RGBA8888, AlphaType::Premul, None);
-        let image = if gpu {
-            #[cfg(target_os = "macos")]
-            panic!("--vulkan: macOS draws with Metal, not Vulkan");
-            #[cfg(not(target_os = "macos"))]
-            {
-                let pixels = vulkan::render(e, &info).unwrap_or_else(|why| panic!("Vulkan: {why}"));
-                skia_safe::images::raster_from_data(&info, skia_safe::Data::new_copy(&pixels), info.min_row_bytes()).expect("image from pixels")
-            }
+        if let Some(on) = screen {
+            e.host().set_graphics_screen(on);
+        }
+        let (pw, ph) = (info.width() as u32, info.height() as u32);
+        let mut pixels = vec![0u8; pw as usize * ph as usize * 4];
+        if gpu {
+            e.host().frame_gpu_rgba(&mut pixels, pw, ph).expect("a GPU frame");
         } else {
-            if let Some(on) = screen {
-                e.host().set_graphics_screen(on);
-            }
-            let (pw, ph) = (info.width() as u32, info.height() as u32);
-            let mut pixels = vec![0u8; pw as usize * ph as usize * 4];
             e.host().frame_rgba(&mut pixels, pw, ph).expect("a CPU frame");
-            skia_safe::images::raster_from_data(&info, skia_safe::Data::new_copy(&pixels), info.min_row_bytes()).expect("image from pixels")
-        };
+        }
+        let image = skia_safe::images::raster_from_data(&info, skia_safe::Data::new_copy(&pixels), info.min_row_bytes()).expect("image from pixels");
         let png = image.encode(None, EncodedImageFormat::PNG, None).expect("PNG encode");
         std::fs::write(&a[1], png.as_bytes()).expect("write PNG");
-        println!("{}: wrote {}", if gpu { "Graphite (Vulkan)" } else { "CPU raster" }, a[1]);
+        println!("{}: wrote {}", if gpu { "GPU" } else { "CPU raster" }, a[1]);
         return;
     }
     exit_on_error(Err("usage: twip-tools <dump|dumpdiff|roundtrip|units|golden|diff|rows|pairs|metrics|render|oracle> ...".into()));
-}
-
-#[cfg(not(any(target_os = "emscripten", target_os = "macos")))]
-mod vulkan {
-    use ash::vk::{self, Handle};
-    use skia_safe::ImageInfo;
-    use skia_safe::gpu::{self, graphite};
-
-    /// Renders a frame offscreen with Graphite on the first Vulkan device and reads it back.
-    pub fn render(session: &mut twip::api::session::Session, info: &ImageInfo) -> Result<Vec<u8>, String> {
-        let entry = unsafe { ash::Entry::load() }.map_err(|e| e.to_string())?;
-        // Graphite needs the 1.3/1.4 core entry points the loader only exposes when asked for that version.
-        let version = unsafe { entry.try_enumerate_instance_version() }.ok().flatten().unwrap_or(vk::API_VERSION_1_1);
-        let app = vk::ApplicationInfo::default().api_version(version);
-        let instance =
-            unsafe { entry.create_instance(&vk::InstanceCreateInfo::default().application_info(&app), None) }.map_err(|e| e.to_string())?;
-        let result = (|| {
-            let pdevice = *unsafe { instance.enumerate_physical_devices() }.map_err(|e| e.to_string())?.first().ok_or("no Vulkan device")?;
-            let family = unsafe { instance.get_physical_device_queue_family_properties(pdevice) }
-                .iter()
-                .position(|q| q.queue_flags.contains(vk::QueueFlags::GRAPHICS))
-                .ok_or("no graphics queue")? as u32;
-            let queues = [vk::DeviceQueueCreateInfo::default().queue_family_index(family).queue_priorities(&[1.0])];
-            let device = unsafe { instance.create_device(pdevice, &vk::DeviceCreateInfo::default().queue_create_infos(&queues), None) }
-                .map_err(|e| e.to_string())?;
-            let pixels = draw(session, info, &entry, &instance, pdevice, &device, family);
-            unsafe { device.destroy_device(None) };
-            pixels
-        })();
-        unsafe { instance.destroy_instance(None) };
-        result
-    }
-
-    fn draw(
-        session: &mut twip::api::session::Session,
-        info: &ImageInfo,
-        entry: &ash::Entry,
-        instance: &ash::Instance,
-        pdevice: vk::PhysicalDevice,
-        device: &ash::Device,
-        family: u32,
-    ) -> Result<Vec<u8>, String> {
-        let queue = unsafe { device.get_device_queue(family, 0) };
-        let resolve = |of: gpu::vk::GetProcOf| unsafe {
-            match of {
-                gpu::vk::GetProcOf::Instance(i, name) => entry.get_instance_proc_addr(vk::Instance::from_raw(i as _), name),
-                gpu::vk::GetProcOf::Device(d, name) => instance.get_device_proc_addr(vk::Device::from_raw(d as _), name),
-            }
-            .map_or(std::ptr::null(), |f| f as *const _)
-        };
-        // SAFETY: the Vulkan handles outlive the context, which is dropped before this returns.
-        let backend = unsafe {
-            gpu::vk::BackendContext::new_builder(
-                instance.handle().as_raw() as _,
-                pdevice.as_raw() as _,
-                device.handle().as_raw() as _,
-                (queue.as_raw() as _, family as usize),
-                &resolve,
-                None,
-            )
-            .build()
-        };
-        let mut context = graphite::vk::context_factory::make_vulkan(&backend, None).ok_or("Graphite rejected the device")?;
-        let mut recorder = context.make_recorder(None).ok_or("no recorder")?;
-        let mut surface = graphite::surfaces::render_target(&mut recorder, info, gpu::Mipmapped::No, None, None).ok_or("no surface")?;
-        session.host().draw(surface.canvas(), f64::from(info.width()), f64::from(info.height()));
-        let mut recording = recorder.snap().ok_or("snap failed")?;
-        context.insert_recording(&graphite::InsertRecordingInfo::new(&mut recording));
-        context.submit_and_wait();
-        let mut pixels = vec![0u8; info.compute_min_byte_size()];
-        if !context.read_pixels(&mut surface, info, &mut pixels, info.min_row_bytes(), (0, 0)) {
-            return Err("readback failed".into());
-        }
-        Ok(pixels)
-    }
 }

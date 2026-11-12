@@ -53,6 +53,10 @@ getrandom = "0.4.3"
 # with Twip at exactly its version (release-please keeps the pin in step).
 twip-graphics = { path = "../twip-graphics", version = "=0.1.1" } # x-release-please-version
 
+# Native windows draw on the GPU (render/window.rs): twip-graphics on wgpu, D3D12 or Vulkan on Windows, Metal on macOS.
+[target.'cfg(any(windows, target_os = "macos"))'.dependencies]
+twip-graphics = { path = "../twip-graphics", version = "=0.1.1", features = ["gpu"] } # x-release-please-version
+
 [features]
 default = ["skia-screen"]
 # CPU frames (`HostSurface::frame_rgba`) are drawn with Skia, as before twip-graphics. Without it they are drawn with

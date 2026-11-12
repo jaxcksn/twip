@@ -2991,3 +2991,37 @@ fn a_table_styles_format_menu_sets_part_borders_properties_and_banding() {
     let quote = style_values(&s.dialog_open_style(StyleOpen::Modify(StyleId("Quote".into()))).expect("opens"));
     assert!(s.dialog_open_on_style(DialogKind::Banding, quote).is_err(), "banding is a table style's");
 }
+
+/// Window frames are drawn on the GPU from the pictures the CPU screen draws: the two agree (a pixel may differ by 2
+/// in each channel; beyond that, at most 0.02% of the pixels, as twip-graphics' own comparisons allow), on the first
+/// frame and on one scrolled, whose pages the GPU draws from what it kept; and after the device is lost, on the new
+/// device the next frame makes. Nothing to compare without a GPU. (One test: the GPU device is the process's.)
+#[test]
+fn gpu_frames_draw_as_cpu_frames() {
+    for (fixture, lose) in [("objects.docx", false), ("docx-feature-showcase.docx", true)] {
+        let mut engine = Engine::new(FontLibrary::system_recommended());
+        let id = engine.create_session(SessionOptions::default());
+        let s = engine.session(id).expect("a session");
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures").join(fixture);
+        s.open(&std::fs::read(path).expect("the fixture")).expect("opens");
+        s.host().set_graphics_screen(true);
+        let (w, h) = (700u32, 500u32);
+        s.host().set_size(f64::from(w), f64::from(h), 1.5);
+        let (mut cpu, mut gpu) = (vec![0u8; (w * h * 4) as usize], vec![0u8; (w * h * 4) as usize]);
+        for scroll in [0.0, 37.0, 37.0] {
+            if lose && scroll > 0.0 {
+                s.host().lose_gpu_device();
+            }
+            s.host().set_scroll(0.0, scroll);
+            s.host().frame_rgba(&mut cpu, w, h).expect("a frame");
+            if s.host().frame_gpu_rgba(&mut gpu, w, h).is_err() {
+                eprintln!("no GPU: skipped");
+                return;
+            }
+            let diffs = cpu.chunks(4).zip(gpu.chunks(4)).map(|(a, b)| a.iter().zip(b).map(|(x, y)| x.abs_diff(*y)).max().unwrap_or(0));
+            let (over, worst) = diffs.fold((0usize, 0u8), |(n, m), d| (n + usize::from(d > 2), m.max(d)));
+            eprintln!("{fixture} at {scroll}: {over} pixels over 2, worst {worst}");
+            assert!(over <= (w * h) as usize / 5000, "{fixture} at {scroll}: {over} pixels differ by more than 2 (worst {worst})");
+        }
+    }
+}

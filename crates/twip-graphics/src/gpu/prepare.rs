@@ -690,13 +690,14 @@ impl Prepare {
                         let (rect, radii) = lists.rrects[rrect as usize];
                         let (mut verbs, mut points) = (std::mem::take(&mut self.verbs), std::mem::take(&mut self.points));
                         rrect_path(rect, radii, &mut verbs, &mut points);
-                        self.path(&verbs, &points, t, &clip, &p);
+                        self.path(&verbs, &points, t, &clip, &p, false);
                         (self.verbs, self.points) = (verbs, points);
                     }
                 }
-                Cmd::Path { path, paint } => {
+                Cmd::Path { path, paint } | Cmd::EvenOddPath { path, paint } => {
+                    let even_odd = matches!(cmd, Cmd::EvenOddPath { .. });
                     if let Some(p) = self.paint(res, lists, paint, t) {
-                        self.path(&lists.verbs[path.verbs.range()], &lists.points[path.points.range()], t, &clip, &p);
+                        self.path(&lists.verbs[path.verbs.range()], &lists.points[path.points.range()], t, &clip, &p, even_odd);
                     }
                 }
                 Cmd::Glyphs { run, paint } => {
@@ -1002,7 +1003,7 @@ impl Prepare {
         if !t.is_scale_translate() || clip.mask.is_some() {
             let (mut verbs, mut points) = (std::mem::take(&mut self.verbs), std::mem::take(&mut self.points));
             rect_path(rect, &mut verbs, &mut points);
-            self.path(&verbs, &points, t, clip, paint);
+            self.path(&verbs, &points, t, clip, paint, false);
             (self.verbs, self.points) = (verbs, points);
             return;
         }
@@ -1023,8 +1024,9 @@ impl Prepare {
         self.push(px, edges, 0, 0, paint);
     }
 
-    /// A path's coverage (clipped as the CPU backend clips it) into the atlas, tile by tile, each tile one instance.
-    fn path(&mut self, verbs: &[Verb], points: &[Point], t: Transform, clip: &Clip, paint: &Paint) {
+    /// A path's coverage (clipped as the CPU backend clips it, by the non-zero or the even-odd rule) into the atlas, tile by
+    /// tile, each tile one instance.
+    fn path(&mut self, verbs: &[Verb], points: &[Point], t: Transform, clip: &Clip, paint: &Paint, even_odd: bool) {
         let Some(first) = points.first() else { return };
         let first = t.map_point(*first);
         let (x0, y0, x1, y1) = points
@@ -1046,7 +1048,7 @@ impl Prepare {
                 for row in 0..h {
                     atlas.row(slot, row, w).fill(0);
                 }
-                raster.fill(verbs, points, t, part, paint.aa, |y, x, cov| {
+                raster.fill(verbs, points, t, part, paint.aa, even_odd, |y, x, cov| {
                     apply_clip(*level, clip, masks, y, x, cov);
                     let out = atlas.row(slot, (y - part.y0) as u32, w);
                     let at = (x - part.x0) as usize;
@@ -1098,7 +1100,7 @@ impl Prepare {
                 points.clear();
                 let map = kurbo::Affine::translate((g.x as f64, run.baseline as f64)) * em;
                 match self.glyphs.outliner.glyph(fonts, run.font, g.id, style, map, &mut verbs, &mut points) {
-                    Ok(true) => self.path(&verbs, &points, t, clip, &Paint { aa: true, ..*paint }),
+                    Ok(true) => self.path(&verbs, &points, t, clip, &Paint { aa: true, ..*paint }, false),
                     Ok(false) => {}
                     Err(()) => self.out.stats.failed_glyphs += 1,
                 }

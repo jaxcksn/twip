@@ -7,6 +7,7 @@ mod overlay;
 pub mod retained;
 pub mod ruler;
 mod shape;
+mod svg;
 
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -191,6 +192,15 @@ impl Graphics {
         self.cpu.render(target, &self.res, &cpu::Frame { clear: self.clear, draws: &draws });
     }
 
+    /// Hands the recorded frame (over the desk colour) and the resources it draws from to `draw`, as
+    /// [`Graphics::present`] does to the CPU renderer, and starts the next one: the GPU screen's present.
+    #[cfg_attr(not(twip_window), allow(dead_code, reason = "the GPU screen is the native windows'"))]
+    pub fn finish<R>(&mut self, draw: impl FnOnce(&Resources, &cpu::Frame<'_>) -> R) -> R {
+        let picture = self.frame.finish();
+        let draws = [Draw { picture: &picture, transform: Affine::IDENTITY }];
+        draw(&self.res, &cpu::Frame { clear: self.clear, draws: &draws })
+    }
+
     /// Tools: `page`'s content as a picture in its points, recorded now (the oracle compares it with Skia's drawing).
     #[doc(hidden)]
     pub fn page_picture(&mut self, r: &Renderer, page: &crate::layout::fragment::PageFragment, images: &[Vec<u8>]) -> twip_graphics::scene::Picture {
@@ -296,10 +306,12 @@ impl Graphics {
                 rec.pop();
             }
             Item::Image { rect: rc, key } => {
-                // shortcut: an SVG picture is drawn as the light frame of a picture twip-graphics can't read; drawing
-                // it lands with an SVG reader that records twip-graphics pictures as `render::svg` draws with Skia.
-                let svg = key.index.and_then(|i| images.get(i)).is_some_and(|b| crate::docx::image::is_svg(b));
-                match self.image(*key, images).filter(|_| !svg) {
+                if let Some(bytes) = key.index.and_then(|i| images.get(i)).filter(|b| crate::docx::image::is_svg(b))
+                    && svg::draw(rec, bytes, rect(*rc))
+                {
+                    return;
+                }
+                match self.image(*key, images) {
                     Some(id) => rec.image(id, None, rect(*rc), &ImagePaint::default()),
                     // A picture that isn't an image twip-graphics reads (EMF, WMF), or a placeholder without data: a
                     // light frame, a CSS pixel wide at 100%.

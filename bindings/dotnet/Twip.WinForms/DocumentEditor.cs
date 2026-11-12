@@ -285,7 +285,7 @@ public class DocumentEditor : Control
         }
     }
 
-    /// <summary>Whether the engine draws with the GPU when it can (Graphite on Dawn: D3D12, D3D11, then Vulkan). Off, or
+    /// <summary>Whether the engine draws with the GPU when it can (D3D12, then Vulkan). Off, or
     /// with no usable GPU, it draws with the CPU.</summary>
     [DefaultValue(true)]
     public bool UseGpu

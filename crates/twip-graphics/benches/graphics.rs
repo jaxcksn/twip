@@ -301,40 +301,20 @@ fn record_keystroke(b: Bencher) {
 /// time is not counted: each frame waits for the last before it, outside the timing). Skipped without a hardware GPU.
 #[cfg(feature = "gpu")]
 mod gpu {
-    use std::future::Future;
-    use std::sync::{Arc, OnceLock};
-    use std::task::{Context as TaskContext, Poll, Wake, Waker};
+    use std::sync::OnceLock;
 
     use divan::Bencher;
     use twip_graphics::Resources;
-    use twip_graphics::gpu::{Context, Renderer};
+    use twip_graphics::gpu::{Context, Renderer, block_on};
     use twip_graphics::kurbo::{Affine, Rect};
     use twip_graphics::paint::Color;
     use twip_graphics::scene::{Picture, Recorder};
 
     use super::{Text, aliased, line, lines};
 
-    fn block_on<F: Future>(future: F) -> F::Output {
-        struct Thread(std::thread::Thread);
-        impl Wake for Thread {
-            fn wake(self: Arc<Self>) {
-                self.0.unpark();
-            }
-        }
-        let waker = Waker::from(Arc::new(Thread(std::thread::current())));
-        let mut cx = TaskContext::from_waker(&waker);
-        let mut future = std::pin::pin!(future);
-        loop {
-            match future.as_mut().poll(&mut cx) {
-                Poll::Ready(v) => return v,
-                Poll::Pending => std::thread::park(),
-            }
-        }
-    }
-
     fn context() -> Option<&'static Context> {
         static CONTEXT: OnceLock<Option<Context>> = OnceLock::new();
-        CONTEXT.get_or_init(|| block_on(Context::new(None)).ok()).as_ref()
+        CONTEXT.get_or_init(|| block_on(Context::new(Context::instance(), None)).ok()).as_ref()
     }
 
     /// The benchmark page with each text line a picture of its own (as Twip keeps lines), placed in the page's.

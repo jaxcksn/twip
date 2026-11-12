@@ -2,7 +2,7 @@ $schema: '../../.moon/cache/schemas/project.json'
 language: rust
 tags: [engine]
 
-# Native cargo runs through build-native.mjs: on Windows it sets up the prebuilt Skia with Dawn, and a plain cargo run
+# Native cargo runs through build-native.mjs: on Windows it sets up the pinned prebuilt Skia, and a plain cargo run
 # there would unpack a different Skia over it.
 tasks:
   # The tests and the lint build it too.

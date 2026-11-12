@@ -48,7 +48,7 @@ pub(crate) fn push_clip(
     t: Transform,
     clip: Clip,
 ) -> Clip {
-    let (verbs, points, aa) = match *rec {
+    let (verbs, points, aa, even_odd) = match *rec {
         ClipRec::Rect { rect, aa } if t.is_scale_translate() => {
             let r = t.map_rect(rect);
             let q = |v: f32| if aa { fixed(v) } else { fixed((v + 0.5).floor()) };
@@ -64,9 +64,9 @@ pub(crate) fn push_clip(
         }
         ClipRec::Rect { rect, aa } => {
             rect_path(rect, verbs, points);
-            (&verbs[..], &points[..], aa)
+            (&verbs[..], &points[..], aa, false)
         }
-        ClipRec::Path(path) => (&lists.verbs[path.verbs.range()], &lists.points[path.points.range()], true),
+        ClipRec::Path { path, even_odd } => (&lists.verbs[path.verbs.range()], &lists.points[path.points.range()], true, even_odd),
     };
     // A coverage mask over the clip's bounds: the path's coverage times the enclosing mask's.
     let index = *used;
@@ -81,7 +81,7 @@ pub(crate) fn push_clip(
     mask.data.clear();
     mask.data.resize(b.width().max(0) as usize * (b.y1 - b.y0).max(0) as usize, 0);
     let w = b.width() as usize;
-    raster.fill(verbs, points, t, b, aa, |y, x, cov| {
+    raster.fill(verbs, points, t, b, aa, even_odd, |y, x, cov| {
         let at = (y - b.y0) as usize * w + (x - b.x0) as usize;
         mask.data[at..at + cov.len()].copy_from_slice(cov);
     });

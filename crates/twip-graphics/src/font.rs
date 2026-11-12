@@ -644,7 +644,7 @@ fn rasterize(
     }
     let mut data = vec![0u8; w * h];
     let table = &gamma_tables()[key.lum as usize];
-    raster.fill(verbs, points, Transform::IDENTITY, bounds, true, |y, x, cov| {
+    raster.fill(verbs, points, Transform::IDENTITY, bounds, true, false, |y, x, cov| {
         let at = (y - bounds.y0) as usize * w + (x - bounds.x0) as usize;
         for (d, &c) in data[at..at + cov.len()].iter_mut().zip(cov.iter()) {
             *d = table[c as usize];

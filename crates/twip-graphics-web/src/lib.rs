@@ -27,7 +27,7 @@ const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 /// `{ "error" }` when there is no GPU.
 #[wasm_bindgen]
 pub async fn run() -> String {
-    let ctx = match Context::new(None).await {
+    let ctx = match Context::new(Context::instance(), None).await {
         Ok(ctx) => ctx,
         Err(e) => return format!("{{\"error\":{:?}}}", e.to_string()),
     };

@@ -8,7 +8,8 @@
 //!   buffer in 1/65536 of a pixel, with the last share taking whatever rounding left, so a piece adds exactly its
 //!   height.
 //! - A row's prefix sum is the winding-weighted coverage. `min(|sum|, 1)` is the non-zero rule: exact for contours that
-//!   don't overlap, and right for holes and same-direction overlaps away from anti-aliased edges. Integer sums don't
+//!   don't overlap, and right for holes and same-direction overlaps away from anti-aliased edges. The even-odd rule
+//!   folds the sum instead: `|sum|` modulo 2, taken back down past 1 (as ab_glyph_rasterizer does). Integer sums don't
 //!   depend on the order of addition, so any SIMD level gives the same bytes.
 
 use fearless_simd::{Level, Simd, dispatch};
@@ -85,9 +86,19 @@ impl Rasterizer {
     }
 
     /// Fills the path (`verbs` over `points`, in local space) mapped by `transform`, inside `clip`, with the non-zero
-    /// rule. Calls `row(y, x, coverage)` for each pixel row with coverage, `coverage[i]` being pixel `x + i`'s (0 to 255).
-    /// Without `aa`, a pixel is covered (255) when at least half of it is inside, else not.
-    pub fn fill(&mut self, verbs: &[Verb], points: &[Point], transform: Transform, clip: IRect, aa: bool, mut row: impl FnMut(i32, i32, &mut [u8])) {
+    /// rule, or the even-odd one. Calls `row(y, x, coverage)` for each pixel row with coverage, `coverage[i]` being pixel
+    /// `x + i`'s (0 to 255). Without `aa`, a pixel is covered (255) when at least half of it is inside, else not.
+    #[allow(clippy::too_many_arguments, reason = "a fill's path, mapping, area and rules")]
+    pub fn fill(
+        &mut self,
+        verbs: &[Verb],
+        points: &[Point],
+        transform: Transform,
+        clip: IRect,
+        aa: bool,
+        even_odd: bool,
+        mut row: impl FnMut(i32, i32, &mut [u8]),
+    ) {
         self.lines.clear();
         flatten(verbs, points, transform, &mut self.lines);
         let Some(bounds) = bounds(&self.lines) else { return };
@@ -127,7 +138,7 @@ impl Rasterizer {
                 }
                 let acc = &mut self.acc[r * stride + lo..=r * stride + hi];
                 let cov = &mut self.row[lo..=hi.min(w - 1)];
-                dispatch!(self.level, simd => coverage(simd, acc, cov, aa));
+                dispatch!(self.level, simd => coverage(simd, acc, cov, aa, even_odd));
                 row(top + r as i32, area.x0 + lo as i32, cov);
             }
             top += rows;
@@ -287,13 +298,18 @@ fn add_row(row: &mut [i32], xa: f64, xb: f64, total: i32) -> (usize, usize) {
 /// A row's prefix sum, as coverage: `acc` covers the touched columns (and is zeroed for the next band), `out` the ones
 /// inside the area.
 #[simd]
-fn coverage<S: Simd>(simd: S, acc: &mut [i32], out: &mut [u8], aa: bool) {
+fn coverage<S: Simd>(simd: S, acc: &mut [i32], out: &mut [u8], aa: bool, even_odd: bool) {
     let mut sum = 0i32;
     for (i, a) in acc.iter_mut().enumerate() {
         sum += *a;
         *a = 0;
         if let Some(o) = out.get_mut(i) {
-            let v = sum.unsigned_abs().min(FULL as u32);
+            let v = if even_odd {
+                let m = sum.unsigned_abs() % (2 * FULL as u32);
+                if m > FULL as u32 { 2 * FULL as u32 - m } else { m }
+            } else {
+                sum.unsigned_abs().min(FULL as u32)
+            };
             *o = if aa {
                 ((v * 255 + (FULL as u32 / 2)) >> 16) as u8
             } else if 2 * v >= FULL as u32 {
@@ -312,12 +328,16 @@ mod tests {
 
     /// The path's coverage on a `w × h` grid, identity transform.
     fn raster(els: &[kurbo::PathEl], w: i32, h: i32, aa: bool) -> Vec<u8> {
+        raster_rule(els, w, h, aa, false)
+    }
+
+    fn raster_rule(els: &[kurbo::PathEl], w: i32, h: i32, aa: bool, even_odd: bool) -> Vec<u8> {
         let (mut verbs, mut points) = (Vec::new(), Vec::new());
         crate::path::push(els, &mut verbs, &mut points);
         let identity = Transform::from_kurbo(kurbo::Affine::IDENTITY);
         let mut out = vec![0u8; (w * h) as usize];
         let mut r = Rasterizer::new(Level::new());
-        r.fill(&verbs, &points, identity, IRect { x0: 0, y0: 0, x1: w, y1: h }, aa, |y, x, cov| {
+        r.fill(&verbs, &points, identity, IRect { x0: 0, y0: 0, x1: w, y1: h }, aa, even_odd, |y, x, cov| {
             let at = (y * w + x) as usize;
             out[at..at + cov.len()].copy_from_slice(cov);
         });
@@ -388,5 +408,21 @@ mod tests {
             kurbo::PathEl::LineTo((4.0, 4.0).into()),
         ];
         raster(&wild, 16, 16, true);
+    }
+
+    #[test]
+    fn even_odd_leaves_every_other_nested_contour_empty() {
+        // Three squares, nested, all wound the same way: non-zero covers all of them; even-odd the outer ring and the
+        // innermost square.
+        let mut p = kurbo::BezPath::new();
+        for (a, b) in [(0.0, 12.0), (3.0, 9.0), (5.0, 7.0)] {
+            p.extend(kurbo::Rect::new(a, a, b, b).path_elements(0.1));
+        }
+        let (nonzero, evenodd) = (raster(p.elements(), 12, 12, true), raster_rule(p.elements(), 12, 12, true, true));
+        let at = |c: &[u8], x: usize, y: usize| c[y * 12 + x];
+        for (x, y) in [(1, 1), (4, 4), (6, 6)] {
+            assert_eq!(at(&nonzero, x, y), 255, "non-zero at {x},{y}");
+        }
+        assert_eq!((at(&evenodd, 1, 1), at(&evenodd, 4, 4), at(&evenodd, 6, 6)), (255, 0, 255));
     }
 }

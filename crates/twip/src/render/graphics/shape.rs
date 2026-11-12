@@ -490,13 +490,20 @@ impl Graphics {
                     rec.fill_path(path.elements(), Paint::new(Brush::Pattern { image, transform, sampling: Sampling::Nearest }));
                 }
             }
+            Fill::Picture { image, mode: BlipMode::Stretch(f), .. }
+                if image.and_then(|i| images.get(i)).is_some_and(|b| crate::docx::image::is_svg(b)) =>
+            {
+                // An SVG: its viewport is the box the stretch fills, clipped to the shape.
+                let bytes = image.and_then(|i| images.get(i)).map_or(&[][..], Vec::as_slice);
+                let f = f.map(|v| v.fraction());
+                let (w, h) = (size[0], size[1]);
+                rec.push_clip(Clip::Path(path.elements()));
+                super::svg::draw(rec, bytes, kurbo::Rect::new(f[0] * w, f[1] * h, w - f[2] * w, h - f[3] * h));
+                rec.pop();
+            }
             Fill::Picture { image, src, mode: blip, adjust, .. } => {
                 let (filters, alpha) = picture_adjust(adjust);
-                // shortcut: an SVG picture fill is drawn as the light frame of a picture twip-graphics can't read;
-                // drawing it lands with an SVG reader that records twip-graphics pictures as `render::svg` draws with
-                // Skia.
-                let svg = image.and_then(|i| images.get(i)).is_some_and(|b| crate::docx::image::is_svg(b));
-                let id = self.image(ImageKey { index: *image, generation: 0 }, images).filter(|_| !svg);
+                let id = self.image(ImageKey { index: *image, generation: 0 }, images);
                 let Some((id, info)) = id.and_then(|id| Some((id, self.res.images.info(id)?))) else {
                     // A picture without an image twip-graphics reads: a light frame, a CSS pixel wide at 100%.
                     rec.stroke_path(path.elements(), &pen(0.75), Paint { aa: false, ..Paint::from(Color::rgb(0xC8_C8C8)) });

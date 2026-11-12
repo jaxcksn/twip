@@ -177,6 +177,11 @@ fn path_scene() {
 }
 
 #[test]
+fn fill_rule_scene() {
+    golden("fill-rules", (128, 168), &fill_rules());
+}
+
+#[test]
 fn stroke_scene() {
     golden("strokes", (128, 128), &strokes());
 }

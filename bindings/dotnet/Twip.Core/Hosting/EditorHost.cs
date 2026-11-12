@@ -52,7 +52,7 @@ public sealed class EditorHost : IDisposable
     /// <summary>The document's size after the last frame, in client pixels: for scrollbars.</summary>
     internal SizeF ContentSize => new((float)(_contentWidth * Scale), (float)(_contentHeight * Scale));
 
-    /// <summary>The GPU backend frames are drawn with ("D3D12", "D3D11", "Vulkan"), or null when they're CPU pixels.</summary>
+    /// <summary>The GPU backend frames are drawn with ("D3D12", "Vulkan"), or null when they're CPU pixels.</summary>
     internal string? GpuBackend { get; private set; }
 
     /// <summary>Raised on the engine thread when the GPU stops drawing (the device was lost): frames are CPU pixels again.</summary>
@@ -68,7 +68,7 @@ public sealed class EditorHost : IDisposable
         var attached = _session.Enqueue(id =>
         {
             string? backend;
-            try { backend = TwipNative.AttachWindow(_session.Engine, id, hwnd) switch { 1 => "D3D12", 2 => "D3D11", 3 => "Vulkan", _ => null }; }
+            try { backend = TwipNative.AttachWindow(_session.Engine, id, hwnd) switch { 1 => "D3D12", 3 => "Vulkan", _ => null }; }
             catch (EntryPointNotFoundException) { backend = null; } // a native library from before the GPU path
             _window = backend is not null;
             GpuBackend = backend;

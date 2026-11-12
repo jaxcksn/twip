@@ -11,6 +11,9 @@ mod arena;
 mod atlas;
 mod prepare;
 
+/// The wgpu this backend is built on, for callers that make its surfaces.
+pub use wgpu;
+
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -52,28 +55,55 @@ impl std::fmt::Display for ContextError {
 
 impl std::error::Error for ContextError {}
 
+/// The backends in Twip's order of preference.
+const ORDER: &[wgpu::Backends] = if cfg!(target_arch = "wasm32") {
+    &[wgpu::Backends::BROWSER_WEBGPU]
+} else {
+    &[wgpu::Backends::DX12, wgpu::Backends::VULKAN, wgpu::Backends::METAL]
+};
+
+/// Runs a future to completion on this thread: wgpu's native futures are ready, or become ready while polled. Not for
+/// the web, whose futures wait on the browser.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn block_on<F: Future>(future: F) -> F::Output {
+    use std::task::{Context as Cx, Poll, Wake, Waker};
+    struct Thread(std::thread::Thread);
+    impl Wake for Thread {
+        fn wake(self: Arc<Self>) {
+            self.0.unpark();
+        }
+    }
+    let waker = Waker::from(Arc::new(Thread(std::thread::current())));
+    let mut cx = Cx::from_waker(&waker);
+    let mut future = std::pin::pin!(future);
+    loop {
+        match future.as_mut().poll(&mut cx) {
+            Poll::Ready(v) => return v,
+            Poll::Pending => std::thread::park(),
+        }
+    }
+}
+
 impl Context {
-    /// The first hardware adapter of the backends in Twip's order that can draw to `surface` (if given), and its
-    /// device.
-    pub async fn new(surface: Option<&wgpu::Surface<'_>>) -> Result<Context, ContextError> {
-        let order: &[wgpu::Backends] = if cfg!(target_arch = "wasm32") {
-            &[wgpu::Backends::BROWSER_WEBGPU]
-        } else {
-            &[wgpu::Backends::DX12, wgpu::Backends::VULKAN, wgpu::Backends::METAL]
-        };
-        for &backends in order {
-            let mut desc = wgpu::InstanceDescriptor::new_without_display_handle();
-            desc.backends = backends;
-            // D3D12 compiles shaders with DXC only (`dxcompiler.dll`, found as Windows finds DLLs): FXC, wgpu's
-            // fallback, miscompiles the instance shader (it drops colour channels of atlas-covered draws). Without
-            // DXC, D3D12 has no adapter here and the next backend is tried.
-            desc.backend_options.dx12.shader_compiler = wgpu::Dx12Compiler::default_dynamic_dxc();
-            let instance = wgpu::Instance::new(desc);
-            let options = wgpu::RequestAdapterOptions { compatible_surface: surface, ..wgpu::RequestAdapterOptions::default() };
-            let Ok(adapter) = instance.request_adapter(&options).await else { continue };
-            if adapter.get_info().device_type == wgpu::DeviceType::Cpu {
-                continue;
-            }
+    /// An instance with Twip's backends, for [`Context::new`]; a window's surface is made from it first, so the adapter
+    /// chosen can draw to it.
+    pub fn instance() -> wgpu::Instance {
+        let mut desc = wgpu::InstanceDescriptor::new_without_display_handle();
+        desc.backends = ORDER.iter().fold(wgpu::Backends::empty(), |all, &b| all | b);
+        // D3D12 compiles shaders with DXC only (`dxcompiler.dll`, found as Windows finds DLLs): FXC, wgpu's fallback,
+        // miscompiles the instance shader (it drops colour channels of atlas-covered draws). Without DXC, D3D12 has no
+        // adapters and the next backend's are used.
+        desc.backend_options.dx12.shader_compiler = wgpu::Dx12Compiler::default_dynamic_dxc();
+        wgpu::Instance::new(desc)
+    }
+
+    /// The first hardware adapter of `instance` (from [`Context::instance`]), in Twip's order of backends, that can
+    /// draw to `surface` (if given), and its device.
+    pub async fn new(instance: wgpu::Instance, surface: Option<&wgpu::Surface<'_>>) -> Result<Context, ContextError> {
+        for &backends in ORDER {
+            let adapters = instance.enumerate_adapters(backends).await;
+            let usable = |a: &wgpu::Adapter| a.get_info().device_type != wgpu::DeviceType::Cpu && surface.is_none_or(|s| a.is_surface_supported(s));
+            let Some(adapter) = adapters.into_iter().find(usable) else { continue };
             let limits = wgpu::Limits::downlevel_webgl2_defaults().using_resolution(adapter.limits());
             let desc = wgpu::DeviceDescriptor { label: Some("twip-graphics"), required_limits: limits, ..wgpu::DeviceDescriptor::default() };
             let (device, queue) = adapter.request_device(&desc).await.map_err(ContextError::Device)?;
@@ -100,15 +130,18 @@ impl Context {
     }
 
     /// A configuration for drawing to `surface` at `width × height`: a non-sRGB format (blending is in encoded sRGB, as
-    /// on the CPU), copies from it allowed (for the blend modes that read the destination) when it offers them, and
-    /// Mailbox presentation when offered, else Fifo. `None` when the adapter can't draw to it.
+    /// on the CPU), copies from it allowed (the blend modes that read the destination copy it), and Mailbox
+    /// presentation when offered, else Fifo. `None` when the adapter can't draw to it so.
     pub fn surface_config(&self, surface: &wgpu::Surface<'_>, width: u32, height: u32) -> Option<wgpu::SurfaceConfiguration> {
         let caps = surface.get_capabilities(&self.adapter);
         let format = *caps.formats.iter().find(|f| !f.is_srgb())?;
+        if !caps.usages.contains(wgpu::TextureUsages::COPY_SRC) {
+            return None;
+        }
         let present_mode =
             if caps.present_modes.contains(&wgpu::PresentMode::Mailbox) { wgpu::PresentMode::Mailbox } else { wgpu::PresentMode::Fifo };
         Some(wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | (caps.usages & wgpu::TextureUsages::COPY_SRC),
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
             format,
             width,
             height,
@@ -845,6 +878,49 @@ impl Renderer {
                 Op::Child { .. } => {}
             }
         }
+    }
+
+    /// Tests and tools, natively: `frame` drawn at `width × height` into a texture of the renderer's format and read
+    /// back, rows packed (premultiplied RGBA for [`wgpu::TextureFormat::Rgba8Unorm`]). Waits for the GPU.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn draw_pixels(&mut self, context: &Context, res: &Resources, frame: &Frame<'_>, (w, h): (u32, u32)) -> Result<Vec<u8>, Error> {
+        let prepared = self.prepare(context, res, frame, (w, h))?;
+        let size = wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 };
+        let texture = context.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("twip-graphics pixels"),
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: self.format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let mut encoder = context.device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+        self.render(&mut encoder, &texture.create_view(&wgpu::TextureViewDescriptor::default()), &prepared);
+        // Rows copied out are padded to 256 bytes.
+        let row = w * 4;
+        let padded = row.div_ceil(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT) * wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
+        let buffer = context.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("twip-graphics readback"),
+            size: u64::from(padded * h),
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let layout = wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(padded), rows_per_image: Some(h) };
+        encoder.copy_texture_to_buffer(texture.as_image_copy(), wgpu::TexelCopyBufferInfo { buffer: &buffer, layout }, size);
+        context.queue.submit([encoder.finish()]);
+        let slice = buffer.slice(..);
+        // The callback runs in whichever thread's poll finds the copy done: this one's, or another's sharing the device
+        // (then perhaps still running when this poll returns).
+        let (tx, rx) = std::sync::mpsc::channel();
+        slice.map_async(wgpu::MapMode::Read, move |r| _ = tx.send(r.is_ok()));
+        let polled = context.device.poll(wgpu::PollType::wait_indefinitely());
+        if polled.is_err() || rx.recv() != Ok(true) || context.is_lost() {
+            return Err(Error::Lost);
+        }
+        let data = slice.get_mapped_range().map_err(|_| Error::Lost)?;
+        Ok(data.chunks(padded as usize).flat_map(|r| &r[..row as usize]).copied().collect())
     }
 }
 

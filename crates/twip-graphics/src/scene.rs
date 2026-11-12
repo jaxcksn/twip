@@ -58,6 +58,16 @@ pub enum Clip<'a> {
     },
     /// The non-zero fill of a path, anti-aliased.
     Path(&'a [PathEl]),
+    /// The even-odd fill of a path, anti-aliased.
+    EvenOdd(&'a [PathEl]),
+}
+
+/// Which points a path's fill covers: those it winds around at all (non-zero), or an odd number of times (even-odd).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum FillRule {
+    #[default]
+    NonZero,
+    EvenOdd,
 }
 
 /// An offscreen layer: what is drawn until the matching [`Recorder::pop`] is filtered and then composited.
@@ -181,7 +191,12 @@ pub(crate) enum Cmd {
         rrect: u32,
         paint: u32,
     },
+    /// Filled by the non-zero rule, or by the even-odd rule (`even_odd`): a field would grow every command.
     Path {
+        path: PathSpan,
+        paint: u32,
+    },
+    EvenOddPath {
         path: PathSpan,
         paint: u32,
     },
@@ -286,7 +301,7 @@ pub(crate) struct ImageRec {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum ClipRec {
     Rect { rect: Rect, aa: bool },
-    Path(PathSpan),
+    Path { path: PathSpan, even_odd: bool },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -436,6 +451,11 @@ impl Recorder {
 
     /// The non-zero fill of a path.
     pub fn fill_path<'p>(&mut self, path: &[PathEl], paint: impl Into<Paint<'p>>) {
+        self.fill_path_rule(path, FillRule::NonZero, paint);
+    }
+
+    /// The fill of a path by `rule`.
+    pub fn fill_path_rule<'p>(&mut self, path: &[PathEl], rule: FillRule, paint: impl Into<Paint<'p>>) {
         if let Some(rect) = path::as_rect(path) {
             return self.fill_rect(rect, paint);
         }
@@ -444,7 +464,10 @@ impl Recorder {
         let path = PathSpan { verbs: Span::since(&self.lists.verbs, verbs), points: Span::since(&self.lists.points, points) };
         self.add_bounds(bounds);
         let paint = self.paint(paint.into());
-        self.lists.cmds.push(Cmd::Path { path, paint });
+        self.lists.cmds.push(match rule {
+            FillRule::NonZero => Cmd::Path { path, paint },
+            FillRule::EvenOdd => Cmd::EvenOddPath { path, paint },
+        });
     }
 
     /// The outline of a path, expanded into a fill here. A width of 0 or less draws nothing. A dash pattern that is
@@ -550,11 +573,12 @@ impl Recorder {
     pub fn push_clip(&mut self, clip: Clip<'_>) {
         let (bounds, rec) = match clip {
             Clip::Rect { rect, aa } => (rect.abs(), ClipRec::Rect { rect: Rect::from_kurbo(rect), aa }),
-            Clip::Path(path) => {
+            Clip::Path(path) | Clip::EvenOdd(path) => {
                 let (verbs, points) = (self.lists.verbs.len(), self.lists.points.len());
                 // An empty path keeps nothing.
                 let bounds = path::push(path, &mut self.lists.verbs, &mut self.lists.points).unwrap_or(kurbo::Rect::ZERO);
-                (bounds, ClipRec::Path(PathSpan { verbs: Span::since(&self.lists.verbs, verbs), points: Span::since(&self.lists.points, points) }))
+                let (verbs, points) = (Span::since(&self.lists.verbs, verbs), Span::since(&self.lists.points, points));
+                (bounds, ClipRec::Path { path: PathSpan { verbs, points }, even_odd: matches!(clip, Clip::EvenOdd(_)) })
             }
         };
         self.stack.push(Frame::Clip(self.clip));
@@ -977,7 +1001,7 @@ mod tests {
         assert_eq!(l.glyphs, [GlyphRec { id: 36, x: 10.0 }, GlyphRec { id: 72, x: 16.5 }]);
         assert_eq!(l.images[0].color_filters, Span { start: 0, len: 2 }, "filters are kept as a chain, in order");
         assert_eq!(l.color_filters[..2], filters);
-        assert!(matches!(l.clips[0], ClipRec::Path(PathSpan { verbs: Span { len: 6.., .. }, .. })));
+        assert!(matches!(l.clips[0], ClipRec::Path { path: PathSpan { verbs: Span { len: 6.., .. }, .. }, .. }));
         assert_eq!((l.layers[0].opacity, l.layers[0].blend, l.layers[0].color_filters), (1.0, BlendMode::DstIn, Span { start: 2, len: 1 }));
     }
 

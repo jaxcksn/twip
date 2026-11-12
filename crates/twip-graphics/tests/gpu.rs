@@ -5,88 +5,30 @@
 
 #![cfg(feature = "gpu")]
 
-use std::future::Future;
 use std::path::PathBuf;
-use std::sync::{Arc, OnceLock};
-use std::task::{Context as TaskContext, Poll, Wake, Waker};
+use std::sync::OnceLock;
 
 use twip_graphics::Resources;
 use twip_graphics::cpu::{Draw, Format, Frame, Renderer as CpuRenderer, Target};
-use twip_graphics::gpu::{Context, Renderer};
+use twip_graphics::gpu::{Context, Renderer, block_on};
 use twip_graphics::kurbo::Affine;
 use twip_graphics::paint::Color;
 use twip_graphics::scene::{Picture, Recorder};
 
 mod common;
 
-/// Runs a future to completion on this thread: wgpu's native futures are ready or become ready while polled.
-fn block_on<F: Future>(future: F) -> F::Output {
-    struct Thread(std::thread::Thread);
-    impl Wake for Thread {
-        fn wake(self: Arc<Self>) {
-            self.0.unpark();
-        }
-    }
-    let waker = Waker::from(Arc::new(Thread(std::thread::current())));
-    let mut cx = TaskContext::from_waker(&waker);
-    let mut future = std::pin::pin!(future);
-    loop {
-        match future.as_mut().poll(&mut cx) {
-            Poll::Ready(v) => return v,
-            Poll::Pending => std::thread::park(),
-        }
-    }
-}
-
 /// This machine's GPU context, made once; `None` without a hardware adapter.
 fn context() -> Option<&'static Context> {
     static CONTEXT: OnceLock<Option<Context>> = OnceLock::new();
-    CONTEXT.get_or_init(|| block_on(Context::new(None)).ok()).as_ref()
+    CONTEXT.get_or_init(|| block_on(Context::new(Context::instance(), None)).ok()).as_ref()
 }
 
 const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 
 /// `picture` under `transform` drawn by `renderer` into a `w × h` RGBA8 target over white, read back.
-fn gpu(ctx: &Context, renderer: &mut Renderer, picture: &Picture, resources: &Resources, (w, h): (u32, u32), transform: Affine) -> Vec<u8> {
-    let (device, queue) = (&ctx.device, &ctx.queue);
-    let format = FORMAT;
-    let texture = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("target"),
-        size: wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
-        view_formats: &[],
-    });
+fn gpu(ctx: &Context, renderer: &mut Renderer, picture: &Picture, resources: &Resources, size: (u32, u32), transform: Affine) -> Vec<u8> {
     let draws = [Draw { picture, transform }];
-    let prepared = renderer.prepare(ctx, resources, &Frame { clear: Some(Color::WHITE), draws: &draws }, (w, h)).expect("not lost");
-    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
-    renderer.render(&mut encoder, &texture.create_view(&wgpu::TextureViewDescriptor::default()), &prepared);
-    // Rows copied out are padded to 256 bytes.
-    let row = w * 4;
-    let padded = row.div_ceil(256) * 256;
-    let buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("readback"),
-        size: u64::from(padded * h),
-        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-        mapped_at_creation: false,
-    });
-    encoder.copy_texture_to_buffer(
-        texture.as_image_copy(),
-        wgpu::TexelCopyBufferInfo {
-            buffer: &buffer,
-            layout: wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(padded), rows_per_image: Some(h) },
-        },
-        wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
-    );
-    queue.submit([encoder.finish()]);
-    let slice = buffer.slice(..);
-    slice.map_async(wgpu::MapMode::Read, |r| r.expect("the readback maps"));
-    device.poll(wgpu::PollType::wait_indefinitely()).expect("the GPU finishes");
-    let data = slice.get_mapped_range().expect("the readback is mapped");
-    data.chunks(padded as usize).flat_map(|r| &r[..row as usize]).copied().collect()
+    renderer.draw_pixels(ctx, resources, &Frame { clear: Some(Color::WHITE), draws: &draws }, size).expect("not lost")
 }
 
 fn cpu(picture: &Picture, resources: &Resources, (w, h): (u32, u32), transform: Affine) -> Vec<u8> {
@@ -152,6 +94,11 @@ fn rrects() {
 #[test]
 fn paths() {
     same("paths", (128, 112), &common::scenes::paths(), &Resources::default());
+}
+
+#[test]
+fn fill_rules() {
+    same("fill-rules", (128, 168), &common::scenes::fill_rules(), &Resources::default());
 }
 
 #[test]
@@ -294,7 +241,7 @@ fn a_lost_device_is_reported_and_a_new_one_draws() {
     }
     let scene = common::scenes::layers();
     let (resources, size) = (Resources::default(), (128, 144));
-    let lost = block_on(Context::new(None)).expect("a device of its own");
+    let lost = block_on(Context::new(Context::instance(), None)).expect("a device of its own");
     let mut renderer = Renderer::new(&lost, FORMAT);
     gpu(&lost, &mut renderer, &scene, &resources, size, Affine::IDENTITY);
     // Lost between a frame's preparation and its drawing: drawing it and submitting it don't panic.
@@ -318,7 +265,7 @@ fn a_lost_device_is_reported_and_a_new_one_draws() {
     let _ = lost.device.poll(wgpu::PollType::wait_indefinitely());
     assert!(lost.is_lost(), "the context reports the loss");
     assert_eq!(renderer.prepare(&lost, &resources, &frame, size).err(), Some(twip_graphics::gpu::Error::Lost));
-    let fresh = block_on(Context::new(None)).expect("a new device");
+    let fresh = block_on(Context::new(Context::instance(), None)).expect("a new device");
     let mut renderer = Renderer::new(&fresh, FORMAT);
     let ours = gpu(&fresh, &mut renderer, &scene, &resources, size, Affine::IDENTITY);
     compare("after-loss", size, &ours, &cpu(&scene, &resources, size, Affine::IDENTITY));
