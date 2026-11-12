@@ -2190,3 +2190,11 @@ fn compat_15_takes_an_empty_spec_vanish_paragraphs_alignment_and_indents() {
     assert!((centred.0 - (324.0 - (540.0 - right.0) / 2.0)).abs() < 0.5, "{centred:?} {right:?}");
     assert_eq!(x(12, "<w:specVanish/>").unwrap(), right, "compat 12 skips it");
 }
+
+#[test]
+fn small_capitals_take_their_runs_own_size_in_the_line() {
+    let p = |rpr: &str, t: &str| format!(r#"<w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:rPr>{rpr}</w:rPr><w:t>{t}</w:t></w:r></w:p>"#);
+    let body = [p("", "Plain"), p("<w:smallCaps/>", "lower only words"), p("", "Plain")].concat();
+    let Some(l) = baselines("", ARIAL_12, &body) else { return };
+    assert!((l[1].3 - l[0].3 - (l[2].3 - l[1].3)).abs() < 0.01 && l[2].3 - l[1].3 > 13.0, "{l:?}");
+}

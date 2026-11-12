@@ -367,6 +367,8 @@ struct Builder<'a> {
     rules: MetricRules,
     /// A custom-mark note reference: the note goes with the next piece (its mark).
     pending_note: Option<Object>,
+    /// Shaping small capitals: the run's own size, which the line takes its height from.
+    small_caps_of: Option<f64>,
 }
 
 struct NewPiece {
@@ -394,6 +396,7 @@ impl<'a> Builder<'a> {
             em1000,
             rules,
             pending_note: None,
+            small_caps_of: None,
         }
     }
 
@@ -480,7 +483,11 @@ impl<'a> Builder<'a> {
     }
 
     fn new_piece(&self, kind: Kind, run: &Run, face: Option<Rc<Face>>, size: f64, raise: f64) -> NewPiece {
-        let (metric_size, mut shift) = if run.vert_align == VertAlign::Baseline { (size, raise) } else { (run.size, run.position) };
+        // Small capitals are as tall in the line as their run's own size, like raised and lowered text.
+        let (metric_size, mut shift) = match (run.vert_align, self.small_caps_of) {
+            (VertAlign::Baseline, own) => (own.unwrap_or(size), raise),
+            (_, own) => (own.unwrap_or(run.size), run.position),
+        };
         if self.rules.no_raise_lower {
             shift -= run.position;
         }
@@ -541,6 +548,16 @@ impl<'a> Builder<'a> {
         Ok(())
     }
 
+    fn small_caps_text(&mut self, seg: &str, small: bool, reduced: &Run, plain: &Run, own: f64) -> Result<(), Yield> {
+        if !small {
+            return self.text(seg, plain);
+        }
+        let outer = self.small_caps_of.replace(own);
+        let r = self.text(seg, reduced);
+        self.small_caps_of = outer;
+        r
+    }
+
     fn text(&mut self, text: &str, run: &Run) -> Result<(), Yield> {
         if self.rules.whole_point_spacing && run.spacing.fract() != 0.0 {
             let mut whole = (**run).clone();
@@ -563,14 +580,14 @@ impl<'a> Builder<'a> {
                 let is_small =
                     c.is_lowercase() || matches!(c, ' ' | '\u{3000}' | '\u{2005}' | '\u{300}' | '\u{301}' | '\u{303}' | '\u{309}' | '\u{323}');
                 if is_small != seg_small && !seg.is_empty() {
-                    self.text(&seg, if seg_small { &small } else { &plain })?;
+                    self.small_caps_text(&seg, seg_small, &small, &plain, run.size)?;
                     seg.clear();
                 }
                 seg_small = is_small;
                 seg.push(c);
             }
             if !seg.is_empty() {
-                self.text(&seg, if seg_small { &small } else { &plain })?;
+                self.small_caps_text(&seg, seg_small, &small, &plain, run.size)?;
             }
             return Ok(());
         }
