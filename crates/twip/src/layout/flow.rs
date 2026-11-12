@@ -1229,6 +1229,20 @@ impl<'d> PageFill<'d, '_> {
                 pos.next_block();
                 continue;
             }
+            // Compat ≤ 14: a beneath-text footnote area goes right under the section's own text, and the endnotes
+            // that follow the section go on below it.
+            if !generic
+                && self.beneath()
+                && pos.block == self.sec.section.blocks.len()
+                && pos.at.at_start()
+                && !area.parts.is_empty()
+                && !area.cut
+                && carry.note_rest.is_empty()
+            {
+                self.draw_notes(area, &col, y + carry.prev_after, out, memos)?;
+                *area = NoteArea::default();
+                (y, carry.prev_after) = (self.at.notes_bottom, 0.0);
+            }
             // Compat 15: a continuous section's text waits for the notes going on from an earlier section, on pages
             // of their own.
             if generic

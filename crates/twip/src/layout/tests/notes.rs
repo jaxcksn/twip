@@ -742,3 +742,19 @@ fn compat_14_a_section_after_a_note_that_fills_its_last_page_starts_on_the_next(
     let Some(pages) = note_in_balanced(cols, 10, 10, first + full, false, 5) else { return };
     let (Some((1, _)), Some((2, _))) = (find(&pages, &format!("Q{:03}", first + full)), find(&pages, "N001")) else { panic!("{pages:?}") };
 }
+
+#[test]
+fn compat_14_section_end_endnotes_follow_the_beneath_text_footnotes() {
+    let pr = r#"<w:footnotePr><w:pos w:val="beneathText"/></w:footnotePr>"#;
+    let body = para("A", &["f1", "e2"]) + &sect(pr, true);
+    let ys = |compat: &str| {
+        let doc = notes_doc(&body, &format!(r#"<w:endnotePr><w:pos w:val="sectEnd"/></w:endnotePr>{compat}"#))?;
+        let p = &super::page_chars(&doc)[0];
+        let line = |y: f64| p.iter().filter(|c| c.2 == y).map(|c| c.0).collect::<String>();
+        let y = |t: &str| p.iter().map(|c| c.2).find(|&y| line(y).contains(t));
+        Some((y("Note 1")?, y("Note 2")?))
+    };
+    let (Some((foot12, end12)), Some((foot15, end15))) = (ys(""), ys(C15)) else { return };
+    assert!(foot12 < end12, "compat 12: the footnote area, then the endnotes: {foot12} {end12}");
+    assert!(end15 < foot15, "compat 15: the endnotes flow as text, the area after them: {end15} {foot15}");
+}

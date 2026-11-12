@@ -7,10 +7,10 @@ page 0 12240 15840
   1440 3151 that products distribution filed. Logistics chapter plan regional.
   1440 3548 A second footnoteiv and a second endnoteII.
   1440 3946 Section 1 ends here; its endnotes follow.
-  1440 4487 I Endnote I, at the section end.
-  1440 4687 II Endnote II.
-  1440 5110 iii Footnote iii.
-  1440 5310 iv Footnote iv.
+  1440 5107 I Endnote I, at the section end.
+  1440 5307 II Endnote II.
+  1440 4490 iii Footnote iii.
+  1440 4690 iv Footnote iv.
 page 1 12240 15840
   1440 1616 Section 2: upper-letter footnotes restarting on each pageA, an endnotee. Notice
   1440 1853 claim team export staff newsletter review matter presenter advisor account served.
