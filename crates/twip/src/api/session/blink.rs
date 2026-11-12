@@ -1,7 +1,9 @@
 //! The caret's blink: a visible and a hidden phase of one interval each, restarted from visible by every input, run on
 //! one engine timer. Time comes in from the caller, so the phases are testable without waiting.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
+
+use crate::clock::Instant;
 
 /// The engine timer the blink runs on (timer 1 is background layout).
 pub(super) const TIMER: u32 = 2;

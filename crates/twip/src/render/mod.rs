@@ -9,7 +9,7 @@ pub mod preview;
 pub mod ruler;
 pub mod svg;
 pub mod theme;
-#[cfg(twip_window)]
+#[cfg(twip_gpu)]
 pub mod window;
 
 pub use theme::Color;

@@ -35,6 +35,8 @@ pub struct Context {
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
     lost: Arc<AtomicBool>,
+    /// Called once, when the device is lost ([`Context::on_lost`]).
+    hook: Arc<std::sync::OnceLock<fn()>>,
 }
 
 /// Why there is no GPU context: no hardware adapter on any backend, or the device was refused.
@@ -108,18 +110,29 @@ impl Context {
             let desc = wgpu::DeviceDescriptor { label: Some("twip-graphics"), required_limits: limits, ..wgpu::DeviceDescriptor::default() };
             let (device, queue) = adapter.request_device(&desc).await.map_err(ContextError::Device)?;
             let lost = Arc::new(AtomicBool::new(false));
-            let flag = Arc::clone(&lost);
-            device.set_device_lost_callback(move |_, _| flag.store(true, Ordering::Relaxed));
+            let hook: Arc<std::sync::OnceLock<fn()>> = Arc::default();
+            // The flag goes up once; the hook hears of the first loss only.
+            let lose = {
+                let (flag, hook) = (Arc::clone(&lost), Arc::clone(&hook));
+                move || {
+                    if !flag.swap(true, Ordering::Relaxed)
+                        && let Some(h) = hook.get()
+                    {
+                        h();
+                    }
+                }
+            };
+            let on_lost = lose.clone();
+            device.set_device_lost_callback(move |_, _| on_lost());
             // An error no scope catches loses the context: out of memory or an internal error (a driver reset) as it
             // comes, a validation error (a bug here) in release builds; debug builds stop on those to show them.
-            let flag = Arc::clone(&lost);
             device.on_uncaptured_error(Arc::new(move |e: wgpu::Error| {
                 if cfg!(debug_assertions) && matches!(e, wgpu::Error::Validation { .. }) {
                     panic!("twip-graphics: {e}");
                 }
-                flag.store(true, Ordering::Relaxed);
+                lose();
             }));
-            return Ok(Context { instance, adapter, device, queue, lost });
+            return Ok(Context { instance, adapter, device, queue, lost, hook });
         }
         Err(ContextError::NoAdapter)
     }
@@ -129,13 +142,23 @@ impl Context {
         self.lost.load(Ordering::Relaxed)
     }
 
-    /// A configuration for drawing to `surface` at `width × height`: a non-sRGB format (blending is in encoded sRGB, as
-    /// on the CPU), copies from it allowed (the blend modes that read the destination copy it), and Mailbox
+    /// Calls `hook` when the device is lost (from wgpu's callback, which may run on another thread natively): a host
+    /// that recovers without waiting for a frame to fail. The first hook set stays.
+    pub fn on_lost(&self, hook: fn()) {
+        let _ = self.hook.set(hook);
+    }
+
+    /// A configuration for drawing to `surface` at `width × height`: a non-sRGB format, 8 bits a channel when offered
+    /// (blending is in encoded sRGB, as on the CPU), copies from it allowed (the blend modes that read the destination copy it), and Mailbox
     /// presentation when offered, else Fifo. `None` when the adapter can't draw to it so.
     pub fn surface_config(&self, surface: &wgpu::Surface<'_>, width: u32, height: u32) -> Option<wgpu::SurfaceConfiguration> {
         let caps = surface.get_capabilities(&self.adapter);
-        let format = *caps.formats.iter().find(|f| !f.is_srgb())?;
-        if !caps.usages.contains(wgpu::TextureUsages::COPY_SRC) {
+        // Eight bits a channel, as the CPU backend draws (a browser canvas offers rgba16float first, too).
+        let eight = [wgpu::TextureFormat::Bgra8Unorm, wgpu::TextureFormat::Rgba8Unorm];
+        let format = eight.into_iter().find(|f| caps.formats.contains(f)).or_else(|| caps.formats.iter().copied().find(|f| !f.is_srgb()))?;
+        // A WebGPU canvas takes COPY_SRC (the specification allows it on every canvas), though wgpu's web backend
+        // advertises only RENDER_ATTACHMENT.
+        if !caps.usages.contains(wgpu::TextureUsages::COPY_SRC) && !cfg!(target_arch = "wasm32") {
             return None;
         }
         let present_mode =

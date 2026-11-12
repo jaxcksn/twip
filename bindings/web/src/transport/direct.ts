@@ -4,20 +4,7 @@
 import { EditorError, type ErrorCode } from '../errors.js';
 import type { FaceInfo } from '../fonts/library.js';
 import type { Warning } from '../types.js';
-import {
-  attachWebGpu,
-  frameWebGl,
-  frameWebGpu,
-  gpuDevice,
-  type GpuDevice,
-  restoreWebGl,
-  watchWebGl,
-  webGlTarget,
-  webGpuTarget,
-  writeWebGpu,
-  type WebGlTarget,
-  type WebGpuTarget,
-} from '../host/gpu.js';
+import { attachGpu, type CpuGpuTarget, cpuDevice, cpuGpuTarget, frameGpu, GpuStart, hasWebGpu, writeGpu } from '../host/gpu.js';
 import { loadModule, type TwipModule } from './module.js';
 import { type Backend, type FrameInfo, Kind, type Input, type Message, Method, type Transport, unwrap, type WireExportOptions } from './protocol.js';
 
@@ -41,14 +28,14 @@ const statusCodes: ErrorCode[] = [
 /** A `TwipBuf` is `{ ptr, len }`: two 32-bit words in wasm32. `TwipFrameInfo` is five f64 then two u32. */
 const BUF_SIZE = 8;
 const FRAME_INFO_SIZE = 48;
-/** Lost WebGPU devices replaced by new ones the engine adopts. Each leaks the engine's GPU context for the old one
- * (Skia can't free a lost device's context), so after these the canvases show CPU pixels copied in. */
+/** Lost WebGPU devices the engine replaces with new ones; past these, the canvases show CPU pixels copied in. */
 const MAX_DEVICE_LOSSES = 3;
 
-/** A session's canvas, on the backend it got. A lost GPU one draws nothing until it has a device or context again. */
+/** A session's canvas, on the backend it got: the engine's GPU frames, CPU pixels copied into a WebGPU canvas (after
+ * too many lost devices), or CPU pixels in a 2D canvas. A lost GPU one draws nothing until it has a device again. */
 type Canvas =
-  | { backend: 'webgpu'; canvas: HTMLCanvasElement; target: WebGpuTarget; lost?: boolean }
-  | { backend: 'webgl'; canvas: HTMLCanvasElement; target: WebGlTarget; lost?: boolean; unwatch: () => void }
+  | { backend: 'webgpu'; canvas: HTMLCanvasElement; lost?: boolean }
+  | { backend: 'cpu-webgpu'; canvas: HTMLCanvasElement; target: CpuGpuTarget; lost?: undefined }
   | { backend: 'cpu'; canvas: HTMLCanvasElement; context: CanvasRenderingContext2D; lost?: undefined };
 
 let shared: Promise<DirectTransport> | undefined;
@@ -73,8 +60,8 @@ export class DirectTransport implements Transport {
   readonly #listeners = new Map<number, Set<(message: Message) => void>>();
   readonly #timers = new Map<number, Set<ReturnType<typeof setTimeout>>>();
   readonly #canvases = new Map<number, Canvas>();
-  /** The page's WebGPU device once the engine adopted it; null without one. */
-  #gpu: Promise<GpuDevice | null> | undefined;
+  /** The engine's WebGPU device, started on the first canvas: whether there is one. */
+  #gpu: Promise<boolean> | undefined;
   #losses = 0;
   /** Set when the module trapped: it can't be trusted again. */
   #fault: EditorError | undefined;
@@ -83,6 +70,8 @@ export class DirectTransport implements Transport {
     this.#m = module;
     this.#engine = engine;
     this.#pending = pending;
+    // The engine reports a lost GPU device from inside its callback: recover after it returns.
+    (globalThis as unknown as { twipHost: { gpuLost?: () => void } }).twipHost.gpuLost = () => queueMicrotask(() => this.#deviceLost());
   }
 
   /** Loads the module and creates the page's engine. */
@@ -113,8 +102,6 @@ export class DirectTransport implements Transport {
     return this.#enqueue(() => {
       for (const t of this.#timers.get(session) ?? []) clearTimeout(t);
       this.#timers.delete(session);
-      const c = this.#canvases.get(session);
-      if (c?.backend === 'webgl') c.unwatch();
       this.#canvases.delete(session);
       this.#m._twip_session_free(this.#engine, session);
     }).finally(() => this.#listeners.delete(session));
@@ -227,22 +214,15 @@ export class DirectTransport implements Transport {
   }
 
   async attachCanvas(session: number, canvas: HTMLCanvasElement): Promise<Backend> {
-    const device = await this.#device();
+    const gpu = await this.#device();
     return this.#enqueue(() => {
-      const m = this.#m;
       let attached: Canvas | undefined;
-      if (device) attached = { backend: 'webgpu', canvas, target: webGpuTarget(canvas, device) };
-      const gl = attached ? null : webGlTarget(m, this.#engine, session, canvas);
-      if (gl) {
-        const c: Canvas = { backend: 'webgl', canvas, target: gl, unwatch: () => {} };
-        c.unwatch = watchWebGl(canvas, () => (c.lost = true), () => this.#restoreGl(session, c));
-        attached = c;
-      }
+      if (gpu && attachGpu(this.#m, this.#engine, session, canvas)) attached = { backend: 'webgpu', canvas };
       const context = attached ? null : canvas.getContext('2d');
       if (context) attached = { backend: 'cpu', canvas, context };
-      if (!attached) throw new EditorError('unsupported', 'the canvas has no WebGPU, WebGL 2 or 2D context');
+      if (!attached) throw new EditorError('unsupported', 'the canvas has no WebGPU or 2D context');
       this.#canvases.set(session, attached);
-      return attached.backend;
+      return attached.backend === 'webgpu' ? 'webgpu' : 'cpu';
     });
   }
 
@@ -258,11 +238,11 @@ export class DirectTransport implements Transport {
         m.HEAPU8.fill(0, info, info + FRAME_INFO_SIZE);
         let drawn: boolean;
         if (c.backend === 'webgpu') {
+          drawn = frameGpu(m, this.#engine, session, width, height, info);
+        } else if (c.backend === 'cpu-webgpu') {
           const target = c.target;
-          if (target.cpu) drawn = this.#frameRgba(session, width, height, info, (p) => writeWebGpu(target, p, width, height));
-          else drawn = frameWebGpu(m, this.#engine, session, target, info);
-        } else if (c.backend === 'webgl') drawn = frameWebGl(m, this.#engine, session, c.target, info);
-        else {
+          drawn = this.#frameRgba(session, width, height, info, (p) => writeGpu(target, p, width, height));
+        } else {
           const context = c.context;
           drawn = this.#frameRgba(session, width, height, info, (p) => context.putImageData(new ImageData(new Uint8ClampedArray(p.buffer), width, height), 0, 0));
         }
@@ -276,46 +256,32 @@ export class DirectTransport implements Transport {
     });
   }
 
-  /** The page's WebGPU device the engine adopted, or null without one. A lost device is replaced by a new one, which
-   * the engine doesn't adopt past `MAX_DEVICE_LOSSES`. */
-  #device(): Promise<GpuDevice | null> {
-    return (this.#gpu ??= gpuDevice().then((d) => {
-      if (!d || (this.#losses <= MAX_DEVICE_LOSSES && !attachWebGpu(this.#m, d))) return null;
-      d.lost.then(() => this.#deviceLost(), () => {});
-      return d;
-    }));
+  /** The engine's WebGPU device, started on first use: whether there is one. */
+  #device(): Promise<boolean> {
+    return (this.#gpu ??= hasWebGpu() ? this.#m.twip_gpu_start().then((r) => r !== GpuStart.None, () => false) : Promise.resolve(false));
   }
 
-  /** The WebGPU canvases wait for a new device, are configured for it, then draw again. */
+  /** The engine's device was lost (`twipHost.gpuLost`): the WebGPU canvases wait for a new one, attached to it, then
+   * draw again; past `MAX_DEVICE_LOSSES` (or with no new device), they show CPU pixels copied in with a device of the
+   * page's. */
   #deviceLost(): void {
-    this.#gpu = undefined;
     this.#losses++;
     for (const c of this.#canvases.values()) if (c.backend === 'webgpu') c.lost = true;
-    // shortcut: without a new device the canvases stay blank; moving the editor to a new canvas on WebGL or CPU pixels
-    // would recover them.
-    void this.#device().then((device) =>
-      this.#enqueue(() => {
-        if (!device) return;
+    const engine: Promise<number> = this.#losses > MAX_DEVICE_LOSSES ? Promise.resolve(GpuStart.None) : this.#m.twip_gpu_start().catch(() => GpuStart.None);
+    void engine.then(async (started) => {
+      const cpu = started === GpuStart.None ? await cpuDevice() : null;
+      await this.#enqueue(() => {
         for (const [session, c] of this.#canvases) {
           if (c.backend !== 'webgpu' || !c.lost) continue;
-          c.target = webGpuTarget(c.canvas, device, this.#losses > MAX_DEVICE_LOSSES);
-          c.lost = false;
+          if (started !== GpuStart.None && attachGpu(this.#m, this.#engine, session, c.canvas)) c.lost = false;
+          else if (cpu) this.#canvases.set(session, { backend: 'cpu-webgpu', canvas: c.canvas, target: cpuGpuTarget(c.canvas, cpu) });
+          // shortcut: with no WebGPU device left the canvas stays blank; moving the editor to a new canvas with a 2D
+          // context would recover it.
+          else continue;
           this.#pending.push({ kind: Kind.RequestFrame, sessionId: session, payload: undefined });
         }
-      }),
-    );
-  }
-
-  /** A session's WebGL context is back: a new context handle for the engine, then a frame. */
-  #restoreGl(session: number, c: Extract<Canvas, { backend: 'webgl' }>): void {
-    this.#enqueue(() => {
-      if (this.#canvases.get(session) !== c) return;
-      const target = restoreWebGl(this.#m, this.#engine, session, c.target);
-      if (!target) return;
-      c.target = target;
-      c.lost = false;
-      this.#pending.push({ kind: Kind.RequestFrame, sessionId: session, payload: undefined });
-    }).catch(() => {});
+      });
+    });
   }
 
   /** Draws CPU pixels and hands `put` a copy of them. */

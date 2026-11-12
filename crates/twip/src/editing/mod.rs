@@ -21,7 +21,7 @@ mod goback;
 pub mod history;
 pub mod index;
 pub mod input;
-#[cfg(any(test, feature = "inspect", not(target_os = "emscripten")))]
+#[cfg(any(test, feature = "inspect", not(target_family = "wasm")))]
 pub mod inspect;
 pub mod integrity;
 pub mod interaction;
@@ -67,7 +67,9 @@ pub(crate) mod tests;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::rc::Rc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+
+use crate::clock::Instant;
 
 use crate::api::record::Origin;
 use crate::docx::{Block, BreakKind, Document, Inline, Paragraph, Run};
@@ -802,7 +804,7 @@ impl Editor {
         }
         if tx.rec.is_none() {
             let author = self.session_author();
-            let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs()) as i64;
+            let secs = crate::clock::unix_secs();
             tx.rec = Some(revisions::Recording::new(author, crate::docx::review::Timestamp::from_utc(secs), self.move_name.clone(), tx.label));
         }
         let Some(rec) = tx.rec.as_mut() else { return self.apply_step(tx, s) };

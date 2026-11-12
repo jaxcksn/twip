@@ -101,7 +101,7 @@ pub fn read_at(bytes: &[u8], now: i64) -> Result<Document, String> {
 
 /// Seconds since 1970, UTC, by the system clock.
 pub fn now_utc() -> i64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64)
+    crate::clock::unix_secs()
 }
 
 /// As [`read`], keeping what saving needs: the package, the main part's XML, where each body paragraph and table came

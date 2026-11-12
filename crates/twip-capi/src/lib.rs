@@ -7,7 +7,7 @@
 //! - Hot input (keys, text, pointer, frames) is typed calls with primitive arguments.
 //! - The engine calls back (`kind` 1 event, 2 state, 3 request frame, 4 set timer, 5 font request, 6 host request)
 //!   after each entry point's work, the state before any event of the same change, never re-entrantly. Natively the
-//!   callback is the function pointer given to [`twip_engine_new`]; in the browser it is `twip-host.js`'s `twip_emit`.
+//!   callback is the function pointer given to [`twip_engine_new`]; in the browser it is the page's `twipHost.emit` (see `web.rs`).
 //! - Every entry point runs under `catch_unwind`: a panic becomes an `internal` error and a fatal `error` event, and
 //!   every later call fails `internal`, except the frees. That needs `panic = "unwind"`, which `build-native.mjs`
 //!   builds the native library with; the browser module keeps the release profile's `abort`, where a panic ends the
@@ -32,8 +32,10 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 mod methods;
-#[cfg(not(target_os = "emscripten"))]
+#[cfg(not(target_family = "wasm"))]
 mod pdf;
+#[cfg(all(target_family = "wasm", target_os = "unknown"))]
+mod web;
 
 pub use methods::Method;
 
@@ -212,24 +214,17 @@ impl TwipEngine {
     }
 
     fn emit(&self, session: u32, kind: u32, payload: &[u8]) {
-        #[cfg(target_os = "emscripten")]
+        #[cfg(all(target_family = "wasm", target_os = "unknown"))]
         {
             let _ = (self.callback, self.context);
-            // SAFETY: twip-host.js reads the bytes during the call and keeps nothing.
-            unsafe { twip_emit(kind, session, payload.as_ptr(), payload.len()) };
+            web::emit(kind, session, payload);
         }
-        #[cfg(not(target_os = "emscripten"))]
+        #[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
         if let Some(callback) = self.callback {
             // SAFETY: the SDK registered this callback with its context, and copies the payload during the call.
             unsafe { callback(self.context, session, kind, payload.as_ptr(), payload.len()) };
         }
     }
-}
-
-#[cfg(target_os = "emscripten")]
-unsafe extern "C" {
-    /// `twip-host.js`: hands a callback to `Module.twipDispatch`.
-    fn twip_emit(kind: u32, session: u32, ptr: *const u8, len: usize);
 }
 
 /// Runs `f` on the engine behind `engine` under `catch_unwind`, then delivers the messages it queued. A panic marks the
@@ -322,6 +317,8 @@ fn to_value<T: serde::Serialize>(v: T) -> Result<Value, Error> {
 pub unsafe extern "C" fn twip_engine_new(options_json: *const u8, len: usize, cb: TwipCallback, ctx: *mut c_void) -> *mut TwipEngine {
     // SAFETY: the caller's promise.
     let json = unsafe { bytes(options_json, len) };
+    #[cfg(all(target_family = "wasm", target_os = "unknown"))]
+    web::clocks();
     let options = if json.is_empty() { Ok(EngineOptions::default()) } else { serde_json::from_slice(json) };
     match options.ok().and_then(|o| catch_unwind(AssertUnwindSafe(|| TwipEngine::new(o, cb, ctx))).ok()) {
         Some(e) => Box::into_raw(Box::new(e)),

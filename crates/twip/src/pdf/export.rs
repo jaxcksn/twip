@@ -315,7 +315,7 @@ fn mark(id: i32) -> Mark {
 
 /// The current UTC time.
 fn now() -> Date {
-    let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs()) as i64;
+    let secs = crate::clock::unix_secs();
     let (days, rem) = (secs.div_euclid(86400), secs.rem_euclid(86400));
     // Civil date from days since 1970-01-01 (Howard Hinnant's algorithm).
     let z = days + 719_468;

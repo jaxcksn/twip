@@ -68,8 +68,7 @@ pub struct Timestamp(pub i64);
 impl Timestamp {
     /// Now, by the system clock.
     pub fn now() -> Timestamp {
-        let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
-        Timestamp(i64::try_from(secs).unwrap_or(i64::MAX))
+        Timestamp(crate::clock::unix_secs())
     }
 }
 
