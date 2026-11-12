@@ -216,11 +216,7 @@ impl Editor {
             return Outcome::Unchanged("no frame");
         };
         let Some(mut n) = self.float_of(f).cloned() else { return Outcome::Unchanged("no frame") };
-        let side = |b: &Option<crate::docx::props::Border>| b.as_ref().map_or(0.0, |b| b.space + b.width);
-        let sides = match blocks.first() {
-            Some(Block::Para(p)) => side(&p.style.border_left) + side(&p.style.border_right),
-            _ => 0.0,
-        };
+        let sides = crate::docx::frames::bleed(&blocks);
         if let Some(tb) = &mut n.text_box {
             tb.blocks = blocks;
         }

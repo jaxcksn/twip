@@ -60,8 +60,6 @@ fn blocks(list: &mut Vec<Block>) {
 
 fn float(group: Vec<Paragraph>) -> Float {
     let fr = group[0].style.frame.clone().unwrap();
-    let side = |b: &Option<super::props::Border>| b.as_ref().map_or(0.0, |b| b.space + b.width);
-    let (lx, rx) = (side(&group[0].style.border_left), side(&group[0].style.border_right));
     let start = group.first().and_then(|p| p.src.as_ref()).and_then(|s| s.ranges.first()).map(|r| r.start);
     let end = group.last().and_then(|p| p.src.as_ref()).and_then(|s| s.ranges.last()).map(|r| r.end);
     let frame_src = start.zip(end).map(|(a, b)| a..b);
@@ -76,7 +74,8 @@ fn float(group: Vec<Paragraph>) -> Float {
             p.style = Rc::new(s);
             Block::Para(p)
         })
-        .collect();
+        .collect::<Vec<Block>>();
+    let sides = bleed(&blocks);
     let mut f = Float {
         id: super::next_para_id(),
         w: 0.0,
@@ -85,7 +84,7 @@ fn float(group: Vec<Paragraph>) -> Float {
         image: None,
         alt: "".into(),
         lock_aspect: false,
-        text_box: Some(TextBox { blocks, insets: [0.0, 0.0, lx + rx, 0.0], outline: 0.0, auto_fit: true, v_anchor: 0, flow }),
+        text_box: Some(TextBox { blocks, insets: [0.0; 4], outline: 0.0, auto_fit: true, v_anchor: 0, flow }),
         h_relative: String::new(),
         h_align: None,
         h_offset: 0.0,
@@ -110,13 +109,37 @@ fn float(group: Vec<Paragraph>) -> Float {
         rot_swap: false,
         relative: Default::default(),
     };
-    place(&mut f, &fr, lx + rx);
+    place(&mut f, &fr, sides);
     f
 }
 
-/// Places a frame's float by its `framePr`: its size, position, wrapping and distance from text. `sides` is the
-/// width its paragraphs' left and right borders add.
-pub fn place(f: &mut Float, fr: &super::props::FramePr, sides: f64) {
+/// How far a frame's paragraph borders reach past it on the left and on the right, points: on a side its first
+/// paragraph has a border, the most of any bordered paragraph's 1.5pt gap, border width (three lines for a double)
+/// and spacing, less its indent on that side (a hanging first line counted on the left), and not below 0.
+pub fn bleed(blocks: &[Block]) -> [f64; 2] {
+    let paras: Vec<&Paragraph> = blocks.iter().filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None }).collect();
+    let reach = |b: &Option<super::props::Border>, indent: f64| {
+        b.as_ref().filter(|b| b.visible()).map(|b| (1.5 + b.width * if b.style == "double" { 3.0 } else { 1.0 } + b.space - indent).max(0.0))
+    };
+    let side = |left: bool| {
+        let first = paras.first().map(|p| if left { &p.style.border_left } else { &p.style.border_right });
+        if first.is_none_or(|b| b.as_ref().is_none_or(|b| !b.visible())) {
+            return 0.0;
+        }
+        paras
+            .iter()
+            .filter_map(|p| match left {
+                true => reach(&p.style.border_left, p.style.ind_left + p.style.ind_first.min(0.0)),
+                false => reach(&p.style.border_right, p.style.ind_right),
+            })
+            .fold(0.0, f64::max)
+    };
+    [side(true), side(false)]
+}
+
+/// Places a frame's float by its `framePr`: its size, position, wrapping and distance from text. `sides` is how far
+/// its paragraphs' borders reach past it on the left and the right ([`bleed`]), kept from the text with `hSpace`.
+pub fn place(f: &mut Float, fr: &super::props::FramePr, sides: [f64; 2]) {
     let margin_cap = fr.drop_cap.as_deref() == Some("margin");
     let anchor = |a: Option<&str>, text: &str, missing: &str| match a {
         Some(a @ ("margin" | "page")) => a.to_string(),
@@ -125,7 +148,7 @@ pub fn place(f: &mut Float, fr: &super::props::FramePr, sides: f64) {
     };
     // A frame without vAnchor is margin-relative; a drop cap sits in its paragraph whatever it says.
     let drop_cap = fr.drop_cap.as_deref().is_some_and(|d| d != "none");
-    f.w = fr.w.unwrap_or(0.0) + sides;
+    f.w = fr.w.unwrap_or(0.0);
     f.auto_w = fr.w.is_none_or(|w| w <= 0.0);
     f.h = fr.h.unwrap_or(0.0);
     if let Some(tb) = &mut f.text_box {
@@ -171,5 +194,5 @@ pub fn place(f: &mut Float, fr: &super::props::FramePr, sides: f64) {
         _ => "square",
     }
     .into();
-    f.dist = [fr.v_space, fr.v_space, fr.h_space, fr.h_space];
+    f.dist = [fr.v_space, fr.v_space, fr.h_space + sides[0], fr.h_space + sides[1]];
 }

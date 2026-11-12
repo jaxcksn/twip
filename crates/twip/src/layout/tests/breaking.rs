@@ -1848,6 +1848,23 @@ fn after_frames(frames: &str) -> Option<Vec<(f64, f64, String)>> {
 }
 
 #[test]
+fn a_frames_paragraph_borders_reach_past_it_by_a_gap_their_width_and_spacing_less_the_indent() {
+    let right_piece = |pbdr: &str| {
+        let a = three_line_frame(2880, 2880, r#"w:vAnchor="page" w:y="1693""#, pbdr, "A");
+        let l = after_frames(&a)?;
+        l.iter().filter(|x| x.2.starts_with("Body") || !x.2.starts_with(['A', 'L'])).map(|x| x.0).find(|&x| x > 3000.0)
+    };
+    let side = |s: &str, sz: u32, space: u32| format!(r#"<w:{s} w:val="single" w:sz="{sz}" w:space="{space}" w:color="000000"/>"#);
+    let Some(plain) = right_piece("") else { return };
+    // 2879 + 2880 + 180: then 30 tw, the 10 tw line and its spacing on the right.
+    assert!((plain - 5939.0).abs() < 1.0, "{plain}");
+    let bordered = right_piece(&format!("<w:pBdr>{}{}</w:pBdr>", side("left", 4, 0), side("right", 4, 0))).unwrap();
+    assert!((bordered - 5979.0).abs() < 1.0, "{bordered}");
+    let spaced = right_piece(&format!(r#"<w:pBdr>{}</w:pBdr><w:ind w:right="20"/>"#, side("right", 4, 2))).unwrap();
+    assert!((spaced - 5939.0 - 30.0 - 10.0 - 40.0 + 20.0).abs() < 1.0, "{spaced}");
+}
+
+#[test]
 fn a_compat_14_frame_in_the_flow_that_may_not_overlap_goes_a_twip_short_of_a_page_frames_bottom() {
     let a = three_line_frame(2880, 2880, r#"w:vAnchor="page" w:y="1693""#, "", "A");
     let b = three_line_frame(4320, 2880, r#"w:vAnchor="text" w:y="0""#, "<w:suppressOverlap/>", "B");
