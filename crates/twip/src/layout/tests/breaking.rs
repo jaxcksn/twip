@@ -91,6 +91,18 @@ fn spaces_after_a_tab_squeeze_a_word_in() {
 }
 
 #[test]
+fn squeezed_spaces_shrink_against_their_own_font_not_the_east_asian_one() {
+    let p =
+        r#"<w:p><w:r><w:t>decorum warrant with status arrest court their which its be business trial for notice records entered is</w:t></w:r></w:p>"#;
+    if !fonts().is_installed("Arial") || !fonts().is_installed("MS Mincho") {
+        return;
+    }
+    let rpr = r#"<w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:eastAsia="MS Mincho"/><w:sz w:val="24"/>"#;
+    let Some(l) = lines("", rpr, p) else { return };
+    assert!(l[0].1.ends_with("records"), "{l:?}");
+}
+
+#[test]
 fn a_line_breaks_before_and_after_an_inline_picture() {
     let pic = r#"<w:r><w:drawing><wp:inline><wp:extent cx="1333500" cy="476250"/><a:graphic><a:graphicData><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>"#;
     let under = "_".repeat(60);

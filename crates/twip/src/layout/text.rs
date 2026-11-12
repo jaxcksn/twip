@@ -1112,7 +1112,9 @@ impl<'a> Builder<'a> {
                 }
             }
             for s in 0..self.styles.len() {
-                self.styles[s].squeeze_avg = self.east_asia_face(s as u32).map_or(0.0, |f| f.avg_width);
+                // The space shrinks against its own font's average width, not the East Asian font's.
+                let own = self.east_asia_face(s as u32).and(self.styles[s].face.clone());
+                self.styles[s].squeeze_avg = own.map_or(0.0, |f| f.avg_width);
             }
         }
         Ok(())
