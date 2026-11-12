@@ -400,7 +400,11 @@ fn holds(b: &Block, para: ParaId) -> bool {
 
 fn references(blocks: &[Block], notes: &std::collections::HashSet<(NoteKind, i64)>) -> bool {
     blocks.iter().any(|b| match b {
-        Block::Para(p) => p.inlines.iter().any(|i| matches!(i, Inline::NoteRef { kind, id, .. } if notes.contains(&(*kind, *id)))),
+        Block::Para(p) => p.inlines.iter().any(|i| match i {
+            Inline::NoteRef { kind, id, .. } => notes.contains(&(*kind, *id)),
+            Inline::NoteMark(kind, id, _) => notes.contains(&super::document::mark_key(*kind, *id)),
+            _ => false,
+        }),
         Block::Table(t) => t.rows.iter().any(|r| r.cells.iter().any(|c| references(&c.blocks, notes))),
     })
 }

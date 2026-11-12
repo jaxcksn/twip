@@ -12,7 +12,7 @@ page 0 12240 15840
   1440 5110 iii Footnote iii.
   1440 5310 iv Footnote iv.
 page 1 12240 15840
-  1440 1616 Section 2: upper-letter footnotes restarting on each pageA, an endnote8. Notice
+  1440 1616 Section 2: upper-letter footnotes restarting on each pageA, an endnoteH. Notice
   1440 1853 claim team export staff newsletter review matter presenter advisor account served.
   1440 2091 Savings pilot receipt corporate requirement standard fact that products
   1440 2328 distribution filed logistics. Chapter plan regional maintenance accessibility
@@ -78,10 +78,10 @@ page 2 12240 15840
   1440 4388 savings pilot receipt corporate requirement standard. Fact that products
   1440 4625 distribution filed logistics chapter plan regional maintenance accessibility tax.
   1440 4862 Finds record.
-  1440 5260 A footnote on the next pageA, and an endnote8. Pilot receipt corporate requirement
+  1440 5260 A footnote on the next pageB, and an endnoteH. Pilot receipt corporate requirement
   1440 5497 standard fact that products distribution filed logistics chapter. Plan regional
   1440 5735 maintenance accessibility tax finds record proposal denied contract onboarding
   1440 5972 support. Network scheduled trend suggestions board order.
-  1440 6514 8 Endnote e, referenced on page 2.
-  1440 6714 8 Section 2's endnotes are lower-letter from e, restarting on each page.
-  1440 14303 A Footnote A again: the numbering restarted.
+  1440 6514 A Endnote e, referenced on page 2.
+  1440 6714 B Section 2's endnotes are lower-letter from e, restarting on each page.
+  1440 14303 B Footnote A again: the numbering restarted.

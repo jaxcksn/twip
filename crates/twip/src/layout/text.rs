@@ -1559,8 +1559,10 @@ pub fn shape_space(
                 let chapter = fields.chapters.as_ref().and_then(|c| c.get(&ParaId(para.id))).filter(|_| *kind == FieldKind::Page);
                 space.fields.push(fields.value(kind, code.trim()).map(|v| chapter.cloned().unwrap_or_default() + &v))
             }
-            Inline::NoteRef { kind, id, .. } | Inline::NoteMark(kind, id, _) => {
-                space.notes.push(notes.get(&(*kind, *id)).cloned().unwrap_or_default())
+            Inline::NoteRef { kind, id, .. } => space.notes.push(notes.get(&(*kind, *id)).cloned().unwrap_or_default()),
+            Inline::NoteMark(kind, id, _) => {
+                let mark = notes.get(&super::document::mark_key(*kind, *id));
+                space.notes.push(mark.or_else(|| notes.get(&(*kind, *id))).cloned().unwrap_or_default())
             }
             _ => {}
         }

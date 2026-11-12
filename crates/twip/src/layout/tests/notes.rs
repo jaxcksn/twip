@@ -758,3 +758,20 @@ fn compat_14_section_end_endnotes_follow_the_beneath_text_footnotes() {
     assert!(foot12 < end12, "compat 12: the footnote area, then the endnotes: {foot12} {end12}");
     assert!(end15 < foot15, "compat 15: the endnotes flow as text, the area after them: {end15} {foot15}");
 }
+
+#[test]
+fn compat_15_each_page_endnotes_take_footnote_keys() {
+    let pr = r#"<w:endnotePr><w:numRestart w:val="eachPage"/></w:endnotePr>"#;
+    let body = para("A", &["f21", "e22", "e23"]) + &sect(pr, true);
+    let note = |tag: &str, id: u32, text: &str| {
+        format!(r#"<w:{tag} w:id="{id}"><w:p><w:r><w:{tag}Ref/></w:r><w:r><w:t xml:space="preserve"> {text}</w:t></w:r></w:p></w:{tag}>"#)
+    };
+    // Footnote 21's story is 0..23; endnote 22's starts at 0 (in it), endnote 23's at 38 (past it).
+    let extra = note("footnote", 21, "Foot twenty-one text") + &note("endnote", 22, "End A, then more words to pass") + &note("endnote", 23, "End B");
+    let Some(doc) = notes_doc_with(&body, C15, &extra) else { return };
+    let p = &super::page_chars(&doc)[0];
+    let line = |y: f64| p.iter().filter(|c| c.2 == y).map(|c| c.0).collect::<String>();
+    let with = |t: &str| p.iter().map(|c| c.2).map(line).find(|l| l.contains(t)).unwrap_or_default();
+    assert!(with("A1").starts_with("A188"), "references: the footnote's own number, the endnotes' 8: {p:?}");
+    assert!(with("End A").starts_with('1') && with("End B").starts_with('8'), "marks: {p:?}");
+}
