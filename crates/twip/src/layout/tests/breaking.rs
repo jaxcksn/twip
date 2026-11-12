@@ -2120,6 +2120,20 @@ fn a_page_anchored_table_holds_the_rows_that_fit_below_where_it_stands() {
     assert_eq!(place(12, 10, 1440, 39).map(|r| (r.0, r.2, r.3)), Some((0, 0, 1)));
 }
 
+#[test]
+fn a_floating_table_in_a_cell_is_wrapped_by_the_cell_text() {
+    let nested = r#"<w:tbl><w:tblPr><w:tblpPr w:leftFromText="0" w:rightFromText="0" w:vertAnchor="text" w:horzAnchor="margin" w:tblpX="0" w:tblpY="0"/><w:tblW w:w="2000" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblCellMar><w:left w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>nested</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#;
+    let body = format!(
+        r#"<w:tbl><w:tblPr><w:tblW w:w="8000" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblCellMar><w:left w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid><w:gridCol w:w="8000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="8000" w:type="dxa"/></w:tcPr>{nested}<w:p><w:r><w:t>beside</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#
+    );
+    for settings in [COMPAT_15, ""] {
+        let Some(l) = baselines(settings, ARIAL_12, &body) else { return };
+        // Beside it on its first line, past its unset right border's 0.75pt, its right distance 0 kept.
+        let (x, y) = at(&l, "beside");
+        assert!((x - 172.75).abs() < 0.1 && (y - at(&l, "nested").1).abs() < 0.1, "{x} {y}");
+    }
+}
+
 /// Fixed tables of one row each, `cells` (text, width in twips) per table, back to back; `between` is written
 /// between them and `tbl_pr` into the second one's properties.
 fn back_to_back(tables: &[&[(&str, u32)]], between: &str, tbl_pr: &str) -> String {

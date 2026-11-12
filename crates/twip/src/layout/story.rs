@@ -391,10 +391,11 @@ pub fn layout_with(
                 };
                 let (rows, h) = super::table::table_units(&tl);
                 let shift = if in_cell && text.compat == Compat::Legacy { super::table::nested_shift(t, text.single_cell_borders) } else { 0.0 };
-                // A header's or footer's floating table takes no room in the story: it stands `tblpY` below where it
-                // starts (from the text) and the text after it wraps around it. Compat ≤ 14: the text runs over it.
-                // ponytail: tblpX and the margin and page anchors are not placed, it starts where the story is.
-                let fp = t.floating.filter(|_| hf && !in_cell);
+                // A floating table in a header, a footer or a cell takes no room in the story: it stands `tblpY` below
+                // where it starts (from the text) and the text after it wraps around it. Compat ≤ 14: a header's or
+                // footer's text runs over it. A cell holds it.
+                // ponytail: the margin and page anchors are not placed, it starts where the story is.
+                let fp = t.floating.filter(|_| hf || in_cell);
                 let top = match fp {
                     Some(fp) if fp.v_anchor == crate::docx::props::TableAnchor::Text => y + fp.y,
                     _ => y,
@@ -409,11 +410,20 @@ pub fn layout_with(
                     units.push(u);
                 }
                 match fp {
-                    Some(_) if text.compat == Compat::Legacy => {}
+                    Some(_) if !in_cell && text.compat == Compat::Legacy => {}
                     Some(fp) => {
-                        let (bl, br) = super::table::float_box(&tl, t, false);
-                        let f = super::flow::table_float(t.id, br - bl, h, super::flow::table_dist(&fp, false), !fp.never_overlap);
-                        tables.push(Placed::new((0, bi, float::TABLE_PIECE), ParaId(t.id), &f, bl, top, h));
+                        let legacy = in_cell && text.compat == Compat::Legacy;
+                        let (bl, br) = super::table::float_box(&tl, t, legacy);
+                        // In a cell the right distance has no minimum.
+                        let mut dist = super::flow::table_dist(&fp, false);
+                        if in_cell {
+                            dist[3] = fp.dist[3];
+                        }
+                        let f = super::flow::table_float(t.id, br - bl, h, dist, !fp.never_overlap);
+                        tables.push(Placed::new((0, bi, float::TABLE_PIECE), ParaId(t.id), &f, bl + shift, top, h));
+                        if in_cell {
+                            held = held.max(top + h);
+                        }
                     }
                     None => y += h,
                 }
