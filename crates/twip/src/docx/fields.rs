@@ -462,7 +462,8 @@ pub fn rekind(doc: &mut Document, want: &dyn Fn(&FieldCode) -> Option<FieldKind>
             let code = parse(&code_text(&p.inlines, s));
             let Inline::FieldBegin { kind, value, lock, .. } = &mut p.inlines[s.begin] else { continue };
             let want = want(&code);
-            if *lock || *kind == want {
+            // A legacy form field's kind comes from its form data, not its code.
+            if *lock || *kind == want || matches!(kind, Some(FieldKind::CheckBox { .. } | FieldKind::DropDown)) {
                 continue;
             }
             back |= want.is_some() && want != Some(FieldKind::SubTemplate);

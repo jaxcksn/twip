@@ -64,6 +64,8 @@ pub enum Object {
     /// The floats a text-wrapping break clears: left, right.
     Clear(bool, bool),
     Ruby(Rc<RubyShape>),
+    /// A legacy check box: its box size (points) and whether it is checked.
+    CheckBox(f64, bool),
 }
 
 /// A ruby's base and annotation, shaped, each piece's x in the object, and the annotation's raise.
@@ -945,6 +947,32 @@ impl<'a> Builder<'a> {
                         r.east_asia = font.clone();
                     }
                     self.text(&ch.to_string(), &Rc::new(r))?;
+                }
+                // A legacy check box: one character of its run's font at the box size, 1.14 box sizes wide, whatever
+                // the font; a break opportunity on both sides.
+                (Inline::FieldBegin { kind: Some(FieldKind::CheckBox { size, checked }), .. }, Some(run)) => {
+                    let e = size.unwrap_or(run.size);
+                    let face = self.face(&run.ascii, run);
+                    let mut p = self.new_piece(Kind::Text, run, face, e, 0.0);
+                    p.width = 1.14 * e;
+                    p.object = Some(Object::CheckBox(e, *checked));
+                    p.break_after = true;
+                    if let Some(q) = self.pieces.last_mut().filter(|q| q.kind != Kind::ListNumber) {
+                        q.break_after = true;
+                    }
+                    self.atom(p, "\u{FFFC}");
+                }
+                // A legacy drop-down without entries: a blank as wide as five of its font's digit zeros, as tall as
+                // its run's text.
+                // ponytail: one unbreakable piece; whether Word breaks inside the blank is unknown.
+                (Inline::FieldBegin { kind: Some(FieldKind::DropDown), value: None, .. }, Some(run)) => {
+                    let face = self.face(&run.ascii, run);
+                    let zero = face.as_ref().and_then(|f| Some(f.advance(f.glyph('0')?) * f.scale(run.size)));
+                    let mut blank = self.new_piece(Kind::Text, run, face, run.size, 0.0);
+                    blank.width = 5.0 * zero.unwrap_or(run.size / 2.0);
+                    // No face: it draws nothing.
+                    blank.style.face = None;
+                    self.atom(blank, "\u{FFFC}");
                 }
                 (Inline::Picture(pic, _), Some(run)) => {
                     let mut p = self.new_piece(Kind::Object, run, None, run.size, 0.0);

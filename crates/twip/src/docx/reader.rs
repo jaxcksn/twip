@@ -784,6 +784,23 @@ struct OpenField {
     spanning: bool,
     /// A TOC field (known at its separator): its result doesn't show the Hyperlink character style.
     toc: bool,
+    /// A legacy form field's data (`w:ffData`): the kind it lays out as, and a drop-down's shown entry.
+    form: Option<(FieldKind, Option<String>)>,
+}
+
+/// A legacy form field's `w:ffData`: a check box (its `w:size` in points, shown checked), or a drop-down and the entry
+/// it shows (`listEntry[result]`, `w:default` without `w:result`, entry 0 out of range; none without entries).
+fn form_data(ff: Node) -> Option<(FieldKind, Option<String>)> {
+    if let Some(cb) = child(ff, "checkBox") {
+        let size = child(cb, "size").filter(|_| child(cb, "sizeAuto").is_none()).and_then(|s| num(val(s))).map(|h| h / 2.0);
+        let checked = flag(cb, "checked").unwrap_or_else(|| child(cb, "default").and_then(|d| int(val(d))).is_some_and(|v| v != 0));
+        return Some((FieldKind::CheckBox { size, checked }, None));
+    }
+    let dd = child(ff, "ddList")?;
+    let entries: Vec<&str> = children(dd, "listEntry").map(|e| val(e).unwrap_or("")).collect();
+    let at = child(dd, "result").or_else(|| child(dd, "default")).and_then(|r| int(val(r))).unwrap_or(0);
+    let shown = entries.first().map(|first| usize::try_from(at).ok().and_then(|k| entries.get(k)).unwrap_or(first).to_string());
+    Some((FieldKind::DropDown, shown))
 }
 
 struct Reader {
@@ -1730,6 +1747,7 @@ impl Reader {
                             begin: out.len(),
                             spanning: false,
                             toc: false,
+                            form: child(c, "ffData").and_then(form_data),
                         });
                         let (lock, dirty) = (flag("fldLock"), flag("dirty"));
                         out.push(Inline::FieldBegin {
@@ -2018,7 +2036,14 @@ impl Reader {
         let kind = parsed.kind();
         let mergeformat = parsed.switches.iter().any(|s| s.flag == '*' && s.arg.as_deref().is_some_and(|a| a.eq_ignore_ascii_case("MERGEFORMAT")));
         let fmt = if mergeformat { f.first_result_run.or(f.first_code_run.clone()) } else { f.first_code_run.clone() };
-        if let Inline::FieldBegin { kind: k, run, lock, .. } = &mut out[f.begin] {
+        // A legacy check box or drop-down shows its form data, in its code's run.
+        let form = f.form.filter(|(k, _)| parsed.name == if *k == FieldKind::DropDown { "FORMDROPDOWN" } else { "FORMCHECKBOX" });
+        if let Inline::FieldBegin { kind: k, run, lock, value, .. } = &mut out[f.begin] {
+            if let Some((form, shown)) = form {
+                *run = f.first_code_run.unwrap_or_else(|| end_run.clone());
+                (*k, *value) = (Some(form), shown);
+                return;
+            }
             // A locked field (`w:fldLock`) isn't updated: Word shows its result.
             let kind = kind.filter(|_| !*lock);
             if kind.is_some() {
@@ -2076,6 +2101,7 @@ impl Reader {
             begin,
             spanning: false,
             toc: false,
+            form: None,
         });
         self.read_inlines(e, base, pkg, out);
         let f = self.fields.pop().expect("the simple field pushed above");

@@ -1912,6 +1912,45 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
 }
 
 // Text colour
+/// A legacy check box's square, `advance` wide at `x`: its outer edge 0.595 pt after the start and 0.84 pt before the
+/// end, a 0.72 pt line, the two diagonals when checked.
+// ponytail: the square's bottom is 0.15 box sizes below the baseline (Arial's); it moves with the font.
+fn check_box(x: f64, base: f64, advance: f64, e: f64, checked: bool, colour: Option<u32>) -> Item {
+    use crate::drawing::geom::{Geom, GeomPath, PathFill, Seg};
+    use crate::drawing::paint::{Paint, ResolvedEffects, ResolvedLine};
+    const STROKE: f64 = 0.72;
+    let side = advance - 0.595 - 0.84 - STROKE;
+    let (x0, y1) = (x + 0.595 + STROKE / 2.0, base + 0.15 * e - STROKE / 2.0);
+    let rect = [x0, y1 - side, x0 + side, y1];
+    let mut segs = vec![Seg::Move([0.0, 0.0]), Seg::Line([side, 0.0]), Seg::Line([side, side]), Seg::Line([0.0, side]), Seg::Close];
+    if checked {
+        segs.extend([Seg::Move([0.0, 0.0]), Seg::Line([side, side]), Seg::Move([side, 0.0]), Seg::Line([0.0, side])]);
+    }
+    let geom =
+        Geom { paths: vec![GeomPath { segs, fill: PathFill::None, stroke: true }], text_rect: [0.0, 0.0, side, side], handles: vec![], cxn: vec![] };
+    let rgb = colour.unwrap_or(0);
+    let paint = Paint::Solid(crate::drawing::colour::Rgba { r: (rgb >> 16) as u8, g: (rgb >> 8) as u8, b: rgb as u8, a: 255 });
+    Item::Shape(Rc::new(super::fragment::ShapeItem {
+        rect,
+        rot: 0.0,
+        flip_h: false,
+        flip_v: false,
+        geom: Rc::new(geom),
+        fill: Paint::None,
+        line: ResolvedLine {
+            width: STROKE,
+            paint,
+            join: crate::drawing::paint::Join::Miter(crate::drawing::units::Pct(800_000)),
+            ..ResolvedLine::none()
+        },
+        effects: ResolvedEffects::default(),
+        behind: false,
+        float: 0,
+        path: Vec::new(),
+        picture: false,
+    }))
+}
+
 fn ink(r: &RunStyle, review: &ReviewView, behind: Option<u32>) -> Option<u32> {
     if let Some(c) = revision_colour(r, review) {
         return Some(c);
@@ -2045,6 +2084,14 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
                 expansions.push((rect, e.clone()));
                 if let Some(unit) = first {
                     atoms.push(Atom { x0: x, x1: next_x.unwrap_or(x + e.size.0), para: q, unit, brk: false });
+                }
+                continue;
+            }
+            if let Some(&Object::CheckBox(e, checked)) = p.object.map(|o| &sp.objects[o as usize]) {
+                flush(&mut run, &mut out);
+                out.push(check_box(x, base, line.widths[k], e, checked, ink(&st.run, o.review, behind_text)));
+                if let Some(unit) = first {
+                    atoms.push(Atom { x0: x, x1: next_x.unwrap_or(x + line.widths[k]), para: q, unit, brk: false });
                 }
                 continue;
             }

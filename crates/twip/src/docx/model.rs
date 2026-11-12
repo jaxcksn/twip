@@ -307,6 +307,13 @@ pub enum FieldKind {
     /// nothing.
     Invalid,
     SubTemplate,
+    /// A legacy check box (FORMCHECKBOX): its box size in points (`None`: its run's size), and whether it is checked.
+    CheckBox {
+        size: Option<f64>,
+        checked: bool,
+    },
+    /// A legacy drop-down (FORMDROPDOWN): it shows its entry as its value, a blank without one.
+    DropDown,
 }
 
 #[derive(Clone, Debug, PartialEq)]

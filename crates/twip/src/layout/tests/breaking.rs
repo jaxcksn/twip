@@ -2372,3 +2372,41 @@ fn compat_14_balanced_columns_grow_by_the_failed_fills_mean_line_and_end_at_the_
     assert!(h > 6.4 && h < 6.6, "{h}");
     assert_eq!(split(c15).map(|s| s.0).as_deref(), Some("P5"));
 }
+
+/// A legacy form field as Word writes it: `w:ffData` in its begin, no result.
+fn form_field(ff: &str, code: &str) -> String {
+    format!(
+        r#"<w:r><w:fldChar w:fldCharType="begin"><w:ffData><w:name w:val="F1"/><w:enabled/>{ff}</w:ffData></w:fldChar></w:r><w:r><w:instrText xml:space="preserve"> {code} </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>"#
+    )
+}
+
+#[test]
+fn a_check_box_is_wide_and_tall_and_the_word_after_it_breaks_away() {
+    if !fonts().is_installed("Arial") {
+        return;
+    }
+    let cb = form_field(r#"<w:checkBox><w:size w:val="24"/><w:default w:val="0"/></w:checkBox>"#, "FORMCHECKBOX");
+    let p = format!(r#"<w:p><w:r><w:t>{}</w:t></w:r>{cb}<w:r><w:t>yyyy</w:t></w:r></w:p>"#, "x".repeat(79));
+    let Some(l) = baselines("", ARIAL_11, &p) else { return };
+    assert_eq!(l.iter().map(|l| l.1.as_str()).collect::<Vec<_>>(), ["x".repeat(79).as_str(), "yyyy"], "{l:?}");
+    // The box's line is Arial's at 12 pt.
+    let p = format!(r#"<w:p><w:r><w:t>xx</w:t><w:br/><w:t>xx</w:t></w:r>{cb}<w:r><w:br/><w:t>xx</w:t></w:r></w:p>"#);
+    let Some(l) = baselines("", ARIAL_11, &p) else { return };
+    assert!((l[1].3 - l[0].3 - 13.56).abs() < 0.1, "{l:?}");
+}
+
+#[test]
+fn a_drop_down_shows_its_selected_entry_in_its_codes_run() {
+    if !fonts().is_installed("Arial") {
+        return;
+    }
+    let dd = form_field(r#"<w:ddList><w:result w:val="1"/><w:listEntry w:val="Alpha"/><w:listEntry w:val="Bravo"/></w:ddList>"#, "FORMDROPDOWN");
+    let p = format!(r#"<w:p><w:r><w:t>xxxxx</w:t></w:r>{dd}<w:r><w:t>xxxxx</w:t></w:r></w:p>"#);
+    let Some(l) = lines("", ARIAL_11, &p) else { return };
+    assert_eq!(l[0].1, "xxxxxBravoxxxxx", "{l:?}");
+    // Without entries: a blank five digit zeros wide.
+    let dd = form_field(r#"<w:ddList><w:result w:val="0"/></w:ddList>"#, "FORMDROPDOWN");
+    let p = format!(r#"<w:p><w:r><w:t>xxxxx</w:t></w:r>{dd}<w:r><w:t>xxxxx</w:t></w:r></w:p>"#);
+    let Some(l) = lines("", ARIAL_11, &p) else { return };
+    assert!((l[0].2 - (72.0 + 27.5 + 30.58)).abs() < 0.1, "{l:?}");
+}
