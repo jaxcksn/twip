@@ -706,10 +706,24 @@ fn linked_text(
     memos: &mut Memos,
 ) -> Result<(), Yield> {
     let blocks: Vec<&Block> = c.story.blocks.iter().collect();
-    let story = layout(&blocks, c.boxes[0].1[0].max(1.0), env, None, memos)?;
+    let mut story = layout(&blocks, c.boxes[0].1[0].max(1.0), env, None, memos)?;
     let heights: Vec<f64> = c.boxes.iter().map(|b| b.1[1]).collect();
-    let slices = chain_slices(&story, &heights, env.ctx.env.text.compat != Compat::Legacy);
-    let Some(range) = slices.get(k).cloned() else { return Ok(()) };
+    let widow = env.ctx.env.text.compat != Compat::Legacy;
+    let range = if c.boxes.iter().all(|b| (b.1[0] - c.boxes[0].1[0]).abs() < EPS) {
+        let Some(range) = chain_slices(&story, &heights, widow).get(k).cloned() else { return Ok(()) };
+        range
+    } else {
+        // Boxes of different widths: each lays out the rest of the story at its own width, from where the box
+        // before it ended.
+        for j in 0..k {
+            let end = chain_slices(&story, &heights[j..j + 2], widow)[0].end;
+            let Some(u) = story.units.get(end) else { return Ok(()) };
+            let at = (u.block, u.from);
+            story = Rc::new(layout_from(&blocks, c.boxes[j + 1].1[0].max(1.0), env, at, memos)?);
+        }
+        let last = k + 1 == heights.len();
+        if last { 0..story.units.len() } else { chain_slices(&story, &heights[k..k + 2], widow)[0].clone() }
+    };
     let fr = layout_frame(&chain_box(f), f.shape.as_deref(), rect);
     let base = story.units.get(range.start).map_or(0.0, |u| u.top);
     for u in &story.units[range] {

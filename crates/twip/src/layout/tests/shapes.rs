@@ -363,3 +363,21 @@ fn a_tight_vml_float_wraps_around_its_wrap_coordinates() {
     assert_eq!(f.poly.as_deref(), Some(&[(0.0, 0.0), (1.0, 0.0), (0.5, 1.0), (0.0, 0.0)][..]));
     assert!(vml_float("", coords, r#"<w10:wrap type="square"/>"#, 15).poly.is_none());
 }
+
+#[test]
+fn a_linked_box_lays_its_part_of_the_story_out_in_its_own_text_rectangle() {
+    // A hexagon heads the chain; the rectangle after it is as wide but its text rectangle is wider.
+    let shape = |prst: &str, text: &str| {
+        format!(
+            r#"<wps:wsp><wps:cNvSpPr txBox="1"/><wps:spPr>{}<a:prstGeom prst="{prst}"><a:avLst/></a:prstGeom></wps:spPr>{text}<wps:bodyPr/></wps:wsp>"#,
+            xfrm(0, 0, 150, 60, "")
+        )
+    };
+    let paras: String = (1..=6).map(|k| format!("<w:p><w:r><w:t>Linked paragraph {k} with some words to fill the boxes in turn.</w:t></w:r></w:p>")).collect();
+    let head = shape("hexagon", &format!(r#"<wps:txbx id="1"><w:txbxContent>{paras}</w:txbxContent></wps:txbx>"#));
+    let next = shape("rect", r#"<wps:linkedTxbx id="1" seq="1"/>"#);
+    let body = format!("<w:p>{}{}</w:p>", anchor(72, 100, 150, 60, 1, false, 1, &head), anchor(300, 100, 150, 200, 2, false, 2, &next));
+    let d = settings_doc(&body, 15).expect("the document reads");
+    let right = super::page_chars(&d)[0].iter().filter(|c| c.1 > 290.0).map(|c| c.1).fold(0.0, f64::max);
+    assert!(right > 415.0, "the rectangle's lines run past the hexagon's text width: {right}");
+}
