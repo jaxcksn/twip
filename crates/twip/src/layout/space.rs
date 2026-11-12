@@ -16,6 +16,8 @@ pub struct ShapeSpace {
     /// The document's default East Asian font.
     pub default_east_asia: Option<String>,
     pub compress: bool,
+    /// Compat 15: with the spaces balanced, compressed punctuation keeps the breaks after hyphens and dashes.
+    pub balanced_dashes: bool,
     pub em1000: bool,
     /// The font metric options of [`super::env::TextEnv`].
     pub metric_rules: MetricRules,
@@ -47,6 +49,8 @@ pub struct MetricRules {
     pub whole_point_spacing: bool,
     pub mac_small_caps: bool,
     pub wp_line_heights: bool,
+    /// Compat ≥ 14: the hyphen, the figure dash and their kin break after too.
+    pub dash_breaks: bool,
 }
 
 pub type BorderKey = Option<std::rc::Rc<BorderGroup>>;

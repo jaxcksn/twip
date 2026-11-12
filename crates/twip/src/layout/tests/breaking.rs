@@ -2118,3 +2118,43 @@ fn a_compat_15_heading_between_floating_tables_meets_the_second_over_its_text_on
     let y = |t: &str| l.iter().find(|l| l.1 == t).expect("drawn").3;
     assert!(y("Heading") < y("second"), "{l:?}");
 }
+
+fn mode(m: u32) -> String {
+    format!(r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="{m}"/></w:compat>"#)
+}
+
+/// Line 1 of `x` × 78, a space, then `AB`, `mid`, `cdefghij end`: `AB` and what follows `mid` don't both fit.
+fn first_line(m: u32, mid: &str) -> Option<String> {
+    let body = format!(r#"<w:p><w:r><w:t xml:space="preserve">{} AB</w:t></w:r>{mid}<w:r><w:t xml:space="preserve">cdefghij end</w:t></w:r></w:p>"#, "x".repeat(78));
+    Some(lines(&mode(m), ARIAL_11, &body)?.swap_remove(0).1)
+}
+
+#[test]
+fn a_line_breaks_after_dashes_and_break_spaces_only() {
+    let t = |c: char| format!("<w:r><w:t>{c}</w:t></w:r>");
+    let Some(_) = first_line(12, "") else { return };
+    for m in [12, 14, 15] {
+        // The four-per-em and zero-width spaces may hang past the line's end.
+        for c in ['-', '\u{2013}', '\u{2014}', '\u{2005}', '\u{200B}'] {
+            assert!(first_line(m, &t(c)).unwrap().trim_end_matches(c).ends_with("AB"), "c{m} U+{:04X}", c as u32);
+        }
+        for c in ['\u{2010}', '\u{2012}'] {
+            assert_eq!(first_line(m, &t(c)).unwrap().ends_with(&format!("AB{c}")), m >= 14, "c{m} U+{:04X}", c as u32);
+        }
+        for c in ['/', '?', '\u{2011}', '\u{2212}', '\u{AD}'] {
+            assert!(first_line(m, &t(c)).unwrap().ends_with('x'), "c{m} U+{:04X}", c as u32);
+        }
+        assert!(first_line(m, "<w:r><w:softHyphen/></w:r>").unwrap().ends_with("AB-"), "c{m} optional hyphen");
+    }
+}
+
+#[test]
+fn a_hyphen_after_balanced_spaces_breaks_with_punctuation_compressed() {
+    let settings = r#"<w:compat><w:balanceSingleByteDoubleByteWidth/><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+    let rpr = r#"<w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:eastAsiaTheme="minorEastAsia"/><w:b/><w:sz w:val="20"/>"#;
+    let body = r#"<w:tbl><w:tblPr><w:tblW w:w="2340" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblCellMar><w:left w:w="108" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid><w:gridCol w:w="2340"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="2340" w:type="dxa"/></w:tcPr><w:p><w:r><w:t xml:space="preserve">ID#: QZ      -7654321</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#;
+    let Some(l) = lines(settings, rpr, body) else { return };
+    assert!(l[0].1.ends_with('-') && l[1].1 == "7654321", "{l:?}");
+    let l = lines(&settings.replace(r#"w:val="15""#, r#"w:val="12""#), rpr, &body.replace("2340", "1700")).unwrap();
+    assert!(l[0].1.ends_with("QZ"), "compat 12 breaks before the hyphen: {l:?}");
+}

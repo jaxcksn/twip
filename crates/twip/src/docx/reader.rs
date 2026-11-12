@@ -1783,6 +1783,12 @@ impl Reader {
             match name {
                 "t" | "delText" => {
                     if let Some(t) = c.text().filter(|t| !t.is_empty()) {
+                        // A soft hyphen character in w:t is no optional hyphen (only w:softHyphen is): an ordinary
+                        // character that never breaks.
+                        // ponytail: read as a no-break hyphen, so it draws the font's hyphen rather than its own
+                        // U+00AD glyph (the same in the common fonts); its own mark in the model if they differ.
+                        let t = if t.contains('\u{AD}') { std::borrow::Cow::Owned(t.replace('\u{AD}', "\u{2011}")) } else { t.into() };
+                        let t = &*t;
                         // A line break inside w:t shows as a space.
                         if t.contains(['\n', '\r']) {
                             push_text(out, &t.replace("\r\n", " ").replace(['\n', '\r'], " "), &run);

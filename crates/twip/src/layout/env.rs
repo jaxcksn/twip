@@ -54,6 +54,8 @@ pub struct TextEnv {
     pub single_cell_borders: bool,
     /// East Asian line-breaking rules: `applyBreakingRules`, or compatibility mode 14 and later.
     pub breaking_rules: bool,
+    /// Compatibility mode 14 and later: more characters break after ([`super::space::MetricRules::dash_breaks`]).
+    pub dash_breaks: bool,
     /// `strictFirstAndLastChars`.
     pub strict_kinsoku: bool,
     pub default_style: Option<String>,
@@ -128,6 +130,7 @@ impl TextEnv {
             suppress_before_after_page_break: s.compat() == Compat::Legacy && s.has("suppressSpBfAfterPgBrk"),
             single_cell_borders: s.compat() == Compat::Legacy && s.has("useSingleBorderforContiguousCells"),
             breaking_rules: s.compat_mode >= 14 || s.has("applyBreakingRules"),
+            dash_breaks: s.compat_mode >= 14,
             strict_kinsoku: s.strict_kinsoku,
             default_style: doc.resolver.as_ref().and_then(|r| r.styles.default_paragraph.clone()),
             grow_autofit: s.has("growAutofit"),

@@ -214,6 +214,14 @@ pub fn metrics(face: &Face, size: f64) -> (f64, f64, f64) {
 
 /// Ascent, descent and gap under the font metric options: `noLeading` drops the gap; `suppressTopSpacingWP` makes a
 /// Latin font's line its size plus 2pt (a fixed-pitch font's, its size), the descent kept.
+/// Whether a line may end after `c`, whatever follows it: the hyphen-minus, the en and em dashes, the en, em,
+/// four-per-em and ideographic spaces and the zero-width space in every mode; `dash_breaks` adds the hyphen, the
+/// figure dash, the Armenian and Hebrew hyphens and the small and fullwidth hyphen forms. No other punctuation.
+fn breaks_after(c: char, dash_breaks: bool) -> bool {
+    matches!(c, '-' | '\u{2013}' | '\u{2014}' | '\u{2002}' | '\u{2003}' | '\u{2005}' | '\u{200B}' | '\u{3000}')
+        || dash_breaks && matches!(c, '\u{2010}' | '\u{2012}' | '\u{058A}' | '\u{05BE}' | '\u{FE58}' | '\u{FE63}' | '\u{FF0D}')
+}
+
 fn ruled(rules: MetricRules, face: &Face, size: f64, (a, d, e): (f64, f64, f64)) -> (f64, f64, f64) {
     if rules.wp_line_heights && !face.east_asian {
         let h = if face.fixed_pitch { size } else { size + 2.0 };
@@ -686,7 +694,7 @@ impl<'a> Builder<'a> {
             } + run.spacing * n_chars as f64;
             // Condensed spacing never takes a character below no width.
             p.width = p.width.max(0.0);
-            p.break_after = kind == Kind::Space || first == '-' || first == '\u{2010}' || first == '\u{2013}';
+            p.break_after = kind == Kind::Space || breaks_after(first, self.rules.dash_breaks);
             if first == '\u{AD}' {
                 p.soft_hyphen = true;
                 p.break_after = true;
@@ -1059,13 +1067,14 @@ impl<'a> Builder<'a> {
         self.flush_text(&mut pend, &mut pend_runs, &mut pend_units)?;
         // Compat 15: table-cell paragraphs fit their regions as compat 12.
         self.fit_text(space.stale_fit && !space.in_cell, space.first_line, space.unfitted);
-        if let Some(dd) = &space.balance
-            && (dd.is_empty() || self.fonts.face(dd, None, false, false).is_some_and(|f| f.east_asian))
-        {
+        let balanced = space.balance.as_ref().is_some_and(|dd| dd.is_empty() || self.fonts.face(dd, None, false, false).is_some_and(|f| f.east_asian));
+        if balanced {
             self.balance_spaces();
         }
         if space.compress {
-            for k in 0..self.pieces.len() {
+            // Compat 15 with the spaces balanced: hyphens and dashes break after as anywhere else.
+            // ponytail: keyed on the balancing pass, not on whether the spaces before each hyphen were widened.
+            for k in (0..self.pieces.len()).filter(|_| !(balanced && space.balanced_dashes)) {
                 let p = &self.pieces[k];
                 if p.break_after
                     && matches!(self.text[p.text.0 as usize..].chars().next(), Some('-' | '\u{2013}'))
@@ -1493,6 +1502,7 @@ pub fn shape_space(
         balance: text.default_east_asia.clone().filter(|_| text.balance_spaces),
         default_east_asia: text.default_east_asia.clone(),
         compress: text.compress_punctuation,
+        balanced_dashes: text.compat == crate::docx::Compat::Generic,
         em1000: text.compat == crate::docx::Compat::Legacy && text.word97_line_breaks,
         frame_breaks: text.show_breaks_in_frames,
         stale_fit: text.compat == crate::docx::Compat::Generic,
@@ -1503,6 +1513,7 @@ pub fn shape_space(
             whole_point_spacing: text.whole_point_spacing,
             mac_small_caps: text.mac_small_caps,
             wp_line_heights: text.wp_line_heights,
+            dash_breaks: text.dash_breaks,
         },
         view: text.review.view,
         hyphenate: text
