@@ -1130,7 +1130,7 @@ struct Fit {
 fn fit(t: &Table, text_w: f64, env: &StoryEnv, avail: Option<i64>, memos: &mut Memos) -> Result<Fit, Yield> {
     let edges = cell_edges(t, grid_columns(t), env.ctx.env.text.single_cell_borders, &|_| None);
     let inputs = fit_inputs(t, env, memos, &edges, &|_| None)?;
-    Ok(resolve_fit(t, text_w, env, avail, &inputs))
+    Ok(resolve_fit(t, text_w, env, avail, false, &inputs))
 }
 
 fn grid_columns(t: &Table) -> usize {
@@ -1205,9 +1205,10 @@ fn fit_inputs<'k>(
     Ok(rows)
 }
 
-fn resolve_fit(t: &Table, text_w: f64, env: &StoryEnv, avail: Option<i64>, inputs: &[FitRow]) -> Fit {
+fn resolve_fit(t: &Table, text_w: f64, env: &StoryEnv, avail: Option<i64>, nested: bool, inputs: &[FitRow]) -> Fit {
     let n = grid_columns(t);
-    let (add_l, add_r) = edge_add(env.ctx.env.text.compat, t);
+    // Compat ≤ 14 widens the room by the edge allowances only for an outermost table.
+    let (add_l, add_r) = edge_add(if nested { Compat::Generic } else { env.ctx.env.text.compat }, t);
     let a = avail.unwrap_or_else(|| twips(text_w - t.ind + add_l + add_r));
     let s2 = twips(2.0 * t.cell_spacing.max(0.0));
     let cells: Vec<autofit::Cell> = inputs.iter().flat_map(|r| r.cells.iter().copied()).collect();
@@ -1267,7 +1268,12 @@ struct CellGeo {
 }
 
 pub fn layout(t: &Table, text_w: f64, env: &StoryEnv, prev: Option<&ParaStyle>, measure: bool, memos: &mut Memos) -> Result<Rc<TableLayout>, Yield> {
-    layout_with(t, text_w, env, prev, measure, None, memos)
+    layout_with(t, text_w, env, prev, measure, None, false, memos)
+}
+
+/// A table inside a cell: its available width takes the compat 15 edge allowances in every mode.
+pub fn layout_nested(t: &Table, text_w: f64, env: &StoryEnv, measure: bool, memos: &mut Memos) -> Result<Rc<TableLayout>, Yield> {
+    layout_with(t, text_w, env, None, measure, None, true, memos)
 }
 
 pub fn relayout_rows(
@@ -1282,7 +1288,7 @@ pub fn relayout_rows(
     if old.rows.len() != t.rows.len() || old.fit.len() != t.rows.len() {
         return layout(t, text_w, env, prev, false, memos);
     }
-    layout_with(t, text_w, env, prev, false, Some((old, rows)), memos)
+    layout_with(t, text_w, env, prev, false, Some((old, rows)), false, memos)
 }
 
 fn layout_with(
@@ -1292,6 +1298,7 @@ fn layout_with(
     prev: Option<&ParaStyle>,
     measure: bool,
     reuse: Option<(&TableLayout, std::ops::RangeInclusive<usize>)>,
+    nested: bool,
     memos: &mut Memos,
 ) -> Result<Rc<TableLayout>, Yield> {
     // A pct indent is a share of the width the table is laid out in, truncated to twips; none while measuring, and
@@ -1314,12 +1321,12 @@ fn layout_with(
         None => t,
     };
     if let Some(runs) = layout_runs(t) {
-        return layout_runs_of(t, &runs, text_w, env, prev, measure, memos);
+        return layout_runs_of(t, &runs, text_w, env, prev, measure, nested, memos);
     }
     match in_view(t, env.ctx.env.text.review.view, env.ctx.expansions) {
-        None => layout_shown(t, text_w, env, prev, measure, reuse, memos),
+        None => layout_shown(t, text_w, env, prev, measure, reuse, nested, memos),
         Some(v) => {
-            let mut tb = v.expand(&*layout_shown(&v.table, text_w, env, prev, measure, None, memos)?);
+            let mut tb = v.expand(&*layout_shown(&v.table, text_w, env, prev, measure, None, nested, memos)?);
             if hidden_tail(t)
                 && env.ctx.env.text.compat == Compat::Legacy
                 && let Some(tb) = Rc::get_mut(&mut tb)
@@ -1425,6 +1432,7 @@ fn layout_runs_of(
     env: &StoryEnv,
     prev: Option<&ParaStyle>,
     measure: bool,
+    nested: bool,
     memos: &mut Memos,
 ) -> Result<Rc<TableLayout>, Yield> {
     let mut merged: Option<TableLayout> = None;
@@ -1448,7 +1456,7 @@ fn layout_runs_of(
             sub.rows.iter_mut().for_each(|r| r.run = None);
         }
         let bounds = own_grid(&mut sub);
-        let laid = layout_with(&sub, text_w, env, if k == 0 { prev } else { None }, measure, None, memos)?;
+        let laid = layout_with(&sub, text_w, env, if k == 0 { prev } else { None }, measure, None, nested, memos)?;
         let old = |g: usize| bounds[g.min(bounds.len() - 1)];
         let at = |c: usize, span: usize| (old(c), old(c + span) - old(c));
         fit.extend(laid.fit.iter().cloned().map(|mut f| {
@@ -1662,6 +1670,7 @@ fn layout_shown(
     prev: Option<&ParaStyle>,
     measure: bool,
     reuse: Option<(&TableLayout, std::ops::RangeInclusive<usize>)>,
+    nested: bool,
     memos: &mut Memos,
 ) -> Result<Rc<TableLayout>, Yield> {
     let kept = |ri: usize| reuse.as_ref().filter(|(_, rows)| !rows.contains(&ri)).map(|(o, _)| *o);
@@ -1670,7 +1679,7 @@ fn layout_shown(
     let single = env.ctx.env.text.single_cell_borders;
     let edges = crate::prof::time("table:edges", || cell_edges(t, n, single, &|ri| reuse.as_ref().filter(|_| !near(ri)).map(|(o, _)| &o.rows[ri])));
     let inputs = crate::prof::time("table:fit", || fit_inputs(t, env, memos, &edges, &|ri| kept(ri).map(|o| &o.fit[ri])))?;
-    let Fit { cols, min_t, width, hard_t } = resolve_fit(t, text_w, env, None, &inputs);
+    let Fit { cols, min_t, width, hard_t } = resolve_fit(t, text_w, env, None, nested, &inputs);
     let geo = if cols.len() == n { place(t, &cols, &edges) } else { cell_geometry(t, &cols, single) };
 
     let mut stories = Vec::new();

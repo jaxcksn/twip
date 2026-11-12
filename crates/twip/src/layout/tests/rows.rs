@@ -600,6 +600,39 @@ fn a_split_rows_continuation_keeps_its_first_paragraphs_space_before() {
 }
 
 #[test]
+fn a_nested_autofit_table_takes_its_cells_content_width_in_compat_12() {
+    // Outer cell 4830 wide (content 4614); the nested cells ask for 4945 and 4946, so the nested columns shrink to the
+    // room they get. Compat 12 must not widen that room by the nested table's edge margins.
+    let cell = |w: u32, inner: &str| format!(r#"<w:tc><w:tcPr><w:tcW w:w="{w}" w:type="dxa"/></w:tcPr>{inner}</w:tc>"#);
+    let p = |t: char| format!(r#"<w:p><w:r><w:t>{t}</w:t></w:r></w:p>"#);
+    let mar = r#"<w:tblCellMar><w:left w:w="108" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar>"#;
+    let nested = format!(
+        r#"<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblInd w:w="0" w:type="dxa"/>{mar}</w:tblPr><w:tblGrid><w:gridCol w:w="3812"/><w:gridCol w:w="3388"/></w:tblGrid><w:tr>{}{}</w:tr></w:tbl>"#,
+        cell(4945, &p('a')),
+        cell(4946, &p('b'))
+    );
+    let body = format!(
+        r#"<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblInd w:w="0" w:type="dxa"/>{mar}</w:tblPr><w:tblGrid><w:gridCol w:w="4830"/></w:tblGrid><w:tr>{}</w:tr></w:tbl><w:p/>"#,
+        cell(4830, &format!("{nested}<w:p/>"))
+    );
+    let col = |mode: i64| {
+        let mut doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
+        doc.settings.compat_mode = mode;
+        let mut x = HashMap::new();
+        crate::layout::traverse::paint(&layout(&doc, &fonts()).pages()[0], &mut |p| {
+            if let crate::layout::fragment::Item::Glyphs(r) = p.absolute() {
+                for g in r.chars.iter() {
+                    x.entry(g.0).or_insert(g.1);
+                }
+            }
+        });
+        x[&'b'] - x[&'a']
+    };
+    let (c12, c15) = (col(12), col(15));
+    assert!((c12 - c15).abs() < 0.01, "first nested column: compat 12 {c12}, compat 15 {c15}");
+}
+
+#[test]
 fn a_nested_row_splits_inside_its_cell() {
     let cell = |w: u32, paras: &str| format!(r#"<w:tc><w:tcPr><w:tcW w:w="{w}" w:type="dxa"/></w:tcPr>{paras}</w:tc>"#);
     let p = |t: char| format!(r#"<w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>{t}</w:t></w:r></w:p>"#);

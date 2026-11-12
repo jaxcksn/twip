@@ -103,8 +103,8 @@ pub fn child_ids(blocks: &[LaidBlock], width: Option<f64>, env: &StoryEnv, cell:
                 ChildId::Para(shape(p.para(), &p.shape_space_in(env.fields, env.notes, &env.ctx, cell.is_some()), env.ctx.fonts, memos)?)
             }
             LaidBlock::Table(t) => ChildId::Table(match width {
-                Some(w) => super::table::layout(&as_nested(t, cell), w, env, None, false, memos)?,
-                None => super::table::layout(&as_nested(t, cell), 1e9, env, None, true, memos)?,
+                Some(w) => nested_layout(t, cell, w, env, false, memos)?,
+                None => nested_layout(t, cell, 1e9, env, true, memos)?,
             }),
         });
     }
@@ -117,6 +117,14 @@ pub struct CellEnds {
     pub after: bool,
     pub fixed: bool,
     pub fit: bool,
+}
+
+/// A story's table: nested when the story is a cell's.
+fn nested_layout(t: &Table, cell: Option<CellEnds>, width: f64, env: &StoryEnv, measure: bool, memos: &mut Memos) -> Result<Rc<TableLayout>, Yield> {
+    match cell {
+        Some(_) => super::table::layout_nested(&as_nested(t, cell), width, env, measure, memos),
+        None => super::table::layout(t, width, env, None, measure, memos),
+    }
 }
 
 pub fn as_nested(t: &Table, cell: Option<CellEnds>) -> std::borrow::Cow<'_, Table> {
@@ -368,7 +376,7 @@ pub fn layout_with(
                 y += prev_after;
                 let tl = match resolved.get(bi) {
                     Some(ChildId::Table(tb)) => tb.clone(),
-                    _ => super::table::layout(&as_nested(t, cell), width, env, None, false, memos)?,
+                    _ => nested_layout(t, cell, width, env, false, memos)?,
                 };
                 let (rows, h) = super::table::table_units(&tl);
                 let shift = if in_cell && text.compat == Compat::Legacy { super::table::nested_shift(t, text.single_cell_borders) } else { 0.0 };
