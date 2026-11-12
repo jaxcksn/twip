@@ -1,6 +1,6 @@
 //! Job budgets
 
-use std::time::Instant;
+use crate::clock::Instant;
 
 use super::cache::LayoutCache;
 

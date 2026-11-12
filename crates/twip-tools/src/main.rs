@@ -1,16 +1,16 @@
 //! The developer tools: `twip-tools <command> ...` (golden, dump, dumpdiff, roundtrip, render, pdf, presets, chrome-fonts, autocorrect-list, ...). Native only; the
 //! browser module is `twip-wasm`. Speed is measured by the engine's Divan benchmarks (`cargo bench -p twip`).
 
-#[cfg(target_os = "emscripten")]
+#[cfg(target_family = "wasm")]
 fn main() {}
 
-#[cfg(not(target_os = "emscripten"))]
+#[cfg(not(target_family = "wasm"))]
 mod cli;
-#[cfg(not(target_os = "emscripten"))]
+#[cfg(not(target_family = "wasm"))]
 mod golden;
 
 /// Prints a command's error and exits with status 1.
-#[cfg(not(target_os = "emscripten"))]
+#[cfg(not(target_family = "wasm"))]
 fn exit_on_error(result: Result<(), String>) {
     if let Err(e) = result {
         eprintln!("error: {e}");
@@ -18,7 +18,7 @@ fn exit_on_error(result: Result<(), String>) {
     }
 }
 
-#[cfg(not(target_os = "emscripten"))]
+#[cfg(not(target_family = "wasm"))]
 fn main() {
     let mut args = std::env::args().skip(1).peekable();
     match args.peek().map(String::as_str) {

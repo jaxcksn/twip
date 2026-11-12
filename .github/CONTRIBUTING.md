@@ -9,8 +9,8 @@ You need:
 - **Rust**: `rustup` installed. The repo pins the toolchain in `rust-toolchain.toml`; rustup picks it up on first build.
 - **Node 24+** and **pnpm** (`corepack enable`).
 - **.NET 10 SDK**: for the .NET SDK and the docs' C# examples.
-- **emsdk 6.0.8**: for the WebAssembly build, which `web:test` and everything else in `bindings/web` needs. `emcc`
-  must be on `PATH` (see below).
+- **The wasm-bindgen CLI** at the locked version, for the WebAssembly module, which `web:test` and everything else
+  in `bindings/web` needs: `cargo install wasm-bindgen-cli --version 0.2.129 --locked`.
 
 Twip links no C or C++ library: `node crates/twip-capi/build-native.mjs` is the plain cargo build of the native
 library (it passes other cargo arguments through: `node crates/twip-capi/build-native.mjs test --workspace`). Native
@@ -27,37 +27,13 @@ pnpm moon setup       # installs the pinned toolchains and the commit-msg hook
 The commit-msg hook runs [commitlint](https://commitlint.js.org) (the `commitlint` key in `package.json`) on every commit, so a
 message that isn't a conventional commit is rejected locally instead of in CI.
 
-### Installing emsdk
-
-macOS and Linux:
-
-```sh
-git clone https://github.com/emscripten-core/emsdk.git ~/emsdk
-cd ~/emsdk
-./emsdk install 6.0.8
-./emsdk activate 6.0.8
-source ./emsdk_env.sh   # in every new shell, or add it to your shell profile
-```
-
-Windows (PowerShell):
-
-```powershell
-git clone https://github.com/emscripten-core/emsdk.git $HOME\emsdk
-cd $HOME\emsdk
-.\emsdk install 6.0.8
-.\emsdk activate 6.0.8 --permanent   # --permanent puts emcc on PATH for new shells
-```
-
-Without `--permanent`, run `.\emsdk_env.ps1` (PowerShell) or `emsdk_env.bat` (cmd) in each new shell instead.
-Check it with `emcc --version`.
-
 ## Layout
 
 | Path | What |
 |---|---|
 | `crates/twip` | The engine: layout, editing, rendering. `twip::api` is the contract every SDK follows. |
 | `crates/twip-capi` | The C ABI over `twip::api` (internal, `include/twip.h`): the native library `twip` the .NET SDK loads. |
-| `crates/twip-wasm` | Builds the C ABI as an emscripten module for the web, with `twip-host.js` for its callbacks. |
+| `crates/twip-wasm` | Builds the C ABI as the web's WebAssembly module (`wasm32-unknown-unknown`, with wasm-bindgen's glue); its `test` runs the layout snapshots in WebAssembly (`wasm32-wasip1` under Node's WASI). |
 | `crates/twip-graphics` | The 2D renderer: pictures recorded once, drawn on the CPU (and the GPU and PDF). Internal; published with `twip` at its exact version. |
 | `crates/twip-tools` | Developer tools: golden comparisons, dumps, round trips, renders (`cargo run -p twip-tools`). |
 | `bindings/web` | `@twip/web`, the TypeScript SDK, written by hand over the wasm module. |
@@ -111,7 +87,7 @@ not in CI). Compare their numbers with `main`'s on the same machine.
 
 The tasks: `root:hygiene` (planning ids, the CI plan), `root:format`, `root:lint` (clippy), `root:contract-scripts`;
 `twip:test` (the unit tests, including the wire fixture check, and the rust contract runner), `twip:example` (the
-Rust API end to end), `twip-graphics:test` (the renderer's unit and golden image tests), `twip-capi:test`; `web:test` (builds the wasm module with emsdk, then the unit, wire, contract and API report checks),
+Rust API end to end), `twip-graphics:test` (the renderer's unit and golden image tests), `twip-capi:test`; `web:test` (builds the wasm module, then the unit, wire, contract and API report checks),
 `web:browser-test`, `web:latency` (the latency budgets, on a quiet machine with a GPU; not in CI); `dotnet:build`, `dotnet:test` (builds twip-capi, then the wire, contract and Native AOT smoke
 tests); `docs:build` and `docs:examples` (the guides' TypeScript and C# examples). `cargo fmt --all` fixes what
 `root:format` reports.
@@ -148,8 +124,7 @@ binary needs `--bench`; without it Divan runs each benchmark once, as a test. Li
   (`tests/golden.rs`); `TWIP_GRAPHICS_BLESS=1 cargo test -p twip-graphics --test golden` rewrites them, to be reviewed
   before they are kept. GPU features are checked against the CPU's output: natively by `tests/gpu.rs` (with
   `--features gpu`; `TWIP_GRAPHICS_GPU=1` fails instead of skipping without a GPU), and on WebGPU in headless Edge by
-  `moon run web:graphics-test`. That needs the wasm-bindgen CLI at the locked version:
-  `cargo install wasm-bindgen-cli --version 0.2.129 --locked`.
+  `moon run web:graphics-test`. That needs the wasm-bindgen CLI at the locked version (above).
 - GPU code uses only what WebGL 2 also has: no compute, no storage buffers, no push constants.
 - No shortcut rests on a guess that a case is rare: do it as Skia does, measure, or mark it `// shortcut:` with what is
   missing and where it lands.

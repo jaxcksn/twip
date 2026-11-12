@@ -57,8 +57,6 @@ jobs:
         with:
           key: shard-${{ matrix.shard.job }}
           save-if: ${{ env.FULL == 'true' }}
-          cache-directories: |
-            .web-deps
       # Metric-compatible stand-ins for the fonts documents use (Calibri, Cambria, Arial, Times New Roman, Courier
       # New); and qpdf and poppler, which open protected PDFs as readers do.
       - if: runner.os == 'Linux'
@@ -66,10 +64,10 @@ jobs:
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
-      - uses: mymindstorm/setup-emsdk@v16
+      # The WebAssembly module's glue (crates/twip-wasm build-web.mjs), at twip-capi's wasm-bindgen version.
+      - uses: taiki-e/install-action@v2
         with:
-          version: '6.0.8'
-          actions-cache-folder: emsdk-cache
+          tool: wasm-bindgen@0.2.129
       - run: moon ci --plan .moon/ci-plan.json --job ${{ matrix.shard.job }} ${{ env.FULL == 'true' && '--force' || '' }}
       - uses: moonrepo/run-report-action@v1
         if: success() || failure()

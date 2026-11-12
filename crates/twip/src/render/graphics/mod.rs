@@ -191,7 +191,7 @@ impl Graphics {
 
     /// Hands the recorded frame (over the desk colour) and the resources it draws from to `draw`, as
     /// [`Graphics::present`] does to the CPU renderer, and starts the next one: the GPU screen's present.
-    #[cfg_attr(not(twip_window), allow(dead_code, reason = "the GPU screen is the native windows'"))]
+    #[cfg_attr(not(twip_gpu), allow(dead_code, reason = "no GPU screen in this build"))]
     pub fn finish<R>(&mut self, draw: impl FnOnce(&Resources, &cpu::Frame<'_>) -> R) -> R {
         let picture = self.frame.finish();
         let draws = [Draw { picture: &picture, transform: Affine::IDENTITY }];

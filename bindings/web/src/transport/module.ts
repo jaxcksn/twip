@@ -1,15 +1,16 @@
 // Loading the engine module: the one place that knows where the WebAssembly build is and what it exports.
-// The build copies the emscripten output (twip-wasm.js and twip_wasm.wasm) next to dist/index.js.
+// The build copies the module (twip-wasm.js, wasm-bindgen's glue, and twip_wasm.wasm) next to dist/index.js.
 import { EditorError } from '../errors.js';
 
 /** Pointers and sizes are 32-bit numbers in wasm32. */
 type Ptr = number;
 
-/** The emscripten module of the engine: the C ABI as `_name` exports, plus the heap and the GPU helpers. */
+/** The engine module: the C ABI as `_name` functions, the memory they share as `HEAPU8` and `HEAPU32`, and the GPU
+ * screen's start and canvas functions. */
 export interface TwipModule {
-  HEAPU8: Uint8Array;
-  HEAPU32: Uint32Array;
-  /** Set by the SDK: `twip-host.js` calls it for every engine callback. The payload lives in HEAPU8 during the call. */
+  readonly HEAPU8: Uint8Array;
+  readonly HEAPU32: Uint32Array;
+  /** Set by the SDK: the engine hands it every callback. The payload lives in HEAPU8 during the call. */
   twipDispatch?: (kind: number, session: number, ptr: Ptr, len: number) => void;
   _twip_alloc(len: number): Ptr;
   _twip_free(ptr: Ptr, len: number): void;
@@ -34,24 +35,14 @@ export interface TwipModule {
   _twip_surface(engine: Ptr, session: number, width: number, height: number, dpr: number): void;
   _twip_scroll(engine: Ptr, session: number, x: number, y: number): void;
   _twip_frame_rgba(engine: Ptr, session: number, pixels: Ptr, width: number, height: number, info: Ptr): number;
+  _twip_frame_window(engine: Ptr, session: number, width: number, height: number, info: Ptr): number;
+  _twip_detach_window(engine: Ptr, session: number): void;
+  _twip_test_lose_gpu(engine: Ptr, session: number): void;
   _twip_timer_fired(engine: Ptr, session: number, timer: number): void;
-  _twip_gpu_instance(): Ptr;
-  _twip_attach_webgpu(instance: Ptr, device: Ptr, queue: Ptr): number;
-  _twip_frame_webgpu(engine: Ptr, session: number, texture: Ptr, bgra: number, height: number, info: Ptr): number;
-  _twip_attach_webgl(engine: Ptr, session: number): number;
-  _twip_frame_webgl(engine: Ptr, session: number, width: number, height: number, info: Ptr): number;
-  /** emscripten's WebGPU import helpers (emdawnwebgpu). */
-  WebGPU?: {
-    importJsDevice(device: unknown, instance: Ptr): Ptr;
-    importJsQueue(queue: unknown, instance: Ptr): Ptr;
-    importJsTexture(texture: unknown): Ptr;
-  };
-  /** emscripten's WebGL context helpers. */
-  GL?: {
-    createContext(canvas: unknown, attributes: Record<string, number>): number;
-    makeContextCurrent(handle: number): boolean;
-    deleteContext(handle: number): void;
-  };
+  /** Makes the page's WebGPU device when there is none or it was lost: 0 none, 1 the one there kept, 2 a new one. */
+  twip_gpu_start(): Promise<number>;
+  /** Gives a session its canvas for GPU frames: the backend (5 WebGPU), or a negative status. */
+  twip_attach_canvas(engine: Ptr, session: number, canvas: HTMLCanvasElement | OffscreenCanvas): number;
 }
 
 /**
@@ -98,13 +89,30 @@ export async function loadModule(dispatch: NonNullable<TwipModule['twipDispatch'
   const assets = useAssets();
   const moduleUrl = assets ? new URL('twip-wasm.js', assets) : defaultModuleUrl;
   const wasmUrl = assets ? new URL('twip_wasm.wasm', assets) : defaultWasmUrl;
-  const { default: create } = (await import(moduleUrl.href)) as {
-    default: (overrides: object) => Promise<TwipModule>;
+  // The engine calls the host through this global (crates/twip-capi/src/web.rs); each worker has its own.
+  (globalThis as { twipHost?: unknown }).twipHost = { emit: dispatch, gpuLost: () => {} };
+  const glue = (await import(moduleUrl.href)) as Record<string, unknown> & {
+    default: (options: { module_or_path: unknown }) => Promise<Record<string, unknown>>;
   };
-  // In Node the module finds its file itself; in a browser it's wherever the bundler, or `assets`, put it.
-  const locateFile =
-    moduleUrl.protocol === 'file:' ? undefined : (file: string) => (file.endsWith('.wasm') ? wasmUrl : new URL(file, moduleUrl)).href;
-  const module = await create({ twipDispatch: dispatch, locateFile });
-  module.twipDispatch = dispatch;
-  return module;
+  // In Node the module's bytes are read from its file; in a browser it's fetched from wherever the bundler, or
+  // `assets`, put it. (The specifier is built so bundlers don't follow it.)
+  const fs = 'node:fs/promises';
+  const source = wasmUrl.protocol === 'file:' ? await ((await import(fs)) as { readFile(path: URL): Promise<Uint8Array> }).readFile(wasmUrl) : wasmUrl;
+  const exports = await glue.default({ module_or_path: source });
+  const memory = exports.memory as WebAssembly.Memory;
+  const module: Record<string, unknown> = {
+    // Views made on each use: the memory's buffer changes when it grows.
+    get HEAPU8() {
+      return new Uint8Array(memory.buffer);
+    },
+    get HEAPU32() {
+      return new Uint32Array(memory.buffer);
+    },
+    twipDispatch: dispatch,
+    twip_gpu_start: glue.twip_gpu_start,
+    twip_attach_canvas: glue.twip_attach_canvas,
+  };
+  for (const [name, value] of Object.entries(exports)) if (name.startsWith('twip_')) module[`_${name}`] = value;
+  if (typeof module._twip_engine_new !== 'function') throw new EditorError('internal', 'the engine module has no C ABI exports');
+  return module as unknown as TwipModule;
 }

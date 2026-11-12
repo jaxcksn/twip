@@ -24,7 +24,7 @@ const FORMULAS: [Formula; 17] = [
 const CMDS: [Cmd; 6] = [Cmd::MoveTo, Cmd::LineTo, Cmd::ArcTo, Cmd::QuadTo, Cmd::CubicTo, Cmd::Close];
 const FILLS: [PathFill; 6] = [PathFill::None, PathFill::Norm, PathFill::Lighten, PathFill::LightenLess, PathFill::Darken, PathFill::DarkenLess];
 
-#[cfg_attr(target_os = "emscripten", allow(dead_code))]
+#[cfg_attr(target_family = "wasm", allow(dead_code))]
 fn var_code(v: Var) -> u64 {
     match v {
         Var::W => 0,
@@ -62,10 +62,10 @@ fn var_of(c: u64) -> Var {
     }
 }
 
-#[cfg_attr(target_os = "emscripten", allow(dead_code))]
+#[cfg_attr(target_family = "wasm", allow(dead_code))]
 struct Out(Vec<u8>);
 
-#[cfg_attr(target_os = "emscripten", allow(dead_code))]
+#[cfg_attr(target_family = "wasm", allow(dead_code))]
 impl Out {
     fn u(&mut self, mut v: u64) {
         loop {
@@ -116,7 +116,7 @@ impl Out {
     }
 }
 
-#[cfg_attr(target_os = "emscripten", allow(dead_code))]
+#[cfg_attr(target_family = "wasm", allow(dead_code))]
 pub fn encode(d: &GeomDef) -> Vec<u8> {
     let mut o = Out(Vec::new());
     o.u(d.av.len() as u64);

@@ -1,24 +1,35 @@
-// GPU device loss: a lost WebGL context (WEBGL_lose_context, then restored) or a destroyed WebGPU device is replaced
-// with no host code, on the main thread and in the worker, and an edit's frame follows within a second. Past 3 lost
-// devices, the canvas shows CPU pixels.
+// GPU device loss: a destroyed WebGPU device is replaced with no host code, on the main thread and in the worker, and
+// an edit's frame follows within a second. Past 3 lost devices, the canvas shows CPU pixels. (The `webgl` switch of the
+// instrument hides WebGPU; the engine has no WebGL backend, so it draws CPU pixels then.)
 import { expect, test, type Page } from '@playwright/test';
 import { hello, mount, open, pixels, softwareGpu } from './helpers.ts';
 
 /**
  * Runs in the page, and in the engine worker ahead of its script: keeps each WebGPU device and WebGL 2 context made,
- * counts CPU pixels written into WebGPU textures, and `twipLose()` loses the latest (a WebGL context is restored 100 ms
+ * counts CPU pixels written into canvas textures, and `twipLose()` loses the latest (a WebGL context is restored 100 ms
  * later). `webgl` hides WebGPU.
  */
 function instrument(webgl: boolean): void {
   const g = globalThis as any;
   if (webgl) Object.defineProperty(navigator, 'gpu', { value: undefined });
   const made = { devices: [] as any[], gl: [] as any[], writes: 0 };
+  // CPU pixels are written into a canvas's texture; the engine's own GPU frames write only their atlases.
+  const canvasTextures = new WeakSet<object>();
+  const context = g.GPUCanvasContext?.prototype;
+  if (context) {
+    const current = context.getCurrentTexture;
+    context.getCurrentTexture = function (this: unknown, ...args: unknown[]) {
+      const texture = current.apply(this, args);
+      canvasTextures.add(texture);
+      return texture;
+    };
+  }
   const queue = g.GPUQueue?.prototype;
   if (queue) {
     const write = queue.writeTexture;
-    queue.writeTexture = function (this: unknown, ...args: unknown[]) {
-      made.writes++;
-      return write.apply(this, args);
+    queue.writeTexture = function (this: unknown, destination: { texture: object }, ...args: unknown[]) {
+      if (canvasTextures.has(destination.texture)) made.writes++;
+      return write.call(this, destination, ...args);
     };
   }
   const adapter = g.GPUAdapter?.prototype;
@@ -71,10 +82,10 @@ function difference(before: Awaited<ReturnType<typeof pixels>>, after: Awaited<R
   return off / (before.width * before.height);
 }
 
-for (const backend of ['webgl', 'webgpu'] as const) {
+for (const backend of ['webgpu'] as const) {
   for (const execution of ['main', 'worker'] as const) {
     test(`a lost ${backend} ${backend === 'webgl' ? 'context' : 'device'} draws again within a second (${execution})`, async ({ page }) => {
-      const webgl = backend === 'webgl';
+      const webgl = (backend as string) === 'webgl';
       test.skip(!webgl && softwareGpu, 'a software GPU');
       await page.addInitScript(instrument, webgl);
       await open(page);

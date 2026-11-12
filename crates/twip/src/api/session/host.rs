@@ -350,7 +350,7 @@ pub(super) struct Presentation {
     /// The selection the blink last restarted for.
     blink_selection: Option<crate::editing::selection::Selection>,
     /// Unique on the thread: names this session's WebGL canvas or GPU window.
-    #[cfg_attr(not(twip_window), allow(dead_code, reason = "no GPU target in this build"))]
+    #[cfg_attr(not(twip_gpu), allow(dead_code, reason = "no GPU target in this build"))]
     serial: u64,
     /// The view settings the chrome and page are drawn with ([`Presentation::apply_look`]); `chrome_set` once the host
     /// chose a scheme (before that, a dark background gives dark chrome).
@@ -779,7 +779,7 @@ impl Session {
         }
         p.blink_selection = Some(selection);
         if p.focused {
-            let step = p.blink.input(std::time::Instant::now());
+            let step = p.blink.input(crate::clock::Instant::now());
             p.blinked(step);
         }
     }
@@ -949,8 +949,8 @@ impl Session {
     }
 }
 
-/// The swap chain on this session's window goes with it.
-#[cfg(twip_window)]
+/// The swap chain on this session's window or canvas goes with it.
+#[cfg(twip_gpu)]
 impl Drop for Presentation {
     fn drop(&mut self) {
         crate::render::window::detach(self.serial);
@@ -1003,7 +1003,7 @@ impl HostSurface<'_> {
         // The caret comes or goes; focus back restarts its blink from visible.
         p.frame_wanted = true;
         if focused {
-            let step = p.blink.input(std::time::Instant::now());
+            let step = p.blink.input(crate::clock::Instant::now());
             p.blinked(step);
         }
     }
@@ -1013,7 +1013,7 @@ impl HostSurface<'_> {
     pub fn set_caret_blink(&mut self, blink: CaretBlink) {
         let ms = |v: Option<u32>| v.map(|m| std::time::Duration::from_millis(u64::from(m)));
         let p = &mut self.session.presentation;
-        let step = p.blink.set(ms(blink.interval_ms), ms(blink.stop_after_ms), std::time::Instant::now());
+        let step = p.blink.set(ms(blink.interval_ms), ms(blink.stop_after_ms), crate::clock::Instant::now());
         p.blinked(step);
         p.frame_wanted = true;
     }
@@ -1034,7 +1034,7 @@ impl HostSurface<'_> {
         if width == 0 || height == 0 || pixels.len() < row * height as usize {
             return Err(Error::invalid("the pixel buffer is smaller than width x height x 4"));
         }
-        let started = std::time::Instant::now();
+        let started = crate::clock::Instant::now();
         self.draw_cpu(pixels, width, height)?;
         self.session.presentation.counters.frame(started.elapsed().as_secs_f64() * 1e3);
         if self.session.presentation.verify {
@@ -1108,17 +1108,24 @@ impl HostSurface<'_> {
         }
     }
 
-    /// Stops drawing into the window [`HostSurface::attach_window`] gave.
+    /// Browser: draws this session's frames into `canvas` with the page's WebGPU from now on, once
+    /// [`crate::render::window::start`] made the device: the backend (5 WebGPU), or `None` when there is none.
+    #[cfg(all(target_family = "wasm", target_os = "unknown"))]
+    pub fn attach_canvas(&mut self, canvas: twip_graphics::gpu::wgpu::SurfaceTarget<'static>) -> Option<u32> {
+        crate::render::window::attach_canvas(self.session.presentation.serial, canvas).map(|b| b as u32)
+    }
+
+    /// Stops drawing into the window [`HostSurface::attach_window`] gave (or, in the browser, the canvas).
     pub fn detach_window(&mut self) {
-        #[cfg(twip_window)]
+        #[cfg(twip_gpu)]
         crate::render::window::detach(self.session.presentation.serial);
     }
 
-    /// Testing: loses the GPU device as a driver reset would. Window frames fail `unavailable` until the next
-    /// [`HostSurface::attach_window`], which makes a new device. Nothing without a GPU build.
+    /// Testing: loses the GPU device as a driver reset would. Window frames fail `unavailable` until a new device: the
+    /// next [`HostSurface::attach_window`] natively, the page's next start in the browser. Nothing without a GPU build.
     #[doc(hidden)]
     pub fn lose_gpu_device(&mut self) {
-        #[cfg(twip_window)]
+        #[cfg(twip_gpu)]
         crate::render::window::lose_device();
     }
 
@@ -1126,10 +1133,10 @@ impl HostSurface<'_> {
     /// `unavailable` when no window is attached or the GPU can't draw now (the device was lost): draw with
     /// [`HostSurface::frame_rgba`] then.
     pub fn frame_window(&mut self, width: u32, height: u32) -> Result<FrameInfo, Error> {
-        #[cfg(twip_window)]
+        #[cfg(twip_gpu)]
         {
             let key = self.session.presentation.serial;
-            let started = std::time::Instant::now();
+            let started = crate::clock::Instant::now();
             let drawn = self.draw_graphics(f64::from(width), f64::from(height), |g| crate::render::window::frame(key, width, height, g));
             if drawn {
                 self.session.presentation.counters.frame(started.elapsed().as_secs_f64() * 1e3);
@@ -1328,7 +1335,7 @@ impl HostSurface<'_> {
         if timer == super::blink::TIMER {
             let s = &mut *self.session;
             let active = s.presentation.focused && s.editor.selection().is_collapsed();
-            let step = s.presentation.blink.fired(active, std::time::Instant::now());
+            let step = s.presentation.blink.fired(active, crate::clock::Instant::now());
             s.presentation.blinked(step);
             return;
         }
