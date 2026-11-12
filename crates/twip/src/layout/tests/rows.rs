@@ -600,6 +600,26 @@ fn a_split_rows_continuation_keeps_its_first_paragraphs_space_before() {
 }
 
 #[test]
+fn compat_12_a_cell_float_laid_out_outside_the_cell_counts_from_the_row_top() {
+    // A layoutInCell="0" text box 10pt below the cell's second paragraph: it counts from the row's top, so the first
+    // paragraph's height doesn't move it.
+    let boxed = r#"<w:r><w:drawing><wp:anchor xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="1" behindDoc="0" locked="0" layoutInCell="0" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>2540000</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>127000</wp:posOffset></wp:positionV><wp:extent cx="1270000" cy="635000"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/><wp:docPr id="1" name="B"/><a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:wsp><wps:cNvSpPr txBox="1"/><wps:spPr><a:prstGeom prst="rect"/></wps:spPr><wps:txbx><w:txbxContent><w:p><w:r><w:t>Z</w:t></w:r></w:p></w:txbxContent></wps:txbx><wps:bodyPr/></wps:wsp></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#;
+    let y = |first: u32| {
+        let body = format!(
+            r#"<w:tbl><w:tblGrid><w:gridCol w:w="6000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="6000" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="{first}" w:lineRule="exact"/></w:pPr><w:r><w:t>a</w:t></w:r></w:p><w:p><w:pPr><w:spacing w:before="0" w:after="0"/></w:pPr>{boxed}<w:r><w:t>b</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#
+        );
+        let mut doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
+        doc.settings.compat_mode = 12;
+        let page = &glyphs(&doc)[0];
+        let at = |ch: char| page.iter().find(|c| c.0 == ch).map(|c| c.1).expect("drawn");
+        (at('b'), at('Z'))
+    };
+    let ((b1, z1), (b2, z2)) = (y(400), y(800));
+    assert!((b2 - b1 - 20.0).abs() < 0.01, "the second paragraph moves down: {b1} {b2}");
+    assert!((z2 - z1).abs() < 0.01, "the box stays: {z1} {z2}");
+}
+
+#[test]
 fn a_nested_autofit_table_takes_its_cells_content_width_in_compat_12() {
     // Outer cell 4830 wide (content 4614); the nested cells ask for 4945 and 4946, so the nested columns shrink to the
     // room they get. Compat 12 must not widen that room by the nested table's edge margins.

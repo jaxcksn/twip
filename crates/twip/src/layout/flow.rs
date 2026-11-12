@@ -586,8 +586,9 @@ fn page_floats<'b>(t: &'b Table, ctx: &LayoutCtx<'b>) -> HashMap<u64, &'b Float>
     out
 }
 
-fn move_floats(row: Option<&mut super::fragment::RowFragment>, floats: &HashMap<u64, &Float>, fr: &Frames, top_border: f64, up: f64) {
+fn move_floats(row: Option<&mut super::fragment::RowFragment>, floats: &HashMap<u64, &Float>, fr: &Frames, up: f64) {
     let Some(row) = row.filter(|_| !floats.is_empty()) else { return };
+    let top = row.top;
     for cell in row.cells.iter_mut() {
         for c in cell.content.iter_mut() {
             let Child::Group { offset, children } = c else { continue };
@@ -602,8 +603,10 @@ fn move_floats(row: Option<&mut super::fragment::RowFragment>, floats: &HashMap<
                         BoxKind::Float { anchor, float, rect, layer } if floats.contains_key(&float.0) => {
                             let f = floats[&float.0];
                             let x = float::h_pos(f, fr) - offset.0;
+                            // `paragraph` counts from the row's top (its top border included), whichever paragraph of the
+                            // cell holds the anchor.
                             let y = match f.v_relative.as_str() {
-                                "paragraph" | "line" => rect[1] - top_border - up,
+                                "paragraph" | "line" => (if f.v_align.is_some() { 0.0 } else { f.v_offset }) - (offset.1 - top) - up,
                                 _ => float::v_pos(f, rect[3] - rect[1], fr, 0.0, 0.0) - offset.1,
                             };
                             let d = (x - rect[0], y - rect[1]);
@@ -2683,7 +2686,7 @@ impl<'d> PageFill<'d, '_> {
             {
                 if let Some(&(rs, top, idx)) = placed.last().filter(|p| p.2 + 1 == rows.len()) {
                     let (mut drawn, _) = draw_whole_row(tb, rs, at_x, top, tb.rows[rs].height, true, memos);
-                    move_floats(Some(&mut drawn), &page_floats, &frames, tb.rows[rs].top_border, up(rs));
+                    move_floats(Some(&mut drawn), &page_floats, &frames, up(rs));
                     rows[idx] = drawn;
                 }
                 *y = bottom;
@@ -2715,7 +2718,7 @@ impl<'d> PageFill<'d, '_> {
                     }
                     Some(_) => draw_row(tb, ri, at_x, *y, height, Some(&parts), last),
                 });
-                move_floats(rows.last_mut(), &page_floats, &frames, row.top_border, up(ri));
+                move_floats(rows.last_mut(), &page_floats, &frames, up(ri));
                 *y += height + if last { tb.bottom_border } else { 0.0 };
                 *empty = false;
                 pos.at = At::Row(ri + 1);
@@ -2787,12 +2790,12 @@ impl<'d> PageFill<'d, '_> {
                     let (rs, top, idx) = placed[m.pi];
                     let same: Vec<&MergedSplit> = merged.iter().filter(|o| o.start == m.start).collect();
                     let mut redrawn = draw_merged_part(tb, &same, ri, h, at_x, top);
-                    move_floats(Some(&mut redrawn), &page_floats, &frames, tb.rows[rs].top_border, up(rs));
+                    move_floats(Some(&mut redrawn), &page_floats, &frames, up(rs));
                     rows[idx] = redrawn;
                 }
                 row_refs.extend(cell_refs(&fitted, rows.len()));
                 rows.push(draw_row(tb, ri, at_x, *y, h, Some(&fitted), true));
-                move_floats(rows.last_mut(), &page_floats, &frames, row.top_border, up(ri));
+                move_floats(rows.last_mut(), &page_floats, &frames, up(ri));
                 *y += h + tb.bottom_border;
                 *empty = false;
                 pos.at = At::RowPart { row: ri, rest: Rc::new(left) };
@@ -2805,7 +2808,7 @@ impl<'d> PageFill<'d, '_> {
             if at_top {
                 row_refs.extend(cell_refs(&parts, rows.len()));
                 rows.push(draw_row(tb, ri, at_x, *y, height, Some(&parts), last));
-                move_floats(rows.last_mut(), &page_floats, &frames, row.top_border, up(ri));
+                move_floats(rows.last_mut(), &page_floats, &frames, up(ri));
                 *y += height + if last { tb.bottom_border } else { 0.0 };
                 *empty = false;
                 pos.at = At::Row(ri + 1);
@@ -2832,7 +2835,7 @@ impl<'d> PageFill<'d, '_> {
                     let last = kept.last().map_or(rs, |p| p.0);
                     let same: Vec<&MergedSplit> = cuts.iter().filter(|o| o.start == m.start).collect();
                     let mut redrawn = draw_merged_part(tb, &same, last + 1, 0.0, at_x, top);
-                    move_floats(Some(&mut redrawn), &page_floats, &frames, tb.rows[rs].top_border, up(rs));
+                    move_floats(Some(&mut redrawn), &page_floats, &frames, up(rs));
                     rows[idx] = redrawn;
                 }
             }
