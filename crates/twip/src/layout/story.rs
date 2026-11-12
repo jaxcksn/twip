@@ -58,6 +58,8 @@ pub struct StoryLayout {
     pub frozen: Vec<((usize, usize), [f64; 4])>,
     /// Each paragraph's top above its space before, by block.
     pub origins: Vec<(usize, f64)>,
+    /// A header's or footer's floating tables as obstacles, from the story's top left.
+    pub tables: Vec<Placed>,
 }
 
 impl PartialEq for StoryLayout {
@@ -65,6 +67,7 @@ impl PartialEq for StoryLayout {
         self.height == o.height
             && self.float_bottom == o.float_bottom
             && self.frozen == o.frozen
+            && self.tables == o.tables
             && self.units.len() == o.units.len()
             && self
                 .units
@@ -144,7 +147,7 @@ pub struct StoryKey {
     text: TextEnv,
     fonts: u64,
     boxed_fields: Option<FieldValues>,
-    hf: bool,
+    hf: Option<(f64, f64)>,
 }
 
 impl StoryKey {
@@ -160,7 +163,7 @@ impl StoryKey {
             text: env.ctx.env.text.clone(),
             fonts: env.ctx.fonts.revision(),
             boxed_fields: boxed.then(|| env.fields.clone()),
-            hf: false,
+            hf: None,
         }
     }
 }
@@ -195,11 +198,11 @@ fn story_bytes(s: &StoryLayout) -> usize {
 }
 
 pub fn layout(blocks: &[&Block], width: f64, env: &StoryEnv, cell: Option<CellEnds>, memos: &mut Memos) -> Result<Rc<StoryLayout>, Yield> {
-    layout_in(blocks, width, env, cell, false, memos)
+    layout_in(blocks, width, env, cell, None, memos)
 }
 
-/// `hf`: a header or footer story, whose floating tables float.
-fn layout_in(blocks: &[&Block], width: f64, env: &StoryEnv, cell: Option<CellEnds>, hf: bool, memos: &mut Memos) -> Result<Rc<StoryLayout>, Yield> {
+/// `hf`: a header or footer story, whose floating tables float: its top on the page and the page's top margin.
+fn layout_in(blocks: &[&Block], width: f64, env: &StoryEnv, cell: Option<CellEnds>, hf: Option<(f64, f64)>, memos: &mut Memos) -> Result<Rc<StoryLayout>, Yield> {
     let blocks = super::join::laid(blocks, env.ctx.env.text.review.view);
     let children = child_ids(&blocks, Some(width), env, cell, memos)?;
     let probe = StoryKey { hf, ..StoryKey::new(children.clone(), Some(width), cell, env, &blocks) };
@@ -210,7 +213,7 @@ fn layout_in(blocks: &[&Block], width: f64, env: &StoryEnv, cell: Option<CellEnd
 pub fn layout_from(blocks: &[&Block], width: f64, env: &StoryEnv, at: (usize, usize), memos: &mut Memos) -> Result<StoryLayout, Yield> {
     let blocks = super::join::laid(blocks, env.ctx.env.text.review.view);
     let children = child_ids(&blocks, Some(width), env, None, memos)?;
-    layout_with(&blocks, &children, width, env, None, at, &[], false, memos)
+    layout_with(&blocks, &children, width, env, None, at, &[], None, memos)
 }
 
 #[allow(clippy::too_many_arguments, reason = "the story, its width and cell ends, where it starts, the floats placed around it and its kind")]
@@ -222,7 +225,7 @@ pub fn layout_with(
     cell: Option<CellEnds>,
     start: (usize, usize),
     around: &[Placed],
-    hf: bool,
+    hf: Option<(f64, f64)>,
     memos: &mut Memos,
 ) -> Result<StoryLayout, Yield> {
     let text = &env.ctx.env.text;
@@ -238,6 +241,7 @@ pub fn layout_with(
     let mut held = 0.0f64;
     let mut origins = Vec::new();
     let mut tables: Vec<Placed> = Vec::new();
+    let mut hf_tables: Vec<Placed> = Vec::new();
     for (bi, b) in blocks.iter().enumerate() {
         // The part of a paragraph starting at a later line goes on without its space before.
         let from = if bi == start.0 { start.1 } else { 0 };
@@ -394,10 +398,16 @@ pub fn layout_with(
                 // A floating table in a header, a footer or a cell takes no room in the story: it stands `tblpY` below
                 // where it starts (from the text) and the text after it wraps around it. Compat ≤ 14: a header's or
                 // footer's text runs over it. A cell holds it.
-                // ponytail: the margin and page anchors are not placed, it starts where the story is.
-                let fp = t.floating.filter(|_| hf || in_cell);
-                let top = match fp {
-                    Some(fp) if fp.v_anchor == crate::docx::props::TableAnchor::Text => y + fp.y,
+                // A header's or footer's table against the page or the margin stands `tblpY` (less a twip) below
+                // its top.
+                // ponytail: a cell's against the page or the margin, and `tblpYSpec`, start where the story is.
+                let fp = t.floating.filter(|_| hf.is_some() || in_cell);
+                let top = match (fp, hf) {
+                    (Some(fp), _) if fp.v_anchor == crate::docx::props::TableAnchor::Text => y + fp.y,
+                    (Some(fp), Some((at, margin))) if fp.y_spec.is_none() => {
+                        let t0 = if fp.v_anchor == crate::docx::props::TableAnchor::Page { 0.0 } else { margin };
+                        (t0 + fp.y - 0.05).max(0.0) - at
+                    }
                     _ => y,
                 };
                 for mut u in rows {
@@ -410,7 +420,6 @@ pub fn layout_with(
                     units.push(u);
                 }
                 match fp {
-                    Some(_) if !in_cell && text.compat == Compat::Legacy => {}
                     Some(fp) => {
                         let legacy = in_cell && text.compat == Compat::Legacy;
                         let (bl, br) = super::table::float_box(&tl, t, legacy);
@@ -420,9 +429,15 @@ pub fn layout_with(
                             dist[3] = fp.dist[3];
                         }
                         let f = super::flow::table_float(t.id, br - bl, h, dist, !fp.never_overlap);
-                        tables.push(Placed::new((0, bi, float::TABLE_PIECE), ParaId(t.id), &f, bl + shift, top, h));
+                        let placed = Placed::new((0, bi, float::TABLE_PIECE), ParaId(t.id), &f, bl + shift, top, h);
                         if in_cell {
                             held = held.max(top + h);
+                        } else {
+                            hf_tables.push(placed.clone());
+                        }
+                        // Compat ≤ 14: a header's or footer's text runs over it.
+                        if in_cell || text.compat != Compat::Legacy {
+                            tables.push(placed);
                         }
                     }
                     None => y += h,
@@ -436,7 +451,7 @@ pub fn layout_with(
         y += prev_after;
     }
     unwrapped_floats(&mut units, &wrapping);
-    Ok(StoryLayout { units, height: y.max(held), float_bottom, frozen: Vec::new(), origins })
+    Ok(StoryLayout { units, height: y.max(held), float_bottom, frozen: Vec::new(), origins, tables: hf_tables })
 }
 
 // Cell floats
@@ -1117,7 +1132,13 @@ pub fn hf_layout(
     env: &StoryEnv,
     memos: &mut Memos,
 ) -> Result<Rc<StoryLayout>, Yield> {
-    let mut l = layout_in(blocks, width, env, None, true, memos)?;
+    let margin = fr.margin[2];
+    let mut l = layout_in(blocks, width, env, None, Some((0.0, margin)), memos)?;
+    // A table placed from the page is placed again once the story's top is known.
+    let placed = |b: &&Block| matches!(b, Block::Table(t) if t.floating.is_some_and(|f| f.v_anchor != crate::docx::props::TableAnchor::Text));
+    if blocks.iter().any(placed) && top(&l) != 0.0 {
+        l = layout_in(blocks, width, env, None, Some((top(&l), margin)), memos)?;
+    }
     // ponytail: compat ≤ 14 seen only with empty paragraphs under a picture as wide as the page; text beside a
     // smaller float is unverified.
     if env.ctx.env.text.compat == Compat::Legacy || !blocks.iter().any(|b| matches!(b, Block::Para(p) if !env.ctx.floats_of(p).is_empty())) {
@@ -1150,7 +1171,7 @@ pub fn hf_layout(
         if around.is_empty() || seen.as_ref() == Some(&rects) {
             break;
         }
-        l = Rc::new(StoryLayout { frozen: frozen.clone(), ..layout_with(&laid, &children, width, env, None, (0, 0), &around, true, memos)? });
+        l = Rc::new(StoryLayout { frozen: frozen.clone(), ..layout_with(&laid, &children, width, env, None, (0, 0), &around, Some((at, margin)), memos)? });
         seen = Some(rects);
     }
     Ok(l)
@@ -1252,6 +1273,11 @@ pub fn stack_limited(story: &StoryLayout, x0: f64, top: f64, limit: f64) -> (Vec
     let mut kept = 0.0;
     let mut cut = false;
     for u in &story.units {
+        // A floating table's rows take no room in the story.
+        if story.tables.iter().any(|t| t.key.1 == u.block) {
+            out.push(Child::Group { offset: (x0, top + u.top), children: u.content.clone() });
+            continue;
+        }
         if !cut && u.top + u.height <= limit + EPS {
             out.push(Child::Group { offset: (x0, top + u.top), children: u.content.clone() });
             kept = u.top + u.height;

@@ -391,7 +391,8 @@ impl<'d> Paginator<'d, '_> {
                 continue;
             };
             let blocks: Vec<&Block> = blocks.iter().collect();
-            if !blocks.iter().any(|b| matches!(b, Block::Para(p) if !self.ctx.floats_of(p).is_empty())) {
+            let tables = blocks.iter().any(|b| matches!(b, Block::Table(t) if t.floating.is_some()));
+            if !tables && !blocks.iter().any(|b| matches!(b, Block::Para(p) if !self.ctx.floats_of(p).is_empty())) {
                 continue;
             }
             let limit = hf_limit(self.ctx.env.text.compat, s.page_h);
@@ -403,6 +404,11 @@ impl<'d> Paginator<'d, '_> {
                 if p.wrap != super::float::Wrap::None {
                     out.push(p);
                 }
+            }
+            // Its floating tables, in both modes.
+            for (i, t) in layout.tables.iter().enumerate() {
+                let key = (usize::MAX, 2 + 2 * i + k, super::float::TABLE_PIECE);
+                out.push(super::float::Placed::new(key, t.anchor, &t.float, left + t.rect[0], at + t.rect[1], t.rect[3] - t.rect[1]));
             }
         }
         Ok(out)

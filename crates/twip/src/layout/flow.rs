@@ -783,6 +783,7 @@ impl<'d> PageFill<'d, '_> {
                     float_bottom: 0.0,
                     frozen: Vec::new(),
                     origins: Vec::new(),
+                    tables: Vec::new(),
                 }
             }),
         };

@@ -230,6 +230,28 @@ fn a_header_float_beside_a_floating_table_keeps_its_first_place() {
 }
 
 #[test]
+fn a_header_table_placed_from_the_page_wraps_the_body_text() {
+    let body = format!(
+        r#"<w:document {W}><w:body><w:p><w:r><w:t>{}</w:t></w:r></w:p><w:sectPr><w:headerReference w:type="default" r:id="rId2"/><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:body></w:document>"#,
+        super::words(600)
+    );
+    let header = format!(
+        r#"<w:hdr {W}><w:tbl><w:tblPr><w:tblpPr w:leftFromText="0" w:rightFromText="0" w:vertAnchor="page" w:horzAnchor="margin" w:tblpY="6000"/><w:tblW w:w="4000" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:trPr><w:trHeight w:val="720" w:hRule="exact"/></w:trPr><w:tc><w:p><w:r><w:t>T</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p><w:r><w:t>Head</w:t></w:r></w:p></w:hdr>"#
+    );
+    for compat in [14, 15] {
+        let Some(doc) = with_header(&body, &header, compat) else { return };
+        let page = &page_chars(&doc)[0];
+        // The table at 300pt on the page, the header's text at its top, the body beside the table.
+        let t = page.iter().find(|c| c.0 == 'T').expect("drawn");
+        assert!(t.2 > 300.0 && t.2 < 320.0, "{t:?}");
+        let head = page.iter().find(|c| c.0 == 'H').expect("drawn");
+        assert!(head.1 < 80.0 && head.2 < 60.0, "{head:?}");
+        let left = page.iter().filter(|c| c.2 > 315.0 && c.2 < 330.0).map(|c| c.1).fold(f64::INFINITY, f64::min);
+        assert!(left > 270.0, "compat {compat}: {left}");
+    }
+}
+
+#[test]
 fn compat_14_header_text_runs_over_its_floating_table() {
     let q = |compat: u32| {
         let doc = header_table(compat, "<w:t>Q</w:t>")?;
