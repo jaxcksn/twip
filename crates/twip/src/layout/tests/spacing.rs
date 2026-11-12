@@ -202,6 +202,22 @@ fn tab_7_compat_15_a_centre_stop_past_the_edge_moves_to_it_unless_a_tab_follows(
     assert_eq!((centre, right), (1, 3));
 }
 
+#[test]
+fn tab_6_text_after_a_centre_stop_near_the_edge_ends_at_it_on_the_line() {
+    use crate::docx::props::{Leader, Tab, TabKind};
+    let lines = |compat: i64| {
+        let mut doc = plain_doc(&["A".to_string()])?;
+        doc.settings.compat_mode = compat;
+        let p = para_mut(&mut doc, 0);
+        Rc::make_mut(&mut p.style).tabs = vec![Tab { pos: 450.0, kind: TabKind::Center, leader: Leader::None }];
+        let Inline::Text(_, run) = p.inlines[0].clone() else { unreachable!() };
+        p.inlines.extend([Inline::Tab(run.clone()), Inline::Text(words(3), run)]);
+        Some(first_para(&doc, 0).1)
+    };
+    let (Some(old), Some(new)) = (lines(14), lines(15)) else { return };
+    assert_eq!((old, new), (1, 1));
+}
+
 fn decimal_x(value: &str, c: char) -> Option<f64> {
     use crate::docx::props::{Leader, Tab, TabKind};
     let mut doc = plain_doc(&["Item".to_string()])?;

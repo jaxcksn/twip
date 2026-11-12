@@ -1122,7 +1122,9 @@ fn fit_line(
             }
             Some(pt) if pt.kind == TabKind::Center => {
                 let w: f64 = ws[pt.idx - start + 1..].iter().sum::<f64>() + p.width;
-                (pt.pen_at_tab + w).max(pt.stop + w / 2.0)
+                // A stop at or before the right edge narrows its tab so the text ends at the edge.
+                let centred = pt.stop + w / 2.0;
+                (pt.pen_at_tab + w).max(if pt.stop <= right + EPS { centred.min(right) } else { centred })
             }
             _ => pen + p.width,
         } + drift
