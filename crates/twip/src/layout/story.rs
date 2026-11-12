@@ -1160,6 +1160,7 @@ fn float_rects(
             let f = fitted.as_ref().unwrap_or(f);
             let h = float_height(f, env, memos)?;
             let (fx, fy) = (super::float::h_pos(f, fr), super::float::v_pos(f, h, fr, para_top, para_top));
+            let (fx, fy) = super::float::page_clamp(f, (fx, fy), h, fr);
             let rect = match story.frozen.iter().find(|(key, _)| *key == (bi, k)) {
                 Some((_, r)) => *r,
                 None => [fx, fy, fx + f.w, fy + h],

@@ -67,14 +67,14 @@ page 0 12240 15840
   1440 13685 Partner section notice claim team export staff newsletter review matter presenter
   1440 13923 advisor. Account served savings pilot.
   1589 2278 50% of the margin width
-  8537 4338 30% of the page, 10% high
+  8717 4338 30% of the page, 10% high
   3929 6397 At 25% of the
   3929 6634 margin
   149 8219 Left
   149 8456 margin,
   149 8694 80%
   float 1440 2025 6120 2745
-  float 8388 4085 12060 5669
+  float 8568 4085 12240 5669
   float 3780 6144 5508 6864
   float 0 7966 1152 8686
   float 4248 9550 7992 12358

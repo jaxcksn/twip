@@ -2206,9 +2206,11 @@ impl<'d> PageFill<'d, '_> {
                 anchors.push(Placed::new((si, bi, pb.from + k), owner, f, x, fy, h));
                 continue;
             }
+            (x, fy) = float::page_clamp(f, (x, fy), h, &frames);
+            // Compat 15 keeps the box with its effect extents (not its distances) on the page.
             if compat == Compat::Generic && matches!(f.v_relative.as_str(), "paragraph" | "line") {
                 fy = fy.max(frames.margin[2]);
-                let (l, r) = (x - f.dist[2], x + f.w + f.dist[3]);
+                let (l, r) = (x - f.effect[0], x + f.w + f.effect[2]);
                 if l < 0.0 {
                     x -= l;
                 } else if r > frames.page_w {

@@ -167,3 +167,15 @@ pub fn v_pos(f: &Float, h: f64, fr: &Frames, para_top: f64, line_top: f64) -> f6
         },
     )
 }
+
+/// Compat ≤ 14 keeps a wrapping float placed from the column or the paragraph on the page: its box with its effect
+/// extents moves left off the right edge and up off the bottom, then right of the left edge and below the top.
+pub fn page_clamp(f: &Float, (x, y): (f64, f64), h: f64, fr: &Frames) -> (f64, f64) {
+    if fr.compat != Compat::Legacy || fr.cell || f.wrap == "none" || !(f.h_relative == "column" || f.v_relative == "paragraph") {
+        return (x, y);
+    }
+    let [l, t, r, b] = f.effect;
+    let x = x - (x + f.w + r - fr.page_w).max(0.0);
+    let y = y - (y + h + b - fr.page_h).max(0.0);
+    (x.max(l), y.max(t))
+}
