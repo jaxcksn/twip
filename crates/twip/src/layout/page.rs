@@ -590,7 +590,10 @@ impl<'d> Paginator<'d, '_> {
                 let r = fill.fill(&pos, &carry, col, false, memos)?;
                 let s = r.stop;
                 (pos, carry) = (r.token, r.state);
-                stats.push(ColStats::of(&r.children, r.bottom - top));
+                // A column's height takes its last paragraph's space after, unless the paragraph goes on in the next
+                // column (the last column's bottom has it already).
+                let hang = |pos: &FlowToken, carry: &FlowState| if s == Stop::Done || !pos.at.at_start() { 0.0 } else { carry.prev_after };
+                stats.push(ColStats::of(&r.children, r.bottom - top + hang(&pos, &carry)));
                 let mut kids = r.children;
                 let mut bottom = r.bottom;
                 let at_mark = skip_last && pos.block + 1 == n && pos.at.at_start();
@@ -606,7 +609,7 @@ impl<'d> Paginator<'d, '_> {
                     size: (0.0, 0.0),
                     children: kids.into(),
                 }));
-                end = end.max(bottom + if s == Stop::Column && !pos.at.at_start() { 0.0 } else { carry.prev_after });
+                end = end.max(bottom + hang(&pos, &carry));
                 if fill.at.forced {
                     return Ok((None, stats));
                 }
@@ -629,26 +632,24 @@ impl<'d> Paginator<'d, '_> {
         let widths: Vec<f64> = cols.iter().map(|c| c.width).collect();
         let wsum: f64 = widths.iter().sum::<f64>().max(1.0);
         let to_pt = |h: i64| h as f64 / LU_PER_PT;
-        let mean = |st: &[ColStats]| {
-            let (n, total) = st.iter().fold((0i64, 0i64), |(n, t), s| (n + s.lines, t + s.height));
-            if n > 0 { total / n } else { 49152 }
-        };
         let mut h;
         let mut r;
         if fill.ctx.env.text.compat == Compat::Legacy {
-            let n = cols.len() as i64;
-            h = if widths.iter().all(|w| (w - widths[0]).abs() < 0.01) {
-                (stats.iter().map(|s| s.height).sum::<i64>() + n - 1) / n
-            } else {
-                let tw = |lu: i64| lu * 1440 / 294912;
-                let a: f64 = widths.iter().zip(&stats).map(|(w, s)| if s.lines > 0 { (tw(s.used) * 20) as f64 * w } else { 0.0 }).sum();
-                (a / wsum) as i64 / 20 * 294912 / 1440
-            };
-            h = h.max(mean(&stats)).min(full_lu);
+            // Compat ≤ 14: from the unbalanced fill's column heights weighted by the columns' widths, never below its
+            // mean line height, the height grows while content is left over by the failed fill's mean line height,
+            // each column's height counted at most up to the height tried. The section ends at that height or at its
+            // tallest column, whichever is less.
+            let (lines, total) = stats.iter().fold((0, 0), |(n, t), s| (n + s.lines, t + s.used));
+            h = (widths.iter().zip(&stats).map(|(w, s)| w * s.used as f64).sum::<f64>() / wsum) as i64;
+            h = h.max(total / lines.max(1)).min(full_lu);
             r = try_h(fill, to_pt(h), memos)?;
             while r.0.is_none() && h < full_lu {
-                h = (h + mean(&r.1)).min(full_lu);
+                let (lines, used) = r.1.iter().fold((0, 0), |(n, t), s| (n + s.lines, t + s.used.min(h)));
+                h = (h + if lines > 0 { (used / lines).max(1) } else { 49152 }).min(full_lu);
                 r = try_h(fill, to_pt(h), memos)?;
+            }
+            if let Some(done) = &mut r.0 {
+                done.3 = done.3.min(top + to_pt(h)).max(fill.at.notes_bottom);
             }
         } else {
             let step = |st: &[ColStats]| st.iter().filter(|s| s.lines > 0).map(|s| s.min).min().unwrap_or(1).max(1);

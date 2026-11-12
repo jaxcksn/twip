@@ -243,5 +243,5 @@ page 3 12240 15840
   6480 10499 organisational considerations
   6480 10758 notwithstanding comprehensive
   6480 11017 interpretation documentation
-  1440 11695 A one-column section after the columns: compat 14 balances them unless
-  1440 11954 noColumnBalance.
+  1440 11535 A one-column section after the columns: compat 14 balances them unless
+  1440 11794 noColumnBalance.

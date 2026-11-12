@@ -2198,3 +2198,40 @@ fn small_capitals_take_their_runs_own_size_in_the_line() {
     let Some(l) = baselines("", ARIAL_12, &body) else { return };
     assert!((l[1].3 - l[0].3 - (l[2].3 - l[1].3)).abs() < 0.01 && l[2].3 - l[1].3 > 13.0, "{l:?}");
 }
+
+#[test]
+fn compat_14_balanced_columns_grow_by_the_failed_fills_mean_line_and_end_at_the_height_tried() {
+    // Seven one-line paragraphs, P2 with 300 tw after and P5 with 500: from half the content the height grows by the
+    // first fill's mean line to 5 / 2, and the next section starts at that height, inside P5's space after. Compat 15
+    // keeps the tallest column: 4 / 3.
+    let sect = |cols: &str| {
+        format!(
+            r#"<w:sectPr><w:type w:val="continuous"/><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>{cols}</w:sectPr>"#
+        )
+    };
+    let after = |k: usize| match k {
+        2 => r#"<w:spacing w:after="300"/>"#,
+        5 => r#"<w:spacing w:after="500"/>"#,
+        _ => "",
+    };
+    let paras: String = (1..=7)
+        .map(|k| {
+            let s = if k == 7 { sect(r#"<w:cols w:num="2" w:space="720"/>"#) } else { String::new() };
+            format!("<w:p><w:pPr>{}{s}</w:pPr><w:r><w:t>P{k}</w:t></w:r></w:p>", after(k))
+        })
+        .collect();
+    let body = format!(r#"{paras}<w:p><w:pPr>{}</w:pPr><w:r><w:t>After</w:t></w:r></w:p>"#, sect(""));
+    let c15 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+    let split = |settings: &str| {
+        let l = baselines(settings, ARIAL_12, &body)?;
+        let y = |t: &str| l.iter().find(|x| x.1 == t).map(|x| x.3);
+        let line = y("P4")? - y("P3")?;
+        let first_right = l.iter().filter(|x| x.0 > 200.0).map(|x| x.1.clone()).next()?;
+        Some((first_right, (y("After")? - y("P1")?) / line))
+    };
+    let Some((right, h)) = split("") else { return };
+    // In lines: half of 7 lines and 800 tw, then a sixth of the failed fill's two columns.
+    assert_eq!(right, "P6");
+    assert!(h > 6.4 && h < 6.6, "{h}");
+    assert_eq!(split(c15).map(|s| s.0).as_deref(), Some("P5"));
+}
