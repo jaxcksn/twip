@@ -18,7 +18,7 @@ page 0 12240 15840
   1440 6422 Tabs: a left stop past the right indent then textagain.
   1440 6841 A right stop past the right indentright text
   1440 7260 1.A hanging indent with a tab after the number: the indent is a tab stop
-  2160 7519 unless an option says not.
+  3924 7519 unless an option says not.
   3924 7938 A float on the left, then a word too long for the gap
   3924 8197 beside it:
   3924 8456 PneumonoultramicroscopicsilicovolcanoconiosisPneumon

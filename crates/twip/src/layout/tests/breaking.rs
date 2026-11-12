@@ -382,6 +382,19 @@ fn a_line_break_beside_a_float_ends_only_its_interval() {
 }
 
 #[test]
+fn a_compat_14_float_on_whole_twips_wraps_the_line_whose_space_after_it_starts_in() {
+    // The line above ends 0.48 tw into a twip: compat ≤ 14 puts the float on that twip, inside the line's space after.
+    let float = r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="114300" simplePos="0" relativeHeight="0" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV><wp:extent cx="914400" cy="914400"/><wp:wrapSquare wrapText="bothSides"/><a:graphic><a:graphicData><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#;
+    let body = format!(r#"<w:p><w:pPr><w:spacing w:after="160"/></w:pPr><w:r><w:t>Before</w:t></w:r></w:p><w:p>{float}<w:r><w:t>Anchor</w:t></w:r></w:p>"#);
+    let rpr = r#"<w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="21"/>"#;
+    let c15 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+    let Some(c12) = lines("", rpr, &body) else { return };
+    let c15 = lines(c15, rpr, &body).unwrap();
+    assert!((c12[0].0 - 153.0).abs() < 0.01, "{c12:?}");
+    assert!((c15[0].0 - 72.0).abs() < 0.01, "{c15:?}");
+}
+
+#[test]
 fn a_compat_14_column_aligned_float_counts_from_the_paragraph_indent() {
     let float = r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="0" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:align>left</wp:align></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV><wp:extent cx="508000" cy="1270000"/><wp:wrapSquare wrapText="bothSides"/><a:graphic><a:graphicData><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#;
     let p = format!(r#"<w:p><w:pPr><w:ind w:left="720"/></w:pPr>{float}<w:r><w:t>Beside the float.</w:t></w:r></w:p>"#);

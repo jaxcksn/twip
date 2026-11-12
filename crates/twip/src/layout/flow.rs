@@ -1503,7 +1503,7 @@ impl<'d> PageFill<'d, '_> {
             Compat::Legacy => bottom + space_after(&self.ctx.env.text, p.para_style_in(self.ctx.env.text.review.view)),
         };
         let affected = self.fixed.iter().chain(self.known_at(pos.block)).any(|f| {
-            let reach = if f.key.2 == float::TABLE_PIECE { text_bottom } else { bottom };
+            let reach = if f.key.2 == float::TABLE_PIECE || self.ctx.env.text.compat == Compat::Legacy { text_bottom } else { bottom };
             f.wrap != Wrap::None && f.excl[3] > *y + EPS && f.excl[1] < reach - EPS && f.excl[0] < col.x + col.width - EPS && f.excl[2] > col.x + EPS
         });
         if has_anchor || affected {
@@ -2047,7 +2047,9 @@ impl<'d> PageFill<'d, '_> {
                                         l.baseline += top_extra;
                                     }
                                 }
-                                let (ph, segs_below) = (segs[0].pitch, segs[0].below);
+                                // Compat ≤ 14 tests the paragraph's last line with its space after.
+                                let tail = if compat == Compat::Legacy && e >= n { after } else { 0.0 };
+                                let (ph, segs_below) = (segs[0].pitch + tail, segs[0].below + tail);
                                 let done = (ph - h).abs() < EPS && (segs_below - below).abs() < EPS || attempt == 1;
                                 got = Some((segs, e));
                                 if done {
@@ -2189,6 +2191,11 @@ impl<'d> PageFill<'d, '_> {
                 }
             }
             let mut fy = float::v_pos(f, h, &frames, para_top, line_top);
+            // Compat ≤ 14: a drawing's page position in whole twips, for the collision with the lines above and the
+            // drawing. Frames keep theirs.
+            if compat == Compat::Legacy && (f.text_box.is_none() || f.shape.is_some()) {
+                (x, fy) = ((x * 20.0).round() / 20.0, (fy * 20.0).round() / 20.0);
+            }
             if Placed::new((si, bi, pb.from + k), owner, f, x, fy, h).wrap == Wrap::None {
                 anchors.push(Placed::new((si, bi, pb.from + k), owner, f, x, fy, h));
                 continue;
