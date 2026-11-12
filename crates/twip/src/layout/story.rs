@@ -873,6 +873,9 @@ fn turned_text(
     groups: &mut Vec<Child>,
     memos: &mut Memos,
 ) -> Result<(), Yield> {
+    if shape.and_then(crate::drawing::Shape::geometry).is_some_and(|g| !g.holds_text()) {
+        return Ok(());
+    }
     let (dark_text, dark_env);
     let env = match shape.and_then(|s| solid_fill(s, env)).filter(|c| super::env::is_dark(*c)) {
         Some(fill) => {
