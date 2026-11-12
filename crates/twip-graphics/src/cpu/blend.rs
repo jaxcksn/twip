@@ -16,7 +16,9 @@
 use fearless_simd::{Level, Simd, dispatch};
 use fearless_simd_macros::simd;
 
+use crate::cover::{frame_cover, frame_middle, overlap};
 use crate::paint::BlendMode;
+use crate::raster::ONE;
 
 /// `round(x / 255)` for `x = a·b` with `a, b <= 255`, in 16-bit arithmetic: exactly `paint::mul_div255`.
 #[inline(always)]
@@ -44,11 +46,6 @@ pub(super) fn mask(level: Level, dst: &mut [u8], cov: &[u8], src: Solid) {
     dispatch!(level, simd => mask_kernel(simd, dst, cov, src));
 }
 
-/// Blends `src` into every pixel of `dst` at coverage `cov`.
-pub(super) fn uniform(level: Level, dst: &mut [u8], cov: u8, src: Solid) {
-    dispatch!(level, simd => uniform_kernel(simd, dst, cov, src));
-}
-
 /// Blends a source of one premultiplied colour per pixel, `src[i]`, into `dst` at coverage `cov[i]`. `src.color` is
 /// unused.
 pub(super) fn shaded(level: Level, dst: &mut [u8], cov: &[u8], colors: &[[u8; 4]], src: Solid) {
@@ -61,6 +58,15 @@ pub(super) fn shaded(level: Level, dst: &mut [u8], cov: &[u8], colors: &[[u8; 4]
 #[allow(clippy::too_many_arguments, reason = "two strided blocks and a source")]
 pub(super) fn mask_block(level: Level, dst: &mut [u8], dst_stride: usize, cov: &[u8], cov_stride: usize, width: usize, height: usize, src: Solid) {
     dispatch!(level, simd => mask_block_kernel(simd, dst, dst_stride, cov, cov_stride, width, height, src));
+}
+
+/// Blends `src` into a `width × height` block of pixels (rows `stride` bytes apart, from its first pixel) at the
+/// coverage of a frame: each pixel's area inside `outer` less its area inside `inner` (in 1/256 pixel from the block's
+/// top left; `inner` inside `outer`, or empty for a plain rect). One dispatch for the whole block: a hairline's rows
+/// are a pixel or two each.
+#[allow(clippy::too_many_arguments, reason = "a strided block, a frame and a source")]
+pub(super) fn frame(level: Level, dst: &mut [u8], stride: usize, width: usize, height: usize, outer: [i32; 4], inner: [i32; 4], src: Solid) {
+    dispatch!(level, simd => frame_kernel(simd, dst, stride, width, height, outer, inner, src));
 }
 
 /// Scales each coverage value by the matching one in `by`.
@@ -167,12 +173,112 @@ fn mask_kernel<S: Simd>(simd: S, dst: &mut [u8], cov: &[u8], src: Solid) {
 }
 
 #[simd]
-fn uniform_kernel<S: Simd>(simd: S, dst: &mut [u8], c: u8, src: Solid) {
-    let px = dst.as_chunks_mut::<4>().0;
+#[allow(clippy::too_many_arguments, reason = "a strided block, a frame and a source")]
+fn frame_kernel<S: Simd>(simd: S, dst: &mut [u8], stride: usize, width: usize, height: usize, outer: [i32; 4], inner: [i32; 4], src: Solid) {
+    // Rows covered alike are one run (all but a few of a rect's rows): each of its columns at one coverage, so the
+    // edge columns blend top to bottom, a pixel per row, and the middles row by row. A run ends where a rect's top or
+    // bottom edge starts or ends a row.
+    let edges = [outer[1], outer[3], inner[1], inner[3]].map(|v| [v.div_euclid(ONE), (v + ONE - 1).div_euclid(ONE)]);
+    let mut top = 0;
+    while top < height {
+        let (oy, iy) = (overlap(outer[1], outer[3], top as i32), overlap(inner[1], inner[3], top as i32));
+        let next = edges.as_flattened().iter().filter(|&&r| r > top as i32).min();
+        let bottom = next.map_or(height, |&r| (r as usize).min(height));
+        let rows = bottom - top;
+        let block = &mut dst[top * stride..];
+        let (a, b, c) = frame_middle(outer, inner, oy, iy, width);
+        for col in (0..a).chain(b..width) {
+            let c = frame_cover(outer, inner, oy, iy, col as i32);
+            if c > 0 {
+                column(&mut block[col * 4..], stride, rows, c, src);
+            }
+        }
+        if c > 0 && b > a {
+            // A rule's middle is a column or two, blended like its edges; a wide one row by row, a call each: inlined
+            // here, the loops ran short of registers and rebuilt the source inside each step (multiply 10% slower).
+            if b - a < 16 {
+                for col in a..b {
+                    column(&mut block[col * 4..], stride, rows, c, src);
+                }
+            } else {
+                for row in block.chunks_mut(stride).take(rows) {
+                    uniform_row(simd, &mut row[a * 4..b * 4], c, src);
+                }
+            }
+        }
+        top = bottom;
+    }
+}
+
+/// Blends `src` into every pixel of `dst` at coverage `c`.
+#[simd]
+#[inline(never)]
+fn uniform_row<S: Simd>(simd: S, dst: &mut [u8], c: u8, src: Solid) {
+    uniform_px(dst.as_chunks_mut::<4>().0, c, src);
+}
+
+/// Sets every pixel of `px` to `s`, in blocks of 64 pixels written at fixed offsets from one address. On an M3 the
+/// loop `slice::fill` compiles to (two stores, then the address moved past them) measured 2.5 times slower filling a
+/// page's rows; this runs at `memset`'s speed. (A frame's clear, whose rows are one contiguous run, is faster with
+/// `slice::fill`.)
+#[inline(always)]
+fn fill(px: &mut [[u8; 4]], s: [u8; 4]) {
+    let block = [s; 16];
+    let (blocks, tail) = px.as_chunks_mut::<64>();
+    for b in blocks {
+        let q = b.as_chunks_mut::<16>().0;
+        q[0] = block;
+        q[1] = block;
+        q[2] = block;
+        q[3] = block;
+    }
+    tail.fill(s);
+}
+
+/// Blends `src` at coverage `c` into the first pixel of `rows` rows `stride` bytes apart.
+#[inline(always)]
+fn column(dst: &mut [u8], stride: usize, rows: usize, c: u8, src: Solid) {
+    #[inline(always)]
+    fn each(dst: &mut [u8], stride: usize, rows: usize, f: impl Fn(&mut [u8; 4])) {
+        let Some(last) = rows.checked_sub(1) else { return };
+        let dst = &mut dst[..last * stride + 4];
+        for row in 0..rows {
+            let at = row * stride;
+            if let Some(d) = dst[at..].first_chunk_mut::<4>() {
+                f(d);
+            }
+        }
+    }
+    let s = src.color;
+    match src.blend {
+        BlendMode::SrcOver if c == 255 && s[3] == 255 => each(dst, stride, rows, |d| *d = s),
+        BlendMode::SrcOver => {
+            let s = s.map(|v| mul(v, c));
+            each(dst, stride, rows, |d| over(d, s));
+        }
+        _ => each(dst, stride, rows, |d| one(d, c, src)),
+    }
+}
+
+/// Blends `src` into one pixel at coverage `c`: the same bytes as `mask` of it.
+#[inline(always)]
+fn one(d: &mut [u8; 4], c: u8, src: Solid) {
+    let s = src.color;
+    match src.blend {
+        BlendMode::SrcOver => over(d, s.map(|v| mul(v, c))),
+        BlendMode::Multiply => multiply(d, s.map(|v| mul(v, c))),
+        BlendMode::DstIn => scale_px(d, 255 - mul(c, 255 - s[3])),
+        BlendMode::Clear => scale_px(d, 255 - c),
+        mode => *d = lerp(*d, general(s, *d, mode, src.bgra), c),
+    }
+}
+
+#[inline(always)]
+fn uniform_px(px: &mut [[u8; 4]], c: u8, src: Solid) {
     let s = src.color;
     match src.blend {
         // An opaque source at full coverage replaces the pixels.
-        BlendMode::SrcOver if c == 255 && s[3] == 255 => px.fill(s),
+        BlendMode::SrcOver if c == 255 && s[3] == 255 => fill(px, s),
         BlendMode::SrcOver => {
             let s = s.map(|v| mul(v, c));
             for d in px {
@@ -391,6 +497,7 @@ fn non_separable(mode: BlendMode, s: [f32; 3], d: [f32; 3], weights: [f32; 3]) -
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cover::factor;
     use crate::paint::mul_div255;
 
     const MODES: [BlendMode; 28] = [
@@ -426,6 +533,13 @@ mod tests {
 
     fn solid(color: [u8; 4], blend: BlendMode) -> Solid {
         Solid { color, blend, bgra: false }
+    }
+
+    /// Every pixel of `dst` blended at coverage `c`: a frame one row high whose rect covers that much of each.
+    fn uniform(level: Level, dst: &mut [u8], c: u8, src: Solid) {
+        let cy = (0..=ONE).find(|&cy| factor(ONE, cy) == c).expect("every coverage is some height");
+        let n = dst.len() / 4;
+        frame(level, dst, n * 4, n, 1, [0, 0, n as i32 * ONE, cy], [0; 4], src);
     }
 
     #[test]

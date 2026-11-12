@@ -113,13 +113,29 @@ pub(crate) fn apply_clip(level: Level, clip: &Clip, masks: &[Mask], y: i32, x: i
 }
 
 /// How much of pixel `p` (its column or row) the span `a..b` (1/256 pixel) covers, 0 to 256.
+#[inline(always)]
 pub(crate) fn overlap(a: i32, b: i32, p: i32) -> i32 {
     (b.min((p + 1) * ONE) - a.max(p * ONE)).clamp(0, ONE)
 }
 
 /// The coverage of a pixel covered `cx` of its width and `cy` of its height (each 0 to 256), 0 to 255.
+#[inline(always)]
 pub(crate) fn factor(cx: i32, cy: i32) -> u8 {
-    (((cx * cy) as u32 * 255 + 32768) >> 16) as u8
+    cover(cx * cy)
+}
+
+/// The coverage of a pixel `area` of which (0 to 65536, in 1/65536 pixel) is inside, 0 to 255: as the rasteriser
+/// rounds an area.
+#[inline(always)]
+pub(crate) fn cover(area: i32) -> u8 {
+    ((area as u32 * 255 + 32768) >> 16) as u8
+}
+
+/// The coverage of column `col` of a row of a frame: the area inside `outer` (1/256 pixel) less the area inside its
+/// hole `inner`, the row covered `oy` by the one and `iy` by the other.
+#[inline(always)]
+pub(crate) fn frame_cover(outer: [i32; 4], inner: [i32; 4], oy: i32, iy: i32, col: i32) -> u8 {
+    cover(overlap(outer[0], outer[2], col) * oy - overlap(inner[0], inner[2], col) * iy)
 }
 
 /// The largest factor a 2×2 matrix `[a, b, c, d]` (kurbo's order) stretches a length by: its larger singular value.
@@ -148,6 +164,26 @@ pub(crate) fn rect_path(r: Rect, verbs: &mut Vec<Verb>, points: &mut Vec<Point>)
     points.clear();
     verbs.extend([Verb::Move, Verb::Line, Verb::Line, Verb::Line, Verb::Close]);
     points.extend([(r.x0, r.y0), (r.x1, r.y0), (r.x1, r.y1), (r.x0, r.y1)].map(|(x, y)| Point { x, y }));
+}
+
+/// The columns of a frame's row (`width` wide) covered alike, `a..b`, and their coverage: inside the hole's whole
+/// columns, the outer rect's cover less the hole's; on a row the hole misses, inside the outer rect's whole columns.
+/// The other columns are its edges.
+#[inline(always)]
+pub(crate) fn frame_middle(outer: [i32; 4], inner: [i32; 4], oy: i32, iy: i32, width: usize) -> (usize, usize, u8) {
+    let whole = |a: i32, b: i32| {
+        let first = (a + ONE - 1).div_euclid(ONE).clamp(0, width as i32);
+        (first as usize, b.div_euclid(ONE).clamp(first, width as i32) as usize)
+    };
+    let ((a, b), c) = if iy == 0 { (whole(outer[0], outer[2]), factor(ONE, oy)) } else { (whole(inner[0], inner[2]), factor(ONE, oy - iy)) };
+    (a, b, c)
+}
+
+/// A frame as a closed path: `outer` one way round, its hole `inner` the other.
+pub(crate) fn frame_path(outer: Rect, inner: Rect, verbs: &mut Vec<Verb>, points: &mut Vec<Point>) {
+    rect_path(outer, verbs, points);
+    verbs.extend([Verb::Move, Verb::Line, Verb::Line, Verb::Line, Verb::Close]);
+    points.extend([(inner.x0, inner.y0), (inner.x0, inner.y1), (inner.x1, inner.y1), (inner.x1, inner.y0)].map(|(x, y)| Point { x, y }));
 }
 
 /// A rounded rect as a closed path of lines and quarter-circle cubics, into `verbs` and `points`. `radii` are top

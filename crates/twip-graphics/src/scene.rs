@@ -8,6 +8,8 @@
 //! Recording takes kurbo's `f64` geometry and stores it in `f32`. Strokes are expanded into fills here, with kurbo, so
 //! backends only fill. Three shapes are recorded as plain rects, which every backend draws fastest: an axis-aligned
 //! rect path, a rounded rect without radii, and an axis-aligned straight stroke with butt or square caps (dashed or not).
+//! A solid stroke of an axis-aligned closed rect with miter joins (a table cell's, text box's or frame's outline) is
+//! recorded as a frame: the rect grown by half the width, less the rect shrunk by half the width.
 //!
 //! A picture's bounds are conservative: everything it draws is inside them, in its local space.
 
@@ -15,7 +17,7 @@ use std::fmt;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use kurbo::{Affine, Cap, PathEl, RoundedRectRadii};
+use kurbo::{Affine, Cap, Join, PathEl, RoundedRectRadii};
 
 use crate::font::{FontId, FontRegistry, Style, embolden_em};
 use crate::geom::{Point, Rect, Transform};
@@ -200,6 +202,11 @@ pub(crate) enum Cmd {
         path: PathSpan,
         paint: u32,
     },
+    /// Index into `frames`.
+    Frame {
+        frame: u32,
+        paint: u32,
+    },
     /// Index into `runs`.
     Glyphs {
         run: u32,
@@ -325,6 +332,8 @@ pub(crate) struct Lists {
     pub stops: Vec<Stop>,
     /// A rounded rect and its corner radii: top left, top right, bottom right, bottom left.
     pub rrects: Vec<(Rect, [f32; 4])>,
+    /// A frame's outer rect and the hole inside it.
+    pub frames: Vec<(Rect, Rect)>,
     pub verbs: Vec<Verb>,
     pub points: Vec<Point>,
     pub runs: Vec<RunRec>,
@@ -347,6 +356,7 @@ impl Lists {
             + size(&self.paints)
             + size(&self.stops)
             + size(&self.rrects)
+            + size(&self.frames)
             + size(&self.verbs)
             + size(&self.points)
             + size(&self.runs)
@@ -361,13 +371,30 @@ impl Lists {
 
     /// Empties every list, keeping their memory for the next recording.
     fn clear(&mut self) {
-        let Lists { cmds, transforms, paints, stops, rrects, verbs, points, runs, glyphs, images, clips, layers, color_filters, filters, children } =
-            self;
+        let Lists {
+            cmds,
+            transforms,
+            paints,
+            stops,
+            rrects,
+            frames,
+            verbs,
+            points,
+            runs,
+            glyphs,
+            images,
+            clips,
+            layers,
+            color_filters,
+            filters,
+            children,
+        } = self;
         cmds.clear();
         transforms.clear();
         paints.clear();
         stops.clear();
         rrects.clear();
+        frames.clear();
         verbs.clear();
         points.clear();
         runs.clear();
@@ -498,6 +525,27 @@ impl Recorder {
                 let (from, to) = (a.lerp(b, from / len), a.lerp(b, to / len));
                 self.fill_rect(line_rect(from, to, stroke.width, square), paint);
             });
+            return;
+        }
+        // Miter joins square a right angle's corner when the limit is over √2 (kurbo's test).
+        if stroke.dash_pattern.is_empty()
+            && stroke.join == Join::Miter
+            && stroke.miter_limit * stroke.miter_limit > 2.0
+            && path.last() == Some(&PathEl::ClosePath)
+            && let Some(r) = path::as_rect(path)
+            && r.width() > 0.0
+            && r.height() > 0.0
+        {
+            let half = stroke.width / 2.0;
+            let (outer, hole) = (r.inflate(half, half), r.inflate(-half, -half));
+            if hole.width() <= 0.0 || hole.height() <= 0.0 {
+                return self.fill_rect(outer, paint);
+            }
+            self.add_bounds(outer);
+            let paint = self.paint(paint);
+            let frame = self.lists.frames.len() as u32;
+            self.lists.frames.push((Rect::from_kurbo(outer), Rect::from_kurbo(hole)));
+            self.lists.cmds.push(Cmd::Frame { frame, paint });
             return;
         }
         let mut stroker = std::mem::take(&mut self.stroker);
@@ -875,6 +923,28 @@ mod tests {
         let rects: Vec<_> =
             pic.lists().cmds.iter().map(|c| if let Cmd::SolidRect { rect, .. } = c { rect.to_kurbo() } else { panic!("{c:?}") }).collect();
         assert_eq!(rects, [rect(0.0, 4.0, 10.0, 6.0), rect(2.5, -0.5, 3.5, 8.5)]);
+    }
+
+    #[test]
+    fn mitered_rect_outlines_become_frames() {
+        let mut rec = Recorder::new();
+        let pen = |w: f64| butt(w).with_join(Join::Miter);
+        rec.stroke_path(rect(0.0, 0.0, 10.0, 6.0).to_path(0.1).elements(), &pen(1.0), RED);
+        // Too wide for a hole: the outer rect.
+        rec.stroke_path(rect(0.0, 0.0, 10.0, 6.0).to_path(0.1).elements(), &pen(6.0), RED);
+        // Round joins, a miter limit under √2, dashes and an open rect stay paths.
+        rec.stroke_path(rect(0.0, 0.0, 10.0, 6.0).to_path(0.1).elements(), &butt(1.0).with_join(Join::Round), RED);
+        rec.stroke_path(rect(0.0, 0.0, 10.0, 6.0).to_path(0.1).elements(), &pen(1.0).with_miter_limit(1.4), RED);
+        rec.stroke_path(rect(0.0, 0.0, 10.0, 6.0).to_path(0.1).elements(), &pen(1.0).with_dashes(0.0, [2.0, 1.0]), RED);
+        let open = rect(0.0, 0.0, 10.0, 6.0).to_path(0.1).elements().iter().copied().filter(|e| *e != PathEl::ClosePath).collect::<Vec<_>>();
+        rec.stroke_path(&open, &pen(1.0), RED);
+        let pic = rec.finish();
+        let l = pic.lists();
+        assert!(matches!(l.cmds[0], Cmd::Frame { frame: 0, .. }));
+        assert_eq!(l.frames, [(Rect { x0: -0.5, y0: -0.5, x1: 10.5, y1: 6.5 }, Rect { x0: 0.5, y0: 0.5, x1: 9.5, y1: 5.5 })]);
+        assert!(matches!(l.cmds[1], Cmd::SolidRect { rect: Rect { x0: -3.0, y0: -3.0, x1: 13.0, y1: 9.0 }, .. }));
+        assert!(l.cmds[2..].iter().all(|c| matches!(c, Cmd::Path { .. })), "{:?}", &l.cmds[2..]);
+        assert_eq!(pic.bounds(), Some(rect(-3.0, -3.0, 13.0, 9.0)));
     }
 
     #[test]

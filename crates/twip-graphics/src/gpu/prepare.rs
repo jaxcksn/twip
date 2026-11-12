@@ -17,7 +17,7 @@ use fearless_simd::Level;
 use super::arena::Arena;
 use super::atlas::{Atlas, Slot};
 use crate::Resources;
-use crate::cover::{Clip, Mask, apply_clip, interior, max_scale, pixel_bounds, push_clip, rect_path, rrect_path};
+use crate::cover::{Clip, Mask, apply_clip, frame_path, interior, max_scale, pixel_bounds, push_clip, rect_path, rrect_path};
 use crate::cpu::shade::{Ramp, box_passes, gaussian, ramp};
 use crate::cpu::{Frame, LayerRegion, Stats, layer_region, mip_index, skip_layer};
 use crate::font::{GlyphCache, GlyphKey, Style, embolden_em, luminance_level};
@@ -690,6 +690,15 @@ impl Prepare {
                         let (rect, radii) = lists.rrects[rrect as usize];
                         let (mut verbs, mut points) = (std::mem::take(&mut self.verbs), std::mem::take(&mut self.points));
                         rrect_path(rect, radii, &mut verbs, &mut points);
+                        self.path(&verbs, &points, t, &clip, &p, false);
+                        (self.verbs, self.points) = (verbs, points);
+                    }
+                }
+                Cmd::Frame { frame, paint } => {
+                    if let Some(p) = self.paint(res, lists, paint, t) {
+                        let (outer, inner) = lists.frames[frame as usize];
+                        let (mut verbs, mut points) = (std::mem::take(&mut self.verbs), std::mem::take(&mut self.points));
+                        frame_path(outer, inner, &mut verbs, &mut points);
                         self.path(&verbs, &points, t, &clip, &p, false);
                         (self.verbs, self.points) = (verbs, points);
                     }

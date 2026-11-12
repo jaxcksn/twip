@@ -27,7 +27,9 @@ use std::fmt;
 use fearless_simd::Level;
 
 use crate::Resources;
-use crate::cover::{Clip, Mask, apply_clip, factor, interior, max_scale, overlap, pixel_bounds, rect_path, rrect_path};
+use crate::cover::{
+    Clip, Mask, apply_clip, frame_cover, frame_middle, frame_path, interior, max_scale, overlap, pixel_bounds, rect_path, rrect_path,
+};
 use crate::font::{GlyphCache, GlyphKey, Style, embolden_em, luminance_level};
 use crate::fx::FastMap;
 use crate::geom::{Point, Rect, Transform};
@@ -342,6 +344,10 @@ impl Renderer {
                         fill_path(&mut r.raster, &mut s, target, verbs, points, t, &clip, src, aa, even_odd);
                     });
                 }
+                Cmd::Frame { frame, paint } => {
+                    let (outer, inner) = lists.frames[frame as usize];
+                    self.with_paint(target, res, lists, paint, t, |r, target, src, aa| r.fill_frame(target, outer, Some(inner), t, &clip, src, aa))
+                }
                 Cmd::Glyphs { run, paint } => {
                     let run = &lists.runs[run as usize];
                     let color = match lists.paints[paint as usize].brush {
@@ -499,14 +505,29 @@ impl Renderer {
     }
 
     fn fill_rect(&mut self, target: &mut Target<'_>, rect: Rect, t: Transform, clip: &Clip, src: Source<'_>, aa: bool) {
-        if !t.is_scale_translate() {
-            rect_path(rect, &mut self.verbs, &mut self.points);
+        self.fill_frame(target, rect, None, t, clip, src, aa);
+    }
+
+    /// Fills `rect` less its hole `inner` (inside it), covered analytically under a scale and translation. A rect
+    /// clipped by a rect is a rect, and a frame a frame: the clip cuts the outer rect and the hole alike. An aliased
+    /// frame is rasterised, so a pixel half covered stays covered (rounding both its edges, a thin one would vanish).
+    #[allow(clippy::too_many_arguments, reason = "a frame and its draw state")]
+    fn fill_frame(&mut self, target: &mut Target<'_>, rect: Rect, inner: Option<Rect>, t: Transform, clip: &Clip, src: Source<'_>, aa: bool) {
+        if !t.is_scale_translate() || (inner.is_some() && !aa) {
+            match inner {
+                Some(inner) => frame_path(rect, inner, &mut self.verbs, &mut self.points),
+                None => rect_path(rect, &mut self.verbs, &mut self.points),
+            }
             return self.fill_scratch_path(target, t, clip, src, aa);
         }
-        let r = t.map_rect(rect);
         // Without anti-aliasing an edge rounds to the nearest pixel boundary, as Skia's aliased rects do.
         let q = |v: f32| if aa { fixed(v) } else { fixed((v + 0.5).floor()) };
-        let [x0, y0, x1, y1] = [q(r.x0).max(clip.rect[0]), q(r.y0).max(clip.rect[1]), q(r.x1).min(clip.rect[2]), q(r.y1).min(clip.rect[3])];
+        let c = clip.rect;
+        let clipped = |r: Rect| {
+            let r = t.map_rect(r);
+            [q(r.x0).max(c[0]), q(r.y0).max(c[1]), q(r.x1).min(c[2]), q(r.y1).min(c[3])]
+        };
+        let [x0, y0, x1, y1] = clipped(rect);
         if x0 >= x1 || y0 >= y1 {
             return;
         }
@@ -515,29 +536,32 @@ impl Renderer {
         if px.is_empty() {
             return;
         }
+        // Both rects from the block's top left; an empty hole covers nothing.
+        let (ox, oy) = (px.x0 * ONE, px.y0 * ONE);
+        let local = |[a, b, c, d]: [i32; 4]| if a < c && b < d { [a - ox, b - oy, c - ox, d - oy] } else { [0; 4] };
+        let outer = local([x0, y0, x1, y1]);
+        let inner = inner.map_or([0; 4], |r| local(clipped(r)));
+        let (w, h) = (px.width() as usize, (px.y1 - px.y0) as usize);
+        if let (None, Source::Solid(solid)) = (clip.mask, src) {
+            let (dst, stride) = target.block(px.y0, px.x0);
+            return blend::frame(self.level, dst, stride, w, h, outer, inner, solid);
+        }
         let mut s = Scratch { level: self.level, masks: &self.masks, row: &mut self.row, colors: &mut self.colors, columns: &mut self.columns };
-        for y in px.y0..px.y1 {
-            let cy = overlap(y0, y1, y);
-            if let (None, Source::Solid(solid)) = (clip.mask, src) {
-                let (left, right) = (px.x0, px.x1 - 1);
-                blend::uniform(s.level, target.pixels(y, left, 1), factor(overlap(x0, x1, left), cy), solid);
-                if right > left {
-                    if right > left + 1 {
-                        blend::uniform(s.level, target.pixels(y, left + 1, (right - left - 1) as usize), factor(ONE, cy), solid);
-                    }
-                    blend::uniform(s.level, target.pixels(y, right, 1), factor(overlap(x0, x1, right), cy), solid);
-                }
-                continue;
+        for row in 0..h as i32 {
+            let (oy, iy) = (overlap(outer[1], outer[3], row), overlap(inner[1], inner[3], row));
+            let y = px.y0 + row;
+            let mut cov = std::mem::take(s.row);
+            let (a, b, c) = frame_middle(outer, inner, oy, iy, w);
+            cov.clear();
+            cov.resize(w, c);
+            for col in (0..a).chain(b..w) {
+                cov[col] = frame_cover(outer, inner, oy, iy, col as i32);
             }
-            let len = px.width() as usize;
-            let mut row = std::mem::take(s.row);
-            row.clear();
-            row.extend((px.x0..px.x1).map(|x| factor(overlap(x0, x1, x), cy)));
             if let Some(m) = clip.mask {
-                blend::scale(s.level, &mut row, s.masks[m].row(y, px.x0, len));
+                blend::scale(s.level, &mut cov, s.masks[m].row(y, px.x0, w));
             }
-            s.paint(target, y, px.x0, &row, src);
-            *s.row = row;
+            s.paint(target, y, px.x0, &cov, src);
+            *s.row = cov;
         }
     }
 
@@ -959,6 +983,7 @@ fn fill_path(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cover::factor;
 
     #[test]
     fn factor_rounds_area_to_255ths() {
@@ -966,6 +991,77 @@ mod tests {
         assert_eq!(factor(0, 256), 0);
         assert_eq!(factor(128, 256), 128);
         assert_eq!(factor(128, 128), 64);
+    }
+
+    #[test]
+    fn frames_cover_as_their_outlines_rasterise() {
+        use crate::paint::{Brush, Paint, Stop};
+        use crate::scene::{Clip, Recorder};
+        use kurbo::Shape;
+        let stops = [Stop { offset: 0.0, color: Color::rgb(0x44_72C4) }, Stop { offset: 1.0, color: Color::rgb(0xED_7D31).with_alpha(140) }];
+        let gradient = Brush::Linear {
+            start: (0.0, 0.0).into(),
+            end: (40.0, 30.0).into(),
+            stops: &stops,
+            extend: Extend::Clamp,
+            transform: kurbo::Affine::IDENTITY,
+        };
+        let paints = [
+            Paint::from(Color::BLACK),
+            Paint::from(Color::rgb(0x20_6040).with_alpha(170)),
+            Paint::new(gradient),
+            Paint { aa: false, ..Paint::from(Color::BLACK) },
+        ];
+        let draw = |frame: bool, paint: Paint<'_>, clip: u8, transform: kurbo::Affine| {
+            let mut rec = Recorder::new();
+            let cut = kurbo::Rect::new(6.3, 5.7, 31.6, 24.2);
+            match clip {
+                // A rect clip cuts a frame's rects, where it scales a path's coverage (rounding twice): the outline
+                // drawn for comparison is cut instead.
+                1 if frame => rec.push_clip(Clip::Rect { rect: cut, aa: true }),
+                2 => rec.push_clip(Clip::Path(kurbo::Circle::new((20.0, 15.0), 13.0).to_path(0.01).elements())),
+                _ => {}
+            }
+            for (i, w) in [0.5, 0.75, 1.0, 2.3].into_iter().enumerate() {
+                let o = i as f64 * 2.7;
+                let r = kurbo::Rect::new(3.2 + o, 2.6 + o, 36.9 - o, 27.4 - o * 0.6);
+                let stroke = kurbo::Stroke::new(w).with_join(kurbo::Join::Miter);
+                if frame {
+                    rec.stroke_path(r.to_path(0.01).elements(), &stroke, paint);
+                } else {
+                    // The outline without kurbo's inner joins, which overlap themselves: the rasteriser's non-zero
+                    // sum counts an overlap twice at an anti-aliased edge, darkening the inner corners.
+                    let (mut outer, mut inner) = (r.inflate(w / 2.0, w / 2.0), r.inflate(-w / 2.0, -w / 2.0));
+                    if clip == 1 {
+                        (outer, inner) = (outer.intersect(cut), inner.intersect(cut));
+                    }
+                    let mut outline = outer.to_path(0.01);
+                    if inner.area() > 0.0 {
+                        outline.move_to((inner.x0, inner.y0));
+                        for p in [(inner.x0, inner.y1), (inner.x1, inner.y1), (inner.x1, inner.y0)] {
+                            outline.line_to(p);
+                        }
+                        outline.close_path();
+                    }
+                    rec.fill_path(outline.elements(), paint);
+                }
+            }
+            let picture = rec.finish();
+            assert_eq!(frame, picture.lists().cmds.iter().any(|c| matches!(c, Cmd::Frame { .. })));
+            let mut px = vec![0u8; 64 * 48 * 4];
+            let draws = [Draw { picture: &picture, transform }];
+            let frame = Frame { clear: Some(Color::rgb(0xE8_D8C8)), draws: &draws };
+            Renderer::new().render(&mut Target::new(&mut px, 64, 48, 256, Format::Rgba8).expect("fits"), &Resources::default(), &frame);
+            px
+        };
+        for transform in [kurbo::Affine::IDENTITY, kurbo::Affine::new([96.0 / 72.0, 0.0, 0.0, 96.0 / 72.0, 0.37, 0.81]), kurbo::Affine::scale(1.6)] {
+            for paint in paints {
+                // An aliased frame is rasterised, through the clip as a path is.
+                for clip in (0..3).filter(|&c| paint.aa || c != 1) {
+                    assert!(draw(true, paint, clip, transform) == draw(false, paint, clip, transform), "{transform:?} clip {clip} aa {}", paint.aa);
+                }
+            }
+        }
     }
 
     #[test]

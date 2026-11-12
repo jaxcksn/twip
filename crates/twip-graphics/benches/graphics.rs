@@ -194,6 +194,51 @@ fn draw_each(b: Bencher, picture: &Picture, resources: &Resources, (w, h): (u32,
     });
 }
 
+/// A page of hairlines, as a document draws its rules: a 10 × 40 table's 0.5 pt borders, a 0.75 pt underline under
+/// each row's text, and 40 cells outlined by a 0.75 pt pen (text boxes and picture frames), drawn as `frame` places a
+/// page. Budget: a small part of `cpu_unchanged`.
+fn hairlines(b: Bencher, dpr: f64) {
+    let mut rec = Recorder::new();
+    for r in 0..=40 {
+        let y = 40.0 + r as f64 * 18.0;
+        rec.fill_rect(Rect::new(72.0, y, 540.0, y + 0.5), INK);
+        if r < 40 {
+            rec.fill_rect(Rect::new(76.0, y + 14.0, 160.0, y + 14.75), INK);
+        }
+    }
+    for c in 0..=10 {
+        let x = 72.0 + c as f64 * 46.8;
+        rec.fill_rect(Rect::new(x, 40.0, x + 0.5, 760.5), INK);
+    }
+    let pen = Stroke::new(0.75).with_caps(Cap::Butt).with_join(kurbo::Join::Miter).with_miter_limit(4.0);
+    for r in 0..40 {
+        let y = 40.0 + r as f64 * 18.0;
+        let x = 72.0 + (r % 10) as f64 * 46.8;
+        rec.stroke_path(Rect::new(x + 3.0, y + 3.0, x + 43.0, y + 15.0).to_path(0.01).elements(), &pen, INK);
+    }
+    let picture = rec.finish();
+    let (w, h) = ((1000.0 * dpr) as u32, (1100.0 * dpr) as u32);
+    let mut px = vec![0u8; (w * h * 4) as usize];
+    let mut renderer = Renderer::new();
+    let transform = Affine::scale(dpr) * Affine::translate((92.0, 16.0)) * Affine::scale(96.0 / 72.0);
+    let draws = [Draw { picture: &picture, transform }];
+    let frame = Frame { clear: None, draws: &draws };
+    b.bench_local(|| {
+        let mut target = Target::new(&mut px, w, h, w as usize * 4, Format::Rgba8).expect("a buffer that fits");
+        renderer.render(&mut target, &Resources::default(), &frame);
+    });
+}
+
+#[divan::bench]
+fn hairlines_dpr1(b: Bencher) {
+    hairlines(b, 1.0);
+}
+
+#[divan::bench]
+fn hairlines_dpr2(b: Bencher) {
+    hairlines(b, 2.0);
+}
+
 /// A 1600 × 1200 photo drawn at 400 × 300: bilinear from its mip level (the decode and mip chain are cached after
 /// the first frame). Budget: well inside a frame (a page with pictures still meets the frame budget).
 #[divan::bench]
