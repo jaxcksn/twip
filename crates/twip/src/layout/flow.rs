@@ -2245,6 +2245,7 @@ impl<'d> PageFill<'d, '_> {
             // a float wholly below it, or beside the column, doesn't meet it. Earlier columns count as met.
             let reach = *y + if compat == Compat::Legacy { carry.prev_after } else { 0.0 };
             a.collided = self.column > 0 || a.excl[1] < reach - EPS && a.excl[0] < cx1 - EPS && a.excl[2] > cx0 + EPS;
+            a.restarts = a.collided || a.excl[1] < line_top + bands[b].1[0].pitch - EPS && a.excl[0] < cx1 - EPS && a.excl[2] > cx0 + EPS;
             anchors.push(a);
         }
         // Pagination
@@ -2314,7 +2315,12 @@ impl<'d> PageFill<'d, '_> {
                 }
                 let across = if in_flow && compat == Compat::Generic { (f64::INFINITY, f64::NEG_INFINITY) } else { (frames.margin[0], frames.page_w) };
                 let others: Vec<Placed> = self.at.found.iter().filter(|o| !under.contains(&o.key)).cloned().collect();
-                if !float::avoid(&mut a, &others, across, col.bottom.to_pt(), compat) {
+                // Compat ≤ 14: once a float (not a frame) later on the page met the text laid out before it, the page
+                // filled again keeps a frame where it was placed, unmoved.
+                let restarted = compat == Compat::Legacy
+                    && frame(&a)
+                    && self.at.known.iter().any(|k| k.restarts && !frame(k) && k.wrap != Wrap::None && k.key.0 == a.key.0 && (k.key.1, k.key.2) > (a.key.1, a.key.2));
+                if !restarted && !float::avoid(&mut a, &others, across, col.bottom.to_pt(), compat) {
                     let b = band_of(a.key.2 - pb.from).unwrap_or(0);
                     forced = Some(forced.map_or(b, |x: usize| x.min(b)));
                 }

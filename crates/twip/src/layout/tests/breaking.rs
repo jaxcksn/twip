@@ -1865,6 +1865,23 @@ fn a_frames_paragraph_borders_reach_past_it_by_a_gap_their_width_and_spacing_les
 }
 
 #[test]
+fn a_compat_14_frame_keeps_its_place_once_a_later_float_meets_the_text_before_it() {
+    let pic = r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="114300" distR="114300" simplePos="0" relativeHeight="0" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>1270000</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV><wp:extent cx="914400" cy="635000"/><wp:wrapSquare wrapText="bothSides"/><a:graphic><a:graphicData><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#;
+    let b_at = |later: &str| {
+        let frames = three_line_frame(1440, 2880, r#"w:vAnchor="text" w:y="0""#, "", "A")
+            + &three_line_frame(2880, 2880, r#"w:vAnchor="text" w:y="360""#, "<w:suppressOverlap/>", "B");
+        let body = format!(r#"<w:p><w:r><w:t>Lead.</w:t></w:r></w:p>{frames}<w:p><w:r><w:t>{FRAME_BODY}</w:t></w:r></w:p>{later}"#);
+        let l = baselines("", ARIAL_11, &body)?;
+        l.iter().find(|x| x.1 == "B one").map(|x| x.0 * 20.0)
+    };
+    // Moved clear of A, right of it; a later picture meeting its own first line leaves B a twip left of its x.
+    let Some(moved) = b_at("") else { return };
+    assert!((moved - 4679.0).abs() < 1.0, "{moved}");
+    let kept = b_at(&format!(r#"<w:p>{pic}<w:r><w:t>A later paragraph with a picture.</w:t></w:r></w:p>"#)).unwrap();
+    assert!((kept - 2879.0).abs() < 1.0, "{kept}");
+}
+
+#[test]
 fn a_compat_14_frame_in_the_flow_that_may_not_overlap_goes_a_twip_short_of_a_page_frames_bottom() {
     let a = three_line_frame(2880, 2880, r#"w:vAnchor="page" w:y="1693""#, "", "A");
     let b = three_line_frame(4320, 2880, r#"w:vAnchor="text" w:y="0""#, "<w:suppressOverlap/>", "B");
