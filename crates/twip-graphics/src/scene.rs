@@ -286,6 +286,10 @@ pub(crate) struct RunRec {
     /// Index into `glyphs`.
     pub glyphs: Span,
     pub synthesis: Synthesis,
+    /// The characters the glyphs draw, as UTF-8 bytes of `text`, and each glyph's cluster (its first byte in them),
+    /// in `clusters`: empty unless recorded with [`Recorder::glyphs_text`].
+    pub text: Span,
+    pub clusters: Span,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -344,6 +348,8 @@ pub(crate) struct Lists {
     pub color_filters: Vec<ColorFilter>,
     pub filters: Vec<Filter>,
     pub children: Vec<Picture>,
+    pub text: String,
+    pub clusters: Vec<u32>,
 }
 
 impl Lists {
@@ -367,6 +373,8 @@ impl Lists {
             + size(&self.color_filters)
             + size(&self.filters)
             + size(&self.children)
+            + self.text.len()
+            + size(&self.clusters)
     }
 
     /// Empties every list, keeping their memory for the next recording.
@@ -388,6 +396,8 @@ impl Lists {
             color_filters,
             filters,
             children,
+            text,
+            clusters,
         } = self;
         cmds.clear();
         transforms.clear();
@@ -405,6 +415,8 @@ impl Lists {
         color_filters.clear();
         filters.clear();
         children.clear();
+        text.clear();
+        clusters.clear();
     }
 }
 
@@ -562,9 +574,24 @@ impl Recorder {
     /// A run of glyphs. `fonts` gives each glyph's outline box, so the picture's bounds hold the run's ink, to within
     /// a device pixel (where hinting snaps edges to the grid).
     pub fn glyphs<'p>(&mut self, fonts: &FontRegistry, run: &GlyphRun<'_>, paint: impl Into<Paint<'p>>) {
+        self.glyphs_text(fonts, run, "", &[], paint);
+    }
+
+    /// [`Recorder::glyphs`], with the characters the glyphs draw: `text`, and each glyph's cluster (the byte in `text`
+    /// its characters start at; one per glyph). A PDF's text extracts as them; the screen draws the glyphs alone.
+    /// Clusters that don't match the glyphs, or fall outside `text`, are dropped (the text is kept, for the run).
+    pub fn glyphs_text<'p>(&mut self, fonts: &FontRegistry, run: &GlyphRun<'_>, text: &str, clusters: &[u32], paint: impl Into<Paint<'p>>) {
         if run.glyphs.is_empty() || !(run.size > 0.0 && run.size.is_finite()) {
             return;
         }
+        let start = self.lists.text.len();
+        self.lists.text.push_str(text);
+        let text_span = Span::since(self.lists.text.as_bytes(), start);
+        let start = self.lists.clusters.len();
+        if clusters.len() == run.glyphs.len() && clusters.iter().all(|&c| (c as usize) < text.len().max(1)) {
+            self.lists.clusters.extend_from_slice(clusters);
+        }
+        let cluster_span = Span::since(&self.lists.clusters, start);
         let start = self.lists.glyphs.len();
         self.lists.glyphs.extend(run.glyphs.iter().map(|&(id, x)| GlyphRec { id, x: x as f32 }));
         let style = Style { skew_x: run.synthesis.skew_x, bold: if run.synthesis.embolden { embolden_em(run.size as f32) } else { 0.0 } };
@@ -582,7 +609,15 @@ impl Recorder {
             self.add_bounds(ink);
         }
         let glyphs = Span::since(&self.lists.glyphs, start);
-        let rec = RunRec { font: run.font, size: run.size as f32, baseline: run.baseline as f32, glyphs, synthesis: run.synthesis };
+        let rec = RunRec {
+            font: run.font,
+            size: run.size as f32,
+            baseline: run.baseline as f32,
+            glyphs,
+            synthesis: run.synthesis,
+            text: text_span,
+            clusters: cluster_span,
+        };
         let run = self.lists.runs.len() as u32;
         self.lists.runs.push(rec);
         let paint = self.paint(paint.into());
@@ -1067,7 +1102,8 @@ mod tests {
         let l = pic.lists();
         assert!(matches!(l.paints[0].brush, BrushRec::Linear { stops: Span { start: 0, len: 2 }, extend: Extend::Mirror, .. }));
         assert_eq!(l.stops, stops);
-        assert_eq!(l.runs[0], RunRec { font, size: 12.0, baseline: 100.0, glyphs: Span { start: 0, len: 2 }, synthesis });
+        let none = Span::default();
+        assert_eq!(l.runs[0], RunRec { font, size: 12.0, baseline: 100.0, glyphs: Span { start: 0, len: 2 }, synthesis, text: none, clusters: none });
         assert_eq!(l.glyphs, [GlyphRec { id: 36, x: 10.0 }, GlyphRec { id: 72, x: 16.5 }]);
         assert_eq!(l.images[0].color_filters, Span { start: 0, len: 2 }, "filters are kept as a chain, in order");
         assert_eq!(l.color_filters[..2], filters);

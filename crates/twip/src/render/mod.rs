@@ -358,7 +358,7 @@ impl Renderer {
 /// glyphs' Unicode, or ActualText where a cluster is not one character per glyph). False when the run's characters
 /// can't be matched to its glyphs.
 fn draw_text(canvas: &Canvas, r: &crate::layout::fragment::GlyphRun, font: &Font, paint: &Paint) -> bool {
-    let Some(clusters) = clusters(r) else { return false };
+    let Some(clusters) = graphics::clusters(r) else { return false };
     let text: String = r.chars.iter().map(|c| c.0).collect();
     let mut b = skia_safe::TextBlobBuilder::new();
     let (ids, xs, utf8, cl) = b.alloc_run_text_pos_h(font, r.glyphs.len(), r.baseline as f32, text.len(), None);
@@ -371,49 +371,6 @@ fn draw_text(canvas: &Canvas, r: &crate::layout::fragment::GlyphRun, font: &Font
     let Some(blob) = b.make() else { return false };
     canvas.draw_text_blob(&blob, (0, 0), paint);
     true
-}
-
-/// Each glyph's cluster (a UTF-8 offset into the run's characters). Characters of a piece share the piece's origin,
-/// so the glyphs from one origin to the next are that piece's: one cluster per character when the counts match, else
-/// one cluster for the piece.
-fn clusters(r: &crate::layout::fragment::GlyphRun) -> Option<Vec<u32>> {
-    if r.glyphs.is_empty() || r.chars.is_empty() {
-        return None;
-    }
-    let mut pieces: Vec<(f64, usize, usize)> = Vec::new();
-    for (i, &(_, x, _)) in r.chars.iter().enumerate() {
-        match pieces.last_mut() {
-            Some(p) if p.0 == x => p.2 += 1,
-            Some(p) if p.0 > x => return None,
-            _ => pieces.push((x, i, 1)),
-        }
-    }
-    let mut byte = Vec::with_capacity(r.chars.len());
-    let mut at = 0u32;
-    for &(c, _, _) in r.chars.iter() {
-        byte.push(at);
-        at += c.len_utf8() as u32;
-    }
-    let piece_of: Vec<usize> = r.glyphs.iter().map(|g| pieces.partition_point(|p| p.0 <= g.1 + 1e-6).saturating_sub(1)).collect();
-    if piece_of.windows(2).any(|w| w[1] < w[0]) {
-        return None;
-    }
-    let mut count = vec![0usize; pieces.len()];
-    for &p in &piece_of {
-        count[p] += 1;
-    }
-    let mut rank = vec![0usize; pieces.len()];
-    Some(
-        piece_of
-            .iter()
-            .map(|&p| {
-                let (_, first, n) = pieces[p];
-                let k = rank[p];
-                rank[p] += 1;
-                byte[if count[p] == n { first + k } else { first }]
-            })
-            .collect(),
-    )
 }
 
 #[cfg(test)]

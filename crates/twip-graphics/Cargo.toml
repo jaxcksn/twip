@@ -30,6 +30,9 @@ gif = "0.14.2"
 # until it is planned.
 wgpu = { version = "30.0.1", default-features = false, features = ["std", "wgsl", "webgpu"], optional = true }
 
+# The PDF writer (feature `pdf`): pictures written as PDF pages, with fonts subset and tagged structure.
+krilla = { version = "0.8.2", default-features = false, features = ["raster-images"], optional = true }
+
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 wgpu = { version = "30.0.1", default-features = false, features = ["dx12", "vulkan", "metal"], optional = true }
 
@@ -44,6 +47,8 @@ fearless_simd = { version = "1.2.0", features = ["force_support_fallback"] }
 divan = "0.1.21"
 # Reading and writing the golden images (tests/golden.rs).
 png = "0.18.1"
+# Renders the PDF writer's output back to pixels, to compare with the CPU backend's (tests/pdf.rs).
+hayro = "0.9.0"
 # Counts a closure's heap allocations (it installs a counting global allocator in test builds only).
 allocation-counter = "0.8.1"
 
@@ -55,6 +60,7 @@ harness = false
 [features]
 # The wgpu backend (src/gpu/). Off by default so CPU-only builds (tests, musl, headless) never compile wgpu.
 gpu = ["dep:wgpu"]
+pdf = ["dep:krilla"]
 
 [lints.rust]
 unsafe_code = "forbid"

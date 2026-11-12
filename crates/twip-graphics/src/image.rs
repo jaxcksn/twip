@@ -486,6 +486,15 @@ impl ImageRegistry {
         self.entries.get(id.0 as usize).map(|e| e.1)
     }
 
+    /// The image's encoded bytes and what they say about themselves; `None` for pixels the caller made.
+    #[cfg(feature = "pdf")]
+    pub(crate) fn encoded(&self, id: ImageId) -> Option<(&ImageData, ImageInfo)> {
+        match self.entries.get(id.0 as usize) {
+            Some((Entry::Encoded(data), info)) => Some((data, *info)),
+            _ => None,
+        }
+    }
+
     /// The image's pixels: decoded now for an encoded image.
     pub(crate) fn decode(&self, id: ImageId) -> Result<Pixmap, ImageError> {
         match self.entries.get(id.0 as usize) {

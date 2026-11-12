@@ -51,6 +51,8 @@ pub struct Graphics {
     /// Scratch: a UI string's glyphs, and one path's elements.
     glyphs: Vec<(u32, f64)>,
     els: Vec<PathEl>,
+    /// Glyph runs carry their characters and clusters, so a PDF's text extracts as the document's.
+    pub with_text: bool,
 }
 
 /// A Skia colour as twip-graphics takes it.
@@ -201,6 +203,16 @@ impl Graphics {
         draw(&self.res, &cpu::Frame { clear: self.clear, draws: &draws })
     }
 
+    /// PDF export: one page item recorded into `rec`, in the page's points.
+    pub fn record_item(&mut self, rec: &mut Recorder, r: &Renderer, item: &Item, images: &[Vec<u8>]) {
+        self.item(rec, r, false, item, images);
+    }
+
+    /// The fonts and images recorded pictures draw with.
+    pub fn resources(&self) -> &Resources {
+        &self.res
+    }
+
     /// Tools: `page`'s content as a picture in its points, recorded now (the oracle compares it with Skia's drawing).
     #[doc(hidden)]
     pub fn page_picture(&mut self, r: &Renderer, page: &crate::layout::fragment::PageFragment, images: &[Vec<u8>]) -> twip_graphics::scene::Picture {
@@ -290,7 +302,13 @@ impl Graphics {
                 }
                 let synthesis = Synthesis { embolden: g.face.sim_bold, skew_x: if g.face.sim_italic { -0.2 } else { 0.0 } };
                 let run = GlyphRun { font, size: g.size, baseline: g.baseline, glyphs: &g.glyphs, synthesis };
-                rec.glyphs(&self.res.fonts, &run, ink(g.colour.unwrap_or(0)));
+                if self.with_text {
+                    let text: String = g.chars.iter().map(|c| c.0).collect();
+                    let clusters = clusters(g).unwrap_or_default();
+                    rec.glyphs_text(&self.res.fonts, &run, &text, &clusters, ink(g.colour.unwrap_or(0)));
+                } else {
+                    rec.glyphs(&self.res.fonts, &run, ink(g.colour.unwrap_or(0)));
+                }
             }
             Item::Gridline { line: [x0, y0, x1, y1] } => {
                 if r.gridlines {
@@ -409,4 +427,47 @@ fn desk(rec: &mut Recorder, papers: impl Iterator<Item = [f64; 4]>, width: f64, 
 /// Paint with a blend mode.
 fn blended(c: Color, blend: BlendMode) -> Paint<'static> {
     Paint { blend, ..Paint::from(c) }
+}
+
+/// Each glyph's cluster (a UTF-8 offset into the run's characters). Characters of a piece share the piece's origin,
+/// so the glyphs from one origin to the next are that piece's: one cluster per character when the counts match, else
+/// one cluster for the piece.
+pub(crate) fn clusters(r: &crate::layout::fragment::GlyphRun) -> Option<Vec<u32>> {
+    if r.glyphs.is_empty() || r.chars.is_empty() {
+        return None;
+    }
+    let mut pieces: Vec<(f64, usize, usize)> = Vec::new();
+    for (i, &(_, x, _)) in r.chars.iter().enumerate() {
+        match pieces.last_mut() {
+            Some(p) if p.0 == x => p.2 += 1,
+            Some(p) if p.0 > x => return None,
+            _ => pieces.push((x, i, 1)),
+        }
+    }
+    let mut byte = Vec::with_capacity(r.chars.len());
+    let mut at = 0u32;
+    for &(c, _, _) in r.chars.iter() {
+        byte.push(at);
+        at += c.len_utf8() as u32;
+    }
+    let piece_of: Vec<usize> = r.glyphs.iter().map(|g| pieces.partition_point(|p| p.0 <= g.1 + 1e-6).saturating_sub(1)).collect();
+    if piece_of.windows(2).any(|w| w[1] < w[0]) {
+        return None;
+    }
+    let mut count = vec![0usize; pieces.len()];
+    for &p in &piece_of {
+        count[p] += 1;
+    }
+    let mut rank = vec![0usize; pieces.len()];
+    Some(
+        piece_of
+            .iter()
+            .map(|&p| {
+                let (_, first, n) = pieces[p];
+                let k = rank[p];
+                rank[p] += 1;
+                byte[if count[p] == n { first + k } else { first }]
+            })
+            .collect(),
+    )
 }

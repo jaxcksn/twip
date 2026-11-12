@@ -5,11 +5,13 @@ all-features = true
 
 [licenses]
 # Licenses compatible with shipping the engine under Apache-2.0. MPL-2.0 is file-level copyleft (spellbook): its
-# files stay under MPL and their source stays available; nothing here modifies them.
+# files stay under MPL and their source stays available; nothing here modifies them. BSD-2-Clause: arrayref, under
+# krilla's tiny-skia-path (the PDF writer).
 allow = [
   "Apache-2.0",
   "Apache-2.0 WITH LLVM-exception",
   "MIT",
+  "BSD-2-Clause",
   "BSD-3-Clause",
   "ISC",
   "Zlib",

@@ -305,6 +305,23 @@ impl Renderer {
         self.trim_colour_masks();
     }
 
+    /// The PDF writer's rasterised layers: the layer pushed at `lists.cmds[at]` drawn into `target` under `t`, its
+    /// content, filters and colour filters composited over the target source-over at full opacity (the writer applies
+    /// the layer's own opacity and blend mode).
+    #[cfg(feature = "pdf")]
+    pub(crate) fn render_layer(&mut self, target: &mut Target<'_>, res: &Resources, lists: &Lists, at: usize, t: Transform) {
+        let Some(&Cmd::PushLayer { layer }) = lists.cmds.get(at) else { return };
+        self.clock += 1;
+        self.stats = Stats::default();
+        let full = target.bounds();
+        let clip = Clip { rect: [full.x0 * ONE, full.y0 * ONE, full.x1 * ONE, full.y1 * ONE], bounds: full, mask: None };
+        let rec = LayerRec { opacity: 1.0, blend: BlendMode::SrcOver, ..lists.layers[layer as usize] };
+        self.layer(target, res, lists, &mut (at + 1), rec, t, clip);
+        self.glyphs.trim();
+        self.trim_images();
+        self.trim_colour_masks();
+    }
+
     fn picture(&mut self, target: &mut Target<'_>, res: &Resources, picture: &Picture, transform: Transform, clip: Clip) {
         let Some(bounds) = picture.local_bounds() else { return };
         // Glyph ink reaches up to a pixel past the bounds.

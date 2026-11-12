@@ -1,5 +1,6 @@
-//! PDF export from a layout snapshot: the pages drawn by `render` on Skia's PDF backend, which embeds the
-//! fonts with ToUnicode maps (the runs carry their characters, so text extracts as typed). Tagged: body paragraphs
+//! PDF export from a layout snapshot: the pages recorded by `render::graphics` and written by twip-graphics' PDF
+//! writer, which embeds the fonts subset with ToUnicode maps (the runs carry their characters, so text extracts as
+//! typed). Tagged: body paragraphs
 //! as P/H1–H6, list items as L/LI/LBody, tables as Table/TR/TH/TD, pictures as Figures; headers, footers, notes, text
 //! boxes, list numbers, borders and shading as artifacts. A bookmarks outline from the headings, and title, language
 //! and creation date (with XMP) metadata.
@@ -11,10 +12,10 @@
 
 use crate::api::state::FontsState;
 use std::collections::{BTreeSet, HashMap};
-use std::ffi::CString;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use skia_safe::pdf::{self, DateTime, Metadata, Outline, StructureElementNode, node_id};
+use twip_graphics::pdf::{self, ArtifactKind, Date, Mark};
+use twip_graphics::scene::Recorder;
 
 use crate::api::error::{Error, ErrorCode};
 use crate::api::session::PdfOptions;
@@ -24,8 +25,16 @@ use crate::font::Fonts;
 use crate::layout::fragment::Item;
 use crate::layout::{Snapshot, traverse};
 use crate::render::Renderer;
+use crate::render::graphics::Graphics;
 
-/// A structure element before it becomes Skia's node. `key`: the model path a container stands for (reused by the
+/// What an item is in the structure: a structure element's content (its id), an artifact, or (before the first item)
+/// nothing yet.
+const OTHER_ARTIFACT: i32 = -1;
+const PAGINATION_ARTIFACT: i32 = -2;
+const LAYOUT_ARTIFACT: i32 = -3;
+const NOTHING: i32 = 0;
+
+/// A structure element before it becomes the writer's. `key`: the model path a container stands for (reused by the
 /// next paragraph in it).
 struct Elem {
     kind: String,
@@ -49,19 +58,23 @@ impl Elem {
         self.kids.last_mut().unwrap()
     }
 
-    fn into_node<'a>(self, th: &'a (CString, CString, CString)) -> StructureElementNode<'a> {
-        let mut n = StructureElementNode::new(&self.kind);
-        n.set_node_id(self.id);
-        if self.kind == "Figure" {
-            n.set_alt("Picture");
-        }
-        if self.kind == "TH" {
-            n.attributes_mut().append_name(&th.0, &th.1, &th.2);
-        }
-        for k in self.kids {
-            n.append_child(k.into_node(th));
-        }
-        n
+    fn into_element(self) -> pdf::Element {
+        let kind = match self.kind.as_str() {
+            "P" => pdf::Kind::Paragraph,
+            "L" => pdf::Kind::List,
+            "LI" => pdf::Kind::ListItem,
+            "LBody" => pdf::Kind::ListBody,
+            "Table" => pdf::Kind::Table,
+            "TR" => pdf::Kind::Row,
+            "TH" => pdf::Kind::HeaderCell,
+            "TD" => pdf::Kind::Cell,
+            "Figure" => pdf::Kind::Figure(Some("Picture".into())),
+            h => pdf::Kind::Heading(h.strip_prefix('H').and_then(|l| l.parse().ok()).unwrap_or(1)),
+        };
+        // Paragraphs, headings and figures are content; containers hold only their kids.
+        let content =
+            matches!(kind, pdf::Kind::Paragraph | pdf::Kind::Heading(_) | pdf::Kind::ListBody | pdf::Kind::Figure(_)).then_some(self.id as u32);
+        pdf::Element { kind, content, kids: self.kids.into_iter().map(Elem::into_element).collect() }
     }
 }
 
@@ -163,12 +176,12 @@ pub fn export(
                         i as i32 + 1
                     }
                     Some(&i) if drawn[i] => i as i32 + 1,
-                    Some(_) => node_id::OTHER_ARTIFACT,
-                    None => node_id::PAGINATION_ARTIFACT,
+                    Some(_) => OTHER_ARTIFACT,
+                    None => PAGINATION_ARTIFACT,
                 },
-                Item::Rect { .. } | Item::Gridline { .. } | Item::Turned(_) => node_id::LAYOUT_ARTIFACT,
+                Item::Rect { .. } | Item::Gridline { .. } | Item::Turned(_) => LAYOUT_ARTIFACT,
                 // A picture is a figure; another shape is an artifact.
-                Item::Shape(s) if !matches!(s.fill, crate::drawing::paint::Paint::Picture { .. }) => node_id::LAYOUT_ARTIFACT,
+                Item::Shape(s) if !matches!(s.fill, crate::drawing::paint::Paint::Picture { .. }) => LAYOUT_ARTIFACT,
                 Item::Image { .. } | Item::Shape(_) => {
                     figures.push((last, n + 1 + figures.len() as i32));
                     figures.last().unwrap().1
@@ -214,57 +227,65 @@ pub fn export(
     root.id = next + 1;
     root.kids.extend(figures.iter().filter(|f| f.0.is_none()).map(|f| Elem::new("Figure", f.1, None)));
 
-    let th = (CString::new("Table").unwrap(), CString::new("Scope").unwrap(), CString::new("Column").unwrap());
     let lang = paras.first().map(|p| p.2.mark.lang.clone()).filter(|l| !l.is_empty());
-    let metadata = Metadata {
+    // The bookmarks: the drawn headings, in document order.
+    let outline: Vec<pdf::Heading> = paras
+        .iter()
+        .enumerate()
+        .filter(|&(i, _)| drawn[i])
+        .filter_map(|(i, (_, _, p))| match p.style.outline_lvl {
+            Some(l @ 0..6) => {
+                Some(pdf::Heading { level: l as u8 + 1, content: i as u32 + 1, title: crate::docx::fields::text(p).trim().to_string() })
+            }
+            _ => None,
+        })
+        .collect();
+    let info = pdf::Info {
         title: if title.trim().is_empty() { "Document".into() } else { title.into() },
+        language: Some(lang.unwrap_or_else(|| "en-US".into())),
+        keywords: options.keywords_line().into_iter().collect(),
         creator: "Twip".into(),
         producer: "Twip".into(),
-        keywords: options.keywords_line().unwrap_or_default(),
-        creation: Some(now()),
-        lang: lang.unwrap_or_else(|| "en-US".into()),
-        pdf_a: true, // XMP metadata (title, dates) and a document id
-        structure_element_tree_root: Some(root.into_node(&th)),
-        outline: Outline::StructureElementHeaders,
-        ..Default::default()
+        created: Some(now()),
+        // XMP metadata (title, dates) and a document id; dropped when encrypted, or when what's drawn breaks it.
+        archival: options.open_password.is_none(),
     };
 
-    let mut out = Vec::new();
-    {
-        let mut pdoc = pdf::new_document(&mut out, Some(&metadata));
-        let mut renderer = Renderer::default();
-        renderer.with_text = true;
-        let mut used: HashMap<(usize, u32, u32), (&crate::font::Face, BTreeSet<u16>)> = HashMap::new();
-        for item in pages.iter().flatten() {
-            if let Item::Glyphs(r) = item
-                && r.face.variations.is_empty()
-            {
-                let key = (std::sync::Arc::as_ptr(&r.face.data) as usize, r.face.index, r.face.instance);
-                used.entry(key).or_insert_with(|| (&*r.face, BTreeSet::new())).1.extend(r.glyphs.iter().map(|g| g.0 as u16));
-            }
-        }
-        for (face, glyphs) in used.values() {
-            if let Some(data) = subset(&face.data, face.index, glyphs) {
-                renderer.set_face_data(face, &data);
-            }
-        }
-        for ((page, items), page_ids) in snapshot.pages().iter().zip(&pages).zip(&ids) {
-            cancelled(cancel)?;
-            let mut on_page = pdoc.begin_page((page.w as f32, page.h as f32), None);
-            let canvas = on_page.canvas();
-            let mut current = node_id::NOTHING;
-            for (item, &id) in items.iter().zip(page_ids) {
-                if id != current {
-                    pdf::set_node_id(canvas, id);
-                    current = id;
+    // Each page as pictures: one per stretch of items with the same structure id.
+    let mut graphics = Graphics::default();
+    graphics.with_text = true;
+    let renderer = Renderer::default();
+    let mut rec = Recorder::new();
+    let mut out_pages = Vec::with_capacity(pages.len());
+    for ((page, items), page_ids) in snapshot.pages().iter().zip(&pages).zip(&ids) {
+        cancelled(cancel)?;
+        let mut parts = Vec::new();
+        let mut current = NOTHING;
+        for (item, &id) in items.iter().zip(page_ids) {
+            if id != current {
+                if current != NOTHING {
+                    parts.push((mark(current), rec.finish()));
                 }
-                renderer.draw_item(canvas, item, &doc.images);
+                current = id;
             }
-            pdoc = on_page.end_page();
+            graphics.record_item(&mut rec, &renderer, item, &doc.images);
         }
-        pdoc.close();
+        if current != NOTHING {
+            parts.push((mark(current), rec.finish()));
+        }
+        out_pages.push(pdf::Page { width: page.w, height: page.h, parts });
     }
+    let structure: Vec<pdf::Element> = root.kids.into_iter().map(Elem::into_element).collect();
+    let written =
+        pdf::write(graphics.resources(), &out_pages, &structure, &outline, &info).map_err(|e| Error::new(ErrorCode::ExportFailed, e.to_string()))?;
+    let archival = written.archival;
+    let mut out = written.bytes;
     let mut written = crate::docx::diagnostics::Diagnostics::default();
+    if !archival && options.open_password.is_none() {
+        written.warn(crate::api::warning::WarningCode::PdfArchivalClaimDropped, None, || {
+            "what the document draws breaks PDF/A-2b, so the PDF doesn't claim it".into()
+        });
+    }
     if let Some(password) = &options.open_password {
         out = super::encrypt::encrypt(&out, password)?;
         written.warn(crate::api::warning::WarningCode::PdfArchivalClaimDropped, None, || {
@@ -379,8 +400,18 @@ fn subset(data: &[u8], index: u32, used: &BTreeSet<u16>) -> Option<Vec<u8>> {
     Some(out)
 }
 
+/// What a structure id marks.
+fn mark(id: i32) -> Mark {
+    match id {
+        OTHER_ARTIFACT => Mark::Artifact(ArtifactKind::Other),
+        PAGINATION_ARTIFACT => Mark::Artifact(ArtifactKind::Pagination),
+        LAYOUT_ARTIFACT => Mark::Artifact(ArtifactKind::Layout),
+        id => Mark::Content(id as u32),
+    }
+}
+
 /// The current UTC time.
-fn now() -> DateTime {
+fn now() -> Date {
     let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs()) as i64;
     let (days, rem) = (secs.div_euclid(86400), secs.rem_euclid(86400));
     // Civil date from days since 1970-01-01 (Howard Hinnant's algorithm).
@@ -393,16 +424,7 @@ fn now() -> DateTime {
     let day = doy - (153 * mp + 2) / 5 + 1;
     let month = if mp < 10 { mp + 3 } else { mp - 9 };
     let year = yoe + era * 400 + i64::from(month <= 2);
-    DateTime {
-        time_zone_minutes: 0,
-        year: year as u16,
-        month: month as u8,
-        day_of_week: (days + 4).rem_euclid(7) as u8,
-        day: day as u8,
-        hour: (rem / 3600) as u8,
-        minute: (rem / 60 % 60) as u8,
-        second: (rem % 60) as u8,
-    }
+    Date { year: year as u16, month: month as u8, day: day as u8, hour: (rem / 3600) as u8, minute: (rem / 60 % 60) as u8, second: (rem % 60) as u8 }
 }
 
 #[cfg(test)]
@@ -429,6 +451,7 @@ mod tests {
             let text = String::from_utf8_lossy(&pdf);
             assert!(pdf.starts_with(b"%PDF-") && text.contains("%%EOF"), "{}", f.display());
             assert!(text.contains("/StructTreeRoot") && text.contains("/MarkInfo"), "{}: untagged", f.display());
+            assert!(text.contains("/ToUnicode"), "{}: the text doesn't map back to its characters", f.display());
             assert!(
                 root.as_os_str().is_empty() || !f.starts_with(&root) || pdf.len() < 150_000,
                 "{}: {} bytes, fonts not subset",

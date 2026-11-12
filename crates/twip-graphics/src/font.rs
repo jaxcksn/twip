@@ -65,7 +65,14 @@ struct Face {
     data: FontData,
     index: u32,
     location: Location,
+    /// The variation coordinates it was registered with (axis tag, user value).
+    #[cfg_attr(not(feature = "pdf"), allow(dead_code, reason = "the PDF writer embeds the face at them"))]
+    variations: Vec<([u8; 4], f32)>,
 }
+
+/// A variation coordinate: an axis tag and its user value.
+#[cfg(feature = "pdf")]
+pub(crate) type Variation = ([u8; 4], f32);
 
 /// A face's font bytes' address, index and variations (axis tags and values as `f32` bits). The face holds its bytes,
 /// so the address isn't reused while the key is in the map.
@@ -100,9 +107,15 @@ impl FontRegistry {
         let font = FontRef::from_index((*data).as_ref(), index).map_err(|e| FontError { index, message: e.to_string() })?;
         let location = font.axes().location(variations.iter().map(|&(t, v)| (Tag::new(&t), v)));
         let id = FontId(self.faces.len() as u32);
-        self.faces.push(Face { data, index, location });
+        self.faces.push(Face { data, index, location, variations: variations.to_vec() });
         self.known.insert(key, id);
         Ok(id)
+    }
+
+    /// The face's bytes, index and variation coordinates, as registered.
+    #[cfg(feature = "pdf")]
+    pub(crate) fn source(&self, font: FontId) -> Option<(&FontData, u32, &[Variation])> {
+        self.faces.get(font.0 as usize).map(|f| (&f.data, f.index, &f.variations[..]))
     }
 
     /// The face's font, and its variation location.

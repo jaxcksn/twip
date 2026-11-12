@@ -25,6 +25,8 @@ mod cover;
 pub mod cpu;
 #[cfg(feature = "gpu")]
 pub mod gpu;
+#[cfg(feature = "pdf")]
+pub mod pdf;
 
 /// What pictures refer to by id, owned by the caller and lent to every frame.
 #[derive(Debug, Default)]
