@@ -1868,6 +1868,8 @@ impl<'d> PageFill<'d, '_> {
         let top_extra = top_border_extra(style, pb.borders.0.as_deref(), first_part);
         let (cx0, cx1) = (col.x, col.x + col.width);
         let compat = self.ctx.env.text.compat;
+        // After a leading page or column break the paragraph starts again with its first line.
+        let restarts = pb.from > 0 && sp.pieces[..pb.from.min(sp.pieces.len())].iter().all(|q| matches!(q.kind, Kind::PageBreak | Kind::ColumnBreak));
         let mut content = pieces.iter().filter(|q| q.kind != Kind::Anchor);
         let lone_picture = compat == Compat::Legacy && content.next().is_some_and(|q| q.kind == Kind::Object) && content.next().is_none();
         // Bands
@@ -2002,7 +2004,7 @@ impl<'d> PageFill<'d, '_> {
                         // and in compat ≤ 14 in a line's only piece beside a float.
                         let open = iv.len() == 1
                             && (compat == Compat::Legacy || (iv[0].0 - cx0).abs() < EPS && (iv[0].1 - cx1).abs() < EPS);
-                        let first = first_part && bands.is_empty();
+                        let first = (first_part || restarts) && bands.is_empty();
                         let r = band(
                             sp,
                             pieces,

@@ -791,6 +791,7 @@ impl<'a> Builder<'a> {
                 }
             }
         }
+        let list_end = self.pieces.len();
         let (mut field, mut note) = (0usize, 0usize);
         let mut at: u32 = 0;
         let shown = crate::docx::fields::layout_shown(&para.inlines);
@@ -1065,6 +1066,16 @@ impl<'a> Builder<'a> {
             at += units;
         }
         self.flush_text(&mut pend, &mut pend_runs, &mut pend_units)?;
+        // A paragraph whose first content is a page or column break starts again after it: the list number goes
+        // with the text that follows.
+        if list_end > 0
+            && let Some(k) = (list_end..self.pieces.len()).find(|&k| self.pieces[k].kind != Kind::Anchor)
+            && matches!(self.pieces[k].kind, Kind::PageBreak | Kind::ColumnBreak)
+        {
+            let mut b = self.pieces.remove(k);
+            (b.text, b.glyphs) = ((self.pieces[0].text.0, self.pieces[0].text.0), (self.pieces[0].glyphs.0, self.pieces[0].glyphs.0));
+            self.pieces.insert(0, b);
+        }
         // Compat 15: table-cell paragraphs fit their regions as compat 12.
         self.fit_text(space.stale_fit && !space.in_cell, space.first_line, space.unfitted);
         let balanced = space.balance.as_ref().is_some_and(|dd| dd.is_empty() || self.fonts.face(dd, None, false, false).is_some_and(|f| f.east_asian));

@@ -2158,3 +2158,20 @@ fn a_hyphen_after_balanced_spaces_breaks_with_punctuation_compressed() {
     let l = lines(&settings.replace(r#"w:val="15""#, r#"w:val="12""#), rpr, &body.replace("2340", "1700")).unwrap();
     assert!(l[0].1.ends_with("QZ"), "compat 12 breaks before the hyphen: {l:?}");
 }
+
+#[test]
+fn a_leading_page_break_starts_the_paragraph_again_after_it() {
+    let text = "Several quiet lanterns glowed beside the harbour while patient workers mended nets. ".repeat(3);
+    let numbering = r#"<w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/><w:lvlJc w:val="left"/></w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>"#;
+    let body = |num: &str, lead: &str| {
+        format!(r#"<w:p><w:pPr><w:ind w:left="1440" w:hanging="720"/>{num}</w:pPr><w:r>{lead}<w:t>{text}</w:t></w:r></w:p>"#)
+    };
+    let num = r#"<w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr>"#;
+    let Some(plain) = numbered_page("", ARIAL_11, &body("", r#"<w:br w:type="page"/>"#), "", 1) else { return };
+    assert!((plain[0].0 - 108.0).abs() < 0.01 && (plain[1].0 - 144.0).abs() < 0.01, "{plain:?}");
+    let numbered = numbered_page("", ARIAL_11, &body(num, r#"<w:br w:type="page"/>"#), numbering, 1).unwrap();
+    assert!(numbered[0].1.starts_with("1.") && (numbered[0].0 - 108.0).abs() < 0.01, "{numbered:?}");
+    // A line break doesn't start it again.
+    let line = numbered_page("", ARIAL_11, &body("", "<w:br/>"), "", 0).unwrap();
+    assert!((line[0].0 - 144.0).abs() < 0.01, "{line:?}");
+}

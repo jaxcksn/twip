@@ -305,12 +305,13 @@ pub fn break_lines_uncached(
 ) -> Result<ParaLines, Yield> {
     let from = space.start.min(shaped.pieces.len());
     let pieces = &shaped.pieces[from..];
+    // After a leading page or column break the paragraph starts again: first-line indent, borders.
     let opens = from == 0 || shaped.pieces[..from].iter().all(|q| matches!(q.kind, Kind::PageBreak | Kind::ColumnBreak));
     let frame = Frame::new(space);
     let view = space.env.review.view;
     let (style, mark) = (para.para_style_in(view), para.mark_in(view));
     let mut lines =
-        super::job::unit("line breaking", || crate::prof::time("break", || break_paragraph(shaped, pieces, style, mark, &frame, fonts, from > 0)));
+        super::job::unit("line breaking", || crate::prof::time("break", || break_paragraph(shaped, pieces, style, mark, &frame, fonts, !opens)));
     let prev = if opens { space.borders.0.clone() } else { continued_key(style) };
     // A joined paragraph (compat ≤ 14): each line has the borders and shading of the paragraph its first character
     // is in, the top rule only above the first line and the bottom rule only below the last.
