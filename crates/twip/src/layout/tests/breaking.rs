@@ -267,6 +267,33 @@ fn a_nested_table_wider_than_its_cell_is_drawn_in_full() {
 }
 
 #[test]
+fn a_nested_table_after_a_paragraph_of_its_cell_is_clipped_to_the_cell() {
+    let inner = cell(9000, 0, &format!(r#"<w:p><w:r><w:t>{}</w:t></w:r></w:p>"#, "M".repeat(40)));
+    let body = cell(3000, 0, &format!(r#"<w:p><w:r><w:t>first</w:t></w:r></w:p>{inner}"#));
+    let Some(l) = lines("", ARIAL_12, &body) else { return };
+    let ms = l.iter().find(|(_, t, _)| t.starts_with('M')).expect("drawn");
+    assert_eq!(ms.1.len(), 15, "{l:?}");
+}
+
+#[test]
+fn a_cell_clips_at_its_borders_inner_edges() {
+    let drawn = |sz: u32| {
+        let b = format!(r#"w:val="single" w:sz="{sz}" w:space="0" w:color="000000""#);
+        let body = format!(
+            r#"<w:tbl><w:tblPr><w:tblW w:w="3000" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblBorders><w:left {b}/><w:right {b}/></w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:ind w:left="-1440" w:right="-1440"/></w:pPr><w:r><w:t>{}</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#,
+            "i".repeat(120)
+        );
+        let doc = test_doc("", ARIAL_12, &body, "")?;
+        let is: Vec<f64> = super::page_chars(&doc)[0].iter().filter(|c| c.0 == 'i').map(|c| c.1).collect();
+        Some((is.len(), is.iter().copied().fold(f64::INFINITY, f64::min)))
+    };
+    let (Some(thin), Some(thick)) = (drawn(4), drawn(48)) else { return };
+    // A 6pt border moves each inner edge 2.75pt further in than a 0.5pt one: one narrow glyph fewer on each side.
+    assert_eq!(thick.0 + 2, thin.0, "{thin:?} {thick:?}");
+    assert!(thick.1 > thin.1, "{thin:?} {thick:?}");
+}
+
+#[test]
 fn a_rows_own_indent_counts_only_when_it_also_fixes_the_rows_layout() {
     let table = |layout: &str, ex: &str| {
         let row = |ex: &str, t: &str| {

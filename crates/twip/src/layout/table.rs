@@ -2506,10 +2506,7 @@ fn clip_nested(c: &Child, lo: f64, hi: f64, bottom: f64) -> Option<Child> {
             let mut any = false;
             let rows = t.rows.iter().map(|r| {
                 let cells = r.cells.iter().map(|cell| {
-                    let content = cell
-                        .content
-                        .iter()
-                        .map(|c| clip_nested(c, f64::NEG_INFINITY, f64::INFINITY, bottom).inspect(|_| any = true).unwrap_or_else(|| c.clone()));
+                    let content = cell.content.iter().map(|c| clip_nested(c, lo, hi, bottom).inspect(|_| any = true).unwrap_or_else(|| c.clone()));
                     CellFragment { content: content.collect(), ..cell.clone() }
                 });
                 RowFragment { cells: cells.collect(), ..r.clone() }
@@ -2612,6 +2609,17 @@ pub fn draw_row(tb: &TableLayout, ri: usize, left: f64, top: f64, height: f64, p
         let clip = if row.exact { top + height - below_margin } else { f64::INFINITY };
         let mut content = Vec::new();
         let mut hidden = Vec::new();
+        // Content clips to the box between the left and right borders' inner edges (cell edges in a spaced table). A
+        // nested table also clips to it once a paragraph of the cell has been drawn in this part; before that it
+        // keeps only its own cells' clips.
+        let (lo, hi) = match row.spacing {
+            Some(_) => (-c.cx, c.w - c.cx),
+            None => {
+                let [_, l, _, r] = drawn_edges(tb, c);
+                (-c.cx + bw(l) / 2.0, c.w - c.cx - bw(r) / 2.0)
+            }
+        };
+        let mut open = false;
         for u in part.units {
             let ut = u.top - part.base;
             let bottom = clip - (base_y + ut) + INK_SLACK;
@@ -2623,7 +2631,9 @@ pub fn draw_row(tb: &TableLayout, ri: usize, left: f64, top: f64, height: f64, p
                 source_units(&u.content, &mut hidden);
                 continue;
             }
-            let children = clip_x(&u.content, -c.cx, c.w - c.cx, bottom).unwrap_or_else(|| u.content.clone());
+            let (lo, hi) = if u.row.is_none() || open { (lo, hi) } else { (f64::NEG_INFINITY, f64::INFINITY) };
+            open |= u.row.is_none();
+            let children = clip_x(&u.content, lo, hi, bottom).unwrap_or_else(|| u.content.clone());
             let children = unaligned_floats(&children, off, &c.fixed_floats).unwrap_or(children);
             content.push(Child::Group { offset: (base_x, base_y + ut), children });
         }
