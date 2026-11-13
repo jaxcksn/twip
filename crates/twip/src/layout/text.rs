@@ -969,13 +969,16 @@ impl<'a> Builder<'a> {
                     }
                     self.text(&ch.to_string(), &Rc::new(r))?;
                 }
-                // A legacy check box: one character of its run's font at the box size, 1.14 box sizes wide, whatever
-                // the font; a break opportunity on both sides.
+                // A legacy check box: one character of its code run's font at the box size, as wide as that font's
+                // single line height there in whole device pixels; a break opportunity on both sides.
                 (Inline::FieldBegin { kind: Some(FieldKind::CheckBox { size, checked }), .. }, Some(run)) => {
                     let e = size.unwrap_or(run.size);
                     let face = self.face(&run.ascii, run);
+                    let height = face.as_ref().map_or(Lu::round_half_up(1.14 * e), |f| {
+                        Lu(Lu::from_font(f.ascent + f.leading, e, f.upem).0 + Lu::from_font(f.descent, e, f.upem).0)
+                    });
                     let mut p = self.new_piece(Kind::Text, run, face, e, 0.0);
-                    p.width = 1.14 * e;
+                    p.width = height.device_px() as f64 * super::units::DEVICE_PX / super::units::LU_PER_PT;
                     p.object = Some(Object::CheckBox(e, *checked));
                     p.break_after = true;
                     if let Some(q) = self.pieces.last_mut().filter(|q| q.kind != Kind::ListNumber) {
