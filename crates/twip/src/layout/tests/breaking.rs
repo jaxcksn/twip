@@ -2534,6 +2534,30 @@ fn compat_14_balanced_columns_grow_by_the_failed_fills_mean_line_and_end_at_the_
     assert_eq!(split(c15).map(|s| s.0).as_deref(), Some("P5"));
 }
 
+#[test]
+fn compat_15_balanced_columns_start_from_the_weighted_height_unrounded() {
+    // Exact lines of 12, 12, 15 and 15pt in two columns: from 27pt the fill fails and grows by 12pt to 39pt, which
+    // holds three lines in the first column. Rounded down to a whole line first (24pt), it would grow to 36pt: 2 / 2.
+    let sect = |cols: &str| {
+        format!(
+            r#"<w:sectPr><w:type w:val="continuous"/><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>{cols}</w:sectPr>"#
+        )
+    };
+    let paras: String = [240, 240, 300, 300]
+        .iter()
+        .enumerate()
+        .map(|(k, line)| {
+            let s = if k == 3 { sect(r#"<w:cols w:num="2" w:space="720"/>"#) } else { String::new() };
+            format!(r#"<w:p><w:pPr><w:spacing w:after="0" w:line="{line}" w:lineRule="exact"/>{s}</w:pPr><w:r><w:t>P{}</w:t></w:r></w:p>"#, k + 1)
+        })
+        .collect();
+    let body = format!(r#"{paras}<w:p><w:pPr>{}</w:pPr><w:r><w:t>After</w:t></w:r></w:p>"#, sect(""));
+    let c15 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+    let Some(l) = baselines(c15, ARIAL_12, &body) else { return };
+    let right: Vec<&str> = l.iter().filter(|x| x.0 > 200.0).map(|x| x.1.as_str()).collect();
+    assert_eq!(right, ["P4"], "{l:?}");
+}
+
 /// A legacy form field as Word writes it: `w:ffData` in its begin, no result.
 fn form_field(ff: &str, code: &str) -> String {
     format!(

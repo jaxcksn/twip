@@ -665,9 +665,10 @@ impl<'d> Paginator<'d, '_> {
             }
         } else {
             let step = |st: &[ColStats]| st.iter().filter(|s| s.lines > 0).map(|s| s.min).min().unwrap_or(1).max(1);
-            let m = step(&stats);
+            // From the unbalanced fill's line heights weighted by the columns' widths, as it is (not rounded to a
+            // line), the height grows by the failed fill's smallest line or row, or shrinks by it while it still fits.
             h = (widths.iter().zip(&stats).map(|(w, s)| w * s.height as f64).sum::<f64>() / wsum) as i64;
-            h = (h - h % m).min(full_lu);
+            h = h.min(full_lu);
             r = try_h(fill, to_pt(h), memos)?;
             if r.0.is_some() {
                 loop {
