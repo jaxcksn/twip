@@ -841,6 +841,30 @@ fn an_empty_deleted_mark_paragraph_before_a_table_isnt_laid_out() {
 }
 
 #[test]
+fn compat_14_widow_control_leaves_a_line_beside_a_float_ending_in_the_body() {
+    // 53 exact 12pt lines, then a paragraph whose first line takes the page's last slot beside a picture that ends
+    // above the body bottom. Widow control would move the paragraph whole; compat ≤ 14 keeps that line.
+    let emu = |pt: i64| pt * 12700;
+    let pic = format!(
+        r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="1" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="page"><wp:posOffset>{}</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>{}</wp:posOffset></wp:positionV><wp:extent cx="{}" cy="{}"/><wp:wrapSquare wrapText="bothSides"/><wp:docPr id="1" name="P"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#,
+        emu(400),
+        emu(700),
+        emu(140),
+        emu(16)
+    );
+    let ppr = r#"<w:pPr><w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="exact"/></w:pPr>"#;
+    let fill: String = (0..53).map(|k| format!("<w:p>{ppr}{}<w:r><w:t>F{k}</w:t></w:r></w:p>", if k == 0 { pic.as_str() } else { "" })).collect();
+    let body = format!("{fill}<w:p>{ppr}<w:r><w:t>Zeta {}</w:t></w:r></w:p>", "words run on past the line end ".repeat(4));
+    let first_page = |mode: u32| {
+        let c = format!(r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="{mode}"/></w:compat>"#);
+        page_baselines(&c, ARIAL_12, &body, 0).map(|l| l.iter().any(|x| x.1.starts_with("Zeta")))
+    };
+    let Some(c12) = first_page(12) else { return };
+    assert!(c12);
+    assert!(!first_page(15).unwrap());
+}
+
+#[test]
 fn a_page_break_in_a_table_cell_is_nothing() {
     let body = r#"<w:tbl><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>Before</w:t><w:br w:type="page"/><w:t>After</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#;
     let Some(l) = lines("", ARIAL_12, body) else { return };

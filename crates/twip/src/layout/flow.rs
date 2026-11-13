@@ -2409,6 +2409,27 @@ impl<'d> PageFill<'d, '_> {
         }
         let hard = bands[..fit].iter().any(|(_, segs)| segs.iter().any(|l| matches!(l.hard, Some(Kind::PageBreak | Kind::ColumnBreak))));
         let mut take = lines_to_take(nb, fit, hard, first_part, style.keep_lines, style.widow_control);
+        // Compat ≤ 14: widow and orphan control never moves a line set beside a wrapping float that ends in the body;
+        // the lines from the last such one up stay.
+        if compat == Compat::Legacy && take < fit && !style.keep_lines {
+            let bottom = col.bottom.to_pt();
+            let beside = |b: usize| {
+                let (bt, segs) = &bands[b];
+                let bb = bt + segs[0].pitch;
+                floats.iter().chain(&self.at.found).any(|f| {
+                    f.key.2 != float::UPRIGHT_TABLE
+                        && f.wrap != Wrap::None
+                        && f.excl[3] <= bottom + EPS
+                        && f.excl[1] < bb - EPS
+                        && f.excl[3] > *bt + EPS
+                        && f.excl[0] < cx1 - EPS
+                        && f.excl[2] > cx0 + EPS
+                })
+            };
+            if let Some(b) = (take..fit).rev().find(|&b| beside(b)) {
+                take = b + 1;
+            }
+        }
         if take == 0 {
             if at_top {
                 take = fit.max(1).min(nb);
