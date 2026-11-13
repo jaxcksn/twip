@@ -1094,6 +1094,29 @@ fn a_no_wrap_auto_cell_is_as_wide_as_its_unwrapped_text() {
 }
 
 #[test]
+fn a_wrapping_float_in_a_cell_raises_its_autofit_min() {
+    let x = |wrap: &str, in_cell: u8| {
+        let float = format!(
+            r#"<w:r><w:drawing><wp:anchor xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="0" behindDoc="0" locked="0" layoutInCell="{in_cell}" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV><wp:extent cx="914400" cy="127000"/><wp:effectExtent l="1270" t="0" r="1270" b="0"/>{wrap}<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#
+        );
+        let body = format!(
+            r#"<w:tbl><w:tblPr><w:tblW w:w="4000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr><w:p>{float}</w:p></w:tc>{}</w:tr></w:tbl><w:p/>"#,
+            autofit_cell(r#"<w:tcW w:w="3000" w:type="dxa"/>"#, false, "b")
+        );
+        glyph_x_in(&body, 15, &[], 'b')
+    };
+    // The squeeze from 6000 to 4000 takes less from the float's column: its min is 1440 + 2 + 2 + 216, not 222.
+    let none = x("<wp:wrapNone/>", 1);
+    assert!((x("<wp:wrapNone/>", 0) - none).abs() < 0.01 && (x("<wp:wrapSquare wrapText=\"bothSides\"/>", 0) - none).abs() < 0.01);
+    let counted = x(
+        "<wp:wrapTight wrapText=\"bothSides\"><wp:wrapPolygon edited=\"0\"><wp:start x=\"0\" y=\"0\"/><wp:lineTo x=\"0\" y=\"0\"/></wp:wrapPolygon></wp:wrapTight>",
+        1,
+    );
+    // Column 1 is about 2330 wide rather than 1980.
+    assert!(counted - none > 15.0, "{counted} vs {none}");
+}
+
+#[test]
 fn compat_15_ignores_grow_autofit_and_squeezes_a_too_wide_table() {
     let body = format!(
         r#"<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="2500"/><w:gridCol w:w="2500"/></w:tblGrid><w:tr>{}{}</w:tr></w:tbl><w:p/>"#,

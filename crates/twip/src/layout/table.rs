@@ -1113,6 +1113,18 @@ fn content_widths_uncached(blocks: &[LaidBlock], env: &StoryEnv, fixed: bool, me
                 if !pieces.is_empty() {
                     mn = mn.max(up(first.unwrap_or(word) + ind));
                 }
+                // A wrapping float laid out in the cell is as wide a piece as its box (turned when it turns) and its
+                // effect extents, each in whole twips. Only the min: the hard min and the indents leave it out.
+                for i in &p.inlines {
+                    if let Inline::Float(f, _) = i
+                        && f.layout_in_cell
+                        && f.wrap != "none"
+                        && !(f.vml || f.hidden() || f.in_note || f.frame_src.is_some())
+                    {
+                        let box_w = (f.w * 20.0 + 1e-6).trunc() as i64;
+                        mn = mn.max(box_w + twips(f.effect[0]) + twips(f.effect[2]));
+                    }
+                }
                 for (li, l) in lines.iter().enumerate() {
                     let start_x = if li == 0 { start0 } else { s.ind_left };
                     let shift = l.xs.first().map_or(0.0, |&x| (x - start_x).max(0.0));
