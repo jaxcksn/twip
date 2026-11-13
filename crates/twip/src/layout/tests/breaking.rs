@@ -1072,6 +1072,39 @@ fn a_cell_paragraph_takes_only_its_own_divisions_margins() {
     assert!((at(&l, "cell") - at(&bare, "cell") - 72.0).abs() < 0.01, "{l:?}");
 }
 
+#[test]
+fn a_direct_num_id_0_zeroes_the_style_chains_left_and_first_line_indents() {
+    let styles = format!(
+        r#"<w:styles xmlns:w="{W}"><w:style w:type="paragraph" w:styleId="Sub"><w:pPr><w:ind w:left="720" w:right="360" w:firstLine="360"/></w:pPr></w:style></w:styles>"#
+    );
+    let p = |direct: &str| format!(r#"<w:p><w:pPr><w:pStyle w:val="Sub"/>{direct}</w:pPr><w:r><w:t>x</w:t></w:r></w:p>"#);
+    let none = r#"<w:numPr><w:ilvl w:val="0"/><w:numId w:val="0"/></w:numPr>"#;
+    let body = format!(
+        r#"<w:document xmlns:w="{W}"><w:body>{}{}{}</w:body></w:document>"#,
+        p(""),
+        p(none),
+        p(&format!(r#"{none}<w:ind w:hanging="360"/>"#))
+    );
+    let rels = r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>"#;
+    let Some(doc) = super::package(&[
+        (
+            "_rels/.rels",
+            r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        ("word/_rels/document.xml.rels", rels),
+        ("word/document.xml", &body),
+        ("word/styles.xml", &styles),
+    ]) else {
+        return;
+    };
+    let ind: Vec<(f64, f64, f64)> = doc.sections[0]
+        .blocks
+        .iter()
+        .filter_map(|b| if let crate::docx::Block::Para(p) = b { Some((p.style.ind_left, p.style.ind_first, p.style.ind_right)) } else { None })
+        .collect();
+    assert_eq!(ind, [(36.0, 18.0, 18.0), (0.0, 0.0, 18.0), (0.0, -18.0, 18.0)]);
+}
+
 fn three_rows(row2: &str, settings: &str) -> Option<Vec<(f64, String, f64, f64)>> {
     let cell = |t: &str| format!(r#"<w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:tc>"#);
     let body = format!(

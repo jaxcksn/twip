@@ -242,6 +242,10 @@ impl Resolver {
             ppr.merge(&style_ppr);
             if let Some(l) = &level {
                 ppr.merge(&l.ppr);
+            } else if direct.num_id == Some(0) {
+                // A direct numId 0 removes the list but still sets a level's indents: left 0, first line 0 over the
+                // style chain's (the right indent stays).
+                (ppr.ind_left, ppr.ind_first) = (Some(0.0), Some(0.0));
             }
         }
         ppr.merge(direct);
