@@ -1022,3 +1022,17 @@ fn compat_15_ignores_grow_autofit_and_squeezes_a_too_wide_table() {
     assert!(c15 < 72.0 + 468.0 - 20.0, "{c15}");
     assert!(c12 > 72.0 + 468.0, "{c12}");
 }
+
+#[test]
+fn a_pct_table_width_does_not_take_off_the_indent() {
+    let x = |ind: i32| {
+        let body = format!(
+            r#"<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="pct"/><w:tblInd w:w="{ind}" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="4000"/><w:gridCol w:w="4000"/></w:tblGrid><w:tr>{}{}</w:tr></w:tbl><w:p/>"#,
+            autofit_cell("", false, "a"),
+            autofit_cell("", false, "b")
+        );
+        glyph_x(&body, 'b').0 - glyph_x(&body, 'a').0
+    };
+    // The table is the whole column wide however far it is indented: its two equal columns stay equal.
+    assert!((x(-1440) - x(0)).abs() < 0.06 && (x(1440) - x(0)).abs() < 0.06, "{} {} {}", x(-1440), x(0), x(1440));
+}

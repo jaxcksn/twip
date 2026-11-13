@@ -1219,8 +1219,10 @@ fn resolve_fit(t: &Table, text_w: f64, env: &StoryEnv, avail: Option<i64>, neste
     // Compat ≤ 14 widens the room by the edge allowances only for an outermost table.
     let (add_l, add_r) = edge_add(if nested { Compat::Generic } else { env.ctx.env.text.compat }, t);
     let a = avail.unwrap_or_else(|| twips(text_w - t.ind + add_l + add_r));
+    // A pct width is a share of the column with its edge allowances, whatever the indent.
+    let pct_base = avail.unwrap_or_else(|| twips(text_w + add_l + add_r));
     let boxed = env.ctx.env.text.box_story && !nested && avail.is_none();
-    let (a, pct_base) = if boxed { (a - 1, a + 15) } else { (a, a) };
+    let (a, pct_base) = if boxed { (a - 1, pct_base + 15) } else { (a, pct_base) };
     let s2 = twips(2.0 * t.cell_spacing.max(0.0));
     let cells: Vec<autofit::Cell> = inputs.iter().flat_map(|r| r.cells.iter().copied()).collect();
     let gaps = skipped(t, n, &cells);
@@ -1424,7 +1426,7 @@ pub fn in_column(t: &Table, text_w: f64, env: &StoryEnv) -> Table {
     }
     if let Width::Pct(p) = t.width {
         let (add_l, add_r) = edge_add(env.ctx.env.text.compat, &t);
-        let a = twips(text_w - t.ind + add_l + add_r);
+        let a = twips(text_w + add_l + add_r);
         t.width = Width::Dxa(autofit::rdiv(a, (p * 5000.0).round() as i64, 5000) as f64 / 20.0);
     }
     t
