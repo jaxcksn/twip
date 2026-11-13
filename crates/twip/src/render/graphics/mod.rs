@@ -8,6 +8,8 @@ pub mod retained;
 pub mod ruler;
 mod shape;
 pub(crate) mod svg;
+#[cfg(test)]
+mod tests;
 
 use std::collections::HashMap;
 use std::rc::Rc;
