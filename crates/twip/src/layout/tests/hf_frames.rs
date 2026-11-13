@@ -295,3 +295,51 @@ fn frame_4_a_frame_ending_the_body_anchors_in_the_paragraph_before_it() {
     assert_eq!(shape(page), [1], "a float of the body paragraph");
     assert_eq!(shape(doc(r#"w:vAnchor="text""#).unwrap()), [0, 0], "a text-anchored one stays in the flow");
 }
+
+#[test]
+fn compat_15_the_body_gives_way_to_a_footer_wrapping_its_float_as_laid_out_from_the_bottom_margin() {
+    // A 200 × 100pt picture at page (72, 656) beside the footer's text: laid out from the bottom margin line (720) the
+    // footer is 5 lines, so the body ends at 756 − 63.25; laid out from there it is 6 lines, drawn from 756 − 75.9.
+    let lines: String = (1..=60).map(|k| format!("<w:p><w:r><w:t>L{k:02}</w:t></w:r></w:p>")).collect();
+    let body = format!(
+        r#"<w:document {W}><w:body>{lines}<w:sectPr><w:footerReference w:type="default" r:id="rId2"/><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:body></w:document>"#
+    );
+    let pic = r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="114300" distR="114300" simplePos="0" relativeHeight="1" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="page"><wp:posOffset>914400</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>8331200</wp:posOffset></wp:positionV><wp:extent cx="2540000" cy="1270000"/><wp:wrapSquare wrapText="bothSides"/><wp:docPr id="5" name="S5"/><a:graphic><a:graphicData><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#;
+    let footer = format!(
+        r#"<w:ftr {W} xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:p>{pic}<w:r><w:t>Bramble jasper quill copper heron otter cedar juniper quartz. Yarrow glacier nutmeg upland elm lagoon tundra garnet nectar. Umber cobalt kelp ridge beacon ivy prairie delta kestrel. Raven zephyr hollow opal vale fjord moss amber harbor. Orchard velvet dune lichen.</w:t></w:r></w:p></w:ftr>"#
+    );
+    let styles = format!(
+        r#"<w:styles {W}><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="22"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults></w:styles>"#
+    );
+    let settings = format!(
+        r#"<w:settings {W}><w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>"#
+    );
+    let Some(doc) = package(&[
+        (
+            "[Content_Types].xml",
+            r#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/></Relationships>"#,
+        ),
+        ("word/document.xml", &body),
+        ("word/footer1.xml", &footer),
+        ("word/styles.xml", &styles),
+        ("word/settings.xml", &settings),
+    ]) else {
+        return;
+    };
+    if super::fonts().face("Arial", None, false, false).is_none() {
+        return;
+    }
+    let page = &page_chars(&doc)[0];
+    let mut body: Vec<f64> = page.iter().filter(|c| c.0 == 'L').map(|c| c.2).collect();
+    body.dedup();
+    let first = page.iter().filter(|c| c.0 == 'B').map(|c| c.2).fold(f64::INFINITY, f64::min);
+    assert!(body.len() == 49 && (first - 690.44).abs() < 0.05, "{} {first}", body.len());
+}

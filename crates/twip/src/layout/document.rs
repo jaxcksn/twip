@@ -700,15 +700,16 @@ fn compose_page(run: &mut PassRun, cx: &PassCx, i: usize, memos: &mut Memos) -> 
     for (slot, footer) in [false, true].into_iter().enumerate() {
         let Some(part) = parts[slot] else { continue };
         let blocks: Vec<&Block> = cx.doc.stories[part].iter().collect();
-        let at = |l: &super::story::StoryLayout| if footer { s.page_h - s.footer - stack_limited(l, 0.0, 0.0, limit).1 } else { s.header };
-        let l = super::story::hf_layout(&blocks, width, &frames, at, &env, memos)?;
         let cap = if clip { reserved[slot].map_or(limit, |r| limit.min(r)) } else { limit };
         let story_fields = super::page::fields_used(&fields, &blocks);
         if footer {
-            let (_, height) = stack_limited(&l, left, 0.0, cap);
-            full[1] = Some(stack_limited(&l, left, 0.0, limit).1);
-            let (mut children, _) = stack_limited(&l, left, s.page_h - s.footer - height, cap);
-            children.extend(super::story::hf_floats(&blocks, &l, &frames, s.page_h - s.footer - height, &env, memos)?);
+            let foot = s.page_h - s.footer;
+            let (l, at, given) = super::story::footer_layout(&blocks, width, &frames, foot, limit, &env, memos)?;
+            let height = given.min(stack_limited(&l, left, 0.0, cap).1);
+            full[1] = Some(given);
+            let at = at.max(foot - cap);
+            let (mut children, _) = stack_limited(&l, left, at, cap);
+            children.extend(super::story::hf_floats(&blocks, &l, &frames, at, &env, memos)?);
             records[1] = Some(HfRecord { part: part.clone(), fields: story_fields, height });
             boxes[1] = Some(BoxFragment {
                 kind: BoxKind::Footer { story: part.clone() },
@@ -718,6 +719,7 @@ fn compose_page(run: &mut PassRun, cx: &PassCx, i: usize, memos: &mut Memos) -> 
                 children: children.into(),
             });
         } else {
+            let l = super::story::hf_layout(&blocks, width, &frames, |_| s.header, &env, memos)?;
             full[0] = Some(stack_limited(&l, left, s.header, limit).1 + hook_height(k));
             let (mut children, height) = if limit.is_infinite() && !clip && s.header + l.height > 0.85 * s.page_h {
                 let cut = 0.435 * s.page_h;

@@ -1224,6 +1224,32 @@ pub fn hf_layout(
     Ok(l)
 }
 
+/// A footer laid out for the page: the layout drawn, the page y it is drawn from and the height the body gives way
+/// to, the story growing up from `foot` (the page height less the footer distance), each limited to `limit`. Compat 15
+/// with its text wrapping its own floats: laid out first from the bottom margin line, which height sets the body's
+/// bottom, then again from where that height puts it, and drawn laid out from where that second height puts it.
+pub fn footer_layout(
+    blocks: &[&Block],
+    width: f64,
+    fr: &super::float::Frames,
+    foot: f64,
+    limit: f64,
+    env: &StoryEnv,
+    memos: &mut Memos,
+) -> Result<(Rc<StoryLayout>, f64, f64), Yield> {
+    let height = |l: &StoryLayout| stack_limited(l, 0.0, 0.0, limit).1;
+    if env.ctx.env.text.compat == Compat::Legacy || !blocks.iter().any(|b| matches!(b, Block::Para(p) if !env.ctx.floats_of(p).is_empty())) {
+        let l = hf_layout(blocks, width, fr, |l| foot - height(l), env, memos)?;
+        let h = height(&l);
+        return Ok((l, foot - h, h));
+    }
+    let margin_line = fr.page_h - fr.margin[3].abs();
+    let first = height(&*hf_layout(blocks, width, fr, |_| margin_line, env, memos)?);
+    let second = height(&*hf_layout(blocks, width, fr, |_| foot - first, env, memos)?);
+    let l = hf_layout(blocks, width, fr, |_| foot - second, env, memos)?;
+    Ok((l, foot - second, first))
+}
+
 pub fn hf_float_rects(
     blocks: &[&Block],
     story: &StoryLayout,

@@ -346,9 +346,11 @@ impl<'d> Paginator<'d, '_> {
                 continue;
             };
             let blocks: Vec<&Block> = blocks.iter().collect();
-            let at = |l: &super::story::StoryLayout| if footer { s.page_h - s.footer - stack_limited(l, 0.0, 0.0, limit).1 } else { s.header };
-            let layout = super::story::hf_layout(&blocks, width, &frames, at, &env, memos)?;
-            out[k] = Some(stack_limited(&layout, left, if footer { 0.0 } else { s.header }, limit).1);
+            out[k] = Some(if footer {
+                super::story::footer_layout(&blocks, width, &frames, s.page_h - s.footer, limit, &env, memos)?.2
+            } else {
+                stack_limited(&*super::story::hf_layout(&blocks, width, &frames, |_| s.header, &env, memos)?, left, s.header, limit).1
+            });
         }
         Ok(out)
     }
@@ -369,7 +371,7 @@ impl<'d> Paginator<'d, '_> {
         }
     }
 
-    fn hf_obstacles(&self, si: usize, hf: &HfHeights, memos: &mut Memos) -> Result<Vec<super::float::Placed>, Yield> {
+    fn hf_obstacles(&self, si: usize, memos: &mut Memos) -> Result<Vec<super::float::Placed>, Yield> {
         let view = self.ctx.env.text.review.view;
         let sec = &self.sections[si];
         if self.run.pages.last().is_some_and(|p| p.blank) {
@@ -396,9 +398,12 @@ impl<'d> Paginator<'d, '_> {
                 continue;
             }
             let limit = hf_limit(self.ctx.env.text.compat, s.page_h);
-            let top = |l: &super::story::StoryLayout| if footer { s.page_h - s.footer - stack_limited(l, 0.0, 0.0, limit).1 } else { s.header };
-            let layout = super::story::hf_layout(&blocks, width, &frames, top, &env, memos)?;
-            let at = if footer { s.page_h - s.footer - hf[1].unwrap_or(layout.height) } else { s.header };
+            let (layout, at) = if footer {
+                let (l, at, _) = super::story::footer_layout(&blocks, width, &frames, s.page_h - s.footer, limit, &env, memos)?;
+                (l, at)
+            } else {
+                (super::story::hf_layout(&blocks, width, &frames, |_| s.header, &env, memos)?, s.header)
+            };
             for (i, (f, r, para)) in super::story::hf_float_rects(&blocks, &layout, &frames, at, &env, memos)?.into_iter().enumerate() {
                 let p = super::float::Placed::new((usize::MAX, k, i), para, &f, r[0], r[1], r[3] - r[1]);
                 if p.wrap != super::float::Wrap::None {
@@ -491,7 +496,7 @@ impl<'d> Paginator<'d, '_> {
             top: Lu::round_half_up(body_top),
             bottom: Lu::round_half_up(notes_top.map_or(body_bottom, |t| t.min(body_bottom))),
         };
-        let mut hf_floats = self.hf_obstacles(si, &hf, memos)?;
+        let mut hf_floats = self.hf_obstacles(si, memos)?;
         // A section going on on the page wraps the floats the sections before it placed there.
         if start.is_some()
             && let Some(p) = self.run.pages.last()
