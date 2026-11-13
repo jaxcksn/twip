@@ -78,6 +78,8 @@ pub struct FlowState {
     pub page_notes: Option<(super::flow::NoteArea, bool)>,
     /// A vertical section's table split across pages: where across the turned page its first part was put.
     pub upright_at: Option<f64>,
+    /// A table split across pages that went beside floats: how far right of the column its first part was put.
+    pub beside_at: Option<f64>,
     /// The rest of a floating table the text after went on beside: it opens the next column.
     pub table_rest: Option<FlowToken>,
     /// The paragraph going on from the last column broke there between letters rather than at a hyphen.
@@ -97,6 +99,7 @@ impl Default for FlowState {
             balanced_after: 0.0,
             page_notes: None,
             upright_at: None,
+            beside_at: None,
             table_rest: None,
             letter_break: false,
         }
@@ -122,6 +125,7 @@ impl PartialEq for FlowState {
             && self.break_before == o.break_before
             && self.balanced_after == o.balanced_after
             && self.upright_at == o.upright_at
+            && self.beside_at == o.beside_at
             && self.table_rest.is_none()
             && o.table_rest.is_none()
             && self.letter_break == o.letter_break

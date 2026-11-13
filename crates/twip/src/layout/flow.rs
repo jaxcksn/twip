@@ -2640,7 +2640,10 @@ impl<'d> PageFill<'d, '_> {
                 Some(Jc::Right) => self.page_w - col.width,
                 _ => 0.0,
             },
-            _ => beside.unwrap_or(col.x),
+            // A continuation keeps the place its first part took beside floats.
+            // ponytail: the place only; a compat ≤ 14 autofit table relaid at the piece's width goes on at the column
+            // layout.
+            _ => beside.or_else(|| carry.beside_at.filter(|_| !pos.at.at_start()).map(|d| col.x + d)).unwrap_or(col.x),
         };
         let mut settled = true;
         let mut first: Option<(usize, f64)> = None;
@@ -2947,6 +2950,7 @@ impl<'d> PageFill<'d, '_> {
                 self.at.found.append(&mut over);
                 finish(rows, out, at_x, opened, false);
                 self.table_obstacle(pos.block, tb, at_x, part_top, *y, flow_y, settled);
+                carry.beside_at = (fp.is_none() && (at_x - col.x).abs() > EPS).then_some(at_x - col.x);
                 return Ok(self.text_goes_on(fp.is_some(), pos, carry, y, empty, (flow_y, was_empty)));
             }
             if at_top {
@@ -2993,6 +2997,7 @@ impl<'d> PageFill<'d, '_> {
             }
             finish(rows, out, at_x, opened, true);
             self.table_obstacle(pos.block, tb, at_x, part_top, *y, flow_y, settled);
+            carry.beside_at = (fp.is_none() && split && (at_x - col.x).abs() > EPS).then_some(at_x - col.x);
             return Ok(self.text_goes_on(fp.is_some() && split, pos, carry, y, empty, (flow_y, was_empty)));
         }
         self.show_endnote_refs(row_refs.into_iter().map(|r| r.1));
@@ -3006,6 +3011,7 @@ impl<'d> PageFill<'d, '_> {
         }
         pos.next_block();
         carry.first_para = false;
+        carry.beside_at = None;
         Ok(Stop::Done)
     }
 

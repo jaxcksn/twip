@@ -705,6 +705,31 @@ mod floats {
     }
 
     #[test]
+    fn a_split_row_beside_a_float_goes_on_at_its_first_parts_place() {
+        // A table beside a 100pt box whose one row runs onto the next page: the row goes on 100pt in there too.
+        let paras: String = (0..70).map(|i| format!("<w:p><w:r><w:t>Line {i}</w:t></w:r></w:p>")).collect();
+        let body = format!(
+            r#"{}<w:tbl><w:tblPr><w:tblW w:w="4000" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="4000" w:type="dxa"/></w:tcPr>{paras}</w:tc></w:tr></w:tbl><w:p/>"#,
+            text_box(r#"<wp:wrapSquare wrapText="bothSides"/>"#, 100.0, "Boxed")
+        );
+        for compat in [14, 15] {
+            let mut d = doc(&body);
+            d.settings.compat_mode = compat;
+            let s = layout(&d, &fonts());
+            let x = |page: usize| {
+                paint_items(&s.pages()[page])
+                    .iter()
+                    .find_map(|i| match i {
+                        Item::Glyphs(r) if r.chars.first().is_some_and(|c| c.0 == 'L') => Some(r.x),
+                        _ => None,
+                    })
+                    .expect("a cell line")
+            };
+            assert!(s.pages().len() > 1 && (x(1) - x(0)).abs() < 0.01 && x(0) > 150.0, "compat {compat}: {} {}", x(0), x(1));
+        }
+    }
+
+    #[test]
     fn compat_14_fits_an_autofit_table_to_the_room_beside_a_float() {
         let long = "Long text that would make the table wider than the room beside the box if it could ".repeat(2);
         let at = |square, compat, options: &[&str]| after_box(square, r#"<w:tblW w:w="0" w:type="auto"/>"#, "", &long, compat, options);
