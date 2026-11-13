@@ -704,6 +704,21 @@ mod floats {
         assert!((at("margin") - at("column")).abs() < 0.01, "margin {} column {}", at("margin"), at("column"));
     }
 
+    #[test]
+    fn compat_14_a_first_row_too_wide_beside_its_tight_page_float_goes_below_it() {
+        let first = |wrap: &str| {
+            let b = text_box(wrap, 40.0, "Boxed").replace(r#"layoutInCell="1""#, r#"layoutInCell="0""#).replacen("<w:p>", "<w:p><w:r><w:t>First</w:t></w:r>", 1);
+            let body = format!(
+                r#"<w:tbl><w:tblPr><w:tblW w:w="8000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="8000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="8000" w:type="dxa"/></w:tcPr>{b}</w:tc></w:tr></w:tbl><w:p/>"#
+            );
+            let mut d = doc(&body);
+            d.settings.compat_mode = 14;
+            baseline_of(&d, "First").expect("the row")
+        };
+        let (tight, none) = (first(r#"<wp:wrapTight wrapText="bothSides"/>"#), first("<wp:wrapNone/>"));
+        assert!(tight - none > 39.0, "tight {tight} vs none {none}");
+    }
+
     /// The first glyph run holding `text`: its x and baseline.
     fn start_of(d: &crate::docx::Document, text: &str) -> (f64, f64) {
         let s = layout(d, &fonts());

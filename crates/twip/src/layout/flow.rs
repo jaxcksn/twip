@@ -583,10 +583,21 @@ pub fn place_units(units: &[StoryUnit], x: f64, y: f64, out: &mut Vec<Child>) {
     }
 }
 
+/// The paragraphs of cells, those of nested tables included.
+fn cell_paras<'b>(rows: &'b [crate::docx::model::Row], out: &mut Vec<&'b crate::docx::model::Paragraph>) {
+    for b in rows.iter().flat_map(|r| r.cells.iter()).flat_map(|c| c.blocks.iter()) {
+        match b {
+            Block::Para(p) => out.push(p),
+            Block::Table(t) => cell_paras(&t.rows, out),
+        }
+    }
+}
+
 fn page_floats<'b>(t: &'b Table, ctx: &LayoutCtx<'b>) -> HashMap<u64, &'b Float> {
     let mut out = HashMap::new();
-    for b in t.rows.iter().flat_map(|r| r.cells.iter()).flat_map(|c| c.blocks.iter()) {
-        let Block::Para(p) = b else { continue };
+    let mut paras = Vec::new();
+    cell_paras(&t.rows, &mut paras);
+    for p in paras {
         for f in ctx.floats_of(p) {
             if !f.in_cell(Compat::Legacy) {
                 out.insert(f.id, f);
@@ -2634,24 +2645,19 @@ impl<'d> PageFill<'d, '_> {
             cell: false,
             odd: self.odd,
         };
-        // Compat ≤ 14: the floats of the first row placed from the page, each from the row top, the first row's
-        // over it and the later rows' below it.
+        // Compat ≤ 14: the wrapping floats of the first row placed from the page, each from the row top, the first
+        // row's over it and the later rows' below it.
         let row_floats: Vec<(&Float, ParaId, f64, f64)> = match (tb.rows.first(), self.sec.blocks.get(pos.block)) {
-            (Some(_), Some(Block::Table(t))) if !floating && pos.at.at_start() && !page_floats.is_empty() => t
-                .rows
-                .first()
-                .into_iter()
-                .flat_map(|row| row.cells.iter())
-                .flat_map(|c| c.blocks.iter())
-                .filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None })
+            (Some(_), Some(Block::Table(t))) if !floating && pos.at.at_start() && !page_floats.is_empty() => {
+                let mut paras = Vec::new();
+                cell_paras(&t.rows[..1], &mut paras);
+                paras
+            }
+            .into_iter()
                 .flat_map(|p| p.inlines.iter().map(move |i| (para_id(p), i)))
                 .filter_map(|(id, i)| if let Inline::Float(f, _) = i { page_floats.get(&f.id).map(|f| (*f, id)) } else { None })
                 .filter(|(f, _)| {
-                    matches!(f.wrap.as_str(), "square" | "topAndBottom")
-                        && f.h_relative == "column"
-                        && f.v_relative == "paragraph"
-                        && f.h_align.is_none()
-                        && f.v_align.is_none()
+                    f.wrap != "none" && f.v_relative == "paragraph" && f.h_align.is_none() && f.v_align.is_none()
                 })
                 .map(|(f, id)| (f, id, f.v_offset - f.dist[0], f.v_offset + f.h + f.dist[1]))
                 .collect(),
