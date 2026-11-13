@@ -306,6 +306,17 @@ mod tests {
     }
 
     #[test]
+    fn compat_14_ties_go_right_and_a_narrow_left_side_falls_back_right() {
+        let f = [fl(256.0, 356.0, Side::Largest)];
+        assert_eq!(intervals(&f, 72.0, 540.0, 10.0, 20.0, true).unwrap(), vec![(356.0, 540.0)]);
+        let f = [fl(82.0, 182.0, Side::Left)];
+        assert_eq!(intervals(&f, 72.0, 540.0, 10.0, 20.0, true).unwrap(), vec![(182.0, 540.0)]);
+        assert_eq!(intervals(&f, 72.0, 540.0, 10.0, 20.0, false).unwrap(), vec![]);
+        let f = [fl(122.0, 182.0, Side::Left)];
+        assert_eq!(intervals(&f, 72.0, 540.0, 10.0, 20.0, true).unwrap(), vec![(72.0, 122.0)]);
+    }
+
+    #[test]
     fn relative_sizes_take_their_share_of_the_page_or_margins() {
         let fr = Frames {
             page_w: 612.0,

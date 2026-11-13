@@ -19,7 +19,7 @@ pub fn text_intervals(floats: &[Placed], x0: f64, x1: f64, top: f64, bottom: f64
             continue;
         }
         let gap = f.gap(legacy);
-        for block in blocks(f, x0, x1, top, bottom)? {
+        for block in blocks(f, x0, x1, top, bottom, legacy)? {
             let mut next = Vec::new();
             for (a, b) in free {
                 if block.1 <= a + EPS || block.0 >= b - EPS {
@@ -39,8 +39,10 @@ pub fn text_intervals(floats: &[Placed], x0: f64, x1: f64, top: f64, bottom: f64
     Some(free)
 }
 
-/// What a float in the band takes of `[x0, x1]`; `None` for one that takes the whole line.
-fn blocks(f: &Placed, x0: f64, x1: f64, top: f64, bottom: f64) -> Option<Vec<(f64, f64)>> {
+/// What a float in the band takes of `[x0, x1]`; `None` for one that takes the whole line. `largest` keeps the wider
+/// side, a tie the left in compat 15 and the right in compat ≤ 14. Compat ≤ 14 also gives a `left` float the right
+/// side when the left one is narrower than its gap and the right one isn't, or when it covers the line's start.
+fn blocks(f: &Placed, x0: f64, x1: f64, top: f64, bottom: f64, legacy: bool) -> Option<Vec<(f64, f64)>> {
     if f.excl[2] <= x0 + EPS || f.excl[0] >= x1 - EPS {
         return Some(Vec::new());
     }
@@ -52,14 +54,11 @@ fn blocks(f: &Placed, x0: f64, x1: f64, top: f64, bottom: f64) -> Option<Vec<(f6
         None => vec![(f.excl[0], f.excl[2])],
     };
     let (Some(&(l, _)), Some(&(_, r))) = (spans.first(), spans.last()) else { return Some(Vec::new()) };
+    let gap = f.gap(legacy);
     let side = match f.side {
-        Side::Largest => {
-            if (l - x0) >= (x1 - r) - EPS {
-                Side::Left
-            } else {
-                Side::Right
-            }
-        }
+        Side::Largest if legacy => if l - x0 > x1 - r + EPS { Side::Left } else { Side::Right },
+        Side::Largest => if l - x0 >= x1 - r - EPS { Side::Left } else { Side::Right },
+        Side::Left if legacy && (l <= x0 + EPS || l - x0 < gap - EPS && x1 - r >= gap - EPS) => Side::Right,
         s => s,
     };
     Some(match side {
@@ -84,7 +83,7 @@ pub fn strip(floats: &[&Placed], x0: f64, x1: f64, top: f64, bottom: f64, slack:
             continue;
         }
         let gap = f.gap(true);
-        for block in blocks(f, x0, x1, top, bottom)? {
+        for block in blocks(f, x0, x1, top, bottom, true)? {
             let mut next = Vec::new();
             for (a, b, end) in free {
                 if block.1 <= a + EPS || block.0 >= b - EPS {
