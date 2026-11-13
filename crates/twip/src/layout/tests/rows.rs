@@ -232,6 +232,29 @@ fn compat_14_nested_right_row_ends_at_the_cell_edge() {
 }
 
 #[test]
+fn a_centred_merged_region_cut_by_the_page_end_centres_in_its_page_part() {
+    let blank = crate::docx::read(&crate::docx::blank::blank_docx()).expect("reads");
+    let sec = &blank.sections[0];
+    // A spacer leaves room for two and a half 72pt rows above the body bottom.
+    let spacer = ((sec.page_h - sec.top - sec.bottom - 180.0) * 20.0).round() as i64;
+    let tc = |merge: &str, t: &str| {
+        format!(r#"<w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/><w:vMerge{merge}/><w:vAlign w:val="center"/></w:tcPr><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:tc>"#)
+    };
+    let tr = |merge: &str, t: &str| format!(r#"<w:tr><w:trPr><w:cantSplit/><w:trHeight w:val="1440"/></w:trPr>{}</w:tr>"#, tc(merge, t));
+    let y = |rows: usize| {
+        let mut body = format!(r#"<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="{spacer}" w:lineRule="exact"/></w:pPr></w:p><w:tbl><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid>{}"#, tr(r#" w:val="restart""#, "T"));
+        for _ in 1..rows {
+            body += &tr("", "");
+        }
+        body += "</w:tbl><w:p/>";
+        let doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
+        glyphs(&doc)[0].iter().find(|g| g.0 == 'T').map(|g| g.1).expect("drawn on page 1")
+    };
+    let (cut, whole) = (y(3), y(2));
+    assert!((cut - whole).abs() < 0.01, "the third row goes to page 2; T centres in the two rows on page 1: {cut} vs {whole}");
+}
+
+#[test]
 fn a_pct_indent_is_a_share_of_the_text_width() {
     let table = |ind: &str| {
         format!(

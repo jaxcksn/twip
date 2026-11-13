@@ -444,14 +444,16 @@ fn merged_page_cuts(tb: &TableLayout, next: usize, placed: &[(usize, f64, usize)
         let (start, top, _) = placed[pi];
         let Some(kr) = tb.rows[start].cells.iter().position(|x| x.col == c.col && x.v_merge == VMerge::Restart) else { continue };
         let rc = &tb.rows[start].cells[kr];
-        if rc.v_align != "top" || tb.rows[start].exact || !(start + 1..=last).all(|r| continues(r, c.col)) {
+        if tb.rows[start].exact || !(start + 1..=last).all(|r| continues(r, c.col)) {
             continue;
         }
         let content_top = top + tb.rows[start].top_border + rc.margins[0];
         let units = &rc.units.units;
         let bottom = last_top + tb.rows[last].height;
         let cut = cell_cut(units, bottom - rc.margins[2] - content_top, false, compat);
-        if cut == units.len() {
+        // The region's part ends at the last whole row, and a whole content is aligned in it.
+        // ponytail: a centred or bottom-aligned content cut by the page end keeps the whole region.
+        if rc.v_align != "top" && cut < units.len() {
             continue;
         }
         out.push(MergedSplit { k, start, kr, pi, cut, bottom });
@@ -489,7 +491,8 @@ fn draw_merged_part(tb: &TableLayout, ms: &[&MergedSplit], ri: usize, h: f64, le
     let t = TableLayout { rows, cols: tb.cols.clone(), outer: tb.outer.clone(), fit: tb.fit.clone(), ..*tb };
     let mut parts = whole(&t.rows[start]);
     for m in ms {
-        parts[m.kr] = CellPart { units: &tb.rows[start].cells[m.kr].units.units[..m.cut], base: 0.0, ends: false };
+        let units = &tb.rows[start].cells[m.kr].units.units;
+        parts[m.kr] = CellPart { units: &units[..m.cut], base: 0.0, ends: m.cut == units.len() };
     }
     draw_row(&t, start, left, top, tb.rows[start].height, Some(&parts), false)
 }
