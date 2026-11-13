@@ -2633,3 +2633,35 @@ fn a_paragraphs_space_before_is_part_of_its_first_lines_box_beside_a_float() {
         assert!((y("<wp:wrapTopAndBottom/>") - y("<wp:wrapNone/>")).abs() < 0.01, "compat {compat}");
     }
 }
+
+fn anchor(x: u32, y: i64, w: u32, h: u32, overlap: u8, relative: &str) -> String {
+    format!(
+        r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="0" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="{overlap}"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>{}</wp:posOffset></wp:positionH><wp:positionV relativeFrom="{relative}"><wp:posOffset>{}</wp:posOffset></wp:positionV><wp:extent cx="{}" cy="{}"/><wp:wrapSquare wrapText="bothSides"/><a:graphic><a:graphicData><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#,
+        x * 12700,
+        y * 12700,
+        w * 12700,
+        h * 12700
+    )
+}
+
+#[test]
+fn compat_15_a_float_with_no_place_sends_its_anchor_line_to_the_next_page() {
+    // Two floats that may not overlap and have no place clear of each other: the paragraph after P1 to P3 starts the
+    // next page, where its first line goes below both and the page ends after it.
+    let short: String = (1..=3).map(|k| format!("<w:p><w:r><w:t>P{k}</w:t></w:r></w:p>")).collect();
+    let floats = format!("{}{}", anchor(0, 0, 468, 400, 0, "paragraph"), anchor(0, 50, 80, 300, 0, "paragraph"));
+    let body = format!(r#"{short}<w:p>{floats}<w:r><w:t>{}</w:t></w:r></w:p>"#, "Alpha bravo charlie delta echo. ".repeat(20));
+    let Some(p1) = page_baselines(C15, ARIAL_12, &body, 0) else { return };
+    let p2 = page_baselines(C15, ARIAL_12, &body, 1).unwrap();
+    assert_eq!(p1.iter().map(|l| l.1.as_str()).collect::<Vec<_>>(), ["P1", "P2", "P3"]);
+    assert!(p2.len() == 1 && p2[0].0 == 72.0 && p2[0].3 > 472.0, "{p2:?}");
+    // A float too tall for any page anchored in the third line: the first two lines stay.
+    let body = format!(
+        r#"<w:p><w:r><w:t>{}</w:t></w:r>{}<w:r><w:t>{}</w:t></w:r></w:p>"#,
+        "Alpha bravo charlie delta echo. ".repeat(7),
+        anchor(0, 0, 216, 680, 1, "line"),
+        "Foxtrot golf hotel india juliet. ".repeat(10)
+    );
+    let p1 = page_baselines(C15, ARIAL_12, &body, 0).unwrap();
+    assert_eq!(p1.len(), 2, "{p1:?}");
+}

@@ -49,6 +49,8 @@ pub struct Placed {
     pub restarts: bool,
     /// It keeps its place while the page is filled again: it met earlier text where it was first placed.
     pub frozen: bool,
+    /// Compat 15: no place keeps it clear of the floats it may not overlap, and its anchor line starts the page.
+    pub unplaced: bool,
     pub contour: Option<Contour>,
     /// The distances text keeps from it: top, bottom, left, right.
     pub dist: [f64; 4],
@@ -116,6 +118,7 @@ impl Placed {
             collided: true,
             restarts: false,
             frozen: false,
+            unplaced: false,
             contour,
             dist: f.dist,
             early_right: None,
@@ -315,6 +318,7 @@ mod tests {
             collided: true,
             restarts: false,
             frozen: false,
+            unplaced: false,
             contour: None,
             dist: [0.0; 4],
             early_right: None,

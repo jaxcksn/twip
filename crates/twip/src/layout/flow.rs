@@ -1949,6 +1949,17 @@ impl<'d> PageFill<'d, '_> {
         ordered.sort_by_key(|f| f.key);
         let mut strip_at: Option<(Vec<(f64, f64)>, f64, f64)> = None;
         let mut slack_on = 0.0;
+        // Compat 15: the page's first line, holding the anchor of a float that found no place, goes below the page's
+        // floats, across the whole column.
+        let unplaced = compat == Compat::Generic
+            && at_top
+            && self.column == 0
+            && !self.mid_page
+            && self.at.known.iter().any(|k| k.unplaced && (k.key.0, k.key.1) == (self.sec.index, pos.block));
+        if unplaced {
+            let low = floats.iter().filter(|f| f.wrap != Wrap::None).map(|f| f.excl[3]).fold(yy, f64::max);
+            yy = low.min(col.bottom.to_pt());
+        }
         while (s < n || bands.is_empty()) && guard < 4000 {
             guard += 1;
             let mut h = est;
@@ -1958,7 +1969,7 @@ impl<'d> PageFill<'d, '_> {
             let mut trial = None;
             // Every piece of the line was cut away or too narrow.
             let mut no_room = false;
-            let here: &[Placed] = if yy >= col.bottom.to_pt() - EPS { &[] } else { &floats };
+            let here: &[Placed] = if yy >= col.bottom.to_pt() - EPS || unplaced && bands.is_empty() { &[] } else { &floats };
             let mut uncut: Option<Vec<Placed>> = None;
             let mut forced: Option<Vec<(f64, f64)>> = None;
             let mut fitted: Option<(Vec<(f64, f64)>, f64, f64, f64)> = None;
@@ -2217,6 +2228,11 @@ impl<'d> PageFill<'d, '_> {
         let mut anchors: Vec<Placed> = Vec::new();
         let mut kept_at = Vec::new();
         let mut forced: Option<usize> = None;
+        // Compat 15, a float that can't be placed: the line holding its anchor goes to the next column (the next
+        // page from a column's top) when it doesn't start the page; when it does, the page ends after it.
+        let page_first = at_top && self.column == 0 && !self.mid_page;
+        let mut push: Option<usize> = None;
+        let mut page_end = false;
         let band_of = |k: usize| bands.iter().position(|(_, segs)| segs.iter().any(|l| k >= l.start && k < l.end.max(l.start + 1)));
         for (k, q) in pieces.iter().enumerate() {
             let (Kind::Anchor, Some(Object::Float(f))) = (q.kind, sp.object(pb.from + k)) else { continue };
@@ -2276,12 +2292,14 @@ impl<'d> PageFill<'d, '_> {
                 let anchor_bottom = line_top + bands[b].1[0].pitch;
                 if up >= anchor_bottom - EPS {
                     fy = up;
-                } else if !at_top {
-                    return Ok(Stop::Full);
+                } else if !(page_first && b == 0) {
+                    push = Some(push.map_or(b, |x: usize| x.min(b)));
+                    continue;
                 } else {
                     let mut a = Placed::new((si, bi, pb.from + k), owner, f, x, fy, h);
                     a.wrap = Wrap::None;
                     forced = Some(forced.map_or(b, |x: usize| x.min(b)));
+                    page_end = true;
                     anchors.push(a);
                     continue;
                 }
@@ -2372,6 +2390,13 @@ impl<'d> PageFill<'d, '_> {
                     && self.at.known.iter().any(|k| k.restarts && !frame(k) && k.wrap != Wrap::None && k.key.0 == a.key.0 && (k.key.1, k.key.2) > (a.key.1, a.key.2));
                 if !restarted && !kept_at.contains(&a.key) && !float::avoid(&mut a, &others, across, (col.top.to_pt(), col.bottom.to_pt()), compat) {
                     let b = band_of(a.key.2 - pb.from).unwrap_or(0);
+                    if compat == Compat::Generic && !(page_first && b == 0) {
+                        push = Some(push.map_or(b, |x: usize| x.min(b)));
+                        continue;
+                    }
+                    // Starting the page, it stays where it was asked for and the line goes below the page's floats.
+                    a.unplaced = compat == Compat::Generic;
+                    page_end |= compat == Compat::Generic;
                     forced = Some(forced.map_or(b, |x: usize| x.min(b)));
                 }
                 if a.restarts && !self.at.known.iter().any(|k| k.same(&a)) {
@@ -2382,6 +2407,17 @@ impl<'d> PageFill<'d, '_> {
         }
         if let Some(b) = forced {
             take = take.min(b + 1);
+        }
+        // The split before a pushed line keeps the paragraph's own rules; the page's first paragraph keeps the lines before it.
+        if let Some(b) = push {
+            let keep = lines_to_take(nb, b, false, first_part, style.keep_lines, style.widow_control);
+            take = take.min(if keep == 0 && page_first { b } else { keep });
+            let end = if take == 0 { 0 } else { bands[take - 1].1.last().map_or(0, |l| l.end) };
+            self.at.found.retain(|f| (f.key.0, f.key.1) != (si, bi) || f.key.2 == float::TABLE_PIECE || f.key.2 < pb.from + end);
+            if take == 0 {
+                carry.keep_top = false;
+                return Ok(if at_top { Stop::Page } else { Stop::Full });
+            }
         }
         let (a, rest) = areas[take.min(areas.len() - 1)].clone();
         *area = a;
@@ -2447,7 +2483,7 @@ impl<'d> PageFill<'d, '_> {
             }
             _ if !done => {
                 carry.keep_top = false;
-                Stop::Full
+                if page_end { Stop::Page } else { Stop::Full }
             }
             _ => Stop::Done,
         })
