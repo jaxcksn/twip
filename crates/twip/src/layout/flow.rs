@@ -1244,6 +1244,13 @@ impl<'d> PageFill<'d, '_> {
             }
             let vanished = matches!(self.sec.blocks.get(pos.block), Some(Block::Para(p)) if super::paragraph::vanished(p));
             if pos.at.at_start()
+                && let Some(end) = self.deleted_before_table(pos.block)
+            {
+                pos.block = end;
+                pos.next_block();
+                continue;
+            }
+            if pos.at.at_start()
                 && (self.break_para_after_table(pos.block) && self.ctx.env.text.compat == Compat::Legacy
                     || self.break_para_after_para(pos.block)
                     || vanished)
@@ -1784,6 +1791,18 @@ impl<'d> PageFill<'d, '_> {
                 None => self.edge_before(pos.block, style, before),
             }
         }
+    }
+
+    /// The last block of the paragraphs joined from `bi` by deleted marks when they show nothing and a table follows
+    /// them (or they end the body): they aren't laid out.
+    fn deleted_before_table(&self, bi: usize) -> Option<usize> {
+        let view = self.ctx.env.text.review.view;
+        let end = self.sec.blocks.chain_end(bi, view);
+        let shows_nothing = |k: usize| matches!(self.sec.blocks.get(k), Some(Block::Para(p)) if super::paragraph::shows_nothing(p, view));
+        let last = matches!(self.sec.blocks.get(end), Some(Block::Para(p)) if view.hides(&p.mark.rev));
+        let next = self.sec.blocks.get(end + 1);
+        let story_end = next.is_none() && !self.sec.breaks;
+        (last && (story_end || matches!(next, Some(Block::Table(_)))) && (bi..=end).all(shows_nothing)).then_some(end)
     }
 
     /// Paragraph `bi`'s own space before.

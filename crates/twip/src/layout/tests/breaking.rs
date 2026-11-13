@@ -817,6 +817,30 @@ fn a_continuous_sections_first_paragraph_pushed_to_a_new_page_keeps_its_space_be
 }
 
 #[test]
+fn an_empty_deleted_mark_paragraph_before_a_table_isnt_laid_out() {
+    let del = r#"w:id="1" w:author="A" w:date="2026-01-01T00:00:00Z""#;
+    let gone = format!(
+        r#"<w:p><w:pPr><w:spacing w:before="480" w:after="480"/><w:rPr><w:del {del}/></w:rPr></w:pPr><w:del {del}><w:r><w:delText>Deleted</w:delText></w:r></w:del></w:p>"#
+    );
+    let table = r#"<w:tbl><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>Row</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#;
+    let top = r#"<w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>Top</w:t></w:r></w:p>"#;
+    let gap = |mid: &str| {
+        let mut doc = test_doc("", ARIAL_12, &format!("{top}{mid}{table}"), "")?;
+        doc.review.view = crate::docx::review::MarkupView::NoMarkup;
+        let snap = layout(&doc, &fonts());
+        let mut y = std::collections::HashMap::new();
+        paint(&snap.pages()[0], &mut |p| {
+            if let Item::Glyphs(r) = p.absolute() {
+                y.insert(r.chars.iter().map(|c| c.0).collect::<String>(), r.baseline);
+            }
+        });
+        Some(y["Row"] - y["Top"])
+    };
+    let Some(without) = gap("") else { return };
+    assert!((gap(&gone).unwrap() - without).abs() < 0.01);
+}
+
+#[test]
 fn a_page_break_in_a_table_cell_is_nothing() {
     let body = r#"<w:tbl><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>Before</w:t><w:br w:type="page"/><w:t>After</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#;
     let Some(l) = lines("", ARIAL_12, body) else { return };
