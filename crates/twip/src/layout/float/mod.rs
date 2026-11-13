@@ -420,6 +420,20 @@ mod tests {
     }
 
     #[test]
+    fn a_pictures_relative_axes_size_on_their_own_and_it_draws_scaled_evenly() {
+        let fr = Frames { page_w: 612.0, page_h: 792.0, margin: [72.0; 4], column: (72.0, 468.0), compat: Compat::Generic, cell: false, odd: true };
+        let mut f = (*fl(0.0, 72.0, Side::Both).float).clone();
+        (f.h, f.image) = (54.0, Some(0));
+        f.relative.size = [Some(("margin".into(), 400)), Some(("margin".into(), 50))];
+        let s = sized(&f, &fr).expect("sized");
+        assert_eq!((s.w, s.h), (187.2, 32.4));
+        let (w, h) = s.relative.drawn.expect("drawn scaled");
+        assert!((w - 43.2).abs() < 1e-9 && (h - 32.4).abs() < 1e-9, "{w} {h}");
+        f.relative.size[1] = None;
+        assert_eq!(sized(&f, &fr).expect("sized").h, 54.0, "only the width: the height stays");
+    }
+
+    #[test]
     fn percentage_positions_count_from_their_reference_box() {
         let fr = Frames { page_w: 612.0, page_h: 792.0, margin: [72.0; 4], column: (72.0, 468.0), compat: Compat::Generic, cell: false, odd: true };
         let at = |h: &str, pct: i64| {

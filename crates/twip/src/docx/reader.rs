@@ -2383,6 +2383,7 @@ impl Reader {
                         })
                     }),
                     pos: st.pos_percent.map(|p| p.filter(|&p| p != 0 && p != -10001)),
+                    drawn: None,
                 },
                 shape: Some(Box::new(shape)),
             }),
@@ -2509,6 +2510,7 @@ impl Reader {
                     Relative {
                         size: [size("sizeRelH", "pctWidth"), size("sizeRelV", "pctHeight")],
                         pos: [at("positionH", "pctPosHOffset"), at("positionV", "pctPosVOffset")],
+                        drawn: None,
                     }
                 },
                 shape: Some(Box::new(shape)),

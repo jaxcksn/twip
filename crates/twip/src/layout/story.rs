@@ -654,6 +654,8 @@ pub fn float_box(f: &Float, rect: [f64; 4], anchor: ParaId, env: &StoryEnv, memo
     let shape_rect = if f.rot_swap {
         let (cx, cy, hw, hh) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0, (y1 - y0) / 2.0, (x1 - x0) / 2.0);
         [cx - hw, cy - hh, cx + hw, cy + hh]
+    } else if let Some((w, h)) = f.relative.drawn {
+        [x0, y0, x0 + w, y0 + h]
     } else {
         rect
     };
@@ -667,7 +669,7 @@ pub fn float_box(f: &Float, rect: [f64; 4], anchor: ParaId, env: &StoryEnv, memo
         }
         None => {
             if let Some(img) = f.image {
-                items.push(Item::Image { rect, key: ImageKey { index: Some(img), generation: 0 } });
+                items.push(Item::Image { rect: shape_rect, key: ImageKey { index: Some(img), generation: 0 } });
             }
         }
     }

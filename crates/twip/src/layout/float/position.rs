@@ -39,12 +39,8 @@ pub fn sized(f: &Float, fr: &Frames) -> Option<Float> {
             _ => fr.page_w - ml - mr,
         };
         out.w = fit(base, *p, el, er);
-        if picture && f.w > 0.0 {
-            out.h = f.h * out.w / f.w;
-        }
     }
     if let Some((from, p)) = &f.relative.size[1]
-        && !picture
         && !f.text_box.as_ref().is_some_and(|t| t.auto_fit)
     {
         let base = match (from.as_str(), fr.odd) {
@@ -54,6 +50,11 @@ pub fn sized(f: &Float, fr: &Frames) -> Option<Float> {
             _ => fr.page_h - mt - mb,
         };
         out.h = fit(base, *p, et, eb);
+    }
+    // Each axis is sized on its own; a picture is drawn scaled evenly into the box.
+    if picture && f.w > 0.0 && f.h > 0.0 {
+        let s = (out.w / f.w).min(out.h / f.h);
+        out.relative.drawn = Some((s * f.w, s * f.h));
     }
     Some(out)
 }

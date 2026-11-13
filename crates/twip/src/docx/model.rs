@@ -417,6 +417,8 @@ pub struct Relative {
     pub size: [Option<(String, i64)>; 2],
     /// Horizontal and vertical position, in tenths of a percent of the reference box.
     pub pos: [Option<i64>; 2],
+    /// A picture whose box was sized: the size it's drawn at, scaled evenly into the box from its top left.
+    pub drawn: Option<(f64, f64)>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
