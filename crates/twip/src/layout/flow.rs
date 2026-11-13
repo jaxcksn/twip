@@ -147,6 +147,9 @@ pub struct AttemptState {
     pub found: Vec<Placed>,
     pub stream: Option<NoteArea>,
     pub forced: bool,
+    /// A float placed in this fill met text laid out before it where the last fill didn't have it: the floats after
+    /// it were placed beside text that moves.
+    pub hit: bool,
     pub starts: Vec<(f64, bool)>,
     pub notes_drawn: bool,
     /// The bottom of the column footnote areas drawn under their text (`beneathText`).
@@ -2201,6 +2204,7 @@ impl<'d> PageFill<'d, '_> {
         let si = self.sec.index;
         let anchor = para_id(p);
         let mut anchors: Vec<Placed> = Vec::new();
+        let mut kept_at = Vec::new();
         let mut forced: Option<usize> = None;
         // Text laid out before the paragraph in this column ends at `*y`, then the space after it keeps.
         let kept = carry.prev.as_ref().map_or(carry.prev_after, |ps| gap(&self.ctx.env.text, ps, carry.prev_after, style, 0.0));
@@ -2240,6 +2244,15 @@ impl<'d> PageFill<'d, '_> {
                 anchors.push(Placed::new((si, bi, pb.from + k), owner, f, x, fy, h));
                 continue;
             }
+            // One that met text laid out before it keeps the place it met it at while the page is filled again.
+            let frozen = self.at.known.iter().find(|o| o.key == (si, bi, pb.from + k) && o.frozen).cloned();
+            if let Some(k) = &frozen {
+                let mut a = self.wrapped(Placed::new(k.key, owner, f, k.rect[0], k.rect[1], h), memos)?;
+                (a.collided, a.restarts, a.frozen) = (true, true, true);
+                kept_at.push(a.key);
+                anchors.push(a);
+                continue;
+            }
             (x, fy) = float::page_clamp(f, (x, fy), h, &frames);
             // Compat 15 keeps the box with its effect extents (not its distances) on the page.
             if compat == Compat::Generic && matches!(f.v_relative.as_str(), "paragraph" | "line") {
@@ -2266,20 +2279,16 @@ impl<'d> PageFill<'d, '_> {
                     continue;
                 }
             }
-            // Compat ≤ 14: one that met the table just before its paragraph stays where it met it when the page is filled
-            // again.
-            // ponytail: only after a table, whose rows can move down from under it; Word freezes every float that meets
-            // earlier text, which needs the attempts to place floats in flow order.
-            let after_table = bi > 0 && matches!(self.sec.blocks.get(bi - 1), Some(Block::Table(_)));
-            if let Some(k) = self.at.known.iter().find(|o| o.key == (si, bi, pb.from + k) && o.collided).filter(|_| compat == Compat::Legacy && after_table) {
-                (x, fy) = (k.rect[0], k.rect[1]);
-            }
             let mut a = self.wrapped(Placed::new((si, bi, pb.from + k), owner, f, x, fy, h), memos)?;
             // That text (with its space after in compat ≤ 14): a float wholly below it, or beside the column, doesn't
             // meet it. Earlier columns count as met.
             let reach = *y + if compat == Compat::Legacy { kept } else { 0.0 };
-            a.collided = self.column > 0 || a.excl[1] < reach - EPS && a.excl[0] < cx1 - EPS && a.excl[2] > cx0 + EPS;
-            a.restarts = a.collided || a.excl[1] < line_top + bands[b].1[0].pitch - EPS && a.excl[0] < cx1 - EPS && a.excl[2] > cx0 + EPS;
+            let met = a.excl[1] < reach - EPS && a.excl[0] < cx1 - EPS && a.excl[2] > cx0 + EPS;
+            a.restarts = self.column > 0 || met || a.excl[1] < line_top + bands[b].1[0].pitch - EPS && a.excl[0] < cx1 - EPS && a.excl[2] > cx0 + EPS;
+            // Only the first float of the fill that meets earlier text of its column met it where it will stay: that
+            // text wraps it in the next fill. A later one was placed beside text that moves, and is placed again.
+            a.frozen = met && !self.at.hit;
+            a.collided = a.frozen || self.column > 0 && !met;
             anchors.push(a);
         }
         // Pagination
@@ -2354,9 +2363,12 @@ impl<'d> PageFill<'d, '_> {
                 let restarted = compat == Compat::Legacy
                     && frame(&a)
                     && self.at.known.iter().any(|k| k.restarts && !frame(k) && k.wrap != Wrap::None && k.key.0 == a.key.0 && (k.key.1, k.key.2) > (a.key.1, a.key.2));
-                if !restarted && !float::avoid(&mut a, &others, across, (col.top.to_pt(), col.bottom.to_pt()), compat) {
+                if !restarted && !kept_at.contains(&a.key) && !float::avoid(&mut a, &others, across, (col.top.to_pt(), col.bottom.to_pt()), compat) {
                     let b = band_of(a.key.2 - pb.from).unwrap_or(0);
                     forced = Some(forced.map_or(b, |x: usize| x.min(b)));
+                }
+                if a.restarts && !self.at.known.iter().any(|k| k.same(&a)) {
+                    self.at.hit = true;
                 }
                 self.at.found.push(a);
             }

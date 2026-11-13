@@ -280,7 +280,7 @@ page 2 12240 15840
   8964 13807 tax finds record
   8964 14044 proposal denied
   8964 14282 contract
-  float 6480 6111 8784 15471
+  float 6480 5636 8784 14996
 page 3 12240 15840
   1440 1616 onboarding support network. Scheduled
   1440 1853 trend suggestions board order update

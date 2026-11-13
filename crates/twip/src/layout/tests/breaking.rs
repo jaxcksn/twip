@@ -2563,3 +2563,50 @@ fn a_page_frame_anchored_after_a_paragraph_wraps_that_paragraphs_last_line() {
     // The second frame, anchored in the second paragraph, meets the first one's second line: that line goes right of it.
     assert_eq!(text, [(477.1, "so that"), (477.05, "every qq"), (72.0, "so that every qq")]);
 }
+
+/// The float's drawn rect on page 1 and the first baseline of the line starting with `start`.
+fn float_and_line(settings: &str, body: &str, start: &str) -> Option<([f64; 4], f64)> {
+    fn find(children: &[crate::layout::fragment::Child]) -> Option<[f64; 4]> {
+        children.iter().find_map(|c| match c {
+            crate::layout::fragment::Child::Box(b) => match b.kind {
+                crate::layout::fragment::BoxKind::Float { rect, .. } => Some(rect),
+                _ => find(&b.children),
+            },
+            _ => None,
+        })
+    }
+    let snap = layout(&test_doc(settings, ARIAL_12, body, "")?, &fonts());
+    let page = &snap.pages()[0];
+    let rect = page.children.iter().find_map(|c| match c {
+        crate::layout::fragment::PageChild::Body(b) => find(&b.children),
+        _ => None,
+    })?;
+    let mut y = None;
+    paint(page, &mut |p| {
+        if let Item::Glyphs(r) = p.absolute()
+            && y.is_none()
+            && r.chars.iter().map(|c| c.0).collect::<String>().starts_with(start)
+        {
+            y = Some(r.baseline);
+        }
+    });
+    Some((rect, y?))
+}
+
+#[test]
+fn a_float_that_met_earlier_text_keeps_that_place_when_the_text_wraps_it() {
+    // B anchors a float 100pt above itself, over A's lines. A wraps it and grows, B moves down, the float stays.
+    let body = |wrap: &str| {
+        format!(
+            r#"<w:p><w:r><w:t>{}</w:t></w:r></w:p><w:p><w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="0" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>-1270000</wp:posOffset></wp:positionV><wp:extent cx="1905000" cy="762000"/>{wrap}<a:graphic><a:graphicData><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r><w:r><w:t>Bravo</w:t></w:r></w:p>"#,
+            "Alpha words run on. ".repeat(40)
+        )
+    };
+    for compat in [12, 15] {
+        let settings = format!(r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="{compat}"/></w:compat>"#);
+        let Some((first, b0)) = float_and_line(&settings, &body("<wp:wrapNone/>"), "Bravo") else { return };
+        let (kept, b1) = float_and_line(&settings, &body(r#"<wp:wrapSquare wrapText="bothSides"/>"#), "Bravo").unwrap();
+        assert!(b1 > b0 + 1.0, "compat {compat}: A wraps the float and pushes B down: {b0} {b1}");
+        assert!((kept[1] - first[1]).abs() < 0.01, "compat {compat}: the float stays where it met A: {first:?} {kept:?}");
+    }
+}

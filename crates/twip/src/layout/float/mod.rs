@@ -47,6 +47,8 @@ pub struct Placed {
     pub collided: bool,
     /// It met text laid out before it on the page, its own paragraph's lines to its anchor included.
     pub restarts: bool,
+    /// It keeps its place while the page is filled again: it met earlier text where it was first placed.
+    pub frozen: bool,
     pub contour: Option<Contour>,
     /// The distances text keeps from it: top, bottom, left, right.
     pub dist: [f64; 4],
@@ -113,6 +115,7 @@ impl Placed {
             settled: true,
             collided: true,
             restarts: false,
+            frozen: false,
             contour,
             dist: f.dist,
             early_right: None,
@@ -311,6 +314,7 @@ mod tests {
             settled: true,
             collided: true,
             restarts: false,
+            frozen: false,
             contour: None,
             dist: [0.0; 4],
             early_right: None,

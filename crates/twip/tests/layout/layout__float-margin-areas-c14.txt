@@ -36,8 +36,8 @@ page 0 12240 15840
   float 3240 14688 3960 15264
   float 4680 432 5400 1008
   float 6120 432 6840 1008
-  float 2520 3610 3240 4186
-  float 9000 3610 9720 4186
+  float 2520 3372 3240 3948
+  float 9000 3372 9720 3948
 page 1 12240 15840
   1800 1616 Page 2: inside and outside swap sides.
   1800 2013 Regional maintenance accessibility tax finds record proposal denied contract
