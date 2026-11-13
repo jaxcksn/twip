@@ -491,7 +491,13 @@ impl<'d> Paginator<'d, '_> {
             top: Lu::round_half_up(body_top),
             bottom: Lu::round_half_up(notes_top.map_or(body_bottom, |t| t.min(body_bottom))),
         };
-        let hf_floats = self.hf_obstacles(si, &hf, memos)?;
+        let mut hf_floats = self.hf_obstacles(si, &hf, memos)?;
+        // A section going on on the page wraps the floats the sections before it placed there.
+        if start.is_some()
+            && let Some(p) = self.run.pages.last()
+        {
+            hf_floats.extend(p.bodies.iter().flat_map(|b| b.effects.floats.iter().cloned()));
+        }
         Ok(BodySpace {
             section: si,
             page_w: s.page_w,
@@ -995,6 +1001,7 @@ pub fn layout_body(
         None if s.text_flow == 4 => ((space.page_w, space.page_h), super::vertical::turn_east_asian(&body).into()),
         None => ((space.page_w, space.page_h), body.into()),
     };
+    effects.floats = placed.iter().filter(|f| f.wrap != super::float::Wrap::None).cloned().collect();
     let fragment = Rc::new(BoxFragment { kind: BoxKind::Body, id: Some(FragmentId::next()), offset: (0.0, 0.0), size, children });
     Ok(PageBody { fragment, end: PageToken { section: space.section, flow: pos, state: carry }, section_end, effects })
 }

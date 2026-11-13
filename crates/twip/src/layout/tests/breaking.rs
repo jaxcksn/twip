@@ -2685,3 +2685,30 @@ fn compat_14_a_keep_lines_paragraph_that_meets_its_own_float_starts_below_it() {
     let Some((_, c15)) = float_and_line(C15, &body("<w:keepLines/>"), "B00") else { return };
     assert!((c15 - float_and_line(C15, &body(""), "B00").unwrap().1).abs() < 0.01, "compat 15 wraps it as usual");
 }
+
+#[test]
+fn a_float_wraps_the_next_continuous_section_on_its_page() {
+    // Section 1 ends with a 150pt float at the column's left; section 2 starts beside it.
+    let body = format!(
+        r#"<w:p><w:r><w:t>S1</w:t></w:r>{}</w:p><w:p><w:pPr><w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:pPr></w:p><w:p><w:r><w:t>{}</w:t></w:r></w:p>"#,
+        anchor(0, 20, 150, 160, 1, "paragraph"),
+        "Section two runs on. ".repeat(30)
+    );
+    for compat in [12, 15] {
+        let settings = format!(r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="{compat}"/></w:compat>"#);
+        let Some(mut doc) = test_doc(&settings, ARIAL_12, &body, "") else { return };
+        doc.sections[1].break_kind = crate::docx::SectionBreak::Continuous;
+        let snap = layout(&doc, &fonts());
+        let mut first = None;
+        paint(&snap.pages()[0], &mut |p| {
+            if let Item::Glyphs(r) = p.absolute()
+                && first.is_none()
+                && r.chars.first().is_some_and(|c| c.0 == 'S')
+                && r.chars.get(1).is_some_and(|c| c.0 == 'e')
+            {
+                first = Some(r.x);
+            }
+        });
+        assert!(first.is_some_and(|x| (x - 222.0).abs() < 0.01), "compat {compat}: {first:?}");
+    }
+}

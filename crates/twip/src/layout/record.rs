@@ -17,6 +17,8 @@ pub struct PageEffects {
     pub notes_shown: Vec<(NoteKind, i64, String)>,
     /// The top of the highest footnote area drawn at the bottom of its column.
     pub notes_top: Option<f64>,
+    /// The wrapping floats placed on the page, which a continuous section going on on it wraps too.
+    pub floats: Vec<super::float::Placed>,
 }
 
 impl PageEffects {
