@@ -1213,6 +1213,8 @@ fn resolve_fit(t: &Table, text_w: f64, env: &StoryEnv, avail: Option<i64>, neste
     // Compat ≤ 14 widens the room by the edge allowances only for an outermost table.
     let (add_l, add_r) = edge_add(if nested { Compat::Generic } else { env.ctx.env.text.compat }, t);
     let a = avail.unwrap_or_else(|| twips(text_w - t.ind + add_l + add_r));
+    let boxed = env.ctx.env.text.box_story && !nested && avail.is_none();
+    let (a, pct_base) = if boxed { (a - 1, a + 15) } else { (a, a) };
     let s2 = twips(2.0 * t.cell_spacing.max(0.0));
     let cells: Vec<autofit::Cell> = inputs.iter().flat_map(|r| r.cells.iter().copied()).collect();
     let gaps = skipped(t, n, &cells);
@@ -1220,7 +1222,7 @@ fn resolve_fit(t: &Table, text_w: f64, env: &StoryEnv, avail: Option<i64>, neste
     let pad_total = s2 * (n as i64 + 1);
     let tbl_w = match t.width {
         Width::Dxa(w) => twips(w),
-        Width::Pct(p) => autofit::rdiv(a, (p * 5000.0).round() as i64, 5000),
+        Width::Pct(p) => autofit::rdiv(pct_base, (p * 5000.0).round() as i64, 5000),
         _ => 0,
     }
     .min(autofit::MAXW - twips(t.ind));
@@ -1309,7 +1311,8 @@ fn layout_with(
     let resolved;
     let t = match t.ind_pct {
         Some(p) => {
-            let ind = if measure || t.floating.is_some() { 0 } else { (p * 5000.0).round() as i64 * twips(text_w) / 5000 };
+            let base = twips(text_w) + if env.ctx.env.text.box_story && !nested { 15 } else { 0 };
+            let ind = if measure || t.floating.is_some() { 0 } else { (p * 5000.0).round() as i64 * base / 5000 };
             resolved = Table { ind: ind as f64 / 20.0, ind_pct: None, ..t.clone() };
             &resolved
         }

@@ -19,6 +19,9 @@ pub struct TextEnv {
     /// `layoutRawTableWidth`: a table row beside a float reports its cells' extent, without the indent and the last
     /// cell's right margin.
     pub raw_table_width: bool,
+    /// Compat ≤ 14: the story is a text box's. A table at its top level has a twip less room, and its pct width and
+    /// pct indent are shares of the box's text width and 15 twips more.
+    pub box_story: bool,
     /// `doNotAutofitConstrainedTables`: an autofit table beside a float keeps the column width it was fitted to.
     pub no_constrained_autofit: bool,
     pub wp_justification: bool,
@@ -111,6 +114,7 @@ impl TextEnv {
             do_not_vert_align_cell_with_sp: s.has("doNotVertAlignCellWithSp"),
             do_not_break_wrapped_tables: s.has("doNotBreakWrappedTables"),
             raw_table_width: s.has("layoutRawTableWidth"),
+            box_story: false,
             no_constrained_autofit: s.has("doNotAutofitConstrainedTables"),
             wp_justification: s.has("wpJustification"),
             word97_line_breaks: s.has("useWord97LineBreakRules"),

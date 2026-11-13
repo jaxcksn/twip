@@ -545,7 +545,8 @@ pub fn float_height(f: &Float, env: &StoryEnv, memos: &mut Memos) -> Result<f64,
             let w = (fr[2] - fr[0]).max(1.0);
             let blocks: Vec<&Block> = tb.blocks.iter().collect();
             let fields = FieldValues::default();
-            let content = layout(&blocks, w, &StoryEnv { fields: &fields, ..*env }, None, memos)?.height.min(1584.0);
+            let mut le = None;
+            let content = layout(&blocks, w, &StoryEnv { fields: &fields, ..box_env(env, &mut le) }, None, memos)?.height.min(1584.0);
             let h = h0 - (fr[3] - fr[1]) + content;
             if f.auto_w || f.shape.is_none() && tb.insets[1] == 0.0 && tb.insets[3] == 0.0 && tb.outline == 0.0 { h.max(f.h) } else { h }
         }
@@ -567,7 +568,8 @@ pub fn tight_lines(f: &Float, env: &StoryEnv, memos: &mut Memos) -> Result<Optio
     let (left, du, dv) = (fr[0], (fr[2] - fr[0]).max(1.0), fr[3] - fr[1]);
     let blocks: Vec<&Block> = tb.blocks.iter().collect();
     let fields = FieldValues::default();
-    let story = layout(&blocks, du, &StoryEnv { fields: &fields, ..*env }, None, memos)?;
+    let mut le = None;
+    let story = layout(&blocks, du, &StoryEnv { fields: &fields, ..box_env(env, &mut le) }, None, memos)?;
     let units = &story.units;
     let mut out = Vec::new();
     for (k, u) in units.iter().enumerate() {
@@ -1041,6 +1043,16 @@ fn inner_frame(tb: &crate::docx::TextBox, shape: Option<&crate::drawing::Shape>,
     [x0, y0, x1, y1]
 }
 
+/// The environment of a text box's story: compat ≤ 14 marks it as one (`TextEnv::box_story`).
+fn box_env<'b>(env: &StoryEnv<'b>, le: &'b mut Option<super::LayoutEnv>) -> StoryEnv<'b> {
+    let text = &env.ctx.env.text;
+    if text.compat != Compat::Legacy || text.box_story {
+        return *env;
+    }
+    let le = le.insert(super::LayoutEnv { text: TextEnv { box_story: true, ..text.clone() }, ..env.ctx.env.clone() });
+    StoryEnv { ctx: LayoutCtx { env: le, ..env.ctx }, ..*env }
+}
+
 fn text_box(
     tb: &crate::docx::TextBox,
     shape: Option<&crate::drawing::Shape>,
@@ -1085,7 +1097,8 @@ fn lay_lines(
 ) -> Result<(), Yield> {
     let w = (fr[2] - fr[0]).max(1.0);
     let blocks: Vec<&Block> = tb.blocks.iter().collect();
-    let story = layout(&blocks, w, env, None, memos)?;
+    let mut le = None;
+    let story = layout(&blocks, w, &box_env(env, &mut le), None, memos)?;
     let (cx, mut cy) = (fr[0], fr[1]);
     let content_bottom = fr[3];
     if !tb.auto_fit && tb.v_anchor > 0 {

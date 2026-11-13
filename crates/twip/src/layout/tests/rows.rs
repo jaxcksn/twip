@@ -267,6 +267,20 @@ fn an_empty_indented_paragraph_doesnt_widen_its_autofit_cell() {
 }
 
 #[test]
+fn compat_14_pct_table_in_a_text_box_takes_15_twips_more() {
+    let body = |grid: &str, cells: &str| {
+        format!(
+            r#"<w:p><w:r><w:drawing><wp:anchor xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="1" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="margin"><wp:posOffset>0</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV><wp:extent cx="1905000" cy="1905000"/><wp:wrapNone/><wp:docPr id="1" name="Box"/><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:wsp xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:cNvSpPr txBox="1"/><wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="1905000" cy="1905000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></wps:spPr><wps:txbx><w:txbxContent><w:tbl><w:tblPr><w:tblW w:w="5000" w:type="pct"/><w:tblLayout w:type="fixed"/>{MAR}</w:tblPr><w:tblGrid>{grid}</w:tblGrid><w:tr>{cells}</w:tr></w:tbl><w:p/></w:txbxContent></wps:txbx><wps:bodyPr lIns="0" tIns="0" rIns="0" bIns="0"/></wps:wsp></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r></w:p>"#
+        )
+    };
+    let two = body(r#"<w:gridCol w:w="1000"/><w:gridCol w:w="1000"/>"#, &(dxa_cell(1000, "p") + &dxa_cell(1000, "q")));
+    // Compat 12: the 3000 text width with its 100 margins, 3200, and 15 more for the pct base. Compat 15: 3000.
+    let col = |mode: i64| glyph_x_in(&two, mode, &[], 'q') - glyph_x_in(&two, mode, &[], 'p');
+    assert!((col(12) - 3215.0 / 40.0).abs() < 0.03, "compat 12: {}", col(12));
+    assert!((col(15) - 3000.0 / 40.0).abs() < 0.03, "compat 15: {}", col(15));
+}
+
+#[test]
 fn a_pct_indent_is_a_share_of_the_text_width() {
     let table = |ind: &str| {
         format!(
