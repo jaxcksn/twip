@@ -1762,6 +1762,7 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
     let mut has_text = false;
     let mut separator = false;
     let mut brk: Option<(f64, f64)> = None;
+    let mut blank: Option<(f64, f64)> = None;
     // The deepest descent an at-least line keeps below its baseline (a turned ruby annotation's lower half).
     let mut at_least_desc = 0.0f64;
     // `auto` centres the runs in flows that keep East Asian text upright, else aligns them to the baseline.
@@ -1827,11 +1828,20 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
                 num_asc = num_asc.max(p.ascent - c);
             }
             Kind::LineBreak => brk = Some((p.ascent, p.descent)),
-            Kind::Space | Kind::Tab => {}
+            Kind::Space | Kind::Tab => {
+                let st = &sp.styles[p.style as usize];
+                let e = if frame.vertical { super::vertical::extra(st.face.as_deref(), st.size) } else { 0.0 };
+                let (pa, pd) = (p.ascent + e, p.descent + e);
+                blank = Some(blank.map_or((pa, pd), |(a, d): (f64, f64)| (a.max(pa), d.max(pd))));
+            }
             _ => {}
         }
     }
-    if !has_content && let Some((a, d)) = brk {
+    // A line of only spaces and tabs takes their height unless it is the paragraph's last line, which takes the
+    // mark's; one ending in a break takes the break's.
+    if !has_content
+        && let Some((a, d)) = brk.or(blank.filter(|_| !last))
+    {
         asc = a;
         desc = d;
         un_asc = a;

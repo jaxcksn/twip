@@ -30,3 +30,18 @@ fn a_check_box_is_its_fonts_line_height_in_whole_device_pixels_wide() {
     let w = at(&c, 'b').0 - 72.0;
     assert!((w - 13.8).abs() < 1e-6, "{w}");
 }
+
+#[test]
+fn a_line_of_only_spaces_takes_their_height_and_one_ending_in_a_break_the_breaks() {
+    let first = |end: &str| {
+        let spaces = format!(r#"<w:r><w:rPr><w:sz w:val="40"/></w:rPr><w:t xml:space="preserve">{}</w:t></w:r>"#, " ".repeat(10));
+        let c = chars("", ARIAL_10, &format!(r#"<w:p>{spaces}<w:r>{end}<w:t>{}</w:t></w:r></w:p>"#, "m".repeat(50)), 0)?;
+        Some(at(&c, 'm').1 - 72.0 - 1921.0 * 10.0 / 2048.0)
+    };
+    // Ten 20pt spaces, then a word that doesn't fit beside them: line 1 is the spaces' (22.998), not the mark's.
+    let Some(spaces) = first("") else { return };
+    assert!((spaces - 2355.0 * 20.0 / 2048.0).abs() < 0.01, "{spaces}");
+    // The same spaces before a 10pt break: the break's line (11.499).
+    let brk = first("<w:br/>").expect("lays out");
+    assert!((brk - 47100.0 / 4096.0).abs() < 0.01, "{brk}");
+}
