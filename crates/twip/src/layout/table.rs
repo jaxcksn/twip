@@ -1343,7 +1343,8 @@ fn layout_with(
 /// wide as the columns they span.
 fn pct_skip_grid(t: &Table, text_w: f64) -> Option<Table> {
     let pct = |w: Option<Width>, k: usize| w.and_then(Width::pct).filter(|_| k > 0);
-    let r = t.rows.iter().find(|r| pct(r.w_before, r.grid_before).is_some() || pct(r.w_after, r.grid_after).is_some())?;
+    let skip_row = t.rows.iter().position(|r| pct(r.w_before, r.grid_before).is_some() || pct(r.w_after, r.grid_after).is_some())?;
+    let r = &t.rows[skip_row];
     let n = grid_columns(t);
     let grid: Vec<i64> = (0..n).map(|i| twips(t.grid.get(i).copied().unwrap_or(0.0))).collect();
     // ponytail: a pct or auto width table's skip is taken from its pct share of the text width or its grid; unmeasured.
@@ -1384,12 +1385,17 @@ fn pct_skip_grid(t: &Table, text_w: f64) -> Option<Table> {
     }
     let mut g = t.clone();
     g.grid = cols.iter().map(|&w| w as f64 / 20.0).collect();
-    for row in &mut g.rows {
+    for (ri, row) in g.rows.iter_mut().enumerate() {
         (row.w_before, row.w_after) = (None, None);
         let mut x = row.grid_before;
         for c in &mut row.cells {
             let to = (x + c.span).min(n);
-            c.width = Some(Width::Dxa(cols[x.min(n)..to].iter().sum::<i64>() as f64 / 20.0));
+            // Another row's pct cell keeps its share of the table's width.
+            let w = match c.width.and_then(Width::pct).filter(|_| ri != skip_row) {
+                Some(p) => autofit::rdiv(total, (p * 5000.0).round() as i64, 5000),
+                None => cols[x.min(n)..to].iter().sum::<i64>(),
+            };
+            c.width = Some(Width::Dxa(w as f64 / 20.0));
             x = to;
         }
     }

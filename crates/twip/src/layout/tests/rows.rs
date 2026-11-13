@@ -198,6 +198,23 @@ fn a_pct_skip_is_a_share_of_the_table_width_and_rebuilds_the_grid() {
 }
 
 #[test]
+fn a_pct_cell_below_a_pct_skip_keeps_its_share_of_the_table_width() {
+    let cell = |w: u32, span: u32, t: char| {
+        format!(r#"<w:tc><w:tcPr><w:tcW w:w="{w}" w:type="pct"/><w:gridSpan w:val="{span}"/></w:tcPr><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:tc>"#)
+    };
+    let body = format!(
+        r#"<w:tbl><w:tblPr><w:tblW w:w="6000" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:trPr><w:gridAfter w:val="1"/><w:wAfter w:w="1000" w:type="pct"/></w:trPr>{}</w:tr><w:tr>{}{}</w:tr></w:tbl><w:p/>"#,
+        cell(4000, 2, 'p'),
+        cell(500, 1, 'a'),
+        cell(4500, 2, 'b')
+    );
+    // The skip row rebuilds the grid to 2400 / 2400 / 1200, but the next row's pct cells take 10 % and 90 % of the
+    // 6000 table: 600 / 5400, not the 2400 the grid gives the first.
+    let (a, b) = (glyph_x(&body, 'a').0, glyph_x(&body, 'b').0);
+    assert!((b - a - 30.0).abs() < 0.01, "a {a} b {b}");
+}
+
+#[test]
 fn a_border_wider_than_its_margin_takes_the_other_sides_margin_first() {
     let right_edge = |border: &str| {
         let body = format!(
