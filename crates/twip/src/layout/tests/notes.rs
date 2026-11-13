@@ -184,6 +184,27 @@ fn compat_14_section_end_endnotes_balance_with_the_columns() {
 }
 
 #[test]
+fn compat_14_balanced_column_starting_in_an_endnote_starts_with_the_continuation_separator() {
+    let long: String = (1..=12).map(|i| format!("<w:p><w:r><w:t>E{i}</w:t></w:r></w:p>")).collect();
+    let extra = format!(r#"<w:endnote w:id="10">{long}</w:endnote>"#);
+    let mut body = para("L01", &["e10"]);
+    body += &format!(r#"<w:p><w:pPr><w:sectPr><w:cols w:num="2" w:space="720"/>{PAGE}</w:sectPr></w:pPr><w:r><w:t>L02</w:t></w:r></w:p>"#);
+    body += &(para("Tail", &[]) + &sect(r#"<w:type w:val="continuous"/>"#, true));
+    let Some(doc) = notes_doc_with(&body, r#"<w:endnotePr><w:pos w:val="sectEnd"/></w:endnotePr>"#, &extra) else { return };
+    let snap = crate::layout::layout(&doc, &super::fonts());
+    let rules: Vec<[f64; 4]> = crate::layout::traverse::paint_items(&snap.pages()[0])
+        .into_iter()
+        .filter_map(|i| match i {
+            crate::layout::fragment::Item::Rect { rect, .. } if rect[3] - rect[1] < 1.0 => Some(rect),
+            _ => None,
+        })
+        .collect();
+    // The separator in column 1, then a rule across column 2 at its top.
+    assert!(rules.iter().any(|r| r[0] < 100.0 && r[2] - r[0] < 150.0), "{rules:?}");
+    assert!(rules.iter().any(|r| r[0] > 300.0 && r[2] - r[0] > 200.0 && r[1] < 90.0), "{rules:?}");
+}
+
+#[test]
 fn compat_15_section_end_endnotes_start_below_the_balanced_columns() {
     let Some(pages) = section_end_endnotes_in_columns(C15) else { return };
     let note = pages[0].iter().find(|c| c.0 == 'N').expect("the endnote is on page 1");

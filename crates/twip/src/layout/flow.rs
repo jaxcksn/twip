@@ -760,6 +760,12 @@ impl<'d> PageFill<'d, '_> {
         pos.block >= n || pos.at.at_start() && pos.block + 1 == n && n > 1 && matches!(self.sec.blocks.get(pos.block), Some(Block::Para(p)) if p.inlines.is_empty())
     }
 
+    /// Whether `pos` is at or inside an endnote's text (past the endnote separator).
+    fn in_endnote_text(&self, pos: &FlowToken) -> bool {
+        let s = &self.sec.blocks.stories;
+        s.len() > 1 && pos.block >= s[1] && pos.block < self.sec.blocks.len()
+    }
+
     /// Whether `pos` is inside an endnote that began on an earlier page.
     fn continues_endnote(&self, pos: &FlowToken) -> bool {
         let s = &self.sec.blocks.stories;
@@ -768,12 +774,17 @@ impl<'d> PageFill<'d, '_> {
 
     fn separator(&mut self, cont: bool, width: f64, memos: &mut Memos) -> Result<Rc<StoryLayout>, Yield> {
         let name = if cont { "footnote:continuationSeparator" } else { "footnote:separator" };
+        self.separator_or_rule(name, 144.0, width, memos)
+    }
+
+    /// The separator story `name` laid out at `width`, else the built-in one: an 11pt line with a rule `rule` wide.
+    fn separator_or_rule(&mut self, name: &str, rule: f64, width: f64, memos: &mut Memos) -> Result<Rc<StoryLayout>, Yield> {
         let s = match self.separator_story(name, width, memos)? {
             Some(s) => s,
             None => Rc::new({
                 let (a, d, e) = super::text::metrics_from(SEPARATOR_METRICS, 11.0);
                 let h = a + d + e;
-                let rule = Item::rect([0.0, h * 0.78 - 2.7, 144.0, h * 0.78 - 2.1], 0);
+                let rule = Item::rect([0.0, h * 0.78 - 2.7, rule, h * 0.78 - 2.1], 0);
                 let content: Rc<[Child]> = Rc::from([Child::Items(Box::new([rule]))]);
                 StoryLayout {
                     units: vec![StoryUnit {
@@ -1196,6 +1207,12 @@ impl<'d> PageFill<'d, '_> {
             && self.continues_endnote(pos)
             && let Some(sep) = self.separator_story("endnote:continuationSeparator", col.width, memos)?
         {
+            place_units(&sep.units, col.x, y, out);
+            y += sep.height;
+        } else if col.balance && self.column > 0 && self.ctx.env.text.compat == Compat::Legacy && self.in_endnote_text(pos) {
+            // Compat ≤ 14: in a balanced section every later column that starts with endnote text starts with the
+            // continuation separator, its rule across the column.
+            let sep = self.separator_or_rule("endnote:continuationSeparator", col.width, col.width, memos)?;
             place_units(&sep.units, col.x, y, out);
             y += sep.height;
         }
