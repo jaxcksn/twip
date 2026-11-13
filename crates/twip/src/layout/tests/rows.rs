@@ -644,6 +644,25 @@ mod floats {
         assert!(at("center", "line") - at("top", "line") > 20.0, "line-relative: in the cell");
     }
 
+    #[test]
+    fn float_14_in_a_cell_page_is_the_cells_box_and_a_wrapping_box_stays_inside_it() {
+        let at = |h_rel: &str, offset: i64, wrap: &str| {
+            let b = text_box(wrap, 40.0, "Boxed").replace(
+                r#"<wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset>"#,
+                &format!(r#"<wp:positionH relativeFrom="{h_rel}"><wp:posOffset>{}</wp:posOffset>"#, offset * 12700),
+            );
+            let margins = r#"<w:tblCellMar><w:left w:w="108" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar></w:tblPr>"#;
+            start_of(&doc(&in_cell("top", &b).replacen("</w:tblPr>", margins, 1)), "Boxed").0
+        };
+        // `page` counts from the cell's edge, 5.4pt (the cell margin) left of `column`.
+        let (page, column) = (at("page", 0, "<wp:wrapNone/>"), at("column", 0, "<wp:wrapNone/>"));
+        assert!((column - page - 5.4).abs() < 0.01, "page {page} column {column}");
+        // A 100pt square box 200pt into the 239.2pt text of a 250pt cell ends at the cell's edge; one without wrap doesn't.
+        let square = at("column", 200, r#"<wp:wrapSquare wrapText="bothSides"/>"#);
+        assert!((square - page - 150.0).abs() < 0.01, "square {square}");
+        assert!((at("column", 200, "<wp:wrapNone/>") - column - 200.0).abs() < 0.01);
+    }
+
     /// The first glyph run holding `text`: its x and baseline.
     fn start_of(d: &crate::docx::Document, text: &str) -> (f64, f64) {
         let s = layout(d, &fonts());

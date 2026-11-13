@@ -124,6 +124,9 @@ pub struct CellEnds {
     pub after: bool,
     pub fixed: bool,
     pub fit: bool,
+    /// The cell's box inside its borders, which `page` floats count from, in twips: where the text starts in it and
+    /// its width. Zero: the text's own box.
+    pub page: (i32, i32),
 }
 
 /// A story's table: nested when the story is a cell's.
@@ -297,8 +300,22 @@ pub fn layout_with(
                 y += g;
                 let id = para_id(p);
                 let para_top = y;
-                let fr =
-                    float::Frames { page_w: width, page_h: 0.0, margin: [0.0; 4], column: (0.0, width), compat: text.compat, cell: true, odd: true };
+                // In a cell `page` is the cell's box inside its borders and `margin` and `column` its text: positions
+                // are found in the cell's box, from `inset` left of the text.
+                let (inset, page_w) = match ends.page {
+                    (_, 0) => (0.0, width),
+                    (l, w) => (l as f64 / 20.0, w as f64 / 20.0),
+                };
+                let fr = float::Frames {
+                    page_w,
+                    page_h: 0.0,
+                    margin: [inset, page_w - inset - width, 0.0, 0.0],
+                    column: (inset, width),
+                    compat: text.compat,
+                    cell: true,
+                    odd: true,
+                };
+                let h_pos = |f: &Float, h: f64| float::page_clamp(f, (float::h_pos(f, &fr), 0.0), h, &fr).0 - inset;
                 // Wrapping floats
                 let mut own: Vec<(usize, Placed)> = Vec::new();
                 if in_cell && !ends.fit {
@@ -313,7 +330,7 @@ pub fn layout_with(
                             continue;
                         }
                         let h = float_height(f, env, memos)?;
-                        let (fx, fy) = (float::h_pos(f, &fr), float::v_pos(f, h, &fr, origin, para_top));
+                        let (fx, fy) = (h_pos(f, h), float::v_pos(f, h, &fr, origin, para_top));
                         own.push((k, Placed::new((0, bi, k), id, f, fx, fy, h)));
                     }
                 }
@@ -356,7 +373,7 @@ pub fn layout_with(
                             let h = float_height(f, env, memos)?;
                             let (fx, fy) = match own.iter().find(|(o, _)| *o == k) {
                                 Some((_, a)) => (a.rect[0], a.rect[1] - y),
-                                None => (super::float::h_pos(f, &fr), super::float::v_pos(f, h, &fr, origin, y) - y),
+                                None => (h_pos(f, h), super::float::v_pos(f, h, &fr, origin, y) - y),
                             };
                             if f.in_cell(text.compat) {
                                 float_bottom = float_bottom.max(y + fy + h);

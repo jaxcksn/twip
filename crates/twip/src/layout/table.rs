@@ -1269,6 +1269,8 @@ struct CellGeo {
     w: f64,
     cx: f64,
     cw: f64,
+    /// The cell's box inside its borders, from the cell's left edge: where it starts and its width.
+    inner: (f64, f64),
     edges: Rc<[Option<Border>; 4]>,
 }
 
@@ -1730,8 +1732,14 @@ fn layout_shown(
                         ci => style(r.cells[ci - 1].blocks.last(), view),
                     };
                     let after = r.cells.get(g.ci + 1).map_or(mark, |n| style(n.blocks.first(), view));
-                    let ends =
-                        CellEnds { before: drops(c.blocks.first(), before), after: drops(c.blocks.last(), after), fixed: t.fixed, fit: c.fit_text };
+                    let page = (((g.cx - g.inner.0) * 20.0).round() as i32, (g.inner.1 * 20.0).round() as i32);
+                    let ends = CellEnds {
+                        before: drops(c.blocks.first(), before),
+                        after: drops(c.blocks.last(), after),
+                        fixed: t.fixed,
+                        fit: c.fit_text,
+                        page,
+                    };
                     let shaded;
                     let cell_env = match c.shading.filter(|f| super::env::is_dark(*f)) {
                         Some(fill) => {
@@ -1963,17 +1971,20 @@ fn place(t: &Table, cols: &[f64], edges: &[Vec<CellEdges>]) -> Vec<Vec<CellGeo>>
                     }
                     let (x, w) = (col_x[col], col_x[col + span] - col_x[col]);
                     let (ml, mr) = (twips(c.margins[1]), twips(c.margins[3]));
+                    let inner;
                     let (cx, cw) = if let Some(row_s) = spacing_of(t, ri) {
                         let (gl, gr) = (twips(gap(row_s, left_outer)), twips(gap(row_s, right_outer)));
                         let (bl, br) = (twips(space_h(left_e)), twips(space_h(right_e)));
                         // Without a gap the text starts half the border further left; the width stays.
                         let indent = if gl > 0 { ml } else { (ml - bl / 2).max(0) };
+                        inner = (gl + bl / 2, w - gl - gr - (bl + br) / 2);
                         (gl + bl + indent, (w - gl - bl - ml - mr - br - gr).max(0))
                     } else {
                         let (bl, br) = (twips(box_h(left_e)), twips(box_h(right_e)));
+                        inner = (bl / 2, w - bl / 2 - br / 2);
                         (ml.max(bl / 2), (w - (ml + mr).max((bl + br) / 2)).max(0))
                     };
-                    CellGeo { ci: e.ci, col, span, x: pt(x), w: pt(w), cx: pt(cx), cw: pt(cw), edges: e.edges.clone() }
+                    CellGeo { ci: e.ci, col, span, x: pt(x), w: pt(w), cx: pt(cx), cw: pt(cw), inner: (pt(inner.0), pt(inner.1)), edges: e.edges.clone() }
                 })
                 .collect()
         })
