@@ -2944,6 +2944,37 @@ fn a_hyphen_after_balanced_spaces_breaks_with_punctuation_compressed() {
 }
 
 #[test]
+fn a_balanced_space_counts_its_widening_as_stretch_taken() {
+    // One justified line of Arial 9, 396 pt wide, with a balanced double space before "If".
+    let line = "hours are subject to a $25 reset fee.  If a class is missed, a $25 setover fee will be assessed.";
+    let body = format!(
+        r#"<w:p><w:pPr><w:ind w:left="1440"/><w:jc w:val="both"/></w:pPr><w:r><w:t xml:space="preserve">{line}</w:t></w:r><w:r><w:br/><w:t>x</w:t></w:r></w:p>"#
+    );
+    let rpr = r#"<w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:eastAsiaTheme="minorEastAsia"/><w:sz w:val="18"/>"#;
+    let x_if = |m: u32| -> Option<f64> {
+        let settings = format!("<w:balanceSingleByteDoubleByteWidth/>{}", mode(m));
+        let doc = test_doc(&settings, rpr, &body, "")?;
+        let fonts = fonts();
+        let snap = layout(&doc, &fonts);
+        let mut x = None;
+        paint(&snap.pages()[0], &mut |p| {
+            if let Item::Glyphs(r) = p.absolute()
+                && r.chars.first().is_some_and(|c| c.0 == 'I')
+            {
+                x = Some(r.x);
+            }
+        });
+        x
+    };
+    let Some(c15) = x_if(15) else { return };
+    // Compat 15: the ordinary spaces take their half, the rest goes equally to all twenty.
+    assert!((c15 - 305.17).abs() < 0.05, "compat 15 {c15}");
+    // Compat 12: the equal share stays under the balanced spaces' widening, so only the ordinary spaces grow.
+    let c12 = x_if(12).unwrap();
+    assert!((c12 - 305.12).abs() < 0.05, "compat 12 {c12}");
+}
+
+#[test]
 fn a_leading_page_break_starts_the_paragraph_again_after_it() {
     let text = "Several quiet lanterns glowed beside the harbour while patient workers mended nets. ".repeat(3);
     let numbering = r#"<w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/><w:lvlJc w:val="left"/></w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>"#;

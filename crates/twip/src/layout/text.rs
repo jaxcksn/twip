@@ -124,6 +124,8 @@ pub struct Piece {
     pub text: (u32, u32),
     pub src: Option<Unit>,
     pub object: Option<u32>,
+    /// A balanced space: its width before it was widened.
+    pub natural: Option<f64>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -477,6 +479,7 @@ impl<'a> Builder<'a> {
             text: (t0, self.text.len() as u32),
             src: None,
             object,
+            natural: None,
         });
     }
 
@@ -1346,7 +1349,9 @@ impl<'a> Builder<'a> {
                 None
             };
             if let Some(em) = em {
-                self.pieces[k].width = em * st.size * st.run.scale / 100.0 + st.run.spacing;
+                let p = &mut self.pieces[k];
+                p.natural = Some(p.width);
+                p.width = em * st.size * st.run.scale / 100.0 + st.run.spacing;
             }
         }
     }

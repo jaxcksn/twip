@@ -1442,9 +1442,9 @@ fn justified_tab_end(
         let last = ink.map_or(first, |k| k + 1);
         let (mut shrink, mut stretch) = (0, 0);
         for k in (first..last).filter(|&k| stretches(sp, &pieces[k])) {
-            let w = lu(all.widths[k - start]).round() as i64;
-            shrink += (w + 2) >> 2;
-            stretch += (w + 1) >> 1;
+            let (e, c) = space_room(&pieces[k], all.widths[k - start]);
+            shrink += c;
+            stretch += e;
         }
         End { at: e, over: lu(x - left).round() - column, shrink, stretch, point: point(e) }
     };
@@ -1569,9 +1569,9 @@ fn justified_line(sp: &ShapedPara, pieces: &[Piece], from: usize, seg_end: usize
                 }
                 natural += lu(p.width) + lu(p.break_extra);
                 if seen && stretches(sp, p) {
-                    let w = lu(p.width) as i64;
-                    shrink += (w + 2) >> 2;
-                    stretch += (w + 1) >> 1;
+                    let (e, c) = space_room(p, p.width);
+                    shrink += c;
+                    stretch += e;
                 }
                 if !p.break_after
                     && let Some(j) = word_end.take()
@@ -1681,7 +1681,7 @@ fn align(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, 
             }
             let extra = right - line_end_x;
             if justify && extra > 0.0 && frame.compat == Compat::Generic {
-                let caps: Vec<(usize, f64)> = spaces.iter().map(|&k| (k, stretch_cap(line.widths[k]))).collect();
+                let caps: Vec<(usize, f64)> = spaces.iter().map(|&k| (k, stretch_cap(&pieces[idx(k)], line.widths[k]))).collect();
                 tiered(extra, &[&caps], &mut line.widths);
             } else if justify
                 && extra < 0.0
@@ -1698,12 +1698,21 @@ fn align(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, 
                     line.widths[k] -= px as f64 * 72.0 / 600.0;
                 }
             } else if justify && (extra > 0.0 || (extra < 0.0 && frame.wp_justification)) {
-                let q = extra / spaces.len() as f64;
-                for &k in &spaces {
-                    line.widths[k] += q;
+                // Equal shares; a balanced space counts its widening as share already taken.
+                let taken: Vec<f64> = spaces.iter().map(|&k| pieces[idx(k)].natural.map_or(0.0, |n| (line.widths[k] - n).max(0.0))).collect();
+                if extra > 0.0 {
+                    let q = water_level(extra, &taken);
+                    for (&k, t) in spaces.iter().zip(&taken) {
+                        line.widths[k] += (q - t).max(0.0);
+                    }
+                } else {
+                    for &k in &spaces {
+                        line.widths[k] += extra / spaces.len() as f64;
+                    }
                 }
             } else if extra < 0.0 && frame.compat == Compat::Generic {
-                shrink_shared(-extra, &spaces, &mut line.widths);
+                let caps: Vec<(usize, f64)> = spaces.iter().map(|&k| (k, shrink_cap(&pieces[idx(k)], line.widths[k]))).collect();
+                shrink_shared(-extra, &caps, &mut line.widths);
             } else {
                 if style.bidi {
                     to_right(line);
@@ -1737,7 +1746,7 @@ fn align(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, 
             let bonus: Vec<(usize, f64)> = chars.windows(2).map(|w| (w[0], auto_space(sp, &pieces[idx(w[0])], &pieces[idx(w[1])], style))).collect();
             let extra = right - line_end_x - bonus.iter().map(|b| b.1).sum::<f64>();
             let spaces: Vec<(usize, f64)> =
-                gaps.iter().filter(|&&k| stretches(sp, &pieces[idx(k)])).map(|&k| (k, stretch_cap(line.widths[k]))).collect();
+                gaps.iter().filter(|&&k| stretches(sp, &pieces[idx(k)])).map(|&k| (k, stretch_cap(&pieces[idx(k)], line.widths[k]))).collect();
             let glyphs: Vec<(usize, f64)> = gaps
                 .iter()
                 .filter(|&&k| !pieces[idx(k)].soft_hyphen)
@@ -1757,7 +1766,8 @@ fn align(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, 
             if extra > 0.0 {
                 tiered(extra, &[&spaces, &glyphs], &mut line.widths);
             } else if extra < 0.0 {
-                shrink_shared(-extra, &spaces.iter().map(|s| s.0).collect::<Vec<_>>(), &mut line.widths);
+                let caps: Vec<(usize, f64)> = spaces.iter().map(|&(k, _)| (k, shrink_cap(&pieces[idx(k)], line.widths[k]))).collect();
+                shrink_shared(-extra, &caps, &mut line.widths);
             }
             let mut x = line.xs[0];
             for k in 0..n {
@@ -1795,9 +1805,43 @@ fn align(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, 
     }
 }
 
-/// How far compat 15 stretches a space of width `w` before the rest is shared equally: half of it, in layout units.
-fn stretch_cap(w: f64) -> f64 {
-    ((((w * LU_PER_PT).round() as i64) + 1) >> 1) as f64 / LU_PER_PT
+/// A compat 15 space `w` points wide: how far it stretches before the rest is shared equally and how far it shrinks,
+/// in layout units: half and a quarter of its width. A balanced space counts its widening as stretch already taken
+/// (what is left of half its natural width) and doesn't shrink.
+fn space_room(p: &Piece, w: f64) -> (i64, i64) {
+    let lu = |w: f64| (w * LU_PER_PT).round() as i64;
+    let w = lu(w);
+    match p.natural {
+        None => ((w + 1) >> 1, (w + 2) >> 2),
+        Some(n) => {
+            let n = lu(n);
+            ((((n + 1) >> 1) - (w - n)).max(0), 0)
+        }
+    }
+}
+
+fn stretch_cap(p: &Piece, w: f64) -> f64 {
+    space_room(p, w).0 as f64 / LU_PER_PT
+}
+
+fn shrink_cap(p: &Piece, w: f64) -> f64 {
+    space_room(p, w).1 as f64 / LU_PER_PT
+}
+
+/// The equal share `s` that spreads `extra` over spaces that have each taken `taken` already: Σ max(0, s − taken)
+/// = extra. Without any taken, `extra` over their number.
+fn water_level(extra: f64, taken: &[f64]) -> f64 {
+    let mut t = taken.to_vec();
+    t.sort_by(f64::total_cmp);
+    let mut sum = 0.0;
+    for (j, &d) in t.iter().enumerate() {
+        sum += d;
+        let s = (extra + sum) / (j + 1) as f64;
+        if t.get(j + 1).is_none_or(|&next| s <= next) {
+            return s;
+        }
+    }
+    0.0
 }
 
 /// Compat 15's share of a line's `extra` width: each tier of opportunities (piece, capacity) in turn takes what is
@@ -1822,16 +1866,15 @@ fn tiered(extra: f64, tiers: &[&[(usize, f64)]], widths: &mut [f64]) {
     }
 }
 
-/// Compat 15's squeeze of an overflowing line: its spaces give way in proportion to a quarter of their widths (in
-/// layout units), all of it at most.
-fn shrink_shared(over: f64, spaces: &[usize], widths: &mut [f64]) {
-    let caps: Vec<f64> = spaces.iter().map(|&k| ((((widths[k] * LU_PER_PT).round() as i64) + 2) >> 2) as f64 / LU_PER_PT).collect();
-    let c: f64 = caps.iter().sum();
+/// Compat 15's squeeze of an overflowing line: its spaces (piece, shrink) give way in proportion to their shrink, all
+/// of it at most.
+fn shrink_shared(over: f64, caps: &[(usize, f64)], widths: &mut [f64]) {
+    let c: f64 = caps.iter().map(|s| s.1).sum();
     if c <= 0.0 {
         return;
     }
     let used = over.min(c);
-    for (&k, cap) in spaces.iter().zip(&caps) {
+    for &(k, cap) in caps {
         widths[k] -= used * cap / c;
     }
 }
