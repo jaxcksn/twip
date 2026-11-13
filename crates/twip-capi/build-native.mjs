@@ -14,4 +14,6 @@ const args = process.argv.slice(2);
 // The library unwinds panics, which the release profile otherwise aborts on: its entry points catch them and report
 // an internal error, so a panic on a bad document fails the call instead of ending the host's process.
 const library = ['--config', 'profile.release.panic="unwind"', 'rustc', '-p', 'twip-capi', '--release', '--crate-type', 'cdylib'];
+// On macOS its install name is @rpath/libtwip.dylib, so an app that embeds it finds it in its own Frameworks folder.
+if (process.platform === 'darwin') library.push('--', '-C', 'link-arg=-Wl,-install_name,@rpath/libtwip.dylib');
 execFileSync('cargo', args.length ? args : library, { cwd: root, env, stdio: 'inherit' });
