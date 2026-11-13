@@ -824,6 +824,18 @@ fn a_page_break_in_a_table_cell_is_nothing() {
 }
 
 #[test]
+fn compat_15_text_after_a_leading_page_break_in_a_cell_goes_on_at_the_left_indent() {
+    let body = r#"<w:tbl><w:tblGrid><w:gridCol w:w="6000"/></w:tblGrid><w:tr><w:tc><w:p><w:pPr><w:ind w:left="1440" w:hanging="720"/></w:pPr><w:r><w:br w:type="page"/><w:t>Text</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#;
+    let x = |mode: u32| {
+        let c = format!(r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="{mode}"/></w:compat>"#);
+        lines(&c, ARIAL_12, body).map(|l| l[0].0)
+    };
+    let Some(c12) = x(12) else { return };
+    // Compat ≤ 14 starts the text again with its hanging line; compat 15 goes on at the left indent.
+    assert!((x(15).unwrap() - c12 - 36.0).abs() < 0.01, "{c12}");
+}
+
+#[test]
 fn spaces_next_to_a_no_break_space_dont_break() {
     let fill = "word ".repeat(14);
     let p = |gap: &str| format!("<w:p><w:r><w:t xml:space=\"preserve\">{fill}carbon.{gap}Risks and more words after them</w:t></w:r></w:p>");

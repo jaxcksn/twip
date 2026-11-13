@@ -700,6 +700,7 @@ impl<'d> PageFill<'d, '_> {
         let next = next.filter(|_| !breaks_first(self.sec.blocks.get(end + 1)));
         let next = next.or_else(|| self.sec.next.filter(|_| end + 1 >= self.sec.blocks.len()));
         let mut space = laid.shape_space(self.fields, self.note_numbers, &self.ctx);
+        space.ends_section = self.sec.breaks && end + 1 == self.sec.section.blocks.len();
         if space.stale_fit && self.sec.index == 0 && bi == 0 && p.inlines.iter().any(|i| i.run().is_some_and(|r| r.fit_text.is_some())) {
             // The document's first line as broken with its regions unadjusted: real tab stops and list number.
             let probe = ShapeSpace { unfitted: true, ..space.clone() };
@@ -1935,7 +1936,7 @@ impl<'d> PageFill<'d, '_> {
         let (cx0, cx1) = (col.x, col.x + col.width);
         let compat = self.ctx.env.text.compat;
         // After a leading page or column break the paragraph starts again with its first line.
-        let restarts = pb.from > 0 && sp.pieces[..pb.from.min(sp.pieces.len())].iter().all(|q| matches!(q.kind, Kind::PageBreak | Kind::ColumnBreak));
+        let restarts = sp.opens && pb.from > 0 && sp.pieces[..pb.from.min(sp.pieces.len())].iter().all(|q| matches!(q.kind, Kind::PageBreak | Kind::ColumnBreak));
         let mut content = pieces.iter().filter(|q| q.kind != Kind::Anchor);
         let lone_picture = compat == Compat::Legacy && content.next().is_some_and(|q| q.kind == Kind::Object) && content.next().is_none();
         // Text laid out before the paragraph in this column ends at `*y`, then the space after it keeps.

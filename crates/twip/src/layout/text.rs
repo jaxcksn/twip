@@ -144,6 +144,8 @@ pub struct ShapedPara {
     pub hyphenate: Option<(super::hyphenate::Hyphenation, bool, usize)>,
     /// The document's default East Asian font is an East Asian font: East Asian paragraph layout.
     pub east_asian_default: bool,
+    /// The text after a leading page or column break starts the paragraph again (first-line indent, top border).
+    pub opens: bool,
 }
 
 impl ShapedPara {
@@ -1130,7 +1132,9 @@ impl<'a> Builder<'a> {
         self.flush_text(&mut pend, &mut pend_runs, &mut pend_units)?;
         // A paragraph whose first content is a page or column break starts again after it: the list number goes
         // with the text that follows.
-        if list_end > 0
+        if list_end > 0 && continues_after_break(para, space) {
+            self.pieces.drain(..list_end);
+        } else if list_end > 0
             && let Some(k) = (list_end..self.pieces.len()).find(|&k| self.pieces[k].kind != Kind::Anchor)
             && matches!(self.pieces[k].kind, Kind::PageBreak | Kind::ColumnBreak)
         {
@@ -1360,6 +1364,7 @@ impl<'a> Builder<'a> {
             rules: self.rules,
             hyphenate: None,
             east_asian_default: false,
+            opens: true,
         }
     }
 }
@@ -1563,7 +1568,22 @@ pub fn shape_uncached(para: &Paragraph, space: &ShapeSpace, fonts: &Fonts, memos
     memos.meter.unit_done();
     let east_asian_default =
         space.default_east_asia.as_deref().is_some_and(|f| !f.is_empty() && fonts.face(f, None, false, false).is_some_and(|f| f.east_asian));
-    Ok(ShapedPara { join: space.join.clone(), hyphenate: space.hyphenate.clone(), east_asian_default, ..b.finish() })
+    let opens = !continues_after_break(para, space);
+    Ok(ShapedPara { join: space.join.clone(), hyphenate: space.hyphenate.clone(), east_asian_default, opens, ..b.finish() })
+}
+
+/// Compat 15: the paragraph's first content is a page or column break (empty runs and bookmarks before it don't
+/// count) and it ends a section or is in a frame or a cell: the text after the break goes on as continuation lines,
+/// with no list number.
+fn continues_after_break(para: &Paragraph, space: &ShapeSpace) -> bool {
+    let in_frame = !space.frame_breaks && para.para_style_in(space.view).in_frame;
+    space.breaks_continue
+        && (space.ends_section || space.in_cell || in_frame)
+        && para
+            .inlines
+            .iter()
+            .find(|i| !matches!(i, Inline::Bookmark(_) | Inline::Range(_)) && !matches!(i, Inline::Text(t, _) if t.is_empty()))
+            .is_some_and(|i| matches!(i, Inline::Break(BreakKind::Page | BreakKind::Column, _)))
 }
 
 pub fn shape_space(
@@ -1581,6 +1601,7 @@ pub fn shape_space(
         em1000: text.compat == crate::docx::Compat::Legacy && text.word97_line_breaks,
         frame_breaks: text.show_breaks_in_frames,
         stale_fit: text.compat == crate::docx::Compat::Generic,
+        breaks_continue: text.compat == crate::docx::Compat::Generic,
         vertical: text.vertical.is_some(),
         metric_rules: MetricRules {
             no_leading: text.no_leading,

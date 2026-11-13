@@ -306,7 +306,7 @@ pub fn break_lines_uncached(
     let from = space.start.min(shaped.pieces.len());
     let pieces = &shaped.pieces[from..];
     // After a leading page or column break the paragraph starts again: first-line indent, borders.
-    let opens = from == 0 || shaped.pieces[..from].iter().all(|q| matches!(q.kind, Kind::PageBreak | Kind::ColumnBreak));
+    let opens = shaped.opens && (from == 0 || shaped.pieces[..from].iter().all(|q| matches!(q.kind, Kind::PageBreak | Kind::ColumnBreak)));
     let frame = Frame::new(space);
     let view = space.env.review.view;
     let (style, mark) = (para.para_style_in(view), para.mark_in(view));

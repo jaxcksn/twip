@@ -28,6 +28,11 @@ pub struct ShapeSpace {
     pub frame_breaks: bool,
     /// Fitted regions break lines with their first adjustment (compat 15).
     pub stale_fit: bool,
+    /// Compat 15: a leading page or column break in a section's last paragraph, a frame or a cell doesn't start the
+    /// paragraph again.
+    pub breaks_continue: bool,
+    /// The paragraph carries the section's break.
+    pub ends_section: bool,
     /// How many pieces the document's first line holds, broken with its fitted regions unadjusted, when this
     /// paragraph holds it (compat 15 fitted text).
     pub first_line: Option<usize>,
