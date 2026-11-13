@@ -1679,6 +1679,16 @@ fn align(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, 
             if justify && extra > 0.0 && frame.compat == Compat::Generic {
                 let caps: Vec<(usize, f64)> = spaces.iter().map(|&k| (k, stretch_cap(line.widths[k]))).collect();
                 tiered(extra, &[&caps], &mut line.widths);
+            } else if justify && extra < 0.0 && frame.wp_justification && sp.styles[pieces[idx(spaces[0])].style as usize].face.as_ref().is_some_and(|f| f.fixed_pitch) {
+                // wpJustification with fixed-pitch spaces: every advance but the last gives way, in 600 dpi pixels,
+                // two short of the overflow; the last advances one more each for the remainder.
+                let advances: Vec<usize> = (first..content_end - 1).collect();
+                let t = ((-extra * 600.0 / 72.0).floor() as i64 - 2).max(0);
+                let (base, rem) = (t / advances.len() as i64, (t % advances.len() as i64) as usize);
+                for (j, &k) in advances.iter().enumerate() {
+                    let px = base + i64::from(j >= advances.len() - rem);
+                    line.widths[k] -= px as f64 * 72.0 / 600.0;
+                }
             } else if justify && (extra > 0.0 || (extra < 0.0 && frame.wp_justification)) {
                 let q = extra / spaces.len() as f64;
                 for &k in &spaces {

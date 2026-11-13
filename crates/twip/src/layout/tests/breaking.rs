@@ -1698,6 +1698,26 @@ fn compat_15_distributed_glyph_shaped_text_stretches_only_its_spaces() {
     assert!((x('d', 1) - (72.0 + (468.0 - word - e_width) / 2.0)).abs() < 0.05, "{} {word}", x('d', 1));
 }
 
+#[test]
+fn wp_justification_squeezes_fixed_pitch_lines_by_every_advance() {
+    if !fonts().is_installed("Courier New") {
+        return;
+    }
+    let wp = r#"<w:compat><w:wpJustification/><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="12"/></w:compat>"#;
+    let text = format!("a{}  bbb", "  a".repeat(22));
+    let body = format!(r#"<w:p><w:pPr><w:jc w:val="both"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Courier New" w:hAnsi="Courier New"/><w:sz w:val="24"/></w:rPr><w:t xml:space="preserve">{text}</w:t></w:r></w:p>"#);
+    let Some(chars) = glyph_xs(wp, &body) else { return };
+    let a: Vec<f64> = chars.iter().filter(|g| g.0 == 'a').map(|g| g.1).collect();
+    // 118 px over 66 advances: one each, the last 52 two; so the gaps between the a's go 21.24 ×4, 21.12, 20.88.
+    let gaps: Vec<f64> = a.windows(2).map(|w| w[1] - w[0]).collect();
+    let want = |k: usize| match k {
+        0..4 => 21.24,
+        4 => 21.12,
+        _ => 20.88,
+    };
+    assert!(gaps.len() == 22 && gaps.iter().enumerate().all(|(k, g)| (g - want(k)).abs() < 0.02), "{gaps:?}");
+}
+
 /// Each character on the first page with its x and baseline.
 fn glyph_xs(settings: &str, body: &str) -> Option<Vec<(char, f64, f64)>> {
     Some(super::page_chars(&test_doc(settings, ARIAL_11, body, "")?).swap_remove(0))
