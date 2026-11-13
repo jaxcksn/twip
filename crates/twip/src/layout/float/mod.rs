@@ -56,6 +56,10 @@ pub struct Placed {
     pub dist: [f64; 4],
     /// Where its right side is for the lines before it in the flow, when that differs.
     pub early_right: Option<f64>,
+    /// Compat ≤ 14: a frame in the flow placed from the nearest twip above its flow position, so that it meets the
+    /// line above it and the page starts again, or a frame anchored after such a one in its paragraph. Kept, it
+    /// doesn't move the text before it.
+    pub rounded_up: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -132,6 +136,7 @@ impl Placed {
             contour,
             dist: f.dist,
             early_right: None,
+            rounded_up: false,
         }
     }
 
@@ -344,6 +349,7 @@ mod tests {
             contour: None,
             dist: [0.0; 4],
             early_right: None,
+            rounded_up: false,
         }
     }
 

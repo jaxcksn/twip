@@ -3470,3 +3470,32 @@ fn a_paragraph_ending_in_a_line_break_beside_a_float_keeps_its_empty_last_line()
     let Some(plain) = next("") else { return };
     assert!((next(&anchor(300, 0, 50, 10, 1, "paragraph")).unwrap() - plain).abs() < 0.01);
 }
+
+/// Compat ≤ 14: a one-line paragraph, an in-flow frame F1, a frame F2 that may not overlap 18pt below it and over it,
+/// a paragraph of `lines` short lines, and an in-flow frame F3 after it. F1's and F2's tops.
+fn frames_and_a_later_frame_in_the_flow(lines: usize) -> Option<(f64, f64)> {
+    let frame = |t: &str, x: u32, y: u32, sup: &str| {
+        format!(r#"<w:p><w:pPr><w:framePr w:w="2880" w:h="720" w:hRule="exact" w:hSpace="180" w:vSpace="0" w:wrap="around" w:vAnchor="text" w:hAnchor="page" w:x="{x}" w:y="{y}"/>{sup}<w:spacing w:before="0" w:after="0"/></w:pPr><w:r><w:t>{t}</w:t></w:r></w:p>"#)
+    };
+    let short: String = (0..lines).map(|k| format!("<w:r><w:t>L{k}</w:t></w:r><w:r><w:br/></w:r>")).collect();
+    let body = format!(
+        r#"<w:p><w:r><w:t>Lead</w:t></w:r></w:p>{}{}<w:p>{short}<w:r><w:t>End</w:t></w:r></w:p>{}<w:p><w:r><w:t>After</w:t></w:r></w:p>"#,
+        frame("F1", 1440, 0, ""),
+        frame("F2", 2880, 360, "<w:suppressOverlap/>"),
+        frame("F3", 5760, 0, "")
+    );
+    let l = baselines("", ARIAL_11, &body)?;
+    let y = |t: &str| l.iter().find(|l| l.1 == t).unwrap_or_else(|| panic!("{t}: {l:?}")).3;
+    Some((y("F1"), y("F2")))
+}
+
+#[test]
+fn compat_14_a_later_frame_in_the_flow_placed_a_fraction_above_its_place_puts_the_first_below_the_frame_it_overlaps() {
+    // 21 lines leave F3's flow position .56 twip past a whole twip: placed from the nearest twip it stays below the
+    // line above, and F1 keeps its place under F2. 25 leave .48: F3 meets that line, the page starts again, and F1 goes
+    // a twip short of F2's bottom.
+    let Some((f1, f2)) = frames_and_a_later_frame_in_the_flow(20) else { return };
+    assert!(f1 < f2, "{f1} {f2}");
+    let (f1, f2) = frames_and_a_later_frame_in_the_flow(24).unwrap();
+    assert!((f1 - f2 - 35.95).abs() < 0.01, "{f1} {f2}");
+}
