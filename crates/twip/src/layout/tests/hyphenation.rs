@@ -178,6 +178,20 @@ fn compat_15_moves_a_hyphenated_last_line_to_the_next_page() {
 }
 
 #[test]
+fn compat_15_checks_the_hyphen_on_the_line_widow_control_leaves_last() {
+    if !super::fonts().is_installed("Courier New") {
+        return;
+    }
+    // Four lines, the first three on the page's last three: widow control keeps two, the second ends in a hyphen and
+    // moves, and the first, left alone, goes with it.
+    let t = r#"<w:r><w:t>Bob and Sam met by the old inn The plain cart ran representative bottom text. Then the old fox ran on and on.</w:t></w:r>"#;
+    let ppr = r#"<w:ind w:right="5699"/><w:widowControl/>"#;
+    let Some([p1, p2]) = courier(&track_settings(15, true, ""), ppr, 20, "a1t", 48, t) else { return };
+    assert_eq!((p1.len(), p1.last().map(String::as_str)), (48, Some("Fill 47")), "{p1:?}");
+    assert_eq!(p2[..2], ["Bob and Sam met by the old inn", "The plain cart ran representa-"], "{p2:?}");
+}
+
+#[test]
 fn compat_15_breaks_the_last_line_again_without_automatic_hyphenation() {
     if !super::fonts().is_installed("Courier New") {
         return;

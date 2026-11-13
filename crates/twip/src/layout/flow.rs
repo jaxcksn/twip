@@ -1637,9 +1637,15 @@ impl<'d> PageFill<'d, '_> {
                 }
             }
             let hard = pb.lines[..fit.min(n)].iter().any(|l| matches!(l.hard, Some(Kind::PageBreak | Kind::ColumnBreak)));
-            // Compat 15: a line that would end the page or column at a hyphenation point goes on to the next one.
-            let fit = if self.ctx.env.text.bottom_hyphen_moves && fit > 0 && fit < n && !hard && pb.lines[fit - 1].hyphen { fit - 1 } else { fit };
-            let take = lines_to_take(n, fit, hard, first_part, style.keep_lines, style.widow_control);
+            let take_of = |fit| lines_to_take(n, fit, hard, first_part, style.keep_lines, style.widow_control);
+            let take = take_of(fit);
+            // Compat 15: when the line that ends the page or column after widow and orphan control ends at a
+            // hyphenation point, it goes on to the next one, and widow and orphan control apply once more.
+            let (fit, take) = if self.ctx.env.text.bottom_hyphen_moves && take > 0 && take < n && !hard && pb.lines[take - 1].hyphen {
+                (take - 1, take_of(take - 1))
+            } else {
+                (fit, take)
+            };
             if take == 0 && force.is_none() && wc && !at_top && self.ctx.env.text.compat == Compat::Legacy && first_ref.is_some() {
                 force = first_ref;
                 continue;
