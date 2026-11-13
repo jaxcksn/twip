@@ -2690,27 +2690,37 @@ fn compat_14_balanced_columns_grow_by_the_failed_fills_mean_line_and_end_at_the_
 }
 
 #[test]
-fn compat_15_balanced_columns_start_from_the_weighted_height_unrounded() {
-    // Exact lines of 12, 12, 15 and 15pt in two columns: from 27pt the fill fails and grows by 12pt to 39pt, which
-    // holds three lines in the first column. Rounded down to a whole line first (24pt), it would grow to 36pt: 2 / 2.
+fn compat_15_balanced_columns_start_rounded_down_to_the_smallest_line() {
     let sect = |cols: &str| {
         format!(
             r#"<w:sectPr><w:type w:val="continuous"/><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>{cols}</w:sectPr>"#
         )
     };
-    let paras: String = [240, 240, 300, 300]
-        .iter()
-        .enumerate()
-        .map(|(k, line)| {
-            let s = if k == 3 { sect(r#"<w:cols w:num="2" w:space="720"/>"#) } else { String::new() };
-            format!(r#"<w:p><w:pPr><w:spacing w:after="0" w:line="{line}" w:lineRule="exact"/>{s}</w:pPr><w:r><w:t>P{}</w:t></w:r></w:p>"#, k + 1)
-        })
-        .collect();
-    let body = format!(r#"{paras}<w:p><w:pPr>{}</w:pPr><w:r><w:t>After</w:t></w:r></w:p>"#, sect(""));
-    let c15 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
-    let Some(l) = baselines(c15, ARIAL_12, &body) else { return };
-    let right: Vec<&str> = l.iter().filter(|x| x.0 > 200.0).map(|x| x.1.as_str()).collect();
-    assert_eq!(right, ["P4"], "{l:?}");
+    // How many of the exact lines (twips) each column holds.
+    let split = |n: u32, lines: &[u32]| {
+        let paras: String = lines
+            .iter()
+            .enumerate()
+            .map(|(k, line)| {
+                let s = if k + 1 == lines.len() { sect(&format!(r#"<w:cols w:num="{n}" w:space="720"/>"#)) } else { String::new() };
+                format!(r#"<w:p><w:pPr><w:spacing w:after="0" w:line="{line}" w:lineRule="exact"/>{s}</w:pPr><w:r><w:t>P{}</w:t></w:r></w:p>"#, k + 1)
+            })
+            .collect();
+        let body = format!(r#"{paras}<w:p><w:pPr>{}</w:pPr><w:r><w:t>After</w:t></w:r></w:p>"#, sect(""));
+        let c15 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+        let l = baselines(c15, ARIAL_12, &body)?;
+        let mut xs: Vec<f64> = l.iter().filter(|x| x.1.starts_with('P')).map(|x| x.0).collect();
+        xs.dedup_by(|a, b| (*a - *b).abs() < 1.0);
+        Some(xs.iter().map(|x| l.iter().filter(|y| y.1.starts_with('P') && (y.0 - x).abs() < 1.0).count()).collect::<Vec<_>>())
+    };
+    // 12, 12, 15, 15pt in two columns: 27pt rounded down to 24pt fails and grows by 12pt to 36pt: 2 / 2 (unrounded it
+    // would grow to 39pt: 3 / 1).
+    let Some(a) = split(2, &[240, 240, 300, 300]) else { return };
+    assert_eq!(a, [2, 2]);
+    // A 10pt line under 12pt text isn't the smallest line: 70pt fails and grows by 14pt, not 10pt: 4 / 4.
+    assert_eq!(split(2, &[400, 480, 480, 280, 480, 280, 200, 300]).unwrap(), [4, 4]);
+    // 25.3pt holds no first line: the columns stay empty and the height grows by the smallest line: 1 / 1 / 3.
+    assert_eq!(split(3, &[560, 560, 480, 253, 253]).unwrap(), [1, 1, 3]);
 }
 
 /// A legacy form field as Word writes it: `w:ffData` in its begin, no result.

@@ -9,7 +9,7 @@ use crate::docx::review::MarkupView;
 
 use super::LayoutCtx;
 use super::flow::{AttemptState, NoteArea, PageFill, PassMemo, Stop};
-use super::fragment::{BoxFragment, BoxKind, Child, Item, PlacedLine, RowFragment};
+use super::fragment::{BoxFragment, BoxKind, Child, Item, LineFragment, PlacedLine, RowFragment};
 use super::ids::FragmentId;
 use super::job::{Memos, Yield};
 use super::node::{Notes, SectionNode};
@@ -623,6 +623,10 @@ impl<'d> Paginator<'d, '_> {
                 }));
                 end = end.max(bottom + hang(&pos, &carry));
                 if fill.at.forced {
+                    // Compat 15: a column whose first line doesn't fit stays empty, and so do the columns after it.
+                    if fill.ctx.env.text.compat == Compat::Generic {
+                        stats.pop();
+                    }
                     return Ok((None, stats));
                 }
                 if s == Stop::Done || at_mark {
@@ -664,11 +668,14 @@ impl<'d> Paginator<'d, '_> {
                 done.3 = done.3.min(top + to_pt(h)).max(fill.at.notes_bottom);
             }
         } else {
-            let step = |st: &[ColStats]| st.iter().filter(|s| s.lines > 0).map(|s| s.min).min().unwrap_or(1).max(1);
-            // From the unbalanced fill's line heights weighted by the columns' widths, as it is (not rounded to a
-            // line), the height grows by the failed fill's smallest line or row, or shrinks by it while it still fits.
+            // From the unbalanced fill's line heights weighted by the columns' widths, rounded down to its smallest
+            // line, the height grows by the failed fill's smallest line or row, or shrinks by the fitting fill's while
+            // it still fits.
+            let smallest = |st: &[ColStats]| st.iter().filter(|s| s.min > 0).map(|s| s.min).min();
+            let m = smallest(&stats).unwrap_or(1).max(1);
+            let step = |st: &[ColStats]| smallest(st).unwrap_or(m).max(1);
             h = (widths.iter().zip(&stats).map(|(w, s)| w * s.height as f64).sum::<f64>() / wsum) as i64;
-            h = h.min(full_lu);
+            h = (h - h % m).min(full_lu);
             r = try_h(fill, to_pt(h), memos)?;
             if r.0.is_some() {
                 loop {
@@ -1135,21 +1142,25 @@ struct ColStats {
 impl ColStats {
     fn of(children: &[Child], used: f64) -> ColStats {
         let mut st = ColStats { lines: 0, height: 0, min: i64::MAX, used: i64::from(Lu::round_half_up(used).0) };
-        let mut add = |h: f64| {
-            let h = i64::from(Lu::round_half_up(h).0);
+        // A line lower than its text's size counts but isn't the smallest line.
+        let mut add = |h: f64, size: f64| {
+            let lu = i64::from(Lu::round_half_up(h).0);
             st.lines += 1;
-            st.height += h;
-            st.min = st.min.min(h);
+            st.height += lu;
+            if h >= size {
+                st.min = st.min.min(lu);
+            }
         };
+        let size = |l: &LineFragment| l.items.iter().filter_map(|i| if let Item::Glyphs(r) = i { Some(r.size) } else { None }).fold(0.0, f64::max);
         for c in children {
             match c {
-                Child::Para(p) => p.lines.iter().for_each(|l| add(l.line.pitch)),
-                Child::Table(t) => t.rows.iter().for_each(|r| add(r.rect[3] - r.rect[1])),
-                Child::Line { placed, .. } => add(placed.line.pitch),
+                Child::Para(p) => p.lines.iter().for_each(|l| add(l.line.pitch, size(&l.line))),
+                Child::Table(t) => t.rows.iter().for_each(|r| add(r.rect[3] - r.rect[1], 0.0)),
+                Child::Line { placed, .. } => add(placed.line.pitch, size(&placed.line)),
                 _ => {}
             }
         }
-        if st.lines == 0 {
+        if st.min == i64::MAX {
             st.min = 0;
         }
         st
