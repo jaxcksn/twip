@@ -1093,10 +1093,11 @@ fn fit_line(
                     ws.push(0.0);
                     pending = Some(Pending { idx: i, stop, kind, pen_at_tab: pen, collapse: false });
                 }
-                // A list number's tab isn't a break opportunity: a first word too long for the line after it is
-                // broken on the number's line.
+                // A line breaks before a tab, not after it: a tab whose next word doesn't fit goes to the next line
+                // with it. A tab first on its line breaks after it. A list number's tab isn't a break opportunity:
+                // a first word too long for the line after it is broken on the number's line.
                 if !number_tab {
-                    breaks.push((i + 1, false));
+                    breaks.push((if i > start { i } else { i + 1 }, false));
                 }
                 i += 1;
                 continue;

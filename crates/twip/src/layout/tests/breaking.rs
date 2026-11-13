@@ -1397,6 +1397,17 @@ fn compat_14_justified_centre_tab_text_that_wraps_starts_at_the_tab() {
     assert!(x('a') - x('3') < 8.0, "{} {}", x('3'), x('a'));
 }
 
+#[test]
+fn a_tab_whose_next_word_does_not_fit_starts_the_next_line() {
+    // The tab's default stop is inside the line but "Signature" isn't: both go down, and the tab takes the next
+    // stop from the line's start there.
+    let body = format!(r#"<w:p><w:r><w:t>{}</w:t><w:tab/><w:t>Signature</w:t></w:r></w:p>"#, "x".repeat(78));
+    let Some(chars) = glyph_xs("", &body) else { return };
+    let s = chars.iter().find(|g| g.0 == 'S').expect("drawn");
+    let x = chars.iter().find(|g| g.0 == 'x').expect("drawn");
+    assert!(s.2 > x.2 && (s.1 - 108.0).abs() < 0.01, "{s:?}");
+}
+
 /// Each character on the first page with its x and baseline.
 fn glyph_xs(settings: &str, body: &str) -> Option<Vec<(char, f64, f64)>> {
     Some(super::page_chars(&test_doc(settings, ARIAL_11, body, "")?).swap_remove(0))
