@@ -161,6 +161,8 @@ pub struct AttemptState {
     pub end: Option<FlowToken>,
     /// Tables of a vertical section, drawn upright on the page as printed.
     pub upright: Vec<Child>,
+    /// The paragraph being placed starts the next page: only the frames before it that stay on this page are.
+    pub frames_only: bool,
 }
 
 pub struct PageFill<'d, 'p> {
@@ -1331,7 +1333,18 @@ impl<'d> PageFill<'d, '_> {
                     let Some((laid, end)) = self.laid(bi) else { unreachable!("a paragraph block") };
                     let p = laid.para();
                     let style = p.para_style_in(self.ctx.env.text.review.view);
-                    if pos.at.at_start() && style.page_break_before && !(empty && page_empty) {
+                    // The frames before the paragraph that stay on this page are placed first; a frame that starts
+                    // with the break takes the break with it.
+                    let framed = matches!(p.inlines.first(), Some(Inline::Float(f, _)) if f.text_box.is_some() && f.shape.is_none());
+                    let mut breaks = pos.at.at_start() && style.page_break_before && !(empty && page_empty);
+                    if pos.at.at_start() && style.page_break_before && framed {
+                        let pb = self.para_lines(&laid, bi, end, col.width, (0, false), col.x, memos)?;
+                        self.at.frames_only = true;
+                        let r = self.place_para(p, &pb, pos, carry, &col, &mut y, &mut empty, area, out, memos);
+                        self.at.frames_only = false;
+                        breaks = r? == Stop::Page;
+                    }
+                    if breaks {
                         carry.keep_top = self.ctx.env.text.compat == Compat::Legacy
                             || bi == 0 && self.sec.section.break_kind == crate::docx::SectionBreak::Continuous;
                         return Ok((Stop::Page, y));
@@ -2350,6 +2363,9 @@ impl<'d> PageFill<'d, '_> {
             }
         }
         if bands.is_empty() {
+            if self.at.frames_only {
+                return Ok(Stop::Page);
+            }
             return self.place_plain(p, pb, pos, carry, col, y, empty, area, out, memos);
         }
         if border_key(style).is_some() || style.shading.is_some() || !style.div_boxes.is_empty() {
@@ -2558,7 +2574,18 @@ impl<'d> PageFill<'d, '_> {
         // A paragraph whose first line goes on to the next page leaves the frames before it on this page where their
         // own paragraph falls on it: one placed by the page or the margin always, one from the text when its height
         // fits below that place. They end at a frame that starts with a page break.
-        let lead_only = take == 0 && !at_top && first_part && col.bottom.holds(origin);
+        let first_text = pieces.iter().position(|q| q.kind != Kind::Anchor).unwrap_or(n);
+        let leading = |a: &Placed| a.float.text_box.is_some() && a.float.shape.is_none() && a.key.2 - pb.from < first_text;
+        // A frame that starts with a page break ends the frames that stay; at a page's top the first one's break adds
+        // no page.
+        let breaks = |a: &Placed| matches!(a.float.text_box.as_ref().and_then(|tb| tb.blocks.first()), Some(Block::Para(p)) if p.para_style_in(self.ctx.env.text.review.view).page_break_before);
+        let first_lead = anchors.iter().filter(|a| leading(a)).map(|a| a.key.2).min();
+        let lead_end = anchors.iter().filter(|a| leading(a) && breaks(a) && !(page_first && Some(a.key.2) == first_lead)).map(|a| a.key.2).min();
+        if self.at.frames_only && (page_first && lead_end.is_none() || !(first_part && col.bottom.holds(origin))) {
+            return Ok(if page_first && lead_end.is_none() { Stop::Done } else { Stop::Page });
+        }
+        let lead_end = lead_end.unwrap_or(usize::MAX);
+        let lead_only = self.at.frames_only || take == 0 && !at_top && first_part && col.bottom.holds(origin);
         if take == 0 && !lead_only {
             if at_top {
                 take = fit.max(1).min(nb);
@@ -2566,13 +2593,8 @@ impl<'d> PageFill<'d, '_> {
                 return Ok(Stop::Full);
             }
         }
-        let first_text = pieces.iter().position(|q| q.kind != Kind::Anchor).unwrap_or(n);
-        let breaks = |a: &Placed| matches!(a.float.text_box.as_ref().and_then(|tb| tb.blocks.first()), Some(Block::Para(p)) if p.style.page_break_before);
-        let lead_end = anchors.iter().filter(|a| breaks(a)).map(|a| a.key.2).min().unwrap_or(usize::MAX);
         let stays = |a: &Placed| {
-            a.float.text_box.is_some()
-                && a.float.shape.is_none()
-                && a.key.2 - pb.from < first_text
+            leading(a)
                 && a.key.2 < lead_end
                 && (matches!(a.float.v_relative.as_str(), "page" | "margin") || col.bottom.holds(origin + a.rect[3] - a.rect[1]))
         };
@@ -2653,7 +2675,7 @@ impl<'d> PageFill<'d, '_> {
             }
         }
         if lead_only {
-            return Ok(Stop::Full);
+            return Ok(if self.at.frames_only { Stop::Page } else { Stop::Full });
         }
         if let Some(b) = forced {
             take = take.min(b + 1);

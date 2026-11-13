@@ -3437,3 +3437,26 @@ fn a_frame_from_the_text_above_the_page_starts_at_its_top() {
     let y = l.iter().find(|l| l.1 == "FRAME").expect("drawn").3;
     assert!(y > 0.0 && y < 20.0, "{y}");
 }
+
+#[test]
+fn a_page_break_before_a_frame_paragraph_breaks_before_the_frame() {
+    let frame = |t: &str, pbb: bool| {
+        let b = if pbb { "<w:pageBreakBefore/>" } else { "" };
+        format!(r#"<w:p><w:pPr>{b}<w:framePr w:w="2880" w:h="720" w:hRule="exact" w:wrap="around" w:vAnchor="text" w:hAnchor="margin" w:x="1440" w:y="0"/></w:pPr><w:r><w:t>{t}</w:t></w:r></w:p>"#)
+    };
+    let texts = |body: &str| -> Option<Vec<Vec<String>>> {
+        (0..2).map(|p| page_baselines("", ARIAL_12, body, p).map(|l| l.into_iter().map(|l| l.1).collect())).collect()
+    };
+    let lead = "<w:p><w:r><w:t>Lead</w:t></w:r></w:p>";
+    let next = "<w:p><w:r><w:t>Next</w:t></w:r></w:p>";
+    // On the frame: it and its paragraph start the next page.
+    let Some(pages) = texts(&format!("{lead}{}{next}", frame("A1", true))) else { return };
+    assert_eq!(pages, [vec!["Lead"], vec!["Next", "A1"]], "{pages:?}");
+    // On a frame's second paragraph: the first part stays a frame of its own, the rest is one on the next page.
+    let pages = texts(&format!("{lead}{}{}{next}", frame("A1", false), frame("A2", true))).unwrap();
+    assert_eq!(pages, [vec!["Lead", "A1"], vec!["Next", "A2"]], "{pages:?}");
+    // In a cell a frame paragraph is an ordinary one: no break.
+    let cell = format!(r#"<w:tbl><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:tc>{}{next}</w:tc></w:tr></w:tbl>"#, frame("A1", true));
+    let one = page_baselines("", ARIAL_12, &format!("{lead}{cell}<w:p/>"), 0).unwrap();
+    assert!(one.iter().any(|l| l.1 == "Next"), "{one:?}");
+}

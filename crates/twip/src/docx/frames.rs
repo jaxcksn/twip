@@ -7,10 +7,10 @@ use super::model::{Block, Compat, Document, Float, Inline, Paragraph, TextBox};
 pub fn convert(doc: &mut Document) {
     let legacy = doc.settings.compat() == Compat::Legacy;
     for s in &mut doc.sections {
-        blocks(&mut s.blocks, legacy);
+        blocks(&mut s.blocks, legacy, true);
     }
     for b in doc.stories.values_mut().chain(doc.footnotes.values_mut()).chain(doc.endnotes.values_mut()) {
-        blocks(b, legacy);
+        blocks(b, legacy, false);
     }
 }
 
@@ -18,16 +18,24 @@ fn key(p: &Paragraph) -> Option<&str> {
     p.style.frame.as_ref().map(|f| f.key.as_str())
 }
 
-fn blocks(list: &mut Vec<Block>, legacy: bool) {
+/// `pages`: the body's own blocks, where a page break before a frame paragraph breaks the page.
+fn blocks(list: &mut Vec<Block>, legacy: bool, pages: bool) {
     let mut out = Vec::with_capacity(list.len());
     let mut groups: Vec<Vec<Paragraph>> = Vec::new();
     for b in std::mem::take(list) {
         match b {
+            // A page break before a frame paragraph starts a frame of its own.
             Block::Para(p) if key(&p).is_some() => match groups.last_mut() {
-                Some(g) if key(&g[0]) == key(&p) => g.push(p),
+                Some(g) if key(&g[0]) == key(&p) && !(pages && p.style.page_break_before) => g.push(p),
                 _ => groups.push(vec![p]),
             },
             Block::Para(mut p) => {
+                // It breaks the page before the paragraph the frames anchor at; the frames before the break stay.
+                if pages && groups.iter().any(|g| g[0].style.page_break_before) && !p.style.page_break_before {
+                    let mut s = (*p.style).clone();
+                    s.page_break_before = true;
+                    p.style = Rc::new(s);
+                }
                 for (k, g) in groups.drain(..).enumerate() {
                     p.inlines.insert(k, Inline::Float(Box::new(float(g, legacy)), p.mark.clone()));
                 }
@@ -36,7 +44,7 @@ fn blocks(list: &mut Vec<Block>, legacy: bool) {
             Block::Table(mut t) => {
                 for r in &mut t.rows {
                     for c in &mut r.cells {
-                        blocks(&mut c.blocks, legacy);
+                        blocks(&mut c.blocks, legacy, false);
                     }
                 }
                 anchor_before(&mut out, std::mem::take(&mut groups), legacy);
