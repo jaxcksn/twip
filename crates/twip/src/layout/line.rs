@@ -830,6 +830,8 @@ struct Pending {
     stop: f64,
     kind: TabKind,
     pen_at_tab: f64,
+    /// The tab has no width (its text wraps).
+    collapse: bool,
 }
 
 /// An East Asian language's kinsoku classes: what doesn't end a line, what doesn't start one (standard and strict
@@ -923,7 +925,7 @@ fn resolve_tab(sp: &ShapedPara, p: &Pending, pieces: &[Piece], xs: &mut [f64], w
     if p.pen_at_tab + tw + w - trail > right + EPS && p.stop <= right + EPS {
         tw = if p.kind == TabKind::Decimal { 0.0 } else { right - (p.pen_at_tab + w) + trail };
     }
-    let tw = tw.max(0.0);
+    let tw = if p.collapse { 0.0 } else { tw.max(0.0) };
     ws[p.idx - start] = tw;
     let mut x = p.pen_at_tab + tw;
     for &k in &seg {
@@ -967,6 +969,9 @@ fn fit_line(
     let mut leaders: Vec<(usize, Leader)> = Vec::new();
     let mut squeeze: Option<(usize, f64)> = None;
     let mut past_custom = false;
+    // Compat ≤ 14, justified: centre-tab text that wraps leaves its tab no width on the line it wraps from, and the
+    // line's justification fills the gap.
+    let collapse_on_wrap = frame.compat == Compat::Legacy && style.jc == Jc::Both;
     // East Asian paragraph layout: distributed, or the document's default East Asian font is an East Asian one.
     let east_asian = style.jc == Jc::Distribute || sp.east_asian_default;
     let rules = frame.breaking_rules || east_asian;
@@ -1086,7 +1091,7 @@ fn fit_line(
                     pen += w;
                 } else {
                     ws.push(0.0);
-                    pending = Some(Pending { idx: i, stop, kind, pen_at_tab: pen });
+                    pending = Some(Pending { idx: i, stop, kind, pen_at_tab: pen, collapse: false });
                 }
                 // A list number's tab isn't a break opportunity: a first word too long for the line after it is
                 // broken on the number's line.
@@ -1199,6 +1204,7 @@ fn fit_line(
                 if let Some(pt) = pending.take()
                     && pt.idx < at
                 {
+                    let pt = Pending { collapse: collapse_on_wrap && pt.kind == TabKind::Center, ..pt };
                     resolve_tab(sp, &pt, pieces, &mut xs, &mut ws, start, at, right);
                 }
                 return Fit { end: at, xs, widths: ws, hard: None, hyphen: soft, leaders };
@@ -1218,6 +1224,7 @@ fn fit_line(
                 ws.truncate(at - start);
                 leaders.retain(|(k, _)| *k < at - start);
                 if let Some(pt) = pending.take().filter(|pt| pt.idx < at) {
+                    let pt = Pending { collapse: collapse_on_wrap && pt.kind == TabKind::Center, ..pt };
                     resolve_tab(sp, &pt, pieces, &mut xs, &mut ws, start, at, right);
                 }
                 return Fit { end: at, xs, widths: ws, hard: None, hyphen: false, leaders };

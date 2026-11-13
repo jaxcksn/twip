@@ -1384,6 +1384,19 @@ fn a_word_too_long_after_a_list_number_breaks_on_the_numbers_line() {
     assert!(l[0].1.starts_with("1.x"), "{l:?}");
 }
 
+#[test]
+fn compat_14_justified_centre_tab_text_that_wraps_starts_at_the_tab() {
+    let words = "aa bb cc dd ee ff gg hh ";
+    let long = "x".repeat(90);
+    let body = format!(
+        r#"<w:p><w:pPr><w:tabs><w:tab w:val="center" w:pos="4680"/></w:tabs><w:jc w:val="both"/></w:pPr><w:r><w:t>C3</w:t><w:tab/><w:t xml:space="preserve">{words}{long}</w:t></w:r></w:p>"#
+    );
+    let Some(chars) = glyph_xs("", &body) else { return };
+    let x = |c: char| chars.iter().find(|g| g.0 == c).map(|g| g.1).expect("drawn");
+    // The tab takes no width: the text starts where "C3" ends and is justified from there.
+    assert!(x('a') - x('3') < 8.0, "{} {}", x('3'), x('a'));
+}
+
 /// Each character on the first page with its x and baseline.
 fn glyph_xs(settings: &str, body: &str) -> Option<Vec<(char, f64, f64)>> {
     Some(super::page_chars(&test_doc(settings, ARIAL_11, body, "")?).swap_remove(0))
