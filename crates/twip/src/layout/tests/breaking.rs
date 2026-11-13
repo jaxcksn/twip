@@ -2665,3 +2665,23 @@ fn compat_15_a_float_with_no_place_sends_its_anchor_line_to_the_next_page() {
     let p1 = page_baselines(C15, ARIAL_12, &body, 0).unwrap();
     assert_eq!(p1.len(), 2, "{p1:?}");
 }
+
+#[test]
+fn compat_14_a_keep_lines_paragraph_that_meets_its_own_float_starts_below_it() {
+    let filler: String = (0..10).map(|k| format!("<w:p><w:r><w:t>A{k:02} filler line text</w:t></w:r></w:p>")).collect();
+    let words = |c: char, n: usize| (0..n).map(|k| format!("{c}{k:02} ")).collect::<String>();
+    let body = |keep: &str| {
+        format!(
+            r#"{filler}<w:p><w:pPr>{keep}</w:pPr><w:r><w:t xml:space="preserve">{}</w:t></w:r>{}<w:r><w:t>{}</w:t></w:r></w:p><w:p><w:r><w:t>Z00</w:t></w:r></w:p>"#,
+            words('B', 90),
+            anchor(368, 0, 100, 20, 1, "line"),
+            words('b', 30)
+        )
+    };
+    let Some((f, plain)) = float_and_line("", &body(""), "B00") else { return };
+    let (kept, b) = float_and_line("", &body("<w:keepLines/>"), "B00").unwrap();
+    assert!(plain < f[1], "without keepLines the paragraph stays above its float: {plain} {f:?}");
+    assert!(b > kept[3], "with keepLines it starts below it: {b} {kept:?}");
+    let Some((_, c15)) = float_and_line(C15, &body("<w:keepLines/>"), "B00") else { return };
+    assert!((c15 - float_and_line(C15, &body(""), "B00").unwrap().1).abs() < 0.01, "compat 15 wraps it as usual");
+}

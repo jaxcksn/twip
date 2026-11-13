@@ -1960,6 +1960,12 @@ impl<'d> PageFill<'d, '_> {
             let low = floats.iter().filter(|f| f.wrap != Wrap::None).map(|f| f.excl[3]).fold(yy, f64::max);
             yy = low.min(col.bottom.to_pt());
         }
+        if compat == Compat::Legacy && style.keep_lines && first_part && !at_top {
+            let own = floats.iter().filter(|f| {
+                f.frozen && (f.key.0, f.key.1) == (self.sec.index, pos.block) && f.wrap != Wrap::None && f.excl[3] > yy + EPS && f.excl[0] < cx1 - EPS && f.excl[2] > cx0 + EPS
+            });
+            yy = own.map(|f| f.excl[3]).fold(yy, f64::max);
+        }
         while (s < n || bands.is_empty()) && guard < 4000 {
             guard += 1;
             let mut h = est;
@@ -2312,7 +2318,10 @@ impl<'d> PageFill<'d, '_> {
             a.restarts = self.column > 0 || met || a.excl[1] < line_top + bands[b].1[0].pitch - EPS && a.excl[0] < cx1 - EPS && a.excl[2] > cx0 + EPS;
             // Only the first float of the fill that meets earlier text of its column met it where it will stay: that
             // text wraps it in the next fill. A later one was placed beside text that moves, and is placed again.
-            a.frozen = met && !self.at.hit;
+            // Compat ≤ 14: one that meets the lines of its own keepLines paragraph below a column's top stays too, and
+            // the paragraph starts below it.
+            let own = compat == Compat::Legacy && style.keep_lines && !at_top && a.restarts && a.excl[3] > bands[0].0 + EPS;
+            a.frozen = (met || own) && !self.at.hit;
             a.collided = a.frozen || self.column > 0 && !met;
             anchors.push(a);
         }
