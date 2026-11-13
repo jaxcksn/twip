@@ -801,6 +801,22 @@ fn an_empty_section_break_paragraph_after_a_table_is_laid_out_in_compat_15_only_
 }
 
 #[test]
+fn a_continuous_sections_first_paragraph_pushed_to_a_new_page_keeps_its_space_before() {
+    // 46 lines fill page 1; the next paragraph (before 12pt, after the previous paragraph's 0) starts page 2.
+    let p = |t: &str, ppr: &str| format!(r#"<w:p><w:pPr><w:spacing w:before="0" w:after="0"/>{ppr}</w:pPr><w:r><w:t>{t}</w:t></w:r></w:p>"#);
+    let fill: String = (0..45).map(|k| p(&format!("Line {k}"), "")).collect();
+    let next = r#"<w:p><w:pPr><w:spacing w:before="240" w:after="0"/></w:pPr><w:r><w:t>First</w:t></w:r></w:p>"#;
+    let close = r#"<w:p><w:pPr><w:sectPr><w:type w:val="continuous"/></w:sectPr></w:pPr></w:p>"#;
+    let y = |sect: &str| {
+        let body = format!("{fill}{}{next}{close}", p("Last", sect));
+        page_baselines("", ARIAL_12, &body, 1).map(|l| l.iter().find(|x| x.1 == "First").unwrap_or_else(|| panic!("{l:?}")).3)
+    };
+    let Some(flow) = y("") else { return };
+    let section = y("<w:sectPr/>").unwrap();
+    assert!((section - flow - 12.0).abs() < 0.01, "{flow} {section}");
+}
+
+#[test]
 fn a_page_break_in_a_table_cell_is_nothing() {
     let body = r#"<w:tbl><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>Before</w:t><w:br w:type="page"/><w:t>After</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#;
     let Some(l) = lines("", ARIAL_12, body) else { return };

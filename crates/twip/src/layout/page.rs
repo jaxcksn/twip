@@ -990,7 +990,9 @@ pub fn layout_body(
             carry.line_no = 0;
         }
         if stop == Stop::Full {
-            carry.keep_top = false;
+            // A continuous section whose first paragraph found no room on the page it starts keeps that paragraph's
+            // space before on the next page, as after a next-page break.
+            carry.keep_top = space.mid_page && pos.block == 0 && pos.at.at_start();
         }
     }
     let (size, children) = match vertical {
