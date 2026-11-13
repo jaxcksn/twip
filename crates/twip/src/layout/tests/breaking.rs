@@ -2947,6 +2947,34 @@ fn compat_14_after_a_line_pushed_beside_a_frame_a_line_with_less_than_its_height
 }
 
 #[test]
+fn compat_14_a_column_offset_in_a_line_beside_a_frame_counts_from_the_lines_piece() {
+    // A frame before the paragraph leaves its first line one piece, from 296.95: the picture's 100pt column offset
+    // counts from there.
+    let frame = r#"<w:p><w:pPr><w:framePr w:w="2880" w:h="720" w:hRule="exact" w:hSpace="180" w:vSpace="0" w:wrap="around" w:vAnchor="text" w:hAnchor="margin" w:x="1440" w:y="0"/></w:pPr><w:r><w:t>Frame.</w:t></w:r></w:p>"#;
+    let body = format!(r#"<w:p><w:r><w:t>Title.</w:t></w:r></w:p>{frame}<w:p>{}<w:r><w:t>Body.</w:t></w:r></w:p>"#, anchor(100, 100, 50, 20, 1, "paragraph"));
+    fn floats(children: &[crate::layout::fragment::Child], out: &mut Vec<[f64; 4]>) {
+        for c in children {
+            if let crate::layout::fragment::Child::Box(b) = c {
+                if let crate::layout::fragment::BoxKind::Float { rect, .. } = b.kind {
+                    out.push(rect);
+                }
+                floats(&b.children, out);
+            }
+        }
+    }
+    let Some(doc) = test_doc("", ARIAL_12, &body, "") else { return };
+    let snap = layout(&doc, &fonts());
+    let mut rects = Vec::new();
+    for c in snap.pages()[0].children.iter() {
+        if let crate::layout::fragment::PageChild::Body(b) = c {
+            floats(&b.children, &mut rects);
+        }
+    }
+    let pic = rects.iter().find(|r| (r[2] - r[0] - 50.0).abs() < 0.01).unwrap();
+    assert!((pic[0] - 396.95).abs() < 0.01, "{rects:?}");
+}
+
+#[test]
 fn compat_14_a_line_pushed_into_one_piece_keeps_reusing_its_strip_beside_a_frame() {
     // Frame A from 73.15, frame B just below it: the third line goes down to A's bottom, where it first finds one
     // piece (B starts lower), so nothing is remembered and the line with 1.5pt left beside B stays beside it.

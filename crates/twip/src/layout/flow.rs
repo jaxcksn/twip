@@ -2373,9 +2373,17 @@ impl<'d> PageFill<'d, '_> {
                 match f.h_align.as_deref() {
                     Some("left") => x += style.ind_left,
                     Some("right") => x -= style.ind_right,
-                    // From a line that starts beside another paragraph's float: from where its piece starts.
+                    // From a line that starts beside another paragraph's float (for a drawing, a frame before the
+                    // paragraph included): from where its piece starts.
                     None => {
-                        let others: Vec<Placed> = floats.iter().chain(&self.at.found).filter(|o| (o.key.0, o.key.1) != (si, bi)).cloned().collect();
+                        let frame = |o: &Placed| o.float.text_box.is_some() && o.float.shape.is_none() && o.key.2 != float::TABLE_PIECE;
+                        let drawing = f.text_box.is_none() || f.shape.is_some();
+                        let others: Vec<Placed> = floats
+                            .iter()
+                            .chain(&self.at.found)
+                            .filter(|o| (o.key.0, o.key.1) != (si, bi) || drawing && frame(o) && o.key.2 < pb.from + k)
+                            .cloned()
+                            .collect();
                         let piece = float::intervals(&others, cx0, cx1, line_top, line_top + bands[b].1[0].pitch, true);
                         x += piece.and_then(|iv| iv.first().map(|p| p.0)).unwrap_or(cx0) - cx0;
                     }
