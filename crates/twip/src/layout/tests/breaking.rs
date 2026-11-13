@@ -2747,6 +2747,23 @@ fn compat_15_balanced_columns_start_rounded_down_to_the_smallest_line() {
     assert_eq!(split(3, &[560, 560, 480, 253, 253]).unwrap(), [1, 1, 3]);
 }
 
+#[test]
+fn compat_14_balancing_counts_every_table_row_with_the_bottom_border() {
+    // An intro line and five rows with 0.5pt borders in two columns: the start counts the bottom border with each row
+    // (4 × 0.5pt more than the layout), which holds the intro and two rows in column 1.
+    let b = r#"w:val="single" w:sz="4" w:space="0" w:color="000000""#;
+    let rows: String = (1..=5).map(|k| format!(r#"<w:tr><w:tc><w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>R{k}</w:t></w:r></w:p></w:tc></w:tr>"#)).collect();
+    let table = format!(
+        r#"<w:tbl><w:tblPr><w:tblBorders><w:top {b}/><w:bottom {b}/><w:insideH {b}/></w:tblBorders><w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid>{rows}</w:tbl>"#
+    );
+    let sect = r#"<w:p><w:pPr><w:sectPr><w:type w:val="continuous"/><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/><w:cols w:num="2" w:space="720"/></w:sectPr></w:pPr></w:p>"#;
+    let close = r#"<w:p><w:pPr><w:sectPr><w:type w:val="continuous"/></w:sectPr></w:pPr></w:p>"#;
+    let body = format!(r#"<w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>Intro</w:t></w:r></w:p>{table}{sect}<w:p><w:r><w:t>After</w:t></w:r></w:p>{close}"#);
+    let Some(l) = baselines("", ARIAL_12, &body) else { return };
+    let right: Vec<&str> = l.iter().filter(|x| x.0 > 300.0).map(|x| x.1.as_str()).collect();
+    assert_eq!(right, ["R3", "R4", "R5"], "{l:?}");
+}
+
 /// A legacy form field as Word writes it: `w:ffData` in its begin, no result.
 fn form_field(ff: &str, code: &str) -> String {
     format!(

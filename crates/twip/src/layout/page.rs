@@ -581,6 +581,13 @@ impl<'d> Paginator<'d, '_> {
         let skip_last = matches!(blocks.get(n.wrapping_sub(1)), Some(Block::Para(p)) if p.inlines.is_empty() && n > 1);
         let mark_line = skip_last && fill.ctx.env.text.compat == Compat::Generic && matches!(blocks.get(n.wrapping_sub(2)), Some(Block::Table(_)));
         let state = fill.at.clone();
+        let mut bottoms = HashMap::new();
+        if fill.ctx.env.text.compat == Compat::Legacy {
+            for bi in (0..n).filter(|&bi| matches!(blocks.get(bi), Some(Block::Table(_)))) {
+                let tb = fill.table_layout(bi, cols[0].width, memos)?;
+                bottoms.insert(tb.id, tb.bottom_border);
+            }
+        }
         #[allow(
             clippy::type_complexity,
             reason = "one column fill's whole result (end, children, token, state, effects); a struct used only here would add nothing"
@@ -605,7 +612,7 @@ impl<'d> Paginator<'d, '_> {
                 // A column's height takes its last paragraph's space after, unless the paragraph goes on in the next
                 // column (the last column's bottom has it already).
                 let hang = |pos: &FlowToken, carry: &FlowState| if s == Stop::Done || !pos.at.at_start() { 0.0 } else { carry.prev_after };
-                stats.push(ColStats::of(&r.children, r.bottom - top + hang(&pos, &carry)));
+                stats.push(ColStats::of(&r.children, r.bottom - top + hang(&pos, &carry), &bottoms));
                 let mut kids = r.children;
                 let mut bottom = r.bottom;
                 let at_mark = skip_last && pos.block + 1 == n && pos.at.at_start();
@@ -651,16 +658,25 @@ impl<'d> Paginator<'d, '_> {
         let mut h;
         let mut r;
         if fill.ctx.env.text.compat == Compat::Legacy {
-            // Compat ≤ 14: from the unbalanced fill's column heights weighted by the columns' widths, never below its
-            // mean line height, the height grows while content is left over by the failed fill's mean line height,
-            // each column's height counted at most up to the height tried. The section ends at that height or at its
+            // Compat ≤ 14: the sums count every table row with the table's bottom border (the fill keeps the layout's
+            // heights). Equal columns start at the unbalanced fill's total over the column count, rounded up; explicit
+            // widths at its layout height weighted by the first column's width, in whole twips. Never below the mean
+            // line height, the height grows while content is left over by the failed fill's mean line height, each
+            // column's height counted at most up to the height tried. The section ends at that height or at its
             // tallest column, whichever is less.
-            let (lines, total) = stats.iter().fold((0, 0), |(n, t), s| (n + s.lines, t + s.used));
-            h = (widths.iter().zip(&stats).map(|(w, s)| w * s.used as f64).sum::<f64>() / wsum) as i64;
+            let (lines, total) = stats.iter().fold((0, 0), |(n, t), s| (n + s.lines, t + s.used + s.extra));
+            let columns = &sec.section.section_in(fill.ctx.env.text.review.view).columns;
+            h = if columns.equal {
+                (total + cols.len() as i64 - 1) / cols.len().max(1) as i64
+            } else {
+                let lu_tw = LU_PER_PT / 20.0;
+                let layout: i64 = stats.iter().map(|s| s.used).sum();
+                (((layout as f64 / lu_tw).trunc() * widths[0] / wsum).trunc() * lu_tw) as i64
+            };
             h = h.max(total / lines.max(1)).min(full_lu);
             r = try_h(fill, to_pt(h), memos)?;
             while r.0.is_none() && h < full_lu {
-                let (lines, used) = r.1.iter().fold((0, 0), |(n, t), s| (n + s.lines, t + s.used.min(h)));
+                let (lines, used) = r.1.iter().fold((0, 0), |(n, t), s| (n + s.lines, t + (s.used + s.extra).min(h)));
                 h = (h + if lines > 0 { (used / lines).max(1) } else { 49152 }).min(full_lu);
                 r = try_h(fill, to_pt(h), memos)?;
             }
@@ -1137,11 +1153,19 @@ struct ColStats {
     height: i64,
     min: i64,
     used: i64,
+    /// What compat ≤ 14 balancing counts beyond `used`: every table row's bottom border, not only the part's last.
+    extra: i64,
 }
 
 impl ColStats {
-    fn of(children: &[Child], used: f64) -> ColStats {
-        let mut st = ColStats { lines: 0, height: 0, min: i64::MAX, used: i64::from(Lu::round_half_up(used).0) };
+    fn of(children: &[Child], used: f64, bottoms: &HashMap<super::ids::TableId, f64>) -> ColStats {
+        let mut st = ColStats { lines: 0, height: 0, min: i64::MAX, used: i64::from(Lu::round_half_up(used).0), extra: 0 };
+        for c in children {
+            if let Child::Table(t) = c {
+                let b = bottoms.get(&t.table).copied().unwrap_or(0.0);
+                st.extra += i64::from(Lu::round_half_up(b * t.rows.len().saturating_sub(1) as f64).0);
+            }
+        }
         // A line lower than its text's size counts but isn't the smallest line.
         let mut add = |h: f64, size: f64| {
             let lu = i64::from(Lu::round_half_up(h).0);
