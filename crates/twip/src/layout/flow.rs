@@ -571,7 +571,8 @@ pub fn stream_height(notes: &[NotePart], widths: &[f64], room: f64, wrap: &mut R
 fn part_height(row: &super::table::RowBox, parts: &[CellPart]) -> f64 {
     let end = |p: &CellPart| p.units.last().map_or(0.0, |u| u.after);
     let content = row.cells.iter().zip(parts).map(|(c, p)| c.margins[0] + p.height() + end(p) + c.margins[2]).fold(0.0, f64::max);
-    row.top_border + content + row.bottom_gap
+    // Each part of an atLeast row is at least the row's height.
+    (row.top_border + content + row.bottom_gap).max(row.min_h)
 }
 
 pub fn place_units(units: &[StoryUnit], x: f64, y: f64, out: &mut Vec<Child>) {

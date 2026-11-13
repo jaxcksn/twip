@@ -1091,3 +1091,22 @@ fn a_table_continued_on_a_page_takes_its_top_border_above_the_row() {
     assert_eq!(thin.0, "R19");
     assert!((thin.1 - thick.1).abs() < 0.01, "{} {}", thin.1, thick.1);
 }
+
+#[test]
+fn every_part_of_a_split_at_least_row_is_at_least_its_height() {
+    let line = |t: &str| format!(r#"<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="300" w:lineRule="exact"/></w:pPr><w:r><w:t>{t}</w:t></w:r></w:p>"#);
+    let next_y = |tr: &str| {
+        let fill: String = (0..38).map(|_| line("fill")).collect();
+        let cell: String = (1..=6).map(|i| line(&format!("a{i}"))).collect();
+        let body = format!(
+            r#"{fill}<w:tbl><w:tblPr><w:tblW w:w="3000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:trPr>{tr}</w:trPr><w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr>{cell}</w:tc></w:tr><w:tr><w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr>{}</w:tc></w:tr></w:tbl><w:p/>"#,
+            line("Next")
+        );
+        let doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
+        let page = &super::page_chars(&doc)[1];
+        page.iter().find(|c| c.0 == 'N').map(|c| c.2).expect("Next on page 2")
+    };
+    // The continuation holds one 15pt line; with a 50pt atLeast height it is 50pt high, so the next row starts 35pt lower.
+    let d = next_y(r#"<w:trHeight w:val="1000" w:hRule="atLeast"/>"#) - next_y("");
+    assert!((d - 35.0).abs() < 0.01, "{d}");
+}
