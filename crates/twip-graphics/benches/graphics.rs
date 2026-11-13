@@ -273,6 +273,24 @@ fn gradient_fill(b: Bencher) {
     draw_each(b, &rec.finish(), &Resources::default(), (400, 300));
 }
 
+/// Curves rasterised every frame: 60 circles filled and outlined and 30 rounded rects, as a page of shapes draws them
+/// (the circles' outlines are kurbo's stroke, all cubics). Budget: well inside a frame.
+#[divan::bench]
+fn curve_fills(b: Bencher) {
+    let mut rec = Recorder::new();
+    for i in 0..60 {
+        let (x, y, r) = (30.0 + (i % 10) as f64 * 60.0, 30.0 + (i / 10) as f64 * 60.0, 6.0 + (i % 7) as f64 * 3.5);
+        let circle = kurbo::Circle::new((x, y), r).to_path(0.01);
+        rec.fill_path(circle.elements(), Color::rgb(0x44_72C4));
+        rec.stroke_path(circle.elements(), &Stroke::new(1.5), INK);
+    }
+    for i in 0..30 {
+        let (x, y) = (20.0 + (i % 6) as f64 * 100.0, 380.0 + (i / 6) as f64 * 40.0);
+        rec.fill_rrect(Rect::new(x, y, x + 80.0, y + 30.0), 4.0 + (i % 4) as f64 * 3.0, Color::rgb(0xED_7D31));
+    }
+    draw_each(b, &rec.finish(), &Resources::default(), (640, 600));
+}
+
 /// A shape's drop shadow: a 200 × 100 rounded rect in a layer blurred by sigma 4, then the shape. Budget: well inside
 /// a frame (shapes with effects are drawn into their page's picture once per change, then replayed).
 #[divan::bench]

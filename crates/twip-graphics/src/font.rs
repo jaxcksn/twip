@@ -35,7 +35,7 @@ use skrifa::raw::TableProvider;
 use skrifa::{FontRef, GlyphId, MetadataProvider, Tag};
 
 use crate::fx::FastMap;
-use crate::geom::{Point, Transform};
+use crate::geom::Point;
 use crate::path::Verb;
 use crate::raster::{IRect, Rasterizer};
 
@@ -656,13 +656,7 @@ fn rasterize(
         return GlyphMask::default();
     }
     let mut data = vec![0u8; w * h];
-    let table = &gamma_tables()[key.lum as usize];
-    raster.fill(verbs, points, Transform::IDENTITY, bounds, true, false, |y, x, cov| {
-        let at = (y - bounds.y0) as usize * w + (x - bounds.x0) as usize;
-        for (d, &c) in data[at..at + cov.len()].iter_mut().zip(cov.iter()) {
-            *d = table[c as usize];
-        }
-    });
+    raster.mask(verbs, points, bounds, &mut data, &gamma_tables()[key.lum as usize]);
     GlyphMask { left: bounds.x0, top: bounds.y0, width: w as u32, height: h as u32, data, failed: false, colour: false, used: 0 }
 }
 

@@ -24,6 +24,8 @@ pub(crate) const ONE: i32 = 256;
 const FULL: i32 = ONE * ONE;
 /// Rows accumulated at a time: the buffer is `(width + 2) × BAND`.
 const BAND: i32 = 16;
+/// The most cells a mask accumulates whole (1 MB): a 256-pixel em's glyph needs about a tenth of it.
+const MASK_CELLS: usize = 1 << 18;
 /// How far a flattened curve may stray from the true one, in device pixels.
 const TOLERANCE: f32 = 0.1;
 /// The most line segments one curve becomes, so absurd coordinates cost bounded time.
@@ -78,11 +80,13 @@ pub(crate) struct Rasterizer {
     active: Vec<u32>,
     acc: Vec<i32>,
     row: Vec<u8>,
+    /// For a mask: the columns each row's pieces touched.
+    touched: Vec<(usize, usize)>,
 }
 
 impl Rasterizer {
     pub fn new(level: Level) -> Rasterizer {
-        Rasterizer { level, lines: Vec::new(), active: Vec::new(), acc: Vec::new(), row: Vec::new() }
+        Rasterizer { level, lines: Vec::new(), active: Vec::new(), acc: Vec::new(), row: Vec::new(), touched: Vec::new() }
     }
 
     /// Fills the path (`verbs` over `points`, in local space) mapped by `transform`, inside `clip`, with the non-zero
@@ -146,37 +150,105 @@ impl Rasterizer {
     }
 }
 
+impl Rasterizer {
+    /// A glyph's coverage mask: the non-zero, anti-aliased fill of the path (in device pixels) over `area`, into `out`
+    /// (`area`'s pixels row by row, zeroed), each pixel through `table`. The same coverage as [`Rasterizer::fill`],
+    /// accumulated over the whole mask at once and swept in one call: a glyph is a few rows, where the bands, a call
+    /// per row and the lines' sort cost more than the coverage (a quarter of a small glyph's time). A mask too large
+    /// to accumulate whole (a broken outline's) is filled band by band.
+    pub fn mask(&mut self, verbs: &[Verb], points: &[Point], area: IRect, out: &mut [u8], table: &[u8; 256]) {
+        let (w, h) = (area.width().max(0) as usize, (area.y1 - area.y0).max(0) as usize);
+        let stride = w + 2;
+        if stride * h > MASK_CELLS {
+            return self.fill(verbs, points, Transform::IDENTITY, area, true, false, |y, x, cov| {
+                let at = (y - area.y0) as usize * w + (x - area.x0) as usize;
+                for (d, &c) in out[at..at + cov.len()].iter_mut().zip(cov.iter()) {
+                    *d = table[c as usize];
+                }
+            });
+        }
+        self.lines.clear();
+        flatten(verbs, points, Transform::IDENTITY, &mut self.lines);
+        if w == 0 || h == 0 {
+            return;
+        }
+        self.acc.clear();
+        self.acc.resize(stride * h, 0);
+        self.touched.clear();
+        self.touched.resize(h, (usize::MAX, 0));
+        let (left, right) = (area.x0 * ONE, area.x1 * ONE);
+        for &l in &self.lines {
+            accumulate(l, area.y0, h as i32, left, right, stride, &mut self.acc, &mut self.touched);
+        }
+        let (acc, touched) = (&self.acc[..], &self.touched[..]);
+        dispatch!(self.level, simd => mask_coverage(simd, acc, stride, touched, out, w, table));
+    }
+}
+
+/// Each row's prefix sum, as anti-aliased non-zero coverage through `table`, into `out` (`w` wide).
+#[simd]
+fn mask_coverage<S: Simd>(simd: S, acc: &[i32], stride: usize, touched: &[(usize, usize)], out: &mut [u8], w: usize, table: &[u8; 256]) {
+    for (r, &(lo, hi)) in touched.iter().enumerate() {
+        if lo > hi {
+            continue;
+        }
+        let mut sum = 0i32;
+        let row = &acc[r * stride + lo..=r * stride + hi];
+        for (o, a) in out[r * w + lo..r * w + (hi + 1).min(w)].iter_mut().zip(row) {
+            sum += *a;
+            *o = table[((sum.unsigned_abs().min(FULL as u32) * 255 + (FULL as u32 / 2)) >> 16) as usize];
+        }
+    }
+}
+
 /// Appends the path's segments in device space, each subpath closed, curves flattened to `TOLERANCE`.
 fn flatten(verbs: &[Verb], points: &[Point], t: Transform, lines: &mut Vec<Line>) {
-    let mut points = points.iter().map(|&p| t.map_point(p));
+    // A glyph mask's outline is already in pixels: the identity leaves its points as they are.
+    let identity = t == Transform::IDENTITY;
+    let mut points = points.iter().map(|&p| if identity { p } else { t.map_point(p) });
     let mut next = || points.next().unwrap_or_default();
     let (mut start, mut last) = (Point::default(), Point::default());
+    let mut pen = Pen { lines, start: (0, 0), last: (0, 0) };
     for verb in verbs {
         match verb {
             Verb::Move => {
-                push(lines, last, start);
+                pen.close();
                 start = next();
                 last = start;
+                pen.move_to(start);
             }
             Verb::Line => {
                 let p = next();
-                push(lines, last, p);
+                pen.line_to(p);
                 last = p;
             }
             Verb::Quad => {
                 let (c, p) = (next(), next());
+                // A bend under a third of a pixel needs one line (most of a small glyph's curves): `segments` gives
+                // 1 for any bend up to 0.4, so the threshold leaves every count as it was.
+                if bend_squared(last, c, p) <= 0.15 {
+                    pen.line_to(p);
+                    last = p;
+                    continue;
+                }
                 let n = segments(0.25 * second_difference(last, c, p));
                 let p0 = last;
                 for i in 1..=n {
                     let s = i as f32 / n as f32;
                     let u = 1.0 - s;
                     let q = Point { x: u * u * p0.x + 2.0 * u * s * c.x + s * s * p.x, y: u * u * p0.y + 2.0 * u * s * c.y + s * s * p.y };
-                    push(lines, last, q);
+                    pen.line_to(q);
                     last = q;
                 }
             }
             Verb::Cubic => {
                 let (c0, c1, p) = (next(), next(), next());
+                // As for quads: `segments` gives 1 for any bend up to 0.4 / 3.
+                if bend_squared(last, c0, c1).max(bend_squared(c0, c1, p)) <= 0.0175 {
+                    pen.line_to(p);
+                    last = p;
+                    continue;
+                }
                 let n = segments(0.75 * second_difference(last, c0, c1).max(second_difference(c0, c1, p)));
                 let p0 = last;
                 for i in 1..=n {
@@ -184,17 +256,23 @@ fn flatten(verbs: &[Verb], points: &[Point], t: Transform, lines: &mut Vec<Line>
                     let u = 1.0 - s;
                     let (a, b, c, d) = (u * u * u, 3.0 * u * u * s, 3.0 * u * s * s, s * s * s);
                     let q = Point { x: a * p0.x + b * c0.x + c * c1.x + d * p.x, y: a * p0.y + b * c0.y + c * c1.y + d * p.y };
-                    push(lines, last, q);
+                    pen.line_to(q);
                     last = q;
                 }
             }
             Verb::Close => {
-                push(lines, last, start);
+                pen.close();
                 last = start;
             }
         }
     }
-    push(lines, last, start);
+    pen.close();
+}
+
+/// `|a - 2b + c|²`, without its square root.
+fn bend_squared(a: Point, b: Point, c: Point) -> f32 {
+    let (x, y) = (a.x - 2.0 * b.x + c.x, a.y - 2.0 * b.y + c.y);
+    x * x + y * y
 }
 
 /// `|a - 2b + c|`, the size of a curve's bend.
@@ -208,10 +286,35 @@ fn segments(m: f32) -> u32 {
     if n.is_finite() { (n as u32).clamp(1, MAX_SEGMENTS) } else { 1 }
 }
 
-fn push(lines: &mut Vec<Line>, a: Point, b: Point) {
-    let (x0, y0, x1, y1) = (fixed(a.x), fixed(a.y), fixed(b.x), fixed(b.y));
-    if y0 != y1 {
-        lines.push(Line { x0, y0, x1, y1 });
+/// Lines appended in fixed point, each point converted once.
+struct Pen<'a> {
+    lines: &'a mut Vec<Line>,
+    start: (i32, i32),
+    last: (i32, i32),
+}
+
+impl Pen<'_> {
+    fn move_to(&mut self, p: Point) {
+        self.start = (fixed(p.x), fixed(p.y));
+        self.last = self.start;
+    }
+
+    fn line_to(&mut self, p: Point) {
+        let to = (fixed(p.x), fixed(p.y));
+        self.push(to);
+    }
+
+    /// Back to the subpath's start.
+    fn close(&mut self) {
+        self.push(self.start);
+    }
+
+    fn push(&mut self, to: (i32, i32)) {
+        let ((x0, y0), (x1, y1)) = (self.last, to);
+        if y0 != y1 {
+            self.lines.push(Line { x0, y0, x1, y1 });
+        }
+        self.last = to;
     }
 }
 
@@ -237,14 +340,21 @@ fn accumulate(line: Line, top: i32, rows: i32, left: i32, right: i32, stride: us
         return;
     }
     let dxdy = (x1 - x0) as f64 / (y1 - y0) as f64;
-    let x_at = |y: i32| (x0 as f64 + (y - y0) as f64 * dxdy).clamp(left as f64, right as f64) - left as f64;
-    let mut y = ys;
+    // A line inside the area (a glyph's always are) needs no clamp.
+    let inside = x0.min(x1) >= left && x0.max(x1) <= right;
+    let x_at = |y: i32| {
+        let x = x0 as f64 + (y - y0) as f64 * dxdy;
+        (if inside { x } else { x.clamp(left as f64, right as f64) }) - left as f64
+    };
+    let (mut y, mut xa) = (ys, x_at(ys) / ONE as f64);
     while y < ye {
         let row_top = y.div_euclid(ONE) * ONE;
         let y_next = (row_top + ONE).min(ye);
         let r = (row_top - band_top) / ONE;
         let base = r as usize * stride;
-        let (lo, hi) = add_row(&mut acc[base..base + stride], x_at(y) / ONE as f64, x_at(y_next) / ONE as f64, dir * (y_next - y) * ONE);
+        let xb = x_at(y_next) / ONE as f64;
+        let (lo, hi) = add_row(&mut acc[base..base + stride], xa, xb, dir * (y_next - y) * ONE);
+        xa = xb;
         let t = &mut touched[r as usize];
         *t = (t.0.min(lo), t.1.max(hi));
         y = y_next;
@@ -342,6 +452,38 @@ mod tests {
             out[at..at + cov.len()].copy_from_slice(cov);
         });
         out
+    }
+
+    #[test]
+    fn a_mask_is_the_fill_through_its_table() {
+        let table: [u8; 256] = std::array::from_fn(|i| (255 - i) as u8);
+        let mut star = kurbo::BezPath::new();
+        for k in 0..5 {
+            let a = std::f64::consts::PI * (0.5 + 0.8 * k as f64);
+            let p = (20.3 + 15.0 * a.cos(), 18.7 - 15.0 * a.sin());
+            if k == 0 { star.move_to(p) } else { star.line_to(p) }
+        }
+        star.close_path();
+        let small = [kurbo::Circle::new((9.3, 7.6), 6.2).to_path(0.01), star];
+        // Wide enough to be filled band by band.
+        let large = kurbo::Rect::new(0.5, 0.25, 1100.75, 260.5).to_path(0.1);
+        let mut r = Rasterizer::new(Level::new());
+        for path in small.iter().chain([&large]) {
+            let (mut verbs, mut points) = (Vec::new(), Vec::new());
+            let b = crate::path::push(path.elements(), &mut verbs, &mut points).expect("points");
+            let area = IRect { x0: b.x0.floor() as i32, y0: b.y0.floor() as i32, x1: b.x1.ceil() as i32, y1: b.y1.ceil() as i32 };
+            let w = area.width() as usize;
+            let mut want = vec![0; w * (area.y1 - area.y0) as usize];
+            r.fill(&verbs, &points, Transform::IDENTITY, area, true, false, |y, x, cov| {
+                let at = (y - area.y0) as usize * w + (x - area.x0) as usize;
+                for (d, &c) in want[at..at + cov.len()].iter_mut().zip(cov.iter()) {
+                    *d = table[c as usize];
+                }
+            });
+            let mut got = vec![0; want.len()];
+            r.mask(&verbs, &points, area, &mut got, &table);
+            assert!(got == want, "{area:?}");
+        }
     }
 
     #[test]

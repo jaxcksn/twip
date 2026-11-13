@@ -95,15 +95,27 @@ pub(crate) fn push_clip(
 }
 
 /// Scales a row of coverage (`cov[i]` for pixel `x + i`, all inside the clip's bounds) by the clip rect's coverage of
-/// each pixel and by the clip's mask.
+/// each pixel and by the clip's mask. Between the rect's edge columns a row is covered alike, fully on all but its top
+/// and bottom rows, so only those rows and the two edge columns are scaled.
 pub(crate) fn apply_clip(level: Level, clip: &Clip, masks: &[Mask], y: i32, x: i32, cov: &mut [u8]) {
     let [cx0, cy0, cx1, cy1] = clip.rect;
     let cy = overlap(cy0, cy1, y);
     let (left, right) = (cx0.div_euclid(ONE), (cx1 - 1).div_euclid(ONE));
-    for (i, c) in cov.iter_mut().enumerate() {
-        let col = x + i as i32;
-        let k = if col == left || col == right { factor(overlap(cx0, cx1, col), cy) } else { factor(ONE, cy) };
-        if k < 255 {
+    let at = |col: i32| usize::try_from(col - x).ok().filter(|&i| i < cov.len());
+    let (l, r) = (at(left), at(right));
+    let k = factor(ONE, cy);
+    if k < 255 {
+        for (i, c) in cov.iter_mut().enumerate() {
+            if Some(i) != l && Some(i) != r {
+                *c = crate::paint::mul_div255(*c, k);
+            }
+        }
+    }
+    for (i, col) in [(l, left), (r.filter(|_| right != left), right)] {
+        let k = factor(overlap(cx0, cx1, col), cy);
+        if let Some(c) = i.map(|i| &mut cov[i])
+            && k < 255
+        {
             *c = crate::paint::mul_div255(*c, k);
         }
     }
@@ -205,4 +217,32 @@ pub(crate) fn rrect_path(r: Rect, [tl, tr, br, bl]: [f32; 4], verbs: &mut Vec<Ve
     corner(p(r.x0 + bl, r.y1), p(r.x0 + bl - KAPPA * bl, r.y1), p(r.x0, r.y1 - bl + KAPPA * bl), p(r.x0, r.y1 - bl));
     corner(p(r.x0, r.y0 + tl), p(r.x0, r.y0 + tl - KAPPA * tl), p(r.x0 + tl - KAPPA * tl, r.y0), p(r.x0 + tl, r.y0));
     verbs.push(Verb::Close);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clipping_a_row_scales_each_pixel_by_its_clip_cover() {
+        // Every pixel by the formula, for clip rects with whole and fractional edges, one to nine pixels wide: every row
+        // of the clip's pixels, from each of its columns to its right edge.
+        let rects = [[256, 256, 2560, 2560], [300, 290, 2000, 1999], [300, 290, 400, 700], [300, 290, 500, 700], [0, 0, 256, 256]];
+        for rect in rects {
+            let bounds = IRect { x0: rect[0] / ONE, y0: rect[1] / ONE, x1: (rect[2] + ONE - 1) / ONE, y1: (rect[3] + ONE - 1) / ONE };
+            let clip = Clip { rect, bounds, mask: None };
+            for y in bounds.y0..bounds.y1 {
+                for x in bounds.x0..bounds.x1 {
+                    let mut cov: Vec<u8> = (0..bounds.x1 - x).map(|i| 255 - i as u8 * 13).collect();
+                    let want: Vec<u8> = cov
+                        .iter()
+                        .enumerate()
+                        .map(|(i, &c)| crate::paint::mul_div255(c, factor(overlap(rect[0], rect[2], x + i as i32), overlap(rect[1], rect[3], y))))
+                        .collect();
+                    apply_clip(Level::new(), &clip, &[], y, x, &mut cov);
+                    assert_eq!(cov, want, "{rect:?} at {x}, {y}");
+                }
+            }
+        }
+    }
 }
