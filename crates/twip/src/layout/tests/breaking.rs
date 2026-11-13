@@ -1627,6 +1627,22 @@ fn a_cell_paragraph_whose_only_stop_is_decimal_aligns_on_it() {
     assert!((x('4') - x('a') - (75.0 - 6.116)).abs() < 0.02 && (x('7') - x('a')).abs() < 0.01, "{} {} {}", x('a'), x('4'), x('7'));
 }
 
+#[test]
+fn a_four_per_em_or_zero_width_space_hangs_at_the_line_end() {
+    let right = |end: &str| {
+        let body = format!(r#"<w:p><w:pPr><w:jc w:val="right"/></w:pPr><w:r><w:t xml:space="preserve">ab{end}</w:t></w:r></w:p>"#);
+        glyph_xs("", &body).map(|c| c.iter().find(|g| g.0 == 'b').expect("drawn").1)
+    };
+    let Some(space) = right(" ") else { return };
+    assert!((right("\u{2005}").unwrap() - space).abs() < 0.01 && (right("\u{2005}\u{2005}").unwrap() - space).abs() < 0.01);
+    // "omega" ends 1.39pt before the right edge, its U+2005 past it: the word stays on line 1.
+    let body = r#"<w:p><w:pPr><w:ind w:right="6238"/></w:pPr><w:r><w:t xml:space="preserve">alpha beta gamma delta omega&#x2005;tail</w:t></w:r></w:p>"#;
+    let chars = glyph_xs("", body).expect("lays out");
+    let o = chars.iter().find(|g| g.0 == 'o').unwrap();
+    let t = chars.iter().find(|g| g.2 > o.2 + 1.0).unwrap();
+    assert!(t.0 == 't' && (t.1 - 72.0).abs() < 0.01, "{o:?} {t:?}");
+}
+
 /// Each character on the first page with its x and baseline.
 fn glyph_xs(settings: &str, body: &str) -> Option<Vec<(char, f64, f64)>> {
     Some(super::page_chars(&test_doc(settings, ARIAL_11, body, "")?).swap_remove(0))

@@ -1382,6 +1382,11 @@ fn shrink_spaces(sp: &ShapedPara, pieces: &[Piece], start: usize, word: usize, c
     }
 }
 
+/// A space a justified line widens: not the four-per-em or zero-width space, which only hang.
+fn stretches(sp: &ShapedPara, p: &Piece) -> bool {
+    p.kind == Kind::Space && !matches!(text_of(sp, p), "\u{2005}" | "\u{200B}")
+}
+
 fn hyphen_width(sp: &ShapedPara, p: &Piece) -> f64 {
     let st = &sp.styles[p.style as usize];
     match &st.face {
@@ -1432,7 +1437,7 @@ fn justified_tab_end(
         let first = (from..e).find(|&k| pieces[k].kind != Kind::Space).unwrap_or(e);
         let last = ink.map_or(first, |k| k + 1);
         let (mut shrink, mut stretch) = (0, 0);
-        for k in (first..last).filter(|&k| pieces[k].kind == Kind::Space) {
+        for k in (first..last).filter(|&k| stretches(sp, &pieces[k])) {
             let w = lu(all.widths[k - start]).round() as i64;
             shrink += (w + 2) >> 2;
             stretch += (w + 1) >> 1;
@@ -1564,7 +1569,7 @@ fn justified_line(sp: &ShapedPara, pieces: &[Piece], from: usize, seg_end: usize
                     word_end = Some(end_word(&mut ends, k, natural, shrink, stretch + glyphs - last_glyph));
                 }
                 natural += lu(p.width) + lu(p.break_extra);
-                if seen {
+                if seen && stretches(sp, p) {
                     let w = lu(p.width) as i64;
                     shrink += (w + 2) >> 2;
                     stretch += (w + 1) >> 1;
@@ -1666,7 +1671,7 @@ fn align(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, 
             while first < content_end && pieces[idx(first)].kind == Kind::Space {
                 first += 1;
             }
-            let spaces: Vec<usize> = (first..content_end).filter(|&k| pieces[idx(k)].kind == Kind::Space).collect();
+            let spaces: Vec<usize> = (first..content_end).filter(|&k| stretches(sp, &pieces[idx(k)])).collect();
             if spaces.is_empty() {
                 if style.bidi {
                     to_right(line);
@@ -1726,7 +1731,7 @@ fn align(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, 
                 let extra = extra - bonus.iter().sum::<f64>();
                 let stretch: Vec<f64> = chars[..chars.len() - 1]
                     .iter()
-                    .map(|&k| if frame.compat == Compat::Generic && pieces[idx(k)].kind == Kind::Space { line.widths[k] / 2.0 } else { 0.0 })
+                    .map(|&k| if frame.compat == Compat::Generic && stretches(sp, &pieces[idx(k)]) { line.widths[k] / 2.0 } else { 0.0 })
                     .collect();
                 let total: f64 = stretch.iter().sum();
                 let share = if total > 0.0 { (extra / total).clamp(0.0, 1.0) } else { 0.0 };

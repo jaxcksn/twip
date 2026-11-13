@@ -736,7 +736,8 @@ impl<'a> Builder<'a> {
             cluster_glyphs.clear();
             cluster_glyphs.extend(by_cluster[g0..gi].iter().map(|&i| glyphs[i]));
             let first = chars.chars().next().unwrap_or(' ');
-            let kind = if first == ' ' || first == '\u{3000}' || first == '\u{2002}' || first == '\u{2003}' { Kind::Space } else { Kind::Text };
+            // The en, em and four-per-em spaces and the zero-width space hang at a line end like spaces.
+            let kind = if matches!(first, ' ' | '\u{3000}' | '\u{2002}' | '\u{2003}' | '\u{2005}' | '\u{200B}') { Kind::Space } else { Kind::Text };
             let n_chars = c1 - c0;
             let mut p = self.new_piece(kind, run, Some(face.clone()), size, raise);
             p.width = if self.em1000 && run.east_asia_named {
