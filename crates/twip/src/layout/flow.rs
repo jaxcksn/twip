@@ -236,7 +236,8 @@ fn fit_count(units: &[StoryUnit], room: f64, compat: Compat) -> usize {
         Some(r) if compat == Compat::Generic && !r.table.is_last(r.ri) => r.table.bottom_border,
         _ => 0.0,
     };
-    units.iter().position(|u| u.top + u.height + u.after + close(u) > room + EPS).unwrap_or(units.len())
+    // A line's floats held in the cell fit with it.
+    units.iter().position(|u| u.top + (u.height + u.after + close(u)).max(u.hold) > room + EPS).unwrap_or(units.len())
 }
 
 #[derive(Clone)]
@@ -770,6 +771,7 @@ impl<'d> PageFill<'d, '_> {
                         height: h,
                         below: 0.0,
                         after: 0.0,
+                        hold: 0.0,
                         content,
                         block: 0,
                         from: 0,

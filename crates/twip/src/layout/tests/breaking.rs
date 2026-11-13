@@ -2134,6 +2134,25 @@ fn a_floating_table_in_a_cell_is_wrapped_by_the_cell_text() {
     }
 }
 
+#[test]
+fn a_split_row_keeps_a_line_only_with_the_float_it_holds_in_the_cell() {
+    // 50 lines of 252 twips, then a row whose first line fits above the bottom margin but its float, 7.2pt below the
+    // line and 36pt tall, doesn't: the row goes to the next page whole.
+    let p = |t: &str, run: &str| format!(r#"<w:p><w:pPr><w:spacing w:after="0" w:line="252" w:lineRule="exact"/></w:pPr>{run}<w:r><w:t>{t}</w:t></w:r></w:p>"#);
+    let float = r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="0" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>91440</wp:posOffset></wp:positionV><wp:extent cx="457200" cy="457200"/><wp:wrapSquare wrapText="bothSides"/><a:graphic><a:graphicData><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#;
+    let fill: String = (0..50).map(|_| p("fill", "")).collect();
+    let cell = |w: u32, body: String| format!(r#"<w:tc><w:tcPr><w:tcW w:w="{w}" w:type="dxa"/></w:tcPr>{body}</w:tc>"#);
+    let body = format!(
+        r#"{fill}<w:tbl><w:tblPr><w:tblW w:w="6000" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/><w:gridCol w:w="3000"/></w:tblGrid><w:tr>{}{}</w:tr></w:tbl><w:p/>"#,
+        cell(3000, p("Float", float)),
+        cell(3000, p("One", "") + &p("Two", ""))
+    );
+    let Some(doc) = test_doc(COMPAT_15, ARIAL_12, &body, "") else { return };
+    let pages = super::page_chars(&doc);
+    let page = |t: &str| pages.iter().position(|pg| pg.iter().map(|c| c.0).collect::<String>().contains(t));
+    assert_eq!((page("Float"), page("One"), page("Two")), (Some(1), Some(1), Some(1)));
+}
+
 /// Fixed tables of one row each, `cells` (text, width in twips) per table, back to back; `between` is written
 /// between them and `tbl_pr` into the second one's properties.
 fn back_to_back(tables: &[&[(&str, u32)]], between: &str, tbl_pr: &str) -> String {

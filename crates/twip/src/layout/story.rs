@@ -30,6 +30,8 @@ pub struct StoryUnit {
     pub height: f64,
     pub below: f64,
     pub after: f64,
+    /// How far below its top the floats it anchors hold the cell's content down (0 for none).
+    pub hold: f64,
     pub content: Rc<[Child]>,
     pub block: usize,
     /// The line's first piece in its paragraph (0 for a table row).
@@ -341,6 +343,7 @@ pub fn layout_with(
                             ((l.start, last, l.pitch, l.below), drawn.collect())
                         }
                     };
+                    let mut hold = 0.0f64;
                     if in_cell {
                         // Anchored floats
                         for k in start..end.max(start + 1) {
@@ -359,6 +362,7 @@ pub fn layout_with(
                                 float_bottom = float_bottom.max(y + fy + h);
                                 if f.wrap != "none" && f.v_align.is_none() && matches!(f.v_relative.as_str(), "paragraph" | "line") {
                                     held = held.max(y + fy + h);
+                                    hold = hold.max(fy + h);
                                 }
                             }
                             if f.wrap != "none" && own.iter().all(|(o, _)| *o != k) {
@@ -373,6 +377,7 @@ pub fn layout_with(
                         height: pitch,
                         below,
                         after: if i + 1 == rows { after } else { 0.0 },
+                        hold,
                         content: content.into(),
                         block: bi,
                         from: lines.from + start,
