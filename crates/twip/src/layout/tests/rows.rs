@@ -163,6 +163,43 @@ fn glyph_x(body: &str, c: char) -> (f64, i64) {
     (x.expect("drawn"), text_w)
 }
 
+/// The x of the first `c` glyph, laid out in compat `mode` with the given compat flags.
+fn glyph_x_in(body: &str, mode: i64, flags: &[&str], c: char) -> f64 {
+    let mut doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), body)).expect("reads");
+    doc.settings.compat_mode = mode;
+    doc.settings.compat.extend(flags.iter().map(|f| f.to_string()));
+    let mut x = None;
+    crate::layout::traverse::paint(&layout(&doc, &fonts()).pages()[0], &mut |p| {
+        if let crate::layout::fragment::Item::Glyphs(r) = p.absolute() {
+            x = x.or(r.chars.iter().find(|g| g.0 == c).map(|g| g.1));
+        }
+    });
+    x.expect("drawn")
+}
+
+fn dxa_cell(w: u32, t: &str) -> String {
+    format!(r#"<w:tc><w:tcPr><w:tcW w:w="{w}" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:tc>"#)
+}
+
+const MAR: &str = r#"<w:tblCellMar><w:left w:w="100" w:type="dxa"/><w:right w:w="100" w:type="dxa"/></w:tblCellMar>"#;
+
+#[test]
+fn compat_15_centres_a_row_with_its_grid_after() {
+    let table = |tr: &str, last: &str| {
+        format!(
+            r#"<w:tbl><w:tblPr><w:jc w:val="center"/><w:tblLayout w:type="fixed"/>{MAR}</w:tblPr><w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/><w:gridCol w:w="1000"/></w:tblGrid><w:tr><w:trPr>{tr}</w:trPr>{}{}{last}</w:tr><w:tr>{}{}{}</w:tr></w:tbl><w:p/>"#,
+            dxa_cell(2000, "a"),
+            dxa_cell(2000, "b"),
+            dxa_cell(2000, "d"),
+            dxa_cell(2000, "e"),
+            dxa_cell(1000, "f")
+        )
+    };
+    let after = glyph_x_in(&table(r#"<w:gridAfter w:val="1"/><w:wAfter w:w="1000" w:type="dxa"/>"#, ""), 15, &[], 'a');
+    let full = glyph_x_in(&table("", &dxa_cell(1000, "c")), 15, &[], 'a');
+    assert!((after - full).abs() < 0.01, "the skipped column is centred with the row: {after} vs {full}");
+}
+
 #[test]
 fn a_pct_indent_is_a_share_of_the_text_width() {
     let table = |ind: &str| {

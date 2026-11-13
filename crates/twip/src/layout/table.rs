@@ -2015,13 +2015,11 @@ fn assemble(
         Compat::Legacy => t.ind - edge_gap(t, lw, lmar),
     };
     match t.jc {
+        // The whole grid is centred, its `gridBefore` and `gridAfter` columns too.
         Jc::Center => {
-            let (gb, ga) = t.rows.first().map_or((0, 0), |r| (r.grid_before.min(cols.len()), r.grid_after.min(cols.len())));
-            let before: f64 = cols[..gb].iter().sum();
-            let after: f64 = cols[cols.len() - ga.min(cols.len() - gb)..].iter().sum();
             let (lh, rh) = (twips(half_border(lw)), twips(edge_right(t)) / 2);
-            let free = twips(text_w) - (lh + twips(total - before - after) + rh);
-            x0 = (lh + (free + 1).div_euclid(2)) as f64 / 20.0 - before;
+            let free = twips(text_w) - (lh + twips(total) + rh);
+            x0 = (lh + (free + 1).div_euclid(2)) as f64 / 20.0;
         }
         Jc::Right => x0 = (twips(text_w) - twips(total) - twips(edge_right(t)) / 2) as f64 / 20.0,
         _ => {}
