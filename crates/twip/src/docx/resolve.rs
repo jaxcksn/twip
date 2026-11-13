@@ -125,7 +125,8 @@ impl Resolver {
             toc: false,
             shading: p.shading.flatten(),
             shd: p.shd.clone().filter(|s| s.pattern != "nil"),
-            border: p.border.clone().filter(|b| b.visible()),
+            // A text border of style `none` draws nothing, but its space still counts.
+            border: p.border.clone().filter(|b| b.visible() || b.style == "none" && b.space > 0.0),
             vert_align: p.vert_align.unwrap_or(VertAlign::Baseline),
             position: p.position.unwrap_or(0.0),
             spacing: p.spacing.unwrap_or(0.0),

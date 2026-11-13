@@ -276,6 +276,27 @@ fn mac_small_caps(hps: i64) -> i64 {
     }
 }
 
+/// The text border of piece `k`'s box, if it is in one: a text or space piece of a run with `w:bdr`.
+pub fn boxed<'s>(pieces: &[Piece], styles: &'s [PieceStyle], k: usize) -> Option<&'s crate::docx::props::Border> {
+    let p = pieces.get(k).filter(|p| matches!(p.kind, Kind::Text | Kind::Space) && p.glyphs.1 > p.glyphs.0)?;
+    styles[p.style as usize].run.border.as_ref()
+}
+
+/// A text border's side, in points: as laid out (`space + k × lines × width` twips, `k` = 2 with a shadow) and as
+/// drawn (in whole device pixels, each part truncated).
+pub fn border_side(b: &crate::docx::props::Border) -> (f64, f64) {
+    // ponytail: styles other than double and triple count one line.
+    let lines = match b.style.as_str() {
+        "none" => 0,
+        "double" => 3,
+        "triple" => 5,
+        _ => 1,
+    } * if b.shadow { 2 } else { 1 };
+    let (line, space) = (((b.width * 8.0).round() as i64 * 5) / 2, (b.space * 20.0).round() as i64);
+    let drawn = (space * 600 / 1440 + lines * (line * 600 / 1440).max(1)) as f64 * super::units::DEVICE_PX / super::units::LU_PER_PT;
+    ((space + lines * line) as f64 / 20.0, drawn)
+}
+
 pub fn hp(x: f64) -> i64 {
     (2.0 * x).round() as i64
 }
@@ -1331,6 +1352,32 @@ impl<'a> Builder<'a> {
         }
     }
 
+    /// Text borders: consecutive runs with equal `w:bdr` share one box ([`boxed`]). Each of its two outer sides
+    /// ([`border_side`]) widens its outer piece; the box's runs are as much taller above and below as a side is wide.
+    fn border_sides(&mut self) {
+        let mut k = 0;
+        while k < self.pieces.len() {
+            let Some(b) = boxed(&self.pieces, &self.styles, k) else {
+                k += 1;
+                continue;
+            };
+            let mut end = k + 1;
+            while boxed(&self.pieces, &self.styles, end) == Some(b) {
+                end += 1;
+            }
+            let (t, drawn) = border_side(b);
+            for p in &mut self.pieces[k..end] {
+                p.ascent += t;
+                p.descent += t;
+            }
+            for i in [k, end - 1] {
+                self.pieces[i].width += drawn;
+                self.pieces[i].break_extra += t - drawn;
+            }
+            k = end;
+        }
+    }
+
     fn finish(mut self) -> ShapedPara {
         if let Some(o) = self.pending_note.take()
             && let Some(p) = self.pieces.iter_mut().rev().find(|p| p.object.is_none())
@@ -1358,6 +1405,7 @@ impl<'a> Builder<'a> {
             }
             a = b;
         }
+        self.border_sides();
         ShapedPara {
             pieces: self.pieces.into_boxed_slice(),
             styles: self.styles.into_boxed_slice(),

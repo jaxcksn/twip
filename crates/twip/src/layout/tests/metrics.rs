@@ -79,3 +79,30 @@ fn compat_15_a_paragraph_of_4000_characters_fits_its_region_as_compat_12() {
     assert!(short > 1.0, "3999: the region breaks with its first adjustment, on line 2");
     assert!(line(4000).expect("lays out").abs() < 1e-6, "4000: compat 12's width fits line 1");
 }
+
+#[test]
+fn a_text_borders_sides_widen_and_heighten_its_box() {
+    let bdr = r#"<w:bdr w:val="single" w:sz="4" w:space="0" w:color="000000"/>"#;
+    let body = format!(r#"<w:p><w:r><w:rPr>{bdr}</w:rPr><w:t>b</w:t></w:r><w:r><w:rPr>{bdr}</w:rPr><w:t>c</w:t></w:r><w:r><w:t>d</w:t></w:r></w:p><w:p><w:r><w:t>y</w:t></w:r></w:p>"#);
+    let Some(c) = chars("", ARIAL_10, &body, 0) else { return };
+    // Equal borders make one box: 10 tw a side, drawn as 4 pixels (0.48pt); 0.5pt more above and below.
+    let (b, cx, d, y) = (at(&c, 'b'), at(&c, 'c'), at(&c, 'd'), at(&c, 'y'));
+    let adv = |n: f64| n * 10.0 / 2048.0;
+    assert!((b.0 - 72.48).abs() < 1e-6 && (cx.0 - b.0 - adv(1139.0)).abs() < 1e-6, "{b:?} {cx:?}");
+    assert!((d.0 - cx.0 - adv(1024.0) - 0.48).abs() < 1e-6, "{cx:?} {d:?}");
+    assert!((b.1 - (72.0 + 0.5 + 1921.0 * 10.0 / 2048.0)).abs() < 0.01 && (y.1 - b.1 - (47100.0 / 4096.0 + 0.5)).abs() < 0.01, "{b:?} {y:?}");
+}
+
+#[test]
+fn a_multiple_spacings_extra_holds_a_smaller_runs_border() {
+    let next = |bdr: &str| {
+        let p = |r: &str| format!(r#"<w:p><w:pPr><w:spacing w:line="288" w:lineRule="auto"/></w:pPr>{r}</w:p>"#);
+        let first = format!(r#"<w:r><w:t xml:space="preserve">x </w:t></w:r><w:r><w:rPr><w:sz w:val="16"/>{bdr}</w:rPr><w:t>k</w:t></w:r>"#);
+        let c = chars("", ARIAL_10, &(p(&first) + &p("<w:r><w:t>y</w:t></w:r>")), 0)?;
+        Some(at(&c, 'y').1)
+    };
+    let Some(plain) = next("") else { return };
+    // The 8pt run's border reaches below the 10pt text, by less than the 1.2 lines' extra: the pitch stays.
+    let boxed = next(r#"<w:bdr w:val="single" w:sz="4" w:space="1" w:color="000000"/>"#).expect("lays out");
+    assert!((boxed - plain).abs() < 1e-6, "{plain} {boxed}");
+}

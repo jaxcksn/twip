@@ -1757,6 +1757,7 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
     let (mut un_asc, mut un_desc, mut un_text_asc, mut un_text_desc) = (0.0f64, 0.0f64, 0.0f64, 0.0f64);
     let mut run_h = 0.0f64;
     let (mut em_above, mut em_below) = (false, false);
+    let (mut boxed_asc, mut boxed_desc) = (0.0f64, 0.0f64);
     let mut num_asc = 0.0f64;
     let mut has_content = false;
     let mut has_text = false;
@@ -1792,8 +1793,11 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
                     let c = object_drop(p.ascent, p.descent, line.align);
                     (pa, pd) = (pa - c, pd + c);
                 }
-                asc = asc.max(pa);
-                desc = desc.max(pd);
+                // A text border's sides make its runs taller; kept apart, as the spacing's extra may hold them.
+                let side = if p.kind == Kind::Text { st.run.border.as_ref().map_or(0.0, |b| super::text::border_side(b).0) } else { 0.0 };
+                (boxed_asc, boxed_desc) = (boxed_asc.max(pa), boxed_desc.max(pd));
+                asc = asc.max(pa - side);
+                desc = desc.max(pd - side);
                 let deeper = match p.object.map(|o| &sp.objects[o as usize]) {
                     Some(Object::Ruby(r)) => r.at_least_descent - p.descent,
                     _ => 0.0,
@@ -1817,7 +1821,7 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
                 } else {
                     un_text_asc = un_text_asc.max(a0);
                     un_text_desc = un_text_desc.max(d0);
-                    run_h = run_h.max(a0 + d0);
+                    run_h = run_h.max(a0 + d0 - 2.0 * side);
                 }
             }
             // A list number is a run in its own font under the paragraph's alignment.
@@ -1879,6 +1883,8 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
     }
     let asc = asc.max(num_asc);
     let un_asc = if !has_text { un_asc.max(num_asc) } else { un_asc };
+    let grow = asc.max(boxed_asc) + desc.max(boxed_desc) - asc - desc;
+    let (asc, desc) = (asc.max(boxed_asc), desc.max(boxed_desc));
     let h = asc + desc;
     // Emphasis marks take a quarter of the line's single height (half, split, with marks above and below), unless the
     // spacing's extra holds them; exact lines have no room for them.
@@ -1902,7 +1908,9 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
         LineRule::Auto => {
             let m = style.line;
             let extra = times_line(text_h, m) - text_h;
-            line.pitch = h + extra + if em <= extra { 0.0 } else { em };
+            // ponytail: the extra holds a text border's growth as it holds an emphasis mark; seen at 1.2 lines only.
+            let held = if grow <= extra { grow } else { 0.0 };
+            line.pitch = h - held + extra + if em <= extra - held { 0.0 } else { em };
             if m >= 1.0 {
                 line.baseline = asc + em_up;
                 line.below = line.pitch - h - em;
@@ -2207,6 +2215,12 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
             }
             let Some(r) = run.as_mut() else { continue };
             let scale = face.scale(st.size) * st.run.scale / 100.0;
+            // A text border's box starts here: its left side comes before the glyphs.
+            let i = o.from + ix;
+            let x = match super::text::boxed(&sp.pieces, &sp.styles, i) {
+                Some(b) if i == 0 || super::text::boxed(&sp.pieces, &sp.styles, i - 1) != Some(b) => x + super::text::border_side(b).1,
+                _ => x,
+            };
             let mut gx = x;
             if p.soft_hyphen {
                 if let Some(g) = face.glyph('-') {
@@ -2402,9 +2416,10 @@ fn draw_decorations(o: &LineOrigin, line: &Line, base: f64, bg_at: usize, behind
     // Text borders: (border, left, right, top, bottom) of the stretch of runs drawn so far.
     let mut boxed: Option<(crate::docx::props::Border, f64, f64, f64, f64)> = None;
     let flush_box = |boxed: &mut Option<(crate::docx::props::Border, f64, f64, f64, f64)>, fg: &mut Vec<Item>| {
-        let Some((b, l, r, t, btm)) = boxed.take() else { return };
+        let Some((b, l, r, t, btm)) = boxed.take().filter(|x| x.0.visible()) else { return };
         let w = super::table::thick(&b);
-        let (l, r, t, btm) = (l - b.space - w, r + b.space + w, t - b.space - w, btm + b.space + w);
+        // The runs' widths hold the box's sides.
+        let (t, btm) = (t - b.space - w, btm + b.space + w);
         super::table::edge(fg, [l, t, r, t + w], true, false, &b);
         super::table::edge(fg, [l, btm - w, r, btm], true, true, &b);
         super::table::edge(fg, [l, t, l + w, btm], false, false, &b);
