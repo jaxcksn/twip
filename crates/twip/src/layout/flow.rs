@@ -2092,7 +2092,11 @@ impl<'d> PageFill<'d, '_> {
                 };
             }
         }
-        while (s < n || bands.is_empty()) && guard < 4000 {
+        // A paragraph ending in a line break has an empty last line after it.
+        let trailing = |bands: &[(f64, Vec<Line>)]| {
+            bands.last().and_then(|(_, segs)| segs.last()).is_some_and(|l| l.end == n && l.start < l.end && l.hard == Some(Kind::LineBreak))
+        };
+        while (s < n || bands.is_empty() || trailing(&bands)) && guard < 4000 {
             guard += 1;
             let mut h = est;
             let mut below = est_below;

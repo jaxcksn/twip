@@ -3460,3 +3460,13 @@ fn a_page_break_before_a_frame_paragraph_breaks_before_the_frame() {
     let one = page_baselines("", ARIAL_12, &format!("{lead}{cell}<w:p/>"), 0).unwrap();
     assert!(one.iter().any(|l| l.1 == "Next"), "{one:?}");
 }
+
+#[test]
+fn a_paragraph_ending_in_a_line_break_beside_a_float_keeps_its_empty_last_line() {
+    let next = |float: &str| {
+        let body = format!(r#"<w:p>{float}<w:r><w:t>A</w:t></w:r><w:r><w:br/></w:r></w:p><w:p><w:r><w:t>B</w:t></w:r></w:p>"#);
+        baselines("", ARIAL_12, &body).map(|l| l.iter().find(|l| l.1 == "B").expect("drawn").3)
+    };
+    let Some(plain) = next("") else { return };
+    assert!((next(&anchor(300, 0, 50, 10, 1, "paragraph")).unwrap() - plain).abs() < 0.01);
+}
