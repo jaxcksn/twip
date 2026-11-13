@@ -2036,11 +2036,48 @@ impl<'d> PageFill<'d, '_> {
             let low = floats.iter().filter(|f| f.wrap != Wrap::None).map(|f| f.excl[3]).fold(yy, f64::max);
             yy = low.min(col.bottom.to_pt());
         }
+        // Compat ≤ 14, a keepLines paragraph and its own float: whether its lines from `from`, laid out from `top` in
+        // steps of the first line's height beside the floats, all start above `bottom`.
+        let (mark, plain) = (p.mark_in(self.ctx.env.text.review.view), frame);
+        let all_beside = |top: f64, from: usize, bottom: f64| {
+            let (mut t, mut k) = (top, from);
+            while k < n {
+                let Some(iv) = float::intervals(&floats, cx0, cx1, t, t + est, true).filter(|_| t < bottom - EPS) else { return false };
+                let ivc: Vec<(f64, f64)> = iv.iter().map(|(a, b)| (a - cx0, b - cx0)).collect();
+                match band(sp, pieces, k, &ivc, k == 0 && (first_part || restarts), style, mark, &plain, self.ctx.fonts, iv.len() == 1) {
+                    Ok((_, e)) if e > k => k = e,
+                    _ => return false,
+                }
+                t += est;
+            }
+            true
+        };
+        let own_float = |f: &&Placed| {
+            (f.key.0, f.key.1) == (self.sec.index, pos.block) && f.wrap != Wrap::None && f.excl[0] < cx1 - EPS && f.excl[2] > cx0 + EPS
+        };
+        // Below a column's top it is tried as a block one line lower at a time, from where it was first laid out: below
+        // the float it stays; with the float starting below its first line it goes on down; with the float's top in its
+        // first line it goes to the float's bottom unless the float reaches more than its first place's distance to
+        // that top below the line; with the float over its first line it stays when every line beside the float starts
+        // above its bottom.
         if compat == Compat::Legacy && style.keep_lines && first_part && !at_top {
-            let own = floats.iter().filter(|f| {
-                f.frozen && (f.key.0, f.key.1) == (self.sec.index, pos.block) && f.wrap != Wrap::None && f.excl[3] > yy + EPS && f.excl[0] < cx1 - EPS && f.excl[2] > cx0 + EPS
-            });
-            yy = own.map(|f| f.excl[3]).fold(yy, f64::max);
+            let own = floats.iter().filter(|f| f.frozen && f.excl[3] > yy + EPS).filter(own_float).min_by(|a, b| a.excl[1].total_cmp(&b.excl[1]));
+            if let Some(f) = own {
+                let (p0, ft, fb) = (yy, f.excl[1], f.excl[3]);
+                let mut y = p0;
+                yy = loop {
+                    if y >= fb - EPS || y >= col.bottom.to_pt() {
+                        break y;
+                    }
+                    if ft >= y + est - EPS {
+                    } else if ft >= y - EPS && fb - y <= ft - p0 + EPS {
+                        break fb;
+                    } else if all_beside(y, 0, fb) {
+                        break y;
+                    }
+                    y += est;
+                };
+            }
         }
         while (s < n || bands.is_empty()) && guard < 4000 {
             guard += 1;
@@ -2144,9 +2181,16 @@ impl<'d> PageFill<'d, '_> {
                     uncut = Some(here.iter().filter(|f| !hidden(f)).cloned().collect());
                 }
                 if style.keep_lines && forced.is_none() {
-                    let top = near().filter(|f| f.wrap != Wrap::None && f.excl[1] > yy + EPS).map(|f| f.excl[1]).fold(f64::INFINITY, f64::min);
-                    if top < yy + h - EPS {
-                        yy = top;
+                    let first = near().filter(|f| f.wrap != Wrap::None && f.excl[1] > yy + EPS).min_by(|a, b| a.excl[1].total_cmp(&b.excl[1]));
+                    // Its own float below a column's top was settled with the paragraph's place above.
+                    if let Some(f) = first.filter(|f| f.excl[1] < yy + h - EPS && (at_top || !first_part || !own_float(f))) {
+                        // At a column's top, beside its own float only when the rest of it starts above the float's
+                        // bottom there; else down past the float in steps of its height, full width.
+                        let (ft, fb) = (f.excl[1], f.excl[3]);
+                        yy = ft;
+                        if at_top && first_part && own_float(&f) && !all_beside(ft, s, fb) {
+                            yy = ft + ((fb - ft) / h - EPS).ceil() * h;
+                        }
                         continue;
                     }
                 }
@@ -2448,7 +2492,7 @@ impl<'d> PageFill<'d, '_> {
             // text wraps it in the next fill. A later one was placed beside text that moves, and is placed again.
             // Compat ≤ 14: one that meets the lines of its own keepLines paragraph below a column's top stays too, and
             // the paragraph starts below it.
-            let own = compat == Compat::Legacy && style.keep_lines && !at_top && a.restarts && a.excl[3] > bands[0].0 + EPS;
+            let own = compat == Compat::Legacy && style.keep_lines && a.restarts && a.excl[3] > bands[0].0 + EPS;
             a.frozen = (met || own) && !self.at.hit;
             a.collided = a.frozen || self.column > 0 && !met;
             anchors.push(a);

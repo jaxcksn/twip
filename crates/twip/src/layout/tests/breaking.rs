@@ -3047,6 +3047,34 @@ fn compat_14_a_keep_lines_paragraph_that_meets_its_own_float_starts_below_it() {
 }
 
 #[test]
+fn compat_14_a_keep_lines_paragraph_steps_down_past_its_own_float_or_stays_beside_it() {
+    let filler: String = (0..10).map(|k| format!("<w:p><w:r><w:t>A{k:02} filler line text</w:t></w:r></w:p>")).collect();
+    let words = |c: char, n: usize| (0..n).map(|k| format!("{c}{k:02} ")).collect::<String>();
+    let para = |ppr: &str, h: u32, after: usize| {
+        format!(
+            r#"<w:p><w:pPr>{ppr}</w:pPr><w:r><w:t xml:space="preserve">{}</w:t></w:r>{}<w:r><w:t>{}</w:t></w:r></w:p>"#,
+            words('B', 20),
+            anchor(368, 0, 100, h, 1, "line"),
+            words('b', after)
+        )
+    };
+    let at = |body: &str, start: &str| baselines("", ARIAL_12, body).unwrap().into_iter().find(|l| l.1.starts_with(start)).unwrap();
+    let Some(plain) = baselines("", ARIAL_12, &format!("{filler}{}", para("", 20, 100))) else { return };
+    let b00 = plain.iter().find(|l| l.1.starts_with("B00")).unwrap().3;
+    // The 20pt float starts in the second line: one and two lines down it still meets the paragraph, three lines down
+    // the paragraph is below it, full width.
+    let stepped = at(&format!("{filler}{}", para("<w:keepLines/>", 20, 100)), "B00");
+    assert!((stepped.3 - b00 - 3.0 * 13.8).abs() < 0.01, "{stepped:?} {b00}");
+    // A 100pt float and a short paragraph: one line down every line beside the float starts above its bottom.
+    let beside = at(&format!("{filler}{}", para("<w:keepLines/>", 100, 20)), "B00");
+    assert!((beside.3 - b00 - 13.8).abs() < 0.01 && beside.2 < 440.0, "{beside:?} {b00}");
+    // At a column's top the line holding the float's top goes down past it in steps of its height, full width.
+    let top = format!("{filler}{}", para("<w:pageBreakBefore/><w:keepLines/>", 20, 100));
+    let Some(p2) = page_baselines("", ARIAL_12, &top, 1) else { return };
+    assert!((p2[1].3 - p2[0].3 - 13.8 - 2.0 * 13.8).abs() < 0.01 && p2[1].0 == 72.0, "{p2:?}");
+}
+
+#[test]
 fn a_float_wraps_the_next_continuous_section_on_its_page() {
     // Section 1 ends with a 150pt float at the column's left; section 2 starts beside it.
     let body = format!(
