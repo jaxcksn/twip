@@ -2610,3 +2610,26 @@ fn a_float_that_met_earlier_text_keeps_that_place_when_the_text_wraps_it() {
         assert!((kept[1] - first[1]).abs() < 0.01, "compat {compat}: the float stays where it met A: {first:?} {kept:?}");
     }
 }
+
+#[test]
+fn a_paragraphs_space_before_is_part_of_its_first_lines_box_beside_a_float() {
+    // A 23pt float over the first paragraph's line; the second paragraph's 24pt before reaches it, its text doesn't.
+    let float = r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="0" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="margin"><wp:posOffset>0</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV><wp:extent cx="1270000" cy="292100"/><wp:wrapSquare wrapText="bothSides"/><a:graphic><a:graphicData><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#;
+    let body = format!(
+        r#"<w:p><w:pPr><w:spacing w:before="0" w:after="0"/></w:pPr>{float}<w:r><w:t>x</w:t></w:r></w:p><w:p><w:pPr><w:spacing w:before="480" w:after="0"/></w:pPr><w:r><w:t>{}</w:t></w:r></w:p>"#,
+        "Alpha bravo charlie delta echo. ".repeat(6)
+    );
+    for compat in [12, 15] {
+        let settings = format!(r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="{compat}"/></w:compat>"#);
+        let Some(l) = lines(&settings, ARIAL_12, &body) else { return };
+        assert!((l[1].0 - 172.0).abs() < 0.01 && (l[2].0 - 72.0).abs() < 0.01, "compat {compat}: {l:?}");
+        // A top-and-bottom float only in the space before doesn't move the line.
+        let y = |wrap: &str| {
+            let low = body
+                .replace(r#"<wp:wrapSquare wrapText="bothSides"/>"#, wrap)
+                .replace(r#"<wp:posOffset>0</wp:posOffset></wp:positionV><wp:extent cx="1270000" cy="292100"/>"#, r#"<wp:posOffset>177800</wp:posOffset></wp:positionV><wp:extent cx="1270000" cy="127000"/>"#);
+            baselines(&settings, ARIAL_12, &low).unwrap()[1].3
+        };
+        assert!((y("<wp:wrapTopAndBottom/>") - y("<wp:wrapNone/>")).abs() < 0.01, "compat {compat}");
+    }
+}

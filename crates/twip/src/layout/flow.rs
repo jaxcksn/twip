@@ -1927,6 +1927,12 @@ impl<'d> PageFill<'d, '_> {
         let restarts = pb.from > 0 && sp.pieces[..pb.from.min(sp.pieces.len())].iter().all(|q| matches!(q.kind, Kind::PageBreak | Kind::ColumnBreak));
         let mut content = pieces.iter().filter(|q| q.kind != Kind::Anchor);
         let lone_picture = compat == Compat::Legacy && content.next().is_some_and(|q| q.kind == Kind::Object) && content.next().is_none();
+        // Text laid out before the paragraph in this column ends at `*y`, then the space after it keeps.
+        let kept = carry.prev.as_ref().map_or(carry.prev_after, |ps| gap(&self.ctx.env.text, ps, carry.prev_after, style, 0.0));
+        // The paragraph's top is above its space before: where that text and its kept space after end.
+        let origin = if at_top { *y } else { *y + kept };
+        // The space before is part of the first line's box: a float beside it wraps the line.
+        let lead = if first_part || restarts { (top - origin).max(0.0) } else { 0.0 };
         // Bands
         let mut bands: Vec<(f64, Vec<Line>)> = Vec::new();
         let mut yy = top;
@@ -2045,7 +2051,12 @@ impl<'d> PageFill<'d, '_> {
             for attempt in 0..2 {
                 let free = match &forced {
                     Some(iv) => Some(iv.clone()),
-                    None => float::text_intervals(cutting, cx0, cx1, yy, yy + h, yy + h - below, compat == Compat::Legacy),
+                    None => {
+                        // A float over the whole line that reaches only into the space before doesn't move it.
+                        let at = |t: f64| float::text_intervals(cutting, cx0, cx1, t, yy + h, yy + h - below, compat == Compat::Legacy);
+                        let lead = if bands.is_empty() { lead } else { 0.0 };
+                        at(yy - lead).or_else(|| at(yy).filter(|_| lead > EPS))
+                    }
                 };
                 match free {
                     None => {
@@ -2206,10 +2217,6 @@ impl<'d> PageFill<'d, '_> {
         let mut anchors: Vec<Placed> = Vec::new();
         let mut kept_at = Vec::new();
         let mut forced: Option<usize> = None;
-        // Text laid out before the paragraph in this column ends at `*y`, then the space after it keeps.
-        let kept = carry.prev.as_ref().map_or(carry.prev_after, |ps| gap(&self.ctx.env.text, ps, carry.prev_after, style, 0.0));
-        // The paragraph's top is above its space before: where that text and its kept space after end.
-        let origin = if at_top { *y } else { *y + kept };
         let band_of = |k: usize| bands.iter().position(|(_, segs)| segs.iter().any(|l| k >= l.start && k < l.end.max(l.start + 1)));
         for (k, q) in pieces.iter().enumerate() {
             let (Kind::Anchor, Some(Object::Float(f))) = (q.kind, sp.object(pb.from + k)) else { continue };
