@@ -23,8 +23,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ github.event.pull_request.number }}
           LABELED: ${{ contains(github.event.pull_request.labels.*.name, 'layout-change') }}
+          CHANGED_FILES: ${{ github.event.pull_request.changed_files }}
+        # The changed files' names from the files API: the diff API refuses pull requests over 20,000 lines. That lists
+        # at most 3,000 files, so a larger pull request fails here rather than passing unchecked.
         run: |
-          files=$(gh pr diff "$PR" --repo "$GITHUB_REPOSITORY" --name-only)
+          if [ "$CHANGED_FILES" -gt 3000 ]; then
+            echo "::error::$CHANGED_FILES files changed; GitHub lists at most 3000, so the snapshots can't be checked."
+            exit 1
+          fi
+          files=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --jq '.[].filename')
           changed=$(printf '%s\n' "$files" | grep '^crates/twip/tests/layout/' || true)
           if [ -z "$changed" ]; then
             echo "No layout snapshot changed."
