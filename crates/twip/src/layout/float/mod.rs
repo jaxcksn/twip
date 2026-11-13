@@ -121,13 +121,17 @@ impl Placed {
         }
     }
 
-    /// Compat ≤ 14 keeps no distance above or below a tight or through float.
+    /// Compat ≤ 14 keeps no distance above or below a tight or through float, and none below a frame.
     pub fn legacy_dist(mut self) -> Placed {
+        let frame = self.float.text_box.is_some() && self.float.shape.is_none() && self.key.2 != TABLE_PIECE;
         if matches!(self.float.wrap.as_str(), "tight" | "through") {
             let [dt, db, ..] = self.dist;
             self.excl[1] += dt;
             self.excl[3] -= db;
             self.dist[0] = 0.0;
+            self.dist[1] = 0.0;
+        } else if frame {
+            self.excl[3] -= self.dist[1];
             self.dist[1] = 0.0;
         }
         self

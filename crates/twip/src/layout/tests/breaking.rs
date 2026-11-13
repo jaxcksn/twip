@@ -1820,6 +1820,24 @@ fn a_text_anchored_frames_y_is_its_offset_from_the_text() {
     assert_eq!(cut(101).unwrap(), 2);
 }
 
+const C15: &str = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+
+/// How many lines of a long body paragraph after a one-line frame (`attrs` added to its `w:framePr`) start beside it.
+fn beside_frame(settings: &str, attrs: &str) -> Option<usize> {
+    let words = "Hxx aaa bbb ccc ddd eee fff ggg hhh iii jjj kkk lll mmm nnn ooo ppp qqq rrr sss ttt uuu vvv www xxx yyy zzz ".repeat(2);
+    let body = format!(
+        r#"<w:p><w:pPr><w:framePr w:vAnchor="text" w:hAnchor="margin" w:x="0" w:y="0" w:wrap="around" w:w="3000" {attrs}/></w:pPr><w:r><w:t>f1</w:t></w:r></w:p><w:p><w:r><w:t>{words}</w:t></w:r></w:p>"#
+    );
+    Some(baselines(settings, ARIAL_12, &body)?.iter().filter(|l| l.1 != "f1" && l.0 > 200.0).count())
+}
+
+#[test]
+fn a_compat_14_frame_keeps_no_vertical_space_below_it() {
+    let Some(legacy) = beside_frame("", r#"w:vSpace="200" w:hSpace="200""#) else { return };
+    assert_eq!(legacy, 1);
+    assert_eq!(beside_frame(C15, r#"w:vSpace="200" w:hSpace="200""#).unwrap(), 2);
+}
+
 #[test]
 fn a_frame_in_the_flow_that_meets_an_earlier_one_goes_below_it() {
     let frame = |x: u32, t: &str, apart: bool| {
