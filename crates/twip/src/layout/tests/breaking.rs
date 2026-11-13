@@ -2909,6 +2909,26 @@ fn a_character_relative_float_counts_from_the_drawn_character_before_its_anchor(
     }
 }
 
+#[test]
+fn compat_14_a_top_and_bottom_float_starting_in_a_line_beside_another_float_moves_it() {
+    // A 200pt square float at the column's left; the next paragraph's own 100pt top-and-bottom float, as narrow and
+    // starting 0.5pt below the line's top, takes the whole line although it lies beside the piece the first one leaves.
+    let tb = anchor(0, 0, 72, 100, 1, "paragraph")
+        .replace(r#"<wp:wrapSquare wrapText="bothSides"/>"#, "<wp:wrapTopAndBottom/>")
+        .replace("<wp:posOffset>0</wp:posOffset></wp:positionV>", "<wp:posOffset>6350</wp:posOffset></wp:positionV>")
+        .replace("<wp:posOffset>0</wp:posOffset></wp:positionH>", "<wp:align>left</wp:align></wp:positionH>");
+    let body = format!(
+        r#"<w:p>{}<w:r><w:t>Alpha</w:t></w:r></w:p><w:p>{tb}<w:r><w:t>Bravo</w:t></w:r></w:p>"#,
+        anchor(0, 0, 72, 200, 1, "paragraph")
+    );
+    for compat in [14, 15] {
+        let settings = format!(r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="{compat}"/></w:compat>"#);
+        let Some(l) = baselines(&settings, ARIAL_12, &body) else { return };
+        let b = l.iter().find(|l| l.1 == "Bravo").unwrap();
+        assert!(b.3 > 72.0 + 13.8 + 100.5, "compat {compat}: {l:?}");
+    }
+}
+
 fn anchor(x: u32, y: i64, w: u32, h: u32, overlap: u8, relative: &str) -> String {
     format!(
         r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="0" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="{overlap}"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>{}</wp:posOffset></wp:positionH><wp:positionV relativeFrom="{relative}"><wp:posOffset>{}</wp:posOffset></wp:positionV><wp:extent cx="{}" cy="{}"/><wp:wrapSquare wrapText="bothSides"/><a:graphic><a:graphicData><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#,

@@ -2103,9 +2103,9 @@ impl<'d> PageFill<'d, '_> {
                 let over: Vec<Placed> = near().filter(|f| f.excl[1] <= yy + EPS).cloned().collect();
                 let e = over.iter().map(|f| f.excl[3]).fold(f64::INFINITY, f64::min);
                 // A float starting inside the band counts only where it meets what the floats over the band's top
-                // leave of the line: else it neither moves nor cuts the line.
+                // leave of the line: else it neither moves nor cuts the line. A top-and-bottom float takes the whole line.
                 let left = float::intervals(&over, cx0, cx1, yy, yy + h, true).unwrap_or_default();
-                let meets = |f: &Placed| left.iter().any(|&(a, b)| f.excl[0] < b - EPS && f.excl[2] > a + EPS);
+                let meets = |f: &Placed| f.wrap == Wrap::TopAndBottom || left.iter().any(|&(a, b)| f.excl[0] < b - EPS && f.excl[2] > a + EPS);
                 let hidden = |f: &Placed| f.in_band(yy, yy + h) && f.excl[1] > yy + EPS && !meets(f);
                 // The line is fitted again with a slack: where they leave it one piece, down to where that piece ends,
                 // else its height. A piece is kept only if it reaches further than the slack below the line's top;
