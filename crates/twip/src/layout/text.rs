@@ -144,6 +144,8 @@ pub struct ShapedPara {
     pub east_asian_default: bool,
     /// The text after a leading page or column break starts the paragraph again (first-line indent, top border).
     pub opens: bool,
+    /// A cell paragraph without a list number whose only tab stop is a decimal one.
+    pub decimal_lead: bool,
 }
 
 impl ShapedPara {
@@ -1427,6 +1429,7 @@ impl<'a> Builder<'a> {
             hyphenate: None,
             east_asian_default: false,
             opens: true,
+            decimal_lead: false,
         }
     }
 }
@@ -1631,7 +1634,12 @@ pub fn shape_uncached(para: &Paragraph, space: &ShapeSpace, fonts: &Fonts, memos
     let east_asian_default =
         space.default_east_asia.as_deref().is_some_and(|f| !f.is_empty() && fonts.face(f, None, false, false).is_some_and(|f| f.east_asian));
     let opens = !continues_after_break(para, space);
-    Ok(ShapedPara { join: space.join.clone(), hyphenate: space.hyphenate.clone(), east_asian_default, opens, ..b.finish() })
+    let mut stops = para.para_style_in(space.view).tabs.iter().filter(|t| t.kind != crate::docx::props::TabKind::Clear);
+    let decimal_lead = space.in_cell
+        && para.list.is_none()
+        && stops.next().is_some_and(|t| t.kind == crate::docx::props::TabKind::Decimal)
+        && stops.next().is_none();
+    Ok(ShapedPara { join: space.join.clone(), hyphenate: space.hyphenate.clone(), east_asian_default, opens, decimal_lead, ..b.finish() })
 }
 
 /// Compat 15: the paragraph's first content is a page or column break (empty runs and bookmarks before it don't

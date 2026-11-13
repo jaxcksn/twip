@@ -1616,6 +1616,17 @@ fn compat_15_compares_a_stop_with_the_line_start_in_layout_units() {
     assert!((b[0].1 - 128.7).abs() < 0.01, "{:?}", b[0]);
 }
 
+#[test]
+fn a_cell_paragraph_whose_only_stop_is_decimal_aligns_on_it() {
+    let dec = r#"<w:p><w:pPr><w:tabs><w:tab w:val="decimal" w:pos="1500"/></w:tabs></w:pPr><w:r><w:t>4.5</w:t></w:r></w:p>"#;
+    let two = r#"<w:p><w:pPr><w:tabs><w:tab w:val="decimal" w:pos="1500"/><w:tab w:val="decimal" w:pos="2400"/></w:tabs></w:pPr><w:r><w:t>7.5</w:t></w:r></w:p>"#;
+    let body = cell(4000, 0, &format!("<w:p><w:r><w:t>a</w:t></w:r></w:p>{dec}{two}"));
+    let Some(chars) = glyph_xs("", &body) else { return };
+    let x = |c: char| chars.iter().find(|g| g.0 == c).map(|g| g.1).expect("drawn");
+    // "4" (6.12 wide) ends at the stop 75 pt into the cell; with two stops "7" stays at the cell's text start.
+    assert!((x('4') - x('a') - (75.0 - 6.116)).abs() < 0.02 && (x('7') - x('a')).abs() < 0.01, "{} {} {}", x('a'), x('4'), x('7'));
+}
+
 /// Each character on the first page with its x and baseline.
 fn glyph_xs(settings: &str, body: &str) -> Option<Vec<(char, f64, f64)>> {
     Some(super::page_chars(&test_doc(settings, ARIAL_11, body, "")?).swap_remove(0))
