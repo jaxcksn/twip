@@ -1285,6 +1285,11 @@ impl<'d> PageFill<'d, '_> {
                             || bi == 0 && self.sec.section.break_kind == crate::docx::SectionBreak::Continuous;
                         return Ok((Stop::Page, y));
                     }
+                    // Compat ≤ 14: a page-break-before paragraph keeps its space-before on a page that is already
+                    // empty too (after a page-break character).
+                    if pos.at.at_start() && style.page_break_before && self.ctx.env.text.compat == Compat::Legacy {
+                        carry.keep_top = true;
+                    }
                     let pb = self.para_lines(&laid, bi, end, col.width, (pos.at.index(), carry.letter_break), col.x, memos)?;
                     let placed = self.place_para(p, &pb, pos, carry, &col, &mut y, &mut empty, area, out, memos)?;
                     if pos.block > bi {

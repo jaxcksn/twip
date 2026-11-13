@@ -59,6 +59,22 @@ fn para_2_a_page_break_after_text_drops_the_space_before() {
 }
 
 #[test]
+fn para_2_compat_14_a_page_break_before_paragraph_keeps_its_space_after_a_page_break() {
+    let top = |mode: i64, pbb: bool| {
+        // The first paragraph (8pt after) ends in a page break; the second has 24pt before.
+        let mut doc = broken(8.0, 24.0)?;
+        let brk = para_mut(&mut doc, 1).inlines.remove(0);
+        para_mut(&mut doc, 0).inlines.push(brk);
+        doc.settings.compat_mode = mode;
+        Rc::make_mut(&mut para_mut(&mut doc, 1).style).page_break_before = pbb;
+        Some(page_2_top(&doc))
+    };
+    let Some(plain) = top(12, false) else { return };
+    assert!((top(12, true).unwrap() - plain - 16.0).abs() < 1e-6, "compat 12: what the 8pt after leaves of the 24pt");
+    assert!((top(15, true).unwrap() - top(15, false).unwrap()).abs() < 1e-6, "compat 15 drops it");
+}
+
+#[test]
 fn an_at_least_line_at_the_page_top_rises_with_the_top_spacing_options() {
     let top = |mode: i64, option: &str| {
         // A page break ends the first paragraph; the second starts page 2 without its space-before.
