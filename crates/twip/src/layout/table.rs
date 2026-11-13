@@ -1199,6 +1199,12 @@ fn fit_inputs<'k>(
                 }
                 let min = (cmn + cell_pad).min(autofit::MAXW);
                 let max = (cmx + cell_pad).max(min).min(autofit::MAXW);
+                // A cell that doesn't wrap is as wide as its unwrapped text, or no narrower than its preferred width.
+                let min = match (c.no_wrap && !continuation, c.width) {
+                    (true, Some(Width::Dxa(_))) => min.max(pref),
+                    (true, Some(Width::Auto) | None) => max,
+                    _ => min,
+                };
                 (min, max, (chard + cell_pad).min(autofit::MAXW))
             };
             cells.push(autofit::Cell { first: g.col, span: g.span, min, max, hard, kind, pref, row: ri, cont: continuation });

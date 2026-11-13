@@ -973,3 +973,38 @@ fn a_rows_top_border_takes_its_width_in_whole_twips() {
     let d = baseline(4) - baseline(3);
     assert!((d - 0.3).abs() < 0.001, "{d}");
 }
+
+fn autofit_cell(w: &str, no_wrap: bool, t: &str) -> String {
+    let nw = if no_wrap { "<w:noWrap/>" } else { "" };
+    format!(r#"<w:tc><w:tcPr>{w}{nw}</w:tcPr><w:p><w:r><w:t xml:space="preserve">{t}</w:t></w:r></w:p></w:tc>"#)
+}
+
+#[test]
+fn a_no_wrap_cell_keeps_its_preferred_width_over_a_narrower_table_width() {
+    let x = |no_wrap: bool| {
+        let c = |t: &str| autofit_cell(r#"<w:tcW w:w="3000" w:type="dxa"/>"#, no_wrap, t);
+        let body = format!(
+            r#"<w:tbl><w:tblPr><w:tblW w:w="4000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/><w:gridCol w:w="3000"/></w:tblGrid><w:tr>{}{}</w:tr></w:tbl><w:p/>"#,
+            c("a"),
+            c("b")
+        );
+        glyph_x(&body, 'b').0 - glyph_x(&body, 'a').0
+    };
+    // Without noWrap the dxa table width shrinks both columns; with it each keeps its 3000.
+    assert!((x(true) - 150.0).abs() < 0.01, "{}", x(true));
+    assert!(x(false) < 140.0, "{}", x(false));
+}
+
+#[test]
+fn a_no_wrap_auto_cell_is_as_wide_as_its_unwrapped_text() {
+    let x = |no_wrap: bool| {
+        let body = format!(
+            r#"<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr><w:tblGrid><w:gridCol w:w="4000"/><w:gridCol w:w="4000"/></w:tblGrid><w:tr>{}{}</w:tr></w:tbl><w:p/>"#,
+            autofit_cell("", no_wrap, &super::words(30)),
+            autofit_cell("", false, &format!("Q {}", super::words(60)))
+        );
+        glyph_x(&body, 'Q').0
+    };
+    // Both cells want more than the column; the noWrap one keeps its whole text width, the other shrinks.
+    assert!(x(true) > x(false) + 40.0, "{} {}", x(true), x(false));
+}
