@@ -45,3 +45,19 @@ fn a_line_of_only_spaces_takes_their_height_and_one_ending_in_a_break_the_breaks
     let brk = first("<w:br/>").expect("lays out");
     assert!((brk - 47100.0 / 4096.0).abs() < 0.01, "{brk}");
 }
+
+#[test]
+fn an_emphasis_mark_is_a_quarter_of_the_line_and_fits_in_the_spacing_extra() {
+    let lines = |line: u32| {
+        let p = |t: &str, em: &str| format!(r#"<w:p><w:pPr><w:spacing w:line="{line}" w:lineRule="auto"/></w:pPr><w:r><w:rPr>{em}</w:rPr><w:t>{t}</w:t></w:r></w:p>"#);
+        let c = chars("", ARIAL_10, &(p("x", r#"<w:em w:val="dot"/>"#) + &p("y", "")), 0)?;
+        Some((at(&c, 'x').1, at(&c, 'y').1))
+    };
+    let Some((x, y)) = lines(240) else { return };
+    // Arial 10: H = 47100 lu, the mark 11775 lu above the text.
+    let (h, a, k) = (47100.0 / 4096.0, 1921.0 * 10.0 / 2048.0, 11775.0 / 4096.0);
+    assert!((x - (72.0 + a + k)).abs() < 0.01 && (y - (72.0 + h + k + a)).abs() < 0.01, "{x} {y}");
+    // 1.5 lines: the extra (H / 2) holds the mark: the pitch stays, the text moves down by it.
+    let (x, y) = lines(360).expect("lays out");
+    assert!((x - (72.0 + a + k)).abs() < 0.01 && (y - (72.0 + 1.5 * h + a)).abs() < 0.01, "{x} {y}");
+}

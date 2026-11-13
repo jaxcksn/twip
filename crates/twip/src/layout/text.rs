@@ -16,8 +16,6 @@ use super::job::{Memos, Yield};
 use super::space::{MetricRules, ShapeSpace};
 use super::units::Lu;
 
-pub(crate) const EM_MARK: f64 = 3.4 / 11.0;
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
     Text,

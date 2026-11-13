@@ -1756,7 +1756,7 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
     let mut object = false;
     let (mut un_asc, mut un_desc, mut un_text_asc, mut un_text_desc) = (0.0f64, 0.0f64, 0.0f64, 0.0f64);
     let mut run_h = 0.0f64;
-    let (mut em_up, mut em_down) = (0.0f64, 0.0f64);
+    let (mut em_above, mut em_below) = (false, false);
     let mut num_asc = 0.0f64;
     let mut has_content = false;
     let mut has_text = false;
@@ -1803,8 +1803,8 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
                 let (a0, d0) = ((pa - r).max(0.0), (pd + r).max(0.0));
                 if p.kind == Kind::Text {
                     match st.run.em.as_deref() {
-                        Some("underDot") => em_down = em_down.max(super::text::EM_MARK * st.size),
-                        Some(_) => em_up = em_up.max(super::text::EM_MARK * st.size),
+                        Some("underDot") => em_below = true,
+                        Some(_) => em_above = true,
                         None => {}
                     }
                 }
@@ -1879,10 +1879,17 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
     }
     let asc = asc.max(num_asc);
     let un_asc = if !has_text { un_asc.max(num_asc) } else { un_asc };
-    let (asc, desc) = (asc + em_up, desc + em_down);
     let h = asc + desc;
-    line.ascent = asc;
-    line.descent = desc;
+    // Emphasis marks take a quarter of the line's single height (half, split, with marks above and below), unless the
+    // spacing's extra holds them; exact lines have no room for them.
+    let (em, em_up) = {
+        let hl = Lu::round_half_up(h).0;
+        let k = if em_above && em_below { hl / 2 } else if em_above || em_below { hl / 4 } else { 0 };
+        let up = if em_below { if em_above { k / 2 } else { 0 } } else { k };
+        (Lu(k).to_pt(), Lu(up).to_pt())
+    };
+    line.ascent = asc + em_up;
+    line.descent = desc + em - em_up;
     let mut text_h = if has_text && run_h > 0.0 { run_h } else { un_asc + un_desc };
     if object {
         text_h = run_h.max(picture_line_height(sp, &pieces[line.start..line.end.min(pieces.len())], mark, fonts, last, compat, run_h));
@@ -1894,18 +1901,20 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
     match style.line_rule {
         LineRule::Auto => {
             let m = style.line;
-            line.pitch = h + times_line(text_h, m) - text_h;
+            let extra = times_line(text_h, m) - text_h;
+            line.pitch = h + extra + if em <= extra { 0.0 } else { em };
             if m >= 1.0 {
-                line.baseline = asc;
-                line.below = line.pitch - h;
+                line.baseline = asc + em_up;
+                line.below = line.pitch - h - em;
             } else {
-                line.baseline = line.pitch - times_line(desc, m);
+                line.baseline = line.pitch - times_line(desc + em - em_up, m);
             }
         }
         LineRule::AtLeast => {
             let x = style.line;
-            line.pitch = x.max(h);
-            line.baseline = if x <= h { asc } else { asc.max(x - desc.max(at_least_desc + em_down)) };
+            let grow = if em <= (x - h).max(0.0) { 0.0 } else { em };
+            line.pitch = x.max(h) + grow;
+            line.baseline = if x <= h { asc } else { asc.max(x - desc.max(at_least_desc)) } + if grow > 0.0 { em_up } else { 0.0 };
         }
         LineRule::Exact => {
             // Whole layout units, so a page's run of exact lines adds up as their rounded heights.

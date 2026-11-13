@@ -76,17 +76,17 @@ page 2 12240 15840
   3948 8676 Navy Teal Coral Gold Gray
   1548 9084 SPACING & SCALE
   3948 9107 Expanded   Condensed   Scaled 150%   Kerned AVATAR
-  1548 9559 EFFECTS
-  3948 9611 Emboss   Imprint   Emphasis dots
-  1548 9999 FONTS
-  3948 10008 Georgia Consolas Segoe UI Cambria Calibri
-  1548 10577 SIZES
-  3948 10663 8 11 14 20 28
-  1548 11156 CHAR STYLES
-  3948 11165 Press Ctrl + S to save — Accent Emphasis is a character style.
-  1548 11600 SYMBOLS
-  3948 11632   ✓     Unicode: ★ → © ™ ½ π ∞
-  2708 12533 “Typography is what language looks like.”  — Ellen Lupton
+  1548 9557 EFFECTS
+  3948 9608 Emboss   Imprint   Emphasis dots
+  1548 9996 FONTS
+  3948 10005 Georgia Consolas Segoe UI Cambria Calibri
+  1548 10574 SIZES
+  3948 10660 8 11 14 20 28
+  1548 11153 CHAR STYLES
+  3948 11162 Press Ctrl + S to save — Accent Emphasis is a character style.
+  1548 11597 SYMBOLS
+  3948 11629   ✓     Unicode: ★ → © ™ ½ π ∞
+  2708 12530 “Typography is what language looks like.”  — Ellen Lupton
   1440 14106 1Footnotes are stored in word/footnotes.xml and referenced by id from the body.
   1440 2780 D
   1440 864 DOCX Feature ShowcaseOdd page header
@@ -107,16 +107,16 @@ page 2 12240 15840
   cell 3840 8430 10800 8813
   cell 1440 8813 3840 9265
   cell 3840 8813 10800 9265
-  cell 1440 9265 3840 9762
-  cell 3840 9265 10800 9762
-  cell 1440 9762 3840 10145
-  cell 3840 9762 10800 10145
-  cell 1440 10145 3840 10919
-  cell 3840 10145 10800 10919
-  cell 1440 10919 3840 11302
-  cell 3840 10919 10800 11302
-  cell 1440 11302 3840 11807
-  cell 3840 11302 10800 11807
+  cell 1440 9265 3840 9759
+  cell 3840 9265 10800 9759
+  cell 1440 9759 3840 10142
+  cell 3840 9759 10800 10142
+  cell 1440 10142 3840 10916
+  cell 3840 10142 10800 10916
+  cell 1440 10916 3840 11299
+  cell 3840 10916 10800 11299
+  cell 1440 11299 3840 11804
+  cell 3840 11299 10800 11804
   float 1440 2124 1900 2944
 page 3 12240 15840
   1440 1728 3Paragraph Formatting
