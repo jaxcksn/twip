@@ -2133,6 +2133,7 @@ fn assemble(
                 || r.rev.change.is_some()
                 || cells_geo.iter().any(|g| r.cells[g.ci].rev.structural.is_some() || r.cells[g.ci].rev.change.is_some()));
         let mut top_border = cells.iter().map(|c| space_h(&c.edges[0])).fold(0.0, f64::max);
+        let mut part_top = 0.0;
         let seams: Vec<(f64, f64, Border)> = match ri.checked_sub(1).and_then(|p| geo.get(p)) {
             Some(above) if row_s.is_none() && !framed(t, ri - 1) => above
                 .iter()
@@ -2161,9 +2162,14 @@ fn assemble(
             for c in &mut cells {
                 c.margins[0] = (above - top_border).max(0.0);
             }
+            // At the top of a later part the table's top border takes the place of the inside one and the row above.
+            if ri > 0 {
+                let top_t = &row_borders(t, ri)[0];
+                let first = cells_geo.iter().map(|g| cand(&r.cells[g.ci].top, top_t) + r.cells[g.ci].margins[0]).fold(0.0, f64::max);
+                part_top = first - above.max(top_border);
+            }
         }
         let mut gap_top = 0.0;
-        let mut part_top = 0.0;
         let mut cell_bottom = 0.0;
         if let Some(s) = row_s {
             gap_top = if ri == 0 { 2.0 * s + space_h(&row_borders(t, 0)[0]) } else { s };

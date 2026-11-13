@@ -1082,3 +1082,12 @@ fn a_row_fits_with_its_own_cells_bottom_border_not_the_last_rows() {
     // A table bottom border counts for every row: row 18 goes on.
     assert_eq!(first_on_page(&exact_rows(24, &format!("<w:bottom {b}/>"), ""), 1).0, "R18");
 }
+
+#[test]
+fn a_table_continued_on_a_page_takes_its_top_border_above_the_row() {
+    let inside = |sz: u32| exact_rows(24, &format!(r#"<w:insideH w:val="single" w:sz="{sz}" w:space="0" w:color="000000"/>"#), "");
+    // The row at the top of the second page has the table's top border (none) above it, not the inside one.
+    let (thin, thick) = (first_on_page(&inside(4), 1), first_on_page(&inside(24), 1));
+    assert_eq!(thin.0, "R19");
+    assert!((thin.1 - thick.1).abs() < 0.01, "{} {}", thin.1, thick.1);
+}
