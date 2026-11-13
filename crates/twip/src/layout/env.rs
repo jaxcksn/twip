@@ -137,7 +137,7 @@ impl TextEnv {
             dash_breaks: s.compat_mode >= 14,
             strict_kinsoku: s.strict_kinsoku,
             default_style: doc.resolver.as_ref().and_then(|r| r.styles.default_paragraph.clone()),
-            grow_autofit: s.has("growAutofit"),
+            grow_autofit: s.compat() == Compat::Legacy && s.has("growAutofit"),
             balance_spaces: s.has("balanceSingleByteDoubleByteWidth"),
             ul_trail_space: s.has("ulTrailSpace"),
             compress_punctuation: s.compress_punctuation,

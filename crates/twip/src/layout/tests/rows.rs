@@ -1008,3 +1008,17 @@ fn a_no_wrap_auto_cell_is_as_wide_as_its_unwrapped_text() {
     // Both cells want more than the column; the noWrap one keeps its whole text width, the other shrinks.
     assert!(x(true) > x(false) + 40.0, "{} {}", x(true), x(false));
 }
+
+#[test]
+fn compat_15_ignores_grow_autofit_and_squeezes_a_too_wide_table() {
+    let body = format!(
+        r#"<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="2500"/><w:gridCol w:w="2500"/></w:tblGrid><w:tr>{}{}</w:tr></w:tbl><w:p/>"#,
+        autofit_cell("", false, &"M".repeat(70)),
+        autofit_cell("", false, "Qshort")
+    );
+    // The unbreakable word is wider than the column: compat 15 squeezes the table into it, compat 12 with
+    // growAutofit lets it grow.
+    let (c15, c12) = (glyph_x_in(&body, 15, &["growAutofit"], 'Q'), glyph_x_in(&body, 12, &["growAutofit"], 'Q'));
+    assert!(c15 < 72.0 + 468.0 - 20.0, "{c15}");
+    assert!(c12 > 72.0 + 468.0, "{c12}");
+}
