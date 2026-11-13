@@ -255,6 +255,18 @@ fn a_centred_merged_region_cut_by_the_page_end_centres_in_its_page_part() {
 }
 
 #[test]
+fn an_empty_indented_paragraph_doesnt_widen_its_autofit_cell() {
+    let table = |ind: &str| {
+        format!(
+            r#"<w:tbl><w:tblGrid><w:gridCol w:w="500"/><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="500" w:type="dxa"/></w:tcPr><w:p><w:pPr>{ind}</w:pPr></w:p></w:tc>{}</w:tr></w:tbl><w:p/>"#,
+            dxa_cell(2000, "b")
+        )
+    };
+    let x = |ind: &str| glyph_x_in(&table(ind), 12, &[], 'b');
+    assert!((x(r#"<w:ind w:left="720"/>"#) - x("")).abs() < 0.01, "the 500 column stays 500");
+}
+
+#[test]
 fn a_pct_indent_is_a_share_of_the_text_width() {
     let table = |ind: &str| {
         format!(

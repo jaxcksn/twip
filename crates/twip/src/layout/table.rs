@@ -1079,7 +1079,10 @@ fn content_widths_uncached(blocks: &[LaidBlock], env: &StoryEnv, fixed: bool, me
                         }
                     }
                 }
-                mn = mn.max(up(first.unwrap_or(word) + ind));
+                // A paragraph without pieces (an empty one) has no min: its indents alone don't widen the cell.
+                if !pieces.is_empty() {
+                    mn = mn.max(up(first.unwrap_or(word) + ind));
+                }
                 for (li, l) in lines.iter().enumerate() {
                     let start_x = if li == 0 { start0 } else { s.ind_left };
                     let shift = l.xs.first().map_or(0.0, |&x| (x - start_x).max(0.0));
