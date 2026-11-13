@@ -703,7 +703,14 @@ impl<'a> Builder<'a> {
         let kern = run.kern > 0.0 && size >= run.kern - 1e-9;
         let shaped_text: String = s.chars().map(|c| if c == '\u{2011}' { '-' } else { c }).collect();
         let ligatures = if run.spacing != 0.0 { run.ligatures & 16 } else { run.ligatures };
-        let glyphs = face.shape(&shaped_text, kern, ligatures, run.figures);
+        let mut glyphs = face.shape(&shaped_text, kern, ligatures, run.figures);
+        // Synthesized bold: each glyph one font unit wider than the regular face's.
+        // ponytail: Word's extra is glyph-dependent (0.0002-0.0007 em); one unit is its mean.
+        if face.sim_bold {
+            for g in &mut glyphs {
+                g.advance += 1.0;
+            }
+        }
         let scale = face.scale(size) * run.scale / 100.0;
         let mut starts: Vec<u32> = glyphs.iter().map(|g| g.cluster).collect();
         starts.sort_unstable();

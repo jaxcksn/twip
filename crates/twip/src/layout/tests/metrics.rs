@@ -106,3 +106,17 @@ fn a_multiple_spacings_extra_holds_a_smaller_runs_border() {
     let boxed = next(r#"<w:bdr w:val="single" w:sz="4" w:space="1" w:color="000000"/>"#).expect("lays out");
     assert!((boxed - plain).abs() < 1e-6, "{plain} {boxed}");
 }
+
+#[test]
+fn synthesized_bold_glyphs_are_a_font_unit_wider() {
+    if !super::fonts().face("Calibri Light", None, true, false).is_some_and(|f| f.sim_bold) {
+        return;
+    }
+    let rpr = r#"<w:rFonts w:ascii="Calibri Light" w:hAnsi="Calibri Light"/><w:sz w:val="32"/>"#;
+    let x = |b: &str| {
+        let body = format!(r#"<w:p><w:r><w:rPr>{b}</w:rPr><w:t xml:space="preserve">iiii iiii</w:t></w:r><w:r><w:t>X</w:t></w:r></w:p>"#);
+        chars("", rpr, &body, 0).map(|c| at(&c, 'X').0)
+    };
+    let (Some(regular), Some(bold)) = (x(""), x("<w:b/>")) else { return };
+    assert!((bold - regular - 9.0 * 16.0 / 2048.0).abs() < 1e-6, "{regular} {bold}");
+}

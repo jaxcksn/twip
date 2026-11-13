@@ -40,7 +40,7 @@ page 0 12240 15840
   9961 5414 279.00
   1440 6091 C. Merged cells, shading, custom borders, vertical alignment, fixed widths,
   1440 6371 nested table
-  4278 6745 Merged header across four columns
+  4275 6745 Merged header across four columns
   1571 8167 Tall
   3011 6992 Top-left aligned (default)
   6251 7355 Centered
