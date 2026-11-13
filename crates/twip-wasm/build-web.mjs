@@ -24,6 +24,9 @@ const out = join(target, 'twip-wasm');
 rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
 const wasm = join(target, 'wasm32-unknown-unknown', release ? 'release' : 'debug', 'twip_wasm.wasm');
-execFileSync('wasm-bindgen', ['--target', 'web', '--no-typescript', '--out-dir', out, '--out-name', 'twip-wasm', wasm], { stdio: 'inherit' });
+// A release module drops its function names: 5.5 of its 15.6 MB (4.19 MB gzipped against 3.56 MB without; 2026-11-12).
+// wasm-opt -Os measured worse: 9.3 MB, but 3.68 MB gzipped, after 8 minutes.
+const strip = release ? ['--remove-name-section', '--remove-producers-section'] : [];
+execFileSync('wasm-bindgen', ['--target', 'web', '--no-typescript', ...strip, '--out-dir', out, '--out-name', 'twip-wasm', wasm], { stdio: 'inherit' });
 // The SDK serves the module as twip_wasm.wasm (its asset names).
 renameSync(join(out, 'twip-wasm_bg.wasm'), join(out, 'twip_wasm.wasm'));

@@ -14,3 +14,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 twip-capi = { path = "../twip-capi" }
+
+# The module's allocator (src/lib.rs).
+[target.'cfg(target_family = "wasm")'.dependencies]
+talc = "5.1.1"
