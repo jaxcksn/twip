@@ -1374,6 +1374,16 @@ fn a_legacy_list_level_puts_its_text_a_fixed_gap_after_the_number() {
     assert!((right - 92.83).abs() < 0.01 && (text - 108.0).abs() < 0.01, "{right} {text}");
 }
 
+#[test]
+fn a_word_too_long_after_a_list_number_breaks_on_the_numbers_line() {
+    let level = r#"<w:abstractNum w:abstractNumId="1"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:suff w:val="tab"/><w:lvlText w:val="%1."/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="200" w:hanging="600"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="1"/></w:num>"#;
+    let word = "x".repeat(150);
+    let body = format!(r#"<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr><w:r><w:t>{word}</w:t></w:r></w:p>"#);
+    let Some(l) = numbered_baselines("", ARIAL_11, &body, level) else { return };
+    // The number's tab is no break: the word starts on the number's line, at the left indent.
+    assert!(l[0].1.starts_with("1.x"), "{l:?}");
+}
+
 /// Each character on the first page with its x and baseline.
 fn glyph_xs(settings: &str, body: &str) -> Option<Vec<(char, f64, f64)>> {
     Some(super::page_chars(&test_doc(settings, ARIAL_11, body, "")?).swap_remove(0))

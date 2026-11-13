@@ -1051,13 +1051,14 @@ fn fit_line(
                 if let Some(pt) = pending.take() {
                     pen = resolve_tab(sp, &pt, pieces, &mut xs, &mut ws, start, i, right);
                 }
+                let number_tab = i > 0 && pieces[..i].iter().all(|q| q.kind == Kind::ListNumber);
                 let (mut stop, mut kind, leader) = match p.object.map(|o| &sp.objects[o as usize]) {
                     Some(Object::PTab(t)) => ptab_stop(t, style, frame),
-                    _ => next_stop(pen, style, frame, i > 0 && pieces[..i].iter().all(|q| q.kind == Kind::ListNumber)),
+                    _ => next_stop(pen, style, frame, number_tab),
                 };
                 let stop_custom = style.tabs.iter().any(|t| t.kind != TabKind::Clear && t.kind != TabKind::Bar && t.pos > pen + EPS);
                 let custom = p.object.is_some() || stop_custom;
-                if !custom && stop > right + EPS && !past_custom && i > start && limit_end.is_none() {
+                if !custom && !number_tab && stop > right + EPS && !past_custom && i > start && limit_end.is_none() {
                     return Fit { end: i, xs, widths: ws, hard: None, hyphen: false, leaders };
                 }
                 let edge = frame.width - style.ind_right;
@@ -1087,7 +1088,11 @@ fn fit_line(
                     ws.push(0.0);
                     pending = Some(Pending { idx: i, stop, kind, pen_at_tab: pen });
                 }
-                breaks.push((i + 1, false));
+                // A list number's tab isn't a break opportunity: a first word too long for the line after it is
+                // broken on the number's line.
+                if !number_tab {
+                    breaks.push((i + 1, false));
+                }
                 i += 1;
                 continue;
             }
@@ -1206,7 +1211,9 @@ fn fit_line(
             while at > start + 1 && pieces[at - 1].kind == Kind::Space && xs[at - 1 - start] + ws[at - 1 - start] > right + EPS {
                 at -= 1;
             }
-            if at > start && pieces[start..at].iter().any(|q| !matches!(q.kind, Kind::ListNumber | Kind::Anchor)) {
+            // The list number and its tab aren't the character a line takes at least.
+            let number_part = |k: usize| pieces[..=k].iter().all(|q| q.kind == Kind::ListNumber) || k > 0 && pieces[k].kind == Kind::Tab && pieces[..k].iter().all(|q| q.kind == Kind::ListNumber);
+            if at > start && (start..at).any(|k| pieces[k].kind != Kind::Anchor && !number_part(k)) {
                 xs.truncate(at - start);
                 ws.truncate(at - start);
                 leaders.retain(|(k, _)| *k < at - start);
