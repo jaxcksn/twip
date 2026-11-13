@@ -1,7 +1,8 @@
-// Browser GPU frames: the engine draws each session's frame into its canvas itself, on the page's WebGPU (wgpu,
-// crates/twip/src/render/window.rs). The SDK starts the engine's device, attaches canvases to it, and after a lost
-// device starts a new one and attaches the canvases again. Past a few lost devices, CPU pixels are copied into the
-// canvas with a device of the page's own instead.
+// Browser GPU frames: the engine draws each session's frame into its canvas itself (wgpu,
+// crates/twip/src/render/window.rs), on the page's WebGPU, or without it on WebGL 2. The SDK starts the engine's
+// WebGPU device, attaches canvases to it, and after a lost device starts a new one and attaches the canvases again.
+// Past a few lost devices, CPU pixels are copied into the canvas with a device of the page's own instead. A WebGL
+// canvas has its own context: lost, it is kept restorable, and attached again when restored.
 import type { TwipModule } from '../transport/module.js';
 
 /** The parts of a WebGPU device the CPU path uses. */
@@ -32,6 +33,49 @@ export function hasWebGpu(): boolean {
 /** Gives the session its canvas for GPU frames: true when the engine draws into it. */
 export function attachGpu(m: TwipModule, engine: number, session: number, canvas: HTMLCanvasElement | OffscreenCanvas): boolean {
   return m.twip_attach_canvas(engine, session, canvas) > 0;
+}
+
+let hardwareWebGl: boolean | undefined;
+
+/** Whether this page's WebGL 2 would be hardware, probed once on a canvas of its own: a session's canvas given a WebGL
+ * context can't take a 2D one for CPU pixels after, and a software WebGL draws slower than the engine's CPU frames. */
+export function hasHardwareWebGl(): boolean {
+  if (hardwareWebGl !== undefined) return hardwareWebGl;
+  let probe: WebGL2RenderingContext | null = null;
+  try {
+    probe = typeof OffscreenCanvas === 'function' ? new OffscreenCanvas(1, 1).getContext('webgl2') : null;
+  } catch {
+    probe = null;
+  }
+  if (!probe) return (hardwareWebGl = false);
+  const info = probe.getExtension('WEBGL_debug_renderer_info');
+  const renderer = info ? String(probe.getParameter(info.UNMASKED_RENDERER_WEBGL)) : '';
+  probe.getExtension('WEBGL_lose_context')?.loseContext();
+  return (hardwareWebGl = !/swiftshader|llvmpipe|softpipe|software|basic render/i.test(renderer));
+}
+
+/** Makes `canvas` a WebGL 2 context of its own in the engine: a handle for {@link attachWebGl}, 0 without one. */
+export function webGlContext(m: TwipModule, canvas: HTMLCanvasElement | OffscreenCanvas): Promise<number> {
+  return m.twip_webgl_context(canvas).catch(() => 0);
+}
+
+/** Gives the session the WebGL canvas of `handle`: true when the engine draws into it. */
+export function attachWebGl(m: TwipModule, engine: number, session: number, handle: number): boolean {
+  return m.twip_attach_webgl(engine, session, handle) > 0;
+}
+
+/** Keeps a lost WebGL context restorable (by default the browser drops it), calling `lost` then `restored`. */
+export function watchWebGl(canvas: HTMLCanvasElement | OffscreenCanvas, lost: () => void, restored: () => void): () => void {
+  const onLost = (e: Event) => {
+    e.preventDefault();
+    lost();
+  };
+  canvas.addEventListener('webglcontextlost', onLost);
+  canvas.addEventListener('webglcontextrestored', restored);
+  return () => {
+    canvas.removeEventListener('webglcontextlost', onLost);
+    canvas.removeEventListener('webglcontextrestored', restored);
+  };
 }
 
 /** Draws a session's frame into its canvas on the GPU; the frame's `TwipFrameInfo` goes to `info`. */

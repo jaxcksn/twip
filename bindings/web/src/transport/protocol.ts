@@ -238,7 +238,7 @@ export interface FrameInfo {
 }
 
 /** How a canvas gets its frames: the best of the page's WebGPU, WebGL 2 and CPU pixels. */
-export type Backend = 'webgpu' | 'cpu';
+export type Backend = 'webgpu' | 'webgl' | 'cpu';
 
 /** The engine, behind one ordered queue. Every method runs after every earlier call on the same transport. */
 export interface Transport {

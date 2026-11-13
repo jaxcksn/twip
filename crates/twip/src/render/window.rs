@@ -1,10 +1,11 @@
 //! GPU targets: twip-graphics on wgpu, presenting to the host's window or the page's canvas. Natively into an `HWND` on
 //! Windows (D3D12, else Vulkan) or the host's `CAMetalLayer` on macOS (Metal); in the browser into a canvas, on the
-//! page's WebGPU. One device; a surface, and a renderer for its format, per window. Natively the state is the
-//! process's, behind a lock, and never dropped (wgpu can't let go of a device while a thread's locals are being
-//! destroyed); in the browser, whose WebGPU objects stay on their thread, it is the thread's. After a device loss,
-//! frames fail until a new device: natively the next attach makes one, letting go of every window's surface; in the
-//! browser [`start`] does, and the page attaches its canvases again.
+//! page's WebGPU, or without it on WebGL 2. One device; a surface, and a renderer for its format, per window; a WebGL
+//! canvas has a context of its own (a WebGL context belongs to its canvas). Natively the state is the process's,
+//! behind a lock, and never dropped (wgpu can't let go of a device while a thread's locals are being destroyed); in
+//! the browser, whose WebGPU objects stay on their thread, it is the thread's. After a device loss, frames fail until
+//! a new device: natively the next attach makes one, letting go of every window's surface; in the browser [`start`]
+//! does, and the page attaches its canvases again (a WebGL canvas, when its context is restored).
 
 use std::collections::HashMap;
 
@@ -22,6 +23,8 @@ pub enum Backend {
     Metal = 4,
     /// The browser's WebGPU.
     WebGpu = 5,
+    /// The browser's WebGL 2, a context per canvas.
+    WebGl = 6,
 }
 
 struct Window {
@@ -30,6 +33,8 @@ struct Window {
     size: (u32, u32),
     /// The renderer for the surface's format, made when it is first configured.
     renderer: Option<(wgpu::TextureFormat, Renderer)>,
+    /// The surface can't be copied from (a WebGL canvas): frames are drawn into the renderer's texture and copied in.
+    through: bool,
 }
 
 impl Window {
@@ -41,7 +46,52 @@ impl Window {
             self.renderer = Some((config.format, Renderer::new(ctx, config.format)));
         }
         self.size = (width, height);
+        self.through = !config.usage.contains(wgpu::TextureUsages::COPY_SRC);
         true
+    }
+
+    /// Draws the recorded frame into the window, `width` x `height` pixels, and presents it: false when it can't.
+    fn draw(&mut self, ctx: &Context, res: &twip_graphics::Resources, frame: &twip_graphics::cpu::Frame<'_>, (width, height): (u32, u32)) -> bool {
+        if ctx.is_lost() || width == 0 || height == 0 {
+            return false;
+        }
+        if self.size != (width, height) && !self.configure(ctx, width, height) {
+            return false;
+        }
+        use wgpu::CurrentSurfaceTexture as Got;
+        let texture = match self.surface.get_current_texture() {
+            Got::Success(t) => t,
+            // Drawn, and configured again for the next frame.
+            Got::Suboptimal(t) => {
+                self.size = (0, 0);
+                t
+            }
+            // The swap chain went stale (a display change): configure it again, once.
+            Got::Outdated | Got::Lost => {
+                if !self.configure(ctx, width, height) {
+                    return false;
+                }
+                match self.surface.get_current_texture() {
+                    Got::Success(t) | Got::Suboptimal(t) => t,
+                    _ => return false,
+                }
+            }
+            // No texture in time (the window is hidden, the display asleep), or a texture wgpu refused.
+            Got::Timeout | Got::Occluded | Got::Validation => return false,
+        };
+        let through = self.through;
+        let Some((_, renderer)) = self.renderer.as_mut() else { return false };
+        let Ok(prepared) = renderer.prepare(ctx, res, frame, (width, height)) else { return false };
+        let view = texture.texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let mut encoder = ctx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+        if through {
+            renderer.render_through(ctx, &mut encoder, &view, &prepared);
+        } else {
+            renderer.render(&mut encoder, &view, &prepared);
+        }
+        ctx.queue.submit([encoder.finish()]);
+        ctx.queue.present(texture);
+        !ctx.is_lost()
     }
 }
 
@@ -50,6 +100,12 @@ struct State {
     /// `None` until the first device, and again after a device loss; `Some(None)` when there is no usable GPU.
     context: Option<Option<Context>>,
     windows: HashMap<u64, Window>,
+    /// WebGL canvases, each with its own context.
+    #[cfg_attr(not(target_family = "wasm"), allow(dead_code, reason = "WebGL is the browser's"))]
+    own: HashMap<u64, (Context, Window)>,
+    /// WebGL contexts made for canvases and not yet attached, by handle ([`webgl_context`]); the last handle given.
+    #[cfg_attr(not(target_family = "wasm"), allow(dead_code, reason = "WebGL is the browser's"))]
+    pending: (HashMap<u32, (Context, Window)>, u32),
     /// Offscreen frames' renderers ([`pixels`]), by session.
     #[cfg_attr(target_family = "wasm", allow(dead_code, reason = "offscreen frames are native"))]
     offscreen: HashMap<u64, Renderer>,
@@ -86,7 +142,7 @@ impl State {
         if !ctx.adapter.is_surface_supported(&surface) {
             return None;
         }
-        self.windows.insert(key, Window { surface, size: (0, 0), renderer: None });
+        self.windows.insert(key, Window { surface, size: (0, 0), renderer: None, through: false });
         self.backend()
     }
 }
@@ -168,7 +224,7 @@ mod platform {
 
     use twip_graphics::gpu::{Context, wgpu};
 
-    use super::{Backend, State};
+    use super::{Backend, State, Window};
 
     thread_local! {
         static STATE: RefCell<State> = RefCell::default();
@@ -206,6 +262,34 @@ mod platform {
         })
     }
 
+    /// A WebGL 2 context of `canvas`'s own (an `HTMLCanvasElement` or `OffscreenCanvas`), for a page without WebGPU:
+    /// a handle for [`attach_webgl`], or 0 when the canvas has no WebGL 2 to give (the page checks first that it would
+    /// be hardware). Made apart from any session, as it waits on the browser.
+    pub async fn webgl_context(canvas: wgpu::SurfaceTarget<'static>) -> u32 {
+        let Ok((ctx, surface)) = Context::for_canvas(canvas).await else { return 0 };
+        with_state(|s| {
+            let (pending, last) = &mut s.pending;
+            *last = last.checked_add(1).unwrap_or(1);
+            pending.insert(*last, (ctx, Window { surface, size: (0, 0), renderer: None, through: false }));
+            *last
+        })
+    }
+
+    /// Draws `key`'s frames into the canvas of `handle` ([`webgl_context`]) from now on. Attached again after the
+    /// canvas's context was lost and restored, it replaces the lost one. `None` for a handle that isn't pending.
+    pub fn attach_webgl(key: u64, handle: u32) -> Option<Backend> {
+        with_state(|s| {
+            let window = s.pending.0.remove(&handle)?;
+            s.own.insert(key, window);
+            Some(Backend::WebGl)
+        })
+    }
+
+    /// Lets go of the context of `handle` ([`webgl_context`]) when no session takes it.
+    pub fn forget_webgl(handle: u32) {
+        with_state(|s| s.pending.0.remove(&handle));
+    }
+
     /// Testing: loses the GPU device as a driver reset would. Frames fail `unavailable` until [`start`] again.
     pub fn lose_device() {
         with_state(|s| {
@@ -224,6 +308,7 @@ use platform::with_state;
 pub fn detach(key: u64) {
     with_state(|s| {
         s.windows.remove(&key);
+        s.own.remove(&key);
         s.offscreen.remove(&key);
     });
 }
@@ -234,43 +319,11 @@ pub fn detach(key: u64) {
 pub fn frame(key: u64, width: u32, height: u32, graphics: &mut Graphics) -> bool {
     graphics.finish(|res, frame| {
         with_state(|s| {
+            if let Some((ctx, w)) = s.own.get_mut(&key) {
+                return w.draw(ctx, res, frame, (width, height));
+            }
             let State { context: Some(Some(ctx)), windows, .. } = s else { return false };
-            let Some(w) = windows.get_mut(&key) else { return false };
-            if ctx.is_lost() || width == 0 || height == 0 {
-                return false;
-            }
-            if w.size != (width, height) && !w.configure(ctx, width, height) {
-                return false;
-            }
-            use wgpu::CurrentSurfaceTexture as Got;
-            let texture = match w.surface.get_current_texture() {
-                Got::Success(t) => t,
-                // Drawn, and configured again for the next frame.
-                Got::Suboptimal(t) => {
-                    w.size = (0, 0);
-                    t
-                }
-                // The swap chain went stale (a display change): configure it again, once.
-                Got::Outdated | Got::Lost => {
-                    if !w.configure(ctx, width, height) {
-                        return false;
-                    }
-                    match w.surface.get_current_texture() {
-                        Got::Success(t) | Got::Suboptimal(t) => t,
-                        _ => return false,
-                    }
-                }
-                // No texture in time (the window is hidden, the display asleep), or a texture wgpu refused.
-                Got::Timeout | Got::Occluded | Got::Validation => return false,
-            };
-            let Some((_, renderer)) = w.renderer.as_mut() else { return false };
-            let Ok(prepared) = renderer.prepare(ctx, res, frame, (width, height)) else { return false };
-            let view = texture.texture.create_view(&wgpu::TextureViewDescriptor::default());
-            let mut encoder = ctx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
-            renderer.render(&mut encoder, &view, &prepared);
-            ctx.queue.submit([encoder.finish()]);
-            ctx.queue.present(texture);
-            !ctx.is_lost()
+            windows.get_mut(&key).is_some_and(|w| w.draw(ctx, res, frame, (width, height)))
         })
     })
 }

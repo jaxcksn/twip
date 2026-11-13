@@ -1115,6 +1115,14 @@ impl HostSurface<'_> {
         crate::render::window::attach_canvas(self.session.presentation.serial, canvas).map(|b| b as u32)
     }
 
+    /// Browser without WebGPU: draws this session's frames with WebGL 2 into the canvas of `handle`
+    /// ([`crate::render::window::webgl_context`]) from now on: the backend (6 WebGL), or `None` for a handle that isn't
+    /// pending.
+    #[cfg(all(target_family = "wasm", target_os = "unknown"))]
+    pub fn attach_webgl(&mut self, handle: u32) -> Option<u32> {
+        crate::render::window::attach_webgl(self.session.presentation.serial, handle).map(|b| b as u32)
+    }
+
     /// Stops drawing into the window [`HostSurface::attach_window`] gave (or, in the browser, the canvas).
     pub fn detach_window(&mut self) {
         #[cfg(twip_gpu)]

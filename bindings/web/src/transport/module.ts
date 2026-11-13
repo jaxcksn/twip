@@ -43,6 +43,12 @@ export interface TwipModule {
   twip_gpu_start(): Promise<number>;
   /** Gives a session its canvas for GPU frames: the backend (5 WebGPU), or a negative status. */
   twip_attach_canvas(engine: Ptr, session: number, canvas: HTMLCanvasElement | OffscreenCanvas): number;
+  /** Without WebGPU: makes `canvas` a WebGL 2 context of its own, as a handle for `twip_attach_webgl` (0: none). */
+  twip_webgl_context(canvas: HTMLCanvasElement | OffscreenCanvas): Promise<number>;
+  /** Gives a session the WebGL canvas of `handle`: the backend (6 WebGL), or a negative status. */
+  twip_attach_webgl(engine: Ptr, session: number, handle: number): number;
+  /** Lets go of the WebGL context of `handle` when no session is to take it. */
+  twip_webgl_forget(handle: number): void;
 }
 
 /**
@@ -111,6 +117,9 @@ export async function loadModule(dispatch: NonNullable<TwipModule['twipDispatch'
     twipDispatch: dispatch,
     twip_gpu_start: glue.twip_gpu_start,
     twip_attach_canvas: glue.twip_attach_canvas,
+    twip_webgl_context: glue.twip_webgl_context,
+    twip_attach_webgl: glue.twip_attach_webgl,
+    twip_webgl_forget: glue.twip_webgl_forget,
   };
   for (const [name, value] of Object.entries(exports)) if (name.startsWith('twip_')) module[`_${name}`] = value;
   if (typeof module._twip_engine_new !== 'function') throw new EditorError('internal', 'the engine module has no C ABI exports');

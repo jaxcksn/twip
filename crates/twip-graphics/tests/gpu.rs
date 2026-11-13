@@ -150,6 +150,30 @@ fn blend_modes() {
     same("blend-modes", (254, 146), &common::scenes::blend_modes(), &Resources::default());
 }
 
+/// Drawn through the renderer's own texture and copied into the target (as into a WebGL canvas), a frame has the bytes
+/// it has drawn directly: the blend modes (which copy from the target), layers and text, frame after frame (later frames
+/// draw kept pictures) and as the target's size changes.
+#[test]
+fn frames_drawn_through_a_texture_are_frames_drawn_directly() {
+    let Some(ctx) = context() else { return };
+    let mut res = Resources::default();
+    let text = common::scenes::text(&mut res);
+    let mut rec = Recorder::new();
+    rec.picture(&common::scenes::blend_modes(), Affine::IDENTITY);
+    rec.picture(&common::scenes::layers(), Affine::translate((260.0, 0.0)));
+    rec.picture(&text, Affine::translate((0.0, 150.0)));
+    let picture = rec.finish();
+    let draws = [Draw { picture: &picture, transform: Affine::IDENTITY }];
+    let frame = Frame { clear: Some(Color::WHITE), draws: &draws };
+    let (mut direct, mut through) = (Renderer::new(ctx, FORMAT), Renderer::new(ctx, FORMAT));
+    for (k, size) in [(400, 360), (400, 360), (200, 100), (400, 360)].into_iter().enumerate() {
+        let a = direct.draw_pixels(ctx, &res, &frame, size).expect("not lost");
+        let b = through.draw_pixels_through(ctx, &res, &frame, size).expect("not lost");
+        assert_eq!(b.len(), (size.0 * size.1 * 4) as usize);
+        assert!(a == b, "frame {k}: the copy changed {} bytes", a.iter().zip(&b).filter(|(x, y)| x != y).count());
+    }
+}
+
 #[test]
 fn colour_glyphs() {
     let mut resources = Resources::default();

@@ -26,8 +26,7 @@ zune-jpeg = "0.5"
 zune-bmp = "0.5.2"
 zune-core = "0.5"
 gif = "0.14.2"
-# The GPU backend (feature `gpu`): WebGPU everywhere, and natively D3D12, Vulkan and Metal. GL (WebGL 2) is left off
-# until it is planned.
+# The GPU backend (feature `gpu`): WebGPU everywhere, natively D3D12, Vulkan and Metal, and in the browser WebGL 2.
 wgpu = { version = "30.0.1", default-features = false, features = ["std", "wgsl", "webgpu"], optional = true }
 
 # The PDF writer (feature `pdf`): PDF's objects and content streams written as typst writes them, and their streams
@@ -37,6 +36,10 @@ miniz_oxide = { version = "0.9", optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 wgpu = { version = "30.0.1", default-features = false, features = ["dx12", "vulkan", "metal"], optional = true }
+
+# WebGL 2 for browsers without WebGPU: wgpu's GL backend (wgpu-core, its GL HAL, naga's GLSL output).
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wgpu = { version = "30.0.1", default-features = false, features = ["webgl"], optional = true }
 
 [dev-dependencies]
 # Character to glyph mapping and advances for the text scenes.

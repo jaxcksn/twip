@@ -4,8 +4,10 @@
 //! it is composited into its parent by an instance.
 //!
 //! It uses only what WebGL 2 also has (vertex and instance buffers, uniform buffers, textures, fixed-function blending;
-//! no compute, no storage buffers), and its device is made with WebGL 2's limits, so wgpu's GL backend can serve
-//! WebGL 2 later without a second design.
+//! no compute, no storage buffers), and its device is made with WebGL 2's limits, so wgpu's GL backend serves WebGL 2
+//! with the same design: in the browser without WebGPU, a context per canvas ([`Context::for_canvas`]), each frame
+//! drawn into a texture of the renderer's and copied into the canvas ([`Renderer::render_through`]), since a WebGL
+//! canvas can't be copied from.
 
 mod arena;
 mod atlas;
@@ -106,35 +108,54 @@ impl Context {
             let adapters = instance.enumerate_adapters(backends).await;
             let usable = |a: &wgpu::Adapter| a.get_info().device_type != wgpu::DeviceType::Cpu && surface.is_none_or(|s| a.is_surface_supported(s));
             let Some(adapter) = adapters.into_iter().find(usable) else { continue };
-            let limits = wgpu::Limits::downlevel_webgl2_defaults().using_resolution(adapter.limits());
-            let desc = wgpu::DeviceDescriptor { label: Some("twip-graphics"), required_limits: limits, ..wgpu::DeviceDescriptor::default() };
-            let (device, queue) = adapter.request_device(&desc).await.map_err(ContextError::Device)?;
-            let lost = Arc::new(AtomicBool::new(false));
-            let hook: Arc<std::sync::OnceLock<fn()>> = Arc::default();
-            // The flag goes up once; the hook hears of the first loss only.
-            let lose = {
-                let (flag, hook) = (Arc::clone(&lost), Arc::clone(&hook));
-                move || {
-                    if !flag.swap(true, Ordering::Relaxed)
-                        && let Some(h) = hook.get()
-                    {
-                        h();
-                    }
-                }
-            };
-            let on_lost = lose.clone();
-            device.set_device_lost_callback(move |_, _| on_lost());
-            // An error no scope catches loses the context: out of memory or an internal error (a driver reset) as it
-            // comes, a validation error (a bug here) in release builds; debug builds stop on those to show them.
-            device.on_uncaptured_error(Arc::new(move |e: wgpu::Error| {
-                if cfg!(debug_assertions) && matches!(e, wgpu::Error::Validation { .. }) {
-                    panic!("twip-graphics: {e}");
-                }
-                lose();
-            }));
-            return Ok(Context { instance, adapter, device, queue, lost, hook });
+            return Context::with_adapter(instance, adapter).await;
         }
         Err(ContextError::NoAdapter)
+    }
+
+    /// Browser: a WebGL 2 context on `canvas` (an `HTMLCanvasElement` or `OffscreenCanvas`) and the surface drawing to
+    /// it. A WebGL context belongs to its canvas, so each canvas has its own. Whether it is hardware is the page's to
+    /// check first: a canvas given a WebGL context can't have a 2D one for CPU pixels after.
+    #[cfg(target_arch = "wasm32")]
+    pub async fn for_canvas(canvas: wgpu::SurfaceTarget<'static>) -> Result<(Context, wgpu::Surface<'static>), ContextError> {
+        let mut desc = wgpu::InstanceDescriptor::new_without_display_handle();
+        desc.backends = wgpu::Backends::GL;
+        let instance = wgpu::Instance::new(desc);
+        let surface = instance.create_surface(canvas).map_err(|_| ContextError::NoAdapter)?;
+        let options = wgpu::RequestAdapterOptions { compatible_surface: Some(&surface), ..wgpu::RequestAdapterOptions::default() };
+        let adapter = instance.request_adapter(&options).await.map_err(|_| ContextError::NoAdapter)?;
+        Ok((Context::with_adapter(instance, adapter).await?, surface))
+    }
+
+    /// `adapter`'s device at WebGL 2's limits (at the adapter's texture sizes), reporting its loss.
+    async fn with_adapter(instance: wgpu::Instance, adapter: wgpu::Adapter) -> Result<Context, ContextError> {
+        let limits = wgpu::Limits::downlevel_webgl2_defaults().using_resolution(adapter.limits());
+        let desc = wgpu::DeviceDescriptor { label: Some("twip-graphics"), required_limits: limits, ..wgpu::DeviceDescriptor::default() };
+        let (device, queue) = adapter.request_device(&desc).await.map_err(ContextError::Device)?;
+        let lost = Arc::new(AtomicBool::new(false));
+        let hook: Arc<std::sync::OnceLock<fn()>> = Arc::default();
+        // The flag goes up once; the hook hears of the first loss only.
+        let lose = {
+            let (flag, hook) = (Arc::clone(&lost), Arc::clone(&hook));
+            move || {
+                if !flag.swap(true, Ordering::Relaxed)
+                    && let Some(h) = hook.get()
+                {
+                    h();
+                }
+            }
+        };
+        let on_lost = lose.clone();
+        device.set_device_lost_callback(move |_, _| on_lost());
+        // An error no scope catches loses the context: out of memory or an internal error (a driver reset) as it comes,
+        // a validation error (a bug here) in release builds; debug builds stop on those to show them.
+        device.on_uncaptured_error(Arc::new(move |e: wgpu::Error| {
+            if cfg!(debug_assertions) && matches!(e, wgpu::Error::Validation { .. }) {
+                panic!("twip-graphics: {e}");
+            }
+            lose();
+        }));
+        Ok(Context { instance, adapter, device, queue, lost, hook })
     }
 
     /// Whether the device has been lost: draw with a new context (or on the CPU).
@@ -149,22 +170,23 @@ impl Context {
     }
 
     /// A configuration for drawing to `surface` at `width × height`: a non-sRGB format, 8 bits a channel when offered
-    /// (blending is in encoded sRGB, as on the CPU), copies from it allowed (the blend modes that read the destination copy it), and Mailbox
-    /// presentation when offered, else Fifo. `None` when the adapter can't draw to it so.
+    /// (blending is in encoded sRGB, as on the CPU), copies from it allowed when it allows them (the blend modes that
+    /// read the destination copy it; without, draw with [`Renderer::render_through`]), and Mailbox presentation when
+    /// offered, else Fifo. `None` when the adapter can't draw to it.
     pub fn surface_config(&self, surface: &wgpu::Surface<'_>, width: u32, height: u32) -> Option<wgpu::SurfaceConfiguration> {
         let caps = surface.get_capabilities(&self.adapter);
         // Eight bits a channel, as the CPU backend draws (a browser canvas offers rgba16float first, too).
         let eight = [wgpu::TextureFormat::Bgra8Unorm, wgpu::TextureFormat::Rgba8Unorm];
         let format = eight.into_iter().find(|f| caps.formats.contains(f)).or_else(|| caps.formats.iter().copied().find(|f| !f.is_srgb()))?;
         // A WebGPU canvas takes COPY_SRC (the specification allows it on every canvas), though wgpu's web backend
-        // advertises only RENDER_ATTACHMENT.
-        if !caps.usages.contains(wgpu::TextureUsages::COPY_SRC) && !cfg!(target_arch = "wasm32") {
-            return None;
-        }
+        // advertises only RENDER_ATTACHMENT. A WebGL canvas doesn't take it.
+        let copy = caps.usages.contains(wgpu::TextureUsages::COPY_SRC) || self.adapter.get_info().backend == wgpu::Backend::BrowserWebGpu;
+        let usage =
+            if copy { wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC } else { wgpu::TextureUsages::RENDER_ATTACHMENT };
         let present_mode =
             if caps.present_modes.contains(&wgpu::PresentMode::Mailbox) { wgpu::PresentMode::Mailbox } else { wgpu::PresentMode::Fifo };
         Some(wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            usage,
             format,
             width,
             height,
@@ -235,6 +257,10 @@ const FILTER_UNIFORMS: u64 = 96;
 /// The GPU renderer for one device and target format. It keeps its pipelines, textures and buffers between frames.
 pub struct Renderer {
     format: wgpu::TextureFormat,
+    /// Copies a texture of the renderer's into a target, pixel for pixel ([`Renderer::render_through`]).
+    copy: wgpu::RenderPipeline,
+    /// The texture [`Renderer::render_through`] draws into, its size, and the copy's bind group reading it.
+    through: Option<((u32, u32), wgpu::TextureView, wgpu::BindGroup)>,
     over: wgpu::RenderPipeline,
     multiply: [wgpu::RenderPipeline; 2],
     erase: wgpu::RenderPipeline,
@@ -472,9 +498,40 @@ impl Renderer {
                 ..wgpu::SamplerDescriptor::default()
             })
         };
+        let copy_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("twip-graphics copy"),
+            source: wgpu::ShaderSource::Wgsl(COPY_SHADER.into()),
+        });
+        let copy = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("twip-graphics copy"),
+            layout: Some(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("twip-graphics copy"),
+                bind_group_layouts: &[Some(&dst_layout)],
+                immediate_size: 0,
+            })),
+            vertex: wgpu::VertexState {
+                module: &copy_shader,
+                entry_point: Some("vertex"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                buffers: &[],
+            },
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            fragment: Some(wgpu::FragmentState {
+                module: &copy_shader,
+                entry_point: Some("fragment"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                targets: &[Some(wgpu::ColorTargetState { format, blend: None, write_mask: wgpu::ColorWrites::ALL })],
+            }),
+            multiview_mask: None,
+            cache: None,
+        });
         let limits = device.limits();
         Renderer {
             format,
+            copy,
+            through: None,
             over: pipeline(component(F::One, F::OneMinusSrcAlpha)),
             multiply: [pipeline(component(F::Dst, F::OneMinusSrcAlpha)), pipeline(component(F::OneMinusDstAlpha, F::One))],
             erase: pipeline(component(F::Zero, F::OneMinusSrcAlpha)),
@@ -903,10 +960,62 @@ impl Renderer {
         }
     }
 
+    /// Draws `prepared` as [`Renderer::render`] does, into a texture of the renderer's (kept, at the target's size),
+    /// then copies it into `target` pixel for pixel: for a target that can't be copied from, as a WebGL canvas.
+    pub fn render_through(&mut self, context: &Context, encoder: &mut wgpu::CommandEncoder, target: &wgpu::TextureView, prepared: &Prepared) {
+        let size = (target.texture().width(), target.texture().height());
+        if self.through.as_ref().is_none_or(|(s, _, _)| *s != size) {
+            let texture = context.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("twip-graphics through"),
+                size: wgpu::Extent3d { width: size.0, height: size.1, depth_or_array_layers: 1 },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: self.format,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            });
+            let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+            let group = context.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("twip-graphics through"),
+                layout: &self.dst_layout,
+                entries: &[wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&view) }],
+            });
+            self.through = Some((size, view, group));
+        }
+        let Some((_, view, group)) = &self.through else { return };
+        self.render(encoder, view, prepared);
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("twip-graphics copy"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: target,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT), store: wgpu::StoreOp::Store },
+            })],
+            ..wgpu::RenderPassDescriptor::default()
+        });
+        pass.set_pipeline(&self.copy);
+        pass.set_bind_group(0, group, &[]);
+        pass.draw(0..3, 0..1);
+    }
+
     /// Tests and tools, natively: `frame` drawn at `width × height` into a texture of the renderer's format and read
     /// back, rows packed (premultiplied RGBA for [`wgpu::TextureFormat::Rgba8Unorm`]). Waits for the GPU.
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn draw_pixels(&mut self, context: &Context, res: &Resources, frame: &Frame<'_>, (w, h): (u32, u32)) -> Result<Vec<u8>, Error> {
+    pub fn draw_pixels(&mut self, context: &Context, res: &Resources, frame: &Frame<'_>, size: (u32, u32)) -> Result<Vec<u8>, Error> {
+        self.pixels(context, res, frame, size, false)
+    }
+
+    /// Tests: as [`Renderer::draw_pixels`], drawn with [`Renderer::render_through`].
+    #[cfg(not(target_arch = "wasm32"))]
+    #[doc(hidden)]
+    pub fn draw_pixels_through(&mut self, context: &Context, res: &Resources, frame: &Frame<'_>, size: (u32, u32)) -> Result<Vec<u8>, Error> {
+        self.pixels(context, res, frame, size, true)
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn pixels(&mut self, context: &Context, res: &Resources, frame: &Frame<'_>, (w, h): (u32, u32), through: bool) -> Result<Vec<u8>, Error> {
         let prepared = self.prepare(context, res, frame, (w, h))?;
         let size = wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 };
         let texture = context.device.create_texture(&wgpu::TextureDescriptor {
@@ -920,7 +1029,12 @@ impl Renderer {
             view_formats: &[],
         });
         let mut encoder = context.device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
-        self.render(&mut encoder, &texture.create_view(&wgpu::TextureViewDescriptor::default()), &prepared);
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        if through {
+            self.render_through(context, &mut encoder, &view, &prepared);
+        } else {
+            self.render(&mut encoder, &view, &prepared);
+        }
         // Rows copied out are padded to 256 bytes.
         let row = w * 4;
         let padded = row.div_ceil(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT) * wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
@@ -946,6 +1060,22 @@ impl Renderer {
         Ok(data.chunks(padded as usize).flat_map(|r| &r[..row as usize]).copied().collect())
     }
 }
+
+/// The copy [`Renderer::render_through`] makes: a triangle covering the target, each pixel the source's at it.
+const COPY_SHADER: &str = "
+@group(0) @binding(0) var source: texture_2d<f32>;
+
+@vertex
+fn vertex(@builtin(vertex_index) i: u32) -> @builtin(position) vec4<f32> {
+    let p = vec2<f32>(f32((i << 1u) & 2u), f32(i & 2u));
+    return vec4<f32>(p * 2.0 - 1.0, 0.0, 1.0);
+}
+
+@fragment
+fn fragment(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
+    return textureLoad(source, vec2<i32>(floor(position.xy)), 0);
+}
+";
 
 /// A uniform binding of `size` bytes, at the offset each draw gives.
 fn uniform_binding(buffer: &wgpu::Buffer, size: u64) -> wgpu::BindingResource<'_> {

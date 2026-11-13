@@ -4,7 +4,20 @@
 import { EditorError, type ErrorCode } from '../errors.js';
 import type { FaceInfo } from '../fonts/library.js';
 import type { Warning } from '../types.js';
-import { attachGpu, type CpuGpuTarget, cpuDevice, cpuGpuTarget, frameGpu, GpuStart, hasWebGpu, writeGpu } from '../host/gpu.js';
+import {
+  attachGpu,
+  attachWebGl,
+  type CpuGpuTarget,
+  cpuDevice,
+  cpuGpuTarget,
+  frameGpu,
+  GpuStart,
+  hasHardwareWebGl,
+  hasWebGpu,
+  watchWebGl,
+  webGlContext,
+  writeGpu,
+} from '../host/gpu.js';
 import { loadModule, type TwipModule } from './module.js';
 import { type Backend, type FrameInfo, Kind, type Input, type Message, Method, type Transport, unwrap, type WireExportOptions } from './protocol.js';
 
@@ -31,10 +44,12 @@ const FRAME_INFO_SIZE = 48;
 /** Lost WebGPU devices the engine replaces with new ones; past these, the canvases show CPU pixels copied in. */
 const MAX_DEVICE_LOSSES = 3;
 
-/** A session's canvas, on the backend it got: the engine's GPU frames, CPU pixels copied into a WebGPU canvas (after
- * too many lost devices), or CPU pixels in a 2D canvas. A lost GPU one draws nothing until it has a device again. */
+/** A session's canvas, on the backend it got: the engine's GPU frames on WebGPU or WebGL 2, CPU pixels copied into a
+ * WebGPU canvas (after too many lost devices), or CPU pixels in a 2D canvas. A lost GPU one draws nothing until it has
+ * a device again, or for WebGL its context back. */
 type Canvas =
   | { backend: 'webgpu'; canvas: HTMLCanvasElement; lost?: boolean }
+  | { backend: 'webgl'; canvas: HTMLCanvasElement; lost?: boolean; unwatch: () => void }
   | { backend: 'cpu-webgpu'; canvas: HTMLCanvasElement; target: CpuGpuTarget; lost?: undefined }
   | { backend: 'cpu'; canvas: HTMLCanvasElement; context: CanvasRenderingContext2D; lost?: undefined };
 
@@ -102,6 +117,8 @@ export class DirectTransport implements Transport {
     return this.#enqueue(() => {
       for (const t of this.#timers.get(session) ?? []) clearTimeout(t);
       this.#timers.delete(session);
+      const c = this.#canvases.get(session);
+      if (c?.backend === 'webgl') c.unwatch();
       this.#canvases.delete(session);
       this.#m._twip_session_free(this.#engine, session);
     }).finally(() => this.#listeners.delete(session));
@@ -215,14 +232,21 @@ export class DirectTransport implements Transport {
 
   async attachCanvas(session: number, canvas: HTMLCanvasElement): Promise<Backend> {
     const gpu = await this.#device();
+    // Without WebGPU, the canvas's own WebGL 2 context, made before the engine's turn (it waits on the browser).
+    const gl = !gpu && hasHardwareWebGl() ? await webGlContext(this.#m, canvas) : 0;
     return this.#enqueue(() => {
       let attached: Canvas | undefined;
       if (gpu && attachGpu(this.#m, this.#engine, session, canvas)) attached = { backend: 'webgpu', canvas };
+      else if (gl && attachWebGl(this.#m, this.#engine, session, gl)) {
+        const c: Canvas = { backend: 'webgl', canvas, unwatch: () => {} };
+        c.unwatch = watchWebGl(canvas, () => (c.lost = true), () => this.#restoreGl(session, c));
+        attached = c;
+      }
       const context = attached ? null : canvas.getContext('2d');
       if (context) attached = { backend: 'cpu', canvas, context };
-      if (!attached) throw new EditorError('unsupported', 'the canvas has no WebGPU or 2D context');
+      if (!attached) throw new EditorError('unsupported', 'the canvas has no WebGPU, WebGL 2 or 2D context');
       this.#canvases.set(session, attached);
-      return attached.backend === 'webgpu' ? 'webgpu' : 'cpu';
+      return attached.backend === 'cpu-webgpu' ? 'cpu' : attached.backend;
     });
   }
 
@@ -237,7 +261,7 @@ export class DirectTransport implements Transport {
       try {
         m.HEAPU8.fill(0, info, info + FRAME_INFO_SIZE);
         let drawn: boolean;
-        if (c.backend === 'webgpu') {
+        if (c.backend === 'webgpu' || c.backend === 'webgl') {
           drawn = frameGpu(m, this.#engine, session, width, height, info);
         } else if (c.backend === 'cpu-webgpu') {
           const target = c.target;
@@ -282,6 +306,21 @@ export class DirectTransport implements Transport {
         }
       });
     });
+  }
+
+  /** A session's WebGL context is back: a new context in the engine for its canvas, then a frame. */
+  #restoreGl(session: number, c: Extract<Canvas, { backend: 'webgl' }>): void {
+    void webGlContext(this.#m, c.canvas).then((handle) =>
+      this.#enqueue(() => {
+        if (!handle) return;
+        if (this.#canvases.get(session) !== c || !attachWebGl(this.#m, this.#engine, session, handle)) {
+          this.#m.twip_webgl_forget(handle);
+          return;
+        }
+        c.lost = false;
+        this.#pending.push({ kind: Kind.RequestFrame, sessionId: session, payload: undefined });
+      }).catch(() => {}),
+    );
   }
 
   /** Draws CPU pixels and hands `put` a copy of them. */
