@@ -1298,7 +1298,7 @@ pub fn fit_frame(f: &Float, width: f64, env: &StoryEnv, memos: &mut Memos) -> Re
     let no_wrap = f.shape.as_deref().and_then(|s| s.sp()).is_some_and(|s| s.body.no_wrap) && !f.rot_swap;
     if let Some(tb) = f.text_box.as_ref().filter(|_| no_wrap) {
         let fr = inner_frame(tb, f.shape.as_deref(), [0.0, 0.0, f.w, f.h]);
-        let longest = longest_line(tb, 1584.0, env, memos)?;
+        let (longest, _) = longest_line(tb, 1584.0, env, memos)?;
         return Ok(Some(Float { w: (f.w - (fr[2] - fr[0]) + longest).min(width.max(f.w)), ..f.clone() }));
     }
     // A text box that fits its vertical text: the lines stack across, so the width follows them.
@@ -1310,13 +1310,18 @@ pub fn fit_frame(f: &Float, width: f64, env: &StoryEnv, memos: &mut Memos) -> Re
         return Ok(Some(Float { w: f.w - (fr[2] - fr[0]) + story.height.min(1584.0), ..f.clone() }));
     }
     let Some(tb) = f.text_box.as_ref().filter(|_| f.auto_w) else { return Ok(None) };
-    let w = longest_line(tb, width, env, memos)?;
-    Ok(Some(Float { w: w.min(width) + tb.insets[0] + tb.insets[2], ..f.clone() }))
+    // A frame without a width is as wide as its content only when that is one line; two or more lines make it as
+    // wide as its column.
+    let (w, lines) = longest_line(tb, width, env, memos)?;
+    let w = if lines > 1 { width } else { w.min(width) };
+    Ok(Some(Float { w: w + tb.insets[0] + tb.insets[2], ..f.clone() }))
 }
 
-fn longest_line(tb: &crate::docx::TextBox, width: f64, env: &StoryEnv, memos: &mut Memos) -> Result<f64, Yield> {
+/// The right edge of the widest line, trailing spaces excluded, and the number of lines.
+fn longest_line(tb: &crate::docx::TextBox, width: f64, env: &StoryEnv, memos: &mut Memos) -> Result<(f64, usize), Yield> {
     let view = env.ctx.env.text.review.view;
     let mut w: f64 = 0.0;
+    let mut lines = 0;
     for b in super::join::laid(&tb.blocks, view) {
         let LaidBlock::Para(laid) = b else { continue };
         let p = laid.para();
@@ -1325,6 +1330,7 @@ fn longest_line(tb: &crate::docx::TextBox, width: f64, env: &StoryEnv, memos: &m
         let ps = super::flow::para_space(p.para_style_in(view), None, None, width, 0, 0.0, &env.ctx);
         let pb = break_lines(&shaped, p, &ps, env.ctx.fonts, memos)?;
         let pieces = pb.pieces();
+        lines += pb.lines.len();
         for l in &pb.lines {
             for (k, i) in (l.start..l.end).enumerate() {
                 if pieces[i].kind != Kind::Space {
@@ -1333,7 +1339,7 @@ fn longest_line(tb: &crate::docx::TextBox, width: f64, env: &StoryEnv, memos: &m
             }
         }
     }
-    Ok(w)
+    Ok((w, lines))
 }
 
 // Header and footer height

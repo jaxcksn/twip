@@ -2195,6 +2195,20 @@ fn beside_frame(settings: &str, attrs: &str) -> Option<usize> {
 }
 
 #[test]
+fn an_auto_width_frame_of_two_lines_is_as_wide_as_its_column() {
+    let x = |paras: &[&str]| {
+        let fp = r#"<w:pPr><w:framePr w:wrap="around" w:hAnchor="margin" w:xAlign="right" w:vAnchor="text" w:y="0"/></w:pPr>"#;
+        let frame: String = paras.iter().map(|t| format!(r#"<w:p>{fp}<w:r><w:t>{t}</w:t></w:r></w:p>"#)).collect();
+        let l = baselines(C15, ARIAL_12, &format!(r#"{frame}<w:p><w:r><w:t>Body</w:t></w:r></w:p>"#))?;
+        Some(l.iter().find(|l| l.1 == "One").expect("drawn").0)
+    };
+    let Some(one) = x(&["One"]) else { return };
+    assert!(one > 400.0, "{one}");
+    // Two lines: column-wide, so right alignment leaves it at the margin.
+    assert!((x(&["One", "Two"]).unwrap() - 72.0).abs() < 0.5);
+}
+
+#[test]
 fn a_frames_auto_height_rule_ignores_its_height() {
     let Some(auto) = beside_frame("", r#"w:h="1000" w:hRule="auto""#) else { return };
     assert_eq!(auto, 1);
