@@ -16,6 +16,10 @@ fn at(chars: &[(char, f64, f64)], c: char) -> (f64, f64) {
 #[test]
 fn a_superscript_is_limited_by_the_devices_pixel_metrics() {
     let body = r#"<w:p><w:r><w:t>x</w:t></w:r><w:r><w:rPr><w:vertAlign w:val="superscript"/></w:rPr><w:t>1</w:t></w:r></w:p>"#;
+    // The device metrics are Arial's own: a metric-compatible stand-in has other ones.
+    if super::fonts().face("Arial", None, false, false).is_none_or(|f| f.family != "Arial") {
+        return;
+    }
     let Some(c) = chars("", ARIAL_10, body, 0) else { return };
     // Arial 10 at 83 ppem: ascent 74 + leading 3 px is 18 half-points, the 6.5pt size's 49 px 12: raised 6, not 7.
     let raise = at(&c, 'x').1 - at(&c, '1').1;

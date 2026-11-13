@@ -89,6 +89,10 @@ fn an_at_least_line_at_the_page_top_rises_with_the_top_spacing_options() {
         (s.line_rule, s.line) = (crate::docx::props::LineRule::AtLeast, 40.0);
         Some(page_2_top(&doc))
     };
+    // The Mac rule's text height is Calibri's own: a metric-compatible stand-in has another one.
+    if fonts().face("Calibri", None, false, false).is_none_or(|f| f.family != "Calibri") {
+        return;
+    }
     let Some(plain) = top(12, "") else { return };
     // The 40pt line keeps 9.6pt of its height (both modes); the Mac rule drops what it has beyond its text (30.48pt).
     for mode in [12, 15] {
