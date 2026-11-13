@@ -536,6 +536,25 @@ mod floats {
     }
 
     #[test]
+    fn a_cell_float_counts_for_the_alignment_only_where_it_reaches() {
+        let cell = |wrap: &str, x: i64| {
+            let float = text_box(wrap, 100.0, "Boxed")
+                .replace("<wp:posOffset>0</wp:posOffset></wp:positionH>", &format!("<wp:posOffset>{x}</wp:posOffset></wp:positionH>"))
+                .replacen("<w:p>", "<w:p><w:r><w:t>Cell</w:t></w:r>", 1);
+            let mut d = doc(&in_cell("center", &float));
+            d.settings.compat_mode = 15;
+            baseline_of(&d, "Cell").expect("the cell text")
+        };
+        let square = cell(r#"<wp:wrapSquare wrapText="bothSides"/>"#, 1524000);
+        // A wrapNone box right of the cell counts nothing; inside it counts as a square one does.
+        let (out, inside) = (cell("<wp:wrapNone/>", 5080000), cell("<wp:wrapNone/>", 1524000));
+        assert!(out - square > 20.0 && (inside - square).abs() < 0.01, "{out} {inside} {square}");
+        // Compat 15: a tight box whose polygon lies along its top adds nothing.
+        let flat = r#"<wp:wrapTight wrapText="bothSides"><wp:wrapPolygon edited="0"><wp:start x="0" y="0"/><wp:lineTo x="0" y="0"/><wp:lineTo x="0" y="0"/></wp:wrapPolygon></wp:wrapTight>"#;
+        assert!((cell(flat, 1524000) - out).abs() < 0.01, "{} {out}", cell(flat, 1524000));
+    }
+
+    #[test]
     fn float_14_a_wrapping_cell_float_makes_an_auto_row_taller() {
         let after = |wrap: &str| {
             let body = format!(

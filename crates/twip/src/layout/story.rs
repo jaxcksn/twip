@@ -376,10 +376,21 @@ pub fn layout_with(
                                 None => (h_pos(f, h), super::float::v_pos(f, h, &fr, origin, y) - y),
                             };
                             if f.in_cell(text.compat) {
-                                float_bottom = float_bottom.max(y + fy + h);
-                                if f.wrap != "none" && f.v_align.is_none() && matches!(f.v_relative.as_str(), "paragraph" | "line") {
-                                    held = held.max(y + fy + h);
-                                    hold = hold.max(fy + h);
+                                // Compat 15: a tight or through float ends at its polygon's bottom (one along its top
+                                // adds nothing). A float that doesn't wrap counts for the alignment only when it
+                                // reaches across the cell's text, and never holds the row.
+                                let shape = match &f.poly {
+                                    Some(p) if text.compat == Compat::Generic && matches!(f.wrap.as_str(), "tight" | "through") => {
+                                        p.iter().map(|q| q.1).fold(0.0, f64::max).clamp(0.0, 1.0) * h
+                                    }
+                                    _ => h,
+                                };
+                                if f.wrap != "none" || fx < width && fx + f.w > 0.0 {
+                                    float_bottom = float_bottom.max(y + fy + shape);
+                                }
+                                if f.wrap != "none" && f.v_align.is_none() {
+                                    held = held.max(y + fy + shape);
+                                    hold = hold.max(fy + shape);
                                 }
                             }
                             if f.wrap != "none" && own.iter().all(|(o, _)| *o != k) {
