@@ -2357,9 +2357,10 @@ impl<'d> PageFill<'d, '_> {
                 continue;
             }
             (x, fy) = float::page_clamp(f, (x, fy), h, &frames);
-            // Compat 15 keeps the box with its effect extents (not its distances) on the page.
+            // Compat 15 keeps the box with its effect extents (not its distances) on the page, its top no higher
+            // than the top margin (a VML shape's own box).
             if compat == Compat::Generic && matches!(f.v_relative.as_str(), "paragraph" | "line") {
-                fy = fy.max(frames.margin[2]);
+                fy = fy.max(frames.margin[2] + if f.vml { 0.0 } else { f.effect[1] });
                 let (l, r) = (x - f.effect[0], x + f.w + f.effect[2]);
                 if l < 0.0 {
                     x -= l;
@@ -3465,6 +3466,7 @@ pub(super) fn table_float(id: u64, w: f64, h: f64, dist: [f64; 4], allow_overlap
         parts: Vec::new(),
         shape: None,
         rot_swap: false,
+        vml: false,
         relative: Default::default(),
     })
 }

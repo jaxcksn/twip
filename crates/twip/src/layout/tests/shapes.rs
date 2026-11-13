@@ -441,3 +441,15 @@ fn a_text_box_outline_without_a_width_takes_its_style_lines_width() {
     assert_eq!(outline(""), 1.5);
     assert_eq!(outline(r#"<a:ln w="6350"/>"#), 0.5);
 }
+
+#[test]
+fn compat_15_keeps_a_wrapping_float_with_its_top_effect_extent_below_the_top_margin() {
+    let top = |body: &str| float_rect(&crate::layout::layout(&settings_doc(body, 15).expect("the document reads"), &fonts()))[1];
+    let a = anchor(100, 0, 90, 60, 1, false, 1, &sp(0, 0, 90, 60, "rect", "", "FF0000"))
+        .replace(r#"<wp:positionV relativeFrom="page"><wp:posOffset>0</wp:posOffset>"#, r#"<wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset>"#)
+        .replace(r#"<wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/>"#, r#"<wp:effectExtent l="0" t="127000" r="0" b="0"/><wp:wrapSquare wrapText="bothSides"/>"#);
+    assert_eq!(top(&format!("<w:p>{a}</w:p>")), 82.0);
+    // A VML shape's outline allowance doesn't move it.
+    let vml = r#"<w:p><w:r><w:pict><v:rect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w10="urn:schemas-microsoft-com:office:word" style="position:absolute;margin-left:100pt;margin-top:0;width:72pt;height:60pt;mso-position-horizontal-relative:margin;mso-position-vertical-relative:paragraph" strokeweight="3pt"><w10:wrap type="square"/></v:rect></w:pict></w:r></w:p>"#;
+    assert_eq!(top(vml), 72.0);
+}

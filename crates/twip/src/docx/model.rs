@@ -396,6 +396,8 @@ pub struct Float {
     pub order: usize,
     pub z: u32,
     pub rot_swap: bool,
+    /// Read from a VML shape: its effect extents stand for its outline's pixels.
+    pub vml: bool,
     pub relative: Relative,
     /// The source `w:drawing` element's byte range in its part: saving drops it when the float is deleted.
     pub src: Option<std::ops::Range<usize>>,

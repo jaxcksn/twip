@@ -117,6 +117,7 @@ fn float(group: Vec<Paragraph>, legacy: bool) -> Float {
         parts: Vec::new(),
         shape: None,
         rot_swap: false,
+        vml: false,
         relative: Default::default(),
     };
     place(&mut f, &fr, sides, legacy);

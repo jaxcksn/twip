@@ -456,6 +456,7 @@ impl Editor {
             parts: Vec::new(),
             shape: Some(Box::new(Shape::new(kind, emu(rect[2]), emu(rect[3]), name))),
             rot_swap: false,
+            vml: false,
             relative: Default::default(),
         };
         let mut inlines = p.inlines.clone();
@@ -881,6 +882,7 @@ impl Editor {
             parts,
             shape: Some(Box::new(group)),
             rot_swap: false,
+            vml: false,
             relative: Default::default(),
             src: None,
             frame_src: None,
@@ -945,6 +947,7 @@ impl Editor {
                 parts,
                 shape: Some(Box::new(s)),
                 rot_swap: false,
+                vml: false,
                 relative: Default::default(),
                 src: None,
                 frame_src: None,

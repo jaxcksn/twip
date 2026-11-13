@@ -2366,6 +2366,7 @@ impl Reader {
                 in_note: false,
                 parts: Vec::new(),
                 rot_swap: false,
+                vml: true,
                 relative: Relative {
                     size: st.size_percent.clone().map(|s| {
                         s.filter(|(_, p)| *p != 0).map(|(from, p)| {
@@ -2500,6 +2501,7 @@ impl Reader {
                 in_note: false,
                 parts,
                 rot_swap: false,
+                vml: false,
                 relative: {
                     let tenths = |n: Option<Node>| n.and_then(|n| n.text()?.trim().parse::<i64>().ok()).map(|v| v / 100).filter(|&v| v != 0);
                     let size = |el: &str, pct: &str| {
