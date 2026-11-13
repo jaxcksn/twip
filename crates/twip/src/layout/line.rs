@@ -689,8 +689,9 @@ pub fn band(
         // A piece cut on the left by a float: compat 15 keeps the indents measured from the column, within the piece.
         // Compat ≤ 14 measures them from the piece: the left indent loses the cut, a hanging first line keeps its
         // own indent from the piece's start; with the cut sides' indents dropped only a first-line indent stays.
+        // A side no float cuts keeps its indents, a negative one past the column edge too.
         let left = match (a > EPS, frame.compat) {
-            (false, _) => a.max(l + first),
+            (false, _) => l + first,
             (true, Compat::Generic) => (a.max(l) + first).max(a),
             (true, Compat::Legacy) if frame.drop_cut_indents => a + first.max(0.0),
             (true, Compat::Legacy) => {

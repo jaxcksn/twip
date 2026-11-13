@@ -2749,3 +2749,15 @@ fn a_first_line_moved_below_a_top_and_bottom_float_keeps_its_share_of_the_space_
         assert!((d - 18.0).abs() < 0.01, "compat {compat}: {d}");
     }
 }
+
+#[test]
+fn a_negative_indent_holds_on_a_line_no_float_meets() {
+    // The paragraph anchors a square float 300pt below it: its line, left indent -36pt, starts 36pt left of the margin.
+    let float = r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="114300" distR="114300" simplePos="0" relativeHeight="0" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>3810000</wp:posOffset></wp:positionV><wp:extent cx="1270000" cy="1270000"/><wp:wrapSquare wrapText="bothSides"/><a:graphic><a:graphicData><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#;
+    let body = format!(r#"<w:p><w:pPr><w:ind w:left="-720"/></w:pPr>{float}<w:r><w:t>Alpha</w:t></w:r></w:p>"#);
+    for compat in [14, 15] {
+        let settings = format!(r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="{compat}"/></w:compat>"#);
+        let Some(l) = lines(&settings, ARIAL_12, &body) else { return };
+        assert!((l[0].0 - 36.0).abs() < 0.01, "compat {compat}: {l:?}");
+    }
+}
