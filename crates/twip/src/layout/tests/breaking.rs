@@ -2889,6 +2889,26 @@ fn a_paragraphs_space_before_is_part_of_its_first_lines_box_beside_a_float() {
     }
 }
 
+#[test]
+fn a_character_relative_float_counts_from_the_drawn_character_before_its_anchor() {
+    // Right-aligned lines: the float, 10pt right of its character, follows where the line's text is drawn.
+    let float = r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="0" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="character"><wp:posOffset>127000</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>7620000</wp:posOffset></wp:positionV><wp:extent cx="1270000" cy="127000"/><wp:wrapNone/><a:graphic><a:graphicData><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#;
+    let jc = r#"<w:pPr><w:jc w:val="right"/></w:pPr>"#;
+    for compat in [12, 15] {
+        let settings = format!(r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="{compat}"/></w:compat>"#);
+        // First in its paragraph: from the line's first glyph.
+        let Some((f, _)) = float_and_line(&settings, &format!("<w:p>{jc}{float}<w:r><w:t>Alpha</w:t></w:r></w:p>"), "Alpha") else { return };
+        let l = lines(&settings, ARIAL_12, &format!("<w:p>{jc}<w:r><w:t>Alpha</w:t></w:r></w:p>")).unwrap();
+        assert!(l[0].0 > 400.0 && (f[0] - (l[0].0 + 10.0)).abs() < 0.06, "compat {compat}: {f:?} {l:?}");
+        // After "Alpha ": from the start of the space, "Alpha" (as wide as the lone right-aligned word) after the line start.
+        let body = format!(r#"<w:p>{jc}<w:r><w:t xml:space="preserve">Alpha </w:t></w:r>{float}<w:r><w:t>Bravo</w:t></w:r></w:p>"#);
+        let (f, _) = float_and_line(&settings, &body, "Alpha").unwrap();
+        let both = lines(&settings, ARIAL_12, &format!("<w:p>{jc}<w:r><w:t>Alpha Bravo</w:t></w:r></w:p>")).unwrap();
+        let space_x = both[0].0 + 540.0 - l[0].0;
+        assert!((f[0] - (space_x + 10.0)).abs() < 0.06, "compat {compat}: {f:?} {space_x}");
+    }
+}
+
 fn anchor(x: u32, y: i64, w: u32, h: u32, overlap: u8, relative: &str) -> String {
     format!(
         r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="0" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="{overlap}"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>{}</wp:posOffset></wp:positionH><wp:positionV relativeFrom="{relative}"><wp:posOffset>{}</wp:posOffset></wp:positionV><wp:extent cx="{}" cy="{}"/><wp:wrapSquare wrapText="bothSides"/><a:graphic><a:graphicData><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#,

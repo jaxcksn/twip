@@ -2323,6 +2323,21 @@ impl<'d> PageFill<'d, '_> {
         let mut push: Option<usize> = None;
         let mut page_end = false;
         let band_of = |k: usize| bands.iter().position(|(_, segs)| segs.iter().any(|l| k >= l.start && k < l.end.max(l.start + 1)));
+        // A character-relative float counts from the drawn start of the character before its anchor, on whichever line
+        // holds it; one first in the paragraph from where its line's first glyph is drawn.
+        let char_x = |k: usize, b: usize| {
+            let at = |j: usize| bands.iter().flat_map(|(_, segs)| segs).find(|l| j >= l.start && j < l.end).map(|l| (l, l.xs[j - l.start]));
+            let before = (0..k).rev().find(|&j| pieces[j].kind != Kind::Anchor).and_then(|j| {
+                let (_, x) = at(j)?;
+                let (g0, g1) = pieces[j].glyphs;
+                Some(x + sp.glyph_advances[g0 as usize..(g1 as usize).max(g0 as usize + 1) - 1].iter().sum::<f64>())
+            });
+            let start = || {
+                let l = &bands[b].1[0];
+                (l.start..l.end).find(|&j| pieces[j].kind != Kind::Anchor).map_or(0.0, |j| l.xs[j - l.start])
+            };
+            cx0 + before.unwrap_or_else(start)
+        };
         for (k, q) in pieces.iter().enumerate() {
             let (Kind::Anchor, Some(Object::Float(f))) = (q.kind, sp.object(pb.from + k)) else { continue };
             let Some(b) = band_of(k) else { continue };
@@ -2333,6 +2348,12 @@ impl<'d> PageFill<'d, '_> {
             let line_top = bands[b].0;
             let para_top = if first_part { origin } else { bands[0].0 };
             let mut x = float::h_pos(f, &frames);
+            // From the line laid out before the float: placed again once the line wraps it, it keeps that x.
+            // ponytail: the x of the fill before is taken as that line's, wherever that fill put the paragraph.
+            if f.h_relative == "character" {
+                let before = self.at.known.iter().find(|o| o.key == (si, bi, pb.from + k) && o.wrap != Wrap::None).map(|o| o.rect[0]);
+                x = before.unwrap_or_else(|| float::h_pos(f, &Frames { column: (char_x(k, b), 0.0), ..frames }));
+            }
             if compat == Compat::Legacy && f.h_relative == "column" {
                 match f.h_align.as_deref() {
                     Some("left") => x += style.ind_left,
