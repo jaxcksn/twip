@@ -2194,7 +2194,9 @@ impl<'d> PageFill<'d, '_> {
                 _ => {
                     let meets = |f: &&Placed| f.in_band(yy, yy + h) && f.excl[2] > cx0 + EPS && f.excl[0] < cx1 - EPS;
                     if first_part && bands.is_empty() && here.iter().filter(meets).any(|f| f.key.2 == float::TABLE_PIECE) {
-                        let below = here.iter().filter(meets).map(|f| f.excl[3]).fold(yy, f64::max);
+                        // To the nearest bottom among the floats it meets, then tried again there.
+                        let below = here.iter().filter(meets).map(|f| f.excl[3]).filter(|&b| b > yy + EPS).fold(f64::INFINITY, f64::min);
+                        let below = if below.is_finite() { below } else { yy };
                         let before = if style.before_auto && carry.first_para { 0.0 } else { space_before(&self.ctx.env.text, style) };
                         yy = (below + before).min(col.bottom.to_pt().max(yy + EPS));
                         continue;

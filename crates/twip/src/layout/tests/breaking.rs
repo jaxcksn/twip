@@ -2773,3 +2773,26 @@ fn compat_15_a_floating_tables_top_distance_rewraps_the_line_above_it() {
         assert_eq!(x > 200.0, beside, "compat {compat}: {l:?}");
     }
 }
+
+#[test]
+fn a_first_line_meeting_two_floating_tables_goes_to_the_nearer_bottom() {
+    // A one-row table and a three-row one right of it to the column end; the heading after them meets both and goes below the first,
+    // beside the second.
+    let table = |x: u32, w: u32, rows: &[&str]| {
+        let rows: String = rows.iter().map(|t| format!(r#"<w:tr><w:tc><w:tcPr><w:tcW w:w="{w}" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:tc></w:tr>"#)).collect();
+        format!(
+            r#"<w:tbl><w:tblPr><w:tblpPr w:leftFromText="180" w:rightFromText="180" w:vertAnchor="text" w:horzAnchor="margin" w:tblpX="{x}" w:tblpY="0"/><w:tblW w:w="{w}" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="{w}"/></w:tblGrid>{rows}</w:tbl>"#
+        )
+    };
+    let body = format!(
+        r#"<w:p><w:r><w:t>Top.</w:t></w:r></w:p>{}{}<w:p><w:pPr><w:spacing w:before="240"/></w:pPr><w:r><w:t>Heading.</w:t></w:r></w:p>"#,
+        table(0, 3000, &["A1"]),
+        table(3200, 6000, &["B1", "B2", "B3"])
+    );
+    for compat in [14, 15] {
+        let settings = format!(r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="{compat}"/></w:compat>"#);
+        let Some(l) = baselines(&settings, ARIAL_12, &body) else { return };
+        let y = |t: &str| l.iter().find(|l| l.1 == t).unwrap_or_else(|| panic!("{t}: {l:?}")).3;
+        assert!(y("Heading.") < y("B3"), "compat {compat}: {l:?}");
+    }
+}
