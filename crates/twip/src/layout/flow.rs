@@ -1621,7 +1621,10 @@ impl<'d> PageFill<'d, '_> {
                 } else if !self.add_notes(&refs, &mut a, col, yy + room + note_tail, &mut rest, defer, memos)? && !pb.leading_page_break(i) {
                     break;
                 }
-                let over = |a: &NoteArea| a.total() > 0.0 && !col.bottom.holds(yy + l.pitch + tail + a.total()) && !pb.leading_page_break(i);
+                // Above a footnote area compat 15 tests the line's full pitch, compat ≤ 14 its height without the room
+                // multiple spacing adds below it.
+                let above = if self.ctx.env.text.compat == Compat::Legacy && style.line_rule == LineRule::Auto && style.line > 1.0 { room } else { l.pitch };
+                let over = |a: &NoteArea| a.total() > 0.0 && !col.bottom.holds(yy + above + tail + a.total()) && !pb.leading_page_break(i);
                 let waits = |a: &NoteArea, rest: &[NotePart]| rest.iter().any(|r| !a.parts.iter().any(|p| (p.kind, p.id) == (r.kind, r.id)));
                 if over(&a) && defer {
                     // The notes fit only without the line's full height: in compat ≤ 14 they may wait instead.
@@ -2391,7 +2394,8 @@ impl<'d> PageFill<'d, '_> {
             if !self.add_notes(&refs, &mut a, col, bt + room + note_tail, &mut rest, false, memos)? && !lead {
                 break;
             }
-            if a.total() > 0.0 && !col.bottom.holds(bt + l.pitch + tail + a.total()) && !lead {
+            let above = if self.ctx.env.text.compat == Compat::Legacy && style.line_rule == LineRule::Auto && style.line > 1.0 { room } else { l.pitch };
+            if a.total() > 0.0 && !col.bottom.holds(bt + above + tail + a.total()) && !lead {
                 break;
             }
             areas.push((a, rest));

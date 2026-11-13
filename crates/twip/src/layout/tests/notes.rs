@@ -252,6 +252,32 @@ fn compat_14_note_waits_for_the_next_page_behind_its_line() {
     assert_eq!(on(&c15, &format!("P{last:02}2")), Some(1), "compat 15 moves the line with its note");
 }
 
+#[test]
+fn compat_14_line_above_a_note_area_needs_no_room_below_its_text() {
+    // 1.5-spaced lines with a note on the first: for some space before the first line, compat ≤ 14 keeps one more
+    // line on page 1 than compat 15 (which tests the full pitch), never fewer.
+    let body = |before: u32| {
+        let line = |k: usize, ppr: &str| {
+            let refs: &[&str] = if k == 1 { &["f1"] } else { &[] };
+            para(&format!("P{k:02}"), refs).replacen("<w:p>", &format!(r#"<w:p><w:pPr><w:spacing w:before="{}" w:after="0" w:line="360" w:lineRule="auto"/>{ppr}</w:pPr>"#, if k == 1 { before } else { 0 }), 1)
+        };
+        (1..=60).map(|k| line(k, "")).collect::<String>() + &sect("", true)
+    };
+    let c12 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="12"/></w:compat>"#;
+    let count = |before: u32, settings: &str| -> Option<usize> {
+        let page: String = super::page_chars(&notes_doc(&body(before), settings)?)[0].iter().map(|c| c.0).collect();
+        Some(page.matches('P').count())
+    };
+    let mut more = false;
+    for before in (0..=400).step_by(20) {
+        let Some(old) = count(before, c12) else { return };
+        let new = count(before, C15).unwrap();
+        assert!(old >= new, "{before}: {old} {new}");
+        more |= old > new;
+    }
+    assert!(more);
+}
+
 const C15: &str = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
 
 #[test]
