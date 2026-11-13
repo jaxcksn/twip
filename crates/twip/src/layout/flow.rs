@@ -2584,14 +2584,26 @@ impl<'d> PageFill<'d, '_> {
                         }
                     }
                 }
-                let across = if in_flow && compat == Compat::Generic { (f64::INFINITY, f64::NEG_INFINITY) } else { (0.0, frames.page_w) };
+                // Its area: a frame's anchor boxes; a drawing's the page across, down the page when placed from it and
+                // the column otherwise.
+                let across = match a.float.h_relative.as_str() {
+                    _ if in_flow && compat == Compat::Generic => (f64::INFINITY, f64::NEG_INFINITY),
+                    "margin" if frame(&a) => (frames.margin[0], frames.page_w - frames.margin[1]),
+                    "column" if frame(&a) => (col.x, col.x + col.width),
+                    _ => (0.0, frames.page_w),
+                };
                 let others: Vec<Placed> = self.at.found.iter().filter(|o| !under.contains(&o.key)).cloned().collect();
                 // Compat ≤ 14: once a float (not a frame) later on the page met the text laid out before it, the page
                 // filled again keeps a frame where it was placed, unmoved.
                 let restarted = compat == Compat::Legacy
                     && frame(&a)
                     && self.at.known.iter().any(|k| k.restarts && !frame(k) && k.wrap != Wrap::None && k.key.0 == a.key.0 && (k.key.1, k.key.2) > (a.key.1, a.key.2));
-                if !restarted && !kept_at.contains(&a.key) && !float::avoid(&mut a, &others, across, (col.top.to_pt(), col.bottom.to_pt()), compat) {
+                let down = match a.float.v_relative.as_str() {
+                    "page" => (0.0, frames.page_h),
+                    "margin" if frame(&a) => (frames.margin[2], frames.page_h - frames.margin[3]),
+                    _ => (col.top.to_pt(), col.bottom.to_pt()),
+                };
+                if !restarted && !kept_at.contains(&a.key) && !float::avoid(&mut a, &others, across, down, compat) {
                     let b = band_of(a.key.2 - pb.from).unwrap_or(0);
                     if compat == Compat::Generic && !(page_first && b == 0) {
                         push = Some(push.map_or(b, |x: usize| x.min(b)));
@@ -2877,7 +2889,14 @@ impl<'d> PageFill<'d, '_> {
                 // It moves off the tables and frames placed before it that it may not overlap, or that may not overlap it.
                 let frames = self.at.found.iter().filter(|o| o.key.2 != float::TABLE_PIECE && o.float.text_box.is_some() && o.float.shape.is_none());
                 let others: Vec<Placed> = tables.iter().filter(|o| !under.contains(&o.key)).chain(frames).cloned().collect();
-                float::avoid(&mut probe, &others, (self.margins.0, self.page_w), (self.margins.2, body_bottom), self.ctx.env.text.compat);
+                // Its area: the box its horizontal and vertical anchors name.
+                let across = match () {
+                    _ if fp.h_page => (0.0, self.page_w),
+                    _ if fp.h_text => (col.x, col.x + col.width),
+                    _ => (self.margins.0, self.page_w - self.margins.1),
+                };
+                let down = if fp.v_anchor == TableAnchor::Page { (0.0, self.page_h) } else { (self.margins.2, body_bottom) };
+                float::avoid(&mut probe, &others, across, down, self.ctx.env.text.compat);
                 (at_x, top) = (probe.rect[0] - bl, probe.rect[1]);
             }
             *y = self.at.known.iter().find(|k| k.key == (self.sec.index, pos.block, float::TABLE_PIECE)).map_or(top, |k| k.rect[1]);

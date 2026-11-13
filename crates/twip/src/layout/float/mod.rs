@@ -219,31 +219,37 @@ impl Placed {
     }
 }
 
-/// Moves a float that may not overlap an earlier one clear of them, each box grown by the room it keeps, its own box
-/// kept within `lo..hi` across and `top..bottom` down. Compat 15 tries the rows at its own y, below each obstacle and
-/// above each, from its own y down, then up; on each row its own x, then beside each obstacle from its own x rightwards,
-/// then leftwards. The first place that meets none wins. Compat ≤ 14 slides it one way, right (left for a
-/// right-aligned float), while it stays within `lo..hi`, else puts it below the float it meets at its own x.
-/// Without a place it stays where it was asked for.
+/// Moves a float that may not overlap an earlier one clear of them, each box grown by the room it keeps, within its
+/// area `lo..hi` across and `top..bottom` down. Compat 15 first pulls its box inside the area on each axis (not on an
+/// axis where it is wider than the area), then tries the rows at that y, below each obstacle and above each, from that
+/// y down, then up; on each row that x, then beside each obstacle from that x rightwards, then leftwards, its box kept
+/// in the area. The first place that meets none wins. Compat ≤ 14 slides it one way, right (left for a right-aligned
+/// float), while its own box stays within `lo..hi`, else puts it below the float it meets at its own x. Without a
+/// place it stays where it was asked for.
 pub fn avoid(f: &mut Placed, placed: &[Placed], (lo, hi): (f64, f64), (top, bottom): (f64, f64), compat: Compat) -> bool {
     let original = (f.rect[0], f.rect[1]);
     let (w, h) = (f.rect[2] - f.rect[0], f.rect[3] - f.rect[1]);
     let [ft, fb, fl, fr] = f.apart();
     let obstacles: Vec<&Placed> = placed.iter().filter(|o| o.key != f.key && f.avoids(o)).collect();
     if compat == Compat::Generic {
+        if !obstacles.iter().any(|o| f.overlaps(o)) {
+            return true;
+        }
         let order = |own: f64, mut c: Vec<f64>| {
             c.sort_by(|a, b| (*a < own - EPS).cmp(&(*b < own - EPS)).then(if *a < own - EPS { b.total_cmp(a) } else { a.total_cmp(b) }));
             c.dedup_by(|a, b| (*a - *b).abs() < EPS);
             c
         };
-        let mut xs = vec![original.0];
-        let mut ys = vec![original.1];
+        let clamp = |v: f64, lead: f64, size: f64, (a, b): (f64, f64)| if size > b - a + EPS { v } else { (v - lead).max(a).min(b - size) + lead };
+        let own = (clamp(original.0, fl, fl + w + fr, (lo, hi)), clamp(original.1, ft, ft + h + fb, (top, bottom)));
+        let mut xs = vec![own.0];
+        let mut ys = vec![own.1];
         for o in &obstacles {
             let [ot, ob, ol, or] = o.apart();
-            xs.extend([o.rect[2] + or + fl, o.rect[0] - ol - fr - w].into_iter().filter(|&x| x >= lo - EPS && x + w <= hi + EPS));
-            ys.extend([o.rect[3] + ob + ft, o.rect[1] - ot - fb - h].into_iter().filter(|&y| y >= top - EPS && y + h <= bottom + EPS));
+            xs.extend([o.rect[2] + or + fl, o.rect[0] - ol - fr - w].into_iter().filter(|&x| x - fl >= lo - EPS && x + w + fr <= hi + EPS));
+            ys.extend([o.rect[3] + ob + ft, o.rect[1] - ot - fb - h].into_iter().filter(|&y| y - ft >= top - EPS && y + h + fb <= bottom + EPS));
         }
-        let (xs, ys) = (order(original.0, xs), order(original.1, ys));
+        let (xs, ys) = (order(own.0, xs), order(own.1, ys));
         for &y in &ys {
             for &x in &xs {
                 f.moved_to(x, y);
@@ -382,8 +388,12 @@ mod tests {
         assert_eq!(f.rect[0], 372.0);
         // Left down to the page's edge when right leaves the page.
         let mut f = apart(532.0, 612.0, 1);
-        assert!(avoid(&mut f, &[apart(80.0, 612.0, 0)], across, down, Compat::Generic));
+        assert!(avoid(&mut f, &[apart(80.0, 612.0, 0)], across, (0.0, 720.0), Compat::Generic));
         assert_eq!((f.rect[0], f.rect[1]), (0.0, 0.0));
+        // Moved, it is first pulled into its area: here down to its top.
+        let mut f = apart(532.0, 612.0, 1);
+        assert!(avoid(&mut f, &[apart(80.0, 612.0, 0)], across, down, Compat::Generic));
+        assert_eq!((f.rect[0], f.rect[1]), (0.0, 72.0));
         // Beside the float it next meets: three in a row.
         let mut f = apart(72.0, 132.0, 2);
         assert!(avoid(&mut f, &[apart(72.0, 172.0, 0), apart(172.0, 252.0, 1)], across, down, Compat::Generic));

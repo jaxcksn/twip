@@ -3361,8 +3361,9 @@ fn a_first_line_meeting_two_floating_tables_goes_to_the_nearer_bottom() {
 }
 
 /// A bottom-aligned three-row floating table that may not overlap, and a bottom-aligned margin frame with
-/// `suppressOverlap` as wide as the column, in the order given; the baselines of the frame's line and of the table's first row.
-fn frame_and_table(compat: u32, frame_first: bool) -> Option<(f64, f64)> {
+/// `suppressOverlap` as wide as the column, in the order given; the baselines of the frame's line and of the table's first row,
+/// and that row's x.
+fn frame_and_table(compat: u32, frame_first: bool) -> Option<(f64, f64, f64)> {
     let frame = r#"<w:p><w:pPr><w:framePr w:w="9360" w:hSpace="181" w:wrap="around" w:hAnchor="margin" w:yAlign="bottom"/><w:suppressOverlap/></w:pPr><w:r><w:t>Framed.</w:t></w:r></w:p>"#;
     let rows: String = (1..=3).map(|i| format!(r#"<w:tr><w:tc><w:tcPr><w:tcW w:w="4000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>Row{i}</w:t></w:r></w:p></w:tc></w:tr>"#)).collect();
     let table = format!(
@@ -3372,18 +3373,28 @@ fn frame_and_table(compat: u32, frame_first: bool) -> Option<(f64, f64)> {
     let body = format!(r#"<w:p><w:r><w:t>Case.</w:t></w:r></w:p>{a}{b}<w:p><w:r><w:t>After.</w:t></w:r></w:p>"#);
     let settings = format!(r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="{compat}"/></w:compat>"#);
     let l = baselines(&settings, ARIAL_12, &body)?;
-    let y = |t: &str| l.iter().find(|l| l.1 == t).unwrap_or_else(|| panic!("{t}: {l:?}")).3;
-    Some((y("Framed."), y("Row1")))
+    let at = |t: &str| l.iter().find(|l| l.1 == t).unwrap_or_else(|| panic!("{t}: {l:?}"));
+    Some((at("Framed.").3, at("Row1").3, at("Row1").0))
 }
 
 #[test]
 fn a_frame_and_a_floating_table_that_may_not_overlap_the_later_one_goes_above() {
     for compat in [14, 15] {
         // The table first: the frame moves up, onto the table's top.
-        let Some((frame, row)) = frame_and_table(compat, false) else { return };
+        let Some((frame, row, _)) = frame_and_table(compat, false) else { return };
         assert!(frame < row && row > 650.0, "compat {compat}: frame {frame} row {row}");
         // The frame first, before the table: it stays at the bottom and the table goes above it.
-        let (frame, row) = frame_and_table(compat, true).unwrap();
+        let (frame, row, _) = frame_and_table(compat, true).unwrap();
         assert!(row < frame && frame > 690.0, "compat {compat}: frame {frame} row {row}");
     }
+}
+
+#[test]
+fn a_compat_15_table_moved_off_a_frame_is_pulled_inside_the_margins() {
+    // Moved up, its box with its 181 tw left distance comes inside the left margin: 9.05pt right of where compat 14 has it.
+    let Some((_, _, legacy)) = frame_and_table(14, true) else { return };
+    let (_, _, moved) = frame_and_table(15, true).unwrap();
+    let (_, _, unmoved) = frame_and_table(15, false).unwrap();
+    assert!((moved - unmoved - 9.05).abs() < 0.1, "moved {moved} unmoved {unmoved}");
+    assert!((moved - legacy - 9.05).abs() < 0.6, "moved {moved} compat 14 {legacy}");
 }
