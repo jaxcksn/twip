@@ -338,7 +338,7 @@ pub fn layout_with(
                 let bottom = para_top + lines.lines.iter().map(|l| l.pitch).sum::<f64>();
                 floats.extend(around.iter().chain(&tables).filter(|f| f.in_band(para_top, bottom)).cloned());
                 let bands =
-                    (!floats.is_empty()).then(|| wrap_bands(&lines, p, style, &floats, &ps, para_top, env.ctx.fonts)).filter(|b| !b.is_empty());
+                    (!floats.is_empty()).then(|| wrap_bands(&lines, p, style, &floats, &ps, (para_top, before), env.ctx.fonts)).filter(|b| !b.is_empty());
                 let rows = bands.as_ref().map_or(lines.lines.len(), Vec::len);
                 for i in 0..rows {
                     let ((start, end, pitch, below), mut content) = match &bands {
@@ -512,7 +512,7 @@ fn wrap_bands(
     style: &ParaStyle,
     floats: &[Placed],
     ps: &ParaSpace,
-    top: f64,
+    (top, before): (f64, f64),
     fonts: &Fonts,
 ) -> Vec<(f64, Vec<Line>)> {
     let frame = Frame::new(ps);
@@ -555,9 +555,11 @@ fn wrap_bands(
             continue;
         }
         let square = floats.iter().filter(|f| f.in_band(yy, yy + h)).all(|f| f.float.wrap == "square");
+        // A first line that goes below a floating table keeps its space before below it.
+        let table = bands.is_empty() && floats.iter().any(|f| f.key.2 == float::TABLE_PIECE && f.in_band(yy, yy + h));
         yy = match trial.filter(|&t| ps.env.compat == Compat::Legacy && square && t > EPS) {
             Some(t) => yy + t,
-            None => float::next_edge(floats, 0.0, ps.width, yy, yy + h).unwrap_or(yy + h),
+            None => float::next_edge(floats, 0.0, ps.width, yy, yy + h).unwrap_or(yy + h) + if table { before } else { 0.0 },
         };
     }
     bands

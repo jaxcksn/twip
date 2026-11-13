@@ -343,3 +343,22 @@ fn compat_15_the_body_gives_way_to_a_footer_wrapping_its_float_as_laid_out_from_
     let first = page.iter().filter(|c| c.0 == 'B').map(|c| c.2).fold(f64::INFINITY, f64::min);
     assert!(body.len() == 49 && (first - 690.44).abs() < 0.05, "{} {first}", body.len());
 }
+
+#[test]
+fn compat_15_a_header_paragraph_below_its_floating_table_keeps_its_space_before() {
+    // A full-width table from 30pt to 66pt on the page, above the header's top: the paragraph after it goes below it,
+    // its 9pt before kept there.
+    let body = format!(
+        r#"<w:document {W}><w:body><w:p><w:r><w:t>Body</w:t></w:r></w:p><w:sectPr><w:headerReference w:type="default" r:id="rId2"/><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:body></w:document>"#
+    );
+    let row = r#"<w:tr><w:trPr><w:trHeight w:val="360" w:hRule="exact"/></w:trPr><w:tc><w:p/></w:tc></w:tr>"#;
+    let header = format!(
+        r#"<w:hdr {W}><w:tbl><w:tblPr><w:tblpPr w:vertAnchor="page" w:horzAnchor="margin" w:tblpY="601"/><w:tblW w:w="9360" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="9360"/></w:tblGrid>{row}{row}</w:tbl><w:p><w:pPr><w:spacing w:before="180" w:after="0"/></w:pPr><w:r><w:t>Q</w:t></w:r></w:p></w:hdr>"#
+    );
+    let Some(doc) = with_header(&body, &header, 15) else { return };
+    let page = &page_chars(&doc)[0];
+    let q = page.iter().find(|c| c.0 == 'Q').expect("drawn");
+    assert!(q.2 > 82.0, "{q:?}");
+    let b = page.iter().find(|c| c.0 == 'B').expect("drawn");
+    assert!(b.2 > q.2 + 10.0, "the body below the header: {b:?}");
+}
