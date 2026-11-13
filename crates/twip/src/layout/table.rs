@@ -1762,10 +1762,10 @@ fn layout_shown(
     if !memos.cache.store_tables {
         return Ok(match memos.cache.tables.lookup(&probe) {
             Some(tb) => tb,
-            None => Rc::new(assemble(t, text_w, env, cols, &geo, &stories, &closings, inputs.into(), memos)?),
+            None => Rc::new(assemble(t, text_w, env, cols, &geo, &stories, &closings, inputs.into(), nested, memos)?),
         });
     }
-    cached(memos, |c| &mut c.tables, probe, table_bytes, |m| assemble(t, text_w, env, cols.clone(), &geo, &stories, &closings, inputs.into(), m))
+    cached(memos, |c| &mut c.tables, probe, table_bytes, |m| assemble(t, text_w, env, cols.clone(), &geo, &stories, &closings, inputs.into(), nested, m))
 }
 
 // Hidden rows
@@ -2003,6 +2003,7 @@ fn assemble(
     stories: &[Option<Rc<StoryLayout>>],
     closings: &[Option<(ParaId, f64)>],
     fit: Rc<[FitRow]>,
+    nested: bool,
     memos: &mut Memos,
 ) -> Result<TableLayout, Yield> {
     let total: f64 = cols.iter().sum();
@@ -2072,15 +2073,21 @@ fn assemble(
         // Row alignment
         let shift = shift
             + match r.jc.unwrap_or(t.jc) {
+                // Compat ≤ 14: with `alignTablesRowByRow` a row is aligned by its own cells' extent, else by the
+                // whole grid. A nested table's rows always take the whole grid, and a right-aligned one no margin.
                 jc @ (Jc::Center | Jc::Right) if compat == Compat::Legacy && t.floating.is_none() && !rtl => {
-                    let n = cols.len();
-                    let (gb, ga) = if env.ctx.env.text.align_tables_row_by_row { (r.grid_before.min(n), r.grid_after) } else { (0, 0) };
-                    let before: f64 = cols[..gb].iter().sum();
-                    let after: f64 = cols[n - ga.min(n - gb)..].iter().sum();
-                    let width = total - before - after;
-                    let gap = r.cells.first().map_or(0.0, |c| c.margins[1]) + row_s.map_or(0.0, |s| 2.0 * s + space_h(&row_borders(t, ri)[1]));
+                    let own = env.ctx.env.text.align_tables_row_by_row && !nested;
+                    let (start, end) = match (cells_geo.first(), cells_geo.last()) {
+                        (Some(a), Some(z)) if own => (a.col.min(cols.len()), (z.col + z.span).min(cols.len())),
+                        _ => (0, cols.len()),
+                    };
+                    let before: f64 = cols[..start].iter().sum();
+                    let width: f64 = cols[start..end.max(start)].iter().sum();
+                    let gap = if nested { 0.0 } else { r.cells.first().map_or(0.0, |c| c.margins[1]) + row_s.map_or(0.0, |s| 2.0 * s + space_h(&row_borders(t, ri)[1])) };
                     let left = if jc == Jc::Center { (twips(text_w) - twips(width)).div_euclid(2) as f64 / 20.0 } else { text_w - width + gap };
-                    left - (x0 + before)
+                    // A nested left-aligned table is moved by its lead as a whole (`nested_shift`).
+                    let lead = if nested && !matches!(t.jc, Jc::Center | Jc::Right) { legacy_lead(t) } else { 0.0 };
+                    left - (x0 + before) - lead
                 }
                 Jc::Left if compat == Compat::Legacy && t.floating.is_none() && !rtl && t.jc != Jc::Left => -edge_gap(t, lw, lmar) - x0,
                 _ => 0.0,

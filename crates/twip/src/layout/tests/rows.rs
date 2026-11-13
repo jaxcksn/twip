@@ -201,6 +201,37 @@ fn compat_15_centres_a_row_with_its_grid_after() {
 }
 
 #[test]
+fn compat_14_row_by_row_centres_a_short_row_by_its_own_cells() {
+    let body = format!(
+        r#"<w:tbl><w:tblPr><w:jc w:val="center"/><w:tblLayout w:type="fixed"/>{MAR}</w:tblPr><w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/></w:tblGrid><w:tr>{}{}{}</w:tr><w:tr>{}</w:tr></w:tbl><w:p/>"#,
+        dxa_cell(2000, "a"),
+        dxa_cell(2000, "x"),
+        dxa_cell(2000, "y"),
+        dxa_cell(2000, "b")
+    );
+    let shift = |flags: &[&str]| glyph_x_in(&body, 12, flags, 'b') - glyph_x_in(&body, 12, flags, 'a');
+    assert!((shift(&["alignTablesRowByRow"]) - 100.0).abs() < 0.01, "the one-cell row is centred alone");
+    assert!(shift(&[]).abs() < 0.01, "without the option every row is centred by the grid");
+}
+
+#[test]
+fn compat_14_nested_right_row_ends_at_the_cell_edge() {
+    let nested = |tbl_jc: &str, tr: &str| {
+        format!(
+            r#"<w:tbl><w:tblPr><w:tblInd w:w="0" w:type="dxa"/><w:tblLayout w:type="fixed"/>{MAR}</w:tblPr><w:tblGrid><w:gridCol w:w="6000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="6000" w:type="dxa"/></w:tcPr><w:tbl><w:tblPr>{tbl_jc}<w:tblLayout w:type="fixed"/>{MAR}</w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:trPr>{tr}</w:trPr>{}</w:tr></w:tbl><w:p/></w:tc></w:tr></w:tbl><w:p/>"#,
+            dxa_cell(3000, "n")
+        )
+    };
+    let flags = ["alignTablesRowByRow"];
+    let right = r#"<w:jc w:val="right"/>"#;
+    // The outer cell's content box starts at the margin and is 5800 wide: the nested row starts 2800 in.
+    let table = glyph_x_in(&nested(right, ""), 12, &flags, 'n');
+    let row = glyph_x_in(&nested("", right), 12, &flags, 'n');
+    assert!((table - (72.0 + 145.0)).abs() < 0.01, "no margin added: {table}");
+    assert!((row - table).abs() < 0.01, "a row's own jc lands the same: {row}");
+}
+
+#[test]
 fn a_pct_indent_is_a_share_of_the_text_width() {
     let table = |ind: &str| {
         format!(
