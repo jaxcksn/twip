@@ -2841,8 +2841,10 @@ impl<'d> PageFill<'d, '_> {
             let refs: Vec<(NoteKind, i64)> = parts.iter().flat_map(|cu| cu.units.iter().flat_map(|u| u.notes.iter().copied())).collect();
             let mut a = area.clone();
             let mut note_rest = Vec::new();
-            let notes_ok = self.add_notes(&refs, &mut a, col, *y + height + tb.bottom_border, &mut note_rest, false, memos)?;
-            if !breaks && notes_ok && col.bottom.holds(*y + height + tb.bottom_border + a.total() - a.total().min(0.0)) {
+            // A framed row fits with the table's bottom frame, any other with its own cells' bottom borders.
+            let allowance = if row.spacing.is_some() { tb.bottom_border } else { row.fit_border };
+            let notes_ok = self.add_notes(&refs, &mut a, col, *y + height + allowance, &mut note_rest, false, memos)?;
+            if !breaks && notes_ok && col.bottom.holds(*y + height + allowance + a.total() - a.total().min(0.0)) {
                 if !keeps {
                     keep = None;
                 } else if keep.is_none() && (!*empty || !rows.is_empty()) {

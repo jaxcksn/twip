@@ -1054,3 +1054,31 @@ fn a_one_column_pct_skip_is_a_pct_cell_of_its_column() {
     let (a, b, c) = (glyph_x(&body, 'a').0, glyph_x(&body, 'b').0, glyph_x(&body, 'c').0);
     assert!((b - a - 30.0).abs() < 0.01 && (c - b - 210.0).abs() < 0.01, "a {a} b {b} c {c}");
 }
+
+fn exact_rows(n: usize, tbl_borders: &str, last_cells: &str) -> String {
+    let rows: String = (1..=n)
+        .map(|i| {
+            let tc = if i == n { last_cells } else { "" };
+            format!(
+                r#"<w:tr><w:trPr><w:trHeight w:val="720" w:hRule="exact"/></w:trPr><w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/>{tc}</w:tcPr><w:p><w:r><w:t>R{i:02}</w:t></w:r></w:p></w:tc></w:tr>"#
+            )
+        })
+        .collect();
+    format!(r#"<w:tbl><w:tblPr><w:tblBorders>{tbl_borders}</w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid>{rows}</w:tbl><w:p/>"#)
+}
+
+fn first_on_page(body: &str, page: usize) -> (String, f64) {
+    let doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), body)).expect("reads");
+    let chars = &super::page_chars(&doc)[page];
+    (chars.iter().take(3).map(|c| c.0).collect(), chars[0].2)
+}
+
+#[test]
+fn a_row_fits_with_its_own_cells_bottom_border_not_the_last_rows() {
+    let b = r#"w:val="single" w:sz="8" w:space="0" w:color="000000""#;
+    // 18 rows of 720 fill the 12960-twip body exactly; the last row's 1pt cell bottom border doesn't count for them.
+    let body = exact_rows(24, "", &format!("<w:tcBorders><w:bottom {b}/></w:tcBorders>"));
+    assert_eq!(first_on_page(&body, 1).0, "R19");
+    // A table bottom border counts for every row: row 18 goes on.
+    assert_eq!(first_on_page(&exact_rows(24, &format!("<w:bottom {b}/>"), ""), 1).0, "R18");
+}

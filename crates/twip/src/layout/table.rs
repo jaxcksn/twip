@@ -415,6 +415,9 @@ pub struct RowBox {
     pub spacing: Option<f64>,
     /// The next row is framed: the row draws its own bottom border.
     pub closes: bool,
+    /// The bottom border the row must fit above the column bottom with: the widest of its cells' own, else the
+    /// table's.
+    pub fit_border: f64,
 }
 
 impl TableLayout {
@@ -1635,6 +1638,7 @@ impl ViewTable {
                     shading: None,
                     spacing: None,
                     closes: false,
+                    fit_border: 0.0,
                 };
                 rows.push(row);
                 fit.push(FitRow::default());
@@ -2246,6 +2250,13 @@ fn assemble(
             _ => None,
         };
         let closes = row_s.is_none() && ri + 1 < t.rows.len() && framed(t, ri + 1);
+        let fit_border = cells_geo
+            .iter()
+            .map(|g| {
+                let own = &r.cells[g.ci].bottom;
+                space_h(if own.is_some() { own } else { &row_borders(t, ri)[2] })
+            })
+            .fold(0.0, f64::max);
         let (lead, trail) = r.div.as_ref().map_or((0.0, 0.0), |d| (d.lead, d.trail));
         rows.push(RowBox {
             cells,
@@ -2269,6 +2280,7 @@ fn assemble(
             shading: r.shading.filter(|_| row_s.is_some_and(|s| s > 0.0)),
             spacing: row_s,
             closes,
+            fit_border,
         });
     }
     for ri in 0..rows.len() {
