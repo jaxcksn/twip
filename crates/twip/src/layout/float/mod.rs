@@ -246,15 +246,20 @@ pub fn avoid(f: &mut Placed, placed: &[Placed], (lo, hi): (f64, f64), (top, bott
         return false;
     }
     let leftward = f.float.h_align.as_deref() == Some("right");
+    let frame = |o: &Placed| o.float.text_box.is_some() && o.float.shape.is_none() && o.key.2 != TABLE_PIECE;
     for _ in 0..32 {
         let Some(hit) = obstacles.iter().find(|o| f.overlaps(o)) else { return true };
-        let [_, hb, hl, hr] = hit.apart();
+        let [ht, hb, hl, hr] = hit.apart();
         let y = f.rect[1];
         let slid = if leftward { hit.rect[0] - hl - fr - w } else { hit.rect[2] + hr + fl };
+        let above = hit.rect[1] - ht - fb - h;
         if slid >= lo - EPS && slid + w <= hi + EPS {
             f.moved_to(slid, y);
         } else if hit.rect[3] + hb + ft + h <= bottom + EPS {
             f.moved_to(original.0, hit.rect[3] + hb + ft);
+        } else if (frame(f) || frame(hit)) && above >= top - EPS && above < f.rect[1] - EPS {
+            // A frame, or a table meeting a frame, with no room below goes above it.
+            f.moved_to(original.0, above);
         } else {
             f.moved_to(original.0, original.1);
             return false;

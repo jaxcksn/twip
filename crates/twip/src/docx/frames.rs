@@ -39,14 +39,19 @@ fn blocks(list: &mut Vec<Block>, legacy: bool) {
                         blocks(&mut c.blocks, legacy);
                     }
                 }
-                // shortcut: a frame before a table or at the end stays in the flow.
-                out.extend(groups.drain(..).flatten().map(Block::Para));
+                anchor_before(&mut out, std::mem::take(&mut groups), legacy);
                 out.push(Block::Table(t));
             }
         }
     }
-    // Frames ending the list are placed by the page or margin: they anchor at the end of the paragraph before them.
-    // shortcut: a text-anchored frame or drop cap there, or one after a table, stays in the flow.
+    anchor_before(&mut out, groups, legacy);
+    *list = out;
+}
+
+/// Frames before a table or ending the list are placed by the page or margin: they anchor at the end of the paragraph
+/// before them.
+/// shortcut: a text-anchored frame or drop cap there, or one after a table, stays in the flow.
+fn anchor_before(out: &mut Vec<Block>, groups: Vec<Vec<Paragraph>>, legacy: bool) {
     let placed = |g: &[Paragraph]| {
         g[0].style.frame.as_ref().is_some_and(|f| {
             matches!(f.v_anchor.as_deref(), None | Some("page" | "margin"))
@@ -60,7 +65,6 @@ fn blocks(list: &mut Vec<Block>, legacy: bool) {
             _ => out.extend(g.into_iter().map(Block::Para)),
         }
     }
-    *list = out;
 }
 
 fn float(group: Vec<Paragraph>, legacy: bool) -> Float {
