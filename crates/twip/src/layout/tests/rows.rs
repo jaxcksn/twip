@@ -1036,3 +1036,21 @@ fn a_pct_table_width_does_not_take_off_the_indent() {
     // The table is the whole column wide however far it is indented: its two equal columns stay equal.
     assert!((x(-1440) - x(0)).abs() < 0.06 && (x(1440) - x(0)).abs() < 0.06, "{} {} {}", x(-1440), x(0), x(1440));
 }
+
+#[test]
+fn a_one_column_pct_skip_is_a_pct_cell_of_its_column() {
+    let cell = |w: u32, span: u32, t: char| {
+        format!(r#"<w:tc><w:tcPr><w:tcW w:w="{w}" w:type="pct"/><w:gridSpan w:val="{span}"/></w:tcPr><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:tc>"#)
+    };
+    let body = format!(
+        r#"<w:tbl><w:tblPr><w:tblW w:w="6000" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:trPr><w:gridAfter w:val="1"/><w:wAfter w:w="1000" w:type="pct"/></w:trPr>{}</w:tr><w:tr>{}{}{}</w:tr></w:tbl><w:p/>"#,
+        cell(4000, 2, 'p'),
+        cell(500, 1, 'a'),
+        cell(1500, 1, 'b'),
+        cell(3000, 1, 'c')
+    );
+    // The skip makes the last column pct 1000 under the 3000 cell; the first row's 4000 over the other two raises
+    // the second to 3500, and the 5000 cap leaves the last 1000: 600 / 4200 / 1200.
+    let (a, b, c) = (glyph_x(&body, 'a').0, glyph_x(&body, 'b').0, glyph_x(&body, 'c').0);
+    assert!((b - a - 30.0).abs() < 0.01 && (c - b - 210.0).abs() < 0.01, "a {a} b {b} c {c}");
+}

@@ -29,6 +29,8 @@ pub struct Col {
     pub hard: i64,
     pub pct: i64,
     pub dxa: i64,
+    /// A single-span pct cell or skip set its pct.
+    pub own_pct: bool,
 }
 
 impl Col {
@@ -135,6 +137,7 @@ fn add_single(col: &mut Col, kind: Kind, pref: i64, min: i64, max: i64, hard: i6
         Kind::Pct => {
             col.pct = if col.kind == Some(Kind::Pct) { col.pct.max(pref) } else { pref };
             col.kind = Some(Kind::Pct);
+            col.own_pct = true;
         }
         Kind::Dxa if col.kind != Some(Kind::Pct) => {
             col.dxa = if col.kind == Some(Kind::Dxa) { col.dxa.max(pref) } else { pref };
@@ -175,6 +178,10 @@ fn spread(cols: &mut [Col], c: &Cell, sp: i64) {
             for k in cs.iter_mut().filter(|k| !pct(k)) {
                 k.pct = if wide == 0 { rest / others } else { rest * k.max / wide };
             }
+        } else if rest > 0 && cs[cs.len() - 1].own_pct {
+            // Every column is pct already: the last one, when a cell of its own made it pct, takes the rest.
+            // ponytail: the condition fits the measured skip tables; other all-pct spans are unmeasured.
+            cs[cs.len() - 1].pct += rest;
         }
         for k in cs.iter_mut() {
             k.kind = Some(Kind::Pct);
@@ -427,7 +434,7 @@ mod tests {
     use serde_json::Value;
 
     fn dxa(w: i64, min: i64) -> Col {
-        Col { kind: Some(Kind::Dxa), min, max: w.max(min), hard: 0, pct: 0, dxa: w }
+        Col { kind: Some(Kind::Dxa), min, max: w.max(min), hard: 0, pct: 0, dxa: w, own_pct: false }
     }
 
     #[test]
@@ -503,7 +510,7 @@ mod tests {
 
     fn col(v: &Value) -> Col {
         let f = |k: &str| v[k].as_i64().unwrap();
-        Col { kind: kind(&v["kind"]), min: f("min"), max: f("max"), hard: f("hard"), pct: f("pct"), dxa: f("dxa") }
+        Col { kind: kind(&v["kind"]), min: f("min"), max: f("max"), hard: f("hard"), pct: f("pct"), dxa: f("dxa"), own_pct: false }
     }
 
     fn same(a: &Col, b: &Col) -> bool {
