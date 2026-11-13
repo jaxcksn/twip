@@ -795,15 +795,42 @@ fn ptab_stop(t: &crate::docx::PTab, style: &ParaStyle, frame: &Frame) -> (f64, T
     (pos, t.align, t.leader)
 }
 
+/// The pen as compat 15 compares it with tab stops: in layout units, the line's start from its indents each rounded
+/// on their own, the text after it as laid out. None in compat ≤ 14, which compares in points.
+fn pen_units(pen: f64, left: f64, style: &ParaStyle, frame: &Frame) -> Option<f64> {
+    let lu = |x: f64| Lu::round_half_up(x).0 as f64;
+    let start = if (left - style.ind_left - style.ind_first).abs() < EPS {
+        lu(style.ind_left) + lu(style.ind_first)
+    } else if (left - style.ind_left).abs() < EPS {
+        lu(style.ind_left)
+    } else {
+        lu(left)
+    };
+    (frame.compat == Compat::Generic && frame.tab_origin == 0.0).then(|| start + ((pen - left) * LU_PER_PT).round())
+}
+
+/// A stop lies past the pen.
+fn past_pen(stop: f64, pen: f64, units: Option<f64>) -> bool {
+    match units {
+        Some(u) => f64::from(Lu::round_half_up(stop).0) > u,
+        None => stop > pen + EPS,
+    }
+}
+
 /// The stop a tab at `pen` goes to; `number`: the tab after a list number.
-fn next_stop(pen: f64, style: &ParaStyle, frame: &Frame, number: bool) -> (f64, TabKind, Leader) {
+fn next_stop(pen: f64, units: Option<f64>, style: &ParaStyle, frame: &Frame, number: bool) -> (f64, TabKind, Leader) {
     let o = frame.tab_origin;
-    let (stop, kind, leader) = stop_from(pen - o, style, frame, if number { frame.number_hang_stop } else { frame.hang_stop });
+    let (stop, kind, leader) = stop_from(pen - o, units, style, frame, if number { frame.number_hang_stop } else { frame.hang_stop });
     (stop + o, kind, leader)
 }
 
-fn stop_from(pen: f64, style: &ParaStyle, frame: &Frame, hang_stop: bool) -> (f64, TabKind, Leader) {
-    let custom = style.tabs.iter().find(|t| t.kind != TabKind::Clear && t.kind != TabKind::Bar && t.pos > pen + EPS);
+/// The custom stops a tab may go to: past the pen, not bar or clear.
+fn custom_stops<'a>(pen: f64, units: Option<f64>, style: &'a ParaStyle) -> impl Iterator<Item = &'a crate::docx::props::Tab> {
+    style.tabs.iter().filter(move |t| !matches!(t.kind, TabKind::Clear | TabKind::Bar) && past_pen(t.pos, pen, units))
+}
+
+fn stop_from(pen: f64, units: Option<f64>, style: &ParaStyle, frame: &Frame, hang_stop: bool) -> (f64, TabKind, Leader) {
+    let custom = custom_stops(pen, units, style).next();
     let (mut stop, mut kind, mut leader) = match custom {
         Some(t) => (t.pos, t.kind, t.leader),
         None => {
@@ -814,7 +841,7 @@ fn stop_from(pen: f64, style: &ParaStyle, frame: &Frame, hang_stop: bool) -> (f6
             (s, TabKind::Left, Leader::None)
         }
     };
-    if hang_stop && pen < style.ind_left - EPS && (stop > style.ind_left + EPS || custom.is_none()) {
+    if hang_stop && past_pen(style.ind_left, pen, units) && (stop > style.ind_left + EPS || custom.is_none()) {
         stop = style.ind_left;
         kind = TabKind::Left;
         leader = Leader::None;
@@ -1060,11 +1087,12 @@ fn fit_line(
                     pen = resolve_tab(sp, &pt, pieces, &mut xs, &mut ws, start, i);
                 }
                 let number_tab = i > 0 && pieces[..i].iter().all(|q| q.kind == Kind::ListNumber);
+                let units = pen_units(pen, left, style, frame);
                 let (mut stop, mut kind, leader) = match p.object.map(|o| &sp.objects[o as usize]) {
                     Some(Object::PTab(t)) => ptab_stop(t, style, frame),
-                    _ => next_stop(pen, style, frame, number_tab),
+                    _ => next_stop(pen, units, style, frame, number_tab),
                 };
-                let stop_custom = p.object.is_none() && style.tabs.iter().any(|t| t.kind != TabKind::Clear && t.kind != TabKind::Bar && t.pos > pen + EPS);
+                let stop_custom = p.object.is_none() && custom_stops(pen, units, style).next().is_some();
                 let custom = p.object.is_some() || stop_custom;
                 if !custom && !number_tab && stop > right + EPS && !past_custom && i > start && limit_end.is_none() {
                     return Fit { end: i, xs, widths: ws, hard: None, hyphen: false, leaders };

@@ -1605,6 +1605,17 @@ fn a_word_too_long_after_a_tab_first_on_its_line_is_broken_on_that_line() {
     assert!((chars[0].1 - 108.0).abs() < 0.01, "{:?}", chars[0]);
 }
 
+#[test]
+fn compat_15_compares_a_stop_with_the_line_start_in_layout_units() {
+    let body = r#"<w:p><w:pPr><w:tabs><w:tab w:val="left" w:pos="567"/></w:tabs><w:ind w:left="1134" w:hanging="567"/></w:pPr><w:r><w:tab/><w:t>Ab</w:t></w:r></w:p>"#;
+    let c15 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+    // Compat 15: the line starts 1 lu before the stop, so the tab goes to it; compat 12: to the left indent.
+    let Some(a) = glyph_xs(c15, body) else { return };
+    assert!((a[0].1 - 100.35).abs() < 0.01, "{:?}", a[0]);
+    let Some(b) = glyph_xs("", body) else { return };
+    assert!((b[0].1 - 128.7).abs() < 0.01, "{:?}", b[0]);
+}
+
 /// Each character on the first page with its x and baseline.
 fn glyph_xs(settings: &str, body: &str) -> Option<Vec<(char, f64, f64)>> {
     Some(super::page_chars(&test_doc(settings, ARIAL_11, body, "")?).swap_remove(0))
