@@ -58,8 +58,6 @@ pub struct Placed {
 pub struct Contour {
     pub points: Rc<[(f64, f64)]>,
     pub through: bool,
-    /// Around a text box's lines rather than a wrap polygon.
-    pub lines: bool,
 }
 
 pub struct Frames {
@@ -91,7 +89,7 @@ impl Placed {
             .poly
             .as_ref()
             .filter(|_| wrap == Wrap::Square)
-            .map(|p| Contour { points: p.iter().map(|&(px, py)| (x + px * f.w, y + py * h)).collect(), through: f.wrap == "through", lines: false });
+            .map(|p| Contour { points: p.iter().map(|&(px, py)| (x + px * f.w, y + py * h)).collect(), through: f.wrap == "through" });
         let wrap_box = match &contour {
             Some(c) => {
                 let b =
@@ -161,7 +159,7 @@ impl Placed {
         let b = points.iter().fold([f64::MAX, f64::MAX, f64::MIN, f64::MIN], |b, &(x, y)| [b[0].min(x), b[1].min(y), b[2].max(x), b[3].max(y)]);
         let [dt, db, dl, dr] = self.dist;
         self.excl = [b[0] - dl, b[1] - dt, b[2] + dr, b[3] + db];
-        self.contour = Some(Contour { points, through: false, lines: true });
+        self.contour = Some(Contour { points, through: false });
         self
     }
 

@@ -749,6 +749,23 @@ fn text_wraps_around_the_lines_of_a_bare_tight_text_box() {
 }
 
 #[test]
+fn a_compat_14_line_meets_a_bare_text_boxs_lines_over_its_text_only() {
+    let line = |t: &str| format!(r#"<w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/><w:textboxTightWrap w:val="allLines"/></w:pPr><w:r><w:t>{t}</w:t></w:r></w:p>"#);
+    let text_box = format!(
+        r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="0" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV><wp:extent cx="2540000" cy="762000"/><wp:wrapTight wrapText="bothSides"><wp:wrapPolygon edited="0"><wp:start x="0" y="0"/><wp:lineTo x="0" y="21600"/><wp:lineTo x="21600" y="21600"/><wp:lineTo x="21600" y="0"/><wp:lineTo x="0" y="0"/></wp:wrapPolygon></wp:wrapTight><wp:docPr id="1" name="T"/><a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:wsp xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="2540000" cy="762000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></wps:spPr><wps:txbx><w:txbxContent>{}{}</w:txbxContent></wps:txbx><wps:bodyPr lIns="0" tIns="0" rIns="0" bIns="0"/></wps:wsp></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#,
+        line("Ab"),
+        line("Abcdefghijklmnopqrstu")
+    );
+    // A 1.5-spaced body line: its text ends where the box's second line starts, the room its spacing adds below runs
+    // past it.
+    let body = format!(r#"<w:p><w:pPr><w:spacing w:after="0" w:line="360" w:lineRule="auto"/></w:pPr>{text_box}<w:r><w:t>{}</w:t></w:r></w:p>"#, "words run on beside the box ".repeat(12));
+    let Some(l) = lines("", ARIAL_12, &body) else { return };
+    let first = l.iter().find(|x| x.1.starts_with("words")).expect("drawn").0;
+    // Right of the first line's ink, not the second's.
+    assert!(first < 100.0, "{l:?}");
+}
+
+#[test]
 fn an_empty_section_break_paragraph_after_a_paragraph_takes_no_line() {
     let sect = r#"<w:p><w:pPr><w:sectPr><w:type w:val="continuous"/><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:pPr></w:p>"#;
     let p = |t: &str| format!(r#"<w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>{t}</w:t></w:r></w:p>"#);
