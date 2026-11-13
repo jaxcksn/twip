@@ -205,6 +205,26 @@ fn compat_14_balanced_column_starting_in_an_endnote_starts_with_the_continuation
 }
 
 #[test]
+fn compat_15_note_going_on_takes_the_next_sections_columns() {
+    // A one-column section's last line references a long note cut at the page bottom; a continuous two-column
+    // section follows: on page 2 the rest is laid out again in that section's two columns.
+    let long: String = (1..=60).map(|i| format!("<w:p><w:r><w:t>E{i:02}</w:t></w:r></w:p>")).collect();
+    let extra = format!(r#"<w:footnote w:id="10">{long}</w:footnote>"#);
+    let pages = |n: usize| {
+        let mut body: String = (1..n).map(|i| para(&format!("L{i:02}"), &[])).collect();
+        body += &format!(r#"<w:p><w:pPr><w:sectPr>{PAGE}</w:sectPr></w:pPr><w:r><w:t>Last</w:t></w:r><w:r><w:footnoteReference w:id="10"/></w:r></w:p>"#);
+        body += &(para("Two", &[]) + &sect(r#"<w:type w:val="continuous"/><w:cols w:num="2" w:space="720"/>"#, true));
+        Some(super::page_chars(&notes_doc_with(&body, C15, &extra)?))
+    };
+    let text = |p: &[(char, f64, f64)]| p.iter().map(|c| c.0).collect::<String>();
+    let Some(_) = pages(2) else { return };
+    // The longest first section that still ends on page 1 with the note cut there.
+    let pages = (2..40).map(|n| pages(n).unwrap()).filter(|p| p.len() > 1 && text(&p[0]).contains("Last") && text(&p[1]).contains('E')).last().expect("a cut note");
+    let notes: Vec<&(char, f64, f64)> = pages[1].iter().filter(|c| c.0 == 'E').collect();
+    assert!(notes.iter().any(|c| c.1 > 300.0) && notes.iter().any(|c| c.1 < 100.0), "{notes:?}");
+}
+
+#[test]
 fn compat_15_section_end_endnotes_start_below_the_balanced_columns() {
     let Some(pages) = section_end_endnotes_in_columns(C15) else { return };
     let note = pages[0].iter().find(|c| c.0 == 'N').expect("the endnote is on page 1");

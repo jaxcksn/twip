@@ -975,8 +975,9 @@ impl<'d> PageFill<'d, '_> {
         }
         let mut rest = Vec::new();
         for part in std::mem::take(&mut carry.note_rest) {
-            // In a later column of the page the note goes on at that column's width.
-            let part = if self.column > 0 { self.rewrap(&part, col.width, memos)? } else { part };
+            // In a later column of the page the note goes on at that column's width; compat 15 on the next page at
+            // the width of the section laying it out.
+            let part = if self.column > 0 || self.ctx.env.text.compat == Compat::Generic { self.rewrap(&part, col.width, memos)? } else { part };
             let room = col.bottom.to_pt() - col.top.to_pt() - area.total();
             // Cut as a new note is, the orphan step only for a part holding its paragraph's first line.
             // ponytail: measured between a balanced section's columns; a continuation going on from page to page is
@@ -1019,6 +1020,8 @@ impl<'d> PageFill<'d, '_> {
         let room = col.bottom.to_pt() - col.top.to_pt() - area.sep;
         let widths: Vec<f64> = if area.cols.is_empty() { vec![col.width] } else { area.cols.iter().map(|c| c.1).collect() };
         let mut wrap = |p: &NotePart, w: f64| self.rewrap(p, w, memos);
+        // The notes going on are laid out again at this page's first column width.
+        carry.note_rest = std::mem::take(&mut carry.note_rest).iter().map(|p| wrap(p, widths[0])).collect::<Result<_, _>>()?;
         let (_, tallest, over) = stream_flow(&carry.note_rest, &widths, room, &mut wrap)?;
         area.parts = std::mem::take(&mut carry.note_rest);
         area.height = if over.is_empty() { stream_height(&area.parts, &widths, room, &mut wrap)?.unwrap_or(tallest) } else { tallest };
@@ -1249,7 +1252,7 @@ impl<'d> PageFill<'d, '_> {
         loop {
             // Compat 15: a note cut at the end of a section that the next one follows on the page goes on in the next
             // section's layout.
-            let passes = self.hold_notes && area.cut && self.at_section_end(pos);
+            let passes = self.hold_notes && (area.cut || !carry.note_rest.is_empty()) && self.at_section_end(pos);
             if pos.block >= nblocks || passes {
                 let end = y + if col.balance { carry.prev_after } else { 0.0 };
                 // A note cut on this page goes on on the next one, even past the end of the text.
