@@ -2720,3 +2720,32 @@ fn compat_15_a_float_taller_than_the_page_ends_the_page_after_its_one_line_parag
     let p2 = page_baselines(C15, ARIAL_12, &body, 1).unwrap();
     assert_eq!((p1.len(), p2[0].1.as_str()), (1, "After Cj."), "{p1:?} {p2:?}");
 }
+
+#[test]
+fn a_first_line_moved_below_a_top_and_bottom_float_keeps_its_share_of_the_space_before() {
+    // A 60pt picture 20pt below its paragraph's top; the paragraph's first line goes below it with its share of the gap.
+    let pic = |dy: i64, h: i64, wrap: &str| {
+        format!(
+            r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="0" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>{}</wp:posOffset></wp:positionV><wp:extent cx="2540000" cy="{}"/>{wrap}<a:graphic><a:graphicData><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#,
+            dy * 12700,
+            h * 12700
+        )
+    };
+    let body = |after: i64, before: i64, float: &str| {
+        format!(
+            r#"<w:p><w:pPr><w:spacing w:before="0" w:after="{after}"/></w:pPr><w:r><w:t>Spacer.</w:t></w:r></w:p><w:p><w:pPr><w:spacing w:before="{before}" w:after="0"/></w:pPr>{float}<w:r><w:t>Anchor.</w:t></w:r></w:p>"#
+        )
+    };
+    let tb = "<wp:wrapTopAndBottom/>";
+    for compat in [14, 15] {
+        let settings = format!(r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="{compat}"/></w:compat>"#);
+        let Some(_) = lines(&settings, ARIAL_12, &body(0, 0, "")) else { return };
+        let y = |after: i64, before: i64, float: &str| baselines(&settings, ARIAL_12, &body(after, before, float)).unwrap()[1].3;
+        // After 10, before 34: the share is 24pt, so the text goes from 24pt to 80 + 24pt below the paragraph's top.
+        let d = y(200, 680, &pic(20, 60, tb)) - y(200, 680, "");
+        assert!((d - 80.0).abs() < 0.01, "compat {compat}: {d}");
+        // A picture of the paragraph's own inside its 36pt space before moves the line: below it plus the 36pt.
+        let d = y(0, 720, &pic(6, 12, tb)) - y(0, 720, &pic(6, 12, "<wp:wrapNone/>"));
+        assert!((d - 18.0).abs() < 0.01, "compat {compat}: {d}");
+    }
+}

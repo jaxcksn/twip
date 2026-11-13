@@ -1935,7 +1935,17 @@ impl<'d> PageFill<'d, '_> {
         // The paragraph's top is above its space before: where that text and its kept space after end.
         let origin = if at_top { *y } else { *y + kept };
         // The space before is part of the first line's box: a float beside it wraps the line.
-        let lead = if first_part || restarts { (top - origin).max(0.0) } else { 0.0 };
+        let mut lead = if first_part || restarts { (top - origin).max(0.0) } else { 0.0 };
+        // A first line moved below a float is no longer at the column top: it keeps its share of the gap above its
+        // text, the space before suppressed at the top included.
+        let share = if !(first_part || restarts) {
+            0.0
+        } else if at_top {
+            let before = if style.before_auto && carry.first_para { 0.0 } else { space_before(&self.ctx.env.text, style) };
+            (super::paragraph::gap_plain(&self.ctx.env.text, carry.prev_after, before) - carry.prev_after).max(lead)
+        } else {
+            lead
+        };
         // Bands
         let mut bands: Vec<(f64, Vec<Line>)> = Vec::new();
         let mut yy = top;
@@ -2072,10 +2082,12 @@ impl<'d> PageFill<'d, '_> {
                 let free = match &forced {
                     Some(iv) => Some(iv.clone()),
                     None => {
-                        // A float over the whole line that reaches only into the space before doesn't move it.
-                        let at = |t: f64| float::text_intervals(cutting, cx0, cx1, t, yy + h, yy + h - below, compat == Compat::Legacy);
+                        // A float over the whole line that reaches only into the space before doesn't move it, unless
+                        // the paragraph anchors it.
+                        let on = |fs: &[Placed], t: f64| float::text_intervals(fs, cx0, cx1, t, yy + h, yy + h - below, compat == Compat::Legacy);
                         let lead = if bands.is_empty() { lead } else { 0.0 };
-                        at(yy - lead).or_else(|| at(yy).filter(|_| lead > EPS))
+                        let own = || cutting.iter().filter(|f| (f.key.0, f.key.1) == (self.sec.index, pos.block)).cloned().collect::<Vec<_>>();
+                        on(cutting, yy - lead).or_else(|| on(cutting, yy).filter(|_| lead > EPS && on(&own(), yy - lead).is_some()))
                     }
                 };
                 match free {
@@ -2203,7 +2215,13 @@ impl<'d> PageFill<'d, '_> {
                         yy = next.min(col.bottom.to_pt().max(yy + EPS));
                         continue;
                     }
-                    match float::next_edge(here, cx0, cx1, yy, yy + h).filter(|_| !float::steps(here, yy, yy + h)) {
+                    // The first line's box, its space before included, goes below the float whole.
+                    let box_top = if bands.is_empty() { yy - lead } else { yy };
+                    match float::next_edge(here, cx0, cx1, box_top, yy + h).filter(|_| !float::steps(here, box_top, yy + h)) {
+                        Some(b) if bands.is_empty() && share > EPS => {
+                            lead = share;
+                            yy = (b + share).min(col.bottom.to_pt().max(yy + EPS));
+                        }
                         Some(b) => yy = b.min(col.bottom.to_pt().max(yy + EPS)),
                         None => yy += h,
                     }
