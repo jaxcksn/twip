@@ -71,6 +71,25 @@ fn words_break_at_their_pattern_points_when_the_settings_ask() {
 }
 
 #[test]
+fn a_run_without_a_language_hyphenates_as_en_us() {
+    let text = "on hyphenation ".repeat(30);
+    if plain_doc(&[String::new()]).is_none() {
+        return;
+    }
+    let unset = |d: &mut Document| {
+        if let Some(Block::Para(p)) = d.sections[0].blocks.first_mut() {
+            for i in &mut p.inlines {
+                if let crate::docx::Inline::Text(_, r) = i {
+                    Rc::make_mut(r).lang = String::new();
+                }
+            }
+        }
+    };
+    let en = swept(&text, 15, |_| {});
+    assert!(en > 0 && swept(&text, 15, unset) == en);
+}
+
+#[test]
 fn compat_14_hyphenates_only_past_the_zone() {
     let text = "on hyphenation ".repeat(30);
     if plain_doc(&[String::new()]).is_none() {

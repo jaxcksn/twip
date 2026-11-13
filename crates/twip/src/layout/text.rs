@@ -1477,7 +1477,8 @@ fn word_points(
     let shouting = caps && !word.chars().any(char::is_lowercase);
     let head: String = word.chars().take(MAX_LETTERS).collect();
     let mut at = Vec::new();
-    if let Some(patterns) = h.for_language(lang).filter(|_| !shouting) {
+    // A run with no language anywhere takes the default editing language of an en-US installation.
+    if let Some(patterns) = h.for_language(if lang.is_empty() { "en-US" } else { lang }).filter(|_| !shouting) {
         for x in patterns.points(&head, right) {
             if let Some(j) = ends.iter().position(|&(c, _)| c == x).filter(|&j| j + 1 < ends.len()) {
                 at.push(ends[j].1);
