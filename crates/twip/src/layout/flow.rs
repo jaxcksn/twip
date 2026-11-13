@@ -2490,7 +2490,7 @@ impl<'d> PageFill<'d, '_> {
                 carry.prev = None;
                 Stop::Column
             }
-            _ if !done => {
+            _ if !done || page_end => {
                 carry.keep_top = false;
                 if page_end { Stop::Page } else { Stop::Full }
             }

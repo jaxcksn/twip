@@ -2712,3 +2712,11 @@ fn a_float_wraps_the_next_continuous_section_on_its_page() {
         assert!(first.is_some_and(|x| (x - 222.0).abs() < 0.01), "compat {compat}: {first:?}");
     }
 }
+
+#[test]
+fn compat_15_a_float_taller_than_the_page_ends_the_page_after_its_one_line_paragraph() {
+    let body = format!(r#"<w:p>{}<w:r><w:t>Cj</w:t></w:r></w:p><w:p><w:r><w:t>After Cj.</w:t></w:r></w:p>"#, anchor(0, 0, 200, 740, 1, "paragraph"));
+    let Some(p1) = page_baselines(C15, ARIAL_12, &body, 0) else { return };
+    let p2 = page_baselines(C15, ARIAL_12, &body, 1).unwrap();
+    assert_eq!((p1.len(), p2[0].1.as_str()), (1, "After Cj."), "{p1:?} {p2:?}");
+}
