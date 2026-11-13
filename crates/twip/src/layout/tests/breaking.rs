@@ -1059,6 +1059,19 @@ fn a_row_in_a_division_moves_by_its_margins() {
     assert!((at(&inside, "cell").1 - at(&outside, "cell").1 - 13.5).abs() < 0.01, "margin, border and space above");
 }
 
+#[test]
+fn a_cell_paragraph_takes_only_its_own_divisions_margins() {
+    // Division 2 (72pt) inside division 1 (36pt): in the body both add; in a cell only division 2.
+    let para = r#"<w:p><w:pPr><w:divId w:val="2"/></w:pPr><w:r><w:t>text</w:t></w:r></w:p>"#;
+    let table = format!(r#"<w:tbl><w:tblGrid><w:gridCol w:w="6000"/></w:tblGrid><w:tr><w:tc>{}</w:tc></w:tr></w:tbl><w:p/>"#, para.replace("text", "cell"));
+    let divs = div(1, &format!("<w:divsChild>{}</w:divsChild>", div(2, "", "")), "");
+    let Some(l) = web_lines(&divs, &format!("{para}{table}")) else { return };
+    let bare = web_lines("", &format!("{para}{table}")).unwrap();
+    let at = |l: &[(f64, String, f64, f64)], t: &str| l.iter().find(|x| x.1 == t).map(|x| x.0).expect("drawn");
+    assert!((at(&l, "text") - at(&bare, "text") - 108.0).abs() < 0.01);
+    assert!((at(&l, "cell") - at(&bare, "cell") - 72.0).abs() < 0.01, "{l:?}");
+}
+
 fn three_rows(row2: &str, settings: &str) -> Option<Vec<(f64, String, f64, f64)>> {
     let cell = |t: &str| format!(r#"<w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:tc>"#);
     let body = format!(

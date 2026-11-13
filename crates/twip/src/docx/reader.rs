@@ -470,8 +470,8 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
     doc.derive_image_sets();
     let divs = doc.resolver.as_ref().map(|r| r.divisions.clone()).unwrap_or_default();
     if !divs.is_empty() {
-        doc.sections.iter_mut().for_each(|s| fold_divs(&mut s.blocks, &divs));
-        doc.stories.values_mut().chain(doc.footnotes.values_mut()).chain(doc.endnotes.values_mut()).for_each(|b| fold_divs(b, &divs));
+        doc.sections.iter_mut().for_each(|s| fold_divs(&mut s.blocks, &divs, false));
+        doc.stories.values_mut().chain(doc.footnotes.values_mut()).chain(doc.endnotes.values_mut()).for_each(|b| fold_divs(b, &divs, false));
     }
     if editable {
         let blocks = doc.sections.iter().map(|s| s.blocks.clone()).collect();
@@ -651,13 +651,17 @@ fn note_floats(blocks: &mut [Block]) {
 
 /// The neighbour-dependent part of the divisions around each paragraph (its indents come from the resolver), and each
 /// table row's.
-fn fold_divs(blocks: &mut [Block], divs: &HashMap<i64, Division>) {
+fn fold_divs(blocks: &mut [Block], divs: &HashMap<i64, Division>, in_cell: bool) {
     let row_chain = |r: Option<&Row>| div_chain(divs, r.and_then(|r| r.div.as_ref()).map(|d| d.id));
     let ends: Vec<(Vec<i64>, Vec<i64>)> = blocks
         .iter()
         .map(|b| match b {
             Block::Para(p) => {
-                let c = div_chain(divs, p.style.div);
+                // A cell paragraph is in its own division only.
+                let mut c = div_chain(divs, p.style.div);
+                if in_cell {
+                    c.truncate(1);
+                }
                 (c.clone(), c)
             }
             Block::Table(t) => (row_chain(t.rows.first()), row_chain(t.rows.last())),
@@ -743,7 +747,7 @@ fn fold_divs(blocks: &mut [Block], divs: &HashMap<i64, Division>) {
                         bottom + boxes.iter().filter(|b| b.ends).map(|b| width(&b.borders[2])).sum::<f64>() + if split_below { split } else { 0.0 };
                     d.boxes = boxes.into();
                 }
-                t.rows.iter_mut().flat_map(|r| &mut r.cells).for_each(|c| fold_divs(&mut c.blocks, divs));
+                t.rows.iter_mut().flat_map(|r| &mut r.cells).for_each(|c| fold_divs(&mut c.blocks, divs, true));
             }
         }
     }

@@ -271,8 +271,12 @@ impl Resolver {
         if region.is_some_and(|t| t.mark_at_style) && direct.mark_size == Some(11.0) {
             style.mark_size = base.size;
         }
-        // The margins of the paragraph's division and its ancestors add to its indents.
-        let chain = div_chain(&self.divisions, style.div);
+        // The margins of the paragraph's division and its ancestors add to its indents; in a table cell only its own
+        // division's.
+        let mut chain = div_chain(&self.divisions, style.div);
+        if region.is_some() {
+            chain.truncate(1);
+        }
         if !chain.is_empty() {
             let sum = |i: usize| chain.iter().map(|id| self.divisions[id].margins[i]).sum::<f64>();
             style.ind_left += sum(0);
