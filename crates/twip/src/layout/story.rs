@@ -324,7 +324,6 @@ pub fn layout_with(
                         if !f.in_cell(text.compat)
                             || f.wrap == "none"
                             || f.v_align.is_some()
-                            || !matches!(f.h_relative.as_str(), "column" | "character")
                             || !matches!(f.v_relative.as_str(), "paragraph" | "line" | "margin" | "page")
                         {
                             continue;

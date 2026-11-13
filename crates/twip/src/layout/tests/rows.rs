@@ -690,6 +690,20 @@ mod floats {
         assert!((at("column", 200, "<wp:wrapNone/>") - column - 200.0).abs() < 0.01);
     }
 
+    #[test]
+    fn a_wrapping_box_in_a_cell_stays_inside_it_from_any_horizontal_reference() {
+        let at = |h_rel: &str| {
+            let b = text_box(r#"<wp:wrapSquare wrapText="bothSides"/>"#, 40.0, "Boxed").replace(
+                r#"<wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset>"#,
+                &format!(r#"<wp:positionH relativeFrom="{h_rel}"><wp:posOffset>{}</wp:posOffset>"#, 200 * 12700),
+            );
+            let b = b.replacen("<w:p>", "<w:p><w:r><w:t>Cell text beside the box</w:t></w:r>", 1);
+            start_of(&doc(&in_cell("top", &b)), "Boxed").0
+        };
+        // A 100pt box 200pt into a 250pt cell ends at the cell's right edge, from the margin as from the column.
+        assert!((at("margin") - at("column")).abs() < 0.01, "margin {} column {}", at("margin"), at("column"));
+    }
+
     /// The first glyph run holding `text`: its x and baseline.
     fn start_of(d: &crate::docx::Document, text: &str) -> (f64, f64) {
         let s = layout(d, &fonts());
