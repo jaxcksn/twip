@@ -154,11 +154,20 @@ internal static unsafe partial class TwipNative
 
     /// <summary>
     /// Loads the library as the runtime would, and on Linux turns a failure into one that says what the library
-    /// needs: the loader's message names the missing file, not where it comes from.
+    /// needs: the loader's message names the missing file, not where it comes from. On Windows it first loads DXC's
+    /// <c>dxcompiler.dll</c> from where the package's native files are: the library loads it by name to draw with
+    /// D3D12, and a portable app keeps native files under <c>runtimes/</c>, where a load by name doesn't look. Once
+    /// loaded, a load by name finds it. Without it, Windows draws with Vulkan.
     /// </summary>
     private static nint Resolve(string name, System.Reflection.Assembly assembly, DllImportSearchPath? path)
     {
-        if (name != Library || !OperatingSystem.IsLinux()) return 0;
+        if (name != Library) return 0;
+        if (OperatingSystem.IsWindows())
+        {
+            NativeLibrary.TryLoad("dxcompiler", assembly, path, out _);
+            return 0;
+        }
+        if (!OperatingSystem.IsLinux()) return 0;
         try
         {
             return NativeLibrary.Load(name, assembly, path);

@@ -59,10 +59,13 @@ jobs:
             . \$HOME/.cargo/env
             node crates/twip-capi/build-native.mjs"
           sudo chown -R "$(id -u):$(id -g)" target
+      # On Windows, DXC's dxcompiler.dll goes beside the library (build-native.mjs fetches the pinned release).
       - uses: actions/upload-artifact@v7
         with:
           name: native-${{ matrix.rid }}
-          path: target/release/${{ matrix.lib }}
+          path: |
+            target/release/${{ matrix.lib }}
+            target/release/dxcompiler.dll
 
   nuget:
     needs: native

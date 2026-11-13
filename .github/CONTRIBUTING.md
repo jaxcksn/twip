@@ -14,8 +14,9 @@ You need:
 
 Twip links no C or C++ library: `node crates/twip-capi/build-native.mjs` is the plain cargo build of the native
 library (it passes other cargo arguments through: `node crates/twip-capi/build-native.mjs test --workspace`). Native
-windows draw on the GPU with twip-graphics on wgpu (D3D12 or Vulkan on Windows, Metal on macOS). D3D12 needs DXC
-(`dxcompiler.dll`, found as Windows finds DLLs); without it, Windows draws with Vulkan.
+windows draw on the GPU with twip-graphics on wgpu (D3D12 or Vulkan on Windows, Metal on macOS). D3D12 needs DXC's
+`dxcompiler.dll`: on Windows the library build fetches the pinned release (its SHA-256 checked) and puts it beside
+`twip.dll`, and the .NET package ships it there; without it, Windows draws with Vulkan.
 
 Then:
 

@@ -31,5 +31,7 @@
     <Compile Remove="WinForms*.cs" Condition="!$([MSBuild]::IsOSPlatform('Windows'))" />
     <!-- The engine, when it has been built (a release cargo build of twip-capi); the tests skip without it. -->
     <None Include="../../../target/release/$(TwipNative)" Condition="Exists('../../../target/release/$(TwipNative)')" CopyToOutputDirectory="PreserveNewest" Link="$(TwipNative)" />
+    <!-- Windows: DXC beside it, as the package has it (crates/twip-capi/build-native.mjs fetches it). -->
+    <None Include="../../../target/release/dxcompiler.dll" Condition="$([MSBuild]::IsOSPlatform('Windows')) And Exists('../../../target/release/dxcompiler.dll')" CopyToOutputDirectory="PreserveNewest" Link="dxcompiler.dll" />
   </ItemGroup>
 </Project>

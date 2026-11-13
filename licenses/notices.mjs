@@ -6,7 +6,8 @@ import { join } from 'node:path';
 
 const dir = import.meta.dirname;
 const out = process.argv[2] ?? 'THIRD-PARTY-NOTICES.md';
-// The fonts and data built into the native library and the WebAssembly module; "both" = both.
+// The fonts and data built into the native library and the WebAssembly module ("both" = both), and the libraries
+// shipped beside the native library ("beside").
 const native = [
   // The engine's last-resort symbol font, a subset of DejaVu Sans (font.rs).
   ['DejaVu Sans (subset)', 'Bitstream-Vera', 'both', 'dejavu-fonts.txt'],
@@ -18,6 +19,8 @@ const native = [
   ['JetBrains Mono (subset)', 'OFL-1.1', 'both', 'jetbrains-mono.txt'],
   // The AutoCorrect replacement list (editing/autocorrect/en-US.tsv).
   ['LibreOffice AutoCorrect list (en-US)', 'MPL-2.0', 'both', 'libreoffice-autocorrect.txt'],
+  // The D3D12 shader compiler, beside twip.dll in the Windows package (crates/twip-capi/build-native.mjs).
+  ['DirectX Shader Compiler (dxcompiler.dll)', 'NCSA AND MIT AND LicenseRef-Microsoft-DXC', 'beside', 'dxc.txt'],
 ];
 // cargo about refuses to write to a pipe on Windows, so it writes a file.
 const tmp = `${out}.crates`;
@@ -25,6 +28,6 @@ execFileSync('cargo', ['about', 'generate', '--fail', '-c', join(dir, 'about.tom
 const crates = readFileSync(tmp, 'utf8');
 rmSync(tmp);
 const libs = native.map(([name, id, where, file]) =>
-  `### ${name} (${id})\n\nIn: ${where === 'both' ? 'the native library and the WebAssembly module' : `the ${where === 'native' ? 'native library' : 'WebAssembly module'}`}\n\n\`\`\`\n${readFileSync(join(dir, file), 'utf8').trim()}\n\`\`\`\n`);
+  `### ${name} (${id})\n\nIn: ${where === 'both' ? 'the native library and the WebAssembly module' : where === 'beside' ? "the Windows native library's folder, beside it" : `the ${where === 'native' ? 'native library' : 'WebAssembly module'}`}\n\n\`\`\`\n${readFileSync(join(dir, file), 'utf8').trim()}\n\`\`\`\n`);
 writeFileSync(out, `${crates.trim()}\n\n## C and C++ libraries, fonts and data\n\n${libs.join('\n')}`);
 console.log(`wrote ${out}`);

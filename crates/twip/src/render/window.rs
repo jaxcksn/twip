@@ -33,10 +33,21 @@ struct Window {
 }
 
 impl Window {
-    /// Configures the surface at `width × height`: false when the adapter can't draw to it.
+    /// Configures the surface at `width × height`: false when the adapter can't draw to it, or (natively) when the
+    /// configuration is refused. A surface left unconfigured must not be drawn to: wgpu fails that frame fatally.
     fn configure(&mut self, ctx: &Context, width: u32, height: u32) -> bool {
         let Some(config) = ctx.surface_config(&self.surface, width, height) else { return false };
+        let scope = ctx.device.push_error_scope(wgpu::ErrorFilter::Validation);
         self.surface.configure(&ctx.device, &config);
+        // Natively the scope's error is known at once (D3D12 refuses a swap chain to a window that has one); the browser
+        // reports it later, as a lost device.
+        #[cfg(not(target_family = "wasm"))]
+        if twip_graphics::gpu::block_on(scope.pop()).is_some() {
+            self.size = (0, 0);
+            return false;
+        }
+        #[cfg(target_family = "wasm")]
+        drop(scope.pop());
         if self.renderer.as_ref().is_none_or(|(f, _)| *f != config.format) {
             self.renderer = Some((config.format, Renderer::new(ctx, config.format)));
         }
