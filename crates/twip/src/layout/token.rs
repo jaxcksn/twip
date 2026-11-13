@@ -84,6 +84,8 @@ pub struct FlowState {
     pub table_rest: Option<FlowToken>,
     /// The paragraph going on from the last column broke there between letters rather than at a hyphen.
     pub letter_break: bool,
+    /// The leading frames of a paragraph that stayed on the last page when the paragraph went on to this one.
+    pub frames_left: Vec<(usize, usize, usize)>,
 }
 
 impl Default for FlowState {
@@ -102,6 +104,7 @@ impl Default for FlowState {
             beside_at: None,
             table_rest: None,
             letter_break: false,
+            frames_left: Vec::new(),
         }
     }
 }
@@ -129,6 +132,7 @@ impl PartialEq for FlowState {
             && self.table_rest.is_none()
             && o.table_rest.is_none()
             && self.letter_break == o.letter_break
+            && self.frames_left == o.frames_left
     }
 }
 

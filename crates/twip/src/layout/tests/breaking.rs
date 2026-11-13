@@ -3398,3 +3398,42 @@ fn a_compat_15_table_moved_off_a_frame_is_pulled_inside_the_margins() {
     assert!((moved - unmoved - 9.05).abs() < 0.1, "moved {moved} unmoved {unmoved}");
     assert!((moved - legacy - 9.05).abs() < 0.6, "moved {moved} compat 14 {legacy}");
 }
+
+/// `lead` one-line paragraphs of 15pt, then `frames` page frames as wide as the column, 10pt tall, 15pt apart from
+/// `y` twips, each before a one-line paragraph, wrapped as `wrap` says. The texts on the first two pages.
+fn frames_at_page_foot(lead: usize, y: u32, frames: usize, wrap: &str) -> Option<Vec<Vec<String>>> {
+    let sp = r#"<w:spacing w:before="0" w:after="0" w:line="300" w:lineRule="exact"/>"#;
+    let mut body: String = (0..lead).map(|k| format!(r#"<w:p><w:pPr>{sp}</w:pPr><w:r><w:t>L{k}</w:t></w:r></w:p>"#)).collect();
+    for k in 0..frames {
+        body += &format!(
+            r#"<w:p><w:pPr><w:framePr w:w="9360" w:h="200" w:hRule="exact" w:hSpace="180" w:vSpace="0" w:wrap="{wrap}" w:vAnchor="page" w:hAnchor="page" w:x="1440" w:y="{}"/><w:spacing w:before="0" w:after="0" w:line="200" w:lineRule="exact"/></w:pPr><w:r><w:t>F{k}</w:t></w:r></w:p><w:p><w:pPr>{sp}</w:pPr><w:r><w:t>B{k}</w:t></w:r></w:p>"#,
+            y + 300 * k as u32
+        );
+    }
+    (0..2).map(|p| page_baselines("", ARIAL_12, &body, p).map(|l| l.into_iter().map(|l| l.1).collect())).collect()
+}
+
+#[test]
+fn a_page_frame_goes_on_the_page_its_own_paragraph_falls_on() {
+    // 43 lines leave 3pt: the paragraph after the frame goes on, the frame stays.
+    let Some(pages) = frames_at_page_foot(43, 3000, 1, "none") else { return };
+    assert!(pages[0].contains(&"F0".to_string()) && pages[1].first().map(String::as_str) == Some("B0"), "{pages:?}");
+}
+
+#[test]
+fn page_frames_meeting_the_lines_before_them_stay_one_at_a_time() {
+    // Each frame pushes the lines laid out before it, and the next frame is placed against the lines as they then
+    // are: F0 to F3 stay, F4's paragraph falls on the next page.
+    let Some(pages) = frames_at_page_foot(36, 12000, 6, "around") else { return };
+    let frames = |p: usize| pages[p].iter().filter(|t| t.starts_with('F')).cloned().collect::<Vec<_>>();
+    assert_eq!(frames(0), ["F0", "F1", "F2", "F3"], "{pages:?}");
+    assert_eq!(pages[1].first().map(String::as_str), Some("B3"), "{pages:?}");
+}
+
+#[test]
+fn a_frame_from_the_text_above_the_page_starts_at_its_top() {
+    let body = r#"<w:p><w:pPr><w:framePr w:w="2000" w:h="400" w:hRule="exact" w:wrap="none" w:vAnchor="text" w:hAnchor="page" w:x="7200" w:y="-2000"/></w:pPr><w:r><w:t>FRAME</w:t></w:r></w:p><w:p><w:r><w:t>Next</w:t></w:r></w:p>"#;
+    let Some(l) = baselines("", ARIAL_12, body) else { return };
+    let y = l.iter().find(|l| l.1 == "FRAME").expect("drawn").3;
+    assert!(y > 0.0 && y < 20.0, "{y}");
+}

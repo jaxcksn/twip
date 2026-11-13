@@ -2399,6 +2399,9 @@ impl<'d> PageFill<'d, '_> {
         };
         for (k, q) in pieces.iter().enumerate() {
             let (Kind::Anchor, Some(Object::Float(f))) = (q.kind, sp.object(pb.from + k)) else { continue };
+            if carry.frames_left.contains(&(si, bi, pb.from + k)) {
+                continue;
+            }
             let Some(b) = band_of(k) else { continue };
             let owner = piece_para(sp, pb.from + k, anchor);
             let f = &float::sized(f, &frames).map_or_else(|| f.clone(), Rc::new);
@@ -2435,6 +2438,10 @@ impl<'d> PageFill<'d, '_> {
                 }
             }
             let mut fy = float::v_pos(f, h, &frames, para_top, line_top);
+            // A frame from the text that would start above the page starts at its top.
+            if f.text_box.is_some() && f.shape.is_none() && f.v_relative == "paragraph" {
+                fy = fy.max(0.0);
+            }
             // Compat ≤ 14: a drawing's page position in whole twips, for the collision with the lines above and the
             // drawing. Frames keep theirs.
             if compat == Compat::Legacy && (f.text_box.is_none() || f.shape.is_some()) {
@@ -2548,16 +2555,36 @@ impl<'d> PageFill<'d, '_> {
                 take = b + 1;
             }
         }
-        if take == 0 {
+        // A paragraph whose first line goes on to the next page leaves the frames before it on this page where their
+        // own paragraph falls on it: one placed by the page or the margin always, one from the text when its height
+        // fits below that place. They end at a frame that starts with a page break.
+        let lead_only = take == 0 && !at_top && first_part && col.bottom.holds(origin);
+        if take == 0 && !lead_only {
             if at_top {
                 take = fit.max(1).min(nb);
             } else {
                 return Ok(Stop::Full);
             }
         }
-        let placed_end = bands[take - 1].1.last().map_or(0, |l| l.end);
+        let first_text = pieces.iter().position(|q| q.kind != Kind::Anchor).unwrap_or(n);
+        let breaks = |a: &Placed| matches!(a.float.text_box.as_ref().and_then(|tb| tb.blocks.first()), Some(Block::Para(p)) if p.style.page_break_before);
+        let lead_end = anchors.iter().filter(|a| breaks(a)).map(|a| a.key.2).min().unwrap_or(usize::MAX);
+        let stays = |a: &Placed| {
+            a.float.text_box.is_some()
+                && a.float.shape.is_none()
+                && a.key.2 - pb.from < first_text
+                && a.key.2 < lead_end
+                && (matches!(a.float.v_relative.as_str(), "page" | "margin") || col.bottom.holds(origin + a.rect[3] - a.rect[1]))
+        };
+        let placed_end = if lead_only { 0 } else { bands[take - 1].1.last().map_or(0, |l| l.end) };
+        if !lead_only {
+            carry.frames_left.clear();
+        }
         for mut a in anchors {
-            if a.key.2 - pb.from < placed_end.max(1) {
+            if lead_only && !stays(&a) {
+                continue;
+            }
+            if lead_only || a.key.2 - pb.from < placed_end.max(1) {
                 // A frame placed in the flow: compat ≤ 14 lays it out below an earlier frame whose box with its
                 // distances it meets, from the nearest twip; compat 15 moves one that may not overlap only down.
                 let frame = |o: &Placed| o.float.text_box.is_some() && o.float.shape.is_none();
@@ -2614,11 +2641,19 @@ impl<'d> PageFill<'d, '_> {
                     page_end |= compat == Compat::Generic;
                     forced = Some(forced.map_or(b, |x: usize| x.min(b)));
                 }
-                if a.restarts && !self.at.known.iter().any(|k| k.same(&a)) {
+                // New in this fill, or meeting earlier text where the last fill didn't: the floats after it were
+                // placed beside text that moves.
+                if a.restarts && !self.at.known.iter().any(|k| k.same(&a) && (k.frozen || !a.frozen)) {
                     self.at.hit = true;
+                }
+                if lead_only {
+                    carry.frames_left.push(a.key);
                 }
                 self.at.found.push(a);
             }
+        }
+        if lead_only {
+            return Ok(Stop::Full);
         }
         if let Some(b) = forced {
             take = take.min(b + 1);
