@@ -106,7 +106,10 @@ fn base_middle(d: &[u8], o: usize, upem: f64) -> Option<f64> {
     let n = u16_at(d, tags) as usize;
     let (ideo, romn) = ((0..n).find(|&i| tag(i) == Some(b"ideo"))?, (0..n).find(|&i| tag(i) == Some(b"romn"))?);
     let record = |want: &[u8; 4]| {
-        (0..u16_at(d, scripts) as usize).map(|i| scripts + 2 + 6 * i).find(|&r| d.get(r..r + 4) == Some(want)).map(|r| scripts + u16_at(d, r + 4) as usize)
+        (0..u16_at(d, scripts) as usize)
+            .map(|i| scripts + 2 + 6 * i)
+            .find(|&r| d.get(r..r + 4) == Some(want))
+            .map(|r| scripts + u16_at(d, r + 4) as usize)
     };
     let script = record(b"hani").or_else(|| record(b"DFLT"))?;
     let values = script + u16_at(d, script) as usize;
@@ -127,7 +130,8 @@ fn vdmx(d: &[u8]) -> Vec<(u16, i16, i16)> {
         return Vec::new();
     };
     let g = u16_at(d, 6 + 4 * ratios + 2 * r) as usize;
-    let mut out: Vec<(u16, i16, i16)> = (0..u16_at(d, g) as usize).map(|i| g + 4 + 6 * i).map(|e| (u16_at(d, e), i16_at(d, e + 2), i16_at(d, e + 4))).collect();
+    let mut out: Vec<(u16, i16, i16)> =
+        (0..u16_at(d, g) as usize).map(|i| g + 4 + 6 * i).map(|e| (u16_at(d, e), i16_at(d, e + 2), i16_at(d, e + 4))).collect();
     out.sort_by_key(|r| r.0);
     out.dedup_by_key(|r| r.0);
     out

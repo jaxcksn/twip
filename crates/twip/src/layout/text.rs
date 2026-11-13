@@ -1182,7 +1182,8 @@ impl<'a> Builder<'a> {
         // as compat 12.
         let long = para.inlines.iter().map(|i| i.units()).sum::<usize>() + 1 >= 4000;
         self.fit_text(space.stale_fit && !space.in_cell && !long, space.first_line, space.unfitted);
-        let balanced = space.balance.as_ref().is_some_and(|dd| dd.is_empty() || self.fonts.face(dd, None, false, false).is_some_and(|f| f.east_asian));
+        let balanced =
+            space.balance.as_ref().is_some_and(|dd| dd.is_empty() || self.fonts.face(dd, None, false, false).is_some_and(|f| f.east_asian));
         if balanced {
             self.balance_spaces();
         }
@@ -1818,11 +1819,8 @@ impl FitRegion<'_> {
         if t < base {
             return (((100.0 * t / base).trunc().max(15.0), 0.0, 0.0), 0.0);
         }
-        let s = if prev == 0.0 || w == base + k * prev {
-            ((t - base) / (n - 1.0)).trunc()
-        } else {
-            (prev * (t - base) / (w - k * prev - base)).trunc()
-        };
+        let s =
+            if prev == 0.0 || w == base + k * prev { ((t - base) / (n - 1.0)).trunc() } else { (prev * (t - base) / (w - k * prev - base)).trunc() };
         let a = fit_tw(s);
         ((x.0, a, a), s)
     }

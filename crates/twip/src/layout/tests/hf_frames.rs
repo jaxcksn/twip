@@ -79,10 +79,11 @@ fn frame_2_a_frame_without_v_anchor_is_relative_to_the_margin() {
 #[test]
 fn frame_3_an_explicit_position_is_one_twip_less_and_beats_the_alignment() {
     use crate::docx::model::{Block, Inline};
-    let frame = |a: &str| format!(r#"<w:p><w:pPr><w:framePr w:w="1440" w:wrap="around" w:hAnchor="margin" w:vAnchor="page" {a}/></w:pPr><w:r><w:t>F</w:t></w:r></w:p>"#);
-    let frames: String = [r#"w:x="2880" w:xAlign="right" w:y="6000" w:yAlign="top""#, r#"w:x="-8" w:y="-12""#, r#"w:x="0" w:y="1""#]
-        .map(frame)
-        .concat();
+    let frame = |a: &str| {
+        format!(r#"<w:p><w:pPr><w:framePr w:w="1440" w:wrap="around" w:hAnchor="margin" w:vAnchor="page" {a}/></w:pPr><w:r><w:t>F</w:t></w:r></w:p>"#)
+    };
+    let frames: String =
+        [r#"w:x="2880" w:xAlign="right" w:y="6000" w:yAlign="top""#, r#"w:x="-8" w:y="-12""#, r#"w:x="0" w:y="1""#].map(frame).concat();
     let body = format!(r#"<w:document {W}><w:body>{frames}<w:p><w:r><w:t>Body</w:t></w:r></w:p></w:body></w:document>"#);
     let Some(doc) = package(&[
         (
@@ -266,7 +267,11 @@ fn compat_14_header_text_runs_over_its_floating_table() {
 #[test]
 fn frame_4_a_frame_ending_the_body_anchors_in_the_paragraph_before_it() {
     use crate::docx::model::{Block, Inline};
-    let frame = |v: &str| format!(r#"<w:p><w:pPr><w:framePr w:w="1440" w:wrap="around" w:hAnchor="page" {v} w:x="3000" w:y="3000"/></w:pPr><w:r><w:t>F</w:t></w:r></w:p>"#);
+    let frame = |v: &str| {
+        format!(
+            r#"<w:p><w:pPr><w:framePr w:w="1440" w:wrap="around" w:hAnchor="page" {v} w:x="3000" w:y="3000"/></w:pPr><w:r><w:t>F</w:t></w:r></w:p>"#
+        )
+    };
     let body = |v: &str| format!(r#"<w:document {W}><w:body><w:p><w:r><w:t>Body</w:t></w:r></w:p>{}</w:body></w:document>"#, frame(v));
     let doc = |v: &str| {
         package(&[

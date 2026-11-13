@@ -23,7 +23,15 @@ fn omitted_key_is_caught() {
     OMIT_WIDTH.set(true);
     let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         for width in [468.0, 300.0] {
-            let space = ParaSpace { width, start: 0, borders: neighbour_borders(&p.style, None, None), x0: 0.0, env: env.text.clone(), fit: false, letter_break: false };
+            let space = ParaSpace {
+                width,
+                start: 0,
+                borders: neighbour_borders(&p.style, None, None),
+                x0: 0.0,
+                env: env.text.clone(),
+                fit: false,
+                letter_break: false,
+            };
             break_lines(&shaped, p, &space, &fonts, &mut memos).expect("unlimited");
         }
     }));

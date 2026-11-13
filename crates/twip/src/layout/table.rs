@@ -804,8 +804,20 @@ fn part(own: Option<&Option<Border>>, table: &Option<Border>) -> f64 {
     };
     match b {
         None => 0.75,
-        Some(b) if b.style == "nil" => if cell { 0.75 } else { 0.0 },
-        Some(b) if b.style == "none" => if b.color.is_some() { 0.0 } else { 0.75 },
+        Some(b) if b.style == "nil" => {
+            if cell {
+                0.75
+            } else {
+                0.0
+            }
+        }
+        Some(b) if b.style == "none" => {
+            if b.color.is_some() {
+                0.0
+            } else {
+                0.75
+            }
+        }
         Some(b) if b.visible() => thick(b) / 2.0,
         Some(_) => 0.0,
     }
@@ -956,7 +968,15 @@ fn vertical_width(blocks: &[Block], env: &StoryEnv, memos: &mut Memos) -> Result
         let space = laid.shape_space_in(env.fields, env.notes, &env.ctx, true);
         let shaped = shape(p, &space, env.ctx.fonts, memos)?;
         let s = p.para_style_in(view);
-        let ps = ParaSpace { width: 1e9, start: 0, borders: neighbour_borders(s, None, None), x0: 0.0, env: env.ctx.env.text.clone(), fit: false, letter_break: false };
+        let ps = ParaSpace {
+            width: 1e9,
+            start: 0,
+            borders: neighbour_borders(s, None, None),
+            x0: 0.0,
+            env: env.ctx.env.text.clone(),
+            fit: false,
+            letter_break: false,
+        };
         let pb = break_lines(&shaped, p, &ps, env.ctx.fonts, memos)?;
         w += twips(s.space_before + s.space_after);
         let pieces = pb.pieces();
@@ -1008,8 +1028,15 @@ fn content_widths_uncached(blocks: &[LaidBlock], env: &StoryEnv, fixed: bool, me
                 let space = laid.shape_space_in(env.fields, env.notes, &env.ctx, true);
                 let shaped = shape(p, &space, env.ctx.fonts, memos)?;
                 let s = p.para_style_in(env.ctx.env.text.review.view);
-                let ps =
-                    ParaSpace { width: 1e9, start: 0, borders: neighbour_borders(s, None, None), x0: 0.0, env: env.ctx.env.text.clone(), fit: false, letter_break: false };
+                let ps = ParaSpace {
+                    width: 1e9,
+                    start: 0,
+                    borders: neighbour_borders(s, None, None),
+                    x0: 0.0,
+                    env: env.ctx.env.text.clone(),
+                    fit: false,
+                    letter_break: false,
+                };
                 let pb = break_lines(&shaped, p, &ps, env.ctx.fonts, memos)?;
                 let ind = if old { s.ind_left + s.ind_right + s.ind_first.min(0.0) } else { s.ind_left + s.ind_right };
                 let pieces = pb.pieces();
@@ -1767,7 +1794,13 @@ fn layout_shown(
             None => Rc::new(assemble(t, text_w, env, cols, &geo, &stories, &closings, inputs.into(), nested, memos)?),
         });
     }
-    cached(memos, |c| &mut c.tables, probe, table_bytes, |m| assemble(t, text_w, env, cols.clone(), &geo, &stories, &closings, inputs.into(), nested, m))
+    cached(
+        memos,
+        |c| &mut c.tables,
+        probe,
+        table_bytes,
+        |m| assemble(t, text_w, env, cols.clone(), &geo, &stories, &closings, inputs.into(), nested, m),
+    )
 }
 
 // Hidden rows
@@ -1972,7 +2005,17 @@ fn place(t: &Table, cols: &[f64], edges: &[Vec<CellEdges>]) -> Vec<Vec<CellGeo>>
                         inner = (bl / 2, w - bl / 2 - br / 2);
                         (ml.max(bl / 2), (w - (ml + mr).max((bl + br) / 2)).max(0))
                     };
-                    CellGeo { ci: e.ci, col, span, x: pt(x), w: pt(w), cx: pt(cx), cw: pt(cw), inner: (pt(inner.0), pt(inner.1)), edges: e.edges.clone() }
+                    CellGeo {
+                        ci: e.ci,
+                        col,
+                        span,
+                        x: pt(x),
+                        w: pt(w),
+                        cx: pt(cx),
+                        cw: pt(cw),
+                        inner: (pt(inner.0), pt(inner.1)),
+                        edges: e.edges.clone(),
+                    }
                 })
                 .collect()
         })
@@ -2088,7 +2131,11 @@ fn assemble(
                     };
                     let before: f64 = cols[..start].iter().sum();
                     let width: f64 = cols[start..end.max(start)].iter().sum();
-                    let gap = if nested { 0.0 } else { r.cells.first().map_or(0.0, |c| c.margins[1]) + row_s.map_or(0.0, |s| 2.0 * s + space_h(&row_borders(t, ri)[1])) };
+                    let gap = if nested {
+                        0.0
+                    } else {
+                        r.cells.first().map_or(0.0, |c| c.margins[1]) + row_s.map_or(0.0, |s| 2.0 * s + space_h(&row_borders(t, ri)[1]))
+                    };
                     let left = if jc == Jc::Center { (twips(text_w) - twips(width)).div_euclid(2) as f64 / 20.0 } else { text_w - width + gap };
                     // A nested left-aligned table is moved by its lead as a whole (`nested_shift`).
                     let lead = if nested && !matches!(t.jc, Jc::Center | Jc::Right) { legacy_lead(t) } else { 0.0 };

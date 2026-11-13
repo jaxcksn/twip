@@ -473,7 +473,9 @@ fn a_vertical_runs_extra_is_an_em_64th_in_whole_font_units() {
 
 /// A one-column table whose rows hold `prefix0`, `prefix1`, …
 fn named_table(prefix: &str, rows: usize, w: u32) -> String {
-    let row = |i: usize| format!(r#"<w:tr><w:tc><w:tcPr><w:tcW w:w="{w}" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>{prefix}{i}</w:t></w:r></w:p></w:tc></w:tr>"#);
+    let row = |i: usize| {
+        format!(r#"<w:tr><w:tc><w:tcPr><w:tcW w:w="{w}" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>{prefix}{i}</w:t></w:r></w:p></w:tc></w:tr>"#)
+    };
     let rows: String = (0..rows).map(row).collect();
     format!(r#"<w:tbl><w:tblPr><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="{w}"/></w:tblGrid>{rows}</w:tbl>"#)
 }
@@ -491,7 +493,8 @@ fn note_in_table(doc: &mut crate::docx::Document, lines: usize) {
     let note = (0..lines)
         .map(|k| {
             let mut n = model.clone();
-            let run = n.inlines.iter().find_map(|i| if let Inline::Text(_, r) = i { Some(r.clone()) } else { None }).unwrap_or_else(|| n.mark.clone());
+            let run =
+                n.inlines.iter().find_map(|i| if let Inline::Text(_, r) = i { Some(r.clone()) } else { None }).unwrap_or_else(|| n.mark.clone());
             n.inlines = vec![Inline::Text(format!("n{k}"), run)];
             n.id = crate::docx::model::next_para_id();
             Block::Para(n)
@@ -574,7 +577,9 @@ fn compat_15_moves_a_vertical_table_whose_note_cant_start_past_it_to_the_next_pa
         let mut doc = section("tbRl", "0", &format!("{lines}{}{}", named_table("c", 1, 1300), para("after", "")))?;
         doc.settings.compat_mode = mode;
         note_in_table(&mut doc, 2);
-        let on = |page: usize| cells_on(&doc, page).into_iter().map(|r| r.0).chain(turned_runs_on(&doc, page).into_iter().map(|r| r.0)).collect::<Vec<_>>();
+        let on = |page: usize| {
+            cells_on(&doc, page).into_iter().map(|r| r.0).chain(turned_runs_on(&doc, page).into_iter().map(|r| r.0)).collect::<Vec<_>>()
+        };
         Some((on(0), on(1)))
     };
     let Some((p1, p2)) = pages(15) else { return };
@@ -600,7 +605,8 @@ fn exact_table(prefix: &str, heights: &[u32], w: u32) -> String {
 fn compat_14_keeps_the_more_of_a_too_long_vertical_tables_rows_below_the_earlier_one_or_below_its_own_image() {
     // Lines 11840 tw long from 1000 tw; the earlier table ends `t1` rows of 500 tw along them.
     let kept = |t1: usize, t2: &[u32]| {
-        let body = format!("{}{}{}{}{}", para("pa", ""), exact_table("r", &vec![500; t1], 2000), para("pb", ""), exact_table("s", t2, 2000), para("pc", ""));
+        let body =
+            format!("{}{}{}{}{}", para("pa", ""), exact_table("r", &vec![500; t1], 2000), para("pb", ""), exact_table("s", t2, 2000), para("pc", ""));
         let mut doc = section("tbRl", "0", &body)?;
         doc.settings.compat_mode = 12;
         Some((cells_on(&doc, 0).iter().filter(|c| c.0.starts_with('s')).count(), turned_runs(&doc)))
@@ -629,7 +635,14 @@ fn inch_section(body: &str) -> Option<crate::docx::Document> {
 #[test]
 fn compat_15_draws_a_vertical_table_over_an_earlier_one_when_moving_it_across_would_cross_the_page_edge() {
     let on_first = |w2: u32| {
-        let body = format!("{}{}{}{}{}", para("pa", ""), exact_table("r", &[263; 25], 5000), para("pb", ""), exact_table("s", &[263; 30], w2), para("pc", ""));
+        let body = format!(
+            "{}{}{}{}{}",
+            para("pa", ""),
+            exact_table("r", &[263; 25], 5000),
+            para("pb", ""),
+            exact_table("s", &[263; 30], w2),
+            para("pc", "")
+        );
         let cells = cells_on(&inch_section(&body)?, 0);
         Some(cells.iter().filter(|c| c.0.starts_with('s')).map(|c| c.2).collect::<Vec<f64>>())
     };
@@ -643,7 +656,8 @@ fn compat_15_draws_a_vertical_table_over_an_earlier_one_when_moving_it_across_wo
 
 #[test]
 fn compat_15_splits_a_vertical_table_longer_than_the_line_once_moved_across() {
-    let body = format!("{}{}{}{}{}", para("pa", ""), exact_table("r", &[263; 12], 5000), para("pb", ""), exact_table("s", &[263; 50], 3000), para("pc", ""));
+    let body =
+        format!("{}{}{}{}{}", para("pa", ""), exact_table("r", &[263; 12], 5000), para("pb", ""), exact_table("s", &[263; 50], 3000), para("pc", ""));
     let Some(doc) = inch_section(&body) else { return };
     assert_eq!(cells_on(&doc, 0).iter().filter(|c| c.0.starts_with('s')).count(), 49);
 }
@@ -652,7 +666,8 @@ fn compat_15_splits_a_vertical_table_longer_than_the_line_once_moved_across() {
 fn compat_15_takes_a_vertical_table_along_with_the_lines_before_it_that_jumped_an_earlier_one() {
     // The earlier table fills the line: the lines before the next one go across past it, and the next one follows
     // them, pushing only the line that meets it.
-    let body = format!("{}{}{}{}{}", para("pa", ""), exact_table("r", &[263; 49], 4000), para("pb", ""), exact_table("s", &[263; 8], 4000), para("pc", ""));
+    let body =
+        format!("{}{}{}{}{}", para("pa", ""), exact_table("r", &[263; 49], 4000), para("pb", ""), exact_table("s", &[263; 8], 4000), para("pc", ""));
     let Some(doc) = inch_section(&body) else { return };
     let runs = turned_runs(&doc);
     let at = |t: &str| runs.iter().find(|r| r.0 == t).map(|r| r.1).expect("a line");
@@ -686,7 +701,14 @@ fn compat_12_places_a_vertical_table_after_lines_that_jumped_an_earlier_one_by_t
         // Cell margins of 108 tw: compat 12 moves each table 5.4pt back.
         let mar = r#"<w:tblPr><w:tblCellMar><w:left w:w="108" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar>"#;
         let table = |p: &str, rows: usize, w: u32| exact_table(p, &vec![263; rows], w).replacen("<w:tblPr>", mar, 1);
-        let body = format!("{}{}{}{}{}", if pa.is_empty() { String::new() } else { para(pa, "") }, table("r", 49, w1), para("pb", ""), table("s", 8, w2), para(pc, ""));
+        let body = format!(
+            "{}{}{}{}{}",
+            if pa.is_empty() { String::new() } else { para(pa, "") },
+            table("r", 49, w1),
+            para("pb", ""),
+            table("s", 8, w2),
+            para(pc, "")
+        );
         let mut doc = inch_section(&body)?;
         doc.settings.compat_mode = 12;
         let s0 = cells_on(&doc, 0).iter().find(|c| c.0 == "s0").map(|c| c.1);

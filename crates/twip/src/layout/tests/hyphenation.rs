@@ -186,7 +186,8 @@ fn compat_15_moves_a_hyphenated_last_line_to_the_next_page() {
     assert_eq!((p1.len(), p1.last().map(String::as_str)), (50, Some("Fill 49")), "{p1:?}");
     assert_eq!(p2[0], "The plain cart ran representa-", "{p2:?}");
     // An optional hyphen moves it too, without automatic hyphenation.
-    let soft = r#"<w:r><w:t xml:space="preserve">The plain cart ran representa</w:t><w:softHyphen/><w:t xml:space="preserve">tive bottom text.</w:t></w:r>"#;
+    let soft =
+        r#"<w:r><w:t xml:space="preserve">The plain cart ran representa</w:t><w:softHyphen/><w:t xml:space="preserve">tive bottom text.</w:t></w:r>"#;
     let [p1, _] = courier_lines(&track_settings(15, false, ""), 50, soft).expect("lays out");
     assert_eq!(p1.len(), 50, "{p1:?}");
     // `allowHyphenationAtTrackBottom`, and compat 12, hyphenate the last line like any other.
@@ -228,7 +229,9 @@ fn a_word_without_proofing_isnt_hyphenated() {
     }
     // The break would follow letter 10; letter 12 is the first that doesn't fit.
     let first = |compat: i64, a: &str, b: &str| {
-        let t = format!(r#"<w:r><w:t xml:space="preserve">The plain cart ran </w:t></w:r><w:r>{a}<w:t>repre</w:t></w:r><w:r>{b}<w:t xml:space="preserve">sentative words go here.</w:t></w:r>"#);
+        let t = format!(
+            r#"<w:r><w:t xml:space="preserve">The plain cart ran </w:t></w:r><w:r>{a}<w:t>repre</w:t></w:r><w:r>{b}<w:t xml:space="preserve">sentative words go here.</w:t></w:r>"#
+        );
         courier_lines(&track_settings(compat, true, ""), 0, &t).map(|[p1, _]| p1[0].clone())
     };
     let Some(plain) = first(15, "", "") else { return };
@@ -289,7 +292,11 @@ fn compat_15_a_line_at_the_limit_ending_at_an_optional_hyphen_isnt_counted() {
     }
     let settings = track_settings(15, true, "").replace("<w:compat>", r#"<w:consecutiveHyphenLimit w:val="1"/><w:compat>"#);
     let Some([p1, _]) = courier_lines(&settings, 0, &t) else { return };
-    assert_eq!(&p1[..3], [format!("{} zza-", "y".repeat(25)), format!("ttttt {}-", "q".repeat(20)), format!("qqqqqq {} zza-", "y".repeat(18))], "{p1:?}");
+    assert_eq!(
+        &p1[..3],
+        [format!("{} zza-", "y".repeat(25)), format!("ttttt {}-", "q".repeat(20)), format!("qqqqqq {} zza-", "y".repeat(18))],
+        "{p1:?}"
+    );
 }
 
 #[test]

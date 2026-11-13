@@ -825,7 +825,7 @@ fn next_stop(pen: f64, units: Option<f64>, style: &ParaStyle, frame: &Frame, num
 }
 
 /// The custom stops a tab may go to: past the pen, not bar or clear.
-fn custom_stops<'a>(pen: f64, units: Option<f64>, style: &'a ParaStyle) -> impl Iterator<Item = &'a crate::docx::props::Tab> {
+fn custom_stops(pen: f64, units: Option<f64>, style: &ParaStyle) -> impl Iterator<Item = &crate::docx::props::Tab> {
     style.tabs.iter().filter(move |t| !matches!(t.kind, TabKind::Clear | TabKind::Bar) && past_pen(t.pos, pen, units))
 }
 
@@ -1197,7 +1197,8 @@ fn fit_line(
             _ if past_custom => f64::INFINITY,
             _ => right,
         };
-        let over = past(right_edge - left, limit - left) && !forced && p.kind != Kind::ListNumber && !(pen <= limit + EPS && pending.is_none() && hangs(i));
+        let over =
+            past(right_edge - left, limit - left) && !forced && p.kind != Kind::ListNumber && !(pen <= limit + EPS && pending.is_none() && hangs(i));
         let word = breaks.last().map_or(start, |b| b.0);
         let room: f64 = match squeeze {
             _ if !over => 0.0,
@@ -1269,7 +1270,10 @@ fn fit_line(
                 at -= 1;
             }
             // The list number and its tab aren't the character a line takes at least.
-            let number_part = |k: usize| pieces[..=k].iter().all(|q| q.kind == Kind::ListNumber) || k > 0 && pieces[k].kind == Kind::Tab && pieces[..k].iter().all(|q| q.kind == Kind::ListNumber);
+            let number_part = |k: usize| {
+                pieces[..=k].iter().all(|q| q.kind == Kind::ListNumber)
+                    || k > 0 && pieces[k].kind == Kind::Tab && pieces[..k].iter().all(|q| q.kind == Kind::ListNumber)
+            };
             if at > start && (start..at).any(|k| pieces[k].kind != Kind::Anchor && !number_part(k)) {
                 xs.truncate(at - start);
                 ws.truncate(at - start);
@@ -1679,7 +1683,11 @@ fn align(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, 
             if justify && extra > 0.0 && frame.compat == Compat::Generic {
                 let caps: Vec<(usize, f64)> = spaces.iter().map(|&k| (k, stretch_cap(line.widths[k]))).collect();
                 tiered(extra, &[&caps], &mut line.widths);
-            } else if justify && extra < 0.0 && frame.wp_justification && sp.styles[pieces[idx(spaces[0])].style as usize].face.as_ref().is_some_and(|f| f.fixed_pitch) {
+            } else if justify
+                && extra < 0.0
+                && frame.wp_justification
+                && sp.styles[pieces[idx(spaces[0])].style as usize].face.as_ref().is_some_and(|f| f.fixed_pitch)
+            {
                 // wpJustification with fixed-pitch spaces: every advance but the last gives way, in 600 dpi pixels,
                 // two short of the overflow; the last advances one more each for the remainder.
                 let advances: Vec<usize> = (first..content_end - 1).collect();
@@ -1728,7 +1736,8 @@ fn align(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, 
             let gaps = &chars[..chars.len() - usize::from(!line.hyphen && !chars.is_empty())];
             let bonus: Vec<(usize, f64)> = chars.windows(2).map(|w| (w[0], auto_space(sp, &pieces[idx(w[0])], &pieces[idx(w[1])], style))).collect();
             let extra = right - line_end_x - bonus.iter().map(|b| b.1).sum::<f64>();
-            let spaces: Vec<(usize, f64)> = gaps.iter().filter(|&&k| stretches(sp, &pieces[idx(k)])).map(|&k| (k, stretch_cap(line.widths[k]))).collect();
+            let spaces: Vec<(usize, f64)> =
+                gaps.iter().filter(|&&k| stretches(sp, &pieces[idx(k)])).map(|&k| (k, stretch_cap(line.widths[k]))).collect();
             let glyphs: Vec<(usize, f64)> = gaps
                 .iter()
                 .filter(|&&k| !pieces[idx(k)].soft_hyphen)
@@ -1982,9 +1991,7 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
     }
     // A line of only spaces and tabs takes their height unless it is the paragraph's last line, which takes the
     // mark's; one ending in a break takes the break's.
-    if !has_content
-        && let Some((a, d)) = brk.or(blank.filter(|_| !last))
-    {
+    if !has_content && let Some((a, d)) = brk.or(blank.filter(|_| !last)) {
         asc = a;
         desc = d;
         un_asc = a;
@@ -2029,7 +2036,13 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
     // spacing's extra holds them; exact lines have no room for them.
     let (em, em_up) = {
         let hl = Lu::round_half_up(h).0;
-        let k = if em_above && em_below { hl / 2 } else if em_above || em_below { hl / 4 } else { 0 };
+        let k = if em_above && em_below {
+            hl / 2
+        } else if em_above || em_below {
+            hl / 4
+        } else {
+            0
+        };
         let up = if em_below { if em_above { k / 2 } else { 0 } } else { k };
         (Lu(k).to_pt(), Lu(up).to_pt())
     };

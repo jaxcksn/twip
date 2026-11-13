@@ -238,11 +238,16 @@ fn a_centred_merged_region_cut_by_the_page_end_centres_in_its_page_part() {
     // A spacer leaves room for two and a half 72pt rows above the body bottom.
     let spacer = ((sec.page_h - sec.top - sec.bottom - 180.0) * 20.0).round() as i64;
     let tc = |merge: &str, t: &str| {
-        format!(r#"<w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/><w:vMerge{merge}/><w:vAlign w:val="center"/></w:tcPr><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:tc>"#)
+        format!(
+            r#"<w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/><w:vMerge{merge}/><w:vAlign w:val="center"/></w:tcPr><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:tc>"#
+        )
     };
     let tr = |merge: &str, t: &str| format!(r#"<w:tr><w:trPr><w:cantSplit/><w:trHeight w:val="1440"/></w:trPr>{}</w:tr>"#, tc(merge, t));
     let y = |rows: usize| {
-        let mut body = format!(r#"<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="{spacer}" w:lineRule="exact"/></w:pPr></w:p><w:tbl><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid>{}"#, tr(r#" w:val="restart""#, "T"));
+        let mut body = format!(
+            r#"<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="{spacer}" w:lineRule="exact"/></w:pPr></w:p><w:tbl><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid>{}"#,
+            tr(r#" w:val="restart""#, "T")
+        );
         for _ in 1..rows {
             body += &tr("", "");
         }
@@ -707,7 +712,11 @@ mod floats {
     #[test]
     fn compat_14_a_first_row_too_wide_beside_its_tight_page_float_goes_below_it() {
         let first = |wrap: &str| {
-            let b = text_box(wrap, 40.0, "Boxed").replace(r#"layoutInCell="1""#, r#"layoutInCell="0""#).replacen("<w:p>", "<w:p><w:r><w:t>First</w:t></w:r>", 1);
+            let b = text_box(wrap, 40.0, "Boxed").replace(r#"layoutInCell="1""#, r#"layoutInCell="0""#).replacen(
+                "<w:p>",
+                "<w:p><w:r><w:t>First</w:t></w:r>",
+                1,
+            );
             let body = format!(
                 r#"<w:tbl><w:tblPr><w:tblW w:w="8000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="8000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="8000" w:type="dxa"/></w:tcPr>{b}</w:tc></w:tr></w:tbl><w:p/>"#
             );
@@ -1120,7 +1129,9 @@ fn exact_rows(n: usize, tbl_borders: &str, last_cells: &str) -> String {
             )
         })
         .collect();
-    format!(r#"<w:tbl><w:tblPr><w:tblBorders>{tbl_borders}</w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid>{rows}</w:tbl><w:p/>"#)
+    format!(
+        r#"<w:tbl><w:tblPr><w:tblBorders>{tbl_borders}</w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid>{rows}</w:tbl><w:p/>"#
+    )
 }
 
 fn first_on_page(body: &str, page: usize) -> (String, f64) {
@@ -1150,7 +1161,9 @@ fn a_table_continued_on_a_page_takes_its_top_border_above_the_row() {
 
 #[test]
 fn every_part_of_a_split_at_least_row_is_at_least_its_height() {
-    let line = |t: &str| format!(r#"<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="300" w:lineRule="exact"/></w:pPr><w:r><w:t>{t}</w:t></w:r></w:p>"#);
+    let line = |t: &str| {
+        format!(r#"<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="300" w:lineRule="exact"/></w:pPr><w:r><w:t>{t}</w:t></w:r></w:p>"#)
+    };
     let next_y = |tr: &str| {
         let fill: String = (0..38).map(|_| line("fill")).collect();
         let cell: String = (1..=6).map(|i| line(&format!("a{i}"))).collect();
@@ -1169,7 +1182,9 @@ fn every_part_of_a_split_at_least_row_is_at_least_its_height() {
 
 #[test]
 fn a_centred_cells_continuation_starts_at_the_parts_top() {
-    let line = |t: &str| format!(r#"<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="300" w:lineRule="exact"/></w:pPr><w:r><w:t>{t}</w:t></w:r></w:p>"#);
+    let line = |t: &str| {
+        format!(r#"<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="300" w:lineRule="exact"/></w:pPr><w:r><w:t>{t}</w:t></w:r></w:p>"#)
+    };
     let fill: String = (0..38).map(|_| line("fill")).collect();
     let a: String = (1..=10).map(|i| line(&format!("a{i:02}"))).collect();
     let b: String = (1..=6).map(|i| line(&format!("b{i:02}"))).collect();
@@ -1190,7 +1205,9 @@ fn a_centred_cells_continuation_starts_at_the_parts_top() {
 #[test]
 fn centred_cells_align_in_the_rows_box_whatever_their_own_margins() {
     let cell = |mar: &str, t: &str| {
-        format!(r#"<w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/>{mar}<w:vAlign w:val="center"/></w:tcPr><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:tc>"#)
+        format!(
+            r#"<w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/>{mar}<w:vAlign w:val="center"/></w:tcPr><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:tc>"#
+        )
     };
     let own = r#"<w:tcMar><w:top w:w="0" w:type="dxa"/><w:bottom w:w="300" w:type="dxa"/></w:tcMar>"#;
     let body = format!(
@@ -1217,8 +1234,12 @@ fn a_table_style_named_table_normal_is_the_built_in_default() {
         );
         let styles = styles.replace("</w:styles>", &style);
         let body = r#"<w:tbl><w:tblPr><w:tblStyle w:val="TS"/><w:tblW w:w="3000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>Q</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#;
-        let bytes = crate::docx::write::repackage(&with_body(&blank, body), &[("word/styles.xml".into(), styles.into_bytes())], zip::CompressionMethod::Deflated)
-            .expect("repackages");
+        let bytes = crate::docx::write::repackage(
+            &with_body(&blank, body),
+            &[("word/styles.xml".into(), styles.into_bytes())],
+            zip::CompressionMethod::Deflated,
+        )
+        .expect("repackages");
         let mut doc = crate::docx::read(&bytes).expect("reads");
         doc.settings.compat_mode = 15;
         super::page_chars(&doc)[0].iter().find(|c| c.0 == 'Q').map(|c| c.1).expect("drawn")

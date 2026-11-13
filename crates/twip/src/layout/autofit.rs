@@ -378,11 +378,7 @@ pub fn resolve(cols: &[Col], pad_total: i64, tbl_w: i64, avail: i64, fixed: bool
     let (bd, ba) = match (xd > 0, xa > 0) {
         (true, true) => {
             let bd = xd.min(budget);
-            if bd + na <= budget {
-                (bd, budget - bd)
-            } else {
-                (if nd + na > budget { nd } else { budget - na }, na)
-            }
+            if bd + na <= budget { (bd, budget - bd) } else { (if nd + na > budget { nd } else { budget - na }, na) }
         }
         (true, false) => (budget, 0),
         (false, true) => (0, na.max(budget)),
@@ -570,7 +566,13 @@ mod tests {
                         .as_array()
                         .unwrap()
                         .iter()
-                        .map(|r| r.as_array().unwrap().iter().map(|g| (g[0].as_u64().unwrap() as usize, g[1].as_u64().unwrap() as usize, g[2].as_i64().unwrap())).collect())
+                        .map(|r| {
+                            r.as_array()
+                                .unwrap()
+                                .iter()
+                                .map(|g| (g[0].as_u64().unwrap() as usize, g[1].as_u64().unwrap() as usize, g[2].as_i64().unwrap()))
+                                .collect()
+                        })
                         .collect();
                     let got = columns(i["n"].as_u64().unwrap() as usize, &cells, i["sp"].as_i64().unwrap(), &gaps, i["fixed"].as_bool().unwrap());
                     let want: Vec<Col> = o.as_array().unwrap().iter().map(col).collect();

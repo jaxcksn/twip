@@ -770,7 +770,11 @@ impl<'d> PageFill<'d, '_> {
     /// Whether only the section's empty closing paragraph, or nothing, is left from `pos`.
     fn at_section_end(&self, pos: &FlowToken) -> bool {
         let n = self.sec.blocks.len();
-        pos.block >= n || pos.at.at_start() && pos.block + 1 == n && n > 1 && matches!(self.sec.blocks.get(pos.block), Some(Block::Para(p)) if p.inlines.is_empty())
+        pos.block >= n
+            || pos.at.at_start()
+                && pos.block + 1 == n
+                && n > 1
+                && matches!(self.sec.blocks.get(pos.block), Some(Block::Para(p)) if p.inlines.is_empty())
     }
 
     /// Whether `pos` is at or inside an endnote's text (past the endnote separator).
@@ -893,7 +897,11 @@ impl<'d> PageFill<'d, '_> {
             let waits = self.column + 1 < n && spread.is_some_and(|s| s > room + EPS);
             let mut wrap = |p: &NotePart, w: f64| self.rewrap(p, w, memos);
             let mut cut = Vec::new();
-            let h = if widths.len() > 1 { stream_height(&a.parts, &widths, room, &mut wrap)? } else { Some(stacked(&a.parts)).filter(|&h| h <= room + EPS) };
+            let h = if widths.len() > 1 {
+                stream_height(&a.parts, &widths, room, &mut wrap)?
+            } else {
+                Some(stacked(&a.parts)).filter(|&h| h <= room + EPS)
+            };
             if h.is_none() && waits {
                 return Ok(false);
             }
@@ -1667,7 +1675,8 @@ impl<'d> PageFill<'d, '_> {
                 }
                 // Above a footnote area compat 15 tests the line's full pitch, compat ≤ 14 its height without the room
                 // multiple spacing adds below it.
-                let above = if self.ctx.env.text.compat == Compat::Legacy && style.line_rule == LineRule::Auto && style.line > 1.0 { room } else { l.pitch };
+                let above =
+                    if self.ctx.env.text.compat == Compat::Legacy && style.line_rule == LineRule::Auto && style.line > 1.0 { room } else { l.pitch };
                 let over = |a: &NoteArea| a.total() > 0.0 && !col.bottom.holds(yy + above + tail + a.total()) && !pb.leading_page_break(i);
                 let waits = |a: &NoteArea, rest: &[NotePart]| rest.iter().any(|r| !a.parts.iter().any(|p| (p.kind, p.id) == (r.kind, r.id)));
                 if over(&a) && defer {
@@ -1752,7 +1761,15 @@ impl<'d> PageFill<'d, '_> {
         let last = match &pb.lines[take - 1] {
             l if text.bottom_unhyphenated && text.hyphenation.is_some() && take < n && l.hyphen && !pb.pieces()[l.end - 1].soft_hyphen => {
                 let env = super::env::TextEnv { hyphenation: None, ..text.clone() };
-                let space = ParaSpace { width: pb.width, start: pb.from + l.start, borders: pb.borders.clone(), x0: pb.x0, env, fit: false, letter_break: false };
+                let space = ParaSpace {
+                    width: pb.width,
+                    start: pb.from + l.start,
+                    borders: pb.borders.clone(),
+                    x0: pb.x0,
+                    env,
+                    fit: false,
+                    letter_break: false,
+                };
                 Some(break_lines(&pb.shaped, p, &space, self.ctx.fonts, memos)?)
             }
             _ => None,
@@ -2002,7 +2019,9 @@ impl<'d> PageFill<'d, '_> {
         let (cx0, cx1) = (col.x, col.x + col.width);
         let compat = self.ctx.env.text.compat;
         // After a leading page or column break the paragraph starts again with its first line.
-        let restarts = sp.opens && pb.from > 0 && sp.pieces[..pb.from.min(sp.pieces.len())].iter().all(|q| matches!(q.kind, Kind::PageBreak | Kind::ColumnBreak));
+        let restarts = sp.opens
+            && pb.from > 0
+            && sp.pieces[..pb.from.min(sp.pieces.len())].iter().all(|q| matches!(q.kind, Kind::PageBreak | Kind::ColumnBreak));
         let mut content = pieces.iter().filter(|q| q.kind != Kind::Anchor);
         let lone_picture = compat == Compat::Legacy && content.next().is_some_and(|q| q.kind == Kind::Object) && content.next().is_none();
         // Text laid out before the paragraph in this column ends at `*y`, then the space after it keeps.
@@ -2065,9 +2084,8 @@ impl<'d> PageFill<'d, '_> {
             }
             true
         };
-        let own_float = |f: &&Placed| {
-            (f.key.0, f.key.1) == (self.sec.index, pos.block) && f.wrap != Wrap::None && f.excl[0] < cx1 - EPS && f.excl[2] > cx0 + EPS
-        };
+        let own_float =
+            |f: &&Placed| (f.key.0, f.key.1) == (self.sec.index, pos.block) && f.wrap != Wrap::None && f.excl[0] < cx1 - EPS && f.excl[2] > cx0 + EPS;
         // Below a column's top it is tried as a block one line lower at a time, from where it was first laid out: below
         // the float it stays; with the float starting below its first line it goes on down; with the float's top in its
         // first line it goes to the float's bottom unless the float reaches more than its first place's distance to
@@ -2134,9 +2152,9 @@ impl<'d> PageFill<'d, '_> {
                         let first = ok.len();
                         return Some((t, ok, first));
                     }
-                    let covering = order
-                        .iter()
-                        .filter(|f| f.wrap != Wrap::None && f.excl[1] <= t + slack + EPS && f.excl[3] > t + EPS && f.excl[2] > cx0 + EPS && f.excl[0] < cx1 - EPS);
+                    let covering = order.iter().filter(|f| {
+                        f.wrap != Wrap::None && f.excl[1] <= t + slack + EPS && f.excl[3] > t + EPS && f.excl[2] > cx0 + EPS && f.excl[0] < cx1 - EPS
+                    });
                     let end = found.iter().map(|p| p.2).chain(covering.map(|f| f.excl[3])).fold(f64::INFINITY, f64::min);
                     if !end.is_finite() || end <= t + EPS {
                         return None;
@@ -2147,7 +2165,9 @@ impl<'d> PageFill<'d, '_> {
             };
             let pieces_of = |ok: &[(f64, f64, f64)]| ok.iter().map(|p| (p.0, p.1)).collect::<Vec<(f64, f64)>>();
             let starts_below = |end: f64| {
-                here.iter().any(|f| f.wrap != Wrap::None && f.excl[1] > end - EPS && f.excl[1] < yy + h - EPS && f.excl[0] < cx1 - EPS && f.excl[2] > cx0 + EPS)
+                here.iter().any(|f| {
+                    f.wrap != Wrap::None && f.excl[1] > end - EPS && f.excl[1] < yy + h - EPS && f.excl[0] < cx1 - EPS && f.excl[2] > cx0 + EPS
+                })
             };
             let reuse = compat == Compat::Legacy
                 && strip_at.as_ref().is_some_and(|&(_, end, least)| {
@@ -2181,7 +2201,10 @@ impl<'d> PageFill<'d, '_> {
                         Some((t, ok, first)) => {
                             let frame = |f: &&&Placed| f.float.text_box.is_some() && f.float.shape.is_none() && f.key.2 != float::TABLE_PIECE;
                             let framed = || {
-                                order.iter().filter(frame).any(|f| f.excl[1] < t + h - EPS && f.excl[3] > yy + EPS && f.excl[0] < cx1 - EPS && f.excl[2] > cx0 + EPS)
+                                order
+                                    .iter()
+                                    .filter(frame)
+                                    .any(|f| f.excl[1] < t + h - EPS && f.excl[3] > yy + EPS && f.excl[0] < cx1 - EPS && f.excl[2] > cx0 + EPS)
                             };
                             let drop = if first >= 2 && framed() { t - yy } else { 0.0 };
                             fitted = Some((pieces_of(&ok), end_of(&ok), one.map_or(0.0, |_| slack), drop));
@@ -2236,8 +2259,7 @@ impl<'d> PageFill<'d, '_> {
                         let ivc: Vec<(f64, f64)> = iv.iter().map(|(a, b)| (a - cx0, b - cx0)).collect();
                         // A word too long for the line breaks after the last character that fits: in an uncut line,
                         // and in compat ≤ 14 in a line's only piece beside a float.
-                        let open = iv.len() == 1
-                            && (compat == Compat::Legacy || (iv[0].0 - cx0).abs() < EPS && (iv[0].1 - cx1).abs() < EPS);
+                        let open = iv.len() == 1 && (compat == Compat::Legacy || (iv[0].0 - cx0).abs() < EPS && (iv[0].1 - cx1).abs() < EPS);
                         let first = (first_part || restarts) && bands.is_empty();
                         let r = band(
                             sp,
@@ -2540,7 +2562,8 @@ impl<'d> PageFill<'d, '_> {
             if !self.add_notes(&refs, &mut a, col, bt + room + note_tail, &mut rest, false, memos)? && !lead {
                 break;
             }
-            let above = if self.ctx.env.text.compat == Compat::Legacy && style.line_rule == LineRule::Auto && style.line > 1.0 { room } else { l.pitch };
+            let above =
+                if self.ctx.env.text.compat == Compat::Legacy && style.line_rule == LineRule::Auto && style.line > 1.0 { room } else { l.pitch };
             if a.total() > 0.0 && !col.bottom.holds(bt + above + tail + a.total()) && !lead {
                 break;
             }
@@ -2648,7 +2671,8 @@ impl<'d> PageFill<'d, '_> {
                 let lifted = (a.rect[1] * 20.0).round() / 20.0 < a.rect[1] - EPS && a.rect[1] > col.top.to_pt() + EPS;
                 if in_flow && by_frame && !apart && !lifted && !kept_at.contains(&a.key) {
                     let key = a.key;
-                    let later = self.at.known.iter().filter(|o| frame(o) && !o.allow_overlap && o.key.0 == key.0 && (o.key.1, o.key.2) > (key.1, key.2));
+                    let later =
+                        self.at.known.iter().filter(|o| frame(o) && !o.allow_overlap && o.key.0 == key.0 && (o.key.1, o.key.2) > (key.1, key.2));
                     for o in later {
                         if o.excl[0] < a.rect[2] - EPS && a.rect[0] < o.excl[2] - EPS && o.rect[1] < a.rect[3] - EPS && a.rect[1] < o.rect[3] - EPS {
                             a.moved_to(a.rect[0], ((o.rect[1] * 20.0 + ((o.rect[3] - o.rect[1]) * 20.0).round() - 1.0) / 20.0).max(a.rect[1]));
@@ -2685,7 +2709,9 @@ impl<'d> PageFill<'d, '_> {
                 let restarted = by_frame
                     || compat == Compat::Legacy
                         && frame(&a)
-                        && self.at.known.iter().any(|k| k.restarts && !frame(k) && k.wrap != Wrap::None && k.key.0 == a.key.0 && (k.key.1, k.key.2) > (a.key.1, a.key.2));
+                        && self.at.known.iter().any(|k| {
+                            k.restarts && !frame(k) && k.wrap != Wrap::None && k.key.0 == a.key.0 && (k.key.1, k.key.2) > (a.key.1, a.key.2)
+                        });
                 let down = match a.float.v_relative.as_str() {
                     "page" => (0.0, frames.page_h),
                     "margin" if frame(&a) => (frames.margin[2], frames.page_h - frames.margin[3]),
@@ -2848,13 +2874,11 @@ impl<'d> PageFill<'d, '_> {
                 paras
             }
             .into_iter()
-                .flat_map(|p| p.inlines.iter().map(move |i| (para_id(p), i)))
-                .filter_map(|(id, i)| if let Inline::Float(f, _) = i { page_floats.get(&f.id).map(|f| (*f, id)) } else { None })
-                .filter(|(f, _)| {
-                    f.wrap != "none" && f.v_relative == "paragraph" && f.h_align.is_none() && f.v_align.is_none()
-                })
-                .map(|(f, id)| (f, id, f.v_offset - f.dist[0], f.v_offset + f.h + f.dist[1]))
-                .collect(),
+            .flat_map(|p| p.inlines.iter().map(move |i| (para_id(p), i)))
+            .filter_map(|(id, i)| if let Inline::Float(f, _) = i { page_floats.get(&f.id).map(|f| (*f, id)) } else { None })
+            .filter(|(f, _)| f.wrap != "none" && f.v_relative == "paragraph" && f.h_align.is_none() && f.v_align.is_none())
+            .map(|(f, id)| (f, id, f.v_offset - f.dist[0], f.v_offset + f.h + f.dist[1]))
+            .collect(),
             _ => Vec::new(),
         };
         let first_h = tb.rows.first().map_or(0.0, |r| r.height);
@@ -3052,9 +3076,11 @@ impl<'d> PageFill<'d, '_> {
             let (l, r) = (at_x + tb.x0, at_x + tb.x0 + tb.cols.iter().sum::<f64>());
             row_floats
                 .iter()
-                .filter(|(f, _, top, _)| *top >= first_h && {
-                    let x = float::h_pos(f, &frames);
-                    x < r && x + f.w > l
+                .filter(|(f, _, top, _)| {
+                    *top >= first_h && {
+                        let x = float::h_pos(f, &frames);
+                        x < r && x + f.w > l
+                    }
                 })
                 .map(|(_, _, top, bottom)| (y0 + top, y0 + bottom))
                 .collect()
@@ -3315,8 +3341,7 @@ impl<'d> PageFill<'d, '_> {
         let Some(Block::Table(t)) = self.sec.blocks.get(bi) else { return Ok(None) };
         let Some(ri) = tb.rows.iter().position(|r| !r.hidden) else { return Ok(None) };
         let si = self.sec.index;
-        let floats: Vec<Placed> =
-            self.fixed.iter().chain(self.known_at(bi)).filter(|f| (f.key.0, f.key.1) != (si, bi)).chain(own).cloned().collect();
+        let floats: Vec<Placed> = self.fixed.iter().chain(self.known_at(bi)).filter(|f| (f.key.0, f.key.1) != (si, bi)).chain(own).cloned().collect();
         if tb.rtl || floats.is_empty() {
             return Ok(None);
         }
@@ -3428,7 +3453,11 @@ impl<'d> PageFill<'d, '_> {
         // ran past the line end below it.
         let passed = |k: f64| {
             let (moved, short) = (|o: &Placed| (o.excl[3] + above - k).abs() < EPS, below_tables(k) + h > end + EPS);
-            self.at.found.iter().filter(|o| o.key.2 == float::UPRIGHT_TABLE && o.excl[3] <= y0 + EPS).any(|o| moved(o) || (short && meeting(k).any(|m| m.same(o))))
+            self.at
+                .found
+                .iter()
+                .filter(|o| o.key.2 == float::UPRIGHT_TABLE && o.excl[3] <= y0 + EPS)
+                .any(|o| moved(o) || (short && meeting(k).any(|m| m.same(o))))
         };
         let known_rect = self.at.known.iter().find(|k| k.key == (self.sec.index, bi, float::UPRIGHT_TABLE)).map(|k| k.rect);
         let known = known_rect.map(|r| r[1]).filter(|&k| legacy || !passed(k));
@@ -3445,7 +3474,9 @@ impl<'d> PageFill<'d, '_> {
             let after = known_rect.filter(|r| *y >= r[3] + below - EPS && upright().any(|o| o.excl[3] <= r[1] + EPS));
             if let Some(r) = after {
                 (full_line, jumped_at) = (true, Some(r[1]));
-            } else if let Some(o) = upright().filter(|o| self.at.starts.iter().any(|s| (s.0 - o.excl[3]).abs() < EPS)).max_by(|a, b| a.excl[3].total_cmp(&b.excl[3])) {
+            } else if let Some(o) =
+                upright().filter(|o| self.at.starts.iter().any(|s| (s.0 - o.excl[3]).abs() < EPS)).max_by(|a, b| a.excl[3].total_cmp(&b.excl[3]))
+            {
                 let e = o.excl[3];
                 let lead = match self.sec.blocks.get(o.key.1) {
                     Some(Block::Table(t1)) => super::table::legacy_lead(t1),
@@ -3521,11 +3552,12 @@ impl<'d> PageFill<'d, '_> {
             let bb = tb.bottom_border;
             let fit = |room: f64| {
                 let mut s = bb;
-                hs.iter().take_while(|&&r| {
-                    s += r;
-                    s <= room + EPS
-                })
-                .count()
+                hs.iter()
+                    .take_while(|&&r| {
+                        s += r;
+                        s <= room + EPS
+                    })
+                    .count()
             };
             let mut under = fit(end - along);
             let piece = hs[..under].iter().sum::<f64>() + bb;

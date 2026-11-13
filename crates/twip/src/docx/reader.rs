@@ -388,7 +388,8 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
     // Word's built-in separators: one line with no paragraph spacing.
     // ponytail: in the default paragraph style's run font, not the document default's; differs only when that style
     // sets a font or size.
-    for (tag, t) in [("footnote", "separator"), ("footnote", "continuationSeparator"), ("endnote", "separator"), ("endnote", "continuationSeparator")] {
+    for (tag, t) in [("footnote", "separator"), ("footnote", "continuationSeparator"), ("endnote", "separator"), ("endnote", "continuationSeparator")]
+    {
         let key = format!("{tag}:{t}");
         if doc.separators.contains_key(&key) || (tag == "endnote" && doc.endnotes.is_empty()) || (tag == "footnote" && doc.footnotes.is_empty()) {
             continue;
@@ -629,11 +630,13 @@ fn shift_connector_text(sections: &mut [Section]) {
     let mut texts = Vec::new();
     sections.iter_mut().for_each(|s| walk(&mut s.blocks, &mut |_, tb| texts.extend(tb.as_mut().map(|tb| std::mem::take(&mut tb.blocks)))));
     let mut texts = texts.into_iter();
-    sections.iter_mut().for_each(|s| walk(&mut s.blocks, &mut |is_line, tb| match tb {
-        Some(_) if is_line => *tb = None,
-        Some(tb) => tb.blocks = texts.next().unwrap_or_default(),
-        None => {}
-    }));
+    sections.iter_mut().for_each(|s| {
+        walk(&mut s.blocks, &mut |is_line, tb| match tb {
+            Some(_) if is_line => *tb = None,
+            Some(tb) => tb.blocks = texts.next().unwrap_or_default(),
+            None => {}
+        })
+    });
 }
 
 /// Marks a note's drawings: a note has no floats, its anchors are laid out inline.
@@ -2329,10 +2332,8 @@ impl Reader {
         let line = shape.sp().and_then(|s| s.line.as_ref()).or_else(|| shape.pic().and_then(|p| p.line.as_ref()));
         let pen = line.filter(|l| !matches!(l.fill, Some(crate::drawing::paint::Fill::None))).map(|l| l.width.map_or(15.0, |w| w.0 as f64 / 635.0));
         let (h_align, v_align) = (align(&st.h_align), align(&st.v_align));
-        let effect = vml_effect(
-            pen,
-            (h_align.is_none() && v_align.is_none()).then(|| [st.x, st.y, st.x + st.w, st.y + st.h].map(|v| (v * 20.0).trunc())),
-        );
+        let effect =
+            vml_effect(pen, (h_align.is_none() && v_align.is_none()).then(|| [st.x, st.y, st.x + st.w, st.y + st.h].map(|v| (v * 20.0).trunc())));
         self.float_order += 1;
         out.push(Inline::Float(
             Box::new(Float {
@@ -2916,7 +2917,14 @@ fn table_grid(t: Node) -> Vec<f64> {
 fn merged_grid(grids: &[Vec<f64>], rows: &mut [Row], row_table: &[usize], moves: &[i64]) -> Vec<f64> {
     let mut edges: Vec<Vec<i64>> = grids
         .iter()
-        .map(|g| std::iter::once(0).chain(g.iter().scan(0.0, |x, w| { *x += w; Some((*x * 20.0).round() as i64) })).collect())
+        .map(|g| {
+            std::iter::once(0)
+                .chain(g.iter().scan(0.0, |x, w| {
+                    *x += w;
+                    Some((*x * 20.0).round() as i64)
+                }))
+                .collect()
+        })
         .collect();
     let mut own: Vec<Option<Vec<i64>>> = vec![None; rows.len()];
     for k in 1..grids.len() {

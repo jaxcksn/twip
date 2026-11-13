@@ -207,7 +207,14 @@ pub fn layout(blocks: &[&Block], width: f64, env: &StoryEnv, cell: Option<CellEn
 }
 
 /// `hf`: a header or footer story, whose floating tables float: its top on the page and the page's top margin.
-fn layout_in(blocks: &[&Block], width: f64, env: &StoryEnv, cell: Option<CellEnds>, hf: Option<(f64, f64)>, memos: &mut Memos) -> Result<Rc<StoryLayout>, Yield> {
+fn layout_in(
+    blocks: &[&Block],
+    width: f64,
+    env: &StoryEnv,
+    cell: Option<CellEnds>,
+    hf: Option<(f64, f64)>,
+    memos: &mut Memos,
+) -> Result<Rc<StoryLayout>, Yield> {
     let blocks = super::join::laid(blocks, env.ctx.env.text.review.view);
     let children = child_ids(&blocks, Some(width), env, cell, memos)?;
     let probe = StoryKey { hf, ..StoryKey::new(children.clone(), Some(width), cell, env, &blocks) };
@@ -337,8 +344,9 @@ pub fn layout_with(
                 // The story's own floats placed from outside it: only those beside the paragraph's unwrapped lines.
                 let bottom = para_top + lines.lines.iter().map(|l| l.pitch).sum::<f64>();
                 floats.extend(around.iter().chain(&tables).filter(|f| f.in_band(para_top, bottom)).cloned());
-                let bands =
-                    (!floats.is_empty()).then(|| wrap_bands(&lines, p, style, &floats, &ps, (para_top, before), env.ctx.fonts)).filter(|b| !b.is_empty());
+                let bands = (!floats.is_empty())
+                    .then(|| wrap_bands(&lines, p, style, &floats, &ps, (para_top, before), env.ctx.fonts))
+                    .filter(|b| !b.is_empty());
                 let rows = bands.as_ref().map_or(lines.lines.len(), Vec::len);
                 for i in 0..rows {
                     let ((start, end, pitch, below), mut content) = match &bands {
@@ -1220,7 +1228,10 @@ pub fn hf_layout(
         if around.is_empty() || seen.as_ref() == Some(&rects) {
             break;
         }
-        l = Rc::new(StoryLayout { frozen: frozen.clone(), ..layout_with(&laid, &children, width, env, None, (0, 0), &around, Some((at, margin)), memos)? });
+        l = Rc::new(StoryLayout {
+            frozen: frozen.clone(),
+            ..layout_with(&laid, &children, width, env, None, (0, 0), &around, Some((at, margin)), memos)?
+        });
         seen = Some(rects);
     }
     Ok(l)

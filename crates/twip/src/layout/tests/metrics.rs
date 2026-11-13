@@ -49,7 +49,9 @@ fn a_line_of_only_spaces_takes_their_height_and_one_ending_in_a_break_the_breaks
 #[test]
 fn an_emphasis_mark_is_a_quarter_of_the_line_and_fits_in_the_spacing_extra() {
     let lines = |line: u32| {
-        let p = |t: &str, em: &str| format!(r#"<w:p><w:pPr><w:spacing w:line="{line}" w:lineRule="auto"/></w:pPr><w:r><w:rPr>{em}</w:rPr><w:t>{t}</w:t></w:r></w:p>"#);
+        let p = |t: &str, em: &str| {
+            format!(r#"<w:p><w:pPr><w:spacing w:line="{line}" w:lineRule="auto"/></w:pPr><w:r><w:rPr>{em}</w:rPr><w:t>{t}</w:t></w:r></w:p>"#)
+        };
         let c = chars("", ARIAL_10, &(p("x", r#"<w:em w:val="dot"/>"#) + &p("y", "")), 0)?;
         Some((at(&c, 'x').1, at(&c, 'y').1))
     };
@@ -64,7 +66,8 @@ fn an_emphasis_mark_is_a_quarter_of_the_line_and_fits_in_the_spacing_extra() {
 
 #[test]
 fn compat_15_a_paragraph_of_4000_characters_fits_its_region_as_compat_12() {
-    let settings = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+    let settings =
+        r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
     let rpr = r#"<w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="22"/>"#;
     let line = |len: usize| {
         // `G2 ` + `stuv` fitted to 2700 tw + `|z ` and filler, `len` characters with the mark, on a 3372 tw line.
@@ -83,7 +86,9 @@ fn compat_15_a_paragraph_of_4000_characters_fits_its_region_as_compat_12() {
 #[test]
 fn a_text_borders_sides_widen_and_heighten_its_box() {
     let bdr = r#"<w:bdr w:val="single" w:sz="4" w:space="0" w:color="000000"/>"#;
-    let body = format!(r#"<w:p><w:r><w:rPr>{bdr}</w:rPr><w:t>b</w:t></w:r><w:r><w:rPr>{bdr}</w:rPr><w:t>c</w:t></w:r><w:r><w:t>d</w:t></w:r></w:p><w:p><w:r><w:t>y</w:t></w:r></w:p>"#);
+    let body = format!(
+        r#"<w:p><w:r><w:rPr>{bdr}</w:rPr><w:t>b</w:t></w:r><w:r><w:rPr>{bdr}</w:rPr><w:t>c</w:t></w:r><w:r><w:t>d</w:t></w:r></w:p><w:p><w:r><w:t>y</w:t></w:r></w:p>"#
+    );
     let Some(c) = chars("", ARIAL_10, &body, 0) else { return };
     // Equal borders make one box: 10 tw a side, drawn as 4 pixels (0.48pt); 0.5pt more above and below.
     let (b, cx, d, y) = (at(&c, 'b'), at(&c, 'c'), at(&c, 'd'), at(&c, 'y'));

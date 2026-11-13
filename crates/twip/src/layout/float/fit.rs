@@ -56,8 +56,20 @@ fn blocks(f: &Placed, x0: f64, x1: f64, top: f64, bottom: f64, legacy: bool) -> 
     let (Some(&(l, _)), Some(&(_, r))) = (spans.first(), spans.last()) else { return Some(Vec::new()) };
     let gap = f.gap(legacy);
     let side = match f.side {
-        Side::Largest if legacy => if l - x0 > x1 - r + EPS { Side::Left } else { Side::Right },
-        Side::Largest => if l - x0 >= x1 - r - EPS { Side::Left } else { Side::Right },
+        Side::Largest if legacy => {
+            if l - x0 > x1 - r + EPS {
+                Side::Left
+            } else {
+                Side::Right
+            }
+        }
+        Side::Largest => {
+            if l - x0 >= x1 - r - EPS {
+                Side::Left
+            } else {
+                Side::Right
+            }
+        }
         Side::Left if legacy && (l <= x0 + EPS || l - x0 < gap - EPS && x1 - r >= gap - EPS) => Side::Right,
         s => s,
     };

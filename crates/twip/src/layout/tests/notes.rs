@@ -104,7 +104,8 @@ fn an_anchor_in_a_note_is_laid_out_inline() {
         let Some(doc) = notes_doc_with(&(para("Body", &[r]) + &sect("", true)), "", &extra) else { return };
         let snap = crate::layout::layout(&doc, &fonts());
         let items = crate::layout::traverse::paint_items(&snap.pages()[0]);
-        let rects: Vec<[f64; 4]> = items.iter().filter_map(|i| if let crate::layout::fragment::Item::Shape(s) = i { Some(s.rect) } else { None }).collect();
+        let rects: Vec<[f64; 4]> =
+            items.iter().filter_map(|i| if let crate::layout::fragment::Item::Shape(s) = i { Some(s.rect) } else { None }).collect();
         let chars = super::page_chars(&doc).remove(0);
         let at = |c: char| chars.iter().find(|g| g.0 == c).copied().expect("the note's text");
         let ([[x0, y0, x1, y1]], (a, b)) = (rects.as_slice(), (at('Q'), at('Z'))) else { panic!("{r}: one shape, {rects:?}") };
@@ -212,14 +213,16 @@ fn compat_15_note_going_on_takes_the_next_sections_columns() {
     let extra = format!(r#"<w:footnote w:id="10">{long}</w:footnote>"#);
     let pages = |n: usize| {
         let mut body: String = (1..n).map(|i| para(&format!("L{i:02}"), &[])).collect();
-        body += &format!(r#"<w:p><w:pPr><w:sectPr>{PAGE}</w:sectPr></w:pPr><w:r><w:t>Last</w:t></w:r><w:r><w:footnoteReference w:id="10"/></w:r></w:p>"#);
+        body +=
+            &format!(r#"<w:p><w:pPr><w:sectPr>{PAGE}</w:sectPr></w:pPr><w:r><w:t>Last</w:t></w:r><w:r><w:footnoteReference w:id="10"/></w:r></w:p>"#);
         body += &(para("Two", &[]) + &sect(r#"<w:type w:val="continuous"/><w:cols w:num="2" w:space="720"/>"#, true));
         Some(super::page_chars(&notes_doc_with(&body, C15, &extra)?))
     };
     let text = |p: &[(char, f64, f64)]| p.iter().map(|c| c.0).collect::<String>();
     let Some(_) = pages(2) else { return };
     // The longest first section that still ends on page 1 with the note cut there.
-    let pages = (2..40).map(|n| pages(n).unwrap()).filter(|p| p.len() > 1 && text(&p[0]).contains("Last") && text(&p[1]).contains('E')).last().expect("a cut note");
+    let pages =
+        (2..40).map(|n| pages(n).unwrap()).rfind(|p| p.len() > 1 && text(&p[0]).contains("Last") && text(&p[1]).contains('E')).expect("a cut note");
     let notes: Vec<&(char, f64, f64)> = pages[1].iter().filter(|c| c.0 == 'E').collect();
     assert!(notes.iter().any(|c| c.1 > 300.0) && notes.iter().any(|c| c.1 < 100.0), "{notes:?}");
 }
@@ -300,7 +303,14 @@ fn compat_14_line_above_a_note_area_needs_no_room_below_its_text() {
     let body = |before: u32| {
         let line = |k: usize, ppr: &str| {
             let refs: &[&str] = if k == 1 { &["f1"] } else { &[] };
-            para(&format!("P{k:02}"), refs).replacen("<w:p>", &format!(r#"<w:p><w:pPr><w:spacing w:before="{}" w:after="0" w:line="360" w:lineRule="auto"/>{ppr}</w:pPr>"#, if k == 1 { before } else { 0 }), 1)
+            para(&format!("P{k:02}"), refs).replacen(
+                "<w:p>",
+                &format!(
+                    r#"<w:p><w:pPr><w:spacing w:before="{}" w:after="0" w:line="360" w:lineRule="auto"/>{ppr}</w:pPr>"#,
+                    if k == 1 { before } else { 0 }
+                ),
+                1,
+            )
         };
         (1..=60).map(|k| line(k, "")).collect::<String>() + &sect("", true)
     };
@@ -578,7 +588,9 @@ fn compat_14_separator_line_is_at_least_the_mark_height() {
 
 #[test]
 fn notes_keep_the_space_after_between_them() {
-    let note = |id: u32, after: u32| format!(r#"<w:footnote w:id="{id}"><w:p><w:pPr><w:spacing w:after="{after}"/></w:pPr><w:r><w:t>Q{id}</w:t></w:r></w:p></w:footnote>"#);
+    let note = |id: u32, after: u32| {
+        format!(r#"<w:footnote w:id="{id}"><w:p><w:pPr><w:spacing w:after="{after}"/></w:pPr><w:r><w:t>Q{id}</w:t></w:r></w:p></w:footnote>"#)
+    };
     let gap = |after: u32| {
         let body = para("Body", &["f11", "f12"]) + &sect("", true);
         let doc = notes_doc_with(&body, "", &(note(11, after) + &note(12, 0)))?;
@@ -705,7 +717,9 @@ fn compat_15_a_cut_note_goes_on_in_the_next_sections_layout_before_its_text() {
     let extra = format!(r#"<w:footnote w:id="10">{long}</w:footnote>"#);
     let line = |s: &str, r: &str| format!(r#"<w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>{s}</w:t></w:r>{r}</w:p>"#);
     let mut b: String = (1..=9).map(|i| line(&format!("P{i:02}"), "")).collect();
-    b += &format!(r#"<w:p><w:pPr><w:spacing w:after="0"/><w:sectPr><w:cols w:num="2" w:space="720"/>{PAGE}</w:sectPr></w:pPr><w:r><w:t>P10</w:t></w:r><w:r><w:footnoteReference w:id="10"/></w:r></w:p>"#);
+    b += &format!(
+        r#"<w:p><w:pPr><w:spacing w:after="0"/><w:sectPr><w:cols w:num="2" w:space="720"/>{PAGE}</w:sectPr></w:pPr><w:r><w:t>P10</w:t></w:r><w:r><w:footnoteReference w:id="10"/></w:r></w:p>"#
+    );
     b += &((1..=20).map(|i| line(&format!("T{i:02}"), "")).collect::<String>() + &sect(r#"<w:type w:val="continuous"/>"#, true));
     let Some(doc) = notes_doc_with(&b, C15, &extra) else { return };
     let pages = super::page_chars(&doc);
@@ -719,8 +733,15 @@ fn compat_15_a_cut_note_goes_on_in_the_next_sections_layout_before_its_text() {
 #[test]
 fn a_continuation_notice_takes_note_room_under_a_cut_note() {
     let lines: String = (1..=10).map(|i| format!(r#"<w:r>{}<w:t>N{i:02}</w:t></w:r>"#, if i > 1 { "<w:br/>" } else { "" })).collect();
-    let extra = format!(r#"<w:footnote w:type="continuationNotice" w:id="11"><w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>Cont</w:t></w:r></w:p></w:footnote><w:footnote w:id="10"><w:p>{lines}</w:p></w:footnote>"#);
-    let line = |k: usize, r: usize| format!(r#"<w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>P{k:02}</w:t></w:r>{}</w:p>"#, if k == r { r#"<w:r><w:footnoteReference w:id="10"/></w:r>"# } else { "" });
+    let extra = format!(
+        r#"<w:footnote w:type="continuationNotice" w:id="11"><w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>Cont</w:t></w:r></w:p></w:footnote><w:footnote w:id="10"><w:p>{lines}</w:p></w:footnote>"#
+    );
+    let line = |k: usize, r: usize| {
+        format!(
+            r#"<w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>P{k:02}</w:t></w:r>{}</w:p>"#,
+            if k == r { r#"<w:r><w:footnoteReference w:id="10"/></w:r>"# } else { "" }
+        )
+    };
     let body = |r: usize| (1..=80).map(|k| line(k, r)).collect::<String>() + &sect("", true);
     let listed = r#"<w:footnotePr><w:footnote w:id="11"/></w:footnotePr>"#;
     let page1 = |r: usize, settings: &str| -> Option<String> {
@@ -753,7 +774,9 @@ fn note_in_balanced(cols: &str, body: usize, r: usize, lines: usize, breaks: boo
     };
     let extra = format!(r#"<w:footnote w:id="10">{long}</w:footnote>"#);
     let pr = r#"<w:footnotePr><w:pos w:val="beneathText"/></w:footnotePr>"#;
-    let line = |s: String, k: usize| p(format!(r#"<w:r><w:t>{s}</w:t></w:r>{}"#, if k == r { r#"<w:r><w:footnoteReference w:id="10"/></w:r>"# } else { "" }));
+    let line = |s: String, k: usize| {
+        p(format!(r#"<w:r><w:t>{s}</w:t></w:r>{}"#, if k == r { r#"<w:r><w:footnoteReference w:id="10"/></w:r>"# } else { "" }))
+    };
     let mut b: String = (1..=body).map(|k| line(format!("P{k:03}"), k)).collect();
     b += &sect(&format!("{pr}{cols}"), false);
     b += &((1..=tail).map(|k| line(format!("N{k:03}"), 0)).collect::<String>() + &sect(&format!(r#"<w:type w:val="continuous"/>{pr}"#), true));
@@ -785,7 +808,9 @@ fn compat_14_a_balanced_column_under_a_continuation_that_goes_on_holds_only_the_
     // Three columns, six lines, a four-line note on line 2: column 1 holds two lines and the note's first, column 2
     // the rest of the note only, column 3 the last four lines.
     let Some(pages) = note_in_balanced(r#"<w:cols w:num="3" w:space="720"/>"#, 6, 2, 4, false, 2) else { return };
-    let (Some((0, p3)), Some((0, q2)), Some((0, q4))) = (find(&pages, "P003"), find(&pages, "Q002"), find(&pages, "Q004")) else { panic!("{pages:?}") };
+    let (Some((0, p3)), Some((0, q2)), Some((0, q4))) = (find(&pages, "P003"), find(&pages, "Q002"), find(&pages, "Q004")) else {
+        panic!("{pages:?}")
+    };
     assert!(q2.1 > 200.0 && q2.1 < 300.0 && q4.1 == q2.1, "the rest of the note in column 2: {pages:?}");
     assert!(p3.1 > 400.0, "line 3 in column 3: {pages:?}");
 }
