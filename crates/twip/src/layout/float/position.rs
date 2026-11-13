@@ -97,6 +97,16 @@ fn by_parity<'a>(align: Option<&'a str>, fr: &Frames, (min, max): (&'a str, &'a 
     }
 }
 
+/// The axes on which the box with its effect extents is placed: those with an alignment, a relative size or a
+/// percentage position. Compat ≤ 14: both, when either is.
+fn grown(f: &Float, fr: &Frames) -> [bool; 2] {
+    let own = |k: usize| [&f.h_align, &f.v_align][k].is_some() || f.relative.size[k].is_some() || f.relative.pos[k].is_some();
+    match [own(0), own(1)] {
+        [a, b] if fr.compat == Compat::Legacy => [a || b; 2],
+        axes => axes,
+    }
+}
+
 pub fn h_pos(f: &Float, fr: &Frames) -> f64 {
     let href = h_ref(f, fr);
     if let Some(p) = f.relative.pos[0] {
@@ -131,7 +141,7 @@ pub fn h_pos(f: &Float, fr: &Frames) -> f64 {
             Some("center") => (w - f.w) / 2.0 + (l - r) / 2.0,
             Some("right") => w - f.w - r,
             Some(_) => l,
-            None => f.h_offset,
+            None => f.h_offset + if grown(f, fr)[0] { l } else { 0.0 },
         },
     )
 }
@@ -156,15 +166,17 @@ pub fn v_pos(f: &Float, h: f64, fr: &Frames, para_top: f64, line_top: f64) -> f6
         "topMargin" => (0.0, fr.margin[2]),
         "bottomMargin" => (fr.page_h - fr.margin[3], fr.margin[3]),
         "line" => (line_top, 0.0),
-        _ => return para_top + if f.v_align.is_some() { 0.0 } else { f.v_offset },
+        _ if f.v_align.is_some() => return para_top,
+        _ => return para_top + f.v_offset + if grown(f, fr)[1] && f.poly.is_none() { f.effect[1] } else { 0.0 },
     };
+    let [_, t, _, b] = if f.poly.is_none() { f.effect } else { [0.0; 4] };
     y0 + snap(
         fr,
         match by_parity(f.v_align.as_deref(), fr, ("top", "bottom")) {
-            Some("center") => (ht - h) / 2.0,
-            Some("bottom") => ht - h,
-            Some(_) => 0.0,
-            None => f.v_offset,
+            Some("center") => (ht - h) / 2.0 + (t - b) / 2.0,
+            Some("bottom") => ht - h - b,
+            Some(_) => t,
+            None => f.v_offset + if grown(f, fr)[1] { t } else { 0.0 },
         },
     )
 }

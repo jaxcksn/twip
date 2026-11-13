@@ -472,6 +472,20 @@ mod tests {
     }
 
     #[test]
+    fn compat_14_grows_both_axes_by_the_effect_extents_when_one_is_aligned() {
+        let fr = |compat| Frames { page_w: 612.0, page_h: 792.0, margin: [72.0; 4], column: (72.0, 468.0), compat, cell: false, odd: true };
+        let mut f = (*fl(0.0, 100.0, Side::Both).float).clone();
+        f.h_align = Some("left".into());
+        f.v_offset = 40.0;
+        f.effect = [5.0, 10.0, 5.0, 10.0];
+        assert_eq!(v_pos(&f, 30.0, &fr(Compat::Legacy), 84.65, 84.65), 134.65);
+        assert_eq!(v_pos(&f, 30.0, &fr(Compat::Generic), 84.65, 84.65), 124.65);
+        (f.h_align, f.v_align, f.v_relative) = (None, Some("top".into()), "margin".into());
+        assert_eq!(h_pos(&f, &fr(Compat::Legacy)), 72.0 + 5.0);
+        assert_eq!((h_pos(&f, &fr(Compat::Generic)), v_pos(&f, 30.0, &fr(Compat::Generic), 0.0, 0.0)), (72.0, 82.0));
+    }
+
+    #[test]
     fn a_through_wrap_opens_a_notch_that_a_tight_wrap_keeps_closed() {
         let u =
             [(0.0, 0.0), (7200.0, 0.0), (7200.0, 14400.0), (14400.0, 14400.0), (14400.0, 0.0), (21600.0, 0.0), (21600.0, 21600.0), (0.0, 21600.0)];
