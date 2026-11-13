@@ -2896,7 +2896,9 @@ impl<'d> PageFill<'d, '_> {
             })
             .collect();
         let spot = if pos.at.at_start() && !floating && self.ctx.env.text.vertical.is_none() {
-            self.beside_floats(pos.block, tb, col, *y, &over, memos)?
+            // A tight or through polygon of a single point is drawn but leaves the row where it is.
+            let hits: Vec<Placed> = over.iter().filter(|a| !a.float.poly.as_ref().is_some_and(|p| p.iter().all(|q| *q == p[0]))).cloned().collect();
+            self.beside_floats(pos.block, tb, col, *y, &hits, memos)?
         } else {
             None
         };

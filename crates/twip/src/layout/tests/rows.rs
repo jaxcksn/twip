@@ -728,6 +728,25 @@ mod floats {
         assert!(tight - none > 39.0, "tight {tight} vs none {none}");
     }
 
+    #[test]
+    fn compat_14_a_first_row_stays_beside_a_tight_page_float_whose_polygon_is_one_point() {
+        let first = |wrap: &str| {
+            let b = text_box(wrap, 40.0, "Boxed")
+                .replace(r#"layoutInCell="1""#, r#"layoutInCell="0""#)
+                .replace(r#"distL="0" distR="0""#, r#"distL="114300" distR="114300""#)
+                .replacen("<w:p>", "<w:p><w:r><w:t>First</w:t></w:r>", 1);
+            let body = format!(
+                r#"<w:tbl><w:tblPr><w:tblW w:w="8000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="8000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="8000" w:type="dxa"/></w:tcPr>{b}</w:tc></w:tr></w:tbl><w:p/>"#
+            );
+            let mut d = doc(&body);
+            d.settings.compat_mode = 14;
+            start_of(&d, "First")
+        };
+        let point = r#"<wp:wrapTight wrapText="bothSides"><wp:wrapPolygon edited="0"><wp:start x="0" y="0"/><wp:lineTo x="0" y="0"/><wp:lineTo x="0" y="0"/></wp:wrapPolygon></wp:wrapTight>"#;
+        let (tight, none) = (first(point), first("<wp:wrapNone/>"));
+        assert!((tight.0 - none.0).abs() < 0.01 && (tight.1 - none.1).abs() < 0.01, "tight {tight:?} vs none {none:?}");
+    }
+
     /// The first glyph run holding `text`: its x and baseline.
     fn start_of(d: &crate::docx::Document, text: &str) -> (f64, f64) {
         let s = layout(d, &fonts());
