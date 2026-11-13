@@ -2,14 +2,15 @@
 
 use std::rc::Rc;
 
-use super::model::{Block, Document, Float, Inline, Paragraph, TextBox};
+use super::model::{Block, Compat, Document, Float, Inline, Paragraph, TextBox};
 
 pub fn convert(doc: &mut Document) {
+    let legacy = doc.settings.compat() == Compat::Legacy;
     for s in &mut doc.sections {
-        blocks(&mut s.blocks);
+        blocks(&mut s.blocks, legacy);
     }
     for b in doc.stories.values_mut().chain(doc.footnotes.values_mut()).chain(doc.endnotes.values_mut()) {
-        blocks(b);
+        blocks(b, legacy);
     }
 }
 
@@ -17,7 +18,7 @@ fn key(p: &Paragraph) -> Option<&str> {
     p.style.frame.as_ref().map(|f| f.key.as_str())
 }
 
-fn blocks(list: &mut Vec<Block>) {
+fn blocks(list: &mut Vec<Block>, legacy: bool) {
     let mut out = Vec::with_capacity(list.len());
     let mut groups: Vec<Vec<Paragraph>> = Vec::new();
     for b in std::mem::take(list) {
@@ -28,14 +29,14 @@ fn blocks(list: &mut Vec<Block>) {
             },
             Block::Para(mut p) => {
                 for (k, g) in groups.drain(..).enumerate() {
-                    p.inlines.insert(k, Inline::Float(Box::new(float(g)), p.mark.clone()));
+                    p.inlines.insert(k, Inline::Float(Box::new(float(g, legacy)), p.mark.clone()));
                 }
                 out.push(Block::Para(p));
             }
             Block::Table(mut t) => {
                 for r in &mut t.rows {
                     for c in &mut r.cells {
-                        blocks(&mut c.blocks);
+                        blocks(&mut c.blocks, legacy);
                     }
                 }
                 // shortcut: a frame before a table or at the end stays in the flow.
@@ -47,18 +48,22 @@ fn blocks(list: &mut Vec<Block>) {
     // Frames ending the list are placed by the page or margin: they anchor at the end of the paragraph before them.
     // shortcut: a text-anchored frame or drop cap there, or one after a table, stays in the flow.
     let placed = |g: &[Paragraph]| {
-        g[0].style.frame.as_ref().is_some_and(|f| matches!(f.v_anchor.as_deref(), None | Some("page" | "margin")) && f.drop_cap.as_deref().is_none_or(|d| d == "none"))
+        g[0].style.frame.as_ref().is_some_and(|f| {
+            matches!(f.v_anchor.as_deref(), None | Some("page" | "margin"))
+                && !(legacy && in_line(f))
+                && f.drop_cap.as_deref().is_none_or(|d| d == "none")
+        })
     };
     for g in groups {
         match out.last_mut() {
-            Some(Block::Para(p)) if placed(&g) => p.inlines.push(Inline::Float(Box::new(float(g)), p.mark.clone())),
+            Some(Block::Para(p)) if placed(&g) => p.inlines.push(Inline::Float(Box::new(float(g, legacy)), p.mark.clone())),
             _ => out.extend(g.into_iter().map(Block::Para)),
         }
     }
     *list = out;
 }
 
-fn float(group: Vec<Paragraph>) -> Float {
+fn float(group: Vec<Paragraph>, legacy: bool) -> Float {
     let fr = group[0].style.frame.clone().unwrap();
     let start = group.first().and_then(|p| p.src.as_ref()).and_then(|s| s.ranges.first()).map(|r| r.start);
     let end = group.last().and_then(|p| p.src.as_ref()).and_then(|s| s.ranges.last()).map(|r| r.end);
@@ -109,7 +114,7 @@ fn float(group: Vec<Paragraph>) -> Float {
         rot_swap: false,
         relative: Default::default(),
     };
-    place(&mut f, &fr, sides);
+    place(&mut f, &fr, sides, legacy);
     f
 }
 
@@ -137,9 +142,18 @@ pub fn bleed(blocks: &[Block]) -> [f64; 2] {
     [side(true), side(false)]
 }
 
+/// No vertical position: `w:y` 0, or no `w:y` and no `w:yAlign` other than `inline`.
+fn in_line(fr: &super::props::FramePr) -> bool {
+    match fr.y {
+        Some(y) => (y * 20.0).round() == 0.0,
+        None => fr.y_align.as_deref().is_none_or(|a| a == "inline"),
+    }
+}
+
 /// Places a frame's float by its `framePr`: its size, position, wrapping and distance from text. `sides` is how far
 /// its paragraphs' borders reach past it on the left and the right ([`bleed`]), kept from the text with `hSpace`.
-pub fn place(f: &mut Float, fr: &super::props::FramePr, sides: [f64; 2]) {
+/// `legacy`: the document is in compat ≤ 14.
+pub fn place(f: &mut Float, fr: &super::props::FramePr, sides: [f64; 2], legacy: bool) {
     let margin_cap = fr.drop_cap.as_deref() == Some("margin");
     let anchor = |a: Option<&str>, text: &str, missing: &str| match a {
         Some(a @ ("margin" | "page")) => a.to_string(),
@@ -187,6 +201,10 @@ pub fn place(f: &mut Float, fr: &super::props::FramePr, sides: [f64; 2]) {
     };
     f.h_offset = x_at.unwrap_or(0.0);
     f.v_relative = anchor(fr.v_anchor.as_deref(), "paragraph", if drop_cap { "paragraph" } else { "margin" });
+    // Compat ≤ 14: a frame without a vertical position stays in the flow, from the page or the margin too.
+    if legacy && in_line(fr) {
+        f.v_relative = "paragraph".into();
+    }
     f.v_align = if fr.y.is_some() { y_code.map(str::to_string) } else { fr.y_align.clone().filter(|a| a != "inline") };
     f.v_offset = y_at.unwrap_or(0.0);
     f.wrap = match fr.wrap.as_deref() {

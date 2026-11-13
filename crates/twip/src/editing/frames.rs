@@ -220,7 +220,7 @@ impl Editor {
         if let Some(tb) = &mut n.text_box {
             tb.blocks = blocks;
         }
-        crate::docx::frames::place(&mut n, &fr, sides);
+        crate::docx::frames::place(&mut n, &fr, sides, self.doc.settings.compat() == crate::docx::Compat::Legacy);
         let caret = self.selection;
         let out = self.set_float(n, "Frame", fonts);
         if !matches!(caret, Selection::Object(_)) {

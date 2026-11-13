@@ -1846,6 +1846,24 @@ fn a_compat_14_frame_keeps_no_vertical_space_below_it() {
 }
 
 #[test]
+fn a_compat_14_frame_without_a_vertical_position_stays_in_the_flow() {
+    let frame_y = |settings: &str, at: &str| {
+        let body = format!(
+            r#"<w:p><w:r><w:t>Before.</w:t></w:r></w:p><w:p><w:pPr><w:framePr w:w="1440" w:wrap="around" {at} w:hAnchor="margin" w:x="0"/></w:pPr><w:r><w:t>Frame</w:t></w:r></w:p><w:p><w:r><w:t>After.</w:t></w:r></w:p>"#
+        );
+        let l = baselines(settings, ARIAL_12, &body)?;
+        let y = |t: &str| l.iter().find(|x| x.1 == t).map(|x| x.3).expect("drawn");
+        Some(y("Frame") - y("Before."))
+    };
+    for at in [r#"w:vAnchor="margin" w:y="0""#, r#"w:vAnchor="page""#, r#"w:vAnchor="margin" w:yAlign="inline""#] {
+        let Some(legacy) = frame_y("", at) else { return };
+        assert!(legacy > 10.0, "{at}: {legacy}");
+    }
+    // Compat 15 puts it at the margin's top, beside the first line.
+    assert!(frame_y(C15, r#"w:vAnchor="margin" w:y="0""#).unwrap().abs() < 0.01);
+}
+
+#[test]
 fn a_frame_in_the_flow_that_meets_an_earlier_one_goes_below_it() {
     let frame = |x: u32, t: &str, apart: bool| {
         let so = if apart { "<w:suppressOverlap/>" } else { "" };
