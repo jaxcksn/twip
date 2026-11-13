@@ -1559,6 +1559,52 @@ fn compat_14_text_after_a_left_stop_at_the_right_edge_stays_on_the_line() {
     assert!((y.1 - 540.0).abs() < 0.01 && (y.2 - chars[0].2).abs() < 0.01, "{y:?}");
 }
 
+#[test]
+fn compat_14_text_after_any_custom_stop_at_the_right_edge_stays_on_the_line() {
+    let at_edge = |kind: &str, text: &str| {
+        let body = format!(
+            r#"<w:p><w:pPr><w:tabs><w:tab w:val="{kind}" w:pos="9360"/></w:tabs></w:pPr><w:r><w:t>{}</w:t><w:tab/><w:t>{text}</w:t></w:r></w:p>"#,
+            "x".repeat(78)
+        );
+        glyph_xs("", &body)
+    };
+    // "x" × 78 ends at 501: right text too wide for the room starts at the pen, centred text is centred on the stop,
+    // decimal text ends its whole part at the stop.
+    let Some(r) = at_edge("right", "Signature") else { return };
+    let s = r.iter().find(|g| g.0 == 'S').expect("drawn");
+    assert!((s.1 - 501.0).abs() < 0.01 && (s.2 - r[0].2).abs() < 0.01, "{s:?}");
+    let Some(d) = at_edge("decimal", "12.50") else { return };
+    let dot = d.iter().find(|g| g.0 == '.').expect("drawn");
+    assert!((dot.1 - 540.0).abs() < 0.01 && (dot.2 - d[0].2).abs() < 0.01, "{dot:?}");
+}
+
+#[test]
+fn compat_15_stops_in_the_right_indent_are_used_where_they_are() {
+    let c15 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+    let doc = |kind: &str, pos: u32, text: &str| {
+        let body = format!(
+            r#"<w:p><w:pPr><w:tabs><w:tab w:val="{kind}" w:pos="{pos}"/></w:tabs><w:ind w:right="720"/></w:pPr><w:r><w:t>{}</w:t><w:tab/><w:t>{text}</w:t></w:r></w:p>"#,
+            "x".repeat(60)
+        );
+        glyph_xs(c15, &body)
+    };
+    // Right edge 504, margin 540: a right stop at 522 ends "Sign" there.
+    let Some(r) = doc("right", 9000, "Sign") else { return };
+    let s = r.iter().find(|g| g.0 == 'S').expect("drawn");
+    assert!((s.1 - 499.98).abs() < 0.02 && (s.2 - r[0].2).abs() < 0.01, "{s:?}");
+    // A decimal stop past the margin moves to the right edge, and its whole text ends there.
+    let Some(d) = doc("decimal", 9500, "12.50") else { return };
+    let one = d.iter().find(|g| g.0 == '1').expect("drawn");
+    assert!((one.1 - 476.47).abs() < 0.02, "{one:?}");
+}
+
+#[test]
+fn a_word_too_long_after_a_tab_first_on_its_line_is_broken_on_that_line() {
+    let body = format!(r#"<w:p><w:r><w:tab/><w:t>{}</w:t></w:r></w:p>"#, "M".repeat(60));
+    let Some(chars) = glyph_xs("", &body) else { return };
+    assert!((chars[0].1 - 108.0).abs() < 0.01, "{:?}", chars[0]);
+}
+
 /// Each character on the first page with its x and baseline.
 fn glyph_xs(settings: &str, body: &str) -> Option<Vec<(char, f64, f64)>> {
     Some(super::page_chars(&test_doc(settings, ARIAL_11, body, "")?).swap_remove(0))

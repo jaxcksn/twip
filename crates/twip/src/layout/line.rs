@@ -832,6 +832,9 @@ struct Pending {
     pen_at_tab: f64,
     /// The tab has no width (its text wraps).
     collapse: bool,
+    /// Where its text narrows the tab to end ([`f64::INFINITY`]: it doesn't), and whether decimal text narrows too.
+    edge: f64,
+    shift: bool,
 }
 
 /// An East Asian language's kinsoku classes: what doesn't end a line, what doesn't start one (standard and strict
@@ -899,7 +902,7 @@ fn text_of<'a>(sp: &'a ShapedPara, p: &Piece) -> &'a str {
     clippy::too_many_arguments,
     reason = "the measured line-breaking helpers take the shaped paragraph, its pieces, style and frame separately, as they were ported"
 )]
-fn resolve_tab(sp: &ShapedPara, p: &Pending, pieces: &[Piece], xs: &mut [f64], ws: &mut [f64], start: usize, upto: usize, right: f64) -> f64 {
+fn resolve_tab(sp: &ShapedPara, p: &Pending, pieces: &[Piece], xs: &mut [f64], ws: &mut [f64], start: usize, upto: usize) -> f64 {
     let seg: Vec<usize> = (p.idx + 1..upto).collect();
     let w: f64 = seg.iter().map(|&k| ws[k - start]).sum();
     let trail: f64 = seg.iter().rev().take_while(|&&k| pieces[k].kind == Kind::Space).map(|&k| ws[k - start]).sum();
@@ -922,8 +925,8 @@ fn resolve_tab(sp: &ShapedPara, p: &Pending, pieces: &[Piece], xs: &mut [f64], w
         _ => 0.0,
     };
     let mut tw = (p.stop - p.pen_at_tab) - d;
-    if p.pen_at_tab + tw + w - trail > right + EPS && p.stop <= right + EPS {
-        tw = if p.kind == TabKind::Decimal { 0.0 } else { right - (p.pen_at_tab + w) + trail };
+    if p.pen_at_tab + tw + w - trail > p.edge + EPS && p.stop <= p.edge + EPS {
+        tw = if p.kind == TabKind::Decimal && !p.shift { 0.0 } else { p.edge - (p.pen_at_tab + w) + trail };
     }
     let tw = if p.collapse { 0.0 } else { tw.max(0.0) };
     ws[p.idx - start] = tw;
@@ -945,7 +948,7 @@ fn fit_line(
     pieces: &[Piece],
     start: usize,
     left: f64,
-    right: f64,
+    mut right: f64,
     style: &ParaStyle,
     frame: &Frame,
     limit_end: Option<usize>,
@@ -1035,7 +1038,7 @@ fn fit_line(
         match p.kind {
             Kind::LineBreak | Kind::PageBreak | Kind::ColumnBreak => {
                 if let Some(pt) = pending.take() {
-                    pen = resolve_tab(sp, &pt, pieces, &mut xs, &mut ws, start, i, right);
+                    pen = resolve_tab(sp, &pt, pieces, &mut xs, &mut ws, start, i);
                 }
                 xs.push(pen);
                 ws.push(0.0);
@@ -1054,34 +1057,43 @@ fn fit_line(
             }
             Kind::Tab => {
                 if let Some(pt) = pending.take() {
-                    pen = resolve_tab(sp, &pt, pieces, &mut xs, &mut ws, start, i, right);
+                    pen = resolve_tab(sp, &pt, pieces, &mut xs, &mut ws, start, i);
                 }
                 let number_tab = i > 0 && pieces[..i].iter().all(|q| q.kind == Kind::ListNumber);
                 let (mut stop, mut kind, leader) = match p.object.map(|o| &sp.objects[o as usize]) {
                     Some(Object::PTab(t)) => ptab_stop(t, style, frame),
                     _ => next_stop(pen, style, frame, number_tab),
                 };
-                let stop_custom = style.tabs.iter().any(|t| t.kind != TabKind::Clear && t.kind != TabKind::Bar && t.pos > pen + EPS);
+                let stop_custom = p.object.is_none() && style.tabs.iter().any(|t| t.kind != TabKind::Clear && t.kind != TabKind::Bar && t.pos > pen + EPS);
                 let custom = p.object.is_some() || stop_custom;
                 if !custom && !number_tab && stop > right + EPS && !past_custom && i > start && limit_end.is_none() {
                     return Fit { end: i, xs, widths: ws, hard: None, hyphen: false, leaders };
                 }
-                let edge = frame.width - style.ind_right;
-                if frame.compat == Compat::Generic && p.object.is_none() && stop_custom && stop > edge {
-                    if kind != TabKind::Left && !pieces[i + 1..].iter().any(|q| q.kind == Kind::Tab) {
-                        stop = edge;
-                        if kind == TabKind::Center {
+                let (edge, margin) = (frame.width - style.ind_right, frame.width);
+                // Compat 15 with a right indent: a custom stop from the right edge to the margin is used where it is
+                // and its text may run on to the margin, the tab staying on the line.
+                let mut indent_stop = false;
+                if frame.compat == Compat::Generic && stop_custom {
+                    let beyond = stop > margin + EPS;
+                    indent_stop = !beyond && edge < margin - EPS && stop >= edge - EPS && right >= edge - EPS;
+                    if indent_stop {
+                        right = margin;
+                        breaks.clear();
+                    } else if stop > edge + EPS || beyond {
+                        if kind != TabKind::Left && !pieces[i + 1..].iter().any(|q| q.kind == Kind::Tab) {
+                            stop = edge;
                             kind = TabKind::Right;
+                        } else if i > start && limit_end.is_none() {
+                            return Fit { end: i, xs, widths: ws, hard: None, hyphen: false, leaders };
+                        } else {
+                            stop = edge;
+                            kind = TabKind::Left;
                         }
-                    } else if i > start && limit_end.is_none() {
-                        return Fit { end: i, xs, widths: ws, hard: None, hyphen: false, leaders };
-                    } else {
-                        stop = edge;
-                        kind = TabKind::Left;
                     }
                 }
-                // Compat ≤ 14: a left stop exactly at the right edge counts as past it.
-                past_custom |= frame.compat == Compat::Legacy && custom && (stop > right + EPS || kind == TabKind::Left && stop >= right - EPS);
+                // Compat ≤ 14: a custom stop at the right edge counts as past it.
+                let past = frame.compat == Compat::Legacy && custom && (stop > right + EPS || stop_custom && stop >= right - EPS);
+                past_custom |= past;
                 if leader != Leader::None {
                     leaders.push((i - start, leader));
                 }
@@ -1092,12 +1104,13 @@ fn fit_line(
                     pen += w;
                 } else {
                     ws.push(0.0);
-                    pending = Some(Pending { idx: i, stop, kind, pen_at_tab: pen, collapse: false });
+                    let edge = if past { f64::INFINITY } else { right };
+                    pending = Some(Pending { idx: i, stop, kind, pen_at_tab: pen, collapse: false, edge, shift: indent_stop });
                 }
                 // A line breaks before a tab, not after it: a tab whose next word doesn't fit goes to the next line
-                // with it. A tab first on its line breaks after it. A list number's tab isn't a break opportunity:
-                // a first word too long for the line after it is broken on the number's line.
-                if !number_tab {
+                // with it, and a word too long after a tab first on its line is broken on that line (beside a
+                // float such a tab stands alone in its piece). A list number's tab isn't a break opportunity.
+                if !number_tab && !indent_stop && (i > start || strict) {
                     breaks.push((if i > start { i } else { i + 1 }, false));
                 }
                 i += 1;
@@ -1207,7 +1220,7 @@ fn fit_line(
                     && pt.idx < at
                 {
                     let pt = Pending { collapse: collapse_on_wrap && pt.kind == TabKind::Center, ..pt };
-                    resolve_tab(sp, &pt, pieces, &mut xs, &mut ws, start, at, right);
+                    resolve_tab(sp, &pt, pieces, &mut xs, &mut ws, start, at);
                 }
                 return Fit { end: at, xs, widths: ws, hard: None, hyphen: soft, leaders };
             }
@@ -1227,7 +1240,7 @@ fn fit_line(
                 leaders.retain(|(k, _)| *k < at - start);
                 if let Some(pt) = pending.take().filter(|pt| pt.idx < at) {
                     let pt = Pending { collapse: collapse_on_wrap && pt.kind == TabKind::Center, ..pt };
-                    resolve_tab(sp, &pt, pieces, &mut xs, &mut ws, start, at, right);
+                    resolve_tab(sp, &pt, pieces, &mut xs, &mut ws, start, at);
                 }
                 return Fit { end: at, xs, widths: ws, hard: None, hyphen: false, leaders };
             }
@@ -1246,7 +1259,7 @@ fn fit_line(
         i += 1;
     }
     if let Some(pt) = pending.take() {
-        resolve_tab(sp, &pt, pieces, &mut xs, &mut ws, start, i, right);
+        resolve_tab(sp, &pt, pieces, &mut xs, &mut ws, start, i);
     }
     if let Some((w, cap)) = squeeze {
         shrink_spaces(sp, pieces, start, w, cap, right, &mut xs, &mut ws);
