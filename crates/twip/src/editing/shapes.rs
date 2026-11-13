@@ -452,6 +452,7 @@ impl Editor {
             src: None,
             locked: false,
             frame_src: None,
+            in_note: false,
             parts: Vec::new(),
             shape: Some(Box::new(Shape::new(kind, emu(rect[2]), emu(rect[3]), name))),
             rot_swap: false,
@@ -883,6 +884,7 @@ impl Editor {
             relative: Default::default(),
             src: None,
             frame_src: None,
+            in_note: false,
             z: members.iter().map(|(m, ..)| m.z).max().unwrap_or(first.z),
             order: usize::MAX / 2,
             ..first
@@ -946,6 +948,7 @@ impl Editor {
                 relative: Default::default(),
                 src: None,
                 frame_src: None,
+                in_note: false,
                 z: m.z,
                 order: usize::MAX / 2,
                 ..m.clone()

@@ -403,6 +403,8 @@ pub struct Float {
     pub locked: bool,
     /// A frame's paragraphs in the source (frames.rs): saving drops them when the frame is deleted.
     pub frame_src: Option<std::ops::Range<usize>>,
+    /// Anchored in a footnote or endnote: laid out as an inline object at its anchor, wrapping nothing.
+    pub in_note: bool,
     pub parts: Vec<GroupPart>,
     /// The DrawingML object (geometry, paint, transform, group tree); `None` for frames and floats made without one.
     pub shape: Option<Box<crate::drawing::Shape>>,

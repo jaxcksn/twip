@@ -734,6 +734,21 @@ impl<'a> Builder<'a> {
         self.push(p, text, &[]);
     }
 
+    /// An inline picture or shape: on the baseline, breakable on both sides.
+    fn picture(&mut self, pic: crate::docx::Picture, run: &Run) {
+        let mut p = self.new_piece(Kind::Object, run, None, run.size, 0.0);
+        let [l, t, r, b] = pic.effect;
+        p.width = pic.w + l + r;
+        p.ascent = (pic.h + t + b + run.position).max(0.0);
+        p.descent = (-run.position).max(0.0);
+        p.object = Some(Object::Picture(pic));
+        p.break_after = true;
+        if let Some(q) = self.pieces.last_mut().filter(|q| q.kind != Kind::ListNumber) {
+            q.break_after = true;
+        }
+        self.atom(p, "\u{FFFC}");
+    }
+
     fn paragraph(&mut self, para: &Paragraph, space: &ShapeSpace) -> Result<(), Yield> {
         if let Some(l) = &para.list {
             let start = self.pieces.len();
@@ -974,19 +989,7 @@ impl<'a> Builder<'a> {
                     blank.style.face = None;
                     self.atom(blank, "\u{FFFC}");
                 }
-                (Inline::Picture(pic, _), Some(run)) => {
-                    let mut p = self.new_piece(Kind::Object, run, None, run.size, 0.0);
-                    let [l, t, r, b] = pic.effect;
-                    p.width = pic.w + l + r;
-                    p.ascent = (pic.h + t + b + run.position).max(0.0);
-                    p.descent = (-run.position).max(0.0);
-                    p.object = Some(Object::Picture(pic.clone()));
-                    p.break_after = true;
-                    if let Some(q) = self.pieces.last_mut().filter(|q| q.kind != Kind::ListNumber) {
-                        q.break_after = true;
-                    }
-                    self.atom(p, "\u{FFFC}");
-                }
+                (Inline::Picture(pic, _), Some(run)) => self.picture(pic.clone(), run),
                 // A ruby: one object as wide as the wider of its base and annotation, as tall as the base or the
                 // annotation raised over it, as deep as the base.
                 (Inline::Ruby(r, _), Some(run)) if r.align != 5 || space.vertical => {
@@ -1067,6 +1070,20 @@ impl<'a> Builder<'a> {
                 }
                 (Inline::DateBlock(_, text, _), Some(run)) => self.text(text, run)?,
                 (Inline::Float(f, _), Some(_)) if space.hide == Some(f.id) => {}
+                // A note's anchor: an inline object where it stands.
+                (Inline::Float(f, _), Some(run)) if f.in_note => self.picture(
+                    crate::docx::Picture {
+                        w: f.w,
+                        h: f.h,
+                        image: f.image,
+                        alt: f.alt.clone(),
+                        lock_aspect: f.lock_aspect,
+                        effect: f.effect,
+                        shape: f.shape.clone(),
+                        text: f.text_box.clone().map(|text_box| Box::new(crate::docx::model::InlineText { id: f.id, text_box })),
+                    },
+                    run,
+                ),
                 (Inline::Float(f, _), Some(run)) => {
                     let mut p = self.new_piece(Kind::Anchor, run, None, run.size, 0.0);
                     let previewed = space.float.clone().filter(|p| p.id == f.id);

@@ -109,6 +109,7 @@ fn float(group: Vec<Paragraph>, legacy: bool) -> Float {
         src: None,
         locked: false,
         frame_src,
+        in_note: false,
         parts: Vec::new(),
         shape: None,
         rot_swap: false,

@@ -66,6 +66,7 @@ impl<'a> LayoutCtx<'a> {
             .inlines
             .iter()
             .filter_map(|i| match i {
+                crate::docx::Inline::Float(f, _) if f.in_note => None,
                 crate::docx::Inline::Float(f, _) => match preview {
                     Some(v) if v.float.id == f.id && v.anchor != ParaId(p.id) => None,
                     Some(v) if v.float.id == f.id => Some(&v.float),

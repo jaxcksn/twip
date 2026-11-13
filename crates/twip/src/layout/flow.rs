@@ -3287,6 +3287,7 @@ pub(super) fn table_float(id: u64, w: f64, h: f64, dist: [f64; 4], allow_overlap
         src: None,
         locked: false,
         frame_src: None,
+        in_note: false,
         parts: Vec::new(),
         shape: None,
         rot_swap: false,

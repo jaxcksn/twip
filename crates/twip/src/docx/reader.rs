@@ -368,6 +368,7 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
             r.in_endnotes = tag == "endnote";
             let mut blocks = r.read_blocks(n, &mut pkg, None);
             r.close_ranges(&mut blocks);
+            note_floats(&mut blocks);
             match attr(n, "type") {
                 // A separator story counts only when the settings list it: else the built-in one is used.
                 Some(t @ ("separator" | "continuationSeparator" | "continuationNotice")) => {
@@ -592,6 +593,20 @@ fn read_divs(xml: Option<&str>, colours: &ThemeColours) -> HashMap<i64, Division
         walk(None, divs, colours, &mut out);
     }
     out
+}
+
+/// Marks a note's drawings: a note has no floats, its anchors are laid out inline.
+fn note_floats(blocks: &mut [Block]) {
+    for b in blocks {
+        match b {
+            Block::Para(p) => p.inlines.iter_mut().for_each(|i| {
+                if let Inline::Float(f, _) = i {
+                    f.in_note = f.shape.is_some();
+                }
+            }),
+            Block::Table(t) => t.rows.iter_mut().flat_map(|r| &mut r.cells).for_each(|c| note_floats(&mut c.blocks)),
+        }
+    }
 }
 
 /// The neighbour-dependent part of the divisions around each paragraph (its indents come from the resolver), and each
@@ -2301,6 +2316,7 @@ impl Reader {
                 src: Some(pict.range()),
                 locked: false,
                 frame_src: None,
+                in_note: false,
                 parts: Vec::new(),
                 rot_swap: false,
                 relative: Relative {
@@ -2433,6 +2449,7 @@ impl Reader {
                 src: Some(d.range()),
                 locked: item.attribute("locked").is_some_and(|v| on_off_str(Some(v))),
                 frame_src: None,
+                in_note: false,
                 parts,
                 rot_swap: false,
                 relative: {

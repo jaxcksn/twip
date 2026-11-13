@@ -267,6 +267,7 @@ mod tests {
             src: None,
             locked: false,
             frame_src: None,
+            in_note: false,
             parts: Vec::new(),
             shape: None,
             rot_swap: false,

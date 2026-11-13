@@ -94,6 +94,26 @@ fn numbers(doc: &crate::docx::Document, kind: NoteKind, ids: &[i64]) -> Vec<Stri
 }
 
 #[test]
+fn an_anchor_in_a_note_is_laid_out_inline() {
+    use super::shapes::{anchor, sp};
+    let ns = r#"xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape""#;
+    let shape = anchor(300, 100, 40, 20, 1, false, 5, &sp(0, 0, 40, 20, "rect", "", "FF0000"));
+    let note = |tag: &str| format!(r#"<w:{tag} {ns} w:id="10"><w:p><w:r><w:t>Q</w:t></w:r>{shape}<w:r><w:t>Z</w:t></w:r></w:p></w:{tag}>"#);
+    let extra = note("footnote") + &note("endnote");
+    for r in ["f10", "e10"] {
+        let Some(doc) = notes_doc_with(&(para("Body", &[r]) + &sect("", true)), "", &extra) else { return };
+        let snap = crate::layout::layout(&doc, &fonts());
+        let items = crate::layout::traverse::paint_items(&snap.pages()[0]);
+        let rects: Vec<[f64; 4]> = items.iter().filter_map(|i| if let crate::layout::fragment::Item::Shape(s) = i { Some(s.rect) } else { None }).collect();
+        let chars = super::page_chars(&doc).remove(0);
+        let at = |c: char| chars.iter().find(|g| g.0 == c).copied().expect("the note's text");
+        let ([[x0, y0, x1, y1]], (a, b)) = (rects.as_slice(), (at('Q'), at('Z'))) else { panic!("{r}: one shape, {rects:?}") };
+        assert!(a.1 < *x0 && (b.1 - x1).abs() < 0.01, "{r}: between its text, {a:?} {x0}..{x1} {b:?}");
+        assert!((y1 - b.2).abs() < 0.01 && (y1 - y0 - 20.0).abs() < 0.01, "{r}: on the baseline, {y0}..{y1} {b:?}");
+    }
+}
+
+#[test]
 fn note_numbers_come_from_the_referencing_section() {
     let fmt = |f: &str, extra: &str| format!(r#"<w:footnotePr><w:numFmt w:val="{f}"/>{extra}</w:footnotePr>"#);
     let body = para("a", &["f1", "f2"]) + &sect(&fmt("decimal", ""), false) + &para("b", &["f3", "f4"]) + &sect(&fmt("lowerRoman", ""), true);
