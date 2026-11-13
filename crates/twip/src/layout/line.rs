@@ -1543,14 +1543,9 @@ fn proofed(sp: &ShapedPara, pieces: &[Piece], i: usize) -> bool {
 fn justified_line(sp: &ShapedPara, pieces: &[Piece], from: usize, seg_end: usize, column: f64, style: &ParaStyle, frame: &Frame) -> LineChoice {
     let points = Points::new(sp, pieces, from, frame);
     let lu = |w: f64| (w * LU_PER_PT).round();
-    // Distributed text: every glyph but the line's last stretches by a 32nd of its font's average character width.
-    let glyph_stretch = |p: &Piece| -> i64 {
-        let st = &sp.styles[p.style as usize];
-        match (&st.face, style.jc) {
-            (Some(f), Jc::Distribute) => ((f.avg_width * st.size * LU_PER_PT).round() as i64 + 16) >> 5,
-            _ => 0,
-        }
-    };
+    // Distributed text: every glyph but the line's last stretches by a 32nd of its font's average character width,
+    // unless its run is glyph-shaped.
+    let glyph_stretch = |p: &Piece| -> i64 { if style.jc == Jc::Distribute { glyph_stretch(sp, p).unwrap_or(0) } else { 0 } };
     let column = line_column(column);
     let mut ends: Vec<End> = Vec::new();
     let (mut natural, mut content, mut shrink, mut stretch, mut glyphs, mut last_glyph) = (0.0, 0.0, 0, 0, 0, 0);
@@ -1681,19 +1676,16 @@ fn align(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, 
                 return;
             }
             let extra = right - line_end_x;
-            if justify && (extra > 0.0 || (extra < 0.0 && frame.wp_justification)) {
+            if justify && extra > 0.0 && frame.compat == Compat::Generic {
+                let caps: Vec<(usize, f64)> = spaces.iter().map(|&k| (k, stretch_cap(line.widths[k]))).collect();
+                tiered(extra, &[&caps], &mut line.widths);
+            } else if justify && (extra > 0.0 || (extra < 0.0 && frame.wp_justification)) {
                 let q = extra / spaces.len() as f64;
                 for &k in &spaces {
                     line.widths[k] += q;
                 }
             } else if extra < 0.0 && frame.compat == Compat::Generic {
-                let caps: Vec<f64> = spaces.iter().map(|&k| line.widths[k] / 4.0).collect();
-                let c: f64 = caps.iter().sum();
-                let used = (-extra).min(c);
-                let q = (c - used) / spaces.len() as f64;
-                for (j, &k) in spaces.iter().enumerate() {
-                    line.widths[k] -= caps[j] - q;
-                }
+                shrink_shared(-extra, &spaces, &mut line.widths);
             } else {
                 if style.bidi {
                     to_right(line);
@@ -1717,10 +1709,46 @@ fn align(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, 
                 }
             }
         }
-        // Every line, the last too: equal gaps between the characters (spaces included), the first at the left edge
-        // and the last ending at the right; a character alone is centred. Where East Asian text meets a Latin letter
-        // or a digit the gap takes half an em more. Compat 15: each space first stretches by up to half its width, all
-        // spaces alike as far as the extra space goes.
+        // Compat 15, every line, the last too: the spaces stretch first, up to half their width, then the glyphs of
+        // runs that aren't glyph-shaped, up to a 32nd of their font's average width, each in proportion to what it
+        // may take; the rest goes equally to all of them. Every character but the line's last takes part (the last
+        // letter too before a hyphen). A line with none is centred; an overflowing one shrinks its spaces.
+        Jc::Distribute if frame.compat == Compat::Generic => {
+            let chars: Vec<usize> = (0..content_end).filter(|&k| pieces[idx(k)].kind != Kind::Tab).collect();
+            let gaps = &chars[..chars.len() - usize::from(!line.hyphen && !chars.is_empty())];
+            let bonus: Vec<(usize, f64)> = chars.windows(2).map(|w| (w[0], auto_space(sp, &pieces[idx(w[0])], &pieces[idx(w[1])], style))).collect();
+            let extra = right - line_end_x - bonus.iter().map(|b| b.1).sum::<f64>();
+            let spaces: Vec<(usize, f64)> = gaps.iter().filter(|&&k| stretches(sp, &pieces[idx(k)])).map(|&k| (k, stretch_cap(line.widths[k]))).collect();
+            let glyphs: Vec<(usize, f64)> = gaps
+                .iter()
+                .filter(|&&k| !pieces[idx(k)].soft_hyphen)
+                .filter_map(|&k| glyph_stretch(sp, &pieces[idx(k)]).map(|g| (k, g as f64 / LU_PER_PT)))
+                .collect();
+            if spaces.is_empty() && glyphs.is_empty() {
+                if extra > 0.0 {
+                    for x in &mut line.xs {
+                        *x += extra / 2.0;
+                    }
+                }
+                return;
+            }
+            for &(k, b) in &bonus {
+                line.widths[k] += b;
+            }
+            if extra > 0.0 {
+                tiered(extra, &[&spaces, &glyphs], &mut line.widths);
+            } else if extra < 0.0 {
+                shrink_shared(-extra, &spaces.iter().map(|s| s.0).collect::<Vec<_>>(), &mut line.widths);
+            }
+            let mut x = line.xs[0];
+            for k in 0..n {
+                line.xs[k] = x;
+                x += line.widths[k];
+            }
+        }
+        // Compat ≤ 14, every line, the last too: equal gaps between the characters (spaces included), the first at
+        // the left edge and the last ending at the right; a character alone is centred. Where East Asian text meets a
+        // Latin letter or a digit the gap takes half an em more.
         Jc::Distribute => {
             let chars: Vec<usize> = (0..content_end).filter(|&k| pieces[idx(k)].kind != Kind::Tab).collect();
             let extra = right - line_end_x;
@@ -1729,19 +1757,9 @@ fn align(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, 
                     *x += extra / 2.0;
                 }
             } else if chars.len() > 1 {
-                let mut bonus: Vec<f64> = chars.windows(2).map(|w| auto_space(sp, &pieces[idx(w[0])], &pieces[idx(w[1])], style)).collect();
+                let bonus: Vec<f64> = chars.windows(2).map(|w| auto_space(sp, &pieces[idx(w[0])], &pieces[idx(w[1])], style)).collect();
                 let extra = extra - bonus.iter().sum::<f64>();
-                let stretch: Vec<f64> = chars[..chars.len() - 1]
-                    .iter()
-                    .map(|&k| if frame.compat == Compat::Generic && stretches(sp, &pieces[idx(k)]) { line.widths[k] / 2.0 } else { 0.0 })
-                    .collect();
-                let total: f64 = stretch.iter().sum();
-                let share = if total > 0.0 { (extra / total).clamp(0.0, 1.0) } else { 0.0 };
-                for (b, s) in bonus.iter_mut().zip(&stretch) {
-                    *b += share * s;
-                }
-                let extra = extra - share * total;
-                if extra > 0.0 || share > 0.0 {
+                if extra > 0.0 {
                     let q = extra / (chars.len() - 1) as f64;
                     for (j, &k) in chars[..chars.len() - 1].iter().enumerate() {
                         line.widths[k] += q + bonus[j];
@@ -1756,6 +1774,61 @@ fn align(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, 
         }
         Jc::Left => {}
     }
+}
+
+/// How far compat 15 stretches a space of width `w` before the rest is shared equally: half of it, in layout units.
+fn stretch_cap(w: f64) -> f64 {
+    ((((w * LU_PER_PT).round() as i64) + 1) >> 1) as f64 / LU_PER_PT
+}
+
+/// Compat 15's share of a line's `extra` width: each tier of opportunities (piece, capacity) in turn takes what is
+/// left in proportion to its capacities, up to them; anything still left goes equally to every opportunity.
+fn tiered(extra: f64, tiers: &[&[(usize, f64)]], widths: &mut [f64]) {
+    let mut rest = extra;
+    for tier in tiers {
+        let cap: f64 = tier.iter().map(|t| t.1).sum();
+        if cap > 0.0 {
+            let take = rest.min(cap);
+            for &(k, c) in tier.iter() {
+                widths[k] += take * c / cap;
+            }
+            rest -= take;
+        }
+    }
+    let n: usize = tiers.iter().map(|t| t.len()).sum();
+    if rest > 0.0 && n > 0 {
+        for &(k, _) in tiers.iter().flat_map(|t| t.iter()) {
+            widths[k] += rest / n as f64;
+        }
+    }
+}
+
+/// Compat 15's squeeze of an overflowing line: its spaces give way in proportion to a quarter of their widths (in
+/// layout units), all of it at most.
+fn shrink_shared(over: f64, spaces: &[usize], widths: &mut [f64]) {
+    let caps: Vec<f64> = spaces.iter().map(|&k| ((((widths[k] * LU_PER_PT).round() as i64) + 2) >> 2) as f64 / LU_PER_PT).collect();
+    let c: f64 = caps.iter().sum();
+    if c <= 0.0 {
+        return;
+    }
+    let used = over.min(c);
+    for (&k, cap) in spaces.iter().zip(&caps) {
+        widths[k] -= used * cap / c;
+    }
+}
+
+/// A run is glyph-shaped when its kerning is active or it asks for OpenType typography (ligatures, number forms or
+/// spacing, contextual alternates, stylistic sets): its glyphs don't stretch in a compat 15 distributed line.
+fn glyph_shaped(r: &RunStyle) -> bool {
+    r.kern > 0.0 && r.size >= r.kern - 1e-9 || r.ligatures != 0 || r.figures != 0
+}
+
+/// How far a glyph of a compat 15 distributed line stretches before the rest is shared (layout units): a 32nd of
+/// its font's average character width; none when it isn't a glyph or its run is glyph-shaped.
+fn glyph_stretch(sp: &ShapedPara, p: &Piece) -> Option<i64> {
+    let st = &sp.styles[p.style as usize];
+    (matches!(p.kind, Kind::Text | Kind::Object | Kind::ListNumber) && !glyph_shaped(&st.run))
+        .then(|| st.face.as_ref().map_or(0, |f| ((f.avg_width * st.size * LU_PER_PT).round() as i64 + 16) >> 5))
 }
 
 /// The extra space between two characters of a distributed line: half the East Asian one's em where East Asian

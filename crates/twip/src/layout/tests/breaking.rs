@@ -1658,6 +1658,46 @@ fn a_justified_line_ending_in_a_line_break_is_expanded() {
     assert!(x.iter().all(|x| *x < 200.0), "{x:?}");
 }
 
+/// The gaps between the words of the first line, one word being a run of glyphs closer than a point apart.
+fn word_gaps(chars: &[(char, f64, f64)], advance: f64) -> Vec<f64> {
+    let line: Vec<_> = chars.iter().filter(|g| g.0 != ' ' && (g.2 - chars[0].2).abs() < 0.01).collect();
+    line.windows(2).map(|w| w[1].1 - w[0].1 - advance).filter(|&g| g > 1.0).collect()
+}
+
+#[test]
+fn compat_15_justified_spaces_stretch_by_their_widths_first() {
+    let c15 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+    let word = r#"<w:r><w:t>xxxxxxxxxx</w:t></w:r>"#;
+    let (small, big) = (r#"<w:r><w:t xml:space="preserve"> </w:t></w:r>"#, r#"<w:r><w:rPr><w:sz w:val="44"/></w:rPr><w:t xml:space="preserve"> </w:t></w:r>"#);
+    let runs: String = (0..6).map(|k| format!("{word}{}", if k % 2 == 0 { small } else { big })).collect();
+    let w = 569.0 * 11.0 / 2048.0;
+    // A long word after six: the line stretches, by more than the spaces' half widths. Each space takes half its
+    // width, then the rest equally, so the 22pt spaces' gaps are 1.5 times the width difference wider.
+    let long = format!(r#"<w:r><w:t>{}</w:t></w:r>"#, "x".repeat(60));
+    let Some(chars) = glyph_xs(c15, &format!(r#"<w:p><w:pPr><w:jc w:val="both"/></w:pPr>{runs}{long}</w:p>"#)) else { return };
+    let gaps = word_gaps(&chars, 5.5);
+    assert!(gaps.len() == 5 && (gaps[1] - gaps[0] - 1.5 * w).abs() < 0.01, "{gaps:?}");
+    // Twelve words overflow and shrink: each space gives way in proportion to a quarter of its width.
+    let chars = glyph_xs(c15, &format!(r#"<w:p><w:pPr><w:jc w:val="both"/></w:pPr>{runs}{runs}</w:p>"#)).expect("lays out");
+    let gaps = word_gaps(&chars, 5.5);
+    assert!(gaps[0] < w && ((2.0 * w - gaps[1]) - 2.0 * (w - gaps[0])).abs() < 0.01, "{gaps:?}");
+}
+
+#[test]
+fn compat_15_distributed_glyph_shaped_text_stretches_only_its_spaces() {
+    let c15 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+    let para = |jc: &str, text: &str| format!(r#"<w:p><w:pPr><w:jc w:val="{jc}"/></w:pPr><w:r><w:rPr><w:kern w:val="2"/></w:rPr><w:t>{text}</w:t></w:r></w:p>"#);
+    let body = format!("{}{}{}", para("distribute", "dune rush"), para("distribute", "dune"), para("left", "dune"));
+    let Some(chars) = glyph_xs(c15, &body) else { return };
+    let x = |c: char, nth: usize| chars.iter().filter(|g| g.0 == c).nth(nth).map(|g| g.1).expect("drawn");
+    // The kerned letters keep their pitch, as in the left-aligned paragraph; the space takes all of the extra.
+    let (pitch, word) = (x('e', 2) - x('d', 2), x('e', 2) - 72.0);
+    assert!((x('e', 0) - x('d', 0) - pitch).abs() < 0.01 && (x('h', 0) - (540.0 - 1139.0 * 11.0 / 2048.0)).abs() < 0.05, "{chars:?}");
+    // A kerned word alone has nothing that stretches: it is centred.
+    let e_width = 1139.0 * 11.0 / 2048.0;
+    assert!((x('d', 1) - (72.0 + (468.0 - word - e_width) / 2.0)).abs() < 0.05, "{} {word}", x('d', 1));
+}
+
 /// Each character on the first page with its x and baseline.
 fn glyph_xs(settings: &str, body: &str) -> Option<Vec<(char, f64, f64)>> {
     Some(super::page_chars(&test_doc(settings, ARIAL_11, body, "")?).swap_remove(0))
@@ -1988,9 +2028,11 @@ fn a_distributed_line_spreads_its_characters_and_spaces_east_asian_text_from_lat
     assert!(near(&plain, &[1440.0, 3266.0, 4982.0, 6698.0, 8524.0, 10240.0]), "{plain:?}");
     // Compat 15: the space first stretches by half its width, then the gaps are equal.
     let c15 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+    // The letters then take their 32nd of the average width (704 lu), and the rest is shared equally.
     let xs = distributed_xs(c15, "", &["abc def"]).expect("lays out");
-    let g = (9020.0 - 770.0 - 55.0) / 6.0;
-    assert!(near(&xs, &[0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0].map(|k| 1440.0 + k * (110.0 + g) + if k > 3.5 { 55.0 } else { 0.0 })), "{xs:?}");
+    let g = 704.0 / 204.8;
+    let rest = (9020.0 - 770.0 - 55.0 - 5.0 * g) / 6.0;
+    assert!(near(&xs, &[0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0].map(|k| 1440.0 + k * (110.0 + g + rest) + if k > 3.5 { 55.0 - g } else { 0.0 })), "{xs:?}");
     // A line 110 tw short of the margin with four spaces: each space takes half of its stretch, the letters keep
     // their pitch.
     let a = |n: usize| "a".repeat(n);
