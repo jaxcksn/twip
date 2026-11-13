@@ -345,9 +345,9 @@ impl Geometry {
         self.with_def(|def, adj| Rc::new(eval::evaluate_def(def, adj, w, h)))
     }
 
-    /// The shape shows text: the chart presets show none.
+    /// The shape shows text: the chart presets and the inverted line take a text box but show none.
     pub fn holds_text(&self) -> bool {
-        !matches!(self.preset(), Some(Preset::ChartPlus | Preset::ChartStar | Preset::ChartX))
+        !matches!(self.preset(), Some(Preset::ChartPlus | Preset::ChartStar | Preset::ChartX | Preset::LineInv))
     }
 
     pub fn preset(&self) -> Option<Preset> {

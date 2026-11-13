@@ -161,6 +161,37 @@ fn box_wsp(w: i64, h: i64, extra_xfrm: &str, body: &str, text: &str) -> String {
     )
 }
 
+#[test]
+fn a_connectors_text_goes_to_the_next_shape_and_the_last_is_dropped() {
+    let texts = |presets: &[&str]| {
+        let body: String = presets
+            .iter()
+            .enumerate()
+            .map(|(k, p)| {
+                let wsp = box_wsp(90, 40, "", "", &format!("T{k}")).replace(r#"prst="rect""#, &format!(r#"prst="{p}""#));
+                format!("<w:p>{}</w:p>", anchor(100, 100 + 60 * k as i64, 90, 40, k as u32 + 1, false, 5, &wsp))
+            })
+            .collect();
+        let d = doc(&body).expect("the document reads");
+        let first = |tb: &crate::docx::TextBox| match tb.blocks.first() {
+            Some(crate::docx::Block::Para(p)) => p.inlines.iter().find_map(|i| if let crate::docx::Inline::Text(t, _) = i { Some(t.clone()) } else { None }),
+            _ => None,
+        };
+        d.sections[0]
+            .blocks
+            .iter()
+            .filter_map(|b| if let crate::docx::Block::Para(p) = b { Some(p) } else { None })
+            .flat_map(|p| p.inlines.iter())
+            .filter_map(|i| if let crate::docx::Inline::Float(f, _) = i { Some(f.text_box.as_ref().and_then(first)) } else { None })
+            .collect::<Vec<_>>()
+    };
+    let t = |s: &str| Some(s.to_string());
+    assert_eq!(texts(&["rect", "bentConnector3", "rect"]), [t("T0"), None, t("T1")]);
+    assert_eq!(texts(&["rect", "straightConnector1", "rect", "rect"]), [t("T0"), None, t("T1"), t("T2")]);
+    assert_eq!(texts(&["line", "lineInv", "rect"]), [None, t("T0"), t("T1")], "an inverted line takes a text box");
+    assert_eq!(texts(&["rect", "rect"]), [t("T0"), t("T1")]);
+}
+
 fn settings_doc(body: &str, compat: u32) -> Option<crate::docx::Document> {
     let ct = r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/></Types>"#;
     let rels = r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#;

@@ -327,6 +327,7 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
         doc.page_colour = child(dom.root_element(), "background").and_then(|b| page_colour(b, &drawing_theme, &colour_map));
         r.record = editable;
         doc.sections = r.read_body(body, &mut pkg);
+        shift_connector_text(&mut doc.sections);
         r.record = false;
     }
 
@@ -593,6 +594,45 @@ fn read_divs(xml: Option<&str>, colours: &ThemeColours) -> HashMap<i64, Division
         walk(None, divs, colours, &mut out);
     }
     out
+}
+
+/// A line or connector preset holds no text: from one that has a text box on, each text box goes to the next shape with
+/// a text box, in document order, and the last one is dropped.
+fn shift_connector_text(sections: &mut [Section]) {
+    fn line(s: Option<&crate::drawing::Shape>) -> bool {
+        let name = s.and_then(|s| s.geometry()?.preset()).map_or("", |p| p.name());
+        name == "line" || ["straightConnector", "bentConnector", "curvedConnector"].iter().any(|c| name.starts_with(c))
+    }
+    // Each text box in document order, with whether its shape is a line.
+    fn walk(blocks: &mut [Block], each: &mut dyn FnMut(bool, &mut Option<TextBox>)) {
+        for b in blocks {
+            match b {
+                Block::Para(p) => p.inlines.iter_mut().for_each(|i| match i {
+                    Inline::Float(f, _) => {
+                        each(line(f.shape.as_deref()), &mut f.text_box);
+                        f.parts.iter_mut().for_each(|g| each(false, &mut g.text_box));
+                    }
+                    Inline::Picture(pic, _) => {
+                        let Some(t) = pic.text.take() else { return };
+                        let InlineText { id, text_box } = *t;
+                        let mut tb = Some(text_box);
+                        each(line(pic.shape.as_deref()), &mut tb);
+                        pic.text = tb.map(|text_box| Box::new(InlineText { id, text_box }));
+                    }
+                    _ => {}
+                }),
+                Block::Table(t) => t.rows.iter_mut().flat_map(|r| &mut r.cells).for_each(|c| walk(&mut c.blocks, each)),
+            }
+        }
+    }
+    let mut texts = Vec::new();
+    sections.iter_mut().for_each(|s| walk(&mut s.blocks, &mut |_, tb| texts.extend(tb.as_mut().map(|tb| std::mem::take(&mut tb.blocks)))));
+    let mut texts = texts.into_iter();
+    sections.iter_mut().for_each(|s| walk(&mut s.blocks, &mut |is_line, tb| match tb {
+        Some(_) if is_line => *tb = None,
+        Some(tb) => tb.blocks = texts.next().unwrap_or_default(),
+        None => {}
+    }));
 }
 
 /// Marks a note's drawings: a note has no floats, its anchors are laid out inline.

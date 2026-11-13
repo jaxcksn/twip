@@ -113,7 +113,7 @@ fn text_rectangles_of_the_four_basic_presets() {
     // The pie's is its inner rectangle, as the ellipse's.
     let (p, e) = (at("pie", &[], 1_828_800, 1_371_600), at("ellipse", &[], 1_828_800, 1_371_600));
     assert!(p.iter().zip(&e).all(|(a, b)| (a.0 - b.0).abs() <= 4_000), "{p:?} {e:?}");
-    assert!(!preset("chartX", &[]).holds_text() && preset("pie", &[]).holds_text());
+    assert!(!preset("chartX", &[]).holds_text() && !preset("lineInv", &[]).holds_text() && preset("pie", &[]).holds_text());
 }
 
 #[test]
