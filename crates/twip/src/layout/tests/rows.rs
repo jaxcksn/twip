@@ -555,6 +555,14 @@ mod floats {
     }
 
     #[test]
+    fn a_margin_relative_wrapping_float_in_a_cell_is_drawn() {
+        let b = text_box(r#"<wp:wrapSquare wrapText="bothSides"/>"#, 30.0, "Boxed")
+            .replace(r#"<wp:positionV relativeFrom="paragraph">"#, r#"<wp:positionV relativeFrom="margin">"#)
+            .replacen("<w:p>", "<w:p><w:r><w:t>Cell</w:t></w:r>", 1);
+        assert!(baseline_of(&doc(&in_cell("top", &b)), "Boxed").is_some());
+    }
+
+    #[test]
     fn float_14_a_wrapping_cell_float_makes_an_auto_row_taller() {
         let after = |wrap: &str| {
             let body = format!(
