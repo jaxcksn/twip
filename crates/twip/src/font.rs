@@ -62,6 +62,10 @@ pub struct Face {
     /// Its outlines are TrueType (`glyf`).
     pub truetype: bool,
     pub avg_width: f64,
+    /// The output device's metrics source: `OS/2` win ascent and descent, the `hhea` line height beyond them (font
+    /// units), and the `VDMX` ANSI 1:1 record's (ppem, yMax, yMin) by ppem.
+    win: Option<(f64, f64, f64)>,
+    vdmx: Vec<(u16, i16, i16)>,
     font: harfrust::Font,
     /// Memos: character → glyph, glyph → advance, and shape plans by (kern, ligatures, figures, script). Building a plan
     /// collects the font's GSUB/GPOS lookups, far more work than shaping a word.
@@ -111,6 +115,22 @@ fn base_middle(d: &[u8], o: usize, upem: f64) -> Option<f64> {
     }
     let coord = |i: usize| i16_at(d, values + u16_at(d, values + 4 + 2 * i) as usize + 2) as f64;
     Some(coord(ideo) - coord(romn) + upem / 2.0)
+}
+
+/// The `VDMX` table's (ppem, yMax, yMin) records, sorted by ppem, of the first ANSI ratio record that covers 1:1.
+fn vdmx(d: &[u8]) -> Vec<(u16, i16, i16)> {
+    let ratios = u16_at(d, 4) as usize;
+    let Some(r) = (0..ratios).find(|&i| {
+        let (set, x, y0, y1) = (d.get(6 + 4 * i).copied(), d.get(7 + 4 * i).copied(), d.get(8 + 4 * i).copied(), d.get(9 + 4 * i).copied());
+        set == Some(1) && (x == Some(0) || (y0 <= x && x <= y1))
+    }) else {
+        return Vec::new();
+    };
+    let g = u16_at(d, 6 + 4 * ratios + 2 * r) as usize;
+    let mut out: Vec<(u16, i16, i16)> = (0..u16_at(d, g) as usize).map(|i| g + 4 + 6 * i).map(|e| (u16_at(d, e), i16_at(d, e + 2), i16_at(d, e + 4))).collect();
+    out.sort_by_key(|r| r.0);
+    out.dedup_by_key(|r| r.0);
+    out
 }
 
 /// Table offsets of face `index` (a TTC holds several).
@@ -167,6 +187,8 @@ impl Face {
             vertical: t.contains_key(b"vmtx") || t.contains_key(b"VORG"),
             truetype: t.contains_key(b"glyf"),
             avg_width: 0.0,
+            win: None,
+            vdmx: t.get(b"VDMX").map_or_else(Vec::new, |&(o, len)| vdmx(d.get(o..o + len).unwrap_or(&[]))),
             font: {
                 let font = harfrust::Font::new(Arc::clone(&data) as Arc<dyn AsRef<[u8]> + Send + Sync>, e.index)?;
                 if e.variations.is_empty() {
@@ -192,6 +214,10 @@ impl Face {
                     desc = u16_at(d, o + 76) as f64;
                     gap = ((h_asc - h_desc + h_gap) - (asc + desc)).max(0.0);
                 }
+            }
+            if len >= 78 {
+                let (wa, wd) = (u16_at(d, o + 74) as f64, u16_at(d, o + 76) as f64);
+                f.win = Some((wa, wd, ((h_asc - h_desc + h_gap) - (wa + wd)).max(0.0)));
             }
             f.avg_width = i16_at(d, o + 2) as f64 / upem;
             f.sub_size = i16_at(d, o + 12) as f64;
@@ -229,6 +255,18 @@ impl Face {
     /// its vertical origin (`VORG`, or `vmtx` top side bearing plus the glyph's top); `None` without vertical metrics.
     pub fn v_origin(&self, glyph: u32) -> Option<f64> {
         self.vertical.then(|| ShaperFont::new(&self.font).glyph_v_origin(harfrust::GlyphId::new(glyph)).1 as f64)
+    }
+
+    /// Ascent, descent and external leading in whole pixels at `ppem`, as the Windows text metrics of a printer give
+    /// them: the `VDMX` record below 255 ppem, else the win metrics scaled and rounded.
+    pub fn device_metrics(&self, ppem: i64) -> (i64, i64, i64) {
+        let (wa, wd, gap) = self.win.unwrap_or((self.ascent, self.descent, self.leading));
+        let px = |v: f64| (v * ppem as f64 / self.upem + 0.5).floor() as i64;
+        let (a, d) = match self.vdmx.binary_search_by_key(&(ppem as u16), |r| r.0) {
+            Ok(i) if ppem < 255 => (self.vdmx[i].1 as i64, -(self.vdmx[i].2 as i64)),
+            _ => (px(wa), px(wd)),
+        };
+        (a, d, px(gap))
     }
 
     /// Points per font unit at `size`.

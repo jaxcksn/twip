@@ -459,26 +459,30 @@ impl<'a> Builder<'a> {
         });
     }
 
+    /// The size a raised or lowered run is drawn at, and how far it is raised. The limits come from the output
+    /// device's pixel metrics at 600 dpi, in half-points; small capitals are raised as their full size.
     fn vertical(&self, run: &RunStyle, face: &Face) -> (f64, f64) {
         let base = run.size;
+        let full = self.small_caps_of.unwrap_or(base);
+        let device = |half_points: i64| face.device_metrics((half_points as f64 * 600.0 / 144.0).round() as i64);
+        let to_hp = |px: i64| (px as f64 * 144.0 / 600.0).round() as i64;
         let (size, mut raise) = match run.vert_align {
             VertAlign::Baseline => (base, 0.0),
             VertAlign::Superscript => {
                 let size = hp(base * face.sup_size / face.upem).max(2) as f64 / 2.0;
-                let (a, _, e) = metrics(face, base);
-                let (asup, _, _) = metrics(face, size);
-                let (a_hp, asup_hp) = (hp(a + e), hp(asup));
-                let limit = (a_hp / 3).max(a_hp - asup_hp);
-                let r = hp(base * face.sup_offset / face.upem).min(limit);
+                let (a, _, e) = device(hp(full));
+                let (asup, _, _) = device(hp(full * face.sup_size / face.upem).max(2));
+                let (a, asup) = (to_hp(a + e), to_hp(asup));
+                let limit = (a / 3).max(a - asup);
+                let r = hp(full * face.sup_offset / face.upem).min(limit);
                 (size, r as f64 / 2.0)
             }
             VertAlign::Subscript => {
                 let size = hp(base * face.sub_size / face.upem).max(2) as f64 / 2.0;
-                let (_, d, _) = metrics(face, base);
-                let (_, dsub, _) = metrics(face, size);
-                let off = hp(base * face.sub_offset / face.upem);
-                let limit = hp(d) - hp(dsub);
-                let drop = if limit > 0 { off.min(limit.max(0)).max(0) } else { off.max(0) };
+                let (_, d, _) = device(hp(full));
+                let (_, dsub, _) = device(hp(full * face.sub_size / face.upem).max(2));
+                let off = hp(full * face.sub_offset / face.upem);
+                let drop = off.min(to_hp(d) - to_hp(dsub));
                 (size, -(drop as f64) / 2.0)
             }
         };

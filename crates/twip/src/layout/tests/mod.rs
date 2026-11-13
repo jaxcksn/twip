@@ -14,6 +14,7 @@ mod excluded;
 mod hf_frames;
 mod hyphenation;
 mod imports;
+mod metrics;
 mod notes;
 mod output;
 mod page_numbers;
