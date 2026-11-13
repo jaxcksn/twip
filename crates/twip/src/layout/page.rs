@@ -868,7 +868,8 @@ pub fn layout_body(
                 }
                 let found = fill.at.found.clone();
                 let notes = fill.at.stream.as_ref().map_or(0.0, |a| a.height);
-                let stable = found.len() == known.len() && found.iter().all(|f| known.iter().any(|k| k.same(f)));
+                // A float that met earlier text only in this fill is seen by that text in the next.
+                let stable = found.len() == known.len() && found.iter().all(|f| known.iter().any(|k| k.same(f) && k.collided >= f.collided));
                 attempts = attempts.max(2 + found.len() + drops).min(64);
                 if (stable && (notes - reserve).abs() < EPS) || attempt >= attempts {
                     return Ok(true);

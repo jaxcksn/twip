@@ -2531,3 +2531,18 @@ fn a_drop_down_shows_its_selected_entry_in_its_codes_run() {
     let Some(l) = lines("", ARIAL_11, &p) else { return };
     assert!((l[0].2 - (72.0 + 27.5 + 30.58)).abs() < 0.1, "{l:?}");
 }
+
+#[test]
+fn a_page_frame_anchored_after_a_paragraph_wraps_that_paragraphs_last_line() {
+    let fr = |w: u32, y: u32| {
+        format!(
+            r#"<w:p><w:pPr><w:framePr w:w="{w}" w:h="200" w:hRule="exact" w:hSpace="180" w:vSpace="0" w:wrap="around" w:vAnchor="page" w:hAnchor="page" w:x="1440" w:y="{y}"/><w:spacing w:before="0" w:after="0" w:line="200" w:lineRule="exact"/></w:pPr><w:r><w:t>F</w:t></w:r></w:p>"#
+        )
+    };
+    let p = r#"<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="300" w:lineRule="exact"/></w:pPr><w:r><w:t>so that every qq</w:t></w:r></w:p>"#;
+    let body = format!("{}{p}{}{p}", fr(7923, 1490), fr(7922, 1790));
+    let Some(l) = baselines(C15, ARIAL_11, &body) else { return };
+    let text: Vec<(f64, &str)> = l.iter().filter(|l| l.1 != "F").map(|l| ((l.0 * 20.0).round() / 20.0, l.1.as_str())).collect();
+    // The second frame, anchored in the second paragraph, meets the first one's second line: that line goes right of it.
+    assert_eq!(text, [(477.1, "so that"), (477.05, "every qq"), (72.0, "so that every qq")]);
+}
