@@ -21,8 +21,8 @@ public sealed class PdfConverterTests : IDisposable
     private static string Undated(byte[] pdf)
     {
         var text = Latin1(pdf);
-        // The id is random bytes, as hex or a literal string: it goes, to the trailer's end.
-        text = System.Text.RegularExpressions.Regex.Replace(text, @"/ID \[.*?startxref", "startxref", System.Text.RegularExpressions.RegexOptions.Singleline);
+        // The id (derived from the creation time) goes, to the trailer's end: "/ID [" or, compact, "/ID[".
+        text = System.Text.RegularExpressions.Regex.Replace(text, @"/ID ?\[.*?startxref", "startxref", System.Text.RegularExpressions.RegexOptions.Singleline);
         text = System.Text.RegularExpressions.Regex.Replace(text, @"uuid:[0-9a-f-]{36}", "uuid:");
         text = System.Text.RegularExpressions.Regex.Replace(text, @"D:\d{14}", "D:");
         return System.Text.RegularExpressions.Regex.Replace(text, @"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d", "T");

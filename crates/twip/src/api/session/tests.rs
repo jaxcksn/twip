@@ -187,19 +187,8 @@ fn dark_mode_changes_neither_the_pdf_nor_the_layout() {
     s.run(Command::InsertText("Dark and light".into())).expect("types");
     s.run(Command::SelectAll).expect("selects");
     s.run(Command::SetFontColor(crate::api::value::AutoOr::Value(crate::api::value::Color(0x1F3864)))).expect("colours");
-    let export = |s: &mut crate::api::session::Session| {
-        let mut b = s.export(&ExportOptions::Pdf(Default::default())).expect("exports").bytes.0;
-        // Two exports differ in their creation time and their XMP packet's and trailer's random ids: cut those out.
-        let find = |b: &[u8], n: &[u8]| b.windows(n.len()).position(|w| w == n);
-        for (from, to) in [(&b"<?xpacket begin"[..], &b"<?xpacket end"[..]), (b"/ID [", b"]")] {
-            if let Some(i) = find(&b, from)
-                && let Some(j) = find(&b[i..], to)
-            {
-                b.drain(i..i + j);
-            }
-        }
-        b.into_iter().filter(|c| !c.is_ascii_digit()).collect::<Vec<u8>>()
-    };
+    // Two exports differ in their creation time and the ids derived from it.
+    let export = |s: &mut crate::api::session::Session| undated(s.export(&ExportOptions::Pdf(Default::default())).expect("exports").bytes.0);
     let light = export(s);
     assert_eq!(export(s), light, "two exports compare equal");
     let pages = s.state().pages.clone();
