@@ -1653,10 +1653,7 @@ impl FieldValues {
                 .page_refs
                 .as_ref()
                 .map(|m| m.get(name).map_or_else(|| "Error! Bookmark not defined.".to_string(), |p| format_field(p, code, None))),
-            FieldKind::StyleRef(st) => {
-                let key = crate::docx::fields::style_key(st);
-                self.style_refs.iter().find(|(k, _)| *k == key).map(|(_, t)| t.clone())
-            }
+            FieldKind::StyleRef(_) => self.style_refs.iter().find(|(k, _)| k == code).map(|(_, t)| t.clone()),
             _ => None,
         }
     }

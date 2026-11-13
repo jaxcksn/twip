@@ -335,8 +335,10 @@ pub struct PassCx<'d> {
     pub ctx: LayoutCtx<'d>,
     pub nodes: Vec<SectionNode<'d>>,
     pub notes: &'d JobNotes,
-    wanted: Vec<String>,
-    paras: HashMap<ParaId, &'d Paragraph>,
+    /// The headers' and footers' `STYLEREF` codes and what each looks for.
+    wanted: Vec<(String, crate::docx::fields::StyleQuery)>,
+    /// What a `STYLEREF` can show from each body paragraph.
+    paras: HashMap<ParaId, Vec<(String, bool, String)>>,
     chapters: Chapters,
 }
 
@@ -362,24 +364,33 @@ impl<'d> PassCx<'d> {
                 SectionNode { index: si, section: s, blocks, breaks: si + 1 < nsec, next }
             })
             .collect();
-        let mut wanted: Vec<String> = Vec::new();
-        for blocks in doc.stories.values() {
+        fn codes(blocks: &[Block], out: &mut Vec<String>) {
             for b in blocks {
-                if let Block::Para(p) = b {
-                    for x in &p.inlines {
-                        if let Inline::FieldBegin { kind: Some(FieldKind::StyleRef(st)), .. } = x {
-                            wanted.push(crate::docx::fields::style_key(st));
+                match b {
+                    Block::Para(p) => {
+                        for s in crate::docx::fields::spans(&p.inlines) {
+                            if let Inline::FieldBegin { kind: Some(FieldKind::StyleRef(_)), .. } = p.inlines[s.begin] {
+                                let code = crate::docx::fields::code_text(&p.inlines, s).trim().to_string();
+                                if !out.contains(&code) {
+                                    out.push(code);
+                                }
+                            }
                         }
                     }
+                    Block::Table(t) => t.rows.iter().flat_map(|r| &r.cells).for_each(|c| codes(&c.blocks, out)),
                 }
             }
         }
+        let mut wanted = Vec::new();
+        doc.stories.values().for_each(|b| codes(b, &mut wanted));
+        let styles = doc.resolver.as_deref().map(|r| &r.styles);
+        let wanted: Vec<_> = wanted.into_iter().map(|code| (code.clone(), crate::docx::fields::StyleQuery::new(&code, styles))).collect();
         let mut paras = HashMap::new();
         if !wanted.is_empty() {
             for n in &nodes {
                 for &b in &n.blocks.blocks {
                     if let Block::Para(p) = b {
-                        paras.insert(ParaId(p.id), p);
+                        paras.insert(ParaId(p.id), crate::docx::fields::style_hits(p));
                     }
                 }
             }
@@ -1024,23 +1035,28 @@ pub(crate) fn finish_page(pg: &PageRecord, section_page: usize) -> (Rc<PageFragm
     (Rc::new(page), PageMeta { section: pg.section, number: pg.number, section_page, blank: pg.blank })
 }
 
-fn style_refs(wanted: &[String], pages: &[PageRecord], paras: &HashMap<ParaId, &Paragraph>, i: usize) -> Vec<(String, String)> {
-    if wanted.is_empty() {
-        return Vec::new();
-    }
-    let style = |p: &Paragraph| p.style.style_id.as_deref().map(crate::docx::fields::style_key).unwrap_or_default();
+/// Each header and footer `STYLEREF`'s text on page `i`, by its code: the first in its style on the page (`\l`: the
+/// last), else the last on an earlier page, else the first on a later one.
+// ponytail: a page's paragraphs whole; a character style's runs on the part of a split paragraph another page holds
+// count on this one too.
+fn style_refs(
+    wanted: &[(String, crate::docx::fields::StyleQuery)],
+    pages: &[PageRecord],
+    paras: &HashMap<ParaId, Vec<(String, bool, String)>>,
+    i: usize,
+) -> Vec<(String, String)> {
     let on = |k: usize| pages.get(k).map(|p| &p.effects.paras[..]).unwrap_or(&[]);
     wanted
         .iter()
-        .filter_map(|key| {
+        .filter_map(|(code, q)| {
             let hit = |list: &[ParaId], rev: bool| {
-                let mut it: Box<dyn Iterator<Item = &ParaId>> = if rev { Box::new(list.iter().rev()) } else { Box::new(list.iter()) };
-                it.find_map(|r| paras.get(r).copied().filter(|p| style(p) == *key)).map(crate::docx::fields::text)
+                let find = |r: &ParaId| q.find(paras.get(r)?, rev);
+                if rev { list.iter().rev().find_map(find) } else { list.iter().find_map(find) }
             };
-            hit(on(i), false)
+            hit(on(i), q.last)
                 .or_else(|| (0..i).rev().find_map(|k| hit(on(k), true)))
                 .or_else(|| (i + 1..pages.len()).find_map(|k| hit(on(k), false)))
-                .map(|t| (key.clone(), t))
+                .map(|t| (code.clone(), t))
         })
         .collect()
 }

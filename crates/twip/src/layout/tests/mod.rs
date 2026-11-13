@@ -30,6 +30,7 @@ mod snapshot_immutable;
 mod source_mapping;
 mod spacing;
 mod spatial_tree;
+mod style_refs;
 mod sweeps;
 mod vertical;
 mod view_accessors;

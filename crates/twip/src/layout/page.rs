@@ -723,14 +723,7 @@ pub(crate) fn fields_used(fields: &BodyFields, blocks: &[&Block]) -> BodyFields 
                             FieldKind::NumPages => out.num_pages.clone_from(&all.num_pages),
                             FieldKind::Section => out.section.clone_from(&all.section),
                             FieldKind::SectionPages => out.section_pages.clone_from(&all.section_pages),
-                            FieldKind::StyleRef(st) => {
-                                let key = crate::docx::fields::style_key(st);
-                                for e in all.style_refs.iter().filter(|e| e.0 == key) {
-                                    if !out.style_refs.contains(e) {
-                                        out.style_refs.push(e.clone());
-                                    }
-                                }
-                            }
+                            FieldKind::StyleRef(_) => out.style_refs.clone_from(&all.style_refs),
                             FieldKind::PageRef(name) => {
                                 let value = all.page_refs.as_ref().and_then(|m| m.get(name)).cloned();
                                 let refs = Rc::make_mut(out.page_refs.get_or_insert_with(Default::default));
