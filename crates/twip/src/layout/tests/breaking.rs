@@ -2929,6 +2929,43 @@ fn compat_14_a_top_and_bottom_float_starting_in_a_line_beside_another_float_move
     }
 }
 
+#[test]
+fn compat_14_after_a_line_pushed_beside_a_frame_a_line_with_less_than_its_height_left_goes_below() {
+    // Frame two sits below frame one; the body's third line goes down to frame one's bottom, between the frames. Its
+    // fifth line has 10.7pt left beside frame two: less than its height, so it goes below frame two, full width.
+    let frame = |x: u32, extra: &str| {
+        format!(
+            r#"<w:p><w:pPr><w:framePr w:w="2880" w:h="720" w:hRule="exact" w:hSpace="180" w:vSpace="0" w:wrap="around" w:vAnchor="text" w:hAnchor="margin" w:x="{x}" w:y="0"/>{extra}</w:pPr><w:r><w:t>Frame.</w:t></w:r></w:p>"#
+        )
+    };
+    let words = "Amber harbor orchard velvet dune lichen sorrel cinder jetty. Reef ember lantern saffron anchor iris pine wren grove. Nook basin indigo pebble willow fennel marble thistle drift. Knoll spruce fable meadow timber bramble jasper quill copper. Heron otter cedar juniper quartz yarrow glacier nutmeg upland.";
+    let body = format!(r#"<w:p><w:r><w:t>Title.</w:t></w:r></w:p>{}{}<w:p><w:r><w:t>{words}</w:t></w:r></w:p>"#, frame(1440, ""), frame(2880, "<w:suppressOverlap/>"));
+    let arial_11 = r#"<w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="22"/>"#;
+    let Some(l) = baselines("", arial_11, &body) else { return };
+    let low = l.iter().filter(|l| words.contains(l.1.trim()) && l.3 > 150.0).min_by(|a, b| a.3.total_cmp(&b.3)).unwrap();
+    assert!(low.0 == 72.0 && (low.3 - 166.97).abs() < 0.05, "{l:?}");
+}
+
+#[test]
+fn compat_14_a_line_pushed_into_one_piece_keeps_reusing_its_strip_beside_a_frame() {
+    // Frame A from 73.15, frame B just below it: the third line goes down to A's bottom, where it first finds one
+    // piece (B starts lower), so nothing is remembered and the line with 1.5pt left beside B stays beside it.
+    let frame = |at: &str, extra: &str| {
+        format!(
+            r#"<w:p><w:pPr><w:framePr w:w="2880" w:hSpace="180" w:vSpace="0" w:wrap="around" {at} w:hAnchor="page"/>{extra}</w:pPr><w:r><w:t>One</w:t></w:r><w:r><w:br/></w:r><w:r><w:t>Two</w:t></w:r><w:r><w:br/></w:r><w:r><w:t>Three</w:t></w:r></w:p>"#
+        )
+    };
+    let words = "Body text runs on beside the box so that every line shows where the wrap edge lies, and the words are short enough to fill each gap well. ".repeat(3);
+    let body = format!(
+        r#"<w:p><w:r><w:t>Lead paragraph.</w:t></w:r></w:p>{}{}<w:p><w:r><w:t>{words}</w:t></w:r></w:p>"#,
+        frame(r#"w:vAnchor="page" w:x="2880" w:y="1463""#, ""),
+        frame(r#"w:vAnchor="page" w:x="4320" w:y="2252""#, "")
+    );
+    let arial_11 = r#"<w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="22"/>"#;
+    let Some(l) = baselines("", arial_11, &body) else { return };
+    assert!(l.iter().any(|l| (l.3 - 159.36).abs() < 0.1 && l.0 == 72.0), "{l:?}");
+}
+
 fn anchor(x: u32, y: i64, w: u32, h: u32, overlap: u8, relative: &str) -> String {
     format!(
         r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="0" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="{overlap}"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>{}</wp:posOffset></wp:positionH><wp:positionV relativeFrom="{relative}"><wp:posOffset>{}</wp:posOffset></wp:positionV><wp:extent cx="{}" cy="{}"/><wp:wrapSquare wrapText="bothSides"/><a:graphic><a:graphicData><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#,

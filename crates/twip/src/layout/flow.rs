@@ -2015,11 +2015,12 @@ impl<'d> PageFill<'d, '_> {
         let mut guard = 0;
         // Compat ≤ 14 takes the floats in the order they were placed. The strip a line was fitted into with a slack
         // (its pieces and where they end) serves the next lines too while it ends below their top, by at least that
-        // slack when it was fitted in one piece. Once a line went down in its own query, the paragraph's later queries
-        // take its height plus that drop as the slack.
+        // slack when it was fitted in one piece, unless a float starts between its end and the line's bottom. Once a
+        // line went down in its own query to a strip of two or more pieces, a frame among the floats over its band,
+        // the paragraph's later lines reuse a strip only while the whole line fits in it, and their queries take the
+        // line's height plus that drop as the slack.
         // ponytail: a strip found with no slack isn't kept (the next line's own query gives the same pieces where
-        // measured), one found with the paragraph's slack is kept to its end, both reset with each paragraph, and a
-        // second drop keeps the first slack.
+        // measured), both reset with each paragraph, and a second drop keeps the first slack.
         let mut ordered: Vec<&Placed> = floats.iter().collect();
         ordered.sort_by_key(|f| f.key);
         let mut strip_at: Option<(Vec<(f64, f64)>, f64, f64)> = None;
@@ -2058,8 +2059,8 @@ impl<'d> PageFill<'d, '_> {
             let order: &[&Placed] = if here.is_empty() { &[] } else { &ordered };
             let end_of = |ok: &[(f64, f64, f64)]| ok.iter().map(|p| p.2).fold(f64::INFINITY, f64::min);
             // The pieces from `v0` with that slack: lower, at where the strip ends, while none reaches further than
-            // the slack below `v0`. With the top they were found at.
-            let query = |v0: f64, slack: f64, h: f64| -> Option<(f64, Vec<(f64, f64, f64)>)> {
+            // the slack below `v0`. With the top they were found at and how many pieces were found there first.
+            let query = |v0: f64, slack: f64, h: f64| -> Option<(f64, Vec<(f64, f64, f64)>, usize)> {
                 let mut t = v0;
                 for _ in 0..64 {
                     if t >= col.bottom.to_pt() - EPS {
@@ -2072,10 +2073,12 @@ impl<'d> PageFill<'d, '_> {
                         let slack = end_of(&ok) - v0;
                         let again = float::strip(order, cx0, cx1, t, t + h.max(slack), slack).unwrap_or_default();
                         let again: Vec<(f64, f64, f64)> = again.into_iter().filter(|p| slack < p.2 - t - EPS).collect();
-                        return Some((t, if again.is_empty() { ok } else { again }));
+                        let first = ok.len();
+                        return Some((t, if again.is_empty() { ok } else { again }, first));
                     }
                     if !ok.is_empty() {
-                        return Some((t, ok));
+                        let first = ok.len();
+                        return Some((t, ok, first));
                     }
                     let covering = order
                         .iter()
@@ -2089,11 +2092,18 @@ impl<'d> PageFill<'d, '_> {
                 None
             };
             let pieces_of = |ok: &[(f64, f64, f64)]| ok.iter().map(|p| (p.0, p.1)).collect::<Vec<(f64, f64)>>();
-            let reuse = compat == Compat::Legacy && strip_at.as_ref().is_some_and(|(_, end, least)| end - yy > EPS && end - yy >= least - EPS);
+            let starts_below = |end: f64| {
+                here.iter().any(|f| f.wrap != Wrap::None && f.excl[1] > end - EPS && f.excl[1] < yy + h - EPS && f.excl[0] < cx1 - EPS && f.excl[2] > cx0 + EPS)
+            };
+            let reuse = compat == Compat::Legacy
+                && strip_at.as_ref().is_some_and(|&(_, end, least)| {
+                    let room = end - yy;
+                    room > EPS && if slack_on > EPS { room >= h - EPS } else { room >= least - EPS && !starts_below(end) }
+                });
             if reuse {
                 forced = strip_at.as_ref().map(|x| x.0.clone());
             } else if compat == Compat::Legacy && slack_on > EPS {
-                if let Some((t, ok)) = query(yy, slack_on, h) {
+                if let Some((t, ok, _)) = query(yy, slack_on, h) {
                     fitted = Some((pieces_of(&ok), end_of(&ok), 0.0, 0.0));
                     forced = Some(pieces_of(&ok));
                     yy = t;
@@ -2114,8 +2124,13 @@ impl<'d> PageFill<'d, '_> {
                     let one = float::strip(order, cx0, cx1, yy, yy + h, 0.0).filter(|p| p.len() == 1).map(|p| p[0].2 - yy);
                     let slack = one.unwrap_or(h);
                     match query(yy, slack, h) {
-                        Some((t, ok)) => {
-                            fitted = Some((pieces_of(&ok), end_of(&ok), one.map_or(0.0, |_| slack), t - yy));
+                        Some((t, ok, first)) => {
+                            let frame = |f: &&&Placed| f.float.text_box.is_some() && f.float.shape.is_none() && f.key.2 != float::TABLE_PIECE;
+                            let framed = || {
+                                order.iter().filter(frame).any(|f| f.excl[1] < t + h - EPS && f.excl[3] > yy + EPS && f.excl[0] < cx1 - EPS && f.excl[2] > cx0 + EPS)
+                            };
+                            let drop = if first >= 2 && framed() { t - yy } else { 0.0 };
+                            fitted = Some((pieces_of(&ok), end_of(&ok), one.map_or(0.0, |_| slack), drop));
                             forced = Some(pieces_of(&ok));
                             moved = Some(t);
                         }
