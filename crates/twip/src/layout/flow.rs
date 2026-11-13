@@ -2347,14 +2347,14 @@ impl<'d> PageFill<'d, '_> {
                         }
                     }
                 }
-                let across = if in_flow && compat == Compat::Generic { (f64::INFINITY, f64::NEG_INFINITY) } else { (frames.margin[0], frames.page_w) };
+                let across = if in_flow && compat == Compat::Generic { (f64::INFINITY, f64::NEG_INFINITY) } else { (0.0, frames.page_w) };
                 let others: Vec<Placed> = self.at.found.iter().filter(|o| !under.contains(&o.key)).cloned().collect();
                 // Compat ≤ 14: once a float (not a frame) later on the page met the text laid out before it, the page
                 // filled again keeps a frame where it was placed, unmoved.
                 let restarted = compat == Compat::Legacy
                     && frame(&a)
                     && self.at.known.iter().any(|k| k.restarts && !frame(k) && k.wrap != Wrap::None && k.key.0 == a.key.0 && (k.key.1, k.key.2) > (a.key.1, a.key.2));
-                if !restarted && !float::avoid(&mut a, &others, across, col.bottom.to_pt(), compat) {
+                if !restarted && !float::avoid(&mut a, &others, across, (col.top.to_pt(), col.bottom.to_pt()), compat) {
                     let b = band_of(a.key.2 - pb.from).unwrap_or(0);
                     forced = Some(forced.map_or(b, |x: usize| x.min(b)));
                 }
@@ -2619,7 +2619,7 @@ impl<'d> PageFill<'d, '_> {
                 let mut probe = Placed::new((self.sec.index, pos.block, float::TABLE_PIECE), ParaId(t.id), &f, at_x + bl, top, h);
                 let body_bottom = self.page_h - self.sec.section.section_in(self.ctx.env.text.review.view).bottom;
                 let others: Vec<Placed> = tables.iter().filter(|o| !under.contains(&o.key)).cloned().collect();
-                float::avoid(&mut probe, &others, (self.margins.0, self.page_w), body_bottom, self.ctx.env.text.compat);
+                float::avoid(&mut probe, &others, (self.margins.0, self.page_w), (self.margins.2, body_bottom), self.ctx.env.text.compat);
                 (at_x, top) = (probe.rect[0] - bl, probe.rect[1]);
             }
             *y = self.at.known.iter().find(|k| k.key == (self.sec.index, pos.block, float::TABLE_PIECE)).map_or(top, |k| k.rect[1]);

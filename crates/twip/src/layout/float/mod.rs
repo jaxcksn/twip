@@ -203,25 +203,51 @@ impl Placed {
     }
 }
 
-/// Moves a float that may not overlap an earlier one clear of it, the two kept apart by the room each keeps:
-/// compat 15 to the nearer side on the same line (right up to the page's edge, left down to the left margin),
-/// compat ≤ 14 to the right while it fits the page, else down.
-pub fn avoid(f: &mut Placed, placed: &[Placed], (left_margin, page_w): (f64, f64), body_bottom: f64, compat: Compat) -> bool {
+/// Moves a float that may not overlap an earlier one clear of them, each box grown by the room it keeps, its own box
+/// kept within `lo..hi` across and `top..bottom` down. Compat 15 tries the rows at its own y, below each obstacle and
+/// above each, from its own y down, then up; on each row its own x, then beside each obstacle from its own x rightwards,
+/// then leftwards. The first place that meets none wins. Compat ≤ 14 slides it one way, right (left for a
+/// right-aligned float), while it stays within `lo..hi`, else puts it below the float it meets at its own x.
+/// Without a place it stays where it was asked for.
+pub fn avoid(f: &mut Placed, placed: &[Placed], (lo, hi): (f64, f64), (top, bottom): (f64, f64), compat: Compat) -> bool {
     let original = (f.rect[0], f.rect[1]);
-    for _ in 0..32 {
-        let Some(hit) = placed.iter().find(|o| o.key != f.key && f.avoids(o) && f.overlaps(o)) else { return true };
-        let (w, h) = (f.rect[2] - f.rect[0], f.rect[3] - f.rect[1]);
-        let ([ft, _, fl, fr], [_, hb, hl, hr]) = (f.apart(), hit.apart());
-        let (x, y) = (f.rect[0], f.rect[1]);
-        let right = Some(hit.rect[2] + hr + fl).filter(|&r| r + w <= page_w + EPS);
-        let left = Some(hit.rect[0] - hl - fr - w).filter(|&l| l >= left_margin - EPS && compat == Compat::Generic);
-        let side = match (right, left) {
-            (Some(r), Some(l)) => Some(if r - x <= x - l { r } else { l }),
-            (r, l) => r.or(l),
+    let (w, h) = (f.rect[2] - f.rect[0], f.rect[3] - f.rect[1]);
+    let [ft, fb, fl, fr] = f.apart();
+    let obstacles: Vec<&Placed> = placed.iter().filter(|o| o.key != f.key && f.avoids(o)).collect();
+    if compat == Compat::Generic {
+        let order = |own: f64, mut c: Vec<f64>| {
+            c.sort_by(|a, b| (*a < own - EPS).cmp(&(*b < own - EPS)).then(if *a < own - EPS { b.total_cmp(a) } else { a.total_cmp(b) }));
+            c.dedup_by(|a, b| (*a - *b).abs() < EPS);
+            c
         };
-        if let Some(to) = side {
-            f.moved_to(to, y);
-        } else if hit.rect[3] + hb + ft + h <= body_bottom + EPS {
+        let mut xs = vec![original.0];
+        let mut ys = vec![original.1];
+        for o in &obstacles {
+            let [ot, ob, ol, or] = o.apart();
+            xs.extend([o.rect[2] + or + fl, o.rect[0] - ol - fr - w].into_iter().filter(|&x| x >= lo - EPS && x + w <= hi + EPS));
+            ys.extend([o.rect[3] + ob + ft, o.rect[1] - ot - fb - h].into_iter().filter(|&y| y >= top - EPS && y + h <= bottom + EPS));
+        }
+        let (xs, ys) = (order(original.0, xs), order(original.1, ys));
+        for &y in &ys {
+            for &x in &xs {
+                f.moved_to(x, y);
+                if !obstacles.iter().any(|o| f.overlaps(o)) {
+                    return true;
+                }
+            }
+        }
+        f.moved_to(original.0, original.1);
+        return false;
+    }
+    let leftward = f.float.h_align.as_deref() == Some("right");
+    for _ in 0..32 {
+        let Some(hit) = obstacles.iter().find(|o| f.overlaps(o)) else { return true };
+        let [_, hb, hl, hr] = hit.apart();
+        let y = f.rect[1];
+        let slid = if leftward { hit.rect[0] - hl - fr - w } else { hit.rect[2] + hr + fl };
+        if slid >= lo - EPS && slid + w <= hi + EPS {
+            f.moved_to(slid, y);
+        } else if hit.rect[3] + hb + ft + h <= bottom + EPS {
             f.moved_to(original.0, hit.rect[3] + hb + ft);
         } else {
             f.moved_to(original.0, original.1);
@@ -314,6 +340,38 @@ mod tests {
         assert_eq!(intervals(&f, 72.0, 540.0, 10.0, 20.0, false).unwrap(), vec![]);
         let f = [fl(122.0, 182.0, Side::Left)];
         assert_eq!(intervals(&f, 72.0, 540.0, 10.0, 20.0, true).unwrap(), vec![(72.0, 122.0)]);
+    }
+
+    fn apart(x0: f64, x1: f64, key: usize) -> Placed {
+        let mut f = fl(x0, x1, Side::Both);
+        f.key = (0, 0, key);
+        f.allow_overlap = false;
+        f
+    }
+
+    #[test]
+    fn floats_that_may_not_overlap_try_right_first_then_left_to_the_page_edge() {
+        let (across, down) = ((0.0, 612.0), (72.0, 720.0));
+        // Right, though left is nearer.
+        let mut f = apart(182.0, 282.0, 1);
+        assert!(avoid(&mut f, &[apart(172.0, 372.0, 0)], across, down, Compat::Generic));
+        assert_eq!(f.rect[0], 372.0);
+        // Left down to the page's edge when right leaves the page.
+        let mut f = apart(532.0, 612.0, 1);
+        assert!(avoid(&mut f, &[apart(80.0, 612.0, 0)], across, down, Compat::Generic));
+        assert_eq!((f.rect[0], f.rect[1]), (0.0, 0.0));
+        // Beside the float it next meets: three in a row.
+        let mut f = apart(72.0, 132.0, 2);
+        assert!(avoid(&mut f, &[apart(72.0, 172.0, 0), apart(172.0, 252.0, 1)], across, down, Compat::Generic));
+        assert_eq!(f.rect[0], 252.0);
+        // Compat ≤ 14: no left move, down instead; a right-aligned float slides left.
+        let mut f = apart(532.0, 612.0, 1);
+        assert!(avoid(&mut f, &[apart(80.0, 612.0, 0)], across, (0.0, 720.0), Compat::Legacy));
+        assert_eq!((f.rect[0], f.rect[1]), (532.0, 100.0));
+        let mut f = apart(390.0, 540.0, 1);
+        Rc::make_mut(&mut f.float).h_align = Some("right".into());
+        assert!(avoid(&mut f, &[apart(472.0, 572.0, 0)], across, down, Compat::Legacy));
+        assert_eq!((f.rect[0], f.rect[1]), (322.0, 0.0));
     }
 
     #[test]
