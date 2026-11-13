@@ -1080,7 +1080,8 @@ fn fit_line(
                         kind = TabKind::Left;
                     }
                 }
-                past_custom |= frame.compat == Compat::Legacy && custom && stop > right + EPS;
+                // Compat ≤ 14: a left stop exactly at the right edge counts as past it.
+                past_custom |= frame.compat == Compat::Legacy && custom && (stop > right + EPS || kind == TabKind::Left && stop >= right - EPS);
                 if leader != Leader::None {
                     leaders.push((i - start, leader));
                 }

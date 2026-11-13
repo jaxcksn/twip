@@ -1408,6 +1408,14 @@ fn a_tab_whose_next_word_does_not_fit_starts_the_next_line() {
     assert!(s.2 > x.2 && (s.1 - 108.0).abs() < 0.01, "{s:?}");
 }
 
+#[test]
+fn compat_14_text_after_a_left_stop_at_the_right_edge_stays_on_the_line() {
+    let body = r#"<w:p><w:pPr><w:tabs><w:tab w:val="left" w:pos="9360"/></w:tabs></w:pPr><w:r><w:t>x</w:t><w:tab/><w:t>Yj</w:t></w:r></w:p>"#;
+    let Some(chars) = glyph_xs("", body) else { return };
+    let y = chars.iter().find(|g| g.0 == 'Y').expect("drawn");
+    assert!((y.1 - 540.0).abs() < 0.01 && (y.2 - chars[0].2).abs() < 0.01, "{y:?}");
+}
+
 /// Each character on the first page with its x and baseline.
 fn glyph_xs(settings: &str, body: &str) -> Option<Vec<(char, f64, f64)>> {
     Some(super::page_chars(&test_doc(settings, ARIAL_11, body, "")?).swap_remove(0))
