@@ -101,6 +101,22 @@ fn compat_12_aligns_a_vertical_cells_block_into_its_far_margin() {
 }
 
 #[test]
+fn compat_12_centres_a_vertical_block_thicker_than_its_cell_unclamped() {
+    let row = r#"<w:trPr><w:trHeight w:val="1000" w:hRule="exact"/></w:trPr>"#;
+    let at = |mode: i64, align: &str| {
+        let body = table("btLr", row, WORDS).replace("<w:textDirection", &format!(r#"<w:vAlign w:val="{align}"/><w:textDirection"#));
+        let mut d = doc(&body)?;
+        d.settings.compat_mode = mode;
+        Some(turned_runs(&d)[0].1[0])
+    };
+    let Some(c15) = at(15, "center") else { return };
+    // The lines are thicker than the 1500-twip cell: compat 15 keeps the block at the first side, compat 12 centres
+    // it, starting left of the cell.
+    assert!((c15 - at(15, "top").unwrap()).abs() < 0.01);
+    assert!(at(12, "center").unwrap() < at(12, "top").unwrap() - 5.0, "{:?} {:?}", at(12, "center"), at(12, "top"));
+}
+
+#[test]
 fn a_vertical_cell_adds_nothing_to_an_auto_row() {
     let (Some(v), Some(h)) = (doc(&table("tbRl", "", WORDS)), doc(&table("lrTb", "", "x"))) else { return };
     let rows = |d: &crate::docx::Document| {

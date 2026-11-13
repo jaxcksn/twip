@@ -2222,9 +2222,11 @@ fn assemble(
             } else {
                 0.0
             };
+            // Compat ≤ 14 doesn't clamp: a block thicker than the cell starts before its first side.
+            let floor = if env.ctx.env.text.compat == Compat::Legacy { f64::NEG_INFINITY } else { 0.0 };
             let across = match c.v_align.as_str() {
-                "center" => ((g.cw + far - story.height) / 2.0).max(0.0),
-                "bottom" => (g.cw + far - story.height).max(0.0),
+                "center" => ((g.cw + far - story.height) / 2.0).max(floor),
+                "bottom" => (g.cw + far - story.height).max(floor),
                 _ => 0.0,
             };
             let bottom = match v.flow {
