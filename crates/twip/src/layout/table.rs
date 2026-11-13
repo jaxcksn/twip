@@ -2335,6 +2335,8 @@ pub struct CellPart<'a> {
     pub units: &'a [StoryUnit],
     pub base: f64,
     pub ends: bool,
+    /// The cell's content started in an earlier part: it isn't aligned down.
+    pub cont: bool,
 }
 
 impl CellPart<'_> {
@@ -2344,7 +2346,7 @@ impl CellPart<'_> {
 }
 
 pub fn whole(row: &RowBox) -> Vec<CellPart<'_>> {
-    row.cells.iter().map(|c| CellPart { units: &c.units.units, base: 0.0, ends: true }).collect()
+    row.cells.iter().map(|c| CellPart { units: &c.units.units, base: 0.0, ends: true, cont: false }).collect()
 }
 
 fn outside_floats(c: &Cell) -> Box<[u64]> {
@@ -2543,11 +2545,12 @@ pub fn draw_row(tb: &TableLayout, ri: usize, left: f64, top: f64, height: f64, p
         background.push(Item::rect(rect, fill));
     }
     for (k, c) in row.cells.iter().enumerate() {
-        let part = parts.map(|p| p[k]).unwrap_or(CellPart { units: &c.units.units, base: 0.0, ends: true });
+        let part = parts.map(|p| p[k]).unwrap_or(CellPart { units: &c.units.units, base: 0.0, ends: true, cont: false });
         let ch = if part.ends && part.base == 0.0 && part.units.len() == c.units.units.len() { c.align_h } else { part.height() };
         let height = height + c.below;
         let inner = height - row.top_border - c.margins[0] - c.margins[2];
         let off = match c.v_align.as_str() {
+            _ if part.cont => 0.0,
             "center" => ((inner - ch) / 2.0).max(0.0),
             "bottom" => (inner - ch).max(0.0),
             _ => 0.0,

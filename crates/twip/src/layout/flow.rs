@@ -299,8 +299,10 @@ fn nested_unit(u: &StoryUnit, parts: Option<Vec<Vec<StoryUnit>>>, close: bool) -
     let Some(nr) = &u.row else { return u.clone() };
     let (tb, ri) = (&nr.table, nr.ri);
     let last = close || tb.is_last(ri);
+    // The kept part of a split is a continuation when the row was split before; the part left over always is.
+    let cont = nr.rest.is_some() || parts.is_some() && !close;
     let held: Option<Rc<[Vec<StoryUnit>]>> = parts.map(Rc::from).or_else(|| nr.rest.clone());
-    let cells: Option<Vec<CellPart>> = held.as_ref().map(|r| r.iter().map(|v| CellPart { units: v, base: 0.0, ends: !close }).collect());
+    let cells: Option<Vec<CellPart>> = held.as_ref().map(|r| r.iter().map(|v| CellPart { units: v, base: 0.0, ends: !close, cont }).collect());
     let h = match &cells {
         Some(c) => part_height(&tb.rows[ri], c),
         None => tb.rows[ri].height,
@@ -492,7 +494,7 @@ fn draw_merged_part(tb: &TableLayout, ms: &[&MergedSplit], ri: usize, h: f64, le
     let mut parts = whole(&t.rows[start]);
     for m in ms {
         let units = &tb.rows[start].cells[m.kr].units.units;
-        parts[m.kr] = CellPart { units: &units[..m.cut], base: 0.0, ends: m.cut == units.len() };
+        parts[m.kr] = CellPart { units: &units[..m.cut], base: 0.0, ends: m.cut == units.len(), cont: false };
     }
     draw_row(&t, start, left, top, tb.rows[start].height, Some(&parts), false)
 }
@@ -2813,12 +2815,12 @@ impl<'d> PageFill<'d, '_> {
             let carried =
                 if rest.is_none() && placed_here == 0 && !pos.at.at_start() { merged_rest(tb, ri, self.ctx.env.text.compat) } else { Vec::new() };
             let mut parts: Vec<CellPart> = match &rest {
-                Some(r) => r.iter().map(|v| CellPart { units: &v[..], base: 0.0, ends: true }).collect(),
+                Some(r) => r.iter().map(|v| CellPart { units: &v[..], base: 0.0, ends: true, cont: true }).collect(),
                 None => whole(row),
             };
             for (k, c) in carried.iter().enumerate() {
                 if let Some(u) = c {
-                    parts[k] = CellPart { units: &u[..], base: 0.0, ends: true };
+                    parts[k] = CellPart { units: &u[..], base: 0.0, ends: true, cont: true };
                 }
             }
             let carries = carried.iter().any(Option::is_some);
@@ -2915,7 +2917,8 @@ impl<'d> PageFill<'d, '_> {
                     left.push(cut.rest(cu.units));
                 }
             }
-            let fitted: Vec<CellPart> = fitted.iter().map(|(units, ends)| CellPart { units, base: 0.0, ends: *ends }).collect();
+            let fitted: Vec<CellPart> =
+                fitted.iter().zip(&parts).map(|((units, ends), p)| CellPart { units, base: 0.0, ends: *ends, cont: p.cont }).collect();
             let merged = if can_split && rest.is_none() {
                 merged_splits(tb, ri, &placed, col.bottom.to_pt() - area.total() - tb.bottom_border, self.ctx.env.text.compat)
             } else {

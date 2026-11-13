@@ -1110,3 +1110,23 @@ fn every_part_of_a_split_at_least_row_is_at_least_its_height() {
     let d = next_y(r#"<w:trHeight w:val="1000" w:hRule="atLeast"/>"#) - next_y("");
     assert!((d - 35.0).abs() < 0.01, "{d}");
 }
+
+#[test]
+fn a_centred_cells_continuation_starts_at_the_parts_top() {
+    let line = |t: &str| format!(r#"<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="300" w:lineRule="exact"/></w:pPr><w:r><w:t>{t}</w:t></w:r></w:p>"#);
+    let fill: String = (0..38).map(|_| line("fill")).collect();
+    let a: String = (1..=10).map(|i| line(&format!("a{i:02}"))).collect();
+    let b: String = (1..=6).map(|i| line(&format!("b{i:02}"))).collect();
+    let body = format!(
+        r#"{fill}<w:tbl><w:tblPr><w:tblW w:w="6000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr>{a}</w:tc><w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/><w:vAlign w:val="center"/></w:tcPr>{b}</w:tc></w:tr></w:tbl><w:p/>"#
+    );
+    let doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
+    let page = &super::page_chars(&doc)[1];
+    let y = |t: &str| {
+        let s: String = page.iter().map(|c| c.0).collect();
+        let k = s.find(t).expect("on page 2");
+        page[s[..k].chars().count()].2
+    };
+    // The second cell's last line goes on beside the first cell's continued lines, level with the first of them.
+    assert!((y("b06") - y("a06")).abs() < 0.01, "{} {}", y("b06"), y("a06"));
+}
