@@ -1147,8 +1147,10 @@ impl<'a> Builder<'a> {
             (b.text, b.glyphs) = ((self.pieces[0].text.0, self.pieces[0].text.0), (self.pieces[0].glyphs.0, self.pieces[0].glyphs.0));
             self.pieces.insert(0, b);
         }
-        // Compat 15: table-cell paragraphs fit their regions as compat 12.
-        self.fit_text(space.stale_fit && !space.in_cell, space.first_line, space.unfitted);
+        // Compat 15: table-cell paragraphs, and paragraphs of 4000 characters or more with the mark, fit their regions
+        // as compat 12.
+        let long = para.inlines.iter().map(|i| i.units()).sum::<usize>() + 1 >= 4000;
+        self.fit_text(space.stale_fit && !space.in_cell && !long, space.first_line, space.unfitted);
         let balanced = space.balance.as_ref().is_some_and(|dd| dd.is_empty() || self.fonts.face(dd, None, false, false).is_some_and(|f| f.east_asian));
         if balanced {
             self.balance_spaces();

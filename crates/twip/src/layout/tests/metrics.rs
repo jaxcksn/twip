@@ -61,3 +61,21 @@ fn an_emphasis_mark_is_a_quarter_of_the_line_and_fits_in_the_spacing_extra() {
     let (x, y) = lines(360).expect("lays out");
     assert!((x - (72.0 + a + k)).abs() < 0.01 && (y - (72.0 + 1.5 * h + a)).abs() < 0.01, "{x} {y}");
 }
+
+#[test]
+fn compat_15_a_paragraph_of_4000_characters_fits_its_region_as_compat_12() {
+    let settings = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+    let rpr = r#"<w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="22"/>"#;
+    let line = |len: usize| {
+        // `G2 ` + `stuv` fitted to 2700 tw + `|z ` and filler, `len` characters with the mark, on a 3372 tw line.
+        let filler = "lorem ".repeat(700)[..len - 1 - 3 - 4 - 3].to_string();
+        let body = format!(
+            r#"<w:p><w:r><w:t>filler</w:t></w:r></w:p><w:p><w:pPr><w:ind w:right="5988"/></w:pPr><w:r><w:t xml:space="preserve">G2 </w:t></w:r><w:r><w:rPr><w:fitText w:val="2700" w:id="701"/></w:rPr><w:t>stuv</w:t></w:r><w:r><w:t xml:space="preserve">|z {filler}</w:t></w:r></w:p>"#
+        );
+        let c = chars(settings, rpr, &body, 0)?;
+        Some(at(&c, 's').1 - at(&c, 'G').1)
+    };
+    let Some(short) = line(3999) else { return };
+    assert!(short > 1.0, "3999: the region breaks with its first adjustment, on line 2");
+    assert!(line(4000).expect("lays out").abs() < 1e-6, "4000: compat 12's width fits line 1");
+}
