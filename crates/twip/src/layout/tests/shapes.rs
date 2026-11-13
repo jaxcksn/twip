@@ -425,3 +425,19 @@ fn a_linked_box_lays_its_part_of_the_story_out_in_its_own_text_rectangle() {
     let right = super::page_chars(&d)[0].iter().filter(|c| c.1 > 290.0).map(|c| c.1).fold(0.0, f64::max);
     assert!(right > 415.0, "the rectangle's lines run past the hexagon's text width: {right}");
 }
+
+#[test]
+fn a_text_box_outline_without_a_width_takes_its_style_lines_width() {
+    let outline = |ln: &str| {
+        let shape = box_wsp(100, 50, "", r#"<wps:style><a:lnRef idx="2"><a:schemeClr val="accent1"/></a:lnRef><a:fillRef idx="0"><a:schemeClr val="accent1"/></a:fillRef><a:effectRef idx="0"><a:schemeClr val="accent1"/></a:effectRef><a:fontRef idx="minor"/></wps:style><wps:bodyPr/>"#, "Pen")
+            .replace(r#"<a:ln w="12700"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:ln>"#, ln);
+        let d = doc(&format!("<w:p>{}</w:p>", anchor(72, 100, 100, 50, 1, false, 1, &shape))).expect("the document reads");
+        let crate::docx::model::Block::Para(p) = &d.sections[0].blocks[0] else { panic!("a paragraph") };
+        let f = p.inlines.iter().find_map(|i| if let crate::docx::model::Inline::Float(f, _) = i { Some(f.clone()) } else { None }).expect("the float");
+        f.text_box.as_ref().expect("a text box").outline
+    };
+    // No theme part: the built-in theme's second line is 1.5 pt.
+    assert_eq!(outline("<a:ln/>"), 1.5);
+    assert_eq!(outline(""), 1.5);
+    assert_eq!(outline(r#"<a:ln w="6350"/>"#), 0.5);
+}

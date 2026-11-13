@@ -289,6 +289,7 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
         anchored: HashSet::new(),
         orphans: HashSet::new(),
         glossary_comments: None,
+        theme: drawing_theme.clone(),
     };
     // The picture bullets' images, from the numbering part's relationships.
     if let Some(part) = &numbering_part {
@@ -864,6 +865,8 @@ fn form_data(ff: Node) -> Option<(FieldKind, Option<String>)> {
 
 struct Reader {
     res: Resolver,
+    /// The theme, for the outline widths text boxes take from their style.
+    theme: Rc<crate::drawing::theme::Theme>,
     settings: Settings,
     counters: Counters,
     images: Vec<Vec<u8>>,
@@ -2559,7 +2562,12 @@ impl Reader {
         let body = shape.descendants().find(|n| n.tag_name().name() == "bodyPr");
         let ins = |n: &str, dflt: f64| body.and_then(|b| emu(b.attribute(n))).unwrap_or(dflt);
         let ln = shape.descendants().find(|c| c.tag_name().name() == "spPr").and_then(|p| p.children().find(|c| is(*c, A, "ln")));
-        let w = ln.and_then(|l| l.attribute("w")).and_then(|v| v.parse::<i64>().ok()).unwrap_or(0);
+        // Without its own width the outline takes the width of the theme's line its style refers to.
+        let style_w = || {
+            let idx = shape.descendants().find(|c| is(*c, A, "lnRef"))?.attribute("idx")?.parse::<u32>().ok()?;
+            Some(crate::drawing::paint::style_entry(&self.theme.lines, None, idx)?.width?.0)
+        };
+        let w = ln.and_then(|l| l.attribute("w")).and_then(|v| v.parse::<i64>().ok()).or_else(style_w).unwrap_or(0);
         let inside = ln.and_then(|l| l.attribute("algn")) == Some("in");
         let outline = 2.0 * if inside { w } else { w / 2 } as f64 / 12700.0;
         let auto_fit = body.is_some_and(|b| b.children().any(|c| is(c, A, "spAutoFit")));
