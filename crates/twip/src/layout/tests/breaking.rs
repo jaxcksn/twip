@@ -2296,6 +2296,23 @@ fn tables_with_nothing_between_them_are_one_table_on_the_union_of_their_edges() 
 }
 
 #[test]
+fn compat_14_a_later_table_with_a_smaller_left_margin_moves_its_edges_onto_the_earlier_ones() {
+    let mar = r#"<w:tblCellMar><w:left w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar>"#;
+    let body = back_to_back(&[&[("aa", 1600), ("ab", 2400)], &[("ba", 1595), ("bb", 2405)]], "", mar);
+    let grid = |mode: &str| {
+        let settings = COMPAT_15.replace(r#"w:val="15""#, &format!(r#"w:val="{mode}""#));
+        let doc = test_doc(&settings, ARIAL_12, &body, "")?;
+        let crate::docx::Block::Table(t) = doc.sections[0].blocks.iter().find(|b| matches!(b, crate::docx::Block::Table(_)))? else { return None };
+        Some(t.grid.clone())
+    };
+    let Some(c15) = grid("15") else { return };
+    // The later table pulls 5 less to the left (its margin 0, the first one's 10, plus half its border 5): its first
+    // cell's end moves the 5 onto the first table's 1600 edge in compat 12; compat 15 keeps its own edges.
+    assert_eq!(c15, vec![79.75, 0.25, 120.0]);
+    assert_eq!(grid("12"), Some(vec![80.0, 120.0, 0.25]));
+}
+
+#[test]
 fn a_floating_or_differently_directed_table_stays_apart_from_the_one_before() {
     let tables = |pr: &str| {
         let body = back_to_back(&[&[("aa", 2000)], &[("ba", 3000)]], "", pr);

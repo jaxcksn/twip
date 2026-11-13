@@ -2793,7 +2793,23 @@ impl Reader {
         }
         let grids: Vec<Vec<f64>> = ts.iter().copied().map(table_grid).collect();
         if grids.iter().any(|g| *g != grid) {
-            grid = merged_grid(&grids, &mut rows, &row_table);
+            // Compat ≤ 14: how far a later table's cell edges may move right onto the earlier edges, from the first
+            // cells' left pulls: the first table's, less the later one's, plus the later one's half left border.
+            let pull = |ri: usize| {
+                let c = rows[ri].cells.first();
+                let table = rows[ri].borders.as_ref().map_or(&tbl.borders.left, |b| &b[1]);
+                let b = c.and_then(|c| c.left.as_ref()).or(table.as_ref()).filter(|b| b.visible()).map_or(0, |b| (b.width * 20.0).round() as i64);
+                let hb = (b + 1) / 2;
+                (hb, hb.max(c.map_or(0, |c| (c.margins[1] * 20.0).round() as i64)))
+            };
+            let first_of = |k: usize| row_table.iter().position(|&t| t == k);
+            let moves: Vec<i64> = (0..ts.len())
+                .map(|k| match (k, first_of(0), first_of(k)) {
+                    (1.., Some(a), Some(b)) if self.res.styles.compat == Compat::Legacy => pull(a).1 - pull(b).1 + pull(b).0,
+                    _ => 0,
+                })
+                .collect();
+            grid = merged_grid(&grids, &mut rows, &row_table, &moves);
         }
         let b = &tbl.borders;
         Table {
@@ -2878,20 +2894,64 @@ fn table_grid(t: Node) -> Vec<f64> {
 
 /// The grid of tables joined into one: every table's column edges, from the table's start (to the nearest twip).
 /// `rows` (from table `row_table[i]` of `grids`) get their gaps and cells' spans over it; columns a row has past its
-/// own grid's end come after the merged grid's.
-fn merged_grid(grids: &[Vec<f64>], rows: &mut [Row], row_table: &[usize]) -> Vec<f64> {
-    let edges: Vec<Vec<i64>> = grids
+/// own grid's end come after the merged grid's. A later table with a move `moves[k] > 0` lays each row of dxa cells
+/// out from the table's left edge instead, each cell's end moving right onto the next earlier edge while the row's
+/// total move stays within it.
+fn merged_grid(grids: &[Vec<f64>], rows: &mut [Row], row_table: &[usize], moves: &[i64]) -> Vec<f64> {
+    let mut edges: Vec<Vec<i64>> = grids
         .iter()
         .map(|g| std::iter::once(0).chain(g.iter().scan(0.0, |x, w| { *x += w; Some((*x * 20.0).round() as i64) })).collect())
         .collect();
+    let mut own: Vec<Option<Vec<i64>>> = vec![None; rows.len()];
+    for k in 1..grids.len() {
+        let d = moves.get(k).copied().unwrap_or(0);
+        let ri: Vec<usize> = (0..rows.len()).filter(|&i| row_table[i] == k).collect();
+        let dxa = |r: &Row| r.grid_before == 0 && r.cells.iter().all(|c| matches!(c.width, Some(Width::Dxa(_))));
+        if d <= 0 || ri.is_empty() || !ri.iter().all(|&i| dxa(&rows[i])) {
+            continue;
+        }
+        let mut earlier: Vec<i64> = edges[..k].iter().flatten().copied().collect();
+        earlier.sort_unstable();
+        let mut kept = Vec::new();
+        for &i in &ri {
+            let (mut x, mut moved) = (0i64, 0i64);
+            let mut row = vec![0];
+            for c in &rows[i].cells {
+                let mut end = x + (c.width.map_or(0.0, Width::dxa) * 20.0).round() as i64;
+                if let Some(&a) = earlier.iter().find(|&&a| a >= end)
+                    && moved + a - end <= d
+                {
+                    moved += a - end;
+                    end = a;
+                }
+                x = end;
+                row.push(end);
+            }
+            kept.extend(row.iter().copied());
+            own[i] = Some(row);
+        }
+        edges[k] = kept;
+    }
     let mut all: Vec<i64> = edges.iter().flatten().copied().collect();
     all.sort_unstable();
     all.dedup();
+    let index = |e: i64| all.binary_search(&e).unwrap_or(0);
+    for (r, row) in rows.iter_mut().zip(&own) {
+        if let Some(row) = row {
+            for (c, w) in r.cells.iter_mut().zip(row.windows(2)) {
+                c.span = index(w[1]) - index(w[0]);
+            }
+            r.grid_after = 0;
+        }
+    }
     let at = |k: usize, c: usize| match edges[k].get(c) {
         Some(e) => all.binary_search(e).unwrap_or(0),
         None => all.len() + c - edges[k].len(),
     };
-    for (r, &k) in rows.iter_mut().zip(row_table) {
+    for ((r, &k), moved) in rows.iter_mut().zip(row_table).zip(&own) {
+        if moved.is_some() {
+            continue;
+        }
         let mut c = r.grid_before;
         r.grid_before = at(k, c);
         for cell in &mut r.cells {
