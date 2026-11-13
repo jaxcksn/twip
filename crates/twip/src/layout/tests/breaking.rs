@@ -1643,6 +1643,21 @@ fn a_four_per_em_or_zero_width_space_hangs_at_the_line_end() {
     assert!(t.0 == 't' && (t.1 - 72.0).abs() < 0.01, "{o:?} {t:?}");
 }
 
+#[test]
+fn a_justified_line_ending_in_a_line_break_is_expanded() {
+    let body = r#"<w:p><w:pPr><w:jc w:val="both"/></w:pPr><w:r><w:t>aa bb cc</w:t><w:br/><w:t>dd ee ff</w:t><w:br/></w:r></w:p>"#;
+    let last = |settings: &str| {
+        let c = glyph_xs(settings, body)?;
+        Some([c.iter().rfind(|g| g.0 == 'c')?.1, c.iter().rfind(|g| g.0 == 'f')?.1])
+    };
+    // Compat 12: both lines end at the edge, the one before the empty last line too; not with the option.
+    let Some(x) = last("") else { return };
+    assert!((x[0] - (540.0 - 5.5)).abs() < 0.01 && (x[1] - (540.0 - 569.0 * 11.0 / 2048.0)).abs() < 0.01, "{x:?}");
+    let off = r#"<w:compat><w:doNotExpandShiftReturn/><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="12"/></w:compat>"#;
+    let x = last(off).expect("lays out");
+    assert!(x.iter().all(|x| *x < 200.0), "{x:?}");
+}
+
 /// Each character on the first page with its x and baseline.
 fn glyph_xs(settings: &str, body: &str) -> Option<Vec<(char, f64, f64)>> {
     Some(super::page_chars(&test_doc(settings, ARIAL_11, body, "")?).swap_remove(0))

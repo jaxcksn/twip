@@ -1657,8 +1657,10 @@ fn align(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, 
     };
     match jc {
         Jc::Both => {
-            let justify = !is_last && (line.hard.is_none() || line.hard == Some(Kind::LineBreak));
-            let justify = justify && !(ends_with_line_break && (frame.compat == Compat::Legacy || !frame.expand_shift_return));
+            // A line ending in a text-wrapping break is justified too (the one before an empty last line included),
+            // unless the document doesn't expand them.
+            let justify = (!is_last || ends_with_line_break) && (line.hard.is_none() || line.hard == Some(Kind::LineBreak));
+            let justify = justify && !(ends_with_line_break && !frame.expand_shift_return);
             let overflow = line_end_x - right;
             if !(justify || (frame.compat == Compat::Generic && overflow > EPS)) {
                 if style.bidi {
