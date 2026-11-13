@@ -254,6 +254,12 @@ public final class EditorSession: @unchecked Sendable {
         try await call(TWIP_SET_MODE, mode)
     }
 
+    /// Shows or hides the built-in rulers along the view's top and left edges (off by default); `state.view.rulers`
+    /// says which show.
+    public func setRulers(_ rulers: RulerVisibility) async throws {
+        try await call(TWIP_HOST_SET_RULERS, rulers)
+    }
+
     /// Sets the author of later edits, revisions and comments.
     public func setAuthor(_ author: Author) async throws {
         try await call(TWIP_SET_AUTHOR, author)

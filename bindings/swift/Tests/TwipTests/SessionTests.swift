@@ -42,6 +42,13 @@ import Testing
         #expect(revisions.count == 2 && revisions[1] > revisions[0])
     }
 
+    @Test func showsRulers() async throws {
+        let session = EditorSession()
+        try await session.setRulers(RulerVisibility(horizontal: true))
+        #expect(session.state.view.rulers == RulerVisibility(horizontal: true))
+        await session.close()
+    }
+
     @Test func closedSessionsThrowDestroyed() async throws {
         let session = EditorSession()
         await session.close()
