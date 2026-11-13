@@ -457,6 +457,11 @@ impl Float {
         }
     }
 
+    /// A hidden shape (`wp:docPr/@hidden`, VML `visibility:hidden`): not drawn, and nothing wraps it.
+    pub fn hidden(&self) -> bool {
+        self.shape.as_ref().is_some_and(|s| s.nv.hidden)
+    }
+
     pub fn in_cell(&self, compat: Compat) -> bool {
         compat == Compat::Generic || self.layout_in_cell || self.h_relative == "character" || self.v_relative == "line"
     }

@@ -1069,7 +1069,7 @@ impl<'a> Builder<'a> {
                     self.atom(p, "\u{FFFC}");
                 }
                 (Inline::DateBlock(_, text, _), Some(run)) => self.text(text, run)?,
-                (Inline::Float(f, _), Some(_)) if space.hide == Some(f.id) => {}
+                (Inline::Float(f, _), Some(_)) if space.hide == Some(f.id) || f.hidden() => {}
                 // A note's anchor: an inline object where it stands.
                 (Inline::Float(f, _), Some(run)) if f.in_note => self.picture(
                     crate::docx::Picture {

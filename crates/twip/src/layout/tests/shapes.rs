@@ -141,6 +141,19 @@ fn a_hidden_shape_draws_nothing() {
     assert!(shapes(&paint_items(&snap.pages()[0])).is_empty());
 }
 
+#[test]
+fn a_hidden_shape_wraps_nothing() {
+    let star = sp(0, 0, 200, 100, "star5", "", "FF0000");
+    let shown = anchor(72, 72, 200, 100, 1, false, 5, &star).replace("<wp:wrapNone/>", r#"<wp:wrapSquare wrapText="bothSides"/>"#);
+    let hidden = shown.replace(r#"name="S1"/>"#, r#"name="S1" hidden="1"/>"#);
+    let first_x = |a: &str| {
+        let d = doc(&format!("<w:p>{a}<w:r><w:t>Words</w:t></w:r></w:p>")).expect("the document reads");
+        super::page_chars(&d)[0][0].1
+    };
+    assert!(first_x(&shown) > 270.0, "a shown shape wraps the line");
+    assert!((first_x(&hidden) - 72.0).abs() < 0.5, "a hidden one doesn't: {}", first_x(&hidden));
+}
+
 fn box_wsp(w: i64, h: i64, extra_xfrm: &str, body: &str, text: &str) -> String {
     format!(
         r#"<wps:wsp><wps:cNvSpPr txBox="1"/><wps:spPr>{}<a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill><a:ln w="12700"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:ln></wps:spPr><wps:txbx><w:txbxContent><w:p><w:r><w:t>{text}</w:t></w:r></w:p></w:txbxContent></wps:txbx>{body}</wps:wsp>"#,
