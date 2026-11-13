@@ -1175,3 +1175,26 @@ fn centred_cells_align_in_the_rows_box_whatever_their_own_margins() {
     // The 300 bottom margin is the row's below for both cells: the same offset.
     assert!((y('X') - y('Y')).abs() < 0.01, "{} {}", y('X'), y('Y'));
 }
+
+#[test]
+fn a_table_style_named_table_normal_is_the_built_in_default() {
+    let x = |name: &str| {
+        let blank = crate::docx::blank::blank_docx();
+        let mut zip = zip::ZipArchive::new(std::io::Cursor::new(&blank)).expect("zip");
+        let mut styles = String::new();
+        std::io::Read::read_to_string(&mut zip.by_name("word/styles.xml").expect("styles"), &mut styles).expect("reads");
+        let style = format!(
+            r#"<w:style w:type="table" w:styleId="TS"><w:name w:val="{name}"/><w:tblPr><w:tblCellMar><w:left w:w="1000" w:type="dxa"/></w:tblCellMar></w:tblPr></w:style></w:styles>"#
+        );
+        let styles = styles.replace("</w:styles>", &style);
+        let body = r#"<w:tbl><w:tblPr><w:tblStyle w:val="TS"/><w:tblW w:w="3000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>Q</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#;
+        let bytes = crate::docx::write::repackage(&with_body(&blank, body), &[("word/styles.xml".into(), styles.into_bytes())], zip::CompressionMethod::Deflated)
+            .expect("repackages");
+        let mut doc = crate::docx::read(&bytes).expect("reads");
+        doc.settings.compat_mode = 15;
+        super::page_chars(&doc)[0].iter().find(|c| c.0 == 'Q').map(|c| c.1).expect("drawn")
+    };
+    // Its 1000 left margin isn't used: the built-in's 108 is, as for the other name; an ordinary name keeps it.
+    assert!((x("Plain") - x("Table Normal") - 44.6).abs() < 0.01, "{} {}", x("Plain"), x("Table Normal"));
+    assert!((x("Normal Table") - x("Table Normal")).abs() < 0.01 && (x("table normal") - x("Plain")).abs() < 0.01);
+}

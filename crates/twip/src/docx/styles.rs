@@ -398,6 +398,14 @@ impl Styles {
                 r.spacing = r.spacing.or(Some(0.0));
                 r.scale = r.scale.or(Some(100.0));
             }
+            // A table style named as Word's built-in default one is that style: indent 0, cell margins 108 left and
+            // right, nothing else, whatever the file defines for it.
+            if kind == StyleKind::Table && matches!(style.name.as_str(), "Normal Table" | "Table Normal") {
+                let margins = Margins { top: Some(0.0), left: Some(5.4), bottom: Some(0.0), right: Some(5.4) };
+                style.base = Region { tbl: TblProps { ind: Some(Width::Dxa(0.0)), margins, ..TblProps::default() }, ..Region::default() };
+                style.regions.clear();
+                style.based_on = None;
+            }
             if kind == StyleKind::Paragraph {
                 s.paragraph_order.push(style.id.clone());
                 if default {

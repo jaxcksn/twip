@@ -7,18 +7,18 @@ page 0 12240 15840
   1440 2740 3. Table Grid style, Body paragraph (based on Normal):
   1445 2982 Cell text XXXX
   1440 3200 4. Table style with 18 pt rPr, Normal paragraph:
-  1548 3528 Cell text XXXX
+  1440 3528 Cell text XXXX
   1440 3760 5. Table style with 18 pt rPr, Body paragraph:
-  1548 4088 Cell text XXXX
+  1440 4088 Cell text XXXX
   1440 4320 6. Table style with only a pPr (widowControl off), Normal paragraph:
-  1548 4552 Cell text XXXX
+  1440 4552 Cell text XXXX
   1440 4760 7. Table style with only bold rPr, Normal paragraph:
-  1548 4992 Cell text XXXX
+  1440 4992 Cell text XXXX
   1440 5200 End.
   cell 1440 1880 5440 2130
   cell 1332 2340 5332 2580
   cell 1440 2780 5440 3030
-  cell 1440 3240 5440 3600
-  cell 1440 3800 5440 4160
-  cell 1440 4360 5440 4600
-  cell 1440 4800 5440 5040
+  cell 1332 3240 5332 3600
+  cell 1332 3800 5332 4160
+  cell 1332 4360 5332 4600
+  cell 1332 4800 5332 5040
