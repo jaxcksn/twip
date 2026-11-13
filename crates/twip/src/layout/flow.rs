@@ -3321,7 +3321,10 @@ impl<'d> PageFill<'d, '_> {
         let (bl, br) = super::table::float_box(tb, t, legacy);
         let f = table_float(t.id, br - bl, bottom - top, table_dist(&fp, in_flow), !fp.never_overlap);
         let mut o = Placed::new((self.sec.index, bi, float::TABLE_PIECE), ParaId(t.id), &f, at_x + bl, top, bottom - top);
-        o.excl[1] = o.excl[1].max(flow_y.min(top));
+        // Compat ≤ 14 keeps the obstacle below where the table stands; compat 15's top distance reaches the text above.
+        if legacy {
+            o.excl[1] = o.excl[1].max(flow_y.min(top));
+        }
         // One twip left of `tblpX`, in either mode.
         if fp.x_align().is_none() && !fp.h_text {
             o.excl[0] -= 0.05;

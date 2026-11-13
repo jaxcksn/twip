@@ -2761,3 +2761,15 @@ fn a_negative_indent_holds_on_a_line_no_float_meets() {
         assert!((l[0].0 - 36.0).abs() < 0.01, "compat {compat}: {l:?}");
     }
 }
+
+#[test]
+fn compat_15_a_floating_tables_top_distance_rewraps_the_line_above_it() {
+    // A table in the flow, 10pt top distance: the line before it, within those 10pt, goes beside it in compat 15.
+    let body = r#"<w:p><w:r><w:t>Above.</w:t></w:r></w:p><w:tbl><w:tblPr><w:tblpPr w:leftFromText="180" w:rightFromText="180" w:topFromText="200" w:vertAnchor="text" w:horzAnchor="margin" w:tblpX="0" w:tblpY="0"/><w:tblW w:w="3000" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p><w:r><w:t>After.</w:t></w:r></w:p>"#;
+    for (compat, beside) in [(14, false), (15, true)] {
+        let settings = format!(r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="{compat}"/></w:compat>"#);
+        let Some(l) = lines(&settings, ARIAL_12, body) else { return };
+        let x = l.iter().find(|l| l.1 == "Above.").expect("the line above").0;
+        assert_eq!(x > 200.0, beside, "compat {compat}: {l:?}");
+    }
+}
