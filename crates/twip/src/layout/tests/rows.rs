@@ -1130,3 +1130,21 @@ fn a_centred_cells_continuation_starts_at_the_parts_top() {
     // The second cell's last line goes on beside the first cell's continued lines, level with the first of them.
     assert!((y("b06") - y("a06")).abs() < 0.01, "{} {}", y("b06"), y("a06"));
 }
+
+#[test]
+fn centred_cells_align_in_the_rows_box_whatever_their_own_margins() {
+    let cell = |mar: &str, t: &str| {
+        format!(r#"<w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/>{mar}<w:vAlign w:val="center"/></w:tcPr><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:tc>"#)
+    };
+    let own = r#"<w:tcMar><w:top w:w="0" w:type="dxa"/><w:bottom w:w="300" w:type="dxa"/></w:tcMar>"#;
+    let body = format!(
+        r#"<w:tbl><w:tblPr><w:tblW w:w="6000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:trPr><w:trHeight w:val="2000" w:hRule="atLeast"/></w:trPr>{}{}</w:tr></w:tbl><w:p/>"#,
+        cell(own, "X"),
+        cell("", "Y")
+    );
+    let doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
+    let page = &super::page_chars(&doc)[0];
+    let y = |c: char| page.iter().find(|g| g.0 == c).map(|g| g.2).expect("drawn");
+    // The 300 bottom margin is the row's below for both cells: the same offset.
+    assert!((y('X') - y('Y')).abs() < 0.01, "{} {}", y('X'), y('Y'));
+}

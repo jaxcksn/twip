@@ -2548,7 +2548,9 @@ pub fn draw_row(tb: &TableLayout, ri: usize, left: f64, top: f64, height: f64, p
         let part = parts.map(|p| p[k]).unwrap_or(CellPart { units: &c.units.units, base: 0.0, ends: true, cont: false });
         let ch = if part.ends && part.base == 0.0 && part.units.len() == c.units.units.len() { c.align_h } else { part.height() };
         let height = height + c.below;
-        let inner = height - row.top_border - c.margins[0] - c.margins[2];
+        // Every cell aligns in the row's box: below the row's widest top border and margin, above its largest bottom
+        // margin.
+        let inner = height - row.top_border - c.margins[0] - row.cells.iter().map(|c| c.margins[2]).fold(0.0, f64::max);
         let off = match c.v_align.as_str() {
             _ if part.cont => 0.0,
             "center" => ((inner - ch) / 2.0).max(0.0),
