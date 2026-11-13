@@ -150,7 +150,8 @@ pub fn place(f: &mut Float, fr: &super::props::FramePr, sides: [f64; 2]) {
     let drop_cap = fr.drop_cap.as_deref().is_some_and(|d| d != "none");
     f.w = fr.w.unwrap_or(0.0);
     f.auto_w = fr.w.is_none_or(|w| w <= 0.0);
-    f.h = fr.h.unwrap_or(0.0);
+    // `hRule="auto"`: the content's height, whatever `w:h` says.
+    f.h = if fr.h_rule.as_deref() == Some("auto") { 0.0 } else { fr.h.unwrap_or(0.0) };
     if let Some(tb) = &mut f.text_box {
         tb.auto_fit = fr.h_rule.as_deref() != Some("exact");
     }

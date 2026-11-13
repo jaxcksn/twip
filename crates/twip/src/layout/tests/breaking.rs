@@ -1832,6 +1832,13 @@ fn beside_frame(settings: &str, attrs: &str) -> Option<usize> {
 }
 
 #[test]
+fn a_frames_auto_height_rule_ignores_its_height() {
+    let Some(auto) = beside_frame("", r#"w:h="1000" w:hRule="auto""#) else { return };
+    assert_eq!(auto, 1);
+    assert_eq!(beside_frame("", r#"w:h="1000" w:hRule="atLeast""#).unwrap(), 4);
+}
+
+#[test]
 fn a_compat_14_frame_keeps_no_vertical_space_below_it() {
     let Some(legacy) = beside_frame("", r#"w:vSpace="200" w:hSpace="200""#) else { return };
     assert_eq!(legacy, 1);
