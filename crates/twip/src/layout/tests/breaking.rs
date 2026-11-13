@@ -2876,14 +2876,16 @@ fn a_paragraphs_space_before_is_part_of_its_first_lines_box_beside_a_float() {
         let settings = format!(r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="{compat}"/></w:compat>"#);
         let Some(l) = lines(&settings, ARIAL_12, &body) else { return };
         assert!((l[1].0 - 172.0).abs() < 0.01 && (l[2].0 - 72.0).abs() < 0.01, "compat {compat}: {l:?}");
-        // A top-and-bottom float only in the space before doesn't move the line.
+        // A top-and-bottom float of the first paragraph only in the space before moves the line: its text goes 24pt
+        // below the float's bottom, 96pt, instead of 24pt below the first line's 13.8pt.
         let y = |wrap: &str| {
             let low = body
                 .replace(r#"<wp:wrapSquare wrapText="bothSides"/>"#, wrap)
                 .replace(r#"<wp:posOffset>0</wp:posOffset></wp:positionV><wp:extent cx="1270000" cy="292100"/>"#, r#"<wp:posOffset>177800</wp:posOffset></wp:positionV><wp:extent cx="1270000" cy="127000"/>"#);
             baselines(&settings, ARIAL_12, &low).unwrap()[1].3
         };
-        assert!((y("<wp:wrapTopAndBottom/>") - y("<wp:wrapNone/>")).abs() < 0.01, "compat {compat}");
+        let d = y("<wp:wrapTopAndBottom/>") - y("<wp:wrapNone/>");
+        assert!((d - (96.0 - 72.0 - 13.8)).abs() < 0.05, "compat {compat}: {d}");
     }
 }
 

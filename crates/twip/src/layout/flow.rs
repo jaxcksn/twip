@@ -2144,12 +2144,10 @@ impl<'d> PageFill<'d, '_> {
                 let free = match &forced {
                     Some(iv) => Some(iv.clone()),
                     None => {
-                        // A float over the whole line that reaches only into the space before doesn't move it, unless
-                        // the paragraph anchors it.
-                        let on = |fs: &[Placed], t: f64| float::text_intervals(fs, cx0, cx1, t, yy + h, yy + h - below, compat == Compat::Legacy);
+                        // A float over the whole line that reaches into its space before moves it, whichever paragraph
+                        // anchors it.
                         let lead = if bands.is_empty() { lead } else { 0.0 };
-                        let own = || cutting.iter().filter(|f| (f.key.0, f.key.1) == (self.sec.index, pos.block)).cloned().collect::<Vec<_>>();
-                        on(cutting, yy - lead).or_else(|| on(cutting, yy).filter(|_| lead > EPS && on(&own(), yy - lead).is_some()))
+                        float::text_intervals(cutting, cx0, cx1, yy - lead, yy + h, yy + h - below, compat == Compat::Legacy)
                     }
                 };
                 match free {
