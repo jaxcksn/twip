@@ -1560,10 +1560,7 @@ impl<'d> PageFill<'d, '_> {
     ) -> Result<Stop, Yield> {
         let style = p.para_style_in(self.ctx.env.text.review.view);
         let first_part = pos.at.at_start();
-        let mut before = space_before(&self.ctx.env.text, style);
-        if style.before_auto && carry.first_para {
-            before = 0.0;
-        }
+        let before = self.own_before(style, pos.block, carry);
         let after = space_after(&self.ctx.env.text, style);
         let n = pb.lines.len();
         let at_top = *empty;
@@ -1770,10 +1767,7 @@ impl<'d> PageFill<'d, '_> {
 
     fn para_gap(&self, p: &Paragraph, pos: &FlowToken, carry: &FlowState, empty: bool) -> f64 {
         let style = p.para_style_in(self.ctx.env.text.review.view);
-        let mut before = space_before(&self.ctx.env.text, style);
-        if style.before_auto && carry.first_para {
-            before = 0.0;
-        }
+        let before = self.own_before(style, pos.block, carry);
         if !pos.at.at_start() {
             0.0
         } else if empty {
@@ -1791,15 +1785,18 @@ impl<'d> PageFill<'d, '_> {
         }
     }
 
-    pub fn break_para_after_table(&self, bi: usize) -> bool {
-        self.sec.breaks
-            && bi + 1 == self.sec.section.blocks.len()
-            && bi > 0
-            && matches!(self.sec.blocks.get(bi - 1), Some(Block::Table(_)))
-            && matches!(self.sec.blocks.get(bi), Some(Block::Para(p)) if p.inlines.is_empty())
+    /// Paragraph `bi`'s own space before.
+    fn own_before(&self, style: &ParaStyle, bi: usize, carry: &FlowState) -> f64 {
+        // Compat 15: the empty closing paragraph a table leaves is laid out without its space before.
+        if style.before_auto && carry.first_para || self.break_para_after_table(bi) {
+            return 0.0;
+        }
+        space_before(&self.ctx.env.text, style)
     }
 
-    pub fn break_para_after_para(&self, bi: usize) -> bool {
+    /// Whether block `bi` is the section's closing paragraph and holds nothing but its mark (bookmarks and empty runs
+    /// don't count), after a block of kind `prev`.
+    fn bare_closing_para(&self, bi: usize, prev: fn(&Block) -> bool) -> bool {
         let bare = |i: &Inline| match i {
             Inline::Text(t, _) => t.is_empty(),
             Inline::Bookmark(_) | Inline::Range(_) | Inline::ControlStart(_) | Inline::ControlEnd(_) | Inline::CommentRef { .. } => true,
@@ -1808,8 +1805,16 @@ impl<'d> PageFill<'d, '_> {
         self.sec.breaks
             && bi + 1 == self.sec.section.blocks.len()
             && bi > 0
-            && matches!(self.sec.blocks.get(bi - 1), Some(Block::Para(_)))
+            && self.sec.blocks.get(bi - 1).is_some_and(prev)
             && matches!(self.sec.blocks.get(bi), Some(Block::Para(p)) if p.inlines.iter().all(bare))
+    }
+
+    pub fn break_para_after_table(&self, bi: usize) -> bool {
+        self.bare_closing_para(bi, |b| matches!(b, Block::Table(_)))
+    }
+
+    pub fn break_para_after_para(&self, bi: usize) -> bool {
+        self.bare_closing_para(bi, |b| matches!(b, Block::Para(_)))
     }
 
     /// `suppressSpacingAtTopOfPage` below the first column: the space before stays and no line rises.
@@ -1944,7 +1949,7 @@ impl<'d> PageFill<'d, '_> {
         let share = if !(first_part || restarts) {
             0.0
         } else if at_top {
-            let before = if style.before_auto && carry.first_para { 0.0 } else { space_before(&self.ctx.env.text, style) };
+            let before = self.own_before(style, pos.block, carry);
             (super::paragraph::gap_plain(&self.ctx.env.text, carry.prev_after, before) - carry.prev_after).max(lead)
         } else {
             lead

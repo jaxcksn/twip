@@ -780,6 +780,27 @@ fn an_empty_section_break_paragraph_after_a_paragraph_takes_no_line() {
 }
 
 #[test]
+fn an_empty_section_break_paragraph_after_a_table_is_laid_out_in_compat_15_only_without_its_space_before() {
+    // The closing paragraph holds a bookmark only: still empty.
+    let sect = r#"<w:p><w:pPr><w:spacing w:before="1200" w:after="0"/><w:sectPr><w:type w:val="continuous"/><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:pPr><w:bookmarkStart w:id="0" w:name="b"/><w:bookmarkEnd w:id="0"/></w:p>"#;
+    let table = r#"<w:tbl><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:tc><w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>Cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#;
+    // "Next" ends a continuous section of its own, so it follows on the same page.
+    let close = r#"<w:p><w:pPr><w:sectPr><w:type w:val="continuous"/></w:sectPr></w:pPr></w:p>"#;
+    let body = format!(r#"{table}{sect}<w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>Next</w:t></w:r></w:p>{close}"#);
+    let gap = |mode: u32| {
+        let c = format!(r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="{mode}"/></w:compat>"#);
+        baselines(&c, ARIAL_12, &body).map(|l| {
+            let y = |t: &str| l.iter().find(|x| x.1 == t).unwrap_or_else(|| panic!("{l:?}")).3;
+            y("Next") - y("Cell")
+        })
+    };
+    let Some(c14) = gap(14) else { return };
+    let c15 = gap(15).unwrap();
+    assert!(c14 < 20.0, "{c14}");
+    assert!((c15 - c14 - 13.8).abs() < 0.5, "{c14} {c15}");
+}
+
+#[test]
 fn a_page_break_in_a_table_cell_is_nothing() {
     let body = r#"<w:tbl><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>Before</w:t><w:br w:type="page"/><w:t>After</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#;
     let Some(l) = lines("", ARIAL_12, body) else { return };
