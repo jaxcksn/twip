@@ -3106,8 +3106,8 @@ pub fn draw_whole_row(
             + (d.0.borders.len() + d.0.background.len()) * std::mem::size_of::<Item>()
     };
     match cached(memos, |c| &mut c.rows, probe, bytes, |_| Ok(DrawnRow(draw_row(tb, ri, left, 0.0, height, None, last_of_table)))) {
-        Ok(d) => (super::page::row_down(&d.0, top), Some(d)),
-        Err(_) => (super::page::row_down(&draw_row(tb, ri, left, 0.0, height, None, last_of_table), top), None),
+        Ok(d) => (super::fragment::row_down(&d.0, top), Some(d)),
+        Err(_) => (super::fragment::row_down(&draw_row(tb, ri, left, 0.0, height, None, last_of_table), top), None),
     }
 }
 

@@ -9,7 +9,7 @@ use crate::docx::review::MarkupView;
 
 use super::LayoutCtx;
 use super::flow::{AttemptState, PageFill, PassMemo, Stop};
-use super::fragment::{BoxFragment, BoxKind, Child, Item, PlacedLine, RowFragment};
+use super::fragment::{BoxFragment, BoxKind, Child, Item, child_down};
 use super::ids::FragmentId;
 use super::job::{Memos, Yield};
 use super::node::{Notes, SectionNode};
@@ -151,58 +151,6 @@ fn glyph_runs(children: &[Child], dx: f64, dy: f64, out: &mut Vec<(f64, f64, f64
                     item(it, dx, dy, out);
                 }
             }
-        }
-    }
-}
-
-fn item_down(it: &Item, dy: f64) -> Item {
-    super::traverse::translated(it, 0.0, dy)
-}
-
-pub(crate) fn row_down(r: &RowFragment, dy: f64) -> RowFragment {
-    RowFragment {
-        row: r.row,
-        rect: [r.rect[0], r.rect[1] + dy, r.rect[2], r.rect[3] + dy],
-        top: r.top + dy,
-        edges: r.edges.clone(),
-        background: r.background.iter().map(|i| item_down(i, dy)).collect(),
-        cells: r
-            .cells
-            .iter()
-            .map(|c| super::fragment::CellFragment {
-                cell: c.cell,
-                content: c.content.iter().map(|x| child_down(x, &|_| dy)).collect(),
-                place: c.place.moved_down(dy),
-            })
-            .collect(),
-        borders: r.borders.iter().map(|i| item_down(i, dy)).collect(),
-        repeat: r.repeat,
-        changed: r.changed,
-    }
-}
-
-fn child_down(c: &Child, shift: &dyn Fn(f64) -> f64) -> Child {
-    match c {
-        Child::Para(p) => Child::Para(super::fragment::ParaFragment {
-            para: p.para,
-            lines: p.lines.iter().map(|l| PlacedLine { x: l.x, y: l.y + shift(l.y + EPS), line: l.line.clone() }).collect(),
-            line_numbers: p.line_numbers.iter().map(|g| g.iter().map(|i| item_down(i, shift(i.top()))).collect()).collect(),
-        }),
-        Child::Line { para, placed } => {
-            Child::Line { para: *para, placed: PlacedLine { x: placed.x, y: placed.y + shift(placed.y + EPS), line: placed.line.clone() } }
-        }
-        Child::Table(t) => Child::Table(super::fragment::TableFragment {
-            table: t.table,
-            rows: t.rows.iter().map(|r| row_down(r, shift(r.rect[1] + EPS))).collect(),
-        }),
-        Child::Items(items) => {
-            Child::Items(items.iter().map(|i| item_down(i, shift(i.top() + if matches!(i, Item::Glyphs(_)) { 0.0 } else { EPS }))).collect())
-        }
-        Child::Group { offset, children } => Child::Group { offset: (offset.0, offset.1 + shift(offset.1 + EPS)), children: children.clone() },
-        Child::Box(b) => {
-            let mut b = b.clone();
-            b.children = b.children.iter().map(|x| child_down(x, shift)).collect();
-            Child::Box(b)
         }
     }
 }
