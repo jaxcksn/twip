@@ -111,6 +111,30 @@ pub struct JobNotes {
     paged: Vec<(NoteKind, i64, i64, String)>,
     /// Compat 15: the notes numbered by their page's note keys ([`JobNotes::renumbered`]).
     keyed: Vec<Keyed>,
+    /// The footnotes and endnotes as laid out, when a note's last mark is hidden ([`joined_notes`]).
+    joined: [Option<HashMap<i64, Vec<Block>>>; 2],
+}
+
+/// A kind's notes are one story in reference order: a note whose last paragraph mark is hidden joins the next note's
+/// first paragraph. Footnotes draw it in the earlier note and the next note again in full; endnotes once, the next
+/// note going on from it. `None` when no note's last mark is hidden.
+fn joined_notes(notes: &HashMap<i64, Vec<Block>>, order: &[i64], view: crate::docx::review::MarkupView, once: bool) -> Option<HashMap<i64, Vec<Block>>> {
+    let hidden = |b: Option<&Vec<Block>>| matches!(b.and_then(|b| b.last()), Some(Block::Para(p)) if view.hides(&p.mark.rev));
+    if !order.iter().any(|id| hidden(notes.get(id))) {
+        return None;
+    }
+    let mut out = notes.clone();
+    for w in order.windows(2) {
+        if !hidden(out.get(&w[0])) {
+            continue;
+        }
+        let Some(first @ Block::Para(_)) = out.get(&w[1]).and_then(|b| b.first()).cloned() else { continue };
+        out.entry(w[0]).or_default().push(first);
+        if once {
+            out.entry(w[1]).or_default().remove(0);
+        }
+    }
+    Some(out)
 }
 
 /// Compat 15, a note restarting each page: its number is the rank of its key among the keys used on its page, in the
@@ -238,7 +262,15 @@ impl JobNotes {
                 }
             }
         }
-        JobNotes { numbers, endnotes, ends, separator, paged, keyed }
+        let view = doc.review.view;
+        let foot: Vec<i64> = of(NoteKind::Foot).collect();
+        let joined = [joined_notes(&doc.footnotes, &foot, view, false), joined_notes(&doc.endnotes, &endnotes, view, true)];
+        JobNotes { numbers, endnotes, ends, separator, paged, keyed, joined }
+    }
+
+    /// The footnotes (`k` 0) or endnotes as laid out.
+    fn stories<'a>(&'a self, doc: &'a Document, k: usize) -> &'a HashMap<i64, Vec<Block>> {
+        self.joined[k].as_ref().unwrap_or(if k == 0 { &doc.footnotes } else { &doc.endnotes })
     }
 }
 
@@ -354,7 +386,7 @@ impl<'d> PassCx<'d> {
                 if notes.ends.contains(&si) {
                     blocks.append(notes.separator.iter());
                     for id in notes.after(si) {
-                        blocks.append(doc.endnotes.get(&id).into_iter().flatten());
+                        blocks.append(notes.stories(doc, 1).get(&id).into_iter().flatten());
                     }
                 }
                 let next = match doc.sections.get(si + 1).and_then(|n| n.blocks.first()) {
@@ -399,7 +431,7 @@ impl<'d> PassCx<'d> {
     }
 
     fn notes(&self) -> Notes<'d> {
-        Notes { footnotes: &self.doc.footnotes, endnotes: &self.doc.endnotes, separators: &self.doc.separators }
+        Notes { footnotes: self.notes.stories(self.doc, 0), endnotes: self.notes.stories(self.doc, 1), separators: &self.doc.separators }
     }
 
     pub fn paginator<'p>(&'p self, run: &'p mut PassRun) -> Paginator<'d, 'p> {

@@ -215,7 +215,8 @@ fn layout_in(
     hf: Option<(f64, f64)>,
     memos: &mut Memos,
 ) -> Result<Rc<StoryLayout>, Yield> {
-    let blocks = super::join::laid(blocks, env.ctx.env.text.review.view);
+    let last = if cell.is_some() { None } else { env.ctx.env.normal.as_ref() };
+    let blocks = super::join::laid_in(blocks, env.ctx.env.text.review.view, last);
     let children = child_ids(&blocks, Some(width), env, cell, memos)?;
     let probe = StoryKey { hf, ..StoryKey::new(children.clone(), Some(width), cell, env, &blocks) };
     cached(memos, |c| &mut c.stories, probe, story_bytes, |m| layout_with(&blocks, &children, width, env, cell, (0, 0), &[], hf, m))
@@ -223,7 +224,7 @@ fn layout_in(
 
 /// The story's text from piece `at.1` of block `at.0` on, laid out at `width` (not cached).
 pub fn layout_from(blocks: &[&Block], width: f64, env: &StoryEnv, at: (usize, usize), memos: &mut Memos) -> Result<StoryLayout, Yield> {
-    let blocks = super::join::laid(blocks, env.ctx.env.text.review.view);
+    let blocks = super::join::laid_in(blocks, env.ctx.env.text.review.view, env.ctx.env.normal.as_ref());
     let children = child_ids(&blocks, Some(width), env, None, memos)?;
     layout_with(&blocks, &children, width, env, None, at, &[], None, memos)
 }
@@ -260,6 +261,13 @@ pub fn layout_with(
         match b {
             _ if bi < start.0 => {}
             LaidBlock::Para(laid) if super::paragraph::vanished(laid.para()) && !(cell.is_some() && bi + 1 == blocks.len()) => {}
+            // Paragraphs joined by hidden marks at the story's end that show nothing aren't laid out (a cell's last
+            // paragraph keeps its line).
+            LaidBlock::Para(laid)
+                if cell.is_none()
+                    && bi + 1 == blocks.len()
+                    && view.hides(&laid.para().mark.rev)
+                    && super::paragraph::shows_nothing(laid.para(), view) => {}
             LaidBlock::Para(laid) => {
                 let p = laid.para();
                 let next = match blocks.get(bi + 1) {
@@ -1203,7 +1211,7 @@ pub fn hf_layout(
     if env.ctx.env.text.compat == Compat::Legacy || !blocks.iter().any(|b| matches!(b, Block::Para(p) if !env.ctx.floats_of(p).is_empty())) {
         return Ok(l);
     }
-    let laid = super::join::laid(blocks, env.ctx.env.text.review.view);
+    let laid = super::join::laid_in(blocks, env.ctx.env.text.review.view, env.ctx.env.normal.as_ref());
     let children = child_ids(&laid, Some(width), env, None, memos)?;
     let mut seen: Option<Vec<[f64; 4]>> = None;
     let mut frozen = Vec::new();
@@ -1337,7 +1345,7 @@ fn longest_line(tb: &crate::docx::TextBox, width: f64, env: &StoryEnv, memos: &m
     let view = env.ctx.env.text.review.view;
     let mut w: f64 = 0.0;
     let mut lines = 0;
-    for b in super::join::laid(&tb.blocks, view) {
+    for b in super::join::laid_in(&tb.blocks, view, env.ctx.env.normal.as_ref()) {
         let LaidBlock::Para(laid) = b else { continue };
         let p = laid.para();
         let space = laid.shape_space(env.fields, env.notes, &env.ctx);

@@ -930,6 +930,49 @@ fn an_empty_deleted_mark_paragraph_before_a_table_isnt_laid_out() {
     assert!((gap(&gone).unwrap() - without).abs() < 0.01);
 }
 
+/// Each line's text and (x, baseline) on page 1 of `body` with deletions hidden.
+fn hidden_view(settings: &str, body: &str) -> Option<std::collections::HashMap<String, (f64, f64)>> {
+    let mut doc = test_doc(settings, ARIAL_12, body, "")?;
+    doc.review.view = crate::docx::review::MarkupView::NoMarkup;
+    let snap = layout(&doc, &fonts());
+    let mut y = std::collections::HashMap::new();
+    paint(&snap.pages()[0], &mut |p| {
+        if let Item::Glyphs(r) = p.absolute() {
+            y.insert(r.chars.iter().map(|c| c.0).collect::<String>(), (r.x, r.baseline));
+        }
+    });
+    Some(y)
+}
+
+#[test]
+fn compat_14_an_empty_deleted_run_before_a_deleted_table_keeps_the_next_paragraphs_space_before() {
+    let del = r#"w:id="1" w:author="A" w:date="2026-01-01T00:00:00Z""#;
+    let gone = format!(
+        r#"<w:p><w:pPr><w:spacing w:before="480" w:after="480"/><w:rPr><w:del {del}/></w:rPr></w:pPr><w:del {del}><w:r><w:delText>Deleted</w:delText></w:r></w:del></w:p>"#
+    );
+    let table = format!(
+        r#"<w:tbl><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:trPr><w:del {del}/></w:trPr><w:tc><w:p><w:r><w:t>Row</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#
+    );
+    let top = r#"<w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>Top</w:t></w:r></w:p>"#;
+    let next = r#"<w:p><w:pPr><w:spacing w:before="200" w:after="0"/></w:pPr><w:r><w:t>Next</w:t></w:r></w:p>"#;
+    let gap = |settings: &str, run: &str| hidden_view(settings, &format!("{top}{run}{table}{next}")).map(|y| y["Next"].1 - y["Top"].1);
+    let Some(without) = gap("", "") else { return };
+    // 200 tw once more in compat 14, nothing in compat 15.
+    assert!((gap("", &gone).unwrap() - without - 10.0).abs() < 0.01);
+    let c15 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+    assert!((gap(c15, &gone).unwrap() - gap(c15, "").unwrap()).abs() < 0.01);
+}
+
+#[test]
+fn text_with_a_deleted_mark_before_a_table_takes_its_first_cell_paragraphs_properties() {
+    let del = r#"w:id="1" w:author="A" w:date="2026-01-01T00:00:00Z""#;
+    let kept = format!(r#"<w:p><w:pPr><w:jc w:val="right"/><w:rPr><w:del {del}/></w:rPr></w:pPr><w:r><w:t>Kept</w:t></w:r></w:p>"#);
+    let table = r#"<w:tbl><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:tc><w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>Cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#;
+    let Some(y) = hidden_view("", &format!("{kept}{table}")) else { return };
+    // Centred on the column (72–540), not right-aligned.
+    assert!(y["Kept"].0 > 250.0 && y["Kept"].0 < 300.0, "{y:?}");
+}
+
 #[test]
 fn compat_14_widow_control_leaves_a_line_beside_a_float_ending_in_the_body() {
     // 53 exact 12pt lines, then a paragraph whose first line takes the page's last slot beside a picture that ends

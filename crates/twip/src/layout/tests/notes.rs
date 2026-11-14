@@ -988,3 +988,48 @@ fn compat_14_widow_control_moves_a_paragraph_whose_float_reaches_into_the_note_a
         assert_eq!(alone(n), Some(false), "{n} lines before it");
     }
 }
+
+#[test]
+fn a_note_ending_in_a_deleted_mark_joins_the_next_notes_first_paragraph() {
+    // Footnotes draw the joined paragraph in the earlier note and the next note again in full; endnotes draw it once.
+    let del = r#"w:id="1" w:author="A" w:date="2026-01-01T00:00:00Z""#;
+    let count = |tag: &str, refs: [&str; 2]| {
+        let extra = format!(
+            r#"<w:{tag} w:id="10"><w:p><w:pPr><w:rPr><w:del {del}/></w:rPr></w:pPr><w:r><w:t>Tail</w:t></w:r></w:p></w:{tag}><w:{tag} w:id="11"><w:p><w:r><w:t>Second</w:t></w:r></w:p></w:{tag}>"#
+        );
+        let body = para("Text", &refs) + &sect("", true);
+        let mut doc = notes_doc_with(&body, "", &extra)?;
+        doc.review.view = crate::docx::review::MarkupView::NoMarkup;
+        let text: String = super::page_chars(&doc).iter().flatten().map(|c| c.0).collect();
+        Some((text.matches("Second").count(), text.contains("TailSecond")))
+    };
+    let Some(foot) = count("footnote", ["f10", "f11"]) else { return };
+    assert_eq!(foot, (2, true));
+    assert_eq!(count("endnote", ["e10", "e11"]).unwrap(), (1, true));
+}
+
+#[test]
+fn an_empty_paragraph_with_a_deleted_mark_ending_a_notes_story_isnt_laid_out() {
+    let del = r#"w:id="1" w:author="A" w:date="2026-01-01T00:00:00Z""#;
+    let note_y = |last: &str| {
+        let extra = format!(r#"<w:footnote w:id="10"><w:p><w:r><w:t>Note text</w:t></w:r></w:p>{last}</w:footnote>"#);
+        let mut doc = notes_doc_with(&(para("Text", &["f10"]) + &sect("", true)), "", &extra)?;
+        doc.review.view = crate::docx::review::MarkupView::NoMarkup;
+        let page = &super::page_chars(&doc)[0];
+        page.windows(4).find(|w| w.iter().map(|c| c.0).eq("Note".chars())).map(|w| w[0].2)
+    };
+    let Some(alone) = note_y("") else { return };
+    let empty = format!(r#"<w:p><w:pPr><w:rPr><w:del {del}/></w:rPr></w:pPr></w:p>"#);
+    assert!((note_y(&empty).unwrap() - alone).abs() < 0.01);
+}
+
+#[test]
+fn text_with_a_deleted_mark_ending_a_notes_story_takes_the_normal_styles_properties() {
+    let del = r#"w:id="1" w:author="A" w:date="2026-01-01T00:00:00Z""#;
+    let extra = format!(r#"<w:footnote w:id="10"><w:p><w:pPr><w:jc w:val="right"/><w:rPr><w:del {del}/></w:rPr></w:pPr><w:r><w:t>Tail</w:t></w:r></w:p></w:footnote>"#);
+    let Some(mut doc) = notes_doc_with(&(para("Text", &["f10"]) + &sect("", true)), "", &extra) else { return };
+    doc.review.view = crate::docx::review::MarkupView::NoMarkup;
+    let page = &super::page_chars(&doc)[0];
+    let x = page.windows(4).find(|w| w.iter().map(|c| c.0).eq("Tail".chars())).map(|w| w[0].1).expect("the note");
+    assert!(x < 100.0, "left-aligned as Normal: {x}");
+}

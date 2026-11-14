@@ -104,6 +104,7 @@ pub struct PassMemo {
     varies: HashMap<usize, bool>,
     joined: HashMap<(usize, usize), Rc<Joined>>,
     mirrored: HashMap<(usize, usize), LaidPara<'static>>,
+    restyled: HashMap<(usize, usize), LaidPara<'static>>,
     rewrapped: HashMap<(NoteKind, i64, usize, usize, u64), Vec<StoryUnit>>,
     pub(crate) held: Held,
 }
@@ -674,6 +675,29 @@ impl<'d> PageFill<'d, '_> {
     }
 
     fn laid_own(&mut self, bi: usize) -> Option<(LaidPara<'d>, usize)> {
+        let (laid, end) = self.laid_chain(bi)?;
+        let view = self.ctx.env.text.review.view;
+        let Some(Block::Para(last)) = self.sec.blocks.get(end) else { return Some((laid, end)) };
+        if !view.hides(&last.mark.rev) {
+            return Some((laid, end));
+        }
+        // A hidden last mark takes the next shown mark's properties; at the end of an endnote the story's own final
+        // mark's.
+        let key = (std::ptr::from_ref(laid.para()) as usize, end - bi);
+        if let Some(r) = self.pass.restyled.get(&key) {
+            return Some((r.clone(), end));
+        }
+        let blocks = &self.sec.blocks;
+        let story_end = blocks.stories.iter().copied().find(|&s| s > end).unwrap_or(blocks.len());
+        let in_note = blocks.stories.first().is_some_and(|&s| bi >= s);
+        let last = if in_note { self.ctx.env.normal.as_ref() } else { None };
+        let Some(style) = super::join::joined_target(&blocks.blocks[..story_end], end, view, last) else { return Some((laid, end)) };
+        let r = laid.restyled(style.clone());
+        self.pass.restyled.insert(key, r.clone());
+        Some((r, end))
+    }
+
+    fn laid_chain(&mut self, bi: usize) -> Option<(LaidPara<'d>, usize)> {
         let Some(Block::Para(p)) = self.sec.blocks.get(bi) else { return None };
         let end = self.sec.blocks.chain_end(bi, self.ctx.env.text.review.view);
         if end == bi {
@@ -1291,6 +1315,11 @@ impl<'d> PageFill<'d, '_> {
             if pos.at.at_start()
                 && let Some(end) = self.deleted_before_table(pos.block)
             {
+                // Compat ≤ 14: before a table whose rows are all hidden they keep the space before of the paragraph
+                // whose mark they join.
+                if !generic && !empty {
+                    y += self.hidden_table_before(end);
+                }
                 pos.block = end;
                 pos.next_block();
                 continue;
@@ -1871,8 +1900,25 @@ impl<'d> PageFill<'d, '_> {
         let shows_nothing = |k: usize| matches!(self.sec.blocks.get(k), Some(Block::Para(p)) if super::paragraph::shows_nothing(p, view));
         let last = matches!(self.sec.blocks.get(end), Some(Block::Para(p)) if view.hides(&p.mark.rev));
         let next = self.sec.blocks.get(end + 1);
-        let story_end = next.is_none() && !self.sec.breaks;
+        let own = self.sec.section.blocks.len();
+        let story_end = match end + 1 {
+            k if k == own => !self.sec.breaks,
+            k => k > own && (k == self.sec.blocks.len() || self.sec.blocks.stories.contains(&k)),
+        };
         (last && (story_end || matches!(next, Some(Block::Table(_)))) && (bi..=end).all(shows_nothing)).then_some(end)
+    }
+
+    /// The space before of the paragraph whose mark the hidden marks ending at `end` join, when a table whose rows are
+    /// all hidden follows them (else 0).
+    fn hidden_table_before(&self, end: usize) -> f64 {
+        let view = self.ctx.env.text.review.view;
+        let blocks = &self.sec.blocks;
+        if !matches!(blocks.get(end + 1), Some(Block::Table(t)) if super::join::table_hidden(t, view)) {
+            return 0.0;
+        }
+        let story_end = blocks.stories.iter().copied().find(|&s| s > end).unwrap_or(blocks.len());
+        super::join::next_shown_mark(&blocks.blocks[..story_end], end + 1, view)
+            .map_or(0.0, |q| space_before(&self.ctx.env.text, q.para_style_in(view)))
     }
 
     /// Paragraph `bi`'s own space before.

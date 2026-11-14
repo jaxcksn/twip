@@ -59,6 +59,48 @@ pub fn chain_start<B: Borrow<Block>>(blocks: &[B], i: usize, view: MarkupView) -
     s
 }
 
+/// Whether every row of `t` is hidden.
+pub fn table_hidden(t: &Table, view: MarkupView) -> bool {
+    t.rows.iter().all(|r| r.vanished || view.hides_row(&r.rev))
+}
+
+/// The first paragraph of a shown table: its first shown row's first cell, into a table that starts it.
+fn table_first(t: &Table, view: MarkupView) -> Option<&Paragraph> {
+    let row = t.rows.iter().find(|r| !(r.vanished || view.hides_row(&r.rev)))?;
+    match row.cells.first()?.blocks.first()? {
+        Block::Para(p) => Some(p),
+        Block::Table(t) => table_first(t, view),
+    }
+}
+
+/// The paragraph whose mark a hidden mark at the end of a chain joins when no paragraph follows it: the next shown mark
+/// in text order from `blocks[from]` on, past hidden marks and tables whose rows are all hidden; a shown table's first
+/// cell paragraph counts. `None` at the end of `blocks`.
+pub fn next_shown_mark<B: Borrow<Block>>(blocks: &[B], from: usize, view: MarkupView) -> Option<&Paragraph> {
+    blocks.get(from..)?.iter().find_map(|b| match b.borrow() {
+        Block::Para(p) if !view.hides(&p.mark.rev) => Some(p),
+        Block::Para(_) => None,
+        Block::Table(t) if table_hidden(t, view) => None,
+        Block::Table(t) => table_first(t, view),
+    })
+}
+
+/// The properties a chain ending at `blocks[end]` takes when its last mark is hidden: the next shown mark's
+/// ([`next_shown_mark`]), else at the story's end `last`'s (a story's own final mark). `None`: its own.
+pub fn joined_target<'a, B: Borrow<Block>>(
+    blocks: &'a [B],
+    end: usize,
+    view: MarkupView,
+    last: Option<&'a Rc<crate::docx::ParaStyle>>,
+) -> Option<&'a Rc<crate::docx::ParaStyle>> {
+    let Some(Block::Para(p)) = blocks.get(end).map(Borrow::borrow) else { return None };
+    if !view.hides(&p.mark.rev) {
+        return None;
+    }
+    let style = next_shown_mark(blocks, end + 1, view).map_or(last, |q| Some(q.para_style_in(view)))?;
+    (!Rc::ptr_eq(style, p.para_style_in(view))).then_some(style)
+}
+
 #[derive(Debug)]
 pub struct Joined {
     pub para: Paragraph,
@@ -149,6 +191,11 @@ pub enum LaidBlock<'a> {
 }
 
 pub fn laid<B: Borrow<Block>>(blocks: &[B], view: MarkupView) -> Vec<LaidBlock<'_>> {
+    laid_in(blocks, view, None)
+}
+
+/// [`laid`] for a story whose own final mark has the properties `last` (a header, footer, text box or notes story).
+pub fn laid_in<'a, B: Borrow<Block>>(blocks: &'a [B], view: MarkupView, last: Option<&'a Rc<crate::docx::ParaStyle>>) -> Vec<LaidBlock<'a>> {
     let mut out = Vec::with_capacity(blocks.len());
     let mut i = 0;
     while let Some(b) = blocks.get(i) {
@@ -159,7 +206,11 @@ pub fn laid<B: Borrow<Block>>(blocks: &[B], view: MarkupView) -> Vec<LaidBlock<'
             }
             Block::Para(p) => {
                 let end = chain_end(blocks, i, view);
-                out.push(LaidBlock::Para(laid_para(&blocks[i..=end]).unwrap_or(LaidPara::One(p))));
+                let chain = laid_para(&blocks[i..=end]).unwrap_or(LaidPara::One(p));
+                out.push(LaidBlock::Para(match joined_target(blocks, end, view, last) {
+                    Some(style) => chain.restyled(style.clone()),
+                    None => chain,
+                }));
                 i = end + 1;
             }
         }
