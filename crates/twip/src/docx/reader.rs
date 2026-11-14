@@ -1856,7 +1856,8 @@ impl Reader {
                             && !f.spanning
                         {
                             out.push(Inline::FieldEnd { id, run: run.clone() });
-                            self.close_field(out, f, &run);
+                            let style = self.run_style(&self.run_props(base, None));
+                            self.close_field(out, f, &run, &style);
                         }
                     }
                     _ => {}
@@ -2114,13 +2115,20 @@ impl Reader {
         self.fields.last().is_some_and(|f| !f.in_result)
     }
 
-    fn close_field(&mut self, out: &mut [Inline], f: OpenField, end_run: &Run) {
+    /// `style`: the paragraph's style formatting, which a REF's text takes.
+    fn close_field(&mut self, out: &mut [Inline], f: OpenField, end_run: &Run, style: &Run) {
         let Some(span) = super::fields::span_at(out, f.begin) else { return };
         let code = super::fields::code_text(out, span);
         let parsed = super::fields::parse(&code);
         let kind = parsed.kind();
-        let mergeformat = parsed.switches.iter().any(|s| s.flag == '*' && s.arg.as_deref().is_some_and(|a| a.eq_ignore_ascii_case("MERGEFORMAT")));
-        let fmt = if mergeformat { f.first_result_run.or(f.first_code_run.clone()) } else { f.first_code_run.clone() };
+        // With `\* MERGEFORMAT` the value's words take the cached result's formatting at layout; this run is for the
+        // words past the cached ones.
+        let fmt = if matches!(kind, Some(FieldKind::Ref(_))) {
+            // A REF's text isn't in its code's formatting: the paragraph's style, the source's own formatting on it.
+            Some(on_style(style, f.first_code_run.as_ref().unwrap_or(end_run)))
+        } else {
+            f.first_code_run.clone()
+        };
         // A legacy check box or drop-down shows its form data, in its code's run.
         let form = f.form.filter(|(k, _)| parsed.name == if *k == FieldKind::DropDown { "FORMDROPDOWN" } else { "FORMCHECKBOX" });
         if let Inline::FieldBegin { kind: k, run, lock, value, .. } = &mut out[f.begin] {
@@ -2159,6 +2167,7 @@ impl Reader {
         let rpr = first.and_then(|r| child(r, "rPr"));
         let run = self.with_direct(self.run_style(&self.run_props(base, rpr)), rpr);
         let run = self.tracked(run, base, rpr);
+        let style = self.run_style(&self.run_props(base, None));
         let (mark, segs) = (units_mark(out), self.segs.len());
         let id = FieldId::next();
         let flag = |a: &str| attr(e, a).is_some_and(|v| v == "1" || v == "true" || v == "on");
@@ -2180,7 +2189,8 @@ impl Reader {
         self.fields.push(OpenField {
             id,
             in_result: true,
-            first_code_run: Some(run.clone()),
+            // A simple field's code has no run: the paragraph's style formatting is its code's.
+            first_code_run: Some(on_style(&style, &run)),
             first_result_run: None,
             para: self.para_no,
             begin,
@@ -2192,7 +2202,7 @@ impl Reader {
         let f = self.fields.pop().expect("the simple field pushed above");
         out.push(Inline::FieldEnd { id, run: run.clone() });
         let fmt = f.first_result_run.clone();
-        self.close_field(out, OpenField { first_result_run: fmt, ..f }, &run);
+        self.close_field(out, OpenField { first_result_run: fmt, ..f }, &run, &style);
         if self.record {
             let inner = self.segs.split_off(segs);
             self.simple.push((e.range().start, inner));
@@ -3046,6 +3056,11 @@ fn position(p: Option<Node>) -> (String, Option<String>, f64) {
         .map(|emu| (emu / 635.0).trunc() / 20.0)
         .unwrap_or(0.0);
     (rel, align, off)
+}
+
+/// The paragraph's style formatting `style` with `run`'s hiding and revisions.
+fn on_style(style: &Run, run: &Run) -> Run {
+    Rc::new(RunStyle { hidden: run.hidden, rev: run.rev.clone(), ..(**style).clone() })
 }
 
 fn push_text(out: &mut Vec<Inline>, t: &str, run: &Run) {

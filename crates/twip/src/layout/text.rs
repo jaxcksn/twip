@@ -1000,7 +1000,14 @@ impl<'a> Builder<'a> {
                     v.clone()
                 };
                 if let (false, Some(run)) = (text.is_empty(), inl.run()) {
-                    self.text(&text, run_in(run, view))?;
+                    match crate::docx::fields::span_at(&para.inlines, k).filter(|_| evaluated) {
+                        Some(s) => {
+                            for (t, r) in crate::docx::fields::value_runs(&para.inlines, s, &text, run) {
+                                self.text(&t, run_in(&r, view))?;
+                            }
+                        }
+                        None => self.text(&text, run_in(run, view))?,
+                    }
                 }
             }
             let run = inl.run().map(|r| run_in(r, view));
