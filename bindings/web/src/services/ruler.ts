@@ -1,6 +1,9 @@
 import type { Session } from '../editor.js';
 import { Method } from '../transport/protocol.js';
 import type { Points } from '../types.js';
+import type { RulerModel, RulerUnit, RulerView, TabSelector } from '../wire.generated.js';
+
+export type { RulerModel, RulerUnit, RulerView, TabAlignment, TabLeader, TabSelector } from '../wire.generated.js';
 
 /** The ruler model, on every editor. */
 export interface RulerModelSource {
@@ -18,57 +21,6 @@ export interface Ruler extends RulerModelSource {
   setTabSelector(kind: TabSelector): Promise<void>;
   /** The model with its mapping to the viewport, for an application drawing its own ruler. */
   view(): RulerView;
-}
-
-/** A ruler unit. */
-export type RulerUnit = 'inches' | 'centimeters' | 'millimeters' | 'points' | 'picas';
-/** What a click on the ruler adds. */
-export type TabSelector = TabAlignment | 'firstLineIndent' | 'hangingIndent';
-/** A tab stop's alignment. */
-export type TabAlignment = 'left' | 'center' | 'right' | 'decimal' | 'bar';
-/** A tab stop's leader. */
-export type TabLeader = 'none' | 'dots' | 'dashes' | 'underline' | 'heavy' | 'middleDot';
-
-/** The ruler model for the selection, in points. */
-export interface RulerModel {
-  /** The selected paragraphs differ: the first one's values are shown. */
-  mixed: boolean;
-  /** The horizontal ruler. */
-  horizontal: {
-    pageWidth: Points;
-    /** The margins, or the cell or text column around the caret. */
-    text: { start: Points; end: Points };
-    /** `firstLine` is relative to `left`; negative is hanging. */
-    indents: { left: Points; right: Points; firstLine: Points };
-    tabs: { position: Points; alignment: TabAlignment; leader: TabLeader; inherited: boolean }[];
-    defaultTabStop: Points;
-    /** The section's text columns. */
-    columns: { start: Points; end: Points }[];
-    /** The cell boundaries of the caret's row. */
-    tableColumns: Points[];
-  };
-  /** The vertical ruler. */
-  vertical: {
-    pageHeight: Points;
-    /** The top and bottom margins. */
-    text: { start: Points; end: Points };
-    /** The row boundaries of the caret's table on this page. */
-    tableRows: Points[];
-  };
-}
-
-/** The ruler model mapped to the viewport. */
-export interface RulerView {
-  /** The model. */
-  model: RulerModel;
-  /** The page the rulers follow (the caret's). */
-  page: number;
-  /** The client x of the page's left edge, and CSS px per point. */
-  horizontal: { origin: number; scale: number };
-  /** The client y of the page's top edge, and CSS px per point. */
-  vertical: { origin: number; scale: number };
-  /** The unit shown. */
-  unit: RulerUnit;
 }
 
 /** The mounted rulers over a session; `view` starts as `initial` and follows `rulerChanged`. */

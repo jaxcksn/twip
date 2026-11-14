@@ -48,7 +48,29 @@ export interface Alias {
 }
 
 // @public
-export type AnnouncementKind = 'table' | 'list' | 'page' | 'review' | 'comment' | 'spelling' | 'formatting' | 'mode' | 'readOnly' | 'command' | 'selection';
+export type AnnouncementKind =
+/** Entering, leaving or moving through a table. */
+'table'
+/** Entering or leaving a list. */
+| 'list'
+/** The caret moved to another page. */
+| 'page'
+/** An insertion or deletion at the caret. */
+| 'review'
+/** A commented range at the caret, with the comment. */
+| 'comment'
+/** A misspelled word at the caret. */
+| 'spelling'
+/** Formatting turned on or off, or described on request. */
+| 'formatting'
+/** Entering or leaving a header, footer, note or text box. */
+| 'mode'
+/** Read-only content: entered, or an edit refused there. */
+| 'readOnly'
+/** What a command did (undo, redo, cut, copy, paste). */
+| 'command'
+/** The selection (select all). */
+| 'selection';
 
 // @public
 export type Arrange = 'forward' | 'backward' | 'toFront' | 'toBack' | 'inFrontOfText' | 'behindText';
@@ -940,7 +962,7 @@ export type Cursor = 'default' | 'text' | 'pointer' | 'move' | 'resizeHorizontal
 export interface CursorOverride {
     cursor: Cursor;
     on: {
-        kind: ElementContext['kind'];
+        kind: 'field' | 'richText' | 'plainText' | 'picture' | 'checkbox' | 'date' | 'dropDown' | 'comboBox' | 'group' | 'repeatingSection' | 'repeatingItem';
     } | {
         action: PressAction;
     };
@@ -1201,7 +1223,13 @@ export interface Dictionary {
 }
 
 // @public
-export type DocumentAppearance = 'light' | 'dark' | 'darkWithLightPage';
+export type DocumentAppearance =
+/** In the document's colours. */
+'light'
+/** Dark mode: a dark page, with the document's colours adjusted to it. */
+| 'dark'
+/** Dark mode with the page shown in its own colours (the chrome stays dark). */
+| 'darkWithLightPage';
 
 // @public
 export interface DocumentDefaults {
@@ -1455,7 +1483,13 @@ export interface FieldInfo {
 }
 
 // @public
-export type FieldShading = 'never' | 'always' | 'whenSelected';
+export type FieldShading =
+/** Never. */
+'never'
+/** Always: every field. */
+| 'always'
+/** The field the caret or selection is in or touches. */
+| 'whenSelected';
 
 // @public
 export interface FieldTargets {
@@ -1695,7 +1729,49 @@ export interface GestureEvent {
 }
 
 // @public
-export type GestureId = 'headerAreaDoubleClick' | 'footerAreaDoubleClick' | 'bodyDoubleClickInHeaderFooter' | 'textDoubleClick' | 'textTripleClick' | 'textCtrlClick' | 'linkActivate' | 'marginClick' | 'marginDoubleClick' | 'tableBorderDoubleClick' | 'tableBorderDrag' | 'objectDrag' | 'textDrag' | 'elementDoubleClick' | 'pictureControlClick' | 'pictureControlDoubleClick' | 'rulerClick' | 'rulerDrag' | 'rulerDragOff' | 'rulerDoubleClick' | 'contextClick';
+export type GestureId =
+/** A double-click in the header area: edits the header. */
+'headerAreaDoubleClick'
+/** A double-click in the footer area: edits the footer. */
+| 'footerAreaDoubleClick'
+/** A double-click on the body while editing a header or footer: back to the body. */
+| 'bodyDoubleClickInHeaderFooter'
+/** A double-click on text: selects a word. */
+| 'textDoubleClick'
+/** A triple-click on text: selects a paragraph. */
+| 'textTripleClick'
+/** A Ctrl+click on text. */
+| 'textCtrlClick'
+/** A Ctrl+click on a hyperlink. */
+| 'linkActivate'
+/** A click in the left margin. */
+| 'marginClick'
+/** A double-click in the left margin. */
+| 'marginDoubleClick'
+/** A double-click on a table's column border. */
+| 'tableBorderDoubleClick'
+/** Dragging a table border: resizes. */
+| 'tableBorderDrag'
+/** Dragging a picture or text box. */
+| 'objectDrag'
+/** Dragging selected text: moves it. */
+| 'textDrag'
+/** A double-click on a field or content control in design mode. */
+| 'elementDoubleClick'
+/** A click on an unfilled picture control in editing and read-only modes: activates it. */
+| 'pictureControlClick'
+/** A double-click on a picture control in editing and read-only modes: activates it. */
+| 'pictureControlDoubleClick'
+/** A click on the ruler: adds a tab stop. */
+| 'rulerClick'
+/** Dragging a ruler marker. */
+| 'rulerDrag'
+/** Dragging a tab stop off the ruler: removes it. */
+| 'rulerDragOff'
+/** A double-click on the ruler: requests the Tabs dialog. */
+| 'rulerDoubleClick'
+/** A right-click: the context menu. */
+| 'contextClick';
 
 // @public
 export interface Gestures {
@@ -1833,7 +1909,33 @@ export type HorizontalReference =
 | 'outsideMargin';
 
 // @public
-export type HostCommand = 'save' | 'saveAs' | 'print' | 'open' | 'new' | 'find' | 'replace' | 'goTo' | 'insertHyperlink' | 'nextMisspelling' | 'focusFont' | 'focusFontSize' | 'help';
+export type HostCommand =
+/** Ctrl+S. */
+'save'
+/** F12. */
+| 'saveAs'
+/** Ctrl+P. */
+| 'print'
+/** Ctrl+O. */
+| 'open'
+/** Ctrl+N. */
+| 'new'
+/** Ctrl+F. */
+| 'find'
+/** Ctrl+H. */
+| 'replace'
+/** Ctrl+G. */
+| 'goTo'
+/** Ctrl+K. */
+| 'insertHyperlink'
+/** F7. */
+| 'nextMisspelling'
+/** Ctrl+Shift+F. */
+| 'focusFont'
+/** Ctrl+Shift+P. */
+| 'focusFontSize'
+/** F1. */
+| 'help';
 
 // @public
 export function inches(n: number): Points;
@@ -1952,7 +2054,13 @@ export type MatchId = string & {
 };
 
 // @public
-export type MeasureDetail = 'quiet' | 'standard' | 'full';
+export type MeasureDetail =
+/** A chip with the value only. */
+'quiet'
+/** Dimension lines with the value; the full set while Alt is held. */
+| 'standard'
+/** Everything: changes from the start, table sizes and status lines. */
+| 'full';
 
 // @public
 export type MenuAction = {
@@ -2098,7 +2206,13 @@ export type NoArgumentCommandId = {
 export type NumberFormat = 'decimal' | 'upperRoman' | 'lowerRoman' | 'upperLetter' | 'lowerLetter' | 'ordinal' | 'cardinalText' | 'ordinalText' | 'decimalZero' | 'bullet' | 'none';
 
 // @public
-export type ObjectGrid = 'off' | 'whileDragging' | 'always';
+export type ObjectGrid =
+/** Never. */
+'off'
+/** While an object is dragged. */
+| 'whileDragging'
+/** Always. */
+| 'always';
 
 // @public
 export type ObjectHorizontalAlignment =
@@ -2305,7 +2419,15 @@ export function preload(options?: {
 }): Promise<void>;
 
 // @public
-export type PressAction = 'toggle' | 'followLink' | 'placeCaret' | 'none';
+export type PressAction =
+/** Checks or clears a checkbox. */
+'toggle'
+/** Follows a hyperlink (with Ctrl or Cmd held, or in a read-only editor). */
+| 'followLink'
+/** Places the caret in the element's text. */
+| 'placeCaret'
+/** Nothing: the element can't be edited here. */
+| 'none';
 
 // @public
 export interface PreviewPicture {
@@ -2453,7 +2575,17 @@ export interface RulerModelSource {
 }
 
 // @public
-export type RulerUnit = 'inches' | 'centimeters' | 'millimeters' | 'points' | 'picas';
+export type RulerUnit =
+/** Inches. */
+'inches'
+/** Centimeters. */
+| 'centimeters'
+/** Millimeters. */
+| 'millimeters'
+/** Points. */
+| 'points'
+/** Picas. */
+| 'picas';
 
 // @public
 export interface RulerView {
@@ -2744,10 +2876,32 @@ export interface SystemColors {
 }
 
 // @public
-export type TabAlignment = 'left' | 'center' | 'right' | 'decimal' | 'bar';
+export type TabAlignment =
+/** Text starts at the stop. */
+'left'
+/** Text centres on the stop. */
+| 'center'
+/** Text ends at the stop. */
+| 'right'
+/** The decimal point sits at the stop. */
+| 'decimal'
+/** A vertical bar at the stop, with no effect on the text. */
+| 'bar';
 
 // @public
-export type TabLeader = 'none' | 'dots' | 'dashes' | 'underline' | 'heavy' | 'middleDot';
+export type TabLeader =
+/** No leader. */
+'none'
+/** Dots. */
+| 'dots'
+/** Dashes. */
+| 'dashes'
+/** A line. */
+| 'underline'
+/** A heavy line. */
+| 'heavy'
+/** Middle dots. */
+| 'middleDot';
 
 // @public
 export interface TablePosition {
@@ -2798,7 +2952,21 @@ export type TableWidth = {
 };
 
 // @public
-export type TabSelector = TabAlignment | 'firstLineIndent' | 'hangingIndent';
+export type TabSelector =
+/** A left tab stop. */
+'left'
+/** A center tab stop. */
+| 'center'
+/** A right tab stop. */
+| 'right'
+/** A decimal tab stop. */
+| 'decimal'
+/** A bar tab. */
+| 'bar'
+/** Sets the first-line indent. */
+| 'firstLineIndent'
+/** Sets the hanging indent. */
+| 'hangingIndent';
 
 // @public
 export interface TabTypeChoice {
