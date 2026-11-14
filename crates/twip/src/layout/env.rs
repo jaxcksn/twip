@@ -177,6 +177,8 @@ pub struct LayoutEnv {
     /// `footnoteLayoutLikeWW8`, compat ≤ 14: a continuous section goes on above the page-bottom footnotes of an
     /// earlier section on the page, up to its first line with a footnote reference.
     pub notes_like_ww8: bool,
+    /// The default paragraph style's properties: a header's, footer's, text box's or notes story's own final mark.
+    pub normal: Option<Rc<crate::docx::ParaStyle>>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -212,9 +214,11 @@ fn chains(doc: &Document) -> Rc<[Chain]> {
         let Some(sp) = f.shape.as_deref().and_then(|s| s.sp()) else { return };
         match (&sp.text, sp.chain, &f.text_box) {
             (ShapeText::Story, Some(c), Some(tb)) => {
-                heads.insert(c, (tb.clone(), (f.id, super::story::text_frame_size(f))));
+                heads.insert(c, (tb.clone(), (f.id, super::story::text_frame_size(f, &doc.theme))));
             }
-            (ShapeText::Linked { chain, seq }, ..) => later.entry(*chain).or_default().push((*seq, (f.id, super::story::text_frame_size(f)))),
+            (ShapeText::Linked { chain, seq }, ..) => {
+                later.entry(*chain).or_default().push((*seq, (f.id, super::story::text_frame_size(f, &doc.theme))))
+            }
             _ => {}
         }
     };
@@ -242,6 +246,7 @@ impl LayoutEnv {
             line_number_run: doc.line_number_run.clone(),
             chains: chains(doc),
             notes_like_ww8: s.compat() == Compat::Legacy && s.has("footnoteLayoutLikeWW8"),
+            normal: doc.resolver.as_ref().map(|r| Rc::new(r.paragraph(&Default::default(), None).style)),
         }
     }
 }

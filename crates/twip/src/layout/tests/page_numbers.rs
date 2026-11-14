@@ -5,13 +5,19 @@ use super::{package, page_chars};
 const W: &str = r#"xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships""#;
 
 fn chaptered(sep: &str) -> Option<crate::docx::Document> {
+    chaptered_with(sep, "", None)
+}
+
+/// [`chaptered`] with `more` at the body's end and a footer.
+fn chaptered_with(sep: &str, more: &str, footer: Option<&str>) -> Option<crate::docx::Document> {
     let page = r#"<w:p><w:r><w:t xml:space="preserve">PG </w:t></w:r><w:r><w:pgNum/></w:r></w:p>"#;
     let heading = |t: &str, direct: &str| format!(r#"<w:p><w:pPr><w:pStyle w:val="Heading1"/>{direct}</w:pPr><w:r><w:t>{t}</w:t></w:r></w:p>"#);
     let brk = r#"<w:p><w:r><w:br w:type="page"/></w:r></w:p>"#;
     let body = format!(
-        r#"<w:document {W}><w:body>{page}{brk}{}{page}{brk}{}{page}<w:sectPr><w:pgNumType w:chapStyle="1"{sep}/></w:sectPr></w:body></w:document>"#,
+        r#"<w:document {W}><w:body>{page}{brk}{}{page}{brk}{}{page}{more}<w:sectPr>{}<w:pgNumType w:chapStyle="1"{sep}/></w:sectPr></w:body></w:document>"#,
         heading("Alpha", ""),
         heading("Beta", r#"<w:numPr><w:ilvl w:val="0"/><w:numId w:val="2"/></w:numPr>"#),
+        if footer.is_some() { r#"<w:footerReference w:type="default" r:id="rId4"/>"# } else { "" },
     );
     let styles = format!(
         r#"<w:styles {W}><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr></w:style></w:styles>"#
@@ -23,8 +29,8 @@ fn chaptered(sep: &str) -> Option<crate::docx::Document> {
         lvl("Chapter %1", "upperRoman"),
         lvl("%1.", "decimal"),
     );
-    let ct = r#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/></Types>"#;
-    let rels = r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/></Relationships>"#;
+    let ct = r#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/><Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/></Types>"#;
+    let rels = r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/><Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/></Relationships>"#;
     package(&[
         ("[Content_Types].xml", ct),
         (
@@ -35,6 +41,7 @@ fn chaptered(sep: &str) -> Option<crate::docx::Document> {
         ("word/document.xml", &body),
         ("word/styles.xml", &styles),
         ("word/numbering.xml", &numbering),
+        ("word/footer1.xml", &format!("<w:ftr {W}>{}</w:ftr>", footer.unwrap_or("<w:p/>"))),
     ])
 }
 
@@ -55,6 +62,22 @@ fn page_numbers_lead_with_the_chapter() {
     assert_eq!(numbers(&doc), ["I-1", "I-2", "I-3"]);
     let Some(doc) = chaptered(r#" w:chapSep="emDash""#) else { return };
     assert_eq!(numbers(&doc)[1], "I\u{2014}2");
+}
+
+#[test]
+fn a_footer_pg_num_takes_the_chapter_at_its_section_start() {
+    let pg = r#"<w:p><w:r><w:t xml:space="preserve">FT </w:t></w:r><w:r><w:pgNum/></w:r><w:r><w:t xml:space="preserve"> PP </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>1</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>"#;
+    let gamma = r#"<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Gamma</w:t></w:r></w:p>"#;
+    let Some(doc) = chaptered_with("", gamma, Some(pg)) else { return };
+    let footers: Vec<String> = page_chars(&doc)
+        .iter()
+        .map(|p| {
+            let s: String = p.iter().filter(|c| c.2 > 700.0 && !c.0.is_whitespace()).map(|c| c.0).collect();
+            s.split("FT").nth(1).unwrap_or_default().to_string()
+        })
+        .collect();
+    // `w:pgNum`: the heading before the section's start (none: the first); PAGE: the last heading on or before the page.
+    assert_eq!(footers, ["I-1PPI-1", "I-2PPI-2", "I-3PPII-3"]);
 }
 
 /// Two sections of one paragraph each; S2 starts on a new page with `pg` numbering, with `settings` children.

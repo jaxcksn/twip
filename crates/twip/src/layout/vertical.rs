@@ -97,10 +97,16 @@ pub fn story(
 /// line starts at the flow's start edge (top, or bottom for `Up`), the first line against the flow's first side,
 /// `across` further in. Glyphs whose ink lies `bottom` or more across from the first side are not drawn.
 pub fn turned(units: &[StoryUnit], v: Vertical, rect: [f64; 4], across: f64, bottom: f64) -> Vec<Item> {
+    turned_in(units, v, rect, across, f64::NEG_INFINITY, bottom)
+}
+
+/// [`turned`], also without the glyphs whose ink lies wholly before `first` across from the first side.
+pub fn turned_in(units: &[StoryUnit], v: Vertical, rect: [f64; 4], across: f64, first: f64, bottom: f64) -> Vec<Item> {
     let [x0, y0, x1, y1] = rect;
     let unit_items = |u: &StoryUnit| {
         let top = u.top + across;
-        let children = super::table::clip_x(&u.content, f64::NEG_INFINITY, f64::INFINITY, bottom - top).unwrap_or_else(|| u.content.clone());
+        let children =
+            super::table::clip_box(&u.content, f64::NEG_INFINITY, f64::INFINITY, first - top, bottom - top).unwrap_or_else(|| u.content.clone());
         upright(&super::traverse::items_of(&[Child::Group { offset: (0.0, top), children }]), v)
     };
     let turn = |centre: [f64; 2], deg: f64, items: Vec<Item>| Item::Turned(Rc::new(Turned { centre, deg, items }));

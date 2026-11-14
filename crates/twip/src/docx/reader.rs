@@ -261,6 +261,7 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
         counters: Counters::default(),
         images: Vec::new(),
         image_index: HashMap::new(),
+        bookmarks: HashMap::new(),
         fields: Vec::new(),
         para_no: 0,
         para_count: 0,
@@ -838,7 +839,6 @@ struct OpenField {
     id: FieldId,
     in_result: bool,
     first_code_run: Option<Run>,
-    first_result_run: Option<Run>,
     /// The paragraph it began in ([`Reader::para_no`]), and its begin marker's index in that paragraph's inlines.
     para: u64,
     begin: usize,
@@ -874,6 +874,8 @@ struct Reader {
     counters: Counters,
     images: Vec<Vec<u8>>,
     image_index: HashMap<String, usize>,
+    /// Bookmark names by `w:id`, for their ends.
+    bookmarks: HashMap<String, String>,
     fields: Vec<OpenField>,
     /// The paragraph being read (a number unique in the read), and the last number given.
     para_no: u64,
@@ -1684,7 +1686,8 @@ impl Reader {
                         let kind = if e.tag_name().name() == "br" { BreakKind::of(attr(e, "type"), attr(e, "clear")) } else { BreakKind::Line };
                         out.push(Inline::Break(kind, run));
                     }
-                    "fldSimple" if !self.in_code() => {
+                    // In a code too: a field nested in another's code (an `IF`'s operand).
+                    "fldSimple" => {
                         let code = attr(e, "instr").unwrap_or("").to_string();
                         self.read_simple_field(e, code, base, pkg, out);
                     }
@@ -1700,7 +1703,7 @@ impl Reader {
                         self.read_inlines(e, base, pkg, out);
                         out.push(Inline::ControlEnd(id));
                     }
-                    "hyperlink" | "smartTag" | "customXml" | "bdo" | "dir" | "fldSimple" => {
+                    "hyperlink" | "smartTag" | "customXml" | "bdo" | "dir" => {
                         self.read_inlines(e, base, pkg, out);
                     }
                     // Revision wrappers: their runs carry the revision (one mark for all of them), nested ones both.
@@ -1748,10 +1751,18 @@ impl Reader {
                     }
                     "bookmarkStart" => {
                         if let Some(name) = attr(e, "name") {
+                            if let Some(id) = attr(e, "id") {
+                                self.bookmarks.insert(id.to_string(), name.to_string());
+                            }
                             out.push(Inline::Bookmark(name.to_string()));
                         }
                     }
-                    // Proofing marks, permissions, bookmark ends: not shown.
+                    "bookmarkEnd" => {
+                        if let Some(name) = attr(e, "id").and_then(|id| self.bookmarks.get(id)) {
+                            out.push(Inline::Bookmark(format!("/{name}")));
+                        }
+                    }
+                    // Proofing marks, permissions: not shown.
                     _ => {}
                 }
             } else if is(e, MC, "AlternateContent")
@@ -1807,7 +1818,6 @@ impl Reader {
                             id,
                             in_result: false,
                             first_code_run: None,
-                            first_result_run: None,
                             para: self.para_no,
                             begin: out.len(),
                             spanning: false,
@@ -1844,14 +1854,23 @@ impl Reader {
                             && !f.spanning
                         {
                             out.push(Inline::FieldEnd { id, run: run.clone() });
-                            self.close_field(out, f, &run);
+                            let style = self.run_style(&self.run_props(base, None));
+                            self.close_field(out, f, &run, &style);
                         }
                     }
                     _ => {}
                 }
                 continue;
             }
+            // A field nested in another's code holds its result as code text.
+            let nested = self.fields.len() >= 2 && !self.fields[self.fields.len() - 2].in_result;
             if let Some(f) = self.fields.last_mut() {
+                if nested && f.in_result && name == "instrText" {
+                    if let Some(t) = c.text().filter(|t| !t.is_empty()) {
+                        push_text(out, t, &run);
+                    }
+                    continue;
+                }
                 if !f.in_result {
                     if matches!(name, "instrText" | "delInstrText") && !f.spanning {
                         f.first_code_run.get_or_insert(run.clone());
@@ -1860,9 +1879,6 @@ impl Reader {
                         }
                     }
                     continue;
-                }
-                if matches!(name, "t" | "delText") {
-                    f.first_result_run.get_or_insert(run.clone());
                 }
             }
             // A comment's anchor, shown or not.
@@ -1921,7 +1937,7 @@ impl Reader {
                     let view = FieldView::Result;
                     out.push(Inline::FieldBegin {
                         id,
-                        kind: Some(FieldKind::Page),
+                        kind: Some(FieldKind::PgNum),
                         lock: false,
                         dirty: false,
                         view,
@@ -2094,13 +2110,20 @@ impl Reader {
         self.fields.last().is_some_and(|f| !f.in_result)
     }
 
-    fn close_field(&mut self, out: &mut [Inline], f: OpenField, end_run: &Run) {
+    /// `style`: the paragraph's style formatting, which a REF's text takes.
+    fn close_field(&mut self, out: &mut [Inline], f: OpenField, end_run: &Run, style: &Run) {
         let Some(span) = super::fields::span_at(out, f.begin) else { return };
         let code = super::fields::code_text(out, span);
         let parsed = super::fields::parse(&code);
         let kind = parsed.kind();
-        let mergeformat = parsed.switches.iter().any(|s| s.flag == '*' && s.arg.as_deref().is_some_and(|a| a.eq_ignore_ascii_case("MERGEFORMAT")));
-        let fmt = if mergeformat { f.first_result_run.or(f.first_code_run.clone()) } else { f.first_code_run.clone() };
+        // With `\* MERGEFORMAT` the value's words take the cached result's formatting at layout; this run is for the
+        // words past the cached ones.
+        let fmt = if matches!(kind, Some(FieldKind::Ref(_))) {
+            // A REF's text isn't in its code's formatting: the paragraph's style, the source's own formatting on it.
+            Some(on_style(style, f.first_code_run.as_ref().unwrap_or(end_run)))
+        } else {
+            f.first_code_run.clone()
+        };
         // A legacy check box or drop-down shows its form data, in its code's run.
         let form = f.form.filter(|(k, _)| parsed.name == if *k == FieldKind::DropDown { "FORMDROPDOWN" } else { "FORMCHECKBOX" });
         if let Inline::FieldBegin { kind: k, run, lock, value, .. } = &mut out[f.begin] {
@@ -2139,6 +2162,7 @@ impl Reader {
         let rpr = first.and_then(|r| child(r, "rPr"));
         let run = self.with_direct(self.run_style(&self.run_props(base, rpr)), rpr);
         let run = self.tracked(run, base, rpr);
+        let style = self.run_style(&self.run_props(base, None));
         let (mark, segs) = (units_mark(out), self.segs.len());
         let id = FieldId::next();
         let flag = |a: &str| attr(e, a).is_some_and(|v| v == "1" || v == "true" || v == "on");
@@ -2160,8 +2184,8 @@ impl Reader {
         self.fields.push(OpenField {
             id,
             in_result: true,
-            first_code_run: Some(run.clone()),
-            first_result_run: None,
+            // A simple field's code has no run: the paragraph's style formatting is its code's.
+            first_code_run: Some(on_style(&style, &run)),
             para: self.para_no,
             begin,
             spanning: false,
@@ -2171,8 +2195,7 @@ impl Reader {
         self.read_inlines(e, base, pkg, out);
         let f = self.fields.pop().expect("the simple field pushed above");
         out.push(Inline::FieldEnd { id, run: run.clone() });
-        let fmt = f.first_result_run.clone();
-        self.close_field(out, OpenField { first_result_run: fmt, ..f }, &run);
+        self.close_field(out, f, &run, &style);
         if self.record {
             let inner = self.segs.split_off(segs);
             self.simple.push((e.range().start, inner));
@@ -2323,7 +2346,9 @@ impl Reader {
             "largest" => "largest",
             _ => "bothSides",
         };
-        let twips = |v: f64| (v * 20.0).trunc() / 20.0;
+        // A style length goes to the nearest twip, halves up (the products of decimal points land just below).
+        let tw = |v: f64| (v * 20.0 + 0.5 + 1e-7).floor();
+        let twips = |v: f64| tw(v) / 20.0;
         let dflt = [0.0, 0.0, 9.0, 9.0];
         let dist = std::array::from_fn(|i| (st.wrap_dist[i].unwrap_or(dflt[i]) * 20.0).round() / 20.0);
         // Compat 15: a VML float is behind the text only without wrapping.
@@ -2333,14 +2358,14 @@ impl Reader {
         let pen = line.filter(|l| !matches!(l.fill, Some(crate::drawing::paint::Fill::None))).map(|l| l.width.map_or(15.0, |w| w.0 as f64 / 635.0));
         let (h_align, v_align) = (align(&st.h_align), align(&st.v_align));
         let effect =
-            vml_effect(pen, (h_align.is_none() && v_align.is_none()).then(|| [st.x, st.y, st.x + st.w, st.y + st.h].map(|v| (v * 20.0).trunc())));
+            vml_effect(pen, (h_align.is_none() && v_align.is_none()).then(|| [tw(st.x), tw(st.y), tw(st.x) + tw(st.w), tw(st.y) + tw(st.h)]));
         self.float_order += 1;
         out.push(Inline::Float(
             Box::new(Float {
                 id: next_para_id(),
-                w: st.w,
+                w: twips(st.w),
                 auto_w: false,
-                h: st.h,
+                h: twips(st.h),
                 image,
                 alt,
                 lock_aspect: false,
@@ -2646,6 +2671,14 @@ impl Reader {
         let style_region = self.res.styles.table_region(style_id.as_deref(), &[]);
         let mut tbl = style_region.tbl.clone();
         tbl.merge(&direct);
+        // Compat ≤ 14: a floating table at vertical position 0 stands in the flow, whatever it is anchored to.
+        if self.res.styles.compat == Compat::Legacy
+            && let Some(fp) = tbl.floating.as_mut()
+            && fp.y == 0.0
+            && fp.y_spec.is_none()
+        {
+            fp.v_anchor = TableAnchor::Text;
+        }
         let widths = |g: Node| children(g, "gridCol").map(|c| attr_twips(c, "w").unwrap_or(0.0)).collect::<Vec<f64>>();
         let grid_node = child(t, "tblGrid");
         let mut grid = grid_node.map(widths).unwrap_or_default();
@@ -2700,6 +2733,7 @@ impl Reader {
         let mut first_row_jc: Option<Jc> = None;
         let mut first_row_width: Option<Width> = None;
         let mut first_row_ind: Option<Width> = None;
+        let mut left_margins: Vec<i64> = Vec::new();
         for (ri, (rn, row_controls)) in row_nodes.iter().enumerate() {
             let mut trp = style_region.tr.clone();
             trp.merge(&TrProps::parse(child(*rn, "trPr")));
@@ -2724,6 +2758,8 @@ impl Reader {
             let mut row_tbl = tbl.clone();
             row_tbl.borders.merge(&ex.borders);
             row_tbl.margins.merge(&ex.margins);
+            let unset = if style_id.is_none() { 0.5 } else { 0.0 };
+            left_margins.push((row_tbl.margins.left.unwrap_or(unset) * 20.0).round() as i64);
             let cell_nodes: Vec<(Node, Vec<ControlId>)> = self.cells_of(*rn, &[]);
             let ncols = cell_nodes.len();
             let mut cells = Vec::new();
@@ -2791,6 +2827,7 @@ impl Reader {
                 shading: ex.shading.flatten(),
                 cell_spacing: trp.cell_spacing.or(ex.cell_spacing).map(|s| s.max(0.0)),
                 run: (ex.fixed == Some(true) && tbl.fixed != Some(true)).then(|| ex.width.or(tbl.width).unwrap_or(Width::Auto)),
+                nudge: None,
                 vanished: tr_pr.and_then(|p| child(p, "hidden")).is_some_and(|n| !matches!(attr(n, "val"), Some("0" | "false" | "off")))
                     && cells.iter().all(|c| {
                         c.blocks.iter().all(|b| match b {
@@ -2811,22 +2848,29 @@ impl Reader {
         let grids: Vec<Vec<f64>> = ts.iter().copied().map(table_grid).collect();
         if grids.iter().any(|g| *g != grid) {
             // Compat ≤ 14: how far a later table's cell edges may move right onto the earlier edges, from the first
-            // cells' left pulls: the first table's, less the later one's, plus the later one's half left border.
+            // cells' left pulls: the first table's, less the later one's, plus 5 twips.
             let pull = |ri: usize| {
                 let c = rows[ri].cells.first();
                 let table = rows[ri].borders.as_ref().map_or(&tbl.borders.left, |b| &b[1]);
                 let b = c.and_then(|c| c.left.as_ref()).or(table.as_ref()).filter(|b| b.visible()).map_or(0, |b| (b.width * 20.0).round() as i64);
-                let hb = (b + 1) / 2;
-                (hb, hb.max(c.map_or(0, |c| (c.margins[1] * 20.0).round() as i64)))
+                ((b + 1) / 2).max(c.map_or(0, |c| (c.margins[1] * 20.0).round() as i64))
             };
             let first_of = |k: usize| row_table.iter().position(|&t| t == k);
             let moves: Vec<i64> = (0..ts.len())
                 .map(|k| match (k, first_of(0), first_of(k)) {
-                    (1.., Some(a), Some(b)) if self.res.styles.compat == Compat::Legacy => pull(a).1 - pull(b).1 + pull(b).0,
+                    (1.., Some(a), Some(b)) if self.res.styles.compat == Compat::Legacy => pull(a) - pull(b) + 5,
                     _ => 0,
                 })
                 .collect();
             grid = merged_grid(&grids, &mut rows, &row_table, &moves);
+        }
+        // Compat ≤ 14: a joined table whose rows' left cell margins differ from the first row's by more than 5 twips
+        // has every column edge 5 twips right, but the left edge of the rows with the largest margin.
+        let widest = left_margins.iter().copied().max().unwrap_or(0);
+        if ts.len() > 1 && self.res.styles.compat == Compat::Legacy && left_margins.iter().any(|m| (m - left_margins[0]).abs() > 5) {
+            for (r, m) in rows.iter_mut().zip(&left_margins) {
+                r.nudge = Some(*m == widest);
+            }
         }
         let b = &tbl.borders;
         Table {
@@ -2840,9 +2884,8 @@ impl Reader {
             own_jc: tbl.jc,
             ind: first_row_ind.or(tbl.ind).map_or(0.0, Width::dxa),
             ind_pct: first_row_ind.or(tbl.ind).and_then(Width::pct),
-            // Without a default table style an unstyled table's indent is unset, as a frozen style's is.
-            ind_set: first_row_ind.or(tbl.ind).is_some()
-                || self.res.styles.default_table.is_some() && direct.style.as_deref().is_none_or(|s| self.res.styles.table_style(Some(s)) != Some(s)),
+            // Set only by a dxa indent found on the table or up its style chain; a pct, auto or nil one is unset.
+            ind_set: matches!(first_row_ind.or(tbl.ind), Some(Width::Dxa(_))),
             borders: [b.top.clone(), b.left.clone(), b.bottom.clone(), b.right.clone(), b.inside_h.clone(), b.inside_v.clone()],
             fixed: tbl.fixed.unwrap_or(false),
             cell_spacing: tbl.cell_spacing.unwrap_or(0.0),
@@ -3008,6 +3051,11 @@ fn position(p: Option<Node>) -> (String, Option<String>, f64) {
         .map(|emu| (emu / 635.0).trunc() / 20.0)
         .unwrap_or(0.0);
     (rel, align, off)
+}
+
+/// The paragraph's style formatting `style` with `run`'s hiding and revisions.
+fn on_style(style: &Run, run: &Run) -> Run {
+    Rc::new(RunStyle { hidden: run.hidden, rev: run.rev.clone(), ..(**style).clone() })
 }
 
 fn push_text(out: &mut Vec<Inline>, t: &str, run: &Run) {

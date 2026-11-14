@@ -239,6 +239,39 @@ fn a_last_line_of_only_a_short_picture_is_the_marks_height() {
     assert!((l[1].3 - l[0].3 - 2.0 * 13.7988).abs() < 0.01, "{l:?}");
 }
 
+#[test]
+fn a_last_line_of_only_a_lowered_picture_counts_its_descent_in_the_minimum() {
+    // A 10pt picture lowered 9pt: the line is one single height, the descent part of it. Compat 15 takes the
+    // picture run's own 16pt font, not the 12pt mark's.
+    let c15 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+    let pic = inline_pic(64, 10).replace("<w:r>", r#"<w:r><w:rPr><w:position w:val="-18"/><w:sz w:val="32"/></w:rPr>"#);
+    let body = format!(r#"<w:p><w:r><w:t>Hi</w:t></w:r></w:p><w:p>{pic}</w:p><w:p><w:r><w:t>After</w:t></w:r></w:p>"#);
+    let gap = |settings: &str| baselines(settings, ARIAL_12, &body).map(|l| l[1].3 - l[0].3);
+    let Some(c12) = gap("") else { return };
+    let c15 = gap(c15).unwrap();
+    let arial_16 = 13.7988 * 16.0 / 12.0;
+    assert!((c12 - 2.0 * 13.7988).abs() < 0.01, "{c12}");
+    assert!((c15 - 13.7988 - arial_16).abs() < 0.01, "{c15}");
+}
+
+#[test]
+fn a_numbered_decimal_only_cell_paragraph_aligns_its_text_after_the_number() {
+    let numbering = r#"<w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1)"/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="720" w:hanging="360"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num><w:abstractNum w:abstractNumId="1"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1)"/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="0" w:hanging="0"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId="2"><w:abstractNumId w:val="1"/></w:num>"#;
+    let para = |num: u32, dec: u32, text: &str| {
+        let num = if num > 0 { format!(r#"<w:numPr><w:ilvl w:val="0"/><w:numId w:val="{num}"/></w:numPr>"#) } else { String::new() };
+        format!(r#"<w:p><w:pPr>{num}<w:tabs><w:tab w:val="decimal" w:pos="{dec}"/></w:tabs></w:pPr><w:r><w:t>{text}</w:t></w:r></w:p>"#)
+    };
+    // In a cell, the text after the number and its tab ends at the stop at its point, as without a number.
+    let body = cell(6000, 0, &(para(0, 2000, "12.5") + &para(1, 2000, "34.5"))) + &para(2, 1500, "7.25");
+    let Some(doc) = test_doc("", ARIAL_11, &body, numbering) else { return };
+    let chars = super::page_chars(&doc).swap_remove(0);
+    let dots: Vec<f64> = chars.iter().filter(|c| c.0 == '.').map(|c| c.1).collect();
+    assert!((dots[0] - dots[1]).abs() < 0.01, "{dots:?}");
+    // A number's tab that reaches a decimal stop uses it as a left stop.
+    let seven = chars.iter().find(|c| c.0 == '7').expect("drawn").1;
+    assert!((seven - 147.0).abs() < 0.01, "{seven}");
+}
+
 fn cell(w: u32, ind: i32, inner: &str) -> String {
     format!(
         r#"<w:tbl><w:tblPr><w:tblW w:w="{w}" w:type="dxa"/><w:tblInd w:w="{ind}" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="{w}"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="{w}" w:type="dxa"/></w:tcPr>{inner}<w:p/></w:tc></w:tr></w:tbl><w:p/>"#
@@ -895,6 +928,49 @@ fn an_empty_deleted_mark_paragraph_before_a_table_isnt_laid_out() {
     };
     let Some(without) = gap("") else { return };
     assert!((gap(&gone).unwrap() - without).abs() < 0.01);
+}
+
+/// Each line's text and (x, baseline) on page 1 of `body` with deletions hidden.
+fn hidden_view(settings: &str, body: &str) -> Option<std::collections::HashMap<String, (f64, f64)>> {
+    let mut doc = test_doc(settings, ARIAL_12, body, "")?;
+    doc.review.view = crate::docx::review::MarkupView::NoMarkup;
+    let snap = layout(&doc, &fonts());
+    let mut y = std::collections::HashMap::new();
+    paint(&snap.pages()[0], &mut |p| {
+        if let Item::Glyphs(r) = p.absolute() {
+            y.insert(r.chars.iter().map(|c| c.0).collect::<String>(), (r.x, r.baseline));
+        }
+    });
+    Some(y)
+}
+
+#[test]
+fn compat_14_an_empty_deleted_run_before_a_deleted_table_keeps_the_next_paragraphs_space_before() {
+    let del = r#"w:id="1" w:author="A" w:date="2026-01-01T00:00:00Z""#;
+    let gone = format!(
+        r#"<w:p><w:pPr><w:spacing w:before="480" w:after="480"/><w:rPr><w:del {del}/></w:rPr></w:pPr><w:del {del}><w:r><w:delText>Deleted</w:delText></w:r></w:del></w:p>"#
+    );
+    let table = format!(
+        r#"<w:tbl><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:trPr><w:del {del}/></w:trPr><w:tc><w:p><w:r><w:t>Row</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#
+    );
+    let top = r#"<w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>Top</w:t></w:r></w:p>"#;
+    let next = r#"<w:p><w:pPr><w:spacing w:before="200" w:after="0"/></w:pPr><w:r><w:t>Next</w:t></w:r></w:p>"#;
+    let gap = |settings: &str, run: &str| hidden_view(settings, &format!("{top}{run}{table}{next}")).map(|y| y["Next"].1 - y["Top"].1);
+    let Some(without) = gap("", "") else { return };
+    // 200 tw once more in compat 14, nothing in compat 15.
+    assert!((gap("", &gone).unwrap() - without - 10.0).abs() < 0.01);
+    let c15 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+    assert!((gap(c15, &gone).unwrap() - gap(c15, "").unwrap()).abs() < 0.01);
+}
+
+#[test]
+fn text_with_a_deleted_mark_before_a_table_takes_its_first_cell_paragraphs_properties() {
+    let del = r#"w:id="1" w:author="A" w:date="2026-01-01T00:00:00Z""#;
+    let kept = format!(r#"<w:p><w:pPr><w:jc w:val="right"/><w:rPr><w:del {del}/></w:rPr></w:pPr><w:r><w:t>Kept</w:t></w:r></w:p>"#);
+    let table = r#"<w:tbl><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:tc><w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>Cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#;
+    let Some(y) = hidden_view("", &format!("{kept}{table}")) else { return };
+    // Centred on the column (72–540), not right-aligned.
+    assert!(y["Kept"].0 > 250.0 && y["Kept"].0 < 300.0, "{y:?}");
 }
 
 #[test]
@@ -1765,6 +1841,51 @@ fn compat_15_distributed_glyph_shaped_text_stretches_only_its_spaces() {
 }
 
 #[test]
+fn a_compat_15_justified_line_ends_before_a_tab_glued_to_its_word() {
+    let c15 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+    let text = format!("{}bbxy</w:t><w:tab/><w:t>thermoregulationalthermoregulational", "aaaa ".repeat(16));
+    let body = format!(r#"<w:p><w:pPr><w:jc w:val="both"/></w:pPr><w:r><w:t xml:space="preserve">{text}</w:t></w:r></w:p>"#);
+    let Some(l) = lines(c15, ARIAL_11, &body) else { return };
+    // The tab and the long word start the next line, not "bbxy" with them.
+    assert!(l[0].1.ends_with("bbxy") && l[1].1.starts_with("thermo"), "{l:?}");
+    // A float's anchor before the first tab is no end: tabs alone wrap as without it.
+    let anchor = r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="0" behindDoc="1" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV><wp:extent cx="127000" cy="127000"/><wp:wrapNone/><wp:docPr id="1" name="P"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#;
+    let after = |lead: &str| {
+        let tabs = "<w:tab/>".repeat(11);
+        let body = format!(
+            r#"<w:p><w:pPr><w:tabs><w:tab w:val="left" w:pos="2970"/><w:tab w:val="left" w:pos="8370"/></w:tabs><w:ind w:right="360"/><w:jc w:val="both"/></w:pPr>{lead}<w:r>{tabs}</w:r></w:p><w:p><w:r><w:t>After</w:t></w:r></w:p>"#
+        );
+        baselines(c15, ARIAL_11, &body).map(|l| l.iter().find(|x| x.1 == "After").expect("drawn").3)
+    };
+    assert_eq!(after(anchor), after(""));
+}
+
+#[test]
+fn compat_14_distributed_spaces_grow_to_the_average_width_first() {
+    let Some(chars) = glyph_xs("", r#"<w:p><w:pPr><w:jc w:val="distribute"/></w:pPr><w:r><w:t xml:space="preserve">aa aa</w:t></w:r></w:p>"#) else {
+        return;
+    };
+    let x: Vec<f64> = chars.iter().filter(|g| g.0 == 'a').map(|g| g.1).collect();
+    // Arial 11: a 1139, space 569 units of 2048; the average width is the face's (Arial's 904, its stand-in's own).
+    let Some(face) = fonts().face("Arial", None, false, false) else { return };
+    let (a, space, avg) = (1139.0 * 11.0 / 2048.0, 569.0 * 11.0 / 2048.0, face.avg_width * 11.0);
+    // Between the words: the second letter's gap and the space's, which takes the room to the average width more.
+    let (letter_gap, words_gap) = (x[1] - x[0] - a, x[2] - x[1] - a - space);
+    assert!((words_gap - 2.0 * letter_gap - (avg - space)).abs() < 0.01, "{x:?}");
+    // With the spaces balanced and an East Asian run font, half an em.
+    if !fonts().is_installed("MS Mincho") {
+        return;
+    }
+    let rpr = r#"<w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:eastAsia="MS Mincho"/><w:sz w:val="22"/>"#;
+    let body = r#"<w:p><w:pPr><w:jc w:val="distribute"/></w:pPr><w:r><w:t xml:space="preserve">aa aa</w:t></w:r></w:p>"#;
+    let settings = r#"<w:compat><w:balanceSingleByteDoubleByteWidth/><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="12"/></w:compat>"#;
+    let chars = super::page_chars(&test_doc(settings, rpr, body, "").expect("lays out")).swap_remove(0);
+    let x: Vec<f64> = chars.iter().filter(|g| g.0 == 'a').map(|g| g.1).collect();
+    let (letter_gap, words_gap) = (x[1] - x[0] - a, x[2] - x[1] - a - space);
+    assert!((words_gap - 2.0 * letter_gap - (5.5 - space)).abs() < 0.01, "{x:?}");
+}
+
+#[test]
 fn wp_justification_squeezes_fixed_pitch_lines_by_every_advance() {
     if !fonts().is_installed("Courier New") {
         return;
@@ -2448,6 +2569,16 @@ fn a_compat_14_frame_in_the_flow_that_may_not_overlap_goes_a_twip_short_of_a_pag
 }
 
 #[test]
+fn a_compat_14_frame_in_the_flow_that_may_not_overlap_goes_a_twip_short_of_an_offset_frames_bottom() {
+    // A from the text 360 tw below the flow (2052.98 tw), 758.94 tw high: B goes to 2052.98 + 759 - 1, whole twips.
+    let a = three_line_frame(1440, 2880, r#"w:vAnchor="text" w:y="360""#, "", "A");
+    let b = three_line_frame(2880, 2880, r#"w:vAnchor="text" w:y="0""#, "<w:suppressOverlap/>", "B");
+    let Some(l) = after_frames(&(a + &b)) else { return };
+    let at = |t: &str| l.iter().find(|x| x.2 == t).map(|x| x.1).expect("drawn");
+    assert!((at("B one") - at("A one") - 758.02).abs() < 0.05, "{l:?}");
+}
+
+#[test]
 fn a_compat_14_line_with_one_piece_left_stays_beside_a_float_starting_above_the_other_ones_bottom() {
     // A (1692 to 2450.94 tw) leaves one piece of the lines beside it; B starts at 2450 in the third body line.
     let frames = |by: u32| {
@@ -2509,6 +2640,17 @@ fn a_compat_14_line_after_one_fitted_with_a_slack_stays_in_its_pieces() {
     let Some(l) = body_after_frames(&(b + &a)) else { return };
     let beside: Vec<(f64, f64)> = l.iter().filter(|x| x.1 > 2300.0 && x.1 < 3200.0).map(|x| (x.0, x.1)).collect();
     assert!(beside.len() == 4 && beside.iter().all(|x| (x.0 - 7379.0).abs() < 0.5), "{beside:?}");
+}
+
+#[test]
+fn a_compat_14_line_pushed_from_two_pieces_reuses_its_strip_while_it_starts_above_its_end() {
+    // A (1692 to 2450.94 tw) leaves two pieces of the third body line, which goes to A's bottom, beside B (2450 to
+    // 3208.94). The fifth line has 252.04 tw left in that strip, less than its height: it stays beside B.
+    let a = three_line_frame(3200, 2880, r#"w:vAnchor="page" w:y="1693""#, "", "A");
+    let b = three_line_frame(4640, 2880, r#"w:vAnchor="text" w:y="0""#, "<w:suppressOverlap/>", "B");
+    let Some(l) = body_after_frames(&(a + &b)) else { return };
+    let fifth: Vec<f64> = l.iter().filter(|x| (x.1 - (2956.90 + 206.4)).abs() < 1.5).map(|x| x.0).collect();
+    assert!(fifth.len() == 2 && (fifth[1] - 7699.0).abs() < 0.5, "{l:?}");
 }
 
 #[test]
@@ -3051,7 +3193,29 @@ fn compat_14_balanced_columns_grow_by_the_failed_fills_mean_line_and_end_at_the_
 }
 
 #[test]
-fn compat_15_balanced_columns_start_rounded_down_to_the_smallest_line() {
+fn compat_14_balanced_columns_end_no_higher_than_a_columns_last_line_with_its_multiple_spacing() {
+    // 18pt and 11pt exact lines, a double-spaced line and a 1.15 line in two columns: the height tried (52.5pt) holds
+    // the double line by its text, but the section ends below its full box, as after the same lines in one column.
+    let sect = r#"<w:sectPr><w:type w:val="continuous"/><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/><w:cols w:num="2" w:space="720"/></w:sectPr>"#;
+    let close = r#"<w:sectPr><w:type w:val="continuous"/><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr>"#;
+    let p = |k: usize, spacing: &str, extra: &str| {
+        format!(r#"<w:p><w:pPr><w:spacing w:after="0" {spacing}/>{extra}</w:pPr><w:r><w:t>P{k}</w:t></w:r></w:p>"#)
+    };
+    let lines = [r#"w:line="360" w:lineRule="exact""#, r#"w:line="220" w:lineRule="exact""#, r#"w:line="480" w:lineRule="auto""#];
+    let head: String = lines.iter().enumerate().map(|(k, l)| p(k + 1, l, "")).collect();
+    let next = format!(r#"<w:p><w:pPr><w:spacing w:after="0"/>{close}</w:pPr><w:r><w:t>NEXT</w:t></w:r></w:p>"#);
+    let gap = |body: &str| {
+        let l = baselines("", ARIAL_11, body)?;
+        let y = |t: &str| l.iter().find(|x| x.1 == t).map(|x| x.3);
+        Some(y("NEXT")? - y("P3")?)
+    };
+    let Some(balanced) = gap(&format!("{head}{}{next}", p(4, r#"w:line="276" w:lineRule="auto""#, sect))) else { return };
+    let one = gap(&format!("{head}{next}")).unwrap();
+    assert!((balanced - one).abs() < 0.05, "{balanced} {one}");
+}
+
+#[test]
+fn compat_15_balanced_columns_start_rounded_down_to_the_smallest_step_and_step_at_least_12pt() {
     let sect = |cols: &str| {
         format!(
             r#"<w:sectPr><w:type w:val="continuous"/><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>{cols}</w:sectPr>"#
@@ -3078,10 +3242,33 @@ fn compat_15_balanced_columns_start_rounded_down_to_the_smallest_line() {
     // would grow to 39pt: 3 / 1).
     let Some(a) = split(2, &[240, 240, 300, 300]) else { return };
     assert_eq!(a, [2, 2]);
-    // A 10pt line under 12pt text isn't the smallest line: 70pt fails and grows by 14pt, not 10pt: 4 / 4.
+    // 72.5pt rounded down to the 10pt line, 70pt fails and grows by 12pt, not 10pt: 4 / 4.
     assert_eq!(split(2, &[400, 480, 480, 280, 480, 280, 200, 300]).unwrap(), [4, 4]);
-    // 25.3pt holds no first line: the columns stay empty and the height grows by the smallest line: 1 / 1 / 3.
+    // 29.75pt rounded down to the 9pt line, 27pt fails and grows by 12pt (by 9pt it would end 2 / 3): 3 / 2.
+    assert_eq!(split(2, &[320, 230, 180, 250, 210]).unwrap(), [3, 2]);
+    // 25.3pt holds no first line: the columns stay empty and the height grows by 12pt, then by the smallest line: 1 / 1 / 3.
     assert_eq!(split(3, &[560, 560, 480, 253, 253]).unwrap(), [1, 1, 3]);
+}
+
+#[test]
+fn compat_15_balancing_counts_a_tables_closing_border_with_its_last_row() {
+    // An intro section, then fourteen bordered rows and a line in two balanced columns: the line under the table is
+    // the section's smallest step (not the line with the table's bottom border), so the height steps by rows to 8 / 6.
+    let b = r#"w:val="single" w:sz="4" w:space="0" w:color="000000""#;
+    let rows: String = (1..=14)
+        .map(|k| format!(r#"<w:tr><w:tc><w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>R{k}</w:t></w:r></w:p></w:tc></w:tr>"#))
+        .collect();
+    let table = format!(
+        r#"<w:tbl><w:tblPr><w:tblBorders><w:top {b}/><w:bottom {b}/><w:insideH {b}/></w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid>{rows}</w:tbl>"#
+    );
+    let page = r#"<w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>"#;
+    let body = format!(
+        r#"<w:p><w:pPr><w:spacing w:after="0"/><w:sectPr><w:type w:val="continuous"/>{page}</w:sectPr></w:pPr><w:r><w:t>Intro</w:t></w:r></w:p>{table}<w:p><w:pPr><w:spacing w:after="0"/><w:sectPr><w:type w:val="continuous"/>{page}<w:cols w:num="2" w:space="720"/></w:sectPr></w:pPr><w:r><w:t>Line</w:t></w:r></w:p><w:p><w:r><w:t>After</w:t></w:r></w:p><w:sectPr><w:type w:val="continuous"/>{page}</w:sectPr>"#
+    );
+    let c15 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+    let Some(l) = baselines(c15, ARIAL_12, &body) else { return };
+    let left = l.iter().filter(|x| x.1.starts_with('R') && x.0 < 300.0).count();
+    assert_eq!(left, 8, "{l:?}");
 }
 
 #[test]
@@ -3433,6 +3620,31 @@ fn compat_14_a_keep_lines_paragraph_steps_down_past_its_own_float_or_stays_besid
 }
 
 #[test]
+fn compat_14_a_keep_lines_paragraph_with_a_taller_first_line_steps_to_the_line_that_failed() {
+    let filler: String = (0..10).map(|k| format!("<w:p><w:r><w:t>A{k:02} filler line text</w:t></w:r></w:p>")).collect();
+    let words = |c: char, from: usize, n: usize| (from..from + n).map(|k| format!("{c}{k:02} ")).collect::<String>();
+    let para = |ppr: &str| {
+        format!(
+            r#"{filler}<w:p><w:pPr>{ppr}</w:pPr><w:r><w:rPr><w:sz w:val="40"/></w:rPr><w:t xml:space="preserve">B00 </w:t></w:r><w:r><w:t xml:space="preserve">{}</w:t></w:r>{}<w:r><w:t>{}</w:t></w:r></w:p>"#,
+            words('B', 1, 20),
+            anchor(368, 0, 100, 100, 1, "line"),
+            words('b', 0, 100)
+        )
+    };
+    let at = |body: &str| {
+        baselines("", ARIAL_12, body)
+            .map(|l| l.into_iter().filter(|l| l.1.starts_with('B') || l.1.starts_with('b')).map(|l| l.3).collect::<Vec<f64>>())
+    };
+    let Some(plain) = at(&para("")) else { return };
+    let kept = at(&para("<w:keepLines/>")).unwrap();
+    // The float's top lies in the second line: the paragraph goes to that line's top, its 22.99pt first line down;
+    // beside the float there the lines start 22.99 and then 13.8pt apart, and it goes to the first one at or below the
+    // float's bottom: 2 × 22.99 + 6 × 13.8 down, not a multiple of the first line's height.
+    let moved = kept[0] - plain[0];
+    assert!((moved - (2.0 * 22.99 + 6.0 * 13.8)).abs() < 0.05, "{moved} {plain:?} {kept:?}");
+}
+
+#[test]
 fn a_float_wraps_the_next_continuous_section_on_its_page() {
     // Section 1 ends with a 150pt float at the column's left; section 2 starts beside it.
     let body = format!(
@@ -3674,8 +3886,8 @@ fn a_paragraph_ending_in_a_line_break_beside_a_float_keeps_its_empty_last_line()
 }
 
 /// Compat ≤ 14: a one-line paragraph, an in-flow frame F1, a frame F2 that may not overlap 18pt below it and over it,
-/// a paragraph of `lines` short lines, and an in-flow frame F3 after it. F1's and F2's tops.
-fn frames_and_a_later_frame_in_the_flow(lines: usize) -> Option<(f64, f64)> {
+/// a paragraph of `lines` short lines, an in-flow frame F3 after it, and `later`. F1's and F2's tops.
+fn frames_and_a_later_frame_in_the_flow(lines: usize, later: &str) -> Option<(f64, f64)> {
     let frame = |t: &str, x: u32, y: u32, sup: &str| {
         format!(
             r#"<w:p><w:pPr><w:framePr w:w="2880" w:h="720" w:hRule="exact" w:hSpace="180" w:vSpace="0" w:wrap="around" w:vAnchor="text" w:hAnchor="page" w:x="{x}" w:y="{y}"/>{sup}<w:spacing w:before="0" w:after="0"/></w:pPr><w:r><w:t>{t}</w:t></w:r></w:p>"#
@@ -3683,7 +3895,7 @@ fn frames_and_a_later_frame_in_the_flow(lines: usize) -> Option<(f64, f64)> {
     };
     let short: String = (0..lines).map(|k| format!("<w:r><w:t>L{k}</w:t></w:r><w:r><w:br/></w:r>")).collect();
     let body = format!(
-        r#"<w:p><w:r><w:t>Lead</w:t></w:r></w:p>{}{}<w:p>{short}<w:r><w:t>End</w:t></w:r></w:p>{}<w:p><w:r><w:t>After</w:t></w:r></w:p>"#,
+        r#"<w:p><w:r><w:t>Lead</w:t></w:r></w:p>{}{}<w:p>{short}<w:r><w:t>End</w:t></w:r></w:p>{}<w:p><w:r><w:t>After</w:t></w:r></w:p>{later}"#,
         frame("F1", 1440, 0, ""),
         frame("F2", 2880, 360, "<w:suppressOverlap/>"),
         frame("F3", 5760, 0, "")
@@ -3696,10 +3908,51 @@ fn frames_and_a_later_frame_in_the_flow(lines: usize) -> Option<(f64, f64)> {
 #[test]
 fn compat_14_a_later_frame_in_the_flow_placed_a_fraction_above_its_place_puts_the_first_below_the_frame_it_overlaps() {
     // 21 lines leave F3's flow position .56 twip past a whole twip: placed from the nearest twip it stays below the
-    // line above, and F1 keeps its place under F2. 25 leave .48: F3 meets that line, the page starts again, and F1 goes
-    // a twip short of F2's bottom.
-    let Some((f1, f2)) = frames_and_a_later_frame_in_the_flow(20) else { return };
+    // line above, and F1 keeps its place under F2. 25 leave .48: F3 meets that line and the page starts again, F1 still
+    // in place; once a picture after F3 meets its own paragraph's first line, F1 goes a twip short of F2's bottom.
+    let Some((f1, f2)) = frames_and_a_later_frame_in_the_flow(20, "") else { return };
     assert!(f1 < f2, "{f1} {f2}");
-    let (f1, f2) = frames_and_a_later_frame_in_the_flow(24).unwrap();
+    let (f1, f2) = frames_and_a_later_frame_in_the_flow(24, "").unwrap();
+    assert!(f1 < f2, "{f1} {f2}");
+    let pic = format!("<w:p>{}<w:r><w:t>Picture paragraph.</w:t></w:r></w:p>", anchor(300, 0, 100, 40, 1, "paragraph"));
+    let (f1, f2) = frames_and_a_later_frame_in_the_flow(24, &pic).unwrap();
     assert!((f1 - f2 - 35.95).abs() < 0.01, "{f1} {f2}");
+}
+
+#[test]
+fn compat_14_a_picture_that_meets_its_own_paragraphs_lines_keeps_its_place_when_the_page_starts_again() {
+    // C's picture, 30pt below C's top, meets C's second line and stays where the first fill put it; D's picture, 200pt
+    // above D, then meets A's lines: A wraps it in the next fill and grows, and C moves down without its picture.
+    let text = |w: &str, n: usize| format!("{w} ").repeat(n);
+    let body = |pic: &str| {
+        format!(
+            r#"<w:p><w:r><w:t>{}</w:t></w:r></w:p><w:p>{pic}<w:r><w:t>{}</w:t></w:r></w:p><w:p>{}<w:r><w:t>{}</w:t></w:r></w:p>"#,
+            text("Alpha bravo", 60),
+            text("Charlie", 40),
+            anchor(0, -200, 200, 60, 1, "paragraph"),
+            text("Delta", 20)
+        )
+    };
+    let Some((_, c0)) = float_and_line("", &body(""), "Charlie") else { return };
+    let doc = test_doc("", ARIAL_12, &body(&anchor(300, 30, 100, 40, 1, "paragraph")), "").unwrap();
+    let snap = layout(&doc, &fonts());
+    fn floats(children: &[crate::layout::fragment::Child], out: &mut Vec<[f64; 4]>) {
+        for c in children {
+            if let crate::layout::fragment::Child::Box(b) = c {
+                if let crate::layout::fragment::BoxKind::Float { rect, .. } = b.kind {
+                    out.push(rect);
+                }
+                floats(&b.children, out);
+            }
+        }
+    }
+    let mut rects = Vec::new();
+    for c in snap.pages()[0].children.iter() {
+        if let crate::layout::fragment::PageChild::Body(b) = c {
+            floats(&b.children, &mut rects);
+        }
+    }
+    let r = rects.iter().find(|r| (r[2] - r[0] - 100.0).abs() < 0.01).expect("placed");
+    // C's first line (baseline 10.86pt below its top) moved down by A's extra lines; the picture didn't.
+    assert!(r[1] < c0 - 10.86 + 30.0 - 10.0, "{r:?} {c0}");
 }

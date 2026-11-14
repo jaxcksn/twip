@@ -392,6 +392,15 @@ fn a_vml_floats_wrap_distances_round_to_twips_and_default_to_nine_points_beside(
 }
 
 #[test]
+fn a_vml_floats_style_lengths_round_to_the_nearest_twip() {
+    let f = vml_float("margin-left:100.3pt;width:72.575pt", "", r#"<w10:wrap type="square"/>"#, 14);
+    assert_eq!((f.h_offset, f.w), (100.3, 72.6));
+    // Unstroked, the right edge 3458 tw goes to the 3465 tw pixel boundary.
+    let f = vml_float("margin-left:100.3pt;width:72.6pt", r#"stroked="f""#, r#"<w10:wrap type="square"/>"#, 14);
+    assert!((f.effect[2] - 0.35).abs() < 1e-9, "{:?}", f.effect);
+}
+
+#[test]
 fn a_vml_float_reads_its_overlap_and_cell_flags() {
     let f = vml_float("", r#"o:allowoverlap="f" o:allowincell="false""#, "", 14);
     assert!(!f.allow_overlap && !f.layout_in_cell);
@@ -435,6 +444,27 @@ fn a_linked_box_lays_its_part_of_the_story_out_in_its_own_text_rectangle() {
 }
 
 #[test]
+fn a_linked_box_outline_without_a_width_takes_its_style_lines_width() {
+    let left = |style: &str| {
+        let shape = |text: &str, style: &str| {
+            format!(
+                r#"<wps:wsp><wps:cNvSpPr txBox="1"/><wps:spPr>{}<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></wps:spPr>{text}{style}<wps:bodyPr/></wps:wsp>"#,
+                xfrm(0, 0, 150, 30, "")
+            )
+        };
+        let paras: String = (1..=4).map(|k| format!("<w:p><w:r><w:t>Linked {k}</w:t></w:r></w:p>")).collect();
+        let head = shape(&format!(r#"<wps:txbx id="1"><w:txbxContent>{paras}</w:txbxContent></wps:txbx>"#), "");
+        let next = shape(r#"<wps:linkedTxbx id="1" seq="1"/>"#, style);
+        let body = format!("<w:p>{}{}</w:p>", anchor(72, 100, 150, 30, 1, false, 1, &head), anchor(300, 100, 150, 200, 2, false, 2, &next));
+        let d = settings_doc(&body, 15).expect("the document reads");
+        super::page_chars(&d)[0].iter().filter(|c| c.1 > 290.0).map(|c| c.1).fold(f64::MAX, f64::min)
+    };
+    let styled = r#"<wps:style><a:lnRef idx="2"><a:schemeClr val="accent1"/></a:lnRef><a:fillRef idx="0"><a:schemeClr val="accent1"/></a:fillRef><a:effectRef idx="0"><a:schemeClr val="accent1"/></a:effectRef><a:fontRef idx="minor"/></wps:style>"#;
+    // The built-in theme's second line is 1.5 pt: half of it inside the box.
+    assert!((left(styled) - left("") - 0.75).abs() < 1e-6, "{} {}", left(styled), left(""));
+}
+
+#[test]
 fn a_text_box_outline_without_a_width_takes_its_style_lines_width() {
     let outline = |ln: &str| {
         let shape = box_wsp(100, 50, "", r#"<wps:style><a:lnRef idx="2"><a:schemeClr val="accent1"/></a:lnRef><a:fillRef idx="0"><a:schemeClr val="accent1"/></a:fillRef><a:effectRef idx="0"><a:schemeClr val="accent1"/></a:effectRef><a:fontRef idx="minor"/></wps:style><wps:bodyPr/>"#, "Pen")
@@ -464,7 +494,18 @@ fn compat_15_keeps_a_wrapping_float_with_its_top_effect_extent_below_the_top_mar
             r#"<wp:effectExtent l="0" t="127000" r="0" b="0"/><wp:wrapSquare wrapText="bothSides"/>"#,
         );
     assert_eq!(top(&format!("<w:p>{a}</w:p>")), 82.0);
-    // A VML shape's outline allowance doesn't move it.
+    // A VML shape's outline allowance counts as its top extent: half the 3 pt pen.
     let vml = r#"<w:p><w:r><w:pict><v:rect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w10="urn:schemas-microsoft-com:office:word" style="position:absolute;margin-left:100pt;margin-top:0;width:72pt;height:60pt;mso-position-horizontal-relative:margin;mso-position-vertical-relative:paragraph" strokeweight="3pt"><w10:wrap type="square"/></v:rect></w:pict></w:r></w:p>"#;
-    assert_eq!(top(vml), 72.0);
+    assert_eq!(top(vml), 73.5);
+}
+
+#[test]
+fn a_box_that_does_not_wrap_is_as_wide_as_its_tables_grid() {
+    let table = r#"<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblCellMar><w:left w:w="50" w:type="dxa"/><w:right w:w="50" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid><w:gridCol w:w="1500"/><w:gridCol w:w="1500"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>Gamma delta epsilon</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>Zeta delta epsilon</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#;
+    let shape = box_wsp(50, 60, "", r#"<wps:bodyPr wrap="none" lIns="0" tIns="0" rIns="0" bIns="0"/>"#, "")
+        .replace("<w:p><w:r><w:t></w:t></w:r></w:p>", table);
+    let d = settings_doc(&format!("<w:p>{}</w:p>", anchor(72, 100, 50, 60, 1, false, 1, &shape)), 12).expect("the document reads");
+    let z = super::page_chars(&d)[0].iter().find(|c| c.0 == 'Z').map(|c| c.1).expect("drawn");
+    // The box takes the grid's 150pt less the outer margins, not its own 50pt: the second cell starts past 130.
+    assert!(z > 130.0, "{z}");
 }

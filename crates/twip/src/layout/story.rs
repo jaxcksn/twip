@@ -215,7 +215,8 @@ fn layout_in(
     hf: Option<(f64, f64)>,
     memos: &mut Memos,
 ) -> Result<Rc<StoryLayout>, Yield> {
-    let blocks = super::join::laid(blocks, env.ctx.env.text.review.view);
+    let last = if cell.is_some() { None } else { env.ctx.env.normal.as_ref() };
+    let blocks = super::join::laid_in(blocks, env.ctx.env.text.review.view, last);
     let children = child_ids(&blocks, Some(width), env, cell, memos)?;
     let probe = StoryKey { hf, ..StoryKey::new(children.clone(), Some(width), cell, env, &blocks) };
     cached(memos, |c| &mut c.stories, probe, story_bytes, |m| layout_with(&blocks, &children, width, env, cell, (0, 0), &[], hf, m))
@@ -223,7 +224,7 @@ fn layout_in(
 
 /// The story's text from piece `at.1` of block `at.0` on, laid out at `width` (not cached).
 pub fn layout_from(blocks: &[&Block], width: f64, env: &StoryEnv, at: (usize, usize), memos: &mut Memos) -> Result<StoryLayout, Yield> {
-    let blocks = super::join::laid(blocks, env.ctx.env.text.review.view);
+    let blocks = super::join::laid_in(blocks, env.ctx.env.text.review.view, env.ctx.env.normal.as_ref());
     let children = child_ids(&blocks, Some(width), env, None, memos)?;
     layout_with(&blocks, &children, width, env, None, at, &[], None, memos)
 }
@@ -254,12 +255,20 @@ pub fn layout_with(
     let mut origins = Vec::new();
     let mut tables: Vec<Placed> = Vec::new();
     let mut hf_tables: Vec<Placed> = Vec::new();
+    let mut aligned: Vec<Placed> = Vec::new();
     for (bi, b) in blocks.iter().enumerate() {
         // The part of a paragraph starting at a later line goes on without its space before.
         let from = if bi == start.0 { start.1 } else { 0 };
         match b {
             _ if bi < start.0 => {}
             LaidBlock::Para(laid) if super::paragraph::vanished(laid.para()) && !(cell.is_some() && bi + 1 == blocks.len()) => {}
+            // Paragraphs joined by hidden marks at the story's end that show nothing aren't laid out (a cell's last
+            // paragraph keeps its line).
+            LaidBlock::Para(laid)
+                if cell.is_none()
+                    && bi + 1 == blocks.len()
+                    && view.hides(&laid.para().mark.rev)
+                    && super::paragraph::shows_nothing(laid.para(), view) => {}
             LaidBlock::Para(laid) => {
                 let p = laid.para();
                 let next = match blocks.get(bi + 1) {
@@ -323,6 +332,11 @@ pub fn layout_with(
                     odd: true,
                 };
                 let h_pos = |f: &Float, h: f64| float::page_clamp(f, (float::h_pos(f, &fr), 0.0), h, &fr).0 - inset;
+                // A wrapping float laid out in the cell doesn't start above the cell's content top.
+                let v_pos = |f: &Float, h: f64, line_top: f64| {
+                    let y = float::v_pos(f, h, &fr, origin, line_top);
+                    if f.wrap != "none" && f.in_cell(text.compat) { y.max(0.0) } else { y }
+                };
                 // Wrapping floats
                 let mut own: Vec<(usize, Placed)> = Vec::new();
                 if in_cell && !ends.fit {
@@ -330,20 +344,23 @@ pub fn layout_with(
                         let (Kind::Anchor, Some(Object::Float(f))) = (q.kind, lines.shaped.object(lines.from + k)) else { continue };
                         if !f.in_cell(text.compat)
                             || f.wrap == "none"
-                            || f.v_align.is_some()
-                            || !matches!(f.v_relative.as_str(), "paragraph" | "line" | "margin" | "page")
+                            || !matches!(f.v_relative.as_str(), "paragraph" | "line" | "margin" | "page") && f.v_align.is_none()
                         {
                             continue;
                         }
                         let h = float_height(f, env, memos)?;
-                        let (fx, fy) = (h_pos(f, h), float::v_pos(f, h, &fr, origin, para_top));
+                        let (fx, fy) = (h_pos(f, h), v_pos(f, h, para_top));
                         own.push((k, Placed::new((0, bi, k), id, f, fx, fy, h)));
                     }
                 }
                 let mut floats: Vec<Placed> = own.iter().map(|(_, a)| a.clone()).collect();
                 // The story's own floats placed from outside it: only those beside the paragraph's unwrapped lines.
                 let bottom = para_top + lines.lines.iter().map(|l| l.pitch).sum::<f64>();
-                floats.extend(around.iter().chain(&tables).filter(|f| f.in_band(para_top, bottom)).cloned());
+                // In a cell, its other paragraphs' aligned floats (the anchor paragraph's are its own).
+                floats.extend(around.iter().filter(|f| !(in_cell && f.key.1 == bi)).chain(&tables).filter(|f| f.in_band(para_top, bottom)).cloned());
+                if in_cell {
+                    aligned.extend(own.iter().filter(|(_, a)| a.float.v_align.is_some()).map(|(_, a)| a.clone()));
+                }
                 let bands = (!floats.is_empty())
                     .then(|| wrap_bands(&lines, p, style, &floats, &ps, (para_top, before), env.ctx.fonts))
                     .filter(|b| !b.is_empty());
@@ -380,7 +397,22 @@ pub fn layout_with(
                             let h = float_height(f, env, memos)?;
                             let (fx, fy) = match own.iter().find(|(o, _)| *o == k) {
                                 Some((_, a)) => (a.rect[0], a.rect[1] - y),
-                                None => (h_pos(f, h), super::float::v_pos(f, h, &fr, origin, y) - y),
+                                None => (h_pos(f, h), v_pos(f, h, y) - y),
+                            };
+                            // Compat ≤ 14: a float that doesn't wrap, placed from the column, counts from the first
+                            // piece its line leaves beside the line's own wrapping floats.
+                            let fx = match own.iter().filter(|(o, _)| (start..end).contains(o)).map(|(_, a)| a.clone()).collect::<Vec<_>>() {
+                                line_own
+                                    if f.wrap == "none"
+                                        && text.compat == Compat::Legacy
+                                        && f.h_relative == "column"
+                                        && f.h_align.is_none()
+                                        && !line_own.is_empty() =>
+                                {
+                                    let piece = float::intervals(&line_own, 0.0, width, y, y + pitch, true).and_then(|iv| iv.first().map(|p| p.0));
+                                    fx + piece.unwrap_or(0.0)
+                                }
+                                _ => fx,
                             };
                             if f.in_cell(text.compat) {
                                 // Compat 15: a tight or through float ends at its polygon's bottom (one along its top
@@ -395,7 +427,7 @@ pub fn layout_with(
                                 if f.wrap != "none" || fx < width && fx + f.w > 0.0 {
                                     float_bottom = float_bottom.max(y + fy + shape);
                                 }
-                                if f.wrap != "none" && f.v_align.is_none() {
+                                if f.wrap != "none" {
                                     held = held.max(y + fy + shape);
                                     hold = hold.max(fy + shape);
                                 }
@@ -439,14 +471,16 @@ pub fn layout_with(
                 // where it starts (from the text) and the text after it wraps around it. Compat ≤ 14: a header's or
                 // footer's text runs over it. A cell holds it.
                 // A header's or footer's table against the page or the margin stands `tblpY` (less a twip) below
-                // its top.
-                // ponytail: a cell's against the page or the margin, and `tblpYSpec`, start where the story is.
+                // its top, or with `tblpYSpec` top at it.
+                // ponytail: a cell's against the page or the margin, and `tblpYSpec` center or bottom, start where the
+                // story is.
                 let fp = t.floating.filter(|_| hf.is_some() || in_cell);
                 let top = match (fp, hf) {
                     (Some(fp), _) if fp.v_anchor == crate::docx::props::TableAnchor::Text => y + fp.y,
-                    (Some(fp), Some((at, margin))) if fp.y_spec.is_none() => {
+                    (Some(fp), Some((at, margin))) if fp.y_spec.is_none_or(|j| j == crate::docx::props::Jc::Left) => {
                         let t0 = if fp.v_anchor == crate::docx::props::TableAnchor::Page { 0.0 } else { margin };
-                        (t0 + fp.y - 0.05).max(0.0) - at
+                        let dy = if fp.y_spec.is_some() { 0.0 } else { fp.y - 0.05 };
+                        (t0 + dy).max(0.0) - at
                     }
                     _ => y,
                 };
@@ -489,6 +523,12 @@ pub fn layout_with(
     }
     if !ends.after {
         y += prev_after;
+    }
+    // A cell's vertically aligned floats are wrapped by every line of the cell that meets them: laid out again with
+    // them placed.
+    // ponytail: one more pass, with the places the first gave them.
+    if !aligned.is_empty() && around.is_empty() {
+        return layout_with(blocks, resolved, width, env, cell, start, &aligned, hf, memos);
     }
     unwrapped_floats(&mut units, &wrapping);
     Ok(StoryLayout { units, height: y.max(held), float_bottom, frozen: Vec::new(), origins, tables: hf_tables })
@@ -756,23 +796,27 @@ pub fn float_box(f: &Float, rect: [f64; 4], anchor: ParaId, env: &StoryEnv, memo
 }
 
 // Linked text boxes
-fn chain_box(f: &Float) -> crate::docx::TextBox {
+fn chain_box(f: &Float, theme: &crate::drawing::theme::Theme) -> crate::docx::TextBox {
     if let Some(tb) = &f.text_box {
         return crate::docx::TextBox { blocks: Vec::new(), ..tb.clone() };
     }
     let sp = f.shape.as_deref().and_then(|s| s.sp());
     let pt = |e: crate::drawing::units::Emu| e.0 as f64 / 12700.0;
     let insets = sp.map_or([7.2, 3.6, 7.2, 3.6], |s| s.body.insets.map(pt));
-    let outline = sp.and_then(|s| s.line.as_ref()).map_or(0.0, |l| {
-        let w = l.width.map_or(0, |w| w.0);
-        2.0 * if l.inset == Some(true) { w } else { w / 2 } as f64 / 12700.0
-    });
+    // Without its own width the outline takes the width of the theme's line its style refers to.
+    let styled =
+        sp.and_then(|s| s.style.as_ref()?.line.as_ref()).and_then(|(idx, _)| crate::drawing::paint::style_entry(&theme.lines, None, *idx)?.width);
+    let own = sp.and_then(|s| s.line.as_ref());
+    let outline = match own.and_then(|l| l.width).or(styled) {
+        Some(w) => 2.0 * if own.and_then(|l| l.inset) == Some(true) { w.0 } else { w.0 / 2 } as f64 / 12700.0,
+        None => 0.0,
+    };
     crate::docx::TextBox { blocks: Vec::new(), insets, outline, auto_fit: false, v_anchor: 0, flow: 0 }
 }
 
-pub(super) fn text_frame_size(f: &Float) -> [f64; 2] {
+pub(super) fn text_frame_size(f: &Float, theme: &crate::drawing::theme::Theme) -> [f64; 2] {
     let (w, h) = if f.rot_swap { (f.h, f.w) } else { (f.w, f.h) };
-    let fr = layout_frame(&chain_box(f), f.shape.as_deref(), [0.0, 0.0, w, h]);
+    let fr = layout_frame(&chain_box(f, theme), f.shape.as_deref(), [0.0, 0.0, w, h]);
     [fr[2] - fr[0], fr[3] - fr[1]]
 }
 
@@ -838,7 +882,7 @@ fn linked_text(
         let last = k + 1 == heights.len();
         if last { 0..story.units.len() } else { chain_slices(&story, &heights[k..k + 2], widow)[0].clone() }
     };
-    let fr = layout_frame(&chain_box(f), f.shape.as_deref(), rect);
+    let fr = layout_frame(&chain_box(f, &env.ctx.env.text.theme), f.shape.as_deref(), rect);
     let base = story.units.get(range.start).map_or(0.0, |u| u.top);
     for u in &story.units[range] {
         let y = fr[1] + u.top - base;
@@ -1225,7 +1269,7 @@ pub fn hf_layout(
     if env.ctx.env.text.compat == Compat::Legacy || !blocks.iter().any(|b| matches!(b, Block::Para(p) if !env.ctx.floats_of(p).is_empty())) {
         return Ok(l);
     }
-    let laid = super::join::laid(blocks, env.ctx.env.text.review.view);
+    let laid = super::join::laid_in(blocks, env.ctx.env.text.review.view, env.ctx.env.normal.as_ref());
     let children = child_ids(&laid, Some(width), env, None, memos)?;
     let mut seen: Option<Vec<[f64; 4]>> = None;
     let mut frozen = Vec::new();
@@ -1336,6 +1380,8 @@ pub fn fit_frame(f: &Float, width: f64, env: &StoryEnv, memos: &mut Memos) -> Re
     if let Some(tb) = f.text_box.as_ref().filter(|_| no_wrap) {
         let fr = inner_frame(tb, f.shape.as_deref(), [0.0, 0.0, f.w, f.h]);
         let (longest, _) = longest_line(tb, 1584.0, env, memos)?;
+        let tables = tb.blocks.iter().filter_map(|b| if let Block::Table(t) = b { Some(table_extent(t, width, env)) } else { None });
+        let longest = tables.fold(longest, f64::max);
         return Ok(Some(Float { w: (f.w - (fr[2] - fr[0]) + longest).min(width.max(f.w)), ..f.clone() }));
     }
     // A text box that fits its vertical text: the lines stack across, so the width follows them.
@@ -1354,12 +1400,33 @@ pub fn fit_frame(f: &Float, width: f64, env: &StoryEnv, memos: &mut Memos) -> Re
     Ok(Some(Float { w: w + tb.insets[0] + tb.insets[2], ..f.clone() }))
 }
 
+/// The width a table reports to a box whose text doesn't wrap: from its first cell's text left to its last cell's
+/// text right as its grid stores it, less half its outer side borders in compat 15. Compat ≤ 14 resolves a pct width
+/// against the section's column.
+fn table_extent(t: &crate::docx::Table, column: f64, env: &StoryEnv) -> f64 {
+    let legacy = env.ctx.env.text.compat == Compat::Legacy;
+    let grid: f64 = t.table_grid_in(env.ctx.env.text.review.view).iter().sum();
+    let total = match t.width {
+        crate::docx::props::Width::Pct(_) if legacy => match super::table::in_column(t, column, env).width {
+            crate::docx::props::Width::Dxa(w) => w,
+            _ => grid,
+        },
+        _ => grid,
+    };
+    let row = t.rows.first();
+    let lm = row.and_then(|r| r.cells.first()).map_or(0.0, |c| c.margins[1]);
+    let rm = row.and_then(|r| r.cells.last()).map_or(0.0, |c| c.margins[3]);
+    let side = |b: &Option<crate::docx::props::Border>| b.as_ref().filter(|b| b.visible()).map_or(0.0, |b| b.width);
+    let borders = if legacy { 0.0 } else { (side(&t.borders[1]) + side(&t.borders[3])) / 2.0 };
+    total - lm - rm - borders
+}
+
 /// The right edge of the widest line, trailing spaces excluded, and the number of lines.
 fn longest_line(tb: &crate::docx::TextBox, width: f64, env: &StoryEnv, memos: &mut Memos) -> Result<(f64, usize), Yield> {
     let view = env.ctx.env.text.review.view;
     let mut w: f64 = 0.0;
     let mut lines = 0;
-    for b in super::join::laid(&tb.blocks, view) {
+    for b in super::join::laid_in(&tb.blocks, view, env.ctx.env.normal.as_ref()) {
         let LaidBlock::Para(laid) = b else { continue };
         let p = laid.para();
         let space = laid.shape_space(env.fields, env.notes, &env.ctx, memos)?;

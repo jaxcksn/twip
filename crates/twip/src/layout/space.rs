@@ -58,6 +58,8 @@ pub struct MetricRules {
     pub wp_line_heights: bool,
     /// Compat ≥ 14: the hyphen, the figure dash and their kin break after too.
     pub dash_breaks: bool,
+    /// Compat ≤ 14: a kerned run fits its lines with the font's legacy `kern` table pairs, drawn with its GPOS kerning.
+    pub kern_table_fit: bool,
 }
 
 pub type BorderKey = Option<std::rc::Rc<BorderGroup>>;

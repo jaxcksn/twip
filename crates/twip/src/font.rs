@@ -71,6 +71,8 @@ pub struct Face {
     /// collects the font's GSUB/GPOS lookups, far more work than shaping a word.
     glyphs: RefCell<HashMap<char, Option<u32>>>,
     advances: RefCell<HashMap<u32, f64>>,
+    /// The legacy `kern` table's pairs, (left << 16 | right) → font units, read on first use.
+    kern_pairs: std::cell::OnceCell<HashMap<u32, f64>>,
     plans: RefCell<HashMap<(bool, u8, u32, Option<harfrust::Script>), Rc<harfrust::ShapePlan>>>,
 }
 
@@ -205,6 +207,7 @@ impl Face {
             },
             glyphs: RefCell::new(HashMap::new()),
             advances: RefCell::new(HashMap::new()),
+            kern_pairs: std::cell::OnceCell::new(),
             plans: RefCell::new(HashMap::new()),
         };
         if let Some(&(o, len)) = t.get(b"OS/2") {
@@ -317,6 +320,43 @@ impl Face {
         a
     }
 
+    /// The legacy `kern` table's adjustment between glyphs `left` and `right`, font units: its format 0 subtables'
+    /// pairs summed; 0 without the table.
+    // ponytail: the Windows table version only (Apple's version 1 tables are read as having no pairs).
+    pub fn kern_pair(&self, left: u32, right: u32) -> f64 {
+        let pairs = self.kern_pairs.get_or_init(|| {
+            let d = &self.data[..];
+            let mut out = HashMap::new();
+            let Some(&(o, len)) = tables(d, self.index).get(b"kern") else { return out };
+            if u16_at(d, o) != 0 {
+                return out;
+            }
+            let mut at = o + 4;
+            for _ in 0..u16_at(d, o + 2) {
+                if at + 6 > o + len {
+                    break;
+                }
+                let (sub_len, coverage) = (u16_at(d, at + 2) as usize, u16_at(d, at + 4));
+                // Format 0, horizontal: a subtable's length field overflows on large tables, so it is measured.
+                if coverage >> 8 != 0 {
+                    at += sub_len.max(6);
+                    continue;
+                }
+                let n = u16_at(d, at + 6) as usize;
+                if coverage & 5 == 1 {
+                    for i in 0..n {
+                        let e = at + 14 + 6 * i;
+                        let key = u32::from(u16_at(d, e)) << 16 | u32::from(u16_at(d, e + 2));
+                        *out.entry(key).or_insert(0.0) += f64::from(i16_at(d, e + 4));
+                    }
+                }
+                at += 14 + 6 * n;
+            }
+            out
+        });
+        pairs.get(&(left << 16 | right)).copied().unwrap_or(0.0)
+    }
+
     /// A glyph's ink box horizontally, (left bearing, width) in font units; None for a glyph without ink (a space).
     pub fn ink(&self, glyph: u32) -> Option<(f64, f64)> {
         let e = ShaperFont::new(&self.font).glyph_extents(harfrust::GlyphId::new(glyph))?;
@@ -327,6 +367,12 @@ impl Face {
     pub fn ink_top(&self, glyph: u32) -> Option<f64> {
         let e = ShaperFont::new(&self.font).glyph_extents(harfrust::GlyphId::new(glyph))?;
         (e.height != 0).then_some(e.y_bearing as f64)
+    }
+
+    /// A glyph's ink bottom below the baseline, in font units (`None` for a glyph without ink).
+    pub fn ink_bottom(&self, glyph: u32) -> Option<f64> {
+        let e = ShaperFont::new(&self.font).glyph_extents(harfrust::GlyphId::new(glyph))?;
+        (e.height != 0).then_some(-(e.y_bearing + e.height) as f64)
     }
 
     /// Glyphs for `text`: `ligatures` as [`crate::docx::RunStyle::ligatures`], `figures` as

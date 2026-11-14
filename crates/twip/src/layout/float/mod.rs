@@ -56,6 +56,9 @@ pub struct Placed {
     pub dist: [f64; 4],
     /// Where its right side is for the lines before it in the flow, when that differs.
     pub early_right: Option<f64>,
+    /// A table in the flow: the box (rect, exclusion) the text before it wraps, when that isn't its own.
+    /// Compat ≤ 14 the box it first had on the page; compat 15 the strip its top distance reaches above it.
+    pub early_box: Option<([f64; 4], [f64; 4])>,
     /// Compat ≤ 14: a frame in the flow placed from the nearest twip above its flow position, so that it meets the
     /// line above it and the page starts again, or a frame anchored after such a one in its paragraph. Kept, it
     /// doesn't move the text before it.
@@ -93,14 +96,13 @@ impl Placed {
             "largest" => Side::Largest,
             _ => Side::Both,
         };
-        // The polygon spans the unturned box about the same centre, mirrored by its horizontal flip, and turns with
-        // the shape.
+        // The polygon spans the unturned box about the same centre, mirrored by its flips, and turns with the shape.
         let xfrm = f.shape.as_ref().map(|s| s.xfrm).unwrap_or_default();
         let (cx, cy) = (x + f.w / 2.0, y + h / 2.0);
         let (bw, bh) = if f.rot_swap { (h, f.w) } else { (f.w, h) };
         let (sin, cos) = xfrm.rot.radians().sin_cos();
         let point = |(px, py): (f64, f64)| {
-            let (dx, dy) = ((if xfrm.flip_h { 1.0 - px } else { px } - 0.5) * bw, (py - 0.5) * bh);
+            let (dx, dy) = ((if xfrm.flip_h { 1.0 - px } else { px } - 0.5) * bw, (if xfrm.flip_v { 1.0 - py } else { py } - 0.5) * bh);
             (cx + dx * cos - dy * sin, cy + dx * sin + dy * cos)
         };
         let contour = f
@@ -136,6 +138,7 @@ impl Placed {
             contour,
             dist: f.dist,
             early_right: None,
+            early_box: None,
             rounded_up: false,
         }
     }
@@ -349,6 +352,7 @@ mod tests {
             contour: None,
             dist: [0.0; 4],
             early_right: None,
+            early_box: None,
             rounded_up: false,
         }
     }
@@ -511,6 +515,18 @@ mod tests {
         let b = c.points.iter().fold([f64::MAX, f64::MAX, f64::MIN, f64::MIN], |b, &(x, y)| [b[0].min(x), b[1].min(y), b[2].max(x), b[3].max(y)]);
         let want = [122.0, 22.0, 222.0, 222.0];
         assert!(b.iter().zip(want).all(|(a, w)| (a - w).abs() < 1e-9), "{b:?}");
+    }
+
+    #[test]
+    fn a_vertical_flip_mirrors_the_polygon_top_to_bottom() {
+        let mut f = (*polygon("tight", &[(0.0, 0.0), (0.0, 21600.0), (21600.0, 21600.0)], [0.0; 4]).float).clone();
+        let xfrm = crate::drawing::Xfrm { flip_v: true, ..Default::default() };
+        let kind = crate::drawing::ShapeKind::Raw(crate::drawing::RawGraphic { uri: String::new() });
+        f.shape = Some(Box::new(crate::drawing::Shape { nv: Default::default(), xfrm, kind, spans: Default::default() }));
+        let p = Placed::new((0, 0, 0), ParaId(1), &Rc::new(f), 72.0, 72.0, 100.0);
+        // Mirrored, the triangle is widest along its top.
+        let free = intervals(&[p], 72.0, 540.0, 72.0, 73.0, false).unwrap();
+        assert!((free[0].0 - 272.0).abs() < 1e-6, "{free:?}");
     }
 
     #[test]

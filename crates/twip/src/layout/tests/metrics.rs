@@ -129,3 +129,91 @@ fn synthesized_bold_glyphs_are_a_font_unit_wider() {
     let (Some(regular), Some(bold)) = (x(""), x("<w:b/>")) else { return };
     assert!((bold - regular - 9.0 * 16.0 / 2048.0).abs() < 1e-6, "{regular} {bold}");
 }
+
+#[test]
+fn a_complex_script_run_takes_its_complex_script_size_bold_and_font() {
+    let x = |rpr: &str| {
+        let body = format!(r#"<w:p><w:r><w:rPr>{rpr}</w:rPr><w:t>mm</w:t></w:r><w:r><w:t>X</w:t></w:r></w:p>"#);
+        chars("", ARIAL_10, &body, 0).map(|c| at(&c, 'X').0)
+    };
+    let (Some(plain), Some(big)) = (x(r#"<w:rFonts w:cs="Times New Roman"/><w:sz w:val="20"/>"#), x(r#"<w:sz w:val="40"/>"#)) else { return };
+    // Marked complex script: szCs, bCs and rFonts/@cs for every character; b and sz play no part.
+    let cs = x(r#"<w:rFonts w:cs="Times New Roman"/><w:b/><w:sz w:val="40"/><w:szCs w:val="20"/><w:cs/>"#).expect("lays out");
+    let tnr = x(r#"<w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="20"/>"#).expect("lays out");
+    assert!((cs - tnr).abs() < 1e-6 && (plain - tnr).abs() > 0.1, "{cs} {tnr} {plain}");
+    // Without w:cs (or with w:val="0") sz and b decide.
+    let off = x(r#"<w:sz w:val="40"/><w:szCs w:val="20"/><w:cs w:val="0"/>"#).expect("lays out");
+    assert!((off - big).abs() < 1e-6, "{off} {big}");
+}
+
+#[test]
+fn a_text_borders_side_is_its_styles_lines_and_gaps() {
+    let side = |style: &str, sz: f64, space: f64, shadow: bool| {
+        super::super::text::border_side(&crate::docx::props::Border { style: style.into(), width: sz / 8.0, space, shadow, color: None })
+    };
+    let near = |a: (f64, f64), b: (f64, f64)| (a.0 - b.0).abs() < 1e-9 && (a.1 - b.1).abs() < 1e-9;
+    // Laid out in twips, drawn in 600-dpi pixels: triple 12 is five 30 tw lines, 12 px each.
+    assert!(near(side("triple", 12.0, 0.0, false), (7.5, 7.2)), "{:?}", side("triple", 12.0, 0.0, false));
+    assert!(near(side("wave", 12.0, 0.0, false), (3.75, 3.72)) && near(side("wave", 4.0, 0.0, false), (3.0, 3.0)));
+    // A shadow doubles the lines and gaps, not the space: 60 + 2 × (90 + 2 × 15) tw.
+    assert!(near(side("thickThinSmallGap", 36.0, 3.0, true), (15.0, 14.76)), "{:?}", side("thickThinSmallGap", 36.0, 3.0, true));
+}
+
+#[test]
+fn each_lines_part_of_a_broken_text_border_has_both_sides() {
+    let bdr = r#"<w:bdr w:val="single" w:sz="8" w:space="2" w:color="000000"/>"#;
+    let body = format!(r#"<w:p><w:r><w:rPr>{bdr}</w:rPr><w:t>{}</w:t></w:r></w:p>"#, "lorem ipsum ".repeat(30).trim_end());
+    let Some(c) = chars("", ARIAL_10, &body, 0) else { return };
+    let mut rows: Vec<f64> = c.iter().map(|g| g.2).collect();
+    rows.sort_by(f64::total_cmp);
+    rows.dedup_by(|a, b| (*a - *b).abs() < 0.01);
+    let first_x = |y: f64| c.iter().filter(|g| (g.2 - y).abs() < 0.01 && !g.0.is_whitespace()).map(|g| g.1).fold(f64::INFINITY, f64::min);
+    // 40 + 20 tw laid out, 16 + 8 px drawn: every line starts after a left side.
+    assert!(rows.len() > 2 && (first_x(rows[0]) - 74.88).abs() < 1e-6 && (first_x(rows[1]) - 74.88).abs() < 1e-6, "{rows:?} {}", first_x(rows[1]));
+}
+
+#[test]
+fn compat_14_fits_a_kerned_run_with_the_kern_tables_pairs() {
+    let Some(face) = super::fonts().face("Segoe UI", None, false, false).filter(|f| f.family == "Segoe UI") else { return };
+    let text = "wry try dry ferry wry try dry ferry";
+    let glyphs = face.shape(text, true, 0, 0);
+    let scale = face.scale(12.0);
+    let gpos = glyphs.iter().map(|g| g.advance).sum::<f64>() * scale;
+    let next = glyphs.iter().skip(1).map(Some).chain([None]);
+    let table = glyphs.iter().zip(next).map(|(g, n)| face.advance(g.id) + n.map_or(0.0, |n| face.kern_pair(g.id, n.id))).sum::<f64>() * scale;
+    // Segoe UI's kern table kerns "ry" less than its GPOS: the text is wider for compat ≤ 14's fitting.
+    assert!(table - gpos > 2.0, "{gpos} {table}");
+    let avail = ((gpos + table) * 10.0).round() as i64;
+    let body = format!(r#"<w:p><w:pPr><w:ind w:right="{}"/></w:pPr><w:r><w:t xml:space="preserve">{text} zz</w:t></w:r></w:p>"#, 9360 - avail);
+    let rpr = r#"<w:rFonts w:ascii="Segoe UI" w:hAnsi="Segoe UI"/><w:sz w:val="24"/><w:kern w:val="2"/>"#;
+    let last_word_on_line_1 = |mode: u32| {
+        let settings = format!(
+            r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="{mode}"/></w:compat>"#
+        );
+        let c = chars(&settings, rpr, &body, 0).expect("lays out");
+        let z = c.iter().position(|g| g.0 == 'z').expect("drawn");
+        (c[z - 2].2 - c[0].2).abs() < 1e-6
+    };
+    assert!(last_word_on_line_1(15) && !last_word_on_line_1(12));
+}
+
+#[test]
+fn compat_14_no_leading_leaves_the_external_leading_out_of_a_superscripts_limit() {
+    if super::fonts().face("Arial", None, false, false).is_none_or(|f| f.family != "Arial") {
+        return;
+    }
+    let body = r#"<w:p><w:r><w:t>x</w:t></w:r><w:r><w:rPr><w:vertAlign w:val="superscript"/></w:rPr><w:t>1</w:t></w:r></w:p>"#;
+    let rpr = r#"<w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="22"/>"#;
+    let raise = |compat: &str, mode: u32| {
+        let settings = format!(
+            r#"<w:compat>{compat}<w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="{mode}"/></w:compat>"#
+        );
+        let c = chars(&settings, rpr, body, 0).expect("lays out");
+        at(&c, 'x').1 - at(&c, '1').1
+    };
+    // Arial 11: ascent and leading 21 half-points, without the leading 20: the limit 7 raises 3.5pt, not 4.
+    let nl = raise("<w:noLeading/>", 12);
+    assert!((nl - 3.5).abs() < 1e-6 && (raise("", 12) - 4.0).abs() < 1e-6, "{nl}");
+    // Compat 15 ignores noLeading.
+    assert!((raise("<w:noLeading/>", 15) - 4.0).abs() < 1e-6);
+}

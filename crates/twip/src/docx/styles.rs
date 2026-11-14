@@ -543,6 +543,7 @@ impl Styles {
         r.east_asia = aptos.clone();
         r.cs = aptos;
         r.size = Some(12.0);
+        r.size_cs = Some(12.0);
         r.kern = Some(1.0);
         self.doc_rpr = r;
         self.doc_ppr = ParaProps { space_after: Some(8.0), line: Some(278.0), line_rule: Some(LineRule::Auto), ..Default::default() };

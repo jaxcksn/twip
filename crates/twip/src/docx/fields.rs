@@ -66,6 +66,91 @@ pub fn code_text(inlines: &[Inline], s: FieldSpan) -> String {
     out
 }
 
+/// A field's code text with each field nested in it as `value` gives it (by its begin), quoted so that it reads as
+/// one word; `None` when a nested field gets no value.
+pub fn code_with(inlines: &[Inline], s: FieldSpan, value: &dyn Fn(usize) -> Option<String>) -> Option<String> {
+    let inner = spans(inlines);
+    let mut out = String::new();
+    let mut k = s.begin + 1;
+    while k < s.code_end() {
+        match &inlines[k] {
+            Inline::FieldBegin { .. } => {
+                if let Some(n) = inner.iter().find(|n| n.begin == k) {
+                    out.push('"');
+                    out.push_str(&value(k)?);
+                    out.push('"');
+                    k = n.end + 1;
+                    continue;
+                }
+            }
+            Inline::Text(t, _) => out.push_str(t),
+            Inline::Tab(_) | Inline::PTab(..) => out.push('\t'),
+            _ => {}
+        }
+        k += 1;
+    }
+    Some(out)
+}
+
+/// The runs a field's value `text` draws in: with `\* MERGEFORMAT`, word by word in its cached result's formatting
+/// (word i, and the white space before it, as cached word i and the white space before that), the words past the
+/// cached ones in `run`; without it, all in `run`.
+pub fn value_runs(inlines: &[Inline], s: FieldSpan, text: &str, run: &Run) -> Vec<(String, Run)> {
+    let merge = parse(&code_text(inlines, s))
+        .switches
+        .iter()
+        .any(|w| w.flag == '*' && w.arg.as_deref().is_some_and(|a| a.eq_ignore_ascii_case("MERGEFORMAT")));
+    let Some(sep) = s.sep.filter(|_| merge) else { return vec![(text.to_string(), run.clone())] };
+    // The cached words: the run of the white space before each, and of its first other character.
+    let part = &inlines[sep + 1..s.end];
+    let mut cached: Vec<(Option<Run>, Option<Run>)> = Vec::new();
+    let mut in_word = false;
+    for (i, sh) in part.iter().zip(shown(part)) {
+        let (t, r) = match (&sh, i) {
+            (Shown::Value(v), _) => (v.as_str(), i.run()),
+            (Shown::Itself, Inline::Text(t, r)) => (t.as_str(), Some(r)),
+            _ => continue,
+        };
+        let Some(r) = r else { continue };
+        for c in t.chars() {
+            match (c.is_whitespace(), in_word) {
+                (true, true) | (true, false) if cached.last().is_none_or(|w| w.1.is_some()) => {
+                    cached.push((Some(r.clone()), None));
+                    in_word = false;
+                }
+                (false, false) => {
+                    match cached.last_mut() {
+                        Some(w) if w.1.is_none() => w.1 = Some(r.clone()),
+                        _ => cached.push((None, Some(r.clone()))),
+                    }
+                    in_word = true;
+                }
+                _ => {}
+            }
+        }
+    }
+    let mut out: Vec<(String, Run)> = Vec::new();
+    let (mut word, mut in_word) = (0usize, false);
+    let mut started = false;
+    for c in text.chars() {
+        let space = c.is_whitespace();
+        if (space && in_word) || (!space && !in_word && !started) {
+            if started {
+                word += 1;
+            }
+            started = true;
+        }
+        in_word = !space;
+        let w = cached.get(word);
+        let r = w.and_then(|w| if space { w.0.clone().or(w.1.clone()) } else { w.1.clone().or(w.0.clone()) }).unwrap_or_else(|| run.clone());
+        match out.last_mut() {
+            Some((t, last)) if std::rc::Rc::ptr_eq(last, &r) || **last == *r => t.push(c),
+            _ => out.push((c.to_string(), r)),
+        }
+    }
+    out
+}
+
 /// A field's result as shown: its result's text, the fields nested in it as theirs.
 pub fn result_text(inlines: &[Inline], s: FieldSpan) -> String {
     let Some(sep) = s.sep else { return String::new() };
@@ -395,7 +480,8 @@ pub fn words(code: &str) -> Vec<String> {
     for c in code.chars() {
         match c {
             '"' => {
-                if quoted {
+                // A quote ends the word before it too: `"a"="b"` is three words.
+                if quoted || !cur.is_empty() {
                     out.push(std::mem::take(&mut cur));
                 }
                 quoted = !quoted;
@@ -414,6 +500,21 @@ pub fn words(code: &str) -> Vec<String> {
     out
 }
 
+/// `run` with what `src` sets over its paragraph's style formatting `style`: a REF's source formatting on the
+/// destination's paragraph style.
+// ponytail: compares the common character properties only; the source's `w:rPr` itself when runs keep it.
+fn with_direct(run: &Run, src: &Run, style: &Run) -> Run {
+    let mut out = (**run).clone();
+    macro_rules! keep {
+        ($($f:ident),*) => { $(if src.$f != style.$f { out.$f = src.$f.clone(); })* };
+    }
+    keep!(size, bold, italic, caps, small_caps, strike, dstrike, underline, color, highlight, vert_align, position, spacing, scale);
+    if src.ascii != style.ascii || src.h_ansi != style.h_ansi {
+        (out.ascii, out.h_ansi, out.east_asia, out.cs) = (src.ascii.clone(), src.h_ansi.clone(), src.east_asia.clone(), src.cs.clone());
+    }
+    std::rc::Rc::new(out)
+}
+
 /// The run a field's error text shows in: its result's, bold toggled.
 fn error_run(inlines: &[Inline], sp: FieldSpan) -> Option<Run> {
     let e = sp
@@ -427,15 +528,36 @@ pub fn evaluate(doc: &mut Document, now: i64) {
     date_blocks(doc, now);
     let resolver = doc.resolver.clone();
     let styles = resolver.as_deref().map(|r| &r.styles);
-    // Bookmark texts (to the end of the bookmark's paragraph) and every paragraph's style and text, in order.
+    // Bookmark texts (to the bookmark's end, at most the end of its paragraph; codes left out) and every paragraph's
+    // style and text, in order.
     let mut marks: HashMap<String, String> = HashMap::new();
+    // Each bookmark's first shown run, and its paragraph's style formatting.
+    let mut sources: HashMap<String, (Run, Run)> = HashMap::new();
     let mut order: Vec<Vec<(String, bool, String)>> = Vec::new();
     for s in &mut doc.sections {
         paras(&mut s.blocks, &mut |p| {
             for (k, i) in p.inlines.iter().enumerate() {
-                if let Inline::Bookmark(name) = i {
-                    let rest = Paragraph { inlines: p.inlines[k..].to_vec(), ..p.clone() };
-                    marks.entry(name.clone()).or_insert_with(|| text(&rest));
+                if let Inline::Bookmark(name) = i
+                    && !name.starts_with('/')
+                {
+                    // A bookmark starting in a field's code starts at that field's result.
+                    let start = spans(&p.inlines).iter().rfind(|s| s.begin < k && k < s.code_end()).map_or(k, |s| s.code_end() + 1);
+                    let end = format!("/{name}");
+                    let stop = p.inlines[start.min(p.inlines.len())..]
+                        .iter()
+                        .position(|i| matches!(i, Inline::Bookmark(n) if *n == end))
+                        .map_or(p.inlines.len(), |e| start + e);
+                    let part = &p.inlines[start.min(stop)..stop];
+                    marks.entry(name.clone()).or_insert_with(|| visible(part));
+                    let first = part.iter().zip(shown(part)).find_map(|(i, s)| match (i, s) {
+                        (Inline::Text(_, r), Shown::Itself) if !r.hidden => Some(r.clone()),
+                        _ => None,
+                    });
+                    if let (Some(r), Some(first)) = (resolver.as_deref(), first) {
+                        let mut base = r.styles.doc_rpr.clone();
+                        base.merge_level(&r.styles.chain_rpr(r.styles.paragraph_style(p.style.style_id.as_deref())));
+                        sources.entry(name.clone()).or_insert((first, r.run_style(&base)));
+                    }
                 }
             }
             order.push(style_hits(p));
@@ -449,6 +571,7 @@ pub fn evaluate(doc: &mut Document, now: i64) {
                 let code = code_text(&p.inlines, sp).trim().to_string();
                 let error_run = error_run(&p.inlines, sp);
                 let cached_empty = result_text(&p.inlines, sp).is_empty();
+                let nested = p.inlines[sp.begin + 1..sp.code_end()].iter().any(|i| matches!(i, Inline::FieldBegin { .. }));
                 let Inline::FieldBegin { kind: Some(kind), value: slot, run, .. } = &mut p.inlines[sp.begin] else { continue };
                 let code = &code;
                 let w = words(code);
@@ -464,7 +587,12 @@ pub fn evaluate(doc: &mut Document, now: i64) {
                         if has("\\h") { Some(String::new()) } else { Some(format_field(&n.to_string(), code, None)) }
                     }
                     // Word's result for a bookmark the document doesn't have.
-                    FieldKind::Ref(name) => Some(marks.get(name).cloned().unwrap_or_else(|| "Error! Reference source not found.".into())),
+                    FieldKind::Ref(name) => {
+                        if let Some((src, src_style)) = sources.get(name) {
+                            *run = with_direct(run, src, src_style);
+                        }
+                        Some(marks.get(name).cloned().unwrap_or_else(|| "Error! Reference source not found.".into()))
+                    }
                     FieldKind::Bookmark(_) if !cached_empty => None,
                     FieldKind::Bookmark(name) => Some(
                         marks
@@ -472,6 +600,8 @@ pub fn evaluate(doc: &mut Document, now: i64) {
                             .find(|(k, _)| k.eq_ignore_ascii_case(name))
                             .map_or_else(|| "Error! Bookmark not defined.".into(), |(_, t)| t.clone()),
                     ),
+                    // One with nested fields is evaluated at layout, on their values there.
+                    FieldKind::If if nested => None,
                     FieldKind::If => if_field(&w),
                     FieldKind::Invalid => Some(String::new()),
                     FieldKind::Date => Some(date(code, now)),
@@ -550,8 +680,8 @@ pub fn rekind(doc: &mut Document, want: &dyn Fn(&FieldCode) -> Option<FieldKind>
             let code = parse(&code_text(&p.inlines, s));
             let Inline::FieldBegin { kind, value, lock, .. } = &mut p.inlines[s.begin] else { continue };
             let want = want(&code);
-            // A legacy form field's kind comes from its form data, not its code.
-            if *lock || *kind == want || matches!(kind, Some(FieldKind::CheckBox { .. } | FieldKind::DropDown)) {
+            // A legacy form field's kind comes from its form data, not its code; `w:pgNum`'s from its element.
+            if *lock || *kind == want || matches!(kind, Some(FieldKind::CheckBox { .. } | FieldKind::DropDown | FieldKind::PgNum)) {
                 continue;
             }
             back |= want.is_some() && want != Some(FieldKind::SubTemplate);
@@ -590,7 +720,7 @@ pub fn blocks_page_dependent(blocks: &[Block]) -> bool {
 }
 
 /// `IF a op b "then" "else"` with literal operands: numbers compare numerically, anything else as text.
-fn if_field(w: &[String]) -> Option<String> {
+pub(crate) fn if_field(w: &[String]) -> Option<String> {
     let [_, a, op, b, yes, rest @ ..] = w else { return None };
     let no = rest.first().cloned().unwrap_or_default();
     let ord = match (a.parse::<f64>(), b.parse::<f64>()) {
@@ -791,6 +921,82 @@ mod tests {
         let doc = crate::docx::read(&bytes).expect("reads");
         let texts: Vec<String> = doc.sections[0].blocks.iter().filter_map(|b| if let Block::Para(p) = b { Some(text(p)) } else { None }).collect();
         assert_eq!(texts[1..3], ["marked", "Error! Bookmark not defined."]);
+    }
+
+    #[test]
+    fn field_2_a_ref_runs_from_a_bookmark_in_a_code_to_its_end() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:bookmarkStart w:id="0" w:name="G"/><w:r><w:instrText xml:space="preserve"> FORMTEXT </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>Lorem</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:bookmarkEnd w:id="0"/><w:r><w:t xml:space="preserve"> end.</w:t></w:r></w:p><w:p><w:fldSimple w:instr=" REF G "><w:r><w:t>STALE</w:t></w:r></w:fldSimple></w:p><w:sectPr/></w:body></w:document>"#;
+        let bytes = crate::docx::write::repackage(
+            &crate::docx::blank::blank_docx(),
+            &[("word/document.xml".into(), xml.as_bytes().to_vec())],
+            zip::CompressionMethod::Deflated,
+        )
+        .expect("repackages");
+        let doc = crate::docx::read(&bytes).expect("reads");
+        let Some(Block::Para(p)) = doc.sections[0].blocks.get(1) else { panic!("two paragraphs") };
+        assert_eq!(text(p), "Lorem");
+    }
+
+    #[test]
+    fn field_4_simple_and_ref_results_take_the_paragraph_style() {
+        let body = concat!(
+            r#"<w:p><w:bookmarkStart w:id="0" w:name="B"/><w:r><w:rPr><w:b/><w:sz w:val="30"/></w:rPr><w:t>Ripe</w:t></w:r><w:bookmarkEnd w:id="0"/></w:p>"#,
+            r#"<w:p><w:fldSimple w:instr=" PAGE "><w:r><w:rPr><w:sz w:val="40"/></w:rPr><w:t>9</w:t></w:r></w:fldSimple></w:p>"#,
+            r#"<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:rPr><w:sz w:val="28"/></w:rPr><w:instrText> REF B </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>STALE</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>"#,
+        );
+        let xml = format!(
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>{body}<w:sectPr/></w:body></w:document>"#
+        );
+        let bytes = crate::docx::write::repackage(
+            &crate::docx::blank::blank_docx(),
+            &[("word/document.xml".into(), xml.into_bytes())],
+            zip::CompressionMethod::Deflated,
+        )
+        .expect("repackages");
+        let doc = crate::docx::read(&bytes).expect("reads");
+        let runs: Vec<Run> = doc.sections[0]
+            .blocks
+            .iter()
+            .filter_map(|b| {
+                if let Block::Para(p) = b {
+                    p.inlines.iter().find_map(|i| if let Inline::FieldBegin { run, .. } = i { Some(run.clone()) } else { None })
+                } else {
+                    None
+                }
+            })
+            .collect();
+        // The simple PAGE: not its result run's 20 pt; the REF: its source's bold 15 pt, not its code's 14 pt.
+        assert!(runs[0].size != 20.0 && !runs[0].bold, "{}", runs[0].size);
+        assert!(runs[1].bold && runs[1].size == 15.0, "{} {}", runs[1].size, runs[1].bold);
+    }
+
+    #[test]
+    fn field_4_mergeformat_maps_the_cached_formatting_word_by_word() {
+        let doc = crate::docx::read(&crate::docx::blank::blank_docx()).expect("reads");
+        let Some(Block::Para(p)) = doc.sections[0].blocks.first() else { panic!("a paragraph") };
+        let size = |pt: f64| std::rc::Rc::new(super::super::model::RunStyle { size: pt, ..(*p.mark).clone() });
+        let (code, a, b) = (size(14.0), size(12.0), size(10.0));
+        let id = FieldId::next();
+        let inlines = vec![
+            Inline::FieldBegin {
+                id,
+                kind: Some(FieldKind::Ref("B".into())),
+                lock: false,
+                dirty: false,
+                view: FieldView::Result,
+                label: None,
+                value: None,
+                run: code.clone(),
+            },
+            Inline::Text(r#" REF B \* MERGEFORMAT "#.into(), code.clone()),
+            Inline::FieldSep { id, run: code.clone() },
+            Inline::Text("Old".into(), a.clone()),
+            Inline::Text(" two".into(), b.clone()),
+            Inline::FieldEnd { id, run: code.clone() },
+        ];
+        let s = span_at(&inlines, 0).expect("a field");
+        let got: Vec<(String, f64)> = value_runs(&inlines, s, "Ripe plum cake", &code).into_iter().map(|(t, r)| (t, r.size)).collect();
+        assert_eq!(got, [("Ripe".to_string(), 12.0), (" plum".to_string(), 10.0), (" cake".to_string(), 14.0)]);
     }
 
     #[test]

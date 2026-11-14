@@ -293,6 +293,9 @@ pub enum FieldView {
 #[derive(Clone, Debug, PartialEq)]
 pub enum FieldKind {
     Page,
+    /// `w:pgNum`: a PAGE field whose code is written for it; in a header or footer its chapter number is its
+    /// section's.
+    PgNum,
     NumPages,
     SectionPages,
     Section,
@@ -539,7 +542,9 @@ pub enum Inline {
         id: FieldId,
         run: Run,
     },
-    /// Start of a bookmark (for PAGEREF/REF).
+    /// Start of a bookmark (for PAGEREF/REF); `/` and its name: its end (no bookmark name starts with `/`).
+    // ponytail: the end shares the start's variant so every no-unit marker rule covers it; its own variant if
+    // anything but REF ever needs the end.
     Bookmark(String),
     /// Where a comment's or a move's range starts or ends. No units.
     Range(RangeMark),
@@ -967,6 +972,9 @@ pub struct Row {
     pub cell_spacing: Option<f64>,
     /// The table width of the layout run the row starts or continues, when its exceptions fix its layout.
     pub run: Option<Width>,
+    /// Compat ≤ 14, a table joined from adjacent tables whose rows' left cell margins differ by more than 5 twips:
+    /// every column edge sits 5 twips right; `Some(true)` keeps the row's left edge (its first cell that much wider).
+    pub nudge: Option<bool>,
     pub cells: Vec<Cell>,
     /// The controls wrapping the row, outermost first.
     pub controls: Vec<ControlId>,

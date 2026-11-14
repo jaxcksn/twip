@@ -232,6 +232,84 @@ fn compat_14_nested_right_row_ends_at_the_cell_edge() {
 }
 
 #[test]
+fn compat_14_a_left_row_of_a_centred_nested_table_sits_as_a_left_table() {
+    let nested = |tbl_jc: &str, tr: &str| {
+        format!(
+            r#"<w:tbl><w:tblPr><w:tblInd w:w="0" w:type="dxa"/><w:tblLayout w:type="fixed"/>{MAR}</w:tblPr><w:tblGrid><w:gridCol w:w="6000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="6000" w:type="dxa"/></w:tcPr><w:tbl><w:tblPr>{tbl_jc}<w:tblInd w:w="300" w:type="dxa"/><w:tblLayout w:type="fixed"/>{MAR}</w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:trPr>{tr}</w:trPr>{}</w:tr></w:tbl><w:p/></w:tc></w:tr></w:tbl><w:p/>"#,
+            dxa_cell(3000, "n")
+        )
+    };
+    let left = glyph_x_in(&nested("", ""), 12, &[], 'n');
+    let row = glyph_x_in(&nested(r#"<w:jc w:val="center"/>"#, r#"<w:jc w:val="left"/>"#), 12, &[], 'n');
+    // The outer cell's content starts at the margin; the nested table's border 300 in, its text 100 more.
+    assert!((left - 92.0).abs() < 0.01 && (row - left).abs() < 0.01, "left table {left}, left row {row}");
+}
+
+#[test]
+fn an_empty_last_paragraph_adds_nothing_to_its_auto_cell() {
+    let table = |last: &str| {
+        format!(
+            r#"<w:tbl><w:tblGrid><w:gridCol w:w="500"/><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:tc><w:p><w:pPr><w:ind w:left="1000"/></w:pPr></w:p><w:p><w:pPr>{last}</w:pPr></w:p></w:tc>{}</w:tr></w:tbl><w:p/>"#,
+            dxa_cell(2000, "b")
+        )
+    };
+    let x = |last: &str| glyph_x_in(&table(last), 12, &[], 'b');
+    assert!((x(r#"<w:ind w:left="1600"/>"#) - x("")).abs() < 0.01, "the column is the first paragraph's 1000");
+}
+
+#[test]
+fn compat_14_joined_tables_with_other_left_margins_move_their_edges_5_twips() {
+    let body = format!(
+        r#"<w:tbl><w:tblPr><w:tblInd w:w="0" w:type="dxa"/><w:tblLayout w:type="fixed"/>{MAR}</w:tblPr><w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/></w:tblGrid><w:tr>{}{}</w:tr></w:tbl><w:tbl><w:tblPr><w:tblInd w:w="0" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblCellMar><w:left w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/></w:tblGrid><w:tr>{}{}</w:tr></w:tbl><w:p/>"#,
+        dxa_cell(2000, "a"),
+        dxa_cell(2000, "b"),
+        dxa_cell(2000, "c"),
+        dxa_cell(2000, "d")
+    );
+    let x = |mode: i64, c: char| glyph_x_in(&body, mode, &[], c);
+    // x0 = 1440 - 100: the first row keeps its left edge, its other edges and every edge of the second row move 5.
+    assert!((x(12, 'a') - 72.0).abs() < 0.01 && (x(12, 'b') - 172.25).abs() < 0.01, "{} {}", x(12, 'a'), x(12, 'b'));
+    assert!((x(12, 'c') - 67.25).abs() < 0.01 && (x(12, 'd') - 167.25).abs() < 0.01, "{} {}", x(12, 'c'), x(12, 'd'));
+}
+
+#[test]
+fn compat_14_a_floating_table_at_vertical_position_0_stands_in_the_flow() {
+    let y = |anchor: &str, mode: i64| {
+        let body = format!(
+            r#"<w:p><w:r><w:t>Lead</w:t></w:r></w:p><w:p><w:r><w:t>Lead</w:t></w:r></w:p><w:tbl><w:tblPr><w:tblpPr w:vertAnchor="{anchor}" w:horzAnchor="margin" w:tblpY="0"/><w:tblW w:w="3000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr>{}</w:tr></w:tbl><w:p/>"#,
+            dxa_cell(3000, "z")
+        );
+        let mut doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
+        doc.settings.compat_mode = mode;
+        glyphs(&doc)[0].iter().find(|g| g.0 == 'z').map(|g| g.1).expect("drawn")
+    };
+    assert!((y("margin", 12) - y("text", 12)).abs() < 0.01 && (y("page", 12) - y("text", 12)).abs() < 0.01, "{} {}", y("margin", 12), y("text", 12));
+}
+
+#[test]
+fn a_table_in_the_flow_is_placed_again_below_text_a_later_table_pushed() {
+    let tbl = |pos: &str, cells: &[&str]| {
+        let rows: String = cells.iter().map(|t| format!("<w:tr>{}</w:tr>", dxa_cell(9360, t))).collect();
+        format!(
+            r#"<w:tbl><w:tblPr><w:tblpPr w:vertAnchor="text"{pos}/><w:tblW w:w="9360" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="9360"/></w:tblGrid>{rows}</w:tbl>"#
+        )
+    };
+    // The second table stands over the first line, which it pushes down past the first table's first place.
+    let body = format!(
+        r#"<w:p><w:r><w:t>q</w:t></w:r></w:p>{}<w:p><w:pPr><w:spacing w:before="240"/></w:pPr><w:r><w:t>h</w:t></w:r></w:p>{}<w:p/>"#,
+        tbl("", &["x", "y", "z"]),
+        tbl(r#" w:tblpY="-2600""#, &["b"])
+    );
+    for mode in [12, 15] {
+        let mut doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
+        doc.settings.compat_mode = mode;
+        let page = &glyphs(&doc)[0];
+        let y = |c: char| page.iter().find(|g| g.0 == c).map(|g| g.1).expect("drawn");
+        assert!(y('b') < y('q') && y('q') < y('x') && y('z') < y('h'), "compat {mode}: b {} q {} x {} h {}", y('b'), y('q'), y('x'), y('h'));
+    }
+}
+
+#[test]
 fn a_centred_merged_region_cut_by_the_page_end_centres_in_its_page_part() {
     let blank = crate::docx::read(&crate::docx::blank::blank_docx()).expect("reads");
     let sec = &blank.sections[0];
@@ -286,16 +364,40 @@ fn compat_14_pct_table_in_a_text_box_takes_15_twips_more() {
 }
 
 #[test]
-fn a_pct_indent_is_a_share_of_the_text_width() {
+fn a_pct_indent_places_nothing() {
     let table = |ind: &str| {
         format!(
-            r#"<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/>{ind}</w:tblPr><w:tblGrid><w:gridCol w:w="1000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="1000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#
+            r#"<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/>{ind}{MAR}</w:tblPr><w:tblGrid><w:gridCol w:w="1000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="1000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#
         )
     };
-    let (pct, text_w) = glyph_x(&table(r#"<w:tblInd w:w="1000" w:type="pct"/>"#), 'a');
-    let (dxa, _) = glyph_x(&table(&format!(r#"<w:tblInd w:w="{}" w:type="dxa"/>"#, 1000 * text_w / 5000)), 'a');
-    let (none, _) = glyph_x(&table(""), 'a');
-    assert!((pct - dxa).abs() < 0.01 && dxa - none > 80.0, "{pct} {dxa} {none}");
+    let x = |ind: &str, mode: i64| glyph_x_in(&table(ind), mode, &[], 'a');
+    let (pct, dxa0) = (r#"<w:tblInd w:w="1000" w:type="pct"/>"#, r#"<w:tblInd w:w="0" w:type="dxa"/>"#);
+    // Compat 12: unset like no indent at all, so not pulled left by the 100 margin; compat 15: indent 0.
+    assert!((x(pct, 12) - x("", 12)).abs() < 0.01 && (x(pct, 12) - x(dxa0, 12) - 5.0).abs() < 0.01, "{} {}", x(pct, 12), x(dxa0, 12));
+    assert!((x(pct, 15) - x(dxa0, 15)).abs() < 0.01);
+}
+
+#[test]
+fn compat_14_a_default_table_style_without_an_indent_isnt_pulled() {
+    let x = |name: &str| {
+        let style = format!(
+            r#"<w:style w:type="table" w:default="1" w:styleId="TableNormal"><w:name w:val="{name}"/><w:tblPr><w:tblCellMar><w:left w:w="300" w:type="dxa"/><w:right w:w="300" w:type="dxa"/></w:tblCellMar></w:tblPr></w:style></w:styles>"#
+        );
+        let body = r#"<w:tbl><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#;
+        let src = replace_in(&with_body(&crate::docx::blank::blank_docx(), body), "word/styles.xml", "</w:styles>", &style);
+        let mut doc = crate::docx::read(&src).expect("reads");
+        doc.settings.compat_mode = 12;
+        let mut x = None;
+        crate::layout::traverse::paint(&layout(&doc, &fonts()).pages()[0], &mut |p| {
+            if let crate::layout::fragment::Item::Glyphs(r) = p.absolute() {
+                x = x.or(r.chars.iter().find(|g| g.0 == 'a').map(|g| g.1));
+            }
+        });
+        x.expect("drawn")
+    };
+    // The built-in writes indent 0 (pulled, its 108 margins: text at the margin); a custom one writes none.
+    assert!((x("Normal Table") - 72.0).abs() < 0.01, "{}", x("Normal Table"));
+    assert!((x("My Default") - 87.0).abs() < 0.01, "{}", x("My Default"));
 }
 
 #[test]
@@ -378,6 +480,11 @@ fn a_right_to_left_paragraph_swaps_left_and_right() {
 }
 
 pub(super) fn with_body(src: &[u8], body: &str) -> Vec<u8> {
+    replace_in(src, "word/document.xml", "<w:p/>", body)
+}
+
+/// The package with the first `from` in its part `part` replaced by `to`.
+fn replace_in(src: &[u8], part: &str, from: &str, to: &str) -> Vec<u8> {
     use std::io::{Read, Write};
     let mut z = zip::ZipArchive::new(std::io::Cursor::new(src)).unwrap();
     let mut out = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
@@ -386,8 +493,8 @@ pub(super) fn with_body(src: &[u8], body: &str) -> Vec<u8> {
         let name = f.name().unwrap().to_string();
         let mut data = Vec::new();
         f.read_to_end(&mut data).unwrap();
-        if name == "word/document.xml" {
-            data = String::from_utf8(data).unwrap().replacen("<w:p/>", body, 1).into_bytes();
+        if name == part {
+            data = String::from_utf8(data).unwrap().replacen(from, to, 1).into_bytes();
         }
         out.start_file(name, zip::write::SimpleFileOptions::default()).unwrap();
         out.write_all(&data).unwrap();
@@ -1289,4 +1396,289 @@ fn a_table_style_named_table_normal_is_the_built_in_default() {
     // Its 1000 left margin isn't used: the built-in's 108 is, as for the other name; an ordinary name keeps it.
     assert!((x("Plain") - x("Table Normal") - 44.6).abs() < 0.01, "{} {}", x("Plain"), x("Table Normal"));
     assert!((x("Normal Table") - x("Table Normal")).abs() < 0.01 && (x("table normal") - x("Plain")).abs() < 0.01);
+}
+
+fn border_doc(borders: &str, rows: &str, mode: i64) -> crate::docx::Document {
+    let body = format!(
+        r#"<w:tbl><w:tblPr><w:tblW w:w="3000" w:type="dxa"/><w:tblBorders>{borders}</w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid>{rows}</w:tbl><w:p/>"#
+    );
+    let mut doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
+    doc.settings.compat_mode = mode;
+    doc
+}
+
+fn border_rows(n: usize, tc_pr: &str) -> String {
+    (0..n)
+        .map(|i| {
+            format!(r#"<w:tr><w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/>{tc_pr}</w:tcPr><w:p><w:r><w:t>R{i}</w:t></w:r></w:p></w:tc></w:tr>"#)
+        })
+        .collect()
+}
+
+#[test]
+fn a_table_part_on_a_page_draws_the_tables_top_and_bottom_borders() {
+    let borders = r#"<w:top w:val="single" w:sz="24"/><w:bottom w:val="single" w:sz="12"/><w:insideH w:val="single" w:sz="4"/>"#;
+    let doc = border_doc(borders, &border_rows(70, ""), 12);
+    let s = layout(&doc, &fonts());
+    let bars = |p: usize| -> Vec<[f64; 4]> {
+        crate::layout::traverse::paint_items(&s.pages()[p])
+            .into_iter()
+            .filter_map(|i| match i {
+                crate::layout::fragment::Item::Rect { rect, .. } if rect[2] - rect[0] > rect[3] - rect[1] => Some(rect),
+                _ => None,
+            })
+            .collect()
+    };
+    let top = bars(1).into_iter().min_by(|a, b| a[1].total_cmp(&b[1])).expect("page 2 bars");
+    assert!((top[1] - doc.sections[0].top).abs() < 0.01 && (top[3] - top[1] - 3.0).abs() < 0.01, "the 3 pt top at the part's top: {top:?}");
+    let low = bars(0).into_iter().max_by(|a, b| a[1].total_cmp(&b[1])).expect("page 1 bars");
+    assert!((low[3] - low[1] - 1.5).abs() < 0.01, "the 1.5 pt bottom under the part's last row: {low:?}");
+}
+
+#[test]
+fn compat_14_reserves_the_edge_under_a_repeated_header_row() {
+    let header = r#"<w:tr><w:trPr><w:tblHeader/></w:trPr><w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/><w:tcBorders><w:bottom w:val="single" w:sz="8"/></w:tcBorders></w:tcPr><w:p><w:r><w:t>H</w:t></w:r></w:p></w:tc></w:tr>"#;
+    let gaps = |mode: i64| {
+        let doc = border_doc("", &format!("{header}{}", border_rows(70, "")), mode);
+        let g = glyphs(&doc);
+        let y = |p: usize, c: char| g[p].iter().find(|g| g.0 == c).map(|g| g.1).expect("drawn");
+        (y(0, 'R') - y(0, 'H'), y(1, 'R') - y(1, 'H'))
+    };
+    let (first, next) = gaps(12);
+    assert!((first - next).abs() < 0.01, "compat 12: the header's 1 pt bottom is reserved on page 2 too: {first} vs {next}");
+    let (first, next) = gaps(15);
+    assert!((first - next - 1.0).abs() < 0.01, "compat 15: the page's first row reserves only its own top: {first} vs {next}");
+}
+
+fn doc_in(body: &str, mode: i64) -> crate::docx::Document {
+    let mut doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), body)).expect("reads");
+    doc.settings.compat_mode = mode;
+    doc
+}
+
+/// A text box `w` × `h` pt holding "Z", anchored in a cell: `pos_v` its vertical position (an offset or an alignment),
+/// `wrap` its wrap element.
+fn cell_box(w: i64, h: i64, h_from: &str, pos_v: &str, wrap: &str) -> String {
+    format!(
+        r#"<w:r><w:drawing><wp:anchor xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="1" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="{h_from}"><wp:posOffset>0</wp:posOffset></wp:positionH>{pos_v}<wp:extent cx="{}" cy="{}"/><wp:effectExtent l="0" t="0" r="0" b="0"/>{wrap}<wp:docPr id="1" name="B"/><a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:wsp><wps:cNvSpPr txBox="1"/><wps:spPr><a:prstGeom prst="rect"/></wps:spPr><wps:txbx><w:txbxContent><w:p><w:r><w:t>Z</w:t></w:r></w:p></w:txbxContent></wps:txbx><wps:bodyPr lIns="0" tIns="0" rIns="0" bIns="0"/></wps:wsp></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#,
+        w * 12700,
+        h * 12700
+    )
+}
+
+fn one_cell(paras: &str, compat: i64) -> crate::docx::Document {
+    let body = format!(
+        r#"<w:tbl><w:tblGrid><w:gridCol w:w="6000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="6000" w:type="dxa"/></w:tcPr>{paras}</w:tc></w:tr></w:tbl><w:p><w:r><w:t>q</w:t></w:r></w:p>"#
+    );
+    let mut doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
+    doc.settings.compat_mode = compat;
+    doc
+}
+
+#[test]
+fn a_spaced_cell_clips_inside_its_own_border_box() {
+    let text = "Lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore";
+    let body = format!(
+        r#"<w:tbl><w:tblPr><w:tblW w:w="4680" w:type="dxa"/><w:tblCellSpacing w:w="100" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblBorders><w:top w:val="single" w:sz="4"/><w:left w:val="single" w:sz="4"/><w:bottom w:val="single" w:sz="4"/><w:right w:val="single" w:sz="4"/><w:insideH w:val="single" w:sz="4"/><w:insideV w:val="single" w:sz="4"/></w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="2340"/><w:gridCol w:w="2340"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="2340" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:ind w:right="-1800"/></w:pPr><w:r><w:t>{text}</w:t></w:r></w:p></w:tc><w:tc><w:tcPr><w:tcW w:w="2340" w:type="dxa"/></w:tcPr><w:p/></w:tc></w:tr></w:tbl><w:p/>"#
+    );
+    let doc = doc_in(&body, 12);
+    let s = layout(&doc, &fonts());
+    let mut xs: Vec<f64> = crate::layout::traverse::paint_items(&s.pages()[0])
+        .into_iter()
+        .filter_map(|i| match i {
+            crate::layout::fragment::Item::Rect { rect, .. } if rect[3] - rect[1] > rect[2] - rect[0] => Some(rect[0]),
+            _ => None,
+        })
+        .collect();
+    xs.sort_by(f64::total_cmp);
+    xs.dedup_by(|a, b| (*a - *b).abs() < 0.01);
+    // The table's left, cell 1's left, cell 1's right: its own right border, drawn inside its box.
+    let inner = xs[2];
+    let last = super::page_chars(&doc)[0].iter().map(|c| c.1).fold(f64::NEG_INFINITY, f64::max);
+    assert!(last < inner, "no glyph starts past cell 1's own right border: {last} vs {inner}");
+}
+
+#[test]
+fn a_nested_tables_borders_clip_to_the_open_enclosing_cell() {
+    let nested = r#"<w:tbl><w:tblPr><w:tblW w:w="8000" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblBorders><w:top w:val="single" w:sz="4"/><w:left w:val="single" w:sz="4"/><w:bottom w:val="single" w:sz="4"/><w:right w:val="single" w:sz="4"/></w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="8000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="8000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>n</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#;
+    let right = |before: &str| {
+        let body = format!(
+            r#"<w:tbl><w:tblPr><w:tblW w:w="3000" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr>{before}{nested}<w:p/></w:tc></w:tr></w:tbl><w:p/>"#
+        );
+        let s = layout(&doc_in(&body, 12), &fonts());
+        crate::layout::traverse::paint_items(&s.pages()[0])
+            .into_iter()
+            .filter_map(|i| match i {
+                crate::layout::fragment::Item::Rect { rect, .. } => Some(rect[2]),
+                _ => None,
+            })
+            .fold(f64::NEG_INFINITY, f64::max)
+    };
+    assert!(right("<w:p><w:r><w:t>Alpha</w:t></w:r></w:p>") < 72.0 + 150.0 + 0.01, "cut at the outer cell after a paragraph");
+    assert!(right("") > 72.0 + 300.0, "drawn in full when it starts the cell");
+}
+
+/// The characters drawn turned on page 1.
+fn turned_chars(doc: &crate::docx::Document) -> String {
+    let s = layout(doc, &fonts());
+    let mut out = String::new();
+    for item in crate::layout::traverse::paint_items(&s.pages()[0]) {
+        if let crate::layout::fragment::Item::Turned(t) = item {
+            for (r, _, _) in crate::layout::vertical::runs(&t) {
+                out.extend(r.chars.iter().map(|c| c.0));
+            }
+        }
+    }
+    out
+}
+
+#[test]
+fn compat_14_hides_vertical_lines_pushed_wholly_before_the_first_side() {
+    let paras: String = ["Ka", "Lb", "Mc", "Nd", "Oe", "Pf"].iter().map(|w| format!("<w:p><w:r><w:t>{w}</w:t></w:r></w:p>")).collect();
+    let body = format!(
+        r#"<w:tbl><w:tblPr><w:tblLayout w:type="fixed"/><w:tblBorders><w:left w:val="single" w:sz="4"/><w:right w:val="single" w:sz="4"/></w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="700"/></w:tblGrid><w:tr><w:trPr><w:trHeight w:val="1500" w:hRule="exact"/></w:trPr><w:tc><w:tcPr><w:tcW w:w="700" w:type="dxa"/><w:textDirection w:val="btLr"/><w:vAlign w:val="bottom"/></w:tcPr>{paras}</w:tc></w:tr></w:tbl><w:p/>"#
+    );
+    let c12 = turned_chars(&doc_in(&body, 12));
+    assert!(!c12.contains('K') && c12.contains('P'), "compat 12: {c12}");
+    let c15 = turned_chars(&doc_in(&body, 15));
+    assert!(c15.contains('K'), "compat 15 keeps the block at the first side: {c15}");
+}
+
+#[test]
+fn a_centred_merged_region_cut_by_the_page_goes_on_at_the_next_parts_top() {
+    let blank = crate::docx::read(&crate::docx::blank::blank_docx()).expect("reads");
+    let sec = &blank.sections[0];
+    let spacer = ((sec.page_h - sec.top - sec.bottom - 150.0) * 20.0).round() as i64;
+    let lines: String = (1..=12).map(|i| format!("<w:p><w:r><w:t>Line{i}</w:t></w:r></w:p>")).collect();
+    let tc = |merge: &str, content: &str| {
+        format!(r#"<w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/><w:vMerge{merge}/><w:vAlign w:val="center"/></w:tcPr>{content}</w:tc>"#)
+    };
+    let tr = |merge: &str, content: &str| format!(r#"<w:tr><w:trPr><w:cantSplit/><w:trHeight w:val="1440"/></w:trPr>{}</w:tr>"#, tc(merge, content));
+    let body = format!(
+        r#"<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="{spacer}" w:lineRule="exact"/></w:pPr></w:p><w:tbl><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid>{}{}{}</w:tbl><w:p/>"#,
+        tr(r#" w:val="restart""#, &lines),
+        tr("", "<w:p/>"),
+        tr("", "<w:p/>")
+    );
+    let doc = doc_in(&body, 12);
+    let pages = super::page_chars(&doc);
+    let on = |p: usize, d: char| pages.get(p).is_some_and(|g| g.windows(2).any(|w| w[0].0 == '1' && w[1].0 == d));
+    assert!(on(1, '2'), "the region's last line goes on on page 2");
+}
+
+#[test]
+fn compat_15_a_moved_table_on_a_refilled_page_is_drawn_at_its_own_x() {
+    let table = |name: &str, pos: &str, overlap: &str| {
+        let rows: String = (1..=3)
+            .map(|i| {
+                format!(
+                    r#"<w:tr><w:tc><w:tcPr><w:tcW w:w="4000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>{name} row {i}</w:t></w:r></w:p></w:tc></w:tr>"#
+                )
+            })
+            .collect();
+        format!(
+            r#"<w:tbl><w:tblPr><w:tblpPr w:leftFromText="181" w:rightFromText="181" {pos} w:horzAnchor="margin" w:tblpYSpec="top"/>{overlap}<w:tblW w:w="4000" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid>{rows}</w:tbl>"#
+        )
+    };
+    let body = format!(
+        r#"<w:p><w:r><w:t>Case</w:t></w:r></w:p>{}<w:p><w:r><w:t>Spacer.</w:t></w:r></w:p>{}<w:p><w:r><w:t>After.</w:t></w:r></w:p>"#,
+        table("A", "", ""),
+        table("Q", r#"w:topFromText="360" w:tblpX="2000""#, r#"<w:tblOverlap w:val="never"/>"#)
+    );
+    let x = |mode: i64| super::page_chars(&doc_in(&body, mode))[0].iter().find(|c| c.0 == 'Q').map(|c| c.1).expect("drawn");
+    assert!((x(15) - (72.0 + 100.0)).abs() < 1.0, "compat 15: drawn at tblpX: {}", x(15));
+    assert!(x(14) > 250.0, "compat 14: drawn where it was moved: {}", x(14));
+}
+
+#[test]
+fn a_wrapping_cell_float_doesnt_start_above_the_cells_content_top_and_holds_the_row() {
+    let at = |offset: i64| {
+        let v = format!(r#"<wp:positionV relativeFrom="paragraph"><wp:posOffset>{}</wp:posOffset></wp:positionV>"#, offset * 12700);
+        let doc = one_cell(
+            &format!("<w:p>{}<w:r><w:t>a</w:t></w:r></w:p>", cell_box(40, 60, "column", &v, r#"<wp:wrapSquare wrapText="bothSides"/>"#)),
+            15,
+        );
+        let page = &super::page_chars(&doc)[0];
+        let y = |ch: char| page.iter().find(|c| c.0 == ch).map(|c| c.2).expect("drawn");
+        (y('Z'), y('q'))
+    };
+    let ((z0, q0), (z, q)) = (at(0), at(-20));
+    assert!((z - z0).abs() < 1e-6, "the box moves down to the content top: {z} vs {z0}");
+    assert!((q - q0).abs() < 1e-6, "the row holds the whole box: {q} vs {q0}");
+}
+
+#[test]
+fn an_aligned_cell_float_goes_to_the_content_top_and_every_line_it_meets_wraps_it() {
+    let v = r#"<wp:positionV relativeFrom="margin"><wp:align>bottom</wp:align></wp:positionV>"#;
+    let doc = one_cell(
+        &format!(
+            "<w:p><w:r><w:t>a</w:t></w:r></w:p><w:p>{}<w:r><w:t>b</w:t></w:r></w:p>",
+            cell_box(60, 30, "column", v, r#"<wp:wrapSquare wrapText="bothSides"/>"#)
+        ),
+        12,
+    );
+    let page = &super::page_chars(&doc)[0];
+    let at = |ch: char| page.iter().find(|c| c.0 == ch).map(|c| (c.1, c.2)).expect("drawn");
+    let (a, z) = (at('a'), at('Z'));
+    assert!(a.0 - z.0 > 59.0, "the first paragraph's line goes on right of the box: a {a:?} Z {z:?}");
+    assert!((a.1 - z.1).abs() < 3.0, "the box is at the cell's top: a {a:?} Z {z:?}");
+}
+
+#[test]
+fn a_table_row_that_meets_a_page_float_lower_down_goes_below_it() {
+    let float = r#"<w:r><w:drawing><wp:anchor xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture" distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="1" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="margin"><wp:posOffset>0</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>3810000</wp:posOffset></wp:positionV><wp:extent cx="5943600" cy="1016000"/><wp:wrapSquare wrapText="bothSides"/><wp:docPr id="1" name="P"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#;
+    let rows: String = (0..30)
+        .map(|k| {
+            format!(
+                r#"<w:tr><w:tc><w:tcPr><w:tcW w:w="9000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>{}</w:t></w:r></w:p></w:tc></w:tr>"#,
+                char::from(b'A' + k)
+            )
+        })
+        .collect();
+    let ys = |compat: i64| {
+        let body = format!(r#"<w:p>{float}</w:p><w:tbl><w:tblGrid><w:gridCol w:w="9000"/></w:tblGrid>{rows}</w:tbl><w:p/>"#);
+        let mut doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
+        doc.settings.compat_mode = compat;
+        let page = &glyphs(&doc)[0];
+        page.iter().filter(|c| c.0.is_ascii_uppercase()).map(|c| c.1).collect::<Vec<f64>>()
+    };
+    // The float covers 300 … 380 across the column.
+    let legacy = ys(12);
+    assert!(legacy.iter().all(|&y| y < 300.0 || y > 380.0), "{legacy:?}");
+    assert!(legacy[0] < 300.0 && legacy.iter().any(|&y| y > 380.0), "{legacy:?}");
+    // Compat 15 tests the part's whole band: the part goes below the float.
+    let generic = ys(15);
+    assert!(generic.iter().all(|&y| y > 380.0), "{generic:?}");
+}
+
+#[test]
+fn compat_12_a_float_laid_out_outside_its_cell_is_wrapped_by_the_text_before_the_table() {
+    let v = r#"<wp:positionV relativeFrom="paragraph"><wp:posOffset>-381000</wp:posOffset></wp:positionV>"#;
+    let x = |lic: &str| {
+        let float = cell_box(80, 25, "column", v, r#"<wp:wrapSquare wrapText="bothSides"/>"#).replace(r#"layoutInCell="1""#, lic);
+        let body = format!(
+            r#"<w:p><w:r><w:t>a</w:t></w:r></w:p><w:p><w:r><w:t>b</w:t></w:r></w:p><w:tbl><w:tblGrid><w:gridCol w:w="6000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="6000" w:type="dxa"/></w:tcPr><w:p>{float}<w:r><w:t>c</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#
+        );
+        let mut doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
+        doc.settings.compat_mode = 12;
+        let page = &super::page_chars(&doc)[0];
+        page.iter().find(|c| c.0 == 'b').map(|c| c.1).expect("drawn")
+    };
+    assert!(x(r#"layoutInCell="0""#) > 150.0, "{}", x(r#"layoutInCell="0""#));
+    assert!(x(r#"layoutInCell="1""#) < 80.0);
+}
+
+#[test]
+fn compat_12_a_float_that_doesnt_wrap_counts_from_its_lines_piece_beside_the_lines_own_float() {
+    let v = r#"<wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV>"#;
+    let x = |compat| {
+        let a = cell_box(100, 30, "column", v, r#"<wp:wrapSquare wrapText="bothSides"/>"#);
+        let b = cell_box(80, 30, "column", v, "<wp:wrapNone/>").replace("<w:t>Z</w:t>", "<w:t>Y</w:t>");
+        let doc = one_cell(&format!("<w:p>{a}{b}</w:p>"), compat);
+        let page = &super::page_chars(&doc)[0];
+        let at = |ch: char| page.iter().find(|c| c.0 == ch).map(|c| c.1).expect("drawn");
+        at('Y') - at('Z')
+    };
+    assert!((x(12) - 100.0).abs() < 0.1, "{}", x(12));
+    assert!(x(15).abs() < 0.1, "{}", x(15));
 }

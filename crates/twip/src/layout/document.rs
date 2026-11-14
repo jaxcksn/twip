@@ -111,6 +111,35 @@ pub struct JobNotes {
     paged: Vec<(NoteKind, i64, i64, String)>,
     /// Compat 15: the notes numbered by their page's note keys ([`JobNotes::renumbered`]).
     keyed: Vec<Keyed>,
+    /// The footnotes and endnotes as laid out, when a note's last mark is hidden ([`joined_notes`]).
+    joined: [Option<HashMap<i64, Vec<Block>>>; 2],
+}
+
+/// A kind's notes are one story in reference order: a note whose last paragraph mark is hidden joins the next note's
+/// first paragraph. Footnotes draw it in the earlier note and the next note again in full; endnotes once, the next
+/// note going on from it. `None` when no note's last mark is hidden.
+fn joined_notes(
+    notes: &HashMap<i64, Vec<Block>>,
+    order: &[i64],
+    view: crate::docx::review::MarkupView,
+    once: bool,
+) -> Option<HashMap<i64, Vec<Block>>> {
+    let hidden = |b: Option<&Vec<Block>>| matches!(b.and_then(|b| b.last()), Some(Block::Para(p)) if view.hides(&p.mark.rev));
+    if !order.iter().any(|id| hidden(notes.get(id))) {
+        return None;
+    }
+    let mut out = notes.clone();
+    for w in order.windows(2) {
+        if !hidden(out.get(&w[0])) {
+            continue;
+        }
+        let Some(first @ Block::Para(_)) = out.get(&w[1]).and_then(|b| b.first()).cloned() else { continue };
+        out.entry(w[0]).or_default().push(first);
+        if once {
+            out.entry(w[1]).or_default().remove(0);
+        }
+    }
+    Some(out)
 }
 
 /// Compat 15, a note restarting each page: its number is the rank of its key among the keys used on its page, in the
@@ -238,7 +267,15 @@ impl JobNotes {
                 }
             }
         }
-        JobNotes { numbers, endnotes, ends, separator, paged, keyed }
+        let view = doc.review.view;
+        let foot: Vec<i64> = of(NoteKind::Foot).collect();
+        let joined = [joined_notes(&doc.footnotes, &foot, view, false), joined_notes(&doc.endnotes, &endnotes, view, true)];
+        JobNotes { numbers, endnotes, ends, separator, paged, keyed, joined }
+    }
+
+    /// The footnotes (`k` 0) or endnotes as laid out.
+    fn stories<'a>(&'a self, doc: &'a Document, k: usize) -> &'a HashMap<i64, Vec<Block>> {
+        self.joined[k].as_ref().unwrap_or(if k == 0 { &doc.footnotes } else { &doc.endnotes })
     }
 }
 
@@ -354,7 +391,7 @@ impl<'d> PassCx<'d> {
                 if notes.ends.contains(&si) {
                     blocks.append(notes.separator.iter());
                     for id in notes.after(si) {
-                        blocks.append(doc.endnotes.get(&id).into_iter().flatten());
+                        blocks.append(notes.stories(doc, 1).get(&id).into_iter().flatten());
                     }
                 }
                 let next = match doc.sections.get(si + 1).and_then(|n| n.blocks.first()) {
@@ -399,7 +436,7 @@ impl<'d> PassCx<'d> {
     }
 
     fn notes(&self) -> Notes<'d> {
-        Notes { footnotes: &self.doc.footnotes, endnotes: &self.doc.endnotes, separators: &self.doc.separators }
+        Notes { footnotes: self.notes.stories(self.doc, 0), endnotes: self.notes.stories(self.doc, 1), separators: &self.doc.separators }
     }
 
     pub fn paginator<'p>(&'p self, run: &'p mut PassRun) -> Paginator<'d, 'p> {
@@ -592,16 +629,18 @@ pub(crate) fn hf_fields(run: &PassRun, cx: &PassCx, i: usize) -> FieldValues {
         style_refs: style_refs(&cx.wanted, &run.pages, &cx.paras, i),
         page_fmt: cx.doc.sections[si].pg_fmt.clone(),
         chapter: page_chapter(cx, &run.pages, i),
+        section_chapter: cx.chapters.sections.get(si).cloned().flatten(),
         chapters: None,
     }
 }
 
 /// Chapter numbers (`w:pgNumType w:chapStyle`): each body paragraph's page number prefix, and the headings' levels and
-/// numbers, in document order.
+/// numbers, in document order, and each section's chapter number for the `w:pgNum` of its headers and footers.
 #[derive(Default)]
 struct Chapters {
     body: Option<Rc<HashMap<ParaId, String>>>,
     heads: Vec<(ParaId, i64, String)>,
+    sections: Vec<Option<String>>,
 }
 
 /// A heading's level and chapter number: a "heading N" paragraph numbered through its style, its label without the
@@ -630,19 +669,28 @@ fn chapters(doc: &Document) -> Chapters {
         }
     }
     let mut paras = Vec::new();
-    doc.sections.iter().enumerate().for_each(|(si, s)| walk(&s.blocks, si, &mut paras));
+    let mut starts = Vec::new();
+    doc.sections.iter().enumerate().for_each(|(si, s)| {
+        starts.push(paras.len());
+        walk(&s.blocks, si, &mut paras)
+    });
     let heads: Vec<(usize, i64, String)> = paras.iter().enumerate().filter_map(|(k, (_, p))| chapter_of(r, p).map(|(l, t)| (k, l, t))).collect();
+    // The last heading of the section's level at or before paragraph `k`; before the first, the first.
+    let at = |si: usize, k: usize| {
+        let (level, sep) = doc.sections[si].chapter.as_ref()?;
+        let mut of_level = heads.iter().filter(|h| h.1 == *level);
+        of_level.clone().take_while(|h| h.0 <= k).last().or_else(|| of_level.next()).map(|h| format!("{}{sep}", h.2))
+    };
     let mut body = HashMap::new();
     for (k, (si, p)) in paras.iter().enumerate() {
-        let Some((level, sep)) = &doc.sections[*si].chapter else { continue };
-        // The last heading at or before the paragraph; before the first, the first.
-        let mut of_level = heads.iter().filter(|h| h.1 == *level);
-        if let Some(h) = of_level.clone().take_while(|h| h.0 <= k).last().or_else(|| of_level.next()) {
-            body.insert(ParaId(p.id), format!("{}{sep}", h.2));
+        if let Some(c) = at(*si, k) {
+            body.insert(ParaId(p.id), c);
         }
     }
+    // A header's or footer's `w:pgNum`: the heading in force at the section's first paragraph, on every page of it.
+    let sections = starts.iter().enumerate().map(|(si, &k)| at(si, k)).collect();
     let heads = heads.into_iter().map(|(k, l, t)| (ParaId(paras[k].1.id), l, t)).collect();
-    Chapters { body: Some(Rc::new(body)), heads }
+    Chapters { body: Some(Rc::new(body)), heads, sections }
 }
 
 /// The chapter prefix of page `i`'s headers and footers: from the last heading at or before the page's end.

@@ -39,6 +39,9 @@ pub struct PieceStyle {
     pub size: f64,
     pub raise: f64,
     pub squeeze_avg: f64,
+    /// The document balances its spaces and the run's East Asian font is an East Asian one: a compat ≤ 14 distributed
+    /// line's spaces grow first to half an em, not to the font's average width.
+    pub half_em_spaces: bool,
 }
 
 impl PartialEq for PieceStyle {
@@ -146,7 +149,7 @@ pub struct ShapedPara {
     pub east_asian_default: bool,
     /// The text after a leading page or column break starts the paragraph again (first-line indent, top border).
     pub opens: bool,
-    /// A cell paragraph without a list number whose only tab stop is a decimal one.
+    /// A cell paragraph whose only tab stop is a decimal one.
     pub decimal_lead: bool,
 }
 
@@ -286,19 +289,42 @@ pub fn boxed<'s>(pieces: &[Piece], styles: &'s [PieceStyle], k: usize) -> Option
     styles[p.style as usize].run.border.as_ref()
 }
 
-/// A text border's side, in points: as laid out (`space + k × lines × width` twips, `k` = 2 with a shadow) and as
-/// drawn (in whole device pixels, each part truncated).
+/// The text border whose box goes on from piece `k` to the next: a line broken between them closes its part of the
+/// box with a side on each line.
+pub fn box_continues<'s>(pieces: &[Piece], styles: &'s [PieceStyle], k: usize) -> Option<&'s crate::docx::props::Border> {
+    let b = boxed(pieces, styles, k)?;
+    (boxed(pieces, styles, k + 1) == Some(b)).then_some(b)
+}
+
+/// A text border's side, in points: as laid out (twips) and as drawn (600-dpi device pixels).
 pub fn border_side(b: &crate::docx::props::Border) -> (f64, f64) {
-    // ponytail: styles other than double and triple count one line.
-    let lines = match b.style.as_str() {
-        "none" => 0,
-        "double" => 3,
-        "triple" => 5,
-        _ => 1,
-    } * if b.shadow { 2 } else { 1 };
-    let (line, space) = (((b.width * 8.0).round() as i64 * 5) / 2, (b.space * 20.0).round() as i64);
-    let drawn = (space * 600 / 1440 + lines * (line * 600 / 1440).max(1)) as f64 * super::units::DEVICE_PX / super::units::LU_PER_PT;
-    ((space + lines * line) as f64 / 20.0, drawn)
+    (border_units(b, 1440) as f64 / 20.0, border_units(b, 600) as f64 * super::units::DEVICE_PX / super::units::LU_PER_PT)
+}
+
+/// One side of a text border in device units at `dpi`: its space, then its lines and gaps (twice with a shadow), each
+/// part truncated to the device and at least one unit.
+fn border_units(b: &crate::docx::props::Border, dpi: i64) -> i64 {
+    let dev = |tw: i64| (tw * dpi / 1440).max(1);
+    let sz = (b.width * 8.0).round() as i64;
+    let w = dev(sz * 5 / 2);
+    let total = match b.style.as_str() {
+        "none" | "nil" => 0,
+        "double" => 3 * w,
+        "triple" => 5 * w,
+        "thinThickSmallGap" | "thickThinSmallGap" => w + 2 * dev(15),
+        "thinThickThinSmallGap" => w + 4 * dev(15),
+        "thinThickMediumGap" | "thickThinMediumGap" => w + 2 * (w / 2).max(1),
+        "thinThickThinMediumGap" => w + 4 * (w / 2).max(1),
+        "thinThickLargeGap" | "thickThinLargeGap" => dev(30) + dev(15) + w,
+        "thinThickThinLargeGap" => dev(30) + 2 * (w + dev(15)),
+        "wave" => dev(if sz == 12 { 75 } else { 60 }),
+        "doubleWave" => dev(105),
+        "dashDotStroked" => dev(60),
+        "threeDEmboss" | "threeDEngrave" => w + 2 * dev(if sz < 24 { 15 } else { 30 }),
+        _ => w,
+    };
+    let space = (b.space * 20.0).round() as i64;
+    space * dpi / 1440 + if b.shadow { 2 } else { 1 } * total
 }
 
 pub fn hp(x: f64) -> i64 {
@@ -496,7 +522,8 @@ impl<'a> Builder<'a> {
                 let size = hp(base * face.sup_size / face.upem).max(2) as f64 / 2.0;
                 let (a, _, e) = device(hp(full));
                 let (asup, _, _) = device(hp(full * face.sup_size / face.upem).max(2));
-                let (a, asup) = (to_hp(a + e), to_hp(asup));
+                // `noLeading` leaves the external leading out of the ascent too.
+                let (a, asup) = (to_hp(a + if self.rules.no_leading { 0 } else { e }), to_hp(asup));
                 let limit = (a / 3).max(a - asup);
                 let r = hp(full * face.sup_offset / face.upem).min(limit);
                 (size, r as f64 / 2.0)
@@ -534,7 +561,7 @@ impl<'a> Builder<'a> {
         descent = (descent - shift).max(0.0);
         NewPiece {
             kind,
-            style: PieceStyle { run: run.clone(), face, size, raise, squeeze_avg: 0.0 },
+            style: PieceStyle { run: run.clone(), face, size, raise, squeeze_avg: 0.0, half_em_spaces: false },
             ascent,
             descent,
             width: 0.0,
@@ -722,6 +749,13 @@ impl<'a> Builder<'a> {
         starts.dedup();
         let src_chars: Vec<char> = s.chars().collect();
         let shaped_map: Vec<u32> = shaped_text.char_indices().map(|(i, _)| i as u32).collect();
+        // Compat ≤ 14 fits a kerned run with the legacy kern table's pairs on the unkerned advances.
+        let kern_table: Option<Vec<f64>> = (kern && self.rules.kern_table_fit && !(self.em1000 && run.east_asia_named)).then(|| {
+            let bold = if face.sim_bold { 1.0 } else { 0.0 };
+            (0..glyphs.len())
+                .map(|i| face.advance(glyphs[i].id) + bold + glyphs.get(i + 1).map_or(0.0, |n| face.kern_pair(glyphs[i].id, n.id)))
+                .collect()
+        });
         let mut by_cluster: Vec<usize> = (0..glyphs.len()).collect();
         by_cluster.sort_by_key(|&i| glyphs[i].cluster);
         let mut gi = 0;
@@ -751,6 +785,9 @@ impl<'a> Builder<'a> {
             } + run.spacing * n_chars as f64;
             // Condensed spacing never takes a character below no width.
             p.width = p.width.max(0.0);
+            let fit = kern_table
+                .as_ref()
+                .map(|kt| (by_cluster[g0..gi].iter().map(|&i| kt[i]).sum::<f64>() * scale + run.spacing * n_chars as f64).max(0.0));
             p.break_after = kind == Kind::Space || breaks_after(first, self.rules.dash_breaks);
             if first == '\u{AD}' {
                 p.soft_hyphen = true;
@@ -764,6 +801,11 @@ impl<'a> Builder<'a> {
                 let text = std::mem::take(&mut chars);
                 self.push(p, &text, &cluster_glyphs);
                 chars = text;
+            }
+            if let (Some(fit), Some(q)) = (fit, self.pieces.last_mut())
+                && !q.soft_hyphen
+            {
+                q.break_extra = fit - q.width;
             }
         }
     }
@@ -958,7 +1000,14 @@ impl<'a> Builder<'a> {
                     v.clone()
                 };
                 if let (false, Some(run)) = (text.is_empty(), inl.run()) {
-                    self.text(&text, run_in(run, view))?;
+                    match crate::docx::fields::span_at(&para.inlines, k).filter(|_| evaluated) {
+                        Some(s) => {
+                            for (t, r) in crate::docx::fields::value_runs(&para.inlines, s, &text, run) {
+                                self.text(&t, run_in(&r, view))?;
+                            }
+                        }
+                        None => self.text(&text, run_in(run, view))?,
+                    }
                 }
             }
             let run = inl.run().map(|r| run_in(r, view));
@@ -1195,6 +1244,10 @@ impl<'a> Builder<'a> {
             space.balance.as_ref().is_some_and(|dd| dd.is_empty() || self.fonts.face(dd, None, false, false).is_some_and(|f| f.east_asian));
         if balanced {
             self.balance_spaces();
+            for s in 0..self.styles.len() {
+                let st = &self.styles[s];
+                self.styles[s].half_em_spaces = self.face(&st.run.east_asia, &st.run).is_some_and(|f| f.east_asian);
+            }
         }
         if space.compress {
             // Compat 15 with the spaces balanced: hyphens and dashes break after as anywhere else.
@@ -1649,10 +1702,7 @@ pub fn shape_uncached(para: &Paragraph, space: &ShapeSpace, fonts: &Fonts, memos
         space.default_east_asia.as_deref().is_some_and(|f| !f.is_empty() && fonts.face(f, None, false, false).is_some_and(|f| f.east_asian));
     let opens = !continues_after_break(para, space);
     let mut stops = para.para_style_in(space.view).tabs.iter().filter(|t| t.kind != crate::docx::props::TabKind::Clear);
-    let decimal_lead = space.in_cell
-        && para.list.is_none()
-        && stops.next().is_some_and(|t| t.kind == crate::docx::props::TabKind::Decimal)
-        && stops.next().is_none();
+    let decimal_lead = space.in_cell && stops.next().is_some_and(|t| t.kind == crate::docx::props::TabKind::Decimal) && stops.next().is_none();
     Ok(ShapedPara { join: space.join.clone(), hyphenate: space.hyphenate.clone(), east_asian_default, opens, decimal_lead, ..b.finish() })
 }
 
@@ -1694,6 +1744,7 @@ pub fn shape_space(
             mac_small_caps: text.mac_small_caps,
             wp_line_heights: text.wp_line_heights,
             dash_breaks: text.dash_breaks,
+            kern_table_fit: text.compat == crate::docx::Compat::Legacy,
         },
         view: text.review.view,
         hyphenate: text
@@ -1708,8 +1759,22 @@ pub fn shape_space(
         match inl {
             Inline::FieldBegin { kind: Some(kind), .. } => {
                 let code = spans.iter().find(|s| s.begin == k).map(|s| crate::docx::fields::code_text(&para.inlines, *s)).unwrap_or_default();
-                let chapter = fields.chapters.as_ref().and_then(|c| c.get(&ParaId(para.id))).filter(|_| *kind == FieldKind::Page);
-                space.fields.push(fields.value(kind, code.trim()).map(|v| chapter.cloned().unwrap_or_default() + &v))
+                let chapter =
+                    fields.chapters.as_ref().and_then(|c| c.get(&ParaId(para.id))).filter(|_| matches!(kind, FieldKind::Page | FieldKind::PgNum));
+                let value = match (kind, spans.iter().find(|s| s.begin == k)) {
+                    // An `IF` on the values its nested fields have here (else its cached result).
+                    (FieldKind::If, Some(s)) => crate::docx::fields::code_with(&para.inlines, *s, &|b| {
+                        let (Inline::FieldBegin { kind, value, .. }, Some(s)) = (&para.inlines[b], spans.iter().find(|s| s.begin == b)) else {
+                            return None;
+                        };
+                        // A field that isn't computed: its cached result.
+                        let Some(kind) = kind else { return Some(crate::docx::fields::result_text(&para.inlines, *s)) };
+                        fields.value(kind, crate::docx::fields::code_text(&para.inlines, *s).trim()).or_else(|| value.clone())
+                    })
+                    .and_then(|c| crate::docx::fields::if_field(&crate::docx::fields::words(&c))),
+                    _ => fields.value(kind, code.trim()),
+                };
+                space.fields.push(value.map(|v| chapter.cloned().unwrap_or_default() + &v))
             }
             Inline::NoteRef { kind, id, .. } => space.notes.push(notes.get(&(*kind, *id)).cloned().unwrap_or_default()),
             Inline::NoteMark(kind, id, _) => {
@@ -1742,14 +1807,17 @@ pub struct FieldValues {
     /// The chapter number and separator page numbers lead with: the page's (headers and footers), or each
     /// paragraph's (the body).
     pub chapter: Option<String>,
+    /// A header's or footer's `w:pgNum` chapter number: its section's.
+    pub section_chapter: Option<String>,
     pub chapters: Option<Rc<HashMap<ParaId, String>>>,
 }
 
 impl FieldValues {
     pub fn value(&self, kind: &FieldKind, code: &str) -> Option<String> {
         match kind {
-            FieldKind::Page => {
-                self.page.clone().map(|p| self.chapter.clone().unwrap_or_default() + &format_field(&p, code, self.page_fmt.as_deref()))
+            FieldKind::Page | FieldKind::PgNum => {
+                let chapter = if *kind == FieldKind::PgNum { &self.section_chapter } else { &self.chapter };
+                self.page.clone().map(|p| chapter.clone().unwrap_or_default() + &format_field(&p, code, self.page_fmt.as_deref()))
             }
             FieldKind::NumPages => self.num_pages.clone().map(|p| format_field(&p, code, None)),
             FieldKind::SectionPages => self.section_pages.clone().map(|p| format_field(&p, code, None)),

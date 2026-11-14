@@ -104,6 +104,7 @@ pub struct PassMemo {
     varies: HashMap<usize, bool>,
     joined: HashMap<(usize, usize), Rc<Joined>>,
     mirrored: HashMap<(usize, usize), LaidPara<'static>>,
+    restyled: HashMap<(usize, usize), LaidPara<'static>>,
     rewrapped: HashMap<(NoteKind, i64, usize, usize, u64), Vec<StoryUnit>>,
     pub(crate) held: Held,
 }
@@ -133,10 +134,9 @@ impl PassMemo {
 
 fn varies_by_page(blocks: &[Block]) -> bool {
     blocks.iter().any(|b| match b {
-        Block::Para(p) => p
-            .inlines
-            .iter()
-            .any(|i| matches!(i, Inline::FieldBegin { kind: Some(FieldKind::Page | FieldKind::Section | FieldKind::SectionPages), .. })),
+        Block::Para(p) => p.inlines.iter().any(|i| {
+            matches!(i, Inline::FieldBegin { kind: Some(FieldKind::Page | FieldKind::PgNum | FieldKind::Section | FieldKind::SectionPages), .. })
+        }),
         Block::Table(t) => t.rows.iter().any(|r| r.cells.iter().any(|c| varies_by_page(&c.blocks))),
     })
 }
@@ -455,11 +455,7 @@ fn merged_page_cuts(tb: &TableLayout, next: usize, placed: &[(usize, f64, usize)
         let units = &rc.units.units;
         let bottom = last_top + tb.rows[last].height;
         let cut = cell_cut(units, bottom - rc.margins[2] - content_top, false, compat);
-        // The region's part ends at the last whole row, and a whole content is aligned in it.
-        // ponytail: a centred or bottom-aligned content cut by the page end keeps the whole region.
-        if rc.v_align != "top" && cut < units.len() {
-            continue;
-        }
+        // The region's part ends at the last whole row; the content kept there is aligned in it.
         out.push(MergedSplit { k, start, kr, pi, cut, bottom });
     }
     out
@@ -475,7 +471,8 @@ fn merged_rest(tb: &TableLayout, ri: usize, compat: Compat) -> Vec<Option<Vec<St
             }
             let start = (0..ri).rev().find(|&r| tb.rows[r].cells.iter().any(|x| x.col == c.col && x.v_merge == VMerge::Restart))?;
             let rc = tb.rows[start].cells.iter().find(|x| x.col == c.col && x.v_merge == VMerge::Restart)?;
-            if rc.v_align != "top" || tb.rows[start].exact {
+            // The rest goes on at the top of the next part, however the region is aligned.
+            if tb.rows[start].exact {
                 return None;
             }
             let room = tb.rows[start..ri].iter().map(|r| r.height).sum::<f64>() - tb.rows[start].top_border - rc.margins[0] - rc.margins[2];
@@ -552,7 +549,12 @@ pub fn stream_fill(notes: &[NotePart], widths: &[f64], h: f64, wrap: &mut Rewrap
     Ok(rest.is_empty().then_some((cols, tallest)))
 }
 
-/// The smallest height `notes` balance to in columns of `widths` within `room`.
+/// The last note's space after, part of a stream area below its notes' columns.
+fn stream_tail(notes: &[NotePart]) -> f64 {
+    notes.last().and_then(|p| p.units.last()).map_or(0.0, |u| u.after)
+}
+
+/// The smallest height `notes` balance to in columns of `widths` within `room`, with the last note's space after.
 pub fn stream_height(notes: &[NotePart], widths: &[f64], room: f64, wrap: &mut Rewrap) -> Result<Option<f64>, Yield> {
     if notes.is_empty() {
         return Ok(Some(0.0));
@@ -569,7 +571,7 @@ pub fn stream_height(notes: &[NotePart], widths: &[f64], room: f64, wrap: &mut R
             lo = mid;
         }
     }
-    Ok(stream_fill(notes, widths, hi, wrap)?.map(|(_, t)| t))
+    Ok(stream_fill(notes, widths, hi, wrap)?.map(|(_, t)| t + stream_tail(notes)))
 }
 
 fn part_height(row: &super::table::RowBox, parts: &[CellPart]) -> f64 {
@@ -609,7 +611,8 @@ fn page_floats<'b>(t: &'b Table, ctx: &LayoutCtx<'b>) -> HashMap<u64, &'b Float>
     out
 }
 
-fn move_floats(row: Option<&mut super::fragment::RowFragment>, floats: &HashMap<u64, &Float>, fr: &Frames, up: f64) {
+/// `pinned`: the page tops of the floats that keep their place whatever their row's.
+fn move_floats(row: Option<&mut super::fragment::RowFragment>, floats: &HashMap<u64, &Float>, pinned: &HashMap<u64, f64>, fr: &Frames, up: f64) {
     let Some(row) = row.filter(|_| !floats.is_empty()) else { return };
     let top = row.top;
     for cell in row.cells.iter_mut() {
@@ -629,6 +632,7 @@ fn move_floats(row: Option<&mut super::fragment::RowFragment>, floats: &HashMap<
                             // `paragraph` counts from the row's top (its top border included), whichever paragraph of the
                             // cell holds the anchor.
                             let y = match f.v_relative.as_str() {
+                                _ if pinned.contains_key(&float.0) => pinned[&float.0] - offset.1,
                                 "paragraph" | "line" => (if f.v_align.is_some() { 0.0 } else { f.v_offset }) - (offset.1 - top) - up,
                                 _ => float::v_pos(f, rect[3] - rect[1], fr, 0.0, 0.0) - offset.1,
                             };
@@ -672,6 +676,29 @@ impl<'d> PageFill<'d, '_> {
     }
 
     fn laid_own(&mut self, bi: usize) -> Option<(LaidPara<'d>, usize)> {
+        let (laid, end) = self.laid_chain(bi)?;
+        let view = self.ctx.env.text.review.view;
+        let Some(Block::Para(last)) = self.sec.blocks.get(end) else { return Some((laid, end)) };
+        if !view.hides(&last.mark.rev) {
+            return Some((laid, end));
+        }
+        // A hidden last mark takes the next shown mark's properties; at the end of an endnote the story's own final
+        // mark's.
+        let key = (std::ptr::from_ref(laid.para()) as usize, end - bi);
+        if let Some(r) = self.pass.restyled.get(&key) {
+            return Some((r.clone(), end));
+        }
+        let blocks = &self.sec.blocks;
+        let story_end = blocks.stories.iter().copied().find(|&s| s > end).unwrap_or(blocks.len());
+        let in_note = blocks.stories.first().is_some_and(|&s| bi >= s);
+        let last = if in_note { self.ctx.env.normal.as_ref() } else { None };
+        let Some(style) = super::join::joined_target(&blocks.blocks[..story_end], end, view, last) else { return Some((laid, end)) };
+        let r = laid.restyled(style.clone());
+        self.pass.restyled.insert(key, r.clone());
+        Some((r, end))
+    }
+
+    fn laid_chain(&mut self, bi: usize) -> Option<(LaidPara<'d>, usize)> {
         let Some(Block::Para(p)) = self.sec.blocks.get(bi) else { return None };
         let end = self.sec.blocks.chain_end(bi, self.ctx.env.text.review.view);
         if end == bi {
@@ -940,7 +967,8 @@ impl<'d> PageFill<'d, '_> {
             }
             let u = self.note_units(k, id, col.width, memos)?;
             let (units, total) = (&u.units, u.height);
-            if deferred {
+            // Compat ≤ 14: a later note on the line follows whole after an earlier one cut here.
+            if deferred || !new_rest.is_empty() && self.ctx.env.text.compat == Compat::Legacy {
                 new_rest.push(NotePart { kind: k, id, units: units.clone() });
                 continue;
             }
@@ -1141,7 +1169,8 @@ impl<'d> PageFill<'d, '_> {
         let widths: Vec<f64> = cols.iter().map(|c| c.1).collect();
         let parts = if cols.len() > 1 || area.cut {
             let mut wrap = |p: &NotePart, w: f64| self.rewrap(p, w, memos);
-            stream_flow(&area.parts, &widths, area.height + EPS, &mut wrap)?.0
+            let tail = if area.cut { 0.0 } else { stream_tail(&area.parts) };
+            stream_flow(&area.parts, &widths, area.height - tail + EPS, &mut wrap)?.0
         } else {
             vec![area.parts.clone()]
         };
@@ -1287,6 +1316,11 @@ impl<'d> PageFill<'d, '_> {
             if pos.at.at_start()
                 && let Some(end) = self.deleted_before_table(pos.block)
             {
+                // Compat ≤ 14: before a table whose rows are all hidden they keep the space before of the paragraph
+                // whose mark they join.
+                if !generic && !empty {
+                    y += self.hidden_table_before(end);
+                }
                 pos.block = end;
                 pos.next_block();
                 continue;
@@ -1539,7 +1573,9 @@ impl<'d> PageFill<'d, '_> {
         }
         if first_part {
             for i in &p.inlines {
-                if let Inline::Bookmark(name) = i {
+                if let Inline::Bookmark(name) = i
+                    && !name.starts_with('/')
+                {
                     self.at.effects.bookmarks.retain(|b| b != name);
                     self.at.effects.bookmarks.push(name.clone());
                 }
@@ -1595,6 +1631,8 @@ impl<'d> PageFill<'d, '_> {
             Compat::Legacy => bottom + self.after_kept(pos.block, p.para_style_in(self.ctx.env.text.review.view)),
         };
         let affected = self.fixed.iter().chain(self.known_at(pos.block)).any(|f| {
+            let early = f.early_box.filter(|_| f.key.0 == self.sec.index && f.key.1 > pos.block);
+            let f = &Placed { excl: early.map_or(f.excl, |b| b.1), ..f.clone() };
             let reach = if f.key.2 == float::TABLE_PIECE || self.ctx.env.text.compat == Compat::Legacy { text_bottom } else { bottom };
             f.wrap != Wrap::None && f.excl[3] > *y + EPS && f.excl[1] < reach - EPS && f.excl[0] < col.x + col.width - EPS && f.excl[2] > col.x + EPS
         });
@@ -1865,8 +1903,25 @@ impl<'d> PageFill<'d, '_> {
         let shows_nothing = |k: usize| matches!(self.sec.blocks.get(k), Some(Block::Para(p)) if super::paragraph::shows_nothing(p, view));
         let last = matches!(self.sec.blocks.get(end), Some(Block::Para(p)) if view.hides(&p.mark.rev));
         let next = self.sec.blocks.get(end + 1);
-        let story_end = next.is_none() && !self.sec.breaks;
+        let own = self.sec.section.blocks.len();
+        let story_end = match end + 1 {
+            k if k == own => !self.sec.breaks,
+            k => k > own && (k == self.sec.blocks.len() || self.sec.blocks.stories.contains(&k)),
+        };
         (last && (story_end || matches!(next, Some(Block::Table(_)))) && (bi..=end).all(shows_nothing)).then_some(end)
+    }
+
+    /// The space before of the paragraph whose mark the hidden marks ending at `end` join, when a table whose rows are
+    /// all hidden follows them (else 0).
+    fn hidden_table_before(&self, end: usize) -> f64 {
+        let view = self.ctx.env.text.review.view;
+        let blocks = &self.sec.blocks;
+        if !matches!(blocks.get(end + 1), Some(Block::Table(t)) if super::join::table_hidden(t, view)) {
+            return 0.0;
+        }
+        let story_end = blocks.stories.iter().copied().find(|&s| s > end).unwrap_or(blocks.len());
+        super::join::next_shown_mark(&blocks.blocks[..story_end], end + 1, view)
+            .map_or(0.0, |q| space_before(&self.ctx.env.text, q.para_style_in(view)))
     }
 
     /// Paragraph `bi`'s own space before.
@@ -2005,6 +2060,9 @@ impl<'d> PageFill<'d, '_> {
             if let Some(r) = f.early_right {
                 (f.rect[2], f.excl[2]) = (r, r);
             }
+            if let Some((r, e)) = f.early_box {
+                (f.rect, f.excl) = (r, e);
+            }
         }
         let letter_break = !first_part && carry.letter_break;
         let env = self.ctx.env.text.clone();
@@ -2048,8 +2106,8 @@ impl<'d> PageFill<'d, '_> {
         // Compat ≤ 14 takes the floats in the order they were placed. The strip a line was fitted into with a slack
         // (its pieces and where they end) serves the next lines too while it ends below their top, by at least that
         // slack when it was fitted in one piece, unless a float starts between its end and the line's bottom. Once a
-        // line went down in its own query to a strip of two or more pieces, a frame among the floats over its band,
-        // the paragraph's later lines reuse a strip only while the whole line fits in it, and their queries take the
+        // line fitted at its top in one piece went down in its own query to a strip of two or more pieces, a frame
+        // among the floats over its band, the paragraph's later lines reuse a strip only while the whole line fits in it, and their queries take the
         // line's height plus that drop as the slack.
         // ponytail: a strip found with no slack isn't kept (the next line's own query gives the same pieces where
         // measured), both reset with each paragraph, and a second drop keeps the first slack.
@@ -2068,29 +2126,37 @@ impl<'d> PageFill<'d, '_> {
             let low = floats.iter().filter(|f| f.wrap != Wrap::None).map(|f| f.excl[3]).fold(yy, f64::max);
             yy = low.min(col.bottom.to_pt());
         }
-        // Compat ≤ 14, a keepLines paragraph and its own float: whether its lines from `from`, laid out from `top` in
-        // steps of the first line's height beside the floats, all start above `bottom`.
+        // Compat ≤ 14, a keepLines paragraph and its own float: the tops of its lines from `from`, laid out from `top`
+        // beside the floats while they start above `stop`, and the top of the first one at or below it when lines
+        // remain. None when a line finds no piece.
         let (mark, plain) = (p.mark_in(self.ctx.env.text.review.view), frame);
-        let all_beside = |top: f64, from: usize, bottom: f64| {
-            let (mut t, mut k) = (top, from);
+        let tops = |top: f64, from: usize, stop: f64| -> Option<(Vec<f64>, Option<f64>)> {
+            let (mut t, mut k, mut v) = (top, from, Vec::new());
             while k < n {
-                let Some(iv) = float::intervals(&floats, cx0, cx1, t, t + est, true).filter(|_| t < bottom - EPS) else { return false };
+                if t >= stop - EPS {
+                    return Some((v, Some(t)));
+                }
+                let iv = float::intervals(&floats, cx0, cx1, t, t + est, true)?;
                 let ivc: Vec<(f64, f64)> = iv.iter().map(|(a, b)| (a - cx0, b - cx0)).collect();
                 match band(sp, pieces, k, &ivc, k == 0 && (first_part || restarts), style, mark, &plain, self.ctx.fonts, iv.len() == 1) {
-                    Ok((_, e)) if e > k => k = e,
-                    _ => return false,
+                    Ok((segs, e)) if e > k => {
+                        v.push(t);
+                        k = e;
+                        t += segs[0].pitch;
+                    }
+                    _ => return None,
                 }
-                t += est;
             }
-            true
+            Some((v, None))
         };
+        let all_beside = |top: f64, from: usize, bottom: f64| matches!(tops(top, from, bottom), Some((_, None)));
         let own_float =
             |f: &&Placed| (f.key.0, f.key.1) == (self.sec.index, pos.block) && f.wrap != Wrap::None && f.excl[0] < cx1 - EPS && f.excl[2] > cx0 + EPS;
-        // Below a column's top it is tried as a block one line lower at a time, from where it was first laid out: below
-        // the float it stays; with the float starting below its first line it goes on down; with the float's top in its
-        // first line it goes to the float's bottom unless the float reaches more than its first place's distance to
-        // that top below the line; with the float over its first line it stays when every line beside the float starts
-        // above its bottom.
+        // Below a column's top it is tried as a block from where it was first laid out: below the float it stays; with
+        // the float starting below its first line it goes on down to the top of the line whose band holds the float's
+        // top; with the float's top in its first line it goes to the float's bottom unless the float reaches more than
+        // its first place's distance to that top below the line; with the float over its first line it stays when
+        // every line beside the float starts above its bottom, else it goes on down to the first one that doesn't.
         if compat == Compat::Legacy && style.keep_lines && first_part && !at_top {
             let own = floats.iter().filter(|f| f.frozen && f.excl[3] > yy + EPS).filter(own_float).min_by(|a, b| a.excl[1].total_cmp(&b.excl[1]));
             if let Some(f) = own {
@@ -2100,13 +2166,17 @@ impl<'d> PageFill<'d, '_> {
                     if y >= fb - EPS || y >= col.bottom.to_pt() {
                         break y;
                     }
-                    if ft >= y + est - EPS {
+                    let next = if ft >= y + est - EPS {
+                        tops(y, 0, ft + 2.0 * EPS).and_then(|(v, more)| more.and(v.last().copied()))
                     } else if ft >= y - EPS && fb - y <= ft - p0 + EPS {
                         break fb;
-                    } else if all_beside(y, 0, fb) {
-                        break y;
-                    }
-                    y += est;
+                    } else {
+                        match tops(y, 0, fb) {
+                            Some((_, None)) => break y,
+                            low => low.and_then(|(_, t)| t),
+                        }
+                    };
+                    y = next.filter(|&t| t > y + EPS).unwrap_or(y + est);
                 };
             }
         }
@@ -2206,7 +2276,8 @@ impl<'d> PageFill<'d, '_> {
                                     .filter(frame)
                                     .any(|f| f.excl[1] < t + h - EPS && f.excl[3] > yy + EPS && f.excl[0] < cx1 - EPS && f.excl[2] > cx0 + EPS)
                             };
-                            let drop = if first >= 2 && framed() { t - yy } else { 0.0 };
+                            // Only a line fitted at its top in one piece remembers its drop.
+                            let drop = if one.is_some() && first >= 2 && framed() { t - yy } else { 0.0 };
                             fitted = Some((pieces_of(&ok), end_of(&ok), one.map_or(0.0, |_| slack), drop));
                             forced = Some(pieces_of(&ok));
                             moved = Some(t);
@@ -2452,8 +2523,9 @@ impl<'d> PageFill<'d, '_> {
             let line_top = bands[b].0;
             let para_top = if first_part { origin } else { bands[0].0 };
             let mut x = float::h_pos(f, &frames);
-            // From the line laid out before the float: placed again once the line wraps it, it keeps that x.
-            // ponytail: the x of the fill before is taken as that line's, wherever that fill put the paragraph.
+            // From the line laid out before the float: placed again once the line wraps it, it keeps that x, as the
+            // first fill of the page that placed it found it (each fill takes the one before's), wherever later fills
+            // put the paragraph.
             if f.h_relative == "character" {
                 let before = self.at.known.iter().find(|o| o.key == (si, bi, pb.from + k) && o.wrap != Wrap::None).map(|o| o.rect[0]);
                 x = before.unwrap_or_else(|| float::h_pos(f, &Frames { column: (char_x(k, b), 0.0), ..frames }));
@@ -2463,14 +2535,23 @@ impl<'d> PageFill<'d, '_> {
                     Some("left") => x += style.ind_left,
                     Some("right") => x -= style.ind_right,
                     // From a line that starts beside another paragraph's float (for a drawing, a frame before the
-                    // paragraph included): from where its piece starts.
+                    // paragraph included): from where its piece starts. One that doesn't wrap also counts from the
+                    // piece its line was laid out again in beside the line's own wrapping floats.
                     None => {
                         let frame = |o: &Placed| o.float.text_box.is_some() && o.float.shape.is_none() && o.key.2 != float::TABLE_PIECE;
                         let drawing = f.text_box.is_none() || f.shape.is_some();
+                        let segs = &bands[b].1;
+                        let line = pb.from + segs[0].start..pb.from + segs.last().map_or(segs[0].end, |l| l.end).max(segs[0].start + 1);
+                        let unwrapped = f.wrap == "none";
                         let others: Vec<Placed> = floats
                             .iter()
                             .chain(&self.at.found)
-                            .filter(|o| (o.key.0, o.key.1) != (si, bi) || drawing && frame(o) && o.key.2 < pb.from + k)
+                            .chain(anchors.iter().filter(|o| !floats.iter().any(|f| f.key == o.key)))
+                            .filter(|o| {
+                                (o.key.0, o.key.1) != (si, bi)
+                                    || drawing && frame(o) && o.key.2 < pb.from + k
+                                    || unwrapped && o.wrap != Wrap::None && line.contains(&o.key.2)
+                            })
                             .cloned()
                             .collect();
                         let piece = float::intervals(&others, cx0, cx1, line_top, line_top + bands[b].1[0].pitch, true);
@@ -2498,16 +2579,25 @@ impl<'d> PageFill<'d, '_> {
             if let Some(k) = &frozen {
                 let mut a = self.wrapped(Placed::new(k.key, owner, f, k.rect[0], k.rect[1], h), memos)?;
                 // A frame that met only the line above it doesn't move that line.
-                (a.collided, a.restarts, a.frozen, a.rounded_up) = (!k.rounded_up, true, true, k.rounded_up);
+                (a.collided, a.restarts, a.frozen, a.rounded_up) = (k.collided && !k.rounded_up, true, true, k.rounded_up);
                 kept_at.push(a.key);
                 anchors.push(a);
                 continue;
             }
             (x, fy) = float::page_clamp(f, (x, fy), h, &frames);
-            // Compat 15 keeps the box with its effect extents (not its distances) on the page, its top no higher
-            // than the top margin (a VML shape's own box).
+            // Compat 15 keeps the box with its effect extents (a VML shape's outline allowance too, not its
+            // distances) on the page, its top no higher than the top margin.
+            let mut clamped = None;
             if compat == Compat::Generic && matches!(f.v_relative.as_str(), "paragraph" | "line") {
-                fy = fy.max(frames.margin[2] + if f.vml { 0.0 } else { f.effect[1] });
+                let top = frames.margin[2] + f.effect[1];
+                // A VML shape moved down by it reaches no further below its box than above it.
+                // ponytail: read off one shape moved by its top extent only; a shape from far above may differ.
+                if f.vml && fy < top - EPS && f.effect[3] > f.effect[1] {
+                    let mut g = (**f).clone();
+                    g.effect[3] = g.effect[1];
+                    clamped = Some(Rc::new(g));
+                }
+                fy = fy.max(top);
                 let (l, r) = (x - f.effect[0], x + f.w + f.effect[2]);
                 if l < 0.0 {
                     x -= l;
@@ -2532,20 +2622,41 @@ impl<'d> PageFill<'d, '_> {
                     continue;
                 }
             }
+            let f = clamped.as_ref().unwrap_or(f);
             let mut a = self.wrapped(Placed::new((si, bi, pb.from + k), owner, f, x, fy, h), memos)?;
             // That text (with its space after in compat ≤ 14): a float wholly below it, or beside the column, doesn't
             // meet it. Earlier columns count as met.
             let reach = *y + if compat == Compat::Legacy { kept } else { 0.0 };
             let met = a.excl[1] < reach - EPS && a.excl[0] < cx1 - EPS && a.excl[2] > cx0 + EPS;
-            a.restarts = self.column > 0 || met || a.excl[1] < line_top + bands[b].1[0].pitch - EPS && a.excl[0] < cx1 - EPS && a.excl[2] > cx0 + EPS;
+            let across = a.excl[0] < cx1 - EPS && a.excl[2] > cx0 + EPS;
+            let lines = a.excl[1] < line_top + bands[b].1[0].pitch - EPS && across;
+            // Compat ≤ 14: a drawing meets its paragraph's lines after its anchor's too.
+            let drawing = f.text_box.is_none() || f.shape.is_some();
+            let (last, (last_top, last_segs)) = (bands.len() - 1, bands.last().expect("laid out"));
+            let para_lines = compat == Compat::Legacy
+                && drawing
+                && last > b
+                && a.excl[1] < last_top + last_segs[0].pitch - EPS
+                && a.excl[3] > line_top + EPS
+                && across;
+            a.restarts = self.column > 0 || met || lines || para_lines;
             // Only the first float of the fill that meets earlier text of its column met it where it will stay: that
             // text wraps it in the next fill. A later one was placed beside text that moves, and is placed again.
             // Compat ≤ 14: one that meets the lines of its own keepLines paragraph below a column's top stays too, and
-            // the paragraph starts below it.
-            let own = compat == Compat::Legacy && style.keep_lines && a.restarts && a.excl[3] > bands[0].0 + EPS;
-            a.frozen = (met || own) && !self.at.hit;
-            a.collided = a.frozen || self.column > 0 && !met;
+            // the paragraph starts below it; so does a drawing that meets its own paragraph's lines. Only text it met
+            // before its paragraph wraps it in the next fill.
+            let own = compat == Compat::Legacy && style.keep_lines && (self.column > 0 || met || lines) && a.excl[3] > bands[0].0 + EPS;
+            let stays = compat == Compat::Legacy && drawing && (lines || para_lines);
+            a.frozen = (met || own || stays) && !self.at.hit;
+            a.collided = a.frozen && (met || own) || self.column > 0 && !met;
             anchors.push(a);
+        }
+        // Compat ≤ 14: the other drawings of the paragraph keep their places with one that stays.
+        let drawing = |a: &Placed| a.float.text_box.is_none() || a.float.shape.is_some();
+        if compat == Compat::Legacy && anchors.iter().any(|a| a.frozen && drawing(a) && !kept_at.contains(&a.key)) {
+            for a in anchors.iter_mut().filter(|a| drawing(a) && a.wrap != Wrap::None) {
+                a.frozen = true;
+            }
         }
         // Pagination
         let nb = bands.len();
@@ -2578,10 +2689,10 @@ impl<'d> PageFill<'d, '_> {
         }
         let hard = bands[..fit].iter().any(|(_, segs)| segs.iter().any(|l| matches!(l.hard, Some(Kind::PageBreak | Kind::ColumnBreak))));
         let mut take = lines_to_take(nb, fit, hard, first_part, style.keep_lines, style.widow_control);
-        // Compat ≤ 14: widow and orphan control never moves a line set beside a wrapping float that ends in the body;
-        // the lines from the last such one up stay.
+        // Compat ≤ 14: widow and orphan control never moves a line set beside a wrapping float that ends in the body
+        // (above the page's note area); the lines from the last such one up stay.
         if compat == Compat::Legacy && take < fit && !style.keep_lines {
-            let bottom = col.bottom.to_pt();
+            let bottom = col.bottom.to_pt() - area.total();
             let beside = |b: usize| {
                 let (bt, segs) = &bands[b];
                 let bb = bt + segs[0].pitch;
@@ -2661,15 +2772,25 @@ impl<'d> PageFill<'d, '_> {
                     (a.rounded_up, a.frozen) = (true, true);
                 }
                 // Compat ≤ 14: after the page started again for a later frame in the flow that met the line above it,
-                // a frame in the flow is placed against the frames after it that may not overlap, where the fill before
-                // put them: one it overlaps it goes below, a twip above its bottom in whole twips.
-                let by_frame = compat == Compat::Legacy
-                    && frame(&a)
-                    && self.at.known.iter().any(|k| k.rounded_up && k.key.0 == a.key.0 && (k.key.1, k.key.2) > (a.key.1, a.key.2));
+                // and once more for a drawing after that frame that met earlier text, a frame in the flow is placed
+                // against the frames after it that may not overlap, where the fill before put them: one it overlaps it
+                // goes below, a twip above its bottom in whole twips.
+                let later = |k: &Placed, a: &Placed| k.key.0 == a.key.0 && (k.key.1, k.key.2) > (a.key.1, a.key.2);
+                let by_frame = compat == Compat::Legacy && frame(&a) && self.at.known.iter().any(|k| k.rounded_up && later(k, &a));
+                let again = by_frame
+                    && self.at.known.iter().any(|k| {
+                        k.rounded_up
+                            && later(k, &a)
+                            && self
+                                .at
+                                .known
+                                .iter()
+                                .any(|d| d.frozen && !frame(d) && d.key.2 < float::UPRIGHT_TABLE && d.wrap != Wrap::None && later(d, k))
+                    });
                 // ponytail: one that the nearest twip would put above its flow position meets the line above it
                 // instead and stays (the line isn't wrapped round it), as measured only on its own page.
                 let lifted = (a.rect[1] * 20.0).round() / 20.0 < a.rect[1] - EPS && a.rect[1] > col.top.to_pt() + EPS;
-                if in_flow && by_frame && !apart && !lifted && !kept_at.contains(&a.key) {
+                if in_flow && again && !apart && !lifted && !kept_at.contains(&a.key) {
                     let key = a.key;
                     let later =
                         self.at.known.iter().filter(|o| frame(o) && !o.allow_overlap && o.key.0 == key.0 && (o.key.1, o.key.2) > (key.1, key.2));
@@ -2683,11 +2804,15 @@ impl<'d> PageFill<'d, '_> {
                     for o in self.at.found.iter().filter(|o| frame(o)) {
                         if o.excl[0] < a.rect[2] - EPS && a.rect[0] < o.excl[2] - EPS && o.rect[1] < a.rect[3] - EPS && a.rect[1] < o.rect[3] - EPS {
                             // Over a frame placed from the page or margin it stays, unless one of the two may not
-                            // overlap: then it goes a twip above that frame's bottom, in whole twips.
-                            let y = match matches!(o.float.v_relative.as_str(), "page" | "margin") {
+                            // overlap: then it goes a twip above that frame's bottom, in whole twips. So does one that
+                            // may not overlap a frame with its own offset from the text; below a frame in the flow it
+                            // goes to its bottom at the nearest twip.
+                            let fixed = matches!(o.float.v_relative.as_str(), "page" | "margin");
+                            let offset = fixed || o.float.v_offset != 0.0 && !(a.allow_overlap && o.allow_overlap);
+                            let y = match offset {
                                 false => (o.rect[3] * 20.0).round() / 20.0,
                                 true if a.allow_overlap && o.allow_overlap => continue,
-                                true => ((o.rect[1] * 20.0 + ((o.rect[3] - o.rect[1]) * 20.0).round() - 1.0) / 20.0).max(a.rect[1]),
+                                true => ((o.rect[1] * 20.0 + ((o.rect[3] - o.rect[1]) * 20.0).round() - 1.0).round() / 20.0).max(a.rect[1]),
                             };
                             a.moved_to(a.rect[0], y);
                             under.push(o.key);
@@ -2865,40 +2990,52 @@ impl<'d> PageFill<'d, '_> {
             cell: false,
             odd: self.odd,
         };
-        // Compat ≤ 14: the wrapping floats of the first row placed from the page, each from the row top, the first
-        // row's over it and the later rows' below it.
-        let row_floats: Vec<(&Float, ParaId, f64, f64)> = match (tb.rows.first(), self.sec.blocks.get(pos.block)) {
-            (Some(_), Some(Block::Table(t))) if !floating && pos.at.at_start() && !page_floats.is_empty() => {
-                let mut paras = Vec::new();
-                cell_paras(&t.rows[..1], &mut paras);
-                paras
-            }
-            .into_iter()
-            .flat_map(|p| p.inlines.iter().map(move |i| (para_id(p), i)))
-            .filter_map(|(id, i)| if let Inline::Float(f, _) = i { page_floats.get(&f.id).map(|f| (*f, id)) } else { None })
-            .filter(|(f, _)| f.wrap != "none" && f.v_relative == "paragraph" && f.h_align.is_none() && f.v_align.is_none())
-            .map(|(f, id)| (f, id, f.v_offset - f.dist[0], f.v_offset + f.h + f.dist[1]))
-            .collect(),
+        // Compat ≤ 14: the wrapping floats of the rows placed from the page, each from its row's top where the rows'
+        // first placement puts it. The first row's over it and the later rows' below it.
+        let row_floats: Vec<(&Float, ParaId, usize, f64, f64)> = match self.sec.blocks.get(pos.block) {
+            Some(Block::Table(t)) if !floating && pos.at.at_start() && !page_floats.is_empty() => (0..t.rows.len().min(tb.rows.len()))
+                .flat_map(|r| {
+                    let mut paras = Vec::new();
+                    cell_paras(&t.rows[r..r + 1], &mut paras);
+                    paras.into_iter().map(move |p| (r, p))
+                })
+                .flat_map(|(r, p)| p.inlines.iter().map(move |i| (r, para_id(p), i)))
+                .filter_map(|(r, id, i)| if let Inline::Float(f, _) = i { page_floats.get(&f.id).map(|f| (*f, id, r)) } else { None })
+                .filter(|(f, ..)| {
+                    f.wrap != "none" && matches!(f.v_relative.as_str(), "paragraph" | "margin" | "page") && f.h_align.is_none() && f.v_align.is_none()
+                })
+                .map(|(f, id, r)| (f, id, r, f.v_offset - f.dist[0], f.v_offset + f.h + f.dist[1]))
+                .collect(),
             _ => Vec::new(),
         };
         let first_h = tb.rows.first().map_or(0.0, |r| r.height);
-        // The row goes beside those over it when the table fits the first piece they leave, else below them; they
-        // keep their place, and wrap the text after the table.
         let y0 = *y;
-        let mut over: Vec<Placed> = row_floats
+        // They are in the page's geometry: the text before the table wraps those reaching above it when the page is
+        // filled again, and they keep the place their rows' first placement gives them when the rows then move.
+        let row_top = |r: usize| y0 + tb.rows[..r].iter().filter(|r| !r.hidden).map(|r| r.height).sum::<f64>();
+        let held: Vec<(usize, Placed)> = row_floats
             .iter()
-            .filter(|(_, _, top, _)| *top < first_h)
             .enumerate()
-            .map(|(k, (f, id, _, _))| {
-                let mut a = Placed::new((self.sec.index, pos.block, k), *id, &Rc::new((*f).clone()), float::h_pos(f, &frames), y0 + f.v_offset, f.h);
-                a.collided = false;
-                a
+            .map(|(k, (f, id, r, _, _))| {
+                let key = (self.sec.index, pos.block, k);
+                let y = if f.v_relative == "paragraph" { row_top(*r) + f.v_offset } else { float::v_pos(f, f.h, &frames, 0.0, 0.0) };
+                let at = (float::h_pos(f, &frames), y);
+                let mut a = Placed::new(key, *id, &Rc::new((*f).clone()), at.0, at.1, f.h);
+                a.collided = a.excl[1] < y0 - EPS;
+                (*r, a)
             })
             .collect();
+        let pinned: HashMap<u64, f64> = held.iter().map(|(_, a)| (a.float.id, a.rect[1])).collect();
+        // A tight or through polygon of a single point is drawn but leaves the rows where they are.
+        let moves = |a: &Placed| !a.float.poly.as_ref().is_some_and(|p| p.iter().all(|q| *q == p[0]));
+        // The first row goes beside those over it (a later row's too) when the table fits the first piece they leave,
+        // else below them.
+        let mut over: Vec<Placed> = held.iter().map(|(_, a)| a.clone()).collect();
         let spot = if pos.at.at_start() && !floating && self.ctx.env.text.vertical.is_none() {
-            // A tight or through polygon of a single point is drawn but leaves the row where it is.
-            let hits: Vec<Placed> = over.iter().filter(|a| !a.float.poly.as_ref().is_some_and(|p| p.iter().all(|q| *q == p[0]))).cloned().collect();
-            self.beside_floats(pos.block, tb, col, *y, &hits, memos)?
+            let hits: Vec<Placed> =
+                held.iter().filter(|(r, a)| moves(a) && (*r > 0 || a.rect[1] - a.dist[0] - y0 < first_h)).map(|(_, a)| a.clone()).collect();
+            let ri = tb.rows.iter().position(|r| !r.hidden).unwrap_or(0);
+            self.beside_floats(pos.block, tb, col, *y, &hits, ri, true, memos)?
         } else {
             None
         };
@@ -2913,11 +3050,11 @@ impl<'d> PageFill<'d, '_> {
         let tb: &TableLayout = relaid.as_deref().unwrap_or(tb);
         let mut rows = Vec::new();
         // A spaced table's outer frame is closed at the top and bottom of each part.
-        let finish = |mut rows: Vec<RowFragment>, out: &mut Vec<Child>, left: f64, opened: Option<f64>, closed: bool| {
-            if let Some(y) = opened
+        let finish = |mut rows: Vec<RowFragment>, out: &mut Vec<Child>, left: f64, opened: Option<(f64, bool)>, closed: bool| {
+            if let Some(o) = opened
                 && let Some(first) = rows.iter_mut().find(|r| !r.repeat)
             {
-                super::table::frame_part(tb, first, left, Some(y), false);
+                super::table::frame_part(tb, first, left, Some(o), false);
             }
             if closed && let Some(last) = rows.last_mut() {
                 super::table::frame_part(tb, last, left, None, true);
@@ -2947,6 +3084,8 @@ impl<'d> PageFill<'d, '_> {
         };
         let mut settled = true;
         let mut first: Option<(usize, f64)> = None;
+        // Where the text wraps a floating table, when it is drawn elsewhere.
+        let mut wrap_x = None;
         if let Some(fp) = fp
             && pos.at.at_start()
         {
@@ -3018,10 +3157,31 @@ impl<'d> PageFill<'d, '_> {
                     _ => (self.margins.0, self.page_w - self.margins.1),
                 };
                 let down = if fp.v_anchor == TableAnchor::Page { (0.0, self.page_h) } else { (self.margins.2, body_bottom) };
+                let asked = at_x;
                 float::avoid(&mut probe, &others, across, down, self.ctx.env.text.compat);
                 (at_x, top) = (probe.rect[0] - bl, probe.rect[1]);
+                // Compat 15: a table moved clear of others whose box meets the text laid out before it on the page (the
+                // page is filled again) is drawn at the x it asked for and the y it was moved to; the text wraps the
+                // place it was moved to.
+                // ponytail: "meets" is its box reaching into the band from the column top to where the flow reached it
+                // on a page with text before it, not a test against those lines.
+                let meets = !was_empty && probe.excl[1] < flow_y - EPS && probe.excl[3] > col.top.to_pt() + EPS;
+                if !legacy && meets && (asked - at_x).abs() > EPS {
+                    wrap_x = Some(at_x);
+                    at_x = asked;
+                }
             }
-            *y = self.at.known.iter().find(|k| k.key == (self.sec.index, pos.block, float::TABLE_PIECE)).map_or(top, |k| k.rect[1]);
+            // A table in the flow is placed again from the flow on every fill. Another keeps the place of the last
+            // fill, in compat 15 only when it met the text laid out before it there.
+            let flowing = fp.v_anchor == TableAnchor::Text && fp.y == 0.0;
+            // A kept place stays for the rest of the page, however the floats before it moved.
+            *y = match self.at.known.iter().find(|k| k.key == (self.sec.index, pos.block, float::TABLE_PIECE)) {
+                Some(k) if !flowing && (legacy || k.restarts) => {
+                    settled = true;
+                    k.rect[1]
+                }
+                _ => top,
+            };
             if unsplit && !*empty && !col.bottom.holds(*y + h) {
                 return Ok(Stop::Full);
             }
@@ -3064,8 +3224,34 @@ impl<'d> PageFill<'d, '_> {
         let headers: Vec<usize> =
             (0..tb.rows.len()).take_while(|&r| tb.rows[r].header || tb.rows[r].hidden).filter(|&r| !tb.rows[r].hidden).collect();
         let n = tb.rows.len();
+        // A continuation goes on from its first part's place under the page's floats: compat ≤ 14 goes beside or
+        // below those its first row's band meets there, as a first part does; compat 15 keeps its place and moves
+        // down below every float the band of its rows on the page meets there.
+        let part_x = at_x;
+        let repeats = *empty && !pos.at.at_start() && !headers.contains(&pos.at.index());
+        if fp.is_none() && !pos.at.at_start() && self.ctx.env.text.vertical.is_none() && !tb.rtl {
+            let ri = if repeats { headers.first().copied().unwrap_or(pos.at.index()) } else { pos.at.index() };
+            let (c0, c1) = super::table::cells_box(tb);
+            let floats = self.page_floats_for(pos.block, true);
+            if legacy {
+                let band = tb.rows[ri].height + if tb.is_last(ri) { tb.bottom_border } else { 0.0 };
+                if floats
+                    .iter()
+                    .any(|f| f.in_band(*y, *y + band) && (f.wrap == Wrap::TopAndBottom || f.excl[2] > at_x + c0 + EPS && f.excl[0] < at_x + c1 - EPS))
+                    && let Some((x, top, _)) = self.beside_floats(pos.block, tb, col, *y, &[], ri, false, memos)?
+                {
+                    (at_x, *y) = (x, top);
+                }
+            } else {
+                while let Some(e) =
+                    float::next_edge(&floats, at_x + c0, at_x + c1, *y, *y + Self::part_band(tb, ri, *y, col)).filter(|&e| e > *y + EPS)
+                {
+                    *y = e;
+                }
+            }
+        }
         // Header rows
-        if *empty && !pos.at.at_start() && !headers.contains(&pos.at.index()) {
+        if repeats {
             for &h in &headers {
                 let hh = tb.rows[h].height;
                 let mut row = draw_row(tb, h, at_x, *y, hh, None, false);
@@ -3078,13 +3264,13 @@ impl<'d> PageFill<'d, '_> {
             let (l, r) = (at_x + tb.x0, at_x + tb.x0 + tb.cols.iter().sum::<f64>());
             row_floats
                 .iter()
-                .filter(|(f, _, top, _)| {
-                    *top >= first_h && {
+                .filter(|(f, _, row, top, _)| {
+                    *row == 0 && f.v_relative == "paragraph" && *top >= first_h && {
                         let x = float::h_pos(f, &frames);
                         x < r && x + f.w > l
                     }
                 })
-                .map(|(_, _, top, bottom)| (y0 + top, y0 + bottom))
+                .map(|(_, _, _, top, bottom)| (y0 + top, y0 + bottom))
                 .collect()
         };
         let up = |r: usize| if r == 0 { lift } else { 0.0 };
@@ -3106,9 +3292,12 @@ impl<'d> PageFill<'d, '_> {
                 pos.at = At::Row(ri + 1);
                 continue;
             }
-            if rows.is_empty() && ri > 0 && row.part_top != 0.0 {
-                opened = Some(*y);
+            if rows.is_empty() && ri > 0 && (row.part_top != 0.0 || row.spacing.is_none()) {
+                opened = Some((*y, false));
                 *y += row.part_top;
+            } else if legacy && opened.is_none() && !rows.is_empty() && rows.iter().all(|r| r.repeat) && row.spacing.is_none() {
+                opened = Some((*y, true));
+                *y += row.header_top;
             }
             let last = tb.is_last(ri);
             let rest = pos.at.rest().cloned();
@@ -3136,13 +3325,35 @@ impl<'d> PageFill<'d, '_> {
             } else {
                 height
             };
+            // Compat ≤ 14: a later row whose band meets one of the page's floats where the part stands goes beside or
+            // below the floats there as a first row does, and the rows after it on the page keep that place; the rows
+            // before it close their part.
+            if legacy && fp.is_none() && placed_here > 0 && self.ctx.env.text.vertical.is_none() && !tb.rtl {
+                let band = height + if last { tb.bottom_border } else { 0.0 };
+                let (c0, c1) = super::table::cells_box(tb);
+                let own: Vec<Placed> = held.iter().filter(|(r, a)| *r != ri && *r > 0 && moves(a)).map(|(_, a)| a.clone()).collect();
+                let floats: Vec<Placed> = self.page_floats_for(pos.block, true).into_iter().chain(own.iter().cloned()).collect();
+                // ponytail: an autofit table keeps its layout at the new place.
+                if floats
+                    .iter()
+                    .any(|f| f.in_band(*y, *y + band) && (f.wrap == Wrap::TopAndBottom || f.excl[2] > at_x + c0 + EPS && f.excl[0] < at_x + c1 - EPS))
+                    && let Some((x, top, _)) = self.beside_floats(pos.block, tb, col, *y, &own, ri, false, memos)?
+                {
+                    if let Some(&(rs, rtop, idx)) = placed.last().filter(|p| p.2 + 1 == rows.len()) {
+                        let (mut drawn, _) = draw_whole_row(tb, rs, at_x, rtop, tb.rows[rs].height, true, memos);
+                        move_floats(Some(&mut drawn), &page_floats, &pinned, &frames, up(rs));
+                        rows[idx] = drawn;
+                    }
+                    (at_x, *y) = (x, top + row.part_top);
+                }
+            }
             if rest.is_none()
                 && !rows.is_empty()
                 && let Some(&(_, bottom)) = later.iter().find(|&&(t, b)| *y < b - EPS && t < *y + height - EPS)
             {
                 if let Some(&(rs, top, idx)) = placed.last().filter(|p| p.2 + 1 == rows.len()) {
                     let (mut drawn, _) = draw_whole_row(tb, rs, at_x, top, tb.rows[rs].height, true, memos);
-                    move_floats(Some(&mut drawn), &page_floats, &frames, up(rs));
+                    move_floats(Some(&mut drawn), &page_floats, &pinned, &frames, up(rs));
                     rows[idx] = drawn;
                 }
                 *y = bottom;
@@ -3176,7 +3387,7 @@ impl<'d> PageFill<'d, '_> {
                     }
                     Some(_) => draw_row(tb, ri, at_x, *y, height, Some(&parts), last),
                 });
-                move_floats(rows.last_mut(), &page_floats, &frames, up(ri));
+                move_floats(rows.last_mut(), &page_floats, &pinned, &frames, up(ri));
                 *y += height + if last { tb.bottom_border } else { 0.0 };
                 *empty = false;
                 pos.at = At::Row(ri + 1);
@@ -3249,26 +3460,26 @@ impl<'d> PageFill<'d, '_> {
                     let (rs, top, idx) = placed[m.pi];
                     let same: Vec<&MergedSplit> = merged.iter().filter(|o| o.start == m.start).collect();
                     let mut redrawn = draw_merged_part(tb, &same, ri, h, at_x, top);
-                    move_floats(Some(&mut redrawn), &page_floats, &frames, up(rs));
+                    move_floats(Some(&mut redrawn), &page_floats, &pinned, &frames, up(rs));
                     rows[idx] = redrawn;
                 }
                 row_refs.extend(cell_refs(&fitted, rows.len()));
                 rows.push(draw_row(tb, ri, at_x, *y, h, Some(&fitted), true));
-                move_floats(rows.last_mut(), &page_floats, &frames, up(ri));
+                move_floats(rows.last_mut(), &page_floats, &pinned, &frames, up(ri));
                 *y += h + tb.bottom_border;
                 *empty = false;
                 pos.at = At::RowPart { row: ri, rest: Rc::new(left) };
                 self.show_endnote_refs(row_refs.into_iter().map(|r| r.1));
                 self.at.found.append(&mut over);
                 finish(rows, out, at_x, opened, false);
-                self.table_obstacle(pos.block, tb, at_x, part_top, *y, flow_y, settled);
-                carry.beside_at = (fp.is_none() && (at_x - col.x).abs() > EPS).then_some(at_x - col.x);
+                self.table_obstacle(pos.block, tb, wrap_x.unwrap_or(at_x), part_top, *y, flow_y, settled);
+                carry.beside_at = (fp.is_none() && (part_x - col.x).abs() > EPS).then_some(part_x - col.x);
                 return Ok(self.text_goes_on(fp.is_some(), pos, carry, y, empty, (flow_y, was_empty)));
             }
             if at_top {
                 row_refs.extend(cell_refs(&parts, rows.len()));
                 rows.push(draw_row(tb, ri, at_x, *y, height, Some(&parts), last));
-                move_floats(rows.last_mut(), &page_floats, &frames, up(ri));
+                move_floats(rows.last_mut(), &page_floats, &pinned, &frames, up(ri));
                 *y += height + if last { tb.bottom_border } else { 0.0 };
                 *empty = false;
                 pos.at = At::Row(ri + 1);
@@ -3295,7 +3506,7 @@ impl<'d> PageFill<'d, '_> {
                     let last = kept.last().map_or(rs, |p| p.0);
                     let same: Vec<&MergedSplit> = cuts.iter().filter(|o| o.start == m.start).collect();
                     let mut redrawn = draw_merged_part(tb, &same, last + 1, 0.0, at_x, top);
-                    move_floats(Some(&mut redrawn), &page_floats, &frames, up(rs));
+                    move_floats(Some(&mut redrawn), &page_floats, &pinned, &frames, up(rs));
                     rows[idx] = redrawn;
                 }
             }
@@ -3308,8 +3519,8 @@ impl<'d> PageFill<'d, '_> {
                 self.at.found.append(&mut over);
             }
             finish(rows, out, at_x, opened, true);
-            self.table_obstacle(pos.block, tb, at_x, part_top, *y, flow_y, settled);
-            carry.beside_at = (fp.is_none() && split && (at_x - col.x).abs() > EPS).then_some(at_x - col.x);
+            self.table_obstacle(pos.block, tb, wrap_x.unwrap_or(at_x), part_top, *y, flow_y, settled);
+            carry.beside_at = (fp.is_none() && split && (part_x - col.x).abs() > EPS).then_some(part_x - col.x);
             return Ok(self.text_goes_on(fp.is_some() && split, pos, carry, y, empty, (flow_y, was_empty)));
         }
         self.show_endnote_refs(row_refs.into_iter().map(|r| r.1));
@@ -3318,7 +3529,7 @@ impl<'d> PageFill<'d, '_> {
         }
         finish(rows, out, at_x, opened, false);
         if fp.is_some() {
-            self.table_obstacle(pos.block, tb, at_x, part_top, *y, flow_y, settled);
+            self.table_obstacle(pos.block, tb, wrap_x.unwrap_or(at_x), part_top, *y, flow_y, settled);
             (*y, *empty) = (flow_y, was_empty);
         }
         pos.next_block();
@@ -3327,10 +3538,34 @@ impl<'d> PageFill<'d, '_> {
         Ok(Stop::Done)
     }
 
-    /// Where an in-flow table starting at `y` goes beside the floats over its first row: in the first free piece of
-    /// the column there, its indent from the piece's start and its `jc` within the piece, when its first row fits
-    /// the piece; else lower, at the first float bottom where it does. Compat ≤ 14 lays an autofit table out again
-    /// at the piece's width. All its rows keep that place. `None` when no float meets the row.
+    /// The page's floats a table part placed in the flow goes beside or below: all but those of its own block; with
+    /// `before`, only the header's and footer's and those anchored before it.
+    fn page_floats_for(&self, bi: usize, before: bool) -> Vec<Placed> {
+        let si = self.sec.index;
+        let at = |f: &&Placed| if before { (f.key.0, f.key.1) < (si, bi) } else { (f.key.0, f.key.1) != (si, bi) };
+        self.fixed.iter().chain(self.known_at(bi).filter(at)).cloned().collect()
+    }
+
+    /// The height of the rows from `ri` on that fit in the column from `top`: at least the first.
+    fn part_band(tb: &TableLayout, ri: usize, top: f64, col: &ColumnSpace) -> f64 {
+        let mut h = 0.0;
+        for (k, r) in tb.rows.iter().enumerate().skip(ri).filter(|(_, r)| !r.hidden) {
+            let next = h + r.height + if tb.is_last(k) { tb.bottom_border } else { 0.0 };
+            if h > 0.0 && !col.bottom.holds(top + next) {
+                break;
+            }
+            h = next;
+        }
+        h
+    }
+
+    /// Where an in-flow table's part starting at row `ri` at `y` goes beside the floats over its band: in the first
+    /// free piece of the column there, its indent from the piece's start and its `jc` within the piece, when the row
+    /// fits the piece; else lower, at the first float bottom where it does. Compat ≤ 14 tests the row's own band
+    /// and only the first piece, and lays an autofit table out again at the piece's width when `relay`; compat 15
+    /// tests the band of the rows the column holds from there and takes the first piece the table fits. `None` when
+    /// no float meets the band.
+    #[allow(clippy::too_many_arguments, reason = "as place_table")]
     fn beside_floats(
         &mut self,
         bi: usize,
@@ -3338,27 +3573,33 @@ impl<'d> PageFill<'d, '_> {
         col: &ColumnSpace,
         y: f64,
         own: &[Placed],
+        ri: usize,
+        relay: bool,
         memos: &mut Memos,
     ) -> Result<Option<(f64, f64, Option<Rc<TableLayout>>)>, Yield> {
         let Some(Block::Table(t)) = self.sec.blocks.get(bi) else { return Ok(None) };
-        let Some(ri) = tb.rows.iter().position(|r| !r.hidden) else { return Ok(None) };
-        let si = self.sec.index;
-        let floats: Vec<Placed> = self.fixed.iter().chain(self.known_at(bi)).filter(|f| (f.key.0, f.key.1) != (si, bi)).chain(own).cloned().collect();
+        // A part placed again on a later page or from a later row meets only the floats already on the page.
+        let floats: Vec<Placed> = self.page_floats_for(bi, !relay).into_iter().chain(own.iter().cloned()).collect();
         if tb.rtl || floats.is_empty() {
             return Ok(None);
         }
         let text = &self.ctx.env.text;
         let legacy = text.compat == Compat::Legacy;
         let (cx0, cx1) = (col.x, col.x + col.width);
-        let (mut top, h) = (y, tb.rows[ri].height + if tb.is_last(ri) { tb.bottom_border } else { 0.0 });
+        let band = |top: f64| {
+            if legacy { tb.rows[ri].height + if tb.is_last(ri) { tb.bottom_border } else { 0.0 } } else { Self::part_band(tb, ri, top, col) }
+        };
+        let mut top = y;
         let mut moved = false;
         while top < col.bottom.to_pt() - EPS {
-            if let Some((u, r)) = float::intervals(&floats, cx0, cx1, top, top + h, legacy).and_then(|iv| iv.first().copied()) {
-                if u <= cx0 + EPS && r >= cx1 - EPS {
-                    break;
-                }
+            let h = band(top);
+            let pieces = float::intervals(&floats, cx0, cx1, top, top + h, legacy).unwrap_or_default();
+            if pieces.first().is_some_and(|&(u, r)| u <= cx0 + EPS && r >= cx1 - EPS) {
+                break;
+            }
+            for &(u, r) in pieces.iter().take(if legacy { 1 } else { usize::MAX }) {
                 let w = r - u;
-                let relaid = if legacy && !t.fixed && !text.no_constrained_autofit {
+                let relaid = if relay && legacy && !t.fixed && !text.no_constrained_autofit {
                     let env = StoryEnv { ctx: self.ctx, fields: self.fields, notes: self.note_numbers };
                     let prev = self.sec.blocks.neighbours(bi, bi, text.review.view).0;
                     let laid = super::table::layout(&super::table::in_column(t, col.width, &env), w, &env, prev, false, memos)?;
@@ -3388,7 +3629,7 @@ impl<'d> PageFill<'d, '_> {
                     }
                 }
             }
-            match float::next_edge(&floats, cx0, cx1, top, top + h) {
+            match float::next_edge(&floats, cx0, cx1, top, top + band(top)) {
                 Some(e) if e > top + EPS => (top, moved) = (e, true),
                 _ => break,
             }
@@ -3663,6 +3904,19 @@ impl<'d> PageFill<'d, '_> {
             o.excl[0] -= t.ind;
         }
         o.settled = settled;
+        let known = self.at.known.iter().find(|k| k.key == o.key);
+        // It met the text before it when it stands above where the flow reached; a kept one keeps that.
+        // ponytail: above the flow, not tested against that text's lines.
+        o.restarts = known.map_or(top < flow_y - EPS, |k| k.restarts);
+        if fp.v_anchor == TableAnchor::Text && fp.y == 0.0 {
+            // Compat ≤ 14: the text before a table in the flow wraps the box it first had on the page; compat 15:
+            // only the strip its top distance reaches above it.
+            o.early_box = match known {
+                Some(k) if legacy => k.early_box.or(Some((k.rect, k.excl))),
+                _ if legacy => None,
+                _ => Some((o.rect, [o.excl[0], o.excl[1], o.excl[2], o.excl[1].max(o.rect[1])])),
+            };
+        }
         self.at.found.push(o);
     }
 }

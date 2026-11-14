@@ -137,6 +137,7 @@ fn shell(t: &Table) -> Table {
                 vanished,
                 cell_spacing: row_spacing,
                 run,
+                nudge,
                 cells,
                 src: _,
                 controls: _,
@@ -203,6 +204,7 @@ fn shell(t: &Table) -> Table {
                 vanished: *vanished,
                 cell_spacing: *row_spacing,
                 run: *run,
+                nudge: *nudge,
                 cells,
                 src: None,
                 controls: Vec::new(),
@@ -297,6 +299,7 @@ pub(crate) fn same_shell(s: &Table, t: &Table) -> bool {
                 vanished,
                 cell_spacing: row_spacing,
                 run,
+                nudge,
                 cells,
                 src: _,
                 controls: _,
@@ -317,6 +320,7 @@ pub(crate) fn same_shell(s: &Table, t: &Table) -> bool {
                 && *vanished == q.vanished
                 && *row_spacing == q.cell_spacing
                 && *run == q.run
+                && *nudge == q.nudge
                 && *rev == q.rev
                 && cells.len() == q.cells.len()
                 && cells.iter().zip(&q.cells).all(|(c, d)| {
@@ -381,6 +385,9 @@ pub struct CellBox {
     pub col: usize,
     pub span: usize,
     pub edges: Rc<[Option<Border>; 4]>,
+    /// The top and bottom edges where a part of the table starts or ends on a page (the cell's own, else the table's
+    /// top and bottom), and the top edge under a repeated header row.
+    pub cut: Rc<[Option<Border>; 3]>,
     pub shading: Option<u32>,
     pub below: f64,
     pub index: usize,
@@ -401,6 +408,8 @@ pub struct RowBox {
     pub gap_top: f64,
     /// Extra room above the row when it starts a later part of the table on a page.
     pub part_top: f64,
+    /// Extra room above the row when it follows repeated header rows.
+    pub header_top: f64,
     /// A framed row's bottom band and the gap below it, held in its height.
     pub bottom_gap: f64,
     pub seams: Vec<(f64, f64, Border)>,
@@ -765,6 +774,11 @@ fn from_hls(h: i64, l: i64, s: i64) -> u32 {
     (scale(channel(h + 80)) << 16) | (scale(channel(h)) << 8) | scale(channel(h - 80))
 }
 
+/// The indent a table is placed by: an unset one (none, or not dxa) places nothing.
+fn placed_ind(t: &Table) -> f64 {
+    if t.ind_set { t.ind } else { 0.0 }
+}
+
 fn half_border(w: f64) -> f64 {
     let tw = (w * 20.0).round() as i64;
     ((tw + 1) / 2) as f64 / 20.0
@@ -888,7 +902,7 @@ fn rtl_x0(t: &Table, total: f64, text_w: f64, res: (i64, i64), sloppy: bool) -> 
     let first_outer = row.is_some_and(|r| r.grid_after == 0 && r.cells.len() == 1);
     let b_last = side(last.and_then(|c| c.left.as_ref()), &t.borders[if alone { 1 } else { 5 }]);
     let hb = |b: i64| (b + 1) / 2;
-    let (w, width, ind, s) = (twips(text_w), twips(total), twips(t.ind), twips(t.cell_spacing.max(0.0)));
+    let (w, width, ind, s) = (twips(text_w), twips(total), twips(placed_ind(t)), twips(t.cell_spacing.max(0.0)));
     let margin = |c: Option<&Cell>| c.map_or(0, |c| twips(c.margins[1]));
     let gap = |outer: bool, b: i64| if s > 0 { s * if outer { 2 } else { 1 } + b } else { 0 };
     let extra = (b_start + b_last) / 2;
@@ -1125,6 +1139,8 @@ fn content_widths_uncached(blocks: &[LaidBlock], env: &StoryEnv, fixed: bool, me
                         mn = mn.max(box_w + twips(f.effect[0]) + twips(f.effect[2]));
                     }
                 }
+                // The cell's last paragraph, when empty, doesn't widen it by its indents.
+                let lines = if pieces.is_empty() && bi + 1 == blocks.len() { &[][..] } else { lines };
                 for (li, l) in lines.iter().enumerate() {
                     let start_x = if li == 0 { start0 } else { s.ind_left };
                     let shift = l.xs.first().map_or(0.0, |&x| (x - start_x).max(0.0));
@@ -1406,13 +1422,12 @@ fn layout_with(
     nested: bool,
     memos: &mut Memos,
 ) -> Result<Rc<TableLayout>, Yield> {
-    // A pct indent is a share of the width the table is laid out in, truncated to twips; none while measuring, and
-    // none for a floating table.
+    // A pct indent places nothing (the indent is unset), but the autofit room still loses its share of the width
+    // the table is laid out in, truncated to twips; none while measuring, and none for a floating table.
     let resolved;
     let t = match t.ind_pct {
         Some(p) => {
-            let base = twips(text_w) + if env.ctx.env.text.box_story && !nested { 15 } else { 0 };
-            let ind = if measure || t.floating.is_some() { 0 } else { (p * 5000.0).round() as i64 * base / 5000 };
+            let ind = if measure || t.floating.is_some() { 0 } else { (p * 5000.0).round() as i64 * twips(text_w) / 5000 };
             resolved = Table { ind: ind as f64 / 20.0, ind_pct: None, ..t.clone() };
             &resolved
         }
@@ -1667,6 +1682,7 @@ impl ViewTable {
                     min_h: 0.0,
                     gap_top: 0.0,
                     part_top: 0.0,
+                    header_top: 0.0,
                     bottom_gap: 0.0,
                     seams: Vec::new(),
                     hidden: true,
@@ -2002,7 +2018,12 @@ fn place(t: &Table, cols: &[f64], edges: &[Vec<CellEdges>]) -> Vec<Vec<CellGeo>>
                     if rtl(t) {
                         (left_e, right_e, left_outer, right_outer) = (right_e, left_e, right_outer, left_outer);
                     }
-                    let (x, w) = (col_x[col], col_x[col + span] - col_x[col]);
+                    let (mut x, mut w) = (col_x[col], col_x[col + span] - col_x[col]);
+                    match r.nudge {
+                        Some(true) if e.ci == 0 => w += 5,
+                        Some(_) => x += 5,
+                        None => {}
+                    }
                     let (ml, mr) = (twips(c.margins[1]), twips(c.margins[3]));
                     let inner;
                     let (cx, cw) = if let Some(row_s) = spacing_of(t, ri) {
@@ -2071,9 +2092,10 @@ fn assemble(
     let first_left = t.rows.first().and_then(|r| r.cells.first()).map(|c| (space_h(candidate(Some(&c.left), &row_borders(t, 0)[1])), c.margins[1]));
     let (lw, lmar) = first_left.unwrap_or((space_h(&row_borders(t, 0)[1]), 0.0));
     let mut x0 = match compat {
-        Compat::Generic => t.ind + half_border(lw),
-        Compat::Legacy if !t.ind_set => t.ind,
-        Compat::Legacy => t.ind - edge_gap(t, lw, lmar),
+        Compat::Generic => placed_ind(t) + half_border(lw),
+        // An unset indent isn't pulled left, but a nested table's is placed as indent 0.
+        Compat::Legacy if !t.ind_set && !nested => 0.0,
+        Compat::Legacy => placed_ind(t) - edge_gap(t, lw, lmar),
     };
     match t.jc {
         // The whole grid is centred, its `gridBefore` and `gridAfter` columns too.
@@ -2124,10 +2146,25 @@ fn assemble(
     let mut closings = closings.iter();
     let mut rows: Vec<RowBox> = Vec::new();
     let review = &env.ctx.env.text.review;
+    let single = env.ctx.env.text.single_cell_borders;
+    // Compat ≤ 14: the edge under a repeated header row is resolved between the last header row and the page's first
+    // row, as an inside edge.
+    let header = t.rows.iter().take_while(|r| r.header).count().checked_sub(1).filter(|_| compat == Compat::Legacy);
     for ((ri, r), cells_geo) in t.rows.iter().enumerate().zip(geo) {
         let row_s = spacing_of(t, ri);
+        let own_or = |own: &Option<Border>, table: &Option<Border>| conflict((own.as_ref().or(table.as_ref()), own.is_some()), (None, false));
+        let under_header = |c: &Cell, col: usize| -> Option<Border> {
+            let h = header.filter(|&h| ri > h + 1)?;
+            let above = geo[h].iter().find(|g| col >= g.col && col < g.col + g.span).map(|g| &t.rows[h].cells[g.ci].bottom);
+            let (a, a_cell) = match above {
+                Some(Some(b)) => (Some(b), true),
+                _ => (row_borders(t, h)[4].as_ref(), false),
+            };
+            let (b, b_cell) = (c.top.as_ref().or(row_borders(t, ri)[4].as_ref()), c.top.is_some());
+            if single { b.filter(|b| b.visible()).or(a.filter(|a| a.visible())).cloned() } else { conflict((b, b_cell), (a, a_cell)) }
+        };
         let shift = match r.ind {
-            Some(i) if !t.fixed && t.jc == Jc::Left && t.floating.is_none() && !rtl => i - t.ind,
+            Some(i) if !t.fixed && t.jc == Jc::Left && t.floating.is_none() && !rtl => i - placed_ind(t),
             _ => 0.0,
         } + r.div.as_ref().filter(|_| t.jc == Jc::Left && t.floating.is_none() && !rtl).map_or(0.0, |d| d.shift);
         // Row alignment
@@ -2153,7 +2190,12 @@ fn assemble(
                     let lead = if nested && !matches!(t.jc, Jc::Center | Jc::Right) { legacy_lead(t) } else { 0.0 };
                     left - (x0 + before) - lead
                 }
-                Jc::Left if compat == Compat::Legacy && t.floating.is_none() && !rtl && t.jc != Jc::Left => -edge_gap(t, lw, lmar) - x0,
+                // A left row of a centred or right-aligned table: placed as a left-aligned table would be, a nested
+                // one by its indent and lead too.
+                Jc::Left if compat == Compat::Legacy && t.floating.is_none() && !rtl && t.jc != Jc::Left => {
+                    let (ind, lead) = if nested { (placed_ind(t).max(0.0), legacy_lead(t)) } else { (0.0, 0.0) };
+                    ind - edge_gap(t, lw, lmar) + lead - x0
+                }
                 _ => 0.0,
             };
         let mut cells = Vec::new();
@@ -2180,6 +2222,7 @@ fn assemble(
                 col: g.col,
                 span: g.span,
                 edges: g.edges.clone(),
+                cut: Rc::new([own_or(&c.top, &row_borders(t, ri)[0]), own_or(&c.bottom, &row_borders(t, ri)[2]), under_header(c, g.col)]),
                 shading,
                 below: 0.0,
                 index: g.ci,
@@ -2193,6 +2236,7 @@ fn assemble(
                 || cells_geo.iter().any(|g| r.cells[g.ci].rev.structural.is_some() || r.cells[g.ci].rev.change.is_some()));
         let mut top_border = cells.iter().map(|c| space_h(&c.edges[0])).fold(0.0, f64::max);
         let mut part_top = 0.0;
+        let mut header_top = 0.0;
         let seams: Vec<(f64, f64, Border)> = match ri.checked_sub(1).and_then(|p| geo.get(p)) {
             Some(above) if row_s.is_none() && !framed(t, ri - 1) => above
                 .iter()
@@ -2226,6 +2270,12 @@ fn assemble(
                 let top_t = &row_borders(t, ri)[0];
                 let first = cells_geo.iter().map(|g| cand(&r.cells[g.ci].top, top_t) + r.cells[g.ci].margins[0]).fold(0.0, f64::max);
                 part_top = first - above.max(top_border);
+            }
+            if let Some(h) = header.filter(|&h| ri > h + 1) {
+                let w = t.rows[h].cells.iter().map(|c| cand(&c.bottom, &row_borders(t, h)[4])).fold(0.0, f64::max);
+                let first = cells_geo.iter().map(|g| cand(&r.cells[g.ci].top, top_t) + r.cells[g.ci].margins[0]).fold(w, f64::max);
+                let edge = cells.iter().map(|c| space_h(&c.cut[2])).fold(0.0, f64::max);
+                header_top = first.max(edge) - above.max(top_border);
             }
         }
         let mut gap_top = 0.0;
@@ -2299,6 +2349,7 @@ fn assemble(
             min_h,
             gap_top,
             part_top,
+            header_top,
             bottom_gap: cell_bottom,
             seams,
             hidden: false,
@@ -2383,12 +2434,15 @@ fn turn_cell(
         "bottom" => (g.cw + far - story.height).max(floor),
         _ => 0.0,
     };
-    let bottom = match v.flow {
-        Flow::Down => g.cw + g.cx,
-        Flow::Up => g.w - g.cx,
-        Flow::DownEast => f64::INFINITY,
+    // Glyphs whose ink lies wholly outside the cell's clip, between its side borders' inner edges, are not drawn,
+    // before the first side as past the far one.
+    let (l, r) = (bw(&c.edges[1]) / 2.0, bw(&c.edges[3]) / 2.0);
+    let (first, bottom) = match v.flow {
+        Flow::Down => (g.cx + g.cw - g.w + r, g.cw + g.cx - l),
+        Flow::Up => (l - g.cx, g.w - g.cx - r),
+        Flow::DownEast => (f64::NEG_INFINITY, f64::INFINITY),
     };
-    let items = super::vertical::turned(&story.units, v, [0.0, 0.0, g.cw, len], across, bottom);
+    let items = super::vertical::turned_in(&story.units, v, [0.0, 0.0, g.cw, len], across, first, bottom);
     let unit = StoryUnit {
         top: 0.0,
         height: 0.0,
@@ -2471,9 +2525,18 @@ fn unaligned_floats(children: &Rc<[Child]>, off: f64, fixed: &[u64]) -> Option<R
 }
 
 pub(super) fn clip_x(children: &Rc<[Child]>, lo: f64, hi: f64, bottom: f64) -> Option<Rc<[Child]>> {
+    clip_box(children, lo, hi, f64::NEG_INFINITY, bottom)
+}
+
+/// `children` without the glyphs whose ink lies wholly outside `lo .. hi` across or `top .. bottom` down, with their
+/// nested tables' borders and shading cut to the box once a side of it is open.
+pub(super) fn clip_box(children: &Rc<[Child]>, lo: f64, hi: f64, top: f64, bottom: f64) -> Option<Rc<[Child]>> {
     let inside = |r: &GlyphRun, g: &(u32, f64), dx: f64, dy: f64| {
         let k = r.size / r.face.upem;
         if bottom.is_finite() && r.face.ink_top(g.0).is_some_and(|t| dy + r.baseline - t * k >= bottom - EPS) {
+            return false;
+        }
+        if top.is_finite() && r.face.ink_bottom(g.0).is_some_and(|b| dy + r.baseline + b * k <= top + EPS) {
             return false;
         }
         match r.face.ink(g.0) {
@@ -2491,7 +2554,7 @@ pub(super) fn clip_x(children: &Rc<[Child]>, lo: f64, hi: f64, bottom: f64) -> O
             _ => false,
         })
     };
-    let nested: Vec<Option<Child>> = children.iter().map(|c| clip_nested(c, lo, hi, bottom)).collect();
+    let nested: Vec<Option<Child>> = children.iter().map(|c| clip_nested(c, lo, hi, top, bottom)).collect();
     if !children.iter().any(|c| matches!(c, Child::Line { placed, .. } if spills(placed))) && nested.iter().all(Option::is_none) {
         return None;
     }
@@ -2539,16 +2602,39 @@ pub(super) fn clip_x(children: &Rc<[Child]>, lo: f64, hi: f64, bottom: f64) -> O
     Some(clipped.collect())
 }
 
-fn clip_nested(c: &Child, lo: f64, hi: f64, bottom: f64) -> Option<Child> {
+fn clip_nested(c: &Child, lo: f64, hi: f64, top: f64, bottom: f64) -> Option<Child> {
     match c {
-        Child::Group { offset, children } => {
-            clip_x(children, lo - offset.0, hi - offset.0, bottom - offset.1).map(|children| Child::Group { offset: *offset, children })
-        }
+        Child::Group { offset, children } => clip_box(children, lo - offset.0, hi - offset.0, top - offset.1, bottom - offset.1)
+            .map(|children| Child::Group { offset: *offset, children }),
         Child::Table(t) => {
             let mut any = false;
-            let rows = t.rows.iter().map(|r| {
+            // A nested table's borders and shading are cut with its text once the enclosing cell's clip is open.
+            let open = lo.is_finite() || hi.is_finite();
+            let rows: Vec<RowFragment> = {
+                let mut cut = |items: &[Item]| -> Box<[Item]> {
+                    if !open {
+                        return items.into();
+                    }
+                    items
+                        .iter()
+                        .filter_map(|i| match i {
+                            Item::Rect { rect, colour } => {
+                                let r = [rect[0].max(lo), rect[1].max(top), rect[2].min(hi), rect[3].min(bottom)];
+                                if r != *rect {
+                                    any = true;
+                                }
+                                (r[2] > r[0] && r[3] > r[1]).then_some(Item::rect(r, *colour))
+                            }
+                            other => Some(other.clone()),
+                        })
+                        .collect()
+                };
+                t.rows.iter().map(|r| RowFragment { background: cut(&r.background), borders: cut(&r.borders), ..r.clone() }).collect()
+            };
+            let rows = rows.iter().map(|r| {
                 let cells = r.cells.iter().map(|cell| {
-                    let content = cell.content.iter().map(|c| clip_nested(c, lo, hi, bottom).inspect(|_| any = true).unwrap_or_else(|| c.clone()));
+                    let content =
+                        cell.content.iter().map(|c| clip_nested(c, lo, hi, top, bottom).inspect(|_| any = true).unwrap_or_else(|| c.clone()));
                     CellFragment { content: content.collect(), ..cell.clone() }
                 });
                 RowFragment { cells: cells.collect(), ..r.clone() }
@@ -2565,12 +2651,70 @@ fn drawn_edges<'a>(tb: &TableLayout, c: &'a CellBox) -> [&'a Option<Border>; 4] 
     if tb.rtl { [t, r, b, l] } else { [t, l, b, r] }
 }
 
-/// The outer frame of a spaced table where a part of it starts or ends on a page: the table's top border from `open`
-/// down to the part's first row, and its bottom border under the part's last row.
-pub fn frame_part(tb: &TableLayout, frag: &mut RowFragment, left: f64, open: Option<f64>, close: bool) {
-    if !tb.rows[frag.row].spacing.is_some_and(|s| s > 0.0) {
+/// A cell's top edge at `y` as a row draws it.
+fn top_edge(out: &mut Vec<Item>, tb: &TableLayout, c: &CellBox, x0: f64, y: f64, t: &Option<Border>) {
+    let [_, l, _, r] = drawn_edges(tb, c);
+    if let Some(t) = t.as_ref().filter(|b| b.visible()) {
+        edge(out, [x0 + c.x - bw(l) / 2.0, y, x0 + c.x + c.w + bw(r) / 2.0, y + thick(t)], true, false, t);
+    }
+}
+
+/// A cell's bottom edge under `y` as a row draws it.
+fn bottom_edge(out: &mut Vec<Item>, tb: &TableLayout, c: &CellBox, x0: f64, y: f64, b: &Option<Border>) {
+    let [_, l, _, r] = drawn_edges(tb, c);
+    if let Some(b) = b.as_ref().filter(|b| b.visible()) {
+        edge(out, [x0 + c.x - bw(l) / 2.0, y, x0 + c.x + c.w + bw(r) / 2.0, y + thick(b)], true, true, b);
+    }
+}
+
+/// Where a part of a table starts or ends on a page. An unspaced part's first row draws the table's first-row top
+/// edge from `open` (each cell's own top, else the table's top; under repeated header rows, `under_header`, the edge
+/// resolved with the last header row) and its last row the table's last-row bottom edge. A spaced table's outer
+/// frame takes the table's top border from `open` down to the part's first row and its bottom border under the
+/// part's last row.
+pub fn frame_part(tb: &TableLayout, frag: &mut RowFragment, left: f64, open: Option<(f64, bool)>, close: bool) {
+    let row = &tb.rows[frag.row];
+    if row.spacing.is_none() {
+        let x0 = left + tb.x0;
+        let mut old = Vec::new();
+        let mut new = Vec::new();
+        if let Some((y, under_header)) = open {
+            for c in &row.cells {
+                if c.v_merge != VMerge::Continue {
+                    top_edge(&mut old, tb, c, x0, frag.top, &c.edges[0]);
+                }
+                top_edge(&mut new, tb, c, x0, y, &c.cut[if under_header { 2 } else { 0 }]);
+            }
+            for (a, b, s) in &row.seams {
+                edge(&mut old, [x0 + a, frag.top, x0 + b, frag.top + thick(s)], true, false, s);
+            }
+        }
+        if close {
+            for c in &row.cells {
+                if row.closes {
+                    bottom_edge(&mut old, tb, c, x0, frag.rect[3], &c.edges[2]);
+                }
+                bottom_edge(&mut new, tb, c, x0, frag.rect[3], &c.cut[1]);
+            }
+        }
+        let same = |a: &Item, b: &Item| match (a, b) {
+            (Item::Rect { rect: r, colour: c }, Item::Rect { rect: q, colour: d }) => c == d && r.iter().zip(q).all(|(x, y)| (x - y).abs() < EPS),
+            _ => false,
+        };
+        let mut borders = std::mem::take(&mut frag.borders).into_vec();
+        for o in &old {
+            if let Some(k) = borders.iter().position(|b| same(b, o)) {
+                borders.remove(k);
+            }
+        }
+        borders.extend(new);
+        frag.borders = borders.into();
         return;
     }
+    if !row.spacing.is_some_and(|s| s > 0.0) {
+        return;
+    }
+    let open = open.map(|o| o.0);
     let [t, l, b, r] = &tb.outer;
     let x0 = left + tb.x0;
     let x1 = x0 + tb.cols.iter().sum::<f64>();
@@ -2651,16 +2795,29 @@ pub fn draw_row(tb: &TableLayout, ri: usize, left: f64, top: f64, height: f64, p
         let clip = if row.exact { top + height - below_margin } else { f64::INFINITY };
         let mut content = Vec::new();
         let mut hidden = Vec::new();
-        // Content clips to the box between the left and right borders' inner edges (cell edges in a spaced table). A
-        // nested table also clips to it once a paragraph of the cell has been drawn in this part; before that it
-        // keeps only its own cells' clips.
-        let (lo, hi) = match row.spacing {
-            Some(_) => (-c.cx, c.w - c.cx),
+        // Content clips to the box between the borders' inner edges: across, the left and right borders'; down, the
+        // row's top border and its bottom edge (an exact row's bottom margin). A spaced cell clips inside its own
+        // border box. A nested table also clips to it once a paragraph of the cell has been drawn in this part;
+        // before that it keeps only its own cells' clips.
+        let [et, el, eb, er] = drawn_edges(tb, c);
+        let (lo, hi, y0, y1) = match row.spacing {
+            Some(s) => {
+                let (mut lo, mut ro) = (c.col == 0, c.col + c.span >= tb.cols.len());
+                if tb.rtl {
+                    (lo, ro) = (ro, lo);
+                }
+                let (by0, by1) = (top + row.gap_top, top + height - gap(s, tb.is_last(ri)));
+                let y1 = if c.v_merge == VMerge::Continue { f64::INFINITY } else { by1 - bw(eb) };
+                (gap(s, lo) + bw(el) - c.cx, c.w - gap(s, ro) - bw(er) - c.cx, by0 + bw(et), y1)
+            }
             None => {
-                let [_, l, _, r] = drawn_edges(tb, c);
-                (-c.cx + bw(l) / 2.0, c.w - c.cx - bw(r) / 2.0)
+                let t = if c.v_merge == VMerge::Continue { 0.0 } else { bw(et) };
+                // A continuation cell's carried content runs on through the region's rows.
+                let y1 = if c.v_merge == VMerge::Continue { f64::INFINITY } else { top + height };
+                (-c.cx + bw(el) / 2.0, c.w - c.cx - bw(er) / 2.0, top + t, y1)
             }
         };
+        let y1 = if row.exact { clip } else { y1 };
         let mut open = false;
         for u in part.units {
             let ut = u.top - part.base;
@@ -2673,9 +2830,14 @@ pub fn draw_row(tb: &TableLayout, ri: usize, left: f64, top: f64, height: f64, p
                 source_units(&u.content, &mut hidden);
                 continue;
             }
-            let (lo, hi) = if u.row.is_none() || open { (lo, hi) } else { (f64::NEG_INFINITY, f64::INFINITY) };
+            let shown = u.row.is_none() || open;
+            let (lo, hi, top, bottom) = if shown {
+                (lo, hi, y0 - (base_y + ut), y1 - (base_y + ut) + INK_SLACK)
+            } else {
+                (f64::NEG_INFINITY, f64::INFINITY, f64::NEG_INFINITY, bottom)
+            };
             open |= u.row.is_none();
-            let children = clip_x(&u.content, lo, hi, bottom).unwrap_or_else(|| u.content.clone());
+            let children = clip_box(&u.content, lo, hi, top, bottom).unwrap_or_else(|| u.content.clone());
             let children = unaligned_floats(&children, off, &c.fixed_floats).unwrap_or(children);
             content.push(Child::Group { offset: (base_x, base_y + ut), children });
         }
@@ -2747,6 +2909,8 @@ pub fn draw_row(tb: &TableLayout, ri: usize, left: f64, top: f64, height: f64, p
         if let Some(r) = r.as_ref().filter(|b| b.visible()) {
             edge(&mut borders, [cx1 - thick(r) / 2.0, top, cx1 + thick(r) / 2.0, top + height], false, true, r);
         }
+        // A part's last row before a page break draws the table's last-row bottom edge.
+        let b = if last_of_table { &c.cut[1] } else { b };
         if (last_of_table || row.closes)
             && let Some(b) = b.as_ref().filter(|b| b.visible())
         {

@@ -862,6 +862,8 @@ struct Pending {
     stop: f64,
     kind: TabKind,
     pen_at_tab: f64,
+    /// The fit drift before the tab.
+    drift: f64,
     /// The tab has no width (its text wraps).
     collapse: bool,
     /// Where its text narrows the tab to end ([`f64::INFINITY`]: it doesn't), and whether decimal text narrows too.
@@ -972,6 +974,19 @@ fn resolve_tab(sp: &ShapedPara, p: &Pending, pieces: &[Piece], xs: &mut [f64], w
     x
 }
 
+/// The sides a line's part of a text border's box gets where the line breaks the box (as laid out, as drawn): before
+/// piece `start` when the box goes on from the piece before it.
+fn lead_side(sp: &ShapedPara, pieces: &[Piece], start: usize) -> (f64, f64) {
+    let at = sp.pieces.len() - pieces.len() + start;
+    at.checked_sub(1).and_then(|k| super::text::box_continues(&sp.pieces, &sp.styles, k)).map_or((0.0, 0.0), super::text::border_side)
+}
+
+/// The side the line's part of a box needs after piece `k` when the line ends there and the box goes on.
+fn open_side(sp: &ShapedPara, pieces: &[Piece], k: usize) -> f64 {
+    let at = sp.pieces.len() - pieces.len() + k;
+    super::text::box_continues(&sp.pieces, &sp.styles, at).map_or(0.0, |b| super::text::border_side(b).0)
+}
+
 // Greedy fit
 #[allow(
     clippy::too_many_arguments,
@@ -982,26 +997,76 @@ fn fit_line(
     pieces: &[Piece],
     start: usize,
     left: f64,
-    mut right: f64,
+    right: f64,
     style: &ParaStyle,
     frame: &Frame,
     limit_end: Option<usize>,
     strict: bool,
 ) -> Fit {
+    // A text border's box broken across lines: each line's part has both sides, in fitting and drawn.
+    let lead = lead_side(sp, pieces, start);
+    let mut fit = fit_greedy(sp, pieces, start, left, right, style, frame, limit_end, strict, lead);
+    if lead.1 > 0.0 && !fit.xs.is_empty() {
+        fit.xs[0] -= lead.1;
+        fit.widths[0] += lead.1;
+    }
+    let (all, o) = (&sp.pieces[..], sp.pieces.len() - pieces.len());
+    if let Some(k) = (start..fit.end.min(pieces.len())).rev().find(|&k| pieces[k].kind != Kind::Space)
+        && fit.end < pieces.len()
+        && let Some(b) = super::text::boxed(all, &sp.styles, o + k)
+        && (k..fit.end).all(|j| super::text::box_continues(all, &sp.styles, o + j).is_some())
+    {
+        let drawn = super::text::border_side(b).1;
+        fit.widths[k - start] += drawn;
+        for x in &mut fit.xs[k - start + 1..] {
+            *x += drawn;
+        }
+    }
+    fit
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the measured line-breaking helpers take the shaped paragraph, its pieces, style and frame separately, as they were ported"
+)]
+fn fit_greedy(
+    sp: &ShapedPara,
+    pieces: &[Piece],
+    start: usize,
+    left: f64,
+    mut right: f64,
+    style: &ParaStyle,
+    frame: &Frame,
+    limit_end: Option<usize>,
+    strict: bool,
+    lead: (f64, f64),
+) -> Fit {
     let mut xs: Vec<f64> = Vec::new();
     let mut ws: Vec<f64> = Vec::new();
-    let mut pen = left;
+    let mut pen = left + lead.1;
     // How much wider the pieces so far count for breaking than they are drawn.
-    let mut drift = 0.0;
+    let lead_drift = lead.0 - lead.1;
+    let mut drift = lead_drift;
     if start == 0 && style.list_jc != "left" {
         let w: f64 = pieces.iter().take_while(|p| p.kind == Kind::ListNumber).map(|p| p.width).sum();
         pen -= if style.list_jc == "right" { w } else { w / 2.0 };
     }
-    // A cell paragraph whose only stop is a decimal one: each line starts as if with a tab to it.
-    let mut pending = custom_stops(pen, pen_units(pen, left, style, frame), style)
-        .find(|t| t.kind == TabKind::Decimal)
-        .filter(|_| sp.decimal_lead)
-        .map(|t| Pending { tab: None, from: start, stop: t.pos, kind: t.kind, pen_at_tab: pen, collapse: false, edge: right, shift: false });
+    // A cell paragraph whose only stop is a decimal one: each line starts as if with a tab to it, the first after its
+    // list number and the number's suffix, when the stop lies past them.
+    let edge = right;
+    let lead = |pen: f64, from: usize| {
+        custom_stops(pen, pen_units(pen, left, style, frame), style)
+            .find(|t| t.kind == TabKind::Decimal)
+            .filter(|_| sp.decimal_lead)
+            .map(|t| Pending { tab: None, from, stop: t.pos, kind: t.kind, pen_at_tab: pen, drift: lead_drift, collapse: false, edge, shift: false })
+    };
+    let numbered = pieces[start..].iter().take_while(|p| p.kind == Kind::ListNumber).count();
+    let lead_at = if numbered == 0 {
+        start
+    } else {
+        start + numbered + usize::from(pieces.get(start + numbered).is_some_and(|p| matches!(p.kind, Kind::Tab | Kind::Space)))
+    };
+    let mut pending = if lead_at == start { lead(pen, start) } else { None };
     let mut breaks: Vec<(usize, bool)> = Vec::new();
     let n = pieces.len();
     let (all, o) = (&sp.pieces[..], sp.pieces.len() - n);
@@ -1065,12 +1130,19 @@ fn fit_line(
             && !style.in_frame
             && classes(k).is_some_and(|t| first_char(k).is_some_and(|c| t.hanging.contains(c)))
     };
+    // Compat ≤ 14 measures the hyphen's fit and the hyphenation zone on the widths it fits with, not as drawn.
+    let fit_shift = |k: usize| {
+        if frame.compat == Compat::Legacy { lead_drift + pieces[start..k].iter().map(|q| q.break_extra).sum::<f64>() } else { 0.0 }
+    };
     let mut i = start;
     while i < n {
         if let Some(le) = limit_end
             && i >= le
         {
             break;
+        }
+        if i == lead_at && i > start && pending.is_none() {
+            pending = lead(pen, i);
         }
         let p = &pieces[i];
         match p.kind {
@@ -1103,6 +1175,10 @@ fn fit_line(
                     Some(Object::PTab(t)) => ptab_stop(t, style, frame),
                     _ => next_stop(pen, units, style, frame, number_tab),
                 };
+                // A list number's tab to a decimal stop uses it as a left stop.
+                if number_tab && kind == TabKind::Decimal {
+                    kind = TabKind::Left;
+                }
                 let stop_custom = p.object.is_none() && custom_stops(pen, units, style).next().is_some();
                 let custom = p.object.is_some() || stop_custom;
                 if !custom && !number_tab && stop > right + EPS && !past_custom && i > start && limit_end.is_none() {
@@ -1144,7 +1220,8 @@ fn fit_line(
                 } else {
                     ws.push(0.0);
                     let edge = if past { f64::INFINITY } else { right };
-                    pending = Some(Pending { tab: Some(i), from: i + 1, stop, kind, pen_at_tab: pen, collapse: false, edge, shift: indent_stop });
+                    pending =
+                        Some(Pending { tab: Some(i), from: i + 1, stop, kind, pen_at_tab: pen, drift, collapse: false, edge, shift: indent_stop });
                 }
                 // A line breaks before a tab, not after it: a tab whose next word doesn't fit goes to the next line
                 // with it, and a word too long after a tab first on its line is broken on that line (beside a
@@ -1182,18 +1259,17 @@ fn fit_line(
         }
         let right_edge = match &pending {
             Some(pt) if pt.kind == TabKind::Right => {
-                let w: f64 = ws[pt.from - start..].iter().sum::<f64>() + p.width;
-                (pt.pen_at_tab + w).max(pt.stop)
+                let w: f64 = ws[pt.from - start..].iter().sum::<f64>() + p.width + drift - pt.drift + p.break_extra;
+                (pt.pen_at_tab + pt.drift + w).max(pt.stop)
             }
             Some(pt) if pt.kind == TabKind::Center => {
-                let w: f64 = ws[pt.from - start..].iter().sum::<f64>() + p.width;
+                let w: f64 = ws[pt.from - start..].iter().sum::<f64>() + p.width + drift - pt.drift + p.break_extra;
                 // A stop at or before the right edge narrows its tab so the text ends at the edge.
                 let centred = pt.stop + w / 2.0;
-                (pt.pen_at_tab + w).max(if pt.stop <= right + EPS { centred.min(right) } else { centred })
+                (pt.pen_at_tab + pt.drift + w).max(if pt.stop <= right + EPS { centred.min(right) } else { centred })
             }
-            _ => pen + p.width,
-        } + drift
-            + p.break_extra;
+            _ => pen + p.width + drift + p.break_extra,
+        } + if p.kind == Kind::Text { open_side(sp, pieces, i) } else { 0.0 };
         let forced = limit_end.is_some();
         let limit = match &pending {
             Some(pt) if pt.kind == TabKind::Right && pt.stop > right => pt.stop,
@@ -1232,7 +1308,7 @@ fn fit_line(
                         continue;
                     }
                     let hy = hyphen_width(sp, &pieces[at - 1]);
-                    let pen_at = xs[at - 1 - start] + if auto { ws[at - 1 - start] } else { 0.0 };
+                    let pen_at = xs[at - 1 - start] + if auto { ws[at - 1 - start] } else { 0.0 } + fit_shift(if auto { at } else { at - 1 });
                     let fits = !past(pen_at + hy - left, right - left);
                     let legacy = auto && frame.compat == Compat::Legacy;
                     if legacy {
@@ -1245,7 +1321,7 @@ fn fit_line(
                             first_unfit = at - 1;
                         }
                     }
-                    if !fits || auto && !zoned(pieces, start, at, &xs, right, frame) {
+                    if !fits || auto && !zoned(pieces, start, at, &xs, right, frame, &fit_shift) {
                         breaks.pop();
                         continue;
                     }
@@ -1349,13 +1425,13 @@ impl Points {
 }
 
 // Hyphenation zone
-fn zoned(pieces: &[Piece], start: usize, at: usize, xs: &[f64], right: f64, frame: &Frame) -> bool {
+fn zoned(pieces: &[Piece], start: usize, at: usize, xs: &[f64], right: f64, frame: &Frame, shift: &dyn Fn(usize) -> f64) -> bool {
     if frame.hyphen_zone <= 0.0 {
         return true;
     }
     // Measured from the word's first letter; a word that starts the line isn't tested.
     let word = (start..at).rev().find(|&k| pieces[k].kind != Kind::Text).map_or(start, |k| k + 1);
-    word == start || right - xs[word - start] >= frame.hyphen_zone - EPS
+    word == start || right - xs[word - start] - shift(word) >= frame.hyphen_zone - EPS
 }
 
 // Space squeeze
@@ -1451,7 +1527,10 @@ fn justified_tab_end(
         }
         End { at: e, over: lu(x - left).round() - column, shrink, stretch, point: point(e) }
     };
-    let is_end = |e: usize| (pieces[e - 1].break_after || pieces[e - 1].kind == Kind::Tab) && pieces[e].kind != Kind::Space;
+    // A line ends after a word or before a tab after something other than anchors (the tab and its text start the
+    // next line), never between a tab and its text.
+    let before_tab = |e: usize| pieces[e].kind == Kind::Tab && pieces[start..e].iter().any(|p| p.kind != Kind::Anchor);
+    let is_end = |e: usize| pieces[e - 1].break_after && pieces[e].kind != Kind::Space || before_tab(e);
     let is_end = |e: usize| e == seg_end || is_end(e) || point(e);
     // From the last word end the greedy line reaches; no end past another tab.
     let lo = (start + 1..=greedy.end).rev().find(|&e| is_end(e) && !point(e)).unwrap_or(greedy.end);
@@ -1555,7 +1634,9 @@ fn justified_line(sp: &ShapedPara, pieces: &[Piece], from: usize, seg_end: usize
     let glyph_stretch = |p: &Piece| -> i64 { if style.jc == Jc::Distribute { glyph_stretch(sp, p).unwrap_or(0) } else { 0 } };
     let column = line_column(column);
     let mut ends: Vec<End> = Vec::new();
-    let (mut natural, mut content, mut shrink, mut stretch, mut glyphs, mut last_glyph) = (0.0, 0.0, 0, 0, 0, 0);
+    let (mut natural, mut content, mut shrink, mut stretch, mut glyphs, mut last_glyph) = (lu(lead_side(sp, pieces, from).0), 0.0, 0, 0, 0, 0);
+    // A line ending inside a text border's box closes it with a side.
+    let open = |k: usize| lu(open_side(sp, pieces, k));
     let (mut word, mut seen) = (false, false);
     // The end of the word before the spaces being read: a space that doesn't break joins the words.
     let mut word_end: Option<usize> = None;
@@ -1568,7 +1649,7 @@ fn justified_line(sp: &ShapedPara, pieces: &[Piece], from: usize, seg_end: usize
         match p.kind {
             Kind::Space => {
                 if std::mem::take(&mut word) {
-                    word_end = Some(end_word(&mut ends, k, natural, shrink, stretch + glyphs - last_glyph));
+                    word_end = Some(end_word(&mut ends, k, natural + open(k - 1), shrink, stretch + glyphs - last_glyph));
                 }
                 natural += lu(p.width) + lu(p.break_extra);
                 if seen && stretches(sp, p) {
@@ -1584,7 +1665,7 @@ fn justified_line(sp: &ShapedPara, pieces: &[Piece], from: usize, seg_end: usize
             }
             Kind::LineBreak | Kind::PageBreak | Kind::ColumnBreak => {
                 if std::mem::take(&mut word) {
-                    end_word(&mut ends, k, natural, shrink, stretch + glyphs - last_glyph);
+                    end_word(&mut ends, k, natural + open(k - 1), shrink, stretch + glyphs - last_glyph);
                 }
             }
             Kind::Anchor if !word => {}
@@ -1597,17 +1678,17 @@ fn justified_line(sp: &ShapedPara, pieces: &[Piece], from: usize, seg_end: usize
                     glyphs += last_glyph;
                 }
                 if k + 1 < seg_end && (p.soft_hyphen || points.at(pieces, k) && proofed(sp, pieces, k)) {
-                    let over = natural + lu(hyphen_width(sp, p)) - column;
+                    let over = natural + lu(hyphen_width(sp, p)) + open(k) - column;
                     ends.push(End { at: k + 1, over, shrink, stretch: stretch + glyphs, point: true });
                 } else if p.break_after && !p.soft_hyphen {
                     word = false;
-                    word_end = Some(end_word(&mut ends, k + 1, natural, shrink, stretch + glyphs - last_glyph));
+                    word_end = Some(end_word(&mut ends, k + 1, natural + open(k), shrink, stretch + glyphs - last_glyph));
                 }
             }
         }
     }
     if word {
-        end_word(&mut ends, seg_end, natural, shrink, stretch + glyphs - last_glyph);
+        end_word(&mut ends, seg_end, natural + open(seg_end - 1), shrink, stretch + glyphs - last_glyph);
     }
     if !seen {
         return LineChoice::Empty;
@@ -1778,9 +1859,10 @@ fn align(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, 
                 x += line.widths[k];
             }
         }
-        // Compat ≤ 14, every line, the last too: equal gaps between the characters (spaces included), the first at
-        // the left edge and the last ending at the right; a character alone is centred. Where East Asian text meets a
-        // Latin letter or a digit the gap takes half an em more.
+        // Compat ≤ 14, every line, the last too: the gaps between the characters (spaces included), the first at the
+        // left edge and the last ending at the right; a character alone is centred. Each space first grows towards its
+        // font's average character width, then the rest goes equally to every gap. Where East Asian text meets a Latin
+        // letter or a digit the gap takes half an em more.
         Jc::Distribute => {
             let chars: Vec<usize> = (0..content_end).filter(|&k| pieces[idx(k)].kind != Kind::Tab).collect();
             let extra = right - line_end_x;
@@ -1792,9 +1874,12 @@ fn align(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, 
                 let bonus: Vec<f64> = chars.windows(2).map(|w| auto_space(sp, &pieces[idx(w[0])], &pieces[idx(w[1])], style)).collect();
                 let extra = extra - bonus.iter().sum::<f64>();
                 if extra > 0.0 {
-                    let q = extra / (chars.len() - 1) as f64;
-                    for (j, &k) in chars[..chars.len() - 1].iter().enumerate() {
-                        line.widths[k] += q + bonus[j];
+                    let gaps = &chars[..chars.len() - 1];
+                    // A space's room to its target counts as share taken below nothing: one level over every gap.
+                    let taken: Vec<f64> = gaps.iter().map(|&k| -distribute_room(sp, &pieces[idx(k)], line.widths[k])).collect();
+                    let q = water_level(extra, &taken);
+                    for (j, &k) in gaps.iter().enumerate() {
+                        line.widths[k] += (q - taken[j]).max(0.0) + bonus[j];
                     }
                     let mut x = line.xs[0];
                     for k in 0..n {
@@ -1821,6 +1906,18 @@ fn space_room(p: &Piece, w: f64) -> (i64, i64) {
             ((((n + 1) >> 1) - (w - n)).max(0), 0)
         }
     }
+}
+
+/// How far a space `w` points wide grows first in a compat ≤ 14 distributed line: up to its font's average character
+/// width at its size, or half an em where the document balances its spaces and the run's East Asian font is an East
+/// Asian one; letters none.
+fn distribute_room(sp: &ShapedPara, p: &Piece, w: f64) -> f64 {
+    let st = &sp.styles[p.style as usize];
+    if !stretches(sp, p) {
+        return 0.0;
+    }
+    let em = if st.half_em_spaces { 0.5 } else { st.face.as_ref().map_or(0.0, |f| f.avg_width) };
+    ((em * st.size * LU_PER_PT).round() / LU_PER_PT - w).max(0.0)
 }
 
 fn stretch_cap(p: &Piece, w: f64) -> f64 {
@@ -2065,13 +2162,17 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
         desc = desc.max(d);
         sep_mark = Some(a + e + d);
     }
-    if last
-        && object
-        && un_text_asc + un_text_desc + num_asc == 0.0
-        && let Some(f) = fonts.face(&mark.ascii, None, mark.bold, mark.italic)
-    {
-        let (a, d, e) = sp.metrics(&f, mark, mark_size);
-        asc = asc.max(a + e + d);
+    // A paragraph's last line of only pictures is at least a single line high, all of the extra above the pictures:
+    // the mark's single height in compat ≤ 14, the picture runs' own fonts' in compat 15.
+    if last && object && un_text_asc + un_text_desc + num_asc == 0.0 {
+        let min = match compat {
+            Compat::Legacy => fonts.face(&mark.ascii, None, mark.bold, mark.italic).map_or(0.0, |f| {
+                let (a, d, e) = sp.metrics(&f, mark, mark_size);
+                a + e + d
+            }),
+            Compat::Generic => picture_line_height(sp, &pieces[line.start..line.end.min(pieces.len())], mark, fonts, last, compat, 0.0),
+        };
+        asc = asc.max(min - desc);
     }
     let asc = asc.max(num_asc);
     let un_asc = if !has_text { un_asc.max(num_asc) } else { un_asc };
@@ -2416,7 +2517,7 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
             // A text border's box starts here: its left side comes before the glyphs.
             let i = o.from + ix;
             let x = match super::text::boxed(&sp.pieces, &sp.styles, i) {
-                Some(b) if i == 0 || super::text::boxed(&sp.pieces, &sp.styles, i - 1) != Some(b) => x + super::text::border_side(b).1,
+                Some(b) if ix == line.start || super::text::boxed(&sp.pieces, &sp.styles, i - 1) != Some(b) => x + super::text::border_side(b).1,
                 _ => x,
             };
             let mut gx = x;

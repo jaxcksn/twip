@@ -912,3 +912,136 @@ fn compat_15_footnote_area_takes_the_columns_of_the_first_section_on_the_page_wi
     let widest = lines.iter().map(|l| l.2 - l.1).fold(0.0, f64::max);
     assert!(widest > 250.0, "S2's note is wrapped across the page: {lines:?}");
 }
+
+#[test]
+fn compat_15_a_note_area_under_balanced_columns_keeps_the_last_notes_space_after() {
+    // The reference in a balanced two-column section between one-column ones: the area holds the note's space after
+    // below its last line, as a one-column page's does.
+    let note_y = |after: u32| {
+        let extra =
+            format!(r#"<w:footnote w:id="10"><w:p><w:pPr><w:spacing w:after="{after}"/></w:pPr><w:r><w:t>Note text</w:t></w:r></w:p></w:footnote>"#);
+        let mut body = para("Intro", &[]) + &sect("", false);
+        body += &(1..=4).map(|i| para(&format!("L{i:02}"), if i == 2 { &["f10"][..] } else { &[] })).collect::<String>();
+        body += &sect(r#"<w:type w:val="continuous"/><w:cols w:num="2" w:space="720"/>"#, false);
+        body += &(para("Tail", &[]) + &sect(r#"<w:type w:val="continuous"/>"#, true));
+        let page = &super::page_chars(&notes_doc_with(&body, C15, &extra)?)[0];
+        page.windows(4).find(|w| w.iter().map(|c| c.0).eq("Note".chars())).map(|w| w[0].2)
+    };
+    let Some(none) = note_y(0) else { return };
+    let some = note_y(140).expect("the note on page 1");
+    assert!((none - some - 7.0).abs() < 0.05, "{none} {some}");
+}
+
+#[test]
+fn compat_14_a_second_note_on_a_cut_notes_line_follows_it_whole() {
+    // Ten lines in three balanced columns, line 4 referencing two seven-line notes: column 1 holds four lines and the
+    // first note's start, column 2 only notes (the first note's rest, then the second), column 3 the last six lines.
+    let p = |s: String| format!(r#"<w:p><w:pPr><w:spacing w:after="0"/></w:pPr>{s}</w:p>"#);
+    let note = |id: u32, q: char| {
+        let lines: String = (1..=7).map(|i| p(format!("<w:r><w:t>{q}{i:03}</w:t></w:r>"))).collect();
+        format!(r#"<w:footnote w:id="{id}">{lines}</w:footnote>"#)
+    };
+    let extra = note(10, 'Q') + &note(11, 'R');
+    let pr = r#"<w:footnotePr><w:pos w:val="beneathText"/></w:footnotePr>"#;
+    let refs = r#"<w:r><w:footnoteReference w:id="10"/></w:r><w:r><w:footnoteReference w:id="11"/></w:r>"#;
+    let mut b: String = (1..=10).map(|k| p(format!(r#"<w:r><w:t>P{k:03}</w:t></w:r>{}"#, if k == 4 { refs } else { "" }))).collect();
+    b += &sect(&format!(r#"{pr}<w:cols w:num="3" w:space="720"/>"#), false);
+    b += &(p("<w:r><w:t>Tail</w:t></w:r>".into()) + &sect(&format!(r#"<w:type w:val="continuous"/>{pr}"#), true));
+    let Some(doc) = notes_doc_with(&b, "", &extra) else { return };
+    let page = &super::page_chars(&doc)[0];
+    let x = |s: &str| page.windows(s.len()).find(|w| w.iter().map(|c| c.0).eq(s.chars())).map(|w| w[0].1);
+    let (Some(p4), Some(p5), Some(r1)) = (x("P004"), x("P005"), x("R001")) else { panic!("{page:?}") };
+    assert!(p4 < 200.0 && p5 > 400.0, "column 2 holds no lines: {p4} {p5}");
+    assert!(r1 > 200.0 && r1 < 300.0, "the second note starts in column 2: {r1}");
+}
+
+#[test]
+fn compat_14_widow_control_moves_a_paragraph_whose_float_reaches_into_the_note_area() {
+    // A page of exact 12pt lines with a six-line note and a frame, then a paragraph beside its own picture (5pt below
+    // its top, 70pt high), which ends in the body but below the text's room above the notes: however the paragraph
+    // meets the page bottom, widow control never leaves its first line alone there.
+    let emu = |pt: i64| pt * 12700;
+    let pic = format!(
+        r#"<w:r><w:drawing xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="1" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>{}</wp:posOffset></wp:positionV><wp:extent cx="{}" cy="{}"/><wp:wrapSquare wrapText="bothSides"/><wp:docPr id="1" name="P"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#,
+        emu(5),
+        emu(100),
+        emu(70)
+    );
+    let ppr = r#"<w:pPr><w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="exact"/></w:pPr>"#;
+    let note: String = (1..=6).map(|k| format!(r#"<w:p>{ppr}<w:r><w:t>Note {k}</w:t></w:r></w:p>"#)).collect();
+    let extra = format!(r#"<w:footnote w:id="10">{note}</w:footnote>"#);
+    let frame = format!(
+        r#"<w:p><w:pPr><w:framePr w:w="3000" w:hSpace="180" w:wrap="around" w:vAnchor="text" w:hAnchor="margin" w:xAlign="right" w:y="1"/>{}</w:pPr><w:r><w:t>{}</w:t></w:r></w:p>"#,
+        &ppr[7..ppr.len() - 8],
+        "Framed paragraph ".repeat(4)
+    );
+    let beside = "Words beside the frame that run on for a few lines of text. ".repeat(4);
+    let zeta: String = (1..=120).map(|k| format!("z{k} ")).collect();
+    let alone = |n: usize| {
+        let fill: String = (0..n)
+            .map(|k| {
+                format!(r#"<w:p>{ppr}<w:r><w:t>F{k}</w:t></w:r>{}</w:p>"#, if k == 0 { r#"<w:r><w:footnoteReference w:id="10"/></w:r>"# } else { "" })
+            })
+            .collect();
+        let body = format!(
+            r#"{fill}{frame}<w:p>{ppr}<w:r><w:t xml:space="preserve">{beside}</w:t></w:r></w:p><w:p>{ppr}{pic}<w:r><w:t xml:space="preserve">{zeta}</w:t></w:r></w:p>{}"#,
+            sect("", true)
+        );
+        let page = &super::page_chars(&notes_doc_with(&body, "", &extra)?)[0];
+        let mut ys: Vec<f64> = page.iter().filter(|c| c.0 == 'z').map(|c| c.2).collect();
+        ys.dedup_by(|a, b| (*a - *b).abs() < 0.5);
+        Some(ys.len() == 1)
+    };
+    let Some(first) = alone(39) else { return };
+    assert!(!first);
+    for n in 40..=42 {
+        assert_eq!(alone(n), Some(false), "{n} lines before it");
+    }
+}
+
+#[test]
+fn a_note_ending_in_a_deleted_mark_joins_the_next_notes_first_paragraph() {
+    // Footnotes draw the joined paragraph in the earlier note and the next note again in full; endnotes draw it once.
+    let del = r#"w:id="1" w:author="A" w:date="2026-01-01T00:00:00Z""#;
+    let count = |tag: &str, refs: [&str; 2]| {
+        let extra = format!(
+            r#"<w:{tag} w:id="10"><w:p><w:pPr><w:rPr><w:del {del}/></w:rPr></w:pPr><w:r><w:t>Tail</w:t></w:r></w:p></w:{tag}><w:{tag} w:id="11"><w:p><w:r><w:t>Second</w:t></w:r></w:p></w:{tag}>"#
+        );
+        let body = para("Text", &refs) + &sect("", true);
+        let mut doc = notes_doc_with(&body, "", &extra)?;
+        doc.review.view = crate::docx::review::MarkupView::NoMarkup;
+        let text: String = super::page_chars(&doc).iter().flatten().map(|c| c.0).collect();
+        Some((text.matches("Second").count(), text.contains("TailSecond")))
+    };
+    let Some(foot) = count("footnote", ["f10", "f11"]) else { return };
+    assert_eq!(foot, (2, true));
+    assert_eq!(count("endnote", ["e10", "e11"]).unwrap(), (1, true));
+}
+
+#[test]
+fn an_empty_paragraph_with_a_deleted_mark_ending_a_notes_story_isnt_laid_out() {
+    let del = r#"w:id="1" w:author="A" w:date="2026-01-01T00:00:00Z""#;
+    let note_y = |last: &str| {
+        let extra = format!(r#"<w:footnote w:id="10"><w:p><w:r><w:t>Note text</w:t></w:r></w:p>{last}</w:footnote>"#);
+        let mut doc = notes_doc_with(&(para("Text", &["f10"]) + &sect("", true)), "", &extra)?;
+        doc.review.view = crate::docx::review::MarkupView::NoMarkup;
+        let page = &super::page_chars(&doc)[0];
+        page.windows(4).find(|w| w.iter().map(|c| c.0).eq("Note".chars())).map(|w| w[0].2)
+    };
+    let Some(alone) = note_y("") else { return };
+    let empty = format!(r#"<w:p><w:pPr><w:rPr><w:del {del}/></w:rPr></w:pPr></w:p>"#);
+    assert!((note_y(&empty).unwrap() - alone).abs() < 0.01);
+}
+
+#[test]
+fn text_with_a_deleted_mark_ending_a_notes_story_takes_the_normal_styles_properties() {
+    let del = r#"w:id="1" w:author="A" w:date="2026-01-01T00:00:00Z""#;
+    let extra = format!(
+        r#"<w:footnote w:id="10"><w:p><w:pPr><w:jc w:val="right"/><w:rPr><w:del {del}/></w:rPr></w:pPr><w:r><w:t>Tail</w:t></w:r></w:p></w:footnote>"#
+    );
+    let Some(mut doc) = notes_doc_with(&(para("Text", &["f10"]) + &sect("", true)), "", &extra) else { return };
+    doc.review.view = crate::docx::review::MarkupView::NoMarkup;
+    let page = &super::page_chars(&doc)[0];
+    let x = page.windows(4).find(|w| w.iter().map(|c| c.0).eq("Tail".chars())).map(|w| w[0].1).expect("the note");
+    assert!(x < 100.0, "left-aligned as Normal: {x}");
+}

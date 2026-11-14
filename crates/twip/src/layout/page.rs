@@ -9,7 +9,7 @@ use crate::docx::review::MarkupView;
 
 use super::LayoutCtx;
 use super::flow::{AttemptState, NoteArea, PageFill, PassMemo, Stop};
-use super::fragment::{BoxFragment, BoxKind, Child, Item, LineFragment, PlacedLine, RowFragment};
+use super::fragment::{BoxFragment, BoxKind, Child, Item, PlacedLine, RowFragment};
 use super::ids::FragmentId;
 use super::job::{Memos, Yield};
 use super::node::{Notes, SectionNode};
@@ -272,6 +272,7 @@ impl<'d> Paginator<'d, '_> {
             style_refs: Vec::new(),
             page_fmt: self.sections[si].pg_fmt.clone(),
             chapter: None,
+            section_chapter: None,
             chapters: self.chapters.clone(),
         }
     }
@@ -586,6 +587,17 @@ impl<'d> Paginator<'d, '_> {
         let skip_last = matches!(blocks.get(n.wrapping_sub(1)), Some(Block::Para(p)) if p.inlines.is_empty() && n > 1);
         let mark_line = skip_last && fill.ctx.env.text.compat == Compat::Generic && matches!(blocks.get(n.wrapping_sub(2)), Some(Block::Table(_)));
         let state = fill.at.clone();
+        let view = fill.ctx.env.text.review.view;
+        let spacing: HashMap<_, _> = blocks
+            .blocks
+            .iter()
+            .filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None })
+            .map(|p| {
+                let (text, style) = (&fill.ctx.env.text, p.para_style_in(view));
+                (super::text::para_id(p), (super::paragraph::space_before(text, style), super::paragraph::space_after(text, style)))
+            })
+            .collect();
+        let legacy = fill.ctx.env.text.compat == Compat::Legacy;
         let mut bottoms = HashMap::new();
         if fill.ctx.env.text.compat == Compat::Legacy {
             for bi in (0..n).filter(|&bi| matches!(blocks.get(bi), Some(Block::Table(_)))) {
@@ -606,6 +618,7 @@ impl<'d> Paginator<'d, '_> {
             let mut children = Vec::new();
             let mut stats = Vec::new();
             let mut end = top;
+            let mut lines_end = top;
             let stream = stream.map(|a| NoteArea { below: true, ..a.clone() });
             fill.at = AttemptState { known: state.known.clone(), stream, beneath: state.beneath, ..Default::default() };
             for (k, c) in cols.iter().enumerate() {
@@ -617,7 +630,10 @@ impl<'d> Paginator<'d, '_> {
                 // A column's height takes its last paragraph's space after, unless the paragraph goes on in the next
                 // column (the last column's bottom has it already).
                 let hang = |pos: &FlowToken, carry: &FlowState| if s == Stop::Done || !pos.at.at_start() { 0.0 } else { carry.prev_after };
-                stats.push(ColStats::of(&r.children, r.bottom - top + hang(&pos, &carry), &bottoms));
+                let tail = if s == Stop::Done || pos.at.at_start() { carry.prev_after } else { 0.0 };
+                stats.push(ColStats::of(&r.children, top, r.bottom - top + hang(&pos, &carry), tail, &spacing, &bottoms));
+                // The column's last line bottom: a finished fill's bottom holds the last space after.
+                lines_end = lines_end.max(r.bottom - if s == Stop::Done { carry.prev_after } else { 0.0 });
                 let mut kids = r.children;
                 let mut bottom = r.bottom;
                 let at_mark = skip_last && pos.block + 1 == n && pos.at.at_start();
@@ -626,6 +642,7 @@ impl<'d> Paginator<'d, '_> {
                     (pos, carry, bottom) = (m.token, m.state, m.bottom);
                     kids.extend(m.children);
                 }
+
                 children.push(Child::Box(BoxFragment {
                     kind: BoxKind::Column,
                     id: None,
@@ -642,6 +659,11 @@ impl<'d> Paginator<'d, '_> {
                     return Ok((None, stats));
                 }
                 if s == Stop::Done || at_mark {
+                    // Compat ≤ 14: the section ends at the height tried or at its tallest column, whichever is less,
+                    // but never above a column's last line (with the room multiple spacing adds below it).
+                    if legacy {
+                        end = end.min(top + h).max(lines_end);
+                    }
                     return Ok((Some((pos, carry, children, end.max(fill.at.notes_bottom), fill.at.effects.clone())), stats));
                 }
                 if k + 1 < cols.len() {
@@ -667,8 +689,7 @@ impl<'d> Paginator<'d, '_> {
             // heights). Equal columns start at the unbalanced fill's total over the column count, rounded up; explicit
             // widths at its layout height weighted by the first column's width, in whole twips. Never below the mean
             // line height, the height grows while content is left over by the failed fill's mean line height, each
-            // column's height counted at most up to the height tried. The section ends at that height or at its
-            // tallest column, whichever is less.
+            // column's height counted at most up to the height tried.
             let (lines, total) = stats.iter().fold((0, 0), |(n, t), s| (n + s.lines, t + s.used + s.extra));
             let columns = &sec.section.section_in(fill.ctx.env.text.review.view).columns;
             h = if columns.equal {
@@ -685,16 +706,15 @@ impl<'d> Paginator<'d, '_> {
                 h = (h + if lines > 0 { (used / lines).max(1) } else { 49152 }).min(full_lu);
                 r = try_h(fill, to_pt(h), memos)?;
             }
-            if let Some(done) = &mut r.0 {
-                done.3 = done.3.min(top + to_pt(h)).max(fill.at.notes_bottom);
-            }
         } else {
-            // From the unbalanced fill's line heights weighted by the columns' widths, rounded down to its smallest
-            // line, the height grows by the failed fill's smallest line or row, or shrinks by the fitting fill's while
-            // it still fits.
+            // From the unbalanced fill's paragraph heights weighted by the columns' widths, rounded down to its
+            // smallest paragraph step, the height grows by the failed fill's smallest step, or shrinks by the fitting
+            // fill's while it still fits; a grow or shrink step is never below 240 tw, and is 240 tw after a fill
+            // that placed nothing.
+            const FLOOR: i64 = 49152;
             let smallest = |st: &[ColStats]| st.iter().filter(|s| s.min > 0).map(|s| s.min).min();
-            let m = smallest(&stats).unwrap_or(1).max(1);
-            let step = |st: &[ColStats]| smallest(st).unwrap_or(m).max(1);
+            let m = smallest(&stats).unwrap_or(FLOOR);
+            let step = |st: &[ColStats]| smallest(st).unwrap_or(FLOOR).max(FLOOR);
             h = (widths.iter().zip(&stats).map(|(w, s)| w * s.height as f64).sum::<f64>() / wsum) as i64;
             h = (h - h % m).min(full_lu);
             r = try_h(fill, to_pt(h), memos)?;
@@ -749,10 +769,11 @@ pub(crate) fn fields_used(fields: &BodyFields, blocks: &[&Block]) -> BodyFields 
                         }
                         let Inline::FieldBegin { kind: Some(kind), .. } = i else { continue };
                         match kind {
-                            FieldKind::Page => {
+                            FieldKind::Page | FieldKind::PgNum => {
                                 out.page.clone_from(&all.page);
                                 out.page_fmt.clone_from(&all.page_fmt);
                                 out.chapter.clone_from(&all.chapter);
+                                out.section_chapter.clone_from(&all.section_chapter);
                                 out.chapters.clone_from(&all.chapters);
                             }
                             FieldKind::NumPages => out.num_pages.clone_from(&all.num_pages),
@@ -897,7 +918,23 @@ pub fn layout_body(
                 let found = fill.at.found.clone();
                 let notes = fill.at.stream.as_ref().map_or(0.0, |a| a.height);
                 // A float that met earlier text only in this fill is seen by that text in the next.
-                let stable = found.len() == known.len() && found.iter().all(|f| known.iter().any(|k| k.same(f) && k.collided >= f.collided));
+                // Compat ≤ 14: a drawing after a frame placed above its flow position that meets earlier text and
+                // didn't stay in the fill before starts the page again, until it stays and its frames are placed
+                // against each other.
+                let frame =
+                    |f: &super::float::Placed| f.float.text_box.is_some() && f.float.shape.is_none() || f.key.2 >= super::float::UPRIGHT_TABLE;
+                let again = found.iter().any(|f| {
+                    f.restarts
+                        && f.wrap != super::float::Wrap::None
+                        && !frame(f)
+                        && !known.iter().any(|k| k.same(f) && k.frozen)
+                        && found.iter().any(|r| r.rounded_up && r.key.0 == f.key.0 && (r.key.1, r.key.2) < (f.key.1, f.key.2))
+                });
+                if again {
+                    attempts = attempts.max(attempt + 2).min(64);
+                }
+                let stable =
+                    !again && found.len() == known.len() && found.iter().all(|f| known.iter().any(|k| k.same(f) && k.collided >= f.collided));
                 attempts = attempts.max(2 + found.len() + drops).min(64);
                 if (stable && (notes - reserve).abs() < EPS) || attempt >= attempts {
                     return Ok(true);
@@ -1155,7 +1192,9 @@ fn separators(c: &Columns, cols: &[ColumnSpace], top: f64, earlier: &[Rc<BoxFrag
 
 struct ColStats {
     lines: i64,
+    /// The sum of the column's paragraph piece heights, each with the spacing it holds.
     height: i64,
+    /// The smallest paragraph piece step: its smallest line with the spacing attached to it (0 with none).
     min: i64,
     used: i64,
     /// What compat ≤ 14 balancing counts beyond `used`: every table row's bottom border, not only the part's last.
@@ -1163,31 +1202,65 @@ struct ColStats {
 }
 
 impl ColStats {
-    fn of(children: &[Child], used: f64, bottoms: &HashMap<super::ids::TableId, f64>) -> ColStats {
-        let mut st = ColStats { lines: 0, height: 0, min: i64::MAX, used: i64::from(Lu::round_half_up(used).0), extra: 0 };
-        for c in children {
-            if let Child::Table(t) = c {
-                let b = bottoms.get(&t.table).copied().unwrap_or(0.0);
-                st.extra += i64::from(Lu::round_half_up(b * t.rows.len().saturating_sub(1) as f64).0);
-            }
-        }
-        // A line lower than its text's size counts but isn't the smallest line.
-        let mut add = |h: f64, size: f64| {
-            let lu = i64::from(Lu::round_half_up(h).0);
-            st.lines += 1;
-            st.height += lu;
-            if h >= size {
-                st.min = st.min.min(lu);
-            }
-        };
-        let size = |l: &LineFragment| l.items.iter().filter_map(|i| if let Item::Glyphs(r) = i { Some(r.size) } else { None }).fold(0.0, f64::max);
+    /// `tail` is the space after of the column's last piece as laid out (0 when its paragraph goes on), `spacing` each
+    /// paragraph's own space before and after.
+    fn of(
+        children: &[Child],
+        top: f64,
+        used: f64,
+        tail: f64,
+        spacing: &HashMap<super::ids::ParaId, (f64, f64)>,
+        bottoms: &HashMap<super::ids::TableId, f64>,
+    ) -> ColStats {
+        let lu = |h: f64| i64::from(Lu::round_half_up(h).0);
+        let mut st = ColStats { lines: 0, height: 0, min: i64::MAX, used: lu(used), extra: 0 };
+        // The column's pieces in order: a paragraph's lines (top, pitch) with its id, or one table row.
+        let mut pieces: Vec<(Option<super::ids::ParaId>, Vec<(f64, f64)>)> = Vec::new();
         for c in children {
             match c {
-                Child::Para(p) => p.lines.iter().for_each(|l| add(l.line.pitch, size(&l.line))),
-                Child::Table(t) => t.rows.iter().for_each(|r| add(r.rect[3] - r.rect[1], 0.0)),
-                Child::Line { placed, .. } => add(placed.line.pitch, size(&placed.line)),
+                Child::Para(p) => pieces.push((Some(p.para), p.lines.iter().map(|l| (l.y, l.line.pitch)).collect())),
+                Child::Line { para, placed } => match pieces.last_mut() {
+                    Some((Some(q), ls)) if Some(*q) == *para => ls.push((placed.y, placed.line.pitch)),
+                    _ => pieces.push((*para, vec![(placed.y, placed.line.pitch)])),
+                },
+                Child::Table(t) => {
+                    let b = bottoms.get(&t.table).copied().unwrap_or(0.0);
+                    st.extra += lu(b * t.rows.len().saturating_sub(1) as f64);
+                    pieces.extend(t.rows.iter().map(|r| (None, vec![(r.rect[1], r.rect[3] - r.rect[1])])));
+                }
                 _ => {}
             }
+        }
+        let mut prev_end = top;
+        for (i, (para, ls)) in pieces.iter().enumerate() {
+            let Some(&(y0, _)) = ls.first() else { continue };
+            let (yl, pl) = ls[ls.len() - 1];
+            let bottom = yl + pl;
+            let after = match pieces.get(i + 1).and_then(|p| Some((p.0, p.1.first()?.0))) {
+                Some((next_para, next)) => {
+                    let gap = (next - bottom).max(0.0);
+                    match para {
+                        Some(q) => spacing.get(q).map_or(0.0, |s| s.1).min(gap),
+                        // A table part's closing border belongs to its last row.
+                        None => (gap - next_para.and_then(|q| spacing.get(&q)).map_or(0.0, |s| s.0)).max(0.0),
+                    }
+                }
+                None => tail,
+            };
+            let before = (y0 - prev_end).max(0.0);
+            let h = bottom + after - prev_end.min(y0);
+            prev_end = bottom + after;
+            st.lines += ls.len() as i64;
+            st.height += lu(h);
+            let step = if ls.len() == 1 {
+                h
+            } else {
+                ls.iter()
+                    .enumerate()
+                    .map(|(j, &(_, p))| p + if j == 0 { before } else { 0.0 } + if j + 1 == ls.len() { after } else { 0.0 })
+                    .fold(f64::MAX, f64::min)
+            };
+            st.min = st.min.min(lu(step));
         }
         if st.min == i64::MAX {
             st.min = 0;
