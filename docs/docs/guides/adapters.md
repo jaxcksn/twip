@@ -21,6 +21,9 @@ and never tears. `useTwipEditor` mounts an editor in an element and destroys it 
 
 `getState()` returns the same snapshot until something changes, which is what `useSyncExternalStore` needs.
 
+The toolbar cancels `mousedown`, so a click on a button leaves the keyboard focus in the document and typing carries on
+there. A toolbar that takes the focus (a font-size box, say) calls `editor.focus()` once its command has run.
+
 ## Angular
 
 `TwipStateService` turns `subscribe` into a signal and ties listeners to the lifetime of the injector that provides

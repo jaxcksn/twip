@@ -19,7 +19,7 @@ import { startScroll } from './scroll.js';
 /** What a mounted editor gets from its host. */
 export interface Host extends Chrome, Clipboard {
   focus(): void;
-  /** Resolves once the first viewport is drawn, or at once when the container is hidden or has no size. */
+  /** Resolves once the first viewport is drawn, or at once when the container or the page is hidden or has no size. */
   ready(): Promise<void>;
 }
 

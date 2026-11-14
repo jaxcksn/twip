@@ -57,7 +57,7 @@ pub enum Notice {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Request {
-    ScrollIntoView { page: usize, rect: [f64; 4] },
+    ScrollIntoView { page: usize, rect: [f64; 4], at_top: bool },
     Autoscroll { vx: f64, vy: f64 },
     CapturePointer,
     ReleasePointer,

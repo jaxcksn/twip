@@ -6,7 +6,8 @@ export function DocumentView({ document }: { document: Uint8Array }) {
   const bold = state?.commands.setBold;
   return (
     <div className="document-view">
-      <div role="toolbar">
+      {/* A press on a button keeps the focus in the document, so typing goes on there. */}
+      <div role="toolbar" onMouseDown={(e) => e.preventDefault()}>
         <button
           disabled={!bold?.enabled}
           aria-pressed={state?.formatting.bold === true}

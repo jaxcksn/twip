@@ -520,6 +520,34 @@ mod tests {
     }
 
     #[test]
+    fn scrolls_clear_the_rulers_and_jumps_go_to_the_top_of_the_view() {
+        use crate::api::session::HostRequest;
+        let mut f = Fixture::open("editor/FX-LONG-50.docx");
+        let seen: Rc<RefCell<Vec<(f64, f64)>>> = Rc::default();
+        let sink = seen.clone();
+        f.s().host().attach(move |r| {
+            if let HostRequest::ScrollTo { y, height, .. } = r {
+                sink.borrow_mut().push((y, height));
+            }
+        });
+        f.s().host().set_rulers(true, true);
+        f.s().host().set_scroll(0.0, 3000.0);
+        let ctrl = Modifiers { ctrl: true, ..NONE };
+        f.s().key(crate::api::input::Key::Home, ctrl);
+        let (y, h) = *seen.borrow().last().expect("Ctrl+Home scrolls");
+        assert!(y <= 0.0 && h >= 600.0, "the top of the first page, at the top: {y} {h}");
+        let caret = |f: &mut Fixture| f.s().host().frame_info().caret_y;
+        let at = caret(&mut f);
+        f.s().key(crate::api::input::Key::ArrowDown, NONE);
+        let (y, h) = *seen.borrow().last().expect("a caret move scrolls");
+        let line = caret(&mut f) - at;
+        assert!(h < 100.0 && h > line, "the line and the horizontal ruler over it: {y} {h}");
+        f.s().run(crate::api::command::Command::GoToPage(3)).expect("goes");
+        let (_, h) = *seen.borrow().last().expect("a jump scrolls");
+        assert!(h >= 600.0, "a jump puts its line at the top: {h}");
+    }
+
+    #[test]
     fn a_text_drag_moves_the_text_unless_rebound() {
         let mut f = Fixture::open("editor/FX-bad-image.docx");
         let to = f.at("for more");

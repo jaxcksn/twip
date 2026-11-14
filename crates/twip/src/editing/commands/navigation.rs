@@ -114,7 +114,7 @@ impl Editor {
         let Some(at) = found else { return Outcome::Unchanged("no such bookmark") };
         self.set_selection(Selection::Caret(at));
         self.ensure(&at, fonts);
-        self.scroll_to_caret(fonts);
+        self.jump_to_caret();
         Outcome::Moved
     }
 
@@ -130,7 +130,7 @@ impl Editor {
         let at = Position { story: hit.story, place: Place::Text { para: hit.para, offset: hit.unit, affinity: hit.affinity } };
         let at = self.nav().line_edge(at, false).unwrap_or(at);
         self.set_selection(Selection::Caret(at));
-        self.scroll_to_caret(fonts);
+        self.jump_to_caret();
         Outcome::Moved
     }
 }

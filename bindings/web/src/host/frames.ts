@@ -12,7 +12,7 @@ export interface Frames {
   readonly info: FrameInfo;
   /** Draws a frame at the next animation frame. */
   request(): void;
-  /** Resolves once a frame was drawn after this call; at once while the editor has no size. */
+  /** Resolves once a frame was drawn after this call; at once while the editor has no size or the page is hidden. */
   drawn(): Promise<void>;
 }
 
@@ -81,6 +81,9 @@ export async function startFrames(s: Session, dom: Dom, ledger: Ledger, report: 
   ledger.observe(new ResizeObserver(resize)).observe(dom.scroller);
   // Shown again (display, visibility, scrolled into the page): draw.
   ledger.observe(new IntersectionObserver((entries) => entries.some((e) => e.isIntersecting) && resize())).observe(dom.scroller);
+  // A hidden page draws no animation frames: what waits for one doesn't wait for the page to show.
+  const page = dom.scroller.ownerDocument;
+  ledger.listen(page, 'visibilitychange', () => (page.hidden ? settle() : request()));
   const onMessage = (message: Message) => {
     if (message.kind === Kind.RequestFrame) request();
   };
@@ -94,7 +97,7 @@ export async function startFrames(s: Session, dom: Dom, ledger: Ledger, report: 
     },
     request,
     drawn: () => {
-      if (!surface.width || !surface.height || s.destroyed) return Promise.resolve();
+      if (!surface.width || !surface.height || page.hidden || s.destroyed) return Promise.resolve();
       request();
       return new Promise((resolve) => waiting.push(resolve));
     },

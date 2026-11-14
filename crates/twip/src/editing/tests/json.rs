@@ -408,7 +408,7 @@ fn notice(n: &Notice) -> Value {
 
 fn request(r: &Request) -> Value {
     match r {
-        Request::ScrollIntoView { page, rect } => json!({ "type": "scroll_into_view", "page": page, "rect": rect }),
+        Request::ScrollIntoView { page, rect, at_top } => json!({ "type": "scroll_into_view", "page": page, "rect": rect, "at_top": at_top }),
         Request::Autoscroll { vx, vy } => json!({ "type": "autoscroll", "vx": vx, "vy": vy }),
         Request::CapturePointer => json!({ "type": "capture_pointer" }),
         Request::ReleasePointer => json!({ "type": "release_pointer" }),

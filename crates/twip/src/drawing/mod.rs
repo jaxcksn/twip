@@ -166,7 +166,7 @@ impl Shape {
             },
             NewShape::TextBox => SpShape {
                 geom: preset(geom::Preset::Rect),
-                fill: Some(Fill::None),
+                fill: Some(Fill::Solid(Colour::srgb(0xFF_FFFF))),
                 line: Some(Line { width: Some(Emu(6350)), fill: Some(Fill::Solid(Colour::srgb(0))), ..Line::default() }),
                 text: ShapeText::Story,
                 text_box: true,

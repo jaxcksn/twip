@@ -54,7 +54,7 @@ impl Editor {
         self.set_selection(Selection::Caret(target));
         self.back_step = Some(k);
         self.ensure(&target, fonts);
-        self.scroll_to_caret(fonts);
+        self.jump_to_caret();
         Outcome::Moved
     }
 }

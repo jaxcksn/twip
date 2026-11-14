@@ -267,6 +267,9 @@ fn from_ooxml<T: serde::de::DeserializeOwned + Default>(s: &str) -> T {
     serde_json::from_value(serde_json::Value::String(s.into())).unwrap_or_default()
 }
 
+/// How far below its paragraph's top a picture floated from the paragraph's first line goes, pt (Word's 3175 EMU).
+const MIN_BELOW_PARA: f64 = 0.25;
+
 const HANDLES: [(f64, f64); 8] = [(-1.0, -1.0), (0.0, -1.0), (1.0, -1.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0), (-1.0, 1.0), (-1.0, 0.0)];
 
 impl ObjectDrag {
@@ -459,6 +462,10 @@ impl Editor {
         let d = self.object_drag.take()?;
         self.requests.push(Request::ReleasePointer);
         let label = if d.handle.is_some() { "Resize Object" } else { "Move Object" };
+        // The page it's dropped on, laid out after the live preview, holds its new anchor.
+        if d.over != d.page {
+            self.ensure_page(d.over, fonts);
+        }
         let out = match d.obj {
             _ if d.now == d.start => Outcome::Unchanged("no drag"),
             ObjectRef::Floating(f) => match self.dropped_float(f, &d) {
@@ -474,7 +481,7 @@ impl Editor {
         Some(out)
     }
 
-    pub(super) fn object_move(&mut self, x: f64, y: f64, mods: super::keymap::Mods) {
+    pub(super) fn object_move(&mut self, x: f64, y: f64, mods: super::keymap::Mods, fonts: &Fonts) {
         let Some(mut d) = self.object_drag else { return };
         (d.now, d.shift) = ((x, y), mods.shift);
         d.snapping = if mods.alt { Snapping::Free } else { Snapping::On };
@@ -512,6 +519,9 @@ impl Editor {
             return;
         };
         d.live |= self.live_layout && d.now != d.start;
+        if d.live && d.over != d.page {
+            self.ensure_page(d.over, fonts);
+        }
         if d.live {
             let preview = self
                 .dropped_float(f, &d)
@@ -758,7 +768,13 @@ impl Editor {
             frame_src: None,
             in_note: false,
             parts: Vec::new(),
-            shape: None,
+            // The shape the saved box reopens with: its white fill and outline draw now.
+            shape: Some(Box::new(crate::drawing::Shape::new(
+                crate::drawing::NewShape::TextBox,
+                crate::drawing::units::Emu::from_pt(144.0),
+                crate::drawing::units::Emu::from_pt(72.0),
+                "Text Box",
+            ))),
             rot_swap: false,
             vml: false,
             relative: Default::default(),
@@ -1005,9 +1021,15 @@ impl Editor {
             return Outcome::Unchanged("no picture");
         };
         let near = self.near;
+        // Where it lies in line, kept below its paragraph's top as Word's conversion keeps it: at the top exactly, the
+        // last line of the paragraph before wraps around it.
         let was = self.pages.pages_of(para, near, &self.index).into_iter().find_map(|page| {
             let geo = self.pages.page(page, &self.index)?;
-            self.inline_box(&geo, para, offset).map(|r| (page, r))
+            let top = geo.lines_of(para).map(|(_, l)| l.top).fold(f64::INFINITY, f64::min);
+            self.inline_box(&geo, para, offset).map(|[x0, y0, x1, y1]| {
+                let dy = (top + MIN_BELOW_PARA - y0).max(0.0);
+                (page, [x0, y0 + dy, x1, y1 + dy])
+            })
         });
         let (wrap, behind) = match wrap {
             "behind" => ("none", true),

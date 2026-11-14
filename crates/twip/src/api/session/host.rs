@@ -508,6 +508,17 @@ impl Presentation {
         self.renderer.appearance
     }
 
+    /// The `scroll_to` request that shows `rect` (document points) clear of the rulers drawn over the viewport's
+    /// edges; `top` puts it at the top of the view.
+    fn scroll_to(&self, [x0, y0, x1, y1]: [f64; 4], top: bool) -> HostRequest {
+        let k = self.px_per_pt();
+        let band = |on: bool| if on { crate::services::ruler::BAND } else { 0.0 };
+        let (left, over) = (band(self.rulers.vertical), band(self.rulers.horizontal));
+        // A rectangle as tall as the view, from it down, scrolls it to the top however little the host scrolls.
+        let height = if top { self.height.max((y1 - y0) * k + over) } else { (y1 - y0) * k + over };
+        HostRequest::ScrollTo { x: x0 * k - left, y: y0 * k - over, width: (x1 - x0) * k + left, height }
+    }
+
     /// A viewport point, CSS px, in document points.
     pub(super) fn to_document(&self, at: Point) -> (f64, f64) {
         let k = self.px_per_pt();
@@ -813,9 +824,9 @@ impl Session {
                     };
                     out.push(HostRequest::Clipboard { data });
                 }
-                Request::ScrollIntoView { page, rect: [x0, y0, x1, y1] } => {
+                Request::ScrollIntoView { page, rect: [x0, y0, x1, y1], at_top } => {
                     if let Some((x, y)) = stack.to_doc(page, x0, y0) {
-                        out.push(HostRequest::ScrollTo { x: x * k, y: y * k, width: (x1 - x0) * k, height: (y1 - y0) * k });
+                        out.push(self.presentation.scroll_to([x, y, x + x1 - x0, y + y1 - y0], at_top));
                     }
                 }
                 // shortcut: hosts autoscroll a drag themselves, and placeholder activation is an event the
@@ -1494,11 +1505,10 @@ impl HostSurface<'_> {
 
     /// Scrolls the selection into view: a `scroll_to` request for the selection's focus.
     pub fn reveal_selection(&mut self) {
-        let k = self.session.presentation.px_per_pt();
         let e = &mut self.session.editor;
         let Some(c) = e.caret_view() else { return };
         let Some((x, y)) = e.stack().to_doc(c.page, c.x, c.top) else { return };
-        let request = HostRequest::ScrollTo { x: x * k, y: y * k, width: k, height: (c.bottom - c.top) * k };
+        let request = self.session.presentation.scroll_to([x, y, x + 1.0, y + c.bottom - c.top], false);
         if let Some(deliver) = self.session.presentation.sink.deliver.as_mut() {
             deliver(request);
         }

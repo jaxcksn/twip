@@ -3673,8 +3673,8 @@ impl Saver<'_, '_> {
             concat!(
                 r#"<{w}drawing><wp:anchor xmlns:wp="{wp}" distT="{dt}" distB="{db}" distL="{dl}" distR="{dr}" simplePos="0" relativeHeight="{id}" "#,
                 r#"behindDoc="{behind}" locked="{locked}" layoutInCell="{cell}" allowOverlap="{overlap}"><wp:simplePos x="0" y="0"/>{h}{v}"#,
-                r#"<wp:extent cx="{cx}" cy="{cy}"/><wp:effectExtent l="0" t="0" r="0" b="0"/>{wrap}<wp:docPr id="{id}" name="{kind} {id}"/>"#,
-                r#"<wp:cNvGraphicFramePr/><a:graphic xmlns:a="{a}">{graphic}</a:graphic></wp:anchor></{w}drawing>"#
+                r#"<wp:extent cx="{cx}" cy="{cy}"/><wp:effectExtent l="0" t="0" r="0" b="0"/>{wrap}<wp:docPr id="{id}" name="{kind} {id}"{descr}/>"#,
+                r#"<wp:cNvGraphicFramePr>{locks}</wp:cNvGraphicFramePr><a:graphic xmlns:a="{a}">{graphic}</a:graphic></wp:anchor></{w}drawing>"#
             ),
             w = self.w,
             wp = WP,
@@ -3697,6 +3697,8 @@ impl Saver<'_, '_> {
                 Some(n) => props::esc(n),
                 None => (if f.text_box.is_some() { "Text Box" } else { "Picture" }).to_string(),
             },
+            descr = descr_attr(&f.alt),
+            locks = if f.lock_aspect { format!(r#"<a:graphicFrameLocks xmlns:a="{A}" noChangeAspect="1"/>"#) } else { String::new() },
             graphic = graphic,
         ))
     }
@@ -3745,7 +3747,7 @@ impl Saver<'_, '_> {
             return Some(format!(
                 concat!(
                     r#"<{w}drawing><wp:inline xmlns:wp="{wp}" distT="0" distB="0" distL="0" distR="0"><wp:extent cx="{cx}" cy="{cy}"/>"#,
-                    r#"<wp:effectExtent l="0" t="0" r="0" b="0"/><wp:docPr id="{id}" name="{name} {id}"/><wp:cNvGraphicFramePr/>"#,
+                    r#"<wp:effectExtent l="0" t="0" r="0" b="0"/><wp:docPr id="{id}" name="{name} {id}"{descr}/><wp:cNvGraphicFramePr/>"#,
                     r#"<a:graphic xmlns:a="{a}">{graphic}</a:graphic></wp:inline></{w}drawing>"#
                 ),
                 w = self.w,
@@ -3755,6 +3757,7 @@ impl Saver<'_, '_> {
                 cy = cy,
                 id = id,
                 name = name,
+                descr = descr_attr(&p.alt),
                 graphic = drawing::graphic_data(
                     &shape,
                     &|path: &[u16]| new_blocks_xml(
@@ -3781,7 +3784,7 @@ impl Saver<'_, '_> {
             return Some(format!(
                 concat!(
                     r#"<{w}drawing><wp:inline xmlns:wp="{wp}" distT="0" distB="0" distL="0" distR="0"><wp:extent cx="{cx}" cy="{cy}"/>"#,
-                    r#"<wp:effectExtent l="0" t="0" r="0" b="0"/><wp:docPr id="{id}" name="Picture {id}"/><wp:cNvGraphicFramePr>"#,
+                    r#"<wp:effectExtent l="0" t="0" r="0" b="0"/><wp:docPr id="{id}" name="Picture {id}"{descr}/><wp:cNvGraphicFramePr>"#,
                     r#"<a:graphicFrameLocks xmlns:a="{a}" noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic xmlns:a="{a}">"#,
                     r#"<a:graphicData uri="{pic}"><pic:pic xmlns:pic="{pic}"><pic:nvPicPr><pic:cNvPr id="0" name="Picture {id}"/>"#,
                     r#"<pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip xmlns:r="{r}" r:embed="{new}{image}"/><a:stretch><a:fillRect/>"#,
@@ -3798,10 +3801,16 @@ impl Saver<'_, '_> {
                 cy = cy,
                 id = id,
                 image = image,
+                descr = descr_attr(&p.alt),
             ));
         }
         object_xml(&self.w, i)
     }
+}
+
+/// A new drawing's `wp:docPr/@descr`, its alternative text: none when it has none.
+fn descr_attr(alt: &str) -> String {
+    if alt.is_empty() { String::new() } else { format!(r#" descr="{}""#, props::esc(alt)) }
 }
 
 /// Each made part that embeds a new picture's image ([`NEW_IMAGE`]): the image as a media part beside it, its
