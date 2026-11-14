@@ -1343,6 +1343,8 @@ pub fn fit_frame(f: &Float, width: f64, env: &StoryEnv, memos: &mut Memos) -> Re
     if let Some(tb) = f.text_box.as_ref().filter(|_| no_wrap) {
         let fr = inner_frame(tb, f.shape.as_deref(), [0.0, 0.0, f.w, f.h]);
         let (longest, _) = longest_line(tb, 1584.0, env, memos)?;
+        let tables = tb.blocks.iter().filter_map(|b| if let Block::Table(t) = b { Some(table_extent(t, width, env)) } else { None });
+        let longest = tables.fold(longest, f64::max);
         return Ok(Some(Float { w: (f.w - (fr[2] - fr[0]) + longest).min(width.max(f.w)), ..f.clone() }));
     }
     // A text box that fits its vertical text: the lines stack across, so the width follows them.
@@ -1359,6 +1361,27 @@ pub fn fit_frame(f: &Float, width: f64, env: &StoryEnv, memos: &mut Memos) -> Re
     let (w, lines) = longest_line(tb, width, env, memos)?;
     let w = if lines > 1 { width } else { w.min(width) };
     Ok(Some(Float { w: w + tb.insets[0] + tb.insets[2], ..f.clone() }))
+}
+
+/// The width a table reports to a box whose text doesn't wrap: from its first cell's text left to its last cell's
+/// text right as its grid stores it, less half its outer side borders in compat 15. Compat ≤ 14 resolves a pct width
+/// against the section's column.
+fn table_extent(t: &crate::docx::Table, column: f64, env: &StoryEnv) -> f64 {
+    let legacy = env.ctx.env.text.compat == Compat::Legacy;
+    let grid: f64 = t.table_grid_in(env.ctx.env.text.review.view).iter().sum();
+    let total = match t.width {
+        crate::docx::props::Width::Pct(_) if legacy => match super::table::in_column(t, column, env).width {
+            crate::docx::props::Width::Dxa(w) => w,
+            _ => grid,
+        },
+        _ => grid,
+    };
+    let row = t.rows.first();
+    let lm = row.and_then(|r| r.cells.first()).map_or(0.0, |c| c.margins[1]);
+    let rm = row.and_then(|r| r.cells.last()).map_or(0.0, |c| c.margins[3]);
+    let side = |b: &Option<crate::docx::props::Border>| b.as_ref().filter(|b| b.visible()).map_or(0.0, |b| b.width);
+    let borders = if legacy { 0.0 } else { (side(&t.borders[1]) + side(&t.borders[3])) / 2.0 };
+    total - lm - rm - borders
 }
 
 /// The right edge of the widest line, trailing spaces excluded, and the number of lines.

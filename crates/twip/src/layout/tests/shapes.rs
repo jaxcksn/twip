@@ -495,3 +495,14 @@ fn compat_15_keeps_a_wrapping_float_with_its_top_effect_extent_below_the_top_mar
     let vml = r#"<w:p><w:r><w:pict><v:rect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w10="urn:schemas-microsoft-com:office:word" style="position:absolute;margin-left:100pt;margin-top:0;width:72pt;height:60pt;mso-position-horizontal-relative:margin;mso-position-vertical-relative:paragraph" strokeweight="3pt"><w10:wrap type="square"/></v:rect></w:pict></w:r></w:p>"#;
     assert_eq!(top(vml), 73.5);
 }
+
+#[test]
+fn a_box_that_does_not_wrap_is_as_wide_as_its_tables_grid() {
+    let table = r#"<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblCellMar><w:left w:w="50" w:type="dxa"/><w:right w:w="50" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid><w:gridCol w:w="1500"/><w:gridCol w:w="1500"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>Gamma delta epsilon</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>Zeta delta epsilon</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#;
+    let shape = box_wsp(50, 60, "", r#"<wps:bodyPr wrap="none" lIns="0" tIns="0" rIns="0" bIns="0"/>"#, "")
+        .replace("<w:p><w:r><w:t></w:t></w:r></w:p>", table);
+    let d = settings_doc(&format!("<w:p>{}</w:p>", anchor(72, 100, 50, 60, 1, false, 1, &shape)), 12).expect("the document reads");
+    let z = super::page_chars(&d)[0].iter().find(|c| c.0 == 'Z').map(|c| c.1).expect("drawn");
+    // The box takes the grid's 150pt less the outer margins, not its own 50pt: the second cell starts past 130.
+    assert!(z > 130.0, "{z}");
+}
