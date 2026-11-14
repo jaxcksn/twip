@@ -106,3 +106,29 @@ fn page_borders_draw_from_the_page_or_the_text_on_the_pages_they_show_on() {
     let pages = page_rects(&format!(r#"<w:pgBorders w:display="firstPage">{all}</w:pgBorders>"#), 2);
     assert!(pages.len() >= 2 && pages[0].len() == 4 && pages[1].is_empty(), "the first page only");
 }
+
+/// Shading and side borders as Word draws them (each combination exported from Word for Mac): the shading fills
+/// to a right border, and to a left one only with a right one too.
+#[test]
+fn shading_fills_to_a_right_border_and_to_a_left_one_only_with_a_right() {
+    let side = |s: &str| format!(r#"<w:{s} w:val="single" w:sz="36" w:space="8" w:color="0E7C86"/>"#);
+    let para = |sides: &[&str]| {
+        let bdr: String = sides.iter().map(|s| side(s)).collect();
+        format!(
+            r#"<w:p><w:pPr><w:pBdr>{bdr}</w:pBdr><w:shd w:val="clear" w:color="auto" w:fill="DCEFF0"/><w:ind w:left="720" w:right="720"/></w:pPr><w:r><w:t>Text</w:t></w:r></w:p>"#
+        )
+    };
+    // Text from 36 to 432 pt; each border 8 pt off it, 4.5 pt thick.
+    for (sides, want) in [
+        (&["left"][..], [36.0, 432.0]),
+        (&["top", "left", "bottom"], [36.0, 432.0]),
+        (&["right"], [36.0, 440.0]),
+        (&["top", "bottom", "right"], [36.0, 440.0]),
+        (&["left", "right"], [28.0, 440.0]),
+        (&["top", "left", "bottom", "right"], [28.0, 440.0]),
+    ] {
+        let shade = rects(&para(sides)).into_iter().find(|(_, c)| *c == 0xDCEFF0).expect("shaded").0;
+        let got = [shade[0], shade[2]].map(|v| (v - 72.0).round());
+        assert_eq!(got, want, "{sides:?}: {shade:?}");
+    }
+}

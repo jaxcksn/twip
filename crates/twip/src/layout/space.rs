@@ -45,6 +45,8 @@ pub struct ShapeSpace {
     pub expansion: Option<std::rc::Rc<super::expansion::Expansion>>,
     /// The patterns, whether capitals are left alone, and the fewest letters after a break.
     pub hyphenate: Option<(super::hyphenate::Hyphenation, bool, usize)>,
+    /// The heights of the inline text boxes that fit their text, by their text's id.
+    pub fitted: Vec<(u64, f64)>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]

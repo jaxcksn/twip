@@ -70,6 +70,9 @@ fn showcase_matches_word() {
     let quote = g.iter().find(|x| x.page == 3 && x.chars.contains("Typography is what")).expect("the pull quote is on page 4");
     assert!((quote.y - 84.6).abs() < 0.5, "at its top");
     assert!(rects.iter().any(|(p, _, c)| *p == 3 && c == "f2f4f7"), "the code block's shading");
+    let bar = rects.iter().find(|(p, r, c)| *p == 2 && c == "0e7c86" && r[3] - r[1] > r[2] - r[0]).map(|(_, r, _)| r[2]);
+    let shade = rects.iter().find(|(p, _, c)| *p == 2 && c == "dceff0").map(|(_, r, _)| r[0]);
+    assert!(matches!((bar, shade), (Some(b), Some(s)) if s - b > 7.5), "the callout's bar stands 8 pt off its shading: {bar:?} {shade:?}");
     assert!(
         rects.iter().filter(|(p, r, c)| *p == 3 && c == "e8684a" && r[3] - r[1] < 1.0).count() >= 2,
         "the boxed paragraph's double top and bottom"

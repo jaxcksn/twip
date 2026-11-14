@@ -506,6 +506,50 @@ fn a_reanchored_float_saves_in_its_new_paragraph() {
 }
 
 #[test]
+fn a_float_or_text_box_dragged_onto_the_next_page_lands_there() {
+    use serde_json::json;
+    for (fx, at, dy, want) in [("FX-OBJ.docx", "", 400.0, 1), ("FX-STORIES.docx", "top", 900.0, 1)] {
+        let n = if fx == "FX-OBJ.docx" { 1 } else { 0 };
+        let mut r = super::scenarios::Run::open(fx, "cross-page");
+        r.step(&json!({ "drag": { "from": { "float": n, "at": at }, "to": { "float": n, "at": at, "dy": dy } } }));
+        let g = crate::editing::inspect::inspect(&mut r.e, "geometry", true);
+        let f = g["geometry"]["floats"].as_array().unwrap().iter().find(|f| f["float"] == json!(n)).cloned().unwrap();
+        let top = g["geometry"]["pages"][want][1].as_f64().unwrap();
+        assert_eq!(f["page"], json!(want), "{fx}: {f}");
+        assert!(f["rect"][1].as_f64().unwrap() > top, "{fx}: {f}");
+    }
+    // Held by its bottom edge, the box follows its centre, not the pointer: the pointer is over page 2, the box's
+    // centre still over page 1.
+    let mut r = super::scenarios::Run::open("FX-STORIES.docx", "cross-page-centre");
+    r.step(&json!({ "drag": { "from": { "float": 0, "at": "bottom" }, "to": { "float": 0, "at": "bottom", "dy": 650.0 } } }));
+    let g = crate::editing::inspect::inspect(&mut r.e, "geometry", true);
+    assert_eq!(g["geometry"]["floats"][0]["page"], json!(0), "{}", g["geometry"]["floats"]);
+}
+
+#[test]
+fn a_shape_selects_on_a_click_and_opens_on_a_double_click_and_a_text_box_opens_at_once() {
+    use super::super::Selection;
+    use super::super::position::StoryId;
+    use serde_json::json;
+    let bytes = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/docx-feature-showcase.docx")).expect("fixture");
+    let mut r = super::scenarios::Run::from_bytes(&bytes, "shape-clicks");
+    let g = crate::editing::inspect::inspect(&mut r.e, "geometry", true);
+    // One of the shapes with text on page 8.
+    let draft = g["geometry"]["floats"].as_array().unwrap().iter().find(|f| f["page"] == json!(7)).expect("a shape")["float"].clone();
+    r.step(&json!({ "click": { "float": draft } }));
+    assert!(matches!(r.e.selection(), Selection::Object(_)), "a click selects the shape: {:?}", r.e.selection());
+    let mut r = super::scenarios::Run::from_bytes(&bytes, "shape-clicks");
+    r.step(&json!({ "click": { "float": draft }, "clicks": 2 }));
+    let caret = r.e.selection().focus().expect("a caret");
+    assert!(matches!(caret.story, StoryId::TextBox(_)) && r.e.selection().is_collapsed(), "a double-click opens its text: {caret:?}");
+    r.step(&json!({ "click": { "float": draft } }));
+    assert!(r.e.selection().is_collapsed(), "a click in the shape being edited stays in its text");
+    let mut r = super::scenarios::Run::open("FX-STORIES.docx", "box-clicks");
+    r.step(&json!({ "click": { "float": 0 } }));
+    assert!(r.e.selection().focus().is_some_and(|p| matches!(p.story, StoryId::TextBox(_))), "a text box opens at once");
+}
+
+#[test]
 fn a_border_moved_in_selected_rows_saves() {
     use serde_json::json;
     let mut r = super::scenarios::Run::open("FX-TBL-BASIC.docx", "obs48-save");

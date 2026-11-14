@@ -712,7 +712,7 @@ impl<'d> PageFill<'d, '_> {
         let prev = prev.filter(|_| !breaks_first(self.sec.blocks.get(bi)));
         let next = next.filter(|_| !breaks_first(self.sec.blocks.get(end + 1)));
         let next = next.or_else(|| self.sec.next.filter(|_| end + 1 >= self.sec.blocks.len()));
-        let mut space = laid.shape_space(self.fields, self.note_numbers, &self.ctx);
+        let mut space = laid.shape_space(self.fields, self.note_numbers, &self.ctx, memos)?;
         space.ends_section = self.sec.breaks && end + 1 == self.sec.section.blocks.len();
         if space.stale_fit && self.sec.index == 0 && bi == 0 && p.inlines.iter().any(|i| i.run().is_some_and(|r| r.fit_text.is_some())) {
             // The document's first line as broken with its regions unadjusted: real tab stops and list number.

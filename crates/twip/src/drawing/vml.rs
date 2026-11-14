@@ -20,7 +20,8 @@ const R: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relations
 pub struct VmlObject<'a, 'i> {
     pub shape: Shape,
     pub style: Style,
-    pub textbox: Option<(Node<'a, 'i>, [f64; 4], u8)>,
+    /// Its text, insets, vertical anchor and whether the shape fits the text.
+    pub textbox: Option<(Node<'a, 'i>, [f64; 4], u8, bool)>,
     pub wrap: Option<(String, String)>,
     pub alt: String,
     /// `o:allowoverlap`, `o:allowincell` (on when absent).
@@ -57,6 +58,8 @@ pub struct Style {
     /// `layout-flow` and `mso-layout-flow-alt`.
     pub layout_flow: Option<String>,
     pub layout_flow_alt: Option<String>,
+    /// `mso-fit-shape-to-text`: the shape grows or shrinks to its text box's text.
+    pub fit_to_text: bool,
 }
 
 impl Style {
@@ -158,6 +161,7 @@ pub fn style(n: Node) -> Style {
             "v-text-anchor" => s.text_anchor = Some(v.to_string()),
             "layout-flow" => s.layout_flow = Some(v.to_string()),
             "mso-layout-flow-alt" => s.layout_flow_alt = Some(v.to_string()),
+            "mso-fit-shape-to-text" => s.fit_to_text = matches!(v, "t" | "true"),
             "mso-width-percent" | "mso-height-percent" => {
                 let k = usize::from(k == "mso-height-percent");
                 let from = s.size_percent[k].take().map_or_else(|| "margin".to_string(), |(f, _)| f);
@@ -796,7 +800,7 @@ fn points(v: &str) -> Vec<(f64, f64)> {
     n.chunks(2).filter(|c| c.len() == 2).map(|c| (c[0], c[1])).collect()
 }
 
-fn textbox<'a, 'i>(el: Node<'a, 'i>, st: &Style) -> Option<(Node<'a, 'i>, [f64; 4], u8)> {
+fn textbox<'a, 'i>(el: Node<'a, 'i>, st: &Style) -> Option<(Node<'a, 'i>, [f64; 4], u8, bool)> {
     let tb = child(el, "textbox")?;
     let content = tb.descendants().find(|n| n.tag_name().name() == "txbxContent")?;
     let ins: Vec<f64> = tb.attribute("inset").unwrap_or("").split(',').map(|v| length(v).unwrap_or(f64::NAN)).collect();
@@ -806,7 +810,7 @@ fn textbox<'a, 'i>(el: Node<'a, 'i>, st: &Style) -> Option<(Node<'a, 'i>, [f64; 
         Some(a) if a.starts_with("bottom") => 2,
         _ => 0,
     };
-    Some((content, [i(0, 7.2), i(1, 3.6), i(2, 7.2), i(3, 3.6)], anchor))
+    Some((content, [i(0, 7.2), i(1, 3.6), i(2, 7.2), i(3, 3.6)], anchor, style(tb).fit_to_text))
 }
 
 fn element(el: Node, ctx: &mut Ctx) -> Option<Shape> {

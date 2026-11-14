@@ -529,7 +529,10 @@ pub fn apply_borders(
             edge(&mut l.rects, b, false, true, x1 - thick(b), 0.0, h);
         }
         if let Some(fill) = s.shading {
-            let sx0 = s.border_left.as_ref().map_or(left, |b| x0 + thick(b));
+            // As Word draws it (every combination of sides checked, compat 15 and earlier): the shading fills to a
+            // right border, and to a left one only with a right one too; a left border alone (a callout's bar)
+            // stands apart from the shaded text, top and bottom borders or not.
+            let sx0 = s.border_left.as_ref().filter(|_| s.border_right.is_some()).map_or(left, |b| x0 + thick(b));
             let sx1 = s.border_right.as_ref().map_or(width - s.ind_right, |b| x1 - thick(b));
             let top = if i == 0 { shade_top } else { 0.0 };
             let bottom = if i + 1 == n { shade_bottom.unwrap_or(h) } else { h };

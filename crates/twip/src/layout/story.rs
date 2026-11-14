@@ -107,7 +107,7 @@ pub fn child_ids(blocks: &[LaidBlock], width: Option<f64>, env: &StoryEnv, cell:
     for b in blocks {
         out.push(match b {
             LaidBlock::Para(p) => {
-                ChildId::Para(shape(p.para(), &p.shape_space_in(env.fields, env.notes, &env.ctx, cell.is_some()), env.ctx.fonts, memos)?)
+                ChildId::Para(shape(p.para(), &p.shape_space_in(env.fields, env.notes, &env.ctx, cell.is_some(), memos)?, env.ctx.fonts, memos)?)
             }
             LaidBlock::Table(t) => ChildId::Table(match width {
                 Some(w) => nested_layout(t, cell, w, env, false, memos)?,
@@ -268,7 +268,7 @@ pub fn layout_with(
                 };
                 let shaped = match resolved.get(bi) {
                     Some(ChildId::Para(s)) => s.clone(),
-                    _ => shape(p, &laid.shape_space_in(env.fields, env.notes, &env.ctx, cell.is_some()), env.ctx.fonts, memos)?,
+                    _ => shape(p, &laid.shape_space_in(env.fields, env.notes, &env.ctx, cell.is_some(), memos)?, env.ctx.fonts, memos)?,
                 };
                 let style = p.para_style_in(view);
                 let line_grid = text.line_grid.filter(|_| in_cell && text.adjust_line_height_in_table);
@@ -578,17 +578,41 @@ pub fn float_height(f: &Float, env: &StoryEnv, memos: &mut Memos) -> Result<f64,
         // Vertical text grows the box across instead (`fit_frame`).
         Some(tb) if tb.auto_fit && vertical_box(f).is_none() => {
             let (w0, h0) = if f.rot_swap { (f.h, f.w) } else { (f.w, f.h) };
-            let fr = inner_frame(tb, f.shape.as_deref(), [0.0, 0.0, w0, h0]);
-            let w = (fr[2] - fr[0]).max(1.0);
-            let blocks: Vec<&Block> = tb.blocks.iter().collect();
-            let fields = FieldValues::default();
-            let mut le = None;
-            let content = layout(&blocks, w, &StoryEnv { fields: &fields, ..box_env(env, &mut le) }, None, memos)?.height.min(1584.0);
-            let h = h0 - (fr[3] - fr[1]) + content;
+            let h = fitted_height(tb, f.shape.as_deref(), w0, h0, env, memos)?;
             if f.auto_w || f.shape.is_none() && tb.insets[1] == 0.0 && tb.insets[3] == 0.0 && tb.outline == 0.0 { h.max(f.h) } else { h }
         }
         _ => f.h,
     })
+}
+
+/// The height of a `w0` by `h0` frame grown or shrunk to text box `tb`'s text.
+fn fitted_height(
+    tb: &crate::docx::TextBox,
+    shape: Option<&crate::drawing::Shape>,
+    w0: f64,
+    h0: f64,
+    env: &StoryEnv,
+    memos: &mut Memos,
+) -> Result<f64, Yield> {
+    let fr = inner_frame(tb, shape, [0.0, 0.0, w0, h0]);
+    let w = (fr[2] - fr[0]).max(1.0);
+    let blocks: Vec<&Block> = tb.blocks.iter().collect();
+    let fields = FieldValues::default();
+    let mut le = None;
+    let content = layout(&blocks, w, &StoryEnv { fields: &fields, ..box_env(env, &mut le) }, None, memos)?.height.min(1584.0);
+    Ok(h0 - (fr[3] - fr[1]) + content)
+}
+
+/// The heights of paragraph `p`'s inline text boxes that fit their text, by their text's id. Vertical text keeps
+/// its box.
+pub fn fitted_boxes(p: &crate::docx::Paragraph, env: &StoryEnv, memos: &mut Memos) -> Result<Vec<(u64, f64)>, Yield> {
+    let mut out = Vec::new();
+    for i in &p.inlines {
+        let Inline::Picture(pic, _) = i else { continue };
+        let Some(t) = pic.text.as_ref().filter(|t| t.text_box.auto_fit && text_flow(&t.text_box, pic.shape.as_deref()).is_none()) else { continue };
+        out.push((t.id, fitted_height(&t.text_box, pic.shape.as_deref(), pic.w, pic.h, env, memos)?));
+    }
+    Ok(out)
 }
 
 /// The lines of a tight or through text box with neither fill nor outline, which text wraps around instead of the
@@ -1338,7 +1362,7 @@ fn longest_line(tb: &crate::docx::TextBox, width: f64, env: &StoryEnv, memos: &m
     for b in super::join::laid(&tb.blocks, view) {
         let LaidBlock::Para(laid) = b else { continue };
         let p = laid.para();
-        let space = laid.shape_space(env.fields, env.notes, &env.ctx);
+        let space = laid.shape_space(env.fields, env.notes, &env.ctx, memos)?;
         let shaped = shape(p, &space, env.ctx.fonts, memos)?;
         let ps = super::flow::para_space(p.para_style_in(view), None, None, width, 0, 0.0, &env.ctx);
         let pb = break_lines(&shaped, p, &ps, env.ctx.fonts, memos)?;

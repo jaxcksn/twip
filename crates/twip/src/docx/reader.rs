@@ -2271,7 +2271,7 @@ impl Reader {
         shape.xfrm.ext = [crate::drawing::units::Emu((st.w * 12700.0).round() as i64), crate::drawing::units::Emu((st.h * 12700.0).round() as i64)];
         let image = shape.pic().and_then(|p| p.blip.image);
         let alt: Rc<str> = v.alt.as_str().into();
-        let text_box = v.textbox.map(|(t, insets, v_anchor)| {
+        let text_box = v.textbox.map(|(t, insets, v_anchor, auto_fit)| {
             let saved = (std::mem::take(&mut self.fields), std::mem::take(&mut self.wrap));
             let blocks = self.read_blocks(t, pkg, None);
             (self.fields, self.wrap) = saved;
@@ -2281,7 +2281,7 @@ impl Reader {
                 .filter(|l| !matches!(l.fill, Some(crate::drawing::paint::Fill::None)))
                 .and_then(|l| l.width)
                 .map_or(0.0, |w| w.0 as f64 / 12700.0);
-            TextBox { blocks, insets, outline, auto_fit: false, v_anchor, flow: 0 }
+            TextBox { blocks, insets, outline, auto_fit, v_anchor, flow: 0 }
         });
         if !st.absolute {
             let text = text_box.map(|text_box| Box::new(InlineText { id: next_para_id(), text_box }));
