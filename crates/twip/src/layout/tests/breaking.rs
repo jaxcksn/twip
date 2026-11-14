@@ -3885,8 +3885,8 @@ fn a_paragraph_ending_in_a_line_break_beside_a_float_keeps_its_empty_last_line()
 }
 
 /// Compat ≤ 14: a one-line paragraph, an in-flow frame F1, a frame F2 that may not overlap 18pt below it and over it,
-/// a paragraph of `lines` short lines, and an in-flow frame F3 after it. F1's and F2's tops.
-fn frames_and_a_later_frame_in_the_flow(lines: usize) -> Option<(f64, f64)> {
+/// a paragraph of `lines` short lines, an in-flow frame F3 after it, and `later`. F1's and F2's tops.
+fn frames_and_a_later_frame_in_the_flow(lines: usize, later: &str) -> Option<(f64, f64)> {
     let frame = |t: &str, x: u32, y: u32, sup: &str| {
         format!(
             r#"<w:p><w:pPr><w:framePr w:w="2880" w:h="720" w:hRule="exact" w:hSpace="180" w:vSpace="0" w:wrap="around" w:vAnchor="text" w:hAnchor="page" w:x="{x}" w:y="{y}"/>{sup}<w:spacing w:before="0" w:after="0"/></w:pPr><w:r><w:t>{t}</w:t></w:r></w:p>"#
@@ -3894,7 +3894,7 @@ fn frames_and_a_later_frame_in_the_flow(lines: usize) -> Option<(f64, f64)> {
     };
     let short: String = (0..lines).map(|k| format!("<w:r><w:t>L{k}</w:t></w:r><w:r><w:br/></w:r>")).collect();
     let body = format!(
-        r#"<w:p><w:r><w:t>Lead</w:t></w:r></w:p>{}{}<w:p>{short}<w:r><w:t>End</w:t></w:r></w:p>{}<w:p><w:r><w:t>After</w:t></w:r></w:p>"#,
+        r#"<w:p><w:r><w:t>Lead</w:t></w:r></w:p>{}{}<w:p>{short}<w:r><w:t>End</w:t></w:r></w:p>{}<w:p><w:r><w:t>After</w:t></w:r></w:p>{later}"#,
         frame("F1", 1440, 0, ""),
         frame("F2", 2880, 360, "<w:suppressOverlap/>"),
         frame("F3", 5760, 0, "")
@@ -3907,10 +3907,51 @@ fn frames_and_a_later_frame_in_the_flow(lines: usize) -> Option<(f64, f64)> {
 #[test]
 fn compat_14_a_later_frame_in_the_flow_placed_a_fraction_above_its_place_puts_the_first_below_the_frame_it_overlaps() {
     // 21 lines leave F3's flow position .56 twip past a whole twip: placed from the nearest twip it stays below the
-    // line above, and F1 keeps its place under F2. 25 leave .48: F3 meets that line, the page starts again, and F1 goes
-    // a twip short of F2's bottom.
-    let Some((f1, f2)) = frames_and_a_later_frame_in_the_flow(20) else { return };
+    // line above, and F1 keeps its place under F2. 25 leave .48: F3 meets that line and the page starts again, F1 still
+    // in place; once a picture after F3 meets its own paragraph's first line, F1 goes a twip short of F2's bottom.
+    let Some((f1, f2)) = frames_and_a_later_frame_in_the_flow(20, "") else { return };
     assert!(f1 < f2, "{f1} {f2}");
-    let (f1, f2) = frames_and_a_later_frame_in_the_flow(24).unwrap();
+    let (f1, f2) = frames_and_a_later_frame_in_the_flow(24, "").unwrap();
+    assert!(f1 < f2, "{f1} {f2}");
+    let pic = format!("<w:p>{}<w:r><w:t>Picture paragraph.</w:t></w:r></w:p>", anchor(300, 0, 100, 40, 1, "paragraph"));
+    let (f1, f2) = frames_and_a_later_frame_in_the_flow(24, &pic).unwrap();
     assert!((f1 - f2 - 35.95).abs() < 0.01, "{f1} {f2}");
+}
+
+#[test]
+fn compat_14_a_picture_that_meets_its_own_paragraphs_lines_keeps_its_place_when_the_page_starts_again() {
+    // C's picture, 30pt below C's top, meets C's second line and stays where the first fill put it; D's picture, 200pt
+    // above D, then meets A's lines: A wraps it in the next fill and grows, and C moves down without its picture.
+    let text = |w: &str, n: usize| format!("{w} ").repeat(n);
+    let body = |pic: &str| {
+        format!(
+            r#"<w:p><w:r><w:t>{}</w:t></w:r></w:p><w:p>{pic}<w:r><w:t>{}</w:t></w:r></w:p><w:p>{}<w:r><w:t>{}</w:t></w:r></w:p>"#,
+            text("Alpha bravo", 60),
+            text("Charlie", 40),
+            anchor(0, -200, 200, 60, 1, "paragraph"),
+            text("Delta", 20)
+        )
+    };
+    let Some((_, c0)) = float_and_line("", &body(""), "Charlie") else { return };
+    let doc = test_doc("", ARIAL_12, &body(&anchor(300, 30, 100, 40, 1, "paragraph")), "").unwrap();
+    let snap = layout(&doc, &fonts());
+    fn floats(children: &[crate::layout::fragment::Child], out: &mut Vec<[f64; 4]>) {
+        for c in children {
+            if let crate::layout::fragment::Child::Box(b) = c {
+                if let crate::layout::fragment::BoxKind::Float { rect, .. } = b.kind {
+                    out.push(rect);
+                }
+                floats(&b.children, out);
+            }
+        }
+    }
+    let mut rects = Vec::new();
+    for c in snap.pages()[0].children.iter() {
+        if let crate::layout::fragment::PageChild::Body(b) = c {
+            floats(&b.children, &mut rects);
+        }
+    }
+    let r = rects.iter().find(|r| (r[2] - r[0] - 100.0).abs() < 0.01).expect("placed");
+    // C's first line (baseline 10.86pt below its top) moved down by A's extra lines; the picture didn't.
+    assert!(r[1] < c0 - 10.86 + 30.0 - 10.0, "{r:?} {c0}");
 }

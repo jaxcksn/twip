@@ -2520,8 +2520,9 @@ impl<'d> PageFill<'d, '_> {
             let line_top = bands[b].0;
             let para_top = if first_part { origin } else { bands[0].0 };
             let mut x = float::h_pos(f, &frames);
-            // From the line laid out before the float: placed again once the line wraps it, it keeps that x.
-            // ponytail: the x of the fill before is taken as that line's, wherever that fill put the paragraph.
+            // From the line laid out before the float: placed again once the line wraps it, it keeps that x, as the
+            // first fill of the page that placed it found it (each fill takes the one before's), wherever later fills
+            // put the paragraph.
             if f.h_relative == "character" {
                 let before = self.at.known.iter().find(|o| o.key == (si, bi, pb.from + k) && o.wrap != Wrap::None).map(|o| o.rect[0]);
                 x = before.unwrap_or_else(|| float::h_pos(f, &Frames { column: (char_x(k, b), 0.0), ..frames }));
@@ -2538,6 +2539,7 @@ impl<'d> PageFill<'d, '_> {
                         let others: Vec<Placed> = floats
                             .iter()
                             .chain(&self.at.found)
+                            .chain(anchors.iter().filter(|o| !floats.iter().any(|f| f.key == o.key)))
                             .filter(|o| (o.key.0, o.key.1) != (si, bi) || drawing && frame(o) && o.key.2 < pb.from + k)
                             .cloned()
                             .collect();
@@ -2566,7 +2568,7 @@ impl<'d> PageFill<'d, '_> {
             if let Some(k) = &frozen {
                 let mut a = self.wrapped(Placed::new(k.key, owner, f, k.rect[0], k.rect[1], h), memos)?;
                 // A frame that met only the line above it doesn't move that line.
-                (a.collided, a.restarts, a.frozen, a.rounded_up) = (!k.rounded_up, true, true, k.rounded_up);
+                (a.collided, a.restarts, a.frozen, a.rounded_up) = (k.collided && !k.rounded_up, true, true, k.rounded_up);
                 kept_at.push(a.key);
                 anchors.push(a);
                 continue;
@@ -2605,15 +2607,35 @@ impl<'d> PageFill<'d, '_> {
             // meet it. Earlier columns count as met.
             let reach = *y + if compat == Compat::Legacy { kept } else { 0.0 };
             let met = a.excl[1] < reach - EPS && a.excl[0] < cx1 - EPS && a.excl[2] > cx0 + EPS;
-            a.restarts = self.column > 0 || met || a.excl[1] < line_top + bands[b].1[0].pitch - EPS && a.excl[0] < cx1 - EPS && a.excl[2] > cx0 + EPS;
+            let across = a.excl[0] < cx1 - EPS && a.excl[2] > cx0 + EPS;
+            let lines = a.excl[1] < line_top + bands[b].1[0].pitch - EPS && across;
+            // Compat ≤ 14: a drawing meets its paragraph's lines after its anchor's too.
+            let drawing = f.text_box.is_none() || f.shape.is_some();
+            let (last, (last_top, last_segs)) = (bands.len() - 1, bands.last().expect("laid out"));
+            let para_lines = compat == Compat::Legacy
+                && drawing
+                && last > b
+                && a.excl[1] < last_top + last_segs[0].pitch - EPS
+                && a.excl[3] > line_top + EPS
+                && across;
+            a.restarts = self.column > 0 || met || lines || para_lines;
             // Only the first float of the fill that meets earlier text of its column met it where it will stay: that
             // text wraps it in the next fill. A later one was placed beside text that moves, and is placed again.
             // Compat ≤ 14: one that meets the lines of its own keepLines paragraph below a column's top stays too, and
-            // the paragraph starts below it.
-            let own = compat == Compat::Legacy && style.keep_lines && a.restarts && a.excl[3] > bands[0].0 + EPS;
-            a.frozen = (met || own) && !self.at.hit;
-            a.collided = a.frozen || self.column > 0 && !met;
+            // the paragraph starts below it; so does a drawing that meets its own paragraph's lines. Only text it met
+            // before its paragraph wraps it in the next fill.
+            let own = compat == Compat::Legacy && style.keep_lines && (self.column > 0 || met || lines) && a.excl[3] > bands[0].0 + EPS;
+            let stays = compat == Compat::Legacy && drawing && (lines || para_lines);
+            a.frozen = (met || own || stays) && !self.at.hit;
+            a.collided = a.frozen && (met || own) || self.column > 0 && !met;
             anchors.push(a);
+        }
+        // Compat ≤ 14: the other drawings of the paragraph keep their places with one that stays.
+        let drawing = |a: &Placed| a.float.text_box.is_none() || a.float.shape.is_some();
+        if compat == Compat::Legacy && anchors.iter().any(|a| a.frozen && drawing(a) && !kept_at.contains(&a.key)) {
+            for a in anchors.iter_mut().filter(|a| drawing(a) && a.wrap != Wrap::None) {
+                a.frozen = true;
+            }
         }
         // Pagination
         let nb = bands.len();
@@ -2729,15 +2751,25 @@ impl<'d> PageFill<'d, '_> {
                     (a.rounded_up, a.frozen) = (true, true);
                 }
                 // Compat ≤ 14: after the page started again for a later frame in the flow that met the line above it,
-                // a frame in the flow is placed against the frames after it that may not overlap, where the fill before
-                // put them: one it overlaps it goes below, a twip above its bottom in whole twips.
-                let by_frame = compat == Compat::Legacy
-                    && frame(&a)
-                    && self.at.known.iter().any(|k| k.rounded_up && k.key.0 == a.key.0 && (k.key.1, k.key.2) > (a.key.1, a.key.2));
+                // and once more for a drawing after that frame that met earlier text, a frame in the flow is placed
+                // against the frames after it that may not overlap, where the fill before put them: one it overlaps it
+                // goes below, a twip above its bottom in whole twips.
+                let later = |k: &Placed, a: &Placed| k.key.0 == a.key.0 && (k.key.1, k.key.2) > (a.key.1, a.key.2);
+                let by_frame = compat == Compat::Legacy && frame(&a) && self.at.known.iter().any(|k| k.rounded_up && later(k, &a));
+                let again = by_frame
+                    && self.at.known.iter().any(|k| {
+                        k.rounded_up
+                            && later(k, &a)
+                            && self
+                                .at
+                                .known
+                                .iter()
+                                .any(|d| d.frozen && !frame(d) && d.key.2 < float::UPRIGHT_TABLE && d.wrap != Wrap::None && later(d, k))
+                    });
                 // ponytail: one that the nearest twip would put above its flow position meets the line above it
                 // instead and stays (the line isn't wrapped round it), as measured only on its own page.
                 let lifted = (a.rect[1] * 20.0).round() / 20.0 < a.rect[1] - EPS && a.rect[1] > col.top.to_pt() + EPS;
-                if in_flow && by_frame && !apart && !lifted && !kept_at.contains(&a.key) {
+                if in_flow && again && !apart && !lifted && !kept_at.contains(&a.key) {
                     let key = a.key;
                     let later =
                         self.at.known.iter().filter(|o| frame(o) && !o.allow_overlap && o.key.0 == key.0 && (o.key.1, o.key.2) > (key.1, key.2));

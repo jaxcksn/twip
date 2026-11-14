@@ -916,7 +916,23 @@ pub fn layout_body(
                 let found = fill.at.found.clone();
                 let notes = fill.at.stream.as_ref().map_or(0.0, |a| a.height);
                 // A float that met earlier text only in this fill is seen by that text in the next.
-                let stable = found.len() == known.len() && found.iter().all(|f| known.iter().any(|k| k.same(f) && k.collided >= f.collided));
+                // Compat ≤ 14: a drawing after a frame placed above its flow position that meets earlier text and
+                // didn't stay in the fill before starts the page again, until it stays and its frames are placed
+                // against each other.
+                let frame =
+                    |f: &super::float::Placed| f.float.text_box.is_some() && f.float.shape.is_none() || f.key.2 >= super::float::UPRIGHT_TABLE;
+                let again = found.iter().any(|f| {
+                    f.restarts
+                        && f.wrap != super::float::Wrap::None
+                        && !frame(f)
+                        && !known.iter().any(|k| k.same(f) && k.frozen)
+                        && found.iter().any(|r| r.rounded_up && r.key.0 == f.key.0 && (r.key.1, r.key.2) < (f.key.1, f.key.2))
+                });
+                if again {
+                    attempts = attempts.max(attempt + 2).min(64);
+                }
+                let stable =
+                    !again && found.len() == known.len() && found.iter().all(|f| known.iter().any(|k| k.same(f) && k.collided >= f.collided));
                 attempts = attempts.max(2 + found.len() + drops).min(64);
                 if (stable && (notes - reserve).abs() < EPS) || attempt >= attempts {
                     return Ok(true);
