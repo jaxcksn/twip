@@ -3128,7 +3128,27 @@ fn compat_14_balanced_columns_grow_by_the_failed_fills_mean_line_and_end_at_the_
 }
 
 #[test]
-fn compat_15_balanced_columns_start_rounded_down_to_the_smallest_line() {
+fn compat_14_balanced_columns_end_no_higher_than_a_columns_last_line_with_its_multiple_spacing() {
+    // 18pt and 11pt exact lines, a double-spaced line and a 1.15 line in two columns: the height tried (52.5pt) holds
+    // the double line by its text, but the section ends below its full box, as after the same lines in one column.
+    let sect = r#"<w:sectPr><w:type w:val="continuous"/><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/><w:cols w:num="2" w:space="720"/></w:sectPr>"#;
+    let close = r#"<w:sectPr><w:type w:val="continuous"/><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr>"#;
+    let p = |k: usize, spacing: &str, extra: &str| format!(r#"<w:p><w:pPr><w:spacing w:after="0" {spacing}/>{extra}</w:pPr><w:r><w:t>P{k}</w:t></w:r></w:p>"#);
+    let lines = [r#"w:line="360" w:lineRule="exact""#, r#"w:line="220" w:lineRule="exact""#, r#"w:line="480" w:lineRule="auto""#];
+    let head: String = lines.iter().enumerate().map(|(k, l)| p(k + 1, l, "")).collect();
+    let next = format!(r#"<w:p><w:pPr><w:spacing w:after="0"/>{close}</w:pPr><w:r><w:t>NEXT</w:t></w:r></w:p>"#);
+    let gap = |body: &str| {
+        let l = baselines("", ARIAL_11, body)?;
+        let y = |t: &str| l.iter().find(|x| x.1 == t).map(|x| x.3);
+        Some(y("NEXT")? - y("P3")?)
+    };
+    let Some(balanced) = gap(&format!("{head}{}{next}", p(4, r#"w:line="276" w:lineRule="auto""#, sect))) else { return };
+    let one = gap(&format!("{head}{next}")).unwrap();
+    assert!((balanced - one).abs() < 0.05, "{balanced} {one}");
+}
+
+#[test]
+fn compat_15_balanced_columns_start_rounded_down_to_the_smallest_step_and_step_at_least_12pt() {
     let sect = |cols: &str| {
         format!(
             r#"<w:sectPr><w:type w:val="continuous"/><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>{cols}</w:sectPr>"#
@@ -3155,9 +3175,11 @@ fn compat_15_balanced_columns_start_rounded_down_to_the_smallest_line() {
     // would grow to 39pt: 3 / 1).
     let Some(a) = split(2, &[240, 240, 300, 300]) else { return };
     assert_eq!(a, [2, 2]);
-    // A 10pt line under 12pt text isn't the smallest line: 70pt fails and grows by 14pt, not 10pt: 4 / 4.
+    // 72.5pt rounded down to the 10pt line, 70pt fails and grows by 12pt, not 10pt: 4 / 4.
     assert_eq!(split(2, &[400, 480, 480, 280, 480, 280, 200, 300]).unwrap(), [4, 4]);
-    // 25.3pt holds no first line: the columns stay empty and the height grows by the smallest line: 1 / 1 / 3.
+    // 29.75pt rounded down to the 9pt line, 27pt fails and grows by 12pt (by 9pt it would end 2 / 3): 3 / 2.
+    assert_eq!(split(2, &[320, 230, 180, 250, 210]).unwrap(), [3, 2]);
+    // 25.3pt holds no first line: the columns stay empty and the height grows by 12pt, then by the smallest line: 1 / 1 / 3.
     assert_eq!(split(3, &[560, 560, 480, 253, 253]).unwrap(), [1, 1, 3]);
 }
 
