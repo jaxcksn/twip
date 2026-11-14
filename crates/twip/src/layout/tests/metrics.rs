@@ -194,3 +194,22 @@ fn compat_14_fits_a_kerned_run_with_the_kern_tables_pairs() {
     };
     assert!(last_word_on_line_1(15) && !last_word_on_line_1(12));
 }
+
+#[test]
+fn compat_14_no_leading_leaves_the_external_leading_out_of_a_superscripts_limit() {
+    if super::fonts().face("Arial", None, false, false).is_none_or(|f| f.family != "Arial") {
+        return;
+    }
+    let body = r#"<w:p><w:r><w:t>x</w:t></w:r><w:r><w:rPr><w:vertAlign w:val="superscript"/></w:rPr><w:t>1</w:t></w:r></w:p>"#;
+    let rpr = r#"<w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="22"/>"#;
+    let raise = |compat: &str, mode: u32| {
+        let settings = format!(r#"<w:compat>{compat}<w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="{mode}"/></w:compat>"#);
+        let c = chars(&settings, rpr, body, 0).expect("lays out");
+        at(&c, 'x').1 - at(&c, '1').1
+    };
+    // Arial 11: ascent and leading 21 half-points, without the leading 20: the limit 7 raises 3.5pt, not 4.
+    let nl = raise("<w:noLeading/>", 12);
+    assert!((nl - 3.5).abs() < 1e-6 && (raise("", 12) - 4.0).abs() < 1e-6, "{nl}");
+    // Compat 15 ignores noLeading.
+    assert!((raise("<w:noLeading/>", 15) - 4.0).abs() < 1e-6);
+}

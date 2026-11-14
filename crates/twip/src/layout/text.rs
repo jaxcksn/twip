@@ -522,7 +522,8 @@ impl<'a> Builder<'a> {
                 let size = hp(base * face.sup_size / face.upem).max(2) as f64 / 2.0;
                 let (a, _, e) = device(hp(full));
                 let (asup, _, _) = device(hp(full * face.sup_size / face.upem).max(2));
-                let (a, asup) = (to_hp(a + e), to_hp(asup));
+                // `noLeading` leaves the external leading out of the ascent too.
+                let (a, asup) = (to_hp(a + if self.rules.no_leading { 0 } else { e }), to_hp(asup));
                 let limit = (a / 3).max(a - asup);
                 let r = hp(full * face.sup_offset / face.upem).min(limit);
                 (size, r as f64 / 2.0)
