@@ -254,6 +254,24 @@ fn a_last_line_of_only_a_lowered_picture_counts_its_descent_in_the_minimum() {
     assert!((c15 - 13.7988 - arial_16).abs() < 0.01, "{c15}");
 }
 
+#[test]
+fn a_numbered_decimal_only_cell_paragraph_aligns_its_text_after_the_number() {
+    let numbering = r#"<w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1)"/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="720" w:hanging="360"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num><w:abstractNum w:abstractNumId="1"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1)"/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="0" w:hanging="0"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId="2"><w:abstractNumId w:val="1"/></w:num>"#;
+    let para = |num: u32, dec: u32, text: &str| {
+        let num = if num > 0 { format!(r#"<w:numPr><w:ilvl w:val="0"/><w:numId w:val="{num}"/></w:numPr>"#) } else { String::new() };
+        format!(r#"<w:p><w:pPr>{num}<w:tabs><w:tab w:val="decimal" w:pos="{dec}"/></w:tabs></w:pPr><w:r><w:t>{text}</w:t></w:r></w:p>"#)
+    };
+    // In a cell, the text after the number and its tab ends at the stop at its point, as without a number.
+    let body = cell(6000, 0, &(para(0, 2000, "12.5") + &para(1, 2000, "34.5"))) + &para(2, 1500, "7.25");
+    let Some(doc) = test_doc("", ARIAL_11, &body, numbering) else { return };
+    let chars = super::page_chars(&doc).swap_remove(0);
+    let dots: Vec<f64> = chars.iter().filter(|c| c.0 == '.').map(|c| c.1).collect();
+    assert!((dots[0] - dots[1]).abs() < 0.01, "{dots:?}");
+    // A number's tab that reaches a decimal stop uses it as a left stop.
+    let seven = chars.iter().find(|c| c.0 == '7').expect("drawn").1;
+    assert!((seven - 147.0).abs() < 0.01, "{seven}");
+}
+
 fn cell(w: u32, ind: i32, inner: &str) -> String {
     format!(
         r#"<w:tbl><w:tblPr><w:tblW w:w="{w}" w:type="dxa"/><w:tblInd w:w="{ind}" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="{w}"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="{w}" w:type="dxa"/></w:tcPr>{inner}<w:p/></w:tc></w:tr></w:tbl><w:p/>"#

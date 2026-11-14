@@ -994,11 +994,22 @@ fn fit_line(
         let w: f64 = pieces.iter().take_while(|p| p.kind == Kind::ListNumber).map(|p| p.width).sum();
         pen -= if style.list_jc == "right" { w } else { w / 2.0 };
     }
-    // A cell paragraph whose only stop is a decimal one: each line starts as if with a tab to it.
-    let mut pending = custom_stops(pen, pen_units(pen, left, style, frame), style)
-        .find(|t| t.kind == TabKind::Decimal)
-        .filter(|_| sp.decimal_lead)
-        .map(|t| Pending { tab: None, from: start, stop: t.pos, kind: t.kind, pen_at_tab: pen, collapse: false, edge: right, shift: false });
+    // A cell paragraph whose only stop is a decimal one: each line starts as if with a tab to it, the first after its
+    // list number and the number's suffix, when the stop lies past them.
+    let edge = right;
+    let lead = |pen: f64, from: usize| {
+        custom_stops(pen, pen_units(pen, left, style, frame), style)
+            .find(|t| t.kind == TabKind::Decimal)
+            .filter(|_| sp.decimal_lead)
+            .map(|t| Pending { tab: None, from, stop: t.pos, kind: t.kind, pen_at_tab: pen, collapse: false, edge, shift: false })
+    };
+    let numbered = pieces[start..].iter().take_while(|p| p.kind == Kind::ListNumber).count();
+    let lead_at = if numbered == 0 {
+        start
+    } else {
+        start + numbered + usize::from(pieces.get(start + numbered).is_some_and(|p| matches!(p.kind, Kind::Tab | Kind::Space)))
+    };
+    let mut pending = if lead_at == start { lead(pen, start) } else { None };
     let mut breaks: Vec<(usize, bool)> = Vec::new();
     let n = pieces.len();
     let (all, o) = (&sp.pieces[..], sp.pieces.len() - n);
@@ -1069,6 +1080,9 @@ fn fit_line(
         {
             break;
         }
+        if i == lead_at && i > start && pending.is_none() {
+            pending = lead(pen, i);
+        }
         let p = &pieces[i];
         match p.kind {
             Kind::LineBreak | Kind::PageBreak | Kind::ColumnBreak => {
@@ -1100,6 +1114,10 @@ fn fit_line(
                     Some(Object::PTab(t)) => ptab_stop(t, style, frame),
                     _ => next_stop(pen, units, style, frame, number_tab),
                 };
+                // A list number's tab to a decimal stop uses it as a left stop.
+                if number_tab && kind == TabKind::Decimal {
+                    kind = TabKind::Left;
+                }
                 let stop_custom = p.object.is_none() && custom_stops(pen, units, style).next().is_some();
                 let custom = p.object.is_some() || stop_custom;
                 if !custom && !number_tab && stop > right + EPS && !past_custom && i > start && limit_end.is_none() {
