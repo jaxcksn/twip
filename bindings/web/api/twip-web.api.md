@@ -1774,7 +1774,37 @@ export class HeadlessEditor {
 }
 
 // @public
-export type HighlightColor = 'yellow' | 'brightGreen' | 'turquoise' | 'pink' | 'blue' | 'red' | 'darkBlue' | 'teal' | 'green' | 'violet' | 'darkRed' | 'darkYellow' | 'gray50' | 'gray25' | 'black';
+export type HighlightColor =
+/** Yellow. */
+'yellow'
+/** Bright green. */
+| 'brightGreen'
+/** Turquoise. */
+| 'turquoise'
+/** Pink. */
+| 'pink'
+/** Blue. */
+| 'blue'
+/** Red. */
+| 'red'
+/** Dark blue. */
+| 'darkBlue'
+/** Teal. */
+| 'teal'
+/** Green. */
+| 'green'
+/** Violet. */
+| 'violet'
+/** Dark red. */
+| 'darkRed'
+/** Dark yellow. */
+| 'darkYellow'
+/** 50% gray. */
+| 'gray50'
+/** 25% gray. */
+| 'gray25'
+/** Black. */
+| 'black';
 
 // @public
 export interface HorizontalPosition {
@@ -1784,7 +1814,23 @@ export interface HorizontalPosition {
 }
 
 // @public
-export type HorizontalReference = 'column' | 'margin' | 'page' | 'character' | 'leftMargin' | 'rightMargin' | 'insideMargin' | 'outsideMargin';
+export type HorizontalReference =
+/** The column it is anchored in (the default). */
+'column'
+/** The area between the left and right margins. */
+| 'margin'
+/** The page's edges. */
+| 'page'
+/** The character its anchor is at. */
+| 'character'
+/** The left margin's area. */
+| 'leftMargin'
+/** The right margin's area. */
+| 'rightMargin'
+/** The inside margin's area (left on odd pages, right on even ones). */
+| 'insideMargin'
+/** The outside margin's area. */
+| 'outsideMargin';
 
 // @public
 export type HostCommand = 'save' | 'saveAs' | 'print' | 'open' | 'new' | 'find' | 'replace' | 'goTo' | 'insertHyperlink' | 'nextMisspelling' | 'focusFont' | 'focusFontSize' | 'help';
@@ -1820,7 +1866,10 @@ export type LineSpacing = {
     rule: 'multiple';
     lines: number;
 } | {
-    rule: 'exact' | 'atLeast';
+    rule: 'exact';
+    size: Points;
+} | {
+    rule: 'atLeast';
     size: Points;
 };
 
@@ -1887,7 +1936,15 @@ export interface Lists {
 }
 
 // @public
-export type MarkupView = 'all' | 'simple' | 'noMarkup' | 'original';
+export type MarkupView =
+/** Insertions and deletions shown in place, in their author's colour, with change bars. */
+'all'
+/** The changes made, with change bars. */
+| 'simple'
+/** The changes made, with no markup. */
+| 'noMarkup'
+/** The document before the changes. */
+| 'original';
 
 // @public
 export type MatchId = string & {
@@ -2044,7 +2101,17 @@ export type NumberFormat = 'decimal' | 'upperRoman' | 'lowerRoman' | 'upperLette
 export type ObjectGrid = 'off' | 'whileDragging' | 'always';
 
 // @public
-export type ObjectHorizontalAlignment = 'left' | 'center' | 'right' | 'inside' | 'outside';
+export type ObjectHorizontalAlignment =
+/** At its left edge. */
+'left'
+/** Centred. */
+| 'center'
+/** At its right edge. */
+| 'right'
+/** At its inside edge (left on odd pages). */
+| 'inside'
+/** At its outside edge. */
+| 'outside';
 
 // @public
 export interface ObjectPlacement {
@@ -2075,10 +2142,34 @@ export interface ObjectSelection {
 }
 
 // @public
-export type ObjectVerticalAlignment = 'top' | 'center' | 'bottom' | 'inside' | 'outside';
+export type ObjectVerticalAlignment =
+/** At its top. */
+'top'
+/** Centred. */
+| 'center'
+/** At its bottom. */
+| 'bottom'
+/** At its inside edge. */
+| 'inside'
+/** At its outside edge. */
+| 'outside';
 
 // @public
-export type ObjectWrap = 'inline' | 'square' | 'tight' | 'through' | 'topAndBottom' | 'behindText' | 'inFrontOfText';
+export type ObjectWrap =
+/** In line with the text. */
+'inline'
+/** Text wraps around its bounding box. */
+| 'square'
+/** Text wraps tightly around its outline. */
+| 'tight'
+/** Text wraps through its open parts. */
+| 'through'
+/** Text sits above and below it, not beside it. */
+| 'topAndBottom'
+/** Behind the text. */
+| 'behindText'
+/** In front of the text. */
+| 'inFrontOfText';
 
 // @public
 export type Op = {
@@ -2845,7 +2936,25 @@ export interface TwipEvents {
 }
 
 // @public
-export type UnderlineStyle = 'none' | 'single' | 'words' | 'double' | 'thick' | 'dotted' | 'dash' | 'dotDash' | 'wave';
+export type UnderlineStyle =
+/** No underline. */
+'none'
+/** A single line. */
+| 'single'
+/** Words only, not the spaces between them. */
+| 'words'
+/** A double line. */
+| 'double'
+/** A thick line. */
+| 'thick'
+/** A dotted line. */
+| 'dotted'
+/** A dashed line. */
+| 'dash'
+/** Alternating dots and dashes. */
+| 'dotDash'
+/** A wavy line. */
+| 'wave';
 
 // @public
 export interface VerticalPosition {
@@ -2855,7 +2964,23 @@ export interface VerticalPosition {
 }
 
 // @public
-export type VerticalReference = 'paragraph' | 'line' | 'margin' | 'page' | 'topMargin' | 'bottomMargin' | 'insideMargin' | 'outsideMargin';
+export type VerticalReference =
+/** Its anchor paragraph's top: it moves with the text (the default). */
+'paragraph'
+/** Its anchor line's top: it moves with the text. */
+| 'line'
+/** The area between the top and bottom margins. */
+| 'margin'
+/** The page's edges: it stays where it is on the page. */
+| 'page'
+/** The top margin's area. */
+| 'topMargin'
+/** The bottom margin's area. */
+| 'bottomMargin'
+/** The inside margin's area. */
+| 'insideMargin'
+/** The outside margin's area. */
+| 'outsideMargin';
 
 // @public
 export interface View {
@@ -2942,6 +3067,14 @@ export interface WordCount {
 }
 
 // @public
-export type WrapSide = 'bothSides' | 'left' | 'right' | 'largest';
+export type WrapSide =
+/** Both sides (the default). */
+'bothSides'
+/** Its left only. */
+| 'left'
+/** Its right only. */
+| 'right'
+/** Whichever side has more room. */
+| 'largest';
 
 ```

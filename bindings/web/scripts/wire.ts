@@ -22,10 +22,74 @@ const ADOPT = [
   'MissingFont',
   'MissingCharacters',
   'FontsState',
+  // state.ts
+  'SelectionSummary',
+  'TableSelection',
+  'TableStyleOptions',
+  'TableWidth',
+  'ObjectSelection',
+  'ObjectWrap',
+  'HorizontalReference',
+  'VerticalReference',
+  'ObjectHorizontalAlignment',
+  'ObjectVerticalAlignment',
+  'WrapSide',
+  'HorizontalPosition',
+  'VerticalPosition',
+  'TextDistance',
+  'ObjectPlacement',
+  'TablePosition',
+  'ElementContext',
+  'CharacterFormatting',
+  'ParagraphFormatting',
+  'PageFormatting',
+  'ViewState',
+  'EditingTarget',
+  'ReviewState',
+  'AutoCorrectOptions',
+  'AutoCorrectEntry',
+  'MarkupView',
+  'LineSpacing',
+  'UnderlineStyle',
+  'HighlightColor',
 ];
 
 /** Schema types written out at each use rather than named. */
-const INLINE = ['AliasTarget'];
+const INLINE = [
+  'AliasTarget',
+  'Alignment',
+  'BorderState',
+  'CellAlignment',
+  'ColumnLayout',
+  'ElementKind',
+  'FlowState',
+  'HeaderFooterInfo',
+  'HeaderFooterKind',
+  'HeaderFooterType',
+  'HeightRule',
+  'HorizontalAlignment',
+  'IndentState',
+  'LinkInfo',
+  'ListState',
+  'ObjectKind',
+  'Orientation',
+  'PageMargins',
+  'PageSize',
+  'RulerVisibility',
+  'SelectionKind',
+  'SelectionMode',
+  'Size',
+  'Story',
+];
+
+/** Fields this SDK types more precisely than the schema can (`Type.field`: the TypeScript type). */
+const FIELDS: Record<string, string> = {
+  // Rust's `Degrees` is an `f64` alias, which the schema doesn't see.
+  'ObjectSelection.rotation': 'Degrees',
+  // This SDK's `RowHeight` has `'auto'` in it.
+  'TableSelection.rowHeight': 'Mixed<RowHeight>',
+  'ElementContext.kind': "'field' | ControlKind | 'repeatingItem'",
+};
 
 /** The schema's string formats, as this SDK's types. */
 const FORMATS: Record<string, string> = { color: 'Color', base64: 'Uint8Array', 'date-time': 'string', char: 'string' };
@@ -106,8 +170,8 @@ function external(name: string, from: string): string {
   return name;
 }
 
-/** `ty` as TypeScript, `from` naming its use for errors. */
-function ts(ty: Ty, from: string): string {
+/** `ty` as TypeScript, `from` naming its use for errors, inline objects indented one step past `indent`. */
+function ts(ty: Ty, from: string, indent = ''): string {
   switch (ty.kind) {
     case 'boolean':
       return 'boolean';
@@ -127,9 +191,9 @@ function ts(ty: Ty, from: string): string {
     case 'literal':
       return `'${ty.value}'`;
     case 'nullable':
-      return `${ts(ty.of, from)} | null`;
+      return `${ts(ty.of, from, indent)} | null`;
     case 'array':
-      return `${parens(ts(ty.of, from))}[]`;
+      return `${parens(ts(ty.of, from, indent))}[]`;
     case 'tuple':
       return `[${ty.items.map((t) => ts(t, from)).join(', ')}]`;
     case 'map':
@@ -138,13 +202,15 @@ function ts(ty: Ty, from: string): string {
       // A value over the selection: `null`, `'mixed'`, or the value (state.ts's Tri and Mixed).
       const [a, b, c] = ty.of;
       if (ty.of.length === 3 && a.kind === 'null' && b.kind === 'literal' && b.value === 'mixed') {
-        return c.kind === 'boolean' ? external('Tri', from) : `${external('Mixed', from)}<${ts(c, from)}>`;
+        return c.kind === 'boolean' ? external('Tri', from) : `${external('Mixed', from)}<${ts(c, from, indent)}>`;
       }
-      return ty.of.map((t) => ts(t, from)).join(' | ');
+      // Keywords last (`Color | 'auto'`), as they read.
+      const ordered = [...ty.of.filter((t) => t.kind !== 'literal'), ...ty.of.filter((t) => t.kind === 'literal')];
+      return ordered.map((t) => ts(t, from, indent)).join(' | ');
     }
     case 'ref': {
       if (adopted.has(ty.name)) return ty.name;
-      if (INLINE.includes(ty.name)) return body(defs.get(ty.name)!, from);
+      if (INLINE.includes(ty.name)) return body(defs.get(ty.name)!, from, indent + '  ');
       return external(ty.name, from);
     }
   }
@@ -193,24 +259,48 @@ function field(f: Field, indent: string, owner: string): string {
   const optional = f.omitted;
   const ty = optional && f.ty.kind === 'nullable' ? f.ty.of : f.ty;
   const key = /^[A-Za-z_$][\w$]*$/.test(f.name) ? f.name : `'${f.name}'`;
-  return `${doc(f.docs, indent, optional)}${indent}${key}${optional ? '?' : ''}: ${ts(ty, `${owner}.${f.name}`)};\n`;
+  const path = `${owner}.${f.name}`;
+  return `${doc(f.docs, indent, optional)}${indent}${key}${optional ? '?' : ''}: ${override(path) ?? ts(ty, path, indent)};\n`;
 }
 
-/** An object written on one line, without its fields' documentation. */
-function inlineObject(fields: Field[], owner: string): string {
+/** A field's type from `FIELDS`, its names imported. */
+function override(path: string): string | undefined {
+  const t = FIELDS[path];
+  if (t === undefined) return undefined;
+  used.add(path);
+  for (const [name] of t.replace(/'[^']*'/g, '').matchAll(/\b[A-Z]\w*/g)) if (!adopted.has(name)) external(name, path);
+  return t;
+}
+
+const used = new Set<string>();
+
+/**
+ * An object, `lead` members first: on one line without its fields' documentation when that is short, else one member
+ * per line at `indent`.
+ */
+function inlineObject(fields: Field[], owner: string, indent = '  ', lead: string[] = []): string {
   const parts = fields.map((f) => {
     const ty = f.omitted && f.ty.kind === 'nullable' ? f.ty.of : f.ty;
-    return `${f.name}${f.omitted ? '?' : ''}: ${ts(ty, `${owner}.${f.name}`)}`;
+    return `${f.name}${f.omitted ? '?' : ''}: ${ts(ty, `${owner}.${f.name}`, indent)}`;
   });
-  return `{ ${parts.join('; ')} }`;
+  const line = `{ ${[...lead, ...parts].join('; ')} }`;
+  if (line.length <= 100 && !line.includes('\n')) return line;
+  return `{\n${lead.map((l) => `${indent}${l};\n`).join('')}${fields.map((f) => field(f, indent, owner)).join('')}${indent.slice(2)}}`;
+}
+
+/** Union members, one per line at `indent` when they don't fit on one. */
+function union(members: string[], indent: string): string {
+  const line = members.join(' | ');
+  if (line.length <= 100 && !line.includes('\n')) return line;
+  return `\n${members.map((m) => `${indent}| ${m}`).join('\n')}`;
 }
 
 function object(fields: Field[], owner: string, indent = '  '): string {
   return `{\n${fields.map((f) => field(f, indent, owner)).join('')}${indent.slice(2)}}`;
 }
 
-/** A definition's type, as written after `type X =` (or inline). */
-function body(d: Def, from: string): string {
+/** A definition's type, as written after `type X =` (or inline, its members at `indent`). */
+function body(d: Def, from: string, indent = '  '): string {
   const s = d.shape;
   switch (s.kind) {
     case 'units':
@@ -218,28 +308,33 @@ function body(d: Def, from: string): string {
     case 'alias':
       return ts(s.of, d.name);
     case 'object':
-      return object(s.fields, d.name);
-    case 'tagged':
-      return s.variants
-        .map((v) => {
-          const tag = `{ ${s.tag}: '${v.name}' }`;
+      return object(s.fields, d.name, indent);
+    case 'tagged': {
+      const inner = indent + '  ';
+      return union(
+        s.variants.map((v) => {
+          const tag = `${s.tag}: '${v.name}'`;
           const p = v.payload;
-          if (p.kind === 'unit') return tag;
-          if (p.kind === 'value') return `{ ${s.tag}: '${v.name}'; value: ${ts(p.ty, `${d.name}.${v.name}`)} }`;
-          if (p.kind === 'spread') return `(${tag} & ${ts(p.ty, `${d.name}.${v.name}`)})`;
-          return `(${tag} & ${object(p.fields, `${d.name}.${v.name}`)})`;
-        })
-        .join(' | ');
+          if (p.kind === 'unit') return `{ ${tag} }`;
+          if (p.kind === 'value') return `{ ${tag}; value: ${ts(p.ty, `${d.name}.${v.name}`, inner)} }`;
+          if (p.kind === 'spread') return `({ ${tag} } & ${ts(p.ty, `${d.name}.${v.name}`, inner)})`;
+          return inlineObject(p.fields, `${d.name}.${v.name}`, inner, [tag]);
+        }),
+        indent,
+      );
+    }
     case 'untagged':
     case 'external':
-      return s.variants
-        .map((v) => {
+      return union(
+        s.variants.map((v) => {
           const p = v.payload;
-          const inner = p.kind === 'unit' ? 'null' : p.kind === 'fields' ? inlineObject(p.fields, d.name) : ts(p.ty, `${d.name}.${v.name}`);
+          const at = indent + '  ';
+          const inner = p.kind === 'unit' ? 'null' : p.kind === 'fields' ? inlineObject(p.fields, d.name, at) : ts(p.ty, `${d.name}.${v.name}`, at);
           if (s.kind === 'untagged') return inner;
           return p.kind === 'unit' ? `'${v.name}'` : `{ ${v.name}: ${inner} }`;
-        })
-        .join(' | ');
+        }),
+        indent,
+      );
   }
   void from;
 }
@@ -251,12 +346,14 @@ function declaration(d: Def): string {
     const members = s.variants.map((v) => `${doc(v.docs, '  ')}  | '${v.name}'`).join('\n');
     return `${doc(d.docs, '')}export type ${d.name} =\n${members};\n`;
   }
-  return `${doc(d.docs, '')}export type ${d.name} = ${body(d, d.name)};\n`;
+  const b = body(d, d.name, '  ');
+  return `${doc(d.docs, '')}export type ${d.name} =${b.startsWith('\n') ? '' : ' '}${b};\n`;
 }
 
 const missing = ADOPT.filter((n) => !defs.has(n));
 if (missing.length) problems.push(`not in the schema: ${missing.join(', ')}`);
 const decls = ADOPT.filter((n) => defs.has(n)).map((n) => declaration(defs.get(n)!));
+for (const path of Object.keys(FIELDS)) if (!used.has(path)) problems.push(`FIELDS names ${path}, which no adopted type has`);
 if (problems.length) {
   console.error(problems.join('\n'));
   process.exit(1);
