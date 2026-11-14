@@ -78,6 +78,10 @@ thread_local! {
     pub(crate) static FAIL_VERIFY: Cell<bool> = const { Cell::new(false) };
 }
 
+// Pass schedule
+const FREE_PASSES: usize = 4;
+const RESERVE_PASS: usize = FREE_PASSES + 1;
+
 fn hook_height(k: usize) -> f64 {
     #[cfg(test)]
     if matches!(k, 1 | 3) {
@@ -893,7 +897,7 @@ impl LayoutJob {
         let run = &self.run;
         let info = run.info.clone().unwrap_or_default();
         let composed: Vec<HfHeights> = run.pages.iter().map(|p| p.hf_full).collect();
-        if run.k <= 4 {
+        if run.k <= FREE_PASSES {
             self.renumber = notes.renumbered(&run.pages);
             let fields_agree = (!self.body_fields || info == *run.known) && self.renumber.is_none();
             let hf_agree = run.pages.iter().all(|pg| same_heights(&used(pg), &pg.hf_full));
@@ -902,7 +906,7 @@ impl LayoutJob {
                 return true;
             }
             self.history.push(composed.clone());
-            if run.k < 4 {
+            if run.k < FREE_PASSES {
                 self.run = PassRun::new(run.k + 1, Rc::new(info), Rc::new(composed), false);
                 return false;
             }
@@ -921,7 +925,7 @@ impl LayoutJob {
                     r
                 })
                 .collect();
-            self.run = PassRun::new(5, Rc::new(info), Rc::new(reserve), true);
+            self.run = PassRun::new(RESERVE_PASS, Rc::new(info), Rc::new(reserve), true);
             return false;
         }
         let frozen_hf: Box<[usize]> = run.pages.iter().enumerate().filter(|(_, pg)| !same_heights(&used(pg), &pg.hf_full)).map(|(i, _)| i).collect();
