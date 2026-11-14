@@ -28,6 +28,21 @@ impl Editor {
             let [x0, y0, x1, y1] = s.rect;
             let in_box = px >= x0 - one && px <= x1 + one && py >= y0 - one && py <= y1 + one;
             let text_box = self.index.text_box(&self.doc, self.index.box_story(f)).is_some();
+            // As in Word, a shape holding text (not a text box) is selected by a click anywhere on it, its text area
+            // or not; a double-click, a click once it's selected or a click in the shape being edited goes to the text.
+            if text_box && reachable(ctx, s.host) && !self.is_text_box_shape(f) {
+                let object = Selection::Object(self.story_object(f));
+                let editing = self.selection.focus().is_some_and(|p| p.story == s.story);
+                let frame = match self.story_object(f) {
+                    ObjectRef::Floating(g) => self.float_frame(g, page).map(|(r, _)| r),
+                    ObjectRef::Inline { para, offset } => self.inline_box(&geo, para, offset),
+                };
+                // ponytail: the frame, not the outline: an ellipse's corners select it too; hit its geometry if that matters.
+                let on = frame.is_some_and(|[a, b, c, d]| px >= a - one && px <= c + one && py >= b - one && py <= d + one);
+                if on && !editing && self.press_clicks < 2 && self.selection != object {
+                    return Some(object);
+                }
+            }
             if !reachable(ctx, s.host) || text_box && !in_box || !text_box && !self.shape_hit(page, f, px, py, 3.0 * one, in_box) {
                 continue;
             }
@@ -48,12 +63,7 @@ impl Editor {
             }
             let left = px - x0 < band;
             if !(left || x1 - px < band || py - y0 < band || y1 - py < band) {
-                // As in Word, a click in a text box goes to its text; a click in a shape's text selects the shape,
-                // and a double-click, a click once it's selected or a click in the shape being edited goes to the text.
-                let editing = self.selection.focus().is_some_and(|p| p.story == s.story);
-                let object = Selection::Object(self.story_object(f));
-                let shape = !self.is_text_box_shape(f);
-                return if !shape || editing || self.press_clicks >= 2 || self.selection == object { None } else { Some(object) };
+                return None;
             }
             if left
                 && let Some(i) = geo.lines.iter().position(|l| l.story == si && py >= l.top && py < l.bottom)
@@ -1278,8 +1288,19 @@ impl Editor {
     pub(super) fn anchor_at(&mut self, page: usize, anchor: crate::layout::ParaId, y: f64) -> Option<(crate::layout::ParaId, f64)> {
         let container = self.index.para_slot(anchor)?.container;
         let geo = self.pages.page(page, &self.index)?;
-        let same = |p: crate::layout::ParaId| self.index.para_slot(p).is_some_and(|s| s.container == container);
+        // A body paragraph's float can go to the body of any section; one in a cell or another story stays in it.
+        let same = |p: crate::layout::ParaId| {
+            self.index.para_slot(p).is_some_and(|s| {
+                s.container == container
+                    || matches!((s.container, container), (super::index::Container::Section(_), super::index::Container::Section(_)))
+            })
+        };
         let lines: Vec<&super::geometry::GLine> = geo.lines.iter().filter(|l| !l.repeat && l.para().is_some_and(same)).collect();
+        // A float lies on its anchor's first page: a paragraph continued from the page before can't hold one here, so
+        // the paragraphs starting on the page do, above or below (when the page has any).
+        let starts: Vec<&super::geometry::GLine> =
+            lines.iter().copied().filter(|l| l.para().is_some_and(|p| l.first_of(p) == Some(Unit(0)))).collect();
+        let lines = if starts.is_empty() { lines } else { starts };
         let l = lines
             .iter()
             .filter(|l| l.top <= y + 1e-6)
