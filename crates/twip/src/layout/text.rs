@@ -1030,7 +1030,13 @@ impl<'a> Builder<'a> {
                     blank.style.face = None;
                     self.atom(blank, "\u{FFFC}");
                 }
-                (Inline::Picture(pic, _), Some(run)) => self.picture(pic.clone(), run),
+                (Inline::Picture(pic, _), Some(run)) => {
+                    let mut pic = pic.clone();
+                    if let Some(&(_, h)) = pic.text.as_ref().and_then(|t| space.fitted.iter().find(|(id, _)| *id == t.id)) {
+                        pic.h = h;
+                    }
+                    self.picture(pic, run)
+                }
                 // A ruby: one object as wide as the wider of its base and annotation, as tall as the base or the
                 // annotation raised over it, as deep as the base.
                 (Inline::Ruby(r, _), Some(run)) if r.align != 5 || space.vertical => {

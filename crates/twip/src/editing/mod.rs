@@ -134,6 +134,9 @@ pub struct Editor {
     provisional: Option<stories::Provisional>,
     border_drag: Option<resize::BorderDrag>,
     table_drag: Option<table_handles::TableDrag>,
+    /// A pointer press, move or release is running: its edits are where the pointer is, so they don't scroll to the
+    /// caret.
+    pointing: bool,
     table_hover: Option<view::TableHover>,
     zone_drag: Option<(TableId, selection::CellRef, selection::CellShape)>,
     cursor: input::Cursor,
@@ -301,6 +304,7 @@ impl Editor {
             provisional: None,
             border_drag: None,
             table_drag: None,
+            pointing: false,
             table_hover: None,
             zone_drag: None,
             cursor: input::Cursor::Text,
@@ -871,7 +875,7 @@ impl Editor {
             b.label.get_or_insert(Cow::Borrowed(tx.label));
             b.tx.undo.append(&mut tx.undo);
             b.tx.targets.extend(tx.targets);
-            self.after_edit(fonts);
+            self.after_edit(tx.before.selection, fonts);
             return Outcome::Changed(self.revision + 1);
         }
         let label = tx.replayed.as_ref().map_or(Cow::Borrowed(tx.label), |done| done.label.clone());
@@ -953,6 +957,7 @@ impl Editor {
     }
 
     fn finish(&mut self, mut tx: Tx, label: Cow<'static, str>, typing: Option<TypingRun>, fonts: &Fonts) -> Outcome {
+        let before = tx.before.selection;
         self.revision += 1;
         let undo = std::mem::take(&mut tx.undo);
         let bytes = undo.iter().map(history::step_bytes).sum();
@@ -965,11 +970,13 @@ impl Editor {
             }
         }
         self.commits.push(Committed { revision: self.revision, origin: tx.origin, label, targets: tx.targets });
-        self.after_edit(fonts);
+        self.after_edit(before, fonts);
         Outcome::Changed(self.revision)
     }
 
-    fn after_edit(&mut self, fonts: &Fonts) {
+    /// `before`: the selection the edit started from. The view follows the caret only when the edit moved it, and
+    /// never for a pointer's edit, which is where the user is looking.
+    fn after_edit(&mut self, before: Selection, fonts: &Fonts) {
         #[cfg(test)]
         {
             let mut fresh = DocIndex::build_with_parts(&self.doc, self.index.parts());
@@ -984,7 +991,9 @@ impl Editor {
         }
         if let Some(p) = self.caret() {
             self.ensure(&p, fonts);
-            self.scroll_to_caret(fonts);
+            if !self.pointing && before.focus() != Some(p) {
+                self.scroll_to_caret(fonts);
+            }
         }
         #[cfg(test)]
         self.pages.assert_memo_fresh(&self.index);
@@ -1055,7 +1064,7 @@ impl Editor {
             return;
         }
         self.effects(&mut tx);
-        self.after_edit(fonts);
+        self.after_edit(tx.before.selection, fonts);
     }
 
     // Typing
@@ -2295,7 +2304,10 @@ impl Editor {
                     self.requests.push(Request::CapturePointer);
                     return;
                 }
+                // The double-click that opens a selected text box puts the caret there.
+                let opening = matches!(self.selection, Selection::Object(_)) && matches!(p.story, StoryId::TextBox(_));
                 let unit = match clicks {
+                    2 if opening => Granularity::Char,
                     2 => Granularity::Word,
                     3.. => Granularity::Paragraph,
                     _ if mods.ctrl && !mods.shift => Granularity::Sentence,
@@ -2623,8 +2635,8 @@ impl Editor {
                 let Some(geo) = self.pages.page(page, &self.index) else { continue };
                 match o {
                     _ if let Some(d) = self.object_drag.filter(|d| d.obj == o && !d.live) => {
-                        if page == d.page {
-                            out.push(view::Outline { page, rect: d.rect(self.object_locked(o)), rot: d.rot });
+                        if page == d.over {
+                            out.push(view::Outline { page, rect: d.on_over(d.rect(self.object_locked(o))), rot: d.rot });
                         }
                     }
                     selection::ObjectRef::Floating(_) => {
@@ -2709,8 +2721,8 @@ impl Editor {
                 let locked = self.selected_object().and_then(|o| o.locked) == Some(true);
                 let moving = self.object_drag.filter(|d| d.handle.is_none() && d.now != d.start && !locked);
                 let to = moving.and_then(|d| {
-                    let (para, _) = self.anchor_at(d.page, self.index.float_anchor(f)?, d.placed(d.rect(false))[1])?;
-                    Some((d.page, para))
+                    let (para, _) = self.anchor_at(d.over, self.index.float_anchor(f)?, d.on_over(d.placed(d.rect(false)))[1])?;
+                    Some((d.over, para))
                 });
                 let at = |e: &mut Self, page: usize, para: ParaId| {
                     let geo = e.pages.page(page, &e.index)?;
@@ -2726,13 +2738,14 @@ impl Editor {
             _ => None,
         };
         let ghost = self.object_drag.filter(|d| d.now != d.start && !d.live).map(|d| view::Ghost {
-            page: d.page,
+            page: d.over,
+            source: d.page,
             float: match d.obj {
                 selection::ObjectRef::Floating(f) => Some(f),
                 selection::ObjectRef::Inline { .. } => None,
             },
             from: d.rect,
-            to: d.rect(self.object_locked(d.obj)),
+            to: d.on_over(d.rect(self.object_locked(d.obj))),
             rot: d.rot,
         });
         let (mut guides, mut measures, original) = self.object_feedback(visible.clone(), anchor);

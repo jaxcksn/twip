@@ -286,22 +286,22 @@ page 6 12240 15840
   float 8250 2666 10800 5216
 page 7 12240 15840
   1440 1664 6.3Shapes & Text Box
-  1440 4852 6.4Equations
-  2255 5980 Equation 1 — Office Math (OMML) — quadratic formula and the sum of the first n integers
-  1440 6691 7Links, Notes & Fields
-  1440 7263 External hyperlink: Open XML SDK — WordprocessingML overview.
-  1440 7656 Internal hyperlink to a bookmark: the complex table in the landscape section.
-  1440 8049 Footnotes appear at the bottom of the page2 and endnotes collect at the end of the
-  1440 8302 document.i
-  1440 8695 Fields: this is page 8 of 10; the file name is showcase.docx; and today is November 9,
-  1440 8948 2026.
-  1440 9673 8Review & Collaboration
-  1440 10245 Comments anchor to a range: this sentence has a reviewer comment attached, and so
-  1440 10498 does this phrase.
-  1440 10891 Tracked changes: the launch is planned for FridayMonday morning after a final sign-
-  1440 11144 off from the whole release team.
-  1680 11537 Two authors appear above, so a good editor shows them in distinct colors and
-  1680 11790 attributes each revision correctly.
+  1440 4437 6.4Equations
+  2255 5565 Equation 1 — Office Math (OMML) — quadratic formula and the sum of the first n integers
+  1440 6276 7Links, Notes & Fields
+  1440 6848 External hyperlink: Open XML SDK — WordprocessingML overview.
+  1440 7241 Internal hyperlink to a bookmark: the complex table in the landscape section.
+  1440 7634 Footnotes appear at the bottom of the page2 and endnotes collect at the end of the
+  1440 7887 document.i
+  1440 8280 Fields: this is page 8 of 10; the file name is showcase.docx; and today is November 9,
+  1440 8533 2026.
+  1440 9258 8Review & Collaboration
+  1440 9830 Comments anchor to a range: this sentence has a reviewer comment attached, and so
+  1440 10083 does this phrase.
+  1440 10476 Tracked changes: the launch is planned for FridayMonday morning after a final sign-
+  1440 10729 off from the whole release team.
+  1680 11122 Two authors appear above, so a good editor shows them in distinct colors and
+  1680 11375 attributes each revision correctly.
   1440 14106 2A second footnote with formatting and a link to ECMA-376.
   2594 2491 Draft
   6173 2476 Review
@@ -313,7 +313,7 @@ page 7 12240 15840
   float 1575 1912 4275 2962
   float 5670 1897 7470 2947
   float 8865 1912 10665 2962
-  float 1440 3235 10800 4315
+  float 1440 3235 10800 3900
 page 8 15840 12240
   1440 1888 9The Complex Table
   1440 2488 A landscape section with a fixed-layout table that combines: a diagonally split corner cell spanning 2×2, three-

@@ -29,6 +29,12 @@ impl Editor {
     }
 
     pub fn pointer_input(&mut self, kind: PointerKind, x: f64, y: f64, clicks: u8, mods: Mods, fonts: &Fonts) {
+        self.pointing = true;
+        self.pointed(kind, x, y, clicks, mods, fonts);
+        self.pointing = false;
+    }
+
+    fn pointed(&mut self, kind: PointerKind, x: f64, y: f64, clicks: u8, mods: Mods, fonts: &Fonts) {
         let activate = (kind == PointerKind::Down && clicks == 2 && self.mode == Mode::Design).then(|| self.hit_laid_out(x, y));
         if kind == PointerKind::Down {
             self.press_clicks = clicks;
@@ -492,6 +498,25 @@ mod tests {
         f.click(moved, 1, NONE);
         f.click(moved, 2, NONE);
         assert_eq!(f.s().state().revision, revision + 2);
+    }
+
+    #[test]
+    fn a_border_dragged_away_from_the_caret_leaves_the_view() {
+        let mut f = Fixture::open("editor/FX-TBL-BASIC.docx");
+        let text = f.at("T2 R1 C2");
+        let start = f.s().host().frame_info();
+        let border = Point { x: start.caret_x - 5.4 * 4.0 / 3.0, y: text.y };
+        let at = f.at("the document starts");
+        f.click(at, 1, NONE);
+        let scrolls: Rc<RefCell<usize>> = Rc::default();
+        let seen = scrolls.clone();
+        f.s().host().attach(move |r| *seen.borrow_mut() += usize::from(matches!(r, crate::api::session::HostRequest::ScrollTo { .. })));
+        let revision = f.s().state().revision;
+        f.drag(border, Point { x: border.x + 40.0, ..border });
+        assert_eq!(f.s().state().revision, revision + 1, "the border moved");
+        assert_eq!(*scrolls.borrow(), 0, "no scroll back to the caret");
+        f.s().text("X");
+        assert_eq!(*scrolls.borrow(), 1, "typing still follows the caret");
     }
 
     #[test]

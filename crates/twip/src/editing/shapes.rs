@@ -808,7 +808,7 @@ impl Editor {
         for (fl, to) in &new {
             let f = FloatId(fl.id);
             if let Some((page, now)) = self.float_box(f, fonts) {
-                self.place_float(f, page, now, *to, label, false, fonts);
+                self.place_float(f, page, now, *to, label, fonts);
             }
         }
         self.selection = super::selection::Selection::Object(ObjectRef::Floating(made[0]));

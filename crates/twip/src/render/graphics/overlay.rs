@@ -111,7 +111,7 @@ impl Graphics {
         }
         // An object drag's ghost: the object's own drawing at half opacity, mapped into the box the drag puts it in.
         if let Some(g) = view.ghost.filter(|g| g.page == i)
-            && let Some(pg) = view.snapshot.pages().get(i)
+            && let Some(pg) = view.snapshot.pages().get(g.source)
         {
             let ([a0, b0, a1, b1], [c0, d0, c1, d1]) = (g.from, g.to);
             let items = match g.float {

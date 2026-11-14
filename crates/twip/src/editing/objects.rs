@@ -48,7 +48,12 @@ impl Editor {
             }
             let left = px - x0 < band;
             if !(left || x1 - px < band || py - y0 < band || y1 - py < band) {
-                return None;
+                // As in Word, a click in a text box goes to its text; a click in a shape's text selects the shape,
+                // and a double-click, a click once it's selected or a click in the shape being edited goes to the text.
+                let editing = self.selection.focus().is_some_and(|p| p.story == s.story);
+                let object = Selection::Object(self.story_object(f));
+                let shape = !self.is_text_box_shape(f);
+                return if !shape || editing || self.press_clicks >= 2 || self.selection == object { None } else { Some(object) };
             }
             if left
                 && let Some(i) = geo.lines.iter().position(|l| l.story == si && py >= l.top && py < l.bottom)
@@ -69,6 +74,18 @@ impl Editor {
             }
         }
         None
+    }
+
+    /// Whether float or inline box `f` is a text box (`txBox`) rather than a shape holding text.
+    fn is_text_box_shape(&self, f: FloatId) -> bool {
+        let shape = match self.story_object(f) {
+            ObjectRef::Floating(f) => self.float_of(f).and_then(|fl| fl.shape.as_deref()),
+            ObjectRef::Inline { para, offset } => match self.index.para(&self.doc, para).and_then(|p| inline_at(p, offset)) {
+                Some(Inline::Picture(pic, _)) => pic.shape.as_deref(),
+                _ => None,
+            },
+        };
+        !matches!(shape.map(|s| &s.kind), Some(crate::drawing::ShapeKind::Sp(sp)) if !sp.text_box)
     }
 
     pub(super) fn story_object(&self, f: FloatId) -> ObjectRef {
@@ -212,6 +229,9 @@ pub(super) struct ObjectDrag {
     /// A turned float's rotation; `rect` is then its frame, unturned, which a quarter-turned float lays out swapped.
     pub rot: f64,
     pub swap: bool,
+    /// The page under the pointer while moving, and the offset from `page`'s coordinates to its own.
+    pub over: usize,
+    pub offset: [f64; 2],
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -257,7 +277,15 @@ impl ObjectDrag {
             snapped: [None; 2],
             rot: 0.0,
             swap: false,
+            over: page,
+            offset: [0.0; 2],
         }
+    }
+
+    /// `r`, in `page`'s coordinates, in `over`'s.
+    pub fn on_over(&self, r: [f64; 4]) -> [f64; 4] {
+        let [sx, sy] = self.offset;
+        [r[0] + sx, r[1] + sy, r[2] + sx, r[3] + sy]
     }
 
     /// `r`, a frame, as the box the float lays out in.
@@ -423,9 +451,10 @@ impl Editor {
         let label = if d.handle.is_some() { "Resize Object" } else { "Move Object" };
         let out = match d.obj {
             _ if d.now == d.start => Outcome::Unchanged("no drag"),
-            ObjectRef::Floating(f) => {
-                self.place_float(f, d.page, d.placed(d.rect), d.placed(d.rect(self.float_locked(f))), label, d.handle.is_none(), fonts)
-            }
+            ObjectRef::Floating(f) => match self.dropped_float(f, &d) {
+                Some((moved, to)) => self.commit_float(f, moved, to, label, fonts),
+                None => Outcome::Unchanged("no float"),
+            },
             ObjectRef::Inline { para, offset } => {
                 let [x0, y0, x1, y1] = d.rect(self.object_locked(d.obj));
                 self.set_picture_size(para, offset, x1 - x0, y1 - y0, fonts)
@@ -439,6 +468,16 @@ impl Editor {
         let Some(mut d) = self.object_drag else { return };
         (d.now, d.shift) = ((x, y), mods.shift);
         d.snapping = if mods.alt { Snapping::Free } else { Snapping::On };
+        if d.handle.is_none()
+            && let ObjectRef::Floating(f) = d.obj
+            && let over = self.page_under(&d)
+            && over != d.over
+        {
+            let stack = self.stack();
+            let (Some(a), Some(b)) = (stack.pages.get(d.page), stack.pages.get(over)) else { return };
+            (d.over, d.offset) = (over, [a[0] - b[0], a[1] - b[1]]);
+            self.build_snaps(over, Dragged::Float(f));
+        }
         if d.handle.is_none() {
             (d.snap, d.snapped) = ([0.0; 2], [None; 2]);
             if d.snapping == Snapping::On {
@@ -450,7 +489,7 @@ impl Editor {
                 } else {
                     [false, true]
                 };
-                let (off, hit) = super::snap::snap(super::snap::turned_bounds(d.rect(false), d.rot), &self.snaps, self.snap_threshold());
+                let (off, hit) = super::snap::snap(super::snap::turned_bounds(d.on_over(d.rect(false)), d.rot), &self.snaps, self.snap_threshold());
                 for k in 0..2 {
                     if free[k] {
                         (d.snap[k], d.snapped[k]) = (off[k], hit[k]);
@@ -464,17 +503,28 @@ impl Editor {
         };
         d.live |= self.live_layout && d.now != d.start;
         if d.live {
-            let to = d.placed(d.rect(self.float_locked(f)));
-            let preview = self.moved_float(f, d.page, d.placed(d.rect), to).and_then(|mut float| {
-                let anchor = self.index.float_anchor(f)?;
-                let dest = if d.handle.is_none() { self.reanchor(d.page, anchor, to, &mut float) } else { None };
-                Some(crate::layout::Preview { float, anchor: dest.unwrap_or(anchor) })
-            });
+            let preview = self
+                .dropped_float(f, &d)
+                .and_then(|(float, dest)| Some(crate::layout::Preview { float, anchor: dest.or_else(|| self.index.float_anchor(f))? }));
             let at = preview.as_ref().map(|p| p.anchor);
             self.preview_layout(f, preview, d.previewed);
             d.previewed = at;
         }
         self.object_drag = Some(d);
+    }
+
+    /// The page a moving float goes to: the one its centre is over, unsnapped. It stays on the page it's on until
+    /// its centre is past the gap beyond it, so it doesn't flit between pages along the gap.
+    fn page_under(&self, d: &ObjectDrag) -> usize {
+        let stack = self.stack();
+        let (Some(home), Some(cur)) = (stack.pages.get(d.page), stack.pages.get(d.over)) else { return d.over };
+        let [x0, y0, x1, y1] = ObjectDrag { snap: [0.0; 2], ..*d }.rect(false);
+        let (cx, cy) = (home[0] + (x0 + x1) / 2.0, home[1] + (y0 + y1) / 2.0);
+        let gap = super::view::PAGE_GAP;
+        if cy >= cur[1] - gap && cy <= cur[1] + cur[3] + gap {
+            return d.over;
+        }
+        stack.page_at(cx, cy).map_or(d.over, |(p, ..)| p)
     }
 
     pub(super) fn object_cancel(&mut self) -> bool {
@@ -883,7 +933,7 @@ impl Editor {
             && on == page
         {
             let (x, y) = (if stay[0] { r[0] } else { now[0] }, if stay[1] { r[1] } else { now[1] });
-            self.place_float(f, page, now, [x, y, x + now[2] - now[0], y + now[3] - now[1]], "Position", false, fonts);
+            self.place_float(f, page, now, [x, y, x + now[2] - now[0], y + now[3] - now[1]], "Position", fonts);
         }
         self.end_batch(true, fonts)
     }
@@ -927,7 +977,7 @@ impl Editor {
 
     pub(super) fn nudge(&mut self, f: FloatId, dx: f64, dy: f64, fonts: &Fonts) -> Outcome {
         let Some((page, r)) = self.float_box(f, fonts) else { return Outcome::Unchanged("float not drawn") };
-        self.place_float(f, page, r, [r[0] + dx, r[1] + dy, r[2] + dx, r[3] + dy], "Move Object", false, fonts)
+        self.place_float(f, page, r, [r[0] + dx, r[1] + dy, r[2] + dx, r[3] + dy], "Move Object", fonts)
     }
 
     pub(super) fn float_box(&mut self, f: FloatId, fonts: &Fonts) -> Option<(usize, [f64; 4])> {
@@ -1020,7 +1070,7 @@ impl Editor {
             if let (Some((page, r)), Some((on, now))) = (was, self.float_box(f, fonts))
                 && on == page
             {
-                self.place_float(f, page, now, [r[0], r[1], r[0] + now[2] - now[0], r[1] + now[3] - now[1]], "Wrap Text", false, fonts);
+                self.place_float(f, page, now, [r[0], r[1], r[0] + now[2] - now[0], r[1] + now[3] - now[1]], "Wrap Text", fonts);
             }
             return self.end_batch(true, fonts);
         }
@@ -1041,7 +1091,7 @@ impl Editor {
         if let (Some((page, r)), Some((on, now))) = (was, self.float_box(f, fonts))
             && on == page
         {
-            self.place_float(f, page, now, [r[0], r[1], r[0] + now[2] - now[0], r[1] + now[3] - now[1]], "Wrap Text", false, fonts);
+            self.place_float(f, page, now, [r[0], r[1], r[0] + now[2] - now[0], r[1] + now[3] - now[1]], "Wrap Text", fonts);
         }
         self.end_batch(true, fonts)
     }
@@ -1103,18 +1153,40 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
-    pub(super) fn place_float(
+    /// Where a drag puts float `f`: moved on its own page, then onto the page under the pointer and re-anchored there.
+    fn dropped_float(&mut self, f: FloatId, d: &ObjectDrag) -> Option<(crate::docx::Float, Option<crate::layout::ParaId>)> {
+        let new = d.placed(d.rect(self.float_locked(f)));
+        let mut fl = self.moved_float(f, d.page, d.placed(d.rect), new)?;
+        if d.handle.is_some() {
+            return Some((fl, None));
+        }
+        let anchor = self.index.float_anchor(f)?;
+        // Off its anchor's page, an offset from the page or its margins is from the new page's.
+        if d.over != d.page && !fl.locked {
+            let twips = |v: f64| (v * 20.0).trunc() / 20.0;
+            fl.h_offset = twips(fl.h_offset + d.offset[0]);
+            if !matches!(fl.v_relative.as_str(), "paragraph" | "line") {
+                fl.v_offset = twips(fl.v_offset + d.offset[1]);
+            }
+        }
+        let dest = self.reanchor(d.over, anchor, d.on_over(new), &mut fl);
+        Some((fl, dest))
+    }
+
+    pub(super) fn place_float(&mut self, f: FloatId, page: usize, old: [f64; 4], new: [f64; 4], label: &'static str, fonts: &Fonts) -> Outcome {
+        let Some(moved) = self.moved_float(f, page, old, new) else { return Outcome::Unchanged("no float") };
+        self.commit_float(f, moved, None, label, fonts)
+    }
+
+    fn commit_float(
         &mut self,
         f: FloatId,
-        page: usize,
-        old: [f64; 4],
-        new: [f64; 4],
+        moved: crate::docx::Float,
+        to: Option<crate::layout::ParaId>,
         label: &'static str,
-        reanchor: bool,
         fonts: &Fonts,
     ) -> Outcome {
         let Some(anchor) = self.index.float_anchor(f) else { return Outcome::Unchanged("no anchor") };
-        let Some(moved) = self.moved_float(f, page, old, new) else { return Outcome::Unchanged("no float") };
         let Some(p) = self.index.para(&self.doc, anchor) else { return Outcome::Unchanged("no anchor") };
         let mut inlines = p.inlines.clone();
         let Some(fl) = inlines.iter_mut().find_map(|i| match i {
@@ -1125,7 +1197,6 @@ impl Editor {
         };
         **fl = moved;
         fit_picture_control(fl, &self.doc.controls);
-        let to = if reanchor { self.reanchor(page, anchor, new, fl) } else { None };
         let mut tx = self.begin(label);
         let ok = match to {
             None => self.step(&mut tx, Step::Restyle { para: anchor, inlines }).is_ok(),
@@ -1441,13 +1512,13 @@ impl Editor {
             let (ox, oy) = self.stack().to_doc(d.page, 0.0, 0.0).unwrap_or((0.0, 0.0));
             match d.handle {
                 None => {
-                    let [x0, y0, x1, y1] = super::snap::turned_bounds(d.rect(false), d.rot);
+                    let [x0, y0, x1, y1] = super::snap::turned_bounds(d.on_over(d.rect(false)), d.rot);
                     let [ml, _, mr, _] = self.snaps.margins;
-                    let anchor_link = anchor.filter(|(p, _)| *p == d.page).and_then(|(_, [ax, ay])| {
+                    let anchor_link = anchor.filter(|(p, _)| *p == d.over).and_then(|(_, [ax, ay])| {
                         let (rx, ry) = ((ax - 18.0 * one).max(10.0 * one) + 6.0 * one, ay + 8.0 * one);
                         (x0 > rx).then_some([Pt(rx), Pt(ry), Pt(x0), Pt(ry)])
                     });
-                    guides.push((d.page, Guides { lines: lines(&self.snaps, d.snapped), grid: self.snaps.grid, anchor_link }));
+                    guides.push((d.over, Guides { lines: lines(&self.snaps, d.snapped), grid: self.snaps.grid, anchor_link }));
                     let (left, right) = (x0 - ml, mr - x1);
                     let equal = (left - right).abs() < 1.5 * one;
                     let shown = match set.detail {
@@ -1461,7 +1532,7 @@ impl Editor {
                         let mut dim = |a: f64, b: f64| {
                             if b - a > 2.0 * one {
                                 measures
-                                    .push((d.page, Measure::Dimension { from: [Pt(a), cy], to: [Pt(b), cy], label: amount(b - a, set.unit), tone }));
+                                    .push((d.over, Measure::Dimension { from: [Pt(a), cy], to: [Pt(b), cy], label: amount(b - a, set.unit), tone }));
                             }
                         };
                         dim(ml, x0);

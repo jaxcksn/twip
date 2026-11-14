@@ -9,6 +9,7 @@ use crate::docx::review::MarkupView;
 
 use super::LayoutCtx;
 use super::ids::{ParaId, Unit};
+use super::job::{Memos, Yield};
 use super::space::ShapeSpace;
 use super::text::{FieldValues, ShapedPara, shape_space};
 
@@ -119,17 +120,31 @@ impl LaidPara<'_> {
         }
     }
 
-    pub fn shape_space_in(&self, fields: &FieldValues, notes: &HashMap<(NoteKind, i64), String>, ctx: &LayoutCtx, in_cell: bool) -> ShapeSpace {
-        ShapeSpace { in_cell, ..self.shape_space(fields, notes, ctx) }
+    pub fn shape_space_in(
+        &self,
+        fields: &FieldValues,
+        notes: &HashMap<(NoteKind, i64), String>,
+        ctx: &LayoutCtx,
+        in_cell: bool,
+        memos: &mut Memos,
+    ) -> Result<ShapeSpace, Yield> {
+        Ok(ShapeSpace { in_cell, ..self.shape_space(fields, notes, ctx, memos)? })
     }
 
-    pub fn shape_space(&self, fields: &FieldValues, notes: &HashMap<(NoteKind, i64), String>, ctx: &LayoutCtx) -> ShapeSpace {
+    pub fn shape_space(
+        &self,
+        fields: &FieldValues,
+        notes: &HashMap<(NoteKind, i64), String>,
+        ctx: &LayoutCtx,
+        memos: &mut Memos,
+    ) -> Result<ShapeSpace, Yield> {
         let mut space = shape_space(self.para(), fields, notes, &ctx.env.text, ctx.preview);
+        space.fitted = super::story::fitted_boxes(self.para(), &super::story::StoryEnv { ctx: *ctx, fields, notes }, memos)?;
         space.expansion = ctx.expansions.and_then(|e| e.paras.get(&ParaId(self.para().id))).cloned();
         if let LaidPara::Joined(j) = self {
             space.join = Some(j.map.clone());
         }
-        space
+        Ok(space)
     }
 }
 

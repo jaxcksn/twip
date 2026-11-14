@@ -63,6 +63,8 @@ pub enum SelectionView {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Ghost {
     pub page: usize,
+    /// The page the object is drawn on, which `from` is on.
+    pub source: usize,
     pub float: Option<crate::layout::FloatId>,
     pub from: [f64; 4],
     pub to: [f64; 4],
