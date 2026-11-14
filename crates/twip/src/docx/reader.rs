@@ -2840,9 +2840,8 @@ impl Reader {
             own_jc: tbl.jc,
             ind: first_row_ind.or(tbl.ind).map_or(0.0, Width::dxa),
             ind_pct: first_row_ind.or(tbl.ind).and_then(Width::pct),
-            // Without a default table style an unstyled table's indent is unset, as a frozen style's is.
-            ind_set: first_row_ind.or(tbl.ind).is_some()
-                || self.res.styles.default_table.is_some() && direct.style.as_deref().is_none_or(|s| self.res.styles.table_style(Some(s)) != Some(s)),
+            // Set only by a dxa indent found on the table or up its style chain; a pct, auto or nil one is unset.
+            ind_set: matches!(first_row_ind.or(tbl.ind), Some(Width::Dxa(_))),
             borders: [b.top.clone(), b.left.clone(), b.bottom.clone(), b.right.clone(), b.inside_h.clone(), b.inside_v.clone()],
             fixed: tbl.fixed.unwrap_or(false),
             cell_spacing: tbl.cell_spacing.unwrap_or(0.0),

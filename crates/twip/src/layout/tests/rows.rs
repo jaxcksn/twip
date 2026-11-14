@@ -286,16 +286,40 @@ fn compat_14_pct_table_in_a_text_box_takes_15_twips_more() {
 }
 
 #[test]
-fn a_pct_indent_is_a_share_of_the_text_width() {
+fn a_pct_indent_places_nothing() {
     let table = |ind: &str| {
         format!(
-            r#"<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/>{ind}</w:tblPr><w:tblGrid><w:gridCol w:w="1000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="1000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#
+            r#"<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/>{ind}{MAR}</w:tblPr><w:tblGrid><w:gridCol w:w="1000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="1000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#
         )
     };
-    let (pct, text_w) = glyph_x(&table(r#"<w:tblInd w:w="1000" w:type="pct"/>"#), 'a');
-    let (dxa, _) = glyph_x(&table(&format!(r#"<w:tblInd w:w="{}" w:type="dxa"/>"#, 1000 * text_w / 5000)), 'a');
-    let (none, _) = glyph_x(&table(""), 'a');
-    assert!((pct - dxa).abs() < 0.01 && dxa - none > 80.0, "{pct} {dxa} {none}");
+    let x = |ind: &str, mode: i64| glyph_x_in(&table(ind), mode, &[], 'a');
+    let (pct, dxa0) = (r#"<w:tblInd w:w="1000" w:type="pct"/>"#, r#"<w:tblInd w:w="0" w:type="dxa"/>"#);
+    // Compat 12: unset like no indent at all, so not pulled left by the 100 margin; compat 15: indent 0.
+    assert!((x(pct, 12) - x("", 12)).abs() < 0.01 && (x(pct, 12) - x(dxa0, 12) - 5.0).abs() < 0.01, "{} {}", x(pct, 12), x(dxa0, 12));
+    assert!((x(pct, 15) - x(dxa0, 15)).abs() < 0.01);
+}
+
+#[test]
+fn compat_14_a_default_table_style_without_an_indent_isnt_pulled() {
+    let x = |name: &str| {
+        let style = format!(
+            r#"<w:style w:type="table" w:default="1" w:styleId="TableNormal"><w:name w:val="{name}"/><w:tblPr><w:tblCellMar><w:left w:w="300" w:type="dxa"/><w:right w:w="300" w:type="dxa"/></w:tblCellMar></w:tblPr></w:style></w:styles>"#
+        );
+        let body = r#"<w:tbl><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#;
+        let src = replace_in(&with_body(&crate::docx::blank::blank_docx(), body), "word/styles.xml", "</w:styles>", &style);
+        let mut doc = crate::docx::read(&src).expect("reads");
+        doc.settings.compat_mode = 12;
+        let mut x = None;
+        crate::layout::traverse::paint(&layout(&doc, &fonts()).pages()[0], &mut |p| {
+            if let crate::layout::fragment::Item::Glyphs(r) = p.absolute() {
+                x = x.or(r.chars.iter().find(|g| g.0 == 'a').map(|g| g.1));
+            }
+        });
+        x.expect("drawn")
+    };
+    // The built-in writes indent 0 (pulled, its 108 margins: text at the margin); a custom one writes none.
+    assert!((x("Normal Table") - 72.0).abs() < 0.01, "{}", x("Normal Table"));
+    assert!((x("My Default") - 87.0).abs() < 0.01, "{}", x("My Default"));
 }
 
 #[test]
@@ -378,6 +402,11 @@ fn a_right_to_left_paragraph_swaps_left_and_right() {
 }
 
 pub(super) fn with_body(src: &[u8], body: &str) -> Vec<u8> {
+    replace_in(src, "word/document.xml", "<w:p/>", body)
+}
+
+/// The package with the first `from` in its part `part` replaced by `to`.
+fn replace_in(src: &[u8], part: &str, from: &str, to: &str) -> Vec<u8> {
     use std::io::{Read, Write};
     let mut z = zip::ZipArchive::new(std::io::Cursor::new(src)).unwrap();
     let mut out = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
@@ -386,8 +415,8 @@ pub(super) fn with_body(src: &[u8], body: &str) -> Vec<u8> {
         let name = f.name().unwrap().to_string();
         let mut data = Vec::new();
         f.read_to_end(&mut data).unwrap();
-        if name == "word/document.xml" {
-            data = String::from_utf8(data).unwrap().replacen("<w:p/>", body, 1).into_bytes();
+        if name == part {
+            data = String::from_utf8(data).unwrap().replacen(from, to, 1).into_bytes();
         }
         out.start_file(name, zip::write::SimpleFileOptions::default()).unwrap();
         out.write_all(&data).unwrap();

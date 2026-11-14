@@ -1003,7 +1003,7 @@ impl TblProps {
                         _ => Jc::Left,
                     })
                 }
-                "tblInd" => p.ind = Some(Width::parse(c).sized()),
+                "tblInd" => p.ind = Some(Width::parse(c)),
                 "tblBorders" => p.borders = Borders::parse(c, tc),
                 "tblCellMar" => p.margins = Margins::parse(c),
                 "tblLayout" => p.fixed = Some(attr(c, "type") == Some("fixed")),

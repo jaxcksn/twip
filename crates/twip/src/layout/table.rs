@@ -765,6 +765,11 @@ fn from_hls(h: i64, l: i64, s: i64) -> u32 {
     (scale(channel(h + 80)) << 16) | (scale(channel(h)) << 8) | scale(channel(h - 80))
 }
 
+/// The indent a table is placed by: an unset one (none, or not dxa) places nothing.
+fn placed_ind(t: &Table) -> f64 {
+    if t.ind_set { t.ind } else { 0.0 }
+}
+
 fn half_border(w: f64) -> f64 {
     let tw = (w * 20.0).round() as i64;
     ((tw + 1) / 2) as f64 / 20.0
@@ -888,7 +893,7 @@ fn rtl_x0(t: &Table, total: f64, text_w: f64, res: (i64, i64), sloppy: bool) -> 
     let first_outer = row.is_some_and(|r| r.grid_after == 0 && r.cells.len() == 1);
     let b_last = side(last.and_then(|c| c.left.as_ref()), &t.borders[if alone { 1 } else { 5 }]);
     let hb = |b: i64| (b + 1) / 2;
-    let (w, width, ind, s) = (twips(text_w), twips(total), twips(t.ind), twips(t.cell_spacing.max(0.0)));
+    let (w, width, ind, s) = (twips(text_w), twips(total), twips(placed_ind(t)), twips(t.cell_spacing.max(0.0)));
     let margin = |c: Option<&Cell>| c.map_or(0, |c| twips(c.margins[1]));
     let gap = |outer: bool, b: i64| if s > 0 { s * if outer { 2 } else { 1 } + b } else { 0 };
     let extra = (b_start + b_last) / 2;
@@ -1406,13 +1411,12 @@ fn layout_with(
     nested: bool,
     memos: &mut Memos,
 ) -> Result<Rc<TableLayout>, Yield> {
-    // A pct indent is a share of the width the table is laid out in, truncated to twips; none while measuring, and
-    // none for a floating table.
+    // A pct indent places nothing (the indent is unset), but the autofit room still loses its share of the width
+    // the table is laid out in, truncated to twips; none while measuring, and none for a floating table.
     let resolved;
     let t = match t.ind_pct {
         Some(p) => {
-            let base = twips(text_w) + if env.ctx.env.text.box_story && !nested { 15 } else { 0 };
-            let ind = if measure || t.floating.is_some() { 0 } else { (p * 5000.0).round() as i64 * base / 5000 };
+            let ind = if measure || t.floating.is_some() { 0 } else { (p * 5000.0).round() as i64 * twips(text_w) / 5000 };
             resolved = Table { ind: ind as f64 / 20.0, ind_pct: None, ..t.clone() };
             &resolved
         }
@@ -2071,9 +2075,10 @@ fn assemble(
     let first_left = t.rows.first().and_then(|r| r.cells.first()).map(|c| (space_h(candidate(Some(&c.left), &row_borders(t, 0)[1])), c.margins[1]));
     let (lw, lmar) = first_left.unwrap_or((space_h(&row_borders(t, 0)[1]), 0.0));
     let mut x0 = match compat {
-        Compat::Generic => t.ind + half_border(lw),
-        Compat::Legacy if !t.ind_set => t.ind,
-        Compat::Legacy => t.ind - edge_gap(t, lw, lmar),
+        Compat::Generic => placed_ind(t) + half_border(lw),
+        // An unset indent isn't pulled left, but a nested table's is placed as indent 0.
+        Compat::Legacy if !t.ind_set && !nested => 0.0,
+        Compat::Legacy => placed_ind(t) - edge_gap(t, lw, lmar),
     };
     match t.jc {
         // The whole grid is centred, its `gridBefore` and `gridAfter` columns too.
@@ -2127,7 +2132,7 @@ fn assemble(
     for ((ri, r), cells_geo) in t.rows.iter().enumerate().zip(geo) {
         let row_s = spacing_of(t, ri);
         let shift = match r.ind {
-            Some(i) if !t.fixed && t.jc == Jc::Left && t.floating.is_none() && !rtl => i - t.ind,
+            Some(i) if !t.fixed && t.jc == Jc::Left && t.floating.is_none() && !rtl => i - placed_ind(t),
             _ => 0.0,
         } + r.div.as_ref().filter(|_| t.jc == Jc::Left && t.floating.is_none() && !rtl).map_or(0.0, |d| d.shift);
         // Row alignment
