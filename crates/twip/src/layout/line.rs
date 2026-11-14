@@ -859,6 +859,8 @@ struct Pending {
     stop: f64,
     kind: TabKind,
     pen_at_tab: f64,
+    /// The fit drift before the tab.
+    drift: f64,
     /// The tab has no width (its text wraps).
     collapse: bool,
     /// Where its text narrows the tab to end ([`f64::INFINITY`]: it doesn't), and whether decimal text narrows too.
@@ -1053,7 +1055,7 @@ fn fit_greedy(
         custom_stops(pen, pen_units(pen, left, style, frame), style)
             .find(|t| t.kind == TabKind::Decimal)
             .filter(|_| sp.decimal_lead)
-            .map(|t| Pending { tab: None, from, stop: t.pos, kind: t.kind, pen_at_tab: pen, collapse: false, edge, shift: false })
+            .map(|t| Pending { tab: None, from, stop: t.pos, kind: t.kind, pen_at_tab: pen, drift: lead_drift, collapse: false, edge, shift: false })
     };
     let numbered = pieces[start..].iter().take_while(|p| p.kind == Kind::ListNumber).count();
     let lead_at = if numbered == 0 {
@@ -1215,7 +1217,8 @@ fn fit_greedy(
                 } else {
                     ws.push(0.0);
                     let edge = if past { f64::INFINITY } else { right };
-                    pending = Some(Pending { tab: Some(i), from: i + 1, stop, kind, pen_at_tab: pen, collapse: false, edge, shift: indent_stop });
+                    pending =
+                        Some(Pending { tab: Some(i), from: i + 1, stop, kind, pen_at_tab: pen, drift, collapse: false, edge, shift: indent_stop });
                 }
                 // A line breaks before a tab, not after it: a tab whose next word doesn't fit goes to the next line
                 // with it, and a word too long after a tab first on its line is broken on that line (beside a
@@ -1253,19 +1256,17 @@ fn fit_greedy(
         }
         let right_edge = match &pending {
             Some(pt) if pt.kind == TabKind::Right => {
-                let w: f64 = ws[pt.from - start..].iter().sum::<f64>() + p.width;
-                (pt.pen_at_tab + w).max(pt.stop)
+                let w: f64 = ws[pt.from - start..].iter().sum::<f64>() + p.width + drift - pt.drift + p.break_extra;
+                (pt.pen_at_tab + pt.drift + w).max(pt.stop)
             }
             Some(pt) if pt.kind == TabKind::Center => {
-                let w: f64 = ws[pt.from - start..].iter().sum::<f64>() + p.width;
+                let w: f64 = ws[pt.from - start..].iter().sum::<f64>() + p.width + drift - pt.drift + p.break_extra;
                 // A stop at or before the right edge narrows its tab so the text ends at the edge.
                 let centred = pt.stop + w / 2.0;
-                (pt.pen_at_tab + w).max(if pt.stop <= right + EPS { centred.min(right) } else { centred })
+                (pt.pen_at_tab + pt.drift + w).max(if pt.stop <= right + EPS { centred.min(right) } else { centred })
             }
-            _ => pen + p.width,
-        } + drift
-            + p.break_extra
-            + if p.kind == Kind::Text { open_side(sp, pieces, i) } else { 0.0 };
+            _ => pen + p.width + drift + p.break_extra,
+        } + if p.kind == Kind::Text { open_side(sp, pieces, i) } else { 0.0 };
         let forced = limit_end.is_some();
         let limit = match &pending {
             Some(pt) if pt.kind == TabKind::Right && pt.stop > right => pt.stop,
