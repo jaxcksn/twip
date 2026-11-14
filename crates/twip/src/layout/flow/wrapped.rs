@@ -30,12 +30,20 @@ struct WrapIn<'a> {
     sp: &'a ShapedPara,
     pieces: &'a [Piece],
     n: usize,
+    est: f64,
+    est_below: f64,
+    top_extra: f64,
     cx0: f64,
     cx1: f64,
     compat: Compat,
+    restarts: bool,
+    lone_picture: bool,
+    kept_after: f64,
     floats: &'a [Placed],
     first_part: bool,
+    at_top: bool,
     top: f64,
+    share: f64,
     origin_y: f64,
     y0: f64,
     kept: f64,
@@ -109,7 +117,7 @@ impl<'d> PageFill<'d, '_> {
         let letter_break = !first_part && carry.letter_break;
         let env = self.ctx.env.text.clone();
         let space = ParaSpace { width: col.width, start: pb.from, borders: (None, None), x0: col.x, env, fit: false, letter_break };
-        let mut frame = Frame::new(&space);
+        let frame = Frame::new(&space);
         let sp: &ShapedPara = &pb.shaped;
         let pieces = pb.pieces();
         let n = pieces.len();
@@ -129,7 +137,7 @@ impl<'d> PageFill<'d, '_> {
         // The paragraph's top is above its space before: where that text and its kept space after end.
         let origin = if at_top { *y } else { *y + kept };
         // The space before is part of the first line's box: a float beside it wraps the line.
-        let mut lead = if first_part || restarts { (top - origin).max(0.0) } else { 0.0 };
+        let lead = if first_part || restarts { (top - origin).max(0.0) } else { 0.0 };
         // A first line moved below a float is no longer at the column top: it keeps its share of the gap above its
         // text, the space before suppressed at the top included.
         let share = if !(first_part || restarts) {
@@ -140,7 +148,158 @@ impl<'d> PageFill<'d, '_> {
         } else {
             lead
         };
-        // Bands
+        let bi = pos.block;
+        let si = self.sec.index;
+        let anchor = para_id(p);
+        // Compat 15, a float that can't be placed: the line holding its anchor goes to the next column (the next
+        // page from a column's top) when it doesn't start the page; when it does, the page ends after it.
+        let page_first = at_top && self.column == 0 && !self.mid_page;
+        let w = WrapIn {
+            p,
+            pb,
+            style,
+            col,
+            sp,
+            pieces,
+            n,
+            cx0,
+            cx1,
+            compat,
+            floats: &floats,
+            est,
+            est_below,
+            top_extra,
+            restarts,
+            lone_picture,
+            kept_after,
+            first_part,
+            at_top,
+            top,
+            share,
+            origin_y: origin,
+            y0: *y,
+            kept,
+            si,
+            bi,
+            page_first,
+            anchor,
+            after,
+        };
+        let (mut bands, s) = self.fit_bands(&w, carry, lead, frame);
+        if bands.is_empty() {
+            if self.at.frames_only {
+                return Ok(Stop::Page);
+            }
+            return self.place_plain(p, pb, cur, col, memos);
+        }
+        if border_key(style).is_some() || style.shading.is_some() || !style.div_boxes.is_empty() {
+            let mut firsts: Vec<Line> = bands.iter().map(|(_, segs)| segs[0].clone()).collect();
+            let next = if s >= n { pb.borders.1.clone() } else { border_key(style) };
+            apply_borders(&mut firsts, style, pb.borders.0.as_deref(), next.as_deref(), col.width, first_part, first_part, s >= n);
+            for ((_, segs), l) in bands.iter_mut().zip(firsts) {
+                segs[0] = l;
+            }
+        }
+        // Anchors
+        let frames = Frames {
+            page_w: self.page_w,
+            page_h: self.page_h,
+            margin: [self.margins.0, self.margins.1, self.margins.2, self.sec.section.section_in(self.ctx.env.text.review.view).bottom],
+            column: (col.x, col.width),
+            compat: self.ctx.env.text.compat,
+            cell: false,
+            odd: self.odd,
+        };
+        let Anchors { anchors, kept_at, mut forced, mut push, mut page_end } = self.place_anchors(&w, &bands, &frames, carry, memos)?;
+        // Pagination
+        let nb = bands.len();
+        let (fit, areas, mut take) = self.page_bands(&w, &bands, area, memos)?;
+        // A paragraph whose first line goes on to the next page leaves the frames before it on this page where their
+        // own paragraph falls on it: one placed by the page or the margin always, one from the text when its height
+        // fits below that place. They end at a frame that starts with a page break.
+        let first_text = pieces.iter().position(|q| q.kind != Kind::Anchor).unwrap_or(n);
+        let leading = |a: &Placed| a.float.text_box.is_some() && a.float.shape.is_none() && a.key.2 - pb.from < first_text;
+        // A frame that starts with a page break ends the frames that stay; at a page's top the first one's break adds
+        // no page.
+        let breaks = |a: &Placed| matches!(a.float.text_box.as_ref().and_then(|tb| tb.blocks.first()), Some(Block::Para(p)) if p.para_style_in(self.ctx.env.text.review.view).page_break_before);
+        let first_lead = anchors.iter().filter(|a| leading(a)).map(|a| a.key.2).min();
+        let lead_end = anchors.iter().filter(|a| leading(a) && breaks(a) && !(page_first && Some(a.key.2) == first_lead)).map(|a| a.key.2).min();
+        if self.at.frames_only && (page_first && lead_end.is_none() || !(first_part && col.bottom.holds(origin))) {
+            return Ok(if page_first && lead_end.is_none() { Stop::Done } else { Stop::Page });
+        }
+        let lead_end = lead_end.unwrap_or(usize::MAX);
+        let lead_only = self.at.frames_only || take == 0 && !at_top && first_part && col.bottom.holds(origin);
+        if take == 0 && !lead_only {
+            if at_top {
+                take = fit.max(1).min(nb);
+            } else {
+                return Ok(Stop::Full);
+            }
+        }
+        let stays = |a: &Placed| {
+            leading(a)
+                && a.key.2 < lead_end
+                && (matches!(a.float.v_relative.as_str(), "page" | "margin") || col.bottom.holds(origin + a.rect[3] - a.rect[1]))
+        };
+        let placed_end = if lead_only { 0 } else { bands[take - 1].1.last().map_or(0, |l| l.end) };
+        if !lead_only {
+            carry.frames_left.clear();
+        }
+        for a in anchors {
+            if lead_only && !stays(&a) {
+                continue;
+            }
+            if lead_only || a.key.2 - pb.from < placed_end.max(1) {
+                self.settle_anchor(&w, a, &kept_at, &bands, &frames, lead_only, &mut push, &mut forced, &mut page_end, carry);
+            }
+        }
+        if lead_only {
+            return Ok(if self.at.frames_only { Stop::Page } else { Stop::Full });
+        }
+        if let Some(b) = forced {
+            take = take.min(b + 1);
+        }
+        // The split before a pushed line keeps the paragraph's own rules; the page's first paragraph keeps the lines before it.
+        if let Some(b) = push {
+            let keep = lines_to_take(nb, b, false, first_part, style.keep_lines, style.widow_control);
+            take = take.min(if keep == 0 && page_first { b } else { keep });
+            let end = if take == 0 { 0 } else { bands[take - 1].1.last().map_or(0, |l| l.end) };
+            self.at.found.retain(|f| (f.key.0, f.key.1) != (si, bi) || f.key.2 == float::TABLE_PIECE || f.key.2 < pb.from + end);
+            if take == 0 {
+                carry.keep_top = false;
+                return Ok(if at_top { Stop::Page } else { Stop::Full });
+            }
+        }
+        self.emit_wrapped(&w, &bands, &areas, take, s, page_end, cur)
+    }
+
+    // Bands
+    fn fit_bands(&self, w: &WrapIn, carry: &FlowState, mut lead: f64, mut frame: Frame) -> (Vec<(f64, Vec<Line>)>, usize) {
+        let &WrapIn {
+            p,
+            style,
+            col,
+            sp,
+            pieces,
+            n,
+            est,
+            est_below,
+            top_extra,
+            cx0,
+            cx1,
+            compat,
+            restarts,
+            lone_picture,
+            kept_after,
+            floats,
+            first_part,
+            at_top,
+            top,
+            share,
+            y0,
+            bi,
+            ..
+        } = w;
         let mut bands: Vec<(f64, Vec<Line>)> = Vec::new();
         let mut yy = top;
         let mut s = 0;
@@ -163,7 +322,7 @@ impl<'d> PageFill<'d, '_> {
             && at_top
             && self.column == 0
             && !self.mid_page
-            && self.at.known.iter().any(|k| k.unplaced && (k.key.0, k.key.1) == (self.sec.index, pos.block));
+            && self.at.known.iter().any(|k| k.unplaced && (k.key.0, k.key.1) == (self.sec.index, bi));
         if unplaced {
             let low = floats.iter().filter(|f| f.wrap != Wrap::None).map(|f| f.excl[3]).fold(yy, f64::max);
             yy = low.min(col.bottom.to_pt());
@@ -178,7 +337,7 @@ impl<'d> PageFill<'d, '_> {
                 if t >= stop - EPS {
                     return Some((v, Some(t)));
                 }
-                let iv = float::intervals(&floats, cx0, cx1, t, t + est, true)?;
+                let iv = float::intervals(floats, cx0, cx1, t, t + est, true)?;
                 let ivc: Vec<(f64, f64)> = iv.iter().map(|(a, b)| (a - cx0, b - cx0)).collect();
                 match band(sp, pieces, k, &ivc, k == 0 && (first_part || restarts), style, mark, &plain, self.ctx.fonts, iv.len() == 1) {
                     Ok((segs, e)) if e > k => {
@@ -193,7 +352,7 @@ impl<'d> PageFill<'d, '_> {
         };
         let all_beside = |top: f64, from: usize, bottom: f64| matches!(tops(top, from, bottom), Some((_, None)));
         let own_float =
-            |f: &&Placed| (f.key.0, f.key.1) == (self.sec.index, pos.block) && f.wrap != Wrap::None && f.excl[0] < cx1 - EPS && f.excl[2] > cx0 + EPS;
+            |f: &&Placed| (f.key.0, f.key.1) == (self.sec.index, bi) && f.wrap != Wrap::None && f.excl[0] < cx1 - EPS && f.excl[2] > cx0 + EPS;
         // Below a column's top it is tried as a block from where it was first laid out: below the float it stays; with
         // the float starting below its first line it goes on down to the top of the line whose band holds the float's
         // top; with the float's top in its first line it goes to the float's bottom unless the float reaches more than
@@ -235,7 +394,7 @@ impl<'d> PageFill<'d, '_> {
             let mut trial = None;
             // Every piece of the line was cut away or too narrow.
             let mut no_room = false;
-            let here: &[Placed] = if yy >= col.bottom.to_pt() - EPS || unplaced && bands.is_empty() { &[] } else { &floats };
+            let here: &[Placed] = if yy >= col.bottom.to_pt() - EPS || unplaced && bands.is_empty() { &[] } else { floats };
             let mut uncut: Option<Vec<Placed>> = None;
             let mut forced: Option<Vec<(f64, f64)>> = None;
             let mut fitted: Option<(Vec<(f64, f64)>, f64, f64, f64)> = None;
@@ -407,7 +566,7 @@ impl<'d> PageFill<'d, '_> {
                             }
                             Err(t) => {
                                 blocked = true;
-                                trial = Some(t + if first { top - *y } else { 0.0 });
+                                trial = Some(t + if first { top - y0 } else { 0.0 });
                                 break;
                             }
                         }
@@ -501,120 +660,7 @@ impl<'d> PageFill<'d, '_> {
                 }
             }
         }
-        if bands.is_empty() {
-            if self.at.frames_only {
-                return Ok(Stop::Page);
-            }
-            return self.place_plain(p, pb, cur, col, memos);
-        }
-        if border_key(style).is_some() || style.shading.is_some() || !style.div_boxes.is_empty() {
-            let mut firsts: Vec<Line> = bands.iter().map(|(_, segs)| segs[0].clone()).collect();
-            let next = if s >= n { pb.borders.1.clone() } else { border_key(style) };
-            apply_borders(&mut firsts, style, pb.borders.0.as_deref(), next.as_deref(), col.width, first_part, first_part, s >= n);
-            for ((_, segs), l) in bands.iter_mut().zip(firsts) {
-                segs[0] = l;
-            }
-        }
-        // Anchors
-        let frames = Frames {
-            page_w: self.page_w,
-            page_h: self.page_h,
-            margin: [self.margins.0, self.margins.1, self.margins.2, self.sec.section.section_in(self.ctx.env.text.review.view).bottom],
-            column: (col.x, col.width),
-            compat: self.ctx.env.text.compat,
-            cell: false,
-            odd: self.odd,
-        };
-        let bi = pos.block;
-        let si = self.sec.index;
-        let anchor = para_id(p);
-        // Compat 15, a float that can't be placed: the line holding its anchor goes to the next column (the next
-        // page from a column's top) when it doesn't start the page; when it does, the page ends after it.
-        let page_first = at_top && self.column == 0 && !self.mid_page;
-        let w = WrapIn {
-            p,
-            pb,
-            style,
-            col,
-            sp,
-            pieces,
-            n,
-            cx0,
-            cx1,
-            compat,
-            floats: &floats,
-            first_part,
-            top,
-            origin_y: origin,
-            y0: *y,
-            kept,
-            si,
-            bi,
-            page_first,
-            anchor,
-            after,
-        };
-        let Anchors { anchors, kept_at, mut forced, mut push, mut page_end } = self.place_anchors(&w, &bands, &frames, carry, memos)?;
-        // Pagination
-        let nb = bands.len();
-        let (fit, areas, mut take) = self.page_bands(&w, &bands, area, memos)?;
-        // A paragraph whose first line goes on to the next page leaves the frames before it on this page where their
-        // own paragraph falls on it: one placed by the page or the margin always, one from the text when its height
-        // fits below that place. They end at a frame that starts with a page break.
-        let first_text = pieces.iter().position(|q| q.kind != Kind::Anchor).unwrap_or(n);
-        let leading = |a: &Placed| a.float.text_box.is_some() && a.float.shape.is_none() && a.key.2 - pb.from < first_text;
-        // A frame that starts with a page break ends the frames that stay; at a page's top the first one's break adds
-        // no page.
-        let breaks = |a: &Placed| matches!(a.float.text_box.as_ref().and_then(|tb| tb.blocks.first()), Some(Block::Para(p)) if p.para_style_in(self.ctx.env.text.review.view).page_break_before);
-        let first_lead = anchors.iter().filter(|a| leading(a)).map(|a| a.key.2).min();
-        let lead_end = anchors.iter().filter(|a| leading(a) && breaks(a) && !(page_first && Some(a.key.2) == first_lead)).map(|a| a.key.2).min();
-        if self.at.frames_only && (page_first && lead_end.is_none() || !(first_part && col.bottom.holds(origin))) {
-            return Ok(if page_first && lead_end.is_none() { Stop::Done } else { Stop::Page });
-        }
-        let lead_end = lead_end.unwrap_or(usize::MAX);
-        let lead_only = self.at.frames_only || take == 0 && !at_top && first_part && col.bottom.holds(origin);
-        if take == 0 && !lead_only {
-            if at_top {
-                take = fit.max(1).min(nb);
-            } else {
-                return Ok(Stop::Full);
-            }
-        }
-        let stays = |a: &Placed| {
-            leading(a)
-                && a.key.2 < lead_end
-                && (matches!(a.float.v_relative.as_str(), "page" | "margin") || col.bottom.holds(origin + a.rect[3] - a.rect[1]))
-        };
-        let placed_end = if lead_only { 0 } else { bands[take - 1].1.last().map_or(0, |l| l.end) };
-        if !lead_only {
-            carry.frames_left.clear();
-        }
-        for a in anchors {
-            if lead_only && !stays(&a) {
-                continue;
-            }
-            if lead_only || a.key.2 - pb.from < placed_end.max(1) {
-                self.settle_anchor(&w, a, &kept_at, &bands, &frames, lead_only, &mut push, &mut forced, &mut page_end, carry);
-            }
-        }
-        if lead_only {
-            return Ok(if self.at.frames_only { Stop::Page } else { Stop::Full });
-        }
-        if let Some(b) = forced {
-            take = take.min(b + 1);
-        }
-        // The split before a pushed line keeps the paragraph's own rules; the page's first paragraph keeps the lines before it.
-        if let Some(b) = push {
-            let keep = lines_to_take(nb, b, false, first_part, style.keep_lines, style.widow_control);
-            take = take.min(if keep == 0 && page_first { b } else { keep });
-            let end = if take == 0 { 0 } else { bands[take - 1].1.last().map_or(0, |l| l.end) };
-            self.at.found.retain(|f| (f.key.0, f.key.1) != (si, bi) || f.key.2 == float::TABLE_PIECE || f.key.2 < pb.from + end);
-            if take == 0 {
-                carry.keep_top = false;
-                return Ok(if at_top { Stop::Page } else { Stop::Full });
-            }
-        }
-        self.emit_wrapped(&w, &bands, &areas, take, s, page_end, cur)
+        (bands, s)
     }
 
     // Anchored floats
