@@ -95,8 +95,12 @@ impl Resolver {
         let east_asia_unset = p.east_asia_below.is_none()
             && matches!(p.east_asia.as_ref().filter(|e| matches!(e, FontRef::Theme(_))).or(p.east_asia_theme.as_ref()),
                 Some(FontRef::Theme(t)) if self.theme.ea_unset(t));
-        let ascii_name = ascii.clone().or_else(|| h_ansi.clone()).unwrap_or_else(fallback);
-        let h_ansi_name = h_ansi.clone().or_else(|| ascii.clone()).unwrap_or_else(fallback);
+        let cs = self.font(&p.cs).unwrap_or_else(fallback);
+        // A run marked complex script lays out every character, Latin, digits and spaces included, in its
+        // complex-script font, size, bold and italic.
+        let complex = p.complex == Some(true);
+        let ascii_name = if complex { cs.clone() } else { ascii.clone().or_else(|| h_ansi.clone()).unwrap_or_else(fallback) };
+        let h_ansi_name = if complex { cs.clone() } else { h_ansi.clone().or_else(|| ascii.clone()).unwrap_or_else(fallback) };
         let east_asia_name = east_asia.clone().unwrap_or_else(fallback);
         let category = |family: &str| self.categories.get(&family.to_lowercase()).copied();
         let categories =
@@ -106,12 +110,12 @@ impl Resolver {
             h_ansi: h_ansi_name,
             east_asia_named: !east_asia_unset && east_asia.as_deref().is_some_and(|n| !n.is_empty() && !n.eq_ignore_ascii_case("Times New Roman")),
             east_asia: east_asia_name,
-            cs: self.font(&p.cs).unwrap_or_else(fallback),
+            cs,
             east_asia_unset,
             hint_east_asia: p.hint.as_deref() == Some("eastAsia"),
-            size: p.size.unwrap_or(10.0),
-            bold: p.toggle(toggle::B),
-            italic: p.toggle(toggle::I),
+            size: if complex { p.size_cs } else { p.size }.unwrap_or(10.0),
+            bold: p.toggle(if complex { toggle::B_CS } else { toggle::B }),
+            italic: p.toggle(if complex { toggle::I_CS } else { toggle::I }),
             caps: p.toggle(toggle::CAPS),
             small_caps: p.toggle(toggle::SMALL_CAPS),
             strike: p.toggle(toggle::STRIKE),

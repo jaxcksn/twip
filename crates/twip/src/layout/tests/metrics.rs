@@ -129,3 +129,19 @@ fn synthesized_bold_glyphs_are_a_font_unit_wider() {
     let (Some(regular), Some(bold)) = (x(""), x("<w:b/>")) else { return };
     assert!((bold - regular - 9.0 * 16.0 / 2048.0).abs() < 1e-6, "{regular} {bold}");
 }
+
+#[test]
+fn a_complex_script_run_takes_its_complex_script_size_bold_and_font() {
+    let x = |rpr: &str| {
+        let body = format!(r#"<w:p><w:r><w:rPr>{rpr}</w:rPr><w:t>mm</w:t></w:r><w:r><w:t>X</w:t></w:r></w:p>"#);
+        chars("", ARIAL_10, &body, 0).map(|c| at(&c, 'X').0)
+    };
+    let (Some(plain), Some(big)) = (x(r#"<w:rFonts w:cs="Times New Roman"/><w:sz w:val="20"/>"#), x(r#"<w:sz w:val="40"/>"#)) else { return };
+    // Marked complex script: szCs, bCs and rFonts/@cs for every character; b and sz play no part.
+    let cs = x(r#"<w:rFonts w:cs="Times New Roman"/><w:b/><w:sz w:val="40"/><w:szCs w:val="20"/><w:cs/>"#).expect("lays out");
+    let tnr = x(r#"<w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="20"/>"#).expect("lays out");
+    assert!((cs - tnr).abs() < 1e-6 && (plain - tnr).abs() > 0.1, "{cs} {tnr} {plain}");
+    // Without w:cs (or with w:val="0") sz and b decide.
+    let off = x(r#"<w:sz w:val="40"/><w:szCs w:val="20"/><w:cs w:val="0"/>"#).expect("lays out");
+    assert!((off - big).abs() < 1e-6, "{off} {big}");
+}

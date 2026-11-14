@@ -59,6 +59,10 @@ pub struct RunProps {
     pub cs: Option<FontRef>,
     pub hint: Option<String>,
     pub size: Option<f64>,
+    /// `w:szCs`: the complex-script size.
+    pub size_cs: Option<f64>,
+    /// `w:cs`: the run is laid out in its complex-script properties.
+    pub complex: Option<bool>,
     /// Toggles this level sets (`toggles_set`) and their values.
     pub toggles_set: u16,
     pub toggles: u16,
@@ -176,6 +180,8 @@ impl RunProps {
                     p.hint = attr(e, "hint").map(str::to_string);
                 }
                 "sz" => p.size = half_points(val(e)),
+                "szCs" => p.size_cs = half_points(val(e)),
+                "cs" => p.complex = Some(on_off(e)),
                 "dstrike" => p.dstrike = Some(on_off(e)),
                 "noProof" => p.no_proof = Some(on_off(e)),
                 "u" => p.underline = Some(val(e).unwrap_or("single").to_string()),
@@ -245,6 +251,8 @@ impl RunProps {
             cs,
             hint,
             size,
+            size_cs,
+            complex,
             dstrike,
             no_proof,
             underline,
