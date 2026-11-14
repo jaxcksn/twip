@@ -154,6 +154,32 @@ fn a_vertically_merged_cells_lines_are_as_long_as_its_region_is_high() {
 }
 
 #[test]
+fn a_vertical_region_is_centred_on_rows_a_later_region_grows() {
+    // A centred btLr label spans two auto rows; the second row is made tall either by a plain cell or by a one-row
+    // merged region further right. The label lands at the same place both ways.
+    let label = |merge: &str, text: &str| {
+        format!(
+            r#"<w:tc><w:tcPr><w:tcW w:w="1500" w:type="dxa"/><w:vMerge{merge}/><w:textDirection w:val="btLr"/></w:tcPr><w:p><w:pPr><w:jc w:val="center"/><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="22"/></w:rPr><w:t>{text}</w:t></w:r></w:p></w:tc>"#
+        )
+    };
+    let side = |merge: &str, lines: usize| {
+        let ps: String = (0..lines).map(|i| format!("<w:p><w:r><w:t>line {i}</w:t></w:r></w:p>")).collect();
+        format!(r#"<w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/>{merge}</w:tcPr>{ps}</w:tc>"#)
+    };
+    let at = |second: &str| {
+        let body = format!(
+            r#"<w:tbl><w:tblPr><w:tblW w:w="4500" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="1500"/><w:gridCol w:w="3000"/></w:tblGrid><w:tr>{}{}</w:tr><w:tr>{}{second}</w:tr></w:tbl><w:p/>"#,
+            label(r#" w:val="restart""#, "SOUTH"),
+            side("", 1),
+            label("", "")
+        );
+        turned_runs(&doc(&body)?).first().map(|r| r.1)
+    };
+    let (Some(plain), Some(merged)) = (at(&side("", 6)), at(&side(r#"<w:vMerge w:val="restart"/>"#, 6))) else { return };
+    assert!((plain[1] - merged[1]).abs() < 0.5, "plain {plain:?} merged {merged:?}");
+}
+
+#[test]
 fn strict_spellings_and_unknown_values_read() {
     let Some(d) = doc(&table("lr", r#"<w:trPr><w:trHeight w:val="2000" w:hRule="exact"/></w:trPr>"#, WORDS)) else { return };
     assert!(turned_runs(&d).iter().all(|r| r.2 == [0.0, -1.0]));
