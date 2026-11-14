@@ -14,10 +14,10 @@ use crate::layout::paragraph::{gap, lines_to_take, space_after, space_before};
 use crate::layout::space::{ColumnSpace, ParaSpace};
 use crate::layout::story::StoryEnv;
 use crate::layout::text::{FieldValues, Kind, Object, ShapedPara, para_id};
-use crate::layout::token::{At, FlowState, FlowToken, NoteArea, NotePart};
+use crate::layout::token::{At, NotePart};
 use crate::layout::units::EPS;
 
-use super::{PageFill, Stop};
+use super::{ColumnCursor, PageFill, Stop};
 
 impl<'d> PageFill<'d, '_> {
     pub fn fit_frame(&self, f: &Rc<Float>, width: f64, memos: &mut Memos) -> Result<Rc<Float>, Yield> {
@@ -42,23 +42,15 @@ impl<'d> PageFill<'d, '_> {
     }
 
     // Wrapped paragraphs
-    #[allow(
-        clippy::too_many_arguments,
-        reason = "the column fill passes its state (flow position, carried state, column, y, emptiness, note area, output) explicitly, so what each step reads and changes stays visible"
-    )]
     pub(super) fn place_wrapped(
         &mut self,
         p: &Paragraph,
         pb: &ParaLines,
-        pos: &mut FlowToken,
-        carry: &mut FlowState,
+        cur: &mut ColumnCursor,
         col: &ColumnSpace,
-        y: &mut f64,
-        empty: &mut bool,
-        area: &mut NoteArea,
-        out: &mut Vec<Child>,
         memos: &mut Memos,
     ) -> Result<Stop, Yield> {
+        let (pos, carry, y, empty, area, out) = cur.parts();
         let style = p.para_style_in(self.ctx.env.text.review.view);
         let first_part = pos.at.at_start();
         let after = space_after(&self.ctx.env.text, style);
@@ -473,7 +465,7 @@ impl<'d> PageFill<'d, '_> {
             if self.at.frames_only {
                 return Ok(Stop::Page);
             }
-            return self.place_plain(p, pb, pos, carry, col, y, empty, area, out, memos);
+            return self.place_plain(p, pb, cur, col, memos);
         }
         if border_key(style).is_some() || style.shading.is_some() || !style.div_boxes.is_empty() {
             let mut firsts: Vec<Line> = bands.iter().map(|(_, segs)| segs[0].clone()).collect();

@@ -9,10 +9,10 @@ use crate::layout::ids::ParaId;
 use crate::layout::job::{Memos, Yield};
 use crate::layout::space::ColumnSpace;
 use crate::layout::story::StoryEnv;
-use crate::layout::token::{FlowState, FlowToken, NoteArea, NotePart};
+use crate::layout::token::{NoteArea, NotePart};
 use crate::layout::units::{EPS, Lu};
 
-use super::{PageFill, Stop};
+use super::{ColumnCursor, PageFill, Stop};
 
 impl<'d> PageFill<'d, '_> {
     /// A table in a vertical section, laid out horizontally and drawn upright: at the stack position the next line
@@ -24,17 +24,9 @@ impl<'d> PageFill<'d, '_> {
     /// puts it) along the line, a `tblpX` from the text further along the stack; one placed from the page on both
     /// axes sits at `tblpX`, `tblpY` as printed.
     #[allow(clippy::too_many_arguments, reason = "as place_table")]
-    pub(super) fn place_upright_table(
-        &mut self,
-        bi: usize,
-        pos: &mut FlowToken,
-        carry: &mut FlowState,
-        col: &ColumnSpace,
-        y: &mut f64,
-        empty: bool,
-        notes: &mut NoteArea,
-        memos: &mut Memos,
-    ) -> Result<Stop, Yield> {
+    pub(super) fn place_upright_table(&mut self, bi: usize, cur: &mut ColumnCursor, col: &ColumnSpace, memos: &mut Memos) -> Result<Stop, Yield> {
+        let (pos, carry, y, empty, notes, _) = cur.parts();
+        let empty = *empty;
         let Some(Block::Table(t)) = self.sec.blocks.get(bi) else { unreachable!("an upright table") };
         let Some(v) = self.ctx.env.text.vertical else { unreachable!("a vertical section") };
         if !empty {
@@ -209,7 +201,8 @@ impl<'d> PageFill<'d, '_> {
         let mut area = NoteArea { shared: Some(0.0), below: true, ..NoteArea::default() };
         let (mut top, mut fresh, mut rows) = (along, true, Vec::new());
         let saved = std::mem::take(&mut self.at.starts);
-        let stop = self.place_table(&tb, pos, carry, &page_col, &mut top, &mut fresh, &mut area, &mut rows, memos)?;
+        let mut inner = ColumnCursor { pos, carry, y: &mut top, empty: &mut fresh, area: &mut area, out: &mut rows };
+        let stop = self.place_table(&tb, &mut inner, &page_col, memos)?;
         carry.upright_at = (stop == Stop::Full).then_some(y0);
         self.at.starts = saved;
         self.at.upright.extend(rows);

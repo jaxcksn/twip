@@ -20,7 +20,7 @@ use crate::layout::text::para_id;
 use crate::layout::token::{At, FlowState, FlowToken, NoteArea};
 use crate::layout::units::{EPS, Lu};
 
-use super::{PageFill, Stop, hold, rebase};
+use super::{ColumnCursor, PageFill, Stop, hold, rebase};
 
 // Row splits
 fn cell_cut(units: &[StoryUnit], room: f64, continued: bool, compat: Compat) -> usize {
@@ -374,22 +374,8 @@ fn move_floats(
 
 impl<'d> PageFill<'d, '_> {
     // Tables
-    #[allow(
-        clippy::too_many_arguments,
-        reason = "the column fill passes its state (flow position, carried state, column, y, emptiness, note area, output) explicitly, so what each step reads and changes stays visible"
-    )]
-    pub(super) fn place_table(
-        &mut self,
-        tb: &TableLayout,
-        pos: &mut FlowToken,
-        carry: &mut FlowState,
-        col: &ColumnSpace,
-        y: &mut f64,
-        empty: &mut bool,
-        area: &mut NoteArea,
-        out: &mut Vec<Child>,
-        memos: &mut Memos,
-    ) -> Result<Stop, Yield> {
+    pub(super) fn place_table(&mut self, tb: &TableLayout, cur: &mut ColumnCursor, col: &ColumnSpace, memos: &mut Memos) -> Result<Stop, Yield> {
+        let (pos, carry, y, empty, area, out) = cur.parts();
         if tb.rows.is_empty() {
             pos.next_block();
             return Ok(Stop::Done);

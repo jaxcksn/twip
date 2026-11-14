@@ -13,7 +13,7 @@ use crate::layout::text::{Kind, para_id};
 use crate::layout::token::{At, FlowState, FlowToken, NoteArea, NotePart};
 use crate::layout::units::EPS;
 
-use super::{PageFill, Stop};
+use super::{ColumnCursor, PageFill, Stop};
 
 impl<'d> PageFill<'d, '_> {
     pub(super) fn line_number(&self, carry: &mut FlowState, style: &ParaStyle, col: &ColumnSpace, baseline: f64, out: &mut Vec<Box<[Item]>>) {
@@ -40,23 +40,15 @@ impl<'d> PageFill<'d, '_> {
     }
 
     // Paragraphs
-    #[allow(
-        clippy::too_many_arguments,
-        reason = "the column fill passes its state (flow position, carried state, column, y, emptiness, note area, output) explicitly, so what each step reads and changes stays visible"
-    )]
     pub(super) fn place_para(
         &mut self,
         p: &Paragraph,
         pb: &ParaLines,
-        pos: &mut FlowToken,
-        carry: &mut FlowState,
+        cur: &mut ColumnCursor,
         col: &ColumnSpace,
-        y: &mut f64,
-        empty: &mut bool,
-        area: &mut NoteArea,
-        out: &mut Vec<Child>,
         memos: &mut Memos,
     ) -> Result<Stop, Yield> {
+        let (pos, carry, y, empty, _, _) = cur.parts();
         let has_anchor = pb.pieces().iter().any(|q| q.kind == Kind::Anchor);
         let bottom = *y + self.para_gap(p, pos, carry, *empty) + pb.lines.iter().map(|l| l.pitch).sum::<f64>();
         let text_bottom = match self.ctx.env.text.compat {
@@ -70,25 +62,20 @@ impl<'d> PageFill<'d, '_> {
             f.wrap != Wrap::None && f.excl[3] > *y + EPS && f.excl[1] < reach - EPS && f.excl[0] < col.x + col.width - EPS && f.excl[2] > col.x + EPS
         });
         if has_anchor || affected {
-            return self.place_wrapped(p, pb, pos, carry, col, y, empty, area, out, memos);
+            return self.place_wrapped(p, pb, cur, col, memos);
         }
-        self.place_plain(p, pb, pos, carry, col, y, empty, area, out, memos)
+        self.place_plain(p, pb, cur, col, memos)
     }
 
-    #[allow(clippy::too_many_arguments, reason = "as place_para")]
     pub(super) fn place_plain(
         &mut self,
         p: &Paragraph,
         pb: &ParaLines,
-        pos: &mut FlowToken,
-        carry: &mut FlowState,
+        cur: &mut ColumnCursor,
         col: &ColumnSpace,
-        y: &mut f64,
-        empty: &mut bool,
-        area: &mut NoteArea,
-        out: &mut Vec<Child>,
         memos: &mut Memos,
     ) -> Result<Stop, Yield> {
+        let (pos, carry, y, empty, area, out) = cur.parts();
         let style = p.para_style_in(self.ctx.env.text.review.view);
         let first_part = pos.at.at_start();
         let before = self.own_before(style, pos.block, carry);
