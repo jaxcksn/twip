@@ -2739,11 +2739,15 @@ impl<'d> PageFill<'d, '_> {
                     for o in self.at.found.iter().filter(|o| frame(o)) {
                         if o.excl[0] < a.rect[2] - EPS && a.rect[0] < o.excl[2] - EPS && o.rect[1] < a.rect[3] - EPS && a.rect[1] < o.rect[3] - EPS {
                             // Over a frame placed from the page or margin it stays, unless one of the two may not
-                            // overlap: then it goes a twip above that frame's bottom, in whole twips.
-                            let y = match matches!(o.float.v_relative.as_str(), "page" | "margin") {
+                            // overlap: then it goes a twip above that frame's bottom, in whole twips. So does one that
+                            // may not overlap a frame with its own offset from the text; below a frame in the flow it
+                            // goes to its bottom at the nearest twip.
+                            let fixed = matches!(o.float.v_relative.as_str(), "page" | "margin");
+                            let offset = fixed || o.float.v_offset != 0.0 && !(a.allow_overlap && o.allow_overlap);
+                            let y = match offset {
                                 false => (o.rect[3] * 20.0).round() / 20.0,
                                 true if a.allow_overlap && o.allow_overlap => continue,
-                                true => ((o.rect[1] * 20.0 + ((o.rect[3] - o.rect[1]) * 20.0).round() - 1.0) / 20.0).max(a.rect[1]),
+                                true => ((o.rect[1] * 20.0 + ((o.rect[3] - o.rect[1]) * 20.0).round() - 1.0).round() / 20.0).max(a.rect[1]),
                             };
                             a.moved_to(a.rect[0], y);
                             under.push(o.key);

@@ -2568,6 +2568,16 @@ fn a_compat_14_frame_in_the_flow_that_may_not_overlap_goes_a_twip_short_of_a_pag
 }
 
 #[test]
+fn a_compat_14_frame_in_the_flow_that_may_not_overlap_goes_a_twip_short_of_an_offset_frames_bottom() {
+    // A from the text 360 tw below the flow (2052.98 tw), 758.94 tw high: B goes to 2052.98 + 759 - 1, whole twips.
+    let a = three_line_frame(1440, 2880, r#"w:vAnchor="text" w:y="360""#, "", "A");
+    let b = three_line_frame(2880, 2880, r#"w:vAnchor="text" w:y="0""#, "<w:suppressOverlap/>", "B");
+    let Some(l) = after_frames(&(a + &b)) else { return };
+    let at = |t: &str| l.iter().find(|x| x.2 == t).map(|x| x.1).expect("drawn");
+    assert!((at("B one") - at("A one") - 758.02).abs() < 0.05, "{l:?}");
+}
+
+#[test]
 fn a_compat_14_line_with_one_piece_left_stays_beside_a_float_starting_above_the_other_ones_bottom() {
     // A (1692 to 2450.94 tw) leaves one piece of the lines beside it; B starts at 2450 in the third body line.
     let frames = |by: u32| {
