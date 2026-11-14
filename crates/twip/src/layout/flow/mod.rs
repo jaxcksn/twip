@@ -52,6 +52,47 @@ impl ColumnCursor<'_> {
     }
 }
 
+// Keep-with-next chain
+#[derive(Clone)]
+struct Breakpoint {
+    pos: FlowToken,
+    carry: FlowState,
+    out: usize,
+    y: f64,
+    empty: bool,
+    area: NoteArea,
+    starts: usize,
+    effects: PageEffects,
+}
+
+fn step_back(members: &[(Breakpoint, usize, bool, bool)]) -> Option<(Breakpoint, usize)> {
+    for (bp, here, keep_lines, widow) in members.iter().rev() {
+        if bp.empty {
+            return None;
+        }
+        if *keep_lines {
+            continue;
+        }
+        let keep = here.saturating_sub(if *widow { 2 } else { 1 });
+        if keep >= if *widow { 2 } else { 1 } {
+            return Some((bp.clone(), keep));
+        }
+    }
+    None
+}
+
+#[derive(Default)]
+struct KeepChain {
+    chain: Option<Breakpoint>,
+    members: Vec<(Breakpoint, usize, bool, bool)>,
+}
+
+impl KeepChain {
+    fn reset(&mut self) {
+        (self.chain, self.members) = (None, Vec::new());
+    }
+}
+
 pub struct ColumnResult {
     pub children: Vec<Child>,
     pub stop: Stop,
@@ -342,6 +383,29 @@ impl<'d> PageFill<'d, '_> {
         Ok(ColumnResult { children: out, stop, bottom, token: pos, state: carry })
     }
 
+    fn checkpoint(&self, cur: &ColumnCursor) -> Breakpoint {
+        Breakpoint {
+            pos: cur.pos.clone(),
+            carry: cur.carry.clone(),
+            out: cur.out.len(),
+            y: *cur.y,
+            empty: *cur.empty,
+            area: cur.area.clone(),
+            starts: self.at.starts.len(),
+            effects: self.at.effects.clone(),
+        }
+    }
+
+    fn rollback(&mut self, cur: &mut ColumnCursor, bp: Breakpoint) -> (f64, bool) {
+        *cur.pos = bp.pos;
+        *cur.carry = bp.carry;
+        *cur.area = bp.area;
+        cur.out.truncate(bp.out);
+        self.at.starts.truncate(bp.starts);
+        self.at.effects = bp.effects;
+        (bp.y, bp.empty)
+    }
+
     fn fill_body(&mut self, cur: &mut ColumnCursor, col: ColumnSpace, page_empty: bool, memos: &mut Memos) -> Result<(Stop, f64), Yield> {
         let nblocks = self.sec.blocks.len();
         if let Some(mut t) = cur.carry.table_rest.take() {
@@ -367,35 +431,7 @@ impl<'d> PageFill<'d, '_> {
             place_units(&sep.units, col.x, *cur.y, cur.out);
             *cur.y += sep.height;
         }
-        // Keep-with-next chain
-        #[derive(Clone)]
-        struct Breakpoint {
-            pos: FlowToken,
-            carry: FlowState,
-            out: usize,
-            y: f64,
-            empty: bool,
-            area: NoteArea,
-            starts: usize,
-            effects: PageEffects,
-        }
-        fn step_back(members: &[(Breakpoint, usize, bool, bool)]) -> Option<(Breakpoint, usize)> {
-            for (bp, here, keep_lines, widow) in members.iter().rev() {
-                if bp.empty {
-                    return None;
-                }
-                if *keep_lines {
-                    continue;
-                }
-                let keep = here.saturating_sub(if *widow { 2 } else { 1 });
-                if keep >= if *widow { 2 } else { 1 } {
-                    return Some((bp.clone(), keep));
-                }
-            }
-            None
-        }
-        let mut chain: Option<Breakpoint> = None;
-        let mut members: Vec<(Breakpoint, usize, bool, bool)> = Vec::new();
+        let mut keep = KeepChain::default();
         let generic = self.ctx.env.text.compat == Compat::Generic;
         loop {
             // Compat 15: a note cut at the end of a section that the next one follows on the page goes on in the next
@@ -457,16 +493,7 @@ impl<'d> PageFill<'d, '_> {
                 return Ok((Stop::Full, *cur.y));
             }
             let bi = cur.pos.block;
-            let start_state = Breakpoint {
-                pos: cur.pos.clone(),
-                carry: cur.carry.clone(),
-                out: cur.out.len(),
-                y: *cur.y,
-                empty: *cur.empty,
-                area: cur.area.clone(),
-                starts: self.at.starts.len(),
-                effects: self.at.effects.clone(),
-            };
+            let start_state = self.checkpoint(cur);
             let found_len = self.at.found.len();
             match self.sec.blocks.get(bi) {
                 Some(Block::Para(_)) => {
@@ -502,18 +529,13 @@ impl<'d> PageFill<'d, '_> {
                     match placed {
                         Stop::Done => {}
                         Stop::Full if cur.pos.block == bi && cur.pos.at.at_start() => {
-                            if let Some(c) = chain.take()
+                            if let Some(c) = keep.chain.take()
                                 && !c.empty
                             {
-                                *cur.pos = c.pos;
-                                *cur.carry = c.carry;
-                                *cur.area = c.area;
-                                cur.out.truncate(c.out);
-                                self.at.starts.truncate(c.starts);
+                                let (y, _) = self.rollback(cur, c);
                                 self.at.found.truncate(found_len);
-                                self.at.effects = c.effects;
                                 cur.carry.keep_top = false;
-                                return Ok((Stop::Full, c.y));
+                                return Ok((Stop::Full, y));
                             }
                             return Ok((Stop::Full, *cur.y));
                         }
@@ -521,45 +543,34 @@ impl<'d> PageFill<'d, '_> {
                     }
                     if style.keep_next {
                         let here = cur.out[start_state.out..].iter().map(|c| if let Child::Para(f) = c { f.lines.len() } else { 0 }).sum();
-                        members.push((start_state.clone(), here, style.keep_lines, style.widow_control));
-                        if chain.is_none() {
-                            chain = Some(start_state);
+                        keep.members.push((start_state.clone(), here, style.keep_lines, style.widow_control));
+                        if keep.chain.is_none() {
+                            keep.chain = Some(start_state);
                         }
                         let fits = self.next_fits(cur.pos.block, cur.carry, &col, *cur.y, cur.area.total(), memos)?;
-                        if !fits && let Some((c, cap)) = generic.then(|| step_back(&members)).flatten() {
-                            *cur.pos = c.pos;
-                            *cur.carry = c.carry;
-                            *cur.area = c.area;
-                            cur.out.truncate(c.out);
-                            self.at.starts.truncate(c.starts);
+                        if !fits && let Some((c, cap)) = generic.then(|| step_back(&keep.members)).flatten() {
+                            let (y, empty) = self.rollback(cur, c);
                             self.at.found.truncate(found_len);
-                            self.at.effects = c.effects;
                             self.at.keep_cap = Some((cur.pos.block, cap));
-                            (chain, members) = (None, Vec::new());
-                            *cur.y = c.y;
-                            *cur.empty = c.empty;
+                            keep.reset();
+                            (*cur.y, *cur.empty) = (y, empty);
                             continue;
                         }
                         if !fits
-                            && let Some(c) = chain.take()
+                            && let Some(c) = keep.chain.take()
                             && !c.empty
                         {
-                            *cur.pos = c.pos;
-                            *cur.carry = c.carry;
-                            *cur.area = c.area;
-                            cur.out.truncate(c.out);
-                            self.at.starts.truncate(c.starts);
+                            let (y, _) = self.rollback(cur, c);
                             self.at.found.truncate(found_len);
-                            self.at.effects = c.effects;
                             cur.carry.keep_top = false;
-                            return Ok((Stop::Full, c.y));
+                            return Ok((Stop::Full, y));
                         }
                     } else {
-                        (chain, members) = (None, Vec::new());
+                        keep.reset();
                     }
                 }
                 Some(Block::Table(_)) if self.ctx.env.text.vertical.is_some() => match self.place_upright_table(bi, cur, &col, memos)? {
-                    Stop::Done => (chain, members) = (None, Vec::new()),
+                    Stop::Done => keep.reset(),
                     s => return Ok((s, *cur.y)),
                 },
                 Some(Block::Table(t)) => {
@@ -573,36 +584,25 @@ impl<'d> PageFill<'d, '_> {
                     }
                     let tb = self.table_layout(bi, col.width, memos)?;
                     match self.place_table(&tb, cur, &col, memos)? {
-                        Stop::Done => (chain, members) = (None, Vec::new()),
+                        Stop::Done => keep.reset(),
                         s => {
                             if cur.pos.block == bi
                                 && cur.pos.at.at_start()
-                                && let Some((c, cap)) = generic.then(|| step_back(&members)).flatten()
+                                && let Some((c, cap)) = generic.then(|| step_back(&keep.members)).flatten()
                             {
-                                *cur.pos = c.pos;
-                                *cur.carry = c.carry;
-                                *cur.area = c.area;
-                                cur.out.truncate(c.out);
-                                self.at.starts.truncate(c.starts);
-                                self.at.effects = c.effects;
+                                let (y, empty) = self.rollback(cur, c);
                                 self.at.keep_cap = Some((cur.pos.block, cap));
-                                (chain, members) = (None, Vec::new());
-                                *cur.y = c.y;
-                                *cur.empty = c.empty;
+                                keep.reset();
+                                (*cur.y, *cur.empty) = (y, empty);
                                 continue;
                             }
-                            if let Some(c) = chain.take()
+                            if let Some(c) = keep.chain.take()
                                 && !c.empty
                                 && cur.pos.block == bi
                                 && cur.pos.at.at_start()
                             {
-                                *cur.pos = c.pos;
-                                *cur.carry = c.carry;
-                                *cur.area = c.area;
-                                cur.out.truncate(c.out);
-                                self.at.starts.truncate(c.starts);
-                                self.at.effects = c.effects;
-                                return Ok((Stop::Full, c.y));
+                                let (y, _) = self.rollback(cur, c);
+                                return Ok((Stop::Full, y));
                             }
                             return Ok((s, *cur.y));
                         }
