@@ -1,14 +1,18 @@
 //! Algorithm signatures
 
+use std::path::Path;
+
 use super::layout_sources;
 
 #[test]
 fn algorithms_take_no_document() {
-    const ALGORITHMS: [&str; 9] = ["text.rs", "line.rs", "paragraph.rs", "story.rs", "table.rs", "flow.rs", "page.rs", "float.rs", "traverse.rs"];
+    const ALGORITHMS: [&str; 9] = ["text", "line", "paragraph", "story", "table", "flow", "page", "float", "traverse"];
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src").join("layout");
     let mut found = Vec::new();
     for (path, text) in layout_sources() {
-        let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-        if !ALGORITHMS.contains(&name) || path.parent().is_some_and(|p| p.ends_with("tests")) {
+        let module = path.strip_prefix(&root).ok().and_then(|p| p.components().next()).and_then(|c| c.as_os_str().to_str());
+        let Some(module) = module.map(|m| m.strip_suffix(".rs").unwrap_or(m)) else { continue };
+        if !ALGORITHMS.contains(&module) {
             continue;
         }
         for (n, line) in text.lines().enumerate() {
