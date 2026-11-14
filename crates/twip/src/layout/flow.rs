@@ -549,7 +549,12 @@ pub fn stream_fill(notes: &[NotePart], widths: &[f64], h: f64, wrap: &mut Rewrap
     Ok(rest.is_empty().then_some((cols, tallest)))
 }
 
-/// The smallest height `notes` balance to in columns of `widths` within `room`.
+/// The last note's space after, part of a stream area below its notes' columns.
+fn stream_tail(notes: &[NotePart]) -> f64 {
+    notes.last().and_then(|p| p.units.last()).map_or(0.0, |u| u.after)
+}
+
+/// The smallest height `notes` balance to in columns of `widths` within `room`, with the last note's space after.
 pub fn stream_height(notes: &[NotePart], widths: &[f64], room: f64, wrap: &mut Rewrap) -> Result<Option<f64>, Yield> {
     if notes.is_empty() {
         return Ok(Some(0.0));
@@ -566,7 +571,7 @@ pub fn stream_height(notes: &[NotePart], widths: &[f64], room: f64, wrap: &mut R
             lo = mid;
         }
     }
-    Ok(stream_fill(notes, widths, hi, wrap)?.map(|(_, t)| t))
+    Ok(stream_fill(notes, widths, hi, wrap)?.map(|(_, t)| t + stream_tail(notes)))
 }
 
 fn part_height(row: &super::table::RowBox, parts: &[CellPart]) -> f64 {
@@ -1138,7 +1143,8 @@ impl<'d> PageFill<'d, '_> {
         let widths: Vec<f64> = cols.iter().map(|c| c.1).collect();
         let parts = if cols.len() > 1 || area.cut {
             let mut wrap = |p: &NotePart, w: f64| self.rewrap(p, w, memos);
-            stream_flow(&area.parts, &widths, area.height + EPS, &mut wrap)?.0
+            let tail = if area.cut { 0.0 } else { stream_tail(&area.parts) };
+            stream_flow(&area.parts, &widths, area.height - tail + EPS, &mut wrap)?.0
         } else {
             vec![area.parts.clone()]
         };

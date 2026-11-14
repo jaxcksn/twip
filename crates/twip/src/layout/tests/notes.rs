@@ -912,3 +912,21 @@ fn compat_15_footnote_area_takes_the_columns_of_the_first_section_on_the_page_wi
     let widest = lines.iter().map(|l| l.2 - l.1).fold(0.0, f64::max);
     assert!(widest > 250.0, "S2's note is wrapped across the page: {lines:?}");
 }
+
+#[test]
+fn compat_15_a_note_area_under_balanced_columns_keeps_the_last_notes_space_after() {
+    // The reference in a balanced two-column section between one-column ones: the area holds the note's space after
+    // below its last line, as a one-column page's does.
+    let note_y = |after: u32| {
+        let extra = format!(r#"<w:footnote w:id="10"><w:p><w:pPr><w:spacing w:after="{after}"/></w:pPr><w:r><w:t>Note text</w:t></w:r></w:p></w:footnote>"#);
+        let mut body = para("Intro", &[]) + &sect("", false);
+        body += &(1..=4).map(|i| para(&format!("L{i:02}"), if i == 2 { &["f10"][..] } else { &[] })).collect::<String>();
+        body += &sect(r#"<w:type w:val="continuous"/><w:cols w:num="2" w:space="720"/>"#, false);
+        body += &(para("Tail", &[]) + &sect(r#"<w:type w:val="continuous"/>"#, true));
+        let page = &super::page_chars(&notes_doc_with(&body, C15, &extra)?)[0];
+        page.windows(4).find(|w| w.iter().map(|c| c.0).eq("Note".chars())).map(|w| w[0].2)
+    };
+    let Some(none) = note_y(0) else { return };
+    let some = note_y(140).expect("the note on page 1");
+    assert!((none - some - 7.0).abs() < 0.05, "{none} {some}");
+}
