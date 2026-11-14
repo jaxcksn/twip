@@ -742,23 +742,26 @@ pub fn float_box(f: &Float, rect: [f64; 4], anchor: ParaId, env: &StoryEnv, memo
 }
 
 // Linked text boxes
-fn chain_box(f: &Float) -> crate::docx::TextBox {
+fn chain_box(f: &Float, theme: &crate::drawing::theme::Theme) -> crate::docx::TextBox {
     if let Some(tb) = &f.text_box {
         return crate::docx::TextBox { blocks: Vec::new(), ..tb.clone() };
     }
     let sp = f.shape.as_deref().and_then(|s| s.sp());
     let pt = |e: crate::drawing::units::Emu| e.0 as f64 / 12700.0;
     let insets = sp.map_or([7.2, 3.6, 7.2, 3.6], |s| s.body.insets.map(pt));
-    let outline = sp.and_then(|s| s.line.as_ref()).map_or(0.0, |l| {
-        let w = l.width.map_or(0, |w| w.0);
-        2.0 * if l.inset == Some(true) { w } else { w / 2 } as f64 / 12700.0
-    });
+    // Without its own width the outline takes the width of the theme's line its style refers to.
+    let styled = sp.and_then(|s| s.style.as_ref()?.line.as_ref()).and_then(|(idx, _)| crate::drawing::paint::style_entry(&theme.lines, None, *idx)?.width);
+    let own = sp.and_then(|s| s.line.as_ref());
+    let outline = match own.and_then(|l| l.width).or(styled) {
+        Some(w) => 2.0 * if own.and_then(|l| l.inset) == Some(true) { w.0 } else { w.0 / 2 } as f64 / 12700.0,
+        None => 0.0,
+    };
     crate::docx::TextBox { blocks: Vec::new(), insets, outline, auto_fit: false, v_anchor: 0, flow: 0 }
 }
 
-pub(super) fn text_frame_size(f: &Float) -> [f64; 2] {
+pub(super) fn text_frame_size(f: &Float, theme: &crate::drawing::theme::Theme) -> [f64; 2] {
     let (w, h) = if f.rot_swap { (f.h, f.w) } else { (f.w, f.h) };
-    let fr = layout_frame(&chain_box(f), f.shape.as_deref(), [0.0, 0.0, w, h]);
+    let fr = layout_frame(&chain_box(f, theme), f.shape.as_deref(), [0.0, 0.0, w, h]);
     [fr[2] - fr[0], fr[3] - fr[1]]
 }
 
@@ -824,7 +827,7 @@ fn linked_text(
         let last = k + 1 == heights.len();
         if last { 0..story.units.len() } else { chain_slices(&story, &heights[k..k + 2], widow)[0].clone() }
     };
-    let fr = layout_frame(&chain_box(f), f.shape.as_deref(), rect);
+    let fr = layout_frame(&chain_box(f, &env.ctx.env.text.theme), f.shape.as_deref(), rect);
     let base = story.units.get(range.start).map_or(0.0, |u| u.top);
     for u in &story.units[range] {
         let y = fr[1] + u.top - base;

@@ -444,6 +444,24 @@ fn a_linked_box_lays_its_part_of_the_story_out_in_its_own_text_rectangle() {
 }
 
 #[test]
+fn a_linked_box_outline_without_a_width_takes_its_style_lines_width() {
+    let left = |style: &str| {
+        let shape = |text: &str, style: &str| {
+            format!(r#"<wps:wsp><wps:cNvSpPr txBox="1"/><wps:spPr>{}<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></wps:spPr>{text}{style}<wps:bodyPr/></wps:wsp>"#, xfrm(0, 0, 150, 30, ""))
+        };
+        let paras: String = (1..=4).map(|k| format!("<w:p><w:r><w:t>Linked {k}</w:t></w:r></w:p>")).collect();
+        let head = shape(&format!(r#"<wps:txbx id="1"><w:txbxContent>{paras}</w:txbxContent></wps:txbx>"#), "");
+        let next = shape(r#"<wps:linkedTxbx id="1" seq="1"/>"#, style);
+        let body = format!("<w:p>{}{}</w:p>", anchor(72, 100, 150, 30, 1, false, 1, &head), anchor(300, 100, 150, 200, 2, false, 2, &next));
+        let d = settings_doc(&body, 15).expect("the document reads");
+        super::page_chars(&d)[0].iter().filter(|c| c.1 > 290.0).map(|c| c.1).fold(f64::MAX, f64::min)
+    };
+    let styled = r#"<wps:style><a:lnRef idx="2"><a:schemeClr val="accent1"/></a:lnRef><a:fillRef idx="0"><a:schemeClr val="accent1"/></a:fillRef><a:effectRef idx="0"><a:schemeClr val="accent1"/></a:effectRef><a:fontRef idx="minor"/></wps:style>"#;
+    // The built-in theme's second line is 1.5 pt: half of it inside the box.
+    assert!((left(styled) - left("") - 0.75).abs() < 1e-6, "{} {}", left(styled), left(""));
+}
+
+#[test]
 fn a_text_box_outline_without_a_width_takes_its_style_lines_width() {
     let outline = |ln: &str| {
         let shape = box_wsp(100, 50, "", r#"<wps:style><a:lnRef idx="2"><a:schemeClr val="accent1"/></a:lnRef><a:fillRef idx="0"><a:schemeClr val="accent1"/></a:fillRef><a:effectRef idx="0"><a:schemeClr val="accent1"/></a:effectRef><a:fontRef idx="minor"/></wps:style><wps:bodyPr/>"#, "Pen")

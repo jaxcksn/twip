@@ -214,9 +214,9 @@ fn chains(doc: &Document) -> Rc<[Chain]> {
         let Some(sp) = f.shape.as_deref().and_then(|s| s.sp()) else { return };
         match (&sp.text, sp.chain, &f.text_box) {
             (ShapeText::Story, Some(c), Some(tb)) => {
-                heads.insert(c, (tb.clone(), (f.id, super::story::text_frame_size(f))));
+                heads.insert(c, (tb.clone(), (f.id, super::story::text_frame_size(f, &doc.theme))));
             }
-            (ShapeText::Linked { chain, seq }, ..) => later.entry(*chain).or_default().push((*seq, (f.id, super::story::text_frame_size(f)))),
+            (ShapeText::Linked { chain, seq }, ..) => later.entry(*chain).or_default().push((*seq, (f.id, super::story::text_frame_size(f, &doc.theme)))),
             _ => {}
         }
     };
