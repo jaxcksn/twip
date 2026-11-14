@@ -107,13 +107,20 @@ fn compat_12_centres_a_vertical_block_thicker_than_its_cell_unclamped() {
         let body = table("btLr", row, WORDS).replace("<w:textDirection", &format!(r#"<w:vAlign w:val="{align}"/><w:textDirection"#));
         let mut d = doc(&body)?;
         d.settings.compat_mode = mode;
-        Some(turned_runs(&d)[0].1[0])
+        Some(turned_runs(&d))
     };
-    let Some(c15) = at(15, "center") else { return };
+    // A line drawn in both blocks (the lines wholly outside the cell aren't drawn).
+    let x = |mode: i64, align: &str| {
+        let (a, top) = (at(mode, align)?, at(mode, "top")?);
+        let r = a.iter().find(|r| top.iter().any(|t| t.0 == r.0))?;
+        Some((r.1[0], top.iter().find(|t| t.0 == r.0)?.1[0]))
+    };
+    let Some((c15, top15)) = x(15, "center") else { return };
     // The lines are thicker than the 1500-twip cell: compat 15 keeps the block at the first side, compat 12 centres
     // it, starting left of the cell.
-    assert!((c15 - at(15, "top").unwrap()).abs() < 0.01);
-    assert!(at(12, "center").unwrap() < at(12, "top").unwrap() - 5.0, "{:?} {:?}", at(12, "center"), at(12, "top"));
+    assert!((c15 - top15).abs() < 0.01);
+    let (c12, top12) = x(12, "center").unwrap();
+    assert!(c12 < top12 - 5.0, "{c12} {top12}");
 }
 
 #[test]

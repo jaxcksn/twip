@@ -2428,12 +2428,15 @@ fn turn_cell(
         "bottom" => (g.cw + far - story.height).max(floor),
         _ => 0.0,
     };
-    let bottom = match v.flow {
-        Flow::Down => g.cw + g.cx,
-        Flow::Up => g.w - g.cx,
-        Flow::DownEast => f64::INFINITY,
+    // Glyphs whose ink lies wholly outside the cell's clip, between its side borders' inner edges, are not drawn,
+    // before the first side as past the far one.
+    let (l, r) = (bw(&c.edges[1]) / 2.0, bw(&c.edges[3]) / 2.0);
+    let (first, bottom) = match v.flow {
+        Flow::Down => (g.cx + g.cw - g.w + r, g.cw + g.cx - l),
+        Flow::Up => (l - g.cx, g.w - g.cx - r),
+        Flow::DownEast => (f64::NEG_INFINITY, f64::INFINITY),
     };
-    let items = super::vertical::turned(&story.units, v, [0.0, 0.0, g.cw, len], across, bottom);
+    let items = super::vertical::turned_in(&story.units, v, [0.0, 0.0, g.cw, len], across, first, bottom);
     let unit = StoryUnit {
         top: 0.0,
         height: 0.0,

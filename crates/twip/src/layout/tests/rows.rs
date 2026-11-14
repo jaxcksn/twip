@@ -1495,3 +1495,29 @@ fn a_nested_tables_borders_clip_to_the_open_enclosing_cell() {
     assert!(right("") > 72.0 + 300.0, "drawn in full when it starts the cell");
 }
 
+/// The characters drawn turned on page 1.
+fn turned_chars(doc: &crate::docx::Document) -> String {
+    let s = layout(doc, &fonts());
+    let mut out = String::new();
+    for item in crate::layout::traverse::paint_items(&s.pages()[0]) {
+        if let crate::layout::fragment::Item::Turned(t) = item {
+            for (r, _, _) in crate::layout::vertical::runs(&t) {
+                out.extend(r.chars.iter().map(|c| c.0));
+            }
+        }
+    }
+    out
+}
+
+#[test]
+fn compat_14_hides_vertical_lines_pushed_wholly_before_the_first_side() {
+    let paras: String = ["Ka", "Lb", "Mc", "Nd", "Oe", "Pf"].iter().map(|w| format!("<w:p><w:r><w:t>{w}</w:t></w:r></w:p>")).collect();
+    let body = format!(
+        r#"<w:tbl><w:tblPr><w:tblLayout w:type="fixed"/><w:tblBorders><w:left w:val="single" w:sz="4"/><w:right w:val="single" w:sz="4"/></w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="700"/></w:tblGrid><w:tr><w:trPr><w:trHeight w:val="1500" w:hRule="exact"/></w:trPr><w:tc><w:tcPr><w:tcW w:w="700" w:type="dxa"/><w:textDirection w:val="btLr"/><w:vAlign w:val="bottom"/></w:tcPr>{paras}</w:tc></w:tr></w:tbl><w:p/>"#
+    );
+    let c12 = turned_chars(&doc_in(&body, 12));
+    assert!(!c12.contains('K') && c12.contains('P'), "compat 12: {c12}");
+    let c15 = turned_chars(&doc_in(&body, 15));
+    assert!(c15.contains('K'), "compat 15 keeps the block at the first side: {c15}");
+}
+
