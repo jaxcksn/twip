@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.2.0](https://github.com/jaxcksn/twip/compare/v0.1.1...v0.2.0) (2026-11-14)
+
+
+### ⚠ BREAKING CHANGES
+
+* **render:** replace skia with custom rendering engine ([#18](https://github.com/jaxcksn/twip/issues/18))
+
+### Features
+
+* **editing:** control labels, host ruler tooltips, row marks ([#14](https://github.com/jaxcksn/twip/issues/14)) ([0ae52ef](https://github.com/jaxcksn/twip/commit/0ae52ef6f94181e7ef862e2679947e204f72e34b))
+* **layout:** various layout stability and rendering fidelity enhancements ([#19](https://github.com/jaxcksn/twip/issues/19)) ([4370a14](https://github.com/jaxcksn/twip/commit/4370a14fa5fe735262a72852b4c331837c6b209c))
+* **render:** replace skia with custom rendering engine ([#18](https://github.com/jaxcksn/twip/issues/18)) ([7faa0fe](https://github.com/jaxcksn/twip/commit/7faa0fe0a3977a5cae331ea5b545952b0e984083))
+
+
+### Bug Fixes
+
+* **editing:** cross-page object drags, shape clicks and layout fidelity ([#21](https://github.com/jaxcksn/twip/issues/21)) ([7c478e0](https://github.com/jaxcksn/twip/commit/7c478e000277021eb8ccacf71593ac86212f14f8))
+* **editing:** new lists drop the old direct indent ([#16](https://github.com/jaxcksn/twip/issues/16)) ([66515eb](https://github.com/jaxcksn/twip/commit/66515eb89bfdeac2d9e5d06310409b1aa9d69580))
+* **editing:** select outlined shapes and drag floats across sections ([#23](https://github.com/jaxcksn/twip/issues/23)) ([341a9d5](https://github.com/jaxcksn/twip/commit/341a9d56e463e36a67992e47a37440dc90014844))
+* **layout:** merged regions after every row grows ([#22](https://github.com/jaxcksn/twip/issues/22)) ([5428606](https://github.com/jaxcksn/twip/commit/5428606bc0c02f14c1c9e949bfe811f1e41f7ee5))
+* **layout:** vertical merged cells now layout correctly ([#20](https://github.com/jaxcksn/twip/issues/20)) ([1bf8e35](https://github.com/jaxcksn/twip/commit/1bf8e358816d9eae16966721314f644d6c2667b2))
+* remove unused test helpers ([9983ad5](https://github.com/jaxcksn/twip/commit/9983ad58ecd051626baac3bc9c4ea7a970207389))
+
 ## [0.1.1](https://github.com/jaxcksn/twip/compare/v0.1.0...v0.1.1) (2026-11-09)
 
 
