@@ -69,6 +69,22 @@ const ADOPT = [
   'ElementClick',
   'ElementSelection',
   'Tooltip',
+  // services/find.ts
+  'FindQuery',
+  'FindResult',
+  'FindMatch',
+  // services/navigation.ts
+  'Heading',
+  'PreviewSize',
+  'PreviewPicture',
+  'StyleInfo',
+  // services/spelling.ts
+  'Dictionary',
+  // services/menus.ts
+  'ContextMenuEvent',
+  'ContextMenu',
+  'MenuTarget',
+  'MenuItem',
 ];
 
 /** Schema types written out at each use rather than named. */
@@ -90,6 +106,7 @@ const INLINE = [
   'IndentState',
   'LinkInfo',
   'ListState',
+  'MenuVia',
   'Modifiers',
   'ObjectKind',
   'Orientation',
@@ -104,6 +121,9 @@ const INLINE = [
   'SelectionMode',
   'Size',
   'Story',
+  'StylePreview',
+  'StyleType',
+  'StyleVisibility',
   'TooltipKind',
 ];
 
@@ -115,6 +135,12 @@ const FIELDS: Record<string, string> = {
   'TableSelection.rowHeight': 'Mixed<RowHeight>',
   'ElementContext.kind': "'field' | ControlKind | 'repeatingItem'",
 };
+
+/** Fields the engine defaults when they're left out, of types only the engine reads: optional here. */
+const OPTIONAL = ['PreviewSize.scale'];
+
+/** Schema types this SDK names otherwise (Rust name: this SDK's), from its own modules. */
+const NAMES: Record<string, string> = { Command: 'Op' };
 
 /** The schema's string formats, as this SDK's types. */
 const FORMATS: Record<string, string> = { color: 'Color', base64: 'Uint8Array', 'date-time': 'string', char: 'string' };
@@ -236,6 +262,7 @@ function ts(ty: Ty, from: string, indent = ''): string {
     case 'ref': {
       if (adopted.has(ty.name)) return ty.name;
       if (INLINE.includes(ty.name)) return body(defs.get(ty.name)!, from, indent + '  ');
+      if (NAMES[ty.name]) return external(NAMES[ty.name], from);
       return external(ty.name, from);
     }
   }
@@ -281,7 +308,7 @@ function doc(raw: string | undefined, indent: string, optional = false): string 
 
 function field(f: Field, indent: string, owner: string): string {
   // A field the engine may leave out is optional here, and left out rather than `null`.
-  const optional = f.omitted;
+  const optional = f.omitted || OPTIONAL.includes(`${owner}.${f.name}`);
   const ty = optional && f.ty.kind === 'nullable' ? f.ty.of : f.ty;
   const key = /^[A-Za-z_$][\w$]*$/.test(f.name) ? f.name : `'${f.name}'`;
   const path = `${owner}.${f.name}`;

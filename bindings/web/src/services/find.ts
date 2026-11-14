@@ -1,6 +1,9 @@
 import type { Session } from '../editor.js';
 import { Method } from '../transport/protocol.js';
 import type { MatchId } from '../types.js';
+import type { FindMatch, FindQuery, FindResult } from '../wire.generated.js';
+
+export type { FindMatch, FindQuery, FindResult } from '../wire.generated.js';
 
 /** Find and replace, over the text of the current markup view. */
 export interface Find {
@@ -16,38 +19,6 @@ export interface Find {
   replace(query: FindQuery, replacement: string): Promise<FindResult>;
   /** Replaces every match: one transaction. */
   replaceAll(query: FindQuery, replacement: string): Promise<{ count: number }>;
-}
-
-/** What to find. */
-export interface FindQuery {
-  /** The text. */
-  text: string;
-  /** Case-sensitive. Default false. */
-  matchCase?: boolean;
-  /** Whole words only. Default false. */
-  wholeWords?: boolean;
-}
-
-/** The result of a find step. */
-export interface FindResult {
-  /** A match was found and selected. */
-  found: boolean;
-  /** The search wrapped around the document's end. */
-  wrapped: boolean;
-}
-
-/** A match in a results list. */
-export interface FindMatch {
-  /** The match, for {@link Find.select}. */
-  id: MatchId;
-  /** Some text before it. */
-  before: string;
-  /** The matched text. */
-  text: string;
-  /** Some text after it. */
-  after: string;
-  /** Its page. */
-  page: number;
 }
 
 /** Find and replace over a session. */

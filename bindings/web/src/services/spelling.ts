@@ -1,17 +1,8 @@
 import type { Session } from '../editor.js';
 import { Method } from '../transport/protocol.js';
+import type { Dictionary } from '../wire.generated.js';
 
-/** Hunspell dictionaries for one language. */
-export interface Dictionary {
-  /** The BCP 47 language tag. */
-  language: string;
-  /** The `.aff` file. */
-  aff: Uint8Array;
-  /** The `.dic` file. */
-  dic: Uint8Array;
-  /** Hyphenation patterns (a `hyph_*.dic` file), for automatic hyphenation. With empty `aff` and `dic`, only these. */
-  hyphenation?: Uint8Array;
-}
+export type { Dictionary } from '../wire.generated.js';
 
 /** Spell checking. */
 export interface Spelling {
