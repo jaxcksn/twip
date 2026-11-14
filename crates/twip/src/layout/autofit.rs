@@ -29,8 +29,10 @@ pub struct Col {
     pub hard: i64,
     pub pct: i64,
     pub dxa: i64,
-    /// A single-span pct cell or skip set its pct.
-    pub own_pct: bool,
+    /// A pct span's share made it pct while it wasn't that span's last column.
+    pub pushed_other: bool,
+    /// A pct span none of whose columns was pct made it pct.
+    pub blank: bool,
 }
 
 impl Col {
@@ -58,6 +60,12 @@ pub fn columns(n: usize, cells: &[Cell], sp: i64, gaps: &[Vec<Gap>], fixed: bool
     let mut cols = vec![Col::default(); n];
     if n == 0 {
         return cols;
+    }
+    // The column edges some cell has: columns with none between them are one column.
+    let mut edge = vec![false; n + 1];
+    for c in cells.iter().filter(|c| c.first < n) {
+        edge[c.first] = true;
+        edge[(c.first + c.span.max(1)).min(n)] = true;
     }
     let cells: Vec<&Cell> = cells.iter().filter(|c| !(c.cont && c.row > 0) && c.first < n).collect();
     let last = |c: &Cell| (c.first + c.span.max(1) - 1).min(n - 1);
@@ -116,7 +124,8 @@ pub fn columns(n: usize, cells: &[Cell], sp: i64, gaps: &[Vec<Gap>], fixed: bool
         if c.first == n - 1 {
             add_single(&mut cols[c.first], c.kind, c.pref, c.min, c.max, c.hard, fixed);
         } else {
-            spread(&mut cols, c, sp);
+            let whole = !edge[c.first + 1..(c.first + c.span).min(n)].iter().any(|&e| e);
+            spread(&mut cols, c, sp, whole);
         }
     }
     for c in &mut cols {
@@ -137,7 +146,6 @@ fn add_single(col: &mut Col, kind: Kind, pref: i64, min: i64, max: i64, hard: i6
         Kind::Pct => {
             col.pct = if col.kind == Some(Kind::Pct) { col.pct.max(pref) } else { pref };
             col.kind = Some(Kind::Pct);
-            col.own_pct = true;
         }
         Kind::Dxa if col.kind != Some(Kind::Pct) => {
             col.dxa = if col.kind == Some(Kind::Dxa) { col.dxa.max(pref) } else { pref };
@@ -150,7 +158,8 @@ fn add_single(col: &mut Col, kind: Kind, pref: i64, min: i64, max: i64, hard: i6
     col.hard = col.hard.max(hard);
 }
 
-fn spread(cols: &mut [Col], c: &Cell, sp: i64) {
+/// `whole`: no cell has an edge inside the span, so its columns are one.
+fn spread(cols: &mut [Col], c: &Cell, sp: i64, whole: bool) {
     let end = (c.first + c.span).min(cols.len());
     if c.first + 2 > end {
         return;
@@ -173,15 +182,20 @@ fn spread(cols: &mut [Col], c: &Cell, sp: i64) {
     if c.kind == Kind::Pct && c.pref > 0 {
         let rest = c.pref.min(5000) - cs.iter().filter(|k| pct(k)).map(|k| k.pct).sum::<i64>();
         let others = cs.iter().filter(|k| !pct(k)).count() as i64;
+        let last = cs.len() - 1;
         if rest > 0 && others > 0 {
             let wide: i64 = cs.iter().filter(|k| !pct(k)).map(|k| k.max).sum();
-            for k in cs.iter_mut().filter(|k| !pct(k)) {
+            let blank = others == span;
+            for (i, k) in cs.iter_mut().enumerate().filter(|(_, k)| !pct(k)) {
                 k.pct = if wide == 0 { rest / others } else { rest * k.max / wide };
+                (k.pushed_other, k.blank) = (i != last, blank);
             }
-        } else if rest > 0 && cs[cs.len() - 1].own_pct {
-            // Every column is pct already: the last one, when a cell of its own made it pct, takes the rest.
-            // ponytail: the condition fits the measured skip tables; other all-pct spans are unmeasured.
-            cs[cs.len() - 1].pct += rest;
+        } else if others == 0 && (whole || !cs.iter().any(|k| k.pushed_other)) {
+            // Every column is pct already: the last one takes what the others leave, a column a blank span's share
+            // made pct counting nothing. A share into another span's non-last column blocks it. Columns that are one
+            // take the larger of their pct and the span's.
+            let taken: i64 = cs[..last].iter().filter(|k| whole || !k.blank).map(|k| k.pct).sum();
+            cs[last].pct = cs[last].pct.max(c.pref.min(5000) - taken);
         }
         for k in cs.iter_mut() {
             k.kind = Some(Kind::Pct);
@@ -429,7 +443,7 @@ mod tests {
     use super::*;
 
     fn dxa(w: i64, min: i64) -> Col {
-        Col { kind: Some(Kind::Dxa), min, max: w.max(min), hard: 0, pct: 0, dxa: w, own_pct: false }
+        Col { kind: Some(Kind::Dxa), min, max: w.max(min), hard: 0, pct: 0, dxa: w, pushed_other: false, blank: false }
     }
 
     #[test]
@@ -481,13 +495,26 @@ mod tests {
     }
 
     #[test]
+    fn an_all_pct_span_tops_up_its_last_column() {
+        let pct = |first, span, pref, row| Cell { first, span, min: 100, max: 100, hard: 0, kind: Kind::Pct, pref, row, cont: false };
+        let auto = |first, row| Cell { kind: Kind::Auto, min: 0, max: 0, ..pct(first, 1, 0, row) };
+        let pcts = |cells: &[Cell], n| columns(n, cells, 0, &[], false).iter().map(|c| c.pct).collect::<Vec<_>>();
+        // A share pushed into a span's non-last column blocks a later all-pct span.
+        assert_eq!(pcts(&[auto(0, 0), pct(1, 1, 1000, 0), pct(0, 2, 3000, 1), pct(0, 2, 4500, 2)], 2), [2000, 1000]);
+        // A blank span's share counts nothing in the sum.
+        assert_eq!(pcts(&[pct(0, 2, 1600, 0), pct(2, 1, 300, 0), auto(0, 1), pct(1, 2, 2500, 1)], 3), [800, 800, 2500]);
+        // Columns no cell has an edge between are one: the larger pct wins.
+        assert_eq!(pcts(&[pct(0, 2, 2000, 0), pct(0, 2, 3500, 1)], 2).iter().sum::<i64>(), 3500);
+    }
+
+    #[test]
     fn a_spanning_cell_widens_its_columns_in_proportion() {
         let cell = |min, max| Cell { first: 0, span: 2, min, max, hard: 0, kind: Kind::Auto, pref: 0, row: 0, cont: false };
         let mut cols = vec![Col { min: 100, max: 200, ..Default::default() }, Col { min: 100, max: 200, ..Default::default() }];
-        spread(&mut cols, &cell(1000, 1000), 0);
+        spread(&mut cols, &cell(1000, 1000), 0, false);
         assert_eq!(cols.iter().map(|c| (c.min, c.max)).collect::<Vec<_>>(), [(500, 500), (500, 500)]);
         let mut cols = vec![Col { min: 100, max: 900, ..Default::default() }, Col { min: 100, max: 300, ..Default::default() }];
-        spread(&mut cols, &cell(700, 1500), 0);
+        spread(&mut cols, &cell(700, 1500), 0, false);
         assert_eq!(cols.iter().map(|c| (c.min, c.max)).collect::<Vec<_>>(), [(509, 1125), (192, 375)]);
     }
 }
