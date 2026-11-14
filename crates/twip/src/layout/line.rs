@@ -1775,9 +1775,10 @@ fn align(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, 
                 x += line.widths[k];
             }
         }
-        // Compat ≤ 14, every line, the last too: equal gaps between the characters (spaces included), the first at
-        // the left edge and the last ending at the right; a character alone is centred. Where East Asian text meets a
-        // Latin letter or a digit the gap takes half an em more.
+        // Compat ≤ 14, every line, the last too: the gaps between the characters (spaces included), the first at the
+        // left edge and the last ending at the right; a character alone is centred. Each space first grows towards its
+        // font's average character width, then the rest goes equally to every gap. Where East Asian text meets a Latin
+        // letter or a digit the gap takes half an em more.
         Jc::Distribute => {
             let chars: Vec<usize> = (0..content_end).filter(|&k| pieces[idx(k)].kind != Kind::Tab).collect();
             let extra = right - line_end_x;
@@ -1789,9 +1790,12 @@ fn align(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, 
                 let bonus: Vec<f64> = chars.windows(2).map(|w| auto_space(sp, &pieces[idx(w[0])], &pieces[idx(w[1])], style)).collect();
                 let extra = extra - bonus.iter().sum::<f64>();
                 if extra > 0.0 {
-                    let q = extra / (chars.len() - 1) as f64;
-                    for (j, &k) in chars[..chars.len() - 1].iter().enumerate() {
-                        line.widths[k] += q + bonus[j];
+                    let gaps = &chars[..chars.len() - 1];
+                    // A space's room to its target counts as share taken below nothing: one level over every gap.
+                    let taken: Vec<f64> = gaps.iter().map(|&k| -distribute_room(sp, &pieces[idx(k)], line.widths[k])).collect();
+                    let q = water_level(extra, &taken);
+                    for (j, &k) in gaps.iter().enumerate() {
+                        line.widths[k] += (q - taken[j]).max(0.0) + bonus[j];
                     }
                     let mut x = line.xs[0];
                     for k in 0..n {
@@ -1818,6 +1822,18 @@ fn space_room(p: &Piece, w: f64) -> (i64, i64) {
             ((((n + 1) >> 1) - (w - n)).max(0), 0)
         }
     }
+}
+
+/// How far a space `w` points wide grows first in a compat ≤ 14 distributed line: up to its font's average character
+/// width at its size, or half an em where the document balances its spaces and the run's East Asian font is an East
+/// Asian one; letters none.
+fn distribute_room(sp: &ShapedPara, p: &Piece, w: f64) -> f64 {
+    let st = &sp.styles[p.style as usize];
+    if !stretches(sp, p) {
+        return 0.0;
+    }
+    let em = if st.half_em_spaces { 0.5 } else { st.face.as_ref().map_or(0.0, |f| f.avg_width) };
+    ((em * st.size * LU_PER_PT).round() / LU_PER_PT - w).max(0.0)
 }
 
 fn stretch_cap(p: &Piece, w: f64) -> f64 {

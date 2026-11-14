@@ -39,6 +39,9 @@ pub struct PieceStyle {
     pub size: f64,
     pub raise: f64,
     pub squeeze_avg: f64,
+    /// The document balances its spaces and the run's East Asian font is an East Asian one: a compat ≤ 14 distributed
+    /// line's spaces grow first to half an em, not to the font's average width.
+    pub half_em_spaces: bool,
 }
 
 impl PartialEq for PieceStyle {
@@ -534,7 +537,7 @@ impl<'a> Builder<'a> {
         descent = (descent - shift).max(0.0);
         NewPiece {
             kind,
-            style: PieceStyle { run: run.clone(), face, size, raise, squeeze_avg: 0.0 },
+            style: PieceStyle { run: run.clone(), face, size, raise, squeeze_avg: 0.0, half_em_spaces: false },
             ascent,
             descent,
             width: 0.0,
@@ -1189,6 +1192,10 @@ impl<'a> Builder<'a> {
             space.balance.as_ref().is_some_and(|dd| dd.is_empty() || self.fonts.face(dd, None, false, false).is_some_and(|f| f.east_asian));
         if balanced {
             self.balance_spaces();
+            for s in 0..self.styles.len() {
+                let st = &self.styles[s];
+                self.styles[s].half_em_spaces = self.face(&st.run.east_asia, &st.run).is_some_and(|f| f.east_asian);
+            }
         }
         if space.compress {
             // Compat 15 with the spaces balanced: hyphens and dashes break after as anywhere else.

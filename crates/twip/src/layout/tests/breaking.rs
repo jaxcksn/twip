@@ -1780,6 +1780,30 @@ fn compat_15_distributed_glyph_shaped_text_stretches_only_its_spaces() {
 }
 
 #[test]
+fn compat_14_distributed_spaces_grow_to_the_average_width_first() {
+    let Some(chars) = glyph_xs("", r#"<w:p><w:pPr><w:jc w:val="distribute"/></w:pPr><w:r><w:t xml:space="preserve">aa aa</w:t></w:r></w:p>"#) else {
+        return;
+    };
+    let x: Vec<f64> = chars.iter().filter(|g| g.0 == 'a').map(|g| g.1).collect();
+    // Arial 11: a 1139, space 569, average width 904 units of 2048.
+    let (a, space, avg) = (1139.0 * 11.0 / 2048.0, 569.0 * 11.0 / 2048.0, 904.0 * 11.0 / 2048.0);
+    // Between the words: the second letter's gap and the space's, which takes the room to the average width more.
+    let (letter_gap, words_gap) = (x[1] - x[0] - a, x[2] - x[1] - a - space);
+    assert!((words_gap - 2.0 * letter_gap - (avg - space)).abs() < 0.01, "{x:?}");
+    // With the spaces balanced and an East Asian run font, half an em.
+    if !fonts().is_installed("MS Mincho") {
+        return;
+    }
+    let rpr = r#"<w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:eastAsia="MS Mincho"/><w:sz w:val="22"/>"#;
+    let body = r#"<w:p><w:pPr><w:jc w:val="distribute"/></w:pPr><w:r><w:t xml:space="preserve">aa aa</w:t></w:r></w:p>"#;
+    let settings = r#"<w:compat><w:balanceSingleByteDoubleByteWidth/><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="12"/></w:compat>"#;
+    let chars = super::page_chars(&test_doc(settings, rpr, body, "").expect("lays out")).swap_remove(0);
+    let x: Vec<f64> = chars.iter().filter(|g| g.0 == 'a').map(|g| g.1).collect();
+    let (letter_gap, words_gap) = (x[1] - x[0] - a, x[2] - x[1] - a - space);
+    assert!((words_gap - 2.0 * letter_gap - (5.5 - space)).abs() < 0.01, "{x:?}");
+}
+
+#[test]
 fn wp_justification_squeezes_fixed_pitch_lines_by_every_advance() {
     if !fonts().is_installed("Courier New") {
         return;
