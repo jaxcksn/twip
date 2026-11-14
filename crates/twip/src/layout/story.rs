@@ -64,13 +64,13 @@ pub struct StoryLayout {
 
 impl PartialEq for StoryLayout {
     fn eq(&self, o: &Self) -> bool {
-        self.height == o.height
-            && self.float_bottom == o.float_bottom
-            && self.frozen == o.frozen
-            && self.tables == o.tables
-            && self.units.len() == o.units.len()
-            && self
-                .units
+        let StoryLayout { units, height, float_bottom, frozen, origins: _, tables } = self;
+        *height == o.height
+            && *float_bottom == o.float_bottom
+            && *frozen == o.frozen
+            && *tables == o.tables
+            && units.len() == o.units.len()
+            && units
                 .iter()
                 .zip(&o.units)
                 .all(|(a, b)| a.top == b.top && a.height == b.height && a.below == b.below && a.block == b.block && a.notes == b.notes)

@@ -194,7 +194,23 @@ pub struct ParaLines {
 
 impl PartialEq for ParaLines {
     fn eq(&self, o: &Self) -> bool {
-        Rc::ptr_eq(&self.shaped, &o.shaped) && self.lines == o.lines && self.from == o.from && self.width == o.width && self.x0 == o.x0
+        let ParaLines {
+            shaped,
+            lines,
+            from,
+            width,
+            x0,
+            para: _,
+            borders: _,
+            drawn: _,
+            compat: _,
+            review: _,
+            ul_trail_space: _,
+            theme: _,
+            colour_map: _,
+            backdrop: _,
+        } = self;
+        Rc::ptr_eq(shaped, &o.shaped) && *lines == o.lines && *from == o.from && *width == o.width && *x0 == o.x0
     }
 }
 

@@ -25,7 +25,8 @@ pub struct Expansion {
 
 impl PartialEq for Expansion {
     fn eq(&self, o: &Self) -> bool {
-        self.field == o.field && self.part == o.part && self.size == o.size && Rc::ptr_eq(&self.content, &o.content)
+        let Expansion { field, part, size, content } = self;
+        *field == o.field && *part == o.part && *size == o.size && Rc::ptr_eq(content, &o.content)
     }
 }
 
@@ -38,7 +39,8 @@ pub struct Expansions {
 
 impl PartialEq for Expansions {
     fn eq(&self, o: &Self) -> bool {
-        self.revision == o.revision
+        let Expansions { paras: _, rows: _, revision } = self;
+        *revision == o.revision
     }
 }
 

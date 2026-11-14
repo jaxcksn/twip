@@ -111,28 +111,44 @@ impl Default for FlowState {
 
 impl PartialEq for FlowState {
     fn eq(&self, o: &Self) -> bool {
-        let style = match (&self.prev, &o.prev) {
+        let FlowState {
+            prev,
+            prev_after,
+            keep_top,
+            first_para,
+            note_rest,
+            line_no,
+            break_before,
+            balanced_after,
+            page_notes,
+            upright_at,
+            beside_at,
+            table_rest,
+            letter_break,
+            frames_left,
+        } = self;
+        let style = match (prev, &o.prev) {
             (None, None) => true,
             (Some(x), Some(y)) => Rc::ptr_eq(x, y) || **x == **y,
             _ => false,
         };
         style
-            && self.prev_after == o.prev_after
-            && self.keep_top == o.keep_top
-            && self.first_para == o.first_para
-            && self.note_rest.is_empty()
+            && *prev_after == o.prev_after
+            && *keep_top == o.keep_top
+            && *first_para == o.first_para
+            && note_rest.is_empty()
             && o.note_rest.is_empty()
-            && self.page_notes.is_none()
+            && page_notes.is_none()
             && o.page_notes.is_none()
-            && self.line_no == o.line_no
-            && self.break_before == o.break_before
-            && self.balanced_after == o.balanced_after
-            && self.upright_at == o.upright_at
-            && self.beside_at == o.beside_at
-            && self.table_rest.is_none()
+            && *line_no == o.line_no
+            && *break_before == o.break_before
+            && *balanced_after == o.balanced_after
+            && *upright_at == o.upright_at
+            && *beside_at == o.beside_at
+            && table_rest.is_none()
             && o.table_rest.is_none()
-            && self.letter_break == o.letter_break
-            && self.frames_left == o.frames_left
+            && *letter_break == o.letter_break
+            && *frames_left == o.frames_left
     }
 }
 

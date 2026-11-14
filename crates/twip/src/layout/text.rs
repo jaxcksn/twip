@@ -46,12 +46,13 @@ pub struct PieceStyle {
 
 impl PartialEq for PieceStyle {
     fn eq(&self, o: &Self) -> bool {
-        let face = match (&self.face, &o.face) {
+        let PieceStyle { run, face, size, raise, squeeze_avg: _, half_em_spaces: _ } = self;
+        let face = match (face, &o.face) {
             (Some(a), Some(b)) => Rc::ptr_eq(a, b),
             (None, None) => true,
             _ => false,
         };
-        face && (Rc::ptr_eq(&self.run, &o.run) || *self.run == *o.run) && self.size == o.size && self.raise == o.raise
+        face && (Rc::ptr_eq(run, &o.run) || **run == *o.run) && *size == o.size && *raise == o.raise
     }
 }
 
