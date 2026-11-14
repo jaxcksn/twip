@@ -1040,7 +1040,8 @@ fn fit_greedy(
     let mut ws: Vec<f64> = Vec::new();
     let mut pen = left + lead.1;
     // How much wider the pieces so far count for breaking than they are drawn.
-    let mut drift = lead.0 - lead.1;
+    let lead_drift = lead.0 - lead.1;
+    let mut drift = lead_drift;
     if start == 0 && style.list_jc != "left" {
         let w: f64 = pieces.iter().take_while(|p| p.kind == Kind::ListNumber).map(|p| p.width).sum();
         pen -= if style.list_jc == "right" { w } else { w / 2.0 };
@@ -1126,7 +1127,7 @@ fn fit_greedy(
     };
     // Compat ≤ 14 measures the hyphen's fit and the hyphenation zone on the widths it fits with, not as drawn.
     let fit_shift = |k: usize| {
-        if frame.compat == Compat::Legacy { lead.0 - lead.1 + pieces[start..k].iter().map(|q| q.break_extra).sum::<f64>() } else { 0.0 }
+        if frame.compat == Compat::Legacy { lead_drift + pieces[start..k].iter().map(|q| q.break_extra).sum::<f64>() } else { 0.0 }
     };
     let mut i = start;
     while i < n {
