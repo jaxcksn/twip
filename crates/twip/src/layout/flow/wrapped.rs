@@ -14,7 +14,7 @@ use crate::layout::line::{Frame, Line, LineOrigin, ParaLines, apply_borders, ban
 use crate::layout::paragraph::{gap, lines_to_take, space_after, space_before};
 use crate::layout::space::{ColumnSpace, ParaSpace};
 use crate::layout::story::StoryEnv;
-use crate::layout::text::{FieldValues, Kind, Object, ShapedPara, para_id};
+use crate::layout::text::{FieldValues, Kind, Object, Piece, ShapedPara, para_id};
 use crate::layout::token::{At, NoteArea, NotePart};
 use crate::layout::units::EPS;
 
@@ -28,7 +28,12 @@ struct WrapIn<'a> {
     style: &'a ParaStyle,
     col: &'a ColumnSpace,
     sp: &'a ShapedPara,
+    pieces: &'a [Piece],
     n: usize,
+    cx0: f64,
+    cx1: f64,
+    compat: Compat,
+    floats: &'a [Placed],
     first_part: bool,
     top: f64,
     anchor: ParaId,
@@ -678,56 +683,8 @@ impl<'d> PageFill<'d, '_> {
         }
         // Pagination
         let nb = bands.len();
-        let mut fit = 0;
-        let mut areas = vec![(area.clone(), Vec::<NotePart>::new())];
-        for (bi_, (bt, segs)) in bands.iter().enumerate() {
-            let l = &segs[0];
-            let room = l.pitch - l.below;
-            let refs: Vec<(NoteKind, i64)> = segs.iter().flat_map(|l| (l.start..l.end).filter_map(|k| sp.note(pb.from + k))).collect();
-            let (mut a, mut rest) = areas.last().cloned().unwrap_or_default();
-            let lead = segs.len() == 1 && breaks_only(pieces, l) && l.end < n;
-            let tail = if bi_ + 1 == nb { after } else { 0.0 };
-            let note_tail = if refs.iter().any(|r| r.0 == NoteKind::Foot) { tail } else { 0.0 };
-            if !self.add_notes(&refs, &mut a, col, bt + room + note_tail, &mut rest, false, memos)? && !lead {
-                break;
-            }
-            let above =
-                if self.ctx.env.text.compat == Compat::Legacy && style.line_rule == LineRule::Auto && style.line > 1.0 { room } else { l.pitch };
-            if a.total() > 0.0 && !col.bottom.holds(bt + above + tail + a.total()) && !lead {
-                break;
-            }
-            areas.push((a, rest));
-            fit += 1;
-            if segs.iter().any(|l| matches!(l.hard, Some(Kind::PageBreak | Kind::ColumnBreak))) {
-                break;
-            }
-            if areas.last().is_some_and(|x| !x.1.is_empty()) {
-                break;
-            }
-        }
-        let hard = bands[..fit].iter().any(|(_, segs)| segs.iter().any(|l| matches!(l.hard, Some(Kind::PageBreak | Kind::ColumnBreak))));
-        let mut take = lines_to_take(nb, fit, hard, first_part, style.keep_lines, style.widow_control);
-        // Compat ≤ 14: widow and orphan control never moves a line set beside a wrapping float that ends in the body
-        // (above the page's note area); the lines from the last such one up stay.
-        if compat == Compat::Legacy && take < fit && !style.keep_lines {
-            let bottom = col.bottom.to_pt() - area.total();
-            let beside = |b: usize| {
-                let (bt, segs) = &bands[b];
-                let bb = bt + segs[0].pitch;
-                floats.iter().chain(&self.at.found).any(|f| {
-                    f.key.2 != float::UPRIGHT_TABLE
-                        && f.wrap != Wrap::None
-                        && f.excl[3] <= bottom + EPS
-                        && f.excl[1] < bb - EPS
-                        && f.excl[3] > *bt + EPS
-                        && f.excl[0] < cx1 - EPS
-                        && f.excl[2] > cx0 + EPS
-                })
-            };
-            if let Some(b) = (take..fit).rev().find(|&b| beside(b)) {
-                take = b + 1;
-            }
-        }
+        let w = WrapIn { p, pb, style, col, sp, pieces, n, cx0, cx1, compat, floats: &floats, first_part, top, anchor, after };
+        let (fit, areas, mut take) = self.page_bands(&w, &bands, area, memos)?;
         // A paragraph whose first line goes on to the next page leaves the frames before it on this page where their
         // own paragraph falls on it: one placed by the page or the margin always, one from the text when its height
         // fits below that place. They end at a frame that starts with a page break.
@@ -899,8 +856,70 @@ impl<'d> PageFill<'d, '_> {
                 return Ok(if at_top { Stop::Page } else { Stop::Full });
             }
         }
-        let w = WrapIn { p, pb, style, col, sp, n, first_part, top, anchor, after };
         self.emit_wrapped(&w, &bands, &areas, take, s, page_end, cur)
+    }
+
+    // Lines that fit with their notes
+    fn page_bands(
+        &mut self,
+        w: &WrapIn,
+        bands: &[(f64, Vec<Line>)],
+        area: &NoteArea,
+        memos: &mut Memos,
+    ) -> Result<(usize, Vec<(NoteArea, Vec<NotePart>)>, usize), Yield> {
+        let &WrapIn { pb, style, col, sp, pieces, n, cx0, cx1, compat, floats, first_part, after, .. } = w;
+        let nb = bands.len();
+        let mut fit = 0;
+        let mut areas = vec![(area.clone(), Vec::<NotePart>::new())];
+        for (bi_, (bt, segs)) in bands.iter().enumerate() {
+            let l = &segs[0];
+            let room = l.pitch - l.below;
+            let refs: Vec<(NoteKind, i64)> = segs.iter().flat_map(|l| (l.start..l.end).filter_map(|k| sp.note(pb.from + k))).collect();
+            let (mut a, mut rest) = areas.last().cloned().unwrap_or_default();
+            let lead = segs.len() == 1 && breaks_only(pieces, l) && l.end < n;
+            let tail = if bi_ + 1 == nb { after } else { 0.0 };
+            let note_tail = if refs.iter().any(|r| r.0 == NoteKind::Foot) { tail } else { 0.0 };
+            if !self.add_notes(&refs, &mut a, col, bt + room + note_tail, &mut rest, false, memos)? && !lead {
+                break;
+            }
+            let above =
+                if self.ctx.env.text.compat == Compat::Legacy && style.line_rule == LineRule::Auto && style.line > 1.0 { room } else { l.pitch };
+            if a.total() > 0.0 && !col.bottom.holds(bt + above + tail + a.total()) && !lead {
+                break;
+            }
+            areas.push((a, rest));
+            fit += 1;
+            if segs.iter().any(|l| matches!(l.hard, Some(Kind::PageBreak | Kind::ColumnBreak))) {
+                break;
+            }
+            if areas.last().is_some_and(|x| !x.1.is_empty()) {
+                break;
+            }
+        }
+        let hard = bands[..fit].iter().any(|(_, segs)| segs.iter().any(|l| matches!(l.hard, Some(Kind::PageBreak | Kind::ColumnBreak))));
+        let mut take = lines_to_take(nb, fit, hard, first_part, style.keep_lines, style.widow_control);
+        // Compat ≤ 14: widow and orphan control never moves a line set beside a wrapping float that ends in the body
+        // (above the page's note area); the lines from the last such one up stay.
+        if compat == Compat::Legacy && take < fit && !style.keep_lines {
+            let bottom = col.bottom.to_pt() - area.total();
+            let beside = |b: usize| {
+                let (bt, segs) = &bands[b];
+                let bb = bt + segs[0].pitch;
+                floats.iter().chain(&self.at.found).any(|f| {
+                    f.key.2 != float::UPRIGHT_TABLE
+                        && f.wrap != Wrap::None
+                        && f.excl[3] <= bottom + EPS
+                        && f.excl[1] < bb - EPS
+                        && f.excl[3] > *bt + EPS
+                        && f.excl[0] < cx1 - EPS
+                        && f.excl[2] > cx0 + EPS
+                })
+            };
+            if let Some(b) = (take..fit).rev().find(|&b| beside(b)) {
+                take = b + 1;
+            }
+        }
+        Ok((fit, areas, take))
     }
 
     // Final take, notes and lines
@@ -915,7 +934,7 @@ impl<'d> PageFill<'d, '_> {
         page_end: bool,
         cur: &mut ColumnCursor,
     ) -> Result<Stop, Yield> {
-        let &WrapIn { p, pb, style, col, sp, n, first_part, top, anchor, after } = w;
+        let &WrapIn { p, pb, style, col, sp, n, first_part, top, anchor, after, .. } = w;
         let (pos, carry, y, empty, area, out) = cur.parts();
         let nb = bands.len();
         let (a, rest) = areas[take.min(areas.len() - 1)].clone();
