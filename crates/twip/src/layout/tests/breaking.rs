@@ -2632,6 +2632,17 @@ fn a_compat_14_line_after_one_fitted_with_a_slack_stays_in_its_pieces() {
 }
 
 #[test]
+fn a_compat_14_line_pushed_from_two_pieces_reuses_its_strip_while_it_starts_above_its_end() {
+    // A (1692 to 2450.94 tw) leaves two pieces of the third body line, which goes to A's bottom, beside B (2450 to
+    // 3208.94). The fifth line has 252.04 tw left in that strip, less than its height: it stays beside B.
+    let a = three_line_frame(3200, 2880, r#"w:vAnchor="page" w:y="1693""#, "", "A");
+    let b = three_line_frame(4640, 2880, r#"w:vAnchor="text" w:y="0""#, "<w:suppressOverlap/>", "B");
+    let Some(l) = body_after_frames(&(a + &b)) else { return };
+    let fifth: Vec<f64> = l.iter().filter(|x| (x.1 - (2956.90 + 206.4)).abs() < 1.5).map(|x| x.0).collect();
+    assert!(fifth.len() == 2 && (fifth[1] - 7699.0).abs() < 0.5, "{l:?}");
+}
+
+#[test]
 fn a_compat_14_line_after_one_moved_down_goes_below_a_float_it_would_overhang() {
     // The third body line goes to A's bottom (2450.94 tw), 252 tw down; B (2451 to 3209.94) cuts the next three. The
     // fourth line below it would start 0.06 tw inside B: it goes to B's bottom, full width.

@@ -2103,8 +2103,8 @@ impl<'d> PageFill<'d, '_> {
         // Compat ≤ 14 takes the floats in the order they were placed. The strip a line was fitted into with a slack
         // (its pieces and where they end) serves the next lines too while it ends below their top, by at least that
         // slack when it was fitted in one piece, unless a float starts between its end and the line's bottom. Once a
-        // line went down in its own query to a strip of two or more pieces, a frame among the floats over its band,
-        // the paragraph's later lines reuse a strip only while the whole line fits in it, and their queries take the
+        // line fitted at its top in one piece went down in its own query to a strip of two or more pieces, a frame
+        // among the floats over its band, the paragraph's later lines reuse a strip only while the whole line fits in it, and their queries take the
         // line's height plus that drop as the slack.
         // ponytail: a strip found with no slack isn't kept (the next line's own query gives the same pieces where
         // measured), both reset with each paragraph, and a second drop keeps the first slack.
@@ -2261,7 +2261,8 @@ impl<'d> PageFill<'d, '_> {
                                     .filter(frame)
                                     .any(|f| f.excl[1] < t + h - EPS && f.excl[3] > yy + EPS && f.excl[0] < cx1 - EPS && f.excl[2] > cx0 + EPS)
                             };
-                            let drop = if first >= 2 && framed() { t - yy } else { 0.0 };
+                            // Only a line fitted at its top in one piece remembers its drop.
+                            let drop = if one.is_some() && first >= 2 && framed() { t - yy } else { 0.0 };
                             fitted = Some((pieces_of(&ok), end_of(&ok), one.map_or(0.0, |_| slack), drop));
                             forced = Some(pieces_of(&ok));
                             moved = Some(t);
