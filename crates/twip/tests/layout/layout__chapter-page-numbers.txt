@@ -46,7 +46,7 @@ page 0 12240 15840
   1440 13558 granted agreement. Marketing promotion division date profitable insights the
   1440 13796 meeting forecast hereby vendors practical. Schedule state entry estimate
   1440 14033 management action budget inventory relevant group relief results. Region ledger
-  4800 15076 Page 2-1 and w:pgNum 2-1
+  4800 15076 Page 2-1 and w:pgNum 1-1
 page 1 12240 15840
   1440 1616 brief usage cause colleague partner section notice claim team export. Staff
   1440 1853 newsletter.
@@ -62,7 +62,7 @@ page 1 12240 15840
   1440 4388 partner section notice claim team export staff. Newsletter review matter presenter
   1440 4625 advisor account served savings pilot receipt corporate requirement. Standard fact.
   1440 5022 End of section 1 (hyphen separator).
-  4800 15076 Page 2-2 and w:pgNum 2-2
+  4800 15076 Page 2-2 and w:pgNum 1-2
 page 2 12240 15840
   1440 1776 3.Gamma
   1440 2041 Pilot receipt corporate requirement standard fact that products distribution filed

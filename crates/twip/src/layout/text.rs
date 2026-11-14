@@ -1746,7 +1746,7 @@ pub fn shape_space(
         match inl {
             Inline::FieldBegin { kind: Some(kind), .. } => {
                 let code = spans.iter().find(|s| s.begin == k).map(|s| crate::docx::fields::code_text(&para.inlines, *s)).unwrap_or_default();
-                let chapter = fields.chapters.as_ref().and_then(|c| c.get(&ParaId(para.id))).filter(|_| *kind == FieldKind::Page);
+                let chapter = fields.chapters.as_ref().and_then(|c| c.get(&ParaId(para.id))).filter(|_| matches!(kind, FieldKind::Page | FieldKind::PgNum));
                 space.fields.push(fields.value(kind, code.trim()).map(|v| chapter.cloned().unwrap_or_default() + &v))
             }
             Inline::NoteRef { kind, id, .. } => space.notes.push(notes.get(&(*kind, *id)).cloned().unwrap_or_default()),
@@ -1780,14 +1780,17 @@ pub struct FieldValues {
     /// The chapter number and separator page numbers lead with: the page's (headers and footers), or each
     /// paragraph's (the body).
     pub chapter: Option<String>,
+    /// A header's or footer's `w:pgNum` chapter number: its section's.
+    pub section_chapter: Option<String>,
     pub chapters: Option<Rc<HashMap<ParaId, String>>>,
 }
 
 impl FieldValues {
     pub fn value(&self, kind: &FieldKind, code: &str) -> Option<String> {
         match kind {
-            FieldKind::Page => {
-                self.page.clone().map(|p| self.chapter.clone().unwrap_or_default() + &format_field(&p, code, self.page_fmt.as_deref()))
+            FieldKind::Page | FieldKind::PgNum => {
+                let chapter = if *kind == FieldKind::PgNum { &self.section_chapter } else { &self.chapter };
+                self.page.clone().map(|p| chapter.clone().unwrap_or_default() + &format_field(&p, code, self.page_fmt.as_deref()))
             }
             FieldKind::NumPages => self.num_pages.clone().map(|p| format_field(&p, code, None)),
             FieldKind::SectionPages => self.section_pages.clone().map(|p| format_field(&p, code, None)),

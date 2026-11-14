@@ -1921,7 +1921,7 @@ impl Reader {
                     let view = FieldView::Result;
                     out.push(Inline::FieldBegin {
                         id,
-                        kind: Some(FieldKind::Page),
+                        kind: Some(FieldKind::PgNum),
                         lock: false,
                         dirty: false,
                         view,

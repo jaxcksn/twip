@@ -153,6 +153,7 @@ fn para(p: &Paragraph, depth: usize, f: &mut BTreeSet<&'static str>) {
             Inline::FieldBegin { kind, run: r, .. } => {
                 if let Some(
                     FieldKind::Page
+                    | FieldKind::PgNum
                     | FieldKind::NumPages
                     | FieldKind::SectionPages
                     | FieldKind::Section

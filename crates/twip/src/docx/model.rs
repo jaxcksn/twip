@@ -293,6 +293,9 @@ pub enum FieldView {
 #[derive(Clone, Debug, PartialEq)]
 pub enum FieldKind {
     Page,
+    /// `w:pgNum`: a PAGE field whose code is written for it; in a header or footer its chapter number is its
+    /// section's.
+    PgNum,
     NumPages,
     SectionPages,
     Section,

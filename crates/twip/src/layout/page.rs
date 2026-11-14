@@ -272,6 +272,7 @@ impl<'d> Paginator<'d, '_> {
             style_refs: Vec::new(),
             page_fmt: self.sections[si].pg_fmt.clone(),
             chapter: None,
+            section_chapter: None,
             chapters: self.chapters.clone(),
         }
     }
@@ -768,10 +769,11 @@ pub(crate) fn fields_used(fields: &BodyFields, blocks: &[&Block]) -> BodyFields 
                         }
                         let Inline::FieldBegin { kind: Some(kind), .. } = i else { continue };
                         match kind {
-                            FieldKind::Page => {
+                            FieldKind::Page | FieldKind::PgNum => {
                                 out.page.clone_from(&all.page);
                                 out.page_fmt.clone_from(&all.page_fmt);
                                 out.chapter.clone_from(&all.chapter);
+                                out.section_chapter.clone_from(&all.section_chapter);
                                 out.chapters.clone_from(&all.chapters);
                             }
                             FieldKind::NumPages => out.num_pages.clone_from(&all.num_pages),

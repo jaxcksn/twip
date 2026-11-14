@@ -629,16 +629,18 @@ pub(crate) fn hf_fields(run: &PassRun, cx: &PassCx, i: usize) -> FieldValues {
         style_refs: style_refs(&cx.wanted, &run.pages, &cx.paras, i),
         page_fmt: cx.doc.sections[si].pg_fmt.clone(),
         chapter: page_chapter(cx, &run.pages, i),
+        section_chapter: cx.chapters.sections.get(si).cloned().flatten(),
         chapters: None,
     }
 }
 
 /// Chapter numbers (`w:pgNumType w:chapStyle`): each body paragraph's page number prefix, and the headings' levels and
-/// numbers, in document order.
+/// numbers, in document order, and each section's chapter number for the `w:pgNum` of its headers and footers.
 #[derive(Default)]
 struct Chapters {
     body: Option<Rc<HashMap<ParaId, String>>>,
     heads: Vec<(ParaId, i64, String)>,
+    sections: Vec<Option<String>>,
 }
 
 /// A heading's level and chapter number: a "heading N" paragraph numbered through its style, its label without the
@@ -667,19 +669,28 @@ fn chapters(doc: &Document) -> Chapters {
         }
     }
     let mut paras = Vec::new();
-    doc.sections.iter().enumerate().for_each(|(si, s)| walk(&s.blocks, si, &mut paras));
+    let mut starts = Vec::new();
+    doc.sections.iter().enumerate().for_each(|(si, s)| {
+        starts.push(paras.len());
+        walk(&s.blocks, si, &mut paras)
+    });
     let heads: Vec<(usize, i64, String)> = paras.iter().enumerate().filter_map(|(k, (_, p))| chapter_of(r, p).map(|(l, t)| (k, l, t))).collect();
+    // The last heading of the section's level at or before paragraph `k`; before the first, the first.
+    let at = |si: usize, k: usize| {
+        let (level, sep) = doc.sections[si].chapter.as_ref()?;
+        let mut of_level = heads.iter().filter(|h| h.1 == *level);
+        of_level.clone().take_while(|h| h.0 <= k).last().or_else(|| of_level.next()).map(|h| format!("{}{sep}", h.2))
+    };
     let mut body = HashMap::new();
     for (k, (si, p)) in paras.iter().enumerate() {
-        let Some((level, sep)) = &doc.sections[*si].chapter else { continue };
-        // The last heading at or before the paragraph; before the first, the first.
-        let mut of_level = heads.iter().filter(|h| h.1 == *level);
-        if let Some(h) = of_level.clone().take_while(|h| h.0 <= k).last().or_else(|| of_level.next()) {
-            body.insert(ParaId(p.id), format!("{}{sep}", h.2));
+        if let Some(c) = at(*si, k) {
+            body.insert(ParaId(p.id), c);
         }
     }
+    // A header's or footer's `w:pgNum`: the heading in force at the section's first paragraph, on every page of it.
+    let sections = starts.iter().enumerate().map(|(si, &k)| at(si, k)).collect();
     let heads = heads.into_iter().map(|(k, l, t)| (ParaId(paras[k].1.id), l, t)).collect();
-    Chapters { body: Some(Rc::new(body)), heads }
+    Chapters { body: Some(Rc::new(body)), heads, sections }
 }
 
 /// The chapter prefix of page `i`'s headers and footers: from the last heading at or before the page's end.

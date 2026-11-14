@@ -137,7 +137,7 @@ fn varies_by_page(blocks: &[Block]) -> bool {
         Block::Para(p) => p
             .inlines
             .iter()
-            .any(|i| matches!(i, Inline::FieldBegin { kind: Some(FieldKind::Page | FieldKind::Section | FieldKind::SectionPages), .. })),
+            .any(|i| matches!(i, Inline::FieldBegin { kind: Some(FieldKind::Page | FieldKind::PgNum | FieldKind::Section | FieldKind::SectionPages), .. })),
         Block::Table(t) => t.rows.iter().any(|r| r.cells.iter().any(|c| varies_by_page(&c.blocks))),
     })
 }
