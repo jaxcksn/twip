@@ -638,7 +638,8 @@ impl Spelling<'_> {
     /// Adds a dictionary for its language.
     pub fn add_dictionary(&mut self, dictionary: Dictionary) -> Result<(), Error> {
         let s = &mut *self.session;
-        s.services.spelling.add_dictionary(&dictionary.language, &dictionary.aff.0, &dictionary.dic.0).map_err(Error::invalid)?;
+        s.services.add_dictionary(&dictionary).map_err(Error::invalid)?;
+        s.editor.set_hyphenation(s.services.hyphenation.clone());
         s.changed(Vec::new());
         Ok(())
     }
@@ -758,12 +759,28 @@ mod tests {
     }
 
     #[test]
+    fn a_dictionarys_hyphenation_patterns_reach_every_document() {
+        let (mut engine, id, _) = open("editor/FX-services.docx");
+        let s = engine.session(id).expect("a session");
+        let patterns = Bytes(b"UTF-8\nhy3ph\n".to_vec());
+        s.spelling()
+            .add_dictionary(Dictionary { language: "en-US".into(), aff: Bytes(Vec::new()), dic: Bytes(Vec::new()), hyphenation: Some(patterns) })
+            .expect("loads");
+        let has = |s: &mut crate::api::session::Session| {
+            s.with_editor(|e| e.document().hyphenation.as_ref().is_some_and(|h| h.for_language("en-US").is_some()))
+        };
+        assert!(has(s));
+        s.new_document();
+        assert!(has(s), "a new document keeps them");
+    }
+
+    #[test]
     fn spelling_checks_ignores_adds_and_menus() {
         let (mut engine, id, events) = open("editor/FX-services.docx");
         let s = engine.session(id).expect("a session");
         let (aff, dic) = (fixture("dictionaries/en_US.aff"), fixture("dictionaries/en_US.dic"));
         s.spelling().load_user_words("en-US", &["brwon".to_string()]);
-        s.spelling().add_dictionary(Dictionary { language: "en-US".into(), aff: Bytes(aff), dic: Bytes(dic) }).expect("loads");
+        s.spelling().add_dictionary(Dictionary { language: "en-US".into(), aff: Bytes(aff), dic: Bytes(dic), hyphenation: None }).expect("loads");
         assert_eq!(s.state().spelling.misspellings, 3, "Teh, quikc, zorbly");
         assert!(s.spelling().suggestions("quikc", None).contains(&"quick".to_string()));
         let next = s.spelling().next_misspelling().expect("one");

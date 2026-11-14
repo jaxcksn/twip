@@ -60,7 +60,7 @@
       "expect": {
         "caret": {
           "para": 20,
-          "page": 1,
+          "page": 0,
           "depth": 2
         }
       }

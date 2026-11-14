@@ -226,7 +226,7 @@ impl Editor {
             let mut lp = next.run_props(&para.base, &Default::default());
             lp.merge(&level.rpr);
             let picture = next.numbering.bullet_image(&level);
-            let label = ListLabel { text, run: next.run_style(&lp), jc: level.jc.clone(), suff: level.suff.clone(), picture };
+            let label = ListLabel { text, run: next.run_style(&lp), jc: level.jc.clone(), suff: level.suff.clone(), picture, legacy: level.legacy };
             let base = next.run_from_xml(&para.base, None, &scx);
             let grey = Rc::new(RunStyle { color: Some(0x80_8080), ..(*base).clone() });
             out.push(Block::Para(Paragraph {
@@ -236,6 +236,7 @@ impl Editor {
                 inlines: vec![Inline::Text("\u{2014}".repeat(10), grey)],
                 src: None,
                 id: next_para_id(),
+                div: None,
                 controls: Vec::new(),
             }));
         }

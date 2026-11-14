@@ -5,13 +5,13 @@ page 0 12240 15840
   1440 2996 Visit the example site for more.
   1440 3394 Keep this obsolete sentence.
   1440 3791 A picture sits beside this text.
-  1553 4198 Cell one
-  6233 4198 Cell two
-  1553 4606 Cell three
-  6233 4606 Cell four
-  1440 5013 End.
-  cell 1445 4012 6125 4420
-  cell 6125 4012 10805 4420
-  cell 1445 4420 6125 4827
-  cell 6125 4420 10805 4827
+  1553 4953 Cell one
+  6233 4953 Cell two
+  1553 5360 Cell three
+  6233 5360 Cell four
+  1440 5768 End.
+  cell 1445 4767 6125 5174
+  cell 6125 4767 10805 5174
+  cell 1445 5174 6125 5582
+  cell 6125 5174 10805 5582
   float 7920 3615 9360 4695

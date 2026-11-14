@@ -33,6 +33,7 @@ pub(super) fn empty_cell(like: &Cell) -> Cell {
         inlines: vec![Inline::Text(String::new(), p.mark.clone())],
         src: None,
         id: crate::docx::next_para_id(),
+        div: None,
         controls: Vec::new(),
     })];
     c
@@ -505,6 +506,7 @@ impl Editor {
             inlines: vec![Inline::Text(String::new(), p.mark.clone())],
             src: None,
             id: crate::docx::next_para_id(),
+            div: None,
             controls: Vec::new(),
         };
         let border = Some(crate::docx::props::Border { style: "single".into(), width: 0.5, space: 0.0, shadow: false, color: None });
@@ -523,6 +525,7 @@ impl Editor {
             text_direction: "lrTb".into(),
             no_wrap: false,
             fit_text: false,
+            hide_mark: false,
             direct: Default::default(),
             blocks: vec![Block::Para(cell_para())],
             controls: Vec::new(),
@@ -533,7 +536,9 @@ impl Editor {
             style_id: grid_style.then(|| "TableGrid".to_string()),
             width: crate::docx::props::Width::Auto,
             jc: crate::docx::props::Jc::Left,
+            own_jc: None,
             ind: 0.0,
+            ind_pct: None,
             ind_set: true,
             borders: if grid_style {
                 Default::default()
@@ -558,6 +563,12 @@ impl Editor {
                     w_after: None,
                     ind: None,
                     jc: None,
+                    div: None,
+                    borders: None,
+                    shading: None,
+                    vanished: false,
+                    cell_spacing: None,
+                    run: None,
                     cells: (0..ncols).map(|_| cell(w)).collect(),
                     src: None,
                     controls: Vec::new(),

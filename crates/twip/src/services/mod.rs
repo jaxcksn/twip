@@ -13,6 +13,8 @@ pub mod styles;
 #[derive(Default)]
 pub struct Services {
     pub spelling: spelling::Spellers,
+    /// The hyphenation patterns the host supplied with its dictionaries.
+    pub hyphenation: Option<crate::layout::hyphenate::Hyphenation>,
     pub announcer: a11y::Announcer,
     /// The paragraphs the accessibility tree read last, for its next build.
     pub tree_cache: a11y::TreeCache,
@@ -29,6 +31,18 @@ pub struct Services {
 }
 
 impl Services {
+    /// Adds a dictionary's spelling and hyphenation patterns.
+    pub fn add_dictionary(&mut self, d: &crate::api::engine::Dictionary) -> Result<(), String> {
+        if let Some(h) = &d.hyphenation {
+            let patterns = crate::layout::hyphenate::Patterns::parse(&String::from_utf8_lossy(&h.0));
+            self.hyphenation = Some(self.hyphenation.clone().unwrap_or_default().with(&d.language, patterns));
+        }
+        if d.hyphenation.is_some() && d.aff.0.is_empty() && d.dic.0.is_empty() {
+            return Ok(());
+        }
+        self.spelling.add_dictionary(&d.language, &d.aff.0, &d.dic.0)
+    }
+
     /// Another document is open: what was reported about the last one goes.
     pub fn document_replaced(&mut self, doc: &crate::docx::Document) {
         self.revision_count = None;

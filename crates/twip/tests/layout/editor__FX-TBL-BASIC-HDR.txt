@@ -1,7 +1,7 @@
 page 0 12240 15840
-  1440 7112 Body paragraph 1.
-  1440 7510 Body paragraph 2.
-  1440 7907 Body paragraph 3.
+  1440 7520 Body paragraph 1.
+  1440 7917 Body paragraph 2.
+  1440 8314 Body paragraph 3.
   1553 906 A1, the document starts
   1553 1143 with this table
   7793 906 C1
@@ -22,12 +22,12 @@ page 0 12240 15840
   1553 5255 T2 R3 C1
   4673 5255 T2 R3 C2
   7793 5255 T2 R3 C3
-  1553 5662 T3 R1 C1
-  4553 5662 T3 R1 C2
-  1553 6070 T3 R2 C1
-  4553 6070 T3 R2 C2
-  1440 6477 The second and third tables above are adjacent in the XML, with no paragraph between
-  1440 6715 them (Word joins them into one table).
+  1553 6070 T3 R1 C1
+  4553 6070 T3 R1 C2
+  1553 6477 T3 R2 C1
+  4553 6477 T3 R2 C2
+  1440 6885 The second and third tables above are separated by an empty paragraph, so they stay
+  1440 7122 two tables (with none, Word joins them).
   cell 1445 720 4565 1365
   cell 4565 720 7685 1365
   cell 7685 720 10805 1365
@@ -46,7 +46,7 @@ page 0 12240 15840
   cell 1445 5069 4565 5476
   cell 4565 5069 7685 5476
   cell 7685 5069 10805 5476
-  cell 1445 5476 4445 5884
-  cell 4445 5476 7445 5884
   cell 1445 5884 4445 6291
   cell 4445 5884 7445 6291
+  cell 1445 6291 4445 6699
+  cell 4445 6291 7445 6699

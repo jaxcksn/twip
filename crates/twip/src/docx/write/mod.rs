@@ -17,7 +17,7 @@ use std::rc::Rc;
 use roxmltree::Node;
 
 use super::review::{CommentId, People, RangeKind, RangeMark, RevisionMark, SectionChange};
-use super::xml::{MC, W, child, is, is_w};
+use super::xml::{MC, W, attr, child, is, is_w};
 use super::*;
 
 mod comments;
@@ -92,7 +92,7 @@ pub fn edited_parts(doc: &Document) -> Result<Vec<(String, Vec<u8>)>, String> {
     fonts::font_renames(doc, &mut parts)?;
     filled_placeholders(doc, &mut parts)?;
     review_parts(doc, &mut parts)?;
-    default_tab_part(doc, &mut parts)?;
+    settings_part(doc, &mut parts)?;
     add_images(&src.package, &doc.images, &mut parts)?;
     data_parts(doc, &mut parts)?;
     Ok(parts)
@@ -171,41 +171,73 @@ const BEFORE: &[&str] = &[
 const BEFORE_DEFAULT_TAB: &[&str] =
     &["trackRevisions", "doNotTrackMoves", "doNotTrackFormatting", "documentProtection", "autoFormatOverride", "styleLockTheme", "styleLockQFSet"];
 
-/// The settings part with `w:defaultTabStop` at the document's default tab spacing, when it changed since reading.
-// shortcut: a document with no settings part keeps the default spacing it was read with.
-fn default_tab_part(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
+/// CT_Settings' children from `w:defaultTabStop` to `w:doNotHyphenateCaps`, in order.
+const TAB_AND_HYPHENATION: &[&str] = &["defaultTabStop", "autoHyphenation", "consecutiveHyphenLimit", "hyphenationZone", "doNotHyphenateCaps"];
+
+/// The settings part with the default tab spacing and the hyphenation settings, where they changed since reading.
+// shortcut: a document with no settings part keeps the settings it was read with.
+fn settings_part(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
     let src = doc.source.as_ref().ok_or("the document was not read for editing")?;
     let Some(name) = package::related(&src.package, parts, &src.main, SETTINGS)? else { return Ok(()) };
     let Some(xml) = package::read(&src.package, parts, &name)? else { return Ok(()) };
-    let dom = roxmltree::Document::parse(&xml).map_err(|e| e.to_string())?;
+    let (read, now) = (super::reader::read_settings(Some(&xml)), &doc.settings);
+    let w = {
+        let dom = roxmltree::Document::parse(&xml).map_err(|e| e.to_string())?;
+        match dom.root_element().lookup_prefix(W) {
+            Some(p) if !p.is_empty() => format!("{p}:"),
+            _ => String::new(),
+        }
+    };
+    let mut out = xml.clone();
+    let tw = |v: f64| (v * 20.0).round() as i64;
+    if (read.default_tab - now.default_tab).abs() >= 0.025 {
+        set_setting(&mut out, "defaultTabStop", Some(format!("<{w}defaultTabStop {w}val=\"{}\"/>", tw(now.default_tab))))?;
+    }
+    if read.auto_hyphenation != now.auto_hyphenation {
+        set_setting(&mut out, "autoHyphenation", now.auto_hyphenation.then(|| format!("<{w}autoHyphenation/>")))?;
+    }
+    if read.consecutive_hyphen_limit != now.consecutive_hyphen_limit {
+        let el = (now.consecutive_hyphen_limit > 0).then(|| format!("<{w}consecutiveHyphenLimit {w}val=\"{}\"/>", now.consecutive_hyphen_limit));
+        set_setting(&mut out, "consecutiveHyphenLimit", el)?;
+    }
+    if tw(read.hyphenation_zone) != tw(now.hyphenation_zone) {
+        set_setting(&mut out, "hyphenationZone", Some(format!("<{w}hyphenationZone {w}val=\"{}\"/>", tw(now.hyphenation_zone))))?;
+    }
+    if read.do_not_hyphenate_caps != now.do_not_hyphenate_caps {
+        set_setting(&mut out, "doNotHyphenateCaps", now.do_not_hyphenate_caps.then(|| format!("<{w}doNotHyphenateCaps/>")))?;
+    }
+    if out != xml {
+        package::set(parts, &name, out.into_bytes());
+    }
+    Ok(())
+}
+
+/// Replaces, removes (`el` of `None`) or adds the settings child `name`, where the schema puts it.
+fn set_setting(xml: &mut String, name: &str, el: Option<String>) -> Result<(), String> {
+    let dom = roxmltree::Document::parse(xml).map_err(|e| e.to_string())?;
     let root = dom.root_element();
-    let old = root.children().find(|c| is_w(*c, "defaultTabStop"));
-    let read = old.and_then(|c| c.attribute((W, "val"))?.parse::<f64>().ok()).map(|t| t / 20.0).filter(|t| *t > 0.0).unwrap_or(36.0);
-    if (read - doc.settings.default_tab).abs() < 0.025 {
+    let el = el.unwrap_or_default();
+    if let Some(c) = root.children().find(|c| is_w(*c, name)) {
+        let r = c.range();
+        drop(dom);
+        xml.replace_range(r, &el);
         return Ok(());
     }
-    let w = match root.lookup_prefix(W) {
-        Some(p) if !p.is_empty() => format!("{p}:"),
-        _ => String::new(),
-    };
-    let el = format!("<{w}defaultTabStop {w}val=\"{}\"/>", (doc.settings.default_tab * 20.0).round() as i64);
-    let mut out = xml.clone();
-    match old {
-        Some(c) => out.replace_range(c.range(), &el),
-        None => {
-            let after =
-                root.children().rfind(|c| c.is_element() && BEFORE.iter().chain(BEFORE_DEFAULT_TAB).any(|b| is_w(*c, b))).map(|c| c.range().end);
-            let r = root.range();
-            let tag = &xml[r.clone()];
-            if after.is_none() && tag.ends_with("/>") {
-                let name = tag[1..].split(|c: char| c.is_whitespace() || c == '/' || c == '>').next().unwrap_or("");
-                out.replace_range(r.end - 2..r.end, &format!(">{el}</{name}>"));
-            } else {
-                out.insert_str(after.unwrap_or_else(|| r.start + tag.find('>').map_or(0, |e| e + 1)), &el);
-            }
-        }
+    if el.is_empty() {
+        return Ok(());
     }
-    package::set(parts, &name, out.into_bytes());
+    let earlier = TAB_AND_HYPHENATION.iter().take_while(|n| **n != name);
+    let before: Vec<&str> = BEFORE.iter().chain(BEFORE_DEFAULT_TAB).chain(earlier).copied().collect();
+    let after = root.children().rfind(|c| c.is_element() && before.iter().any(|b| is_w(*c, b))).map(|c| c.range().end);
+    let r = root.range();
+    let tag = xml[r.clone()].to_string();
+    drop(dom);
+    if after.is_none() && tag.ends_with("/>") {
+        let tag_name = tag[1..].split(|c: char| c.is_whitespace() || c == '/' || c == '>').next().unwrap_or("").to_string();
+        xml.replace_range(r.end - 2..r.end, &format!(">{el}</{tag_name}>"));
+    } else {
+        xml.insert_str(after.unwrap_or_else(|| r.start + tag.find('>').map_or(0, |e| e + 1)), &el);
+    }
     Ok(())
 }
 
@@ -1242,8 +1274,10 @@ impl<'a, 'i> Saver<'a, 'i> {
             && a.grid == b.grid
             && (&a.change, &a.grid_change) == (&b.change, &b.grid_change)
             && a.width == b.width
-            && (&a.style_id, a.look, a.jc, a.ind, a.floating) == (&b.style_id, b.look, b.jc, b.ind, b.floating);
-        if !same_rows {
+            && (&a.style_id, a.look, a.jc, a.ind, a.ind_pct, a.floating) == (&b.style_id, b.look, b.jc, b.ind, b.ind_pct, b.floating);
+        // Tables read as one (nothing between them) are written as one.
+        let joined = a.src.as_ref().is_some_and(|r| self.tables.get(&r.start).is_some_and(|n| n.range().end != r.end));
+        if !same_rows || joined {
             // Rows or cells came or went: the table is written again, its kept rows from their source.
             let range = (**a.src.as_ref().ok_or("a table without its source")?).clone();
             let text = self.table_xml(Some(a), b)?;
@@ -1432,7 +1466,7 @@ impl<'a, 'i> Saver<'a, 'i> {
                             };
                             fix.push(self.set_child(p, "jc", format!("<{w}jc {w}val=\"{v}\"/>"), before("jc")));
                         }
-                        if a.ind != t.ind {
+                        if (a.ind, a.ind_pct) != (t.ind, t.ind_pct) {
                             fix.push(self.set_child(p, "tblInd", format!("<{w}tblInd {w}w=\"{}\" {w}type=\"dxa\"/>", twips(t.ind)), before("tblInd")));
                         }
                         if a.look != t.look
@@ -1506,7 +1540,7 @@ impl<'a, 'i> Saver<'a, 'i> {
                         self.container(&c.blocks, &d.blocks)?;
                     }
                     let mut inner = std::mem::replace(&mut self.splices, outer);
-                    inner.extend(self.row_fixes(n, k, row));
+                    inner.extend(self.row_fixes(n, k, row, node));
                     out.push_str(&self.spliced(n.range(), inner)?);
                 }
                 (_, n) => {
@@ -1613,25 +1647,47 @@ impl<'a, 'i> Saver<'a, 'i> {
 
     /// A kept row's height and its cells' widths changed by a border drag, and its and its cells' revisions, patched
     /// into its source properties.
-    fn row_fixes(&self, n: Node, was: &Row, now: &Row) -> Vec<Splice> {
+    /// `table` is the table written (the first of tables read as one).
+    fn row_fixes(&self, n: Node, was: &Row, now: &Row, table: Option<Node>) -> Vec<Splice> {
         let w = self.w.clone();
         let mut out = Vec::new();
+        // A row of a later table read as one with the first: its own table's alignment and cell margins become its
+        // exceptions (the row's own win).
+        let own = n.ancestors().skip(1).find(|a| is_w(*a, "tbl")).filter(|t| table.is_some_and(|f| f != *t));
+        let ex = child(n, "tblPrEx");
+        let mut later: Vec<(&str, String, &[&str])> = Vec::new();
+        for name in ["jc", "tblCellMar"] {
+            if let Some(c) = own.and_then(|t| child(t, "tblPr")).and_then(|p| child(p, name))
+                && ex.is_none_or(|e| child(e, name).is_none())
+            {
+                later.push((name, self.xml[c.range()].to_string(), revisions::before(revisions::TBLPREX, name)));
+            }
+        }
         // The table exceptions' tracked change.
-        if was.rev.ex_change != now.rev.ex_change {
-            let tag = revisions::ex_change(&w, &now.rev, self.people);
-            match child(n, "tblPrEx") {
-                Some(p) => out.push(self.set_child(p, "tblPrExChange", tag, revisions::before(revisions::TBLPREX, "tblPrExChange"))),
-                None if !tag.is_empty() => {
-                    let at = self.open_end(n);
-                    out.push((at..at, format!("<{w}tblPrEx>{tag}</{w}tblPrEx>")));
+        let change = if was.rev.ex_change != now.rev.ex_change { Some(revisions::ex_change(&w, &now.rev, self.people)) } else { None };
+        match ex {
+            Some(p) => {
+                if let Some(tag) = change {
+                    out.push(self.set_child(p, "tblPrExChange", tag, revisions::before(revisions::TBLPREX, "tblPrExChange")));
                 }
-                None => {}
+                out.extend(self.set_children(p, later));
+            }
+            None => {
+                let kids: String = later.into_iter().map(|(_, t, _)| t).chain(change).collect();
+                if !kids.is_empty() {
+                    let at = self.open_end(n);
+                    out.push((at..at, format!("<{w}tblPrEx>{kids}</{w}tblPrEx>")));
+                }
             }
         }
         // Grid gaps before and after the cells (a border moved in some rows only).
         const BASE: &[&str] = &["cnfStyle", "divId"];
         let mut tr: Vec<(&str, String, &[&str])> = Vec::new();
-        for (name, a, b) in [("gridBefore", was.grid_before, now.grid_before), ("gridAfter", was.grid_after, now.grid_after)] {
+        // Against the row's source: a row of tables read as one has its gaps and spans over their merged grid.
+        let int_of = |n: Option<Node>, name: &str| n.and_then(|p| child(p, name)).and_then(|c| attr(c, "val")).and_then(|v| v.parse::<usize>().ok());
+        let tr_pr = child(n, "trPr");
+        let gaps = [(int_of(tr_pr, "gridBefore").unwrap_or(0), now.grid_before), (int_of(tr_pr, "gridAfter").unwrap_or(0), now.grid_after)];
+        for (name, (a, b)) in ["gridBefore", "gridAfter"].into_iter().zip(gaps) {
             if a != b {
                 tr.push((name, if b > 0 { format!("<{w}{name} {w}val=\"{b}\"/>") } else { String::new() }, BASE));
             }
@@ -1678,7 +1734,7 @@ impl<'a, 'i> Saver<'a, 'i> {
                 if a.width != b.width {
                     fix.push(("tcW", b.width.as_ref().map_or(String::new(), |v| width(&w, "tcW", v)), &["cnfStyle"]));
                 }
-                if a.span.max(1) != b.span.max(1) {
+                if int_of(child(*tc, "tcPr"), "gridSpan").unwrap_or(1).max(1) != b.span.max(1) {
                     let tag = if b.span > 1 { format!("<{w}gridSpan {w}val=\"{}\"/>", b.span) } else { String::new() };
                     fix.push(("gridSpan", tag, &["cnfStyle", "tcW"]));
                 }
@@ -2034,6 +2090,9 @@ fn unit_keys(i: &Inline, out: &mut Vec<(u64, char)>) {
         Inline::Text(s, _) => out.extend(s.chars().map(|c| (c as u64, c))),
         Inline::Tab(_) => out.push(('\t' as u64, '\t')),
         Inline::Break(BreakKind::Line, _) => out.push((0xB, '\u{b}')),
+        Inline::Break(BreakKind::ClearLeft, _) => out.push((ATOM | BreakKind::ClearLeft as u64, '\u{1}')),
+        Inline::Break(BreakKind::ClearRight, _) => out.push((ATOM | BreakKind::ClearRight as u64, '\u{2}')),
+        Inline::Break(BreakKind::ClearAll, _) => out.push((ATOM | BreakKind::ClearAll as u64, '\u{3}')),
         Inline::Break(BreakKind::Column, _) => out.push((ATOM | BreakKind::Column as u64, '\u{e}')),
         Inline::Break(k, _) => out.push((ATOM | *k as u64, '\u{c}')),
         Inline::Bookmark(_) | Inline::Range(_) | Inline::CommentRef { .. } | Inline::Float(..) | Inline::ControlStart(_) | Inline::ControlEnd(_) => {}
@@ -3177,6 +3236,11 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                 self.flush_text();
                 self.pend.push_str(&format!("<{w}br {w}type=\"page\"/>"));
             }
+            (Some(c @ '\u{1}'..='\u{3}'), _) => {
+                self.flush_text();
+                let clear = ["left", "right", "all"][c as usize - 1];
+                self.pend.push_str(&format!("<{w}br {w}clear=\"{clear}\"/>"));
+            }
             (Some(c), _) => self.text.push(c),
             (None, Some(r)) => {
                 self.flush_text();
@@ -3874,6 +3938,8 @@ fn object_xml(w: &str, i: &Inline) -> Option<String> {
             if *lock { format!(" {w}fldLock=\"1\"") } else { String::new() },
             if *dirty { format!(" {w}dirty=\"1\"") } else { String::new() }
         )),
+        Inline::Ruby(r, _) => r.xml.0.as_deref().map(str::to_string),
+        Inline::DateBlock(name, ..) => Some(format!("<{w}{name}/>")),
         Inline::FieldSep { .. } => Some(format!("<{w}fldChar {w}fldCharType=\"separate\"/>")),
         Inline::FieldEnd { .. } => Some(format!("<{w}fldChar {w}fldCharType=\"end\"/>")),
         Inline::PTab(t, _) => {
@@ -4298,7 +4364,9 @@ fn tbl_pr(w: &str, t: &Table, people: &People) -> String {
     if t.cell_spacing != 0.0 {
         s.push_str(&width(w, "tblCellSpacing", &Width::Dxa(t.cell_spacing)));
     }
-    if t.ind != 0.0 {
+    if let Some(p) = t.ind_pct {
+        s.push_str(&width(w, "tblInd", &Width::Pct(p)));
+    } else if t.ind != 0.0 {
         s.push_str(&width(w, "tblInd", &Width::Dxa(t.ind)));
     }
     if t.borders.iter().any(Option::is_some) {

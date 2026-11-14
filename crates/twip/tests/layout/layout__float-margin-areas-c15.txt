@@ -1,0 +1,52 @@
+page 0 12240 15840
+  1800 1936 Floats relative to the margin areas
+  1800 2201 Ten wrapNone shapes against the margin areas, the page and the inside and outside
+  1800 2439 margins. Inventory relevant group relief results region ledger brief usage cause
+  1800 2676 colleague partner. Section notice claim team export staff newsletter review matter
+  1800 2914 presenter advisor account. Served savings pilot receipt corporate requirement
+  1800 3151 standard fact that products distribution filed. Logistics chapter plan regional.
+  2700 3548 Left and right of the column, in a paragraph indented 36pt and
+  2700 3786 72pt: compat 14 counts from the indents. Notice claim team
+  2700 4023 export staff newsletter review matter presenter advisor
+  2520 4261 account served. Savings pilot receipt corporate requirement
+  2520 4498 standard fact that products distribution filed logistics.
+  2520 4736 Chapter plan regional maintenance accessibility tax finds
+  2520 4973 record proposal denied contract onboarding. Support network
+  2520 5210 scheduled trend suggestions board order update granted
+  2520 5448 agreement marketing promotion. Division date profitable
+  2520 5685 insights the meeting forecast hereby vendors practical schedule
+  2520 5923 state.
+  1800 6320 Pilot receipt corporate requirement standard fact that products distribution filed
+  1800 6557 logistics chapter. Plan regional maintenance accessibility tax finds record
+  1800 6795 proposal denied contract onboarding support. Network scheduled trend suggestions
+  1800 7032 board order update granted agreement marketing promotion division. Date profitable
+  1800 7270 insights the meeting forecast hereby vendors practical schedule state entry.
+  1800 7507 Estimate management action budget inventory relevant group relief results region
+  1800 7745 ledger brief. Usage cause colleague partner section notice claim team export staff
+  1800 7982 newsletter review. Matter presenter advisor account served savings pilot receipt.
+  float 540 2025 1260 2601
+  float 11304 2025 12024 2601
+  float 540 2889 1260 3465
+  float 11340 2889 12060 3465
+  float 0 3753 720 4329
+  float 11520 3753 12240 4329
+  float 6120 432 6840 1008
+  float 3240 14688 3960 15264
+  float 4680 432 5400 1008
+  float 6120 14832 6840 15408
+  float 1800 3372 2520 3948
+  float 10440 3372 11160 3948
+page 1 12240 15840
+  1800 1616 Page 2: inside and outside swap sides.
+  1800 2013 Regional maintenance accessibility tax finds record proposal denied contract
+  1800 2251 onboarding support network. Scheduled trend suggestions board order update granted
+  1800 2488 agreement marketing promotion division date. Profitable insights the meeting
+  1800 2726 forecast hereby vendors practical schedule state entry estimate. Management action
+  1800 2963 budget inventory relevant group relief results region ledger brief usage. Cause
+  1800 3201 colleague partner section notice claim team export staff newsletter review matter.
+  float 11340 2269 12060 2845
+  float 540 2269 1260 2845
+  float 4680 14832 5400 15408
+  float 6120 432 6840 1008
+  float 11520 3277 12240 3853
+  float 0 3277 720 3853

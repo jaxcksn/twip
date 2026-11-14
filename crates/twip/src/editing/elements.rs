@@ -431,7 +431,7 @@ pub fn touched(inverses: &[super::step::Step]) -> Touched {
                 }));
             }
             Step::Para { para, .. } | Step::FieldViews { para, .. } => paras.push(*para),
-            Step::AddImage { .. } | Step::Resolver { .. } | Step::DefaultTab(_) => {}
+            Step::AddImage { .. } | Step::Resolver { .. } | Step::DefaultTab(_) | Step::Hyphenation(_) => {}
             Step::Join { first, second } => paras.extend([*first, *second]),
             Step::Split { para, second, .. } => {
                 paras.push(*para);

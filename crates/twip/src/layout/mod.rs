@@ -9,6 +9,7 @@ pub mod expansion;
 pub mod float;
 pub mod flow;
 pub mod fragment;
+pub mod hyphenate;
 pub mod ids;
 pub mod incremental;
 pub mod job;
@@ -26,6 +27,7 @@ pub mod text;
 pub mod token;
 pub mod traverse;
 pub(crate) mod units;
+pub mod vertical;
 
 #[cfg(test)]
 pub(crate) mod tests;
@@ -64,6 +66,7 @@ impl<'a> LayoutCtx<'a> {
             .inlines
             .iter()
             .filter_map(|i| match i {
+                crate::docx::Inline::Float(f, _) if f.hidden() || f.in_note => None,
                 crate::docx::Inline::Float(f, _) => match preview {
                     Some(v) if v.float.id == f.id && v.anchor != ParaId(p.id) => None,
                     Some(v) if v.float.id == f.id => Some(&v.float),

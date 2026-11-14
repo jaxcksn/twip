@@ -196,6 +196,7 @@ impl Editor {
                         first = Some(style.frame.clone());
                     }
                     style.frame = None;
+                    style.in_frame = true;
                     p.style = Rc::new(style);
                     Block::Para(p)
                 }
@@ -215,15 +216,11 @@ impl Editor {
             return Outcome::Unchanged("no frame");
         };
         let Some(mut n) = self.float_of(f).cloned() else { return Outcome::Unchanged("no frame") };
-        let side = |b: &Option<crate::docx::props::Border>| b.as_ref().map_or(0.0, |b| b.space + b.width);
-        let sides = match blocks.first() {
-            Some(Block::Para(p)) => side(&p.style.border_left) + side(&p.style.border_right),
-            _ => 0.0,
-        };
+        let sides = crate::docx::frames::bleed(&blocks);
         if let Some(tb) = &mut n.text_box {
             tb.blocks = blocks;
         }
-        crate::docx::frames::place(&mut n, &fr, sides);
+        crate::docx::frames::place(&mut n, &fr, sides, self.doc.settings.compat() == crate::docx::Compat::Legacy);
         let caret = self.selection;
         let out = self.set_float(n, "Frame", fonts);
         if !matches!(caret, Selection::Object(_)) {

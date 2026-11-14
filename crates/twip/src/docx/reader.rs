@@ -10,7 +10,7 @@ use super::diagnostics::{Diagnostics, WarningCode};
 use super::model::*;
 use super::numbering::{Counters, Numbering};
 use super::props::*;
-use super::resolve::{ParaResolved, Resolver};
+use super::resolve::{ParaResolved, Resolver, div_chain};
 use super::review::{
     AuthorId, CellMarkKind, CellRevisions, Comment, CommentId, FormatChange, GridChange, IdCounter, Identity, MarkKind, ParaChange, People,
     PreviousProps, Protection, ProtectionKind, RangeKind, RangeMark, RevisionId, RevisionMark, RowRevisions, RunRevisions, SectionChange,
@@ -90,11 +90,11 @@ fn resolve_path(dir: &str, target: &str) -> String {
 }
 
 pub fn read(bytes: &[u8]) -> Result<Document, String> {
-    read_with(bytes, false, now_utc())
+    read_with(bytes, false, now_local())
 }
 
-/// As [`read`], with `DATE`/`TIME` fields computed at `now` (seconds since 1970, UTC) instead of the system clock, so
-/// the layout is the same on every run.
+/// As [`read`], with `DATE`/`TIME` fields and date blocks computed at `now` (seconds since 1970, local time) instead
+/// of the system clock, so the layout is the same on every run.
 pub fn read_at(bytes: &[u8], now: i64) -> Result<Document, String> {
     read_with(bytes, false, now)
 }
@@ -104,10 +104,56 @@ pub fn now_utc() -> i64 {
     crate::clock::unix_secs()
 }
 
+/// Seconds since 1970 by the system clock in the local time zone: the wall-clock time dates and times show.
+pub fn now_local() -> i64 {
+    let t = now_utc();
+    t + local_offset(t)
+}
+
+/// The local time zone's offset from UTC at `t` (seconds since 1970, UTC), in seconds; 0 without a time zone.
+fn local_offset(t: i64) -> i64 {
+    // The fields `struct tm` starts with on every platform, with room for the rest.
+    #[repr(C)]
+    #[derive(Default)]
+    struct Tm {
+        sec: i32,
+        min: i32,
+        hour: i32,
+        mday: i32,
+        mon: i32,
+        year: i32,
+        rest: [i64; 4],
+    }
+    let mut tm = Tm::default();
+    #[cfg(windows)]
+    // SAFETY: `_localtime64_s` writes one `struct tm` (nine ints, within `Tm`) and reads one 64-bit time.
+    let ok = unsafe {
+        unsafe extern "C" {
+            fn _localtime64_s(tm: *mut Tm, t: *const i64) -> i32;
+        }
+        _localtime64_s(&mut tm, &t) == 0
+    };
+    #[cfg(all(unix, target_pointer_width = "64"))]
+    // SAFETY: `localtime_r` writes one `struct tm` (nine ints, a long and a pointer, within `Tm`) and reads one time_t.
+    let ok = unsafe {
+        unsafe extern "C" {
+            fn localtime_r(t: *const i64, tm: *mut Tm) -> *mut Tm;
+        }
+        !localtime_r(&t, &mut tm).is_null()
+    };
+    #[cfg(not(any(windows, all(unix, target_pointer_width = "64"))))]
+    let ok = false;
+    if !ok {
+        return 0;
+    }
+    let days = super::review::days_from_civil(i64::from(tm.year) + 1900, i64::from(tm.mon) + 1, i64::from(tm.mday));
+    days * 86_400 + i64::from(tm.hour) * 3600 + i64::from(tm.min) * 60 + i64::from(tm.sec) - t
+}
+
 /// As [`read`], keeping what saving needs: the package, the main part's XML, where each body paragraph and table came
 /// from ([`Paragraph::src`], [`Table::src`]) and each run's direct formatting ([`RunStyle::direct`]).
 pub fn read_editable(bytes: &[u8]) -> Result<Document, String> {
-    read_with(bytes, true, now_utc())
+    read_with(bytes, true, now_local())
 }
 
 /// The XML text of an element as written.
@@ -181,6 +227,8 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
     });
     styles.compat = settings.compat();
     styles.word2002_rules = styles.compat == Compat::Legacy && settings.has("useWord2002TableStyleRules");
+    styles.open_type = styles.compat == Compat::Generic || settings.has("enableOpenTypeFeatures");
+    styles.cell_size_rules = styles.compat == Compat::Legacy && !settings.has("overrideTableStyleFontSizeAndJustification");
     let xml = pkg.read_str(&main).ok_or("no main document part, or one too large or nested too deeply")?;
 
     // New revision, comment and paragraph ids go past every id in the parts read, so ids are seeded before reading.
@@ -205,6 +253,7 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
     let font_descriptions = part_of("fontTable").and_then(|p| pkg.read_str(&p)).map(|x| super::font_table::parse(&x)).unwrap_or_default();
     let mut res = Resolver::new(styles, numbering, theme);
     res.categories = Rc::new(super::font_table::categories(&font_descriptions));
+    res.divisions = Rc::new(read_divs(part_of("webSettings").and_then(|p| pkg.read_str(&p)).as_deref(), &colours));
     let numbering_part = part_of("numbering");
     let mut r = Reader {
         res,
@@ -217,10 +266,12 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
         para_count: 0,
         float_order: 0,
         pending_hidden: None,
+        pending_spec: None,
         uncounted: false,
         part: main.clone(),
         rels: rels.clone(),
         note_id: 0,
+        in_endnotes: false,
         record: false,
         segs: Vec::new(),
         simple: Vec::new(),
@@ -238,6 +289,7 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
         anchored: HashSet::new(),
         orphans: HashSet::new(),
         glossary_comments: None,
+        theme: drawing_theme.clone(),
     };
     // The picture bullets' images, from the numbering part's relationships.
     if let Some(part) = &numbering_part {
@@ -276,6 +328,7 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
         doc.page_colour = child(dom.root_element(), "background").and_then(|b| page_colour(b, &drawing_theme, &colour_map));
         r.record = editable;
         doc.sections = r.read_body(body, &mut pkg);
+        shift_connector_text(&mut doc.sections);
         r.record = false;
     }
 
@@ -314,11 +367,16 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
         for n in children(dom.root_element(), if tag == "footnote" { "footnote" } else { "endnote" }) {
             let id = int(attr(n, "id")).unwrap_or(0);
             r.note_id = id;
+            r.in_endnotes = tag == "endnote";
             let mut blocks = r.read_blocks(n, &mut pkg, None);
             r.close_ranges(&mut blocks);
+            note_floats(&mut blocks);
             match attr(n, "type") {
+                // A separator story counts only when the settings list it: else the built-in one is used.
                 Some(t @ ("separator" | "continuationSeparator" | "continuationNotice")) => {
-                    doc.separators.insert(format!("{tag}:{t}"), blocks);
+                    if r.settings.listed_notes.contains(&format!("{tag}:{id}")) {
+                        doc.separators.insert(format!("{tag}:{t}"), blocks);
+                    }
                 }
                 _ => {
                     map.insert(id, blocks);
@@ -326,6 +384,24 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
             }
         }
         r.record = false;
+    }
+    // Word's built-in separators: one line with no paragraph spacing.
+    // ponytail: in the default paragraph style's run font, not the document default's; differs only when that style
+    // sets a font or size.
+    for (tag, t) in [("footnote", "separator"), ("footnote", "continuationSeparator"), ("endnote", "separator"), ("endnote", "continuationSeparator")]
+    {
+        let key = format!("{tag}:{t}");
+        if doc.separators.contains_key(&key) || (tag == "endnote" && doc.endnotes.is_empty()) || (tag == "footnote" && doc.footnotes.is_empty()) {
+            continue;
+        }
+        let xml = format!(
+            r#"<w:{tag} xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/><w:ind w:left="0" w:right="0" w:firstLine="0"/><w:jc w:val="left"/></w:pPr><w:r><w:{t}/></w:r></w:p></w:{tag}>"#
+        );
+        if let Ok(dom) = roxmltree::Document::parse(&xml) {
+            r.in_endnotes = tag == "endnote";
+            let blocks = r.read_blocks(dom.root_element(), &mut pkg, None);
+            doc.separators.insert(key, blocks);
+        }
     }
     if let (Some(path), Some(dom)) = (&comments_part, &comments_dom) {
         r.enter_part(path, &mut pkg);
@@ -394,6 +470,11 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
     super::fields::evaluate(&mut doc, now);
     super::frames::convert(&mut doc);
     doc.derive_image_sets();
+    let divs = doc.resolver.as_ref().map(|r| r.divisions.clone()).unwrap_or_default();
+    if !divs.is_empty() {
+        doc.sections.iter_mut().for_each(|s| fold_divs(&mut s.blocks, &divs, false));
+        doc.stories.values_mut().chain(doc.footnotes.values_mut()).chain(doc.endnotes.values_mut()).for_each(|b| fold_divs(b, &divs, false));
+    }
     if editable {
         let blocks = doc.sections.iter().map(|s| s.blocks.clone()).collect();
         let stories = story_xml.into_iter().map(|(name, x)| (name.clone(), (x, doc.stories[&name].clone()))).collect();
@@ -488,7 +569,195 @@ impl Map {
     }
 }
 
-fn read_settings(xml: Option<&str>) -> Settings {
+// HTML divisions
+fn read_divs(xml: Option<&str>, colours: &ThemeColours) -> HashMap<i64, Division> {
+    fn walk(parent: Option<i64>, n: Node, colours: &ThemeColours, out: &mut HashMap<i64, Division>) {
+        for d in children(n, "div") {
+            let Some(id) = int(attr(d, "id")) else { continue };
+            let m = |name: &str| child(d, name).and_then(|e| twips(val(e))).unwrap_or(0.0);
+            let bdr = child(d, "divBdr");
+            let b = |name: &str| bdr.and_then(|x| child(x, name)).map(|e| Border::parse(e, colours)).filter(|b| b.visible());
+            out.insert(
+                id,
+                Division {
+                    parent,
+                    margins: [m("marLeft"), m("marRight"), m("marTop"), m("marBottom")],
+                    borders: [b("top"), b("left"), b("bottom"), b("right")],
+                },
+            );
+            if let Some(c) = child(d, "divsChild") {
+                walk(Some(id), c, colours, out);
+            }
+        }
+    }
+    let mut out = HashMap::new();
+    let Some(doc) = xml.and_then(|x| roxmltree::Document::parse(x).ok()) else { return out };
+    if let Some(divs) = child(doc.root_element(), "divs") {
+        walk(None, divs, colours, &mut out);
+    }
+    out
+}
+
+/// A line or connector preset holds no text: from one that has a text box on, each text box goes to the next shape with
+/// a text box, in document order, and the last one is dropped.
+fn shift_connector_text(sections: &mut [Section]) {
+    fn line(s: Option<&crate::drawing::Shape>) -> bool {
+        let name = s.and_then(|s| s.geometry()?.preset()).map_or("", |p| p.name());
+        name == "line" || ["straightConnector", "bentConnector", "curvedConnector"].iter().any(|c| name.starts_with(c))
+    }
+    // Each text box in document order, with whether its shape is a line.
+    fn walk(blocks: &mut [Block], each: &mut dyn FnMut(bool, &mut Option<TextBox>)) {
+        for b in blocks {
+            match b {
+                Block::Para(p) => p.inlines.iter_mut().for_each(|i| match i {
+                    Inline::Float(f, _) => {
+                        each(line(f.shape.as_deref()), &mut f.text_box);
+                        f.parts.iter_mut().for_each(|g| each(false, &mut g.text_box));
+                    }
+                    Inline::Picture(pic, _) => {
+                        let Some(t) = pic.text.take() else { return };
+                        let InlineText { id, text_box } = *t;
+                        let mut tb = Some(text_box);
+                        each(line(pic.shape.as_deref()), &mut tb);
+                        pic.text = tb.map(|text_box| Box::new(InlineText { id, text_box }));
+                    }
+                    _ => {}
+                }),
+                Block::Table(t) => t.rows.iter_mut().flat_map(|r| &mut r.cells).for_each(|c| walk(&mut c.blocks, each)),
+            }
+        }
+    }
+    let mut texts = Vec::new();
+    sections.iter_mut().for_each(|s| walk(&mut s.blocks, &mut |_, tb| texts.extend(tb.as_mut().map(|tb| std::mem::take(&mut tb.blocks)))));
+    let mut texts = texts.into_iter();
+    sections.iter_mut().for_each(|s| {
+        walk(&mut s.blocks, &mut |is_line, tb| match tb {
+            Some(_) if is_line => *tb = None,
+            Some(tb) => tb.blocks = texts.next().unwrap_or_default(),
+            None => {}
+        })
+    });
+}
+
+/// Marks a note's drawings: a note has no floats, its anchors are laid out inline.
+fn note_floats(blocks: &mut [Block]) {
+    for b in blocks {
+        match b {
+            Block::Para(p) => p.inlines.iter_mut().for_each(|i| {
+                if let Inline::Float(f, _) = i {
+                    f.in_note = f.shape.is_some();
+                }
+            }),
+            Block::Table(t) => t.rows.iter_mut().flat_map(|r| &mut r.cells).for_each(|c| note_floats(&mut c.blocks)),
+        }
+    }
+}
+
+/// The neighbour-dependent part of the divisions around each paragraph (its indents come from the resolver), and each
+/// table row's.
+fn fold_divs(blocks: &mut [Block], divs: &HashMap<i64, Division>, in_cell: bool) {
+    let row_chain = |r: Option<&Row>| div_chain(divs, r.and_then(|r| r.div.as_ref()).map(|d| d.id));
+    let ends: Vec<(Vec<i64>, Vec<i64>)> = blocks
+        .iter()
+        .map(|b| match b {
+            Block::Para(p) => {
+                // A cell paragraph is in its own division only.
+                let mut c = div_chain(divs, p.style.div);
+                if in_cell {
+                    c.truncate(1);
+                }
+                (c.clone(), c)
+            }
+            Block::Table(t) => (row_chain(t.rows.first()), row_chain(t.rows.last())),
+        })
+        .collect();
+    let mut seen: Vec<i64> = Vec::new();
+    let mut reopened: Vec<i64> = Vec::new();
+    let mut runs = |chain: &[i64], prev: &[i64]| {
+        for id in chain.iter().filter(|id| !prev.contains(id)) {
+            if seen.contains(id) {
+                reopened.push(*id);
+            } else {
+                seen.push(*id);
+                reopened.retain(|r| r != id);
+            }
+        }
+        reopened.clone()
+    };
+    let most = |ids: &mut dyn Iterator<Item = &i64>, i: usize| ids.map(|id| divs[id].margins[i]).fold(0.0, f64::max);
+    let width = |b: &Option<Border>| b.as_ref().map_or(0.0, |b| b.width * if b.style == "double" { 3.0 } else { 1.0 } + b.space);
+    let boxes = |chain: &[i64], prev: &[i64], next: &[i64], again: &[i64]| -> Vec<DivBox> {
+        (0..chain.len())
+            .rev()
+            .filter(|&k| divs[&chain[k]].borders.iter().any(Option::is_some))
+            .map(|k| {
+                let id = &chain[k];
+                let outward = |i: usize| chain[k..].iter().map(|o| divs[o].margins[i]).sum::<f64>();
+                let open = !again.contains(id);
+                DivBox {
+                    borders: divs[id].borders.clone(),
+                    left: outward(0),
+                    right: outward(1),
+                    starts: open && !prev.contains(id),
+                    ends: open && !next.contains(id),
+                }
+            })
+            .collect()
+    };
+    let empty = Vec::new();
+    for k in 0..blocks.len() {
+        let (prev, next) = (k.checked_sub(1).map_or(&empty, |j| &ends[j].1), ends.get(k + 1).map_or(&empty, |e| &e.0));
+        let table_before = k.checked_sub(1).is_some_and(|j| matches!(blocks[j], Block::Table(_)));
+        let table_after = matches!(blocks.get(k + 1), Some(Block::Table(_)));
+        let para_before = k.checked_sub(1).is_some_and(|j| matches!(blocks[j], Block::Para(_)));
+        let para_after = matches!(blocks.get(k + 1), Some(Block::Para(_)));
+        match &mut blocks[k] {
+            Block::Para(p) => {
+                let chain = &ends[k].0;
+                let again = runs(chain, prev);
+                let mut before = most(&mut chain.iter().filter(|id| !prev.contains(id)), 2);
+                let mut after = most(&mut chain.iter().filter(|id| !next.contains(id)), 3);
+                if table_before {
+                    before = before.max(most(&mut prev.iter().filter(|id| !chain.contains(id)), 3));
+                }
+                if table_after {
+                    after = after.max(most(&mut next.iter().filter(|id| !chain.contains(id)), 2));
+                }
+                if chain.is_empty() && before == 0.0 && after == 0.0 {
+                    continue;
+                }
+                let boxes = boxes(chain, prev, next, &again);
+                p.div = Some(Rc::new(DivEdge::new(&p.style, before, after, boxes.into())));
+            }
+            Block::Table(t) => {
+                let chains: Vec<Vec<i64>> = t.rows.iter().map(|r| row_chain(Some(r))).collect();
+                let n = t.rows.len();
+                let split = t.borders[2].as_ref().filter(|b| b.visible()).map_or(0.0, |b| b.width);
+                for (ri, r) in t.rows.iter_mut().enumerate() {
+                    let chain = &chains[ri];
+                    let Some(d) = r.div.as_mut().filter(|_| !chain.is_empty()) else { continue };
+                    let row_prev = if ri == 0 { prev } else { &chains[ri - 1] };
+                    let row_next = if ri + 1 == n { next } else { &chains[ri + 1] };
+                    let again = runs(chain, row_prev);
+                    let boxes = boxes(chain, row_prev, row_next, &again);
+                    let top = if ri == 0 && para_before { 0.0 } else { most(&mut chain.iter().filter(|id| !row_prev.contains(id)), 2) };
+                    let bottom = if ri + 1 == n && para_after { 0.0 } else { most(&mut chain.iter().filter(|id| !row_next.contains(id)), 3) };
+                    let d = Rc::make_mut(d);
+                    d.shift = chain.iter().map(|id| divs[id].margins[0]).sum();
+                    let (split_above, split_below) = (ri > 0 && chains[ri - 1] != *chain, ri + 1 < n && chains[ri + 1].is_empty());
+                    d.lead =
+                        top + boxes.iter().filter(|b| b.starts).map(|b| width(&b.borders[0])).sum::<f64>() + if split_above { split } else { 0.0 };
+                    d.trail =
+                        bottom + boxes.iter().filter(|b| b.ends).map(|b| width(&b.borders[2])).sum::<f64>() + if split_below { split } else { 0.0 };
+                    d.boxes = boxes.into();
+                }
+                t.rows.iter_mut().flat_map(|r| &mut r.cells).for_each(|c| fold_divs(&mut c.blocks, divs, true));
+            }
+        }
+    }
+}
+
+pub(crate) fn read_settings(xml: Option<&str>) -> Settings {
     let mut s = Settings { compat_mode: 12, default_tab: 36.0, hyphenation_zone: 18.0, ..Default::default() };
     let Some(doc) = xml.and_then(|x| roxmltree::Document::parse(x).ok()) else { return s };
     let root = doc.root_element();
@@ -501,6 +770,9 @@ fn read_settings(xml: Option<&str>) -> Settings {
     s.even_and_odd = flag(root, "evenAndOddHeaders").unwrap_or(false);
     s.mirror_margins = flag(root, "mirrorMargins").unwrap_or(false);
     s.gutter_at_top = flag(root, "gutterAtTop").unwrap_or(false);
+    let rev = flag(root, "bookFoldRevPrinting").unwrap_or(false);
+    s.book_fold = (rev || flag(root, "bookFoldPrinting").unwrap_or(false)).then_some(rev);
+    s.strict_kinsoku = flag(root, "strictFirstAndLastChars").unwrap_or(false);
     s.auto_hyphenation = flag(root, "autoHyphenation").unwrap_or(false);
     s.do_not_hyphenate_caps = flag(root, "doNotHyphenateCaps").unwrap_or(false);
     s.borders_do_not_surround_header = flag(root, "bordersDoNotSurroundHeader").unwrap_or(false);
@@ -510,6 +782,12 @@ fn read_settings(xml: Option<&str>) -> Settings {
     }
     s.consecutive_hyphen_limit = child(root, "consecutiveHyphenLimit").and_then(|n| int(val(n))).unwrap_or(0);
     s.track_revisions = flag(root, "trackRevisions").unwrap_or(false);
+    s.endnotes_sect_end = child(root, "endnotePr").and_then(|p| child(p, "pos")).and_then(val) == Some("sectEnd");
+    for tag in ["footnote", "endnote"] {
+        for n in child(root, &format!("{tag}Pr")).into_iter().flat_map(|p| children(p, tag)) {
+            s.listed_notes.push(format!("{tag}:{}", attr(n, "id").unwrap_or_default()));
+        }
+    }
     s.protection = child(root, "documentProtection").map(|n| Protection {
         edit: match attr(n, "edit") {
             Some("readOnly") => ProtectionKind::ReadOnly,
@@ -529,7 +807,18 @@ fn read_settings(xml: Option<&str>) -> Settings {
                 if attr(e, "name") == Some("compatibilityMode")
                     && let Some(m) = int(attr(e, "val"))
                 {
-                    s.compat_mode = m;
+                    s.compat_mode = m.min(15);
+                } else if let Some(
+                    name @ ("enableOpenTypeFeatures"
+                    | "overrideTableStyleFontSizeAndJustification"
+                    | "allowHyphenationAtTrackBottom"
+                    | "allowTextAfterFloatingTableBreak"),
+                ) = attr(e, "name")
+                    && on_off_str(attr(e, "val"))
+                {
+                    s.compat.insert(name.to_string());
+                } else if attr(e, "name") == Some("useWord2013TrackBottomHyphenation") && !on_off_str(attr(e, "val")) {
+                    s.compat.insert("useWord2013TrackBottomHyphenation=0".to_string());
                 }
             } else if on_off(e) {
                 s.compat.insert(e.tag_name().name().to_string());
@@ -558,10 +847,29 @@ struct OpenField {
     spanning: bool,
     /// A TOC field (known at its separator): its result doesn't show the Hyperlink character style.
     toc: bool,
+    /// A legacy form field's data (`w:ffData`): the kind it lays out as, and a drop-down's shown entry.
+    form: Option<(FieldKind, Option<String>)>,
+}
+
+/// A legacy form field's `w:ffData`: a check box (its `w:size` in points, shown checked), or a drop-down and the entry
+/// it shows (`listEntry[result]`, `w:default` without `w:result`, entry 0 out of range; none without entries).
+fn form_data(ff: Node) -> Option<(FieldKind, Option<String>)> {
+    if let Some(cb) = child(ff, "checkBox") {
+        let size = child(cb, "size").filter(|_| child(cb, "sizeAuto").is_none()).and_then(|s| num(val(s))).map(|h| h / 2.0);
+        let checked = flag(cb, "checked").unwrap_or_else(|| child(cb, "default").and_then(|d| int(val(d))).is_some_and(|v| v != 0));
+        return Some((FieldKind::CheckBox { size, checked }, None));
+    }
+    let dd = child(ff, "ddList")?;
+    let entries: Vec<&str> = children(dd, "listEntry").map(|e| val(e).unwrap_or("")).collect();
+    let at = child(dd, "result").or_else(|| child(dd, "default")).and_then(|r| int(val(r))).unwrap_or(0);
+    let shown = entries.first().map(|first| usize::try_from(at).ok().and_then(|k| entries.get(k)).unwrap_or(first).to_string());
+    Some((FieldKind::DropDown, shown))
 }
 
 struct Reader {
     res: Resolver,
+    /// The theme, for the outline widths text boxes take from their style.
+    theme: Rc<crate::drawing::theme::Theme>,
     settings: Settings,
     counters: Counters,
     images: Vec<Vec<u8>>,
@@ -572,11 +880,16 @@ struct Reader {
     para_count: u64,
     float_order: usize,
     pending_hidden: Option<Paragraph>,
+    /// Compat 15: the empty paragraph whose `w:specVanish` mark started the pending join; its alignment and indents
+    /// go to the joined paragraph.
+    pending_spec: Option<Rc<ParaStyle>>,
     uncounted: bool,
     part: String,
     rels: HashMap<String, (String, String)>,
     /// The note being read (for its `w:footnoteRef` mark).
     note_id: i64,
+    /// Reading the endnotes part.
+    in_endnotes: bool,
     /// Reading the main body for editing: paragraphs and tables get their sources, runs their direct formatting.
     record: bool,
     /// The paragraph being read: elements that produced units ([`ParaSrc::segs`]), and whether any can't be mapped.
@@ -937,6 +1250,22 @@ impl Reader {
         if let Some(p) = self.pending_hidden.take() {
             blocks.push(Block::Para(p));
         }
+        // A body that ends with a table ends with an empty paragraph after it.
+        if matches!(blocks.last(), Some(Block::Table(_))) {
+            let r = self.res.paragraph(&ParaProps::default(), None);
+            let mark = self.run_style(&self.run_props(&r.base, None));
+            let id = next_para_id();
+            blocks.push(Block::Para(Paragraph {
+                style: Rc::new(r.style),
+                mark,
+                list: None,
+                inlines: Vec::new(),
+                src: None,
+                id,
+                div: None,
+                controls: Vec::new(),
+            }));
+        }
         sec.blocks = blocks;
         sections.push(sec);
         // Ranges pair across the body's sections.
@@ -963,7 +1292,10 @@ impl Reader {
         table: Option<&TableCtx>,
     ) -> Vec<(Option<Block>, Option<Node<'a, 'i>>)> {
         let mut out = Vec::new();
-        for n in container.children().filter(|c| c.is_element()) {
+        let kids: Vec<Node> = container.children().filter(|c| c.is_element()).collect();
+        let mut i = 0;
+        while let Some(&n) = kids.get(i) {
+            i += 1;
             if is_w(n, "p") {
                 let sect = child(n, "pPr").and_then(|p| child(p, "sectPr"));
                 self.uncounted = sect.is_some() && matches!(out.last(), Some((Some(Block::Para(_)), None))) && !has_content(n);
@@ -974,7 +1306,16 @@ impl Reader {
                 if let Some(p) = self.pending_hidden.take() {
                     out.push((Some(Block::Para(p)), None));
                 }
-                out.push((Some(Block::Table(self.read_table(n, pkg))), None));
+                // Tables with nothing between them are one table.
+                let mut run = vec![n];
+                while let Some(&m) = kids.get(i)
+                    && is_w(m, "tbl")
+                    && self.joins(&run, m)
+                {
+                    run.push(m);
+                    i += 1;
+                }
+                out.push((Some(Block::Table(self.read_table(&run, pkg))), None));
             } else if is_w(n, "sdt") || is_w(n, "customXml") {
                 let content = if is_w(n, "sdt") { child(n, "sdtContent") } else { Some(n) };
                 if let Some(c) = content {
@@ -1032,11 +1373,17 @@ impl Reader {
             footers: [None, None, None],
             pg_start: None,
             pg_fmt: None,
+            chapter: None,
             line_numbers: None,
             v_align: "top".into(),
             page_borders: None,
             page_borders_xml: None,
             line_grid: None,
+            notes: Default::default(),
+            no_endnote: false,
+            text_flow: 0,
+            rtl_gutter: false,
+            footnote_columns: 0,
             blocks: Vec::new(),
             change: None,
         }
@@ -1082,6 +1429,12 @@ impl Reader {
             };
         }
         sec.title_pg = flag(s, "titlePg").unwrap_or(false);
+        sec.rtl_gutter = flag(s, "rtlGutter").unwrap_or(false);
+        sec.footnote_columns = s
+            .children()
+            .find(|c| c.tag_name().namespace() == Some(W15) && c.tag_name().name() == "footnoteColumns")
+            .and_then(|c| int(attr(c, "val")))
+            .map_or(0, |n| n.clamp(0, 45) as u32);
         for (name, slot) in [("headerReference", 0), ("footerReference", 1)] {
             for r in children(s, name) {
                 let idx = match attr(r, "type") {
@@ -1100,6 +1453,14 @@ impl Reader {
         if let Some(p) = child(s, "pgNumType") {
             sec.pg_start = int(attr(p, "start"));
             sec.pg_fmt = attr(p, "fmt").map(str::to_string);
+            let sep = match attr(p, "chapSep") {
+                Some("period") => ".",
+                Some("colon") => ":",
+                Some("emDash") => "\u{2014}",
+                Some("enDash") => "\u{2013}",
+                _ => "-",
+            };
+            sec.chapter = int(attr(p, "chapStyle")).filter(|&n| n > 0).map(|n| (n, sep.to_string()));
         }
         if let Some(l) = child(s, "lnNumType") {
             sec.line_numbers = Some(LineNumbering {
@@ -1109,12 +1470,26 @@ impl Reader {
                 restart: attr(l, "restart").unwrap_or("newPage").to_string(),
             });
         }
+        for (k, name) in [(0, "footnotePr"), (1, "endnotePr")] {
+            let Some(p) = child(s, name) else { continue };
+            let n = &mut sec.notes[k];
+            n.fmt = child(p, "numFmt").and_then(val).map(str::to_string);
+            n.start = child(p, "numStart").and_then(|e| int(val(e))).unwrap_or(n.start);
+            n.restart = match child(p, "numRestart").and_then(val) {
+                Some("eachSect") => NoteRestart::EachSect,
+                Some("eachPage") => NoteRestart::EachPage,
+                _ => NoteRestart::Continuous,
+            };
+            n.beneath = k == 0 && child(p, "pos").and_then(val) == Some("beneathText");
+        }
+        sec.no_endnote = flag(s, "noEndnote").unwrap_or(false);
         if let Some(v) = child(s, "vAlign").and_then(val) {
             sec.v_align = v.to_string();
         }
         if let Some(g) = child(s, "docGrid").filter(|g| matches!(attr(*g, "type"), Some("lines" | "linesAndChars" | "snapToChars"))) {
             sec.line_grid = Some((int(attr(g, "linePitch")).unwrap_or(0).max(1) * 2048 / 10) as i32);
         }
+        sec.text_flow = child(s, "textDirection").and_then(val).map_or(0, |v| if v == "tbLrV" { 5 } else { crate::docx::model::text_flow(v) });
         if let Some(b) = child(s, "pgBorders") {
             sec.page_borders_xml = Some(raw(b).to_string());
             let side = |n| child(b, n).map(|n| Border::parse(n, &self.res.styles.colours));
@@ -1192,7 +1567,7 @@ impl Reader {
                         let mut lp = mark_props.clone();
                         lp.merge(&l.rpr);
                         let picture = self.res.numbering.bullet_image(l);
-                        ListLabel { text, run: self.res.run_style(&lp), jc: l.jc.clone(), suff: l.suff.clone(), picture }
+                        ListLabel { text, run: self.res.run_style(&lp), jc: l.jc.clone(), suff: l.suff.clone(), picture, legacy: l.legacy }
                     })
                 } else {
                     None
@@ -1220,10 +1595,40 @@ impl Reader {
         let (segs, lossy, simple) =
             (std::mem::replace(&mut self.segs, outer.0), std::mem::replace(&mut self.lossy, outer.1), std::mem::replace(&mut self.simple, outer.2));
         let src = self.record.then(|| Rc::new(ParaSrc { ranges: vec![n.range()], segs, simple, lossy }));
-        let para = Paragraph { style: para_style, mark: mark.clone(), list, inlines, src, id: next_para_id(), controls: Vec::new() };
+        let para = Paragraph { style: para_style, mark: mark.clone(), list, inlines, src, id: next_para_id(), div: None, controls: Vec::new() };
 
+        let spec = self.pending_spec.take();
         let mut para = match self.pending_hidden.take() {
+            // A vanished mark joins the paragraph to the next: the first one's indents, alignment, tabs and space
+            // before (unless it is empty), the first one's borders and shading, the last one's other properties; in
+            // compat 15 the first one's indents, alignment, tabs, borders and shading for every line, in compat ≤ 14
+            // each later line's indents, alignment, tabs, borders and shading from the paragraph of its first
+            // character (a line starting at a vanished mark is the mark's).
             Some(mut prev) => {
+                let at = prev.inlines.iter().map(Inline::units).sum::<usize>() as u32;
+                let mut style = (*para.style).clone();
+                let first = &prev.style;
+                // An empty paragraph before the mark gives nothing, except in compat 15 with `w:specVanish`: its
+                // alignment and indents (the first of a chain of them).
+                if let (0, Some(s)) = (at, &spec) {
+                    (style.ind_left, style.ind_right, style.ind_first, style.jc) = (s.ind_left, s.ind_right, s.ind_first, s.jc);
+                }
+                if at > 0 {
+                    (style.ind_left, style.ind_right, style.ind_first, style.jc) = (first.ind_left, first.ind_right, first.ind_first, first.jc);
+                    (style.space_before, style.before_auto) = (first.space_before, first.before_auto);
+                    style.tabs = first.tabs.clone();
+                    if self.res.styles.compat == Compat::Legacy {
+                        style.joined = first.joined.iter().cloned().chain([(at, para.style.clone())]).collect();
+                    }
+                    (style.border_top, style.border_bottom, style.border_left, style.border_right, style.border_between) = (
+                        first.border_top.clone(),
+                        first.border_bottom.clone(),
+                        first.border_left.clone(),
+                        first.border_right.clone(),
+                        first.border_between.clone(),
+                    );
+                    (style.shading, style.shd) = (first.shading, first.shd.clone());
+                }
                 prev.inlines.extend(para.inlines);
                 let src = match (prev.src, para.src) {
                     (Some(a), Some(b)) => Some(Rc::new(ParaSrc {
@@ -1235,18 +1640,24 @@ impl Reader {
                     (a, b) => a.or(b),
                 };
                 Paragraph {
-                    style: para.style,
+                    style: Rc::new(style),
                     mark: para.mark,
                     list: prev.list.or(para.list),
                     inlines: prev.inlines,
                     src,
                     id: prev.id,
+                    div: None,
                     controls: para.controls,
                 }
             }
             None => para,
         };
         if mark.hidden {
+            let spec_vanish = mark_rpr_node.and_then(|r| child(r, "specVanish")).is_some_and(on_off);
+            let empty = para.inlines.iter().map(Inline::units).sum::<usize>() == 0;
+            if spec_vanish && empty && self.res.styles.compat == Compat::Generic {
+                self.pending_spec = Some(spec.unwrap_or_else(|| para.style.clone()));
+            }
             para.mark = mark;
             self.pending_hidden = Some(para);
             return None;
@@ -1270,11 +1681,7 @@ impl Reader {
                     "r" => self.read_run(e, base, pkg, out),
                     "br" | "cr" => {
                         let run = self.direct_run(e, base, &mut RunProps::default());
-                        let kind = match attr(e, "type") {
-                            Some("page") if e.tag_name().name() == "br" => BreakKind::Page,
-                            Some("column") if e.tag_name().name() == "br" => BreakKind::Column,
-                            _ => BreakKind::Line,
-                        };
+                        let kind = if e.tag_name().name() == "br" { BreakKind::of(attr(e, "type"), attr(e, "clear")) } else { BreakKind::Line };
                         out.push(Inline::Break(kind, run));
                     }
                     "fldSimple" if !self.in_code() => {
@@ -1405,6 +1812,7 @@ impl Reader {
                             begin: out.len(),
                             spanning: false,
                             toc: false,
+                            form: child(c, "ffData").and_then(form_data),
                         });
                         let (lock, dirty) = (flag("fldLock"), flag("dirty"));
                         out.push(Inline::FieldBegin {
@@ -1472,6 +1880,12 @@ impl Reader {
             match name {
                 "t" | "delText" => {
                     if let Some(t) = c.text().filter(|t| !t.is_empty()) {
+                        // A soft hyphen character in w:t is no optional hyphen (only w:softHyphen is): an ordinary
+                        // character that never breaks.
+                        // ponytail: read as a no-break hyphen, so it draws the font's hyphen rather than its own
+                        // U+00AD glyph (the same in the common fonts); its own mark in the model if they differ.
+                        let t = if t.contains('\u{AD}') { std::borrow::Cow::Owned(t.replace('\u{AD}', "\u{2011}")) } else { t.into() };
+                        let t = &*t;
                         // A line break inside w:t shows as a space.
                         if t.contains(['\n', '\r']) {
                             push_text(out, &t.replace("\r\n", " ").replace(['\n', '\r'], " "), &run);
@@ -1497,15 +1911,28 @@ impl Reader {
                     out.push(Inline::PTab(PTab { align, margin: attr(c, "relativeTo") != Some("indent"), leader }, run.clone()));
                 }
                 "br" => {
-                    let kind = match attr(c, "type") {
-                        Some("page") => BreakKind::Page,
-                        Some("column") => BreakKind::Column,
-                        _ => BreakKind::Line,
-                    };
-                    out.push(Inline::Break(kind, run.clone()));
+                    out.push(Inline::Break(BreakKind::of(attr(c, "type"), attr(c, "clear")), run.clone()));
                 }
                 "cr" => out.push(Inline::Break(BreakKind::Line, run.clone())),
                 "noBreakHyphen" => push_text(out, "\u{2011}", &run),
+                // `w:pgNum`: the page number, as a PAGE field.
+                "pgNum" => {
+                    let id = FieldId::next();
+                    let view = FieldView::Result;
+                    out.push(Inline::FieldBegin {
+                        id,
+                        kind: Some(FieldKind::Page),
+                        lock: false,
+                        dirty: false,
+                        view,
+                        label: None,
+                        value: None,
+                        run: run.clone(),
+                    });
+                    out.push(Inline::Text("PAGE".into(), run.clone()));
+                    out.push(Inline::FieldSep { id, run: run.clone() });
+                    out.push(Inline::FieldEnd { id, run: run.clone() });
+                }
                 "softHyphen" => push_text(out, "\u{AD}", &run),
                 "sym" => {
                     let font = attr(c, "font").unwrap_or("Symbol").to_string();
@@ -1516,6 +1943,13 @@ impl Reader {
                 }
                 "drawing" => self.read_drawing(c, &run, pkg, out),
                 "pict" | "object" => self.read_pict(c, &run, pkg, out),
+                name if let Some(&(element, _)) = DATE_BLOCKS.iter().find(|(e, _)| *e == name) => {
+                    out.push(Inline::DateBlock(element, String::new(), run.clone()));
+                }
+                "ruby" => {
+                    let ruby = self.read_ruby(c, base, pkg);
+                    out.push(Inline::Ruby(Rc::new(ruby), run.clone()));
+                }
                 "footnoteReference" | "endnoteReference" => out.push(Inline::NoteRef {
                     kind: if name == "footnoteReference" { NoteKind::Foot } else { NoteKind::End },
                     id: int(attr(c, "id")).unwrap_or(0),
@@ -1524,14 +1958,40 @@ impl Reader {
                 }),
                 "footnoteRef" => out.push(Inline::NoteMark(NoteKind::Foot, self.note_id, run.clone())),
                 "endnoteRef" => out.push(Inline::NoteMark(NoteKind::End, self.note_id, run.clone())),
-                "separator" => out.push(Inline::Separator { continuation: false, run: run.clone() }),
-                "continuationSeparator" => out.push(Inline::Separator { continuation: true, run: run.clone() }),
+                "separator" => out.push(Inline::Separator { continuation: false, full: false, run: run.clone() }),
+                "continuationSeparator" => out.push(Inline::Separator { continuation: true, full: self.in_endnotes, run: run.clone() }),
                 _ => {}
             }
         }
         if self.record {
             self.note_seg(out, prev);
         }
+    }
+
+    /// A ruby's base and annotation text with their runs, its alignment and raise.
+    fn read_ruby(&mut self, ruby: Node, base: &RunProps, pkg: &mut Package) -> Ruby {
+        let record = std::mem::replace(&mut self.record, false);
+        let mut text = |name: &str| {
+            let mut tmp = Vec::new();
+            if let Some(n) = child(ruby, name) {
+                self.read_inlines(n, base, pkg, &mut tmp);
+            }
+            tmp.into_iter().filter_map(|i| if let Inline::Text(t, r) = i { Some((t, r)) } else { None }).collect()
+        };
+        let (base_text, annotation) = (text("rubyBase"), text("rt"));
+        self.record = record;
+        let pr = child(ruby, "rubyPr");
+        let align = match pr.and_then(|p| child(p, "rubyAlign")).and_then(val) {
+            Some("distributeLetter") => 1,
+            Some("distributeSpace") => 2,
+            Some("left") => 3,
+            Some("right") => 4,
+            Some("rightVertical") => 5,
+            _ => 0,
+        };
+        let raise = pr.and_then(|p| child(p, "hpsRaise")).and_then(|h| half_points(val(h))).unwrap_or(0.0);
+        let size = pr.and_then(|p| child(p, "hps")).and_then(|h| half_points(val(h)));
+        Ruby { base: base_text, text: annotation, align, raise, size, xml: Raw(Some(raw(ruby))) }
     }
 
     /// A checkbox content control (`w14:checkbox`) as one symbol: the character it
@@ -1641,7 +2101,14 @@ impl Reader {
         let kind = parsed.kind();
         let mergeformat = parsed.switches.iter().any(|s| s.flag == '*' && s.arg.as_deref().is_some_and(|a| a.eq_ignore_ascii_case("MERGEFORMAT")));
         let fmt = if mergeformat { f.first_result_run.or(f.first_code_run.clone()) } else { f.first_code_run.clone() };
-        if let Inline::FieldBegin { kind: k, run, lock, .. } = &mut out[f.begin] {
+        // A legacy check box or drop-down shows its form data, in its code's run.
+        let form = f.form.filter(|(k, _)| parsed.name == if *k == FieldKind::DropDown { "FORMDROPDOWN" } else { "FORMCHECKBOX" });
+        if let Inline::FieldBegin { kind: k, run, lock, value, .. } = &mut out[f.begin] {
+            if let Some((form, shown)) = form {
+                *run = f.first_code_run.unwrap_or_else(|| end_run.clone());
+                (*k, *value) = (Some(form), shown);
+                return;
+            }
             // A locked field (`w:fldLock`) isn't updated: Word shows its result.
             let kind = kind.filter(|_| !*lock);
             if kind.is_some() {
@@ -1699,6 +2166,7 @@ impl Reader {
             begin,
             spanning: false,
             toc: false,
+            form: None,
         });
         self.read_inlines(e, base, pkg, out);
         let f = self.fields.pop().expect("the simple field pushed above");
@@ -1813,7 +2281,7 @@ impl Reader {
                 .filter(|l| !matches!(l.fill, Some(crate::drawing::paint::Fill::None)))
                 .and_then(|l| l.width)
                 .map_or(0.0, |w| w.0 as f64 / 12700.0);
-            TextBox { blocks, insets, outline, auto_fit: false, v_anchor }
+            TextBox { blocks, insets, outline, auto_fit: false, v_anchor, flow: 0 }
         });
         if !st.absolute {
             let text = text_box.map(|text_box| Box::new(InlineText { id: next_para_id(), text_box }));
@@ -1856,6 +2324,16 @@ impl Reader {
             _ => "bothSides",
         };
         let twips = |v: f64| (v * 20.0).trunc() / 20.0;
+        let dflt = [0.0, 0.0, 9.0, 9.0];
+        let dist = std::array::from_fn(|i| (st.wrap_dist[i].unwrap_or(dflt[i]) * 20.0).round() / 20.0);
+        // Compat 15: a VML float is behind the text only without wrapping.
+        let behind = st.z < 0 && (self.res.styles.compat != Compat::Generic || wrap == "none");
+        let poly = v.wrap_coords.filter(|_| matches!(wrap.as_str(), "tight" | "through")).map(Rc::from);
+        let line = shape.sp().and_then(|s| s.line.as_ref()).or_else(|| shape.pic().and_then(|p| p.line.as_ref()));
+        let pen = line.filter(|l| !matches!(l.fill, Some(crate::drawing::paint::Fill::None))).map(|l| l.width.map_or(15.0, |w| w.0 as f64 / 635.0));
+        let (h_align, v_align) = (align(&st.h_align), align(&st.v_align));
+        let effect =
+            vml_effect(pen, (h_align.is_none() && v_align.is_none()).then(|| [st.x, st.y, st.x + st.w, st.y + st.h].map(|v| (v * 20.0).trunc())));
         self.float_order += 1;
         out.push(Inline::Float(
             Box::new(Float {
@@ -1868,26 +2346,47 @@ impl Reader {
                 lock_aspect: false,
                 text_box,
                 h_relative: h_relative.into(),
-                h_align: align(&st.h_align),
+                h_align,
                 h_offset: twips(st.x),
                 v_relative: v_relative.into(),
-                v_align: align(&st.v_align),
+                v_align,
                 v_offset: twips(st.y),
                 wrap,
                 wrap_text: wrap_text.into(),
-                dist: [0.0, 0.0, 9.0, 9.0],
-                effect: [0.0; 4],
-                poly: None,
-                behind: st.z < 0,
-                allow_overlap: true,
-                layout_in_cell: true,
+                dist,
+                effect,
+                poly,
+                behind,
+                allow_overlap: v.allow_overlap,
+                layout_in_cell: v.allow_in_cell,
                 order: self.float_order,
                 z: st.z.unsigned_abs().min(u64::from(u32::MAX)) as u32,
                 src: Some(pict.range()),
                 locked: false,
                 frame_src: None,
+                in_note: false,
                 parts: Vec::new(),
                 rot_swap: false,
+                vml: true,
+                relative: Relative {
+                    size: st.size_percent.clone().map(|s| {
+                        s.filter(|(_, p)| *p != 0).map(|(from, p)| {
+                            let from = match from.as_str() {
+                                "page" => "page",
+                                "left-margin-area" => "leftMargin",
+                                "right-margin-area" => "rightMargin",
+                                "top-margin-area" => "topMargin",
+                                "bottom-margin-area" => "bottomMargin",
+                                "inner-margin-area" => "insideMargin",
+                                "outer-margin-area" => "outsideMargin",
+                                _ => "margin",
+                            };
+                            (from.to_string(), p)
+                        })
+                    }),
+                    pos: st.pos_percent.map(|p| p.filter(|&p| p != 0 && p != -10001)),
+                    drawn: None,
+                },
                 shape: Some(Box::new(shape)),
             }),
             run.clone(),
@@ -1990,9 +2489,7 @@ impl Reader {
                         .filter(|q| q.is_element())
                         .filter_map(|q| Some((q.attribute("x")?.parse::<f64>().ok()? / 21600.0, q.attribute("y")?.parse::<f64>().ok()? / 21600.0)))
                         .collect();
-                    (pts.len() >= 2).then(|| {
-                        pts.iter().fold([f64::MAX, f64::MAX, f64::MIN, f64::MIN], |b, &(x, y)| [b[0].min(x), b[1].min(y), b[2].max(x), b[3].max(y)])
-                    })
+                    (pts.len() >= 2).then(|| Rc::from(pts))
                 }),
                 behind: item.attribute("behindDoc").is_some_and(|v| on_off_str(Some(v))),
                 allow_overlap: item.attribute("allowOverlap").map(|v| on_off_str(Some(v))).unwrap_or(true),
@@ -2002,8 +2499,23 @@ impl Reader {
                 src: Some(d.range()),
                 locked: item.attribute("locked").is_some_and(|v| on_off_str(Some(v))),
                 frame_src: None,
+                in_note: false,
                 parts,
                 rot_swap: false,
+                vml: false,
+                relative: {
+                    let tenths = |n: Option<Node>| n.and_then(|n| n.text()?.trim().parse::<i64>().ok()).map(|v| v / 100).filter(|&v| v != 0);
+                    let size = |el: &str, pct: &str| {
+                        let s = item.children().find(|c| is(*c, WP14, el))?;
+                        Some((s.attribute("relativeFrom").unwrap_or("margin").to_string(), tenths(s.children().find(|c| is(*c, WP14, pct)))?))
+                    };
+                    let at = |el: &str, pct: &str| tenths(pos(el).and_then(|p| p.descendants().find(|c| is(*c, WP14, pct))));
+                    Relative {
+                        size: [size("sizeRelH", "pctWidth"), size("sizeRelV", "pctHeight")],
+                        pos: [at("positionH", "pctPosHOffset"), at("positionV", "pctPosVOffset")],
+                        drawn: None,
+                    }
+                },
                 shape: Some(Box::new(shape)),
             }),
             run.clone(),
@@ -2055,7 +2567,12 @@ impl Reader {
         let body = shape.descendants().find(|n| n.tag_name().name() == "bodyPr");
         let ins = |n: &str, dflt: f64| body.and_then(|b| emu(b.attribute(n))).unwrap_or(dflt);
         let ln = shape.descendants().find(|c| c.tag_name().name() == "spPr").and_then(|p| p.children().find(|c| is(*c, A, "ln")));
-        let w = ln.and_then(|l| l.attribute("w")).and_then(|v| v.parse::<i64>().ok()).unwrap_or(0);
+        // Without its own width the outline takes the width of the theme's line its style refers to.
+        let style_w = || {
+            let idx = shape.descendants().find(|c| is(*c, A, "lnRef"))?.attribute("idx")?.parse::<u32>().ok()?;
+            Some(crate::drawing::paint::style_entry(&self.theme.lines, None, idx)?.width?.0)
+        };
+        let w = ln.and_then(|l| l.attribute("w")).and_then(|v| v.parse::<i64>().ok()).or_else(style_w).unwrap_or(0);
         let inside = ln.and_then(|l| l.attribute("algn")) == Some("in");
         let outline = 2.0 * if inside { w } else { w / 2 } as f64 / 12700.0;
         let auto_fit = body.is_some_and(|b| b.children().any(|c| is(c, A, "spAutoFit")));
@@ -2068,7 +2585,7 @@ impl Reader {
             Some("b") => 2,
             _ => 0,
         };
-        TextBox { blocks, insets: [ins("lIns", 7.2), ins("tIns", 3.6), ins("rIns", 7.2), ins("bIns", 3.6)], outline, auto_fit, v_anchor }
+        TextBox { blocks, insets: [ins("lIns", 7.2), ins("tIns", 3.6), ins("rIns", 7.2), ins("bIns", 3.6)], outline, auto_fit, v_anchor, flow: 0 }
     }
 
     fn group_parts(&mut self, g: Node, map: &Map, path: &mut crate::drawing::ChildPath, pkg: &mut Package, out: &mut Vec<GroupPart>) {
@@ -2104,7 +2621,26 @@ impl Reader {
 
     // ---------------- tables ----------------
 
-    fn read_table(&mut self, t: Node, pkg: &mut Package) -> Table {
+    /// Whether the table `m` right after the tables `run` is one table with them: neither floats or both float with the
+    /// same position, both have the same style and run the same way, and their grids are the same or have no column without a width (their edges then
+    /// merge).
+    fn joins(&self, run: &[Node], m: Node) -> bool {
+        let kind = |t: Node| {
+            let direct = TblProps::parse(child(t, "tblPr"), &self.res.styles.colours);
+            let style = self.res.styles.table_style(direct.style.as_deref()).map(str::to_string);
+            let mut tbl = self.res.styles.table_region(style.as_deref(), &[]).tbl.clone();
+            tbl.merge(&direct);
+            (tbl.floating, style, tbl.bidi_visual.unwrap_or(false))
+        };
+        let grids: Vec<Vec<f64>> = run.iter().copied().chain([m]).map(table_grid).collect();
+        let first = kind(run[0]);
+        kind(m) == first && (grids.iter().all(|g| *g == grids[0]) || grids.iter().flatten().all(|w| *w > 0.0))
+    }
+
+    /// One table from `ts`, tables with nothing between them: the first one's properties and grid, every table's
+    /// rows in order.
+    fn read_table(&mut self, ts: &[Node], pkg: &mut Package) -> Table {
+        let t = ts[0];
         let direct = TblProps::parse(child(t, "tblPr"), &self.res.styles.colours);
         let style_id = self.res.styles.table_style(direct.style.as_deref()).map(str::to_string);
         let style_region = self.res.styles.table_region(style_id.as_deref(), &[]);
@@ -2112,7 +2648,7 @@ impl Reader {
         tbl.merge(&direct);
         let widths = |g: Node| children(g, "gridCol").map(|c| attr_twips(c, "w").unwrap_or(0.0)).collect::<Vec<f64>>();
         let grid_node = child(t, "tblGrid");
-        let grid = grid_node.map(widths).unwrap_or_default();
+        let mut grid = grid_node.map(widths).unwrap_or_default();
         // The earlier properties resolve over the earlier table style, as the table's own do over its style. Earlier
         // properties without borders leave the table's borders as they are (FX-REVIEW-TABLES and its rejected twin).
         let now = &tbl.borders;
@@ -2126,7 +2662,7 @@ impl Reader {
                 style_id,
                 width: tbl.width.unwrap_or(Width::Auto),
                 jc: tbl.jc.unwrap_or(Jc::Left),
-                ind: tbl.ind.unwrap_or(0.0),
+                ind: tbl.ind.map_or(0.0, Width::dxa),
                 borders: [b.top.clone(), b.left.clone(), b.bottom.clone(), b.right.clone(), b.inside_h.clone(), b.inside_v.clone()],
                 fixed: tbl.fixed.unwrap_or(false),
                 cell_spacing: tbl.cell_spacing.unwrap_or(0.0),
@@ -2140,7 +2676,13 @@ impl Reader {
         });
         let look =
             direct.look.unwrap_or(Look { first_row: true, last_row: false, first_col: true, last_col: false, no_h_band: false, no_v_band: true });
-        let row_nodes: Vec<(Node, Vec<ControlId>)> = self.rows_of(t, &[]);
+        let mut row_nodes: Vec<(Node, Vec<ControlId>)> = Vec::new();
+        let mut row_table = Vec::new();
+        for (k, t) in ts.iter().enumerate() {
+            let rows = self.rows_of(*t, &[]);
+            row_table.extend(std::iter::repeat_n(k, rows.len()));
+            row_nodes.extend(rows);
+        }
         let nrows = row_nodes.len();
         let row_band = tbl.row_band.unwrap_or(0);
         let headers = row_nodes
@@ -2156,14 +2698,32 @@ impl Reader {
         let mut rows = Vec::new();
         let mut row_jc: Option<Option<Jc>> = None;
         let mut first_row_jc: Option<Jc> = None;
+        let mut first_row_width: Option<Width> = None;
+        let mut first_row_ind: Option<Width> = None;
         for (ri, (rn, row_controls)) in row_nodes.iter().enumerate() {
             let mut trp = style_region.tr.clone();
             trp.merge(&TrProps::parse(child(*rn, "trPr")));
+            let mut ex = TblProps::parse(child(*rn, "tblPrEx"), &self.res.styles.colours);
+            // A later table's rows keep its own alignment and cell margins as their exceptions.
+            if row_table[ri] > 0 {
+                let own = TblProps::parse(child(ts[row_table[ri]], "tblPr"), &self.res.styles.colours);
+                let mut later = TblProps { jc: own.jc, margins: own.margins, ..Default::default() };
+                later.merge(&ex);
+                ex = later;
+            }
+            trp.jc = trp.jc.or(ex.jc);
             // Every row's alignment, or none when they differ.
             row_jc = Some(if ri == 0 || row_jc == Some(trp.jc) { trp.jc } else { None });
             if ri == 0 {
                 first_row_jc = trp.jc;
+                // The first row's exceptions are the table's, unless the row starts a layout run of its own.
+                let own = ex.fixed != Some(true) || tbl.fixed == Some(true);
+                first_row_width = ex.width.filter(|_| own);
+                first_row_ind = ex.ind.filter(|_| own);
             }
+            let mut row_tbl = tbl.clone();
+            row_tbl.borders.merge(&ex.borders);
+            row_tbl.margins.merge(&ex.margins);
             let cell_nodes: Vec<(Node, Vec<ControlId>)> = self.cells_of(*rn, &[]);
             let ncols = cell_nodes.len();
             let mut cells = Vec::new();
@@ -2173,7 +2733,7 @@ impl Reader {
                 let tc_pr = child(*cn, "tcPr");
                 tcp.merge(&TcProps::parse(tc_pr, &self.res.styles.colours));
                 let unset = if style_id.is_none() { 0.5 } else { 0.0 };
-                let tm = &tbl.margins;
+                let tm = &row_tbl.margins;
                 let rev = self.cell_revisions(tc_pr, &region.tc, tm, unset);
                 let ctx = TableCtx { region: region.clone() };
                 let blocks = self.read_blocks(*cn, pkg, Some(&ctx));
@@ -2196,6 +2756,7 @@ impl Reader {
                     text_direction: tcp.text_direction.clone().unwrap_or_else(|| "lrTb".into()),
                     no_wrap: tcp.no_wrap.unwrap_or(false),
                     fit_text: tcp.fit_text.unwrap_or(false),
+                    hide_mark: tc_pr.and_then(|p| child(p, "hideMark")).is_some_and(|n| !matches!(attr(n, "val"), Some("0" | "false" | "off"))),
                     direct: Raw(child(*cn, "tcPr").map(|n| Rc::from(&n.document().input_text()[n.range()]))),
                     blocks,
                     controls: cell_controls.clone(),
@@ -2219,27 +2780,69 @@ impl Reader {
                 header: trp.header.unwrap_or(false),
                 grid_before: trp.grid_before.unwrap_or(0).max(0) as usize,
                 grid_after: trp.grid_after.unwrap_or(0).max(0) as usize,
-                w_before: trp.w_before.map(|w| w.max(0.0)),
-                w_after: trp.w_after.map(|w| w.max(0.0)),
-                ind: TblProps::parse(child(*rn, "tblPrEx"), &self.res.styles.colours).ind,
+                w_before: trp.w_before,
+                w_after: trp.w_after,
+                ind: ex.ind.map(Width::dxa).filter(|_| ex.fixed == Some(true) && tbl.fixed != Some(true)),
                 jc: trp.jc,
+                div: tr_pr
+                    .and_then(|p| child(p, "divId"))
+                    .and_then(|n| int(val(n)))
+                    .map(|id| Rc::new(RowDiv { id, shift: 0.0, lead: 0.0, trail: 0.0, boxes: Rc::from([]) })),
+                shading: ex.shading.flatten(),
+                cell_spacing: trp.cell_spacing.or(ex.cell_spacing).map(|s| s.max(0.0)),
+                run: (ex.fixed == Some(true) && tbl.fixed != Some(true)).then(|| ex.width.or(tbl.width).unwrap_or(Width::Auto)),
+                vanished: tr_pr.and_then(|p| child(p, "hidden")).is_some_and(|n| !matches!(attr(n, "val"), Some("0" | "false" | "off")))
+                    && cells.iter().all(|c| {
+                        c.blocks.iter().all(|b| match b {
+                            Block::Para(p) => p.mark.hidden && p.inlines.iter().all(|i| i.run().is_none_or(|r| r.hidden)),
+                            Block::Table(_) => false,
+                        })
+                    }),
+                borders: (ex.borders != Borders::default()).then(|| {
+                    let b = &row_tbl.borders;
+                    Rc::new([b.top.clone(), b.left.clone(), b.bottom.clone(), b.right.clone(), b.inside_h.clone(), b.inside_v.clone()])
+                }),
                 cells,
                 controls: row_controls.clone(),
                 src: self.record.then(|| Rc::new(rn.range())),
                 rev,
             });
         }
+        let grids: Vec<Vec<f64>> = ts.iter().copied().map(table_grid).collect();
+        if grids.iter().any(|g| *g != grid) {
+            // Compat ≤ 14: how far a later table's cell edges may move right onto the earlier edges, from the first
+            // cells' left pulls: the first table's, less the later one's, plus the later one's half left border.
+            let pull = |ri: usize| {
+                let c = rows[ri].cells.first();
+                let table = rows[ri].borders.as_ref().map_or(&tbl.borders.left, |b| &b[1]);
+                let b = c.and_then(|c| c.left.as_ref()).or(table.as_ref()).filter(|b| b.visible()).map_or(0, |b| (b.width * 20.0).round() as i64);
+                let hb = (b + 1) / 2;
+                (hb, hb.max(c.map_or(0, |c| (c.margins[1] * 20.0).round() as i64)))
+            };
+            let first_of = |k: usize| row_table.iter().position(|&t| t == k);
+            let moves: Vec<i64> = (0..ts.len())
+                .map(|k| match (k, first_of(0), first_of(k)) {
+                    (1.., Some(a), Some(b)) if self.res.styles.compat == Compat::Legacy => pull(a).1 - pull(b).1 + pull(b).0,
+                    _ => 0,
+                })
+                .collect();
+            grid = merged_grid(&grids, &mut rows, &row_table, &moves);
+        }
         let b = &tbl.borders;
         Table {
             style_id,
-            width: tbl.width.unwrap_or(Width::Auto),
+            width: first_row_width.or(tbl.width).unwrap_or(Width::Auto),
             jc: first_row_jc
                 .filter(|_| self.res.styles.compat == Compat::Generic && tbl.floating.is_none())
                 .or(tbl.jc)
                 .or(row_jc.flatten())
                 .unwrap_or(Jc::Left),
-            ind: tbl.ind.unwrap_or(0.0),
-            ind_set: tbl.ind.is_some() || direct.style.as_deref().is_none_or(|s| self.res.styles.table_style(Some(s)) != Some(s)),
+            own_jc: tbl.jc,
+            ind: first_row_ind.or(tbl.ind).map_or(0.0, Width::dxa),
+            ind_pct: first_row_ind.or(tbl.ind).and_then(Width::pct),
+            // Without a default table style an unstyled table's indent is unset, as a frozen style's is.
+            ind_set: first_row_ind.or(tbl.ind).is_some()
+                || self.res.styles.default_table.is_some() && direct.style.as_deref().is_none_or(|s| self.res.styles.table_style(Some(s)) != Some(s)),
             borders: [b.top.clone(), b.left.clone(), b.bottom.clone(), b.right.clone(), b.inside_h.clone(), b.inside_v.clone()],
             fixed: tbl.fixed.unwrap_or(false),
             cell_spacing: tbl.cell_spacing.unwrap_or(0.0),
@@ -2249,7 +2852,7 @@ impl Reader {
             bidi_visual: tbl.bidi_visual.unwrap_or(false),
             grid,
             rows,
-            src: self.record.then(|| Rc::new(t.range())),
+            src: self.record.then(|| Rc::new(t.range().start..ts[ts.len() - 1].range().end)),
             id: next_para_id(),
             direct: Raw(child(t, "tblPr").map(|n| Rc::from(&n.document().input_text()[n.range()]))),
             controls: Vec::new(),
@@ -2299,6 +2902,91 @@ impl Reader {
         });
         CellRevisions { structural, change }
     }
+}
+
+/// A table's `w:tblGrid` column widths.
+fn table_grid(t: Node) -> Vec<f64> {
+    child(t, "tblGrid").map(|g| children(g, "gridCol").map(|c| attr_twips(c, "w").unwrap_or(0.0)).collect()).unwrap_or_default()
+}
+
+/// The grid of tables joined into one: every table's column edges, from the table's start (to the nearest twip).
+/// `rows` (from table `row_table[i]` of `grids`) get their gaps and cells' spans over it; columns a row has past its
+/// own grid's end come after the merged grid's. A later table with a move `moves[k] > 0` lays each row of dxa cells
+/// out from the table's left edge instead, each cell's end moving right onto the next earlier edge while the row's
+/// total move stays within it.
+fn merged_grid(grids: &[Vec<f64>], rows: &mut [Row], row_table: &[usize], moves: &[i64]) -> Vec<f64> {
+    let mut edges: Vec<Vec<i64>> = grids
+        .iter()
+        .map(|g| {
+            std::iter::once(0)
+                .chain(g.iter().scan(0.0, |x, w| {
+                    *x += w;
+                    Some((*x * 20.0).round() as i64)
+                }))
+                .collect()
+        })
+        .collect();
+    let mut own: Vec<Option<Vec<i64>>> = vec![None; rows.len()];
+    for k in 1..grids.len() {
+        let d = moves.get(k).copied().unwrap_or(0);
+        let ri: Vec<usize> = (0..rows.len()).filter(|&i| row_table[i] == k).collect();
+        let dxa = |r: &Row| r.grid_before == 0 && r.cells.iter().all(|c| matches!(c.width, Some(Width::Dxa(_))));
+        if d <= 0 || ri.is_empty() || !ri.iter().all(|&i| dxa(&rows[i])) {
+            continue;
+        }
+        let mut earlier: Vec<i64> = edges[..k].iter().flatten().copied().collect();
+        earlier.sort_unstable();
+        let mut kept = Vec::new();
+        for &i in &ri {
+            let (mut x, mut moved) = (0i64, 0i64);
+            let mut row = vec![0];
+            for c in &rows[i].cells {
+                let mut end = x + (c.width.map_or(0.0, Width::dxa) * 20.0).round() as i64;
+                if let Some(&a) = earlier.iter().find(|&&a| a >= end)
+                    && moved + a - end <= d
+                {
+                    moved += a - end;
+                    end = a;
+                }
+                x = end;
+                row.push(end);
+            }
+            kept.extend(row.iter().copied());
+            own[i] = Some(row);
+        }
+        edges[k] = kept;
+    }
+    let mut all: Vec<i64> = edges.iter().flatten().copied().collect();
+    all.sort_unstable();
+    all.dedup();
+    let index = |e: i64| all.binary_search(&e).unwrap_or(0);
+    for (r, row) in rows.iter_mut().zip(&own) {
+        if let Some(row) = row {
+            for (c, w) in r.cells.iter_mut().zip(row.windows(2)) {
+                c.span = index(w[1]) - index(w[0]);
+            }
+            r.grid_after = 0;
+        }
+    }
+    let at = |k: usize, c: usize| match edges[k].get(c) {
+        Some(e) => all.binary_search(e).unwrap_or(0),
+        None => all.len() + c - edges[k].len(),
+    };
+    for ((r, &k), moved) in rows.iter_mut().zip(row_table).zip(&own) {
+        if moved.is_some() {
+            continue;
+        }
+        let mut c = r.grid_before;
+        r.grid_before = at(k, c);
+        for cell in &mut r.cells {
+            let from = at(k, c);
+            c += cell.span;
+            cell.span = at(k, c) - from;
+        }
+        let end = at(k, c);
+        r.grid_after = at(k, c + r.grid_after) - end;
+    }
+    all.windows(2).map(|w| (w[1] - w[0]) as f64 / 20.0).collect()
 }
 
 fn cell_margins(tcp: &TcProps, tm: &Margins, unset: f64) -> [f64; 4] {
@@ -2489,5 +3177,37 @@ impl crate::drawing::read::Source for DrawingSource<'_, '_> {
         }
         let mut ctx = crate::drawing::read::Ctx { source: &mut NoImages, unknown_presets: Vec::new() };
         crate::drawing::read::diagram_drawing(&xml, &mut ctx)
+    }
+}
+
+/// A VML shape's effect extents, points: its bounds with its line (`pen`, its width in twips, `None` unstroked) on the
+/// 96-dpi pixel grid of its position frame, past its box (`[l, t, r, b]`, twips, in that frame) on each side. Half the
+/// pen, at least half a pixel, goes out on each side, the bottom a pixel further; an unstroked shape's edges go to the
+/// nearest pixel.
+// ponytail: an aligned shape gets none; its frame position is known only once it is placed.
+fn vml_effect(pen: Option<f64>, rect: Option<[f64; 4]>) -> [f64; 4] {
+    let Some([l, t, r, b]) = rect else { return [0.0; 4] };
+    let px = |v: f64| v / 15.0;
+    let bounds = match pen {
+        Some(w) => {
+            let h = (w / 30.0).max(0.5);
+            [(px(l) - h).floor(), (px(t) - h).floor(), (px(r) + h).ceil(), (px(b) + h).floor() + 1.0]
+        }
+        None => [px(l).round(), px(t).round(), px(r).round(), px(b).round()],
+    }
+    .map(|v| v * 15.0);
+    [l - bounds[0], t - bounds[1], bounds[2] - r, bounds[3] - b].map(|e| e.max(0.0) / 20.0)
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn a_vml_shapes_effect_extents_reach_its_lines_pixel_bounds() {
+        let tw = |e: [f64; 4]| e.map(|v| (v * 20.0 * 1000.0).round() / 1000.0);
+        assert_eq!(tw(super::vml_effect(Some(15.0), Some([2002.0, 0.0, 3442.0, 800.0]))), [22.0, 15.0, 8.0, 10.0]);
+        assert_eq!(tw(super::vml_effect(Some(15.0), Some([2007.0, 0.0, 3459.0, 800.0])))[2], 21.0);
+        assert_eq!(tw(super::vml_effect(Some(60.0), Some([2000.0, 0.0, 3440.0, 800.0])))[2], 40.0);
+        assert_eq!(tw(super::vml_effect(None, Some([2002.0, 0.0, 3442.0, 800.0]))), [7.0, 0.0, 0.0, 0.0]);
+        assert_eq!(super::vml_effect(Some(15.0), None), [0.0; 4]);
     }
 }

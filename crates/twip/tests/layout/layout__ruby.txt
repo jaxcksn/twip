@@ -1,0 +1,11 @@
+page 0 12240 15840
+  1440 1936 Ruby
+  1440 2313 Latin base text with an annotation: Twiplayout and on with the line. Inventory relevant
+  1440 2560 group relief results region ledger brief usage cause colleague partner. Section
+  1440 2797 notice claim team export staff newsletter review.
+  1440 3306 A CJK base: 漢漢kanji then text; 漢kan left-aligned ruby.
+  1440 3825 A long annotation over a short base: aba long annotation Notice claim team export staff
+  1440 4071 newsletter review matter presenter advisor account served. Savings pilot receipt
+  1440 4308 corporate requirement standard fact that products distribution filed logistics.
+  1440 4546 Chapter plan regional maintenance accessibility tax.
+  1440 4943 A paragraph without ruby, for the line pitch.

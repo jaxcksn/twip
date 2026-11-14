@@ -38,7 +38,13 @@ impl Default for Theme {
 impl Theme {
     pub fn parse(xml: Option<&str>) -> Theme {
         let mut t = Theme::default();
-        let Some(doc) = xml.and_then(|x| roxmltree::Document::parse(x).ok()) else { return t };
+        let Some(doc) = xml.and_then(|x| roxmltree::Document::parse(x).ok()) else {
+            // A document without a theme part has Word's built-in theme lines.
+            for (l, w) in t.lines.iter_mut().zip([12700, 19050, 25400]) {
+                l.width = Some(super::units::Emu(w));
+            }
+            return t;
+        };
         if let Some(cs) = doc.descendants().find(|n| is(*n, A, "clrScheme")) {
             for (i, name) in ["dk1", "lt1", "dk2", "lt2", "accent1", "accent2", "accent3", "accent4", "accent5", "accent6", "hlink", "folHlink"]
                 .into_iter()

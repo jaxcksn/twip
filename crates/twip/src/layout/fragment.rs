@@ -143,6 +143,8 @@ pub struct LineFragment {
     pub items: Box<[Item]>,
     pub pitch: f64,
     pub baseline: f64,
+    /// The spacing a multiple adds below the line's text, within its pitch.
+    pub below: f64,
     pub atoms: Box<[Atom]>,
     pub changed: bool,
     pub mark: Option<Unit>,

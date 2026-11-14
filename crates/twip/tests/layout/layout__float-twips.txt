@@ -1,0 +1,47 @@
+page 0 12240 15840
+  1440 1936 Float rectangles in whole twips
+  1440 2201 Offsets and sizes that aren't whole twips (635 EMU each): the offsets are truncated
+  1440 2439 to twips.
+  3463 2836 170688 EMU across (268.8 twips, 268). Inventory relevant group
+  3463 3074 relief results region ledger brief usage cause colleague partner.
+  3463 3311 Section notice claim team export staff newsletter review matter
+  3463 3548 presenter advisor account. Served savings pilot receipt
+  1440 3786 corporate requirement standard fact that products distribution filed. Logistics
+  1440 4023 chapter plan regional maintenance accessibility tax finds record proposal denied
+  1440 4261 contract. Onboarding support.
+  1440 4658 3000317 EMU from the margin. Notice
+  8392 4658 claim team export
+  1440 4896 staff newsletter review matter
+  8392 4896 presenter advisor
+  1440 5133 account served. Savings pilot receipt
+  8392 5133 corporate
+  1440 5370 requirement standard fact that products
+  8392 5370 distribution filed
+  1440 5608 logistics. Chapter plan regional maintenance accessibility tax finds record
+  1440 5845 proposal denied contract onboarding. Support network scheduled trend suggestions
+  1440 6083 board order update granted agreement marketing promotion. Division date.
+  3054 6480 One EMU short of an inch from the page edge. Pilot receipt corporate
+  3054 6717 requirement standard fact that products distribution filed
+  3054 6955 logistics chapter. Plan regional maintenance accessibility tax
+  3054 7192 finds record proposal denied contract onboarding support. Network
+  1440 7430 scheduled trend suggestions board order update granted agreement marketing
+  1440 7667 promotion division. Date profitable insights the meeting forecast hereby vendors
+  1440 7905 practical schedule state entry. Estimate management.
+  1440 8302 A VML float at
+  5100 8302 100.37pt by 3.33pt. Regional maintenance
+  1440 8539 accessibility
+  5100 8539 tax finds record proposal denied contract
+  1440 8777 onboarding
+  5100 8777 support network. Scheduled trend suggestions
+  1440 9014 board order update granted agreement marketing promotion division date. Profitable
+  1440 9252 insights the meeting forecast hereby vendors practical schedule state entry
+  1440 9489 estimate. Management action budget inventory relevant group relief results region
+  1440 9726 ledger brief usage. Cause colleague.
+  1440 10124 Trend suggestions board order update granted agreement marketing promotion
+  1440 10361 division date profitable. Insights the meeting forecast hereby vendors practical
+  1440 10599 schedule state entry estimate management. Action budget inventory relevant group
+  1440 10836 relief results region ledger brief usage cause. Colleague partner section notice.
+  float 1708 2661 3283 3606
+  float 6164 4581 8212 5369
+  float 1439 6304 2874 7021
+  float 3447 8192 4899 8793

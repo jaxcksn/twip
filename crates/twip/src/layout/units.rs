@@ -2,6 +2,9 @@
 
 pub const LU_PER_PT: f64 = 4096.0;
 
+/// One pixel of the 600-dpi device Word's PDF export lays text out on, in layout units (0.12pt).
+pub const DEVICE_PX: f64 = LU_PER_PT * 72.0 / 600.0;
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Lu(pub i32);
 
@@ -17,6 +20,11 @@ impl Lu {
 
     pub fn to_pt(self) -> f64 {
         f64::from(self.0) / LU_PER_PT
+    }
+
+    /// The nearest whole number of device pixels, half up.
+    pub fn device_px(self) -> i64 {
+        (i64::from(self.0) * 600 + 147456).div_euclid(294912)
     }
 
     pub const MAX: Lu = Lu(i32::MAX);

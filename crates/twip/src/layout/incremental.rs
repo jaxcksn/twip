@@ -110,11 +110,17 @@ fn props(s: &Section) -> Section {
         footers,
         pg_start,
         pg_fmt,
+        chapter,
         line_numbers,
         v_align,
         page_borders,
         page_borders_xml,
         line_grid,
+        notes,
+        no_endnote,
+        text_flow,
+        rtl_gutter,
+        footnote_columns,
         blocks: _,
         change,
     } = s;
@@ -135,11 +141,17 @@ fn props(s: &Section) -> Section {
         footers: footers.clone(),
         pg_start: *pg_start,
         pg_fmt: pg_fmt.clone(),
+        chapter: chapter.clone(),
         line_numbers: line_numbers.clone(),
         v_align: v_align.clone(),
         page_borders: page_borders.clone(),
         page_borders_xml: page_borders_xml.clone(),
         line_grid: *line_grid,
+        notes: notes.clone(),
+        no_endnote: *no_endnote,
+        text_flow: *text_flow,
+        rtl_gutter: *rtl_gutter,
+        footnote_columns: *footnote_columns,
         blocks: Vec::new(),
         change: change.clone(),
     }
@@ -346,7 +358,7 @@ fn shifted(t: &PageToken, span: Option<&Span>) -> PageToken {
 }
 
 fn same_used(used: &BodyFields, now: &BodyFields) -> bool {
-    (used.page.is_none() || (used.page == now.page && used.page_fmt == now.page_fmt))
+    (used.page.is_none() || (used.page == now.page && used.page_fmt == now.page_fmt && used.chapters == now.chapters))
         && (used.section.is_none() || used.section == now.section)
         && (used.num_pages.is_none() || used.num_pages == now.num_pages)
         && (used.section_pages.is_none() || used.section_pages == now.section_pages)
@@ -388,7 +400,11 @@ fn holds(b: &Block, para: ParaId) -> bool {
 
 fn references(blocks: &[Block], notes: &std::collections::HashSet<(NoteKind, i64)>) -> bool {
     blocks.iter().any(|b| match b {
-        Block::Para(p) => p.inlines.iter().any(|i| matches!(i, Inline::NoteRef { kind, id, .. } if notes.contains(&(*kind, *id)))),
+        Block::Para(p) => p.inlines.iter().any(|i| match i {
+            Inline::NoteRef { kind, id, .. } => notes.contains(&(*kind, *id)),
+            Inline::NoteMark(kind, id, _) => notes.contains(&super::document::mark_key(*kind, *id)),
+            _ => false,
+        }),
         Block::Table(t) => t.rows.iter().any(|r| r.cells.iter().any(|c| references(&c.blocks, notes))),
     })
 }

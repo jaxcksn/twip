@@ -3,7 +3,7 @@
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::docx::review::{MarkupView, RunRevisions};
-use crate::docx::{BreakKind, Inline, Paragraph};
+use crate::docx::{Inline, Paragraph};
 use crate::layout::Unit;
 
 pub const OBJECT: char = '\u{FFFC}';
@@ -39,7 +39,7 @@ impl UnitText {
             match i {
                 Inline::Text(s, _) => s.chars().for_each(|c| push(c, &mut text)),
                 Inline::Tab(_) | Inline::PTab(..) => push('\t', &mut text),
-                Inline::Break(BreakKind::Line, _) => push('\u{2028}', &mut text),
+                Inline::Break(k, _) if k.is_line() => push('\u{2028}', &mut text),
                 Inline::Break(..) => push('\u{c}', &mut text),
                 Inline::Sym { ch, .. } => push(*ch, &mut text),
                 i if i.units() == 1 => push(OBJECT, &mut text),

@@ -340,6 +340,7 @@ impl Editor {
             inlines: Vec::new(),
             src: None,
             id: pid,
+            div: None,
             controls: Vec::new(),
         };
         sp.text = ShapeText::Story;
@@ -355,6 +356,7 @@ impl Editor {
                 crate::drawing::text::VAnchor::Bottom => 2,
                 _ => 0,
             },
+            flow: 0,
         });
         if !matches!(self.set_float(n, "Add Text", fonts), super::commands::Outcome::Changed(_)) {
             return false;
@@ -450,9 +452,12 @@ impl Editor {
             src: None,
             locked: false,
             frame_src: None,
+            in_note: false,
             parts: Vec::new(),
             shape: Some(Box::new(Shape::new(kind, emu(rect[2]), emu(rect[3]), name))),
             rot_swap: false,
+            vml: false,
+            relative: Default::default(),
         };
         let mut inlines = p.inlines.clone();
         inlines.insert(0, crate::docx::Inline::Float(Box::new(float), run));
@@ -877,8 +882,11 @@ impl Editor {
             parts,
             shape: Some(Box::new(group)),
             rot_swap: false,
+            vml: false,
+            relative: Default::default(),
             src: None,
             frame_src: None,
+            in_note: false,
             z: members.iter().map(|(m, ..)| m.z).max().unwrap_or(first.z),
             order: usize::MAX / 2,
             ..first
@@ -939,8 +947,11 @@ impl Editor {
                 parts,
                 shape: Some(Box::new(s)),
                 rot_swap: false,
+                vml: false,
+                relative: Default::default(),
                 src: None,
                 frame_src: None,
+                in_note: false,
                 z: m.z,
                 order: usize::MAX / 2,
                 ..m.clone()

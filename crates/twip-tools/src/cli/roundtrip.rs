@@ -275,7 +275,7 @@ pub fn run(args: &[String]) -> Result<(), String> {
     if let Some(k) = &keep {
         std::fs::create_dir_all(k).map_err(|e| format!("{}: {e}", k.display()))?;
     }
-    let fonts = Fonts::system();
+    let fonts = super::system_fonts();
     let (mut ok, mut failed, mut skipped) = (0, Vec::new(), 0);
     // Merge families whose command the editor doesn't have yet.
     let mut pending: Vec<&str> = Vec::new();

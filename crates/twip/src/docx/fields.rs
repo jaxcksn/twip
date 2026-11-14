@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use super::model::{Block, Document, FieldId, FieldKind, FieldView, Inline, Paragraph, Run};
+use super::model::{Block, DATE_BLOCKS, Document, FieldId, FieldKind, FieldView, Inline, Paragraph, Run};
 
 /// A field's markers in a paragraph's inlines: the indexes of its begin, separator (if it has one) and
 /// end.
@@ -317,6 +317,76 @@ pub fn style_key(s: &str) -> String {
     s.chars().filter(|c| !c.is_whitespace()).flat_map(char::to_lowercase).collect()
 }
 
+/// What a `STYLEREF` can show from a paragraph, `(style key, a character style, text)`: its text under its paragraph
+/// style, then each stretch of runs in one character style. Hidden text is left out, white space trimmed, at most 256
+/// characters kept.
+pub fn style_hits(p: &Paragraph) -> Vec<(String, bool, String)> {
+    let clean = |t: &str| t.trim().chars().take(256).collect::<String>();
+    let (mut all, mut out, mut cur) = (String::new(), Vec::new(), None::<(String, String)>);
+    for (i, s) in p.inlines.iter().zip(shown(&p.inlines)) {
+        let Some(run) = i.run().filter(|r| !r.hidden) else { continue };
+        let t = match (&s, i) {
+            (Shown::Value(v), _) => v.as_str(),
+            (Shown::Itself, Inline::Text(t, _)) => t,
+            (Shown::Itself, Inline::Tab(_) | Inline::PTab(..)) => "\t",
+            _ => continue,
+        };
+        all.push_str(t);
+        let key = run.style_id.as_deref().map(style_key);
+        if cur.as_ref().map(|c| &c.0) != key.as_ref() {
+            out.extend(cur.take().map(|(k, t)| (k, true, clean(&t))));
+            cur = key.map(|k| (k, String::new()));
+        }
+        if let Some(c) = &mut cur {
+            c.1.push_str(t);
+        }
+    }
+    out.extend(cur.map(|(k, t)| (k, true, clean(&t))));
+    out.insert(0, (p.style.style_id.as_deref().map(style_key).unwrap_or_default(), false, clean(&all)));
+    out
+}
+
+/// What a `STYLEREF` looks for: the style it names (by id or name, ignoring case and spaces; `1` to `9` name the
+/// built-in headings), whether it is a character style, `\l` (the last one on the page), and the error text it shows
+/// when nothing in the document has it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct StyleQuery {
+    pub key: String,
+    pub char: bool,
+    pub last: bool,
+    pub error: String,
+}
+
+impl StyleQuery {
+    pub fn new(code: &str, styles: Option<&super::styles::Styles>) -> StyleQuery {
+        let c = parse(code);
+        let arg = c.args.first().cloned().unwrap_or_default();
+        let key = style_key(&match arg.parse::<u8>() {
+            Ok(n @ 1..=9) => format!("heading {n}"),
+            _ => arg.clone(),
+        });
+        let all = || styles.into_iter().flat_map(|s| s.by_id.values());
+        let style = all()
+            .find(|s| style_key(&s.id) == key)
+            .or_else(|| all().find(|s| std::iter::once(&s.name).chain(&s.aliases).any(|n| style_key(n) == key)));
+        StyleQuery {
+            key: style.map_or(key, |s| style_key(&s.id)),
+            char: style.is_some_and(|s| s.kind == super::styles::StyleKind::Character),
+            last: c.switches.iter().any(|s| s.flag == 'l'),
+            error: match style {
+                Some(_) => "Error! No text of specified style in document.".into(),
+                None => format!("Error! Use the Home tab to apply {arg} to the text that you want to appear here."),
+            },
+        }
+    }
+
+    /// The first of a paragraph's [`style_hits`] in the style (`rev`: the last).
+    pub fn find(&self, hits: &[(String, bool, String)], rev: bool) -> Option<String> {
+        let mut it = hits.iter().filter(|h| h.0 == self.key && h.1 == self.char);
+        if rev { it.next_back() } else { it.next() }.map(|h| h.2.clone())
+    }
+}
+
 /// Field-code words, quotes removed from quoted ones.
 pub fn words(code: &str) -> Vec<String> {
     let mut out = Vec::new();
@@ -344,10 +414,22 @@ pub fn words(code: &str) -> Vec<String> {
     out
 }
 
+/// The run a field's error text shows in: its result's, bold toggled.
+fn error_run(inlines: &[Inline], sp: FieldSpan) -> Option<Run> {
+    let e = sp
+        .sep
+        .and_then(|k| if let Inline::FieldSep { run, .. } = &inlines[k] { Some(run) } else { None })
+        .or_else(|| if let Inline::FieldEnd { run, .. } = &inlines[sp.end] { Some(run) } else { None })?;
+    Some(std::rc::Rc::new(super::model::RunStyle { bold: !e.bold, ..(**e).clone() }))
+}
+
 pub fn evaluate(doc: &mut Document, now: i64) {
+    date_blocks(doc, now);
+    let resolver = doc.resolver.clone();
+    let styles = resolver.as_deref().map(|r| &r.styles);
     // Bookmark texts (to the end of the bookmark's paragraph) and every paragraph's style and text, in order.
     let mut marks: HashMap<String, String> = HashMap::new();
-    let mut order: Vec<(String, String)> = Vec::new();
+    let mut order: Vec<Vec<(String, bool, String)>> = Vec::new();
     for s in &mut doc.sections {
         paras(&mut s.blocks, &mut |p| {
             for (k, i) in p.inlines.iter().enumerate() {
@@ -356,7 +438,7 @@ pub fn evaluate(doc: &mut Document, now: i64) {
                     marks.entry(name.clone()).or_insert_with(|| text(&rest));
                 }
             }
-            order.push((p.style.style_id.as_deref().map(style_key).unwrap_or_default(), text(p)));
+            order.push(style_hits(p));
         });
     }
     let mut seq: HashMap<String, i64> = HashMap::new();
@@ -365,10 +447,7 @@ pub fn evaluate(doc: &mut Document, now: i64) {
         paras(&mut s.blocks, &mut |p| {
             for sp in spans(&p.inlines) {
                 let code = code_text(&p.inlines, sp).trim().to_string();
-                let error_run = sp
-                    .sep
-                    .and_then(|k| if let Inline::FieldSep { run, .. } = &p.inlines[k] { Some(run.clone()) } else { None })
-                    .or_else(|| if let Inline::FieldEnd { run, .. } = &p.inlines[sp.end] { Some(run.clone()) } else { None });
+                let error_run = error_run(&p.inlines, sp);
                 let cached_empty = result_text(&p.inlines, sp).is_empty();
                 let Inline::FieldBegin { kind: Some(kind), value: slot, run, .. } = &mut p.inlines[sp.begin] else { continue };
                 let code = &code;
@@ -396,38 +475,68 @@ pub fn evaluate(doc: &mut Document, now: i64) {
                     FieldKind::If => if_field(&w),
                     FieldKind::Invalid => Some(String::new()),
                     FieldKind::Date => Some(date(code, now)),
-                    // In the body: the nearest paragraph with the style before the field, else the next one.
-                    FieldKind::StyleRef(st) => {
-                        let key = style_key(st);
-                        order[..=at.min(order.len().saturating_sub(1))]
-                            .iter()
-                            .rev()
-                            .chain(order[at.min(order.len())..].iter())
-                            .find(|(k, _)| *k == key)
-                            .map(|(_, t)| t.clone())
+                    // In the body: the nearest text in the style before the field, else the next one.
+                    FieldKind::StyleRef(_) => {
+                        let q = StyleQuery::new(code, styles);
+                        let before = order[..(at + 1).min(order.len())].iter().rev().find_map(|h| q.find(h, true));
+                        Some(before.or_else(|| order[at.min(order.len())..].iter().find_map(|h| q.find(h, false))).unwrap_or(q.error))
                     }
                     _ => None,
                 };
                 // A PAGEREF to a bookmark the document doesn't have shows its error text at layout.
                 let page_error = matches!(&*kind, FieldKind::PageRef(n) if !marks.contains_key(n));
                 if page_error && let Some(e) = &error_run {
-                    let mut r = (**e).clone();
-                    r.bold = !r.bold;
-                    *run = std::rc::Rc::new(r);
+                    *run = e.clone();
                 }
                 if let Some(v) = value {
                     if v.starts_with("Error! ")
-                        && let Some(e) = &error_run
+                        && let Some(e) = error_run
                     {
-                        let mut r = (**e).clone();
-                        r.bold = !r.bold;
-                        *run = std::rc::Rc::new(r);
+                        *run = e;
                     }
                     *slot = Some(v);
                 }
             }
             at += 1;
         });
+    }
+    // A header's or footer's STYLEREF is found on each page at layout; one that finds nothing shows its error.
+    for b in doc.stories.values_mut() {
+        paras(b, &mut |p| {
+            for sp in spans(&p.inlines) {
+                if !matches!(p.inlines[sp.begin], Inline::FieldBegin { kind: Some(FieldKind::StyleRef(_)), .. }) {
+                    continue;
+                }
+                let q = StyleQuery::new(code_text(&p.inlines, sp).trim(), styles);
+                let e = error_run(&p.inlines, sp);
+                if order.iter().all(|h| q.find(h, false).is_none())
+                    && let Inline::FieldBegin { value, run, .. } = &mut p.inlines[sp.begin]
+                {
+                    *run = e.unwrap_or_else(|| run.clone());
+                    *value = Some(q.error);
+                }
+            }
+        });
+    }
+}
+
+/// Every date block's date at `now`, in its picture: the user locale's names (en-US), whatever the run's language; at
+/// most 40 characters.
+fn date_blocks(doc: &mut Document, now: i64) {
+    let mut visit = |p: &mut Paragraph| {
+        for i in &mut p.inlines {
+            if let Inline::DateBlock(name, text, _) = i
+                && let Some((_, picture)) = DATE_BLOCKS.iter().find(|(e, _)| e == name)
+            {
+                *text = date(&format!("\\@ {picture}"), now).chars().take(40).collect();
+            }
+        }
+    };
+    for s in &mut doc.sections {
+        paras(&mut s.blocks, &mut visit);
+    }
+    for b in doc.stories.values_mut().chain(doc.footnotes.values_mut()).chain(doc.endnotes.values_mut()) {
+        paras(b, &mut visit);
     }
 }
 
@@ -441,7 +550,8 @@ pub fn rekind(doc: &mut Document, want: &dyn Fn(&FieldCode) -> Option<FieldKind>
             let code = parse(&code_text(&p.inlines, s));
             let Inline::FieldBegin { kind, value, lock, .. } = &mut p.inlines[s.begin] else { continue };
             let want = want(&code);
-            if *lock || *kind == want {
+            // A legacy form field's kind comes from its form data, not its code.
+            if *lock || *kind == want || matches!(kind, Some(FieldKind::CheckBox { .. } | FieldKind::DropDown)) {
                 continue;
             }
             back |= want.is_some() && want != Some(FieldKind::SubTemplate);
@@ -626,6 +736,36 @@ pub(crate) fn format_field(value: &str, code: &str, default: Option<&str>) -> St
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_local_clock_is_utc_moved_by_quarter_hours() {
+        let off = crate::docx::now_local() - crate::docx::now_utc();
+        assert!(off.abs() <= 14 * 3600 && (off + 1).rem_euclid(900) <= 2, "{off}");
+    }
+
+    #[test]
+    fn date_blocks_show_the_date_in_their_picture_whatever_the_language() {
+        use crate::docx::{blank::blank_docx, write::repackage};
+        let body = r#"<w:p><w:r><w:rPr><w:lang w:val="de-DE"/></w:rPr><w:t>x</w:t><w:dayShort/><w:dayLong/><w:monthShort/><w:monthLong/><w:yearShort/><w:yearLong/><w:t>y</w:t></w:r></w:p>"#;
+        let xml = format!(
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>{body}<w:sectPr/></w:body></w:document>"#
+        );
+        let bytes =
+            repackage(&blank_docx(), &[("word/document.xml".to_string(), xml.into_bytes())], zip::CompressionMethod::Deflated).expect("repackages");
+        // 2026-11-08
+        let doc = crate::docx::read_at(&bytes, 1_794_096_000).expect("reads");
+        let Some(Block::Para(p)) = doc.sections[0].blocks.first() else { panic!("a paragraph") };
+        let shown: String = p
+            .inlines
+            .iter()
+            .map(|i| match i {
+                Inline::Text(t, _) | Inline::DateBlock(_, t, _) => t.as_str(),
+                _ => "",
+            })
+            .collect();
+        assert_eq!(shown, "x08Sunday11November262026y");
+        assert_eq!(p.inlines.iter().map(Inline::units).sum::<usize>(), 8, "a block is one unit");
+    }
 
     #[test]
     fn field_2_a_one_word_code_is_a_bookmark_reference() {

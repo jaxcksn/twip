@@ -73,6 +73,19 @@ pub struct FlowState {
     pub line_no: i64,
     pub break_before: f64,
     pub balanced_after: f64,
+    /// Compat 15: the footnote area of the earlier sections on the page, drawn after the page's last text, and
+    /// whether it goes beneath the text.
+    pub page_notes: Option<(super::flow::NoteArea, bool)>,
+    /// A vertical section's table split across pages: where across the turned page its first part was put.
+    pub upright_at: Option<f64>,
+    /// A table split across pages that went beside floats: how far right of the column its first part was put.
+    pub beside_at: Option<f64>,
+    /// The rest of a floating table the text after went on beside: it opens the next column.
+    pub table_rest: Option<FlowToken>,
+    /// The paragraph going on from the last column broke there between letters rather than at a hyphen.
+    pub letter_break: bool,
+    /// The leading frames of a paragraph that stayed on the last page when the paragraph went on to this one.
+    pub frames_left: Vec<(usize, usize, usize)>,
 }
 
 impl Default for FlowState {
@@ -86,6 +99,12 @@ impl Default for FlowState {
             line_no: 0,
             break_before: 0.0,
             balanced_after: 0.0,
+            page_notes: None,
+            upright_at: None,
+            beside_at: None,
+            table_rest: None,
+            letter_break: false,
+            frames_left: Vec::new(),
         }
     }
 }
@@ -103,9 +122,17 @@ impl PartialEq for FlowState {
             && self.first_para == o.first_para
             && self.note_rest.is_empty()
             && o.note_rest.is_empty()
+            && self.page_notes.is_none()
+            && o.page_notes.is_none()
             && self.line_no == o.line_no
             && self.break_before == o.break_before
             && self.balanced_after == o.balanced_after
+            && self.upright_at == o.upright_at
+            && self.beside_at == o.beside_at
+            && self.table_rest.is_none()
+            && o.table_rest.is_none()
+            && self.letter_break == o.letter_break
+            && self.frames_left == o.frames_left
     }
 }
 

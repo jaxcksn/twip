@@ -118,7 +118,7 @@ impl Session {
         for d in &options.dictionaries {
             // shortcut: a dictionary that doesn't parse is left out silently; report it as a warning event if hosts
             // need to know at creation.
-            let _ = s.services.spelling.add_dictionary(&d.language, &d.aff.0, &d.dic.0);
+            let _ = s.services.add_dictionary(d);
         }
         s.configure();
         s.fonts_opened();
@@ -149,6 +149,7 @@ impl Session {
     fn configure(&mut self) {
         let mode = self.editor_mode();
         self.editor.set_mode(mode);
+        self.editor.set_hyphenation(self.services.hyphenation.clone());
         let fonts = self.fonts.fonts();
         for c in &self.field_setup {
             self.editor.execute(c.clone(), &fonts);

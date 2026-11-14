@@ -245,7 +245,13 @@ pub fn page_text(snapshot: &Snapshot, doc: &Document) -> String {
                     writeln!(s, "I {} {} {} {} {}", f(b[0]), f(b[1]), f(b[2]), f(b[3]), key.index.map_or(-1, |i| i as isize)).unwrap()
                 }
                 Item::Gridline { line: b } => writeln!(s, "L {} {} {} {}", f(b[0]), f(b[1]), f(b[2]), f(b[3])).unwrap(),
-                Item::Turned(t) => writeln!(s, "T turned {} about {} {} items {}", f(t.deg), f(t.centre[0]), f(t.centre[1]), t.items.len()).unwrap(),
+                Item::Turned(t) => {
+                    writeln!(s, "T turned {} about {} {} items {}", f(t.deg), f(t.centre[0]), f(t.centre[1]), t.items.len()).unwrap();
+                    for (r, [x, y], [dx, dy]) in super::vertical::runs(&t) {
+                        let chars: String = r.chars.iter().map(|c| c.0).collect();
+                        writeln!(s, "V dir {} {} o {} {} size {} chars {chars:?}", f(dx), f(dy), f(x), f(y), f(r.size)).unwrap();
+                    }
+                }
                 Item::Shape(sh) => {
                     let b = sh.rect;
                     writeln!(s, "S {} {} {} {} rot {} paths {}", f(b[0]), f(b[1]), f(b[2]), f(b[3]), f(sh.rot), sh.geom.paths.len()).unwrap()

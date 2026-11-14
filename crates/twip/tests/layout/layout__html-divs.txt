@@ -1,0 +1,25 @@
+page 0 12240 15840
+  1440 1936 HTML divisions
+  1440 2201 Plain paragraph with no space after.
+  2880 2829 In division 101: 72pt left and 36pt right margins, 12pt top
+  2880 3066 margin, a 1.5pt border with 6pt space. Inventory relevant group
+  2880 3304 relief results region ledger brief usage cause colleague
+  2880 3541 partner. Section notice claim team export staff newsletter
+  2880 3778 review matter presenter advisor account. Served savings pilot
+  2880 4016 receipt corporate requirement.
+  2880 4253 Still in division 101. Notice claim team export staff newsletter
+  2880 4491 review matter presenter advisor account served. Savings pilot
+  2880 4728 receipt corporate requirement standard fact that.
+  3600 5086 In division 102, a child of 101: another 36pt on the left,
+  3600 5323 6pt more at its top. Pilot receipt corporate requirement
+  3600 5560 standard fact that products distribution filed logistics
+  3600 5798 chapter. Plan regional maintenance accessibility tax
+  3600 6035 finds record proposal denied contract onboarding
+  3600 6273 support. Network.
+  2880 6510 Back in 101, after the child ends.
+  1800 7137 Division 103 starts right after 101 ends: 18pt on each side, 24pt below.
+  1800 7375 Regional maintenance accessibility tax finds record proposal denied
+  1800 7612 contract onboarding support network. Scheduled trend suggestions board
+  1800 7850 order update granted agreement.
+  1440 8567 Outside every division.
+  1440 8965 An id with no division is ignored.

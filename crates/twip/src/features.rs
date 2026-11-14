@@ -118,9 +118,13 @@ fn para(p: &Paragraph, depth: usize, f: &mut BTreeSet<&'static str>) {
     run(&p.mark, f);
     for i in &p.inlines {
         match i {
-            Inline::Text(_, r) | Inline::Break(_, r) | Inline::Sym { run: r, .. } | Inline::NoteMark(_, _, r) | Inline::Separator { run: r, .. } => {
-                run(r, f)
-            }
+            Inline::Text(_, r)
+            | Inline::Break(_, r)
+            | Inline::Sym { run: r, .. }
+            | Inline::NoteMark(_, _, r)
+            | Inline::Separator { run: r, .. }
+            | Inline::Ruby(_, r)
+            | Inline::DateBlock(_, _, r) => run(r, f),
             Inline::Tab(r) | Inline::PTab(_, r) => {
                 f.insert("tabs");
                 run(r, f);

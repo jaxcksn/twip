@@ -55,7 +55,8 @@
       "expect": {
         "text": {
           "12": "Paragraph between the first and second tables.",
-          "13": "T3 R1 C1"
+          "13": "",
+          "14": "T3 R1 C1"
         }
       }
     }

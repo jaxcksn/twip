@@ -86,7 +86,8 @@ fn boxes(children: &[Child], dx: f64, dy: f64, out: &mut Vec<(&'static str, [f64
     }
 }
 
-/// Pages, then per drawn line its start, baseline and text, then picture boxes, floats and table cells, in twips.
+/// Pages, then per drawn line its start, baseline and text, then per turned run its origin, direction and text, then
+/// picture boxes, floats and table cells, in twips.
 // ponytail: coordinates rounded to whole twips and compared as text; a value landing on a rounding edge on one
 // platform only would need a tolerance compare.
 fn snapshot(doc: &crate::docx::Document, fonts: &Fonts) -> String {
@@ -96,6 +97,7 @@ fn snapshot(doc: &crate::docx::Document, fonts: &Fonts) -> String {
         writeln!(s, "page {pi} {} {}", f(page.w), f(page.h)).unwrap();
         let mut lines: Vec<(u32, f64, f64, String)> = Vec::new();
         let mut images = Vec::new();
+        let mut turned = Vec::new();
         paint(page, &mut |p| match p.absolute() {
             Item::Glyphs(r) => {
                 let i = match lines.iter().position(|l| l.0 == p.line && p.line != 0) {
@@ -112,6 +114,14 @@ fn snapshot(doc: &crate::docx::Document, fonts: &Fonts) -> String {
                 }
             }
             Item::Image { rect, .. } => images.push(rect),
+            Item::Turned(t) => {
+                for (r, at, dir) in crate::layout::vertical::runs(&t) {
+                    let text: String = r.chars.iter().map(|c| c.0).collect();
+                    if !text.trim().is_empty() {
+                        turned.push(format!("turned {} {} {} {} {}", f(at[0]), f(at[1]), dir[0], dir[1], text.trim_end()));
+                    }
+                }
+            }
             _ => {}
         });
         for (_, x, y, text) in lines {
@@ -119,6 +129,9 @@ fn snapshot(doc: &crate::docx::Document, fonts: &Fonts) -> String {
             if !text.is_empty() {
                 writeln!(s, "  {} {} {text}", f(x), f(y)).unwrap();
             }
+        }
+        for t in turned {
+            writeln!(s, "  {t}").unwrap();
         }
         for r in images {
             writeln!(s, "  image {} {} {} {}", f(r[0]), f(r[1]), f(r[2]), f(r[3])).unwrap();
@@ -231,12 +244,16 @@ fn write_diff(name: &str, want: &str, got: &str) -> Vec<String> {
 fn layout_output_matches_snapshots() {
     let (dir, write) = (root().join("layout"), std::env::var_os("TWIP_WRITE_LAYOUT").is_some());
     let fonts = bundled_fonts();
+    // The host's en-US hyphenation patterns, for the documents that turn automatic hyphenation on.
+    let patterns = std::fs::read_to_string(root().join("fixtures/layout/hyph-en-US.dic")).expect("hyphenation patterns");
+    let hyphenation = crate::layout::hyphenate::Hyphenation::default().with("en-US", crate::layout::hyphenate::Patterns::parse(&patterns));
     let mut paths = Vec::new();
     fixtures(&root().join("fixtures"), &mut paths);
     let mut got = BTreeMap::new();
     for path in &paths {
         // DATE/TIME fields at a fixed instant (2026-11-09 12:00 UTC), so the snapshots don't change with the day.
-        let Some(d) = std::fs::read(path).ok().and_then(|b| crate::docx::read_at(&b, 1_794_225_600).ok()) else { continue };
+        let Some(mut d) = std::fs::read(path).ok().and_then(|b| crate::docx::read_at(&b, 1_794_225_600).ok()) else { continue };
+        d.hyphenation = Some(hyphenation.clone());
         let rel = path.strip_prefix(root().join("fixtures")).unwrap().to_string_lossy().replace(['\\', '/'], "__");
         got.insert(rel.replace(".docx", ".txt"), snapshot(&d, &fonts));
     }

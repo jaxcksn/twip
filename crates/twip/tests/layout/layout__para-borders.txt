@@ -1,0 +1,64 @@
+page 0 12240 15840
+  1440 1936 Paragraph borders
+  1440 2201 Plain paragraph before the bordered ones.
+  1440 2699 One paragraph with a top and a bottom border, 1pt wide with 4pt space: its first line
+  1440 2936 moves down by 5pt and the next paragraph by 5pt more.
+  1440 3434 Plain paragraph between.
+  1440 3931 First of three paragraphs with the same borders: one box, so the top border is above
+  1440 4168 this one only. Inventory relevant group relief results region ledger brief usage
+  1440 4406 cause colleague partner. Section notice claim team export staff newsletter review.
+  1440 4803 Second of the three: no border above or below it inside the box.
+  1440 5201 Third of the three: the bottom border is below this one only.
+  2160 5798 Same borders but a left indent: a box edge differs, so a new box starts here.
+  1440 6426 Between borders: the first of two paragraphs with a between border.
+  1440 7073 The second: the between line and its space come above this one.
+  1440 7685 A double border is three times its width: 0.75pt lines with a gap, 2pt space.
+  1440 8218 A shadowed border adds one more width below its bottom line.
+  1440 8695 Notice claim team export staff newsletter review matter presenter advisor account
+  1440 8933 served. Savings pilot receipt corporate requirement standard fact that products
+  1440 9170 distribution filed logistics. Chapter plan regional maintenance accessibility tax
+  1440 9407 finds record proposal denied contract onboarding. Support network scheduled trend
+  1440 9645 suggestions board order update granted agreement marketing promotion. Division
+  1440 9882 date profitable insights the meeting forecast hereby vendors practical schedule
+  1440 10120 state.
+  1440 10517 Regional maintenance accessibility tax finds record proposal denied contract
+  1440 10755 onboarding support network. Scheduled trend suggestions board order update granted
+  1440 10992 agreement marketing promotion division date. Profitable insights the meeting
+  1440 11229 forecast hereby vendors practical schedule state entry estimate. Management action
+  1440 11467 budget inventory relevant group relief results region ledger brief usage. Cause
+  1440 11704 colleague partner section notice claim team export staff newsletter review matter.
+  1440 11942 Presenter advisor account served savings pilot receipt corporate requirement
+  1440 12179 standard.
+  1440 12576 Trend suggestions board order update granted agreement marketing promotion
+  1440 12814 division date profitable. Insights the meeting forecast hereby vendors practical
+  1440 13051 schedule state entry estimate management. Action budget inventory relevant group
+  1440 13289 relief results region ledger brief usage cause. Colleague partner section notice
+  1440 13526 claim team export staff newsletter review matter presenter. Advisor account served
+  1440 13764 savings pilot receipt corporate requirement standard fact that products.
+  1440 14001 Distribution filed logistics chapter plan regional maintenance accessibility tax
+  1440 14238 finds.
+page 1 12240 15840
+  1440 1616 The meeting forecast hereby vendors practical schedule state entry estimate
+  1440 1853 management action. Budget inventory relevant group relief results region ledger
+  1440 2091 brief usage cause colleague. Partner section notice claim team export staff
+  1440 2328 newsletter review matter presenter advisor. Account served savings pilot receipt
+  1440 2566 corporate requirement standard fact that products distribution. Filed logistics
+  1440 2803 chapter plan regional maintenance accessibility tax finds record proposal denied.
+  1440 3041 Contract onboarding support network scheduled trend suggestions board order
+  1440 3278 update.
+  1440 3675 Inventory relevant group relief results region ledger brief usage cause colleague
+  1440 3913 partner. Section notice claim team export staff newsletter review matter presenter
+  1440 4150 advisor account. Served savings pilot receipt corporate requirement standard fact
+  1440 4388 that products distribution filed. Logistics chapter plan regional maintenance
+  1440 4625 accessibility tax finds record proposal denied contract. Onboarding support
+  1440 4862 network scheduled trend suggestions board order update granted agreement
+  1440 5100 marketing. Promotion division date profitable insights the meeting forecast hereby
+  1440 5337 vendors.
+  1440 5835 A box split by a page break: this paragraph opens it and its page break leaves it
+  1440 6072 open. Pilot receipt corporate requirement standard fact that products distribution
+  1440 6310 filed logistics chapter. Plan regional maintenance accessibility tax finds record
+  1440 6547 proposal.
+page 2 12240 15840
+  1440 1616 Continued after the break: no top border on the new page.
+  1440 2013 Last paragraph of the box: its bottom border closes it.
+  1440 2511 Plain paragraph after the box.

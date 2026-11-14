@@ -109,7 +109,7 @@ fn with_run(i: &Inline, run: &Run) -> Inline {
     match i {
         Inline::Float(f, _) => Inline::Float(f.clone(), run.clone()),
         Inline::CommentRef { id, .. } => Inline::CommentRef { id: *id, run: run.clone() },
-        Inline::Separator { continuation, .. } => Inline::Separator { continuation: *continuation, run: run.clone() },
+        Inline::Separator { continuation, full, .. } => Inline::Separator { continuation: *continuation, full: *full, run: run.clone() },
         other => super::super::format::with_run(other, run),
     }
 }

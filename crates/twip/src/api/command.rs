@@ -238,6 +238,17 @@ commands! {
     /// The document's default tab spacing (1…1584 pt). Undo: one step.
     SetDefaultTabStop(#[serde(with = "value")] Points),
 
+    // Hyphenation
+    /// Automatic hyphenation for the document, with the hyphenation patterns of the text's language. Undo: one step.
+    SetAutoHyphenation(#[serde(with = "value")] bool),
+    /// The hyphenation zone (0…1584 pt): in documents in compatibility mode 14 and earlier, a word is hyphenated only
+    /// when moving it whole would leave this gap. Undo: one step.
+    SetHyphenationZone(#[serde(with = "value")] Points),
+    /// The most consecutive lines that may end in a hyphen (0…32767; 0 for no limit). Undo: one step.
+    SetConsecutiveHyphenLimit(#[serde(with = "value")] u32),
+    /// Whether words in capitals are hyphenated. Undo: one step.
+    SetHyphenateCaps(#[serde(with = "value")] bool),
+
     // Page layout
     /// The selection's sections' margins (0…1584 pt; left + right + gutter < page width). Undo: one step.
     SetMargins(Margins),

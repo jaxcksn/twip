@@ -14,6 +14,8 @@ mod position;
 const EPS: f64 = 1e-6;
 
 pub const TABLE_PIECE: usize = usize::MAX;
+/// A table in a vertical section: drawn upright, an obstacle on the turned page.
+pub const UPRIGHT_TABLE: usize = usize::MAX - 1;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Wrap {
@@ -30,7 +32,7 @@ pub enum Side {
     Largest,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Placed {
     pub key: (usize, usize, usize),
     pub anchor: ParaId,
@@ -41,6 +43,29 @@ pub struct Placed {
     pub allow_overlap: bool,
     pub float: Rc<Float>,
     pub settled: bool,
+    /// It met text laid out before its paragraph on the page: that text wraps it when the page is filled again.
+    pub collided: bool,
+    /// It met text laid out before it on the page, its own paragraph's lines to its anchor included.
+    pub restarts: bool,
+    /// It keeps its place while the page is filled again: it met earlier text where it was first placed.
+    pub frozen: bool,
+    /// Compat 15: no place keeps it clear of the floats it may not overlap, and its anchor line starts the page.
+    pub unplaced: bool,
+    pub contour: Option<Contour>,
+    /// The distances text keeps from it: top, bottom, left, right.
+    pub dist: [f64; 4],
+    /// Where its right side is for the lines before it in the flow, when that differs.
+    pub early_right: Option<f64>,
+    /// Compat ≤ 14: a frame in the flow placed from the nearest twip above its flow position, so that it meets the
+    /// line above it and the page starts again, or a frame anchored after such a one in its paragraph. Kept, it
+    /// doesn't move the text before it.
+    pub rounded_up: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Contour {
+    pub points: Rc<[(f64, f64)]>,
+    pub through: bool,
 }
 
 pub struct Frames {
@@ -49,6 +74,8 @@ pub struct Frames {
     pub margin: [f64; 4],
     pub column: (f64, f64),
     pub compat: Compat,
+    pub cell: bool,
+    pub odd: bool,
 }
 
 impl Placed {
@@ -66,10 +93,26 @@ impl Placed {
             "largest" => Side::Largest,
             _ => Side::Both,
         };
-        let wrap_box = match f.poly {
-            Some([x0, y0, x1, y1]) => {
-                let top = y + y0 * h;
-                [x + x0 * f.w, top, x + x1 * f.w, (y + y1 * h).max(top + 1.0 / LU_PER_PT)]
+        // The polygon spans the unturned box about the same centre, mirrored by its horizontal flip, and turns with
+        // the shape.
+        let xfrm = f.shape.as_ref().map(|s| s.xfrm).unwrap_or_default();
+        let (cx, cy) = (x + f.w / 2.0, y + h / 2.0);
+        let (bw, bh) = if f.rot_swap { (h, f.w) } else { (f.w, h) };
+        let (sin, cos) = xfrm.rot.radians().sin_cos();
+        let point = |(px, py): (f64, f64)| {
+            let (dx, dy) = ((if xfrm.flip_h { 1.0 - px } else { px } - 0.5) * bw, (py - 0.5) * bh);
+            (cx + dx * cos - dy * sin, cy + dx * sin + dy * cos)
+        };
+        let contour = f
+            .poly
+            .as_ref()
+            .filter(|_| wrap == Wrap::Square)
+            .map(|p| Contour { points: p.iter().copied().map(point).collect(), through: f.wrap == "through" });
+        let wrap_box = match &contour {
+            Some(c) => {
+                let b =
+                    c.points.iter().fold([f64::MAX, f64::MAX, f64::MIN, f64::MIN], |b, &(x, y)| [b[0].min(x), b[1].min(y), b[2].max(x), b[3].max(y)]);
+                [b[0], b[1], b[2], b[3].max(b[1] + 1.0 / LU_PER_PT)]
             }
             None => {
                 let [l, t, r, b] = f.effect;
@@ -86,7 +129,59 @@ impl Placed {
             allow_overlap: f.allow_overlap,
             float: f.clone(),
             settled: true,
+            collided: true,
+            restarts: false,
+            frozen: false,
+            unplaced: false,
+            contour,
+            dist: f.dist,
+            early_right: None,
+            rounded_up: false,
         }
+    }
+
+    /// Compat ≤ 14 keeps no distance above or below a tight or through float, and none below a frame.
+    pub fn legacy_dist(mut self) -> Placed {
+        let frame = self.float.text_box.is_some() && self.float.shape.is_none() && self.key.2 != TABLE_PIECE;
+        if matches!(self.float.wrap.as_str(), "tight" | "through") {
+            let [dt, db, ..] = self.dist;
+            self.excl[1] += dt;
+            self.excl[3] -= db;
+            self.dist[0] = 0.0;
+            self.dist[1] = 0.0;
+        } else if frame {
+            self.excl[3] -= self.dist[1];
+            self.dist[1] = 0.0;
+        }
+        self
+    }
+
+    /// The narrowest piece of a line it leaves beside it: in compat ≤ 14 an inch beside a frame and half the usual
+    /// beside a tight or through float.
+    pub fn gap(&self, legacy: bool) -> f64 {
+        let frame = self.float.text_box.is_some() && self.float.shape.is_none() && self.key.2 != TABLE_PIECE;
+        match () {
+            _ if !legacy => 18.0,
+            _ if frame => 72.0,
+            _ if self.key.2 != TABLE_PIECE && matches!(self.float.wrap.as_str(), "tight" | "through") => 9.0,
+            _ => 18.0,
+        }
+    }
+
+    /// Wraps around a text box's lines instead of its box: one rectangle per line, from the box's top left.
+    pub fn around_lines(mut self, lines: &[[f64; 4]]) -> Placed {
+        if lines.is_empty() {
+            return self;
+        }
+        let (x, y) = (self.rect[0], self.rect[1]);
+        let down = lines.iter().flat_map(|r| [(x + r[2], y + r[1]), (x + r[2], y + r[3])]);
+        let up = lines.iter().rev().flat_map(|r| [(x + r[0], y + r[3]), (x + r[0], y + r[1])]);
+        let points: Rc<[(f64, f64)]> = down.chain(up).collect();
+        let b = points.iter().fold([f64::MAX, f64::MAX, f64::MIN, f64::MIN], |b, &(x, y)| [b[0].min(x), b[1].min(y), b[2].max(x), b[3].max(y)]);
+        let [dt, db, dl, dr] = self.dist;
+        self.excl = [b[0] - dl, b[1] - dt, b[2] + dr, b[3] + db];
+        self.contour = Some(Contour { points, through: false });
+        self
     }
 
     pub fn same(&self, o: &Placed) -> bool {
@@ -97,11 +192,14 @@ impl Placed {
         self.wrap != Wrap::None && top < self.excl[3] - EPS && self.excl[1] < bottom - EPS
     }
 
-    fn moved_to(&mut self, x: f64, y: f64) {
+    pub fn moved_to(&mut self, x: f64, y: f64) {
         let (dx, dy) = (x - self.rect[0], y - self.rect[1]);
         for (k, d) in [dx, dy, dx, dy].iter().enumerate() {
             self.rect[k] += d;
             self.excl[k] += d;
+        }
+        if let Some(c) = &mut self.contour {
+            c.points = c.points.iter().map(|&(x, y)| (x + dx, y + dy)).collect();
         }
     }
 
@@ -109,23 +207,80 @@ impl Placed {
         (!self.allow_overlap || !o.allow_overlap) && ((self.wrap == Wrap::None) == (o.wrap == Wrap::None))
     }
 
+    /// The room a frame or a floating table keeps around it from other objects that may not overlap it; a
+    /// picture keeps none.
+    fn apart(&self) -> [f64; 4] {
+        let frame = self.float.text_box.is_some() && self.float.shape.is_none();
+        if frame || self.key.2 == TABLE_PIECE { self.float.dist } else { [0.0; 4] }
+    }
+
+    /// The two boxes, each grown by the room it keeps, overlap.
     fn overlaps(&self, o: &Placed) -> bool {
-        self.rect[0] < o.rect[2] - EPS && o.rect[0] < self.rect[2] - EPS && self.rect[1] < o.rect[3] - EPS && o.rect[1] < self.rect[3] - EPS
+        let ([st, sb, sl, sr], [ot, ob, ol, or]) = (self.apart(), o.apart());
+        self.rect[0] - sl < o.rect[2] + or - EPS
+            && o.rect[0] - ol < self.rect[2] + sr - EPS
+            && self.rect[1] - st < o.rect[3] + ob - EPS
+            && o.rect[1] - ot < self.rect[3] + sb - EPS
     }
 }
 
-pub fn avoid(f: &mut Placed, placed: &[Placed], page_w: f64, body_bottom: f64) -> bool {
+/// Moves a float that may not overlap an earlier one clear of them, each box grown by the room it keeps, within its
+/// area `lo..hi` across and `top..bottom` down. Compat 15 first pulls its box inside the area on each axis (not on an
+/// axis where it is wider than the area), then tries the rows at that y, below each obstacle and above each, from that
+/// y down, then up; on each row that x, then beside each obstacle from that x rightwards, then leftwards, its box kept
+/// in the area. The first place that meets none wins. Compat ≤ 14 slides it one way, right (left for a right-aligned
+/// float), while its own box stays within `lo..hi`, else puts it below the float it meets at its own x. Without a
+/// place it stays where it was asked for.
+pub fn avoid(f: &mut Placed, placed: &[Placed], (lo, hi): (f64, f64), (top, bottom): (f64, f64), compat: Compat) -> bool {
     let original = (f.rect[0], f.rect[1]);
+    let (w, h) = (f.rect[2] - f.rect[0], f.rect[3] - f.rect[1]);
+    let [ft, fb, fl, fr] = f.apart();
+    let obstacles: Vec<&Placed> = placed.iter().filter(|o| o.key != f.key && f.avoids(o)).collect();
+    if compat == Compat::Generic {
+        if !obstacles.iter().any(|o| f.overlaps(o)) {
+            return true;
+        }
+        let order = |own: f64, mut c: Vec<f64>| {
+            c.sort_by(|a, b| (*a < own - EPS).cmp(&(*b < own - EPS)).then(if *a < own - EPS { b.total_cmp(a) } else { a.total_cmp(b) }));
+            c.dedup_by(|a, b| (*a - *b).abs() < EPS);
+            c
+        };
+        let clamp = |v: f64, lead: f64, size: f64, (a, b): (f64, f64)| if size > b - a + EPS { v } else { (v - lead).max(a).min(b - size) + lead };
+        let own = (clamp(original.0, fl, fl + w + fr, (lo, hi)), clamp(original.1, ft, ft + h + fb, (top, bottom)));
+        let mut xs = vec![own.0];
+        let mut ys = vec![own.1];
+        for o in &obstacles {
+            let [ot, ob, ol, or] = o.apart();
+            xs.extend([o.rect[2] + or + fl, o.rect[0] - ol - fr - w].into_iter().filter(|&x| x - fl >= lo - EPS && x + w + fr <= hi + EPS));
+            ys.extend([o.rect[3] + ob + ft, o.rect[1] - ot - fb - h].into_iter().filter(|&y| y - ft >= top - EPS && y + h + fb <= bottom + EPS));
+        }
+        let (xs, ys) = (order(own.0, xs), order(own.1, ys));
+        for &y in &ys {
+            for &x in &xs {
+                f.moved_to(x, y);
+                if !obstacles.iter().any(|o| f.overlaps(o)) {
+                    return true;
+                }
+            }
+        }
+        f.moved_to(original.0, original.1);
+        return false;
+    }
+    let leftward = f.float.h_align.as_deref() == Some("right");
+    let frame = |o: &Placed| o.float.text_box.is_some() && o.float.shape.is_none() && o.key.2 != TABLE_PIECE;
     for _ in 0..32 {
-        let Some(hit) = placed.iter().find(|o| o.key != f.key && f.avoids(o) && f.overlaps(o)) else { return true };
-        let (w, h) = (f.rect[2] - f.rect[0], f.rect[3] - f.rect[1]);
+        let Some(hit) = obstacles.iter().find(|o| f.overlaps(o)) else { return true };
+        let [ht, hb, hl, hr] = hit.apart();
         let y = f.rect[1];
-        if hit.rect[2] + w <= page_w + EPS {
-            f.moved_to(hit.rect[2], y);
-        } else if hit.rect[0] - w >= -EPS {
-            f.moved_to(hit.rect[0] - w, y);
-        } else if hit.rect[3] + h <= body_bottom + EPS {
-            f.moved_to(original.0, hit.rect[3]);
+        let slid = if leftward { hit.rect[0] - hl - fr - w } else { hit.rect[2] + hr + fl };
+        let above = hit.rect[1] - ht - fb - h;
+        if slid >= lo - EPS && slid + w <= hi + EPS {
+            f.moved_to(slid, y);
+        } else if hit.rect[3] + hb + ft + h <= bottom + EPS {
+            f.moved_to(original.0, hit.rect[3] + hb + ft);
+        } else if (frame(f) || frame(hit)) && above >= top - EPS && above < f.rect[1] - EPS {
+            // A frame, or a table meeting a frame, with no room below goes above it.
+            f.moved_to(original.0, above);
         } else {
             f.moved_to(original.0, original.1);
             return false;
@@ -134,8 +289,8 @@ pub fn avoid(f: &mut Placed, placed: &[Placed], page_w: f64, body_bottom: f64) -
     false
 }
 
-pub use fit::{intervals, next_edge};
-pub use position::{h_pos, v_pos};
+pub use fit::{intervals, next_edge, steps, strip, text_intervals};
+pub use position::{h_pos, page_clamp, sized, v_pos};
 
 #[cfg(test)]
 mod tests {
@@ -170,9 +325,12 @@ mod tests {
             src: None,
             locked: false,
             frame_src: None,
+            in_note: false,
             parts: Vec::new(),
             shape: None,
             rot_swap: false,
+            vml: false,
+            relative: Default::default(),
         });
         Placed {
             key: (0, 0, 0),
@@ -184,26 +342,236 @@ mod tests {
             allow_overlap: true,
             float,
             settled: true,
+            collided: true,
+            restarts: false,
+            frozen: false,
+            unplaced: false,
+            contour: None,
+            dist: [0.0; 4],
+            early_right: None,
+            rounded_up: false,
         }
     }
 
     #[test]
     fn sides() {
         let f = [fl(222.0, 322.0, Side::Both)];
-        assert_eq!(intervals(&f, 72.0, 540.0, 10.0, 20.0).unwrap(), vec![(72.0, 222.0), (322.0, 540.0)]);
+        assert_eq!(intervals(&f, 72.0, 540.0, 10.0, 20.0, false).unwrap(), vec![(72.0, 222.0), (322.0, 540.0)]);
         let f = [fl(222.0, 322.0, Side::Largest)];
-        assert_eq!(intervals(&f, 72.0, 540.0, 10.0, 20.0).unwrap(), vec![(322.0, 540.0)]);
+        assert_eq!(intervals(&f, 72.0, 540.0, 10.0, 20.0, false).unwrap(), vec![(322.0, 540.0)]);
         let f = [fl(256.0, 356.0, Side::Largest)];
-        assert_eq!(intervals(&f, 72.0, 540.0, 10.0, 20.0).unwrap(), vec![(72.0, 256.0)]);
+        assert_eq!(intervals(&f, 72.0, 540.0, 10.0, 20.0, false).unwrap(), vec![(72.0, 256.0)]);
         let f = [fl(222.0, 322.0, Side::Both)];
-        assert_eq!(intervals(&f, 72.0, 540.0, 100.0, 110.0).unwrap(), vec![(72.0, 540.0)]);
+        assert_eq!(intervals(&f, 72.0, 540.0, 100.0, 110.0, false).unwrap(), vec![(72.0, 540.0)]);
         let f = [fl(89.0, 522.0, Side::Both)];
-        assert_eq!(intervals(&f, 72.0, 540.0, 10.0, 20.0).unwrap(), vec![(522.0, 540.0)]);
+        assert_eq!(intervals(&f, 72.0, 540.0, 10.0, 20.0, false).unwrap(), vec![(522.0, 540.0)]);
+    }
+
+    #[test]
+    fn compat_14_ties_go_right_and_a_narrow_left_side_falls_back_right() {
+        let f = [fl(256.0, 356.0, Side::Largest)];
+        assert_eq!(intervals(&f, 72.0, 540.0, 10.0, 20.0, true).unwrap(), vec![(356.0, 540.0)]);
+        let f = [fl(82.0, 182.0, Side::Left)];
+        assert_eq!(intervals(&f, 72.0, 540.0, 10.0, 20.0, true).unwrap(), vec![(182.0, 540.0)]);
+        assert_eq!(intervals(&f, 72.0, 540.0, 10.0, 20.0, false).unwrap(), vec![]);
+        let f = [fl(122.0, 182.0, Side::Left)];
+        assert_eq!(intervals(&f, 72.0, 540.0, 10.0, 20.0, true).unwrap(), vec![(72.0, 122.0)]);
+    }
+
+    fn apart(x0: f64, x1: f64, key: usize) -> Placed {
+        let mut f = fl(x0, x1, Side::Both);
+        f.key = (0, 0, key);
+        f.allow_overlap = false;
+        f
+    }
+
+    #[test]
+    fn floats_that_may_not_overlap_try_right_first_then_left_to_the_page_edge() {
+        let (across, down) = ((0.0, 612.0), (72.0, 720.0));
+        // Right, though left is nearer.
+        let mut f = apart(182.0, 282.0, 1);
+        assert!(avoid(&mut f, &[apart(172.0, 372.0, 0)], across, down, Compat::Generic));
+        assert_eq!(f.rect[0], 372.0);
+        // Left down to the page's edge when right leaves the page.
+        let mut f = apart(532.0, 612.0, 1);
+        assert!(avoid(&mut f, &[apart(80.0, 612.0, 0)], across, (0.0, 720.0), Compat::Generic));
+        assert_eq!((f.rect[0], f.rect[1]), (0.0, 0.0));
+        // Moved, it is first pulled into its area: here down to its top.
+        let mut f = apart(532.0, 612.0, 1);
+        assert!(avoid(&mut f, &[apart(80.0, 612.0, 0)], across, down, Compat::Generic));
+        assert_eq!((f.rect[0], f.rect[1]), (0.0, 72.0));
+        // Beside the float it next meets: three in a row.
+        let mut f = apart(72.0, 132.0, 2);
+        assert!(avoid(&mut f, &[apart(72.0, 172.0, 0), apart(172.0, 252.0, 1)], across, down, Compat::Generic));
+        assert_eq!(f.rect[0], 252.0);
+        // Compat ≤ 14: no left move, down instead; a right-aligned float slides left.
+        let mut f = apart(532.0, 612.0, 1);
+        assert!(avoid(&mut f, &[apart(80.0, 612.0, 0)], across, (0.0, 720.0), Compat::Legacy));
+        assert_eq!((f.rect[0], f.rect[1]), (532.0, 100.0));
+        let mut f = apart(390.0, 540.0, 1);
+        Rc::make_mut(&mut f.float).h_align = Some("right".into());
+        assert!(avoid(&mut f, &[apart(472.0, 572.0, 0)], across, down, Compat::Legacy));
+        assert_eq!((f.rect[0], f.rect[1]), (322.0, 0.0));
+    }
+
+    #[test]
+    fn relative_sizes_take_their_share_of_the_page_or_margins() {
+        let fr = Frames {
+            page_w: 612.0,
+            page_h: 792.0,
+            margin: [72.0, 36.0, 72.0, 144.0],
+            column: (72.0, 504.0),
+            compat: Compat::Generic,
+            cell: false,
+            odd: true,
+        };
+        let size = |w_from: &str, h_from: &str| {
+            let mut f = (*fl(0.0, 40.0, Side::Both).float).clone();
+            f.relative.size = [Some((w_from.into(), 500)), Some((h_from.into(), 500))];
+            let s = sized(&f, &fr).expect("sized");
+            (s.w, s.h)
+        };
+        assert_eq!(size("margin", "margin"), (252.0, 288.0));
+        assert_eq!(size("page", "page"), (306.0, 396.0));
+        assert_eq!(size("leftMargin", "topMargin"), (36.0, 36.0));
+        assert_eq!(size("rightMargin", "bottomMargin"), (18.0, 72.0));
+        assert_eq!(size("insideMargin", "insideMargin"), (18.0, 36.0));
+        let mut f = (*fl(0.0, 40.0, Side::Both).float).clone();
+        f.relative.size = [Some(("page".into(), 500)), None];
+        f.effect = [10.0, 0.0, 20.0, 0.0];
+        assert_eq!(sized(&f, &fr).expect("sized").w, 276.0);
+        f.relative.size = [None, Some(("page".into(), 1))];
+        assert_eq!(sized(&f, &fr).expect("sized").h, 1.0);
+        let cell = Frames { cell: true, ..fr };
+        assert!(sized(&f, &cell).is_none());
+    }
+
+    #[test]
+    fn a_pictures_relative_axes_size_on_their_own_and_it_draws_scaled_evenly() {
+        let fr = Frames { page_w: 612.0, page_h: 792.0, margin: [72.0; 4], column: (72.0, 468.0), compat: Compat::Generic, cell: false, odd: true };
+        let mut f = (*fl(0.0, 72.0, Side::Both).float).clone();
+        (f.h, f.image) = (54.0, Some(0));
+        f.relative.size = [Some(("margin".into(), 400)), Some(("margin".into(), 50))];
+        let s = sized(&f, &fr).expect("sized");
+        assert_eq!((s.w, s.h), (187.2, 32.4));
+        let (w, h) = s.relative.drawn.expect("drawn scaled");
+        assert!((w - 43.2).abs() < 1e-9 && (h - 32.4).abs() < 1e-9, "{w} {h}");
+        f.relative.size[1] = None;
+        assert_eq!(sized(&f, &fr).expect("sized").h, 54.0, "only the width: the height stays");
+    }
+
+    #[test]
+    fn percentage_positions_count_from_their_reference_box() {
+        let fr = Frames { page_w: 612.0, page_h: 792.0, margin: [72.0; 4], column: (72.0, 468.0), compat: Compat::Generic, cell: false, odd: true };
+        let at = |h: &str, pct: i64| {
+            let mut f = (*fl(0.0, 40.0, Side::Both).float).clone();
+            f.h_relative = h.into();
+            f.relative.pos = [Some(pct), None];
+            h_pos(&f, &fr)
+        };
+        assert_eq!((at("margin", 250), at("page", 250), at("leftMargin", 250)), (189.0, 153.0, 18.0));
+        let two_columns = Frames { column: (72.0, 216.0), ..fr };
+        let mut f = (*fl(0.0, 40.0, Side::Both).float).clone();
+        f.relative.pos = [Some(500), None];
+        assert_eq!(h_pos(&f, &two_columns), 306.0);
+        f.v_relative = "page".into();
+        f.relative.pos = [None, Some(123)];
+        assert!((v_pos(&f, 20.0, &fr, 0.0, 0.0) - 97.42).abs() < 0.05);
+    }
+
+    fn polygon(wrap: &str, pts: &[(f64, f64)], dist: [f64; 4]) -> Placed {
+        let mut f = (*fl(0.0, 200.0, Side::Both).float).clone();
+        f.wrap = wrap.into();
+        f.poly = Some(pts.iter().map(|&(x, y)| (x / 21600.0, y / 21600.0)).collect());
+        f.dist = dist;
+        Placed::new((0, 0, 0), ParaId(1), &Rc::new(f), 72.0, 72.0, 100.0)
+    }
+
+    #[test]
+    fn a_polygon_wraps_by_its_widest_point_over_the_band() {
+        let tri = [(0.0, 0.0), (0.0, 21600.0), (21600.0, 21600.0)];
+        let starts = |dist| intervals(&[polygon("tight", &tri, dist)], 72.0, 540.0, 72.0, 83.49, false).unwrap();
+        let free = starts([0.0; 4]);
+        assert!((free[0].0 - 94.98).abs() < 1e-6 && free.len() == 1, "{free:?}");
+        let free = starts([0.0, 0.0, 0.0, 18.0]);
+        assert!((free[0].0 - 112.98).abs() < 1e-6, "{free:?}");
+        assert_eq!(intervals(&[polygon("tight", &tri, [0.0; 4])], 72.0, 540.0, 180.0, 190.0, false).unwrap(), vec![(72.0, 540.0)]);
+    }
+
+    #[test]
+    fn a_polygon_turns_with_its_shape_about_the_box_centre() {
+        let mut f = (*fl(0.0, 200.0, Side::Both).float).clone();
+        f.wrap = "tight".into();
+        f.poly = Some([(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)].into_iter().collect());
+        let xfrm = crate::drawing::Xfrm { rot: crate::drawing::units::Angle(90 * 60000), ..Default::default() };
+        let kind = crate::drawing::ShapeKind::Raw(crate::drawing::RawGraphic { uri: String::new() });
+        f.shape = Some(Box::new(crate::drawing::Shape { nv: Default::default(), xfrm, kind, spans: Default::default() }));
+        let p = Placed::new((0, 0, 0), ParaId(1), &Rc::new(f), 72.0, 72.0, 100.0);
+        let c = p.contour.expect("a contour");
+        let b = c.points.iter().fold([f64::MAX, f64::MAX, f64::MIN, f64::MIN], |b, &(x, y)| [b[0].min(x), b[1].min(y), b[2].max(x), b[3].max(y)]);
+        let want = [122.0, 22.0, 222.0, 222.0];
+        assert!(b.iter().zip(want).all(|(a, w)| (a - w).abs() < 1e-9), "{b:?}");
+    }
+
+    #[test]
+    fn compat_14_grows_both_axes_by_the_effect_extents_when_one_is_aligned() {
+        let fr = |compat| Frames { page_w: 612.0, page_h: 792.0, margin: [72.0; 4], column: (72.0, 468.0), compat, cell: false, odd: true };
+        let mut f = (*fl(0.0, 100.0, Side::Both).float).clone();
+        f.h_align = Some("left".into());
+        f.v_offset = 40.0;
+        f.effect = [5.0, 10.0, 5.0, 10.0];
+        assert_eq!(v_pos(&f, 30.0, &fr(Compat::Legacy), 84.65, 84.65), 134.65);
+        assert_eq!(v_pos(&f, 30.0, &fr(Compat::Generic), 84.65, 84.65), 124.65);
+        (f.h_align, f.v_align, f.v_relative) = (None, Some("top".into()), "margin".into());
+        assert_eq!(h_pos(&f, &fr(Compat::Legacy)), 72.0 + 5.0);
+        assert_eq!((h_pos(&f, &fr(Compat::Generic)), v_pos(&f, 30.0, &fr(Compat::Generic), 0.0, 0.0)), (72.0, 82.0));
+    }
+
+    #[test]
+    fn a_through_wrap_opens_a_notch_that_a_tight_wrap_keeps_closed() {
+        let u =
+            [(0.0, 0.0), (7200.0, 0.0), (7200.0, 14400.0), (14400.0, 14400.0), (14400.0, 0.0), (21600.0, 0.0), (21600.0, 21600.0), (0.0, 21600.0)];
+        let band = |wrap, top: f64| intervals(&[polygon(wrap, &u, [0.0; 4])], 0.0, 540.0, top, top + 11.49, false).unwrap();
+        let notch = (72.0 + 200.0 / 3.0, 72.0 + 400.0 / 3.0);
+        let through = band("through", 80.0);
+        assert!(through.iter().any(|&(a, b)| (a - notch.0).abs() < 1e-6 && (b - notch.1).abs() < 1e-6), "{through:?}");
+        assert!(!band("tight", 80.0).iter().any(|&(a, _)| a > 72.0 && a < 272.0));
+        assert!(!band("through", 135.0).iter().any(|&(a, _)| a > 72.0 && a < 272.0), "the band over the notch bottom");
+    }
+
+    #[test]
+    fn inside_and_outside_follow_the_page_parity() {
+        let fr = |compat, odd| Frames { page_w: 612.0, page_h: 792.0, margin: [72.0; 4], column: (72.0, 468.0), compat, cell: false, odd };
+        let x = |rel: &str, align: &str, compat, odd| {
+            let mut f = (*fl(0.0, 40.0, Side::Both).float).clone();
+            f.h_relative = rel.into();
+            f.h_align = Some(align.into());
+            h_pos(&f, &fr(compat, odd))
+        };
+        assert_eq!((x("insideMargin", "left", Compat::Generic, true), x("insideMargin", "left", Compat::Generic, false)), (0.0, 540.0));
+        assert_eq!((x("insideMargin", "left", Compat::Legacy, true), x("outsideMargin", "left", Compat::Legacy, true)), (540.0, 0.0));
+        assert_eq!((x("margin", "inside", Compat::Generic, true), x("margin", "inside", Compat::Generic, false)), (72.0, 500.0));
+        let even = Frames { margin: [72.0, 36.0, 72.0, 144.0], ..fr(Compat::Generic, false) };
+        let mut f = (*fl(0.0, 40.0, Side::Both).float).clone();
+        f.relative.size = [Some(("insideMargin".into(), 500)), Some(("insideMargin".into(), 500))];
+        let s = sized(&f, &even).expect("sized");
+        assert_eq!((s.w, s.h), (36.0, 72.0));
+    }
+
+    #[test]
+    fn compat_14_snaps_an_aligned_offset_to_whole_twips() {
+        let fr = |compat| Frames { page_w: 612.0, page_h: 792.0, margin: [72.0; 4], column: (72.0, 468.0), compat, cell: false, odd: true };
+        let mut f = (*fl(0.0, 40.03, Side::Both).float).clone();
+        f.h_relative = "margin".into();
+        f.h_align = Some("center".into());
+        assert_eq!(h_pos(&f, &fr(Compat::Legacy)), 286.0);
+        assert!((h_pos(&f, &fr(Compat::Generic)) - 285.985).abs() < 1e-9);
     }
 
     #[test]
     fn positions() {
-        let fr = |compat| Frames { page_w: 612.0, page_h: 792.0, margin: [72.0, 72.0, 72.0, 72.0], column: (72.0, 468.0), compat };
+        let fr =
+            |compat| Frames { page_w: 612.0, page_h: 792.0, margin: [72.0, 72.0, 72.0, 72.0], column: (72.0, 468.0), compat, cell: false, odd: true };
         let f = |h: &str, ha: Option<&str>, v: &str, va: Option<&str>| Float {
             h_relative: h.into(),
             h_align: ha.map(Into::into),
@@ -217,5 +585,34 @@ mod tests {
         for va in ["top", "center", "bottom"] {
             assert_eq!(v_pos(&f("column", None, "paragraph", Some(va)), 40.0, &fr(Compat::Generic), 200.0, 220.0), 200.0);
         }
+    }
+
+    #[test]
+    fn a_piece_narrower_than_its_floats_gap_gets_no_text() {
+        let with = |wrap: &str, frame: bool| {
+            let mut f = (*fl(135.0, 300.0, Side::Both).float).clone();
+            f.wrap = wrap.into();
+            if frame {
+                f.text_box = Some(crate::docx::TextBox { blocks: Vec::new(), insets: [0.0; 4], outline: 0.0, auto_fit: false, v_anchor: 0, flow: 0 });
+            }
+            [Placed::new((0, 0, 0), ParaId(1), &Rc::new(f), 135.0, 0.0, 100.0)]
+        };
+        let left = |f: &[Placed], legacy| intervals(f, 72.0, 540.0, 10.0, 20.0, legacy).unwrap()[0];
+        assert_eq!(left(&with("square", false), true), (72.0, 135.0));
+        assert_eq!(left(&with("square", true), true), (300.0, 540.0), "an inch beside a compat 14 frame");
+        assert_eq!(left(&with("square", true), false), (72.0, 135.0));
+        let narrow = |wrap: &str, legacy| intervals(&with(wrap, false), 120.0, 540.0, 10.0, 20.0, legacy).unwrap()[0];
+        assert_eq!(narrow("tight", true), (120.0, 135.0), "9 pt beside a compat 14 tight float");
+        assert_eq!(narrow("tight", false), (300.0, 540.0));
+    }
+
+    #[test]
+    fn compat_14_keeps_no_distance_above_or_below_a_tight_float() {
+        let square = [(0.0, 0.0), (21600.0, 0.0), (21600.0, 21600.0), (0.0, 21600.0)];
+        let p = polygon("tight", &square, [10.0, 10.0, 5.0, 5.0]).legacy_dist();
+        assert_eq!(p.excl, [67.0, 72.0, 277.0, 172.0]);
+        assert!(intervals(&[p], 0.0, 540.0, 175.0, 185.0, true).unwrap() == vec![(0.0, 540.0)]);
+        let q = polygon("square", &square, [10.0, 10.0, 5.0, 5.0]).legacy_dist();
+        assert_eq!(q.excl[1], 62.0);
     }
 }

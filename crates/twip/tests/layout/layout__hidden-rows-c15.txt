@@ -1,0 +1,35 @@
+page 0 12240 15840
+  1440 1936 Hidden rows
+  1440 2201 A hidden middle row: every character, mark and the row mark hidden.
+  1571 2644 Row 1
+  1571 3086 Row 3
+  1440 3529 A hidden first row:
+  1571 3971 Row 2
+  1571 4413 Row 3
+  1440 4856 A hidden last row: compat 15 still reserves the bottom border, compat 12 doesn't.
+  1571 5298 Row 1
+  1571 5741 Row 2
+  1440 6183 trPr/w:hidden alone keeps the row:
+  1571 6626 Row 1
+  1571 7068 Row 2, row mark hidden
+  1571 7305 only
+  1571 7748 Row 3
+  1440 8190 Paragraph after the tables.
+  cell 1463 2423 4463 2865
+  cell 4463 2423 7463 2865
+  cell 1463 2865 4463 3308
+  cell 4463 2865 7463 3308
+  cell 1463 3750 4463 4192
+  cell 4463 3750 7463 4192
+  cell 1463 4192 4463 4635
+  cell 4463 4192 7463 4635
+  cell 1463 5077 4463 5520
+  cell 4463 5077 7463 5520
+  cell 1463 5520 4463 5962
+  cell 4463 5520 7463 5962
+  cell 1463 6405 4463 6847
+  cell 4463 6405 7463 6847
+  cell 1463 6847 4463 7527
+  cell 4463 6847 7463 7527
+  cell 1463 7527 4463 7969
+  cell 4463 7527 7463 7969

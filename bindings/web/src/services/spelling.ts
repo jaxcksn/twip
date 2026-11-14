@@ -9,6 +9,8 @@ export interface Dictionary {
   aff: Uint8Array;
   /** The `.dic` file. */
   dic: Uint8Array;
+  /** Hyphenation patterns (a `hyph_*.dic` file), for automatic hyphenation. With empty `aff` and `dic`, only these. */
+  hyphenation?: Uint8Array;
 }
 
 /** Spell checking. */

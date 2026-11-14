@@ -2251,6 +2251,43 @@ fn backspace_and_delete_take_a_section_break() {
 }
 
 #[test]
+fn hyphenation_settings_change_undo_and_save_in_schema_order() {
+    use crate::api::state::{CommandValue, Tri};
+    use crate::api::value::Points;
+    let bytes = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-TEXT.docx")).expect("fixture");
+    let mut e = crate::editing::Editor::open(&bytes, fonts()).expect("opens");
+    e.execute(Command::SetAutoHyphenation(true), fonts());
+    e.execute(Command::SetConsecutiveHyphenLimit(2), fonts());
+    e.execute(Command::SetHyphenationZone(Points(9.0)), fonts());
+    e.execute(Command::SetHyphenateCaps(false), fonts());
+    let s = &e.document().settings;
+    assert_eq!((s.auto_hyphenation, s.consecutive_hyphen_limit, s.hyphenation_zone, s.do_not_hyphenate_caps), (true, 2, 9.0, true));
+    let f = e.format_state();
+    let states = e.command_states(f.as_ref(), super::super::state::StateFlags { read_only: false });
+    let id = |c: Command| c.id();
+    assert_eq!(states[&id(Command::SetAutoHyphenation(true))].checked, Some(true));
+    assert_eq!(states[&id(Command::SetHyphenateCaps(true))].checked, Some(false));
+    assert_eq!(states[&id(Command::SetHyphenationZone(Points(0.0)))].value, Some(CommandValue::Length(Tri::Uniform(Points(9.0)))));
+    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let mut z = zip::ZipArchive::new(std::io::Cursor::new(&saved[..])).expect("zip");
+    let mut xml = String::new();
+    std::io::Read::read_to_string(&mut z.by_name("word/settings.xml").expect("settings"), &mut xml).expect("reads");
+    let at = |el: &str| xml.find(el).unwrap_or_else(|| panic!("{el} in {xml}"));
+    assert!(at("<w:defaultTabStop") < at("<w:autoHyphenation/>"));
+    assert!(at("<w:autoHyphenation/>") < at("<w:consecutiveHyphenLimit w:val=\"2\"/>"));
+    assert!(at("<w:consecutiveHyphenLimit") < at("<w:hyphenationZone w:val=\"180\"/>"));
+    assert!(at("<w:hyphenationZone") < at("<w:doNotHyphenateCaps/>"));
+    let again = crate::docx::read_editable(&saved).expect("reads");
+    assert_eq!((again.settings.auto_hyphenation, again.settings.consecutive_hyphen_limit), (true, 2));
+    for _ in 0..4 {
+        e.execute(Command::Undo, fonts());
+    }
+    let s = &e.document().settings;
+    assert_eq!((s.auto_hyphenation, s.consecutive_hyphen_limit, s.do_not_hyphenate_caps), (false, 0, false));
+    assert!(matches!(e.execute(Command::SetHyphenationZone(Points(-1.0)), fonts()), super::super::commands::Outcome::Refused(_)));
+}
+
+#[test]
 fn a_list_reapplied_after_backspacing_out_indents_again() {
     let mut e = open("FX-TEXT.docx");
     let para = super::super::tests::para_id(&e, 1);
@@ -2263,4 +2300,38 @@ fn a_list_reapplied_after_backspacing_out_indents_again() {
     assert_ne!(ind(&e), listed, "backspace took the list off");
     e.execute(Command::SetList(Some(crate::api::command::ListKind::Numbered)), fonts());
     assert_eq!(ind(&e), listed);
+}
+
+#[test]
+fn reformatting_a_paragraph_in_a_division_keeps_the_divisions_margins() {
+    use std::io::{Read, Write};
+    let body = r#"<w:p><w:r><w:t>Before.</w:t></w:r></w:p><w:p><w:pPr><w:divId w:val="7"/></w:pPr><w:r><w:t>In the division.</w:t></w:r></w:p>"#;
+    let web = r#"<w:webSettings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:divs><w:div w:id="7"><w:marLeft w:val="1440"/><w:marRight w:val="720"/><w:marTop w:val="240"/><w:marBottom w:val="0"/></w:div></w:divs></w:webSettings>"#;
+    let mut z = zip::ZipArchive::new(std::io::Cursor::new(super::blank_body(body))).unwrap();
+    let mut out = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    for i in 0..z.len() {
+        let mut f = z.by_index(i).unwrap();
+        let name = f.name().unwrap().to_string();
+        let mut data = Vec::new();
+        f.read_to_end(&mut data).unwrap();
+        if name == "word/_rels/document.xml.rels" {
+            let rel = r#"<Relationship Id="rIdWeb" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/webSettings" Target="webSettings.xml"/></Relationships>"#;
+            data = String::from_utf8(data).unwrap().replace("</Relationships>", rel).into_bytes();
+        }
+        out.start_file(name, zip::write::SimpleFileOptions::default()).unwrap();
+        out.write_all(&data).unwrap();
+    }
+    out.start_file("word/webSettings.xml", zip::write::SimpleFileOptions::default()).unwrap();
+    out.write_all(web.as_bytes()).unwrap();
+    let mut e = super::super::Editor::open(&out.finish().unwrap().into_inner(), fonts()).unwrap();
+    let margins = |e: &super::super::Editor| {
+        let crate::docx::Block::Para(p) = &e.document().sections[0].blocks[1] else { panic!("a paragraph") };
+        let s = p.para_style_in(e.document().review.view);
+        (s.ind_left, s.ind_right, s.space_before, s.jc)
+    };
+    let read = margins(&e);
+    assert_eq!((read.0, read.1, read.2), (72.0, 36.0, 12.0));
+    e.execute(crate::editing::tests::mv(MoveBy::Story, Dir::Forward, false), fonts());
+    e.execute(Command::SetAlignment(crate::api::value::Alignment::Center), fonts());
+    assert_eq!(margins(&e), (72.0, 36.0, 12.0, crate::docx::props::Jc::Center));
 }

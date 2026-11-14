@@ -8,7 +8,7 @@ use super::colour::{Colour, ColourMod};
 use super::geom::{CustomGeom, Geometry, Preset};
 use super::paint::{self, Fill, Line};
 use super::read::Ctx;
-use super::text::{BodyProps, VAnchor};
+use super::text::{BodyProps, TextDirection, VAnchor};
 use super::units::{Angle, Emu, Pct};
 use super::{GroupShape, NonVisual, PicShape, Shape, ShapeKind, ShapeText, SpShape, Spans, Xfrm};
 
@@ -23,6 +23,11 @@ pub struct VmlObject<'a, 'i> {
     pub textbox: Option<(Node<'a, 'i>, [f64; 4], u8)>,
     pub wrap: Option<(String, String)>,
     pub alt: String,
+    /// `o:allowoverlap`, `o:allowincell` (on when absent).
+    pub allow_overlap: bool,
+    pub allow_in_cell: bool,
+    /// `wrapcoords`: the wrap polygon's points, in 21600ths of the shape's box.
+    pub wrap_coords: Option<Vec<(f64, f64)>>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -43,6 +48,27 @@ pub struct Style {
     pub v_align: Option<String>,
     pub v_relative: Option<String>,
     pub text_anchor: Option<String>,
+    /// `mso-width-relative`/`mso-width-percent` and the height's, in tenths of a percent.
+    pub size_percent: [Option<(String, i64)>; 2],
+    /// `mso-left-percent`, `mso-top-percent`.
+    pub pos_percent: [Option<i64>; 2],
+    /// `mso-wrap-distance-top`, `-bottom`, `-left`, `-right`.
+    pub wrap_dist: [Option<f64>; 4],
+    /// `layout-flow` and `mso-layout-flow-alt`.
+    pub layout_flow: Option<String>,
+    pub layout_flow_alt: Option<String>,
+}
+
+impl Style {
+    /// The text flow `layout-flow` gives, as the DrawingML direction it lays out like; `None` when not given. The
+    /// ideographic flows stay horizontal.
+    fn direction(&self) -> Option<TextDirection> {
+        Some(match (self.layout_flow.as_deref()?, self.layout_flow_alt.as_deref()) {
+            ("vertical", Some("bottom-to-top")) => TextDirection::Vert270,
+            ("vertical", _) => TextDirection::Vert,
+            _ => TextDirection::Horizontal,
+        })
+    }
 }
 
 fn is(n: Node, ns: &str, name: &str) -> bool {
@@ -130,6 +156,24 @@ pub fn style(n: Node) -> Style {
             "mso-position-vertical" => s.v_align = Some(v.to_string()),
             "mso-position-vertical-relative" => s.v_relative = Some(v.to_string()),
             "v-text-anchor" => s.text_anchor = Some(v.to_string()),
+            "layout-flow" => s.layout_flow = Some(v.to_string()),
+            "mso-layout-flow-alt" => s.layout_flow_alt = Some(v.to_string()),
+            "mso-width-percent" | "mso-height-percent" => {
+                let k = usize::from(k == "mso-height-percent");
+                let from = s.size_percent[k].take().map_or_else(|| "margin".to_string(), |(f, _)| f);
+                s.size_percent[k] = Some((from, v.parse().unwrap_or(0)));
+            }
+            "mso-width-relative" | "mso-height-relative" => {
+                let k = usize::from(k == "mso-height-relative");
+                let pct = s.size_percent[k].take().map_or(0, |(_, p)| p);
+                s.size_percent[k] = Some((v.to_string(), pct));
+            }
+            "mso-left-percent" => s.pos_percent[0] = v.parse().ok(),
+            "mso-top-percent" => s.pos_percent[1] = v.parse().ok(),
+            "mso-wrap-distance-top" => s.wrap_dist[0] = length(v),
+            "mso-wrap-distance-bottom" => s.wrap_dist[1] = length(v),
+            "mso-wrap-distance-left" => s.wrap_dist[2] = length(v),
+            "mso-wrap-distance-right" => s.wrap_dist[3] = length(v),
             _ => {}
         }
     }
@@ -939,6 +983,8 @@ fn finish(el: Node, st: &Style, geom: Geometry, rect: Option<[f64; 4]>, image: &
         Some(a) if a.starts_with("bottom") => VAnchor::Bottom,
         _ => VAnchor::Top,
     };
+    // The text box's own flow, else the shape's.
+    let direction = child(el, "textbox").and_then(|tb| style(tb).direction()).or_else(|| st.direction()).unwrap_or_default();
     let ins = child(el, "textbox").map(|tb| {
         let v: Vec<f64> = tb.attribute("inset").unwrap_or("").split(',').map(|v| length(v).unwrap_or(f64::NAN)).collect();
         let i = |k: usize, d: f64| emu(v.get(k).copied().filter(|x| !x.is_nan()).unwrap_or(d));
@@ -950,7 +996,7 @@ fn finish(el: Node, st: &Style, geom: Geometry, rect: Option<[f64; 4]>, image: &
         line: Some(stroke(el)),
         effects: shadow(el),
         style: None,
-        body: BodyProps { anchor, insets: ins.unwrap_or(BodyProps::default().insets), ..BodyProps::default() },
+        body: BodyProps { anchor, insets: ins.unwrap_or(BodyProps::default().insets), direction, ..BodyProps::default() },
         text: if text { ShapeText::Story } else { ShapeText::None },
         text_box: text,
         chain: None,
@@ -1001,7 +1047,18 @@ pub fn read<'a, 'i>(pict: Node<'a, 'i>, ctx: &mut Ctx) -> Option<VmlObject<'a, '
         .map(|w| (w.attribute("type").unwrap_or("").to_string(), w.attribute("side").unwrap_or("both").to_string()));
     let mut shape = shape;
     shape.xfrm.off = [Emu(0); 2];
-    Some(VmlObject { textbox: textbox(el, &st), shape, wrap, alt: el.attribute("alt").unwrap_or("").to_string(), style: st })
+    let nums: Vec<f64> = el.attribute("wrapcoords").unwrap_or("").split([' ', ',']).filter_map(|v| v.trim().parse().ok()).collect();
+    let wrap_coords = (nums.len() >= 4).then(|| nums.as_chunks::<2>().0.iter().map(|p| (p[0] / 21600.0, p[1] / 21600.0)).collect());
+    Some(VmlObject {
+        textbox: textbox(el, &st),
+        shape,
+        wrap,
+        alt: el.attribute("alt").unwrap_or("").to_string(),
+        allow_overlap: on(el.attribute((O, "allowoverlap")), true),
+        allow_in_cell: on(el.attribute((O, "allowincell")), true),
+        wrap_coords,
+        style: st,
+    })
 }
 
 #[cfg(test)]
@@ -1030,6 +1087,19 @@ mod tests {
         assert!(s.absolute);
         assert_eq!((s.x, s.y, s.w, s.h, s.rotation, s.flip_h, s.z), (72.0, 72.0, 90.0, 60.0, 30.0, true, -3));
         assert_eq!(s.h_relative.as_deref(), Some("page"));
+    }
+
+    #[test]
+    fn a_layout_flow_reads_as_its_text_direction() {
+        let dir = |css: &str| {
+            let xml = format!(r#"<v:textbox xmlns:v="urn:schemas-microsoft-com:vml" style="{css}"/>"#);
+            style(roxmltree::Document::parse(&xml).unwrap().root_element()).direction()
+        };
+        assert_eq!(dir("layout-flow:vertical"), Some(TextDirection::Vert));
+        assert_eq!(dir("layout-flow:vertical;mso-layout-flow-alt:bottom-to-top"), Some(TextDirection::Vert270));
+        assert_eq!(dir("mso-layout-flow-alt:top-to-bottom;layout-flow:vertical"), Some(TextDirection::Vert));
+        assert_eq!(dir("layout-flow:vertical-ideographic"), Some(TextDirection::Horizontal));
+        assert_eq!(dir("mso-fit-shape-to-text:t"), None);
     }
 
     #[test]

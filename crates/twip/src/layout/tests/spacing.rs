@@ -58,6 +58,74 @@ fn para_2_a_page_break_after_text_drops_the_space_before() {
     assert!((page_2_top(&mid) - page_2_top(&none)).abs() < 1e-6, "text before the break: the 6pt go");
 }
 
+#[test]
+fn para_2_compat_14_a_page_break_before_paragraph_keeps_its_space_after_a_page_break() {
+    let top = |mode: i64, pbb: bool| {
+        // The first paragraph (8pt after) ends in a page break; the second has 24pt before.
+        let mut doc = broken(8.0, 24.0)?;
+        let brk = para_mut(&mut doc, 1).inlines.remove(0);
+        para_mut(&mut doc, 0).inlines.push(brk);
+        doc.settings.compat_mode = mode;
+        Rc::make_mut(&mut para_mut(&mut doc, 1).style).page_break_before = pbb;
+        Some(page_2_top(&doc))
+    };
+    let Some(plain) = top(12, false) else { return };
+    assert!((top(12, true).unwrap() - plain - 16.0).abs() < 1e-6, "compat 12: what the 8pt after leaves of the 24pt");
+    assert!((top(15, true).unwrap() - top(15, false).unwrap()).abs() < 1e-6, "compat 15 drops it");
+}
+
+#[test]
+fn an_at_least_line_at_the_page_top_rises_with_the_top_spacing_options() {
+    let top = |mode: i64, option: &str| {
+        // A page break ends the first paragraph; the second starts page 2 without its space-before.
+        let mut doc = broken(0.0, 12.0)?;
+        let brk = para_mut(&mut doc, 1).inlines.remove(0);
+        para_mut(&mut doc, 0).inlines.push(brk);
+        doc.settings.compat_mode = mode;
+        if !option.is_empty() {
+            doc.settings.compat.insert(option.to_string());
+        }
+        let s = Rc::make_mut(&mut para_mut(&mut doc, 1).style);
+        (s.line_rule, s.line) = (crate::docx::props::LineRule::AtLeast, 40.0);
+        Some(page_2_top(&doc))
+    };
+    // The Mac rule's text height is Calibri's own: a metric-compatible stand-in has another one.
+    if fonts().face("Calibri", None, false, false).is_none_or(|f| f.family != "Calibri") {
+        return;
+    }
+    let Some(plain) = top(12, "") else { return };
+    // The 40pt line keeps 9.6pt of its height (both modes); the Mac rule drops what it has beyond its text (30.48pt).
+    for mode in [12, 15] {
+        assert!((plain - top(mode, "suppressTopSpacing").unwrap() - 30.4).abs() < 1e-6, "compat {mode}");
+    }
+    let mac = plain - top(12, "suppressSpacingAtTopOfPage").unwrap();
+    assert!((mac - 9.52).abs() < 0.01, "{mac}");
+    assert!((top(15, "suppressSpacingAtTopOfPage").unwrap() - top(15, "").unwrap()).abs() < 1e-6);
+}
+
+#[test]
+fn a_page_top_line_that_keeps_its_space_before_rises_too() {
+    let top = |option: &str, page: usize| {
+        // Paragraph 2 starts with a page break: its text line keeps its 12pt space-before on page 2. Compat 12.
+        let mut doc = broken(0.0, 12.0)?;
+        doc.settings.compat_mode = 12;
+        if !option.is_empty() {
+            doc.settings.compat.insert(option.to_string());
+        }
+        for i in 0..2 {
+            let s = Rc::make_mut(&mut para_mut(&mut doc, i).style);
+            (s.line_rule, s.line) = (crate::docx::props::LineRule::AtLeast, 40.0);
+        }
+        Some(first_para(&doc, page).0)
+    };
+    let (Some(first), Some(plain)) = (top("", 0), top("", 1)) else { return };
+    // The document's first paragraph and the kept-space line both rise by the line's height beyond 9.6pt.
+    assert!((first - top("suppressTopSpacing", 0).unwrap() - 30.4).abs() < 1e-6);
+    assert!((plain - top("suppressTopSpacing", 1).unwrap() - 30.4).abs() < 1e-6);
+    // `suppressSpBfAfterPgBrk`: the space-before after the leading page break goes.
+    assert!((plain - top("suppressSpBfAfterPgBrk", 1).unwrap() - 12.0).abs() < 1e-6);
+}
+
 fn after_continuous_break(after: f64) -> Option<f64> {
     let mut doc = plain_doc(&[words(3), words(3)])?;
     Rc::make_mut(&mut para_mut(&mut doc, 0).style).space_after = after;
@@ -152,6 +220,22 @@ fn tab_7_compat_15_a_centre_stop_past_the_edge_moves_to_it_unless_a_tab_follows(
     use crate::docx::props::TabKind::{Center, Right};
     let (Some(centre), Some(right)) = (custom_past_edge(15, &[Center]), custom_past_edge(15, &[Right, Right])) else { return };
     assert_eq!((centre, right), (1, 3));
+}
+
+#[test]
+fn tab_6_text_after_a_centre_stop_near_the_edge_ends_at_it_on_the_line() {
+    use crate::docx::props::{Leader, Tab, TabKind};
+    let lines = |compat: i64| {
+        let mut doc = plain_doc(&["A".to_string()])?;
+        doc.settings.compat_mode = compat;
+        let p = para_mut(&mut doc, 0);
+        Rc::make_mut(&mut p.style).tabs = vec![Tab { pos: 450.0, kind: TabKind::Center, leader: Leader::None }];
+        let Inline::Text(_, run) = p.inlines[0].clone() else { unreachable!() };
+        p.inlines.extend([Inline::Tab(run.clone()), Inline::Text(words(3), run)]);
+        Some(first_para(&doc, 0).1)
+    };
+    let (Some(old), Some(new)) = (lines(14), lines(15)) else { return };
+    assert_eq!((old, new), (1, 1));
 }
 
 fn decimal_x(value: &str, c: char) -> Option<f64> {

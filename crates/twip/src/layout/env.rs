@@ -16,9 +16,51 @@ pub struct TextEnv {
     pub align_tables_row_by_row: bool,
     pub do_not_vert_align_cell_with_sp: bool,
     pub do_not_break_wrapped_tables: bool,
-    pub do_not_vert_align_in_txbx: bool,
+    /// `layoutRawTableWidth`: a table row beside a float reports its cells' extent, without the indent and the last
+    /// cell's right margin.
+    pub raw_table_width: bool,
+    /// Compat ≤ 14: the story is a text box's. A table at its top level has a twip less room, and its pct width and
+    /// pct indent are shares of the box's text width and 15 twips more.
+    pub box_story: bool,
+    /// `doNotAutofitConstrainedTables`: an autofit table beside a float keeps the column width it was fitted to.
+    pub no_constrained_autofit: bool,
     pub wp_justification: bool,
     pub word97_line_breaks: bool,
+    /// Font metric options, compat ≤ 14: `noLeading` (no external leading), `noSpaceRaiseLower` (raised and
+    /// lowered text doesn't grow the line), `spacingInWholePoints` (character spacing truncated to whole points),
+    /// `mwSmallCaps` (the Mac small-caps sizes).
+    pub no_leading: bool,
+    pub no_raise_lower: bool,
+    pub whole_point_spacing: bool,
+    pub mac_small_caps: bool,
+    /// `suppressTopSpacingWP`, compat ≤ 14: line heights of Latin fonts from the font size.
+    pub wp_line_heights: bool,
+    /// Exact line heights: `noExtraLineSpacing` puts the baseline at the line's ascent; `suppressBottomSpacing` makes
+    /// the part of the room under the baseline beyond the line's descent space below the text.
+    pub exact_on_top: bool,
+    pub exact_extra_after: bool,
+    /// `doNotSuppressIndentation`, compat ≤ 14: beside a float a line drops the indents of its cut sides.
+    pub drop_cut_indents: bool,
+    /// The hanging indent is no tab stop: `noTabHangInd` (any tab) and `doNotUseIndentAsNumberingTabStop` (a
+    /// list number's tab), compat ≤ 14.
+    pub no_tab_hang_ind: bool,
+    pub no_number_hang_stop: bool,
+    /// `showBreaksInFrames`, compat ≤ 14: page and column breaks in a frame break its lines.
+    pub show_breaks_in_frames: bool,
+    /// `suppressTopSpacing`.
+    pub suppress_top_spacing: bool,
+    /// `suppressSpacingAtTopOfPage`, compat ≤ 14.
+    pub suppress_spacing_at_top: bool,
+    /// `suppressSpBfAfterPgBrk`, compat ≤ 14: the text after a paragraph's leading page break loses its space before.
+    pub suppress_before_after_page_break: bool,
+    /// `useSingleBorderforContiguousCells`, compat ≤ 14: a shared cell edge takes the right or lower cell's border.
+    pub single_cell_borders: bool,
+    /// East Asian line-breaking rules: `applyBreakingRules`, or compatibility mode 14 and later.
+    pub breaking_rules: bool,
+    /// Compatibility mode 14 and later: more characters break after ([`super::space::MetricRules::dash_breaks`]).
+    pub dash_breaks: bool,
+    /// `strictFirstAndLastChars`.
+    pub strict_kinsoku: bool,
     pub default_style: Option<String>,
     pub grow_autofit: bool,
     pub balance_spaces: bool,
@@ -31,6 +73,26 @@ pub struct TextEnv {
     pub theme: std::rc::Rc<crate::drawing::theme::Theme>,
     pub colour_map: crate::drawing::theme::ColourMap,
     pub backdrop: Option<u32>,
+    /// The vertical flow the text is laid out in.
+    pub vertical: Option<super::vertical::Vertical>,
+    /// Automatic hyphenation.
+    pub hyphenation: Option<HyphenEnv>,
+    /// Compat 15, the last line of a page or column without `allowHyphenationAtTrackBottom`: re-broken without
+    /// automatic hyphenation (`useWord2013TrackBottomHyphenation` off), else moved to the next one when it ends at a
+    /// hyphenation point.
+    pub bottom_unhyphenated: bool,
+    pub bottom_hyphen_moves: bool,
+    /// Compat 15, `allowTextAfterFloatingTableBreak`: the text after a floating table split across pages goes on
+    /// beside its first part.
+    pub text_after_table_break: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct HyphenEnv {
+    pub patterns: super::hyphenate::Hyphenation,
+    pub zone: f64,
+    pub limit: i64,
+    pub caps: bool,
 }
 
 pub fn is_dark(c: u32) -> bool {
@@ -40,6 +102,7 @@ pub fn is_dark(c: u32) -> bool {
 impl TextEnv {
     pub fn new(doc: &Document) -> TextEnv {
         let s = &doc.settings;
+        let bottom = s.compat() == Compat::Generic && !s.has("allowHyphenationAtTrackBottom");
         TextEnv {
             compat: s.compat(),
             default_tab: s.default_tab,
@@ -50,11 +113,31 @@ impl TextEnv {
             align_tables_row_by_row: s.has("alignTablesRowByRow"),
             do_not_vert_align_cell_with_sp: s.has("doNotVertAlignCellWithSp"),
             do_not_break_wrapped_tables: s.has("doNotBreakWrappedTables"),
-            do_not_vert_align_in_txbx: s.has("doNotVertAlignInTxbx"),
+            raw_table_width: s.has("layoutRawTableWidth"),
+            box_story: false,
+            no_constrained_autofit: s.has("doNotAutofitConstrainedTables"),
             wp_justification: s.has("wpJustification"),
             word97_line_breaks: s.has("useWord97LineBreakRules"),
+            no_leading: s.compat() == Compat::Legacy && s.has("noLeading"),
+            no_raise_lower: s.compat() == Compat::Legacy && s.has("noSpaceRaiseLower"),
+            whole_point_spacing: s.compat() == Compat::Legacy && s.has("spacingInWholePoints"),
+            mac_small_caps: s.compat() == Compat::Legacy && s.has("mwSmallCaps"),
+            wp_line_heights: s.compat() == Compat::Legacy && s.has("suppressTopSpacingWP"),
+            exact_on_top: s.has("noExtraLineSpacing"),
+            exact_extra_after: s.has("suppressBottomSpacing"),
+            drop_cut_indents: s.compat() == Compat::Legacy && s.has("doNotSuppressIndentation"),
+            no_tab_hang_ind: s.compat() == Compat::Legacy && s.has("noTabHangInd"),
+            no_number_hang_stop: s.compat() == Compat::Legacy && s.has("doNotUseIndentAsNumberingTabStop"),
+            show_breaks_in_frames: s.compat() == Compat::Legacy && s.has("showBreaksInFrames"),
+            suppress_top_spacing: s.has("suppressTopSpacing"),
+            suppress_spacing_at_top: s.compat() == Compat::Legacy && s.has("suppressSpacingAtTopOfPage"),
+            suppress_before_after_page_break: s.compat() == Compat::Legacy && s.has("suppressSpBfAfterPgBrk"),
+            single_cell_borders: s.compat() == Compat::Legacy && s.has("useSingleBorderforContiguousCells"),
+            breaking_rules: s.compat_mode >= 14 || s.has("applyBreakingRules"),
+            dash_breaks: s.compat_mode >= 14,
+            strict_kinsoku: s.strict_kinsoku,
             default_style: doc.resolver.as_ref().and_then(|r| r.styles.default_paragraph.clone()),
-            grow_autofit: s.has("growAutofit"),
+            grow_autofit: s.compat() == Compat::Legacy && s.has("growAutofit"),
             balance_spaces: s.has("balanceSingleByteDoubleByteWidth"),
             ul_trail_space: s.has("ulTrailSpace"),
             compress_punctuation: s.compress_punctuation,
@@ -68,6 +151,16 @@ impl TextEnv {
             theme: doc.theme.clone(),
             colour_map: doc.colour_map,
             backdrop: None,
+            vertical: None,
+            hyphenation: doc.hyphenation.clone().filter(|_| s.auto_hyphenation).map(|patterns| HyphenEnv {
+                patterns,
+                zone: s.hyphenation_zone,
+                limit: s.consecutive_hyphen_limit,
+                caps: s.do_not_hyphenate_caps,
+            }),
+            bottom_unhyphenated: bottom && s.has("useWord2013TrackBottomHyphenation=0"),
+            bottom_hyphen_moves: bottom && !s.has("useWord2013TrackBottomHyphenation=0"),
+            text_after_table_break: s.compat() == Compat::Generic && s.has("allowTextAfterFloatingTableBreak"),
         }
     }
 }
@@ -78,8 +171,12 @@ pub struct LayoutEnv {
     pub even_and_odd: bool,
     pub mirror_margins: bool,
     pub gutter_at_top: bool,
+    pub book_fold: Option<bool>,
     pub line_number_run: Option<Run>,
     pub chains: Rc<[Chain]>,
+    /// `footnoteLayoutLikeWW8`, compat ≤ 14: a continuous section goes on above the page-bottom footnotes of an
+    /// earlier section on the page, up to its first line with a footnote reference.
+    pub notes_like_ww8: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -141,8 +238,10 @@ impl LayoutEnv {
             even_and_odd: s.even_and_odd,
             mirror_margins: s.mirror_margins,
             gutter_at_top: s.gutter_at_top,
+            book_fold: s.book_fold,
             line_number_run: doc.line_number_run.clone(),
             chains: chains(doc),
+            notes_like_ww8: s.compat() == Compat::Legacy && s.has("footnoteLayoutLikeWW8"),
         }
     }
 }

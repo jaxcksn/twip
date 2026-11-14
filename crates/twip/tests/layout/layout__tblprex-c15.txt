@@ -1,0 +1,41 @@
+page 0 12240 15840
+  1440 1936 Table property exceptions
+  1553 2211 Row 1, the table's own
+  1553 2449 properties
+  1553 2906 Row 2: 3pt borders from
+  1553 3144 its exceptions
+  1877 3601 Row 3: 0.3in cell
+  1877 3838 margins
+  4877 3601 right
+  1553 4246 Row 4: centred by its
+  1553 4483 exceptions
+  1707 4963 Row 5: cell spacing and
+  1707 5200 shading
+  1553 5690 Row 6: back to the
+  1553 5927 table's
+  1440 6334 An autofit table whose rows carry indents:
+  2066 6742 Autofit at indent
+  2066 6979 513
+  2066 7387 Exception indent 0
+  2066 7624 alone: ignored
+  1553 8041 Indent 0 with fixed
+  1553 8279 layout: its own
+  1440 8686 Paragraph after the tables.
+  cell 1445 2025 4445 2670
+  cell 4445 2025 7445 2670
+  cell 1445 2670 4445 3365
+  cell 4445 2670 7445 3365
+  cell 1445 3365 4445 4060
+  cell 4445 3365 7445 4060
+  cell 1445 4060 4445 4705
+  cell 4445 4060 7445 4705
+  cell 1445 4705 4445 5504
+  cell 4445 4705 7445 5504
+  cell 1445 5504 4445 6148
+  cell 4445 5504 7445 6148
+  cell 1958 6556 4458 7201
+  cell 4458 6556 6958 7201
+  cell 1958 7201 4458 7845
+  cell 4458 7201 6958 7845
+  cell 1445 7855 3945 8500
+  cell 3945 7855 6445 8500

@@ -1,0 +1,18 @@
+page 0 12240 15840
+  1440 1936 Sections without endnotes
+  1440 2201 Section 1 has noEndnote: its endnotei waits for the next section. Inventory relevant
+  1440 2439 group relief results region ledger brief usage cause colleague partner. Section
+  1440 2676 notice claim team export staff newsletter review matter presenter advisor account.
+  1440 2914 Served savings pilot receipt corporate requirement.
+  1440 3311 End of section 1.
+  1440 3708 Section 2 takes endnotes: its ownii and section 1's. Notice claim team export staff
+  1440 3946 newsletter review matter presenter advisor account served. Savings pilot receipt
+  1440 4183 corporate requirement standard fact that products distribution filed logistics.
+  1440 4421 Chapter plan regional maintenance accessibility tax.
+  1440 4818 End of section 2.
+  1440 5360 i Endnote 1, carried to the end of section 2.
+  1440 5560 ii Endnote 2, section 2's own.
+  1440 5836 Section 3, the last, has noEndnote too: it still takes what is leftiii. Pilot receipt
+  1440 6073 corporate requirement standard fact that products distribution filed logistics
+  1440 6310 chapter. Plan regional maintenance accessibility tax finds record proposal.
+  1440 6852 iii Endnote 3, at the document end.
