@@ -22,7 +22,7 @@
 
   <br />
 
-  [**Get started**](#get-started) · [**Explore the engine**](#under-the-hood) · [**Documentation**](#documentation) · [**Roadmap**](jaxcksn.github.io/twip/roadmap)
+  [**Get started**](#get-started) · [**Explore the engine**](#under-the-hood) · [**Documentation**](#documentation) · [**Vibe-Coded Demo**](https://jaxcksn.github.io/twip-demo)
 </div>
 
 <br />
