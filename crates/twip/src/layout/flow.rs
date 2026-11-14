@@ -1572,7 +1572,9 @@ impl<'d> PageFill<'d, '_> {
         }
         if first_part {
             for i in &p.inlines {
-                if let Inline::Bookmark(name) = i {
+                if let Inline::Bookmark(name) = i
+                    && !name.starts_with('/')
+                {
                     self.at.effects.bookmarks.retain(|b| b != name);
                     self.at.effects.bookmarks.push(name.clone());
                 }

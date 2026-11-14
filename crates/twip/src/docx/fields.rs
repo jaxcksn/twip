@@ -454,15 +454,24 @@ pub fn evaluate(doc: &mut Document, now: i64) {
     date_blocks(doc, now);
     let resolver = doc.resolver.clone();
     let styles = resolver.as_deref().map(|r| &r.styles);
-    // Bookmark texts (to the end of the bookmark's paragraph) and every paragraph's style and text, in order.
+    // Bookmark texts (to the bookmark's end, at most the end of its paragraph; codes left out) and every paragraph's
+    // style and text, in order.
     let mut marks: HashMap<String, String> = HashMap::new();
     let mut order: Vec<Vec<(String, bool, String)>> = Vec::new();
     for s in &mut doc.sections {
         paras(&mut s.blocks, &mut |p| {
             for (k, i) in p.inlines.iter().enumerate() {
-                if let Inline::Bookmark(name) = i {
-                    let rest = Paragraph { inlines: p.inlines[k..].to_vec(), ..p.clone() };
-                    marks.entry(name.clone()).or_insert_with(|| text(&rest));
+                if let Inline::Bookmark(name) = i
+                    && !name.starts_with('/')
+                {
+                    // A bookmark starting in a field's code starts at that field's result.
+                    let start = spans(&p.inlines).iter().filter(|s| s.begin < k && k < s.code_end()).last().map_or(k, |s| s.code_end() + 1);
+                    let end = format!("/{name}");
+                    let stop = p.inlines[start.min(p.inlines.len())..]
+                        .iter()
+                        .position(|i| matches!(i, Inline::Bookmark(n) if *n == end))
+                        .map_or(p.inlines.len(), |e| start + e);
+                    marks.entry(name.clone()).or_insert_with(|| visible(&p.inlines[start.min(stop)..stop]));
                 }
             }
             order.push(style_hits(p));
@@ -818,6 +827,20 @@ mod tests {
         let doc = crate::docx::read(&bytes).expect("reads");
         let texts: Vec<String> = doc.sections[0].blocks.iter().filter_map(|b| if let Block::Para(p) = b { Some(text(p)) } else { None }).collect();
         assert_eq!(texts[1..3], ["marked", "Error! Bookmark not defined."]);
+    }
+
+    #[test]
+    fn field_2_a_ref_runs_from_a_bookmark_in_a_code_to_its_end() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:bookmarkStart w:id="0" w:name="G"/><w:r><w:instrText xml:space="preserve"> FORMTEXT </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>Lorem</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:bookmarkEnd w:id="0"/><w:r><w:t xml:space="preserve"> end.</w:t></w:r></w:p><w:p><w:fldSimple w:instr=" REF G "><w:r><w:t>STALE</w:t></w:r></w:fldSimple></w:p><w:sectPr/></w:body></w:document>"#;
+        let bytes = crate::docx::write::repackage(
+            &crate::docx::blank::blank_docx(),
+            &[("word/document.xml".into(), xml.as_bytes().to_vec())],
+            zip::CompressionMethod::Deflated,
+        )
+        .expect("repackages");
+        let doc = crate::docx::read(&bytes).expect("reads");
+        let Some(Block::Para(p)) = doc.sections[0].blocks.get(1) else { panic!("two paragraphs") };
+        assert_eq!(text(p), "Lorem");
     }
 
     #[test]

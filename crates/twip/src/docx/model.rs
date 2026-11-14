@@ -542,7 +542,9 @@ pub enum Inline {
         id: FieldId,
         run: Run,
     },
-    /// Start of a bookmark (for PAGEREF/REF).
+    /// Start of a bookmark (for PAGEREF/REF); `/` and its name: its end (no bookmark name starts with `/`).
+    // ponytail: the end shares the start's variant so every no-unit marker rule covers it; its own variant if
+    // anything but REF ever needs the end.
     Bookmark(String),
     /// Where a comment's or a move's range starts or ends. No units.
     Range(RangeMark),

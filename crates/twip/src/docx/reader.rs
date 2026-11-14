@@ -261,6 +261,7 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
         counters: Counters::default(),
         images: Vec::new(),
         image_index: HashMap::new(),
+        bookmarks: HashMap::new(),
         fields: Vec::new(),
         para_no: 0,
         para_count: 0,
@@ -874,6 +875,8 @@ struct Reader {
     counters: Counters,
     images: Vec<Vec<u8>>,
     image_index: HashMap<String, usize>,
+    /// Bookmark names by `w:id`, for their ends.
+    bookmarks: HashMap<String, String>,
     fields: Vec<OpenField>,
     /// The paragraph being read (a number unique in the read), and the last number given.
     para_no: u64,
@@ -1749,10 +1752,18 @@ impl Reader {
                     }
                     "bookmarkStart" => {
                         if let Some(name) = attr(e, "name") {
+                            if let Some(id) = attr(e, "id") {
+                                self.bookmarks.insert(id.to_string(), name.to_string());
+                            }
                             out.push(Inline::Bookmark(name.to_string()));
                         }
                     }
-                    // Proofing marks, permissions, bookmark ends: not shown.
+                    "bookmarkEnd" => {
+                        if let Some(name) = attr(e, "id").and_then(|id| self.bookmarks.get(id)) {
+                            out.push(Inline::Bookmark(format!("/{name}")));
+                        }
+                    }
+                    // Proofing marks, permissions: not shown.
                     _ => {}
                 }
             } else if is(e, MC, "AlternateContent")
