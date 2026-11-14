@@ -2918,11 +2918,11 @@ impl<'d> PageFill<'d, '_> {
         let tb: &TableLayout = relaid.as_deref().unwrap_or(tb);
         let mut rows = Vec::new();
         // A spaced table's outer frame is closed at the top and bottom of each part.
-        let finish = |mut rows: Vec<RowFragment>, out: &mut Vec<Child>, left: f64, opened: Option<f64>, closed: bool| {
-            if let Some(y) = opened
+        let finish = |mut rows: Vec<RowFragment>, out: &mut Vec<Child>, left: f64, opened: Option<(f64, bool)>, closed: bool| {
+            if let Some(o) = opened
                 && let Some(first) = rows.iter_mut().find(|r| !r.repeat)
             {
-                super::table::frame_part(tb, first, left, Some(y), false);
+                super::table::frame_part(tb, first, left, Some(o), false);
             }
             if closed && let Some(last) = rows.last_mut() {
                 super::table::frame_part(tb, last, left, None, true);
@@ -3121,9 +3121,12 @@ impl<'d> PageFill<'d, '_> {
                 pos.at = At::Row(ri + 1);
                 continue;
             }
-            if rows.is_empty() && ri > 0 && row.part_top != 0.0 {
-                opened = Some(*y);
+            if rows.is_empty() && ri > 0 && (row.part_top != 0.0 || row.spacing.is_none()) {
+                opened = Some((*y, false));
                 *y += row.part_top;
+            } else if legacy && opened.is_none() && !rows.is_empty() && rows.iter().all(|r| r.repeat) && row.spacing.is_none() {
+                opened = Some((*y, true));
+                *y += row.header_top;
             }
             let last = tb.is_last(ri);
             let rest = pos.at.rest().cloned();

@@ -1397,3 +1397,52 @@ fn a_table_style_named_table_normal_is_the_built_in_default() {
     assert!((x("Plain") - x("Table Normal") - 44.6).abs() < 0.01, "{} {}", x("Plain"), x("Table Normal"));
     assert!((x("Normal Table") - x("Table Normal")).abs() < 0.01 && (x("table normal") - x("Plain")).abs() < 0.01);
 }
+
+fn border_doc(borders: &str, rows: &str, mode: i64) -> crate::docx::Document {
+    let body = format!(
+        r#"<w:tbl><w:tblPr><w:tblW w:w="3000" w:type="dxa"/><w:tblBorders>{borders}</w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid>{rows}</w:tbl><w:p/>"#
+    );
+    let mut doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
+    doc.settings.compat_mode = mode;
+    doc
+}
+
+fn border_rows(n: usize, tc_pr: &str) -> String {
+    (0..n).map(|i| format!(r#"<w:tr><w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/>{tc_pr}</w:tcPr><w:p><w:r><w:t>R{i}</w:t></w:r></w:p></w:tc></w:tr>"#)).collect()
+}
+
+#[test]
+fn a_table_part_on_a_page_draws_the_tables_top_and_bottom_borders() {
+    let borders = r#"<w:top w:val="single" w:sz="24"/><w:bottom w:val="single" w:sz="12"/><w:insideH w:val="single" w:sz="4"/>"#;
+    let doc = border_doc(borders, &border_rows(70, ""), 12);
+    let s = layout(&doc, &fonts());
+    let bars = |p: usize| -> Vec<[f64; 4]> {
+        crate::layout::traverse::paint_items(&s.pages()[p])
+            .into_iter()
+            .filter_map(|i| match i {
+                crate::layout::fragment::Item::Rect { rect, .. } if rect[2] - rect[0] > rect[3] - rect[1] => Some(rect),
+                _ => None,
+            })
+            .collect()
+    };
+    let top = bars(1).into_iter().min_by(|a, b| a[1].total_cmp(&b[1])).expect("page 2 bars");
+    assert!((top[1] - doc.sections[0].top).abs() < 0.01 && (top[3] - top[1] - 3.0).abs() < 0.01, "the 3 pt top at the part's top: {top:?}");
+    let low = bars(0).into_iter().max_by(|a, b| a[1].total_cmp(&b[1])).expect("page 1 bars");
+    assert!((low[3] - low[1] - 1.5).abs() < 0.01, "the 1.5 pt bottom under the part's last row: {low:?}");
+}
+
+#[test]
+fn compat_14_reserves_the_edge_under_a_repeated_header_row() {
+    let header = r#"<w:tr><w:trPr><w:tblHeader/></w:trPr><w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/><w:tcBorders><w:bottom w:val="single" w:sz="8"/></w:tcBorders></w:tcPr><w:p><w:r><w:t>H</w:t></w:r></w:p></w:tc></w:tr>"#;
+    let gaps = |mode: i64| {
+        let doc = border_doc("", &format!("{header}{}", border_rows(70, "")), mode);
+        let g = glyphs(&doc);
+        let y = |p: usize, c: char| g[p].iter().find(|g| g.0 == c).map(|g| g.1).expect("drawn");
+        (y(0, 'R') - y(0, 'H'), y(1, 'R') - y(1, 'H'))
+    };
+    let (first, next) = gaps(12);
+    assert!((first - next).abs() < 0.01, "compat 12: the header's 1 pt bottom is reserved on page 2 too: {first} vs {next}");
+    let (first, next) = gaps(15);
+    assert!((first - next - 1.0).abs() < 0.01, "compat 15: the page's first row reserves only its own top: {first} vs {next}");
+}
+

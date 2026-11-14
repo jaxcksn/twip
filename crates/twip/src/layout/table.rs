@@ -385,6 +385,9 @@ pub struct CellBox {
     pub col: usize,
     pub span: usize,
     pub edges: Rc<[Option<Border>; 4]>,
+    /// The top and bottom edges where a part of the table starts or ends on a page (the cell's own, else the table's
+    /// top and bottom), and the top edge under a repeated header row.
+    pub cut: Rc<[Option<Border>; 3]>,
     pub shading: Option<u32>,
     pub below: f64,
     pub index: usize,
@@ -405,6 +408,8 @@ pub struct RowBox {
     pub gap_top: f64,
     /// Extra room above the row when it starts a later part of the table on a page.
     pub part_top: f64,
+    /// Extra room above the row when it follows repeated header rows.
+    pub header_top: f64,
     /// A framed row's bottom band and the gap below it, held in its height.
     pub bottom_gap: f64,
     pub seams: Vec<(f64, f64, Border)>,
@@ -1677,6 +1682,7 @@ impl ViewTable {
                     min_h: 0.0,
                     gap_top: 0.0,
                     part_top: 0.0,
+                    header_top: 0.0,
                     bottom_gap: 0.0,
                     seams: Vec::new(),
                     hidden: true,
@@ -2140,8 +2146,23 @@ fn assemble(
     let mut closings = closings.iter();
     let mut rows: Vec<RowBox> = Vec::new();
     let review = &env.ctx.env.text.review;
+    let single = env.ctx.env.text.single_cell_borders;
+    // Compat ≤ 14: the edge under a repeated header row is resolved between the last header row and the page's first
+    // row, as an inside edge.
+    let header = t.rows.iter().take_while(|r| r.header).count().checked_sub(1).filter(|_| compat == Compat::Legacy);
     for ((ri, r), cells_geo) in t.rows.iter().enumerate().zip(geo) {
         let row_s = spacing_of(t, ri);
+        let own_or = |own: &Option<Border>, table: &Option<Border>| conflict((own.as_ref().or(table.as_ref()), own.is_some()), (None, false));
+        let under_header = |c: &Cell, col: usize| -> Option<Border> {
+            let h = header.filter(|&h| ri > h + 1)?;
+            let above = geo[h].iter().find(|g| col >= g.col && col < g.col + g.span).map(|g| &t.rows[h].cells[g.ci].bottom);
+            let (a, a_cell) = match above {
+                Some(Some(b)) => (Some(b), true),
+                _ => (row_borders(t, h)[4].as_ref(), false),
+            };
+            let (b, b_cell) = (c.top.as_ref().or(row_borders(t, ri)[4].as_ref()), c.top.is_some());
+            if single { b.filter(|b| b.visible()).or(a.filter(|a| a.visible())).cloned() } else { conflict((b, b_cell), (a, a_cell)) }
+        };
         let shift = match r.ind {
             Some(i) if !t.fixed && t.jc == Jc::Left && t.floating.is_none() && !rtl => i - placed_ind(t),
             _ => 0.0,
@@ -2201,6 +2222,7 @@ fn assemble(
                 col: g.col,
                 span: g.span,
                 edges: g.edges.clone(),
+                cut: Rc::new([own_or(&c.top, &row_borders(t, ri)[0]), own_or(&c.bottom, &row_borders(t, ri)[2]), under_header(c, g.col)]),
                 shading,
                 below: 0.0,
                 index: g.ci,
@@ -2214,6 +2236,7 @@ fn assemble(
                 || cells_geo.iter().any(|g| r.cells[g.ci].rev.structural.is_some() || r.cells[g.ci].rev.change.is_some()));
         let mut top_border = cells.iter().map(|c| space_h(&c.edges[0])).fold(0.0, f64::max);
         let mut part_top = 0.0;
+        let mut header_top = 0.0;
         let seams: Vec<(f64, f64, Border)> = match ri.checked_sub(1).and_then(|p| geo.get(p)) {
             Some(above) if row_s.is_none() && !framed(t, ri - 1) => above
                 .iter()
@@ -2247,6 +2270,12 @@ fn assemble(
                 let top_t = &row_borders(t, ri)[0];
                 let first = cells_geo.iter().map(|g| cand(&r.cells[g.ci].top, top_t) + r.cells[g.ci].margins[0]).fold(0.0, f64::max);
                 part_top = first - above.max(top_border);
+            }
+            if let Some(h) = header.filter(|&h| ri > h + 1) {
+                let w = t.rows[h].cells.iter().map(|c| cand(&c.bottom, &row_borders(t, h)[4])).fold(0.0, f64::max);
+                let first = cells_geo.iter().map(|g| cand(&r.cells[g.ci].top, top_t) + r.cells[g.ci].margins[0]).fold(w, f64::max);
+                let edge = cells.iter().map(|c| space_h(&c.cut[2])).fold(0.0, f64::max);
+                header_top = first.max(edge) - above.max(top_border);
             }
         }
         let mut gap_top = 0.0;
@@ -2320,6 +2349,7 @@ fn assemble(
             min_h,
             gap_top,
             part_top,
+            header_top,
             bottom_gap: cell_bottom,
             seams,
             hidden: false,
@@ -2580,12 +2610,70 @@ fn drawn_edges<'a>(tb: &TableLayout, c: &'a CellBox) -> [&'a Option<Border>; 4] 
     if tb.rtl { [t, r, b, l] } else { [t, l, b, r] }
 }
 
-/// The outer frame of a spaced table where a part of it starts or ends on a page: the table's top border from `open`
-/// down to the part's first row, and its bottom border under the part's last row.
-pub fn frame_part(tb: &TableLayout, frag: &mut RowFragment, left: f64, open: Option<f64>, close: bool) {
-    if !tb.rows[frag.row].spacing.is_some_and(|s| s > 0.0) {
+/// A cell's top edge at `y` as a row draws it.
+fn top_edge(out: &mut Vec<Item>, tb: &TableLayout, c: &CellBox, x0: f64, y: f64, t: &Option<Border>) {
+    let [_, l, _, r] = drawn_edges(tb, c);
+    if let Some(t) = t.as_ref().filter(|b| b.visible()) {
+        edge(out, [x0 + c.x - bw(l) / 2.0, y, x0 + c.x + c.w + bw(r) / 2.0, y + thick(t)], true, false, t);
+    }
+}
+
+/// A cell's bottom edge under `y` as a row draws it.
+fn bottom_edge(out: &mut Vec<Item>, tb: &TableLayout, c: &CellBox, x0: f64, y: f64, b: &Option<Border>) {
+    let [_, l, _, r] = drawn_edges(tb, c);
+    if let Some(b) = b.as_ref().filter(|b| b.visible()) {
+        edge(out, [x0 + c.x - bw(l) / 2.0, y, x0 + c.x + c.w + bw(r) / 2.0, y + thick(b)], true, true, b);
+    }
+}
+
+/// Where a part of a table starts or ends on a page. An unspaced part's first row draws the table's first-row top
+/// edge from `open` (each cell's own top, else the table's top; under repeated header rows, `under_header`, the edge
+/// resolved with the last header row) and its last row the table's last-row bottom edge. A spaced table's outer
+/// frame takes the table's top border from `open` down to the part's first row and its bottom border under the
+/// part's last row.
+pub fn frame_part(tb: &TableLayout, frag: &mut RowFragment, left: f64, open: Option<(f64, bool)>, close: bool) {
+    let row = &tb.rows[frag.row];
+    if row.spacing.is_none() {
+        let x0 = left + tb.x0;
+        let mut old = Vec::new();
+        let mut new = Vec::new();
+        if let Some((y, under_header)) = open {
+            for c in &row.cells {
+                if c.v_merge != VMerge::Continue {
+                    top_edge(&mut old, tb, c, x0, frag.top, &c.edges[0]);
+                }
+                top_edge(&mut new, tb, c, x0, y, &c.cut[if under_header { 2 } else { 0 }]);
+            }
+            for (a, b, s) in &row.seams {
+                edge(&mut old, [x0 + a, frag.top, x0 + b, frag.top + thick(s)], true, false, s);
+            }
+        }
+        if close {
+            for c in &row.cells {
+                if row.closes {
+                    bottom_edge(&mut old, tb, c, x0, frag.rect[3], &c.edges[2]);
+                }
+                bottom_edge(&mut new, tb, c, x0, frag.rect[3], &c.cut[1]);
+            }
+        }
+        let same = |a: &Item, b: &Item| match (a, b) {
+            (Item::Rect { rect: r, colour: c }, Item::Rect { rect: q, colour: d }) => c == d && r.iter().zip(q).all(|(x, y)| (x - y).abs() < EPS),
+            _ => false,
+        };
+        let mut borders = std::mem::take(&mut frag.borders).into_vec();
+        for o in &old {
+            if let Some(k) = borders.iter().position(|b| same(b, o)) {
+                borders.remove(k);
+            }
+        }
+        borders.extend(new);
+        frag.borders = borders.into();
         return;
     }
+    if !row.spacing.is_some_and(|s| s > 0.0) {
+        return;
+    }
+    let open = open.map(|o| o.0);
     let [t, l, b, r] = &tb.outer;
     let x0 = left + tb.x0;
     let x1 = x0 + tb.cols.iter().sum::<f64>();
@@ -2762,6 +2850,8 @@ pub fn draw_row(tb: &TableLayout, ri: usize, left: f64, top: f64, height: f64, p
         if let Some(r) = r.as_ref().filter(|b| b.visible()) {
             edge(&mut borders, [cx1 - thick(r) / 2.0, top, cx1 + thick(r) / 2.0, top + height], false, true, r);
         }
+        // A part's last row before a page break draws the table's last-row bottom edge.
+        let b = if last_of_table { &c.cut[1] } else { b };
         if (last_of_table || row.closes)
             && let Some(b) = b.as_ref().filter(|b| b.visible())
         {
