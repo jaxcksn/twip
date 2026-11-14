@@ -511,195 +511,189 @@ impl<'d> Paginator<'d, '_> {
             }
         })
     }
+}
 
-    // Column balancing
+// Column balancing
+#[allow(
+    clippy::type_complexity,
+    reason = "one column fill's whole result (end, children, token, state, effects); a struct used only here would add nothing"
+)]
+fn balance(
+    fill: &mut PageFill,
+    sec: &SectionNode,
+    cols: &[ColumnSpace],
+    saved: &(FlowToken, FlowState),
+    mid: bool,
+    stream: Option<&NoteArea>,
+    memos: &mut Memos,
+) -> Result<Option<(f64, Vec<Child>, FlowToken, FlowState, PageEffects)>, Yield> {
+    let (p0, c0) = saved;
+    let top = cols[0].top.to_pt();
+    let blocks = &sec.blocks;
+    let n = blocks.len();
+    let skip_last = matches!(blocks.get(n.wrapping_sub(1)), Some(Block::Para(p)) if p.inlines.is_empty() && n > 1);
+    let mark_line = skip_last && fill.ctx.env.text.compat == Compat::Generic && matches!(blocks.get(n.wrapping_sub(2)), Some(Block::Table(_)));
+    let state = fill.at.clone();
+    let view = fill.ctx.env.text.review.view;
+    let spacing: HashMap<_, _> = blocks
+        .blocks
+        .iter()
+        .filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None })
+        .map(|p| {
+            let (text, style) = (&fill.ctx.env.text, p.para_style_in(view));
+            (super::text::para_id(p), (super::paragraph::space_before(text, style), super::paragraph::space_after(text, style)))
+        })
+        .collect();
+    let legacy = fill.ctx.env.text.compat == Compat::Legacy;
+    let mut bottoms = HashMap::new();
+    if fill.ctx.env.text.compat == Compat::Legacy {
+        for bi in (0..n).filter(|&bi| matches!(blocks.get(bi), Some(Block::Table(_)))) {
+            let tb = fill.table_layout(bi, cols[0].width, memos)?;
+            bottoms.insert(tb.id, tb.bottom_border);
+        }
+    }
     #[allow(
         clippy::type_complexity,
         reason = "one column fill's whole result (end, children, token, state, effects); a struct used only here would add nothing"
     )]
-    fn balance(
-        fill: &mut PageFill,
-        sec: &SectionNode,
-        cols: &[ColumnSpace],
-        saved: &(FlowToken, FlowState),
-        mid: bool,
-        stream: Option<&NoteArea>,
-        memos: &mut Memos,
-    ) -> Result<Option<(f64, Vec<Child>, FlowToken, FlowState, PageEffects)>, Yield> {
-        let (p0, c0) = saved;
-        let top = cols[0].top.to_pt();
-        let blocks = &sec.blocks;
-        let n = blocks.len();
-        let skip_last = matches!(blocks.get(n.wrapping_sub(1)), Some(Block::Para(p)) if p.inlines.is_empty() && n > 1);
-        let mark_line = skip_last && fill.ctx.env.text.compat == Compat::Generic && matches!(blocks.get(n.wrapping_sub(2)), Some(Block::Table(_)));
-        let state = fill.at.clone();
-        let view = fill.ctx.env.text.review.view;
-        let spacing: HashMap<_, _> = blocks
-            .blocks
-            .iter()
-            .filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None })
-            .map(|p| {
-                let (text, style) = (&fill.ctx.env.text, p.para_style_in(view));
-                (super::text::para_id(p), (super::paragraph::space_before(text, style), super::paragraph::space_after(text, style)))
-            })
-            .collect();
-        let legacy = fill.ctx.env.text.compat == Compat::Legacy;
-        let mut bottoms = HashMap::new();
-        if fill.ctx.env.text.compat == Compat::Legacy {
-            for bi in (0..n).filter(|&bi| matches!(blocks.get(bi), Some(Block::Table(_)))) {
-                let tb = fill.table_layout(bi, cols[0].width, memos)?;
-                bottoms.insert(tb.id, tb.bottom_border);
+    let try_h = |fill: &mut PageFill,
+                 h: f64,
+                 memos: &mut Memos|
+     -> Result<(Option<(FlowToken, FlowState, Vec<Child>, f64, PageEffects)>, Vec<ColStats>), Yield> {
+        let mut pos = p0.clone();
+        let mut carry = c0.clone();
+        let mut children = Vec::new();
+        let mut stats = Vec::new();
+        let mut end = top;
+        let mut lines_end = top;
+        let stream = stream.map(|a| NoteArea { below: true, ..a.clone() });
+        fill.at = AttemptState { known: state.known.clone(), stream, beneath: state.beneath, ..Default::default() };
+        for (k, c) in cols.iter().enumerate() {
+            let col = ColumnSpace { bottom: Lu::round_half_up(top + h).min(c.bottom), balance: true, ..*c };
+            fill.column = k;
+            let r = fill.fill(&pos, &carry, col, false, memos)?;
+            let s = r.stop;
+            (pos, carry) = (r.token, r.state);
+            // A column's height takes its last paragraph's space after, unless the paragraph goes on in the next
+            // column (the last column's bottom has it already).
+            let hang = |pos: &FlowToken, carry: &FlowState| if s == Stop::Done || !pos.at.at_start() { 0.0 } else { carry.prev_after };
+            let tail = if s == Stop::Done || pos.at.at_start() { carry.prev_after } else { 0.0 };
+            stats.push(ColStats::of(&r.children, top, r.bottom - top + hang(&pos, &carry), tail, &spacing, &bottoms));
+            // The column's last line bottom: a finished fill's bottom holds the last space after.
+            lines_end = lines_end.max(r.bottom - if s == Stop::Done { carry.prev_after } else { 0.0 });
+            let mut kids = r.children;
+            let mut bottom = r.bottom;
+            let at_mark = skip_last && pos.block + 1 == n && pos.at.at_start();
+            if at_mark && mark_line && !fill.at.forced {
+                let m = fill.fill(&pos, &carry, ColumnSpace { top: Lu::round_half_up(r.bottom), bottom: Lu::MAX, ..col }, false, memos)?;
+                (pos, carry, bottom) = (m.token, m.state, m.bottom);
+                kids.extend(m.children);
             }
-        }
-        #[allow(
-            clippy::type_complexity,
-            reason = "one column fill's whole result (end, children, token, state, effects); a struct used only here would add nothing"
-        )]
-        let try_h = |fill: &mut PageFill,
-                     h: f64,
-                     memos: &mut Memos|
-         -> Result<(Option<(FlowToken, FlowState, Vec<Child>, f64, PageEffects)>, Vec<ColStats>), Yield> {
-            let mut pos = p0.clone();
-            let mut carry = c0.clone();
-            let mut children = Vec::new();
-            let mut stats = Vec::new();
-            let mut end = top;
-            let mut lines_end = top;
-            let stream = stream.map(|a| NoteArea { below: true, ..a.clone() });
-            fill.at = AttemptState { known: state.known.clone(), stream, beneath: state.beneath, ..Default::default() };
-            for (k, c) in cols.iter().enumerate() {
-                let col = ColumnSpace { bottom: Lu::round_half_up(top + h).min(c.bottom), balance: true, ..*c };
-                fill.column = k;
-                let r = fill.fill(&pos, &carry, col, false, memos)?;
-                let s = r.stop;
-                (pos, carry) = (r.token, r.state);
-                // A column's height takes its last paragraph's space after, unless the paragraph goes on in the next
-                // column (the last column's bottom has it already).
-                let hang = |pos: &FlowToken, carry: &FlowState| if s == Stop::Done || !pos.at.at_start() { 0.0 } else { carry.prev_after };
-                let tail = if s == Stop::Done || pos.at.at_start() { carry.prev_after } else { 0.0 };
-                stats.push(ColStats::of(&r.children, top, r.bottom - top + hang(&pos, &carry), tail, &spacing, &bottoms));
-                // The column's last line bottom: a finished fill's bottom holds the last space after.
-                lines_end = lines_end.max(r.bottom - if s == Stop::Done { carry.prev_after } else { 0.0 });
-                let mut kids = r.children;
-                let mut bottom = r.bottom;
-                let at_mark = skip_last && pos.block + 1 == n && pos.at.at_start();
-                if at_mark && mark_line && !fill.at.forced {
-                    let m = fill.fill(&pos, &carry, ColumnSpace { top: Lu::round_half_up(r.bottom), bottom: Lu::MAX, ..col }, false, memos)?;
-                    (pos, carry, bottom) = (m.token, m.state, m.bottom);
-                    kids.extend(m.children);
-                }
 
-                children.push(Child::Box(BoxFragment {
-                    kind: BoxKind::Column,
-                    id: None,
-                    offset: (0.0, 0.0),
-                    size: (0.0, 0.0),
-                    children: kids.into(),
-                }));
-                end = end.max(bottom + hang(&pos, &carry));
-                if fill.at.forced {
-                    // Compat 15: a column whose first line doesn't fit stays empty, and so do the columns after it.
-                    if fill.ctx.env.text.compat == Compat::Generic {
-                        stats.pop();
-                    }
-                    return Ok((None, stats));
+            children.push(Child::Box(BoxFragment { kind: BoxKind::Column, id: None, offset: (0.0, 0.0), size: (0.0, 0.0), children: kids.into() }));
+            end = end.max(bottom + hang(&pos, &carry));
+            if fill.at.forced {
+                // Compat 15: a column whose first line doesn't fit stays empty, and so do the columns after it.
+                if fill.ctx.env.text.compat == Compat::Generic {
+                    stats.pop();
                 }
-                if s == Stop::Done || at_mark {
-                    // Compat ≤ 14: the section ends at the height tried or at its tallest column, whichever is less,
-                    // but never above a column's last line (with the room multiple spacing adds below it).
-                    if legacy {
-                        end = end.min(top + h).max(lines_end);
-                    }
-                    return Ok((Some((pos, carry, children, end.max(fill.at.notes_bottom), fill.at.effects.clone())), stats));
-                }
-                if k + 1 < cols.len() {
-                    carry.keep_top = s == Stop::Column && carry.keep_top || s == Stop::Full && mid;
-                }
+                return Ok((None, stats));
             }
-            Ok((None, stats))
-        };
-        let full = cols[0].bottom.to_pt() - top;
-        let (first, stats) = try_h(fill, full, memos)?;
-        if first.is_none() {
-            fill.at = state;
-            return Ok(None);
+            if s == Stop::Done || at_mark {
+                // Compat ≤ 14: the section ends at the height tried or at its tallest column, whichever is less,
+                // but never above a column's last line (with the room multiple spacing adds below it).
+                if legacy {
+                    end = end.min(top + h).max(lines_end);
+                }
+                return Ok((Some((pos, carry, children, end.max(fill.at.notes_bottom), fill.at.effects.clone())), stats));
+            }
+            if k + 1 < cols.len() {
+                carry.keep_top = s == Stop::Column && carry.keep_top || s == Stop::Full && mid;
+            }
         }
-        let full_lu = i64::from(Lu::round_half_up(full).0);
-        let widths: Vec<f64> = cols.iter().map(|c| c.width).collect();
-        let wsum: f64 = widths.iter().sum::<f64>().max(1.0);
-        let to_pt = |h: i64| h as f64 / LU_PER_PT;
-        let mut h;
-        let mut r;
-        if fill.ctx.env.text.compat == Compat::Legacy {
-            // Compat ≤ 14: the sums count every table row with the table's bottom border (the fill keeps the layout's
-            // heights). Equal columns start at the unbalanced fill's total over the column count, rounded up; explicit
-            // widths at its layout height weighted by the first column's width, in whole twips. Never below the mean
-            // line height, the height grows while content is left over by the failed fill's mean line height, each
-            // column's height counted at most up to the height tried.
-            let (lines, total) = stats.iter().fold((0, 0), |(n, t), s| (n + s.lines, t + s.used + s.extra));
-            let columns = &sec.section.section_in(fill.ctx.env.text.review.view).columns;
-            h = if columns.equal {
-                (total + cols.len() as i64 - 1) / cols.len().max(1) as i64
-            } else {
-                let lu_tw = LU_PER_PT / 20.0;
-                let layout: i64 = stats.iter().map(|s| s.used).sum();
-                (((layout as f64 / lu_tw).trunc() * widths[0] / wsum).trunc() * lu_tw) as i64
-            };
-            h = h.max(total / lines.max(1)).min(full_lu);
+        Ok((None, stats))
+    };
+    let full = cols[0].bottom.to_pt() - top;
+    let (first, stats) = try_h(fill, full, memos)?;
+    if first.is_none() {
+        fill.at = state;
+        return Ok(None);
+    }
+    let full_lu = i64::from(Lu::round_half_up(full).0);
+    let widths: Vec<f64> = cols.iter().map(|c| c.width).collect();
+    let wsum: f64 = widths.iter().sum::<f64>().max(1.0);
+    let to_pt = |h: i64| h as f64 / LU_PER_PT;
+    let mut h;
+    let mut r;
+    if fill.ctx.env.text.compat == Compat::Legacy {
+        // Compat ≤ 14: the sums count every table row with the table's bottom border (the fill keeps the layout's
+        // heights). Equal columns start at the unbalanced fill's total over the column count, rounded up; explicit
+        // widths at its layout height weighted by the first column's width, in whole twips. Never below the mean
+        // line height, the height grows while content is left over by the failed fill's mean line height, each
+        // column's height counted at most up to the height tried.
+        let (lines, total) = stats.iter().fold((0, 0), |(n, t), s| (n + s.lines, t + s.used + s.extra));
+        let columns = &sec.section.section_in(fill.ctx.env.text.review.view).columns;
+        h = if columns.equal {
+            (total + cols.len() as i64 - 1) / cols.len().max(1) as i64
+        } else {
+            let lu_tw = LU_PER_PT / 20.0;
+            let layout: i64 = stats.iter().map(|s| s.used).sum();
+            (((layout as f64 / lu_tw).trunc() * widths[0] / wsum).trunc() * lu_tw) as i64
+        };
+        h = h.max(total / lines.max(1)).min(full_lu);
+        r = try_h(fill, to_pt(h), memos)?;
+        while r.0.is_none() && h < full_lu {
+            let (lines, used) = r.1.iter().fold((0, 0), |(n, t), s| (n + s.lines, t + (s.used + s.extra).min(h)));
+            h = (h + if lines > 0 { (used / lines).max(1) } else { 49152 }).min(full_lu);
             r = try_h(fill, to_pt(h), memos)?;
-            while r.0.is_none() && h < full_lu {
-                let (lines, used) = r.1.iter().fold((0, 0), |(n, t), s| (n + s.lines, t + (s.used + s.extra).min(h)));
-                h = (h + if lines > 0 { (used / lines).max(1) } else { 49152 }).min(full_lu);
-                r = try_h(fill, to_pt(h), memos)?;
+        }
+    } else {
+        // From the unbalanced fill's paragraph heights weighted by the columns' widths, rounded down to its
+        // smallest paragraph step, the height grows by the failed fill's smallest step, or shrinks by the fitting
+        // fill's while it still fits; a grow or shrink step is never below 240 tw, and is 240 tw after a fill
+        // that placed nothing.
+        const FLOOR: i64 = 49152;
+        let smallest = |st: &[ColStats]| st.iter().filter(|s| s.min > 0).map(|s| s.min).min();
+        let m = smallest(&stats).unwrap_or(FLOOR);
+        let step = |st: &[ColStats]| smallest(st).unwrap_or(FLOOR).max(FLOOR);
+        h = (widths.iter().zip(&stats).map(|(w, s)| w * s.height as f64).sum::<f64>() / wsum) as i64;
+        h = (h - h % m).min(full_lu);
+        r = try_h(fill, to_pt(h), memos)?;
+        if r.0.is_some() {
+            loop {
+                let m = step(&r.1);
+                if h - m <= 0 {
+                    break;
+                }
+                let r2 = try_h(fill, to_pt(h - m), memos)?;
+                if r2.0.is_none() {
+                    break;
+                }
+                h -= m;
+                r = r2;
             }
         } else {
-            // From the unbalanced fill's paragraph heights weighted by the columns' widths, rounded down to its
-            // smallest paragraph step, the height grows by the failed fill's smallest step, or shrinks by the fitting
-            // fill's while it still fits; a grow or shrink step is never below 240 tw, and is 240 tw after a fill
-            // that placed nothing.
-            const FLOOR: i64 = 49152;
-            let smallest = |st: &[ColStats]| st.iter().filter(|s| s.min > 0).map(|s| s.min).min();
-            let m = smallest(&stats).unwrap_or(FLOOR);
-            let step = |st: &[ColStats]| smallest(st).unwrap_or(FLOOR).max(FLOOR);
-            h = (widths.iter().zip(&stats).map(|(w, s)| w * s.height as f64).sum::<f64>() / wsum) as i64;
-            h = (h - h % m).min(full_lu);
-            r = try_h(fill, to_pt(h), memos)?;
-            if r.0.is_some() {
-                loop {
-                    let m = step(&r.1);
-                    if h - m <= 0 {
-                        break;
-                    }
-                    let r2 = try_h(fill, to_pt(h - m), memos)?;
-                    if r2.0.is_none() {
-                        break;
-                    }
-                    h -= m;
-                    r = r2;
-                }
-            } else {
-                while r.0.is_none() && h < full_lu {
-                    h = (h + step(&r.1)).min(full_lu);
-                    r = try_h(fill, to_pt(h), memos)?;
-                }
+            while r.0.is_none() && h < full_lu {
+                h = (h + step(&r.1)).min(full_lu);
+                r = try_h(fill, to_pt(h), memos)?;
             }
         }
-        let Some((p, mut c, children, end, eff)) = r.0.or(first) else { unreachable!("the full height balanced before") };
-        c.prev = None;
-        c.balanced_after = c.prev_after;
-        c.prev_after = 0.0;
-        Ok(Some((end, children, p, c, eff)))
     }
+    let Some((p, mut c, children, end, eff)) = r.0.or(first) else { unreachable!("the full height balanced before") };
+    c.prev = None;
+    c.balanced_after = c.prev_after;
+    c.prev_after = 0.0;
+    Ok(Some((end, children, p, c, eff)))
+}
 
-    fn draw_floats(fill: &PageFill, placed: &[super::float::Placed], memos: &mut Memos) -> Result<Vec<Child>, Yield> {
-        let fields = FieldValues::default();
-        let env = StoryEnv { ctx: fill.ctx, fields: &fields, notes: fill.note_numbers };
-        placed
-            .iter()
-            .filter(|p| !matches!(p.key.2, super::float::TABLE_PIECE | super::float::UPRIGHT_TABLE))
-            .map(|p| super::story::float_box(&p.float, p.rect, p.anchor, &env, memos))
-            .collect()
-    }
+fn draw_floats(fill: &PageFill, placed: &[super::float::Placed], memos: &mut Memos) -> Result<Vec<Child>, Yield> {
+    let fields = FieldValues::default();
+    let env = StoryEnv { ctx: fill.ctx, fields: &fields, notes: fill.note_numbers };
+    placed
+        .iter()
+        .filter(|p| !matches!(p.key.2, super::float::TABLE_PIECE | super::float::UPRIGHT_TABLE))
+        .map(|p| super::story::float_box(&p.float, p.rect, p.anchor, &env, memos))
+        .collect()
 }
 
 pub(crate) fn fields_used(fields: &BodyFields, blocks: &[&Block]) -> BodyFields {
@@ -926,7 +920,7 @@ pub fn layout_body(
         let text = bottoms.iter().copied().fold(page_top, f64::max) + if pos.at.at_start() { carry.prev_after } else { 0.0 };
         fill.draw_notes(a, &cols[0], text, &mut body, memos)?;
     }
-    let floats = crate::prof::time("layout:floats", || Paginator::draw_floats(&fill, &placed, memos))?;
+    let floats = crate::prof::time("layout:floats", || draw_floats(&fill, &placed, memos))?;
     if !space.mid_page && !next_shares && cols.len() == 1 {
         let done = pos.at.at_start();
         let bottom = bottoms.first().copied().unwrap_or(page_top) + if done { carry.prev_after } else { 0.0 };
@@ -952,7 +946,7 @@ pub fn layout_body(
             && effects.notes_shown.iter().any(|n| n.0 == NoteKind::Foot);
         if space.balance && cols.len() > 1 && !breaks {
             let template = shared.then(|| stream_area(reserve));
-            match Paginator::balance(&mut fill, sec, cols, &saved, space.mid_page, template.as_ref(), memos)? {
+            match balance(&mut fill, sec, cols, &saved, space.mid_page, template.as_ref(), memos)? {
                 Some((h, children, p, mut c, eff)) => {
                     e = h;
                     pos = p;
