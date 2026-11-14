@@ -15,7 +15,7 @@ use crate::layout::job::{Memos, Yield};
 use crate::layout::paragraph::lines_to_take;
 use crate::layout::space::ColumnSpace;
 use crate::layout::story::{NestedRow, StoryEnv, StoryUnit};
-use crate::layout::table::{CellPart, TableLayout, draw_row, draw_whole_row, whole};
+use crate::layout::table::{CellPart, RowBox, TableLayout, draw_row, draw_whole_row, whole};
 use crate::layout::text::para_id;
 use crate::layout::token::{At, FlowState, FlowToken, NoteArea};
 use crate::layout::units::{EPS, Lu};
@@ -372,6 +372,9 @@ fn move_floats(
     }
 }
 
+// Cell cuts
+type CellCuts<'u> = (Vec<(Cow<'u, [StoryUnit]>, bool)>, Vec<Vec<StoryUnit>>);
+
 // A floating table's place
 struct Floated {
     at_x: f64,
@@ -710,39 +713,11 @@ impl<'d> PageFill<'d, '_> {
                 && !row.exact
                 && (!no_split || at_top && self.ctx.env.text.compat == Compat::Generic)
                 && (at_top || rest.is_some() || row.min_h <= avail + row.top_border + EPS);
-            let mut fitted: Vec<(Cow<[StoryUnit]>, bool)> = Vec::new();
-            let mut left: Vec<Vec<StoryUnit>> = Vec::new();
-            if can_split {
-                let compat = self.ctx.env.text.compat;
-                let (mut kept, mut low) = (Vec::new(), 0.0f64);
-                for (k, cu) in parts.iter().enumerate() {
-                    let m = &row.cells[k].margins;
-                    let room = avail - m[0] - m[2];
-                    let first = cut_cell(cu.units, room, rest.is_some(), compat);
-                    let mut cut = first.clone();
-                    while cut.any() {
-                        let held = cut.kept(cu.units);
-                        let u = &held[held.len() - 1];
-                        let bottom = (*y + row.top_border + m[0] + u.top + u.height + u.after + m[2] + tb.bottom_border).max(low);
-                        let mut refs = kept.clone();
-                        refs.extend(held.iter().flat_map(|u| u.notes.iter().copied()));
-                        if refs.is_empty() || self.add_notes(&refs, &mut area.clone(), col, bottom, &mut Vec::new(), false, memos)? {
-                            (kept, low) = (refs, bottom);
-                            break;
-                        }
-                        let next = cut_cell(cu.units, u.top, rest.is_some(), compat);
-                        let (a, b) = (next.keep + next.head.is_some() as usize, cut.keep + cut.head.is_some() as usize);
-                        cut = if a < b { next } else { Cut::at(b - 1) };
-                    }
-                    if !cut.any() && at_top {
-                        cut = first;
-                    }
-                    let held = cut.kept(cu.units);
-                    let ends = cu.ends && cut.head.is_none() && held.len() == cu.units.len();
-                    fitted.push((held, ends));
-                    left.push(cut.rest(cu.units));
-                }
-            }
+            let (fitted, mut left) = if can_split {
+                self.cut_cells(tb, row, &parts, avail, rest.is_some(), at_top, *y, area, col, memos)?
+            } else {
+                (Vec::new(), Vec::new())
+            };
             let fitted: Vec<CellPart> =
                 fitted.iter().zip(&parts).map(|((units, ends), p)| CellPart { units, base: 0.0, ends: *ends, cont: p.cont }).collect();
             let merged = if can_split && rest.is_none() {
@@ -845,6 +820,55 @@ impl<'d> PageFill<'d, '_> {
         carry.first_para = false;
         carry.beside_at = None;
         Ok(Stop::Done)
+    }
+
+    // Cell cuts of a split row
+    #[allow(clippy::too_many_arguments, reason = "the row, its cells' parts, and the room and note area they are cut for")]
+    fn cut_cells<'u>(
+        &mut self,
+        tb: &TableLayout,
+        row: &RowBox,
+        parts: &[CellPart<'u>],
+        avail: f64,
+        continued: bool,
+        at_top: bool,
+        y: f64,
+        area: &NoteArea,
+        col: &ColumnSpace,
+        memos: &mut Memos,
+    ) -> Result<CellCuts<'u>, Yield> {
+        let mut fitted: Vec<(Cow<[StoryUnit]>, bool)> = Vec::new();
+        let mut left: Vec<Vec<StoryUnit>> = Vec::new();
+        let compat = self.ctx.env.text.compat;
+        let (mut kept, mut low) = (Vec::new(), 0.0f64);
+        for (k, cu) in parts.iter().enumerate() {
+            let m = &row.cells[k].margins;
+            let room = avail - m[0] - m[2];
+            let first = cut_cell(cu.units, room, continued, compat);
+            let mut cut = first.clone();
+            while cut.any() {
+                let held = cut.kept(cu.units);
+                let u = &held[held.len() - 1];
+                let bottom = (y + row.top_border + m[0] + u.top + u.height + u.after + m[2] + tb.bottom_border).max(low);
+                let mut refs = kept.clone();
+                refs.extend(held.iter().flat_map(|u| u.notes.iter().copied()));
+                if refs.is_empty() || self.add_notes(&refs, &mut area.clone(), col, bottom, &mut Vec::new(), false, memos)? {
+                    (kept, low) = (refs, bottom);
+                    break;
+                }
+                let next = cut_cell(cu.units, u.top, continued, compat);
+                let (a, b) = (next.keep + next.head.is_some() as usize, cut.keep + cut.head.is_some() as usize);
+                cut = if a < b { next } else { Cut::at(b - 1) };
+            }
+            if !cut.any() && at_top {
+                cut = first;
+            }
+            let held = cut.kept(cu.units);
+            let ends = cu.ends && cut.head.is_none() && held.len() == cu.units.len();
+            fitted.push((held, ends));
+            left.push(cut.rest(cu.units));
+        }
+        Ok((fitted, left))
     }
 
     // Floating table position
