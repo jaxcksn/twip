@@ -11,7 +11,7 @@ use crate::docx::Document;
 use crate::editing::Editor;
 
 /// The formats a document exports to.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum ExportFormat {
     /// Office Open XML.
@@ -22,7 +22,7 @@ pub enum ExportFormat {
 }
 
 /// What to export: the format, and for a PDF what it writes beyond the pages.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(tag = "format", rename_all = "camelCase")]
 pub enum ExportOptions {
     /// Office Open XML.
@@ -53,7 +53,7 @@ impl From<ExportFormat> for ExportOptions {
 }
 
 /// What a PDF writes beyond the pages. The default writes neither a password nor keywords.
-#[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PdfOptions {
     /// Encrypts the PDF (AES-256): readers ask for this password before showing anything. Must not be empty.
@@ -88,7 +88,7 @@ impl PdfOptions {
 }
 
 /// An exported document, the revision it captures, and what writing it couldn't keep.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Export {
     /// The file. The C ABI returns it apart from the rest, as raw bytes.

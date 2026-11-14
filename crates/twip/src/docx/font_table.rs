@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// A generic font category, like the CSS generic families.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum GenericFamily {
     /// Fonts with serifs (`roman` in a document's font table).
@@ -22,7 +22,7 @@ pub enum GenericFamily {
 
 /// A document's description of a font family, from its font table (`w:font`). Each field is absent when the
 /// document doesn't state it, or states a value this reader doesn't know.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FontDescription {
     /// The general class (`w:family`).
@@ -33,6 +33,7 @@ pub struct FontDescription {
     pub pitch: Option<FontPitch>,
     /// The PANOSE classification (`w:panose1`): 10 bytes, 20 hex digits on the wire.
     #[serde(default, skip_serializing_if = "Option::is_none", serialize_with = "panose_out", deserialize_with = "panose_in")]
+    #[wire(encode_with = "wire_panose_out", decode_with = "wire_panose_in")]
     pub panose: Option<[u8; 10]>,
     /// The character set (`w:charset`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -40,7 +41,7 @@ pub struct FontDescription {
 }
 
 /// A font table's general class of a family.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum FontClass {
     /// Serif (`roman`).
@@ -58,7 +59,7 @@ pub enum FontClass {
 }
 
 /// A font table's pitch of a family.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum FontPitch {
     /// Every character has the same width.
@@ -78,6 +79,18 @@ fn panose_out<S: Serializer>(p: &Option<[u8; 10]>, s: S) -> Result<S::Ok, S::Err
 
 fn panose_in<'de, D: Deserializer<'de>>(d: D) -> Result<Option<[u8; 10]>, D::Error> {
     let hex = Option::<String>::deserialize(d)?;
+    Ok(hex.as_deref().and_then(panose))
+}
+
+fn wire_panose_out(p: &Option<[u8; 10]>, out: &mut Vec<u8>) {
+    match p {
+        Some(bytes) => twip_wire::write_str(out, &bytes.iter().map(|b| format!("{b:02X}")).collect::<String>()),
+        None => out.extend_from_slice(b"null"),
+    }
+}
+
+fn wire_panose_in(r: &mut twip_wire::Reader<'_>) -> Result<Option<[u8; 10]>, twip_wire::Error> {
+    let hex = <Option<String> as twip_wire::Decode>::decode(r)?;
     Ok(hex.as_deref().and_then(panose))
 }
 

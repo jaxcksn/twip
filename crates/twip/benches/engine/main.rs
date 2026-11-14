@@ -9,6 +9,7 @@ mod frames;
 mod layout;
 mod pdf;
 mod review;
+mod wire;
 
 use std::fmt::Write as _;
 

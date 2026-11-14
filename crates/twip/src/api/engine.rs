@@ -16,12 +16,12 @@ use super::state::Mode;
 use super::value::Bytes;
 
 /// A session's id in its engine. Ids are never reused.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(transparent)]
 pub struct SessionId(pub u32);
 
 /// A Hunspell dictionary.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Dictionary {
     /// BCP 47 (`en-US`).
@@ -37,7 +37,7 @@ pub struct Dictionary {
 }
 
 /// How a session starts. Every field has a default, so `{}` is a valid wire value.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", default, deny_unknown_fields)]
 pub struct SessionOptions {
     /// Who edits: tracked changes and comments are attributed to them.

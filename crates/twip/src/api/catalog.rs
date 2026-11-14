@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use super::command::CommandId;
 
 /// Where a command belongs in a UI.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum CommandGroup {
     /// Typing, breaks and symbols.
@@ -48,7 +48,7 @@ pub enum CommandGroup {
 }
 
 /// How a command's changes undo.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum UndoGrouping {
     /// One undo step.
@@ -60,7 +60,7 @@ pub enum UndoGrouping {
 }
 
 /// A command's keys, as display strings (`Ctrl+B`, `⌘B`).
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CommandShortcuts {
     /// The Windows keys.
@@ -70,7 +70,7 @@ pub struct CommandShortcuts {
 }
 
 /// One catalog entry.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CommandInfo {
     /// The command.

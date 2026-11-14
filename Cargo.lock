@@ -1565,6 +1565,7 @@ dependencies = [
  "sha2",
  "spellbook",
  "twip-graphics",
+ "twip-wire",
  "unicode-segmentation",
  "wuff",
  "zip",
@@ -1574,9 +1575,9 @@ dependencies = [
 name = "twip-capi"
 version = "0.2.0"
 dependencies = [
- "serde",
  "serde_json",
  "twip",
+ "twip-wire",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
@@ -1622,6 +1623,25 @@ version = "0.2.0"
 dependencies = [
  "talc",
  "twip-capi",
+]
+
+[[package]]
+name = "twip-wire"
+version = "0.1.1"
+dependencies = [
+ "itoa",
+ "ryu",
+ "serde_json",
+ "twip-wire-derive",
+]
+
+[[package]]
+name = "twip-wire-derive"
+version = "0.1.1"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]

@@ -49,8 +49,30 @@ impl<'de, T: DeserializeOwned> Deserialize<'de> for Tri<T> {
     }
 }
 
+impl<T: twip_wire::Encode> twip_wire::Encode for Tri<T> {
+    fn encode(&self, out: &mut Vec<u8>) {
+        match self {
+            Tri::Uniform(v) => v.encode(out),
+            Tri::Mixed => out.extend_from_slice(b"\"mixed\""),
+            Tri::Unavailable => out.extend_from_slice(b"null"),
+        }
+    }
+}
+
+impl<T: twip_wire::Decode> twip_wire::Decode for Tri<T> {
+    fn decode(r: &mut twip_wire::Reader<'_>) -> Result<Tri<T>, twip_wire::Error> {
+        if r.null()? {
+            Ok(Tri::Unavailable)
+        } else if r.keyword("mixed")? {
+            Ok(Tri::Mixed)
+        } else {
+            T::decode(r).map(Tri::Uniform)
+        }
+    }
+}
+
 /// Editing, or template design (activations go to the application). Read only is its own flag.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum Mode {
     /// Editing the document (the default).
@@ -61,7 +83,7 @@ pub enum Mode {
 }
 
 /// What the editor is on: the template, or one of its sub-templates.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 pub enum EditingTarget {
     /// The document itself.
@@ -84,7 +106,7 @@ impl EditingTarget {
 }
 
 /// Whether the document is open and laid out.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum LoadState {
     /// A document is being opened.
@@ -97,7 +119,7 @@ pub enum LoadState {
 }
 
 /// The state snapshot.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct State {
     /// +1 per committed transaction.
@@ -153,7 +175,7 @@ pub struct State {
 }
 
 /// One command's state.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CommandState {
     /// Whether running it now would succeed.
@@ -167,7 +189,7 @@ pub struct CommandState {
 }
 
 /// A command's state value. On the wire it is the value itself.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(untagged)]
 pub enum CommandValue {
     /// An on/off value (bold).
@@ -203,7 +225,7 @@ pub enum CommandValue {
 }
 
 /// What is selected and where.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SelectionSummary {
     /// What kind of selection it is.
@@ -236,7 +258,7 @@ pub struct SelectionSummary {
 }
 
 /// The kinds of selection.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum SelectionKind {
     /// A caret, nothing selected (the default).
@@ -253,7 +275,7 @@ pub enum SelectionKind {
 }
 
 /// The selection's table: its shape, the current cell (from 0) and the values the table commands set.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TableSelection {
     /// The number of rows.
@@ -291,7 +313,7 @@ pub struct TableSelection {
 }
 
 /// Which parts of a table style apply.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TableStyleOptions {
     /// The header row is formatted.
@@ -309,7 +331,7 @@ pub struct TableStyleOptions {
 }
 
 /// The kinds of selectable object.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum ObjectKind {
     /// A picture (the default).
@@ -326,7 +348,7 @@ pub enum ObjectKind {
 }
 
 /// The selected picture or text box.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ObjectSelection {
     /// A picture or a text box.
@@ -366,7 +388,7 @@ pub struct ObjectSelection {
 }
 
 /// A floating object's place and its wrapping options.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ObjectPlacement {
     /// The horizontal place: an alignment or an offset.
@@ -384,7 +406,7 @@ pub struct ObjectPlacement {
 }
 
 /// How far text keeps from a floating object.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TextDistance {
     /// Above it.
@@ -398,7 +420,7 @@ pub struct TextDistance {
 }
 
 /// The kinds of merge-designer element.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum ElementKind {
     /// A field (the default).
@@ -427,7 +449,7 @@ pub enum ElementKind {
 }
 
 /// An element the selection is in or covers.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ElementContext {
     /// The element's id.
@@ -451,7 +473,7 @@ pub struct ElementContext {
 }
 
 /// The link at the selection.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct LinkInfo {
     /// Where the link goes.
@@ -461,7 +483,7 @@ pub struct LinkInfo {
 }
 
 /// A header or a footer.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum HeaderFooterKind {
     /// A header (the default).
@@ -472,7 +494,7 @@ pub enum HeaderFooterKind {
 }
 
 /// Which pages a header or footer is for.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum HeaderFooterType {
     /// For every page (the default).
@@ -485,7 +507,7 @@ pub enum HeaderFooterType {
 }
 
 /// The header or footer being edited.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct HeaderFooterInfo {
     /// A header or a footer.
@@ -502,7 +524,7 @@ pub struct HeaderFooterInfo {
 }
 
 /// The selection's character formatting.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CharacterFormatting {
     /// The document's family, never the substituted one.
@@ -540,7 +562,7 @@ pub struct CharacterFormatting {
 }
 
 /// A paragraph's list.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum ListState {
     /// A bulleted list.
@@ -553,7 +575,7 @@ pub enum ListState {
 }
 
 /// A paragraph's borders, as the border presets name them.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum BorderState {
     /// A box around the paragraph.
@@ -568,7 +590,7 @@ pub enum BorderState {
 }
 
 /// The selected paragraphs' indents.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct IndentState {
     /// The left indent.
@@ -582,7 +604,7 @@ pub struct IndentState {
 }
 
 /// The selected paragraphs' pagination settings.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FlowState {
     /// Keep with the next paragraph.
@@ -596,7 +618,7 @@ pub struct FlowState {
 }
 
 /// The selection's paragraph formatting.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ParagraphFormatting {
     /// The paragraph style.
@@ -624,7 +646,7 @@ pub struct ParagraphFormatting {
 }
 
 /// A page size.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PageSize {
     /// The width.
@@ -634,7 +656,7 @@ pub struct PageSize {
 }
 
 /// A section's margins.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PageMargins {
     /// The top margin.
@@ -650,7 +672,7 @@ pub struct PageMargins {
 }
 
 /// A section's text columns.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ColumnLayout {
     /// The number of columns.
@@ -662,7 +684,7 @@ pub struct ColumnLayout {
 }
 
 /// The selection's section's page setup.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PageFormatting {
     /// The page size.
@@ -684,7 +706,7 @@ pub struct PageFormatting {
 }
 
 /// What can be undone and redone.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct HistoryState {
     /// There is something to undo.
@@ -699,7 +721,7 @@ pub struct HistoryState {
 
 /// The pages laid out so far and the caret's page (from 1). Background layout adds pages until `complete`; each change
 /// to `count` or `complete` is a new state with the same revision.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PagesState {
     /// The number of pages laid out so far: all of them once `complete`.
@@ -714,7 +736,7 @@ pub struct PagesState {
 pub const SELECTION_TEXT_LIMIT: usize = 10_000;
 
 /// Which rulers show.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RulerVisibility {
     /// The horizontal ruler shows.
@@ -724,7 +746,7 @@ pub struct RulerVisibility {
 }
 
 /// The view settings.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ViewState {
     /// Percent, after any fit.
@@ -807,7 +829,7 @@ impl Default for ViewState {
 }
 
 /// Track changes and the review counts.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReviewState {
     /// Changes are tracked.
@@ -825,7 +847,7 @@ pub struct ReviewState {
 }
 
 /// Spell checking.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SpellingState {
     /// Spell checking is on.
@@ -844,7 +866,7 @@ impl Default for SpellingState {
 
 /// The document's fonts the library can't draw as the document asks: per family and style, those a resolver is
 /// fetching and those nothing provided, and the characters no font has. Each list is sorted by family, then style.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FontsState {
     /// Families a resolver is fetching; they draw with a stand-in meanwhile.
@@ -857,7 +879,7 @@ pub struct FontsState {
 }
 
 /// A family, in one style, that draws with a stand-in.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MissingFont {
     /// The family as the document names it, or the replacement target for [`StandIn::Original`].
@@ -883,7 +905,7 @@ pub struct MissingFont {
 }
 
 /// Which stand-in draws a missing family.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum StandIn {
     /// A replacement's target is missing, so the document's own family draws.
@@ -897,7 +919,7 @@ pub enum StandIn {
 }
 
 /// Characters no font has, by the family their runs name.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MissingCharacters {
     /// The family the runs name.

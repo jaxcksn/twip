@@ -1,7 +1,7 @@
 //! The C ABI over `twip::api`. It is internal: the SDKs' private layers call it, applications never do, and it may
 //! change in any release. `include/twip.h` declares it.
 //!
-//! - Structured values cross as UTF-8 JSON, the `twip::api` types' serde form. A response is `{"ok": value}` or
+//! - Structured values cross as UTF-8 JSON, the `twip::api` types' wire form (`twip_wire`). A response is `{"ok": value}` or
 //!   `{"error": {code, message, details}}`, written to a [`TwipBuf`] the caller frees with [`twip_buf_free`]. The
 //!   status returned beside it is 0, or the negated error code ([`status`]).
 //! - Hot input (keys, text, pointer, frames) is typed calls with primitive arguments.
@@ -28,8 +28,6 @@ use engine::api::event::{Event, HostCommand, KeyOutcome};
 use engine::api::fonts::FontLibrary;
 use engine::api::input::{CompositionPhase, Key, Modifiers, Point, PointerButton, PointerKind};
 use engine::api::session::{ExportOptions, FrameInfo, OpenToken, Session};
-use serde::Deserialize;
-use serde_json::{Value, json};
 
 mod methods;
 #[cfg(not(target_family = "wasm"))]
@@ -139,8 +137,8 @@ pub struct TwipEngine {
     faulted: bool,
 }
 
-#[derive(Deserialize, Default)]
-#[serde(rename_all = "camelCase", default, deny_unknown_fields)]
+#[derive(twip_wire::Decode, Default)]
+#[wire(rename_all = "camelCase", default, deny_unknown_fields)]
 struct EngineOptions {
     /// `"system"` (the default) or `"empty"`.
     fonts: Option<String>,
@@ -158,12 +156,10 @@ impl TwipEngine {
         engine.set_listener(move |session, event| {
             let kind = if matches!(event, Event::StateChanged(_)) { kind::STATE } else { kind::EVENT };
             let payload = match event {
-                Event::StateChanged(state) => serde_json::to_vec(state),
-                e => serde_json::to_vec(e),
+                Event::StateChanged(state) => twip_wire::to_vec(state),
+                e => twip_wire::to_vec(e),
             };
-            if let Ok(payload) = payload {
-                queue.borrow_mut().push_back(Message { session: session.0, kind, payload });
-            }
+            queue.borrow_mut().push_back(Message { session: session.0, kind, payload });
         });
         TwipEngine {
             engine,
@@ -247,9 +243,8 @@ fn guard<T>(engine: *mut TwipEngine, session: u32, f: impl FnOnce(&mut TwipEngin
             let error = Error::new(ErrorCode::Internal, format!("the engine failed: {}", what.unwrap_or_default()));
             e.faulted = true;
             e.outbox.borrow_mut().clear();
-            if let Ok(payload) = serde_json::to_vec(&Event::fault(error.clone())) {
-                e.emit(session, kind::EVENT, &payload);
-            }
+            let payload = twip_wire::to_vec(&Event::fault(error.clone()));
+            e.emit(session, kind::EVENT, &payload);
             Err(error)
         }
     }
@@ -268,9 +263,9 @@ unsafe fn bytes<'a>(ptr: *const u8, len: usize) -> &'a [u8] {
 }
 
 /// A JSON request: `null` for none.
-fn request<T: serde::de::DeserializeOwned>(json: &[u8]) -> Result<T, Error> {
+fn request<T: twip_wire::Decode>(json: &[u8]) -> Result<T, Error> {
     let json = if json.is_empty() { b"null".as_slice() } else { json };
-    serde_json::from_slice(json).map_err(|e| Error::invalid(format!("bad request: {e}")))
+    twip_wire::from_slice(json).map_err(|e| Error::invalid(format!("bad request: {e}")))
 }
 
 /// Hands `data` to the caller in `out` (nothing for a null `out`).
@@ -292,18 +287,43 @@ unsafe fn put(out: *mut TwipBuf, data: Vec<u8>) {
 ///
 /// # Safety
 /// `out` is null or valid for a write.
-unsafe fn respond(out: *mut TwipBuf, result: Result<Value, Error>) -> i32 {
+unsafe fn respond(out: *mut TwipBuf, result: Result<Json, Error>) -> i32 {
     let (code, envelope) = match result {
-        Ok(v) => (0, json!({ "ok": v })),
-        Err(e) => (status(e.code), json!({ "error": e })),
+        Ok(Json(v)) => {
+            let mut out = Vec::with_capacity(v.len() + 7);
+            out.extend_from_slice(b"{\"ok\":");
+            out.extend_from_slice(&v);
+            out.push(b'}');
+            (0, out)
+        }
+        Err(e) => {
+            let mut out = b"{\"error\":".to_vec();
+            twip_wire::Encode::encode(&e, &mut out);
+            out.push(b'}');
+            (status(e.code), out)
+        }
     };
     // SAFETY: the caller's promise.
-    unsafe { put(out, serde_json::to_vec(&envelope).unwrap_or_default()) };
+    unsafe { put(out, envelope) };
     code
 }
 
-fn to_value<T: serde::Serialize>(v: T) -> Result<Value, Error> {
-    serde_json::to_value(v).map_err(|e| Error::new(ErrorCode::Internal, e.to_string()))
+/// A response value, already JSON.
+struct Json(Vec<u8>);
+
+impl Json {
+    const NULL: fn() -> Json = || Json(b"null".to_vec());
+}
+
+fn to_value<T: twip_wire::Encode>(v: T) -> Result<Json, Error> {
+    Ok(Json(twip_wire::to_vec(&v)))
+}
+
+/// What `twip_export` reports beside the file.
+#[derive(twip_wire::Encode)]
+struct ExportMeta<'a> {
+    revision: u64,
+    warnings: &'a [engine::api::warning::Warning],
 }
 
 // ---------------- handles and buffers ----------------
@@ -319,7 +339,7 @@ pub unsafe extern "C" fn twip_engine_new(options_json: *const u8, len: usize, cb
     let json = unsafe { bytes(options_json, len) };
     #[cfg(all(target_family = "wasm", target_os = "unknown"))]
     web::clocks();
-    let options = if json.is_empty() { Ok(EngineOptions::default()) } else { serde_json::from_slice(json) };
+    let options = if json.is_empty() { Ok(EngineOptions::default()) } else { twip_wire::from_slice(json) };
     match options.ok().and_then(|o| catch_unwind(AssertUnwindSafe(|| TwipEngine::new(o, cb, ctx))).ok()) {
         Some(e) => Box::into_raw(Box::new(e)),
         None => std::ptr::null_mut(),
@@ -425,8 +445,8 @@ pub unsafe extern "C" fn twip_call(engine: *mut TwipEngine, session: u32, method
     unsafe { respond(out, result) }
 }
 
-#[derive(Deserialize, Default)]
-#[serde(rename_all = "camelCase", default, deny_unknown_fields)]
+#[derive(twip_wire::Decode, Default)]
+#[wire(rename_all = "camelCase", default, deny_unknown_fields)]
 struct OpenOptions {}
 
 /// Opens a document from `bytes` (`opts`: `{}`); `out` gets `{"ok": warnings}`.
@@ -477,7 +497,7 @@ pub unsafe extern "C" fn twip_open_prepare(
         let token = e.next_token;
         e.next_token += 1;
         e.prepared.insert(token, (session, prepared));
-        Ok(json!(token))
+        to_value(token)
     });
     // SAFETY: the caller's promise.
     unsafe { respond(out, result) }
@@ -504,10 +524,11 @@ pub unsafe extern "C" fn twip_export(
         let options: ExportOptions = if opts.is_empty() { ExportOptions::default() } else { request(opts)? };
         e.session(session)?.export(&options)
     });
-    let result = result.map(|export| {
+    let result = result.and_then(|export| {
+        let meta = to_value(ExportMeta { revision: export.revision, warnings: &export.warnings });
         // SAFETY: the caller's promise.
         unsafe { put(bytes_out, export.bytes.0) };
-        json!({ "revision": export.revision, "warnings": export.warnings })
+        meta
     });
     // SAFETY: the caller's promise.
     unsafe { respond(meta, result) }
@@ -549,7 +570,7 @@ pub unsafe extern "C" fn twip_font_symbol_fallback(engine: *mut TwipEngine, byte
         for s in &e.surfaces {
             e.emit(*s, kind::REQUEST_FRAME, &[]);
         }
-        Ok(Value::Null)
+        Ok(Json::NULL())
     });
     // SAFETY: the caller's promise.
     unsafe { respond(out, result) }
@@ -685,9 +706,8 @@ pub unsafe extern "C" fn twip_surface(engine: *mut TwipEngine, session: u32, wid
         if shown && e.surfaces.insert(session) {
             let queue = e.outbox.clone();
             e.session(session)?.host().attach(move |r| {
-                if let Ok(payload) = serde_json::to_vec(&r) {
-                    queue.borrow_mut().push_back(Message { session, kind: kind::HOST_REQUEST, payload });
-                }
+                let payload = twip_wire::to_vec(&r);
+                queue.borrow_mut().push_back(Message { session, kind: kind::HOST_REQUEST, payload });
             });
         } else if !shown && e.surfaces.remove(&session) {
             e.session(session)?.host().detach();

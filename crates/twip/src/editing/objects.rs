@@ -259,12 +259,12 @@ pub(super) struct ToggledCheckbox {
     pub after: Position,
 }
 
-fn ooxml<T: serde::Serialize>(v: T) -> String {
-    serde_json::to_value(v).ok().and_then(|v| v.as_str().map(str::to_owned)).unwrap_or_default()
+fn ooxml<T: twip_wire::Named>(v: T) -> String {
+    v.name().to_owned()
 }
 
-fn from_ooxml<T: serde::de::DeserializeOwned + Default>(s: &str) -> T {
-    serde_json::from_value(serde_json::Value::String(s.into())).unwrap_or_default()
+fn from_ooxml<T: twip_wire::Named + Default>(s: &str) -> T {
+    T::from_name(s).unwrap_or_default()
 }
 
 /// How far below its paragraph's top a picture floated from the paragraph's first line goes, pt (Word's 3175 EMU).

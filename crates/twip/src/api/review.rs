@@ -9,7 +9,7 @@ use super::value::{Color, CommentId, RevisionId, Story};
 pub use crate::docx::review::MarkupView;
 
 /// The kinds of revision.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum RevisionKind {
     /// Inserted text.
@@ -41,7 +41,7 @@ pub enum RevisionKind {
 }
 
 /// One revision, for a reviewing pane.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RevisionInfo {
     /// The revision.
@@ -66,7 +66,7 @@ pub struct RevisionInfo {
 }
 
 /// A comment thread: the first comment and its replies.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CommentThread {
     /// The first comment's id.
@@ -82,7 +82,7 @@ pub struct CommentThread {
 }
 
 /// One comment.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Comment {
     /// The comment.
@@ -98,7 +98,7 @@ pub struct Comment {
 }
 
 /// Someone who made revisions or comments, with the colour they show in.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Person {
     /// The display name.
@@ -114,7 +114,7 @@ pub struct Person {
 }
 
 /// Formatted text: paragraphs of runs (comment bodies, field results).
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RichText {
     /// The paragraphs.
@@ -122,7 +122,7 @@ pub struct RichText {
 }
 
 /// One paragraph of [`RichText`].
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RichParagraph {
     /// The runs.
@@ -130,7 +130,7 @@ pub struct RichParagraph {
 }
 
 /// A run of [`RichText`]: text with its formatting.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RichRun {
     /// The text.
@@ -153,7 +153,7 @@ pub struct RichRun {
 }
 
 /// Plain or formatted text, where a command takes either.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(untagged)]
 pub enum Body {
     /// Plain text.
@@ -163,7 +163,7 @@ pub enum Body {
 }
 
 /// Where a visible comment's range is, for placing its card (content coordinates, CSS px).
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CommentAnchor {
     /// The thread.
@@ -187,7 +187,7 @@ pub struct CommentAnchor {
 }
 
 /// Where the SDK placed an attached card, and its leader line (a polyline).
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct BalloonPlacement {
     /// The thread.

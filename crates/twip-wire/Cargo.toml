@@ -1,0 +1,16 @@
+[package]
+name = "twip-wire"
+description = "Twip's JSON wire: concrete encoders and decoders for the API types, derived."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+twip-wire-derive = { path = "../twip-wire-derive" }
+# Number formatting, byte for byte what serde_json writes.
+itoa = "1.0.18"
+ryu = "1.0.23"
+# `serde_json::Value` as a wire value, while error details are still one.
+serde_json = { version = "1.0.154", optional = true }

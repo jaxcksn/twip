@@ -17,7 +17,7 @@ use super::wire::value;
 
 /// An event. On the wire its `type` is the event name (`documentChanged`), and its payload's fields sit beside it;
 /// a payload that isn't an object (a list, a value or `null`) travels in `value`.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(tag = "type", rename_all = "camelCase", deny_unknown_fields)]
 #[non_exhaustive]
 #[allow(clippy::large_enum_variant, reason = "an event is made once per change and lent to the listener; boxing would allocate per change")]
@@ -147,7 +147,7 @@ pub enum Event {
 }
 
 /// Why typing, pasting or dropping was refused.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 pub enum RefusalReason {
     /// Into a sub-template's body shown in place of its reference: edit the sub-template instead.
@@ -160,7 +160,7 @@ pub enum RefusalReason {
 }
 
 /// How a link was activated.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum LinkVia {
     /// Ctrl+click (Cmd+click on a Mac).
@@ -170,7 +170,7 @@ pub enum LinkVia {
 }
 
 /// A field whose result the application computes.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FieldRequest {
     /// The field.
@@ -180,7 +180,7 @@ pub struct FieldRequest {
 }
 
 /// Keys whose UI is the application's: pressing one never edits, and emits `hostCommand`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 #[repr(u32)]
 pub enum HostCommand {
@@ -232,7 +232,7 @@ impl HostCommand {
 }
 
 /// What a key press did.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(tag = "type", rename_all = "camelCase", deny_unknown_fields)]
 pub enum KeyOutcome {
     /// The editor used it: the host suppresses the platform's default.

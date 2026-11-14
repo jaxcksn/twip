@@ -1,10 +1,7 @@
 //! The structured calls: one number per `Session` method (and the engine's font library), each with its JSON
-//! request and response, the `api` types' serde form.
+//! request and response, the `api` types' wire form.
 
-use serde::Deserialize;
-use serde_json::Value;
-
-use super::{Message, TwipEngine, kind, request, to_value};
+use super::{Json, Message, TwipEngine, kind, request, to_value};
 use engine::api::command::Command;
 use engine::api::engine::Dictionary;
 use engine::api::error::Error;
@@ -241,176 +238,182 @@ methods! {
 }
 
 /// A resolver's answer to a font request.
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(twip_wire::Decode)]
+#[wire(deny_unknown_fields)]
 struct Answer {
     request: FontRequest,
     answer: FontAnswer,
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 struct WindowSelectRequest {
     anchor: engine::api::services::WindowPoint,
     focus: engine::api::services::WindowPoint,
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 struct BatchRequest {
     commands: Vec<Command>,
-    #[serde(default)]
+    #[wire(default)]
     label: Option<String>,
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 struct StyleTileRequest {
     id: engine::api::value::StyleId,
     size: engine::api::services::PreviewSize,
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 struct ListEntryPreviewRequest {
     id: engine::api::services::ListEntryId,
     size: engine::api::services::PreviewSize,
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 struct CharacterPictureRequest {
     family: String,
     character: char,
     size: engine::api::services::PreviewSize,
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 struct DialogPreviewRequest {
     model: DialogModel,
     size: engine::api::services::PreviewSize,
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 struct DialogOnStyleRequest {
     kind: DialogKind,
     style: engine::api::services::StyleDialog,
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 struct DialogUpdateRequest {
     model: DialogModel,
     patch: DialogPatch,
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 struct FindRequest {
     query: FindQuery,
     direction: FindDirection,
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 struct ReplaceRequest {
     query: FindQuery,
     with: String,
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 struct UserWordsRequest {
     language: String,
     words: Vec<String>,
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 struct SuggestionsRequest {
     word: String,
-    #[serde(default)]
+    #[wire(default)]
     language: Option<String>,
 }
 
-#[derive(Deserialize, Default)]
-#[serde(rename_all = "camelCase", default, deny_unknown_fields)]
+#[derive(twip_wire::Decode, Default)]
+#[wire(rename_all = "camelCase", default, deny_unknown_fields)]
 struct StructureRequest {
     root: Option<ElementId>,
     depth: Option<u32>,
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 struct SelectElementRequest {
     id: ElementId,
-    #[serde(default)]
+    #[wire(default)]
     reveal: bool,
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 struct SubTemplateExportRequest {
     name: String,
-    #[serde(default)]
+    #[wire(default)]
     category: Option<String>,
 }
 
-#[derive(Deserialize, Default)]
-#[serde(rename_all = "camelCase", default, deny_unknown_fields)]
+#[derive(twip_wire::Decode, Default)]
+#[wire(rename_all = "camelCase", default, deny_unknown_fields)]
 struct DataPartsRequest {
     namespace: Option<String>,
     item_id: Option<String>,
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 struct GestureSetRequest {
     gesture: GestureId,
     action: GestureAction,
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 struct CopyRequest {
     cut: bool,
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 struct PasteRequest {
     data: ClipboardData,
-    #[serde(default)]
+    #[wire(default)]
     as_text: bool,
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 struct RulersRequest {
     horizontal: bool,
     vertical: bool,
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 struct DropRequest {
     at: Point,
     command: Command,
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 struct BalloonsRequest {
     anchors: Vec<CommentAnchor>,
     heights: Vec<f64>,
-    #[serde(default)]
+    #[wire(default)]
     gap: Option<f64>,
 }
 
+/// `ReplaceAll`'s response.
+#[derive(twip_wire::Encode)]
+struct Count {
+    count: u32,
+}
+
 /// Runs `method` with its JSON request.
-pub(super) fn call(e: &mut TwipEngine, session: u32, method: Method, json: &[u8]) -> Result<Value, Error> {
+pub(super) fn call(e: &mut TwipEngine, session: u32, method: Method, json: &[u8]) -> Result<Json, Error> {
     if let Method::OpenCommit | Method::OpenDiscard = method {
         let token: u32 = request(json)?;
         e.session(session)?;
@@ -423,7 +426,7 @@ pub(super) fn call(e: &mut TwipEngine, session: u32, method: Method, json: &[u8]
             Method::OpenCommit => to_value(s.open_commit(prepared)?),
             _ => {
                 s.open_discard(prepared);
-                Ok(Value::Null)
+                Ok(Json::NULL())
             }
         };
     }
@@ -434,7 +437,7 @@ pub(super) fn call(e: &mut TwipEngine, session: u32, method: Method, json: &[u8]
 }
 
 /// The methods of the engine's catalog and font library, which take no session; `None` for the rest.
-fn engine_call(e: &mut TwipEngine, method: Method, json: &[u8]) -> Option<Result<Value, Error>> {
+fn engine_call(e: &mut TwipEngine, method: Method, json: &[u8]) -> Option<Result<Json, Error>> {
     let fonts = e.engine.fonts();
     let result = match method {
         Method::Catalog => to_value(Session::catalog()),
@@ -442,45 +445,44 @@ fn engine_call(e: &mut TwipEngine, method: Method, json: &[u8]) -> Option<Result
         Method::FontFamilies => to_value(fonts.families()),
         Method::FontSetReplacements => request::<Vec<FontRule>>(json).map(|r| {
             fonts.set_replacements(r);
-            Value::Null
+            Json::NULL()
         }),
         Method::FontSetFallback => request::<Option<String>>(json).map(|f| {
             fonts.set_fallback(f.as_deref());
-            Value::Null
+            Json::NULL()
         }),
         Method::FontSetAliases => request::<Vec<Alias>>(json).map(|a| {
             fonts.set_aliases(a);
-            Value::Null
+            Json::NULL()
         }),
         Method::FontSetGenericDefaults => request::<GenericDefaults>(json).map(|d| {
             fonts.set_generic_defaults(d);
-            Value::Null
+            Json::NULL()
         }),
         Method::FontSetCharacterFallback => request::<Vec<String>>(json).map(|f| {
             fonts.set_character_fallback(f);
-            Value::Null
+            Json::NULL()
         }),
         Method::FontSetClassification => request::<bool>(json).map(|on| {
             fonts.set_classification(on);
-            Value::Null
+            Json::NULL()
         }),
-        Method::FontSetSymbolFallback => request::<SymbolFallback>(json).and_then(|f| fonts.set_symbol_fallback(f).map(|()| Value::Null)),
+        Method::FontSetSymbolFallback => request::<SymbolFallback>(json).and_then(|f| fonts.set_symbol_fallback(f).map(|()| Json::NULL())),
         Method::FontSetResolver => request::<bool>(json).map(|on| {
             if on {
                 let queue = e.outbox.clone();
                 fonts.on_request(move |r| {
-                    if let Ok(payload) = serde_json::to_vec(r) {
-                        queue.borrow_mut().push_back(Message { session: 0, kind: kind::FONT_REQUEST, payload });
-                    }
+                    let payload = twip_wire::to_vec(r);
+                    queue.borrow_mut().push_back(Message { session: 0, kind: kind::FONT_REQUEST, payload });
                 });
             } else {
                 fonts.stop_requests();
             }
-            Value::Null
+            Json::NULL()
         }),
         Method::FontAnswer => request::<Answer>(json).map(|a| {
             fonts.answer(&a.request, a.answer);
-            Value::Null
+            Json::NULL()
         }),
         Method::StackBalloons => {
             request::<BalloonsRequest>(json).and_then(|r| to_value(engine::api::review::stack_balloons(&r.anchors, &r.heights, r.gap.unwrap_or(8.0))))
@@ -507,8 +509,8 @@ fn engine_call(e: &mut TwipEngine, method: Method, json: &[u8]) -> Option<Result
 }
 
 /// The session methods.
-fn session_call(s: &mut Session, method: Method, json: &[u8]) -> Result<Value, Error> {
-    let none = Value::Null;
+fn session_call(s: &mut Session, method: Method, json: &[u8]) -> Result<Json, Error> {
+    let none = Json::NULL();
     match method {
         Method::Run => to_value(s.run(request(json)?)?),
         Method::Batch => {
@@ -577,7 +579,7 @@ fn session_call(s: &mut Session, method: Method, json: &[u8]) -> Result<Value, E
         }
         Method::ReplaceAll => {
             let r: ReplaceRequest = request(json)?;
-            to_value(serde_json::json!({ "count": s.replace_all(&r.query, &r.with)? }))
+            to_value(Count { count: s.replace_all(&r.query, &r.with)? })
         }
         Method::SpellingAddDictionary => to_value(s.spelling().add_dictionary(request::<Dictionary>(json)?)?),
         Method::SpellingSetEnabled => {

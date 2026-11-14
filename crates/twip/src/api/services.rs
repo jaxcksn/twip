@@ -17,7 +17,7 @@ use super::value::{
 };
 
 /// A point relative to the browser viewport (or the control), CSS px: where to place a fixed-position menu.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ClientPoint {
     /// From the viewport's left edge.
@@ -27,7 +27,7 @@ pub struct ClientPoint {
 }
 
 /// A rectangle in the [`ClientPoint`] space.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ClientRect {
     /// Its left edge.
@@ -41,7 +41,7 @@ pub struct ClientRect {
 }
 
 /// A point relative to the editor's balloon layer, CSS px: it scrolls and zooms with the document.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ContentPoint {
     /// From the layer's left edge.
@@ -53,7 +53,7 @@ pub struct ContentPoint {
 // ---------------- context menu ----------------
 
 /// The context menu for the selection.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ContextMenu {
     /// What the menu is for.
@@ -63,7 +63,7 @@ pub struct ContextMenu {
 }
 
 /// What the menu is for.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 pub enum MenuTarget {
     /// Text.
@@ -106,7 +106,7 @@ pub enum MenuTarget {
 }
 
 /// A menu entry.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 pub enum MenuItem {
     /// A command, as the catalog describes it.
@@ -146,7 +146,7 @@ pub enum MenuItem {
 }
 
 /// What a menu item does, passed back to `invoke` (opaque to applications).
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(tag = "type", rename_all = "camelCase", deny_unknown_fields)]
 pub enum MenuAction {
     /// Runs a command.
@@ -174,7 +174,7 @@ pub enum MenuAction {
 }
 
 /// How a context menu was opened.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum MenuVia {
     /// A right-click.
@@ -185,7 +185,7 @@ pub enum MenuVia {
 }
 
 /// A context menu to open at a point.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ContextMenuEvent {
     /// The menu.
@@ -207,7 +207,7 @@ macro_rules! dialog {
         }
 
         #[doc = concat!("The fields of [`", stringify!($name), "`] that changed.")]
-        #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+        #[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
         #[serde(rename_all = "camelCase", deny_unknown_fields)]
         pub struct $patch {
             $(
@@ -232,7 +232,7 @@ pub(crate) fn present<'de, D: Deserializer<'de>, T: Deserialize<'de>>(d: D) -> R
 }
 
 /// The dialogs the engine models.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum DialogKind {
     /// Font.
@@ -297,7 +297,7 @@ impl DialogKind {
 }
 
 /// An open dialog: its values for the selection, and each field's label and state.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DialogModel {
     /// Which dialog.
@@ -312,7 +312,7 @@ pub struct DialogModel {
 }
 
 /// A dialog's values, tagged with its kind.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum DialogValues {
     /// The Font dialog's.
@@ -360,7 +360,7 @@ pub enum DialogValues {
 }
 
 /// What `dialog_update` changes: the kind-tagged values with only the changed fields.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum DialogPatch {
     /// The Font dialog's.
@@ -439,7 +439,7 @@ impl DialogPatch {
 }
 
 /// How the style dialog opens.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum StyleOpen {
     /// Create New Style from Formatting: a new style from the selection's formatting.
@@ -450,7 +450,7 @@ pub enum StyleOpen {
 }
 
 /// The kind of style the style dialog makes.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum StyleDialogType {
     /// A paragraph style.
@@ -468,7 +468,7 @@ pub enum StyleDialogType {
 
 dialog! {
     /// The style dialog: Modify Style, and Create New Style from Formatting (`short_form`: the name and the preview).
-    #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
     #[serde(rename_all = "camelCase", default, deny_unknown_fields)]
     pub struct StyleDialog / StylePatch {
         /// Creating a style, or modifying one.
@@ -534,7 +534,7 @@ dialog! {
 }
 
 /// The parts of a table a table style formats.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum TableStylePart {
     /// The whole table.
@@ -588,7 +588,7 @@ impl TableStylePart {
 }
 
 /// Manage Styles' tabs.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum ManageStylesTab {
     /// The styles, to modify, delete or add to.
@@ -603,7 +603,7 @@ pub enum ManageStylesTab {
 }
 
 /// How Manage Styles sorts its list.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum StyleSort {
     /// By priority, then name.
@@ -618,7 +618,7 @@ pub enum StyleSort {
 }
 
 /// A style in Manage Styles.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ManagedStyle {
     /// The style.
@@ -641,7 +641,7 @@ pub struct ManagedStyle {
 dialog! {
     /// Manage Styles: its Edit, Recommend, Restrict and Set Defaults tabs. Modify, New Style and Delete are the style
     /// dialog and `deleteStyle`; Import/Export isn't offered.
-    #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
     #[serde(rename_all = "camelCase", default, deny_unknown_fields)]
     pub struct ManageStylesDialog / ManageStylesPatch {
         /// The tab shown.
@@ -662,7 +662,7 @@ dialog! {
 }
 
 /// Borders and Shading's tabs.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum BordersTab {
     /// The paragraph's or text's borders.
@@ -675,7 +675,7 @@ pub enum BordersTab {
 }
 
 /// Borders and Shading's settings: no borders, a box, a box with a shadow, or the edges set one by one.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum BorderSetting {
     /// No borders.
@@ -693,7 +693,7 @@ dialog! {
     /// Borders and Shading: the borders of the selected paragraphs, and the shading of the paragraphs or the text. A
     /// setting (`none`, `box`, `shadow`) sets the edges with the line `style`, `color` and `width`; setting an edge
     /// makes it `custom`. The Page Border tab does the same for the section's pages.
-    #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+    #[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
     #[serde(rename_all = "camelCase", deny_unknown_fields)]
     pub struct BordersShadingDialog / BordersShadingPatch {
         /// The tab shown.
@@ -749,7 +749,7 @@ dialog! {
     /// The Frame dialog, on the frame the selection is in: its properties (`setFrame`), and Move with text, which is
     /// the vertical position relative to the paragraph. `remove` is its Remove Frame button: applying runs
     /// `removeFrame`.
-    #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
     #[serde(rename_all = "camelCase", default, deny_unknown_fields)]
     pub struct FrameDialog / FramePatch {
         /// Text wrapping.
@@ -834,7 +834,7 @@ impl FrameDialog {
 dialog! {
     /// Define New Bullet: the bullet of the selection's list level (or a new list's): its character in its font, or
     /// a picture.
-    #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
     #[serde(rename_all = "camelCase", default, deny_unknown_fields)]
     pub struct DefineBulletDialog / DefineBulletPatch {
         /// The bullet's character.
@@ -850,7 +850,7 @@ dialog! {
 
 dialog! {
     /// Define New Number Format: the number of the selection's list level (or a new list's).
-    #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
     #[serde(rename_all = "camelCase", default, deny_unknown_fields)]
     pub struct DefineNumberFormatDialog / DefineNumberFormatPatch {
         /// The number style.
@@ -867,7 +867,7 @@ dialog! {
 dialog! {
     /// Define New Multilevel List: the nine levels of the selection's list (or a new list's), the level shown, what
     /// the levels apply to, and the ListNum field name.
-    #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
     #[serde(rename_all = "camelCase", default, deny_unknown_fields)]
     pub struct DefineMultilevelDialog / DefineMultilevelPatch {
         /// The levels.
@@ -885,7 +885,7 @@ dialog! {
 
 dialog! {
     /// Set Numbering Value: start a new list at a value, or continue the previous list (skipping to a value).
-    #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
     #[serde(rename_all = "camelCase", default, deny_unknown_fields)]
     pub struct SetNumberingValueDialog / SetNumberingValuePatch {
         /// Start a new list, or continue.
@@ -899,7 +899,7 @@ dialog! {
 
 dialog! {
     /// Adjust List Indents: the selection's list level's indents and what follows its number.
-    #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
     #[serde(rename_all = "camelCase", default, deny_unknown_fields)]
     pub struct AdjustListIndentsDialog / AdjustListIndentsPatch {
         /// Where the number is.
@@ -916,7 +916,7 @@ dialog! {
 dialog! {
     /// Bullets and Numbering, from the style dialog's Format menu: the list the style's paragraphs are in, as a
     /// gallery entry (`listGalleries`), or none.
-    #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
     #[serde(rename_all = "camelCase", default, deny_unknown_fields)]
     pub struct BulletsNumberingDialog / BulletsNumberingPatch {
         /// The gallery shown.
@@ -927,7 +927,7 @@ dialog! {
 }
 
 /// A run of characters a font has: code points `first` to `last`.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CharRange {
     /// The first code point.
@@ -938,7 +938,7 @@ pub struct CharRange {
 
 dialog! {
     /// Banding: a table style's rows and columns in each band.
-    #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
     #[serde(rename_all = "camelCase", default, deny_unknown_fields)]
     pub struct BandingDialog / BandingPatch {
         /// The rows in each band.
@@ -949,7 +949,7 @@ dialog! {
 }
 
 /// A list gallery: bullets, numbering, or multilevel lists.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum ListGalleryKind {
     /// The bullet library.
@@ -962,7 +962,7 @@ pub enum ListGalleryKind {
 }
 
 /// A section of a list gallery.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum ListGallerySectionKind {
     /// The built-in library.
@@ -977,12 +977,12 @@ pub enum ListGallerySectionKind {
 }
 
 /// A list gallery entry, by its id (`applyListEntry`, `listEntryPreview`).
-#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(transparent)]
 pub struct ListEntryId(pub String);
 
 /// A list gallery entry: its id, a short label (its first levels' numbers or its bullet), and its levels.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ListEntry {
     /// The entry.
@@ -994,7 +994,7 @@ pub struct ListEntry {
 }
 
 /// A section of a list gallery and its entries.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ListGallerySection {
     /// Which section.
@@ -1004,7 +1004,7 @@ pub struct ListGallerySection {
 }
 
 /// The size of a preview picture: CSS px (or device-independent pixels), and the device pixels per one.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PreviewSize {
     /// The width.
@@ -1021,7 +1021,7 @@ fn one() -> f64 {
 }
 
 /// A picture the editor drew: a PNG of `width` x `height` device pixels.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PreviewPicture {
     /// The PNG.
@@ -1033,7 +1033,7 @@ pub struct PreviewPicture {
 }
 
 /// How a dialog field is edited.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum FieldKind {
     /// A plain number.
@@ -1054,7 +1054,7 @@ pub enum FieldKind {
 }
 
 /// One choice of a choice field.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ChoiceOption {
     /// The value the field takes.
@@ -1064,7 +1064,7 @@ pub struct ChoiceOption {
 }
 
 /// A dialog field's label, kind, range and state.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FieldInfo {
     /// The English label.
@@ -1088,7 +1088,7 @@ pub struct FieldInfo {
 }
 
 /// The Font dialog's style box.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum FontStyle {
     /// Regular.
@@ -1104,7 +1104,7 @@ pub enum FontStyle {
 
 dialog! {
     /// The Font dialog.
-    #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
     #[serde(rename_all = "camelCase", default, deny_unknown_fields)]
     pub struct FontDialog / FontPatch {
         /// The font name.
@@ -1141,7 +1141,7 @@ dialog! {
 }
 
 /// The Paragraph dialog's special indent.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum SpecialIndent {
     /// No first-line indent.
@@ -1155,7 +1155,7 @@ pub enum SpecialIndent {
 
 dialog! {
     /// The Paragraph dialog.
-    #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
     #[serde(rename_all = "camelCase", default, deny_unknown_fields)]
     pub struct ParagraphDialog / ParagraphPatch {
         /// The alignment.
@@ -1188,7 +1188,7 @@ dialog! {
 }
 
 /// Where page setup applies.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum ApplyTo {
     /// The selection's section.
@@ -1200,7 +1200,7 @@ pub enum ApplyTo {
 
 dialog! {
     /// The Page Setup dialog.
-    #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
     #[serde(rename_all = "camelCase", default, deny_unknown_fields)]
     pub struct PageSetupDialog / PageSetupPatch {
         /// The top margin.
@@ -1234,7 +1234,7 @@ dialog! {
 
 dialog! {
     /// The Insert Table dialog.
-    #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
     #[serde(rename_all = "camelCase", default, deny_unknown_fields)]
     pub struct InsertTableDialog / InsertTablePatch {
         /// The number of rows.
@@ -1245,7 +1245,7 @@ dialog! {
 }
 
 /// Cell margins, all four set.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CellMarginValues {
     /// The top margin.
@@ -1260,7 +1260,7 @@ pub struct CellMarginValues {
 
 dialog! {
     /// The Table Properties dialog.
-    #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
     #[serde(rename_all = "camelCase", default, deny_unknown_fields)]
     pub struct TablePropertiesDialog / TablePropertiesPatch {
         /// The table's preferred width.
@@ -1286,7 +1286,7 @@ dialog! {
 
 dialog! {
     /// The Picture Size dialog.
-    #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
     #[serde(rename_all = "camelCase", default, deny_unknown_fields)]
     pub struct PictureSizeDialog / PictureSizePatch {
         /// The width.
@@ -1306,7 +1306,7 @@ dialog! {
 
 dialog! {
     /// The Alt Text dialog.
-    #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
     #[serde(rename_all = "camelCase", default, deny_unknown_fields)]
     pub struct AltTextDialog / AltTextPatch {
         /// The description.
@@ -1318,7 +1318,7 @@ dialog! {
 
 dialog! {
     /// The Hyperlink dialog.
-    #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
     #[serde(rename_all = "camelCase", default, deny_unknown_fields)]
     pub struct HyperlinkDialog / HyperlinkPatch {
         /// The text to display.
@@ -1329,7 +1329,7 @@ dialog! {
 }
 
 /// The Tabs dialog's buttons, applied by `update`.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum TabsAction {
     /// No button.
@@ -1345,7 +1345,7 @@ pub enum TabsAction {
 
 dialog! {
     /// The Tabs dialog.
-    #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
     #[serde(rename_all = "camelCase", default, deny_unknown_fields)]
     pub struct TabsDialog / TabsPatch {
         /// The paragraph's tab stops.
@@ -1366,7 +1366,7 @@ dialog! {
 }
 
 /// One accessibility issue.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AccessibilityIssue {
     /// The issue's id.
@@ -1379,7 +1379,7 @@ pub struct AccessibilityIssue {
 
 dialog! {
     /// The Accessibility dialog (read only).
-    #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
     #[serde(rename_all = "camelCase", default, deny_unknown_fields)]
     pub struct AccessibilityDialog / AccessibilityPatch {
         /// The issues found.
@@ -1390,7 +1390,7 @@ dialog! {
 // ---------------- find, spelling, navigation, styles ----------------
 
 /// What to find.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FindQuery {
     /// The text.
@@ -1407,7 +1407,7 @@ pub struct FindQuery {
 pub type FindDirection = Order;
 
 /// Whether a match was found, and whether the search wrapped past the end.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FindResult {
     /// A match was found and selected.
@@ -1417,7 +1417,7 @@ pub struct FindResult {
 }
 
 /// One match with its context, for a results list.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FindMatch {
     /// The match, for selecting it.
@@ -1433,7 +1433,7 @@ pub struct FindMatch {
 }
 
 /// A misspelled word and what to replace it with.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Misspelling {
     /// The word.
@@ -1443,7 +1443,7 @@ pub struct Misspelling {
 }
 
 /// A heading, for a navigation pane.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Heading {
     /// The heading.
@@ -1457,7 +1457,7 @@ pub struct Heading {
 }
 
 /// The kinds of style.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum StyleType {
     /// A paragraph style.
@@ -1472,7 +1472,7 @@ pub enum StyleType {
 }
 
 /// Whether a style shows in style lists.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum StyleVisibility {
     /// Shown.
@@ -1485,7 +1485,7 @@ pub enum StyleVisibility {
 }
 
 /// How a style gallery tile draws.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct StylePreview {
     /// The font name.
@@ -1507,7 +1507,7 @@ impl Default for StylePreview {
 }
 
 /// A style, for a style gallery or list.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct StyleInfo {
     /// The style.
@@ -1543,7 +1543,7 @@ pub struct StyleInfo {
 // ---------------- elements and data parts ----------------
 
 /// A text to match in an element property.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ElementMatch {
     /// The property: a field's code, or a control's tag or title.
@@ -1554,7 +1554,7 @@ pub struct ElementMatch {
 }
 
 /// Which elements `elements` lists.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ElementFilter {
     /// Only this kind (any when unset).
@@ -1572,7 +1572,7 @@ pub struct ElementFilter {
 }
 
 /// A field or content control.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ElementInfo {
     /// The element.
@@ -1611,7 +1611,7 @@ pub struct ElementInfo {
 }
 
 /// A sub-template: a building block in a category the rules declare.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SubTemplateInfo {
     /// Its name.
@@ -1627,7 +1627,7 @@ pub struct SubTemplateInfo {
 }
 
 /// What a sub-template reference field names and whether its body shows.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SubTemplateReference {
     /// The sub-template's name, as the field gives it.
@@ -1642,7 +1642,7 @@ pub struct SubTemplateReference {
 }
 
 /// Whether a reference's sub-template resolves, or why its body can't show.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum ReferenceResolution {
     /// A sub-template has the name.
@@ -1663,7 +1663,7 @@ pub enum ReferenceResolution {
 }
 
 /// An element with its settings and children.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ElementDetail {
     /// The element.
@@ -1706,7 +1706,7 @@ pub struct ElementDetail {
 }
 
 /// A cell's place in a vertical merge.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum VerticalMerge {
     /// Not merged.
@@ -1719,7 +1719,7 @@ pub enum VerticalMerge {
 }
 
 /// The document (or an element) as blocks, for checking a template's structure.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 pub enum Block {
     /// A paragraph.
@@ -1738,7 +1738,7 @@ pub enum Block {
 }
 
 /// A table row of [`Block::Table`].
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct BlockRow {
     /// Its cells.
@@ -1746,7 +1746,7 @@ pub struct BlockRow {
 }
 
 /// A cell of [`BlockRow`].
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct BlockCell {
     /// The grid columns it spans.
@@ -1760,7 +1760,7 @@ pub struct BlockCell {
 }
 
 /// A custom XML data part.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DataPart {
     /// Its root element's namespace.
@@ -1772,7 +1772,7 @@ pub struct DataPart {
 }
 
 /// A custom XML data part, without its content.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DataPartInfo {
     /// Its root element's namespace.
@@ -1782,7 +1782,7 @@ pub struct DataPartInfo {
 }
 
 /// A picture control the user or the application activated.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PictureControlActivation {
     /// The picture control.
@@ -1793,12 +1793,12 @@ pub struct PictureControlActivation {
 
 /// An accessibility tree node's identity. It stays the same across edits while the thing it names exists: a
 /// paragraph, table, note, comment or story keeps its id when other content changes.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(transparent)]
 pub struct AccessibleId(pub u64);
 
 /// An accessibility tree node's role.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum AccessibleRole {
     /// The document.
@@ -1845,7 +1845,7 @@ pub enum AccessibleRole {
 }
 
 /// What a text node is marked with.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum AccessibleMark {
     /// A tracked insertion.
@@ -1857,7 +1857,7 @@ pub enum AccessibleMark {
 }
 
 /// Where a cell is in its table's grid: its row and column (from 1) and how many it spans.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CellPlace {
     /// Its row, from 1.
@@ -1871,7 +1871,7 @@ pub struct CellPlace {
 }
 
 /// Where a list item is in its list: its index (from 1) among the items at its level, and how many there are.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ListPosition {
     /// Its index, from 1.
@@ -1881,7 +1881,7 @@ pub struct ListPosition {
 }
 
 /// The document's accessibility tree.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AccessibleNode {
     /// Its identity.
@@ -1928,7 +1928,7 @@ pub struct AccessibleNode {
 /// The text around the caret, for the element that has the keyboard focus while the editor does: the caret's
 /// paragraph, the one before it and the ones after it (up to about 2,000 characters), all in the caret's container (the
 /// body, a cell, a note, a header or footer, a text box), each split into its laid-out lines; and the selection in it.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CaretWindow {
     /// The paragraphs, in order.
@@ -1946,7 +1946,7 @@ pub struct CaretWindow {
 }
 
 /// A paragraph of a caret window.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct WindowParagraph {
     /// Its id: the same as its node's in the accessibility tree.
@@ -1964,7 +1964,7 @@ pub struct WindowParagraph {
 }
 
 /// A line of a caret window's paragraph.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct WindowLine {
     /// Its text, split where marks, author or language change.
@@ -1972,7 +1972,7 @@ pub struct WindowLine {
 }
 
 /// Text of a caret window's line with the same marks, author and language.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct WindowSegment {
     /// Its text.
@@ -1990,7 +1990,7 @@ pub struct WindowSegment {
 
 /// A place in a caret window: a paragraph (its index in the window) and an offset in its text (characters, not
 /// counting a list item's label).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct WindowPoint {
     /// The paragraph's index in the window.
@@ -2000,7 +2000,7 @@ pub struct WindowPoint {
 }
 
 /// A change to the accessibility tree.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(tag = "type", rename_all = "camelCase", deny_unknown_fields)]
 pub enum A11yChange {
     /// The node with this node's id, and its subtree, are replaced.
@@ -2019,7 +2019,7 @@ pub enum A11yChange {
 }
 
 /// The accessibility tree, or what changed in it since the last update.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub enum A11yUpdate {
     /// The whole tree.
@@ -2029,7 +2029,7 @@ pub enum A11yUpdate {
 }
 
 /// What an announcement is about.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum AnnouncementKind {
     /// Entering, leaving or moving through a table.
@@ -2074,7 +2074,7 @@ impl AnnouncementKind {
 }
 
 /// A key on every platform, or one per platform (`Ctrl+Alt+K`).
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(untagged)]
 pub enum ShortcutKeys {
     /// The same keys everywhere.
@@ -2089,7 +2089,7 @@ pub enum ShortcutKeys {
 }
 
 /// An application shortcut: pressing its keys emits `shortcut` with its id.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Shortcut {
     /// The application's id for it.
@@ -2099,7 +2099,7 @@ pub struct Shortcut {
 }
 
 /// What a key does now.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 pub enum KeyBinding {
     /// Runs a command.
@@ -2120,7 +2120,7 @@ pub enum KeyBinding {
 }
 
 /// The pointer gestures the engine recognises.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum GestureId {
     /// A double-click in the header area: edits the header.
@@ -2182,7 +2182,7 @@ pub enum GestureAction {
     Op(Command),
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(deny_unknown_fields)]
 struct OpAction {
     op: Command,
@@ -2217,8 +2217,38 @@ impl<'de> Deserialize<'de> for GestureAction {
     }
 }
 
+impl twip_wire::Encode for GestureAction {
+    fn encode(&self, out: &mut Vec<u8>) {
+        match self {
+            GestureAction::Default => out.extend_from_slice(b"\"default\""),
+            GestureAction::Emit => out.extend_from_slice(b"\"emit\""),
+            GestureAction::None => out.extend_from_slice(b"\"none\""),
+            GestureAction::Op(op) => {
+                out.extend_from_slice(b"{\"op\":");
+                twip_wire::Encode::encode(op, out);
+                out.push(b'}');
+            }
+        }
+    }
+}
+
+impl twip_wire::Decode for GestureAction {
+    fn decode(r: &mut twip_wire::Reader<'_>) -> Result<GestureAction, twip_wire::Error> {
+        if r.peek()? != twip_wire::Kind::String {
+            return <OpAction as twip_wire::Decode>::decode(r).map(|a| GestureAction::Op(a.op));
+        }
+        let at = r.clone();
+        match &*r.str()? {
+            "default" => Ok(GestureAction::Default),
+            "emit" => Ok(GestureAction::Emit),
+            "none" => Ok(GestureAction::None),
+            other => Err(at.error(format!("unknown gesture action `{other}`"))),
+        }
+    }
+}
+
 /// A gesture's binding, with a label for a settings screen (`Double-click the header area`).
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GestureBinding {
     /// The gesture.
@@ -2230,7 +2260,7 @@ pub struct GestureBinding {
 }
 
 /// Page areas a gesture can be over.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum AreaKind {
     /// The header area.
@@ -2246,7 +2276,7 @@ pub enum AreaKind {
 }
 
 /// What a gesture is over.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(untagged)]
 pub enum GestureTarget {
     /// Document content, as a context menu names it.
@@ -2259,7 +2289,7 @@ pub enum GestureTarget {
 }
 
 /// A gesture bound to `emit`.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GestureEvent {
     /// The gesture.
@@ -2275,7 +2305,7 @@ pub struct GestureEvent {
 // ---------------- rulers, view, hit testing ----------------
 
 /// What typing corrects (AutoCorrect): each rule on or off, and the texts never corrected again.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AutoCorrectOptions {
     /// THe → The.
@@ -2325,7 +2355,7 @@ impl Default for AutoCorrectOptions {
 }
 
 /// `setAutoCorrect`'s change: the rules given switch, the lists given replace the shipped ones.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AutoCorrectChange {
     /// THe → The.
@@ -2376,7 +2406,7 @@ pub struct AutoCorrectChange {
 }
 
 /// One replacement-list entry.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AutoCorrectEntry {
     /// What's typed.
@@ -2386,7 +2416,7 @@ pub struct AutoCorrectEntry {
 }
 
 /// The editor chrome's colour scheme: the desk, rulers, handles, guides and readouts.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum ChromeTheme {
     /// Light chrome.
@@ -2399,7 +2429,7 @@ pub enum ChromeTheme {
 }
 
 /// The platform's colours in high contrast mode.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SystemColors {
     /// The window background.
@@ -2416,7 +2446,7 @@ pub struct SystemColors {
 
 /// The host's colours for the light and the dark chrome scheme, to match its own UI: each scheme given replaces the
 /// last one set for it (`{}` puts its own colours back). The high contrast scheme always takes the platform's.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ThemeColors {
     /// For the light scheme.
@@ -2428,7 +2458,7 @@ pub struct ThemeColors {
 }
 
 /// Chrome colours in place of a scheme's own; each one left out keeps the scheme's.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ChromeColors {
     /// Around the pages and the rulers' strips (a background the host sets wins around the pages).
@@ -2452,7 +2482,7 @@ pub struct ChromeColors {
 }
 
 /// How the document's page is drawn on screen. Saving, PDF export and printing always use the document's colours.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum DocumentAppearance {
     /// In the document's colours.
@@ -2465,7 +2495,7 @@ pub enum DocumentAppearance {
 }
 
 /// How much the editor measures while you drag and hover.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum MeasureDetail {
     /// A chip with the value only.
@@ -2478,7 +2508,7 @@ pub enum MeasureDetail {
 }
 
 /// When the dot grid objects snap to shows.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum ObjectGrid {
     /// Never.
@@ -2491,7 +2521,7 @@ pub enum ObjectGrid {
 }
 
 /// When fields are shaded: a grey backdrop behind each field's text on screen, never printed, exported or saved.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum FieldShading {
     /// Never.
@@ -2504,7 +2534,7 @@ pub enum FieldShading {
 }
 
 /// The unit rulers show.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum RulerUnit {
     /// Inches.
@@ -2521,7 +2551,7 @@ pub enum RulerUnit {
 }
 
 /// What a click on the ruler adds.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum TabSelector {
     /// A left tab stop.
@@ -2543,7 +2573,7 @@ pub enum TabSelector {
 
 /// A popover the engine asks the application to show by `anchor`, with what it offers and the commands that answer
 /// it. Only one is open at a time; `popoverClosed` says the engine dismissed it.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 pub enum Popover {
     /// The tab type picker: answered with `setRulerTabType`.
@@ -2578,7 +2608,7 @@ pub enum Popover {
 }
 
 /// One entry of the tab type picker.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TabTypeChoice {
     /// The type.
@@ -2590,7 +2620,7 @@ pub struct TabTypeChoice {
 }
 
 /// A span along a ruler.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Span {
     /// Where it starts, from the page edge.
@@ -2600,7 +2630,7 @@ pub struct Span {
 }
 
 /// The indent markers. `first_line` is relative to `left`; negative is hanging.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RulerIndents {
     /// The left indent.
@@ -2612,7 +2642,7 @@ pub struct RulerIndents {
 }
 
 /// A tab stop, measured from the paragraph's left text edge.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TabStopInfo {
     /// Its position.
@@ -2626,7 +2656,7 @@ pub struct TabStopInfo {
 }
 
 /// The horizontal ruler's model.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct HorizontalRuler {
     /// The page's width.
@@ -2646,7 +2676,7 @@ pub struct HorizontalRuler {
 }
 
 /// The vertical ruler's model.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct VerticalRuler {
     /// The page's height.
@@ -2658,7 +2688,7 @@ pub struct VerticalRuler {
 }
 
 /// The ruler model for the selection, in points, with no viewport mapping.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RulerModel {
     /// The selected paragraphs differ: the first one's values are shown.
@@ -2670,7 +2700,7 @@ pub struct RulerModel {
 }
 
 /// A ruler's mapping to the viewport: the client coordinate of the page edge, and CSS px per point.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RulerAxis {
     /// The page edge's client coordinate, CSS px.
@@ -2680,7 +2710,7 @@ pub struct RulerAxis {
 }
 
 /// The ruler model with its viewport mapping, for an application drawing its own ruler.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RulerView {
     /// The model.
@@ -2696,7 +2726,7 @@ pub struct RulerView {
 }
 
 /// A visible page and where it is.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PageRect {
     /// The page's index, from 0.
@@ -2706,7 +2736,7 @@ pub struct PageRect {
 }
 
 /// What is under a point.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct HitResult {
     /// The innermost field or content control there.
@@ -2716,7 +2746,7 @@ pub struct HitResult {
 }
 
 /// What a tooltip is about.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum TooltipKind {
     /// A hyperlink.
@@ -2733,7 +2763,7 @@ pub enum TooltipKind {
 }
 
 /// A tooltip to show over the document or its rulers.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Tooltip {
     /// What is hovered.
@@ -2747,7 +2777,7 @@ pub struct Tooltip {
 }
 
 /// What a press on an element does.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum PressAction {
     /// Checks or clears a checkbox.
@@ -2762,7 +2792,7 @@ pub enum PressAction {
 }
 
 /// The field, content control or merge-designer element under the pointer.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ElementHover {
     /// The element; `exact` is always false.
@@ -2774,7 +2804,7 @@ pub struct ElementHover {
 }
 
 /// A click on an element, after the editor's own action for it.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ElementClick {
     /// The element; `exact` is always false.
@@ -2788,7 +2818,7 @@ pub struct ElementClick {
 }
 
 /// The innermost element the selection is in or covers.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ElementSelection {
     /// The element.
@@ -2798,7 +2828,7 @@ pub struct ElementSelection {
 }
 
 /// Which hovered elements a cursor override applies to.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum CursorTarget {
     /// Elements of a kind.
@@ -2808,7 +2838,7 @@ pub enum CursorTarget {
 }
 
 /// The pointer shape to show over some elements instead of the editor's own.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CursorOverride {
     /// The elements.
@@ -2818,7 +2848,7 @@ pub struct CursorOverride {
 }
 
 /// The document's counts, computed on request.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct WordCount {
     /// Words.

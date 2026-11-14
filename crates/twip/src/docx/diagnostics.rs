@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 /// The kinds of problem a read or a write reports. Each serializes as its stable name (`unsupported-element`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "kebab-case")]
 pub enum WarningCode {
     /// An element the reader doesn't keep: it was left out, counted per element name.
@@ -72,7 +72,7 @@ impl WarningCode {
 }
 
 /// Where a warning was first found.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Location {
     /// The package part (`word/document.xml`, `word/comments.xml`, ...).
@@ -83,7 +83,7 @@ pub struct Location {
 }
 
 /// One kind of problem in one part, with how many times it happened.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Warning {
     pub code: WarningCode,

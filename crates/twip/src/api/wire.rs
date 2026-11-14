@@ -20,12 +20,12 @@ pub use examples::{Fixture, fixtures};
 pub(crate) mod value {
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-    #[derive(Serialize)]
+    #[derive(Serialize, twip_wire::Encode)]
     struct Out<'a, T> {
         value: &'a T,
     }
 
-    #[derive(Deserialize)]
+    #[derive(Deserialize, twip_wire::Decode)]
     #[serde(deny_unknown_fields)]
     struct In<T> {
         value: T,
@@ -77,6 +77,91 @@ mod tests {
             }
             assert_eq!(committed, serde_json::Value::Array((f.examples)()), "{} differs from its examples", f.name);
         }
+    }
+
+    /// twip-wire reads and writes every fixture as serde does, and accepts and refuses the same variations of them.
+    #[test]
+    fn twip_wire_matches_serde() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/wire");
+        let mut failures = Vec::new();
+        let mut checked = 0;
+        for f in fixtures() {
+            let text = std::fs::read_to_string(dir.join(format!("{}.json", f.name))).expect("fixture");
+            let serde_json::Value::Array(items) = serde_json::from_str(&text).expect("JSON") else { panic!("{}: not an array", f.name) };
+            for (i, item) in items.iter().enumerate() {
+                for (label, input) in std::iter::once(("as committed".to_string(), item.clone())).chain(variations(item)) {
+                    let c = (f.compare)(&serde_json::to_vec(&input).expect("serializes"));
+                    checked += 1;
+                    let problem = match (c.serde, c.wire) {
+                        (Ok(()), Err(e)) => Some(format!("wire refuses what serde reads: {e}")),
+                        (Err(e), Ok(())) => Some(format!("wire reads what serde refuses: {e}")),
+                        _ => c.mismatch,
+                    };
+                    if let Some(p) = problem {
+                        failures.push(format!("{}[{i}] {label}: {p}\n    {input}", f.name));
+                    }
+                }
+            }
+        }
+        // The first difference of each kind per type.
+        let mut seen = std::collections::BTreeSet::new();
+        let shown: Vec<&String> = failures
+            .iter()
+            .filter(|f| {
+                let kind =
+                    f.split(" at `").next().unwrap_or(f).split(['[', ']']).filter(|s| !s.chars().all(|c| c.is_ascii_digit())).collect::<String>();
+                seen.insert(kind)
+            })
+            .take(60)
+            .collect();
+        assert!(
+            failures.is_empty(),
+            "{} of {checked} inputs differ:\n{}",
+            failures.len(),
+            shown.iter().map(|s| s.as_str()).collect::<Vec<_>>().join("\n")
+        );
+    }
+
+    /// Variations of `v`: at each object an unknown key added and each key removed, each value replaced by one of
+    /// another kind.
+    fn variations(v: &serde_json::Value) -> Vec<(String, serde_json::Value)> {
+        use serde_json::{Value, json};
+        fn paths(v: &Value, at: String, out: &mut Vec<String>) {
+            match v {
+                Value::Object(m) => m.iter().for_each(|(k, x)| paths(x, format!("{at}/{}", k.replace('~', "~0").replace('/', "~1")), out)),
+                Value::Array(a) => a.iter().enumerate().for_each(|(i, x)| paths(x, format!("{at}/{i}"), out)),
+                _ => {}
+            }
+            out.push(at);
+        }
+        let mut all = Vec::new();
+        paths(v, String::new(), &mut all);
+        let mut out = Vec::new();
+        for p in all {
+            let node = v.pointer(&p).expect("a path into v");
+            let mut with = |label: String, f: &dyn Fn(&mut Value)| {
+                let mut c = v.clone();
+                f(c.pointer_mut(&p).expect("a path into the copy"));
+                out.push((format!("{label} at `{p}`"), c));
+            };
+            if let Value::Object(m) = node {
+                with("unknown key".into(), &|n| {
+                    n.as_object_mut().expect("object").insert("zzUnknown".into(), json!(1));
+                });
+                for k in m.keys() {
+                    with(format!("without `{k}`"), &|n| {
+                        n.as_object_mut().expect("object").remove(k);
+                    });
+                }
+            }
+            let other = match node {
+                Value::String(_) | Value::Null => json!(7),
+                Value::Array(_) => json!({}),
+                _ => json!("x"),
+            };
+            with("wrong kind".into(), &|n| *n = other.clone());
+        }
+        out
     }
 
     /// The committed files are byte for byte what the examples write, and no file is left that no type makes.

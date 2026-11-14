@@ -12,7 +12,7 @@ pub use crate::docx::font_table::{FontClass, FontDescription, FontPitch, Generic
 use crate::font::{FontSettings, Fonts, Resolution};
 
 /// A face a font file added.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FaceInfo {
     /// The family name the font file gives.
@@ -24,7 +24,7 @@ pub struct FaceInfo {
 }
 
 /// A face layout needs and the library doesn't have: what a resolver is asked for, once per family and style.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FontRequest {
     /// The family, as the document names it.
@@ -42,7 +42,7 @@ pub struct FontRequest {
 }
 
 /// A resolver's answer to a [`FontRequest`].
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 pub enum FontAnswer {
     /// The font was added (with [`FontLibrary::add`]); the family is missing still if the font doesn't have it.
@@ -69,7 +69,7 @@ pub enum FontAnswer {
 /// A draw-time replacement: `from` (optionally only its bold or italic faces) is drawn with `to`, even when `from`
 /// is in the library. The document keeps naming `from`: saved files and the formatting a session reports are
 /// unchanged. When `to` isn't in the library, `from` resolves as if there were no rule.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FontRule {
     /// The family to replace, case-insensitive.
@@ -86,7 +86,7 @@ pub struct FontRule {
 
 /// An alias: when `from` (optionally only its bold or italic faces) isn't in the library, it is drawn with `to`.
 /// Aliases chain (`A → B → C`) up to 8 hops. The document keeps naming `from`.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Alias {
     /// The family the document names, case-insensitive.
@@ -103,7 +103,7 @@ pub struct Alias {
 
 /// What an [`Alias`] draws with: another family, or the default family of a generic category
 /// ([`GenericDefaults`]).
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(untagged)]
 pub enum AliasTarget {
     /// Another family; its own aliases apply when it is missing too.
@@ -118,7 +118,7 @@ pub enum AliasTarget {
 /// The family that draws a missing font of each generic category. Opt-in: every category is unset by default, and
 /// with none set no missing font is drawn through a category. A missing family's category comes from the document's
 /// description of it (its font table), from an [`Alias`] to a category, or from a resolver's answer.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GenericDefaults {
     /// The family for missing serif fonts.
@@ -153,7 +153,7 @@ impl GenericDefaults {
 
 /// The face that draws characters no other font has, after the character-fallback families. It is never a family a
 /// document can name.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum SymbolFallback {
     /// The bundled symbol font: bullets, checkboxes, arrows, check marks, card suits and common math signs.

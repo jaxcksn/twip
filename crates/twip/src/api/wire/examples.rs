@@ -36,6 +36,32 @@ pub struct Fixture {
     pub examples: fn() -> Vec<Value>,
     /// Decodes a value as the type and encodes it again.
     pub round_trip: fn(&Value) -> Result<Value, String>,
+    /// Reads the JSON with serde and with twip-wire: whether each accepts it, and whether they agree.
+    pub compare: fn(&[u8]) -> Comparison,
+}
+
+/// What serde and twip-wire made of one input.
+pub struct Comparison {
+    /// serde's error, if it refused the input.
+    pub serde: Result<(), String>,
+    /// twip-wire's error, if it refused the input.
+    pub wire: Result<(), String>,
+    /// How they differ when both accept it: the values they read, or the bytes they write back.
+    pub mismatch: Option<String>,
+}
+
+fn compare<T: Serialize + DeserializeOwned + twip_wire::Encode + twip_wire::Decode + PartialEq + std::fmt::Debug>(json: &[u8]) -> Comparison {
+    let s = serde_json::from_slice::<T>(json).map_err(|e| e.to_string());
+    let w = twip_wire::from_slice::<T>(json).map_err(|e| e.to_string());
+    let mismatch = match (&s, &w) {
+        (Ok(a), Ok(b)) if a != b => Some(format!("read differently:\n  serde {a:?}\n  wire  {b:?}")),
+        (Ok(a), Ok(_)) => {
+            let (x, y) = (serde_json::to_vec(a).expect("serializes"), twip_wire::to_vec(a));
+            (x != y).then(|| format!("written differently:\n  serde {}\n  wire  {}", String::from_utf8_lossy(&x), String::from_utf8_lossy(&y)))
+        }
+        _ => None,
+    };
+    Comparison { serde: s.map(drop), wire: w.map(drop), mismatch }
 }
 
 fn json<T: Serialize>(v: &T) -> Value {
@@ -85,6 +111,7 @@ macro_rules! fixture {
                 v.iter().map(json).collect()
             },
             round_trip: round_trip::<$ty>,
+            compare: compare::<$ty>,
         }
     };
 }

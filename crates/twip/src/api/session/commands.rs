@@ -39,7 +39,7 @@ fn picture(data: &[u8]) -> Result<(), Error> {
 
 /// A command id's wire name (`setBold`).
 pub(super) fn id_name(id: CommandId) -> String {
-    serde_json::to_value(id).ok().and_then(|v| v.as_str().map(str::to_string)).unwrap_or_default()
+    twip_wire::Named::name(&id).to_owned()
 }
 
 impl Session {

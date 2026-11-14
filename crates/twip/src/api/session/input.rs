@@ -651,9 +651,9 @@ impl Shortcuts<'_> {
                     match &b {
                         KeyBinding::Command { id } => format!("runs {}", super::commands::id_name(*id)),
                         KeyBinding::Shortcut { id } => format!("is the shortcut {id}"),
-                        KeyBinding::Host { command } => format!("is the host key {}", serde_json::to_value(command).unwrap_or_default()),
+                        KeyBinding::Host { command } => format!("is the host key \"{}\"", twip_wire::Named::name(command)),
                     },
-                    serde_json::to_value(&b).ok(),
+                    twip_wire::from_slice::<serde_json::Value>(&twip_wire::to_vec(&b)).ok(),
                 )),
                 None if MENU_KEYS.contains(&chord) => Some(("opens the context menu".to_string(), None)),
                 None if DIALOG_KEYS.iter().any(|d| (d.0, d.1, d.2, d.3) == chord) => Some(("opens a dialog".to_string(), None)),
@@ -661,7 +661,7 @@ impl Shortcuts<'_> {
             };
             if let Some((what, binding)) = taken {
                 let mut e = Error::unavailable(format!("{k} {what}"));
-                e.details = binding.map(|b| serde_json::json!({ "binding": b }));
+                e.details = binding.map(|b| serde_json::Value::Object([("binding".to_string(), b)].into_iter().collect()));
                 return Err(e);
             }
             chords.push(chord);

@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Why an operation failed. Each serializes as its stable name (`invalid-argument`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "kebab-case")]
 pub enum ErrorCode {
     /// The session was closed.
@@ -29,7 +29,7 @@ pub enum ErrorCode {
 }
 
 /// A failed operation: its code, a message for developers, and details where the code needs them.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Error {
     /// Why it failed.
@@ -65,8 +65,7 @@ impl Error {
 
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let code = serde_json::to_value(self.code).ok();
-        write!(f, "{}: {}", code.as_ref().and_then(|c| c.as_str()).unwrap_or("error"), self.message)
+        write!(f, "{}: {}", twip_wire::Named::name(&self.code), self.message)
     }
 }
 

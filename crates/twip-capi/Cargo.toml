@@ -22,7 +22,9 @@ doc = false
 
 [dependencies]
 engine = { package = "twip", path = "../twip" }
-serde = { version = "1", features = ["derive"] }
+twip-wire = { path = "../twip-wire" }
+
+[dev-dependencies]
 serde_json = "1.0.154"
 
 # The browser module's boundary (src/web.rs); exactly the version of the wasm-bindgen CLI that makes the glue.

@@ -16,7 +16,7 @@ use crate::editing::commands::Outcome;
 
 /// What a command did: the transaction it committed (none for selection and view commands, or when nothing changed),
 /// and what it made.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Commit {
     /// The committed transaction, as `documentChanged` reported it.

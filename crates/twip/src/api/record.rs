@@ -8,7 +8,7 @@ use super::value::{CommentId, ElementId, RevisionId};
 pub use crate::docx::review::Identity;
 
 /// One committed transaction, as `documentChanged` reports it.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TransactionRecord {
     /// Unique in the session, increasing.
@@ -28,7 +28,7 @@ pub struct TransactionRecord {
 }
 
 /// What started a transaction.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase")]
 pub enum Origin {
     /// Input: keys, text, pointer, clipboard.
@@ -42,7 +42,7 @@ pub enum Origin {
 }
 
 /// Who edits: the name revisions and comments are recorded under.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Author {
     /// The display name.
@@ -85,8 +85,22 @@ impl<'de> Deserialize<'de> for Timestamp {
     }
 }
 
+impl twip_wire::Encode for Timestamp {
+    fn encode(&self, out: &mut Vec<u8>) {
+        twip_wire::write_str(out, &crate::docx::review::Timestamp::from_utc(self.0).raw);
+    }
+}
+
+impl twip_wire::Decode for Timestamp {
+    fn decode(r: &mut twip_wire::Reader<'_>) -> Result<Timestamp, twip_wire::Error> {
+        let at = r.clone();
+        let s = r.str()?;
+        crate::docx::review::Timestamp::parse(&s).utc.map(Timestamp).ok_or_else(|| at.error(format!("`{s}` is not an ISO 8601 time")))
+    }
+}
+
 /// What a transaction touched: how many paragraphs and tables, and which elements, revisions and comments.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ChangeSummary {
     /// How many paragraphs it changed.

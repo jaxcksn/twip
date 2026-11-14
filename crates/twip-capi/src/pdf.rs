@@ -4,16 +4,13 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use super::{TwipBuf, bytes, put, request, respond, to_value};
 use engine::api::error::{Error, ErrorCode};
 use engine::pdf::{Alias, FontRule, FontSet, GenericDefaults, PdfOptions};
-use serde::Deserialize;
-use serde_json::json;
-
-use super::{TwipBuf, bytes, put, request, respond, to_value};
 
 /// What a font set is built from, besides the font bytes passed alongside.
-#[derive(Deserialize, Default)]
-#[serde(rename_all = "camelCase", default, deny_unknown_fields)]
+#[derive(twip_wire::Decode, Default)]
+#[wire(rename_all = "camelCase", default, deny_unknown_fields)]
 struct FontSetOptions {
     include_system_fonts: bool,
     font_files: Vec<String>,
@@ -28,11 +25,18 @@ struct FontSetOptions {
 
 /// The PDF font set's symbol fallback: `"bundled"`, `"off"`, or `{ "font": i }`, the font bytes at index `i` (which
 /// then aren't added to the set).
-#[derive(Deserialize)]
-#[serde(untagged)]
+#[derive(twip_wire::Decode)]
+#[wire(untagged)]
 enum SymbolFallbackOption {
     Named(engine::pdf::SymbolFallback),
     Font { font: usize },
+}
+
+/// What `twip_pdf_convert` reports beside the PDF.
+#[derive(twip_wire::Encode)]
+struct ConversionMeta<'a> {
+    warnings: &'a [engine::api::warning::Warning],
+    fonts: &'a engine::pdf::FontsReport,
 }
 
 /// `f` with a panic reported as `Internal`.
@@ -198,10 +202,11 @@ pub unsafe extern "C" fn twip_pdf_convert(
             None => engine::pdf::convert(docx, fonts, &options),
         }
     });
-    let result = result.map(|conversion| {
+    let result = result.and_then(|conversion| {
+        let meta = to_value(ConversionMeta { warnings: &conversion.warnings, fonts: &conversion.fonts });
         // SAFETY: the caller's promise.
         unsafe { put(pdf, conversion.bytes) };
-        json!({ "warnings": conversion.warnings, "fonts": conversion.fonts })
+        meta
     });
     // SAFETY: the caller's promise.
     unsafe { respond(meta, result) }
