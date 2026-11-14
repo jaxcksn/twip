@@ -289,19 +289,42 @@ pub fn boxed<'s>(pieces: &[Piece], styles: &'s [PieceStyle], k: usize) -> Option
     styles[p.style as usize].run.border.as_ref()
 }
 
-/// A text border's side, in points: as laid out (`space + k × lines × width` twips, `k` = 2 with a shadow) and as
-/// drawn (in whole device pixels, each part truncated).
+/// The text border whose box goes on from piece `k` to the next: a line broken between them closes its part of the
+/// box with a side on each line.
+pub fn box_continues<'s>(pieces: &[Piece], styles: &'s [PieceStyle], k: usize) -> Option<&'s crate::docx::props::Border> {
+    let b = boxed(pieces, styles, k)?;
+    (boxed(pieces, styles, k + 1) == Some(b)).then_some(b)
+}
+
+/// A text border's side, in points: as laid out (twips) and as drawn (600-dpi device pixels).
 pub fn border_side(b: &crate::docx::props::Border) -> (f64, f64) {
-    // ponytail: styles other than double and triple count one line.
-    let lines = match b.style.as_str() {
-        "none" => 0,
-        "double" => 3,
-        "triple" => 5,
-        _ => 1,
-    } * if b.shadow { 2 } else { 1 };
-    let (line, space) = (((b.width * 8.0).round() as i64 * 5) / 2, (b.space * 20.0).round() as i64);
-    let drawn = (space * 600 / 1440 + lines * (line * 600 / 1440).max(1)) as f64 * super::units::DEVICE_PX / super::units::LU_PER_PT;
-    ((space + lines * line) as f64 / 20.0, drawn)
+    (border_units(b, 1440) as f64 / 20.0, border_units(b, 600) as f64 * super::units::DEVICE_PX / super::units::LU_PER_PT)
+}
+
+/// One side of a text border in device units at `dpi`: its space, then its lines and gaps (twice with a shadow), each
+/// part truncated to the device and at least one unit.
+fn border_units(b: &crate::docx::props::Border, dpi: i64) -> i64 {
+    let dev = |tw: i64| (tw * dpi / 1440).max(1);
+    let sz = (b.width * 8.0).round() as i64;
+    let w = dev(sz * 5 / 2);
+    let total = match b.style.as_str() {
+        "none" | "nil" => 0,
+        "double" => 3 * w,
+        "triple" => 5 * w,
+        "thinThickSmallGap" | "thickThinSmallGap" => w + 2 * dev(15),
+        "thinThickThinSmallGap" => w + 4 * dev(15),
+        "thinThickMediumGap" | "thickThinMediumGap" => w + 2 * (w / 2).max(1),
+        "thinThickThinMediumGap" => w + 4 * (w / 2).max(1),
+        "thinThickLargeGap" | "thickThinLargeGap" => dev(30) + dev(15) + w,
+        "thinThickThinLargeGap" => dev(30) + 2 * (w + dev(15)),
+        "wave" => dev(if sz == 12 { 75 } else { 60 }),
+        "doubleWave" => dev(105),
+        "dashDotStroked" => dev(60),
+        "threeDEmboss" | "threeDEngrave" => w + 2 * dev(if sz < 24 { 15 } else { 30 }),
+        _ => w,
+    };
+    let space = (b.space * 20.0).round() as i64;
+    space * dpi / 1440 + if b.shadow { 2 } else { 1 } * total
 }
 
 pub fn hp(x: f64) -> i64 {

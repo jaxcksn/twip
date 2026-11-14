@@ -145,3 +145,29 @@ fn a_complex_script_run_takes_its_complex_script_size_bold_and_font() {
     let off = x(r#"<w:sz w:val="40"/><w:szCs w:val="20"/><w:cs w:val="0"/>"#).expect("lays out");
     assert!((off - big).abs() < 1e-6, "{off} {big}");
 }
+
+#[test]
+fn a_text_borders_side_is_its_styles_lines_and_gaps() {
+    let side = |style: &str, sz: f64, space: f64, shadow: bool| {
+        super::super::text::border_side(&crate::docx::props::Border { style: style.into(), width: sz / 8.0, space, shadow, color: None })
+    };
+    let near = |a: (f64, f64), b: (f64, f64)| (a.0 - b.0).abs() < 1e-9 && (a.1 - b.1).abs() < 1e-9;
+    // Laid out in twips, drawn in 600-dpi pixels: triple 12 is five 30 tw lines, 12 px each.
+    assert!(near(side("triple", 12.0, 0.0, false), (7.5, 7.2)), "{:?}", side("triple", 12.0, 0.0, false));
+    assert!(near(side("wave", 12.0, 0.0, false), (3.75, 3.72)) && near(side("wave", 4.0, 0.0, false), (3.0, 3.0)));
+    // A shadow doubles the lines and gaps, not the space: 60 + 2 × (90 + 2 × 15) tw.
+    assert!(near(side("thickThinSmallGap", 36.0, 3.0, true), (15.0, 14.76)), "{:?}", side("thickThinSmallGap", 36.0, 3.0, true));
+}
+
+#[test]
+fn each_lines_part_of_a_broken_text_border_has_both_sides() {
+    let bdr = r#"<w:bdr w:val="single" w:sz="8" w:space="2" w:color="000000"/>"#;
+    let body = format!(r#"<w:p><w:r><w:rPr>{bdr}</w:rPr><w:t>{}</w:t></w:r></w:p>"#, "lorem ipsum ".repeat(30).trim_end());
+    let Some(c) = chars("", ARIAL_10, &body, 0) else { return };
+    let mut rows: Vec<f64> = c.iter().map(|g| g.2).collect();
+    rows.sort_by(f64::total_cmp);
+    rows.dedup_by(|a, b| (*a - *b).abs() < 0.01);
+    let first_x = |y: f64| c.iter().filter(|g| (g.2 - y).abs() < 0.01 && !g.0.is_whitespace()).map(|g| g.1).fold(f64::INFINITY, f64::min);
+    // 40 + 20 tw laid out, 16 + 8 px drawn: every line starts after a left side.
+    assert!(rows.len() > 2 && (first_x(rows[0]) - 74.88).abs() < 1e-6 && (first_x(rows[1]) - 74.88).abs() < 1e-6, "{rows:?} {}", first_x(rows[1]));
+}

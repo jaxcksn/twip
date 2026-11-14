@@ -969,6 +969,19 @@ fn resolve_tab(sp: &ShapedPara, p: &Pending, pieces: &[Piece], xs: &mut [f64], w
     x
 }
 
+/// The sides a line's part of a text border's box gets where the line breaks the box (as laid out, as drawn): before
+/// piece `start` when the box goes on from the piece before it.
+fn lead_side(sp: &ShapedPara, pieces: &[Piece], start: usize) -> (f64, f64) {
+    let at = sp.pieces.len() - pieces.len() + start;
+    at.checked_sub(1).and_then(|k| super::text::box_continues(&sp.pieces, &sp.styles, k)).map_or((0.0, 0.0), super::text::border_side)
+}
+
+/// The side the line's part of a box needs after piece `k` when the line ends there and the box goes on.
+fn open_side(sp: &ShapedPara, pieces: &[Piece], k: usize) -> f64 {
+    let at = sp.pieces.len() - pieces.len() + k;
+    super::text::box_continues(&sp.pieces, &sp.styles, at).map_or(0.0, |b| super::text::border_side(b).0)
+}
+
 // Greedy fit
 #[allow(
     clippy::too_many_arguments,
@@ -979,17 +992,55 @@ fn fit_line(
     pieces: &[Piece],
     start: usize,
     left: f64,
-    mut right: f64,
+    right: f64,
     style: &ParaStyle,
     frame: &Frame,
     limit_end: Option<usize>,
     strict: bool,
 ) -> Fit {
+    // A text border's box broken across lines: each line's part has both sides, in fitting and drawn.
+    let lead = lead_side(sp, pieces, start);
+    let mut fit = fit_greedy(sp, pieces, start, left, right, style, frame, limit_end, strict, lead);
+    if lead.1 > 0.0 && !fit.xs.is_empty() {
+        fit.xs[0] -= lead.1;
+        fit.widths[0] += lead.1;
+    }
+    let (all, o) = (&sp.pieces[..], sp.pieces.len() - pieces.len());
+    if let Some(k) = (start..fit.end.min(pieces.len())).rev().find(|&k| pieces[k].kind != Kind::Space)
+        && fit.end < pieces.len()
+        && let Some(b) = super::text::boxed(all, &sp.styles, o + k)
+        && (k..fit.end).all(|j| super::text::box_continues(all, &sp.styles, o + j).is_some())
+    {
+        let drawn = super::text::border_side(b).1;
+        fit.widths[k - start] += drawn;
+        for x in &mut fit.xs[k - start + 1..] {
+            *x += drawn;
+        }
+    }
+    fit
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the measured line-breaking helpers take the shaped paragraph, its pieces, style and frame separately, as they were ported"
+)]
+fn fit_greedy(
+    sp: &ShapedPara,
+    pieces: &[Piece],
+    start: usize,
+    left: f64,
+    mut right: f64,
+    style: &ParaStyle,
+    frame: &Frame,
+    limit_end: Option<usize>,
+    strict: bool,
+    lead: (f64, f64),
+) -> Fit {
     let mut xs: Vec<f64> = Vec::new();
     let mut ws: Vec<f64> = Vec::new();
-    let mut pen = left;
+    let mut pen = left + lead.1;
     // How much wider the pieces so far count for breaking than they are drawn.
-    let mut drift = 0.0;
+    let mut drift = lead.0 - lead.1;
     if start == 0 && style.list_jc != "left" {
         let w: f64 = pieces.iter().take_while(|p| p.kind == Kind::ListNumber).map(|p| p.width).sum();
         pen -= if style.list_jc == "right" { w } else { w / 2.0 };
@@ -1208,7 +1259,8 @@ fn fit_line(
             }
             _ => pen + p.width,
         } + drift
-            + p.break_extra;
+            + p.break_extra
+            + if p.kind == Kind::Text { open_side(sp, pieces, i) } else { 0.0 };
         let forced = limit_end.is_some();
         let limit = match &pending {
             Some(pt) if pt.kind == TabKind::Right && pt.stop > right => pt.stop,
@@ -1573,7 +1625,9 @@ fn justified_line(sp: &ShapedPara, pieces: &[Piece], from: usize, seg_end: usize
     let glyph_stretch = |p: &Piece| -> i64 { if style.jc == Jc::Distribute { glyph_stretch(sp, p).unwrap_or(0) } else { 0 } };
     let column = line_column(column);
     let mut ends: Vec<End> = Vec::new();
-    let (mut natural, mut content, mut shrink, mut stretch, mut glyphs, mut last_glyph) = (0.0, 0.0, 0, 0, 0, 0);
+    let (mut natural, mut content, mut shrink, mut stretch, mut glyphs, mut last_glyph) = (lu(lead_side(sp, pieces, from).0), 0.0, 0, 0, 0, 0);
+    // A line ending inside a text border's box closes it with a side.
+    let open = |k: usize| lu(open_side(sp, pieces, k));
     let (mut word, mut seen) = (false, false);
     // The end of the word before the spaces being read: a space that doesn't break joins the words.
     let mut word_end: Option<usize> = None;
@@ -1586,7 +1640,7 @@ fn justified_line(sp: &ShapedPara, pieces: &[Piece], from: usize, seg_end: usize
         match p.kind {
             Kind::Space => {
                 if std::mem::take(&mut word) {
-                    word_end = Some(end_word(&mut ends, k, natural, shrink, stretch + glyphs - last_glyph));
+                    word_end = Some(end_word(&mut ends, k, natural + open(k - 1), shrink, stretch + glyphs - last_glyph));
                 }
                 natural += lu(p.width) + lu(p.break_extra);
                 if seen && stretches(sp, p) {
@@ -1602,7 +1656,7 @@ fn justified_line(sp: &ShapedPara, pieces: &[Piece], from: usize, seg_end: usize
             }
             Kind::LineBreak | Kind::PageBreak | Kind::ColumnBreak => {
                 if std::mem::take(&mut word) {
-                    end_word(&mut ends, k, natural, shrink, stretch + glyphs - last_glyph);
+                    end_word(&mut ends, k, natural + open(k - 1), shrink, stretch + glyphs - last_glyph);
                 }
             }
             Kind::Anchor if !word => {}
@@ -1615,17 +1669,17 @@ fn justified_line(sp: &ShapedPara, pieces: &[Piece], from: usize, seg_end: usize
                     glyphs += last_glyph;
                 }
                 if k + 1 < seg_end && (p.soft_hyphen || points.at(pieces, k) && proofed(sp, pieces, k)) {
-                    let over = natural + lu(hyphen_width(sp, p)) - column;
+                    let over = natural + lu(hyphen_width(sp, p)) + open(k) - column;
                     ends.push(End { at: k + 1, over, shrink, stretch: stretch + glyphs, point: true });
                 } else if p.break_after && !p.soft_hyphen {
                     word = false;
-                    word_end = Some(end_word(&mut ends, k + 1, natural, shrink, stretch + glyphs - last_glyph));
+                    word_end = Some(end_word(&mut ends, k + 1, natural + open(k), shrink, stretch + glyphs - last_glyph));
                 }
             }
         }
     }
     if word {
-        end_word(&mut ends, seg_end, natural, shrink, stretch + glyphs - last_glyph);
+        end_word(&mut ends, seg_end, natural + open(seg_end - 1), shrink, stretch + glyphs - last_glyph);
     }
     if !seen {
         return LineChoice::Empty;
@@ -2454,7 +2508,7 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
             // A text border's box starts here: its left side comes before the glyphs.
             let i = o.from + ix;
             let x = match super::text::boxed(&sp.pieces, &sp.styles, i) {
-                Some(b) if i == 0 || super::text::boxed(&sp.pieces, &sp.styles, i - 1) != Some(b) => x + super::text::border_side(b).1,
+                Some(b) if ix == line.start || super::text::boxed(&sp.pieces, &sp.styles, i - 1) != Some(b) => x + super::text::border_side(b).1,
                 _ => x,
             };
             let mut gx = x;
