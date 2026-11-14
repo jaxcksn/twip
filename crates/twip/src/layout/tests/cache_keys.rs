@@ -18,7 +18,7 @@ fn omitted_key_is_caught() {
     let env = LayoutEnv::new(&doc);
     let mut cache = LayoutCache::new();
     let mut meter = Meter::unlimited();
-    let mut memos = Memos { cache: &mut cache, job: None, meter: &mut meter };
+    let mut memos = Memos { cache: &mut cache, meter: &mut meter };
     let shaped = shape(p, &ShapeSpace::default(), &fonts, &mut memos).expect("unlimited");
     OMIT_WIDTH.set(true);
     let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {

@@ -5,6 +5,8 @@ pub const LU_PER_PT: f64 = 4096.0;
 /// One pixel of the 600-dpi device Word's PDF export lays text out on, in layout units (0.12pt).
 pub const DEVICE_PX: f64 = LU_PER_PT * 72.0 / 600.0;
 
+pub(crate) const EPS: f64 = 1e-6;
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Lu(pub i32);
 

@@ -6,7 +6,7 @@ use std::rc::Rc;
 use crate::docx::fields::{Shown, format_field};
 use crate::docx::model::*;
 use crate::docx::props::VertAlign;
-use crate::docx::review::run_in;
+use crate::docx::review::{MarkupView, run_in};
 use crate::font::{Face, Fonts, Glyph};
 
 use super::cache::{CacheKey, cached};
@@ -46,12 +46,13 @@ pub struct PieceStyle {
 
 impl PartialEq for PieceStyle {
     fn eq(&self, o: &Self) -> bool {
-        let face = match (&self.face, &o.face) {
+        let PieceStyle { run, face, size, raise, squeeze_avg: _, half_em_spaces: _ } = self;
+        let face = match (face, &o.face) {
             (Some(a), Some(b)) => Rc::ptr_eq(a, b),
             (None, None) => true,
             _ => false,
         };
-        face && (Rc::ptr_eq(&self.run, &o.run) || *self.run == *o.run) && self.size == o.size && self.raise == o.raise
+        face && (Rc::ptr_eq(run, &o.run) || **run == *o.run) && *size == o.size && *raise == o.raise
     }
 }
 
@@ -830,81 +831,7 @@ impl<'a> Builder<'a> {
     }
 
     fn paragraph(&mut self, para: &Paragraph, space: &ShapeSpace) -> Result<(), Yield> {
-        if let Some(l) = &para.list {
-            let start = self.pieces.len();
-            let mut unkerned = (*l.run).clone();
-            unkerned.kern = 0.0;
-            match l.picture {
-                // A picture bullet: its image, as tall as the text.
-                Some(image) => {
-                    let size = l.run.size;
-                    let mut p = self.new_piece(Kind::Object, &l.run, None, size, 0.0);
-                    (p.width, p.ascent, p.descent) = (size, size * 0.8, 0.0);
-                    p.object = Some(Object::Picture(crate::docx::Picture {
-                        w: size,
-                        h: size * 0.8,
-                        image: Some(image),
-                        alt: Rc::from(""),
-                        lock_aspect: true,
-                        effect: [0.0; 4],
-                        shape: None,
-                        text: None,
-                    }));
-                    self.atom(p, "\u{FFFC}");
-                }
-                None => self.text(&l.text, &Rc::new(unkerned))?,
-            }
-            for p in &mut self.pieces[start..] {
-                p.kind = Kind::ListNumber;
-                p.break_after = false;
-            }
-            // A legacy level: the number moved in by its alignment, then a fixed gap to the text (no tab stop, any
-            // suffix).
-            if let Some((legacy_space, indent)) = l.legacy {
-                let lu = |pt: f64| Lu::round_half_up(pt).0 as i64;
-                let num_w = lu(self.pieces[start..].iter().map(|p| p.width).sum());
-                let width = lu((-para.para_style_in(space.view).ind_first).max(indent));
-                let (w, gap) = ((width - num_w).max(0), lu(legacy_space));
-                let r = (w - gap).max(0);
-                let (shift, gap) = match l.jc.as_str() {
-                    "center" if w >> 1 >= gap => (w >> 1, w >> 1),
-                    "center" | "right" => (r, gap),
-                    _ => (0, gap.max(w)),
-                };
-                let at = |b: &Self, w: i64| {
-                    let mut p = b.new_piece(Kind::ListNumber, &l.run, None, l.run.size, 0.0);
-                    p.width = Lu(w as i32).to_pt();
-                    p
-                };
-                let lead = at(self, shift);
-                self.atom(lead, "");
-                let lead = self.pieces.pop().expect("just pushed");
-                self.pieces.insert(start, lead);
-                let gap = at(self, gap);
-                self.atom(gap, "");
-            }
-            match l.suff.as_str() {
-                _ if l.legacy.is_some() => {}
-                "space" => {
-                    let s = self.pieces.len();
-                    self.text(" ", &l.run)?;
-                    for i in s..self.pieces.len() {
-                        let size = self.styles[self.pieces[i].style as usize].size;
-                        let p = &mut self.pieces[i];
-                        p.break_after = false;
-                        p.width = LIST_SUFFIX_SPACE_EM * size * l.run.scale / 100.0 + l.run.spacing;
-                    }
-                }
-                "nothing" => {}
-                _ => {
-                    let f = self.face(&l.run.ascii, &l.run);
-                    let mut t = self.new_piece(Kind::Tab, &l.run, f, l.run.size, 0.0);
-                    t.ascent = 0.0;
-                    t.descent = 0.0;
-                    self.atom(t, "\t");
-                }
-            }
-        }
+        self.list_label(para, space)?;
         let list_end = self.pieces.len();
         let (mut field, mut note) = (0usize, 0usize);
         let mut at: u32 = 0;
@@ -1052,21 +979,7 @@ impl<'a> Builder<'a> {
                 }
                 // A legacy check box: one character of its code run's font at the box size, as wide as that font's
                 // single line height there in whole device pixels; a break opportunity on both sides.
-                (Inline::FieldBegin { kind: Some(FieldKind::CheckBox { size, checked }), .. }, Some(run)) => {
-                    let e = size.unwrap_or(run.size);
-                    let face = self.face(&run.ascii, run);
-                    let height = face.as_ref().map_or(Lu::round_half_up(1.14 * e), |f| {
-                        Lu(Lu::from_font(f.ascent + f.leading, e, f.upem).0 + Lu::from_font(f.descent, e, f.upem).0)
-                    });
-                    let mut p = self.new_piece(Kind::Text, run, face, e, 0.0);
-                    p.width = height.device_px() as f64 * super::units::DEVICE_PX / super::units::LU_PER_PT;
-                    p.object = Some(Object::CheckBox(e, *checked));
-                    p.break_after = true;
-                    if let Some(q) = self.pieces.last_mut().filter(|q| q.kind != Kind::ListNumber) {
-                        q.break_after = true;
-                    }
-                    self.atom(p, "\u{FFFC}");
-                }
+                (Inline::FieldBegin { kind: Some(FieldKind::CheckBox { size, checked }), .. }, Some(run)) => self.check_box(size, checked, run),
                 // A legacy drop-down without entries: a blank as wide as five of its font's digit zeros, as tall as
                 // its run's text.
                 // ponytail: one unbreakable piece; whether Word breaks inside the blank is unknown.
@@ -1088,82 +1001,14 @@ impl<'a> Builder<'a> {
                 }
                 // A ruby: one object as wide as the wider of its base and annotation, as tall as the base or the
                 // annotation raised over it, as deep as the base.
-                (Inline::Ruby(r, _), Some(run)) if r.align != 5 || space.vertical => {
-                    let (base, text) = (self.sub(&r.base, view)?, self.sub(&r.text, view)?);
-                    let wo = [&base, &text].map(|s| s.pieces.iter().map(|q| q.width).sum::<f64>()).into_iter().fold(0.0, f64::max);
-                    let face = self.face(&run.ascii, run);
-                    let mut p = self.new_piece(Kind::Text, run, face, run.size, 0.0);
-                    p.width = wo;
-                    let top = |s: &ShapedPara, f: fn(&Piece) -> f64| s.pieces.iter().map(f).fold(0.0, f64::max);
-                    p.ascent = top(&base, |q| q.ascent).max(r.raise + top(&text, |q| q.ascent));
-                    p.descent = top(&base, |q| q.descent);
-                    let (base_x, text_x) = (ruby_x(&base, wo, r.align), ruby_x(&text, wo, r.align));
-                    let shape = RubyShape { base, text, base_x, text_x, raise: r.raise, turned: None, narrow: 0.0, at_least_descent: p.descent };
-                    p.object = Some(Object::Ruby(Rc::new(shape)));
-                    self.atom(p, "\u{FFFC}");
-                }
+                (Inline::Ruby(r, _), Some(run)) if r.align != 5 || space.vertical => self.ruby_piece(r, run, view)?,
                 // `rightVertical` in horizontal text: the annotation turned a quarter clockwise after the base, centred
                 // on the base text's middle. Each base character is the ruby run's size in half-points (in layout
                 // units) narrower, down to no advance, its own character spacing ignored; the object adds the
                 // annotation's height as a centred vertical line and the ruby run's character spacing; the line is as
                 // tall as the annotation is long, about its middle. The annotation is one font at one size: every run
                 // at `w:hps`, in the first run's ascii font, not bold, in its own colour.
-                (Inline::Ruby(r, _), Some(run)) => {
-                    let first = r.text.first().map(|(_, f)| f.clone());
-                    let parts: Vec<(String, Run)> = r
-                        .text
-                        .iter()
-                        .map(|(t, own)| {
-                            let Some(f) = &first else { return (t.clone(), own.clone()) };
-                            let mut s = (**own).clone();
-                            (s.ascii, s.h_ansi, s.bold) = (f.ascii.clone(), f.ascii.clone(), false);
-                            s.categories[..2].fill(f.categories[0]);
-                            s.size = r.size.unwrap_or(s.size);
-                            // ponytail: East Asian characters the first run's font lacks keep their run's East Asian
-                            // font (Word falls back to a font of its own); a fallback font if it matters.
-                            let face = self.face(&f.ascii, f);
-                            if face.is_some_and(|face| t.chars().filter(|&c| is_east_asian(c as u32)).all(|c| face.has_glyph(c))) {
-                                (s.east_asia, s.categories[2]) = (f.ascii.clone(), f.categories[0]);
-                            }
-                            (t.clone(), Rc::new(s))
-                        })
-                        .collect();
-                    let (base, text) = (self.sub(&r.base, view)?, self.sub(&parts, view)?);
-                    let face = self.face(&run.ascii, run);
-                    let mut p = self.new_piece(Kind::Text, run, face, run.size, 0.0);
-                    let top = |s: &ShapedPara, f: fn(&Piece) -> f64| s.pieces.iter().map(f).fold(0.0, f64::max);
-                    let narrow = super::units::Lu((run.size * 2.0 * 204.8).round() as i32).to_pt();
-                    let mut base_x = Vec::with_capacity(base.pieces.len());
-                    let mut x = 0.0;
-                    for (i, q) in base.pieces.iter().enumerate() {
-                        base_x.push(x);
-                        let st = &base.styles[q.style as usize];
-                        let scale = st.face.as_ref().map_or(0.0, |f| f.scale(st.size) * st.run.scale / 100.0);
-                        x += base.glyphs(i).map(|(_, a, _)| (a * scale - narrow).max(0.0)).sum::<f64>();
-                    }
-                    let len = text.pieces.iter().map(|q| q.width).sum::<f64>();
-                    // The annotation's centred ascent and descent, and its glyphs' drop below its reference baseline.
-                    let (mut up, mut down, mut drop) = (0.0f64, 0.0f64, None);
-                    for q in text.pieces.iter().filter(|q| q.kind == Kind::Text) {
-                        let st = &text.styles[q.style as usize];
-                        let Some(f) = &st.face else { continue };
-                        let (e, c) =
-                            (super::vertical::extra(Some(f), st.size), super::line::align_drop(f, st.size, super::line::Align::Center, true));
-                        (up, down) = (up.max(q.ascent + e - c), down.max(q.descent + e + c));
-                        // ponytail: one drop for the whole annotation (its first run's), per-run drops if mixed fonts matter.
-                        drop.get_or_insert(c);
-                    }
-                    p.width = x + up + down + run.spacing;
-                    p.ascent = top(&base, |q| q.ascent).max(len / 2.0);
-                    p.descent = top(&base, |q| q.descent).max(len - p.ascent);
-                    let at_least_descent = top(&base, |q| q.descent).max(len / 2.0);
-                    let delta = top(&base, |q| q.ascent) - top(&base, |q| q.descent);
-                    let start = [x + down - drop.unwrap_or(0.0), -(delta + len) / 2.0];
-                    let text_x = ruby_x(&text, len, 3);
-                    let shape = RubyShape { base, text, base_x, text_x, raise: 0.0, turned: Some(start), narrow, at_least_descent };
-                    p.object = Some(Object::Ruby(Rc::new(shape)));
-                    self.atom(p, "\u{FFFC}");
-                }
+                (Inline::Ruby(r, _), Some(run)) => self.turned_ruby_piece(r, run, view)?,
                 (Inline::DateBlock(_, text, _), Some(run)) => self.text(text, run)?,
                 (Inline::Float(f, _), Some(_)) if space.hide == Some(f.id) || f.hidden() => {}
                 // A note's anchor: an inline object where it stands.
@@ -1224,6 +1069,188 @@ impl<'a> Builder<'a> {
             at += units;
         }
         self.flush_text(&mut pend, &mut pend_runs, &mut pend_units)?;
+        self.restart_after_break(para, space, list_end);
+        // Compat 15: table-cell paragraphs, and paragraphs of 4000 characters or more with the mark, fit their regions
+        // as compat 12.
+        let long = para.inlines.iter().map(|i| i.units()).sum::<usize>() + 1 >= 4000;
+        self.fit_text(space.stale_fit && !space.in_cell && !long, space.first_line, space.unfitted);
+        self.space_rules(space);
+        Ok(())
+    }
+
+    // List label
+    fn list_label(&mut self, para: &Paragraph, space: &ShapeSpace) -> Result<(), Yield> {
+        if let Some(l) = &para.list {
+            let start = self.pieces.len();
+            let mut unkerned = (*l.run).clone();
+            unkerned.kern = 0.0;
+            match l.picture {
+                // A picture bullet: its image, as tall as the text.
+                Some(image) => {
+                    let size = l.run.size;
+                    let mut p = self.new_piece(Kind::Object, &l.run, None, size, 0.0);
+                    (p.width, p.ascent, p.descent) = (size, size * 0.8, 0.0);
+                    p.object = Some(Object::Picture(crate::docx::Picture {
+                        w: size,
+                        h: size * 0.8,
+                        image: Some(image),
+                        alt: Rc::from(""),
+                        lock_aspect: true,
+                        effect: [0.0; 4],
+                        shape: None,
+                        text: None,
+                    }));
+                    self.atom(p, "\u{FFFC}");
+                }
+                None => self.text(&l.text, &Rc::new(unkerned))?,
+            }
+            for p in &mut self.pieces[start..] {
+                p.kind = Kind::ListNumber;
+                p.break_after = false;
+            }
+            // A legacy level: the number moved in by its alignment, then a fixed gap to the text (no tab stop, any
+            // suffix).
+            if let Some((legacy_space, indent)) = l.legacy {
+                let lu = |pt: f64| Lu::round_half_up(pt).0 as i64;
+                let num_w = lu(self.pieces[start..].iter().map(|p| p.width).sum());
+                let width = lu((-para.para_style_in(space.view).ind_first).max(indent));
+                let (w, gap) = ((width - num_w).max(0), lu(legacy_space));
+                let r = (w - gap).max(0);
+                let (shift, gap) = match l.jc.as_str() {
+                    "center" if w >> 1 >= gap => (w >> 1, w >> 1),
+                    "center" | "right" => (r, gap),
+                    _ => (0, gap.max(w)),
+                };
+                let at = |b: &Self, w: i64| {
+                    let mut p = b.new_piece(Kind::ListNumber, &l.run, None, l.run.size, 0.0);
+                    p.width = Lu(w as i32).to_pt();
+                    p
+                };
+                let lead = at(self, shift);
+                self.atom(lead, "");
+                let lead = self.pieces.pop().expect("just pushed");
+                self.pieces.insert(start, lead);
+                let gap = at(self, gap);
+                self.atom(gap, "");
+            }
+            match l.suff.as_str() {
+                _ if l.legacy.is_some() => {}
+                "space" => {
+                    let s = self.pieces.len();
+                    self.text(" ", &l.run)?;
+                    for i in s..self.pieces.len() {
+                        let size = self.styles[self.pieces[i].style as usize].size;
+                        let p = &mut self.pieces[i];
+                        p.break_after = false;
+                        p.width = LIST_SUFFIX_SPACE_EM * size * l.run.scale / 100.0 + l.run.spacing;
+                    }
+                }
+                "nothing" => {}
+                _ => {
+                    let f = self.face(&l.run.ascii, &l.run);
+                    let mut t = self.new_piece(Kind::Tab, &l.run, f, l.run.size, 0.0);
+                    t.ascent = 0.0;
+                    t.descent = 0.0;
+                    self.atom(t, "\t");
+                }
+            }
+        }
+        Ok(())
+    }
+
+    // A legacy check box
+    fn check_box(&mut self, size: &Option<f64>, checked: &bool, run: &Run) {
+        let e = size.unwrap_or(run.size);
+        let face = self.face(&run.ascii, run);
+        let height = face
+            .as_ref()
+            .map_or(Lu::round_half_up(1.14 * e), |f| Lu(Lu::from_font(f.ascent + f.leading, e, f.upem).0 + Lu::from_font(f.descent, e, f.upem).0));
+        let mut p = self.new_piece(Kind::Text, run, face, e, 0.0);
+        p.width = height.device_px() as f64 * super::units::DEVICE_PX / super::units::LU_PER_PT;
+        p.object = Some(Object::CheckBox(e, *checked));
+        p.break_after = true;
+        if let Some(q) = self.pieces.last_mut().filter(|q| q.kind != Kind::ListNumber) {
+            q.break_after = true;
+        }
+        self.atom(p, "\u{FFFC}");
+    }
+
+    // A ruby
+    fn ruby_piece(&mut self, r: &Ruby, run: &Run, view: MarkupView) -> Result<(), Yield> {
+        let (base, text) = (self.sub(&r.base, view)?, self.sub(&r.text, view)?);
+        let wo = [&base, &text].map(|s| s.pieces.iter().map(|q| q.width).sum::<f64>()).into_iter().fold(0.0, f64::max);
+        let face = self.face(&run.ascii, run);
+        let mut p = self.new_piece(Kind::Text, run, face, run.size, 0.0);
+        p.width = wo;
+        let top = |s: &ShapedPara, f: fn(&Piece) -> f64| s.pieces.iter().map(f).fold(0.0, f64::max);
+        p.ascent = top(&base, |q| q.ascent).max(r.raise + top(&text, |q| q.ascent));
+        p.descent = top(&base, |q| q.descent);
+        let (base_x, text_x) = (ruby_x(&base, wo, r.align), ruby_x(&text, wo, r.align));
+        let shape = RubyShape { base, text, base_x, text_x, raise: r.raise, turned: None, narrow: 0.0, at_least_descent: p.descent };
+        p.object = Some(Object::Ruby(Rc::new(shape)));
+        self.atom(p, "\u{FFFC}");
+        Ok(())
+    }
+
+    // A `rightVertical` ruby in horizontal text
+    fn turned_ruby_piece(&mut self, r: &Ruby, run: &Run, view: MarkupView) -> Result<(), Yield> {
+        let first = r.text.first().map(|(_, f)| f.clone());
+        let parts: Vec<(String, Run)> = r
+            .text
+            .iter()
+            .map(|(t, own)| {
+                let Some(f) = &first else { return (t.clone(), own.clone()) };
+                let mut s = (**own).clone();
+                (s.ascii, s.h_ansi, s.bold) = (f.ascii.clone(), f.ascii.clone(), false);
+                s.categories[..2].fill(f.categories[0]);
+                s.size = r.size.unwrap_or(s.size);
+                // ponytail: East Asian characters the first run's font lacks keep their run's East Asian
+                // font (Word falls back to a font of its own); a fallback font if it matters.
+                let face = self.face(&f.ascii, f);
+                if face.is_some_and(|face| t.chars().filter(|&c| is_east_asian(c as u32)).all(|c| face.has_glyph(c))) {
+                    (s.east_asia, s.categories[2]) = (f.ascii.clone(), f.categories[0]);
+                }
+                (t.clone(), Rc::new(s))
+            })
+            .collect();
+        let (base, text) = (self.sub(&r.base, view)?, self.sub(&parts, view)?);
+        let face = self.face(&run.ascii, run);
+        let mut p = self.new_piece(Kind::Text, run, face, run.size, 0.0);
+        let top = |s: &ShapedPara, f: fn(&Piece) -> f64| s.pieces.iter().map(f).fold(0.0, f64::max);
+        let narrow = super::units::Lu((run.size * 2.0 * 204.8).round() as i32).to_pt();
+        let mut base_x = Vec::with_capacity(base.pieces.len());
+        let mut x = 0.0;
+        for (i, q) in base.pieces.iter().enumerate() {
+            base_x.push(x);
+            let st = &base.styles[q.style as usize];
+            let scale = st.face.as_ref().map_or(0.0, |f| f.scale(st.size) * st.run.scale / 100.0);
+            x += base.glyphs(i).map(|(_, a, _)| (a * scale - narrow).max(0.0)).sum::<f64>();
+        }
+        let len = text.pieces.iter().map(|q| q.width).sum::<f64>();
+        // The annotation's centred ascent and descent, and its glyphs' drop below its reference baseline.
+        let (mut up, mut down, mut drop) = (0.0f64, 0.0f64, None);
+        for q in text.pieces.iter().filter(|q| q.kind == Kind::Text) {
+            let st = &text.styles[q.style as usize];
+            let Some(f) = &st.face else { continue };
+            let (e, c) = (super::vertical::extra(Some(f), st.size), super::line::align_drop(f, st.size, super::line::Align::Center, true));
+            (up, down) = (up.max(q.ascent + e - c), down.max(q.descent + e + c));
+            // ponytail: one drop for the whole annotation (its first run's), per-run drops if mixed fonts matter.
+            drop.get_or_insert(c);
+        }
+        p.width = x + up + down + run.spacing;
+        p.ascent = top(&base, |q| q.ascent).max(len / 2.0);
+        p.descent = top(&base, |q| q.descent).max(len - p.ascent);
+        let at_least_descent = top(&base, |q| q.descent).max(len / 2.0);
+        let delta = top(&base, |q| q.ascent) - top(&base, |q| q.descent);
+        let start = [x + down - drop.unwrap_or(0.0), -(delta + len) / 2.0];
+        let text_x = ruby_x(&text, len, 3);
+        let shape = RubyShape { base, text, base_x, text_x, raise: 0.0, turned: Some(start), narrow, at_least_descent };
+        p.object = Some(Object::Ruby(Rc::new(shape)));
+        self.atom(p, "\u{FFFC}");
+        Ok(())
+    }
+
+    fn restart_after_break(&mut self, para: &Paragraph, space: &ShapeSpace, list_end: usize) {
         // A paragraph whose first content is a page or column break starts again after it: the list number goes
         // with the text that follows.
         if list_end > 0 && continues_after_break(para, space) {
@@ -1236,10 +1263,10 @@ impl<'a> Builder<'a> {
             (b.text, b.glyphs) = ((self.pieces[0].text.0, self.pieces[0].text.0), (self.pieces[0].glyphs.0, self.pieces[0].glyphs.0));
             self.pieces.insert(0, b);
         }
-        // Compat 15: table-cell paragraphs, and paragraphs of 4000 characters or more with the mark, fit their regions
-        // as compat 12.
-        let long = para.inlines.iter().map(|i| i.units()).sum::<usize>() + 1 >= 4000;
-        self.fit_text(space.stale_fit && !space.in_cell && !long, space.first_line, space.unfitted);
+    }
+
+    // Space balancing and compression
+    fn space_rules(&mut self, space: &ShapeSpace) {
         let balanced =
             space.balance.as_ref().is_some_and(|dd| dd.is_empty() || self.fonts.face(dd, None, false, false).is_some_and(|f| f.east_asian));
         if balanced {
@@ -1267,7 +1294,6 @@ impl<'a> Builder<'a> {
                 self.styles[s].squeeze_avg = own.map_or(0.0, |f| f.avg_width);
             }
         }
-        Ok(())
     }
 
     /// Each fitted region (consecutive text whose runs have `w:fitText` with one id) made as wide as its first run's
@@ -1778,7 +1804,7 @@ pub fn shape_space(
             }
             Inline::NoteRef { kind, id, .. } => space.notes.push(notes.get(&(*kind, *id)).cloned().unwrap_or_default()),
             Inline::NoteMark(kind, id, _) => {
-                let mark = notes.get(&super::document::mark_key(*kind, *id));
+                let mark = notes.get(&super::node::mark_key(*kind, *id));
                 space.notes.push(mark.or_else(|| notes.get(&(*kind, *id))).cloned().unwrap_or_default())
             }
             _ => {}
@@ -1982,7 +2008,7 @@ mod tests {
         let inserted = Rc::new(RunStyle { rev: RunRevisions { ins: Some(mark), ..Default::default() }, ..(*base).clone() });
         p.inlines = vec![Inline::Text("ab".into(), base.clone()), Inline::Text("cd".into(), inserted), Inline::Text("ef".into(), base)];
         let (fonts, mut cache, mut meter) = (fonts(), LayoutCache::new(), Meter::unlimited());
-        let mut memos = Memos { cache: &mut cache, job: None, meter: &mut meter };
+        let mut memos = Memos { cache: &mut cache, meter: &mut meter };
         crate::prof::take();
         let shaped = shape_uncached(&p, &ShapeSpace::default(), &fonts, &mut memos).expect("unlimited");
         let stretches = crate::prof::take().iter().find(|t| t.0 == "stretch").map_or(0, |t| t.2);

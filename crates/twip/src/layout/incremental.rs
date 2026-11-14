@@ -314,7 +314,7 @@ fn row_restart(
     let story = super::story::StoryEnv { ctx, fields: &fields, notes };
     cache.store_tables = false;
     let mut meter = super::job::Meter::unlimited();
-    let mut memos = Memos { cache, job: None, meter: &mut meter };
+    let mut memos = Memos { cache, meter: &mut meter };
     let new = match latest.filter(|l| (l.0, l.1, l.2) == (span.section, span.first, width.to_bits())) {
         Some(l) => super::table::relayout_rows(table, width, &story, prev, &l.3, span.first_row.min(row)..=row, &mut memos),
         None => super::table::layout(table, width, &story, prev, false, &mut memos),
@@ -329,11 +329,7 @@ fn row_restart(
     if row < old.rows.iter().take_while(|r| r.header).count() {
         return None;
     }
-    let same = old.cols == new.cols
-        && old.x0 == new.x0
-        && old.rows.len() == new.rows.len()
-        && old.rows[..row].iter().zip(&new.rows[..row]).all(|(a, b)| a.height == b.height && a.top_border == b.top_border);
-    same.then_some(p)
+    old.keeps_rows_above(&new, row).then_some(p)
 }
 
 fn start_key(t: &PageToken) -> (usize, usize, u8, usize) {
@@ -402,7 +398,7 @@ fn references(blocks: &[Block], notes: &std::collections::HashSet<(NoteKind, i64
     blocks.iter().any(|b| match b {
         Block::Para(p) => p.inlines.iter().any(|i| match i {
             Inline::NoteRef { kind, id, .. } => notes.contains(&(*kind, *id)),
-            Inline::NoteMark(kind, id, _) => notes.contains(&super::document::mark_key(*kind, *id)),
+            Inline::NoteMark(kind, id, _) => notes.contains(&super::node::mark_key(*kind, *id)),
             _ => false,
         }),
         Block::Table(t) => t.rows.iter().any(|r| r.cells.iter().any(|c| references(&c.blocks, notes))),
@@ -466,11 +462,7 @@ impl Reuse {
             if let Some(r) = in_table {
                 let (Some(old), Some(Block::Table(table))) = (&body.start_table, doc.sections[si].blocks.get(token.flow.block)) else { continue };
                 let Some(new) = run.memo.table(table, space.columns[0].width) else { continue };
-                let same = old.cols == new.cols
-                    && old.x0 == new.x0
-                    && old.bottom_border == new.bottom_border
-                    && old.rows.len() == new.rows.len()
-                    && old.rows.get(r..) == new.rows.get(r..)
+                let same = old.same_rows_from(&new, r)
                     && new.rows.get(r).is_some_and(|row| row.cells.iter().all(|c| c.v_merge != VMerge::Continue))
                     && self.span.and_then(|s| s.row).is_some_and(|e| e >= new.rows.iter().take_while(|row| row.header).count())
                     && old.rows.iter().take_while(|row| row.header).eq(new.rows.iter().take_while(|row| row.header));
@@ -717,8 +709,8 @@ impl DocumentLayout {
         }
         let same_notes = span.is_none_or(|s| {
             let old = &b.shadow[s.section][s.first..s.old_end];
-            old.iter().all(|o| o.as_ref().is_some_and(|x| !super::document::has_note_refs(x)))
-                && !doc.sections[s.section].blocks[s.first..s.new_end].iter().any(super::document::has_note_refs)
+            old.iter().all(|o| o.as_ref().is_some_and(|x| !super::node::has_note_refs(x)))
+                && !doc.sections[s.section].blocks[s.first..s.new_end].iter().any(super::node::has_note_refs)
         });
         let mut job = if same_notes { LayoutJob::with_notes(rev, b.notes.clone(), fields) } else { new_job() };
         if b.extras.endnote_order != job.endnotes() {

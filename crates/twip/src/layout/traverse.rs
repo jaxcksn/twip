@@ -2,7 +2,7 @@
 
 use crate::docx::NoteKind;
 
-use super::fragment::{BoxFragment, BoxKind, CellPlace, Child, GlyphRun, Item, LineFragment, PageChild, PageFragment, PlacedLine, RowFragment};
+use super::fragment::{BoxFragment, BoxKind, CellPlace, Child, Item, LineFragment, PageChild, PageFragment, PlacedLine, RowFragment, translated};
 use super::ids::{FloatId, ParaId, TableId, Unit};
 
 #[derive(Clone, Copy)]
@@ -17,31 +17,6 @@ pub struct Placed<'a> {
 impl Placed<'_> {
     pub fn absolute(&self) -> Item {
         translated(self.item, self.dx, self.dy)
-    }
-}
-
-pub fn translated(item: &Item, dx: f64, dy: f64) -> Item {
-    let r4 = |r: &[f64; 4]| [r[0] + dx, r[1] + dy, r[2] + dx, r[3] + dy];
-    match item {
-        Item::Glyphs(r) => Item::Glyphs(GlyphRun {
-            face: r.face.clone(),
-            size: r.size,
-            baseline: r.baseline + dy,
-            x: r.x + dx,
-            glyphs: r.glyphs.iter().map(|&(g, x)| (g, x + dx)).collect(),
-            chars: r.chars.iter().map(|&(c, x, u)| (c, x + dx, u)).collect(),
-            colour: r.colour,
-            para: r.para,
-        }),
-        Item::Rect { rect, colour } => Item::rect(r4(rect), *colour),
-        Item::Image { rect, key } => Item::Image { rect: r4(rect), key: *key },
-        Item::Gridline { line } => Item::Gridline { line: r4(line) },
-        Item::Shape(s) => Item::Shape(std::rc::Rc::new(s.moved(dx, dy))),
-        Item::Turned(t) => Item::Turned(std::rc::Rc::new(super::fragment::Turned {
-            centre: [t.centre[0] + dx, t.centre[1] + dy],
-            deg: t.deg,
-            items: t.items.iter().map(|i| translated(i, dx, dy)).collect(),
-        })),
     }
 }
 

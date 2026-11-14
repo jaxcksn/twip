@@ -25,7 +25,8 @@ pub struct Expansion {
 
 impl PartialEq for Expansion {
     fn eq(&self, o: &Self) -> bool {
-        self.field == o.field && self.part == o.part && self.size == o.size && Rc::ptr_eq(&self.content, &o.content)
+        let Expansion { field, part, size, content } = self;
+        *field == o.field && *part == o.part && *size == o.size && Rc::ptr_eq(content, &o.content)
     }
 }
 
@@ -38,7 +39,8 @@ pub struct Expansions {
 
 impl PartialEq for Expansions {
     fn eq(&self, o: &Self) -> bool {
-        self.revision == o.revision
+        let Expansions { paras: _, rows: _, revision } = self;
+        *revision == o.revision
     }
 }
 
@@ -47,7 +49,7 @@ pub fn lay(doc: &Document, blocks: &[Block], width: f64, fonts: &Fonts, nested: 
     let ctx = LayoutCtx { fonts, env: &env, preview: None, expansions: nested };
     let mut cache = LayoutCache::default();
     let mut meter = Meter::unlimited();
-    let mut memos = Memos { cache: &mut cache, job: None, meter: &mut meter };
+    let mut memos = Memos { cache: &mut cache, meter: &mut meter };
     let (fields, notes) = (FieldValues::default(), HashMap::new());
     let senv = StoryEnv { ctx, fields: &fields, notes: &notes };
     let refs: Vec<&Block> = blocks.iter().collect();

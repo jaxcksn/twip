@@ -2,24 +2,26 @@
 
 use std::path::Path;
 
-const FILES: [&str; 9] = ["text.rs", "line.rs", "flow.rs", "table.rs", "story.rs", "page.rs", "document.rs", "node.rs", "incremental.rs"];
+use super::layout_sources;
+
+const MODULES: [&str; 9] = ["text", "line", "flow", "table", "story", "page", "document", "node", "incremental"];
 
 const FIELDS: [&str; 8] = ["p.style", "para.style", "src.style", "n.style", "p.mark", "para.mark", "src.mark", "t.grid"];
 
 const PAGE: [&str; 11] = ["page_w", "page_h", "top", "bottom", "left", "right", "header", "footer", "gutter", "columns", "title_pg"];
 
 const ALLOWED: [(&str, &str, &str); 11] = [
-    ("text.rs", "self.style_index(p.style)", "a piece's style index"),
-    ("text.rs", "self.east_asia_face(p.style)", "a piece's style index"),
-    ("table.rs", "grid == t.grid.as_slice()", "`in_view` compares the view's grid with the model's"),
-    ("document.rs", "let mut st = (*p.style).clone();", "the endnote separator's own copy, made before layout"),
-    ("document.rs", "p.style = Rc::new(st);", "the endnote separator's own copy, made before layout"),
-    ("document.rs", "p.style.style_id.as_deref()", "STYLEREF looks paragraphs up by their style as it is"),
-    ("table.rs", "Some((ParaId(p.id), p.mark.size))", "the caret height at a cell's closing paragraph, for editing"),
-    ("table.rs", "*grid == t.grid", "the table cache compares the model"),
-    ("table.rs", "t.grid.len().max(", "the shown table's grid (`in_view` applied `table_grid_in`)"),
-    ("table.rs", "t.grid.get(i)", "the shown table's grid (`in_view` applied `table_grid_in`)"),
-    ("table.rs", "t.grid = bounds.windows(2)", "a layout run's own grid, built only when the table has no grid change"),
+    ("text", "self.style_index(p.style)", "a piece's style index"),
+    ("text", "self.east_asia_face(p.style)", "a piece's style index"),
+    ("table", "grid == t.grid.as_slice()", "`in_view` compares the view's grid with the model's"),
+    ("document", "let mut st = (*p.style).clone();", "the endnote separator's own copy, made before layout"),
+    ("document", "p.style = Rc::new(st);", "the endnote separator's own copy, made before layout"),
+    ("document", "p.style.style_id.as_deref()", "STYLEREF looks paragraphs up by their style as it is"),
+    ("table", "Some((ParaId(p.id), p.mark.size))", "the caret height at a cell's closing paragraph, for editing"),
+    ("table", "*grid == t.grid", "the table cache compares the model"),
+    ("table", "t.grid.len().max(", "the shown table's grid (`in_view` applied `table_grid_in`)"),
+    ("table", "t.grid.get(i)", "the shown table's grid (`in_view` applied `table_grid_in`)"),
+    ("table", "t.grid = bounds.windows(2)", "a layout run's own grid, built only when the table has no grid change"),
 ];
 
 fn ident(c: Option<char>) -> bool {
@@ -50,21 +52,25 @@ fn reads(code: &str) -> Vec<String> {
 
 #[test]
 fn layout_reads_properties_through_the_view() {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/layout");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src").join("layout");
     let mut found = Vec::new();
-    for file in FILES {
-        let text = std::fs::read_to_string(dir.join(file)).expect("a layout source");
+    let mut seen = Vec::new();
+    for (path, text) in layout_sources() {
+        let module = path.strip_prefix(&root).ok().and_then(|p| p.components().next()).and_then(|c| c.as_os_str().to_str());
+        let Some(module) = module.map(|m| m.strip_suffix(".rs").unwrap_or(m)).filter(|m| MODULES.contains(m)) else { continue };
+        seen.push(module.to_string());
         let code = text.split("#[cfg(test)]\nmod tests").next().unwrap_or(&text);
         for (n, line) in code.lines().enumerate() {
             let code = line.split("//").next().unwrap_or("");
-            if ALLOWED.iter().any(|(f, l, _)| *f == file && code.contains(l)) {
+            if ALLOWED.iter().any(|(m, l, _)| *m == module && code.contains(l)) {
                 continue;
             }
             for r in reads(code) {
-                found.push(format!("{file}:{}: {r} ({})", n + 1, line.trim()));
+                found.push(format!("{}:{}: {r} ({})", path.display(), n + 1, line.trim()));
             }
         }
     }
+    assert!(MODULES.iter().all(|m| seen.iter().any(|s| s == m)), "a layout module not found: {seen:?}");
     assert!(found.is_empty(), "direct property reads where the view's accessor is needed:\n{}", found.join("\n"));
 }
 

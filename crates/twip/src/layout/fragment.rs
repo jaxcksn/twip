@@ -8,6 +8,7 @@ use crate::font::Face;
 use crate::docx::VMerge;
 
 use super::ids::{FloatId, FragmentId, ParaId, TableId, Unit};
+use super::units::EPS;
 
 #[derive(Clone, Debug)]
 pub struct GlyphRun {
@@ -303,5 +304,82 @@ impl BoxBuilder {
 
     pub fn finish(self, kind: BoxKind, offset: (f64, f64), size: (f64, f64)) -> BoxFragment {
         BoxFragment { kind, id: None, offset, size, children: self.children.into_boxed_slice() }
+    }
+}
+
+pub fn translated(item: &Item, dx: f64, dy: f64) -> Item {
+    let r4 = |r: &[f64; 4]| [r[0] + dx, r[1] + dy, r[2] + dx, r[3] + dy];
+    match item {
+        Item::Glyphs(r) => Item::Glyphs(GlyphRun {
+            face: r.face.clone(),
+            size: r.size,
+            baseline: r.baseline + dy,
+            x: r.x + dx,
+            glyphs: r.glyphs.iter().map(|&(g, x)| (g, x + dx)).collect(),
+            chars: r.chars.iter().map(|&(c, x, u)| (c, x + dx, u)).collect(),
+            colour: r.colour,
+            para: r.para,
+        }),
+        Item::Rect { rect, colour } => Item::rect(r4(rect), *colour),
+        Item::Image { rect, key } => Item::Image { rect: r4(rect), key: *key },
+        Item::Gridline { line } => Item::Gridline { line: r4(line) },
+        Item::Shape(s) => Item::Shape(std::rc::Rc::new(s.moved(dx, dy))),
+        Item::Turned(t) => Item::Turned(std::rc::Rc::new(super::fragment::Turned {
+            centre: [t.centre[0] + dx, t.centre[1] + dy],
+            deg: t.deg,
+            items: t.items.iter().map(|i| translated(i, dx, dy)).collect(),
+        })),
+    }
+}
+
+fn item_down(it: &Item, dy: f64) -> Item {
+    translated(it, 0.0, dy)
+}
+
+pub(crate) fn row_down(r: &RowFragment, dy: f64) -> RowFragment {
+    RowFragment {
+        row: r.row,
+        rect: [r.rect[0], r.rect[1] + dy, r.rect[2], r.rect[3] + dy],
+        top: r.top + dy,
+        edges: r.edges.clone(),
+        background: r.background.iter().map(|i| item_down(i, dy)).collect(),
+        cells: r
+            .cells
+            .iter()
+            .map(|c| super::fragment::CellFragment {
+                cell: c.cell,
+                content: c.content.iter().map(|x| child_down(x, &|_| dy)).collect(),
+                place: c.place.moved_down(dy),
+            })
+            .collect(),
+        borders: r.borders.iter().map(|i| item_down(i, dy)).collect(),
+        repeat: r.repeat,
+        changed: r.changed,
+    }
+}
+
+pub(super) fn child_down(c: &Child, shift: &dyn Fn(f64) -> f64) -> Child {
+    match c {
+        Child::Para(p) => Child::Para(super::fragment::ParaFragment {
+            para: p.para,
+            lines: p.lines.iter().map(|l| PlacedLine { x: l.x, y: l.y + shift(l.y + EPS), line: l.line.clone() }).collect(),
+            line_numbers: p.line_numbers.iter().map(|g| g.iter().map(|i| item_down(i, shift(i.top()))).collect()).collect(),
+        }),
+        Child::Line { para, placed } => {
+            Child::Line { para: *para, placed: PlacedLine { x: placed.x, y: placed.y + shift(placed.y + EPS), line: placed.line.clone() } }
+        }
+        Child::Table(t) => Child::Table(super::fragment::TableFragment {
+            table: t.table,
+            rows: t.rows.iter().map(|r| row_down(r, shift(r.rect[1] + EPS))).collect(),
+        }),
+        Child::Items(items) => {
+            Child::Items(items.iter().map(|i| item_down(i, shift(i.top() + if matches!(i, Item::Glyphs(_)) { 0.0 } else { EPS }))).collect())
+        }
+        Child::Group { offset, children } => Child::Group { offset: (offset.0, offset.1 + shift(offset.1 + EPS)), children: children.clone() },
+        Child::Box(b) => {
+            let mut b = b.clone();
+            b.children = b.children.iter().map(|x| child_down(x, shift)).collect();
+            Child::Box(b)
+        }
     }
 }

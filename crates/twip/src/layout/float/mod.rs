@@ -6,12 +6,10 @@ use crate::docx::Compat;
 use crate::docx::model::Float;
 
 use super::ids::ParaId;
-use super::units::LU_PER_PT;
+use super::units::{EPS, LU_PER_PT};
 
 mod fit;
 mod position;
-
-const EPS: f64 = 1e-6;
 
 pub const TABLE_PIECE: usize = usize::MAX;
 /// A table in a vertical section: drawn upright, an obstacle on the turned page.
@@ -294,6 +292,51 @@ pub fn avoid(f: &mut Placed, placed: &[Placed], (lo, hi): (f64, f64), (top, bott
 
 pub use fit::{intervals, next_edge, steps, strip, text_intervals};
 pub use position::{h_pos, page_clamp, sized, v_pos};
+
+/// A floating table's distances from the text: none above or below one placed in the flow.
+pub fn table_dist(fp: &crate::docx::props::TablePos, in_flow: bool) -> [f64; 4] {
+    let [dt, db, dl, dr] = fp.dist;
+    if in_flow { [0.0, 0.0, dl.max(0.5), dr.max(0.5)] } else { [dt, db, dl.max(0.5), dr.max(0.5)] }
+}
+
+/// A table's box as a square, both-sides float `dist` apart from the text.
+pub fn table_float(id: u64, w: f64, h: f64, dist: [f64; 4], allow_overlap: bool) -> Rc<Float> {
+    Rc::new(Float {
+        id,
+        w,
+        auto_w: false,
+        h,
+        image: None,
+        alt: "".into(),
+        lock_aspect: false,
+        text_box: None,
+        h_relative: "column".into(),
+        h_align: None,
+        h_offset: 0.0,
+        v_relative: "paragraph".into(),
+        v_align: None,
+        v_offset: 0.0,
+        wrap: "square".into(),
+        wrap_text: "bothSides".into(),
+        dist,
+        effect: [0.0; 4],
+        poly: None,
+        behind: false,
+        allow_overlap,
+        layout_in_cell: true,
+        order: 0,
+        z: 0,
+        src: None,
+        locked: false,
+        frame_src: None,
+        in_note: false,
+        parts: Vec::new(),
+        shape: None,
+        rot_swap: false,
+        vml: false,
+        relative: Default::default(),
+    })
+}
 
 #[cfg(test)]
 mod tests {
