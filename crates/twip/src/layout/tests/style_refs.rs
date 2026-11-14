@@ -34,6 +34,8 @@ fn doc() -> Option<crate::docx::Document> {
         field("U", r#""No Such""#),
         field("K", r#""Key Word""#),
         field("KL", r#""Key Word" \l"#),
+        // An IF on a nested simple STYLEREF whose cached result is "Alpha".
+        r#"<w:p><w:r><w:t xml:space="preserve">I:</w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> IF </w:instrText></w:r><w:fldSimple w:instr=" STYLEREF &quot;heading 1&quot; "><w:r><w:instrText>Alpha</w:instrText></w:r></w:fldSimple><w:r><w:instrText xml:space="preserve">= "Beta" "yes" "no" </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>cached</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>"#.into(),
     ]
     .concat();
     let style = |kind: &str, id: &str, name: &str| format!(r#"<w:style w:type="{kind}" w:styleId="{id}"><w:name w:val="{name}"/></w:style>"#);
@@ -77,4 +79,8 @@ fn a_header_styleref_finds_its_style_by_name_on_its_page() {
     has(1, "A:BetaL:BetaD:BetaF:Latethree");
     has(1, "K:klastKL:klast");
     has(2, "A:GammaL:GammaD:Gamma");
+    // The nested field per page, then the IF.
+    has(0, "I:no");
+    has(1, "I:yes");
+    has(2, "I:no");
 }

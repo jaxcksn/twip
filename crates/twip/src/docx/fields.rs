@@ -66,6 +66,32 @@ pub fn code_text(inlines: &[Inline], s: FieldSpan) -> String {
     out
 }
 
+/// A field's code text with each field nested in it as `value` gives it (by its begin), quoted so that it reads as
+/// one word; `None` when a nested field gets no value.
+pub fn code_with(inlines: &[Inline], s: FieldSpan, value: &dyn Fn(usize) -> Option<String>) -> Option<String> {
+    let inner = spans(inlines);
+    let mut out = String::new();
+    let mut k = s.begin + 1;
+    while k < s.code_end() {
+        match &inlines[k] {
+            Inline::FieldBegin { .. } => {
+                if let Some(n) = inner.iter().find(|n| n.begin == k) {
+                    out.push('"');
+                    out.push_str(&value(k)?);
+                    out.push('"');
+                    k = n.end + 1;
+                    continue;
+                }
+            }
+            Inline::Text(t, _) => out.push_str(t),
+            Inline::Tab(_) | Inline::PTab(..) => out.push('\t'),
+            _ => {}
+        }
+        k += 1;
+    }
+    Some(out)
+}
+
 /// A field's result as shown: its result's text, the fields nested in it as theirs.
 pub fn result_text(inlines: &[Inline], s: FieldSpan) -> String {
     let Some(sep) = s.sep else { return String::new() };
@@ -395,7 +421,8 @@ pub fn words(code: &str) -> Vec<String> {
     for c in code.chars() {
         match c {
             '"' => {
-                if quoted {
+                // A quote ends the word before it too: `"a"="b"` is three words.
+                if quoted || !cur.is_empty() {
                     out.push(std::mem::take(&mut cur));
                 }
                 quoted = !quoted;
@@ -590,7 +617,7 @@ pub fn blocks_page_dependent(blocks: &[Block]) -> bool {
 }
 
 /// `IF a op b "then" "else"` with literal operands: numbers compare numerically, anything else as text.
-fn if_field(w: &[String]) -> Option<String> {
+pub(crate) fn if_field(w: &[String]) -> Option<String> {
     let [_, a, op, b, yes, rest @ ..] = w else { return None };
     let no = rest.first().cloned().unwrap_or_default();
     let ord = match (a.parse::<f64>(), b.parse::<f64>()) {

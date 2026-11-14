@@ -1747,7 +1747,17 @@ pub fn shape_space(
             Inline::FieldBegin { kind: Some(kind), .. } => {
                 let code = spans.iter().find(|s| s.begin == k).map(|s| crate::docx::fields::code_text(&para.inlines, *s)).unwrap_or_default();
                 let chapter = fields.chapters.as_ref().and_then(|c| c.get(&ParaId(para.id))).filter(|_| matches!(kind, FieldKind::Page | FieldKind::PgNum));
-                space.fields.push(fields.value(kind, code.trim()).map(|v| chapter.cloned().unwrap_or_default() + &v))
+                let value = match (kind, spans.iter().find(|s| s.begin == k)) {
+                    // An `IF` on the values its nested fields have here (else its cached result).
+                    (FieldKind::If, Some(s)) => crate::docx::fields::code_with(&para.inlines, *s, &|b| {
+                        let Inline::FieldBegin { kind: Some(kind), value, .. } = &para.inlines[b] else { return None };
+                        let code = spans.iter().find(|s| s.begin == b).map(|s| crate::docx::fields::code_text(&para.inlines, *s)).unwrap_or_default();
+                        fields.value(kind, code.trim()).or_else(|| value.clone())
+                    })
+                    .and_then(|c| crate::docx::fields::if_field(&crate::docx::fields::words(&c))),
+                    _ => fields.value(kind, code.trim()),
+                };
+                space.fields.push(value.map(|v| chapter.cloned().unwrap_or_default() + &v))
             }
             Inline::NoteRef { kind, id, .. } => space.notes.push(notes.get(&(*kind, *id)).cloned().unwrap_or_default()),
             Inline::NoteMark(kind, id, _) => {

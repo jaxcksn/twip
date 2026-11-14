@@ -1684,7 +1684,8 @@ impl Reader {
                         let kind = if e.tag_name().name() == "br" { BreakKind::of(attr(e, "type"), attr(e, "clear")) } else { BreakKind::Line };
                         out.push(Inline::Break(kind, run));
                     }
-                    "fldSimple" if !self.in_code() => {
+                    // In a code too: a field nested in another's code (an `IF`'s operand).
+                    "fldSimple" => {
                         let code = attr(e, "instr").unwrap_or("").to_string();
                         self.read_simple_field(e, code, base, pkg, out);
                     }
@@ -1700,7 +1701,7 @@ impl Reader {
                         self.read_inlines(e, base, pkg, out);
                         out.push(Inline::ControlEnd(id));
                     }
-                    "hyperlink" | "smartTag" | "customXml" | "bdo" | "dir" | "fldSimple" => {
+                    "hyperlink" | "smartTag" | "customXml" | "bdo" | "dir" => {
                         self.read_inlines(e, base, pkg, out);
                     }
                     // Revision wrappers: their runs carry the revision (one mark for all of them), nested ones both.
@@ -1851,7 +1852,15 @@ impl Reader {
                 }
                 continue;
             }
+            // A field nested in another's code holds its result as code text.
+            let nested = self.fields.len() >= 2 && !self.fields[self.fields.len() - 2].in_result;
             if let Some(f) = self.fields.last_mut() {
+                if nested && f.in_result && name == "instrText" {
+                    if let Some(t) = c.text().filter(|t| !t.is_empty()) {
+                        push_text(out, t, &run);
+                    }
+                    continue;
+                }
                 if !f.in_result {
                     if matches!(name, "instrText" | "delInstrText") && !f.spanning {
                         f.first_code_run.get_or_insert(run.clone());
