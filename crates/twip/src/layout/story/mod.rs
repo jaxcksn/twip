@@ -4,6 +4,7 @@ use crate::docx::Compat;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use crate::docx::review::MarkupView;
 use crate::docx::{Block, Float, Inline, NoteKind, ParaStyle, Paragraph, Table};
 use crate::font::Fonts;
 
@@ -14,7 +15,7 @@ use super::float::{self, Placed};
 use super::fragment::{Child, Item, PlacedLine};
 use super::ids::ParaId;
 use super::job::{Memos, Yield};
-use super::join::LaidBlock;
+use super::join::{LaidBlock, LaidPara};
 use super::line::{Frame, Line, ParaLines, band, break_lines, draw_line, neighbour_borders};
 use super::paragraph::{contextual_in, gap, gap_plain, space_after, space_before};
 use super::space::ParaSpace;
@@ -250,19 +251,22 @@ pub fn layout_with(
 ) -> Result<StoryLayout, Yield> {
     let text = &env.ctx.env.text;
     let view = text.review.view;
-    let mut units = Vec::new();
-    let mut y = 0.0;
-    let mut prev: Option<&ParaStyle> = None;
-    let mut prev_after = 0.0;
     let (in_cell, ends) = (cell.is_some(), cell.unwrap_or_default());
     let contextual = contextual_in(text, in_cell);
-    let mut wrapping: Vec<(usize, usize, f64, f64)> = Vec::new();
-    let mut float_bottom = 0.0f64;
-    let mut held = 0.0f64;
-    let mut origins = Vec::new();
-    let mut tables: Vec<Placed> = Vec::new();
-    let mut hf_tables: Vec<Placed> = Vec::new();
-    let mut aligned: Vec<Placed> = Vec::new();
+    let w = StoryIn { blocks, resolved, width, env, cell, around, hf, text, view, in_cell, ends, contextual };
+    let mut st = Stack {
+        units: Vec::new(),
+        y: 0.0,
+        prev: None,
+        prev_after: 0.0,
+        wrapping: Vec::new(),
+        float_bottom: 0.0,
+        held: 0.0,
+        origins: Vec::new(),
+        tables: Vec::new(),
+        hf_tables: Vec::new(),
+        aligned: Vec::new(),
+    };
     for (bi, b) in blocks.iter().enumerate() {
         // The part of a paragraph starting at a later line goes on without its space before.
         let from = if bi == start.0 { start.1 } else { 0 };
@@ -276,258 +280,11 @@ pub fn layout_with(
                     && bi + 1 == blocks.len()
                     && view.hides(&laid.para().mark.rev)
                     && super::paragraph::shows_nothing(laid.para(), view) => {}
-            LaidBlock::Para(laid) => {
-                let p = laid.para();
-                let next = match blocks.get(bi + 1) {
-                    Some(LaidBlock::Para(n)) => Some(&**n.para().para_style_in(view)),
-                    _ => None,
-                };
-                let shaped = match resolved.get(bi) {
-                    Some(ChildId::Para(s)) => s.clone(),
-                    _ => shape(p, &laid.shape_space_in(env.fields, env.notes, &env.ctx, cell.is_some(), memos)?, env.ctx.fonts, memos)?,
-                };
-                let style = p.para_style_in(view);
-                let line_grid = text.line_grid.filter(|_| in_cell && text.adjust_line_height_in_table);
-                let ps = ParaSpace {
-                    width,
-                    start: from,
-                    borders: neighbour_borders(style, prev, next),
-                    x0: 0.0,
-                    env: TextEnv { line_grid, ..text.clone() },
-                    fit: ends.fit,
-                    letter_break: false,
-                };
-                let lines = break_lines(&shaped, p, &ps, env.ctx.fonts, memos)?;
-                let (mut before, mut after) = (space_before(text, style), space_after(text, style));
-                if in_cell && style.before_auto && bi == 0 {
-                    before = 0.0;
-                }
-                if in_cell && style.after_auto && bi + 1 == blocks.len() && style.list.is_none() {
-                    after = 0.0;
-                }
-                let g = match prev {
-                    _ if from > 0 => 0.0,
-                    None if bi == 0 && ends.before => 0.0,
-                    None => before,
-                    Some(_) if !contextual => gap_plain(text, prev_after, before),
-                    Some(ps) => gap(text, ps, prev_after, style, before),
-                };
-                // The paragraph's top, which `paragraph` floats count from, is above its space before.
-                let kept = match prev {
-                    Some(ps) if contextual && from == 0 => gap(text, ps, prev_after, style, 0.0),
-                    Some(_) if from == 0 => prev_after,
-                    _ => 0.0,
-                };
-                let origin = y + kept;
-                origins.push((bi, origin));
-                y += g;
-                let id = para_id(p);
-                let para_top = y;
-                // In a cell `page` is the cell's box inside its borders and `margin` and `column` its text: positions
-                // are found in the cell's box, from `inset` left of the text.
-                let (inset, page_w) = match ends.page {
-                    (_, 0) => (0.0, width),
-                    (l, w) => (l as f64 / 20.0, w as f64 / 20.0),
-                };
-                let fr = float::Frames {
-                    page_w,
-                    page_h: 0.0,
-                    margin: [inset, page_w - inset - width, 0.0, 0.0],
-                    column: (inset, width),
-                    compat: text.compat,
-                    cell: true,
-                    odd: true,
-                };
-                let h_pos = |f: &Float, h: f64| float::page_clamp(f, (float::h_pos(f, &fr), 0.0), h, &fr).0 - inset;
-                // A wrapping float laid out in the cell doesn't start above the cell's content top.
-                let v_pos = |f: &Float, h: f64, line_top: f64| {
-                    let y = float::v_pos(f, h, &fr, origin, line_top);
-                    if f.wrap != "none" && f.in_cell(text.compat) { y.max(0.0) } else { y }
-                };
-                // Wrapping floats
-                let mut own: Vec<(usize, Placed)> = Vec::new();
-                if in_cell && !ends.fit {
-                    for (k, q) in lines.pieces().iter().enumerate() {
-                        let (Kind::Anchor, Some(Object::Float(f))) = (q.kind, lines.shaped.object(lines.from + k)) else { continue };
-                        if !f.in_cell(text.compat)
-                            || f.wrap == "none"
-                            || !matches!(f.v_relative.as_str(), "paragraph" | "line" | "margin" | "page") && f.v_align.is_none()
-                        {
-                            continue;
-                        }
-                        let h = float_height(f, env, memos)?;
-                        let (fx, fy) = (h_pos(f, h), v_pos(f, h, para_top));
-                        own.push((k, Placed::new((0, bi, k), id, f, fx, fy, h)));
-                    }
-                }
-                let mut floats: Vec<Placed> = own.iter().map(|(_, a)| a.clone()).collect();
-                // The story's own floats placed from outside it: only those beside the paragraph's unwrapped lines.
-                let bottom = para_top + lines.lines.iter().map(|l| l.pitch).sum::<f64>();
-                // In a cell, its other paragraphs' aligned floats (the anchor paragraph's are its own).
-                floats.extend(around.iter().filter(|f| !(in_cell && f.key.1 == bi)).chain(&tables).filter(|f| f.in_band(para_top, bottom)).cloned());
-                if in_cell {
-                    aligned.extend(own.iter().filter(|(_, a)| a.float.v_align.is_some()).map(|(_, a)| a.clone()));
-                }
-                let bands = (!floats.is_empty())
-                    .then(|| wrap_bands(&lines, p, style, &floats, &ps, (para_top, before), env.ctx.fonts))
-                    .filter(|b| !b.is_empty());
-                let rows = bands.as_ref().map_or(lines.lines.len(), Vec::len);
-                for i in 0..rows {
-                    let ((start, end, pitch, below), mut content) = match &bands {
-                        None => {
-                            let l = &lines.lines[i];
-                            let placed = PlacedLine { x: 0.0, y: 0.0, line: lines.fragment(i, p, env.ctx.fonts) };
-                            ((l.start, l.end, l.pitch, l.below), vec![Child::Line { para: Some(id), placed }])
-                        }
-                        Some(b) => {
-                            let (top, segs) = &b[i];
-                            y = *top;
-                            let o = lines.origin();
-                            let drawn = segs.iter().map(|l| {
-                                let placed = PlacedLine { x: 0.0, y: 0.0, line: Rc::new(draw_line(&o, l, p, env.ctx.fonts)) };
-                                Child::Line { para: Some(id), placed }
-                            });
-                            let (l, last) = (&segs[0], segs.last().map_or(segs[0].end, |l| l.end));
-                            ((l.start, last, l.pitch, l.below), drawn.collect())
-                        }
-                    };
-                    let mut hold = 0.0f64;
-                    if in_cell {
-                        // Anchored floats
-                        for k in start..end.max(start + 1) {
-                            if lines.pieces().get(k).is_none_or(|q| q.kind != Kind::Anchor) {
-                                continue;
-                            }
-                            let Some(Object::Float(f)) = lines.shaped.object(lines.from + k) else {
-                                continue;
-                            };
-                            let h = float_height(f, env, memos)?;
-                            let (fx, fy) = match own.iter().find(|(o, _)| *o == k) {
-                                Some((_, a)) => (a.rect[0], a.rect[1] - y),
-                                None => (h_pos(f, h), v_pos(f, h, y) - y),
-                            };
-                            // Compat ≤ 14: a float that doesn't wrap, placed from the column, counts from the first
-                            // piece its line leaves beside the line's own wrapping floats.
-                            let fx = match own.iter().filter(|(o, _)| (start..end).contains(o)).map(|(_, a)| a.clone()).collect::<Vec<_>>() {
-                                line_own
-                                    if f.wrap == "none"
-                                        && text.compat == Compat::Legacy
-                                        && f.h_relative == "column"
-                                        && f.h_align.is_none()
-                                        && !line_own.is_empty() =>
-                                {
-                                    let piece = float::intervals(&line_own, 0.0, width, y, y + pitch, true).and_then(|iv| iv.first().map(|p| p.0));
-                                    fx + piece.unwrap_or(0.0)
-                                }
-                                _ => fx,
-                            };
-                            if f.in_cell(text.compat) {
-                                // Compat 15: a tight or through float ends at its polygon's bottom (one along its top
-                                // adds nothing). A float that doesn't wrap counts for the alignment only when it
-                                // reaches across the cell's text, and never holds the row.
-                                let shape = match &f.poly {
-                                    Some(p) if text.compat == Compat::Generic && matches!(f.wrap.as_str(), "tight" | "through") => {
-                                        p.iter().map(|q| q.1).fold(0.0, f64::max).clamp(0.0, 1.0) * h
-                                    }
-                                    _ => h,
-                                };
-                                if f.wrap != "none" || fx < width && fx + f.w > 0.0 {
-                                    float_bottom = float_bottom.max(y + fy + shape);
-                                }
-                                if f.wrap != "none" {
-                                    held = held.max(y + fy + shape);
-                                    hold = hold.max(fy + shape);
-                                }
-                            }
-                            if f.wrap != "none" && own.iter().all(|(o, _)| *o != k) {
-                                wrapping.push((units.len(), content.len(), y + fy - f.dist[0], y + fy + h + f.dist[1]));
-                            }
-                            let anchor = super::join::piece_para(&lines.shaped, lines.from + k, id);
-                            content.push(float_box(f, [fx, fy, fx + f.w, fy + h], anchor, env, memos)?);
-                        }
-                    }
-                    units.push(StoryUnit {
-                        top: y,
-                        height: pitch,
-                        below,
-                        after: if i + 1 == rows { after } else { 0.0 },
-                        hold,
-                        content: content.into(),
-                        block: bi,
-                        from: lines.from + start,
-                        widow: style.widow_control,
-                        keep_next: style.keep_next,
-                        keep_lines: style.keep_lines,
-                        notes: (start..end).filter_map(|k| lines.shaped.note(lines.from + k)).collect(),
-                        row: None,
-                    });
-                    y += pitch;
-                }
-                prev = Some(style);
-                prev_after = after;
-            }
-            LaidBlock::Table(t) => {
-                y += prev_after;
-                let tl = match resolved.get(bi) {
-                    Some(ChildId::Table(tb)) => tb.clone(),
-                    _ => nested_layout(t, cell, width, env, false, memos)?,
-                };
-                let (rows, h) = super::table::table_units(&tl);
-                let shift = if in_cell && text.compat == Compat::Legacy { super::table::nested_shift(t, text.single_cell_borders) } else { 0.0 };
-                // A floating table in a header, a footer or a cell takes no room in the story: it stands `tblpY` below
-                // where it starts (from the text) and the text after it wraps around it. Compat ≤ 14: a header's or
-                // footer's text runs over it. A cell holds it.
-                // A header's or footer's table against the page or the margin stands `tblpY` (less a twip) below
-                // its top, or with `tblpYSpec` top at it.
-                // ponytail: a cell's against the page or the margin, and `tblpYSpec` center or bottom, start where the
-                // story is.
-                let fp = t.floating.filter(|_| hf.is_some() || in_cell);
-                let top = match (fp, hf) {
-                    (Some(fp), _) if fp.v_anchor == crate::docx::props::TableAnchor::Text => y + fp.y,
-                    (Some(fp), Some((at, margin))) if fp.y_spec.is_none_or(|j| j == crate::docx::props::Jc::Left) => {
-                        let t0 = if fp.v_anchor == crate::docx::props::TableAnchor::Page { 0.0 } else { margin };
-                        let dy = if fp.y_spec.is_some() { 0.0 } else { fp.y - 0.05 };
-                        (t0 + dy).max(0.0) - at
-                    }
-                    _ => y,
-                };
-                for mut u in rows {
-                    u.block = bi;
-                    u.top += top;
-                    if shift != 0.0 {
-                        u.content = Rc::from([Child::Group { offset: (shift, 0.0), children: u.content }]);
-                        u.row = u.row.map(|r| Rc::new(NestedRow { shift, ..(*r).clone() }));
-                    }
-                    units.push(u);
-                }
-                match fp {
-                    Some(fp) => {
-                        let legacy = in_cell && text.compat == Compat::Legacy;
-                        let (bl, br) = super::table::float_box(&tl, t, legacy);
-                        // In a cell the right distance has no minimum.
-                        let mut dist = float::table_dist(&fp, false);
-                        if in_cell {
-                            dist[3] = fp.dist[3];
-                        }
-                        let f = float::table_float(t.id, br - bl, h, dist, !fp.never_overlap);
-                        let placed = Placed::new((0, bi, float::TABLE_PIECE), ParaId(t.id), &f, bl + shift, top, h);
-                        if in_cell {
-                            held = held.max(top + h);
-                        } else {
-                            hf_tables.push(placed.clone());
-                        }
-                        // Compat ≤ 14: a header's or footer's text runs over it.
-                        if in_cell || text.compat != Compat::Legacy {
-                            tables.push(placed);
-                        }
-                    }
-                    None => y += h,
-                }
-                prev = None;
-                prev_after = 0.0;
-            }
+            LaidBlock::Para(laid) => stack_para(&w, &mut st, bi, laid, from, memos)?,
+            LaidBlock::Table(t) => stack_table(&w, &mut st, bi, t, memos)?,
         }
     }
+    let Stack { mut units, mut y, prev_after, wrapping, float_bottom, held, origins, hf_tables, aligned, .. } = st;
     if !ends.after {
         y += prev_after;
     }
@@ -539,6 +296,302 @@ pub fn layout_with(
     }
     unwrapped_floats(&mut units, &wrapping);
     Ok(StoryLayout { units, height: y.max(held), float_bottom, frozen: Vec::new(), origins, tables: hf_tables })
+}
+
+// Paragraph block
+fn stack_para<'b>(w: &StoryIn<'b, '_>, st: &mut Stack<'b>, bi: usize, laid: &'b LaidPara<'b>, from: usize, memos: &mut Memos) -> Result<(), Yield> {
+    let &StoryIn { blocks, resolved, width, env, cell, around, text, view, in_cell, ends, contextual, .. } = w;
+    let Stack { ref mut units, ref mut wrapping, ref mut origins, ref tables, ref mut aligned, .. } = *st;
+    let (prev, prev_after) = (st.prev, st.prev_after);
+    let (mut y, mut float_bottom, mut held) = (st.y, st.float_bottom, st.held);
+    let p = laid.para();
+    let next = match blocks.get(bi + 1) {
+        Some(LaidBlock::Para(n)) => Some(&**n.para().para_style_in(view)),
+        _ => None,
+    };
+    let shaped = match resolved.get(bi) {
+        Some(ChildId::Para(s)) => s.clone(),
+        _ => shape(p, &laid.shape_space_in(env.fields, env.notes, &env.ctx, cell.is_some(), memos)?, env.ctx.fonts, memos)?,
+    };
+    let style = p.para_style_in(view);
+    let line_grid = text.line_grid.filter(|_| in_cell && text.adjust_line_height_in_table);
+    let ps = ParaSpace {
+        width,
+        start: from,
+        borders: neighbour_borders(style, prev, next),
+        x0: 0.0,
+        env: TextEnv { line_grid, ..text.clone() },
+        fit: ends.fit,
+        letter_break: false,
+    };
+    let lines = break_lines(&shaped, p, &ps, env.ctx.fonts, memos)?;
+    let (mut before, mut after) = (space_before(text, style), space_after(text, style));
+    if in_cell && style.before_auto && bi == 0 {
+        before = 0.0;
+    }
+    if in_cell && style.after_auto && bi + 1 == blocks.len() && style.list.is_none() {
+        after = 0.0;
+    }
+    let g = match prev {
+        _ if from > 0 => 0.0,
+        None if bi == 0 && ends.before => 0.0,
+        None => before,
+        Some(_) if !contextual => gap_plain(text, prev_after, before),
+        Some(ps) => gap(text, ps, prev_after, style, before),
+    };
+    // The paragraph's top, which `paragraph` floats count from, is above its space before.
+    let kept = match prev {
+        Some(ps) if contextual && from == 0 => gap(text, ps, prev_after, style, 0.0),
+        Some(_) if from == 0 => prev_after,
+        _ => 0.0,
+    };
+    let origin = y + kept;
+    origins.push((bi, origin));
+    y += g;
+    let id = para_id(p);
+    let para_top = y;
+    // In a cell `page` is the cell's box inside its borders and `margin` and `column` its text: positions
+    // are found in the cell's box, from `inset` left of the text.
+    let (inset, page_w) = match ends.page {
+        (_, 0) => (0.0, width),
+        (l, w) => (l as f64 / 20.0, w as f64 / 20.0),
+    };
+    let fr = float::Frames {
+        page_w,
+        page_h: 0.0,
+        margin: [inset, page_w - inset - width, 0.0, 0.0],
+        column: (inset, width),
+        compat: text.compat,
+        cell: true,
+        odd: true,
+    };
+    let h_pos = |f: &Float, h: f64| float::page_clamp(f, (float::h_pos(f, &fr), 0.0), h, &fr).0 - inset;
+    // A wrapping float laid out in the cell doesn't start above the cell's content top.
+    let v_pos = |f: &Float, h: f64, line_top: f64| {
+        let y = float::v_pos(f, h, &fr, origin, line_top);
+        if f.wrap != "none" && f.in_cell(text.compat) { y.max(0.0) } else { y }
+    };
+    // Wrapping floats
+    let mut own: Vec<(usize, Placed)> = Vec::new();
+    if in_cell && !ends.fit {
+        for (k, q) in lines.pieces().iter().enumerate() {
+            let (Kind::Anchor, Some(Object::Float(f))) = (q.kind, lines.shaped.object(lines.from + k)) else { continue };
+            if !f.in_cell(text.compat)
+                || f.wrap == "none"
+                || !matches!(f.v_relative.as_str(), "paragraph" | "line" | "margin" | "page") && f.v_align.is_none()
+            {
+                continue;
+            }
+            let h = float_height(f, env, memos)?;
+            let (fx, fy) = (h_pos(f, h), v_pos(f, h, para_top));
+            own.push((k, Placed::new((0, bi, k), id, f, fx, fy, h)));
+        }
+    }
+    let mut floats: Vec<Placed> = own.iter().map(|(_, a)| a.clone()).collect();
+    // The story's own floats placed from outside it: only those beside the paragraph's unwrapped lines.
+    let bottom = para_top + lines.lines.iter().map(|l| l.pitch).sum::<f64>();
+    // In a cell, its other paragraphs' aligned floats (the anchor paragraph's are its own).
+    floats.extend(around.iter().filter(|f| !(in_cell && f.key.1 == bi)).chain(tables).filter(|f| f.in_band(para_top, bottom)).cloned());
+    if in_cell {
+        aligned.extend(own.iter().filter(|(_, a)| a.float.v_align.is_some()).map(|(_, a)| a.clone()));
+    }
+    let bands = (!floats.is_empty()).then(|| wrap_bands(&lines, p, style, &floats, &ps, (para_top, before), env.ctx.fonts)).filter(|b| !b.is_empty());
+    let rows = bands.as_ref().map_or(lines.lines.len(), Vec::len);
+    for i in 0..rows {
+        let ((start, end, pitch, below), mut content) = match &bands {
+            None => {
+                let l = &lines.lines[i];
+                let placed = PlacedLine { x: 0.0, y: 0.0, line: lines.fragment(i, p, env.ctx.fonts) };
+                ((l.start, l.end, l.pitch, l.below), vec![Child::Line { para: Some(id), placed }])
+            }
+            Some(b) => {
+                let (top, segs) = &b[i];
+                y = *top;
+                let o = lines.origin();
+                let drawn = segs.iter().map(|l| {
+                    let placed = PlacedLine { x: 0.0, y: 0.0, line: Rc::new(draw_line(&o, l, p, env.ctx.fonts)) };
+                    Child::Line { para: Some(id), placed }
+                });
+                let (l, last) = (&segs[0], segs.last().map_or(segs[0].end, |l| l.end));
+                ((l.start, last, l.pitch, l.below), drawn.collect())
+            }
+        };
+        let mut hold = 0.0f64;
+        if in_cell {
+            // Anchored floats
+            for k in start..end.max(start + 1) {
+                if lines.pieces().get(k).is_none_or(|q| q.kind != Kind::Anchor) {
+                    continue;
+                }
+                let Some(Object::Float(f)) = lines.shaped.object(lines.from + k) else {
+                    continue;
+                };
+                let h = float_height(f, env, memos)?;
+                let (fx, fy) = match own.iter().find(|(o, _)| *o == k) {
+                    Some((_, a)) => (a.rect[0], a.rect[1] - y),
+                    None => (h_pos(f, h), v_pos(f, h, y) - y),
+                };
+                // Compat ≤ 14: a float that doesn't wrap, placed from the column, counts from the first
+                // piece its line leaves beside the line's own wrapping floats.
+                let fx = match own.iter().filter(|(o, _)| (start..end).contains(o)).map(|(_, a)| a.clone()).collect::<Vec<_>>() {
+                    line_own
+                        if f.wrap == "none"
+                            && text.compat == Compat::Legacy
+                            && f.h_relative == "column"
+                            && f.h_align.is_none()
+                            && !line_own.is_empty() =>
+                    {
+                        let piece = float::intervals(&line_own, 0.0, width, y, y + pitch, true).and_then(|iv| iv.first().map(|p| p.0));
+                        fx + piece.unwrap_or(0.0)
+                    }
+                    _ => fx,
+                };
+                if f.in_cell(text.compat) {
+                    // Compat 15: a tight or through float ends at its polygon's bottom (one along its top
+                    // adds nothing). A float that doesn't wrap counts for the alignment only when it
+                    // reaches across the cell's text, and never holds the row.
+                    let shape = match &f.poly {
+                        Some(p) if text.compat == Compat::Generic && matches!(f.wrap.as_str(), "tight" | "through") => {
+                            p.iter().map(|q| q.1).fold(0.0, f64::max).clamp(0.0, 1.0) * h
+                        }
+                        _ => h,
+                    };
+                    if f.wrap != "none" || fx < width && fx + f.w > 0.0 {
+                        float_bottom = float_bottom.max(y + fy + shape);
+                    }
+                    if f.wrap != "none" {
+                        held = held.max(y + fy + shape);
+                        hold = hold.max(fy + shape);
+                    }
+                }
+                if f.wrap != "none" && own.iter().all(|(o, _)| *o != k) {
+                    wrapping.push((units.len(), content.len(), y + fy - f.dist[0], y + fy + h + f.dist[1]));
+                }
+                let anchor = super::join::piece_para(&lines.shaped, lines.from + k, id);
+                content.push(float_box(f, [fx, fy, fx + f.w, fy + h], anchor, env, memos)?);
+            }
+        }
+        units.push(StoryUnit {
+            top: y,
+            height: pitch,
+            below,
+            after: if i + 1 == rows { after } else { 0.0 },
+            hold,
+            content: content.into(),
+            block: bi,
+            from: lines.from + start,
+            widow: style.widow_control,
+            keep_next: style.keep_next,
+            keep_lines: style.keep_lines,
+            notes: (start..end).filter_map(|k| lines.shaped.note(lines.from + k)).collect(),
+            row: None,
+        });
+        y += pitch;
+    }
+    (st.y, st.float_bottom, st.held) = (y, float_bottom, held);
+    st.prev = Some(style);
+    st.prev_after = after;
+    Ok(())
+}
+
+// Table block
+fn stack_table(w: &StoryIn, st: &mut Stack, bi: usize, t: &Table, memos: &mut Memos) -> Result<(), Yield> {
+    let &StoryIn { resolved, width, env, cell, hf, text, in_cell, .. } = w;
+    let Stack { ref mut units, ref mut tables, ref mut hf_tables, .. } = *st;
+    let prev_after = st.prev_after;
+    let (mut y, mut held) = (st.y, st.held);
+    y += prev_after;
+    let tl = match resolved.get(bi) {
+        Some(ChildId::Table(tb)) => tb.clone(),
+        _ => nested_layout(t, cell, width, env, false, memos)?,
+    };
+    let (rows, h) = super::table::table_units(&tl);
+    let shift = if in_cell && text.compat == Compat::Legacy { super::table::nested_shift(t, text.single_cell_borders) } else { 0.0 };
+    // A floating table in a header, a footer or a cell takes no room in the story: it stands `tblpY` below
+    // where it starts (from the text) and the text after it wraps around it. Compat ≤ 14: a header's or
+    // footer's text runs over it. A cell holds it.
+    // A header's or footer's table against the page or the margin stands `tblpY` (less a twip) below
+    // its top, or with `tblpYSpec` top at it.
+    // ponytail: a cell's against the page or the margin, and `tblpYSpec` center or bottom, start where the
+    // story is.
+    let fp = t.floating.filter(|_| hf.is_some() || in_cell);
+    let top = match (fp, hf) {
+        (Some(fp), _) if fp.v_anchor == crate::docx::props::TableAnchor::Text => y + fp.y,
+        (Some(fp), Some((at, margin))) if fp.y_spec.is_none_or(|j| j == crate::docx::props::Jc::Left) => {
+            let t0 = if fp.v_anchor == crate::docx::props::TableAnchor::Page { 0.0 } else { margin };
+            let dy = if fp.y_spec.is_some() { 0.0 } else { fp.y - 0.05 };
+            (t0 + dy).max(0.0) - at
+        }
+        _ => y,
+    };
+    for mut u in rows {
+        u.block = bi;
+        u.top += top;
+        if shift != 0.0 {
+            u.content = Rc::from([Child::Group { offset: (shift, 0.0), children: u.content }]);
+            u.row = u.row.map(|r| Rc::new(NestedRow { shift, ..(*r).clone() }));
+        }
+        units.push(u);
+    }
+    match fp {
+        Some(fp) => {
+            let legacy = in_cell && text.compat == Compat::Legacy;
+            let (bl, br) = super::table::float_box(&tl, t, legacy);
+            // In a cell the right distance has no minimum.
+            let mut dist = float::table_dist(&fp, false);
+            if in_cell {
+                dist[3] = fp.dist[3];
+            }
+            let f = float::table_float(t.id, br - bl, h, dist, !fp.never_overlap);
+            let placed = Placed::new((0, bi, float::TABLE_PIECE), ParaId(t.id), &f, bl + shift, top, h);
+            if in_cell {
+                held = held.max(top + h);
+            } else {
+                hf_tables.push(placed.clone());
+            }
+            // Compat ≤ 14: a header's or footer's text runs over it.
+            if in_cell || text.compat != Compat::Legacy {
+                tables.push(placed);
+            }
+        }
+        None => y += h,
+    }
+    (st.y, st.held) = (y, held);
+    st.prev = None;
+    st.prev_after = 0.0;
+    Ok(())
+}
+
+// Story stacking inputs
+#[derive(Clone, Copy)]
+struct StoryIn<'b, 'e> {
+    blocks: &'b [LaidBlock<'b>],
+    resolved: &'b [ChildId],
+    width: f64,
+    env: &'b StoryEnv<'e>,
+    cell: Option<CellEnds>,
+    around: &'b [Placed],
+    hf: Option<(f64, f64)>,
+    text: &'b TextEnv,
+    view: MarkupView,
+    in_cell: bool,
+    ends: CellEnds,
+    contextual: bool,
+}
+
+// Story stacking state
+struct Stack<'b> {
+    units: Vec<StoryUnit>,
+    y: f64,
+    prev: Option<&'b ParaStyle>,
+    prev_after: f64,
+    wrapping: Vec<(usize, usize, f64, f64)>,
+    float_bottom: f64,
+    held: f64,
+    origins: Vec<(usize, f64)>,
+    tables: Vec<Placed>,
+    hf_tables: Vec<Placed>,
+    aligned: Vec<Placed>,
 }
 
 // Cell floats
