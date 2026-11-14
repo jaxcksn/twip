@@ -1623,3 +1623,25 @@ fn an_aligned_cell_float_goes_to_the_content_top_and_every_line_it_meets_wraps_i
     assert!(a.0 - z.0 > 59.0, "the first paragraph's line goes on right of the box: a {a:?} Z {z:?}");
     assert!((a.1 - z.1).abs() < 3.0, "the box is at the cell's top: a {a:?} Z {z:?}");
 }
+
+#[test]
+fn a_table_row_that_meets_a_page_float_lower_down_goes_below_it() {
+    let float = r#"<w:r><w:drawing><wp:anchor xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture" distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="1" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="margin"><wp:posOffset>0</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>3810000</wp:posOffset></wp:positionV><wp:extent cx="5943600" cy="1016000"/><wp:wrapSquare wrapText="bothSides"/><wp:docPr id="1" name="P"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#;
+    let rows: String = (0..30)
+        .map(|k| format!(r#"<w:tr><w:tc><w:tcPr><w:tcW w:w="9000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>{}</w:t></w:r></w:p></w:tc></w:tr>"#, char::from(b'A' + k)))
+        .collect();
+    let ys = |compat: i64| {
+        let body = format!(r#"<w:p>{float}</w:p><w:tbl><w:tblGrid><w:gridCol w:w="9000"/></w:tblGrid>{rows}</w:tbl><w:p/>"#);
+        let mut doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
+        doc.settings.compat_mode = compat;
+        let page = &glyphs(&doc)[0];
+        page.iter().filter(|c| c.0.is_ascii_uppercase()).map(|c| c.1).collect::<Vec<f64>>()
+    };
+    // The float covers 300 … 380 across the column.
+    let legacy = ys(12);
+    assert!(legacy.iter().all(|&y| y < 300.0 || y > 380.0), "{legacy:?}");
+    assert!(legacy[0] < 300.0 && legacy.iter().any(|&y| y > 380.0), "{legacy:?}");
+    // Compat 15 tests the part's whole band: the part goes below the float.
+    let generic = ys(15);
+    assert!(generic.iter().all(|&y| y > 380.0), "{generic:?}");
+}

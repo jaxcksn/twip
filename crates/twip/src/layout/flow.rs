@@ -3013,7 +3013,8 @@ impl<'d> PageFill<'d, '_> {
         let spot = if pos.at.at_start() && !floating && self.ctx.env.text.vertical.is_none() {
             // A tight or through polygon of a single point is drawn but leaves the row where it is.
             let hits: Vec<Placed> = over.iter().filter(|a| !a.float.poly.as_ref().is_some_and(|p| p.iter().all(|q| *q == p[0]))).cloned().collect();
-            self.beside_floats(pos.block, tb, col, *y, &hits, memos)?
+            let ri = tb.rows.iter().position(|r| !r.hidden).unwrap_or(0);
+            self.beside_floats(pos.block, tb, col, *y, &hits, ri, true, memos)?
         } else {
             None
         };
@@ -3202,8 +3203,30 @@ impl<'d> PageFill<'d, '_> {
         let headers: Vec<usize> =
             (0..tb.rows.len()).take_while(|&r| tb.rows[r].header || tb.rows[r].hidden).filter(|&r| !tb.rows[r].hidden).collect();
         let n = tb.rows.len();
+        // A continuation goes on from its first part's place under the page's floats: compat ≤ 14 goes beside or
+        // below those its first row's band meets there, as a first part does; compat 15 keeps its place and moves
+        // down below every float the band of its rows on the page meets there.
+        let part_x = at_x;
+        let repeats = *empty && !pos.at.at_start() && !headers.contains(&pos.at.index());
+        if fp.is_none() && !pos.at.at_start() && self.ctx.env.text.vertical.is_none() && !tb.rtl {
+            let ri = if repeats { headers.first().copied().unwrap_or(pos.at.index()) } else { pos.at.index() };
+            let (c0, c1) = super::table::cells_box(tb);
+            let floats = self.page_floats_for(pos.block);
+            if legacy {
+                let band = tb.rows[ri].height + if tb.is_last(ri) { tb.bottom_border } else { 0.0 };
+                if floats.iter().any(|f| f.in_band(*y, *y + band) && (f.wrap == Wrap::TopAndBottom || f.excl[2] > at_x + c0 + EPS && f.excl[0] < at_x + c1 - EPS))
+                    && let Some((x, top, _)) = self.beside_floats(pos.block, tb, col, *y, &[], ri, false, memos)?
+                {
+                    (at_x, *y) = (x, top);
+                }
+            } else {
+                while let Some(e) = float::next_edge(&floats, at_x + c0, at_x + c1, *y, *y + Self::part_band(tb, ri, *y, col)).filter(|&e| e > *y + EPS) {
+                    *y = e;
+                }
+            }
+        }
         // Header rows
-        if *empty && !pos.at.at_start() && !headers.contains(&pos.at.index()) {
+        if repeats {
             for &h in &headers {
                 let hh = tb.rows[h].height;
                 let mut row = draw_row(tb, h, at_x, *y, hh, None, false);
@@ -3277,6 +3300,25 @@ impl<'d> PageFill<'d, '_> {
             } else {
                 height
             };
+            // Compat ≤ 14: a later row whose band meets one of the page's floats where the part stands goes beside or
+            // below the floats there as a first row does, and the rows after it on the page keep that place; the rows
+            // before it close their part.
+            if legacy && fp.is_none() && placed_here > 0 && self.ctx.env.text.vertical.is_none() && !tb.rtl {
+                let band = height + if last { tb.bottom_border } else { 0.0 };
+                let (c0, c1) = super::table::cells_box(tb);
+                let floats = self.page_floats_for(pos.block);
+                // ponytail: an autofit table keeps its layout at the new place.
+                if floats.iter().any(|f| f.in_band(*y, *y + band) && (f.wrap == Wrap::TopAndBottom || f.excl[2] > at_x + c0 + EPS && f.excl[0] < at_x + c1 - EPS))
+                    && let Some((x, top, _)) = self.beside_floats(pos.block, tb, col, *y, &[], ri, false, memos)?
+                {
+                    if let Some(&(rs, rtop, idx)) = placed.last().filter(|p| p.2 + 1 == rows.len()) {
+                        let (mut drawn, _) = draw_whole_row(tb, rs, at_x, rtop, tb.rows[rs].height, true, memos);
+                        move_floats(Some(&mut drawn), &page_floats, &frames, up(rs));
+                        rows[idx] = drawn;
+                    }
+                    (at_x, *y) = (x, top + row.part_top);
+                }
+            }
             if rest.is_none()
                 && !rows.is_empty()
                 && let Some(&(_, bottom)) = later.iter().find(|&&(t, b)| *y < b - EPS && t < *y + height - EPS)
@@ -3403,7 +3445,7 @@ impl<'d> PageFill<'d, '_> {
                 self.at.found.append(&mut over);
                 finish(rows, out, at_x, opened, false);
                 self.table_obstacle(pos.block, tb, wrap_x.unwrap_or(at_x), part_top, *y, flow_y, settled);
-                carry.beside_at = (fp.is_none() && (at_x - col.x).abs() > EPS).then_some(at_x - col.x);
+                carry.beside_at = (fp.is_none() && (part_x - col.x).abs() > EPS).then_some(part_x - col.x);
                 return Ok(self.text_goes_on(fp.is_some(), pos, carry, y, empty, (flow_y, was_empty)));
             }
             if at_top {
@@ -3450,7 +3492,7 @@ impl<'d> PageFill<'d, '_> {
             }
             finish(rows, out, at_x, opened, true);
             self.table_obstacle(pos.block, tb, wrap_x.unwrap_or(at_x), part_top, *y, flow_y, settled);
-            carry.beside_at = (fp.is_none() && split && (at_x - col.x).abs() > EPS).then_some(at_x - col.x);
+            carry.beside_at = (fp.is_none() && split && (part_x - col.x).abs() > EPS).then_some(part_x - col.x);
             return Ok(self.text_goes_on(fp.is_some() && split, pos, carry, y, empty, (flow_y, was_empty)));
         }
         self.show_endnote_refs(row_refs.into_iter().map(|r| r.1));
@@ -3468,10 +3510,32 @@ impl<'d> PageFill<'d, '_> {
         Ok(Stop::Done)
     }
 
-    /// Where an in-flow table starting at `y` goes beside the floats over its first row: in the first free piece of
-    /// the column there, its indent from the piece's start and its `jc` within the piece, when its first row fits
-    /// the piece; else lower, at the first float bottom where it does. Compat ≤ 14 lays an autofit table out again
-    /// at the piece's width. All its rows keep that place. `None` when no float meets the row.
+    /// The page's floats a table part placed in the flow goes beside or below: all but those of its own block.
+    fn page_floats_for(&self, bi: usize) -> Vec<Placed> {
+        let si = self.sec.index;
+        self.fixed.iter().chain(self.known_at(bi)).filter(|f| (f.key.0, f.key.1) != (si, bi)).cloned().collect()
+    }
+
+    /// The height of the rows from `ri` on that fit in the column from `top`: at least the first.
+    fn part_band(tb: &TableLayout, ri: usize, top: f64, col: &ColumnSpace) -> f64 {
+        let mut h = 0.0;
+        for (k, r) in tb.rows.iter().enumerate().skip(ri).filter(|(_, r)| !r.hidden) {
+            let next = h + r.height + if tb.is_last(k) { tb.bottom_border } else { 0.0 };
+            if h > 0.0 && !col.bottom.holds(top + next) {
+                break;
+            }
+            h = next;
+        }
+        h
+    }
+
+    /// Where an in-flow table's part starting at row `ri` at `y` goes beside the floats over its band: in the first
+    /// free piece of the column there, its indent from the piece's start and its `jc` within the piece, when the row
+    /// fits the piece; else lower, at the first float bottom where it does. Compat ≤ 14 tests the row's own band
+    /// and only the first piece, and lays an autofit table out again at the piece's width when `relay`; compat 15
+    /// tests the band of the rows the column holds from there and takes the first piece the table fits. `None` when
+    /// no float meets the band.
+    #[allow(clippy::too_many_arguments, reason = "as place_table")]
     fn beside_floats(
         &mut self,
         bi: usize,
@@ -3479,27 +3543,30 @@ impl<'d> PageFill<'d, '_> {
         col: &ColumnSpace,
         y: f64,
         own: &[Placed],
+        ri: usize,
+        relay: bool,
         memos: &mut Memos,
     ) -> Result<Option<(f64, f64, Option<Rc<TableLayout>>)>, Yield> {
         let Some(Block::Table(t)) = self.sec.blocks.get(bi) else { return Ok(None) };
-        let Some(ri) = tb.rows.iter().position(|r| !r.hidden) else { return Ok(None) };
-        let si = self.sec.index;
-        let floats: Vec<Placed> = self.fixed.iter().chain(self.known_at(bi)).filter(|f| (f.key.0, f.key.1) != (si, bi)).chain(own).cloned().collect();
+        let floats: Vec<Placed> = self.page_floats_for(bi).into_iter().chain(own.iter().cloned()).collect();
         if tb.rtl || floats.is_empty() {
             return Ok(None);
         }
         let text = &self.ctx.env.text;
         let legacy = text.compat == Compat::Legacy;
         let (cx0, cx1) = (col.x, col.x + col.width);
-        let (mut top, h) = (y, tb.rows[ri].height + if tb.is_last(ri) { tb.bottom_border } else { 0.0 });
+        let band = |top: f64| if legacy { tb.rows[ri].height + if tb.is_last(ri) { tb.bottom_border } else { 0.0 } } else { Self::part_band(tb, ri, top, col) };
+        let mut top = y;
         let mut moved = false;
         while top < col.bottom.to_pt() - EPS {
-            if let Some((u, r)) = float::intervals(&floats, cx0, cx1, top, top + h, legacy).and_then(|iv| iv.first().copied()) {
-                if u <= cx0 + EPS && r >= cx1 - EPS {
-                    break;
-                }
+            let h = band(top);
+            let pieces = float::intervals(&floats, cx0, cx1, top, top + h, legacy).unwrap_or_default();
+            if pieces.first().is_some_and(|&(u, r)| u <= cx0 + EPS && r >= cx1 - EPS) {
+                break;
+            }
+            for &(u, r) in pieces.iter().take(if legacy { 1 } else { usize::MAX }) {
                 let w = r - u;
-                let relaid = if legacy && !t.fixed && !text.no_constrained_autofit {
+                let relaid = if relay && legacy && !t.fixed && !text.no_constrained_autofit {
                     let env = StoryEnv { ctx: self.ctx, fields: self.fields, notes: self.note_numbers };
                     let prev = self.sec.blocks.neighbours(bi, bi, text.review.view).0;
                     let laid = super::table::layout(&super::table::in_column(t, col.width, &env), w, &env, prev, false, memos)?;
@@ -3529,7 +3596,7 @@ impl<'d> PageFill<'d, '_> {
                     }
                 }
             }
-            match float::next_edge(&floats, cx0, cx1, top, top + h) {
+            match float::next_edge(&floats, cx0, cx1, top, top + band(top)) {
                 Some(e) if e > top + EPS => (top, moved) = (e, true),
                 _ => break,
             }
