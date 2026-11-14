@@ -344,8 +344,7 @@ pub fn layout_with(
                         let (Kind::Anchor, Some(Object::Float(f))) = (q.kind, lines.shaped.object(lines.from + k)) else { continue };
                         if !f.in_cell(text.compat)
                             || f.wrap == "none"
-                            || !matches!(f.v_relative.as_str(), "paragraph" | "line" | "margin" | "page")
-                                && f.v_align.is_none()
+                            || !matches!(f.v_relative.as_str(), "paragraph" | "line" | "margin" | "page") && f.v_align.is_none()
                         {
                             continue;
                         }
@@ -358,9 +357,7 @@ pub fn layout_with(
                 // The story's own floats placed from outside it: only those beside the paragraph's unwrapped lines.
                 let bottom = para_top + lines.lines.iter().map(|l| l.pitch).sum::<f64>();
                 // In a cell, its other paragraphs' aligned floats (the anchor paragraph's are its own).
-                floats.extend(
-                    around.iter().filter(|f| !(in_cell && f.key.1 == bi)).chain(&tables).filter(|f| f.in_band(para_top, bottom)).cloned(),
-                );
+                floats.extend(around.iter().filter(|f| !(in_cell && f.key.1 == bi)).chain(&tables).filter(|f| f.in_band(para_top, bottom)).cloned());
                 if in_cell {
                     aligned.extend(own.iter().filter(|(_, a)| a.float.v_align.is_some()).map(|(_, a)| a.clone()));
                 }
@@ -405,7 +402,13 @@ pub fn layout_with(
                             // Compat ≤ 14: a float that doesn't wrap, placed from the column, counts from the first
                             // piece its line leaves beside the line's own wrapping floats.
                             let fx = match own.iter().filter(|(o, _)| (start..end).contains(o)).map(|(_, a)| a.clone()).collect::<Vec<_>>() {
-                                line_own if f.wrap == "none" && text.compat == Compat::Legacy && f.h_relative == "column" && f.h_align.is_none() && !line_own.is_empty() => {
+                                line_own
+                                    if f.wrap == "none"
+                                        && text.compat == Compat::Legacy
+                                        && f.h_relative == "column"
+                                        && f.h_align.is_none()
+                                        && !line_own.is_empty() =>
+                                {
                                     let piece = float::intervals(&line_own, 0.0, width, y, y + pitch, true).and_then(|iv| iv.first().map(|p| p.0));
                                     fx + piece.unwrap_or(0.0)
                                 }
@@ -777,7 +780,8 @@ fn chain_box(f: &Float, theme: &crate::drawing::theme::Theme) -> crate::docx::Te
     let pt = |e: crate::drawing::units::Emu| e.0 as f64 / 12700.0;
     let insets = sp.map_or([7.2, 3.6, 7.2, 3.6], |s| s.body.insets.map(pt));
     // Without its own width the outline takes the width of the theme's line its style refers to.
-    let styled = sp.and_then(|s| s.style.as_ref()?.line.as_ref()).and_then(|(idx, _)| crate::drawing::paint::style_entry(&theme.lines, None, *idx)?.width);
+    let styled =
+        sp.and_then(|s| s.style.as_ref()?.line.as_ref()).and_then(|(idx, _)| crate::drawing::paint::style_entry(&theme.lines, None, *idx)?.width);
     let own = sp.and_then(|s| s.line.as_ref());
     let outline = match own.and_then(|l| l.width).or(styled) {
         Some(w) => 2.0 * if own.and_then(|l| l.inset) == Some(true) { w.0 } else { w.0 / 2 } as f64 / 12700.0,

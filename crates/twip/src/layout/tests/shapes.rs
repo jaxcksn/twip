@@ -447,7 +447,10 @@ fn a_linked_box_lays_its_part_of_the_story_out_in_its_own_text_rectangle() {
 fn a_linked_box_outline_without_a_width_takes_its_style_lines_width() {
     let left = |style: &str| {
         let shape = |text: &str, style: &str| {
-            format!(r#"<wps:wsp><wps:cNvSpPr txBox="1"/><wps:spPr>{}<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></wps:spPr>{text}{style}<wps:bodyPr/></wps:wsp>"#, xfrm(0, 0, 150, 30, ""))
+            format!(
+                r#"<wps:wsp><wps:cNvSpPr txBox="1"/><wps:spPr>{}<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></wps:spPr>{text}{style}<wps:bodyPr/></wps:wsp>"#,
+                xfrm(0, 0, 150, 30, "")
+            )
         };
         let paras: String = (1..=4).map(|k| format!("<w:p><w:r><w:t>Linked {k}</w:t></w:r></w:p>")).collect();
         let head = shape(&format!(r#"<wps:txbx id="1"><w:txbxContent>{paras}</w:txbxContent></wps:txbx>"#), "");

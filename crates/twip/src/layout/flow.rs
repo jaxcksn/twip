@@ -3001,7 +3001,9 @@ impl<'d> PageFill<'d, '_> {
                 })
                 .flat_map(|(r, p)| p.inlines.iter().map(move |i| (r, para_id(p), i)))
                 .filter_map(|(r, id, i)| if let Inline::Float(f, _) = i { page_floats.get(&f.id).map(|f| (*f, id, r)) } else { None })
-                .filter(|(f, ..)| f.wrap != "none" && matches!(f.v_relative.as_str(), "paragraph" | "margin" | "page") && f.h_align.is_none() && f.v_align.is_none())
+                .filter(|(f, ..)| {
+                    f.wrap != "none" && matches!(f.v_relative.as_str(), "paragraph" | "margin" | "page") && f.h_align.is_none() && f.v_align.is_none()
+                })
                 .map(|(f, id, r)| (f, id, r, f.v_offset - f.dist[0], f.v_offset + f.h + f.dist[1]))
                 .collect(),
             _ => Vec::new(),
@@ -3233,13 +3235,17 @@ impl<'d> PageFill<'d, '_> {
             let floats = self.page_floats_for(pos.block, true);
             if legacy {
                 let band = tb.rows[ri].height + if tb.is_last(ri) { tb.bottom_border } else { 0.0 };
-                if floats.iter().any(|f| f.in_band(*y, *y + band) && (f.wrap == Wrap::TopAndBottom || f.excl[2] > at_x + c0 + EPS && f.excl[0] < at_x + c1 - EPS))
+                if floats
+                    .iter()
+                    .any(|f| f.in_band(*y, *y + band) && (f.wrap == Wrap::TopAndBottom || f.excl[2] > at_x + c0 + EPS && f.excl[0] < at_x + c1 - EPS))
                     && let Some((x, top, _)) = self.beside_floats(pos.block, tb, col, *y, &[], ri, false, memos)?
                 {
                     (at_x, *y) = (x, top);
                 }
             } else {
-                while let Some(e) = float::next_edge(&floats, at_x + c0, at_x + c1, *y, *y + Self::part_band(tb, ri, *y, col)).filter(|&e| e > *y + EPS) {
+                while let Some(e) =
+                    float::next_edge(&floats, at_x + c0, at_x + c1, *y, *y + Self::part_band(tb, ri, *y, col)).filter(|&e| e > *y + EPS)
+                {
                     *y = e;
                 }
             }
@@ -3328,7 +3334,9 @@ impl<'d> PageFill<'d, '_> {
                 let own: Vec<Placed> = held.iter().filter(|(r, a)| *r != ri && *r > 0 && moves(a)).map(|(_, a)| a.clone()).collect();
                 let floats: Vec<Placed> = self.page_floats_for(pos.block, true).into_iter().chain(own.iter().cloned()).collect();
                 // ponytail: an autofit table keeps its layout at the new place.
-                if floats.iter().any(|f| f.in_band(*y, *y + band) && (f.wrap == Wrap::TopAndBottom || f.excl[2] > at_x + c0 + EPS && f.excl[0] < at_x + c1 - EPS))
+                if floats
+                    .iter()
+                    .any(|f| f.in_band(*y, *y + band) && (f.wrap == Wrap::TopAndBottom || f.excl[2] > at_x + c0 + EPS && f.excl[0] < at_x + c1 - EPS))
                     && let Some((x, top, _)) = self.beside_floats(pos.block, tb, col, *y, &own, ri, false, memos)?
                 {
                     if let Some(&(rs, rtop, idx)) = placed.last().filter(|p| p.2 + 1 == rows.len()) {
@@ -3578,7 +3586,9 @@ impl<'d> PageFill<'d, '_> {
         let text = &self.ctx.env.text;
         let legacy = text.compat == Compat::Legacy;
         let (cx0, cx1) = (col.x, col.x + col.width);
-        let band = |top: f64| if legacy { tb.rows[ri].height + if tb.is_last(ri) { tb.bottom_border } else { 0.0 } } else { Self::part_band(tb, ri, top, col) };
+        let band = |top: f64| {
+            if legacy { tb.rows[ri].height + if tb.is_last(ri) { tb.bottom_border } else { 0.0 } } else { Self::part_band(tb, ri, top, col) }
+        };
         let mut top = y;
         let mut moved = false;
         while top < col.bottom.to_pt() - EPS {

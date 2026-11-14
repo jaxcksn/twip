@@ -216,7 +216,9 @@ fn chains(doc: &Document) -> Rc<[Chain]> {
             (ShapeText::Story, Some(c), Some(tb)) => {
                 heads.insert(c, (tb.clone(), (f.id, super::story::text_frame_size(f, &doc.theme))));
             }
-            (ShapeText::Linked { chain, seq }, ..) => later.entry(*chain).or_default().push((*seq, (f.id, super::story::text_frame_size(f, &doc.theme)))),
+            (ShapeText::Linked { chain, seq }, ..) => {
+                later.entry(*chain).or_default().push((*seq, (f.id, super::story::text_frame_size(f, &doc.theme))))
+            }
             _ => {}
         }
     };
