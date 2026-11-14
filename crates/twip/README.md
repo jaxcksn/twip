@@ -1,7 +1,7 @@
 # twip
 
-A DOCX layout, editing and rendering engine: it paginates Word documents, edits them, and draws them with Skia or
-exports PDF.
+A DOCX layout, editing and rendering engine: it paginates Word documents, edits them, and draws them with its own
+2D graphics engine, twip-graphics, or exports PDF.
 
 > **Alpha.** Before 1.0 the crate's public items follow the engine's needs rather than a designed Rust API; expect
 > breaking changes in minor versions.
@@ -9,9 +9,6 @@ exports PDF.
 ```sh
 cargo add twip
 ```
-
-On Linux, Skia links FreeType and Fontconfig: install `libfreetype6-dev libfontconfig1-dev` (Debian and Ubuntu).
-The first build downloads a prebuilt Skia.
 
 ```rust
 use twip::api::command::Command;

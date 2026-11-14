@@ -1,5 +1,5 @@
 //! The view's overlays with twip-graphics: what editing shows over a page's content (field shading, the fade, marks,
-//! regions, comment tints, the drop caret, the guide line, the selection, the caret), as the Skia path draws them.
+//! regions, comment tints, the drop caret, the guide line, the selection, the caret).
 //! Recorded every frame, never with the page.
 
 use twip_graphics::kurbo::{self, Affine};

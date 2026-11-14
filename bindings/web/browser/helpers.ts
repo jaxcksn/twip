@@ -1,5 +1,5 @@
 // What the browser specs share: a page with the SDK, the document's text read from an export, and pixels read from
-// screenshots (the canvas may be WebGPU or WebGL, which a 2D context can't read back).
+// screenshots (the canvas may be WebGPU, which a 2D context can't read back).
 import { readFileSync } from 'node:fs';
 import { inflateRawSync } from 'node:zlib';
 import { expect, type Locator, type Page } from '@playwright/test';
@@ -8,7 +8,7 @@ export const fixture = (name: string) => [...readFileSync(new URL(`../../../crat
 export const hello = [...readFileSync(new URL('../../hello.docx', import.meta.url))];
 
 /** A software GPU (CI's Linux runners): its WebGPU paints blank ("A valid external Instance reference no longer
- * exists"), so editors there draw with WebGL 2, and the latency budgets aren't checked. */
+ * exists"), so editors there draw CPU pixels, and the latency budgets aren't checked. */
 export const softwareGpu = process.env.TWIP_SOFTWARE_GPU === '1';
 
 /** An empty page on the test server's origin, with the SDK as `window.twip` (configured with `assets`, if given) and a
@@ -29,13 +29,9 @@ ${await response.text()}` });
   await page.goto('/blank.html');
   await page.evaluate(async ({ gpu, softwareGpu, assets }) => {
     if (!gpu || softwareGpu) Object.defineProperty(navigator, 'gpu', { value: undefined });
-    // The CPU path, which every machine has: no WebGPU adapter and no WebGL 2, and the engine on the main thread,
-    // where these patches are.
+    // The CPU path, which every machine has: no WebGPU adapter, and the engine on the main thread, where these
+    // patches are.
     if (!gpu) {
-      const get = HTMLCanvasElement.prototype.getContext;
-      HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, kind: string, ...rest: unknown[]) {
-        return kind === 'webgl2' ? null : get.call(this, kind as '2d', ...(rest as []));
-      } as typeof get;
       Object.defineProperty(HTMLCanvasElement.prototype, 'transferControlToOffscreen', { value: undefined });
     }
     const twip = await import('/web/dist/index.js' as string);

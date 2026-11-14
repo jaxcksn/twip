@@ -22,7 +22,7 @@ struct Recording<'a> {
     stops: Vec<Stop>,
 }
 
-/// An SVG colour (unpremultiplied, `0..=1`) in 8 bits, rounded as Skia rounds a float colour.
+/// An SVG colour (unpremultiplied, `0..=1`) in 8 bits, rounded to nearest.
 fn colour([r, g, b, a]: [f32; 4]) -> Color {
     let q = |v: f32| (v.clamp(0.0, 1.0) * 255.0 + 0.5) as u8;
     Color::rgba(q(r), q(g), q(b), q(a))

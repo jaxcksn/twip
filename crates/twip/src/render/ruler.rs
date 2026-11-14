@@ -76,7 +76,6 @@ mod tests {
         }
     }
 
-    /// The rulers drawn on a grey viewport 400 by 300, as RGBA: by Skia, or by twip-graphics while
     /// The rulers drawn by twip-graphics over grey, 400 × 300 device pixels.
     fn draw(theme: &Theme, f: &RulerFrame) -> Vec<u8> {
         let mut pixels = vec![0u8; 400 * 300 * 4];

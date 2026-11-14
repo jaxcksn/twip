@@ -40,9 +40,9 @@ Under forced colours (web) or high contrast (WinForms) the editor uses the syste
 The options are also methods on `editor.view`, for a settings page: `setCaretBlink` and `setOverlayColors`. Once you
 call them, the editor stops following the platform's setting.
 
-The editor draws with WebGPU, then WebGL 2, then the CPU. If the GPU device or the WebGL context is lost, the editor
-gets a new one and draws the next frame on it; in worker mode too. Each lost WebGPU device costs the engine some
-memory it can't free, so after the third the editor draws CPU pixels and copies them onto the canvas.
+The editor draws with WebGPU, else the CPU. If the GPU device is lost, the editor gets a new one and draws the next
+frame on it; in worker mode too. Each lost WebGPU device costs the engine some memory it can't free, so after the third
+the editor draws CPU pixels and copies them onto the canvas.
 
 ## WinForms
 

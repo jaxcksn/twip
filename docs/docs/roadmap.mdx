@@ -18,7 +18,7 @@ you. The work between them runs in four phases, in this order:
 
 <Phases
   items={[
-    { n: '01', title: 'Layout', href: '#layout', range: '1.1 – 1.11', blurb: 'Every line and page breaks where it should, and stays there.' },
+    { n: '01', title: 'Layout', href: '#layout', range: '1.1 – 1.11', blurb: 'Every line and page breaks where it should, and stays there.', done: true },
     { n: '02', title: 'DOCX fidelity', href: '#docx', range: '2.1 – 2.14', blurb: 'Everything in the file is read, kept and settable.' },
     { n: '03', title: 'Rendering', href: '#rendering', range: '3.1 – 3.11', blurb: 'Everything in the model is drawn.' },
     { n: '04', title: 'Editor and platform', href: '#editor', range: '4.1 – 4.12', blurb: 'The workflows, packages and API freeze.' },
@@ -39,6 +39,12 @@ OOXML property that changes where text or objects go, for Latin-script documents
 layout come after 1.0, with IME (see [Not in 1.0.0](#later)); when they land, they change layout only for documents
 in those scripts, and under the `layout-change` label.
 
+:::tip Complete
+
+Phase 1 is done: every chunk below has landed, and the layout gate (1.1) guards it.
+
+:::
+
 :::info Done when
 
 - Every layout-affecting construct in the document format is laid out, or listed under [Not in 1.0.0](#later).
@@ -48,7 +54,7 @@ in those scripts, and under the `layout-change` label.
 
 :::
 
-<Chunk id="1.1" title="Layout regression gate" gate>
+<Chunk id="1.1" title="Layout regression gate" gate done>
 
 **Goal:** a layout change can't land unnoticed.
 
@@ -60,7 +66,7 @@ in those scripts, and under the `layout-change` label.
 
 </Chunk>
 
-<Chunk id="1.2" title="Paragraph and table geometry" deps={['1.1']}>
+<Chunk id="1.2" title="Paragraph and table geometry" deps={['1.1']} done>
 
 **Goal:** paragraph and table edges land on the same twip as Word's.
 
@@ -72,7 +78,7 @@ in those scripts, and under the `layout-change` label.
 
 </Chunk>
 
-<Chunk id="1.3" title="Float positioning" deps={['1.1']}>
+<Chunk id="1.3" title="Float positioning" deps={['1.1']} done>
 
 **Goal:** every floating object is positioned by one model, with both compatibility modes complete.
 
@@ -85,7 +91,7 @@ in those scripts, and under the `layout-change` label.
 
 </Chunk>
 
-<Chunk id="1.4" title="Float sizing and wrapping" deps={['1.3']}>
+<Chunk id="1.4" title="Float sizing and wrapping" deps={['1.3']} done>
 
 **Goal:** text wraps around floats exactly as authored.
 
@@ -97,7 +103,7 @@ in those scripts, and under the `layout-change` label.
 
 </Chunk>
 
-<Chunk id="1.5" title="Text box autofit and columns" deps={['1.3']}>
+<Chunk id="1.5" title="Text box autofit and columns" deps={['1.3']} done>
 
 **Goal:** the text box settings that are read today but not laid out stay that way, because Word doesn't lay
 them out from a `.docx` either.
@@ -108,7 +114,7 @@ them out from a `.docx` either.
 
 </Chunk>
 
-<Chunk id="1.6" title="Table rows and exceptions" deps={['1.2']}>
+<Chunk id="1.6" title="Table rows and exceptions" deps={['1.2']} done>
 
 **Goal:** rows from merged or pasted tables keep their own geometry.
 
@@ -118,7 +124,7 @@ them out from a `.docx` either.
 
 </Chunk>
 
-<Chunk id="1.7" title="Notes, sections and page numbers" deps={['1.1']}>
+<Chunk id="1.7" title="Notes, sections and page numbers" deps={['1.1']} done>
 
 **Goal:** section-level settings that move content between pages.
 
@@ -131,7 +137,7 @@ them out from a `.docx` either.
 
 </Chunk>
 
-<Chunk id="1.8" title="Missing line content" deps={['1.1']}>
+<Chunk id="1.8" title="Missing line content" deps={['1.1']} done>
 
 **Goal:** no text that Word shows is missing from the page.
 
@@ -146,7 +152,7 @@ them out from a `.docx` either.
 
 </Chunk>
 
-<Chunk id="1.9" title="Compatibility options" deps={['1.3']}>
+<Chunk id="1.9" title="Compatibility options" deps={['1.3']} done>
 
 **Goal:** every layout switch in `w:compat` is accounted for.
 
@@ -155,7 +161,7 @@ them out from a `.docx` either.
 
 </Chunk>
 
-<Chunk id="1.10" title="Automatic hyphenation" deps={['1.1']}>
+<Chunk id="1.10" title="Automatic hyphenation" deps={['1.1']} done>
 
 **Goal:** documents with automatic hyphenation break lines as Word does.
 
@@ -166,7 +172,7 @@ them out from a `.docx` either.
 
 </Chunk>
 
-<Chunk id="1.11" title="Vertical text" deps={['1.1']}>
+<Chunk id="1.11" title="Vertical text" deps={['1.1']} done>
 
 **Goal:** vertical pages, paragraphs and cells lay out as Word lays them out.
 
@@ -609,7 +615,7 @@ The workflows on top of a complete model, the framework packages, and the API fr
 - IME
 - Format Painter
 - HTML and RTF paste, and drawing `altChunk` content, which needs the same importer
-- An extensions surface for custom Skia drawing (comment bubbles, custom rulers)
+- An extensions surface for custom drawing (comment bubbles, custom rulers)
 - Equations (OMML)
 - Charts
 - Right-to-left and East Asian layout and editing, with IME (below)

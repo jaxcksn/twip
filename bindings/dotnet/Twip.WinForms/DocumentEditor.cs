@@ -354,7 +354,7 @@ public class DocumentEditor : Control
         });
     }
 
-    /// <summary>The GPU backend the editor draws with ("D3D12", "D3D11" or "Vulkan"), or null when it draws with the CPU.</summary>
+    /// <summary>The GPU backend the editor draws with ("D3D12" or "Vulkan"), or null when it draws with the CPU.</summary>
     [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public string? GpuBackend => _canvas is null ? null : _host?.GpuBackend;
 

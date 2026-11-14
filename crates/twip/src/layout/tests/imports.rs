@@ -4,7 +4,7 @@ use super::layout_sources;
 
 #[test]
 fn layout_has_no_forbidden_imports() {
-    const FORBIDDEN: [&str; 7] = ["skia_safe", "twip_graphics", "crate::editor", "crate::legacy", "crate::web", "crate::golden", "crate::cli"];
+    const FORBIDDEN: [&str; 6] = ["twip_graphics", "crate::editor", "crate::legacy", "crate::web", "crate::golden", "crate::cli"];
     let sources = layout_sources();
     assert!(!sources.is_empty(), "layout sources not found");
     let mut found = Vec::new();

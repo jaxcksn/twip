@@ -1,6 +1,6 @@
 //! Shape drawing with twip-graphics: fills (solid, gradient, pattern, picture), lines (dashed, compound, inset, with
-//! arrowheads) and effects (outer and inner shadows, glow, soft edges, blur), as the Skia path draws them. Skia's
-//! boolean path operations are replaced by layers: an inner shadow is the shadow's ring blurred and kept inside the
+//! arrowheads) and effects (outer and inner shadows, glow, soft edges, blur). Boolean path
+//! operations are done with layers: an inner shadow is the shadow's ring blurred and kept inside the
 //! shape with destination-in; a compound or inset line is its bands' coverage (strokes, gaps cleared) under the line's
 //! paint, drawn source-in.
 
@@ -39,7 +39,7 @@ impl Paths {
 }
 
 /// A geometry path as a kurbo path. An axis-aligned rect is turned to start at its bottom left and run the other way,
-/// as the Skia path builds it, so their windings agree.
+/// the winding Twip has always drawn rects with.
 fn path(segs: &[Seg]) -> BezPath {
     let p = |q: [f64; 2]| kurbo::Point::new(q[0], q[1]);
     if let [Seg::Move(a), Seg::Line(b), Seg::Line(c), Seg::Line(d), Seg::Close] = *segs
@@ -645,7 +645,7 @@ impl Graphics {
     }
 }
 
-/// The 49 stops the Skia path samples a gradient at, as twip-graphics stops.
+/// The 49 stops a gradient is sampled at, as twip-graphics stops.
 fn stops(stops: &[(f64, Rgba)]) -> Vec<Stop> {
     let n = 48;
     (0..=n).map(|i| i as f64 / n as f64).map(|t| Stop { offset: t as f32, color: colour(gradient_at(stops, t)) }).collect()

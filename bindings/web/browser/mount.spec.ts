@@ -10,7 +10,7 @@ test('the mount resolves with the first viewport drawn', async ({ page }) => {
   expect(await text(page)).toContain('Hello');
 });
 
-test('the CPU path draws where there is no WebGPU or WebGL', async ({ page, context }) => {
+test('the CPU path draws where there is no WebGPU', async ({ page, context }) => {
   const cpu = await context.newPage();
   await open(cpu, { gpu: false });
   await mount(cpu, { docx: hello });

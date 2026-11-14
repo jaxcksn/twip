@@ -95,15 +95,14 @@ Cambria to Caladea): see [A recommended setup](fonts#a-recommended-setup).
 ## Alpine and other containers
 
 `Twip.Core` ships native libraries for Linux musl (Alpine) on x64 and arm64, beside Windows x64 and Linux glibc x64
-and arm64. On Linux the library needs FreeType, Fontconfig and libstdc++, and fonts to draw with:
+and arm64. On Linux the library needs only the C runtime (glibc, or musl on Alpine) and fonts to draw with:
 
 ```dockerfile
 FROM mcr.microsoft.com/dotnet/runtime:10.0-alpine
-RUN apk add --no-cache fontconfig freetype libstdc++ font-liberation
+RUN apk add --no-cache font-liberation
 COPY app/ /app/
 ENTRYPOINT ["dotnet", "/app/MyService.dll"]
 ```
 
-On Debian and Ubuntu images, install `libfreetype6 libfontconfig1` and a font package such as `fonts-liberation`. When
-a library is missing, loading `Twip.Core` fails with a `DllNotFoundException` that names the missing file and these
-packages.
+On Debian and Ubuntu images, install a font package such as `fonts-liberation`. When
+the C runtime is missing, loading `Twip.Core` fails with a `DllNotFoundException` that names the missing file.

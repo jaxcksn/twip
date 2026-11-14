@@ -25,9 +25,8 @@ dotnet add package Twip.WinForms   # the DocumentEditor control
 `Twip.Core` carries the native engine for `win-x64`, `win-arm64`, `linux-x64` and `linux-arm64`. It works with Native
 AOT publishing; no extra configuration is needed.
 
-On Linux the engine uses the system's FreeType and Fontconfig libraries. Desktop distributions have them; in a
-slim container image install them (`libfreetype6 libfontconfig1` on Debian and Ubuntu), and see [Fonts](guides/fonts)
-for the fonts documents expect.
+On Linux the engine needs only the C runtime and fonts to draw with: a slim container image may have none, so see
+[Fonts](guides/fonts) for the fonts documents expect.
 
 ## Rust
 

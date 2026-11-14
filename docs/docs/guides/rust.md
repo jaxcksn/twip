@@ -44,5 +44,3 @@ Every type is `serde` serializable, and `api::wire` holds the JSON rules: camelC
 
 Before 1.0 the API changes between minor versions. The crate's other modules are internal: they are what the
 engine is built from, and they carry no compatibility promise.
-
-The crate builds Skia from a prebuilt archive, which it downloads on the first build.

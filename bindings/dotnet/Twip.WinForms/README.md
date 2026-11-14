@@ -26,7 +26,7 @@ await editor.OpenAsync("report.docx");
 control creates its own `EditorSession`, or takes yours; disposing it then only detaches, and the session keeps its
 document, selection and history.
 
-The control draws on the GPU (Graphite on Dawn: D3D12, then D3D11, then Vulkan) into a child window, and with the
+The control draws on the GPU (wgpu: D3D12, then Vulkan) into a child window, and with the
 CPU when there is no usable GPU (a remote desktop, a VM), after a device loss, with `UseGpu = false`, or while a
 `PaintMarkupPane` handler draws over the frame. `GpuBackend` says which it uses.
 

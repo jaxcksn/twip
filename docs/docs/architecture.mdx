@@ -20,7 +20,7 @@ flowchart TD
     C[Editing commands and review operations] --> B
     B --> D[Text shaping and layout]
     D --> E[Immutable layout fragments]
-    E --> F[Skia rendering]
+    E --> F[twip-graphics rendering]
     E --> G[Editing geometry and hit testing]
     F --> H[Host application]
     G --> H
@@ -35,7 +35,7 @@ Each stage has a distinct responsibility:
 | Editing          | Commands, selections, undo/redo, comments, and tracked changes       |
 | Text and layout  | Shaping, breaking lines, positioning content, and filling pages      |
 | Fragments        | Immutable descriptions of the calculated layout                      |
-| Rendering        | Drawing pages using Skia, with recorded output reused where possible |
+| Rendering        | Drawing with twip-graphics, recorded output reused where possible    |
 | Editing geometry | Caret stops, selection geometry, and hit testing                     |
 | SDKs             | Exposing the engine to Rust, web, and .NET applications              |
 

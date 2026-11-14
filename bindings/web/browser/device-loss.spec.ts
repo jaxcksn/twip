@@ -1,18 +1,15 @@
 // GPU device loss: a destroyed WebGPU device is replaced with no host code, on the main thread and in the worker, and
-// an edit's frame follows within a second. Past 3 lost devices, the canvas shows CPU pixels. (The `webgl` switch of the
-// instrument hides WebGPU; the engine has no WebGL backend, so it draws CPU pixels then.)
+// an edit's frame follows within a second. Past 3 lost devices, the canvas shows CPU pixels.
 import { expect, test, type Page } from '@playwright/test';
 import { hello, mount, open, pixels, softwareGpu } from './helpers.ts';
 
 /**
- * Runs in the page, and in the engine worker ahead of its script: keeps each WebGPU device and WebGL 2 context made,
- * counts CPU pixels written into canvas textures, and `twipLose()` loses the latest (a WebGL context is restored 100 ms
- * later). `webgl` hides WebGPU.
+ * Runs in the page, and in the engine worker ahead of its script: keeps each WebGPU device made, counts CPU pixels
+ * written into canvas textures, and `twipLose()` destroys the latest device.
  */
-function instrument(webgl: boolean): void {
+function instrument(): void {
   const g = globalThis as any;
-  if (webgl) Object.defineProperty(navigator, 'gpu', { value: undefined });
-  const made = { devices: [] as any[], gl: [] as any[], writes: 0 };
+  const made = { devices: [] as any[], writes: 0 };
   // CPU pixels are written into a canvas's texture; the engine's own GPU frames write only their atlases.
   const canvasTextures = new WeakSet<object>();
   const context = g.GPUCanvasContext?.prototype;
@@ -41,24 +38,8 @@ function instrument(webgl: boolean): void {
       return device;
     };
   }
-  for (const kind of [g.HTMLCanvasElement, g.OffscreenCanvas]) {
-    if (!kind) continue;
-    const get = kind.prototype.getContext;
-    kind.prototype.getContext = function (this: unknown, type: string, ...rest: unknown[]) {
-      const context = get.call(this, type, ...rest);
-      if (type === 'webgl2' && context && !made.gl.includes(context)) made.gl.push(context);
-      return context;
-    };
-  }
-  g.twipMade = () => ({ devices: made.devices.length, gl: made.gl.length, lost: made.gl.at(-1)?.isContextLost() ?? false, writes: made.writes });
-  g.twipLose = () => {
-    const gl = made.gl.at(-1);
-    if (gl) {
-      const lose = gl.getExtension('WEBGL_lose_context');
-      lose.loseContext();
-      setTimeout(() => lose.restoreContext(), 100);
-    } else made.devices.at(-1)?.destroy();
-  };
+  g.twipMade = () => ({ devices: made.devices.length, writes: made.writes });
+  g.twipLose = () => made.devices.at(-1)?.destroy();
 }
 
 /** Where the engine draws: the page, or the engine worker. */
@@ -84,29 +65,27 @@ function difference(before: Awaited<ReturnType<typeof pixels>>, after: Awaited<R
 
 for (const backend of ['webgpu'] as const) {
   for (const execution of ['main', 'worker'] as const) {
-    test(`a lost ${backend} ${backend === 'webgl' ? 'context' : 'device'} draws again within a second (${execution})`, async ({ page }) => {
-      const webgl = (backend as string) === 'webgl';
-      test.skip(!webgl && softwareGpu, 'a software GPU');
-      await page.addInitScript(instrument, webgl);
+    test(`a lost ${backend} device draws again within a second (${execution})`, async ({ page }) => {
+      test.skip(softwareGpu, 'a software GPU');
+      await page.addInitScript(instrument);
       await open(page);
       await page.route('**/web/dist/worker.js', async (route) => {
         const response = await route.fetch();
-        await route.fulfill({ response, body: `(${instrument.toString()})(${webgl});\n${await response.text()}` });
+        await route.fulfill({ response, body: `(${instrument.toString()})();\n${await response.text()}` });
       });
       await mount(page, { docx: hello, mount: { execution } });
       const scope = engineScope(page, execution);
       const made = await scope.evaluate(() => (globalThis as any).twipMade());
-      test.skip(webgl ? made.gl === 0 : made.devices === 0, `no ${backend} on this machine`);
+      test.skip(made.devices === 0, `no ${backend} on this machine`);
       const canvas = page.locator('#editor canvas');
       const before = await pixels(page, canvas);
 
       await scope.evaluate(() => (globalThis as any).twipLose());
       const lost = Date.now();
-      if (webgl) expect((await scope.evaluate(() => (globalThis as any).twipMade())).lost, 'the context is lost').toBe(true);
       // An edit while the GPU is gone (a lost WebGPU canvas keeps showing its last frame): its frame shows within a
-      // second of the loss (of the restore, for WebGL, 100 ms after it).
+      // second of the loss.
       await page.evaluate(() => (window as any).editor.commands.insertText('WWWWWWWWWWWW'));
-      const due = lost + (webgl ? 1100 : 1000);
+      const due = lost + 1000;
       let drawn = Infinity;
       while (Date.now() < due + 3000) {
         // The text, not a blank canvas.
@@ -118,8 +97,7 @@ for (const backend of ['webgpu'] as const) {
       }
       expect(drawn - lost, 'the frame after the loss').toBeLessThanOrEqual(due - lost);
       const now = await scope.evaluate(() => (globalThis as any).twipMade());
-      if (webgl) expect(now.lost, 'the context is restored').toBe(false);
-      else expect(now.devices, 'a new device').toBe(2);
+      expect(now.devices, 'a new device').toBe(2);
       // Undone, the frame is the one before the loss.
       await page.evaluate(() => (window as any).editor.commands.undo());
       await expect.poll(async () => difference(before, await pixels(page, canvas))).toBeLessThan(0.0002);
@@ -130,11 +108,11 @@ for (const backend of ['webgpu'] as const) {
 for (const execution of ['main', 'worker'] as const) {
   test(`past 3 lost WebGPU devices the canvas shows CPU pixels (${execution})`, async ({ page }) => {
     test.skip(softwareGpu, 'a software GPU');
-    await page.addInitScript(instrument, false);
+    await page.addInitScript(instrument);
     await open(page);
     await page.route('**/web/dist/worker.js', async (route) => {
       const response = await route.fetch();
-      await route.fulfill({ response, body: `(${instrument.toString()})(false);\n${await response.text()}` });
+      await route.fulfill({ response, body: `(${instrument.toString()})();\n${await response.text()}` });
     });
     await mount(page, { docx: hello, mount: { execution } });
     const scope = engineScope(page, execution);

@@ -118,7 +118,7 @@ Merge fields, content controls, XML data binding, reusable building blocks, and 
 
 **Rendering & export**
 
-Ships a hybrid 2D rendering engine purpose-built for documents that can render with WebGPU, WebGL 2, and native graphics backends; and provides DOCX save and PDF export.
+Ships a hybrid 2D rendering engine purpose-built for documents that can render with WebGPU, native graphics backends, or the CPU; and provides DOCX save and PDF export.
 
 </td>
 <td valign="top">

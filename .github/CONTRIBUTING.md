@@ -127,7 +127,7 @@ binary needs `--bench`; without it Divan runs each benchmark once, as a test. Li
   `--features gpu`; `TWIP_GRAPHICS_GPU=1` fails instead of skipping without a GPU), and on WebGPU in headless Edge by
   `moon run web:graphics-test`. That needs the wasm-bindgen CLI at the locked version (above).
 - GPU code uses only what WebGL 2 also has: no compute, no storage buffers, no push constants.
-- No shortcut rests on a guess that a case is rare: do it as Skia does, measure, or mark it `// shortcut:` with what is
+- No shortcut rests on a guess that a case is rare: do it as an established renderer does, measure, or mark it `// shortcut:` with what is
   missing and where it lands.
 - Comments say what the code does, and name the source of an algorithm in its module's header (keeping the licence
   notice of any copied code).

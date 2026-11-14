@@ -7,7 +7,7 @@ slug: /
 # Twip
 
 Twip is a DOCX layout, editing and rendering engine. It lays documents out the way a word processor does, line for
-line and page for page, and draws them with Skia. It is written in Rust and runs natively on Windows and Linux, and
+line and page for page, and draws them with its own 2D graphics engine, twip-graphics. It is written in Rust and runs natively on Windows and Linux, and
 in the browser through WebAssembly.
 
 Twip is the engine under an editor, not the whole application. It owns the document, the layout, the caret and

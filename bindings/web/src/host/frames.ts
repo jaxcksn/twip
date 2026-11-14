@@ -1,5 +1,5 @@
 // Frames: the engine asks for one (`request_frame`), the next animation frame draws it into the canvas through the
-// best backend the transport could attach (WebGPU, then WebGL 2, then CPU pixels), at devicePixelRatio. The
+// best backend the transport could attach (WebGPU, else CPU pixels), at devicePixelRatio. The
 // viewport's size, the pixel density and visibility are watched here; a hidden or zero-sized editor draws nothing
 // until it has a size again. The engine's `set_timer` timers are armed by the transport.
 import type { Session } from '../editor.js';

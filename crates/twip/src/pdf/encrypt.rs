@@ -2,7 +2,7 @@
 //! 32000-2 §7.6.4). Every string and stream is encrypted with one random file key; the open password unlocks it
 //! through `/U` and `/UE`. The owner password is random and never given out, and every permission is granted.
 //!
-//! The input is Skia's output, whose shape this relies on: a classic xref table, no object streams, each stream's
+//! The input is twip-graphics' PDF output, whose shape this relies on: a classic xref table, no object streams, each stream's
 //! `/Length` a direct integer, and a trailer with `/Size` and `/ID`.
 // shortcut: passwords aren't SASLprep-normalized; ASCII and NFC passwords match what readers compute, compatibility
 // characters may not. Upgrade: a SASLprep table.
@@ -231,7 +231,7 @@ fn hex(b: &[u8]) -> String {
     b.iter().map(|x| format!("{x:02X}")).collect()
 }
 
-// ---------------- reading Skia's PDF ----------------
+// ---------------- reading twip-graphics' PDF ----------------
 
 /// A token of an object or the trailer. Everything but strings is kept as written.
 #[derive(Clone, Debug, PartialEq)]

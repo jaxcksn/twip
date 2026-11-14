@@ -1,6 +1,6 @@
 // Latency at 60 Hz, at devicePixelRatio 2: a subscribed toolbar sees the state of a keystroke, an undo and a caret
 // move within one refresh (16.7 ms) of the commit, and a keystroke's frame is painted within one refresh of it, on
-// WebGPU, WebGL and the CPU path. The commit comes after the key's event, so each time runs from the event's
+// WebGPU and the CPU path. The commit comes after the key's event, so each time runs from the event's
 // timestamp: an upper bound. Each key is pressed alone, once the last one's frame is painted, and the 95th
 // percentile of the samples must be in budget; the numbers are printed either way.
 import { expect, test, type Page } from '@playwright/test';
@@ -20,7 +20,6 @@ function backend(page: Page): Promise<string> {
     const canvas = document.querySelector('#editor canvas') as HTMLCanvasElement;
     // A canvas gives only the kind of context it already has.
     if (canvas.getContext('webgpu')) return 'webgpu';
-    if (canvas.getContext('webgl2')) return 'webgl';
     return canvas.getContext('2d') ? 'cpu' : 'none';
   });
 }
@@ -115,11 +114,10 @@ for (const execution of ['main', 'worker'] as const) {
   });
 }
 
-// The renderer is the page's best: WebGPU where there is an adapter, WebGL 2 with no WebGPU, CPU with neither. The
-// engine runs on the main thread here, so the page's patches choose it.
-for (const renderer of ['webgpu', 'webgl', 'cpu'] as const) {
+// The renderer is the page's best: WebGPU where there is an adapter, else the CPU. The engine runs on the main thread
+// here, so the page's patches choose it.
+for (const renderer of ['webgpu', 'cpu'] as const) {
   test(`a keystroke's frame is painted within a refresh at devicePixelRatio 2 (${renderer})`, async ({ page }) => {
-    if (renderer === 'webgl') await page.addInitScript(() => Object.defineProperty(navigator, 'gpu', { value: undefined }));
     await open(page, { gpu: renderer !== 'cpu' });
     expect(await page.evaluate(() => devicePixelRatio)).toBe(2);
     await ready(page, 'main');

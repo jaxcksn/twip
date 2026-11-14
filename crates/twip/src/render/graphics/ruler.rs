@@ -1,6 +1,6 @@
 //! The built-in rulers with twip-graphics: flat bands on the paper colour with hatched margins, hairline ticks and
-//! markers, and the numbers over the ticks; the drag's and hover's measurements over the document, as the Skia path
-//! draws them ([`crate::render::ruler`]), from the same frame.
+//! markers, and the numbers over the ticks; the drag's and hover's measurements over the document, from the
+//! frame [`crate::render::ruler`] builds.
 
 use std::rc::Rc;
 

@@ -5,7 +5,7 @@ import styles from './styles.module.css';
 // Chunk "1.4" is anchored as #c1-4.
 const anchor = (id: string) => `c${id.replace('.', '-')}`;
 
-type PhaseItem = { n: string; title: string; href: string; range: string; blurb: string };
+type PhaseItem = { n: string; title: string; href: string; range: string; blurb: string; done?: boolean };
 
 /** The four phases as a track, ending at 1.0.0. */
 export function Phases({ items }: { items: PhaseItem[] }) {
@@ -17,7 +17,10 @@ export function Phases({ items }: { items: PhaseItem[] }) {
             <span className={styles.numeral}>{p.n}</span>
             <span className={styles.stopTitle}>{p.title}</span>
           </a>
-          <span className={styles.range}>{p.range}</span>
+          <span className={styles.range}>
+            {p.range}
+            {p.done && <span className={styles.flag}>Done</span>}
+          </span>
           <span className={styles.blurb}>{p.blurb}</span>
         </li>
       ))}
@@ -35,11 +38,12 @@ type ChunkProps = {
   title: string;
   deps?: string[];
   gate?: boolean;
+  done?: boolean;
   children: ReactNode;
 };
 
 /** One chunk: one feature pull request. */
-export function Chunk({ id, title, deps = [], gate = false, children }: ChunkProps) {
+export function Chunk({ id, title, deps = [], gate = false, done = false, children }: ChunkProps) {
   useBrokenLinks().collectAnchor(anchor(id));
   return (
     <section id={anchor(id)} className={`${styles.chunk} ${gate ? styles.gate : ''}`}>
@@ -49,6 +53,7 @@ export function Chunk({ id, title, deps = [], gate = false, children }: ChunkPro
         </a>
         <span className={styles.title}>{title}</span>
         {gate && <span className={styles.flag}>Gate</span>}
+        {done && <span className={styles.flag}>Done</span>}
       </header>
       <div className={styles.body}>{children}</div>
       {deps.length > 0 && (

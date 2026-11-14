@@ -1,7 +1,7 @@
 //! The screen drawn with twip-graphics: each page's content recorded once into a picture ([`retained`]), and each
 //! frame (the desk, the pages' shadows and paper, their pictures, the view's overlays, the rulers) recorded in device
-//! pixels and then rendered on the CPU. It draws what [`super::Renderer::draw`] draws with Skia, item for item; the
-//! colours, theme and appearance come from that renderer.
+//! pixels and then rendered on the CPU. The colours, theme and appearance come from
+//! [`super::Renderer`].
 
 mod overlay;
 pub mod retained;
@@ -35,7 +35,7 @@ use crate::layout::traverse::paint;
 pub struct Graphics {
     res: Resources,
     cpu: cpu::Renderer,
-    /// Registered faces, by the face file's address, index and instance (as the Skia typefaces are keyed).
+    /// Registered faces, by the face file's address, index and instance.
     fonts: HashMap<(usize, u32, u32), Option<FontId>>,
     /// The first document face drawn: UI strings use it for characters the chrome faces lack.
     fallback: Option<Rc<Face>>,
@@ -61,7 +61,7 @@ fn rect([x0, y0, x1, y1]: [f64; 4]) -> kurbo::Rect {
     kurbo::Rect::new(x0, y0, x1, y1)
 }
 
-/// A rect's outline, clockwise from its top left, as Skia strokes a rect.
+/// A rect's outline, clockwise from its top left.
 fn rect_path(r: kurbo::Rect) -> [PathEl; 5] {
     [
         PathEl::MoveTo((r.x0, r.y0).into()),
@@ -72,7 +72,7 @@ fn rect_path(r: kurbo::Rect) -> [PathEl; 5] {
     ]
 }
 
-/// A stroke `width` wide with Skia's paint defaults: butt caps, miter joins at limit 4.
+/// A stroke `width` wide: butt caps, miter joins at limit 4.
 fn pen(width: f64) -> kurbo::Stroke {
     kurbo::Stroke::new(width).with_caps(kurbo::Cap::Butt).with_join(kurbo::Join::Miter).with_miter_limit(4.0)
 }
@@ -97,7 +97,7 @@ fn chrome_face(face: ChromeFace) -> Option<Rc<Face>> {
     FACES.with(|f| f[face as usize].clone())
 }
 
-/// `text`'s width at `size` in `face`: the characters' advances, as Skia's `measure_str` adds them (no shaping).
+/// `text`'s width at `size` in `face`: the characters' advances added up (no shaping).
 fn measure(face: &Face, text: &str, size: f64) -> f64 {
     text.chars().map(|c| face.advance(face.glyph(c).unwrap_or(0))).sum::<f64>() * face.scale(size)
 }
@@ -210,7 +210,7 @@ impl Graphics {
         &self.res
     }
 
-    /// Tools: `page`'s content as a picture in its points, recorded now (the oracle compares it with Skia's drawing).
+    /// Tests: `page`'s content as a picture in its points, recorded now.
     #[doc(hidden)]
     pub fn page_picture(&mut self, r: &Renderer, page: &crate::layout::fragment::PageFragment, images: &[Vec<u8>]) -> twip_graphics::scene::Picture {
         let mut rec = Recorder::new();
@@ -266,7 +266,7 @@ impl Graphics {
     }
 
     /// Records `text` with its baseline's start at (`x`, `y`), `size` points, in `face`: each character's nominal glyph
-    /// at the sum of the advances before it, as Skia's `draw_str` places them.
+    /// at the sum of the advances before it.
     #[allow(clippy::too_many_arguments, reason = "one string's place, face, size and colour")]
     fn text(&mut self, rec: &mut Recorder, face: &Rc<Face>, text: &str, x: f64, y: f64, size: f64, c: Color) {
         let Some(font) = self.font(face) else { return };
@@ -361,8 +361,8 @@ impl Graphics {
 }
 
 /// A page's shadow around its paper `p` (device pixels): four rounded rects, each grown and dropped a little more
-/// and fainter. Only what shows around the paper is drawn (the paper is opaque and drawn over it), as Skia's
-/// difference clip does, in whole-pixel pieces: the strips above and below the paper through the rounded rect, the
+/// and fainter. Only what shows around the paper is drawn (the paper is opaque and drawn over it),
+/// in whole-pixel pieces: the strips above and below the paper through the rounded rect, the
 /// sides' rows by the corners likewise, and the sides' straight stretch between them as plain rects. Filling the
 /// paper's area under it would cost four fills of the page a frame.
 fn shadow(rec: &mut Recorder, p: kurbo::Rect, dpr: f64, k: f32) {

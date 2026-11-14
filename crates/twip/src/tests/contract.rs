@@ -1,5 +1,5 @@
-//! The renderer contract: each scenario runs with no frames, with the Skia
-//! renderer drawing a frame after every input (as the host does), and with a recorder that lags and drops frames. The
+//! The renderer contract: each scenario runs with no frames, with the
+//! twip-graphics renderer drawing a frame after every input (as the host does), and with a recorder that lags and drops frames. The
 //! inspection state after every step is the same in all three: editing state doesn't depend on rendering.
 
 use std::path::Path;
@@ -62,7 +62,7 @@ fn same_with_any_renderer(files: &[std::path::PathBuf]) {
     assert!(!files.is_empty());
     let failed = par_map(files, |f| {
         let plain = states(f, 0);
-        for (mode, what) in [(1, "drawing every frame with Skia"), (2, "a lagging, dropping recorder")] {
+        for (mode, what) in [(1, "drawing every frame with twip-graphics"), (2, "a lagging, dropping recorder")] {
             let got = states(f, mode);
             if let Some(k) = (0..plain.len()).find(|&k| got.get(k) != plain.get(k)) {
                 let keys: Vec<&String> =

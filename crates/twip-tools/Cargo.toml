@@ -8,7 +8,7 @@ repository.workspace = true
 rust-version.workspace = true
 publish = false
 
-# Built only when asked for (`cargo run -p twip-tools`): no tests, so `cargo test` never links a second Skia binary.
+# Built only when asked for (`cargo run -p twip-tools`): no tests, so `cargo test` never builds it.
 [[bin]]
 name = "twip-tools"
 path = "src/main.rs"

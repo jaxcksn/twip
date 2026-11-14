@@ -12,7 +12,7 @@ static class Rendering
         #region rendering
         var editor = new DocumentEditor
         {
-            // On by default: Graphite on Dawn (D3D12, D3D11, then Vulkan), else the CPU.
+            // On by default: wgpu (D3D12, then Vulkan), else the CPU.
             UseGpu = true,
             // Until set, Windows' caret blink rate; null is a steady caret.
             CaretBlink = TimeSpan.FromMilliseconds(600),

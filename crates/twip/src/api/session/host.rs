@@ -349,7 +349,7 @@ pub(super) struct Presentation {
     pub(super) blink: super::blink::Blink,
     /// The selection the blink last restarted for.
     blink_selection: Option<crate::editing::selection::Selection>,
-    /// Unique on the thread: names this session's WebGL canvas or GPU window.
+    /// Unique on the thread: names this session's GPU canvas or window.
     #[cfg_attr(not(twip_gpu), allow(dead_code, reason = "no GPU target in this build"))]
     serial: u64,
     /// The view settings the chrome and page are drawn with ([`Presentation::apply_look`]); `chrome_set` once the host

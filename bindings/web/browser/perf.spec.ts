@@ -30,7 +30,7 @@ async function record(page: Page, r: Result): Promise<void> {
   const { gpu, dpr } = await page.evaluate(() => {
     const canvas = document.querySelector('canvas') as HTMLCanvasElement | null;
     // In worker mode the canvas was transferred: the worker's backend isn't readable here.
-    const gpu = (navigator as any).gpu ? 'webgpu' : 'webgl';
+    const gpu = (navigator as any).gpu ? 'webgpu' : 'cpu';
     return { gpu: canvas ? gpu : 'none', dpr: devicePixelRatio };
   });
   const out = { ...r, gpu, dpr, commit: COMMIT, p50: at(0.5), p95: at(0.95), max: sorted.at(-1) ?? NaN };

@@ -61,10 +61,10 @@ faces it added.
 - **System fonts** (.NET and Rust). `FontLibrary.System` loads the machine's fonts; `FontLibrary.CreateEmpty()` starts
   with none. The browser gives the engine no fonts, so a web page adds what its documents use, or resolves them on
   demand.
-- **Linux.** Native builds use the system's FreeType and Fontconfig. On Debian and Ubuntu,
+- **Linux.** On Debian and Ubuntu,
   `fonts-crosextra-carlito fonts-crosextra-caladea fonts-liberation` installs the metric-compatible families the
-  [recommended setup](#a-recommended-setup) names. On Alpine, install `fontconfig freetype libstdc++` and a font package
-  such as `font-liberation`.
+  [recommended setup](#a-recommended-setup) names. On Alpine, install a font package such as
+  `font-liberation`.
 
 `families()` (`GetFamiliesAsync`) lists every family the library can draw, for a font box.
 
