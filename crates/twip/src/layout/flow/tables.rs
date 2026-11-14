@@ -409,41 +409,9 @@ impl<'d> PageFill<'d, '_> {
             cell: false,
             odd: self.odd,
         };
-        // Compat ≤ 14: the wrapping floats of the rows placed from the page, each from its row's top where the rows'
-        // first placement puts it. The first row's over it and the later rows' below it.
-        let row_floats: Vec<(&Float, ParaId, usize, f64, f64)> = match self.sec.blocks.get(pos.block) {
-            Some(Block::Table(t)) if !floating && pos.at.at_start() && !page_floats.is_empty() => (0..t.rows.len().min(tb.rows.len()))
-                .flat_map(|r| {
-                    let mut paras = Vec::new();
-                    cell_paras(&t.rows[r..r + 1], &mut paras);
-                    paras.into_iter().map(move |p| (r, p))
-                })
-                .flat_map(|(r, p)| p.inlines.iter().map(move |i| (r, para_id(p), i)))
-                .filter_map(|(r, id, i)| if let Inline::Float(f, _) = i { page_floats.get(&f.id).map(|f| (*f, id, r)) } else { None })
-                .filter(|(f, ..)| {
-                    f.wrap != "none" && matches!(f.v_relative.as_str(), "paragraph" | "margin" | "page") && f.h_align.is_none() && f.v_align.is_none()
-                })
-                .map(|(f, id, r)| (f, id, r, f.v_offset - f.dist[0], f.v_offset + f.h + f.dist[1]))
-                .collect(),
-            _ => Vec::new(),
-        };
         let first_h = tb.rows.first().map_or(0.0, |r| r.height);
         let y0 = *y;
-        // They are in the page's geometry: the text before the table wraps those reaching above it when the page is
-        // filled again, and they keep the place their rows' first placement gives them when the rows then move.
-        let row_top = |r: usize| y0 + tb.rows[..r].iter().filter(|r| !r.hidden).map(|r| r.height).sum::<f64>();
-        let held: Vec<(usize, Placed)> = row_floats
-            .iter()
-            .enumerate()
-            .map(|(k, (f, id, r, _, _))| {
-                let key = (self.sec.index, pos.block, k);
-                let y = if f.v_relative == "paragraph" { row_top(*r) + f.v_offset } else { float::v_pos(f, f.h, &frames, 0.0, 0.0) };
-                let at = (float::h_pos(f, &frames), y);
-                let mut a = Placed::new(key, *id, &Rc::new((*f).clone()), at.0, at.1, f.h);
-                a.collided = a.excl[1] < y0 - EPS;
-                (*r, a)
-            })
-            .collect();
+        let (row_floats, held) = self.held_row_floats(tb, pos.block, pos.at.at_start(), floating, &page_floats, &frames, y0);
         let pinned: HashMap<u64, f64> = held.iter().map(|(_, a)| (a.float.id, a.rect[1])).collect();
         // A tight or through polygon of a single point is drawn but leaves the rows where they are.
         let moves = |a: &Placed| !a.float.poly.as_ref().is_some_and(|p| p.iter().all(|q| *q == p[0]));
@@ -820,6 +788,54 @@ impl<'d> PageFill<'d, '_> {
         carry.first_para = false;
         carry.beside_at = None;
         Ok(Stop::Done)
+    }
+
+    #[allow(clippy::too_many_arguments, reason = "the table, where it starts, its page-placed floats and the page")]
+    #[allow(clippy::type_complexity, reason = "the rows' floats as the row loop reads them")]
+    fn held_row_floats<'f>(
+        &self,
+        tb: &TableLayout,
+        bi: usize,
+        at_start: bool,
+        floating: bool,
+        page_floats: &HashMap<u64, &'f Float>,
+        frames: &Frames,
+        y0: f64,
+    ) -> (Vec<(&'f Float, ParaId, usize, f64, f64)>, Vec<(usize, Placed)>) {
+        // Compat ≤ 14: the wrapping floats of the rows placed from the page, each from its row's top where the rows'
+        // first placement puts it. The first row's over it and the later rows' below it.
+        let row_floats: Vec<(&Float, ParaId, usize, f64, f64)> = match self.sec.blocks.get(bi) {
+            Some(Block::Table(t)) if !floating && at_start && !page_floats.is_empty() => (0..t.rows.len().min(tb.rows.len()))
+                .flat_map(|r| {
+                    let mut paras = Vec::new();
+                    cell_paras(&t.rows[r..r + 1], &mut paras);
+                    paras.into_iter().map(move |p| (r, p))
+                })
+                .flat_map(|(r, p)| p.inlines.iter().map(move |i| (r, para_id(p), i)))
+                .filter_map(|(r, id, i)| if let Inline::Float(f, _) = i { page_floats.get(&f.id).map(|f| (*f, id, r)) } else { None })
+                .filter(|(f, ..)| {
+                    f.wrap != "none" && matches!(f.v_relative.as_str(), "paragraph" | "margin" | "page") && f.h_align.is_none() && f.v_align.is_none()
+                })
+                .map(|(f, id, r)| (f, id, r, f.v_offset - f.dist[0], f.v_offset + f.h + f.dist[1]))
+                .collect(),
+            _ => Vec::new(),
+        };
+        // They are in the page's geometry: the text before the table wraps those reaching above it when the page is
+        // filled again, and they keep the place their rows' first placement gives them when the rows then move.
+        let row_top = |r: usize| y0 + tb.rows[..r].iter().filter(|r| !r.hidden).map(|r| r.height).sum::<f64>();
+        let held: Vec<(usize, Placed)> = row_floats
+            .iter()
+            .enumerate()
+            .map(|(k, (f, id, r, _, _))| {
+                let key = (self.sec.index, bi, k);
+                let y = if f.v_relative == "paragraph" { row_top(*r) + f.v_offset } else { float::v_pos(f, f.h, frames, 0.0, 0.0) };
+                let at = (float::h_pos(f, frames), y);
+                let mut a = Placed::new(key, *id, &Rc::new((*f).clone()), at.0, at.1, f.h);
+                a.collided = a.excl[1] < y0 - EPS;
+                (*r, a)
+            })
+            .collect();
+        (row_floats, held)
     }
 
     // Cell cuts of a split row
