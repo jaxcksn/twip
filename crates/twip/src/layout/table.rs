@@ -1130,6 +1130,8 @@ fn content_widths_uncached(blocks: &[LaidBlock], env: &StoryEnv, fixed: bool, me
                         mn = mn.max(box_w + twips(f.effect[0]) + twips(f.effect[2]));
                     }
                 }
+                // The cell's last paragraph, when empty, doesn't widen it by its indents.
+                let lines = if pieces.is_empty() && bi + 1 == blocks.len() { &[][..] } else { lines };
                 for (li, l) in lines.iter().enumerate() {
                     let start_x = if li == 0 { start0 } else { s.ind_left };
                     let shift = l.xs.first().map_or(0.0, |&x| (x - start_x).max(0.0));

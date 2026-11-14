@@ -246,6 +246,18 @@ fn compat_14_a_left_row_of_a_centred_nested_table_sits_as_a_left_table() {
 }
 
 #[test]
+fn an_empty_last_paragraph_adds_nothing_to_its_auto_cell() {
+    let table = |last: &str| {
+        format!(
+            r#"<w:tbl><w:tblGrid><w:gridCol w:w="500"/><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:tc><w:p><w:pPr><w:ind w:left="1000"/></w:pPr></w:p><w:p><w:pPr>{last}</w:pPr></w:p></w:tc>{}</w:tr></w:tbl><w:p/>"#,
+            dxa_cell(2000, "b")
+        )
+    };
+    let x = |last: &str| glyph_x_in(&table(last), 12, &[], 'b');
+    assert!((x(r#"<w:ind w:left="1600"/>"#) - x("")).abs() < 0.01, "the column is the first paragraph's 1000");
+}
+
+#[test]
 fn a_centred_merged_region_cut_by_the_page_end_centres_in_its_page_part() {
     let blank = crate::docx::read(&crate::docx::blank::blank_docx()).expect("reads");
     let sec = &blank.sections[0];
