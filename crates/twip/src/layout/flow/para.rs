@@ -98,91 +98,7 @@ impl<'d> PageFill<'d, '_> {
             }
         };
         let top = *y + g - if at_top { self.top_lift(style, pb) } else { 0.0 };
-        let wc = style.widow_control;
-        // Compat ≤ 14: when the lines can't stay on the page with a line's notes after a note placed whole, those
-        // notes wait for the next page and the lines stay.
-        let mut force: Option<usize> = None;
-        let (fit, areas, mut take) = loop {
-            let mut yy = top;
-            let mut fit = 0;
-            let mut areas = vec![(area.clone(), Vec::<NotePart>::new())];
-            // After a note waits for the next page, the lines its paragraph can't be parted from there.
-            let mut more: Option<usize> = None;
-            let mut first_ref = None;
-            for (i, l) in pb.lines.iter().enumerate() {
-                let room = l.pitch - l.below;
-                let refs = pb.notes(i);
-                if more.is_some() && refs.iter().any(|r| r.0 == NoteKind::Foot) {
-                    break;
-                }
-                let (mut a, mut rest) = areas.last().cloned().unwrap_or_default();
-                let foot = refs.iter().any(|r| r.0 == NoteKind::Foot);
-                if first_ref.is_none() && foot && a.parts.len() > a.carried {
-                    first_ref = Some(i);
-                }
-                let defer = i == 0 || first_part && wc && (i == 1 || n <= 3);
-                // The last line's space after comes off the room for its notes (a line without notes fits without it).
-                let tail = if i + 1 == n { after } else { 0.0 };
-                let note_tail = if foot { tail } else { 0.0 };
-                if force == Some(i) {
-                    for &(k, id) in refs.iter().filter(|r| r.0 == NoteKind::Foot) {
-                        rest.push(NotePart { kind: k, id, units: self.note_units(k, id, col.width, memos)?.units.clone() });
-                    }
-                } else if !self.add_notes(&refs, &mut a, col, yy + room + note_tail, &mut rest, defer, memos)? && !pb.leading_page_break(i) {
-                    break;
-                }
-                // Above a footnote area compat 15 tests the line's full pitch, compat ≤ 14 its height without the room
-                // multiple spacing adds below it.
-                let above =
-                    if self.ctx.env.text.compat == Compat::Legacy && style.line_rule == LineRule::Auto && style.line > 1.0 { room } else { l.pitch };
-                let over = |a: &NoteArea| a.total() > 0.0 && !col.bottom.holds(yy + above + tail + a.total()) && !pb.leading_page_break(i);
-                let waits = |a: &NoteArea, rest: &[NotePart]| rest.iter().any(|r| !a.parts.iter().any(|p| (p.kind, p.id) == (r.kind, r.id)));
-                if over(&a) && defer {
-                    // The notes fit only without the line's full height: in compat ≤ 14 they may wait instead.
-                    let (mut a2, mut rest2) = areas.last().cloned().unwrap_or_default();
-                    if self.add_notes(&refs, &mut a2, col, yy + l.pitch + tail, &mut rest2, defer, memos)? && waits(&a2, &rest2) {
-                        (a, rest) = (a2, rest2);
-                    }
-                }
-                if over(&a) {
-                    break;
-                }
-                areas.push((a, rest));
-                yy += l.pitch;
-                fit += 1;
-                if matches!(l.hard, Some(Kind::PageBreak | Kind::ColumnBreak)) {
-                    break;
-                }
-                if let Some((a, rest)) = areas.last().filter(|x| !x.1.is_empty()) {
-                    if more.is_none() && waits(a, rest) {
-                        more = Some(match (first_part && wc, n <= 3) {
-                            (true, true) => n - 1 - i,
-                            (true, false) if i == 0 || i + 2 == n => 1,
-                            _ => 0,
-                        });
-                    }
-                    match more {
-                        Some(m) if m > 0 => more = Some(m - 1),
-                        _ => break,
-                    }
-                }
-            }
-            let hard = pb.lines[..fit.min(n)].iter().any(|l| matches!(l.hard, Some(Kind::PageBreak | Kind::ColumnBreak)));
-            let take_of = |fit| lines_to_take(n, fit, hard, first_part, style.keep_lines, style.widow_control);
-            let take = take_of(fit);
-            // Compat 15: when the line that ends the page or column after widow and orphan control ends at a
-            // hyphenation point, it goes on to the next one, and widow and orphan control apply once more.
-            let (fit, take) = if self.ctx.env.text.bottom_hyphen_moves && take > 0 && take < n && !hard && pb.lines[take - 1].hyphen {
-                (take - 1, take_of(take - 1))
-            } else {
-                (fit, take)
-            };
-            if take == 0 && force.is_none() && wc && !at_top && self.ctx.env.text.compat == Compat::Legacy && first_ref.is_some() {
-                force = first_ref;
-                continue;
-            }
-            break (fit, areas, take);
-        };
+        let (fit, areas, mut take) = self.fit_plain(pb, style, area, col, top, first_part, at_top, after, memos)?;
         if let Some((b, cap)) = self.at.keep_cap
             && b == pos.block
             && first_part
@@ -293,6 +209,109 @@ impl<'d> PageFill<'d, '_> {
             }
             _ => Stop::Done,
         })
+    }
+
+    // Lines that fit with their notes
+    #[allow(clippy::too_many_arguments, reason = "the paragraph's lines, the note area and where the lines start")]
+    fn fit_plain(
+        &mut self,
+        pb: &ParaLines,
+        style: &ParaStyle,
+        area: &NoteArea,
+        col: &ColumnSpace,
+        top: f64,
+        first_part: bool,
+        at_top: bool,
+        after: f64,
+        memos: &mut Memos,
+    ) -> Result<(usize, Vec<(NoteArea, Vec<NotePart>)>, usize), Yield> {
+        let n = pb.lines.len();
+        let wc = style.widow_control;
+        // Compat ≤ 14: when the lines can't stay on the page with a line's notes after a note placed whole, those
+        // notes wait for the next page and the lines stay.
+        let mut force: Option<usize> = None;
+        let fitted = loop {
+            let mut yy = top;
+            let mut fit = 0;
+            let mut areas = vec![(area.clone(), Vec::<NotePart>::new())];
+            // After a note waits for the next page, the lines its paragraph can't be parted from there.
+            let mut more: Option<usize> = None;
+            let mut first_ref = None;
+            for (i, l) in pb.lines.iter().enumerate() {
+                let room = l.pitch - l.below;
+                let refs = pb.notes(i);
+                if more.is_some() && refs.iter().any(|r| r.0 == NoteKind::Foot) {
+                    break;
+                }
+                let (mut a, mut rest) = areas.last().cloned().unwrap_or_default();
+                let foot = refs.iter().any(|r| r.0 == NoteKind::Foot);
+                if first_ref.is_none() && foot && a.parts.len() > a.carried {
+                    first_ref = Some(i);
+                }
+                let defer = i == 0 || first_part && wc && (i == 1 || n <= 3);
+                // The last line's space after comes off the room for its notes (a line without notes fits without it).
+                let tail = if i + 1 == n { after } else { 0.0 };
+                let note_tail = if foot { tail } else { 0.0 };
+                if force == Some(i) {
+                    for &(k, id) in refs.iter().filter(|r| r.0 == NoteKind::Foot) {
+                        rest.push(NotePart { kind: k, id, units: self.note_units(k, id, col.width, memos)?.units.clone() });
+                    }
+                } else if !self.add_notes(&refs, &mut a, col, yy + room + note_tail, &mut rest, defer, memos)? && !pb.leading_page_break(i) {
+                    break;
+                }
+                // Above a footnote area compat 15 tests the line's full pitch, compat ≤ 14 its height without the room
+                // multiple spacing adds below it.
+                let above =
+                    if self.ctx.env.text.compat == Compat::Legacy && style.line_rule == LineRule::Auto && style.line > 1.0 { room } else { l.pitch };
+                let over = |a: &NoteArea| a.total() > 0.0 && !col.bottom.holds(yy + above + tail + a.total()) && !pb.leading_page_break(i);
+                let waits = |a: &NoteArea, rest: &[NotePart]| rest.iter().any(|r| !a.parts.iter().any(|p| (p.kind, p.id) == (r.kind, r.id)));
+                if over(&a) && defer {
+                    // The notes fit only without the line's full height: in compat ≤ 14 they may wait instead.
+                    let (mut a2, mut rest2) = areas.last().cloned().unwrap_or_default();
+                    if self.add_notes(&refs, &mut a2, col, yy + l.pitch + tail, &mut rest2, defer, memos)? && waits(&a2, &rest2) {
+                        (a, rest) = (a2, rest2);
+                    }
+                }
+                if over(&a) {
+                    break;
+                }
+                areas.push((a, rest));
+                yy += l.pitch;
+                fit += 1;
+                if matches!(l.hard, Some(Kind::PageBreak | Kind::ColumnBreak)) {
+                    break;
+                }
+                if let Some((a, rest)) = areas.last().filter(|x| !x.1.is_empty()) {
+                    if more.is_none() && waits(a, rest) {
+                        more = Some(match (first_part && wc, n <= 3) {
+                            (true, true) => n - 1 - i,
+                            (true, false) if i == 0 || i + 2 == n => 1,
+                            _ => 0,
+                        });
+                    }
+                    match more {
+                        Some(m) if m > 0 => more = Some(m - 1),
+                        _ => break,
+                    }
+                }
+            }
+            let hard = pb.lines[..fit.min(n)].iter().any(|l| matches!(l.hard, Some(Kind::PageBreak | Kind::ColumnBreak)));
+            let take_of = |fit| lines_to_take(n, fit, hard, first_part, style.keep_lines, style.widow_control);
+            let take = take_of(fit);
+            // Compat 15: when the line that ends the page or column after widow and orphan control ends at a
+            // hyphenation point, it goes on to the next one, and widow and orphan control apply once more.
+            let (fit, take) = if self.ctx.env.text.bottom_hyphen_moves && take > 0 && take < n && !hard && pb.lines[take - 1].hyphen {
+                (take - 1, take_of(take - 1))
+            } else {
+                (fit, take)
+            };
+            if take == 0 && force.is_none() && wc && !at_top && self.ctx.env.text.compat == Compat::Legacy && first_ref.is_some() {
+                force = first_ref;
+                continue;
+            }
+            break (fit, areas, take);
+        };
+        Ok(fitted)
     }
 
     pub(super) fn para_gap(&self, p: &Paragraph, pos: &FlowToken, carry: &FlowState, empty: bool) -> f64 {
