@@ -411,7 +411,7 @@ page 8 15840 12240
   1440 864 Landscape section · watermark lives in this header
   7077 11303 Page 9  •  Section 3
   turned 2149 5618 0 -1 NORTH
-  turned 2149 6993 0 -1 SOUTH
+  turned 2149 7118 0 -1 SOUTH
   turned 2149 8279 0 -1 WEST
   turned 2149 9394 0 -1 EAST
   cell 1450 3478 4450 4385
@@ -460,7 +460,7 @@ page 8 15840 12240
   cell 8850 5485 9850 6035
   cell 9850 5485 11050 6035
   cell 11050 5485 14410 6035
-  cell 1450 6035 2750 7135
+  cell 1450 6035 2750 7386
   cell 2750 6035 4450 6585
   cell 4450 6035 5450 6585
   cell 5450 6035 6650 6585

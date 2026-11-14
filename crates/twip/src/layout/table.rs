@@ -2312,6 +2312,7 @@ fn assemble(
             fit_border,
         });
     }
+    let mut regions = Vec::new();
     for ri in 0..rows.len() {
         for ci in 0..rows[ri].cells.len() {
             if rows[ri].cells[ci].v_merge != VMerge::Restart {
@@ -2328,14 +2329,19 @@ fn assemble(
             if need > have + EPS && !rows[last].exact {
                 rows[last].height += need - have;
             }
-            rows[ri].cells[ci].below = rows[ri + 1..=last].iter().map(|r| r.height).sum();
-            // A vertical region's lines are as long as the region's content is high.
-            let g = &geo[ri][ci];
-            if let Some(v) = vertical_cell(&t.rows[ri].cells[g.ci]) {
-                let c = &rows[ri].cells[ci];
-                let len = have.max(need) - rows[ri].top_border - c.margins[0] - c.margins[2];
-                turn_cell(&mut rows[ri].cells[ci], &t.rows[ri].cells[g.ci], g, v, len, t.fixed, env, memos)?;
-            }
+            regions.push((ri, ci, last));
+        }
+    }
+    // Once every region has grown its last row (a later region can grow a row an earlier one spans), each region's
+    // rows below its first and, for vertical text, its lines as long as its content is high.
+    for (ri, ci, last) in regions {
+        rows[ri].cells[ci].below = rows[ri + 1..=last].iter().map(|r| r.height).sum();
+        let g = &geo[ri][ci];
+        if let Some(v) = vertical_cell(&t.rows[ri].cells[g.ci]) {
+            let c = &rows[ri].cells[ci];
+            let high: f64 = rows[ri..=last].iter().map(|r| r.height).sum();
+            let len = high - rows[ri].top_border - c.margins[0] - c.margins[2];
+            turn_cell(&mut rows[ri].cells[ci], &t.rows[ri].cells[g.ci], g, v, len, t.fixed, env, memos)?;
         }
     }
     let mut bottom_border = rows.last().map(|r| r.cells.iter().map(|c| space_h(&c.edges[2])).fold(0.0, f64::max)).unwrap_or(0.0);
