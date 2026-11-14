@@ -3176,7 +3176,9 @@ fn compat_14_balanced_columns_end_no_higher_than_a_columns_last_line_with_its_mu
     // the double line by its text, but the section ends below its full box, as after the same lines in one column.
     let sect = r#"<w:sectPr><w:type w:val="continuous"/><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/><w:cols w:num="2" w:space="720"/></w:sectPr>"#;
     let close = r#"<w:sectPr><w:type w:val="continuous"/><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr>"#;
-    let p = |k: usize, spacing: &str, extra: &str| format!(r#"<w:p><w:pPr><w:spacing w:after="0" {spacing}/>{extra}</w:pPr><w:r><w:t>P{k}</w:t></w:r></w:p>"#);
+    let p = |k: usize, spacing: &str, extra: &str| {
+        format!(r#"<w:p><w:pPr><w:spacing w:after="0" {spacing}/>{extra}</w:pPr><w:r><w:t>P{k}</w:t></w:r></w:p>"#)
+    };
     let lines = [r#"w:line="360" w:lineRule="exact""#, r#"w:line="220" w:lineRule="exact""#, r#"w:line="480" w:lineRule="auto""#];
     let head: String = lines.iter().enumerate().map(|(k, l)| p(k + 1, l, "")).collect();
     let next = format!(r#"<w:p><w:pPr><w:spacing w:after="0"/>{close}</w:pPr><w:r><w:t>NEXT</w:t></w:r></w:p>"#);

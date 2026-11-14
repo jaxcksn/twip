@@ -118,7 +118,12 @@ pub struct JobNotes {
 /// A kind's notes are one story in reference order: a note whose last paragraph mark is hidden joins the next note's
 /// first paragraph. Footnotes draw it in the earlier note and the next note again in full; endnotes once, the next
 /// note going on from it. `None` when no note's last mark is hidden.
-fn joined_notes(notes: &HashMap<i64, Vec<Block>>, order: &[i64], view: crate::docx::review::MarkupView, once: bool) -> Option<HashMap<i64, Vec<Block>>> {
+fn joined_notes(
+    notes: &HashMap<i64, Vec<Block>>,
+    order: &[i64],
+    view: crate::docx::review::MarkupView,
+    once: bool,
+) -> Option<HashMap<i64, Vec<Block>>> {
     let hidden = |b: Option<&Vec<Block>>| matches!(b.and_then(|b| b.last()), Some(Block::Para(p)) if view.hides(&p.mark.rev));
     if !order.iter().any(|id| hidden(notes.get(id))) {
         return None;

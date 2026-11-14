@@ -105,7 +105,8 @@ pub fn turned_in(units: &[StoryUnit], v: Vertical, rect: [f64; 4], across: f64, 
     let [x0, y0, x1, y1] = rect;
     let unit_items = |u: &StoryUnit| {
         let top = u.top + across;
-        let children = super::table::clip_box(&u.content, f64::NEG_INFINITY, f64::INFINITY, first - top, bottom - top).unwrap_or_else(|| u.content.clone());
+        let children =
+            super::table::clip_box(&u.content, f64::NEG_INFINITY, f64::INFINITY, first - top, bottom - top).unwrap_or_else(|| u.content.clone());
         upright(&super::traverse::items_of(&[Child::Group { offset: (0.0, top), children }]), v)
     };
     let turn = |centre: [f64; 2], deg: f64, items: Vec<Item>| Item::Turned(Rc::new(Turned { centre, deg, items }));

@@ -1408,7 +1408,11 @@ fn border_doc(borders: &str, rows: &str, mode: i64) -> crate::docx::Document {
 }
 
 fn border_rows(n: usize, tc_pr: &str) -> String {
-    (0..n).map(|i| format!(r#"<w:tr><w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/>{tc_pr}</w:tcPr><w:p><w:r><w:t>R{i}</w:t></w:r></w:p></w:tc></w:tr>"#)).collect()
+    (0..n)
+        .map(|i| {
+            format!(r#"<w:tr><w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/>{tc_pr}</w:tcPr><w:p><w:r><w:t>R{i}</w:t></w:r></w:p></w:tc></w:tr>"#)
+        })
+        .collect()
 }
 
 #[test]
@@ -1547,7 +1551,11 @@ fn a_centred_merged_region_cut_by_the_page_goes_on_at_the_next_parts_top() {
 fn compat_15_a_moved_table_on_a_refilled_page_is_drawn_at_its_own_x() {
     let table = |name: &str, pos: &str, overlap: &str| {
         let rows: String = (1..=3)
-            .map(|i| format!(r#"<w:tr><w:tc><w:tcPr><w:tcW w:w="4000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>{name} row {i}</w:t></w:r></w:p></w:tc></w:tr>"#))
+            .map(|i| {
+                format!(
+                    r#"<w:tr><w:tc><w:tcPr><w:tcW w:w="4000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>{name} row {i}</w:t></w:r></w:p></w:tc></w:tr>"#
+                )
+            })
             .collect();
         format!(
             r#"<w:tbl><w:tblPr><w:tblpPr w:leftFromText="181" w:rightFromText="181" {pos} w:horzAnchor="margin" w:tblpYSpec="top"/>{overlap}<w:tblW w:w="4000" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid>{rows}</w:tbl>"#

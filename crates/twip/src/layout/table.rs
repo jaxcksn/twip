@@ -2605,29 +2605,25 @@ fn clip_nested(c: &Child, lo: f64, hi: f64, top: f64, bottom: f64) -> Option<Chi
             // A nested table's borders and shading are cut with its text once the enclosing cell's clip is open.
             let open = lo.is_finite() || hi.is_finite();
             let rows: Vec<RowFragment> = {
-            let mut cut = |items: &[Item]| -> Box<[Item]> {
-                if !open {
-                    return items.into();
-                }
-                items
-                    .iter()
-                    .filter_map(|i| match i {
-                        Item::Rect { rect, colour } => {
-                            let r = [rect[0].max(lo), rect[1].max(top), rect[2].min(hi), rect[3].min(bottom)];
-                            if r != *rect {
-                                any = true;
+                let mut cut = |items: &[Item]| -> Box<[Item]> {
+                    if !open {
+                        return items.into();
+                    }
+                    items
+                        .iter()
+                        .filter_map(|i| match i {
+                            Item::Rect { rect, colour } => {
+                                let r = [rect[0].max(lo), rect[1].max(top), rect[2].min(hi), rect[3].min(bottom)];
+                                if r != *rect {
+                                    any = true;
+                                }
+                                (r[2] > r[0] && r[3] > r[1]).then_some(Item::rect(r, *colour))
                             }
-                            (r[2] > r[0] && r[3] > r[1]).then_some(Item::rect(r, *colour))
-                        }
-                        other => Some(other.clone()),
-                    })
-                    .collect()
-            };
-            t
-                .rows
-                .iter()
-                .map(|r| RowFragment { background: cut(&r.background), borders: cut(&r.borders), ..r.clone() })
-                .collect()
+                            other => Some(other.clone()),
+                        })
+                        .collect()
+                };
+                t.rows.iter().map(|r| RowFragment { background: cut(&r.background), borders: cut(&r.borders), ..r.clone() }).collect()
             };
             let rows = rows.iter().map(|r| {
                 let cells = r.cells.iter().map(|cell| {

@@ -918,7 +918,8 @@ fn compat_15_a_note_area_under_balanced_columns_keeps_the_last_notes_space_after
     // The reference in a balanced two-column section between one-column ones: the area holds the note's space after
     // below its last line, as a one-column page's does.
     let note_y = |after: u32| {
-        let extra = format!(r#"<w:footnote w:id="10"><w:p><w:pPr><w:spacing w:after="{after}"/></w:pPr><w:r><w:t>Note text</w:t></w:r></w:p></w:footnote>"#);
+        let extra =
+            format!(r#"<w:footnote w:id="10"><w:p><w:pPr><w:spacing w:after="{after}"/></w:pPr><w:r><w:t>Note text</w:t></w:r></w:p></w:footnote>"#);
         let mut body = para("Intro", &[]) + &sect("", false);
         body += &(1..=4).map(|i| para(&format!("L{i:02}"), if i == 2 { &["f10"][..] } else { &[] })).collect::<String>();
         body += &sect(r#"<w:type w:val="continuous"/><w:cols w:num="2" w:space="720"/>"#, false);
@@ -969,14 +970,23 @@ fn compat_14_widow_control_moves_a_paragraph_whose_float_reaches_into_the_note_a
     let ppr = r#"<w:pPr><w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="exact"/></w:pPr>"#;
     let note: String = (1..=6).map(|k| format!(r#"<w:p>{ppr}<w:r><w:t>Note {k}</w:t></w:r></w:p>"#)).collect();
     let extra = format!(r#"<w:footnote w:id="10">{note}</w:footnote>"#);
-    let frame = format!(r#"<w:p><w:pPr><w:framePr w:w="3000" w:hSpace="180" w:wrap="around" w:vAnchor="text" w:hAnchor="margin" w:xAlign="right" w:y="1"/>{}</w:pPr><w:r><w:t>{}</w:t></w:r></w:p>"#, &ppr[7..ppr.len() - 8], "Framed paragraph ".repeat(4));
+    let frame = format!(
+        r#"<w:p><w:pPr><w:framePr w:w="3000" w:hSpace="180" w:wrap="around" w:vAnchor="text" w:hAnchor="margin" w:xAlign="right" w:y="1"/>{}</w:pPr><w:r><w:t>{}</w:t></w:r></w:p>"#,
+        &ppr[7..ppr.len() - 8],
+        "Framed paragraph ".repeat(4)
+    );
     let beside = "Words beside the frame that run on for a few lines of text. ".repeat(4);
     let zeta: String = (1..=120).map(|k| format!("z{k} ")).collect();
     let alone = |n: usize| {
         let fill: String = (0..n)
-            .map(|k| format!(r#"<w:p>{ppr}<w:r><w:t>F{k}</w:t></w:r>{}</w:p>"#, if k == 0 { r#"<w:r><w:footnoteReference w:id="10"/></w:r>"# } else { "" }))
+            .map(|k| {
+                format!(r#"<w:p>{ppr}<w:r><w:t>F{k}</w:t></w:r>{}</w:p>"#, if k == 0 { r#"<w:r><w:footnoteReference w:id="10"/></w:r>"# } else { "" })
+            })
             .collect();
-        let body = format!(r#"{fill}{frame}<w:p>{ppr}<w:r><w:t xml:space="preserve">{beside}</w:t></w:r></w:p><w:p>{ppr}{pic}<w:r><w:t xml:space="preserve">{zeta}</w:t></w:r></w:p>{}"#, sect("", true));
+        let body = format!(
+            r#"{fill}{frame}<w:p>{ppr}<w:r><w:t xml:space="preserve">{beside}</w:t></w:r></w:p><w:p>{ppr}{pic}<w:r><w:t xml:space="preserve">{zeta}</w:t></w:r></w:p>{}"#,
+            sect("", true)
+        );
         let page = &super::page_chars(&notes_doc_with(&body, "", &extra)?)[0];
         let mut ys: Vec<f64> = page.iter().filter(|c| c.0 == 'z').map(|c| c.2).collect();
         ys.dedup_by(|a, b| (*a - *b).abs() < 0.5);
@@ -1026,7 +1036,9 @@ fn an_empty_paragraph_with_a_deleted_mark_ending_a_notes_story_isnt_laid_out() {
 #[test]
 fn text_with_a_deleted_mark_ending_a_notes_story_takes_the_normal_styles_properties() {
     let del = r#"w:id="1" w:author="A" w:date="2026-01-01T00:00:00Z""#;
-    let extra = format!(r#"<w:footnote w:id="10"><w:p><w:pPr><w:jc w:val="right"/><w:rPr><w:del {del}/></w:rPr></w:pPr><w:r><w:t>Tail</w:t></w:r></w:p></w:footnote>"#);
+    let extra = format!(
+        r#"<w:footnote w:id="10"><w:p><w:pPr><w:jc w:val="right"/><w:rPr><w:del {del}/></w:rPr></w:pPr><w:r><w:t>Tail</w:t></w:r></w:p></w:footnote>"#
+    );
     let Some(mut doc) = notes_doc_with(&(para("Text", &["f10"]) + &sect("", true)), "", &extra) else { return };
     doc.review.view = crate::docx::review::MarkupView::NoMarkup;
     let page = &super::page_chars(&doc)[0];
