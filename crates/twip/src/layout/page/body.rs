@@ -363,22 +363,7 @@ pub fn layout_body(
                 carry = saved.1.clone();
                 col_children.clear();
                 bottoms.clear();
-                for (k, col) in cols.iter().enumerate() {
-                    let page_empty = k == 0 && !space.mid_page;
-                    fill.column = k;
-                    let r = fill.fill(&pos, &carry, *col, page_empty, memos)?;
-                    let st = r.stop;
-                    (pos, carry) = (r.token, r.state);
-                    col_children.push(r.children);
-                    bottoms.push(r.bottom);
-                    stop = st;
-                    if matches!(st, Stop::Done | Stop::Page) {
-                        break;
-                    }
-                    if k + 1 < cols.len() {
-                        carry.keep_top = st == Stop::Column && carry.keep_top || st == Stop::Full && space.mid_page;
-                    }
-                }
+                fill_columns(&mut fill, cols, space.mid_page, &mut pos, &mut carry, &mut col_children, &mut bottoms, &mut stop, memos)?;
                 let found = fill.at.found.clone();
                 let notes = fill.at.stream.as_ref().map_or(0.0, |a| a.height);
                 // A float that met earlier text only in this fill is seen by that text in the next.
@@ -496,20 +481,7 @@ pub fn layout_body(
     } else if pos.block >= nblocks && (carry.note_rest.is_empty() && carry.table_rest.is_none() || stop != Stop::Full) {
         section_end = Some(bottoms.iter().copied().fold(page_top, f64::max));
     }
-    let mut texts = Vec::new();
-    crate::layout::traverse::lines_in(&body, &mut |para, l, dx, dy| {
-        for (r, pic) in l.line.texts.iter() {
-            let (ox, oy) = (dx + l.x, dy + l.y);
-            texts.push((para.unwrap_or(crate::layout::ids::ParaId(0)), [r[0] + ox, r[1] + oy, r[2] + ox, r[3] + oy], pic.clone()));
-        }
-    });
-    if !texts.is_empty() {
-        let fields = crate::layout::text::FieldValues::default();
-        let senv = crate::layout::story::StoryEnv { ctx: fill.ctx, fields: &fields, notes: fill.note_numbers };
-        for (para, rect, pic) in texts {
-            body.extend(crate::layout::story::inline_text_box(&pic, rect, para, &senv, memos)?);
-        }
-    }
+    inline_text_boxes(&fill, &mut body, memos)?;
     let shown = crate::layout::expansion::shown(&body);
     body.extend(shown);
     separators(&s.section_in(env.ctx.env.text.review.view).columns, cols, page_top, earlier, &mut body);
@@ -538,6 +510,57 @@ pub fn layout_body(
     effects.floats = placed.iter().filter(|f| f.wrap != crate::layout::float::Wrap::None).cloned().collect();
     let fragment = Rc::new(BoxFragment { kind: BoxKind::Body, id: Some(FragmentId::next()), offset: (0.0, 0.0), size, children });
     Ok(PageBody { fragment, end: PageToken { section: space.section, flow: pos, state: carry }, section_end, effects })
+}
+
+// One attempt's columns
+#[allow(clippy::too_many_arguments, reason = "the attempt's flow position, carried state and the columns' results")]
+fn fill_columns(
+    fill: &mut PageFill,
+    cols: &[ColumnSpace],
+    mid_page: bool,
+    pos: &mut FlowToken,
+    carry: &mut FlowState,
+    col_children: &mut Vec<Vec<Child>>,
+    bottoms: &mut Vec<f64>,
+    stop: &mut Stop,
+    memos: &mut Memos,
+) -> Result<(), Yield> {
+    for (k, col) in cols.iter().enumerate() {
+        let page_empty = k == 0 && !mid_page;
+        fill.column = k;
+        let r = fill.fill(pos, carry, *col, page_empty, memos)?;
+        let st = r.stop;
+        (*pos, *carry) = (r.token, r.state);
+        col_children.push(r.children);
+        bottoms.push(r.bottom);
+        *stop = st;
+        if matches!(st, Stop::Done | Stop::Page) {
+            break;
+        }
+        if k + 1 < cols.len() {
+            carry.keep_top = st == Stop::Column && carry.keep_top || st == Stop::Full && mid_page;
+        }
+    }
+    Ok(())
+}
+
+// Inline text boxes
+fn inline_text_boxes(fill: &PageFill, body: &mut Vec<Child>, memos: &mut Memos) -> Result<(), Yield> {
+    let mut texts = Vec::new();
+    crate::layout::traverse::lines_in(body, &mut |para, l, dx, dy| {
+        for (r, pic) in l.line.texts.iter() {
+            let (ox, oy) = (dx + l.x, dy + l.y);
+            texts.push((para.unwrap_or(crate::layout::ids::ParaId(0)), [r[0] + ox, r[1] + oy, r[2] + ox, r[3] + oy], pic.clone()));
+        }
+    });
+    if !texts.is_empty() {
+        let fields = crate::layout::text::FieldValues::default();
+        let senv = crate::layout::story::StoryEnv { ctx: fill.ctx, fields: &fields, notes: fill.note_numbers };
+        for (para, rect, pic) in texts {
+            body.extend(crate::layout::story::inline_text_box(&pic, rect, para, &senv, memos)?);
+        }
+    }
+    Ok(())
 }
 
 /// The footnote area's columns (x, width): with `w15:footnoteColumns` (`n` > 0) n even columns 36pt apart across the
