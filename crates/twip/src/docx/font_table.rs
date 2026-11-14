@@ -30,7 +30,13 @@ pub struct FontDescription {
     #[wire(default, skip_serializing_if = "Option::is_none")]
     pub pitch: Option<FontPitch>,
     /// The PANOSE classification (`w:panose1`): 10 bytes, 20 hex digits on the wire.
-    #[wire(default, skip_serializing_if = "Option::is_none", encode_with = "wire_panose_out", decode_with = "wire_panose_in")]
+    #[wire(
+        default,
+        skip_serializing_if = "Option::is_none",
+        encode_with = "wire_panose_out",
+        decode_with = "wire_panose_in",
+        describe_with = "describe_panose"
+    )]
     pub panose: Option<[u8; 10]>,
     /// The character set (`w:charset`).
     #[wire(default, skip_serializing_if = "Option::is_none")]
@@ -71,6 +77,13 @@ fn wire_panose_out(p: &Option<[u8; 10]>, out: &mut Vec<u8>) {
     match p {
         Some(bytes) => twip_wire::write_str(out, &bytes.iter().map(|b| format!("{b:02X}")).collect::<String>()),
         None => out.extend_from_slice(b"null"),
+    }
+}
+
+twip_wire::__schema! {
+    fn describe_panose(_: &mut twip_wire::schema::Registry) -> twip_wire::schema::Ty {
+        use twip_wire::schema::Ty;
+        Ty::Nullable { of: Box::new(Ty::String) }
     }
 }
 

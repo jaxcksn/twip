@@ -2194,6 +2194,31 @@ impl twip_wire::Encode for GestureAction {
     }
 }
 
+twip_wire::__schema! {
+    impl twip_wire::schema::Describe for GestureAction {
+        fn describe(reg: &mut twip_wire::schema::Registry) -> twip_wire::schema::Ty {
+            use twip_wire::schema::{Def, Field, Payload, Shape, Ty, Variant};
+            reg.named(module_path!(), "GestureAction", |reg| {
+                let word = |name: &'static str, docs: &str| Variant { name: name.into(), docs: docs.into(), payload: Payload::Value { ty: Ty::Literal { value: name } } };
+                let op = Field { name: "op".into(), docs: String::new(), ty: <Command as twip_wire::schema::Describe>::describe(reg), optional: false };
+                Def {
+                    name: "GestureAction".into(),
+                    module: module_path!(),
+                    docs: "What a gesture does: its default action, an event for the application, nothing, or another command.".into(),
+                    shape: Shape::Untagged {
+                        variants: vec![
+                            word("default", "Its built-in action."),
+                            word("emit", "Emits `gesture` instead."),
+                            word("none", "Does nothing."),
+                            Variant { name: "op".into(), docs: "Runs this command instead.".into(), payload: Payload::Fields { fields: vec![op] } },
+                        ],
+                    },
+                }
+            })
+        }
+    }
+}
+
 impl twip_wire::Decode for GestureAction {
     fn decode(r: &mut twip_wire::Reader<'_>) -> Result<GestureAction, twip_wire::Error> {
         if r.peek()? != twip_wire::Kind::String {

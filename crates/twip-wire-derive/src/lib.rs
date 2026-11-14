@@ -5,7 +5,11 @@
 //! `rename_all` and `skip`; on a field `rename`, `default`, `default = "path"`, `skip` and `skip_serializing_if`. A
 //! field may also be `value` (a variant's one argument in `{ "value": v }` beside the tag), `nullable` (an
 //! `Option<Option<T>>`: absent, `null` or a value), `present` (an `Option<T>` that is `Some` whenever present), or name
-//! its own `encode_with` and `decode_with` functions. Anything else is a compile error.
+//! its own `encode_with` and `decode_with` functions (and `describe_with`, for the schema). Anything else is a compile
+//! error.
+//!
+//! `Encode` also writes the type's `twip_wire::schema::Describe`, with its `///` documentation, which twip-wire keeps
+//! only with its `schema` feature.
 
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote};
@@ -16,7 +20,11 @@ use syn::{Data, DeriveInput, Fields, Ident, LitByteStr, LitStr, Path, Type, pars
 #[proc_macro_derive(Encode, attributes(wire))]
 pub fn derive_encode(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
-    expand(&input, true).unwrap_or_else(syn::Error::into_compile_error).into()
+    let tokens = expand(&input, true).and_then(|e| {
+        let d = describe(&input)?;
+        Ok(quote!(#e ::twip_wire::__schema! { #d }))
+    });
+    tokens.unwrap_or_else(syn::Error::into_compile_error).into()
 }
 
 /// Derives `twip_wire::Decode` (and `DecodeFields` for an object).
@@ -78,6 +86,7 @@ struct FieldAttrs {
     mode: Mode,
     encode_with: Option<Path>,
     decode_with: Option<Path>,
+    describe_with: Option<Path>,
 }
 
 fn case(lit: &LitStr) -> syn::Result<Case> {
@@ -146,6 +155,7 @@ fn field_attrs(attrs: &[syn::Attribute]) -> syn::Result<FieldAttrs> {
         mode: Mode::Normal,
         encode_with: None,
         decode_with: None,
+        describe_with: None,
     };
     for attr in attrs.iter().filter(|a| is_ours(a)) {
         attr.parse_nested_meta(|m| {
@@ -166,6 +176,8 @@ fn field_attrs(attrs: &[syn::Attribute]) -> syn::Result<FieldAttrs> {
                 f.mode = Mode::Present;
             } else if m.path.is_ident("encode_with") {
                 f.encode_with = Some(m.value()?.parse::<LitStr>()?.parse()?);
+            } else if m.path.is_ident("describe_with") {
+                f.describe_with = Some(m.value()?.parse::<LitStr>()?.parse()?);
             } else if m.path.is_ident("decode_with") {
                 f.decode_with = Some(m.value()?.parse::<LitStr>()?.parse()?);
             } else {
@@ -227,6 +239,7 @@ fn key_bytes(name: &str) -> LitByteStr {
 
 struct Field<'a> {
     ident: &'a Ident,
+    attrs_raw: &'a [syn::Attribute],
     ty: &'a Type,
     name: String,
     attrs: FieldAttrs,
@@ -240,7 +253,7 @@ fn named_fields(fields: &syn::FieldsNamed, case: Case) -> syn::Result<Vec<Field<
             let ident = f.ident.as_ref().expect("named");
             let attrs = field_attrs(&f.attrs)?;
             let name = attrs.rename.clone().unwrap_or_else(|| rename_field(&ident.unraw().to_string(), case));
-            Ok(Field { ident, ty: &f.ty, name, attrs })
+            Ok(Field { ident, attrs_raw: &f.attrs, ty: &f.ty, name, attrs })
         })
         .collect()
 }
@@ -740,6 +753,134 @@ fn untagged(name: &Ident, generics: &syn::Generics, variants: &[(&syn::Variant, 
                     #(#attempts)*
                     ::core::result::Result::Err(::twip_wire::no_variant(r, #ty_name))
                 }
+            }
+        }
+    })
+}
+
+// Schema
+
+/// The `///` lines of `attrs`, as a `docs(&[...])` call.
+fn docs(attrs: &[syn::Attribute]) -> TokenStream {
+    let lines = attrs.iter().filter(|a| a.path().is_ident("doc")).filter_map(|a| match &a.meta {
+        syn::Meta::NameValue(syn::MetaNameValue { value: syn::Expr::Lit(syn::ExprLit { lit: syn::Lit::Str(l), .. }), .. }) => Some(l.value()),
+        _ => None,
+    });
+    quote!(::twip_wire::schema::docs(&[#(#lines),*]))
+}
+
+/// `T` of `Option<T>`.
+fn option_inner(ty: &Type) -> Option<&Type> {
+    let Type::Path(p) = ty else { return None };
+    let seg = p.path.segments.last().filter(|s| s.ident == "Option")?;
+    match &seg.arguments {
+        syn::PathArguments::AngleBracketed(a) => a.args.iter().find_map(|g| match g {
+            syn::GenericArgument::Type(t) => Some(t),
+            _ => None,
+        }),
+        _ => None,
+    }
+}
+
+/// `fields` as `Field` values, with `reg` in scope.
+fn describe_fields(fields: &[Field<'_>], container_default: bool) -> TokenStream {
+    let each = fields.iter().filter(|f| !f.attrs.skip).map(|f| {
+        let name = &f.name;
+        let doc = docs(f.attrs_raw);
+        let ty = match (&f.attrs.describe_with, f.attrs.mode, option_inner(f.ty)) {
+            (Some(p), _, _) => quote!(#p(reg)),
+            (None, Mode::Present, Some(inner)) => quote!(<#inner as ::twip_wire::schema::Describe>::describe(reg)),
+            (None, _, _) => {
+                let t = f.ty;
+                quote!(<#t as ::twip_wire::schema::Describe>::describe(reg))
+            }
+        };
+        let optional =
+            container_default || f.attrs.skip_if.is_some() || !matches!(f.attrs.default, FieldDefault::None) || option_inner(f.ty).is_some();
+        quote!(::twip_wire::schema::Field { name: #name.into(), docs: #doc, ty: #ty, optional: #optional })
+    });
+    quote!(::std::vec![#(#each),*])
+}
+
+fn describe(input: &DeriveInput) -> syn::Result<TokenStream> {
+    let c = container_attrs(&input.attrs)?;
+    let name = &input.ident;
+    let name_str = name.to_string();
+    let mut generics = input.generics.clone();
+    for p in generics.type_params_mut() {
+        p.bounds.push(syn::parse_quote!(::twip_wire::schema::Describe));
+    }
+    let (imp, ty, wh) = generics.split_for_impl();
+    let case = c.rename_all.unwrap_or(Case::None);
+    let doc = docs(&input.attrs);
+    let shape = match &input.data {
+        Data::Struct(s) => match &s.fields {
+            Fields::Named(named) if !c.transparent => {
+                let fields = named_fields(named, case)?;
+                let list = describe_fields(&fields, c.default);
+                let closed = c.deny;
+                quote!(::twip_wire::schema::Shape::Object { fields: #list, closed: #closed })
+            }
+            Fields::Named(named) if named.named.len() == 1 => {
+                let t = &named.named[0].ty;
+                quote!(::twip_wire::schema::Shape::Alias { of: <#t as ::twip_wire::schema::Describe>::describe(reg) })
+            }
+            Fields::Unnamed(u) if u.unnamed.len() == 1 => {
+                let t = &u.unnamed[0].ty;
+                quote!(::twip_wire::schema::Shape::Alias { of: <#t as ::twip_wire::schema::Describe>::describe(reg) })
+            }
+            _ => return Err(syn::Error::new_spanned(name, "twip-wire: unsupported struct shape")),
+        },
+        Data::Enum(e) => {
+            let mut units = Vec::new();
+            let mut variants = Vec::new();
+            for v in &e.variants {
+                let a = variant_attrs(&v.attrs)?;
+                if a.skip {
+                    continue;
+                }
+                let vname = a.rename.clone().unwrap_or_else(|| rename_variant(&v.ident.to_string(), case));
+                let vdoc = docs(&v.attrs);
+                units.push(quote!(::twip_wire::schema::Unit { name: #vname.into(), docs: #vdoc }));
+                let payload = match &v.fields {
+                    Fields::Unit => quote!(::twip_wire::schema::Payload::Unit),
+                    Fields::Unnamed(u) if u.unnamed.len() == 1 => {
+                        let t = &u.unnamed[0].ty;
+                        let d = quote!(<#t as ::twip_wire::schema::Describe>::describe(reg));
+                        if c.tag.is_some() && field_attrs(&u.unnamed[0].attrs)?.mode != Mode::Value {
+                            quote!(::twip_wire::schema::Payload::Spread { ty: #d })
+                        } else {
+                            quote!(::twip_wire::schema::Payload::Value { ty: #d })
+                        }
+                    }
+                    Fields::Named(named) => {
+                        let fields = named_fields(named, a.rename_all.unwrap_or(Case::None))?;
+                        let list = describe_fields(&fields, false);
+                        quote!(::twip_wire::schema::Payload::Fields { fields: #list })
+                    }
+                    _ => return Err(syn::Error::new_spanned(&v.ident, "twip-wire: unsupported variant shape")),
+                };
+                variants.push(quote!(::twip_wire::schema::Variant { name: #vname.into(), docs: #vdoc, payload: #payload }));
+            }
+            let all_unit = e.variants.iter().all(|v| matches!(v.fields, Fields::Unit) || variant_attrs(&v.attrs).is_ok_and(|a| a.skip));
+            match (&c.tag, c.untagged) {
+                (Some(tag), _) => quote!(::twip_wire::schema::Shape::Tagged { tag: #tag, variants: ::std::vec![#(#variants),*] }),
+                (None, true) => quote!(::twip_wire::schema::Shape::Untagged { variants: ::std::vec![#(#variants),*] }),
+                (None, false) if all_unit => quote!(::twip_wire::schema::Shape::Units { variants: ::std::vec![#(#units),*] }),
+                (None, false) => quote!(::twip_wire::schema::Shape::External { variants: ::std::vec![#(#variants),*] }),
+            }
+        }
+        Data::Union(_) => return Err(syn::Error::new_spanned(name, "twip-wire: unions aren't supported")),
+    };
+    Ok(quote! {
+        impl #imp ::twip_wire::schema::Describe for #name #ty #wh {
+            fn describe(reg: &mut ::twip_wire::schema::Registry) -> ::twip_wire::schema::Ty {
+                reg.named(::core::module_path!(), #name_str, |reg| ::twip_wire::schema::Def {
+                    name: #name_str.into(),
+                    module: ::core::module_path!(),
+                    docs: #doc,
+                    shape: #shape,
+                })
             }
         }
     })

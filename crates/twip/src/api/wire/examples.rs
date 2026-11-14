@@ -33,6 +33,8 @@ pub struct Fixture {
     pub examples: fn() -> Vec<Value>,
     /// Decodes a value as the type and encodes it again.
     pub round_trip: fn(&Value) -> Result<Value, String>,
+    /// Describes the type into a schema.
+    pub describe: fn(&mut twip_wire::schema::Registry) -> twip_wire::schema::Ty,
 }
 
 fn json<T: twip_wire::Encode>(v: &T) -> Value {
@@ -58,6 +60,7 @@ macro_rules! fixture {
                 v.iter().map(json).collect()
             },
             round_trip: round_trip::<$ty>,
+            describe: |reg| reg.add::<$ty>(),
         }
     };
 }

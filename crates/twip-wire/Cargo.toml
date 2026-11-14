@@ -13,3 +13,7 @@ twip-wire-derive = { path = "../twip-wire-derive", version = "=0.1.1" } # x-rele
 # Number formatting, byte for byte what serde_json writes.
 itoa = "1.0.18"
 ryu = "1.0.23"
+
+[features]
+# `schema::Describe` for every derived type, and the schema it builds: for tests and the SDK generators.
+schema = []

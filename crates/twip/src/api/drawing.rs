@@ -43,6 +43,20 @@ impl twip_wire::Encode for ShapePreset {
     }
 }
 
+twip_wire::__schema! {
+    impl twip_wire::schema::Describe for ShapePreset {
+        fn describe(reg: &mut twip_wire::schema::Registry) -> twip_wire::schema::Ty {
+            use twip_wire::schema::{Def, Shape, Unit};
+            reg.named(module_path!(), "ShapePreset", |_| Def {
+                name: "ShapePreset".into(),
+                module: module_path!(),
+                docs: "A preset geometry, by its DrawingML name (`rect`, `wedgeRectCallout`).".into(),
+                shape: Shape::Units { variants: ShapePreset::all().map(|p| Unit { name: p.name().into(), docs: String::new() }).collect() },
+            })
+        }
+    }
+}
+
 impl twip_wire::Decode for ShapePreset {
     fn decode(r: &mut twip_wire::Reader<'_>) -> Result<ShapePreset, twip_wire::Error> {
         let at = r.clone();

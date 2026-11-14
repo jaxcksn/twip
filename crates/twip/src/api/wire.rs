@@ -52,22 +52,38 @@ mod tests {
         }
     }
 
-    /// The committed files are byte for byte what the examples write, and no file is left that no type makes.
-    /// `TWIP_WRITE_WIRE=1 cargo nextest run -p twip --lib fixtures_are_current` rewrites them.
+    /// The wire schema of every fixture's type, with its documentation, for the SDKs.
+    fn schema() -> String {
+        let mut reg = twip_wire::schema::Registry::default();
+        for f in fixtures() {
+            (f.describe)(&mut reg);
+        }
+        let schema = reg.finish().unwrap_or_else(|e| panic!("{e}"));
+        let json: serde_json::Value = serde_json::from_slice(&twip_wire::to_vec(&schema)).expect("the schema is JSON");
+        serde_json::to_string_pretty(&json).expect("JSON") + "\n"
+    }
+
+    /// The committed files are byte for byte what the examples write, `tests/wire-schema.json` is their types' schema,
+    /// and no file is left that no type makes. `TWIP_WRITE_WIRE=1 cargo nextest run -p twip --lib
+    /// fixtures_are_current` rewrites them.
     #[test]
     fn fixtures_are_current() {
-        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/wire");
+        let tests = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests");
+        let dir = tests.join("wire");
         let write = std::env::var_os("TWIP_WRITE_WIRE").is_some();
         let fixtures = fixtures();
+        let mut files: Vec<(std::path::PathBuf, String)> = fixtures
+            .iter()
+            .map(|f| (dir.join(format!("{}.json", f.name)), serde_json::to_string_pretty(&(f.examples)()).expect("examples encode") + "\n"))
+            .collect();
+        files.push((tests.join("wire-schema.json"), schema()));
         let mut stale = Vec::new();
-        for f in &fixtures {
-            let path = dir.join(format!("{}.json", f.name));
-            let text = serde_json::to_string_pretty(&(f.examples)()).expect("examples encode") + "\n";
-            if std::fs::read_to_string(&path).ok().as_deref() == Some(text.as_str()) {
+        for (path, text) in &files {
+            if std::fs::read_to_string(path).ok().as_deref() == Some(text.as_str()) {
                 continue;
             }
             if write {
-                std::fs::write(&path, text).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+                std::fs::write(path, text).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
             } else {
                 stale.push(path.display().to_string());
             }

@@ -99,6 +99,41 @@ impl twip_wire::Decode for OutlineLevel {
     }
 }
 
+twip_wire::__schema! {
+    impl twip_wire::schema::Describe for Color {
+        fn describe(_: &mut twip_wire::schema::Registry) -> twip_wire::schema::Ty {
+            twip_wire::schema::Ty::Format { format: "color" }
+        }
+    }
+
+    impl twip_wire::schema::Describe for Bytes {
+        fn describe(_: &mut twip_wire::schema::Registry) -> twip_wire::schema::Ty {
+            twip_wire::schema::Ty::Format { format: "base64" }
+        }
+    }
+
+    impl<T: twip_wire::schema::Describe> twip_wire::schema::Describe for AutoOr<T> {
+        fn describe(reg: &mut twip_wire::schema::Registry) -> twip_wire::schema::Ty {
+            use twip_wire::schema::Ty;
+            Ty::OneOf { of: vec![Ty::Literal { value: "auto" }, T::describe(reg)] }
+        }
+    }
+
+    impl<T: twip_wire::schema::Describe> twip_wire::schema::Describe for NoneOr<T> {
+        fn describe(reg: &mut twip_wire::schema::Registry) -> twip_wire::schema::Ty {
+            use twip_wire::schema::Ty;
+            Ty::OneOf { of: vec![Ty::Literal { value: "none" }, T::describe(reg)] }
+        }
+    }
+
+    impl twip_wire::schema::Describe for OutlineLevel {
+        fn describe(reg: &mut twip_wire::schema::Registry) -> twip_wire::schema::Ty {
+            use twip_wire::schema::Ty;
+            Ty::OneOf { of: vec![Ty::Literal { value: "body" }, <u8 as twip_wire::schema::Describe>::describe(reg)] }
+        }
+    }
+}
+
 impl twip_wire::Encode for Bytes {
     fn encode(&self, out: &mut Vec<u8>) {
         twip_wire::write_str(out, &base64(&self.0));

@@ -75,6 +75,14 @@ impl twip_wire::Encode for Timestamp {
     }
 }
 
+twip_wire::__schema! {
+    impl twip_wire::schema::Describe for Timestamp {
+        fn describe(_: &mut twip_wire::schema::Registry) -> twip_wire::schema::Ty {
+            twip_wire::schema::Ty::Format { format: "date-time" }
+        }
+    }
+}
+
 impl twip_wire::Decode for Timestamp {
     fn decode(r: &mut twip_wire::Reader<'_>) -> Result<Timestamp, twip_wire::Error> {
         let at = r.clone();

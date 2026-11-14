@@ -48,6 +48,15 @@ impl<T: twip_wire::Decode> twip_wire::Decode for Tri<T> {
     }
 }
 
+twip_wire::__schema! {
+    impl<T: twip_wire::schema::Describe> twip_wire::schema::Describe for Tri<T> {
+        fn describe(reg: &mut twip_wire::schema::Registry) -> twip_wire::schema::Ty {
+            use twip_wire::schema::Ty;
+            Ty::OneOf { of: vec![Ty::Null, Ty::Literal { value: "mixed" }, T::describe(reg)] }
+        }
+    }
+}
+
 /// Editing, or template design (activations go to the application). Read only is its own flag.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
 #[wire(rename_all = "camelCase")]

@@ -50,10 +50,11 @@ message that isn't a conventional commit is rejected locally instead of in CI.
 `twip::api` (`crates/twip/src/api`) defines every operation, state field, event, error and warning. The SDKs are
 not generated: each is written by hand in its language, and each follows the contract. Three things hold them to it:
 
-- **Wire fixtures.** The api types serialize to the JSON the SDKs exchange with the engine. `crates/twip/tests/wire`
-  holds one fixture per type; both SDKs round-trip every one through their own types, and `twip:test` fails when
-  they differ from the api types. After changing an api type, run
-  `TWIP_WRITE_WIRE=1 cargo nextest run -p twip --lib fixtures_are_current` and commit the fixtures.
+- **Wire fixtures.** The api types serialize to the JSON the SDKs exchange with the engine (`twip-wire`'s derives).
+  `crates/twip/tests/wire` holds one fixture per type; both SDKs round-trip every one through their own types, and
+  `twip:test` fails when they differ from the api types. `crates/twip/tests/wire-schema.json` is the same types'
+  schema: every field, variant and tag, with its documentation. After changing an api type, run
+  `TWIP_WRITE_WIRE=1 cargo nextest run -p twip --lib fixtures_are_current` and commit the fixtures and the schema.
 - **Contract scripts.** `tests/contract/*.json` are scripted scenarios (ordering, state, transactions, errors,
   services, review, cleanup) that run against the Rust API, `@twip/web` headless and in a worker, and `Twip.Core`
   unattached and attached; every runner must give the same results. A script in `tests/contract/pending.txt` waits

@@ -5,6 +5,9 @@
 //! over the input slice. An internally tagged enum finds its tag by scanning ahead in the slice instead of buffering
 //! the object; an untagged enum tries its variants from a saved position.
 
+// The derives name this crate `::twip_wire`, here too.
+extern crate self as twip_wire;
+
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
@@ -13,6 +16,27 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 pub use twip_wire_derive::{Decode, Encode};
+
+#[cfg(feature = "schema")]
+pub mod schema;
+
+/// The derives' `schema::Describe` impls: their tokens with the `schema` feature, nothing without.
+#[cfg(feature = "schema")]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __schema {
+    ($($t:tt)*) => {
+        $($t)*
+    };
+}
+
+/// The derives' `schema::Describe` impls: their tokens with the `schema` feature, nothing without.
+#[cfg(not(feature = "schema"))]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __schema {
+    ($($t:tt)*) => {};
+}
 
 /// How deep arrays and objects may nest before the input is refused (serde_json's limit).
 pub const MAX_DEPTH: u32 = 128;
@@ -734,7 +758,7 @@ macro_rules! ints {
     )*};
 }
 
-ints!(u8 u16 u32 u64 usize i8 i16 i32 i64 isize);
+ints!(u8 u16 u32 u64 usize i8 i16 i32 i64 isize i128);
 
 impl Encode for f64 {
     fn encode(&self, out: &mut Vec<u8>) {
