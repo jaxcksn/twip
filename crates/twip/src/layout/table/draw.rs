@@ -396,132 +396,23 @@ pub fn draw_row(tb: &TableLayout, ri: usize, left: f64, top: f64, height: f64, p
         };
         cells.push(CellFragment { cell: k, content: content.into_boxed_slice(), place });
         if let Some(spacing) = row.spacing {
-            let ncols = tb.cols.len();
-            let (mut lo, mut ro) = (c.col == 0, c.col + c.span >= ncols);
-            if tb.rtl {
-                (lo, ro) = (ro, lo);
-            }
-            let bx0 = x0 + c.x + gap(spacing, lo);
-            let bx1 = x0 + c.x + c.w - gap(spacing, ro);
-            let (by0, by1) = (top + row.gap_top, top + height - gap(spacing, tb.is_last(ri)));
-            if let Some(fill) = c.shading {
-                background.push(Item::rect([bx0, by0, bx1, by1], fill));
-            }
-            let [t, l, b, r] = drawn_edges(tb, c);
-            let vis = |e: &'_ Option<Border>| e.as_ref().filter(|b| b.visible()).map(|b| (thick(b), b.clone()));
-            if let Some((w, e)) = vis(t) {
-                edge(&mut borders, [bx0, by0, bx1, by0 + w], true, false, &e);
-            }
-            if let Some((w, e)) = vis(b) {
-                edge(&mut borders, [bx0, by1 - w, bx1, by1], true, true, &e);
-            }
-            if let Some((w, e)) = vis(l) {
-                edge(&mut borders, [bx0, by0, bx0 + w, by1], false, false, &e);
-            }
-            if let Some((w, e)) = vis(r) {
-                edge(&mut borders, [bx1 - w, by0, bx1, by1], false, true, &e);
-            }
+            spaced_cell_frame(tb, row, ri, c, spacing, x0, (top, height), &mut background, &mut borders);
             continue;
         }
         if let Some(fill) = c.shading {
             background.push(Item::rect([x0 + c.x, top, x0 + c.x + c.w, top + height], fill));
         }
-        // Borders
-        let [t, l, b, r] = drawn_edges(tb, c);
-        let (cx0, cx1) = (x0 + c.x, x0 + c.x + c.w);
-        let shown = |e: &Option<Border>| e.as_ref().is_some_and(|b| b.visible());
-        if !shown(t) && c.v_merge != VMerge::Continue {
-            borders.push(Item::Gridline { line: [cx0, top, cx1, top] });
-        }
-        if !shown(l) {
-            borders.push(Item::Gridline { line: [cx0, top, cx0, top + height] });
-        }
-        if !shown(r) {
-            borders.push(Item::Gridline { line: [cx1, top, cx1, top + height] });
-        }
-        if last_of_table && !shown(b) {
-            borders.push(Item::Gridline { line: [cx0, top + height, cx1, top + height] });
-        }
-        if let Some(t) = t.as_ref().filter(|b| b.visible() && c.v_merge != VMerge::Continue) {
-            edge(&mut borders, [cx0 - bw(l) / 2.0, top, cx1 + bw(r) / 2.0, top + thick(t)], true, false, t);
-        }
-        if let Some(l) = l.as_ref().filter(|b| b.visible()) {
-            edge(&mut borders, [cx0 - thick(l) / 2.0, top, cx0 + thick(l) / 2.0, top + height], false, false, l);
-        }
-        if let Some(r) = r.as_ref().filter(|b| b.visible()) {
-            edge(&mut borders, [cx1 - thick(r) / 2.0, top, cx1 + thick(r) / 2.0, top + height], false, true, r);
-        }
-        // A part's last row before a page break draws the table's last-row bottom edge.
-        let b = if last_of_table { &c.cut[1] } else { b };
-        if (last_of_table || row.closes)
-            && let Some(b) = b.as_ref().filter(|b| b.visible())
-        {
-            edge(&mut borders, [cx0 - bw(l) / 2.0, top + height, cx1 + bw(r) / 2.0, top + height + thick(b)], true, true, b);
-        }
+        cell_borders(tb, row, c, x0, (top, height), last_of_table, &mut borders);
     }
     for (a, b, s) in &row.seams {
         edge(&mut borders, [x0 + a, top, x0 + b, top + thick(s)], true, false, s);
     }
     if row.spacing.is_some_and(|s| s > 0.0) {
-        // Outer border
-        let [t, l, b, r] = &tb.outer;
-        let x1 = x0 + tb.cols.iter().sum::<f64>();
-        let (lw, rw) = (bw(l), bw(r));
-        let bottom = top + height + if last_of_table { tb.bottom_border - bw(b) } else { 0.0 };
-        if ri == 0
-            && let Some(t) = t.as_ref().filter(|b| b.visible())
-        {
-            edge(&mut borders, [x0 - lw / 2.0, top, x1 + rw / 2.0, top + thick(t)], true, false, t);
-        }
-        if let Some(l) = l.as_ref().filter(|b| b.visible()) {
-            edge(&mut borders, [x0 - lw / 2.0, top, x0 + lw / 2.0, bottom], false, false, l);
-        }
-        if let Some(r) = r.as_ref().filter(|b| b.visible()) {
-            edge(&mut borders, [x1 - rw / 2.0, top, x1 + rw / 2.0, bottom], false, true, r);
-        }
-        if last_of_table && let Some(b) = b.as_ref().filter(|b| b.visible()) {
-            edge(&mut borders, [x0 - lw / 2.0, bottom, x1 + rw / 2.0, bottom + thick(b)], true, true, b);
-        }
+        spacing_frame(tb, ri, x0, (top, height), last_of_table, &mut borders);
     }
     // Division boxes
     if whole && !row.div_boxes.is_empty() {
-        let side = |b: &Option<Border>| b.as_ref().map_or(0.0, |b| b.space + thick(b));
-        let n = row.div_boxes.len();
-        let (mut l, mut r) = (rect[0], rect[2]);
-        let mut extents = vec![(0.0, 0.0); n];
-        for (k, d) in row.div_boxes.iter().enumerate().rev() {
-            l -= side(&d.borders[1]);
-            r += side(&d.borders[3]);
-            extents[k] = (l, r);
-        }
-        let opening: f64 = row.div_boxes.iter().filter(|d| d.starts).map(|d| side(&d.borders[0])).sum();
-        let mut y = top - opening;
-        let mut tops = vec![outer_top; n];
-        for (k, d) in row.div_boxes.iter().enumerate().filter(|(_, d)| d.starts) {
-            tops[k] = y;
-            if let Some(b) = &d.borders[0] {
-                edge(&mut borders, [extents[k].0, y, extents[k].1, y + thick(b)], true, false, b);
-            }
-            y += side(&d.borders[0]);
-        }
-        let mut y = top + height;
-        let mut bottoms = vec![outer_bottom; n];
-        for (k, d) in row.div_boxes.iter().enumerate().rev().filter(|(_, d)| d.ends) {
-            if let Some(b) = &d.borders[2] {
-                y += b.space;
-                edge(&mut borders, [extents[k].0, y, extents[k].1, y + thick(b)], true, true, b);
-                y += thick(b);
-            }
-            bottoms[k] = y;
-        }
-        for (k, d) in row.div_boxes.iter().enumerate() {
-            if let Some(b) = &d.borders[1] {
-                edge(&mut borders, [extents[k].0, tops[k], extents[k].0 + thick(b), bottoms[k]], false, false, b);
-            }
-            if let Some(b) = &d.borders[3] {
-                edge(&mut borders, [extents[k].1 - thick(b), tops[k], extents[k].1, bottoms[k]], false, true, b);
-            }
-        }
+        division_boxes(row, rect, (top, height), (outer_top, outer_bottom), &mut borders);
     }
     RowFragment {
         row: ri,
@@ -533,6 +424,145 @@ pub fn draw_row(tb: &TableLayout, ri: usize, left: f64, top: f64, height: f64, p
         borders: borders.into_boxed_slice(),
         repeat: false,
         changed: row.changed,
+    }
+}
+
+// A spaced cell's own frame
+#[allow(clippy::too_many_arguments, reason = "the cell, the row's place and the two lists it draws into")]
+fn spaced_cell_frame(
+    tb: &TableLayout,
+    row: &RowBox,
+    ri: usize,
+    c: &CellBox,
+    spacing: f64,
+    x0: f64,
+    (top, height): (f64, f64),
+    background: &mut Vec<Item>,
+    borders: &mut Vec<Item>,
+) {
+    let ncols = tb.cols.len();
+    let (mut lo, mut ro) = (c.col == 0, c.col + c.span >= ncols);
+    if tb.rtl {
+        (lo, ro) = (ro, lo);
+    }
+    let bx0 = x0 + c.x + gap(spacing, lo);
+    let bx1 = x0 + c.x + c.w - gap(spacing, ro);
+    let (by0, by1) = (top + row.gap_top, top + height - gap(spacing, tb.is_last(ri)));
+    if let Some(fill) = c.shading {
+        background.push(Item::rect([bx0, by0, bx1, by1], fill));
+    }
+    let [t, l, b, r] = drawn_edges(tb, c);
+    let vis = |e: &'_ Option<Border>| e.as_ref().filter(|b| b.visible()).map(|b| (thick(b), b.clone()));
+    if let Some((w, e)) = vis(t) {
+        edge(borders, [bx0, by0, bx1, by0 + w], true, false, &e);
+    }
+    if let Some((w, e)) = vis(b) {
+        edge(borders, [bx0, by1 - w, bx1, by1], true, true, &e);
+    }
+    if let Some((w, e)) = vis(l) {
+        edge(borders, [bx0, by0, bx0 + w, by1], false, false, &e);
+    }
+    if let Some((w, e)) = vis(r) {
+        edge(borders, [bx1 - w, by0, bx1, by1], false, true, &e);
+    }
+}
+
+// A cell's borders and gridlines
+fn cell_borders(tb: &TableLayout, row: &RowBox, c: &CellBox, x0: f64, (top, height): (f64, f64), last_of_table: bool, borders: &mut Vec<Item>) {
+    // Borders
+    let [t, l, b, r] = drawn_edges(tb, c);
+    let (cx0, cx1) = (x0 + c.x, x0 + c.x + c.w);
+    let shown = |e: &Option<Border>| e.as_ref().is_some_and(|b| b.visible());
+    if !shown(t) && c.v_merge != VMerge::Continue {
+        borders.push(Item::Gridline { line: [cx0, top, cx1, top] });
+    }
+    if !shown(l) {
+        borders.push(Item::Gridline { line: [cx0, top, cx0, top + height] });
+    }
+    if !shown(r) {
+        borders.push(Item::Gridline { line: [cx1, top, cx1, top + height] });
+    }
+    if last_of_table && !shown(b) {
+        borders.push(Item::Gridline { line: [cx0, top + height, cx1, top + height] });
+    }
+    if let Some(t) = t.as_ref().filter(|b| b.visible() && c.v_merge != VMerge::Continue) {
+        edge(borders, [cx0 - bw(l) / 2.0, top, cx1 + bw(r) / 2.0, top + thick(t)], true, false, t);
+    }
+    if let Some(l) = l.as_ref().filter(|b| b.visible()) {
+        edge(borders, [cx0 - thick(l) / 2.0, top, cx0 + thick(l) / 2.0, top + height], false, false, l);
+    }
+    if let Some(r) = r.as_ref().filter(|b| b.visible()) {
+        edge(borders, [cx1 - thick(r) / 2.0, top, cx1 + thick(r) / 2.0, top + height], false, true, r);
+    }
+    // A part's last row before a page break draws the table's last-row bottom edge.
+    let b = if last_of_table { &c.cut[1] } else { b };
+    if (last_of_table || row.closes)
+        && let Some(b) = b.as_ref().filter(|b| b.visible())
+    {
+        edge(borders, [cx0 - bw(l) / 2.0, top + height, cx1 + bw(r) / 2.0, top + height + thick(b)], true, true, b);
+    }
+}
+
+// A spaced table's outer frame
+fn spacing_frame(tb: &TableLayout, ri: usize, x0: f64, (top, height): (f64, f64), last_of_table: bool, borders: &mut Vec<Item>) {
+    // Outer border
+    let [t, l, b, r] = &tb.outer;
+    let x1 = x0 + tb.cols.iter().sum::<f64>();
+    let (lw, rw) = (bw(l), bw(r));
+    let bottom = top + height + if last_of_table { tb.bottom_border - bw(b) } else { 0.0 };
+    if ri == 0
+        && let Some(t) = t.as_ref().filter(|b| b.visible())
+    {
+        edge(borders, [x0 - lw / 2.0, top, x1 + rw / 2.0, top + thick(t)], true, false, t);
+    }
+    if let Some(l) = l.as_ref().filter(|b| b.visible()) {
+        edge(borders, [x0 - lw / 2.0, top, x0 + lw / 2.0, bottom], false, false, l);
+    }
+    if let Some(r) = r.as_ref().filter(|b| b.visible()) {
+        edge(borders, [x1 - rw / 2.0, top, x1 + rw / 2.0, bottom], false, true, r);
+    }
+    if last_of_table && let Some(b) = b.as_ref().filter(|b| b.visible()) {
+        edge(borders, [x0 - lw / 2.0, bottom, x1 + rw / 2.0, bottom + thick(b)], true, true, b);
+    }
+}
+
+fn division_boxes(row: &RowBox, rect: [f64; 4], (top, height): (f64, f64), (outer_top, outer_bottom): (f64, f64), borders: &mut Vec<Item>) {
+    let side = |b: &Option<Border>| b.as_ref().map_or(0.0, |b| b.space + thick(b));
+    let n = row.div_boxes.len();
+    let (mut l, mut r) = (rect[0], rect[2]);
+    let mut extents = vec![(0.0, 0.0); n];
+    for (k, d) in row.div_boxes.iter().enumerate().rev() {
+        l -= side(&d.borders[1]);
+        r += side(&d.borders[3]);
+        extents[k] = (l, r);
+    }
+    let opening: f64 = row.div_boxes.iter().filter(|d| d.starts).map(|d| side(&d.borders[0])).sum();
+    let mut y = top - opening;
+    let mut tops = vec![outer_top; n];
+    for (k, d) in row.div_boxes.iter().enumerate().filter(|(_, d)| d.starts) {
+        tops[k] = y;
+        if let Some(b) = &d.borders[0] {
+            edge(borders, [extents[k].0, y, extents[k].1, y + thick(b)], true, false, b);
+        }
+        y += side(&d.borders[0]);
+    }
+    let mut y = top + height;
+    let mut bottoms = vec![outer_bottom; n];
+    for (k, d) in row.div_boxes.iter().enumerate().rev().filter(|(_, d)| d.ends) {
+        if let Some(b) = &d.borders[2] {
+            y += b.space;
+            edge(borders, [extents[k].0, y, extents[k].1, y + thick(b)], true, true, b);
+            y += thick(b);
+        }
+        bottoms[k] = y;
+    }
+    for (k, d) in row.div_boxes.iter().enumerate() {
+        if let Some(b) = &d.borders[1] {
+            edge(borders, [extents[k].0, tops[k], extents[k].0 + thick(b), bottoms[k]], false, false, b);
+        }
+        if let Some(b) = &d.borders[3] {
+            edge(borders, [extents[k].1 - thick(b), tops[k], extents[k].1, bottoms[k]], false, true, b);
+        }
     }
 }
 
