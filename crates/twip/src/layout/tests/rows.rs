@@ -1645,3 +1645,20 @@ fn a_table_row_that_meets_a_page_float_lower_down_goes_below_it() {
     let generic = ys(15);
     assert!(generic.iter().all(|&y| y > 380.0), "{generic:?}");
 }
+
+#[test]
+fn compat_12_a_float_laid_out_outside_its_cell_is_wrapped_by_the_text_before_the_table() {
+    let v = r#"<wp:positionV relativeFrom="paragraph"><wp:posOffset>-381000</wp:posOffset></wp:positionV>"#;
+    let x = |lic: &str| {
+        let float = cell_box(80, 25, "column", v, r#"<wp:wrapSquare wrapText="bothSides"/>"#).replace(r#"layoutInCell="1""#, lic);
+        let body = format!(
+            r#"<w:p><w:r><w:t>a</w:t></w:r></w:p><w:p><w:r><w:t>b</w:t></w:r></w:p><w:tbl><w:tblGrid><w:gridCol w:w="6000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="6000" w:type="dxa"/></w:tcPr><w:p>{float}<w:r><w:t>c</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#
+        );
+        let mut doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
+        doc.settings.compat_mode = 12;
+        let page = &super::page_chars(&doc)[0];
+        page.iter().find(|c| c.0 == 'b').map(|c| c.1).expect("drawn")
+    };
+    assert!(x(r#"layoutInCell="0""#) > 150.0, "{}", x(r#"layoutInCell="0""#));
+    assert!(x(r#"layoutInCell="1""#) < 80.0);
+}

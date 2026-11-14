@@ -611,7 +611,8 @@ fn page_floats<'b>(t: &'b Table, ctx: &LayoutCtx<'b>) -> HashMap<u64, &'b Float>
     out
 }
 
-fn move_floats(row: Option<&mut super::fragment::RowFragment>, floats: &HashMap<u64, &Float>, fr: &Frames, up: f64) {
+/// `pinned`: the page tops of the floats that keep their place whatever their row's.
+fn move_floats(row: Option<&mut super::fragment::RowFragment>, floats: &HashMap<u64, &Float>, pinned: &HashMap<u64, f64>, fr: &Frames, up: f64) {
     let Some(row) = row.filter(|_| !floats.is_empty()) else { return };
     let top = row.top;
     for cell in row.cells.iter_mut() {
@@ -631,6 +632,7 @@ fn move_floats(row: Option<&mut super::fragment::RowFragment>, floats: &HashMap<
                             // `paragraph` counts from the row's top (its top border included), whichever paragraph of the
                             // cell holds the anchor.
                             let y = match f.v_relative.as_str() {
+                                _ if pinned.contains_key(&float.0) => pinned[&float.0] - offset.1,
                                 "paragraph" | "line" => (if f.v_align.is_some() { 0.0 } else { f.v_offset }) - (offset.1 - top) - up,
                                 _ => float::v_pos(f, rect[3] - rect[1], fr, 0.0, 0.0) - offset.1,
                             };
@@ -2980,39 +2982,48 @@ impl<'d> PageFill<'d, '_> {
             cell: false,
             odd: self.odd,
         };
-        // Compat ≤ 14: the wrapping floats of the first row placed from the page, each from the row top, the first
-        // row's over it and the later rows' below it.
-        let row_floats: Vec<(&Float, ParaId, f64, f64)> = match (tb.rows.first(), self.sec.blocks.get(pos.block)) {
-            (Some(_), Some(Block::Table(t))) if !floating && pos.at.at_start() && !page_floats.is_empty() => {
-                let mut paras = Vec::new();
-                cell_paras(&t.rows[..1], &mut paras);
-                paras
-            }
-            .into_iter()
-            .flat_map(|p| p.inlines.iter().map(move |i| (para_id(p), i)))
-            .filter_map(|(id, i)| if let Inline::Float(f, _) = i { page_floats.get(&f.id).map(|f| (*f, id)) } else { None })
-            .filter(|(f, _)| f.wrap != "none" && f.v_relative == "paragraph" && f.h_align.is_none() && f.v_align.is_none())
-            .map(|(f, id)| (f, id, f.v_offset - f.dist[0], f.v_offset + f.h + f.dist[1]))
-            .collect(),
+        // Compat ≤ 14: the wrapping floats of the rows placed from the page, each from its row's top where the rows'
+        // first placement puts it. The first row's over it and the later rows' below it.
+        let row_floats: Vec<(&Float, ParaId, usize, f64, f64)> = match self.sec.blocks.get(pos.block) {
+            Some(Block::Table(t)) if !floating && pos.at.at_start() && !page_floats.is_empty() => (0..t.rows.len().min(tb.rows.len()))
+                .flat_map(|r| {
+                    let mut paras = Vec::new();
+                    cell_paras(&t.rows[r..r + 1], &mut paras);
+                    paras.into_iter().map(move |p| (r, p))
+                })
+                .flat_map(|(r, p)| p.inlines.iter().map(move |i| (r, para_id(p), i)))
+                .filter_map(|(r, id, i)| if let Inline::Float(f, _) = i { page_floats.get(&f.id).map(|f| (*f, id, r)) } else { None })
+                .filter(|(f, ..)| f.wrap != "none" && matches!(f.v_relative.as_str(), "paragraph" | "margin" | "page") && f.h_align.is_none() && f.v_align.is_none())
+                .map(|(f, id, r)| (f, id, r, f.v_offset - f.dist[0], f.v_offset + f.h + f.dist[1]))
+                .collect(),
             _ => Vec::new(),
         };
         let first_h = tb.rows.first().map_or(0.0, |r| r.height);
-        // The row goes beside those over it when the table fits the first piece they leave, else below them; they
-        // keep their place, and wrap the text after the table.
         let y0 = *y;
-        let mut over: Vec<Placed> = row_floats
+        // They are in the page's geometry: the text before the table wraps those reaching above it when the page is
+        // filled again, and they keep the place their rows' first placement gives them when the rows then move.
+        let row_top = |r: usize| y0 + tb.rows[..r].iter().filter(|r| !r.hidden).map(|r| r.height).sum::<f64>();
+        let held: Vec<(usize, Placed)> = row_floats
             .iter()
-            .filter(|(_, _, top, _)| *top < first_h)
             .enumerate()
-            .map(|(k, (f, id, _, _))| {
-                let mut a = Placed::new((self.sec.index, pos.block, k), *id, &Rc::new((*f).clone()), float::h_pos(f, &frames), y0 + f.v_offset, f.h);
-                a.collided = false;
-                a
+            .map(|(k, (f, id, r, _, _))| {
+                let key = (self.sec.index, pos.block, k);
+                let y = if f.v_relative == "paragraph" { row_top(*r) + f.v_offset } else { float::v_pos(f, f.h, &frames, 0.0, 0.0) };
+                let at = (float::h_pos(f, &frames), y);
+                let mut a = Placed::new(key, *id, &Rc::new((*f).clone()), at.0, at.1, f.h);
+                a.collided = a.excl[1] < y0 - EPS;
+                (*r, a)
             })
             .collect();
+        let pinned: HashMap<u64, f64> = held.iter().map(|(_, a)| (a.float.id, a.rect[1])).collect();
+        // A tight or through polygon of a single point is drawn but leaves the rows where they are.
+        let moves = |a: &Placed| !a.float.poly.as_ref().is_some_and(|p| p.iter().all(|q| *q == p[0]));
+        // The first row goes beside those over it (a later row's too) when the table fits the first piece they leave,
+        // else below them.
+        let mut over: Vec<Placed> = held.iter().map(|(_, a)| a.clone()).collect();
         let spot = if pos.at.at_start() && !floating && self.ctx.env.text.vertical.is_none() {
-            // A tight or through polygon of a single point is drawn but leaves the row where it is.
-            let hits: Vec<Placed> = over.iter().filter(|a| !a.float.poly.as_ref().is_some_and(|p| p.iter().all(|q| *q == p[0]))).cloned().collect();
+            let hits: Vec<Placed> =
+                held.iter().filter(|(r, a)| moves(a) && (*r > 0 || a.rect[1] - a.dist[0] - y0 < first_h)).map(|(_, a)| a.clone()).collect();
             let ri = tb.rows.iter().position(|r| !r.hidden).unwrap_or(0);
             self.beside_floats(pos.block, tb, col, *y, &hits, ri, true, memos)?
         } else {
@@ -3211,7 +3222,7 @@ impl<'d> PageFill<'d, '_> {
         if fp.is_none() && !pos.at.at_start() && self.ctx.env.text.vertical.is_none() && !tb.rtl {
             let ri = if repeats { headers.first().copied().unwrap_or(pos.at.index()) } else { pos.at.index() };
             let (c0, c1) = super::table::cells_box(tb);
-            let floats = self.page_floats_for(pos.block);
+            let floats = self.page_floats_for(pos.block, true);
             if legacy {
                 let band = tb.rows[ri].height + if tb.is_last(ri) { tb.bottom_border } else { 0.0 };
                 if floats.iter().any(|f| f.in_band(*y, *y + band) && (f.wrap == Wrap::TopAndBottom || f.excl[2] > at_x + c0 + EPS && f.excl[0] < at_x + c1 - EPS))
@@ -3239,13 +3250,13 @@ impl<'d> PageFill<'d, '_> {
             let (l, r) = (at_x + tb.x0, at_x + tb.x0 + tb.cols.iter().sum::<f64>());
             row_floats
                 .iter()
-                .filter(|(f, _, top, _)| {
-                    *top >= first_h && {
+                .filter(|(f, _, row, top, _)| {
+                    *row == 0 && f.v_relative == "paragraph" && *top >= first_h && {
                         let x = float::h_pos(f, &frames);
                         x < r && x + f.w > l
                     }
                 })
-                .map(|(_, _, top, bottom)| (y0 + top, y0 + bottom))
+                .map(|(_, _, _, top, bottom)| (y0 + top, y0 + bottom))
                 .collect()
         };
         let up = |r: usize| if r == 0 { lift } else { 0.0 };
@@ -3306,14 +3317,15 @@ impl<'d> PageFill<'d, '_> {
             if legacy && fp.is_none() && placed_here > 0 && self.ctx.env.text.vertical.is_none() && !tb.rtl {
                 let band = height + if last { tb.bottom_border } else { 0.0 };
                 let (c0, c1) = super::table::cells_box(tb);
-                let floats = self.page_floats_for(pos.block);
+                let own: Vec<Placed> = held.iter().filter(|(r, a)| *r != ri && *r > 0 && moves(a)).map(|(_, a)| a.clone()).collect();
+                let floats: Vec<Placed> = self.page_floats_for(pos.block, true).into_iter().chain(own.iter().cloned()).collect();
                 // ponytail: an autofit table keeps its layout at the new place.
                 if floats.iter().any(|f| f.in_band(*y, *y + band) && (f.wrap == Wrap::TopAndBottom || f.excl[2] > at_x + c0 + EPS && f.excl[0] < at_x + c1 - EPS))
-                    && let Some((x, top, _)) = self.beside_floats(pos.block, tb, col, *y, &[], ri, false, memos)?
+                    && let Some((x, top, _)) = self.beside_floats(pos.block, tb, col, *y, &own, ri, false, memos)?
                 {
                     if let Some(&(rs, rtop, idx)) = placed.last().filter(|p| p.2 + 1 == rows.len()) {
                         let (mut drawn, _) = draw_whole_row(tb, rs, at_x, rtop, tb.rows[rs].height, true, memos);
-                        move_floats(Some(&mut drawn), &page_floats, &frames, up(rs));
+                        move_floats(Some(&mut drawn), &page_floats, &pinned, &frames, up(rs));
                         rows[idx] = drawn;
                     }
                     (at_x, *y) = (x, top + row.part_top);
@@ -3325,7 +3337,7 @@ impl<'d> PageFill<'d, '_> {
             {
                 if let Some(&(rs, top, idx)) = placed.last().filter(|p| p.2 + 1 == rows.len()) {
                     let (mut drawn, _) = draw_whole_row(tb, rs, at_x, top, tb.rows[rs].height, true, memos);
-                    move_floats(Some(&mut drawn), &page_floats, &frames, up(rs));
+                    move_floats(Some(&mut drawn), &page_floats, &pinned, &frames, up(rs));
                     rows[idx] = drawn;
                 }
                 *y = bottom;
@@ -3359,7 +3371,7 @@ impl<'d> PageFill<'d, '_> {
                     }
                     Some(_) => draw_row(tb, ri, at_x, *y, height, Some(&parts), last),
                 });
-                move_floats(rows.last_mut(), &page_floats, &frames, up(ri));
+                move_floats(rows.last_mut(), &page_floats, &pinned, &frames, up(ri));
                 *y += height + if last { tb.bottom_border } else { 0.0 };
                 *empty = false;
                 pos.at = At::Row(ri + 1);
@@ -3432,12 +3444,12 @@ impl<'d> PageFill<'d, '_> {
                     let (rs, top, idx) = placed[m.pi];
                     let same: Vec<&MergedSplit> = merged.iter().filter(|o| o.start == m.start).collect();
                     let mut redrawn = draw_merged_part(tb, &same, ri, h, at_x, top);
-                    move_floats(Some(&mut redrawn), &page_floats, &frames, up(rs));
+                    move_floats(Some(&mut redrawn), &page_floats, &pinned, &frames, up(rs));
                     rows[idx] = redrawn;
                 }
                 row_refs.extend(cell_refs(&fitted, rows.len()));
                 rows.push(draw_row(tb, ri, at_x, *y, h, Some(&fitted), true));
-                move_floats(rows.last_mut(), &page_floats, &frames, up(ri));
+                move_floats(rows.last_mut(), &page_floats, &pinned, &frames, up(ri));
                 *y += h + tb.bottom_border;
                 *empty = false;
                 pos.at = At::RowPart { row: ri, rest: Rc::new(left) };
@@ -3451,7 +3463,7 @@ impl<'d> PageFill<'d, '_> {
             if at_top {
                 row_refs.extend(cell_refs(&parts, rows.len()));
                 rows.push(draw_row(tb, ri, at_x, *y, height, Some(&parts), last));
-                move_floats(rows.last_mut(), &page_floats, &frames, up(ri));
+                move_floats(rows.last_mut(), &page_floats, &pinned, &frames, up(ri));
                 *y += height + if last { tb.bottom_border } else { 0.0 };
                 *empty = false;
                 pos.at = At::Row(ri + 1);
@@ -3478,7 +3490,7 @@ impl<'d> PageFill<'d, '_> {
                     let last = kept.last().map_or(rs, |p| p.0);
                     let same: Vec<&MergedSplit> = cuts.iter().filter(|o| o.start == m.start).collect();
                     let mut redrawn = draw_merged_part(tb, &same, last + 1, 0.0, at_x, top);
-                    move_floats(Some(&mut redrawn), &page_floats, &frames, up(rs));
+                    move_floats(Some(&mut redrawn), &page_floats, &pinned, &frames, up(rs));
                     rows[idx] = redrawn;
                 }
             }
@@ -3510,10 +3522,12 @@ impl<'d> PageFill<'d, '_> {
         Ok(Stop::Done)
     }
 
-    /// The page's floats a table part placed in the flow goes beside or below: all but those of its own block.
-    fn page_floats_for(&self, bi: usize) -> Vec<Placed> {
+    /// The page's floats a table part placed in the flow goes beside or below: all but those of its own block; with
+    /// `before`, only the header's and footer's and those anchored before it.
+    fn page_floats_for(&self, bi: usize, before: bool) -> Vec<Placed> {
         let si = self.sec.index;
-        self.fixed.iter().chain(self.known_at(bi)).filter(|f| (f.key.0, f.key.1) != (si, bi)).cloned().collect()
+        let at = |f: &&Placed| if before { (f.key.0, f.key.1) < (si, bi) } else { (f.key.0, f.key.1) != (si, bi) };
+        self.fixed.iter().chain(self.known_at(bi).filter(at)).cloned().collect()
     }
 
     /// The height of the rows from `ri` on that fit in the column from `top`: at least the first.
@@ -3548,7 +3562,8 @@ impl<'d> PageFill<'d, '_> {
         memos: &mut Memos,
     ) -> Result<Option<(f64, f64, Option<Rc<TableLayout>>)>, Yield> {
         let Some(Block::Table(t)) = self.sec.blocks.get(bi) else { return Ok(None) };
-        let floats: Vec<Placed> = self.page_floats_for(bi).into_iter().chain(own.iter().cloned()).collect();
+        // A part placed again on a later page or from a later row meets only the floats already on the page.
+        let floats: Vec<Placed> = self.page_floats_for(bi, !relay).into_iter().chain(own.iter().cloned()).collect();
         if tb.rtl || floats.is_empty() {
             return Ok(None);
         }
