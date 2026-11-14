@@ -7,7 +7,7 @@
 //! - Hot input (keys, text, pointer, frames) is typed calls with primitive arguments.
 //! - The engine calls back (`kind` 1 event, 2 state, 3 request frame, 4 set timer, 5 font request, 6 host request)
 //!   after each entry point's work, the state before any event of the same change, never re-entrantly. Natively the
-//!   callback is the function pointer given to [`twip_engine_new`]; in the browser it is `twip-host.js`'s `twip_emit`.
+//!   callback is the function pointer given to [`twip_engine_new`]; in the browser it is the page's `twipHost.emit` (see `web.rs`).
 //! - Every entry point runs under `catch_unwind`: a panic becomes an `internal` error and a fatal `error` event, and
 //!   every later call fails `internal`, except the frees. That needs `panic = "unwind"`, which `build-native.mjs`
 //!   builds the native library with; the browser module keeps the release profile's `abort`, where a panic ends the
@@ -32,8 +32,10 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 mod methods;
-#[cfg(not(target_os = "emscripten"))]
+#[cfg(not(target_family = "wasm"))]
 mod pdf;
+#[cfg(all(target_family = "wasm", target_os = "unknown"))]
+mod web;
 
 pub use methods::Method;
 
@@ -212,24 +214,17 @@ impl TwipEngine {
     }
 
     fn emit(&self, session: u32, kind: u32, payload: &[u8]) {
-        #[cfg(target_os = "emscripten")]
+        #[cfg(all(target_family = "wasm", target_os = "unknown"))]
         {
             let _ = (self.callback, self.context);
-            // SAFETY: twip-host.js reads the bytes during the call and keeps nothing.
-            unsafe { twip_emit(kind, session, payload.as_ptr(), payload.len()) };
+            web::emit(kind, session, payload);
         }
-        #[cfg(not(target_os = "emscripten"))]
+        #[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
         if let Some(callback) = self.callback {
             // SAFETY: the SDK registered this callback with its context, and copies the payload during the call.
             unsafe { callback(self.context, session, kind, payload.as_ptr(), payload.len()) };
         }
     }
-}
-
-#[cfg(target_os = "emscripten")]
-unsafe extern "C" {
-    /// `twip-host.js`: hands a callback to `Module.twipDispatch`.
-    fn twip_emit(kind: u32, session: u32, ptr: *const u8, len: usize);
 }
 
 /// Runs `f` on the engine behind `engine` under `catch_unwind`, then delivers the messages it queued. A panic marks the
@@ -322,6 +317,8 @@ fn to_value<T: serde::Serialize>(v: T) -> Result<Value, Error> {
 pub unsafe extern "C" fn twip_engine_new(options_json: *const u8, len: usize, cb: TwipCallback, ctx: *mut c_void) -> *mut TwipEngine {
     // SAFETY: the caller's promise.
     let json = unsafe { bytes(options_json, len) };
+    #[cfg(all(target_family = "wasm", target_os = "unknown"))]
+    web::clocks();
     let options = if json.is_empty() { Ok(EngineOptions::default()) } else { serde_json::from_slice(json) };
     match options.ok().and_then(|o| catch_unwind(AssertUnwindSafe(|| TwipEngine::new(o, cb, ctx))).ok()) {
         Some(e) => Box::into_raw(Box::new(e)),
@@ -758,128 +755,9 @@ pub unsafe extern "C" fn twip_frame_rgba(
     }
 }
 
-/// Browser: a WebGPU instance handle for `Module.WebGPU.importJsDevice` and `importJsQueue`. 0 natively.
-#[unsafe(no_mangle)]
-pub extern "C" fn twip_gpu_instance() -> usize {
-    #[cfg(target_os = "emscripten")]
-    return catch_unwind(engine::internal::render::web::webgpu_instance).unwrap_or(0);
-    #[cfg(not(target_os = "emscripten"))]
-    0
-}
-
-/// Browser: adopts the page's WebGPU device for every session (imported device and queue handles, and the instance
-/// from `twip_gpu_instance`). Fails `unavailable` when it can't be used: draw with WebGL then.
-///
-/// # Safety
-/// The handles are live, just imported by the SDK.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn twip_attach_webgpu(instance: usize, device: usize, queue: usize) -> i32 {
-    #[cfg(target_os = "emscripten")]
-    {
-        // SAFETY: the caller's promise.
-        let ok = catch_unwind(|| unsafe { engine::internal::render::web::attach_webgpu(instance, device, queue) }).unwrap_or(false);
-        if ok { 0 } else { status(ErrorCode::Unavailable) }
-    }
-    #[cfg(not(target_os = "emscripten"))]
-    {
-        let _ = (instance, device, queue);
-        status(ErrorCode::Unavailable)
-    }
-}
-
-/// Browser: draws the viewport into a WebGPU canvas texture (an emdawnwebgpu handle from `importJsTexture`,
-/// released here); `height` is the texture's height in pixels, `bgra` 1 for a BGRA texture.
-///
-/// # Safety
-/// `engine` is from twip_engine_new; `texture` is a live texture handle not used again; `info` is null or valid for
-/// a write.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn twip_frame_webgpu(
-    engine: *mut TwipEngine,
-    session: u32,
-    texture: usize,
-    bgra: u32,
-    height: u32,
-    info: *mut TwipFrameInfo,
-) -> i32 {
-    #[cfg(target_os = "emscripten")]
-    {
-        let result = guard(engine, session, |e| {
-            let mut host = e.session(session)?.host();
-            // SAFETY: the caller's promise: the texture was imported for this one call.
-            let drawn = unsafe {
-                engine::internal::render::web::webgpu_frame(texture, bgra != 0, |c| {
-                    let width = f64::from(c.base_layer_size().width);
-                    host.draw(c, width, f64::from(height));
-                })
-            };
-            if drawn { Ok(host.frame_info()) } else { Err(Error::unavailable("no WebGPU device is attached")) }
-        });
-        match result {
-            Ok(frame) => {
-                // SAFETY: the caller's promise.
-                unsafe { put_info(info, frame) };
-                0
-            }
-            Err(e) => status(e.code),
-        }
-    }
-    #[cfg(not(target_os = "emscripten"))]
-    {
-        let _ = (engine, session, texture, bgra, height, info);
-        status(ErrorCode::Unavailable)
-    }
-}
-
-/// Browser: adopts the current WebGL 2 context (made current with `Module.GL.makeContextCurrent`) for the session's
-/// canvas.
-///
-/// # Safety
-/// `engine` is from twip_engine_new.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn twip_attach_webgl(engine: *mut TwipEngine, session: u32) -> i32 {
-    #[cfg(target_os = "emscripten")]
-    {
-        match guard(engine, session, |e| Ok(e.session(session)?.host().attach_webgl())) {
-            Ok(true) => 0,
-            Ok(false) => status(ErrorCode::Unavailable),
-            Err(e) => status(e.code),
-        }
-    }
-    #[cfg(not(target_os = "emscripten"))]
-    {
-        let _ = (engine, session);
-        status(ErrorCode::Unavailable)
-    }
-}
-
-/// Browser: draws the viewport into the session's WebGL canvas, `width` x `height` device pixels.
-///
-/// # Safety
-/// `engine` is from twip_engine_new; `info` is null or valid for a write.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn twip_frame_webgl(engine: *mut TwipEngine, session: u32, width: u32, height: u32, info: *mut TwipFrameInfo) -> i32 {
-    #[cfg(target_os = "emscripten")]
-    {
-        match guard(engine, session, |e| e.session(session)?.host().frame_webgl(width, height)) {
-            Ok(frame) => {
-                // SAFETY: the caller's promise.
-                unsafe { put_info(info, frame) };
-                0
-            }
-            Err(e) => status(e.code),
-        }
-    }
-    #[cfg(not(target_os = "emscripten"))]
-    {
-        let _ = (engine, session, width, height, info);
-        status(ErrorCode::Unavailable)
-    }
-}
-
-/// Windows and macOS: draws the session's frames into `window` with the GPU (Graphite, on Dawn on Windows and on Metal
-/// on macOS): an `HWND` on Windows, a `CAMetalLayer` on macOS. Returns the backend, 1 D3D12, 2 D3D11, 3 Vulkan or 4 Metal; fails `unavailable` with no
-/// usable GPU, or in a build without one: draw with twip_frame_rgba then.
+/// Windows and macOS: draws the session's frames into `window` with the GPU (twip-graphics on wgpu): an `HWND` on
+/// Windows, a `CAMetalLayer` on macOS. Returns the backend, 1 D3D12, 3 Vulkan or 4 Metal (2, D3D11, is no longer
+/// returned); fails `unavailable` with no usable GPU, or in a build without one: draw with twip_frame_rgba then.
 ///
 /// # Safety
 /// `engine` is from twip_engine_new; `window` is a live window or layer that outlives the attach (twip_detach_window,

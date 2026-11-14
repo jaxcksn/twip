@@ -1,6 +1,6 @@
 [package]
 name = "twip-wasm"
-description = "The WebAssembly module (emscripten) the TypeScript SDK loads."
+description = "The WebAssembly module (wasm32-unknown-unknown, with wasm-bindgen) the TypeScript SDK loads."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -8,5 +8,13 @@ repository.workspace = true
 rust-version.workspace = true
 publish = false
 
+# The module: the C ABI's functions as its exports.
+[lib]
+crate-type = ["cdylib", "rlib"]
+
 [dependencies]
 twip-capi = { path = "../twip-capi" }
+
+# The module's allocator (src/lib.rs).
+[target.'cfg(target_family = "wasm")'.dependencies]
+talc = "5.1.1"

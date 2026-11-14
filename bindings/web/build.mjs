@@ -1,8 +1,8 @@
-// Builds dist/: the SDK compiled by tsc (ESM and .d.ts), plus the engine module from the emscripten build.
+// Builds dist/: the SDK compiled by tsc (ESM and .d.ts), plus the engine module (crates/twip-wasm build-web.mjs).
 import { execFileSync } from 'node:child_process';
 import { cpSync, existsSync, rmSync } from 'node:fs';
 
-const release = '../../target/wasm32-unknown-emscripten/release';
+const release = `${process.env.CARGO_TARGET_DIR ?? '../../target'}/twip-wasm`;
 rmSync('dist', { recursive: true, force: true });
 execFileSync(process.execPath, ['node_modules/typescript/bin/tsc'], { stdio: 'inherit' });
 // The engine module: loaded by dist/transport/module.js from dist/.

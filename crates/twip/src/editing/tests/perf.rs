@@ -1,6 +1,6 @@
 //! Interaction budgets
 
-use std::time::Instant;
+use crate::clock::Instant;
 
 use serde_json::{Value, json};
 

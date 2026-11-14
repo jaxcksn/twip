@@ -916,6 +916,13 @@ impl Fonts {
     }
 }
 
+/// The first face of a font file that ships with the engine, outside any catalog.
+pub(crate) fn shipped(data: &[u8], name: &str) -> Option<Rc<Face>> {
+    let mut own = Fonts::default();
+    own.add_bytes(data.to_vec()).ok()?;
+    own.load(0, name, false, false)
+}
+
 /// The settings the fonts guide recommends, which tests lay out with so their output doesn't depend on which of a
 /// family's metric-compatible stand-ins a machine has.
 #[cfg(test)]

@@ -9,19 +9,14 @@ You need:
 - **Rust**: `rustup` installed. The repo pins the toolchain in `rust-toolchain.toml`; rustup picks it up on first build.
 - **Node 24+** and **pnpm** (`corepack enable`).
 - **.NET 10 SDK**: for the .NET SDK and the docs' C# examples.
-- **emsdk 6.0.8**: for the WebAssembly build, which `web:test` and everything else in `bindings/web` needs. `emcc`
-  must be on `PATH` (see below). Use exactly 6.0.8: the prebuilt browser Skia was built with it, and linking needs
-  the same version.
+- **The wasm-bindgen CLI** at the locked version, for the WebAssembly module, which `web:test` and everything else
+  in `bindings/web` needs: `cargo install wasm-bindgen-cli --version 0.2.129 --locked`.
 
-Skia is never built from source. Native builds use skia-safe's prebuilts, except on Windows:
-`node crates/twip-capi/build-native.mjs` downloads the pinned Skia with Graphite on Dawn (a
-[twip-skia-dawn](https://github.com/jaxcksn/twip-skia-dawn) release), so the native library draws on the GPU (D3D12,
-D3D11 or Vulkan). On macOS skia-safe's own prebuilt has Graphite on Metal, and the same script points the Metal shim
-at the Skia headers the skia-bindings crate ships. It passes other cargo arguments through
-(`node crates/twip-capi/build-native.mjs test --workspace`); a plain cargo build on Windows or macOS draws with the CPU
-only.
-On Linux musl (Alpine) the same script downloads the pinned musl Skia from twip-skia-dawn (built without Dawn, so it
-draws with the CPU), because skia-safe publishes no musl prebuilts.
+Twip links no C or C++ library: `node crates/twip-capi/build-native.mjs` is the plain cargo build of the native
+library (it passes other cargo arguments through: `node crates/twip-capi/build-native.mjs test --workspace`). Native
+windows draw on the GPU with twip-graphics on wgpu (D3D12 or Vulkan on Windows, Metal on macOS). D3D12 needs DXC's
+`dxcompiler.dll`: on Windows the library build fetches the pinned release (its SHA-256 checked) and puts it beside
+`twip.dll`, and the .NET package ships it there; without it, Windows draws with Vulkan.
 
 Then:
 
@@ -33,37 +28,14 @@ pnpm moon setup       # installs the pinned toolchains and the commit-msg hook
 The commit-msg hook runs [commitlint](https://commitlint.js.org) (the `commitlint` key in `package.json`) on every commit, so a
 message that isn't a conventional commit is rejected locally instead of in CI.
 
-### Installing emsdk
-
-macOS and Linux:
-
-```sh
-git clone https://github.com/emscripten-core/emsdk.git ~/emsdk
-cd ~/emsdk
-./emsdk install 6.0.8
-./emsdk activate 6.0.8
-source ./emsdk_env.sh   # in every new shell, or add it to your shell profile
-```
-
-Windows (PowerShell):
-
-```powershell
-git clone https://github.com/emscripten-core/emsdk.git $HOME\emsdk
-cd $HOME\emsdk
-.\emsdk install 6.0.8
-.\emsdk activate 6.0.8 --permanent   # --permanent puts emcc on PATH for new shells
-```
-
-Without `--permanent`, run `.\emsdk_env.ps1` (PowerShell) or `emsdk_env.bat` (cmd) in each new shell instead.
-Check it with `emcc --version`.
-
 ## Layout
 
 | Path | What |
 |---|---|
 | `crates/twip` | The engine: layout, editing, rendering. `twip::api` is the contract every SDK follows. |
 | `crates/twip-capi` | The C ABI over `twip::api` (internal, `include/twip.h`): the native library `twip` the .NET SDK loads. |
-| `crates/twip-wasm` | Builds the C ABI as an emscripten module for the web, with `twip-host.js` for its callbacks. |
+| `crates/twip-wasm` | Builds the C ABI as the web's WebAssembly module (`wasm32-unknown-unknown`, with wasm-bindgen's glue); its `test` runs the layout snapshots in WebAssembly (`wasm32-wasip1` under Node's WASI). |
+| `crates/twip-graphics` | The 2D renderer: pictures recorded once, drawn on the CPU (and the GPU and PDF). Internal; published with `twip` at its exact version. |
 | `crates/twip-tools` | Developer tools: golden comparisons, dumps, round trips, renders (`cargo run -p twip-tools`). |
 | `bindings/web` | `@twip/web`, the TypeScript SDK, written by hand over the wasm module. |
 | `bindings/dotnet` | `Twip.Core` and `Twip.WinForms`, the .NET SDK, written by hand over the C ABI. |
@@ -116,7 +88,7 @@ not in CI). Compare their numbers with `main`'s on the same machine.
 
 The tasks: `root:hygiene` (planning ids, the CI plan), `root:format`, `root:lint` (clippy), `root:contract-scripts`;
 `twip:test` (the unit tests, including the wire fixture check, and the rust contract runner), `twip:example` (the
-Rust API end to end), `twip-capi:test`; `web:test` (builds the wasm module with emsdk, then the unit, wire, contract and API report checks),
+Rust API end to end), `twip-graphics:test` (the renderer's unit and golden image tests), `twip-capi:test`; `web:test` (builds the wasm module, then the unit, wire, contract and API report checks),
 `web:browser-test`, `web:latency` (the latency budgets, on a quiet machine with a GPU; not in CI); `dotnet:build`, `dotnet:test` (builds twip-capi, then the wire, contract and Native AOT smoke
 tests); `docs:build` and `docs:examples` (the guides' TypeScript and C# examples). `cargo fmt --all` fixes what
 `root:format` reports.
@@ -138,6 +110,29 @@ samply record cargo bench -p twip -- editing::typing   # opens a flame graph in 
 On macOS, Instruments' Time Profiler works too: run `dsymutil <bench binary>` first so it finds the line tables, then
 `xcrun xctrace record --template 'Time Profiler' --launch -- <bench binary> --bench <filter>`. Run directly, the
 binary needs `--bench`; without it Divan runs each benchmark once, as a test. Linux `perf` works as well.
+
+## twip-graphics
+
+`crates/twip-graphics` holds itself to more than the engine does:
+
+- No `unsafe` at all (`unsafe_code = "forbid"`). SIMD goes through `fearless_simd`, and every kernel gives the same
+  bytes at every instruction set level: integer pixel arithmetic, no fused multiply-add, no approximate or relaxed
+  instructions, no `f32` reductions. The golden tests run each scene at the detected level, the baseline and the
+  scalar fallback.
+- No allocation per frame, per line or per glyph once warm: buffers are reused, and a test counts a steady frame's
+  allocations.
+- The CPU backend is deterministic and is the reference. Every drawing feature lands with a golden image
+  (`tests/golden.rs`); `TWIP_GRAPHICS_BLESS=1 cargo test -p twip-graphics --test golden` rewrites them, to be reviewed
+  before they are kept. GPU features are checked against the CPU's output: natively by `tests/gpu.rs` (with
+  `--features gpu`; `TWIP_GRAPHICS_GPU=1` fails instead of skipping without a GPU), and on WebGPU in headless Edge by
+  `moon run web:graphics-test`. That needs the wasm-bindgen CLI at the locked version (above).
+- GPU code uses only what WebGL 2 also has: no compute, no storage buffers, no push constants.
+- No shortcut rests on a guess that a case is rare: do it as Skia does, measure, or mark it `// shortcut:` with what is
+  missing and where it lands.
+- Comments say what the code does, and name the source of an algorithm in its module's header (keeping the licence
+  notice of any copied code).
+- A new dependency must replace something substantial to write, keep the wasm build small, and pass `cargo deny`.
+- Benchmarks: `cargo bench -p twip-graphics`, last, compared with the previous numbers on the same machine.
 
 ## Comments
 

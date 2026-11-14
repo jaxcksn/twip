@@ -2,7 +2,17 @@
 //! lines) and an accent the host chooses. Everything the engine draws around and over the document takes its
 //! colours from here; the document's own colours are [`super::appearance`]'s.
 
-use skia_safe::Color;
+pub use twip_graphics::paint::Color;
+
+/// A colour from its alpha, red, green and blue.
+pub const fn argb(a: u8, r: u8, g: u8, b: u8) -> Color {
+    Color::rgba(r, g, b, a)
+}
+
+/// An opaque colour from its red, green and blue.
+pub const fn rgb8(r: u8, g: u8, b: u8) -> Color {
+    Color::rgba(r, g, b, 255)
+}
 
 /// Colours the platform supplies in high contrast mode (the host reads them; the engine never asks the platform).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -49,7 +59,7 @@ impl Tokens {
                 ink: rgb(0x1c1d1f),
                 ink2: rgb(0x62656c),
                 ink3: rgb(0xa4a6ac),
-                line: Color::from_argb(31, 20, 22, 26),
+                line: argb(31, 20, 22, 26),
                 shadow: 1.0,
             },
             Scheme::Dark => Tokens {
@@ -58,7 +68,7 @@ impl Tokens {
                 ink: rgb(0xe7e7ea),
                 ink2: rgb(0xa0a3aa),
                 ink3: rgb(0x5f626a),
-                line: Color::from_argb(31, 255, 255, 255),
+                line: argb(31, 255, 255, 255),
                 shadow: 4.0,
             },
             Scheme::HighContrast(s) => {
@@ -84,7 +94,7 @@ pub struct Accent {
 }
 
 /// The default accent, azure: OKLCH(0.57, 0.19, 256).
-pub const AZURE: Color = Color::new(0xff0a_74e4);
+pub const AZURE: Color = Color::rgb(0x0a_74e4);
 
 impl Accent {
     pub fn new(base: Color, scheme: Scheme) -> Accent {
@@ -104,7 +114,7 @@ impl Accent {
                 best.filter(|c| contrast(*c, solid) >= 4.5).unwrap_or(Color::BLACK)
             }
         };
-        Accent { base, solid, soft: solid.with_a(36), mid: solid.with_a(102), on }
+        Accent { base, solid, soft: solid.with_alpha(36), mid: solid.with_alpha(102), on }
     }
 }
 
@@ -150,13 +160,13 @@ impl Theme {
 }
 
 pub fn rgb(c: u32) -> Color {
-    Color::new(0xff00_0000 | c)
+    Color::rgb(c)
 }
 
 /// `a` and `b` mixed: `t` of `b`.
 pub fn mix(a: Color, b: Color, t: f32) -> Color {
     let m = |x: u8, y: u8| (f32::from(x) + (f32::from(y) - f32::from(x)) * t).round() as u8;
-    Color::from_rgb(m(a.r(), b.r()), m(a.g(), b.g()), m(a.b(), b.b()))
+    rgb8(m(a.r, b.r), m(a.g, b.g), m(a.b, b.b))
 }
 
 fn linear(v: u8) -> f64 {
@@ -171,7 +181,7 @@ fn gamma(v: f64) -> u8 {
 
 /// WCAG relative luminance.
 pub fn luminance(c: Color) -> f64 {
-    0.2126 * linear(c.r()) + 0.7152 * linear(c.g()) + 0.0722 * linear(c.b())
+    0.2126 * linear(c.r) + 0.7152 * linear(c.g) + 0.0722 * linear(c.b)
 }
 
 /// WCAG contrast ratio.
@@ -182,7 +192,7 @@ pub fn contrast(a: Color, b: Color) -> f64 {
 
 /// OKLCH: lightness, chroma, hue in degrees.
 fn oklch(c: Color) -> (f64, f64, f64) {
-    let (r, g, b) = (linear(c.r()), linear(c.g()), linear(c.b()));
+    let (r, g, b) = (linear(c.r), linear(c.g), linear(c.b));
     let l = (0.412_221_470_8 * r + 0.536_332_536_3 * g + 0.051_445_992_9 * b).cbrt();
     let m = (0.211_903_498_2 * r + 0.680_699_545_1 * g + 0.107_396_956_6 * b).cbrt();
     let s = (0.088_302_461_9 * r + 0.281_718_837_6 * g + 0.629_978_700_5 * b).cbrt();
@@ -197,7 +207,7 @@ fn from_oklch(l: f64, c: f64, h: f64) -> Color {
     let l_ = (l + 0.396_337_777_4 * a + 0.215_803_757_3 * b).powi(3);
     let m_ = (l - 0.105_561_345_8 * a - 0.063_854_172_8 * b).powi(3);
     let s_ = (l - 0.089_484_177_5 * a - 1.291_485_548 * b).powi(3);
-    Color::from_rgb(
+    rgb8(
         gamma(4.076_741_662_1 * l_ - 3.307_711_591_3 * m_ + 0.230_969_929_2 * s_),
         gamma(-1.268_438_004_6 * l_ + 2.609_757_401_1 * m_ - 0.341_319_396_5 * s_),
         gamma(-0.004_196_086_3 * l_ - 0.703_418_614_7 * m_ + 1.707_614_701 * s_),
@@ -212,7 +222,7 @@ mod tests {
     fn the_dark_azure_is_the_prototypes() {
         let a = Accent::new(AZURE, Scheme::Dark).solid;
         let want = rgb(0x61a6ff);
-        for (x, y) in [(a.r(), want.r()), (a.g(), want.g()), (a.b(), want.b())] {
+        for (x, y) in [(a.r, want.r), (a.g, want.g), (a.b, want.b)] {
             assert!(x.abs_diff(y) <= 2, "{a:?} vs {want:?}");
         }
     }
@@ -238,7 +248,7 @@ mod tests {
         assert!(contrast(Color::BLACK, light) >= 4.5);
         for h in (0..360).step_by(30) {
             let dark = Theme::new(Scheme::Dark, from_oklch(0.57, 0.19, f64::from(h))).palette().selection;
-            let over = mix(rgb(0x262626), dark.with_a(255), f32::from(dark.a()) / 255.0);
+            let over = mix(rgb(0x262626), dark.with_alpha(255), f32::from(dark.a) / 255.0);
             let r = contrast(rgb(0xF6F6F6), over);
             assert!(r >= 4.5, "hue {h}: {r:.2}");
         }

@@ -11,8 +11,8 @@ in 64-bit processes (build the app for x64).
 dotnet add package Twip.Core
 ```
 
-On Linux, install FreeType and Fontconfig (`libfreetype6 libfontconfig1` on Debian and Ubuntu; `fontconfig freetype
-libstdc++` and a font package such as `font-liberation` on Alpine).
+On Linux the library needs only the C runtime, and fonts to draw with (on Alpine, a font package such as
+`font-liberation`).
 
 ```csharp
 using Twip;

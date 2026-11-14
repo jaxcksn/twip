@@ -187,19 +187,8 @@ fn dark_mode_changes_neither_the_pdf_nor_the_layout() {
     s.run(Command::InsertText("Dark and light".into())).expect("types");
     s.run(Command::SelectAll).expect("selects");
     s.run(Command::SetFontColor(crate::api::value::AutoOr::Value(crate::api::value::Color(0x1F3864)))).expect("colours");
-    let export = |s: &mut crate::api::session::Session| {
-        let mut b = s.export(&ExportOptions::Pdf(Default::default())).expect("exports").bytes.0;
-        // Two exports differ in their creation time and their XMP packet's and trailer's random ids: cut those out.
-        let find = |b: &[u8], n: &[u8]| b.windows(n.len()).position(|w| w == n);
-        for (from, to) in [(&b"<?xpacket begin"[..], &b"<?xpacket end"[..]), (b"/ID [", b"]")] {
-            if let Some(i) = find(&b, from)
-                && let Some(j) = find(&b[i..], to)
-            {
-                b.drain(i..i + j);
-            }
-        }
-        b.into_iter().filter(|c| !c.is_ascii_digit()).collect::<Vec<u8>>()
-    };
+    // Two exports differ in their creation time and the ids derived from it.
+    let export = |s: &mut crate::api::session::Session| undated(s.export(&ExportOptions::Pdf(Default::default())).expect("exports").bytes.0);
     let light = export(s);
     assert_eq!(export(s), light, "two exports compare equal");
     let pages = s.state().pages.clone();
@@ -1260,11 +1249,11 @@ fn blue_pixels(s: &mut crate::api::session::Session) -> usize {
     let view = s.editor.view(0..1);
     let images = s.editor.document().images.clone();
     let f = Frame { origin_x: 0.0, origin_y: 0.0, width: 700.0, height: 900.0, dpr: 1.0, px_per_pt: 1.0, caret: false };
-    let mut surface = skia_safe::surfaces::raster_n32_premul((700, 900)).expect("a raster surface");
-    Renderer::default().draw(surface.canvas(), &view, &images, &f);
-    let info = skia_safe::ImageInfo::new((700, 900), skia_safe::ColorType::RGBA8888, skia_safe::AlphaType::Unpremul, None);
+    let mut g = crate::render::graphics::Graphics::default();
+    g.draw(&Renderer::default(), &view, &images, &f);
     let mut px = vec![0u8; 700 * 900 * 4];
-    assert!(surface.read_pixels(&info, &mut px, 700 * 4, (0, 0)));
+    let mut target = twip_graphics::cpu::Target::new(&mut px, 700, 900, 700 * 4, twip_graphics::cpu::Format::Rgba8).expect("the buffer fits");
+    g.present(&mut target);
     px.chunks(4).filter(|p| p[0].abs_diff(0x3F) < 10 && p[1].abs_diff(0x51) < 10 && p[2].abs_diff(0xB5) < 10).count()
 }
 
@@ -2990,4 +2979,37 @@ fn a_table_styles_format_menu_sets_part_borders_properties_and_banding() {
     assert!(style.pending.contains("<w:tblStyleRowBandSize w:val=\"2\"/>"), "{}", style.pending);
     let quote = style_values(&s.dialog_open_style(StyleOpen::Modify(StyleId("Quote".into()))).expect("opens"));
     assert!(s.dialog_open_on_style(DialogKind::Banding, quote).is_err(), "banding is a table style's");
+}
+
+/// Window frames are drawn on the GPU from the pictures the CPU screen draws: the two agree (a pixel may differ by 2
+/// in each channel; beyond that, at most 0.02% of the pixels, as twip-graphics' own comparisons allow), on the first
+/// frame and on one scrolled, whose pages the GPU draws from what it kept; and after the device is lost, on the new
+/// device the next frame makes. Nothing to compare without a GPU. (One test: the GPU device is the process's.)
+#[test]
+fn gpu_frames_draw_as_cpu_frames() {
+    for (fixture, lose) in [("objects.docx", false), ("docx-feature-showcase.docx", true)] {
+        let mut engine = Engine::new(FontLibrary::system_recommended());
+        let id = engine.create_session(SessionOptions::default());
+        let s = engine.session(id).expect("a session");
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures").join(fixture);
+        s.open(&std::fs::read(path).expect("the fixture")).expect("opens");
+        let (w, h) = (700u32, 500u32);
+        s.host().set_size(f64::from(w), f64::from(h), 1.5);
+        let (mut cpu, mut gpu) = (vec![0u8; (w * h * 4) as usize], vec![0u8; (w * h * 4) as usize]);
+        for scroll in [0.0, 37.0, 37.0] {
+            if lose && scroll > 0.0 {
+                s.host().lose_gpu_device();
+            }
+            s.host().set_scroll(0.0, scroll);
+            s.host().frame_rgba(&mut cpu, w, h).expect("a frame");
+            if s.host().frame_gpu_rgba(&mut gpu, w, h).is_err() {
+                eprintln!("no GPU: skipped");
+                return;
+            }
+            let diffs = cpu.chunks(4).zip(gpu.chunks(4)).map(|(a, b)| a.iter().zip(b).map(|(x, y)| x.abs_diff(*y)).max().unwrap_or(0));
+            let (over, worst) = diffs.fold((0usize, 0u8), |(n, m), d| (n + usize::from(d > 2), m.max(d)));
+            eprintln!("{fixture} at {scroll}: {over} pixels over 2, worst {worst}");
+            assert!(over <= (w * h) as usize / 5000, "{fixture} at {scroll}: {over} pixels differ by more than 2 (worst {worst})");
+        }
+    }
 }

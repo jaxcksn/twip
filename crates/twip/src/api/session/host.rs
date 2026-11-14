@@ -164,7 +164,7 @@ pub struct OverlayPalette {
 impl Default for OverlayPalette {
     fn default() -> OverlayPalette {
         let p = crate::render::Palette::default();
-        let c = |c: skia_safe::Color| Color((u32::from(c.r()) << 16) | (u32::from(c.g()) << 8) | u32::from(c.b()));
+        let c = |c: crate::render::Color| Color((u32::from(c.r) << 16) | (u32::from(c.g) << 8) | u32::from(c.b));
         OverlayPalette { selection: c(p.selection), object: c(p.object), drop: c(p.drop), marks: c(p.marks), leaders: c(p.leaders) }
     }
 }
@@ -238,15 +238,16 @@ impl FrameCounters {
         self.stats.last_frame_ms = ms;
     }
 
-    fn stats(&self, retained: &crate::render::retained::Retained) -> FrameStats {
+    /// The frames' statistics, with what the retained page content cost.
+    fn stats(&self, pictures: &crate::render::graphics::retained::Retained) -> FrameStats {
         let mut sorted: Vec<f64> = self.times.iter().copied().collect();
         sorted.sort_by(f64::total_cmp);
         let p95 = sorted.get(((sorted.len().saturating_sub(1)) as f64 * 0.95).round() as usize).copied().unwrap_or(0.0);
         FrameStats {
             p95_frame_ms: p95,
-            pages_recorded: retained.counts.recorded,
-            pages_reused: retained.counts.reused,
-            recording_bytes: retained.bytes() as u64,
+            pages_recorded: pictures.counts.recorded,
+            pages_reused: pictures.counts.reused,
+            recording_bytes: pictures.bytes() as u64,
             ..self.stats
         }
     }
@@ -300,9 +301,20 @@ impl RulerDrag {
     }
 }
 
+/// A frame ready to draw: where it goes, the view it shows and the rulers' view, for `width` x `height` device pixels.
+struct PreparedFrame {
+    f: Frame,
+    view: crate::editing::view::View,
+    ruler: RulerView,
+    width: f64,
+    height: f64,
+}
+
 /// The host's view of a session: viewport size, scroll and zoom, and the renderer's caches.
 pub(super) struct Presentation {
     renderer: Renderer,
+    /// The screen: frames recorded and drawn with twip-graphics, on the CPU or the GPU.
+    graphics: crate::render::graphics::Graphics,
     width: f64,
     height: f64,
     dpr: f64,
@@ -338,7 +350,7 @@ pub(super) struct Presentation {
     /// The selection the blink last restarted for.
     blink_selection: Option<crate::editing::selection::Selection>,
     /// Unique on the thread: names this session's WebGL canvas or GPU window.
-    #[cfg_attr(not(any(target_os = "emscripten", twip_window)), allow(dead_code, reason = "no GPU target in this build"))]
+    #[cfg_attr(not(twip_gpu), allow(dead_code, reason = "no GPU target in this build"))]
     serial: u64,
     /// The view settings the chrome and page are drawn with ([`Presentation::apply_look`]); `chrome_set` once the host
     /// chose a scheme (before that, a dark background gives dark chrome).
@@ -356,6 +368,7 @@ impl Default for Presentation {
         static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         Presentation {
             renderer: Renderer::retaining(),
+            graphics: crate::render::graphics::Graphics::default(),
             width: 0.0,
             height: 0.0,
             dpr: 1.0,
@@ -456,8 +469,8 @@ impl Presentation {
 
     /// Forgets what the last document's frames cached.
     pub(super) fn clear(&mut self) {
-        self.renderer.clear_images();
-        self.renderer.retained.clear();
+        self.graphics.clear_images();
+        self.graphics.retained.clear();
         self.sink.a11y = None;
     }
 
@@ -518,10 +531,10 @@ impl Presentation {
     }
 
     /// The markup pane's colour: the background a shade towards the middle grey.
-    fn pane_color(&self) -> skia_safe::Color {
+    fn pane_color(&self) -> crate::render::Color {
         let bg = self.renderer.background.unwrap_or(self.renderer.theme.tokens.desk);
-        let shade = |c: u8| if bg.r() as u32 + bg.g() as u32 + bg.b() as u32 > 3 * 128 { c.saturating_sub(10) } else { c.saturating_add(16) };
-        skia_safe::Color::from_rgb(shade(bg.r()), shade(bg.g()), shade(bg.b()))
+        let shade = |c: u8| if bg.r as u32 + bg.g as u32 + bg.b as u32 > 3 * 128 { c.saturating_sub(10) } else { c.saturating_add(16) };
+        crate::render::theme::rgb8(shade(bg.r), shade(bg.g), shade(bg.b))
     }
 }
 
@@ -565,7 +578,7 @@ pub(super) fn fill_state(s: &Session, state: &mut crate::api::state::State) {
     state.view.cursor_overrides.clone_from(&s.cursor_overrides);
     state.view.live_layout = s.editor.live_layout;
     state.view.control_labels = s.editor.control_labels;
-    let (t, rgb) = (&p.renderer.theme, |c: skia_safe::Color| Color((u32::from(c.r()) << 16) | (u32::from(c.g()) << 8) | u32::from(c.b())));
+    let (t, rgb) = (&p.renderer.theme, |c: crate::render::Color| Color((u32::from(c.r) << 16) | (u32::from(c.g) << 8) | u32::from(c.b)));
     state.view.background = rgb(p.renderer.background.unwrap_or(t.tokens.desk));
     state.view.theme = p.chrome;
     state.view.theme_colors = p.theme_colors;
@@ -766,7 +779,7 @@ impl Session {
         }
         p.blink_selection = Some(selection);
         if p.focused {
-            let step = p.blink.input(std::time::Instant::now());
+            let step = p.blink.input(crate::clock::Instant::now());
             p.blinked(step);
         }
     }
@@ -936,16 +949,8 @@ impl Session {
     }
 }
 
-/// The WebGL state of this session's canvas goes with it.
-#[cfg(target_os = "emscripten")]
-impl Drop for Presentation {
-    fn drop(&mut self) {
-        crate::render::web::detach_gl(self.serial);
-    }
-}
-
-/// So does the swap chain on its window.
-#[cfg(twip_window)]
+/// The swap chain on this session's window or canvas goes with it.
+#[cfg(twip_gpu)]
 impl Drop for Presentation {
     fn drop(&mut self) {
         crate::render::window::detach(self.serial);
@@ -998,7 +1003,7 @@ impl HostSurface<'_> {
         // The caret comes or goes; focus back restarts its blink from visible.
         p.frame_wanted = true;
         if focused {
-            let step = p.blink.input(std::time::Instant::now());
+            let step = p.blink.input(crate::clock::Instant::now());
             p.blinked(step);
         }
     }
@@ -1008,7 +1013,7 @@ impl HostSurface<'_> {
     pub fn set_caret_blink(&mut self, blink: CaretBlink) {
         let ms = |v: Option<u32>| v.map(|m| std::time::Duration::from_millis(u64::from(m)));
         let p = &mut self.session.presentation;
-        let step = p.blink.set(ms(blink.interval_ms), ms(blink.stop_after_ms), std::time::Instant::now());
+        let step = p.blink.set(ms(blink.interval_ms), ms(blink.stop_after_ms), crate::clock::Instant::now());
         p.blinked(step);
         p.frame_wanted = true;
     }
@@ -1029,20 +1034,15 @@ impl HostSurface<'_> {
         if width == 0 || height == 0 || pixels.len() < row * height as usize {
             return Err(Error::invalid("the pixel buffer is smaller than width x height x 4"));
         }
-        let (w, h) = (i32::try_from(width).map_err(|_| Error::invalid("width"))?, i32::try_from(height).map_err(|_| Error::invalid("height"))?);
-        let info = skia_safe::ImageInfo::new((w, h), skia_safe::ColorType::RGBA8888, skia_safe::AlphaType::Premul, None);
-        let Some(mut surface) = skia_safe::surfaces::wrap_pixels(&info, pixels, row, None) else {
-            return Err(Error::invalid("the pixel buffer can't be drawn into"));
-        };
-        self.draw(surface.canvas(), f64::from(width), f64::from(height));
-        drop(surface);
+        let started = crate::clock::Instant::now();
+        self.draw_cpu(pixels, width, height)?;
+        self.session.presentation.counters.frame(started.elapsed().as_secs_f64() * 1e3);
         if self.session.presentation.verify {
             let mut again = vec![0u8; pixels.len()];
-            if let Some(mut direct) = skia_safe::surfaces::wrap_pixels(&info, &mut again, row, None) {
-                self.session.presentation.renderer.direct = true;
-                self.draw_frame(direct.canvas(), f64::from(width), f64::from(height));
-                self.session.presentation.renderer.direct = false;
-            }
+            self.session.presentation.renderer.direct = true;
+            let drawn = self.draw_cpu(&mut again, width, height);
+            self.session.presentation.renderer.direct = false;
+            drawn?;
             if again[..] != pixels[..row * height as usize] {
                 let p = &mut self.session.presentation;
                 p.verify_failures += 1;
@@ -1064,6 +1064,14 @@ impl HostSurface<'_> {
         Ok(self.frame_info())
     }
 
+    /// Draws the viewport into `pixels` on the CPU.
+    fn draw_cpu(&mut self, pixels: &mut [u8], width: u32, height: u32) -> Result<(), Error> {
+        let row = width as usize * 4;
+        let mut target = twip_graphics::cpu::Target::new(pixels, width, height, row, twip_graphics::cpu::Format::Rgba8)
+            .map_err(|e| Error::invalid(format!("the pixel buffer can't be drawn into: {e}")))?;
+        self.draw_graphics(f64::from(width), f64::from(height), |g| g.present(&mut target));
+        Ok(())
+    }
     /// Test builds and tools: each CPU frame ([`HostSurface::frame_rgba`]) is drawn a second time from scratch,
     /// past the retained page content, and compared pixel for pixel.
     #[doc(hidden)]
@@ -1083,25 +1091,8 @@ impl HostSurface<'_> {
         self.session.presentation.verify_failures
     }
 
-    /// Adopts the current WebGL 2 context (the page made it current) for this session's canvas.
-    #[cfg(target_os = "emscripten")]
-    pub fn attach_webgl(&mut self) -> bool {
-        crate::render::web::attach_gl(self.session.presentation.serial)
-    }
-
-    /// Draws the viewport into this session's WebGL canvas, `width` x `height` device pixels.
-    #[cfg(target_os = "emscripten")]
-    pub fn frame_webgl(&mut self, width: u32, height: u32) -> Result<FrameInfo, Error> {
-        let key = self.session.presentation.serial;
-        let (w, h) = (i32::try_from(width).map_err(|_| Error::invalid("width"))?, i32::try_from(height).map_err(|_| Error::invalid("height"))?);
-        if !crate::render::web::gl_frame(key, w, h, |c| self.draw(c, f64::from(width), f64::from(height))) {
-            return Err(Error::unavailable("no WebGL context is attached"));
-        }
-        Ok(self.frame_info())
-    }
-
     /// Draws this session's frames into `window` with the GPU from now on (an `HWND` on Windows, a `CAMetalLayer` on
-    /// macOS): the backend (1 D3D12, 2 D3D11, 3 Vulkan, 4 Metal), or `None` when there is no usable GPU or this build
+    /// macOS): the backend (1 D3D12, 3 Vulkan, 4 Metal), or `None` when there is no usable GPU or this build
     /// has none (draw with [`HostSurface::frame_rgba`]).
     /// # Safety
     /// `window` is a live window or layer that outlives the attach ([`HostSurface::detach_window`], or the session's
@@ -1117,17 +1108,24 @@ impl HostSurface<'_> {
         }
     }
 
-    /// Stops drawing into the window [`HostSurface::attach_window`] gave.
+    /// Browser: draws this session's frames into `canvas` with the page's WebGPU from now on, once
+    /// [`crate::render::window::start`] made the device: the backend (5 WebGPU), or `None` when there is none.
+    #[cfg(all(target_family = "wasm", target_os = "unknown"))]
+    pub fn attach_canvas(&mut self, canvas: twip_graphics::gpu::wgpu::SurfaceTarget<'static>) -> Option<u32> {
+        crate::render::window::attach_canvas(self.session.presentation.serial, canvas).map(|b| b as u32)
+    }
+
+    /// Stops drawing into the window [`HostSurface::attach_window`] gave (or, in the browser, the canvas).
     pub fn detach_window(&mut self) {
-        #[cfg(twip_window)]
+        #[cfg(twip_gpu)]
         crate::render::window::detach(self.session.presentation.serial);
     }
 
-    /// Testing: loses the GPU device as a driver reset would. Window frames fail `unavailable` until the next
-    /// [`HostSurface::attach_window`], which makes a new device. Nothing without a GPU build.
+    /// Testing: loses the GPU device as a driver reset would. Window frames fail `unavailable` until a new device: the
+    /// next [`HostSurface::attach_window`] natively, the page's next start in the browser. Nothing without a GPU build.
     #[doc(hidden)]
     pub fn lose_gpu_device(&mut self) {
-        #[cfg(twip_window)]
+        #[cfg(twip_gpu)]
         crate::render::window::lose_device();
     }
 
@@ -1135,10 +1133,13 @@ impl HostSurface<'_> {
     /// `unavailable` when no window is attached or the GPU can't draw now (the device was lost): draw with
     /// [`HostSurface::frame_rgba`] then.
     pub fn frame_window(&mut self, width: u32, height: u32) -> Result<FrameInfo, Error> {
-        #[cfg(twip_window)]
+        #[cfg(twip_gpu)]
         {
             let key = self.session.presentation.serial;
-            if crate::render::window::frame(key, width, height, |c| self.draw(c, f64::from(width), f64::from(height))) {
+            let started = crate::clock::Instant::now();
+            let drawn = self.draw_graphics(f64::from(width), f64::from(height), |g| crate::render::window::frame(key, width, height, g));
+            if drawn {
+                self.session.presentation.counters.frame(started.elapsed().as_secs_f64() * 1e3);
                 return Ok(self.frame_info());
             }
         }
@@ -1146,22 +1147,35 @@ impl HostSurface<'_> {
         Err(Error::unavailable("no GPU window is attached"))
     }
 
-    /// Draws the viewport on `canvas`, `width` x `height` device pixels: the GPU paths hand their canvas here.
+    /// Tests and tools: the viewport drawn as [`HostSurface::frame_window`] draws it, on the GPU, into `pixels` (as
+    /// [`HostSurface::frame_rgba`] fills them) instead of a window. Fails `unavailable` with no usable GPU, or in a
+    /// build without one.
     #[doc(hidden)]
-    pub fn draw(&mut self, canvas: &skia_safe::Canvas, width: f64, height: f64) {
-        let started = std::time::Instant::now();
-        self.draw_frame(canvas, width, height);
-        let ms = started.elapsed().as_secs_f64() * 1e3;
-        self.session.presentation.counters.frame(ms);
+    pub fn frame_gpu_rgba(&mut self, pixels: &mut [u8], width: u32, height: u32) -> Result<FrameInfo, Error> {
+        let row = width as usize * 4;
+        if width == 0 || height == 0 || pixels.len() < row * height as usize {
+            return Err(Error::invalid("the pixel buffer is smaller than width x height x 4"));
+        }
+        #[cfg(twip_window)]
+        {
+            let key = self.session.presentation.serial;
+            let drawn = self.draw_graphics(f64::from(width), f64::from(height), |g| crate::render::window::pixels(key, width, height, g));
+            if let Some(drawn) = drawn {
+                pixels[..drawn.len()].copy_from_slice(&drawn);
+                return Ok(self.frame_info());
+            }
+        }
+        Err(Error::unavailable("no GPU to draw with"))
     }
 
     /// What the frames have cost so far.
     pub fn frame_stats(&self) -> FrameStats {
         let p = &self.session.presentation;
-        p.counters.stats(&p.renderer.retained)
+        p.counters.stats(&p.graphics.retained)
     }
 
-    fn draw_frame(&mut self, canvas: &skia_safe::Canvas, width: f64, height: f64) {
+    /// A frame laid out and its view built, ready to draw: `width` x `height` device pixels.
+    fn prepare_frame(&mut self, width: f64, height: f64) -> PreparedFrame {
         self.session.sync_view_settings();
         let s = &mut *self.session;
         let p = &mut s.presentation;
@@ -1183,62 +1197,69 @@ impl HostSurface<'_> {
         view.field_shading = field_shading;
         p.renderer.gridlines = s.gridlines;
         p.renderer.page_colour = s.editor.document().page_colour;
-        p.renderer.draw(canvas, &view, &s.editor.document().images, &f);
+        drop(fonts);
+        let ruler = s.ruler_view();
+        PreparedFrame { f, view, ruler, width, height }
+    }
+
+    /// After a frame is drawn: the rulers' view reported when it changed, the comments' anchors placed, and the
+    /// requests the layout made delivered.
+    fn finish_frame(&mut self, frame: PreparedFrame) {
+        let s = &mut *self.session;
+        // Coalesced per frame: the view as this frame shows it, when it changed.
+        if s.presentation.ruler_seen.as_ref() != Some(&frame.ruler) {
+            s.presentation.ruler_seen = Some(frame.ruler.clone());
+            s.emit(Event::RulerChanged(frame.ruler));
+        }
+        let stack = s.editor.stack();
+        s.set_comment_anchors(&frame.view, &stack, frame.f.px_per_pt);
+        // The pages just laid out may have placed the caret.
+        crate::prof::time("frame:deliver", || s.deliver_requests());
+    }
+
+    /// Records a frame with twip-graphics: the visible pages and the view's overlays, the markup pane, the balloons'
+    /// leaders and the rulers.
+    /// Records a frame with twip-graphics, `width` x `height` device pixels, and draws it with `present`.
+    fn draw_graphics<R>(&mut self, width: f64, height: f64, present: impl FnOnce(&mut crate::render::graphics::Graphics) -> R) -> R {
+        let frame = self.prepare_frame(width, height);
+        let s = &mut *self.session;
+        let (f, view) = (&frame.f, &frame.view);
+        let p = &mut s.presentation;
+        crate::prof::time("frame:draw", || p.graphics.draw(&p.renderer, view, &s.editor.document().images, f));
         if p.markup_pane > 0.0 {
             let left = (view.stack.width * f.px_per_pt + f.origin_x) * f.dpr;
-            let r = skia_safe::Rect::from_xywh(left as f32, 0.0, (p.markup_pane * f.dpr) as f32, height as f32);
-            canvas.draw_rect(r, &skia_safe::Paint::new(skia_safe::Color4f::from(p.pane_color()), None));
+            p.graphics.pane([left, 0.0, left + p.markup_pane * f.dpr, height], p.pane_color());
         }
         // The balloons' leaders, over everything: from each comment's text to its card, one device pixel wide.
         if !p.leaders.is_empty() {
-            let mut line = skia_safe::Paint::default();
-            line.set_anti_alias(true);
-            line.set_style(skia_safe::paint::Style::Stroke);
-            line.set_color(p.renderer.palette().leaders);
-            line.set_stroke_width(f.dpr.round().max(1.0) as f32);
-            for polyline in &p.leaders {
-                let points: Vec<skia_safe::Point> = polyline
-                    .iter()
-                    .map(|q| skia_safe::Point::new(((q.x + f.origin_x) * f.dpr) as f32, ((q.y + f.origin_y) * f.dpr) as f32))
-                    .collect();
-                canvas.draw_points(skia_safe::canvas::PointMode::Polygon, &points, &line);
-            }
+            p.graphics.leaders(&p.leaders, f, f.dpr.round().max(1.0), p.renderer.palette().leaders);
         }
-        drop(fonts);
         // The rulers sit over the viewport's top and left edges, the document scrolling under them.
-        // shortcut: revealing the selection doesn't allow for them, so a caret scrolled to the top edge can sit under
-        // the horizontal ruler.
-        let ruler = s.ruler_view();
-        let p = &s.presentation;
-        if p.rulers != Bands::default() {
+        if s.presentation.rulers != Bands::default() {
             let measures = s.ruler_measures();
-            let frame = crate::render::ruler::RulerFrame {
+            let (ghost, hover) = (s.ruler_ghost(&frame.ruler), s.ruler_hovered(&frame.ruler));
+            let p = &mut s.presentation;
+            // Built from the presentation's fields here: the graphics state is borrowed mutably beside it.
+            let rf = crate::render::ruler::RulerFrame {
                 bands: p.rulers,
-                width: width / f.dpr,
-                height: height / f.dpr,
+                width: frame.width / f.dpr,
+                height: frame.height / f.dpr,
                 dpr: f.dpr,
                 selector: p.tab_selector,
                 guide: p.ruler_drag.as_ref().and_then(RulerDrag::guide),
                 drag: p.ruler_drag.as_ref().and_then(RulerDrag::shown),
-                ghost: s.ruler_ghost(&ruler),
-                hover: s.ruler_hovered(&ruler),
+                ghost,
+                hover,
                 popover: p.popover.as_ref(),
                 measures: &measures,
                 page: p.renderer.page_theme(),
             };
-            crate::render::ruler::paint(&ruler, &p.renderer.theme, canvas, &frame);
+            p.graphics.ruler(&frame.ruler, &p.renderer.theme, &rf);
         }
-        // Coalesced per frame: the view as this frame shows it, when it changed.
-        if s.presentation.ruler_seen.as_ref() != Some(&ruler) {
-            s.presentation.ruler_seen = Some(ruler.clone());
-            s.emit(Event::RulerChanged(ruler));
-        }
-        let stack = s.editor.stack();
-        s.set_comment_anchors(&view, &stack, f.px_per_pt);
-        // The pages just laid out may have placed the caret.
-        s.deliver_requests();
+        let presented = crate::prof::time("frame:raster", || present(&mut s.presentation.graphics));
+        self.finish_frame(frame);
+        presented
     }
-
     /// The document's size and the caret after the last frame: `caret_visible` is whether the frame drew the caret
     /// (focused, collapsed, in the blink's visible phase).
     pub fn frame_info(&mut self) -> FrameInfo {
@@ -1314,7 +1335,7 @@ impl HostSurface<'_> {
         if timer == super::blink::TIMER {
             let s = &mut *self.session;
             let active = s.presentation.focused && s.editor.selection().is_collapsed();
-            let step = s.presentation.blink.fired(active, std::time::Instant::now());
+            let step = s.presentation.blink.fired(active, crate::clock::Instant::now());
             s.presentation.blinked(step);
             return;
         }
@@ -1344,7 +1365,8 @@ impl HostSurface<'_> {
 
     /// The memory the session keeps its pages' drawing in.
     pub fn set_paint_budget(&mut self, budget: PaintBudget) {
-        self.session.presentation.renderer.retained.budget = usize::try_from(budget.recordings).unwrap_or(usize::MAX);
+        let budget = usize::try_from(budget.recordings).unwrap_or(usize::MAX);
+        self.session.presentation.graphics.retained.budget = budget;
     }
 
     /// The colours of what the editor draws over the document.
@@ -1378,7 +1400,7 @@ impl HostSurface<'_> {
         self.background(None);
     }
 
-    fn background(&mut self, bg: Option<skia_safe::Color>) {
+    fn background(&mut self, bg: Option<crate::render::Color>) {
         use crate::api::services::ChromeTheme;
         let p = &mut self.session.presentation;
         p.renderer.background = bg;
@@ -1819,7 +1841,7 @@ mod tests {
             assert_eq!((s.state().view.background, ink(s)), (Color(0x1B1F27), crate::render::rgb(0xE6EDF3)));
             assert_eq!(s.state().view.theme_colors.dark, Some(dark));
             // The caret stays black on the white page.
-            assert_eq!(s.presentation.renderer.caret(), skia_safe::Color::BLACK);
+            assert_eq!(s.presentation.renderer.caret(), crate::render::Color::BLACK);
             // High contrast takes the platform's.
             let hc = SystemColors {
                 canvas: Color(0),

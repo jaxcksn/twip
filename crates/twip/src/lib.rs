@@ -2,10 +2,11 @@
 //! sessions, the commands, state, events, services, errors and warnings.
 
 pub mod api;
+pub(crate) mod clock;
 pub(crate) mod docx;
 pub(crate) mod drawing;
 pub(crate) mod editing;
-#[cfg(any(test, not(target_os = "emscripten")))]
+#[cfg(any(test, not(target_family = "wasm")))]
 pub(crate) mod features;
 pub(crate) mod font;
 pub(crate) mod layout;
@@ -20,6 +21,9 @@ mod tests;
 /// part of the API: no documentation and no compatibility promise.
 #[doc(hidden)]
 pub mod internal {
+    pub mod clock {
+        pub use crate::clock::*;
+    }
     pub mod docx {
         pub use crate::docx::*;
     }
@@ -29,7 +33,7 @@ pub mod internal {
     pub mod editing {
         pub use crate::editing::*;
     }
-    #[cfg(not(target_os = "emscripten"))]
+    #[cfg(not(target_family = "wasm"))]
     pub mod features {
         pub use crate::features::*;
     }

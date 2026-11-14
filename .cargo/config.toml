@@ -1,6 +1,11 @@
-# Rust's default emscripten linker on Windows is emcc.bat; current emsdk ships emcc.exe.
-[target.wasm32-unknown-emscripten]
-linker = "emcc"
+# Wasm SIMD (simd128): twip-graphics' CPU kernels run their vector path in the browser instead of the scalar one.
+# Every browser with WebGPU has it; it needs Safari 16.4, Chrome 91 and Firefox 89.
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "target-feature=+simd128"]
+
+# The WebAssembly layout check (crates/twip-wasm build-web.mjs test) runs with the browser module's SIMD.
+[target.wasm32-wasip1]
+rustflags = ["-C", "target-feature=+simd128"]
 
 # LLD (shipped with Rust) links Windows builds, instead of MSVC's link.exe.
 [target.x86_64-pc-windows-msvc]

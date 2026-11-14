@@ -2,17 +2,11 @@
 
 /// Pixel size (orientation applied) and resolution of an image.
 pub fn image_info(data: &[u8]) -> Option<(f64, f64, f64, f64)> {
-    let codec = skia_safe::Codec::from_data(skia_safe::Data::new_copy(data))?;
-    let d = codec.dimensions();
+    // The probe's size already has the EXIF orientation applied: a quarter turn swaps it.
+    let info = twip_graphics::image::probe(data)?;
     let (dx, dy) = dpi(data);
-    let swap = !matches!(
-        codec.origin(),
-        skia_safe::EncodedOrigin::TopLeft
-            | skia_safe::EncodedOrigin::TopRight
-            | skia_safe::EncodedOrigin::BottomRight
-            | skia_safe::EncodedOrigin::BottomLeft
-    );
-    Some(if swap { (d.height as f64, d.width as f64, dy, dx) } else { (d.width as f64, d.height as f64, dx, dy) })
+    let (w, h) = (f64::from(info.width), f64::from(info.height));
+    Some(if info.orientation >= 5 { (w, h, dy, dx) } else { (w, h, dx, dy) })
 }
 
 /// PNG `pHYs` or JPEG JFIF density, else 96 dpi.
@@ -81,4 +75,17 @@ pub fn image_type(d: &[u8]) -> Option<(&'static str, &'static str)> {
         [b'I', b'I', 42, _, ..] | [b'M', b'M', _, 42, ..] => ("image/tiff", "tiff"),
         _ => return None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_exif_quarter_turn_swaps_the_size() {
+        // Stored 48 × 32 with EXIF orientation 6: shown 32 wide and 48 tall.
+        let jpeg = include_bytes!("../../../twip-graphics/tests/images/rotated-6.jpg");
+        assert_eq!(image_info(jpeg), Some((32.0, 48.0, 96.0, 96.0)));
+        assert_eq!(image_info(b"\x89PNG\r\n\x1a\n not a png"), None);
+    }
 }

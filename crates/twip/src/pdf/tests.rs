@@ -11,13 +11,21 @@ use crate::font::Fonts;
 /// creation and modification dates.
 pub(crate) fn undated(mut b: Vec<u8>) -> Vec<u8> {
     let digits = |b: &[u8], at: usize, n: usize| b.get(at..at + n).is_some_and(|d| d.iter().all(u8::is_ascii_digit));
-    // The id is random bytes, written as hex or as a literal string, whichever is shorter: it goes, to the trailer's end.
-    if let Some(i) = b.windows(5).position(|w| w == b"/ID [")
+    // The id (derived from the date) goes, to the trailer's end.
+    if let Some(i) = b.windows(4).position(|w| w == b"/ID[" || w == b"/ID ")
         && let Some(k) = b[i..].windows(9).position(|w| w == b"startxref")
     {
         b.drain(i..i + k);
     }
     for i in 0..b.len() {
+        // The XMP's ids, derived from the date too.
+        for tag in [&b"instanceID>"[..], b"documentID>", b"InstanceID>", b"DocumentID>"] {
+            if b[i..].starts_with(tag) {
+                let start = i + tag.len();
+                let end = b[start..].iter().position(|&c| c == b'<').map_or(start, |k| start + k);
+                b[start..end].fill(b'0');
+            }
+        }
         if b[i..].starts_with(b"uuid:") && b.len() >= i + 41 {
             b[i + 5..i + 41].fill(b'0');
         }
@@ -34,6 +42,13 @@ pub(crate) fn undated(mut b: Vec<u8>) -> Vec<u8> {
         }
     }
     b
+}
+
+/// Where two PDFs first differ: the bytes around it in each, for a failure's message.
+pub(crate) fn first_difference(a: &[u8], b: &[u8]) -> String {
+    let at = a.iter().zip(b).position(|(x, y)| x != y).unwrap_or(a.len().min(b.len()));
+    let around = |v: &[u8]| String::from_utf8_lossy(&v[at.saturating_sub(40)..(at + 40).min(v.len())]).into_owned();
+    format!("at byte {at} of {} and {}: {:?} vs {:?}", a.len(), b.len(), around(a), around(b))
 }
 
 /// The repository's DOCX fixtures, by name.
@@ -69,7 +84,8 @@ fn converts_like_the_editor_export() {
         s.open(&bytes).expect("opens");
         let editor = s.export(&ExportOptions::Pdf(PdfOptions::default())).expect("exports");
         let converted = convert(&bytes, &fonts, &PdfOptions::default()).expect("converts");
-        assert!(undated(converted.bytes) == undated(editor.bytes.0), "{name}: the converter's PDF differs from the editor's");
+        let (ours, theirs) = (undated(converted.bytes), undated(editor.bytes.0));
+        assert!(ours == theirs, "{name}: the converter's PDF differs from the editor's, {}", first_difference(&ours, &theirs));
         engine.close_session(id);
     }
 }

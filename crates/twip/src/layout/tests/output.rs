@@ -28,12 +28,31 @@ fn bundled_fonts() -> Fonts {
     fonts
 }
 
+/// The crate's folder: `TWIP_ROOT` when set (the WebAssembly run, which sees the workspace at a path of its runner's),
+/// else where it is.
+fn crate_dir() -> PathBuf {
+    std::env::var_os("TWIP_ROOT").map_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")), PathBuf::from)
+}
+
+/// The crate's `tests` folder.
 fn root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests")
+    crate_dir().join("tests")
+}
+
+/// The entries of `dir`. Node's WASI on Windows can't list a folder: there its runner passes every file under the crate
+/// folder it shows in `TWIP_FILES` (a path a line), and a folder's entries come from that.
+fn entries(dir: &Path) -> Vec<PathBuf> {
+    if let Ok(r) = std::fs::read_dir(dir) {
+        return r.flatten().map(|e| e.path()).collect();
+    }
+    let files = std::env::var("TWIP_FILES").unwrap_or_default();
+    let kids: std::collections::BTreeSet<PathBuf> =
+        files.lines().filter_map(|f| Path::new(f).strip_prefix(dir).ok().and_then(|rest| rest.components().next()).map(|c| dir.join(c))).collect();
+    kids.into_iter().collect()
 }
 
 fn fixtures(dir: &Path, out: &mut Vec<PathBuf>) {
-    let mut entries: Vec<PathBuf> = std::fs::read_dir(dir).into_iter().flatten().flatten().map(|e| e.path()).collect();
+    let mut entries = entries(dir);
     entries.sort();
     for p in entries {
         if p.is_dir() {
@@ -197,7 +216,7 @@ fn escape(s: &str) -> String {
 /// `target/layout-diff`, which CI uploads as an artifact when the check fails. By `..`, not by the path's ancestors: the
 /// WebAssembly build reads a Windows host's path as one component.
 fn diff_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/layout-diff")
+    crate_dir().join("../../target/layout-diff")
 }
 
 /// The pages that differ as SVG files in `target/layout-diff/<name>/`, returning their paths under the root.
@@ -238,6 +257,7 @@ fn layout_output_matches_snapshots() {
         let rel = path.strip_prefix(root().join("fixtures")).unwrap().to_string_lossy().replace(['\\', '/'], "__");
         got.insert(rel.replace(".docx", ".txt"), snapshot(&d, &fonts));
     }
+    assert!(!got.is_empty(), "no fixtures read from {}", root().join("fixtures").display());
     if write {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -263,8 +283,8 @@ fn layout_output_matches_snapshots() {
             Err(_) => failures.push(format!("{name}: no snapshot")),
         }
     }
-    for e in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
-        let name = e.file_name().to_string_lossy().into_owned();
+    for e in entries(&dir) {
+        let name = e.file_name().unwrap_or_default().to_string_lossy().into_owned();
         if !got.contains_key(&name) {
             failures.push(format!("{name}: snapshot without a fixture"));
         }

@@ -1,0 +1,68 @@
+[package]
+name = "twip-graphics"
+description = "Internal part of Twip (its 2D graphics: pictures drawn on the CPU and the GPU). No stable API; use the `twip` crate."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+readme = "README.md"
+# The package is the library: the golden images, test fonts and benchmarks stay in the repository.
+include = ["src/**/*", "Cargo.toml", "README.md"]
+
+[dependencies]
+# Geometry preparation at record time (stroking, dashing, arcs, SVG path data); its types are the recording API's.
+kurbo = "0.13.1"
+# Safe SIMD with the instruction set chosen at runtime (SSE4.2/AVX2/AVX-512, NEON, wasm simd128, scalar). Kernels
+# give identical bytes at every level: integer pixel arithmetic only.
+fearless_simd = "1.2.0"
+fearless_simd_macros = "0.1.0"
+# Glyph outlines (TrueType, CFF, CFF2, variations). 0.49 is the release on harfrust 0.15's read-fonts (0.46), so Twip
+# carries one copy; bump the two together.
+skrifa = "~0.49"
+# Image decoders: PNG, JPEG, BMP and GIF's first frame (ICO and WBMP are read here).
+zune-png = "0.5.2"
+zune-jpeg = "0.5"
+zune-bmp = "0.5.2"
+zune-core = "0.5"
+gif = "0.14.2"
+# The GPU backend (feature `gpu`): WebGPU everywhere, and natively D3D12, Vulkan and Metal. GL (WebGL 2) is left off
+# until it is planned.
+wgpu = { version = "30.0.1", default-features = false, features = ["std", "wgsl", "webgpu"], optional = true }
+
+# The PDF writer (feature `pdf`): PDF's objects and content streams written as typst writes them, and their streams
+# compressed (miniz_oxide is flate2's backend, already in Twip).
+pdf-writer = { version = "0.15.0", optional = true }
+miniz_oxide = { version = "0.9", optional = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+wgpu = { version = "30.0.1", default-features = false, features = ["dx12", "vulkan", "metal"], optional = true }
+
+[dev-dependencies]
+# Character to glyph mapping and advances for the text scenes.
+skrifa = "~0.49"
+# fontations' test fonts: COLRv0/COLRv1 and bitmap (CBDT, sbix) glyphs for the colour glyph scenes.
+font-test-data = "0.10"
+# The scalar level, so tests can check every kernel gives the same bytes without SIMD (test builds only).
+fearless_simd = { version = "1.2.0", features = ["force_support_fallback"] }
+# Benchmarks, as Twip's engine has them.
+divan = "0.1.21"
+# Reading and writing the golden images (tests/golden.rs).
+png = "0.18.1"
+# Renders the PDF writer's output back to pixels, to compare with the CPU backend's (tests/pdf.rs).
+hayro = "0.9.0"
+# Counts a closure's heap allocations (it installs a counting global allocator in test builds only).
+allocation-counter = "0.8.1"
+
+# One benchmark binary for the crate.
+[[bench]]
+name = "graphics"
+harness = false
+
+[features]
+# The wgpu backend (src/gpu/). Off by default so CPU-only builds (tests, musl, headless) never compile wgpu.
+gpu = ["dep:wgpu"]
+pdf = ["dep:pdf-writer", "dep:miniz_oxide"]
+
+[lints.rust]
+unsafe_code = "forbid"

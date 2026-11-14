@@ -28,7 +28,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - run: sudo apt-get update && sudo apt-get install -y libfreetype6-dev libfontconfig1-dev fonts-crosextra-carlito fonts-crosextra-caladea fonts-liberation
+      - run: sudo apt-get update && sudo apt-get install -y fonts-crosextra-carlito fonts-crosextra-caladea fonts-liberation
       - uses: taiki-e/install-action@cargo-llvm-cov
       # The engine and C API tests, the same ones the Engine shard runs, instrumented for line coverage.
       - run: rustup component add llvm-tools-preview && cargo llvm-cov -p twip -p twip-capi --lcov --output-path lcov.info

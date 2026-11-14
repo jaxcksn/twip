@@ -44,6 +44,8 @@
     <!-- A local build, when runtimes/ has no Windows library: the release cdylib twip-capi builds. -->
     <None Include="../../../target/release/twip.dll" Pack="true" PackagePath="runtimes/win-x64/native/"
           Condition="!Exists('../runtimes/win-x64/native/twip.dll') And Exists('../../../target/release/twip.dll')" />
+    <None Include="../../../target/release/dxcompiler.dll" Pack="true" PackagePath="runtimes/win-x64/native/"
+          Condition="!Exists('../runtimes/win-x64/native/twip.dll') And Exists('../../../target/release/dxcompiler.dll')" />
     <!-- Generated at release time (licenses/notices.mjs). -->
     <None Include="../../../THIRD-PARTY-NOTICES.md" Pack="true" PackagePath="" Condition="Exists('../../../THIRD-PARTY-NOTICES.md')" />
   </ItemGroup>

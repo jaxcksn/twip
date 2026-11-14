@@ -101,7 +101,7 @@ pub fn read_at(bytes: &[u8], now: i64) -> Result<Document, String> {
 
 /// Seconds since 1970, UTC, by the system clock.
 pub fn now_utc() -> i64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64)
+    crate::clock::unix_secs()
 }
 
 /// Seconds since 1970 by the system clock in the local time zone: the wall-clock time dates and times show.

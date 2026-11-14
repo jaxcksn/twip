@@ -60,9 +60,9 @@ Recompute what changed, reuse what didn't. Pages can become editable while the r
 </td>
 <td width="33%" valign="top">
 
-**03 / Powered by Skia**
+**03 / Hybrid Rendering**
 
-Hardware accelerated rendering across native graphics backends and the web, with graceful fallbacks and [prebuilt-bindings for Skia](https://github.com/jaxcksn/twip-skia-dawn/).
+Provides a purpose-built hybrid CPU & GPU rendering engine inspired by Vello that works across native graphics backends and the web, with graceful fallbacks.
 
 </td>
 </tr>
@@ -118,7 +118,7 @@ Merge fields, content controls, XML data binding, reusable building blocks, and 
 
 **Rendering & export**
 
-Skia rendering with WebGPU, WebGL 2, and native graphics backends; DOCX save and PDF export.
+Ships a hybrid 2D rendering engine purpose-built for documents that can render with WebGPU, WebGL 2, and native graphics backends; and provides DOCX save and PDF export.
 
 </td>
 <td valign="top">
@@ -224,7 +224,7 @@ More complete examples live in [`docs/examples`](docs/examples) and [`crates/twi
 
 ## Under the hood
 
-Twip reads a DOCX into a document model, lays it out into pages and draws those pages with Skia. Editing commands change the model, and the layout follows.
+Twip reads a DOCX into a document model, lays it out into pages and draws those pages with it's rendering engine (twip-graphics). Editing commands change the model, and the layout follows.
 
 
 ```mermaid
@@ -237,7 +237,7 @@ flowchart LR
     cmd["Editing commands<br/>undo · track changes"]:::io --> model
     model --> layout["Layout<br/>shape → break lines → fill pages"]:::step
     layout --> frags["Page fragments<br/>immutable, shared"]:::out
-    frags --> skia["Skia<br/>GPU or CPU"]:::io
+    frags --> graphics["twip-graphics<br/>GPU or CPU"]:::io
     frags --> ui["Caret, hit tests, state<br/>for your UI"]:::io
 ```
 
@@ -284,5 +284,5 @@ Want to contribute? See [CONTRIBUTING](.github/CONTRIBUTING.md). Curious what's 
 ---
 
 <div align="center">
-  <sub>Built with Rust, rendered with Skia, and released under the <a href="LICENSE">Apache License 2.0</a>.<br />© 2026 Jackson Casey</sub>
+  <sub>Built with Rust, and released under the <a href="LICENSE">Apache License 2.0</a>.<br />© 2026 Jackson Casey</sub>
 </div>

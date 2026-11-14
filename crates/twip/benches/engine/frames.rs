@@ -1,5 +1,5 @@
 //! Frames through the API session as an SDK draws them: a 1000 x 800 CSS px viewport at 1x on `big.docx`, its whole
-//! layout done (the background layout timer has run by the time a user scrolls or selects).
+//! layout done (the background layout timer has run by the time a user scrolls or selects), drawn on the CPU.
 
 use std::cell::{Cell, RefCell};
 
@@ -24,7 +24,7 @@ fn session(pixels: &mut [u8]) -> (Engine, SessionId) {
     (engine, id)
 }
 
-/// An unchanged frame on the first screen and one a few pages in, with the pages' drawing kept (`retained`) or
+/// An unchanged frame on the first page and one a few pages in, with the pages' drawing kept (`retained`) or
 /// drawn from scratch.
 #[divan::bench(args = [(0.0, true), (0.0, false), (3000.0, true), (3000.0, false)])]
 fn unchanged(bencher: Bencher, (scroll, retained): (f64, bool)) {
@@ -53,6 +53,21 @@ fn scroll(bencher: Bencher) {
             }
             y += step;
             s.borrow_mut().host().set_scroll(0.0, y);
+        })
+        .bench_local_values(|()| s.borrow_mut().host().frame_rgba(&mut pixels.borrow_mut(), W, H).expect("a frame"));
+}
+
+/// A character typed on the first page, then the frame after it: the edited page's drawing recorded again, the others
+/// kept. Budget: under 8.3 ms, one 120 Hz frame.
+#[divan::bench(sample_size = 1)]
+fn typed(bencher: Bencher) {
+    let mut pixels = vec![0u8; (W * H * 4) as usize];
+    let (mut engine, id) = session(&mut pixels);
+    let s = engine.session(id).expect("the session");
+    let (s, pixels) = (RefCell::new(s), RefCell::new(pixels));
+    bencher
+        .with_inputs(|| {
+            s.borrow_mut().text("a");
         })
         .bench_local_values(|()| s.borrow_mut().host().frame_rgba(&mut pixels.borrow_mut(), W, H).expect("a frame"));
 }

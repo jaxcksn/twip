@@ -138,7 +138,7 @@ impl CustomGeom {
         CustomGeom { av_names: scope.av, av, gd: ops, ah, cxn, rect, paths }
     }
 
-    #[cfg(not(target_os = "emscripten"))]
+    #[cfg(not(target_family = "wasm"))]
     pub fn to_bytes(&self) -> Vec<u8> {
         let names: Vec<(&str, i64)> = self.av_names.iter().zip(&self.av).map(|(n, v)| (n.as_str(), *v)).collect();
         let paths: Vec<super::PathDef> = self

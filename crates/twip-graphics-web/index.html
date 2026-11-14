@@ -1,0 +1,13 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>twip-graphics: GPU against CPU, on WebGPU</title>
+<script type="module">
+  // The comparisons' report, for the test to read.
+  import init, { run } from './twip_graphics_web.js';
+  try {
+    await init();
+    window.report = JSON.parse(await run());
+  } catch (e) {
+    window.report = { error: String(e) };
+  }
+</script>

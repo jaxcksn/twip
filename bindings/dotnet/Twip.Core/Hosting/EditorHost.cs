@@ -52,7 +52,7 @@ public sealed class EditorHost : IDisposable
     /// <summary>The document's size after the last frame, in client pixels: for scrollbars.</summary>
     internal SizeF ContentSize => new((float)(_contentWidth * Scale), (float)(_contentHeight * Scale));
 
-    /// <summary>The GPU backend frames are drawn with ("D3D12", "D3D11", "Vulkan"), or null when they're CPU pixels.</summary>
+    /// <summary>The GPU backend frames are drawn with ("D3D12", "Vulkan"), or null when they're CPU pixels.</summary>
     internal string? GpuBackend { get; private set; }
 
     /// <summary>Raised on the engine thread when the GPU stops drawing (the device was lost): frames are CPU pixels again.</summary>
@@ -68,14 +68,25 @@ public sealed class EditorHost : IDisposable
         var attached = _session.Enqueue(id =>
         {
             string? backend;
-            try { backend = TwipNative.AttachWindow(_session.Engine, id, hwnd) switch { 1 => "D3D12", 2 => "D3D11", 3 => "Vulkan", _ => null }; }
+            try { backend = TwipNative.AttachWindow(_session.Engine, id, hwnd) switch { 1 => "D3D12", 3 => "Vulkan", _ => null }; }
             catch (EntryPointNotFoundException) { backend = null; } // a native library from before the GPU path
             _window = backend is not null;
             GpuBackend = backend;
             ScheduleRender();
             return backend;
         }, default);
-        return attached.Wait(TimeSpan.FromSeconds(5)) ? attached.Result : null;
+        // A time limit: while the engine presents to the window, DXGI may wait on the window's thread, this one. When the
+        // engine hasn't got to the attach by then, the caller lets the window go, so a detach follows the attach: the
+        // engine lets go of it as soon as it can (a window destroyed while attached keeps its swap chain, and D3D12
+        // refuses one to a later window given the same handle).
+        if (attached.Wait(TimeSpan.FromSeconds(5))) return attached.Result;
+        _session.Enqueue(id =>
+        {
+            if (_window) TwipNative.DetachWindow(_session.Engine, id);
+            (_window, GpuBackend) = (false, null);
+            return true;
+        }, default);
+        return null;
     }
 
     /// <summary>Testing: loses the GPU device as a driver reset would; the next frame finds it lost.</summary>
@@ -537,6 +548,14 @@ public sealed class EditorHost : IDisposable
     public void Dispose()
     {
         if (_disposed) return;
+        // The engine lets go of the window first, as the window may go right after: a window destroyed while the engine
+        // still has it keeps its swap chain, and D3D12 refuses one to a later window given the same handle. A session
+        // already disposed let go of it when it went.
+        if (_window)
+        {
+            try { DetachWindow(); }
+            catch (AggregateException) { }
+        }
         _disposed = true;
         _session.Detached(this);
     }

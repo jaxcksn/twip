@@ -33,7 +33,7 @@ thread_local! {
 pub fn time<T>(name: &'static str, f: impl FnOnce() -> T) -> T {
     #[cfg(any(test, feature = "prof"))]
     {
-        let t = std::time::Instant::now();
+        let t = crate::clock::Instant::now();
         let r = f();
         let ms = t.elapsed().as_secs_f64() * 1e3;
         TOTALS.with(|v| {

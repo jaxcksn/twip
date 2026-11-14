@@ -3,13 +3,14 @@ language: rust
 tags: [engine]
 
 tasks:
-  # Needs emsdk's emcc on PATH (CI: setup-emsdk; locally: emsdk_env). Downloads the prebuilt browser Skia once.
+  # The module for wasm32-unknown-unknown and its wasm-bindgen glue, into target/twip-wasm. Needs the wasm-bindgen CLI
+  # at twip-capi's wasm-bindgen version (build-web.mjs).
   build:
     command: node build-web.mjs
-    inputs: ['src/**/*', 'build.rs', 'build-web.mjs', 'Cargo.toml', 'twip-host.js', '/crates/twip-capi/src/**/*', '/crates/twip/src/**/*', '/crates/twip/cpp/**/*', '/crates/twip/build.rs']
-    outputs: ['/target/wasm32-unknown-emscripten/release/twip-wasm.js', '/target/wasm32-unknown-emscripten/release/twip_wasm.wasm']
-  # The layout snapshot check (crates/twip/src/layout/tests/output.rs) built for the web and run under Node, against
-  # the same snapshots twip:test compares on Windows and Linux.
+    inputs: ['src/**/*', 'build.rs', 'build-web.mjs', 'Cargo.toml', '/crates/twip-capi/src/**/*', '/crates/twip-capi/Cargo.toml', '/crates/twip/src/**/*', '/crates/twip/build.rs']
+    outputs: ['/target/twip-wasm/twip-wasm.js', '/target/twip-wasm/twip_wasm.wasm']
+  # The layout snapshot check (crates/twip/src/layout/tests/output.rs) built for WebAssembly (wasm32-wasip1) and run
+  # under Node's WASI, against the same snapshots twip:test compares on Windows and Linux.
   test:
     command: node build-web.mjs test
-    inputs: ['build-web.mjs', '/crates/twip/src/**/*', '/crates/twip/cpp/**/*', '/crates/twip/build.rs', '/crates/twip/Cargo.toml', '/crates/twip/tests/fixtures/**/*', '/crates/twip/tests/layout/**/*']
+    inputs: ['build-web.mjs', 'wasi-test.mjs', '/crates/twip/src/**/*', '/crates/twip/build.rs', '/crates/twip/Cargo.toml', '/crates/twip/tests/fixtures/**/*', '/crates/twip/tests/layout/**/*']
