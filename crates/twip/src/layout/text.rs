@@ -785,7 +785,9 @@ impl<'a> Builder<'a> {
             } + run.spacing * n_chars as f64;
             // Condensed spacing never takes a character below no width.
             p.width = p.width.max(0.0);
-            let fit = kern_table.as_ref().map(|kt| (by_cluster[g0..gi].iter().map(|&i| kt[i]).sum::<f64>() * scale + run.spacing * n_chars as f64).max(0.0));
+            let fit = kern_table
+                .as_ref()
+                .map(|kt| (by_cluster[g0..gi].iter().map(|&i| kt[i]).sum::<f64>() * scale + run.spacing * n_chars as f64).max(0.0));
             p.break_after = kind == Kind::Space || breaks_after(first, self.rules.dash_breaks);
             if first == '\u{AD}' {
                 p.soft_hyphen = true;
@@ -1687,9 +1689,7 @@ pub fn shape_uncached(para: &Paragraph, space: &ShapeSpace, fonts: &Fonts, memos
         space.default_east_asia.as_deref().is_some_and(|f| !f.is_empty() && fonts.face(f, None, false, false).is_some_and(|f| f.east_asian));
     let opens = !continues_after_break(para, space);
     let mut stops = para.para_style_in(space.view).tabs.iter().filter(|t| t.kind != crate::docx::props::TabKind::Clear);
-    let decimal_lead = space.in_cell
-        && stops.next().is_some_and(|t| t.kind == crate::docx::props::TabKind::Decimal)
-        && stops.next().is_none();
+    let decimal_lead = space.in_cell && stops.next().is_some_and(|t| t.kind == crate::docx::props::TabKind::Decimal) && stops.next().is_none();
     Ok(ShapedPara { join: space.join.clone(), hyphenate: space.hyphenate.clone(), east_asian_default, opens, decimal_lead, ..b.finish() })
 }
 

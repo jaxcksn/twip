@@ -187,7 +187,9 @@ fn compat_14_fits_a_kerned_run_with_the_kern_tables_pairs() {
     let body = format!(r#"<w:p><w:pPr><w:ind w:right="{}"/></w:pPr><w:r><w:t xml:space="preserve">{text} zz</w:t></w:r></w:p>"#, 9360 - avail);
     let rpr = r#"<w:rFonts w:ascii="Segoe UI" w:hAnsi="Segoe UI"/><w:sz w:val="24"/><w:kern w:val="2"/>"#;
     let last_word_on_line_1 = |mode: u32| {
-        let settings = format!(r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="{mode}"/></w:compat>"#);
+        let settings = format!(
+            r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="{mode}"/></w:compat>"#
+        );
         let c = chars(&settings, rpr, &body, 0).expect("lays out");
         let z = c.iter().position(|g| g.0 == 'z').expect("drawn");
         (c[z - 2].2 - c[0].2).abs() < 1e-6
@@ -203,7 +205,9 @@ fn compat_14_no_leading_leaves_the_external_leading_out_of_a_superscripts_limit(
     let body = r#"<w:p><w:r><w:t>x</w:t></w:r><w:r><w:rPr><w:vertAlign w:val="superscript"/></w:rPr><w:t>1</w:t></w:r></w:p>"#;
     let rpr = r#"<w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="22"/>"#;
     let raise = |compat: &str, mode: u32| {
-        let settings = format!(r#"<w:compat>{compat}<w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="{mode}"/></w:compat>"#);
+        let settings = format!(
+            r#"<w:compat>{compat}<w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="{mode}"/></w:compat>"#
+        );
         let c = chars(&settings, rpr, body, 0).expect("lays out");
         at(&c, 'x').1 - at(&c, '1').1
     };

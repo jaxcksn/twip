@@ -290,7 +290,9 @@ fn compat_14_a_floating_table_at_vertical_position_0_stands_in_the_flow() {
 fn a_table_in_the_flow_is_placed_again_below_text_a_later_table_pushed() {
     let tbl = |pos: &str, cells: &[&str]| {
         let rows: String = cells.iter().map(|t| format!("<w:tr>{}</w:tr>", dxa_cell(9360, t))).collect();
-        format!(r#"<w:tbl><w:tblPr><w:tblpPr w:vertAnchor="text"{pos}/><w:tblW w:w="9360" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="9360"/></w:tblGrid>{rows}</w:tbl>"#)
+        format!(
+            r#"<w:tbl><w:tblPr><w:tblpPr w:vertAnchor="text"{pos}/><w:tblW w:w="9360" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="9360"/></w:tblGrid>{rows}</w:tbl>"#
+        )
     };
     // The second table stands over the first line, which it pushes down past the first table's first place.
     let body = format!(
