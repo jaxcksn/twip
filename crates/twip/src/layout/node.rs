@@ -1,9 +1,9 @@
 //! Input nodes
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::docx::review::MarkupView;
-use crate::docx::{Block, NoteKind, ParaStyle, Section};
+use crate::docx::{Block, Inline, NoteKind, ParaStyle, Section};
 
 pub struct Blocks<'a> {
     pub blocks: Vec<&'a Block>,
@@ -68,6 +68,50 @@ impl<'a> Notes<'a> {
         match kind {
             NoteKind::Foot => self.footnotes.get(&id),
             NoteKind::End => self.endnotes.get(&id),
+        }
+    }
+}
+
+/// The number key of an endnote's mark when it differs from its reference's.
+pub fn mark_key(kind: NoteKind, id: i64) -> (NoteKind, i64) {
+    (kind, !id)
+}
+
+/// The block holds a footnote reference.
+pub fn has_footnote_refs(b: &Block) -> bool {
+    match b {
+        Block::Para(p) => p.inlines.iter().any(|i| matches!(i, Inline::NoteRef { kind: NoteKind::Foot, .. })),
+        Block::Table(t) => t.rows.iter().flat_map(|r| r.cells.iter()).flat_map(|c| c.blocks.iter()).any(has_footnote_refs),
+    }
+}
+
+pub fn has_note_refs(b: &Block) -> bool {
+    match b {
+        Block::Para(p) => p.inlines.iter().any(|i| matches!(i, Inline::NoteRef { .. })),
+        Block::Table(t) => t.rows.iter().flat_map(|r| r.cells.iter()).flat_map(|c| c.blocks.iter()).any(has_note_refs),
+    }
+}
+
+/// Each note's first reference: kind, id, and whether it carries a custom mark.
+pub(super) fn collect_refs(blocks: &[Block], out: &mut Vec<(NoteKind, i64, bool)>, seen: &mut HashSet<(NoteKind, i64)>) {
+    for b in blocks {
+        match b {
+            Block::Para(p) => {
+                for i in &p.inlines {
+                    if let Inline::NoteRef { kind, id, custom, .. } = i
+                        && seen.insert((*kind, *id))
+                    {
+                        out.push((*kind, *id, *custom));
+                    }
+                }
+            }
+            Block::Table(t) => {
+                for r in &t.rows {
+                    for c in &r.cells {
+                        collect_refs(&c.blocks, out, seen);
+                    }
+                }
+            }
         }
     }
 }

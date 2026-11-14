@@ -402,7 +402,7 @@ fn references(blocks: &[Block], notes: &std::collections::HashSet<(NoteKind, i64
     blocks.iter().any(|b| match b {
         Block::Para(p) => p.inlines.iter().any(|i| match i {
             Inline::NoteRef { kind, id, .. } => notes.contains(&(*kind, *id)),
-            Inline::NoteMark(kind, id, _) => notes.contains(&super::document::mark_key(*kind, *id)),
+            Inline::NoteMark(kind, id, _) => notes.contains(&super::node::mark_key(*kind, *id)),
             _ => false,
         }),
         Block::Table(t) => t.rows.iter().any(|r| r.cells.iter().any(|c| references(&c.blocks, notes))),
@@ -717,8 +717,8 @@ impl DocumentLayout {
         }
         let same_notes = span.is_none_or(|s| {
             let old = &b.shadow[s.section][s.first..s.old_end];
-            old.iter().all(|o| o.as_ref().is_some_and(|x| !super::document::has_note_refs(x)))
-                && !doc.sections[s.section].blocks[s.first..s.new_end].iter().any(super::document::has_note_refs)
+            old.iter().all(|o| o.as_ref().is_some_and(|x| !super::node::has_note_refs(x)))
+                && !doc.sections[s.section].blocks[s.first..s.new_end].iter().any(super::node::has_note_refs)
         });
         let mut job = if same_notes { LayoutJob::with_notes(rev, b.notes.clone(), fields) } else { new_job() };
         if b.extras.endnote_order != job.endnotes() {

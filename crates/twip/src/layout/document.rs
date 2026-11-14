@@ -16,7 +16,7 @@ use super::fragment::{BoxFragment, BoxKind, PageChild, PageFragment};
 use super::ids::{FragmentId, LayoutRevision, ParaId, Revision, Unit};
 use super::incremental::Reuse;
 use super::job::{Budget, Memos, Meter, Step, Yield};
-use super::node::{Blocks, Notes, SectionNode};
+use super::node::{Blocks, Notes, SectionNode, collect_refs, mark_key};
 use super::page::{Cursor, Next, Paginator, PassInfo, PassRun, margins, story_ref_in};
 use super::record::{HfRecord, PageRecord};
 use super::snapshot::{LayoutStatus, PageMeta, Snapshot};
@@ -152,11 +152,6 @@ struct Keyed {
     fmt: String,
     /// An endnote mark: its note's first paragraph (the page it is drawn on).
     mark: Option<ParaId>,
-}
-
-/// The number key of an endnote's mark when it differs from its reference's.
-pub fn mark_key(kind: NoteKind, id: i64) -> (NoteKind, i64) {
-    (kind, !id)
 }
 
 /// Each note's story start in its kind's stories laid end to end in reference order, and the end of the last one:
@@ -324,45 +319,6 @@ impl JobNotes {
     /// The endnotes that follow section `si`.
     fn after(&self, si: usize) -> impl Iterator<Item = i64> + '_ {
         self.endnotes.iter().zip(&self.ends).filter(move |e| *e.1 == si).map(|e| *e.0)
-    }
-}
-
-/// The block holds a footnote reference.
-pub fn has_footnote_refs(b: &Block) -> bool {
-    match b {
-        Block::Para(p) => p.inlines.iter().any(|i| matches!(i, Inline::NoteRef { kind: NoteKind::Foot, .. })),
-        Block::Table(t) => t.rows.iter().flat_map(|r| r.cells.iter()).flat_map(|c| c.blocks.iter()).any(has_footnote_refs),
-    }
-}
-
-pub fn has_note_refs(b: &Block) -> bool {
-    match b {
-        Block::Para(p) => p.inlines.iter().any(|i| matches!(i, Inline::NoteRef { .. })),
-        Block::Table(t) => t.rows.iter().flat_map(|r| r.cells.iter()).flat_map(|c| c.blocks.iter()).any(has_note_refs),
-    }
-}
-
-/// Each note's first reference: kind, id, and whether it carries a custom mark.
-fn collect_refs(blocks: &[Block], out: &mut Vec<(NoteKind, i64, bool)>, seen: &mut HashSet<(NoteKind, i64)>) {
-    for b in blocks {
-        match b {
-            Block::Para(p) => {
-                for i in &p.inlines {
-                    if let Inline::NoteRef { kind, id, custom, .. } = i
-                        && seen.insert((*kind, *id))
-                    {
-                        out.push((*kind, *id, *custom));
-                    }
-                }
-            }
-            Block::Table(t) => {
-                for r in &t.rows {
-                    for c in &r.cells {
-                        collect_refs(&c.blocks, out, seen);
-                    }
-                }
-            }
-        }
     }
 }
 

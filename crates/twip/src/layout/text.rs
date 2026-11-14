@@ -1779,7 +1779,7 @@ pub fn shape_space(
             }
             Inline::NoteRef { kind, id, .. } => space.notes.push(notes.get(&(*kind, *id)).cloned().unwrap_or_default()),
             Inline::NoteMark(kind, id, _) => {
-                let mark = notes.get(&super::document::mark_key(*kind, *id));
+                let mark = notes.get(&super::node::mark_key(*kind, *id));
                 space.notes.push(mark.or_else(|| notes.get(&(*kind, *id))).cloned().unwrap_or_default())
             }
             _ => {}
