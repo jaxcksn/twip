@@ -541,7 +541,7 @@ pub fn evaluate(doc: &mut Document, now: i64) {
                     && !name.starts_with('/')
                 {
                     // A bookmark starting in a field's code starts at that field's result.
-                    let start = spans(&p.inlines).iter().filter(|s| s.begin < k && k < s.code_end()).last().map_or(k, |s| s.code_end() + 1);
+                    let start = spans(&p.inlines).iter().rfind(|s| s.begin < k && k < s.code_end()).map_or(k, |s| s.code_end() + 1);
                     let end = format!("/{name}");
                     let stop = p.inlines[start.min(p.inlines.len())..]
                         .iter()
