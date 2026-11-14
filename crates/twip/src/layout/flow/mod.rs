@@ -408,79 +408,18 @@ impl<'d> PageFill<'d, '_> {
 
     fn fill_body(&mut self, cur: &mut ColumnCursor, col: ColumnSpace, page_empty: bool, memos: &mut Memos) -> Result<(Stop, f64), Yield> {
         let nblocks = self.sec.blocks.len();
-        if let Some(mut t) = cur.carry.table_rest.take() {
-            let tb = self.table_layout(t.block, col.width, memos)?;
-            let (prev, prev_after) = (cur.carry.prev.clone(), cur.carry.prev_after);
-            let (mut ty, mut te) = (*cur.y, *cur.empty);
-            let mut carried = ColumnCursor { pos: &mut t, carry: cur.carry, y: &mut ty, empty: &mut te, area: cur.area, out: cur.out };
-            if self.place_table(&tb, &mut carried, &col, memos)? != Stop::Done {
-                cur.carry.table_rest.get_or_insert(t);
-            }
-            (cur.carry.prev, cur.carry.prev_after) = (prev, prev_after);
-        }
-        if page_empty
-            && self.continues_endnote(cur.pos)
-            && let Some(sep) = self.separator_story("endnote:continuationSeparator", col.width, memos)?
-        {
-            place_units(&sep.units, col.x, *cur.y, cur.out);
-            *cur.y += sep.height;
-        } else if col.balance && self.column > 0 && self.ctx.env.text.compat == Compat::Legacy && self.in_endnote_text(cur.pos) {
-            // Compat ≤ 14: in a balanced section every later column that starts with endnote text starts with the
-            // continuation separator, its rule across the column.
-            let sep = self.separator_or_rule("endnote:continuationSeparator", col.width, col.width, memos)?;
-            place_units(&sep.units, col.x, *cur.y, cur.out);
-            *cur.y += sep.height;
-        }
+        self.resume_table(cur, &col, memos)?;
+        self.open_endnotes(cur, &col, page_empty, memos)?;
         let mut keep = KeepChain::default();
         let generic = self.ctx.env.text.compat == Compat::Generic;
         loop {
-            // Compat 15: a note cut at the end of a section that the next one follows on the page goes on in the next
-            // section's layout.
-            let passes = self.hold_notes && (cur.area.cut || !cur.carry.note_rest.is_empty()) && self.at_section_end(cur.pos);
-            if cur.pos.block >= nblocks || passes {
-                let end = *cur.y + if col.balance { cur.carry.prev_after } else { 0.0 };
-                // A note cut on this page goes on on the next one, even past the end of the text.
-                let more = !cur.carry.note_rest.is_empty() && !cur.area.parts.is_empty() && !passes || cur.carry.table_rest.is_some();
-                return Ok((if more { Stop::Full } else { Stop::Done }, end));
+            if let Some(end) = self.column_end(cur, &col, nblocks) {
+                return Ok(end);
             }
-            if self.at.end.as_ref() == Some(&*cur.pos) {
-                return Ok((Stop::Page, *cur.y));
-            }
-            let vanished = matches!(self.sec.blocks.get(cur.pos.block), Some(Block::Para(p)) if super::paragraph::vanished(p));
-            if cur.pos.at.at_start()
-                && let Some(end) = self.deleted_before_table(cur.pos.block)
-            {
-                // Compat ≤ 14: before a table whose rows are all hidden they keep the space before of the paragraph
-                // whose mark they join.
-                if !generic && !*cur.empty {
-                    *cur.y += self.hidden_table_before(end);
-                }
-                cur.pos.block = end;
-                cur.pos.next_block();
+            if self.skip_block(cur, generic) {
                 continue;
             }
-            if cur.pos.at.at_start()
-                && (self.break_para_after_table(cur.pos.block) && self.ctx.env.text.compat == Compat::Legacy
-                    || self.break_para_after_para(cur.pos.block)
-                    || vanished)
-            {
-                cur.pos.next_block();
-                continue;
-            }
-            // Compat ≤ 14: a beneath-text footnote area goes right under the section's own text, and the endnotes
-            // that follow the section go on below it.
-            if !generic
-                && self.beneath()
-                && cur.pos.block == self.sec.section.blocks.len()
-                && cur.pos.at.at_start()
-                && !cur.area.parts.is_empty()
-                && !cur.area.cut
-                && cur.carry.note_rest.is_empty()
-            {
-                self.draw_notes(cur.area, &col, *cur.y + cur.carry.prev_after, cur.out, memos)?;
-                *cur.area = NoteArea::default();
-                (*cur.y, cur.carry.prev_after) = (self.at.notes_bottom, 0.0);
-            }
+            self.notes_under_text(cur, &col, generic, memos)?;
             // Compat 15: a continuous section's text waits for the notes going on from an earlier section, on pages
             // of their own.
             if generic
@@ -497,76 +436,8 @@ impl<'d> PageFill<'d, '_> {
             let found_len = self.at.found.len();
             match self.sec.blocks.get(bi) {
                 Some(Block::Para(_)) => {
-                    let Some((laid, end)) = self.laid(bi) else { unreachable!("a paragraph block") };
-                    let p = laid.para();
-                    let style = p.para_style_in(self.ctx.env.text.review.view);
-                    // The frames before the paragraph that stay on this page are placed first; a frame that starts
-                    // with the break takes the break with it.
-                    let framed = matches!(p.inlines.first(), Some(Inline::Float(f, _)) if f.text_box.is_some() && f.shape.is_none());
-                    let mut breaks = cur.pos.at.at_start() && style.page_break_before && !(*cur.empty && page_empty);
-                    if cur.pos.at.at_start() && style.page_break_before && framed {
-                        let pb = self.para_lines(&laid, bi, end, col.width, (0, false), col.x, memos)?;
-                        self.at.frames_only = true;
-                        let r = self.place_para(p, &pb, cur, &col, memos);
-                        self.at.frames_only = false;
-                        breaks = r? == Stop::Page;
-                    }
-                    if breaks {
-                        cur.carry.keep_top = self.ctx.env.text.compat == Compat::Legacy
-                            || bi == 0 && self.sec.section.break_kind == crate::docx::SectionBreak::Continuous;
-                        return Ok((Stop::Page, *cur.y));
-                    }
-                    // Compat ≤ 14: a page-break-before paragraph keeps its space-before on a page that is already
-                    // empty too (after a page-break character).
-                    if cur.pos.at.at_start() && style.page_break_before && self.ctx.env.text.compat == Compat::Legacy {
-                        cur.carry.keep_top = true;
-                    }
-                    let pb = self.para_lines(&laid, bi, end, col.width, (cur.pos.at.index(), cur.carry.letter_break), col.x, memos)?;
-                    let placed = self.place_para(p, &pb, cur, &col, memos)?;
-                    if cur.pos.block > bi {
-                        cur.pos.block = end + 1;
-                    }
-                    match placed {
-                        Stop::Done => {}
-                        Stop::Full if cur.pos.block == bi && cur.pos.at.at_start() => {
-                            if let Some(c) = keep.chain.take()
-                                && !c.empty
-                            {
-                                let (y, _) = self.rollback(cur, c);
-                                self.at.found.truncate(found_len);
-                                cur.carry.keep_top = false;
-                                return Ok((Stop::Full, y));
-                            }
-                            return Ok((Stop::Full, *cur.y));
-                        }
-                        s => return Ok((s, *cur.y)),
-                    }
-                    if style.keep_next {
-                        let here = cur.out[start_state.out..].iter().map(|c| if let Child::Para(f) = c { f.lines.len() } else { 0 }).sum();
-                        keep.members.push((start_state.clone(), here, style.keep_lines, style.widow_control));
-                        if keep.chain.is_none() {
-                            keep.chain = Some(start_state);
-                        }
-                        let fits = self.next_fits(cur.pos.block, cur.carry, &col, *cur.y, cur.area.total(), memos)?;
-                        if !fits && let Some((c, cap)) = generic.then(|| step_back(&keep.members)).flatten() {
-                            let (y, empty) = self.rollback(cur, c);
-                            self.at.found.truncate(found_len);
-                            self.at.keep_cap = Some((cur.pos.block, cap));
-                            keep.reset();
-                            (*cur.y, *cur.empty) = (y, empty);
-                            continue;
-                        }
-                        if !fits
-                            && let Some(c) = keep.chain.take()
-                            && !c.empty
-                        {
-                            let (y, _) = self.rollback(cur, c);
-                            self.at.found.truncate(found_len);
-                            cur.carry.keep_top = false;
-                            return Ok((Stop::Full, y));
-                        }
-                    } else {
-                        keep.reset();
+                    if let Some(stop) = self.fill_para(cur, &col, page_empty, bi, start_state, found_len, &mut keep, generic, memos)? {
+                        return Ok(stop);
                     }
                 }
                 Some(Block::Table(_)) if self.ctx.env.text.vertical.is_some() => match self.place_upright_table(bi, cur, &col, memos)? {
@@ -574,43 +445,245 @@ impl<'d> PageFill<'d, '_> {
                     s => return Ok((s, *cur.y)),
                 },
                 Some(Block::Table(t)) => {
-                    let breaks = t.rows.first().is_some_and(|r| {
-                        r.cells.iter().any(
-                            |c| matches!(c.blocks.first(), Some(Block::Para(p)) if p.para_style_in(self.ctx.env.text.review.view).page_break_before),
-                        )
-                    });
-                    if cur.pos.at.at_start() && breaks && !(*cur.empty && page_empty) {
-                        return Ok((Stop::Page, *cur.y));
-                    }
-                    let tb = self.table_layout(bi, col.width, memos)?;
-                    match self.place_table(&tb, cur, &col, memos)? {
-                        Stop::Done => keep.reset(),
-                        s => {
-                            if cur.pos.block == bi
-                                && cur.pos.at.at_start()
-                                && let Some((c, cap)) = generic.then(|| step_back(&keep.members)).flatten()
-                            {
-                                let (y, empty) = self.rollback(cur, c);
-                                self.at.keep_cap = Some((cur.pos.block, cap));
-                                keep.reset();
-                                (*cur.y, *cur.empty) = (y, empty);
-                                continue;
-                            }
-                            if let Some(c) = keep.chain.take()
-                                && !c.empty
-                                && cur.pos.block == bi
-                                && cur.pos.at.at_start()
-                            {
-                                let (y, _) = self.rollback(cur, c);
-                                return Ok((Stop::Full, y));
-                            }
-                            return Ok((s, *cur.y));
-                        }
+                    if let Some(stop) = self.fill_table(cur, &col, page_empty, bi, t, &mut keep, generic, memos)? {
+                        return Ok(stop);
                     }
                 }
                 None => unreachable!("block index checked above"),
             }
         }
+    }
+
+    // Carried floating table
+    fn resume_table(&mut self, cur: &mut ColumnCursor, col: &ColumnSpace, memos: &mut Memos) -> Result<(), Yield> {
+        if let Some(mut t) = cur.carry.table_rest.take() {
+            let tb = self.table_layout(t.block, col.width, memos)?;
+            let (prev, prev_after) = (cur.carry.prev.clone(), cur.carry.prev_after);
+            let (mut ty, mut te) = (*cur.y, *cur.empty);
+            let mut carried = ColumnCursor { pos: &mut t, carry: cur.carry, y: &mut ty, empty: &mut te, area: cur.area, out: cur.out };
+            if self.place_table(&tb, &mut carried, col, memos)? != Stop::Done {
+                cur.carry.table_rest.get_or_insert(t);
+            }
+            (cur.carry.prev, cur.carry.prev_after) = (prev, prev_after);
+        }
+        Ok(())
+    }
+
+    // Endnote continuation separator
+    fn open_endnotes(&mut self, cur: &mut ColumnCursor, col: &ColumnSpace, page_empty: bool, memos: &mut Memos) -> Result<(), Yield> {
+        if page_empty
+            && self.continues_endnote(cur.pos)
+            && let Some(sep) = self.separator_story("endnote:continuationSeparator", col.width, memos)?
+        {
+            place_units(&sep.units, col.x, *cur.y, cur.out);
+            *cur.y += sep.height;
+        } else if col.balance && self.column > 0 && self.ctx.env.text.compat == Compat::Legacy && self.in_endnote_text(cur.pos) {
+            // Compat ≤ 14: in a balanced section every later column that starts with endnote text starts with the
+            // continuation separator, its rule across the column.
+            let sep = self.separator_or_rule("endnote:continuationSeparator", col.width, col.width, memos)?;
+            place_units(&sep.units, col.x, *cur.y, cur.out);
+            *cur.y += sep.height;
+        }
+        Ok(())
+    }
+
+    // Column end
+    fn column_end(&self, cur: &ColumnCursor, col: &ColumnSpace, nblocks: usize) -> Option<(Stop, f64)> {
+        // Compat 15: a note cut at the end of a section that the next one follows on the page goes on in the next
+        // section's layout.
+        let passes = self.hold_notes && (cur.area.cut || !cur.carry.note_rest.is_empty()) && self.at_section_end(cur.pos);
+        if cur.pos.block >= nblocks || passes {
+            let end = *cur.y + if col.balance { cur.carry.prev_after } else { 0.0 };
+            // A note cut on this page goes on on the next one, even past the end of the text.
+            let more = !cur.carry.note_rest.is_empty() && !cur.area.parts.is_empty() && !passes || cur.carry.table_rest.is_some();
+            return Some((if more { Stop::Full } else { Stop::Done }, end));
+        }
+        if self.at.end.as_ref() == Some(&*cur.pos) {
+            return Some((Stop::Page, *cur.y));
+        }
+        None
+    }
+
+    // Blocks not laid out
+    fn skip_block(&self, cur: &mut ColumnCursor, generic: bool) -> bool {
+        let vanished = matches!(self.sec.blocks.get(cur.pos.block), Some(Block::Para(p)) if super::paragraph::vanished(p));
+        if cur.pos.at.at_start()
+            && let Some(end) = self.deleted_before_table(cur.pos.block)
+        {
+            // Compat ≤ 14: before a table whose rows are all hidden they keep the space before of the paragraph
+            // whose mark they join.
+            if !generic && !*cur.empty {
+                *cur.y += self.hidden_table_before(end);
+            }
+            cur.pos.block = end;
+            cur.pos.next_block();
+            return true;
+        }
+        if cur.pos.at.at_start()
+            && (self.break_para_after_table(cur.pos.block) && self.ctx.env.text.compat == Compat::Legacy
+                || self.break_para_after_para(cur.pos.block)
+                || vanished)
+        {
+            cur.pos.next_block();
+            return true;
+        }
+        false
+    }
+
+    // Beneath-text notes
+    fn notes_under_text(&mut self, cur: &mut ColumnCursor, col: &ColumnSpace, generic: bool, memos: &mut Memos) -> Result<(), Yield> {
+        // Compat ≤ 14: a beneath-text footnote area goes right under the section's own text, and the endnotes
+        // that follow the section go on below it.
+        if !generic
+            && self.beneath()
+            && cur.pos.block == self.sec.section.blocks.len()
+            && cur.pos.at.at_start()
+            && !cur.area.parts.is_empty()
+            && !cur.area.cut
+            && cur.carry.note_rest.is_empty()
+        {
+            self.draw_notes(cur.area, col, *cur.y + cur.carry.prev_after, cur.out, memos)?;
+            *cur.area = NoteArea::default();
+            (*cur.y, cur.carry.prev_after) = (self.at.notes_bottom, 0.0);
+        }
+        Ok(())
+    }
+
+    // Paragraph block
+    #[allow(clippy::too_many_arguments, reason = "the block, the column it fills and the keep-with-next chain it may roll back")]
+    fn fill_para(
+        &mut self,
+        cur: &mut ColumnCursor,
+        col: &ColumnSpace,
+        page_empty: bool,
+        bi: usize,
+        start_state: Breakpoint,
+        found_len: usize,
+        keep: &mut KeepChain,
+        generic: bool,
+        memos: &mut Memos,
+    ) -> Result<Option<(Stop, f64)>, Yield> {
+        let Some((laid, end)) = self.laid(bi) else { unreachable!("a paragraph block") };
+        let p = laid.para();
+        let style = p.para_style_in(self.ctx.env.text.review.view);
+        // The frames before the paragraph that stay on this page are placed first; a frame that starts
+        // with the break takes the break with it.
+        let framed = matches!(p.inlines.first(), Some(Inline::Float(f, _)) if f.text_box.is_some() && f.shape.is_none());
+        let mut breaks = cur.pos.at.at_start() && style.page_break_before && !(*cur.empty && page_empty);
+        if cur.pos.at.at_start() && style.page_break_before && framed {
+            let pb = self.para_lines(&laid, bi, end, col.width, (0, false), col.x, memos)?;
+            self.at.frames_only = true;
+            let r = self.place_para(p, &pb, cur, col, memos);
+            self.at.frames_only = false;
+            breaks = r? == Stop::Page;
+        }
+        if breaks {
+            cur.carry.keep_top =
+                self.ctx.env.text.compat == Compat::Legacy || bi == 0 && self.sec.section.break_kind == crate::docx::SectionBreak::Continuous;
+            return Ok(Some((Stop::Page, *cur.y)));
+        }
+        // Compat ≤ 14: a page-break-before paragraph keeps its space-before on a page that is already
+        // empty too (after a page-break character).
+        if cur.pos.at.at_start() && style.page_break_before && self.ctx.env.text.compat == Compat::Legacy {
+            cur.carry.keep_top = true;
+        }
+        let pb = self.para_lines(&laid, bi, end, col.width, (cur.pos.at.index(), cur.carry.letter_break), col.x, memos)?;
+        let placed = self.place_para(p, &pb, cur, col, memos)?;
+        if cur.pos.block > bi {
+            cur.pos.block = end + 1;
+        }
+        match placed {
+            Stop::Done => {}
+            Stop::Full if cur.pos.block == bi && cur.pos.at.at_start() => {
+                if let Some(c) = keep.chain.take()
+                    && !c.empty
+                {
+                    let (y, _) = self.rollback(cur, c);
+                    self.at.found.truncate(found_len);
+                    cur.carry.keep_top = false;
+                    return Ok(Some((Stop::Full, y)));
+                }
+                return Ok(Some((Stop::Full, *cur.y)));
+            }
+            s => return Ok(Some((s, *cur.y))),
+        }
+        if style.keep_next {
+            let here = cur.out[start_state.out..].iter().map(|c| if let Child::Para(f) = c { f.lines.len() } else { 0 }).sum();
+            keep.members.push((start_state.clone(), here, style.keep_lines, style.widow_control));
+            if keep.chain.is_none() {
+                keep.chain = Some(start_state);
+            }
+            let fits = self.next_fits(cur.pos.block, cur.carry, col, *cur.y, cur.area.total(), memos)?;
+            if !fits && let Some((c, cap)) = generic.then(|| step_back(&keep.members)).flatten() {
+                let (y, empty) = self.rollback(cur, c);
+                self.at.found.truncate(found_len);
+                self.at.keep_cap = Some((cur.pos.block, cap));
+                keep.reset();
+                (*cur.y, *cur.empty) = (y, empty);
+                return Ok(None);
+            }
+            if !fits
+                && let Some(c) = keep.chain.take()
+                && !c.empty
+            {
+                let (y, _) = self.rollback(cur, c);
+                self.at.found.truncate(found_len);
+                cur.carry.keep_top = false;
+                return Ok(Some((Stop::Full, y)));
+            }
+        } else {
+            keep.reset();
+        }
+        Ok(None)
+    }
+
+    // Table block
+    #[allow(clippy::too_many_arguments, reason = "as fill_para")]
+    fn fill_table(
+        &mut self,
+        cur: &mut ColumnCursor,
+        col: &ColumnSpace,
+        page_empty: bool,
+        bi: usize,
+        t: &Table,
+        keep: &mut KeepChain,
+        generic: bool,
+        memos: &mut Memos,
+    ) -> Result<Option<(Stop, f64)>, Yield> {
+        let breaks = t.rows.first().is_some_and(|r| {
+            r.cells
+                .iter()
+                .any(|c| matches!(c.blocks.first(), Some(Block::Para(p)) if p.para_style_in(self.ctx.env.text.review.view).page_break_before))
+        });
+        if cur.pos.at.at_start() && breaks && !(*cur.empty && page_empty) {
+            return Ok(Some((Stop::Page, *cur.y)));
+        }
+        let tb = self.table_layout(bi, col.width, memos)?;
+        match self.place_table(&tb, cur, col, memos)? {
+            Stop::Done => keep.reset(),
+            s => {
+                if cur.pos.block == bi
+                    && cur.pos.at.at_start()
+                    && let Some((c, cap)) = generic.then(|| step_back(&keep.members)).flatten()
+                {
+                    let (y, empty) = self.rollback(cur, c);
+                    self.at.keep_cap = Some((cur.pos.block, cap));
+                    keep.reset();
+                    (*cur.y, *cur.empty) = (y, empty);
+                    return Ok(None);
+                }
+                if let Some(c) = keep.chain.take()
+                    && !c.empty
+                    && cur.pos.block == bi
+                    && cur.pos.at.at_start()
+                {
+                    let (y, _) = self.rollback(cur, c);
+                    return Ok(Some((Stop::Full, y)));
+                }
+                return Ok(Some((s, *cur.y)));
+            }
+        }
+        Ok(None)
     }
 
     fn next_fits(&mut self, bi: usize, carry: &FlowState, col: &ColumnSpace, y: f64, notes: f64, memos: &mut Memos) -> Result<bool, Yield> {
