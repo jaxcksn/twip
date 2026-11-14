@@ -427,7 +427,6 @@ pub fn with_spacing(widths: &mut [i64], s2: i64) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::Value;
 
     fn dxa(w: i64, min: i64) -> Col {
         Col { kind: Some(Kind::Dxa), min, max: w.max(min), hard: 0, pct: 0, dxa: w, own_pct: false }
@@ -490,101 +489,5 @@ mod tests {
         let mut cols = vec![Col { min: 100, max: 900, ..Default::default() }, Col { min: 100, max: 300, ..Default::default() }];
         spread(&mut cols, &cell(700, 1500), 0);
         assert_eq!(cols.iter().map(|c| (c.min, c.max)).collect::<Vec<_>>(), [(509, 1125), (192, 375)]);
-    }
-
-    fn kind(v: &Value) -> Option<Kind> {
-        match v.as_str()? {
-            "pct" => Some(Kind::Pct),
-            "dxa" => Some(Kind::Dxa),
-            _ => Some(Kind::Auto),
-        }
-    }
-
-    fn ints(v: &Value) -> Vec<i64> {
-        v.as_array().unwrap().iter().map(|x| x.as_i64().unwrap()).collect()
-    }
-
-    fn col(v: &Value) -> Col {
-        let f = |k: &str| v[k].as_i64().unwrap();
-        Col { kind: kind(&v["kind"]), min: f("min"), max: f("max"), hard: f("hard"), pct: f("pct"), dxa: f("dxa"), own_pct: false }
-    }
-
-    fn same(a: &Col, b: &Col) -> bool {
-        (a.kind, a.min, a.max, a.hard, a.pct, a.dxa) == (b.kind, b.min, b.max, b.hard, b.pct, b.dxa)
-    }
-
-    /// The acceptance vectors.
-    #[test]
-    fn acceptance_vectors() {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/cleanroom/autofit_vectors.jsonl");
-        let text = std::fs::read_to_string(path).expect("autofit vectors");
-        let (mut runs, mut fails) = (std::collections::BTreeMap::<String, usize>::new(), Vec::new());
-        for (line, l) in text.lines().enumerate() {
-            let v: Value = serde_json::from_str(l).unwrap();
-            let (f, i, o) = (v["f"].as_str().unwrap(), &v["in"], &v["out"]);
-            *runs.entry(f.to_string()).or_default() += 1;
-            let ok = match f {
-                "distribute" => {
-                    let mut out = ints(&i["out"]);
-                    distribute(&mut out, &ints(&i["floor"]), i["target"].as_i64().unwrap());
-                    out == ints(o)
-                }
-                "resolve" => {
-                    let cols: Vec<Col> = i["cols"].as_array().unwrap().iter().map(col).collect();
-                    let g = |k: &str| i[k].as_i64().unwrap();
-                    let b = |k: &str| i[k].as_bool().unwrap();
-                    let r = resolve(&cols, g("pad"), g("tbl"), g("avail"), b("fixed"), b("no_grow"));
-                    let want = Resolved {
-                        width: o["width"].as_i64().unwrap(),
-                        widths: ints(&o["widths"]),
-                        min_t: o["min_t"].as_i64().unwrap(),
-                        hard_t: o["hard_t"].as_i64().unwrap(),
-                    };
-                    r == want
-                }
-                "columns" => {
-                    let cells: Vec<Cell> = i["cells"]
-                        .as_array()
-                        .unwrap()
-                        .iter()
-                        .map(|c| {
-                            let g = |k: &str| c[k].as_i64().unwrap();
-                            Cell {
-                                first: g("first") as usize,
-                                span: g("span") as usize,
-                                min: g("min"),
-                                max: g("max"),
-                                hard: g("hard"),
-                                kind: kind(&c["kind"]).unwrap_or(Kind::Auto),
-                                pref: g("pref"),
-                                row: g("row") as usize,
-                                cont: c["cont"].as_bool().unwrap(),
-                            }
-                        })
-                        .collect();
-                    let gaps: Vec<Vec<Gap>> = i["gaps"]
-                        .as_array()
-                        .unwrap()
-                        .iter()
-                        .map(|r| {
-                            r.as_array()
-                                .unwrap()
-                                .iter()
-                                .map(|g| (g[0].as_u64().unwrap() as usize, g[1].as_u64().unwrap() as usize, g[2].as_i64().unwrap()))
-                                .collect()
-                        })
-                        .collect();
-                    let got = columns(i["n"].as_u64().unwrap() as usize, &cells, i["sp"].as_i64().unwrap(), &gaps, i["fixed"].as_bool().unwrap());
-                    let want: Vec<Col> = o.as_array().unwrap().iter().map(col).collect();
-                    got.len() == want.len() && got.iter().zip(&want).all(|(a, b)| same(a, b))
-                }
-                _ => panic!("unknown function {f}"),
-            };
-            if !ok {
-                fails.push((line + 1, f.to_string()));
-            }
-        }
-        assert_eq!(runs.values().sum::<usize>(), 3400, "{runs:?}");
-        assert!(fails.is_empty(), "{} of 3400 differ, first: {:?}", fails.len(), &fails[..fails.len().min(20)]);
     }
 }

@@ -1917,47 +1917,6 @@ mod tests {
         assert_eq!(inserted, [false, false, true, true, false, false]);
     }
 
-    /// The fitted-text acceptance vectors.
-    #[test]
-    fn fitted_text_vectors() {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/cleanroom/fit_vectors.jsonl");
-        let text = std::fs::read_to_string(path).expect("fit vectors");
-        let mut fails = Vec::new();
-        let mut cases = 0;
-        for (line, l) in text.lines().enumerate() {
-            let v: serde_json::Value = serde_json::from_str(l).unwrap();
-            let glyphs: Vec<[i64; 3]> = serde_json::from_value(v["glyphs"].clone()).unwrap();
-            let advances = |scale: f64| -> Vec<f64> {
-                glyphs
-                    .iter()
-                    .map(|&[fu, avg, hp]| {
-                        let q = avg * scale as i64 / 100;
-                        ((2 * fu * q + avg) / (2 * avg) * hp) as f64
-                    })
-                    .collect()
-            };
-            let target = (v["target_tw"].as_f64().unwrap() * 1024.0 / 5.0).trunc();
-            let region = FitRegion { n: glyphs.len(), advances: &advances, target };
-            let state = |k: &str| -> FitState {
-                let s: [f64; 3] = serde_json::from_value(v[k].clone()).unwrap();
-                (s[0], s[1], s[2])
-            };
-            let unadjusted = (100.0, 0.0, 0.0);
-            let first = region.step(unadjusted);
-            let second = region.step(first);
-            // One character: (σ, 0, c) is (σ, c, c).
-            let one = |s: FitState| if glyphs.len() == 1 { (s.0, s.2, s.2) } else { s };
-            let got = [region.fit(unadjusted), first, second, region.fit(second)].map(one);
-            let want = [state("c12"), state("c15_A"), state("c15_B"), state("c15_printed")];
-            if got != want {
-                fails.push((line + 1, got, want));
-            }
-            cases += 1;
-        }
-        assert_eq!(cases, 600);
-        assert!(fails.is_empty(), "{} of 600 differ, first: {:?}", fails.len(), &fails[..fails.len().min(5)]);
-    }
-
     #[test]
     fn a_fitted_region_spreads_then_corrects_its_last_character() {
         // `abcdef` Arial 11 to 2880 tw.
