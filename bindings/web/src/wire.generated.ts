@@ -3,7 +3,7 @@ import type { ControlKind, ReferenceRule } from './services/elements.js';
 import type { RulerUnit, TabSelector } from './services/ruler.js';
 import type { ChromeTheme, CursorOverride, DocumentAppearance, FieldShading, MeasureDetail, ObjectGrid, ThemeColors } from './services/view.js';
 import type { Mixed, RowHeight, Tri } from './state.js';
-import type { Color, CommentId, ContentPoint, Degrees, ElementId, Points, RevisionId, ShapeState, StyleId } from './types.js';
+import type { Author, ClientPoint, ClientRect, Color, CommentId, ContentPoint, Degrees, ElementId, Points, RevisionId, ShapeState, StyleId } from './types.js';
 
 /** A font table's general class of a family. */
 export type FontClass =
@@ -936,4 +936,124 @@ export interface BalloonPlacement {
   left: number;
   /** The leader line, a polyline from the range to the card. */
   leader: ContentPoint[];
+}
+
+/** One committed transaction, as `documentChanged` reports it. */
+export interface TransactionRecord {
+  /** Unique in the session, increasing. */
+  id: number;
+  /** The document revision this transaction made. */
+  revision: number;
+  /** Who started it. */
+  origin: 'user' | 'api' | 'undo' | 'redo';
+  /** The session's author at the time. */
+  author: Author;
+  /** When it committed. */
+  time: string;
+  /** The undo label (`Typing`, `Bold`, a batch's label). */
+  label: string;
+  /** What it touched. */
+  summary: {
+    /** How many paragraphs it changed. */
+    paragraphs: number;
+    /** How many tables it changed. */
+    tables: number;
+    /** The elements it changed. */
+    elements: ElementId[];
+    /** The revisions it made or changed. */
+    revisions: RevisionId[];
+    /** The comments it made or changed. */
+    comments: CommentId[];
+  };
+}
+
+/** Keys whose UI is the application's: pressing one never edits, and emits `hostCommand`. */
+export type HostCommand =
+  /** Ctrl+S. */
+  | 'save'
+  /** F12. */
+  | 'saveAs'
+  /** Ctrl+P. */
+  | 'print'
+  /** Ctrl+O. */
+  | 'open'
+  /** Ctrl+N. */
+  | 'new'
+  /** Ctrl+F. */
+  | 'find'
+  /** Ctrl+H. */
+  | 'replace'
+  /** Ctrl+G. */
+  | 'goTo'
+  /** Ctrl+K. */
+  | 'insertHyperlink'
+  /** F7. */
+  | 'nextMisspelling'
+  /** Ctrl+Shift+F. */
+  | 'focusFont'
+  /** Ctrl+Shift+P. */
+  | 'focusFontSize'
+  /** F1. */
+  | 'help';
+
+/** What a press on an element does. */
+export type PressAction =
+  /** Checks or clears a checkbox. */
+  | 'toggle'
+  /** Follows a hyperlink (with Ctrl or Cmd held, or in a read-only editor). */
+  | 'followLink'
+  /** Places the caret in the element's text. */
+  | 'placeCaret'
+  /** Nothing: the element can't be edited here. */
+  | 'none';
+
+/** The field, content control or merge-designer element under the pointer. */
+export interface ElementHover {
+  /** The element; `exact` is always false. */
+  element: ElementContext;
+  /** Its boxes on screen, one per line it spans. */
+  boxes: ClientRect[];
+  /** What a press there does. */
+  action: PressAction;
+}
+
+/** A click on an element, after the editor's own action for it. */
+export interface ElementClick {
+  /** The element; `exact` is always false. */
+  element: ElementContext;
+  /** 1 for a click, 2 for a double click, 3 for a triple click. */
+  count: number;
+  /** The button. */
+  button: 'primary' | 'secondary' | 'middle';
+  /** The modifier keys held. */
+  modifiers: {
+    /** Ctrl. */
+    ctrl: boolean;
+    /** Shift. */
+    shift: boolean;
+    /** Alt (Option on a Mac). */
+    alt: boolean;
+    /** Meta: Cmd on a Mac, the Windows key on Windows. */
+    meta: boolean;
+  };
+}
+
+/** The innermost element the selection is in or covers. */
+export interface ElementSelection {
+  /** The element. */
+  element: ElementContext;
+  /** Its boxes on screen, one per line it spans; none while it is scrolled out of view. */
+  boxes: ClientRect[];
+}
+
+/** A tooltip to show over the document or its rulers. */
+export interface Tooltip {
+  /** What is hovered. */
+  kind: 'link' | 'mark' | 'revision' | 'comment' | 'ruler';
+  /** The text to show. */
+  text: string;
+  /** The pointer. */
+  at: ClientPoint;
+  /** The hovered thing's box. */
+  rect: ClientRect;
 }

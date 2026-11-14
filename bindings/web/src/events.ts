@@ -9,6 +9,24 @@ import type { RulerView } from './services/ruler.js';
 import type { GestureEvent, Popover } from './services/view.js';
 import type { EditingTarget, ElementContext, SelectionSummary } from './state.js';
 import type { Author, ClientPoint, ClientRect, CommentId, ElementId, RevisionId, Warning } from './types.js';
+import type {
+  ElementClick,
+  ElementHover,
+  ElementSelection,
+  HostCommand,
+  Tooltip,
+  TransactionRecord,
+} from './wire.generated.js';
+
+export type {
+  ElementClick,
+  ElementHover,
+  ElementSelection,
+  HostCommand,
+  PressAction,
+  Tooltip,
+  TransactionRecord,
+} from './wire.generated.js';
 
 /** Every event of `editor.on(type, listener)`, keyed by type. */
 export interface TwipEvents {
@@ -90,83 +108,4 @@ export interface TwipEvents {
   warning: Warning;
   /** A listener's exception, or a fault (then `fatal` is true). */
   error: EditorError;
-}
-
-/** A committed transaction. */
-export interface TransactionRecord {
-  /** Unique per session. */
-  id: number;
-  /** The revision it committed. */
-  revision: number;
-  /** Who started it: the user's input, an API call, undo or redo. */
-  origin: 'user' | 'api' | 'undo' | 'redo';
-  /** The session's author at the time. */
-  author: Author;
-  /** When, ISO 8601 UTC. */
-  time: string;
-  /** The undo label. */
-  label: string;
-  /** What it touched. */
-  summary: { paragraphs: number; tables: number; elements: ElementId[]; revisions: RevisionId[]; comments: CommentId[] };
-}
-
-/** A key the application owns. */
-export type HostCommand =
-  | 'save'
-  | 'saveAs'
-  | 'print'
-  | 'open'
-  | 'new'
-  | 'find'
-  | 'replace'
-  | 'goTo'
-  | 'insertHyperlink'
-  | 'nextMisspelling'
-  | 'focusFont'
-  | 'focusFontSize'
-  | 'help';
-
-/** What a press on an element does: `followLink` with Ctrl or Cmd held, or in a read-only editor. */
-export type PressAction = 'toggle' | 'followLink' | 'placeCaret' | 'none';
-
-/** The field or content control under the pointer. */
-export interface ElementHover {
-  /** The element; `exact` is always false. */
-  element: ElementContext;
-  /** Its boxes, one per line it spans. */
-  boxes: ClientRect[];
-  /** What a press there does. */
-  action: PressAction;
-}
-
-/** A click on an element. */
-export interface ElementClick {
-  /** The element; `exact` is always false. */
-  element: ElementContext;
-  /** 1 for a click, 2 for a double click, 3 for a triple click. */
-  count: number;
-  /** The button. */
-  button: 'primary' | 'secondary' | 'middle';
-  /** The modifier keys held. */
-  modifiers: { ctrl: boolean; shift: boolean; alt: boolean; meta: boolean };
-}
-
-/** The innermost element the selection is in or covers. */
-export interface ElementSelection {
-  /** The element. */
-  element: ElementContext;
-  /** Its boxes, one per line it spans; none while it is scrolled out of view. */
-  boxes: ClientRect[];
-}
-
-/** A hover tooltip to show, over the document or its rulers. */
-export interface Tooltip {
-  /** What is hovered. */
-  kind: 'link' | 'mark' | 'revision' | 'comment' | 'ruler';
-  /** The text to show. */
-  text: string;
-  /** The pointer. */
-  at: ClientPoint;
-  /** The hovered thing's box. */
-  rect: ClientRect;
 }

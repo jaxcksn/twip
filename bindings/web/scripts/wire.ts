@@ -61,6 +61,14 @@ const ADOPT = [
   'RichRun',
   'CommentAnchor',
   'BalloonPlacement',
+  // events.ts
+  'TransactionRecord',
+  'HostCommand',
+  'PressAction',
+  'ElementHover',
+  'ElementClick',
+  'ElementSelection',
+  'Tooltip',
 ];
 
 /** Schema types written out at each use rather than named. */
@@ -69,6 +77,7 @@ const INLINE = [
   'Alignment',
   'BorderState',
   'CellAlignment',
+  'ChangeSummary',
   'ColumnLayout',
   'ElementKind',
   'FlowState',
@@ -81,10 +90,13 @@ const INLINE = [
   'IndentState',
   'LinkInfo',
   'ListState',
+  'Modifiers',
   'ObjectKind',
   'Orientation',
+  'Origin',
   'PageMargins',
   'PageSize',
+  'PointerButton',
   'RevisionKind',
   'RichParagraph',
   'RulerVisibility',
@@ -92,6 +104,7 @@ const INLINE = [
   'SelectionMode',
   'Size',
   'Story',
+  'TooltipKind',
 ];
 
 /** Fields this SDK types more precisely than the schema can (`Type.field`: the TypeScript type). */
