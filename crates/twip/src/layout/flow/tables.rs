@@ -372,6 +372,14 @@ fn move_floats(
     }
 }
 
+// A floating table's place
+struct Floated {
+    at_x: f64,
+    settled: bool,
+    first: Option<(usize, f64)>,
+    wrap_x: Option<f64>,
+}
+
 impl<'d> PageFill<'d, '_> {
     // Tables
     pub(super) fn place_table(&mut self, tb: &TableLayout, cur: &mut ColumnCursor, col: &ColumnSpace, memos: &mut Memos) -> Result<Stop, Yield> {
@@ -497,116 +505,9 @@ impl<'d> PageFill<'d, '_> {
         if let Some(fp) = fp
             && pos.at.at_start()
         {
-            settled = self.at.found.iter().all(|f| self.at.known.iter().any(|k| k.same(f)));
-            let h: f64 = tb.rows.iter().filter(|r| !r.hidden).map(|r| r.height).sum::<f64>() + tb.bottom_border;
-            let (t0, t1) = match fp.v_anchor {
-                TableAnchor::Page => (0.0, self.page_h),
-                _ => (self.margins.2, self.page_h - self.sec.section.section_in(self.ctx.env.text.review.view).bottom),
-            };
-            let mut top = match (fp.v_anchor, fp.y_spec) {
-                (TableAnchor::Text, _) => flow_y + fp.y,
-                (_, Some(Jc::Center)) => (t0 + t1 - h) / 2.0,
-                (_, Some(Jc::Right)) => t1 - h,
-                (_, Some(_)) => t0,
-                (_, None) => t0 + fp.y - 0.05,
-            }
-            .max(0.0);
-            // A page-anchored table's first part holds the rows that fit from where it stands in the flow to the
-            // column bottom, and it is moved up so they end on the paper.
-            // ponytail: whole rows only, and only `tblpY` against the page.
-            if fp.v_anchor == TableAnchor::Page && fp.y_spec.is_none() {
-                let mut part = (0, tb.bottom_border);
-                for r in tb.rows.iter().filter(|r| !r.hidden) {
-                    if !col.bottom.holds(flow_y + part.1 + r.height) {
-                        break;
-                    }
-                    part = (part.0 + 1, part.1 + r.height);
-                }
-                if part.0 > 0 {
-                    top = top.min(self.page_h - part.1).max(0.0);
-                    first = Some(part);
-                }
-            }
-            let (bl, br) = match self.sec.blocks.get(pos.block) {
-                Some(Block::Table(t)) => crate::layout::table::float_box(tb, t, legacy),
-                _ => (0.0, 0.0),
-            };
-            let [dt, db, ..] = fp.dist;
-            // Compat ≤ 14 puts a table placed in the flow, from the nearest twip, below an earlier table whose obstacle
-            // its text box (a twip left of `tblpX`, the indent added to its width) reaches.
-            let in_flow = legacy && fp.v_anchor == TableAnchor::Text && fp.y == 0.0;
-            let tables: Vec<Placed> = self.at.found.iter().filter(|o| o.key.2 == float::TABLE_PIECE).cloned().collect();
-            let (c0, c1) = crate::layout::table::cells_box(tb);
-            let shift = if fp.x_align().is_none() && !fp.h_text { 0.05 } else { 0.0 };
-            let ind = match self.sec.blocks.get(pos.block) {
-                Some(Block::Table(t)) => t.ind,
-                _ => 0.0,
-            };
-            let (f0, f1) = (at_x + c0 - shift - ind, at_x + c1 - shift);
-            // A table below which it went is not avoided again for what the rounding left of their overlap.
-            let mut under = Vec::new();
-            for o in tables.iter().filter(|_| in_flow) {
-                if f0 < o.excl[2] - EPS && o.excl[0] < f1 - EPS && o.excl[3].min(top + h + db) - o.excl[1].max(top - dt) >= 9.0 {
-                    top = (o.excl[3] * 20.0).round() / 20.0;
-                    under.push(o.key);
-                }
-            }
-            if let Some(Block::Table(t)) = self.sec.blocks.get(pos.block) {
-                let f = float::table_float(t.id, br - bl, h, float::table_dist(&fp, in_flow), !fp.never_overlap);
-                let mut probe = Placed::new((self.sec.index, pos.block, float::TABLE_PIECE), ParaId(t.id), &f, at_x + bl, top, h);
-                let body_bottom = self.page_h - self.sec.section.section_in(self.ctx.env.text.review.view).bottom;
-                // It moves off the tables and frames placed before it that it may not overlap, or that may not overlap it.
-                let frames = self.at.found.iter().filter(|o| o.key.2 != float::TABLE_PIECE && o.float.text_box.is_some() && o.float.shape.is_none());
-                let others: Vec<Placed> = tables.iter().filter(|o| !under.contains(&o.key)).chain(frames).cloned().collect();
-                // Its area: the box its horizontal and vertical anchors name.
-                let across = match () {
-                    _ if fp.h_page => (0.0, self.page_w),
-                    _ if fp.h_text => (col.x, col.x + col.width),
-                    _ => (self.margins.0, self.page_w - self.margins.1),
-                };
-                let down = if fp.v_anchor == TableAnchor::Page { (0.0, self.page_h) } else { (self.margins.2, body_bottom) };
-                let asked = at_x;
-                float::avoid(&mut probe, &others, across, down, self.ctx.env.text.compat);
-                (at_x, top) = (probe.rect[0] - bl, probe.rect[1]);
-                // Compat 15: a table moved clear of others whose box meets the text laid out before it on the page (the
-                // page is filled again) is drawn at the x it asked for and the y it was moved to; the text wraps the
-                // place it was moved to.
-                // ponytail: "meets" is its box reaching into the band from the column top to where the flow reached it
-                // on a page with text before it, not a test against those lines.
-                let meets = !was_empty && probe.excl[1] < flow_y - EPS && probe.excl[3] > col.top.to_pt() + EPS;
-                if !legacy && meets && (asked - at_x).abs() > EPS {
-                    wrap_x = Some(at_x);
-                    at_x = asked;
-                }
-            }
-            // A table in the flow is placed again from the flow on every fill. Another keeps the place of the last
-            // fill, in compat 15 only when it met the text laid out before it there.
-            let flowing = fp.v_anchor == TableAnchor::Text && fp.y == 0.0;
-            // A kept place stays for the rest of the page, however the floats before it moved.
-            *y = match self.at.known.iter().find(|k| k.key == (self.sec.index, pos.block, float::TABLE_PIECE)) {
-                Some(k) if !flowing && (legacy || k.restarts) => {
-                    settled = true;
-                    k.rect[1]
-                }
-                _ => top,
-            };
-            if unsplit && !*empty && !col.bottom.holds(*y + h) {
-                return Ok(Stop::Full);
-            }
-            // Compat 15: one placed above where it stands that doesn't hold every row in its first part goes to the
-            // next page (where the text after it goes on is as for a split table).
-            if let Some((n, _)) = first
-                && !legacy
-                && !*empty
-                && *y + 0.05 < flow_y - EPS
-                && n < tb.rows.iter().filter(|r| !r.hidden).count()
-            {
-                if self.ctx.env.text.text_after_table_break {
-                    carry.prev = None;
-                    carry.prev_after = 0.0;
-                    carry.balanced_after = 0.0;
-                }
-                return Ok(self.text_goes_on(true, pos, carry, y, empty, (flow_y, was_empty)));
+            match self.place_floating(fp, tb, col, pos, carry, y, empty, at_x, (flow_y, was_empty), unsplit)? {
+                Ok(f) => (at_x, settled, first, wrap_x) = (f.at_x, f.settled, f.first, f.wrap_x),
+                Err(stop) => return Ok(stop),
             }
         }
         // An exact row is cut to the column's own height, whatever bottom the table's first part has.
@@ -944,6 +845,138 @@ impl<'d> PageFill<'d, '_> {
         carry.first_para = false;
         carry.beside_at = None;
         Ok(Stop::Done)
+    }
+
+    // Floating table position
+    #[allow(clippy::too_many_arguments, reason = "the table, its column place, and where the flow stood before it")]
+    fn place_floating(
+        &mut self,
+        fp: crate::docx::props::TablePos,
+        tb: &TableLayout,
+        col: &ColumnSpace,
+        pos: &mut FlowToken,
+        carry: &mut FlowState,
+        y: &mut f64,
+        empty: &mut bool,
+        mut at_x: f64,
+        (flow_y, was_empty): (f64, bool),
+        unsplit: bool,
+    ) -> Result<Result<Floated, Stop>, Yield> {
+        let legacy = self.ctx.env.text.compat == Compat::Legacy;
+        let mut first: Option<(usize, f64)> = None;
+        let mut wrap_x = None;
+        let mut settled = self.at.found.iter().all(|f| self.at.known.iter().any(|k| k.same(f)));
+        let h: f64 = tb.rows.iter().filter(|r| !r.hidden).map(|r| r.height).sum::<f64>() + tb.bottom_border;
+        let (t0, t1) = match fp.v_anchor {
+            TableAnchor::Page => (0.0, self.page_h),
+            _ => (self.margins.2, self.page_h - self.sec.section.section_in(self.ctx.env.text.review.view).bottom),
+        };
+        let mut top = match (fp.v_anchor, fp.y_spec) {
+            (TableAnchor::Text, _) => flow_y + fp.y,
+            (_, Some(Jc::Center)) => (t0 + t1 - h) / 2.0,
+            (_, Some(Jc::Right)) => t1 - h,
+            (_, Some(_)) => t0,
+            (_, None) => t0 + fp.y - 0.05,
+        }
+        .max(0.0);
+        // A page-anchored table's first part holds the rows that fit from where it stands in the flow to the
+        // column bottom, and it is moved up so they end on the paper.
+        // ponytail: whole rows only, and only `tblpY` against the page.
+        if fp.v_anchor == TableAnchor::Page && fp.y_spec.is_none() {
+            let mut part = (0, tb.bottom_border);
+            for r in tb.rows.iter().filter(|r| !r.hidden) {
+                if !col.bottom.holds(flow_y + part.1 + r.height) {
+                    break;
+                }
+                part = (part.0 + 1, part.1 + r.height);
+            }
+            if part.0 > 0 {
+                top = top.min(self.page_h - part.1).max(0.0);
+                first = Some(part);
+            }
+        }
+        let (bl, br) = match self.sec.blocks.get(pos.block) {
+            Some(Block::Table(t)) => crate::layout::table::float_box(tb, t, legacy),
+            _ => (0.0, 0.0),
+        };
+        let [dt, db, ..] = fp.dist;
+        // Compat ≤ 14 puts a table placed in the flow, from the nearest twip, below an earlier table whose obstacle
+        // its text box (a twip left of `tblpX`, the indent added to its width) reaches.
+        let in_flow = legacy && fp.v_anchor == TableAnchor::Text && fp.y == 0.0;
+        let tables: Vec<Placed> = self.at.found.iter().filter(|o| o.key.2 == float::TABLE_PIECE).cloned().collect();
+        let (c0, c1) = crate::layout::table::cells_box(tb);
+        let shift = if fp.x_align().is_none() && !fp.h_text { 0.05 } else { 0.0 };
+        let ind = match self.sec.blocks.get(pos.block) {
+            Some(Block::Table(t)) => t.ind,
+            _ => 0.0,
+        };
+        let (f0, f1) = (at_x + c0 - shift - ind, at_x + c1 - shift);
+        // A table below which it went is not avoided again for what the rounding left of their overlap.
+        let mut under = Vec::new();
+        for o in tables.iter().filter(|_| in_flow) {
+            if f0 < o.excl[2] - EPS && o.excl[0] < f1 - EPS && o.excl[3].min(top + h + db) - o.excl[1].max(top - dt) >= 9.0 {
+                top = (o.excl[3] * 20.0).round() / 20.0;
+                under.push(o.key);
+            }
+        }
+        if let Some(Block::Table(t)) = self.sec.blocks.get(pos.block) {
+            let f = float::table_float(t.id, br - bl, h, float::table_dist(&fp, in_flow), !fp.never_overlap);
+            let mut probe = Placed::new((self.sec.index, pos.block, float::TABLE_PIECE), ParaId(t.id), &f, at_x + bl, top, h);
+            let body_bottom = self.page_h - self.sec.section.section_in(self.ctx.env.text.review.view).bottom;
+            // It moves off the tables and frames placed before it that it may not overlap, or that may not overlap it.
+            let frames = self.at.found.iter().filter(|o| o.key.2 != float::TABLE_PIECE && o.float.text_box.is_some() && o.float.shape.is_none());
+            let others: Vec<Placed> = tables.iter().filter(|o| !under.contains(&o.key)).chain(frames).cloned().collect();
+            // Its area: the box its horizontal and vertical anchors name.
+            let across = match () {
+                _ if fp.h_page => (0.0, self.page_w),
+                _ if fp.h_text => (col.x, col.x + col.width),
+                _ => (self.margins.0, self.page_w - self.margins.1),
+            };
+            let down = if fp.v_anchor == TableAnchor::Page { (0.0, self.page_h) } else { (self.margins.2, body_bottom) };
+            let asked = at_x;
+            float::avoid(&mut probe, &others, across, down, self.ctx.env.text.compat);
+            (at_x, top) = (probe.rect[0] - bl, probe.rect[1]);
+            // Compat 15: a table moved clear of others whose box meets the text laid out before it on the page (the
+            // page is filled again) is drawn at the x it asked for and the y it was moved to; the text wraps the
+            // place it was moved to.
+            // ponytail: "meets" is its box reaching into the band from the column top to where the flow reached it
+            // on a page with text before it, not a test against those lines.
+            let meets = !was_empty && probe.excl[1] < flow_y - EPS && probe.excl[3] > col.top.to_pt() + EPS;
+            if !legacy && meets && (asked - at_x).abs() > EPS {
+                wrap_x = Some(at_x);
+                at_x = asked;
+            }
+        }
+        // A table in the flow is placed again from the flow on every fill. Another keeps the place of the last
+        // fill, in compat 15 only when it met the text laid out before it there.
+        let flowing = fp.v_anchor == TableAnchor::Text && fp.y == 0.0;
+        // A kept place stays for the rest of the page, however the floats before it moved.
+        *y = match self.at.known.iter().find(|k| k.key == (self.sec.index, pos.block, float::TABLE_PIECE)) {
+            Some(k) if !flowing && (legacy || k.restarts) => {
+                settled = true;
+                k.rect[1]
+            }
+            _ => top,
+        };
+        if unsplit && !*empty && !col.bottom.holds(*y + h) {
+            return Ok(Err(Stop::Full));
+        }
+        // Compat 15: one placed above where it stands that doesn't hold every row in its first part goes to the
+        // next page (where the text after it goes on is as for a split table).
+        if let Some((n, _)) = first
+            && !legacy
+            && !*empty
+            && *y + 0.05 < flow_y - EPS
+            && n < tb.rows.iter().filter(|r| !r.hidden).count()
+        {
+            if self.ctx.env.text.text_after_table_break {
+                carry.prev = None;
+                carry.prev_after = 0.0;
+                carry.balanced_after = 0.0;
+            }
+            return Ok(Err(self.text_goes_on(true, pos, carry, y, empty, (flow_y, was_empty))));
+        }
+        Ok(Ok(Floated { at_x, settled, first, wrap_x }))
     }
 
     /// The page's floats a table part placed in the flow goes beside or below: all but those of its own block; with
