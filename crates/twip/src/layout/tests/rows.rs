@@ -258,6 +258,21 @@ fn an_empty_last_paragraph_adds_nothing_to_its_auto_cell() {
 }
 
 #[test]
+fn compat_14_joined_tables_with_other_left_margins_move_their_edges_5_twips() {
+    let body = format!(
+        r#"<w:tbl><w:tblPr><w:tblInd w:w="0" w:type="dxa"/><w:tblLayout w:type="fixed"/>{MAR}</w:tblPr><w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/></w:tblGrid><w:tr>{}{}</w:tr></w:tbl><w:tbl><w:tblPr><w:tblInd w:w="0" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblCellMar><w:left w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/></w:tblGrid><w:tr>{}{}</w:tr></w:tbl><w:p/>"#,
+        dxa_cell(2000, "a"),
+        dxa_cell(2000, "b"),
+        dxa_cell(2000, "c"),
+        dxa_cell(2000, "d")
+    );
+    let x = |mode: i64, c: char| glyph_x_in(&body, mode, &[], c);
+    // x0 = 1440 - 100: the first row keeps its left edge, its other edges and every edge of the second row move 5.
+    assert!((x(12, 'a') - 72.0).abs() < 0.01 && (x(12, 'b') - 172.25).abs() < 0.01, "{} {}", x(12, 'a'), x(12, 'b'));
+    assert!((x(12, 'c') - 67.25).abs() < 0.01 && (x(12, 'd') - 167.25).abs() < 0.01, "{} {}", x(12, 'c'), x(12, 'd'));
+}
+
+#[test]
 fn a_centred_merged_region_cut_by_the_page_end_centres_in_its_page_part() {
     let blank = crate::docx::read(&crate::docx::blank::blank_docx()).expect("reads");
     let sec = &blank.sections[0];

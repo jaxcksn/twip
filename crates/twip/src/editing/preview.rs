@@ -68,6 +68,7 @@ impl Editor {
                 shading: None,
                 vanished: false,
                 cell_spacing: None,
+                nudge: None,
                 run: None,
                 cells: texts
                     .iter()

@@ -137,6 +137,7 @@ fn shell(t: &Table) -> Table {
                 vanished,
                 cell_spacing: row_spacing,
                 run,
+                nudge,
                 cells,
                 src: _,
                 controls: _,
@@ -203,6 +204,7 @@ fn shell(t: &Table) -> Table {
                 vanished: *vanished,
                 cell_spacing: *row_spacing,
                 run: *run,
+                nudge: *nudge,
                 cells,
                 src: None,
                 controls: Vec::new(),
@@ -297,6 +299,7 @@ pub(crate) fn same_shell(s: &Table, t: &Table) -> bool {
                 vanished,
                 cell_spacing: row_spacing,
                 run,
+                nudge,
                 cells,
                 src: _,
                 controls: _,
@@ -317,6 +320,7 @@ pub(crate) fn same_shell(s: &Table, t: &Table) -> bool {
                 && *vanished == q.vanished
                 && *row_spacing == q.cell_spacing
                 && *run == q.run
+                && *nudge == q.nudge
                 && *rev == q.rev
                 && cells.len() == q.cells.len()
                 && cells.iter().zip(&q.cells).all(|(c, d)| {
@@ -2008,7 +2012,12 @@ fn place(t: &Table, cols: &[f64], edges: &[Vec<CellEdges>]) -> Vec<Vec<CellGeo>>
                     if rtl(t) {
                         (left_e, right_e, left_outer, right_outer) = (right_e, left_e, right_outer, left_outer);
                     }
-                    let (x, w) = (col_x[col], col_x[col + span] - col_x[col]);
+                    let (mut x, mut w) = (col_x[col], col_x[col + span] - col_x[col]);
+                    match r.nudge {
+                        Some(true) if e.ci == 0 => w += 5,
+                        Some(_) => x += 5,
+                        None => {}
+                    }
                     let (ml, mr) = (twips(c.margins[1]), twips(c.margins[3]));
                     let inner;
                     let (cx, cw) = if let Some(row_s) = spacing_of(t, ri) {

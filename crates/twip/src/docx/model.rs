@@ -967,6 +967,9 @@ pub struct Row {
     pub cell_spacing: Option<f64>,
     /// The table width of the layout run the row starts or continues, when its exceptions fix its layout.
     pub run: Option<Width>,
+    /// Compat ≤ 14, a table joined from adjacent tables whose rows' left cell margins differ by more than 5 twips:
+    /// every column edge sits 5 twips right; `Some(true)` keeps the row's left edge (its first cell that much wider).
+    pub nudge: Option<bool>,
     pub cells: Vec<Cell>,
     /// The controls wrapping the row, outermost first.
     pub controls: Vec<ControlId>,

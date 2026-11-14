@@ -2700,6 +2700,7 @@ impl Reader {
         let mut first_row_jc: Option<Jc> = None;
         let mut first_row_width: Option<Width> = None;
         let mut first_row_ind: Option<Width> = None;
+        let mut left_margins: Vec<i64> = Vec::new();
         for (ri, (rn, row_controls)) in row_nodes.iter().enumerate() {
             let mut trp = style_region.tr.clone();
             trp.merge(&TrProps::parse(child(*rn, "trPr")));
@@ -2724,6 +2725,8 @@ impl Reader {
             let mut row_tbl = tbl.clone();
             row_tbl.borders.merge(&ex.borders);
             row_tbl.margins.merge(&ex.margins);
+            let unset = if style_id.is_none() { 0.5 } else { 0.0 };
+            left_margins.push((row_tbl.margins.left.unwrap_or(unset) * 20.0).round() as i64);
             let cell_nodes: Vec<(Node, Vec<ControlId>)> = self.cells_of(*rn, &[]);
             let ncols = cell_nodes.len();
             let mut cells = Vec::new();
@@ -2791,6 +2794,7 @@ impl Reader {
                 shading: ex.shading.flatten(),
                 cell_spacing: trp.cell_spacing.or(ex.cell_spacing).map(|s| s.max(0.0)),
                 run: (ex.fixed == Some(true) && tbl.fixed != Some(true)).then(|| ex.width.or(tbl.width).unwrap_or(Width::Auto)),
+                nudge: None,
                 vanished: tr_pr.and_then(|p| child(p, "hidden")).is_some_and(|n| !matches!(attr(n, "val"), Some("0" | "false" | "off")))
                     && cells.iter().all(|c| {
                         c.blocks.iter().all(|b| match b {
@@ -2811,22 +2815,29 @@ impl Reader {
         let grids: Vec<Vec<f64>> = ts.iter().copied().map(table_grid).collect();
         if grids.iter().any(|g| *g != grid) {
             // Compat ≤ 14: how far a later table's cell edges may move right onto the earlier edges, from the first
-            // cells' left pulls: the first table's, less the later one's, plus the later one's half left border.
+            // cells' left pulls: the first table's, less the later one's, plus 5 twips.
             let pull = |ri: usize| {
                 let c = rows[ri].cells.first();
                 let table = rows[ri].borders.as_ref().map_or(&tbl.borders.left, |b| &b[1]);
                 let b = c.and_then(|c| c.left.as_ref()).or(table.as_ref()).filter(|b| b.visible()).map_or(0, |b| (b.width * 20.0).round() as i64);
-                let hb = (b + 1) / 2;
-                (hb, hb.max(c.map_or(0, |c| (c.margins[1] * 20.0).round() as i64)))
+                ((b + 1) / 2).max(c.map_or(0, |c| (c.margins[1] * 20.0).round() as i64))
             };
             let first_of = |k: usize| row_table.iter().position(|&t| t == k);
             let moves: Vec<i64> = (0..ts.len())
                 .map(|k| match (k, first_of(0), first_of(k)) {
-                    (1.., Some(a), Some(b)) if self.res.styles.compat == Compat::Legacy => pull(a).1 - pull(b).1 + pull(b).0,
+                    (1.., Some(a), Some(b)) if self.res.styles.compat == Compat::Legacy => pull(a) - pull(b) + 5,
                     _ => 0,
                 })
                 .collect();
             grid = merged_grid(&grids, &mut rows, &row_table, &moves);
+        }
+        // Compat ≤ 14: a joined table whose rows' left cell margins differ from the first row's by more than 5 twips
+        // has every column edge 5 twips right, but the left edge of the rows with the largest margin.
+        let widest = left_margins.iter().copied().max().unwrap_or(0);
+        if ts.len() > 1 && self.res.styles.compat == Compat::Legacy && left_margins.iter().any(|m| (m - left_margins[0]).abs() > 5) {
+            for (r, m) in rows.iter_mut().zip(&left_margins) {
+                r.nudge = Some(*m == widest);
+            }
         }
         let b = &tbl.borders;
         Table {
