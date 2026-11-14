@@ -41,6 +41,8 @@ jobs:
       # unit, which make them the slowest builds here; build.yml builds the packages with the shipped profile.
       CARGO_PROFILE_RELEASE_LTO: 'false'
       CARGO_PROFILE_RELEASE_CODEGEN_UNITS: '16'
+      # nextest's CI profile (.config/nextest.toml): every failing test, not only the first.
+      NEXTEST_PROFILE: ci
       # Runs by hand and the weekly run check every task.
       FULL: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' }}
     steps:
@@ -64,10 +66,11 @@ jobs:
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
-      # The WebAssembly module's glue (crates/twip-wasm build-web.mjs), at twip-capi's wasm-bindgen version.
+      # The WebAssembly module's glue (crates/twip-wasm build-web.mjs), at twip-capi's wasm-bindgen version; and
+      # cargo-nextest, which runs the Rust tests.
       - uses: taiki-e/install-action@v2
         with:
-          tool: wasm-bindgen@0.2.129
+          tool: wasm-bindgen@0.2.129,cargo-nextest
       - run: moon ci --plan .moon/ci-plan.json --job ${{ matrix.shard.job }} ${{ env.FULL == 'true' && '--force' || '' }}
       - uses: moonrepo/run-report-action@v1
         if: success() || failure()

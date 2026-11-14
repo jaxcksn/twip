@@ -1,0 +1,5 @@
+# cargo-nextest runs the Rust tests (moon's twip, twip-capi and twip-graphics test tasks). CI sets NEXTEST_PROFILE=ci.
+
+# CI reports every failing test, not only the first.
+[profile.ci]
+fail-fast = false

@@ -11,6 +11,8 @@ You need:
 - **.NET 10 SDK**: for the .NET SDK and the docs' C# examples.
 - **The wasm-bindgen CLI** at the locked version, for the WebAssembly module, which `web:test` and everything else
   in `bindings/web` needs: `cargo install wasm-bindgen-cli --version 0.2.129 --locked`.
+- **cargo-nextest**, which runs the Rust tests: `cargo install cargo-nextest --locked`. It can't run doctests;
+  `twip:test` runs those with `cargo test --doc`.
 
 Twip links no C or C++ library: `node crates/twip-capi/build-native.mjs` is the plain cargo build of the native
 library (it passes other cargo arguments through: `node crates/twip-capi/build-native.mjs test --workspace`). Native
@@ -51,7 +53,7 @@ not generated: each is written by hand in its language, and each follows the con
 - **Wire fixtures.** The api types serialize to the JSON the SDKs exchange with the engine. `crates/twip/tests/wire`
   holds one fixture per type; both SDKs round-trip every one through their own types, and `twip:test` fails when
   they differ from the api types. After changing an api type, run
-  `TWIP_WRITE_WIRE=1 cargo test -p twip --lib fixtures_are_current` and commit the fixtures.
+  `TWIP_WRITE_WIRE=1 cargo nextest run -p twip --lib fixtures_are_current` and commit the fixtures.
 - **Contract scripts.** `tests/contract/*.json` are scripted scenarios (ordering, state, transactions, errors,
   services, review, cleanup) that run against the Rust API, `@twip/web` headless and in a worker, and `Twip.Core`
   unattached and attached; every runner must give the same results. A script in `tests/contract/pending.txt` waits
@@ -82,7 +84,7 @@ pnpm moon run docs:dev            # the docs site, locally
 ```
 
 Builds dominate the time a change takes, so run the checks in order. While iterating, build and test only what the
-change touches (`cargo check`, `cargo test -p twip <filter>`). Run `moon ci` once the change is done. Run the
+change touches (`cargo check`, `cargo nextest run -p twip <filter>`). Run `moon ci` once the change is done. Run the
 benchmarks last, after everything else passes: `cargo bench -p twip [-- <filter>]` (Divan, `crates/twip/benches`;
 not in CI). Compare their numbers with `main`'s on the same machine.
 
@@ -122,7 +124,7 @@ binary needs `--bench`; without it Divan runs each benchmark once, as a test. Li
 - No allocation per frame, per line or per glyph once warm: buffers are reused, and a test counts a steady frame's
   allocations.
 - The CPU backend is deterministic and is the reference. Every drawing feature lands with a golden image
-  (`tests/golden.rs`); `TWIP_GRAPHICS_BLESS=1 cargo test -p twip-graphics --test golden` rewrites them, to be reviewed
+  (`tests/golden.rs`); `TWIP_GRAPHICS_BLESS=1 cargo nextest run -p twip-graphics --test golden` rewrites them, to be reviewed
   before they are kept. GPU features are checked against the CPU's output: natively by `tests/gpu.rs` (with
   `--features gpu`; `TWIP_GRAPHICS_GPU=1` fails instead of skipping without a GPU), and on WebGPU in headless Edge by
   `moon run web:graphics-test`. That needs the wasm-bindgen CLI at the locked version (above).
@@ -166,7 +168,7 @@ The code is the documentation. A comment in the engine names a part of the code 
   `twip:test` (Windows, Linux) and `twip-wasm:test` (WebAssembly) fail when one changes. The failure draws each
   changed page in `target/layout-diff/index.html` (red: before, green: after); CI uploads it as the `layout-diff-<os>`
   artifact (`layout-diff-wasm` for WebAssembly) on the run's summary page. When the change is intended, run
-  `TWIP_WRITE_LAYOUT=1 cargo test -p twip --lib layout_output` and commit the snapshots with it. A pull request that
+  `TWIP_WRITE_LAYOUT=1 cargo nextest run -p twip --lib layout_output` and commit the snapshots with it. A pull request that
   changes the snapshots needs the `layout-change` label; the `layout-label` check blocks the merge without it. The
   release workflow lists every pull request with the label under **Layout changes** in the next release's changelog
   entry, by its title: say there what moves.
