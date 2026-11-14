@@ -2575,10 +2575,19 @@ impl<'d> PageFill<'d, '_> {
                 continue;
             }
             (x, fy) = float::page_clamp(f, (x, fy), h, &frames);
-            // Compat 15 keeps the box with its effect extents (not its distances) on the page, its top no higher
-            // than the top margin (a VML shape's own box).
+            // Compat 15 keeps the box with its effect extents (a VML shape's outline allowance too, not its
+            // distances) on the page, its top no higher than the top margin.
+            let mut clamped = None;
             if compat == Compat::Generic && matches!(f.v_relative.as_str(), "paragraph" | "line") {
-                fy = fy.max(frames.margin[2] + if f.vml { 0.0 } else { f.effect[1] });
+                let top = frames.margin[2] + f.effect[1];
+                // A VML shape moved down by it reaches no further below its box than above it.
+                // ponytail: read off one shape moved by its top extent only; a shape from far above may differ.
+                if f.vml && fy < top - EPS && f.effect[3] > f.effect[1] {
+                    let mut g = (**f).clone();
+                    g.effect[3] = g.effect[1];
+                    clamped = Some(Rc::new(g));
+                }
+                fy = fy.max(top);
                 let (l, r) = (x - f.effect[0], x + f.w + f.effect[2]);
                 if l < 0.0 {
                     x -= l;
@@ -2603,6 +2612,7 @@ impl<'d> PageFill<'d, '_> {
                     continue;
                 }
             }
+            let f = clamped.as_ref().unwrap_or(f);
             let mut a = self.wrapped(Placed::new((si, bi, pb.from + k), owner, f, x, fy, h), memos)?;
             // That text (with its space after in compat ≤ 14): a float wholly below it, or beside the column, doesn't
             // meet it. Earlier columns count as met.

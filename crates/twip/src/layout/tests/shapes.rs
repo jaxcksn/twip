@@ -473,7 +473,7 @@ fn compat_15_keeps_a_wrapping_float_with_its_top_effect_extent_below_the_top_mar
             r#"<wp:effectExtent l="0" t="127000" r="0" b="0"/><wp:wrapSquare wrapText="bothSides"/>"#,
         );
     assert_eq!(top(&format!("<w:p>{a}</w:p>")), 82.0);
-    // A VML shape's outline allowance doesn't move it.
+    // A VML shape's outline allowance counts as its top extent: half the 3 pt pen.
     let vml = r#"<w:p><w:r><w:pict><v:rect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w10="urn:schemas-microsoft-com:office:word" style="position:absolute;margin-left:100pt;margin-top:0;width:72pt;height:60pt;mso-position-horizontal-relative:margin;mso-position-vertical-relative:paragraph" strokeweight="3pt"><w10:wrap type="square"/></v:rect></w:pict></w:r></w:p>"#;
-    assert_eq!(top(vml), 72.0);
+    assert_eq!(top(vml), 73.5);
 }
