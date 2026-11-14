@@ -312,6 +312,40 @@ impl<'d> PageFill<'d, '_> {
         matches!(self.tops(w, top, from, bottom), Some((_, None)))
     }
 
+    fn keep_lines_start(&self, w: &WrapIn, mut yy: f64) -> f64 {
+        let &WrapIn { style, col, est, compat, floats, first_part, at_top, .. } = w;
+        // Below a column's top it is tried as a block from where it was first laid out: below the float it stays; with
+        // the float starting below its first line it goes on down to the top of the line whose band holds the float's
+        // top; with the float's top in its first line it goes to the float's bottom unless the float reaches more than
+        // its first place's distance to that top below the line; with the float over its first line it stays when
+        // every line beside the float starts above its bottom, else it goes on down to the first one that doesn't.
+        if compat == Compat::Legacy && style.keep_lines && first_part && !at_top {
+            let own =
+                floats.iter().filter(|f| f.frozen && f.excl[3] > yy + EPS).filter(|f| w.own_float(f)).min_by(|a, b| a.excl[1].total_cmp(&b.excl[1]));
+            if let Some(f) = own {
+                let (p0, ft, fb) = (yy, f.excl[1], f.excl[3]);
+                let mut y = p0;
+                yy = loop {
+                    if y >= fb - EPS || y >= col.bottom.to_pt() {
+                        break y;
+                    }
+                    let next = if ft >= y + est - EPS {
+                        self.tops(w, y, 0, ft + 2.0 * EPS).and_then(|(v, more)| more.and(v.last().copied()))
+                    } else if ft >= y - EPS && fb - y <= ft - p0 + EPS {
+                        break fb;
+                    } else {
+                        match self.tops(w, y, 0, fb) {
+                            Some((_, None)) => break y,
+                            low => low.and_then(|(_, t)| t),
+                        }
+                    };
+                    y = next.filter(|&t| t > y + EPS).unwrap_or(y + est);
+                };
+            }
+        }
+        yy
+    }
+
     // Bands
     fn fit_bands(&self, w: &WrapIn, carry: &FlowState, mut lead: f64, mut frame: Frame) -> (Vec<(f64, Vec<Line>)>, usize) {
         let &WrapIn {
@@ -366,35 +400,7 @@ impl<'d> PageFill<'d, '_> {
             let low = floats.iter().filter(|f| f.wrap != Wrap::None).map(|f| f.excl[3]).fold(yy, f64::max);
             yy = low.min(col.bottom.to_pt());
         }
-        // Below a column's top it is tried as a block from where it was first laid out: below the float it stays; with
-        // the float starting below its first line it goes on down to the top of the line whose band holds the float's
-        // top; with the float's top in its first line it goes to the float's bottom unless the float reaches more than
-        // its first place's distance to that top below the line; with the float over its first line it stays when
-        // every line beside the float starts above its bottom, else it goes on down to the first one that doesn't.
-        if compat == Compat::Legacy && style.keep_lines && first_part && !at_top {
-            let own =
-                floats.iter().filter(|f| f.frozen && f.excl[3] > yy + EPS).filter(|f| w.own_float(f)).min_by(|a, b| a.excl[1].total_cmp(&b.excl[1]));
-            if let Some(f) = own {
-                let (p0, ft, fb) = (yy, f.excl[1], f.excl[3]);
-                let mut y = p0;
-                yy = loop {
-                    if y >= fb - EPS || y >= col.bottom.to_pt() {
-                        break y;
-                    }
-                    let next = if ft >= y + est - EPS {
-                        self.tops(w, y, 0, ft + 2.0 * EPS).and_then(|(v, more)| more.and(v.last().copied()))
-                    } else if ft >= y - EPS && fb - y <= ft - p0 + EPS {
-                        break fb;
-                    } else {
-                        match self.tops(w, y, 0, fb) {
-                            Some((_, None)) => break y,
-                            low => low.and_then(|(_, t)| t),
-                        }
-                    };
-                    y = next.filter(|&t| t > y + EPS).unwrap_or(y + est);
-                };
-            }
-        }
+        yy = self.keep_lines_start(w, yy);
         // A paragraph ending in a line break has an empty last line after it.
         let trailing = |bands: &[(f64, Vec<Line>)]| {
             bands.last().and_then(|(_, segs)| segs.last()).is_some_and(|l| l.end == n && l.start < l.end && l.hard == Some(Kind::LineBreak))
