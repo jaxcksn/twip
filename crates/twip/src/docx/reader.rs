@@ -2646,6 +2646,14 @@ impl Reader {
         let style_region = self.res.styles.table_region(style_id.as_deref(), &[]);
         let mut tbl = style_region.tbl.clone();
         tbl.merge(&direct);
+        // Compat ≤ 14: a floating table at vertical position 0 stands in the flow, whatever it is anchored to.
+        if self.res.styles.compat == Compat::Legacy
+            && let Some(fp) = tbl.floating.as_mut()
+            && fp.y == 0.0
+            && fp.y_spec.is_none()
+        {
+            fp.v_anchor = TableAnchor::Text;
+        }
         let widths = |g: Node| children(g, "gridCol").map(|c| attr_twips(c, "w").unwrap_or(0.0)).collect::<Vec<f64>>();
         let grid_node = child(t, "tblGrid");
         let mut grid = grid_node.map(widths).unwrap_or_default();

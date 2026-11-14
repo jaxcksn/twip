@@ -439,14 +439,16 @@ pub fn layout_with(
                 // where it starts (from the text) and the text after it wraps around it. Compat ≤ 14: a header's or
                 // footer's text runs over it. A cell holds it.
                 // A header's or footer's table against the page or the margin stands `tblpY` (less a twip) below
-                // its top.
-                // ponytail: a cell's against the page or the margin, and `tblpYSpec`, start where the story is.
+                // its top, or with `tblpYSpec` top at it.
+                // ponytail: a cell's against the page or the margin, and `tblpYSpec` center or bottom, start where the
+                // story is.
                 let fp = t.floating.filter(|_| hf.is_some() || in_cell);
                 let top = match (fp, hf) {
                     (Some(fp), _) if fp.v_anchor == crate::docx::props::TableAnchor::Text => y + fp.y,
-                    (Some(fp), Some((at, margin))) if fp.y_spec.is_none() => {
+                    (Some(fp), Some((at, margin))) if fp.y_spec.is_none_or(|j| j == crate::docx::props::Jc::Left) => {
                         let t0 = if fp.v_anchor == crate::docx::props::TableAnchor::Page { 0.0 } else { margin };
-                        (t0 + fp.y - 0.05).max(0.0) - at
+                        let dy = if fp.y_spec.is_some() { 0.0 } else { fp.y - 0.05 };
+                        (t0 + dy).max(0.0) - at
                     }
                     _ => y,
                 };

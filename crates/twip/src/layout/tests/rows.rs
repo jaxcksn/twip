@@ -273,6 +273,20 @@ fn compat_14_joined_tables_with_other_left_margins_move_their_edges_5_twips() {
 }
 
 #[test]
+fn compat_14_a_floating_table_at_vertical_position_0_stands_in_the_flow() {
+    let y = |anchor: &str, mode: i64| {
+        let body = format!(
+            r#"<w:p><w:r><w:t>Lead</w:t></w:r></w:p><w:p><w:r><w:t>Lead</w:t></w:r></w:p><w:tbl><w:tblPr><w:tblpPr w:vertAnchor="{anchor}" w:horzAnchor="margin" w:tblpY="0"/><w:tblW w:w="3000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr>{}</w:tr></w:tbl><w:p/>"#,
+            dxa_cell(3000, "z")
+        );
+        let mut doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
+        doc.settings.compat_mode = mode;
+        glyphs(&doc)[0].iter().find(|g| g.0 == 'z').map(|g| g.1).expect("drawn")
+    };
+    assert!((y("margin", 12) - y("text", 12)).abs() < 0.01 && (y("page", 12) - y("text", 12)).abs() < 0.01, "{} {}", y("margin", 12), y("text", 12));
+}
+
+#[test]
 fn a_centred_merged_region_cut_by_the_page_end_centres_in_its_page_part() {
     let blank = crate::docx::read(&crate::docx::blank::blank_docx()).expect("reads");
     let sec = &blank.sections[0];
