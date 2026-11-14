@@ -329,11 +329,7 @@ fn row_restart(
     if row < old.rows.iter().take_while(|r| r.header).count() {
         return None;
     }
-    let same = old.cols == new.cols
-        && old.x0 == new.x0
-        && old.rows.len() == new.rows.len()
-        && old.rows[..row].iter().zip(&new.rows[..row]).all(|(a, b)| a.height == b.height && a.top_border == b.top_border);
-    same.then_some(p)
+    old.keeps_rows_above(&new, row).then_some(p)
 }
 
 fn start_key(t: &PageToken) -> (usize, usize, u8, usize) {
@@ -466,11 +462,7 @@ impl Reuse {
             if let Some(r) = in_table {
                 let (Some(old), Some(Block::Table(table))) = (&body.start_table, doc.sections[si].blocks.get(token.flow.block)) else { continue };
                 let Some(new) = run.memo.table(table, space.columns[0].width) else { continue };
-                let same = old.cols == new.cols
-                    && old.x0 == new.x0
-                    && old.bottom_border == new.bottom_border
-                    && old.rows.len() == new.rows.len()
-                    && old.rows.get(r..) == new.rows.get(r..)
+                let same = old.same_rows_from(&new, r)
                     && new.rows.get(r).is_some_and(|row| row.cells.iter().all(|c| c.v_merge != VMerge::Continue))
                     && self.span.and_then(|s| s.row).is_some_and(|e| e >= new.rows.iter().take_while(|row| row.header).count())
                     && old.rows.iter().take_while(|row| row.header).eq(new.rows.iter().take_while(|row| row.header));

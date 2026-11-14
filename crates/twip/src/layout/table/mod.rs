@@ -95,6 +95,21 @@ impl TableLayout {
     pub fn is_last(&self, ri: usize) -> bool {
         self.rows.get(ri + 1..).is_none_or(|rest| rest.iter().all(|r| r.hidden))
     }
+
+    pub(crate) fn keeps_rows_above(&self, new: &TableLayout, row: usize) -> bool {
+        self.cols == new.cols
+            && self.x0 == new.x0
+            && self.rows.len() == new.rows.len()
+            && self.rows[..row].iter().zip(&new.rows[..row]).all(|(a, b)| a.height == b.height && a.top_border == b.top_border)
+    }
+
+    pub(crate) fn same_rows_from(&self, new: &TableLayout, r: usize) -> bool {
+        self.cols == new.cols
+            && self.x0 == new.x0
+            && self.bottom_border == new.bottom_border
+            && self.rows.len() == new.rows.len()
+            && self.rows.get(r..) == new.rows.get(r..)
+    }
 }
 
 #[derive(Debug, PartialEq)]
