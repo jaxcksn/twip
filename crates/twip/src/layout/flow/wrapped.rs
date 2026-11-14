@@ -15,7 +15,7 @@ use crate::layout::paragraph::{gap, lines_to_take, space_after, space_before};
 use crate::layout::space::{ColumnSpace, ParaSpace};
 use crate::layout::story::StoryEnv;
 use crate::layout::text::{FieldValues, Kind, Object, Piece, ShapedPara, para_id};
-use crate::layout::token::{At, NoteArea, NotePart};
+use crate::layout::token::{At, FlowState, NoteArea, NotePart};
 use crate::layout::units::EPS;
 
 use super::{ColumnCursor, PageFill, Stop};
@@ -36,8 +36,27 @@ struct WrapIn<'a> {
     floats: &'a [Placed],
     first_part: bool,
     top: f64,
+    origin_y: f64,
+    y0: f64,
+    kept: f64,
+    si: usize,
+    bi: usize,
+    page_first: bool,
     anchor: ParaId,
     after: f64,
+}
+
+// Anchored floats of the paragraph
+struct Anchors {
+    anchors: Vec<Placed>,
+    kept_at: Vec<(usize, usize, usize)>,
+    forced: Option<usize>,
+    push: Option<usize>,
+    page_end: bool,
+}
+
+fn band_of(bands: &[(f64, Vec<Line>)], k: usize) -> Option<usize> {
+    bands.iter().position(|(_, segs)| segs.iter().any(|l| k >= l.start && k < l.end.max(l.start + 1)))
 }
 
 impl<'d> PageFill<'d, '_> {
@@ -509,181 +528,35 @@ impl<'d> PageFill<'d, '_> {
         let bi = pos.block;
         let si = self.sec.index;
         let anchor = para_id(p);
-        let mut anchors: Vec<Placed> = Vec::new();
-        let mut kept_at = Vec::new();
-        let mut forced: Option<usize> = None;
         // Compat 15, a float that can't be placed: the line holding its anchor goes to the next column (the next
         // page from a column's top) when it doesn't start the page; when it does, the page ends after it.
         let page_first = at_top && self.column == 0 && !self.mid_page;
-        let mut push: Option<usize> = None;
-        let mut page_end = false;
-        let band_of = |k: usize| bands.iter().position(|(_, segs)| segs.iter().any(|l| k >= l.start && k < l.end.max(l.start + 1)));
-        // A character-relative float counts from the drawn start of the character before its anchor, on whichever line
-        // holds it; one first in the paragraph from where its line's first glyph is drawn.
-        let char_x = |k: usize, b: usize| {
-            let at = |j: usize| bands.iter().flat_map(|(_, segs)| segs).find(|l| j >= l.start && j < l.end).map(|l| (l, l.xs[j - l.start]));
-            let before = (0..k).rev().find(|&j| pieces[j].kind != Kind::Anchor).and_then(|j| {
-                let (_, x) = at(j)?;
-                let (g0, g1) = pieces[j].glyphs;
-                Some(x + sp.glyph_advances[g0 as usize..(g1 as usize).max(g0 as usize + 1) - 1].iter().sum::<f64>())
-            });
-            let start = || {
-                let l = &bands[b].1[0];
-                (l.start..l.end).find(|&j| pieces[j].kind != Kind::Anchor).map_or(0.0, |j| l.xs[j - l.start])
-            };
-            cx0 + before.unwrap_or_else(start)
+        let w = WrapIn {
+            p,
+            pb,
+            style,
+            col,
+            sp,
+            pieces,
+            n,
+            cx0,
+            cx1,
+            compat,
+            floats: &floats,
+            first_part,
+            top,
+            origin_y: origin,
+            y0: *y,
+            kept,
+            si,
+            bi,
+            page_first,
+            anchor,
+            after,
         };
-        for (k, q) in pieces.iter().enumerate() {
-            let (Kind::Anchor, Some(Object::Float(f))) = (q.kind, sp.object(pb.from + k)) else { continue };
-            if carry.frames_left.contains(&(si, bi, pb.from + k)) {
-                continue;
-            }
-            let Some(b) = band_of(k) else { continue };
-            let owner = piece_para(sp, pb.from + k, anchor);
-            let f = &float::sized(f, &frames).map_or_else(|| f.clone(), Rc::new);
-            let f = &self.fit_frame(f, col.width, memos)?;
-            let h = self.float_height(f, memos)?;
-            let line_top = bands[b].0;
-            let para_top = if first_part { origin } else { bands[0].0 };
-            let mut x = float::h_pos(f, &frames);
-            // From the line laid out before the float: placed again once the line wraps it, it keeps that x, as the
-            // first fill of the page that placed it found it (each fill takes the one before's), wherever later fills
-            // put the paragraph.
-            if f.h_relative == "character" {
-                let before = self.at.known.iter().find(|o| o.key == (si, bi, pb.from + k) && o.wrap != Wrap::None).map(|o| o.rect[0]);
-                x = before.unwrap_or_else(|| float::h_pos(f, &Frames { column: (char_x(k, b), 0.0), ..frames }));
-            }
-            if compat == Compat::Legacy && f.h_relative == "column" {
-                match f.h_align.as_deref() {
-                    Some("left") => x += style.ind_left,
-                    Some("right") => x -= style.ind_right,
-                    // From a line that starts beside another paragraph's float (for a drawing, a frame before the
-                    // paragraph included): from where its piece starts. One that doesn't wrap also counts from the
-                    // piece its line was laid out again in beside the line's own wrapping floats.
-                    None => {
-                        let frame = |o: &Placed| o.float.text_box.is_some() && o.float.shape.is_none() && o.key.2 != float::TABLE_PIECE;
-                        let drawing = f.text_box.is_none() || f.shape.is_some();
-                        let segs = &bands[b].1;
-                        let line = pb.from + segs[0].start..pb.from + segs.last().map_or(segs[0].end, |l| l.end).max(segs[0].start + 1);
-                        let unwrapped = f.wrap == "none";
-                        let others: Vec<Placed> = floats
-                            .iter()
-                            .chain(&self.at.found)
-                            .chain(anchors.iter().filter(|o| !floats.iter().any(|f| f.key == o.key)))
-                            .filter(|o| {
-                                (o.key.0, o.key.1) != (si, bi)
-                                    || drawing && frame(o) && o.key.2 < pb.from + k
-                                    || unwrapped && o.wrap != Wrap::None && line.contains(&o.key.2)
-                            })
-                            .cloned()
-                            .collect();
-                        let piece = float::intervals(&others, cx0, cx1, line_top, line_top + bands[b].1[0].pitch, true);
-                        x += piece.and_then(|iv| iv.first().map(|p| p.0)).unwrap_or(cx0) - cx0;
-                    }
-                    _ => {}
-                }
-            }
-            let mut fy = float::v_pos(f, h, &frames, para_top, line_top);
-            // A frame from the text that would start above the page starts at its top.
-            if f.text_box.is_some() && f.shape.is_none() && f.v_relative == "paragraph" {
-                fy = fy.max(0.0);
-            }
-            // Compat ≤ 14: a drawing's page position in whole twips, for the collision with the lines above and the
-            // drawing. Frames keep theirs.
-            if compat == Compat::Legacy && (f.text_box.is_none() || f.shape.is_some()) {
-                (x, fy) = ((x * 20.0).round() / 20.0, (fy * 20.0).round() / 20.0);
-            }
-            if Placed::new((si, bi, pb.from + k), owner, f, x, fy, h).wrap == Wrap::None {
-                anchors.push(Placed::new((si, bi, pb.from + k), owner, f, x, fy, h));
-                continue;
-            }
-            // One that met text laid out before it keeps the place it met it at while the page is filled again.
-            let frozen = self.at.known.iter().find(|o| o.key == (si, bi, pb.from + k) && o.frozen).cloned();
-            if let Some(k) = &frozen {
-                let mut a = self.wrapped(Placed::new(k.key, owner, f, k.rect[0], k.rect[1], h), memos)?;
-                // A frame that met only the line above it doesn't move that line.
-                (a.collided, a.restarts, a.frozen, a.rounded_up) = (k.collided && !k.rounded_up, true, true, k.rounded_up);
-                kept_at.push(a.key);
-                anchors.push(a);
-                continue;
-            }
-            (x, fy) = float::page_clamp(f, (x, fy), h, &frames);
-            // Compat 15 keeps the box with its effect extents (a VML shape's outline allowance too, not its
-            // distances) on the page, its top no higher than the top margin.
-            let mut clamped = None;
-            if compat == Compat::Generic && matches!(f.v_relative.as_str(), "paragraph" | "line") {
-                let top = frames.margin[2] + f.effect[1];
-                // A VML shape moved down by it reaches no further below its box than above it.
-                // ponytail: read off one shape moved by its top extent only; a shape from far above may differ.
-                if f.vml && fy < top - EPS && f.effect[3] > f.effect[1] {
-                    let mut g = (**f).clone();
-                    g.effect[3] = g.effect[1];
-                    clamped = Some(Rc::new(g));
-                }
-                fy = fy.max(top);
-                let (l, r) = (x - f.effect[0], x + f.w + f.effect[2]);
-                if l < 0.0 {
-                    x -= l;
-                } else if r > frames.page_w {
-                    x -= (r - frames.page_w).min(l);
-                }
-            }
-            if compat == Compat::Generic && matches!(f.v_relative.as_str(), "paragraph" | "line") && !col.bottom.holds(fy + h) {
-                let up = col.bottom.to_pt() - h;
-                let anchor_bottom = line_top + bands[b].1[0].pitch;
-                if up >= anchor_bottom - EPS {
-                    fy = up;
-                } else if !(page_first && b == 0) {
-                    push = Some(push.map_or(b, |x: usize| x.min(b)));
-                    continue;
-                } else {
-                    let mut a = Placed::new((si, bi, pb.from + k), owner, f, x, fy, h);
-                    a.wrap = Wrap::None;
-                    forced = Some(forced.map_or(b, |x: usize| x.min(b)));
-                    page_end = true;
-                    anchors.push(a);
-                    continue;
-                }
-            }
-            let f = clamped.as_ref().unwrap_or(f);
-            let mut a = self.wrapped(Placed::new((si, bi, pb.from + k), owner, f, x, fy, h), memos)?;
-            // That text (with its space after in compat ≤ 14): a float wholly below it, or beside the column, doesn't
-            // meet it. Earlier columns count as met.
-            let reach = *y + if compat == Compat::Legacy { kept } else { 0.0 };
-            let met = a.excl[1] < reach - EPS && a.excl[0] < cx1 - EPS && a.excl[2] > cx0 + EPS;
-            let across = a.excl[0] < cx1 - EPS && a.excl[2] > cx0 + EPS;
-            let lines = a.excl[1] < line_top + bands[b].1[0].pitch - EPS && across;
-            // Compat ≤ 14: a drawing meets its paragraph's lines after its anchor's too.
-            let drawing = f.text_box.is_none() || f.shape.is_some();
-            let (last, (last_top, last_segs)) = (bands.len() - 1, bands.last().expect("laid out"));
-            let para_lines = compat == Compat::Legacy
-                && drawing
-                && last > b
-                && a.excl[1] < last_top + last_segs[0].pitch - EPS
-                && a.excl[3] > line_top + EPS
-                && across;
-            a.restarts = self.column > 0 || met || lines || para_lines;
-            // Only the first float of the fill that meets earlier text of its column met it where it will stay: that
-            // text wraps it in the next fill. A later one was placed beside text that moves, and is placed again.
-            // Compat ≤ 14: one that meets the lines of its own keepLines paragraph below a column's top stays too, and
-            // the paragraph starts below it; so does a drawing that meets its own paragraph's lines. Only text it met
-            // before its paragraph wraps it in the next fill.
-            let own = compat == Compat::Legacy && style.keep_lines && (self.column > 0 || met || lines) && a.excl[3] > bands[0].0 + EPS;
-            let stays = compat == Compat::Legacy && drawing && (lines || para_lines);
-            a.frozen = (met || own || stays) && !self.at.hit;
-            a.collided = a.frozen && (met || own) || self.column > 0 && !met;
-            anchors.push(a);
-        }
-        // Compat ≤ 14: the other drawings of the paragraph keep their places with one that stays.
-        let drawing = |a: &Placed| a.float.text_box.is_none() || a.float.shape.is_some();
-        if compat == Compat::Legacy && anchors.iter().any(|a| a.frozen && drawing(a) && !kept_at.contains(&a.key)) {
-            for a in anchors.iter_mut().filter(|a| drawing(a) && a.wrap != Wrap::None) {
-                a.frozen = true;
-            }
-        }
+        let Anchors { anchors, kept_at, mut forced, mut push, mut page_end } = self.place_anchors(&w, &bands, &frames, carry, memos)?;
         // Pagination
         let nb = bands.len();
-        let w = WrapIn { p, pb, style, col, sp, pieces, n, cx0, cx1, compat, floats: &floats, first_part, top, anchor, after };
         let (fit, areas, mut take) = self.page_bands(&w, &bands, area, memos)?;
         // A paragraph whose first line goes on to the next page leaves the frames before it on this page where their
         // own paragraph falls on it: one placed by the page or the margin always, one from the text when its height
@@ -818,7 +691,7 @@ impl<'d> PageFill<'d, '_> {
                     _ => (col.top.to_pt(), col.bottom.to_pt()),
                 };
                 if !restarted && !kept_at.contains(&a.key) && !float::avoid(&mut a, &others, across, down, compat) {
-                    let b = band_of(a.key.2 - pb.from).unwrap_or(0);
+                    let b = band_of(&bands, a.key.2 - pb.from).unwrap_or(0);
                     if compat == Compat::Generic && !(page_first && b == 0) {
                         push = Some(push.map_or(b, |x: usize| x.min(b)));
                         continue;
@@ -857,6 +730,189 @@ impl<'d> PageFill<'d, '_> {
             }
         }
         self.emit_wrapped(&w, &bands, &areas, take, s, page_end, cur)
+    }
+
+    // Anchored floats
+    fn place_anchors(
+        &mut self,
+        w: &WrapIn,
+        bands: &[(f64, Vec<Line>)],
+        frames: &Frames,
+        carry: &FlowState,
+        memos: &mut Memos,
+    ) -> Result<Anchors, Yield> {
+        let &WrapIn {
+            pb, style, col, sp, pieces, cx0, cx1, compat, floats, first_part, origin_y: origin, y0, kept, si, bi, page_first, anchor, ..
+        } = w;
+        let mut anchors: Vec<Placed> = Vec::new();
+        let mut kept_at = Vec::new();
+        let mut forced: Option<usize> = None;
+        let mut push: Option<usize> = None;
+        let mut page_end = false;
+        // A character-relative float counts from the drawn start of the character before its anchor, on whichever line
+        // holds it; one first in the paragraph from where its line's first glyph is drawn.
+        let char_x = |k: usize, b: usize| {
+            let at = |j: usize| bands.iter().flat_map(|(_, segs)| segs).find(|l| j >= l.start && j < l.end).map(|l| (l, l.xs[j - l.start]));
+            let before = (0..k).rev().find(|&j| pieces[j].kind != Kind::Anchor).and_then(|j| {
+                let (_, x) = at(j)?;
+                let (g0, g1) = pieces[j].glyphs;
+                Some(x + sp.glyph_advances[g0 as usize..(g1 as usize).max(g0 as usize + 1) - 1].iter().sum::<f64>())
+            });
+            let start = || {
+                let l = &bands[b].1[0];
+                (l.start..l.end).find(|&j| pieces[j].kind != Kind::Anchor).map_or(0.0, |j| l.xs[j - l.start])
+            };
+            cx0 + before.unwrap_or_else(start)
+        };
+        for (k, q) in pieces.iter().enumerate() {
+            let (Kind::Anchor, Some(Object::Float(f))) = (q.kind, sp.object(pb.from + k)) else { continue };
+            if carry.frames_left.contains(&(si, bi, pb.from + k)) {
+                continue;
+            }
+            let Some(b) = band_of(bands, k) else { continue };
+            let owner = piece_para(sp, pb.from + k, anchor);
+            let f = &float::sized(f, frames).map_or_else(|| f.clone(), Rc::new);
+            let f = &self.fit_frame(f, col.width, memos)?;
+            let h = self.float_height(f, memos)?;
+            let line_top = bands[b].0;
+            let para_top = if first_part { origin } else { bands[0].0 };
+            let mut x = float::h_pos(f, frames);
+            // From the line laid out before the float: placed again once the line wraps it, it keeps that x, as the
+            // first fill of the page that placed it found it (each fill takes the one before's), wherever later fills
+            // put the paragraph.
+            if f.h_relative == "character" {
+                let before = self.at.known.iter().find(|o| o.key == (si, bi, pb.from + k) && o.wrap != Wrap::None).map(|o| o.rect[0]);
+                x = before.unwrap_or_else(|| float::h_pos(f, &Frames { column: (char_x(k, b), 0.0), ..*frames }));
+            }
+            if compat == Compat::Legacy && f.h_relative == "column" {
+                match f.h_align.as_deref() {
+                    Some("left") => x += style.ind_left,
+                    Some("right") => x -= style.ind_right,
+                    // From a line that starts beside another paragraph's float (for a drawing, a frame before the
+                    // paragraph included): from where its piece starts. One that doesn't wrap also counts from the
+                    // piece its line was laid out again in beside the line's own wrapping floats.
+                    None => {
+                        let frame = |o: &Placed| o.float.text_box.is_some() && o.float.shape.is_none() && o.key.2 != float::TABLE_PIECE;
+                        let drawing = f.text_box.is_none() || f.shape.is_some();
+                        let segs = &bands[b].1;
+                        let line = pb.from + segs[0].start..pb.from + segs.last().map_or(segs[0].end, |l| l.end).max(segs[0].start + 1);
+                        let unwrapped = f.wrap == "none";
+                        let others: Vec<Placed> = floats
+                            .iter()
+                            .chain(&self.at.found)
+                            .chain(anchors.iter().filter(|o| !floats.iter().any(|f| f.key == o.key)))
+                            .filter(|o| {
+                                (o.key.0, o.key.1) != (si, bi)
+                                    || drawing && frame(o) && o.key.2 < pb.from + k
+                                    || unwrapped && o.wrap != Wrap::None && line.contains(&o.key.2)
+                            })
+                            .cloned()
+                            .collect();
+                        let piece = float::intervals(&others, cx0, cx1, line_top, line_top + bands[b].1[0].pitch, true);
+                        x += piece.and_then(|iv| iv.first().map(|p| p.0)).unwrap_or(cx0) - cx0;
+                    }
+                    _ => {}
+                }
+            }
+            let mut fy = float::v_pos(f, h, frames, para_top, line_top);
+            // A frame from the text that would start above the page starts at its top.
+            if f.text_box.is_some() && f.shape.is_none() && f.v_relative == "paragraph" {
+                fy = fy.max(0.0);
+            }
+            // Compat ≤ 14: a drawing's page position in whole twips, for the collision with the lines above and the
+            // drawing. Frames keep theirs.
+            if compat == Compat::Legacy && (f.text_box.is_none() || f.shape.is_some()) {
+                (x, fy) = ((x * 20.0).round() / 20.0, (fy * 20.0).round() / 20.0);
+            }
+            if Placed::new((si, bi, pb.from + k), owner, f, x, fy, h).wrap == Wrap::None {
+                anchors.push(Placed::new((si, bi, pb.from + k), owner, f, x, fy, h));
+                continue;
+            }
+            // One that met text laid out before it keeps the place it met it at while the page is filled again.
+            let frozen = self.at.known.iter().find(|o| o.key == (si, bi, pb.from + k) && o.frozen).cloned();
+            if let Some(k) = &frozen {
+                let mut a = self.wrapped(Placed::new(k.key, owner, f, k.rect[0], k.rect[1], h), memos)?;
+                // A frame that met only the line above it doesn't move that line.
+                (a.collided, a.restarts, a.frozen, a.rounded_up) = (k.collided && !k.rounded_up, true, true, k.rounded_up);
+                kept_at.push(a.key);
+                anchors.push(a);
+                continue;
+            }
+            (x, fy) = float::page_clamp(f, (x, fy), h, frames);
+            // Compat 15 keeps the box with its effect extents (a VML shape's outline allowance too, not its
+            // distances) on the page, its top no higher than the top margin.
+            let mut clamped = None;
+            if compat == Compat::Generic && matches!(f.v_relative.as_str(), "paragraph" | "line") {
+                let top = frames.margin[2] + f.effect[1];
+                // A VML shape moved down by it reaches no further below its box than above it.
+                // ponytail: read off one shape moved by its top extent only; a shape from far above may differ.
+                if f.vml && fy < top - EPS && f.effect[3] > f.effect[1] {
+                    let mut g = (**f).clone();
+                    g.effect[3] = g.effect[1];
+                    clamped = Some(Rc::new(g));
+                }
+                fy = fy.max(top);
+                let (l, r) = (x - f.effect[0], x + f.w + f.effect[2]);
+                if l < 0.0 {
+                    x -= l;
+                } else if r > frames.page_w {
+                    x -= (r - frames.page_w).min(l);
+                }
+            }
+            if compat == Compat::Generic && matches!(f.v_relative.as_str(), "paragraph" | "line") && !col.bottom.holds(fy + h) {
+                let up = col.bottom.to_pt() - h;
+                let anchor_bottom = line_top + bands[b].1[0].pitch;
+                if up >= anchor_bottom - EPS {
+                    fy = up;
+                } else if !(page_first && b == 0) {
+                    push = Some(push.map_or(b, |x: usize| x.min(b)));
+                    continue;
+                } else {
+                    let mut a = Placed::new((si, bi, pb.from + k), owner, f, x, fy, h);
+                    a.wrap = Wrap::None;
+                    forced = Some(forced.map_or(b, |x: usize| x.min(b)));
+                    page_end = true;
+                    anchors.push(a);
+                    continue;
+                }
+            }
+            let f = clamped.as_ref().unwrap_or(f);
+            let mut a = self.wrapped(Placed::new((si, bi, pb.from + k), owner, f, x, fy, h), memos)?;
+            // That text (with its space after in compat ≤ 14): a float wholly below it, or beside the column, doesn't
+            // meet it. Earlier columns count as met.
+            let reach = y0 + if compat == Compat::Legacy { kept } else { 0.0 };
+            let met = a.excl[1] < reach - EPS && a.excl[0] < cx1 - EPS && a.excl[2] > cx0 + EPS;
+            let across = a.excl[0] < cx1 - EPS && a.excl[2] > cx0 + EPS;
+            let lines = a.excl[1] < line_top + bands[b].1[0].pitch - EPS && across;
+            // Compat ≤ 14: a drawing meets its paragraph's lines after its anchor's too.
+            let drawing = f.text_box.is_none() || f.shape.is_some();
+            let (last, (last_top, last_segs)) = (bands.len() - 1, bands.last().expect("laid out"));
+            let para_lines = compat == Compat::Legacy
+                && drawing
+                && last > b
+                && a.excl[1] < last_top + last_segs[0].pitch - EPS
+                && a.excl[3] > line_top + EPS
+                && across;
+            a.restarts = self.column > 0 || met || lines || para_lines;
+            // Only the first float of the fill that meets earlier text of its column met it where it will stay: that
+            // text wraps it in the next fill. A later one was placed beside text that moves, and is placed again.
+            // Compat ≤ 14: one that meets the lines of its own keepLines paragraph below a column's top stays too, and
+            // the paragraph starts below it; so does a drawing that meets its own paragraph's lines. Only text it met
+            // before its paragraph wraps it in the next fill.
+            let own = compat == Compat::Legacy && style.keep_lines && (self.column > 0 || met || lines) && a.excl[3] > bands[0].0 + EPS;
+            let stays = compat == Compat::Legacy && drawing && (lines || para_lines);
+            a.frozen = (met || own || stays) && !self.at.hit;
+            a.collided = a.frozen && (met || own) || self.column > 0 && !met;
+            anchors.push(a);
+        }
+        // Compat ≤ 14: the other drawings of the paragraph keep their places with one that stays.
+        let drawing = |a: &Placed| a.float.text_box.is_none() || a.float.shape.is_some();
+        if compat == Compat::Legacy && anchors.iter().any(|a| a.frozen && drawing(a) && !kept_at.contains(&a.key)) {
+            for a in anchors.iter_mut().filter(|a| drawing(a) && a.wrap != Wrap::None) {
+                a.frozen = true;
+            }
+        }
+        Ok(Anchors { anchors, kept_at, forced, push, page_end })
     }
 
     // Lines that fit with their notes
