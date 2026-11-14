@@ -28,7 +28,7 @@ use super::text::{FieldValues, FontMetrics, Kind, Object, ShapedPara, para_id, s
 
 /// Default footnote separator line metrics.
 const SEPARATOR_METRICS: FontMetrics = FontMetrics { ascent: 1950.0, descent: 550.0, leading: 0.0, upem: 2048.0 };
-use super::token::{At, FlowState, FlowToken, NotePart};
+use super::token::{At, FlowState, FlowToken, NoteArea, NotePart};
 use super::units::{EPS, Lu};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -47,29 +47,6 @@ pub struct ColumnResult {
     pub state: FlowState,
 }
 
-#[derive(Clone, Default, Debug)]
-pub struct NoteArea {
-    pub parts: Vec<NotePart>,
-    /// How many of `parts` continue notes from an earlier column or page.
-    pub carried: usize,
-    pub height: f64,
-    pub sep: f64,
-    pub cont: bool,
-    pub shared: Option<f64>,
-    /// The area's columns (x, width), those of the section holding the page's first reference; empty for the
-    /// column it is filled in.
-    pub cols: Vec<(f64, f64)>,
-    pub below: bool,
-    /// Room kept clear above the notes, down from where a note that goes on on the next page was referenced.
-    pub kept: f64,
-    /// A note in the area goes on on the next page.
-    pub cut: bool,
-    /// Room held at the bottom for the continuation notice: compat ≤ 14 on every area, compat 15 once a note is cut.
-    pub notice: f64,
-    /// The area draws the continuation notice under its cut note.
-    pub noticed: bool,
-}
-
 /// The space shared between two notes in an area: the gap between them is the later one's space before or the
 /// earlier one's space after, whichever is larger.
 fn note_join(prev: Option<&NotePart>, next: &NotePart) -> f64 {
@@ -85,15 +62,6 @@ fn note_extent(part: &NotePart) -> f64 {
 /// The height of `parts` stacked in one column.
 fn stacked(parts: &[NotePart]) -> f64 {
     parts.iter().enumerate().map(|(i, p)| note_extent(p) - note_join(i.checked_sub(1).map(|j| &parts[j]), p)).sum()
-}
-
-impl NoteArea {
-    pub fn total(&self) -> f64 {
-        if self.below {
-            return 0.0;
-        }
-        self.sep + self.shared.map_or(self.height, |r| self.height.max(r)) + self.kept + self.notice
-    }
 }
 
 #[derive(Default)]

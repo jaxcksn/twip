@@ -8,7 +8,7 @@ use crate::docx::model::*;
 use crate::docx::review::MarkupView;
 
 use super::LayoutCtx;
-use super::flow::{AttemptState, NoteArea, PageFill, PassMemo, Stop};
+use super::flow::{AttemptState, PageFill, PassMemo, Stop};
 use super::fragment::{BoxFragment, BoxKind, Child, Item, PlacedLine, RowFragment};
 use super::ids::FragmentId;
 use super::job::{Memos, Yield};
@@ -17,7 +17,7 @@ use super::record::{BodyRecord, PageEffects, PageRecord};
 use super::space::{BodyArea, BodyFields, BodySpace, ColumnSpace, HfHeights};
 use super::story::{StoryEnv, hf_limit, stack_limited};
 use super::text::FieldValues;
-use super::token::{FlowState, FlowToken, PageToken};
+use super::token::{FlowState, FlowToken, NoteArea, PageToken};
 use super::units::{EPS, LU_PER_PT, Lu};
 
 #[derive(Clone, Default, PartialEq, Debug)]

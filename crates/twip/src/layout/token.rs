@@ -75,7 +75,7 @@ pub struct FlowState {
     pub balanced_after: f64,
     /// Compat 15: the footnote area of the earlier sections on the page, drawn after the page's last text, and
     /// whether it goes beneath the text.
-    pub page_notes: Option<(super::flow::NoteArea, bool)>,
+    pub page_notes: Option<(NoteArea, bool)>,
     /// A vertical section's table split across pages: where across the turned page its first part was put.
     pub upright_at: Option<f64>,
     /// A table split across pages that went beside floats: how far right of the column its first part was put.
@@ -162,6 +162,38 @@ pub struct NotePart {
 impl NotePart {
     pub fn height(&self) -> f64 {
         self.units.last().map_or(0.0, |u| u.top + u.height)
+    }
+}
+
+#[derive(Clone, Default, Debug)]
+pub struct NoteArea {
+    pub parts: Vec<NotePart>,
+    /// How many of `parts` continue notes from an earlier column or page.
+    pub carried: usize,
+    pub height: f64,
+    pub sep: f64,
+    pub cont: bool,
+    pub shared: Option<f64>,
+    /// The area's columns (x, width), those of the section holding the page's first reference; empty for the
+    /// column it is filled in.
+    pub cols: Vec<(f64, f64)>,
+    pub below: bool,
+    /// Room kept clear above the notes, down from where a note that goes on on the next page was referenced.
+    pub kept: f64,
+    /// A note in the area goes on on the next page.
+    pub cut: bool,
+    /// Room held at the bottom for the continuation notice: compat ≤ 14 on every area, compat 15 once a note is cut.
+    pub notice: f64,
+    /// The area draws the continuation notice under its cut note.
+    pub noticed: bool,
+}
+
+impl NoteArea {
+    pub fn total(&self) -> f64 {
+        if self.below {
+            return 0.0;
+        }
+        self.sep + self.shared.map_or(self.height, |r| self.height.max(r)) + self.kept + self.notice
     }
 }
 
