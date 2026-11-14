@@ -455,11 +455,7 @@ fn merged_page_cuts(tb: &TableLayout, next: usize, placed: &[(usize, f64, usize)
         let units = &rc.units.units;
         let bottom = last_top + tb.rows[last].height;
         let cut = cell_cut(units, bottom - rc.margins[2] - content_top, false, compat);
-        // The region's part ends at the last whole row, and a whole content is aligned in it.
-        // ponytail: a centred or bottom-aligned content cut by the page end keeps the whole region.
-        if rc.v_align != "top" && cut < units.len() {
-            continue;
-        }
+        // The region's part ends at the last whole row; the content kept there is aligned in it.
         out.push(MergedSplit { k, start, kr, pi, cut, bottom });
     }
     out
@@ -475,7 +471,8 @@ fn merged_rest(tb: &TableLayout, ri: usize, compat: Compat) -> Vec<Option<Vec<St
             }
             let start = (0..ri).rev().find(|&r| tb.rows[r].cells.iter().any(|x| x.col == c.col && x.v_merge == VMerge::Restart))?;
             let rc = tb.rows[start].cells.iter().find(|x| x.col == c.col && x.v_merge == VMerge::Restart)?;
-            if rc.v_align != "top" || tb.rows[start].exact {
+            // The rest goes on at the top of the next part, however the region is aligned.
+            if tb.rows[start].exact {
                 return None;
             }
             let room = tb.rows[start..ri].iter().map(|r| r.height).sum::<f64>() - tb.rows[start].top_border - rc.margins[0] - rc.margins[2];

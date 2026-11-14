@@ -1521,3 +1521,25 @@ fn compat_14_hides_vertical_lines_pushed_wholly_before_the_first_side() {
     assert!(c15.contains('K'), "compat 15 keeps the block at the first side: {c15}");
 }
 
+#[test]
+fn a_centred_merged_region_cut_by_the_page_goes_on_at_the_next_parts_top() {
+    let blank = crate::docx::read(&crate::docx::blank::blank_docx()).expect("reads");
+    let sec = &blank.sections[0];
+    let spacer = ((sec.page_h - sec.top - sec.bottom - 150.0) * 20.0).round() as i64;
+    let lines: String = (1..=12).map(|i| format!("<w:p><w:r><w:t>Line{i}</w:t></w:r></w:p>")).collect();
+    let tc = |merge: &str, content: &str| {
+        format!(r#"<w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/><w:vMerge{merge}/><w:vAlign w:val="center"/></w:tcPr>{content}</w:tc>"#)
+    };
+    let tr = |merge: &str, content: &str| format!(r#"<w:tr><w:trPr><w:cantSplit/><w:trHeight w:val="1440"/></w:trPr>{}</w:tr>"#, tc(merge, content));
+    let body = format!(
+        r#"<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="{spacer}" w:lineRule="exact"/></w:pPr></w:p><w:tbl><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid>{}{}{}</w:tbl><w:p/>"#,
+        tr(r#" w:val="restart""#, &lines),
+        tr("", "<w:p/>"),
+        tr("", "<w:p/>")
+    );
+    let doc = doc_in(&body, 12);
+    let pages = super::page_chars(&doc);
+    let on = |p: usize, d: char| pages.get(p).is_some_and(|g| g.windows(2).any(|w| w[0].0 == '1' && w[1].0 == d));
+    assert!(on(1, '2'), "the region's last line goes on on page 2");
+}
+
