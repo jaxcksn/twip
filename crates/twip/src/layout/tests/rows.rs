@@ -1662,3 +1662,18 @@ fn compat_12_a_float_laid_out_outside_its_cell_is_wrapped_by_the_text_before_the
     assert!(x(r#"layoutInCell="0""#) > 150.0, "{}", x(r#"layoutInCell="0""#));
     assert!(x(r#"layoutInCell="1""#) < 80.0);
 }
+
+#[test]
+fn compat_12_a_float_that_doesnt_wrap_counts_from_its_lines_piece_beside_the_lines_own_float() {
+    let v = r#"<wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV>"#;
+    let x = |compat| {
+        let a = cell_box(100, 30, "column", v, r#"<wp:wrapSquare wrapText="bothSides"/>"#);
+        let b = cell_box(80, 30, "column", v, "<wp:wrapNone/>").replace("<w:t>Z</w:t>", "<w:t>Y</w:t>");
+        let doc = one_cell(&format!("<w:p>{a}{b}</w:p>"), compat);
+        let page = &super::page_chars(&doc)[0];
+        let at = |ch: char| page.iter().find(|c| c.0 == ch).map(|c| c.1).expect("drawn");
+        at('Y') - at('Z')
+    };
+    assert!((x(12) - 100.0).abs() < 0.1, "{}", x(12));
+    assert!(x(15).abs() < 0.1, "{}", x(15));
+}

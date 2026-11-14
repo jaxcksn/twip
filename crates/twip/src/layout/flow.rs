@@ -2535,15 +2535,23 @@ impl<'d> PageFill<'d, '_> {
                     Some("left") => x += style.ind_left,
                     Some("right") => x -= style.ind_right,
                     // From a line that starts beside another paragraph's float (for a drawing, a frame before the
-                    // paragraph included): from where its piece starts.
+                    // paragraph included): from where its piece starts. One that doesn't wrap also counts from the
+                    // piece its line was laid out again in beside the line's own wrapping floats.
                     None => {
                         let frame = |o: &Placed| o.float.text_box.is_some() && o.float.shape.is_none() && o.key.2 != float::TABLE_PIECE;
                         let drawing = f.text_box.is_none() || f.shape.is_some();
+                        let segs = &bands[b].1;
+                        let line = pb.from + segs[0].start..pb.from + segs.last().map_or(segs[0].end, |l| l.end).max(segs[0].start + 1);
+                        let unwrapped = f.wrap == "none";
                         let others: Vec<Placed> = floats
                             .iter()
                             .chain(&self.at.found)
                             .chain(anchors.iter().filter(|o| !floats.iter().any(|f| f.key == o.key)))
-                            .filter(|o| (o.key.0, o.key.1) != (si, bi) || drawing && frame(o) && o.key.2 < pb.from + k)
+                            .filter(|o| {
+                                (o.key.0, o.key.1) != (si, bi)
+                                    || drawing && frame(o) && o.key.2 < pb.from + k
+                                    || unwrapped && o.wrap != Wrap::None && line.contains(&o.key.2)
+                            })
                             .cloned()
                             .collect();
                         let piece = float::intervals(&others, cx0, cx1, line_top, line_top + bands[b].1[0].pitch, true);

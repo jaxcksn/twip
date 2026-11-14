@@ -402,6 +402,15 @@ pub fn layout_with(
                                 Some((_, a)) => (a.rect[0], a.rect[1] - y),
                                 None => (h_pos(f, h), v_pos(f, h, y) - y),
                             };
+                            // Compat ≤ 14: a float that doesn't wrap, placed from the column, counts from the first
+                            // piece its line leaves beside the line's own wrapping floats.
+                            let fx = match own.iter().filter(|(o, _)| (start..end).contains(o)).map(|(_, a)| a.clone()).collect::<Vec<_>>() {
+                                line_own if f.wrap == "none" && text.compat == Compat::Legacy && f.h_relative == "column" && f.h_align.is_none() && !line_own.is_empty() => {
+                                    let piece = float::intervals(&line_own, 0.0, width, y, y + pitch, true).and_then(|iv| iv.first().map(|p| p.0));
+                                    fx + piece.unwrap_or(0.0)
+                                }
+                                _ => fx,
+                            };
                             if f.in_cell(text.compat) {
                                 // Compat 15: a tight or through float ends at its polygon's bottom (one along its top
                                 // adds nothing). A float that doesn't wrap counts for the alignment only when it
