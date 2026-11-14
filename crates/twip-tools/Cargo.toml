@@ -17,7 +17,8 @@ doctest = false
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 roxmltree = "0.21.1"
-twip = { path = "../twip" }
+twip = { path = "../twip", features = ["inspect"] }
+twip-wire = { path = "../twip-wire" }
 serde_json = "1.0.154"
 # `render` writes its frame as a PNG.
 png = "0.18.1"

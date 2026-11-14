@@ -93,6 +93,12 @@ impl Bindings {
 }
 
 /// The input modifiers as the editor's keymap takes them.
+/// A shortcut's registration error details: what already has the key.
+#[derive(twip_wire::Encode)]
+struct Taken {
+    binding: KeyBinding,
+}
+
 fn internal(m: Modifiers) -> Mods {
     Mods { ctrl: m.ctrl, shift: m.shift, alt: m.alt, meta: m.meta }
 }
@@ -653,7 +659,7 @@ impl Shortcuts<'_> {
                         KeyBinding::Shortcut { id } => format!("is the shortcut {id}"),
                         KeyBinding::Host { command } => format!("is the host key \"{}\"", twip_wire::Named::name(command)),
                     },
-                    twip_wire::from_slice::<serde_json::Value>(&twip_wire::to_vec(&b)).ok(),
+                    Some(b),
                 )),
                 None if MENU_KEYS.contains(&chord) => Some(("opens the context menu".to_string(), None)),
                 None if DIALOG_KEYS.iter().any(|d| (d.0, d.1, d.2, d.3) == chord) => Some(("opens a dialog".to_string(), None)),
@@ -661,7 +667,7 @@ impl Shortcuts<'_> {
             };
             if let Some((what, binding)) = taken {
                 let mut e = Error::unavailable(format!("{k} {what}"));
-                e.details = binding.map(|b| serde_json::Value::Object([("binding".to_string(), b)].into_iter().collect()));
+                e.details = binding.map(|binding| twip_wire::RawJson::of(&Taken { binding }));
                 return Err(e);
             }
             chords.push(chord);

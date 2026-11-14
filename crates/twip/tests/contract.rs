@@ -7,7 +7,6 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 use twip::api::command::{Command, MoveSelection, MoveUnit};
 use twip::api::engine::{Engine, SessionId, SessionOptions};
@@ -71,17 +70,17 @@ struct Runner {
 
 type Step = Result<(), String>;
 
-fn parse<T: DeserializeOwned>(v: &Value) -> Result<T, String> {
-    serde_json::from_value(v.clone()).map_err(|e| format!("{e} in {v}"))
+fn parse<T: twip_wire::Decode>(v: &Value) -> Result<T, String> {
+    twip_wire::from_slice(&serde_json::to_vec(v).expect("JSON")).map_err(|e| format!("{e} in {v}"))
 }
 
 /// `parse` for an operation: a bad value is the script's failure.
-fn arg_of<T: DeserializeOwned>(v: Value) -> Result<T, Result<Error, String>> {
+fn arg_of<T: twip_wire::Decode>(v: Value) -> Result<T, Result<Error, String>> {
     parse(&v).map_err(Err)
 }
 
-fn to_json<T: serde::Serialize>(v: T) -> Value {
-    serde_json::to_value(v).expect("api values serialize")
+fn to_json<T: twip_wire::Encode>(v: T) -> Value {
+    serde_json::from_slice(&twip_wire::to_vec(&v)).expect("api values encode to JSON")
 }
 
 /// A `twip::api` command from a command method's TypeScript arguments: one argument is the op's `value`, an options
@@ -200,7 +199,7 @@ impl Runner {
                 }
                 let warnings = s.open_commit(token).map_err(Ok)?;
                 if let (Some(want), "open") = (step.get("match"), op) {
-                    matches(want, &json!({ "warnings": warnings }), "open").map_err(Err)?;
+                    matches(want, &json!({ "warnings": to_json(&warnings) }), "open").map_err(Err)?;
                 }
                 Ok(())
             }
@@ -222,7 +221,8 @@ impl Runner {
                 }
                 let head: String = export.bytes.0.iter().take(4).map(|b| char::from(*b)).collect();
                 if let Some(want) = step.get("match") {
-                    matches(want, &json!({ "revision": export.revision, "warnings": export.warnings, "head": head }), "export").map_err(Err)?;
+                    matches(want, &json!({ "revision": export.revision, "warnings": to_json(&export.warnings), "head": head }), "export")
+                        .map_err(Err)?;
                 }
                 for want in step.get("contains").and_then(Value::as_array).into_iter().flatten() {
                     let want = want.as_str().unwrap_or_default().as_bytes();
@@ -245,7 +245,7 @@ impl Runner {
             }
             "call" => {
                 let args = match step.get("args") {
-                    Some(a) => parse::<Vec<Value>>(a).map_err(Err)?,
+                    Some(a) => a.as_array().cloned().ok_or_else(|| Err(format!("`args` isn't an array: {a}")))?,
                     None => Vec::new(),
                 };
                 let method = step["method"].as_str().unwrap_or("");
@@ -318,7 +318,8 @@ impl Runner {
                 // `{ from: to }` or a list of rules.
                 let rules: Vec<Value> = match arg(0) {
                     Value::Object(o) => o.into_iter().map(|(from, to)| json!({ "from": from, "to": to })).collect(),
-                    v => arg_of(v)?,
+                    Value::Array(rules) => rules,
+                    v => return Err(Err(format!("{method}: {v} isn't rules"))),
                 };
                 let fonts = self.engine.fonts();
                 if method == "fonts.setAliases" {

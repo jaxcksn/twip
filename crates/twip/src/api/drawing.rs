@@ -1,8 +1,6 @@
 //! Shape values: preset geometries, colours, fills, outlines, effects and text bodies, as applications set and read
 //! them. Colours stay as written (a theme colour and its transforms), never only the resolved RGB.
 
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
 use super::value::{Bytes, Color, Points};
 use crate::drawing::colour::{Colour, ColourBase, ColourMod, SchemeSlot};
 use crate::drawing::geom::Preset;
@@ -39,19 +37,6 @@ impl ShapePreset {
     }
 }
 
-impl Serialize for ShapePreset {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_str(self.name())
-    }
-}
-
-impl<'de> Deserialize<'de> for ShapePreset {
-    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<ShapePreset, D::Error> {
-        let s = String::deserialize(d)?;
-        ShapePreset::from_name(&s).ok_or_else(|| serde::de::Error::custom(format!("unknown preset geometry {s:?}")))
-    }
-}
-
 impl twip_wire::Encode for ShapePreset {
     fn encode(&self, out: &mut Vec<u8>) {
         twip_wire::write_str(out, self.name());
@@ -67,8 +52,8 @@ impl twip_wire::Decode for ShapePreset {
 }
 
 /// A theme colour.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum ThemeColour {
     /// Dark 1 (through the document's colour mapping).
     Text1,
@@ -145,8 +130,8 @@ impl ThemeColour {
 }
 
 /// What a colour transform does.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum TransformKind {
     /// Towards white by `1 - value`.
     Tint,
@@ -171,8 +156,8 @@ pub enum TransformKind {
 }
 
 /// One colour transform; `value` is a fraction (0.75), degrees for `hueOff`.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Copy, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ColourTransform {
     /// What it does.
     pub kind: TransformKind,
@@ -181,20 +166,20 @@ pub struct ColourTransform {
 }
 
 /// A colour: exactly one base (a theme colour, an RGB value or a preset colour name), then its transforms in order.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ColourValue {
     /// A theme colour.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub theme: Option<ThemeColour>,
     /// An RGB colour.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub rgb: Option<Color>,
     /// A preset colour by its CSS name (`"cornflowerBlue"`).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub preset: Option<String>,
     /// The transforms, applied in order.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[wire(default, skip_serializing_if = "Vec::is_empty")]
     pub transforms: Vec<ColourTransform>,
 }
 
@@ -279,8 +264,8 @@ impl ColourValue {
 }
 
 /// A gradient's shape.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum GradientShape {
     /// Along a direction (`angle`).
     #[default]
@@ -294,8 +279,8 @@ pub enum GradientShape {
 }
 
 /// A gradient stop.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GradientStop {
     /// 0 to 1 along the gradient.
     pub position: f64,
@@ -304,8 +289,8 @@ pub struct GradientStop {
 }
 
 /// A fill.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(tag = "type", rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(tag = "type", rename_all = "camelCase", deny_unknown_fields)]
 pub enum FillValue {
     /// No fill.
     None,
@@ -319,7 +304,7 @@ pub enum FillValue {
         /// Its shape.
         kind: GradientShape,
         /// A linear gradient's direction (0: left to right).
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[wire(default, skip_serializing_if = "Option::is_none")]
         angle: Option<Degrees>,
         /// Two or more stops.
         stops: Vec<GradientStop>,
@@ -338,7 +323,7 @@ pub enum FillValue {
         /// The image (PNG, JPEG, GIF, BMP); empty in the state (the selection reports the fill, not its bytes).
         image: Bytes,
         /// Tiled at its own size instead of stretched.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[wire(default, skip_serializing_if = "Option::is_none")]
         tile: Option<bool>,
     },
     /// The style reference's fill (no explicit fill).
@@ -422,8 +407,8 @@ impl FillValue {
 }
 
 /// How a line is drawn along its length.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum Compound {
     /// One line.
     #[default]
@@ -439,8 +424,8 @@ pub enum Compound {
 }
 
 /// A line's ends.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum LineCap {
     /// Square, at the end.
     #[default]
@@ -452,8 +437,8 @@ pub enum LineCap {
 }
 
 /// How a line's segments join.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum LineJoin {
     /// Rounded.
     #[default]
@@ -465,8 +450,8 @@ pub enum LineJoin {
 }
 
 /// An arrowhead's shape.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum ArrowKind {
     /// A filled triangle.
     Triangle,
@@ -481,8 +466,8 @@ pub enum ArrowKind {
 }
 
 /// An arrowhead's width or length.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum ArrowSize {
     /// Small.
     Small,
@@ -494,34 +479,34 @@ pub enum ArrowSize {
 }
 
 /// An arrowhead.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Arrowhead {
     /// Its shape.
     pub kind: ArrowKind,
     /// Its width.
-    #[serde(default)]
+    #[wire(default)]
     pub width: ArrowSize,
     /// Its length.
-    #[serde(default)]
+    #[wire(default)]
     pub length: ArrowSize,
 }
 
 /// A line's arrowheads.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct LineEnds {
     /// At the start.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub head: Option<Arrowhead>,
     /// At the end.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub tail: Option<Arrowhead>,
 }
 
 /// An outline.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct LineValue {
     /// The width (0.75 pt when the document gives none).
     pub width: Points,
@@ -540,29 +525,29 @@ pub struct LineValue {
 }
 
 /// `setShapeLine`'s change; what isn't given is kept.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct LineChange {
     /// The width (0…1584 pt).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub width: Option<Points>,
     /// `none`, `solid` or `gradient`; `fromStyle` removes the whole explicit outline.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub fill: Option<FillValue>,
     /// The ECMA-376 dash name.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub dash: Option<String>,
     /// Single or several lines.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub compound: Option<Compound>,
     /// The ends.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub cap: Option<LineCap>,
     /// The joins.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub join: Option<LineJoin>,
     /// The arrowheads: both ends are replaced (an end not given is removed).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub ends: Option<LineEnds>,
 }
 
@@ -694,8 +679,8 @@ impl LineChange {
 }
 
 /// A shadow.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Shadow {
     /// Its colour (with its transparency as an `alpha` transform).
     pub colour: ColourValue,
@@ -708,8 +693,8 @@ pub struct Shadow {
 }
 
 /// A glow.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Glow {
     /// Its colour.
     pub colour: ColourValue,
@@ -718,44 +703,44 @@ pub struct Glow {
 }
 
 /// A shape's effects.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct EffectsValue {
     /// A shadow outside the shape.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub outer_shadow: Option<Shadow>,
     /// A shadow inside the shape.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub inner_shadow: Option<Shadow>,
     /// A glow around the shape.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub glow: Option<Glow>,
     /// Edges faded over this distance.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub soft_edge: Option<Points>,
     /// The whole shape blurred by this radius.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub blur: Option<Points>,
 }
 
 /// `setShapeEffects`'s change: each effect given replaces that effect, `null` removes it, what isn't given is kept.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct EffectsChange {
     /// A shadow outside the shape.
-    #[serde(default, skip_serializing_if = "Option::is_none", with = "crate::api::wire::nullable")]
+    #[wire(default, skip_serializing_if = "Option::is_none", nullable)]
     pub outer_shadow: Option<Option<Shadow>>,
     /// A shadow inside the shape.
-    #[serde(default, skip_serializing_if = "Option::is_none", with = "crate::api::wire::nullable")]
+    #[wire(default, skip_serializing_if = "Option::is_none", nullable)]
     pub inner_shadow: Option<Option<Shadow>>,
     /// A glow around the shape.
-    #[serde(default, skip_serializing_if = "Option::is_none", with = "crate::api::wire::nullable")]
+    #[wire(default, skip_serializing_if = "Option::is_none", nullable)]
     pub glow: Option<Option<Glow>>,
     /// Edges faded over this distance.
-    #[serde(default, skip_serializing_if = "Option::is_none", with = "crate::api::wire::nullable")]
+    #[wire(default, skip_serializing_if = "Option::is_none", nullable)]
     pub soft_edge: Option<Option<Points>>,
     /// The whole shape blurred by this radius.
-    #[serde(default, skip_serializing_if = "Option::is_none", with = "crate::api::wire::nullable")]
+    #[wire(default, skip_serializing_if = "Option::is_none", nullable)]
     pub blur: Option<Option<Points>>,
 }
 
@@ -842,8 +827,8 @@ impl EffectsChange {
 }
 
 /// Where text sits in a shape vertically.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum TextAnchor {
     /// At the top.
     #[default]
@@ -855,8 +840,8 @@ pub enum TextAnchor {
 }
 
 /// How a shape fits its text.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum TextAutofit {
     /// The shape keeps its size.
     #[default]
@@ -866,8 +851,8 @@ pub enum TextAutofit {
 }
 
 /// Which way a shape's text runs.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum TextDirection {
     /// Left to right, lines downward.
     #[default]
@@ -887,8 +872,8 @@ pub enum TextDirection {
 }
 
 /// A shape's text body as written.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ShapeTextState {
     /// Left, top, right, bottom.
     pub insets: [Points; 4],
@@ -903,23 +888,23 @@ pub struct ShapeTextState {
 }
 
 /// `setShapeText`'s change; what isn't given is kept.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ShapeTextChange {
     /// Left, top, right, bottom (0…1584 pt).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub insets: Option<[Points; 4]>,
     /// Where the text sits.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub anchor: Option<TextAnchor>,
     /// How the shape fits it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub autofit: Option<TextAutofit>,
     /// Lines wrap at the shape's width.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub wrap_text: Option<bool>,
     /// Which way it runs.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub direction: Option<TextDirection>,
 }
 
@@ -988,20 +973,20 @@ impl ShapeTextChange {
 }
 
 /// `setPictureAdjust`'s change; what isn't given is kept. Fractions are −1…1 (transparency 0…1).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PictureAdjustChange {
     /// How see-through the picture is (0 opaque, 1 invisible).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub transparency: Option<f64>,
     /// Shown in shades of grey.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub grayscale: Option<bool>,
     /// Lighter (positive) or darker.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub brightness: Option<f64>,
     /// More (positive) or less contrast.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub contrast: Option<f64>,
 }
 
@@ -1044,22 +1029,22 @@ impl PictureAdjustChange {
 }
 
 /// `insertShape`'s options.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Copy, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ShapeInsert {
     /// The preset geometry.
     pub preset: ShapePreset,
     /// The width (72 pt when not given).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub width: Option<Points>,
     /// The height (72 pt when not given; 0 for lines).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub height: Option<Points>,
 }
 
 /// `setShapeAdjust`'s options.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ShapeAdjust {
     /// The adjust value's index, in the preset's order.
     pub index: u8,
@@ -1068,8 +1053,8 @@ pub struct ShapeAdjust {
 }
 
 /// Which way to flip.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum FlipAxis {
     /// Left to right.
     Horizontal,
@@ -1078,8 +1063,8 @@ pub enum FlipAxis {
 }
 
 /// Where an object goes in the paint order.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum Arrange {
     /// Over the next object above it.
     Forward,
@@ -1096,8 +1081,8 @@ pub enum Arrange {
 }
 
 /// A fill as written: the shape's own, or its style reference's.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum FillState {
     /// The shape's own fill.
     Explicit(FillValue),
@@ -1106,8 +1091,8 @@ pub enum FillState {
 }
 
 /// An outline as written: the shape's own, or its style reference's.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum LineState {
     /// The shape's own outline.
     Explicit(LineValue),
@@ -1116,8 +1101,8 @@ pub enum LineState {
 }
 
 /// The selected shape's properties, as written.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ShapeState {
     /// The preset geometry; `null` for a custom geometry.
     pub preset: Option<ShapePreset>,
@@ -1134,8 +1119,8 @@ pub struct ShapeState {
 }
 
 /// A group of the shape gallery.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ShapeGalleryGroup {
     /// Its label (`"Basic Shapes"`).
     pub label: String,
@@ -1193,7 +1178,7 @@ mod tests {
         assert_eq!(m, Colour::scheme(SchemeSlot::Accent(1)).with(ColourMod::LumMod(Pct(75000))));
         assert_eq!(ColourValue::of(&m, None), v);
         assert!(ColourValue { theme: Some(ThemeColour::Text1), rgb: Some(Color(0)), ..ColourValue::default() }.to_model().is_err());
-        let json = serde_json::to_value(&v).expect("serialises");
+        let json = crate::api::wire::to_value(&v).expect("serialises");
         assert_eq!(json, serde_json::json!({ "theme": "accent1", "transforms": [{ "kind": "lumMod", "value": 0.75 }] }));
     }
 
@@ -1209,16 +1194,16 @@ mod tests {
 
     #[test]
     fn presets_go_by_their_names() {
-        let p: ShapePreset = serde_json::from_str("\"wedgeRectCallout\"").expect("a preset");
+        let p: ShapePreset = twip_wire::from_str("\"wedgeRectCallout\"").expect("a preset");
         assert_eq!(p.name(), "wedgeRectCallout");
-        assert!(serde_json::from_str::<ShapePreset>("\"nope\"").is_err());
+        assert!(twip_wire::from_str::<ShapePreset>("\"nope\"").is_err());
         assert!(ShapePreset::from_name("straightConnector1").expect("a preset").is_line());
         assert!(!ShapePreset::from_name("rect").expect("a preset").is_line());
     }
 
     #[test]
     fn effect_changes_keep_remove_or_replace() {
-        let c: EffectsChange = serde_json::from_str(r#"{"glow": null, "softEdge": 3}"#).expect("parses");
+        let c: EffectsChange = twip_wire::from_str(r#"{"glow": null, "softEdge": 3}"#).expect("parses");
         assert_eq!((c.glow.clone(), c.soft_edge, c.outer_shadow.clone()), (Some(None), Some(Some(Points(3.0))), None));
         let e = c
             .apply(Some(&paint::EffectList { glow: Some(paint::Glow { radius: Emu(1), colour: Colour::srgb(0) }), ..Default::default() }))

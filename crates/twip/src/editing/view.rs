@@ -332,7 +332,7 @@ pub fn canonical(v: &View) -> String {
         "caret": v.caret.map(|c| serde_json::json!({ "page": c.page, "x": r2(c.x), "top": r2(c.top), "bottom": r2(c.bottom) })),
         "selection": selection,
         "story": format!("{:?}", v.story),
-        "cursor": serde_json::to_value(v.cursor).unwrap_or_default(),
+        "cursor": crate::api::wire::to_value(&v.cursor).unwrap_or_default(),
     });
     if let Some(d) = v.drop {
         out["drop"] = serde_json::json!({ "page": d.page, "x": r2(d.x), "top": r2(d.top), "bottom": r2(d.bottom) });

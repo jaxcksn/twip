@@ -170,8 +170,8 @@ fn main() {
         let gpu = a.iter().any(|x| x == "--gpu");
         let flag = |name: &str| a.iter().find_map(|x| x.strip_prefix(&format!("--{name}="))).map(|v| format!("\"{v}\""));
         let options = twip::api::command::ViewOptions {
-            appearance: flag("appearance").map(|v| serde_json::from_str(&v).expect("an appearance: light, dark or darkWithLightPage")),
-            theme: flag("theme").map(|v| serde_json::from_str(&v).expect("a theme: light or dark")),
+            appearance: flag("appearance").map(|v| twip_wire::from_str(&v).expect("an appearance: light, dark or darkWithLightPage")),
+            theme: flag("theme").map(|v| twip_wire::from_str(&v).expect("a theme: light or dark")),
             ..Default::default()
         };
         let a: Vec<String> = a.into_iter().filter(|x| !x.starts_with("--")).collect();

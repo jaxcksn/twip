@@ -1,7 +1,5 @@
 //! Revisions, comments and people, as applications read them, and where comment cards go beside the pages.
 
-use serde::{Deserialize, Serialize};
-
 use super::record::{Identity, Timestamp};
 use super::services::ContentPoint;
 use super::value::{Color, CommentId, RevisionId, Story};
@@ -9,8 +7,8 @@ use super::value::{Color, CommentId, RevisionId, Story};
 pub use crate::docx::review::MarkupView;
 
 /// The kinds of revision.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum RevisionKind {
     /// Inserted text.
     Insertion,
@@ -41,8 +39,8 @@ pub enum RevisionKind {
 }
 
 /// One revision, for a reviewing pane.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RevisionInfo {
     /// The revision.
     pub id: RevisionId,
@@ -61,13 +59,13 @@ pub struct RevisionInfo {
     /// The story it is in.
     pub story: Story,
     /// A move's other half.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub pair: Option<RevisionId>,
 }
 
 /// A comment thread: the first comment and its replies.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CommentThread {
     /// The first comment's id.
     pub id: CommentId,
@@ -82,8 +80,8 @@ pub struct CommentThread {
 }
 
 /// One comment.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Comment {
     /// The comment.
     pub id: CommentId,
@@ -98,63 +96,63 @@ pub struct Comment {
 }
 
 /// Someone who made revisions or comments, with the colour they show in.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, Eq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Person {
     /// The display name.
     pub name: String,
     /// The initials.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub initials: Option<String>,
     /// The identity in a directory.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub identity: Option<Identity>,
     /// The colour the editor marks their changes with.
     pub color: Color,
 }
 
 /// Formatted text: paragraphs of runs (comment bodies, field results).
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RichText {
     /// The paragraphs.
     pub paragraphs: Vec<RichParagraph>,
 }
 
 /// One paragraph of [`RichText`].
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RichParagraph {
     /// The runs.
     pub runs: Vec<RichRun>,
 }
 
 /// A run of [`RichText`]: text with its formatting.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RichRun {
     /// The text.
     pub text: String,
     /// Bold.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub bold: Option<bool>,
     /// Italic.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub italic: Option<bool>,
     /// Underlined.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub underline: Option<bool>,
     /// Struck through.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub strikethrough: Option<bool>,
     /// A link's address.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub link: Option<String>,
 }
 
 /// Plain or formatted text, where a command takes either.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(untagged)]
+#[derive(Clone, Debug, PartialEq, Eq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(untagged)]
 pub enum Body {
     /// Plain text.
     Text(String),
@@ -163,8 +161,8 @@ pub enum Body {
 }
 
 /// Where a visible comment's range is, for placing its card (content coordinates, CSS px).
-#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CommentAnchor {
     /// The thread.
     pub thread: CommentId,
@@ -187,8 +185,8 @@ pub struct CommentAnchor {
 }
 
 /// Where the SDK placed an attached card, and its leader line (a polyline).
-#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct BalloonPlacement {
     /// The thread.
     pub thread: CommentId,

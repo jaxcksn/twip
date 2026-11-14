@@ -194,10 +194,10 @@ fn typing_api(bencher: Bencher) {
     let mut engine = Engine::new(FontLibrary::system());
     engine.set_listener(|_, event| {
         let json = match event {
-            Event::StateChanged(state) => serde_json::to_vec(state),
-            e => serde_json::to_vec(e),
+            Event::StateChanged(state) => twip_wire::to_vec(state),
+            e => twip_wire::to_vec(e),
         };
-        divan::black_box(json.ok());
+        divan::black_box(json);
     });
     let id = engine.create_session(SessionOptions::default());
     let s = engine.session(id).expect("the session was just created");
@@ -239,7 +239,7 @@ mod merge {
     const DOC: &str = "editor/FX-MERGE-LARGE.docx";
 
     fn command(v: serde_json::Value) -> Command {
-        serde_json::from_value(v).expect("a command")
+        twip_wire::from_slice(&serde_json::to_vec(&v).expect("JSON")).expect("a command")
     }
 
     /// The element list. Budget: under 200 ms.

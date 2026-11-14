@@ -1023,7 +1023,7 @@ fn a_floating_picture_control() {
         "id": crate::editing::elements::id_str(crate::docx::ElementId::Control(c)), "options": { "width": 144, "height": 108 },
         "placeholderImage": { "data": crate::api::value::base64(svg.as_bytes()), "mime": "image/svg+xml" },
     });
-    let out = r.e.execute(Command::SetControl(serde_json::from_value(set).unwrap()), fonts());
+    let out = r.e.execute(Command::SetControl(crate::api::wire::from_value(set).unwrap()), fonts());
     assert!(matches!(out, super::super::Outcome::Changed(_)), "{out:?}");
     let f = body_floats(&r.e).remove(0);
     let image = |e: &super::super::Editor, f: &crate::docx::Float| e.document().images[f.image.unwrap()].clone();

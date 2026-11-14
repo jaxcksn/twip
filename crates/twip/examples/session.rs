@@ -13,7 +13,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Events arrive synchronously, in commit order, after the session's state reflects them.
     engine.set_listener(|_, event| match event {
         Event::StateChanged(state) => println!("event: stateChanged, revision {}", state.revision),
-        event => println!("event: {}", serde_json::to_string(event).expect("events serialize")),
+        event => println!("event: {}", twip_wire::to_string(event)),
     });
     let id = engine.create_session(SessionOptions::default());
     let session = engine.session(id).expect("the session was just created");
@@ -27,13 +27,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let state = session.state();
-    let summary = serde_json::json!({
-        "revision": state.revision,
-        "modified": state.modified,
-        "formatting": state.formatting,
-        "history": state.history,
-    });
-    println!("state: {summary}");
+    println!(
+        "state: revision {}, modified {}, formatting {}, history {}",
+        state.revision,
+        state.modified,
+        twip_wire::to_string(&state.formatting),
+        twip_wire::to_string(&state.history)
+    );
 
     let export = session.export(&ExportOptions::Docx)?;
     println!("exported {} bytes at revision {}", export.bytes.0.len(), export.revision);

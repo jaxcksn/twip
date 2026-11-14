@@ -878,7 +878,7 @@ mod tests {
         assert_eq!(h.text, "the example site");
         assert!(s.dialog_open(DialogKind::TableProperties).is_err(), "not in a table");
         let patch: crate::api::services::DialogPatch =
-            serde_json::from_str(r#"{"kind":"hyperlink","address":"https://example.org/"}"#).expect("a patch");
+            twip_wire::from_str(r#"{"kind":"hyperlink","address":"https://example.org/"}"#).expect("a patch");
         let link = s.dialog_update(link, patch).expect("updates");
         let DialogValues::Hyperlink(h) = &link.values else { panic!() };
         assert_eq!((h.text.as_str(), h.address.as_str()), ("the example site", "https://example.org/"), "fields left out keep their values");

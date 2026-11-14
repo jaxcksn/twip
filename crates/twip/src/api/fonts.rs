@@ -4,16 +4,14 @@ use std::cell::{Ref, RefCell};
 use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
 
-use serde::{Deserialize, Serialize};
-
 use super::error::Error;
 use super::state::{FontsState, MissingFont, StandIn};
 pub use crate::docx::font_table::{FontClass, FontDescription, FontPitch, GenericFamily};
 use crate::font::{FontSettings, Fonts, Resolution};
 
 /// A face a font file added.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FaceInfo {
     /// The family name the font file gives.
     pub family: String,
@@ -24,8 +22,8 @@ pub struct FaceInfo {
 }
 
 /// A face layout needs and the library doesn't have: what a resolver is asked for, once per family and style.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FontRequest {
     /// The family, as the document names it.
     pub family: String,
@@ -34,16 +32,16 @@ pub struct FontRequest {
     /// An italic face is needed.
     pub italic: bool,
     /// The document's description of the family (its font table), when it has one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<FontDescription>,
     /// The generic category that description gives, whether or not classification is on.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub proposed: Option<GenericFamily>,
 }
 
 /// A resolver's answer to a [`FontRequest`].
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, Eq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 pub enum FontAnswer {
     /// The font was added (with [`FontLibrary::add`]); the family is missing still if the font doesn't have it.
     Font,
@@ -69,16 +67,16 @@ pub enum FontAnswer {
 /// A draw-time replacement: `from` (optionally only its bold or italic faces) is drawn with `to`, even when `from`
 /// is in the library. The document keeps naming `from`: saved files and the formatting a session reports are
 /// unchanged. When `to` isn't in the library, `from` resolves as if there were no rule.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FontRule {
     /// The family to replace, case-insensitive.
     pub from: String,
     /// Only its bold (`true`) or regular-weight (`false`) faces; `None` for both.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub bold: Option<bool>,
     /// Only its italic (`true`) or upright (`false`) faces; `None` for both.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub italic: Option<bool>,
     /// The family that draws instead.
     pub to: String,
@@ -86,16 +84,16 @@ pub struct FontRule {
 
 /// An alias: when `from` (optionally only its bold or italic faces) isn't in the library, it is drawn with `to`.
 /// Aliases chain (`A → B → C`) up to 8 hops. The document keeps naming `from`.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, Eq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Alias {
     /// The family the document names, case-insensitive.
     pub from: String,
     /// Only its bold (`true`) or regular-weight (`false`) faces; `None` for both.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub bold: Option<bool>,
     /// Only its italic (`true`) or upright (`false`) faces; `None` for both.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub italic: Option<bool>,
     /// The family, or the generic category, that draws instead.
     pub to: AliasTarget,
@@ -103,8 +101,8 @@ pub struct Alias {
 
 /// What an [`Alias`] draws with: another family, or the default family of a generic category
 /// ([`GenericDefaults`]).
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(untagged)]
+#[derive(Clone, Debug, PartialEq, Eq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(untagged)]
 pub enum AliasTarget {
     /// Another family; its own aliases apply when it is missing too.
     Family(String),
@@ -118,23 +116,23 @@ pub enum AliasTarget {
 /// The family that draws a missing font of each generic category. Opt-in: every category is unset by default, and
 /// with none set no missing font is drawn through a category. A missing family's category comes from the document's
 /// description of it (its font table), from an [`Alias`] to a category, or from a resolver's answer.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GenericDefaults {
     /// The family for missing serif fonts.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub serif: Option<String>,
     /// The family for missing sans-serif fonts.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub sans_serif: Option<String>,
     /// The family for missing fixed-pitch fonts.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub monospace: Option<String>,
     /// The family for missing script fonts.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub script: Option<String>,
     /// The family for missing decorative fonts.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub decorative: Option<String>,
 }
 
@@ -153,14 +151,14 @@ impl GenericDefaults {
 
 /// The face that draws characters no other font has, after the character-fallback families. It is never a family a
 /// document can name.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug, Default, PartialEq, Eq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum SymbolFallback {
     /// The bundled symbol font: bullets, checkboxes, arrows, check marks, card suits and common math signs.
     #[default]
     Bundled,
     /// The first face of this font file (TrueType, OpenType, a collection, WOFF or WOFF2).
-    #[serde(skip)]
+    #[wire(skip)]
     Font(std::sync::Arc<Vec<u8>>),
     /// None: a character no font has draws as its font's missing-glyph box.
     Off,

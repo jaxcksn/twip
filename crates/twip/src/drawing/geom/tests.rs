@@ -67,7 +67,7 @@ fn flatten(g: &Geom) -> Vec<[f64; 2]> {
 
 const EXPECTED_DIFFERENT: &[&str] = &[];
 
-#[derive(serde::Deserialize)]
+#[derive(twip_wire::Decode)]
 struct Reference {
     preset: String,
     adj: std::collections::BTreeMap<String, i64>,
@@ -78,7 +78,7 @@ struct Reference {
 
 #[test]
 fn every_preset_outline_lies_on_its_reference_points() {
-    let refs: Vec<Reference> = serde_json::from_str(include_str!("reference-outlines.json")).expect("the reference table");
+    let refs: Vec<Reference> = twip_wire::from_str(include_str!("reference-outlines.json")).expect("the reference table");
     let mut bad = Vec::new();
     for r in refs.iter().filter(|r| !r.pts.is_empty() && !EXPECTED_DIFFERENT.contains(&r.preset.as_str())) {
         let adj: Vec<(String, i64)> = r.adj.iter().map(|(k, v)| (k.clone(), *v)).collect();

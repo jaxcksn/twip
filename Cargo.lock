@@ -1560,7 +1560,6 @@ dependencies = [
  "getrandom",
  "harfrust",
  "roxmltree",
- "serde",
  "serde_json",
  "sha2",
  "spellbook",
@@ -1615,6 +1614,7 @@ dependencies = [
  "roxmltree",
  "serde_json",
  "twip",
+ "twip-wire",
 ]
 
 [[package]]
@@ -1631,7 +1631,6 @@ version = "0.1.1"
 dependencies = [
  "itoa",
  "ryu",
- "serde_json",
  "twip-wire-derive",
 ]
 

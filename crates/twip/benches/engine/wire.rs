@@ -1,30 +1,30 @@
-//! The SDK wire's JSON, serde_json against twip-wire: each samples' encode and decode, whole.
+//! The SDK wire's JSON (twip-wire): each sample set's encode and decode, whole.
 //!
 //! - `State`: `big.docx`'s, as every change sends it.
 //! - `Command`: one of every variant (the wire fixture), as `run` reads them.
 //! - `DialogModel`: every dialog opened on `big.docx`, as `dialogUpdate` reads and writes them.
 //! - `Event`: one of every variant (the wire fixture).
-//!
-//! `encode_serde_value` is the C ABI's old response path: a `serde_json::Value` first, then its bytes.
 
 use divan::{Bencher, black_box};
-use serde::Serialize;
-use serde::de::DeserializeOwned;
 use twip::api::command::Command;
 use twip::api::engine::{Engine, SessionOptions};
 use twip::api::event::Event;
 use twip::api::fonts::FontLibrary;
 use twip::api::services::{DialogKind, DialogModel};
 use twip::api::state::State;
+use twip_wire::{Decode, Encode, Named};
 
 /// A wire type and the values it's timed on.
-trait Sample: Serialize + DeserializeOwned + twip_wire::Encode + twip_wire::Decode {
+trait Sample: Encode + Decode {
     fn samples() -> Vec<Self>;
 }
 
-fn committed<T: DeserializeOwned>(name: &str) -> Vec<T> {
+/// A committed wire fixture's examples, each re-encoded as one JSON value.
+fn committed<T: Decode>(name: &str) -> Vec<T> {
     let path = format!("{}/tests/wire/{name}.json", env!("CARGO_MANIFEST_DIR"));
-    serde_json::from_str(&std::fs::read_to_string(&path).expect("the wire fixture")).expect("the fixture reads")
+    let text = std::fs::read_to_string(&path).expect("the wire fixture");
+    let items: Vec<serde_json::Value> = serde_json::from_str(&text).expect("the fixture is JSON");
+    items.iter().map(|v| twip_wire::from_slice(&serde_json::to_vec(v).expect("JSON")).expect("the fixture reads")).collect()
 }
 
 /// `f` on a session with `big.docx` open.
@@ -50,7 +50,7 @@ impl Sample for Command {
 
 impl Sample for DialogModel {
     fn samples() -> Vec<DialogModel> {
-        with_big(|s| committed::<DialogKind>("dialog-kind").into_iter().filter_map(|k| s.dialog_open(k).ok()).collect())
+        with_big(|s| DialogKind::names().iter().filter_map(|n| s.dialog_open(DialogKind::from_name(n)?).ok()).collect())
     }
 }
 
@@ -60,43 +60,15 @@ impl Sample for Event {
     }
 }
 
-fn encoded<T: Sample>() -> Vec<Vec<u8>> {
-    T::samples().iter().map(|v| serde_json::to_vec(v).expect("serializes")).collect()
-}
-
 #[divan::bench(types = [State, Command, DialogModel, Event])]
-fn encode_serde<T: Sample>(bencher: Bencher) {
-    let samples = T::samples();
-    bencher.bench_local(|| samples.iter().map(|v| serde_json::to_vec(v).expect("serializes").len()).sum::<usize>());
-}
-
-#[divan::bench(types = [State, Command, DialogModel, Event])]
-fn encode_serde_value<T: Sample>(bencher: Bencher) {
-    let samples = T::samples();
-    bencher.bench_local(|| {
-        samples.iter().map(|v| serde_json::to_vec(&serde_json::to_value(v).expect("serializes")).expect("serializes").len()).sum::<usize>()
-    });
-}
-
-#[divan::bench(types = [State, Command, DialogModel, Event])]
-fn encode_wire<T: Sample>(bencher: Bencher) {
+fn encode<T: Sample>(bencher: Bencher) {
     let samples = T::samples();
     bencher.bench_local(|| samples.iter().map(|v| twip_wire::to_vec(v).len()).sum::<usize>());
 }
 
 #[divan::bench(types = [State, Command, DialogModel, Event])]
-fn decode_serde<T: Sample>(bencher: Bencher) {
-    let inputs = encoded::<T>();
-    bencher.bench_local(|| {
-        for json in &inputs {
-            black_box(serde_json::from_slice::<T>(json).expect("reads"));
-        }
-    });
-}
-
-#[divan::bench(types = [State, Command, DialogModel, Event])]
-fn decode_wire<T: Sample>(bencher: Bencher) {
-    let inputs = encoded::<T>();
+fn decode<T: Sample>(bencher: Bencher) {
+    let inputs: Vec<Vec<u8>> = T::samples().iter().map(twip_wire::to_vec).collect();
     bencher.bench_local(|| {
         for json in &inputs {
             black_box(twip_wire::from_slice::<T>(json).expect("reads"));

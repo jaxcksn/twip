@@ -1,12 +1,10 @@
 //! Raw input hosts forward: keys (by `KeyboardEvent.code`), modifiers, pointer and composition phases, and the
 //! clipboard's contents. The engine recognises shortcuts and gestures from these.
 
-use serde::{Deserialize, Serialize};
-
 macro_rules! keys {
     ($($name:ident = $n:literal,)*) => {
         /// A physical key, named and numbered as in the C ABI's key table. The names are `KeyboardEvent.code`'s.
-        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
         #[repr(u32)]
         pub enum Key {
             $(#[doc = concat!("The `", stringify!($name), "` key.")] $name = $n,)*
@@ -51,8 +49,8 @@ keys! {
 }
 
 /// The modifier keys held. In the C ABI a bit set: Ctrl 1, Shift 2, Alt 4, Meta (Cmd) 8.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Modifiers {
     /// Ctrl.
     pub ctrl: bool,
@@ -72,8 +70,8 @@ impl Modifiers {
 }
 
 /// A pointer event's kind. In the C ABI: down 0, move 1, up 2, cancel 3, leave 4 (the pointer left the view).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 #[repr(u32)]
 pub enum PointerKind {
     /// A button went down.
@@ -89,8 +87,8 @@ pub enum PointerKind {
 }
 
 /// The button a pointer event pressed or released. In the C ABI: primary 0, secondary 1, middle 2.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 #[repr(u32)]
 pub enum PointerButton {
     /// The main button (left, by default).
@@ -103,8 +101,8 @@ pub enum PointerButton {
 }
 
 /// An IME composition's phase. In the C ABI: start 0, update 1, end 2.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 #[repr(u32)]
 pub enum CompositionPhase {
     /// A composition began.
@@ -116,8 +114,8 @@ pub enum CompositionPhase {
 }
 
 /// A point in the editor's viewport, CSS px from its top-left corner.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Point {
     /// CSS px from the left edge.
     pub x: f64,
@@ -126,15 +124,15 @@ pub struct Point {
 }
 
 /// What a copy puts on the clipboard, and what a paste takes from it.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ClipboardData {
     /// The plain text (`text/plain`).
     pub text: String,
     /// The HTML (`text/html`), when there is any.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub html: Option<String>,
     /// A token naming the engine's internal fragment: a paste in any session of the engine keeps its formatting.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub internal: Option<String>,
 }

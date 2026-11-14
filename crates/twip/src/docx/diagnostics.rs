@@ -1,11 +1,9 @@
 //! What reading or writing a document couldn't keep or make sense of: warnings with a code, a message and where, one
 //! per code and part, with how many times it happened. Recoverable problems never fail a read.
 
-use serde::{Deserialize, Serialize};
-
 /// The kinds of problem a read or a write reports. Each serializes as its stable name (`unsupported-element`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "kebab-case")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "kebab-case")]
 pub enum WarningCode {
     /// An element the reader doesn't keep: it was left out, counted per element name.
     UnsupportedElement,
@@ -72,25 +70,25 @@ impl WarningCode {
 }
 
 /// Where a warning was first found.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, Eq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Location {
     /// The package part (`word/document.xml`, `word/comments.xml`, ...).
     pub part: String,
     /// The paragraph's index in the part's body, when the warning is about one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub paragraph: Option<u32>,
 }
 
 /// One kind of problem in one part, with how many times it happened.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, Eq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Warning {
     pub code: WarningCode,
     /// The first occurrence's description.
     pub message: String,
     pub count: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub location: Option<Location>,
 }
 
@@ -139,7 +137,7 @@ mod tests {
         for code in
             [WarningCode::UnsupportedElement, WarningCode::PdfFontFallback, WarningCode::PdfArchivalClaimDropped, WarningCode::CommentReferenceOrphan]
         {
-            assert_eq!(serde_json::to_value(code).ok(), Some(serde_json::Value::from(code.name())));
+            assert_eq!(crate::api::wire::to_value(&code).ok(), Some(serde_json::Value::from(code.name())));
         }
     }
 }

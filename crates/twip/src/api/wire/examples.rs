@@ -1,12 +1,9 @@
 //! One example of every variant of every `api` type: the wire fixtures. Unit-variant enums list every variant by
-//! their serde names; the rest are written out here, so a changed type fails to compile until its examples follow.
+//! their wire names; the rest are written out here, so a changed type fails to compile until its examples follow.
 //! Option structs of commands, dialog values and event payloads are covered inside their parents' files.
 
-use std::collections::BTreeMap;
-
-use serde::de::{DeserializeOwned, Error as _, Visitor};
-use serde::{Deserializer, Serialize};
 use serde_json::Value;
+use std::collections::BTreeMap;
 
 use crate::api::catalog::{CommandGroup, CommandInfo, CommandShortcuts, UndoGrouping};
 use crate::api::command::*;
@@ -32,74 +29,24 @@ use crate::api::warning::{Location, Warning, WarningCode};
 pub struct Fixture {
     /// The file name without `.json`: the type's name in kebab case.
     pub name: &'static str,
-    /// The examples, as the type serializes them.
+    /// The examples, as the type encodes them.
     pub examples: fn() -> Vec<Value>,
     /// Decodes a value as the type and encodes it again.
     pub round_trip: fn(&Value) -> Result<Value, String>,
-    /// Reads the JSON with serde and with twip-wire: whether each accepts it, and whether they agree.
-    pub compare: fn(&[u8]) -> Comparison,
 }
 
-/// What serde and twip-wire made of one input.
-pub struct Comparison {
-    /// serde's error, if it refused the input.
-    pub serde: Result<(), String>,
-    /// twip-wire's error, if it refused the input.
-    pub wire: Result<(), String>,
-    /// How they differ when both accept it: the values they read, or the bytes they write back.
-    pub mismatch: Option<String>,
+fn json<T: twip_wire::Encode>(v: &T) -> Value {
+    serde_json::from_slice(&twip_wire::to_vec(v)).expect("api values encode to JSON")
 }
 
-fn compare<T: Serialize + DeserializeOwned + twip_wire::Encode + twip_wire::Decode + PartialEq + std::fmt::Debug>(json: &[u8]) -> Comparison {
-    let s = serde_json::from_slice::<T>(json).map_err(|e| e.to_string());
-    let w = twip_wire::from_slice::<T>(json).map_err(|e| e.to_string());
-    let mismatch = match (&s, &w) {
-        (Ok(a), Ok(b)) if a != b => Some(format!("read differently:\n  serde {a:?}\n  wire  {b:?}")),
-        (Ok(a), Ok(_)) => {
-            let (x, y) = (serde_json::to_vec(a).expect("serializes"), twip_wire::to_vec(a));
-            (x != y).then(|| format!("written differently:\n  serde {}\n  wire  {}", String::from_utf8_lossy(&x), String::from_utf8_lossy(&y)))
-        }
-        _ => None,
-    };
-    Comparison { serde: s.map(drop), wire: w.map(drop), mismatch }
+fn round_trip<T: twip_wire::Encode + twip_wire::Decode>(v: &Value) -> Result<Value, String> {
+    let t: T = twip_wire::from_slice(&serde_json::to_vec(v).expect("JSON")).map_err(|e| e.to_string())?;
+    Ok(json(&t))
 }
 
-fn json<T: Serialize>(v: &T) -> Value {
-    serde_json::to_value(v).expect("api values serialize to JSON")
-}
-
-fn round_trip<T: Serialize + DeserializeOwned>(v: &Value) -> Result<Value, String> {
-    let t: T = serde_json::from_value(v.clone()).map_err(|e| e.to_string())?;
-    serde_json::to_value(&t).map_err(|e| e.to_string())
-}
-
-/// Every variant of a unit-variant enum, read from its serde names.
-fn all<T: DeserializeOwned>() -> Vec<T> {
-    /// Records the variant names a derived `Deserialize` asks an enum for, and reads nothing.
-    struct Probe(Option<&'static [&'static str]>);
-
-    impl<'de> Deserializer<'de> for &mut Probe {
-        type Error = serde::de::value::Error;
-
-        fn deserialize_any<V: Visitor<'de>>(self, _: V) -> Result<V::Value, Self::Error> {
-            Err(Self::Error::custom("not a unit-variant enum"))
-        }
-
-        fn deserialize_enum<V: Visitor<'de>>(self, _: &'static str, variants: &'static [&'static str], _: V) -> Result<V::Value, Self::Error> {
-            self.0 = Some(variants);
-            Err(Self::Error::custom("probed"))
-        }
-
-        serde::forward_to_deserialize_any! {
-            bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string bytes byte_buf option unit unit_struct
-            newtype_struct seq tuple tuple_struct map struct identifier ignored_any
-        }
-    }
-
-    let mut probe = Probe(None);
-    let _ = T::deserialize(&mut probe);
-    let names = probe.0.expect("units! lists only unit-variant enums");
-    names.iter().map(|n| serde_json::from_value(Value::String((*n).to_string())).expect("a unit variant reads from its name")).collect()
+/// Every variant of a unit-variant enum, by its wire names.
+fn all<T: twip_wire::Named>() -> Vec<T> {
+    T::names().iter().map(|n| T::from_name(n).expect("a unit variant reads from its name")).collect()
 }
 
 macro_rules! fixture {
@@ -111,7 +58,6 @@ macro_rules! fixture {
                 v.iter().map(json).collect()
             },
             round_trip: round_trip::<$ty>,
-            compare: compare::<$ty>,
         }
     };
 }
@@ -293,7 +239,10 @@ pub fn fixtures() -> Vec<Fixture> {
         fixture!(
             "error",
             Error,
-            vec![Error::unsupported("PDF export"), Error { details: Some(serde_json::json!({ "index": 2 })), ..Error::invalid("rows") }]
+            vec![
+                Error::unsupported("PDF export"),
+                Error { details: Some(twip_wire::RawJson::parse(r#"{"index":2}"#).expect("JSON")), ..Error::invalid("rows") }
+            ]
         ),
         fixture!("warning", Warning, vec![warning(), Warning { location: None, ..warning() }]),
         fixture!("location", Location, vec![Location { part: "word/document.xml".into(), paragraph: Some(3) }]),

@@ -91,7 +91,7 @@ fn a_typical_state_is_under_12_kb() {
     let mut state = s.state().clone();
     let text = state.selection.text.take().expect("a short selection's text");
     assert!(text.contains('\n'), "{text:?}");
-    let json = serde_json::to_string(&state).expect("serializes");
+    let json = twip_wire::to_string(&state);
     assert!(json.len() < 12 * 1024, "{} bytes", json.len());
 }
 
@@ -1263,7 +1263,7 @@ fn blue_pixels(s: &mut crate::api::session::Session) -> usize {
 fn picture_control_placeholder_images() {
     use serde_json::json;
     use std::io::Read;
-    let run = |s: &mut crate::api::session::Session, op: serde_json::Value| s.run(serde_json::from_value(op).expect("a command"));
+    let run = |s: &mut crate::api::session::Session, op: serde_json::Value| s.run(crate::api::wire::from_value(op).expect("a command"));
     let svg = crate::render::svg::tests::ADAPTIVE.as_bytes().to_vec();
     let red = br##"<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="#C00000"/></svg>"##;
     let png = crate::api::value::base64(&crate::render::svg::fallback_png(red, 8, 8).expect("a PNG"));
@@ -1280,7 +1280,7 @@ fn picture_control_placeholder_images() {
         "type": "insertControl", "kind": "picture", "tag": "Photo", "options": { "width": 250, "height": 125 },
         "placeholderImage": { "data": crate::api::value::base64(&svg), "mime": "image/svg+xml" },
     });
-    let c = serde_json::to_value(run(s, insert).expect("inserts").value).expect("json")["id"].clone();
+    let c = crate::api::wire::to_value(&run(s, insert).expect("inserts").value).expect("json")["id"].clone();
     assert!(blue_pixels(s) > 1000, "the SVG is drawn");
     let saved = s.export(&ExportOptions::Docx).expect("saves").bytes.0;
     let mut z = zip::ZipArchive::new(std::io::Cursor::new(saved.clone())).expect("a package");
@@ -1846,7 +1846,7 @@ fn picture_control_activation() {
     let id = engine.create_session(SessionOptions::default());
     let s = engine.session(id).expect("a session");
     s.open(&editor_fixture("FX-PICTURE-CONTROLS.docx")).expect("opens");
-    s.run(Command::InsertControl(serde_json::from_value(serde_json::json!({ "kind": "plainText", "tag": "Text" })).unwrap()))
+    s.run(Command::InsertControl(crate::api::wire::from_value(serde_json::json!({ "kind": "plainText", "tag": "Text" })).unwrap()))
         .expect("a text control");
     s.host().attach(|_| {});
     s.host().set_size(2000.0, 4000.0, 1.0);

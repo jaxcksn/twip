@@ -1,10 +1,8 @@
 //! Errors: a stable code, a readable message and optional details.
 
-use serde::{Deserialize, Serialize};
-
 /// Why an operation failed. Each serializes as its stable name (`invalid-argument`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "kebab-case")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "kebab-case")]
 pub enum ErrorCode {
     /// The session was closed.
     Destroyed,
@@ -29,16 +27,16 @@ pub enum ErrorCode {
 }
 
 /// A failed operation: its code, a message for developers, and details where the code needs them.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Error {
     /// Why it failed.
     pub code: ErrorCode,
     /// A readable message for developers, not for end users.
     pub message: String,
     /// More about the failure, where the code needs it (the argument that was invalid).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub details: Option<serde_json::Value>,
+    #[wire(default, skip_serializing_if = "Option::is_none")]
+    pub details: Option<twip_wire::RawJson>,
 }
 
 impl Error {

@@ -174,7 +174,7 @@ fn dump(e: &mut Editor) -> serde_json::Value {
 
 /// Runs one command, given as the API's JSON; `pending` is set when the editor doesn't know the command yet.
 fn send(e: &mut Editor, fonts: &Fonts, op: serde_json::Value, pending: &mut bool) {
-    match serde_json::from_value::<Command>(op.clone()) {
+    match twip_wire::from_slice::<Command>(&serde_json::to_vec(&op).expect("JSON")) {
         Ok(cmd) => {
             let out = e.execute(cmd, fonts);
             if std::env::var_os("RT_TRACE").is_some() {

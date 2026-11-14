@@ -1,7 +1,7 @@
 //! Twip's JSON wire: one concrete encoder and decoder per API type.
 //!
-//! The derives read the same `#[serde(...)]` (or `#[wire(...)]`) attributes serde does and write the same JSON, but
-//! each type gets one non-generic [`Encode::encode`] into a `Vec<u8>` and one [`Decode::decode`] from a [`Reader`]
+//! The derives take `#[wire(...)]` attributes with serde's names and meanings and write the JSON serde did, but each
+//! type gets one non-generic [`Encode::encode`] into a `Vec<u8>` and one [`Decode::decode`] from a [`Reader`]
 //! over the input slice. An internally tagged enum finds its tag by scanning ahead in the slice instead of buffering
 //! the object; an untagged enum tries its variants from a saved position.
 
@@ -28,7 +28,7 @@ pub trait Decode: Sized {
     /// Reads one value at the reader's position.
     fn decode(r: &mut Reader<'_>) -> Result<Self, Error>;
 
-    /// The value of a field that isn't there, for a type that has one (`Option`'s `None`), as serde's.
+    /// The value of a field that isn't there, for a type that has one (`Option`'s `None`).
     fn absent() -> Option<Self> {
         None
     }
@@ -56,10 +56,45 @@ pub trait MapKey: Sized {
 
 /// A unit-variant enum's variants by their wire names (`setBold`), derived with [`Encode`].
 pub trait Named: Sized {
+    /// Every variant's name, in declaration order.
+    fn names() -> &'static [&'static str];
     /// This variant's name.
     fn name(&self) -> &'static str;
     /// The variant with this name.
     fn from_name(name: &str) -> Option<Self>;
+}
+
+/// A JSON value kept as its text: written as it is, and read by checking one value and keeping its bytes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RawJson(Box<str>);
+
+impl RawJson {
+    /// `value`'s JSON.
+    pub fn of<T: Encode + ?Sized>(value: &T) -> RawJson {
+        RawJson(to_string(value).into_boxed_str())
+    }
+
+    /// `text`, checked to be one JSON value.
+    pub fn parse(text: &str) -> Result<RawJson, Error> {
+        from_str(text)
+    }
+
+    /// The JSON text.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Encode for RawJson {
+    fn encode(&self, out: &mut Vec<u8>) {
+        out.extend_from_slice(self.0.as_bytes());
+    }
+}
+
+impl Decode for RawJson {
+    fn decode(r: &mut Reader<'_>) -> Result<RawJson, Error> {
+        r.raw().map(|s| RawJson(s.into()))
+    }
 }
 
 /// The tag keys of the internally tagged enums an object is read inside, innermost first.
@@ -89,6 +124,12 @@ pub fn to_vec<T: Encode + ?Sized>(value: &T) -> Vec<u8> {
     let mut out = Vec::with_capacity(128);
     value.encode(&mut out);
     out
+}
+
+/// Encodes `value` to a JSON string.
+pub fn to_string<T: Encode + ?Sized>(value: &T) -> String {
+    // Encoders write UTF-8: they copy `str`s and ASCII.
+    String::from_utf8(to_vec(value)).unwrap_or_default()
 }
 
 /// Decodes one `T` from all of `json`.
@@ -559,6 +600,14 @@ impl<'a> Reader<'a> {
         Err(self.error(format!("missing field `{key}`")))
     }
 
+    /// Passes over one value of any kind, returning its text.
+    pub fn raw(&mut self) -> Result<&'a str, Error> {
+        self.peek_byte();
+        let start = self.pos;
+        self.skip()?;
+        Ok(&self.s[start..self.pos])
+    }
+
     /// Reads the string `word` if it is next.
     pub fn keyword(&mut self, word: &str) -> Result<bool, Error> {
         if self.peek_byte() != Some(b'"') {
@@ -612,13 +661,13 @@ pub fn unit_index(r: &mut Reader<'_>, names: &[&str]) -> Result<usize, Error> {
     names.iter().position(|n| *n == s).ok_or_else(|| unknown_variant(&at, &s))
 }
 
-/// A unit variant of an internally tagged enum: an object, whose other keys serde ignores even under
-/// `deny_unknown_fields`.
+/// A unit variant of an internally tagged enum: an object, whose other keys are ignored even under
+/// `deny_unknown_fields`, as the wire always has.
 pub fn decode_unit(r: &mut Reader<'_>) -> Result<(), Error> {
     r.skip()
 }
 
-/// A variant's single argument in `value` beside its tag (`#[serde(with = "value")]`).
+/// A variant's single argument in `value` beside its tag (`#[wire(value)]`).
 pub fn decode_value<T: Decode>(r: &mut Reader<'_>, tags: Option<&Tags<'_>>) -> Result<T, Error> {
     let mut o = r.object()?;
     let mut v = None;
@@ -1013,75 +1062,6 @@ impl<K: MapKey + Eq + Hash, V: Decode, S: BuildHasher + Default> Decode for Hash
             m.insert(k, V::decode(r)?);
         }
         Ok(m)
-    }
-}
-
-#[cfg(feature = "serde_json")]
-mod json_value {
-    use super::*;
-    use serde_json::{Map, Number, Value};
-
-    impl Encode for Value {
-        fn encode(&self, out: &mut Vec<u8>) {
-            match self {
-                Value::Null => out.extend_from_slice(b"null"),
-                Value::Bool(b) => b.encode(out),
-                Value::Number(n) => match (n.as_u64(), n.as_i64(), n.as_f64()) {
-                    (Some(u), _, _) => u.encode(out),
-                    (None, Some(i), _) => i.encode(out),
-                    (None, None, Some(f)) => f.encode(out),
-                    _ => out.extend_from_slice(b"null"),
-                },
-                Value::String(s) => write_str(out, s),
-                Value::Array(a) => a.encode(out),
-                Value::Object(m) => {
-                    out.push(b'{');
-                    for (i, (k, v)) in m.iter().enumerate() {
-                        if i > 0 {
-                            out.push(b',');
-                        }
-                        write_str(out, k);
-                        out.push(b':');
-                        v.encode(out);
-                    }
-                    out.push(b'}');
-                }
-            }
-        }
-    }
-
-    impl Decode for Value {
-        fn decode(r: &mut Reader<'_>) -> Result<Value, Error> {
-            Ok(match r.peek()? {
-                Kind::Null => {
-                    r.null()?;
-                    Value::Null
-                }
-                Kind::Bool => Value::Bool(r.bool()?),
-                Kind::Number => {
-                    let at = r.pos;
-                    let (text, integer) = r.number()?;
-                    let n =
-                        if integer { text.parse::<u64>().map(Number::from).or_else(|_| text.parse::<i64>().map(Number::from)).ok() } else { None };
-                    match n {
-                        Some(n) => Value::Number(n),
-                        None => {
-                            text.parse::<f64>().ok().and_then(Number::from_f64).map(Value::Number).ok_or_else(|| Error::new("invalid number", at))?
-                        }
-                    }
-                }
-                Kind::String => Value::String(r.str()?.into_owned()),
-                Kind::Array => Value::Array(Vec::decode(r)?),
-                Kind::Object => {
-                    let mut o = r.object()?;
-                    let mut m = Map::new();
-                    while let Some(k) = r.key(&mut o)? {
-                        m.insert(k.into_owned(), Value::decode(r)?);
-                    }
-                    Value::Object(m)
-                }
-            })
-        }
     }
 }
 

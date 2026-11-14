@@ -1,7 +1,5 @@
 //! Opening, creating and exporting documents.
 
-use serde::{Deserialize, Serialize};
-
 use super::Session;
 use crate::api::error::{Error, ErrorCode};
 use crate::api::fonts::FontLibrary;
@@ -11,8 +9,8 @@ use crate::docx::Document;
 use crate::editing::Editor;
 
 /// The formats a document exports to.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum ExportFormat {
     /// Office Open XML.
     #[default]
@@ -22,8 +20,8 @@ pub enum ExportFormat {
 }
 
 /// What to export: the format, and for a PDF what it writes beyond the pages.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(tag = "format", rename_all = "camelCase")]
+#[derive(Clone, Debug, Default, PartialEq, Eq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(tag = "format", rename_all = "camelCase")]
 pub enum ExportOptions {
     /// Office Open XML.
     #[default]
@@ -53,14 +51,14 @@ impl From<ExportFormat> for ExportOptions {
 }
 
 /// What a PDF writes beyond the pages. The default writes neither a password nor keywords.
-#[derive(Clone, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Default, PartialEq, Eq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PdfOptions {
     /// Encrypts the PDF (AES-256): readers ask for this password before showing anything. Must not be empty.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub open_password: Option<String>,
     /// Written to the PDF's keywords metadata, in order. Blank entries are dropped.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[wire(default, skip_serializing_if = "Vec::is_empty")]
     pub keywords: Vec<String>,
 }
 
@@ -88,8 +86,8 @@ impl PdfOptions {
 }
 
 /// An exported document, the revision it captures, and what writing it couldn't keep.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Export {
     /// The file. The C ABI returns it apart from the rest, as raw bytes.
     pub bytes: Bytes,

@@ -8,9 +8,8 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-twip-wire-derive = { path = "../twip-wire-derive" }
+# Published with Twip at exactly its version (release-please keeps the pin in step).
+twip-wire-derive = { path = "../twip-wire-derive", version = "=0.1.1" } # x-release-please-version
 # Number formatting, byte for byte what serde_json writes.
 itoa = "1.0.18"
 ryu = "1.0.23"
-# `serde_json::Value` as a wire value, while error details are still one.
-serde_json = { version = "1.0.154", optional = true }

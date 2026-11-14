@@ -261,7 +261,7 @@ fn a_protected_floating_picture_control_goes_with_its_box() {
 /// reopened as one, dragged and resized as a float (its picture keeping the box's size) and filled where it is.
 #[test]
 fn floating_picture_control_round_trip() {
-    let insert = |r: &mut Run, v: serde_json::Value| r.e.execute(Command::InsertControl(serde_json::from_value(v).unwrap()), fonts());
+    let insert = |r: &mut Run, v: serde_json::Value| r.e.execute(Command::InsertControl(crate::api::wire::from_value(v).unwrap()), fonts());
     let mut r = design("FX-TEXT.docx", "float-insert");
     let refused = insert(&mut r, json!({ "kind": "plainText", "float": { "wrap": "square" } }));
     assert!(matches!(refused, super::super::Outcome::Refused(_)), "{refused:?}");
@@ -319,7 +319,7 @@ fn picture_control_wrap_converts_both_ways() {
         "id": crate::editing::elements::id_str(crate::docx::ElementId::Control(c)),
         "placeholderImage": { "data": crate::api::value::base64(svg.as_bytes()), "mime": "image/svg+xml" },
     });
-    r.e.execute(Command::SetControl(serde_json::from_value(set).unwrap()), fonts());
+    r.e.execute(Command::SetControl(crate::api::wire::from_value(set).unwrap()), fonts());
     let (_, props) = control(&r.e, "Placeholder:Signature.X");
     let size = size(&r.e, "Placeholder:Signature.X");
     pick(&mut r, "Placeholder:Signature.X");

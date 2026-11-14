@@ -5,8 +5,6 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
-use serde::{Deserialize, Serialize};
-
 use super::command::ReferenceRule;
 use super::event::Event;
 use super::fonts::FontLibrary;
@@ -16,13 +14,13 @@ use super::state::Mode;
 use super::value::Bytes;
 
 /// A session's id in its engine. Ids are never reused.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(transparent)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord, twip_wire::Encode, twip_wire::Decode)]
+#[wire(transparent)]
 pub struct SessionId(pub u32);
 
 /// A Hunspell dictionary.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Dictionary {
     /// BCP 47 (`en-US`).
     pub language: String,
@@ -32,13 +30,13 @@ pub struct Dictionary {
     pub dic: Bytes,
     /// Hyphenation patterns (a `hyph_*.dic` file), for automatic hyphenation in this language. With empty `aff` and
     /// `dic`, the dictionary adds only these.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub hyphenation: Option<Bytes>,
 }
 
 /// How a session starts. Every field has a default, so `{}` is a valid wire value.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", default, deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, Eq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", default, deny_unknown_fields)]
 pub struct SessionOptions {
     /// Who edits: tracked changes and comments are attributed to them.
     pub author: Author,

@@ -2,8 +2,6 @@
 
 use std::borrow::Cow;
 
-use serde::{Deserialize, Serialize};
-
 use super::Session;
 use super::commands::id_name;
 use crate::api::command::{Command, CommandResult};
@@ -16,8 +14,8 @@ use crate::editing::commands::Outcome;
 
 /// What a command did: the transaction it committed (none for selection and view commands, or when nothing changed),
 /// and what it made.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Commit {
     /// The committed transaction, as `documentChanged` reported it.
     pub record: Option<TransactionRecord>,

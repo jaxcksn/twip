@@ -8,8 +8,8 @@ pub enum PointerKind {
     Cancel,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, serde::Serialize, twip_wire::Encode, serde::Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum Cursor {
     #[default]
     Default,

@@ -11,9 +11,9 @@ use crate::api::state::ElementKind;
 
 /// Runs a command given as JSON; its result as JSON.
 fn command(s: &mut Session, op: Value) -> Value {
-    let c: Command = serde_json::from_value(op.clone()).unwrap_or_else(|e| panic!("{op}: {e}"));
+    let c: Command = crate::api::wire::from_value(op.clone()).unwrap_or_else(|e| panic!("{op}: {e}"));
     let commit = s.run(c).unwrap_or_else(|e| panic!("{op} -> {e:?}"));
-    serde_json::to_value(commit.value).expect("a result")
+    crate::api::wire::to_value(&commit.value).expect("a result")
 }
 
 /// Each element's kind, code, tag and display text, in document order.
@@ -79,7 +79,7 @@ fn paste_between_editors_keeps_fields() {
     let clip = a.copy().expect("a copy");
     let depth = a.history().undo_depth();
     let end = json!({ "type": "moveSelection", "by": "document", "direction": "forward" });
-    b.execute(serde_json::from_value(end).expect("a command"), fonts());
+    b.execute(crate::api::wire::from_value(end).expect("a command"), fonts());
     let token = b.adopt_clipboard(clip.clone()).to_string();
     b.apply_json(&json!({ "type": "paste", "text": clip.text(), "token": token, "seq": b.seq_applied() + 1 }).to_string(), fonts());
     let after = fields(&b);
@@ -96,7 +96,7 @@ fn picture_control_size() {
     let (mut engine, id) = super::session(&fixture("FX-TEXT.docx"));
     let e = engine.session(id).expect("a session");
     let size = |e: &Session, c: &Value| {
-        let d = serde_json::to_value(e.element(serde_json::from_value(c.clone()).expect("an id")).expect("the control")).expect("json");
+        let d = crate::api::wire::to_value(&e.element(crate::api::wire::from_value(c.clone()).expect("an id")).expect("the control")).expect("json");
         (d["options"]["width"].as_f64(), d["options"]["height"].as_f64())
     };
     let c =
@@ -104,7 +104,7 @@ fn picture_control_size() {
     assert_eq!(size(e, &c), (Some(216.0), Some(54.0)));
     let listed = |e: &Session| e.elements(&ElementFilter::default())[0].size.map(|s| (s.width.0, s.height.0));
     assert_eq!(listed(e), Some((216.0, 54.0)), "elements.list reports it");
-    e.select_element(serde_json::from_value(c.clone()).expect("an id"), false).expect("selects");
+    e.select_element(crate::api::wire::from_value(c.clone()).expect("an id"), false).expect("selects");
     let context = e.state().selection.context.iter().find_map(|x| x.size).map(|s| (s.width.0, s.height.0));
     assert_eq!(context, Some((216.0, 54.0)), "so does the selection's context");
     command(e, json!({ "type": "setControl", "id": c, "options": { "width": 288 } }));
@@ -112,11 +112,11 @@ fn picture_control_size() {
     command(e, json!({ "type": "undo" }));
     assert_eq!(size(e, &c), (Some(216.0), Some(54.0)), "one undo step");
     command(e, json!({ "type": "redo" }));
-    let bad = serde_json::from_value(json!({ "type": "setControl", "id": c, "options": { "height": 0 } })).expect("a command");
+    let bad = crate::api::wire::from_value(json!({ "type": "setControl", "id": c, "options": { "height": 0 } })).expect("a command");
     assert!(e.run(bad).is_err(), "out of range");
     let saved = e.export(&Default::default()).expect("saves").bytes.0;
     let (mut again, id) = super::session(&saved);
     let again = again.session(id).expect("a session");
-    let c = serde_json::to_value(&again.elements(&ElementFilter::default())[0].id).expect("an id");
+    let c = crate::api::wire::to_value(&again.elements(&ElementFilter::default())[0].id).expect("an id");
     assert_eq!(size(again, &c), (Some(288.0), Some(54.0)), "read back");
 }

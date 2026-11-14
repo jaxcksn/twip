@@ -26,8 +26,8 @@ pub struct Person {
 }
 
 /// Who a person is in an identity provider (`w15:presenceInfo`).
-#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize, twip_wire::Encode, serde::Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Identity {
     pub provider: Rc<str>,
     pub user_id: Rc<str>,
@@ -445,8 +445,8 @@ impl Protection {
 }
 
 /// The markup view: how revisions show. A view setting, never saved.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, serde::Serialize, twip_wire::Encode, serde::Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum MarkupView {
     /// Insertions and deletions shown in place, in their author's colour, with change bars.
     #[default]

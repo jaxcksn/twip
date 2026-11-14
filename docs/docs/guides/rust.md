@@ -37,8 +37,8 @@ To convert documents without a session, on many threads at once, use `twip::pdf`
 - `error::Error` carries an `ErrorCode`, the same codes as the SDKs (`InvalidArgument`, `Unavailable`, `ReadOnly`,
   `ImportFailed` and the others), and `warning::Warning` the fidelity warnings.
 
-Every type is `serde` serializable, and `api::wire` holds the JSON rules: camelCase fields, and enums tagged with
-`type`.
+Every type implements `twip_wire::Encode` and `twip_wire::Decode` (`twip_wire::to_vec`, `twip_wire::from_slice`), and
+`api::wire` holds the JSON rules: camelCase fields, and enums tagged with `type`.
 
 ## Stability
 

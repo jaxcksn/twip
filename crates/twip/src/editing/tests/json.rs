@@ -55,8 +55,9 @@ fn mods(v: &Value) -> Mods {
     Mods { ctrl: flag("ctrl"), shift: flag("shift"), alt: flag("alt"), meta: flag("meta") }
 }
 
-fn typed<T: serde::de::DeserializeOwned>(v: Option<&Value>, what: &str) -> Result<T, BadInput> {
-    serde_json::from_value(v.cloned().unwrap_or(Value::Null)).map_err(|e| BadInput(format!("bad `{what}`: {e}")))
+fn typed<T: twip_wire::Decode>(v: Option<&Value>, what: &str) -> Result<T, BadInput> {
+    let json = serde_json::to_vec(v.unwrap_or(&Value::Null)).expect("JSON");
+    twip_wire::from_slice(&json).map_err(|e| BadInput(format!("bad `{what}`: {e}")))
 }
 
 fn parse(v: &Value) -> Result<(u64, Input), BadInput> {
@@ -263,7 +264,7 @@ impl Editor {
     fn answer_of(&mut self, out: Outcome) -> Option<Value> {
         match out {
             Outcome::Refused(e) => Some(json!({ "error": e.message })),
-            _ => self.made.take().and_then(|made| serde_json::to_value(made).ok()),
+            _ => self.made.take().and_then(|made| crate::api::wire::to_value(&made).ok()),
         }
     }
 

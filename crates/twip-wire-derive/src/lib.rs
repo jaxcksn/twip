@@ -1,10 +1,11 @@
-//! `#[derive(Encode, Decode)]` for twip-wire, reading `#[serde(...)]` and `#[wire(...)]` attributes.
+//! `#[derive(Encode, Decode)]` for twip-wire, configured by `#[wire(...)]` attributes.
 //!
-//! Supported, as serde means them: on a container `rename_all` (camelCase, kebab-case, snake_case), `tag`,
-//! `untagged`, `transparent`, `deny_unknown_fields` and `default`; on a variant `rename`, `rename_all` and `skip`; on
-//! a field `rename`, `default`, `default = "path"`, `skip`, `skip_serializing_if`, and `with`/`deserialize_with` naming
-//! one of the wire's helpers (`value`, `nullable`, `present`). `#[wire(encode_with, decode_with)]` names a field's own
-//! functions. Anything else is a compile error.
+//! The attributes mean what serde's of the same names do: on a container `rename_all` (camelCase, kebab-case,
+//! snake_case), `tag`, `untagged`, `transparent`, `deny_unknown_fields` and `default`; on a variant `rename`,
+//! `rename_all` and `skip`; on a field `rename`, `default`, `default = "path"`, `skip` and `skip_serializing_if`. A
+//! field may also be `value` (a variant's one argument in `{ "value": v }` beside the tag), `nullable` (an
+//! `Option<Option<T>>`: absent, `null` or a value), `present` (an `Option<T>` that is `Some` whenever present), or name
+//! its own `encode_with` and `decode_with` functions. Anything else is a compile error.
 
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote};
@@ -77,8 +78,6 @@ struct FieldAttrs {
     mode: Mode,
     encode_with: Option<Path>,
     decode_with: Option<Path>,
-    /// A serde `serialize_with`/`deserialize_with` with no wire equivalent: only allowed beside `#[wire(...)]`'s.
-    foreign_with: Option<Span>,
 }
 
 fn case(lit: &LitStr) -> syn::Result<Case> {
@@ -91,7 +90,7 @@ fn case(lit: &LitStr) -> syn::Result<Case> {
 }
 
 fn is_ours(attr: &syn::Attribute) -> bool {
-    attr.path().is_ident("serde") || attr.path().is_ident("wire")
+    attr.path().is_ident("wire")
 }
 
 fn container_attrs(attrs: &[syn::Attribute]) -> syn::Result<Container> {
@@ -138,16 +137,6 @@ fn variant_attrs(attrs: &[syn::Attribute]) -> syn::Result<VariantAttrs> {
     Ok(v)
 }
 
-/// The wire helper a serde `with`/`deserialize_with` path names, by its last segment.
-fn helper(lit: &LitStr) -> Option<Mode> {
-    match lit.value().rsplit("::").next() {
-        Some("value") => Some(Mode::Value),
-        Some("nullable") => Some(Mode::Nullable),
-        Some("present") => Some(Mode::Present),
-        _ => None,
-    }
-}
-
 fn field_attrs(attrs: &[syn::Attribute]) -> syn::Result<FieldAttrs> {
     let mut f = FieldAttrs {
         rename: None,
@@ -157,7 +146,6 @@ fn field_attrs(attrs: &[syn::Attribute]) -> syn::Result<FieldAttrs> {
         mode: Mode::Normal,
         encode_with: None,
         decode_with: None,
-        foreign_with: None,
     };
     for attr in attrs.iter().filter(|a| is_ours(a)) {
         attr.parse_nested_meta(|m| {
@@ -170,12 +158,12 @@ fn field_attrs(attrs: &[syn::Attribute]) -> syn::Result<FieldAttrs> {
                 f.skip = true;
             } else if m.path.is_ident("skip_serializing_if") {
                 f.skip_if = Some(m.value()?.parse::<LitStr>()?.parse()?);
-            } else if m.path.is_ident("with") || m.path.is_ident("deserialize_with") || m.path.is_ident("serialize_with") {
-                let lit: LitStr = m.value()?.parse()?;
-                match helper(&lit) {
-                    Some(mode) => f.mode = mode,
-                    None => f.foreign_with = Some(lit.span()),
-                }
+            } else if m.path.is_ident("value") {
+                f.mode = Mode::Value;
+            } else if m.path.is_ident("nullable") {
+                f.mode = Mode::Nullable;
+            } else if m.path.is_ident("present") {
+                f.mode = Mode::Present;
             } else if m.path.is_ident("encode_with") {
                 f.encode_with = Some(m.value()?.parse::<LitStr>()?.parse()?);
             } else if m.path.is_ident("decode_with") {
@@ -185,11 +173,6 @@ fn field_attrs(attrs: &[syn::Attribute]) -> syn::Result<FieldAttrs> {
             }
             Ok(())
         })?;
-    }
-    if let Some(span) = f.foreign_with
-        && (f.encode_with.is_none() || f.decode_with.is_none())
-    {
-        return Err(syn::Error::new(span, "twip-wire: a custom serde `with` needs #[wire(encode_with, decode_with)]"));
     }
     Ok(f)
 }
@@ -456,10 +439,12 @@ fn unit_enum(name: &Ident, variants: &[(&syn::Variant, VariantAttrs)], wire_name
         let index = (0..n).map(|i| if i + 1 == n { quote!(_) } else { quote!(#i) });
         quote! {
             impl ::twip_wire::Named for #name {
+                fn names() -> &'static [&'static str] {
+                    &[#(#names),*]
+                }
                 fn name(&self) -> &'static str {
                     match self {
                         #(Self::#idents => #names,)*
-                        // serde refuses to write a skipped variant; there's no error path here, so it has no name.
                         #(Self::#skipped { .. } => "",)*
                     }
                 }
@@ -605,7 +590,7 @@ fn tagged(
     })
 }
 
-/// serde's default: a unit variant as its name, a newtype variant as `{ "name": value }`.
+/// The default tagging: a unit variant as its name, a newtype variant as `{ "name": value }`.
 fn external(
     name: &Ident,
     generics: &syn::Generics,
@@ -739,7 +724,6 @@ fn untagged(name: &Ident, generics: &syn::Generics, variants: &[(&syn::Variant, 
             }
         }
     } else {
-        // Each attempt reads from the saved position; the first that reads wins, as serde's untagged does.
         let attempts = arms.iter().map(|arm| {
             quote! {
                 let attempt = |r: &mut ::twip_wire::Reader<'_>| -> ::core::result::Result<Self, ::twip_wire::Error> { #arm };

@@ -1,15 +1,12 @@
 //! Transaction records: who changed what, when, and with which undo label.
 
-use serde::de::Error as _;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
 use super::value::{CommentId, ElementId, RevisionId};
 
 pub use crate::docx::review::Identity;
 
 /// One committed transaction, as `documentChanged` reports it.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TransactionRecord {
     /// Unique in the session, increasing.
     pub id: u64,
@@ -28,8 +25,8 @@ pub struct TransactionRecord {
 }
 
 /// What started a transaction.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum Origin {
     /// Input: keys, text, pointer, clipboard.
     User,
@@ -42,16 +39,16 @@ pub enum Origin {
 }
 
 /// Who edits: the name revisions and comments are recorded under.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, Eq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Author {
     /// The display name.
     pub name: String,
     /// The initials shown on comments.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub initials: Option<String>,
     /// The identity in a directory, written to the document with the author.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub identity: Option<Identity>,
 }
 
@@ -72,19 +69,6 @@ impl Timestamp {
     }
 }
 
-impl Serialize for Timestamp {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_str(&crate::docx::review::Timestamp::from_utc(self.0).raw)
-    }
-}
-
-impl<'de> Deserialize<'de> for Timestamp {
-    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Timestamp, D::Error> {
-        let s = String::deserialize(d)?;
-        crate::docx::review::Timestamp::parse(&s).utc.map(Timestamp).ok_or_else(|| D::Error::custom(format!("`{s}` is not an ISO 8601 time")))
-    }
-}
-
 impl twip_wire::Encode for Timestamp {
     fn encode(&self, out: &mut Vec<u8>) {
         twip_wire::write_str(out, &crate::docx::review::Timestamp::from_utc(self.0).raw);
@@ -100,8 +84,8 @@ impl twip_wire::Decode for Timestamp {
 }
 
 /// What a transaction touched: how many paragraphs and tables, and which elements, revisions and comments.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ChangeSummary {
     /// How many paragraphs it changed.
     pub paragraphs: u32,
@@ -176,8 +160,8 @@ mod tests {
     #[test]
     fn timestamps_are_iso_utc() {
         let t = Timestamp(1_792_000_000);
-        let json = serde_json::to_string(&t).expect("serializes");
+        let json = twip_wire::to_string(&t);
         assert_eq!(json, "\"2026-10-14T17:46:40Z\"");
-        assert_eq!(serde_json::from_str::<Timestamp>(&json).ok(), Some(t));
+        assert_eq!(twip_wire::from_str::<Timestamp>(&json).ok(), Some(t));
     }
 }

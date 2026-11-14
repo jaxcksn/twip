@@ -1,8 +1,6 @@
 //! Events: what the engine tells its host, in commit order. A session's state is rebuilt before any event of the same
 //! change is delivered.
 
-use serde::{Deserialize, Serialize};
-
 use super::error::{Error, ErrorCode};
 use super::record::TransactionRecord;
 use super::review::{BalloonPlacement, CommentAnchor};
@@ -13,12 +11,11 @@ use super::services::{
 use super::state::{FontsState, SelectionSummary, State};
 use super::value::ElementId;
 use super::warning::Warning;
-use super::wire::value;
 
 /// An event. On the wire its `type` is the event name (`documentChanged`), and its payload's fields sit beside it;
 /// a payload that isn't an object (a list, a value or `null`) travels in `value`.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(tag = "type", rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(tag = "type", rename_all = "camelCase", deny_unknown_fields)]
 #[non_exhaustive]
 #[allow(clippy::large_enum_variant, reason = "an event is made once per change and lent to the listener; boxing would allocate per change")]
 pub enum Event {
@@ -97,9 +94,9 @@ pub enum Event {
     /// Comments came, went or changed.
     CommentsChanged {},
     /// The visible comments' anchors, after layout, zoom or scroll.
-    CommentAnchors(#[serde(with = "value")] Vec<CommentAnchor>),
+    CommentAnchors(#[wire(value)] Vec<CommentAnchor>),
     /// Where the SDK placed the attached balloons.
-    BalloonsLaidOut(#[serde(with = "value")] Vec<BalloonPlacement>),
+    BalloonsLaidOut(#[wire(value)] Vec<BalloonPlacement>),
     /// The ruler view changed (coalesced per frame).
     RulerChanged(RulerView),
     /// The editor switched between the template and a sub-template, or between sub-templates: where it is now.
@@ -109,19 +106,19 @@ pub enum Event {
         /// Why.
         reason: RefusalReason,
         /// The element concerned: the reference field whose sub-template's body shows.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[wire(default, skip_serializing_if = "Option::is_none")]
         element: Option<ElementId>,
     },
     /// Hover over a link, element mark, revision or comment; `null` hides the tooltip.
-    Tooltip(#[serde(with = "value")] Option<Tooltip>),
+    Tooltip(#[wire(value)] Option<Tooltip>),
     /// The pointer moved onto another field, content control or merge-designer element, or the hovered one's boxes
     /// moved (at most once a frame); `null` when it left.
-    ElementHover(#[serde(with = "value")] Option<ElementHover>),
+    ElementHover(#[wire(value)] Option<ElementHover>),
     /// An element was clicked.
     ElementClick(ElementClick),
     /// The selection moved into another element, or its boxes moved (at most once a frame); `null` when it is in
     /// none.
-    ElementSelect(#[serde(with = "value")] Option<ElementSelection>),
+    ElementSelect(#[wire(value)] Option<ElementSelection>),
     /// What the editor said to screen readers.
     Announcement {
         /// The announced text.
@@ -132,23 +129,23 @@ pub enum Event {
     /// A fidelity note from reading or writing.
     Warning(Warning),
     /// A fault: the engine failed. With `fatal`, the session rejects later operations with `internal`.
-    #[serde(rename = "error")]
+    #[wire(rename = "error")]
     Fault {
         /// What failed.
         code: ErrorCode,
         /// An English description, for logs.
         message: String,
         /// Structured detail, when there is any.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        details: Option<serde_json::Value>,
+        #[wire(default, skip_serializing_if = "Option::is_none")]
+        details: Option<twip_wire::RawJson>,
         /// Whether the session is unusable: it rejects later operations with `internal`.
         fatal: bool,
     },
 }
 
 /// Why typing, pasting or dropping was refused.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, Eq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 pub enum RefusalReason {
     /// Into a sub-template's body shown in place of its reference: edit the sub-template instead.
     SubTemplate {
@@ -160,8 +157,8 @@ pub enum RefusalReason {
 }
 
 /// How a link was activated.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum LinkVia {
     /// Ctrl+click (Cmd+click on a Mac).
     CtrlClick,
@@ -170,8 +167,8 @@ pub enum LinkVia {
 }
 
 /// A field whose result the application computes.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, Eq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FieldRequest {
     /// The field.
     pub id: ElementId,
@@ -180,8 +177,8 @@ pub struct FieldRequest {
 }
 
 /// Keys whose UI is the application's: pressing one never edits, and emits `hostCommand`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 #[repr(u32)]
 pub enum HostCommand {
     /// Ctrl+S.
@@ -232,15 +229,15 @@ impl HostCommand {
 }
 
 /// What a key press did.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(tag = "type", rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, Eq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(tag = "type", rename_all = "camelCase", deny_unknown_fields)]
 pub enum KeyOutcome {
     /// The editor used it: the host suppresses the platform's default.
     Handled,
     /// A key the application owns (also emitted as `hostCommand`).
-    HostCommand(#[serde(with = "value")] HostCommand),
+    HostCommand(#[wire(value)] HostCommand),
     /// An application shortcut (also emitted as `shortcut`).
-    Shortcut(#[serde(with = "value")] String),
+    Shortcut(#[wire(value)] String),
     /// Not the editor's: the platform keeps it.
     Unhandled,
 }

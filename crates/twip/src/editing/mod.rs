@@ -21,7 +21,7 @@ mod goback;
 pub mod history;
 pub mod index;
 pub mod input;
-#[cfg(any(test, feature = "inspect", not(target_family = "wasm")))]
+#[cfg(any(test, feature = "inspect"))]
 pub mod inspect;
 pub mod integrity;
 pub mod interaction;

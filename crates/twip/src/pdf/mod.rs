@@ -174,8 +174,8 @@ pub struct Conversion {
 
 /// The document's families (per style) that drew with a stand-in, and the characters no font has: the same report a
 /// session gives, without pending families, since a conversion has no resolver.
-#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, twip_wire::Encode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug, Default, PartialEq, Eq, twip_wire::Encode)]
+#[wire(rename_all = "camelCase")]
 pub struct FontsReport {
     /// Families that drew with a stand-in.
     pub missing: Vec<MissingFont>,

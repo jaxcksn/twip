@@ -6,8 +6,6 @@
 
 use std::collections::BTreeMap;
 
-use serde::{Deserialize, Serialize};
-
 use super::drawing::{
     Arrange, Degrees, EffectsChange, FillValue, FlipAxis, LineChange, PictureAdjustChange, ShapeAdjust, ShapeInsert, ShapePreset, ShapeTextChange,
 };
@@ -19,14 +17,13 @@ use super::value::{
     HighlightColor, HorizontalAlignment, HorizontalPosition, LineSpacing, NoneOr, ObjectWrap, Order, Orientation, PlaceholderImage, Points,
     RevisionId, RowHeight, StyleId, TabAlignment, TabLeader, TableWidth, UnderlineStyle, VerticalPosition, WrapSide,
 };
-use super::wire::value;
 
 macro_rules! commands {
     ($($(#[doc = $doc:literal])* $name:ident $(($(#[$field:meta])* $arg:ty))?,)*) => {
         /// A command. Each variant's documentation states its undo grouping: one step, typing (consecutive typing in
         /// one paragraph joins one step), or view (no undo step and no revision).
-        #[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-        #[serde(tag = "type", rename_all = "camelCase", deny_unknown_fields)]
+        #[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+        #[wire(tag = "type", rename_all = "camelCase", deny_unknown_fields)]
         #[non_exhaustive]
         pub enum Command {
             $($(#[doc = $doc])* $name $(($(#[$field])* $arg))?,)*
@@ -34,8 +31,8 @@ macro_rules! commands {
 
         /// A command's id: its catalog id, its key in the state's command map, and its op's `type`, all one spelling
         /// (`setBold`).
-        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-        #[serde(rename_all = "camelCase")]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, twip_wire::Encode, twip_wire::Decode)]
+        #[wire(rename_all = "camelCase")]
         #[non_exhaustive]
         pub enum CommandId {
             $($(#[doc = $doc])* $name,)*
@@ -60,7 +57,7 @@ macro_rules! commands {
 commands! {
     // Text
     /// Types `value` (non-empty) at the selection, replacing it. Undo: typing.
-    InsertText(#[serde(with = "value")] String),
+    InsertText(#[wire(value)] String),
     /// Starts a new paragraph (Enter). Undo: one step.
     InsertParagraph,
     /// A line break (Shift+Enter). Undo: one step.
@@ -70,7 +67,7 @@ commands! {
     /// A column break, in the body outside tables. Undo: one step.
     InsertColumnBreak,
     /// A section break of the given kind, in the body outside tables. Undo: one step.
-    InsertSectionBreak(#[serde(with = "value")] SectionBreakKind),
+    InsertSectionBreak(#[wire(value)] SectionBreakKind),
     /// A tab character. Undo: typing.
     InsertTab,
     /// One character, optionally in a symbol font. Undo: one step.
@@ -86,7 +83,7 @@ commands! {
     /// Pastes the system clipboard, formatted or as text. Undo: one step.
     Paste(PasteOptions),
     /// Pastes `value` as plain text. Undo: one step.
-    PasteText(#[serde(with = "value")] String),
+    PasteText(#[wire(value)] String),
     /// Undoes the last step. State value: the undo label.
     Undo,
     /// Redoes the last undone step. State value: the redo label.
@@ -98,63 +95,63 @@ commands! {
     /// Selects the whole story. Undo: view.
     SelectAll,
     /// Selects the unit at the caret. Undo: view.
-    Select(#[serde(with = "value")] SelectUnit),
+    Select(#[wire(value)] SelectUnit),
     /// Moves or extends the selection. Undo: view.
     MoveSelection(MoveSelection),
     /// Moves to the next or previous cell; `next` from the last cell adds a row (then one step).
-    MoveToCell(#[serde(with = "value")] Order),
+    MoveToCell(#[wire(value)] Order),
     /// Normal, extend (F8) or block (Ctrl+Shift+F8) selection. Undo: view.
-    SetSelectionMode(#[serde(with = "value")] SelectionMode),
+    SetSelectionMode(#[wire(value)] SelectionMode),
     /// Back to an earlier edit location (Shift+F5). Undo: view.
     GoBack,
     /// Leaves a header or footer, a text box, or object selection (Esc). Undo: view.
     Escape,
     /// Selects the next or previous floating object. Undo: view.
-    SelectNextObject(#[serde(with = "value")] Order),
+    SelectNextObject(#[wire(value)] Order),
     /// Moves the caret to the start of page `value` (1…count). Undo: view.
-    GoToPage(#[serde(with = "value")] u32),
+    GoToPage(#[wire(value)] u32),
 
     // Character formatting
     /// Bold on or off. Undo: one step.
-    SetBold(#[serde(with = "value")] bool),
+    SetBold(#[wire(value)] bool),
     /// Italic on or off. Undo: one step.
-    SetItalic(#[serde(with = "value")] bool),
+    SetItalic(#[wire(value)] bool),
     /// The underline style (`none` removes it). Undo: one step.
-    SetUnderline(#[serde(with = "value")] UnderlineStyle),
+    SetUnderline(#[wire(value)] UnderlineStyle),
     /// Strikethrough on or off. Undo: one step.
-    SetStrikethrough(#[serde(with = "value")] bool),
+    SetStrikethrough(#[wire(value)] bool),
     /// Double strikethrough on or off. Undo: one step.
-    SetDoubleStrikethrough(#[serde(with = "value")] bool),
+    SetDoubleStrikethrough(#[wire(value)] bool),
     /// Subscript on or off. Undo: one step.
-    SetSubscript(#[serde(with = "value")] bool),
+    SetSubscript(#[wire(value)] bool),
     /// Superscript on or off. Undo: one step.
-    SetSuperscript(#[serde(with = "value")] bool),
+    SetSuperscript(#[wire(value)] bool),
     /// Small capitals on or off. Undo: one step.
-    SetSmallCaps(#[serde(with = "value")] bool),
+    SetSmallCaps(#[wire(value)] bool),
     /// All capitals on or off. Undo: one step.
-    SetAllCaps(#[serde(with = "value")] bool),
+    SetAllCaps(#[wire(value)] bool),
     /// Hidden text on or off. Undo: one step.
-    SetHidden(#[serde(with = "value")] bool),
+    SetHidden(#[wire(value)] bool),
     /// The font family (non-empty). Undo: one step.
-    SetFont(#[serde(with = "value")] String),
+    SetFont(#[wire(value)] String),
     /// The font size (1…1638 pt, in 0.5 steps). Undo: one step.
-    SetFontSize(#[serde(with = "value")] Points),
+    SetFontSize(#[wire(value)] Points),
     /// The next size up in the standard list. Undo: one step.
     GrowFont,
     /// The next size down in the standard list. Undo: one step.
     ShrinkFont,
     /// The font colour, or automatic. Undo: one step.
-    SetFontColor(#[serde(with = "value")] AutoOr<Color>),
+    SetFontColor(#[wire(value)] AutoOr<Color>),
     /// The highlight colour, or none (`null`). Undo: one step.
-    SetHighlight(#[serde(with = "value")] Option<HighlightColor>),
+    SetHighlight(#[wire(value)] Option<HighlightColor>),
     /// Character spacing, expanded when positive (−1584…1584 pt). Undo: one step.
-    SetCharacterSpacing(#[serde(with = "value")] Points),
+    SetCharacterSpacing(#[wire(value)] Points),
     /// The raised (positive) or lowered position (−1584…1584 pt). Undo: one step.
-    SetCharacterPosition(#[serde(with = "value")] Points),
+    SetCharacterPosition(#[wire(value)] Points),
     /// Removes direct character formatting. Undo: one step.
     ClearFormatting,
     /// Changes the case of the selected text. Undo: one step.
-    ChangeCase(#[serde(with = "value")] CaseChange),
+    ChangeCase(#[wire(value)] CaseChange),
     /// Holds the selection's formatting for `pasteFormatting` (the format painter). Undo: view.
     CopyFormatting,
     /// Applies the held formatting to the selection. Undo: one step.
@@ -162,7 +159,7 @@ commands! {
 
     // Paragraph formatting
     /// The selected paragraphs' alignment. Undo: one step.
-    SetAlignment(#[serde(with = "value")] Alignment),
+    SetAlignment(#[wire(value)] Alignment),
     /// The selected paragraphs' line spacing. Undo: one step.
     SetLineSpacing(LineSpacing),
     /// Space before and after the selected paragraphs (0…1584 pt, or auto). Undo: one step.
@@ -174,21 +171,21 @@ commands! {
     /// Outdents the selected paragraphs to the previous stop. Undo: one step.
     DecreaseIndent,
     /// An existing paragraph style. Undo: one step.
-    SetParagraphStyle(#[serde(with = "value")] StyleId),
+    SetParagraphStyle(#[wire(value)] StyleId),
     /// Changes a style to the selection's formatting: its paragraph's and its first run's direct formatting become the
     /// style's. Undo: one step.
-    UpdateStyleToSelection(#[serde(with = "value")] StyleId),
+    UpdateStyleToSelection(#[wire(value)] StyleId),
     /// Deletes a style the document made: its paragraphs take the default paragraph style, its runs lose it, and the
     /// styles based on it take its base. Built-in styles can't be deleted. Undo: one step.
-    DeleteStyle(#[serde(with = "value")] StyleId),
+    DeleteStyle(#[wire(value)] StyleId),
     /// Sets a style's list flags: visibility, priority, gallery, lock. Undo: one step.
     SetStyleMeta(StyleMetaChange),
     /// Sets the document's default formatting (Manage Styles' Set Defaults). Undo: one step.
     SetDocumentDefaults(DocumentDefaults),
     /// Bullets, numbering, or no list (`null`). Undo: one step.
-    SetList(#[serde(with = "value")] Option<ListKind>),
+    SetList(#[wire(value)] Option<ListKind>),
     /// One list level deeper or shallower, in a list. Undo: one step.
-    SetListLevel(#[serde(with = "value")] LevelChange),
+    SetListLevel(#[wire(value)] LevelChange),
     /// Defines the selection's list levels (Define New Bullet, Number Format, Multilevel List): for its whole list,
     /// from this paragraph on, or for the selected paragraphs. Outside a list, makes a new one. Undo: one step.
     SetListDefinition(ListDefinitionChange),
@@ -197,7 +194,7 @@ commands! {
     /// Applies a list gallery entry (`listGalleries`): a library or recent entry defines the selection's list (the
     /// current level for bullets and numbering, every level for a multilevel list), or makes a new one; a document
     /// list or list style continues that list. Undo: one step.
-    ApplyListEntry(#[serde(with = "value")] super::services::ListEntryId),
+    ApplyListEntry(#[wire(value)] super::services::ListEntryId),
     /// Restarts the list at this paragraph, at its level's start. Undo: one step.
     RestartNumbering,
     /// Continues the previous list from this paragraph. Undo: one step.
@@ -208,9 +205,9 @@ commands! {
     /// Keep with next, keep lines together, page break before and widow control. Undo: one step.
     SetParagraphFlow(ParagraphFlow),
     /// A box, a bottom border or none (a ½ pt single line). Undo: one step.
-    SetParagraphBorders(#[serde(with = "value")] BorderPreset),
+    SetParagraphBorders(#[wire(value)] BorderPreset),
     /// Paragraph shading, or none (`null`). Undo: one step.
-    SetParagraphShading(#[serde(with = "value")] Option<Color>),
+    SetParagraphShading(#[wire(value)] Option<Color>),
     /// The selected paragraphs' border lines: each edge set, removed (`null`) or kept (absent). Undo: one step.
     SetParagraphBorderLines(ParagraphBorderLines),
     /// Shading of the selected paragraphs or text: its fill, pattern and pattern color. Undo: one step.
@@ -232,28 +229,28 @@ commands! {
     /// Moves the stop at `from` (within 0.5 pt) to `to`. Undo: one step.
     MoveTabStop(MoveTabStop),
     /// Deletes the stop at `value`; an inherited stop is cleared in the paragraph. Undo: one step.
-    DeleteTabStop(#[serde(with = "value")] Points),
+    DeleteTabStop(#[wire(value)] Points),
     /// Clears the paragraphs' own and inherited stops. Undo: one step.
     ClearTabStops,
     /// The document's default tab spacing (1…1584 pt). Undo: one step.
-    SetDefaultTabStop(#[serde(with = "value")] Points),
+    SetDefaultTabStop(#[wire(value)] Points),
 
     // Hyphenation
     /// Automatic hyphenation for the document, with the hyphenation patterns of the text's language. Undo: one step.
-    SetAutoHyphenation(#[serde(with = "value")] bool),
+    SetAutoHyphenation(#[wire(value)] bool),
     /// The hyphenation zone (0…1584 pt): in documents in compatibility mode 14 and earlier, a word is hyphenated only
     /// when moving it whole would leave this gap. Undo: one step.
-    SetHyphenationZone(#[serde(with = "value")] Points),
+    SetHyphenationZone(#[wire(value)] Points),
     /// The most consecutive lines that may end in a hyphen (0…32767; 0 for no limit). Undo: one step.
-    SetConsecutiveHyphenLimit(#[serde(with = "value")] u32),
+    SetConsecutiveHyphenLimit(#[wire(value)] u32),
     /// Whether words in capitals are hyphenated. Undo: one step.
-    SetHyphenateCaps(#[serde(with = "value")] bool),
+    SetHyphenateCaps(#[wire(value)] bool),
 
     // Page layout
     /// The selection's sections' margins (0…1584 pt; left + right + gutter < page width). Undo: one step.
     SetMargins(Margins),
     /// Portrait or landscape. Undo: one step.
-    SetOrientation(#[serde(with = "value")] Orientation),
+    SetOrientation(#[wire(value)] Orientation),
     /// The paper size, in portrait (36…1584 pt). Undo: one step.
     SetPaperSize(PaperSize),
     /// Text columns (1…45), their spacing and separator. Undo: one step.
@@ -261,9 +258,9 @@ commands! {
     /// The header and footer distances from the page edge. Undo: one step.
     SetHeaderFooterDistance(HeaderFooterDistance),
     /// A different first page header and footer. Undo: one step.
-    SetDifferentFirstPage(#[serde(with = "value")] bool),
+    SetDifferentFirstPage(#[wire(value)] bool),
     /// Different odd and even page headers and footers. Undo: one step.
-    SetDifferentOddEvenPages(#[serde(with = "value")] bool),
+    SetDifferentOddEvenPages(#[wire(value)] bool),
     /// Moves a text column boundary (from the ruler). Undo: one step.
     MoveColumnBoundary(ColumnBoundaryMove),
 
@@ -311,7 +308,7 @@ commands! {
     /// Deletes the table. Undo: one step.
     DeleteTable,
     /// Deletes the selected cells, shifting the rest up or left. Undo: one step.
-    DeleteCells(#[serde(with = "value")] CellShift),
+    DeleteCells(#[wire(value)] CellShift),
     /// Merges a rectangular block of cells. Undo: one step.
     MergeCells,
     /// Splits the selected cells (1…63 columns, 1…32767 rows). Undo: one step.
@@ -323,25 +320,25 @@ commands! {
     /// Gives the selected columns equal widths. Undo: one step.
     DistributeColumns,
     /// Moves the selected rows up or down. Undo: one step.
-    MoveRows(#[serde(with = "value")] VerticalDirection),
+    MoveRows(#[wire(value)] VerticalDirection),
     /// Fits the columns to their contents, the window, or fixed widths. Undo: one step.
-    AutoFitColumns(#[serde(with = "value")] AutoFit),
+    AutoFitColumns(#[wire(value)] AutoFit),
     /// The selected cells' vertical alignment. Undo: one step.
-    SetCellAlignment(#[serde(with = "value")] CellAlignment),
+    SetCellAlignment(#[wire(value)] CellAlignment),
     /// Cell shading, or none (`null`). Undo: one step.
-    SetCellShading(#[serde(with = "value")] Option<Color>),
+    SetCellShading(#[wire(value)] Option<Color>),
     /// Borders on the selected cells' edges. Undo: one step.
     SetCellBorders(CellBorders),
     /// The selected cells' margins (0…1584 pt). Undo: one step.
     SetCellMargins(CellMargins),
     /// Repeat the selected rows as header rows. Undo: one step.
-    SetHeaderRow(#[serde(with = "value")] bool),
+    SetHeaderRow(#[wire(value)] bool),
     /// The selected rows' height, or automatic. Undo: one step.
-    SetRowHeight(#[serde(with = "value")] AutoOr<RowHeight>),
+    SetRowHeight(#[wire(value)] AutoOr<RowHeight>),
     /// Whether the selected rows can break across pages. Undo: one step.
-    SetRowCanBreak(#[serde(with = "value")] bool),
+    SetRowCanBreak(#[wire(value)] bool),
     /// The selected columns' width (1…1584 pt). Undo: one step.
-    SetColumnWidth(#[serde(with = "value")] Points),
+    SetColumnWidth(#[wire(value)] Points),
     /// Moves a column boundary of the caret's row (from the rulers and cell edges). Undo: one step.
     MoveTableColumnBoundary(BoundaryMove),
     /// Moves a row boundary of the caret's table. Undo: one step.
@@ -349,16 +346,16 @@ commands! {
     /// The table's preferred width. Undo: one step.
     SetTableWidth(TableWidth),
     /// The table's alignment on the page. Undo: one step.
-    SetTableAlignment(#[serde(with = "value")] HorizontalAlignment),
+    SetTableAlignment(#[wire(value)] HorizontalAlignment),
     /// The table's indent (−1584…1584 pt). Undo: one step.
-    SetTableIndent(#[serde(with = "value")] Points),
+    SetTableIndent(#[wire(value)] Points),
     /// An existing table style. Undo: one step.
-    SetTableStyle(#[serde(with = "value")] StyleId),
+    SetTableStyle(#[wire(value)] StyleId),
     /// Which parts of the table style apply. Undo: one step.
     SetTableStyleOptions(TableStyleChange),
     /// Where the table is placed, and what it is measured from: a table without a position becomes positioned (text
     /// wraps around it); none (`null`) puts it back in the text. Undo: one step.
-    SetTablePosition(#[serde(with = "value")] Option<TablePosition>),
+    SetTablePosition(#[wire(value)] Option<TablePosition>),
 
     // Objects
     /// The selected object's size (1…1584 pt). Undo: one step.
@@ -366,9 +363,9 @@ commands! {
     /// The selected picture at its original size. Undo: one step.
     ResetObjectSize,
     /// How text wraps around the selected object. Undo: one step.
-    SetObjectWrap(#[serde(with = "value")] ObjectWrap),
+    SetObjectWrap(#[wire(value)] ObjectWrap),
     /// Locks a floating object's anchor. Undo: one step.
-    SetAnchorLocked(#[serde(with = "value")] bool),
+    SetAnchorLocked(#[wire(value)] bool),
     /// Where the selected floating object is, and what it is measured from. Undo: one step.
     SetObjectPosition(ObjectPosition),
     /// The sides text wraps on around the selected floating object, and its distance from the text. Undo: one step.
@@ -379,11 +376,11 @@ commands! {
     DeleteObject,
     /// The selected shape's preset geometry; its text, fill, outline and effects stay and its adjust values reset.
     /// Undo: one step.
-    SetShapePreset(#[serde(with = "value")] ShapePreset),
+    SetShapePreset(#[wire(value)] ShapePreset),
     /// One of the selected shape's adjust values. Undo: one step.
     SetShapeAdjust(ShapeAdjust),
     /// The selected objects' fill (`fromStyle`: the style reference's again). Undo: one step.
-    SetShapeFill(#[serde(with = "value")] FillValue),
+    SetShapeFill(#[wire(value)] FillValue),
     /// The selected objects' outline; what isn't given is kept. Undo: one step.
     SetShapeLine(LineChange),
     /// The selected objects' shadows, glow, soft edge and blur; what isn't given is kept, `null` removes. Undo: one
@@ -394,17 +391,17 @@ commands! {
     /// The selected picture's transparency, greyscale, brightness and contrast. Undo: one step.
     SetPictureAdjust(PictureAdjustChange),
     /// The selected objects' rotation (0…360°, clockwise). Undo: one step.
-    SetObjectRotation(#[serde(with = "value")] Degrees),
+    SetObjectRotation(#[wire(value)] Degrees),
     /// Flips the selected objects. Undo: one step.
-    FlipObject(#[serde(with = "value")] FlipAxis),
+    FlipObject(#[wire(value)] FlipAxis),
     /// Moves the selected floating object in the paint order, or behind or in front of the text. Undo: one step.
-    ArrangeObject(#[serde(with = "value")] Arrange),
+    ArrangeObject(#[wire(value)] Arrange),
     /// Groups the selected floating objects (two or more, one story). Undo: one step.
     GroupObjects,
     /// Ungroups the selected group. Undo: one step.
     UngroupObjects,
     /// Selects the next or previous child of the selected group. Undo: view.
-    SelectGroupChild(#[serde(with = "value")] Order),
+    SelectGroupChild(#[wire(value)] Order),
 
     // Fields
     /// Changes a field's code or result. Undo: one step.
@@ -457,7 +454,7 @@ commands! {
     /// Wraps the selection in a repeating section; result `{ id }`. Undo: one step.
     WrapInRepeatingSection(RepeatingSection),
     /// Removes a field, or a control with its content. Undo: one step.
-    RemoveElement(#[serde(with = "value")] ElementId),
+    RemoveElement(#[wire(value)] ElementId),
     /// Replaces text in element codes, tags or titles, case-sensitive; result `{ changed }`. Undo: one step.
     ReplaceInElements(ReplaceInElements),
     /// Rewrites a font family's name in the document; result `{ changed, skipped }`. Undo: one step.
@@ -480,13 +477,13 @@ commands! {
 
     // Review
     /// Track changes on or off. Undo: one step.
-    SetTrackChanges(#[serde(with = "value")] bool),
+    SetTrackChanges(#[wire(value)] bool),
     /// How revisions show. Undo: view.
-    SetMarkupView(#[serde(with = "value")] MarkupView),
+    SetMarkupView(#[wire(value)] MarkupView),
     /// Accepts a revision (a move as a pair). Undo: one step.
-    AcceptRevision(#[serde(with = "value")] RevisionId),
+    AcceptRevision(#[wire(value)] RevisionId),
     /// Rejects a revision (a move as a pair). Undo: one step.
-    RejectRevision(#[serde(with = "value")] RevisionId),
+    RejectRevision(#[wire(value)] RevisionId),
     /// Accepts the revisions in the selection. Undo: one step.
     AcceptRevisionsInSelection,
     /// Rejects the revisions in the selection. Undo: one step.
@@ -496,33 +493,33 @@ commands! {
     /// Rejects every revision, or one author's. Undo: one step.
     RejectAllRevisions(AuthorFilter),
     /// Selects the next or previous revision. Undo: view.
-    SelectRevision(#[serde(with = "value")] Order),
+    SelectRevision(#[wire(value)] Order),
     /// A comment on the selection, or the word at the caret; result `{ id }`. Undo: one step.
-    AddComment(#[serde(with = "value")] Body),
+    AddComment(#[wire(value)] Body),
     /// A reply in a thread; result `{ id }`. Undo: one step.
     ReplyToComment(CommentReply),
     /// Changes a comment's body. Undo: one step.
     EditComment(CommentEdit),
     /// Deletes a reply, or the whole thread when it's the first comment. Undo: one step.
-    DeleteComment(#[serde(with = "value")] CommentId),
+    DeleteComment(#[wire(value)] CommentId),
     /// Marks a thread done or open. Undo: one step.
     ResolveComment(CommentResolve),
     /// The thread the application shows as active, or none. Undo: view.
-    SetActiveComment(#[serde(with = "value")] Option<CommentId>),
+    SetActiveComment(#[wire(value)] Option<CommentId>),
     /// Selects and reveals a comment's range. Undo: view.
-    SelectComment(#[serde(with = "value")] CommentId),
+    SelectComment(#[wire(value)] CommentId),
     /// The colour an author's revisions and comments show in. Undo: view.
     SetAuthorColor(AuthorColor),
 
     // View
     /// The zoom (10…500 percent), or a fit. Undo: view.
-    SetZoom(#[serde(with = "value")] Zoom),
+    SetZoom(#[wire(value)] Zoom),
     /// Formatting marks, gridlines and text boundaries. Undo: view.
     SetViewOptions(ViewOptions),
     /// Editing or design mode. Undo: view.
-    SetMode(#[serde(with = "value")] Mode),
+    SetMode(#[wire(value)] Mode),
     /// What a click on the ruler adds; answers the tab type picker. Undo: view.
-    SetRulerTabType(#[serde(with = "value")] TabSelector),
+    SetRulerTabType(#[wire(value)] TabSelector),
     /// Asks for the tab type picker (`popoverRequested`). Undo: view.
     ShowTabTypes,
     /// Asks for the options of the tab stop nearest the caret (`popoverRequested`). Undo: view.
@@ -544,8 +541,8 @@ commands! {
 }
 
 /// The kinds of section break.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum SectionBreakKind {
     /// Starts the new section on the next page.
     NextPage,
@@ -558,19 +555,19 @@ pub enum SectionBreakKind {
 }
 
 /// `insertSymbol`'s options.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct InsertSymbol {
     /// The character to insert.
     pub char: char,
     /// The symbol font (Symbol, Wingdings); `None` keeps the font at the selection.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub font: Option<String>,
 }
 
 /// What `delete` removes when the selection is collapsed.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum DeleteUnit {
     /// One character (a grapheme).
     Character,
@@ -579,19 +576,19 @@ pub enum DeleteUnit {
 }
 
 /// `delete`'s options.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DeleteOptions {
     /// Backward (Backspace) or forward (Delete).
     pub direction: Direction,
     /// Default: character.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub unit: Option<DeleteUnit>,
 }
 
 /// How `paste` takes the clipboard.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum PasteAs {
     /// With its formatting.
     Formatted,
@@ -600,17 +597,17 @@ pub enum PasteAs {
 }
 
 /// `paste`'s options.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PasteOptions {
     /// Default: formatted.
-    #[serde(rename = "as", default, skip_serializing_if = "Option::is_none")]
+    #[wire(rename = "as", default, skip_serializing_if = "Option::is_none")]
     pub as_: Option<PasteAs>,
 }
 
 /// What `select` selects at the caret.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum SelectUnit {
     /// The word at the caret.
     Word,
@@ -629,8 +626,8 @@ pub enum SelectUnit {
 }
 
 /// What `moveSelection` moves by.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum MoveUnit {
     /// One character.
     Character,
@@ -655,21 +652,21 @@ pub enum MoveUnit {
 }
 
 /// `moveSelection`'s options.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MoveSelection {
     /// The unit to move by.
     pub by: MoveUnit,
     /// Which way to move.
     pub direction: Direction,
     /// Extends the selection instead of moving the caret. Default: false.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub extend: Option<bool>,
 }
 
 /// How the selection grows.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum SelectionMode {
     /// Moving the caret collapses the selection.
     #[default]
@@ -681,8 +678,8 @@ pub enum SelectionMode {
 }
 
 /// `changeCase`'s target.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum CaseChange {
     /// lowercase.
     Lower,
@@ -697,32 +694,32 @@ pub enum CaseChange {
 }
 
 /// `setParagraphBorderLines`'s options: each edge set, removed (`null`) or, absent, kept.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ParagraphBorderLines {
     /// The top edge.
-    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "super::services::present")]
+    #[wire(default, skip_serializing_if = "Option::is_none", present)]
     pub top: Option<Option<Border>>,
     /// The bottom edge.
-    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "super::services::present")]
+    #[wire(default, skip_serializing_if = "Option::is_none", present)]
     pub bottom: Option<Option<Border>>,
     /// The left edge.
-    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "super::services::present")]
+    #[wire(default, skip_serializing_if = "Option::is_none", present)]
     pub left: Option<Option<Border>>,
     /// The right edge.
-    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "super::services::present")]
+    #[wire(default, skip_serializing_if = "Option::is_none", present)]
     pub right: Option<Option<Border>>,
     /// The line between paragraphs with the same borders.
-    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "super::services::present")]
+    #[wire(default, skip_serializing_if = "Option::is_none", present)]
     pub between: Option<Option<Border>>,
     /// A shadow on the bottom and right edges (Shadow setting).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub shadow: Option<bool>,
 }
 
 /// What page borders are measured from.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum PageBorderOffset {
     /// The page's edge.
     #[default]
@@ -732,8 +729,8 @@ pub enum PageBorderOffset {
 }
 
 /// The pages a section's borders show on.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum PageBorderDisplay {
     /// Every page.
     #[default]
@@ -745,8 +742,8 @@ pub enum PageBorderDisplay {
 }
 
 /// The sections page borders apply to.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum PageBorderScope {
     /// Every section.
     WholeDocument,
@@ -756,49 +753,49 @@ pub enum PageBorderScope {
 }
 
 /// `setPageBorders`'s options: each edge set, removed (`null`) or, absent, kept.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PageBordersChange {
     /// The top edge.
-    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "super::services::present")]
+    #[wire(default, skip_serializing_if = "Option::is_none", present)]
     pub top: Option<Option<Border>>,
     /// The bottom edge.
-    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "super::services::present")]
+    #[wire(default, skip_serializing_if = "Option::is_none", present)]
     pub bottom: Option<Option<Border>>,
     /// The left edge.
-    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "super::services::present")]
+    #[wire(default, skip_serializing_if = "Option::is_none", present)]
     pub left: Option<Option<Border>>,
     /// The right edge.
-    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "super::services::present")]
+    #[wire(default, skip_serializing_if = "Option::is_none", present)]
     pub right: Option<Option<Border>>,
     /// A shadow on the bottom and right edges.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub shadow: Option<bool>,
     /// What the borders are measured from.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub offset_from: Option<PageBorderOffset>,
     /// The pages they show on.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub display: Option<PageBorderDisplay>,
     /// The sections they apply to.
-    #[serde(default)]
+    #[wire(default)]
     pub apply_to: PageBorderScope,
 }
 
 /// `setTextBorder`'s options: the box's line, or none to remove it.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TextBorderChange {
     /// The line, or none.
     pub border: Option<Border>,
     /// A shadow.
-    #[serde(default)]
+    #[wire(default)]
     pub shadow: bool,
 }
 
 /// What shading applies to.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum ShadingTarget {
     /// The selected paragraphs.
     #[default]
@@ -811,8 +808,8 @@ pub enum ShadingTarget {
 
 /// A shading pattern: clear (the fill only), solid (the pattern color), or a percentage of the pattern color over the
 /// fill.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum ShadingPattern {
     /// The fill only.
     #[default]
@@ -890,24 +887,24 @@ impl ShadingPattern {
 }
 
 /// `setShading`'s options.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ShadingChange {
     /// The paragraphs or the text.
     pub target: ShadingTarget,
     /// The fill, or none (no shading at all, with a clear pattern).
     pub fill: NoneOr<Color>,
     /// The pattern.
-    #[serde(default)]
+    #[wire(default)]
     pub pattern: ShadingPattern,
     /// The pattern's color.
-    #[serde(default)]
+    #[wire(default)]
     pub color: AutoOr<Color>,
 }
 
 /// Whether text wraps around a frame.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum FrameWrap {
     /// Text stays above and below the frame.
     None,
@@ -917,8 +914,8 @@ pub enum FrameWrap {
 }
 
 /// How a frame's width is set.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum FrameWidthRule {
     /// As wide as its text.
     #[default]
@@ -928,8 +925,8 @@ pub enum FrameWidthRule {
 }
 
 /// How a frame's height is set.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum FrameHeightRule {
     /// As tall as its text.
     #[default]
@@ -941,8 +938,8 @@ pub enum FrameHeightRule {
 }
 
 /// A frame's horizontal alignment.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum FrameHorizontalAlign {
     /// Left.
     Left,
@@ -957,8 +954,8 @@ pub enum FrameHorizontalAlign {
 }
 
 /// A frame's vertical alignment.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum FrameVerticalAlign {
     /// Top.
     Top,
@@ -973,8 +970,8 @@ pub enum FrameVerticalAlign {
 }
 
 /// What a frame's horizontal position is relative to.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum FrameHorizontalRelative {
     /// The page margins.
     Margin,
@@ -986,8 +983,8 @@ pub enum FrameHorizontalRelative {
 }
 
 /// What a frame's vertical position is relative to.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum FrameVerticalRelative {
     /// The page margins.
     Margin,
@@ -999,8 +996,8 @@ pub enum FrameVerticalRelative {
 }
 
 /// `setFrame`'s options: a frame's wrapping, size, position and distance from text.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FrameProperties {
     /// Text wrapping.
     pub wrap: FrameWrap,
@@ -1033,82 +1030,82 @@ pub struct FrameProperties {
 }
 
 /// `setStyleMeta`'s options: what isn't given is kept.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct StyleMetaChange {
     /// The style.
     pub id: StyleId,
     /// Whether it shows in style lists.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub visibility: Option<super::services::StyleVisibility>,
     /// Its sort priority (`w:uiPriority`).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub priority: Option<u32>,
     /// Shown in the Styles gallery.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub quick: Option<bool>,
     /// Restricted while formatting is protected.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub locked: Option<bool>,
 }
 
 /// `setDocumentDefaults`'s options: the formatting text has before any style's; what isn't given is kept.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DocumentDefaults {
     /// The font.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub font: Option<String>,
     /// The size.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub size: Option<Points>,
     /// The font color.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<AutoOr<Color>>,
     /// The space before and after paragraphs.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub spacing: Option<ParagraphSpacing>,
     /// The line spacing.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub line_spacing: Option<LineSpacing>,
     /// The left and right indents.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub indents: Option<Indents>,
 }
 
 /// `setParagraphSpacing`'s options.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ParagraphSpacing {
     /// Space before, or auto.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub before: Option<AutoOr<Points>>,
     /// Space after, or auto.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub after: Option<AutoOr<Points>>,
 }
 
 /// `setIndents`'s options (−1584…1584 pt; `firstLine` and `hanging` exclude each other, both ≥ 0).
-#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Indents {
     /// The left indent.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub left: Option<Points>,
     /// The right indent.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub right: Option<Points>,
     /// The first line's extra indent.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub first_line: Option<Points>,
     /// The hanging indent of the lines after the first.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub hanging: Option<Points>,
 }
 
 /// A list level's number style.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum NumberFormat {
     /// 1, 2, 3.
     #[default]
@@ -1174,8 +1171,8 @@ impl NumberFormat {
 }
 
 /// How a list level's number aligns at its position.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum LevelAlignment {
     /// Left.
     #[default]
@@ -1187,8 +1184,8 @@ pub enum LevelAlignment {
 }
 
 /// What follows a list level's number.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum FollowNumber {
     /// A tab.
     #[default]
@@ -1200,8 +1197,8 @@ pub enum FollowNumber {
 }
 
 /// A list level: its number or bullet, and where it and the text start.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ListLevel {
     /// The number style.
     pub format: NumberFormat,
@@ -1215,31 +1212,31 @@ pub struct ListLevel {
     /// What follows the number.
     pub follow: FollowNumber,
     /// The tab stop after the number, when `follow` is a tab: none uses the text indent.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub tab: Option<Points>,
     /// Where the number is, from the margin.
     pub number_position: Points,
     /// Where the text is, from the margin.
     pub text_indent: Points,
     /// The level after which it restarts (1 to 9); 0 never; none after the level above.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub restart_after: Option<u8>,
     /// Legal style numbering: the numbers of every level in Arabic numerals.
     pub legal: bool,
     /// The paragraph style linked to the level.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub linked_style: Option<StyleId>,
     /// The number's or bullet's font.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub font: Option<String>,
     /// A picture bullet's image (PNG, JPEG or GIF).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub picture: Option<super::value::Bytes>,
 }
 
 /// What a list definition applies to.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum ListApplyTo {
     /// The selection's whole list.
     #[default]
@@ -1251,22 +1248,22 @@ pub enum ListApplyTo {
 }
 
 /// `setListDefinition`'s options: level `k` of `levels` defines level `k`; levels past its end are kept.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ListDefinitionChange {
     /// The levels, from the first.
     pub levels: Vec<ListLevel>,
     /// What they apply to.
-    #[serde(default)]
+    #[wire(default)]
     pub apply_to: ListApplyTo,
     /// The list's name (the ListNum field list name); none keeps it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
 }
 
 /// How Set Numbering Value sets the number.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum NumberingMode {
     /// Start a new list.
     #[default]
@@ -1276,21 +1273,21 @@ pub enum NumberingMode {
 }
 
 /// `setNumberingValue`'s options.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct NumberingValue {
     /// Start a new list, or continue the previous one.
     pub mode: NumberingMode,
     /// The value to start at (a new list), or to skip to (continuing, with `advance`).
     pub value: u32,
     /// Continuing: skip numbers to `value`.
-    #[serde(default)]
+    #[wire(default)]
     pub advance: bool,
 }
 
 /// `adjustListIndents`'s options.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ListIndents {
     /// Where the number is, from the margin.
     pub number_position: Points,
@@ -1299,13 +1296,13 @@ pub struct ListIndents {
     /// What follows the number.
     pub follow: FollowNumber,
     /// The tab stop after the number; none uses the text indent.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub tab: Option<Points>,
 }
 
 /// The kinds of list `setList` applies.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum ListKind {
     /// A bulleted list.
     Bullet,
@@ -1314,8 +1311,8 @@ pub enum ListKind {
 }
 
 /// One level deeper or shallower.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum LevelChange {
     /// One level deeper.
     Increase,
@@ -1324,26 +1321,26 @@ pub enum LevelChange {
 }
 
 /// `setParagraphFlow`'s options.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ParagraphFlow {
     /// Keeps the paragraph on the same page as the next one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub keep_with_next: Option<bool>,
     /// Keeps the paragraph's lines on one page.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub keep_lines_together: Option<bool>,
     /// Starts the paragraph on a new page.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub page_break_before: Option<bool>,
     /// Prevents a single first or last line on a page.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub widow_control: Option<bool>,
 }
 
 /// The paragraph border presets.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum BorderPreset {
     /// A box around the paragraphs.
     Box,
@@ -1354,22 +1351,22 @@ pub enum BorderPreset {
 }
 
 /// `addTabStop`'s options.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AddTabStop {
     /// From the paragraph's left text edge (0…1584 pt).
     pub position: Points,
     /// Default: left.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub alignment: Option<TabAlignment>,
     /// Default: none.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub leader: Option<TabLeader>,
 }
 
 /// `moveTabStop`'s options.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MoveTabStop {
     /// The stop's current position.
     pub from: Points,
@@ -1378,29 +1375,29 @@ pub struct MoveTabStop {
 }
 
 /// `setMargins`'s options.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Margins {
     /// The top margin.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub top: Option<Points>,
     /// The bottom margin.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub bottom: Option<Points>,
     /// The left margin.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub left: Option<Points>,
     /// The right margin.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub right: Option<Points>,
     /// The gutter, added on the binding side.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub gutter: Option<Points>,
 }
 
 /// `setPaperSize`'s options.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PaperSize {
     /// The paper width.
     pub width: Points,
@@ -1409,34 +1406,34 @@ pub struct PaperSize {
 }
 
 /// `setColumns`'s options.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Columns {
     /// The number of text columns (1…45).
     pub count: u32,
     /// The space between columns.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub spacing: Option<Points>,
     /// Draws a line between columns.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub separator: Option<bool>,
 }
 
 /// `setHeaderFooterDistance`'s options.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct HeaderFooterDistance {
     /// The header's distance from the top edge.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub header: Option<Points>,
     /// The footer's distance from the bottom edge.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub footer: Option<Points>,
 }
 
 /// `moveColumnBoundary`'s options: the boundary after text column `column` (from 0) moves to `to`.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ColumnBoundaryMove {
     /// The text column whose right boundary moves, from 0.
     pub column: u32,
@@ -1445,8 +1442,8 @@ pub struct ColumnBoundaryMove {
 }
 
 /// A table boundary to move: column or row boundary `index` (from 0) moves to `to`.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct BoundaryMove {
     /// The boundary's index, from 0.
     pub index: u32,
@@ -1455,8 +1452,8 @@ pub struct BoundaryMove {
 }
 
 /// What a page number field shows.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum PageNumberFormat {
     /// The page number.
     Page,
@@ -1467,8 +1464,8 @@ pub enum PageNumberFormat {
 }
 
 /// Where a page number goes.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum PageNumberPlace {
     /// At the caret.
     Caret,
@@ -1479,22 +1476,22 @@ pub enum PageNumberPlace {
 }
 
 /// `insertPageNumber`'s options.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PageNumber {
     /// What the field shows.
     pub format: PageNumberFormat,
     /// Default: caret.
-    #[serde(rename = "where", default, skip_serializing_if = "Option::is_none")]
+    #[wire(rename = "where", default, skip_serializing_if = "Option::is_none")]
     pub place: Option<PageNumberPlace>,
     /// The alignment in the header or footer; `None` keeps the paragraph's.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub alignment: Option<HorizontalAlignment>,
 }
 
 /// `insertTable`'s options.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TableSize {
     /// The number of rows.
     pub rows: u32,
@@ -1503,56 +1500,56 @@ pub struct TableSize {
 }
 
 /// `insertPicture`'s options.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Picture {
     /// The image file's bytes.
     pub data: Bytes,
     /// The alternative text.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub alt_text: Option<String>,
 }
 
 /// `insertHyperlink`'s options.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Hyperlink {
     /// The link's address (a URL or `#bookmark`).
     pub address: String,
     /// The text to show; `None` uses the selection, or the address when collapsed.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
 }
 
 /// `editHyperlink`'s options.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct HyperlinkEdit {
     /// The new address.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub address: Option<String>,
     /// The new display text.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
 }
 
 /// `insertField`'s options.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct InsertField {
     /// The field code (`PAGE`, `DATE \@ "d MMMM yyyy"`).
     pub code: String,
     /// The result shown until the field updates.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub display: Option<String>,
     /// Shows the code instead of the result.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub show_code: Option<bool>,
 }
 
 /// Above or below.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum VerticalSide {
     /// Above the selection.
     Above,
@@ -1561,8 +1558,8 @@ pub enum VerticalSide {
 }
 
 /// Left or right.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum HorizontalSide {
     /// To the selection's left.
     Left,
@@ -1571,32 +1568,32 @@ pub enum HorizontalSide {
 }
 
 /// `insertRows`'s options.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct InsertRows {
     /// Above or below the selected rows.
-    #[serde(rename = "where")]
+    #[wire(rename = "where")]
     pub side: VerticalSide,
     /// Default: 1.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub count: Option<u32>,
 }
 
 /// `insertColumns`'s options.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct InsertColumns {
     /// Left or right of the selected columns.
-    #[serde(rename = "where")]
+    #[wire(rename = "where")]
     pub side: HorizontalSide,
     /// Default: 1.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub count: Option<u32>,
 }
 
 /// Where `deleteCells` shifts the remaining cells.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum CellShift {
     /// Shifts the cells below up.
     Up,
@@ -1605,19 +1602,19 @@ pub enum CellShift {
 }
 
 /// `splitCells`'s options.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SplitCells {
     /// The number of columns to split each cell into.
     pub columns: u32,
     /// Default: 1.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub rows: Option<u32>,
 }
 
 /// Up or down.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum VerticalDirection {
     /// Up.
     Up,
@@ -1626,8 +1623,8 @@ pub enum VerticalDirection {
 }
 
 /// What `autoFitColumns` fits the columns to.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum AutoFit {
     /// Fits the columns to their contents.
     Contents,
@@ -1638,8 +1635,8 @@ pub enum AutoFit {
 }
 
 /// The cell edges `setCellBorders` sets.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum BorderEdges {
     /// Every edge.
     All,
@@ -1664,8 +1661,8 @@ pub enum BorderEdges {
 }
 
 /// A border line's style.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum BorderStyle {
     /// A single line.
     Single,
@@ -1754,8 +1751,8 @@ impl BorderStyle {
 }
 
 /// A border line.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Border {
     /// The line style.
     pub style: BorderStyle,
@@ -1766,157 +1763,157 @@ pub struct Border {
 }
 
 /// `setCellBorders`'s options.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CellBorders {
     /// Which edges of the selected cells.
     pub edges: BorderEdges,
     /// Default: a ½ pt single automatic line.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub border: Option<Border>,
 }
 
 /// `setCellMargins`'s options.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CellMargins {
     /// The top margin.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub top: Option<Points>,
     /// The bottom margin.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub bottom: Option<Points>,
     /// The left margin.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub left: Option<Points>,
     /// The right margin.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub right: Option<Points>,
 }
 
 /// `setTableStyleOptions`'s options.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TableStyleChange {
     /// Formats the first row as a header.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub header_row: Option<bool>,
     /// Formats the last row as a total.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub total_row: Option<bool>,
     /// Formats the first column.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub first_column: Option<bool>,
     /// Formats the last column.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub last_column: Option<bool>,
     /// Alternates row shading.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub banded_rows: Option<bool>,
     /// Alternates column shading.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub banded_columns: Option<bool>,
 }
 
 /// `setObjectSize`'s options.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ObjectSize {
     /// The width.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub width: Option<Points>,
     /// The height.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub height: Option<Points>,
     /// Keeps the aspect ratio when one side is set.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub lock_aspect: Option<bool>,
 }
 
 /// `setObjectPosition`'s options; what isn't given is kept.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ObjectPosition {
     /// The horizontal place.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub horizontal: Option<HorizontalPosition>,
     /// The vertical place.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub vertical: Option<VerticalPosition>,
     /// Other floating objects may overlap it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub allow_overlap: Option<bool>,
     /// In a table cell, it is placed and kept within the cell.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub layout_in_cell: Option<bool>,
 }
 
 /// `setTablePosition`'s value: a positioned table's place on each axis, as `setObjectPosition` gives an object's, and
 /// its distance from the text around it; what isn't given is kept. A table is measured from the column, the margin or
 /// the page across, and from the paragraph, the margin or the page down.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TablePosition {
     /// The horizontal place.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub horizontal: Option<HorizontalPosition>,
     /// The vertical place.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub vertical: Option<VerticalPosition>,
     /// How far the text around it keeps (0…1584 pt).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub wrap_distance: Option<TextDistance>,
 }
 
 /// `setObjectWrapOptions`'s options; what isn't given is kept. Distances are 0…1584 pt.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ObjectWrapOptions {
     /// The sides text wraps on.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub side: Option<WrapSide>,
     /// The distance from the text above.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub top: Option<Points>,
     /// The distance from the text below.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub bottom: Option<Points>,
     /// The distance from the text on the left.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub left: Option<Points>,
     /// The distance from the text on the right.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub right: Option<Points>,
 }
 
 /// `setAltText`'s options.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AltText {
     /// The alternative text.
     pub text: String,
     /// Marks the object decorative (no alternative text).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub decorative: Option<bool>,
 }
 
 /// `setField`'s options.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SetField {
     /// The field.
     pub id: ElementId,
     /// The new field code.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub code: Option<String>,
     /// The new display text.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub display: Option<Body>,
 }
 
 /// One field's computed result.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FieldResult {
     /// The field.
     pub id: ElementId,
@@ -1925,264 +1922,264 @@ pub struct FieldResult {
 }
 
 /// `setFieldResults`'s options.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FieldResults {
     /// The results, one per field.
     pub results: Vec<FieldResult>,
     /// The token of the `fieldsUpdateRequested` event whose step these results join.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub token: Option<u64>,
 }
 
 /// Elements to act on; default: the selection's.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ElementIds {
     /// The elements; `None` means the selection's.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub ids: Option<Vec<ElementId>>,
 }
 
 /// `setFieldsLocked`'s options.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FieldsLocked {
     /// Locks (`true`) or unlocks the fields.
     pub locked: bool,
     /// The fields; `None` means the selection's.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub ids: Option<Vec<ElementId>>,
 }
 
 /// `showFieldCodes`'s options.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ShowFieldCodes {
     /// Shows codes (`true`) or results.
     pub show: bool,
     /// The fields; `None` means the selection's.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub ids: Option<Vec<ElementId>>,
 }
 
 /// One sub-template reference rule: a field of type `field_type` names, in argument `argument`, the building block
 /// in category `category` (and `gallery`) whose body it shows.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, Eq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReferenceRule {
     /// The field type (`SUBTEMPLATE`), compared without case.
     pub field_type: String,
     /// Which of the field's arguments is the sub-template's name, from 0. Default: 0.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub argument: Option<u32>,
     /// The building block category the name is looked up in.
     pub category: String,
     /// The building block gallery (`custom1`), when it matters.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub gallery: Option<String>,
 }
 
 /// A sub-template by name, and its category where several rules name categories.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, Eq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SubTemplateName {
     /// Its name.
     pub name: String,
     /// Its building block category; default: the rules' categories, in order.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub category: Option<String>,
 }
 
 /// `createSubTemplate`'s options.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateSubTemplate {
     /// Its name: unique in its category.
     pub name: String,
     /// Its building block category; default: the first rule's.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub category: Option<String>,
     /// A DOCX whose body becomes its body; default: one empty paragraph.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub from: Option<Bytes>,
     /// A sub-template in the same category whose body (formatting, fields, controls, pictures, references) is
     /// copied; not with `from`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub copy_of: Option<String>,
 }
 
 /// `replaceBody`'s options.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReplaceBody {
     /// The DOCX whose body becomes the template's.
     pub from: Bytes,
 }
 
 /// `renameSubTemplate`'s options.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, Eq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RenameSubTemplate {
     /// Its name now.
     pub name: String,
     /// Its new name: unique in its category.
     pub to: String,
     /// Its building block category, where several rules name categories.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub category: Option<String>,
     /// Renames the references too, in the template and in other sub-templates. Default: false.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub update_references: Option<bool>,
 }
 
 /// `setSubTemplateView`'s options.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SubTemplateView {
     /// The reference fields; `None` means every reference.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub ids: Option<Vec<ElementId>>,
     /// Their bodies show in their place (else their fields do).
     pub expanded: bool,
 }
 
 /// `setSubTemplateRules`'s options.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SubTemplateRules {
     /// The rules, replacing those set before.
     pub rules: Vec<ReferenceRule>,
 }
 
 /// `setApplicationFieldTypes`' options.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ApplicationFieldTypes {
     /// The field types (a code's first word), replacing those set before; an empty list clears them.
     pub types: Vec<String>,
 }
 
 /// `setFieldLabels`'s options: labels by field code.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FieldLabels {
     /// The label design mode shows for each field code.
     pub labels: BTreeMap<String, String>,
     /// Keeps labels for codes not listed. Default: false.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub merge: Option<bool>,
 }
 
 /// `insertControl`'s options.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct InsertControl {
     /// The kind of control.
     pub kind: ControlKind,
     /// The control's tag, for the application.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub tag: Option<String>,
     /// The control's title, shown on its handle.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
     /// Whether the control can be deleted or its content edited.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub lock: Option<ControlLock>,
     /// The prompt text shown while the control is empty.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub placeholder: Option<String>,
     /// The custom XML data part node the control is bound to.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub binding: Option<DataBinding>,
     /// The kind's options (list items, date format, checkbox symbols).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub options: Option<ControlOptions>,
     /// A picture control's placeholder picture; default: the engine's.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub placeholder_image: Option<PlaceholderImage>,
     /// Wraps the selection instead of inserting an empty control.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub wrap_selection: Option<bool>,
     /// A picture control floats: positioned and wrapped as `setObjectWrap` and `setObjectPosition` place an object.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub float: Option<ControlFloat>,
 }
 
 /// How `insertControl` floats a picture control.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ControlFloat {
     /// How text wraps around it; not `inline`.
     pub wrap: ObjectWrap,
     /// The horizontal place; where it would sit in line when not given.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub horizontal: Option<HorizontalPosition>,
     /// The vertical place; where it would sit in line when not given.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub vertical: Option<VerticalPosition>,
 }
 
 /// `setControl`'s options. `binding: null` removes the binding.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SetControl {
     /// The control.
     pub id: ElementId,
     /// The new tag.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub tag: Option<String>,
     /// The new title.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
     /// The new lock.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub lock: Option<ControlLock>,
     /// The new prompt text.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub placeholder: Option<String>,
     /// The new binding; `Some(None)` removes it.
-    #[serde(default, skip_serializing_if = "Option::is_none", with = "super::wire::nullable")]
+    #[wire(default, skip_serializing_if = "Option::is_none", nullable)]
     pub binding: Option<Option<DataBinding>>,
     /// The new options.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub options: Option<ControlOptions>,
     /// A picture control's new placeholder picture, while it shows its placeholder.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub placeholder_image: Option<PlaceholderImage>,
 }
 
 /// `removeControl`'s options.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RemoveControl {
     /// The control.
     pub id: ElementId,
     /// Keeps the control's content in the document. Default: false.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub keep_content: Option<bool>,
 }
 
 /// `fillControl`'s options: exactly one of `text`, `image` and `docx`.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FillControl {
     /// The control.
     pub id: ElementId,
     /// Plain text.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
     /// An image, fitted to the control's box.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub image: Option<Bytes>,
     /// DOCX content.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub docx: Option<Bytes>,
 }
 
 /// `setCheckbox`'s options.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SetCheckbox {
     /// The checkbox control.
     pub id: ElementId,
@@ -2191,20 +2188,20 @@ pub struct SetCheckbox {
 }
 
 /// `wrapInRepeatingSection`'s options.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RepeatingSection {
     /// The section's tag.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub tag: Option<String>,
     /// The section's title.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
 }
 
 /// Which element property `replaceInElements` searches.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum ElementField {
     /// A field's code.
     Code,
@@ -2215,8 +2212,8 @@ pub enum ElementField {
 }
 
 /// Fields or content controls.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum ElementClass {
     /// Fields.
     Field,
@@ -2225,21 +2222,21 @@ pub enum ElementClass {
 }
 
 /// `replaceInElements`'s options.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReplaceInElements {
     /// The text to find (case-sensitive).
     pub find: String,
     /// Its replacement, at every occurrence.
     pub replace: String,
     /// Which property to search.
-    #[serde(rename = "in")]
+    #[wire(rename = "in")]
     pub field: ElementField,
     /// Fields or controls only; `None` means both.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<ElementClass>,
     /// The elements to search; `None` means every one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub ids: Option<Vec<ElementId>>,
 }
 
@@ -2250,21 +2247,21 @@ pub struct ReplaceInElements {
 /// font table. In selection scope, or with a filter, it rewrites only the text, and a matching run whose family comes
 /// from a style or the theme gets `to` as its own. With tracked changes on, the text's changes are formatting
 /// revisions. Text inside locked content controls is skipped and counted.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, Eq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReplaceFont {
     /// The family to rewrite, case-insensitive.
     pub from: String,
     /// The family it becomes.
     pub to: String,
     /// The whole document (the default) or the selection.
-    #[serde(default, skip_serializing_if = "is_document")]
+    #[wire(default, skip_serializing_if = "is_document")]
     pub scope: ReplaceScope,
     /// Only bold (`true`) or regular-weight (`false`) text; `None` for both.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub bold: Option<bool>,
     /// Only italic (`true`) or upright (`false`) text; `None` for both.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub italic: Option<bool>,
 }
 
@@ -2273,8 +2270,8 @@ fn is_document(scope: &ReplaceScope) -> bool {
 }
 
 /// Where `replaceFont` rewrites.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum ReplaceScope {
     /// The whole document: every story, and the tables below the text.
     #[default]
@@ -2284,8 +2281,8 @@ pub enum ReplaceScope {
 }
 
 /// How serious an element mark is.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum Severity {
     /// An error.
     Error,
@@ -2296,8 +2293,8 @@ pub enum Severity {
 }
 
 /// A mark on one element.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ElementMark {
     /// The element.
     pub id: ElementId,
@@ -2308,69 +2305,69 @@ pub struct ElementMark {
 }
 
 /// `markElements`'s options.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MarkElements {
     /// The marks to draw.
     pub marks: Vec<ElementMark>,
     /// Removes the earlier marks first. Default: false.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub clear: Option<bool>,
 }
 
 /// `setProtectedPictureControls`' options.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProtectedPictureControls {
     /// The tag prefixes, replacing those set before; an empty list protects none.
     pub tag_prefixes: Vec<String>,
 }
 
 /// `activatePictureControl`'s options.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ActivatePictureControl {
     /// The picture control; the selected one when `None`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub element: Option<ElementId>,
 }
 
 /// `writeDataPart`'s options.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct WriteDataPart {
     /// The part's root namespace.
     pub namespace: String,
     /// The part's item id, where several share the namespace.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub item_id: Option<String>,
     /// The part's XML (well-formed).
     pub xml: String,
 }
 
 /// A data part by namespace, and item id where several share it.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DataPartRef {
     /// The part's root namespace.
     pub namespace: String,
     /// The part's item id, where several share the namespace.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub item_id: Option<String>,
 }
 
 /// Every revision, or one author's.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AuthorFilter {
     /// The author; `None` means every author.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub author: Option<String>,
 }
 
 /// `replyToComment`'s options.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CommentReply {
     /// The comment replied to.
     pub to: CommentId,
@@ -2379,8 +2376,8 @@ pub struct CommentReply {
 }
 
 /// `editComment`'s options.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CommentEdit {
     /// The comment.
     pub id: CommentId,
@@ -2389,8 +2386,8 @@ pub struct CommentEdit {
 }
 
 /// `resolveComment`'s options.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CommentResolve {
     /// The thread's first comment.
     pub id: CommentId,
@@ -2399,8 +2396,8 @@ pub struct CommentResolve {
 }
 
 /// `setAuthorColor`'s options.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AuthorColor {
     /// The author's name.
     pub author: String,
@@ -2409,8 +2406,8 @@ pub struct AuthorColor {
 }
 
 /// A zoom: a percentage (10…500), or a fit the host computes.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(untagged)]
+#[derive(Clone, Copy, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(untagged)]
 pub enum Zoom {
     /// A percentage.
     Percent(f64),
@@ -2419,8 +2416,8 @@ pub enum Zoom {
 }
 
 /// The zoom fits.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum ZoomFit {
     /// The page's width fills the view.
     PageWidth,
@@ -2429,55 +2426,55 @@ pub enum ZoomFit {
 }
 
 /// `setViewOptions`'s options.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ViewOptions {
     /// Shows paragraph marks, spaces and tabs.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub formatting_marks: Option<bool>,
     /// Shows table gridlines.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub gridlines: Option<bool>,
     /// Shows text boundaries.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub text_boundaries: Option<bool>,
     /// Text wraps around an object again as it is dragged.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub live_layout: Option<bool>,
     /// The chrome's colour scheme.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub theme: Option<super::services::ChromeTheme>,
     /// The host's colours for the light and dark schemes.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub theme_colors: Option<super::services::ThemeColors>,
     /// The chrome's accent: selection, handles, guides and active markers. Any colour; the dark scheme lightens it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub accent: Option<Color>,
     /// How the page is drawn on screen (dark mode).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub appearance: Option<super::services::DocumentAppearance>,
     /// How much the editor measures while you drag and hover.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub detail: Option<super::services::MeasureDetail>,
     /// When the dot grid objects snap to shows (unrelated to `gridlines`, the table gridlines).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub object_grid: Option<super::services::ObjectGrid>,
     /// Labels content controls and shown sub-templates while the caret is in them or the pointer is over them.
     /// Default: on. A control whose `w15:appearance` is `hidden` is never labelled.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub control_labels: Option<bool>,
     /// When fields are shaded. Default: when selected.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub field_shading: Option<super::services::FieldShading>,
     /// Pointer shapes over elements instead of the editor's own, replacing those set before; the first that matches
     /// the hovered element wins, and `[]` clears them.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub cursor_overrides: Option<Vec<super::services::CursorOverride>>,
 }
 
 /// What a command returns besides its commit, for the commands that create something.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(untagged)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(untagged)]
 pub enum CommandResult {
     /// A field, control or repeating section made: `{ id }`.
     Element {
@@ -2490,7 +2487,7 @@ pub enum CommandResult {
         id: CommentId,
     },
     /// A data part written: `{ itemId }`.
-    #[serde(rename_all = "camelCase")]
+    #[wire(rename_all = "camelCase")]
     DataPart {
         /// The data part's item id.
         item_id: String,
@@ -2526,20 +2523,20 @@ mod tests {
     #[test]
     fn ids_and_types_are_one_spelling() {
         for c in [Command::SetBold(true), Command::Undo, Command::InsertTable(TableSize { rows: 3, columns: 2 })] {
-            let wire = serde_json::to_value(&c).expect("serializes");
-            assert_eq!(wire["type"], serde_json::to_value(c.id()).expect("serializes"));
+            let wire = crate::api::wire::to_value(&c).expect("serializes");
+            assert_eq!(wire["type"], crate::api::wire::to_value(&c.id()).expect("serializes"));
         }
     }
 
     #[test]
     fn single_arguments_travel_in_value_and_options_spread() {
-        let bold: Command = serde_json::from_str(r#"{"type":"setBold","value":true}"#).expect("setBold");
+        let bold: Command = twip_wire::from_str(r#"{"type":"setBold","value":true}"#).expect("setBold");
         assert_eq!(bold, Command::SetBold(true));
-        let table: Command = serde_json::from_str(r#"{"type":"insertTable","rows":3,"columns":2}"#).expect("insertTable");
+        let table: Command = twip_wire::from_str(r#"{"type":"insertTable","rows":3,"columns":2}"#).expect("insertTable");
         assert_eq!(table, Command::InsertTable(TableSize { rows: 3, columns: 2 }));
-        let spacing: Command = serde_json::from_str(r#"{"type":"setLineSpacing","rule":"multiple","lines":1.5}"#).expect("setLineSpacing");
+        let spacing: Command = twip_wire::from_str(r#"{"type":"setLineSpacing","rule":"multiple","lines":1.5}"#).expect("setLineSpacing");
         assert_eq!(spacing, Command::SetLineSpacing(LineSpacing::Multiple { lines: 1.5 }));
-        let none: Command = serde_json::from_str(r#"{"type":"setHighlight","value":null}"#).expect("setHighlight");
+        let none: Command = twip_wire::from_str(r#"{"type":"setHighlight","value":null}"#).expect("setHighlight");
         assert_eq!(none, Command::SetHighlight(None));
     }
 
@@ -2553,12 +2550,12 @@ mod tests {
     fn every_id_round_trips_through_its_op_type() {
         let ops = fixture();
         for id in CommandId::ALL {
-            let name = serde_json::to_value(id).expect("serializes");
-            assert_eq!(serde_json::from_value::<CommandId>(name.clone()).ok(), Some(*id), "{name}");
+            let name = crate::api::wire::to_value(&id).expect("serializes");
+            assert_eq!(crate::api::wire::from_value::<CommandId>(name.clone()).ok(), Some(*id), "{name}");
             let op = ops.iter().find(|o| o["type"] == name).unwrap_or_else(|| panic!("{name} isn't in tests/wire/command.json"));
-            let command: Command = serde_json::from_value(op.clone()).unwrap_or_else(|e| panic!("{op}: {e}"));
+            let command: Command = crate::api::wire::from_value(op.clone()).unwrap_or_else(|e| panic!("{op}: {e}"));
             assert_eq!(command.id(), *id);
-            assert_eq!(serde_json::to_value(&command).expect("serializes")["type"], name);
+            assert_eq!(crate::api::wire::to_value(&command).expect("serializes")["type"], name);
         }
         assert_eq!(ops.len(), CommandId::ALL.len(), "one op per variant");
     }
@@ -2582,7 +2579,7 @@ mod tests {
             r#"{"type":"toggleBold"}"#,
             r#"{"type":"setBold"}"#,
         ] {
-            assert!(serde_json::from_str::<Command>(bad).is_err(), "{bad}");
+            assert!(twip_wire::from_str::<Command>(bad).is_err(), "{bad}");
         }
     }
 }

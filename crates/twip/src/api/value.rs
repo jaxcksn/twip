@@ -1,12 +1,9 @@
 //! Values that commands, state and services share: lengths, colours, bytes, ids, and the formatting vocabularies
 //! (underline styles, alignments, tab stops, wrapping, content control kinds).
 
-use serde::de::{DeserializeOwned, Error as _};
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
 /// A length in points (1/72 inch). Every length in the API is one.
-#[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(transparent)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd, twip_wire::Encode, twip_wire::Decode)]
+#[wire(transparent)]
 pub struct Points(pub f64);
 
 /// An RGB colour, `#RRGGBB` on the wire.
@@ -27,19 +24,6 @@ impl std::fmt::Display for Color {
     }
 }
 
-impl Serialize for Color {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        s.collect_str(self)
-    }
-}
-
-impl<'de> Deserialize<'de> for Color {
-    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Color, D::Error> {
-        let s = String::deserialize(d)?;
-        Color::parse(&s).ok_or_else(|| D::Error::custom(format!("`{s}` is not a #RRGGBB colour")))
-    }
-}
-
 impl twip_wire::Encode for Color {
     fn encode(&self, out: &mut Vec<u8>) {
         twip_wire::write_str(out, &self.to_string());
@@ -54,7 +38,8 @@ impl twip_wire::Decode for Color {
     }
 }
 
-/// A value, or `keyword` in its place (read first).
+/// A value or a keyword in its place: `'auto'` ([`AutoOr`]) or `'none'` ([`NoneOr`]). The keyword is read before the
+/// value, so a value that spells the keyword reads as the keyword.
 fn decode_keyword_or<T: twip_wire::Decode>(r: &mut twip_wire::Reader<'_>, keyword: &str) -> Result<Option<T>, twip_wire::Error> {
     if r.keyword(keyword)? { Ok(None) } else { T::decode(r).map(Some) }
 }
@@ -127,16 +112,6 @@ impl twip_wire::Decode for Bytes {
     }
 }
 
-/// A value or a keyword in its place: `'auto'` ([`AutoOr`]) or `'none'` ([`NoneOr`]). The keyword is read before the
-/// value, so a value that spells the keyword reads as the keyword.
-fn keyword_or<'de, D: Deserializer<'de>, T: DeserializeOwned>(d: D, keyword: &str) -> Result<Option<T>, D::Error> {
-    let v = serde_json::Value::deserialize(d)?;
-    if v.as_str() == Some(keyword) {
-        return Ok(None);
-    }
-    T::deserialize(v).map(Some).map_err(D::Error::custom)
-}
-
 /// A value, or `'auto'`: the document decides (an automatic colour, automatic spacing, a row's natural height).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum AutoOr<T> {
@@ -147,21 +122,6 @@ pub enum AutoOr<T> {
     Value(T),
 }
 
-impl<T: Serialize> Serialize for AutoOr<T> {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        match self {
-            AutoOr::Auto => s.serialize_str("auto"),
-            AutoOr::Value(v) => v.serialize(s),
-        }
-    }
-}
-
-impl<'de, T: DeserializeOwned> Deserialize<'de> for AutoOr<T> {
-    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<AutoOr<T>, D::Error> {
-        Ok(keyword_or(d, "auto")?.map_or(AutoOr::Auto, AutoOr::Value))
-    }
-}
-
 /// A value, or `'none'` where state reports its absence explicitly (no shading, no highlight).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum NoneOr<T> {
@@ -169,21 +129,6 @@ pub enum NoneOr<T> {
     None,
     /// This value.
     Value(T),
-}
-
-impl<T: Serialize> Serialize for NoneOr<T> {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        match self {
-            NoneOr::None => s.serialize_str("none"),
-            NoneOr::Value(v) => v.serialize(s),
-        }
-    }
-}
-
-impl<'de, T: DeserializeOwned> Deserialize<'de> for NoneOr<T> {
-    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<NoneOr<T>, D::Error> {
-        Ok(keyword_or(d, "none")?.map_or(NoneOr::None, NoneOr::Value))
-    }
 }
 
 /// A paragraph's outline level: body text, or a level from 1 to 9. On the wire: `'body'` or the number.
@@ -196,37 +141,9 @@ pub enum OutlineLevel {
     Level(u8),
 }
 
-impl Serialize for OutlineLevel {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        match self {
-            OutlineLevel::Body => s.serialize_str("body"),
-            OutlineLevel::Level(n) => s.serialize_u8(*n),
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for OutlineLevel {
-    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<OutlineLevel, D::Error> {
-        Ok(keyword_or(d, "body")?.map_or(OutlineLevel::Body, OutlineLevel::Level))
-    }
-}
-
 /// Binary data (pictures, fonts, dictionaries, documents), standard base64 on the wire.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Bytes(pub Vec<u8>);
-
-impl Serialize for Bytes {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_str(&base64(&self.0))
-    }
-}
-
-impl<'de> Deserialize<'de> for Bytes {
-    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Bytes, D::Error> {
-        let s = String::deserialize(d)?;
-        from_base64(&s).map(Bytes).ok_or_else(|| D::Error::custom("not standard base64"))
-    }
-}
 
 /// Standard base64 with padding.
 pub(crate) fn base64(data: &[u8]) -> String {
@@ -272,8 +189,8 @@ fn from_base64(s: &str) -> Option<Vec<u8>> {
 macro_rules! ids {
     ($($(#[$m:meta])* $name:ident),* $(,)?) => {$(
         $(#[$m])*
-        #[derive(Clone, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-        #[serde(transparent)]
+        #[derive(Clone, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord, twip_wire::Encode, twip_wire::Decode)]
+        #[wire(transparent)]
         pub struct $name(pub String);
     )*};
 }
@@ -294,8 +211,8 @@ ids! {
 }
 
 /// The two ways along a sequence.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum Direction {
     /// Toward the start.
     Backward,
@@ -304,8 +221,8 @@ pub enum Direction {
 }
 
 /// Next or previous, in document order.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum Order {
     /// The next one.
     Next,
@@ -314,8 +231,8 @@ pub enum Order {
 }
 
 /// Where the selection is: the body or another story.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum Story {
     /// The main document.
     #[default]
@@ -335,8 +252,8 @@ pub enum Story {
 }
 
 /// `w:u` styles.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum UnderlineStyle {
     /// No underline.
     #[default]
@@ -360,8 +277,8 @@ pub enum UnderlineStyle {
 }
 
 /// `w:highlight` colours.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum HighlightColor {
     /// Yellow.
     Yellow,
@@ -396,8 +313,8 @@ pub enum HighlightColor {
 }
 
 /// A paragraph's alignment.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum Alignment {
     /// Aligned left.
     #[default]
@@ -411,8 +328,8 @@ pub enum Alignment {
 }
 
 /// Left, centre or right: tables on the page, page numbers in a header.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum HorizontalAlignment {
     /// Left.
     #[default]
@@ -424,8 +341,8 @@ pub enum HorizontalAlignment {
 }
 
 /// Text in a cell, top to bottom.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum CellAlignment {
     /// At the top.
     #[default]
@@ -437,8 +354,8 @@ pub enum CellAlignment {
 }
 
 /// Line spacing: a multiple of single, or a size in points.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(tag = "rule", rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Copy, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(tag = "rule", rename_all = "camelCase", deny_unknown_fields)]
 pub enum LineSpacing {
     /// `lines` times single spacing (0.06…132).
     Multiple {
@@ -464,8 +381,8 @@ impl Default for LineSpacing {
 }
 
 /// How a tab stop aligns the text after it.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum TabAlignment {
     /// Text starts at the stop.
     #[default]
@@ -481,8 +398,8 @@ pub enum TabAlignment {
 }
 
 /// What fills the space before a tab stop.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum TabLeader {
     /// No leader.
     #[default]
@@ -500,8 +417,8 @@ pub enum TabLeader {
 }
 
 /// A section's page orientation.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum Orientation {
     /// Taller than wide.
     #[default]
@@ -511,8 +428,8 @@ pub enum Orientation {
 }
 
 /// How text wraps around a picture or text box.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum ObjectWrap {
     /// In line with the text.
     #[default]
@@ -532,8 +449,8 @@ pub enum ObjectWrap {
 }
 
 /// What a floating object's horizontal position is measured from.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum HorizontalReference {
     /// The column it is anchored in (the default).
     #[default]
@@ -555,8 +472,8 @@ pub enum HorizontalReference {
 }
 
 /// What a floating object's vertical position is measured from.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum VerticalReference {
     /// Its anchor paragraph's top: it moves with the text (the default).
     #[default]
@@ -578,8 +495,8 @@ pub enum VerticalReference {
 }
 
 /// A floating object aligned across its horizontal reference.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum ObjectHorizontalAlignment {
     /// At its left edge.
     #[default]
@@ -595,8 +512,8 @@ pub enum ObjectHorizontalAlignment {
 }
 
 /// A floating object aligned across its vertical reference.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum ObjectVerticalAlignment {
     /// At its top.
     #[default]
@@ -612,8 +529,8 @@ pub enum ObjectVerticalAlignment {
 }
 
 /// Which sides of a floating object text wraps on.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum WrapSide {
     /// Both sides (the default).
     #[default]
@@ -628,37 +545,37 @@ pub enum WrapSide {
 
 /// A floating object's horizontal place: aligned across its reference, or an offset from the reference's left edge.
 /// Given with neither, the object stays where it is, measured from the new reference.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct HorizontalPosition {
     /// What it is measured from.
     pub relative_to: HorizontalReference,
     /// Aligned across the reference.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub align: Option<ObjectHorizontalAlignment>,
     /// Right of the reference's left edge (−1584…1584 pt).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub offset: Option<Points>,
 }
 
 /// A floating object's vertical place: aligned across its reference, or an offset below the reference's top. Given
 /// with neither, the object stays where it is, measured from the new reference.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct VerticalPosition {
     /// What it is measured from.
     pub relative_to: VerticalReference,
     /// Aligned across the reference.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub align: Option<ObjectVerticalAlignment>,
     /// Below the reference's top (−1584…1584 pt).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub offset: Option<Points>,
 }
 
 /// A table's preferred width.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 pub enum TableWidth {
     /// Sized by its content.
     #[default]
@@ -676,8 +593,8 @@ pub enum TableWidth {
 }
 
 /// How a row height applies.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum HeightRule {
     /// At least the height: taller when the content needs it.
     #[default]
@@ -687,8 +604,8 @@ pub enum HeightRule {
 }
 
 /// A row height: at least or exactly `height` (0…1584 pt).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RowHeight {
     /// The height.
     pub height: Points,
@@ -697,8 +614,8 @@ pub struct RowHeight {
 }
 
 /// The kinds of content control.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum ControlKind {
     /// Formatted text.
     #[default]
@@ -722,8 +639,8 @@ pub enum ControlKind {
 }
 
 /// What a content control's lock keeps: the control itself, its content, or both.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase")]
 pub enum ControlLock {
     /// Not locked.
     #[default]
@@ -737,22 +654,22 @@ pub enum ControlLock {
 }
 
 /// A content control's binding to a custom XML data part (`w:dataBinding`).
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DataBinding {
     /// The XPath of the bound node in the data part.
     pub xpath: String,
     /// The data part's item id.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub store_item_id: Option<String>,
     /// The XPath's namespace prefixes (`xmlns:ns0='…'`).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub prefix_mappings: Option<String>,
 }
 
 /// One entry of a drop-down or combo box.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ListItem {
     /// The text shown.
     pub text: String,
@@ -761,8 +678,8 @@ pub struct ListItem {
 }
 
 /// The settings of one control kind. On the wire the object's fields say which kind it is.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(untagged)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(untagged)]
 pub enum ControlOptions {
     /// A checkbox's state.
     Checkbox(CheckboxOptions),
@@ -777,46 +694,46 @@ pub enum ControlOptions {
 }
 
 /// A checkbox's state.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CheckboxOptions {
     /// Whether it is checked.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub checked: Option<bool>,
 }
 
 /// A date picker's display format and locale.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DateOptions {
     /// The display format (`M/d/yyyy`).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub format: Option<String>,
     /// The locale (`en-US`).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub locale: Option<String>,
 }
 
 /// A drop-down's or combo box's entries.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ListOptions {
     /// The entries, in order.
     pub items: Vec<ListItem>,
 }
 
 /// Whether a plain text control takes line breaks.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PlainTextOptions {
     /// Whether it takes line breaks.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub multiline: Option<bool>,
 }
 
 /// A width and height.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Size {
     /// The width.
     pub width: Points,
@@ -826,8 +743,8 @@ pub struct Size {
 
 /// A picture control's placeholder picture: what it shows while it shows its placeholder (`w:showingPlcHdr`), in the
 /// editor, the saved DOCX and a PDF alike.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PlaceholderImage {
     /// The picture: PNG, JPEG, GIF, BMP or SVG.
     pub data: Bytes,
@@ -836,14 +753,14 @@ pub struct PlaceholderImage {
 }
 
 /// A picture control's picture size (1…1584 pt): its placeholder's, and the picture's once filled (fitted to it).
-#[derive(Clone, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PictureOptions {
     /// The width; default 144 pt when inserted, else kept.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub width: Option<Points>,
     /// The height; default 108 pt when inserted, else kept.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[wire(default, skip_serializing_if = "Option::is_none")]
     pub height: Option<Points>,
 }
 
@@ -861,11 +778,11 @@ mod tests {
 
     #[test]
     fn keywords_read_before_values() {
-        let auto: AutoOr<Color> = serde_json::from_str("\"auto\"").expect("auto");
+        let auto: AutoOr<Color> = twip_wire::from_str("\"auto\"").expect("auto");
         assert_eq!(auto, AutoOr::Auto);
-        let red: AutoOr<Color> = serde_json::from_str("\"#FF0000\"").expect("a colour");
+        let red: AutoOr<Color> = twip_wire::from_str("\"#FF0000\"").expect("a colour");
         assert_eq!(red, AutoOr::Value(Color(0xFF0000)));
-        assert!(serde_json::from_str::<Color>("\"red\"").is_err());
-        assert_eq!(serde_json::to_string(&Color(0x0563C1)).ok().as_deref(), Some("\"#0563C1\""));
+        assert!(twip_wire::from_str::<Color>("\"red\"").is_err());
+        assert_eq!(Some(twip_wire::to_string(&Color(0x0563C1)).as_str()), Some("\"#0563C1\""));
     }
 }

@@ -548,7 +548,7 @@ fn a_sub_template_exports_alone_and_copies_whole() {
     let (mut e, _) = expanded();
     e.execute(Command::EditSubTemplate(crate::api::command::SubTemplateName { name: "Violation".into(), category: None }), fonts());
     let picture = serde_json::json!({ "kind": "picture", "tag": "Photo", "options": { "width": 90, "height": 60 } });
-    e.execute(Command::InsertControl(serde_json::from_value(picture).unwrap()), fonts());
+    e.execute(Command::InsertControl(crate::api::wire::from_value(picture).unwrap()), fonts());
     e.execute(Command::CloseSubTemplate, fonts());
     let violation = body_shape(&e, "Violation");
     assert!(violation.1.iter().any(|(c, _)| c.as_deref().is_some_and(|c| c.contains("MERGEFIELD Fee"))), "{violation:?}");

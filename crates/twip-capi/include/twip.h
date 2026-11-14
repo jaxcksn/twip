@@ -1,7 +1,7 @@
 /*
  * The C ABI over twip::api. Internal: the SDKs' private layers call it, and it may change in any release.
  *
- * Structured values cross as UTF-8 JSON in the twip::api types' serde form. A structured response is
+ * Structured values cross as UTF-8 JSON in the twip::api types' wire form (twip-wire). A structured response is
  * {"ok": value} or {"error": {"code", "message", "details"}}, written to a TwipBuf the caller frees with
  * twip_buf_free. The int32_t status beside it is 0, or a negated TWIP_E_* code.
  *

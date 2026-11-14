@@ -1,7 +1,5 @@
 //! The presentation surface a host attaches: size, scroll, focus, frames, rulers, balloons and hit testing.
 
-use serde::{Deserialize, Serialize};
-
 use super::{Commit, Session};
 use crate::api::command::Command;
 use crate::api::error::Error;
@@ -23,8 +21,8 @@ pub use crate::editing::input::Cursor;
 
 /// Something only the host showing the session can do, given to the sink [`HostSurface::attach`] takes. Positions
 /// are content CSS px: they scroll with the document. On the wire it is the `host_request` callback, `type` tagged.
-#[derive(Clone, Debug, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum HostRequest {
     /// Show this pointer shape.
     Cursor {
@@ -122,8 +120,8 @@ fn a11y_key(e: &crate::editing::Editor) -> u64 {
 const A11Y_MS: u32 = 250;
 
 /// What a host keeps about the frame it drew: the document's size and the caret, for scrollbars and the IME.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FrameInfo {
     /// The page stack's width, CSS px.
     pub content_width: f64,
@@ -145,8 +143,8 @@ pub struct FrameInfo {
 /// over the chrome theme's; the defaults are the light theme's with the default accent: lines and marks at least 3:1
 /// against the page, and the selection a light tint black text keeps at least 4.5:1 over. The caret is always black
 /// or white, whichever stands out more on the page.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct OverlayPalette {
     /// The selection, blended under the content (multiply), so black text stays black over it. Default `#9DC7F4`,
     /// the accent's light tint.
@@ -171,8 +169,8 @@ impl Default for OverlayPalette {
 
 /// The memory a session keeps its pages' drawing in ([`HostSurface::set_paint_budget`]): past it, what was drawn
 /// longest ago goes first.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PaintBudget {
     /// The pages' recordings, bytes. Default 32 MB.
     pub recordings: u64,
@@ -185,8 +183,8 @@ impl Default for PaintBudget {
 }
 
 /// How the caret blinks ([`HostSurface::set_caret_blink`]).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CaretBlink {
     /// A phase's length, ms (at least 100); none is a steady caret.
     pub interval_ms: Option<u32>,
@@ -201,8 +199,8 @@ impl Default for CaretBlink {
 }
 
 /// What the frames have cost so far: for benchmarks and tests. Counts run from the session's start.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, twip_wire::Encode, Deserialize, twip_wire::Decode)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, twip_wire::Encode, twip_wire::Decode)]
+#[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FrameStats {
     /// Frames drawn.
     pub frames: u64,
