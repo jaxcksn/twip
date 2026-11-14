@@ -391,56 +391,9 @@ pub(super) fn assemble(
     let compat = env.ctx.env.text.compat;
     let first_left = t.rows.first().and_then(|r| r.cells.first()).map(|c| (space_h(candidate(Some(&c.left), &row_borders(t, 0)[1])), c.margins[1]));
     let (lw, lmar) = first_left.unwrap_or((space_h(&row_borders(t, 0)[1]), 0.0));
-    let mut x0 = match compat {
-        Compat::Generic => placed_ind(t) + half_border(lw),
-        // An unset indent isn't pulled left, but a nested table's is placed as indent 0.
-        Compat::Legacy if !t.ind_set && !nested => 0.0,
-        Compat::Legacy => placed_ind(t) - edge_gap(t, lw, lmar),
-    };
-    match t.jc {
-        // The whole grid is centred, its `gridBefore` and `gridAfter` columns too.
-        Jc::Center => {
-            let (lh, rh) = (twips(half_border(lw)), twips(edge_right(t)) / 2);
-            let free = twips(text_w) - (lh + twips(total) + rh);
-            x0 = (lh + (free + 1).div_euclid(2)) as f64 / 20.0;
-        }
-        Jc::Right => x0 = (twips(text_w) - twips(total) - twips(edge_right(t)) / 2) as f64 / 20.0,
-        _ => {}
-    }
-    // Floating tables
-    if let Some(fp) = t.floating {
-        let (e0, ind) = match compat {
-            Compat::Generic => (half_border(lw), 0.0),
-            Compat::Legacy => (-edge_gap(t, lw, lmar), t.ind),
-        };
-        let frame = || {
-            let row_w = |(r, g): (&Row, &CellGeo)| match compat {
-                Compat::Generic => {
-                    let table = if g.col + g.span >= cols.len() { &t.borders[3] } else { &t.borders[5] };
-                    let b = match (&g.edges[3], candidate(r.cells.get(g.ci).map(|c| &c.right), table)) {
-                        (Some(b), _) => thick(b) - ((thick(b) * 20.0).round() as i64 / 2) as f64 / 20.0,
-                        (None, None) => 0.75,
-                        (None, Some(_)) => 0.0,
-                    };
-                    g.x + g.w + e0 + b
-                }
-                Compat::Legacy => g.x + g.cx + g.cw + e0,
-            };
-            t.rows.iter().zip(geo).filter_map(|(r, gs)| gs.last().map(|g| (r, g))).map(row_w).fold(0.0, f64::max) + ind
-        };
-        x0 = match fp.x_align() {
-            Some(Jc::Center) => (text_w - frame()) / 2.0 + e0 + ind,
-            Some(Jc::Right) => text_w - frame() + e0 + ind,
-            Some(_) => e0 + ind,
-            // A frame left of the page starts at its edge.
-            None if fp.h_page => fp.x.max(0.05) + e0 + ind,
-            None => fp.x + e0 + ind,
-        };
-    }
     let rtl = rtl(t);
-    if rtl {
-        x0 = rtl_x0(t, total, text_w, rtl_sides(geo.first().into_iter().flatten().map(|g| &*g.edges)), compat == Compat::Legacy);
-    }
+    let x0 = table_x0(t, text_w, &cols, geo, total, (lw, lmar), nested, rtl, compat);
+    let asm = Assembly { t, text_w, env, cols: &cols, compat, nested, rtl, lw, lmar, x0 };
     let mirror = |x: f64, w: f64| if rtl { total - x - w } else { x };
     let mut stories = stories.iter();
     let mut closings = closings.iter();
@@ -463,41 +416,7 @@ pub(super) fn assemble(
             let (b, b_cell) = (c.top.as_ref().or(row_borders(t, ri)[4].as_ref()), c.top.is_some());
             if single { b.filter(|b| b.visible()).or(a.filter(|a| a.visible())).cloned() } else { conflict((b, b_cell), (a, a_cell)) }
         };
-        let shift = match r.ind {
-            Some(i) if !t.fixed && t.jc == Jc::Left && t.floating.is_none() && !rtl => i - placed_ind(t),
-            _ => 0.0,
-        } + r.div.as_ref().filter(|_| t.jc == Jc::Left && t.floating.is_none() && !rtl).map_or(0.0, |d| d.shift);
-        // Row alignment
-        let shift = shift
-            + match r.jc.unwrap_or(t.jc) {
-                // Compat ≤ 14: with `alignTablesRowByRow` a row is aligned by its own cells' extent, else by the
-                // whole grid. A nested table's rows always take the whole grid, and a right-aligned one no margin.
-                jc @ (Jc::Center | Jc::Right) if compat == Compat::Legacy && t.floating.is_none() && !rtl => {
-                    let own = env.ctx.env.text.align_tables_row_by_row && !nested;
-                    let (start, end) = match (cells_geo.first(), cells_geo.last()) {
-                        (Some(a), Some(z)) if own => (a.col.min(cols.len()), (z.col + z.span).min(cols.len())),
-                        _ => (0, cols.len()),
-                    };
-                    let before: f64 = cols[..start].iter().sum();
-                    let width: f64 = cols[start..end.max(start)].iter().sum();
-                    let gap = if nested {
-                        0.0
-                    } else {
-                        r.cells.first().map_or(0.0, |c| c.margins[1]) + row_s.map_or(0.0, |s| 2.0 * s + space_h(&row_borders(t, ri)[1]))
-                    };
-                    let left = if jc == Jc::Center { (twips(text_w) - twips(width)).div_euclid(2) as f64 / 20.0 } else { text_w - width + gap };
-                    // A nested left-aligned table is moved by its lead as a whole (`nested_shift`).
-                    let lead = if nested && !matches!(t.jc, Jc::Center | Jc::Right) { legacy_lead(t) } else { 0.0 };
-                    left - (x0 + before) - lead
-                }
-                // A left row of a centred or right-aligned table: placed as a left-aligned table would be, a nested
-                // one by its indent and lead too.
-                Jc::Left if compat == Compat::Legacy && t.floating.is_none() && !rtl && t.jc != Jc::Left => {
-                    let (ind, lead) = if nested { (placed_ind(t).max(0.0), legacy_lead(t)) } else { (0.0, 0.0) };
-                    ind - edge_gap(t, lw, lmar) + lead - x0
-                }
-                _ => 0.0,
-            };
+        let shift = row_shift(&asm, r, ri, cells_geo, row_s);
         let mut cells = Vec::new();
         for g in cells_geo {
             let c = &r.cells[g.ci];
@@ -535,8 +454,6 @@ pub(super) fn assemble(
                 || r.rev.change.is_some()
                 || cells_geo.iter().any(|g| r.cells[g.ci].rev.structural.is_some() || r.cells[g.ci].rev.change.is_some()));
         let mut top_border = cells.iter().map(|c| space_h(&c.edges[0])).fold(0.0, f64::max);
-        let mut part_top = 0.0;
-        let mut header_top = 0.0;
         let seams: Vec<(f64, f64, Border)> = match ri.checked_sub(1).and_then(|p| geo.get(p)) {
             Some(above) if row_s.is_none() && !framed(t, ri - 1) => above
                 .iter()
@@ -554,30 +471,7 @@ pub(super) fn assemble(
             _ => Vec::new(),
         };
         top_border = seams.iter().map(|s| thick(&s.2)).fold(top_border, f64::max);
-        if row_s.is_none() {
-            let cand = |own: &Option<Border>, table: &Option<Border>| space_h(if own.is_some() { own } else { table });
-            let top_t = if ri == 0 { &row_borders(t, ri)[0] } else { &row_borders(t, ri)[4] };
-            let w = ri
-                .checked_sub(1)
-                .filter(|&p| !framed(t, p))
-                .map_or(0.0, |p| t.rows[p].cells.iter().map(|c| cand(&c.bottom, &row_borders(t, p)[4])).fold(0.0, f64::max));
-            let above = cells_geo.iter().map(|g| cand(&r.cells[g.ci].top, top_t) + r.cells[g.ci].margins[0]).fold(w, f64::max);
-            for c in &mut cells {
-                c.margins[0] = (above - top_border).max(0.0);
-            }
-            // At the top of a later part the table's top border takes the place of the inside one and the row above.
-            if ri > 0 {
-                let top_t = &row_borders(t, ri)[0];
-                let first = cells_geo.iter().map(|g| cand(&r.cells[g.ci].top, top_t) + r.cells[g.ci].margins[0]).fold(0.0, f64::max);
-                part_top = first - above.max(top_border);
-            }
-            if let Some(h) = header.filter(|&h| ri > h + 1) {
-                let w = t.rows[h].cells.iter().map(|c| cand(&c.bottom, &row_borders(t, h)[4])).fold(0.0, f64::max);
-                let first = cells_geo.iter().map(|g| cand(&r.cells[g.ci].top, top_t) + r.cells[g.ci].margins[0]).fold(w, f64::max);
-                let edge = cells.iter().map(|c| space_h(&c.cut[2])).fold(0.0, f64::max);
-                header_top = first.max(edge) - above.max(top_border);
-            }
-        }
+        let (mut part_top, header_top) = if row_s.is_none() { row_top(t, ri, r, cells_geo, &mut cells, top_border, header) } else { (0.0, 0.0) };
         let mut gap_top = 0.0;
         let mut cell_bottom = 0.0;
         if let Some(s) = row_s {
@@ -663,6 +557,167 @@ pub(super) fn assemble(
             fit_border,
         });
     }
+    fit_merged(&mut rows, t, geo, env, memos)?;
+    let mut bottom_border = rows.last().map(|r| r.cells.iter().map(|c| space_h(&c.edges[2])).fold(0.0, f64::max)).unwrap_or(0.0);
+    if framed(t, t.rows.len().saturating_sub(1)) {
+        bottom_border = space_h(&row_borders(t, t.rows.len() - 1)[2]);
+    }
+    let (l, r) = if rtl { (3, 1) } else { (1, 3) };
+    let (tb0, tbn) = (row_borders(t, 0), row_borders(t, t.rows.len().saturating_sub(1)));
+    let outer = [tb0[0].clone(), tb0[l].clone(), tbn[2].clone(), tb0[r].clone()];
+    Ok(TableLayout { x0, cols, rows, bottom_border, spacing: t.cell_spacing, outer, id: TableId(t.id), fit, rtl })
+}
+
+// Table-wide inputs of row assembly
+struct Assembly<'a> {
+    t: &'a Table,
+    text_w: f64,
+    env: &'a StoryEnv<'a>,
+    cols: &'a [f64],
+    compat: Compat,
+    nested: bool,
+    rtl: bool,
+    lw: f64,
+    lmar: f64,
+    x0: f64,
+}
+
+// Table origin
+#[allow(clippy::too_many_arguments, reason = "the table, its grid and the text it stands in")]
+fn table_x0(
+    t: &Table,
+    text_w: f64,
+    cols: &[f64],
+    geo: &[Vec<CellGeo>],
+    total: f64,
+    (lw, lmar): (f64, f64),
+    nested: bool,
+    rtl: bool,
+    compat: Compat,
+) -> f64 {
+    let mut x0 = match compat {
+        Compat::Generic => placed_ind(t) + half_border(lw),
+        // An unset indent isn't pulled left, but a nested table's is placed as indent 0.
+        Compat::Legacy if !t.ind_set && !nested => 0.0,
+        Compat::Legacy => placed_ind(t) - edge_gap(t, lw, lmar),
+    };
+    match t.jc {
+        // The whole grid is centred, its `gridBefore` and `gridAfter` columns too.
+        Jc::Center => {
+            let (lh, rh) = (twips(half_border(lw)), twips(edge_right(t)) / 2);
+            let free = twips(text_w) - (lh + twips(total) + rh);
+            x0 = (lh + (free + 1).div_euclid(2)) as f64 / 20.0;
+        }
+        Jc::Right => x0 = (twips(text_w) - twips(total) - twips(edge_right(t)) / 2) as f64 / 20.0,
+        _ => {}
+    }
+    // Floating tables
+    if let Some(fp) = t.floating {
+        let (e0, ind) = match compat {
+            Compat::Generic => (half_border(lw), 0.0),
+            Compat::Legacy => (-edge_gap(t, lw, lmar), t.ind),
+        };
+        let frame = || {
+            let row_w = |(r, g): (&Row, &CellGeo)| match compat {
+                Compat::Generic => {
+                    let table = if g.col + g.span >= cols.len() { &t.borders[3] } else { &t.borders[5] };
+                    let b = match (&g.edges[3], candidate(r.cells.get(g.ci).map(|c| &c.right), table)) {
+                        (Some(b), _) => thick(b) - ((thick(b) * 20.0).round() as i64 / 2) as f64 / 20.0,
+                        (None, None) => 0.75,
+                        (None, Some(_)) => 0.0,
+                    };
+                    g.x + g.w + e0 + b
+                }
+                Compat::Legacy => g.x + g.cx + g.cw + e0,
+            };
+            t.rows.iter().zip(geo).filter_map(|(r, gs)| gs.last().map(|g| (r, g))).map(row_w).fold(0.0, f64::max) + ind
+        };
+        x0 = match fp.x_align() {
+            Some(Jc::Center) => (text_w - frame()) / 2.0 + e0 + ind,
+            Some(Jc::Right) => text_w - frame() + e0 + ind,
+            Some(_) => e0 + ind,
+            // A frame left of the page starts at its edge.
+            None if fp.h_page => fp.x.max(0.05) + e0 + ind,
+            None => fp.x + e0 + ind,
+        };
+    }
+    if rtl {
+        x0 = rtl_x0(t, total, text_w, rtl_sides(geo.first().into_iter().flatten().map(|g| &*g.edges)), compat == Compat::Legacy);
+    }
+    x0
+}
+
+// Row alignment shift
+fn row_shift(asm: &Assembly, r: &Row, ri: usize, cells_geo: &[CellGeo], row_s: Option<f64>) -> f64 {
+    let &Assembly { t, text_w, env, cols, compat, nested, rtl, lw, lmar, x0, .. } = asm;
+    let shift = match r.ind {
+        Some(i) if !t.fixed && t.jc == Jc::Left && t.floating.is_none() && !rtl => i - placed_ind(t),
+        _ => 0.0,
+    } + r.div.as_ref().filter(|_| t.jc == Jc::Left && t.floating.is_none() && !rtl).map_or(0.0, |d| d.shift);
+    // Row alignment
+    shift
+        + match r.jc.unwrap_or(t.jc) {
+            // Compat ≤ 14: with `alignTablesRowByRow` a row is aligned by its own cells' extent, else by the
+            // whole grid. A nested table's rows always take the whole grid, and a right-aligned one no margin.
+            jc @ (Jc::Center | Jc::Right) if compat == Compat::Legacy && t.floating.is_none() && !rtl => {
+                let own = env.ctx.env.text.align_tables_row_by_row && !nested;
+                let (start, end) = match (cells_geo.first(), cells_geo.last()) {
+                    (Some(a), Some(z)) if own => (a.col.min(cols.len()), (z.col + z.span).min(cols.len())),
+                    _ => (0, cols.len()),
+                };
+                let before: f64 = cols[..start].iter().sum();
+                let width: f64 = cols[start..end.max(start)].iter().sum();
+                let gap = if nested {
+                    0.0
+                } else {
+                    r.cells.first().map_or(0.0, |c| c.margins[1]) + row_s.map_or(0.0, |s| 2.0 * s + space_h(&row_borders(t, ri)[1]))
+                };
+                let left = if jc == Jc::Center { (twips(text_w) - twips(width)).div_euclid(2) as f64 / 20.0 } else { text_w - width + gap };
+                // A nested left-aligned table is moved by its lead as a whole (`nested_shift`).
+                let lead = if nested && !matches!(t.jc, Jc::Center | Jc::Right) { legacy_lead(t) } else { 0.0 };
+                left - (x0 + before) - lead
+            }
+            // A left row of a centred or right-aligned table: placed as a left-aligned table would be, a nested
+            // one by its indent and lead too.
+            Jc::Left if compat == Compat::Legacy && t.floating.is_none() && !rtl && t.jc != Jc::Left => {
+                let (ind, lead) = if nested { (placed_ind(t).max(0.0), legacy_lead(t)) } else { (0.0, 0.0) };
+                ind - edge_gap(t, lw, lmar) + lead - x0
+            }
+            _ => 0.0,
+        }
+}
+
+// Top border and margins of a row without cell spacing
+fn row_top(t: &Table, ri: usize, r: &Row, cells_geo: &[CellGeo], cells: &mut [CellBox], top_border: f64, header: Option<usize>) -> (f64, f64) {
+    let mut part_top = 0.0;
+    let mut header_top = 0.0;
+    let cand = |own: &Option<Border>, table: &Option<Border>| space_h(if own.is_some() { own } else { table });
+    let top_t = if ri == 0 { &row_borders(t, ri)[0] } else { &row_borders(t, ri)[4] };
+    let w = ri
+        .checked_sub(1)
+        .filter(|&p| !framed(t, p))
+        .map_or(0.0, |p| t.rows[p].cells.iter().map(|c| cand(&c.bottom, &row_borders(t, p)[4])).fold(0.0, f64::max));
+    let above = cells_geo.iter().map(|g| cand(&r.cells[g.ci].top, top_t) + r.cells[g.ci].margins[0]).fold(w, f64::max);
+    for c in cells.iter_mut() {
+        c.margins[0] = (above - top_border).max(0.0);
+    }
+    // At the top of a later part the table's top border takes the place of the inside one and the row above.
+    if ri > 0 {
+        let top_t = &row_borders(t, ri)[0];
+        let first = cells_geo.iter().map(|g| cand(&r.cells[g.ci].top, top_t) + r.cells[g.ci].margins[0]).fold(0.0, f64::max);
+        part_top = first - above.max(top_border);
+    }
+    if let Some(h) = header.filter(|&h| ri > h + 1) {
+        let w = t.rows[h].cells.iter().map(|c| cand(&c.bottom, &row_borders(t, h)[4])).fold(0.0, f64::max);
+        let first = cells_geo.iter().map(|g| cand(&r.cells[g.ci].top, top_t) + r.cells[g.ci].margins[0]).fold(w, f64::max);
+        let edge = cells.iter().map(|c| space_h(&c.cut[2])).fold(0.0, f64::max);
+        header_top = first.max(edge) - above.max(top_border);
+    }
+    (part_top, header_top)
+}
+
+// Merged regions
+fn fit_merged(rows: &mut [RowBox], t: &Table, geo: &[Vec<CellGeo>], env: &StoryEnv, memos: &mut Memos) -> Result<(), Yield> {
     let mut regions = Vec::new();
     for ri in 0..rows.len() {
         for ci in 0..rows[ri].cells.len() {
@@ -695,14 +750,7 @@ pub(super) fn assemble(
             turn_cell(&mut rows[ri].cells[ci], &t.rows[ri].cells[g.ci], g, v, len, t.fixed, env, memos)?;
         }
     }
-    let mut bottom_border = rows.last().map(|r| r.cells.iter().map(|c| space_h(&c.edges[2])).fold(0.0, f64::max)).unwrap_or(0.0);
-    if framed(t, t.rows.len().saturating_sub(1)) {
-        bottom_border = space_h(&row_borders(t, t.rows.len() - 1)[2]);
-    }
-    let (l, r) = if rtl { (3, 1) } else { (1, 3) };
-    let (tb0, tbn) = (row_borders(t, 0), row_borders(t, t.rows.len().saturating_sub(1)));
-    let outer = [tb0[0].clone(), tb0[l].clone(), tbn[2].clone(), tb0[r].clone()];
-    Ok(TableLayout { x0, cols, rows, bottom_border, spacing: t.cell_spacing, outer, id: TableId(t.id), fit, rtl })
+    Ok(())
 }
 
 /// A vertical cell's lines `len` long, turned and stacked across the cell, as its one unit.
