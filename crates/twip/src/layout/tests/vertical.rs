@@ -133,6 +133,27 @@ fn a_vertical_cell_adds_nothing_to_an_auto_row() {
 }
 
 #[test]
+fn a_vertically_merged_cells_lines_are_as_long_as_its_region_is_high() {
+    // Two exact 600-twip rows; the first column's btLr cell spans both. One row is too short for the word, the
+    // region isn't.
+    let cell = |merge: &str, text: &str| {
+        format!(
+            r#"<w:tc><w:tcPr><w:tcW w:w="1500" w:type="dxa"/><w:vMerge{merge}/><w:textDirection w:val="btLr"/></w:tcPr><w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="22"/></w:rPr><w:t>{text}</w:t></w:r></w:p></w:tc>"#
+        )
+    };
+    let side = r#"<w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr><w:p/></w:tc>"#;
+    let row = |c: String| format!(r#"<w:tr><w:trPr><w:trHeight w:val="600" w:hRule="exact"/></w:trPr>{c}{side}</w:tr>"#);
+    let body = format!(
+        r#"<w:tbl><w:tblPr><w:tblW w:w="4500" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="1500"/><w:gridCol w:w="3000"/></w:tblGrid>{}{}</w:tbl><w:p/>"#,
+        row(cell(r#" w:val="restart""#, "NORTH")),
+        row(cell("", ""))
+    );
+    let Some(doc) = doc(&body) else { return };
+    let runs: Vec<String> = turned_runs(&doc).into_iter().map(|r| r.0).collect();
+    assert_eq!(runs, ["NORTH"], "{runs:?}");
+}
+
+#[test]
 fn strict_spellings_and_unknown_values_read() {
     let Some(d) = doc(&table("lr", r#"<w:trPr><w:trHeight w:val="2000" w:hRule="exact"/></w:trPr>"#, WORDS)) else { return };
     assert!(turned_runs(&d).iter().all(|r| r.2 == [0.0, -1.0]));

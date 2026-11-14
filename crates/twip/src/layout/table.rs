@@ -2267,50 +2267,12 @@ fn assemble(
             Some((h, rule)) if rule != "auto" => (top_border + content.max(*h + min_margins), false, top_border + *h + min_margins),
             _ => (top_border + content, false, 0.0),
         };
-        // Vertical cells: lines as long as the row's content is high, stacked across the cell.
+        // Vertical cells: lines as long as the row's content is high, stacked across the cell. A merged region's first
+        // cell is laid out once its rows have their heights, below.
         for ((c, g), v) in cells.iter_mut().zip(cells_geo).zip(vertical) {
-            let Some(v) = v.filter(|_| c.v_merge != VMerge::Continue) else { continue };
+            let Some(v) = v.filter(|_| c.v_merge == VMerge::None) else { continue };
             let len = height - top_border - c.margins[0] - c.margins[2];
-            let story = vertical_story(&r.cells[g.ci], v, len, t.fixed, env, memos)?;
-            use super::vertical::Flow;
-            // Compat ≤ 14: centred and bottom blocks reach into the margin on the far side (the left one when the
-            // lines stack from the right), up to half its border.
-            let far = if env.ctx.env.text.compat == Compat::Legacy {
-                let side = if v.flow == Flow::Down { 1 } else { 3 };
-                (c.margins[side] - bw(&c.edges[side]) / 2.0).max(0.0)
-            } else {
-                0.0
-            };
-            // Compat ≤ 14 doesn't clamp: a block thicker than the cell starts before its first side.
-            let floor = if env.ctx.env.text.compat == Compat::Legacy { f64::NEG_INFINITY } else { 0.0 };
-            let across = match c.v_align.as_str() {
-                "center" => ((g.cw + far - story.height) / 2.0).max(floor),
-                "bottom" => (g.cw + far - story.height).max(floor),
-                _ => 0.0,
-            };
-            let bottom = match v.flow {
-                Flow::Down => g.cw + g.cx,
-                Flow::Up => g.w - g.cx,
-                Flow::DownEast => f64::INFINITY,
-            };
-            let items = super::vertical::turned(&story.units, v, [0.0, 0.0, g.cw, len], across, bottom);
-            let unit = StoryUnit {
-                top: 0.0,
-                height: 0.0,
-                below: 0.0,
-                after: 0.0,
-                hold: 0.0,
-                content: Rc::from([Child::Items(items.into())]),
-                block: 0,
-                from: 0,
-                widow: false,
-                keep_next: false,
-                keep_lines: false,
-                notes: story.units.iter().flat_map(|u| u.notes.iter().copied()).collect(),
-                row: None,
-            };
-            c.units = Rc::new(StoryLayout { units: vec![unit], ..StoryLayout::default() });
-            c.v_align = "top".into();
+            turn_cell(c, &r.cells[g.ci], g, v, len, t.fixed, env, memos)?;
         }
         let first = match r.cells.first().and_then(|c| c.blocks.first()) {
             Some(Block::Para(p)) => Some(p.para_style_in(env.ctx.env.text.review.view)),
@@ -2367,6 +2329,13 @@ fn assemble(
                 rows[last].height += need - have;
             }
             rows[ri].cells[ci].below = rows[ri + 1..=last].iter().map(|r| r.height).sum();
+            // A vertical region's lines are as long as the region's content is high.
+            let g = &geo[ri][ci];
+            if let Some(v) = vertical_cell(&t.rows[ri].cells[g.ci]) {
+                let c = &rows[ri].cells[ci];
+                let len = have.max(need) - rows[ri].top_border - c.margins[0] - c.margins[2];
+                turn_cell(&mut rows[ri].cells[ci], &t.rows[ri].cells[g.ci], g, v, len, t.fixed, env, memos)?;
+            }
         }
     }
     let mut bottom_border = rows.last().map(|r| r.cells.iter().map(|c| space_h(&c.edges[2])).fold(0.0, f64::max)).unwrap_or(0.0);
@@ -2377,6 +2346,61 @@ fn assemble(
     let (tb0, tbn) = (row_borders(t, 0), row_borders(t, t.rows.len().saturating_sub(1)));
     let outer = [tb0[0].clone(), tb0[l].clone(), tbn[2].clone(), tb0[r].clone()];
     Ok(TableLayout { x0, cols, rows, bottom_border, spacing: t.cell_spacing, outer, id: TableId(t.id), fit, rtl })
+}
+
+/// A vertical cell's lines `len` long, turned and stacked across the cell, as its one unit.
+#[allow(clippy::too_many_arguments)]
+fn turn_cell(
+    c: &mut CellBox,
+    cell: &Cell,
+    g: &CellGeo,
+    v: super::vertical::Vertical,
+    len: f64,
+    fixed: bool,
+    env: &StoryEnv,
+    memos: &mut Memos,
+) -> Result<(), Yield> {
+    let story = vertical_story(cell, v, len, fixed, env, memos)?;
+    use super::vertical::Flow;
+    // Compat ≤ 14: centred and bottom blocks reach into the margin on the far side (the left one when the
+    // lines stack from the right), up to half its border.
+    let far = if env.ctx.env.text.compat == Compat::Legacy {
+        let side = if v.flow == Flow::Down { 1 } else { 3 };
+        (c.margins[side] - bw(&c.edges[side]) / 2.0).max(0.0)
+    } else {
+        0.0
+    };
+    // Compat ≤ 14 doesn't clamp: a block thicker than the cell starts before its first side.
+    let floor = if env.ctx.env.text.compat == Compat::Legacy { f64::NEG_INFINITY } else { 0.0 };
+    let across = match c.v_align.as_str() {
+        "center" => ((g.cw + far - story.height) / 2.0).max(floor),
+        "bottom" => (g.cw + far - story.height).max(floor),
+        _ => 0.0,
+    };
+    let bottom = match v.flow {
+        Flow::Down => g.cw + g.cx,
+        Flow::Up => g.w - g.cx,
+        Flow::DownEast => f64::INFINITY,
+    };
+    let items = super::vertical::turned(&story.units, v, [0.0, 0.0, g.cw, len], across, bottom);
+    let unit = StoryUnit {
+        top: 0.0,
+        height: 0.0,
+        below: 0.0,
+        after: 0.0,
+        hold: 0.0,
+        content: Rc::from([Child::Items(items.into())]),
+        block: 0,
+        from: 0,
+        widow: false,
+        keep_next: false,
+        keep_lines: false,
+        notes: story.units.iter().flat_map(|u| u.notes.iter().copied()).collect(),
+        row: None,
+    };
+    c.units = Rc::new(StoryLayout { units: vec![unit], ..StoryLayout::default() });
+    c.v_align = "top".into();
+    Ok(())
 }
 
 fn tint(review: &ReviewView, r: &Row, c: &Cell) -> Option<u32> {
