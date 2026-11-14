@@ -255,6 +255,7 @@ pub fn layout_with(
     let mut origins = Vec::new();
     let mut tables: Vec<Placed> = Vec::new();
     let mut hf_tables: Vec<Placed> = Vec::new();
+    let mut aligned: Vec<Placed> = Vec::new();
     for (bi, b) in blocks.iter().enumerate() {
         // The part of a paragraph starting at a later line goes on without its space before.
         let from = if bi == start.0 { start.1 } else { 0 };
@@ -331,6 +332,11 @@ pub fn layout_with(
                     odd: true,
                 };
                 let h_pos = |f: &Float, h: f64| float::page_clamp(f, (float::h_pos(f, &fr), 0.0), h, &fr).0 - inset;
+                // A wrapping float laid out in the cell doesn't start above the cell's content top.
+                let v_pos = |f: &Float, h: f64, line_top: f64| {
+                    let y = float::v_pos(f, h, &fr, origin, line_top);
+                    if f.wrap != "none" && f.in_cell(text.compat) { y.max(0.0) } else { y }
+                };
                 // Wrapping floats
                 let mut own: Vec<(usize, Placed)> = Vec::new();
                 if in_cell && !ends.fit {
@@ -338,20 +344,26 @@ pub fn layout_with(
                         let (Kind::Anchor, Some(Object::Float(f))) = (q.kind, lines.shaped.object(lines.from + k)) else { continue };
                         if !f.in_cell(text.compat)
                             || f.wrap == "none"
-                            || f.v_align.is_some()
                             || !matches!(f.v_relative.as_str(), "paragraph" | "line" | "margin" | "page")
+                                && f.v_align.is_none()
                         {
                             continue;
                         }
                         let h = float_height(f, env, memos)?;
-                        let (fx, fy) = (h_pos(f, h), float::v_pos(f, h, &fr, origin, para_top));
+                        let (fx, fy) = (h_pos(f, h), v_pos(f, h, para_top));
                         own.push((k, Placed::new((0, bi, k), id, f, fx, fy, h)));
                     }
                 }
                 let mut floats: Vec<Placed> = own.iter().map(|(_, a)| a.clone()).collect();
                 // The story's own floats placed from outside it: only those beside the paragraph's unwrapped lines.
                 let bottom = para_top + lines.lines.iter().map(|l| l.pitch).sum::<f64>();
-                floats.extend(around.iter().chain(&tables).filter(|f| f.in_band(para_top, bottom)).cloned());
+                // In a cell, its other paragraphs' aligned floats (the anchor paragraph's are its own).
+                floats.extend(
+                    around.iter().filter(|f| !(in_cell && f.key.1 == bi)).chain(&tables).filter(|f| f.in_band(para_top, bottom)).cloned(),
+                );
+                if in_cell {
+                    aligned.extend(own.iter().filter(|(_, a)| a.float.v_align.is_some()).map(|(_, a)| a.clone()));
+                }
                 let bands = (!floats.is_empty())
                     .then(|| wrap_bands(&lines, p, style, &floats, &ps, (para_top, before), env.ctx.fonts))
                     .filter(|b| !b.is_empty());
@@ -388,7 +400,7 @@ pub fn layout_with(
                             let h = float_height(f, env, memos)?;
                             let (fx, fy) = match own.iter().find(|(o, _)| *o == k) {
                                 Some((_, a)) => (a.rect[0], a.rect[1] - y),
-                                None => (h_pos(f, h), super::float::v_pos(f, h, &fr, origin, y) - y),
+                                None => (h_pos(f, h), v_pos(f, h, y) - y),
                             };
                             if f.in_cell(text.compat) {
                                 // Compat 15: a tight or through float ends at its polygon's bottom (one along its top
@@ -403,7 +415,7 @@ pub fn layout_with(
                                 if f.wrap != "none" || fx < width && fx + f.w > 0.0 {
                                     float_bottom = float_bottom.max(y + fy + shape);
                                 }
-                                if f.wrap != "none" && f.v_align.is_none() {
+                                if f.wrap != "none" {
                                     held = held.max(y + fy + shape);
                                     hold = hold.max(fy + shape);
                                 }
@@ -499,6 +511,12 @@ pub fn layout_with(
     }
     if !ends.after {
         y += prev_after;
+    }
+    // A cell's vertically aligned floats are wrapped by every line of the cell that meets them: laid out again with
+    // them placed.
+    // ponytail: one more pass, with the places the first gave them.
+    if !aligned.is_empty() && around.is_empty() {
+        return layout_with(blocks, resolved, width, env, cell, start, &aligned, hf, memos);
     }
     unwrapped_floats(&mut units, &wrapping);
     Ok(StoryLayout { units, height: y.max(held), float_bottom, frozen: Vec::new(), origins, tables: hf_tables })

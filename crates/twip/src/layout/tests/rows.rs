@@ -1456,6 +1456,25 @@ fn doc_in(body: &str, mode: i64) -> crate::docx::Document {
     doc
 }
 
+/// A text box `w` × `h` pt holding "Z", anchored in a cell: `pos_v` its vertical position (an offset or an alignment),
+/// `wrap` its wrap element.
+fn cell_box(w: i64, h: i64, h_from: &str, pos_v: &str, wrap: &str) -> String {
+    format!(
+        r#"<w:r><w:drawing><wp:anchor xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="1" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="{h_from}"><wp:posOffset>0</wp:posOffset></wp:positionH>{pos_v}<wp:extent cx="{}" cy="{}"/><wp:effectExtent l="0" t="0" r="0" b="0"/>{wrap}<wp:docPr id="1" name="B"/><a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:wsp><wps:cNvSpPr txBox="1"/><wps:spPr><a:prstGeom prst="rect"/></wps:spPr><wps:txbx><w:txbxContent><w:p><w:r><w:t>Z</w:t></w:r></w:p></w:txbxContent></wps:txbx><wps:bodyPr lIns="0" tIns="0" rIns="0" bIns="0"/></wps:wsp></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#,
+        w * 12700,
+        h * 12700
+    )
+}
+
+fn one_cell(paras: &str, compat: i64) -> crate::docx::Document {
+    let body = format!(
+        r#"<w:tbl><w:tblGrid><w:gridCol w:w="6000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="6000" w:type="dxa"/></w:tcPr>{paras}</w:tc></w:tr></w:tbl><w:p><w:r><w:t>q</w:t></w:r></w:p>"#
+    );
+    let mut doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
+    doc.settings.compat_mode = compat;
+    doc
+}
+
 #[test]
 fn a_spaced_cell_clips_inside_its_own_border_box() {
     let text = "Lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore";
@@ -1569,4 +1588,38 @@ fn compat_15_a_moved_table_on_a_refilled_page_is_drawn_at_its_own_x() {
     let x = |mode: i64| super::page_chars(&doc_in(&body, mode))[0].iter().find(|c| c.0 == 'Q').map(|c| c.1).expect("drawn");
     assert!((x(15) - (72.0 + 100.0)).abs() < 1.0, "compat 15: drawn at tblpX: {}", x(15));
     assert!(x(14) > 250.0, "compat 14: drawn where it was moved: {}", x(14));
+}
+
+#[test]
+fn a_wrapping_cell_float_doesnt_start_above_the_cells_content_top_and_holds_the_row() {
+    let at = |offset: i64| {
+        let v = format!(r#"<wp:positionV relativeFrom="paragraph"><wp:posOffset>{}</wp:posOffset></wp:positionV>"#, offset * 12700);
+        let doc = one_cell(
+            &format!("<w:p>{}<w:r><w:t>a</w:t></w:r></w:p>", cell_box(40, 60, "column", &v, r#"<wp:wrapSquare wrapText="bothSides"/>"#)),
+            15,
+        );
+        let page = &super::page_chars(&doc)[0];
+        let y = |ch: char| page.iter().find(|c| c.0 == ch).map(|c| c.2).expect("drawn");
+        (y('Z'), y('q'))
+    };
+    let ((z0, q0), (z, q)) = (at(0), at(-20));
+    assert!((z - z0).abs() < 1e-6, "the box moves down to the content top: {z} vs {z0}");
+    assert!((q - q0).abs() < 1e-6, "the row holds the whole box: {q} vs {q0}");
+}
+
+#[test]
+fn an_aligned_cell_float_goes_to_the_content_top_and_every_line_it_meets_wraps_it() {
+    let v = r#"<wp:positionV relativeFrom="margin"><wp:align>bottom</wp:align></wp:positionV>"#;
+    let doc = one_cell(
+        &format!(
+            "<w:p><w:r><w:t>a</w:t></w:r></w:p><w:p>{}<w:r><w:t>b</w:t></w:r></w:p>",
+            cell_box(60, 30, "column", v, r#"<wp:wrapSquare wrapText="bothSides"/>"#)
+        ),
+        12,
+    );
+    let page = &super::page_chars(&doc)[0];
+    let at = |ch: char| page.iter().find(|c| c.0 == ch).map(|c| (c.1, c.2)).expect("drawn");
+    let (a, z) = (at('a'), at('Z'));
+    assert!(a.0 - z.0 > 59.0, "the first paragraph's line goes on right of the box: a {a:?} Z {z:?}");
+    assert!((a.1 - z.1).abs() < 3.0, "the box is at the cell's top: a {a:?} Z {z:?}");
 }

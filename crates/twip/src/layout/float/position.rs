@@ -148,6 +148,15 @@ pub fn h_pos(f: &Float, fr: &Frames) -> f64 {
 
 pub fn v_pos(f: &Float, h: f64, fr: &Frames, para_top: f64, line_top: f64) -> f64 {
     let vref = v_ref(f, fr);
+    // In a cell an alignment is ignored: the float goes to its reference's top, the cell's content top for every
+    // reference but the line and the paragraph.
+    if fr.cell && f.v_align.is_some() {
+        return match vref {
+            "line" => line_top,
+            "paragraph" => para_top,
+            _ => fr.margin[2],
+        };
+    }
     if let Some(p) = f.relative.pos[1].filter(|_| !fr.cell) {
         let body = fr.page_h - fr.margin[2] - fr.margin[3];
         let (s, base) = match vref {
