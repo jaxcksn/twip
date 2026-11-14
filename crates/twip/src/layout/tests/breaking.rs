@@ -3227,6 +3227,27 @@ fn compat_15_balanced_columns_start_rounded_down_to_the_smallest_step_and_step_a
 }
 
 #[test]
+fn compat_15_balancing_counts_a_tables_closing_border_with_its_last_row() {
+    // An intro section, then fourteen bordered rows and a line in two balanced columns: the line under the table is
+    // the section's smallest step (not the line with the table's bottom border), so the height steps by rows to 8 / 6.
+    let b = r#"w:val="single" w:sz="4" w:space="0" w:color="000000""#;
+    let rows: String = (1..=14)
+        .map(|k| format!(r#"<w:tr><w:tc><w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>R{k}</w:t></w:r></w:p></w:tc></w:tr>"#))
+        .collect();
+    let table = format!(
+        r#"<w:tbl><w:tblPr><w:tblBorders><w:top {b}/><w:bottom {b}/><w:insideH {b}/></w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid>{rows}</w:tbl>"#
+    );
+    let page = r#"<w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>"#;
+    let body = format!(
+        r#"<w:p><w:pPr><w:spacing w:after="0"/><w:sectPr><w:type w:val="continuous"/>{page}</w:sectPr></w:pPr><w:r><w:t>Intro</w:t></w:r></w:p>{table}<w:p><w:pPr><w:spacing w:after="0"/><w:sectPr><w:type w:val="continuous"/>{page}<w:cols w:num="2" w:space="720"/></w:sectPr></w:pPr><w:r><w:t>Line</w:t></w:r></w:p><w:p><w:r><w:t>After</w:t></w:r></w:p><w:sectPr><w:type w:val="continuous"/>{page}</w:sectPr>"#
+    );
+    let c15 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+    let Some(l) = baselines(c15, ARIAL_12, &body) else { return };
+    let left = l.iter().filter(|x| x.1.starts_with('R') && x.0 < 300.0).count();
+    assert_eq!(left, 8, "{l:?}");
+}
+
+#[test]
 fn compat_14_balancing_counts_every_table_row_with_the_bottom_border() {
     // An intro line and five rows with 0.5pt borders in two columns: the start counts the bottom border with each row
     // (4 × 0.5pt more than the layout), which holds the intro and two rows in column 1.

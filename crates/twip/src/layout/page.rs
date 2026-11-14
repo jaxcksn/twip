@@ -587,11 +587,14 @@ impl<'d> Paginator<'d, '_> {
         let mark_line = skip_last && fill.ctx.env.text.compat == Compat::Generic && matches!(blocks.get(n.wrapping_sub(2)), Some(Block::Table(_)));
         let state = fill.at.clone();
         let view = fill.ctx.env.text.review.view;
-        let afters: HashMap<_, _> = blocks
+        let spacing: HashMap<_, _> = blocks
             .blocks
             .iter()
             .filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None })
-            .map(|p| (super::text::para_id(p), super::paragraph::space_after(&fill.ctx.env.text, p.para_style_in(view))))
+            .map(|p| {
+                let (text, style) = (&fill.ctx.env.text, p.para_style_in(view));
+                (super::text::para_id(p), (super::paragraph::space_before(text, style), super::paragraph::space_after(text, style)))
+            })
             .collect();
         let legacy = fill.ctx.env.text.compat == Compat::Legacy;
         let mut bottoms = HashMap::new();
@@ -627,7 +630,7 @@ impl<'d> Paginator<'d, '_> {
                 // column (the last column's bottom has it already).
                 let hang = |pos: &FlowToken, carry: &FlowState| if s == Stop::Done || !pos.at.at_start() { 0.0 } else { carry.prev_after };
                 let tail = if s == Stop::Done || pos.at.at_start() { carry.prev_after } else { 0.0 };
-                stats.push(ColStats::of(&r.children, top, r.bottom - top + hang(&pos, &carry), tail, &afters, &bottoms));
+                stats.push(ColStats::of(&r.children, top, r.bottom - top + hang(&pos, &carry), tail, &spacing, &bottoms));
                 // The column's last line bottom: a finished fill's bottom holds the last space after.
                 lines_end = lines_end.max(r.bottom - if s == Stop::Done { carry.prev_after } else { 0.0 });
                 let mut kids = r.children;
@@ -1181,14 +1184,14 @@ struct ColStats {
 }
 
 impl ColStats {
-    /// `tail` is the space after of the column's last piece as laid out (0 when its paragraph goes on), `afters` each
-    /// paragraph's own space after.
+    /// `tail` is the space after of the column's last piece as laid out (0 when its paragraph goes on), `spacing` each
+    /// paragraph's own space before and after.
     fn of(
         children: &[Child],
         top: f64,
         used: f64,
         tail: f64,
-        afters: &HashMap<super::ids::ParaId, f64>,
+        spacing: &HashMap<super::ids::ParaId, (f64, f64)>,
         bottoms: &HashMap<super::ids::TableId, f64>,
     ) -> ColStats {
         let lu = |h: f64| i64::from(Lu::round_half_up(h).0);
@@ -1215,8 +1218,15 @@ impl ColStats {
             let Some(&(y0, _)) = ls.first() else { continue };
             let (yl, pl) = ls[ls.len() - 1];
             let bottom = yl + pl;
-            let after = match pieces.get(i + 1).and_then(|p| p.1.first()) {
-                Some(&(next, _)) => para.and_then(|q| afters.get(&q)).copied().unwrap_or(0.0).min(next - bottom).max(0.0),
+            let after = match pieces.get(i + 1).and_then(|p| Some((p.0, p.1.first()?.0))) {
+                Some((next_para, next)) => {
+                    let gap = (next - bottom).max(0.0);
+                    match para {
+                        Some(q) => spacing.get(q).map_or(0.0, |s| s.1).min(gap),
+                        // A table part's closing border belongs to its last row.
+                        None => (gap - next_para.and_then(|q| spacing.get(&q)).map_or(0.0, |s| s.0)).max(0.0),
+                    }
+                }
                 None => tail,
             };
             let before = (y0 - prev_end).max(0.0);
