@@ -115,22 +115,70 @@ const ADOPT = [
   'ListPosition',
   'CellPlace',
   'AnnouncementKind',
+  // services/elements.ts
+  'ControlKind',
+  'ElementInfo',
+  'ReferenceRule',
+  'ReferenceResolution',
+  'SubTemplateReference',
+  'DataBinding',
+  'PlaceholderImage',
+  'ControlOptions',
+  'Block',
+  'SubTemplateInfo',
+  // services/lists.ts
+  // services/dialogs.ts
+  'DialogKind',
+  'FieldInfo',
 ];
 
 /** Schema types written out at each use rather than named. */
 const INLINE = [
+  'AccessibilityDialog',
+  'AccessibilityIssue',
   'AccessibleMark',
   'AccessibleRole',
+  'AdjustListIndentsDialog',
   'AliasTarget',
   'Alignment',
+  'AltTextDialog',
+  'ApplyTo',
   'AreaKind',
+  'BandingDialog',
+  'BlockCell',
+  'BlockRow',
+  'Border',
+  'BorderSetting',
   'BorderState',
+  'BorderStyle',
+  'BordersShadingDialog',
+  'BordersTab',
+  'BulletsNumberingDialog',
   'CellAlignment',
+  'CellMarginValues',
   'ChangeSummary',
+  'CheckboxOptions',
+  'ChoiceOption',
   'ColumnLayout',
+  'ControlLock',
   'CursorTarget',
+  'DateOptions',
+  'DefineBulletDialog',
+  'DefineMultilevelDialog',
+  'DefineNumberFormatDialog',
   'ElementKind',
+  'FieldKind',
   'FlowState',
+  'FontDialog',
+  'FontStyle',
+  'FrameDialog',
+  'FrameHeightRule',
+  'FrameHorizontalAlign',
+  'FrameHorizontalRelative',
+  'FrameVerticalAlign',
+  'FrameVerticalRelative',
+  'FrameWidthRule',
+  'FrameWrap',
   'GestureTarget',
   'HeaderFooterInfo',
   'HeaderFooterKind',
@@ -138,17 +186,36 @@ const INLINE = [
   'HeightRule',
   'HorizontalAlignment',
   'HorizontalRuler',
+  'HyperlinkDialog',
   'Identity',
   'IndentState',
+  'InsertTableDialog',
+  'LevelAlignment',
   'LinkInfo',
+  'ListApplyTo',
+  'ListGalleryKind',
+  'ListItem',
+  'ListOptions',
   'ListState',
+  'ManageStylesDialog',
+  'ManageStylesTab',
+  'ManagedStyle',
   'MenuVia',
   'Modifiers',
+  'NumberingMode',
   'ObjectKind',
   'Orientation',
   'Origin',
+  'PageBorderDisplay',
+  'PageBorderOffset',
+  'PageBorderScope',
   'PageMargins',
+  'PageSetupDialog',
   'PageSize',
+  'ParagraphDialog',
+  'PictureOptions',
+  'PictureSizeDialog',
+  'PlainTextOptions',
   'PointerButton',
   'RevisionKind',
   'RichParagraph',
@@ -157,14 +224,26 @@ const INLINE = [
   'RulerVisibility',
   'SelectionKind',
   'SelectionMode',
+  'SetNumberingValueDialog',
+  'ShadingTarget',
   'Size',
   'Span',
+  'SpecialIndent',
   'Story',
+  'StyleDialog',
+  'StyleDialogType',
+  'StyleOpen',
   'StylePreview',
+  'StyleSort',
   'StyleType',
   'StyleVisibility',
   'TabStopInfo',
+  'TablePropertiesDialog',
+  'TableStylePart',
+  'TabsAction',
+  'TabsDialog',
   'TooltipKind',
+  'VerticalMerge',
   'VerticalRuler',
 ];
 
@@ -284,8 +363,10 @@ function ts(ty: Ty, from: string, indent = ''): string {
       return `'${ty.value}'`;
     case 'nullable':
       return `${ts(ty.of, from, indent)} | null`;
-    case 'array':
-      return `${parens(ts(ty.of, from, indent))}[]`;
+    case 'array': {
+      const item = ts(ty.of, from, indent);
+      return `${isUnion(ty.of) ? `(${item})` : item}[]`;
+    }
     case 'tuple':
       return `[${ty.items.map((t) => ts(t, from)).join(', ')}]`;
     case 'map':
@@ -309,7 +390,13 @@ function ts(ty: Ty, from: string, indent = ''): string {
   }
 }
 
-const parens = (t: string) => (t.includes(' | ') || t.includes(' & ') ? `(${t})` : t);
+/** Whether `ty` is written as a union, which an array's item type parenthesizes. */
+function isUnion(ty: Ty): boolean {
+  if (ty.kind === 'nullable' || ty.kind === 'oneOf') return true;
+  if (ty.kind !== 'ref' || !INLINE.includes(ty.name)) return false;
+  const shape = defs.get(ty.name)!.shape;
+  return shape.kind !== 'object' && !(shape.kind === 'alias' && !isUnion(shape.of)) && !(shape.kind === 'units' && shape.variants.length === 1);
+}
 
 /**
  * The engine's documentation in this SDK's terms: links become code (a unit variant its wire name), and `None` is

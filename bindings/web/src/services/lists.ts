@@ -2,6 +2,9 @@ import type { ListEntryId, ListLevel } from '../commands.js';
 import type { Session } from '../editor.js';
 import { Method } from '../transport/protocol.js';
 import { type PreviewPicture, type PreviewSize, toPicture } from './navigation.js';
+import type {  } from '../wire.generated.js';
+
+export type {  } from '../wire.generated.js';
 
 /** A list gallery entry: its id, a short label (its first levels' numbers or its bullet), and its levels. */
 export interface ListEntry {

@@ -15,6 +15,9 @@ import { Method } from '../transport/protocol.js';
 import { type PreviewPicture, type PreviewSize, toPicture } from './navigation.js';
 import type { Color, Points, StyleId } from '../types.js';
 import type { TabAlignment, TabLeader } from './ruler.js';
+import type { DialogKind, FieldInfo } from '../wire.generated.js';
+
+export type { DialogKind, FieldInfo } from '../wire.generated.js';
 
 /** The editor's dialogs as typed models: the application draws them. */
 export interface Dialogs {
@@ -45,31 +48,6 @@ export interface FormatDialogSession<K extends FormatDialogKind> extends Omit<Di
   /** Applies it to the style dialog: resolves with the style dialog after it. */
   apply(): Promise<StyleDialogSession>;
 }
-
-/** A dialog. */
-export type DialogKind =
-  | 'font'
-  | 'paragraph'
-  | 'pageSetup'
-  | 'insertTable'
-  | 'tableProperties'
-  | 'pictureSize'
-  | 'altText'
-  | 'hyperlink'
-  | 'tabs'
-  | 'accessibility'
-  | 'autoCorrect'
-  | 'style'
-  | 'manageStyles'
-  | 'bordersShading'
-  | 'frame'
-  | 'banding'
-  | 'defineBullet'
-  | 'defineNumberFormat'
-  | 'defineMultilevelList'
-  | 'setNumberingValue'
-  | 'adjustListIndents'
-  | 'bulletsNumbering';
 
 /** An open dialog. */
 export interface DialogSession<K extends DialogKind> {
@@ -103,24 +81,6 @@ export type DialogSessionOf<K extends DialogKind = DialogKind> = K extends 'acce
   : K extends 'style'
     ? StyleDialogSession
     : DialogSession<K>;
-
-/** A dialog field's metadata. */
-export interface FieldInfo {
-  /** The English label. */
-  label: string;
-  /** Whether it can be changed now. */
-  enabled: boolean;
-  /** The control it wants. */
-  kind: 'number' | 'length' | 'text' | 'choice' | 'toggle' | 'color' | 'list';
-  /** The minimum. */
-  min?: number;
-  /** The maximum. */
-  max?: number;
-  /** The step. */
-  step?: number;
-  /** A choice's options. */
-  options?: { value: string; label: string }[];
-}
 
 /** Each dialog's values. */
 export interface DialogValues {

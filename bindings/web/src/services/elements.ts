@@ -3,18 +3,27 @@ import type { Session } from '../editor.js';
 import type { SelectionSummary } from '../state.js';
 import { Method } from '../transport/protocol.js';
 import type { ClientPoint, ClientRect, ElementId, Points } from '../types.js';
+import type {
+  Block,
+  ControlKind,
+  ControlOptions,
+  DataBinding,
+  ElementInfo,
+  SubTemplateInfo,
+} from '../wire.generated.js';
 
-/** A content control's kind. */
-export type ControlKind =
-  | 'richText'
-  | 'plainText'
-  | 'picture'
-  | 'checkbox'
-  | 'date'
-  | 'dropDown'
-  | 'comboBox'
-  | 'group'
-  | 'repeatingSection';
+export type {
+  Block,
+  ControlKind,
+  ControlOptions,
+  DataBinding,
+  ElementInfo,
+  PlaceholderImage,
+  ReferenceResolution,
+  ReferenceRule,
+  SubTemplateInfo,
+  SubTemplateReference,
+} from '../wire.generated.js';
 
 /** The merge designer's elements: fields and content controls. Changing them is done with the commands. */
 export interface Elements {
@@ -51,66 +60,6 @@ export interface MountedElements extends Elements {
   drop(at: ClientPoint, op: Op): Promise<void>;
 }
 
-/** An element. */
-export interface ElementInfo {
-  /** The element. */
-  id: ElementId;
-  /** Its kind. */
-  kind: 'field' | ControlKind;
-  /** A field's code. */
-  code?: string;
-  /** A control's tag. */
-  tag?: string;
-  /** A control's title. */
-  title?: string;
-  /** The result or content text, up to 200 characters. */
-  display: string;
-  /** The story it is in. */
-  story: SelectionSummary['story'];
-  /** The sub-template whose body it is in, when `story` is `'subTemplate'`. */
-  subTemplate?: string;
-  /** The element it is in. */
-  parent: ElementId | null;
-  /** Locked against editing. */
-  locked: boolean;
-  /** A sub-template reference field's sub-template. */
-  reference?: SubTemplateReference;
-  /** A picture control's picture size (inline or floating). */
-  size?: { width: Points; height: Points };
-  /** Whether a content control shows its placeholder. */
-  showingPlaceholder?: boolean;
-}
-
-/**
- * One sub-template reference rule (`setSubTemplateRules`): a field of type `fieldType` names, in argument `argument`,
- * the building block in `category` (and `gallery`) whose body it shows.
- */
-export interface ReferenceRule {
-  /** The field type (`SUBTEMPLATE`), compared without case. */
-  fieldType: string;
-  /** Which of the field's arguments is the sub-template's name, from 0. Default: 0. */
-  argument?: number;
-  /** The building block category the name is looked up in. */
-  category: string;
-  /** The building block gallery (`custom1`), when it matters. */
-  gallery?: string;
-}
-
-/** Whether a reference's sub-template resolves, or why its body can't show. */
-export type ReferenceResolution = 'resolved' | 'missing' | 'nearMatch' | 'cycle' | 'tooDeep' | 'notAlone' | 'notInBody';
-
-/** What a sub-template reference field names and whether its body shows. */
-export interface SubTemplateReference {
-  /** The sub-template's name, as the field gives it. */
-  name: string;
-  /** Whether it names a sub-template whose body can show in its place. */
-  resolution: ReferenceResolution;
-  /** The sub-template's name when only a name in another case matches (`'nearMatch'`). */
-  nearMatch?: string;
-  /** Its body shows in its place. */
-  expanded: boolean;
-}
-
 /** An element in detail. */
 export interface ElementDetail extends ElementInfo {
   /** A control's lock. */
@@ -125,65 +74,12 @@ export interface ElementDetail extends ElementInfo {
   children: ElementId[];
 }
 
-/** A content control's binding to a custom XML part. */
-export interface DataBinding {
-  /** The XPath of the bound node. */
-  xpath: string;
-  /** The data part's item id. */
-  storeItemId?: string;
-  /** The XPath's namespace prefixes. */
-  prefixMappings?: string;
-}
-
-/** A picture control's placeholder picture: PNG, JPEG, GIF, BMP or SVG (`image/svg+xml`). */
-export interface PlaceholderImage {
-  /** The picture's bytes. */
-  data: Uint8Array;
-  /** Its MIME type; the data must be one. */
-  mime: string;
-}
-
-/**
- * A content control's options, by kind: checkbox, date, list, plain text, or picture. A picture's size (1…1584 pt) is
- * its placeholder's, and the picture's once filled (fitted to it); `setControl` keeps a side not given.
- */
-export type ControlOptions =
-  | { checked?: boolean }
-  | { format?: string; locale?: string }
-  | { items: { text: string; value: string }[] }
-  | { multiline?: boolean }
-  | { width?: Points; height?: Points };
-
-/** A block of the document structure. */
-export type Block =
-  | { kind: 'paragraph'; textLength: number; elements: ElementId[] }
-  | {
-      kind: 'table';
-      rows: {
-        cells: { span: number; verticalMerge: 'none' | 'start' | 'continue'; empty: boolean; blocks: Block[] }[];
-      }[];
-    };
-
 /** The document's custom XML data parts. Writing and removing them is done with commands. */
 export interface DataParts {
   /** Every data part. */
   list(): Promise<{ namespace: string | null; itemId: string }[]>;
   /** The data parts with a namespace or an item id. */
   get(options: { namespace?: string; itemId?: string }): Promise<{ namespace: string | null; itemId: string; xml: string }[]>;
-}
-
-/** A sub-template: a building block in a category the rules declare. */
-export interface SubTemplateInfo {
-  /** Its name. */
-  name: string;
-  /** Its building block category. */
-  category: string;
-  /** The reference fields naming it in the template's body, headers, footers and notes. */
-  references: number;
-  /** The reference fields naming it in other sub-templates' bodies. */
-  nestedReferences: number;
-  /** The fields and controls in its body. */
-  elements: ElementInfo[];
 }
 
 /**

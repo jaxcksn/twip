@@ -935,7 +935,25 @@ export interface ContextMenuEvent {
 }
 
 // @public
-export type ControlKind = 'richText' | 'plainText' | 'picture' | 'checkbox' | 'date' | 'dropDown' | 'comboBox' | 'group' | 'repeatingSection';
+export type ControlKind =
+/** Formatted text. */
+'richText'
+/** Unformatted text. */
+| 'plainText'
+/** A picture. */
+| 'picture'
+/** A checkbox. */
+| 'checkbox'
+/** A date picker. */
+| 'date'
+/** A drop-down list. */
+| 'dropDown'
+/** A combo box: a list that also takes typed text. */
+| 'comboBox'
+/** A group of controls, edited only inside its child controls. */
+| 'group'
+/** A section that repeats per item. */
+| 'repeatingSection';
 
 // @public
 export type ControlOptions = {
@@ -995,7 +1013,51 @@ export interface DataParts {
 export type Degrees = number;
 
 // @public
-export type DialogKind = 'font' | 'paragraph' | 'pageSetup' | 'insertTable' | 'tableProperties' | 'pictureSize' | 'altText' | 'hyperlink' | 'tabs' | 'accessibility' | 'autoCorrect' | 'style' | 'manageStyles' | 'bordersShading' | 'frame' | 'banding' | 'defineBullet' | 'defineNumberFormat' | 'defineMultilevelList' | 'setNumberingValue' | 'adjustListIndents' | 'bulletsNumbering';
+export type DialogKind =
+/** Font. */
+'font'
+/** Paragraph. */
+| 'paragraph'
+/** Page Setup. */
+| 'pageSetup'
+/** Insert Table. */
+| 'insertTable'
+/** Table Properties. */
+| 'tableProperties'
+/** Picture Size. */
+| 'pictureSize'
+/** Alt Text. */
+| 'altText'
+/** Hyperlink. */
+| 'hyperlink'
+/** Tabs. */
+| 'tabs'
+/** The accessibility checker. */
+| 'accessibility'
+/** The AutoCorrect rules. */
+| 'autoCorrect'
+/** Modify Style, and Create New Style from Formatting (`dialog_open_style`). */
+| 'style'
+/** Manage Styles. */
+| 'manageStyles'
+/** Borders and Shading. */
+| 'bordersShading'
+/** Frame. */
+| 'frame'
+/** Banding (a table style's band sizes, from the style dialog's Format menu). */
+| 'banding'
+/** Define New Bullet. */
+| 'defineBullet'
+/** Define New Number Format. */
+| 'defineNumberFormat'
+/** Define New Multilevel List. */
+| 'defineMultilevelList'
+/** Set Numbering Value. */
+| 'setNumberingValue'
+/** Adjust List Indents. */
+| 'adjustListIndents'
+/** Bullets and Numbering. */
+| 'bulletsNumbering';
 
 // @public
 export interface Dialogs {
@@ -1399,7 +1461,7 @@ export interface ElementInfo {
     code?: string;
     display: string;
     id: ElementId;
-    kind: 'field' | ControlKind;
+    kind: 'field' | 'richText' | 'plainText' | 'picture' | 'checkbox' | 'date' | 'dropDown' | 'comboBox' | 'group' | 'repeatingSection' | 'repeatingItem';
     locked: boolean;
     parent: ElementId | null;
     reference?: SubTemplateReference;
@@ -1408,7 +1470,7 @@ export interface ElementInfo {
         width: Points;
         height: Points;
     };
-    story: SelectionSummary['story'];
+    story: 'body' | 'header' | 'footer' | 'footnote' | 'endnote' | 'textBox' | 'subTemplate';
     subTemplate?: string;
     tag?: string;
     title?: string;
@@ -2447,7 +2509,21 @@ export interface PreviewSize {
 export function pt(n: number): Points;
 
 // @public
-export type ReferenceResolution = 'resolved' | 'missing' | 'nearMatch' | 'cycle' | 'tooDeep' | 'notAlone' | 'notInBody';
+export type ReferenceResolution =
+/** A sub-template has the name. */
+'resolved'
+/** No sub-template has the name. */
+| 'missing'
+/** Only a name in another case matches. */
+| 'nearMatch'
+/** The sub-template is already being shown around it. */
+| 'cycle'
+/** More than 16 sub-templates deep. */
+| 'tooDeep'
+/** The field shares its paragraph with other content. */
+| 'notAlone'
+/** The field is in a header, footer, note or text box. */
+| 'notInBody';
 
 // @public
 export interface ReferenceRule {
