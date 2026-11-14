@@ -942,7 +942,8 @@ impl<'d> PageFill<'d, '_> {
             }
             let u = self.note_units(k, id, col.width, memos)?;
             let (units, total) = (&u.units, u.height);
-            if deferred {
+            // Compat ≤ 14: a later note on the line follows whole after an earlier one cut here.
+            if deferred || !new_rest.is_empty() && self.ctx.env.text.compat == Compat::Legacy {
                 new_rest.push(NotePart { kind: k, id, units: units.clone() });
                 continue;
             }

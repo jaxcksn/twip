@@ -930,3 +930,26 @@ fn compat_15_a_note_area_under_balanced_columns_keeps_the_last_notes_space_after
     let some = note_y(140).expect("the note on page 1");
     assert!((none - some - 7.0).abs() < 0.05, "{none} {some}");
 }
+
+#[test]
+fn compat_14_a_second_note_on_a_cut_notes_line_follows_it_whole() {
+    // Ten lines in three balanced columns, line 4 referencing two seven-line notes: column 1 holds four lines and the
+    // first note's start, column 2 only notes (the first note's rest, then the second), column 3 the last six lines.
+    let p = |s: String| format!(r#"<w:p><w:pPr><w:spacing w:after="0"/></w:pPr>{s}</w:p>"#);
+    let note = |id: u32, q: char| {
+        let lines: String = (1..=7).map(|i| p(format!("<w:r><w:t>{q}{i:03}</w:t></w:r>"))).collect();
+        format!(r#"<w:footnote w:id="{id}">{lines}</w:footnote>"#)
+    };
+    let extra = note(10, 'Q') + &note(11, 'R');
+    let pr = r#"<w:footnotePr><w:pos w:val="beneathText"/></w:footnotePr>"#;
+    let refs = r#"<w:r><w:footnoteReference w:id="10"/></w:r><w:r><w:footnoteReference w:id="11"/></w:r>"#;
+    let mut b: String = (1..=10).map(|k| p(format!(r#"<w:r><w:t>P{k:03}</w:t></w:r>{}"#, if k == 4 { refs } else { "" }))).collect();
+    b += &sect(&format!(r#"{pr}<w:cols w:num="3" w:space="720"/>"#), false);
+    b += &(p("<w:r><w:t>Tail</w:t></w:r>".into()) + &sect(&format!(r#"<w:type w:val="continuous"/>{pr}"#), true));
+    let Some(doc) = notes_doc_with(&b, "", &extra) else { return };
+    let page = &super::page_chars(&doc)[0];
+    let x = |s: &str| page.windows(s.len()).find(|w| w.iter().map(|c| c.0).eq(s.chars())).map(|w| w[0].1);
+    let (Some(p4), Some(p5), Some(r1)) = (x("P004"), x("P005"), x("R001")) else { panic!("{page:?}") };
+    assert!(p4 < 200.0 && p5 > 400.0, "column 2 holds no lines: {p4} {p5}");
+    assert!(r1 > 200.0 && r1 < 300.0, "the second note starts in column 2: {r1}");
+}
