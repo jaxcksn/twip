@@ -25,6 +25,15 @@ const config: Config = {
   trailingSlash: false,
   onBrokenLinks: 'throw',
   i18n: { defaultLocale: 'en', locales: ['en'] },
+  markdown: { mermaid: true },
+  themes: ['@docusaurus/theme-mermaid'],
+  plugins: [
+    // No diagram uses ELK layouts; the theme's optional import of the package has nothing to resolve under pnpm.
+    () => ({
+      name: 'mermaid-without-elk',
+      configureWebpack: () => ({ resolve: { alias: { '@mermaid-js/layout-elk': false } } }),
+    }),
+  ],
 
   // Source Serif 4 (editorial), DM Sans (interface) and IBM Plex Mono (technical) from Google Fonts.
   headTags: [
@@ -68,6 +77,10 @@ const config: Config = {
     },
     footer: {
       copyright: `Layout. Edit. Render. · Copyright ${new Date().getFullYear()} Jackson Casey. Apache License 2.0.`,
+    },
+    mermaid: {
+      theme: { light: 'neutral', dark: 'neutral' },
+      options: { fontFamily: "'DM Sans', 'Segoe UI', Arial, sans-serif", flowchart: { curve: 'linear' } },
     },
     prism: {
       theme: mono('#171817', '#ffffff', '#646660', '#0968cd'),

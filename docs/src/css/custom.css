@@ -301,3 +301,48 @@ th {
   color: var(--twip-muted);
   padding: 2rem 1.5rem 3rem;
 }
+
+/* Diagrams: flat boxes on 1px rules */
+.docusaurus-mermaid-container {
+  margin: 1.5rem 0 2rem;
+  padding: 1.5rem;
+  background: var(--twip-surface);
+  border: 1px solid var(--twip-rule);
+  border-radius: 2px;
+}
+.docusaurus-mermaid-container svg {
+  font-family: var(--twip-sans) !important;
+}
+.docusaurus-mermaid-container .node rect,
+.docusaurus-mermaid-container .node polygon {
+  fill: var(--twip-paper) !important;
+  stroke: var(--twip-rule) !important;
+  stroke-width: 1px !important;
+  rx: 2px;
+}
+.docusaurus-mermaid-container .nodeLabel,
+.docusaurus-mermaid-container .edgeLabel {
+  color: var(--twip-ink) !important;
+  fill: var(--twip-ink) !important;
+}
+.docusaurus-mermaid-container .edgeLabel,
+.docusaurus-mermaid-container .edgeLabel p,
+.docusaurus-mermaid-container .edgeLabel rect,
+.docusaurus-mermaid-container .labelBkg {
+  background: var(--twip-surface) !important;
+  fill: var(--twip-surface) !important;
+  font-family: var(--twip-mono);
+  font-size: 0.75rem;
+}
+.docusaurus-mermaid-container .flowchart-link {
+  stroke: var(--twip-muted) !important;
+  stroke-width: 1px !important;
+}
+.docusaurus-mermaid-container marker path {
+  fill: var(--twip-muted) !important;
+  stroke: var(--twip-muted) !important;
+}
+.docusaurus-mermaid-container .node,
+.docusaurus-mermaid-container .node * {
+  filter: none !important;
+}
