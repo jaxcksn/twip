@@ -186,6 +186,38 @@ GitHub token). A pull request labeled `preview` gets `@twip/web` on pkg.pr.new o
 in a comment. For NuGet, run the NuGet preview workflow from the branch and use the `nupkg` artifact as a local
 source.
 
+## AI-assisted contributions
+
+Twip welcomes contributions made with the assistance of AI, including those substantially implemented by autonomous coding agents. I care about the quality, correctness, and maintainability of contributions, not whether every line was written by hand.
+AI is a tool, not a substitute for engineering judgment. Contributions involving AI are held to the same or even higher standards as any other contribution.
+
+### Expectations
+
+- Take ownership. The person submitting a contribution is responsible for understanding its behavior, reviewing the changes, and addressing issues discovered during review. You should be able to explain what your code does and why.
+- Verify, don't assume. AI-generated code can be convincing and incorrect. Run relevant tests, inspect the results, and report what was actually verified. Never present an agent's assertion that something works as evidence that it does.
+- Respect fidelity. Twip prioritizes document correctness. Changes to layout, editing, or rendering should be tested against realistic documents and edge cases. Never blindly accept regenerated snapshots or golden images simply because tests fail.
+- Prefer maintainability over volume. Keep changes focused and consistent with the existing architecture. Large, speculative refactors and unnecessary abstractions are no more desirable when an agent can produce them cheaply.
+- Be transparent. Disclose substantial AI assistance in your pull request, including which parts were implemented by an agent and what model was used. No need to share prompts, token counts, or entire conversations.
+- Respect licensing and security. Do not submit generated code that reproduces incompatible third-party code or exposes private information, credentials, or proprietary material.
+
+### AI agent commits
+
+An AI agent may write code and create commits on your behalf, but it may not substitute its own approval for human review.
+
+Agent-created commits should follow the same Conventional Commits format as all other contributions. When an agent autonomously creates a commit, identify the primary model used in the commit footer:
+
+```
+fix(editing): preserve selection across table splits
+
+AI-Agent: Claude Code Opus 5.5
+```
+
+This trailer is intended for commits that contain code written autonomously by an agent, not every commit where a contributor consulted an AI assistant. **Do not use Co-authored-by to attribute authorship to an AI model; that convention is better reserved for human collaborators.**
+
+Agent-created commits are considered provisional until a human has reviewed the final diff. Before marking a pull request ready for review, the submitting contributor must inspect the changes, verify the relevant behavior, and accept responsibility for the result.
+
+Because Twip squash-merges pull requests, individual agent trailers need not be preserved in the final merge commit. Significant AI involvement should instead remain disclosed in the pull request description.
+
 ## License
 
 By contributing you agree that your contributions are licensed under the Apache License 2.0, as in `LICENSE`.
