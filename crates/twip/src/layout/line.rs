@@ -1124,6 +1124,10 @@ fn fit_greedy(
             && !style.in_frame
             && classes(k).is_some_and(|t| first_char(k).is_some_and(|c| t.hanging.contains(c)))
     };
+    // Compat ≤ 14 measures the hyphen's fit and the hyphenation zone on the widths it fits with, not as drawn.
+    let fit_shift = |k: usize| {
+        if frame.compat == Compat::Legacy { lead.0 - lead.1 + pieces[start..k].iter().map(|q| q.break_extra).sum::<f64>() } else { 0.0 }
+    };
     let mut i = start;
     while i < n {
         if let Some(le) = limit_end
@@ -1299,7 +1303,7 @@ fn fit_greedy(
                         continue;
                     }
                     let hy = hyphen_width(sp, &pieces[at - 1]);
-                    let pen_at = xs[at - 1 - start] + if auto { ws[at - 1 - start] } else { 0.0 };
+                    let pen_at = xs[at - 1 - start] + if auto { ws[at - 1 - start] } else { 0.0 } + fit_shift(if auto { at } else { at - 1 });
                     let fits = !past(pen_at + hy - left, right - left);
                     let legacy = auto && frame.compat == Compat::Legacy;
                     if legacy {
@@ -1312,7 +1316,7 @@ fn fit_greedy(
                             first_unfit = at - 1;
                         }
                     }
-                    if !fits || auto && !zoned(pieces, start, at, &xs, right, frame) {
+                    if !fits || auto && !zoned(pieces, start, at, &xs, right, frame, &fit_shift) {
                         breaks.pop();
                         continue;
                     }
@@ -1416,13 +1420,13 @@ impl Points {
 }
 
 // Hyphenation zone
-fn zoned(pieces: &[Piece], start: usize, at: usize, xs: &[f64], right: f64, frame: &Frame) -> bool {
+fn zoned(pieces: &[Piece], start: usize, at: usize, xs: &[f64], right: f64, frame: &Frame, shift: &dyn Fn(usize) -> f64) -> bool {
     if frame.hyphen_zone <= 0.0 {
         return true;
     }
     // Measured from the word's first letter; a word that starts the line isn't tested.
     let word = (start..at).rev().find(|&k| pieces[k].kind != Kind::Text).map_or(start, |k| k + 1);
-    word == start || right - xs[word - start] >= frame.hyphen_zone - EPS
+    word == start || right - xs[word - start] - shift(word) >= frame.hyphen_zone - EPS
 }
 
 // Space squeeze

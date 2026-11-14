@@ -748,6 +748,13 @@ impl<'a> Builder<'a> {
         starts.dedup();
         let src_chars: Vec<char> = s.chars().collect();
         let shaped_map: Vec<u32> = shaped_text.char_indices().map(|(i, _)| i as u32).collect();
+        // Compat ≤ 14 fits a kerned run with the legacy kern table's pairs on the unkerned advances.
+        let kern_table: Option<Vec<f64>> = (kern && self.rules.kern_table_fit && !(self.em1000 && run.east_asia_named)).then(|| {
+            let bold = if face.sim_bold { 1.0 } else { 0.0 };
+            (0..glyphs.len())
+                .map(|i| face.advance(glyphs[i].id) + bold + glyphs.get(i + 1).map_or(0.0, |n| face.kern_pair(glyphs[i].id, n.id)))
+                .collect()
+        });
         let mut by_cluster: Vec<usize> = (0..glyphs.len()).collect();
         by_cluster.sort_by_key(|&i| glyphs[i].cluster);
         let mut gi = 0;
@@ -777,6 +784,7 @@ impl<'a> Builder<'a> {
             } + run.spacing * n_chars as f64;
             // Condensed spacing never takes a character below no width.
             p.width = p.width.max(0.0);
+            let fit = kern_table.as_ref().map(|kt| (by_cluster[g0..gi].iter().map(|&i| kt[i]).sum::<f64>() * scale + run.spacing * n_chars as f64).max(0.0));
             p.break_after = kind == Kind::Space || breaks_after(first, self.rules.dash_breaks);
             if first == '\u{AD}' {
                 p.soft_hyphen = true;
@@ -790,6 +798,11 @@ impl<'a> Builder<'a> {
                 let text = std::mem::take(&mut chars);
                 self.push(p, &text, &cluster_glyphs);
                 chars = text;
+            }
+            if let (Some(fit), Some(q)) = (fit, self.pieces.last_mut())
+                && !q.soft_hyphen
+            {
+                q.break_extra = fit - q.width;
             }
         }
     }
@@ -1717,6 +1730,7 @@ pub fn shape_space(
             mac_small_caps: text.mac_small_caps,
             wp_line_heights: text.wp_line_heights,
             dash_breaks: text.dash_breaks,
+            kern_table_fit: text.compat == crate::docx::Compat::Legacy,
         },
         view: text.review.view,
         hyphenate: text

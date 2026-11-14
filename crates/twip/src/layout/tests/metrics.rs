@@ -171,3 +171,26 @@ fn each_lines_part_of_a_broken_text_border_has_both_sides() {
     // 40 + 20 tw laid out, 16 + 8 px drawn: every line starts after a left side.
     assert!(rows.len() > 2 && (first_x(rows[0]) - 74.88).abs() < 1e-6 && (first_x(rows[1]) - 74.88).abs() < 1e-6, "{rows:?} {}", first_x(rows[1]));
 }
+
+#[test]
+fn compat_14_fits_a_kerned_run_with_the_kern_tables_pairs() {
+    let Some(face) = super::fonts().face("Segoe UI", None, false, false).filter(|f| f.family == "Segoe UI") else { return };
+    let text = "wry try dry ferry wry try dry ferry";
+    let glyphs = face.shape(text, true, 0, 0);
+    let scale = face.scale(12.0);
+    let gpos = glyphs.iter().map(|g| g.advance).sum::<f64>() * scale;
+    let next = glyphs.iter().skip(1).map(Some).chain([None]);
+    let table = glyphs.iter().zip(next).map(|(g, n)| face.advance(g.id) + n.map_or(0.0, |n| face.kern_pair(g.id, n.id))).sum::<f64>() * scale;
+    // Segoe UI's kern table kerns "ry" less than its GPOS: the text is wider for compat ≤ 14's fitting.
+    assert!(table - gpos > 2.0, "{gpos} {table}");
+    let avail = ((gpos + table) * 10.0).round() as i64;
+    let body = format!(r#"<w:p><w:pPr><w:ind w:right="{}"/></w:pPr><w:r><w:t xml:space="preserve">{text} zz</w:t></w:r></w:p>"#, 9360 - avail);
+    let rpr = r#"<w:rFonts w:ascii="Segoe UI" w:hAnsi="Segoe UI"/><w:sz w:val="24"/><w:kern w:val="2"/>"#;
+    let last_word_on_line_1 = |mode: u32| {
+        let settings = format!(r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="{mode}"/></w:compat>"#);
+        let c = chars(&settings, rpr, &body, 0).expect("lays out");
+        let z = c.iter().position(|g| g.0 == 'z').expect("drawn");
+        (c[z - 2].2 - c[0].2).abs() < 1e-6
+    };
+    assert!(last_word_on_line_1(15) && !last_word_on_line_1(12));
+}
