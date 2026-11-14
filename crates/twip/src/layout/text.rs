@@ -1983,7 +1983,7 @@ mod tests {
         let inserted = Rc::new(RunStyle { rev: RunRevisions { ins: Some(mark), ..Default::default() }, ..(*base).clone() });
         p.inlines = vec![Inline::Text("ab".into(), base.clone()), Inline::Text("cd".into(), inserted), Inline::Text("ef".into(), base)];
         let (fonts, mut cache, mut meter) = (fonts(), LayoutCache::new(), Meter::unlimited());
-        let mut memos = Memos { cache: &mut cache, job: None, meter: &mut meter };
+        let mut memos = Memos { cache: &mut cache, meter: &mut meter };
         crate::prof::take();
         let shaped = shape_uncached(&p, &ShapeSpace::default(), &fonts, &mut memos).expect("unlimited");
         let stretches = crate::prof::take().iter().find(|t| t.0 == "stretch").map_or(0, |t| t.2);

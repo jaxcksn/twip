@@ -314,7 +314,7 @@ fn row_restart(
     let story = super::story::StoryEnv { ctx, fields: &fields, notes };
     cache.store_tables = false;
     let mut meter = super::job::Meter::unlimited();
-    let mut memos = Memos { cache, job: None, meter: &mut meter };
+    let mut memos = Memos { cache, meter: &mut meter };
     let new = match latest.filter(|l| (l.0, l.1, l.2) == (span.section, span.first, width.to_bits())) {
         Some(l) => super::table::relayout_rows(table, width, &story, prev, &l.3, span.first_row.min(row)..=row, &mut memos),
         None => super::table::layout(table, width, &story, prev, false, &mut memos),

@@ -120,12 +120,8 @@ pub fn take_over_limit() -> Vec<(&'static str, f64)> {
     OVER.with(|o| std::mem::take(&mut *o.borrow_mut()))
 }
 
-#[derive(Debug, Default)]
-pub struct JobMemo {}
-
 pub struct Memos<'a> {
     pub cache: &'a mut LayoutCache,
-    pub job: Option<&'a mut JobMemo>,
     pub meter: &'a mut Meter,
 }
 

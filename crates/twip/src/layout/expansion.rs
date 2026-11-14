@@ -49,7 +49,7 @@ pub fn lay(doc: &Document, blocks: &[Block], width: f64, fonts: &Fonts, nested: 
     let ctx = LayoutCtx { fonts, env: &env, preview: None, expansions: nested };
     let mut cache = LayoutCache::default();
     let mut meter = Meter::unlimited();
-    let mut memos = Memos { cache: &mut cache, job: None, meter: &mut meter };
+    let mut memos = Memos { cache: &mut cache, meter: &mut meter };
     let (fields, notes) = (FieldValues::default(), HashMap::new());
     let senv = StoryEnv { ctx, fields: &fields, notes: &notes };
     let refs: Vec<&Block> = blocks.iter().collect();

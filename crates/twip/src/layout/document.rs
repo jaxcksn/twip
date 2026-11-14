@@ -834,7 +834,7 @@ impl LayoutJob {
         let mut notes = std::mem::take(&mut self.notes);
         let step_result = loop {
             let cx = PassCx::new(doc, *ctx, &notes);
-            let mut memos = Memos { cache, job: None, meter: &mut meter };
+            let mut memos = Memos { cache, meter: &mut meter };
             let r = loop {
                 if let Cursor::Done = self.run.cursor {
                     if self.end_pass(doc, &notes) {
@@ -868,7 +868,7 @@ impl LayoutJob {
         {
             let cx = PassCx::new(doc, *ctx, &notes);
             let mut meter = Meter::new(Budget::Unlimited);
-            let mut memos = Memos { cache, job: None, meter: &mut meter };
+            let mut memos = Memos { cache, meter: &mut meter };
             let run = &mut self.run;
             let n = run.pages.len();
             let nsec = doc.sections.len();
