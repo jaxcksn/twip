@@ -1866,8 +1866,9 @@ fn compat_14_distributed_spaces_grow_to_the_average_width_first() {
         return;
     };
     let x: Vec<f64> = chars.iter().filter(|g| g.0 == 'a').map(|g| g.1).collect();
-    // Arial 11: a 1139, space 569, average width 904 units of 2048.
-    let (a, space, avg) = (1139.0 * 11.0 / 2048.0, 569.0 * 11.0 / 2048.0, 904.0 * 11.0 / 2048.0);
+    // Arial 11: a 1139, space 569 units of 2048; the average width is the face's (Arial's 904, its stand-in's own).
+    let Some(face) = fonts().face("Arial", None, false, false) else { return };
+    let (a, space, avg) = (1139.0 * 11.0 / 2048.0, 569.0 * 11.0 / 2048.0, face.avg_width * 11.0);
     // Between the words: the second letter's gap and the space's, which takes the room to the average width more.
     let (letter_gap, words_gap) = (x[1] - x[0] - a, x[2] - x[1] - a - space);
     assert!((words_gap - 2.0 * letter_gap - (avg - space)).abs() < 0.01, "{x:?}");
