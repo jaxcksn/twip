@@ -953,3 +953,38 @@ fn compat_14_a_second_note_on_a_cut_notes_line_follows_it_whole() {
     assert!(p4 < 200.0 && p5 > 400.0, "column 2 holds no lines: {p4} {p5}");
     assert!(r1 > 200.0 && r1 < 300.0, "the second note starts in column 2: {r1}");
 }
+
+#[test]
+fn compat_14_widow_control_moves_a_paragraph_whose_float_reaches_into_the_note_area() {
+    // A page of exact 12pt lines with a six-line note and a frame, then a paragraph beside its own picture (5pt below
+    // its top, 70pt high), which ends in the body but below the text's room above the notes: however the paragraph
+    // meets the page bottom, widow control never leaves its first line alone there.
+    let emu = |pt: i64| pt * 12700;
+    let pic = format!(
+        r#"<w:r><w:drawing xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="1" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>{}</wp:posOffset></wp:positionV><wp:extent cx="{}" cy="{}"/><wp:wrapSquare wrapText="bothSides"/><wp:docPr id="1" name="P"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#,
+        emu(5),
+        emu(100),
+        emu(70)
+    );
+    let ppr = r#"<w:pPr><w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="exact"/></w:pPr>"#;
+    let note: String = (1..=6).map(|k| format!(r#"<w:p>{ppr}<w:r><w:t>Note {k}</w:t></w:r></w:p>"#)).collect();
+    let extra = format!(r#"<w:footnote w:id="10">{note}</w:footnote>"#);
+    let frame = format!(r#"<w:p><w:pPr><w:framePr w:w="3000" w:hSpace="180" w:wrap="around" w:vAnchor="text" w:hAnchor="margin" w:xAlign="right" w:y="1"/>{}</w:pPr><w:r><w:t>{}</w:t></w:r></w:p>"#, &ppr[7..ppr.len() - 8], "Framed paragraph ".repeat(4));
+    let beside = "Words beside the frame that run on for a few lines of text. ".repeat(4);
+    let zeta: String = (1..=120).map(|k| format!("z{k} ")).collect();
+    let alone = |n: usize| {
+        let fill: String = (0..n)
+            .map(|k| format!(r#"<w:p>{ppr}<w:r><w:t>F{k}</w:t></w:r>{}</w:p>"#, if k == 0 { r#"<w:r><w:footnoteReference w:id="10"/></w:r>"# } else { "" }))
+            .collect();
+        let body = format!(r#"{fill}{frame}<w:p>{ppr}<w:r><w:t xml:space="preserve">{beside}</w:t></w:r></w:p><w:p>{ppr}{pic}<w:r><w:t xml:space="preserve">{zeta}</w:t></w:r></w:p>{}"#, sect("", true));
+        let page = &super::page_chars(&notes_doc_with(&body, "", &extra)?)[0];
+        let mut ys: Vec<f64> = page.iter().filter(|c| c.0 == 'z').map(|c| c.2).collect();
+        ys.dedup_by(|a, b| (*a - *b).abs() < 0.5);
+        Some(ys.len() == 1)
+    };
+    let Some(first) = alone(39) else { return };
+    assert!(!first);
+    for n in 40..=42 {
+        assert_eq!(alone(n), Some(false), "{n} lines before it");
+    }
+}

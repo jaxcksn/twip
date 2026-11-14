@@ -2587,10 +2587,10 @@ impl<'d> PageFill<'d, '_> {
         }
         let hard = bands[..fit].iter().any(|(_, segs)| segs.iter().any(|l| matches!(l.hard, Some(Kind::PageBreak | Kind::ColumnBreak))));
         let mut take = lines_to_take(nb, fit, hard, first_part, style.keep_lines, style.widow_control);
-        // Compat ≤ 14: widow and orphan control never moves a line set beside a wrapping float that ends in the body;
-        // the lines from the last such one up stay.
+        // Compat ≤ 14: widow and orphan control never moves a line set beside a wrapping float that ends in the body
+        // (above the page's note area); the lines from the last such one up stay.
         if compat == Compat::Legacy && take < fit && !style.keep_lines {
-            let bottom = col.bottom.to_pt();
+            let bottom = col.bottom.to_pt() - area.total();
             let beside = |b: usize| {
                 let (bt, segs) = &bands[b];
                 let bb = bt + segs[0].pitch;
