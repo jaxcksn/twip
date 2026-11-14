@@ -311,7 +311,8 @@ impl PageGeometry {
                 _ => None,
             })
             .filter_map(|r| {
-                let a = l.line.atoms.iter().find(|a| !a.brk && (a.x0 - r[0]).abs() < 0.01)?;
+                // The picture's atom holds its drawing, inset by any effect extent (an outline's half width).
+                let a = l.line.atoms.iter().find(|a| !a.brk && a.x0 - 0.01 <= r[0] && r[0] < a.x1)?;
                 Some((a.para, a.unit, [l.x + r[0], l.y + r[1], l.x + r[2], l.y + r[3]]))
             })
             .collect();

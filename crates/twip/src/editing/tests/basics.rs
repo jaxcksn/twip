@@ -524,6 +524,16 @@ fn a_float_or_text_box_dragged_onto_the_next_page_lands_there() {
     r.step(&json!({ "drag": { "from": { "float": 0, "at": "bottom" }, "to": { "float": 0, "at": "bottom", "dy": 650.0 } } }));
     let g = crate::editing::inspect::inspect(&mut r.e, "geometry", true);
     assert_eq!(g["geometry"]["floats"][0]["page"], json!(0), "{}", g["geometry"]["floats"]);
+    // The showcase's banner, floated, crosses from the cover's section into the next one.
+    let bytes = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/docx-feature-showcase.docx")).expect("fixture");
+    let mut r = super::scenarios::Run::from_bytes(&bytes, "cross-section");
+    r.step(&json!({ "click": { "picture": 0 } }));
+    let out = r.e.execute(super::super::commands::Command::SetObjectWrap(crate::api::value::ObjectWrap::Square), fonts());
+    assert!(matches!(out, super::super::commands::Outcome::Changed(_)), "{out:?}");
+    r.step(&json!({ "drag": { "from": { "float": 0 }, "to": { "float": 0, "dy": 700.0 } } }));
+    let g = crate::editing::inspect::inspect(&mut r.e, "geometry", true);
+    let f = g["geometry"]["floats"].as_array().unwrap().iter().find(|f| f["float"] == json!(0)).cloned().unwrap();
+    assert_eq!(f["page"], json!(1), "{f}");
 }
 
 #[test]
@@ -544,6 +554,23 @@ fn a_shape_selects_on_a_click_and_opens_on_a_double_click_and_a_text_box_opens_a
     assert!(matches!(caret.story, StoryId::TextBox(_)) && r.e.selection().is_collapsed(), "a double-click opens its text: {caret:?}");
     r.step(&json!({ "click": { "float": draft } }));
     assert!(r.e.selection().is_collapsed(), "a click in the shape being edited stays in its text");
+    // Each shape, Review's ellipse too (its text area is narrow, its frame inset by its outline), is selected by a
+    // click by its text's start.
+    for f in g["geometry"]["floats"].as_array().unwrap().iter().filter(|f| f["page"] == json!(7)).take(3) {
+        let v: Vec<f64> = f["rect"].as_array().unwrap().iter().map(|v| v.as_f64().unwrap()).collect();
+        let mut r = super::scenarios::Run::from_bytes(&bytes, "shape-clicks");
+        let (x, y) = (v[0] + (v[2] - v[0]) * 0.3, (v[1] + v[3]) / 2.0);
+        r.send(json!({ "type": "pointer", "kind": "down", "x": x, "y": y, "clicks": 1, "mods": {} }));
+        r.send(json!({ "type": "pointer", "kind": "up", "x": x, "y": y, "clicks": 1 }));
+        assert!(matches!(r.e.selection(), Selection::Object(_)), "{v:?}: {:?}", r.e.selection());
+        let pages = r.e.snapshot().pages().len();
+        let view = r.e.view(0..pages);
+        assert!(
+            matches!(&view.selection, super::super::view::SelectionView::Object(o, true) if !o.is_empty()),
+            "{v:?}: its outline and handles draw: {:?}",
+            view.selection
+        );
+    }
     let mut r = super::scenarios::Run::open("FX-STORIES.docx", "box-clicks");
     r.step(&json!({ "click": { "float": 0 } }));
     assert!(r.e.selection().focus().is_some_and(|p| matches!(p.story, StoryId::TextBox(_))), "a text box opens at once");
