@@ -96,7 +96,10 @@ pub fn code_with(inlines: &[Inline], s: FieldSpan, value: &dyn Fn(usize) -> Opti
 /// (word i, and the white space before it, as cached word i and the white space before that), the words past the
 /// cached ones in `run`; without it, all in `run`.
 pub fn value_runs(inlines: &[Inline], s: FieldSpan, text: &str, run: &Run) -> Vec<(String, Run)> {
-    let merge = parse(&code_text(inlines, s)).switches.iter().any(|w| w.flag == '*' && w.arg.as_deref().is_some_and(|a| a.eq_ignore_ascii_case("MERGEFORMAT")));
+    let merge = parse(&code_text(inlines, s))
+        .switches
+        .iter()
+        .any(|w| w.flag == '*' && w.arg.as_deref().is_some_and(|a| a.eq_ignore_ascii_case("MERGEFORMAT")));
     let Some(sep) = s.sep.filter(|_| merge) else { return vec![(text.to_string(), run.clone())] };
     // The cached words: the run of the white space before each, and of its first other character.
     let part = &inlines[sep + 1..s.end];
@@ -954,7 +957,13 @@ mod tests {
         let runs: Vec<Run> = doc.sections[0]
             .blocks
             .iter()
-            .filter_map(|b| if let Block::Para(p) = b { p.inlines.iter().find_map(|i| if let Inline::FieldBegin { run, .. } = i { Some(run.clone()) } else { None }) } else { None })
+            .filter_map(|b| {
+                if let Block::Para(p) = b {
+                    p.inlines.iter().find_map(|i| if let Inline::FieldBegin { run, .. } = i { Some(run.clone()) } else { None })
+                } else {
+                    None
+                }
+            })
             .collect();
         // The simple PAGE: not its result run's 20 pt; the REF: its source's bold 15 pt, not its code's 14 pt.
         assert!(runs[0].size != 20.0 && !runs[0].bold, "{}", runs[0].size);
@@ -969,7 +978,16 @@ mod tests {
         let (code, a, b) = (size(14.0), size(12.0), size(10.0));
         let id = FieldId::next();
         let inlines = vec![
-            Inline::FieldBegin { id, kind: Some(FieldKind::Ref("B".into())), lock: false, dirty: false, view: FieldView::Result, label: None, value: None, run: code.clone() },
+            Inline::FieldBegin {
+                id,
+                kind: Some(FieldKind::Ref("B".into())),
+                lock: false,
+                dirty: false,
+                view: FieldView::Result,
+                label: None,
+                value: None,
+                run: code.clone(),
+            },
             Inline::Text(r#" REF B \* MERGEFORMAT "#.into(), code.clone()),
             Inline::FieldSep { id, run: code.clone() },
             Inline::Text("Old".into(), a.clone()),

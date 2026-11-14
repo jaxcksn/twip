@@ -134,10 +134,9 @@ impl PassMemo {
 
 fn varies_by_page(blocks: &[Block]) -> bool {
     blocks.iter().any(|b| match b {
-        Block::Para(p) => p
-            .inlines
-            .iter()
-            .any(|i| matches!(i, Inline::FieldBegin { kind: Some(FieldKind::Page | FieldKind::PgNum | FieldKind::Section | FieldKind::SectionPages), .. })),
+        Block::Para(p) => p.inlines.iter().any(|i| {
+            matches!(i, Inline::FieldBegin { kind: Some(FieldKind::Page | FieldKind::PgNum | FieldKind::Section | FieldKind::SectionPages), .. })
+        }),
         Block::Table(t) => t.rows.iter().any(|r| r.cells.iter().any(|c| varies_by_page(&c.blocks))),
     })
 }
