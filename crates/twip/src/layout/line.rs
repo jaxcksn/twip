@@ -2062,13 +2062,17 @@ fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, m
         desc = desc.max(d);
         sep_mark = Some(a + e + d);
     }
-    if last
-        && object
-        && un_text_asc + un_text_desc + num_asc == 0.0
-        && let Some(f) = fonts.face(&mark.ascii, None, mark.bold, mark.italic)
-    {
-        let (a, d, e) = sp.metrics(&f, mark, mark_size);
-        asc = asc.max(a + e + d);
+    // A paragraph's last line of only pictures is at least a single line high, all of the extra above the pictures:
+    // the mark's single height in compat ≤ 14, the picture runs' own fonts' in compat 15.
+    if last && object && un_text_asc + un_text_desc + num_asc == 0.0 {
+        let min = match compat {
+            Compat::Legacy => fonts.face(&mark.ascii, None, mark.bold, mark.italic).map_or(0.0, |f| {
+                let (a, d, e) = sp.metrics(&f, mark, mark_size);
+                a + e + d
+            }),
+            Compat::Generic => picture_line_height(sp, &pieces[line.start..line.end.min(pieces.len())], mark, fonts, last, compat, 0.0),
+        };
+        asc = asc.max(min - desc);
     }
     let asc = asc.max(num_asc);
     let un_asc = if !has_text { un_asc.max(num_asc) } else { un_asc };

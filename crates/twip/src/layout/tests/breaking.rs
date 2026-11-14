@@ -239,6 +239,21 @@ fn a_last_line_of_only_a_short_picture_is_the_marks_height() {
     assert!((l[1].3 - l[0].3 - 2.0 * 13.7988).abs() < 0.01, "{l:?}");
 }
 
+#[test]
+fn a_last_line_of_only_a_lowered_picture_counts_its_descent_in_the_minimum() {
+    // A 10pt picture lowered 9pt: the line is one single height, the descent part of it. Compat 15 takes the
+    // picture run's own 16pt font, not the 12pt mark's.
+    let c15 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+    let pic = inline_pic(64, 10).replace("<w:r>", r#"<w:r><w:rPr><w:position w:val="-18"/><w:sz w:val="32"/></w:rPr>"#);
+    let body = format!(r#"<w:p><w:r><w:t>Hi</w:t></w:r></w:p><w:p>{pic}</w:p><w:p><w:r><w:t>After</w:t></w:r></w:p>"#);
+    let gap = |settings: &str| baselines(settings, ARIAL_12, &body).map(|l| l[1].3 - l[0].3);
+    let Some(c12) = gap("") else { return };
+    let c15 = gap(c15).unwrap();
+    let arial_16 = 13.7988 * 16.0 / 12.0;
+    assert!((c12 - 2.0 * 13.7988).abs() < 0.01, "{c12}");
+    assert!((c15 - 13.7988 - arial_16).abs() < 0.01, "{c15}");
+}
+
 fn cell(w: u32, ind: i32, inner: &str) -> String {
     format!(
         r#"<w:tbl><w:tblPr><w:tblW w:w="{w}" w:type="dxa"/><w:tblInd w:w="{ind}" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="{w}"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="{w}" w:type="dxa"/></w:tcPr>{inner}<w:p/></w:tc></w:tr></w:tbl><w:p/>"#
