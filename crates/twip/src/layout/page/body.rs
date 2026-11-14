@@ -8,7 +8,7 @@ use crate::docx::model::*;
 use crate::layout::LayoutCtx;
 use crate::layout::flow::{AttemptState, PageFill, PassMemo, Stop};
 use crate::layout::fragment::{BoxFragment, BoxKind, Child, Item, child_down};
-use crate::layout::ids::FragmentId;
+use crate::layout::ids::{FragmentId, ParaId, TableId};
 use crate::layout::job::{Memos, Yield};
 use crate::layout::node::{Notes, SectionNode};
 use crate::layout::record::PageEffects;
@@ -62,14 +62,59 @@ fn balance(
             bottoms.insert(tb.id, tb.bottom_border);
         }
     }
+    let trial = Trial { cols, p0, c0, top, state: &state, stream, n, skip_last, mark_line, legacy, mid, spacing: &spacing, bottoms: &bottoms };
+    let try_h = |fill: &mut PageFill, h: f64, memos: &mut Memos| trial.run(fill, h, memos);
+    let full = cols[0].bottom.to_pt() - top;
+    let (first, stats) = try_h(fill, full, memos)?;
+    if first.is_none() {
+        fill.at = state;
+        return Ok(None);
+    }
+    let full_lu = i64::from(Lu::round_half_up(full).0);
+    let widths: Vec<f64> = cols.iter().map(|c| c.width).collect();
+    let wsum: f64 = widths.iter().sum::<f64>().max(1.0);
+    let r = if fill.ctx.env.text.compat == Compat::Legacy {
+        trial.legacy_height(fill, sec, &stats, full_lu, &widths, wsum, memos)?
+    } else {
+        trial.generic_height(fill, &stats, full_lu, &widths, wsum, memos)?
+    };
+    let Some((p, mut c, children, end, eff)) = r.0.or(first) else { unreachable!("the full height balanced before") };
+    c.prev = None;
+    c.balanced_after = c.prev_after;
+    c.prev_after = 0.0;
+    Ok(Some((end, children, p, c, eff)))
+}
+
+// One balancing trial's inputs
+struct Trial<'t> {
+    cols: &'t [ColumnSpace],
+    p0: &'t FlowToken,
+    c0: &'t FlowState,
+    top: f64,
+    state: &'t AttemptState,
+    stream: Option<&'t NoteArea>,
+    n: usize,
+    skip_last: bool,
+    mark_line: bool,
+    legacy: bool,
+    mid: bool,
+    spacing: &'t HashMap<ParaId, (f64, f64)>,
+    bottoms: &'t HashMap<TableId, f64>,
+}
+
+impl Trial<'_> {
+    // One trial at a height
     #[allow(
         clippy::type_complexity,
         reason = "one column fill's whole result (end, children, token, state, effects); a struct used only here would add nothing"
     )]
-    let try_h = |fill: &mut PageFill,
-                 h: f64,
-                 memos: &mut Memos|
-     -> Result<(Option<(FlowToken, FlowState, Vec<Child>, f64, PageEffects)>, Vec<ColStats>), Yield> {
+    fn run(
+        &self,
+        fill: &mut PageFill,
+        h: f64,
+        memos: &mut Memos,
+    ) -> Result<(Option<(FlowToken, FlowState, Vec<Child>, f64, PageEffects)>, Vec<ColStats>), Yield> {
+        let &Trial { cols, p0, c0, top, state, stream, n, skip_last, mark_line, legacy, mid, spacing, bottoms } = self;
         let mut pos = p0.clone();
         let mut carry = c0.clone();
         let mut children = Vec::new();
@@ -88,7 +133,7 @@ fn balance(
             // column (the last column's bottom has it already).
             let hang = |pos: &FlowToken, carry: &FlowState| if s == Stop::Done || !pos.at.at_start() { 0.0 } else { carry.prev_after };
             let tail = if s == Stop::Done || pos.at.at_start() { carry.prev_after } else { 0.0 };
-            stats.push(ColStats::of(&r.children, top, r.bottom - top + hang(&pos, &carry), tail, &spacing, &bottoms));
+            stats.push(ColStats::of(&r.children, top, r.bottom - top + hang(&pos, &carry), tail, spacing, bottoms));
             // The column's last line bottom: a finished fill's bottom holds the last space after.
             lines_end = lines_end.max(r.bottom - if s == Stop::Done { carry.prev_after } else { 0.0 });
             let mut kids = r.children;
@@ -122,20 +167,26 @@ fn balance(
             }
         }
         Ok((None, stats))
-    };
-    let full = cols[0].bottom.to_pt() - top;
-    let (first, stats) = try_h(fill, full, memos)?;
-    if first.is_none() {
-        fill.at = state;
-        return Ok(None);
     }
-    let full_lu = i64::from(Lu::round_half_up(full).0);
-    let widths: Vec<f64> = cols.iter().map(|c| c.width).collect();
-    let wsum: f64 = widths.iter().sum::<f64>().max(1.0);
-    let to_pt = |h: i64| h as f64 / LU_PER_PT;
-    let mut h;
-    let mut r;
-    if fill.ctx.env.text.compat == Compat::Legacy {
+
+    // Compat ≤ 14 search
+    #[allow(clippy::type_complexity, reason = "as run")]
+    #[allow(clippy::too_many_arguments, reason = "the first fill's statistics and the columns' widths")]
+    fn legacy_height(
+        &self,
+        fill: &mut PageFill,
+        sec: &SectionNode,
+        stats: &[ColStats],
+        full_lu: i64,
+        widths: &[f64],
+        wsum: f64,
+        memos: &mut Memos,
+    ) -> Result<(Option<(FlowToken, FlowState, Vec<Child>, f64, PageEffects)>, Vec<ColStats>), Yield> {
+        let cols = self.cols;
+        let try_h = |fill: &mut PageFill, h: f64, memos: &mut Memos| self.run(fill, h, memos);
+        let to_pt = |h: i64| h as f64 / LU_PER_PT;
+        let mut h;
+        let mut r;
         // Compat ≤ 14: the sums count every table row with the table's bottom border (the fill keeps the layout's
         // heights). Equal columns start at the unbalanced fill's total over the column count, rounded up; explicit
         // widths at its layout height weighted by the first column's width, in whole twips. Never below the mean
@@ -157,16 +208,33 @@ fn balance(
             h = (h + if lines > 0 { (used / lines).max(1) } else { 49152 }).min(full_lu);
             r = try_h(fill, to_pt(h), memos)?;
         }
-    } else {
+        Ok(r)
+    }
+
+    // Compat 15 search
+    #[allow(clippy::type_complexity, reason = "as run")]
+    fn generic_height(
+        &self,
+        fill: &mut PageFill,
+        stats: &[ColStats],
+        full_lu: i64,
+        widths: &[f64],
+        wsum: f64,
+        memos: &mut Memos,
+    ) -> Result<(Option<(FlowToken, FlowState, Vec<Child>, f64, PageEffects)>, Vec<ColStats>), Yield> {
+        let try_h = |fill: &mut PageFill, h: f64, memos: &mut Memos| self.run(fill, h, memos);
+        let to_pt = |h: i64| h as f64 / LU_PER_PT;
+        let mut h;
+        let mut r;
         // From the unbalanced fill's paragraph heights weighted by the columns' widths, rounded down to its
         // smallest paragraph step, the height grows by the failed fill's smallest step, or shrinks by the fitting
         // fill's while it still fits; a grow or shrink step is never below 240 tw, and is 240 tw after a fill
         // that placed nothing.
         const FLOOR: i64 = 49152;
         let smallest = |st: &[ColStats]| st.iter().filter(|s| s.min > 0).map(|s| s.min).min();
-        let m = smallest(&stats).unwrap_or(FLOOR);
+        let m = smallest(stats).unwrap_or(FLOOR);
         let step = |st: &[ColStats]| smallest(st).unwrap_or(FLOOR).max(FLOOR);
-        h = (widths.iter().zip(&stats).map(|(w, s)| w * s.height as f64).sum::<f64>() / wsum) as i64;
+        h = (widths.iter().zip(stats).map(|(w, s)| w * s.height as f64).sum::<f64>() / wsum) as i64;
         h = (h - h % m).min(full_lu);
         r = try_h(fill, to_pt(h), memos)?;
         if r.0.is_some() {
@@ -188,12 +256,8 @@ fn balance(
                 r = try_h(fill, to_pt(h), memos)?;
             }
         }
+        Ok(r)
     }
-    let Some((p, mut c, children, end, eff)) = r.0.or(first) else { unreachable!("the full height balanced before") };
-    c.prev = None;
-    c.balanced_after = c.prev_after;
-    c.prev_after = 0.0;
-    Ok(Some((end, children, p, c, eff)))
 }
 
 fn draw_floats(fill: &PageFill, placed: &[crate::layout::float::Placed], memos: &mut Memos) -> Result<Vec<Child>, Yield> {
