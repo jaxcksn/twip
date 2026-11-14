@@ -9,7 +9,8 @@ use crate::layout::ids::ParaId;
 use crate::layout::job::{Memos, Yield};
 use crate::layout::space::ColumnSpace;
 use crate::layout::story::StoryEnv;
-use crate::layout::token::{NoteArea, NotePart};
+use crate::layout::table::TableLayout;
+use crate::layout::token::{FlowState, NoteArea, NotePart};
 use crate::layout::units::{EPS, Lu};
 
 use super::{ColumnCursor, PageFill, Stop};
@@ -154,39 +155,10 @@ impl<'d> PageFill<'d, '_> {
         // lines stack from the left.
         let left = if v.flow == crate::layout::vertical::Flow::DownEast { y0 } else { self.page_h - y1 };
         let bottom = if fp.is_some() { Lu::MAX } else { Lu::round_half_up(end) };
-        // Compat ≤ 14: one that runs past the line end below an earlier table is drawn from the line start, over
-        // it. It keeps the more of the rows that fit below that table (all that fit the line, when those reach past
-        // its end) and the rows that fit once the table is stacked below its own image until it no longer fits
-        // whole; at least one. When the rows that fit below that table reach past its end, the lines before meet
-        // those rows only.
-        let mut reach = None;
-        let (along, bottom) = if legacy && along > col.x + EPS && along + h > end + EPS && fp.is_none() {
-            let hs: Vec<f64> = tb.rows.iter().skip(pos.at.index()).filter(|r| !r.hidden).map(|r| r.height).collect();
-            let bb = tb.bottom_border;
-            let fit = |room: f64| {
-                let mut s = bb;
-                hs.iter()
-                    .take_while(|&&r| {
-                        s += r;
-                        s <= room + EPS
-                    })
-                    .count()
-            };
-            let mut under = fit(end - along);
-            let piece = hs[..under].iter().sum::<f64>() + bb;
-            if under > 0 && col.x + piece - bb > along + EPS {
-                reach = Some(piece);
-                under = fit(col.width);
-            }
-            let whole = hs.iter().sum::<f64>() + bb;
-            let mut room = col.width - whole;
-            while whole > EPS && room >= whole {
-                room -= whole;
-            }
-            let kept = under.max(fit(room)).max(1).min(hs.len());
-            (col.x, Lu::round_half_up(col.x + hs[..kept].iter().sum::<f64>() + bb))
+        let (along, bottom, reach) = if legacy && along > col.x + EPS && along + h > end + EPS && fp.is_none() {
+            legacy_over(&tb, pos.at.index(), col, end, along)
         } else {
-            (along, bottom)
+            (along, bottom, None)
         };
         // Compat 15: a table whose notes can't start past it goes to the next page with them.
         if !legacy && !empty && !paged && pos.at.at_start() {
@@ -206,6 +178,28 @@ impl<'d> PageFill<'d, '_> {
         carry.upright_at = (stop == Stop::Full).then_some(y0);
         self.at.starts = saved;
         self.at.upright.extend(rows);
+        self.upright_notes(&area, y0, y1, notes, carry, col, memos)?;
+        let (from, to) = if full_line { (col.x, end) } else { (along, top) };
+        let f = float::table_float(t.id, to - from, y1 - y0, [above, below, 0.0, 0.0], true);
+        let mut o = Placed::new((self.sec.index, bi, float::UPRIGHT_TABLE), ParaId(t.id), &f, from, y0, y1 - y0);
+        o.early_right = reach.map(|r| along + r);
+        self.at.found.push(o);
+        Ok(stop)
+    }
+
+    // An upright table's notes
+    #[allow(clippy::too_many_arguments, reason = "the table's notes, where it stands, and the column's note area")]
+    fn upright_notes(
+        &mut self,
+        area: &NoteArea,
+        y0: f64,
+        y1: f64,
+        notes: &mut NoteArea,
+        carry: &mut FlowState,
+        col: &ColumnSpace,
+        memos: &mut Memos,
+    ) -> Result<(), Yield> {
+        let legacy = self.ctx.env.text.compat == Compat::Legacy;
         let refs: Vec<(NoteKind, i64)> = area.parts.iter().map(|p| (p.kind, p.id)).collect();
         if !refs.is_empty() {
             // From past the table across the page; compat ≤ 14 from where it starts. What doesn't fit goes on on
@@ -229,11 +223,39 @@ impl<'d> PageFill<'d, '_> {
                 }
             }
         }
-        let (from, to) = if full_line { (col.x, end) } else { (along, top) };
-        let f = float::table_float(t.id, to - from, y1 - y0, [above, below, 0.0, 0.0], true);
-        let mut o = Placed::new((self.sec.index, bi, float::UPRIGHT_TABLE), ParaId(t.id), &f, from, y0, y1 - y0);
-        o.early_right = reach.map(|r| along + r);
-        self.at.found.push(o);
-        Ok(stop)
+        Ok(())
     }
+}
+
+// Compat ≤ 14: one that runs past the line end below an earlier table is drawn from the line start, over
+// it. It keeps the more of the rows that fit below that table (all that fit the line, when those reach past
+// its end) and the rows that fit once the table is stacked below its own image until it no longer fits
+// whole; at least one. When the rows that fit below that table reach past its end, the lines before meet
+// those rows only.
+fn legacy_over(tb: &TableLayout, from: usize, col: &ColumnSpace, end: f64, along: f64) -> (f64, Lu, Option<f64>) {
+    let mut reach = None;
+    let hs: Vec<f64> = tb.rows.iter().skip(from).filter(|r| !r.hidden).map(|r| r.height).collect();
+    let bb = tb.bottom_border;
+    let fit = |room: f64| {
+        let mut s = bb;
+        hs.iter()
+            .take_while(|&&r| {
+                s += r;
+                s <= room + EPS
+            })
+            .count()
+    };
+    let mut under = fit(end - along);
+    let piece = hs[..under].iter().sum::<f64>() + bb;
+    if under > 0 && col.x + piece - bb > along + EPS {
+        reach = Some(piece);
+        under = fit(col.width);
+    }
+    let whole = hs.iter().sum::<f64>() + bb;
+    let mut room = col.width - whole;
+    while whole > EPS && room >= whole {
+        room -= whole;
+    }
+    let kept = under.max(fit(room)).max(1).min(hs.len());
+    (col.x, Lu::round_half_up(col.x + hs[..kept].iter().sum::<f64>() + bb), reach)
 }
