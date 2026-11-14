@@ -3,20 +3,21 @@ import type * as Preset from '@docusaurus/preset-classic';
 import type { PrismTheme } from 'prism-react-renderer';
 import include from './src/remark/include';
 
-// Black and white code: emphasis by weight and tone, not hue.
-const mono = (fg: string, bg: string, muted: string): PrismTheme => ({
+// Ink code: emphasis by weight and tone, with strings in the accent.
+const mono = (fg: string, bg: string, muted: string, accent: string): PrismTheme => ({
   plain: { color: fg, backgroundColor: bg },
   styles: [
     { types: ['comment', 'prolog', 'doctype', 'cdata'], style: { color: muted, fontStyle: 'italic' } },
-    { types: ['keyword', 'builtin', 'important', 'atrule'], style: { fontWeight: 'bold' } },
+    { types: ['keyword', 'builtin', 'important', 'atrule'], style: { fontWeight: '600' } },
     { types: ['punctuation', 'operator'], style: { color: muted } },
+    { types: ['string', 'char', 'attr-value', 'regex'], style: { color: accent } },
   ],
 });
 
 const config: Config = {
   title: 'Twip',
   tagline: 'A DOCX layout, editing and rendering engine.',
-  favicon: 'img/logo.svg',
+  favicon: 'img/favicon.ico',
   url: 'https://jaxcksn.github.io',
   baseUrl: '/twip/',
   organizationName: 'jaxcksn',
@@ -25,13 +26,15 @@ const config: Config = {
   onBrokenLinks: 'throw',
   i18n: { defaultLocale: 'en', locales: ['en'] },
 
-  // Source Serif 4 from Google Fonts: every weight, italics, and the optical-size axis.
+  // Source Serif 4 (editorial), DM Sans (interface) and IBM Plex Mono (technical) from Google Fonts.
   headTags: [
+    { tagName: 'link', attributes: { rel: 'icon', type: 'image/svg+xml', href: '/twip/img/favicon.svg' } },
+    { tagName: 'link', attributes: { rel: 'apple-touch-icon', href: '/twip/img/apple-touch-icon.png' } },
     { tagName: 'link', attributes: { rel: 'preconnect', href: 'https://fonts.googleapis.com' } },
     { tagName: 'link', attributes: { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: 'anonymous' } },
   ],
   stylesheets: [
-    'https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,200..900;1,8..60,200..900&display=swap',
+    'https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400..700;1,9..40,400..700&family=IBM+Plex+Mono:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,200..900;1,8..60,200..900&display=swap',
   ],
 
   presets: [
@@ -51,10 +54,12 @@ const config: Config = {
   ],
 
   themeConfig: {
+    image: 'img/social-card.png',
     colorMode: { respectPrefersColorScheme: true },
     navbar: {
       logo: { alt: 'Twip', src: 'img/logo.svg', srcDark: 'img/logo-dark.svg' },
       items: [
+        { type: 'docSidebar', sidebarId: 'docs', label: 'Docs', position: 'left' },
         // The generated references, built beside the site (.github/workflows/docs.yml).
         { to: 'pathname:///api/web/', label: 'TypeScript API', position: 'left' },
         { to: 'pathname:///api/dotnet/', label: '.NET API', position: 'left' },
@@ -62,11 +67,11 @@ const config: Config = {
       ],
     },
     footer: {
-      copyright: `Copyright ${new Date().getFullYear()} Jackson Casey. Apache License 2.0.`,
+      copyright: `Layout. Edit. Render. · Copyright ${new Date().getFullYear()} Jackson Casey. Apache License 2.0.`,
     },
     prism: {
-      theme: mono('#000000', '#f5f5f5', '#6b6b6b'),
-      darkTheme: mono('#ffffff', '#141414', '#9a9a9a'),
+      theme: mono('#171817', '#ffffff', '#646660', '#0968cd'),
+      darkTheme: mono('#f8f7f3', '#1d1e1c', '#a7a9a2', '#61a6ff'),
       additionalLanguages: ['rust', 'csharp', 'toml', 'bash'],
     },
   } satisfies Preset.ThemeConfig,

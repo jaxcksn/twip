@@ -17,6 +17,7 @@
   margin: 0;
 }
 .stop:first-child {
+  border-top-color: var(--ifm-color-primary);
   border-top-width: 4px;
   padding-top: calc(0.75rem - 3px);
 }

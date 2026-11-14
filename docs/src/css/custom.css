@@ -1,113 +1,303 @@
-/* Black on white, white on black. Hierarchy comes from type, weight and rules, never from color. */
+/* Paper, ink and one accent. Hierarchy from type and 1px rules; color marks action and interaction. */
 :root {
-  --ifm-font-family-base: 'Source Serif 4', Georgia, serif;
-  --ifm-heading-font-family: var(--ifm-font-family-base);
-  --ifm-font-family-monospace: ui-monospace, 'Cascadia Code', Menlo, Consolas, monospace;
-  --ifm-font-size-base: 112.5%;
-  --ifm-line-height-base: 1.6;
-  --ifm-heading-font-weight: 600;
-  --ifm-code-font-size: 85%;
+  --twip-ink: #171817;
+  --twip-paper: #f8f7f3;
+  --twip-surface: #ffffff;
+  --twip-muted: #646660;
+  --twip-rule: #d8dad4;
+  --twip-accent: #0a74e4;
+  --twip-accent-soft: #d7e5f1;
+  --twip-serif: 'Source Serif 4', Georgia, serif;
+  --twip-sans: 'DM Sans', 'Segoe UI', Arial, sans-serif;
+  --twip-mono: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;
 
-  --ifm-color-primary: #000000;
-  --ifm-color-primary-dark: #000000;
-  --ifm-color-primary-darker: #000000;
-  --ifm-color-primary-darkest: #000000;
-  --ifm-color-primary-light: #333333;
-  --ifm-color-primary-lighter: #4d4d4d;
-  --ifm-color-primary-lightest: #666666;
+  --ifm-font-family-base: var(--twip-sans);
+  --ifm-heading-font-family: var(--twip-serif);
+  --ifm-font-family-monospace: var(--twip-mono);
+  --ifm-font-size-base: 106.25%;
+  --ifm-line-height-base: 1.65;
+  --ifm-heading-font-weight: 400;
+  --ifm-code-font-size: 86%;
+  --ifm-global-radius: 2px;
+  --ifm-code-border-radius: 2px;
+  --ifm-code-padding-horizontal: 0.3rem;
 
-  --ifm-background-color: #ffffff;
-  --ifm-font-color-base: #000000;
-  --ifm-color-emphasis-300: #d9d9d9;
-  --ifm-toc-border-color: #e6e6e6;
-  --ifm-hr-border-color: #e6e6e6;
-  --ifm-code-background: #f5f5f5;
-  --ifm-link-decoration: underline;
+  /* The accent darkened to 5:1 on paper, for text */
+  --ifm-color-primary: #0968cd;
+  --ifm-color-primary-dark: #085cb5;
+  --ifm-color-primary-darker: #0756aa;
+  --ifm-color-primary-darkest: #06478c;
+  --ifm-color-primary-light: #0a74e4;
+  --ifm-color-primary-lighter: #1c82f4;
+  --ifm-color-primary-lightest: #4b9cf7;
+
+  --ifm-background-color: var(--twip-paper);
+  --ifm-background-surface-color: var(--twip-paper);
+  --ifm-navbar-background-color: var(--twip-paper);
+  --ifm-font-color-base: var(--twip-ink);
+  --ifm-heading-color: var(--twip-ink);
+  --ifm-font-color-secondary: var(--twip-muted);
+  --ifm-color-emphasis-300: var(--twip-rule);
+  --ifm-toc-border-color: var(--twip-rule);
+  --ifm-hr-border-color: var(--twip-rule);
+  --ifm-table-border-color: var(--twip-rule);
+  --ifm-table-stripe-background: transparent;
+  --ifm-code-background: var(--twip-surface);
+  --ifm-link-decoration: none;
   --ifm-link-hover-decoration: underline;
   --ifm-navbar-shadow: none;
+  --ifm-navbar-height: 4rem;
   --ifm-global-shadow-lw: none;
+  --ifm-global-shadow-md: none;
+  --ifm-menu-color: var(--twip-muted);
+  --ifm-menu-color-active: var(--twip-ink);
   --ifm-menu-color-background-active: transparent;
   --ifm-menu-color-background-hover: transparent;
-  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.08);
+  --ifm-breadcrumb-item-background-active: transparent;
+  --docusaurus-highlighted-code-line-bg: var(--twip-accent-soft);
 }
 
 html[data-theme='dark'] {
-  --ifm-color-primary: #ffffff;
-  --ifm-color-primary-dark: #ffffff;
-  --ifm-color-primary-darker: #ffffff;
-  --ifm-color-primary-darkest: #ffffff;
-  --ifm-color-primary-light: #cccccc;
-  --ifm-color-primary-lighter: #b3b3b3;
-  --ifm-color-primary-lightest: #999999;
+  --twip-ink: #f8f7f3;
+  --twip-paper: #151615;
+  --twip-surface: #1d1e1c;
+  --twip-muted: #a7a9a2;
+  --twip-rule: #454740;
+  --twip-accent: #61a6ff;
+  --twip-accent-soft: #202a36;
 
-  --ifm-background-color: #000000;
-  --ifm-background-surface-color: #000000;
-  --ifm-font-color-base: #ffffff;
-  --ifm-color-emphasis-300: #333333;
-  --ifm-toc-border-color: #262626;
-  --ifm-hr-border-color: #262626;
-  --ifm-code-background: #141414;
-  --ifm-navbar-background-color: #000000;
-  --ifm-table-stripe-background: #0a0a0a;
-  --docusaurus-highlighted-code-line-bg: rgba(255, 255, 255, 0.1);
+  --ifm-color-primary: #61a6ff;
+  --ifm-color-primary-dark: #3d93ff;
+  --ifm-color-primary-darker: #2b89ff;
+  --ifm-color-primary-darkest: #006ef4;
+  --ifm-color-primary-light: #85b9ff;
+  --ifm-color-primary-lighter: #97c3ff;
+  --ifm-color-primary-lightest: #cce2ff;
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+}
+::selection {
+  background: var(--twip-accent-soft);
 }
 
 a {
-  text-underline-offset: 0.15em;
+  text-underline-offset: 0.18em;
   text-decoration-thickness: 1px;
 }
-
-/* Navigation stays quiet: no underlines, the active item is bold. */
-.navbar a,
-.menu a,
-.table-of-contents a,
-.pagination-nav a,
-.breadcrumbs a,
-.footer a {
-  text-decoration: none;
+.markdown a {
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--twip-accent) 40%, transparent);
 }
-.menu__link--active:not(.menu__link--sublist),
-.table-of-contents__link--active {
+.markdown a:hover {
+  text-decoration-color: currentColor;
+}
+
+/* Headings */
+.markdown h1,
+.markdown h2,
+.markdown h3 {
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+.markdown h1:first-child {
+  --ifm-h1-font-size: clamp(2.6rem, 5vw, 3.6rem);
+  letter-spacing: -0.05em;
+  margin-bottom: 2rem;
+}
+.markdown h2 {
+  --ifm-h2-font-size: 1.9rem;
+  border-top: 1px solid var(--twip-rule);
+  padding-top: 1.4rem;
+  margin-top: 3.2rem;
+}
+.markdown h3 {
+  --ifm-h3-font-size: 1.35rem;
+}
+.markdown h4,
+.markdown h5,
+.markdown h6 {
+  font-family: var(--twip-sans);
   font-weight: 600;
 }
 
-.navbar {
-  border-bottom: 1px solid var(--ifm-toc-border-color);
-}
-.navbar__logo {
-  height: 1.6rem;
-}
-.footer {
-  background: var(--ifm-background-color);
-  border-top: 1px solid var(--ifm-toc-border-color);
+/* Mono labels: the technical voice */
+.menu__list-item-collapsible > .menu__link--sublist,
+.menu__link--sublist-caret,
+.theme-doc-toc-desktop .table-of-contents::before,
+.pagination-nav__sublabel,
+.breadcrumbs__item:not(:last-child),
+.footer,
+th {
+  font-family: var(--twip-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
-/* Admonitions in grayscale, marked by a rule instead of a color. */
-.alert[class*='alert--'] {
-  --ifm-alert-background-color: var(--ifm-code-background);
-  --ifm-alert-background-color-highlight: var(--ifm-code-background);
-  --ifm-alert-foreground-color: var(--ifm-font-color-base);
-  --ifm-alert-border-color: var(--ifm-font-color-base);
-  border-left-width: 3px;
+/* Navbar */
+.navbar {
+  border-bottom: 1px solid var(--twip-rule);
+  padding-inline: 1.5rem;
+}
+.navbar__logo {
+  height: 1.7rem;
+}
+.navbar__link {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--twip-muted);
+}
+.navbar__link:hover,
+.navbar__link--active {
+  color: var(--twip-ink);
+}
+
+/* Sidebar */
+.theme-doc-sidebar-container {
+  border-right: 1px solid var(--twip-rule) !important;
+}
+.menu {
+  padding: 1.5rem 1rem !important;
+}
+.menu__link {
+  font-size: 0.92rem;
+  border-left: 1px solid transparent;
+  border-radius: 0;
+}
+.menu__link:hover {
+  color: var(--twip-ink);
+}
+.menu__link--active:not(.menu__link--sublist) {
+  color: var(--ifm-color-primary);
+  border-left-color: var(--twip-accent);
+  font-weight: 500;
+}
+.menu__list-item-collapsible > .menu__link--sublist,
+.menu__link--sublist-caret {
+  color: var(--twip-muted);
+  margin-top: 1rem;
+}
+.menu__list .menu__list {
+  border-left: 1px solid var(--twip-rule);
+  margin-left: 0.75rem;
+  padding-left: 0;
+}
+.menu__list .menu__list .menu__link {
+  margin-left: -1px;
+}
+
+/* Table of contents */
+.table-of-contents {
+  border-left: 1px solid var(--twip-rule);
+}
+.theme-doc-toc-desktop .table-of-contents::before {
+  content: 'On this page';
+  display: block;
+  color: var(--twip-muted);
+  padding: 0 var(--ifm-toc-padding-horizontal) 0.5rem;
+}
+.table-of-contents__link {
+  color: var(--twip-muted);
+  font-size: 0.85rem;
+}
+.table-of-contents__link:hover,
+.table-of-contents__link--active {
+  color: var(--ifm-color-primary);
+}
+
+/* Breadcrumbs */
+.breadcrumbs__link {
+  color: var(--twip-muted);
+  padding: 0;
+}
+.breadcrumbs__item--active .breadcrumbs__link {
+  color: var(--twip-ink);
+}
+
+/* Code */
+code {
+  border: 1px solid var(--twip-rule);
+  vertical-align: 0.05em;
+}
+.theme-code-block {
+  border: 1px solid var(--twip-rule);
   box-shadow: none;
+}
+.theme-code-block code {
+  border: 0;
+}
+[class*='codeBlockTitle'] {
+  font-family: var(--twip-mono);
+  font-size: 0.75rem !important;
+  color: var(--twip-muted);
+  border-bottom: 1px solid var(--twip-rule) !important;
+}
+
+/* Admonitions: a 2px accent rule on a flat surface */
+.alert[class*='alert--'] {
+  --ifm-alert-background-color: var(--twip-surface);
+  --ifm-alert-background-color-highlight: var(--twip-accent-soft);
+  --ifm-alert-foreground-color: var(--twip-ink);
+  --ifm-alert-border-color: var(--twip-accent);
+  border: 1px solid var(--twip-rule);
+  border-left: 2px solid var(--twip-accent);
+  box-shadow: none;
+}
+.alert[class*='alert--'] [class*='admonitionHeading'] {
+  font-family: var(--twip-mono);
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  color: var(--ifm-color-primary);
 }
 .alert[class*='alert--'] svg {
   fill: currentColor;
 }
 
-:root {
-  --ifm-breadcrumb-item-background-active: transparent;
+/* Tables */
+table {
+  display: table;
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
 }
 thead tr {
   background: none;
+  border-bottom: 1px solid var(--twip-ink);
 }
-
-.pagination-nav__link,
-.theme-code-block {
-  box-shadow: none;
-  border: 1px solid var(--ifm-toc-border-color);
-}
-
-th {
+.markdown th,
+.markdown td {
+  border-width: 0 0 1px;
   text-align: left;
+}
+th {
+  font-weight: 500;
+  color: var(--twip-muted);
+}
+
+/* Pagination */
+.pagination-nav__link {
+  border: 1px solid var(--twip-rule);
+  background: var(--twip-surface);
+}
+.pagination-nav__link:hover {
+  border-color: var(--twip-accent);
+}
+.pagination-nav__sublabel {
+  color: var(--twip-muted);
+}
+.pagination-nav__label {
+  font-family: var(--twip-serif);
+  font-weight: 400;
+  font-size: 1.25rem;
+}
+
+/* Footer */
+.footer {
+  background: var(--twip-paper);
+  border-top: 1px solid var(--twip-rule);
+  color: var(--twip-muted);
+  padding: 2rem 1.5rem 3rem;
 }
