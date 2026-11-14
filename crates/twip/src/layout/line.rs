@@ -1466,7 +1466,10 @@ fn justified_tab_end(
         }
         End { at: e, over: lu(x - left).round() - column, shrink, stretch, point: point(e) }
     };
-    let is_end = |e: usize| (pieces[e - 1].break_after || pieces[e - 1].kind == Kind::Tab) && pieces[e].kind != Kind::Space;
+    // A line ends after a word or before a tab after something other than anchors (the tab and its text start the
+    // next line), never between a tab and its text.
+    let before_tab = |e: usize| pieces[e].kind == Kind::Tab && pieces[start..e].iter().any(|p| p.kind != Kind::Anchor);
+    let is_end = |e: usize| pieces[e - 1].break_after && pieces[e].kind != Kind::Space || before_tab(e);
     let is_end = |e: usize| e == seg_end || is_end(e) || point(e);
     // From the last word end the greedy line reaches; no end past another tab.
     let lo = (start + 1..=greedy.end).rev().find(|&e| is_end(e) && !point(e)).unwrap_or(greedy.end);

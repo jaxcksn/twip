@@ -1798,6 +1798,26 @@ fn compat_15_distributed_glyph_shaped_text_stretches_only_its_spaces() {
 }
 
 #[test]
+fn a_compat_15_justified_line_ends_before_a_tab_glued_to_its_word() {
+    let c15 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>"#;
+    let text = format!("{}bbxy</w:t><w:tab/><w:t>thermoregulationalthermoregulational", "aaaa ".repeat(16));
+    let body = format!(r#"<w:p><w:pPr><w:jc w:val="both"/></w:pPr><w:r><w:t xml:space="preserve">{text}</w:t></w:r></w:p>"#);
+    let Some(l) = lines(c15, ARIAL_11, &body) else { return };
+    // The tab and the long word start the next line, not "bbxy" with them.
+    assert!(l[0].1.ends_with("bbxy") && l[1].1.starts_with("thermo"), "{l:?}");
+    // A float's anchor before the first tab is no end: tabs alone wrap as without it.
+    let anchor = r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="0" behindDoc="1" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV><wp:extent cx="127000" cy="127000"/><wp:wrapNone/><wp:docPr id="1" name="P"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:blipFill/></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#;
+    let after = |lead: &str| {
+        let tabs = "<w:tab/>".repeat(11);
+        let body = format!(
+            r#"<w:p><w:pPr><w:tabs><w:tab w:val="left" w:pos="2970"/><w:tab w:val="left" w:pos="8370"/></w:tabs><w:ind w:right="360"/><w:jc w:val="both"/></w:pPr>{lead}<w:r>{tabs}</w:r></w:p><w:p><w:r><w:t>After</w:t></w:r></w:p>"#
+        );
+        baselines(c15, ARIAL_11, &body).map(|l| l.iter().find(|x| x.1 == "After").expect("drawn").3)
+    };
+    assert_eq!(after(anchor), after(""));
+}
+
+#[test]
 fn compat_14_distributed_spaces_grow_to_the_average_width_first() {
     let Some(chars) = glyph_xs("", r#"<w:p><w:pPr><w:jc w:val="distribute"/></w:pPr><w:r><w:t xml:space="preserve">aa aa</w:t></w:r></w:p>"#) else {
         return;
