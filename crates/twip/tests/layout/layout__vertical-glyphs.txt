@@ -1,0 +1,40 @@
+page 0 12240 15840
+  turned 10620 1440 0 1 Latin text turned with the line,
+  turned 10576 5213 1 0 漢
+  turned 10576 5433 1 0 漢
+  turned 10576 5653 1 0 漢
+  turned 10576 5873 1 0 漢
+  turned 10620 5917 0 1  upright, digits 2026 and Latin again. Inventory relevant group relief
+  turned 10375 1440 0 1 results region ledger brief usage cause colleague partner. Section notice claim team export staff newsletter
+  turned 10130 1440 0 1 review.
+  turned 9725 1440 0 1 Run of CJK:
+  turned 9681 2870 1 0 漢
+  turned 9681 3090 1 0 漢
+  turned 9681 3310 1 0 漢
+  turned 9681 3530 1 0 漢
+  turned 9681 3750 1 0 漢
+  turned 9681 3970 1 0 漢
+  turned 9681 4190 1 0 漢
+  turned 9681 4410 1 0 漢
+  turned 9681 4630 1 0 漢
+  turned 9681 4850 1 0 漢
+  turned 9681 5070 1 0 漢
+  turned 9681 5290 1 0 漢
+  turned 9725 5334 0 1  after it.
+  turned 9320 1440 0 1 Mixed
+  turned 9276 2276 1 0 漢
+  turned 9320 2320 0 1 a
+  turned 9276 2617 1 0 漢
+  turned 9320 2661 0 1 b
+  turned 9276 2958 1 0 漢
+  turned 9320 3002 0 1 c, Notice claim team export staff newsletter review matter presenter advisor account served. Savings
+  turned 9075 1440 0 1 pilot receipt corporate.
+  turned 8670 1440 0 1 End of the tbRl section.
+page 1 12240 15840
+  turned 1488 1440 0 1 tbLrV: lines from the left,
+  turned 1444 4674 1 0 漢
+  turned 1444 4894 1 0 漢
+  turned 1444 5114 1 0 漢
+  turned 1444 5334 1 0 漢
+  turned 1488 5378 0 1  upright. Pilot receipt corporate requirement standard fact that products
+  turned 1733 1440 0 1 distribution filed logistics chapter. Plan regional maintenance accessibility tax finds record proposal.

@@ -19,6 +19,8 @@ pub struct Resolver {
     pub style_links: HashMap<(i64, i64), String>,
     /// The generic category of each family the document's font table describes, by lowercase name.
     pub categories: Rc<HashMap<String, super::font_table::GenericFamily>>,
+    /// The document's HTML divisions, by id.
+    pub divisions: Rc<HashMap<i64, Division>>,
 }
 
 impl std::fmt::Debug for Resolver {
@@ -39,9 +41,20 @@ pub struct ParaResolved {
     pub style_id: Option<String>,
 }
 
+/// A division and its ancestors, innermost first.
+pub(crate) fn div_chain(divs: &HashMap<i64, Division>, id: Option<i64>) -> Vec<i64> {
+    let mut out = Vec::new();
+    let mut at = id.filter(|i| divs.contains_key(i));
+    while let Some(i) = at.filter(|i| !out.contains(i)) {
+        out.push(i);
+        at = divs.get(&i).and_then(|d| d.parent);
+    }
+    out
+}
+
 impl Resolver {
     pub fn new(styles: Styles, numbering: Numbering, theme: ThemeFonts) -> Resolver {
-        let mut r = Resolver { styles, numbering, theme, style_links: HashMap::new(), categories: Rc::default() };
+        let mut r = Resolver { styles, numbering, theme, style_links: HashMap::new(), categories: Rc::default(), divisions: Rc::default() };
         r.compute_style_links();
         r
     }
@@ -104,6 +117,7 @@ impl Resolver {
             strike: p.toggle(toggle::STRIKE),
             dstrike: p.dstrike.unwrap_or(false),
             hidden: p.toggle(toggle::VANISH),
+            no_proof: p.no_proof.unwrap_or(false),
             underline: p.underline.clone().filter(|u| u != "none"),
             color: p.color.flatten(),
             highlight: p.highlight.flatten(),
@@ -111,14 +125,19 @@ impl Resolver {
             toc: false,
             shading: p.shading.flatten(),
             shd: p.shd.clone().filter(|s| s.pattern != "nil"),
-            border: p.border.clone().filter(|b| b.visible()),
+            // A text border of style `none` draws nothing, but its space still counts.
+            border: p.border.clone().filter(|b| b.visible() || b.style == "none" && b.space > 0.0),
             vert_align: p.vert_align.unwrap_or(VertAlign::Baseline),
             position: p.position.unwrap_or(0.0),
             spacing: p.spacing.unwrap_or(0.0),
             scale: p.scale.unwrap_or(100.0),
             kern: p.kern.unwrap_or(0.0),
-            ligatures: p.ligatures.unwrap_or(0) | if p.cntxt_alts == Some(true) { 16 } else { 0 },
+            // OpenType features only where they apply: else the fonts' default glyphs.
+            ligatures: if self.styles.open_type { p.ligatures.unwrap_or(0) | if p.cntxt_alts == Some(true) { 16 } else { 0 } } else { 0 },
+            figures: if self.styles.open_type { p.num_form.unwrap_or(0) | p.num_spacing.unwrap_or(0) | p.style_sets.unwrap_or(0) << 4 } else { 0 },
+            fit_text: p.fit_text,
             lang: p.lang.clone().unwrap_or_default(),
+            lang_east_asia: p.lang_east_asia.clone().unwrap_or_default(),
             style_id: p.style.clone(),
             direct: Raw::default(),
             rev: Default::default(),
@@ -154,7 +173,18 @@ impl Resolver {
             page_break_before: p.page_break_before.unwrap_or(false),
             widow_control: p.widow_control.unwrap_or(true),
             suppress_auto_hyphens: p.suppress_auto_hyphens.unwrap_or(false),
+            no_kinsoku: p.kinsoku == Some(false),
+            no_overflow_punct: p.overflow_punct == Some(false),
+            no_auto_space_de: p.auto_space_de == Some(false),
+            no_auto_space_dn: p.auto_space_dn == Some(false),
+            top_line_punct: p.top_line_punct.unwrap_or(false),
+            no_word_wrap: p.word_wrap == Some(false),
+            tight_wrap: p.tight_wrap.unwrap_or(0),
+            suppress_overlap: p.suppress_overlap.unwrap_or(false),
             suppress_line_numbers: p.suppress_line_numbers.unwrap_or(false),
+            mirror_indents: p.mirror_indents.unwrap_or(false),
+            div: p.div_id,
+            div_boxes: Rc::from([]),
             tabs: p.resolved_tabs(),
             border_top: bdr(&p.border_top),
             border_bottom: bdr(&p.border_bottom),
@@ -164,6 +194,8 @@ impl Resolver {
             shading: p.shading.flatten(),
             shd: p.shd.clone().filter(|s| s.pattern != "nil"),
             frame: p.frame.clone(),
+            text_flow: p.text_flow.unwrap_or(0),
+            in_frame: false,
             text_alignment: p.text_alignment.clone().unwrap_or_else(|| "auto".into()),
             outline_lvl: p.outline_lvl,
             list_jc: "left".into(),
@@ -173,6 +205,7 @@ impl Resolver {
             mark_size: None,
             direct: Raw::default(),
             change: None,
+            joined: Rc::from([]),
         }
     }
 
@@ -210,6 +243,10 @@ impl Resolver {
             ppr.merge(&style_ppr);
             if let Some(l) = &level {
                 ppr.merge(&l.ppr);
+            } else if direct.num_id == Some(0) {
+                // A direct numId 0 removes the list but still sets a level's indents: left 0, first line 0 over the
+                // style chain's (the right indent stays).
+                (ppr.ind_left, ppr.ind_first) = (Some(0.0), Some(0.0));
             }
         }
         ppr.merge(direct);
@@ -217,7 +254,8 @@ impl Resolver {
         ppr.num_id = num_id;
         let mut style = self.para_style(&ppr);
         if let Some(l) = &level {
-            style.list_jc = l.jc.clone();
+            // A legacy level places its number itself, in the label.
+            style.list_jc = if l.legacy.is_some() { "left".into() } else { l.jc.clone() };
             style.num = num_id.map(|id| (id, ilvl));
             style.list_fmt = Some(l.fmt.clone());
             style.list = num_id.and_then(|id| self.numbering.abstract_of(id, &self.styles));
@@ -237,6 +275,17 @@ impl Resolver {
         }
         if region.is_some_and(|t| t.mark_at_style) && direct.mark_size == Some(11.0) {
             style.mark_size = base.size;
+        }
+        // The margins of the paragraph's division and its ancestors add to its indents; in a table cell only its own
+        // division's.
+        let mut chain = div_chain(&self.divisions, style.div);
+        if region.is_some() {
+            chain.truncate(1);
+        }
+        if !chain.is_empty() {
+            let sum = |i: usize| chain.iter().map(|id| self.divisions[id].margins[i]).sum::<f64>();
+            style.ind_left += sum(0);
+            style.ind_right += sum(1);
         }
         ParaResolved { style, base, level, num_id, ilvl, from_style, style_id }
     }
@@ -428,7 +477,7 @@ mod tests {
                 sz(normal)
             );
             let mut styles = Styles::parse(Some(&xml), Default::default());
-            styles.compat = if compat15 { Compat::Generic } else { Compat::Legacy };
+            styles.cell_size_rules = !compat15;
             let res = Resolver::new(styles, Numbering::default(), ThemeFonts::default());
             let look = Look { first_row: false, last_row: false, first_col: false, last_col: false, no_h_band: true, no_v_band: true };
             let direct = ParaProps { style: p_style.map(str::to_string), ..ParaProps::default() };
@@ -457,7 +506,7 @@ mod tests {
                 r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:sz w:val="{dd}"/></w:rPr></w:rPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="P0"><w:rPr><w:sz w:val="{normal}"/></w:rPr></w:style><w:style w:type="table" w:default="1" w:styleId="T0"/><w:style w:type="table" w:styleId="T1"><w:basedOn w:val="T0"/></w:style></w:styles>"#
             );
             let mut styles = Styles::parse(Some(&xml), Default::default());
-            styles.compat = if compat15 { Compat::Generic } else { Compat::Legacy };
+            styles.cell_size_rules = !compat15;
             let res = Resolver::new(styles, Numbering::default(), ThemeFonts::default());
             let look = Look { first_row: false, last_row: false, first_col: false, last_col: false, no_h_band: true, no_v_band: true };
             let direct = ParaProps { mark_size: Some(own), ..ParaProps::default() };
@@ -488,5 +537,42 @@ mod tests {
         // A named font under the slot fills it, so the run's name stands.
         assert!(!unset(r#"w:eastAsia="Calibri""#, r#"w:eastAsiaTheme="minorEastAsia""#));
         assert!(!unset(r#"w:eastAsia="Calibri""#, ""));
+    }
+
+    #[test]
+    fn a_table_styles_own_cell_borders_do_not_apply_but_a_regions_do() {
+        let bd = r#"<w:tcPr><w:tcBorders><w:left w:val="single" w:sz="24" w:space="0" w:color="000000"/></w:tcBorders></w:tcPr>"#;
+        let xml = format!(
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="table" w:styleId="T1"><w:tblPr/>{bd}<w:tblStylePr w:type="firstRow">{bd}</w:tblStylePr></w:style></w:styles>"#
+        );
+        let styles = Styles::parse(Some(&xml), Default::default());
+        assert!(styles.table_region(Some("T1"), &[]).tc.borders.left.is_none());
+        assert!(styles.table_region(Some("T1"), &["firstRow"]).tc.borders.left.is_some());
+    }
+
+    #[test]
+    fn a_table_style_read_before_its_base_keeps_only_its_own_properties() {
+        let normal = r#"<w:style w:type="table" w:default="1" w:styleId="TableNormal"><w:tblPr><w:tblInd w:w="0" w:type="dxa"/><w:tblCellMar><w:left w:w="108" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar><w:tblBorders><w:left w:val="single" w:sz="4" w:space="0" w:color="000000"/></w:tblBorders></w:tblPr></w:style>"#;
+        let region = |styles: &str, id: &str| {
+            let xml = format!(r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">{styles}</w:styles>"#);
+            Styles::parse(Some(&xml), Default::default()).table_region(Some(id), &[])
+        };
+        let own = r#"<w:style w:type="table" w:styleId="T"><w:basedOn w:val="TableNormal"/><w:tblPr><w:tblBorders><w:top w:val="single" w:sz="4" w:space="0" w:color="000000"/></w:tblBorders></w:tblPr></w:style>"#;
+        // Base read first: its margins and indent; its own borders replace the base's set.
+        let after = region(&format!("{normal}{own}"), "T");
+        assert_eq!((after.tbl.margins.left, after.tbl.ind.is_some()), (Some(5.4), true));
+        assert!(after.tbl.borders.top.is_some() && after.tbl.borders.left.is_none());
+        // Base read later: frozen, nothing from it.
+        let before = region(&format!("{own}{normal}"), "T");
+        assert_eq!((before.tbl.margins.left, before.tbl.ind.is_some()), (None, false));
+        // Its own run properties stored after the table ones work it out again with its base.
+        let rpr = own.replace("</w:tblPr></w:style>", "</w:tblPr><w:rPr><w:b/></w:rPr></w:style>");
+        assert_eq!(region(&format!("{rpr}{normal}"), "T").tbl.margins.left, Some(5.4));
+        // Run properties met at a region while the base is missing take Word's 10pt.
+        let region_first = r#"<w:style w:type="table" w:styleId="R"><w:rPr><w:b/></w:rPr><w:tblStylePr w:type="firstRow"><w:rPr><w:i/></w:rPr></w:tblStylePr></w:style>"#;
+        assert_eq!(region(&format!("{region_first}{normal}"), "R").rpr.size, Some(10.0));
+        // A style's own noWrap doesn't apply.
+        let nowrap = r#"<w:style w:type="table" w:styleId="N"><w:tcPr><w:noWrap/></w:tcPr></w:style>"#;
+        assert_eq!(region(&format!("{normal}{nowrap}"), "N").tc.no_wrap, None);
     }
 }

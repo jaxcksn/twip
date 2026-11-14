@@ -387,6 +387,22 @@
     "value": 36.5
   },
   {
+    "type": "setAutoHyphenation",
+    "value": true
+  },
+  {
+    "type": "setHyphenationZone",
+    "value": 18.0
+  },
+  {
+    "type": "setConsecutiveHyphenLimit",
+    "value": 2
+  },
+  {
+    "type": "setHyphenateCaps",
+    "value": false
+  },
+  {
     "bottom": 72.5,
     "gutter": 0.5,
     "left": 90.5,

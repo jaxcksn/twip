@@ -94,6 +94,7 @@ impl RichText {
                     inlines,
                     src: None,
                     id: crate::docx::next_para_id(),
+                    div: None,
                     controls: Vec::new(),
                 })
             })
@@ -151,7 +152,7 @@ fn paragraph(p: &Paragraph) -> RichParagraph {
         let (text, r) = match i {
             Inline::Text(t, r) => (t.as_str(), r),
             Inline::Tab(r) => ("\t", r),
-            Inline::Break(BreakKind::Line, r) => ("\n", r),
+            Inline::Break(k, r) if k.is_line() => ("\n", r),
             _ => continue,
         };
         if code[k] || text.is_empty() || r.hidden {

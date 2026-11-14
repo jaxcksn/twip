@@ -437,11 +437,11 @@ fn ltb_35_structural_table_edits_save_and_reopen_to_the_same_dump() {
     let mut r = Run::open("FX-TBL-BASIC.docx", "LTB-35");
     // Back to front, so the earlier paragraphs keep their numbers.
     let steps = [
-        json!({ "click": { "para": 46, "offset": 2 } }),
+        json!({ "click": { "para": 47, "offset": 2 } }),
         json!({"command": {"type": "insertTable", "rows": 2, "columns": 2}}),
-        json!({ "drag": { "from": { "para": 34, "offset": 2 }, "to": { "para": 38, "offset": 2 } } }),
+        json!({ "drag": { "from": { "para": 35, "offset": 2 }, "to": { "para": 39, "offset": 2 } } }),
         json!({"command": {"type": "mergeCells"}}),
-        json!({ "click": { "para": 28, "offset": 2 } }),
+        json!({ "click": { "para": 29, "offset": 2 } }),
         json!({"command": {"type": "insertColumns", "where": "right"}}),
         json!({ "click": { "para": 16, "offset": 2 } }),
         json!({"command": {"type": "insertRows", "where": "below"}}),

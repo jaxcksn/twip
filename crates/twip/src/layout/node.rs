@@ -52,6 +52,8 @@ pub struct SectionNode<'a> {
     pub section: &'a Section,
     pub blocks: Blocks<'a>,
     pub breaks: bool,
+    /// The next section's first paragraph, which the last paragraph's border group looks down to.
+    pub next: Option<&'a ParaStyle>,
 }
 
 #[derive(Clone, Copy)]

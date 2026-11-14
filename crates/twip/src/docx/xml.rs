@@ -7,6 +7,7 @@ pub const R: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relat
 pub const WP: &str = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
 pub const A: &str = "http://schemas.openxmlformats.org/drawingml/2006/main";
 pub const W14: &str = "http://schemas.microsoft.com/office/word/2010/wordml";
+pub const WP14: &str = "http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing";
 pub const W15: &str = "http://schemas.microsoft.com/office/word/2012/wordml";
 pub const MC: &str = "http://schemas.openxmlformats.org/markup-compatibility/2006";
 

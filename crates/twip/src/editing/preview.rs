@@ -23,6 +23,7 @@ fn paragraph(style: Rc<crate::docx::ParaStyle>, run: Rc<RunStyle>, text: String)
         inlines: vec![Inline::Text(text, run)],
         src: None,
         id: next_para_id(),
+        div: None,
         controls: Vec::new(),
     })
 }
@@ -62,6 +63,12 @@ impl Editor {
                 w_after: None,
                 ind: None,
                 jc: None,
+                div: None,
+                borders: None,
+                shading: None,
+                vanished: false,
+                cell_spacing: None,
+                run: None,
                 cells: texts
                     .iter()
                     .enumerate()
@@ -84,6 +91,7 @@ impl Editor {
                             text_direction: "lrTb".into(),
                             no_wrap: false,
                             fit_text: false,
+                            hide_mark: false,
                             direct: Default::default(),
                             blocks: vec![paragraph(Rc::new(para.style), run, t.to_string())],
                             controls: Vec::new(),
@@ -101,7 +109,9 @@ impl Editor {
             style_id: Some(id),
             width: crate::docx::props::Width::Auto,
             jc: crate::docx::props::Jc::Left,
+            own_jc: None,
             ind: 0.0,
+            ind_pct: None,
             ind_set: true,
             borders: [b.top.clone(), b.left.clone(), b.bottom.clone(), b.right.clone(), b.inside_h.clone(), b.inside_v.clone()],
             fixed: true,

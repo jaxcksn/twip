@@ -11,11 +11,11 @@
     {
       "drag": {
         "from": {
-          "para": 34,
+          "para": 35,
           "offset": 2
         },
         "to": {
-          "para": 36,
+          "para": 37,
           "offset": 2
         }
       }
@@ -27,20 +27,20 @@
     },
     {
       "expect": {
-        "paragraphs": 46,
+        "paragraphs": 47,
         "text": {
-          "33": "",
-          "34": "The fourth and fifth tables above are separated only by an empty paragraph."
+          "34": "",
+          "35": "The fourth and fifth tables above are separated only by an empty paragraph."
         },
         "caret": {
-          "para": 34,
+          "para": 35,
           "offset": 0
         }
       }
     },
     {
       "click": {
-        "para": 31,
+        "para": 32,
         "offset": 2
       }
     },

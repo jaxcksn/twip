@@ -407,6 +407,19 @@ export interface Commands {
   /** Sets the document's default tab spacing, 1 to 1584. */
   setDefaultTabStop(spacing: Points): Promise<void>;
 
+  // Hyphenation: the document's settings
+  /** Turns automatic hyphenation on or off, with the hyphenation patterns of the text's language. */
+  setAutoHyphenation(on: boolean): Promise<void>;
+  /**
+   * Sets the hyphenation zone, 0 to 1584: in documents in compatibility mode 14 and earlier, a word is hyphenated
+   * only when moving it whole would leave this gap.
+   */
+  setHyphenationZone(zone: Points): Promise<void>;
+  /** Sets the most consecutive lines that may end in a hyphen, 0 to 32767; 0 for no limit. */
+  setConsecutiveHyphenLimit(limit: number): Promise<void>;
+  /** Hyphenates words in capitals, or not. */
+  setHyphenateCaps(on: boolean): Promise<void>;
+
   // Page layout: the selection's sections
   /** Sets the margins, 0 to 1584; unset fields keep their value. */
   setMargins(options: { top?: Points; bottom?: Points; left?: Points; right?: Points; gutter?: Points }): Promise<void>;
@@ -949,6 +962,10 @@ const encodings: { [K in CommandId]: Encoding<K> } = {
   deleteTabStop: 'value',
   clearTabStops: 'none',
   setDefaultTabStop: 'value',
+  setAutoHyphenation: 'value',
+  setHyphenationZone: 'value',
+  setConsecutiveHyphenLimit: 'value',
+  setHyphenateCaps: 'value',
   setMargins: 'spread',
   setOrientation: 'value',
   setPaperSize: 'spread',

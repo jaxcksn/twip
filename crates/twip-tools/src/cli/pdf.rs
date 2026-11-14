@@ -10,7 +10,7 @@ pub fn run(docx: &Path, out: &Path, options: &twip::api::session::PdfOptions) ->
     // A fixed clock (2026-10-30T00:00:00Z), as `dump` uses: DATE/TIME fields print the same on every run.
     let mut doc = twip::internal::docx::read_at(&bytes, 1_793_318_400).map_err(|e| format!("{}: {e:?}", docx.display()))?;
     doc.review.view = twip::internal::docx::review::MarkupView::NoMarkup;
-    let fonts = twip::internal::font::Fonts::system();
+    let fonts = super::system_fonts();
     let layout = twip::internal::layout::layout(&doc, &fonts);
     let (pdf, warnings) = twip::internal::pdf::export(&doc, &layout, "", options, None).map_err(|e| e.message)?;
     for w in warnings {

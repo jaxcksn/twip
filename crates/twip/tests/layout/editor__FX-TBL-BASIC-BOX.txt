@@ -22,12 +22,12 @@ page 0 12240 15840
   1702 6052 T2 R3 C1
   4822 6052 T2 R3 C2
   7942 6052 T2 R3 C3
-  1702 6459 T3 R1 C1
-  4702 6459 T3 R1 C2
-  1702 6867 T3 R2 C1
-  4702 6867 T3 R2 C2
-  1589 7274 The second and third tables above are adjacent in the XML, with no paragraph
-  1589 7512 between them (Word joins them into one table).
+  1702 6867 T3 R1 C1
+  4702 6867 T3 R1 C2
+  1702 7274 T3 R2 C1
+  4702 7274 T3 R2 C2
+  1589 7682 The second and third tables above are separated by an empty paragraph, so they
+  1589 7919 stay two tables (with none, Word joins them).
   float 1440 1440 10800 13680
   cell 1594 1517 4714 2162
   cell 4714 1517 7834 2162
@@ -47,7 +47,7 @@ page 0 12240 15840
   cell 1594 5866 4714 6273
   cell 4714 5866 7834 6273
   cell 7834 5866 10954 6273
-  cell 1594 6273 4594 6681
-  cell 4594 6273 7594 6681
   cell 1594 6681 4594 7088
   cell 4594 6681 7594 7088
+  cell 1594 7088 4594 7496
+  cell 4594 7088 7594 7496

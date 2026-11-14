@@ -1,0 +1,10 @@
+page 0 12240 15840
+  1440 1936 Decimal tabs
+  1440 2201 The settings say the decimal symbol is a comma; the stop still aligns on the period.
+  5155 2599 1,234.56
+  5397 2836 3,5
+  5518 3074 12.5
+  5639 3311 7
+  5639 3548 1.000,25
+  5639 3786 0.125
+  4737 4023 no digits

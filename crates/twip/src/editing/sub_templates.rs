@@ -112,6 +112,7 @@ fn empty_para(doc: &Document, cx: &crate::docx::write::props::Cx) -> Option<Para
         inlines: Vec::new(),
         src: None,
         id: crate::docx::next_para_id(),
+        div: None,
         controls: Vec::new(),
     })
 }
@@ -787,7 +788,7 @@ impl Editor {
         let (rules, types) = (&self.sub_template_rules, &self.application_field_types);
         let (changed, back) = fields::rekind(&mut self.doc, &|code: &FieldCode| field_kind(rules, types, code));
         if back {
-            fields::evaluate(&mut self.doc, crate::docx::now_utc());
+            fields::evaluate(&mut self.doc, crate::docx::now_local());
         }
         if changed {
             self.relayout(vec![None]);

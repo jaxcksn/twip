@@ -1,0 +1,22 @@
+page 0 12240 15840
+  1440 1936 Hidden cell marks
+  1440 2201 A row of empty cells marked hideMark collapses to its margins and borders:
+  1440 2619 The same row without hideMark keeps one line:
+  1440 3434 A cell with text and an empty last paragraph, marked: the last paragraph takes no
+  1440 3671 line.
+  1553 4078 Text
+  4553 4078 Text
+  1440 4883 A tall exact row keeps its height; a 4pt mark beside text:
+  5553 5291 Text
+  1440 5891 Paragraph after the tables.
+  cell 1445 2423 3445 2433
+  cell 3445 2423 5445 2433
+  cell 5445 2423 7445 2433
+  cell 1445 2840 3445 3248
+  cell 3445 2840 5445 3248
+  cell 5445 2840 7445 3248
+  cell 1445 3892 4445 4697
+  cell 4445 3892 7445 4697
+  cell 1445 5105 3445 5705
+  cell 3445 5105 5445 5705
+  cell 5445 5105 7445 5705

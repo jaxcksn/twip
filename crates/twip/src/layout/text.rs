@@ -13,10 +13,8 @@ use super::cache::{CacheKey, cached};
 use super::env::TextEnv;
 use super::ids::{ParaId, Unit};
 use super::job::{Memos, Yield};
-use super::space::ShapeSpace;
+use super::space::{MetricRules, ShapeSpace};
 use super::units::Lu;
-
-pub(crate) const EM_MARK: f64 = 3.4 / 11.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
@@ -31,6 +29,7 @@ pub enum Kind {
     ListNumber,
     Separator,
     ContSeparator,
+    FullSeparator,
 }
 
 #[derive(Clone, Debug)]
@@ -60,6 +59,50 @@ pub enum Object {
     Note(NoteKind, i64),
     PTab(crate::docx::PTab),
     Expansion(Rc<super::expansion::Expansion>),
+    /// The floats a text-wrapping break clears: left, right.
+    Clear(bool, bool),
+    Ruby(Rc<RubyShape>),
+    /// A legacy check box: its box size (points) and whether it is checked.
+    CheckBox(f64, bool),
+}
+
+/// A ruby's base and annotation, shaped, each piece's x in the object, and the annotation's raise.
+#[derive(Debug, PartialEq)]
+pub struct RubyShape {
+    pub base: ShapedPara,
+    pub text: ShapedPara,
+    pub base_x: Vec<f64>,
+    pub text_x: Vec<f64>,
+    pub raise: f64,
+    /// An annotation turned a quarter clockwise beside the base: its start (its baseline's x from the object's start,
+    /// its first character's y from the line's baseline).
+    pub turned: Option<[f64; 2]>,
+    /// How much narrower each base character is drawn than its advance (never below no advance).
+    pub narrow: f64,
+    /// The object's descent in an at-least line: the turned annotation's lower half when that is deeper.
+    pub at_least_descent: f64,
+}
+
+/// Each piece's x in a ruby object `wo` wide: the narrower part spread by the ruby's alignment.
+fn ruby_x(s: &ShapedPara, wo: f64, align: u8) -> Vec<f64> {
+    let k = s.pieces.len();
+    let e = wo - s.pieces.iter().map(|p| p.width).sum::<f64>();
+    let (lead, gap) = match align {
+        1 if k > 1 => (0.0, e / (k - 1) as f64),
+        2 if k > 0 => (e / k as f64 / 2.0, e / k as f64),
+        3 => (0.0, 0.0),
+        4 => (e, 0.0),
+        _ => (e / 2.0, 0.0),
+    };
+    let mut x = lead;
+    s.pieces
+        .iter()
+        .map(|p| {
+            let at = x;
+            x += p.width + gap;
+            at
+        })
+        .collect()
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -67,6 +110,12 @@ pub struct Piece {
     pub kind: Kind,
     pub break_after: bool,
     pub soft_hyphen: bool,
+    /// The word may break after this piece (automatic hyphenation).
+    pub auto_hyphen: bool,
+    /// No line break before this piece (inside a fitted region of text).
+    pub glued: bool,
+    /// How much wider the piece counts than it is drawn when lines are broken (a fitted region in compat 15).
+    pub break_extra: f64,
     pub style: u32,
     pub width: f64,
     pub ascent: f64,
@@ -75,6 +124,8 @@ pub struct Piece {
     pub text: (u32, u32),
     pub src: Option<Unit>,
     pub object: Option<u32>,
+    /// A balanced space: its width before it was widened.
+    pub natural: Option<f64>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -88,11 +139,27 @@ pub struct ShapedPara {
     pub objects: Box<[Object]>,
     pub join: Option<Rc<super::join::JoinMap>>,
     pub em1000: bool,
+    pub rules: MetricRules,
+    /// The patterns, whether capitals are left alone, and the fewest letters after a break.
+    pub hyphenate: Option<(super::hyphenate::Hyphenation, bool, usize)>,
+    /// The document's default East Asian font is an East Asian font: East Asian paragraph layout.
+    pub east_asian_default: bool,
+    /// The text after a leading page or column break starts the paragraph again (first-line indent, top border).
+    pub opens: bool,
+    /// A cell paragraph without a list number whose only tab stop is a decimal one.
+    pub decimal_lead: bool,
 }
 
 impl ShapedPara {
+    /// The end of the word whose letters start at `pieces[from]` and the pieces it may break after, hyphenated as a
+    /// word from there.
+    pub fn points_from(&self, pieces: &[Piece], from: usize) -> (usize, Vec<usize>) {
+        let Some((h, caps, right)) = &self.hyphenate else { return (from, Vec::new()) };
+        word_points(pieces, &self.text, &self.styles, from, h, *caps, *right)
+    }
+
     pub fn metrics(&self, face: &Face, run: &RunStyle, size: f64) -> (f64, f64, f64) {
-        metrics_at(face, size, self.em1000 && run.east_asia_named)
+        ruled(self.rules, face, size, metrics_at(face, size, self.em1000 && run.east_asia_named))
     }
 
     pub fn style(&self, i: usize) -> &PieceStyle {
@@ -151,6 +218,24 @@ pub fn metrics(face: &Face, size: f64) -> (f64, f64, f64) {
     metrics_at(face, size, false)
 }
 
+/// Ascent, descent and gap under the font metric options: `noLeading` drops the gap; `suppressTopSpacingWP` makes a
+/// Latin font's line its size plus 2pt (a fixed-pitch font's, its size), the descent kept.
+/// Whether a line may end after `c`, whatever follows it: the hyphen-minus, the en and em dashes, the en, em,
+/// four-per-em and ideographic spaces and the zero-width space in every mode; `dash_breaks` adds the hyphen, the
+/// figure dash, the Armenian and Hebrew hyphens and the small and fullwidth hyphen forms. No other punctuation.
+fn breaks_after(c: char, dash_breaks: bool) -> bool {
+    matches!(c, '-' | '\u{2013}' | '\u{2014}' | '\u{2002}' | '\u{2003}' | '\u{2005}' | '\u{200B}' | '\u{3000}')
+        || dash_breaks && matches!(c, '\u{2010}' | '\u{2012}' | '\u{058A}' | '\u{05BE}' | '\u{FE58}' | '\u{FE63}' | '\u{FF0D}')
+}
+
+fn ruled(rules: MetricRules, face: &Face, size: f64, (a, d, e): (f64, f64, f64)) -> (f64, f64, f64) {
+    if rules.wp_line_heights && !face.east_asian {
+        let h = if face.fixed_pitch { size } else { size + 2.0 };
+        return ((h - d).max(0.0), d, 0.0);
+    }
+    (a, d, if rules.no_leading { 0.0 } else { e })
+}
+
 pub fn metrics_at(face: &Face, size: f64, em1000: bool) -> (f64, f64, f64) {
     if em1000 {
         let r = |v: f64| (v * 1000.0 / face.upem).round();
@@ -181,6 +266,39 @@ pub fn metrics_from(m: FontMetrics, size: f64) -> (f64, f64, f64) {
 fn width_at_em1000(advance: f64, upem: f64, size: f64) -> f64 {
     let w = (advance * 1000.0 / upem).round();
     (w * 2.0 * size * 2048.0 / 1000.0).floor() / super::units::LU_PER_PT
+}
+
+/// The Mac small-caps size of `hps` half-points: the next smaller size of the Mac size table, or 10pt below the
+/// size rounded up to 10pt above 72pt.
+fn mac_small_caps(hps: i64) -> i64 {
+    const SIZES: [i64; 11] = [14, 18, 20, 24, 28, 36, 48, 72, 96, 120, 144];
+    if hps <= 144 {
+        let i = SIZES.iter().position(|&s| s >= hps).unwrap_or(SIZES.len());
+        SIZES[i.max(1) - 1]
+    } else {
+        (((hps + 19) / 20 * 20).min(3276) - 20).max(144)
+    }
+}
+
+/// The text border of piece `k`'s box, if it is in one: a text or space piece of a run with `w:bdr`.
+pub fn boxed<'s>(pieces: &[Piece], styles: &'s [PieceStyle], k: usize) -> Option<&'s crate::docx::props::Border> {
+    let p = pieces.get(k).filter(|p| matches!(p.kind, Kind::Text | Kind::Space) && p.glyphs.1 > p.glyphs.0)?;
+    styles[p.style as usize].run.border.as_ref()
+}
+
+/// A text border's side, in points: as laid out (`space + k × lines × width` twips, `k` = 2 with a shadow) and as
+/// drawn (in whole device pixels, each part truncated).
+pub fn border_side(b: &crate::docx::props::Border) -> (f64, f64) {
+    // ponytail: styles other than double and triple count one line.
+    let lines = match b.style.as_str() {
+        "none" => 0,
+        "double" => 3,
+        "triple" => 5,
+        _ => 1,
+    } * if b.shadow { 2 } else { 1 };
+    let (line, space) = (((b.width * 8.0).round() as i64 * 5) / 2, (b.space * 20.0).round() as i64);
+    let drawn = (space * 600 / 1440 + lines * (line * 600 / 1440).max(1)) as f64 * super::units::DEVICE_PX / super::units::LU_PER_PT;
+    ((space + lines * line) as f64 / 20.0, drawn)
 }
 
 pub fn hp(x: f64) -> i64 {
@@ -241,7 +359,7 @@ pub(crate) fn family_for(c: char, run: &RunStyle) -> &str {
     if cp < 0x80 { &run.ascii } else { &run.h_ansi }
 }
 
-fn is_east_asian(cp: u32) -> bool {
+pub(super) fn is_east_asian(cp: u32) -> bool {
     matches!(cp, 0x1100..=0x11FF | 0x2E80..=0x9FFF | 0xA960..=0xA97F | 0xAC00..=0xD7FF | 0xF900..=0xFAFF | 0xFE30..=0xFE4F | 0xFF00..=0xFFEF | 0x20000..=0x2FFFF)
 }
 
@@ -255,6 +373,8 @@ fn shared_with_east_asia(cp: u32) -> bool {
     match cp {
         0xA1 | 0xA4 | 0xA7 | 0xA8 | 0xAA | 0xAD | 0xAF | 0xD7 | 0xF7 => true,
         0xB0..=0xB4 | 0xB6..=0xBA | 0xBC..=0xBF => true,
+        // Greek and Cyrillic.
+        0x370..=0x4FF => true,
         0x200B..=0x200F | 0x2028..=0x202E => false,
         0x2000..=0x2BFF => true,
         _ => false,
@@ -271,6 +391,11 @@ struct Builder<'a> {
     text: String,
     objects: Vec<Object>,
     em1000: bool,
+    rules: MetricRules,
+    /// A custom-mark note reference: the note goes with the next piece (its mark).
+    pending_note: Option<Object>,
+    /// Shaping small capitals: the run's own size, which the line takes its height from.
+    small_caps_of: Option<f64>,
 }
 
 struct NewPiece {
@@ -284,7 +409,33 @@ struct NewPiece {
     object: Option<Object>,
 }
 
-impl Builder<'_> {
+impl<'a> Builder<'a> {
+    fn new(fonts: &'a Fonts, em1000: bool, rules: MetricRules) -> Builder<'a> {
+        Builder {
+            fonts,
+            pieces: Vec::new(),
+            styles: Vec::new(),
+            glyph_ids: Vec::new(),
+            glyph_advances: Vec::new(),
+            glyph_dx: Vec::new(),
+            text: String::new(),
+            objects: Vec::new(),
+            em1000,
+            rules,
+            pending_note: None,
+            small_caps_of: None,
+        }
+    }
+
+    /// Runs of text shaped on their own (a ruby's base or annotation).
+    fn sub(&self, parts: &[(String, Run)], view: crate::docx::review::MarkupView) -> Result<ShapedPara, Yield> {
+        let mut b = Builder::new(self.fonts, self.em1000, self.rules);
+        for (t, r) in parts {
+            b.text(t, run_in(r, view))?;
+        }
+        Ok(b.finish())
+    }
+
     fn face(&self, family: &str, run: &RunStyle) -> Option<Rc<Face>> {
         self.fonts.face(family, run.category(family), run.bold, run.italic)
     }
@@ -308,7 +459,7 @@ impl Builder<'_> {
         }
         let t0 = self.text.len() as u32;
         self.text.push_str(text);
-        let object = p.object.map(|o| {
+        let object = p.object.or_else(|| self.pending_note.take()).map(|o| {
             self.objects.push(o);
             (self.objects.len() - 1) as u32
         });
@@ -317,6 +468,9 @@ impl Builder<'_> {
             kind: p.kind,
             break_after: p.break_after,
             soft_hyphen: p.soft_hyphen,
+            auto_hyphen: false,
+            glued: false,
+            break_extra: 0.0,
             style,
             width: p.width,
             ascent: p.ascent,
@@ -325,29 +479,34 @@ impl Builder<'_> {
             text: (t0, self.text.len() as u32),
             src: None,
             object,
+            natural: None,
         });
     }
 
+    /// The size a raised or lowered run is drawn at, and how far it is raised. The limits come from the output
+    /// device's pixel metrics at 600 dpi, in half-points; small capitals are raised as their full size.
     fn vertical(&self, run: &RunStyle, face: &Face) -> (f64, f64) {
         let base = run.size;
+        let full = self.small_caps_of.unwrap_or(base);
+        let device = |half_points: i64| face.device_metrics((half_points as f64 * 600.0 / 144.0).round() as i64);
+        let to_hp = |px: i64| (px as f64 * 144.0 / 600.0).round() as i64;
         let (size, mut raise) = match run.vert_align {
             VertAlign::Baseline => (base, 0.0),
             VertAlign::Superscript => {
                 let size = hp(base * face.sup_size / face.upem).max(2) as f64 / 2.0;
-                let (a, _, e) = metrics(face, base);
-                let (asup, _, _) = metrics(face, size);
-                let (a_hp, asup_hp) = (hp(a + e), hp(asup));
-                let limit = (a_hp / 3).max(a_hp - asup_hp);
-                let r = hp(base * face.sup_offset / face.upem).min(limit);
+                let (a, _, e) = device(hp(full));
+                let (asup, _, _) = device(hp(full * face.sup_size / face.upem).max(2));
+                let (a, asup) = (to_hp(a + e), to_hp(asup));
+                let limit = (a / 3).max(a - asup);
+                let r = hp(full * face.sup_offset / face.upem).min(limit);
                 (size, r as f64 / 2.0)
             }
             VertAlign::Subscript => {
                 let size = hp(base * face.sub_size / face.upem).max(2) as f64 / 2.0;
-                let (_, d, _) = metrics(face, base);
-                let (_, dsub, _) = metrics(face, size);
-                let off = hp(base * face.sub_offset / face.upem);
-                let limit = hp(d) - hp(dsub);
-                let drop = if limit > 0 { off.min(limit.max(0)).max(0) } else { off.max(0) };
+                let (_, d, _) = device(hp(full));
+                let (_, dsub, _) = device(hp(full * face.sub_size / face.upem).max(2));
+                let off = hp(full * face.sub_offset / face.upem);
+                let drop = off.min(to_hp(d) - to_hp(dsub));
                 (size, -(drop as f64) / 2.0)
             }
         };
@@ -356,10 +515,17 @@ impl Builder<'_> {
     }
 
     fn new_piece(&self, kind: Kind, run: &Run, face: Option<Rc<Face>>, size: f64, raise: f64) -> NewPiece {
-        let (metric_size, shift) = if run.vert_align == VertAlign::Baseline { (size, raise) } else { (run.size, run.position) };
+        // Small capitals are as tall in the line as their run's own size, like raised and lowered text.
+        let (metric_size, mut shift) = match (run.vert_align, self.small_caps_of) {
+            (VertAlign::Baseline, own) => (own.unwrap_or(size), raise),
+            (_, own) => (own.unwrap_or(run.size), run.position),
+        };
+        if self.rules.no_raise_lower {
+            shift -= run.position;
+        }
         let (mut ascent, mut descent) = match &face {
             Some(f) => {
-                let (a, d, e) = metrics_at(f, metric_size, self.em1000 && run.east_asia_named);
+                let (a, d, e) = ruled(self.rules, f, metric_size, metrics_at(f, metric_size, self.em1000 && run.east_asia_named));
                 (a + e, d)
             }
             None => (0.0, 0.0),
@@ -414,12 +580,28 @@ impl Builder<'_> {
         Ok(())
     }
 
+    fn small_caps_text(&mut self, seg: &str, small: bool, reduced: &Run, plain: &Run, own: f64) -> Result<(), Yield> {
+        if !small {
+            return self.text(seg, plain);
+        }
+        let outer = self.small_caps_of.replace(own);
+        let r = self.text(seg, reduced);
+        self.small_caps_of = outer;
+        r
+    }
+
     fn text(&mut self, text: &str, run: &Run) -> Result<(), Yield> {
+        if self.rules.whole_point_spacing && run.spacing.fract() != 0.0 {
+            let mut whole = (**run).clone();
+            whole.spacing = run.spacing.trunc();
+            return self.text(text, &Rc::new(whole));
+        }
         if run.small_caps && !run.caps {
             let mut small = (**run).clone();
             small.small_caps = false;
             small.caps = true;
-            small.size = ((hp(run.size) * 4 + 2) / 5).clamp(2, 3276) as f64 / 2.0;
+            small.size =
+                if self.rules.mac_small_caps { mac_small_caps(hp(run.size)) } else { ((hp(run.size) * 4 + 2) / 5).clamp(2, 3276) } as f64 / 2.0;
             let small = Rc::new(small);
             let mut plain = (**run).clone();
             plain.small_caps = false;
@@ -430,14 +612,14 @@ impl Builder<'_> {
                 let is_small =
                     c.is_lowercase() || matches!(c, ' ' | '\u{3000}' | '\u{2005}' | '\u{300}' | '\u{301}' | '\u{303}' | '\u{309}' | '\u{323}');
                 if is_small != seg_small && !seg.is_empty() {
-                    self.text(&seg, if seg_small { &small } else { &plain })?;
+                    self.small_caps_text(&seg, seg_small, &small, &plain, run.size)?;
                     seg.clear();
                 }
                 seg_small = is_small;
                 seg.push(c);
             }
             if !seg.is_empty() {
-                self.text(&seg, if seg_small { &small } else { &plain })?;
+                self.small_caps_text(&seg, seg_small, &small, &plain, run.size)?;
             }
             return Ok(());
         }
@@ -504,7 +686,8 @@ impl Builder<'_> {
                 (None, None) => true,
                 _ => false,
             };
-            if i > 0 && !same {
+            // The half-width voiced marks are characters of their own, not part of the one before.
+            if i > 0 && (!same || matches!(c, '\u{FF9E}' | '\u{FF9F}')) {
                 idx.push((stretch_start, i, stretch_face.take()));
                 stretch_start = i;
             }
@@ -525,7 +708,14 @@ impl Builder<'_> {
         let kern = run.kern > 0.0 && size >= run.kern - 1e-9;
         let shaped_text: String = s.chars().map(|c| if c == '\u{2011}' { '-' } else { c }).collect();
         let ligatures = if run.spacing != 0.0 { run.ligatures & 16 } else { run.ligatures };
-        let glyphs = face.shape(&shaped_text, kern, ligatures);
+        let mut glyphs = face.shape(&shaped_text, kern, ligatures, run.figures);
+        // Synthesized bold: each glyph one font unit wider than the regular face's.
+        // ponytail: Word's extra is glyph-dependent (0.0002-0.0007 em); one unit is its mean.
+        if face.sim_bold {
+            for g in &mut glyphs {
+                g.advance += 1.0;
+            }
+        }
         let scale = face.scale(size) * run.scale / 100.0;
         let mut starts: Vec<u32> = glyphs.iter().map(|g| g.cluster).collect();
         starts.sort_unstable();
@@ -549,7 +739,8 @@ impl Builder<'_> {
             cluster_glyphs.clear();
             cluster_glyphs.extend(by_cluster[g0..gi].iter().map(|&i| glyphs[i]));
             let first = chars.chars().next().unwrap_or(' ');
-            let kind = if first == ' ' || first == '\u{3000}' || first == '\u{2002}' || first == '\u{2003}' { Kind::Space } else { Kind::Text };
+            // The en, em and four-per-em spaces and the zero-width space hang at a line end like spaces.
+            let kind = if matches!(first, ' ' | '\u{3000}' | '\u{2002}' | '\u{2003}' | '\u{2005}' | '\u{200B}') { Kind::Space } else { Kind::Text };
             let n_chars = c1 - c0;
             let mut p = self.new_piece(kind, run, Some(face.clone()), size, raise);
             p.width = if self.em1000 && run.east_asia_named {
@@ -558,7 +749,9 @@ impl Builder<'_> {
             } else {
                 cluster_glyphs.iter().map(|g| g.advance).sum::<f64>() * scale
             } + run.spacing * n_chars as f64;
-            p.break_after = kind == Kind::Space || first == '-' || first == '\u{2010}' || first == '\u{2013}';
+            // Condensed spacing never takes a character below no width.
+            p.width = p.width.max(0.0);
+            p.break_after = kind == Kind::Space || breaks_after(first, self.rules.dash_breaks);
             if first == '\u{AD}' {
                 p.soft_hyphen = true;
                 p.break_after = true;
@@ -577,6 +770,21 @@ impl Builder<'_> {
 
     fn atom(&mut self, p: NewPiece, text: &str) {
         self.push(p, text, &[]);
+    }
+
+    /// An inline picture or shape: on the baseline, breakable on both sides.
+    fn picture(&mut self, pic: crate::docx::Picture, run: &Run) {
+        let mut p = self.new_piece(Kind::Object, run, None, run.size, 0.0);
+        let [l, t, r, b] = pic.effect;
+        p.width = pic.w + l + r;
+        p.ascent = (pic.h + t + b + run.position).max(0.0);
+        p.descent = (-run.position).max(0.0);
+        p.object = Some(Object::Picture(pic));
+        p.break_after = true;
+        if let Some(q) = self.pieces.last_mut().filter(|q| q.kind != Kind::ListNumber) {
+            q.break_after = true;
+        }
+        self.atom(p, "\u{FFFC}");
     }
 
     fn paragraph(&mut self, para: &Paragraph, space: &ShapeSpace) -> Result<(), Yield> {
@@ -608,7 +816,33 @@ impl Builder<'_> {
                 p.kind = Kind::ListNumber;
                 p.break_after = false;
             }
+            // A legacy level: the number moved in by its alignment, then a fixed gap to the text (no tab stop, any
+            // suffix).
+            if let Some((legacy_space, indent)) = l.legacy {
+                let lu = |pt: f64| Lu::round_half_up(pt).0 as i64;
+                let num_w = lu(self.pieces[start..].iter().map(|p| p.width).sum());
+                let width = lu((-para.para_style_in(space.view).ind_first).max(indent));
+                let (w, gap) = ((width - num_w).max(0), lu(legacy_space));
+                let r = (w - gap).max(0);
+                let (shift, gap) = match l.jc.as_str() {
+                    "center" if w >> 1 >= gap => (w >> 1, w >> 1),
+                    "center" | "right" => (r, gap),
+                    _ => (0, gap.max(w)),
+                };
+                let at = |b: &Self, w: i64| {
+                    let mut p = b.new_piece(Kind::ListNumber, &l.run, None, l.run.size, 0.0);
+                    p.width = Lu(w as i32).to_pt();
+                    p
+                };
+                let lead = at(self, shift);
+                self.atom(lead, "");
+                let lead = self.pieces.pop().expect("just pushed");
+                self.pieces.insert(start, lead);
+                let gap = at(self, gap);
+                self.atom(gap, "");
+            }
             match l.suff.as_str() {
+                _ if l.legacy.is_some() => {}
                 "space" => {
                     let s = self.pieces.len();
                     self.text(" ", &l.run)?;
@@ -629,6 +863,7 @@ impl Builder<'_> {
                 }
             }
         }
+        let list_end = self.pieces.len();
         let (mut field, mut note) = (0usize, 0usize);
         let mut at: u32 = 0;
         let shown = crate::docx::fields::layout_shown(&para.inlines);
@@ -659,6 +894,7 @@ impl Builder<'_> {
                 .find(|s| matches!(para.inlines[s.begin], Inline::FieldBegin { id, .. } if id == e.field))
                 .map(|s| (s.begin..=s.end, e.clone()))
         });
+        let in_frame = !space.frame_breaks && para.para_style_in(view).in_frame;
         for (k, inl) in para.inlines.iter().enumerate() {
             let evaluated = matches!(inl, Inline::FieldBegin { kind: Some(_), .. });
             if let Some((span, e)) = expanded.as_ref().filter(|(s, _)| s.contains(&k)) {
@@ -739,15 +975,21 @@ impl Builder<'_> {
                     p.object = Some(Object::PTab(*t));
                     self.atom(p, "\t");
                 }
-                (Inline::Break(BreakKind::Page | BreakKind::Column, _), Some(_)) if space.in_cell => {}
+                (Inline::Break(BreakKind::Page | BreakKind::Column, _), Some(_)) if space.in_cell || in_frame => {}
                 (Inline::Break(k, _), Some(run)) => {
                     let kind = match k {
-                        BreakKind::Line => Kind::LineBreak,
                         BreakKind::Page => Kind::PageBreak,
                         BreakKind::Column => Kind::ColumnBreak,
+                        _ => Kind::LineBreak,
                     };
                     let f = self.face(&run.ascii, run);
-                    let p = self.new_piece(kind, run, f, run.size, 0.0);
+                    let mut p = self.new_piece(kind, run, f, run.size, 0.0);
+                    p.object = match k {
+                        BreakKind::ClearLeft => Some(Object::Clear(true, false)),
+                        BreakKind::ClearRight => Some(Object::Clear(false, true)),
+                        BreakKind::ClearAll => Some(Object::Clear(true, true)),
+                        _ => None,
+                    };
                     self.atom(p, "");
                 }
                 (Inline::Sym { ch, font, control, .. }, Some(run)) => {
@@ -759,20 +1001,130 @@ impl Builder<'_> {
                     }
                     self.text(&ch.to_string(), &Rc::new(r))?;
                 }
-                (Inline::Picture(pic, _), Some(run)) => {
-                    let mut p = self.new_piece(Kind::Object, run, None, run.size, 0.0);
-                    let [l, t, r, b] = pic.effect;
-                    p.width = pic.w + l + r;
-                    p.ascent = (pic.h + t + b + run.position).max(0.0);
-                    p.descent = (-run.position).max(0.0);
-                    p.object = Some(Object::Picture(pic.clone()));
+                // A legacy check box: one character of its code run's font at the box size, as wide as that font's
+                // single line height there in whole device pixels; a break opportunity on both sides.
+                (Inline::FieldBegin { kind: Some(FieldKind::CheckBox { size, checked }), .. }, Some(run)) => {
+                    let e = size.unwrap_or(run.size);
+                    let face = self.face(&run.ascii, run);
+                    let height = face.as_ref().map_or(Lu::round_half_up(1.14 * e), |f| {
+                        Lu(Lu::from_font(f.ascent + f.leading, e, f.upem).0 + Lu::from_font(f.descent, e, f.upem).0)
+                    });
+                    let mut p = self.new_piece(Kind::Text, run, face, e, 0.0);
+                    p.width = height.device_px() as f64 * super::units::DEVICE_PX / super::units::LU_PER_PT;
+                    p.object = Some(Object::CheckBox(e, *checked));
                     p.break_after = true;
                     if let Some(q) = self.pieces.last_mut().filter(|q| q.kind != Kind::ListNumber) {
                         q.break_after = true;
                     }
                     self.atom(p, "\u{FFFC}");
                 }
-                (Inline::Float(f, _), Some(_)) if space.hide == Some(f.id) => {}
+                // A legacy drop-down without entries: a blank as wide as five of its font's digit zeros, as tall as
+                // its run's text.
+                // ponytail: one unbreakable piece; whether Word breaks inside the blank is unknown.
+                (Inline::FieldBegin { kind: Some(FieldKind::DropDown), value: None, .. }, Some(run)) => {
+                    let face = self.face(&run.ascii, run);
+                    let zero = face.as_ref().and_then(|f| Some(f.advance(f.glyph('0')?) * f.scale(run.size)));
+                    let mut blank = self.new_piece(Kind::Text, run, face, run.size, 0.0);
+                    blank.width = 5.0 * zero.unwrap_or(run.size / 2.0);
+                    // No face: it draws nothing.
+                    blank.style.face = None;
+                    self.atom(blank, "\u{FFFC}");
+                }
+                (Inline::Picture(pic, _), Some(run)) => self.picture(pic.clone(), run),
+                // A ruby: one object as wide as the wider of its base and annotation, as tall as the base or the
+                // annotation raised over it, as deep as the base.
+                (Inline::Ruby(r, _), Some(run)) if r.align != 5 || space.vertical => {
+                    let (base, text) = (self.sub(&r.base, view)?, self.sub(&r.text, view)?);
+                    let wo = [&base, &text].map(|s| s.pieces.iter().map(|q| q.width).sum::<f64>()).into_iter().fold(0.0, f64::max);
+                    let face = self.face(&run.ascii, run);
+                    let mut p = self.new_piece(Kind::Text, run, face, run.size, 0.0);
+                    p.width = wo;
+                    let top = |s: &ShapedPara, f: fn(&Piece) -> f64| s.pieces.iter().map(f).fold(0.0, f64::max);
+                    p.ascent = top(&base, |q| q.ascent).max(r.raise + top(&text, |q| q.ascent));
+                    p.descent = top(&base, |q| q.descent);
+                    let (base_x, text_x) = (ruby_x(&base, wo, r.align), ruby_x(&text, wo, r.align));
+                    let shape = RubyShape { base, text, base_x, text_x, raise: r.raise, turned: None, narrow: 0.0, at_least_descent: p.descent };
+                    p.object = Some(Object::Ruby(Rc::new(shape)));
+                    self.atom(p, "\u{FFFC}");
+                }
+                // `rightVertical` in horizontal text: the annotation turned a quarter clockwise after the base, centred
+                // on the base text's middle. Each base character is the ruby run's size in half-points (in layout
+                // units) narrower, down to no advance, its own character spacing ignored; the object adds the
+                // annotation's height as a centred vertical line and the ruby run's character spacing; the line is as
+                // tall as the annotation is long, about its middle. The annotation is one font at one size: every run
+                // at `w:hps`, in the first run's ascii font, not bold, in its own colour.
+                (Inline::Ruby(r, _), Some(run)) => {
+                    let first = r.text.first().map(|(_, f)| f.clone());
+                    let parts: Vec<(String, Run)> = r
+                        .text
+                        .iter()
+                        .map(|(t, own)| {
+                            let Some(f) = &first else { return (t.clone(), own.clone()) };
+                            let mut s = (**own).clone();
+                            (s.ascii, s.h_ansi, s.bold) = (f.ascii.clone(), f.ascii.clone(), false);
+                            s.categories[..2].fill(f.categories[0]);
+                            s.size = r.size.unwrap_or(s.size);
+                            // ponytail: East Asian characters the first run's font lacks keep their run's East Asian
+                            // font (Word falls back to a font of its own); a fallback font if it matters.
+                            let face = self.face(&f.ascii, f);
+                            if face.is_some_and(|face| t.chars().filter(|&c| is_east_asian(c as u32)).all(|c| face.has_glyph(c))) {
+                                (s.east_asia, s.categories[2]) = (f.ascii.clone(), f.categories[0]);
+                            }
+                            (t.clone(), Rc::new(s))
+                        })
+                        .collect();
+                    let (base, text) = (self.sub(&r.base, view)?, self.sub(&parts, view)?);
+                    let face = self.face(&run.ascii, run);
+                    let mut p = self.new_piece(Kind::Text, run, face, run.size, 0.0);
+                    let top = |s: &ShapedPara, f: fn(&Piece) -> f64| s.pieces.iter().map(f).fold(0.0, f64::max);
+                    let narrow = super::units::Lu((run.size * 2.0 * 204.8).round() as i32).to_pt();
+                    let mut base_x = Vec::with_capacity(base.pieces.len());
+                    let mut x = 0.0;
+                    for (i, q) in base.pieces.iter().enumerate() {
+                        base_x.push(x);
+                        let st = &base.styles[q.style as usize];
+                        let scale = st.face.as_ref().map_or(0.0, |f| f.scale(st.size) * st.run.scale / 100.0);
+                        x += base.glyphs(i).map(|(_, a, _)| (a * scale - narrow).max(0.0)).sum::<f64>();
+                    }
+                    let len = text.pieces.iter().map(|q| q.width).sum::<f64>();
+                    // The annotation's centred ascent and descent, and its glyphs' drop below its reference baseline.
+                    let (mut up, mut down, mut drop) = (0.0f64, 0.0f64, None);
+                    for q in text.pieces.iter().filter(|q| q.kind == Kind::Text) {
+                        let st = &text.styles[q.style as usize];
+                        let Some(f) = &st.face else { continue };
+                        let (e, c) =
+                            (super::vertical::extra(Some(f), st.size), super::line::align_drop(f, st.size, super::line::Align::Center, true));
+                        (up, down) = (up.max(q.ascent + e - c), down.max(q.descent + e + c));
+                        // ponytail: one drop for the whole annotation (its first run's), per-run drops if mixed fonts matter.
+                        drop.get_or_insert(c);
+                    }
+                    p.width = x + up + down + run.spacing;
+                    p.ascent = top(&base, |q| q.ascent).max(len / 2.0);
+                    p.descent = top(&base, |q| q.descent).max(len - p.ascent);
+                    let at_least_descent = top(&base, |q| q.descent).max(len / 2.0);
+                    let delta = top(&base, |q| q.ascent) - top(&base, |q| q.descent);
+                    let start = [x + down - drop.unwrap_or(0.0), -(delta + len) / 2.0];
+                    let text_x = ruby_x(&text, len, 3);
+                    let shape = RubyShape { base, text, base_x, text_x, raise: 0.0, turned: Some(start), narrow, at_least_descent };
+                    p.object = Some(Object::Ruby(Rc::new(shape)));
+                    self.atom(p, "\u{FFFC}");
+                }
+                (Inline::DateBlock(_, text, _), Some(run)) => self.text(text, run)?,
+                (Inline::Float(f, _), Some(_)) if space.hide == Some(f.id) || f.hidden() => {}
+                // A note's anchor: an inline object where it stands.
+                (Inline::Float(f, _), Some(run)) if f.in_note => self.picture(
+                    crate::docx::Picture {
+                        w: f.w,
+                        h: f.h,
+                        image: f.image,
+                        alt: f.alt.clone(),
+                        lock_aspect: f.lock_aspect,
+                        effect: f.effect,
+                        shape: f.shape.clone(),
+                        text: f.text_box.clone().map(|text_box| Box::new(crate::docx::model::InlineText { id: f.id, text_box })),
+                    },
+                    run,
+                ),
                 (Inline::Float(f, _), Some(run)) => {
                     let mut p = self.new_piece(Kind::Anchor, run, None, run.size, 0.0);
                     let previewed = space.float.clone().filter(|p| p.id == f.id);
@@ -782,7 +1134,9 @@ impl Builder<'_> {
                 (Inline::NoteRef { kind, id, custom, .. }, Some(run)) => {
                     let number = space.notes.get(note).cloned().unwrap_or_default();
                     note += 1;
-                    if !*custom {
+                    if *custom {
+                        self.pending_note = Some(Object::Note(*kind, *id));
+                    } else {
                         let start = self.pieces.len();
                         self.text(&number, run)?;
                         if start < self.pieces.len() {
@@ -796,9 +1150,13 @@ impl Builder<'_> {
                     note += 1;
                     self.text(&number, run)?;
                 }
-                (Inline::Separator { continuation, .. }, Some(run)) => {
+                (Inline::Separator { continuation, full, .. }, Some(run)) => {
                     let f = self.face(&run.ascii, run);
-                    let kind = if *continuation { Kind::ContSeparator } else { Kind::Separator };
+                    let kind = match (*continuation, *full) {
+                        (_, true) => Kind::FullSeparator,
+                        (true, false) => Kind::ContSeparator,
+                        (false, false) => Kind::Separator,
+                    };
                     let p = self.new_piece(kind, run, f, run.size, 0.0);
                     self.atom(p, "");
                 }
@@ -811,13 +1169,31 @@ impl Builder<'_> {
             at += units;
         }
         self.flush_text(&mut pend, &mut pend_runs, &mut pend_units)?;
-        if let Some(dd) = &space.balance
-            && (dd.is_empty() || self.fonts.face(dd, None, false, false).is_some_and(|f| f.east_asian))
+        // A paragraph whose first content is a page or column break starts again after it: the list number goes
+        // with the text that follows.
+        if list_end > 0 && continues_after_break(para, space) {
+            self.pieces.drain(..list_end);
+        } else if list_end > 0
+            && let Some(k) = (list_end..self.pieces.len()).find(|&k| self.pieces[k].kind != Kind::Anchor)
+            && matches!(self.pieces[k].kind, Kind::PageBreak | Kind::ColumnBreak)
         {
+            let mut b = self.pieces.remove(k);
+            (b.text, b.glyphs) = ((self.pieces[0].text.0, self.pieces[0].text.0), (self.pieces[0].glyphs.0, self.pieces[0].glyphs.0));
+            self.pieces.insert(0, b);
+        }
+        // Compat 15: table-cell paragraphs, and paragraphs of 4000 characters or more with the mark, fit their regions
+        // as compat 12.
+        let long = para.inlines.iter().map(|i| i.units()).sum::<usize>() + 1 >= 4000;
+        self.fit_text(space.stale_fit && !space.in_cell && !long, space.first_line, space.unfitted);
+        let balanced =
+            space.balance.as_ref().is_some_and(|dd| dd.is_empty() || self.fonts.face(dd, None, false, false).is_some_and(|f| f.east_asian));
+        if balanced {
             self.balance_spaces();
         }
         if space.compress {
-            for k in 0..self.pieces.len() {
+            // Compat 15 with the spaces balanced: hyphens and dashes break after as anywhere else.
+            // ponytail: keyed on the balancing pass, not on whether the spaces before each hyphen were widened.
+            for k in (0..self.pieces.len()).filter(|_| !(balanced && space.balanced_dashes)) {
                 let p = &self.pieces[k];
                 if p.break_after
                     && matches!(self.text[p.text.0 as usize..].chars().next(), Some('-' | '\u{2013}'))
@@ -827,10 +1203,115 @@ impl Builder<'_> {
                 }
             }
             for s in 0..self.styles.len() {
-                self.styles[s].squeeze_avg = self.east_asia_face(s as u32).map_or(0.0, |f| f.avg_width);
+                // The space shrinks against its own font's average width, not the East Asian font's.
+                let own = self.east_asia_face(s as u32).and(self.styles[s].face.clone());
+                self.styles[s].squeeze_avg = own.map_or(0.0, |f| f.avg_width);
             }
         }
         Ok(())
+    }
+
+    /// Each fitted region (consecutive text whose runs have `w:fitText` with one id) made as wide as its first run's
+    /// `w:fitText`: wider with character spacing, narrower with a horizontal scale; never broken. `stale`: lines are
+    /// broken with the region's first adjustment (compat 15), except on the document's first line, which holds the
+    /// first `first_line` pieces; a squeezed region there is treated like any other line. `unfitted`: the regions keep
+    /// their natural widths.
+    fn fit_text(&mut self, stale: bool, first_line: Option<usize>, unfitted: bool) {
+        let fit = |b: &Self, k: usize| {
+            let p = &b.pieces[k];
+            b.styles[p.style as usize].run.fit_text.filter(|_| matches!(p.kind, Kind::Text | Kind::Space))
+        };
+        let mut a = 0;
+        while a < self.pieces.len() {
+            let Some((target, id)) = fit(self, a) else {
+                a += 1;
+                continue;
+            };
+            let mut e = a + 1;
+            while e < self.pieces.len() && fit(self, e).is_some_and(|(_, i)| i == id) {
+                e += 1;
+            }
+            self.fit_region(a, e, target, stale, first_line.is_some_and(|n| e <= n), unfitted);
+            a = e;
+        }
+    }
+
+    /// Fits pieces `a..e` to `target` points. `stale`: compat 15; `first`: the region is on the document's first line.
+    fn fit_region(&mut self, a: usize, e: usize, target: f64, stale: bool, first: bool, unfitted: bool) {
+        for k in a..e {
+            let p = &mut self.pieces[k];
+            p.glued = k > a;
+            p.auto_hyphen = false;
+            if k + 1 < e {
+                p.break_after = false;
+            }
+        }
+        if unfitted {
+            return;
+        }
+        let chars = |b: &Self, k: usize| b.text[b.pieces[k].text.0 as usize..b.pieces[k].text.1 as usize].chars().count();
+        // Each piece's natural width: the runs' own character spacing is replaced.
+        let natural: Vec<f64> = (a..e)
+            .map(|k| (self.pieces[k].width - self.styles[self.pieces[k].style as usize].run.spacing * chars(self, k) as f64) * 4096.0)
+            .collect();
+        let counts: Vec<usize> = (a..e).map(|k| chars(self, k)).collect();
+        let n: usize = counts.iter().sum();
+        if n == 0 {
+            return;
+        }
+        // Per character: a piece's advance is its first character's.
+        let advances = |scale: f64| -> Vec<f64> {
+            (a..e)
+                .zip(&natural)
+                .zip(&counts)
+                .flat_map(|((k, &w), &c)| {
+                    let w = if scale == 100.0 { w } else { self.scaled(k, scale).unwrap_or(w * scale / 100.0) };
+                    (0..c).map(move |i| if i == 0 { w } else { 0.0 })
+                })
+                .collect()
+        };
+        let region = FitRegion { n, advances: &advances, target: ((target * 20.0).round() * 1024.0 / 5.0).trunc() };
+        let natural_w: f64 = natural.iter().sum();
+        // An expanding region on the document's first line takes that line's state; a squeezed one breaks as on any
+        // other line.
+        let on_first = region.target > natural_w && first;
+        let unadjusted = (100.0, 0.0, 0.0);
+        let (printed, broken) = if !stale {
+            let s = region.fit(unadjusted);
+            (s, s)
+        } else {
+            let first_step = region.step(unadjusted);
+            if on_first {
+                let s = region.fit(first_step);
+                (s, s)
+            } else {
+                (region.fit(region.step(first_step)), first_step)
+            }
+        };
+        let pieces = |s: FitState| -> Vec<f64> {
+            let mut w = region.parts(s).into_iter();
+            counts.iter().map(|&c| w.by_ref().take(c).sum()).collect()
+        };
+        let (printed, broken) = (pieces(printed), pieces(broken));
+        for ((k, w), bw) in (a..e).zip(printed).zip(broken) {
+            self.pieces[k].width = w / 4096.0;
+            self.pieces[k].break_extra = (bw - w) / 4096.0;
+        }
+    }
+
+    /// A piece's width in lu at a horizontal scale: each glyph's advance at `round(fu × floor(avg × scale / 100) / avg)`
+    /// font units, `avg` the font's average character width.
+    fn scaled(&self, k: usize, scale: f64) -> Option<f64> {
+        let st = &self.styles[self.pieces[k].style as usize];
+        let face = st.face.as_ref()?;
+        let avg = (face.avg_width * face.upem).round();
+        if avg <= 0.0 {
+            return None;
+        }
+        let q = (avg * scale / 100.0).floor();
+        let (g0, g1) = self.pieces[k].glyphs;
+        let fu: f64 = (g0 as usize..g1 as usize).map(|g| (self.glyph_advances[g] * q / avg).round()).sum();
+        Some(fu * face.scale(st.size) * 4096.0)
     }
 
     fn east_asia_face(&self, style: u32) -> Option<Rc<Face>> {
@@ -868,12 +1349,58 @@ impl Builder<'_> {
                 None
             };
             if let Some(em) = em {
-                self.pieces[k].width = em * st.size * st.run.scale / 100.0 + st.run.spacing;
+                let p = &mut self.pieces[k];
+                p.natural = Some(p.width);
+                p.width = em * st.size * st.run.scale / 100.0 + st.run.spacing;
             }
         }
     }
 
+    // Automatic hyphenation
+    fn hyphenate(&mut self, h: &super::hyphenate::Hyphenation, caps: bool, right: usize) {
+        let mut k = 0;
+        while k < self.pieces.len() {
+            let (e, at) = word_points(&self.pieces, &self.text, &self.styles, k, h, caps, right);
+            for j in at {
+                self.pieces[j].auto_hyphen = true;
+            }
+            k = e.max(k + 1);
+        }
+    }
+
+    /// Text borders: consecutive runs with equal `w:bdr` share one box ([`boxed`]). Each of its two outer sides
+    /// ([`border_side`]) widens its outer piece; the box's runs are as much taller above and below as a side is wide.
+    fn border_sides(&mut self) {
+        let mut k = 0;
+        while k < self.pieces.len() {
+            let Some(b) = boxed(&self.pieces, &self.styles, k) else {
+                k += 1;
+                continue;
+            };
+            let mut end = k + 1;
+            while boxed(&self.pieces, &self.styles, end) == Some(b) {
+                end += 1;
+            }
+            let (t, drawn) = border_side(b);
+            for p in &mut self.pieces[k..end] {
+                p.ascent += t;
+                p.descent += t;
+            }
+            for i in [k, end - 1] {
+                self.pieces[i].width += drawn;
+                self.pieces[i].break_extra += t - drawn;
+            }
+            k = end;
+        }
+    }
+
     fn finish(mut self) -> ShapedPara {
+        if let Some(o) = self.pending_note.take()
+            && let Some(p) = self.pieces.iter_mut().rev().find(|p| p.object.is_none())
+        {
+            self.objects.push(o);
+            p.object = Some((self.objects.len() - 1) as u32);
+        }
         let text = |p: &Piece| &self.text[p.text.0 as usize..p.text.1 as usize];
         let n = self.pieces.len();
         let mut a = 0;
@@ -894,6 +1421,7 @@ impl Builder<'_> {
             }
             a = b;
         }
+        self.border_sides();
         ShapedPara {
             pieces: self.pieces.into_boxed_slice(),
             styles: self.styles.into_boxed_slice(),
@@ -904,8 +1432,66 @@ impl Builder<'_> {
             objects: self.objects.into_boxed_slice(),
             join: None,
             em1000: self.em1000,
+            rules: self.rules,
+            hyphenate: None,
+            east_asian_default: false,
+            opens: true,
+            decimal_lead: false,
         }
     }
+}
+
+/// The end of the word whose letters start at `pieces[k]` and the pieces it may break after. A word is letters and
+/// apostrophes in one language; optional hyphens and zero-width joiners inside it are skipped.
+fn word_points(
+    pieces: &[Piece],
+    text: &str,
+    styles: &[PieceStyle],
+    k: usize,
+    h: &super::hyphenate::Hyphenation,
+    caps: bool,
+    right: usize,
+) -> (usize, Vec<usize>) {
+    const MAX_LETTERS: usize = 65;
+    let n = pieces.len();
+    let text = |k: usize| {
+        let p = &pieces[k];
+        if p.kind == Kind::Text { &text[p.text.0 as usize..p.text.1 as usize] } else { "" }
+    };
+    let letters = |k: usize| {
+        let t = text(k);
+        !t.is_empty() && t.chars().all(|c| c.is_alphabetic() || c == '\'')
+    };
+    let skipped = |k: usize| {
+        let t = text(k);
+        !t.is_empty() && t.chars().all(|c| matches!(c, '\u{ad}' | '\u{200c}' | '\u{200d}'))
+    };
+    if k >= n || !letters(k) {
+        return (k, Vec::new());
+    }
+    let lang = &styles[pieces[k].style as usize].run.lang;
+    let mut e = k;
+    let mut word = String::new();
+    let mut ends = Vec::new();
+    while e < n && (letters(e) || skipped(e)) && styles[pieces[e].style as usize].run.lang == *lang {
+        if letters(e) {
+            word.push_str(text(e));
+            ends.push((word.chars().count(), e));
+        }
+        e += 1;
+    }
+    let shouting = caps && !word.chars().any(char::is_lowercase);
+    let head: String = word.chars().take(MAX_LETTERS).collect();
+    let mut at = Vec::new();
+    // A run with no language anywhere takes the default editing language of an en-US installation.
+    if let Some(patterns) = h.for_language(if lang.is_empty() { "en-US" } else { lang }).filter(|_| !shouting) {
+        for x in patterns.points(&head, right) {
+            if let Some(j) = ends.iter().position(|&(c, _)| c == x).filter(|&j| j + 1 < ends.len()) {
+                at.push(ends[j].1);
+            }
+        }
+    }
+    (e, at)
 }
 
 fn shapes_alike(a: &Run, b: &Run) -> bool {
@@ -925,6 +1511,7 @@ fn shapes_alike(a: &Run, b: &Run) -> bool {
         strike,
         dstrike,
         hidden,
+        no_proof,
         underline,
         color,
         highlight,
@@ -937,9 +1524,12 @@ fn shapes_alike(a: &Run, b: &Run) -> bool {
         scale,
         kern,
         ligatures,
+        figures,
+        fit_text,
         em,
         toc,
         lang,
+        lang_east_asia,
         style_id,
         direct: _,
         rev: _,
@@ -961,6 +1551,7 @@ fn shapes_alike(a: &Run, b: &Run) -> bool {
             && *strike == b.strike
             && *dstrike == b.dstrike
             && *hidden == b.hidden
+            && *no_proof == b.no_proof
             && *underline == b.underline
             && *color == b.color
             && *highlight == b.highlight
@@ -972,9 +1563,12 @@ fn shapes_alike(a: &Run, b: &Run) -> bool {
             && *scale == b.scale
             && *kern == b.kern
             && *ligatures == b.ligatures
+            && *figures == b.figures
+            && *fit_text == b.fit_text
             && *em == b.em
             && *toc == b.toc
             && *lang == b.lang
+            && *lang_east_asia == b.lang_east_asia
             && *style_id == b.style_id
             && *categories == b.categories)
 }
@@ -1025,7 +1619,9 @@ pub fn same_para(a: &Paragraph, b: &Paragraph) -> bool {
         && run(&a.mark, &b.mark)
         && match (&a.list, &b.list) {
             (None, None) => true,
-            (Some(x), Some(y)) => x.text == y.text && x.jc == y.jc && x.suff == y.suff && x.picture == y.picture && run(&x.run, &y.run),
+            (Some(x), Some(y)) => {
+                x.text == y.text && x.jc == y.jc && x.suff == y.suff && x.picture == y.picture && x.legacy == y.legacy && run(&x.run, &y.run)
+            }
             _ => false,
         }
         && a.inlines == b.inlines
@@ -1037,20 +1633,35 @@ pub fn shape(para: &Paragraph, space: &ShapeSpace, fonts: &Fonts, memos: &mut Me
 }
 
 pub fn shape_uncached(para: &Paragraph, space: &ShapeSpace, fonts: &Fonts, memos: &mut Memos) -> Result<ShapedPara, Yield> {
-    let mut b = Builder {
-        fonts,
-        pieces: Vec::new(),
-        styles: Vec::new(),
-        glyph_ids: Vec::new(),
-        glyph_advances: Vec::new(),
-        glyph_dx: Vec::new(),
-        text: String::new(),
-        objects: Vec::new(),
-        em1000: space.em1000,
-    };
+    let mut b = Builder::new(fonts, space.em1000, space.metric_rules);
     super::job::unit("shaping call", || crate::prof::time("itemize", || b.paragraph(para, space)))?;
+    if let Some((h, caps, right)) = &space.hyphenate {
+        b.hyphenate(h, *caps, *right);
+    }
     memos.meter.unit_done();
-    Ok(ShapedPara { join: space.join.clone(), ..b.finish() })
+    let east_asian_default =
+        space.default_east_asia.as_deref().is_some_and(|f| !f.is_empty() && fonts.face(f, None, false, false).is_some_and(|f| f.east_asian));
+    let opens = !continues_after_break(para, space);
+    let mut stops = para.para_style_in(space.view).tabs.iter().filter(|t| t.kind != crate::docx::props::TabKind::Clear);
+    let decimal_lead = space.in_cell
+        && para.list.is_none()
+        && stops.next().is_some_and(|t| t.kind == crate::docx::props::TabKind::Decimal)
+        && stops.next().is_none();
+    Ok(ShapedPara { join: space.join.clone(), hyphenate: space.hyphenate.clone(), east_asian_default, opens, decimal_lead, ..b.finish() })
+}
+
+/// Compat 15: the paragraph's first content is a page or column break (empty runs and bookmarks before it don't
+/// count) and it ends a section or is in a frame or a cell: the text after the break goes on as continuation lines,
+/// with no list number.
+fn continues_after_break(para: &Paragraph, space: &ShapeSpace) -> bool {
+    let in_frame = !space.frame_breaks && para.para_style_in(space.view).in_frame;
+    space.breaks_continue
+        && (space.ends_section || space.in_cell || in_frame)
+        && para
+            .inlines
+            .iter()
+            .find(|i| !matches!(i, Inline::Bookmark(_) | Inline::Range(_)) && !matches!(i, Inline::Text(t, _) if t.is_empty()))
+            .is_some_and(|i| matches!(i, Inline::Break(BreakKind::Page | BreakKind::Column, _)))
 }
 
 pub fn shape_space(
@@ -1062,9 +1673,28 @@ pub fn shape_space(
 ) -> ShapeSpace {
     let mut space = ShapeSpace {
         balance: text.default_east_asia.clone().filter(|_| text.balance_spaces),
+        default_east_asia: text.default_east_asia.clone(),
         compress: text.compress_punctuation,
+        balanced_dashes: text.compat == crate::docx::Compat::Generic,
         em1000: text.compat == crate::docx::Compat::Legacy && text.word97_line_breaks,
+        frame_breaks: text.show_breaks_in_frames,
+        stale_fit: text.compat == crate::docx::Compat::Generic,
+        breaks_continue: text.compat == crate::docx::Compat::Generic,
+        vertical: text.vertical.is_some(),
+        metric_rules: MetricRules {
+            no_leading: text.no_leading,
+            no_raise_lower: text.no_raise_lower,
+            whole_point_spacing: text.whole_point_spacing,
+            mac_small_caps: text.mac_small_caps,
+            wp_line_heights: text.wp_line_heights,
+            dash_breaks: text.dash_breaks,
+        },
         view: text.review.view,
+        hyphenate: text
+            .hyphenation
+            .as_ref()
+            .filter(|_| !para.para_style_in(text.review.view).suppress_auto_hyphens)
+            .map(|h| (h.patterns.clone(), h.caps, if text.compat == crate::docx::Compat::Generic { 3 } else { 2 })),
         ..ShapeSpace::default()
     };
     let spans = crate::docx::fields::spans(&para.inlines);
@@ -1072,10 +1702,13 @@ pub fn shape_space(
         match inl {
             Inline::FieldBegin { kind: Some(kind), .. } => {
                 let code = spans.iter().find(|s| s.begin == k).map(|s| crate::docx::fields::code_text(&para.inlines, *s)).unwrap_or_default();
-                space.fields.push(fields.value(kind, code.trim()))
+                let chapter = fields.chapters.as_ref().and_then(|c| c.get(&ParaId(para.id))).filter(|_| *kind == FieldKind::Page);
+                space.fields.push(fields.value(kind, code.trim()).map(|v| chapter.cloned().unwrap_or_default() + &v))
             }
-            Inline::NoteRef { kind, id, .. } | Inline::NoteMark(kind, id, _) => {
-                space.notes.push(notes.get(&(*kind, *id)).cloned().unwrap_or_default())
+            Inline::NoteRef { kind, id, .. } => space.notes.push(notes.get(&(*kind, *id)).cloned().unwrap_or_default()),
+            Inline::NoteMark(kind, id, _) => {
+                let mark = notes.get(&super::document::mark_key(*kind, *id));
+                space.notes.push(mark.or_else(|| notes.get(&(*kind, *id))).cloned().unwrap_or_default())
             }
             _ => {}
         }
@@ -1100,12 +1733,18 @@ pub struct FieldValues {
     pub page_refs: Option<Rc<HashMap<String, String>>>,
     pub style_refs: Vec<(String, String)>,
     pub page_fmt: Option<String>,
+    /// The chapter number and separator page numbers lead with: the page's (headers and footers), or each
+    /// paragraph's (the body).
+    pub chapter: Option<String>,
+    pub chapters: Option<Rc<HashMap<ParaId, String>>>,
 }
 
 impl FieldValues {
     pub fn value(&self, kind: &FieldKind, code: &str) -> Option<String> {
         match kind {
-            FieldKind::Page => self.page.clone().map(|p| format_field(&p, code, self.page_fmt.as_deref())),
+            FieldKind::Page => {
+                self.page.clone().map(|p| self.chapter.clone().unwrap_or_default() + &format_field(&p, code, self.page_fmt.as_deref()))
+            }
             FieldKind::NumPages => self.num_pages.clone().map(|p| format_field(&p, code, None)),
             FieldKind::SectionPages => self.section_pages.clone().map(|p| format_field(&p, code, None)),
             FieldKind::Section => self.section.clone().map(|p| format_field(&p, code, None)),
@@ -1113,10 +1752,7 @@ impl FieldValues {
                 .page_refs
                 .as_ref()
                 .map(|m| m.get(name).map_or_else(|| "Error! Bookmark not defined.".to_string(), |p| format_field(p, code, None))),
-            FieldKind::StyleRef(st) => {
-                let key = crate::docx::fields::style_key(st);
-                self.style_refs.iter().find(|(k, _)| *k == key).map(|(_, t)| t.clone())
-            }
+            FieldKind::StyleRef(_) => self.style_refs.iter().find(|(k, _)| k == code).map(|(_, t)| t.clone()),
             _ => None,
         }
     }
@@ -1127,19 +1763,103 @@ pub fn para_id(p: &Paragraph) -> ParaId {
 }
 
 pub fn shape_run(text: &str, run: &Run, fonts: &Fonts) -> ShapedPara {
-    let mut b = Builder {
-        fonts,
-        pieces: Vec::new(),
-        styles: Vec::new(),
-        glyph_ids: Vec::new(),
-        glyph_advances: Vec::new(),
-        glyph_dx: Vec::new(),
-        text: String::new(),
-        objects: Vec::new(),
-        em1000: false,
-    };
+    let mut b = Builder::new(fonts, false, MetricRules::default());
     let _ = b.text(text, run);
     b.finish()
+}
+
+/// Scale (percent), spacing on every character but the last, the last's spacing (twips).
+type FitState = (f64, f64, f64);
+
+fn fit_lu(tw: f64) -> f64 {
+    (tw * 1024.0 / 5.0).round()
+}
+
+fn fit_tw(lu: f64) -> f64 {
+    (lu * 5.0 / 1024.0).trunc()
+}
+
+/// `n` characters, their advances (lu) at a scale, and the target (lu).
+struct FitRegion<'a> {
+    n: usize,
+    advances: &'a dyn Fn(f64) -> Vec<f64>,
+    target: f64,
+}
+
+impl FitRegion<'_> {
+    const CLOSE: f64 = 2048.0;
+
+    /// Each character's width (lu), never below zero.
+    fn parts(&self, (scale, sp, last): FitState) -> Vec<f64> {
+        let (sp, last) = (fit_lu(sp), fit_lu(last));
+        let end = self.n - 1;
+        (self.advances)(scale).iter().enumerate().map(|(j, w)| (w + if j == end { last } else { sp }).max(0.0)).collect()
+    }
+
+    fn width(&self, s: FitState) -> f64 {
+        self.parts(s).iter().sum()
+    }
+
+    /// Compat 15's single adjustment.
+    fn step(&self, x: FitState) -> FitState {
+        let (n, t, w) = (self.n as f64, self.target, self.width(x));
+        if (t - w).abs() <= Self::CLOSE {
+            x
+        } else if n == 1.0 || t == 0.0 || w == 0.0 {
+            (if t < w { 100.0 } else { x.0 }, 0.0, -fit_tw(w - t))
+        } else if t < w {
+            ((100.0 * t / w).trunc().max(15.0), 0.0, 0.0)
+        } else {
+            let a = fit_tw(((t - w) / (n - 1.0)).trunc());
+            (x.0, a, a)
+        }
+    }
+
+    /// The new state and the spread (lu).
+    fn spread(&self, x: FitState, base: f64, prev: f64, w: f64, k: f64) -> (FitState, f64) {
+        let (n, t) = (self.n as f64, self.target);
+        if n < 2.0 || t == 0.0 || base == 0.0 || base == t {
+            return (x, 0.0);
+        }
+        if t < base {
+            return (((100.0 * t / base).trunc().max(15.0), 0.0, 0.0), 0.0);
+        }
+        let s =
+            if prev == 0.0 || w == base + k * prev { ((t - base) / (n - 1.0)).trunc() } else { (prev * (t - base) / (w - k * prev - base)).trunc() };
+        let a = fit_tw(s);
+        ((x.0, a, a), s)
+    }
+
+    /// The compat 12 fit procedure from `x`.
+    fn fit(&self, x: FitState) -> FitState {
+        let t = self.target;
+        let w = self.width(x);
+        if (t - w).abs() <= Self::CLOSE {
+            return x;
+        }
+        let reset = (if t < w { 100.0 } else { x.0 }, 0.0, 0.0);
+        let n0 = self.width(reset);
+        let base = |w: f64| if n0 == 0.0 { w } else { n0 };
+        let (mut x, mut s) = self.spread(reset, base(n0), 0.0, n0, 1.0);
+        let mut w = self.width(x);
+        let mut again = 0;
+        let corr = loop {
+            let corr = fit_tw(s) - fit_tw(w - t);
+            if corr.abs() <= 40.0 || again == 2 {
+                break corr;
+            }
+            (x, s) = self.spread(x, base(w), s, w, 1.0);
+            w = self.width(x);
+            again += 1;
+        };
+        let before = w;
+        x.2 = corr;
+        let w = self.width(x);
+        if corr == 0.0 && (t - w).abs() > Self::CLOSE || corr != 0.0 && w == before {
+            x = self.spread(x, base(w), s, w, 0.0).0;
+        }
+        x
+    }
 }
 
 #[cfg(test)]
@@ -1149,6 +1869,34 @@ mod tests {
     use crate::layout::cache::LayoutCache;
     use crate::layout::job::Meter;
     use crate::layout::tests::{fonts, plain_doc};
+
+    #[test]
+    fn a_rubys_narrower_part_is_spread_by_its_alignment() {
+        let Some(doc) = plain_doc(&["one".into()]) else { return };
+        let Some(Block::Para(p)) = doc.sections[0].blocks.first() else { unreachable!() };
+        let run = p.inlines.iter().find_map(Inline::run).expect("a run").clone();
+        let s = shape_run("MWM", &run, &fonts());
+        let w: Vec<f64> = s.pieces.iter().map(|p| p.width).collect();
+        let e = 10.0;
+        let wo = w.iter().sum::<f64>() + e;
+        let near = |a: Vec<f64>, b: [f64; 3]| a.iter().zip(b).all(|(x, y)| (x - y).abs() < 1e-9);
+        assert!(near(ruby_x(&s, wo, 0), [e / 2.0, e / 2.0 + w[0], e / 2.0 + w[0] + w[1]]));
+        assert!(near(ruby_x(&s, wo, 1), [0.0, w[0] + e / 2.0, w[0] + w[1] + e]));
+        assert!(near(ruby_x(&s, wo, 2), [e / 6.0, w[0] + e / 2.0, w[0] + w[1] + e * 5.0 / 6.0]));
+        assert!(near(ruby_x(&s, wo, 3), [0.0, w[0], w[0] + w[1]]));
+        assert!(near(ruby_x(&s, wo, 4), [e, e + w[0], e + w[0] + w[1]]));
+    }
+
+    #[test]
+    fn an_east_asian_hinted_runs_greek_and_cyrillic_take_its_east_asian_font() {
+        let Some(doc) = plain_doc(&["one".into()]) else { return };
+        let Some(Block::Para(p)) = doc.sections[0].blocks.first() else { unreachable!() };
+        let base = p.inlines.iter().find_map(Inline::run).expect("a run");
+        let run = RunStyle { ascii: "A".into(), h_ansi: "H".into(), east_asia: "E".into(), ..(**base).clone() };
+        let hinted = RunStyle { hint_east_asia: true, ..run.clone() };
+        assert_eq!(['α', 'Б', 'é', 'Ā'].map(|c| family_for(c, &hinted)), ["E", "E", "H", "H"]);
+        assert_eq!(family_for('α', &run), "H");
+    }
 
     #[test]
     fn revisions_dont_split_a_stretch() {
@@ -1167,5 +1915,70 @@ mod tests {
         assert_eq!(stretches, 1);
         let inserted: Vec<bool> = (0..shaped.len()).map(|i| shaped.run(i).rev.ins.is_some()).collect();
         assert_eq!(inserted, [false, false, true, true, false, false]);
+    }
+
+    /// The fitted-text acceptance vectors.
+    #[test]
+    fn fitted_text_vectors() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/cleanroom/fit_vectors.jsonl");
+        let text = std::fs::read_to_string(path).expect("fit vectors");
+        let mut fails = Vec::new();
+        let mut cases = 0;
+        for (line, l) in text.lines().enumerate() {
+            let v: serde_json::Value = serde_json::from_str(l).unwrap();
+            let glyphs: Vec<[i64; 3]> = serde_json::from_value(v["glyphs"].clone()).unwrap();
+            let advances = |scale: f64| -> Vec<f64> {
+                glyphs
+                    .iter()
+                    .map(|&[fu, avg, hp]| {
+                        let q = avg * scale as i64 / 100;
+                        ((2 * fu * q + avg) / (2 * avg) * hp) as f64
+                    })
+                    .collect()
+            };
+            let target = (v["target_tw"].as_f64().unwrap() * 1024.0 / 5.0).trunc();
+            let region = FitRegion { n: glyphs.len(), advances: &advances, target };
+            let state = |k: &str| -> FitState {
+                let s: [f64; 3] = serde_json::from_value(v[k].clone()).unwrap();
+                (s[0], s[1], s[2])
+            };
+            let unadjusted = (100.0, 0.0, 0.0);
+            let first = region.step(unadjusted);
+            let second = region.step(first);
+            // One character: (σ, 0, c) is (σ, c, c).
+            let one = |s: FitState| if glyphs.len() == 1 { (s.0, s.2, s.2) } else { s };
+            let got = [region.fit(unadjusted), first, second, region.fit(second)].map(one);
+            let want = [state("c12"), state("c15_A"), state("c15_B"), state("c15_printed")];
+            if got != want {
+                fails.push((line + 1, got, want));
+            }
+            cases += 1;
+        }
+        assert_eq!(cases, 600);
+        assert!(fails.is_empty(), "{} of 600 differ, first: {:?}", fails.len(), &fails[..fails.len().min(5)]);
+    }
+
+    #[test]
+    fn a_fitted_region_spreads_then_corrects_its_last_character() {
+        // `abcdef` Arial 11 to 2880 tw.
+        let advances = |scale: f64| -> Vec<f64> {
+            let fu: [i64; 6] = [1139, 1139, 1024, 1139, 1139, 569];
+            let q = 904 * scale as i64 / 100;
+            fu.iter().map(|&f| ((2 * f * q + 904) / (2 * 904) * 22) as f64).collect()
+        };
+        let region = FitRegion { n: 6, advances: &advances, target: 589824.0 };
+        let first = region.step((100.0, 0.0, 0.0));
+        assert_eq!(first, (100.0, 443.0, 443.0));
+        assert_eq!(region.step(first), (86.0, 0.0, 0.0));
+        assert_eq!(region.fit((86.0, 0.0, 0.0)), (86.0, 462.0, 3.0));
+        assert_eq!(region.fit((100.0, 0.0, 0.0)), (100.0, 443.0, 5.0));
+    }
+
+    #[test]
+    fn a_negative_spacing_wider_than_a_character_clamps_that_character() {
+        let advances = |_: f64| vec![20480.0, 1024.0, 20480.0];
+        let region = FitRegion { n: 3, advances: &advances, target: 0.0 };
+        assert_eq!(region.parts((100.0, -10.0, 0.0)), [18432.0, 0.0, 20480.0]);
+        assert_eq!(region.parts((100.0, 0.0, -101.0)), [20480.0, 1024.0, 0.0]);
     }
 }

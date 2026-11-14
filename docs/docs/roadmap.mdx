@@ -68,7 +68,7 @@ in those scripts, and under the `layout-change` label.
 - Border `w:space` offsets for paragraph and page border lines.
 - Table horizontal geometry in integer twips: grid columns, cell margins, table indents and border widths.
 - HTML divisions (`divId`, with margins and borders from `webSettings`).
-- Decimal tabs align on the document's `decimalSymbol` rather than always `.`.
+- Decimal tabs align on `.` whatever the document's `decimalSymbol` says, as Word aligns them.
 
 </Chunk>
 
@@ -99,10 +99,12 @@ in those scripts, and under the `layout-change` label.
 
 <Chunk id="1.5" title="Text box autofit and columns" deps={['1.3']}>
 
-**Goal:** the text box settings that are read today but not laid out.
+**Goal:** the text box settings that are read today but not laid out stay that way, because Word doesn't lay
+them out from a `.docx` either.
 
-- Shrink text on overflow (`a:normAutofit` font scale and line spacing reduction).
-- Text box columns (`bodyPr@numCol`, `spcCol`).
+- Shrink text on overflow (`a:normAutofit` font scale and line spacing reduction): read and kept on save, no effect
+  on layout.
+- Text box columns (`bodyPr@numCol`, `spcCol`): read and kept on save, the box's text in one column.
 
 </Chunk>
 
@@ -120,8 +122,8 @@ in those scripts, and under the `layout-change` label.
 
 **Goal:** section-level settings that move content between pages.
 
-- Footnote and endnote properties in sections and settings: position (page bottom or beneath text, section end or
-  document end), number format, start and restart.
+- Footnote and endnote properties in sections: position (page bottom or beneath text, section end or document end),
+  number format, start and restart. Word ignores most of them in settings.
 - `noEndnote` sections.
 - Mirror indents (`mirrorIndents`) on facing pages.
 - Book fold printing.
@@ -133,13 +135,14 @@ in those scripts, and under the `layout-change` label.
 
 **Goal:** no text that Word shows is missing from the page.
 
-- Ruby base text, which is dropped today. Ruby annotations come with East Asian layout.
+- Ruby base text, which is dropped today, and ruby annotations.
 - `w:legacy` list levels (pre-97 list indents).
 - `w:fitText`: fit text to a given width.
 - `specVanish`, the hidden paragraph mark used by style separators.
 - The run date and time elements (`dayShort` through `yearLong`).
 - OpenType number forms, number spacing and stylistic sets (`w14:numForm`, `w14:numSpacing`, `w14:stylisticSets`),
   which change glyph widths.
+- Legacy form fields as Word shows them: the FORMCHECKBOX box at its size and the FORMDROPDOWN's selected entry.
 
 </Chunk>
 
@@ -327,8 +330,8 @@ and save, and has a command to create, change and remove it. Where a construct h
 **Goal:** pre-2007 forms, common in court and government work, open, fill and save.
 
 - Form field data (`w:ffData`) in the model and on save.
-- FORMTEXT, FORMCHECKBOX and FORMDROPDOWN: draw them (the check box is missing today), fill them, insert them and set
-  their properties.
+- FORMTEXT, FORMCHECKBOX and FORMDROPDOWN: fill them, insert them and set their properties (they lay out and draw
+  from 1.8).
 - Form field shading and `doNotShadeFormData`.
 
 </Chunk>
@@ -610,20 +613,29 @@ The workflows on top of a complete model, the framework packages, and the API fr
 - Equations (OMML)
 - Charts
 - Right-to-left and East Asian layout and editing, with IME (below)
+- The caret, selection and hit testing in vertical sections: vertical documents lay out and draw in 1.0, but editing
+  them places the caret as if the page weren't turned
 
 ### Right-to-left and East Asian
 
 Planned for the release after 1.0, together with IME, so these documents can be both laid out and typed in. Each
-item below is read and kept on save in 1.0 (2.2); it isn't laid out or settable yet.
+item below is read and kept on save in 1.0 (2.2); it isn't laid out or settable yet. Some East Asian layout already
+works and stays: `kinsoku`, `wordWrap`, `overflowPunct`, `topLinePunct`, `autoSpaceDE`, `autoSpaceDN`,
+`strictFirstAndLastChars`, ruby annotations and `rtlGutter` are laid out, but not settable. Their open details come
+with the rest: the autospace gap between some Latin and East Asian fonts, and `textAlignment` in vertical lines.
 
 - **Complex scripts and right-to-left:** complex-script run properties (`szCs`, `bCs`, `iCs`, `cs`, `rtl`); the
   bidirectional algorithm per line; font slots from `lang@bidi`; theme script fonts and `themeFontLang`; section
-  `bidi` and `rtlGutter`; Hebrew and Arabic number formats; paragraph, run and table direction commands.
-- **East Asian line breaking and the grid:** `kinsoku`, `wordWrap`, `overflowPunct`, `topLinePunct`,
-  `noLineBreaksBefore` and `After`; `autoSpaceDE`, `autoSpaceDN`, `adjustRightInd`; the character grid
-  (`docGrid@charSpace`, `linesAndChars`, run `snapToGrid`); character-unit indents and line-unit spacing;
-  `eastAsianLayout`; CJK, enclosed and `chicago` number formats; font slots from `lang@eastAsia`.
-- **Ruby:** ruby annotations over their base text.
+  `bidi`; `w:bdo` and `w:dir`; kashida justification; text box `rtlCol`; Hebrew and Arabic number formats;
+  paragraph, run and table direction commands.
+- **East Asian line breaking and the grid:** `noLineBreaksBefore` and `After`; `adjustRightInd`; the character
+  grid (`docGrid@charSpace`, `linesAndChars`, run `snapToGrid`, `doNotSnapToGridInCell`); character-unit indents and
+  line-unit spacing; `eastAsianLayout`; `characterSpacingControl` and `noPunctuationKerning`; CJK and enclosed number
+  formats; font slots from `lang@eastAsia`.
+- **East Asian compatibility options:** `spaceForUL`, `doNotWrapTextWithPunct`, `doNotUseEastAsianBreakRules`,
+  `useAltKinsokuLineBreakRules`, `lineWrapLikeWord6`, `autoSpaceLikeWord95`, `displayHangulFixedWidth`,
+  `subFontBySize` and `doNotLeaveBackslashAlone`.
+- **East Asian text boxes:** `normalEastAsianFlow`, and the `eaVert` and `mongolianVert` text directions.
 - **Editing:** the Asian layout tools, inserting ruby, emphasis marks and character grid settings.
 
 ### Backlog
@@ -637,6 +649,7 @@ Pulled forward when a customer document needs one.
 - Style sets, themes and the Organizer.
 - SmartArt editing, inserting WordArt, editing OLE objects.
 - Drawing subdocuments and ink natively (ink draws from its fallback picture after 2.2).
+- `alignBordersAndEdges`: paragraph borders and table edges snapped to the page border (kept on save).
 
 ### Not planned
 

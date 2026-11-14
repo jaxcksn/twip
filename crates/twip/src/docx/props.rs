@@ -63,6 +63,8 @@ pub struct RunProps {
     pub toggles_set: u16,
     pub toggles: u16,
     pub dstrike: Option<bool>,
+    /// `w:noProof`.
+    pub no_proof: Option<bool>,
     pub underline: Option<String>,
     /// `Some(None)` = auto.
     pub color: Option<Option<u32>>,
@@ -81,11 +83,21 @@ pub struct RunProps {
     /// `w14:ligatures` bits: 1 standard, 2 contextual, 4 historical, 8 discretionary.
     pub ligatures: Option<u8>,
     pub cntxt_alts: Option<bool>,
+    /// `w14:numForm`: 1 lining, 2 old style, 0 default.
+    pub num_form: Option<u32>,
+    /// `w14:numSpacing`: 4 proportional, 8 tabular, 0 default.
+    pub num_spacing: Option<u32>,
+    /// `w14:stylisticSets`: bit n − 1 for set n.
+    pub style_sets: Option<u32>,
     /// `w:em`: the emphasis mark ("dot", "comma", "circle", "underDot"; "none").
     pub em: Option<String>,
     pub lang: Option<String>,
+    /// `w:lang w:eastAsia`.
+    pub lang_east_asia: Option<String>,
     pub style: Option<String>,
     pub rtl: Option<bool>,
+    /// `w:fitText`: the width to fit the text to (points) and its region id.
+    pub fit_text: Option<(f64, i64)>,
 }
 
 fn font_ref(n: Node, name: &str) -> Option<FontRef> {
@@ -124,6 +136,22 @@ impl RunProps {
                     });
                 } else if name == "cntxtAlts" {
                     p.cntxt_alts = Some(!matches!(val_any(e), Some("0" | "false" | "off")));
+                } else if name == "numForm" {
+                    p.num_form = Some(match val_any(e) {
+                        Some("lining") => 1,
+                        Some("oldStyle") => 2,
+                        _ => 0,
+                    });
+                } else if name == "numSpacing" {
+                    p.num_spacing = Some(match val_any(e) {
+                        Some("proportional") => 4,
+                        Some("tabular") => 8,
+                        _ => 0,
+                    });
+                } else if name == "stylisticSets" {
+                    let on = |s: &Node| !matches!(s.attribute((W14, "val")), Some("0" | "false" | "off"));
+                    let ids = e.children().filter(|s| is(*s, W14, "styleSet") && on(s)).filter_map(|s| s.attribute((W14, "id"))?.parse::<u32>().ok());
+                    p.style_sets = Some(ids.filter(|n| (1..=20).contains(n)).fold(0, |m, n| m | 1 << (n - 1)));
                 }
                 continue;
             }
@@ -149,6 +177,7 @@ impl RunProps {
                 }
                 "sz" => p.size = half_points(val(e)),
                 "dstrike" => p.dstrike = Some(on_off(e)),
+                "noProof" => p.no_proof = Some(on_off(e)),
                 "u" => p.underline = Some(val(e).unwrap_or("single").to_string()),
                 "color" => p.color = Some(tc.colour(e, "val", "themeColor", "themeTint", "themeShade")),
                 "highlight" => {
@@ -174,9 +203,13 @@ impl RunProps {
                 "spacing" => p.spacing = twips(val(e)),
                 "w" => p.scale = num(val(e).map(|v| v.trim_end_matches('%'))),
                 "kern" => p.kern = half_points(val(e)),
-                "lang" => p.lang = val(e).map(str::to_string),
+                "lang" => {
+                    p.lang = val(e).map(str::to_string);
+                    p.lang_east_asia = attr(e, "eastAsia").map(str::to_string);
+                }
                 "rStyle" => p.style = val(e).map(str::to_string),
                 "rtl" => p.rtl = Some(on_off(e)),
+                "fitText" => p.fit_text = twips(val(e)).map(|w| (w, int(attr(e, "id")).unwrap_or(0))),
                 _ => {}
             }
         }
@@ -206,8 +239,36 @@ impl RunProps {
             ($($f:ident),*) => { $( if o.$f.is_some() { self.$f = o.$f.clone(); } )* };
         }
         take!(
-            ascii, h_ansi, east_asia, cs, hint, size, dstrike, underline, color, highlight, shading, shd, border, vert_align, position, spacing,
-            scale, kern, ligatures, cntxt_alts, lang, style, rtl, em
+            ascii,
+            h_ansi,
+            east_asia,
+            cs,
+            hint,
+            size,
+            dstrike,
+            no_proof,
+            underline,
+            color,
+            highlight,
+            shading,
+            shd,
+            border,
+            vert_align,
+            position,
+            spacing,
+            scale,
+            kern,
+            ligatures,
+            cntxt_alts,
+            num_form,
+            num_spacing,
+            style_sets,
+            lang,
+            lang_east_asia,
+            style,
+            rtl,
+            em,
+            fit_text
         );
         self.toggles = (self.toggles & !o.toggles_set) | (o.toggles & o.toggles_set);
         self.toggles_set |= o.toggles_set;
@@ -499,8 +560,19 @@ pub struct ParaProps {
     pub page_break_before: Option<bool>,
     pub widow_control: Option<bool>,
     pub suppress_auto_hyphens: Option<bool>,
+    pub kinsoku: Option<bool>,
+    pub overflow_punct: Option<bool>,
+    pub auto_space_de: Option<bool>,
+    pub auto_space_dn: Option<bool>,
+    pub top_line_punct: Option<bool>,
+    pub word_wrap: Option<bool>,
+    pub tight_wrap: Option<u8>,
+    pub suppress_overlap: Option<bool>,
     pub suppress_line_numbers: Option<bool>,
+    pub mirror_indents: Option<bool>,
     pub bidi: Option<bool>,
+    /// `w:divId`: the HTML division (`webSettings.xml`) the paragraph is in.
+    pub div_id: Option<i64>,
     /// Tab stops this level sets and clears, in order.
     pub tabs: Vec<Tab>,
     pub num_id: Option<i64>,
@@ -514,6 +586,7 @@ pub struct ParaProps {
     /// The `w:shd` as written.
     pub shd: Option<Shd>,
     pub frame: Option<FramePr>,
+    pub text_flow: Option<u8>,
     pub text_alignment: Option<String>,
     pub outline_lvl: Option<i64>,
     pub mark_size: Option<f64>,
@@ -559,7 +632,25 @@ impl ParaProps {
                 "pageBreakBefore" => p.page_break_before = Some(on_off(e)),
                 "widowControl" => p.widow_control = Some(on_off(e)),
                 "suppressAutoHyphens" => p.suppress_auto_hyphens = Some(on_off(e)),
+                "kinsoku" => p.kinsoku = Some(on_off(e)),
+                "overflowPunct" => p.overflow_punct = Some(on_off(e)),
+                "autoSpaceDE" => p.auto_space_de = Some(on_off(e)),
+                "autoSpaceDN" => p.auto_space_dn = Some(on_off(e)),
+                "topLinePunct" => p.top_line_punct = Some(on_off(e)),
+                "wordWrap" => p.word_wrap = Some(on_off(e)),
+                "suppressOverlap" => p.suppress_overlap = Some(on_off(e)),
+                "textboxTightWrap" => {
+                    p.tight_wrap = Some(match val(e) {
+                        Some("allLines") => 1,
+                        Some("firstAndLastLine") => 2,
+                        Some("firstLineOnly") => 3,
+                        Some("lastLineOnly") => 4,
+                        _ => 0,
+                    })
+                }
+                "divId" => p.div_id = int(val(e)),
                 "suppressLineNumbers" => p.suppress_line_numbers = Some(on_off(e)),
+                "mirrorIndents" => p.mirror_indents = Some(on_off(e)),
                 "bidi" => p.bidi = Some(on_off(e)),
                 "tabs" => {
                     for t in children(e, "tab") {
@@ -624,6 +715,7 @@ impl ParaProps {
                     });
                 }
                 "textAlignment" => p.text_alignment = val(e).map(str::to_string),
+                "textDirection" => p.text_flow = val(e).map(super::model::text_flow),
                 "outlineLvl" => p.outline_lvl = int(val(e)),
                 "rPr" => p.mark_size = child(e, "sz").and_then(|s| half_points(val(s))),
                 _ => {}
@@ -656,8 +748,18 @@ impl ParaProps {
             page_break_before,
             widow_control,
             suppress_auto_hyphens,
+            kinsoku,
+            overflow_punct,
+            auto_space_de,
+            auto_space_dn,
+            top_line_punct,
+            word_wrap,
+            tight_wrap,
+            suppress_overlap,
             suppress_line_numbers,
+            mirror_indents,
             bidi,
+            div_id,
             num_id,
             ilvl,
             border_top,
@@ -668,6 +770,7 @@ impl ParaProps {
             shading,
             shd,
             frame,
+            text_flow,
             text_alignment,
             outline_lvl
         );
@@ -731,6 +834,24 @@ impl Width {
                 None => Width::Auto,
             },
         }
+    }
+
+    /// A dxa or pct width as it is, any other as 0 points.
+    pub fn sized(self) -> Width {
+        match self {
+            Width::Dxa(_) | Width::Pct(_) => self,
+            _ => Width::Dxa(0.0),
+        }
+    }
+
+    /// The points of a dxa width, 0 for any other.
+    pub fn dxa(self) -> f64 {
+        if let Width::Dxa(v) = self { v } else { 0.0 }
+    }
+
+    /// The fraction of a pct width.
+    pub fn pct(self) -> Option<f64> {
+        if let Width::Pct(p) = self { Some(p) } else { None }
     }
 }
 
@@ -811,7 +932,8 @@ pub struct TblProps {
     pub style: Option<String>,
     pub width: Option<Width>,
     pub jc: Option<Jc>,
-    pub ind: Option<f64>,
+    /// Dxa or pct.
+    pub ind: Option<Width>,
     pub borders: Borders,
     pub margins: Margins,
     pub fixed: Option<bool>,
@@ -851,6 +973,20 @@ pub struct TablePos {
     pub never_overlap: bool,
 }
 
+impl TablePos {
+    /// The alignment `tblpXSpec` gives, else the one `tblpX` codes: 0 left, -4 centre, -8 right, -12 inside (left on
+    /// a first page), -16 outside.
+    // ponytail: inside and outside as on an odd page without mirrored margins.
+    pub fn x_align(&self) -> Option<Jc> {
+        self.x_spec.or(match (self.x * 20.0).round() as i64 {
+            0 | -12 => Some(Jc::Left),
+            -4 => Some(Jc::Center),
+            -8 | -16 => Some(Jc::Right),
+            _ => None,
+        })
+    }
+}
+
 impl TblProps {
     pub fn parse(e: Option<Node>, tc: &ThemeColours) -> TblProps {
         let mut p = TblProps::default();
@@ -867,7 +1003,7 @@ impl TblProps {
                         _ => Jc::Left,
                     })
                 }
-                "tblInd" => p.ind = Some(if let Width::Dxa(v) = Width::parse(c) { v } else { 0.0 }),
+                "tblInd" => p.ind = Some(Width::parse(c).sized()),
                 "tblBorders" => p.borders = Borders::parse(c, tc),
                 "tblCellMar" => p.margins = Margins::parse(c),
                 "tblLayout" => p.fixed = Some(attr(c, "type") == Some("fixed")),
@@ -1012,9 +1148,9 @@ pub struct TrProps {
     pub jc: Option<Jc>,
     pub grid_before: Option<i64>,
     pub grid_after: Option<i64>,
-    /// `w:wBefore` / `w:wAfter`: the width of the grid columns a row skips (points, dxa only).
-    pub w_before: Option<f64>,
-    pub w_after: Option<f64>,
+    /// `w:wBefore` / `w:wAfter`: the width of the grid columns a row skips, dxa or pct.
+    pub w_before: Option<Width>,
+    pub w_after: Option<Width>,
     pub cell_spacing: Option<f64>,
 }
 
@@ -1036,8 +1172,8 @@ impl TrProps {
                 }
                 "gridBefore" => p.grid_before = int(val(c)),
                 "gridAfter" => p.grid_after = int(val(c)),
-                "wBefore" => p.w_before = Some(if let Width::Dxa(v) = Width::parse(c) { v } else { 0.0 }),
-                "wAfter" => p.w_after = Some(if let Width::Dxa(v) = Width::parse(c) { v } else { 0.0 }),
+                "wBefore" => p.w_before = Some(Width::parse(c).sized()),
+                "wAfter" => p.w_after = Some(Width::parse(c).sized()),
                 "tblCellSpacing" => p.cell_spacing = Some(if let Width::Dxa(v) = Width::parse(c) { v } else { 0.0 }),
                 _ => {}
             }

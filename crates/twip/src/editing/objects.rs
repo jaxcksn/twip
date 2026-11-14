@@ -657,6 +657,7 @@ impl Editor {
             inlines: Vec::new(),
             src: None,
             id: pid,
+            div: None,
             controls: Vec::new(),
         };
         let fid = crate::docx::next_para_id();
@@ -674,6 +675,7 @@ impl Editor {
                 outline: 0.5,
                 auto_fit: false,
                 v_anchor: 0,
+                flow: 0,
             }),
             h_relative: "column".into(),
             h_align: None,
@@ -694,9 +696,12 @@ impl Editor {
             src: None,
             locked: false,
             frame_src: None,
+            in_note: false,
             parts: Vec::new(),
             shape: None,
             rot_swap: false,
+            vml: false,
+            relative: Default::default(),
         };
         let mut inlines = p.inlines.clone();
         inlines.insert(0, Inline::Float(Box::new(float), run));
@@ -957,7 +962,14 @@ impl Editor {
             q.controls.clear();
             q.inlines = vec![Inline::ControlStart(c), Inline::Picture(pic.clone(), run.clone()), Inline::ControlEnd(c)];
             let crate::docx::Block::Para(q) = super::clipboard::fresh(&crate::docx::Block::Para(q)) else { return None };
-            Some(crate::docx::TextBox { blocks: vec![crate::docx::Block::Para(q)], insets: [0.0; 4], outline: 0.0, auto_fit: false, v_anchor: 0 })
+            Some(crate::docx::TextBox {
+                blocks: vec![crate::docx::Block::Para(q)],
+                insets: [0.0; 4],
+                outline: 0.0,
+                auto_fit: false,
+                v_anchor: 0,
+                flow: 0,
+            })
         });
         let float = crate::docx::Float {
             id,
@@ -987,9 +999,12 @@ impl Editor {
             src: None,
             locked: false,
             frame_src: None,
+            in_note: false,
             parts: Vec::new(),
             shape: if boxed.is_some() { None } else { pic.shape.clone() },
             rot_swap: false,
+            vml: false,
+            relative: Default::default(),
         };
         self.begin_batch(Some("Wrap Text".into()));
         let mut tx = self.begin("Wrap Text");

@@ -120,10 +120,21 @@ pub enum Step {
         renames: Vec<crate::docx::font_table::FontRename>,
     },
     DefaultTab(f64),
+    Hyphenation(Hyphenating),
     SectionBreak {
         section: usize,
         back: Option<Box<SectionBack>>,
     },
+}
+
+/// The document's hyphenation settings.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Hyphenating {
+    pub auto: bool,
+    pub zone: f64,
+    pub limit: i64,
+    /// Words in capitals aren't hyphenated.
+    pub caps: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -141,6 +152,7 @@ pub struct TableProps {
     pub width: crate::docx::props::Width,
     pub jc: crate::docx::props::Jc,
     pub ind: f64,
+    pub ind_pct: Option<f64>,
     pub borders: [Option<crate::docx::props::Border>; 6],
     pub bands: (i64, i64),
     pub floating: Option<crate::docx::props::TablePos>,
@@ -317,6 +329,7 @@ impl TableProps {
             width: t.width,
             jc: t.jc,
             ind: t.ind,
+            ind_pct: t.ind_pct,
             borders: t.borders.clone(),
             bands: t.bands,
             floating: t.floating,
@@ -401,7 +414,9 @@ pub fn run_of(i: &Inline) -> Option<&Run> {
         | Inline::Break(_, r)
         | Inline::Picture(_, r)
         | Inline::Float(_, r)
-        | Inline::NoteMark(_, _, r) => Some(r),
+        | Inline::NoteMark(_, _, r)
+        | Inline::Ruby(_, r)
+        | Inline::DateBlock(_, _, r) => Some(r),
         Inline::Sym { run, .. }
         | Inline::NoteRef { run, .. }
         | Inline::Separator { run, .. }
@@ -672,6 +687,7 @@ impl Step {
                 let old_style = std::mem::replace(&mut p.style, style);
                 let old_mark = std::mem::replace(&mut p.mark, mark);
                 let old_list = std::mem::replace(&mut p.list, list);
+                p.refresh_div();
                 Ok(Applied {
                     inverse: Step::Para { para, style: old_style, mark: old_mark, list: old_list },
                     map: Map::Same,
@@ -850,6 +866,17 @@ impl Step {
                 let old = std::mem::replace(&mut doc.settings.default_tab, v);
                 Ok(Applied { inverse: Step::DefaultTab(old), map: Map::Same, hint: None })
             }
+            Step::Hyphenation(h) => {
+                let s = &mut doc.settings;
+                let old = Hyphenating {
+                    auto: s.auto_hyphenation,
+                    zone: s.hyphenation_zone,
+                    limit: s.consecutive_hyphen_limit,
+                    caps: s.do_not_hyphenate_caps,
+                };
+                (s.auto_hyphenation, s.hyphenation_zone, s.consecutive_hyphen_limit, s.do_not_hyphenate_caps) = (h.auto, h.zone, h.limit, h.caps);
+                Ok(Applied { inverse: Step::Hyphenation(old), map: Map::Same, hint: None })
+            }
             Step::SectionBreak { section, back } => {
                 let n = doc.sections.len();
                 if doc.section_sources.len() != n {
@@ -903,8 +930,8 @@ impl Step {
             Step::TableProps { table, props } => {
                 let t = idx.table_mut(doc, table).ok_or(StepError::Missing)?;
                 let old = TableProps::of(t);
-                (t.style_id, t.look, t.width, t.jc, t.ind, t.borders, t.bands, t.floating) =
-                    (props.style_id, props.look, props.width, props.jc, props.ind, props.borders, props.bands, props.floating);
+                (t.style_id, t.look, t.width, t.jc, t.ind, t.ind_pct, t.borders, t.bands, t.floating) =
+                    (props.style_id, props.look, props.width, props.jc, props.ind, props.ind_pct, props.borders, props.bands, props.floating);
                 let slot = idx.table_slot(table).ok_or(StepError::Missing)?;
                 let hint = idx.top_block(slot.container, slot.block).map(|(section, b, row)| Change {
                     section,

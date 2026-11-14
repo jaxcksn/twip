@@ -1,0 +1,52 @@
+page 0 12240 15840
+  1440 1936 Table geometry
+  1440 2201 Default borders (0.5pt), default cell margins; compat 15 puts the outer border edge
+  1440 2439 on the margin, compat 12 pulls the table left by the first cell's left margin:
+  1440 2846 Cell one
+  4560 2846 Cell two
+  7680 2846 Cell three
+  1440 3254 3pt borders and no cell margins: the pull is half the border width.
+  1440 3711 Thick one
+  6120 3711 Thick two
+  1440 4168 Indent 720 and margins 288 / 144:
+  2160 4648 Indented
+  5160 4648 Wide margins
+  1440 5127 Odd grid widths: 1001, 2333 and 1777 twips:
+  1440 5535 1001
+  2441 5535 2333
+  4774 5535 1777
+  1440 5942 A first cell with its own 6pt left border:
+  1440 6350 Own border
+  4440 6350 Table border
+  1440 6757 Centred and right-aligned tables:
+  4228 7164 Centred
+  6228 7164 table
+  1440 7572 Between.
+  7016 7979 Right
+  9016 7979 table
+  1440 8387 A nested table, indented 144 in its cell:
+  1440 8794 Outer cell
+  1697 9201 Nested A
+  3197 9201 Nested B
+  5440 8794 Second outer cell
+  1440 9619 Paragraph after the tables.
+  cell 1332 2660 4452 3068
+  cell 4452 2660 7572 3068
+  cell 7572 2660 10692 3068
+  cell 1410 3475 6090 3932
+  cell 6090 3475 10770 3932
+  cell 1872 4390 4872 4941
+  cell 4872 4390 7872 4941
+  cell 1332 5349 2333 5756
+  cell 2333 5349 4666 5756
+  cell 4666 5349 6443 5756
+  cell 1332 6164 4332 6571
+  cell 4332 6164 7332 6571
+  cell 4120 6978 6120 7386
+  cell 6120 6978 8120 7386
+  cell 6908 7793 8908 8201
+  cell 8908 7793 10908 8201
+  cell 1332 8608 5332 9433
+  cell 1589 9015 3089 9423
+  cell 3089 9015 4589 9423
+  cell 5332 8608 8332 9433

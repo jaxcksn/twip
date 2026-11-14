@@ -143,7 +143,16 @@ impl Editor {
         };
         let para = next.para_from_xml(ppr.as_deref(), None, &cx);
         let run = next.run_from_xml(&para.base, rpr.as_deref(), &cx);
-        let p = Paragraph { style: Rc::new(para.style), mark: run.clone(), list: None, inlines: Vec::new(), src: None, id: 0, controls: Vec::new() };
+        let p = Paragraph {
+            style: Rc::new(para.style),
+            mark: run.clone(),
+            list: None,
+            inlines: Vec::new(),
+            src: None,
+            id: 0,
+            div: None,
+            controls: Vec::new(),
+        };
         Some((p, run, cx))
     }
 

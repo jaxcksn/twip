@@ -1,0 +1,85 @@
+page 0 12240 15840
+  1440 1936 One vertical model for cells and text boxes
+  7153 2211 A horizontal
+  7153 2449 cell beside
+  7153 2686 them.
+  1440 4611 An auto-height row: vertical cells add nothing to its height.
+  2953 5019 Horizontal
+  3348 5426 Regional maintenance
+  9108 5426 accessibility
+  3348 5664 tax finds record proposal denied
+  9108 5664 contract
+  3348 5901 onboarding support network.
+  9108 5901 Scheduled
+  3348 6138 trend suggestions board order
+  9108 6138 update granted
+  3348 6376 agreement marketing promotion
+  9108 6376 division date.
+  3348 6613 Profitable insights the meeting
+  9108 6613 forecast
+  3348 6851 hereby vendors practical
+  9108 6851 schedule state
+  3348 7088 entry estimate. Management
+  9108 7088 action budget
+  3348 7326 inventory relevant group relief
+  9108 7326 results region
+  3348 7563 ledger brief usage. Cause
+  9108 7563 colleague
+  3348 7800 partner section notice claim
+  9108 7800 team export
+  3348 8038 staff newsletter review matter.
+  9108 8038 Presenter
+  3348 8275 advisor account served savings
+  9108 8275 pilot receipt
+  1440 8513 corporate requirement standard fact that. Products distribution filed logistics
+  1440 8750 chapter plan regional maintenance.
+  1440 9147 Trend suggestions board order update granted agreement marketing promotion
+  1440 9385 division date profitable. Insights the meeting forecast hereby vendors practical
+  1440 9622 schedule state entry estimate management. Action budget inventory relevant group
+  1440 9860 relief results region ledger brief usage cause. Colleague partner section notice.
+  turned 2557 2035 0 1 vertical cell text
+  turned 2312 2035 0 1 Inventory relevant
+  turned 2067 2035 0 1 group relief results
+  turned 1822 2035 0 1 region ledger brief.
+  turned 3133 4425 0 -1 vertical cell text
+  turned 3378 4425 0 -1 Inventory relevant
+  turned 3623 4425 0 -1 group relief results
+  turned 3868 4425 0 -1 region ledger brief.
+  turned 5357 2035 0 1 vertical cell text
+  turned 5112 2035 0 1 Inventory relevant
+  turned 4867 2035 0 1 group relief results
+  turned 4622 2035 0 1 region ledger brief.
+  turned 4333 2211 1 0 漢
+  turned 4333 2431 1 0 漢
+  turned 4333 2651 1 0 漢
+  turned 5801 2035 0 1 vertical cell text
+  turned 6046 2035 0 1 Inventory relevant
+  turned 6291 2035 0 1 group relief results
+  turned 6536 2035 0 1 region ledger brief.
+  turned 2557 4843 0 1 tbR
+  turned 2312 4843 0 1 l
+  turned 2067 4843 0 1 in
+  turned 1822 4843 0 1 an
+  turned 1577 4843 0 1 aut
+  turned 1332 4843 0 1 o
+  turned 2839 5327 0 1 A vert text box: lines
+  turned 2594 5327 0 1 run down, stacked from
+  turned 2349 5327 0 1 the right. Notice claim
+  turned 2104 5327 0 1 team export staff
+  turned 1859 5327 0 1 newsletter review
+  turned 1614 5327 0 1 matter presenter
+  turned 7529 8053 0 -1 A vert270 text box runs
+  turned 7774 8053 0 -1 up. Pilot receipt
+  turned 8019 8053 0 -1 corporate requirement
+  turned 8264 8053 0 -1 standard fact that
+  turned 8509 8053 0 -1 products distribution
+  turned 8754 8053 0 -1 filed.
+  cell 1445 2025 2845 4425
+  cell 2845 2025 4245 4425
+  cell 4245 2025 5645 4425
+  cell 5645 2025 7045 4425
+  cell 7045 2025 9045 4425
+  cell 1445 4833 2845 5240
+  cell 2845 4833 5845 5240
+  float 1440 5250 3168 8130
+  float 7200 5250 8928 8130

@@ -317,7 +317,11 @@ impl Geometry {
     fn with_def<R>(&self, f: impl FnOnce(&GeomDef, &[i64]) -> R) -> R {
         match self {
             Geometry::Preset { preset, adj } => {
-                let def = preset.def();
+                let mut def = preset.def();
+                // The pie's text rectangle takes its inner rectangle's top and right where the definition swaps them.
+                if *preset == Preset::Pie {
+                    def.rect = def.rect.map(|[l, t, r, b]| [l, r, t, b]);
+                }
                 let vals: Vec<i64> = def.av.iter().map(|(n, d)| adj.iter().find(|(k, _)| k == n).map_or(*d, |(_, v)| *v)).collect();
                 if let Some((body, body_adj)) = tailless_body(*preset, &vals) {
                     return f(&body.def(), &body_adj);
@@ -339,6 +343,11 @@ impl Geometry {
 
     pub fn evaluate(&self, w: Emu, h: Emu) -> Rc<Geom> {
         self.with_def(|def, adj| Rc::new(eval::evaluate_def(def, adj, w, h)))
+    }
+
+    /// The shape shows text: the chart presets and the inverted line take a text box but show none.
+    pub fn holds_text(&self) -> bool {
+        !matches!(self.preset(), Some(Preset::ChartPlus | Preset::ChartStar | Preset::ChartX | Preset::LineInv))
     }
 
     pub fn preset(&self) -> Option<Preset> {

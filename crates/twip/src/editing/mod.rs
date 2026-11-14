@@ -455,6 +455,14 @@ impl Editor {
         self.relayout([None]);
     }
 
+    /// The hyphenation patterns automatic hyphenation uses.
+    pub fn set_hyphenation(&mut self, h: Option<crate::layout::hyphenate::Hyphenation>) {
+        if self.doc.hyphenation != h {
+            self.doc.hyphenation = h;
+            self.relayout([None]);
+        }
+    }
+
     fn pending_image(&mut self, data: Vec<u8>) -> usize {
         self.pending_images.push(data);
         self.doc.images.len() + self.pending_images.len() - 1
@@ -1531,6 +1539,7 @@ impl Editor {
             inlines: Vec::new(),
             src: None,
             id: crate::docx::next_para_id(),
+            div: None,
             controls: p.controls.clone(),
         })
     }
@@ -1914,6 +1923,7 @@ impl Editor {
                 inlines: vec![Inline::Text(String::new(), p.mark.clone())],
                 src: None,
                 id: crate::docx::next_para_id(),
+                div: None,
                 controls: Vec::new(),
             };
             cell.blocks = vec![Block::Para(p)];

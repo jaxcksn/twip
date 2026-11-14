@@ -30,6 +30,10 @@ pub struct Dictionary {
     pub aff: Bytes,
     /// The word list (`.dic`).
     pub dic: Bytes,
+    /// Hyphenation patterns (a `hyph_*.dic` file), for automatic hyphenation in this language. With empty `aff` and
+    /// `dic`, the dictionary adds only these.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hyphenation: Option<Bytes>,
 }
 
 /// How a session starts. Every field has a default, so `{}` is a valid wire value.

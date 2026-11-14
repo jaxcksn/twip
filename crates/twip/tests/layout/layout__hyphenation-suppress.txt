@@ -1,0 +1,25 @@
+page 0 12240 15840
+  1440 1936 Don't hyphenate
+  1440 2201 Hyphenated: representative hyphenation in-
+  1440 2439 ternational administration responsibili-
+  1440 2676 ties organisational considerations not-
+  1440 2914 withstanding comprehensive interpretation
+  1440 3151 documentation telecommunication characte-
+  1440 3388 ristically representative hyphenation in-
+  1440 3626 ternational administration responsibili-
+  1440 3863 ties organisational considerations not-
+  1440 4101 withstanding comprehensive interpretation
+  1440 4338 documentation telecommunication characte-
+  1440 4576 ristically
+  1440 4973 suppressAutoHyphens: representative
+  1440 5210 hyphenation international administration
+  1440 5448 responsibilities organisational
+  1440 5685 considerations notwithstanding
+  1440 5923 comprehensive interpretation documentation
+  1440 6160 telecommunication characteristically
+  1440 6397 representative hyphenation international
+  1440 6635 administration responsibilities
+  1440 6872 organisational considerations
+  1440 7110 notwithstanding comprehensive
+  1440 7347 interpretation documentation
+  1440 7585 telecommunication characteristically

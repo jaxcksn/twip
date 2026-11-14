@@ -1,0 +1,24 @@
+page 0 12240 15840
+  1440 1936 Style separators
+  2242 2201 Centred heading, indents 36pt, its mark vanished: the next paragraph,
+  2880 2439 left-aligned and indented 72pt with an 18pt first line, joins it on one
+  2880 2676 line. Inventory relevant group relief results region ledger brief
+  2880 2914 usage cause colleague partner. Section notice claim team export staff
+  2880 3151 newsletter review matter presenter advisor account. Served savings
+  2880 3388 pilot receipt corporate requirement standard fact that products
+  2880 3626 distribution filed. Logistics chapter plan regional maintenance
+  2880 3863 accessibility tax finds record proposal denied contract. Onboarding
+  2880 4101 support network scheduled trend suggestions board order update
+  2880 4338 granted agreement marketing. Promotion division date profitable
+  2880 4576 insights the meeting forecast hereby vendors.
+  1440 5003 A bordered run-in heading. Its paragraph follows without borders: compat 15 boxes
+  1440 5240 the whole joined paragraph. Notice claim team export staff newsletter review matter
+  1440 5478 presenter advisor account served. Savings pilot receipt corporate requirement
+  1440 5715 standard fact that products distribution filed logistics. Chapter plan regional
+  1440 5953 maintenance accessibility tax finds record proposal denied contract onboarding.
+  1440 6190 Support network scheduled trend suggestions board order update granted agreement
+  1440 6427 marketing promotion. Division date.
+  1440 6825 A mark with specVanish but no vanish ends its paragraph.
+  1440 7222 The next paragraph starts its own line.
+  1791 7620 An empty paragraph before a vanished mark gives nothing: this paragraph keeps its
+  9051 7857 own properties.

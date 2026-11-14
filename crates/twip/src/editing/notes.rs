@@ -103,6 +103,7 @@ impl Editor {
             inlines: vec![Inline::NoteMark(kind, id, mark_run), Inline::Text(" ".into(), text_run)],
             src: None,
             id: pid,
+            div: None,
             controls: Vec::new(),
         };
         if self.step(&mut tx, Step::Note { kind, id, blocks: Some(vec![Block::Para(note)]) }).is_err() {

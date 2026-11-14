@@ -283,6 +283,12 @@ impl Editor {
             Command::DeleteTabStop(at) => self.delete_tab_stop(at, fonts),
             Command::ClearTabStops => self.clear_tab_stops(fonts),
             Command::SetDefaultTabStop(v) => self.set_default_tab_stop(v, fonts),
+            Command::SetAutoHyphenation(on) => self.set_hyphenation_options("Automatic Hyphenation", |h| h.auto = on, fonts),
+            Command::SetHyphenationZone(z) if !(0.0..=1584.0).contains(&z.0) => Outcome::invalid("the zone must be from 0 to 1584"),
+            Command::SetHyphenationZone(z) => self.set_hyphenation_options("Hyphenation Zone", |h| h.zone = (z.0 * 20.0).round() / 20.0, fonts),
+            Command::SetConsecutiveHyphenLimit(n) if n > 32767 => Outcome::invalid("the limit must be from 0 to 32767"),
+            Command::SetConsecutiveHyphenLimit(n) => self.set_hyphenation_options("Limit Consecutive Hyphens", |h| h.limit = i64::from(n), fonts),
+            Command::SetHyphenateCaps(on) => self.set_hyphenation_options("Hyphenate Words in CAPS", |h| h.caps = !on, fonts),
             // Page layout, headers and footers
             Command::SetMargins(m) => self.set_margins(m, fonts),
             Command::SetOrientation(o) => {

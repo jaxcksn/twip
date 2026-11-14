@@ -141,11 +141,57 @@ fn a_hidden_shape_draws_nothing() {
     assert!(shapes(&paint_items(&snap.pages()[0])).is_empty());
 }
 
+#[test]
+fn a_hidden_shape_wraps_nothing() {
+    let star = sp(0, 0, 200, 100, "star5", "", "FF0000");
+    let shown = anchor(72, 72, 200, 100, 1, false, 5, &star).replace("<wp:wrapNone/>", r#"<wp:wrapSquare wrapText="bothSides"/>"#);
+    let hidden = shown.replace(r#"name="S1"/>"#, r#"name="S1" hidden="1"/>"#);
+    let first_x = |a: &str| {
+        let d = doc(&format!("<w:p>{a}<w:r><w:t>Words</w:t></w:r></w:p>")).expect("the document reads");
+        super::page_chars(&d)[0][0].1
+    };
+    assert!(first_x(&shown) > 270.0, "a shown shape wraps the line");
+    assert!((first_x(&hidden) - 72.0).abs() < 0.5, "a hidden one doesn't: {}", first_x(&hidden));
+}
+
 fn box_wsp(w: i64, h: i64, extra_xfrm: &str, body: &str, text: &str) -> String {
     format!(
         r#"<wps:wsp><wps:cNvSpPr txBox="1"/><wps:spPr>{}<a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill><a:ln w="12700"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:ln></wps:spPr><wps:txbx><w:txbxContent><w:p><w:r><w:t>{text}</w:t></w:r></w:p></w:txbxContent></wps:txbx>{body}</wps:wsp>"#,
         xfrm(0, 0, w, h, extra_xfrm)
     )
+}
+
+#[test]
+fn a_connectors_text_goes_to_the_next_shape_and_the_last_is_dropped() {
+    let texts = |presets: &[&str]| {
+        let body: String = presets
+            .iter()
+            .enumerate()
+            .map(|(k, p)| {
+                let wsp = box_wsp(90, 40, "", "", &format!("T{k}")).replace(r#"prst="rect""#, &format!(r#"prst="{p}""#));
+                format!("<w:p>{}</w:p>", anchor(100, 100 + 60 * k as i64, 90, 40, k as u32 + 1, false, 5, &wsp))
+            })
+            .collect();
+        let d = doc(&body).expect("the document reads");
+        let first = |tb: &crate::docx::TextBox| match tb.blocks.first() {
+            Some(crate::docx::Block::Para(p)) => {
+                p.inlines.iter().find_map(|i| if let crate::docx::Inline::Text(t, _) = i { Some(t.clone()) } else { None })
+            }
+            _ => None,
+        };
+        d.sections[0]
+            .blocks
+            .iter()
+            .filter_map(|b| if let crate::docx::Block::Para(p) = b { Some(p) } else { None })
+            .flat_map(|p| p.inlines.iter())
+            .filter_map(|i| if let crate::docx::Inline::Float(f, _) = i { Some(f.text_box.as_ref().and_then(first)) } else { None })
+            .collect::<Vec<_>>()
+    };
+    let t = |s: &str| Some(s.to_string());
+    assert_eq!(texts(&["rect", "bentConnector3", "rect"]), [t("T0"), None, t("T1")]);
+    assert_eq!(texts(&["rect", "straightConnector1", "rect", "rect"]), [t("T0"), None, t("T1"), t("T2")]);
+    assert_eq!(texts(&["line", "lineInv", "rect"]), [None, t("T0"), t("T1")], "an inverted line takes a text box");
+    assert_eq!(texts(&["rect", "rect"]), [t("T0"), t("T1")]);
 }
 
 fn settings_doc(body: &str, compat: u32) -> Option<crate::docx::Document> {
@@ -227,6 +273,70 @@ fn vertical_text_is_turned_into_its_frame() {
     assert!(items.iter().any(|i| matches!(i, Item::Turned(t) if (t.deg - 270.0).abs() < 1e-9)));
 }
 
+/// A text box with no outline, its paragraphs in Arial 10 with single lines.
+fn vertical_box(w: i64, h: i64, body: &str, paras: &[&str]) -> String {
+    let ps: String = paras
+        .iter()
+        .map(|t| format!(r#"<w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="20"/></w:rPr><w:t>{t}</w:t></w:r></w:p>"#))
+        .collect();
+    format!(
+        r#"<wps:wsp><wps:cNvSpPr txBox="1"/><wps:spPr>{}<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></wps:spPr><wps:txbx><w:txbxContent>{ps}</w:txbxContent></wps:txbx>{body}</wps:wsp>"#,
+        xfrm(0, 0, w, h, "")
+    )
+}
+
+/// The first page's turned runs: text, origin and direction.
+fn turned_runs(snap: &crate::layout::Snapshot) -> Vec<(String, [f64; 2], [f64; 2])> {
+    let mut out = Vec::new();
+    for it in paint_items(&snap.pages()[0]) {
+        if let Item::Turned(t) = it {
+            for (r, at, dir) in crate::layout::vertical::runs(&t) {
+                out.push((r.chars.iter().map(|c| c.0).collect::<String>().trim().to_string(), at, dir));
+            }
+        }
+    }
+    out.retain(|r| !r.0.is_empty());
+    out
+}
+
+#[test]
+fn a_vert_text_box_lays_its_lines_out_like_a_vertical_cell_its_anchor_moving_them_across() {
+    // Bottom-anchored: the block against the side the lines stack towards, the left one.
+    let v = vertical_box(100, 200, r#"<wps:bodyPr vert="vert" lIns="0" tIns="0" rIns="0" bIns="0" anchor="b"/>"#, &["HHHH x", "second"]);
+    let body = format!("<w:p>{}</w:p>", anchor(100, 100, 100, 200, 1, false, 1, &v));
+    let d = settings_doc(&body, 15).expect("the document reads");
+    let runs = turned_runs(&crate::layout::layout(&d, &fonts()));
+    assert!(runs.len() == 2 && runs.iter().all(|r| r.2 == [0.0, 1.0]), "{runs:?}");
+    // A vertical line's metrics: the last line its descent in from the left, the lines a vertical pitch apart.
+    assert!((runs[1].1[0] - 102.26).abs() < 0.2 && (runs[0].1[0] - 114.26).abs() < 0.2, "{runs:?}");
+    assert!(runs.iter().all(|r| (r.1[1] - 100.0).abs() < 0.1), "{runs:?}");
+}
+
+#[test]
+fn a_word_art_vertical_text_box_stacks_its_lines_from_the_left() {
+    let v = vertical_box(100, 200, r#"<wps:bodyPr vert="wordArtVert" lIns="0" tIns="0" rIns="0" bIns="0"/>"#, &["HHHH x", "second"]);
+    let body = format!("<w:p>{}</w:p>", anchor(100, 100, 100, 200, 1, false, 1, &v));
+    let d = settings_doc(&body, 15).expect("the document reads");
+    let runs = turned_runs(&crate::layout::layout(&d, &fonts()));
+    assert!(runs.len() == 2 && runs.iter().all(|r| r.2 == [0.0, 1.0]), "{runs:?}");
+    assert!((runs[0].1[0] - 102.50).abs() < 0.25 && (runs[1].1[0] - 114.26).abs() < 0.2, "{runs:?}");
+}
+
+#[test]
+fn a_vertical_text_box_that_fits_its_text_grows_across() {
+    let v = vertical_box(
+        20,
+        200,
+        r#"<wps:bodyPr vert="vert" lIns="91440" tIns="45720" rIns="91440" bIns="45720"><a:spAutoFit/></wps:bodyPr>"#,
+        &["one two", "three"],
+    );
+    let body = format!("<w:p>{}</w:p>", anchor(100, 100, 20, 200, 1, false, 1, &v));
+    let d = settings_doc(&body, 15).expect("the document reads");
+    let r = float_rect(&crate::layout::layout(&d, &fonts()));
+    // Two vertical lines and the insets (no pen): 23.6 + 14.4.
+    assert!((r[2] - r[0] - 38.0).abs() < 0.2 && (r[3] - r[1] - 200.0).abs() < 1e-6, "{r:?}");
+}
+
 #[test]
 fn effects_resolve_from_the_effect_list_and_the_style() {
     let effects = r#"<a:effectLst><a:outerShdw blurRad="50800" dist="38100" dir="2700000"><a:srgbClr val="000000"><a:alpha val="40000"/></a:srgbClr></a:outerShdw><a:glow rad="101600"><a:srgbClr val="FFC000"/></a:glow><a:softEdge rad="63500"/></a:effectLst>"#;
@@ -245,4 +355,116 @@ fn effects_resolve_from_the_effect_list_and_the_style() {
     assert_eq!(e.soft_edge, Some(5.0));
     let theme = s[1].effects.outer.as_ref().expect("the theme's third effect: a shadow");
     assert_eq!((theme.blur, theme.dist), (4.5, 1.5));
+}
+
+#[test]
+fn a_relative_width_and_a_percentage_position_follow_the_page() {
+    let shape = box_wsp(100, 50, "", "<wps:bodyPr/>", "Share");
+    let pct = r#"<wp:positionH relativeFrom="margin"><mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><mc:Choice Requires="wp14"><wp14:pctPosHOffset xmlns:wp14="http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing">25000</wp14:pctPosHOffset></mc:Choice><mc:Fallback><wp:posOffset>0</wp:posOffset></mc:Fallback></mc:AlternateContent></wp:positionH>"#;
+    let rel = r#"<wp14:sizeRelH xmlns:wp14="http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing" relativeFrom="page"><wp14:pctWidth>50000</wp14:pctWidth></wp14:sizeRelH></wp:anchor>"#;
+    let a = anchor(72, 100, 100, 50, 1, false, 1, &shape);
+    let a = a.replacen(&format!(r#"<wp:positionH relativeFrom="page"><wp:posOffset>{}</wp:posOffset></wp:positionH>"#, 72 * PT), pct, 1).replacen(
+        "</wp:anchor>",
+        rel,
+        1,
+    );
+    let d = settings_doc(&format!("<w:p>{a}</w:p>"), 15).expect("the document reads");
+    let r = float_rect(&crate::layout::layout(&d, &fonts()));
+    assert!(close(r, [189.0, 100.0, 495.0, 150.0]), "{r:?}");
+}
+
+/// The float a VML rectangle with `style` and `extra` attributes reads as, in a document of `compat`.
+fn vml_float(style: &str, extra: &str, wrap: &str, compat: u32) -> crate::docx::model::Float {
+    let rect = format!(
+        r#"<w:p><w:r><w:pict><v:rect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w10="urn:schemas-microsoft-com:office:word" style="position:absolute;margin-left:72pt;margin-top:72pt;width:90pt;height:60pt;{style}" {extra}>{wrap}</v:rect></w:pict></w:r></w:p>"#
+    );
+    let d = settings_doc(&rect, compat).expect("the document reads");
+    let crate::docx::model::Block::Para(p) = &d.sections[0].blocks[0] else { panic!("a paragraph") };
+    p.inlines.iter().find_map(|i| if let crate::docx::model::Inline::Float(f, _) = i { Some((**f).clone()) } else { None }).expect("the VML float")
+}
+
+#[test]
+fn a_vml_floats_wrap_distances_round_to_twips_and_default_to_nine_points_beside() {
+    let square = r#"<w10:wrap type="square"/>"#;
+    assert_eq!(vml_float("", "", square, 15).dist, [0.0, 0.0, 9.0, 9.0]);
+    let f = vml_float("mso-wrap-distance-top:0.03in;mso-wrap-distance-left:0pt;mso-wrap-distance-right:24px", "", square, 15);
+    assert_eq!(f.dist, [2.15, 0.0, 0.0, 18.0]);
+}
+
+#[test]
+fn a_vml_float_reads_its_overlap_and_cell_flags() {
+    let f = vml_float("", r#"o:allowoverlap="f" o:allowincell="false""#, "", 14);
+    assert!(!f.allow_overlap && !f.layout_in_cell);
+    let f = vml_float("", r#"o:allowoverlap="t""#, "", 14);
+    assert!(f.allow_overlap && f.layout_in_cell);
+}
+
+#[test]
+fn a_compat_15_vml_float_is_behind_the_text_only_without_wrapping() {
+    let behind = |wrap: &str, compat| vml_float("z-index:-3", "", wrap, compat).behind;
+    let square = r#"<w10:wrap type="square"/>"#;
+    assert!(!behind(square, 15) && behind("", 15) && behind(r#"<w10:wrap type="none"/>"#, 15));
+    assert!(behind(square, 14));
+}
+
+#[test]
+fn a_tight_vml_float_wraps_around_its_wrap_coordinates() {
+    let coords = r#"wrapcoords="0 0 21600 0 10800 21600 0 0""#;
+    let f = vml_float("", coords, r#"<w10:wrap type="tight"/>"#, 15);
+    assert_eq!(f.poly.as_deref(), Some(&[(0.0, 0.0), (1.0, 0.0), (0.5, 1.0), (0.0, 0.0)][..]));
+    assert!(vml_float("", coords, r#"<w10:wrap type="square"/>"#, 15).poly.is_none());
+}
+
+#[test]
+fn a_linked_box_lays_its_part_of_the_story_out_in_its_own_text_rectangle() {
+    // A hexagon heads the chain; the rectangle after it is as wide but its text rectangle is wider.
+    let shape = |prst: &str, text: &str| {
+        format!(
+            r#"<wps:wsp><wps:cNvSpPr txBox="1"/><wps:spPr>{}<a:prstGeom prst="{prst}"><a:avLst/></a:prstGeom></wps:spPr>{text}<wps:bodyPr/></wps:wsp>"#,
+            xfrm(0, 0, 150, 60, "")
+        )
+    };
+    let paras: String =
+        (1..=6).map(|k| format!("<w:p><w:r><w:t>Linked paragraph {k} with some words to fill the boxes in turn.</w:t></w:r></w:p>")).collect();
+    let head = shape("hexagon", &format!(r#"<wps:txbx id="1"><w:txbxContent>{paras}</w:txbxContent></wps:txbx>"#));
+    let next = shape("rect", r#"<wps:linkedTxbx id="1" seq="1"/>"#);
+    let body = format!("<w:p>{}{}</w:p>", anchor(72, 100, 150, 60, 1, false, 1, &head), anchor(300, 100, 150, 200, 2, false, 2, &next));
+    let d = settings_doc(&body, 15).expect("the document reads");
+    let right = super::page_chars(&d)[0].iter().filter(|c| c.1 > 290.0).map(|c| c.1).fold(0.0, f64::max);
+    assert!(right > 415.0, "the rectangle's lines run past the hexagon's text width: {right}");
+}
+
+#[test]
+fn a_text_box_outline_without_a_width_takes_its_style_lines_width() {
+    let outline = |ln: &str| {
+        let shape = box_wsp(100, 50, "", r#"<wps:style><a:lnRef idx="2"><a:schemeClr val="accent1"/></a:lnRef><a:fillRef idx="0"><a:schemeClr val="accent1"/></a:fillRef><a:effectRef idx="0"><a:schemeClr val="accent1"/></a:effectRef><a:fontRef idx="minor"/></wps:style><wps:bodyPr/>"#, "Pen")
+            .replace(r#"<a:ln w="12700"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:ln>"#, ln);
+        let d = doc(&format!("<w:p>{}</w:p>", anchor(72, 100, 100, 50, 1, false, 1, &shape))).expect("the document reads");
+        let crate::docx::model::Block::Para(p) = &d.sections[0].blocks[0] else { panic!("a paragraph") };
+        let f =
+            p.inlines.iter().find_map(|i| if let crate::docx::model::Inline::Float(f, _) = i { Some(f.clone()) } else { None }).expect("the float");
+        f.text_box.as_ref().expect("a text box").outline
+    };
+    // No theme part: the built-in theme's second line is 1.5 pt.
+    assert_eq!(outline("<a:ln/>"), 1.5);
+    assert_eq!(outline(""), 1.5);
+    assert_eq!(outline(r#"<a:ln w="6350"/>"#), 0.5);
+}
+
+#[test]
+fn compat_15_keeps_a_wrapping_float_with_its_top_effect_extent_below_the_top_margin() {
+    let top = |body: &str| float_rect(&crate::layout::layout(&settings_doc(body, 15).expect("the document reads"), &fonts()))[1];
+    let a = anchor(100, 0, 90, 60, 1, false, 1, &sp(0, 0, 90, 60, "rect", "", "FF0000"))
+        .replace(
+            r#"<wp:positionV relativeFrom="page"><wp:posOffset>0</wp:posOffset>"#,
+            r#"<wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset>"#,
+        )
+        .replace(
+            r#"<wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/>"#,
+            r#"<wp:effectExtent l="0" t="127000" r="0" b="0"/><wp:wrapSquare wrapText="bothSides"/>"#,
+        );
+    assert_eq!(top(&format!("<w:p>{a}</w:p>")), 82.0);
+    // A VML shape's outline allowance doesn't move it.
+    let vml = r#"<w:p><w:r><w:pict><v:rect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w10="urn:schemas-microsoft-com:office:word" style="position:absolute;margin-left:100pt;margin-top:0;width:72pt;height:60pt;mso-position-horizontal-relative:margin;mso-position-vertical-relative:paragraph" strokeweight="3pt"><w10:wrap type="square"/></v:rect></w:pict></w:r></w:p>"#;
+    assert_eq!(top(vml), 72.0);
 }

@@ -1,0 +1,8 @@
+page 0 12240 15840
+  1440 1936 OpenType number forms, spacing and stylistic sets
+  1440 2201 0123456789 1111111111 Inventory relevant group relief results region.
+  1440 2599 0123456789 1111111111 Inventory relevant group relief results region.
+  1440 2996 0123456789 1111111111 Inventory relevant group relief results region.
+  1440 3394 0123456789 1111111111 Inventory relevant group relief results region.
+  1440 3791 0123456789 1111111111 Inventory relevant group relief results region.
+  1440 4188 0123456789 1111111111 Inventory relevant group relief results region.

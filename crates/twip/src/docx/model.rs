@@ -29,6 +29,8 @@ pub struct RunStyle {
     pub strike: bool,
     pub dstrike: bool,
     pub hidden: bool,
+    /// `w:noProof`: no automatic hyphenation either.
+    pub no_proof: bool,
     pub underline: Option<String>,
     pub color: Option<u32>,
     pub highlight: Option<u32>,
@@ -47,11 +49,18 @@ pub struct RunStyle {
     /// Kern at or above this size; 0 = off.
     pub kern: f64,
     pub ligatures: u8,
+    /// OpenType number and style features asked for: 1 `lnum`, 2 `onum`, 4 `pnum`, 8 `tnum`, and `16 << (n − 1)` for
+    /// `ssNN`.
+    pub figures: u32,
+    /// `w:fitText`: the width its region of text is fitted to (points) and the region's id.
+    pub fit_text: Option<(f64, i64)>,
     /// `w:em`, when it marks the text ("dot", "comma", "circle", "underDot").
     pub em: Option<String>,
     /// In a table of contents' result: the Hyperlink character style doesn't show ([`crate::docx::resolve::Resolver::rerun`]).
     pub toc: bool,
     pub lang: String,
+    /// The East Asian language (`w:lang w:eastAsia`).
+    pub lang_east_asia: String,
     pub style_id: Option<String>,
     /// The `w:rPr` as written (editable reads only): what saving writes back for new runs in this formatting.
     pub direct: Raw,
@@ -82,6 +91,65 @@ impl PartialEq for Raw {
     }
 }
 
+/// A table row's HTML division.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RowDiv {
+    pub id: i64,
+    pub shift: f64,
+    pub lead: f64,
+    pub trail: f64,
+    pub boxes: Rc<[DivBox]>,
+}
+
+/// An HTML division (`w:div` in `webSettings`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Division {
+    pub parent: Option<i64>,
+    /// Left, right, top and bottom margins.
+    pub margins: [f64; 4],
+    /// Top, left, bottom and right borders.
+    pub borders: [Option<Border>; 4],
+}
+
+/// What the divisions starting and ending at a paragraph add to it, which depends on its neighbours: space above and
+/// below at least `before` and `after`, and the boxes around it. `style` is `from` with them applied.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DivEdge {
+    pub before: f64,
+    pub after: f64,
+    pub boxes: Rc<[DivBox]>,
+    from: Rc<ParaStyle>,
+    style: Rc<ParaStyle>,
+}
+
+impl DivEdge {
+    pub fn new(from: &Rc<ParaStyle>, before: f64, after: f64, boxes: Rc<[DivBox]>) -> DivEdge {
+        let mut s = (**from).clone();
+        s.space_before = s.space_before.max(before);
+        s.space_after = s.space_after.max(after);
+        s.div_boxes = boxes.clone();
+        DivEdge { before, after, boxes, from: from.clone(), style: Rc::new(s) }
+    }
+
+    /// The paragraph's style with the edge applied, while `style` is the one it was built over.
+    pub fn over<'a>(&'a self, style: &'a Rc<ParaStyle>) -> &'a Rc<ParaStyle> {
+        if Rc::ptr_eq(&self.from, style) { &self.style } else { style }
+    }
+}
+
+/// A bordered HTML division's box, as one paragraph in it sees it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DivBox {
+    /// Top, left, bottom, right.
+    pub borders: [Option<Border>; 4],
+    /// The division's left and right edges, from the text column's.
+    pub left: f64,
+    pub right: f64,
+    /// The box opens above this paragraph, closes below it.
+    pub starts: bool,
+    pub ends: bool,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct ParaStyle {
     pub style_id: Option<String>,
@@ -105,7 +173,29 @@ pub struct ParaStyle {
     pub page_break_before: bool,
     pub widow_control: bool,
     pub suppress_auto_hyphens: bool,
+    /// `w:kinsoku` off: no East Asian line-breaking classes.
+    pub no_kinsoku: bool,
+    /// `w:overflowPunct` off: no punctuation hangs past the right margin.
+    pub no_overflow_punct: bool,
+    /// `w:autoSpaceDE` / `w:autoSpaceDN` off: no extra space between East Asian text and Latin letters / digits.
+    pub no_auto_space_de: bool,
+    pub no_auto_space_dn: bool,
+    /// `w:topLinePunct`: an opening bracket starting a line in an East Asian paragraph loses its left half.
+    pub top_line_punct: bool,
+    /// `w:wordWrap` off: East Asian and Latin text may break between any two characters.
+    pub no_word_wrap: bool,
+    /// `w:textboxTightWrap` in a text box: 0 none, 1 all lines, 2 first and last, 3 first only, 4 last only.
+    pub tight_wrap: u8,
+    /// `w:suppressOverlap`: the paragraph's frame may not overlap other frames and floats.
+    pub suppress_overlap: bool,
     pub suppress_line_numbers: bool,
+    /// `w:mirrorIndents`: on mirrored pages the indents swap sides.
+    pub mirror_indents: bool,
+    /// The HTML division the paragraph is in (`w:divId`).
+    pub div: Option<i64>,
+    /// The bordered divisions around the paragraph, outermost first (only in [`Paragraph::para_style_in`]'s style:
+    /// they come from the neighbours, [`DivEdge`]).
+    pub div_boxes: Rc<[DivBox]>,
     pub tabs: Vec<Tab>,
     pub border_top: Option<Border>,
     pub border_bottom: Option<Border>,
@@ -116,6 +206,10 @@ pub struct ParaStyle {
     /// The shading's pattern, pattern color and fill, as written.
     pub shd: Option<super::props::Shd>,
     pub frame: Option<FramePr>,
+    /// The `w:textDirection` text-flow code (`text_flow`): a frame's paragraphs run in it.
+    pub text_flow: u8,
+    /// The paragraph is in a frame: its `frame` made the float that holds it.
+    pub in_frame: bool,
     pub text_alignment: String,
     pub outline_lvl: Option<i64>,
     pub list_jc: String,
@@ -128,6 +222,10 @@ pub struct ParaStyle {
     pub direct: Raw,
     /// A tracked change of the paragraph's properties.
     pub change: Option<Rc<ParaChange>>,
+    /// Paragraphs joined onto this one's start through vanished marks, when each line takes its indents, alignment and
+    /// tabs from the paragraph its first character is in: the unit each one after the first starts at, and its own
+    /// style. Empty otherwise.
+    pub joined: Rc<[(u32, Rc<ParaStyle>)]>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -135,6 +233,28 @@ pub enum BreakKind {
     Line,
     Page,
     Column,
+    /// Text-wrapping breaks (`w:br w:clear`).
+    ClearLeft,
+    ClearRight,
+    ClearAll,
+}
+
+impl BreakKind {
+    pub fn is_line(self) -> bool {
+        matches!(self, BreakKind::Line | BreakKind::ClearLeft | BreakKind::ClearRight | BreakKind::ClearAll)
+    }
+
+    /// The break `w:br@type` and `@clear` give.
+    pub fn of(kind: Option<&str>, clear: Option<&str>) -> BreakKind {
+        match (kind, clear) {
+            (Some("page"), _) => BreakKind::Page,
+            (Some("column"), _) => BreakKind::Column,
+            (_, Some("left")) => BreakKind::ClearLeft,
+            (_, Some("right")) => BreakKind::ClearRight,
+            (_, Some("all")) => BreakKind::ClearAll,
+            _ => BreakKind::Line,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -187,6 +307,13 @@ pub enum FieldKind {
     /// nothing.
     Invalid,
     SubTemplate,
+    /// A legacy check box (FORMCHECKBOX): its box size in points (`None`: its run's size), and whether it is checked.
+    CheckBox {
+        size: Option<f64>,
+        checked: bool,
+    },
+    /// A legacy drop-down (FORMDROPDOWN): it shows its entry as its value, a blank without one.
+    DropDown,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -260,7 +387,8 @@ pub struct Float {
     pub wrap_text: String,
     pub dist: [f64; 4],
     pub effect: [f64; 4],
-    pub poly: Option<[f64; 4]>,
+    /// The wrap polygon of a tight or through float, as fractions of its box.
+    pub poly: Option<Rc<[(f64, f64)]>>,
     pub behind: bool,
     pub allow_overlap: bool,
     pub layout_in_cell: bool,
@@ -268,15 +396,31 @@ pub struct Float {
     pub order: usize,
     pub z: u32,
     pub rot_swap: bool,
+    /// Read from a VML shape: its effect extents stand for its outline's pixels.
+    pub vml: bool,
+    pub relative: Relative,
     /// The source `w:drawing` element's byte range in its part: saving drops it when the float is deleted.
     pub src: Option<std::ops::Range<usize>>,
     /// `wp:anchor/@locked`: the anchor stays in its paragraph when the float is moved.
     pub locked: bool,
     /// A frame's paragraphs in the source (frames.rs): saving drops them when the frame is deleted.
     pub frame_src: Option<std::ops::Range<usize>>,
+    /// Anchored in a footnote or endnote: laid out as an inline object at its anchor, wrapping nothing.
+    pub in_note: bool,
     pub parts: Vec<GroupPart>,
     /// The DrawingML object (geometry, paint, transform, group tree); `None` for frames and floats made without one.
     pub shape: Option<Box<crate::drawing::Shape>>,
+}
+
+/// Relative size and position (`wp14:sizeRelH`, `wp14:pctPosHOffset`, VML `mso-width-percent`, `mso-left-percent`).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Relative {
+    /// Width and height: the box they're relative to and the share in tenths of a percent.
+    pub size: [Option<(String, i64)>; 2],
+    /// Horizontal and vertical position, in tenths of a percent of the reference box.
+    pub pos: [Option<i64>; 2],
+    /// A picture whose box was sized: the size it's drawn at, scaled evenly into the box from its top left.
+    pub drawn: Option<(f64, f64)>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -317,6 +461,11 @@ impl Float {
         }
     }
 
+    /// A hidden shape (`wp:docPr/@hidden`, VML `visibility:hidden`): not drawn, and nothing wraps it.
+    pub fn hidden(&self) -> bool {
+        self.shape.as_ref().is_some_and(|s| s.nv.hidden)
+    }
+
     pub fn in_cell(&self, compat: Compat) -> bool {
         compat == Compat::Generic || self.layout_in_cell || self.h_relative == "character" || self.v_relative == "line"
     }
@@ -329,6 +478,8 @@ pub struct TextBox {
     pub outline: f64,
     pub auto_fit: bool,
     pub v_anchor: u8,
+    /// A frame's text-flow code (`text_flow`).
+    pub flow: u8,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -358,6 +509,8 @@ pub enum Inline {
     NoteMark(NoteKind, i64, Run),
     Separator {
         continuation: bool,
+        /// Drawn across the column in every mode (an endnote continuation separator).
+        full: bool,
         run: Run,
     },
     /// A field's start (`w:fldChar begin`). The inlines up to its [`Inline::FieldSep`] (or its
@@ -399,6 +552,30 @@ pub enum Inline {
     /// beside the control's edge.
     ControlStart(ControlId),
     ControlEnd(ControlId),
+    /// A ruby (`w:ruby`): one unit.
+    Ruby(Rc<Ruby>, Run),
+    /// A date block (`w:dayShort`, `w:dayLong`, `w:monthShort`, `w:monthLong`, `w:yearShort`, `w:yearLong`, by its
+    /// element name) and the date it shows, filled in when fields are evaluated: one unit.
+    DateBlock(&'static str, String, Run),
+}
+
+/// The date blocks' element names and the date pictures they show.
+pub const DATE_BLOCKS: [(&str, &str); 6] =
+    [("dayShort", "dd"), ("dayLong", "dddd"), ("monthShort", "MM"), ("monthLong", "MMMM"), ("yearShort", "yy"), ("yearLong", "yyyy")];
+
+/// A ruby: base text with its annotation set above it, laid out as one object.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Ruby {
+    pub base: Vec<(String, Run)>,
+    pub text: Vec<(String, Run)>,
+    /// `w:rubyAlign`: center, distributeLetter, distributeSpace, left, right, rightVertical (0 to 5).
+    pub align: u8,
+    /// `w:hpsRaise`: the annotation's baseline above the base's, points.
+    pub raise: f64,
+    /// `w:hps`: the annotation's size, points.
+    pub size: Option<f64>,
+    /// The `w:ruby` element as read: what saving writes.
+    pub xml: Raw,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -409,6 +586,8 @@ pub struct ListLabel {
     pub suff: String,
     /// A picture bullet's image (an index into [`Document::images`]), drawn instead of the text.
     pub picture: Option<usize>,
+    /// A legacy level's space and indent ([`super::numbering::Level::legacy`]).
+    pub legacy: Option<(f64, f64)>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -425,6 +604,17 @@ pub struct Paragraph {
     /// The block-level content controls around it, outermost first: consecutive blocks with an id are
     /// that control's content.
     pub controls: Vec<ControlId>,
+    /// What the HTML divisions starting and ending here add.
+    pub div: Option<Rc<DivEdge>>,
+}
+
+impl Paragraph {
+    /// The division edge built again over the paragraph's current style, after the style was replaced.
+    pub fn refresh_div(&mut self) {
+        if let Some(d) = self.div.as_ref().filter(|d| !Rc::ptr_eq(&d.from, &self.style)) {
+            self.div = Some(Rc::new(DivEdge::new(&self.style, d.before, d.after, d.boxes.clone())));
+        }
+    }
 }
 
 /// A new paragraph id (unique in the process).
@@ -713,6 +903,19 @@ pub enum VMerge {
     Continue,
 }
 
+/// A `w:textDirection` value (transitional or strict spelling) as its text-flow code: `lrTb` 0, `tbRl` 1, `btLr` 3,
+/// `lrTbV` 4, `tbRlV` 5, `tbLrV` 7; anything else is horizontal.
+pub fn text_flow(v: &str) -> u8 {
+    match v {
+        "tbRl" | "rl" => 1,
+        "btLr" | "lr" => 3,
+        "lrTbV" | "tbV" => 4,
+        "tbRlV" | "rlV" => 5,
+        "tbLrV" | "lrV" => 7,
+        _ => 0,
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Cell {
     pub width: Option<Width>,
@@ -728,6 +931,8 @@ pub struct Cell {
     pub text_direction: String,
     pub no_wrap: bool,
     pub fit_text: bool,
+    /// `w:hideMark`.
+    pub hide_mark: bool,
     /// The cell's `w:tcPr` as read (or as table formatting changed it): what re-resolution merges over the cell's
     /// table-style region when its place in the table changes.
     pub direct: Raw,
@@ -745,10 +950,23 @@ pub struct Row {
     pub header: bool,
     pub grid_before: usize,
     pub grid_after: usize,
-    pub w_before: Option<f64>,
-    pub w_after: Option<f64>,
+    pub w_before: Option<Width>,
+    pub w_after: Option<Width>,
     pub ind: Option<f64>,
     pub jc: Option<Jc>,
+    /// The HTML division the row is in (`trPr/w:divId`).
+    pub div: Option<Rc<RowDiv>>,
+    /// The table borders the row's exceptions (`w:tblPrEx`) give it, in [`Table::borders`] order; `None` for the
+    /// table's.
+    pub borders: Option<Rc<[Option<Border>; 6]>>,
+    /// The row's exception shading (`w:tblPrEx/w:shd`).
+    pub shading: Option<u32>,
+    /// Every character of the row, its row-end mark included, is hidden.
+    pub vanished: bool,
+    /// The row's own cell spacing (`trPr` or `w:tblPrEx`).
+    pub cell_spacing: Option<f64>,
+    /// The table width of the layout run the row starts or continues, when its exceptions fix its layout.
+    pub run: Option<Width>,
     pub cells: Vec<Cell>,
     /// The controls wrapping the row, outermost first.
     pub controls: Vec<ControlId>,
@@ -764,7 +982,11 @@ pub struct Table {
     pub style_id: Option<String>,
     pub width: Width,
     pub jc: Jc,
+    /// The table's own `w:jc`; a layout run after the first row falls back to it.
+    pub own_jc: Option<Jc>,
     pub ind: f64,
+    /// A `pct` indent, the fraction of the width the table is laid out in; [`Table::ind`] is then 0.
+    pub ind_pct: Option<f64>,
     pub ind_set: bool,
     pub borders: [Option<Border>; 6],
     pub fixed: bool,
@@ -867,6 +1089,29 @@ pub struct LineNumbering {
     pub restart: String,
 }
 
+/// A section's `w:footnotePr` / `w:endnotePr`: number format, start and restart; for footnotes, `w:pos beneathText`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct NoteProps {
+    pub fmt: Option<String>,
+    pub start: i64,
+    pub restart: NoteRestart,
+    pub beneath: bool,
+}
+
+impl Default for NoteProps {
+    fn default() -> NoteProps {
+        NoteProps { fmt: None, start: 1, restart: NoteRestart::Continuous, beneath: false }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum NoteRestart {
+    #[default]
+    Continuous,
+    EachSect,
+    EachPage,
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct PageBorders {
     pub top: Option<Border>,
@@ -900,12 +1145,25 @@ pub struct Section {
     pub footers: HfRefs,
     pub pg_start: Option<i64>,
     pub pg_fmt: Option<String>,
+    /// `w:pgNumType w:chapStyle` / `w:chapSep`: page numbers lead with the number of the last heading of this level,
+    /// then this separator.
+    pub chapter: Option<(i64, String)>,
     pub line_numbers: Option<LineNumbering>,
     pub v_align: String,
     pub page_borders: Option<PageBorders>,
     /// The `w:pgBorders` as written, or as last set.
     pub page_borders_xml: Option<String>,
     pub line_grid: Option<i32>,
+    /// Footnote and endnote properties, by [`NoteKind`] (foot, end).
+    pub notes: [NoteProps; 2],
+    /// `w:noEndnote`: the section's endnotes wait for the next section's.
+    pub no_endnote: bool,
+    /// The `w:textDirection` text-flow code (`text_flow`; a section's `tbLrV` reads as `tbRlV`).
+    pub text_flow: u8,
+    /// `w:rtlGutter`: the gutter is on the right.
+    pub rtl_gutter: bool,
+    /// `w15:footnoteColumns`: the footnote area's column count (0 when absent).
+    pub footnote_columns: u32,
     pub blocks: Vec<Block>,
     /// A tracked change of the section's properties.
     pub change: Option<Rc<SectionChange>>,
@@ -921,7 +1179,9 @@ pub enum Compat {
 #[derive(Clone, Debug, Default)]
 pub struct Settings {
     pub compat_mode: i64,
-    /// `w:compat` child options that are on.
+    /// `w:compat` child options that are on, and the on/off `w:compatSetting`s that are on (`enableOpenTypeFeatures`,
+    /// `overrideTableStyleFontSizeAndJustification`, `allowHyphenationAtTrackBottom`,
+    /// `allowTextAfterFloatingTableBreak`); `useWord2013TrackBottomHyphenation=0` when that one is off.
     pub compat: std::collections::HashSet<String>,
     pub default_tab: f64,
     /// `w:characterSpacingControl` is compressPunctuation or compressPunctuationAndJapaneseKana.
@@ -929,6 +1189,10 @@ pub struct Settings {
     pub even_and_odd: bool,
     pub mirror_margins: bool,
     pub gutter_at_top: bool,
+    /// `w:bookFoldPrinting` / `w:bookFoldRevPrinting`: `Some(reversed)`.
+    pub book_fold: Option<bool>,
+    /// `w:strictFirstAndLastChars`: the strict East Asian line-breaking level.
+    pub strict_kinsoku: bool,
     pub auto_hyphenation: bool,
     pub hyphenation_zone: f64,
     pub consecutive_hyphen_limit: i64,
@@ -937,6 +1201,10 @@ pub struct Settings {
     pub borders_do_not_surround_footer: bool,
     /// `w:trackRevisions`: edits are recorded as revisions.
     pub track_revisions: bool,
+    /// `w:endnotePr/w:pos sectEnd`: endnotes follow their section rather than the document.
+    pub endnotes_sect_end: bool,
+    /// The note stories `w:footnotePr` / `w:endnotePr` list, as `footnote:<id>` / `endnote:<id>`.
+    pub listed_notes: Vec<String>,
     pub protection: Option<Protection>,
     /// `w:revisionView` as written, kept for saving.
     pub revision_view_raw: Raw,
@@ -973,6 +1241,8 @@ pub struct Document {
     /// Footnote separator / continuation separator stories, when the document defines them.
     pub separators: HashMap<String, Vec<Block>>,
     pub images: Vec<Vec<u8>>,
+    /// The hyphenation patterns the host supplied.
+    pub hyphenation: Option<crate::layout::hyphenate::Hyphenation>,
     /// Content controls the model keeps: row-level wrappers (repeating sections and their items) and checkboxes,
     /// by id.
     pub controls: HashMap<ControlId, Control>,
@@ -1111,7 +1381,9 @@ impl Inline {
             | Inline::Break(_, r)
             | Inline::Picture(_, r)
             | Inline::Float(_, r)
-            | Inline::NoteMark(_, _, r) => Some(r),
+            | Inline::NoteMark(_, _, r)
+            | Inline::Ruby(_, r)
+            | Inline::DateBlock(_, _, r) => Some(r),
             Inline::Sym { run, .. }
             | Inline::NoteRef { run, .. }
             | Inline::Separator { run, .. }

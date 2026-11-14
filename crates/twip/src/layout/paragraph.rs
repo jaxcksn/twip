@@ -72,6 +72,16 @@ pub fn vanished(p: &crate::docx::Paragraph) -> bool {
         })
 }
 
+/// Whether `p` shows nothing in `view`: every run hidden or a hidden revision (bookmarks and the like don't count).
+pub fn shows_nothing(p: &crate::docx::Paragraph, view: crate::docx::review::MarkupView) -> bool {
+    use crate::docx::Inline;
+    p.inlines.iter().all(|i| match i {
+        Inline::Text(t, r) => t.is_empty() || r.hidden || view.hides(&r.rev),
+        Inline::Bookmark(_) | Inline::Range(_) | Inline::ControlStart(_) | Inline::ControlEnd(_) | Inline::CommentRef { .. } => true,
+        i => i.run().is_some_and(|r| r.hidden || view.hides(&r.rev)),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::lines_to_take;

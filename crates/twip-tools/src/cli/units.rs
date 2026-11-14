@@ -26,7 +26,7 @@ pub fn run(args: &[String]) -> Result<(), String> {
         None => (twip::internal::layout::job::UNIT_LIMIT_MS, args.to_vec()),
     };
     twip::internal::layout::job::time_units(limit);
-    let fonts = twip::internal::font::Fonts::system();
+    let fonts = super::system_fonts();
     let mut docs = Vec::new();
     for p in &paths {
         collect(Path::new(p), &mut docs);

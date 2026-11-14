@@ -50,13 +50,28 @@ pub struct Face {
     pub strike_pos: f64,
     pub strike_thick: f64,
     pub east_asian: bool,
+    /// `post.isFixedPitch`.
+    pub fixed_pitch: bool,
+    /// The height an East Asian face adds above and below its win metrics, font units.
+    pub ea_extra: f64,
+    /// How far an upright East Asian glyph's em box middle is above its baseline, font units: from the `BASE`
+    /// table's ideographic and Roman baselines (Han script, else the default), else the win metrics' middle.
+    pub em_middle: f64,
+    /// It has vertical metrics (`vmtx` or `VORG`).
+    vertical: bool,
+    /// Its outlines are TrueType (`glyf`).
+    pub truetype: bool,
     pub avg_width: f64,
+    /// The output device's metrics source: `OS/2` win ascent and descent, the `hhea` line height beyond them (font
+    /// units), and the `VDMX` ANSI 1:1 record's (ppem, yMax, yMin) by ppem.
+    win: Option<(f64, f64, f64)>,
+    vdmx: Vec<(u16, i16, i16)>,
     font: harfrust::Font,
-    /// Memos: character → glyph, glyph → advance, and shape plans by (kern, ligatures, script). Building a plan
+    /// Memos: character → glyph, glyph → advance, and shape plans by (kern, ligatures, figures, script). Building a plan
     /// collects the font's GSUB/GPOS lookups, far more work than shaping a word.
     glyphs: RefCell<HashMap<char, Option<u32>>>,
     advances: RefCell<HashMap<u32, f64>>,
-    plans: RefCell<HashMap<(bool, u8, Option<harfrust::Script>), Rc<harfrust::ShapePlan>>>,
+    plans: RefCell<HashMap<(bool, u8, u32, Option<harfrust::Script>), Rc<harfrust::ShapePlan>>>,
 }
 
 /// A shaped glyph: advances and offsets in font units, `cluster` = byte offset in the shaped text.
@@ -77,6 +92,49 @@ fn i16_at(d: &[u8], o: usize) -> i16 {
 }
 fn u32_at(d: &[u8], o: usize) -> u32 {
     d.get(o..o + 4).map_or(0, |b| u32::from_be_bytes([b[0], b[1], b[2], b[3]]))
+}
+
+/// The `BASE` table at `o`: the horizontal axis's ideographic baseline less its Roman one, plus half the em, for the
+/// Han script or else the default one.
+fn base_middle(d: &[u8], o: usize, upem: f64) -> Option<f64> {
+    let axis = o + u16_at(d, o + 4) as usize;
+    if axis == o {
+        return None;
+    }
+    let (tags, scripts) = (axis + u16_at(d, axis) as usize, axis + u16_at(d, axis + 2) as usize);
+    let tag = |i: usize| d.get(tags + 2 + 4 * i..tags + 6 + 4 * i);
+    let n = u16_at(d, tags) as usize;
+    let (ideo, romn) = ((0..n).find(|&i| tag(i) == Some(b"ideo"))?, (0..n).find(|&i| tag(i) == Some(b"romn"))?);
+    let record = |want: &[u8; 4]| {
+        (0..u16_at(d, scripts) as usize)
+            .map(|i| scripts + 2 + 6 * i)
+            .find(|&r| d.get(r..r + 4) == Some(want))
+            .map(|r| scripts + u16_at(d, r + 4) as usize)
+    };
+    let script = record(b"hani").or_else(|| record(b"DFLT"))?;
+    let values = script + u16_at(d, script) as usize;
+    if values == script || u16_at(d, values + 2) as usize != n {
+        return None;
+    }
+    let coord = |i: usize| i16_at(d, values + u16_at(d, values + 4 + 2 * i) as usize + 2) as f64;
+    Some(coord(ideo) - coord(romn) + upem / 2.0)
+}
+
+/// The `VDMX` table's (ppem, yMax, yMin) records, sorted by ppem, of the first ANSI ratio record that covers 1:1.
+fn vdmx(d: &[u8]) -> Vec<(u16, i16, i16)> {
+    let ratios = u16_at(d, 4) as usize;
+    let Some(r) = (0..ratios).find(|&i| {
+        let (set, x, y0, y1) = (d.get(6 + 4 * i).copied(), d.get(7 + 4 * i).copied(), d.get(8 + 4 * i).copied(), d.get(9 + 4 * i).copied());
+        set == Some(1) && (x == Some(0) || (y0 <= x && x <= y1))
+    }) else {
+        return Vec::new();
+    };
+    let g = u16_at(d, 6 + 4 * ratios + 2 * r) as usize;
+    let mut out: Vec<(u16, i16, i16)> =
+        (0..u16_at(d, g) as usize).map(|i| g + 4 + 6 * i).map(|e| (u16_at(d, e), i16_at(d, e + 2), i16_at(d, e + 4))).collect();
+    out.sort_by_key(|r| r.0);
+    out.dedup_by_key(|r| r.0);
+    out
 }
 
 /// Table offsets of face `index` (a TTC holds several).
@@ -127,7 +185,14 @@ impl Face {
             strike_pos: upem * 0.26,
             strike_thick: upem * 0.05,
             east_asian: false,
+            fixed_pitch: false,
+            ea_extra: 0.0,
+            em_middle: 0.0,
+            vertical: t.contains_key(b"vmtx") || t.contains_key(b"VORG"),
+            truetype: t.contains_key(b"glyf"),
             avg_width: 0.0,
+            win: None,
+            vdmx: t.get(b"VDMX").map_or_else(Vec::new, |&(o, len)| vdmx(d.get(o..o + len).unwrap_or(&[]))),
             font: {
                 let font = harfrust::Font::new(Arc::clone(&data) as Arc<dyn AsRef<[u8]> + Send + Sync>, e.index)?;
                 if e.variations.is_empty() {
@@ -154,6 +219,10 @@ impl Face {
                     gap = ((h_asc - h_desc + h_gap) - (asc + desc)).max(0.0);
                 }
             }
+            if len >= 78 {
+                let (wa, wd) = (u16_at(d, o + 74) as f64, u16_at(d, o + 76) as f64);
+                f.win = Some((wa, wd, ((h_asc - h_desc + h_gap) - (wa + wd)).max(0.0)));
+            }
             f.avg_width = i16_at(d, o + 2) as f64 / upem;
             f.sub_size = i16_at(d, o + 12) as f64;
             f.sub_offset = i16_at(d, o + 16) as f64;
@@ -167,6 +236,7 @@ impl Face {
                 let (wa, wd) = (u16_at(d, o + 74) as f64, u16_at(d, o + 76) as f64);
                 let extra = (0.15 * (wa + wd) + 0.5).floor();
                 (asc, desc, gap) = (wa + extra, wd + extra, 0.0);
+                f.ea_extra = extra;
             }
         } else {
             asc = h_asc;
@@ -176,11 +246,31 @@ impl Face {
         if let Some(&(o, _)) = t.get(b"post") {
             f.underline_pos = -(i16_at(d, o + 8) as f64);
             f.underline_thick = i16_at(d, o + 10) as f64;
+            f.fixed_pitch = u32_at(d, o + 12) != 0;
         }
         f.ascent = asc;
         f.descent = desc;
         f.leading = gap;
+        f.em_middle = t.get(b"BASE").and_then(|&(o, _)| base_middle(d, o, upem)).unwrap_or((asc - desc) / 2.0);
         Some(f)
+    }
+
+    /// Where an upright glyph's horizontal baseline is below the top of its em along a vertical line, font units:
+    /// its vertical origin (`VORG`, or `vmtx` top side bearing plus the glyph's top); `None` without vertical metrics.
+    pub fn v_origin(&self, glyph: u32) -> Option<f64> {
+        self.vertical.then(|| ShaperFont::new(&self.font).glyph_v_origin(harfrust::GlyphId::new(glyph)).1 as f64)
+    }
+
+    /// Ascent, descent and external leading in whole pixels at `ppem`, as the Windows text metrics of a printer give
+    /// them: the `VDMX` record below 255 ppem, else the win metrics scaled and rounded.
+    pub fn device_metrics(&self, ppem: i64) -> (i64, i64, i64) {
+        let (wa, wd, gap) = self.win.unwrap_or((self.ascent, self.descent, self.leading));
+        let px = |v: f64| (v * ppem as f64 / self.upem + 0.5).floor() as i64;
+        let (a, d) = match self.vdmx.binary_search_by_key(&(ppem as u16), |r| r.0) {
+            Ok(i) if ppem < 255 => (self.vdmx[i].1 as i64, -(self.vdmx[i].2 as i64)),
+            _ => (px(wa), px(wd)),
+        };
+        (a, d, px(gap))
     }
 
     /// Points per font unit at `size`.
@@ -239,18 +329,20 @@ impl Face {
         (e.height != 0).then_some(e.y_bearing as f64)
     }
 
-    pub fn shape(&self, text: &str, kern: bool, ligatures: u8) -> Vec<Glyph> {
-        crate::prof::time("shape", || self.shape_uncached(text, kern, ligatures))
+    /// Glyphs for `text`: `ligatures` as [`crate::docx::RunStyle::ligatures`], `figures` as
+    /// [`crate::docx::RunStyle::figures`].
+    pub fn shape(&self, text: &str, kern: bool, ligatures: u8, figures: u32) -> Vec<Glyph> {
+        crate::prof::time("shape", || self.shape_uncached(text, kern, ligatures, figures))
     }
 
-    fn shape_uncached(&self, text: &str, kern: bool, ligatures: u8) -> Vec<Glyph> {
+    fn shape_uncached(&self, text: &str, kern: bool, ligatures: u8, figures: u32) -> Vec<Glyph> {
         let sf = ShaperFont::new(&self.font);
         let mut buf = Buffer::new();
         buf.push_str(text);
         buf.set_direction(Direction::LeftToRight);
         buf.guess_segment_properties();
         let on = |b: bool| if b { 1 } else { 0 };
-        let feats = [
+        let mut feats = vec![
             Feature::new(Tag::new(b"kern"), on(kern), ..),
             Feature::new(Tag::new(b"liga"), on(ligatures & 1 != 0), ..),
             Feature::new(Tag::new(b"clig"), on(ligatures & 2 != 0), ..),
@@ -258,7 +350,14 @@ impl Face {
             Feature::new(Tag::new(b"hlig"), on(ligatures & 4 != 0), ..),
             Feature::new(Tag::new(b"dlig"), on(ligatures & 8 != 0), ..),
         ];
-        let key = (kern, ligatures, buf.script());
+        // Number forms and spacing, then the stylistic sets: only those asked for, the font's defaults otherwise.
+        let sets = (1..=20u8).map(|n| [b's', b's', b'0' + n / 10, b'0' + n % 10]);
+        for (k, tag) in [*b"lnum", *b"onum", *b"pnum", *b"tnum"].into_iter().chain(sets).enumerate() {
+            if figures & 1 << k != 0 {
+                feats.push(Feature::new(Tag::new(&tag), 1, ..));
+            }
+        }
+        let key = (kern, ligatures, figures, buf.script());
         let cached = self.plans.borrow().get(&key).cloned();
         let plan = cached.unwrap_or_else(|| {
             let plan = Rc::new(harfrust::ShapePlan::new(&self.font, buf.direction(), buf.script(), None, &feats));
@@ -509,6 +608,11 @@ impl Fonts {
         self.resolved.borrow_mut().clear();
         self.fallbacks.borrow_mut().clear();
         self.symbol_fallback = std::cell::OnceCell::new();
+    }
+
+    /// The families searched, in order, for a character a run's font lacks, before the symbol fallback.
+    pub fn set_character_fallback(&mut self, families: Vec<String>) {
+        self.set_settings(|s| s.character_fallback = families);
     }
 
     /// Changes the settings, and drops everything resolved with the old ones.
@@ -1265,7 +1369,7 @@ mod tests {
         f.add_bytes(VARIABLE.to_vec()).unwrap();
         let advance = |family: &str, bold: bool| {
             let face = f.face(family, None, bold, false).unwrap();
-            (face.weight, face.sim_bold, face.shape("A", true, 0)[0].advance, face.advance(face.glyph('A').unwrap()))
+            (face.weight, face.sim_bold, face.shape("A", true, 0, 0)[0].advance, face.advance(face.glyph('A').unwrap()))
         };
         assert_eq!(advance("Stand-in Variable", false), (400, false, 500.0, 500.0));
         // Bold is the Bold instance, not a synthesized one.

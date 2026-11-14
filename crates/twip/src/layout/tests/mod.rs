@@ -12,9 +12,12 @@ mod determinism;
 mod equivalence;
 mod excluded;
 mod hf_frames;
+mod hyphenation;
 mod imports;
+mod metrics;
 mod notes;
 mod output;
+mod page_numbers;
 mod pending;
 mod random_edits;
 mod rebreak;
@@ -28,7 +31,9 @@ mod snapshot_immutable;
 mod source_mapping;
 mod spacing;
 mod spatial_tree;
+mod style_refs;
 mod sweeps;
+mod vertical;
 mod view_accessors;
 mod warm;
 
@@ -49,8 +54,9 @@ pub fn fixture(rel: &str) -> Option<Document> {
     doc(&fixtures().join(rel))
 }
 
+/// Reads a fixture with a fixed clock, so date fields lay out the same on every day.
 pub fn doc(path: &Path) -> Option<Document> {
-    crate::docx::read(&std::fs::read(path).ok()?).ok()
+    crate::docx::read_at(&std::fs::read(path).ok()?, 1_794_096_000).ok()
 }
 
 pub fn fonts() -> Fonts {

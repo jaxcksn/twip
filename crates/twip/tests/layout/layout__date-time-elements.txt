@@ -1,0 +1,14 @@
+page 0 12240 15840
+  1440 1936 Run date and time elements
+  1440 2201 dayShort: [09] then text.
+  1440 2439 dayLong: [Monday] then text.
+  1440 2676 monthShort: [11] then text.
+  1440 2914 monthLong: [November] then text.
+  1440 3151 yearShort: [26] then text.
+  1440 3388 yearLong: [2026] then text.
+  1440 3626 All six in one run: 09Monday11November262026|
+  1440 4023 They break lines by their width: Inventory relevant group relief results region
+  1440 4261 ledger brief usage cause colleague partner. Section notice claim team. Monday
+  1440 4498 November 2026 Notice claim team export staff newsletter review matter presenter
+  1440 4736 advisor account served. Savings pilot receipt corporate requirement standard fact
+  1440 4973 that.

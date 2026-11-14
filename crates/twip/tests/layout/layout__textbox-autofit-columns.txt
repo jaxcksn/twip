@@ -1,0 +1,61 @@
+page 0 12240 15840
+  1440 1936 Text box autofit and columns
+  5940 2201 The box on the left shrinks text on overflow
+  5940 2439 (50% font scale, 20% line spacing
+  5940 2676 reduction): its text stays full size.
+  5940 2914 Inventory relevant group relief results
+  5940 3151 region ledger brief usage cause colleague
+  5940 3388 partner. Section notice claim team export
+  5940 3626 staff newsletter review matter presenter
+  5940 3863 advisor account. Served savings pilot
+  1440 4101 receipt corporate requirement standard fact that products distribution filed.
+  1440 4338 Logistics chapter plan regional maintenance accessibility tax finds record
+  1440 4576 proposal denied contract. Onboarding support network scheduled trend suggestions
+  1440 4813 board order update granted agreement marketing.
+  1440 5210 Notice claim team export staff newsletter review matter presenter advisor account
+  1440 5448 served. Savings pilot receipt corporate requirement standard fact that products
+  1440 5685 distribution filed logistics. Chapter plan regional maintenance accessibility
+  1440 5923 tax.
+  1440 6320 The box on the right asks for two columns:
+  1440 6557 its text is in one. Pilot receipt
+  1440 6795 corporate requirement standard fact
+  1440 7032 that products distribution filed
+  1440 7270 logistics chapter. Plan regional
+  1440 7507 maintenance accessibility tax finds
+  1440 7745 record proposal denied contract
+  1440 7982 onboarding support. Network scheduled
+  1440 8219 trend suggestions board order update
+  1440 8457 granted agreement marketing promotion
+  1440 8694 division. Date profitable insights the
+  1440 8932 meeting forecast hereby vendors
+  1440 9169 practical schedule state entry.
+  1440 9406 Estimate management action budget inventory relevant group relief results region
+  1440 9644 ledger brief.
+  1440 10041 Regional maintenance accessibility tax finds record proposal denied contract
+  1440 10279 onboarding support network. Scheduled trend suggestions board order update granted
+  1440 10516 agreement marketing promotion division date. Profitable insights the meeting
+  1440 10754 forecast hereby vendors practical schedule state entry estimate. Management action
+  1440 10991 budget inventory.
+  1589 2278 The meeting forecast hereby vendors
+  1589 2498 practical schedule state entry
+  1589 2718 estimate management action. Budget
+  1589 2938 inventory relevant group relief
+  1589 3158 results region ledger brief usage
+  1589 3378 cause colleague. Partner section
+  1589 3598 notice claim team export.
+  1589 3818 Inventory relevant group relief
+  6341 6397 The meeting forecast hereby vendors
+  6341 6617 practical schedule state entry
+  6341 6837 estimate management action. Budget
+  6341 7057 inventory relevant group relief
+  6341 7277 results region ledger brief usage
+  6341 7497 cause colleague. Partner section
+  6341 7717 notice claim team export.
+  6341 7937 Inventory relevant group relief
+  6341 8157 results region ledger brief usage
+  6341 8377 cause colleague partner. Section
+  6341 8597 notice claim team export staff
+  6341 8817 newsletter review matter presenter
+  6341 9037 advisor account. Served savings
+  float 1440 2025 5760 3753
+  float 6192 6144 10512 9024
