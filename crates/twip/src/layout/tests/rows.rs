@@ -1543,3 +1543,22 @@ fn a_centred_merged_region_cut_by_the_page_goes_on_at_the_next_parts_top() {
     assert!(on(1, '2'), "the region's last line goes on on page 2");
 }
 
+#[test]
+fn compat_15_a_moved_table_on_a_refilled_page_is_drawn_at_its_own_x() {
+    let table = |name: &str, pos: &str, overlap: &str| {
+        let rows: String = (1..=3)
+            .map(|i| format!(r#"<w:tr><w:tc><w:tcPr><w:tcW w:w="4000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>{name} row {i}</w:t></w:r></w:p></w:tc></w:tr>"#))
+            .collect();
+        format!(
+            r#"<w:tbl><w:tblPr><w:tblpPr w:leftFromText="181" w:rightFromText="181" {pos} w:horzAnchor="margin" w:tblpYSpec="top"/>{overlap}<w:tblW w:w="4000" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid>{rows}</w:tbl>"#
+        )
+    };
+    let body = format!(
+        r#"<w:p><w:r><w:t>Case</w:t></w:r></w:p>{}<w:p><w:r><w:t>Spacer.</w:t></w:r></w:p>{}<w:p><w:r><w:t>After.</w:t></w:r></w:p>"#,
+        table("A", "", ""),
+        table("Q", r#"w:topFromText="360" w:tblpX="2000""#, r#"<w:tblOverlap w:val="never"/>"#)
+    );
+    let x = |mode: i64| super::page_chars(&doc_in(&body, mode))[0].iter().find(|c| c.0 == 'Q').map(|c| c.1).expect("drawn");
+    assert!((x(15) - (72.0 + 100.0)).abs() < 1.0, "compat 15: drawn at tblpX: {}", x(15));
+    assert!(x(14) > 250.0, "compat 14: drawn where it was moved: {}", x(14));
+}

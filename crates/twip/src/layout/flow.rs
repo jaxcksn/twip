@@ -2949,6 +2949,8 @@ impl<'d> PageFill<'d, '_> {
         };
         let mut settled = true;
         let mut first: Option<(usize, f64)> = None;
+        // Where the text wraps a floating table, when it is drawn elsewhere.
+        let mut wrap_x = None;
         if let Some(fp) = fp
             && pos.at.at_start()
         {
@@ -3020,8 +3022,19 @@ impl<'d> PageFill<'d, '_> {
                     _ => (self.margins.0, self.page_w - self.margins.1),
                 };
                 let down = if fp.v_anchor == TableAnchor::Page { (0.0, self.page_h) } else { (self.margins.2, body_bottom) };
+                let asked = at_x;
                 float::avoid(&mut probe, &others, across, down, self.ctx.env.text.compat);
                 (at_x, top) = (probe.rect[0] - bl, probe.rect[1]);
+                // Compat 15: a table moved clear of others whose box meets the text laid out before it on the page (the
+                // page is filled again) is drawn at the x it asked for and the y it was moved to; the text wraps the
+                // place it was moved to.
+                // ponytail: "meets" is its box reaching into the band from the column top to where the flow reached it
+                // on a page with text before it, not a test against those lines.
+                let meets = !was_empty && probe.excl[1] < flow_y - EPS && probe.excl[3] > col.top.to_pt() + EPS;
+                if !legacy && meets && (asked - at_x).abs() > EPS {
+                    wrap_x = Some(at_x);
+                    at_x = asked;
+                }
             }
             // A table in the flow is placed again from the flow on every fill. Another keeps the place of the last
             // fill, in compat 15 only when it met the text laid out before it there.
@@ -3276,7 +3289,7 @@ impl<'d> PageFill<'d, '_> {
                 self.show_endnote_refs(row_refs.into_iter().map(|r| r.1));
                 self.at.found.append(&mut over);
                 finish(rows, out, at_x, opened, false);
-                self.table_obstacle(pos.block, tb, at_x, part_top, *y, flow_y, settled);
+                self.table_obstacle(pos.block, tb, wrap_x.unwrap_or(at_x), part_top, *y, flow_y, settled);
                 carry.beside_at = (fp.is_none() && (at_x - col.x).abs() > EPS).then_some(at_x - col.x);
                 return Ok(self.text_goes_on(fp.is_some(), pos, carry, y, empty, (flow_y, was_empty)));
             }
@@ -3323,7 +3336,7 @@ impl<'d> PageFill<'d, '_> {
                 self.at.found.append(&mut over);
             }
             finish(rows, out, at_x, opened, true);
-            self.table_obstacle(pos.block, tb, at_x, part_top, *y, flow_y, settled);
+            self.table_obstacle(pos.block, tb, wrap_x.unwrap_or(at_x), part_top, *y, flow_y, settled);
             carry.beside_at = (fp.is_none() && split && (at_x - col.x).abs() > EPS).then_some(at_x - col.x);
             return Ok(self.text_goes_on(fp.is_some() && split, pos, carry, y, empty, (flow_y, was_empty)));
         }
@@ -3333,7 +3346,7 @@ impl<'d> PageFill<'d, '_> {
         }
         finish(rows, out, at_x, opened, false);
         if fp.is_some() {
-            self.table_obstacle(pos.block, tb, at_x, part_top, *y, flow_y, settled);
+            self.table_obstacle(pos.block, tb, wrap_x.unwrap_or(at_x), part_top, *y, flow_y, settled);
             (*y, *empty) = (flow_y, was_empty);
         }
         pos.next_block();
