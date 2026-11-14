@@ -496,11 +496,11 @@ pub fn layout_with(
                         let legacy = in_cell && text.compat == Compat::Legacy;
                         let (bl, br) = super::table::float_box(&tl, t, legacy);
                         // In a cell the right distance has no minimum.
-                        let mut dist = super::flow::table_dist(&fp, false);
+                        let mut dist = float::table_dist(&fp, false);
                         if in_cell {
                             dist[3] = fp.dist[3];
                         }
-                        let f = super::flow::table_float(t.id, br - bl, h, dist, !fp.never_overlap);
+                        let f = float::table_float(t.id, br - bl, h, dist, !fp.never_overlap);
                         let placed = Placed::new((0, bi, float::TABLE_PIECE), ParaId(t.id), &f, bl + shift, top, h);
                         if in_cell {
                             held = held.max(top + h);

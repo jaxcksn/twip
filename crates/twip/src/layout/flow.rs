@@ -3110,7 +3110,7 @@ impl<'d> PageFill<'d, '_> {
                 }
             }
             if let Some(Block::Table(t)) = self.sec.blocks.get(pos.block) {
-                let f = table_float(t.id, br - bl, h, table_dist(&fp, in_flow), !fp.never_overlap);
+                let f = float::table_float(t.id, br - bl, h, float::table_dist(&fp, in_flow), !fp.never_overlap);
                 let mut probe = Placed::new((self.sec.index, pos.block, float::TABLE_PIECE), ParaId(t.id), &f, at_x + bl, top, h);
                 let body_bottom = self.page_h - self.sec.section.section_in(self.ctx.env.text.review.view).bottom;
                 // It moves off the tables and frames placed before it that it may not overlap, or that may not overlap it.
@@ -3825,7 +3825,7 @@ impl<'d> PageFill<'d, '_> {
             }
         }
         let (from, to) = if full_line { (col.x, end) } else { (along, top) };
-        let f = table_float(t.id, to - from, y1 - y0, [above, below, 0.0, 0.0], true);
+        let f = float::table_float(t.id, to - from, y1 - y0, [above, below, 0.0, 0.0], true);
         let mut o = Placed::new((self.sec.index, bi, float::UPRIGHT_TABLE), ParaId(t.id), &f, from, y0, y1 - y0);
         o.early_right = reach.map(|r| along + r);
         self.at.found.push(o);
@@ -3854,7 +3854,7 @@ impl<'d> PageFill<'d, '_> {
         let legacy = self.ctx.env.text.compat == Compat::Legacy;
         let in_flow = legacy && fp.v_anchor == TableAnchor::Text && fp.y == 0.0;
         let (bl, br) = super::table::float_box(tb, t, legacy);
-        let f = table_float(t.id, br - bl, bottom - top, table_dist(&fp, in_flow), !fp.never_overlap);
+        let f = float::table_float(t.id, br - bl, bottom - top, float::table_dist(&fp, in_flow), !fp.never_overlap);
         let mut o = Placed::new((self.sec.index, bi, float::TABLE_PIECE), ParaId(t.id), &f, at_x + bl, top, bottom - top);
         // Compat ≤ 14 keeps the obstacle below where the table stands; compat 15's top distance reaches the text above.
         if legacy {
@@ -3885,49 +3885,4 @@ impl<'d> PageFill<'d, '_> {
         }
         self.at.found.push(o);
     }
-}
-
-/// A floating table's distances from the text: none above or below one placed in the flow.
-pub(super) fn table_dist(fp: &crate::docx::props::TablePos, in_flow: bool) -> [f64; 4] {
-    let [dt, db, dl, dr] = fp.dist;
-    if in_flow { [0.0, 0.0, dl.max(0.5), dr.max(0.5)] } else { [dt, db, dl.max(0.5), dr.max(0.5)] }
-}
-
-/// A table's box as a square, both-sides float `dist` apart from the text.
-pub(super) fn table_float(id: u64, w: f64, h: f64, dist: [f64; 4], allow_overlap: bool) -> Rc<Float> {
-    Rc::new(Float {
-        id,
-        w,
-        auto_w: false,
-        h,
-        image: None,
-        alt: "".into(),
-        lock_aspect: false,
-        text_box: None,
-        h_relative: "column".into(),
-        h_align: None,
-        h_offset: 0.0,
-        v_relative: "paragraph".into(),
-        v_align: None,
-        v_offset: 0.0,
-        wrap: "square".into(),
-        wrap_text: "bothSides".into(),
-        dist,
-        effect: [0.0; 4],
-        poly: None,
-        behind: false,
-        allow_overlap,
-        layout_in_cell: true,
-        order: 0,
-        z: 0,
-        src: None,
-        locked: false,
-        frame_src: None,
-        in_note: false,
-        parts: Vec::new(),
-        shape: None,
-        rot_swap: false,
-        vml: false,
-        relative: Default::default(),
-    })
 }
