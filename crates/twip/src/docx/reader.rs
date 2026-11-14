@@ -839,7 +839,6 @@ struct OpenField {
     id: FieldId,
     in_result: bool,
     first_code_run: Option<Run>,
-    first_result_run: Option<Run>,
     /// The paragraph it began in ([`Reader::para_no`]), and its begin marker's index in that paragraph's inlines.
     para: u64,
     begin: usize,
@@ -1819,7 +1818,6 @@ impl Reader {
                             id,
                             in_result: false,
                             first_code_run: None,
-                            first_result_run: None,
                             para: self.para_no,
                             begin: out.len(),
                             spanning: false,
@@ -1881,9 +1879,6 @@ impl Reader {
                         }
                     }
                     continue;
-                }
-                if matches!(name, "t" | "delText") {
-                    f.first_result_run.get_or_insert(run.clone());
                 }
             }
             // A comment's anchor, shown or not.
@@ -2191,7 +2186,6 @@ impl Reader {
             in_result: true,
             // A simple field's code has no run: the paragraph's style formatting is its code's.
             first_code_run: Some(on_style(&style, &run)),
-            first_result_run: None,
             para: self.para_no,
             begin,
             spanning: false,
@@ -2201,8 +2195,7 @@ impl Reader {
         self.read_inlines(e, base, pkg, out);
         let f = self.fields.pop().expect("the simple field pushed above");
         out.push(Inline::FieldEnd { id, run: run.clone() });
-        let fmt = f.first_result_run.clone();
-        self.close_field(out, OpenField { first_result_run: fmt, ..f }, &run, &style);
+        self.close_field(out, f, &run, &style);
         if self.record {
             let inner = self.segs.split_off(segs);
             self.simple.push((e.range().start, inner));

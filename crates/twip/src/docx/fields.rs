@@ -568,6 +568,7 @@ pub fn evaluate(doc: &mut Document, now: i64) {
                 let code = code_text(&p.inlines, sp).trim().to_string();
                 let error_run = error_run(&p.inlines, sp);
                 let cached_empty = result_text(&p.inlines, sp).is_empty();
+                let nested = p.inlines[sp.begin + 1..sp.code_end()].iter().any(|i| matches!(i, Inline::FieldBegin { .. }));
                 let Inline::FieldBegin { kind: Some(kind), value: slot, run, .. } = &mut p.inlines[sp.begin] else { continue };
                 let code = &code;
                 let w = words(code);
@@ -596,6 +597,8 @@ pub fn evaluate(doc: &mut Document, now: i64) {
                             .find(|(k, _)| k.eq_ignore_ascii_case(name))
                             .map_or_else(|| "Error! Bookmark not defined.".into(), |(_, t)| t.clone()),
                     ),
+                    // One with nested fields is evaluated at layout, on their values there.
+                    FieldKind::If if nested => None,
                     FieldKind::If => if_field(&w),
                     FieldKind::Invalid => Some(String::new()),
                     FieldKind::Date => Some(date(code, now)),

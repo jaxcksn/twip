@@ -1757,9 +1757,10 @@ pub fn shape_space(
                 let value = match (kind, spans.iter().find(|s| s.begin == k)) {
                     // An `IF` on the values its nested fields have here (else its cached result).
                     (FieldKind::If, Some(s)) => crate::docx::fields::code_with(&para.inlines, *s, &|b| {
-                        let Inline::FieldBegin { kind: Some(kind), value, .. } = &para.inlines[b] else { return None };
-                        let code = spans.iter().find(|s| s.begin == b).map(|s| crate::docx::fields::code_text(&para.inlines, *s)).unwrap_or_default();
-                        fields.value(kind, code.trim()).or_else(|| value.clone())
+                        let (Inline::FieldBegin { kind, value, .. }, Some(s)) = (&para.inlines[b], spans.iter().find(|s| s.begin == b)) else { return None };
+                        // A field that isn't computed: its cached result.
+                        let Some(kind) = kind else { return Some(crate::docx::fields::result_text(&para.inlines, *s)) };
+                        fields.value(kind, crate::docx::fields::code_text(&para.inlines, *s).trim()).or_else(|| value.clone())
                     })
                     .and_then(|c| crate::docx::fields::if_field(&crate::docx::fields::words(&c))),
                     _ => fields.value(kind, code.trim()),

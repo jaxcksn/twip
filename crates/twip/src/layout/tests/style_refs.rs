@@ -10,6 +10,8 @@ fn doc() -> Option<crate::docx::Document> {
     let run = |style: &str, t: &str| format!(r#"<w:r><w:rPr><w:rStyle w:val="{style}"/></w:rPr><w:t xml:space="preserve">{t}</w:t></w:r>"#);
     let brk = r#"<w:p><w:r><w:br w:type="page"/></w:r></w:p>"#;
     let body = [
+        // A body IF on a nested field that isn't computed: on its cached result.
+        r#"<w:p><w:r><w:t xml:space="preserve">M:</w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> IF </w:instrText></w:r><w:fldSimple w:instr=" MERGEFIELD a "><w:r><w:instrText>x</w:instrText></w:r></w:fldSimple><w:r><w:instrText xml:space="preserve"> = "x" "yes" "no" </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>cached</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>"#.into(),
         para("Heading1", &run("", "Alpha")),
         para("Heading1", &run("", "Beta")),
         para("Normal", &(run("", "x ") + &run("Key", "kfirst") + &run("", " y ") + &run("Key", "klast"))),
@@ -81,6 +83,7 @@ fn a_header_styleref_finds_its_style_by_name_on_its_page() {
     has(2, "A:GammaL:GammaD:Gamma");
     // The nested field per page, then the IF.
     has(0, "I:no");
+    has(0, "M:yes");
     has(1, "I:yes");
     has(2, "I:no");
 }
