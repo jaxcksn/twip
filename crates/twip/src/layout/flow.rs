@@ -15,13 +15,13 @@ use super::ids::ParaId;
 use super::job::{Memos, Yield};
 use super::join::{Joined, LaidPara, laid_para, piece_para};
 use super::line::{
-    Frame, Line, LineOrigin, ParaLines, apply_borders, band, border_key, break_lines, breaks_only, draw_label, draw_line, neighbour_borders,
+    Frame, Line, LineOrigin, ParaLines, apply_borders, band, border_key, break_lines, breaks_only, draw_label, draw_line, para_space,
     top_border_extra,
 };
 use super::node::{Notes, SectionNode};
 use super::paragraph::{gap, lines_to_take, space_after, space_before};
 use super::record::PageEffects;
-use super::space::{BorderKey, ColumnSpace, ParaSpace, ShapeSpace};
+use super::space::{ColumnSpace, ParaSpace, ShapeSpace};
 use super::story::{NestedRow, StoryEnv, StoryLayout, StoryUnit};
 use super::table::{CellPart, DrawnRow, TableLayout, draw_row, draw_whole_row, whole};
 use super::text::{FieldValues, FontMetrics, Kind, Object, ShapedPara, para_id, shape};
@@ -154,25 +154,6 @@ pub struct PageFill<'d, 'p> {
     pub notes_closed: bool,
     /// The column being filled.
     pub column: usize,
-}
-
-pub fn para_space(
-    style: &ParaStyle,
-    prev: Option<&ParaStyle>,
-    next: Option<&ParaStyle>,
-    width: f64,
-    from: usize,
-    x0: f64,
-    ctx: &LayoutCtx,
-) -> ParaSpace {
-    let borders: (BorderKey, BorderKey) = match border_key(style) {
-        None => (None, None),
-        Some(_) => {
-            let (p, n) = neighbour_borders(style, prev, next);
-            (if from > 0 { super::line::continued_key(style) } else { p }, n)
-        }
-    };
-    ParaSpace { width, start: from, borders, x0, env: ctx.env.text.clone(), fit: false, letter_break: false }
 }
 
 pub fn note_cut(units: &[StoryUnit], room: f64) -> usize {

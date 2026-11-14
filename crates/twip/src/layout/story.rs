@@ -1429,7 +1429,7 @@ fn longest_line(tb: &crate::docx::TextBox, width: f64, env: &StoryEnv, memos: &m
         let p = laid.para();
         let space = laid.shape_space(env.fields, env.notes, &env.ctx, memos)?;
         let shaped = shape(p, &space, env.ctx.fonts, memos)?;
-        let ps = super::flow::para_space(p.para_style_in(view), None, None, width, 0, 0.0, &env.ctx);
+        let ps = super::line::para_space(p.para_style_in(view), None, None, width, 0, 0.0, &env.ctx);
         let pb = break_lines(&shaped, p, &ps, env.ctx.fonts, memos)?;
         let pieces = pb.pieces();
         lines += pb.lines.len();

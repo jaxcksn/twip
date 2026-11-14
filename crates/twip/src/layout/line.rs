@@ -9,6 +9,7 @@ use crate::docx::props::{Jc, Leader, LineRule, TabKind};
 use crate::docx::review::{AuthorPalette, MarkKind, MarkupView, ReviewView};
 use crate::font::Fonts;
 
+use super::LayoutCtx;
 use super::cache::{CacheKey, cached};
 use super::fragment::{Atom, GlyphRun, ImageKey, Item, LineFragment};
 use super::ids::{ParaId, Unit};
@@ -356,6 +357,25 @@ pub fn break_lines_uncached(
         colour_map: space.env.colour_map,
         backdrop: space.env.backdrop,
     })
+}
+
+pub fn para_space(
+    style: &ParaStyle,
+    prev: Option<&ParaStyle>,
+    next: Option<&ParaStyle>,
+    width: f64,
+    from: usize,
+    x0: f64,
+    ctx: &LayoutCtx,
+) -> ParaSpace {
+    let borders: (BorderKey, BorderKey) = match border_key(style) {
+        None => (None, None),
+        Some(_) => {
+            let (p, n) = neighbour_borders(style, prev, next);
+            (if from > 0 { super::line::continued_key(style) } else { p }, n)
+        }
+    };
+    ParaSpace { width, start: from, borders, x0, env: ctx.env.text.clone(), fit: false, letter_break: false }
 }
 
 // Paragraph borders
