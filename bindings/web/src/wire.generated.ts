@@ -3,7 +3,7 @@ import type { ControlKind, ReferenceRule } from './services/elements.js';
 import type { RulerUnit, TabSelector } from './services/ruler.js';
 import type { ChromeTheme, CursorOverride, DocumentAppearance, FieldShading, MeasureDetail, ObjectGrid, ThemeColors } from './services/view.js';
 import type { Mixed, RowHeight, Tri } from './state.js';
-import type { Color, CommentId, Degrees, ElementId, Points, RevisionId, ShapeState, StyleId } from './types.js';
+import type { Color, CommentId, ContentPoint, Degrees, ElementId, Points, RevisionId, ShapeState, StyleId } from './types.js';
 
 /** A font table's general class of a family. */
 export type FontClass =
@@ -813,3 +813,127 @@ export type HighlightColor =
   | 'gray25'
   /** Black. */
   | 'black';
+
+/** One revision, for a reviewing pane. */
+export interface RevisionInfo {
+  /** The revision. */
+  id: RevisionId;
+  /** What changed. */
+  kind: 'insertion' | 'deletion' | 'moveFrom' | 'moveTo' | 'formatting' | 'paragraphProperties' | 'sectionProperties' | 'tableProperties' | 'rowInsertion' | 'rowDeletion' | 'cellInsertion' | 'cellDeletion' | 'cellMerge';
+  /** Who made it. */
+  author: Person;
+  /** `null` when the document gives no readable date. */
+  time: string | null;
+  /** The inserted, deleted or moved text, when there is some. */
+  text: string;
+  /** What changed, for formatting changes (`Formatted: Bold, Italic`). */
+  description: string;
+  /** The page it starts on. */
+  page: number;
+  /** The story it is in. */
+  story: 'body' | 'header' | 'footer' | 'footnote' | 'endnote' | 'textBox' | 'subTemplate';
+  /** A move's other half. */
+  pair?: RevisionId;
+}
+
+/** A comment thread: the first comment and its replies. */
+export interface CommentThread {
+  /** The first comment's id. */
+  id: CommentId;
+  /** Whether the thread is resolved. */
+  done: boolean;
+  /** The commented text. */
+  anchorText: string;
+  /** The page it starts on. */
+  page: number;
+  /** The first comment, then its replies. */
+  comments: Comment[];
+}
+
+/** One comment. */
+export interface Comment {
+  /** The comment. */
+  id: CommentId;
+  /** Who wrote it. */
+  author: Person;
+  /** When, or `null` when the document gives no readable date. */
+  time: string | null;
+  /** The body. */
+  body: RichText;
+  /** The body as plain text. */
+  plainText: string;
+}
+
+/** Someone who made revisions or comments, with the colour they show in. */
+export interface Person {
+  /** The display name. */
+  name: string;
+  /** The initials. */
+  initials?: string;
+  /** The identity in a directory. */
+  identity?: {
+    provider: string;
+    userId: string;
+  };
+  /** The colour the editor marks their changes with. */
+  color: Color;
+}
+
+/** Formatted text: paragraphs of runs (comment bodies, field results). */
+export interface RichText {
+  /** The paragraphs. */
+  paragraphs: {
+    /** The runs. */
+    runs: RichRun[];
+  }[];
+}
+
+/** A run of `RichText`: text with its formatting. */
+export interface RichRun {
+  /** The text. */
+  text: string;
+  /** Bold. */
+  bold?: boolean;
+  /** Italic. */
+  italic?: boolean;
+  /** Underlined. */
+  underline?: boolean;
+  /** Struck through. */
+  strikethrough?: boolean;
+  /** A link's address. */
+  link?: string;
+}
+
+/** Where a visible comment's range is, for placing its card (content coordinates, CSS px). */
+export interface CommentAnchor {
+  /** The thread. */
+  thread: CommentId;
+  /** The page. */
+  page: number;
+  /** Whether it is the active thread. */
+  active: boolean;
+  /** Whether the thread is resolved. */
+  done: boolean;
+  /** The range's first character, at its baseline. */
+  start: ContentPoint;
+  /** The range's last character, at its baseline. */
+  end: ContentPoint;
+  /** The first line's top, for a card level with it. */
+  lineTop: number;
+  /** The first line's bottom. */
+  lineBottom: number;
+  /** The x where a leader line leaves the page. */
+  pageEdge: number;
+}
+
+/** Where the SDK placed an attached card, and its leader line (a polyline). */
+export interface BalloonPlacement {
+  /** The thread. */
+  thread: CommentId;
+  /** The card's top. */
+  top: number;
+  /** The card's left. */
+  left: number;
+  /** The leader line, a polyline from the range to the card. */
+  leader: ContentPoint[];
+}

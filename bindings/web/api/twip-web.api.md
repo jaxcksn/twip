@@ -2371,7 +2371,7 @@ export interface RevisionInfo {
     kind: 'insertion' | 'deletion' | 'moveFrom' | 'moveTo' | 'formatting' | 'paragraphProperties' | 'sectionProperties' | 'tableProperties' | 'rowInsertion' | 'rowDeletion' | 'cellInsertion' | 'cellDeletion' | 'cellMerge';
     page: number;
     pair?: RevisionId;
-    story: SelectionSummary['story'];
+    story: 'body' | 'header' | 'footer' | 'footnote' | 'endnote' | 'textBox' | 'subTemplate';
     text: string;
     time: string | null;
 }

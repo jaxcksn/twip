@@ -52,6 +52,15 @@ const ADOPT = [
   'LineSpacing',
   'UnderlineStyle',
   'HighlightColor',
+  // review.ts
+  'RevisionInfo',
+  'CommentThread',
+  'Comment',
+  'Person',
+  'RichText',
+  'RichRun',
+  'CommentAnchor',
+  'BalloonPlacement',
 ];
 
 /** Schema types written out at each use rather than named. */
@@ -68,6 +77,7 @@ const INLINE = [
   'HeaderFooterType',
   'HeightRule',
   'HorizontalAlignment',
+  'Identity',
   'IndentState',
   'LinkInfo',
   'ListState',
@@ -75,6 +85,8 @@ const INLINE = [
   'Orientation',
   'PageMargins',
   'PageSize',
+  'RevisionKind',
+  'RichParagraph',
   'RulerVisibility',
   'SelectionKind',
   'SelectionMode',

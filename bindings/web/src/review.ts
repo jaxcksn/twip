@@ -2,6 +2,18 @@ import type { Session } from './editor.js';
 import type { SelectionSummary } from './state.js';
 import { Method } from './transport/protocol.js';
 import type { Color, CommentId, ContentPoint, RevisionId } from './types.js';
+import type { CommentAnchor, CommentThread, Person, RevisionInfo } from './wire.generated.js';
+
+export type {
+  BalloonPlacement,
+  Comment,
+  CommentAnchor,
+  CommentThread,
+  Person,
+  RevisionInfo,
+  RichRun,
+  RichText,
+} from './wire.generated.js';
 
 /** Reading tracked changes and comments. Changing them is done with the review commands. */
 export interface Review {
@@ -28,137 +40,6 @@ export interface MountedReview extends Review {
   attachBalloon(thread: CommentId, card: HTMLElement): () => void;
   /** The current anchors, also delivered by the `commentAnchors` event. */
   anchors(): CommentAnchor[];
-}
-
-/** A tracked revision. */
-export interface RevisionInfo {
-  /** The revision. */
-  id: RevisionId;
-  /** What changed. */
-  kind:
-    | 'insertion'
-    | 'deletion'
-    | 'moveFrom'
-    | 'moveTo'
-    | 'formatting'
-    | 'paragraphProperties'
-    | 'sectionProperties'
-    | 'tableProperties'
-    | 'rowInsertion'
-    | 'rowDeletion'
-    | 'cellInsertion'
-    | 'cellDeletion'
-    | 'cellMerge';
-  /** Who made it. */
-  author: Person;
-  /** When, ISO 8601 UTC, if the document says. */
-  time: string | null;
-  /** The inserted, deleted or moved text, when there is some. */
-  text: string;
-  /** For example `'Formatted: Bold, Italic'` for formatting changes. */
-  description: string;
-  /** The page it starts on. */
-  page: number;
-  /** The story it is in. */
-  story: SelectionSummary['story'];
-  /** A move's other half. */
-  pair?: RevisionId;
-}
-
-/** A comment and its replies. */
-export interface CommentThread {
-  /** The first comment's id. */
-  id: CommentId;
-  /** Resolved. */
-  done: boolean;
-  /** The commented text. */
-  anchorText: string;
-  /** The page it starts on. */
-  page: number;
-  /** The first comment, then its replies. */
-  comments: Comment[];
-}
-
-/** One comment. */
-export interface Comment {
-  /** The comment. */
-  id: CommentId;
-  /** Who wrote it. */
-  author: Person;
-  /** When, ISO 8601 UTC, if the document says. */
-  time: string | null;
-  /** The body. */
-  body: RichText;
-  /** The body as plain text. */
-  plainText: string;
-}
-
-/** Someone who made a revision or a comment. */
-export interface Person {
-  /** The display name. */
-  name: string;
-  /** The initials. */
-  initials?: string;
-  /** The identity in a directory. */
-  identity?: { provider: string; userId: string };
-  /** The colour the editor marks their changes with. */
-  color: Color;
-}
-
-/** Formatted text: paragraphs of runs. */
-export interface RichText {
-  /** The paragraphs. */
-  paragraphs: { runs: RichRun[] }[];
-}
-
-/** A run of {@link RichText}. */
-export interface RichRun {
-  /** The text. */
-  text: string;
-  /** Bold. */
-  bold?: boolean;
-  /** Italic. */
-  italic?: boolean;
-  /** Underlined. */
-  underline?: boolean;
-  /** Struck through. */
-  strikethrough?: boolean;
-  /** A link address. */
-  link?: string;
-}
-
-/** Where a visible comment's range is, for placing its card. */
-export interface CommentAnchor {
-  /** The thread. */
-  thread: CommentId;
-  /** The page. */
-  page: number;
-  /** The active thread. */
-  active: boolean;
-  /** Resolved. */
-  done: boolean;
-  /** The range's first character, at its baseline. */
-  start: ContentPoint;
-  /** The range's last character, at its baseline. */
-  end: ContentPoint;
-  /** The first line's top, for a card level with it. */
-  lineTop: number;
-  /** The first line's bottom. */
-  lineBottom: number;
-  /** The x where a leader line leaves the page. */
-  pageEdge: number;
-}
-
-/** Where the SDK placed an attached balloon. */
-export interface BalloonPlacement {
-  /** The thread. */
-  thread: CommentId;
-  /** The card's top. */
-  top: number;
-  /** The card's left. */
-  left: number;
-  /** The leader line, a polyline. */
-  leader: ContentPoint[];
 }
 
 /**
