@@ -2123,29 +2123,37 @@ impl<'d> PageFill<'d, '_> {
             let low = floats.iter().filter(|f| f.wrap != Wrap::None).map(|f| f.excl[3]).fold(yy, f64::max);
             yy = low.min(col.bottom.to_pt());
         }
-        // Compat ≤ 14, a keepLines paragraph and its own float: whether its lines from `from`, laid out from `top` in
-        // steps of the first line's height beside the floats, all start above `bottom`.
+        // Compat ≤ 14, a keepLines paragraph and its own float: the tops of its lines from `from`, laid out from `top`
+        // beside the floats while they start above `stop`, and the top of the first one at or below it when lines
+        // remain. None when a line finds no piece.
         let (mark, plain) = (p.mark_in(self.ctx.env.text.review.view), frame);
-        let all_beside = |top: f64, from: usize, bottom: f64| {
-            let (mut t, mut k) = (top, from);
+        let tops = |top: f64, from: usize, stop: f64| -> Option<(Vec<f64>, Option<f64>)> {
+            let (mut t, mut k, mut v) = (top, from, Vec::new());
             while k < n {
-                let Some(iv) = float::intervals(&floats, cx0, cx1, t, t + est, true).filter(|_| t < bottom - EPS) else { return false };
+                if t >= stop - EPS {
+                    return Some((v, Some(t)));
+                }
+                let iv = float::intervals(&floats, cx0, cx1, t, t + est, true)?;
                 let ivc: Vec<(f64, f64)> = iv.iter().map(|(a, b)| (a - cx0, b - cx0)).collect();
                 match band(sp, pieces, k, &ivc, k == 0 && (first_part || restarts), style, mark, &plain, self.ctx.fonts, iv.len() == 1) {
-                    Ok((_, e)) if e > k => k = e,
-                    _ => return false,
+                    Ok((segs, e)) if e > k => {
+                        v.push(t);
+                        k = e;
+                        t += segs[0].pitch;
+                    }
+                    _ => return None,
                 }
-                t += est;
             }
-            true
+            Some((v, None))
         };
+        let all_beside = |top: f64, from: usize, bottom: f64| matches!(tops(top, from, bottom), Some((_, None)));
         let own_float =
             |f: &&Placed| (f.key.0, f.key.1) == (self.sec.index, pos.block) && f.wrap != Wrap::None && f.excl[0] < cx1 - EPS && f.excl[2] > cx0 + EPS;
-        // Below a column's top it is tried as a block one line lower at a time, from where it was first laid out: below
-        // the float it stays; with the float starting below its first line it goes on down; with the float's top in its
-        // first line it goes to the float's bottom unless the float reaches more than its first place's distance to
-        // that top below the line; with the float over its first line it stays when every line beside the float starts
-        // above its bottom.
+        // Below a column's top it is tried as a block from where it was first laid out: below the float it stays; with
+        // the float starting below its first line it goes on down to the top of the line whose band holds the float's
+        // top; with the float's top in its first line it goes to the float's bottom unless the float reaches more than
+        // its first place's distance to that top below the line; with the float over its first line it stays when
+        // every line beside the float starts above its bottom, else it goes on down to the first one that doesn't.
         if compat == Compat::Legacy && style.keep_lines && first_part && !at_top {
             let own = floats.iter().filter(|f| f.frozen && f.excl[3] > yy + EPS).filter(own_float).min_by(|a, b| a.excl[1].total_cmp(&b.excl[1]));
             if let Some(f) = own {
@@ -2155,13 +2163,17 @@ impl<'d> PageFill<'d, '_> {
                     if y >= fb - EPS || y >= col.bottom.to_pt() {
                         break y;
                     }
-                    if ft >= y + est - EPS {
+                    let next = if ft >= y + est - EPS {
+                        tops(y, 0, ft + 2.0 * EPS).and_then(|(v, more)| more.and(v.last().copied()))
                     } else if ft >= y - EPS && fb - y <= ft - p0 + EPS {
                         break fb;
-                    } else if all_beside(y, 0, fb) {
-                        break y;
-                    }
-                    y += est;
+                    } else {
+                        match tops(y, 0, fb) {
+                            Some((_, None)) => break y,
+                            low => low.and_then(|(_, t)| t),
+                        }
+                    };
+                    y = next.filter(|&t| t > y + EPS).unwrap_or(y + est);
                 };
             }
         }

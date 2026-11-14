@@ -3619,6 +3619,31 @@ fn compat_14_a_keep_lines_paragraph_steps_down_past_its_own_float_or_stays_besid
 }
 
 #[test]
+fn compat_14_a_keep_lines_paragraph_with_a_taller_first_line_steps_to_the_line_that_failed() {
+    let filler: String = (0..10).map(|k| format!("<w:p><w:r><w:t>A{k:02} filler line text</w:t></w:r></w:p>")).collect();
+    let words = |c: char, from: usize, n: usize| (from..from + n).map(|k| format!("{c}{k:02} ")).collect::<String>();
+    let para = |ppr: &str| {
+        format!(
+            r#"{filler}<w:p><w:pPr>{ppr}</w:pPr><w:r><w:rPr><w:sz w:val="40"/></w:rPr><w:t xml:space="preserve">B00 </w:t></w:r><w:r><w:t xml:space="preserve">{}</w:t></w:r>{}<w:r><w:t>{}</w:t></w:r></w:p>"#,
+            words('B', 1, 20),
+            anchor(368, 0, 100, 100, 1, "line"),
+            words('b', 0, 100)
+        )
+    };
+    let at = |body: &str| {
+        baselines("", ARIAL_12, body)
+            .map(|l| l.into_iter().filter(|l| l.1.starts_with('B') || l.1.starts_with('b')).map(|l| l.3).collect::<Vec<f64>>())
+    };
+    let Some(plain) = at(&para("")) else { return };
+    let kept = at(&para("<w:keepLines/>")).unwrap();
+    // The float's top lies in the second line: the paragraph goes to that line's top, its 22.99pt first line down;
+    // beside the float there the lines start 22.99 and then 13.8pt apart, and it goes to the first one at or below the
+    // float's bottom: 2 × 22.99 + 6 × 13.8 down, not a multiple of the first line's height.
+    let moved = kept[0] - plain[0];
+    assert!((moved - (2.0 * 22.99 + 6.0 * 13.8)).abs() < 0.05, "{moved} {plain:?} {kept:?}");
+}
+
+#[test]
 fn a_float_wraps_the_next_continuous_section_on_its_page() {
     // Section 1 ends with a 150pt float at the column's left; section 2 starts beside it.
     let body = format!(
