@@ -589,127 +589,12 @@ impl<'d> PageFill<'d, '_> {
         if !lead_only {
             carry.frames_left.clear();
         }
-        for mut a in anchors {
+        for a in anchors {
             if lead_only && !stays(&a) {
                 continue;
             }
             if lead_only || a.key.2 - pb.from < placed_end.max(1) {
-                // A frame placed in the flow: compat ≤ 14 lays it out below an earlier frame whose box with its
-                // distances it meets, from the nearest twip; compat 15 moves one that may not overlap only down.
-                let frame = |o: &Placed| o.float.text_box.is_some() && o.float.shape.is_none();
-                let in_flow = frame(&a) && a.float.v_relative == "paragraph" && a.float.v_offset == 0.0;
-                let mut under = Vec::new();
-                // Compat ≤ 14 places a frame that may not overlap, or any frame once the page holds one, at the nearest
-                // twip, its height kept.
-                let apart = !a.allow_overlap || self.at.found.iter().any(|o| frame(o) && !o.allow_overlap);
-                let flow_y = a.rect[1];
-                if frame(&a) && apart && compat == Compat::Legacy && !kept_at.contains(&a.key) {
-                    a.moved_to(a.rect[0], (a.rect[1] * 20.0).round() / 20.0);
-                    // In the flow and so placed above its flow position, it meets the line above it. Met there in two
-                    // fills running, it keeps that place while the page is filled again.
-                    a.rounded_up = in_flow && a.rect[1] < flow_y - EPS && flow_y > col.top.to_pt() + EPS;
-                    a.frozen |= a.rounded_up && self.at.known.iter().any(|k| k.rounded_up && k.same(&a));
-                }
-                // The frames anchored after such a frame in its paragraph keep their places with it.
-                // ponytail: Word keeps the later floats of the page too when no drawing met earlier text; not modelled.
-                if compat == Compat::Legacy
-                    && frame(&a)
-                    && !kept_at.contains(&a.key)
-                    && self.at.found.iter().any(|o| o.rounded_up && o.frozen && (o.key.0, o.key.1) == (a.key.0, a.key.1) && o.key.2 < a.key.2)
-                {
-                    (a.rounded_up, a.frozen) = (true, true);
-                }
-                // Compat ≤ 14: after the page started again for a later frame in the flow that met the line above it,
-                // and once more for a drawing after that frame that met earlier text, a frame in the flow is placed
-                // against the frames after it that may not overlap, where the fill before put them: one it overlaps it
-                // goes below, a twip above its bottom in whole twips.
-                let later = |k: &Placed, a: &Placed| k.key.0 == a.key.0 && (k.key.1, k.key.2) > (a.key.1, a.key.2);
-                let by_frame = compat == Compat::Legacy && frame(&a) && self.at.known.iter().any(|k| k.rounded_up && later(k, &a));
-                let again = by_frame
-                    && self.at.known.iter().any(|k| {
-                        k.rounded_up
-                            && later(k, &a)
-                            && self
-                                .at
-                                .known
-                                .iter()
-                                .any(|d| d.frozen && !frame(d) && d.key.2 < float::UPRIGHT_TABLE && d.wrap != Wrap::None && later(d, k))
-                    });
-                // ponytail: one that the nearest twip would put above its flow position meets the line above it
-                // instead and stays (the line isn't wrapped round it), as measured only on its own page.
-                let lifted = (a.rect[1] * 20.0).round() / 20.0 < a.rect[1] - EPS && a.rect[1] > col.top.to_pt() + EPS;
-                if in_flow && again && !apart && !lifted && !kept_at.contains(&a.key) {
-                    let key = a.key;
-                    let later =
-                        self.at.known.iter().filter(|o| frame(o) && !o.allow_overlap && o.key.0 == key.0 && (o.key.1, o.key.2) > (key.1, key.2));
-                    for o in later {
-                        if o.excl[0] < a.rect[2] - EPS && a.rect[0] < o.excl[2] - EPS && o.rect[1] < a.rect[3] - EPS && a.rect[1] < o.rect[3] - EPS {
-                            a.moved_to(a.rect[0], ((o.rect[1] * 20.0 + ((o.rect[3] - o.rect[1]) * 20.0).round() - 1.0) / 20.0).max(a.rect[1]));
-                        }
-                    }
-                }
-                if in_flow && compat == Compat::Legacy {
-                    for o in self.at.found.iter().filter(|o| frame(o)) {
-                        if o.excl[0] < a.rect[2] - EPS && a.rect[0] < o.excl[2] - EPS && o.rect[1] < a.rect[3] - EPS && a.rect[1] < o.rect[3] - EPS {
-                            // Over a frame placed from the page or margin it stays, unless one of the two may not
-                            // overlap: then it goes a twip above that frame's bottom, in whole twips. So does one that
-                            // may not overlap a frame with its own offset from the text; below a frame in the flow it
-                            // goes to its bottom at the nearest twip.
-                            let fixed = matches!(o.float.v_relative.as_str(), "page" | "margin");
-                            let offset = fixed || o.float.v_offset != 0.0 && !(a.allow_overlap && o.allow_overlap);
-                            let y = match offset {
-                                false => (o.rect[3] * 20.0).round() / 20.0,
-                                true if a.allow_overlap && o.allow_overlap => continue,
-                                true => ((o.rect[1] * 20.0 + ((o.rect[3] - o.rect[1]) * 20.0).round() - 1.0).round() / 20.0).max(a.rect[1]),
-                            };
-                            a.moved_to(a.rect[0], y);
-                            under.push(o.key);
-                        }
-                    }
-                }
-                // Its area: a frame's anchor boxes; a drawing's the page across, down the page when placed from it and
-                // the column otherwise.
-                let across = match a.float.h_relative.as_str() {
-                    _ if in_flow && compat == Compat::Generic => (f64::INFINITY, f64::NEG_INFINITY),
-                    "margin" if frame(&a) => (frames.margin[0], frames.page_w - frames.margin[1]),
-                    "column" if frame(&a) => (col.x, col.x + col.width),
-                    _ => (0.0, frames.page_w),
-                };
-                let others: Vec<Placed> = self.at.found.iter().filter(|o| !under.contains(&o.key)).cloned().collect();
-                // Compat ≤ 14: once a float (not a frame) later on the page met the text laid out before it, the page
-                // filled again keeps a frame where it was placed, unmoved.
-                // So does a later frame in the flow that met the line above it.
-                let restarted = by_frame
-                    || compat == Compat::Legacy
-                        && frame(&a)
-                        && self.at.known.iter().any(|k| {
-                            k.restarts && !frame(k) && k.wrap != Wrap::None && k.key.0 == a.key.0 && (k.key.1, k.key.2) > (a.key.1, a.key.2)
-                        });
-                let down = match a.float.v_relative.as_str() {
-                    "page" => (0.0, frames.page_h),
-                    "margin" if frame(&a) => (frames.margin[2], frames.page_h - frames.margin[3]),
-                    _ => (col.top.to_pt(), col.bottom.to_pt()),
-                };
-                if !restarted && !kept_at.contains(&a.key) && !float::avoid(&mut a, &others, across, down, compat) {
-                    let b = band_of(&bands, a.key.2 - pb.from).unwrap_or(0);
-                    if compat == Compat::Generic && !(page_first && b == 0) {
-                        push = Some(push.map_or(b, |x: usize| x.min(b)));
-                        continue;
-                    }
-                    // Starting the page, it stays where it was asked for and the line goes below the page's floats.
-                    a.unplaced = compat == Compat::Generic;
-                    page_end |= compat == Compat::Generic;
-                    forced = Some(forced.map_or(b, |x: usize| x.min(b)));
-                }
-                // New in this fill, or meeting earlier text where the last fill didn't: the floats after it were
-                // placed beside text that moves.
-                if a.restarts && !self.at.known.iter().any(|k| k.same(&a) && (k.frozen || !a.frozen)) {
-                    self.at.hit = true;
-                }
-                if lead_only {
-                    carry.frames_left.push(a.key);
-                }
-                self.at.found.push(a);
+                self.settle_anchor(&w, a, &kept_at, &bands, &frames, lead_only, &mut push, &mut forced, &mut page_end, carry);
             }
         }
         if lead_only {
@@ -913,6 +798,137 @@ impl<'d> PageFill<'d, '_> {
             }
         }
         Ok(Anchors { anchors, kept_at, forced, push, page_end })
+    }
+
+    // Settle a float against the page's others
+    #[allow(clippy::too_many_arguments, reason = "the float, the paragraph's bands and frames, and the decisions it may change")]
+    fn settle_anchor(
+        &mut self,
+        w: &WrapIn,
+        mut a: Placed,
+        kept_at: &[(usize, usize, usize)],
+        bands: &[(f64, Vec<Line>)],
+        frames: &Frames,
+        lead_only: bool,
+        push: &mut Option<usize>,
+        forced: &mut Option<usize>,
+        page_end: &mut bool,
+        carry: &mut FlowState,
+    ) {
+        let &WrapIn { pb, col, compat, page_first, .. } = w;
+        // A frame placed in the flow: compat ≤ 14 lays it out below an earlier frame whose box with its
+        // distances it meets, from the nearest twip; compat 15 moves one that may not overlap only down.
+        let frame = |o: &Placed| o.float.text_box.is_some() && o.float.shape.is_none();
+        let in_flow = frame(&a) && a.float.v_relative == "paragraph" && a.float.v_offset == 0.0;
+        let mut under = Vec::new();
+        // Compat ≤ 14 places a frame that may not overlap, or any frame once the page holds one, at the nearest
+        // twip, its height kept.
+        let apart = !a.allow_overlap || self.at.found.iter().any(|o| frame(o) && !o.allow_overlap);
+        let flow_y = a.rect[1];
+        if frame(&a) && apart && compat == Compat::Legacy && !kept_at.contains(&a.key) {
+            a.moved_to(a.rect[0], (a.rect[1] * 20.0).round() / 20.0);
+            // In the flow and so placed above its flow position, it meets the line above it. Met there in two
+            // fills running, it keeps that place while the page is filled again.
+            a.rounded_up = in_flow && a.rect[1] < flow_y - EPS && flow_y > col.top.to_pt() + EPS;
+            a.frozen |= a.rounded_up && self.at.known.iter().any(|k| k.rounded_up && k.same(&a));
+        }
+        // The frames anchored after such a frame in its paragraph keep their places with it.
+        // ponytail: Word keeps the later floats of the page too when no drawing met earlier text; not modelled.
+        if compat == Compat::Legacy
+            && frame(&a)
+            && !kept_at.contains(&a.key)
+            && self.at.found.iter().any(|o| o.rounded_up && o.frozen && (o.key.0, o.key.1) == (a.key.0, a.key.1) && o.key.2 < a.key.2)
+        {
+            (a.rounded_up, a.frozen) = (true, true);
+        }
+        // Compat ≤ 14: after the page started again for a later frame in the flow that met the line above it,
+        // and once more for a drawing after that frame that met earlier text, a frame in the flow is placed
+        // against the frames after it that may not overlap, where the fill before put them: one it overlaps it
+        // goes below, a twip above its bottom in whole twips.
+        let later = |k: &Placed, a: &Placed| k.key.0 == a.key.0 && (k.key.1, k.key.2) > (a.key.1, a.key.2);
+        let by_frame = compat == Compat::Legacy && frame(&a) && self.at.known.iter().any(|k| k.rounded_up && later(k, &a));
+        let again = by_frame
+            && self.at.known.iter().any(|k| {
+                k.rounded_up
+                    && later(k, &a)
+                    && self.at.known.iter().any(|d| d.frozen && !frame(d) && d.key.2 < float::UPRIGHT_TABLE && d.wrap != Wrap::None && later(d, k))
+            });
+        // ponytail: one that the nearest twip would put above its flow position meets the line above it
+        // instead and stays (the line isn't wrapped round it), as measured only on its own page.
+        let lifted = (a.rect[1] * 20.0).round() / 20.0 < a.rect[1] - EPS && a.rect[1] > col.top.to_pt() + EPS;
+        if in_flow && again && !apart && !lifted && !kept_at.contains(&a.key) {
+            let key = a.key;
+            let later = self.at.known.iter().filter(|o| frame(o) && !o.allow_overlap && o.key.0 == key.0 && (o.key.1, o.key.2) > (key.1, key.2));
+            for o in later {
+                if o.excl[0] < a.rect[2] - EPS && a.rect[0] < o.excl[2] - EPS && o.rect[1] < a.rect[3] - EPS && a.rect[1] < o.rect[3] - EPS {
+                    a.moved_to(a.rect[0], ((o.rect[1] * 20.0 + ((o.rect[3] - o.rect[1]) * 20.0).round() - 1.0) / 20.0).max(a.rect[1]));
+                }
+            }
+        }
+        if in_flow && compat == Compat::Legacy {
+            for o in self.at.found.iter().filter(|o| frame(o)) {
+                if o.excl[0] < a.rect[2] - EPS && a.rect[0] < o.excl[2] - EPS && o.rect[1] < a.rect[3] - EPS && a.rect[1] < o.rect[3] - EPS {
+                    // Over a frame placed from the page or margin it stays, unless one of the two may not
+                    // overlap: then it goes a twip above that frame's bottom, in whole twips. So does one that
+                    // may not overlap a frame with its own offset from the text; below a frame in the flow it
+                    // goes to its bottom at the nearest twip.
+                    let fixed = matches!(o.float.v_relative.as_str(), "page" | "margin");
+                    let offset = fixed || o.float.v_offset != 0.0 && !(a.allow_overlap && o.allow_overlap);
+                    let y = match offset {
+                        false => (o.rect[3] * 20.0).round() / 20.0,
+                        true if a.allow_overlap && o.allow_overlap => continue,
+                        true => ((o.rect[1] * 20.0 + ((o.rect[3] - o.rect[1]) * 20.0).round() - 1.0).round() / 20.0).max(a.rect[1]),
+                    };
+                    a.moved_to(a.rect[0], y);
+                    under.push(o.key);
+                }
+            }
+        }
+        // Its area: a frame's anchor boxes; a drawing's the page across, down the page when placed from it and
+        // the column otherwise.
+        let across = match a.float.h_relative.as_str() {
+            _ if in_flow && compat == Compat::Generic => (f64::INFINITY, f64::NEG_INFINITY),
+            "margin" if frame(&a) => (frames.margin[0], frames.page_w - frames.margin[1]),
+            "column" if frame(&a) => (col.x, col.x + col.width),
+            _ => (0.0, frames.page_w),
+        };
+        let others: Vec<Placed> = self.at.found.iter().filter(|o| !under.contains(&o.key)).cloned().collect();
+        // Compat ≤ 14: once a float (not a frame) later on the page met the text laid out before it, the page
+        // filled again keeps a frame where it was placed, unmoved.
+        // So does a later frame in the flow that met the line above it.
+        let restarted = by_frame
+            || compat == Compat::Legacy
+                && frame(&a)
+                && self
+                    .at
+                    .known
+                    .iter()
+                    .any(|k| k.restarts && !frame(k) && k.wrap != Wrap::None && k.key.0 == a.key.0 && (k.key.1, k.key.2) > (a.key.1, a.key.2));
+        let down = match a.float.v_relative.as_str() {
+            "page" => (0.0, frames.page_h),
+            "margin" if frame(&a) => (frames.margin[2], frames.page_h - frames.margin[3]),
+            _ => (col.top.to_pt(), col.bottom.to_pt()),
+        };
+        if !restarted && !kept_at.contains(&a.key) && !float::avoid(&mut a, &others, across, down, compat) {
+            let b = band_of(bands, a.key.2 - pb.from).unwrap_or(0);
+            if compat == Compat::Generic && !(page_first && b == 0) {
+                *push = Some(push.map_or(b, |x: usize| x.min(b)));
+                return;
+            }
+            // Starting the page, it stays where it was asked for and the line goes below the page's floats.
+            a.unplaced = compat == Compat::Generic;
+            *page_end |= compat == Compat::Generic;
+            *forced = Some(forced.map_or(b, |x: usize| x.min(b)));
+        }
+        // New in this fill, or meeting earlier text where the last fill didn't: the floats after it were
+        // placed beside text that moves.
+        if a.restarts && !self.at.known.iter().any(|k| k.same(&a) && (k.frozen || !a.frozen)) {
+            self.at.hit = true;
+        }
+        if lead_only {
+            carry.frames_left.push(a.key);
+        }
+        self.at.found.push(a);
     }
 
     // Lines that fit with their notes
