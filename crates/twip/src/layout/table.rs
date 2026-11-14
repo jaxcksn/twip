@@ -18,9 +18,7 @@ use super::line::{break_lines, neighbour_borders};
 use super::space::ParaSpace;
 use super::story::{CellEnds, NestedRow, StoryEnv, StoryKey, StoryLayout, StoryUnit, child_ids};
 use super::text::{Kind, shape};
-use super::units::Lu;
-
-const EPS: f64 = 1e-6;
+use super::units::{EPS, Lu};
 
 // Table cache
 #[derive(Debug)]

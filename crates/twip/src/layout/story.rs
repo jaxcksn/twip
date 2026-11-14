@@ -20,9 +20,7 @@ use super::paragraph::{contextual_in, gap, gap_plain, space_after, space_before}
 use super::space::ParaSpace;
 use super::table::TableLayout;
 use super::text::{FieldValues, Kind, Object, ShapedPara, para_id, shape};
-use super::units::Lu;
-
-const EPS: f64 = 1e-6;
+use super::units::{EPS, Lu};
 
 #[derive(Clone, Debug)]
 pub struct StoryUnit {

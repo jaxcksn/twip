@@ -29,9 +29,7 @@ use super::text::{FieldValues, FontMetrics, Kind, Object, ShapedPara, para_id, s
 /// Default footnote separator line metrics.
 const SEPARATOR_METRICS: FontMetrics = FontMetrics { ascent: 1950.0, descent: 550.0, leading: 0.0, upem: 2048.0 };
 use super::token::{At, FlowState, FlowToken, NotePart};
-use super::units::Lu;
-
-const EPS: f64 = 1e-6;
+use super::units::{EPS, Lu};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Stop {

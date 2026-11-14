@@ -18,9 +18,7 @@ use super::space::{BodyArea, BodyFields, BodySpace, ColumnSpace, HfHeights};
 use super::story::{StoryEnv, hf_limit, stack_limited};
 use super::text::FieldValues;
 use super::token::{FlowState, FlowToken, PageToken};
-use super::units::{LU_PER_PT, Lu};
-
-const EPS: f64 = 1e-6;
+use super::units::{EPS, LU_PER_PT, Lu};
 
 #[derive(Clone, Default, PartialEq, Debug)]
 pub struct PassInfo {

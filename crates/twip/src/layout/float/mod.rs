@@ -6,12 +6,10 @@ use crate::docx::Compat;
 use crate::docx::model::Float;
 
 use super::ids::ParaId;
-use super::units::LU_PER_PT;
+use super::units::{EPS, LU_PER_PT};
 
 mod fit;
 mod position;
-
-const EPS: f64 = 1e-6;
 
 pub const TABLE_PIECE: usize = usize::MAX;
 /// A table in a vertical section: drawn upright, an obstacle on the turned page.

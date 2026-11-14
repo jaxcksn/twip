@@ -15,10 +15,8 @@ use super::ids::{ParaId, Unit};
 use super::job::{Memos, Yield};
 use super::space::{BorderGroup, BorderKey, ParaSpace};
 use super::text::{Kind, Object, Piece, ShapedPara, para_id, symbol_unicode};
-use super::units::{LU_PER_PT, Lu};
+use super::units::{EPS, LU_PER_PT, Lu};
 use crate::docx::props::Border;
-
-const EPS: f64 = 1e-6;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Line {

@@ -24,6 +24,7 @@ use super::space::HfHeights;
 use super::story::{StoryEnv, hf_limit, stack_limited};
 use super::text::FieldValues;
 use super::token::{FlowToken, PageToken};
+use super::units::EPS;
 
 pub fn layout(doc: &Document, fonts: &Fonts) -> Snapshot {
     let mut cache = LayoutCache::new();
@@ -85,8 +86,6 @@ fn hook_height(k: usize) -> f64 {
     let _ = k;
     0.0
 }
-
-const EPS: f64 = 1e-6;
 
 pub(crate) fn same_heights(a: &HfHeights, b: &HfHeights) -> bool {
     a.iter().zip(b).all(|(x, y)| match (x, y) {
