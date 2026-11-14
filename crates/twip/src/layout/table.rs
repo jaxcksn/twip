@@ -2158,7 +2158,12 @@ fn assemble(
                     let lead = if nested && !matches!(t.jc, Jc::Center | Jc::Right) { legacy_lead(t) } else { 0.0 };
                     left - (x0 + before) - lead
                 }
-                Jc::Left if compat == Compat::Legacy && t.floating.is_none() && !rtl && t.jc != Jc::Left => -edge_gap(t, lw, lmar) - x0,
+                // A left row of a centred or right-aligned table: placed as a left-aligned table would be, a nested
+                // one by its indent and lead too.
+                Jc::Left if compat == Compat::Legacy && t.floating.is_none() && !rtl && t.jc != Jc::Left => {
+                    let (ind, lead) = if nested { (placed_ind(t).max(0.0), legacy_lead(t)) } else { (0.0, 0.0) };
+                    ind - edge_gap(t, lw, lmar) + lead - x0
+                }
                 _ => 0.0,
             };
         let mut cells = Vec::new();

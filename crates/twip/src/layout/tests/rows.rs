@@ -232,6 +232,20 @@ fn compat_14_nested_right_row_ends_at_the_cell_edge() {
 }
 
 #[test]
+fn compat_14_a_left_row_of_a_centred_nested_table_sits_as_a_left_table() {
+    let nested = |tbl_jc: &str, tr: &str| {
+        format!(
+            r#"<w:tbl><w:tblPr><w:tblInd w:w="0" w:type="dxa"/><w:tblLayout w:type="fixed"/>{MAR}</w:tblPr><w:tblGrid><w:gridCol w:w="6000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="6000" w:type="dxa"/></w:tcPr><w:tbl><w:tblPr>{tbl_jc}<w:tblInd w:w="300" w:type="dxa"/><w:tblLayout w:type="fixed"/>{MAR}</w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:trPr>{tr}</w:trPr>{}</w:tr></w:tbl><w:p/></w:tc></w:tr></w:tbl><w:p/>"#,
+            dxa_cell(3000, "n")
+        )
+    };
+    let left = glyph_x_in(&nested("", ""), 12, &[], 'n');
+    let row = glyph_x_in(&nested(r#"<w:jc w:val="center"/>"#, r#"<w:jc w:val="left"/>"#), 12, &[], 'n');
+    // The outer cell's content starts at the margin; the nested table's border 300 in, its text 100 more.
+    assert!((left - 92.0).abs() < 0.01 && (row - left).abs() < 0.01, "left table {left}, left row {row}");
+}
+
+#[test]
 fn a_centred_merged_region_cut_by_the_page_end_centres_in_its_page_part() {
     let blank = crate::docx::read(&crate::docx::blank::blank_docx()).expect("reads");
     let sec = &blank.sections[0];
