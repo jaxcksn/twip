@@ -1595,6 +1595,8 @@ impl<'d> PageFill<'d, '_> {
             Compat::Legacy => bottom + self.after_kept(pos.block, p.para_style_in(self.ctx.env.text.review.view)),
         };
         let affected = self.fixed.iter().chain(self.known_at(pos.block)).any(|f| {
+            let early = f.early_box.filter(|_| f.key.0 == self.sec.index && f.key.1 > pos.block);
+            let f = &Placed { excl: early.map_or(f.excl, |b| b.1), ..f.clone() };
             let reach = if f.key.2 == float::TABLE_PIECE || self.ctx.env.text.compat == Compat::Legacy { text_bottom } else { bottom };
             f.wrap != Wrap::None && f.excl[3] > *y + EPS && f.excl[1] < reach - EPS && f.excl[0] < col.x + col.width - EPS && f.excl[2] > col.x + EPS
         });
@@ -2004,6 +2006,9 @@ impl<'d> PageFill<'d, '_> {
         for f in floats.iter_mut().filter(|f| f.key.0 == self.sec.index && f.key.1 > pos.block) {
             if let Some(r) = f.early_right {
                 (f.rect[2], f.excl[2]) = (r, r);
+            }
+            if let Some((r, e)) = f.early_box {
+                (f.rect, f.excl) = (r, e);
             }
         }
         let letter_break = !first_part && carry.letter_break;
@@ -3021,7 +3026,17 @@ impl<'d> PageFill<'d, '_> {
                 float::avoid(&mut probe, &others, across, down, self.ctx.env.text.compat);
                 (at_x, top) = (probe.rect[0] - bl, probe.rect[1]);
             }
-            *y = self.at.known.iter().find(|k| k.key == (self.sec.index, pos.block, float::TABLE_PIECE)).map_or(top, |k| k.rect[1]);
+            // A table in the flow is placed again from the flow on every fill. Another keeps the place of the last
+            // fill, in compat 15 only when it met the text laid out before it there.
+            let flowing = fp.v_anchor == TableAnchor::Text && fp.y == 0.0;
+            // A kept place stays for the rest of the page, however the floats before it moved.
+            *y = match self.at.known.iter().find(|k| k.key == (self.sec.index, pos.block, float::TABLE_PIECE)) {
+                Some(k) if !flowing && (legacy || k.restarts) => {
+                    settled = true;
+                    k.rect[1]
+                }
+                _ => top,
+            };
             if unsplit && !*empty && !col.bottom.holds(*y + h) {
                 return Ok(Stop::Full);
             }
@@ -3663,6 +3678,19 @@ impl<'d> PageFill<'d, '_> {
             o.excl[0] -= t.ind;
         }
         o.settled = settled;
+        let known = self.at.known.iter().find(|k| k.key == o.key);
+        // It met the text before it when it stands above where the flow reached; a kept one keeps that.
+        // ponytail: above the flow, not tested against that text's lines.
+        o.restarts = known.map_or(top < flow_y - EPS, |k| k.restarts);
+        if fp.v_anchor == TableAnchor::Text && fp.y == 0.0 {
+            // Compat ≤ 14: the text before a table in the flow wraps the box it first had on the page; compat 15:
+            // only the strip its top distance reaches above it.
+            o.early_box = match known {
+                Some(k) if legacy => k.early_box.or(Some((k.rect, k.excl))),
+                _ if legacy => None,
+                _ => Some((o.rect, [o.excl[0], o.excl[1], o.excl[2], o.excl[1].max(o.rect[1])])),
+            };
+        }
         self.at.found.push(o);
     }
 }

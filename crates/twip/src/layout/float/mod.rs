@@ -56,6 +56,9 @@ pub struct Placed {
     pub dist: [f64; 4],
     /// Where its right side is for the lines before it in the flow, when that differs.
     pub early_right: Option<f64>,
+    /// A table in the flow: the box (rect, exclusion) the text before it wraps, when that isn't its own.
+    /// Compat ≤ 14 the box it first had on the page; compat 15 the strip its top distance reaches above it.
+    pub early_box: Option<([f64; 4], [f64; 4])>,
     /// Compat ≤ 14: a frame in the flow placed from the nearest twip above its flow position, so that it meets the
     /// line above it and the page starts again, or a frame anchored after such a one in its paragraph. Kept, it
     /// doesn't move the text before it.
@@ -136,6 +139,7 @@ impl Placed {
             contour,
             dist: f.dist,
             early_right: None,
+            early_box: None,
             rounded_up: false,
         }
     }
@@ -349,6 +353,7 @@ mod tests {
             contour: None,
             dist: [0.0; 4],
             early_right: None,
+            early_box: None,
             rounded_up: false,
         }
     }

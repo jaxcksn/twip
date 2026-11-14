@@ -287,6 +287,27 @@ fn compat_14_a_floating_table_at_vertical_position_0_stands_in_the_flow() {
 }
 
 #[test]
+fn a_table_in_the_flow_is_placed_again_below_text_a_later_table_pushed() {
+    let tbl = |pos: &str, cells: &[&str]| {
+        let rows: String = cells.iter().map(|t| format!("<w:tr>{}</w:tr>", dxa_cell(9360, t))).collect();
+        format!(r#"<w:tbl><w:tblPr><w:tblpPr w:vertAnchor="text"{pos}/><w:tblW w:w="9360" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="9360"/></w:tblGrid>{rows}</w:tbl>"#)
+    };
+    // The second table stands over the first line, which it pushes down past the first table's first place.
+    let body = format!(
+        r#"<w:p><w:r><w:t>q</w:t></w:r></w:p>{}<w:p><w:pPr><w:spacing w:before="240"/></w:pPr><w:r><w:t>h</w:t></w:r></w:p>{}<w:p/>"#,
+        tbl("", &["x", "y", "z"]),
+        tbl(r#" w:tblpY="-2600""#, &["b"])
+    );
+    for mode in [12, 15] {
+        let mut doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
+        doc.settings.compat_mode = mode;
+        let page = &glyphs(&doc)[0];
+        let y = |c: char| page.iter().find(|g| g.0 == c).map(|g| g.1).expect("drawn");
+        assert!(y('b') < y('q') && y('q') < y('x') && y('z') < y('h'), "compat {mode}: b {} q {} x {} h {}", y('b'), y('q'), y('x'), y('h'));
+    }
+}
+
+#[test]
 fn a_centred_merged_region_cut_by_the_page_end_centres_in_its_page_part() {
     let blank = crate::docx::read(&crate::docx::blank::blank_docx()).expect("reads");
     let sec = &blank.sections[0];
