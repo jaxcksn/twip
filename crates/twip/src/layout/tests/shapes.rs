@@ -392,6 +392,15 @@ fn a_vml_floats_wrap_distances_round_to_twips_and_default_to_nine_points_beside(
 }
 
 #[test]
+fn a_vml_floats_style_lengths_round_to_the_nearest_twip() {
+    let f = vml_float("margin-left:100.3pt;width:72.575pt", "", r#"<w10:wrap type="square"/>"#, 14);
+    assert_eq!((f.h_offset, f.w), (100.3, 72.6));
+    // Unstroked, the right edge 3458 tw goes to the 3465 tw pixel boundary.
+    let f = vml_float("margin-left:100.3pt;width:72.6pt", r#"stroked="f""#, r#"<w10:wrap type="square"/>"#, 14);
+    assert!((f.effect[2] - 0.35).abs() < 1e-9, "{:?}", f.effect);
+}
+
+#[test]
 fn a_vml_float_reads_its_overlap_and_cell_flags() {
     let f = vml_float("", r#"o:allowoverlap="f" o:allowincell="false""#, "", 14);
     assert!(!f.allow_overlap && !f.layout_in_cell);

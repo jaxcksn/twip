@@ -2346,7 +2346,9 @@ impl Reader {
             "largest" => "largest",
             _ => "bothSides",
         };
-        let twips = |v: f64| (v * 20.0).trunc() / 20.0;
+        // A style length goes to the nearest twip, halves up (the products of decimal points land just below).
+        let tw = |v: f64| (v * 20.0 + 0.5 + 1e-7).floor();
+        let twips = |v: f64| tw(v) / 20.0;
         let dflt = [0.0, 0.0, 9.0, 9.0];
         let dist = std::array::from_fn(|i| (st.wrap_dist[i].unwrap_or(dflt[i]) * 20.0).round() / 20.0);
         // Compat 15: a VML float is behind the text only without wrapping.
@@ -2356,14 +2358,14 @@ impl Reader {
         let pen = line.filter(|l| !matches!(l.fill, Some(crate::drawing::paint::Fill::None))).map(|l| l.width.map_or(15.0, |w| w.0 as f64 / 635.0));
         let (h_align, v_align) = (align(&st.h_align), align(&st.v_align));
         let effect =
-            vml_effect(pen, (h_align.is_none() && v_align.is_none()).then(|| [st.x, st.y, st.x + st.w, st.y + st.h].map(|v| (v * 20.0).trunc())));
+            vml_effect(pen, (h_align.is_none() && v_align.is_none()).then(|| [tw(st.x), tw(st.y), tw(st.x) + tw(st.w), tw(st.y) + tw(st.h)]));
         self.float_order += 1;
         out.push(Inline::Float(
             Box::new(Float {
                 id: next_para_id(),
-                w: st.w,
+                w: twips(st.w),
                 auto_w: false,
-                h: st.h,
+                h: twips(st.h),
                 image,
                 alt,
                 lock_aspect: false,
