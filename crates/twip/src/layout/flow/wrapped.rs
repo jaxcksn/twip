@@ -7,6 +7,7 @@ use crate::docx::model::*;
 use crate::docx::props::LineRule;
 use crate::layout::float::{self, Frames, Placed, Wrap};
 use crate::layout::fragment::{Child, ParaFragment, PlacedLine};
+use crate::layout::ids::ParaId;
 use crate::layout::job::{Memos, Yield};
 use crate::layout::join::piece_para;
 use crate::layout::line::{Frame, Line, LineOrigin, ParaLines, apply_borders, band, border_key, breaks_only, draw_line, top_border_extra};
@@ -14,10 +15,25 @@ use crate::layout::paragraph::{gap, lines_to_take, space_after, space_before};
 use crate::layout::space::{ColumnSpace, ParaSpace};
 use crate::layout::story::StoryEnv;
 use crate::layout::text::{FieldValues, Kind, Object, ShapedPara, para_id};
-use crate::layout::token::{At, NotePart};
+use crate::layout::token::{At, NoteArea, NotePart};
 use crate::layout::units::EPS;
 
 use super::{ColumnCursor, PageFill, Stop};
+
+// Wrapped paragraph inputs
+#[derive(Clone, Copy)]
+struct WrapIn<'a> {
+    p: &'a Paragraph,
+    pb: &'a ParaLines,
+    style: &'a ParaStyle,
+    col: &'a ColumnSpace,
+    sp: &'a ShapedPara,
+    n: usize,
+    first_part: bool,
+    top: f64,
+    anchor: ParaId,
+    after: f64,
+}
 
 impl<'d> PageFill<'d, '_> {
     pub fn fit_frame(&self, f: &Rc<Float>, width: f64, memos: &mut Memos) -> Result<Rc<Float>, Yield> {
@@ -50,7 +66,7 @@ impl<'d> PageFill<'d, '_> {
         col: &ColumnSpace,
         memos: &mut Memos,
     ) -> Result<Stop, Yield> {
-        let (pos, carry, y, empty, area, out) = cur.parts();
+        let (pos, carry, y, empty, area, _) = cur.parts();
         let style = p.para_style_in(self.ctx.env.text.review.view);
         let first_part = pos.at.at_start();
         let after = space_after(&self.ctx.env.text, style);
@@ -883,6 +899,25 @@ impl<'d> PageFill<'d, '_> {
                 return Ok(if at_top { Stop::Page } else { Stop::Full });
             }
         }
+        let w = WrapIn { p, pb, style, col, sp, n, first_part, top, anchor, after };
+        self.emit_wrapped(&w, &bands, &areas, take, s, page_end, cur)
+    }
+
+    // Final take, notes and lines
+    #[allow(clippy::too_many_arguments, reason = "the paragraph, its bands and what pagination took of them")]
+    fn emit_wrapped(
+        &mut self,
+        w: &WrapIn,
+        bands: &[(f64, Vec<Line>)],
+        areas: &[(NoteArea, Vec<NotePart>)],
+        take: usize,
+        s: usize,
+        page_end: bool,
+        cur: &mut ColumnCursor,
+    ) -> Result<Stop, Yield> {
+        let &WrapIn { p, pb, style, col, sp, n, first_part, top, anchor, after } = w;
+        let (pos, carry, y, empty, area, out) = cur.parts();
+        let nb = bands.len();
         let (a, rest) = areas[take.min(areas.len() - 1)].clone();
         *area = a;
         let notes_continue = !rest.is_empty();
