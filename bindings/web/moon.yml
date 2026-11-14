@@ -12,14 +12,15 @@ tasks:
     deps: [twip-wasm:build]
     inputs: ['build.mjs', 'tsconfig.json', 'src/**/*']
     outputs: ['dist']
-  # The unit tests (the wire fixtures round trip, commands, events, services, fonts), the contract scripts, the Node
-  # smoke through the package's export, the tests' types (with every wire fixture checked against its public type,
+  # The generated types are the schema's (src/wire.generated.ts; `node scripts/wire.ts` rewrites it), the unit tests
+  # (the wire fixtures round trip, commands, events, services, fonts), the contract scripts, the Node smoke through
+  # the package's export, the tests' types (with every wire fixture checked against its public type,
   # test/wire-types.ts) and the API report (api/twip-web.api.md; `pnpm exec api-extractor run --local` updates it
   # after an intended change).
   test:
-    script: node --test "test/*.test.ts" && node test/wire-types.ts && pnpm exec tsc --noEmit -p test && pnpm exec api-extractor run
+    script: node scripts/wire.ts --check && node --test "test/*.test.ts" && node test/wire-types.ts && pnpm exec tsc --noEmit -p test && pnpm exec api-extractor run
     deps: [build]
-    inputs: ['test/**/*', 'api-extractor.json', 'api/**/*', '/crates/twip/tests/wire/**/*', '/tests/contract/**/*', '/crates/twip/tests/fixtures/**/*']
+    inputs: ['scripts/**/*', 'test/**/*', 'api-extractor.json', 'api/**/*', '/crates/twip/tests/wire/**/*', '/crates/twip/tests/wire-schema.json', '/tests/contract/**/*', '/crates/twip/tests/fixtures/**/*']
   contract:
     command: node --test test/contract.test.ts
     deps: [build]

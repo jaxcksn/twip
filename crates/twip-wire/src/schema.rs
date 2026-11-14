@@ -150,8 +150,10 @@ pub struct Field {
     pub docs: String,
     /// Its value's type.
     pub ty: Ty,
-    /// Whether it may be left out.
-    pub optional: bool,
+    /// Whether the engine may leave it out (`skip_serializing_if`).
+    pub omitted: bool,
+    /// Whether it may be left out of what the engine reads (a default, or an `Option`'s `None`).
+    pub defaulted: bool,
 }
 
 /// A data enum's variant.

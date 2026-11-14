@@ -2200,7 +2200,7 @@ twip_wire::__schema! {
             use twip_wire::schema::{Def, Field, Payload, Shape, Ty, Variant};
             reg.named(module_path!(), "GestureAction", |reg| {
                 let word = |name: &'static str, docs: &str| Variant { name: name.into(), docs: docs.into(), payload: Payload::Value { ty: Ty::Literal { value: name } } };
-                let op = Field { name: "op".into(), docs: String::new(), ty: <Command as twip_wire::schema::Describe>::describe(reg), optional: false };
+                let op = Field { name: "op".into(), docs: String::new(), ty: <Command as twip_wire::schema::Describe>::describe(reg), omitted: false, defaulted: false };
                 Def {
                     name: "GestureAction".into(),
                     module: module_path!(),

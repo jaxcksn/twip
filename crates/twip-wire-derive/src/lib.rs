@@ -795,9 +795,9 @@ fn describe_fields(fields: &[Field<'_>], container_default: bool) -> TokenStream
                 quote!(<#t as ::twip_wire::schema::Describe>::describe(reg))
             }
         };
-        let optional =
-            container_default || f.attrs.skip_if.is_some() || !matches!(f.attrs.default, FieldDefault::None) || option_inner(f.ty).is_some();
-        quote!(::twip_wire::schema::Field { name: #name.into(), docs: #doc, ty: #ty, optional: #optional })
+        let omitted = f.attrs.skip_if.is_some();
+        let defaulted = container_default || !matches!(f.attrs.default, FieldDefault::None) || option_inner(f.ty).is_some();
+        quote!(::twip_wire::schema::Field { name: #name.into(), docs: #doc, ty: #ty, omitted: #omitted, defaulted: #defaulted })
     });
     quote!(::std::vec![#(#each),*])
 }

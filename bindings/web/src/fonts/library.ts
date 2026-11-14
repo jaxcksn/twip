@@ -1,38 +1,23 @@
 import { EditorError } from '../errors.js';
 import { directTransport } from '../transport/direct.js';
 import { Kind, Method, type Transport } from '../transport/protocol.js';
+import type { Alias, FaceInfo, FontRequest, FontRule, GenericDefaults, GenericFamily } from '../wire.generated.js';
 
-/** A font table's general class of a family: `roman` (serif), `swiss` (sans serif), `modern` (fixed pitch), and so on. */
-export type FontClass = 'roman' | 'swiss' | 'modern' | 'script' | 'decorative' | 'auto';
-
-/** A font table's pitch of a family. */
-export type FontPitch = 'fixed' | 'variable' | 'default';
-
-/** A document's description of a font family, from its font table. Each field is absent when the document doesn't state it. */
-export interface FontDescription {
-  /** The general class (`w:family`). */
-  class?: FontClass;
-  /** The pitch (`w:pitch`). */
-  pitch?: FontPitch;
-  /** The PANOSE classification (`w:panose1`), 20 hex digits. */
-  panose?: string;
-  /** The character set (`w:charset`). */
-  charset?: number;
-}
-
-/** A font the engine needs, asked once per family and style. */
-export interface FontRequest {
-  /** The family, as the document names it. */
-  family: string;
-  /** Bold. */
-  bold: boolean;
-  /** Italic. */
-  italic: boolean;
-  /** The document's description of the family, when its font table has one. */
-  description?: FontDescription;
-  /** The generic category that description gives, whether or not classification is on. */
-  proposed?: GenericFamily;
-}
+export type {
+  Alias,
+  FaceInfo,
+  FontClass,
+  FontDescription,
+  FontPitch,
+  FontRequest,
+  FontRule,
+  FontsState,
+  GenericDefaults,
+  GenericFamily,
+  MissingCharacters,
+  MissingFont,
+  StandIn,
+} from '../wire.generated.js';
 
 /**
  * What a resolver returns for a request: the font's bytes or a URL to fetch it from, a family to draw it with
@@ -40,122 +25,6 @@ export interface FontRequest {
  * category answer applies to every style of the family until aliases or replacements change.
  */
 export type FontAnswer = Uint8Array | URL | string | { family: string } | { category: GenericFamily } | null;
-
-/** A face a library holds. */
-export interface FaceInfo {
-  /** The family. */
-  family: string;
-  /** Bold. */
-  bold: boolean;
-  /** Italic. */
-  italic: boolean;
-}
-
-/**
- * A draw-time replacement: `from` (optionally one style of it) is drawn with `to`, even when `from` is in the
- * library. The document keeps naming `from`. When `to` isn't in the library, `from` resolves as if there were no rule.
- */
-export interface FontRule {
-  /** The family the document asks for. */
-  from: string;
-  /** Only the bold faces (or only the regular ones). */
-  bold?: boolean;
-  /** Only the italic faces (or only the upright ones). */
-  italic?: boolean;
-  /** The family to draw instead. */
-  to: string;
-}
-
-/** A generic font category, like the CSS generic families. */
-export type GenericFamily = 'serif' | 'sansSerif' | 'monospace' | 'script' | 'decorative';
-
-/**
- * An alias: when `from` (optionally one style of it) isn't in the library, it is drawn with `to`, another family or
- * the default family of a generic category. Aliases chain up to 8 hops. The document keeps naming `from`.
- */
-export interface Alias {
-  /** The family the document names, case-insensitive. */
-  from: string;
-  /** The family, or the generic category, that draws instead. */
-  to: string | { category: GenericFamily };
-  /** Only the bold faces (or only the regular ones). */
-  bold?: boolean;
-  /** Only the italic faces (or only the upright ones). */
-  italic?: boolean;
-}
-
-/**
- * The family that draws a missing font of each generic category. Opt-in: every category is unset by default, and
- * with none set no missing font is drawn through a category.
- */
-export interface GenericDefaults {
-  /** The family for missing serif fonts. */
-  serif?: string;
-  /** The family for missing sans-serif fonts. */
-  sansSerif?: string;
-  /** The family for missing fixed-pitch fonts. */
-  monospace?: string;
-  /** The family for missing script fonts. */
-  script?: string;
-  /** The family for missing decorative fonts. */
-  decorative?: string;
-}
-
-/** Which stand-in draws a missing family. */
-export type StandIn =
-  /** A replacement's target is missing, so the document's own family draws. */
-  | 'original'
-  /** The default family of its generic category. */
-  | 'generic'
-  /** The general fallback family. */
-  | 'fallback'
-  /** The first face added to the library (or the symbol fallback, in an empty library). */
-  | 'lastResort';
-
-/** A family, in one style, that draws with a stand-in. */
-export interface MissingFont {
-  /** The family as the document names it, or the replacement target when `by` is `'original'`. */
-  family: string;
-  /** The bold style. */
-  bold: boolean;
-  /** The italic style. */
-  italic: boolean;
-  /** The replacement target and alias targets tried, in order. */
-  tried: string[];
-  /** The generic category the family has, from the document's font table, an alias or a resolver. */
-  category?: GenericFamily;
-  /** The family that draws instead; absent when nothing draws (an empty library with no symbol fallback). */
-  drawnWith?: string;
-  /** Why that family draws. */
-  by: StandIn;
-  /** The resolver's failure, when it failed. */
-  error?: string;
-}
-
-/** Characters no font has, by the family their runs name. */
-export interface MissingCharacters {
-  /** The family the runs name. */
-  family: string;
-  /** The distinct characters, in code point order, at most 64. */
-  characters: string;
-  /** More than 64 characters are missing. */
-  truncated: boolean;
-}
-
-/**
- * The document's fonts the library can't draw as the document asks. Each list is sorted by family, then style.
- */
-export interface FontsState {
-  /** Families a resolver is fetching; they draw with a stand-in meanwhile. */
-  pending: MissingFont[];
-  /** Families nothing provided; they draw with a stand-in. */
-  missing: MissingFont[];
-  /**
-   * Characters that neither their run's font, the character-fallback families nor the symbol fallback has; they draw
-   * as their font's missing-glyph box.
-   */
-  characters: MissingCharacters[];
-}
 
 type Resolver = (request: FontRequest, signal: AbortSignal) => Promise<FontAnswer>;
 

@@ -1541,7 +1541,19 @@ export type FontAnswer = Uint8Array | URL | string | {
 } | null;
 
 // @public
-export type FontClass = 'roman' | 'swiss' | 'modern' | 'script' | 'decorative' | 'auto';
+export type FontClass =
+/** Serif (`roman`). */
+'roman'
+/** Sans serif (`swiss`). */
+| 'swiss'
+/** Fixed pitch (`modern`). */
+| 'modern'
+/** Script (`script`). */
+| 'script'
+/** Decorative (`decorative`). */
+| 'decorative'
+/** Not stated (`auto`). */
+| 'auto';
 
 // @public
 export interface FontDescription {
@@ -1569,7 +1581,13 @@ export class FontLibrary {
 }
 
 // @public
-export type FontPitch = 'fixed' | 'variable' | 'default';
+export type FontPitch =
+/** Every character has the same width. */
+'fixed'
+/** Widths vary. */
+| 'variable'
+/** Not stated. */
+| 'default';
 
 // @public
 export interface FontRequest {
@@ -1642,7 +1660,17 @@ export interface GenericDefaults {
 }
 
 // @public
-export type GenericFamily = 'serif' | 'sansSerif' | 'monospace' | 'script' | 'decorative';
+export type GenericFamily =
+/** Fonts with serifs (`roman` in a document's font table). */
+'serif'
+/** Fonts without serifs (`swiss`). */
+| 'sansSerif'
+/** Fixed-pitch fonts (`modern`, or any font the document says is fixed pitch). */
+| 'monospace'
+/** Script and handwriting fonts (`script`). */
+| 'script'
+/** Decorative and display fonts (`decorative`). */
+| 'decorative';
 
 // @public
 export type GestureAction = 'default' | 'emit' | 'none' | {
