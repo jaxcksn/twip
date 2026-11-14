@@ -369,6 +369,12 @@ impl Face {
         (e.height != 0).then_some(e.y_bearing as f64)
     }
 
+    /// A glyph's ink bottom below the baseline, in font units (`None` for a glyph without ink).
+    pub fn ink_bottom(&self, glyph: u32) -> Option<f64> {
+        let e = ShaperFont::new(&self.font).glyph_extents(harfrust::GlyphId::new(glyph))?;
+        (e.height != 0).then_some(-(e.y_bearing + e.height) as f64)
+    }
+
     /// Glyphs for `text`: `ligatures` as [`crate::docx::RunStyle::ligatures`], `figures` as
     /// [`crate::docx::RunStyle::figures`].
     pub fn shape(&self, text: &str, kern: bool, ligatures: u8, figures: u32) -> Vec<Glyph> {

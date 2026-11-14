@@ -1446,3 +1446,52 @@ fn compat_14_reserves_the_edge_under_a_repeated_header_row() {
     assert!((first - next - 1.0).abs() < 0.01, "compat 15: the page's first row reserves only its own top: {first} vs {next}");
 }
 
+fn doc_in(body: &str, mode: i64) -> crate::docx::Document {
+    let mut doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), body)).expect("reads");
+    doc.settings.compat_mode = mode;
+    doc
+}
+
+#[test]
+fn a_spaced_cell_clips_inside_its_own_border_box() {
+    let text = "Lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore";
+    let body = format!(
+        r#"<w:tbl><w:tblPr><w:tblW w:w="4680" w:type="dxa"/><w:tblCellSpacing w:w="100" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblBorders><w:top w:val="single" w:sz="4"/><w:left w:val="single" w:sz="4"/><w:bottom w:val="single" w:sz="4"/><w:right w:val="single" w:sz="4"/><w:insideH w:val="single" w:sz="4"/><w:insideV w:val="single" w:sz="4"/></w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="2340"/><w:gridCol w:w="2340"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="2340" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:ind w:right="-1800"/></w:pPr><w:r><w:t>{text}</w:t></w:r></w:p></w:tc><w:tc><w:tcPr><w:tcW w:w="2340" w:type="dxa"/></w:tcPr><w:p/></w:tc></w:tr></w:tbl><w:p/>"#
+    );
+    let doc = doc_in(&body, 12);
+    let s = layout(&doc, &fonts());
+    let mut xs: Vec<f64> = crate::layout::traverse::paint_items(&s.pages()[0])
+        .into_iter()
+        .filter_map(|i| match i {
+            crate::layout::fragment::Item::Rect { rect, .. } if rect[3] - rect[1] > rect[2] - rect[0] => Some(rect[0]),
+            _ => None,
+        })
+        .collect();
+    xs.sort_by(f64::total_cmp);
+    xs.dedup_by(|a, b| (*a - *b).abs() < 0.01);
+    // The table's left, cell 1's left, cell 1's right: its own right border, drawn inside its box.
+    let inner = xs[2];
+    let last = super::page_chars(&doc)[0].iter().map(|c| c.1).fold(f64::NEG_INFINITY, f64::max);
+    assert!(last < inner, "no glyph starts past cell 1's own right border: {last} vs {inner}");
+}
+
+#[test]
+fn a_nested_tables_borders_clip_to_the_open_enclosing_cell() {
+    let nested = r#"<w:tbl><w:tblPr><w:tblW w:w="8000" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblBorders><w:top w:val="single" w:sz="4"/><w:left w:val="single" w:sz="4"/><w:bottom w:val="single" w:sz="4"/><w:right w:val="single" w:sz="4"/></w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="8000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="8000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>n</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#;
+    let right = |before: &str| {
+        let body = format!(
+            r#"<w:tbl><w:tblPr><w:tblW w:w="3000" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr>{before}{nested}<w:p/></w:tc></w:tr></w:tbl><w:p/>"#
+        );
+        let s = layout(&doc_in(&body, 12), &fonts());
+        crate::layout::traverse::paint_items(&s.pages()[0])
+            .into_iter()
+            .filter_map(|i| match i {
+                crate::layout::fragment::Item::Rect { rect, .. } => Some(rect[2]),
+                _ => None,
+            })
+            .fold(f64::NEG_INFINITY, f64::max)
+    };
+    assert!(right("<w:p><w:r><w:t>Alpha</w:t></w:r></w:p>") < 72.0 + 150.0 + 0.01, "cut at the outer cell after a paragraph");
+    assert!(right("") > 72.0 + 300.0, "drawn in full when it starts the cell");
+}
+

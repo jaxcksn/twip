@@ -2516,9 +2516,18 @@ fn unaligned_floats(children: &Rc<[Child]>, off: f64, fixed: &[u64]) -> Option<R
 }
 
 pub(super) fn clip_x(children: &Rc<[Child]>, lo: f64, hi: f64, bottom: f64) -> Option<Rc<[Child]>> {
+    clip_box(children, lo, hi, f64::NEG_INFINITY, bottom)
+}
+
+/// `children` without the glyphs whose ink lies wholly outside `lo .. hi` across or `top .. bottom` down, with their
+/// nested tables' borders and shading cut to the box once a side of it is open.
+pub(super) fn clip_box(children: &Rc<[Child]>, lo: f64, hi: f64, top: f64, bottom: f64) -> Option<Rc<[Child]>> {
     let inside = |r: &GlyphRun, g: &(u32, f64), dx: f64, dy: f64| {
         let k = r.size / r.face.upem;
         if bottom.is_finite() && r.face.ink_top(g.0).is_some_and(|t| dy + r.baseline - t * k >= bottom - EPS) {
+            return false;
+        }
+        if top.is_finite() && r.face.ink_bottom(g.0).is_some_and(|b| dy + r.baseline + b * k <= top + EPS) {
             return false;
         }
         match r.face.ink(g.0) {
@@ -2536,7 +2545,7 @@ pub(super) fn clip_x(children: &Rc<[Child]>, lo: f64, hi: f64, bottom: f64) -> O
             _ => false,
         })
     };
-    let nested: Vec<Option<Child>> = children.iter().map(|c| clip_nested(c, lo, hi, bottom)).collect();
+    let nested: Vec<Option<Child>> = children.iter().map(|c| clip_nested(c, lo, hi, top, bottom)).collect();
     if !children.iter().any(|c| matches!(c, Child::Line { placed, .. } if spills(placed))) && nested.iter().all(Option::is_none) {
         return None;
     }
@@ -2584,16 +2593,43 @@ pub(super) fn clip_x(children: &Rc<[Child]>, lo: f64, hi: f64, bottom: f64) -> O
     Some(clipped.collect())
 }
 
-fn clip_nested(c: &Child, lo: f64, hi: f64, bottom: f64) -> Option<Child> {
+fn clip_nested(c: &Child, lo: f64, hi: f64, top: f64, bottom: f64) -> Option<Child> {
     match c {
-        Child::Group { offset, children } => {
-            clip_x(children, lo - offset.0, hi - offset.0, bottom - offset.1).map(|children| Child::Group { offset: *offset, children })
-        }
+        Child::Group { offset, children } => clip_box(children, lo - offset.0, hi - offset.0, top - offset.1, bottom - offset.1)
+            .map(|children| Child::Group { offset: *offset, children }),
         Child::Table(t) => {
             let mut any = false;
-            let rows = t.rows.iter().map(|r| {
+            // A nested table's borders and shading are cut with its text once the enclosing cell's clip is open.
+            let open = lo.is_finite() || hi.is_finite();
+            let rows: Vec<RowFragment> = {
+            let mut cut = |items: &[Item]| -> Box<[Item]> {
+                if !open {
+                    return items.into();
+                }
+                items
+                    .iter()
+                    .filter_map(|i| match i {
+                        Item::Rect { rect, colour } => {
+                            let r = [rect[0].max(lo), rect[1].max(top), rect[2].min(hi), rect[3].min(bottom)];
+                            if r != *rect {
+                                any = true;
+                            }
+                            (r[2] > r[0] && r[3] > r[1]).then_some(Item::rect(r, *colour))
+                        }
+                        other => Some(other.clone()),
+                    })
+                    .collect()
+            };
+            t
+                .rows
+                .iter()
+                .map(|r| RowFragment { background: cut(&r.background), borders: cut(&r.borders), ..r.clone() })
+                .collect()
+            };
+            let rows = rows.iter().map(|r| {
                 let cells = r.cells.iter().map(|cell| {
-                    let content = cell.content.iter().map(|c| clip_nested(c, lo, hi, bottom).inspect(|_| any = true).unwrap_or_else(|| c.clone()));
+                    let content =
+                        cell.content.iter().map(|c| clip_nested(c, lo, hi, top, bottom).inspect(|_| any = true).unwrap_or_else(|| c.clone()));
                     CellFragment { content: content.collect(), ..cell.clone() }
                 });
                 RowFragment { cells: cells.collect(), ..r.clone() }
@@ -2754,16 +2790,29 @@ pub fn draw_row(tb: &TableLayout, ri: usize, left: f64, top: f64, height: f64, p
         let clip = if row.exact { top + height - below_margin } else { f64::INFINITY };
         let mut content = Vec::new();
         let mut hidden = Vec::new();
-        // Content clips to the box between the left and right borders' inner edges (cell edges in a spaced table). A
-        // nested table also clips to it once a paragraph of the cell has been drawn in this part; before that it
-        // keeps only its own cells' clips.
-        let (lo, hi) = match row.spacing {
-            Some(_) => (-c.cx, c.w - c.cx),
+        // Content clips to the box between the borders' inner edges: across, the left and right borders'; down, the
+        // row's top border and its bottom edge (an exact row's bottom margin). A spaced cell clips inside its own
+        // border box. A nested table also clips to it once a paragraph of the cell has been drawn in this part;
+        // before that it keeps only its own cells' clips.
+        let [et, el, eb, er] = drawn_edges(tb, c);
+        let (lo, hi, y0, y1) = match row.spacing {
+            Some(s) => {
+                let (mut lo, mut ro) = (c.col == 0, c.col + c.span >= tb.cols.len());
+                if tb.rtl {
+                    (lo, ro) = (ro, lo);
+                }
+                let (by0, by1) = (top + row.gap_top, top + height - gap(s, tb.is_last(ri)));
+                let y1 = if c.v_merge == VMerge::Continue { f64::INFINITY } else { by1 - bw(eb) };
+                (gap(s, lo) + bw(el) - c.cx, c.w - gap(s, ro) - bw(er) - c.cx, by0 + bw(et), y1)
+            }
             None => {
-                let [_, l, _, r] = drawn_edges(tb, c);
-                (-c.cx + bw(l) / 2.0, c.w - c.cx - bw(r) / 2.0)
+                let t = if c.v_merge == VMerge::Continue { 0.0 } else { bw(et) };
+                // A continuation cell's carried content runs on through the region's rows.
+                let y1 = if c.v_merge == VMerge::Continue { f64::INFINITY } else { top + height };
+                (-c.cx + bw(el) / 2.0, c.w - c.cx - bw(er) / 2.0, top + t, y1)
             }
         };
+        let y1 = if row.exact { clip } else { y1 };
         let mut open = false;
         for u in part.units {
             let ut = u.top - part.base;
@@ -2776,9 +2825,14 @@ pub fn draw_row(tb: &TableLayout, ri: usize, left: f64, top: f64, height: f64, p
                 source_units(&u.content, &mut hidden);
                 continue;
             }
-            let (lo, hi) = if u.row.is_none() || open { (lo, hi) } else { (f64::NEG_INFINITY, f64::INFINITY) };
+            let shown = u.row.is_none() || open;
+            let (lo, hi, top, bottom) = if shown {
+                (lo, hi, y0 - (base_y + ut), y1 - (base_y + ut) + INK_SLACK)
+            } else {
+                (f64::NEG_INFINITY, f64::INFINITY, f64::NEG_INFINITY, bottom)
+            };
             open |= u.row.is_none();
-            let children = clip_x(&u.content, lo, hi, bottom).unwrap_or_else(|| u.content.clone());
+            let children = clip_box(&u.content, lo, hi, top, bottom).unwrap_or_else(|| u.content.clone());
             let children = unaligned_floats(&children, off, &c.fixed_floats).unwrap_or(children);
             content.push(Child::Group { offset: (base_x, base_y + ut), children });
         }
