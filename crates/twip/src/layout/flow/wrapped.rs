@@ -71,6 +71,15 @@ struct Strip {
     reuse: bool,
 }
 
+// A band tried
+struct Tried {
+    got: Option<(Vec<Line>, usize)>,
+    blocked: bool,
+    trial: Option<f64>,
+    no_room: bool,
+    h: f64,
+}
+
 // Anchored floats of the paragraph
 struct Anchors {
     anchors: Vec<Placed>,
@@ -485,33 +494,95 @@ impl<'d> PageFill<'d, '_> {
         (yy, Some(Strip { uncut, forced, fitted, reuse }))
     }
 
+    // Fit the line's pieces, at most twice
+    #[allow(clippy::too_many_arguments, reason = "the floats that cut the line, its strip, and where and how high it is tried")]
+    fn try_band(
+        &self,
+        w: &WrapIn,
+        bands: &[(f64, Vec<Line>)],
+        cutting: &[Placed],
+        forced: &Option<Vec<(f64, f64)>>,
+        lead: f64,
+        frame: &Frame,
+        s: usize,
+        yy: f64,
+        mut h: f64,
+        mut below: f64,
+    ) -> Tried {
+        let &WrapIn { p, style, sp, pieces, n, top_extra, cx0, cx1, compat, restarts, lone_picture, kept_after, first_part, top, y0, .. } = w;
+        let mut got = None;
+        let mut blocked = false;
+        let mut trial = None;
+        // Every piece of the line was cut away or too narrow.
+        let mut no_room = false;
+        for attempt in 0..2 {
+            let free = match &forced {
+                Some(iv) => Some(iv.clone()),
+                None => {
+                    // A float over the whole line that reaches into its space before moves it, whichever paragraph
+                    // anchors it.
+                    let lead = if bands.is_empty() { lead } else { 0.0 };
+                    float::text_intervals(cutting, cx0, cx1, yy - lead, yy + h, yy + h - below, compat == Compat::Legacy)
+                }
+            };
+            match free {
+                None => {
+                    blocked = true;
+                    break;
+                }
+                Some(iv) => {
+                    no_room = iv.is_empty();
+                    let ivc: Vec<(f64, f64)> = iv.iter().map(|(a, b)| (a - cx0, b - cx0)).collect();
+                    // A word too long for the line breaks after the last character that fits: in an uncut line,
+                    // and in compat ≤ 14 in a line's only piece beside a float.
+                    let open = iv.len() == 1 && (compat == Compat::Legacy || (iv[0].0 - cx0).abs() < EPS && (iv[0].1 - cx1).abs() < EPS);
+                    let first = (first_part || restarts) && bands.is_empty();
+                    let r = band(
+                        sp,
+                        pieces,
+                        s,
+                        &ivc,
+                        first,
+                        style,
+                        p.mark_in(self.ctx.env.text.review.view),
+                        frame,
+                        self.ctx.fonts,
+                        open || lone_picture,
+                    );
+                    match r {
+                        Ok((mut segs, e)) => {
+                            if first {
+                                for l in &mut segs {
+                                    l.pitch += top_extra;
+                                    l.baseline += top_extra;
+                                }
+                            }
+                            // Compat ≤ 14 tests the paragraph's last line with its space after.
+                            let tail = if compat == Compat::Legacy && e >= n { kept_after } else { 0.0 };
+                            let (ph, segs_below) = (segs[0].pitch + tail, segs[0].below + tail);
+                            let done = (ph - h).abs() < EPS && (segs_below - below).abs() < EPS || attempt == 1;
+                            got = Some((segs, e));
+                            if done {
+                                break;
+                            }
+                            h = ph;
+                            below = segs_below;
+                        }
+                        Err(t) => {
+                            blocked = true;
+                            trial = Some(t + if first { top - y0 } else { 0.0 });
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        Tried { got, blocked, trial, no_room, h }
+    }
+
     // Bands
     fn fit_bands(&self, w: &WrapIn, carry: &FlowState, mut lead: f64, mut frame: Frame) -> (Vec<(f64, Vec<Line>)>, usize) {
-        let &WrapIn {
-            p,
-            style,
-            col,
-            sp,
-            pieces,
-            n,
-            est,
-            est_below,
-            top_extra,
-            cx0,
-            cx1,
-            compat,
-            restarts,
-            lone_picture,
-            kept_after,
-            floats,
-            first_part,
-            at_top,
-            top,
-            share,
-            y0,
-            bi,
-            ..
-        } = w;
+        let &WrapIn { style, col, sp, pieces, n, est, est_below, cx0, cx1, compat, floats, first_part, at_top, top, share, bi, .. } = w;
         let mut bands: Vec<(f64, Vec<Line>)> = Vec::new();
         let mut yy = top;
         let mut s = 0;
@@ -546,80 +617,14 @@ impl<'d> PageFill<'d, '_> {
         };
         while (s < n || bands.is_empty() || trailing(&bands)) && guard < 4000 {
             guard += 1;
-            let mut h = est;
-            let mut below = est_below;
-            let mut got = None;
-            let mut blocked = false;
-            let mut trial = None;
-            // Every piece of the line was cut away or too narrow.
-            let mut no_room = false;
+            let h = est;
+            let below = est_below;
             let here: &[Placed] = if yy >= col.bottom.to_pt() - EPS || unplaced && bands.is_empty() { &[] } else { floats };
             let (moved_to, strip) = self.choose_strip(w, here, &ordered, &strip_at, slack_on, h, s, yy);
             yy = moved_to;
             let Some(Strip { uncut, forced, fitted, reuse }) = strip else { continue };
             let cutting = uncut.as_deref().unwrap_or(here);
-            for attempt in 0..2 {
-                let free = match &forced {
-                    Some(iv) => Some(iv.clone()),
-                    None => {
-                        // A float over the whole line that reaches into its space before moves it, whichever paragraph
-                        // anchors it.
-                        let lead = if bands.is_empty() { lead } else { 0.0 };
-                        float::text_intervals(cutting, cx0, cx1, yy - lead, yy + h, yy + h - below, compat == Compat::Legacy)
-                    }
-                };
-                match free {
-                    None => {
-                        blocked = true;
-                        break;
-                    }
-                    Some(iv) => {
-                        no_room = iv.is_empty();
-                        let ivc: Vec<(f64, f64)> = iv.iter().map(|(a, b)| (a - cx0, b - cx0)).collect();
-                        // A word too long for the line breaks after the last character that fits: in an uncut line,
-                        // and in compat ≤ 14 in a line's only piece beside a float.
-                        let open = iv.len() == 1 && (compat == Compat::Legacy || (iv[0].0 - cx0).abs() < EPS && (iv[0].1 - cx1).abs() < EPS);
-                        let first = (first_part || restarts) && bands.is_empty();
-                        let r = band(
-                            sp,
-                            pieces,
-                            s,
-                            &ivc,
-                            first,
-                            style,
-                            p.mark_in(self.ctx.env.text.review.view),
-                            &frame,
-                            self.ctx.fonts,
-                            open || lone_picture,
-                        );
-                        match r {
-                            Ok((mut segs, e)) => {
-                                if first {
-                                    for l in &mut segs {
-                                        l.pitch += top_extra;
-                                        l.baseline += top_extra;
-                                    }
-                                }
-                                // Compat ≤ 14 tests the paragraph's last line with its space after.
-                                let tail = if compat == Compat::Legacy && e >= n { kept_after } else { 0.0 };
-                                let (ph, segs_below) = (segs[0].pitch + tail, segs[0].below + tail);
-                                let done = (ph - h).abs() < EPS && (segs_below - below).abs() < EPS || attempt == 1;
-                                got = Some((segs, e));
-                                if done {
-                                    break;
-                                }
-                                h = ph;
-                                below = segs_below;
-                            }
-                            Err(t) => {
-                                blocked = true;
-                                trial = Some(t + if first { top - y0 } else { 0.0 });
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
+            let Tried { got, blocked, trial, no_room, h } = self.try_band(w, &bands, cutting, &forced, lead, &frame, s, yy, h, below);
             match (got, blocked) {
                 (Some((segs, e)), false) => {
                     let ph = segs[0].pitch;
