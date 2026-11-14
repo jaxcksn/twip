@@ -30,6 +30,8 @@ const MASK_CELLS: usize = 1 << 18;
 const TOLERANCE: f32 = 0.1;
 /// The most line segments one curve becomes, so absurd coordinates cost bounded time.
 const MAX_SEGMENTS: u32 = 1024;
+/// The most lines one path flattens to (64 MB of them): past it, curves are drawn as their chords.
+const MAX_LINES: usize = 1 << 22;
 /// Device coordinates are clamped to ±2^20 pixels, so fixed-point differences fit in an `i32`.
 const LIMIT: f32 = (1 << 20) as f32;
 
@@ -47,6 +49,7 @@ impl IRect {
         self.x0 >= self.x1 || self.y0 >= self.y1
     }
 
+    /// Disjoint rects meet in an inverted rect (`x1 < x0` or `y1 < y0`): check `is_empty` before taking sizes.
     pub fn intersect(self, o: IRect) -> IRect {
         IRect { x0: self.x0.max(o.x0), y0: self.y0.max(o.y0), x1: self.x1.min(o.x1), y1: self.y1.min(o.y1) }
     }
@@ -104,7 +107,7 @@ impl Rasterizer {
         mut row: impl FnMut(i32, i32, &mut [u8]),
     ) {
         self.lines.clear();
-        flatten(verbs, points, transform, &mut self.lines);
+        flatten(verbs, points, transform, clip, &mut self.lines);
         let Some(bounds) = bounds(&self.lines) else { return };
         let area = bounds.intersect(clip);
         if area.is_empty() {
@@ -168,7 +171,7 @@ impl Rasterizer {
             });
         }
         self.lines.clear();
-        flatten(verbs, points, Transform::IDENTITY, &mut self.lines);
+        flatten(verbs, points, Transform::IDENTITY, area, &mut self.lines);
         if w == 0 || h == 0 {
             return;
         }
@@ -201,8 +204,19 @@ fn mask_coverage<S: Simd>(simd: S, acc: &[i32], stride: usize, touched: &[(usize
     }
 }
 
-/// Appends the path's segments in device space, each subpath closed, curves flattened to `TOLERANCE`.
-fn flatten(verbs: &[Verb], points: &[Point], t: Transform, lines: &mut Vec<Line>) {
+/// Appends the path's segments in device space, each subpath closed, curves flattened to `TOLERANCE`. A curve wholly
+/// to one side of `clip` is its chord: a piece adds to the pixels right of it only what its ends' heights say, and
+/// the chord has the same ends, so the coverage inside the clip is the same, where a path of huge curves off the
+/// target would make a thousand lines each.
+fn flatten(verbs: &[Verb], points: &[Point], t: Transform, clip: IRect, lines: &mut Vec<Line>) {
+    let (x0, y0, x1, y1) = (clip.x0 as f32 - 1.0, clip.y0 as f32 - 1.0, clip.x1 as f32 + 1.0, clip.y1 as f32 + 1.0);
+    let chord = |lines: &Vec<Line>, ps: &[Point]| {
+        lines.len() >= MAX_LINES
+            || ps.iter().all(|p| p.x < x0)
+            || ps.iter().all(|p| p.x > x1)
+            || ps.iter().all(|p| p.y < y0)
+            || ps.iter().all(|p| p.y > y1)
+    };
     // A glyph mask's outline is already in pixels: the identity leaves its points as they are.
     let identity = t == Transform::IDENTITY;
     let mut points = points.iter().map(|&p| if identity { p } else { t.map_point(p) });
@@ -226,7 +240,7 @@ fn flatten(verbs: &[Verb], points: &[Point], t: Transform, lines: &mut Vec<Line>
                 let (c, p) = (next(), next());
                 // A bend under a third of a pixel needs one line (most of a small glyph's curves): `segments` gives
                 // 1 for any bend up to 0.4, so the threshold leaves every count as it was.
-                if bend_squared(last, c, p) <= 0.15 {
+                if bend_squared(last, c, p) <= 0.15 || chord(pen.lines, &[last, c, p]) {
                     pen.line_to(p);
                     last = p;
                     continue;
@@ -244,7 +258,7 @@ fn flatten(verbs: &[Verb], points: &[Point], t: Transform, lines: &mut Vec<Line>
             Verb::Cubic => {
                 let (c0, c1, p) = (next(), next(), next());
                 // As for quads: `segments` gives 1 for any bend up to 0.4 / 3.
-                if bend_squared(last, c0, c1).max(bend_squared(c0, c1, p)) <= 0.0175 {
+                if bend_squared(last, c0, c1).max(bend_squared(c0, c1, p)) <= 0.0175 || chord(pen.lines, &[last, c0, c1, p]) {
                     pen.line_to(p);
                     last = p;
                     continue;
@@ -452,6 +466,38 @@ mod tests {
             out[at..at + cov.len()].copy_from_slice(cov);
         });
         out
+    }
+
+    #[test]
+    fn curves_off_the_clip_are_chords_with_the_same_coverage() {
+        // A square on the clip, closed through a cubic bulging far off its left edge.
+        let mut p = kurbo::BezPath::new();
+        p.move_to((5.0, 2.0));
+        p.line_to((15.0, 2.0));
+        p.line_to((15.0, 18.5));
+        p.line_to((-50.0, 18.5));
+        p.curve_to((-1.0e5, 13.0), (-1.0e5, 5.0), (-50.0, 2.0));
+        p.close_path();
+        let (mut verbs, mut points) = (Vec::new(), Vec::new());
+        crate::path::push(p.elements(), &mut verbs, &mut points);
+        let identity = Transform::from_kurbo(kurbo::Affine::IDENTITY);
+        let mut r = Rasterizer::new(Level::new());
+        let mut cover = |clip: IRect| {
+            let mut out = vec![0u8; 400];
+            r.fill(&verbs, &points, identity, clip, true, false, |y, x, cov| {
+                for (i, &c) in cov.iter().enumerate() {
+                    let x = x + i as i32;
+                    if (0..20).contains(&x) && (0..20).contains(&y) {
+                        out[(y * 20 + x) as usize] = c;
+                    }
+                }
+            });
+            (out, r.lines.len())
+        };
+        let (near, chorded) = cover(IRect { x0: 0, y0: 0, x1: 20, y1: 20 });
+        let (far, flattened) = cover(IRect { x0: -200_000, y0: 0, x1: 20, y1: 20 });
+        assert!(chorded < 10 && flattened > 100, "{chorded} lines, against {flattened}");
+        assert_eq!(near, far, "the clip's coverage is the same");
     }
 
     #[test]

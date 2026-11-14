@@ -474,32 +474,60 @@ pub(super) fn erode(level: Level, px: &mut [u8], w: usize, h: usize, radius: usi
     if radius == 0 || w == 0 || h == 0 {
         return;
     }
-    scratch.resize(px.len(), 0);
-    dispatch!(level, simd => min_pass(simd, px, scratch, w, h, 4, w * 4, radius));
-    dispatch!(level, simd => min_pass(simd, px, scratch, h, w, w * 4, 4, radius));
+    // The forward running minima take the image's size, the backward ones a line's.
+    scratch.resize(px.len() + 4 * w.max(h), 0);
+    let (forward, back) = scratch.split_at_mut(px.len());
+    dispatch!(level, simd => min_pass(simd, px, forward, back, w, h, 4, w * 4, radius));
+    dispatch!(level, simd => min_pass(simd, px, forward, back, h, w, w * 4, 4, radius));
 }
 
+/// One erode pass along lines (laid out as in [`box_pass`]): each pixel the minimum of the `2 radius + 1` around it,
+/// in constant time at any radius (van Herk and Gil–Werman). The line is cut into blocks a window long; `forward` holds
+/// each pixel's minimum from its block's start, `back` (one line) from it to its block's end, and a window spanning
+/// two blocks is the minimum of its start's `back` and its end's `forward`.
 #[simd]
 #[allow(clippy::too_many_arguments, reason = "a strided pass's geometry stays explicit")]
-fn min_pass<S: Simd>(simd: S, px: &mut [u8], tmp: &mut [u8], n: usize, lines: usize, step: usize, line_step: usize, radius: usize) {
+fn min_pass<S: Simd>(
+    simd: S,
+    px: &mut [u8],
+    forward: &mut [u8],
+    back: &mut [u8],
+    n: usize,
+    lines: usize,
+    step: usize,
+    line_step: usize,
+    radius: usize,
+) {
+    let size = 2 * radius + 1;
+    let at = |base: usize, i: usize| base + i * step;
     for line in 0..lines {
         let base = line * line_step;
-        for i in 0..n {
-            let o = base + i * step;
-            // Beyond the ends is transparent, so a window reaching past them erodes to zero.
-            let mut low = [0u8; 4];
-            if i >= radius && i + radius < n {
-                low = [255; 4];
-                for j in i - radius..=i + radius {
-                    let p = base + j * step;
-                    (0..4).for_each(|c| low[c] = low[c].min(px[p + c]));
-                }
-            }
-            tmp[o..o + 4].copy_from_slice(&low);
+        // Beyond the ends is transparent, so a window reaching past them erodes to zero: with no window inside the
+        // line, all of it does.
+        if n < size {
+            (0..n).for_each(|i| px[at(base, i)..at(base, i) + 4].fill(0));
+            continue;
         }
         for i in 0..n {
-            let o = base + i * step;
-            px[o..o + 4].copy_from_slice(&tmp[o..o + 4]);
+            let o = at(base, i);
+            if i % size == 0 {
+                forward[o..o + 4].copy_from_slice(&px[o..o + 4]);
+            } else {
+                let p = at(base, i - 1);
+                (0..4).for_each(|c| forward[o + c] = forward[p + c].min(px[o + c]));
+            }
+        }
+        for i in (0..n).rev() {
+            let o = at(base, i);
+            for c in 0..4 {
+                back[4 * i + c] = if i == n - 1 || (i + 1) % size == 0 { px[o + c] } else { back[4 * (i + 1) + c].min(px[o + c]) };
+            }
+        }
+        for i in 0..n {
+            let o = at(base, i);
+            for c in 0..4 {
+                px[o + c] = if i >= radius && i + radius < n { back[4 * (i - radius) + c].min(forward[at(base, i + radius) + c]) } else { 0 };
+            }
         }
     }
 }
@@ -651,6 +679,38 @@ mod tests {
                     }
                 }
             }
+        }
+    }
+
+    #[test]
+    fn erode_is_the_window_minimum_at_any_radius() {
+        // A naive minimum over each pixel's window, x then y, zero where the window passes an edge.
+        let naive = |px: &[u8], w: usize, h: usize, r: usize| {
+            let pass = |src: &[u8], n: usize, lines: usize, step: usize, line_step: usize| {
+                let mut out = src.to_vec();
+                for line in 0..lines {
+                    for i in 0..n {
+                        for c in 0..4 {
+                            let o = line * line_step + i * step + c;
+                            out[o] = if i >= r && i + r < n {
+                                (i - r..=i + r).map(|j| src[line * line_step + j * step + c]).min().unwrap_or(0)
+                            } else {
+                                0
+                            };
+                        }
+                    }
+                }
+                out
+            };
+            let x = pass(px, w, h, 4, w * 4);
+            pass(&x, h, w, w * 4, 4)
+        };
+        let (w, h) = (23, 17);
+        let px: Vec<u8> = (0..w * h * 4).map(|i| ((i * 2_654_435_761usize) >> 7) as u8).collect();
+        for r in [1, 2, 3, 5, 8, 11, 12, 40] {
+            let mut fast = px.clone();
+            erode(Level::new(), &mut fast, w, h, r, &mut Vec::new());
+            assert_eq!(fast, naive(&px, w, h, r), "radius {r}");
         }
     }
 

@@ -29,6 +29,12 @@ use crate::path::{self, Verb};
 /// (400% zoom at dpr 2, about 10.7 pixels per point).
 const STROKE_TOLERANCE: f64 = 0.01;
 
+/// The deepest pictures and layers nest, counted together: every backend walks them recursively (and a CPU layer
+/// holds a buffer the size of its region), so a document nesting thousands of groups would overflow the stack. The
+/// recorder keeps to it: a picture placed deeper isn't, and a layer opened deeper draws its content without its
+/// effects. Twip's own nesting (page, line and shape pictures, a few layers) is far below it.
+pub(crate) const MAX_DEPTH: u32 = 64;
+
 /// A run of glyphs on one baseline, shaped by Twip: glyph ids with the x of each glyph's origin. The glyph slice is
 /// Twip's own layout (`GlyphRun::glyphs`), so recording it copies nothing but the narrowed values.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -101,6 +107,20 @@ pub enum Filter {
     Erode { radius: f32 },
 }
 
+/// The largest blur sigma or erode radius drawn, in device pixels (Skia's `kMAX_BLUR_SIGMA`): a layer's buffer grows by
+/// at most three times it a side.
+pub(crate) const MAX_FILTER_PX: f32 = 532.0;
+
+impl Filter {
+    /// The blur's sigma or the erode's radius in device pixels, under a transform stretching lengths by `scale`: at
+    /// most [`MAX_FILTER_PX`], and 0 for NaN.
+    pub(crate) fn device_size(self, scale: f32) -> f32 {
+        let (Filter::Blur { sigma: v } | Filter::Erode { radius: v }) = self;
+        let d = v.abs() * scale;
+        if d.is_nan() { 0.0 } else { d.min(MAX_FILTER_PX) }
+    }
+}
+
 /// A picture's identity: unique among the pictures of a process, never reused.
 #[allow(dead_code, reason = "an opaque identity: compared and hashed, never read")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -112,6 +132,8 @@ pub struct Picture(Arc<Data>);
 
 struct Data {
     id: PictureId,
+    /// How deep its pictures and layers nest, itself counted (at most [`MAX_DEPTH`]).
+    depth: u32,
     bounds: Option<Rect>,
     bytes: usize,
     lists: Lists,
@@ -294,8 +316,17 @@ pub(crate) struct RunRec {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct GlyphRec {
-    pub id: u32,
+    /// The id as recorded; read it with [`GlyphRec::id`].
+    pub raw: u32,
     pub x: f32,
+}
+
+impl GlyphRec {
+    /// The glyph id, as [`crate::font::glyph_id`] bounds it (here, not while recording, which stays a copy).
+    #[inline]
+    pub fn id(&self) -> u32 {
+        crate::font::glyph_id(self.raw)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -442,6 +473,9 @@ pub struct Recorder {
     bounds: Option<kurbo::Rect>,
     /// Kept between strokes so expanding one reuses the last one's buffers.
     stroker: kurbo::StrokeCtx,
+    /// Layers open now, and the deepest nesting recorded so far ([`MAX_DEPTH`]).
+    layers_open: u32,
+    depth: u32,
 }
 
 impl Default for Recorder {
@@ -459,6 +493,8 @@ impl Recorder {
             clip: None,
             bounds: None,
             stroker: kurbo::StrokeCtx::default(),
+            layers_open: 0,
+            depth: 1,
         }
     }
 
@@ -510,20 +546,21 @@ impl Recorder {
     }
 
     /// The outline of a path, expanded into a fill here. A width of 0 or less draws nothing. A dash pattern that is
-    /// negative somewhere or sums to 0 is ignored: the stroke is solid.
+    /// negative somewhere, sums to 0 or past `f64`, or makes more than [`MAX_DASHES`] dashes is ignored: the stroke is
+    /// solid.
     pub fn stroke_path<'p>(&mut self, path: &[PathEl], stroke: &kurbo::Stroke, paint: impl Into<Paint<'p>>) {
         // NaN widths draw nothing too.
         if stroke.width.is_nan() || stroke.width <= 0.0 {
             return;
         }
         let paint = paint.into();
-        let valid_dashes = stroke.dash_pattern.iter().all(|&d| d >= 0.0) && stroke.dash_pattern.iter().sum::<f64>() > 0.0;
-        let solid;
-        let stroke = if stroke.dash_pattern.is_empty() || valid_dashes {
-            stroke
-        } else {
-            solid = kurbo::Stroke { dash_pattern: Default::default(), ..stroke.clone() };
-            &solid
+        let safe;
+        let stroke = match safe_dashes(path, stroke) {
+            Some(s) => {
+                safe = s;
+                &safe
+            }
+            None => stroke,
         };
         if let Some((a, b)) = path::as_line(path)
             && (a.x == b.x || a.y == b.y)
@@ -593,7 +630,7 @@ impl Recorder {
         }
         let cluster_span = Span::since(&self.lists.clusters, start);
         let start = self.lists.glyphs.len();
-        self.lists.glyphs.extend(run.glyphs.iter().map(|&(id, x)| GlyphRec { id, x: x as f32 }));
+        self.lists.glyphs.extend(run.glyphs.iter().map(|&(id, x)| GlyphRec { raw: id, x: x as f32 }));
         let style = Style { skew_x: run.synthesis.skew_x, bold: if run.synthesis.embolden { embolden_em(run.size as f32) } else { 0.0 } };
         let mut ink: Option<kurbo::Rect> = None;
         let mut origins = run.glyphs.iter();
@@ -638,6 +675,11 @@ impl Recorder {
     /// Places `picture`, mapped by `transform`. The picture is shared, not copied.
     pub fn picture(&mut self, picture: &Picture, transform: Affine) {
         let Some(bounds) = picture.bounds() else { return };
+        let depth = 1 + self.layers_open + picture.0.depth;
+        if depth > MAX_DEPTH {
+            return;
+        }
+        self.depth = self.depth.max(depth);
         self.add_bounds(transform.transform_rect_bbox(bounds));
         let child = self.lists.children.len() as u32;
         self.lists.children.push(picture.clone());
@@ -672,6 +714,11 @@ impl Recorder {
     }
 
     pub fn push_layer(&mut self, layer: &Layer<'_>) {
+        if 1 + self.layers_open + 1 > MAX_DEPTH {
+            return self.push_transform(Affine::IDENTITY);
+        }
+        self.layers_open += 1;
+        self.depth = self.depth.max(1 + self.layers_open);
         let start = self.lists.color_filters.len();
         self.lists.color_filters.extend_from_slice(layer.color_filters);
         let color_filters = Span::since(&self.lists.color_filters, start);
@@ -707,6 +754,7 @@ impl Recorder {
             Frame::Transform(outer) => self.transform = outer,
             Frame::Clip(outer) => self.clip = outer,
             Frame::Layer { outer_bounds, outer_clip, blur, index } => {
+                self.layers_open -= 1;
                 self.clip = outer_clip;
                 // The content back in the layer's local space (the transform is the one it was pushed under). A
                 // transform that collapses space draws nothing; one too extreme to invert leaves the content unbounded.
@@ -739,7 +787,8 @@ impl Recorder {
         static NEXT: AtomicU64 = AtomicU64::new(1);
         let id = PictureId(NEXT.fetch_add(1, Ordering::Relaxed));
         let bytes = std::mem::size_of::<Data>() + lists.bytes();
-        Picture(Arc::new(Data { id, bounds, bytes, lists }))
+        let depth = std::mem::replace(&mut self.depth, 1);
+        Picture(Arc::new(Data { id, depth, bounds, bytes, lists }))
     }
 
     fn paint(&mut self, paint: Paint<'_>) -> u32 {
@@ -834,16 +883,57 @@ fn flat_caps(stroke: &kurbo::Stroke) -> Option<bool> {
     }
 }
 
+/// The most dash pattern entries a stroke walks: a pattern finer than this along its path (zero-length entries count)
+/// draws the stroke solid, where it would take time and memory without bound.
+const MAX_DASHES: f64 = 200_000.0;
+
+/// `stroke` made safe to dash, when it is dashed: solid when its pattern isn't valid (an entry negative or NaN, the sum
+/// 0 or past `f64`) or is too fine for `path`, else its offset within one period (kurbo walks the pattern to an offset
+/// entry by entry, so 1e300 never ends).
+fn safe_dashes(path: &[PathEl], stroke: &kurbo::Stroke) -> Option<kurbo::Stroke> {
+    let pattern = &stroke.dash_pattern;
+    if pattern.is_empty() {
+        return None;
+    }
+    let sum: f64 = pattern.iter().sum();
+    let period = sum * if pattern.len() % 2 == 1 { 2.0 } else { 1.0 };
+    let valid = pattern.iter().all(|&d| d >= 0.0) && sum > 0.0 && period.is_finite();
+    // The control polygon is at least as long as the path; NaN or infinity fails the test too.
+    if !(valid && polygon_length(path) / period * pattern.len() as f64 <= MAX_DASHES) {
+        return Some(kurbo::Stroke { dash_pattern: Default::default(), ..stroke.clone() });
+    }
+    Some(kurbo::Stroke { dash_offset: stroke.dash_offset.rem_euclid(period), ..stroke.clone() })
+}
+
+/// The length of `path`'s control polygon, closing segments included.
+fn polygon_length(path: &[PathEl]) -> f64 {
+    let (mut len, mut at, mut start) = (0.0, kurbo::Point::ZERO, kurbo::Point::ZERO);
+    for el in path {
+        let (points, n) = match *el {
+            PathEl::MoveTo(p) => {
+                (at, start) = (p, p);
+                continue;
+            }
+            PathEl::LineTo(p) => ([p, p, p], 1),
+            PathEl::QuadTo(a, b) => ([a, b, b], 2),
+            PathEl::CurveTo(a, b, c) => ([a, b, c], 3),
+            PathEl::ClosePath => ([start, start, start], 1),
+        };
+        for &p in &points[..n] {
+            len += at.distance(p);
+            at = p;
+        }
+    }
+    len
+}
+
 /// Calls `dash(from, to)` with the distances along a straight segment `len` long where each dash of `pattern` (on and
 /// off lengths, an odd-length pattern repeated twice, as SVG reads it) starts and ends, in order, starting `offset`
-/// into the pattern. `pattern` is non-negative with a positive sum. A pattern too fine to draw as dashes (more than
-/// 100,000 repeats along the segment) draws the segment solid.
+/// into the pattern. `pattern` is what [`safe_dashes`] keeps: non-negative, a finite positive sum, at most
+/// [`MAX_DASHES`] entries along the segment.
 fn dashes(len: f64, pattern: &[f64], offset: f64, mut dash: impl FnMut(f64, f64)) {
     let n = pattern.len();
     let period = pattern.iter().sum::<f64>() * if n % 2 == 1 { 2.0 } else { 1.0 };
-    if len / period > 100_000.0 {
-        return dash(0.0, len);
-    }
     // The dash `offset` falls in (`i`, counting through the repeated pattern) and what is left of it.
     let (mut i, mut left) = (0, offset.rem_euclid(period));
     while left >= pattern[i % n] {
@@ -993,6 +1083,14 @@ mod tests {
     }
 
     #[test]
+    fn filter_sizes_are_capped_and_nan_is_none() {
+        assert_eq!(Filter::Blur { sigma: -3.0 }.device_size(2.0), 6.0);
+        assert_eq!(Filter::Blur { sigma: 1.0e9 }.device_size(1.0), MAX_FILTER_PX);
+        assert_eq!(Filter::Erode { radius: f32::INFINITY }.device_size(1.0), MAX_FILTER_PX);
+        assert_eq!(Filter::Erode { radius: f32::NAN }.device_size(1.0), 0.0);
+    }
+
+    #[test]
     fn dashes_follow_offset_and_repeat_odd_patterns() {
         let collect = |len: f64, pattern: &[f64], offset: f64| {
             let mut out = Vec::new();
@@ -1002,7 +1100,10 @@ mod tests {
         assert_eq!(collect(10.0, &[3.0, 1.0], 2.0), [(0.0, 1.0), (2.0, 5.0), (6.0, 9.0)]);
         assert_eq!(collect(10.0, &[3.0, 1.0], -1.0), [(1.0, 4.0), (5.0, 8.0), (9.0, 10.0)]);
         assert_eq!(collect(6.0, &[1.0], 0.0), [(0.0, 1.0), (2.0, 3.0), (4.0, 5.0)]);
-        assert_eq!(collect(1e9, &[1.0, 1.0], 0.0), [(0.0, 1e9)], "too fine: solid");
+        // Too fine (`safe_dashes`): solid.
+        let mut rec = Recorder::new();
+        rec.line((0.0, 0.0).into(), (1e9, 0.0).into(), &butt(1.0).with_dashes(0.0, [1.0, 1.0]), RED);
+        assert_eq!(rec.finish().lists().cmds.len(), 1);
     }
 
     #[test]
@@ -1104,7 +1205,7 @@ mod tests {
         assert_eq!(l.stops, stops);
         let none = Span::default();
         assert_eq!(l.runs[0], RunRec { font, size: 12.0, baseline: 100.0, glyphs: Span { start: 0, len: 2 }, synthesis, text: none, clusters: none });
-        assert_eq!(l.glyphs, [GlyphRec { id: 36, x: 10.0 }, GlyphRec { id: 72, x: 16.5 }]);
+        assert_eq!(l.glyphs, [GlyphRec { raw: 36, x: 10.0 }, GlyphRec { raw: 72, x: 16.5 }]);
         assert_eq!(l.images[0].color_filters, Span { start: 0, len: 2 }, "filters are kept as a chain, in order");
         assert_eq!(l.color_filters[..2], filters);
         assert!(matches!(l.clips[0], ClipRec::Path { path: PathSpan { verbs: Span { len: 6.., .. }, .. }, .. }));

@@ -145,6 +145,29 @@ fn layers() {
     same("layers", (128, 144), &common::scenes::layers(), &Resources::default());
 }
 
+/// Blurs and erodes wide enough for the block-sum and doubling steps, against the CPU's direct ones: the same bytes
+/// within the module's tolerance, with content on the layer's edges (the blocks that start before a line).
+#[test]
+fn wide_filters() {
+    use twip_graphics::kurbo::{Circle, Rect, Shape};
+    use twip_graphics::scene::{Filter, Layer};
+    let cases: [&[Filter]; 5] = [
+        &[Filter::Blur { sigma: 40.0 }],
+        &[Filter::Blur { sigma: 150.0 }],
+        &[Filter::Blur { sigma: 1.0e6 }],
+        &[Filter::Erode { radius: 20.0 }],
+        &[Filter::Erode { radius: 37.0 }, Filter::Blur { sigma: 30.0 }],
+    ];
+    for (i, filters) in cases.into_iter().enumerate() {
+        let mut rec = Recorder::new();
+        rec.push_layer(&Layer { filters, ..Layer::default() });
+        rec.fill_rect(Rect::new(0.0, 0.0, 150.0, 90.0), Color::rgb(0x44_72C4));
+        rec.fill_path(Circle::new((170.0, 110.0), 60.0).to_path(0.01).elements(), Color::rgb(0xED_7D31).with_alpha(200));
+        rec.pop();
+        same(&format!("wide_filters_{i}"), (240, 160), &rec.finish(), &Resources::default());
+    }
+}
+
 #[test]
 fn blend_modes() {
     same("blend-modes", (254, 146), &common::scenes::blend_modes(), &Resources::default());

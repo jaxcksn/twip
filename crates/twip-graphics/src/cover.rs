@@ -80,6 +80,10 @@ pub(crate) fn push_clip(
     mask.bounds = b;
     mask.data.clear();
     mask.data.resize(b.width().max(0) as usize * (b.y1 - b.y0).max(0) as usize, 0);
+    // Nothing is kept (a clip off the target): no coverage, and no rows of the enclosing mask to read.
+    if b.is_empty() {
+        return Clip { rect: clip.rect, bounds: b, mask: Some(index) };
+    }
     let w = b.width() as usize;
     raster.fill(verbs, points, t, b, aa, even_odd, |y, x, cov| {
         let at = (y - b.y0) as usize * w + (x - b.x0) as usize;

@@ -1,5 +1,11 @@
-//! A map for the renderer's caches: small integer keys hashed with the multiply-rotate hash rustc uses (FxHash). Far
-//! cheaper than SipHash per lookup, and every key is the renderer's own, so collisions can't be chosen by an attacker.
+//! A map for the renderer's caches: small integer keys hashed with the multiply-rotate hash rustc uses (FxHash), far
+//! cheaper than SipHash per lookup.
+//!
+//! Unseeded, and `finish` is the bare product, whose low bits (where hashbrown takes a bucket from) depend only on the
+//! key's low bits: keys that differ only above them share a probe chain. Glyph ids are a face's, and faces come from
+//! the host (a document names a family, never a face's bytes); the glyph caches still see them at most 0xFFFF
+//! (`font::glyph_id`), which leaves a face at most a few hundred ids sharing a bucket. A map keyed by something wide
+//! that a document chooses needs a mixing `finish`.
 
 use std::collections::HashMap;
 use std::hash::{BuildHasherDefault, Hasher};

@@ -139,9 +139,7 @@ pub fn probe(bytes: &[u8]) -> Option<ImageInfo> {
 /// Decodes `bytes` into premultiplied RGBA8, orientation applied.
 pub(crate) fn decode(bytes: &[u8]) -> Result<Pixmap, ImageError> {
     let info = probe(bytes).ok_or_else(|| error("not a supported image"))?;
-    if info.width as u64 * info.height as u64 > MAX_PIXELS {
-        return Err(error(format_args!("{}×{} pixels is more than an image may have", info.width, info.height)));
-    }
+    fits(info.width, info.height)?;
     let options = DecoderOptions::default().set_max_width(1 << 16).set_max_height(1 << 16);
     let straight = match info.format {
         ImageFormat::Png => png(bytes, options)?,
@@ -160,6 +158,14 @@ pub(crate) fn decode(bytes: &[u8]) -> Result<Pixmap, ImageError> {
     let mut p = orient(straight, info.orientation);
     premultiply(&mut p.data);
     Ok(p)
+}
+
+/// Whether `width × height` is at most [`MAX_PIXELS`], checked before a decoder allocates for it.
+pub(crate) fn fits(width: u32, height: u32) -> Result<(), ImageError> {
+    if width as u64 * height as u64 > MAX_PIXELS {
+        return Err(error(format_args!("{width}×{height} pixels is more than an image may have")));
+    }
+    Ok(())
 }
 
 fn png(bytes: &[u8], options: DecoderOptions) -> Result<Pixmap, ImageError> {
@@ -252,8 +258,14 @@ fn ico_entry(d: &[u8]) -> Option<IcoEntry> {
 fn ico(bytes: &[u8], options: DecoderOptions) -> Result<Pixmap, ImageError> {
     let e = ico_entry(bytes).ok_or_else(|| error("an ICO without entries"))?;
     let data = bytes.get(e.offset..e.offset.saturating_add(e.size)).ok_or_else(|| error("an ICO entry outside the file"))?;
+    // The image inside is checked itself: the directory's size (at most 256) needn't be the size it decodes to.
     if data.starts_with(&[0x89, b'P', b'N', b'G']) {
+        let i = probe(data).ok_or_else(|| error("a broken ICO PNG"))?;
+        fits(i.width, i.height)?;
         return png(data, options);
+    }
+    if data.len() < 16 {
+        return Err(error("a truncated ICO bitmap"));
     }
     let u32_at = |o: usize| data.get(o..o + 4).map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]));
     let header = u32_at(0).ok_or_else(|| error("a truncated ICO bitmap"))? as usize;
@@ -262,28 +274,33 @@ fn ico(bytes: &[u8], options: DecoderOptions) -> Result<Pixmap, ImageError> {
         0 if bpp <= 8 => 1usize << bpp,
         n => n as usize,
     };
-    let pixels_at = 14 + header + colours * 4;
+    let pixels_at = u32::try_from(colours.saturating_mul(4).saturating_add(header).saturating_add(14))
+        .map_err(|_| error("an ICO bitmap's pixels outside the file"))?;
     // A BMP file: a file header, the DIB header with the height halved (the colour rows only), the palette and rows.
     let mut file = Vec::with_capacity(14 + data.len());
     file.extend_from_slice(b"BM");
     file.extend_from_slice(&((14 + data.len()) as u32).to_le_bytes());
     file.extend_from_slice(&[0; 4]);
-    file.extend_from_slice(&(pixels_at as u32).to_le_bytes());
+    file.extend_from_slice(&pixels_at.to_le_bytes());
     file.extend_from_slice(data);
     let h = e.height as i32;
     file[14 + 8..14 + 12].copy_from_slice(&h.to_le_bytes());
+    let i = probe(&file).ok_or_else(|| error("a broken ICO bitmap"))?;
+    fits(i.width, i.height)?;
     let mut p = bmp(&file, options)?;
     // The AND mask: 1 bit per pixel, rows bottom up, each padded to 4 bytes; a set bit is transparent. A 32-bit
     // bitmap carries its own alpha, unless every alpha is zero (then the mask applies).
     let has_alpha = bpp == 32 && p.data.as_chunks::<4>().0.iter().any(|q| q[3] != 0);
     if !has_alpha {
         let row_bytes = (p.width as usize).div_ceil(32) * 4;
-        let colour_bytes = (p.width as usize * bpp as usize).div_ceil(32) * 4 * p.height as usize;
-        let mask_at = header + colours * 4 + colour_bytes;
+        // Saturating: the header and palette sizes are the file's (up to 2^32 each), past a 32-bit usize.
+        let colour_bytes = (p.width as usize).saturating_mul(bpp as usize).div_ceil(32).saturating_mul(4 * p.height as usize);
+        let mask_at = header.saturating_add(colours.saturating_mul(4)).saturating_add(colour_bytes);
+        let mask = data.get(mask_at..).unwrap_or_default();
         for y in 0..p.height as usize {
             let src_row = p.height as usize - 1 - y;
             for x in 0..p.width as usize {
-                let bit = data.get(mask_at + src_row * row_bytes + x / 8).map_or(0, |b| (b >> (7 - x % 8)) & 1);
+                let bit = mask.get(src_row * row_bytes + x / 8).map_or(0, |b| (b >> (7 - x % 8)) & 1);
                 p.data[(y * p.width as usize + x) * 4 + 3] = if bit == 1 { 0 } else { 255 };
             }
         }
@@ -311,7 +328,7 @@ fn wbmp_header(d: &[u8]) -> Option<(u32, u32, usize)> {
     };
     let (w, h) = (read()?, read()?);
     let row = (w as usize).div_ceil(8);
-    (d.len() >= at + row * h as usize).then_some((w, h, at))
+    (d.len() >= row.checked_mul(h as usize)?.checked_add(at)?).then_some((w, h, at))
 }
 
 fn wbmp(d: &[u8]) -> Result<Pixmap, ImageError> {
@@ -335,15 +352,17 @@ fn exif_orientation(exif: &[u8]) -> u8 {
         Some(b"MM") => false,
         _ => return 1,
     };
-    let u16_at = |o: usize| t.get(o..o + 2).map(|b| if little { u16::from_le_bytes([b[0], b[1]]) } else { u16::from_be_bytes([b[0], b[1]]) });
+    let u16_at =
+        |o: usize| t.get(o..o.checked_add(2)?).map(|b| if little { u16::from_le_bytes([b[0], b[1]]) } else { u16::from_be_bytes([b[0], b[1]]) });
     let u32_at = |o: usize| {
-        t.get(o..o + 4).map(|b| if little { u32::from_le_bytes([b[0], b[1], b[2], b[3]]) } else { u32::from_be_bytes([b[0], b[1], b[2], b[3]]) })
+        t.get(o..o.checked_add(4)?)
+            .map(|b| if little { u32::from_le_bytes([b[0], b[1], b[2], b[3]]) } else { u32::from_be_bytes([b[0], b[1], b[2], b[3]]) })
     };
     let Some(ifd) = u32_at(4).map(|v| v as usize) else { return 1 };
     let count = u16_at(ifd).unwrap_or(0) as usize;
     (0..count)
         .find_map(|i| {
-            let e = ifd + 2 + 12 * i;
+            let e = ifd.checked_add(2 + 12 * i)?;
             (u16_at(e)? == 0x0112).then(|| u16_at(e + 8)).flatten()
         })
         .filter(|o| (1..=8).contains(o))
@@ -392,7 +411,11 @@ fn premultiply(data: &mut [u8]) {
 /// a pixel averages the two above it; along an odd one, three, weighted 1, 2, 1, so the last row or column counts too.
 #[derive(Clone, Debug)]
 pub(crate) struct Mips {
+    /// From level `skip` on: the CPU keeps only the levels it draws (the GPU every one, `skip` 0).
     pub levels: Vec<Pixmap>,
+    pub skip: usize,
+    /// Level 0's size.
+    pub size: (u32, u32),
 }
 
 /// The taps along one side, from `n` pixels to half as many: each output's first input and weights.
@@ -406,6 +429,7 @@ fn taps(n: u32, i: u32) -> (u32, &'static [u32]) {
 
 impl Mips {
     pub fn new(base: Pixmap) -> Mips {
+        let size = (base.width, base.height);
         let mut levels = vec![base];
         while let Some(last) = levels.last().filter(|l| l.width > 1 || l.height > 1) {
             let (w, h) = ((last.width / 2).max(1), (last.height / 2).max(1));
@@ -427,7 +451,24 @@ impl Mips {
             }
             levels.push(Pixmap { width: w, height: h, data });
         }
-        Mips { levels }
+        Mips { levels, skip: 0, size }
+    }
+
+    /// How many levels the whole chain has, kept or not.
+    pub fn count(&self) -> usize {
+        self.skip + self.levels.len()
+    }
+
+    /// Level `i`, when it is kept.
+    pub fn level(&self, i: usize) -> Option<&Pixmap> {
+        self.levels.get(i.checked_sub(self.skip)?)
+    }
+
+    /// Drops the levels finer than `i` (the coarsest stays).
+    pub fn keep_from(&mut self, i: usize) {
+        let n = i.saturating_sub(self.skip).min(self.levels.len() - 1);
+        self.levels.drain(..n);
+        self.skip += n;
     }
 
     pub fn bytes(&self) -> usize {
@@ -475,6 +516,7 @@ impl ImageRegistry {
         if width == 0 || height == 0 || rgba.len() as u64 != width as u64 * height as u64 * 4 {
             return Err(error(format_args!("{} bytes aren't {width}×{height} RGBA pixels", rgba.len())));
         }
+        fits(width, height)?;
         premultiply(&mut rgba);
         let info = ImageInfo { format: ImageFormat::Png, width, height, orientation: 1 };
         let id = ImageId(self.entries.len() as u32);
@@ -610,6 +652,30 @@ mod tests {
         }
         // A WBMP claiming 2^14 × 2^15 pixels with no data.
         assert!(decode(&[0, 0, 0x81, 0x80, 0x00, 0x82, 0x80, 0x00]).is_err());
+    }
+
+    /// An ICO of one entry holding `data`.
+    fn ico_of(data: &[u8]) -> Vec<u8> {
+        let mut ico = vec![0, 0, 1, 0, 1, 0, 16, 16, 0, 0, 1, 0, 32, 0];
+        ico.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        ico.extend_from_slice(&22u32.to_le_bytes());
+        ico.extend_from_slice(data);
+        ico
+    }
+
+    #[test]
+    fn ico_entries_cant_panic_or_dodge_the_pixel_cap() {
+        // A bitmap entry too short for its DIB header indexed past the end of the BMP it was copied into.
+        assert!(decode(&ico_of(&[40, 0, 0, 0, 1, 0, 0, 0])).is_err());
+        // A 16 × 16 directory entry whose PNG says 60000 × 60000 was decoded at that size.
+        let mut huge = Vec::new();
+        drop(png::Encoder::new(&mut huge, 60000, 60000).write_header());
+        // Signature and IHDR, then an empty IDAT (the header reader wants one) and IEND.
+        huge.truncate(33);
+        huge.extend_from_slice(&[0, 0, 0, 0, b'I', b'D', b'A', b'T', 0x35, 0xAF, 0x06, 0x1E]);
+        huge.extend_from_slice(&[0, 0, 0, 0, b'I', b'E', b'N', b'D', 0xAE, 0x42, 0x60, 0x82]);
+        // Refused from its header, before the decoder (allowed 2^16 a side) allocates 13 GiB for it.
+        assert!(decode(&ico_of(&huge)).is_err());
     }
 
     #[test]

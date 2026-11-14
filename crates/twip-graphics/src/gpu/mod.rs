@@ -177,15 +177,21 @@ impl Context {
     }
 }
 
-/// Why a frame can't be prepared: the device was lost (see [`Context::is_lost`]).
+/// Why a frame can't be prepared: the device was lost (see [`Context::is_lost`]), or the frame needs more than the
+/// device has (atlas layers, a texture's height, a buffer's size), where making it would lose the device. The
+/// renderer is still usable; draw that frame on the CPU.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error {
     Lost,
+    TooLarge,
 }
 
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("the GPU device was lost")
+        f.write_str(match self {
+            Error::Lost => "the GPU device was lost",
+            Error::TooLarge => "the frame needs more than the GPU device's limits",
+        })
     }
 }
 
@@ -223,9 +229,14 @@ const IMAGE_BUDGET: usize = 256 << 20;
 struct Slot {
     size: (u32, u32),
     views: [wgpu::TextureView; 2],
-    /// The filter passes' bind groups reading from each texture (made again with the uniform buffer).
+    /// The filter passes' bind groups reading from each texture (made again with the uniform buffer), and the
+    /// blocks step's (made again with the block sums too).
     groups: Option<[wgpu::BindGroup; 2]>,
+    blocks: Option<[wgpu::BindGroup; 2]>,
 }
+
+/// The block sums' texels: four 16-bit sums of up to 257 8-bit values.
+const SUMS_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Uint;
 
 /// The bytes of a draw's uniforms (its target's size, its instances' origin, its ramp and filter bases) and of a filter
 /// pass's (see the filter shader).
@@ -235,12 +246,20 @@ const FILTER_UNIFORMS: u64 = 96;
 /// The GPU renderer for one device and target format. It keeps its pipelines, textures and buffers between frames.
 pub struct Renderer {
     format: wgpu::TextureFormat,
+    /// The device's limits a frame's textures and buffers are checked against.
+    limits: wgpu::Limits,
     over: wgpu::RenderPipeline,
     multiply: [wgpu::RenderPipeline; 2],
     erase: wgpu::RenderPipeline,
     /// The other blend modes, reading a copy of the destination.
     general: wgpu::RenderPipeline,
     filter: wgpu::RenderPipeline,
+    /// A wide box's two steps: block sums into `sums_texture`, then the box from them.
+    sums: wgpu::RenderPipeline,
+    blocks: wgpu::RenderPipeline,
+    blocks_layout: wgpu::BindGroupLayout,
+    /// The block sums, grown to the largest layer a frame sums in blocks (one at a time, so one serves every depth).
+    sums_texture: Option<(wgpu::TextureView, (u32, u32))>,
     frame_layout: wgpu::BindGroupLayout,
     image_layout: wgpu::BindGroupLayout,
     filter_layout: wgpu::BindGroupLayout,
@@ -435,31 +454,45 @@ impl Renderer {
             label: Some("twip-graphics filter"),
             entries: &[uniform(FILTER_UNIFORMS), texture_entry(1, Sample::Float { filterable: false }, Dim::D2)],
         });
-        let filter = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("twip-graphics filter"),
-            layout: Some(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("twip-graphics filter"),
-                bind_group_layouts: &[Some(&filter_layout)],
-                immediate_size: 0,
-            })),
-            vertex: wgpu::VertexState {
-                module: &filter_shader,
-                entry_point: Some("vertex"),
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-                buffers: &[],
-            },
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            fragment: Some(wgpu::FragmentState {
-                module: &filter_shader,
-                entry_point: Some("fragment"),
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-                targets: &[Some(wgpu::ColorTargetState { format, blend: None, write_mask: wgpu::ColorWrites::ALL })],
-            }),
-            multiview_mask: None,
-            cache: None,
+        // The blocks step also reads the block sums (16-bit integers, written by the sums step).
+        let blocks_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("twip-graphics filter blocks"),
+            entries: &[
+                uniform(FILTER_UNIFORMS),
+                texture_entry(1, Sample::Float { filterable: false }, Dim::D2),
+                texture_entry(2, Sample::Uint, Dim::D2),
+            ],
         });
+        let filter_pipeline = |layout: &wgpu::BindGroupLayout, entry: &str, format: wgpu::TextureFormat| {
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("twip-graphics filter"),
+                layout: Some(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("twip-graphics filter"),
+                    bind_group_layouts: &[Some(layout)],
+                    immediate_size: 0,
+                })),
+                vertex: wgpu::VertexState {
+                    module: &filter_shader,
+                    entry_point: Some("vertex"),
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    buffers: &[],
+                },
+                primitive: wgpu::PrimitiveState::default(),
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState::default(),
+                fragment: Some(wgpu::FragmentState {
+                    module: &filter_shader,
+                    entry_point: Some(entry),
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    targets: &[Some(wgpu::ColorTargetState { format, blend: None, write_mask: wgpu::ColorWrites::ALL })],
+                }),
+                multiview_mask: None,
+                cache: None,
+            })
+        };
+        let filter = filter_pipeline(&filter_layout, "fragment", format);
+        let sums = filter_pipeline(&filter_layout, "block_sums", SUMS_FORMAT);
+        let blocks = filter_pipeline(&blocks_layout, "blocks", format);
         let sampler = |linear: bool, repeat: bool| {
             let filter = if linear { wgpu::FilterMode::Linear } else { wgpu::FilterMode::Nearest };
             let address = if repeat { wgpu::AddressMode::Repeat } else { wgpu::AddressMode::ClampToEdge };
@@ -475,11 +508,16 @@ impl Renderer {
         let limits = device.limits();
         Renderer {
             format,
+            limits: limits.clone(),
             over: pipeline(component(F::One, F::OneMinusSrcAlpha)),
             multiply: [pipeline(component(F::Dst, F::OneMinusSrcAlpha)), pipeline(component(F::OneMinusDstAlpha, F::One))],
             erase: pipeline(component(F::Zero, F::OneMinusSrcAlpha)),
             general: instanced(&general_layout, "blend", None),
             filter,
+            sums,
+            blocks,
+            blocks_layout,
+            sums_texture: None,
             frame_layout,
             image_layout,
             filter_layout,
@@ -510,6 +548,22 @@ impl Renderer {
         }
     }
 
+    /// Whether the prepared frame's atlases, row textures and buffers are within the device's limits: past them,
+    /// making them is a validation error, which loses the device.
+    fn fits(&self) -> bool {
+        let (l, p) = (&self.limits, &self.prepare);
+        let layers = [p.atlas.pages(), p.colour.pages(), p.kept.pages()].iter().all(|&n| n as u64 <= u64::from(l.max_texture_array_layers));
+        // Row textures double their height as they grow.
+        let rows =
+            [p.out.ramps.len(), p.out.filters.len()].iter().all(|&n| (n.max(1) as u64).next_power_of_two() <= u64::from(l.max_texture_dimension_2d));
+        let uniforms = p.out.uniforms.len().max(1) as u64 * u64::from(self.stride);
+        let kept = u64::from(p.memo.arena.capacity()) * INSTANCE as u64;
+        let buffers = [p.out.instances.len() as u64, uniforms, kept].iter().all(|&b| b <= l.max_buffer_size);
+        // Kept pictures' layers add their depths' sizes too.
+        let slots = p.out.slots.iter().map(|&(w, h)| u64::from(w) * u64::from(h)).sum::<u64>() <= crate::cpu::MAX_LAYER_PIXELS;
+        layers && rows && buffers && slots
+    }
+
     /// Prepares `frame` for a `width × height` target: its instances built, its coverage, ramps, colour filters and
     /// new images uploaded. What the GPU keeps (textures, buffers, bind groups) is made again only when it must grow.
     pub fn prepare(&mut self, context: &Context, res: &Resources, frame: &Frame<'_>, (width, height): (u32, u32)) -> Result<Prepared, Error> {
@@ -518,6 +572,9 @@ impl Renderer {
         }
         let (device, queue) = (&context.device, &context.queue);
         self.prepare.frame(res, frame, (width, height));
+        if !self.fits() {
+            return Err(Error::TooLarge);
+        }
         let p = &mut self.prepare;
         // The images this frame draws: an evicted one (a kept picture drawn again may sample it) is decoded again.
         let now = self.serial + 1;
@@ -588,7 +645,7 @@ impl Renderer {
         }
         let bytes = (p.out.instances.len() as u64).max(INSTANCE as u64);
         if self.instances.as_ref().is_none_or(|(_, size)| *size < bytes) {
-            let size = bytes.next_power_of_two();
+            let size = bytes.next_power_of_two().min(self.limits.max_buffer_size).max(bytes);
             let buffer = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("twip-graphics instances"),
                 size,
@@ -646,7 +703,7 @@ impl Renderer {
         }
         let bytes = self.bytes.len() as u64;
         if self.uniforms.as_ref().is_none_or(|(_, size)| *size < bytes) {
-            let size = bytes.next_power_of_two();
+            let size = bytes.next_power_of_two().min(self.limits.max_buffer_size).max(bytes);
             let buffer = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("twip-graphics uniforms"),
                 size,
@@ -657,18 +714,29 @@ impl Renderer {
             // The frame's and the filters' bind groups bind the old buffer.
             remade = true;
             for s in &mut self.slots {
-                s.groups = None;
+                (s.groups, s.blocks) = (None, None);
             }
         }
         let Some((uniforms, _)) = &self.uniforms else { return Err(Error::Lost) };
         queue.write_buffer(uniforms, 0, &self.bytes);
-        // Each layer depth's textures, grown to the largest layer drawn at that depth.
+        // Each layer depth's textures, grown to the largest layer drawn at that depth. Grown past the layers' budget
+        // (each depth's largest in a different frame), they are made again at this frame's sizes, and deeper ones go.
+        let grown = |depth: usize, (w, h): (u32, u32)| self.slots.get(depth).map_or((w, h), |s| (s.size.0.max(w), s.size.1.max(h)));
+        let held: u64 = p.out.slots.iter().enumerate().map(|(d, &s)| grown(d, s)).map(|(w, h)| u64::from(w) * u64::from(h)).sum();
+        let exact = held > crate::cpu::MAX_LAYER_PIXELS;
+        if exact {
+            let n = p.out.slots.len();
+            self.slots.truncate(n);
+            self.sources.retain(|s, _| !matches!(s, Source::Layer(d) if *d >= n));
+        }
         for (depth, &(w, h)) in p.out.slots.iter().enumerate() {
             let have = self.slots.get(depth).map(|s| s.size);
-            if have.is_some_and(|(sw, sh)| sw >= w && sh >= h) {
+            if have.is_some_and(|(sw, sh)| if exact { (sw, sh) == (w, h) } else { sw >= w && sh >= h }) {
                 continue;
             }
-            let size = have.map_or((w, h), |(sw, sh)| (sw.max(w), sh.max(h)));
+            let size = if exact { (w, h) } else { have.map_or((w, h), |(sw, sh)| (sw.max(w), sh.max(h))) };
+            // A depth only a kept picture's layers reach may be empty here: a texture is at least a pixel.
+            let size = (size.0.max(1), size.1.max(1));
             let make = || {
                 device
                     .create_texture(&wgpu::TextureDescriptor {
@@ -683,7 +751,7 @@ impl Renderer {
                     })
                     .create_view(&wgpu::TextureViewDescriptor::default())
             };
-            let slot = Slot { size, views: [make(), make()], groups: None };
+            let slot = Slot { size, views: [make(), make()], groups: None, blocks: None };
             match self.slots.get_mut(depth) {
                 Some(s) => *s = slot,
                 None => self.slots.push(slot),
@@ -704,6 +772,47 @@ impl Renderer {
                     })
                 };
                 s.groups = Some([group(&s.views[0]), group(&s.views[1])]);
+            }
+        }
+        // The block sums, when a wide box is drawn: grown to the largest layer, which unbinds the blocks steps.
+        let summed = p.out.ops.iter().any(|op| matches!(op, Op::Filter { step, .. } if step.kind == prepare::SUMS));
+        let need = p.out.slots.iter().fold((1, 1), |(w, h), &(sw, sh)| (w.max(sw), h.max(sh)));
+        let have = self.sums_texture.as_ref().map(|(_, size)| *size);
+        if summed && have.is_none_or(|(w, h)| w < need.0 || h < need.1) {
+            let size = have.map_or(need, |(w, h)| (w.max(need.0), h.max(need.1)));
+            let view = device
+                .create_texture(&wgpu::TextureDescriptor {
+                    label: Some("twip-graphics block sums"),
+                    size: wgpu::Extent3d { width: size.0, height: size.1, depth_or_array_layers: 1 },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: SUMS_FORMAT,
+                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+                    view_formats: &[],
+                })
+                .create_view(&wgpu::TextureViewDescriptor::default());
+            self.sums_texture = Some((view, size));
+            for s in &mut self.slots {
+                s.blocks = None;
+            }
+        }
+        if let Some((sums, _)) = &self.sums_texture {
+            for s in &mut self.slots {
+                if s.blocks.is_none() {
+                    let group = |view: &wgpu::TextureView| {
+                        device.create_bind_group(&wgpu::BindGroupDescriptor {
+                            label: Some("twip-graphics filter blocks"),
+                            layout: &self.blocks_layout,
+                            entries: &[
+                                wgpu::BindGroupEntry { binding: 0, resource: uniform_binding(uniforms, FILTER_UNIFORMS) },
+                                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(view) },
+                                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(sums) },
+                            ],
+                        })
+                    };
+                    s.blocks = Some([group(&s.views[0]), group(&s.views[1])]);
+                }
             }
         }
         // The destination copy, grown to the largest a general blend needs (at least a pixel, to bind).
@@ -876,12 +985,24 @@ impl Renderer {
                         }
                     }
                 }
-                Op::Filter { slot, size, read, uniform, .. } => {
+                Op::Filter { slot, size, read, uniform, step } => {
                     let s = &self.slots[*slot];
-                    let Some(groups) = &s.groups else { continue };
-                    let mut pass = begin(encoder, &s.views[1 - read], transparent, *size);
-                    pass.set_pipeline(&self.filter);
-                    pass.set_bind_group(0, &groups[*read], &[uniform * stride]);
+                    let (Some(groups), blocks) = (&s.groups, &s.blocks) else { continue };
+                    // Block sums go to their own texture; every other step to the layer's other texture.
+                    let (view, pipeline, group) = match step.kind {
+                        prepare::SUMS => {
+                            let Some((sums, _)) = &self.sums_texture else { continue };
+                            (sums, &self.sums, &groups[*read])
+                        }
+                        prepare::BLOCKS => {
+                            let Some(blocks) = blocks else { continue };
+                            (&s.views[1 - read], &self.blocks, &blocks[*read])
+                        }
+                        _ => (&s.views[1 - read], &self.filter, &groups[*read]),
+                    };
+                    let mut pass = begin(encoder, view, transparent, *size);
+                    pass.set_pipeline(pipeline);
+                    pass.set_bind_group(0, group, &[uniform * stride]);
                     pass.draw(0..3, 0..1);
                 }
                 Op::Copy { slot, from, size } => {

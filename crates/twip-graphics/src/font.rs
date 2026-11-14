@@ -86,7 +86,8 @@ pub struct FontRegistry {
     known: HashMap<FaceKey, FontId>,
     /// Each glyph's control box in em units, y down (`None` for a glyph without ink), filled as recording asks.
     /// Behind a lock because recording borrows the registry shared, and the registry may be shared across threads.
-    boxes: Mutex<FastMap<(FontId, u32), Option<kurbo::Rect>>>,
+    /// Keyed by `font << 32 | glyph` (one hasher step; recording looks up every glyph).
+    boxes: Mutex<FastMap<u64, Option<kurbo::Rect>>>,
 }
 
 impl fmt::Debug for FontRegistry {
@@ -190,8 +191,10 @@ impl FontRegistry {
         // A poisoned lock still holds correct boxes: they are computed before they're inserted.
         let mut boxes = self.boxes.lock().unwrap_or_else(|e| e.into_inner());
         let mut outline = BezPath::new();
+        // Raw ids (not `glyph_id`'s): the clamp cost recording 4%, and a face's ids are its own, from the host, never
+        // a document's.
         for glyph in glyphs {
-            let b = *boxes.entry((font, glyph)).or_insert_with(|| match self.kind(font, glyph) {
+            let b = *boxes.entry(u64::from(font.0) << 32 | u64::from(glyph)).or_insert_with(|| match self.kind(font, glyph) {
                 GlyphKind::Outline => {
                     outline.truncate(0);
                     (self.em_outline(font, glyph, &mut outline) && !outline.is_empty()).then(|| outline.control_box())
@@ -201,6 +204,14 @@ impl FontRegistry {
             each(glyph, b);
         }
     }
+}
+
+/// A glyph id as the caches key it: OpenType ids are below 0xFFFF (a face has at most 65535 glyphs), so anything
+/// larger (a cmap format 12 entry may name any u32) is 0xFFFF, which no face has and nothing draws. A font can't then
+/// spread a cache's keys over 32 bits, and the PDF writer's 16-bit glyph codes can't name a different glyph.
+#[inline]
+pub(crate) fn glyph_id(id: u32) -> u32 {
+    id.min(0xFFFF)
 }
 
 /// The face's colour bitmap strikes (sbix, then CBDT), if it has any.
@@ -570,6 +581,10 @@ impl GlyphCache {
     /// The mask for `glyph` at `bin` in `strike`, rasterised now if it isn't cached. An unknown face or glyph gives an
     /// empty mask.
     pub fn mask_in(&mut self, fonts: &FontRegistry, raster: &mut Rasterizer, strike: StrikeId, glyph: u32, bin: [u8; 2]) -> &GlyphMask {
+        // Over the budget mid-frame, older masks go now (strikes stay, so ids hold until the frame's trim).
+        if self.bytes > self.budget {
+            self.drop_old();
+        }
         self.clock += 1;
         let clock = self.clock;
         let GlyphCache { strikes, hinters, hint, bytes, outliner, verbs, points, .. } = self;
@@ -591,9 +606,22 @@ impl GlyphCache {
 
     /// Drops the least recently used masks while the cache is over its budget (after a frame), down to half of it.
     pub fn trim(&mut self) {
+        // ponytail: hinting instances (one per face and size, so a zoom sweep makes hundreds) aren't in the byte
+        // budget; past 64 they all go and are made again as drawn. Count their bytes if that churn ever shows.
+        if self.hinters.len() > 64 {
+            self.hinters.clear();
+        }
         if self.bytes <= self.budget {
             return;
         }
+        self.drop_old();
+        // Empty strikes go too, which moves the others: their ids are renumbered.
+        self.strikes.retain(|s| !s.masks.is_empty());
+        self.strike_ids = self.strikes.iter().enumerate().map(|(i, s)| (s.key, i)).collect();
+    }
+
+    /// Drops the least recently used masks down to half the budget, keeping every strike (and so every id).
+    fn drop_old(&mut self) {
         let mut by_age: Vec<(u64, usize, u64)> =
             self.strikes.iter().enumerate().flat_map(|(i, s)| s.masks.iter().map(move |(&k, m)| (m.used, i, k))).collect();
         by_age.sort_unstable_by_key(|&(used, ..)| used);
@@ -605,9 +633,6 @@ impl GlyphCache {
                 self.bytes -= m.data.len() + std::mem::size_of::<GlyphMask>();
             }
         }
-        // Empty strikes go too, which moves the others: their ids are renumbered.
-        self.strikes.retain(|s| !s.masks.is_empty());
-        self.strike_ids = self.strikes.iter().enumerate().map(|(i, s)| (s.key, i)).collect();
     }
 
     #[cfg(test)]
@@ -652,12 +677,29 @@ fn rasterize(
     let (w, h) = (bounds.width().max(0) as usize, (bounds.y1 - bounds.y0).max(0) as usize);
     // An em at most 256 pixels across makes masks far smaller than this; anything larger is a broken outline, which
     // draws nothing rather than taking unbounded memory.
-    if w > 4096 || h > 4096 {
+    let em = crate::cover::max_scale([a, b, c, d]);
+    if w > 4096 || h > 4096 || !within_reach(bounds, glyph_reach(em, OUTLINE_EMS)) {
         return GlyphMask::default();
     }
     let mut data = vec![0u8; w * h];
     raster.mask(verbs, points, bounds, &mut data, &gamma_tables()[key.lum as usize]);
     GlyphMask { left: bounds.x0, top: bounds.y0, width: w as u32, height: h as u32, data, failed: false, colour: false, used: 0 }
+}
+
+/// How far an outline glyph's ink may reach from its origin, in ems, and a colour glyph's (emoji fill about one).
+pub(crate) const OUTLINE_EMS: f64 = 8.0;
+pub(crate) const COLOUR_EMS: f64 = 2.0;
+
+/// How far, in pixels either way, a glyph's mask may reach from its origin's pixel at `em` pixels per em: `ems` ems,
+/// plus the subpixel offset and rounding. A mask past it is a broken glyph (or a font's trap: a huge clip box at a
+/// small size) and draws nothing, so a glyph that far off the clip can be skipped unseen.
+pub(crate) fn glyph_reach(em: f64, ems: f64) -> i32 {
+    (ems * em).ceil() as i32 + 2
+}
+
+/// Whether `b` (pixels from the glyph origin's pixel) is within `reach` of it.
+pub(crate) fn within_reach(b: IRect, reach: i32) -> bool {
+    b.x0 >= -reach && b.y0 >= -reach && b.x1 <= reach && b.y1 <= reach
 }
 
 /// The luminance level (0 to 7) of a premultiplied colour, which picks the mask gamma: its sRGB luminance (Rec. 709
@@ -802,6 +844,12 @@ mod tests {
         // And the ring adds ink inside the stroke, not holes in it.
         let row = &bold.data[(bold.height / 2 * bold.width) as usize..][..bold.width as usize];
         assert!(row.iter().filter(|&&c| c == 255).count() >= 4, "{row:?}");
+    }
+
+    #[test]
+    fn glyph_ids_past_a_faces_are_one_that_draws_nothing() {
+        // A cmap format 12 entry may name any u32: the caches (and the unmixed hash, `fx`) see at most 0xFFFF.
+        assert_eq!([0, 0xFFFE, 0xFFFF, 0x1_0041, u32::MAX].map(glyph_id), [0, 0xFFFE, 0xFFFF, 0xFFFF, 0xFFFF]);
     }
 
     #[test]

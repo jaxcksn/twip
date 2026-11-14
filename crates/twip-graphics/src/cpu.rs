@@ -82,7 +82,8 @@ impl std::error::Error for TargetError {}
 impl<'a> Target<'a> {
     pub fn new(data: &'a mut [u8], width: u32, height: u32, stride: usize, format: Format) -> Result<Target<'a>, TargetError> {
         let error = TargetError { len: data.len(), width, height, stride };
-        let row = width as usize * 4;
+        // Checked: past 2^30 pixels wide, a row's bytes wrap a 32-bit usize.
+        let Some(row) = (width as usize).checked_mul(4) else { return Err(error) };
         let needed = match height {
             0 => Some(0),
             h => stride.checked_mul(h as usize - 1).and_then(|n| n.checked_add(row)),
@@ -154,12 +155,20 @@ struct Saved {
     masks: usize,
 }
 
-/// A decoded image: its mip chain, or `None` when it didn't decode.
+/// A decoded image: its mip chain (the levels from the finest drawn), or `None` when it didn't decode; the frame it
+/// was last drawn in, and the finest level that frame drew.
 #[derive(Debug)]
 struct Decoded {
     mips: Option<Mips>,
     used: u64,
+    finest: usize,
 }
+
+/// The most layer pixels open at once (each nested layer holds a buffer of its region, 256 MB together), and the most
+/// a frame filters (blur and erode passes run over each layer's region; a 4K viewport's largest blur is half of it):
+/// layers past either aren't drawn.
+pub(crate) const MAX_LAYER_PIXELS: u64 = 1 << 26;
+pub(crate) const MAX_FILTERED_PIXELS: u64 = 1 << 27;
 
 /// A colour glyph's mask: premultiplied colour in the target's channel order, `width × height`, its top left at
 /// (`left`, `top`) from the glyph origin's pixel.
@@ -235,6 +244,12 @@ pub struct Renderer {
     image_bytes: usize,
     image_budget: usize,
     clock: u64,
+    /// The pixels of the layers open now, and of those the frame has filtered, and their budgets
+    /// ([`MAX_LAYER_PIXELS`], [`MAX_FILTERED_PIXELS`]; tests lower them).
+    open_pixels: u64,
+    filtered_pixels: u64,
+    layer_budget: u64,
+    filter_budget: u64,
     /// Layer buffers, kept for the next layer, and the filters' scratch.
     layers: Vec<Vec<u8>>,
     filter_scratch: Vec<u8>,
@@ -274,6 +289,10 @@ impl Renderer {
             image_bytes: 0,
             image_budget: 256 << 20,
             clock: 0,
+            open_pixels: 0,
+            filtered_pixels: 0,
+            layer_budget: MAX_LAYER_PIXELS,
+            filter_budget: MAX_FILTERED_PIXELS,
             layers: Vec::new(),
             filter_scratch: Vec::new(),
             stats: Stats::default(),
@@ -287,6 +306,7 @@ impl Renderer {
 
     pub fn render(&mut self, target: &mut Target<'_>, resources: &Resources, frame: &Frame<'_>) {
         self.clock += 1;
+        self.filtered_pixels = 0;
         self.stats = Stats::default();
         let full = target.bounds();
         if let Some(c) = frame.clear {
@@ -300,9 +320,7 @@ impl Renderer {
         for draw in frame.draws {
             self.picture(target, resources, draw.picture, Transform::from_kurbo(draw.transform), clip);
         }
-        self.glyphs.trim();
-        self.trim_images();
-        self.trim_colour_masks();
+        self.end_frame();
     }
 
     /// The PDF writer's rasterised layers: the layer pushed at `lists.cmds[at]` drawn into `target` under `t`, its
@@ -312,14 +330,13 @@ impl Renderer {
     pub(crate) fn render_layer(&mut self, target: &mut Target<'_>, res: &Resources, lists: &Lists, at: usize, t: Transform) {
         let Some(&Cmd::PushLayer { layer }) = lists.cmds.get(at) else { return };
         self.clock += 1;
+        self.filtered_pixels = 0;
         self.stats = Stats::default();
         let full = target.bounds();
         let clip = Clip { rect: [full.x0 * ONE, full.y0 * ONE, full.x1 * ONE, full.y1 * ONE], bounds: full, mask: None };
         let rec = LayerRec { opacity: 1.0, blend: BlendMode::SrcOver, ..lists.layers[layer as usize] };
         self.layer(target, res, lists, &mut (at + 1), rec, t, clip);
-        self.glyphs.trim();
-        self.trim_images();
-        self.trim_colour_masks();
+        self.end_frame();
     }
 
     fn picture(&mut self, target: &mut Target<'_>, res: &Resources, picture: &Picture, transform: Transform, clip: Clip) {
@@ -441,19 +458,21 @@ impl Renderer {
             BrushRec::Pattern { image, transform, sampling } => {
                 // The shader borrows the decoded image while the draw borrows the renderer, so the image comes out of
                 // the cache for the draw and goes back after.
-                self.load(&res.images, image);
-                let Some(decoded) = self.images.remove(&image) else { return };
-                match (decoded.mips.as_ref(), transform.then(t).inverse()) {
+                let inv = transform.then(t).inverse();
+                let level = |m: &Mips| inv.map_or(0, |inv| mip_index(m.count(), inv, sampling));
+                let (decoded, fresh) = self.take(&res.images, image, level);
+                match (decoded.mips.as_ref(), inv) {
                     (Some(mips), Some(inv)) => {
-                        let (pixmap, scale) = mip_level(mips, inv, sampling);
-                        let kind = Kind::Image { pixmap, scale, sampling, repeat: true };
-                        let shader = Shader { kind, ramp: [[0; 4]; 256], extend: Extend::Repeat, inv, filters: &[], bgra: solid.bgra };
-                        draw(self, target, Source::Shade(&shader, solid), paint.aa);
+                        if let Some((pixmap, scale)) = mip_level(mips, inv, sampling) {
+                            let kind = Kind::Image { pixmap, scale, sampling, repeat: true };
+                            let shader = Shader { kind, ramp: [[0; 4]; 256], extend: Extend::Repeat, inv, filters: &[], bgra: solid.bgra };
+                            draw(self, target, Source::Shade(&shader, solid), paint.aa);
+                        }
                     }
                     (None, _) => self.stats.failed_images += 1,
                     (Some(_), None) => {}
                 }
-                self.images.insert(image, decoded);
+                self.put_back(image, decoded, fresh);
                 return;
             }
         };
@@ -462,24 +481,77 @@ impl Renderer {
         }
     }
 
-    /// Decodes `id` into the cache if it isn't there.
-    fn load(&mut self, images: &ImageRegistry, id: ImageId) {
+    /// Image `id` out of the cache for a draw of level `level(mips)` (the shader borrows it while the draw borrows
+    /// the renderer), and whether it was decoded for it: when it isn't cached, or its kept levels are coarser than
+    /// the draw needs. Give it back with [`Renderer::put_back`].
+    fn take(&mut self, images: &ImageRegistry, id: ImageId, level: impl Fn(&Mips) -> usize) -> (Decoded, bool) {
         let clock = self.clock;
-        if let Some(d) = self.images.get_mut(&id) {
-            d.used = clock;
-            return;
+        let mut fresh = false;
+        let mut d = match self.images.remove(&id) {
+            Some(d) => d,
+            None => {
+                fresh = true;
+                self.decode(images, id)
+            }
+        };
+        if let Some(mips) = &d.mips {
+            let mut i = level(mips);
+            if mips.level(i).is_none() {
+                self.image_bytes -= mips.bytes();
+                (d, fresh) = (self.decode(images, id), true);
+                i = d.mips.as_ref().map_or(0, &level);
+            }
+            d.finest = if d.used == clock { d.finest.min(i) } else { i };
         }
-        let mips = images.decode(id).ok().map(Mips::new);
-        self.image_bytes += mips.as_ref().map_or(0, Mips::bytes);
-        self.images.insert(id, Decoded { mips, used: clock });
+        d.used = clock;
+        (d, fresh)
     }
 
-    /// Drops the least recently drawn images while the cache is over its budget (after a frame), down to half of it.
-    fn trim_images(&mut self) {
+    /// Image `id` decoded (counted in the cache's bytes, not yet in it).
+    fn decode(&mut self, images: &ImageRegistry, id: ImageId) -> Decoded {
+        // Over the budget mid-frame (a page of images that each decode to a gigabyte), older ones go now, not after
+        // the frame: the cache holds at most the budget and the image being drawn (out of the map while it draws).
+        self.trim_images(false);
+        let mips = images.decode(id).ok().map(Mips::new);
+        self.image_bytes += mips.as_ref().map_or(0, Mips::bytes);
+        // No level drawn yet: the draw's sets it.
+        Decoded { mips, used: self.clock, finest: usize::MAX }
+    }
+
+    /// [`Renderer::take`]'s image back in the cache. One decoded for the draw keeps only the levels from the one it
+    /// drew (a 16384-pixel image drawn 400 wide keeps a megabyte, not 1.3 GB); a finer draw later decodes it again.
+    fn put_back(&mut self, id: ImageId, mut d: Decoded, fresh: bool) {
+        if fresh {
+            self.keep_drawn(&mut d);
+        }
+        self.images.insert(id, d);
+    }
+
+    /// Drops `d`'s levels finer than the finest drawn in its last frame.
+    fn keep_drawn(&mut self, d: &mut Decoded) {
+        if let Some(mips) = &mut d.mips {
+            self.image_bytes -= mips.bytes();
+            mips.keep_from(d.finest);
+            self.image_bytes += mips.bytes();
+        }
+    }
+
+    /// Drops the least recently drawn images while the cache is over its budget, down to half of it. After a frame
+    /// (`ended`), first the levels finer than each image drew, and never an image the frame drew: evicting one
+    /// over the budget alone (a 16384-pixel image, decoded to 1.3 GB) decoded it again every frame.
+    fn trim_images(&mut self, ended: bool) {
+        if ended {
+            let (mut images, now) = (std::mem::take(&mut self.images), self.clock);
+            for d in images.values_mut().filter(|d| d.used == now) {
+                self.keep_drawn(d);
+            }
+            self.images = images;
+        }
         if self.image_bytes <= self.image_budget {
             return;
         }
-        let mut by_age: Vec<(u64, ImageId)> = self.images.iter().map(|(k, d)| (d.used, *k)).collect();
+        let now = self.clock;
+        let mut by_age: Vec<(u64, ImageId)> = self.images.iter().filter(|(_, d)| !(ended && d.used == now)).map(|(k, d)| (d.used, *k)).collect();
         by_age.sort_unstable();
         for (_, id) in by_age {
             if self.image_bytes <= self.image_budget / 2 {
@@ -493,20 +565,27 @@ impl Renderer {
 
     /// Draws an image (or its source rect) into its destination rect, filtered by its colour filters.
     fn image(&mut self, target: &mut Target<'_>, res: &Resources, rec: &ImageRec, lists: &Lists, t: Transform, clip: &Clip) {
-        self.load(&res.images, rec.image);
-        let Some(decoded) = self.images.remove(&rec.image) else { return };
-        let drawn = (|| {
-            let mips = decoded.mips.as_ref()?;
-            let base = &mips.levels[0];
-            let src = rec.src.unwrap_or(Rect { x0: 0.0, y0: 0.0, x1: base.width as f32, y1: base.height as f32 });
+        // Off the clip, the image isn't decoded at all.
+        if pixel_bounds(t.map_rect(rec.dst)).intersect(clip.bounds).is_empty() {
+            return;
+        }
+        // Device pixels to the image's (`None` when its source rect is empty or the transform collapses).
+        let inverse = |m: &Mips| {
+            let src = rec.src.unwrap_or(Rect { x0: 0.0, y0: 0.0, x1: m.size.0 as f32, y1: m.size.1 as f32 });
             let (sw, sh) = (src.x1 - src.x0, src.y1 - src.y0);
             if sw <= 0.0 || sh <= 0.0 {
-                return Some(());
+                return None;
             }
             let (sx, sy) = ((rec.dst.x1 - rec.dst.x0) / sw, (rec.dst.y1 - rec.dst.y0) / sh);
             let image_to_local = Transform { a: sx, b: 0.0, c: 0.0, d: sy, e: rec.dst.x0 - src.x0 * sx, f: rec.dst.y0 - src.y0 * sy };
-            let inv = image_to_local.then(t).inverse()?;
-            let (pixmap, scale) = mip_level(mips, inv, rec.sampling);
+            image_to_local.then(t).inverse()
+        };
+        let level = |m: &Mips| inverse(m).map_or(0, |inv| mip_index(m.count(), inv, rec.sampling));
+        let (decoded, fresh) = self.take(&res.images, rec.image, level);
+        let drawn = (|| {
+            let mips = decoded.mips.as_ref()?;
+            let inv = inverse(mips)?;
+            let (pixmap, scale) = mip_level(mips, inv, rec.sampling)?;
             let bgra = target.bgra();
             let filters = &lists.color_filters[rec.color_filters.range()];
             let kind = Kind::Image { pixmap, scale, sampling: rec.sampling, repeat: false };
@@ -518,7 +597,7 @@ impl Renderer {
         if drawn.is_none() && decoded.mips.is_none() {
             self.stats.failed_images += 1;
         }
-        self.images.insert(rec.image, decoded);
+        self.put_back(rec.image, decoded, fresh);
     }
 
     fn fill_rect(&mut self, target: &mut Target<'_>, rect: Rect, t: Transform, clip: &Clip, src: Source<'_>, aa: bool) {
@@ -618,7 +697,7 @@ impl Renderer {
                 self.verbs.clear();
                 self.points.clear();
                 let map = kurbo::Affine::translate((g.x as f64, run.baseline as f64)) * em;
-                match self.glyphs.outliner.glyph(fonts, run.font, g.id, style, map, &mut self.verbs, &mut self.points) {
+                match self.glyphs.outliner.glyph(fonts, run.font, g.id(), style, map, &mut self.verbs, &mut self.points) {
                     Ok(true) => self.fill_scratch_path(target, t, clip, src, true),
                     Ok(false) => {}
                     Err(()) => self.stats.failed_glyphs += 1,
@@ -641,13 +720,21 @@ impl Renderer {
         // Glyph origins land on quarter pixels; an axis-aligned run's baseline rounds to a whole pixel, as in Skia.
         let axis_aligned = t.b == 0.0 && t.c == 0.0;
         let inside = interior(clip);
+        // A glyph whose origin is farther off the clip than any mask reaches draws nothing: no mask is made for it.
+        let reach = crate::font::glyph_reach(max_scale(m), crate::font::OUTLINE_EMS);
+        let b = clip.bounds;
+        let (x0, y0, x1, y1) = (b.x0.saturating_sub(reach), b.y0.saturating_sub(reach), b.x1.saturating_add(reach), b.y1.saturating_add(reach));
         for g in glyphs {
             let o = t.map_point(Point { x: g.x, y: run.baseline });
             let qx = (o.x * 4.0).round() as i32;
-            let qy = if axis_aligned { o.y.round() as i32 * 4 } else { (o.y * 4.0).round() as i32 };
+            let qy = if axis_aligned { (o.y.round() as i32).saturating_mul(4) } else { (o.y * 4.0).round() as i32 };
+            let (ox, oy) = (qx.div_euclid(4), qy.div_euclid(4));
+            if ox < x0 || ox >= x1 || oy < y0 || oy >= y1 {
+                continue;
+            }
             let bin = [qx.rem_euclid(4) as u8, qy.rem_euclid(4) as u8];
-            let glyph_key = GlyphKey { glyph: g.id, bin, ..key };
-            let mask = self.glyphs.mask_in(fonts, &mut self.raster, strike, g.id, bin);
+            let glyph_key = GlyphKey { glyph: g.id(), bin, ..key };
+            let mask = self.glyphs.mask_in(fonts, &mut self.raster, strike, g.id(), bin);
             if mask.failed {
                 self.stats.failed_glyphs += 1;
             }
@@ -708,6 +795,10 @@ impl Renderer {
         let (x0, y0) = (origin.0 + mask.left, origin.1 + mask.top);
         let r = IRect { x0, y0, x1: x0 + mask.width as i32, y1: y0 + mask.height as i32 };
         let vis = r.intersect(clip.bounds);
+        // Off the clip (an emoji scrolled past the left edge): `vis.x0 - r.x0` would be past the mask's rows.
+        if vis.is_empty() {
+            return;
+        }
         let solid = match src {
             Source::Solid(s) | Source::Shade(_, s) => Solid { color: [0; 4], ..s },
         };
@@ -743,6 +834,8 @@ impl Renderer {
         let opaque = unpremultiply(fg).with_alpha(255);
         let ck: ColourKey = (key, [opaque.r, opaque.g, opaque.b, 255], format == Format::Bgra8);
         if !self.colour_masks.contains_key(&ck) {
+            // Over the budget mid-frame, older masks go before this one is made.
+            self.trim_colour_masks();
             let mask = self.make_colour_mask(res, key, opaque, format).unwrap_or_default();
             self.colour_bytes += mask.data.len();
             self.colour_masks.insert(ck, mask);
@@ -752,6 +845,17 @@ impl Renderer {
             mask.used = clock;
         }
         ck
+    }
+
+    /// After a frame: the caches trimmed, and the layer buffers kept for the next one dropped when together they hold
+    /// more than the open layers may (they keep each depth's largest so far).
+    fn end_frame(&mut self) {
+        self.glyphs.trim();
+        self.trim_images(true);
+        self.trim_colour_masks();
+        if self.layers.iter().map(Vec::capacity).sum::<usize>() as u64 > 4 * self.layer_budget {
+            self.layers.clear();
+        }
     }
 
     /// Ends a frame for a renderer kept only for its colour masks: drops the least recently drawn over the budget,
@@ -779,8 +883,10 @@ impl Renderer {
         let dev = map.transform_rect_bbox(em);
         let bounds = IRect { x0: dev.x0.floor() as i32, y0: dev.y0.floor() as i32, x1: dev.x1.ceil() as i32, y1: dev.y1.ceil() as i32 };
         let (w, h) = (bounds.width().max(0) as usize, (bounds.y1 - bounds.y0).max(0) as usize);
-        // An em at most 256 pixels across paints far less than this; anything larger is a broken glyph.
-        if w == 0 || h == 0 || w > 4096 || h > 4096 {
+        // An em at most 256 pixels across paints far less than this; anything larger is a broken glyph (a font's clip
+        // box can say anything).
+        let reach = crate::font::glyph_reach(max_scale([a, b, c, d]), crate::font::COLOUR_EMS);
+        if w == 0 || h == 0 || w > 4096 || h > 4096 || !crate::font::within_reach(bounds, reach) {
             return None;
         }
         let mut data = vec![0u8; w * h * 4];
@@ -793,11 +899,10 @@ impl Renderer {
                 (None, Some((pixels, place))) => {
                     // The bitmap as an image filling its placement, from the mip level for the glyph's size.
                     let mips = Mips::new(pixels);
-                    let base = &mips.levels[0];
-                    let (sx, sy) = ((place.width() / base.width as f64) as f32, (place.height() / base.height as f64) as f32);
+                    let (sx, sy) = ((place.width() / f64::from(mips.size.0)) as f32, (place.height() / f64::from(mips.size.1)) as f32);
                     let image_to_em = Transform { a: sx, b: 0.0, c: 0.0, d: sy, e: place.x0 as f32, f: place.y0 as f32 };
                     let inv = image_to_em.then(transform).inverse()?;
-                    let (pixmap, scale) = mip_level(&mips, inv, Sampling::Linear);
+                    let (pixmap, scale) = mip_level(&mips, inv, Sampling::Linear)?;
                     let kind = Kind::Image { pixmap, scale, sampling: Sampling::Linear, repeat: false };
                     let bgra = format == Format::Bgra8;
                     let shader = Shader { kind, ramp: [[0; 4]; 256], extend: Extend::Clamp, inv, filters: &[], bgra };
@@ -810,7 +915,8 @@ impl Renderer {
         Some(ColourMask { left: bounds.x0, top: bounds.y0, width: w as u32, height: h as u32, data, used: 0 })
     }
 
-    /// Drops the least recently drawn colour masks while they are over 16 MB (after a frame), down to half of it.
+    /// Drops the least recently drawn colour masks while they are over 16 MB (after a frame, or before one is made),
+    /// down to half of it.
     fn trim_colour_masks(&mut self) {
         const BUDGET: usize = 16 << 20;
         if self.colour_bytes <= BUDGET {
@@ -837,6 +943,16 @@ impl Renderer {
             return;
         };
         let filters = &lists.filters[rec.filters.range()];
+        // Past the budgets (nested blurred groups each a gigabyte, or a thousand shapes each blurred at the largest
+        // sigma), the layer isn't drawn.
+        let pixels = region.width() as u64 * (region.y1 - region.y0) as u64;
+        let filtered = if filters.is_empty() { 0 } else { pixels };
+        if self.open_pixels + pixels > self.layer_budget || self.filtered_pixels + filtered > self.filter_budget {
+            skip_layer(lists, i);
+            return;
+        }
+        self.open_pixels += pixels;
+        self.filtered_pixels += filtered;
         let color_filters = &lists.color_filters[rec.color_filters.range()];
         let bgra = target.bgra();
         let out = region.intersect(clip.bounds);
@@ -850,12 +966,11 @@ impl Renderer {
             let inner = Clip { rect, bounds: region, mask: None };
             self.run(&mut layer, res, lists, i, t, inner, true);
         }
+        self.open_pixels -= pixels;
         for f in filters {
             match *f {
-                Filter::Blur { sigma } => shade::blur(self.level, &mut buffer, w, h, sigma.abs() * scale, &mut self.filter_scratch),
-                Filter::Erode { radius } => {
-                    shade::erode(self.level, &mut buffer, w, h, (radius.abs() * scale).round() as usize, &mut self.filter_scratch)
-                }
+                Filter::Blur { .. } => shade::blur(self.level, &mut buffer, w, h, f.device_size(scale), &mut self.filter_scratch),
+                Filter::Erode { .. } => shade::erode(self.level, &mut buffer, w, h, f.device_size(scale).round() as usize, &mut self.filter_scratch),
             }
         }
         let opacity = (rec.opacity * 255.0 + 0.5) as u8;
@@ -908,8 +1023,8 @@ pub(crate) fn layer_region(lists: &Lists, rec: &LayerRec, t: Transform, clip: &C
     let reach: f32 = lists.filters[rec.filters.range()]
         .iter()
         .map(|f| match *f {
-            Filter::Blur { sigma } => 3.0 * sigma.abs() * scale,
-            Filter::Erode { radius } => radius.abs() * scale,
+            Filter::Blur { .. } => 3.0 * f.device_size(scale),
+            Filter::Erode { .. } => f.device_size(scale),
         })
         .sum();
     // The filters' reach, and the pixel glyph ink can reach past its bounds.
@@ -936,7 +1051,7 @@ pub(crate) fn layer_region(lists: &Lists, rec: &LayerRec, t: Transform, clip: &C
         x1: (rect[2] + ONE - 1).div_euclid(ONE),
         y1: (rect[3] + ONE - 1).div_euclid(ONE),
     };
-    let fits = region.width() as i64 * (region.y1 - region.y0) as i64 <= 1 << 28;
+    let fits = region.width() as i64 * (region.y1 - region.y0) as i64 <= MAX_LAYER_PIXELS as i64;
     (!region.is_empty() && !region.intersect(clip.bounds).is_empty() && fits).then_some(LayerRegion { region, rect, scale })
 }
 
@@ -961,10 +1076,10 @@ pub(crate) fn skip_layer(lists: &Lists, i: &mut usize) {
 
 /// The mip level to sample for a draw whose device-to-image transform is `inv` (no finer than an image pixel per
 /// device pixel), and its scale from image pixels to level pixels in x and y. Nearest sampling reads the image itself.
-fn mip_level(mips: &Mips, inv: Transform, sampling: Sampling) -> (&crate::image::Pixmap, (f32, f32)) {
-    let base = &mips.levels[0];
-    let p = &mips.levels[mip_index(mips.levels.len(), inv, sampling)];
-    (p, (p.width as f32 / base.width as f32, p.height as f32 / base.height as f32))
+/// `None` when that level isn't kept.
+fn mip_level(mips: &Mips, inv: Transform, sampling: Sampling) -> Option<(&crate::image::Pixmap, (f32, f32))> {
+    let p = mips.level(mip_index(mips.count(), inv, sampling))?;
+    Some((p, (p.width as f32 / mips.size.0 as f32, p.height as f32 / mips.size.1 as f32)))
 }
 
 /// The mip level (of `levels`) an image is sampled from under `inv` (device to image pixels): the base when sampled
@@ -1001,6 +1116,72 @@ fn fill_path(
 mod tests {
     use super::*;
     use crate::cover::factor;
+
+    /// `picture` drawn by `r` over white on a `w × h` target.
+    fn drawn(r: &mut Renderer, resources: &Resources, picture: &Picture, (w, h): (u32, u32)) -> Vec<u8> {
+        let mut px = vec![0u8; (w * h * 4) as usize];
+        let mut target = Target::new(&mut px, w, h, w as usize * 4, Format::Rgba8).expect("fits");
+        let draws = [Draw { picture, transform: kurbo::Affine::IDENTITY }];
+        r.render(&mut target, resources, &Frame { clear: Some(Color::WHITE), draws: &draws });
+        px
+    }
+
+    #[test]
+    fn images_keep_the_levels_drawn_and_stay_past_the_budget() {
+        use crate::paint::ImagePaint;
+        use crate::scene::Recorder;
+        let mut resources = Resources::default();
+        let id = resources.images.add_pixels(256, 256, vec![200; 256 * 256 * 4]).expect("pixels");
+        let mut r = Renderer::new();
+        r.image_budget = 64 << 10;
+        let draw = |r: &mut Renderer, side: f64| {
+            let mut rec = Recorder::new();
+            rec.image(id, None, kurbo::Rect::new(0.0, 0.0, side, side), &ImagePaint::default());
+            drawn(r, &resources, &rec.finish(), (256, 256));
+        };
+        let kept = |r: &Renderer| r.images.get(&id).and_then(|d| d.mips.as_ref()).map(|m| m.skip);
+        draw(&mut r, 32.0);
+        assert_eq!(kept(&r), Some(3), "only the levels from the one drawn (32 pixels a side)");
+        assert!(r.image_bytes < 8 << 10, "{} bytes", r.image_bytes);
+        draw(&mut r, 256.0);
+        assert_eq!(kept(&r), Some(0), "drawn whole: decoded again, and kept past the budget as the frame drew it");
+        draw(&mut r, 256.0);
+        assert_eq!(kept(&r), Some(0));
+    }
+
+    #[test]
+    fn layers_past_the_budgets_are_not_drawn() {
+        use crate::scene::{Filter, Layer, Recorder};
+        let ink = |px: &[u8], x: usize, y: usize| px[(y * 100 + x) * 4] < 128;
+        // Two blurred layers side by side: the second is past the frame's filtering budget.
+        let mut rec = Recorder::new();
+        for x in [10.0, 60.0] {
+            rec.push_layer(&Layer { filters: &[Filter::Blur { sigma: 1.0 }], ..Layer::default() });
+            rec.fill_rect(kurbo::Rect::new(x, 10.0, x + 30.0, 40.0), Color::BLACK);
+            rec.pop();
+        }
+        let sides = rec.finish();
+        // A layer nested in another: past the open layers' budget.
+        rec.push_layer(&Layer { opacity: 0.99, ..Layer::default() });
+        rec.fill_rect(kurbo::Rect::new(10.0, 10.0, 40.0, 40.0), Color::BLACK);
+        rec.push_layer(&Layer { opacity: 0.99, ..Layer::default() });
+        rec.fill_rect(kurbo::Rect::new(60.0, 10.0, 90.0, 40.0), Color::BLACK);
+        rec.pop();
+        rec.pop();
+        let nested = rec.finish();
+        let mut r = Renderer::new();
+        for p in [&sides, &nested] {
+            let px = drawn(&mut r, &Resources::default(), p, (100, 50));
+            assert!(ink(&px, 25, 25) && ink(&px, 75, 25), "within the budgets, both draw");
+        }
+        // Each layer's region is its content and the filter's reach: about 1400 pixels a blurred side, 2600 the outer
+        // layer and 1000 the inner.
+        (r.filter_budget, r.layer_budget) = (2000, 3000);
+        for p in [&sides, &nested] {
+            let px = drawn(&mut r, &Resources::default(), p, (100, 50));
+            assert!(ink(&px, 25, 25) && !ink(&px, 75, 25), "the first draws, the second doesn't");
+        }
+    }
 
     #[test]
     fn factor_rounds_area_to_255ths() {

@@ -490,6 +490,40 @@ mod gpu {
         });
     }
 
+    /// A viewport-sized layer eroded (radius 30) then blurred (sigma 100), timed until the GPU finishes: what wide
+    /// filters cost the GPU, which reads a few pixels per pixel for them. Budget: well inside a frame.
+    #[divan::bench]
+    fn gpu_wide_filters(b: Bencher) {
+        use twip_graphics::scene::{Filter, Layer};
+        let Some(ctx) = context() else { return };
+        let mut rec = Recorder::new();
+        rec.push_layer(&Layer { filters: &[Filter::Erode { radius: 30.0 }, Filter::Blur { sigma: 100.0 }], ..Layer::default() });
+        rec.fill_rect(Rect::new(100.0, 100.0, 900.0, 700.0), Color::rgb(0x44_72C4));
+        rec.pop();
+        let picture = rec.finish();
+        let target = ctx.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("bench target"),
+            size: wgpu::Extent3d { width: VIEWPORT.0, height: VIEWPORT.1, depth_or_array_layers: 1 },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        let view = target.create_view(&wgpu::TextureViewDescriptor::default());
+        let (mut renderer, resources) = (Renderer::new(ctx, FORMAT), Resources::default());
+        b.bench_local(|| {
+            let draws = [twip_graphics::cpu::Draw { picture: &picture, transform: Affine::IDENTITY }];
+            let frame = twip_graphics::cpu::Frame { clear: Some(Color::WHITE), draws: &draws };
+            let prepared = renderer.prepare(ctx, &resources, &frame, VIEWPORT).expect("not lost");
+            let mut encoder = ctx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+            renderer.render(&mut encoder, &view, &prepared);
+            ctx.queue.submit([encoder.finish()]);
+            ctx.device.poll(wgpu::PollType::wait_indefinitely()).expect("the GPU finishes");
+        });
+    }
+
     /// For comparison: the page prepared from nothing each frame (a new picture each time, its lines too). Budget:
     /// none; it is what keeping pictures saves.
     #[divan::bench]

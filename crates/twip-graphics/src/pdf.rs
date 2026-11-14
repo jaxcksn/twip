@@ -235,6 +235,11 @@ fn subset_glyf(data: &[u8], index: u32, used: &std::collections::BTreeSet<u16>, 
         if keep.contains(&(g as u16)) {
             new_glyf.extend_from_slice(outline(g));
             new_glyf.resize(new_glyf.len().next_multiple_of(4), 0);
+            // A subset is no larger than the table and its padding, unless loca ranges overlap (each glyph naming the
+            // whole table makes gigabytes): such a face doesn't subset.
+            if new_glyf.len() > glyf.len() + 4 * count {
+                return None;
+            }
         }
     }
     new_loca.extend((new_glyf.len() as u32).to_be_bytes());
@@ -1103,7 +1108,12 @@ impl<'r> Writer<'r> {
         let size = run.size;
         let text = std::str::from_utf8(&lists.text.as_bytes()[run.text.range()]).unwrap_or("");
         let clusters = &lists.clusters[run.clusters.range()];
-        let end = |c: u32| clusters.iter().copied().filter(|&d| d > c).min().map_or(text.len(), |d| d as usize);
+        // A cluster's text ends where the next cluster (in text order) starts: found by halving, where a scan per glyph
+        // made a run of combining marks quadratic.
+        let mut starts = clusters.to_vec();
+        starts.sort_unstable();
+        starts.dedup();
+        let end = |c: u32| starts.get(starts.partition_point(|&d| d <= c)).map_or(text.len(), |&d| d as usize);
         let piece = |k: usize| -> &str {
             match clusters.get(k) {
                 Some(&c) => text.get(c as usize..end(c)).unwrap_or(""),
@@ -1126,22 +1136,22 @@ impl<'r> Writer<'r> {
         let mut placed: Vec<(Option<usize>, u32, f32)> = Vec::with_capacity(glyphs.len());
         let mut round_trips = true;
         for (k, g) in glyphs.iter().enumerate() {
-            let kind = self.res.fonts.kind(run.font, g.id);
+            let kind = self.res.fonts.kind(run.font, g.id());
             let chars = piece(k).to_string();
             let (font, code, width, mapped) = match (face, kind) {
                 (FaceKind::Cid, GlyphKind::Outline) => {
-                    let width = self.advance(run.font, g.id);
+                    let width = self.advance(run.font, g.id());
                     let entry = self.cid.entry(run.font).or_default();
-                    let mapped = entry.glyphs.entry(g.id as u16).or_insert((width, chars.clone())).1.clone();
-                    (None, g.id, width, mapped)
+                    let mapped = entry.glyphs.entry(g.id() as u16).or_insert((width, chars.clone())).1.clone();
+                    (None, g.id(), width, mapped)
                 }
                 (_, GlyphKind::Outline) => {
-                    let (t, code) = self.type3_code(run.font, None, g.id, &chars);
-                    (Some(t), u32::from(code), self.advance(run.font, g.id), self.type3[t].glyphs[code as usize].1.clone())
+                    let (t, code) = self.type3_code(run.font, None, g.id(), &chars);
+                    (Some(t), u32::from(code), self.advance(run.font, g.id()), self.type3[t].glyphs[code as usize].1.clone())
                 }
                 _ => {
-                    let (t, code) = self.type3_code(run.font, Some((fg, ink)), g.id, &chars);
-                    (Some(t), u32::from(code), self.advance(run.font, g.id), self.type3[t].glyphs[code as usize].1.clone())
+                    let (t, code) = self.type3_code(run.font, Some((fg, ink)), g.id(), &chars);
+                    (Some(t), u32::from(code), self.advance(run.font, g.id()), self.type3[t].glyphs[code as usize].1.clone())
                 }
             };
             round_trips &= mapped == chars;
@@ -1224,7 +1234,7 @@ impl<'r> Writer<'r> {
         let mut one = BezPath::new();
         for g in glyphs {
             one.truncate(0);
-            if !self.res.fonts.em_outline(run.font, g.id, &mut one) {
+            if !self.res.fonts.em_outline(run.font, g.id(), &mut one) {
                 continue;
             }
             let t = Affine::new([1.0, 0.0, skew, 1.0, -skew * base, 0.0]) * Affine::translate((f64::from(g.x), base)) * Affine::scale(size);
@@ -1358,6 +1368,8 @@ impl<'r> Writer<'r> {
             }
             let info = res.images.info(id)?;
             let (w, h) = (info.width, info.height);
+            // The header's size, before allocating for it: a GIF's says up to 65535 × 65535 (16 GiB) in 13 bytes.
+            crate::image::fits(w, h).ok()?;
             let mut pixels = vec![0u8; w as usize * h as usize * 4];
             {
                 // The image drawn at its size, through its colour filters, by the CPU backend.
@@ -1523,7 +1535,9 @@ impl<'r> Writer<'r> {
                     if let Some(em) = em {
                         let px = Affine::scale(COLOUR_GLYPH_PX).transform_rect_bbox(em).expand();
                         let (w, h) = (px.width() as u32, px.height() as u32);
-                        if w > 0 && h > 0 {
+                        // The em box is the font's (a COLR clip box, a bitmap's metrics): one past 16 em is broken,
+                        // and drawn as nothing rather than allocating a terabyte.
+                        if w > 0 && h > 0 && w <= 4096 && h <= 4096 {
                             let mut pixels = vec![0u8; w as usize * h as usize * 4];
                             let mut rec = Recorder::new();
                             let run = GlyphRun {
@@ -1585,7 +1599,7 @@ impl<'r> Writer<'r> {
         let mut parents: Vec<Vec<(i32, Ref)>> = vec![Vec::new(); pages.len()];
         let mut kids = Vec::new();
         for e in structure {
-            kids.push(self.element(e, document, pages, &content, &mut parents));
+            kids.push(self.element(e, document, pages, &content, &mut parents, 1));
         }
         let mut d = self.pdf.struct_element(document);
         d.kind(StructRole::Document).parent(root);
@@ -1627,10 +1641,22 @@ impl<'r> Writer<'r> {
         pages: &[Ref],
         content: &FastMap<u32, Vec<(usize, i32)>>,
         parents: &mut [Vec<(i32, Ref)>],
+        depth: u32,
     ) -> Ref {
         let id = self.alloc();
-        let kids: Vec<Ref> = e.kids.iter().map(|k| self.element(k, id, pages, content, parents)).collect();
-        let marked = e.content.and_then(|c| content.get(&c)).cloned().unwrap_or_default();
+        let own = |e: &Element| e.content.and_then(|c| content.get(&c)).map_or(&[][..], Vec::as_slice);
+        let (kids, marked): (Vec<Ref>, Vec<(usize, i32)>) = if depth < crate::scene::MAX_DEPTH {
+            (e.kids.iter().map(|k| self.element(k, id, pages, content, parents, depth + 1)).collect(), own(e).to_vec())
+        } else {
+            // Deeper, the element's descendants fold into it (their content marked as its), where recursing on would
+            // overflow the stack; found with a stack of their own, in reading order.
+            let (mut marked, mut todo) = (Vec::new(), vec![e]);
+            while let Some(x) = todo.pop() {
+                marked.extend_from_slice(own(x));
+                todo.extend(x.kids.iter().rev());
+            }
+            (Vec::new(), marked)
+        };
         for &(page, mcid) in &marked {
             parents[page].push((mcid, id));
         }
@@ -1692,21 +1718,30 @@ impl<'r> Writer<'r> {
             parent[k] = open.last().copied();
             open.push(k);
         }
-        let kids_of = |p: Option<usize>| -> Vec<usize> { (0..items.len()).filter(|&k| parent[k] == p).collect() };
-        let count = |p: Option<usize>| -> i32 {
-            fn all(parent: &[Option<usize>], p: Option<usize>) -> i32 {
-                (0..parent.len()).filter(|&k| parent[k] == p).map(|k| 1 + all(parent, Some(k))).sum()
+        // Each item's kids and place among its siblings, and its descendants (a parent comes before its kids, so
+        // walking back counts kids first): one pass each, where searching per item made 50,000 headings quadratic.
+        let (mut kids, mut top, mut at) = (vec![Vec::new(); items.len()], Vec::new(), vec![0; items.len()]);
+        for (k, p) in parent.iter().enumerate() {
+            let siblings = match *p {
+                Some(p) => &mut kids[p],
+                None => &mut top,
+            };
+            at[k] = siblings.len();
+            siblings.push(k);
+        }
+        let mut below = vec![0i32; items.len()];
+        for k in (0..items.len()).rev() {
+            if let Some(p) = parent[k] {
+                below[p] += 1 + below[k];
             }
-            all(&parent, p)
-        };
-        let top = kids_of(None);
+        }
         let mut o = self.pdf.outline(root);
-        o.first(refs[top[0]]).last(refs[*top.last().expect("an item")]).count(count(None));
+        o.first(refs[top[0]]).last(refs[*top.last().expect("an item")]).count(top.iter().map(|&k| 1 + below[k]).sum());
         o.finish();
         for (k, &(_, title, page, y)) in items.iter().enumerate() {
-            let siblings = kids_of(parent[k]);
-            let at = siblings.iter().position(|&s| s == k).expect("an item is its parent's kid");
-            let kids = kids_of(Some(k));
+            let siblings = parent[k].map_or(&top, |p| &kids[p]);
+            let at = at[k];
+            let kids = &kids[k];
             let mut it = self.pdf.outline_item(refs[k]);
             it.title(TextStr(title)).parent(parent[k].map_or(root, |p| refs[p]));
             if at > 0 {
@@ -1716,7 +1751,7 @@ impl<'r> Writer<'r> {
                 it.next(refs[n]);
             }
             if let (Some(&f), Some(&l)) = (kids.first(), kids.last()) {
-                it.first(refs[f]).last(refs[l]).count(-count(Some(k)));
+                it.first(refs[f]).last(refs[l]).count(-below[k]);
             }
             let top = (pages[page].height - y) as f32;
             it.dest().page(page_refs[page]).xyz(0.0, top, None);
@@ -1953,7 +1988,16 @@ fn rect_ops(c: &mut Content, r: kurbo::Rect) {
 
 /// How a group of commands (from `i`: to the end, or through the layer's pop) is written: the strongest need of its
 /// draws and the layers directly in it, its nested pictures' commands included.
-fn classify(lists: &Lists, mut i: usize, in_layer: bool) -> Group {
+fn classify(lists: &Lists, i: usize, in_layer: bool) -> Group {
+    let mut masks = 0;
+    let group = classify_in(lists, i, in_layer, &mut masks);
+    // Each masking op nests what came before it a soft mask deeper (written, and read back, recursively): past
+    // `MAX_DEPTH` of them the group is rasterised instead.
+    if group == Group::Masked && masks > crate::scene::MAX_DEPTH as usize { Group::Raster } else { group }
+}
+
+/// [`classify`], counting the group's masking ops (its pictures' too: [`collect`] flattens them into it) in `masks`.
+fn classify_in(lists: &Lists, mut i: usize, in_layer: bool, masks: &mut usize) -> Group {
     let mut group = Group::Plain;
     let mut depth = 0usize;
     // Clips of the group's own, open: a masking mode under one acts only inside it, which the masks don't cover.
@@ -1982,7 +2026,7 @@ fn classify(lists: &Lists, mut i: usize, in_layer: bool) -> Group {
                 clips.pop();
                 Group::Plain
             }
-            Cmd::Picture { child, .. } => classify(lists.children[child as usize].lists(), 0, false),
+            Cmd::Picture { child, .. } => classify_in(lists.children[child as usize].lists(), 0, false, masks),
             Cmd::PushLayer { layer } => {
                 let rec = lists.layers[layer as usize];
                 crate::cpu::skip_layer(lists, &mut i);
@@ -2005,6 +2049,9 @@ fn classify(lists: &Lists, mut i: usize, in_layer: bool) -> Group {
             Cmd::SolidRect { blend, .. } => draw_need(blend, true),
             Cmd::Image { .. } => Group::Plain,
         };
+        if need == Group::Masked && !matches!(cmd, Cmd::Picture { .. }) {
+            *masks += 1;
+        }
         group = group.max(need);
     }
     group

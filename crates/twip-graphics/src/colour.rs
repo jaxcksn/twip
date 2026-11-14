@@ -28,7 +28,7 @@ pub(crate) fn colr_picture(fonts: &FontRegistry, font: FontId, glyph: u32, foreg
     let mut rec = Recorder::new();
     // The paint graph is in font units, y up.
     rec.push_transform(Affine::new([1.0 / upem, 0.0, 0.0, -1.0 / upem, 0.0, 0.0]));
-    let mut painter = Painter { rec: &mut rec, fonts, font, upem, colours, foreground, outline: BezPath::new(), stops: Vec::new() };
+    let mut painter = Painter { rec: &mut rec, fonts, font, upem, colours, foreground, outline: BezPath::new(), stops: Vec::new(), layers: 0 };
     g.paint(location, &mut painter).ok()?;
     rec.pop();
     Some(rec.finish())
@@ -43,7 +43,12 @@ struct Painter<'a> {
     foreground: Color,
     outline: BezPath,
     stops: Vec<Stop>,
+    /// Layers (and the transforms standing in for them) open now.
+    layers: u32,
 }
+
+/// The deepest a colour glyph's layers nest.
+const MAX_LAYERS: u32 = 16;
 
 impl Painter<'_> {
     /// Palette entry `index` at `alpha` times its own; 0xFFFF is the text colour.
@@ -173,13 +178,24 @@ impl ColorPainter for Painter<'_> {
     }
 
     fn push_layer(&mut self, mode: CompositeMode) {
-        self.rec.push_layer(&Layer { blend: blend(mode), ..Layer::default() });
+        // Each nested layer is a mask-sized buffer when drawn: past 16 deep (skrifa allows 64), the glyph's composites
+        // draw as plain source-over.
+        if self.layers < MAX_LAYERS {
+            self.rec.push_layer(&Layer { blend: blend(mode), ..Layer::default() });
+        } else {
+            self.rec.push_transform(Affine::IDENTITY);
+        }
+        self.layers += 1;
     }
 
     fn pop_layer(&mut self) {
+        self.layers -= 1;
         self.rec.pop();
     }
 }
+
+/// The widest and tallest colour bitmap glyph decoded (emoji strikes are at most a few hundred pixels).
+const MAX_BITMAP: u32 = 1024;
 
 /// Glyph `glyph`'s bitmap from the strike nearest `ppem` (premultiplied RGBA) and where it goes, in em units, y down;
 /// `None` when it has none or it doesn't decode. A mask bitmap takes `foreground`.
@@ -190,7 +206,12 @@ pub(crate) fn bitmap(fonts: &FontRegistry, font: FontId, glyph: u32, ppem: f32, 
     let place = bitmap_em_box(&b, upem);
     let (w, h) = (b.width, b.height);
     let pixels = match &b.data {
-        skrifa::bitmap::BitmapData::Png(png) => crate::image::decode(png).ok()?,
+        // A strike's bitmaps are glyph-sized: checked from the header before decoding, where the image cap (2^28
+        // pixels) would let each glyph, bin and colour decode a gigabyte.
+        skrifa::bitmap::BitmapData::Png(png) => {
+            let i = crate::image::probe(png).filter(|i| i.width <= MAX_BITMAP && i.height <= MAX_BITMAP)?;
+            crate::image::decode(png).ok().filter(|p| (p.width, p.height) == (i.width, i.height))?
+        }
         skrifa::bitmap::BitmapData::Bgra(bgra) => {
             let data: Vec<u8> = bgra.as_chunks::<4>().0.iter().flat_map(|&[b, g, r, a]| [r, g, b, a]).collect();
             (data.len() == (w * h * 4) as usize).then_some(Pixmap { width: w, height: h, data })?

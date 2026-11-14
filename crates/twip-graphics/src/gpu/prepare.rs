@@ -403,11 +403,26 @@ pub(super) enum Op {
     Child { key: MemoKey, offset: (i32, i32) },
 }
 
+/// The filter shader's steps (see it).
+pub(super) const BOX: u32 = 0;
+pub(super) const KERNEL: u32 = 1;
+pub(super) const MIN: u32 = 2;
+/// Into the renderer's block-sum texture, leaving the source where it is for the [`BLOCKS`] step that reads both.
+pub(super) const SUMS: u32 = 3;
+pub(super) const BLOCKS: u32 = 4;
+pub(super) const MIN_DOUBLE: u32 = 5;
+pub(super) const MIN_FINAL: u32 = 6;
+
+/// Boxes wider than this are summed in blocks, and mins this wide or wider by doubling: a pass reading each pixel's
+/// whole window cost the window's width per pixel (a thousand reads at the largest blur).
+const WIDE_BOX: usize = 64;
+const WIDE_MIN: usize = 33;
+
 /// One filter step along rows or columns (see the filter shader).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct Step {
     pub horizontal: bool,
-    /// 0 a box, 1 a kernel, 2 a minimum.
+    /// [`BOX`], [`KERNEL`], [`MIN`], ...
     pub kind: u32,
     pub left: u32,
     pub right: u32,
@@ -499,6 +514,8 @@ pub(super) struct Prepare {
     building: Option<Building>,
     /// The device's largest texture side.
     max_texture: u32,
+    /// The pixels of the layers the frame has filtered (see [`crate::cpu::MAX_LAYER_PIXELS`]).
+    filtered_pixels: u64,
     /// Images decoded and waiting to be uploaded; the renderer takes them.
     pub pending: Vec<(ImageId, Mips)>,
     pub known: Known,
@@ -531,6 +548,7 @@ impl Prepare {
             memo: Memo::default(),
             building: None,
             max_texture,
+            filtered_pixels: 0,
             pending: Vec::new(),
             known: Known::default(),
         }
@@ -539,6 +557,7 @@ impl Prepare {
     /// Builds `frame`'s instances for a `width × height` target.
     pub fn frame(&mut self, res: &Resources, frame: &Frame<'_>, (width, height): (u32, u32)) {
         self.out.clear();
+        self.filtered_pixels = 0;
         self.atlas.clear();
         self.kept.begin_frame();
         self.colour.begin_frame();
@@ -780,6 +799,20 @@ impl Prepare {
             return;
         }
         let slot = self.out.depth;
+        // The frame's layer textures (two at each depth, the size of its largest layer) hold at most the CPU's open
+        // layers' budget, and its filters run over at most its pixels: past either, the layer isn't drawn.
+        let pixels = |(w, h): (u32, u32)| u64::from(w) * u64::from(h);
+        let grown = |d: usize, (w, h): (u32, u32)| if d == slot { (w.max(size.0), h.max(size.1)) } else { (w, h) };
+        let mut held: u64 = self.out.slots.iter().enumerate().map(|(d, &s)| pixels(grown(d, s))).sum();
+        if slot == self.out.slots.len() {
+            held += pixels(size);
+        }
+        let filtered = if rec.filters.len > 0 { pixels(size) } else { 0 };
+        if held > crate::cpu::MAX_LAYER_PIXELS || self.filtered_pixels + filtered > crate::cpu::MAX_FILTERED_PIXELS {
+            skip_layer(lists, i);
+            return;
+        }
+        self.filtered_pixels += filtered;
         if self.out.slots.len() == slot {
             self.out.slots.push((0, 0));
         }
@@ -795,7 +828,9 @@ impl Prepare {
             let uniform = out.uniforms.len() as u32;
             out.uniforms.push(Uniform::Filter { size, step });
             out.ops.push(Op::Filter { slot, size, read, step, uniform });
-            read ^= 1;
+            if step.kind != SUMS {
+                read ^= 1;
+            }
         };
         let along = |horizontal: bool, kind: u32, (left, right): (usize, usize), weights: [u32; 16]| Step {
             horizontal,
@@ -806,8 +841,8 @@ impl Prepare {
         };
         for f in &lists.filters[rec.filters.range()] {
             match *f {
-                Filter::Blur { sigma } => {
-                    let sigma = sigma.abs() * scale;
+                Filter::Blur { .. } => {
+                    let sigma = f.device_size(scale);
                     // Below this a blur changes nothing visible, and Skia skips it.
                     if sigma.is_nan() || sigma < 0.531_923 {
                         continue;
@@ -817,7 +852,7 @@ impl Prepare {
                         let mut weights = [0; 16];
                         weights[..k.len()].copy_from_slice(&k);
                         for horizontal in [true, false] {
-                            step(&mut self.out, along(horizontal, 1, (radius, radius), weights));
+                            step(&mut self.out, along(horizontal, KERNEL, (radius, radius), weights));
                         }
                         continue;
                     }
@@ -827,16 +862,38 @@ impl Prepare {
                         continue;
                     }
                     for horizontal in [true, false] {
-                        for reach in passes {
-                            step(&mut self.out, along(horizontal, 0, reach, [0; 16]));
+                        for (left, right) in passes {
+                            let span = left + right + 1;
+                            if span <= WIDE_BOX {
+                                step(&mut self.out, along(horizontal, BOX, (left, right), [0; 16]));
+                                continue;
+                            }
+                            // Blocks of about √span (at most 257, the 16-bit sums' limit): as many blocks as pixels
+                            // in one, which reads least.
+                            let b = ((span as f64).sqrt().round() as usize).clamp(1, 257);
+                            step(&mut self.out, along(horizontal, SUMS, (b, 0), [0; 16]));
+                            let mut weights = [0; 16];
+                            weights[0] = b as u32;
+                            step(&mut self.out, along(horizontal, BLOCKS, (left, right), weights));
                         }
                     }
                 }
-                Filter::Erode { radius } => {
-                    let r = (radius.abs() * scale).round() as usize;
+                Filter::Erode { .. } => {
+                    let r = f.device_size(scale).round() as usize;
                     if r > 0 {
+                        let window = 2 * r + 1;
                         for horizontal in [true, false] {
-                            step(&mut self.out, along(horizontal, 2, (r, r), [0; 16]));
+                            if window < WIDE_MIN {
+                                step(&mut self.out, along(horizontal, MIN, (r, r), [0; 16]));
+                                continue;
+                            }
+                            // Minima of 2^k pixels (the most within the window) by doubling, then two of them cover
+                            // each window: k + 1 passes of two reads.
+                            let k = window.ilog2();
+                            for i in 0..k {
+                                step(&mut self.out, along(horizontal, MIN_DOUBLE, (1 << i, 0), [0; 16]));
+                            }
+                            step(&mut self.out, along(horizontal, MIN_FINAL, (r, 1 << k), [0; 16]));
                         }
                     }
                 }
@@ -934,7 +991,14 @@ impl Prepare {
     /// when it doesn't decode.
     fn levels(&mut self, res: &Resources, id: ImageId) -> Option<Vec<(u32, u32)>> {
         let known = self.known.entry(id).or_insert_with(|| {
-            let mips = Mips::new(res.images.decode(id).ok()?);
+            // ponytail: an image wider or taller than the device's largest texture isn't drawn (a failed image),
+            // where creating its texture would lose the context; drawing it downscaled to fit lands with tiled layers.
+            // The decoded size, not the header's: an ICO's directory needn't match the image inside.
+            let p = res.images.decode(id).ok()?;
+            if p.width > self.max_texture || p.height > self.max_texture {
+                return None;
+            }
+            let mips = Mips::new(p);
             let sizes = mips.levels.iter().map(|l| (l.width, l.height)).collect();
             self.pending.push((id, mips));
             Some(sizes)
@@ -1108,7 +1172,7 @@ impl Prepare {
                 verbs.clear();
                 points.clear();
                 let map = kurbo::Affine::translate((g.x as f64, run.baseline as f64)) * em;
-                match self.glyphs.outliner.glyph(fonts, run.font, g.id, style, map, &mut verbs, &mut points) {
+                match self.glyphs.outliner.glyph(fonts, run.font, g.id(), style, map, &mut verbs, &mut points) {
                     Ok(true) => self.path(&verbs, &points, t, clip, &Paint { aa: true, ..*paint }, false),
                     Ok(false) => {}
                     Err(()) => self.out.stats.failed_glyphs += 1,
@@ -1123,11 +1187,19 @@ impl Prepare {
         let strike = self.glyphs.strike(key);
         let axis_aligned = t.b == 0.0 && t.c == 0.0;
         let inside = interior(clip);
+        // A glyph whose origin is farther off the clip than any mask reaches draws nothing: no mask is made for it.
+        let reach = crate::font::glyph_reach(max_scale(m), crate::font::OUTLINE_EMS);
+        let b = clip.bounds;
+        let (x0, y0, x1, y1) = (b.x0.saturating_sub(reach), b.y0.saturating_sub(reach), b.x1.saturating_add(reach), b.y1.saturating_add(reach));
         for g in glyphs {
             let o = t.map_point(Point { x: g.x, y: run.baseline });
             let qx = (o.x * 4.0).round() as i32;
-            let qy = if axis_aligned { o.y.round() as i32 * 4 } else { (o.y * 4.0).round() as i32 };
-            let key = GlyphKey { glyph: g.id, bin: [qx.rem_euclid(4) as u8, qy.rem_euclid(4) as u8], ..key };
+            let qy = if axis_aligned { (o.y.round() as i32).saturating_mul(4) } else { (o.y * 4.0).round() as i32 };
+            let (ox, oy) = (qx.div_euclid(4), qy.div_euclid(4));
+            if ox < x0 || ox >= x1 || oy < y0 || oy >= y1 {
+                continue;
+            }
+            let key = GlyphKey { glyph: g.id(), bin: [qx.rem_euclid(4) as u8, qy.rem_euclid(4) as u8], ..key };
             let origin = (qx.div_euclid(4), qy.div_euclid(4));
             let mask = self.glyphs.mask_in(fonts, &mut self.raster, strike, key.glyph, key.bin);
             if mask.failed {
