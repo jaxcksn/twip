@@ -63,6 +63,14 @@ impl WrapIn<'_> {
     }
 }
 
+// A band's strip
+struct Strip {
+    uncut: Option<Vec<Placed>>,
+    forced: Option<Vec<(f64, f64)>>,
+    fitted: Option<(Vec<(f64, f64)>, f64, f64, f64)>,
+    reuse: bool,
+}
+
 // Anchored floats of the paragraph
 struct Anchors {
     anchors: Vec<Placed>,
@@ -346,6 +354,137 @@ impl<'d> PageFill<'d, '_> {
         yy
     }
 
+    // Strip choice
+    #[allow(clippy::too_many_arguments, reason = "the band's floats, the strip kept from the last line and where the line is tried")]
+    fn choose_strip(
+        &self,
+        w: &WrapIn,
+        here: &[Placed],
+        ordered: &[&Placed],
+        strip_at: &Option<(Vec<(f64, f64)>, f64, f64)>,
+        slack_on: f64,
+        h: f64,
+        s: usize,
+        mut yy: f64,
+    ) -> (f64, Option<Strip>) {
+        let &WrapIn { style, col, cx0, cx1, compat, first_part, at_top, .. } = w;
+        let mut uncut: Option<Vec<Placed>> = None;
+        let mut forced: Option<Vec<(f64, f64)>> = None;
+        let mut fitted: Option<(Vec<(f64, f64)>, f64, f64, f64)> = None;
+        let mut moved = None;
+        let order: &[&Placed] = if here.is_empty() { &[] } else { ordered };
+        let end_of = |ok: &[(f64, f64, f64)]| ok.iter().map(|p| p.2).fold(f64::INFINITY, f64::min);
+        // The pieces from `v0` with that slack: lower, at where the strip ends, while none reaches further than
+        // the slack below `v0`. With the top they were found at and how many pieces were found there first.
+        let query = |v0: f64, slack: f64, h: f64| -> Option<(f64, Vec<(f64, f64, f64)>, usize)> {
+            let mut t = v0;
+            for _ in 0..64 {
+                if t >= col.bottom.to_pt() - EPS {
+                    return None;
+                }
+                let found = float::strip(order, cx0, cx1, t, t + h.max(slack), slack)?;
+                let ok: Vec<(f64, f64, f64)> = found.iter().copied().filter(|p| slack < p.2 - v0 - EPS).collect();
+                if !ok.is_empty() && t > v0 + EPS {
+                    // Kept lower: fitted again there with a slack down to where its strip ends.
+                    let slack = end_of(&ok) - v0;
+                    let again = float::strip(order, cx0, cx1, t, t + h.max(slack), slack).unwrap_or_default();
+                    let again: Vec<(f64, f64, f64)> = again.into_iter().filter(|p| slack < p.2 - t - EPS).collect();
+                    let first = ok.len();
+                    return Some((t, if again.is_empty() { ok } else { again }, first));
+                }
+                if !ok.is_empty() {
+                    let first = ok.len();
+                    return Some((t, ok, first));
+                }
+                let covering = order.iter().filter(|f| {
+                    f.wrap != Wrap::None && f.excl[1] <= t + slack + EPS && f.excl[3] > t + EPS && f.excl[2] > cx0 + EPS && f.excl[0] < cx1 - EPS
+                });
+                let end = found.iter().map(|p| p.2).chain(covering.map(|f| f.excl[3])).fold(f64::INFINITY, f64::min);
+                if !end.is_finite() || end <= t + EPS {
+                    return None;
+                }
+                t = end;
+            }
+            None
+        };
+        let pieces_of = |ok: &[(f64, f64, f64)]| ok.iter().map(|p| (p.0, p.1)).collect::<Vec<(f64, f64)>>();
+        let starts_below = |end: f64| {
+            here.iter()
+                .any(|f| f.wrap != Wrap::None && f.excl[1] > end - EPS && f.excl[1] < yy + h - EPS && f.excl[0] < cx1 - EPS && f.excl[2] > cx0 + EPS)
+        };
+        let reuse = compat == Compat::Legacy
+            && strip_at.as_ref().is_some_and(|&(_, end, least)| {
+                let room = end - yy;
+                room > EPS && if slack_on > EPS { room >= h - EPS } else { room >= least - EPS && !starts_below(end) }
+            });
+        if reuse {
+            forced = strip_at.as_ref().map(|x| x.0.clone());
+        } else if compat == Compat::Legacy && slack_on > EPS {
+            if let Some((t, ok, _)) = query(yy, slack_on, h) {
+                fitted = Some((pieces_of(&ok), end_of(&ok), 0.0, 0.0));
+                forced = Some(pieces_of(&ok));
+                yy = t;
+            }
+        } else if compat == Compat::Legacy {
+            let near = || here.iter().filter(|f| f.in_band(yy, yy + h) && f.excl[2] > cx0 + EPS && f.excl[0] < cx1 - EPS);
+            let over: Vec<Placed> = near().filter(|f| f.excl[1] <= yy + EPS).cloned().collect();
+            let e = over.iter().map(|f| f.excl[3]).fold(f64::INFINITY, f64::min);
+            // A float starting inside the band counts only where it meets what the floats over the band's top
+            // leave of the line: else it neither moves nor cuts the line. A top-and-bottom float takes the whole line.
+            let left = float::intervals(&over, cx0, cx1, yy, yy + h, true).unwrap_or_default();
+            let meets = |f: &Placed| f.wrap == Wrap::TopAndBottom || left.iter().any(|&(a, b)| f.excl[0] < b - EPS && f.excl[2] > a + EPS);
+            let hidden = |f: &Placed| f.in_band(yy, yy + h) && f.excl[1] > yy + EPS && !meets(f);
+            // The line is fitted again with a slack: where they leave it one piece, down to where that piece ends,
+            // else its height. A piece is kept only if it reaches further than the slack below the line's top;
+            // with none the line goes down to where the strip ends and is fitted there.
+            if e < yy + h - EPS && near().any(|f| f.excl[1] > yy + EPS && meets(f)) {
+                let one = float::strip(order, cx0, cx1, yy, yy + h, 0.0).filter(|p| p.len() == 1).map(|p| p[0].2 - yy);
+                let slack = one.unwrap_or(h);
+                match query(yy, slack, h) {
+                    Some((t, ok, first)) => {
+                        let frame = |f: &&&Placed| f.float.text_box.is_some() && f.float.shape.is_none() && f.key.2 != float::TABLE_PIECE;
+                        let framed = || {
+                            order
+                                .iter()
+                                .filter(frame)
+                                .any(|f| f.excl[1] < t + h - EPS && f.excl[3] > yy + EPS && f.excl[0] < cx1 - EPS && f.excl[2] > cx0 + EPS)
+                        };
+                        // Only a line fitted at its top in one piece remembers its drop.
+                        let drop = if one.is_some() && first >= 2 && framed() { t - yy } else { 0.0 };
+                        fitted = Some((pieces_of(&ok), end_of(&ok), one.map_or(0.0, |_| slack), drop));
+                        forced = Some(pieces_of(&ok));
+                        moved = Some(t);
+                    }
+                    None => {
+                        yy = e;
+                        return (yy, None);
+                    }
+                }
+            }
+            if here.iter().any(hidden) {
+                uncut = Some(here.iter().filter(|f| !hidden(f)).cloned().collect());
+            }
+            if style.keep_lines && forced.is_none() {
+                let first = near().filter(|f| f.wrap != Wrap::None && f.excl[1] > yy + EPS).min_by(|a, b| a.excl[1].total_cmp(&b.excl[1]));
+                // Its own float below a column's top was settled with the paragraph's place above.
+                if let Some(f) = first.filter(|f| f.excl[1] < yy + h - EPS && (at_top || !first_part || !w.own_float(f))) {
+                    // At a column's top, beside its own float only when the rest of it starts above the float's
+                    // bottom there; else down past the float in steps of its height, full width.
+                    let (ft, fb) = (f.excl[1], f.excl[3]);
+                    yy = ft;
+                    if at_top && first_part && w.own_float(&f) && !self.all_beside(w, ft, s, fb) {
+                        yy = ft + ((fb - ft) / h - EPS).ceil() * h;
+                    }
+                    return (yy, None);
+                }
+            }
+        }
+        if let Some(t) = moved {
+            yy = t;
+        }
+        (yy, Some(Strip { uncut, forced, fitted, reuse }))
+    }
+
     // Bands
     fn fit_bands(&self, w: &WrapIn, carry: &FlowState, mut lead: f64, mut frame: Frame) -> (Vec<(f64, Vec<Line>)>, usize) {
         let &WrapIn {
@@ -415,121 +554,9 @@ impl<'d> PageFill<'d, '_> {
             // Every piece of the line was cut away or too narrow.
             let mut no_room = false;
             let here: &[Placed] = if yy >= col.bottom.to_pt() - EPS || unplaced && bands.is_empty() { &[] } else { floats };
-            let mut uncut: Option<Vec<Placed>> = None;
-            let mut forced: Option<Vec<(f64, f64)>> = None;
-            let mut fitted: Option<(Vec<(f64, f64)>, f64, f64, f64)> = None;
-            let mut moved = None;
-            let order: &[&Placed] = if here.is_empty() { &[] } else { &ordered };
-            let end_of = |ok: &[(f64, f64, f64)]| ok.iter().map(|p| p.2).fold(f64::INFINITY, f64::min);
-            // The pieces from `v0` with that slack: lower, at where the strip ends, while none reaches further than
-            // the slack below `v0`. With the top they were found at and how many pieces were found there first.
-            let query = |v0: f64, slack: f64, h: f64| -> Option<(f64, Vec<(f64, f64, f64)>, usize)> {
-                let mut t = v0;
-                for _ in 0..64 {
-                    if t >= col.bottom.to_pt() - EPS {
-                        return None;
-                    }
-                    let found = float::strip(order, cx0, cx1, t, t + h.max(slack), slack)?;
-                    let ok: Vec<(f64, f64, f64)> = found.iter().copied().filter(|p| slack < p.2 - v0 - EPS).collect();
-                    if !ok.is_empty() && t > v0 + EPS {
-                        // Kept lower: fitted again there with a slack down to where its strip ends.
-                        let slack = end_of(&ok) - v0;
-                        let again = float::strip(order, cx0, cx1, t, t + h.max(slack), slack).unwrap_or_default();
-                        let again: Vec<(f64, f64, f64)> = again.into_iter().filter(|p| slack < p.2 - t - EPS).collect();
-                        let first = ok.len();
-                        return Some((t, if again.is_empty() { ok } else { again }, first));
-                    }
-                    if !ok.is_empty() {
-                        let first = ok.len();
-                        return Some((t, ok, first));
-                    }
-                    let covering = order.iter().filter(|f| {
-                        f.wrap != Wrap::None && f.excl[1] <= t + slack + EPS && f.excl[3] > t + EPS && f.excl[2] > cx0 + EPS && f.excl[0] < cx1 - EPS
-                    });
-                    let end = found.iter().map(|p| p.2).chain(covering.map(|f| f.excl[3])).fold(f64::INFINITY, f64::min);
-                    if !end.is_finite() || end <= t + EPS {
-                        return None;
-                    }
-                    t = end;
-                }
-                None
-            };
-            let pieces_of = |ok: &[(f64, f64, f64)]| ok.iter().map(|p| (p.0, p.1)).collect::<Vec<(f64, f64)>>();
-            let starts_below = |end: f64| {
-                here.iter().any(|f| {
-                    f.wrap != Wrap::None && f.excl[1] > end - EPS && f.excl[1] < yy + h - EPS && f.excl[0] < cx1 - EPS && f.excl[2] > cx0 + EPS
-                })
-            };
-            let reuse = compat == Compat::Legacy
-                && strip_at.as_ref().is_some_and(|&(_, end, least)| {
-                    let room = end - yy;
-                    room > EPS && if slack_on > EPS { room >= h - EPS } else { room >= least - EPS && !starts_below(end) }
-                });
-            if reuse {
-                forced = strip_at.as_ref().map(|x| x.0.clone());
-            } else if compat == Compat::Legacy && slack_on > EPS {
-                if let Some((t, ok, _)) = query(yy, slack_on, h) {
-                    fitted = Some((pieces_of(&ok), end_of(&ok), 0.0, 0.0));
-                    forced = Some(pieces_of(&ok));
-                    yy = t;
-                }
-            } else if compat == Compat::Legacy {
-                let near = || here.iter().filter(|f| f.in_band(yy, yy + h) && f.excl[2] > cx0 + EPS && f.excl[0] < cx1 - EPS);
-                let over: Vec<Placed> = near().filter(|f| f.excl[1] <= yy + EPS).cloned().collect();
-                let e = over.iter().map(|f| f.excl[3]).fold(f64::INFINITY, f64::min);
-                // A float starting inside the band counts only where it meets what the floats over the band's top
-                // leave of the line: else it neither moves nor cuts the line. A top-and-bottom float takes the whole line.
-                let left = float::intervals(&over, cx0, cx1, yy, yy + h, true).unwrap_or_default();
-                let meets = |f: &Placed| f.wrap == Wrap::TopAndBottom || left.iter().any(|&(a, b)| f.excl[0] < b - EPS && f.excl[2] > a + EPS);
-                let hidden = |f: &Placed| f.in_band(yy, yy + h) && f.excl[1] > yy + EPS && !meets(f);
-                // The line is fitted again with a slack: where they leave it one piece, down to where that piece ends,
-                // else its height. A piece is kept only if it reaches further than the slack below the line's top;
-                // with none the line goes down to where the strip ends and is fitted there.
-                if e < yy + h - EPS && near().any(|f| f.excl[1] > yy + EPS && meets(f)) {
-                    let one = float::strip(order, cx0, cx1, yy, yy + h, 0.0).filter(|p| p.len() == 1).map(|p| p[0].2 - yy);
-                    let slack = one.unwrap_or(h);
-                    match query(yy, slack, h) {
-                        Some((t, ok, first)) => {
-                            let frame = |f: &&&Placed| f.float.text_box.is_some() && f.float.shape.is_none() && f.key.2 != float::TABLE_PIECE;
-                            let framed = || {
-                                order
-                                    .iter()
-                                    .filter(frame)
-                                    .any(|f| f.excl[1] < t + h - EPS && f.excl[3] > yy + EPS && f.excl[0] < cx1 - EPS && f.excl[2] > cx0 + EPS)
-                            };
-                            // Only a line fitted at its top in one piece remembers its drop.
-                            let drop = if one.is_some() && first >= 2 && framed() { t - yy } else { 0.0 };
-                            fitted = Some((pieces_of(&ok), end_of(&ok), one.map_or(0.0, |_| slack), drop));
-                            forced = Some(pieces_of(&ok));
-                            moved = Some(t);
-                        }
-                        None => {
-                            yy = e;
-                            continue;
-                        }
-                    }
-                }
-                if here.iter().any(hidden) {
-                    uncut = Some(here.iter().filter(|f| !hidden(f)).cloned().collect());
-                }
-                if style.keep_lines && forced.is_none() {
-                    let first = near().filter(|f| f.wrap != Wrap::None && f.excl[1] > yy + EPS).min_by(|a, b| a.excl[1].total_cmp(&b.excl[1]));
-                    // Its own float below a column's top was settled with the paragraph's place above.
-                    if let Some(f) = first.filter(|f| f.excl[1] < yy + h - EPS && (at_top || !first_part || !w.own_float(f))) {
-                        // At a column's top, beside its own float only when the rest of it starts above the float's
-                        // bottom there; else down past the float in steps of its height, full width.
-                        let (ft, fb) = (f.excl[1], f.excl[3]);
-                        yy = ft;
-                        if at_top && first_part && w.own_float(&f) && !self.all_beside(w, ft, s, fb) {
-                            yy = ft + ((fb - ft) / h - EPS).ceil() * h;
-                        }
-                        continue;
-                    }
-                }
-            }
-            if let Some(t) = moved {
-                yy = t;
-            }
+            let (moved_to, strip) = self.choose_strip(w, here, &ordered, &strip_at, slack_on, h, s, yy);
+            yy = moved_to;
+            let Some(Strip { uncut, forced, fitted, reuse }) = strip else { continue };
             let cutting = uncut.as_deref().unwrap_or(here);
             for attempt in 0..2 {
                 let free = match &forced {
