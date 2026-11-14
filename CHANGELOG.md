@@ -3,6 +3,15 @@
 ## [0.2.0](https://github.com/jaxcksn/twip/compare/v0.1.1...v0.2.0) (2026-11-14)
 
 
+### Layout changes
+
+* **layout:** expand layout stability gate ([#17](https://github.com/jaxcksn/twip/pull/17))
+* **layout:** various layout stability and rendering fidelity enhancements ([#19](https://github.com/jaxcksn/twip/pull/19))
+* **layout:** vertical merged cells now layout correctly ([#20](https://github.com/jaxcksn/twip/pull/20))
+* **editing:** cross-page object drags, shape clicks and layout fidelity ([#21](https://github.com/jaxcksn/twip/pull/21))
+* **layout:** merged regions after every row grows ([#22](https://github.com/jaxcksn/twip/pull/22))
+
+
 ### ⚠ BREAKING CHANGES
 
 * **render:** replace skia with custom rendering engine ([#18](https://github.com/jaxcksn/twip/issues/18))
