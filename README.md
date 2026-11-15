@@ -9,7 +9,7 @@
   <br />
   <br />
 
-  A high-fidelity document layout, editing, and rendering engine.  
+  A high-fidelity docx layout, editing, and rendering engine.  
   Written in Rust 🦀. Built for the browser, desktop, and server.
 
   <a href="https://github.com/jaxcksn/twip/actions/workflows/ci.yml"><img src="https://flat.badgen.net/github/checks/jaxcksn/twip/main?label=build&icon=github" alt="Build"></a>
