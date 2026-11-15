@@ -1594,6 +1594,7 @@ dependencies = [
  "gif",
  "hayro",
  "kurbo",
+ "libm",
  "miniz_oxide 0.9.1",
  "pdf-writer",
  "png",

@@ -214,8 +214,9 @@ impl Editor {
                 }
             }
         }
+        // Word records moves in every story: headers, footers and notes too.
         let mut paras = Vec::new();
-        self.doc.sections.iter().for_each(|s| walk(&s.blocks, &mut paras));
+        super::elements::stories(&self.doc, &self.index).into_iter().for_each(|(_, blocks)| walk(blocks, &mut paras));
         let mut ends: [Option<((ParaId, Unit), (ParaId, Unit))>; 2] = [None, None];
         let mut cache: HashMap<*const RunStyle, Option<Run>> = HashMap::new();
         let mut steps = Vec::new();

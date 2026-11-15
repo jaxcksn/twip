@@ -1,0 +1,11 @@
+page 0 12240 15840
+  1440 2226 Body paragraph one has a sentence of its own.
+  1440 2664 Body paragraph two has a sentence of its own.
+  1440 3102 Body paragraph three has a sentence of its own.
+  1440 3540 Footnote here1
+  1440 13281 Note paragraph one has a sentence of its own.
+  1440 13719 Note paragraph two has a sentence of its own.
+  1440 14157 Note paragraph three has a sentence of its own.
+  1440 912 Header paragraph one has a sentence of its own.
+  1440 1350 Header paragraph two has a sentence of its own.
+  1440 1788 Header paragraph three has a sentence of its own.

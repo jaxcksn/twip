@@ -1140,18 +1140,23 @@ impl HostSurface<'_> {
         crate::render::window::lose_device();
     }
 
-    /// Draws the viewport into the attached window, `width` x `height` device pixels, and presents it. Fails
-    /// `unavailable` when no window is attached or the GPU can't draw now (the device was lost): draw with
+    /// Draws the viewport into the attached window, `width` x `height` device pixels, and presents it. Fails `aborted`
+    /// when the window isn't showing (no frame is drawn; the next one tries again), and `unavailable` when no window is
+    /// attached or the GPU can't draw this frame (the device was lost, the frame is too large): draw it with
     /// [`HostSurface::frame_rgba`] then.
     pub fn frame_window(&mut self, width: u32, height: u32) -> Result<FrameInfo, Error> {
         #[cfg(twip_gpu)]
         {
+            use crate::render::window::Framed;
             let key = self.session.presentation.serial;
             let started = crate::clock::Instant::now();
-            let drawn = self.draw_graphics(f64::from(width), f64::from(height), |g| crate::render::window::frame(key, width, height, g));
-            if drawn {
-                self.session.presentation.counters.frame(started.elapsed().as_secs_f64() * 1e3);
-                return Ok(self.frame_info());
+            match self.draw_graphics(f64::from(width), f64::from(height), |g| crate::render::window::frame(key, width, height, g)) {
+                Framed::Drawn => {
+                    self.session.presentation.counters.frame(started.elapsed().as_secs_f64() * 1e3);
+                    return Ok(self.frame_info());
+                }
+                Framed::Skipped => return Err(Error::new(crate::api::error::ErrorCode::Aborted, "the window isn't showing: no frame was drawn")),
+                Framed::Failed => {}
             }
         }
         let _ = (width, height);

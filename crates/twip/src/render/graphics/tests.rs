@@ -402,3 +402,14 @@ fn a_picture_fill_without_its_image_draws_a_light_frame() {
     assert!(edge.iter().any(|p| (180..230).contains(&p[0]) && p[0] == p[1]), "a grey frame");
     assert!(paper(s.at(150.0, 130.0)), "nothing inside");
 }
+
+#[test]
+fn a_new_document_lets_the_last_ones_images_go() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-OBJ.docx");
+    let doc = crate::docx::read(&std::fs::read(path).expect("fixture")).expect("reads");
+    let mut g = super::Graphics::default();
+    let key = crate::layout::fragment::ImageKey { index: Some(0), generation: 0 };
+    let id = g.image(key, &doc.images).expect("an image");
+    g.clear_images();
+    assert!(g.res.images.info(id).is_none(), "the registry holds the old document's bytes no longer");
+}

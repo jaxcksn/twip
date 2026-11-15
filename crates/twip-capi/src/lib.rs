@@ -799,7 +799,8 @@ pub unsafe extern "C" fn twip_test_lose_gpu(engine: *mut TwipEngine, session: u3
 }
 
 /// Windows and macOS: draws the viewport into the attached window, `width` x `height` device pixels, and presents it.
-/// Fails `unavailable` when the GPU can't draw now (the device was lost): draw with twip_frame_rgba then.
+/// Fails `aborted` when the window isn't showing (no frame drawn; the next one tries again), and `unavailable` when
+/// the GPU can't draw this frame (the device was lost, the frame is too large): draw it with twip_frame_rgba then.
 ///
 /// # Safety
 /// `engine` is from twip_engine_new; `info` is null or valid for a write.

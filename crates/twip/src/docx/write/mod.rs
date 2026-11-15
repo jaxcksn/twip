@@ -2282,10 +2282,11 @@ struct Open {
     rev: Option<Wrapper>,
 }
 
-/// A source revision wrapper: whether it deletes (`w:del`, `w:moveFrom`) or inserts, and its `w:id`.
+/// A source revision wrapper: whether it deletes (`w:del`, `w:moveFrom`) or inserts, whether it moves, and its `w:id`.
 #[derive(Clone, Copy)]
 struct Wrapper {
     del: bool,
+    moved: bool,
     id: Option<i64>,
 }
 
@@ -2298,7 +2299,8 @@ impl Wrapper {
         } else {
             return None;
         };
-        Some(Wrapper { del, id: n.attribute((W, "id")).and_then(|v| v.trim().parse().ok()) })
+        let moved = is_w(n, "moveFrom") || is_w(n, "moveTo");
+        Some(Wrapper { del, moved, id: n.attribute((W, "id")).and_then(|v| v.trim().parse().ok()) })
     }
 
     fn is(&self, m: &Option<Rc<RevisionMark>>) -> bool {
@@ -3230,14 +3232,14 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
     }
 
     /// Pending text as run content: deleted text (a deleted run's, or a source run's in a deletion) in `w:delText` or
-    /// `w:delInstrText`.
+    /// `w:delInstrText`. Text moved away stays `w:t`, as Word writes it: Word refuses a `w:delText` in a `w:moveFrom`.
     fn flush_text(&mut self) {
         if !self.text.is_empty() {
             let w = &self.s.w;
             let t = self.text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
             let deleted = match &self.to {
-                Some(To::Own(run)) => run.rev.del.is_some(),
-                _ => self.stack.iter().any(|o| o.rev.is_some_and(|r| r.del)),
+                Some(To::Own(run)) => run.rev.del.as_ref().is_some_and(|m| m.kind != crate::docx::review::MarkKind::MoveFrom),
+                _ => self.stack.iter().any(|o| o.rev.is_some_and(|r| r.del && !r.moved)),
             };
             let tag = match (self.text_code, deleted) {
                 (false, false) => "t",

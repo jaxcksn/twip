@@ -2563,3 +2563,53 @@ fn a_list_made_in_a_header_is_numbered() {
     let label = e.index().para(e.document(), para).and_then(|p| p.list.as_ref()).map(|l| l.text.clone());
     assert_eq!(label.as_deref(), Some("1."), "the header's list has its label");
 }
+
+#[test]
+fn a_paragraph_cut_and_pasted_in_a_header_or_note_is_a_tracked_move() {
+    use super::super::index::Container;
+    use super::super::position::Position;
+    use crate::docx::review::MarkKind;
+    let mut r = super::scenarios::Run::open("review/FX-REVIEW-MOVES-STORIES.docx", "story-moves");
+    r.e.execute(Command::SetTrackChanges(true), fonts());
+    let header = r.e.document().stories.keys().find(|n| n.contains("header")).cloned().expect("a header");
+    let stories = [StoryId::Body, r.e.index().header_footer(&header).expect("its story"), StoryId::Footnote(1)];
+    for story in stories {
+        let container = if story == StoryId::Body { Container::Section(0) } else { Container::Story(story) };
+        let paras: Vec<_> =
+            r.e.index()
+                .blocks(r.e.document(), container)
+                .expect("its blocks")
+                .iter()
+                .filter_map(|b| if let crate::docx::Block::Para(p) = b { Some(crate::layout::ParaId(p.id)) } else { None })
+                .collect();
+        r.e.set_caret_for_benchmark(Selection::range(
+            Position::text(story, paras[0], Unit(0)),
+            Position::text(story, paras[1], Unit(0)),
+            crate::editing::selection::Granularity::Char,
+        ));
+        r.step(&serde_json::json!({ "clipboard": "cut" }));
+        r.e.set_caret_for_benchmark(Selection::Caret(Position::text(story, paras[2], Unit(0))));
+        r.step(&serde_json::json!({ "clipboard": "paste" }));
+        let blocks = r.e.index().blocks(r.e.document(), container).expect("its blocks");
+        let kinds: Vec<MarkKind> = blocks
+            .iter()
+            .filter_map(|b| if let crate::docx::Block::Para(p) = b { Some(p) } else { None })
+            .flat_map(|p| p.inlines.iter().filter_map(|i| i.run()).flat_map(|r| r.rev.ins.iter().chain(r.rev.del.iter()).map(|m| m.kind)))
+            .collect();
+        assert!(kinds.contains(&MarkKind::MoveFrom) && kinds.contains(&MarkKind::MoveTo), "{story:?}: {kinds:?}");
+        assert!(!kinds.contains(&MarkKind::Insert) && !kinds.contains(&MarkKind::Delete), "{story:?}: a move, as Word records it: {kinds:?}");
+    }
+    let bytes = crate::docx::write::save(r.e.document()).expect("saves");
+    if let Some(d) = std::env::var_os("RT_KEEP") {
+        std::fs::write(std::path::Path::new(&d).join("FX-REVIEW-MOVES-STORIES.moved.docx"), &bytes).expect("writes");
+    }
+    let mut z = zip::ZipArchive::new(std::io::Cursor::new(bytes)).expect("a package");
+    for part in ["word/document.xml", header.trim_start_matches('/'), "word/footnotes.xml"] {
+        let mut xml = String::new();
+        std::io::Read::read_to_string(&mut z.by_name(part).expect("the part"), &mut xml).expect("text");
+        assert!(xml.contains("<w:moveFrom ") && xml.contains("<w:moveTo ") && xml.contains("<w:moveFromRangeStart "), "{part}");
+        // Text moved away is `w:t`, as Word writes it: Word reports a `w:delText` in a `w:moveFrom` as unreadable.
+        let moved_away = xml.split("<w:moveFrom ").skip(1).filter_map(|s| s.split("</w:moveFrom>").next());
+        assert!(moved_away.clone().all(|s| !s.contains("delText")), "{part}");
+    }
+}

@@ -127,7 +127,8 @@ impl Shader<'_> {
             Kind::Sweep { c, start, span } => {
                 for (i, px) in out.iter_mut().enumerate() {
                     let p = at(i);
-                    let angle = (p.y - c.y).atan2(p.x - c.x).to_degrees().rem_euclid(360.0);
+                    // libm's atan2, not the platform's: the same bits on every system.
+                    let angle = libm::atan2f(p.y - c.y, p.x - c.x).to_degrees().rem_euclid(360.0);
                     let t = if span != 0.0 { (angle - start) / span } else { 0.0 };
                     *px = ramp[index(extend(t, e))];
                 }

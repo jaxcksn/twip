@@ -163,8 +163,14 @@ impl Context {
         }
         let present_mode =
             if caps.present_modes.contains(&wgpu::PresentMode::Mailbox) { wgpu::PresentMode::Mailbox } else { wgpu::PresentMode::Fifo };
+        // COPY_DST where the surface takes it: a frame too large for the device is drawn on the CPU and copied in.
+        let copy_in = if caps.usages.contains(wgpu::TextureUsages::COPY_DST) || cfg!(target_arch = "wasm32") {
+            wgpu::TextureUsages::COPY_DST
+        } else {
+            wgpu::TextureUsages::empty()
+        };
         Some(wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC | copy_in,
             format,
             width,
             height,

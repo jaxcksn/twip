@@ -248,7 +248,8 @@ int32_t twip_frame_rgba(TwipEngine* engine, uint32_t session, uint8_t* pixels, u
 /* Native GPU frames: twip-graphics on wgpu into the host's window. On Windows window is an HWND (D3D12, then Vulkan);
  * on macOS a CAMetalLayer (Metal), whose device, pixel format and drawable size the engine sets. twip_attach_window
  * returns the backend (1 D3D12, 3 Vulkan, 4 Metal) or fails TWIP_E_UNAVAILABLE; twip_frame_rgba is the fallback.
- * After a device loss twip_frame_window fails TWIP_E_UNAVAILABLE; the next twip_attach_window makes a new device.
+ * twip_frame_window fails TWIP_E_ABORTED while the window isn't showing (no frame drawn; the next one tries again).
+ * After a device loss it fails TWIP_E_UNAVAILABLE; the next twip_attach_window makes a new device.
  * twip_test_lose_gpu loses the device as a driver reset would, for tests. */
 int32_t twip_attach_window(TwipEngine* engine, uint32_t session, void* window);
 void twip_detach_window(TwipEngine* engine, uint32_t session);
