@@ -182,6 +182,24 @@ const ADOPT = [
   'ElementSelection',
   'CursorOverride',
   'TabTypeChoice',
+  // Commands
+  'ListLevel',
+  'ParagraphBorderLines',
+  'FrameProperties',
+  'HorizontalPosition',
+  'VerticalPosition',
+  'LineChange',
+  'EffectsChange',
+  'ShapeTextChange',
+  'PictureAdjustChange',
+  'AutoCorrectChange',
+  'AutoCorrectEntry',
+  'DocumentDefaults',
+  'FieldResult',
+  'DataBinding',
+  'ControlFloat',
+  'PlaceholderImage',
+  'ElementMark',
 ];
 
 /** Schema types this SDK names otherwise (Rust name: C# type). */
@@ -203,6 +221,11 @@ const NAMES: Record<string, string> = {
   'PointerButton': 'Hosting.PointerButton',
   'Modifiers': 'Hosting.KeyModifiers',
   'Cursor': 'Hosting.EditorCursor',
+  'Border': 'CellBorder',
+  'ParagraphSpacing': 'ParagraphSpacingOptions',
+  'Indents': 'IndentOptions',
+  'Body': 'RichText',
+  'Severity': 'MarkSeverity',
 };
 
 /**
@@ -232,7 +255,18 @@ const FIELDS: Record<string, string> = {
   'StylePreview.color': 'ColorValue',
   'ElementHover.boxes': 'IReadOnlyList<RectangleF>',
   'ElementSelection.boxes': 'IReadOnlyList<RectangleF>',
+  'ListLevel.picture': 'byte[]?',
+  'ParagraphBorderLines.shadow': 'bool',
+  'EffectsChange.outerShadow': 'EffectChange<Shadow>',
+  'EffectsChange.innerShadow': 'EffectChange<Shadow>',
+  'EffectsChange.glow': 'EffectChange<Glow>',
+  'EffectsChange.softEdge': 'EffectChange<Length>',
+  'EffectsChange.blur': 'EffectChange<Length>',
+  'DocumentDefaults.color': 'ColorValue?',
 };
+
+/** Fields this SDK names otherwise (`Type.field`: the C# member name). */
+const MEMBERS: Record<string, string> = { 'DataBinding.xpath': 'XPath' };
 
 /** Init properties that start other than empty (`Type.field`: the C# initializer), as the state before the first. */
 const INIT: Record<string, string> = {
@@ -248,11 +282,12 @@ const INIT: Record<string, string> = {
   'PageFormatting.margins': 'new(Length.FromInches(1), Length.FromInches(1), Length.FromInches(1), Length.FromInches(1), Length.Zero)',
   'PageFormatting.columns': 'new(1, Length.FromInches(0.5), false)',
   'SpellingState.language': '"en-US"',
+  'ParagraphBorderLines.shadow': 'false',
 };
 
 /** Records written with init properties whatever their size, and positional ones whatever their size. */
 const PROPERTIES: string[] = ['SelectionSummary', 'TableSelection', 'TableStyleOptions', 'ObjectSelection', 'ShapeState', 'ShapeTextState', 'ObjectPlacement', 'TextDistance', 'CharacterFormatting', 'ParagraphFormatting', 'PageFormatting', 'HistoryState', 'ReviewState', 'SpellingState', 'RulerModel'];
-const POSITIONAL: string[] = ['Person', 'RevisionInfo', 'CommentThread', 'Comment', 'CommentAnchor', 'LinkInfo', 'HeaderFooterInfo', 'PageSize', 'PageMargins', 'RulerIndents', 'FindQuery', 'FindResult', 'FindMatch', 'Misspelling', 'Heading', 'PreviewSize', 'PreviewPicture', 'StylePreview', 'ElementMatch', 'SubTemplateInfo', 'DataPartInfo', 'DataPart', 'CellPlace', 'ListPosition', 'GestureBinding', 'TablePosition', 'GradientStop', 'Arrowhead', 'LineEnds', 'LineValue', 'Shadow', 'Glow', 'EffectsValue', 'ThemeColors', 'ChromeColors', 'ElementHover', 'ElementClick', 'ElementSelection', 'CursorOverride', 'TabTypeChoice'];
+const POSITIONAL: string[] = ['Person', 'RevisionInfo', 'CommentThread', 'Comment', 'CommentAnchor', 'LinkInfo', 'HeaderFooterInfo', 'PageSize', 'PageMargins', 'RulerIndents', 'FindQuery', 'FindResult', 'FindMatch', 'Misspelling', 'Heading', 'PreviewSize', 'PreviewPicture', 'StylePreview', 'ElementMatch', 'SubTemplateInfo', 'DataPartInfo', 'DataPart', 'CellPlace', 'ListPosition', 'GestureBinding', 'TablePosition', 'GradientStop', 'Arrowhead', 'LineEnds', 'LineValue', 'Shadow', 'Glow', 'EffectsValue', 'ThemeColors', 'ChromeColors', 'ElementHover', 'ElementClick', 'ElementSelection', 'CursorOverride', 'TabTypeChoice', 'ListLevel', 'ParagraphBorderLines', 'FrameProperties', 'HorizontalPosition', 'VerticalPosition', 'LineChange', 'EffectsChange', 'ShapeTextChange', 'PictureAdjustChange', 'AutoCorrectChange', 'AutoCorrectEntry', 'DocumentDefaults', 'FieldResult', 'DataBinding', 'ControlFloat', 'PlaceholderImage', 'ElementMark'];
 const POSITIONAL_MAX = 8;
 
 
@@ -466,14 +501,19 @@ interface Member {
 
 function members(d: Def & { shape: { kind: 'object' } }): Member[] {
   return d.shape.fields.map((f) => {
-    const name = memberName(f.name);
     const path = `${d.name}.${f.name}`;
+    const name = MEMBERS[path] ?? memberName(f.name);
     // An override is the type exactly; otherwise a field the engine may leave out is nullable.
     let type = FIELDS[path] ?? cs(f.omitted && f.ty.kind !== 'nullable' ? { kind: 'nullable', of: f.ty } : f.ty, path);
     if (f.omitted && !FIELDS[path] && !type.endsWith('?')) type += '?';
     const attrs: string[] = [];
-    // Null is left out; a value type (overridden from nullable) is always written.
-    if (f.omitted && (type.endsWith('?') || isReference(type))) attrs.push('JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)');
+    // Left out when null, unless null is a value (`Option<Option<T>>`: null clears); a value type (overridden) is left
+    // out at its default.
+    const clears = f.ty.kind === 'nullable' && f.ty.of.kind === 'nullable';
+    if (f.omitted && !clears && (type.endsWith('?') || isReference(type))) attrs.push('JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)');
+    else if (f.omitted && !type.endsWith('?') && !isReference(type) && !/^(bool|int|long|double)$/.test(type)) {
+      attrs.push('JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)');
+    }
     // A converted type names its converter on the field itself.
     const base = f.ty.kind === 'nullable' ? f.ty.of : f.ty;
     const conv = base.kind === 'ref' ? CONVERTED[base.name] : base.kind === 'format' ? CONVERTED[base.format] : undefined;
@@ -531,7 +571,7 @@ for (const name of ADOPT) {
   else if (d.shape.kind === 'object') decls.push(recordDecl(d as Def & { shape: { kind: 'object' } }));
   else problems.push(`${name} is ${d.shape.kind}: this generator writes records and enums`);
 }
-for (const path of [...Object.keys(FIELDS), ...Object.keys(INIT)]) {
+for (const path of [...Object.keys(FIELDS), ...Object.keys(INIT), ...Object.keys(MEMBERS)]) {
   const [t, f] = path.split('.');
   const d = defs.get(t);
   if (!adopted.has(t) || d?.shape.kind !== 'object' || !d.shape.fields.some((x) => x.name === f)) problems.push(`FIELDS or INIT names ${path}, which no adopted record has`);

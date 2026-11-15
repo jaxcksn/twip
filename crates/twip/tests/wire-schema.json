@@ -18647,8 +18647,11 @@
             "ty": {
               "kind": "nullable",
               "of": {
-                "kind": "ref",
-                "name": "Border"
+                "kind": "nullable",
+                "of": {
+                  "kind": "ref",
+                  "name": "Border"
+                }
               }
             }
           },
@@ -18660,8 +18663,11 @@
             "ty": {
               "kind": "nullable",
               "of": {
-                "kind": "ref",
-                "name": "Border"
+                "kind": "nullable",
+                "of": {
+                  "kind": "ref",
+                  "name": "Border"
+                }
               }
             }
           },
@@ -18673,8 +18679,11 @@
             "ty": {
               "kind": "nullable",
               "of": {
-                "kind": "ref",
-                "name": "Border"
+                "kind": "nullable",
+                "of": {
+                  "kind": "ref",
+                  "name": "Border"
+                }
               }
             }
           },
@@ -18686,8 +18695,11 @@
             "ty": {
               "kind": "nullable",
               "of": {
-                "kind": "ref",
-                "name": "Border"
+                "kind": "nullable",
+                "of": {
+                  "kind": "ref",
+                  "name": "Border"
+                }
               }
             }
           },
@@ -19296,8 +19308,11 @@
             "ty": {
               "kind": "nullable",
               "of": {
-                "kind": "ref",
-                "name": "Border"
+                "kind": "nullable",
+                "of": {
+                  "kind": "ref",
+                  "name": "Border"
+                }
               }
             }
           },
@@ -19309,8 +19324,11 @@
             "ty": {
               "kind": "nullable",
               "of": {
-                "kind": "ref",
-                "name": "Border"
+                "kind": "nullable",
+                "of": {
+                  "kind": "ref",
+                  "name": "Border"
+                }
               }
             }
           },
@@ -19322,8 +19340,11 @@
             "ty": {
               "kind": "nullable",
               "of": {
-                "kind": "ref",
-                "name": "Border"
+                "kind": "nullable",
+                "of": {
+                  "kind": "ref",
+                  "name": "Border"
+                }
               }
             }
           },
@@ -19335,8 +19356,11 @@
             "ty": {
               "kind": "nullable",
               "of": {
-                "kind": "ref",
-                "name": "Border"
+                "kind": "nullable",
+                "of": {
+                  "kind": "ref",
+                  "name": "Border"
+                }
               }
             }
           },
@@ -19348,8 +19372,11 @@
             "ty": {
               "kind": "nullable",
               "of": {
-                "kind": "ref",
-                "name": "Border"
+                "kind": "nullable",
+                "of": {
+                  "kind": "ref",
+                  "name": "Border"
+                }
               }
             }
           },

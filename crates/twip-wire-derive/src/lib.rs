@@ -789,7 +789,6 @@ fn describe_fields(fields: &[Field<'_>], container_default: bool) -> TokenStream
         let doc = docs(f.attrs_raw);
         let ty = match (&f.attrs.describe_with, f.attrs.mode, option_inner(f.ty)) {
             (Some(p), _, _) => quote!(#p(reg)),
-            (None, Mode::Present, Some(inner)) => quote!(<#inner as ::twip_wire::schema::Describe>::describe(reg)),
             (None, _, _) => {
                 let t = f.ty;
                 quote!(<#t as ::twip_wire::schema::Describe>::describe(reg))

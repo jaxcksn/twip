@@ -176,35 +176,6 @@ public enum LineStyle
     Inset,
 }
 
-/// <summary>A list level: its number or bullet, and where it and the text start.</summary>
-/// <param name="Format">The number style.</param>
-/// <param name="Text">The number format, with %1 to %9 for the numbers of this level and those above it; a bullet's character.</param>
-/// <param name="Start">The number it starts at.</param>
-/// <param name="Alignment">How the number aligns.</param>
-/// <param name="Follow">What follows the number.</param>
-/// <param name="NumberPosition">Where the number is, from the margin.</param>
-/// <param name="TextIndent">Where the text is, from the margin.</param>
-/// <param name="Legal">Legal style numbering.</param>
-/// <param name="Tab">The tab stop after the number; null uses the text indent.</param>
-/// <param name="RestartAfter">The level after which it restarts (1 to 9), 0 never; null after the level above.</param>
-/// <param name="LinkedStyle">The paragraph style linked to the level.</param>
-/// <param name="Font">The number's or bullet's font.</param>
-/// <param name="Picture">A picture bullet's image (PNG, JPEG or GIF).</param>
-public sealed record ListLevel(
-    NumberFormat Format,
-    string Text,
-    int Start,
-    LevelAlignment Alignment,
-    FollowNumber Follow,
-    Length NumberPosition,
-    Length TextIndent,
-    bool Legal,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Tab = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? RestartAfter = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] StyleId? LinkedStyle = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Font = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] byte[]? Picture = null);
-
 /// <summary>A list definition for <see cref="EditorCommands.SetListDefinitionAsync"/>: level k of Levels is level k; the levels after them are kept.</summary>
 /// <param name="Levels">The levels, from the first.</param>
 /// <param name="ApplyTo">What they apply to.</param>
@@ -255,21 +226,6 @@ public sealed record PageBordersOptions(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PageBorderDisplay? Display = null,
     PageBorderScope ApplyTo = PageBorderScope.ThisSection);
 
-/// <summary>The paragraph border lines for <see cref="EditorCommands.SetParagraphBorderLinesAsync"/>: every edge is set, and null removes it.</summary>
-/// <param name="Top">The top edge.</param>
-/// <param name="Bottom">The bottom edge.</param>
-/// <param name="Left">The left edge.</param>
-/// <param name="Right">The right edge.</param>
-/// <param name="Between">The line between paragraphs with the same borders.</param>
-/// <param name="Shadow">A shadow on the bottom and right edges.</param>
-public sealed record ParagraphBorderLines(
-    CellBorder? Top = null,
-    CellBorder? Bottom = null,
-    CellBorder? Left = null,
-    CellBorder? Right = null,
-    CellBorder? Between = null,
-    bool Shadow = false);
-
 /// <summary>Shading for <see cref="EditorCommands.SetShadingAsync"/>.</summary>
 /// <param name="Target">The paragraphs or the text.</param>
 /// <param name="Fill">The fill; <see cref="ColorValue.None"/> with a clear pattern removes the shading.</param>
@@ -281,37 +237,6 @@ public sealed record ShadingOptions(
     ShadingPattern Pattern = ShadingPattern.Clear,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ColorValue? Color = null);
 
-/// <summary>A frame's wrapping, size, position and distance from text.</summary>
-/// <param name="Wrap">Text wrapping.</param>
-/// <param name="WidthRule">How the width is set.</param>
-/// <param name="Width">The width, when exact.</param>
-/// <param name="HeightRule">How the height is set.</param>
-/// <param name="Height">The height, unless automatic.</param>
-/// <param name="HorizontalAlign">The horizontal alignment, or null for <paramref name="Horizontal"/>.</param>
-/// <param name="Horizontal">The horizontal position.</param>
-/// <param name="HorizontalRelative">What the horizontal position is relative to.</param>
-/// <param name="HorizontalDistance">The distance from text, left and right.</param>
-/// <param name="VerticalAlign">The vertical alignment, or null for <paramref name="Vertical"/>.</param>
-/// <param name="Vertical">The vertical position.</param>
-/// <param name="VerticalRelative">What the vertical position is relative to.</param>
-/// <param name="VerticalDistance">The distance from text, above and below.</param>
-/// <param name="LockAnchor">The anchor stays with its paragraph.</param>
-public sealed record FrameProperties(
-    FrameWrap Wrap,
-    FrameWidthRule WidthRule,
-    Length Width,
-    FrameHeightRule HeightRule,
-    Length Height,
-    FrameHorizontalAlign? HorizontalAlign,
-    Length Horizontal,
-    FrameHorizontalRelative HorizontalRelative,
-    Length HorizontalDistance,
-    FrameVerticalAlign? VerticalAlign,
-    Length Vertical,
-    FrameVerticalRelative VerticalRelative,
-    Length VerticalDistance,
-    bool LockAnchor);
-
 /// <summary>A table's alignment on the page.</summary>
 public enum TableAlignment
 {
@@ -322,50 +247,6 @@ public enum TableAlignment
     /// <summary>Right.</summary>
     Right,
 }
-
-/// <summary>
-/// A floating object's horizontal place: aligned across its reference, or an offset from the reference's left edge.
-/// Set with neither, the object stays where it is, measured from the new reference.
-/// </summary>
-/// <param name="RelativeTo">What it is measured from.</param>
-/// <param name="Align">Aligned across the reference.</param>
-/// <param name="Offset">Right of the reference's left edge, −1584 to 1584 pt.</param>
-public sealed record HorizontalPosition(
-    HorizontalReference RelativeTo,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ObjectHorizontalAlignment? Align = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Offset = null);
-
-/// <summary>
-/// A floating object's vertical place: aligned across its reference, or an offset below the reference's top. Set with
-/// neither, the object stays where it is, measured from the new reference.
-/// </summary>
-/// <param name="RelativeTo">What it is measured from.</param>
-/// <param name="Align">Aligned across the reference.</param>
-/// <param name="Offset">Below the reference's top, −1584 to 1584 pt.</param>
-public sealed record VerticalPosition(
-    VerticalReference RelativeTo,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ObjectVerticalAlignment? Align = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Offset = null);
-
-/// <summary>An outline change; unset values are kept.</summary>
-/// <param name="Width">The width, 0 to 1584 pt.</param>
-/// <param name="Fill">
-/// <see cref="FillValue.None"/>, <see cref="FillValue.Solid"/> or <see cref="FillValue.Gradient"/>;
-/// <see cref="FillValue.FromStyle"/> removes the whole explicit outline.
-/// </param>
-/// <param name="Dash">The ECMA-376 dash name, such as <c>dash</c> or <c>sysDot</c>.</param>
-/// <param name="Compound">Single or several lines.</param>
-/// <param name="Cap">The ends.</param>
-/// <param name="Join">The joins.</param>
-/// <param name="Ends">The arrowheads; they replace both ends.</param>
-public sealed record LineChange(
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Width = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] FillValue? Fill = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Dash = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] LineCompound? Compound = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] LineCap? Cap = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] LineJoin? Join = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] LineEnds? Ends = null);
 
 /// <summary>One effect of an <see cref="EffectsChange"/>: kept (the default), removed, or set. A value converts to set.</summary>
 /// <typeparam name="T">The effect's value type.</typeparam>
@@ -399,43 +280,6 @@ public readonly record struct EffectChange<T>
     public T Value { get; }
 }
 
-/// <summary>An effects change: each effect is kept, removed or set.</summary>
-/// <param name="OuterShadow">A shadow outside the shape.</param>
-/// <param name="InnerShadow">A shadow inside the shape.</param>
-/// <param name="Glow">A glow around the shape.</param>
-/// <param name="SoftEdge">Edges faded over this distance.</param>
-/// <param name="Blur">The whole shape blurred by this radius.</param>
-public sealed record EffectsChange(
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] EffectChange<Shadow> OuterShadow = default,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] EffectChange<Shadow> InnerShadow = default,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] EffectChange<Glow> Glow = default,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] EffectChange<Length> SoftEdge = default,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] EffectChange<Length> Blur = default);
-
-/// <summary>A shape text body change; unset values are kept.</summary>
-/// <param name="Insets">The left, top, right and bottom insets, 0 to 1584 pt.</param>
-/// <param name="Anchor">Where the text sits.</param>
-/// <param name="Autofit">How the shape fits it.</param>
-/// <param name="WrapText">Lines wrap at the shape's width.</param>
-/// <param name="Direction">Which way it runs.</param>
-public sealed record ShapeTextChange(
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<Length>? Insets = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TextAnchor? Anchor = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TextAutofit? Autofit = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? WrapText = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TextDirection? Direction = null);
-
-/// <summary>A picture adjustment change; unset values are kept.</summary>
-/// <param name="Transparency">How see-through the picture is, 0 (opaque) to 1 (invisible).</param>
-/// <param name="Grayscale">Shown in shades of grey.</param>
-/// <param name="Brightness">Lighter (positive) or darker, −1 to 1.</param>
-/// <param name="Contrast">More (positive) or less contrast, −1 to 1.</param>
-public sealed record PictureAdjustChange(
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? Transparency = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Grayscale = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? Brightness = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? Contrast = null);
-
 /// <summary>Which element text a replacement applies to.</summary>
 public enum ElementTextField
 {
@@ -467,44 +311,6 @@ public enum MarkSeverity
     Info,
 }
 
-/// <summary>An AutoCorrect change: the rules given switch, the lists given replace the shipped ones; unset values are kept.</summary>
-/// <param name="TwoInitialCapitals">Two initial capitals: <c>THe</c> becomes <c>The</c>.</param>
-/// <param name="SentenceCapitals">The first letter of a sentence.</param>
-/// <param name="CellCapitals">The first letter of a table cell.</param>
-/// <param name="DayNames">Day names.</param>
-/// <param name="ReplaceText">The replacement list and the symbols.</param>
-/// <param name="SmartQuotes">Smart quotes.</param>
-/// <param name="Ordinals">Ordinals.</param>
-/// <param name="Fractions">Fractions.</param>
-/// <param name="Dashes">Dashes.</param>
-/// <param name="NumberedLists">Automatic numbered lists: <c>1.</c> then a space at a paragraph's start.</param>
-/// <param name="BulletedLists">Automatic bulleted lists: <c>*</c> then a space at a paragraph's start.</param>
-/// <param name="Entries">The replacement list, in place of the shipped one.</param>
-/// <param name="FirstLetterExceptions">Abbreviations after which a sentence doesn't start (<c>e.g.</c>), in place of the shipped ones.</param>
-/// <param name="InitialCapsExceptions">Words whose two initial capitals stay (<c>IDs</c>), in place of the shipped ones.</param>
-/// <param name="Never">The texts never corrected.</param>
-public sealed record AutoCorrectChange(
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? TwoInitialCapitals = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? SentenceCapitals = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? CellCapitals = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? DayNames = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? ReplaceText = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? SmartQuotes = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Ordinals = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Fractions = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Dashes = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? NumberedLists = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? BulletedLists = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<AutoCorrectEntry>? Entries = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? FirstLetterExceptions = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? InitialCapsExceptions = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? Never = null);
-
-/// <summary>One AutoCorrect replacement.</summary>
-/// <param name="From">What is typed.</param>
-/// <param name="To">What it becomes.</param>
-public sealed record AutoCorrectEntry(string From, string To);
-
 /// <summary>A style's list flags for <see cref="EditorCommands.SetStyleMetaAsync"/>: what is null is kept.</summary>
 /// <param name="Id">The style.</param>
 /// <param name="Visibility">Whether it shows in style lists.</param>
@@ -524,21 +330,6 @@ public sealed record StyleMetaOptions(
 public sealed record ParagraphSpacingOptions(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] SpacingValue? Before = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] SpacingValue? After = null);
-
-/// <summary>The document's default formatting: what text has before any style's. What is null is kept.</summary>
-/// <param name="Font">The font.</param>
-/// <param name="Size">The size.</param>
-/// <param name="Color">The font color.</param>
-/// <param name="Spacing">The space before and after paragraphs.</param>
-/// <param name="LineSpacing">The line spacing.</param>
-/// <param name="Indents">The left and right indents.</param>
-public sealed record DocumentDefaults(
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Font = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Size = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ColorValue? Color = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ParagraphSpacingOptions? Spacing = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] LineSpacing? LineSpacing = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IndentOptions? Indents = null);
 
 /// <summary>Indents to change; unset values are kept. <c>FirstLine</c> and <c>Hanging</c> are exclusive.</summary>
 /// <param name="Left">The left indent.</param>
@@ -616,20 +407,6 @@ public sealed record FieldOptions(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Display = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? ShowCode = null);
 
-/// <summary>A computed field result.</summary>
-/// <param name="Id">The field.</param>
-/// <param name="Display">The result; a string converts to plain text.</param>
-public sealed record FieldResult(ElementId Id, RichText Display);
-
-/// <summary>A content control's data binding.</summary>
-/// <param name="XPath">The XPath into the data part.</param>
-/// <param name="StoreItemId">The data part's item id.</param>
-/// <param name="PrefixMappings">The namespace prefix mappings.</param>
-public sealed record DataBinding(
-    [property: JsonPropertyName("xpath")] string XPath,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? StoreItemId = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? PrefixMappings = null);
-
 /// <summary>An item of a drop-down list or combo box.</summary>
 /// <param name="Text">The shown text.</param>
 /// <param name="Value">The stored value.</param>
@@ -675,23 +452,6 @@ public sealed record InsertControlOptions(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PlaceholderImage? PlaceholderImage = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ControlFloat? Float = null);
 
-/// <summary>
-/// Floats a picture control, positioned and wrapped as <see cref="EditorCommands.SetObjectWrapAsync"/> and
-/// <see cref="EditorCommands.SetObjectPositionAsync"/> place an object.
-/// </summary>
-/// <param name="Wrap">How text wraps around it; it can't be <see cref="ObjectWrap.Inline"/>.</param>
-/// <param name="Horizontal">The horizontal place; null for where it would sit in line.</param>
-/// <param name="Vertical">The vertical place; null for where it would sit in line.</param>
-public sealed record ControlFloat(
-    ObjectWrap Wrap,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] HorizontalPosition? Horizontal = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] VerticalPosition? Vertical = null);
-
-/// <summary>A picture control's placeholder picture: what the editor, the saved DOCX and a PDF show until it is filled. An SVG is drawn with the picture's box as its viewport.</summary>
-/// <param name="Data">The picture: PNG, JPEG, GIF, BMP or SVG.</param>
-/// <param name="Mime">Its MIME type (<c>image/png</c>, <c>image/svg+xml</c>); the data must be one.</param>
-public sealed record PlaceholderImage(ReadOnlyMemory<byte> Data, string Mime);
-
 /// <summary>Changes to a content control; unset values are kept.</summary>
 /// <param name="Id">The control.</param>
 /// <param name="Tag">The new tag.</param>
@@ -736,12 +496,6 @@ public sealed record ControlContent
     /// <param name="docx">The DOCX bytes.</param>
     public static ControlContent FromDocx(ReadOnlyMemory<byte> docx) => new() { Docx = docx };
 }
-
-/// <summary>A mark on an element: a wavy line with a tooltip.</summary>
-/// <param name="Id">The element.</param>
-/// <param name="Severity">The severity.</param>
-/// <param name="Message">The tooltip text.</param>
-public sealed record ElementMark(ElementId Id, MarkSeverity Severity, string Message);
 
 /// <summary>A highlight colour.</summary>
 public enum HighlightColor
