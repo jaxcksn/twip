@@ -130,7 +130,6 @@ const ADOPT = [
   'Comment',
   'CommentAnchor',
   // State
-  'AutoCorrectOptions',
   'SelectionSummary',
   'LinkInfo',
   'HeaderFooterInfo',
@@ -178,7 +177,6 @@ const CONVERTED: Record<string, { cs: string; converter: string; nullable?: stri
 
 /** Fields this SDK types its own way (`Type.field`: the C# type). */
 const FIELDS: Record<string, string> = {
-  'AutoCorrectOptions.never': 'IReadOnlyList<string>',
   'TableSelection.cellShading': 'FormatValue<ColorValue>',
   'TableSelection.rowHeight': 'FormatValue<RowHeight>',
   'CharacterFormatting.color': 'FormatValue<ColorValue>',
@@ -191,8 +189,21 @@ const FIELDS: Record<string, string> = {
   'ParagraphFormatting.shading': 'FormatValue<ColorValue>',
 };
 
+/** Init properties that start other than empty (`Type.field`: the C# initializer), as the state before the first. */
+const INIT: Record<string, string> = {
+  'SelectionSummary.page': '1',
+  'SelectionSummary.empty': 'true',
+  'TableSelection.width': 'TableWidth.Auto',
+  'ObjectPlacement.horizontal': 'new(HorizontalReference.Column)',
+  'ObjectPlacement.vertical': 'new(VerticalReference.Paragraph)',
+  'PageFormatting.size': 'new(Length.FromInches(8.5), Length.FromInches(11))',
+  'PageFormatting.margins': 'new(Length.FromInches(1), Length.FromInches(1), Length.FromInches(1), Length.FromInches(1), Length.Zero)',
+  'PageFormatting.columns': 'new(1, Length.FromInches(0.5), false)',
+  'SpellingState.language': '"en-US"',
+};
+
 /** Records written with init properties whatever their size, and positional ones whatever their size. */
-const PROPERTIES: string[] = ['AutoCorrectOptions', 'SelectionSummary', 'TableSelection', 'TableStyleOptions', 'ObjectSelection', 'ShapeState', 'ShapeTextState', 'ObjectPlacement', 'TextDistance', 'CharacterFormatting', 'ParagraphFormatting', 'PageFormatting', 'HistoryState', 'ReviewState', 'SpellingState', 'RulerModel'];
+const PROPERTIES: string[] = ['SelectionSummary', 'TableSelection', 'TableStyleOptions', 'ObjectSelection', 'ShapeState', 'ShapeTextState', 'ObjectPlacement', 'TextDistance', 'CharacterFormatting', 'ParagraphFormatting', 'PageFormatting', 'HistoryState', 'ReviewState', 'SpellingState', 'RulerModel'];
 const POSITIONAL: string[] = ['Person', 'RevisionInfo', 'CommentThread', 'Comment', 'CommentAnchor', 'LinkInfo', 'HeaderFooterInfo', 'PageSize', 'PageMargins', 'RulerIndents'];
 const POSITIONAL_MAX = 8;
 
@@ -398,6 +409,7 @@ function enumDecl(d: Def & { shape: { kind: 'units' } }): string {
 
 interface Member {
   name: string;
+  wire: string;
   type: string;
   omitted: boolean;
   json: string;
@@ -420,7 +432,7 @@ function members(d: Def & { shape: { kind: 'object' } }): Member[] {
     if (camel(name) !== f.name) attrs.push(`JsonPropertyName("${f.name}")`);
     if (!f.docs) problems.push(`${path} has no documentation`);
     dumped[path] = { name, type };
-    return { name, type, omitted: f.omitted, json: attrs.join(', '), docs: f.docs ?? '' };
+    return { name, wire: f.name, type, omitted: f.omitted, json: attrs.join(', '), docs: f.docs ?? '' };
   });
 }
 
@@ -446,7 +458,8 @@ function recordDecl(d: Def & { shape: { kind: 'object' } }): string {
   const props = ms
     .map((m) => {
       // A reference that can't be null starts as an empty value.
-      const init = m.type.endsWith('?') || !isReference(m.type) ? '' : m.type === 'string' ? ' = "";' : m.type.startsWith('IReadOnlyList<') ? ' = [];' : ' = null!;';
+      const given = INIT[`${d.name}.${m.wire}`];
+      const init = given !== undefined ? ` = ${given};` : m.type.endsWith('?') || !isReference(m.type) ? '' : m.type === 'string' ? ' = "";' : m.type.startsWith('IReadOnlyList<') ? ' = [];' : ' = null!;';
       return `${docLines(translate(m.docs, d, false), '    ', '<summary>', '</summary>')}${m.json ? `    [${m.json}]\n` : ''}    public ${m.type} ${m.name} { get; init; }${init}\n`;
     })
     .join('\n');
@@ -461,10 +474,10 @@ for (const name of ADOPT) {
   else if (d.shape.kind === 'object') decls.push(recordDecl(d as Def & { shape: { kind: 'object' } }));
   else problems.push(`${name} is ${d.shape.kind}: this generator writes records and enums`);
 }
-for (const path of Object.keys(FIELDS)) {
+for (const path of [...Object.keys(FIELDS), ...Object.keys(INIT)]) {
   const [t, f] = path.split('.');
   const d = defs.get(t);
-  if (!adopted.has(t) || d?.shape.kind !== 'object' || !d.shape.fields.some((x) => x.name === f)) problems.push(`FIELDS names ${path}, which no adopted record has`);
+  if (!adopted.has(t) || d?.shape.kind !== 'object' || !d.shape.fields.some((x) => x.name === f)) problems.push(`FIELDS or INIT names ${path}, which no adopted record has`);
 }
 // WIRE_DUMP=<file>: each adopted record field's C# type and the problems, for tooling; nothing is written.
 if (process.env.WIRE_DUMP) {

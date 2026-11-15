@@ -376,3 +376,51 @@ public sealed record VerticalRulerModel
     /// <summary>The row boundaries of the caret's table on this page.</summary>
     public IReadOnlyList<Length> TableRows { get; init; } = [];
 }
+
+/// <summary>What typing corrects (AutoCorrect): each rule on or off (all on by default), and the texts never corrected again.</summary>
+public sealed record AutoCorrectOptions
+{
+    /// <summary>Two initial capitals: <c>THe</c> becomes <c>The</c>.</summary>
+    public bool TwoInitialCapitals { get; init; } = true;
+
+    /// <summary>The first letter of a sentence is capitalised.</summary>
+    public bool SentenceCapitals { get; init; } = true;
+
+    /// <summary>The first letter of a table cell is capitalised.</summary>
+    public bool CellCapitals { get; init; } = true;
+
+    /// <summary>Day names are capitalised: <c>monday</c> becomes <c>Monday</c>.</summary>
+    public bool DayNames { get; init; } = true;
+
+    /// <summary>The replacement list and the symbols: <c>(c)</c> becomes <c>©</c>.</summary>
+    public bool ReplaceText { get; init; } = true;
+
+    /// <summary>Straight quotes become curly ones.</summary>
+    public bool SmartQuotes { get; init; } = true;
+
+    /// <summary>Ordinals get their suffix raised: <c>1st</c>.</summary>
+    public bool Ordinals { get; init; } = true;
+
+    /// <summary>Fractions: <c>1/2</c> becomes <c>½</c>.</summary>
+    public bool Fractions { get; init; } = true;
+
+    /// <summary>Hyphens become en and em dashes.</summary>
+    public bool Dashes { get; init; } = true;
+
+    /// <summary><c>1.</c> or <c>1)</c> then a space or tab at a paragraph's start makes it a numbered list.</summary>
+    public bool NumberedLists { get; init; } = true;
+
+    /// <summary><c>*</c> or <c>-</c> then a space or tab at a paragraph's start makes it a bulleted list.</summary>
+    public bool BulletedLists { get; init; } = true;
+
+    /// <summary>The texts Never correct added: never corrected again.</summary>
+    [JsonIgnore]
+    public IReadOnlyList<string> Never { get; init; } = [];
+
+    [JsonInclude, JsonPropertyName("never"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    internal IReadOnlyList<string>? NeverWire
+    {
+        get => Never.Count == 0 ? null : Never;
+        init => Never = value ?? [];
+    }
+}

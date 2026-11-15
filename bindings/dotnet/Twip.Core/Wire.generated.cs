@@ -2378,47 +2378,6 @@ public sealed record CommentAnchor(
     double LineBottom,
     double PageEdge);
 
-/// <summary>What typing corrects (AutoCorrect): each rule on or off, and the texts never corrected again.</summary>
-public sealed record AutoCorrectOptions
-{
-    /// <summary>THe → The.</summary>
-    public bool TwoInitialCapitals { get; init; }
-
-    /// <summary>The first letter of a sentence.</summary>
-    public bool SentenceCapitals { get; init; }
-
-    /// <summary>The first letter of a table cell.</summary>
-    public bool CellCapitals { get; init; }
-
-    /// <summary>monday → Monday.</summary>
-    public bool DayNames { get; init; }
-
-    /// <summary>The replacement list and the symbols ((c) → ©).</summary>
-    public bool ReplaceText { get; init; }
-
-    /// <summary>Straight quotes to curly ones.</summary>
-    public bool SmartQuotes { get; init; }
-
-    /// <summary>1st with the suffix raised.</summary>
-    public bool Ordinals { get; init; }
-
-    /// <summary>1/2 → ½.</summary>
-    public bool Fractions { get; init; }
-
-    /// <summary>Hyphens to en and em dashes.</summary>
-    public bool Dashes { get; init; }
-
-    /// <summary><c>1.</c> or <c>1)</c> then a space or tab at a paragraph's start makes it a numbered list.</summary>
-    public bool NumberedLists { get; init; }
-
-    /// <summary><c>*</c> or <c>-</c> then a space or tab at a paragraph's start makes it a bulleted list.</summary>
-    public bool BulletedLists { get; init; }
-
-    /// <summary>Texts Never correct added: never corrected again.</summary>
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public IReadOnlyList<string> Never { get; init; } = [];
-}
-
 /// <summary>What is selected and where.</summary>
 public sealed record SelectionSummary
 {
@@ -2429,13 +2388,13 @@ public sealed record SelectionSummary
     public Story Story { get; init; }
 
     /// <summary>The page of the caret, from 1.</summary>
-    public int Page { get; init; }
+    public int Page { get; init; } = 1;
 
     /// <summary>How the selection extends.</summary>
     public TextSelectionMode Mode { get; init; }
 
     /// <summary>Nothing is selected (a caret).</summary>
-    public bool Empty { get; init; }
+    public bool Empty { get; init; } = true;
 
     /// <summary>
     /// The selection as plain text, paragraphs separated by <c>\n</c> (empty for a caret), or null when it is longer
@@ -2528,7 +2487,7 @@ public sealed record TableSelection
     public TableStyleOptions StyleOptions { get; init; } = null!;
 
     /// <summary>The table width.</summary>
-    public TableWidth Width { get; init; } = null!;
+    public TableWidth Width { get; init; } = TableWidth.Auto;
 
     /// <summary>The table's alignment between the margins.</summary>
     public TableAlignment Alignment { get; init; }
@@ -2654,10 +2613,10 @@ public sealed record ShapeTextState
 public sealed record ObjectPlacement
 {
     /// <summary>The horizontal place: an alignment or an offset.</summary>
-    public HorizontalPosition Horizontal { get; init; } = null!;
+    public HorizontalPosition Horizontal { get; init; } = new(HorizontalReference.Column);
 
     /// <summary>The vertical place: an alignment or an offset.</summary>
-    public VerticalPosition Vertical { get; init; } = null!;
+    public VerticalPosition Vertical { get; init; } = new(VerticalReference.Paragraph);
 
     /// <summary>Other floating objects may overlap it.</summary>
     public bool AllowOverlap { get; init; }
@@ -2781,16 +2740,16 @@ public sealed record ParagraphFormatting
 public sealed record PageFormatting
 {
     /// <summary>The page size.</summary>
-    public PageSize Size { get; init; } = null!;
+    public PageSize Size { get; init; } = new(Length.FromInches(8.5), Length.FromInches(11));
 
     /// <summary>Portrait or landscape.</summary>
     public PageOrientation Orientation { get; init; }
 
     /// <summary>The margins.</summary>
-    public PageMargins Margins { get; init; } = null!;
+    public PageMargins Margins { get; init; } = new(Length.FromInches(1), Length.FromInches(1), Length.FromInches(1), Length.FromInches(1), Length.Zero);
 
     /// <summary>The text columns.</summary>
-    public PageColumns Columns { get; init; } = null!;
+    public PageColumns Columns { get; init; } = new(1, Length.FromInches(0.5), false);
 
     /// <summary>From the page's top edge to the header.</summary>
     public Length HeaderDistance { get; init; }
@@ -2863,7 +2822,7 @@ public sealed record SpellingState
     public bool Enabled { get; init; }
 
     /// <summary>The language for text with none (BCP 47).</summary>
-    public string Language { get; init; } = "";
+    public string Language { get; init; } = "en-US";
 
     /// <summary>The number of misspelled words.</summary>
     public int Misspellings { get; init; }
