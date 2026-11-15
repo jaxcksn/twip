@@ -14815,6 +14815,7 @@
         "fields": [
           {
             "defaulted": false,
+            "docs": "The provider, such as `AD`.",
             "name": "provider",
             "omitted": false,
             "ty": {
@@ -14823,6 +14824,7 @@
           },
           {
             "defaulted": false,
+            "docs": "The user's id at the provider.",
             "name": "userId",
             "omitted": false,
             "ty": {

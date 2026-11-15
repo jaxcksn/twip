@@ -29,7 +29,9 @@ pub struct Person {
 #[derive(Clone, Debug, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
 #[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Identity {
+    /// The provider, such as `AD`.
     pub provider: Rc<str>,
+    /// The user's id at the provider.
     pub user_id: Rc<str>,
 }
 

@@ -871,7 +871,9 @@ export interface Person {
   initials?: string;
   /** The identity in a directory. */
   identity?: {
+    /** The provider, such as `AD`. */
     provider: string;
+    /** The user's id at the provider. */
     userId: string;
   };
   /** The colour the editor marks their changes with. */
@@ -1992,7 +1994,9 @@ export interface Author {
   initials?: string;
   /** The identity in a directory, written to the document with the author. */
   identity?: {
+    /** The provider, such as `AD`. */
     provider: string;
+    /** The user's id at the provider. */
     userId: string;
   };
 }

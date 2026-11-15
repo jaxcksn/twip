@@ -20,32 +20,6 @@ public sealed record EditorSessionOptions(
     IReadOnlyDictionary<string, string>? FieldLabels = null, IReadOnlyList<string>? ApplicationFieldTypes = null,
     IReadOnlyList<ReferenceRule>? SubTemplateRules = null);
 
-/// <summary>The person making edits.</summary>
-/// <param name="Name">The display name.</param>
-/// <param name="Initials">The initials shown on comments.</param>
-/// <param name="Identity">The identity from a sign-in provider.</param>
-public sealed record Author(
-    string Name,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Initials = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Identity? Identity = null);
-
-/// <summary>A sign-in identity.</summary>
-/// <param name="Provider">The provider, such as <c>AD</c>.</param>
-/// <param name="UserId">The user id at the provider.</param>
-public sealed record Identity(string Provider, string UserId);
-
-/// <summary>A Hunspell spelling dictionary.</summary>
-/// <param name="Language">The BCP 47 language it checks.</param>
-/// <param name="Aff">The <c>.aff</c> file.</param>
-/// <param name="Dic">The <c>.dic</c> file.</param>
-/// <param name="Hyphenation">Hyphenation patterns (a <c>hyph_*.dic</c> file), for automatic hyphenation. With empty
-/// <paramref name="Aff"/> and <paramref name="Dic"/>, only these.</param>
-public sealed record Dictionary(
-    string Language,
-    ReadOnlyMemory<byte> Aff,
-    ReadOnlyMemory<byte> Dic,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ReadOnlyMemory<byte>? Hyphenation = null);
-
 /// <summary>The result of an open.</summary>
 /// <param name="Warnings">What the import approximated.</param>
 public sealed record ImportResult(IReadOnlyList<Warning> Warnings);
@@ -63,28 +37,6 @@ public enum EditorMode
     /// <summary>The merge designer: fields and controls show as labelled elements.</summary>
     Design,
 }
-
-/// <summary>One committed transaction.</summary>
-/// <param name="Id">The transaction id.</param>
-/// <param name="Revision">The document revision it produced.</param>
-/// <param name="Origin">Where it came from.</param>
-/// <param name="Author">Who made it.</param>
-/// <param name="Time">When it committed (UTC).</param>
-/// <param name="Label">The undo label.</param>
-/// <param name="Summary">What it touched.</param>
-public sealed record TransactionRecord(
-    long Id, long Revision, Origin Origin, Author Author,
-    [property: JsonConverter(typeof(UtcTimeConverter))] DateTimeOffset Time, string Label, ChangeSummary Summary);
-
-/// <summary>What a transaction touched.</summary>
-/// <param name="Paragraphs">The number of paragraphs changed.</param>
-/// <param name="Tables">The number of tables changed.</param>
-/// <param name="Elements">The elements changed.</param>
-/// <param name="Revisions">The revisions changed.</param>
-/// <param name="Comments">The comments changed.</param>
-public sealed record ChangeSummary(
-    int Paragraphs, int Tables, IReadOnlyList<ElementId> Elements, IReadOnlyList<RevisionId> Revisions,
-    IReadOnlyList<CommentId> Comments);
 
 /// <summary>A stable error code.</summary>
 [JsonConverter(typeof(KebabEnumConverter<EditorErrorCode>))]
@@ -130,29 +82,11 @@ public sealed class EditorException : Exception
     internal static EditorException Unsupported(string what) => new(EditorErrorCode.Unsupported, $"{what} is not supported yet");
 }
 
-/// <summary>An import or export approximation, aggregated per code and part.</summary>
-/// <param name="Code">The kind.</param>
-/// <param name="Message">A description.</param>
-/// <param name="Count">How many times it happened.</param>
-/// <param name="Location">Where, when known.</param>
-public sealed record Warning(
-    WarningCode Code, string Message, int Count,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] WarningLocation? Location = null);
-
 /// <summary>Where a warning happened.</summary>
 /// <param name="Part">The package part, such as <c>word/document.xml</c>.</param>
 /// <param name="Paragraph">The paragraph index in the part.</param>
 public sealed record WarningLocation(
     string Part, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Paragraph = null);
-
-/// <summary>Document statistics, computed on request.</summary>
-/// <param name="Words">Words.</param>
-/// <param name="Characters">Characters without spaces.</param>
-/// <param name="CharactersWithSpaces">Characters with spaces.</param>
-/// <param name="Paragraphs">Paragraphs.</param>
-/// <param name="Lines">Lines.</param>
-/// <param name="Pages">Pages.</param>
-public sealed record WordCount(int Words, int Characters, int CharactersWithSpaces, int Paragraphs, int Lines, int Pages);
 
 /// <summary>Formatted text: paragraphs of runs. A string converts to plain text.</summary>
 [JsonConverter(typeof(RichTextConverter))]
@@ -180,25 +114,6 @@ public sealed record RichText
     public override string ToString() => Plain ?? string.Join("\n", Paragraphs.Select(p => string.Concat(p.Runs.Select(r => r.Text))));
 }
 
-/// <summary>A paragraph of formatted text.</summary>
-/// <param name="Runs">The runs.</param>
-public sealed record RichParagraph(IReadOnlyList<RichRun> Runs);
-
-/// <summary>A run of formatted text.</summary>
-/// <param name="Text">The text.</param>
-/// <param name="Bold">Bold.</param>
-/// <param name="Italic">Italic.</param>
-/// <param name="Underline">Underlined.</param>
-/// <param name="Strikethrough">Struck through.</param>
-/// <param name="Link">A hyperlink address.</param>
-public sealed record RichRun(
-    string Text,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Bold = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Italic = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Underline = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Strikethrough = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Link = null);
-
 /// <summary>A catalog entry: what an application needs to show a command in its UI.</summary>
 /// <param name="Id">The command.</param>
 /// <param name="Label">The English label.</param>
@@ -214,9 +129,4 @@ public sealed record CommandInfo(
 /// <param name="Windows">On Windows and Linux.</param>
 /// <param name="Mac">On macOS.</param>
 public sealed record Shortcuts(IReadOnlyList<string> Windows, IReadOnlyList<string> Mac);
-
-/// <summary>A group of Word's Insert &gt; Shapes gallery.</summary>
-/// <param name="Label">Its label, such as <c>Basic Shapes</c>.</param>
-/// <param name="Presets">Its presets, in Word's order.</param>
-public sealed record ShapeGalleryGroup(string Label, IReadOnlyList<ShapePreset> Presets);
 

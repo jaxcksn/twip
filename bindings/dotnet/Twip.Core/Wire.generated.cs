@@ -2188,3 +2188,113 @@ public enum PressAction
     /// <summary>Nothing: the element can't be edited here.</summary>
     None,
 }
+
+/// <summary>Who edits: the name revisions and comments are recorded under.</summary>
+/// <param name="Name">The display name.</param>
+/// <param name="Initials">The initials shown on comments.</param>
+/// <param name="Identity">The identity in a directory, written to the document with the author.</param>
+public sealed record Author(
+    string Name,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Initials = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Identity? Identity = null);
+
+/// <summary>Who a person is in an identity provider (<c>w15:presenceInfo</c>).</summary>
+/// <param name="Provider">The provider, such as <c>AD</c>.</param>
+/// <param name="UserId">The user's id at the provider.</param>
+public sealed record Identity(string Provider, string UserId);
+
+/// <summary>A Hunspell dictionary.</summary>
+/// <param name="Language">BCP 47 (<c>en-US</c>).</param>
+/// <param name="Aff">The affix file (<c>.aff</c>).</param>
+/// <param name="Dic">The word list (<c>.dic</c>).</param>
+/// <param name="Hyphenation">
+/// Hyphenation patterns (a <c>hyph_*.dic</c> file), for automatic hyphenation in this language. With empty <paramref
+/// name="Aff"/> and <paramref name="Dic"/>, the dictionary adds only these.
+/// </param>
+public sealed record Dictionary(
+    string Language,
+    ReadOnlyMemory<byte> Aff,
+    ReadOnlyMemory<byte> Dic,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ReadOnlyMemory<byte>? Hyphenation = null);
+
+/// <summary>One committed transaction, as <c>documentChanged</c> reports it.</summary>
+/// <param name="Id">Unique in the session, increasing.</param>
+/// <param name="Revision">The document revision this transaction made.</param>
+/// <param name="Origin">Who started it.</param>
+/// <param name="Author">The session's author at the time.</param>
+/// <param name="Time">When it committed.</param>
+/// <param name="Label">The undo label (<c>Typing</c>, <c>Bold</c>, a batch's label).</param>
+/// <param name="Summary">What it touched.</param>
+public sealed record TransactionRecord(
+    long Id,
+    long Revision,
+    Origin Origin,
+    Author Author,
+    DateTimeOffset Time,
+    string Label,
+    ChangeSummary Summary);
+
+/// <summary>
+/// What a transaction touched: how many paragraphs and tables, and which elements, revisions and comments.
+/// </summary>
+/// <param name="Paragraphs">How many paragraphs it changed.</param>
+/// <param name="Tables">How many tables it changed.</param>
+/// <param name="Elements">The elements it changed.</param>
+/// <param name="Revisions">The revisions it made or changed.</param>
+/// <param name="Comments">The comments it made or changed.</param>
+public sealed record ChangeSummary(
+    int Paragraphs,
+    int Tables,
+    IReadOnlyList<ElementId> Elements,
+    IReadOnlyList<RevisionId> Revisions,
+    IReadOnlyList<CommentId> Comments);
+
+/// <summary>One kind of problem in one part, with how many times it happened.</summary>
+/// <param name="Code">What kind of problem it is.</param>
+/// <param name="Message">The first occurrence's description.</param>
+/// <param name="Count">How many times it happened.</param>
+/// <param name="Location">Where it happened, when known.</param>
+public sealed record Warning(
+    WarningCode Code,
+    string Message,
+    int Count,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] WarningLocation? Location = null);
+
+/// <summary>The document's counts, computed on request.</summary>
+/// <param name="Words">Words.</param>
+/// <param name="Characters">Characters, without spaces.</param>
+/// <param name="CharactersWithSpaces">Characters, with spaces.</param>
+/// <param name="Paragraphs">Paragraphs.</param>
+/// <param name="Lines">Lines.</param>
+/// <param name="Pages">Pages.</param>
+public sealed record WordCount(
+    int Words,
+    int Characters,
+    int CharactersWithSpaces,
+    int Paragraphs,
+    int Lines,
+    int Pages);
+
+/// <summary>One paragraph of <see cref="RichText"/>.</summary>
+/// <param name="Runs">The runs.</param>
+public sealed record RichParagraph(IReadOnlyList<RichRun> Runs);
+
+/// <summary>A run of <see cref="RichText"/>: text with its formatting.</summary>
+/// <param name="Text">The text.</param>
+/// <param name="Bold">Bold.</param>
+/// <param name="Italic">Italic.</param>
+/// <param name="Underline">Underlined.</param>
+/// <param name="Strikethrough">Struck through.</param>
+/// <param name="Link">A link's address.</param>
+public sealed record RichRun(
+    string Text,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Bold = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Italic = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Underline = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Strikethrough = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Link = null);
+
+/// <summary>A group of the shape gallery.</summary>
+/// <param name="Label">Its label (<c>"Basic Shapes"</c>).</param>
+/// <param name="Presets">Its presets, in Word's order.</param>
+public sealed record ShapeGalleryGroup(string Label, IReadOnlyList<ShapePreset> Presets);

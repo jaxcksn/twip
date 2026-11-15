@@ -112,10 +112,21 @@ const ADOPT = [
   'ObjectGrid',
   'FieldShading',
   'PressAction',
+  // Records
+  'Author',
+  'Identity',
+  'Dictionary',
+  'TransactionRecord',
+  'ChangeSummary',
+  'Warning',
+  'WordCount',
+  'RichParagraph',
+  'RichRun',
+  'ShapeGalleryGroup',
 ];
 
 /** Schema types this SDK names otherwise (Rust name: C# type). */
-const NAMES: Record<string, string> = { Points: 'Length' };
+const NAMES: Record<string, string> = { Points: 'Length', Location: 'WarningLocation' };
 
 /** Fields this SDK types its own way (`Type.field`: the C# type). */
 const FIELDS: Record<string, string> = {};
