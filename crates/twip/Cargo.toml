@@ -19,7 +19,7 @@ spellbook = "0.4.2"
 unicode-segmentation = "1.12"
 # The public API's types cross the SDK wire as JSON (api::wire).
 # Published with Twip at exactly its version (release-please keeps the pin in step).
-twip-wire = { path = "../twip-wire", version = "=0.1.1" } # x-release-please-version
+twip-wire = { path = "../twip-wire", version = "=0.2.0" } # x-release-please-version
 # The test inspection surface's JSON (`inspect`).
 serde_json = { version = "1.0.154", optional = true }
 # WOFF and WOFF2 fonts (what web font services serve) decoded to TrueType/OpenType: Brotli and glyf reconstruction.

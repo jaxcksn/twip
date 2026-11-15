@@ -1608,7 +1608,7 @@ dependencies = [
 
 [[package]]
 name = "twip-tools"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "png",
  "roxmltree",
@@ -1627,7 +1627,7 @@ dependencies = [
 
 [[package]]
 name = "twip-wire"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "itoa",
  "ryu",
@@ -1636,7 +1636,7 @@ dependencies = [
 
 [[package]]
 name = "twip-wire-derive"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "proc-macro2",
  "quote",
