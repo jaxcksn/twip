@@ -2377,3 +2377,515 @@ public sealed record CommentAnchor(
     double LineTop,
     double LineBottom,
     double PageEdge);
+
+/// <summary>What typing corrects (AutoCorrect): each rule on or off, and the texts never corrected again.</summary>
+public sealed record AutoCorrectOptions
+{
+    /// <summary>THe → The.</summary>
+    public bool TwoInitialCapitals { get; init; }
+
+    /// <summary>The first letter of a sentence.</summary>
+    public bool SentenceCapitals { get; init; }
+
+    /// <summary>The first letter of a table cell.</summary>
+    public bool CellCapitals { get; init; }
+
+    /// <summary>monday → Monday.</summary>
+    public bool DayNames { get; init; }
+
+    /// <summary>The replacement list and the symbols ((c) → ©).</summary>
+    public bool ReplaceText { get; init; }
+
+    /// <summary>Straight quotes to curly ones.</summary>
+    public bool SmartQuotes { get; init; }
+
+    /// <summary>1st with the suffix raised.</summary>
+    public bool Ordinals { get; init; }
+
+    /// <summary>1/2 → ½.</summary>
+    public bool Fractions { get; init; }
+
+    /// <summary>Hyphens to en and em dashes.</summary>
+    public bool Dashes { get; init; }
+
+    /// <summary><c>1.</c> or <c>1)</c> then a space or tab at a paragraph's start makes it a numbered list.</summary>
+    public bool NumberedLists { get; init; }
+
+    /// <summary><c>*</c> or <c>-</c> then a space or tab at a paragraph's start makes it a bulleted list.</summary>
+    public bool BulletedLists { get; init; }
+
+    /// <summary>Texts Never correct added: never corrected again.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<string> Never { get; init; } = [];
+}
+
+/// <summary>What is selected and where.</summary>
+public sealed record SelectionSummary
+{
+    /// <summary>What kind of selection it is.</summary>
+    public SelectionKind Kind { get; init; }
+
+    /// <summary>The story the selection is in.</summary>
+    public Story Story { get; init; }
+
+    /// <summary>The page of the caret, from 1.</summary>
+    public int Page { get; init; }
+
+    /// <summary>How the selection extends.</summary>
+    public TextSelectionMode Mode { get; init; }
+
+    /// <summary>Nothing is selected (a caret).</summary>
+    public bool Empty { get; init; }
+
+    /// <summary>
+    /// The selection as plain text, paragraphs separated by <c>\n</c> (empty for a caret), or null when it is longer
+    /// than <c>SELECTION_TEXT_LIMIT</c> characters.
+    /// </summary>
+    public string? Text { get; init; }
+
+    /// <summary>The selection's table, or null outside tables.</summary>
+    public TableSelection? Table { get; init; }
+
+    /// <summary>The selected picture or text box, or null.</summary>
+    public ObjectSelection? Object { get; init; }
+
+    /// <summary>Innermost first: the element the selection is in or covers, then its parents.</summary>
+    public IReadOnlyList<ElementContext> Context { get; init; } = [];
+
+    /// <summary>The link at the selection, or null.</summary>
+    public LinkInfo? Link { get; init; }
+
+    /// <summary>The thread at the caret.</summary>
+    public CommentId? Comment { get; init; }
+
+    /// <summary>The revision at the caret.</summary>
+    public RevisionId? Revision { get; init; }
+
+    /// <summary>Set while a header or footer is being edited.</summary>
+    public HeaderFooterInfo? HeaderFooter { get; init; }
+}
+
+/// <summary>The link at the selection.</summary>
+/// <param name="Address">Where the link goes.</param>
+/// <param name="Text">The link's display text.</param>
+public sealed record LinkInfo(string Address, string Text);
+
+/// <summary>The header or footer being edited.</summary>
+/// <param name="Kind">A header or a footer.</param>
+/// <param name="Type">Which pages it is for (<paramref name="Type"/> on the wire).</param>
+/// <param name="Section">Its section, from 1.</param>
+/// <param name="Page">The page it is being edited on, from 1.</param>
+/// <param name="Label"><c>First Page Header -Section 2-</c>.</param>
+public sealed record HeaderFooterInfo(
+    HeaderFooterKind Kind,
+    HeaderFooterType Type,
+    int Section,
+    int Page,
+    string Label);
+
+/// <summary>
+/// The selection's table: its shape, the current cell (from 0) and the values the table commands set.
+/// </summary>
+public sealed record TableSelection
+{
+    /// <summary>The number of rows.</summary>
+    public int Rows { get; init; }
+
+    /// <summary>The number of columns.</summary>
+    public int Columns { get; init; }
+
+    /// <summary>The current cell's row, from 0.</summary>
+    public int Row { get; init; }
+
+    /// <summary>The current cell's column, from 0.</summary>
+    public int Column { get; init; }
+
+    /// <summary>Whether the selected cells can merge.</summary>
+    public bool CanMerge { get; init; }
+
+    /// <summary>The first row repeats as a header on each page.</summary>
+    public FormatValue<bool> HeaderRow { get; init; }
+
+    /// <summary>Rows can break across pages.</summary>
+    public FormatValue<bool> RowCanBreak { get; init; }
+
+    /// <summary>The cells' vertical alignment.</summary>
+    public FormatValue<CellAlignment> CellAlignment { get; init; }
+
+    /// <summary>The cells' shading, or none.</summary>
+    public FormatValue<ColorValue> CellShading { get; init; }
+
+    /// <summary>The rows' height, or automatic.</summary>
+    public FormatValue<RowHeight> RowHeight { get; init; }
+
+    /// <summary>The column width.</summary>
+    public FormatValue<Length> ColumnWidth { get; init; }
+
+    /// <summary>The table style, or null.</summary>
+    public StyleId? Style { get; init; }
+
+    /// <summary>Which parts of the table style apply.</summary>
+    public TableStyleOptions StyleOptions { get; init; } = null!;
+
+    /// <summary>The table width.</summary>
+    public TableWidth Width { get; init; } = null!;
+
+    /// <summary>The table's alignment between the margins.</summary>
+    public TableAlignment Alignment { get; init; }
+
+    /// <summary>The table indent.</summary>
+    public Length Indent { get; init; }
+}
+
+/// <summary>Which parts of a table style apply.</summary>
+public sealed record TableStyleOptions
+{
+    /// <summary>The header row is formatted.</summary>
+    public bool HeaderRow { get; init; }
+
+    /// <summary>The total (last) row is formatted.</summary>
+    public bool TotalRow { get; init; }
+
+    /// <summary>The first column is formatted.</summary>
+    public bool FirstColumn { get; init; }
+
+    /// <summary>The last column is formatted.</summary>
+    public bool LastColumn { get; init; }
+
+    /// <summary>Rows alternate.</summary>
+    public bool BandedRows { get; init; }
+
+    /// <summary>Columns alternate.</summary>
+    public bool BandedColumns { get; init; }
+}
+
+/// <summary>The selected picture or text box.</summary>
+public sealed record ObjectSelection
+{
+    /// <summary>A picture or a text box.</summary>
+    public ObjectKind Kind { get; init; }
+
+    /// <summary>How text wraps around it.</summary>
+    public ObjectWrap Wrap { get; init; }
+
+    /// <summary>The width.</summary>
+    public Length Width { get; init; }
+
+    /// <summary>The height.</summary>
+    public Length Height { get; init; }
+
+    /// <summary>The alternative text.</summary>
+    public string AltText { get; init; } = "";
+
+    /// <summary>Marked decorative.</summary>
+    public bool Decorative { get; init; }
+
+    /// <summary><c>null</c> for inline objects.</summary>
+    public bool? AnchorLocked { get; init; }
+
+    /// <summary>Where a floating object is and how text keeps from it; <c>null</c> for inline objects.</summary>
+    public ObjectPlacement? Placement { get; init; }
+
+    /// <summary>
+    /// The shape's properties as written; <c>null</c> for objects without shape properties (frames) and kept graphics.
+    /// </summary>
+    public ShapeState? Shape { get; init; }
+
+    /// <summary>Its rotation, clockwise.</summary>
+    public double Rotation { get; init; }
+
+    /// <summary>Flipped left to right.</summary>
+    public bool FlipH { get; init; }
+
+    /// <summary>Flipped top to bottom.</summary>
+    public bool FlipV { get; init; }
+
+    /// <summary>The selected child's place in its group; empty unless a group child is selected.</summary>
+    public IReadOnlyList<int> ChildPath { get; init; } = [];
+
+    /// <summary>
+    /// How many objects are selected (2 or more: a multi-selection, the other fields describing the first).
+    /// </summary>
+    public int Count { get; init; }
+}
+
+/// <summary>The selected shape's properties, as written.</summary>
+public sealed record ShapeState
+{
+    /// <summary>The preset geometry; <c>null</c> for a custom geometry.</summary>
+    public ShapePreset? Preset { get; init; }
+
+    /// <summary>The adjust values in effect, in the preset's order.</summary>
+    public IReadOnlyList<long> Adjust { get; init; } = [];
+
+    /// <summary>The fill.</summary>
+    public FillState Fill { get; init; } = null!;
+
+    /// <summary>The outline.</summary>
+    public LineState Line { get; init; } = null!;
+
+    /// <summary>The effects.</summary>
+    public EffectsValue Effects { get; init; } = null!;
+
+    /// <summary>The text body; <c>null</c> for pictures and groups.</summary>
+    public ShapeTextState? Text { get; init; }
+}
+
+/// <summary>A shape's text body as written.</summary>
+public sealed record ShapeTextState
+{
+    /// <summary>Left, top, right, bottom.</summary>
+    public IReadOnlyList<Length> Insets { get; init; } = [];
+
+    /// <summary>Where the text sits.</summary>
+    public TextAnchor Anchor { get; init; }
+
+    /// <summary>How the shape fits it.</summary>
+    public TextAutofit Autofit { get; init; }
+
+    /// <summary>Lines wrap at the shape's width.</summary>
+    public bool WrapText { get; init; }
+
+    /// <summary>Which way it runs.</summary>
+    public TextDirection Direction { get; init; }
+}
+
+/// <summary>A floating object's place and its wrapping options.</summary>
+public sealed record ObjectPlacement
+{
+    /// <summary>The horizontal place: an alignment or an offset.</summary>
+    public HorizontalPosition Horizontal { get; init; } = null!;
+
+    /// <summary>The vertical place: an alignment or an offset.</summary>
+    public VerticalPosition Vertical { get; init; } = null!;
+
+    /// <summary>Other floating objects may overlap it.</summary>
+    public bool AllowOverlap { get; init; }
+
+    /// <summary>In a table cell, it is kept within the cell.</summary>
+    public bool LayoutInCell { get; init; }
+
+    /// <summary>The sides text wraps on.</summary>
+    public WrapSide WrapSide { get; init; }
+
+    /// <summary>The distance from the text: top, bottom, left and right.</summary>
+    public TextDistance Distance { get; init; } = null!;
+}
+
+/// <summary>How far text keeps from a floating object.</summary>
+public sealed record TextDistance
+{
+    /// <summary>Above it.</summary>
+    public Length Top { get; init; }
+
+    /// <summary>Below it.</summary>
+    public Length Bottom { get; init; }
+
+    /// <summary>On its left.</summary>
+    public Length Left { get; init; }
+
+    /// <summary>On its right.</summary>
+    public Length Right { get; init; }
+}
+
+/// <summary>The selection's character formatting.</summary>
+public sealed record CharacterFormatting
+{
+    /// <summary>The document's family, never the substituted one.</summary>
+    public FormatValue<string> Font { get; init; }
+
+    /// <summary>The font size.</summary>
+    public FormatValue<Length> Size { get; init; }
+
+    /// <summary>Bold.</summary>
+    public FormatValue<bool> Bold { get; init; }
+
+    /// <summary>Italic.</summary>
+    public FormatValue<bool> Italic { get; init; }
+
+    /// <summary>The underline style.</summary>
+    public FormatValue<UnderlineStyle> Underline { get; init; }
+
+    /// <summary>Strikethrough.</summary>
+    public FormatValue<bool> Strikethrough { get; init; }
+
+    /// <summary>Double strikethrough.</summary>
+    public FormatValue<bool> DoubleStrikethrough { get; init; }
+
+    /// <summary>Subscript.</summary>
+    public FormatValue<bool> Subscript { get; init; }
+
+    /// <summary>Superscript.</summary>
+    public FormatValue<bool> Superscript { get; init; }
+
+    /// <summary>Small caps.</summary>
+    public FormatValue<bool> SmallCaps { get; init; }
+
+    /// <summary>All caps.</summary>
+    public FormatValue<bool> AllCaps { get; init; }
+
+    /// <summary>Hidden text.</summary>
+    public FormatValue<bool> Hidden { get; init; }
+
+    /// <summary>The font color, or automatic.</summary>
+    public FormatValue<ColorValue> Color { get; init; }
+
+    /// <summary>The highlight color, or none.</summary>
+    public FormatValue<HighlightColor> Highlight { get; init; }
+
+    /// <summary>The character spacing.</summary>
+    public FormatValue<Length> CharacterSpacing { get; init; }
+
+    /// <summary>The raised (positive) or lowered position.</summary>
+    public FormatValue<Length> Position { get; init; }
+}
+
+/// <summary>The selection's paragraph formatting.</summary>
+public sealed record ParagraphFormatting
+{
+    /// <summary>The paragraph style.</summary>
+    public FormatValue<StyleId> Style { get; init; }
+
+    /// <summary>The alignment.</summary>
+    public FormatValue<ParagraphAlignment> Alignment { get; init; }
+
+    /// <summary>The line spacing.</summary>
+    public FormatValue<LineSpacing> LineSpacing { get; init; }
+
+    /// <summary>The space before, or automatic.</summary>
+    public FormatValue<SpacingValue> SpaceBefore { get; init; }
+
+    /// <summary>The space after, or automatic.</summary>
+    public FormatValue<SpacingValue> SpaceAfter { get; init; }
+
+    /// <summary>The indents.</summary>
+    public ParagraphIndents Indents { get; init; } = null!;
+
+    /// <summary>The list kind.</summary>
+    public FormatValue<ListKind> List { get; init; }
+
+    /// <summary>The list level, from 0.</summary>
+    public FormatValue<int> ListLevel { get; init; }
+
+    /// <summary>The pagination settings.</summary>
+    public ParagraphFlow Flow { get; init; } = null!;
+
+    /// <summary>The borders.</summary>
+    public FormatValue<ParagraphBorders> Borders { get; init; }
+
+    /// <summary>The shading, or none.</summary>
+    public FormatValue<ColorValue> Shading { get; init; }
+}
+
+/// <summary>The selection's section's page setup.</summary>
+public sealed record PageFormatting
+{
+    /// <summary>The page size.</summary>
+    public PageSize Size { get; init; } = null!;
+
+    /// <summary>Portrait or landscape.</summary>
+    public PageOrientation Orientation { get; init; }
+
+    /// <summary>The margins.</summary>
+    public PageMargins Margins { get; init; } = null!;
+
+    /// <summary>The text columns.</summary>
+    public PageColumns Columns { get; init; } = null!;
+
+    /// <summary>From the page's top edge to the header.</summary>
+    public Length HeaderDistance { get; init; }
+
+    /// <summary>From the page's bottom edge to the footer.</summary>
+    public Length FooterDistance { get; init; }
+
+    /// <summary>The first page has its own header and footer.</summary>
+    public bool DifferentFirstPage { get; init; }
+
+    /// <summary>Odd and even pages have their own headers and footers.</summary>
+    public bool DifferentOddEven { get; init; }
+}
+
+/// <summary>A page size.</summary>
+/// <param name="Width">The width.</param>
+/// <param name="Height">The height.</param>
+public sealed record PageSize(Length Width, Length Height);
+
+/// <summary>A section's margins.</summary>
+/// <param name="Top">The top margin.</param>
+/// <param name="Bottom">The bottom margin.</param>
+/// <param name="Left">The left margin.</param>
+/// <param name="Right">The right margin.</param>
+/// <param name="Gutter">The gutter.</param>
+public sealed record PageMargins(Length Top, Length Bottom, Length Left, Length Right, Length Gutter);
+
+/// <summary>What can be undone and redone.</summary>
+public sealed record HistoryState
+{
+    /// <summary>There is something to undo.</summary>
+    public bool CanUndo { get; init; }
+
+    /// <summary>There is something to redo.</summary>
+    public bool CanRedo { get; init; }
+
+    /// <summary>What undo would undo (<c>Typing</c>), or null.</summary>
+    public string? UndoLabel { get; init; }
+
+    /// <summary>What redo would redo, or null.</summary>
+    public string? RedoLabel { get; init; }
+}
+
+/// <summary>Track changes and the review counts.</summary>
+public sealed record ReviewState
+{
+    /// <summary>Changes are tracked.</summary>
+    public bool Tracking { get; init; }
+
+    /// <summary>Document protection keeps tracking on.</summary>
+    public bool TrackingLocked { get; init; }
+
+    /// <summary>How revisions and comments show.</summary>
+    public MarkupView MarkupView { get; init; }
+
+    /// <summary>The number of revisions.</summary>
+    public int Revisions { get; init; }
+
+    /// <summary>The number of comment threads.</summary>
+    public int Comments { get; init; }
+
+    /// <summary>The active comment thread, or null.</summary>
+    public CommentId? ActiveComment { get; init; }
+}
+
+/// <summary>Spell checking.</summary>
+public sealed record SpellingState
+{
+    /// <summary>Spell checking is on.</summary>
+    public bool Enabled { get; init; }
+
+    /// <summary>The language for text with none (BCP 47).</summary>
+    public string Language { get; init; } = "";
+
+    /// <summary>The number of misspelled words.</summary>
+    public int Misspellings { get; init; }
+}
+
+/// <summary>The ruler model for the selection, in points, with no viewport mapping.</summary>
+public sealed record RulerModel
+{
+    /// <summary>The selected paragraphs differ: the first one's values are shown.</summary>
+    public bool Mixed { get; init; }
+
+    /// <summary>The horizontal ruler.</summary>
+    public HorizontalRulerModel Horizontal { get; init; } = null!;
+
+    /// <summary>The vertical ruler.</summary>
+    public VerticalRulerModel Vertical { get; init; } = null!;
+}
+
+/// <summary>
+/// The indent markers. <c>first_line</c> is relative to <paramref name="Left"/>; negative is hanging.
+/// </summary>
+/// <param name="Left">The left indent.</param>
+/// <param name="Right">The right indent.</param>
+/// <param name="FirstLine">The first line's indent from <paramref name="Left"/>.</param>
+public sealed record RulerIndents(Length Left, Length Right, Length FirstLine);

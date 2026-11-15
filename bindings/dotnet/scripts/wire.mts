@@ -129,10 +129,43 @@ const ADOPT = [
   'CommentThread',
   'Comment',
   'CommentAnchor',
+  // State
+  'AutoCorrectOptions',
+  'SelectionSummary',
+  'LinkInfo',
+  'HeaderFooterInfo',
+  'TableSelection',
+  'TableStyleOptions',
+  'ObjectSelection',
+  'ShapeState',
+  'ShapeTextState',
+  'ObjectPlacement',
+  'TextDistance',
+  'CharacterFormatting',
+  'ParagraphFormatting',
+  'PageFormatting',
+  'PageSize',
+  'PageMargins',
+  'HistoryState',
+  'ReviewState',
+  'SpellingState',
+  'RulerModel',
+  'RulerIndents',
 ];
 
 /** Schema types this SDK names otherwise (Rust name: C# type). */
-const NAMES: Record<string, string> = { Points: 'Length', Location: 'WarningLocation' };
+const NAMES: Record<string, string> = {
+  Points: 'Length',
+  Location: 'WarningLocation',
+  'SelectionMode': 'TextSelectionMode',
+  'HorizontalAlignment': 'TableAlignment',
+  'IndentState': 'ParagraphIndents',
+  'FlowState': 'ParagraphFlow',
+  'Orientation': 'PageOrientation',
+  'ColumnLayout': 'PageColumns',
+  'HorizontalRuler': 'HorizontalRulerModel',
+  'VerticalRuler': 'VerticalRulerModel',
+};
 
 /**
  * Schema types and formats this SDK writes with a converter of its own (Twip.Wire's): the C# type, and the converter
@@ -144,15 +177,25 @@ const CONVERTED: Record<string, { cs: string; converter: string; nullable?: stri
 };
 
 /** Fields this SDK types its own way (`Type.field`: the C# type). */
-const FIELDS: Record<string, string> = {};
+const FIELDS: Record<string, string> = {
+  'AutoCorrectOptions.never': 'IReadOnlyList<string>',
+  'TableSelection.cellShading': 'FormatValue<ColorValue>',
+  'TableSelection.rowHeight': 'FormatValue<RowHeight>',
+  'CharacterFormatting.color': 'FormatValue<ColorValue>',
+  'CharacterFormatting.highlight': 'FormatValue<HighlightColor>',
+  'ParagraphFormatting.alignment': 'FormatValue<ParagraphAlignment>',
+  'ParagraphFormatting.spaceBefore': 'FormatValue<SpacingValue>',
+  'ParagraphFormatting.spaceAfter': 'FormatValue<SpacingValue>',
+  'ParagraphFormatting.list': 'FormatValue<ListKind>',
+  'ParagraphFormatting.borders': 'FormatValue<ParagraphBorders>',
+  'ParagraphFormatting.shading': 'FormatValue<ColorValue>',
+};
 
 /** Records written with init properties whatever their size, and positional ones whatever their size. */
-const PROPERTIES: string[] = [];
-const POSITIONAL: string[] = ['Person', 'RevisionInfo', 'CommentThread', 'Comment', 'CommentAnchor'];
+const PROPERTIES: string[] = ['AutoCorrectOptions', 'SelectionSummary', 'TableSelection', 'TableStyleOptions', 'ObjectSelection', 'ShapeState', 'ShapeTextState', 'ObjectPlacement', 'TextDistance', 'CharacterFormatting', 'ParagraphFormatting', 'PageFormatting', 'HistoryState', 'ReviewState', 'SpellingState', 'RulerModel'];
+const POSITIONAL: string[] = ['Person', 'RevisionInfo', 'CommentThread', 'Comment', 'CommentAnchor', 'LinkInfo', 'HeaderFooterInfo', 'PageSize', 'PageMargins', 'RulerIndents'];
 const POSITIONAL_MAX = 8;
 
-/** The SDK's own reference types (records and classes) that generated records hold. */
-const REFERENCES: string[] = [];
 
 /** The schema's string formats, as this SDK's types. */
 const FORMATS: Record<string, string> = { color: 'ColorValue', base64: 'ReadOnlyMemory<byte>', 'date-time': 'DateTimeOffset', char: 'string' };
@@ -193,6 +236,10 @@ interface Def {
 const defs = new Map(schema.types.map((d) => [d.name, d]));
 const adopted = new Set(ADOPT);
 const problems: string[] = [];
+const dumped: Record<string, { name: string; type: string }> = {};
+
+/** The SDK's own public reference types (records and classes, not enums or structs). */
+const ownReferences = new Set<string>();
 
 /** The SDK's own public types, by name (nested namespaces qualified: `Hosting.EditorCursor`). */
 function ownTypes(): Set<string> {
@@ -205,8 +252,10 @@ function ownTypes(): Set<string> {
       else if (p.endsWith('.cs') && p !== out) {
         const text = readFileSync(p, 'utf8');
         const ns = /^namespace Twip(?:\.(\w+))?;/m.exec(text)?.[1];
-        for (const m of text.matchAll(/^public (?:readonly )?(?:sealed |abstract |static )?(?:partial )?(?:record struct|record|enum|class|struct) (\w+)/gm)) {
-          found.add(ns ? `${ns}.${m[1]}` : m[1]);
+        for (const m of text.matchAll(/^public (?:readonly )?(?:sealed |abstract |static )?(?:partial )?(record struct|record|enum|class|struct) (\w+)/gm)) {
+          const name = ns ? `${ns}.${m[2]}` : m[2];
+          found.add(name);
+          if (m[1] === 'record' || m[1] === 'class') ownReferences.add(name);
         }
       }
     }
@@ -359,8 +408,9 @@ function members(d: Def & { shape: { kind: 'object' } }): Member[] {
   return d.shape.fields.map((f) => {
     const name = memberName(f.name);
     const path = `${d.name}.${f.name}`;
+    // An override is the type exactly; otherwise a field the engine may leave out is nullable.
     let type = FIELDS[path] ?? cs(f.omitted && f.ty.kind !== 'nullable' ? { kind: 'nullable', of: f.ty } : f.ty, path);
-    if (f.omitted && !type.endsWith('?')) type += '?';
+    if (f.omitted && !FIELDS[path] && !type.endsWith('?')) type += '?';
     const attrs: string[] = [];
     if (f.omitted) attrs.push('JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)');
     // A converted type names its converter on the field itself.
@@ -369,6 +419,7 @@ function members(d: Def & { shape: { kind: 'object' } }): Member[] {
     if (conv && !FIELDS[path]) attrs.push(`JsonConverter(typeof(Wire.${(type.endsWith('?') && conv.nullable) || conv.converter}))`);
     if (camel(name) !== f.name) attrs.push(`JsonPropertyName("${f.name}")`);
     if (!f.docs) problems.push(`${path} has no documentation`);
+    dumped[path] = { name, type };
     return { name, type, omitted: f.omitted, json: attrs.join(', '), docs: f.docs ?? '' };
   });
 }
@@ -378,7 +429,7 @@ function isReference(type: string): boolean {
   if (type === 'string' || type.startsWith('IReadOnly')) return true;
   const d = defs.get(type);
   if (adopted.has(type) && d) return d.shape.kind === 'object';
-  return REFERENCES.includes(type);
+  return ownReferences.has(type);
 }
 
 function recordDecl(d: Def & { shape: { kind: 'object' } }): string {
@@ -414,6 +465,11 @@ for (const path of Object.keys(FIELDS)) {
   const [t, f] = path.split('.');
   const d = defs.get(t);
   if (!adopted.has(t) || d?.shape.kind !== 'object' || !d.shape.fields.some((x) => x.name === f)) problems.push(`FIELDS names ${path}, which no adopted record has`);
+}
+// WIRE_DUMP=<file>: each adopted record field's C# type and the problems, for tooling; nothing is written.
+if (process.env.WIRE_DUMP) {
+  writeFileSync(process.env.WIRE_DUMP, JSON.stringify({ fields: dumped, problems }, null, 1));
+  process.exit(0);
 }
 if (problems.length) {
   console.error(problems.join('\n'));
