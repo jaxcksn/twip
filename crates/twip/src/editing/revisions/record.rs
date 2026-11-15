@@ -15,9 +15,16 @@ use crate::layout::{ParaId, TableId, Unit};
 use super::super::index::DocIndex;
 use super::super::step::{Edges, Step, para_len};
 
-const UNTRACKED_TABLE_EDITS: [&str; 2] = ["Merge Cells", "Split Cells"];
+// Transactions the recorder tracks by their label: the producers begin them with these.
+pub(in crate::editing) const MERGE_CELLS: &str = "Merge Cells";
+pub(in crate::editing) const SPLIT_CELLS: &str = "Split Cells";
+pub(in crate::editing) const INSERT_SHAPE: &str = "Insert Shape";
+pub(in crate::editing) const INSERT_TEXT_BOX: &str = "Insert Text Box";
+pub(in crate::editing) const DELETE: &str = "Delete";
 
-const FLOAT_INSERTS: [&str; 2] = ["Insert Shape", "Insert Text Box"];
+const UNTRACKED_TABLE_EDITS: [&str; 2] = [MERGE_CELLS, SPLIT_CELLS];
+
+const FLOAT_INSERTS: [&str; 2] = [INSERT_SHAPE, INSERT_TEXT_BOX];
 
 pub struct Recording {
     pub author: AuthorId,
@@ -490,7 +497,7 @@ impl Recording {
                 inlines.into_iter().map(|i| if float_id(&i).is_some_and(|f| !had.contains(&f)) { self.ins_inline(i, ids) } else { i }).collect();
             return vec![Step::Restyle { para, inlines }];
         }
-        if self.label == "Delete" && !had.is_subset(&has) {
+        if self.label == DELETE && !had.is_subset(&has) {
             let mut out = inlines;
             for (k, i) in p.inlines.iter().enumerate() {
                 if let Inline::Float(f, r) = i

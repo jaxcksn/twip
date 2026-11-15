@@ -440,7 +440,7 @@ impl Editor {
             (0..rows[tg.rows.0].cells.len()).find(|&k| Grid::of(&Table { rows: rows.clone(), ..t.clone() }).rows[tg.rows.0][k].0 == c0).unwrap_or(0);
         rows[tg.rows.0].cells[k].blocks = content;
         let grid = t.grid.clone();
-        self.rebuild("Merge Cells", tg.table, rows, grid, (tg.rows.0, c0), fonts)
+        self.rebuild(super::revisions::record::MERGE_CELLS, tg.table, rows, grid, (tg.rows.0, c0), fonts)
     }
 
     pub(super) fn split_cell(&mut self, cols: usize, fonts: &Fonts) -> Outcome {
@@ -489,7 +489,7 @@ impl Editor {
         }
         row.cells.splice(k..k + 1, new);
         rows.iter_mut().for_each(|r| r.src = None);
-        self.rebuild("Split Cells", tg.table, rows, grid, (r, c), fonts)
+        self.rebuild(super::revisions::record::SPLIT_CELLS, tg.table, rows, grid, (r, c), fonts)
     }
 
     pub(super) fn insert_table(&mut self, nrows: usize, ncols: usize, fonts: &Fonts) -> Outcome {

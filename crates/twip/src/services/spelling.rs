@@ -220,11 +220,13 @@ pub struct Spellers {
     pub enabled: bool,
     ignored: Vec<String>,
     pending: BTreeMap<String, Vec<String>>,
+    /// Counts the dictionaries added: a replaced one can hold the same number of words and others.
+    dictionaries: u64,
 }
 
 impl Default for Spellers {
     fn default() -> Spellers {
-        Spellers { by_language: BTreeMap::new(), enabled: true, ignored: Vec::new(), pending: BTreeMap::new() }
+        Spellers { by_language: BTreeMap::new(), enabled: true, ignored: Vec::new(), pending: BTreeMap::new(), dictionaries: 0 }
     }
 }
 
@@ -239,7 +241,7 @@ impl Spellers {
     pub fn signature(&self) -> u64 {
         use std::hash::{Hash, Hasher};
         let mut h = std::hash::DefaultHasher::new();
-        (self.enabled, self.ignored.len()).hash(&mut h);
+        (self.enabled, self.ignored.len(), self.dictionaries).hash(&mut h);
         for (language, sp) in &self.by_language {
             (language, sp.ignored.len(), sp.added.len()).hash(&mut h);
         }
@@ -261,6 +263,7 @@ impl Spellers {
             sp.ignore(w);
         }
         self.by_language.insert(key, sp);
+        self.dictionaries += 1;
         Ok(())
     }
 
@@ -404,5 +407,9 @@ mod tests {
         let errs = sp.errors(&text);
         assert_eq!(errs.iter().map(|e| e.start).collect::<Vec<_>>(), [10], "only quikc");
         assert!(s.suggestions("quikc", "en-GB").contains(&"quick".to_string()), "a regional tag finds the dictionary");
+        // A dictionary replaced by one of the same size can misspell other words.
+        let before = s.signature();
+        s.add_dictionary("en-US", &aff, &dic).expect("loads");
+        assert_ne!(s.signature(), before);
     }
 }

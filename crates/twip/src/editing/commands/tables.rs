@@ -27,7 +27,7 @@ impl Editor {
 
     pub(in crate::editing) fn split_cells(&mut self, s: SplitCells, fonts: &Fonts) -> Outcome {
         let (columns, rows) = (s.columns as usize, s.rows.unwrap_or(1) as usize);
-        self.joined("Split Cells", fonts, |e| {
+        self.joined(crate::editing::revisions::record::SPLIT_CELLS, fonts, |e| {
             let mut out = Outcome::Unchanged("nothing to split");
             if columns > 1 {
                 out = e.split_cell(columns, fonts);

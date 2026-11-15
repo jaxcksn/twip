@@ -211,7 +211,7 @@ impl Editor {
         let Some(p) = self.index.para(&self.doc, anchor) else { return Outcome::Unchanged("no anchor") };
         let inlines: Vec<Inline> = p.inlines.iter().filter(|i| !matches!(i, Inline::Float(fl, _) if FloatId(fl.id) == f)).cloned().collect();
         let story = self.index.para_slot(anchor).map_or(StoryId::Body, |s| self.index.story(s.container));
-        let mut tx = self.begin("Delete");
+        let mut tx = self.begin(super::revisions::record::DELETE);
         if self.step(&mut tx, Step::Restyle { para: anchor, inlines }).is_err() {
             self.abort(tx);
             return Outcome::Unchanged("stale object");
@@ -781,7 +781,7 @@ impl Editor {
         };
         let mut inlines = p.inlines.clone();
         inlines.insert(0, Inline::Float(Box::new(float), run));
-        let mut tx = self.begin("Insert Text Box");
+        let mut tx = self.begin(super::revisions::record::INSERT_TEXT_BOX);
         if self.step(&mut tx, Step::Restyle { para, inlines }).is_err() {
             self.abort(tx);
             return Outcome::Unchanged("stale caret");

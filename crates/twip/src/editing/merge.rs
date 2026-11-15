@@ -836,9 +836,14 @@ impl Editor {
 
     // Locks
     pub(super) fn locked_edit(&self, a: &Position, b: &Position) -> bool {
-        let check = |para: ParaId, x: u32, y: u32| -> bool {
+        let ends = |p: ParaId| self.index.para(&self.doc, p).map_or(&[][..], |q| &q.controls[..]);
+        let (pa, pb) = (a.para_offset().map(|(p, _)| p), b.para_offset().map(|(p, _)| p));
+        // `whole`: a paragraph between the ends, deleted with its block controls unless one also holds an end.
+        let check_with = |para: ParaId, x: u32, y: u32, whole: bool| -> bool {
             let Some(p) = self.index.para(&self.doc, para) else { return false };
-            if p.controls.iter().any(|c| self.doc.controls.get(c).is_some_and(|k| !k.props.lock.editable())) {
+            let held = |c: &ControlId| [pa, pb].into_iter().flatten().any(|e| ends(e).contains(c));
+            let refused = |c: &ControlId, lock: crate::docx::Lock| if whole && !held(c) { !lock.deletable() } else { !lock.editable() };
+            if p.controls.iter().any(|c| self.doc.controls.get(c).is_some_and(|k| refused(c, k.props.lock))) {
                 return true;
             }
             let mut at = 0u32;
@@ -870,12 +875,20 @@ impl Editor {
             }
             false
         };
+        let check = |para: ParaId, x: u32, y: u32| check_with(para, x, y, false);
         let (Some((pa, ua)), Some((pb, ub))) = (a.para_offset(), b.para_offset()) else { return false };
         if pa == pb {
             return check(pa, ua.0.min(ub.0), ua.0.max(ub.0));
         }
         let len = |p: ParaId| self.index.para(&self.doc, p).map_or(0, |q| super::step::para_len(q).0);
-        check(pa, ua.0, len(pa).max(ua.0 + 1)) || check(pb, 0, ub.0)
+        // The paragraphs between the ends go whole.
+        let inside = |p: ParaId| {
+            let at = self.index.para_slot(p).map(|s| Position::text(self.index.story(s.container), p, Unit(0)));
+            p != pa && p != pb && at.is_some_and(|at| self.index.cmp(a, &at).is_lt() && self.index.cmp(&at, b).is_lt())
+        };
+        check(pa, ua.0, len(pa).max(ua.0 + 1))
+            || check(pb, 0, ub.0)
+            || self.index.para_ids().filter(|&p| inside(p)).any(|p| check_with(p, 0, len(p), true))
     }
 
     pub(super) fn refuse_locked(&mut self) -> bool {

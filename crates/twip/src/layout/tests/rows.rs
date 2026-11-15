@@ -1682,3 +1682,40 @@ fn compat_12_a_float_that_doesnt_wrap_counts_from_its_lines_piece_beside_the_lin
     assert!((x(12) - 100.0).abs() < 0.1, "{}", x(12));
     assert!(x(15).abs() < 0.1, "{}", x(15));
 }
+
+#[test]
+fn a_page_field_in_a_cells_text_box_numbers_the_page_the_row_is_on() {
+    let field = r#"<w:r><w:t>PG</w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>1</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>"#;
+    let boxed = format!(
+        concat!(
+            r#"<w:r><w:drawing><wp:anchor xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" "#,
+            r#"xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="1" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1">"#,
+            r#"<wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>1270000</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV>"#,
+            r#"<wp:extent cx="1270000" cy="254000"/><wp:wrapNone/><wp:docPr id="1" name="B"/><a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">"#,
+            r#"<wps:wsp><wps:cNvSpPr txBox="1"/><wps:spPr><a:prstGeom prst="rect"/></wps:spPr><wps:txbx><w:txbxContent><w:p>{field}</w:p></w:txbxContent></wps:txbx><wps:bodyPr/></wps:wsp>"#,
+            r#"</a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#
+        ),
+        field = field
+    );
+    let rows: String = (0..80)
+        .map(|i| {
+            format!(
+                r#"<w:tr><w:tc><w:tcPr><w:tcW w:w="4000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>Row {i}</w:t></w:r>{}</w:p></w:tc></w:tr>"#,
+                if i == 79 { boxed.as_str() } else { "" }
+            )
+        })
+        .collect();
+    let body = format!(r#"<w:tbl><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid>{rows}</w:tbl><w:p/>"#);
+    let doc = format!(r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>{body}</w:body></w:document>"#);
+    let d = crate::docx::read(&super::package_bytes(&[("word/document.xml", doc.as_str())]).expect("a package")).expect("reads");
+    let snap = layout(&d, &fonts());
+    let last = snap.pages().len() - 1;
+    assert!(last > 0, "the table goes onto a second page");
+    let mut text = String::new();
+    crate::layout::traverse::paint(&snap.pages()[last], &mut |p| {
+        if let crate::layout::fragment::Item::Glyphs(r) = p.absolute() {
+            text.extend(r.chars.iter().map(|c| c.0));
+        }
+    });
+    assert!(text.contains(&format!("PG{}", last + 1)), "the box on page {} says {text:?}", last + 1);
+}

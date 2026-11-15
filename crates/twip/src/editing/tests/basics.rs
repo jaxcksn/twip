@@ -27,6 +27,21 @@ fn typing_inserts_at_the_caret_and_one_undo_removes_the_run() {
 }
 
 #[test]
+fn typing_elsewhere_in_the_paragraph_is_an_undo_step_of_its_own() {
+    use super::super::position::Position;
+    let mut e = open("FX-TEXT.docx");
+    let para = super::para_id(&e, 1);
+    e.set_caret_for_benchmark(Selection::Caret(Position::text(StoryId::Body, para, Unit(2))));
+    type_text(&mut e, "abc");
+    let typed = texts(&e);
+    // A caret move that writes the selection itself, as Shift+F9 and extend mode do, keeps the typing run.
+    e.selection = Selection::Caret(Position::text(StoryId::Body, para, Unit(0)));
+    type_text(&mut e, "x");
+    e.execute(Command::Undo, fonts());
+    assert_eq!(texts(&e), typed, "one undo takes back only the x");
+}
+
+#[test]
 fn enter_splits_and_backspace_joins_back() {
     let mut e = open("FX-TEXT.docx");
     let before = texts(&e);
@@ -2512,4 +2527,39 @@ fn a_picture_floated_from_its_paragraphs_first_line_stays_below_the_paragraph_be
     let f = body_floats(&e).remove(0);
     assert!(f.v_offset > 0.0, "below its paragraph's top: {}", f.v_offset);
     assert_eq!(first(&mut e), before, "the paragraph before keeps its lines");
+}
+
+#[test]
+fn a_delete_across_a_locked_paragraph_is_refused() {
+    use super::super::position::Position;
+    let body = concat!(
+        r#"<w:p><w:r><w:t>First paragraph</w:t></w:r></w:p>"#,
+        r#"<w:sdt><w:sdtPr><w:lock w:val="sdtLocked"/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>Locked paragraph</w:t></w:r></w:p></w:sdtContent></w:sdt>"#,
+        r#"<w:p><w:r><w:t>Last paragraph</w:t></w:r></w:p>"#,
+    );
+    let mut e = super::super::Editor::open(&super::blank_body(body), fonts()).expect("opens");
+    let before = texts(&e);
+    let (a, b) = (super::para_id(&e, 0), super::para_id(&e, 2));
+    e.set_caret_for_benchmark(Selection::range(
+        Position::text(StoryId::Body, a, Unit(2)),
+        Position::text(StoryId::Body, b, Unit(2)),
+        crate::editing::selection::Granularity::Char,
+    ));
+    e.execute(crate::editing::tests::del(Dir::Back, false), fonts());
+    assert_eq!(texts(&e), before, "the locked paragraph in the middle stays");
+}
+
+#[test]
+fn a_list_made_in_a_header_is_numbered() {
+    use super::super::position::Position;
+    let mut e = open("FX-STORIES.docx");
+    let header = e.document().stories.keys().filter(|n| n.contains("header")).min().cloned().expect("a header");
+    let story = e.index().header_footer(&header).expect("its story");
+    let para =
+        e.index().para_ids().find(|id| e.index().para_slot(*id).is_some_and(|s| e.index().story(s.container) == story)).expect("a header paragraph");
+    e.set_caret_for_benchmark(Selection::Caret(Position::text(story, para, Unit(0))));
+    let out = e.execute(Command::SetList(Some(crate::api::command::ListKind::Numbered)), fonts());
+    assert!(matches!(out, super::super::Outcome::Changed(_)), "{out:?}");
+    let label = e.index().para(e.document(), para).and_then(|p| p.list.as_ref()).map(|l| l.text.clone());
+    assert_eq!(label.as_deref(), Some("1."), "the header's list has its label");
 }

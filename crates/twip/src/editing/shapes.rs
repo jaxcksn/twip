@@ -461,7 +461,7 @@ impl Editor {
         };
         let mut inlines = p.inlines.clone();
         inlines.insert(0, crate::docx::Inline::Float(Box::new(float), run));
-        let mut tx = self.begin("Insert Shape");
+        let mut tx = self.begin(super::revisions::record::INSERT_SHAPE);
         if self.step(&mut tx, super::step::Step::Restyle { para, inlines }).is_err() {
             self.abort(tx);
             return Outcome::Unchanged("stale caret");

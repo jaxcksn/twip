@@ -1708,7 +1708,7 @@ impl Editor {
         } else if self.refuse_locked() {
             return Outcome::Unchanged("locked");
         }
-        let mut tx = self.begin(if dir == Dir::Back { "Backspace" } else { "Delete" });
+        let mut tx = self.begin(if dir == Dir::Back { "Backspace" } else { revisions::record::DELETE });
         if !self.selection.is_collapsed() {
             let caret = match self.delete_range_joining(&mut tx, false) {
                 Ok(Some(p)) => p,

@@ -110,7 +110,9 @@ impl Filter {
     }
 }
 
-fn stories<'d>(doc: &'d Document, idx: &DocIndex) -> Vec<(StoryId, &'d [Block])> {
+/// The stories in reading order: the body, the headers and footers as the sections name them, the footnotes, the
+/// endnotes. Lists number through them in this order, as they do when the document is read.
+pub(super) fn stories<'d>(doc: &'d Document, idx: &DocIndex) -> Vec<(StoryId, &'d [Block])> {
     let mut out: Vec<(StoryId, &[Block])> = Vec::new();
     for s in &doc.sections {
         out.push((StoryId::Body, &s.blocks));
