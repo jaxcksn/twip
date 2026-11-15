@@ -48,9 +48,9 @@ message that isn't a conventional commit is rejected locally instead of in CI.
 ## The API and the SDKs
 
 `twip::api` (`crates/twip/src/api`) defines every operation, state field, event, error and warning. The SDKs' methods
-are written by hand in each language; the web SDK's wire types are generated from the engine's schema
-(`bindings/web/scripts/wire.ts`, which lists them and the overrides for types the SDK shapes its own way). Three things
-hold the SDKs to the contract:
+are written by hand in each language; most of their wire types are generated from the engine's schema
+(`bindings/web/scripts/wire.ts` and `bindings/dotnet/scripts/wire.mts`, which list them and the overrides for types
+each SDK shapes its own way). Three things hold the SDKs to the contract:
 
 - **Wire fixtures.** The api types serialize to the JSON the SDKs exchange with the engine (`twip-wire`'s derives).
   `crates/twip/tests/wire` holds one fixture per type; both SDKs round-trip every one through their own types, and
