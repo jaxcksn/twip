@@ -167,6 +167,78 @@ public enum HighlightColor
     Black,
 }
 
+/// <summary>The scale, kerning and OpenType features to set (the Font dialog's Advanced tab); unset values are kept.</summary>
+/// <param name="Scale">The horizontal scale, percent (1 to 600).</param>
+/// <param name="Kerning">Kerning for text at or above this size (0 to 1638 pt); 0 turns it off.</param>
+/// <param name="Ligatures">Which ligatures the font may use.</param>
+/// <param name="NumberSpacing">The digits' widths.</param>
+/// <param name="NumberForm">The digits' forms.</param>
+/// <param name="StylisticSet">The font's stylistic set (1 to 20), or its default (0).</param>
+/// <param name="ContextualAlternates">The font's contextual alternates.</param>
+public sealed record TypographyOptions(
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? Scale = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Kerning = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Ligatures? Ligatures = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NumberSpacing? NumberSpacing = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NumberForm? NumberForm = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? StylisticSet = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? ContextualAlternates = null);
+
+/// <summary>The ligatures text may use (Word's choices).</summary>
+public enum Ligatures
+{
+    /// <summary>None.</summary>
+    None,
+    /// <summary>Standard ligatures only.</summary>
+    Standard,
+    /// <summary>Standard and contextual.</summary>
+    StandardContextual,
+    /// <summary>Historical and discretionary.</summary>
+    HistoricalDiscretional,
+    /// <summary>Every kind.</summary>
+    All,
+}
+
+/// <summary>The digits' widths.</summary>
+public enum NumberSpacing
+{
+    /// <summary>The font's.</summary>
+    Default,
+    /// <summary>Each digit its own width.</summary>
+    Proportional,
+    /// <summary>All digits one width.</summary>
+    Tabular,
+}
+
+/// <summary>The digits' forms.</summary>
+public enum NumberForm
+{
+    /// <summary>The font's.</summary>
+    Default,
+    /// <summary>Lining figures, all at cap height.</summary>
+    Lining,
+    /// <summary>Old-style figures, with ascenders and descenders.</summary>
+    OldStyle,
+}
+
+/// <summary>The text's language and proofing to set; unset values are kept.</summary>
+/// <param name="Language">The language, a BCP 47 tag (<c>en-GB</c>).</param>
+/// <param name="NoProof">Do not check spelling or grammar.</param>
+public sealed record LanguageOptions(
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Language = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? NoProof = null);
+
+/// <summary>Character effects to set; unset values are kept. Emboss and engrave exclude each other.</summary>
+/// <param name="Emboss">Raised relief.</param>
+/// <param name="Engrave">Sunken relief.</param>
+/// <param name="Outline">The letters' outlines only.</param>
+/// <param name="Shadow">A shadow behind the letters.</param>
+public sealed record CharacterEffectsOptions(
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Emboss = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Engrave = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Outline = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Shadow = null);
+
 /// <summary>A case change.</summary>
 public enum CaseChange
 {

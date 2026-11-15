@@ -6569,3 +6569,119 @@ Twip.WarningCode.PictureBulletUndecodable = 17 -> Twip.WarningCode
 Twip.TooltipKind.Ruler = 4 -> Twip.TooltipKind
 Twip.ViewState.ControlLabels.get -> bool
 Twip.ViewState.ControlLabels.init -> void
+Twip.CharacterEffectsOptions
+Twip.CharacterEffectsOptions.<Clone>$() -> Twip.CharacterEffectsOptions!
+Twip.CharacterEffectsOptions.CharacterEffectsOptions(bool? Emboss = null, bool? Engrave = null, bool? Outline = null, bool? Shadow = null) -> void
+Twip.CharacterEffectsOptions.Deconstruct(out bool? Emboss, out bool? Engrave, out bool? Outline, out bool? Shadow) -> void
+Twip.CharacterEffectsOptions.Emboss.get -> bool?
+Twip.CharacterEffectsOptions.Emboss.init -> void
+Twip.CharacterEffectsOptions.Engrave.get -> bool?
+Twip.CharacterEffectsOptions.Engrave.init -> void
+Twip.CharacterEffectsOptions.Equals(Twip.CharacterEffectsOptions? other) -> bool
+Twip.CharacterEffectsOptions.Outline.get -> bool?
+Twip.CharacterEffectsOptions.Outline.init -> void
+Twip.CharacterEffectsOptions.Shadow.get -> bool?
+Twip.CharacterEffectsOptions.Shadow.init -> void
+Twip.CharacterFormatting.CharacterStyle.get -> Twip.FormatValue<Twip.StyleId>
+Twip.CharacterFormatting.CharacterStyle.init -> void
+Twip.CharacterFormatting.ContextualAlternates.get -> Twip.FormatValue<bool>
+Twip.CharacterFormatting.ContextualAlternates.init -> void
+Twip.CharacterFormatting.Emboss.get -> Twip.FormatValue<bool>
+Twip.CharacterFormatting.Emboss.init -> void
+Twip.CharacterFormatting.Engrave.get -> Twip.FormatValue<bool>
+Twip.CharacterFormatting.Engrave.init -> void
+Twip.CharacterFormatting.Kerning.get -> Twip.FormatValue<Twip.Length>
+Twip.CharacterFormatting.Kerning.init -> void
+Twip.CharacterFormatting.Language.get -> Twip.FormatValue<string!>
+Twip.CharacterFormatting.Language.init -> void
+Twip.CharacterFormatting.Ligatures.get -> Twip.FormatValue<Twip.Ligatures>
+Twip.CharacterFormatting.Ligatures.init -> void
+Twip.CharacterFormatting.NoProof.get -> Twip.FormatValue<bool>
+Twip.CharacterFormatting.NoProof.init -> void
+Twip.CharacterFormatting.NumberForm.get -> Twip.FormatValue<Twip.NumberForm>
+Twip.CharacterFormatting.NumberForm.init -> void
+Twip.CharacterFormatting.NumberSpacing.get -> Twip.FormatValue<Twip.NumberSpacing>
+Twip.CharacterFormatting.NumberSpacing.init -> void
+Twip.CharacterFormatting.Outline.get -> Twip.FormatValue<bool>
+Twip.CharacterFormatting.Outline.init -> void
+Twip.CharacterFormatting.Scale.get -> Twip.FormatValue<double>
+Twip.CharacterFormatting.Scale.init -> void
+Twip.CharacterFormatting.Shadow.get -> Twip.FormatValue<bool>
+Twip.CharacterFormatting.Shadow.init -> void
+Twip.CharacterFormatting.StylisticSet.get -> Twip.FormatValue<int>
+Twip.CharacterFormatting.StylisticSet.init -> void
+Twip.CharacterFormatting.UnderlineColor.get -> Twip.FormatValue<Twip.ColorValue>
+Twip.CharacterFormatting.UnderlineColor.init -> void
+Twip.CommandId.ApplyCharacterStyle = 215 -> Twip.CommandId
+Twip.CommandId.SetCharacterEffects = 218 -> Twip.CommandId
+Twip.CommandId.SetLanguage = 217 -> Twip.CommandId
+Twip.CommandId.SetTypography = 216 -> Twip.CommandId
+Twip.CommandId.SetUnderlineColor = 219 -> Twip.CommandId
+Twip.EditorCommands.ApplyCharacterStyleAsync(Twip.StyleId? styleId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetCharacterEffectsAsync(Twip.CharacterEffectsOptions! options, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetLanguageAsync(Twip.LanguageOptions! options, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetTypographyAsync(Twip.TypographyOptions! options, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetUnderlineColorAsync(Twip.ColorValue color, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.LanguageOptions
+Twip.LanguageOptions.<Clone>$() -> Twip.LanguageOptions!
+Twip.LanguageOptions.Deconstruct(out string? Language, out bool? NoProof) -> void
+Twip.LanguageOptions.Equals(Twip.LanguageOptions? other) -> bool
+Twip.LanguageOptions.Language.get -> string?
+Twip.LanguageOptions.Language.init -> void
+Twip.LanguageOptions.LanguageOptions(string? Language = null, bool? NoProof = null) -> void
+Twip.LanguageOptions.NoProof.get -> bool?
+Twip.LanguageOptions.NoProof.init -> void
+Twip.Ligatures
+Twip.Ligatures.All = 4 -> Twip.Ligatures
+Twip.Ligatures.HistoricalDiscretional = 3 -> Twip.Ligatures
+Twip.Ligatures.None = 0 -> Twip.Ligatures
+Twip.Ligatures.Standard = 1 -> Twip.Ligatures
+Twip.Ligatures.StandardContextual = 2 -> Twip.Ligatures
+Twip.NumberForm
+Twip.NumberForm.Default = 0 -> Twip.NumberForm
+Twip.NumberForm.Lining = 1 -> Twip.NumberForm
+Twip.NumberForm.OldStyle = 2 -> Twip.NumberForm
+Twip.NumberSpacing
+Twip.NumberSpacing.Default = 0 -> Twip.NumberSpacing
+Twip.NumberSpacing.Proportional = 1 -> Twip.NumberSpacing
+Twip.NumberSpacing.Tabular = 2 -> Twip.NumberSpacing
+Twip.TypographyOptions
+Twip.TypographyOptions.<Clone>$() -> Twip.TypographyOptions!
+Twip.TypographyOptions.ContextualAlternates.get -> bool?
+Twip.TypographyOptions.ContextualAlternates.init -> void
+Twip.TypographyOptions.Deconstruct(out double? Scale, out Twip.Length? Kerning, out Twip.Ligatures? Ligatures, out Twip.NumberSpacing? NumberSpacing, out Twip.NumberForm? NumberForm, out int? StylisticSet, out bool? ContextualAlternates) -> void
+Twip.TypographyOptions.Equals(Twip.TypographyOptions? other) -> bool
+Twip.TypographyOptions.Kerning.get -> Twip.Length?
+Twip.TypographyOptions.Kerning.init -> void
+Twip.TypographyOptions.Ligatures.get -> Twip.Ligatures?
+Twip.TypographyOptions.Ligatures.init -> void
+Twip.TypographyOptions.NumberForm.get -> Twip.NumberForm?
+Twip.TypographyOptions.NumberForm.init -> void
+Twip.TypographyOptions.NumberSpacing.get -> Twip.NumberSpacing?
+Twip.TypographyOptions.NumberSpacing.init -> void
+Twip.TypographyOptions.Scale.get -> double?
+Twip.TypographyOptions.Scale.init -> void
+Twip.TypographyOptions.StylisticSet.get -> int?
+Twip.TypographyOptions.StylisticSet.init -> void
+Twip.TypographyOptions.TypographyOptions(double? Scale = null, Twip.Length? Kerning = null, Twip.Ligatures? Ligatures = null, Twip.NumberSpacing? NumberSpacing = null, Twip.NumberForm? NumberForm = null, int? StylisticSet = null, bool? ContextualAlternates = null) -> void
+override Twip.CharacterEffectsOptions.Equals(object? obj) -> bool
+override Twip.CharacterEffectsOptions.GetHashCode() -> int
+override Twip.CharacterEffectsOptions.ToString() -> string!
+override Twip.LanguageOptions.Equals(object? obj) -> bool
+override Twip.LanguageOptions.GetHashCode() -> int
+override Twip.LanguageOptions.ToString() -> string!
+override Twip.TypographyOptions.Equals(object? obj) -> bool
+override Twip.TypographyOptions.GetHashCode() -> int
+override Twip.TypographyOptions.ToString() -> string!
+static Twip.CharacterEffectsOptions.operator !=(Twip.CharacterEffectsOptions? left, Twip.CharacterEffectsOptions? right) -> bool
+static Twip.CharacterEffectsOptions.operator ==(Twip.CharacterEffectsOptions? left, Twip.CharacterEffectsOptions? right) -> bool
+static Twip.EditorOperation.ApplyCharacterStyle(Twip.StyleId? styleId) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetCharacterEffects(Twip.CharacterEffectsOptions! options) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetLanguage(Twip.LanguageOptions! options) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetTypography(Twip.TypographyOptions! options) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetUnderlineColor(Twip.ColorValue color) -> Twip.EditorOperation!
+static Twip.LanguageOptions.operator !=(Twip.LanguageOptions? left, Twip.LanguageOptions? right) -> bool
+static Twip.LanguageOptions.operator ==(Twip.LanguageOptions? left, Twip.LanguageOptions? right) -> bool
+static Twip.StyleId.None.get -> Twip.StyleId
+static Twip.TypographyOptions.operator !=(Twip.TypographyOptions? left, Twip.TypographyOptions? right) -> bool
+static Twip.TypographyOptions.operator ==(Twip.TypographyOptions? left, Twip.TypographyOptions? right) -> bool

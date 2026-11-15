@@ -120,6 +120,13 @@ const CONSTRUCTS: &[Construct] = &[
         exempt: &[],
     },
     Construct {
+        name: "style-separator",
+        xml: r#"<w:r><w:rPr><w:vanish/><w:specVanish/></w:rPr><w:t>.</w:t></w:r>"#,
+        holds: &["w:specVanish"],
+        parts: &[],
+        exempt: &[],
+    },
+    Construct {
         name: "permission",
         xml: r#"<w:permStart w:id="3" w:edGrp="everyone"/><w:r><w:t>Editable</w:t></w:r><w:permEnd w:id="3"/>"#,
         holds: &["w:permStart", "w:permEnd"],

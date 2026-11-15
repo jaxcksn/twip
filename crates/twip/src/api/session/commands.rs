@@ -95,6 +95,22 @@ impl Session {
                 within("the page", f64::from(*p), 1.0, last)
             }
             C::SetFont(f) => text("the font", f),
+            C::SetTypography(t) => {
+                if let Some(s) = t.scale {
+                    within("the scale", s, 1.0, 600.0)?;
+                }
+                length("the kerning size", t.kerning, 0.0, 1638.0)?;
+                match t.stylistic_set {
+                    Some(n) if n > 20 => Err(Error::invalid("the stylistic set is 0…20")),
+                    _ => Ok(()),
+                }
+            }
+            C::SetLanguage(l) => match &l.language {
+                Some(tag) if tag.is_empty() || tag.len() > 35 || !tag.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') => {
+                    Err(Error::invalid("the language is a BCP 47 tag"))
+                }
+                _ => Ok(()),
+            },
             C::SetFontSize(s) => {
                 within("the size", s.0, 1.0, 1638.0)?;
                 if (s.0 * 2.0).fract() != 0.0 { Err(Error::invalid("the size goes in 0.5 pt steps")) } else { Ok(()) }

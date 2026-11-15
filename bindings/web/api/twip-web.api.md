@@ -150,23 +150,46 @@ export interface CellPlace {
 }
 
 // @public
+export interface CharacterEffects {
+    emboss?: boolean;
+    engrave?: boolean;
+    outline?: boolean;
+    shadow?: boolean;
+}
+
+// @public
 export interface CharacterFormatting {
     allCaps: Tri;
     bold: Tri;
     characterSpacing: Mixed<Points>;
+    characterStyle: Mixed<StyleId | 'none'>;
     color: Mixed<Color | 'auto'>;
+    contextualAlternates: Tri;
     doubleStrikethrough: Tri;
+    emboss: Tri;
+    engrave: Tri;
     font: Mixed<string>;
     hidden: Tri;
     highlight: Mixed<HighlightColor | 'none'>;
     italic: Tri;
+    kerning: Mixed<Points>;
+    language: Mixed<string>;
+    ligatures: Mixed<Ligatures>;
+    noProof: Tri;
+    numberForm: Mixed<NumberForm>;
+    numberSpacing: Mixed<NumberSpacing>;
+    outline: Tri;
     position: Mixed<Points>;
+    scale: Mixed<number>;
+    shadow: Tri;
     size: Mixed<Points>;
     smallCaps: Tri;
     strikethrough: Tri;
+    stylisticSet: Mixed<number>;
     subscript: Tri;
     superscript: Tri;
     underline: Mixed<UnderlineStyle>;
+    underlineColor: Mixed<Color | 'auto'>;
 }
 
 // @public
@@ -275,6 +298,7 @@ export interface Commands {
         follow: FollowNumber;
         tab?: Points;
     }): Promise<void>;
+    applyCharacterStyle(styleId: StyleId | null): Promise<void>;
     // Warning: (ae-forgotten-export) The symbol "ListEntryId" needs to be exported by the entry point index.d.ts
     applyListEntry(id: ListEntryId): Promise<void>;
     arrangeObject(where: Arrange): Promise<void>;
@@ -540,6 +564,7 @@ export interface Commands {
         right?: Points;
     }): Promise<void>;
     setCellShading(color: Color | null): Promise<void>;
+    setCharacterEffects(effects: CharacterEffects): Promise<void>;
     setCharacterPosition(position: Points): Promise<void>;
     setCharacterSpacing(spacing: Points): Promise<void>;
     setCheckbox(options: {
@@ -607,6 +632,7 @@ export interface Commands {
         hanging?: Points;
     }): Promise<void>;
     setItalic(on: boolean): Promise<void>;
+    setLanguage(language: Language): Promise<void>;
     setLineSpacing(spacing: LineSpacing): Promise<void>;
     setList(kind: 'bullet' | 'numbered' | null): Promise<void>;
     setListDefinition(options: {
@@ -741,7 +767,9 @@ export interface Commands {
         shadow?: boolean;
     }): Promise<void>;
     setTrackChanges(on: boolean): Promise<void>;
+    setTypography(typography: Typography): Promise<void>;
     setUnderline(style: UnderlineStyle): Promise<void>;
+    setUnderlineColor(color: Color | 'auto'): Promise<void>;
     setViewOptions(options: ViewOptions): Promise<void>;
     setZoom(zoom: number | 'pageWidth' | 'wholePage'): Promise<void>;
     showAutoCorrectOptions(): Promise<void>;
@@ -1765,6 +1793,15 @@ export type HostCommand = 'save' | 'saveAs' | 'print' | 'open' | 'new' | 'find' 
 export function inches(n: number): Points;
 
 // @public
+export interface Language {
+    language?: string;
+    noProof?: boolean;
+}
+
+// @public
+export type Ligatures = 'none' | 'standard' | 'standardContextual' | 'historicalDiscretional' | 'all';
+
+// @public
 export type LineCap = 'flat' | 'round' | 'square';
 
 // @public
@@ -2010,7 +2047,13 @@ export type NoArgumentCommandId = {
 }[CommandId];
 
 // @public
+export type NumberForm = 'default' | 'lining' | 'oldStyle';
+
+// @public
 export type NumberFormat = 'decimal' | 'upperRoman' | 'lowerRoman' | 'upperLetter' | 'lowerLetter' | 'ordinal' | 'cardinalText' | 'ordinalText' | 'decimalZero' | 'bullet' | 'none';
+
+// @public
+export type NumberSpacing = 'default' | 'proportional' | 'tabular';
 
 // @public
 export type ObjectGrid = 'off' | 'whileDragging' | 'always';
@@ -2814,6 +2857,17 @@ export interface TwipEvents {
         word: string;
         language: string;
     };
+}
+
+// @public
+export interface Typography {
+    contextualAlternates?: boolean;
+    kerning?: Points;
+    ligatures?: Ligatures;
+    numberForm?: NumberForm;
+    numberSpacing?: NumberSpacing;
+    scale?: number;
+    stylisticSet?: number;
 }
 
 // @public

@@ -194,7 +194,8 @@ save as read. The [fidelity guide](guides/fidelity) lists every element and the 
 :::info Done when
 
 - Every construct in the document format, apart from charts and equations, is in the model and has an API: no row of
-  the [fidelity guide](guides/fidelity) is Model, Kept or Lost.
+  the [fidelity guide](guides/fidelity) is Model, Kept or Lost, apart from text effects, whose API comes with their
+  drawing (3.5).
 - The round-trip gate (2.1) passes: no edit loses content the engine read.
 
 :::
@@ -240,7 +241,7 @@ save as read. The [fidelity guide](guides/fidelity) lists every element and the 
 
 </Chunk>
 
-<Chunk id="2.4" title="Character formatting" deps={['2.2']}>
+<Chunk id="2.4" title="Character formatting" deps={['2.2']} done>
 
 **Goal:** everything in Word's Font dialog can be set.
 
@@ -250,7 +251,7 @@ save as read. The [fidelity guide](guides/fidelity) lists every element and the 
 - Language per run.
 - Do not check spelling (`noProof`), and spell checking skips those runs.
 - Underline colour: read it, and apply the Font dialog's colour field, which is offered but not applied yet.
-- Emboss, engrave, outline and shadow; w14 text effects.
+- Emboss, engrave, outline and shadow. (w14 text effects get their API with their drawing, in 3.5.)
 - `w:effect`, `webHidden` and `specVanish` are kept on save.
 
 </Chunk>
@@ -431,7 +432,7 @@ Everything in the model is drawn, on screen and in PDF, and looks as it does in 
 
 **Goal:** Word 2010 text effects.
 
-- w14 glow, shadow and reflection.
+- w14 glow, shadow and reflection, read into the model and set through the API (`setTextEffects`).
 - Text fill (solid, gradient, none) and text outline.
 - 3-D text drawn flat, as a fallback.
 

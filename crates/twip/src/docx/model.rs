@@ -32,6 +32,16 @@ pub struct RunStyle {
     /// `w:noProof`: no automatic hyphenation either.
     pub no_proof: bool,
     pub underline: Option<String>,
+    /// The underline's own colour (`w:u/@w:color`); `None`: the text's.
+    pub underline_color: Option<u32>,
+    /// Emboss, engrave (`w:imprint`), outline and shadow.
+    pub emboss: bool,
+    pub imprint: bool,
+    pub outline: bool,
+    pub shadow: bool,
+    /// The OpenType features as set, whatever the compatibility mode makes of them ([`RunStyle::ligatures`] and
+    /// [`RunStyle::figures`] are what layout applies).
+    pub typography: Typography,
     pub color: Option<u32>,
     pub highlight: Option<u32>,
     pub shading: Option<u32>,
@@ -79,6 +89,21 @@ impl RunStyle {
 }
 
 pub type Run = Rc<RunStyle>;
+
+/// A run's OpenType settings as written (`w14:ligatures`, `w14:cntxtAlts`, `w14:numForm`, `w14:numSpacing`,
+/// `w14:stylisticSets`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Typography {
+    /// 1 standard, 2 contextual, 4 historical, 8 discretionary.
+    pub ligatures: u8,
+    pub contextual_alternates: bool,
+    /// 1 lining, 2 old style, 0 the font's default.
+    pub number_form: u32,
+    /// 4 proportional, 8 tabular, 0 the font's default.
+    pub number_spacing: u32,
+    /// Bit n − 1 for stylistic set n.
+    pub stylistic_sets: u32,
+}
 
 /// Source XML carried for saving (a run's `w:rPr`, a paragraph's `w:pPr`). Never part of equality: formatting
 /// compares by its effect.

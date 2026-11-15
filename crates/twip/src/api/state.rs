@@ -537,6 +537,36 @@ pub struct CharacterFormatting {
     pub character_spacing: Tri<Points>,
     /// The raised (positive) or lowered position.
     pub position: Tri<Points>,
+    /// The character style, or none.
+    pub character_style: Tri<NoneOr<StyleId>>,
+    /// The horizontal scale, percent.
+    pub scale: Tri<f64>,
+    /// Kerning at or above this size; 0: off.
+    pub kerning: Tri<Points>,
+    /// The ligatures used (a combination Word's dialog doesn't offer reads as mixed).
+    pub ligatures: Tri<crate::api::command::Ligatures>,
+    /// The digits' widths.
+    pub number_spacing: Tri<crate::api::command::NumberSpacing>,
+    /// The digits' forms.
+    pub number_form: Tri<crate::api::command::NumberForm>,
+    /// The stylistic set (1…20), or 0 for the font's default.
+    pub stylistic_set: Tri<u8>,
+    /// Contextual alternates.
+    pub contextual_alternates: Tri<bool>,
+    /// The language (a BCP 47 tag).
+    pub language: Tri<String>,
+    /// Spelling and grammar are not checked.
+    pub no_proof: Tri<bool>,
+    /// Emboss.
+    pub emboss: Tri<bool>,
+    /// Engrave.
+    pub engrave: Tri<bool>,
+    /// Outline.
+    pub outline: Tri<bool>,
+    /// Shadow.
+    pub shadow: Tri<bool>,
+    /// The underline's colour, or the text's (`auto`).
+    pub underline_color: Tri<AutoOr<Color>>,
 }
 
 /// A paragraph's list.

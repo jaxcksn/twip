@@ -70,6 +70,8 @@ pub struct RunProps {
     /// `w:noProof`.
     pub no_proof: Option<bool>,
     pub underline: Option<String>,
+    /// `w:u`'s colour; `Some(None)` = the text's.
+    pub underline_color: Option<Option<u32>>,
     /// `Some(None)` = auto.
     pub color: Option<Option<u32>>,
     pub highlight: Option<Option<u32>>,
@@ -184,7 +186,10 @@ impl RunProps {
                 "cs" => p.complex = Some(on_off(e)),
                 "dstrike" => p.dstrike = Some(on_off(e)),
                 "noProof" => p.no_proof = Some(on_off(e)),
-                "u" => p.underline = Some(val(e).unwrap_or("single").to_string()),
+                "u" => {
+                    p.underline = Some(val(e).unwrap_or("single").to_string());
+                    p.underline_color = Some(tc.colour(e, "color", "themeColor", "themeTint", "themeShade"));
+                }
                 "color" => p.color = Some(tc.colour(e, "val", "themeColor", "themeTint", "themeShade")),
                 "highlight" => {
                     p.highlight = Some(match val(e) {
@@ -256,6 +261,7 @@ impl RunProps {
             dstrike,
             no_proof,
             underline,
+            underline_color,
             color,
             highlight,
             shading,

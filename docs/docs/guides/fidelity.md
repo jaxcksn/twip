@@ -72,19 +72,19 @@ Chunk numbers are [roadmap](../roadmap#docx) chunks.
 | Colour, highlight, shading, border | `w:color`, `w:highlight`, `w:shd`, `w:bdr` | API |
 | Position, spacing, super- and subscript | `w:position`, `w:spacing`, `w:vertAlign` | API |
 | Hidden text | `w:vanish` | API |
-| Underline | `w:u` | API for the style; its colour is Lost on new runs, Model and API, 2.4 |
-| Character style | `w:rStyle` | Model (style dialog only), 2.4 |
-| Scale and kerning | `w:w`, `w:kern` | Model, 2.4 |
-| Effects | `w:emboss`, `w:imprint`, `w:outline`, `w:shadow` | Model, 2.4 |
-| Do not check spelling | `w:noProof` | Model, 2.4 |
-| Language | `w:lang` | Model, 2.4 |
-| Fit text | `w:fitText` | Laid out; Model, 2.4 |
-| OpenType features | `w14:ligatures`, `w14:numForm`, `w14:numSpacing`, `w14:stylisticSets`, `w14:styleSet`, `w14:cntxtAlts` | Model, 2.4 |
-| Text effects | `w14:glow`, `w14:shadow`, `w14:reflection`, `w14:textOutline`, `w14:textFill`, `w14:scene3d`, `w14:props3d` | Kept; Model and API, 2.4 (drawn in 3.5) |
-| Text effect colours and lines | `w14:solidFill`, `w14:gradFill`, `w14:noFill`, `w14:gsLst`, `w14:gs`, `w14:lin`, `w14:path`, `w14:fillToRect`, `w14:srgbClr`, `w14:schemeClr`, `w14:alpha`, `w14:tint`, `w14:shade`, `w14:hueMod`, `w14:sat`, `w14:satMod`, `w14:satOff`, `w14:lum`, `w14:lumMod`, `w14:lumOff`, `w14:prstDash`, `w14:round`, `w14:bevel`, `w14:miter`, `w14:camera`, `w14:lightRig`, `w14:rot`, `w14:bevelT`, `w14:bevelB`, `w14:extrusionClr`, `w14:contourClr` | Kept; part of text effects, 2.4 |
+| Underline | `w:u` | API (style and colour) |
+| Character style | `w:rStyle` | API (`applyCharacterStyle`, a linked style's character half too) |
+| Scale and kerning | `w:w`, `w:kern` | API (`setTypography`) |
+| Effects | `w:emboss`, `w:imprint`, `w:outline`, `w:shadow` | API (`setCharacterEffects`); drawn in 3.4 |
+| Do not check spelling | `w:noProof` | API (`setLanguage`); spell checking skips it |
+| Language | `w:lang` | API (`setLanguage`; the East Asian and complex-script languages after 1.0) |
+| Fit text | `w:fitText` | Laid out; Word sets it with the Asian layout tools, after 1.0 |
+| OpenType features | `w14:ligatures`, `w14:numForm`, `w14:numSpacing`, `w14:stylisticSets`, `w14:styleSet`, `w14:cntxtAlts` | API (`setTypography`) |
+| Text effects | `w14:glow`, `w14:shadow`, `w14:reflection`, `w14:textOutline`, `w14:textFill`, `w14:scene3d`, `w14:props3d` | Kept; Model and API with their drawing, 3.5 |
+| Text effect colours and lines | `w14:solidFill`, `w14:gradFill`, `w14:noFill`, `w14:gsLst`, `w14:gs`, `w14:lin`, `w14:path`, `w14:fillToRect`, `w14:srgbClr`, `w14:schemeClr`, `w14:alpha`, `w14:tint`, `w14:shade`, `w14:hueMod`, `w14:sat`, `w14:satMod`, `w14:satOff`, `w14:lum`, `w14:lumMod`, `w14:lumOff`, `w14:prstDash`, `w14:round`, `w14:bevel`, `w14:miter`, `w14:camera`, `w14:lightRig`, `w14:rot`, `w14:bevelT`, `w14:bevelB`, `w14:extrusionClr`, `w14:contourClr` | Kept; part of text effects, 3.5 |
 | Text animation (Word 97) | `w:effect` | Kept: Word 2007 and later neither show nor set it |
 | Hidden in web view | `w:webHidden` | Kept: only Web Layout hides it |
-| Style separator | `w:specVanish` | Laid out; kept, checked by the gate in 2.4 |
+| Style separator | `w:specVanish` | Laid out; kept (Word sets it from the paragraph mark's Style Separator command, 4.1) |
 | Complex scripts and right-to-left | `w:bCs`, `w:iCs`, `w:szCs`, `w:cs`, `w:rtl`, `w:bdo`, `w:dir` | After 1.0 |
 | East Asian | `w:eastAsianLayout`, `w:em`, `w:snapToGrid` | After 1.0 |
 

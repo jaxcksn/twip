@@ -48,6 +48,19 @@ pub const RPR: &[&str] = &[
     "eastAsianLayout",
     "specVanish",
     "oMath",
+    // Word 2010's, after the base properties.
+    "w14:glow",
+    "w14:shadow",
+    "w14:reflection",
+    "w14:textOutline",
+    "w14:textFill",
+    "w14:scene3d",
+    "w14:props3d",
+    "w14:ligatures",
+    "w14:numForm",
+    "w14:numSpacing",
+    "w14:stylisticSets",
+    "w14:cntxtAlts",
     "rPrChange",
 ];
 
@@ -204,6 +217,26 @@ impl Cx {
         Cx { w, ns: ns.join(" ") }
     }
 
+    /// The prefix the part's root gives `uri`, with its colon.
+    pub fn prefix_of(&self, uri: &str) -> Option<String> {
+        self.ns
+            .split_whitespace()
+            .find(|a| a.ends_with(&format!("\"{uri}\"")))
+            .and_then(|a| a.strip_prefix("xmlns:"))
+            .map(|a| format!("{}:", &a[..a.find('=').unwrap_or(0)]))
+    }
+
+    /// An element of the Word 2010 namespace: in the part's prefix for it, else declaring its own.
+    pub fn w14(&self, local: &str, attrs: &[(&str, &str)], inner: &str) -> String {
+        const W14: &str = "http://schemas.microsoft.com/office/word/2010/wordml";
+        let (p, decl) = match self.prefix_of(W14) {
+            Some(p) => (p, String::new()),
+            None => ("w14:".to_string(), format!(" xmlns:w14=\"{W14}\"")),
+        };
+        let a: String = attrs.iter().map(|(k, v)| format!(" {p}{k}=\"{}\"", esc(v))).collect();
+        if inner.is_empty() { format!("<{p}{local}{decl}{a}/>") } else { format!("<{p}{local}{decl}{a}>{}</{p}{local}>", inner.replace("{w14}", &p)) }
+    }
+
     /// Parses an element as written in the main part (its prefixes declared at the root): `f` gets the parsed text and
     /// the element.
     pub fn parse<T>(&self, raw: &str, f: impl FnOnce(&str, roxmltree::Node) -> T) -> Option<T> {
@@ -211,6 +244,16 @@ impl Cx {
         let doc = roxmltree::Document::parse(&text).ok()?;
         let el = doc.root_element().first_element_child()?;
         Some(f(&text, el))
+    }
+}
+
+/// A child's key in [`Props`]: its local name in WordprocessingML, `w14:` and its name in Word 2010's namespace, else its
+/// expanded name (so `w14:shadow` is not `w:shadow`).
+fn key(c: roxmltree::Node) -> String {
+    match c.tag_name().namespace() {
+        Some(W_NS) | None => c.tag_name().name().to_string(),
+        Some("http://schemas.microsoft.com/office/word/2010/wordml") => format!("w14:{}", c.tag_name().name()),
+        Some(ns) => format!("{{{ns}}}{}", c.tag_name().name()),
     }
 }
 
@@ -236,7 +279,7 @@ impl Props {
         let parsed = raw.and_then(|r| {
             cx.parse(r, |text, el| {
                 let open = el.first_child().map(|c| text[el.range().start..c.range().start].to_string());
-                (open, el.children().filter(|c| c.is_element()).map(|c| (c.tag_name().name().to_string(), text[c.range()].to_string())).collect())
+                (open, el.children().filter(|c| c.is_element()).map(|c| (key(c), text[c.range()].to_string())).collect())
             })
         });
         if let Some((open, kids)) = parsed {

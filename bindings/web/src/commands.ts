@@ -149,6 +149,53 @@ export type ShadingPattern =
   | 'pct80'
   | 'pct90';
 
+/** The ligatures text may use (Word's choices). */
+export type Ligatures = 'none' | 'standard' | 'standardContextual' | 'historicalDiscretional' | 'all';
+
+/** The digits' widths: the font's, proportional or tabular. */
+export type NumberSpacing = 'default' | 'proportional' | 'tabular';
+
+/** The digits' forms: the font's, lining or old style. */
+export type NumberForm = 'default' | 'lining' | 'oldStyle';
+
+/** The scale, kerning and OpenType features to set (the Font dialog's Advanced tab); what isn't given is kept. */
+export interface Typography {
+  /** The horizontal scale, percent (1…600). */
+  scale?: number;
+  /** Kerning for text at or above this size (0…1638 pt); 0 turns it off. */
+  kerning?: Points;
+  /** Which ligatures the font may use. */
+  ligatures?: Ligatures;
+  /** The digits' widths. */
+  numberSpacing?: NumberSpacing;
+  /** The digits' forms. */
+  numberForm?: NumberForm;
+  /** The font's stylistic set (1…20), or its default (0). */
+  stylisticSet?: number;
+  /** The font's contextual alternates. */
+  contextualAlternates?: boolean;
+}
+
+/** The text's language and proofing to set; what isn't given is kept. */
+export interface Language {
+  /** The language, a BCP 47 tag (`en-GB`). */
+  language?: string;
+  /** Do not check spelling or grammar. */
+  noProof?: boolean;
+}
+
+/** Character effects to set; what isn't given is kept. Emboss and engrave exclude each other. */
+export interface CharacterEffects {
+  /** Raised relief. */
+  emboss?: boolean;
+  /** Sunken relief. */
+  engrave?: boolean;
+  /** The letters' outlines only. */
+  outline?: boolean;
+  /** A shadow behind the letters. */
+  shadow?: boolean;
+}
+
 /** A frame's wrapping, size, position and distance from text. */
 export type FrameProperties = {
   /** Text wrapping: around the frame, or above and below it (`'none'`). */
@@ -292,6 +339,16 @@ export interface Commands {
   setCharacterSpacing(spacing: Points): Promise<void>;
   /** Raises (positive) or lowers the text, -1584 to 1584. */
   setCharacterPosition(position: Points): Promise<void>;
+  /** Applies a character style to the selected text (a linked paragraph style's character half), or removes it (`null`). */
+  applyCharacterStyle(styleId: StyleId | null): Promise<void>;
+  /** Sets the scale, kerning and OpenType features; what isn't given is kept. */
+  setTypography(typography: Typography): Promise<void>;
+  /** Sets the text's language and whether spelling is checked; what isn't given is kept. */
+  setLanguage(language: Language): Promise<void>;
+  /** Sets emboss, engrave, outline and shadow; what isn't given is kept. */
+  setCharacterEffects(effects: CharacterEffects): Promise<void>;
+  /** Sets the underline's colour, or the text's (`'auto'`); underlined text only. */
+  setUnderlineColor(color: Color | 'auto'): Promise<void>;
   /** Clears character formatting (Ctrl+Space). */
   clearFormatting(): Promise<void>;
   /** Changes the case of the selection (Shift+F3 cycles). */
@@ -925,6 +982,11 @@ const encodings: { [K in CommandId]: Encoding<K> } = {
   setHighlight: 'value',
   setCharacterSpacing: 'value',
   setCharacterPosition: 'value',
+  applyCharacterStyle: 'value',
+  setTypography: 'spread',
+  setLanguage: 'spread',
+  setCharacterEffects: 'spread',
+  setUnderlineColor: 'value',
   clearFormatting: 'none',
   changeCase: 'value',
   copyFormatting: 'none',

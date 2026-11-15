@@ -151,6 +151,18 @@ commands! {
     SetCharacterSpacing(#[serde(with = "value")] Points),
     /// The raised (positive) or lowered position (−1584…1584 pt). Undo: one step.
     SetCharacterPosition(#[serde(with = "value")] Points),
+    /// Applies a character style to the selected text (a linked paragraph style's character half), or removes it
+    /// (`null`). Undo: one step.
+    ApplyCharacterStyle(#[serde(with = "value")] Option<StyleId>),
+    /// The scale, kerning and OpenType features (the Font dialog's Advanced tab); what isn't given is kept. Undo: one
+    /// step.
+    SetTypography(Typography),
+    /// The text's language and whether spelling is checked; what isn't given is kept. Undo: one step.
+    SetLanguage(Language),
+    /// Emboss, engrave, outline and shadow; what isn't given is kept. Undo: one step.
+    SetCharacterEffects(CharacterEffects),
+    /// The underline's colour, or the text's (`auto`); underlined text only. Undo: one step.
+    SetUnderlineColor(#[serde(with = "value")] AutoOr<Color>),
     /// Removes direct character formatting. Undo: one step.
     ClearFormatting,
     /// Changes the case of the selected text. Undo: one step.
@@ -1321,6 +1333,103 @@ pub enum LevelChange {
     Increase,
     /// One level shallower.
     Decrease,
+}
+
+/// `setTypography`'s options.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Typography {
+    /// The horizontal scale, percent (1…600).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scale: Option<f64>,
+    /// Kerning for text at or above this size (0…1638 pt); 0 turns it off.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kerning: Option<Points>,
+    /// Which ligatures the font may use.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ligatures: Option<Ligatures>,
+    /// The digits' widths.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub number_spacing: Option<NumberSpacing>,
+    /// The digits' forms.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub number_form: Option<NumberForm>,
+    /// The font's stylistic set (1…20), or its default (0).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stylistic_set: Option<u8>,
+    /// The font's contextual alternates.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contextual_alternates: Option<bool>,
+}
+
+/// The ligatures text may use (Word's choices).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Ligatures {
+    /// None.
+    None,
+    /// Standard ligatures only.
+    Standard,
+    /// Standard and contextual.
+    StandardContextual,
+    /// Historical and discretionary.
+    HistoricalDiscretional,
+    /// Every kind.
+    All,
+}
+
+/// The widths of digits.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum NumberSpacing {
+    /// The font's.
+    Default,
+    /// Each digit its own width.
+    Proportional,
+    /// All digits one width.
+    Tabular,
+}
+
+/// The forms of digits.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum NumberForm {
+    /// The font's.
+    Default,
+    /// Lining figures, all at cap height.
+    Lining,
+    /// Old-style figures, with ascenders and descenders.
+    OldStyle,
+}
+
+/// `setLanguage`'s options.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Language {
+    /// The language, a BCP 47 tag (`en-GB`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    /// Do not check spelling or grammar.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub no_proof: Option<bool>,
+}
+
+/// `setCharacterEffects`' options.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CharacterEffects {
+    /// Raised relief.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub emboss: Option<bool>,
+    /// Sunken relief.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engrave: Option<bool>,
+    /// The letters' outlines only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outline: Option<bool>,
+    /// A shadow behind the letters.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shadow: Option<bool>,
 }
 
 /// `setParagraphFlow`'s options.

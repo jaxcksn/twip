@@ -1,4 +1,4 @@
-import type { CommandId } from './commands.js';
+import type { CommandId, Ligatures, NumberForm, NumberSpacing } from './commands.js';
 import type { FontsState } from './fonts/library.js';
 import type { DialogKind } from './services/dialogs.js';
 import type { ControlKind, ReferenceRule } from './services/elements.js';
@@ -467,6 +467,36 @@ export interface CharacterFormatting {
   characterSpacing: Mixed<Points>;
   /** The raised (positive) or lowered position. */
   position: Mixed<Points>;
+  /** The character style, or `'none'`. */
+  characterStyle: Mixed<StyleId | 'none'>;
+  /** The horizontal scale, percent. */
+  scale: Mixed<number>;
+  /** Kerning at or above this size; 0: off. */
+  kerning: Mixed<Points>;
+  /** The ligatures used (a combination Word's dialog doesn't offer reads as mixed). */
+  ligatures: Mixed<Ligatures>;
+  /** The digits' widths. */
+  numberSpacing: Mixed<NumberSpacing>;
+  /** The digits' forms. */
+  numberForm: Mixed<NumberForm>;
+  /** The stylistic set (1…20), or 0 for the font's default. */
+  stylisticSet: Mixed<number>;
+  /** Contextual alternates. */
+  contextualAlternates: Tri;
+  /** The language (a BCP 47 tag). */
+  language: Mixed<string>;
+  /** Spelling and grammar are not checked. */
+  noProof: Tri;
+  /** Emboss. */
+  emboss: Tri;
+  /** Engrave. */
+  engrave: Tri;
+  /** Outline. */
+  outline: Tri;
+  /** Shadow. */
+  shadow: Tri;
+  /** The underline's colour, or the text's (`'auto'`). */
+  underlineColor: Mixed<Color | 'auto'>;
 }
 
 /** The selection's paragraph formatting. */

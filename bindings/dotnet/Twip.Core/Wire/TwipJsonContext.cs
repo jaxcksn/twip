@@ -17,6 +17,9 @@ namespace Twip.Wire;
         typeof(CamelEnum<AutoFitBehavior>),
         typeof(CamelEnum<BorderEdges>),
         typeof(CamelEnum<CaseChange>),
+        typeof(CamelEnum<Ligatures>),
+        typeof(CamelEnum<NumberSpacing>),
+        typeof(CamelEnum<NumberForm>),
         typeof(CamelEnum<CellAlignment>),
         typeof(CamelEnum<CellShift>),
         typeof(CamelEnum<ColumnPosition>),
@@ -160,6 +163,10 @@ namespace Twip.Wire;
         typeof(FormatValueConverter<SpacingValue>),
         typeof(FormatValueConverter<ListKind>),
         typeof(FormatValueConverter<int>),
+        typeof(FormatValueConverter<double>),
+        typeof(FormatValueConverter<Ligatures>),
+        typeof(FormatValueConverter<NumberSpacing>),
+        typeof(FormatValueConverter<NumberForm>),
         typeof(FormatValueConverter<ParagraphBorders>),
         typeof(FormatValueConverter<CellAlignment>),
         typeof(FormatValueConverter<RowHeight>),
@@ -200,6 +207,12 @@ namespace Twip.Wire;
 [JsonSerializable(typeof(bool))]
 [JsonSerializable(typeof(BorderEdges))]
 [JsonSerializable(typeof(CaseChange))]
+[JsonSerializable(typeof(TypographyOptions))]
+[JsonSerializable(typeof(LanguageOptions))]
+[JsonSerializable(typeof(CharacterEffectsOptions))]
+[JsonSerializable(typeof(Ligatures))]
+[JsonSerializable(typeof(NumberSpacing))]
+[JsonSerializable(typeof(NumberForm))]
 [JsonSerializable(typeof(CellAlignment))]
 [JsonSerializable(typeof(CellBorder))]
 [JsonSerializable(typeof(CellMarginOptions))]

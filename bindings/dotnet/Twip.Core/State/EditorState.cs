@@ -626,6 +626,51 @@ public sealed record CharacterFormatting
 
     /// <summary>The raised or lowered position.</summary>
     public FormatValue<Length> Position { get; init; }
+
+    /// <summary>The character style; <see cref="StyleId.None"/> for none.</summary>
+    public FormatValue<StyleId> CharacterStyle { get; init; }
+
+    /// <summary>The horizontal scale, percent.</summary>
+    public FormatValue<double> Scale { get; init; }
+
+    /// <summary>Kerning at or above this size; 0 when off.</summary>
+    public FormatValue<Length> Kerning { get; init; }
+
+    /// <summary>The ligatures used (a combination Word's dialog doesn't offer reads as mixed).</summary>
+    public FormatValue<Ligatures> Ligatures { get; init; }
+
+    /// <summary>The digits' widths.</summary>
+    public FormatValue<NumberSpacing> NumberSpacing { get; init; }
+
+    /// <summary>The digits' forms.</summary>
+    public FormatValue<NumberForm> NumberForm { get; init; }
+
+    /// <summary>The stylistic set (1 to 20), or 0 for the font's default.</summary>
+    public FormatValue<int> StylisticSet { get; init; }
+
+    /// <summary>Contextual alternates.</summary>
+    public FormatValue<bool> ContextualAlternates { get; init; }
+
+    /// <summary>The language (a BCP 47 tag).</summary>
+    public FormatValue<string> Language { get; init; }
+
+    /// <summary>Spelling and grammar are not checked.</summary>
+    public FormatValue<bool> NoProof { get; init; }
+
+    /// <summary>Emboss.</summary>
+    public FormatValue<bool> Emboss { get; init; }
+
+    /// <summary>Engrave.</summary>
+    public FormatValue<bool> Engrave { get; init; }
+
+    /// <summary>Outline.</summary>
+    public FormatValue<bool> Outline { get; init; }
+
+    /// <summary>Shadow.</summary>
+    public FormatValue<bool> Shadow { get; init; }
+
+    /// <summary>The underline's colour, or the text's (<see cref="ColorValue.Auto"/>).</summary>
+    public FormatValue<ColorValue> UnderlineColor { get; init; }
 }
 
 /// <summary>The selected paragraphs' formatting.</summary>

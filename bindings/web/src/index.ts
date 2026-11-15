@@ -12,6 +12,7 @@ export type { ExportOptions, ExportResult, MountOptions, PdfOptions, SessionOpti
 export type {
   BorderLine,
   BorderLineStyle,
+  CharacterEffects,
   CommandEntry,
   CommandId,
   CommandInfo,
@@ -20,13 +21,18 @@ export type {
   FieldTargets,
   FollowNumber,
   FrameProperties,
+  Language,
+  Ligatures,
   ListLevel,
   NoArgumentCommandId,
+  NumberForm,
   NumberFormat,
+  NumberSpacing,
   Op,
   OpArgs,
   ReplaceScope,
   ShadingPattern,
+  Typography,
 } from './commands.js';
 export type {
   AutoCorrectChange,

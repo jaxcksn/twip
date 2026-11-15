@@ -433,4 +433,14 @@ public enum CommandId
     SetConsecutiveHyphenLimit,
     /// <summary>Hyphenates words in capitals, or not.</summary>
     SetHyphenateCaps,
+    /// <summary>Applies a character style to the selected text, or removes it.</summary>
+    ApplyCharacterStyle,
+    /// <summary>Sets the scale, kerning and OpenType features.</summary>
+    SetTypography,
+    /// <summary>Sets the text's language and whether spelling is checked.</summary>
+    SetLanguage,
+    /// <summary>Sets emboss, engrave, outline and shadow.</summary>
+    SetCharacterEffects,
+    /// <summary>Sets the underline's colour.</summary>
+    SetUnderlineColor,
 }

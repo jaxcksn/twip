@@ -276,6 +276,36 @@ public sealed class EditorCommands
     /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
     public Task SetCharacterPositionAsync(Length position, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetCharacterPosition(position), ct);
 
+    /// <summary>Applies a character style to the selected text (a linked paragraph style's character half), or removes it.</summary>
+    /// <param name="styleId">The style; <see langword="null"/> removes the character style.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task ApplyCharacterStyleAsync(StyleId? styleId, CancellationToken ct = default) => _session.RunAsync(EditorOperation.ApplyCharacterStyle(styleId), ct);
+
+    /// <summary>Sets the scale, kerning and OpenType features; unset values are kept.</summary>
+    /// <param name="options">The settings.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SetTypographyAsync(TypographyOptions options, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetTypography(options), ct);
+
+    /// <summary>Sets the text's language and whether spelling is checked; unset values are kept.</summary>
+    /// <param name="options">The settings.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SetLanguageAsync(LanguageOptions options, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetLanguage(options), ct);
+
+    /// <summary>Sets emboss, engrave, outline and shadow; unset values are kept.</summary>
+    /// <param name="options">The effects.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SetCharacterEffectsAsync(CharacterEffectsOptions options, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetCharacterEffects(options), ct);
+
+    /// <summary>Sets the underline's colour, or the text's (<see cref="ColorValue.Auto"/>); underlined text only.</summary>
+    /// <param name="color">The colour.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SetUnderlineColorAsync(ColorValue color, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetUnderlineColor(color), ct);
+
     /// <summary>Removes direct character formatting from the selection.</summary>
     /// <param name="ct">Cancels the command before it runs.</param>
     /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>

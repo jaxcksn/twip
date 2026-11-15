@@ -204,6 +204,9 @@ public readonly record struct MatchId(string Value)
 [JsonConverter(typeof(StyleIdConverter))]
 public readonly record struct StyleId(string Value)
 {
+    /// <summary>No style, as state reports it (<c>none</c>).</summary>
+    public static StyleId None => new("none");
+
     /// <inheritdoc/>
     public override string ToString() => Value;
 }

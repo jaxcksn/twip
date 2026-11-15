@@ -131,6 +131,53 @@ pub(super) fn character(runs: &[&RunStyle]) -> CharacterFormatting {
         highlight: fold(runs.iter().map(|r| highlight_of(r))),
         character_spacing: fold(runs.iter().map(|r| Points(r.spacing))),
         position: fold(runs.iter().map(|r| Points(r.position))),
+        character_style: fold(runs.iter().map(|r| r.style_id.clone().map_or(NoneOr::None, |s| NoneOr::Value(StyleId(s))))),
+        scale: fold(runs.iter().map(|r| r.scale)),
+        kerning: fold(runs.iter().map(|r| Points(r.kern))),
+        ligatures: {
+            use crate::api::command::Ligatures as L;
+            let l = |r: &RunStyle| match r.typography.ligatures {
+                0 => Some(L::None),
+                1 => Some(L::Standard),
+                3 => Some(L::StandardContextual),
+                12 => Some(L::HistoricalDiscretional),
+                15 => Some(L::All),
+                _ => None,
+            };
+            if runs.iter().any(|r| l(r).is_none()) {
+                if runs.is_empty() { Tri::Unavailable } else { Tri::Mixed }
+            } else {
+                fold(runs.iter().filter_map(|r| l(r)))
+            }
+        },
+        number_spacing: fold(runs.iter().map(|r| {
+            use crate::api::command::NumberSpacing as N;
+            match r.typography.number_spacing {
+                4 => N::Proportional,
+                8 => N::Tabular,
+                _ => N::Default,
+            }
+        })),
+        number_form: fold(runs.iter().map(|r| {
+            use crate::api::command::NumberForm as N;
+            match r.typography.number_form {
+                1 => N::Lining,
+                2 => N::OldStyle,
+                _ => N::Default,
+            }
+        })),
+        stylistic_set: fold(runs.iter().map(|r| {
+            let s = r.typography.stylistic_sets;
+            if s == 0 { 0 } else { s.trailing_zeros() as u8 + 1 }
+        })),
+        contextual_alternates: tri(&|r| r.typography.contextual_alternates),
+        language: fold(runs.iter().map(|r| r.lang.clone())),
+        no_proof: tri(&|r| r.no_proof),
+        emboss: tri(&|r| r.emboss),
+        engrave: tri(&|r| r.imprint),
+        outline: tri(&|r| r.outline),
+        shadow: tri(&|r| r.shadow),
+        underline_color: fold(runs.iter().map(|r| r.underline_color.map_or(AutoOr::Auto, |c| AutoOr::Value(Color(c))))),
     }
 }
 
@@ -386,6 +433,9 @@ impl Editor {
                 (C::SetHighlight, Some(f)) => (formatted, (None, Some(CommandValue::Highlight(f.character.highlight)))),
                 (C::SetCharacterSpacing, Some(f)) => (formatted, (None, Some(CommandValue::Length(f.character.character_spacing)))),
                 (C::SetCharacterPosition, Some(f)) => (formatted, (None, Some(CommandValue::Length(f.character.position)))),
+                (C::ApplyCharacterStyle | C::SetTypography | C::SetLanguage | C::SetCharacterEffects | C::SetUnderlineColor, Some(_)) => {
+                    (formatted, (None, None))
+                }
                 (C::ChangeCase, _) => (editable && selected, (None, None)),
                 (C::SetAlignment, Some(f)) => (formatted, (None, Some(CommandValue::Alignment(f.paragraph.alignment)))),
                 (C::SetLineSpacing, Some(f)) => (formatted, (None, Some(CommandValue::LineSpacing(f.paragraph.line_spacing)))),

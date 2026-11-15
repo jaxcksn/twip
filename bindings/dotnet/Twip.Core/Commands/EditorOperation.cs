@@ -224,6 +224,21 @@ public abstract partial record EditorOperation
     /// <param name="position">The offset, -1584 to 1584 pt; positive raises.</param>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation SetCharacterPosition(Length position) => Op(CommandId.SetCharacterPosition, new Arg("value", Node(position)));
+    /// <summary>Applies a character style to the selected text (a linked paragraph style's character half), or removes it.</summary>
+    /// <param name="styleId">The style; <see langword="null"/> removes the character style.</param>
+    public static EditorOperation ApplyCharacterStyle(StyleId? styleId) => Op(CommandId.ApplyCharacterStyle, new Arg("value", styleId is { } id ? Node(id) : null));
+    /// <summary>Sets the scale, kerning and OpenType features; unset values are kept.</summary>
+    /// <param name="options">The settings.</param>
+    public static EditorOperation SetTypography(TypographyOptions options) => Op(CommandId.SetTypography, Arg.Flatten(options));
+    /// <summary>Sets the text's language and whether spelling is checked; unset values are kept.</summary>
+    /// <param name="options">The settings.</param>
+    public static EditorOperation SetLanguage(LanguageOptions options) => Op(CommandId.SetLanguage, Arg.Flatten(options));
+    /// <summary>Sets emboss, engrave, outline and shadow; unset values are kept.</summary>
+    /// <param name="options">The effects.</param>
+    public static EditorOperation SetCharacterEffects(CharacterEffectsOptions options) => Op(CommandId.SetCharacterEffects, Arg.Flatten(options));
+    /// <summary>Sets the underline's colour, or the text's (<see cref="ColorValue.Auto"/>); underlined text only.</summary>
+    /// <param name="color">The colour.</param>
+    public static EditorOperation SetUnderlineColor(ColorValue color) => Op(CommandId.SetUnderlineColor, new Arg("value", Node(color)));
 
     /// <summary>Removes direct character formatting from the selection.</summary>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>

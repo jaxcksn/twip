@@ -161,6 +161,34 @@
     "value": -2.5
   },
   {
+    "type": "applyCharacterStyle",
+    "value": "Strong"
+  },
+  {
+    "contextualAlternates": true,
+    "kerning": 12.0,
+    "ligatures": "standardContextual",
+    "numberForm": "oldStyle",
+    "numberSpacing": "tabular",
+    "scale": 90.0,
+    "stylisticSet": 2,
+    "type": "setTypography"
+  },
+  {
+    "language": "en-GB",
+    "noProof": true,
+    "type": "setLanguage"
+  },
+  {
+    "emboss": true,
+    "outline": false,
+    "type": "setCharacterEffects"
+  },
+  {
+    "type": "setUnderlineColor",
+    "value": "#C00000"
+  },
+  {
     "type": "clearFormatting"
   },
   {
