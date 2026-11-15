@@ -1,6 +1,6 @@
 # Editor scenarios
 
-One JSON file per scenario, run by the native runner (`crates/twip/src/editing/tests/scenarios.rs`, `cargo test -p twip scenarios`).md §2: an L4 scenario and its native twin).
+One JSON file per scenario, run by the native runner (`crates/twip/src/editing/tests/scenarios.rs`, `cargo nextest run -p twip scenarios`).md §2: an L4 scenario and its native twin).
 
 ```json
 {

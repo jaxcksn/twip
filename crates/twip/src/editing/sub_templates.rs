@@ -119,6 +119,11 @@ fn empty_para(doc: &Document, cx: &crate::docx::write::props::Cx) -> Option<Para
 
 pub const MAX_DEPTH: usize = 16;
 
+/// The expansions one sync lays out: each part's references expand again at every level, so `k` references a level
+/// would be `k^16` layouts at [`MAX_DEPTH`].
+// ponytail: a safety bound, not memoised; past it the remaining references show collapsed.
+const MAX_EXPANSIONS: usize = 4096;
+
 pub fn column_width(s: &Section) -> f64 {
     let text = s.page_w - s.left - s.right - s.gutter;
     match (&s.columns.cols[..], s.columns.equal || s.columns.cols.is_empty()) {
@@ -324,17 +329,18 @@ impl Editor {
         (base - indents).max(1.0)
     }
 
-    fn expand(&self, f: FieldId, r: &Reference, width: f64, path: &mut Vec<u32>, fonts: &Fonts) -> Option<Rc<Expansion>> {
+    fn expand(&self, f: FieldId, r: &Reference, width: f64, path: &mut Vec<u32>, budget: &mut usize, fonts: &Fonts) -> Option<Rc<Expansion>> {
         let part = r.part?;
-        if r.resolution != Resolution::Resolved || self.collapsed.contains(&f) || path.len() >= MAX_DEPTH || path.contains(&part) {
+        if r.resolution != Resolution::Resolved || self.collapsed.contains(&f) || path.len() >= MAX_DEPTH || path.contains(&part) || *budget == 0 {
             return None;
         }
+        *budget -= 1;
         let body = &self.doc.glossary.as_ref()?.parts.get(part as usize)?.body;
         path.push(part);
         let mut nested = Expansions::default();
         for (g, q) in &self.references.by_field {
             let inside = self.index.para_slot(q.at).is_some_and(|s| self.index.story(s.container) == StoryId::BuildingBlock(part));
-            if inside && let Some(e) = self.expand(*g, q, self.reference_width(q.at, width), path, fonts) {
+            if inside && let Some(e) = self.expand(*g, q, self.reference_width(q.at, width), path, budget, fonts) {
                 nested.paras.insert(q.at, e);
             }
         }
@@ -354,6 +360,7 @@ impl Editor {
             let flow = self.editing_sub_template().map_or(StoryId::Body, StoryId::BuildingBlock);
             let mut path: Vec<u32> = self.editing_sub_template().into_iter().collect();
             let outer = self.surface.as_ref().map_or(0.0, |s| column_width(&s.doc.sections[0]));
+            let mut budget = MAX_EXPANSIONS;
             for (f, r) in &self.references.by_field {
                 let top = self.index.para_slot(r.at).is_some_and(|s| self.index.story(s.container) == flow);
                 if !top || r.resolution != Resolution::Resolved || self.collapsed.contains(f) {
@@ -367,7 +374,7 @@ impl Editor {
                     out.paras.remove(&r.at);
                     continue;
                 }
-                if let Some(e) = self.expand(*f, r, self.reference_width(r.at, outer), &mut path, fonts) {
+                if let Some(e) = self.expand(*f, r, self.reference_width(r.at, outer), &mut path, &mut budget, fonts) {
                     out.paras.insert(r.at, e);
                 }
             }

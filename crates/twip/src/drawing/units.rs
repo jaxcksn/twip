@@ -24,10 +24,14 @@ impl Emu {
         self.0 / 635
     }
 
+    /// `ST_Coordinate`'s bound: any sum of a few coordinates from the file stays within `i64`.
+    pub const MAX: i64 = 27_273_042_316_900;
+
     pub fn parse(s: &str) -> Option<Emu> {
         let s = s.trim();
+        let bound = |v: i64| Emu(v.clamp(-Self::MAX, Self::MAX));
         if let Ok(v) = s.parse::<i64>() {
-            return Some(Emu(v));
+            return Some(bound(v));
         }
         let (num, unit) = s.split_at(s.find(|c: char| c.is_ascii_alphabetic())?);
         let v: f64 = num.trim().parse().ok()?;
@@ -39,7 +43,7 @@ impl Emu {
             "pc" | "pi" => 152_400.0,
             _ => return None,
         };
-        Some(Emu((v * per).round() as i64))
+        Some(bound((v * per).round() as i64))
     }
 }
 
@@ -143,6 +147,9 @@ mod tests {
         assert_eq!(Emu::parse("12700"), Some(Emu(12700)));
         assert_eq!(Emu::parse("1in"), Some(Emu(914400)));
         assert_eq!(Emu::parse("2.5pt"), Some(Emu(31750)));
+        // Coordinates past ST_Coordinate's, so that their sums stay within i64.
+        assert_eq!(Emu::parse("9223372036854775807"), Some(Emu(Emu::MAX)));
+        assert_eq!(Emu::parse("-100000000000000in"), Some(Emu(-Emu::MAX)));
         assert_eq!(Pct::parse("50%"), Some(Pct(50000)));
         assert_eq!(Pct::parse("-25000"), Some(Pct(-25000)));
         assert_eq!(Angle::parse("-5400000").map(Angle::normalized), Some(Angle(16_200_000)));

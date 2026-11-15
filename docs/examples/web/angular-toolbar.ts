@@ -6,7 +6,8 @@ import { TwipStateService } from './angular.js';
   selector: 'app-document',
   providers: [TwipStateService],
   template: `
-    <div role="toolbar">
+    <!-- A press on a button keeps the focus in the document, so typing goes on there. -->
+    <div role="toolbar" (mousedown)="$event.preventDefault()">
       <button [disabled]="!bold()?.enabled" [attr.aria-pressed]="isBold()" (click)="toggleBold()">Bold</button>
     </div>
     <div #host style="height: 80vh"></div>

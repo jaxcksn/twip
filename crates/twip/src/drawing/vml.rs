@@ -448,10 +448,11 @@ impl Guides {
 
     fn arg(&self, a: &str) -> String {
         let a = a.trim();
-        if let Some(n) = a.strip_prefix('#') {
+        // Only a number follows the marks: the rest of the file's text would go into the attribute unescaped.
+        if let Some(n) = a.strip_prefix('#').and_then(|n| n.parse::<u32>().ok()) {
             return format!("adj{n}");
         }
-        if let Some(n) = a.strip_prefix('@') {
+        if let Some(n) = a.strip_prefix('@').and_then(|n| n.parse::<u32>().ok()) {
             return format!("f{n}");
         }
         let [w, h] = self.size;

@@ -1708,7 +1708,7 @@ impl Editor {
         } else if self.refuse_locked() {
             return Outcome::Unchanged("locked");
         }
-        let mut tx = self.begin(if dir == Dir::Back { "Backspace" } else { "Delete" });
+        let mut tx = self.begin(if dir == Dir::Back { "Backspace" } else { revisions::record::DELETE });
         if !self.selection.is_collapsed() {
             let caret = match self.delete_range_joining(&mut tx, false) {
                 Ok(Some(p)) => p,
@@ -2038,7 +2038,13 @@ impl Editor {
             self.goal_x = goal;
         }
         self.ensure(&target, fonts);
-        self.scroll_to_caret(fonts);
+        match self.caret_view() {
+            // Ctrl+Home: the top of the first page.
+            Some(c) if by == MoveBy::Story && !forward && target.story == StoryId::Body => {
+                self.requests.push(Request::ScrollIntoView { page: c.page, rect: [c.x, -view::PAGE_GAP, c.x + 1.0, c.bottom], at_top: true });
+            }
+            _ => self.scroll_to_caret(fonts),
+        }
         Outcome::Moved
     }
 
@@ -2362,7 +2368,7 @@ impl Editor {
                     return;
                 }
                 if self.object_drag.is_some() {
-                    self.object_move(x, y, mods);
+                    self.object_move(x, y, mods, fonts);
                     return;
                 }
                 if self.shape_drag.is_some() {
@@ -2624,7 +2630,14 @@ impl Editor {
 
     fn scroll_to_caret(&mut self, _fonts: &Fonts) {
         if let Some(c) = self.caret_view() {
-            self.requests.push(Request::ScrollIntoView { page: c.page, rect: [c.x, c.top, c.x + 1.0, c.bottom] });
+            self.requests.push(Request::ScrollIntoView { page: c.page, rect: [c.x, c.top, c.x + 1.0, c.bottom], at_top: false });
+        }
+    }
+
+    /// After a jump (a link, a bookmark, a page): the caret's line at the top of the view, as Word puts it.
+    fn jump_to_caret(&mut self) {
+        if let Some(c) = self.caret_view() {
+            self.requests.push(Request::ScrollIntoView { page: c.page, rect: [c.x, c.top, c.x + 1.0, c.bottom], at_top: true });
         }
     }
 

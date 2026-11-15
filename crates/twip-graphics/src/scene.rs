@@ -1,7 +1,7 @@
 //! The display list: a [`Recorder`] takes draw commands and finishes into an immutable, shareable [`Picture`].
 //!
 //! A picture is the seam between Twip and every backend. It is recorded once (a line, a page, or this frame's overlays),
-//! kept by identity, and replayed by the CPU and GPU backends (and later the PDF writer) with a frame transform. Pictures
+//! kept by identity, and replayed by the CPU and GPU backends and the PDF writer with a frame transform. Pictures
 //! nest: a page picture places its lines' pictures, so an edit records again only the lines it changed. A backend draws
 //! a nested picture exactly as it would draw the same commands inline under the composed transform.
 //!

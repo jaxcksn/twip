@@ -154,6 +154,6 @@ impl Editor {
         }
         rows.splice(r + 1..r + 1, added);
         let grid = t.grid.clone();
-        self.rebuild("Split Cells", tg.table, rows, grid, (r, tg.cols.0), fonts)
+        self.rebuild(super::revisions::record::SPLIT_CELLS, tg.table, rows, grid, (r, tg.cols.0), fonts)
     }
 }

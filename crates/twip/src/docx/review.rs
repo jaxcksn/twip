@@ -129,7 +129,8 @@ pub(crate) fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
     era * 146_097 + doe - 719_468
 }
 
-fn civil_from_days(z: i64) -> (i64, i64, i64) {
+/// The civil date (year, month, day) `z` days after 1970-01-01 (Howard Hinnant's algorithm).
+pub(crate) fn civil_from_days(z: i64) -> (i64, i64, i64) {
     let z = z + 719_468;
     let era = z.div_euclid(146_097);
     let doe = z - era * 146_097;
@@ -390,6 +391,11 @@ impl Comments {
     }
 
     /// The first comment of the thread holding `id` (cycles stop at the first repeat).
+    /// How many threads there are, as [`Self::threads`] has them, without building them.
+    pub fn thread_count(&self) -> usize {
+        self.by_id.values().filter(|c| c.parent.is_none_or(|p| !self.by_id.contains_key(&p))).count()
+    }
+
     pub fn root(&self, id: CommentId) -> CommentId {
         let (mut at, mut seen) = (id, Vec::new());
         while let Some(p) = self.by_id.get(&at).and_then(|c| c.parent).filter(|p| self.by_id.contains_key(p)) {
@@ -582,7 +588,7 @@ impl IdCounter {
     /// A revision or comment id: one sequence for both, as `w:id`s share one space in a document.
     pub fn next_revision_id(&mut self) -> i64 {
         let id = self.next_revision;
-        self.next_revision += 1;
+        self.next_revision = self.next_revision.saturating_add(1);
         id
     }
 
@@ -659,5 +665,9 @@ mod tests {
             cs.by_id.insert(x.id, x);
         }
         assert_eq!(cs.threads(), vec![(CommentId(1), vec![CommentId(2), CommentId(3)]), (CommentId(4), vec![])]);
+        // Replies in a loop have no root: neither counts as a thread.
+        cs.by_id.insert(CommentId(5), c(5, Some(6), "2026-01-01T00:00:00Z"));
+        cs.by_id.insert(CommentId(6), c(6, Some(5), "2026-01-01T00:00:00Z"));
+        assert_eq!(cs.thread_count(), cs.threads().len());
     }
 }

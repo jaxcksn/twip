@@ -265,7 +265,7 @@ impl Editor {
                 }
             }
         }
-        self.doc.sections.iter().for_each(|s| walk(&s.blocks, &mut order));
+        super::elements::stories(&self.doc, &self.index).into_iter().for_each(|(_, blocks)| walk(blocks, &mut order));
         for para in order {
             let Some(p) = self.index.para(&self.doc, para) else { continue };
             let label = match p.style.num {

@@ -480,6 +480,8 @@ enum Entry {
     Encoded(ImageData),
     /// Straight RGBA8 pixels the caller made (Twip's 8 × 8 pattern tiles).
     Pixels(Arc<Pixmap>),
+    /// Removed: its bytes are gone, and its id isn't given to another image, so a cache keyed by ids never mixes two.
+    Removed,
 }
 
 /// The images pictures draw.
@@ -525,7 +527,17 @@ impl ImageRegistry {
     }
 
     pub fn info(&self, id: ImageId) -> Option<ImageInfo> {
-        self.entries.get(id.0 as usize).map(|e| e.1)
+        self.entries.get(id.0 as usize).filter(|e| !matches!(e.0, Entry::Removed)).map(|e| e.1)
+    }
+
+    /// Forgets an image and drops its bytes: pictures that still draw it draw nothing in its place, and what backends
+    /// decoded from it ages out of their caches.
+    pub fn remove(&mut self, id: ImageId) {
+        let Some(e) = self.entries.get_mut(id.0 as usize) else { return };
+        if let Entry::Encoded(data) = &e.0 {
+            self.known.remove(&(Arc::as_ptr(data) as *const () as usize));
+        }
+        e.0 = Entry::Removed;
     }
 
     /// The image's encoded bytes and what they say about themselves; `None` for pixels the caller made.
@@ -542,7 +554,7 @@ impl ImageRegistry {
         match self.entries.get(id.0 as usize) {
             Some((Entry::Encoded(data), _)) => decode((**data).as_ref()),
             Some((Entry::Pixels(p), _)) => Ok((**p).clone()),
-            None => Err(error("no such image")),
+            Some((Entry::Removed, _)) | None => Err(error("no such image")),
         }
     }
 }
@@ -558,6 +570,17 @@ mod tests {
         e.set_depth(png::BitDepth::Eight);
         e.write_header().expect("header").write_image_data(rgba).expect("data");
         out
+    }
+
+    #[test]
+    fn a_removed_image_drops_its_bytes_and_keeps_its_id() {
+        let mut r = ImageRegistry::default();
+        let data: ImageData = Arc::new(png_bytes(1, 1, &[0, 0, 255, 255]));
+        let id = r.add(Arc::clone(&data)).expect("registers");
+        r.remove(id);
+        assert_eq!(Arc::strong_count(&data), 1, "the registry holds the bytes no longer");
+        assert!(r.info(id).is_none() && r.decode(id).is_err());
+        assert_ne!(r.add(data).expect("registers again"), id, "a new id, never the removed one's");
     }
 
     #[test]

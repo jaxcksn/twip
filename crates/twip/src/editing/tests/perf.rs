@@ -29,7 +29,7 @@ fn border(e: &mut Editor, table: usize, row: usize, k: usize) -> (f64, f64) {
 }
 
 #[test]
-#[ignore = "timing: run alone in a release build, `cargo test --release --lib perf -- --ignored`"]
+#[ignore = "timing: run alone in a release build, `cargo nextest run -p twip --release --lib --run-ignored only --test-threads 1 perf`"]
 fn pointer_hits_and_drag_moves_are_within_budget() {
     let mut e = open("FX-TBL-BASIC.docx");
     e.complete(fonts());
@@ -51,7 +51,7 @@ fn pointer_hits_and_drag_moves_are_within_budget() {
 }
 
 #[test]
-#[ignore = "timing: run alone in a release build, `cargo test --release --lib perf -- --ignored`"]
+#[ignore = "timing: run alone in a release build, `cargo nextest run -p twip --release --lib --run-ignored only --test-threads 1 perf`"]
 fn live_float_drag_moves_are_within_budget() {
     let mut e = open("FX-OBJ.docx");
     e.complete(fonts());
@@ -74,7 +74,7 @@ fn live_float_drag_moves_are_within_budget() {
 }
 
 #[test]
-#[ignore = "timing: run alone in a release build, `cargo test --release --lib perf -- --ignored`"]
+#[ignore = "timing: run alone in a release build, `cargo nextest run -p twip --release --lib --run-ignored only --test-threads 1 perf`"]
 fn table_structure_and_resize_commits_are_within_budget() {
     let mut e = open("FX-TBL-LARGE.docx");
     e.complete(fonts());

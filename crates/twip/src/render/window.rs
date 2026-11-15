@@ -30,6 +30,9 @@ struct Window {
     size: (u32, u32),
     /// The renderer for the surface's format, made when it is first configured.
     renderer: Option<(wgpu::TextureFormat, Renderer)>,
+    /// The surface takes copies in: a frame the GPU can't draw is drawn on the CPU into `pixels` and copied there.
+    copy_in: bool,
+    pixels: Vec<u8>,
 }
 
 impl Window {
@@ -51,8 +54,38 @@ impl Window {
         if self.renderer.as_ref().is_none_or(|(f, _)| *f != config.format) {
             self.renderer = Some((config.format, Renderer::new(ctx, config.format)));
         }
+        self.copy_in = config.usage.contains(wgpu::TextureUsages::COPY_DST)
+            && matches!(config.format, wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Rgba8Unorm);
         self.size = (width, height);
         true
+    }
+
+    /// The surface's next texture, or what becomes of the frame without one.
+    fn texture(&mut self, ctx: &Context, width: u32, height: u32) -> Result<wgpu::SurfaceTexture, Framed> {
+        use wgpu::CurrentSurfaceTexture as Got;
+        match self.surface.get_current_texture() {
+            Got::Success(t) => Ok(t),
+            // Drawn, and configured again for the next frame.
+            Got::Suboptimal(t) => {
+                self.size = (0, 0);
+                Ok(t)
+            }
+            // The swap chain went stale (a display change): configure it again, once.
+            Got::Outdated | Got::Lost => {
+                if !self.configure(ctx, width, height) {
+                    return Err(Framed::Failed);
+                }
+                match self.surface.get_current_texture() {
+                    Got::Success(t) | Got::Suboptimal(t) => Ok(t),
+                    Got::Timeout | Got::Occluded => Err(Framed::Skipped),
+                    _ => Err(Framed::Failed),
+                }
+            }
+            // No texture in time: the window is hidden, the display asleep.
+            Got::Timeout | Got::Occluded => Err(Framed::Skipped),
+            // A texture wgpu refused.
+            Got::Validation => Err(Framed::Failed),
+        }
     }
 }
 
@@ -97,7 +130,7 @@ impl State {
         if !ctx.adapter.is_surface_supported(&surface) {
             return None;
         }
-        self.windows.insert(key, Window { surface, size: (0, 0), renderer: None });
+        self.windows.insert(key, Window { surface, size: (0, 0), renderer: None, copy_in: false, pixels: Vec::new() });
         self.backend()
     }
 }
@@ -239,49 +272,60 @@ pub fn detach(key: u64) {
     });
 }
 
+/// What became of a window frame.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Framed {
+    Drawn,
+    /// No texture in time: the window is hidden or the display asleep. The next frame tries again.
+    Skipped,
+    /// The window isn't attached, or the GPU can't draw this frame (the device was lost, the frame is too large):
+    /// draw it with the CPU.
+    Failed,
+}
+
 /// Draws `graphics`' recorded frame into `key`'s window, `width` x `height` pixels, and presents it; the next frame is
-/// recorded afresh either way. False when the window isn't attached or the GPU can't draw (the device was lost): draw
-/// with the CPU then.
-pub fn frame(key: u64, width: u32, height: u32, graphics: &mut Graphics) -> bool {
-    graphics.finish(|res, frame| {
+/// recorded afresh either way.
+pub fn frame(key: u64, width: u32, height: u32, graphics: &mut Graphics) -> Framed {
+    graphics.finish(|res, frame, cpu| {
         with_state(|s| {
-            let State { context: Some(Some(ctx)), windows, .. } = s else { return false };
-            let Some(w) = windows.get_mut(&key) else { return false };
+            let State { context: Some(Some(ctx)), windows, .. } = s else { return Framed::Failed };
+            let Some(w) = windows.get_mut(&key) else { return Framed::Failed };
             if ctx.is_lost() || width == 0 || height == 0 {
-                return false;
+                return Framed::Failed;
             }
             if w.size != (width, height) && !w.configure(ctx, width, height) {
-                return false;
+                return Framed::Failed;
             }
-            use wgpu::CurrentSurfaceTexture as Got;
-            let texture = match w.surface.get_current_texture() {
-                Got::Success(t) => t,
-                // Drawn, and configured again for the next frame.
-                Got::Suboptimal(t) => {
-                    w.size = (0, 0);
-                    t
-                }
-                // The swap chain went stale (a display change): configure it again, once.
-                Got::Outdated | Got::Lost => {
-                    if !w.configure(ctx, width, height) {
-                        return false;
-                    }
-                    match w.surface.get_current_texture() {
-                        Got::Success(t) | Got::Suboptimal(t) => t,
-                        _ => return false,
-                    }
-                }
-                // No texture in time (the window is hidden, the display asleep), or a texture wgpu refused.
-                Got::Timeout | Got::Occluded | Got::Validation => return false,
+            let texture = match w.texture(ctx, width, height) {
+                Ok(t) => t,
+                Err(f) => return f,
             };
-            let Some((_, renderer)) = w.renderer.as_mut() else { return false };
-            let Ok(prepared) = renderer.prepare(ctx, res, frame, (width, height)) else { return false };
-            let view = texture.texture.create_view(&wgpu::TextureViewDescriptor::default());
-            let mut encoder = ctx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
-            renderer.render(&mut encoder, &view, &prepared);
-            ctx.queue.submit([encoder.finish()]);
+            let Some((format, renderer)) = w.renderer.as_mut() else { return Framed::Failed };
+            match renderer.prepare(ctx, res, frame, (width, height)) {
+                Ok(prepared) => {
+                    let view = texture.texture.create_view(&wgpu::TextureViewDescriptor::default());
+                    let mut encoder = ctx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+                    renderer.render(&mut encoder, &view, &prepared);
+                    ctx.queue.submit([encoder.finish()]);
+                }
+                // More than the device has (a frame too large for its textures): this frame on the CPU, copied in.
+                Err(twip_graphics::gpu::Error::TooLarge) if w.copy_in => {
+                    use twip_graphics::cpu::{Format, Target};
+                    let channels = if *format == wgpu::TextureFormat::Bgra8Unorm { Format::Bgra8 } else { Format::Rgba8 };
+                    w.pixels.resize(width as usize * height as usize * 4, 0);
+                    let Ok(mut target) = Target::new(&mut w.pixels, width, height, width as usize * 4, channels) else { return Framed::Failed };
+                    cpu.render(&mut target, res, frame);
+                    ctx.queue.write_texture(
+                        texture.texture.as_image_copy(),
+                        &w.pixels,
+                        wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(width * 4), rows_per_image: Some(height) },
+                        wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+                    );
+                }
+                Err(_) => return Framed::Failed,
+            }
             ctx.queue.present(texture);
-            !ctx.is_lost()
+            if ctx.is_lost() { Framed::Failed } else { Framed::Drawn }
         })
     })
 }
@@ -290,7 +334,7 @@ pub fn frame(key: u64, width: u32, height: u32, graphics: &mut Graphics) -> bool
 /// RGBA, rows packed), with `key`'s own renderer; `None` with no usable GPU, or when the device was lost.
 #[cfg(not(target_family = "wasm"))]
 pub fn pixels(key: u64, width: u32, height: u32, graphics: &mut Graphics) -> Option<Vec<u8>> {
-    graphics.finish(|res, frame| {
+    graphics.finish(|res, frame, _| {
         with_state(|s| {
             platform::ensure(s, None, Context::instance);
             let State { context: Some(Some(ctx)), offscreen, .. } = s else { return None };

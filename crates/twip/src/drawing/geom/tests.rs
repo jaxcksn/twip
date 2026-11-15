@@ -142,3 +142,12 @@ fn every_preset_evaluates_to_finite_values_at_any_size_and_adjust_value() {
         }
     }
 }
+
+#[test]
+fn a_sweep_from_a_guide_is_bounded_as_a_literal_one_is() {
+    let xml = r#"<a:custGeom xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:avLst/><a:gdLst><a:gd name="g" fmla="*/ 2147483647 2147483647 1"/></a:gdLst><a:pathLst><a:path w="100" h="100"><a:moveTo><a:pt x="0" y="50"/></a:moveTo><a:arcTo wR="50" hR="50" stAng="0" swAng="g"/></a:path></a:pathLst></a:custGeom>"#;
+    let d = roxmltree::Document::parse(xml).expect("xml");
+    let g = Geometry::Custom(std::rc::Rc::new(super::CustomGeom::parse(d.root_element()))).evaluate(emu(100.0), emu(100.0));
+    let segs: usize = g.paths.iter().map(|p| p.segs.len()).sum();
+    assert!(segs < 1000, "{segs} segments");
+}

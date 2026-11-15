@@ -103,9 +103,11 @@ fn measure(face: &Face, text: &str, size: f64) -> f64 {
 }
 
 impl Graphics {
-    /// Forgets the document's pictures (a new document).
+    /// Forgets the document's pictures (a new document), their bytes too: a long session opens many documents.
     pub fn clear_images(&mut self) {
-        self.images.clear();
+        for id in self.images.drain().filter_map(|(_, id)| id) {
+            self.res.images.remove(id);
+        }
     }
 
     /// Records a frame: the visible pages, then the view's overlays over them, in device pixels. What the host draws
@@ -137,9 +139,7 @@ impl Graphics {
             if r.retain && !r.direct {
                 let inputs = retained::Inputs { gridlines: r.gridlines, appearance: r.appearance };
                 let picture = kept.picture(page, inputs, |content| self.page(content, r, page, images));
-                if let Some(picture) = picture {
-                    rec.picture(&picture, Affine::IDENTITY);
-                }
+                rec.picture(&picture, Affine::IDENTITY);
             } else {
                 self.page(&mut rec, r, page, images);
             }
@@ -191,13 +191,14 @@ impl Graphics {
         self.cpu.render(target, &self.res, &cpu::Frame { clear: self.clear, draws: &draws });
     }
 
-    /// Hands the recorded frame (over the desk colour) and the resources it draws from to `draw`, as
-    /// [`Graphics::present`] does to the CPU renderer, and starts the next one: the GPU screen's present.
+    /// Hands the recorded frame (over the desk colour), the resources it draws from and the CPU renderer (for a frame
+    /// the GPU can't draw) to `draw`, as [`Graphics::present`] does to the CPU renderer, and starts the next one: the
+    /// GPU screen's present.
     #[cfg_attr(not(twip_gpu), allow(dead_code, reason = "no GPU screen in this build"))]
-    pub fn finish<R>(&mut self, draw: impl FnOnce(&Resources, &cpu::Frame<'_>) -> R) -> R {
+    pub fn finish<R>(&mut self, draw: impl FnOnce(&Resources, &cpu::Frame<'_>, &mut cpu::Renderer) -> R) -> R {
         let picture = self.frame.finish();
         let draws = [Draw { picture: &picture, transform: Affine::IDENTITY }];
-        draw(&self.res, &cpu::Frame { clear: self.clear, draws: &draws })
+        draw(&self.res, &cpu::Frame { clear: self.clear, draws: &draws }, &mut self.cpu)
     }
 
     /// PDF export: one page item recorded into `rec`, in the page's points.

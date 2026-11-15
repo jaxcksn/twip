@@ -244,6 +244,8 @@ impl Pen {
 const PT: f64 = EMU_PER_PT as f64;
 
 fn arc(pen: &mut Pen, wr: f64, hr: f64, ratio: f64, st: f64, sw: f64) {
+    // A guide's sweep is unbounded, and each quarter turn is a segment: bound it as a literal angle is.
+    let sw = sw.clamp(i32::MIN.into(), i32::MAX.into());
     let param = |a: f64| (ratio * a.sin()).atan2(a.cos());
     let (sa, swa) = (rad(st), rad(sw));
     let t0 = param(sa);

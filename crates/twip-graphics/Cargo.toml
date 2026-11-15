@@ -26,6 +26,8 @@ zune-jpeg = "0.5"
 zune-bmp = "0.5.2"
 zune-core = "0.5"
 gif = "0.14.2"
+# The sweep gradient's atan2: the platform's maths library rounds differently between systems, and pixels must not.
+libm = "0.2.16"
 # The GPU backend (feature `gpu`): WebGPU everywhere, and natively D3D12, Vulkan and Metal. GL (WebGL 2) is left off
 # until it is planned.
 wgpu = { version = "30.0.1", default-features = false, features = ["std", "wgsl", "webgpu"], optional = true }

@@ -7,8 +7,8 @@
 //!
 //! The pages show the markup view the snapshot was laid out in: its revision marks and change bars are layout items.
 //! Only layout items are drawn, so view overlays (comment tints, the selection, squiggles) never reach the PDF.
-// shortcut: no hyperlink annotations, figure alt text or Note elements: the docx model carries no hyperlinks, alt
-// text or story of a run yet.
+// shortcut: no hyperlink annotations, figure alt text or Note elements yet: the model has hyperlinks (as HYPERLINK
+// fields) and pictures' alt text, but the export doesn't write them.
 
 use crate::api::state::FontsState;
 use std::collections::{BTreeSet, HashMap};
@@ -317,16 +317,7 @@ fn mark(id: i32) -> Mark {
 fn now() -> Date {
     let secs = crate::clock::unix_secs();
     let (days, rem) = (secs.div_euclid(86400), secs.rem_euclid(86400));
-    // Civil date from days since 1970-01-01 (Howard Hinnant's algorithm).
-    let z = days + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let day = doy - (153 * mp + 2) / 5 + 1;
-    let month = if mp < 10 { mp + 3 } else { mp - 9 };
-    let year = yoe + era * 400 + i64::from(month <= 2);
+    let (year, month, day) = crate::docx::review::civil_from_days(days);
     Date { year: year as u16, month: month as u8, day: day as u8, hour: (rem / 3600) as u8, minute: (rem / 60 % 60) as u8, second: (rem % 60) as u8 }
 }
 

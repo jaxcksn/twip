@@ -110,6 +110,7 @@ fn fingerprint(p: &Paragraph, open: &[CommentId], notes: usize, context: u64) ->
             Inline::Text(s, _) => s.hash(&mut h),
             Inline::Sym { ch, .. } => ch.hash(&mut h),
             Inline::Picture(pic, _) => (&*pic.alt, pic.shape.as_ref().is_some_and(|s| s.nv.decorative)).hash(&mut h),
+            Inline::Float(f, _) => (&*f.alt, f.shape.as_ref().is_some_and(|s| s.nv.decorative)).hash(&mut h),
             Inline::NoteRef { kind, id, .. } => (matches!(kind, NoteKind::End), id).hash(&mut h),
             Inline::FieldBegin { view, value, .. } => (std::mem::discriminant(view), value).hash(&mut h),
             Inline::Range(m) => (std::mem::discriminant(&m.kind), m.id).hash(&mut h),
@@ -864,6 +865,33 @@ mod tests {
         assert_eq!(caret_para(&t, comment.id), Some(Some(ParaId(anchor.id.0))), "a comment goes to its commented text");
         assert_eq!(caret_para(&t, first(AccessibleRole::Region).id), Some(None), "a region holds no caret");
         assert_eq!(caret_para(&t, AccessibleId((1 << 53) - 1)), None, "no such node");
+    }
+
+    #[test]
+    fn a_floating_pictures_alt_text_reaches_the_cached_tree() {
+        let (mut e, fonts) = open("FX-OBJ.docx");
+        let mut cache = TreeCache::default();
+        let _ = tree_with(&e, &Spellers::default(), "en-US", &mut cache);
+        let f = e.document().sections[0]
+            .blocks
+            .iter()
+            .find_map(|b| match b {
+                crate::docx::Block::Para(p) => p.inlines.iter().find_map(|i| match i {
+                    crate::docx::Inline::Float(f, _) if f.text_box.is_none() => Some(f.id),
+                    _ => None,
+                }),
+                _ => None,
+            })
+            .expect("a floating picture");
+        e.set_caret_for_benchmark(crate::editing::selection::Selection::Object(crate::editing::selection::ObjectRef::Floating(
+            crate::layout::FloatId(f),
+        )));
+        e.execute(
+            crate::api::command::Command::SetAltText(crate::api::command::AltText { text: "A new description".into(), decorative: None }),
+            &fonts,
+        );
+        let now = tree_with(&e, &Spellers::default(), "en-US", &mut cache);
+        assert_eq!(now, tree(&e, &Spellers::default(), "en-US"), "the cached build is a fresh one");
     }
 
     #[test]

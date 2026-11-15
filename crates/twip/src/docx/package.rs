@@ -12,12 +12,17 @@ pub fn read(package: &[u8], parts: &[(String, Vec<u8>)], name: &str) -> Result<O
     }
     let mut zin = zip::ZipArchive::new(Cursor::new(package)).map_err(|e| e.to_string())?;
     let Ok(f) = zin.by_name(name) else { return Ok(None) };
+    text(f, name).map(Some)
+}
+
+/// A zip entry's text, refused past [`MAX_PART`].
+pub fn text(f: impl Read, name: &str) -> Result<String, String> {
     let mut s = String::new();
     f.take(MAX_PART + 1).read_to_string(&mut s).map_err(|e| e.to_string())?;
     if s.len() as u64 > MAX_PART {
         return Err(format!("{name} is larger than {MAX_PART} bytes"));
     }
-    Ok(Some(s))
+    Ok(s)
 }
 
 /// Sets a part's content in `parts`, replacing what this save made for it.

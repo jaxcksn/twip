@@ -700,6 +700,8 @@ public sealed class EditorHost : IDisposable
                 Presented();
                 return;
             }
+            // The window isn't showing: no frame now, the GPU stays.
+            if (status == Status.Aborted) return;
             // The GPU can't draw now (the device was lost): CPU pixels from here on.
             TwipNative.DetachWindow(_session.Engine, id);
             (_window, GpuBackend) = (false, null);

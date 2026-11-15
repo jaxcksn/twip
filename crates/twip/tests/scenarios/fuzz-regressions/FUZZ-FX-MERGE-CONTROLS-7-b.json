@@ -7,22 +7,6 @@
   ],
   "steps": [
     {
-      "expect": {},
-      "key": "KeyA",
-      "mods": {
-        "ctrl": true,
-        "shift": false
-      }
-    },
-    {
-      "expect": {},
-      "key": "ArrowDown",
-      "mods": {
-        "ctrl": false,
-        "shift": true
-      }
-    },
-    {
       "command": {
         "type": "deleteTable"
       },

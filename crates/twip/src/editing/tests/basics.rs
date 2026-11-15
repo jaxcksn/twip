@@ -27,6 +27,21 @@ fn typing_inserts_at_the_caret_and_one_undo_removes_the_run() {
 }
 
 #[test]
+fn typing_elsewhere_in_the_paragraph_is_an_undo_step_of_its_own() {
+    use super::super::position::Position;
+    let mut e = open("FX-TEXT.docx");
+    let para = super::para_id(&e, 1);
+    e.set_caret_for_benchmark(Selection::Caret(Position::text(StoryId::Body, para, Unit(2))));
+    type_text(&mut e, "abc");
+    let typed = texts(&e);
+    // A caret move that writes the selection itself, as Shift+F9 and extend mode do, keeps the typing run.
+    e.selection = Selection::Caret(Position::text(StoryId::Body, para, Unit(0)));
+    type_text(&mut e, "x");
+    e.execute(Command::Undo, fonts());
+    assert_eq!(texts(&e), typed, "one undo takes back only the x");
+}
+
+#[test]
 fn enter_splits_and_backspace_joins_back() {
     let mut e = open("FX-TEXT.docx");
     let before = texts(&e);
@@ -1094,7 +1109,8 @@ fn an_inline_picture_floats_where_it_is_and_goes_back_in_line() {
     assert!(matches!(r.e.selection(), Selection::Object(ObjectRef::Floating(_))), "{:?}", r.e.selection());
     assert_eq!((body_pictures(&r.e).len(), body_floats(&r.e).len()), (pictures - 1, floats + 1));
     let now = object_box(&mut r.e);
-    assert!(was.iter().zip(&now).all(|(a, b)| (a - b).abs() < 0.1), "stays where it was: {was:?} -> {now:?}");
+    // Off its paragraph's first line, it goes the quarter point below the paragraph's top that Word's conversion does.
+    assert!(was.iter().zip(&now).all(|(a, b)| (a - b).abs() < 0.3), "stays where it was: {was:?} -> {now:?}");
     let f = body_floats(&r.e).into_iter().find(|f| f.src.is_none()).expect("the new float");
     assert_eq!((f.wrap.as_str(), f.h_relative.as_str(), f.v_relative.as_str(), f.image.is_some()), ("square", "column", "paragraph", true));
     let bytes = crate::docx::write::save(r.e.document()).expect("saves");
@@ -2277,12 +2293,12 @@ fn select_all_delete_across_sections() {
     let again = super::super::Editor::open(&saved, fonts()).expect("reopens");
     assert_eq!(texts(&again), vec![String::new()]);
     assert_eq!(pages(&again), pages(&e));
-    let xml = crate::docx::write::main_xml(e.document(), false).unwrap().unwrap();
+    let xml = crate::docx::write::main_xml(e.document()).unwrap().unwrap();
     assert_eq!(xml.matches("<w:sectPr").count(), 1, "{xml}");
     e.execute(Command::Undo, fonts());
     assert_eq!(texts(&e), before);
     assert_eq!(pages(&e), was);
-    assert!(crate::docx::write::main_xml(e.document(), false).unwrap().is_none(), "undone, nothing to save");
+    assert!(crate::docx::write::main_xml(e.document()).unwrap().is_none(), "undone, nothing to save");
 }
 
 #[test]
@@ -2300,7 +2316,7 @@ fn backspace_and_delete_take_a_section_break() {
     };
     let (was, before) = (pages(&e), texts(&e));
     let n = was.len();
-    let sects = |e: &super::super::Editor| crate::docx::write::main_xml(e.document(), false).unwrap().unwrap().matches("<w:sectPr").count();
+    let sects = |e: &super::super::Editor| crate::docx::write::main_xml(e.document()).unwrap().unwrap().matches("<w:sectPr").count();
     for (back, k) in [(true, 1), (false, 1)] {
         let (p, len) = para(&e, k, !back);
         e.selection = Selection::Caret(super::super::position::Position::text(StoryId::Body, p, if back { Unit(0) } else { len }));
@@ -2405,4 +2421,195 @@ fn reformatting_a_paragraph_in_a_division_keeps_the_divisions_margins() {
     e.execute(crate::editing::tests::mv(MoveBy::Story, Dir::Forward, false), fonts());
     e.execute(Command::SetAlignment(crate::api::value::Alignment::Center), fonts());
     assert_eq!(margins(&e), (72.0, 36.0, 12.0, crate::docx::props::Jc::Center));
+}
+
+#[test]
+fn a_float_dropped_on_the_next_page_between_idles_lands_there() {
+    use super::super::input::PointerKind;
+    use super::super::keymap::Mods;
+    use serde_json::json;
+    let data = open("FX-OBJ.docx").document().images.last().cloned().expect("an image");
+    let text: Vec<String> =
+        (0..40).map(|i| format!("Paragraph {i} lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod.")).collect();
+    let mut r = super::scenarios::Run::from_bytes(&super::blank_with(&text.join("\n")), "drop-next-page");
+    r.step(&json!({ "click": { "para": 2, "offset": 3 } }));
+    r.e.execute(Command::InsertPicture(crate::api::command::Picture { data: crate::api::value::Bytes(data), alt_text: None }), fonts());
+    r.e.execute(Command::SetObjectWrap(crate::api::value::ObjectWrap::Square), fonts());
+    while r.e.idle(fonts()) {}
+    let g = crate::editing::inspect::inspect(&mut r.e, "geometry", true);
+    let v: Vec<f64> = g["geometry"]["floats"][0]["rect"].as_array().unwrap().iter().map(|v| v.as_f64().unwrap()).collect();
+    let (x, y) = ((v[0] + v[2]) / 2.0, (v[1] + v[3]) / 2.0);
+    // The host's moves come faster than idle layout: the pages after each preview are still provisional.
+    r.e.pointer_input(PointerKind::Down, x, y, 1, Mods::default(), fonts());
+    for k in 1..=40 {
+        r.e.pointer_input(PointerKind::Move, x, y + 20.0 * k as f64, 0, Mods::default(), fonts());
+    }
+    r.e.pointer_input(PointerKind::Up, x, y + 800.0, 0, Mods::default(), fonts());
+    while r.e.idle(fonts()) {}
+    let g = crate::editing::inspect::inspect(&mut r.e, "geometry", true);
+    let f = &g["geometry"]["floats"][0];
+    assert_eq!(f["page"], json!(1), "{f}");
+    let top = g["geometry"]["pages"][1][1].as_f64().unwrap();
+    assert!(f["rect"][1].as_f64().unwrap() > top, "{f}");
+    r.e.execute(Command::Undo, fonts());
+    while r.e.idle(fonts()) {}
+    let g = crate::editing::inspect::inspect(&mut r.e, "geometry", true);
+    assert_eq!(g["geometry"]["floats"][0]["rect"].as_array().unwrap().iter().map(|v| v.as_f64().unwrap()).collect::<Vec<_>>(), v, "undone");
+}
+
+#[test]
+fn an_inserted_text_box_draws_as_it_reopens() {
+    use super::super::position::{Position, StoryId};
+    let mut e = super::super::Editor::open(&super::blank_with("Body text here"), fonts()).expect("opens");
+    e.set_caret_for_benchmark(Selection::Caret(Position::text(StoryId::Body, super::para_id(&e, 0), Unit(2))));
+    e.execute(Command::InsertTextBox, fonts());
+    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let again = super::super::Editor::open(&bytes, fonts()).expect("reopens");
+    let look = |e: &super::super::Editor| {
+        let f = body_floats(e).remove(0);
+        let sp = f.shape.as_ref().and_then(|s| s.sp()).cloned().expect("a shape");
+        (format!("{:?} {:?} {:?}", sp.fill, sp.line, sp.body), f.text_box.as_ref().map(|t| (t.insets, t.outline)))
+    };
+    assert_eq!(look(&e), look(&again));
+    assert!(look(&e).0.starts_with("Some(Solid("), "{:?}", look(&e));
+}
+
+#[test]
+fn an_inserted_pictures_alt_text_and_aspect_lock_save_inline_and_floating() {
+    use super::super::position::{Position, StoryId};
+    let data = open("FX-OBJ.docx").document().images.last().cloned().expect("an image");
+    let mut e = super::super::Editor::open(&super::blank_with("Body text here"), fonts()).expect("opens");
+    e.set_caret_for_benchmark(Selection::Caret(Position::text(StoryId::Body, super::para_id(&e, 0), Unit(2))));
+    let alt = Some("A black \"square\"".to_string());
+    e.execute(Command::InsertPicture(crate::api::command::Picture { data: crate::api::value::Bytes(data), alt_text: alt }), fonts());
+    let picture = |e: &super::super::Editor| {
+        e.document().sections[0].blocks.iter().find_map(|b| match b {
+            crate::docx::Block::Para(p) => p.inlines.iter().find_map(|i| match i {
+                crate::docx::Inline::Picture(p, _) => Some((p.alt.to_string(), p.lock_aspect)),
+                crate::docx::Inline::Float(f, _) => Some((f.alt.to_string(), f.lock_aspect)),
+                _ => None,
+            }),
+            _ => None,
+        })
+    };
+    let want = Some(("A black \"square\"".to_string(), true));
+    assert_eq!(picture(&e), want, "inserted");
+    let reopened = |e: &super::super::Editor| {
+        let bytes = crate::docx::write::save(e.document()).expect("saves");
+        super::super::Editor::open(&bytes, fonts()).expect("reopens")
+    };
+    assert_eq!(picture(&reopened(&e)), want, "inline, reopened");
+    let out = e.execute(Command::SetObjectWrap(crate::api::value::ObjectWrap::Square), fonts());
+    assert!(matches!(out, super::super::Outcome::Changed(_)), "{out:?}");
+    assert_eq!(picture(&e), want, "floated");
+    assert_eq!(picture(&reopened(&e)), want, "floating, reopened");
+}
+
+#[test]
+fn a_picture_floated_from_its_paragraphs_first_line_stays_below_the_paragraph_before() {
+    use super::super::position::{Position, StoryId};
+    use crate::api::value::Points;
+    let data = open("FX-OBJ.docx").document().images.last().cloned().expect("an image");
+    let long = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris.";
+    let xml: String = [long; 4].iter().map(|t| format!("<w:p><w:pPr><w:spacing w:after=\"0\"/></w:pPr><w:r><w:t>{t}</w:t></w:r></w:p>")).collect();
+    let mut e = super::super::Editor::open(&super::blank_body(&xml), fonts()).expect("opens");
+    e.set_caret_for_benchmark(Selection::Caret(Position::text(StoryId::Body, super::para_id(&e, 1), Unit(0))));
+    e.execute(Command::InsertPicture(crate::api::command::Picture { data: crate::api::value::Bytes(data), alt_text: None }), fonts());
+    let size = crate::api::command::ObjectSize { width: Some(Points(150.0)), height: Some(Points(90.0)), lock_aspect: Some(false) };
+    e.execute(Command::SetObjectSize(size), fonts());
+    let first = |e: &mut super::super::Editor| {
+        while e.idle(fonts()) {}
+        let g = crate::editing::inspect::inspect(e, "geometry", true);
+        g["geometry"]["lines"].as_array().unwrap().iter().filter(|l| l["para"] == serde_json::json!(0)).cloned().collect::<Vec<_>>()
+    };
+    let before = first(&mut e);
+    e.execute(Command::SetObjectWrap(crate::api::value::ObjectWrap::Square), fonts());
+    let f = body_floats(&e).remove(0);
+    assert!(f.v_offset > 0.0, "below its paragraph's top: {}", f.v_offset);
+    assert_eq!(first(&mut e), before, "the paragraph before keeps its lines");
+}
+
+#[test]
+fn a_delete_across_a_locked_paragraph_is_refused() {
+    use super::super::position::Position;
+    let body = concat!(
+        r#"<w:p><w:r><w:t>First paragraph</w:t></w:r></w:p>"#,
+        r#"<w:sdt><w:sdtPr><w:lock w:val="sdtLocked"/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>Locked paragraph</w:t></w:r></w:p></w:sdtContent></w:sdt>"#,
+        r#"<w:p><w:r><w:t>Last paragraph</w:t></w:r></w:p>"#,
+    );
+    let mut e = super::super::Editor::open(&super::blank_body(body), fonts()).expect("opens");
+    let before = texts(&e);
+    let (a, b) = (super::para_id(&e, 0), super::para_id(&e, 2));
+    e.set_caret_for_benchmark(Selection::range(
+        Position::text(StoryId::Body, a, Unit(2)),
+        Position::text(StoryId::Body, b, Unit(2)),
+        crate::editing::selection::Granularity::Char,
+    ));
+    e.execute(crate::editing::tests::del(Dir::Back, false), fonts());
+    assert_eq!(texts(&e), before, "the locked paragraph in the middle stays");
+}
+
+#[test]
+fn a_list_made_in_a_header_is_numbered() {
+    use super::super::position::Position;
+    let mut e = open("FX-STORIES.docx");
+    let header = e.document().stories.keys().filter(|n| n.contains("header")).min().cloned().expect("a header");
+    let story = e.index().header_footer(&header).expect("its story");
+    let para =
+        e.index().para_ids().find(|id| e.index().para_slot(*id).is_some_and(|s| e.index().story(s.container) == story)).expect("a header paragraph");
+    e.set_caret_for_benchmark(Selection::Caret(Position::text(story, para, Unit(0))));
+    let out = e.execute(Command::SetList(Some(crate::api::command::ListKind::Numbered)), fonts());
+    assert!(matches!(out, super::super::Outcome::Changed(_)), "{out:?}");
+    let label = e.index().para(e.document(), para).and_then(|p| p.list.as_ref()).map(|l| l.text.clone());
+    assert_eq!(label.as_deref(), Some("1."), "the header's list has its label");
+}
+
+#[test]
+fn a_paragraph_cut_and_pasted_in_a_header_or_note_is_a_tracked_move() {
+    use super::super::index::Container;
+    use super::super::position::Position;
+    use crate::docx::review::MarkKind;
+    let mut r = super::scenarios::Run::open("review/FX-REVIEW-MOVES-STORIES.docx", "story-moves");
+    r.e.execute(Command::SetTrackChanges(true), fonts());
+    let header = r.e.document().stories.keys().find(|n| n.contains("header")).cloned().expect("a header");
+    let stories = [StoryId::Body, r.e.index().header_footer(&header).expect("its story"), StoryId::Footnote(1)];
+    for story in stories {
+        let container = if story == StoryId::Body { Container::Section(0) } else { Container::Story(story) };
+        let paras: Vec<_> =
+            r.e.index()
+                .blocks(r.e.document(), container)
+                .expect("its blocks")
+                .iter()
+                .filter_map(|b| if let crate::docx::Block::Para(p) = b { Some(crate::layout::ParaId(p.id)) } else { None })
+                .collect();
+        r.e.set_caret_for_benchmark(Selection::range(
+            Position::text(story, paras[0], Unit(0)),
+            Position::text(story, paras[1], Unit(0)),
+            crate::editing::selection::Granularity::Char,
+        ));
+        r.step(&serde_json::json!({ "clipboard": "cut" }));
+        r.e.set_caret_for_benchmark(Selection::Caret(Position::text(story, paras[2], Unit(0))));
+        r.step(&serde_json::json!({ "clipboard": "paste" }));
+        let blocks = r.e.index().blocks(r.e.document(), container).expect("its blocks");
+        let kinds: Vec<MarkKind> = blocks
+            .iter()
+            .filter_map(|b| if let crate::docx::Block::Para(p) = b { Some(p) } else { None })
+            .flat_map(|p| p.inlines.iter().filter_map(|i| i.run()).flat_map(|r| r.rev.ins.iter().chain(r.rev.del.iter()).map(|m| m.kind)))
+            .collect();
+        assert!(kinds.contains(&MarkKind::MoveFrom) && kinds.contains(&MarkKind::MoveTo), "{story:?}: {kinds:?}");
+        assert!(!kinds.contains(&MarkKind::Insert) && !kinds.contains(&MarkKind::Delete), "{story:?}: a move, as Word records it: {kinds:?}");
+    }
+    let bytes = crate::docx::write::save(r.e.document()).expect("saves");
+    if let Some(d) = std::env::var_os("RT_KEEP") {
+        std::fs::write(std::path::Path::new(&d).join("FX-REVIEW-MOVES-STORIES.moved.docx"), &bytes).expect("writes");
+    }
+    let mut z = zip::ZipArchive::new(std::io::Cursor::new(bytes)).expect("a package");
+    for part in ["word/document.xml", header.trim_start_matches('/'), "word/footnotes.xml"] {
+        let mut xml = String::new();
+        std::io::Read::read_to_string(&mut z.by_name(part).expect("the part"), &mut xml).expect("text");
+        assert!(xml.contains("<w:moveFrom ") && xml.contains("<w:moveTo ") && xml.contains("<w:moveFromRangeStart "), "{part}");
+        // Text moved away is `w:t`, as Word writes it: Word reports a `w:delText` in a `w:moveFrom` as unreadable.
+        let moved_away = xml.split("<w:moveFrom ").skip(1).filter_map(|s| s.split("</w:moveFrom>").next());
+        assert!(moved_away.clone().all(|s| !s.contains("delText")), "{part}");
+    }
 }

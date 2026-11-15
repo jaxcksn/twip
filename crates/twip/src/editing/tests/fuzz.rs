@@ -253,7 +253,7 @@ fn env(k: &str, default: u64) -> u64 {
 }
 
 #[test]
-#[ignore = "long: cargo test --release fuzz -- --ignored"]
+#[ignore = "long: cargo nextest run -p twip --release --run-ignored only fuzz"]
 fn fuzz_editing() {
     let steps = env("FUZZ_STEPS", 300) as usize;
     let seeds: Vec<u64> = match std::env::var("FUZZ_SEED").ok().and_then(|v| v.parse().ok()) {

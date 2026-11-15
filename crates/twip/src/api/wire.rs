@@ -9,7 +9,7 @@
 //! - a mixed value is `"mixed"` ([`super::state::Tri`]), lengths are points, colours `#RRGGBB`, bytes base64.
 //!
 //! [`fixtures`] lists one example of every variant of every type, committed as `crates/twip/tests/wire/<type>.json`
-//! (`TWIP_WRITE_WIRE=1 cargo test -p twip --lib fixtures_are_current` rewrites them); each SDK round-trips them
+//! (`TWIP_WRITE_WIRE=1 cargo nextest run -p twip --lib fixtures_are_current` rewrites them); each SDK round-trips them
 //! through its own types.
 
 mod examples;
@@ -80,7 +80,7 @@ mod tests {
     }
 
     /// The committed files are byte for byte what the examples write, and no file is left that no type makes.
-    /// `TWIP_WRITE_WIRE=1 cargo test -p twip --lib fixtures_are_current` rewrites them.
+    /// `TWIP_WRITE_WIRE=1 cargo nextest run -p twip --lib fixtures_are_current` rewrites them.
     #[test]
     fn fixtures_are_current() {
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/wire");

@@ -29,6 +29,25 @@ struct Package {
 // ponytail: one fixed budget; make it an open option if hosts load documents bigger than this.
 const PACKAGE_BUDGET: u64 = 2 << 30;
 
+/// The grid columns a row's `gridSpan`s, `gridBefore` and `gridAfter` may add past one a cell: the values come from
+/// the file, and every column is layout work and memory, so `gridSpan="2000000000"` would be gigabytes.
+// ponytail: a safety bound well past Word's 63 columns; raise it if a real table needs more.
+const MAX_SPANNED: usize = 1024;
+
+fn bound_spans(r: &mut Row) {
+    let mut room = MAX_SPANNED;
+    let mut take = |v: usize, floor: usize| {
+        let extra = v.saturating_sub(floor).min(room);
+        room -= extra;
+        floor + extra
+    };
+    r.grid_before = take(r.grid_before, 0);
+    for c in &mut r.cells {
+        c.span = take(c.span, 1);
+    }
+    r.grid_after = take(r.grid_after, 0);
+}
+
 impl Package {
     /// A part's bytes: none when it is missing, unreadable, larger than [`super::package::MAX_PART`] or past the
     /// package's budget.
@@ -1038,7 +1057,7 @@ impl Reader {
     }
 
     /// The revision `e` records (`w:ins`, `w:del`, `w:rPrChange`, ...). Moves take the name of the move range they
-    /// are in. A property change's kind is `Insert`: what changed is the element holding it.
+    /// are in. A property change's kind is `Format`: what changed is the element holding it.
     fn mark(&mut self, e: Node, kind: MarkKind) -> Rc<RevisionMark> {
         let (id, author) = (self.revision_id(e), self.author(e));
         let range = match kind {
@@ -2844,6 +2863,9 @@ impl Reader {
                 src: self.record.then(|| Rc::new(rn.range())),
                 rev,
             });
+            if let Some(r) = rows.last_mut() {
+                bound_spans(r);
+            }
         }
         let grids: Vec<Vec<f64>> = ts.iter().copied().map(table_grid).collect();
         if grids.iter().any(|g| *g != grid) {

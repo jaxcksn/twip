@@ -1,6 +1,6 @@
 # Merge template scenarios
 
-One folder per feature area, IDs `MRG-<area>-NN`. They run natively (`cargo test -p twip scenarios`, filter with `SCENARIO=merge`).spec.ts`).
+One folder per feature area, IDs `MRG-<area>-NN`. They run natively (`cargo nextest run -p twip scenarios`, filter with `SCENARIO=merge`).spec.ts`).
 
 - `us1/`: insert and change placeholders (fields and content controls), drops, selection context, design-mode labels.
 - `us2/`: list, mark, select and rename placeholders; change lists.

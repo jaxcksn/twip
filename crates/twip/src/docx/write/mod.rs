@@ -46,12 +46,12 @@ pub fn save(doc: &Document) -> Result<Vec<u8>, String> {
 pub fn edited_parts(doc: &Document) -> Result<Vec<(String, Vec<u8>)>, String> {
     let src = doc.source.as_ref().ok_or("the document was not read for editing")?;
     let mut parts = Vec::new();
-    if let Some(xml) = main_xml(doc, false)? {
+    if let Some(xml) = main_xml(doc)? {
         parts.push((src.main.clone(), xml.into_bytes()));
     }
     for (name, (xml, orig)) in &src.stories {
         let now = doc.stories.get(name).map_or(&[][..], Vec::as_slice);
-        if let Some(xml) = part_xml(xml, &boxes(&[orig], &[now]), &[(orig, now)], false, &doc.controls, &gone_controls(doc), &doc.people)? {
+        if let Some(xml) = part_xml(xml, &boxes(&[orig], &[now]), &[(orig, now)], &doc.controls, &gone_controls(doc), &doc.people)? {
             parts.push((name.clone(), xml.into_bytes()));
         }
     }
@@ -294,12 +294,10 @@ fn removed_data_files(doc: &Document) -> Vec<String> {
 
 /// A data item's properties part and relationships part, as the package has them.
 fn item_parts(package: &[u8], item: &str) -> Option<(String, String)> {
-    use std::io::Read;
     let (dir, name) = item.rsplit_once('/').unwrap_or(("", item));
     let rels = if dir.is_empty() { format!("_rels/{name}.rels") } else { format!("{dir}/_rels/{name}.rels") };
     let mut zin = zip::ZipArchive::new(Cursor::new(package)).ok()?;
-    let mut x = String::new();
-    zin.by_name(&rels).ok()?.read_to_string(&mut x).ok()?;
+    let x = crate::docx::package::text(zin.by_name(&rels).ok()?, &rels).ok()?;
     let d = roxmltree::Document::parse(&x).ok()?;
     let t = d.root_element().children().find(|r| r.attribute("Type").is_some_and(|t| t.ends_with("/customXmlProps")))?.attribute("Target")?;
     let props = if dir.is_empty() { t.to_string() } else { format!("{dir}/{t}") };
@@ -316,16 +314,13 @@ fn data_parts(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), 
     if changed.is_empty() && doc.removed_data.is_empty() {
         return Ok(());
     }
-    use std::io::Read;
     let mut zin = zip::ZipArchive::new(Cursor::new(&src.package)).map_err(|e| e.to_string())?;
     let names: Vec<String> = zin.file_names().filter_map(|n| n.ok().map(|n| n.to_string())).collect();
     let mut read = |n: &str, parts: &[(String, Vec<u8>)]| -> Result<String, String> {
         if let Some((_, b)) = parts.iter().find(|(m, _)| m == n) {
             return String::from_utf8(b.clone()).map_err(|e| e.to_string());
         }
-        let mut s = String::new();
-        zin.by_name(n).map_err(|e| format!("{n}: {e}"))?.read_to_string(&mut s).map_err(|e| e.to_string())?;
-        Ok(s)
+        crate::docx::package::text(zin.by_name(n).map_err(|e| format!("{n}: {e}"))?, n)
     };
     let main_rels = match src.main.rsplit_once('/') {
         Some((d, f)) => format!("{d}/_rels/{f}.rels"),
@@ -534,7 +529,6 @@ fn sect_with_page(sect: &str, w: &str, p: &SectionPage, change: Option<&SectionC
 /// it, the picture's extents as fitted and its content control without `w:showingPlcHdr`.
 // shortcut: its relationship and content-type edits are its own; they move to `package::add_part` when next changed.
 fn filled_placeholders(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
-    use std::io::Read;
     if doc.filled.is_empty() {
         return Ok(());
     }
@@ -544,10 +538,8 @@ fn filled_placeholders(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Re
         if let Some((_, b)) = parts.iter().find(|(m, _)| m == n) {
             return String::from_utf8(b.clone()).map(Some).map_err(|e| e.to_string());
         }
-        let Ok(mut f) = zin.by_name(n) else { return Ok(None) };
-        let mut s = String::new();
-        f.read_to_string(&mut s).map_err(|e| e.to_string())?;
-        Ok(Some(s))
+        let Ok(f) = zin.by_name(n) else { return Ok(None) };
+        crate::docx::package::text(f, n).map(Some)
     };
     let base = |p: &str| p.rsplit('/').next().unwrap_or(p).to_string();
     // A filled image's size as shown: its first picture's.
@@ -652,7 +644,6 @@ fn filled_placeholders(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Re
 /// the section references to it (inserted first in their sections' `w:sectPr`, where CT_SectPr has them).
 // shortcut: its relationship and content-type edits are its own; they move to `package::add_part` when next changed.
 fn new_stories(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
-    use std::io::Read;
     let src = doc.source.as_ref().ok_or("the document was not read for editing")?;
     let made: Vec<&String> = doc.stories.keys().filter(|n| !src.stories.contains_key(*n)).collect();
     if made.is_empty() {
@@ -663,9 +654,7 @@ fn new_stories(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(),
         if let Some((_, b)) = parts.iter().find(|(m, _)| m == n) {
             return String::from_utf8(b.clone()).map_err(|e| e.to_string());
         }
-        let mut s = String::new();
-        zin.by_name(n).map_err(|e| format!("{n}: {e}"))?.read_to_string(&mut s).map_err(|e| e.to_string())?;
-        Ok(s)
+        crate::docx::package::text(zin.by_name(n).map_err(|e| format!("{n}: {e}"))?, n)
     };
     let main = src.main.clone();
     let (dir, file) = main.rsplit_once('/').unwrap_or(("", &main));
@@ -772,7 +761,6 @@ fn new_notes_part(
     controls: &HashMap<ControlId, Control>,
     people: &People,
 ) -> Result<Vec<(String, Vec<u8>)>, String> {
-    use std::io::Read;
     let (tag, file, rel) = if foot { ("footnote", "footnotes.xml", "footnotes") } else { ("endnote", "endnotes.xml", "endnotes") };
     let ns = r#"xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships""#;
     let sep = |id: i64, kind: &str| {
@@ -806,9 +794,7 @@ fn new_notes_part(
         if let Some((_, b)) = made.iter().find(|(m, _)| m == n) {
             return String::from_utf8(b.clone()).map_err(|e| e.to_string());
         }
-        let mut s = String::new();
-        zin.by_name(n).map_err(|e| format!("{n}: {e}"))?.read_to_string(&mut s).map_err(|e| e.to_string())?;
-        Ok(s)
+        crate::docx::package::text(zin.by_name(n).map_err(|e| format!("{n}: {e}"))?, n)
     };
     let rels = read(&rels_name)?;
     let mut k = 1;
@@ -874,7 +860,7 @@ fn notes_xml(
         }
     }
     // One pass: the kept notes' edits and these whole-note splices never overlap (removed notes aren't in `lists`).
-    part_xml_with(xml, inner, lists, false, &splices, &[], controls, gone, people)
+    part_xml_with(xml, inner, lists, &splices, &[], controls, gone, people)
 }
 
 /// The controls read that the document no longer has (removed, or emptied of every member).
@@ -895,7 +881,6 @@ fn new_blocks_xml(xml: &str, blocks: &[Block], controls: &HashMap<ControlId, Con
         tables: HashMap::new(),
         w,
         cx: Cx::of_xml(xml),
-        force: false,
         splices: Vec::new(),
         nested: Vec::new(),
         float_src: HashMap::new(),
@@ -935,9 +920,8 @@ fn boxes<'d>(orig: &[&'d [Block]], now: &[&'d [Block]]) -> Vec<(&'d [Block], &'d
     o.into_iter().rev().filter_map(|(id, a)| Some((a, n.iter().find(|(m, _)| *m == id)?.1))).collect()
 }
 
-/// The main part's XML after the edits; `None` when nothing changed. `force` rewrites unchanged paragraphs too
-/// (tests: the rewrite of an unedited paragraph must be the paragraph).
-pub fn main_xml(doc: &Document, force: bool) -> Result<Option<String>, String> {
+/// The main part's XML after the edits; `None` when nothing changed.
+pub fn main_xml(doc: &Document) -> Result<Option<String>, String> {
     let src = doc.source.as_ref().ok_or("the document was not read for editing")?;
     let sources = if doc.section_sources.is_empty() { vec![1; doc.sections.len()] } else { doc.section_sources.clone() };
     if sources.len() != doc.sections.len() || sources.iter().sum::<usize>() != src.blocks.len() {
@@ -970,7 +954,7 @@ pub fn main_xml(doc: &Document, force: bool) -> Result<Option<String>, String> {
     };
     let lists: Vec<(&[Block], &[Block])> = orig.iter().zip(&doc.sections).map(|(a, s)| (a.as_ref(), s.blocks.as_slice())).collect();
     let (o, n): (Vec<&[Block]>, Vec<&[Block]>) = lists.iter().copied().unzip();
-    part_xml_with(&src.xml, &boxes(&o, &n), &lists, force, &[], &dropped, &doc.controls, &gone_controls(doc), &doc.people)
+    part_xml_with(&src.xml, &boxes(&o, &n), &lists, &[], &dropped, &doc.controls, &gone_controls(doc), &doc.people)
 }
 
 /// A part's XML with its block lists (as read, now) written back; `None` when none changed.
@@ -978,12 +962,11 @@ fn part_xml(
     xml: &str,
     inner: &[(&[Block], &[Block])],
     lists: &[(&[Block], &[Block])],
-    force: bool,
     controls: &HashMap<ControlId, Control>,
     gone: &[Control],
     people: &People,
 ) -> Result<Option<String>, String> {
-    part_xml_with(xml, inner, lists, force, &[], &[], controls, gone, people)
+    part_xml_with(xml, inner, lists, &[], &[], controls, gone, people)
 }
 
 /// [`part_xml`] with `extra` splices of the original part added (whole notes in and out), and the section breaks
@@ -993,7 +976,6 @@ fn part_xml_with<'a>(
     xml: &'a str,
     inner: &[(&[Block], &[Block])],
     lists: &[(&[Block], &[Block])],
-    force: bool,
     extra: &[Splice],
     dropped: &'a [Range<usize>],
     controls: &HashMap<ControlId, Control>,
@@ -1034,7 +1016,6 @@ fn part_xml_with<'a>(
         tables,
         w,
         cx: Cx::of_xml(xml),
-        force,
         splices: Vec::new(),
         nested: Vec::new(),
         float_src,
@@ -1128,7 +1109,6 @@ struct Saver<'a, 'i> {
     /// The WordprocessingML prefix with its colon (`w:`), for written elements.
     w: String,
     cx: Cx,
-    force: bool,
     splices: Vec<Splice>,
     /// Rewrites inside other content (text boxes' paragraphs, made first): applied wherever that content's source is
     /// copied, and written on their own where it isn't rewritten.
@@ -1313,8 +1293,7 @@ impl<'a, 'i> Saver<'a, 'i> {
         if qs.is_empty() && ps.is_empty() {
             return Ok(());
         }
-        if !self.force && qs.len() == 1 && ps.len() == 1 && same_para(qs[0], ps[0]) && qs[0].controls == ps[0].controls && !self.changed_inline(ps[0])
-        {
+        if qs.len() == 1 && ps.len() == 1 && same_para(qs[0], ps[0]) && qs[0].controls == ps[0].controls && !self.changed_inline(ps[0]) {
             return Ok(());
         }
         // A deleted frame (frames.rs made its paragraphs a float of the next one): its paragraphs go too.
@@ -2303,10 +2282,11 @@ struct Open {
     rev: Option<Wrapper>,
 }
 
-/// A source revision wrapper: whether it deletes (`w:del`, `w:moveFrom`) or inserts, and its `w:id`.
+/// A source revision wrapper: whether it deletes (`w:del`, `w:moveFrom`) or inserts, whether it moves, and its `w:id`.
 #[derive(Clone, Copy)]
 struct Wrapper {
     del: bool,
+    moved: bool,
     id: Option<i64>,
 }
 
@@ -2319,7 +2299,8 @@ impl Wrapper {
         } else {
             return None;
         };
-        Some(Wrapper { del, id: n.attribute((W, "id")).and_then(|v| v.trim().parse().ok()) })
+        let moved = is_w(n, "moveFrom") || is_w(n, "moveTo");
+        Some(Wrapper { del, moved, id: n.attribute((W, "id")).and_then(|v| v.trim().parse().ok()) })
     }
 
     fn is(&self, m: &Option<Rc<RevisionMark>>) -> bool {
@@ -3251,14 +3232,14 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
     }
 
     /// Pending text as run content: deleted text (a deleted run's, or a source run's in a deletion) in `w:delText` or
-    /// `w:delInstrText`.
+    /// `w:delInstrText`. Text moved away stays `w:t`, as Word writes it: Word refuses a `w:delText` in a `w:moveFrom`.
     fn flush_text(&mut self) {
         if !self.text.is_empty() {
             let w = &self.s.w;
             let t = self.text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
             let deleted = match &self.to {
-                Some(To::Own(run)) => run.rev.del.is_some(),
-                _ => self.stack.iter().any(|o| o.rev.is_some_and(|r| r.del)),
+                Some(To::Own(run)) => run.rev.del.as_ref().is_some_and(|m| m.kind != crate::docx::review::MarkKind::MoveFrom),
+                _ => self.stack.iter().any(|o| o.rev.is_some_and(|r| r.del && !r.moved)),
             };
             let tag = match (self.text_code, deleted) {
                 (false, false) => "t",
@@ -3673,8 +3654,8 @@ impl Saver<'_, '_> {
             concat!(
                 r#"<{w}drawing><wp:anchor xmlns:wp="{wp}" distT="{dt}" distB="{db}" distL="{dl}" distR="{dr}" simplePos="0" relativeHeight="{id}" "#,
                 r#"behindDoc="{behind}" locked="{locked}" layoutInCell="{cell}" allowOverlap="{overlap}"><wp:simplePos x="0" y="0"/>{h}{v}"#,
-                r#"<wp:extent cx="{cx}" cy="{cy}"/><wp:effectExtent l="0" t="0" r="0" b="0"/>{wrap}<wp:docPr id="{id}" name="{kind} {id}"/>"#,
-                r#"<wp:cNvGraphicFramePr/><a:graphic xmlns:a="{a}">{graphic}</a:graphic></wp:anchor></{w}drawing>"#
+                r#"<wp:extent cx="{cx}" cy="{cy}"/><wp:effectExtent l="0" t="0" r="0" b="0"/>{wrap}<wp:docPr id="{id}" name="{kind} {id}"{descr}/>"#,
+                r#"<wp:cNvGraphicFramePr>{locks}</wp:cNvGraphicFramePr><a:graphic xmlns:a="{a}">{graphic}</a:graphic></wp:anchor></{w}drawing>"#
             ),
             w = self.w,
             wp = WP,
@@ -3697,6 +3678,8 @@ impl Saver<'_, '_> {
                 Some(n) => props::esc(n),
                 None => (if f.text_box.is_some() { "Text Box" } else { "Picture" }).to_string(),
             },
+            descr = descr_attr(&f.alt),
+            locks = if f.lock_aspect { format!(r#"<a:graphicFrameLocks xmlns:a="{A}" noChangeAspect="1"/>"#) } else { String::new() },
             graphic = graphic,
         ))
     }
@@ -3745,7 +3728,7 @@ impl Saver<'_, '_> {
             return Some(format!(
                 concat!(
                     r#"<{w}drawing><wp:inline xmlns:wp="{wp}" distT="0" distB="0" distL="0" distR="0"><wp:extent cx="{cx}" cy="{cy}"/>"#,
-                    r#"<wp:effectExtent l="0" t="0" r="0" b="0"/><wp:docPr id="{id}" name="{name} {id}"/><wp:cNvGraphicFramePr/>"#,
+                    r#"<wp:effectExtent l="0" t="0" r="0" b="0"/><wp:docPr id="{id}" name="{name} {id}"{descr}/><wp:cNvGraphicFramePr/>"#,
                     r#"<a:graphic xmlns:a="{a}">{graphic}</a:graphic></wp:inline></{w}drawing>"#
                 ),
                 w = self.w,
@@ -3755,6 +3738,7 @@ impl Saver<'_, '_> {
                 cy = cy,
                 id = id,
                 name = name,
+                descr = descr_attr(&p.alt),
                 graphic = drawing::graphic_data(
                     &shape,
                     &|path: &[u16]| new_blocks_xml(
@@ -3781,7 +3765,7 @@ impl Saver<'_, '_> {
             return Some(format!(
                 concat!(
                     r#"<{w}drawing><wp:inline xmlns:wp="{wp}" distT="0" distB="0" distL="0" distR="0"><wp:extent cx="{cx}" cy="{cy}"/>"#,
-                    r#"<wp:effectExtent l="0" t="0" r="0" b="0"/><wp:docPr id="{id}" name="Picture {id}"/><wp:cNvGraphicFramePr>"#,
+                    r#"<wp:effectExtent l="0" t="0" r="0" b="0"/><wp:docPr id="{id}" name="Picture {id}"{descr}/><wp:cNvGraphicFramePr>"#,
                     r#"<a:graphicFrameLocks xmlns:a="{a}" noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic xmlns:a="{a}">"#,
                     r#"<a:graphicData uri="{pic}"><pic:pic xmlns:pic="{pic}"><pic:nvPicPr><pic:cNvPr id="0" name="Picture {id}"/>"#,
                     r#"<pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip xmlns:r="{r}" r:embed="{new}{image}"/><a:stretch><a:fillRect/>"#,
@@ -3798,26 +3782,29 @@ impl Saver<'_, '_> {
                 cy = cy,
                 id = id,
                 image = image,
+                descr = descr_attr(&p.alt),
             ));
         }
         object_xml(&self.w, i)
     }
 }
 
+/// A new drawing's `wp:docPr/@descr`, its alternative text: none when it has none.
+fn descr_attr(alt: &str) -> String {
+    if alt.is_empty() { String::new() } else { format!(r#" descr="{}""#, props::esc(alt)) }
+}
+
 /// Each made part that embeds a new picture's image ([`NEW_IMAGE`]): the image as a media part beside it, its
 /// relationship, and the content type of its extension.
 // shortcut: its relationship and content-type edits are its own; they move to `package::add_part` when next changed.
 fn add_images(package: &[u8], images: &[Vec<u8>], parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
-    use std::io::Read;
     let mut zin = zip::ZipArchive::new(Cursor::new(package)).map_err(|e| e.to_string())?;
     let mut read = |parts: &[(String, Vec<u8>)], n: &str| -> Result<Option<String>, String> {
         if let Some((_, b)) = parts.iter().find(|(m, _)| m == n) {
             return String::from_utf8(b.clone()).map(Some).map_err(|e| e.to_string());
         }
-        let Ok(mut f) = zin.by_name(n) else { return Ok(None) };
-        let mut s = String::new();
-        f.read_to_string(&mut s).map_err(|e| e.to_string())?;
-        Ok(Some(s))
+        let Ok(f) = zin.by_name(n) else { return Ok(None) };
+        crate::docx::package::text(f, n).map(Some)
     };
     let names: Vec<String> = parts
         .iter()
@@ -3984,7 +3971,7 @@ struct Placement {
     dist: Option<[f64; 4]>,
     overlap: Option<bool>,
     in_cell: Option<bool>,
-    /// The shape's own properties (DRAW), as edits in the drawing's text: applied first.
+    /// The shape's own properties, as edits in the drawing's text: applied first.
     shape: Option<Vec<drawing::Edit>>,
     /// The drawing's place in the patched text, when only it is written (an `mc:AlternateContent` around it is
     /// dropped).

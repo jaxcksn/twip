@@ -341,7 +341,7 @@ pub(super) fn fill_state(s: &mut Session, state: &mut State) {
             n
         }
     };
-    r.comments = e.document().comments.threads().len() as u32;
+    r.comments = e.document().comments.thread_count() as u32;
     r.active_comment = e.active_comment().map(comment_id);
 }
 

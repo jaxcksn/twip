@@ -220,6 +220,9 @@ fn shadow_of(b: &Block) -> Option<Block> {
     }
 }
 
+/// Every block, the largest tables too: a full layout clones them once (about 4 ms for 10,000 cells against a second to
+/// lay them out), and unhinted edits then compare against them. [`shadow_of`] leaves out the large tables an edit lays
+/// out again, so typing in one doesn't clone it each key.
 fn shadow(doc: &Document) -> Shadow {
     doc.sections.iter().map(|s| s.blocks.iter().map(|b| Some(b.clone())).collect()).collect()
 }

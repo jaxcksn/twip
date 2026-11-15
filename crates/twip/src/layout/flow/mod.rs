@@ -62,6 +62,7 @@ struct Breakpoint {
     empty: bool,
     area: NoteArea,
     starts: usize,
+    found: usize,
     effects: PageEffects,
 }
 
@@ -137,8 +138,11 @@ impl PassMemo {
 
 fn varies_by_page(blocks: &[Block]) -> bool {
     blocks.iter().any(|b| match b {
-        Block::Para(p) => p.inlines.iter().any(|i| {
-            matches!(i, Inline::FieldBegin { kind: Some(FieldKind::Page | FieldKind::PgNum | FieldKind::Section | FieldKind::SectionPages), .. })
+        Block::Para(p) => p.inlines.iter().any(|i| match i {
+            Inline::FieldBegin { kind: Some(FieldKind::Page | FieldKind::PgNum | FieldKind::Section | FieldKind::SectionPages), .. } => true,
+            // A text box's text lays out with its anchor's, as `page::fields_used` reads it.
+            Inline::Float(f, _) => f.text_box.iter().chain(f.parts.iter().filter_map(|p| p.text_box.as_ref())).any(|tb| varies_by_page(&tb.blocks)),
+            _ => false,
         }),
         Block::Table(t) => t.rows.iter().any(|r| r.cells.iter().any(|c| varies_by_page(&c.blocks))),
     })
@@ -392,6 +396,7 @@ impl<'d> PageFill<'d, '_> {
             empty: *cur.empty,
             area: cur.area.clone(),
             starts: self.at.starts.len(),
+            found: self.at.found.len(),
             effects: self.at.effects.clone(),
         }
     }
@@ -402,6 +407,7 @@ impl<'d> PageFill<'d, '_> {
         *cur.area = bp.area;
         cur.out.truncate(bp.out);
         self.at.starts.truncate(bp.starts);
+        self.at.found.truncate(bp.found);
         self.at.effects = bp.effects;
         (bp.y, bp.empty)
     }
@@ -433,10 +439,9 @@ impl<'d> PageFill<'d, '_> {
             }
             let bi = cur.pos.block;
             let start_state = self.checkpoint(cur);
-            let found_len = self.at.found.len();
             match self.sec.blocks.get(bi) {
                 Some(Block::Para(_)) => {
-                    if let Some(stop) = self.fill_para(cur, &col, page_empty, bi, start_state, found_len, &mut keep, generic, memos)? {
+                    if let Some(stop) = self.fill_para(cur, &col, page_empty, bi, start_state, &mut keep, generic, memos)? {
                         return Ok(stop);
                     }
                 }
@@ -558,7 +563,6 @@ impl<'d> PageFill<'d, '_> {
         page_empty: bool,
         bi: usize,
         start_state: Breakpoint,
-        found_len: usize,
         keep: &mut KeepChain,
         generic: bool,
         memos: &mut Memos,
@@ -599,7 +603,6 @@ impl<'d> PageFill<'d, '_> {
                     && !c.empty
                 {
                     let (y, _) = self.rollback(cur, c);
-                    self.at.found.truncate(found_len);
                     cur.carry.keep_top = false;
                     return Ok(Some((Stop::Full, y)));
                 }
@@ -616,7 +619,6 @@ impl<'d> PageFill<'d, '_> {
             let fits = self.next_fits(cur.pos.block, cur.carry, col, *cur.y, cur.area.total(), memos)?;
             if !fits && let Some((c, cap)) = generic.then(|| step_back(&keep.members)).flatten() {
                 let (y, empty) = self.rollback(cur, c);
-                self.at.found.truncate(found_len);
                 self.at.keep_cap = Some((cur.pos.block, cap));
                 keep.reset();
                 (*cur.y, *cur.empty) = (y, empty);
@@ -627,7 +629,6 @@ impl<'d> PageFill<'d, '_> {
                 && !c.empty
             {
                 let (y, _) = self.rollback(cur, c);
-                self.at.found.truncate(found_len);
                 cur.carry.keep_top = false;
                 return Ok(Some((Stop::Full, y)));
             }

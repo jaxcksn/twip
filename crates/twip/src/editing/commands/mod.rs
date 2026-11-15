@@ -121,6 +121,10 @@ impl Editor {
         let continues = matches!(cmd, Command::InsertText(_))
             && self.selection.is_collapsed()
             && self.caret().and_then(|p| p.para_offset()).is_some_and(|(p, u)| self.history.continues(p, u, Typing::Insert));
+        // Typing anywhere but where the last typing left the caret starts an undo step, however the caret got there.
+        if matches!(cmd, Command::InsertText(_)) && !continues {
+            self.history.break_typing();
+        }
         let repeatable = match &cmd {
             Command::InsertText(t) => match (&self.repeat, continues) {
                 (Some(Command::InsertText(prev)), true) => Some(Command::InsertText(format!("{prev}{t}"))),

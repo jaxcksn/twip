@@ -141,6 +141,8 @@ internal enum Method : uint
 internal static class Status
 {
     public const int Ok = 0;
+    /// <summary>The operation was cancelled (a window frame: the window isn't showing).</summary>
+    public const int Aborted = -7;
 }
 
 /// <summary>The engine's C ABI (<c>twip.h</c>). Every call is made on the engine thread.</summary>

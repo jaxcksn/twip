@@ -1090,7 +1090,8 @@ pub(crate) fn mip_index(levels: usize, inv: Transform, sampling: Sampling) -> us
     }
     // Image pixels per device pixel, the larger of the two directions.
     let k = (inv.a * inv.a + inv.b * inv.b).sqrt().max((inv.c * inv.c + inv.d * inv.d).sqrt());
-    if k > 1.0 { (k.log2().floor() as usize).min(levels - 1) } else { 0 }
+    // floor(log2 k) from the exponent, not the platform's `log2`, so every system picks the same level.
+    if k > 1.0 { (((k.to_bits() >> 23) & 0xFF) as usize - 127).min(levels - 1) } else { 0 }
 }
 
 #[allow(clippy::too_many_arguments, reason = "the borrows of the renderer's fields stay apart")]
