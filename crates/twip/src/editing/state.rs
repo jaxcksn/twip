@@ -214,6 +214,7 @@ pub(super) fn paragraph(paras: &[(&ParaStyle, Option<bool>)]) -> ParagraphFormat
             right: pt(&|p| p.ind_right),
             first_line: pt(&|p| p.ind_first.max(0.0)),
             hanging: pt(&|p| (-p.ind_first).max(0.0)),
+            mirror: tri(&|p| p.mirror_indents),
         },
         list: fold(paras.iter().map(|(_, l)| match l {
             Some(true) => ListState::Bullet,
@@ -226,9 +227,28 @@ pub(super) fn paragraph(paras: &[(&ParaStyle, Option<bool>)]) -> ParagraphFormat
             keep_lines_together: tri(&|p| p.keep_lines),
             page_break_before: tri(&|p| p.page_break_before),
             widow_control: tri(&|p| p.widow_control),
+            dont_hyphenate: tri(&|p| p.suppress_auto_hyphens),
+            suppress_line_numbers: tri(&|p| p.suppress_line_numbers),
         },
         borders: fold(paras.iter().map(|(p, _)| borders_of(p))),
         shading: fold(paras.iter().map(|(p, _)| p.shading.map_or(NoneOr::None, |c| NoneOr::Value(Color(c))))),
+        contextual_spacing: tri(&|p| p.contextual),
+        outline_level: fold(paras.iter().map(|(p, _)| match p.outline_lvl {
+            Some(l @ 0..=8) => l as u8 + 1,
+            _ => 0,
+        })),
+        collapsed: tri(&|p| p.collapsed),
+        text_direction: fold(paras.iter().map(|(p, _)| {
+            use crate::api::command::TextFlow as D;
+            match p.text_flow {
+                1 => D::TbRl,
+                3 => D::BtLr,
+                4 => D::LrTbV,
+                5 => D::TbRlV,
+                7 => D::TbLrV,
+                _ => D::LrTb,
+            }
+        })),
     }
 }
 
@@ -363,7 +383,11 @@ impl Editor {
             Toggle::Align(a) => Command::SetAlignment(if f.paragraph.alignment == Tri::Uniform(a) { Alignment::Left } else { a }),
             Toggle::SpaceBefore => {
                 let some = f.para.space_before > 0.0;
-                Command::SetParagraphSpacing(ParagraphSpacing { before: Some(AutoOr::Value(Points(if some { 0.0 } else { 12.0 }))), after: None })
+                Command::SetParagraphSpacing(ParagraphSpacing {
+                    before: Some(AutoOr::Value(Points(if some { 0.0 } else { 12.0 }))),
+                    after: None,
+                    contextual: None,
+                })
             }
             Toggle::TrackChanges | Toggle::FieldCodes { .. } => return None,
         })
@@ -433,9 +457,16 @@ impl Editor {
                 (C::SetHighlight, Some(f)) => (formatted, (None, Some(CommandValue::Highlight(f.character.highlight)))),
                 (C::SetCharacterSpacing, Some(f)) => (formatted, (None, Some(CommandValue::Length(f.character.character_spacing)))),
                 (C::SetCharacterPosition, Some(f)) => (formatted, (None, Some(CommandValue::Length(f.character.position)))),
-                (C::ApplyCharacterStyle | C::SetTypography | C::SetLanguage | C::SetCharacterEffects | C::SetUnderlineColor, Some(_)) => {
-                    (formatted, (None, None))
-                }
+                (
+                    C::ApplyCharacterStyle
+                    | C::SetTypography
+                    | C::SetLanguage
+                    | C::SetCharacterEffects
+                    | C::SetUnderlineColor
+                    | C::SetOutline
+                    | C::SetParagraphTextDirection,
+                    Some(_),
+                ) => (formatted, (None, None)),
                 (C::ChangeCase, _) => (editable && selected, (None, None)),
                 (C::SetAlignment, Some(f)) => (formatted, (None, Some(CommandValue::Alignment(f.paragraph.alignment)))),
                 (C::SetLineSpacing, Some(f)) => (formatted, (None, Some(CommandValue::LineSpacing(f.paragraph.line_spacing)))),

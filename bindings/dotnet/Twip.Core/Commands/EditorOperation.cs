@@ -270,13 +270,24 @@ public abstract partial record EditorOperation
     /// <summary>Sets the space before and after the selected paragraphs. Unset values are kept.</summary>
     /// <param name="before">The space before, 0 to 1584 pt, or automatic.</param>
     /// <param name="after">The space after, 0 to 1584 pt, or automatic.</param>
+    /// <param name="contextual">No space between paragraphs of the same style.</param>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
-    public static EditorOperation SetParagraphSpacing(SpacingValue? before = null, SpacingValue? after = null) => Op(CommandId.SetParagraphSpacing, new Arg("before", before is { } before_ ? Node(before_) : null, Optional: true), new Arg("after", after is { } after_ ? Node(after_) : null, Optional: true));
+    public static EditorOperation SetParagraphSpacing(SpacingValue? before = null, SpacingValue? after = null, bool? contextual = null) => Op(CommandId.SetParagraphSpacing, new Arg("before", before is { } before_ ? Node(before_) : null, Optional: true), new Arg("after", after is { } after_ ? Node(after_) : null, Optional: true), new Arg("contextual", contextual is { } contextual_ ? Node(contextual_) : null, Optional: true));
 
     /// <summary>Sets the indents of the selected paragraphs. Unset values are kept.</summary>
     /// <param name="options">The indents to change.</param>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation SetIndents(IndentOptions options) => Op(CommandId.SetIndents, Arg.Flatten(options));
+
+    /// <summary>Sets the outline level and whether the paragraphs open collapsed; unset values are kept.</summary>
+    /// <param name="options">The settings.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetOutline(OutlineOptions options) => Op(CommandId.SetOutline, Arg.Flatten(options));
+
+    /// <summary>Sets the selected paragraphs' text direction.</summary>
+    /// <param name="direction">The direction.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetParagraphTextDirection(TextFlow direction) => Op(CommandId.SetParagraphTextDirection, new Arg("value", Node(direction)));
 
     /// <summary>Increases the left indent to the next tab stop.</summary>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>

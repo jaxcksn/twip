@@ -149,6 +149,12 @@ export type ShadingPattern =
   | 'pct80'
   | 'pct90';
 
+/**
+ * Which way text flows: lines left to right, top to bottom (`lrTb`); vertical lines right to left (`tbRl`) or bottom to
+ * top (`btLr`); and their East Asian forms with characters turned (`lrTbV`, `tbRlV`, `tbLrV`).
+ */
+export type TextFlow = 'lrTb' | 'tbRl' | 'btLr' | 'lrTbV' | 'tbRlV' | 'tbLrV';
+
 /** The ligatures text may use (Word's choices). */
 export type Ligatures = 'none' | 'standard' | 'standardContextual' | 'historicalDiscretional' | 'all';
 
@@ -364,9 +370,21 @@ export interface Commands {
   /** Sets the line spacing: 0.06 to 132 lines, or 0.7 to 1584 points. */
   setLineSpacing(spacing: LineSpacing): Promise<void>;
   /** Sets the space before and after, 0 to 1584; unset fields keep their value. */
-  setParagraphSpacing(options: { before?: Points | 'auto'; after?: Points | 'auto' }): Promise<void>;
+  setParagraphSpacing(options: {
+    before?: Points | 'auto';
+    after?: Points | 'auto';
+    /** No space between paragraphs of the same style. */
+    contextual?: boolean;
+  }): Promise<void>;
   /** Sets the indents, -1584 to 1584; `firstLine` and `hanging` are exclusive. Unset fields keep their value. */
-  setIndents(options: { left?: Points; right?: Points; firstLine?: Points; hanging?: Points }): Promise<void>;
+  setIndents(options: {
+    left?: Points;
+    right?: Points;
+    firstLine?: Points;
+    hanging?: Points;
+    /** Mirror indents: on facing pages `left` is the inside indent and `right` the outside. */
+    mirror?: boolean;
+  }): Promise<void>;
   /** Increases the left indent (Ctrl+M). */
   increaseIndent(): Promise<void>;
   /** Decreases the left indent (Ctrl+Shift+M). */
@@ -394,7 +412,15 @@ export interface Commands {
     keepLinesTogether?: boolean;
     pageBreakBefore?: boolean;
     widowControl?: boolean;
+    /** Don't hyphenate the paragraph. */
+    dontHyphenate?: boolean;
+    /** Leaves the paragraph's lines out of line numbering. */
+    suppressLineNumbers?: boolean;
   }): Promise<void>;
+  /** Sets the outline level (1 to 9, or 0 for body text) and whether the paragraphs open collapsed; unset fields keep their value. */
+  setOutline(options: { level?: number; collapsed?: boolean }): Promise<void>;
+  /** Sets the selected paragraphs' text direction. */
+  setParagraphTextDirection(direction: TextFlow): Promise<void>;
   /** Sets the paragraph borders (a half-point single line). */
   setParagraphBorders(preset: 'box' | 'bottom' | 'none'): Promise<void>;
   /** Sets or removes (`null`) the paragraph shading. */
@@ -1005,6 +1031,8 @@ const encodings: { [K in CommandId]: Encoding<K> } = {
   setList: 'value',
   setListLevel: 'value',
   setParagraphFlow: 'spread',
+  setOutline: 'spread',
+  setParagraphTextDirection: 'value',
   setParagraphBorders: 'value',
   setParagraphShading: 'value',
   setParagraphBorderLines: 'spread',

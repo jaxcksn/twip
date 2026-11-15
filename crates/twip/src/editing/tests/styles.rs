@@ -83,7 +83,7 @@ fn formatting_commands_edit_a_style_and_leave_the_document_alone() {
     let commands = vec![
         C::SetFontSize(Points(20.0)),
         C::SetItalic(true),
-        C::SetIndents(Indents { left: Some(Points(36.0)), right: None, first_line: None, hanging: None }),
+        C::SetIndents(Indents { left: Some(Points(36.0)), right: None, first_line: None, hanging: None, mirror: None }),
         C::SetAlignment(Alignment::Center),
         C::AddTabStop(AddTabStop { position: Points(144.0), alignment: None, leader: None }),
     ];

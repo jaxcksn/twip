@@ -708,6 +708,18 @@ public sealed record ParagraphFormatting
 
     /// <summary>The shading; <see cref="ColorValue.None"/> for none.</summary>
     public FormatValue<ColorValue> Shading { get; init; }
+
+    /// <summary>No space between paragraphs of the same style.</summary>
+    public FormatValue<bool> ContextualSpacing { get; init; }
+
+    /// <summary>The outline level (1 to 9), or body text (0).</summary>
+    public FormatValue<int> OutlineLevel { get; init; }
+
+    /// <summary>Collapsed when the document opens.</summary>
+    public FormatValue<bool> Collapsed { get; init; }
+
+    /// <summary>The text direction.</summary>
+    public FormatValue<TextFlow> TextDirection { get; init; }
 }
 
 /// <summary>Paragraph indents.</summary>
@@ -724,6 +736,9 @@ public sealed record ParagraphIndents
 
     /// <summary>The hanging indent.</summary>
     public FormatValue<Length> Hanging { get; init; }
+
+    /// <summary>Mirror indents (inside and outside on facing pages).</summary>
+    public FormatValue<bool> Mirror { get; init; }
 }
 
 /// <summary>How paragraphs break across pages.</summary>
@@ -740,6 +755,12 @@ public sealed record ParagraphFlow
 
     /// <summary>Avoid single lines at a page's top or bottom.</summary>
     public FormatValue<bool> WidowControl { get; init; }
+
+    /// <summary>Don't hyphenate.</summary>
+    public FormatValue<bool> DontHyphenate { get; init; }
+
+    /// <summary>Left out of line numbering.</summary>
+    public FormatValue<bool> SuppressLineNumbers { get; init; }
 }
 
 /// <summary>The selection's section page layout.</summary>

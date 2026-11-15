@@ -342,9 +342,22 @@ public sealed class EditorCommands
     /// <summary>Sets the space before and after the selected paragraphs. Unset values are kept.</summary>
     /// <param name="before">The space before, 0 to 1584 pt, or automatic.</param>
     /// <param name="after">The space after, 0 to 1584 pt, or automatic.</param>
+    /// <param name="contextual">No space between paragraphs of the same style.</param>
     /// <param name="ct">Cancels the command before it runs.</param>
     /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
-    public Task SetParagraphSpacingAsync(SpacingValue? before = null, SpacingValue? after = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetParagraphSpacing(before, after), ct);
+    public Task SetParagraphSpacingAsync(SpacingValue? before = null, SpacingValue? after = null, bool? contextual = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetParagraphSpacing(before, after, contextual), ct);
+
+    /// <summary>Sets the outline level and whether the paragraphs open collapsed; unset values are kept.</summary>
+    /// <param name="options">The settings.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SetOutlineAsync(OutlineOptions options, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetOutline(options), ct);
+
+    /// <summary>Sets the selected paragraphs' text direction.</summary>
+    /// <param name="direction">The direction.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SetParagraphTextDirectionAsync(TextFlow direction, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetParagraphTextDirection(direction), ct);
 
     /// <summary>Sets the indents of the selected paragraphs. Unset values are kept.</summary>
     /// <param name="options">The indents to change.</param>

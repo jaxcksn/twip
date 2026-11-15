@@ -1,4 +1,4 @@
-import type { CommandId, Ligatures, NumberForm, NumberSpacing } from './commands.js';
+import type { CommandId, Ligatures, NumberForm, NumberSpacing, TextFlow } from './commands.js';
 import type { FontsState } from './fonts/library.js';
 import type { DialogKind } from './services/dialogs.js';
 import type { ControlKind, ReferenceRule } from './services/elements.js';
@@ -512,17 +512,25 @@ export interface ParagraphFormatting {
   /** The space after. */
   spaceAfter: Mixed<Points | 'auto'>;
   /** The indents. */
-  indents: { left: Mixed<Points>; right: Mixed<Points>; firstLine: Mixed<Points>; hanging: Mixed<Points> };
+  indents: { left: Mixed<Points>; right: Mixed<Points>; firstLine: Mixed<Points>; hanging: Mixed<Points>; mirror: Tri };
   /** The list kind. */
   list: Mixed<'bullet' | 'numbered' | 'none'>;
   /** The list level. */
   listLevel: Mixed<number>;
   /** The pagination flags. */
-  flow: { keepWithNext: Tri; keepLinesTogether: Tri; pageBreakBefore: Tri; widowControl: Tri };
+  flow: { keepWithNext: Tri; keepLinesTogether: Tri; pageBreakBefore: Tri; widowControl: Tri; dontHyphenate: Tri; suppressLineNumbers: Tri };
   /** The borders. */
   borders: Mixed<'box' | 'bottom' | 'none' | 'other'>;
   /** The shading. */
   shading: Mixed<Color | 'none'>;
+  /** No space between paragraphs of the same style. */
+  contextualSpacing: Tri;
+  /** The outline level (1 to 9), or body text (0). */
+  outlineLevel: Mixed<number>;
+  /** Collapsed when the document opens. */
+  collapsed: Tri;
+  /** The text direction. */
+  textDirection: Mixed<TextFlow>;
 }
 
 /** The selection's section. */

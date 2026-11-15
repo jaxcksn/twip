@@ -146,6 +146,7 @@ impl Session {
             spacing: Some(ParagraphSpacing {
                 before: Some(AutoOr::Value(Points(ppr.space_before.unwrap_or(0.0)))),
                 after: Some(AutoOr::Value(Points(ppr.space_after.unwrap_or(0.0)))),
+                contextual: None,
             }),
             line_spacing: Some(match (ppr.line, ppr.line_rule) {
                 (Some(l), Some(crate::docx::props::LineRule::Exact)) => LineSpacing::Exact { size: Points(l / 20.0) },
@@ -158,6 +159,7 @@ impl Session {
                 right: Some(Points(ppr.ind_right.unwrap_or(0.0))),
                 first_line: None,
                 hanging: None,
+                mirror: None,
             }),
         }
     }

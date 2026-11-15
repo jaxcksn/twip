@@ -630,6 +630,7 @@ export interface Commands {
         right?: Points;
         firstLine?: Points;
         hanging?: Points;
+        mirror?: boolean;
     }): Promise<void>;
     setItalic(on: boolean): Promise<void>;
     setLanguage(language: Language): Promise<void>;
@@ -676,6 +677,10 @@ export interface Commands {
         right?: Points;
     }): Promise<void>;
     setOrientation(orientation: 'portrait' | 'landscape'): Promise<void>;
+    setOutline(options: {
+        level?: number;
+        collapsed?: boolean;
+    }): Promise<void>;
     setPageBorders(options: {
         top?: BorderLine | null;
         bottom?: BorderLine | null;
@@ -704,13 +709,17 @@ export interface Commands {
         keepLinesTogether?: boolean;
         pageBreakBefore?: boolean;
         widowControl?: boolean;
+        dontHyphenate?: boolean;
+        suppressLineNumbers?: boolean;
     }): Promise<void>;
     setParagraphShading(color: Color | null): Promise<void>;
     setParagraphSpacing(options: {
         before?: Points | 'auto';
         after?: Points | 'auto';
+        contextual?: boolean;
     }): Promise<void>;
     setParagraphStyle(styleId: StyleId): Promise<void>;
+    setParagraphTextDirection(direction: TextFlow): Promise<void>;
     setPictureAdjust(change: PictureAdjustChange): Promise<void>;
     setProtectedPictureControls(options: {
         tagPrefixes: string[];
@@ -2149,25 +2158,32 @@ export interface PageFormatting {
 export interface ParagraphFormatting {
     alignment: Mixed<'left' | 'center' | 'right' | 'justify'>;
     borders: Mixed<'box' | 'bottom' | 'none' | 'other'>;
+    collapsed: Tri;
+    contextualSpacing: Tri;
     flow: {
         keepWithNext: Tri;
         keepLinesTogether: Tri;
         pageBreakBefore: Tri;
         widowControl: Tri;
+        dontHyphenate: Tri;
+        suppressLineNumbers: Tri;
     };
     indents: {
         left: Mixed<Points>;
         right: Mixed<Points>;
         firstLine: Mixed<Points>;
         hanging: Mixed<Points>;
+        mirror: Tri;
     };
     lineSpacing: Mixed<LineSpacing>;
     list: Mixed<'bullet' | 'numbered' | 'none'>;
     listLevel: Mixed<number>;
+    outlineLevel: Mixed<number>;
     shading: Mixed<Color | 'none'>;
     spaceAfter: Mixed<Points | 'auto'>;
     spaceBefore: Mixed<Points | 'auto'>;
     style: Mixed<StyleId>;
+    textDirection: Mixed<TextFlow>;
 }
 
 // @public
@@ -2747,6 +2763,9 @@ export interface TextDistance {
     right: Points;
     top: Points;
 }
+
+// @public
+export type TextFlow = 'lrTb' | 'tbRl' | 'btLr' | 'lrTbV' | 'tbRlV' | 'tbLrV';
 
 // @public
 export interface ThemeColors {

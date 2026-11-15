@@ -217,8 +217,14 @@ commands! {
     /// Adjust List Indents: the selection's list level's number position, text indent and what follows the number,
     /// for its whole list. Undo: one step.
     AdjustListIndents(ListIndents),
-    /// Keep with next, keep lines together, page break before and widow control. Undo: one step.
+    /// Keep with next, keep lines together, page break before, widow control, don't hyphenate and suppress line
+    /// numbers. Undo: one step.
     SetParagraphFlow(ParagraphFlow),
+    /// The selected paragraphs' outline level and whether they open collapsed; what isn't given is kept. Undo: one
+    /// step.
+    SetOutline(Outline),
+    /// The selected paragraphs' text direction. Undo: one step.
+    SetParagraphTextDirection(#[serde(with = "value")] TextFlow),
     /// A box, a bottom border or none (a ½ pt single line). Undo: one step.
     SetParagraphBorders(#[serde(with = "value")] BorderPreset),
     /// Paragraph shading, or none (`null`). Undo: one step.
@@ -1098,6 +1104,9 @@ pub struct ParagraphSpacing {
     /// Space after, or auto.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub after: Option<AutoOr<Points>>,
+    /// No space between paragraphs of the same style.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contextual: Option<bool>,
 }
 
 /// `setIndents`'s options (−1584…1584 pt; `firstLine` and `hanging` exclude each other, both ≥ 0).
@@ -1116,6 +1125,9 @@ pub struct Indents {
     /// The hanging indent of the lines after the first.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hanging: Option<Points>,
+    /// Mirror indents: on facing pages `left` is the inside indent and `right` the outside.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mirror: Option<bool>,
 }
 
 /// A list level's number style.
@@ -1448,6 +1460,43 @@ pub struct ParagraphFlow {
     /// Prevents a single first or last line on a page.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub widow_control: Option<bool>,
+    /// Don't hyphenate the paragraph.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dont_hyphenate: Option<bool>,
+    /// Leaves the paragraph's lines out of line numbering.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub suppress_line_numbers: Option<bool>,
+}
+
+/// `setOutline`'s options.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Outline {
+    /// The outline level (1…9), or body text (0).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub level: Option<u8>,
+    /// Collapsed when the document opens.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub collapsed: Option<bool>,
+}
+
+/// Which way text flows: lines left to right, top to bottom (`lrTb`); vertical lines right to left (`tbRl`) or
+/// bottom to top (`btLr`); and their East Asian forms with characters turned (`lrTbV`, `tbRlV`, `tbLrV`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TextFlow {
+    /// Horizontal.
+    LrTb,
+    /// Vertical, lines right to left.
+    TbRl,
+    /// Vertical, read from the bottom.
+    BtLr,
+    /// Horizontal, East Asian characters turned.
+    LrTbV,
+    /// Vertical, lines right to left, East Asian characters upright.
+    TbRlV,
+    /// Vertical, lines left to right, East Asian characters upright.
+    TbLrV,
 }
 
 /// The paragraph border presets.

@@ -767,7 +767,6 @@ Twip.EditorCommands.SetPaperSizeAsync(Twip.Length width, Twip.Length height, Sys
 Twip.EditorCommands.SetParagraphBordersAsync(Twip.ParagraphBorders preset, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.SetParagraphFlowAsync(Twip.ParagraphFlowOptions! options, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.SetParagraphShadingAsync(Twip.ColorValue color, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-Twip.EditorCommands.SetParagraphSpacingAsync(Twip.SpacingValue? before = null, Twip.SpacingValue? after = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.SetParagraphStyleAsync(Twip.StyleId styleId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.SetRowCanBreakAsync(bool on, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.SetRowHeightAsync(Twip.RowHeight! height, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
@@ -1710,13 +1709,11 @@ Twip.ImportResult.Warnings.get -> System.Collections.Generic.IReadOnlyList<Twip.
 Twip.ImportResult.Warnings.init -> void
 Twip.IndentOptions
 Twip.IndentOptions.<Clone>$() -> Twip.IndentOptions!
-Twip.IndentOptions.Deconstruct(out Twip.Length? Left, out Twip.Length? Right, out Twip.Length? FirstLine, out Twip.Length? Hanging) -> void
 Twip.IndentOptions.Equals(Twip.IndentOptions? other) -> bool
 Twip.IndentOptions.FirstLine.get -> Twip.Length?
 Twip.IndentOptions.FirstLine.init -> void
 Twip.IndentOptions.Hanging.get -> Twip.Length?
 Twip.IndentOptions.Hanging.init -> void
-Twip.IndentOptions.IndentOptions(Twip.Length? Left = null, Twip.Length? Right = null, Twip.Length? FirstLine = null, Twip.Length? Hanging = null) -> void
 Twip.IndentOptions.Left.get -> Twip.Length?
 Twip.IndentOptions.Left.init -> void
 Twip.IndentOptions.Right.get -> Twip.Length?
@@ -2130,7 +2127,6 @@ Twip.ParagraphFlow.WidowControl.get -> Twip.FormatValue<bool>
 Twip.ParagraphFlow.WidowControl.init -> void
 Twip.ParagraphFlowOptions
 Twip.ParagraphFlowOptions.<Clone>$() -> Twip.ParagraphFlowOptions!
-Twip.ParagraphFlowOptions.Deconstruct(out bool? KeepWithNext, out bool? KeepLinesTogether, out bool? PageBreakBefore, out bool? WidowControl) -> void
 Twip.ParagraphFlowOptions.Equals(Twip.ParagraphFlowOptions? other) -> bool
 Twip.ParagraphFlowOptions.KeepLinesTogether.get -> bool?
 Twip.ParagraphFlowOptions.KeepLinesTogether.init -> void
@@ -2138,7 +2134,6 @@ Twip.ParagraphFlowOptions.KeepWithNext.get -> bool?
 Twip.ParagraphFlowOptions.KeepWithNext.init -> void
 Twip.ParagraphFlowOptions.PageBreakBefore.get -> bool?
 Twip.ParagraphFlowOptions.PageBreakBefore.init -> void
-Twip.ParagraphFlowOptions.ParagraphFlowOptions(bool? KeepWithNext = null, bool? KeepLinesTogether = null, bool? PageBreakBefore = null, bool? WidowControl = null) -> void
 Twip.ParagraphFlowOptions.WidowControl.get -> bool?
 Twip.ParagraphFlowOptions.WidowControl.init -> void
 Twip.ParagraphFormatting
@@ -3542,7 +3537,6 @@ static Twip.EditorOperation.SetPaperSize(Twip.Length width, Twip.Length height) 
 static Twip.EditorOperation.SetParagraphBorders(Twip.ParagraphBorders preset) -> Twip.EditorOperation!
 static Twip.EditorOperation.SetParagraphFlow(Twip.ParagraphFlowOptions! options) -> Twip.EditorOperation!
 static Twip.EditorOperation.SetParagraphShading(Twip.ColorValue color) -> Twip.EditorOperation!
-static Twip.EditorOperation.SetParagraphSpacing(Twip.SpacingValue? before = null, Twip.SpacingValue? after = null) -> Twip.EditorOperation!
 static Twip.EditorOperation.SetParagraphStyle(Twip.StyleId styleId) -> Twip.EditorOperation!
 static Twip.EditorOperation.SetRowCanBreak(bool on) -> Twip.EditorOperation!
 static Twip.EditorOperation.SetRowHeight(Twip.RowHeight! height) -> Twip.EditorOperation!
@@ -6685,3 +6679,56 @@ static Twip.LanguageOptions.operator ==(Twip.LanguageOptions? left, Twip.Languag
 static Twip.StyleId.None.get -> Twip.StyleId
 static Twip.TypographyOptions.operator !=(Twip.TypographyOptions? left, Twip.TypographyOptions? right) -> bool
 static Twip.TypographyOptions.operator ==(Twip.TypographyOptions? left, Twip.TypographyOptions? right) -> bool
+Twip.CommandId.SetOutline = 220 -> Twip.CommandId
+Twip.CommandId.SetParagraphTextDirection = 221 -> Twip.CommandId
+Twip.EditorCommands.SetOutlineAsync(Twip.OutlineOptions! options, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetParagraphSpacingAsync(Twip.SpacingValue? before = null, Twip.SpacingValue? after = null, bool? contextual = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetParagraphTextDirectionAsync(Twip.TextFlow direction, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.IndentOptions.Deconstruct(out Twip.Length? Left, out Twip.Length? Right, out Twip.Length? FirstLine, out Twip.Length? Hanging, out bool? Mirror) -> void
+Twip.IndentOptions.IndentOptions(Twip.Length? Left = null, Twip.Length? Right = null, Twip.Length? FirstLine = null, Twip.Length? Hanging = null, bool? Mirror = null) -> void
+Twip.IndentOptions.Mirror.get -> bool?
+Twip.IndentOptions.Mirror.init -> void
+Twip.OutlineOptions
+Twip.OutlineOptions.<Clone>$() -> Twip.OutlineOptions!
+Twip.OutlineOptions.Collapsed.get -> bool?
+Twip.OutlineOptions.Collapsed.init -> void
+Twip.OutlineOptions.Deconstruct(out int? Level, out bool? Collapsed) -> void
+Twip.OutlineOptions.Equals(Twip.OutlineOptions? other) -> bool
+Twip.OutlineOptions.Level.get -> int?
+Twip.OutlineOptions.Level.init -> void
+Twip.OutlineOptions.OutlineOptions(int? Level = null, bool? Collapsed = null) -> void
+Twip.ParagraphFlow.DontHyphenate.get -> Twip.FormatValue<bool>
+Twip.ParagraphFlow.DontHyphenate.init -> void
+Twip.ParagraphFlow.SuppressLineNumbers.get -> Twip.FormatValue<bool>
+Twip.ParagraphFlow.SuppressLineNumbers.init -> void
+Twip.ParagraphFlowOptions.Deconstruct(out bool? KeepWithNext, out bool? KeepLinesTogether, out bool? PageBreakBefore, out bool? WidowControl, out bool? DontHyphenate, out bool? SuppressLineNumbers) -> void
+Twip.ParagraphFlowOptions.DontHyphenate.get -> bool?
+Twip.ParagraphFlowOptions.DontHyphenate.init -> void
+Twip.ParagraphFlowOptions.ParagraphFlowOptions(bool? KeepWithNext = null, bool? KeepLinesTogether = null, bool? PageBreakBefore = null, bool? WidowControl = null, bool? DontHyphenate = null, bool? SuppressLineNumbers = null) -> void
+Twip.ParagraphFlowOptions.SuppressLineNumbers.get -> bool?
+Twip.ParagraphFlowOptions.SuppressLineNumbers.init -> void
+Twip.ParagraphFormatting.Collapsed.get -> Twip.FormatValue<bool>
+Twip.ParagraphFormatting.Collapsed.init -> void
+Twip.ParagraphFormatting.ContextualSpacing.get -> Twip.FormatValue<bool>
+Twip.ParagraphFormatting.ContextualSpacing.init -> void
+Twip.ParagraphFormatting.OutlineLevel.get -> Twip.FormatValue<int>
+Twip.ParagraphFormatting.OutlineLevel.init -> void
+Twip.ParagraphFormatting.TextDirection.get -> Twip.FormatValue<Twip.TextFlow>
+Twip.ParagraphFormatting.TextDirection.init -> void
+Twip.ParagraphIndents.Mirror.get -> Twip.FormatValue<bool>
+Twip.ParagraphIndents.Mirror.init -> void
+Twip.TextFlow
+Twip.TextFlow.BtLr = 2 -> Twip.TextFlow
+Twip.TextFlow.LrTb = 0 -> Twip.TextFlow
+Twip.TextFlow.LrTbV = 3 -> Twip.TextFlow
+Twip.TextFlow.TbLrV = 5 -> Twip.TextFlow
+Twip.TextFlow.TbRl = 1 -> Twip.TextFlow
+Twip.TextFlow.TbRlV = 4 -> Twip.TextFlow
+override Twip.OutlineOptions.Equals(object? obj) -> bool
+override Twip.OutlineOptions.GetHashCode() -> int
+override Twip.OutlineOptions.ToString() -> string!
+static Twip.EditorOperation.SetOutline(Twip.OutlineOptions! options) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetParagraphSpacing(Twip.SpacingValue? before = null, Twip.SpacingValue? after = null, bool? contextual = null) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetParagraphTextDirection(Twip.TextFlow direction) -> Twip.EditorOperation!
+static Twip.OutlineOptions.operator !=(Twip.OutlineOptions? left, Twip.OutlineOptions? right) -> bool
+static Twip.OutlineOptions.operator ==(Twip.OutlineOptions? left, Twip.OutlineOptions? right) -> bool

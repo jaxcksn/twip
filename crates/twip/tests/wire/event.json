@@ -160,16 +160,21 @@
     "paragraph": {
       "alignment": "left",
       "borders": "other",
+      "collapsed": false,
+      "contextualSpacing": true,
       "flow": {
+        "dontHyphenate": false,
         "keepLinesTogether": false,
         "keepWithNext": true,
         "pageBreakBefore": "mixed",
+        "suppressLineNumbers": "mixed",
         "widowControl": true
       },
       "indents": {
         "firstLine": "mixed",
         "hanging": null,
         "left": 0.5,
+        "mirror": false,
         "right": 0.5
       },
       "lineSpacing": {
@@ -178,10 +183,12 @@
       },
       "list": "bullet",
       "listLevel": 1,
+      "outlineLevel": 2,
       "shading": "#D9E2F3",
       "spaceAfter": 8.5,
       "spaceBefore": "auto",
-      "style": "Normal"
+      "style": "Normal",
+      "textDirection": "lrTb"
     },
     "readOnly": false,
     "review": {

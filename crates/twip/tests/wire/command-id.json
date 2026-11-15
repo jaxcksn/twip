@@ -71,6 +71,8 @@
   "continueNumbering",
   "adjustListIndents",
   "setParagraphFlow",
+  "setOutline",
+  "setParagraphTextDirection",
   "setParagraphBorders",
   "setParagraphShading",
   "setParagraphBorderLines",

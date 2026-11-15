@@ -603,6 +603,8 @@ pub struct ParaProps {
     pub text_flow: Option<u8>,
     pub text_alignment: Option<String>,
     pub outline_lvl: Option<i64>,
+    /// `w15:collapsed`: the heading opens collapsed.
+    pub collapsed: Option<bool>,
     pub mark_size: Option<f64>,
 }
 
@@ -610,6 +612,9 @@ impl ParaProps {
     pub fn parse(ppr: Option<Node>, tc: &ThemeColours) -> ParaProps {
         let mut p = ParaProps::default();
         let Some(ppr) = ppr else { return p };
+        if let Some(c) = ppr.children().find(|c| is(*c, W15, "collapsed")) {
+            p.collapsed = Some(!matches!(c.attribute((W15, "val")), Some("0" | "false" | "off")));
+        }
         for e in ppr.children().filter(|c| c.is_element() && c.tag_name().namespace() == Some(W)) {
             match e.tag_name().name() {
                 "pStyle" => p.style = val(e).map(str::to_string),
@@ -786,7 +791,8 @@ impl ParaProps {
             frame,
             text_flow,
             text_alignment,
-            outline_lvl
+            outline_lvl,
+            collapsed
         );
         self.tabs.extend(o.tabs.iter().copied());
     }

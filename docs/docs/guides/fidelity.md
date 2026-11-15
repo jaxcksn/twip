@@ -92,20 +92,20 @@ Chunk numbers are [roadmap](../roadmap#docx) chunks.
 
 | Construct | Elements | Status |
 |---|---|---|
-| Style, alignment, indents, spacing | `w:pStyle`, `w:jc`, `w:ind`, `w:spacing` | API; mirror indents are Model, 2.5 |
+| Style, alignment, indents, spacing | `w:pStyle`, `w:jc`, `w:ind`, `w:spacing` | API |
 | Pagination | `w:keepNext`, `w:keepLines`, `w:pageBreakBefore`, `w:widowControl` | API |
 | Borders and shading | `w:pBdr`, `w:top`, `w:left`, `w:bottom`, `w:right`, `w:between`, `w:bar`, `w:start`, `w:end`, `w:shd` | API |
 | Tabs | `w:tabs`, `w:tab` | API |
 | Lists | `w:numPr`, `w:ilvl`, `w:numId` | API |
 | Frames and drop caps | `w:framePr`, `w:suppressOverlap` | API; creating a drop cap is 2.5 |
-| Contextual spacing | `w:contextualSpacing` | Model, 2.5 |
-| Mirror indents | `w:mirrorIndents` | Model, 2.5 |
-| Outline level | `w:outlineLvl` | Model, 2.5 |
-| Collapsed by default | `w15:collapsed` | Kept, 2.5 |
-| Text direction | `w:textDirection` | Model (paragraphs, sections, cells), 2.5, 2.6 and 2.9 |
+| Contextual spacing | `w:contextualSpacing` | API (`setParagraphSpacing`) |
+| Mirror indents | `w:mirrorIndents` | API (`setIndents`) |
+| Outline level | `w:outlineLvl` | API (`setOutline`) |
+| Collapsed by default | `w15:collapsed` | API (`setOutline`) |
+| Text direction | `w:textDirection` | API for paragraphs (`setParagraphTextDirection`); Model for sections and cells, 2.6 and 2.9 |
 | Text box tight wrap | `w:textboxTightWrap` | Laid out; Model, 2.10 |
-| Don't hyphenate | `w:suppressAutoHyphens` | Laid out; Model, 2.5 |
-| Line numbers | `w:suppressLineNumbers` | Laid out; Model, 2.6 |
+| Don't hyphenate | `w:suppressAutoHyphens` | API (`setParagraphFlow`) |
+| Line numbers | `w:suppressLineNumbers` | API (`setParagraphFlow`) |
 | HTML divisions | `w:divId`, `w:divs`, `w:div`, `w:divBdr`, `w:divsChild`, `w:blockQuote`, `w:bodyDiv`, `w:marLeft`, `w:marRight`, `w:marTop`, `w:marBottom` | Laid out (from pasted HTML; Word has no setting for them) |
 | Conditional formatting | `w:cnfStyle` | Kept |
 | Bidirectional and East Asian | `w:bidi`, `w:adjustRightInd`, `w:kinsoku`, `w:wordWrap`, `w:overflowPunct`, `w:topLinePunct`, `w:autoSpaceDE`, `w:autoSpaceDN`, `w:textAlignment` | After 1.0 |

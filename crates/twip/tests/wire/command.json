@@ -213,11 +213,13 @@
   {
     "after": 8.5,
     "before": "auto",
+    "contextual": true,
     "type": "setParagraphSpacing"
   },
   {
     "firstLine": 18.5,
     "left": 36.5,
+    "mirror": true,
     "right": 0.5,
     "type": "setIndents"
   },
@@ -314,11 +316,22 @@
     "type": "adjustListIndents"
   },
   {
+    "dontHyphenate": true,
     "keepLinesTogether": false,
     "keepWithNext": true,
     "pageBreakBefore": true,
+    "suppressLineNumbers": false,
     "type": "setParagraphFlow",
     "widowControl": true
+  },
+  {
+    "collapsed": true,
+    "level": 2,
+    "type": "setOutline"
+  },
+  {
+    "type": "setParagraphTextDirection",
+    "value": "tbRl"
   },
   {
     "type": "setParagraphBorders",

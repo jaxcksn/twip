@@ -609,6 +609,8 @@ pub struct IndentState {
     pub first_line: Tri<Points>,
     /// The hanging indent.
     pub hanging: Tri<Points>,
+    /// Mirror indents (inside and outside on facing pages).
+    pub mirror: Tri<bool>,
 }
 
 /// The selected paragraphs' pagination settings.
@@ -623,6 +625,10 @@ pub struct FlowState {
     pub page_break_before: Tri<bool>,
     /// Widow and orphan control.
     pub widow_control: Tri<bool>,
+    /// Don't hyphenate.
+    pub dont_hyphenate: Tri<bool>,
+    /// Left out of line numbering.
+    pub suppress_line_numbers: Tri<bool>,
 }
 
 /// The selection's paragraph formatting.
@@ -651,6 +657,14 @@ pub struct ParagraphFormatting {
     pub borders: Tri<BorderState>,
     /// The shading, or none.
     pub shading: Tri<NoneOr<Color>>,
+    /// No space between paragraphs of the same style.
+    pub contextual_spacing: Tri<bool>,
+    /// The outline level (1…9), or body text (0).
+    pub outline_level: Tri<u8>,
+    /// Collapsed when the document opens.
+    pub collapsed: Tri<bool>,
+    /// The text direction.
+    pub text_direction: Tri<crate::api::command::TextFlow>,
 }
 
 /// A page size.

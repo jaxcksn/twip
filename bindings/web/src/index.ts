@@ -32,6 +32,7 @@ export type {
   OpArgs,
   ReplaceScope,
   ShadingPattern,
+  TextFlow,
   Typography,
 } from './commands.js';
 export type {

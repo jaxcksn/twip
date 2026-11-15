@@ -214,6 +214,7 @@ impl Resolver {
             in_frame: false,
             text_alignment: p.text_alignment.clone().unwrap_or_else(|| "auto".into()),
             outline_lvl: p.outline_lvl,
+            collapsed: p.collapsed.unwrap_or(false),
             list_jc: "left".into(),
             num: None,
             list_fmt: None,

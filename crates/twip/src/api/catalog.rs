@@ -189,6 +189,8 @@ const ENTRIES: &[Entry] = {
         (C::ContinueNumbering, "Continue Numbering", G::Paragraph, &[], &[], false, true, U::Step),
         (C::AdjustListIndents, "Adjust List Indents", G::Paragraph, &[], &[], true, true, U::Step),
         (C::SetParagraphFlow, "Line and Page Breaks", G::Paragraph, &[], &[], true, true, U::Step),
+        (C::SetOutline, "Outline Level", G::Paragraph, &[], &[], true, true, U::Step),
+        (C::SetParagraphTextDirection, "Text Direction", G::Paragraph, &[], &[], true, true, U::Step),
         (C::SetParagraphBorders, "Borders", G::Paragraph, &[], &[], true, true, U::Step),
         (C::SetParagraphShading, "Shading", G::Paragraph, &[], &[], true, true, U::Step),
         (C::SetParagraphBorderLines, "Borders", G::Paragraph, &[], &[], true, true, U::Step),

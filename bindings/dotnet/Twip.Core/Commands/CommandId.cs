@@ -443,4 +443,8 @@ public enum CommandId
     SetCharacterEffects,
     /// <summary>Sets the underline's colour.</summary>
     SetUnderlineColor,
+    /// <summary>Sets the outline level and whether paragraphs open collapsed.</summary>
+    SetOutline,
+    /// <summary>Sets the paragraphs' text direction.</summary>
+    SetParagraphTextDirection,
 }

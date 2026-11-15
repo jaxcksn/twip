@@ -228,10 +228,20 @@ impl Cx {
 
     /// An element of the Word 2010 namespace: in the part's prefix for it, else declaring its own.
     pub fn w14(&self, local: &str, attrs: &[(&str, &str)], inner: &str) -> String {
-        const W14: &str = "http://schemas.microsoft.com/office/word/2010/wordml";
-        let (p, decl) = match self.prefix_of(W14) {
+        self.ext(("w14", "http://schemas.microsoft.com/office/word/2010/wordml"), local, attrs, inner)
+    }
+
+    /// An element of the Word 2012 namespace, as [`Cx::w14`].
+    pub fn w15(&self, local: &str, attrs: &[(&str, &str)]) -> String {
+        self.ext(("w15", "http://schemas.microsoft.com/office/word/2012/wordml"), local, attrs, "")
+    }
+
+    /// An element of an extension namespace (its usual prefix and URI): in the part's prefix for it, else declaring
+    /// its own; `{w14}` in `inner` takes the prefix.
+    fn ext(&self, (usual, uri): (&str, &str), local: &str, attrs: &[(&str, &str)], inner: &str) -> String {
+        let (p, decl) = match self.prefix_of(uri) {
             Some(p) => (p, String::new()),
-            None => ("w14:".to_string(), format!(" xmlns:w14=\"{W14}\"")),
+            None => (format!("{usual}:"), format!(" xmlns:{usual}=\"{uri}\"")),
         };
         let a: String = attrs.iter().map(|(k, v)| format!(" {p}{k}=\"{}\"", esc(v))).collect();
         if inner.is_empty() { format!("<{p}{local}{decl}{a}/>") } else { format!("<{p}{local}{decl}{a}>{}</{p}{local}>", inner.replace("{w14}", &p)) }
@@ -253,6 +263,7 @@ fn key(c: roxmltree::Node) -> String {
     match c.tag_name().namespace() {
         Some(W_NS) | None => c.tag_name().name().to_string(),
         Some("http://schemas.microsoft.com/office/word/2010/wordml") => format!("w14:{}", c.tag_name().name()),
+        Some("http://schemas.microsoft.com/office/word/2012/wordml") => format!("w15:{}", c.tag_name().name()),
         Some(ns) => format!("{{{ns}}}{}", c.tag_name().name()),
     }
 }

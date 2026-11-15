@@ -47,6 +47,8 @@ pub fn formats_a_style(c: &Command) -> bool {
             | Command::IncreaseIndent
             | Command::DecreaseIndent
             | Command::SetParagraphFlow(_)
+            | Command::SetOutline(_)
+            | Command::SetParagraphTextDirection(_)
             | Command::SetParagraphBorders(_)
             | Command::SetParagraphShading(_)
             | Command::SetParagraphBorderLines(_)

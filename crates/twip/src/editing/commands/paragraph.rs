@@ -1,6 +1,6 @@
 //! Paragraph formatting
 
-use crate::api::command::{BorderPreset, Indents, ListKind, ParagraphFlow, ParagraphSpacing};
+use crate::api::command::{BorderPreset, Indents, ListKind, Outline, ParagraphFlow, ParagraphSpacing, TextFlow};
 use crate::api::value::{Alignment, AutoOr, LineSpacing, StyleId};
 use crate::font::Fonts;
 use crate::layout::ParaId;
@@ -42,7 +42,19 @@ impl Editor {
                 None => {}
             }
         }
-        self.format_paras("Paragraph Spacing", &|p, cx, _| p.attrs("spacing", &attrs, cx), fonts)
+        let contextual = s.contextual;
+        self.format_paras(
+            "Paragraph Spacing",
+            &|p, cx, _| {
+                if !attrs.is_empty() {
+                    p.attrs("spacing", &attrs, cx);
+                }
+                if let Some(on) = contextual {
+                    p.set("contextualSpacing", flag_xml(&cx.w, "contextualSpacing", on));
+                }
+            },
+            fonts,
+        )
     }
 
     pub(in crate::editing) fn set_indents(&mut self, i: Indents, fonts: &Fonts) -> Outcome {
@@ -59,7 +71,45 @@ impl Editor {
         if let Some(v) = i.hanging {
             attrs.extend([("hanging", Some(twips(v.0))), ("firstLine", None)]);
         }
-        self.format_paras("Indent", &|p, cx, _| p.attrs("ind", &attrs, cx), fonts)
+        let mirror = i.mirror;
+        self.format_paras(
+            "Indent",
+            &|p, cx, _| {
+                if !attrs.is_empty() {
+                    p.attrs("ind", &attrs, cx);
+                }
+                if let Some(on) = mirror {
+                    p.set("mirrorIndents", flag_xml(&cx.w, "mirrorIndents", on));
+                }
+            },
+            fonts,
+        )
+    }
+
+    pub(in crate::editing) fn set_outline(&mut self, o: Outline, fonts: &Fonts) -> Outcome {
+        if o.level.is_some_and(|l| l > 9) {
+            return Outcome::invalid("the outline level is 0…9");
+        }
+        self.format_paras(
+            "Outline Level",
+            &|p, cx, _| {
+                let w = &cx.w;
+                // Body text over a heading style's level is `9`.
+                if let Some(l) = o.level {
+                    let v = if l == 0 { 9 } else { l - 1 };
+                    p.set("outlineLvl", format!("<{w}outlineLvl {w}val=\"{v}\"/>"));
+                }
+                if let Some(on) = o.collapsed {
+                    p.set("w15:collapsed", if on { cx.w15("collapsed", &[]) } else { cx.w15("collapsed", &[("val", "0")]) });
+                }
+            },
+            fonts,
+        )
+    }
+
+    pub(in crate::editing) fn set_paragraph_text_direction(&mut self, d: TextFlow, fonts: &Fonts) -> Outcome {
+        let v = text_direction(d);
+        self.format_paras("Text Direction", &|p, cx, _| p.set("textDirection", format!("<{w}textDirection {w}val=\"{v}\"/>", w = cx.w)), fonts)
     }
 
     pub(in crate::editing) fn set_paragraph_style(&mut self, id: StyleId, fonts: &Fonts) -> Outcome {
@@ -107,6 +157,8 @@ impl Editor {
             ("keepLines", f.keep_lines_together),
             ("pageBreakBefore", f.page_break_before),
             ("widowControl", f.widow_control),
+            ("suppressAutoHyphens", f.dont_hyphenate),
+            ("suppressLineNumbers", f.suppress_line_numbers),
         ];
         self.format_paras(
             "Paragraph Formatting",
@@ -131,5 +183,22 @@ impl Editor {
             BorderPreset::None => "none",
         };
         self.format(&Format::ParaBorders(which.into()), fonts)
+    }
+}
+
+/// A paragraph flag as written: on, or explicitly off (over a style's).
+fn flag_xml(w: &str, name: &str, on: bool) -> String {
+    if on { format!("<{w}{name}/>") } else { format!("<{w}{name} {w}val=\"0\"/>") }
+}
+
+/// A text direction's `w:textDirection` value.
+pub(in crate::editing) fn text_direction(d: TextFlow) -> &'static str {
+    match d {
+        TextFlow::LrTb => "lrTb",
+        TextFlow::TbRl => "tbRl",
+        TextFlow::BtLr => "btLr",
+        TextFlow::LrTbV => "lrTbV",
+        TextFlow::TbRlV => "tbRlV",
+        TextFlow::TbLrV => "tbLrV",
     }
 }

@@ -237,6 +237,8 @@ pub struct ParaStyle {
     pub in_frame: bool,
     pub text_alignment: String,
     pub outline_lvl: Option<i64>,
+    /// `w15:collapsed`: the heading opens collapsed.
+    pub collapsed: bool,
     pub list_jc: String,
     /// The list the paragraph is in (numId, ilvl; direct or from its style), and that level's `w:numFmt`.
     pub num: Option<(i64, i64)>,

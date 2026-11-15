@@ -1042,13 +1042,13 @@ pub fn commands(values: &DialogValues, state: &State, cx: &Context) -> Result<Ve
                 _ => (None, None),
             };
             check(!matches!(v.by, Tri::Uniform(Points(b)) if b < 0.0), "by is 0 or more")?;
-            let indents = Indents { left, right, first_line, hanging };
+            let indents = Indents { left, right, first_line, hanging, mirror: None };
             if indents != Indents::default() {
                 out.push(Command::SetIndents(indents));
             }
             let (before, after) = (set(&v.before, &n.before), set(&v.after, &n.after));
             if before.is_some() || after.is_some() {
-                out.push(Command::SetParagraphSpacing(ParagraphSpacing { before, after }));
+                out.push(Command::SetParagraphSpacing(ParagraphSpacing { before, after, contextual: None }));
             }
             out.extend(set(&v.line_spacing, &n.line_spacing).map(Command::SetLineSpacing));
             let flow = ParagraphFlow {
@@ -1056,6 +1056,8 @@ pub fn commands(values: &DialogValues, state: &State, cx: &Context) -> Result<Ve
                 keep_lines_together: set(&v.keep_lines_together, &n.keep_lines_together),
                 page_break_before: set(&v.page_break_before, &n.page_break_before),
                 widow_control: set(&v.widow_control, &n.widow_control),
+                dont_hyphenate: None,
+                suppress_line_numbers: None,
             };
             if flow != ParagraphFlow::default() {
                 out.push(Command::SetParagraphFlow(flow));

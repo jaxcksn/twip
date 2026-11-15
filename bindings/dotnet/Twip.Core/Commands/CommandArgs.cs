@@ -1267,22 +1267,55 @@ public sealed record DocumentDefaults(
 /// <param name="Right">The right indent.</param>
 /// <param name="FirstLine">The first-line indent (at least 0).</param>
 /// <param name="Hanging">The hanging indent (at least 0).</param>
+/// <param name="Mirror">Mirror indents: on facing pages <c>Left</c> is the inside indent and <c>Right</c> the outside.</param>
 public sealed record IndentOptions(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Left = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Right = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? FirstLine = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Hanging = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Hanging = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Mirror = null);
 
 /// <summary>Paragraph flow settings to change; unset values are kept.</summary>
 /// <param name="KeepWithNext">Keep with the next paragraph.</param>
 /// <param name="KeepLinesTogether">Keep the lines on one page.</param>
 /// <param name="PageBreakBefore">Start on a new page.</param>
 /// <param name="WidowControl">Avoid single lines at a page's top or bottom.</param>
+/// <param name="DontHyphenate">Don't hyphenate the paragraph.</param>
+/// <param name="SuppressLineNumbers">Leave the paragraph's lines out of line numbering.</param>
 public sealed record ParagraphFlowOptions(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? KeepWithNext = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? KeepLinesTogether = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? PageBreakBefore = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? WidowControl = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? WidowControl = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? DontHyphenate = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? SuppressLineNumbers = null);
+
+/// <summary>Outline settings to change; unset values are kept.</summary>
+/// <param name="Level">The outline level (1 to 9), or body text (0).</param>
+/// <param name="Collapsed">Collapsed when the document opens.</param>
+public sealed record OutlineOptions(
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Level = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Collapsed = null);
+
+/// <summary>
+/// Which way a paragraph's, section's or cell's text flows: lines left to right, top to bottom (<see cref="LrTb"/>);
+/// vertical lines right to left (<see cref="TbRl"/>) or bottom to top (<see cref="BtLr"/>); and their East Asian forms.
+/// </summary>
+public enum TextFlow
+{
+    /// <summary>Horizontal.</summary>
+    LrTb,
+    /// <summary>Vertical, lines right to left.</summary>
+    TbRl,
+    /// <summary>Vertical, read from the bottom.</summary>
+    BtLr,
+    /// <summary>Horizontal, East Asian characters turned.</summary>
+    LrTbV,
+    /// <summary>Vertical, lines right to left, East Asian characters upright.</summary>
+    TbRlV,
+    /// <summary>Vertical, lines left to right, East Asian characters upright.</summary>
+    TbLrV,
+}
 
 /// <summary>Page margins to change, 0 to 1584 pt; unset values are kept.</summary>
 /// <param name="Top">The top margin.</param>

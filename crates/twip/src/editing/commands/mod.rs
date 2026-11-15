@@ -284,6 +284,8 @@ impl Editor {
             Command::ApplyListEntry(id) => self.apply_list_entry(&id, fonts),
             Command::SetListLevel(c) => self.list_level(c == crate::api::command::LevelChange::Decrease, fonts),
             Command::SetParagraphFlow(f) => self.set_paragraph_flow(f, fonts),
+            Command::SetOutline(o) => self.set_outline(o, fonts),
+            Command::SetParagraphTextDirection(d) => self.set_paragraph_text_direction(d, fonts),
             Command::SetParagraphBorders(b) => self.set_paragraph_borders(b, fonts),
             Command::SetParagraphShading(c) => self.format(&super::format::Format::ParaShading(c.map(|c| c.0)), fonts),
             // Tab stops

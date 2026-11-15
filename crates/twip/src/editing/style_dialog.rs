@@ -302,10 +302,16 @@ impl Editor {
             if now.space_before != was.space_before || now.space_after != was.space_after {
                 let before = (now.space_before != was.space_before).then_some(AutoOr::Value(now.space_before));
                 let after = (now.space_after != was.space_after).then_some(AutoOr::Value(now.space_after));
-                commands.push(Command::SetParagraphSpacing(ParagraphSpacing { before, after }));
+                commands.push(Command::SetParagraphSpacing(ParagraphSpacing { before, after, contextual: None }));
             }
             if now.left_indent != was.left_indent {
-                commands.push(Command::SetIndents(Indents { left: Some(now.left_indent), right: None, first_line: None, hanging: None }));
+                commands.push(Command::SetIndents(Indents {
+                    left: Some(now.left_indent),
+                    right: None,
+                    first_line: None,
+                    hanging: None,
+                    mirror: None,
+                }));
             }
         }
         // A table style's part: the formatting commands, fill, alignment and border edit it.
