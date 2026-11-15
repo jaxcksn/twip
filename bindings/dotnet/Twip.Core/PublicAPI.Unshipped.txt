@@ -5299,7 +5299,8 @@ Twip.MissingFont.By.get -> Twip.StandIn
 Twip.MissingFont.By.init -> void
 Twip.MissingFont.Category.get -> Twip.GenericFamily?
 Twip.MissingFont.Category.init -> void
-Twip.MissingFont.Deconstruct(out string! Family, out bool Bold, out bool Italic, out System.Collections.Generic.IReadOnlyList<string!>! Tried, out Twip.GenericFamily? Category, out string? DrawnWith, out Twip.StandIn By, out string? Error) -> void
+Twip.MissingFont.Deconstruct(out string! Family, out bool Bold, out bool Italic, out System.Collections.Generic.IReadOnlyList<string!>! Tried, out Twip.StandIn By, out Twip.GenericFamily? Category, out string? DrawnWith, out string? Error) -> void
+Twip.MissingFont.MissingFont(string! Family, bool Bold, bool Italic, System.Collections.Generic.IReadOnlyList<string!>! Tried, Twip.StandIn By, Twip.GenericFamily? Category = null, string? DrawnWith = null, string? Error = null) -> void
 Twip.MissingFont.DrawnWith.get -> string?
 Twip.MissingFont.DrawnWith.init -> void
 Twip.MissingFont.Equals(Twip.MissingFont? other) -> bool
@@ -5309,7 +5310,6 @@ Twip.MissingFont.Family.get -> string!
 Twip.MissingFont.Family.init -> void
 Twip.MissingFont.Italic.get -> bool
 Twip.MissingFont.Italic.init -> void
-Twip.MissingFont.MissingFont(string! Family, bool Bold, bool Italic, System.Collections.Generic.IReadOnlyList<string!>! Tried, Twip.GenericFamily? Category, string? DrawnWith, Twip.StandIn By, string? Error) -> void
 Twip.MissingFont.Tried.get -> System.Collections.Generic.IReadOnlyList<string!>!
 Twip.MissingFont.Tried.init -> void
 Twip.PdfConversion.Deconstruct(out byte[]! Bytes, out System.Collections.Generic.IReadOnlyList<Twip.Warning!>! Warnings, out Twip.FontsReport! Fonts) -> void

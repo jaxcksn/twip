@@ -9,12 +9,13 @@ tasks:
   build:
     command: dotnet build Twip.slnx -c Release -warnaserror
     inputs: ['Twip.Core/**/*', 'Twip.WinForms/**/*', 'Twip.Tests/**/*', 'smoke/**/*', 'Twip.slnx']
-  # The wire round trips, the contract scripts (unattached and attached), then a Native AOT publish of a console app
-  # that drives the engine: it proves the SDK is trim and AOT safe.
+  # The generated records are the schema's (Twip.Core/Wire.generated.cs; `node scripts/wire.mts` rewrites it), the
+  # wire round trips, the contract scripts (unattached and attached), then a Native AOT publish of a console app that
+  # drives the engine: it proves the SDK is trim and AOT safe.
   test:
-    script: dotnet test Twip.Tests -c Release && dotnet publish smoke -c Release -o ../../target/smoke && ../../target/smoke/smoke
+    script: node scripts/wire.mts --check && dotnet test Twip.Tests -c Release && dotnet publish smoke -c Release -o ../../target/smoke && ../../target/smoke/smoke
     deps: [twip-capi:build]
-    inputs: ['Twip.Core/**/*', 'Twip.Tests/**/*', 'smoke/**/*', '/tests/contract/**/*', '/crates/twip/tests/wire/**/*']
+    inputs: ['scripts/**/*', 'Twip.Core/**/*', 'Twip.Tests/**/*', 'smoke/**/*', '/tests/contract/**/*', '/crates/twip/tests/wire/**/*', '/crates/twip/tests/wire-schema.json']
   contract:
     command: dotnet test Twip.Tests -c Release --filter FullyQualifiedName~ContractTests
     deps: [twip-capi:build]
