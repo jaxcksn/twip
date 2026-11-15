@@ -298,11 +298,8 @@ wrapper!(&T, Box<T>, std::rc::Rc<T>, std::sync::Arc<T>);
 
 impl<T: Describe> Describe for Option<T> {
     fn describe(reg: &mut Registry) -> Ty {
-        // `Option<Option<T>>` writes `null` for both `None`s.
-        match T::describe(reg) {
-            n @ Ty::Nullable { .. } => n,
-            t => Ty::Nullable { of: Box::new(t) },
-        }
+        // `Option<Option<T>>` stays two deep: a field left out for the outer `None` is `null` for the inner one.
+        Ty::Nullable { of: Box::new(T::describe(reg)) }
     }
 }
 

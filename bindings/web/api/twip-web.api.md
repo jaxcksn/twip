@@ -73,7 +73,19 @@ export type AnnouncementKind =
 | 'selection';
 
 // @public
-export type Arrange = 'forward' | 'backward' | 'toFront' | 'toBack' | 'inFrontOfText' | 'behindText';
+export type Arrange =
+/** Over the next object above it. */
+'forward'
+/** Under the next object below it. */
+| 'backward'
+/** Over every object. */
+| 'toFront'
+/** Under every object. */
+| 'toBack'
+/** In front of the text. */
+| 'inFrontOfText'
+/** Behind the text. */
+| 'behindText';
 
 // @public
 export interface Arrowhead {
@@ -83,10 +95,26 @@ export interface Arrowhead {
 }
 
 // @public
-export type ArrowKind = 'triangle' | 'stealth' | 'diamond' | 'oval' | 'arrow';
+export type ArrowKind =
+/** A filled triangle. */
+'triangle'
+/** A notched triangle. */
+| 'stealth'
+/** A diamond. */
+| 'diamond'
+/** An oval. */
+| 'oval'
+/** An open V. */
+| 'arrow';
 
 // @public
-export type ArrowSize = 'small' | 'medium' | 'large';
+export type ArrowSize =
+/** Small. */
+'small'
+/** Medium. */
+| 'medium'
+/** Large. */
+| 'large';
 
 // @public
 export interface Author {
@@ -908,7 +936,17 @@ export interface CommentThread {
 }
 
 // @public
-export type Compound = 'single' | 'double' | 'thickThin' | 'thinThick' | 'triple';
+export type Compound =
+/** One line. */
+'single'
+/** Two equal lines. */
+| 'double'
+/** A thick line then a thin one. */
+| 'thickThin'
+/** A thin line then a thick one. */
+| 'thinThick'
+/** Three lines. */
+| 'triple';
 
 // @public
 export function configure(options: {
@@ -1624,7 +1662,11 @@ export interface FindResult {
 }
 
 // @public
-export type FlipAxis = 'horizontal' | 'vertical';
+export type FlipAxis =
+/** Left to right. */
+'horizontal'
+/** Top to bottom. */
+| 'vertical';
 
 // @public
 export type FollowNumber = 'tab' | 'space' | 'nothing';
@@ -1849,7 +1891,15 @@ export interface Glow {
 }
 
 // @public
-export type GradientShape = 'linear' | 'radial' | 'rectangular' | 'path';
+export type GradientShape =
+/** Along a direction (`angle`). */
+'linear'
+/** From the centre outward in circles. */
+| 'radial'
+/** From the centre outward in rectangles. */
+| 'rectangular'
+/** Following the shape's outline. */
+| 'path';
 
 // @public
 export interface GradientStop {
@@ -2003,7 +2053,13 @@ export type HostCommand =
 export function inches(n: number): Points;
 
 // @public
-export type LineCap = 'flat' | 'round' | 'square';
+export type LineCap =
+/** Square, at the end. */
+'flat'
+/** Rounded. */
+| 'round'
+/** Square, half the width past the end. */
+| 'square';
 
 // @public
 export interface LineChange {
@@ -2023,7 +2079,13 @@ export interface LineEnds {
 }
 
 // @public
-export type LineJoin = 'round' | 'bevel' | 'miter';
+export type LineJoin =
+/** Rounded. */
+'round'
+/** Cut off. */
+| 'bevel'
+/** Pointed. */
+| 'miter';
 
 // @public
 export type LineSpacing = {
@@ -3052,13 +3114,37 @@ export interface TabTypeChoice {
 }
 
 // @public
-export type TextAnchor = 'top' | 'middle' | 'bottom';
+export type TextAnchor =
+/** At the top. */
+'top'
+/** In the middle. */
+| 'middle'
+/** At the bottom. */
+| 'bottom';
 
 // @public
-export type TextAutofit = 'none' | 'shape';
+export type TextAutofit =
+/** The shape keeps its size. */
+'none'
+/** The shape's height follows its text. */
+| 'shape';
 
 // @public
-export type TextDirection = 'horizontal' | 'vertical' | 'vertical270' | 'eastAsianVertical' | 'mongolianVertical' | 'stacked' | 'stackedRightToLeft';
+export type TextDirection =
+/** Left to right, lines downward. */
+'horizontal'
+/** Turned 90° clockwise. */
+| 'vertical'
+/** Turned 270° clockwise. */
+| 'vertical270'
+/** East Asian vertical: CJK upright, other text turned. */
+| 'eastAsianVertical'
+/** Mongolian vertical. */
+| 'mongolianVertical'
+/** Letters stacked, one per line. */
+| 'stacked'
+/** Letters stacked, right to left. */
+| 'stackedRightToLeft';
 
 // @public
 export interface TextDistance {
@@ -3075,7 +3161,31 @@ export interface ThemeColors {
 }
 
 // @public
-export type ThemeColour = 'text1' | 'background1' | 'text2' | 'background2' | 'accent1' | 'accent2' | 'accent3' | 'accent4' | 'accent5' | 'accent6' | 'hyperlink' | 'followedHyperlink';
+export type ThemeColour =
+/** Dark 1 (through the document's colour mapping). */
+'text1'
+/** Light 1. */
+| 'background1'
+/** Dark 2. */
+| 'text2'
+/** Light 2. */
+| 'background2'
+/** Accent 1. */
+| 'accent1'
+/** Accent 2. */
+| 'accent2'
+/** Accent 3. */
+| 'accent3'
+/** Accent 4. */
+| 'accent4'
+/** Accent 5. */
+| 'accent5'
+/** Accent 6. */
+| 'accent6'
+/** The hyperlink colour. */
+| 'hyperlink'
+/** The followed hyperlink colour. */
+| 'followedHyperlink';
 
 // @public
 export interface Tooltip {
@@ -3103,7 +3213,27 @@ export interface TransactionRecord {
 }
 
 // @public
-export type TransformKind = 'tint' | 'shade' | 'lumMod' | 'lumOff' | 'satMod' | 'satOff' | 'hueMod' | 'hueOff' | 'alpha' | 'alphaMod';
+export type TransformKind =
+/** Towards white by `1 - value`. */
+'tint'
+/** Towards black by `1 - value`. */
+| 'shade'
+/** Luminance times `value`. */
+| 'lumMod'
+/** Luminance plus `value`. */
+| 'lumOff'
+/** Saturation times `value`. */
+| 'satMod'
+/** Saturation plus `value`. */
+| 'satOff'
+/** Hue times `value`. */
+| 'hueMod'
+/** Hue plus `value` degrees. */
+| 'hueOff'
+/** Opacity `value`. */
+| 'alpha'
+/** Opacity times `value`. */
+| 'alphaMod';
 
 // @public
 export type Tri = boolean | 'mixed' | null;
@@ -3291,7 +3421,7 @@ export interface ViewState {
 
 // @public
 export interface Warning {
-    code: 'unsupported-element' | 'image-undecodable' | 'picture-bullet-undecodable' | 'font-unresolved' | 'rewritten-content' | 'pdf-font-fallback' | 'pdf-archival-claim-dropped' | 'revision-id-missing' | 'range-unpaired' | 'author-missing' | 'comment-unanchored' | 'comment-reference-orphan' | 'unknown-preset' | 'glossary-unreadable' | 'duplicate-building-block' | 'sub-template-cycle' | 'sub-template-too-deep' | 'sub-template-near-match';
+    code: 'unsupported-element' | 'image-undecodable' | 'font-unresolved' | 'rewritten-content' | 'pdf-font-fallback' | 'pdf-archival-claim-dropped' | 'revision-id-missing' | 'range-unpaired' | 'author-missing' | 'comment-unanchored' | 'comment-reference-orphan' | 'unknown-preset' | 'glossary-unreadable' | 'duplicate-building-block' | 'sub-template-cycle' | 'sub-template-too-deep' | 'sub-template-near-match' | 'picture-bullet-undecodable';
     count: number;
     location?: {
         part: string;

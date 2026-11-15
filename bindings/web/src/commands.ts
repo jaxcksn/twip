@@ -35,22 +35,9 @@ import type {
   ShapeTextChange,
   StyleId,
 } from './types.js';
+import type { DocumentDefaults } from './wire.generated.js';
 
-/** The document's default formatting: what text has before any style's. */
-export interface DocumentDefaults {
-  /** The font. */
-  font?: string;
-  /** The size. */
-  size?: Points;
-  /** The font color. */
-  color?: Color | 'auto';
-  /** The space before and after paragraphs. */
-  spacing?: { before?: Points | 'auto'; after?: Points | 'auto' };
-  /** The line spacing. */
-  lineSpacing?: LineSpacing;
-  /** The left and right indents. */
-  indents?: { left?: Points; right?: Points; firstLine?: Points; hanging?: Points };
-}
+export type { DocumentDefaults } from './wire.generated.js';
 
 /** A list level's number style. */
 export type NumberFormat =

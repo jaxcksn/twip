@@ -130,6 +130,53 @@ const ADOPT = [
   // services/dialogs.ts
   'DialogKind',
   'FieldInfo',
+  // types.ts
+  'ClientPoint',
+  'FrameStats',
+  'ClientRect',
+  'ContentPoint',
+  'Author',
+  'Warning',
+  'WordCount',
+  'ShapePreset',
+  'ThemeColour',
+  'TransformKind',
+  'ColourTransform',
+  'ColourValue',
+  'GradientShape',
+  'GradientStop',
+  'FillValue',
+  'Compound',
+  'LineCap',
+  'LineJoin',
+  'ArrowKind',
+  'ArrowSize',
+  'Arrowhead',
+  'LineEnds',
+  'LineValue',
+  'LineChange',
+  'Shadow',
+  'Glow',
+  'EffectsValue',
+  'EffectsChange',
+  'TextAnchor',
+  'TextAutofit',
+  'TextDirection',
+  'ShapeTextState',
+  'ShapeTextChange',
+  'PictureAdjustChange',
+  'ShapeInsert',
+  'ShapeAdjust',
+  'FlipAxis',
+  'Arrange',
+  'FillState',
+  'LineState',
+  'ShapeState',
+  'ShapeGalleryGroup',
+  // editor.ts
+  'PdfOptions',
+  // commands.ts
+  'DocumentDefaults',
 ];
 
 /** Schema types written out at each use rather than named. */
@@ -189,6 +236,7 @@ const INLINE = [
   'HyperlinkDialog',
   'Identity',
   'IndentState',
+  'Indents',
   'InsertTableDialog',
   'LevelAlignment',
   'LinkInfo',
@@ -197,6 +245,7 @@ const INLINE = [
   'ListItem',
   'ListOptions',
   'ListState',
+  'Location',
   'ManageStylesDialog',
   'ManageStylesTab',
   'ManagedStyle',
@@ -213,6 +262,7 @@ const INLINE = [
   'PageSetupDialog',
   'PageSize',
   'ParagraphDialog',
+  'ParagraphSpacing',
   'PictureOptions',
   'PictureSizeDialog',
   'PlainTextOptions',
@@ -245,6 +295,7 @@ const INLINE = [
   'TooltipKind',
   'VerticalMerge',
   'VerticalRuler',
+  'WarningCode',
 ];
 
 /** Fields this SDK types more precisely than the schema can (`Type.field`: the TypeScript type). */
@@ -254,10 +305,13 @@ const FIELDS: Record<string, string> = {
   // This SDK's `RowHeight` has `'auto'` in it.
   'TableSelection.rowHeight': 'Mixed<RowHeight>',
   'ElementContext.kind': "'field' | ControlKind | 'repeatingItem'",
+  'FillValue.gradient.angle': 'Degrees',
+  'Shadow.direction': 'Degrees',
+  'PdfOptions.keywords': 'readonly string[]',
 };
 
 /** Fields the engine defaults when they're left out, of types only the engine reads: optional here. */
-const OPTIONAL = ['PreviewSize.scale'];
+const OPTIONAL = ['PreviewSize.scale', 'Arrowhead.length', 'Arrowhead.width'];
 
 /** Schema types this SDK names otherwise (Rust name: this SDK's), from its own modules. */
 const NAMES: Record<string, string> = { Command: 'Op' };
@@ -362,9 +416,12 @@ function ts(ty: Ty, from: string, indent = ''): string {
     case 'literal':
       return `'${ty.value}'`;
     case 'nullable':
-      return `${ts(ty.of, from, indent)} | null`;
+      // `null` once, however deep.
+      return ty.of.kind === 'nullable' ? ts(ty.of, from, indent) : `${ts(ty.of, from, indent)} | null`;
     case 'array': {
       const item = ts(ty.of, from, indent);
+      // A fixed length is a tuple.
+      if (ty.len !== undefined && ty.len <= 8) return `[${Array(ty.len).fill(item).join(', ')}]`;
       return `${isUnion(ty.of) ? `(${item})` : item}[]`;
     }
     case 'tuple':
@@ -460,8 +517,10 @@ const used = new Set<string>();
  */
 function inlineObject(fields: Field[], owner: string, indent = '  ', lead: string[] = []): string {
   const parts = fields.map((f) => {
-    const ty = f.omitted && f.ty.kind === 'nullable' ? f.ty.of : f.ty;
-    return `${f.name}${f.omitted ? '?' : ''}: ${ts(ty, `${owner}.${f.name}`, indent)}`;
+    const optional = f.omitted || OPTIONAL.includes(`${owner}.${f.name}`);
+    const ty = optional && f.ty.kind === 'nullable' ? f.ty.of : f.ty;
+    const path = `${owner}.${f.name}`;
+    return `${f.name}${optional ? '?' : ''}: ${override(path) ?? ts(ty, path, indent)}`;
   });
   const line = `{ ${[...lead, ...parts].join('; ')} }`;
   if (line.length <= 100 && !line.includes('\n')) return line;

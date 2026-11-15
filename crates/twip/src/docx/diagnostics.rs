@@ -84,10 +84,13 @@ pub struct Location {
 #[derive(Clone, Debug, PartialEq, Eq, twip_wire::Encode, twip_wire::Decode)]
 #[wire(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Warning {
+    /// What kind of problem it is.
     pub code: WarningCode,
     /// The first occurrence's description.
     pub message: String,
+    /// How many times it happened.
     pub count: u32,
+    /// Where it happened, when known.
     #[wire(default, skip_serializing_if = "Option::is_none")]
     pub location: Option<Location>,
 }

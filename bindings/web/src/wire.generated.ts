@@ -3,7 +3,7 @@ import type { CommandId, Op } from './commands.js';
 import type { MenuAction } from './services/menus.js';
 import type { Mixed, RowHeight, Tri } from './state.js';
 import type { Cursor } from './transport/protocol.js';
-import type { Author, ClientPoint, ClientRect, Color, CommentId, ContentPoint, Degrees, ElementId, HeadingId, MatchId, Points, RevisionId, ShapeState, StyleId } from './types.js';
+import type { Color, CommentId, Degrees, ElementId, HeadingId, MatchId, Points, RevisionId, StyleId } from './types.js';
 
 /** A font table's general class of a family. */
 export type FontClass =
@@ -1939,4 +1939,531 @@ export interface FieldInfo {
     /** The English label. */
     label: string;
   }[];
+}
+
+/** A point relative to the browser viewport (or the control), CSS px: where to place a fixed-position menu. */
+export interface ClientPoint {
+  /** From the viewport's left edge. */
+  clientX: number;
+  /** From the viewport's top edge. */
+  clientY: number;
+}
+
+/** What the frames have cost so far: for benchmarks and tests. Counts run from the session's start. */
+export interface FrameStats {
+  /** Frames drawn. */
+  frames: number;
+  /** Page recordings made: an unchanged page is recorded once. */
+  pagesRecorded: number;
+  /** Pages drawn again from their recordings. */
+  pagesReused: number;
+  /** The page recordings kept now, bytes. */
+  recordingBytes: number;
+  /** The last frame's time, ms. */
+  lastFrameMs: number;
+  /** The 95th percentile of the last 120 frames' times, ms. */
+  p95FrameMs: number;
+}
+
+/** A rectangle in the `ClientPoint` space. */
+export interface ClientRect {
+  /** Its left edge. */
+  left: number;
+  /** Its top edge. */
+  top: number;
+  /** Its width. */
+  width: number;
+  /** Its height. */
+  height: number;
+}
+
+/** A point relative to the editor's balloon layer, CSS px: it scrolls and zooms with the document. */
+export interface ContentPoint {
+  /** From the layer's left edge. */
+  x: number;
+  /** From the layer's top edge. */
+  y: number;
+}
+
+/** Who edits: the name revisions and comments are recorded under. */
+export interface Author {
+  /** The display name. */
+  name: string;
+  /** The initials shown on comments. */
+  initials?: string;
+  /** The identity in a directory, written to the document with the author. */
+  identity?: {
+    provider: string;
+    userId: string;
+  };
+}
+
+/** One kind of problem in one part, with how many times it happened. */
+export interface Warning {
+  /** What kind of problem it is. */
+  code: 'unsupported-element' | 'image-undecodable' | 'font-unresolved' | 'rewritten-content' | 'pdf-font-fallback' | 'pdf-archival-claim-dropped' | 'revision-id-missing' | 'range-unpaired' | 'author-missing' | 'comment-unanchored' | 'comment-reference-orphan' | 'unknown-preset' | 'glossary-unreadable' | 'duplicate-building-block' | 'sub-template-cycle' | 'sub-template-too-deep' | 'sub-template-near-match' | 'picture-bullet-undecodable';
+  /** The first occurrence's description. */
+  message: string;
+  /** How many times it happened. */
+  count: number;
+  /** Where it happened, when known. */
+  location?: {
+    /** The package part (`word/document.xml`, `word/comments.xml`, ...). */
+    part: string;
+    /** The paragraph's index in the part's body, when the warning is about one. */
+    paragraph?: number;
+  };
+}
+
+/** The document's counts, computed on request. */
+export interface WordCount {
+  /** Words. */
+  words: number;
+  /** Characters, without spaces. */
+  characters: number;
+  /** Characters, with spaces. */
+  charactersWithSpaces: number;
+  /** Paragraphs. */
+  paragraphs: number;
+  /** Lines. */
+  lines: number;
+  /** Pages. */
+  pages: number;
+}
+
+/** A preset geometry, by its DrawingML name (`rect`, `wedgeRectCallout`). */
+export type ShapePreset = 'accentBorderCallout1' | 'accentBorderCallout2' | 'accentBorderCallout3' | 'accentCallout1' | 'accentCallout2' | 'accentCallout3' | 'actionButtonBackPrevious' | 'actionButtonBeginning' | 'actionButtonBlank' | 'actionButtonDocument' | 'actionButtonEnd' | 'actionButtonForwardNext' | 'actionButtonHelp' | 'actionButtonHome' | 'actionButtonInformation' | 'actionButtonMovie' | 'actionButtonReturn' | 'actionButtonSound' | 'arc' | 'bentArrow' | 'bentConnector2' | 'bentConnector3' | 'bentConnector4' | 'bentConnector5' | 'bentUpArrow' | 'bevel' | 'blockArc' | 'borderCallout1' | 'borderCallout2' | 'borderCallout3' | 'bracePair' | 'bracketPair' | 'callout1' | 'callout2' | 'callout3' | 'can' | 'chartPlus' | 'chartStar' | 'chartX' | 'chevron' | 'chord' | 'circularArrow' | 'cloud' | 'cloudCallout' | 'corner' | 'cornerTabs' | 'cube' | 'curvedConnector2' | 'curvedConnector3' | 'curvedConnector4' | 'curvedConnector5' | 'curvedDownArrow' | 'curvedLeftArrow' | 'curvedRightArrow' | 'curvedUpArrow' | 'decagon' | 'diagStripe' | 'diamond' | 'dodecagon' | 'donut' | 'doubleWave' | 'downArrow' | 'downArrowCallout' | 'ellipse' | 'ellipseRibbon' | 'ellipseRibbon2' | 'flowChartAlternateProcess' | 'flowChartCollate' | 'flowChartConnector' | 'flowChartDecision' | 'flowChartDelay' | 'flowChartDisplay' | 'flowChartDocument' | 'flowChartExtract' | 'flowChartInputOutput' | 'flowChartInternalStorage' | 'flowChartMagneticDisk' | 'flowChartMagneticDrum' | 'flowChartMagneticTape' | 'flowChartManualInput' | 'flowChartManualOperation' | 'flowChartMerge' | 'flowChartMultidocument' | 'flowChartOfflineStorage' | 'flowChartOffpageConnector' | 'flowChartOnlineStorage' | 'flowChartOr' | 'flowChartPredefinedProcess' | 'flowChartPreparation' | 'flowChartProcess' | 'flowChartPunchedCard' | 'flowChartPunchedTape' | 'flowChartSort' | 'flowChartSummingJunction' | 'flowChartTerminator' | 'foldedCorner' | 'frame' | 'funnel' | 'gear6' | 'gear9' | 'halfFrame' | 'heart' | 'heptagon' | 'hexagon' | 'homePlate' | 'horizontalScroll' | 'irregularSeal1' | 'irregularSeal2' | 'leftArrow' | 'leftArrowCallout' | 'leftBrace' | 'leftBracket' | 'leftCircularArrow' | 'leftRightArrow' | 'leftRightArrowCallout' | 'leftRightCircularArrow' | 'leftRightRibbon' | 'leftRightUpArrow' | 'leftUpArrow' | 'lightningBolt' | 'line' | 'lineInv' | 'mathDivide' | 'mathEqual' | 'mathMinus' | 'mathMultiply' | 'mathNotEqual' | 'mathPlus' | 'moon' | 'noSmoking' | 'nonIsoscelesTrapezoid' | 'notchedRightArrow' | 'octagon' | 'parallelogram' | 'pentagon' | 'pie' | 'pieWedge' | 'plaque' | 'plaqueTabs' | 'plus' | 'quadArrow' | 'quadArrowCallout' | 'rect' | 'ribbon' | 'ribbon2' | 'rightArrow' | 'rightArrowCallout' | 'rightBrace' | 'rightBracket' | 'round1Rect' | 'round2DiagRect' | 'round2SameRect' | 'roundRect' | 'rtTriangle' | 'smileyFace' | 'snip1Rect' | 'snip2DiagRect' | 'snip2SameRect' | 'snipRoundRect' | 'squareTabs' | 'star10' | 'star12' | 'star16' | 'star24' | 'star32' | 'star4' | 'star5' | 'star6' | 'star7' | 'star8' | 'straightConnector1' | 'stripedRightArrow' | 'sun' | 'swooshArrow' | 'teardrop' | 'trapezoid' | 'triangle' | 'upArrow' | 'upArrowCallout' | 'upDownArrow' | 'upDownArrowCallout' | 'uturnArrow' | 'verticalScroll' | 'wave' | 'wedgeEllipseCallout' | 'wedgeRectCallout' | 'wedgeRoundRectCallout';
+
+/** A theme colour. */
+export type ThemeColour =
+  /** Dark 1 (through the document's colour mapping). */
+  | 'text1'
+  /** Light 1. */
+  | 'background1'
+  /** Dark 2. */
+  | 'text2'
+  /** Light 2. */
+  | 'background2'
+  /** Accent 1. */
+  | 'accent1'
+  /** Accent 2. */
+  | 'accent2'
+  /** Accent 3. */
+  | 'accent3'
+  /** Accent 4. */
+  | 'accent4'
+  /** Accent 5. */
+  | 'accent5'
+  /** Accent 6. */
+  | 'accent6'
+  /** The hyperlink colour. */
+  | 'hyperlink'
+  /** The followed hyperlink colour. */
+  | 'followedHyperlink';
+
+/** What a colour transform does. */
+export type TransformKind =
+  /** Towards white by `1 - value`. */
+  | 'tint'
+  /** Towards black by `1 - value`. */
+  | 'shade'
+  /** Luminance times `value`. */
+  | 'lumMod'
+  /** Luminance plus `value`. */
+  | 'lumOff'
+  /** Saturation times `value`. */
+  | 'satMod'
+  /** Saturation plus `value`. */
+  | 'satOff'
+  /** Hue times `value`. */
+  | 'hueMod'
+  /** Hue plus `value` degrees. */
+  | 'hueOff'
+  /** Opacity `value`. */
+  | 'alpha'
+  /** Opacity times `value`. */
+  | 'alphaMod';
+
+/** One colour transform; `value` is a fraction (0.75), degrees for `hueOff`. */
+export interface ColourTransform {
+  /** What it does. */
+  kind: TransformKind;
+  /** How much. */
+  value: number;
+}
+
+/** A colour: exactly one base (a theme colour, an RGB value or a preset colour name), then its transforms in order. */
+export interface ColourValue {
+  /** A theme colour. */
+  theme?: ThemeColour;
+  /** An RGB colour. */
+  rgb?: Color;
+  /** A preset colour by its CSS name (`"cornflowerBlue"`). */
+  preset?: string;
+  /** The transforms, applied in order. */
+  transforms?: ColourTransform[];
+}
+
+/** A gradient's shape. */
+export type GradientShape =
+  /** Along a direction (`angle`). */
+  | 'linear'
+  /** From the centre outward in circles. */
+  | 'radial'
+  /** From the centre outward in rectangles. */
+  | 'rectangular'
+  /** Following the shape's outline. */
+  | 'path';
+
+/** A gradient stop. */
+export interface GradientStop {
+  /** 0 to 1 along the gradient. */
+  position: number;
+  /** The colour there. */
+  colour: ColourValue;
+}
+
+/** A fill. */
+export type FillValue =
+  | { type: 'none' }
+  | { type: 'solid'; colour: ColourValue }
+  | { type: 'gradient'; kind: GradientShape; angle?: Degrees; stops: GradientStop[] }
+  | { type: 'pattern'; preset: string; foreground: ColourValue; background: ColourValue }
+  | { type: 'picture'; image: Uint8Array; tile?: boolean }
+  | { type: 'fromStyle' };
+
+/** How a line is drawn along its length. */
+export type Compound =
+  /** One line. */
+  | 'single'
+  /** Two equal lines. */
+  | 'double'
+  /** A thick line then a thin one. */
+  | 'thickThin'
+  /** A thin line then a thick one. */
+  | 'thinThick'
+  /** Three lines. */
+  | 'triple';
+
+/** A line's ends. */
+export type LineCap =
+  /** Square, at the end. */
+  | 'flat'
+  /** Rounded. */
+  | 'round'
+  /** Square, half the width past the end. */
+  | 'square';
+
+/** How a line's segments join. */
+export type LineJoin =
+  /** Rounded. */
+  | 'round'
+  /** Cut off. */
+  | 'bevel'
+  /** Pointed. */
+  | 'miter';
+
+/** An arrowhead's shape. */
+export type ArrowKind =
+  /** A filled triangle. */
+  | 'triangle'
+  /** A notched triangle. */
+  | 'stealth'
+  /** A diamond. */
+  | 'diamond'
+  /** An oval. */
+  | 'oval'
+  /** An open V. */
+  | 'arrow';
+
+/** An arrowhead's width or length. */
+export type ArrowSize =
+  /** Small. */
+  | 'small'
+  /** Medium. */
+  | 'medium'
+  /** Large. */
+  | 'large';
+
+/** An arrowhead. */
+export interface Arrowhead {
+  /** Its shape. */
+  kind: ArrowKind;
+  /** Its width. */
+  width?: ArrowSize;
+  /** Its length. */
+  length?: ArrowSize;
+}
+
+/** A line's arrowheads. */
+export interface LineEnds {
+  /** At the start. */
+  head?: Arrowhead;
+  /** At the end. */
+  tail?: Arrowhead;
+}
+
+/** An outline. */
+export interface LineValue {
+  /** The width (0.75 pt when the document gives none). */
+  width: Points;
+  /** `none`, `solid` or `gradient`. */
+  fill: FillValue;
+  /** The ECMA-376 dash name (`"solid"`, `"dash"`, `"sysDot"`…); `"custom"` for a custom dash. */
+  dash: string;
+  /** Single or several lines. */
+  compound: Compound;
+  /** The ends. */
+  cap: LineCap;
+  /** The joins. */
+  join: LineJoin;
+  /** The arrowheads. */
+  ends: LineEnds;
+}
+
+/** `setShapeLine`'s change; what isn't given is kept. */
+export interface LineChange {
+  /** The width (0…1584 pt). */
+  width?: Points;
+  /** `none`, `solid` or `gradient`; `fromStyle` removes the whole explicit outline. */
+  fill?: FillValue;
+  /** The ECMA-376 dash name. */
+  dash?: string;
+  /** Single or several lines. */
+  compound?: Compound;
+  /** The ends. */
+  cap?: LineCap;
+  /** The joins. */
+  join?: LineJoin;
+  /** The arrowheads: both ends are replaced (an end not given is removed). */
+  ends?: LineEnds;
+}
+
+/** A shadow. */
+export interface Shadow {
+  /** Its colour (with its transparency as an `alpha` transform). */
+  colour: ColourValue;
+  /** How far it blurs. */
+  blur: Points;
+  /** How far from the shape. */
+  distance: Points;
+  /** Which way, clockwise from the right. */
+  direction: Degrees;
+}
+
+/** A glow. */
+export interface Glow {
+  /** Its colour. */
+  colour: ColourValue;
+  /** How far it reaches. */
+  radius: Points;
+}
+
+/** A shape's effects. */
+export interface EffectsValue {
+  /** A shadow outside the shape. */
+  outerShadow?: Shadow;
+  /** A shadow inside the shape. */
+  innerShadow?: Shadow;
+  /** A glow around the shape. */
+  glow?: Glow;
+  /** Edges faded over this distance. */
+  softEdge?: Points;
+  /** The whole shape blurred by this radius. */
+  blur?: Points;
+}
+
+/** `setShapeEffects`'s change: each effect given replaces that effect, `null` removes it, what isn't given is kept. */
+export interface EffectsChange {
+  /** A shadow outside the shape. */
+  outerShadow?: Shadow | null;
+  /** A shadow inside the shape. */
+  innerShadow?: Shadow | null;
+  /** A glow around the shape. */
+  glow?: Glow | null;
+  /** Edges faded over this distance. */
+  softEdge?: Points | null;
+  /** The whole shape blurred by this radius. */
+  blur?: Points | null;
+}
+
+/** Where text sits in a shape vertically. */
+export type TextAnchor =
+  /** At the top. */
+  | 'top'
+  /** In the middle. */
+  | 'middle'
+  /** At the bottom. */
+  | 'bottom';
+
+/** How a shape fits its text. */
+export type TextAutofit =
+  /** The shape keeps its size. */
+  | 'none'
+  /** The shape's height follows its text. */
+  | 'shape';
+
+/** Which way a shape's text runs. */
+export type TextDirection =
+  /** Left to right, lines downward. */
+  | 'horizontal'
+  /** Turned 90° clockwise. */
+  | 'vertical'
+  /** Turned 270° clockwise. */
+  | 'vertical270'
+  /** East Asian vertical: CJK upright, other text turned. */
+  | 'eastAsianVertical'
+  /** Mongolian vertical. */
+  | 'mongolianVertical'
+  /** Letters stacked, one per line. */
+  | 'stacked'
+  /** Letters stacked, right to left. */
+  | 'stackedRightToLeft';
+
+/** A shape's text body as written. */
+export interface ShapeTextState {
+  /** Left, top, right, bottom. */
+  insets: [Points, Points, Points, Points];
+  /** Where the text sits. */
+  anchor: TextAnchor;
+  /** How the shape fits it. */
+  autofit: TextAutofit;
+  /** Lines wrap at the shape's width. */
+  wrapText: boolean;
+  /** Which way it runs. */
+  direction: TextDirection;
+}
+
+/** `setShapeText`'s change; what isn't given is kept. */
+export interface ShapeTextChange {
+  /** Left, top, right, bottom (0…1584 pt). */
+  insets?: [Points, Points, Points, Points];
+  /** Where the text sits. */
+  anchor?: TextAnchor;
+  /** How the shape fits it. */
+  autofit?: TextAutofit;
+  /** Lines wrap at the shape's width. */
+  wrapText?: boolean;
+  /** Which way it runs. */
+  direction?: TextDirection;
+}
+
+/** `setPictureAdjust`'s change; what isn't given is kept. Fractions are −1…1 (transparency 0…1). */
+export interface PictureAdjustChange {
+  /** How see-through the picture is (0 opaque, 1 invisible). */
+  transparency?: number;
+  /** Shown in shades of grey. */
+  grayscale?: boolean;
+  /** Lighter (positive) or darker. */
+  brightness?: number;
+  /** More (positive) or less contrast. */
+  contrast?: number;
+}
+
+/** `insertShape`'s options. */
+export interface ShapeInsert {
+  /** The preset geometry. */
+  preset: ShapePreset;
+  /** The width (72 pt when not given). */
+  width?: Points;
+  /** The height (72 pt when not given; 0 for lines). */
+  height?: Points;
+}
+
+/** `setShapeAdjust`'s options. */
+export interface ShapeAdjust {
+  /** The adjust value's index, in the preset's order. */
+  index: number;
+  /** Its new value (the preset's units, usually 100000ths). */
+  value: number;
+}
+
+/** Which way to flip. */
+export type FlipAxis =
+  /** Left to right. */
+  | 'horizontal'
+  /** Top to bottom. */
+  | 'vertical';
+
+/** Where an object goes in the paint order. */
+export type Arrange =
+  /** Over the next object above it. */
+  | 'forward'
+  /** Under the next object below it. */
+  | 'backward'
+  /** Over every object. */
+  | 'toFront'
+  /** Under every object. */
+  | 'toBack'
+  /** In front of the text. */
+  | 'inFrontOfText'
+  /** Behind the text. */
+  | 'behindText';
+
+/** A fill as written: the shape's own, or its style reference's. */
+export type FillState = { explicit: FillValue } | { fromStyle: FillValue };
+
+/** An outline as written: the shape's own, or its style reference's. */
+export type LineState = { explicit: LineValue } | { fromStyle: LineValue };
+
+/** The selected shape's properties, as written. */
+export interface ShapeState {
+  /** The preset geometry; `null` for a custom geometry. */
+  preset: ShapePreset | null;
+  /** The adjust values in effect, in the preset's order. */
+  adjust: number[];
+  /** The fill. */
+  fill: FillState;
+  /** The outline. */
+  line: LineState;
+  /** The effects. */
+  effects: EffectsValue;
+  /** The text body; `null` for pictures and groups. */
+  text: ShapeTextState | null;
+}
+
+/** A group of the shape gallery. */
+export interface ShapeGalleryGroup {
+  /** Its label (`"Basic Shapes"`). */
+  label: string;
+  /** Its presets, in Word's order. */
+  presets: ShapePreset[];
+}
+
+/** What a PDF writes beyond the pages. The default writes neither a password nor keywords. */
+export interface PdfOptions {
+  /** Encrypts the PDF (AES-256): readers ask for this password before showing anything. Must not be empty. */
+  openPassword?: string;
+  /** Written to the PDF's keywords metadata, in order. Blank entries are dropped. */
+  keywords?: readonly string[];
+}
+
+/** `setDocumentDefaults`'s options: the formatting text has before any style's; what isn't given is kept. */
+export interface DocumentDefaults {
+  /** The font. */
+  font?: string;
+  /** The size. */
+  size?: Points;
+  /** The font color. */
+  color?: Color | 'auto';
+  /** The space before and after paragraphs. */
+  spacing?: {
+    /** Space before, or auto. */
+    before?: Points | 'auto';
+    /** Space after, or auto. */
+    after?: Points | 'auto';
+  };
+  /** The line spacing. */
+  lineSpacing?: LineSpacing;
+  /** The left and right indents. */
+  indents?: {
+    /** The left indent. */
+    left?: Points;
+    /** The right indent. */
+    right?: Points;
+    /** The first line's extra indent. */
+    firstLine?: Points;
+    /** The hanging indent of the lines after the first. */
+    hanging?: Points;
+  };
 }

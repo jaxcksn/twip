@@ -9384,8 +9384,11 @@
             "ty": {
               "kind": "nullable",
               "of": {
-                "kind": "ref",
-                "name": "Shadow"
+                "kind": "nullable",
+                "of": {
+                  "kind": "ref",
+                  "name": "Shadow"
+                }
               }
             }
           },
@@ -9397,8 +9400,11 @@
             "ty": {
               "kind": "nullable",
               "of": {
-                "kind": "ref",
-                "name": "Shadow"
+                "kind": "nullable",
+                "of": {
+                  "kind": "ref",
+                  "name": "Shadow"
+                }
               }
             }
           },
@@ -9410,8 +9416,11 @@
             "ty": {
               "kind": "nullable",
               "of": {
-                "kind": "ref",
-                "name": "Glow"
+                "kind": "nullable",
+                "of": {
+                  "kind": "ref",
+                  "name": "Glow"
+                }
               }
             }
           },
@@ -9423,8 +9432,11 @@
             "ty": {
               "kind": "nullable",
               "of": {
-                "kind": "ref",
-                "name": "Points"
+                "kind": "nullable",
+                "of": {
+                  "kind": "ref",
+                  "name": "Points"
+                }
               }
             }
           },
@@ -9436,8 +9448,11 @@
             "ty": {
               "kind": "nullable",
               "of": {
-                "kind": "ref",
-                "name": "Points"
+                "kind": "nullable",
+                "of": {
+                  "kind": "ref",
+                  "name": "Points"
+                }
               }
             }
           }
@@ -22377,8 +22392,11 @@
             "ty": {
               "kind": "nullable",
               "of": {
-                "kind": "ref",
-                "name": "DataBinding"
+                "kind": "nullable",
+                "of": {
+                  "kind": "ref",
+                  "name": "DataBinding"
+                }
               }
             }
           },
@@ -27475,6 +27493,7 @@
         "fields": [
           {
             "defaulted": false,
+            "docs": "What kind of problem it is.",
             "name": "code",
             "omitted": false,
             "ty": {
@@ -27493,6 +27512,7 @@
           },
           {
             "defaulted": false,
+            "docs": "How many times it happened.",
             "name": "count",
             "omitted": false,
             "ty": {
@@ -27503,6 +27523,7 @@
           },
           {
             "defaulted": true,
+            "docs": "Where it happened, when known.",
             "name": "location",
             "omitted": true,
             "ty": {

@@ -29,6 +29,9 @@ import { directTransport } from './transport/direct.js';
 import { chooseExecution, workerTransport } from './transport/worker.js';
 import { decodeEvent, type FrameInfo, Kind, Method, type Input, type Message, type Transport } from './transport/protocol.js';
 import type { Author, ClientRect, Color, OverlayColors, ShapeGalleryGroup, Warning, WordCount } from './types.js';
+import type { PdfOptions } from './wire.generated.js';
+
+export type { PdfOptions } from './wire.generated.js';
 
 /** Options for a new session. */
 export interface SessionOptions {
@@ -99,17 +102,6 @@ export interface MountOptions extends SessionOptions {
   label?: string;
   /** Aborts the mount; everything it created is released. */
   signal?: AbortSignal;
-}
-
-/** What a PDF writes beyond the pages. */
-export interface PdfOptions {
-  /**
-   * Encrypts the PDF with AES-256: readers ask for this password before showing anything. Must not be empty. A protected
-   * PDF doesn't claim PDF/A conformance, and the export warns that the claim was dropped.
-   */
-  openPassword?: string;
-  /** Written to the PDF's keywords metadata, in order. Blank entries are dropped. */
-  keywords?: readonly string[];
 }
 
 /** What {@link HeadlessEditor.export} writes: DOCX, or PDF with its options. */
