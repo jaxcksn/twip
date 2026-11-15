@@ -217,3 +217,61 @@ fn hostile_packages_are_refused_or_read() {
     let listed = hostile(&item.repeat(2), &[("word/numbering.xml", numbering), ("word/_rels/document.xml.rels", rels)]);
     assert_eq!(read_on_small_stack(listed), Ok(()));
 }
+
+#[test]
+fn hostile_values_in_a_package_are_bounded() {
+    const W: &str = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+    const REL: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+    let rels = format!(
+        r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="{REL}/numbering" Target="numbering.xml"/><Relationship Id="rId2" Type="{REL}/settings" Target="settings.xml"/></Relationships>"#
+    );
+    let settings = format!(
+        r#"<w:settings xmlns:w="{W}"><w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>"#
+    );
+    let read = |body: &str, numbering: &str| {
+        let numbering = format!(r#"<w:numbering xmlns:w="{W}">{numbering}</w:numbering>"#);
+        read_on_small_stack(hostile(
+            body,
+            &[("word/numbering.xml", &numbering), ("word/settings.xml", &settings), ("word/_rels/document.xml.rels", &rels)],
+        ))
+    };
+    // A chicago list starting at the largest number there is: one symbol a repeat would be exabytes.
+    let numbering = r#"<w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:start w:val="9223372036854775807"/><w:numFmt w:val="chicago"/><w:lvlText w:val="%1"/></w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>"#;
+    let item = r#"<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr><w:r><w:t>x</w:t></w:r></w:p>"#;
+    assert_eq!(read(item, numbering), Ok(()), "chicago");
+    // Cells spanning, and rows skipping, two billion grid columns.
+    let table = r#"<w:tbl><w:tr><w:trPr><w:gridBefore w:val="2000000000"/><w:gridAfter w:val="9223372036854775807"/></w:trPr><w:tc><w:tcPr><w:gridSpan w:val="2000000000"/></w:tcPr><w:p/></w:tc><w:tc><w:tcPr><w:gridSpan w:val="9223372036854775807"/></w:tcPr><w:p/></w:tc></w:tr></w:tbl><w:p/>"#;
+    assert_eq!(read(table, ""), Ok(()), "grid spans");
+    let anchor = |allow: u8, size: u32, h: &str, extra: &str| {
+        format!(
+            concat!(
+                r#"<w:p><w:r><w:drawing xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" "#,
+                r#"xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture" xmlns:wp14="http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing">"#,
+                r#"<wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="0" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="{allow}">"#,
+                r#"<wp:simplePos x="0" y="0"/>{h}<wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV>"#,
+                r#"<wp:extent cx="{size}" cy="{size}"/><wp:wrapSquare wrapText="bothSides"/><wp:docPr id="1" name="x"/>"#,
+                r#"<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:blipFill/><pic:spPr><a:xfrm><a:off x="9223372036854775807" y="-9223372036854775808"/><a:ext cx="127000" cy="127000"/></a:xfrm></pic:spPr></pic:pic></a:graphicData></a:graphic>{extra}</wp:anchor></w:drawing></w:r></w:p>"#
+            ),
+            allow = allow,
+            size = size,
+            h = h,
+            extra = extra,
+        )
+    };
+    // Percentage positions and sizes of the largest value there is, and an offset past any page.
+    let pct = anchor(
+        1,
+        127_000,
+        r#"<wp:positionH relativeFrom="page"><wp14:pctPosHOffset>9223372036854775807</wp14:pctPosHOffset></wp:positionH>"#,
+        r#"<wp14:sizeRelH relativeFrom="page"><wp14:pctWidth>9223372036854775807</wp14:pctWidth></wp14:sizeRelH><wp14:sizeRelV relativeFrom="page"><wp14:pctHeight>-9223372036854775808</wp14:pctHeight></wp14:sizeRelV>"#,
+    );
+    assert_eq!(read(&pct, ""), Ok(()), "wp14 percentages");
+    // More pictures that may not overlap than a page holds, all asked for in one place: compat 15 searches for room
+    // for each, and those that find none try every place.
+    // Each a different size, so that no two edges are the same place to try: 600 took minutes without a bound.
+    let at = r#"<wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH>"#;
+    let crowd: String = (0..600).map(|i| anchor(0, 127_000 + i * 1_270, at, "")).collect::<String>().replace("</w:r></w:p><w:p><w:r>", "</w:r><w:r>");
+    let started = std::time::Instant::now();
+    assert_eq!(read(&crowd, ""), Ok(()), "a crowd of floats");
+    assert!(started.elapsed() < std::time::Duration::from_secs(60), "laid out in {:?}", started.elapsed());
+}

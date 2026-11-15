@@ -582,7 +582,7 @@ impl IdCounter {
     /// A revision or comment id: one sequence for both, as `w:id`s share one space in a document.
     pub fn next_revision_id(&mut self) -> i64 {
         let id = self.next_revision;
-        self.next_revision += 1;
+        self.next_revision = self.next_revision.saturating_add(1);
         id
     }
 

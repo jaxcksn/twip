@@ -9,10 +9,13 @@ fn tw(v: f64) -> i64 {
     (v * 20.0).round() as i64
 }
 
+/// `a * b / c`, rounded half away from zero; `b` is a wp14 percentage from the file, so the product is wide and the
+/// result saturates.
 fn mul_div(a: i64, b: i64, c: i64) -> i64 {
-    let q = a * b;
+    let (q, c) = (i128::from(a) * i128::from(b), i128::from(c));
     let r = (q.abs() + c.abs() / 2) / c.abs();
-    if (q >= 0) == (c > 0) { r } else { -r }
+    let r = if (q >= 0) == (c > 0) { r } else { -r };
+    r.clamp(i64::MIN.into(), i64::MAX.into()) as i64
 }
 
 fn share(base: f64, tenths: i64) -> f64 {

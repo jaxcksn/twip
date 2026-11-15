@@ -310,7 +310,7 @@ pub fn format_number(v: i64, fmt: &str) -> String {
         "none" => String::new(),
         "numberInDash" => format!("- {v} -"),
         "hex" => format!("{v:X}"),
-        "chicago" if v > 0 => ["*", "†", "‡", "§"][(v as usize - 1) % 4].repeat((v as usize - 1) / 4 + 1),
+        "chicago" if v > 0 && v <= REPEAT_LIMIT => ["*", "†", "‡", "§"][(v as usize - 1) % 4].repeat((v as usize - 1) / 4 + 1),
         "russianLower" => repeated(v, &chars(&[(0x430, 0x438), (0x43A, 0x43F), (0x440, 0x449), (0x44B, 0x44B), (0x44D, 0x44F)])),
         "russianUpper" => repeated(v, &chars(&[(0x410, 0x418), (0x41A, 0x41F), (0x420, 0x429), (0x42B, 0x42B), (0x42D, 0x42F)])),
         "hindiVowels" => repeated(v, &chars(&[(0x915, 0x939)])),
@@ -495,6 +495,8 @@ mod tests {
         assert!(cardinal(i64::MIN).starts_with("minus nine billion"));
         assert_eq!(format_number(i64::MAX, "lowerLetter"), i64::MAX.to_string());
         assert_eq!(format_number(i64::MAX, "upperRoman"), i64::MAX.to_string());
+        assert_eq!(format_number(i64::MAX, "chicago"), i64::MAX.to_string());
+        assert_eq!(format_number(6, "chicago"), "††");
         assert_eq!(ordinal_text(20), "twentieth");
         assert_eq!(ordinal_text(21), "twenty-first");
         assert_eq!(format_number(29, "russianLower"), "я");

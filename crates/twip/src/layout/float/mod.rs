@@ -225,6 +225,11 @@ impl Placed {
     }
 }
 
+/// The overlap tests compat 15's search for a free place may make: its rows and columns grow with the obstacles, so
+/// it is cubic in them, and a page of `allowOverlap="0"` shapes would take minutes.
+// ponytail: a safety bound far past real pages (ten obstacles make about 4,000 tests); past it the float stays put.
+const AVOID_TESTS: usize = 1 << 16;
+
 /// Moves a float that may not overlap an earlier one clear of them, each box grown by the room it keeps, within its
 /// area `lo..hi` across and `top..bottom` down. Compat 15 first pulls its box inside the area on each axis (not on an
 /// axis where it is wider than the area), then tries the rows at that y, below each obstacle and above each, from that
@@ -256,8 +261,11 @@ pub fn avoid(f: &mut Placed, placed: &[Placed], (lo, hi): (f64, f64), (top, bott
             ys.extend([o.rect[3] + ob + ft, o.rect[1] - ot - fb - h].into_iter().filter(|&y| y - ft >= top - EPS && y + h + fb <= bottom + EPS));
         }
         let (xs, ys) = (order(own.0, xs), order(own.1, ys));
-        for &y in &ys {
+        let mut budget = AVOID_TESTS;
+        'search: for &y in &ys {
             for &x in &xs {
+                let Some(left) = budget.checked_sub(obstacles.len()) else { break 'search };
+                budget = left;
                 f.moved_to(x, y);
                 if !obstacles.iter().any(|o| f.overlaps(o)) {
                     return true;

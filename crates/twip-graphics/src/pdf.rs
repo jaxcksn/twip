@@ -148,6 +148,9 @@ impl std::fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
+/// The functions a repeating gradient's shading may write, as [`crate::scene`] bounds dashes.
+const MAX_GRADIENT_PIECES: usize = 200_000;
+
 /// Device pixels per point of what is rasterised: 300 dots per inch.
 const RASTER: f64 = 300.0 / 72.0;
 
@@ -1033,6 +1036,9 @@ impl<'r> Writer<'r> {
                     }
                     _ => (0.0, 1.0),
                 };
+                // Each repeat is a function per stop, and a tiny repeating gradient over a large shape repeats without
+                // bound: past the bound the last colour carries on.
+                let hi = hi.min(lo + (MAX_GRADIENT_PIECES / stops.len().max(1)) as f64);
                 let f = self.stitched(&stops, lo, hi, g.extend);
                 let mut sh = self.pdf.function_shading(id);
                 let at = |t: f64, a: f32, b: f32| (f64::from(a) + t * f64::from(b - a)) as f32;

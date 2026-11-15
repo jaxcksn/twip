@@ -1,6 +1,6 @@
 //! Font renames
 
-use std::io::{Cursor, Read};
+use std::io::Cursor;
 
 use crate::docx::Document;
 use crate::docx::font_table::FontRename;
@@ -16,10 +16,8 @@ pub(super) fn font_renames(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -
         if let Some((_, b)) = parts.iter().find(|(m, _)| m == n) {
             return String::from_utf8(b.clone()).map(Some).map_err(|e| e.to_string());
         }
-        let Ok(mut f) = zin.by_name(n) else { return Ok(None) };
-        let mut s = String::new();
-        f.read_to_string(&mut s).map_err(|e| e.to_string())?;
-        Ok(Some(s))
+        let Ok(f) = zin.by_name(n) else { return Ok(None) };
+        crate::docx::package::text(f, n).map(Some)
     };
     let main = src.main.clone();
     let (dir, file) = main.rsplit_once('/').unwrap_or(("", &main));
