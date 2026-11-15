@@ -2848,3 +2848,107 @@ public sealed record RulerModel
 /// <param name="Right">The right indent.</param>
 /// <param name="FirstLine">The first line's indent from <paramref name="Left"/>.</param>
 public sealed record RulerIndents(Length Left, Length Right, Length FirstLine);
+
+/// <summary>What to find.</summary>
+/// <param name="Text">The text.</param>
+/// <param name="MatchCase">Match case (off when unset).</param>
+/// <param name="WholeWords">Whole words only (off when unset).</param>
+public sealed record FindQuery(string Text, bool MatchCase = false, bool WholeWords = false);
+
+/// <summary>Whether a match was found, and whether the search wrapped past the end.</summary>
+/// <param name="Found">A match was found and selected.</param>
+/// <param name="Wrapped">The search wrapped around the document's end.</param>
+public sealed record FindResult(bool Found, bool Wrapped);
+
+/// <summary>One match with its context, for a results list.</summary>
+/// <param name="Id">The match, for selecting it.</param>
+/// <param name="Before">Some text before it.</param>
+/// <param name="Text">The matched text.</param>
+/// <param name="After">Some text after it.</param>
+/// <param name="Page">Its page.</param>
+public sealed record FindMatch(MatchId Id, string Before, string Text, string After, int Page);
+
+/// <summary>A misspelled word and what to replace it with.</summary>
+/// <param name="Word">The word.</param>
+/// <param name="Suggestions">Replacements, best first.</param>
+public sealed record Misspelling(string Word, IReadOnlyList<string> Suggestions);
+
+/// <summary>A heading, for a navigation pane.</summary>
+/// <param name="Id">The heading.</param>
+/// <param name="Level">Its outline level, from 1.</param>
+/// <param name="Text">Its text.</param>
+/// <param name="Page">Its page.</param>
+public sealed record Heading(HeadingId Id, int Level, string Text, int Page);
+
+/// <summary>
+/// The size of a preview picture: CSS px (or device-independent pixels), and the device pixels per one.
+/// </summary>
+/// <param name="Width">The width.</param>
+/// <param name="Height">The height.</param>
+/// <param name="Scale">Device pixels per px (the device pixel ratio). Default: 1.</param>
+public sealed record PreviewSize(double Width, double Height, double Scale = 1);
+
+/// <summary>
+/// A picture the editor drew: a PNG of <paramref name="Width"/> x <paramref name="Height"/> device pixels.
+/// </summary>
+/// <param name="Png">The PNG.</param>
+/// <param name="Width">Its width, device pixels.</param>
+/// <param name="Height">Its height, device pixels.</param>
+public sealed record PreviewPicture(byte[] Png, int Width, int Height);
+
+/// <summary>How a style gallery tile draws.</summary>
+/// <param name="Font">The font name.</param>
+/// <param name="Size">The size.</param>
+/// <param name="Bold">Bold.</param>
+/// <param name="Italic">Italic.</param>
+/// <param name="Color">The text color.</param>
+public sealed record StylePreview(string Font, Length Size, bool Bold, bool Italic, ColorValue Color);
+
+/// <summary>A text to match in an element property.</summary>
+/// <param name="In">The property: a field's code, or a control's tag or title.</param>
+/// <param name="Text">The text it contains.</param>
+public sealed record ElementMatch(ElementTextField In, string Text);
+
+/// <summary>A sub-template: a building block in a category the rules declare.</summary>
+/// <param name="Name">Its name.</param>
+/// <param name="Category">Its building block category.</param>
+/// <param name="References">The reference fields naming it in the template's body, headers, footers and notes.</param>
+/// <param name="NestedReferences">The reference fields naming it in other sub-templates' bodies.</param>
+/// <param name="Elements">The fields and controls in its body.</param>
+public sealed record SubTemplateInfo(
+    string Name,
+    string Category,
+    int References,
+    int NestedReferences,
+    IReadOnlyList<ElementInfo> Elements);
+
+/// <summary>A custom XML data part, without its content.</summary>
+/// <param name="Namespace">Its root element's namespace.</param>
+/// <param name="ItemId">Its item id (<c>{GUID}</c>), which data bindings name.</param>
+public sealed record DataPartInfo(string? Namespace, string ItemId);
+
+/// <summary>A custom XML data part.</summary>
+/// <param name="Namespace">Its root element's namespace.</param>
+/// <param name="ItemId">Its item id (<c>{GUID}</c>), which data bindings name.</param>
+/// <param name="Xml">Its XML.</param>
+public sealed record DataPart(string? Namespace, string ItemId, string Xml);
+
+/// <summary>Where a cell is in its table's grid: its row and column (from 1) and how many it spans.</summary>
+/// <param name="Row">Its row, from 1.</param>
+/// <param name="Col">Its first grid column, from 1.</param>
+/// <param name="RowSpan">How many rows it spans.</param>
+/// <param name="ColSpan">How many grid columns it spans.</param>
+public sealed record CellPlace(int Row, int Col, int RowSpan, int ColSpan);
+
+/// <summary>
+/// Where a list item is in its list: its index (from 1) among the items at its level, and how many there are.
+/// </summary>
+/// <param name="Index">Its index, from 1.</param>
+/// <param name="Count">The number of items.</param>
+public sealed record ListPosition(int Index, int Count);
+
+/// <summary>A gesture's binding, with a label for a settings screen (<c>Double-click the header area</c>).</summary>
+/// <param name="Gesture">The gesture.</param>
+/// <param name="Action">What it does.</param>
+/// <param name="Label">For example <c>Double-click the header area</c>.</param>
+public sealed record GestureBinding(GestureId Gesture, GestureAction Action, string Label);

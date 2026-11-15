@@ -150,6 +150,22 @@ const ADOPT = [
   'SpellingState',
   'RulerModel',
   'RulerIndents',
+  // Services
+  'FindQuery',
+  'FindResult',
+  'FindMatch',
+  'Misspelling',
+  'Heading',
+  'PreviewSize',
+  'PreviewPicture',
+  'StylePreview',
+  'ElementMatch',
+  'SubTemplateInfo',
+  'DataPartInfo',
+  'DataPart',
+  'CellPlace',
+  'ListPosition',
+  'GestureBinding',
 ];
 
 /** Schema types this SDK names otherwise (Rust name: C# type). */
@@ -164,6 +180,8 @@ const NAMES: Record<string, string> = {
   'ColumnLayout': 'PageColumns',
   'HorizontalRuler': 'HorizontalRulerModel',
   'VerticalRuler': 'VerticalRulerModel',
+  'ElementField': 'ElementTextField',
+  'AccessibleId': 'long',
 };
 
 /**
@@ -187,10 +205,15 @@ const FIELDS: Record<string, string> = {
   'ParagraphFormatting.list': 'FormatValue<ListKind>',
   'ParagraphFormatting.borders': 'FormatValue<ParagraphBorders>',
   'ParagraphFormatting.shading': 'FormatValue<ColorValue>',
+  'FindQuery.matchCase': 'bool',
+  'FindQuery.wholeWords': 'bool',
+  'PreviewPicture.png': 'byte[]',
+  'StylePreview.color': 'ColorValue',
 };
 
 /** Init properties that start other than empty (`Type.field`: the C# initializer), as the state before the first. */
 const INIT: Record<string, string> = {
+  'PreviewSize.scale': '1',
   'SelectionSummary.page': '1',
   'SelectionSummary.empty': 'true',
   'TableSelection.width': 'TableWidth.Auto',
@@ -204,7 +227,7 @@ const INIT: Record<string, string> = {
 
 /** Records written with init properties whatever their size, and positional ones whatever their size. */
 const PROPERTIES: string[] = ['SelectionSummary', 'TableSelection', 'TableStyleOptions', 'ObjectSelection', 'ShapeState', 'ShapeTextState', 'ObjectPlacement', 'TextDistance', 'CharacterFormatting', 'ParagraphFormatting', 'PageFormatting', 'HistoryState', 'ReviewState', 'SpellingState', 'RulerModel'];
-const POSITIONAL: string[] = ['Person', 'RevisionInfo', 'CommentThread', 'Comment', 'CommentAnchor', 'LinkInfo', 'HeaderFooterInfo', 'PageSize', 'PageMargins', 'RulerIndents'];
+const POSITIONAL: string[] = ['Person', 'RevisionInfo', 'CommentThread', 'Comment', 'CommentAnchor', 'LinkInfo', 'HeaderFooterInfo', 'PageSize', 'PageMargins', 'RulerIndents', 'FindQuery', 'FindResult', 'FindMatch', 'Misspelling', 'Heading', 'PreviewSize', 'PreviewPicture', 'StylePreview', 'ElementMatch', 'SubTemplateInfo', 'DataPartInfo', 'DataPart', 'CellPlace', 'ListPosition', 'GestureBinding'];
 const POSITIONAL_MAX = 8;
 
 
@@ -424,7 +447,8 @@ function members(d: Def & { shape: { kind: 'object' } }): Member[] {
     let type = FIELDS[path] ?? cs(f.omitted && f.ty.kind !== 'nullable' ? { kind: 'nullable', of: f.ty } : f.ty, path);
     if (f.omitted && !FIELDS[path] && !type.endsWith('?')) type += '?';
     const attrs: string[] = [];
-    if (f.omitted) attrs.push('JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)');
+    // Null is left out; a value type (overridden from nullable) is always written.
+    if (f.omitted && (type.endsWith('?') || isReference(type))) attrs.push('JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)');
     // A converted type names its converter on the field itself.
     const base = f.ty.kind === 'nullable' ? f.ty.of : f.ty;
     const conv = base.kind === 'ref' ? CONVERTED[base.name] : base.kind === 'format' ? CONVERTED[base.format] : undefined;
@@ -448,8 +472,16 @@ function recordDecl(d: Def & { shape: { kind: 'object' } }): string {
   const ms = members(d);
   const positional = POSITIONAL.includes(d.name) || (!PROPERTIES.includes(d.name) && ms.length <= POSITIONAL_MAX);
   if (positional) {
-    const ordered = [...ms.filter((m) => !m.omitted), ...ms.filter((m) => m.omitted)];
-    const params = ordered.map((m) => `${m.json ? `[property: ${m.json}] ` : ''}${m.type} ${m.name}${m.omitted ? ' = null' : ''}`);
+    // Parameters with a default (left out by the engine, or given one in INIT) come after the rest.
+    const given = (m: Member) => INIT[`${d.name}.${m.wire}`];
+    const defaulted = (m: Member) => m.omitted || given(m) !== undefined;
+    const ordered = [...ms.filter((m) => !defaulted(m)), ...ms.filter(defaulted)];
+    // A field the engine may leave out defaults to null, or (overridden to a value type) to its default.
+    const empty = (t: string) => (t.endsWith('?') ? 'null' : t === 'bool' ? 'false' : 'default');
+    const params = ordered.map((m) => {
+      const value = given(m) ?? (m.omitted ? empty(m.type) : undefined);
+      return `${m.json ? `[property: ${m.json}] ` : ''}${m.type} ${m.name}${value !== undefined ? ` = ${value}` : ''}`;
+    });
     const docs = ordered.map((m) => docLines(translate(m.docs, d, true), '', `<param name="${m.name}">`, '</param>')).join('');
     const one = `public sealed record ${d.name}(${params.join(', ')});`;
     const decl = one.length <= 120 && ordered.length ? one : `public sealed record ${d.name}(\n${params.map((p) => `    ${p}`).join(',\n')});`;

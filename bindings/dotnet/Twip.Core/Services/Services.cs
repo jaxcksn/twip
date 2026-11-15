@@ -56,25 +56,6 @@ public sealed class EditorFind
         (await _session.CallAsync<ReplaceAllResult>(Method.ReplaceAll, WireJson.ToUtf8(new ReplaceRequest(query, replacement)), ct).ConfigureAwait(false)).Count;
 }
 
-/// <summary>What to find.</summary>
-/// <param name="Text">The text.</param>
-/// <param name="MatchCase">Match case.</param>
-/// <param name="WholeWords">Match whole words only.</param>
-public sealed record FindQuery(string Text, bool MatchCase = false, bool WholeWords = false);
-
-/// <summary>The result of a find.</summary>
-/// <param name="Found">Whether a match was found.</param>
-/// <param name="Wrapped">Whether the search wrapped around the document.</param>
-public sealed record FindResult(bool Found, bool Wrapped);
-
-/// <summary>A find match, with context for a results list.</summary>
-/// <param name="Id">The match.</param>
-/// <param name="Before">Text before the match.</param>
-/// <param name="Text">The matched text.</param>
-/// <param name="After">Text after the match.</param>
-/// <param name="Page">The page.</param>
-public sealed record FindMatch(MatchId Id, string Before, string Text, string After, int Page);
-
 /// <summary>Spell checking.</summary>
 public sealed class EditorSpelling
 {
@@ -128,11 +109,6 @@ public sealed class EditorSpelling
     public Task<Misspelling?> NextAsync(CancellationToken ct = default) => _session.CallAsync<Misspelling?>(Method.SpellingNext, [], ct);
 }
 
-/// <summary>A misspelled word and its suggestions.</summary>
-/// <param name="Word">The word.</param>
-/// <param name="Suggestions">The suggestions, best first.</param>
-public sealed record Misspelling(string Word, IReadOnlyList<string> Suggestions);
-
 /// <summary>Headings, for a navigation pane.</summary>
 public sealed class EditorNavigation
 {
@@ -151,13 +127,6 @@ public sealed class EditorNavigation
     /// <returns>Completes when it is selected.</returns>
     public Task SelectAsync(HeadingId heading, CancellationToken ct = default) => _session.CallAsync(Method.SelectHeading, WireJson.ToUtf8(heading), ct);
 }
-
-/// <summary>A heading.</summary>
-/// <param name="Id">The heading.</param>
-/// <param name="Level">Its outline level.</param>
-/// <param name="Text">Its text.</param>
-/// <param name="Page">Its page.</param>
-public sealed record Heading(HeadingId Id, int Level, string Text, int Page);
 
 /// <summary>The document's styles, for a style gallery.</summary>
 public sealed class EditorStyles
@@ -181,18 +150,6 @@ public sealed class EditorStyles
     public Task<PreviewPicture> TileAsync(StyleId id, PreviewSize size, CancellationToken ct = default) =>
         _session.CallAsync<PreviewPicture>(Method.StyleTile, WireJson.ToUtf8(new StyleTileRequest(id, size)), ct);
 }
-
-/// <summary>A preview picture's size: device-independent pixels, and device pixels per one.</summary>
-/// <param name="Width">The width.</param>
-/// <param name="Height">The height.</param>
-/// <param name="Scale">Device pixels per device-independent pixel.</param>
-public sealed record PreviewSize(double Width, double Height, double Scale = 1);
-
-/// <summary>A picture the editor drew.</summary>
-/// <param name="Png">The PNG.</param>
-/// <param name="Width">Its width, device pixels.</param>
-/// <param name="Height">Its height, device pixels.</param>
-public sealed record PreviewPicture(byte[] Png, int Width, int Height);
 
 /// <summary>A section of a list gallery.</summary>
 public enum ListGallerySectionKind
@@ -261,14 +218,6 @@ public sealed class EditorLists
     public Task<PreviewPicture> CharacterPictureAsync(string family, string character, PreviewSize size, CancellationToken ct = default) =>
         _session.CallAsync<PreviewPicture>(Method.CharacterPicture, WireJson.ToUtf8(new CharacterPictureRequest(family, character, size)), ct);
 }
-
-/// <summary>How a style gallery tile looks.</summary>
-/// <param name="Font">The family.</param>
-/// <param name="Size">The size.</param>
-/// <param name="Bold">Bold.</param>
-/// <param name="Italic">Italic.</param>
-/// <param name="Color">The colour.</param>
-public sealed record StylePreview(string Font, Length Size, bool Bold, bool Italic, ColorValue Color);
 
 /// <summary>A style.</summary>
 /// <param name="Id">The style id.</param>
@@ -342,11 +291,6 @@ public sealed class EditorElements
         _session.CallAsync(Method.SelectElement, WireJson.ToUtf8(new SelectElementRequest(id, reveal)), ct);
 }
 
-/// <summary>A text match on element codes, tags or titles.</summary>
-/// <param name="In">Which text.</param>
-/// <param name="Text">The text to contain.</param>
-public sealed record ElementMatch(ElementTextField In, string Text);
-
 /// <summary>Which elements to list.</summary>
 /// <param name="Kind">Only this kind.</param>
 /// <param name="Match">Only elements whose text matches.</param>
@@ -360,14 +304,6 @@ public sealed record ElementFilter(
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? SubTemplate { get; init; }
 }
-
-/// <summary>A sub-template: a building block in a category the rules declare.</summary>
-/// <param name="Name">Its name.</param>
-/// <param name="Category">Its building block category.</param>
-/// <param name="References">The reference fields naming it in the template's body, headers, footers and notes.</param>
-/// <param name="NestedReferences">The reference fields naming it in other sub-templates' bodies.</param>
-/// <param name="Elements">The fields and controls in its body.</param>
-public sealed record SubTemplateInfo(string Name, string Category, int References, int NestedReferences, IReadOnlyList<ElementInfo> Elements);
 
 /// <summary>
 /// The template's sub-templates, and editing one in this editor. While one is edited, <see cref="EditorState.Editing"/>
@@ -576,17 +512,6 @@ public sealed class EditorDataParts
         _session.CallAsync<IReadOnlyList<DataPart>>(Method.DataParts, WireJson.ToUtf8(new DataPartsRequest(@namespace, itemId)), ct);
 }
 
-/// <summary>A data part.</summary>
-/// <param name="Namespace">Its root namespace.</param>
-/// <param name="ItemId">Its item id.</param>
-public sealed record DataPartInfo(string? Namespace, string ItemId);
-
-/// <summary>A data part with its XML.</summary>
-/// <param name="Namespace">Its root namespace.</param>
-/// <param name="ItemId">Its item id.</param>
-/// <param name="Xml">Its XML.</param>
-public sealed record DataPart(string? Namespace, string ItemId, string Xml);
-
 /// <summary>The document's accessible structure.</summary>
 public sealed class EditorAccessibility
 {
@@ -612,18 +537,6 @@ public sealed class EditorAccessibility
     public Task SetAnnouncementsAsync(IReadOnlyList<AnnouncementKind> kinds, CancellationToken ct = default) =>
         _session.CallAsync(Method.AnnouncementsSet, WireJson.ToUtf8(kinds), ct);
 }
-
-/// <summary>Where a cell is in its table's grid: its row and column (from 1) and how many it spans.</summary>
-/// <param name="Row">Its row, from 1.</param>
-/// <param name="Col">Its first grid column, from 1.</param>
-/// <param name="RowSpan">How many rows it spans.</param>
-/// <param name="ColSpan">How many grid columns it spans.</param>
-public sealed record CellPlace(int Row, int Col, int RowSpan, int ColSpan);
-
-/// <summary>Where a list item is in its list: its index (from 1) among the items at its level, and how many there are.</summary>
-/// <param name="Index">Its index, from 1.</param>
-/// <param name="Count">The number of items.</param>
-public sealed record ListPosition(int Index, int Count);
 
 /// <summary>A node of the accessible tree.</summary>
 /// <param name="Id">Its identity: the same across edits while the thing it names exists.</param>
@@ -703,12 +616,6 @@ public sealed class GestureAction
     /// <inheritdoc/>
     public override string ToString() => Operation?.ToString() ?? Kind;
 }
-
-/// <summary>A gesture's binding.</summary>
-/// <param name="Gesture">The gesture.</param>
-/// <param name="Action">What it does.</param>
-/// <param name="Label">A description, such as "Double-click the header area".</param>
-public sealed record GestureBinding(GestureId Gesture, GestureAction Action, string Label);
 
 /// <summary>A non-content area a gesture can hit.</summary>
 public enum GestureArea
