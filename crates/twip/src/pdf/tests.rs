@@ -160,7 +160,7 @@ fn threads_share_font_bytes() {
     assert_eq!(probe.files_read(), after_one, "a second thread reads no font file again");
 }
 
-/// A page-independent memory check, run by hand: `cargo test -p twip --release -- --ignored repeated_conversions`.
+/// A page-independent memory check, run by hand: `cargo nextest run -p twip --release --run-ignored only repeated_conversions`.
 #[test]
 #[ignore = "10,000 conversions"]
 fn repeated_conversions_hold_memory() {

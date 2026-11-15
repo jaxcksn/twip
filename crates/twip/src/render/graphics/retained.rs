@@ -10,7 +10,7 @@ use std::rc::Rc;
 
 use twip_graphics::scene::{Picture, Recorder};
 
-use crate::layout::fragment::{BoxFragment, Child, Item, PageChild, PageFragment};
+use crate::layout::fragment::{BoxFragment, BoxKind, Child, Item, PageChild, PageFragment};
 
 /// What a page draws, as a hash: its size, every shared line and group by identity and place, and the loose items
 /// by value. Two pages with one key draw alike. The lines are `Rc`s a recording keeps alive (it holds its fragment),
@@ -62,10 +62,15 @@ pub fn drawing_key(page: &PageFragment) -> u64 {
     }
     fn boxed(b: &BoxFragment, h: &mut impl Hasher) {
         (9u8, b.offset.0.to_bits(), b.offset.1.to_bits(), b.size.0.to_bits(), b.size.1.to_bits()).hash(h);
+        // A float's layer sets the order it paints in.
+        if let BoxKind::Float { layer, .. } = &b.kind {
+            layer.hash(h);
+        }
         walk(&b.children, h);
     }
     let mut h = std::collections::hash_map::DefaultHasher::new();
     (page.w.to_bits(), page.h.to_bits()).hash(&mut h);
+    items(&page.borders, &mut h);
     for c in page.children.iter() {
         match c {
             PageChild::Body(b) => boxed(b, &mut h),
@@ -124,24 +129,24 @@ impl Retained {
         self.recordings.values().map(|r| r.picture.bytes()).sum()
     }
 
-    /// `page`'s picture (in its points), recorded with `record` first when there is none for these inputs. `None` when
-    /// the page draws nothing.
-    pub fn picture(&mut self, page: &Rc<PageFragment>, inputs: Inputs, record: impl FnOnce(&mut Recorder)) -> Option<Picture> {
+    /// `page`'s picture (in its points), recorded with `record` first when there is none for these inputs.
+    pub fn picture(&mut self, page: &Rc<PageFragment>, inputs: Inputs, record: impl FnOnce(&mut Recorder)) -> Picture {
         self.clock += 1;
         let key = drawing_key(page);
         match self.recordings.get_mut(&key).filter(|r| r.inputs == inputs) {
             Some(r) => {
                 r.used = self.clock;
                 self.counts.reused += 1;
+                r.picture.clone()
             }
             None => {
                 record(&mut self.recorder);
                 let picture = self.recorder.finish();
-                self.recordings.insert(key, Recording { _fragment: Rc::clone(page), inputs, picture, used: self.clock });
+                self.recordings.insert(key, Recording { _fragment: Rc::clone(page), inputs, picture: picture.clone(), used: self.clock });
                 self.counts.recorded += 1;
+                picture
             }
         }
-        self.recordings.get(&key).map(|r| r.picture.clone())
     }
 
     /// After a frame: drops the least recently drawn pictures past the budget.

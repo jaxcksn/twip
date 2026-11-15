@@ -1057,7 +1057,7 @@ impl Reader {
     }
 
     /// The revision `e` records (`w:ins`, `w:del`, `w:rPrChange`, ...). Moves take the name of the move range they
-    /// are in. A property change's kind is `Insert`: what changed is the element holding it.
+    /// are in. A property change's kind is `Format`: what changed is the element holding it.
     fn mark(&mut self, e: Node, kind: MarkKind) -> Rc<RevisionMark> {
         let (id, author) = (self.revision_id(e), self.author(e));
         let range = match kind {

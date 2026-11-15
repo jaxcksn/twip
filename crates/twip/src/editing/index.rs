@@ -509,6 +509,14 @@ impl DocIndex {
         match container {
             Container::Section(i) => Some((i, block, None)),
             Container::Story(StoryId::BuildingBlock(k)) if self.flow == Some(k) => Some((0, block, None)),
+            // A text box lays out with its anchor's paragraph (text boxes don't nest).
+            Container::Story(StoryId::TextBox(f)) => {
+                let s = self.para_slot(self.float_anchor(f)?)?;
+                if matches!(s.container, Container::Story(StoryId::TextBox(_))) {
+                    return None;
+                }
+                self.top_block(s.container, s.block)
+            }
             Container::Story(_) => None,
             Container::Cell { table, row, .. } => {
                 let s = self.table_slot(table)?;

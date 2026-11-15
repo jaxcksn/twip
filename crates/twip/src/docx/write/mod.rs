@@ -46,12 +46,12 @@ pub fn save(doc: &Document) -> Result<Vec<u8>, String> {
 pub fn edited_parts(doc: &Document) -> Result<Vec<(String, Vec<u8>)>, String> {
     let src = doc.source.as_ref().ok_or("the document was not read for editing")?;
     let mut parts = Vec::new();
-    if let Some(xml) = main_xml(doc, false)? {
+    if let Some(xml) = main_xml(doc)? {
         parts.push((src.main.clone(), xml.into_bytes()));
     }
     for (name, (xml, orig)) in &src.stories {
         let now = doc.stories.get(name).map_or(&[][..], Vec::as_slice);
-        if let Some(xml) = part_xml(xml, &boxes(&[orig], &[now]), &[(orig, now)], false, &doc.controls, &gone_controls(doc), &doc.people)? {
+        if let Some(xml) = part_xml(xml, &boxes(&[orig], &[now]), &[(orig, now)], &doc.controls, &gone_controls(doc), &doc.people)? {
             parts.push((name.clone(), xml.into_bytes()));
         }
     }
@@ -860,7 +860,7 @@ fn notes_xml(
         }
     }
     // One pass: the kept notes' edits and these whole-note splices never overlap (removed notes aren't in `lists`).
-    part_xml_with(xml, inner, lists, false, &splices, &[], controls, gone, people)
+    part_xml_with(xml, inner, lists, &splices, &[], controls, gone, people)
 }
 
 /// The controls read that the document no longer has (removed, or emptied of every member).
@@ -881,7 +881,6 @@ fn new_blocks_xml(xml: &str, blocks: &[Block], controls: &HashMap<ControlId, Con
         tables: HashMap::new(),
         w,
         cx: Cx::of_xml(xml),
-        force: false,
         splices: Vec::new(),
         nested: Vec::new(),
         float_src: HashMap::new(),
@@ -921,9 +920,8 @@ fn boxes<'d>(orig: &[&'d [Block]], now: &[&'d [Block]]) -> Vec<(&'d [Block], &'d
     o.into_iter().rev().filter_map(|(id, a)| Some((a, n.iter().find(|(m, _)| *m == id)?.1))).collect()
 }
 
-/// The main part's XML after the edits; `None` when nothing changed. `force` rewrites unchanged paragraphs too
-/// (tests: the rewrite of an unedited paragraph must be the paragraph).
-pub fn main_xml(doc: &Document, force: bool) -> Result<Option<String>, String> {
+/// The main part's XML after the edits; `None` when nothing changed.
+pub fn main_xml(doc: &Document) -> Result<Option<String>, String> {
     let src = doc.source.as_ref().ok_or("the document was not read for editing")?;
     let sources = if doc.section_sources.is_empty() { vec![1; doc.sections.len()] } else { doc.section_sources.clone() };
     if sources.len() != doc.sections.len() || sources.iter().sum::<usize>() != src.blocks.len() {
@@ -956,7 +954,7 @@ pub fn main_xml(doc: &Document, force: bool) -> Result<Option<String>, String> {
     };
     let lists: Vec<(&[Block], &[Block])> = orig.iter().zip(&doc.sections).map(|(a, s)| (a.as_ref(), s.blocks.as_slice())).collect();
     let (o, n): (Vec<&[Block]>, Vec<&[Block]>) = lists.iter().copied().unzip();
-    part_xml_with(&src.xml, &boxes(&o, &n), &lists, force, &[], &dropped, &doc.controls, &gone_controls(doc), &doc.people)
+    part_xml_with(&src.xml, &boxes(&o, &n), &lists, &[], &dropped, &doc.controls, &gone_controls(doc), &doc.people)
 }
 
 /// A part's XML with its block lists (as read, now) written back; `None` when none changed.
@@ -964,12 +962,11 @@ fn part_xml(
     xml: &str,
     inner: &[(&[Block], &[Block])],
     lists: &[(&[Block], &[Block])],
-    force: bool,
     controls: &HashMap<ControlId, Control>,
     gone: &[Control],
     people: &People,
 ) -> Result<Option<String>, String> {
-    part_xml_with(xml, inner, lists, force, &[], &[], controls, gone, people)
+    part_xml_with(xml, inner, lists, &[], &[], controls, gone, people)
 }
 
 /// [`part_xml`] with `extra` splices of the original part added (whole notes in and out), and the section breaks
@@ -979,7 +976,6 @@ fn part_xml_with<'a>(
     xml: &'a str,
     inner: &[(&[Block], &[Block])],
     lists: &[(&[Block], &[Block])],
-    force: bool,
     extra: &[Splice],
     dropped: &'a [Range<usize>],
     controls: &HashMap<ControlId, Control>,
@@ -1020,7 +1016,6 @@ fn part_xml_with<'a>(
         tables,
         w,
         cx: Cx::of_xml(xml),
-        force,
         splices: Vec::new(),
         nested: Vec::new(),
         float_src,
@@ -1114,7 +1109,6 @@ struct Saver<'a, 'i> {
     /// The WordprocessingML prefix with its colon (`w:`), for written elements.
     w: String,
     cx: Cx,
-    force: bool,
     splices: Vec<Splice>,
     /// Rewrites inside other content (text boxes' paragraphs, made first): applied wherever that content's source is
     /// copied, and written on their own where it isn't rewritten.
@@ -1299,8 +1293,7 @@ impl<'a, 'i> Saver<'a, 'i> {
         if qs.is_empty() && ps.is_empty() {
             return Ok(());
         }
-        if !self.force && qs.len() == 1 && ps.len() == 1 && same_para(qs[0], ps[0]) && qs[0].controls == ps[0].controls && !self.changed_inline(ps[0])
-        {
+        if qs.len() == 1 && ps.len() == 1 && same_para(qs[0], ps[0]) && qs[0].controls == ps[0].controls && !self.changed_inline(ps[0]) {
             return Ok(());
         }
         // A deleted frame (frames.rs made its paragraphs a float of the next one): its paragraphs go too.
@@ -3976,7 +3969,7 @@ struct Placement {
     dist: Option<[f64; 4]>,
     overlap: Option<bool>,
     in_cell: Option<bool>,
-    /// The shape's own properties (DRAW), as edits in the drawing's text: applied first.
+    /// The shape's own properties, as edits in the drawing's text: applied first.
     shape: Option<Vec<drawing::Edit>>,
     /// The drawing's place in the patched text, when only it is written (an `mc:AlternateContent` around it is
     /// dropped).

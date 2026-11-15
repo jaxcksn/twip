@@ -1,7 +1,7 @@
 //! Golden images: a scene's pixels compared byte for byte with a committed PNG in `tests/golden/`.
 //!
 //! The PNGs hold premultiplied RGBA8 bytes exactly as the CPU backend writes them. Scenes draw over an opaque
-//! background, so the files also view correctly. `TWIP_GRAPHICS_BLESS=1 cargo test -p twip-graphics --test golden`
+//! background, so the files also view correctly. `TWIP_GRAPHICS_BLESS=1 cargo nextest run -p twip-graphics --test golden`
 //! writes the golden files from the current output; review them before committing. A mismatch writes
 //! `tests/out/<name>.actual.png` and `tests/out/<name>.diff.png` (differing pixels red, the rest the expected image,
 //! faded).

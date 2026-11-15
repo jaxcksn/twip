@@ -1154,6 +1154,10 @@ fn justified_line(sp: &ShapedPara, pieces: &[Piece], from: usize, seg_end: usize
                 }
             }
         }
+        // Past an end that doesn't fit no later one does (`over - shrink` only grows), and the text is past the column.
+        if content > column + LU_EPS && ends.last().is_some_and(|e| e.over > e.shrink as f64 + LU_EPS) {
+            break;
+        }
     }
     if word {
         end_word(&mut ends, seg_end, natural + open(seg_end - 1), shrink, stretch + glyphs - last_glyph);

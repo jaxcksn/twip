@@ -2293,12 +2293,12 @@ fn select_all_delete_across_sections() {
     let again = super::super::Editor::open(&saved, fonts()).expect("reopens");
     assert_eq!(texts(&again), vec![String::new()]);
     assert_eq!(pages(&again), pages(&e));
-    let xml = crate::docx::write::main_xml(e.document(), false).unwrap().unwrap();
+    let xml = crate::docx::write::main_xml(e.document()).unwrap().unwrap();
     assert_eq!(xml.matches("<w:sectPr").count(), 1, "{xml}");
     e.execute(Command::Undo, fonts());
     assert_eq!(texts(&e), before);
     assert_eq!(pages(&e), was);
-    assert!(crate::docx::write::main_xml(e.document(), false).unwrap().is_none(), "undone, nothing to save");
+    assert!(crate::docx::write::main_xml(e.document()).unwrap().is_none(), "undone, nothing to save");
 }
 
 #[test]
@@ -2316,7 +2316,7 @@ fn backspace_and_delete_take_a_section_break() {
     };
     let (was, before) = (pages(&e), texts(&e));
     let n = was.len();
-    let sects = |e: &super::super::Editor| crate::docx::write::main_xml(e.document(), false).unwrap().unwrap().matches("<w:sectPr").count();
+    let sects = |e: &super::super::Editor| crate::docx::write::main_xml(e.document()).unwrap().unwrap().matches("<w:sectPr").count();
     for (back, k) in [(true, 1), (false, 1)] {
         let (p, len) = para(&e, k, !back);
         e.selection = Selection::Caret(super::super::position::Position::text(StoryId::Body, p, if back { Unit(0) } else { len }));

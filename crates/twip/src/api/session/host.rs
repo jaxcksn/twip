@@ -1228,9 +1228,8 @@ impl HostSurface<'_> {
         crate::prof::time("frame:deliver", || s.deliver_requests());
     }
 
-    /// Records a frame with twip-graphics: the visible pages and the view's overlays, the markup pane, the balloons'
-    /// leaders and the rulers.
-    /// Records a frame with twip-graphics, `width` x `height` device pixels, and draws it with `present`.
+    /// Records a frame with twip-graphics, `width` x `height` device pixels (the visible pages and the view's overlays,
+    /// the markup pane, the balloons' leaders and the rulers), and draws it with `present`.
     fn draw_graphics<R>(&mut self, width: f64, height: f64, present: impl FnOnce(&mut crate::render::graphics::Graphics) -> R) -> R {
         let frame = self.prepare_frame(width, height);
         let s = &mut *self.session;

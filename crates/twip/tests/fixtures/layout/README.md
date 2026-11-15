@@ -7,7 +7,7 @@ that lays out differently in compat ≤ 14 and compat 15 comes as a pair with th
 / `-c15`); diffing the pair's snapshots shows the mode difference.
 
 `make-layout-fixtures.py` writes every file here: `python -I crates/twip/tests/fixtures/layout/make-layout-fixtures.py`,
-then `TWIP_WRITE_LAYOUT=1 cargo test -p twip --lib layout_output` writes the snapshots. Standard library only, the
+then `TWIP_WRITE_LAYOUT=1 cargo nextest run -p twip --lib layout_output` writes the snapshots. Standard library only, the
 same bytes on every run. Fonts are Calibri, Times New Roman and MS Mincho; the gate draws them with its bundled
 stand-ins (the CJK stand-in has only 漢, so that is the only CJK character used). `hyph-en-US.dic` is a small made-up
 pattern set the gate supplies as the host's en-US hyphenation patterns, so the documents that turn automatic

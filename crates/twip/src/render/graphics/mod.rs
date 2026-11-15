@@ -137,9 +137,7 @@ impl Graphics {
             if r.retain && !r.direct {
                 let inputs = retained::Inputs { gridlines: r.gridlines, appearance: r.appearance };
                 let picture = kept.picture(page, inputs, |content| self.page(content, r, page, images));
-                if let Some(picture) = picture {
-                    rec.picture(&picture, Affine::IDENTITY);
-                }
+                rec.picture(&picture, Affine::IDENTITY);
             } else {
                 self.page(&mut rec, r, page, images);
             }

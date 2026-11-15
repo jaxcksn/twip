@@ -297,7 +297,7 @@ fn layout_output_matches_snapshots() {
     }
     assert!(
         failures.is_empty(),
-        "layout output changed for {} fixture(s); the changed pages are drawn in {} (in CI: the layout-diff artifact). If intended, run `TWIP_WRITE_LAYOUT=1 cargo test -p twip --lib layout_output` and commit tests/layout:\n{}",
+        "layout output changed for {} fixture(s); the changed pages are drawn in {} (in CI: the layout-diff artifact). If intended, run `TWIP_WRITE_LAYOUT=1 cargo nextest run -p twip --lib layout_output` and commit tests/layout:\n{}",
         failures.len(),
         diff_root().join("index.html").display(),
         failures.join("\n")
