@@ -59,6 +59,34 @@ impl Window {
         self.size = (width, height);
         true
     }
+
+    /// The surface's next texture, or what becomes of the frame without one.
+    fn texture(&mut self, ctx: &Context, width: u32, height: u32) -> Result<wgpu::SurfaceTexture, Framed> {
+        use wgpu::CurrentSurfaceTexture as Got;
+        match self.surface.get_current_texture() {
+            Got::Success(t) => Ok(t),
+            // Drawn, and configured again for the next frame.
+            Got::Suboptimal(t) => {
+                self.size = (0, 0);
+                Ok(t)
+            }
+            // The swap chain went stale (a display change): configure it again, once.
+            Got::Outdated | Got::Lost => {
+                if !self.configure(ctx, width, height) {
+                    return Err(Framed::Failed);
+                }
+                match self.surface.get_current_texture() {
+                    Got::Success(t) | Got::Suboptimal(t) => Ok(t),
+                    Got::Timeout | Got::Occluded => Err(Framed::Skipped),
+                    _ => Err(Framed::Failed),
+                }
+            }
+            // No texture in time: the window is hidden, the display asleep.
+            Got::Timeout | Got::Occluded => Err(Framed::Skipped),
+            // A texture wgpu refused.
+            Got::Validation => Err(Framed::Failed),
+        }
+    }
 }
 
 #[derive(Default)]
@@ -268,29 +296,9 @@ pub fn frame(key: u64, width: u32, height: u32, graphics: &mut Graphics) -> Fram
             if w.size != (width, height) && !w.configure(ctx, width, height) {
                 return Framed::Failed;
             }
-            use wgpu::CurrentSurfaceTexture as Got;
-            let texture = match w.surface.get_current_texture() {
-                Got::Success(t) => t,
-                // Drawn, and configured again for the next frame.
-                Got::Suboptimal(t) => {
-                    w.size = (0, 0);
-                    t
-                }
-                // The swap chain went stale (a display change): configure it again, once.
-                Got::Outdated | Got::Lost => {
-                    if !w.configure(ctx, width, height) {
-                        return Framed::Failed;
-                    }
-                    match w.surface.get_current_texture() {
-                        Got::Success(t) | Got::Suboptimal(t) => t,
-                        Got::Timeout | Got::Occluded => return Framed::Skipped,
-                        _ => return Framed::Failed,
-                    }
-                }
-                // No texture in time: the window is hidden, the display asleep.
-                Got::Timeout | Got::Occluded => return Framed::Skipped,
-                // A texture wgpu refused.
-                Got::Validation => return Framed::Failed,
+            let texture = match w.texture(ctx, width, height) {
+                Ok(t) => t,
+                Err(f) => return f,
             };
             let Some((format, renderer)) = w.renderer.as_mut() else { return Framed::Failed };
             match renderer.prepare(ctx, res, frame, (width, height)) {
