@@ -888,6 +888,7 @@ fn new_blocks_xml(xml: &str, blocks: &[Block], controls: &HashMap<ControlId, Con
         ids: std::cell::Cell::new(DRAWING_IDS),
         people,
         dropped: &[],
+        bookmarks: Default::default(),
     };
     s.blocks_xml(None, blocks)
 }
@@ -1023,6 +1024,7 @@ fn part_xml_with<'a>(
         ids: std::cell::Cell::new(DRAWING_IDS),
         people,
         dropped,
+        bookmarks: Default::default(),
     };
     for (orig, now) in inner {
         s.container(orig, now)?;
@@ -1124,6 +1126,8 @@ struct Saver<'a, 'i> {
     people: &'a People,
     /// The `w:sectPr`s of section breaks deleted: a paragraph written again doesn't keep one.
     dropped: &'a [Range<usize>],
+    /// Bookmark ids by name: the part's, and those given to bookmarks written new.
+    bookmarks: std::cell::RefCell<Option<HashMap<String, i64>>>,
 }
 
 fn block_src(b: &Block) -> Option<*const ()> {
@@ -1532,7 +1536,7 @@ impl<'a, 'i> Saver<'a, 'i> {
                     let mut cells_open = Vec::new();
                     for c in &row.cells {
                         wrap(&mut out, &c.controls, &mut cells_open, self);
-                        out.push_str(&format!("<{w}tc>{}", tc_pr(&w, c, self.people)));
+                        out.push_str(&format!("<{w}tc>{}", tc_pr(&w, c, self.people, &self.cx)));
                         out.push_str(&self.blocks_xml(orig, &c.blocks)?);
                         out.push_str(&format!("</{w}tc>"));
                     }
@@ -1591,7 +1595,14 @@ impl<'a, 'i> Saver<'a, 'i> {
     fn row_props(&self, n: Option<Node>, was: Option<&Row>, row: &Row) -> String {
         let w = &self.w;
         let same = was.is_some_and(|k| k.rev == row.rev);
-        let src = |name: &str| n.and_then(|n| child(n, name)).map(|p| &self.xml[p.range()]);
+        // A row rewritten from the model (its cells changed) patches the properties it was read with.
+        let src = |name: &str| {
+            n.and_then(|n| child(n, name)).map(|p| &self.xml[p.range()]).or(if name == "trPr" {
+                row.direct.0.as_deref()
+            } else {
+                row.exceptions.0.as_deref()
+            })
+        };
         let mut out = String::new();
         match src("tblPrEx") {
             Some(x) if same => out.push_str(x),
@@ -1808,6 +1819,22 @@ impl<'a, 'i> Saver<'a, 'i> {
     fn marker_range(&self, m: &Marker, srcs: &[&ParaSrc]) -> Option<Range<usize>> {
         let mut nodes = srcs.iter().flat_map(|x| x.ranges.iter()).filter_map(|r| self.paras.get(&r.start));
         match m {
+            Marker::Bookmark(n) => {
+                let (name, start) = n.strip_prefix('/').map_or((n.as_str(), true), |n| (n, false));
+                let id = self.bookmark_id(name);
+                let (el, by) = if start { ("bookmarkStart", None) } else { ("bookmarkEnd", Some(id.to_string())) };
+                nodes.find_map(|p| {
+                    p.descendants()
+                        .find(|d| {
+                            is_w(*d, el)
+                                && match &by {
+                                    None => d.attribute((W, "name")) == Some(name),
+                                    Some(id) => d.attribute((W, "id")).map(str::trim) == Some(id.as_str()),
+                                }
+                        })
+                        .map(|d| d.range())
+                })
+            }
             Marker::Opaque(o) => {
                 let raw = o.xml.0.as_deref()?;
                 srcs.iter().flat_map(|x| x.ranges.iter()).find_map(|r| self.xml[r.clone()].find(raw).map(|k| r.start + k..r.start + k + raw.len()))
@@ -1821,6 +1848,24 @@ impl<'a, 'i> Saver<'a, 'i> {
                 })
             }
         }
+    }
+
+    /// A bookmark's id: the part's for its name, else a new one, the same for its start and end.
+    fn bookmark_id(&self, name: &str) -> i64 {
+        let mut map = self.bookmarks.borrow_mut();
+        let map = map.get_or_insert_with(|| {
+            let Some(root) = self.paras.values().next().map(|n| n.document().root_element()) else { return HashMap::new() };
+            root.descendants()
+                .filter(|d| is_w(*d, "bookmarkStart"))
+                .filter_map(|d| Some((d.attribute((W, "name"))?.to_string(), d.attribute((W, "id"))?.trim().parse().ok()?)))
+                .collect()
+        });
+        if let Some(&id) = map.get(name) {
+            return id;
+        }
+        let id = map.values().max().map_or(0, |m| m + 1);
+        map.insert(name.to_string(), id);
+        id
     }
 
     /// Whether `xml` (content of a part's body) parses, with the part's namespaces.
@@ -2017,13 +2062,15 @@ enum Marker {
     Comment(CommentId, Run),
     /// Content kept as read ([`Inline::Opaque`]).
     Opaque(Rc<super::model::Opaque>),
+    /// A bookmark's start, or (`/` and its name) end.
+    Bookmark(String),
 }
 
 impl Marker {
     /// The element it is in the source, and the id that names it there.
     fn element(&self) -> Option<(&'static str, i64)> {
         match self {
-            Marker::Control(..) | Marker::Opaque(_) => None,
+            Marker::Control(..) | Marker::Opaque(_) | Marker::Bookmark(_) => None,
             Marker::Range(r) => Some((range_element(r.kind), r.id)),
             Marker::Comment(id, _) => Some(("commentReference", id.0)),
         }
@@ -2038,6 +2085,12 @@ impl Marker {
             Marker::Range(r) => (2 + r.kind as u8, r.id),
             Marker::Comment(id, _) => (u8::MAX, id.0),
             Marker::Opaque(o) => (u8::MAX - 1, Rc::as_ptr(o) as usize as i64),
+            Marker::Bookmark(n) => {
+                use std::hash::{Hash, Hasher};
+                let mut h = std::hash::DefaultHasher::new();
+                n.hash(&mut h);
+                (u8::MAX - 2, h.finish() as i64)
+            }
         }
     }
 }
@@ -2062,6 +2115,7 @@ fn marker(i: &Inline, pend: &mut Vec<Marker>) {
         Inline::Range(r) => pend.push(Marker::Range(r.clone())),
         Inline::CommentRef { id, run } => pend.push(Marker::Comment(*id, run.clone())),
         Inline::Opaque(o) => pend.push(Marker::Opaque(o.clone())),
+        Inline::Bookmark(n) => pend.push(Marker::Bookmark(n.clone())),
         _ => {}
     }
 }
@@ -2141,8 +2195,8 @@ fn unit_keys(i: &Inline, out: &mut Vec<(u64, char)>) {
                 Inline::FieldBegin { id, .. } | Inline::FieldSep { id, .. } | Inline::FieldEnd { id, .. } => id.hash(&mut h),
                 _ => {}
             }
-            // A symbol writes as its character (a checkbox's face); other objects as U+FFFC.
-            let ch = if let Inline::Sym { ch, .. } = other { *ch } else { '\u{FFFC}' };
+            // A checkbox's face writes as its character; other objects (a symbol too) as U+FFFC.
+            let ch = if let Inline::Sym { ch, control: Some(_), .. } = other { *ch } else { '\u{FFFC}' };
             out.push((ATOM | (h.finish() >> 24) << 41, ch));
         }
     }
@@ -3233,6 +3287,19 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                     let x = self.range_xml(&r);
                     self.out.push_str(&x);
                 }
+                Marker::Bookmark(n) => {
+                    self.flush();
+                    let level = self.stack.iter().rposition(|o| o.run).unwrap_or(self.stack.len());
+                    self.open_to(level);
+                    let (name, start) = n.strip_prefix('/').map_or((n.as_str(), true), |n| (n, false));
+                    let id = self.s.bookmark_id(name);
+                    let x = if start {
+                        format!("<{w}bookmarkStart {w}id=\"{id}\" {w}name=\"{}\"/>", props::esc(name))
+                    } else {
+                        format!("<{w}bookmarkEnd {w}id=\"{id}\"/>")
+                    };
+                    self.out.push_str(&x);
+                }
                 Marker::Opaque(o) => {
                     self.flush();
                     let level = self.stack.iter().rposition(|o| o.run).unwrap_or(self.stack.len());
@@ -4037,16 +4104,36 @@ fn svg_blips(xml: &str, k: usize, svg: &[u8]) -> Option<(Vec<u8>, String)> {
 /// The run content a new object writes as, for those the model can write without a source.
 fn object_xml(w: &str, i: &Inline) -> Option<String> {
     match i {
-        Inline::NoteRef { kind: NoteKind::Foot, id, custom: false, .. } => Some(format!("<{w}footnoteReference {w}id=\"{id}\"/>")),
-        Inline::NoteRef { kind: NoteKind::End, id, custom: false, .. } => Some(format!("<{w}endnoteReference {w}id=\"{id}\"/>")),
+        Inline::NoteRef { kind, id, custom, .. } => {
+            let el = if *kind == NoteKind::Foot { "footnoteReference" } else { "endnoteReference" };
+            let mark = if *custom { format!(" {w}customMarkFollows=\"1\"") } else { String::new() };
+            Some(format!("<{w}{el}{mark} {w}id=\"{id}\"/>"))
+        }
+        // A character past U+FFFF, which `w:char` can't hold: Word 2016's symbol, with the character as its fallback.
+        Inline::Sym { ch, font, control: None, .. } if *ch as u32 > 0xFFFF => Some(format!(
+            concat!(
+                "<mc:AlternateContent xmlns:mc=\"http://schemas.openxmlformats.org/markup-compatibility/2006\">",
+                "<mc:Choice xmlns:w16se=\"http://schemas.microsoft.com/office/word/2015/wordml/symex\" Requires=\"w16se\">",
+                "<w16se:symEx w16se:font=\"{f}\" w16se:char=\"{c:X}\"/></mc:Choice><mc:Fallback><{w}t>{ch}</{w}t></mc:Fallback>",
+                "</mc:AlternateContent>"
+            ),
+            f = props::esc(font),
+            c = *ch as u32,
+            ch = ch,
+            w = w
+        )),
+        Inline::Sym { ch, font, control: None, .. } => Some(format!("<{w}sym {w}font=\"{}\" {w}char=\"{:04X}\"/>", props::esc(font), *ch as u32)),
         Inline::NoteMark(NoteKind::Foot, ..) => Some(format!("<{w}footnoteRef/>")),
         Inline::NoteMark(NoteKind::End, ..) => Some(format!("<{w}endnoteRef/>")),
         // each marker is its `fldChar`, in a run of the field's formatting.
-        Inline::FieldBegin { lock, dirty, .. } => Some(format!(
-            "<{w}fldChar {w}fldCharType=\"begin\"{}{}/>",
-            if *lock { format!(" {w}fldLock=\"1\"") } else { String::new() },
-            if *dirty { format!(" {w}dirty=\"1\"") } else { String::new() }
-        )),
+        Inline::FieldBegin { lock, dirty, form, .. } => {
+            let lock = if *lock { format!(" {w}fldLock=\"1\"") } else { String::new() };
+            let dirty = if *dirty { format!(" {w}dirty=\"1\"") } else { String::new() };
+            Some(match form.as_ref().and_then(|f| f.xml.0.as_deref()) {
+                Some(ff) => format!("<{w}fldChar {w}fldCharType=\"begin\"{lock}{dirty}>{ff}</{w}fldChar>"),
+                None => format!("<{w}fldChar {w}fldCharType=\"begin\"{lock}{dirty}/>"),
+            })
+        }
         Inline::Ruby(r, _) => r.xml.0.as_deref().map(str::to_string),
         Inline::DateBlock(name, ..) => Some(format!("<{w}{name}/>")),
         Inline::FieldSep { .. } => Some(format!("<{w}fldChar {w}fldCharType=\"separate\"/>")),
@@ -4541,7 +4628,36 @@ fn tr_pr(w: &str, r: &Row, people: &People) -> String {
 }
 
 /// A cell's `w:tcPr` from the model, in CT_TcPr order.
-fn tc_pr(w: &str, c: &Cell, people: &People) -> String {
+/// A cell's `w:tcPr`: the properties it was read with (which table formatting keeps current), its width, span,
+/// vertical merge and revisions as the model has them now; else written from the model.
+fn tc_pr(w: &str, c: &Cell, people: &People, cx: &Cx) -> String {
+    if let Some(raw) = c.direct.0.as_deref() {
+        let mut p = Props::parse(Some(raw), "tcPr", cx);
+        p.reorder(props::TCPR);
+        match &c.width {
+            Some(x) => p.set("tcW", width(w, "tcW", x)),
+            None => p.remove("tcW"),
+        }
+        if c.span > 1 {
+            p.set("gridSpan", format!("<{w}gridSpan {w}val=\"{}\"/>", c.span));
+        } else {
+            p.remove("gridSpan");
+        }
+        // A Word 97 horizontal merge is read as a span.
+        p.remove("hMerge");
+        match c.v_merge {
+            VMerge::Restart => p.set("vMerge", format!("<{w}vMerge {w}val=\"restart\"/>")),
+            VMerge::Continue => p.set("vMerge", format!("<{w}vMerge/>")),
+            VMerge::None => p.remove("vMerge"),
+        }
+        for (name, tag) in revisions::cell_marks(w, &c.rev, people) {
+            p.remove(name);
+            if !tag.is_empty() {
+                p.set(name, tag);
+            }
+        }
+        return p.xml().unwrap_or_default();
+    }
     let mut s = format!("<{w}tcPr>");
     if let Some(width_) = &c.width {
         s.push_str(&width(w, "tcW", width_));

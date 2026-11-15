@@ -1824,7 +1824,7 @@ impl Reader {
         // A run-level `mc:AlternateContent` whose choice isn't understood reads as its fallback's run content, all of it
         // one seg (the element is saved whole or rewritten, never split).
         let kids = r.children().filter(|c| c.is_element()).flat_map(|c| {
-            let fallback = is(c, MC, "AlternateContent").then(|| choose(c)).flatten().filter(|b| is(*b, MC, "Fallback"));
+            let fallback = is(c, MC, "AlternateContent").then(|| choose(c)).flatten().filter(|b| is(*b, MC, "Fallback") && sym_ex(c).is_none());
             let own = fallback.is_none().then_some((c, c));
             own.into_iter().chain(fallback.into_iter().flat_map(move |b| b.children().filter(|x| x.is_element()).map(move |x| (x, c))))
         });
@@ -1842,7 +1842,9 @@ impl Reader {
                 prev = Some((seg.range(), units_mark(out)));
             }
             if is(c, MC, "AlternateContent") {
-                if let Some(ch) = choose(c) {
+                if let Some((ch, font)) = sym_ex(c) {
+                    out.push(Inline::Sym { ch, font, run: run.clone(), control: None });
+                } else if let Some(ch) = choose(c) {
                     for d in ch.children().filter(|d| is_w(*d, "drawing")) {
                         self.read_drawing(d, &run, pkg, out);
                     }
@@ -1871,6 +1873,7 @@ impl Reader {
                             form: child(c, "ffData").and_then(form_data),
                         });
                         let (lock, dirty) = (flag("fldLock"), flag("dirty"));
+                        let form = child(c, "ffData").filter(|_| self.record).map(|f| Rc::new(FormField { xml: Raw(Some(raw(f))) }));
                         out.push(Inline::FieldBegin {
                             id,
                             kind: None,
@@ -1879,6 +1882,7 @@ impl Reader {
                             view: FieldView::Result,
                             label: None,
                             value: None,
+                            form,
                             run: run.clone(),
                         });
                     }
@@ -1986,6 +1990,7 @@ impl Reader {
                         view,
                         label: None,
                         value: None,
+                        form: None,
                         run: run.clone(),
                     });
                     out.push(Inline::Text("PAGE".into(), run.clone()));
@@ -2197,6 +2202,13 @@ impl Reader {
         if let Some(a) = anchor {
             code += &format!(" \\l \"{a}\"");
         }
+        // The ScreenTip and target frame, as the field's switches: a link rewritten as its field keeps them.
+        let quoted = |v: &str| v.replace('\\', "\\\\").replace('"', "\\\"");
+        for (switch, name) in [("o", "tooltip"), ("t", "tgtFrame")] {
+            if let Some(v) = attr(e, name) {
+                code += &format!(" \\{switch} \"{}\"", quoted(v));
+            }
+        }
         (address.is_some() || anchor.is_some()).then_some(code)
     }
 
@@ -2218,6 +2230,7 @@ impl Reader {
             view: FieldView::Result,
             label: None,
             value: None,
+            form: None,
             run: run.clone(),
         });
         if !code.is_empty() {
@@ -2884,6 +2897,8 @@ impl Reader {
                 }),
                 cells,
                 controls: row_controls.clone(),
+                direct: Raw(tr_pr.filter(|_| self.record).map(raw)),
+                exceptions: Raw(child(*rn, "tblPrEx").filter(|_| self.record).map(raw)),
                 src: self.record.then(|| Rc::new(rn.range())),
                 rev,
             });
@@ -3102,6 +3117,14 @@ fn position(p: Option<Node>) -> (String, Option<String>, f64) {
 /// The paragraph's style formatting `style` with `run`'s hiding and revisions.
 fn on_style(style: &Run, run: &Run) -> Run {
     Rc::new(RunStyle { hidden: run.hidden, rev: run.rev.clone(), ..(**style).clone() })
+}
+
+/// A Word 2016 symbol (`w16se:symEx` in an `mc:AlternateContent`): its character and font.
+fn sym_ex(ac: Node) -> Option<(char, String)> {
+    const W16SE: &str = "http://schemas.microsoft.com/office/word/2015/wordml/symex";
+    let s = ac.descendants().find(|d| is(*d, W16SE, "symEx"))?;
+    let ch = s.attribute((W16SE, "char")).and_then(|h| u32::from_str_radix(h, 16).ok()).and_then(char::from_u32)?;
+    Some((ch, s.attribute((W16SE, "font")).unwrap_or("").to_string()))
 }
 
 fn push_text(out: &mut Vec<Inline>, t: &str, run: &Run) {

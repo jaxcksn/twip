@@ -188,7 +188,7 @@ fn ids_in(inlines: &[Inline], out: &mut Vec<CommentId>) {
     }
 }
 
-fn ids_in_blocks(blocks: &[Block], out: &mut Vec<CommentId>) {
+pub(in crate::editing) fn ids_in_blocks(blocks: &[Block], out: &mut Vec<CommentId>) {
     for b in blocks {
         match b {
             Block::Para(p) => ids_in(&p.inlines, out),

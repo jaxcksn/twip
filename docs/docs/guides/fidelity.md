@@ -30,7 +30,7 @@ Chunk numbers are [roadmap](../roadmap#docx) chunks.
 |---|---|---|
 | Parts and stories | `w:document`, `w:body`, `w:hdr`, `w:ftr`, `w:footnotes`, `w:endnotes`, `w:comments`, `w:settings`, `w:styles`, `w:numbering`, `w:fonts`, `w:webSettings`, `w:glossaryDocument`, `w:txbxContent` | API |
 | Paragraphs and runs | `w:p`, `w:r`, `w:pPr`, `w:rPr`, `w:t` | API |
-| Hyperlinks | `w:hyperlink` | API; `tooltip`, `tgtFrame` and `history` are Lost when a link is rewritten, 2.3 |
+| Hyperlinks | `w:hyperlink` | API; a link rewritten as its HYPERLINK field keeps its ScreenTip (`\o`) and frame (`\t`), and drops `history`, which no field switch holds |
 | Header and footer references | `w:headerReference`, `w:footerReference` | API for editing; link to previous and removal are Model, 2.6 |
 | Section properties | `w:sectPr` | API (see [Sections](#sections)) |
 | Unknown elements | anything not listed here | Between runs: Kept as an opaque node, moved with its text, and reported as unsupported content. Inside a run: Lost when its paragraph is pasted or written from the model, 2.3 |
@@ -41,8 +41,8 @@ Chunk numbers are [roadmap](../roadmap#docx) chunks.
 |---|---|---|
 | Text, tabs and breaks | `w:t`, `w:tab`, `w:br`, `w:cr`, `w:noBreakHyphen`, `w:softHyphen` | API |
 | Absolute position tabs | `w:ptab` | Laid out; inserting one (Insert Alignment Tab) is 2.6 |
-| Symbols | `w:sym` | API to insert; the font is Lost when an edited paragraph is rewritten, 2.3 |
-| Symbol extensions | `w16se:symEx` | Kept, its fallback character shown; Lost when cut and pasted, 2.3 |
+| Symbols | `w:sym` | API |
+| Symbol extensions | `w16se:symEx` | API (read as a symbol in its font) |
 | Page number in a run | `w:pgNum` | Laid out; inserting one is API (`insertPageNumber` inserts a PAGE field) |
 | Date blocks | `w:dayShort`, `w:dayLong`, `w:monthShort`, `w:monthLong`, `w:yearShort`, `w:yearLong` | Laid out; Word inserts them only from old documents |
 | Deleted text | `w:delText`, `w:delInstrText` | API (track changes) |
@@ -59,7 +59,7 @@ Chunk numbers are [roadmap](../roadmap#docx) chunks.
 |---|---|---|
 | Fields | `w:fldChar`, `w:fldSimple`, `w:instrText` | API (`insertField`, `setField`, `updateFields`); more computed kinds in 2.11 |
 | Field data | `w:fldData` | Application (binary data Word keeps for a field) |
-| Legacy form fields | `w:ffData`, `w:name`, `w:enabled`, `w:calcOnExit`, `w:entryMacro`, `w:exitMacro`, `w:helpText`, `w:statusText`, `w:checkBox`, `w:size`, `w:sizeAuto`, `w:default`, `w:checked`, `w:ddList`, `w:result`, `w:listEntry`, `w:textInput`, `w:type`, `w:maxLength`, `w:format` | Lost when a field is rewritten; check box and drop-down drawn. Model and API, 2.12 |
+| Legacy form fields | `w:ffData`, `w:name`, `w:enabled`, `w:calcOnExit`, `w:entryMacro`, `w:exitMacro`, `w:helpText`, `w:statusText`, `w:checkBox`, `w:size`, `w:sizeAuto`, `w:default`, `w:checked`, `w:ddList`, `w:result`, `w:listEntry`, `w:textInput`, `w:type`, `w:maxLength`, `w:format` | Kept (with the field when it is rewritten or moved); check box and drop-down drawn. Model and API, 2.12 |
 | Form field shading | `w:doNotShadeFormData` | 2.12 |
 | Document variables | `w:docVars`, `w:docVar` | Kept; Model and API, with DOCVARIABLE, 2.11 |
 
@@ -107,7 +107,7 @@ Chunk numbers are [roadmap](../roadmap#docx) chunks.
 | Don't hyphenate | `w:suppressAutoHyphens` | Laid out; Model, 2.5 |
 | Line numbers | `w:suppressLineNumbers` | Laid out; Model, 2.6 |
 | HTML divisions | `w:divId`, `w:divs`, `w:div`, `w:divBdr`, `w:divsChild`, `w:blockQuote`, `w:bodyDiv`, `w:marLeft`, `w:marRight`, `w:marTop`, `w:marBottom` | Laid out (from pasted HTML; Word has no setting for them) |
-| Conditional formatting | `w:cnfStyle` | Kept in paragraphs and rows; Lost in rewritten cells, 2.3 |
+| Conditional formatting | `w:cnfStyle` | Kept |
 | Bidirectional and East Asian | `w:bidi`, `w:adjustRightInd`, `w:kinsoku`, `w:wordWrap`, `w:overflowPunct`, `w:topLinePunct`, `w:autoSpaceDE`, `w:autoSpaceDN`, `w:textAlignment` | After 1.0 |
 
 ## Styles and numbering
@@ -150,11 +150,11 @@ Chunk numbers are [roadmap](../roadmap#docx) chunks.
 | Cell spacing | `w:tblCellSpacing` | Model, 2.9 |
 | Alt text | `w:tblCaption`, `w:tblDescription` | Kept, 2.9 |
 | Row properties | `w:trHeight`, `w:cantSplit`, `w:tblHeader` | API |
-| Row grid | `w:gridBefore`, `w:gridAfter`, `w:wBefore`, `w:wAfter` | Laid out; patched by column edits in 2.3 |
+| Row grid | `w:gridBefore`, `w:gridAfter`, `w:wBefore`, `w:wAfter` | Laid out, kept |
 | Hidden rows | `w:hidden` | Laid out; Model, 2.9 |
-| Row exceptions | `w:tblPrEx` | Laid out; Lost on new rows, 2.3; Model, 2.9 |
+| Row exceptions | `w:tblPrEx` | Laid out, kept on rewritten and new rows; Model, 2.9 |
 | Cell properties | `w:tcW`, `w:gridSpan`, `w:vMerge`, `w:tcBorders`, `w:insideH`, `w:insideV`, `w:tcMar` | API; percent widths are 2.9 |
-| Horizontal merge (Word 97) | `w:hMerge` | Lost in rewritten rows, 2.3 |
+| Horizontal merge (Word 97) | `w:hMerge` | Laid out as a span; a rewritten row writes it as `w:gridSpan` |
 | Diagonal borders | `w:tl2br`, `w:tr2bl` | Kept; Model, 2.9 (drawn in 3.6) |
 | Cell text | `w:noWrap`, `w:tcFitText`, `w:hideMark` | Laid out; Model, 2.9 |
 | Default table style | `w:defaultTableStyle` | Lost on new tables, 2.9 |
@@ -164,7 +164,7 @@ Chunk numbers are [roadmap](../roadmap#docx) chunks.
 
 | Construct | Elements | Status |
 |---|---|---|
-| Footnotes and endnotes | `w:footnote`, `w:endnote`, `w:footnoteReference`, `w:endnoteReference`, `w:footnoteRef`, `w:endnoteRef`, `w:separator`, `w:continuationSeparator` | API to insert; custom marks are Lost on rewrite (2.3), settings and conversion are 2.7 |
+| Footnotes and endnotes | `w:footnote`, `w:endnote`, `w:footnoteReference`, `w:endnoteReference`, `w:footnoteRef`, `w:endnoteRef`, `w:separator`, `w:continuationSeparator` | API to insert; notes move with cut and paste; settings and conversion are 2.7 |
 | Comments | `w:comment`, `w:commentRangeStart`, `w:commentRangeEnd`, `w:commentReference`, `w:annotationRef`, `w15:commentsEx`, `w15:commentEx`, `w16cid:commentsIds`, `w16cid:commentId`, `w16cex:commentsExtensible`, `w16cex:commentExtensible`, `w16cex:extLst`, `w16cur:ext` | API |
 | People | `w15:people`, `w15:person`, `w15:presenceInfo` | API (authors) |
 
@@ -182,8 +182,8 @@ Chunk numbers are [roadmap](../roadmap#docx) chunks.
 
 | Construct | Elements | Status |
 |---|---|---|
-| Bookmarks | `w:bookmarkStart`, `w:bookmarkEnd` | Kept; Lost when pasted or written from the model, 2.3; API, 2.8 |
-| Editing permissions | `w:permStart`, `w:permEnd` | Kept as an opaque node; Model and API, 2.14 |
+| Bookmarks | `w:bookmarkStart`, `w:bookmarkEnd` | Model (kept, moved with their text); API, 2.8 |
+| Editing permissions | `w:permStart`, `w:permEnd` | Kept as an opaque node, moved with their text; Model and API, 2.14 |
 
 ## Content controls
 

@@ -1325,16 +1325,21 @@ impl Editor {
                 lone.push((c, start));
             }
         }
-        if !lone.is_empty() {
+        // Bookmarks and editing permissions on the range's edges go with it when the rest of them does (comments go
+        // with `remove_comments`).
+        let bound = clipboard::bound_markers(self.index.para(&self.doc, para).ok_or(StepError::Missing)?, range.start, range.end, false);
+        if !lone.is_empty() || !bound.is_empty() {
             let p = self.index.para(&self.doc, para).ok_or(StepError::Missing)?;
             let inlines: Vec<Inline> = p
                 .inlines
                 .iter()
-                .filter(|i| {
-                    !matches!(i, Inline::ControlStart(c) if lone.contains(&(*c, true)))
+                .enumerate()
+                .filter(|(k, i)| {
+                    !bound.contains(k)
+                        && !matches!(i, Inline::ControlStart(c) if lone.contains(&(*c, true)))
                         && !matches!(i, Inline::ControlEnd(c) if lone.contains(&(*c, false)))
                 })
-                .cloned()
+                .map(|(_, i)| i.clone())
                 .collect();
             self.step(tx, Step::Restyle { para, inlines })?;
         }

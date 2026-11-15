@@ -233,7 +233,17 @@ pub fn field_inlines(code: &str, display: &str, run: &Run) -> Vec<Inline> {
 /// [`field_inlines`] with the field's id given.
 pub fn field_inlines_with(id: FieldId, code: &str, display: &str, run: &Run) -> Vec<Inline> {
     let kind = parse(code).kind();
-    let mut v = vec![Inline::FieldBegin { id, kind, lock: false, dirty: false, view: FieldView::Result, label: None, value: None, run: run.clone() }];
+    let mut v = vec![Inline::FieldBegin {
+        id,
+        kind,
+        lock: false,
+        dirty: false,
+        view: FieldView::Result,
+        label: None,
+        value: None,
+        form: None,
+        run: run.clone(),
+    }];
     if !code.is_empty() {
         v.push(Inline::Text(code.into(), run.clone()));
     }
@@ -986,6 +996,7 @@ mod tests {
                 view: FieldView::Result,
                 label: None,
                 value: None,
+                form: None,
                 run: code.clone(),
             },
             Inline::Text(r#" REF B \* MERGEFORMAT "#.into(), code.clone()),
@@ -1063,6 +1074,7 @@ mod tests {
             view: FieldView::Result,
             label: None,
             value: None,
+            form: None,
             run: run.clone(),
         };
         let t = |s: &str| Inline::Text(s.into(), run.clone());

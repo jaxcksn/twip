@@ -1,9 +1,2 @@
 # Round-trip gate cases that still fail, one `construct edit` per line (src/tests/fidelity.rs). A listed case that
 # passes fails the run: delete its line.
-comment cut-paste
-custom-mark-note cut-paste
-custom-xml cut-paste
-form-text cut-paste
-hyperlink-tooltip cut-paste
-symbol-extension cut-paste
-symbol-font cut-paste

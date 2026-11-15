@@ -76,7 +76,7 @@ pub(super) fn with_run(i: &Inline, run: &Run) -> Inline {
         Inline::Picture(p, _) => Inline::Picture(p.clone(), run),
         Inline::NoteRef { kind, id, custom, .. } => Inline::NoteRef { kind: *kind, id: *id, custom: *custom, run },
         Inline::NoteMark(k, id, _) => Inline::NoteMark(*k, *id, run),
-        Inline::FieldBegin { id, kind, lock, dirty, view, label, value, .. } => Inline::FieldBegin {
+        Inline::FieldBegin { id, kind, lock, dirty, view, label, value, form, .. } => Inline::FieldBegin {
             id: *id,
             kind: kind.clone(),
             lock: *lock,
@@ -84,6 +84,7 @@ pub(super) fn with_run(i: &Inline, run: &Run) -> Inline {
             view: *view,
             label: label.clone(),
             value: value.clone(),
+            form: form.clone(),
             run,
         },
         Inline::FieldSep { id, .. } => Inline::FieldSep { id: *id, run },

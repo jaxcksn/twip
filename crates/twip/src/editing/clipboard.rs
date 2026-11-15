@@ -22,18 +22,124 @@ pub struct Fragment {
     pub open_end: bool,
     pub cells: Option<super::cell_clipboard::CellCopy>,
     pub controls: std::collections::HashMap<crate::docx::ControlId, crate::docx::Control>,
+    pub refs: Refs,
+}
+
+/// The notes and comments a fragment refers to, as they were when it was copied: pasting brings them back (a cut's
+/// under their own ids, a copy's as copies).
+#[derive(Clone, Debug, Default)]
+pub struct Refs {
+    pub notes: Vec<(crate::docx::NoteKind, i64, Vec<Block>)>,
+    pub comments: Vec<crate::docx::review::Comment>,
+}
+
+/// Takes out the markers of comments the fragment holds only part of (its range's start, end and reference): those
+/// stay with the document.
+fn strip_partial_comments(blocks: &mut [Block]) {
+    use crate::docx::review::{CommentId, RangeKind};
+    let mut seen: HashMap<CommentId, u8> = HashMap::new();
+    each_inline(blocks, &mut |i| match i {
+        Inline::Range(r) if r.kind == RangeKind::CommentStart => *seen.entry(CommentId(r.id)).or_default() |= 1,
+        Inline::Range(r) if r.kind == RangeKind::CommentEnd => *seen.entry(CommentId(r.id)).or_default() |= 2,
+        Inline::CommentRef { id, .. } => *seen.entry(*id).or_default() |= 4,
+        _ => {}
+    });
+    let partial: HashSet<CommentId> = seen.into_iter().filter(|(_, m)| *m != 7).map(|(id, _)| id).collect();
+    if partial.is_empty() {
+        return;
+    }
+    let keep = |i: &Inline| match i {
+        Inline::Range(r) if matches!(r.kind, RangeKind::CommentStart | RangeKind::CommentEnd) => !partial.contains(&CommentId(r.id)),
+        Inline::CommentRef { id, .. } => !partial.contains(id),
+        _ => true,
+    };
+    fn walk(blocks: &mut [Block], keep: &dyn Fn(&Inline) -> bool) {
+        for b in blocks {
+            match b {
+                Block::Para(p) => {
+                    p.inlines.retain(keep);
+                    for i in &mut p.inlines {
+                        if let Some(tb) = i.story_mut() {
+                            walk(&mut tb.blocks, keep);
+                        }
+                    }
+                }
+                Block::Table(t) => t.rows.iter_mut().flat_map(|r| r.cells.iter_mut()).for_each(|c| walk(&mut c.blocks, keep)),
+            }
+        }
+    }
+    walk(blocks, &keep);
+}
+
+/// Every inline of `blocks`, table cells and text boxes included.
+fn each_inline(blocks: &mut [Block], f: &mut dyn FnMut(&mut Inline)) {
+    for b in blocks {
+        match b {
+            Block::Para(p) => {
+                for i in &mut p.inlines {
+                    f(i);
+                    if let Some(tb) = i.story_mut() {
+                        each_inline(&mut tb.blocks, f);
+                    }
+                }
+            }
+            Block::Table(t) => t.rows.iter_mut().flat_map(|r| r.cells.iter_mut()).for_each(|c| each_inline(&mut c.blocks, f)),
+        }
+    }
+}
+
+/// The markers on the edges of `a..b` (bookmarks', editing permissions' and, with `comments`, comments' starts, ends and
+/// references) whose partner is in it too: they belong to the range, as Word moves a bookmark whose text is selected.
+pub(super) fn bound_markers(p: &Paragraph, a: Unit, b: Unit, comments: bool) -> Vec<usize> {
+    use crate::docx::review::RangeKind;
+    #[derive(PartialEq)]
+    enum Key<'a> {
+        Bookmark(&'a str),
+        Perm(i64),
+        Comment(i64),
+    }
+    if a >= b {
+        return Vec::new();
+    }
+    let mut at = 0u32;
+    let mut marks: Vec<(usize, u32, Key, bool)> = Vec::new();
+    for (k, i) in p.inlines.iter().enumerate() {
+        let m = match i {
+            Inline::Bookmark(n) => Some(n.strip_prefix('/').map_or((Key::Bookmark(n), true), |n| (Key::Bookmark(n), false))),
+            Inline::Opaque(o) => o.permission().map(|(start, id)| (Key::Perm(id), start)),
+            Inline::Range(r) if comments && r.kind == RangeKind::CommentStart => Some((Key::Comment(r.id), true)),
+            Inline::Range(r) if comments && r.kind == RangeKind::CommentEnd => Some((Key::Comment(r.id), false)),
+            Inline::CommentRef { id, .. } if comments => Some((Key::Comment(id.0), false)),
+            _ => None,
+        };
+        if let Some((key, start)) = m {
+            marks.push((k, at, key, start));
+        }
+        at += i.units() as u32;
+    }
+    let within = |x: u32| a.0 <= x && x <= b.0;
+    marks
+        .iter()
+        .filter(|(_, u, key, start)| {
+            (*u == a.0 || *u == b.0)
+                && marks.iter().all(|(_, v, k, s)| k != key || s == start || within(*v))
+                && marks.iter().any(|(_, _, k, s)| k == key && s != start)
+        })
+        .map(|m| m.0)
+        .collect()
 }
 
 fn slice(p: &Paragraph, a: Unit, b: Unit) -> Vec<Inline> {
     let mut out = Vec::new();
     let mut at = 0u32;
-    for i in &p.inlines {
+    let bound = bound_markers(p, a, b, true);
+    for (k, i) in p.inlines.iter().enumerate() {
         let n = i.units() as u32;
         let (s, e) = (at, at + n);
         at = e;
         if n == 0 {
             let control = matches!(i, Inline::ControlStart(_) | Inline::ControlEnd(_));
-            if (s > a.0 && s < b.0) || (control && s >= a.0 && s <= b.0) {
+            if (s > a.0 && s < b.0) || (control && s >= a.0 && s <= b.0) || bound.contains(&k) {
                 out.push(i.clone());
             }
             continue;
@@ -290,6 +396,110 @@ impl Editor {
     }
 
     pub fn copy_fragment(&mut self) -> Option<Fragment> {
+        let mut f = self.copy_content()?;
+        strip_partial_comments(&mut f.blocks);
+        f.refs = self.refs_of(&f.blocks);
+        Some(f)
+    }
+
+    /// The notes and comments (with their replies) `blocks` refer to.
+    fn refs_of(&self, blocks: &[Block]) -> Refs {
+        let mut notes = Vec::new();
+        super::notes::refs_in(blocks, &mut notes);
+        notes.sort_by_key(|&(k, id)| (k == crate::docx::NoteKind::End, id));
+        notes.dedup();
+        let notes = notes
+            .into_iter()
+            .filter_map(|(k, id)| {
+                let body = match k {
+                    crate::docx::NoteKind::Foot => self.doc.footnotes.get(&id),
+                    crate::docx::NoteKind::End => self.doc.endnotes.get(&id),
+                };
+                Some((k, id, body?.clone()))
+            })
+            .collect();
+        let mut ids = Vec::new();
+        super::comments::ids_in_blocks(blocks, &mut ids);
+        let comments =
+            self.doc.comments.by_id.values().filter(|c| ids.contains(&c.id) || c.parent.is_some_and(|p| ids.contains(&p))).cloned().collect();
+        Refs { notes, comments }
+    }
+
+    /// Brings back the notes and comments pasted content refers to: under their own ids when those are free (they were
+    /// cut), else as copies under new ids, the pasted references renumbered.
+    fn paste_refs(&mut self, tx: &mut super::Tx, blocks: &mut [Block], refs: &Refs) {
+        use crate::docx::NoteKind;
+        use crate::docx::review::{CommentId, RangeKind};
+        for (kind, id, body) in &refs.notes {
+            let notes = if *kind == NoteKind::Foot { &self.doc.footnotes } else { &self.doc.endnotes };
+            let to = if notes.contains_key(id) { notes.keys().max().map_or(1, |m| m + 1) } else { *id };
+            let mut body: Vec<Block> = body.iter().map(fresh).collect();
+            for (c, k) in adopt(&mut body, &self.doc.controls) {
+                let _ = self.step(tx, Step::Control { id: c, control: Some(k) });
+            }
+            if to != *id {
+                each_inline(blocks, &mut |i| {
+                    if let Inline::NoteRef { kind: k, id: n, .. } = i
+                        && *k == *kind
+                        && *n == *id
+                    {
+                        *n = to;
+                    }
+                });
+                each_inline(&mut body, &mut |i| {
+                    if let Inline::NoteMark(k, n, _) = i
+                        && *k == *kind
+                    {
+                        *n = to;
+                    }
+                });
+            }
+            let _ = self.step(tx, Step::Note { kind: *kind, id: to, blocks: Some(body) });
+        }
+        let mut next = self.doc.comments.by_id.keys().map(|c| c.0).max().unwrap_or(0) + 1;
+        let mut map: HashMap<CommentId, CommentId> = HashMap::new();
+        for c in &refs.comments {
+            let to = if self.doc.comments.by_id.contains_key(&c.id) || map.values().any(|v| *v == c.id) {
+                next += 1;
+                CommentId(next - 1)
+            } else {
+                c.id
+            };
+            map.insert(c.id, to);
+        }
+        if map.iter().any(|(a, b)| a != b) {
+            each_inline(blocks, &mut |i| match i {
+                Inline::Range(r) if matches!(r.kind, RangeKind::CommentStart | RangeKind::CommentEnd) => {
+                    if let Some(to) = map.get(&CommentId(r.id)) {
+                        r.id = to.0;
+                    }
+                }
+                Inline::CommentRef { id, .. } => {
+                    if let Some(to) = map.get(id) {
+                        *id = *to;
+                    }
+                }
+                _ => {}
+            });
+        }
+        for c in &refs.comments {
+            let to = map[&c.id];
+            let mut c = c.clone();
+            if to != c.id {
+                c.para_id = self.doc.review_ids.next_para_id();
+                c.durable_id = None;
+            }
+            c.id = to;
+            c.parent = c.parent.map(|p| map.get(&p).copied().unwrap_or(p));
+            c.body = c.body.iter().map(fresh).collect();
+            for (id, k) in adopt(&mut c.body, &self.doc.controls) {
+                let _ = self.step(tx, Step::Control { id, control: Some(k) });
+            }
+            let _ = self.step(tx, Step::Comment { id: to, after: Some(c) });
+        }
+    }
+
+    fn copy_content(&mut self) -> Option<Fragment> {
         if matches!(self.selection, Selection::Cells { .. }) {
             let id = self.clipboard.as_ref().map_or(1, |f| f.id + 1);
             return self.copy_cells(id);
@@ -304,7 +514,14 @@ impl Editor {
                 q.inlines = slice(p, a, b);
                 out.push(Block::Para(q));
             }
-            return (!out.is_empty()).then_some(Fragment { id, blocks: out, open_end: true, cells: None, controls: Default::default() });
+            return (!out.is_empty()).then_some(Fragment {
+                id,
+                blocks: out,
+                open_end: true,
+                cells: None,
+                controls: Default::default(),
+                refs: Default::default(),
+            });
         }
         let (a, b) = self.selection.ordered(&self.index)?;
         if a.same_place(&b) {
@@ -335,7 +552,7 @@ impl Editor {
                 }
             }
             let open_end = self.index.para(&self.doc, pb).is_some_and(|p| ob < para_len(p) || sa.block == sb.block) || b.para_offset().is_none();
-            return Some(Fragment { id, blocks: out, open_end, cells: None, controls: Default::default() });
+            return Some(Fragment { id, blocks: out, open_end, cells: None, controls: Default::default(), refs: Default::default() });
         }
         // Across cells or levels
         let mut out = Vec::new();
@@ -346,7 +563,7 @@ impl Editor {
                 out.push(Block::Para(q));
             }
         }
-        Some(Fragment { id, blocks: out, open_end: true, cells: None, controls: Default::default() })
+        Some(Fragment { id, blocks: out, open_end: true, cells: None, controls: Default::default(), refs: Default::default() })
     }
 
     fn keep_look(&self, src: &Run, base: &crate::docx::props::RunProps, cache: &mut HashMap<*const RunStyle, Run>) -> Run {
@@ -460,6 +677,7 @@ impl Editor {
         for (id, c) in adopt(&mut blocks, &f.controls) {
             let _ = self.step(&mut tx, Step::Control { id, control: Some(c) });
         }
+        self.paste_refs(&mut tx, &mut blocks, &f.refs);
         let dest: Vec<crate::docx::ControlId> = self.index.para(&self.doc, para).map(|p| p.controls.clone()).unwrap_or_default();
         if !dest.is_empty() {
             for b in &mut blocks {

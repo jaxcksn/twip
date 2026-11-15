@@ -532,6 +532,8 @@ pub enum Inline {
         /// Template design: what an empty result shows; not saved.
         label: Option<Rc<str>>,
         value: Option<String>,
+        /// A legacy form field's data (`w:ffData`).
+        form: Option<Rc<FormField>>,
         run: Run,
     },
     /// `w:fldChar separate`: the end of a field's code, the start of its result.
@@ -567,6 +569,29 @@ pub enum Inline {
     /// Content the engine doesn't model, between runs (an equation, a subdocument, an editing permission's start or
     /// end): no units, nothing drawn, saved as read wherever it moves. No units.
     Opaque(Rc<Opaque>),
+}
+
+impl Opaque {
+    /// An editing permission's start (`true`) or end, and its id.
+    pub fn permission(&self) -> Option<(bool, i64)> {
+        let x = self.xml.0.as_deref()?;
+        let name = x.strip_prefix('<')?.split(|c: char| c.is_whitespace() || c == '/' || c == '>').next()?;
+        let start = match name.rsplit(':').next()? {
+            "permStart" => true,
+            "permEnd" => false,
+            _ => return None,
+        };
+        let at = x.find(":id=\"").or_else(|| x.find(" id=\""))?;
+        let v = x[at..].split('"').nth(1)?;
+        Some((start, v.trim().parse().ok()?))
+    }
+}
+
+/// A legacy form field's data: what saving writes back.
+#[derive(Debug, PartialEq)]
+pub struct FormField {
+    /// The `w:ffData` as read.
+    pub xml: Raw,
 }
 
 /// An element kept as read ([`Inline::Opaque`]).
@@ -993,6 +1018,10 @@ pub struct Row {
     /// The `w:tr` element's byte range in [`Source::xml`] (editable reads only): saving keeps a row it still has. A
     /// copied row needs `None`, or it would be written as the row it was copied from.
     pub src: Option<Rc<std::ops::Range<usize>>>,
+    /// The row's `w:trPr` and `w:tblPrEx` as read (editable reads only): what a rewritten row's properties are patched
+    /// from.
+    pub direct: Raw,
+    pub exceptions: Raw,
     /// Tracked insertion or deletion of the row, and tracked changes of its properties.
     pub rev: RowRevisions,
 }

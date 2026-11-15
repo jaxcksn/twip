@@ -831,7 +831,7 @@ impl Editor {
             blocks.pop();
         }
         let controls = super::clipboard::controls_of(&blocks, &doc);
-        Ok(super::clipboard::Fragment { id: 0, blocks, open_end: true, cells: None, controls })
+        Ok(super::clipboard::Fragment { id: 0, blocks, open_end: true, cells: None, controls, refs: Default::default() })
     }
 
     // Locks

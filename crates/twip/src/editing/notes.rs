@@ -20,7 +20,7 @@ fn story(kind: NoteKind, id: i64) -> StoryId {
     }
 }
 
-fn refs_in(blocks: &[Block], out: &mut Vec<(NoteKind, i64)>) {
+pub(super) fn refs_in(blocks: &[Block], out: &mut Vec<(NoteKind, i64)>) {
     for b in blocks {
         match b {
             Block::Para(p) => refs_inline(&p.inlines, out),

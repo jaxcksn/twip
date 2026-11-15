@@ -59,6 +59,7 @@ impl Editor {
             open_end: false,
             cells: Some(CellCopy { whole_rows, whole_table }),
             controls: Default::default(),
+            refs: Default::default(),
         })
     }
 

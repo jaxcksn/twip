@@ -101,6 +101,8 @@ impl Editor {
                     })
                     .collect(),
                 src: None,
+                direct: Default::default(),
+                exceptions: Default::default(),
                 controls: Vec::new(),
                 rev: Default::default(),
             })

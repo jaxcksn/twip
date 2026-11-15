@@ -572,6 +572,8 @@ impl Editor {
                     nudge: None,
                     cells: (0..ncols).map(|_| cell(w)).collect(),
                     src: None,
+                    direct: Default::default(),
+                    exceptions: Default::default(),
                     controls: Vec::new(),
                     rev: Default::default(),
                 })

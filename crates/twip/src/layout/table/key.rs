@@ -129,6 +129,8 @@ fn shell(t: &Table) -> Table {
                 nudge,
                 cells,
                 src: _,
+                direct: _,
+                exceptions: _,
                 controls: _,
                 rev,
             } = r;
@@ -196,6 +198,8 @@ fn shell(t: &Table) -> Table {
                 nudge: *nudge,
                 cells,
                 src: None,
+                direct: Raw(None),
+                exceptions: Raw(None),
                 controls: Vec::new(),
                 rev: rev.clone(),
             }
@@ -291,6 +295,8 @@ pub(crate) fn same_shell(s: &Table, t: &Table) -> bool {
                 nudge,
                 cells,
                 src: _,
+                direct: _,
+                exceptions: _,
                 controls: _,
                 rev,
             } = r;
