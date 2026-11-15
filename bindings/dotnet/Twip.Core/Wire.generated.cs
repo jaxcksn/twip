@@ -2952,3 +2952,142 @@ public sealed record ListPosition(int Index, int Count);
 /// <param name="Action">What it does.</param>
 /// <param name="Label">For example <c>Double-click the header area</c>.</param>
 public sealed record GestureBinding(GestureId Gesture, GestureAction Action, string Label);
+
+/// <summary>
+/// <c>setTablePosition</c>'s value: a positioned table's place on each axis, as <c>setObjectPosition</c> gives an
+/// object's, and its distance from the text around it; what isn't given is kept. A table is measured from the column,
+/// the margin or the page across, and from the paragraph, the margin or the page down.
+/// </summary>
+/// <param name="Horizontal">The horizontal place.</param>
+/// <param name="Vertical">The vertical place.</param>
+/// <param name="WrapDistance">How far the text around it keeps (0…1584 pt).</param>
+public sealed record TablePosition(
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] HorizontalPosition? Horizontal = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] VerticalPosition? Vertical = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TextDistance? WrapDistance = null);
+
+/// <summary>A gradient stop.</summary>
+/// <param name="Position">0 to 1 along the gradient.</param>
+/// <param name="Color">The colour there.</param>
+public sealed record GradientStop(double Position, [property: JsonPropertyName("colour")] ShapeColor Color);
+
+/// <summary>An arrowhead.</summary>
+/// <param name="Kind">Its shape.</param>
+/// <param name="Width">Its width.</param>
+/// <param name="Length">Its length.</param>
+public sealed record Arrowhead(ArrowKind Kind, ArrowSize Width = ArrowSize.Medium, ArrowSize Length = ArrowSize.Medium);
+
+/// <summary>A line's arrowheads.</summary>
+/// <param name="Head">At the start.</param>
+/// <param name="Tail">At the end.</param>
+public sealed record LineEnds(
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Arrowhead? Head = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Arrowhead? Tail = null);
+
+/// <summary>An outline.</summary>
+/// <param name="Width">The width (0.75 pt when the document gives none).</param>
+/// <param name="Fill"><c>none</c>, <c>solid</c> or <c>gradient</c>.</param>
+/// <param name="Dash">
+/// The ECMA-376 dash name (<c>"solid"</c>, <c>"dash"</c>, <c>"sysDot"</c>…); <c>"custom"</c> for a custom dash.
+/// </param>
+/// <param name="Compound">Single or several lines.</param>
+/// <param name="Cap">The ends.</param>
+/// <param name="Join">The joins.</param>
+/// <param name="Ends">The arrowheads.</param>
+public sealed record LineValue(
+    Length Width,
+    FillValue Fill,
+    string Dash,
+    LineCompound Compound,
+    LineCap Cap,
+    LineJoin Join,
+    LineEnds Ends);
+
+/// <summary>A shadow.</summary>
+/// <param name="Color">Its colour (with its transparency as an <c>alpha</c> transform).</param>
+/// <param name="Blur">How far it blurs.</param>
+/// <param name="Distance">How far from the shape.</param>
+/// <param name="Direction">Which way, clockwise from the right.</param>
+public sealed record Shadow(
+    [property: JsonPropertyName("colour")] ShapeColor Color,
+    Length Blur,
+    Length Distance,
+    double Direction);
+
+/// <summary>A glow.</summary>
+/// <param name="Color">Its colour.</param>
+/// <param name="Radius">How far it reaches.</param>
+public sealed record Glow([property: JsonPropertyName("colour")] ShapeColor Color, Length Radius);
+
+/// <summary>A shape's effects.</summary>
+/// <param name="OuterShadow">A shadow outside the shape.</param>
+/// <param name="InnerShadow">A shadow inside the shape.</param>
+/// <param name="Glow">A glow around the shape.</param>
+/// <param name="SoftEdge">Edges faded over this distance.</param>
+/// <param name="Blur">The whole shape blurred by this radius.</param>
+public sealed record EffectsValue(
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Shadow? OuterShadow = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Shadow? InnerShadow = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Glow? Glow = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? SoftEdge = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Blur = null);
+
+/// <summary>
+/// The host's colours for the light and the dark chrome scheme, to match its own UI: each scheme given replaces the
+/// last one set for it (<c>{}</c> puts its own colours back). The high contrast scheme always takes the platform's.
+/// </summary>
+/// <param name="Light">For the light scheme.</param>
+/// <param name="Dark">For the dark scheme.</param>
+public sealed record ThemeColors(
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ChromeColors? Light = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ChromeColors? Dark = null);
+
+/// <summary>Chrome colours in place of a scheme's own; each one left out keeps the scheme's.</summary>
+/// <param name="Desk">
+/// Around the pages and the rulers' strips (a background the host sets wins around the pages).
+/// </param>
+/// <param name="Surface">The rulers' strips, and the readouts' and labels' backgrounds.</param>
+/// <param name="Text">Text, and the ruler numbers and markers.</param>
+/// <param name="SecondaryText">The rulers' unit ticks, and secondary text.</param>
+/// <param name="FaintText">The rulers' fine ticks, the object grid, and faint text.</param>
+/// <param name="Line">The rulers' outlines and the margins' hatching.</param>
+public sealed record ChromeColors(
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ColorValue? Desk = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ColorValue? Surface = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ColorValue? Text = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ColorValue? SecondaryText = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ColorValue? FaintText = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ColorValue? Line = null);
+
+/// <summary>The field, content control or merge-designer element under the pointer.</summary>
+/// <param name="Element">The element; <c>exact</c> is always false.</param>
+/// <param name="Boxes">Its boxes on screen, one per line it spans.</param>
+/// <param name="Action">What a press there does.</param>
+public sealed record ElementHover(ElementContext Element, IReadOnlyList<RectangleF> Boxes, PressAction Action);
+
+/// <summary>A click on an element, after the editor's own action for it.</summary>
+/// <param name="Element">The element; <c>exact</c> is always false.</param>
+/// <param name="Count">1 for a click, 2 for a double click, 3 for a triple click.</param>
+/// <param name="Button">The button.</param>
+/// <param name="Modifiers">The modifier keys held.</param>
+public sealed record ElementClick(
+    ElementContext Element,
+    int Count,
+    Hosting.PointerButton Button,
+    Hosting.KeyModifiers Modifiers);
+
+/// <summary>The innermost element the selection is in or covers.</summary>
+/// <param name="Element">The element.</param>
+/// <param name="Boxes">Its boxes on screen, one per line it spans; none while it is scrolled out of view.</param>
+public sealed record ElementSelection(ElementContext Element, IReadOnlyList<RectangleF> Boxes);
+
+/// <summary>The pointer shape to show over some elements instead of the editor's own.</summary>
+/// <param name="On">The elements.</param>
+/// <param name="Cursor">The shape.</param>
+public sealed record CursorOverride(CursorTarget On, Hosting.EditorCursor Cursor);
+
+/// <summary>One entry of the tab type picker.</summary>
+/// <param name="Value">The type.</param>
+/// <param name="Name">Its name (<c>Decimal</c>).</param>
+/// <param name="Description">What it does, in one line (<c>Numbers line up on the decimal point</c>).</param>
+public sealed record TabTypeChoice(TabSelector Value, string Name, string Description);

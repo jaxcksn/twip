@@ -166,6 +166,22 @@ const ADOPT = [
   'CellPlace',
   'ListPosition',
   'GestureBinding',
+  // Values
+  'TablePosition',
+  'GradientStop',
+  'Arrowhead',
+  'LineEnds',
+  'LineValue',
+  'Shadow',
+  'Glow',
+  'EffectsValue',
+  'ThemeColors',
+  'ChromeColors',
+  'ElementHover',
+  'ElementClick',
+  'ElementSelection',
+  'CursorOverride',
+  'TabTypeChoice',
 ];
 
 /** Schema types this SDK names otherwise (Rust name: C# type). */
@@ -182,6 +198,11 @@ const NAMES: Record<string, string> = {
   'VerticalRuler': 'VerticalRulerModel',
   'ElementField': 'ElementTextField',
   'AccessibleId': 'long',
+  'ColourValue': 'ShapeColor',
+  'Compound': 'LineCompound',
+  'PointerButton': 'Hosting.PointerButton',
+  'Modifiers': 'Hosting.KeyModifiers',
+  'Cursor': 'Hosting.EditorCursor',
 };
 
 /**
@@ -209,10 +230,14 @@ const FIELDS: Record<string, string> = {
   'FindQuery.wholeWords': 'bool',
   'PreviewPicture.png': 'byte[]',
   'StylePreview.color': 'ColorValue',
+  'ElementHover.boxes': 'IReadOnlyList<RectangleF>',
+  'ElementSelection.boxes': 'IReadOnlyList<RectangleF>',
 };
 
 /** Init properties that start other than empty (`Type.field`: the C# initializer), as the state before the first. */
 const INIT: Record<string, string> = {
+  'Arrowhead.width': 'ArrowSize.Medium',
+  'Arrowhead.length': 'ArrowSize.Medium',
   'PreviewSize.scale': '1',
   'SelectionSummary.page': '1',
   'SelectionSummary.empty': 'true',
@@ -227,7 +252,7 @@ const INIT: Record<string, string> = {
 
 /** Records written with init properties whatever their size, and positional ones whatever their size. */
 const PROPERTIES: string[] = ['SelectionSummary', 'TableSelection', 'TableStyleOptions', 'ObjectSelection', 'ShapeState', 'ShapeTextState', 'ObjectPlacement', 'TextDistance', 'CharacterFormatting', 'ParagraphFormatting', 'PageFormatting', 'HistoryState', 'ReviewState', 'SpellingState', 'RulerModel'];
-const POSITIONAL: string[] = ['Person', 'RevisionInfo', 'CommentThread', 'Comment', 'CommentAnchor', 'LinkInfo', 'HeaderFooterInfo', 'PageSize', 'PageMargins', 'RulerIndents', 'FindQuery', 'FindResult', 'FindMatch', 'Misspelling', 'Heading', 'PreviewSize', 'PreviewPicture', 'StylePreview', 'ElementMatch', 'SubTemplateInfo', 'DataPartInfo', 'DataPart', 'CellPlace', 'ListPosition', 'GestureBinding'];
+const POSITIONAL: string[] = ['Person', 'RevisionInfo', 'CommentThread', 'Comment', 'CommentAnchor', 'LinkInfo', 'HeaderFooterInfo', 'PageSize', 'PageMargins', 'RulerIndents', 'FindQuery', 'FindResult', 'FindMatch', 'Misspelling', 'Heading', 'PreviewSize', 'PreviewPicture', 'StylePreview', 'ElementMatch', 'SubTemplateInfo', 'DataPartInfo', 'DataPart', 'CellPlace', 'ListPosition', 'GestureBinding', 'TablePosition', 'GradientStop', 'Arrowhead', 'LineEnds', 'LineValue', 'Shadow', 'Glow', 'EffectsValue', 'ThemeColors', 'ChromeColors', 'ElementHover', 'ElementClick', 'ElementSelection', 'CursorOverride', 'TabTypeChoice'];
 const POSITIONAL_MAX = 8;
 
 

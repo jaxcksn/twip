@@ -374,20 +374,6 @@ public sealed record TableWidth(TableWidthKind Kind, [property: JsonIgnore(Condi
     public static TableWidth FromPercent(double percent) => new(TableWidthKind.Percent, percent);
 }
 
-/// <summary>
-/// A positioned table's place (<see cref="EditorCommands.SetTablePositionAsync"/>): each axis as an object's, and its
-/// distance from the text around it. A table is measured from the column, the margin or the page across, and from the
-/// paragraph, the margin or the page down; another reference is an invalid argument. Given to the command, what isn't
-/// set is kept; as the command's state value, every property is set.
-/// </summary>
-/// <param name="Horizontal">The horizontal place: an alignment or an offset.</param>
-/// <param name="Vertical">The vertical place: an alignment or an offset.</param>
-/// <param name="WrapDistance">How far the text around it keeps, 0 to 1584 pt.</param>
-public sealed record TablePosition(
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] HorizontalPosition? Horizontal = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] VerticalPosition? Vertical = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TextDistance? WrapDistance = null);
-
 /// <summary>How line spacing is measured.</summary>
 public enum LineSpacingRule
 {
@@ -513,11 +499,6 @@ public sealed record ShapeColor(
     public static ShapeColor FromRgb(ColorValue rgb) => new(Rgb: rgb);
 }
 
-/// <summary>A gradient stop.</summary>
-/// <param name="Position">0 to 1 along the gradient.</param>
-/// <param name="Color">The colour there.</param>
-public sealed record GradientStop(double Position, [property: JsonPropertyName("colour")] ShapeColor Color);
-
 /// <summary>A shape's fill.</summary>
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "type")]
 [JsonDerivedType(typeof(None), "none")]
@@ -576,54 +557,6 @@ public enum LineCompound
     Triple,
 }
 
-/// <summary>An arrowhead.</summary>
-/// <param name="Kind">Its shape.</param>
-/// <param name="Width">Its width.</param>
-/// <param name="Length">Its length.</param>
-public sealed record Arrowhead(ArrowKind Kind, ArrowSize Width = ArrowSize.Medium, ArrowSize Length = ArrowSize.Medium);
-
-/// <summary>A line's arrowheads.</summary>
-/// <param name="Head">At the start.</param>
-/// <param name="Tail">At the end.</param>
-public sealed record LineEnds(
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Arrowhead? Head = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Arrowhead? Tail = null);
-
-/// <summary>A shape's outline.</summary>
-/// <param name="Width">The width (0.75 pt when the document gives none).</param>
-/// <param name="Fill"><see cref="FillValue.None"/>, <see cref="FillValue.Solid"/> or <see cref="FillValue.Gradient"/>.</param>
-/// <param name="Dash">The ECMA-376 dash name, such as <c>solid</c>, <c>dash</c> or <c>sysDot</c>; <c>custom</c> for a custom dash.</param>
-/// <param name="Compound">Single or several lines.</param>
-/// <param name="Cap">The ends.</param>
-/// <param name="Join">The joins.</param>
-/// <param name="Ends">The arrowheads.</param>
-public sealed record LineValue(Length Width, FillValue Fill, string Dash, LineCompound Compound, LineCap Cap, LineJoin Join, LineEnds Ends);
-
-/// <summary>A shadow.</summary>
-/// <param name="Color">Its colour, with its transparency as an <see cref="ColorTransformKind.Alpha"/> transform.</param>
-/// <param name="Blur">How far it blurs.</param>
-/// <param name="Distance">How far from the shape.</param>
-/// <param name="Direction">Which way, in degrees clockwise from the right.</param>
-public sealed record Shadow([property: JsonPropertyName("colour")] ShapeColor Color, Length Blur, Length Distance, double Direction);
-
-/// <summary>A glow.</summary>
-/// <param name="Color">Its colour.</param>
-/// <param name="Radius">How far it reaches.</param>
-public sealed record Glow([property: JsonPropertyName("colour")] ShapeColor Color, Length Radius);
-
-/// <summary>A shape's effects.</summary>
-/// <param name="OuterShadow">A shadow outside the shape.</param>
-/// <param name="InnerShadow">A shadow inside the shape.</param>
-/// <param name="Glow">A glow around the shape.</param>
-/// <param name="SoftEdge">Edges faded over this distance.</param>
-/// <param name="Blur">The whole shape blurred by this radius.</param>
-public sealed record EffectsValue(
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Shadow? OuterShadow = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Shadow? InnerShadow = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Glow? Glow = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? SoftEdge = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Blur = null);
-
 /// <summary>
 /// The editor chrome's colour scheme: the desk, rulers, handles, guides and readouts. <see cref="Light"/>,
 /// <see cref="Dark"/>, or <see cref="HighContrast"/> from the platform's colours.
@@ -671,61 +604,12 @@ public enum ChromeThemeKind
 /// <param name="GrayText">Disabled and secondary text.</param>
 public sealed record HighContrastColors(ColorValue Canvas, ColorValue CanvasText, ColorValue Highlight, ColorValue HighlightText, ColorValue GrayText);
 
-/// <summary>
-/// The application's colours for the light and dark chrome schemes, to match its own UI. Each scheme given replaces the
-/// last one set for it, and an empty <see cref="ChromeColors"/> puts its own colours back. The high contrast scheme
-/// always takes the platform's.
-/// </summary>
-/// <param name="Light">For the light scheme; null keeps the last one set.</param>
-/// <param name="Dark">For the dark scheme; null keeps the last one set.</param>
-public sealed record ThemeColors(
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ChromeColors? Light = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ChromeColors? Dark = null);
-
-/// <summary>Chrome colours in place of a scheme's own; each one left null keeps the scheme's.</summary>
-/// <param name="Desk">Around the pages and the rulers' strips (a background the host sets wins around the pages).</param>
-/// <param name="Surface">The rulers' strips, and the readouts' and labels' backgrounds.</param>
-/// <param name="Text">Text, and the ruler numbers and markers.</param>
-/// <param name="SecondaryText">The rulers' unit ticks, and secondary text.</param>
-/// <param name="FaintText">The rulers' fine ticks, the object grid, and faint text.</param>
-/// <param name="Line">The rulers' outlines and the margins' hatching.</param>
-public sealed record ChromeColors(
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ColorValue? Desk = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ColorValue? Surface = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ColorValue? Text = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ColorValue? SecondaryText = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ColorValue? FaintText = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ColorValue? Line = null);
-
-/// <summary>The field or content control under the pointer.</summary>
-/// <param name="Element">The element; <see cref="ElementContext.Exact"/> is always false.</param>
-/// <param name="Boxes">Its boxes in client coordinates, one per line it spans.</param>
-/// <param name="Action">What a press there does.</param>
-public sealed record ElementHover(ElementContext Element, IReadOnlyList<RectangleF> Boxes, PressAction Action);
-
-/// <summary>A click on an element, after the editor's own action for the press (a checkbox toggles first).</summary>
-/// <param name="Element">The element; <see cref="ElementContext.Exact"/> is always false.</param>
-/// <param name="Count">1 for a click, 2 for a double click, 3 for a triple click.</param>
-/// <param name="Button">The button.</param>
-/// <param name="Modifiers">The modifier keys held.</param>
-public sealed record ElementClick(ElementContext Element, int Count, Hosting.PointerButton Button, Hosting.KeyModifiers Modifiers);
-
-/// <summary>The innermost element the selection is in or covers.</summary>
-/// <param name="Element">The element.</param>
-/// <param name="Boxes">Its boxes in client coordinates, one per line it spans; none while it is scrolled out of view.</param>
-public sealed record ElementSelection(ElementContext Element, IReadOnlyList<RectangleF> Boxes);
-
 /// <summary>Which hovered elements a <see cref="CursorOverride"/> applies to: set one of the two.</summary>
 /// <param name="Kind">Elements of a kind.</param>
 /// <param name="Action">Elements a press on does this.</param>
 public sealed record CursorTarget(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ElementKind? Kind = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PressAction? Action = null);
-
-/// <summary>The pointer shape to show over some elements instead of the editor's own.</summary>
-/// <param name="On">The elements.</param>
-/// <param name="Cursor">The shape.</param>
-public sealed record CursorOverride(CursorTarget On, Hosting.EditorCursor Cursor);
 
 /// <summary>
 /// A popover the engine asks the application to show by its anchor, with what it offers. Only one is open at a time;
@@ -762,8 +646,3 @@ public abstract record Popover
     public sealed record AutoCorrect(RectangleF Anchor, string From, string To) : Popover;
 }
 
-/// <summary>One entry of the tab type picker.</summary>
-/// <param name="Value">The type.</param>
-/// <param name="Name">Its name (<c>Decimal</c>).</param>
-/// <param name="Description">What it does, in one line (<c>Numbers line up on the decimal point</c>).</param>
-public sealed record TabTypeChoice(TabSelector Value, string Name, string Description);
