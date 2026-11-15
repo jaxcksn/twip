@@ -2230,7 +2230,7 @@ public sealed record TransactionRecord(
     long Revision,
     Origin Origin,
     Author Author,
-    DateTimeOffset Time,
+    [property: JsonConverter(typeof(Wire.UtcTimeConverter))] DateTimeOffset Time,
     string Label,
     ChangeSummary Summary);
 
@@ -2298,3 +2298,82 @@ public sealed record RichRun(
 /// <param name="Label">Its label (<c>"Basic Shapes"</c>).</param>
 /// <param name="Presets">Its presets, in Word's order.</param>
 public sealed record ShapeGalleryGroup(string Label, IReadOnlyList<ShapePreset> Presets);
+
+/// <summary>Someone who made revisions or comments, with the colour they show in.</summary>
+/// <param name="Name">The display name.</param>
+/// <param name="Color">The colour the editor marks their changes with.</param>
+/// <param name="Initials">The initials.</param>
+/// <param name="Identity">The identity in a directory.</param>
+public sealed record Person(
+    string Name,
+    ColorValue Color,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Initials = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Identity? Identity = null);
+
+/// <summary>One revision, for a reviewing pane.</summary>
+/// <param name="Id">The revision.</param>
+/// <param name="Kind">What changed.</param>
+/// <param name="Author">Who made it.</param>
+/// <param name="Time"><c>null</c> when the document gives no readable date.</param>
+/// <param name="Text">The inserted, deleted or moved text, when there is some.</param>
+/// <param name="Description">What changed, for formatting changes (<c>Formatted: Bold, Italic</c>).</param>
+/// <param name="Page">The page it starts on.</param>
+/// <param name="Story">The story it is in.</param>
+/// <param name="Pair">A move's other half.</param>
+public sealed record RevisionInfo(
+    RevisionId Id,
+    RevisionKind Kind,
+    Person Author,
+    [property: JsonConverter(typeof(Wire.NullableUtcTimeConverter))] DateTimeOffset? Time,
+    string Text,
+    string Description,
+    int Page,
+    Story Story,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] RevisionId? Pair = null);
+
+/// <summary>A comment thread: the first comment and its replies.</summary>
+/// <param name="Id">The first comment's id.</param>
+/// <param name="Done">Whether the thread is resolved.</param>
+/// <param name="AnchorText">The commented text.</param>
+/// <param name="Page">The page it starts on.</param>
+/// <param name="Comments">The first comment, then its replies.</param>
+public sealed record CommentThread(
+    CommentId Id,
+    bool Done,
+    string AnchorText,
+    int Page,
+    IReadOnlyList<Comment> Comments);
+
+/// <summary>One comment.</summary>
+/// <param name="Id">The comment.</param>
+/// <param name="Author">Who wrote it.</param>
+/// <param name="Time">When, or null when the document gives no readable date.</param>
+/// <param name="Body">The body.</param>
+/// <param name="PlainText">The body as plain text.</param>
+public sealed record Comment(
+    CommentId Id,
+    Person Author,
+    [property: JsonConverter(typeof(Wire.NullableUtcTimeConverter))] DateTimeOffset? Time,
+    RichText Body,
+    string PlainText);
+
+/// <summary>Where a visible comment's range is, for placing its card (content coordinates, CSS px).</summary>
+/// <param name="Thread">The thread.</param>
+/// <param name="Page">The page.</param>
+/// <param name="Active">Whether it is the active thread.</param>
+/// <param name="Done">Whether the thread is resolved.</param>
+/// <param name="Start">The range's first character, at its baseline.</param>
+/// <param name="End">The range's last character, at its baseline.</param>
+/// <param name="LineTop">The first line's top, for a card level with it.</param>
+/// <param name="LineBottom">The first line's bottom.</param>
+/// <param name="PageEdge">The x where a leader line leaves the page.</param>
+public sealed record CommentAnchor(
+    CommentId Thread,
+    int Page,
+    bool Active,
+    bool Done,
+    [property: JsonConverter(typeof(Wire.WirePointConverter))] PointF Start,
+    [property: JsonConverter(typeof(Wire.WirePointConverter))] PointF End,
+    double LineTop,
+    double LineBottom,
+    double PageEdge);

@@ -123,18 +123,36 @@ const ADOPT = [
   'RichParagraph',
   'RichRun',
   'ShapeGalleryGroup',
+  // Review
+  'Person',
+  'RevisionInfo',
+  'CommentThread',
+  'Comment',
+  'CommentAnchor',
 ];
 
 /** Schema types this SDK names otherwise (Rust name: C# type). */
 const NAMES: Record<string, string> = { Points: 'Length', Location: 'WarningLocation' };
+
+/**
+ * Schema types and formats this SDK writes with a converter of its own (Twip.Wire's): the C# type, and the converter
+ * a field of it (or of it or null) names.
+ */
+const CONVERTED: Record<string, { cs: string; converter: string; nullable?: string }> = {
+  ContentPoint: { cs: 'PointF', converter: 'WirePointConverter' },
+  'date-time': { cs: 'DateTimeOffset', converter: 'UtcTimeConverter', nullable: 'NullableUtcTimeConverter' },
+};
 
 /** Fields this SDK types its own way (`Type.field`: the C# type). */
 const FIELDS: Record<string, string> = {};
 
 /** Records written with init properties whatever their size, and positional ones whatever their size. */
 const PROPERTIES: string[] = [];
-const POSITIONAL: string[] = [];
+const POSITIONAL: string[] = ['Person', 'RevisionInfo', 'CommentThread', 'Comment', 'CommentAnchor'];
 const POSITIONAL_MAX = 8;
+
+/** The SDK's own reference types (records and classes) that generated records hold. */
+const REFERENCES: string[] = [];
 
 /** The schema's string formats, as this SDK's types. */
 const FORMATS: Record<string, string> = { color: 'ColorValue', base64: 'ReadOnlyMemory<byte>', 'date-time': 'DateTimeOffset', char: 'string' };
@@ -229,7 +247,7 @@ function cs(ty: Ty, from: string): string {
     case 'json':
       return 'System.Text.Json.JsonElement';
     case 'format':
-      return FORMATS[ty.format];
+      return CONVERTED[ty.format]?.cs ?? FORMATS[ty.format];
     case 'nullable': {
       const inner = cs(ty.of, from);
       return inner.endsWith('?') ? inner : `${inner}?`;
@@ -246,6 +264,7 @@ function cs(ty: Ty, from: string): string {
       return 'object';
     }
     case 'ref': {
+      if (CONVERTED[ty.name]) return CONVERTED[ty.name].cs;
       if (adopted.has(ty.name)) return ty.name;
       if (NAMES[ty.name]) return NAMES[ty.name];
       if (own.has(ty.name)) return ty.name;
@@ -344,10 +363,22 @@ function members(d: Def & { shape: { kind: 'object' } }): Member[] {
     if (f.omitted && !type.endsWith('?')) type += '?';
     const attrs: string[] = [];
     if (f.omitted) attrs.push('JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)');
+    // A converted type names its converter on the field itself.
+    const base = f.ty.kind === 'nullable' ? f.ty.of : f.ty;
+    const conv = base.kind === 'ref' ? CONVERTED[base.name] : base.kind === 'format' ? CONVERTED[base.format] : undefined;
+    if (conv && !FIELDS[path]) attrs.push(`JsonConverter(typeof(Wire.${(type.endsWith('?') && conv.nullable) || conv.converter}))`);
     if (camel(name) !== f.name) attrs.push(`JsonPropertyName("${f.name}")`);
     if (!f.docs) problems.push(`${path} has no documentation`);
     return { name, type, omitted: f.omitted, json: attrs.join(', '), docs: f.docs ?? '' };
   });
+}
+
+/** Whether a C# type is a reference type: a string, a collection, or a record or class (not an enum or struct). */
+function isReference(type: string): boolean {
+  if (type === 'string' || type.startsWith('IReadOnly')) return true;
+  const d = defs.get(type);
+  if (adopted.has(type) && d) return d.shape.kind === 'object';
+  return REFERENCES.includes(type);
 }
 
 function recordDecl(d: Def & { shape: { kind: 'object' } }): string {
@@ -362,7 +393,11 @@ function recordDecl(d: Def & { shape: { kind: 'object' } }): string {
     return `${summary(d.docs, '', d, true, d.name)}${docs}${ordered.length ? decl : `public sealed record ${d.name};`}\n`;
   }
   const props = ms
-    .map((m) => `${docLines(translate(m.docs, d, false), '    ', '<summary>', '</summary>')}${m.json ? `    [${m.json}]\n` : ''}    public ${m.type} ${m.name} { get; init; }\n`)
+    .map((m) => {
+      // A reference that can't be null starts as an empty value.
+      const init = m.type.endsWith('?') || !isReference(m.type) ? '' : m.type === 'string' ? ' = "";' : m.type.startsWith('IReadOnlyList<') ? ' = [];' : ' = null!;';
+      return `${docLines(translate(m.docs, d, false), '    ', '<summary>', '</summary>')}${m.json ? `    [${m.json}]\n` : ''}    public ${m.type} ${m.name} { get; init; }${init}\n`;
+    })
     .join('\n');
   return `${summary(d.docs, '', d, false, d.name)}public sealed record ${d.name}\n{\n${props}}\n`;
 }

@@ -2286,7 +2286,8 @@ Twip.Person
 Twip.Person.<Clone>$() -> Twip.Person!
 Twip.Person.Color.get -> Twip.ColorValue
 Twip.Person.Color.init -> void
-Twip.Person.Deconstruct(out string! Name, out string? Initials, out Twip.Identity? Identity, out Twip.ColorValue Color) -> void
+Twip.Person.Deconstruct(out string! Name, out Twip.ColorValue Color, out string? Initials, out Twip.Identity? Identity) -> void
+Twip.Person.Person(string! Name, Twip.ColorValue Color, string? Initials = null, Twip.Identity? Identity = null) -> void
 Twip.Person.Equals(Twip.Person? other) -> bool
 Twip.Person.Identity.get -> Twip.Identity?
 Twip.Person.Identity.init -> void
@@ -2294,7 +2295,6 @@ Twip.Person.Initials.get -> string?
 Twip.Person.Initials.init -> void
 Twip.Person.Name.get -> string!
 Twip.Person.Name.init -> void
-Twip.Person.Person(string! Name, string? Initials, Twip.Identity? Identity, Twip.ColorValue Color) -> void
 Twip.PictureSizeDialogValues
 Twip.PictureSizeDialogValues.<Clone>$() -> Twip.PictureSizeDialogValues!
 Twip.PictureSizeDialogValues.Deconstruct(out Twip.Length Width, out Twip.Length Height, out double ScaleWidth, out double ScaleHeight, out bool LockAspect, out bool Reset) -> void
