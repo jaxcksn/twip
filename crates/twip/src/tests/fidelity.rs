@@ -1,7 +1,9 @@
 //! Round-trip gate
 //!
-//! Each construct sits in a paragraph `Previous` / `Before{construct}After` / `Next`. Every edit opens it fresh, edits
-//! through the editor, and saves: the saved package must still hold the construct as often as the source did, and
+//! Each construct sits in a paragraph `Previous` / `Before{construct}After` / `Next`, with a comment on `After`. Every
+//! edit opens it fresh, edits
+//! through the editor, and saves: the saved package must still hold the construct at least as often as the source did
+//! (typing next to formatting copies it), and
 //! every part the edit had no reason to touch must be byte-identical. `tests/fidelity/pending.txt` lists the
 //! `construct edit` pairs that still fail; one that passes fails the run. `TWIP_FIDELITY_OUT=dir` writes every saved
 //! package there, with each construct's source, for the schema check (`tests/fidelity/validate`).
@@ -37,7 +39,8 @@ struct Construct {
     /// The construct, between `Before` and `After` in one paragraph; a block holding `{PARA}` (a table) takes the three
     /// paragraphs in its place instead.
     xml: &'static str,
-    /// What must survive: `prefix:name` counts elements, `prefix:name@prefix:attr` those with the attribute.
+    /// What must survive, at least as often as it was read: `prefix:name` counts elements, `prefix:name@prefix:attr`
+    /// those with the attribute, `prefix:name@prefix:attr=value` those with it set to the value.
     holds: &'static [&'static str],
     parts: &'static [Part],
 }
@@ -49,11 +52,24 @@ const FOOTNOTES: Part = (
     r#"<w:footnote w:type="separator" w:id="-1"><w:p><w:r><w:separator/></w:r></w:p></w:footnote><w:footnote w:type="continuationSeparator" w:id="0"><w:p><w:r><w:continuationSeparator/></w:r></w:p></w:footnote><w:footnote w:id="1"><w:p><w:r><w:t xml:space="preserve"> A note.</w:t></w:r></w:p></w:footnote>"#,
 );
 
+const COMMENTS: Part = (
+    "word/comments.xml",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml",
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments",
+    r#"<w:comment w:id="90" w:author="Reviewer" w:initials="R"><w:p><w:r><w:t>Earlier note</w:t></w:r></w:p></w:comment><w:comment w:id="91" w:author="Reviewer" w:initials="R"><w:p><w:r><w:t>On the construct</w:t></w:r></w:p></w:comment>"#,
+);
+
 const CONSTRUCTS: &[Construct] = &[
     Construct {
         name: "bookmark",
         xml: r#"<w:bookmarkStart w:id="7" w:name="Mark"/><w:r><w:t>Mark</w:t></w:r><w:bookmarkEnd w:id="7"/>"#,
         holds: &["w:bookmarkStart", "w:bookmarkEnd"],
+        parts: &[],
+    },
+    Construct {
+        name: "comment",
+        xml: r#"<w:commentRangeStart w:id="91"/><w:r><w:t>Noted</w:t></w:r><w:commentRangeEnd w:id="91"/><w:r><w:commentReference w:id="91"/></w:r>"#,
+        holds: &["w:commentRangeStart@w:id=91", "w:commentRangeEnd@w:id=91", "w:commentReference@w:id=91"],
         parts: &[],
     },
     Construct {
@@ -149,12 +165,13 @@ const EDITS: &[(&str, fn(&mut Editor, &Spot) -> Outcome)] = &[
         let id = ElementId(crate::editing::elements::id_str(crate::docx::ElementId::Control(*c)));
         e.execute(Command::FillControl(FillControl { id, text: Some("Filled".into()), image: None, docx: None }), fonts())
     }),
+    ("delete-comment", |e, _| e.execute(Command::DeleteComment(crate::api::value::CommentId("c90".into())), fonts())),
     ("comment", |e, s| {
         e.select_range(s.para, Unit(0), s.len, fonts());
         e.execute(Command::AddComment(Body::Text("Note".into())), fonts())
     }),
     ("cut-paste", |e, s| {
-        e.select_range(s.para, Unit(0), s.len, fonts());
+        e.select_range(s.para, Unit(0), s.after, fonts());
         e.execute(Command::Cut, fonts());
         e.select_range(s.next, Unit(0), Unit(0), fonts());
         e.execute(Command::Paste(PasteOptions { as_: None }), fonts())
@@ -205,7 +222,9 @@ fn spot(e: &Editor) -> Option<Spot> {
 /// The construct's document: its main part, with the parts it needs.
 fn package(c: &Construct) -> Vec<u8> {
     let decl = NS.iter().map(|(p, u)| format!(r#" xmlns:{p}="{u}""#)).collect::<String>();
-    let para = format!(r#"<w:p><w:r><w:t>Before</w:t></w:r>{}<w:r><w:t>After</w:t></w:r></w:p>"#, if c.xml.contains("{PARA}") { "" } else { c.xml });
+    let after =
+        r#"<w:commentRangeStart w:id="90"/><w:r><w:t>After</w:t></w:r><w:commentRangeEnd w:id="90"/><w:r><w:commentReference w:id="90"/></w:r>"#;
+    let para = format!(r#"<w:p><w:r><w:t>Before</w:t></w:r>{}{after}</w:p>"#, if c.xml.contains("{PARA}") { "" } else { c.xml });
     let paras = format!(r#"<w:p><w:r><w:t>Previous</w:t></w:r></w:p>{para}<w:p><w:r><w:t>Next</w:t></w:r></w:p>"#);
     let target = if c.xml.contains("{PARA}") { c.xml.replace("{PARA}", &paras) + "<w:p/>" } else { paras };
     let body = format!(
@@ -221,10 +240,10 @@ fn package(c: &Construct) -> Vec<u8> {
         r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="{REL}/styles" Target="styles.xml"/>"#
     );
     let mut files = vec![("word/document.xml".to_string(), main)];
-    for (k, (name, ctype, rtype, xml)) in c.parts.iter().enumerate() {
+    for (k, (name, ctype, rtype, xml)) in c.parts.iter().chain([&COMMENTS]).enumerate() {
         types += &format!(r#"<Override PartName="/{name}" ContentType="{ctype}"/>"#);
         rels += &format!(r#"<Relationship Id="rIdP{k}" Type="{rtype}" Target="{}"/>"#, name.trim_start_matches("word/"));
-        let root = if name.ends_with("footnotes.xml") { "footnotes" } else { "endnotes" };
+        let root = name.trim_start_matches("word/").trim_end_matches(".xml");
         files.push((
             name.to_string(),
             format!(r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:{root}{decl} mc:Ignorable="w14 w15 w16se">{xml}</w:{root}>"#),
@@ -279,12 +298,17 @@ fn count(package: &[u8], holds: &[&str]) -> Vec<usize> {
         }
         let Ok(dom) = roxmltree::Document::parse(xml) else { continue };
         for (k, h) in holds.iter().enumerate() {
-            let (el, attr) = h.split_once('@').map_or((*h, None), |(e, a)| (e, Some(qname(a))));
+            let (el, attr) = h.split_once('@').map_or((*h, None), |(e, a)| (e, Some(a)));
+            let attr = attr.map(|a| a.split_once('=').map_or((qname(a), None), |(a, v)| (qname(a), Some(v))));
             let (ns, local) = qname(el);
             n[k] += dom
                 .descendants()
                 .filter(|d| d.tag_name().namespace() == Some(ns) && d.tag_name().name() == local)
-                .filter(|d| attr.as_ref().is_none_or(|(ans, al)| d.attributes().any(|a| a.namespace() == Some(*ans) && a.name() == al)))
+                .filter(|d| {
+                    attr.as_ref().is_none_or(|((ans, al), v)| {
+                        d.attributes().any(|a| a.namespace() == Some(*ans) && a.name() == al && v.is_none_or(|v| a.value() == v))
+                    })
+                })
                 .count();
         }
     }
@@ -301,7 +325,14 @@ fn may_change(name: &str) -> bool {
         || name == "word/settings.xml"
 }
 
-/// What went wrong with one construct and edit, if anything.
+/// What went wrong with one construct and edit, if anything; a panic too.
+fn check_caught(c: &Construct, edit: fn(&mut Editor, &Spot) -> Outcome, out: Option<&Path>, label: &str) -> Option<String> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| check(c, edit, out, label))).unwrap_or_else(|p| {
+        let why = p.downcast_ref::<String>().cloned().or_else(|| p.downcast_ref::<&str>().map(|s| s.to_string())).unwrap_or_default();
+        Some(format!("panicked: {}", why.lines().next().unwrap_or("")))
+    })
+}
+
 fn check(c: &Construct, edit: fn(&mut Editor, &Spot) -> Outcome, out: Option<&Path>, label: &str) -> Option<String> {
     let src = package(c);
     if let Some(dir) = out {
@@ -323,7 +354,7 @@ fn check(c: &Construct, edit: fn(&mut Editor, &Spot) -> Outcome, out: Option<&Pa
     }
     let (was, now) = (count(&src, c.holds), count(&saved, c.holds));
     let lost: Vec<String> =
-        c.holds.iter().zip(was.iter().zip(&now)).filter(|(_, (a, b))| a != b).map(|(h, (a, b))| format!("{h} {a} → {b}")).collect();
+        c.holds.iter().zip(was.iter().zip(&now)).filter(|(_, (a, b))| b < a).map(|(h, (a, b))| format!("{h} {a} → {b}")).collect();
     let before = entries(&src);
     let touched: Vec<String> = entries(&saved)
         .into_iter()
@@ -353,7 +384,7 @@ fn every_edit_keeps_every_construct() {
         CONSTRUCTS.iter().flat_map(|c| EDITS.iter().map(move |(n, f)| (c, *n, *f))).collect();
     let results = crate::editing::tests::par_map(&cases, |(c, n, f)| {
         let label = format!("{} {n}", c.name);
-        let failure = check(c, *f, out.as_deref(), &label.replace(' ', "-"));
+        let failure = check_caught(c, *f, out.as_deref(), &label.replace(' ', "-"));
         (label, failure)
     });
     let pending = pending();
@@ -367,4 +398,12 @@ fn every_edit_keeps_every_construct() {
         }
     }
     assert!(problems.is_empty(), "{} round-trip problems:\n{}", problems.len(), problems.join("\n"));
+}
+
+#[test]
+fn content_kept_as_read_is_reported() {
+    let c = CONSTRUCTS.iter().find(|c| c.name == "equation").expect("the equation construct");
+    let doc = crate::docx::read_editable(&package(c)).expect("reads");
+    let w = doc.diagnostics.warnings.iter().find(|w| w.code == crate::docx::diagnostics::WarningCode::UnsupportedElement);
+    assert!(w.is_some_and(|w| w.message.starts_with("m:oMath")), "{:?}", doc.diagnostics);
 }

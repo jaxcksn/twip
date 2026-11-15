@@ -424,7 +424,7 @@ pub fn run_of(i: &Inline) -> Option<&Run> {
         | Inline::FieldSep { run, .. }
         | Inline::FieldEnd { run, .. }
         | Inline::CommentRef { run, .. } => Some(run),
-        Inline::Bookmark(_) | Inline::Range(_) | Inline::ControlStart(_) | Inline::ControlEnd(_) => None,
+        Inline::Bookmark(_) | Inline::Range(_) | Inline::ControlStart(_) | Inline::ControlEnd(_) | Inline::Opaque(_) => None,
     }
 }
 

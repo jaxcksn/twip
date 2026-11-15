@@ -168,9 +168,33 @@ pub fn color(s: Option<&str>) -> Option<u32> {
     u32::from_str_radix(s, 16).ok()
 }
 
+/// Namespaces whose markup the engine reads: an `mc:Choice` requiring only these is taken over its `mc:Fallback`.
+const UNDERSTOOD: &[&str] = &[
+    W,
+    W14,
+    W15,
+    WP,
+    WP14,
+    A,
+    "http://schemas.microsoft.com/office/word/2010/wordprocessingShape",
+    "http://schemas.microsoft.com/office/word/2010/wordprocessingGroup",
+    "http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas",
+    "http://schemas.microsoft.com/office/drawing/2010/main",
+    "http://schemas.openxmlformats.org/drawingml/2006/picture",
+];
+
+/// The branch of an `mc:AlternateContent` to read: the first `mc:Choice` whose `Requires` prefixes all name
+/// understood namespaces, else the `mc:Fallback`.
+pub fn choose<'a, 'i>(ac: roxmltree::Node<'a, 'i>) -> Option<roxmltree::Node<'a, 'i>> {
+    let understood = |c: &roxmltree::Node| {
+        c.attribute("Requires").unwrap_or("").split_whitespace().all(|p| c.lookup_namespace_uri(Some(p)).is_some_and(|u| UNDERSTOOD.contains(&u)))
+    };
+    ac.children().find(|c| is(*c, MC, "Choice") && understood(c)).or_else(|| ac.children().find(|c| is(*c, MC, "Fallback")))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::too_deep;
+    use super::{MC, choose, too_deep};
 
     #[test]
     fn depth_counts_elements_only() {
@@ -184,5 +208,20 @@ mod tests {
         // Unterminated text ends the count without a panic.
         assert!(!too_deep("<a><b", 3));
         assert!(!too_deep("<a><!--", 3));
+    }
+
+    #[test]
+    fn a_choice_is_taken_only_when_its_namespaces_are_understood() {
+        let pick = |requires: &str| {
+            let xml = format!(
+                r#"<mc:AlternateContent xmlns:mc="{MC}" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" xmlns:w16se="http://schemas.microsoft.com/office/word/2015/wordml/symex"><mc:Choice Requires="{requires}"/><mc:Fallback/></mc:AlternateContent>"#
+            );
+            let dom = roxmltree::Document::parse(&xml).unwrap();
+            choose(dom.root_element()).unwrap().tag_name().name().to_string()
+        };
+        assert_eq!(pick("wps"), "Choice");
+        assert_eq!(pick("w16se"), "Fallback");
+        assert_eq!(pick("wps w16se"), "Fallback");
+        assert_eq!(pick("undeclared"), "Fallback");
     }
 }

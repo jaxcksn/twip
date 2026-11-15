@@ -1353,7 +1353,7 @@ impl Reader {
                     }
                 }
             } else if is(n, MC, "AlternateContent")
-                && let Some(c) = n.children().find(|c| is(*c, MC, "Choice")).or_else(|| n.children().find(|c| is(*c, MC, "Fallback")))
+                && let Some(c) = choose(n)
             {
                 out.extend(self.walk_blocks(c, pkg, table));
             } else if let Some(m) = self.range(n) {
@@ -1781,15 +1781,35 @@ impl Reader {
                             out.push(Inline::Bookmark(format!("/{name}")));
                         }
                     }
-                    // Proofing marks, permissions: not shown.
-                    _ => {}
+                    // Properties, read with their element; Word's spelling state, rebuilt by Word.
+                    "pPr" | "rPr" | "customXmlPr" | "smartTagPr" | "sdtPr" | "sdtEndPr" | "proofErr" => {}
+                    // Editing permissions: kept until protection reads them.
+                    "permStart" | "permEnd" => self.opaque(e, out),
+                    _ => self.unsupported(e, out),
                 }
             } else if is(e, MC, "AlternateContent")
-                && let Some(c) = e.children().find(|c| is(*c, MC, "Choice"))
+                && let Some(c) = choose(e)
             {
                 self.read_inlines(c, base, pkg, out);
+            } else {
+                self.unsupported(e, out);
             }
         }
+    }
+
+    /// An element between runs the engine doesn't model, kept as read (editable reads).
+    fn opaque(&mut self, e: Node, out: &mut Vec<Inline>) {
+        if self.record {
+            out.push(Inline::Opaque(Rc::new(Opaque { xml: Raw(Some(raw(e))) })));
+        }
+    }
+
+    /// [`Reader::opaque`], reported as content that isn't drawn.
+    fn unsupported(&mut self, e: Node, out: &mut Vec<Inline>) {
+        let name = e.tag_name();
+        let prefix = e.lookup_prefix(name.namespace().unwrap_or("")).unwrap_or("");
+        self.warn(WarningCode::UnsupportedElement, || format!("{prefix}:{} isn't drawn; it is kept as read", name.name()));
+        self.opaque(e, out);
     }
 
     fn read_run(&mut self, r: Node, base: &RunProps, pkg: &mut Package, out: &mut Vec<Inline>) {
@@ -1801,7 +1821,14 @@ impl Reader {
         let mut content = false;
         // The child being read and the units before it: what it added becomes a seg when the next one starts.
         let mut prev: Option<(std::ops::Range<usize>, (usize, usize))> = None;
-        for c in r.children().filter(|c| c.is_element()) {
+        // A run-level `mc:AlternateContent` whose choice isn't understood reads as its fallback's run content, all of it
+        // one seg (the element is saved whole or rewritten, never split).
+        let kids = r.children().filter(|c| c.is_element()).flat_map(|c| {
+            let fallback = is(c, MC, "AlternateContent").then(|| choose(c)).flatten().filter(|b| is(*b, MC, "Fallback"));
+            let own = fallback.is_none().then_some((c, c));
+            own.into_iter().chain(fallback.into_iter().flat_map(move |b| b.children().filter(|x| x.is_element()).map(move |x| (x, c))))
+        });
+        for (c, seg) in kids {
             if is_w(c, "rPr") {
                 if content {
                     direct.merge(&RunProps::parse(Some(c), &self.res.styles.colours));
@@ -1810,12 +1837,12 @@ impl Reader {
                 continue;
             }
             content = true;
-            if self.record {
+            if self.record && prev.as_ref().is_none_or(|(r, _)| *r != seg.range()) {
                 self.note_seg(out, prev.take());
-                prev = Some((c.range(), units_mark(out)));
+                prev = Some((seg.range(), units_mark(out)));
             }
             if is(c, MC, "AlternateContent") {
-                if let Some(ch) = c.children().find(|x| is(*x, MC, "Choice")) {
+                if let Some(ch) = choose(c) {
                     for d in ch.children().filter(|d| is_w(*d, "drawing")) {
                         self.read_drawing(d, &run, pkg, out);
                     }
@@ -1907,9 +1934,6 @@ impl Reader {
                     Some(_) => {}
                     None => self.warn(WarningCode::CommentReferenceOrphan, || "a comment reference has no w:id".into()),
                 }
-                continue;
-            }
-            if run.hidden {
                 continue;
             }
             match name {
@@ -3082,7 +3106,7 @@ fn on_style(style: &Run, run: &Run) -> Run {
 
 fn push_text(out: &mut Vec<Inline>, t: &str, run: &Run) {
     if let Some(Inline::Text(s, r)) = out.last_mut()
-        && (Rc::ptr_eq(r, run) || **r == **run)
+        && (Rc::ptr_eq(r, run) || (**r == **run && r.direct.0 == run.direct.0))
     {
         s.push_str(t);
         return;

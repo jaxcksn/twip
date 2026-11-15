@@ -199,7 +199,7 @@ save as read. The [fidelity guide](guides/fidelity) lists every element and the 
 
 :::
 
-<Chunk id="2.1" title="Round-trip gate" gate deps={['1.1']}>
+<Chunk id="2.1" title="Round-trip gate" gate deps={['1.1']} done>
 
 **Goal:** no edit can lose content without failing CI.
 
@@ -211,13 +211,12 @@ save as read. The [fidelity guide](guides/fidelity) lists every element and the 
 
 </Chunk>
 
-<Chunk id="2.2" title="Document model refinement" deps={['2.1']}>
+<Chunk id="2.2" title="Document model refinement" deps={['2.1']} done>
 
 **Goal:** the model holds everything the reader sees, even what the engine doesn't understand.
 
 - An opaque inline and block node that carries the raw XML of every element the engine doesn't model: equations,
   charts, OLE objects, ink, subdocuments, `altChunk`, and w14 and w15 elements.
-- A model writer for bookmarks. The model holds them, but a paragraph written from the model loses them today.
 - Editing permission ranges (`permStart`, `permEnd`) as model nodes, with writers.
 - Hidden (`vanish`) runs in the model.
 - `mc:AlternateContent` honours `Requires`, and takes the fallback when a choice can't be drawn.
@@ -231,7 +230,9 @@ save as read. The [fidelity guide](guides/fidelity) lists every element and the 
 
 **Goal:** moved content and restructured tables keep everything they held.
 
-- Cut, copy, paste and drag keep the source XML of the content they move.
+- Cut, copy, paste and drag keep the source XML of the content they move, and a commented range moves with its
+  comment.
+- A model writer for bookmarks. The model holds them, but a paragraph pasted or written from the model loses them.
 - Merging, splitting and adding or removing columns patch each cell's `tcPr` and the table grid, rather than
   rebuilding them, and keep non-paragraph cell content.
 - Custom-mark footnote references, `w:sym` with its font, and floats in their place within the paragraph.

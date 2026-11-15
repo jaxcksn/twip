@@ -1803,6 +1803,34 @@ impl<'a, 'i> Saver<'a, 'i> {
     }
 
     /// The source element at exactly `r`, inside one of the part's paragraphs.
+    /// A marker's element in the group's source paragraphs: a range or comment reference by its name and id, opaque
+    /// content by its text.
+    fn marker_range(&self, m: &Marker, srcs: &[&ParaSrc]) -> Option<Range<usize>> {
+        let mut nodes = srcs.iter().flat_map(|x| x.ranges.iter()).filter_map(|r| self.paras.get(&r.start));
+        match m {
+            Marker::Opaque(o) => {
+                let raw = o.xml.0.as_deref()?;
+                srcs.iter().flat_map(|x| x.ranges.iter()).find_map(|r| self.xml[r.clone()].find(raw).map(|k| r.start + k..r.start + k + raw.len()))
+            }
+            _ => {
+                let (name, id) = m.element()?;
+                nodes.find_map(|n| {
+                    n.descendants()
+                        .find(|d| is_w(*d, name) && d.attribute((W, "id")).and_then(|v| v.trim().parse::<i64>().ok()) == Some(id))
+                        .map(|d| d.range())
+                })
+            }
+        }
+    }
+
+    /// Whether `xml` (content of a part's body) parses, with the part's namespaces.
+    fn well_formed(&self, xml: &str) -> bool {
+        let Some(root) = self.paras.values().next().map(|n| n.document().root_element()) else { return true };
+        let decl: String =
+            root.namespaces().map(|n| format!(" xmlns{}=\"{}\"", n.name().map_or(String::new(), |p| format!(":{p}")), props::esc(n.uri()))).collect();
+        roxmltree::Document::parse(&format!("<x{decl}>{xml}</x>")).is_ok()
+    }
+
     fn node_at(&self, r: Range<usize>) -> Option<Node<'a, 'i>> {
         self.paras.values().filter(|p| p.range().start <= r.start && r.end <= p.range().end).find_map(|p| p.descendants().find(|n| n.range() == r))
     }
@@ -1987,15 +2015,29 @@ enum Marker {
     Range(RangeMark),
     /// A comment's reference mark, in its run's formatting.
     Comment(CommentId, Run),
+    /// Content kept as read ([`Inline::Opaque`]).
+    Opaque(Rc<super::model::Opaque>),
 }
 
 impl Marker {
     /// The element it is in the source, and the id that names it there.
     fn element(&self) -> Option<(&'static str, i64)> {
         match self {
-            Marker::Control(..) => None,
+            Marker::Control(..) | Marker::Opaque(_) => None,
             Marker::Range(r) => Some((range_element(r.kind), r.id)),
             Marker::Comment(id, _) => Some(("commentReference", id.0)),
+        }
+    }
+}
+
+impl Marker {
+    /// What names it, whatever its formatting: two markers with the same key are the same marker.
+    fn key(&self) -> (u8, i64) {
+        match self {
+            Marker::Control(id, start) => (u8::from(*start), id.0 as i64),
+            Marker::Range(r) => (2 + r.kind as u8, r.id),
+            Marker::Comment(id, _) => (u8::MAX, id.0),
+            Marker::Opaque(o) => (u8::MAX - 1, Rc::as_ptr(o) as usize as i64),
         }
     }
 }
@@ -2019,6 +2061,7 @@ fn marker(i: &Inline, pend: &mut Vec<Marker>) {
         Inline::ControlEnd(c) => pend.push(Marker::Control(*c, false)),
         Inline::Range(r) => pend.push(Marker::Range(r.clone())),
         Inline::CommentRef { id, run } => pend.push(Marker::Comment(*id, run.clone())),
+        Inline::Opaque(o) => pend.push(Marker::Opaque(o.clone())),
         _ => {}
     }
 }
@@ -2027,6 +2070,7 @@ fn same_inline(x: &Inline, y: &Inline) -> bool {
     match (x, y) {
         (Inline::Text(s, r), Inline::Text(t, q)) => s == t && Rc::ptr_eq(r, q),
         (Inline::Bookmark(a), Inline::Bookmark(b)) => a == b,
+        (Inline::Opaque(a), Inline::Opaque(b)) => Rc::ptr_eq(a, b),
         (Inline::Range(a), Inline::Range(b)) => a == b,
         (Inline::CommentRef { id: a, run: r }, Inline::CommentRef { id: b, run: q }) => a == b && Rc::ptr_eq(r, q),
         (Inline::ControlStart(a), Inline::ControlStart(b)) | (Inline::ControlEnd(a), Inline::ControlEnd(b)) => a == b,
@@ -2074,7 +2118,13 @@ fn unit_keys(i: &Inline, out: &mut Vec<(u64, char)>) {
         Inline::Break(BreakKind::ClearAll, _) => out.push((ATOM | BreakKind::ClearAll as u64, '\u{3}')),
         Inline::Break(BreakKind::Column, _) => out.push((ATOM | BreakKind::Column as u64, '\u{e}')),
         Inline::Break(k, _) => out.push((ATOM | *k as u64, '\u{c}')),
-        Inline::Bookmark(_) | Inline::Range(_) | Inline::CommentRef { .. } | Inline::Float(..) | Inline::ControlStart(_) | Inline::ControlEnd(_) => {}
+        Inline::Bookmark(_)
+        | Inline::Opaque(_)
+        | Inline::Range(_)
+        | Inline::CommentRef { .. }
+        | Inline::Float(..)
+        | Inline::ControlStart(_)
+        | Inline::ControlEnd(_) => {}
         other => {
             let mut h = std::hash::DefaultHasher::new();
             // By what the object is, not its formatting: reformatting keeps it.
@@ -2244,6 +2294,8 @@ struct Cur {
     /// The markers right before it (inline controls, comment and move ranges, comment references, in order): written
     /// when the group is written from the model.
     ctl: Vec<Marker>,
+    /// Those of `ctl` the group's source doesn't have, when the source is walked: written where they are now.
+    fresh: Vec<Marker>,
     /// A checkbox whose control's properties changed: its new `w:sdtPr`, patched into its source ([`Emit::seg`]).
     pr: Option<String>,
 }
@@ -2375,10 +2427,23 @@ struct Emit<'s, 'a, 'i> {
     unwrap: Vec<usize>,
     /// Changed controls' `w:sdtPr` ranges, with the properties written there.
     prs: Vec<(Range<usize>, String)>,
+    /// Fresh markers written so far ([`Cur::fresh`]).
+    fresh_written: usize,
 }
 
 impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
+    /// A group's XML: its source walked, with markers added since reading written where they are, when that comes out
+    /// whole (well-formed, every added marker written); else as [`Emit::group_as`] without them.
     fn group(s: &'s Saver<'a, 'i>, qs: &[&Paragraph], srcs: &[&ParaSrc], ps: &[&Paragraph]) -> Result<String, String> {
+        match Emit::group_as(s, qs, srcs, ps, true)? {
+            Some(x) => Ok(x),
+            None => Emit::group_as(s, qs, srcs, ps, false).map(|x| x.unwrap_or_default()),
+        }
+    }
+
+    /// With `fresh`, `None` when the source can't be walked with the markers added since reading, or what that wrote
+    /// isn't whole.
+    fn group_as(s: &'s Saver<'a, 'i>, qs: &[&Paragraph], srcs: &[&ParaSrc], ps: &[&Paragraph], fresh: bool) -> Result<Option<String>, String> {
         // The source text can be walked when every unit has its element and no element holds another's.
         let mut segs = Vec::new();
         let mut orig = Vec::new();
@@ -2454,10 +2519,11 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                     obj: obj.clone(),
                     size: size.clone(),
                     ctl: if k == 0 { std::mem::take(&mut pend) } else { Vec::new() },
+                    fresh: Vec::new(),
                     pr: pr.clone(),
                 }));
             }
-            cur.push(Cur { key: MARK, ch: '\n', code: false, run: None, obj: None, size: None, ctl: pend, pr: None });
+            cur.push(Cur { key: MARK, ch: '\n', code: false, run: None, obj: None, size: None, ctl: pend, fresh: Vec::new(), pr: None });
         }
         let keys_of = |orig: &[Orig]| orig.iter().map(|o| o.key).collect::<Vec<_>>();
         let cur_keys: Vec<u64> = cur.iter().map(|c| c.key).collect();
@@ -2494,6 +2560,34 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
         }
         let live: Vec<Vec<Marker>> =
             orig_ctl.iter().map(|ms| ms.iter().filter(|m| !matches!(m, Marker::Control(id, _) if gone.contains(id))).cloned().collect()).collect();
+        // Markers the source doesn't have, set aside to be written where they are (a new comment's range, a new
+        // control's markup).
+        let mut fresh_ids = Vec::new();
+        if fresh {
+            let had: std::collections::HashSet<(u8, i64)> = orig_ctl.iter().flatten().map(Marker::key).collect();
+            for c in &mut cur {
+                let (old, new): (Vec<Marker>, Vec<Marker>) = std::mem::take(&mut c.ctl).into_iter().partition(|m| had.contains(&m.key()));
+                c.ctl = old;
+                fresh_ids.extend(new.iter().filter_map(|m| if let Marker::Control(id, _) = m { Some(*id) } else { None }));
+                c.fresh = new;
+            }
+        }
+        let fresh_count: usize = cur.iter().map(|c| c.fresh.len()).sum();
+        now_ids.retain(|id| !fresh_ids.contains(id));
+        // Markers gone since reading (a deleted comment's range and reference, deleted opaque content), their source
+        // elements left out of the walk; controls go as `gone`.
+        let mut removed = Vec::new();
+        if fresh {
+            let now: std::collections::HashSet<(u8, i64)> = cur.iter().flat_map(|c| c.ctl.iter().chain(&c.fresh)).map(Marker::key).collect();
+            for m in orig_ctl.iter().flatten().filter(|m| !matches!(m, Marker::Control(..)) && !now.contains(&m.key())) {
+                match s.marker_range(m, srcs) {
+                    Some(r) => removed.push((m.key(), r)),
+                    None => return Ok(None),
+                }
+            }
+        }
+        let live: Vec<Vec<Marker>> =
+            live.into_iter().map(|ms| ms.into_iter().filter(|m| !removed.iter().any(|(k, _)| *k == m.key())).collect()).collect();
         let faithful = |kept: &[Option<usize>]| {
             let mut taken = vec![false; cur.len()];
             kept.iter().flatten().for_each(|&j| taken[j] = true);
@@ -2506,6 +2600,9 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
         let (mut cut, mut fills) = (HashMap::new(), HashMap::new());
         let content = |id: ControlId| sdt_of(&id).and_then(|a| sdts[&a].0);
         mapped = mapped && place(&orig, &live, &cur, &kept, &mut ins, &mut cut, &mut fills, &content);
+        if !mapped && (fresh_count > 0 || !removed.is_empty()) {
+            return Ok(None);
+        }
         if !mapped {
             // shortcut: written from the model (an unmappable source such as a field across runs of different parents,
             // or inline markers added, removed or moved), so the group's content the model doesn't hold (bookmarks,
@@ -2634,6 +2731,7 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
             .into_iter()
             .filter(|(id, _, r)| !now.iter().any(|(n, _, q)| n == id && same_rev(r, q)))
             .filter_map(|(_, src, _)| src)
+            .chain(removed.iter().map(|(_, r)| r.clone()))
             .collect();
         let all = |ps: &[&Paragraph]| -> Vec<Float> {
             ps.iter().flat_map(|p| p.inlines.iter()).filter_map(|i| if let Inline::Float(f, _) = i { Some((**f).clone()) } else { None }).collect()
@@ -2703,6 +2801,8 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
             let mut read = Vec::new();
             qs.iter().flat_map(|q| q.inlines.iter()).for_each(|i| marker(i, &mut read));
             marker_outside = read.iter().filter_map(Marker::element).filter(|k| !marker_src.contains_key(k)).collect();
+        }
+        if !mapped || fresh_count > 0 {
             moves = ps
                 .iter()
                 .flat_map(|p| p.inlines.iter())
@@ -2748,6 +2848,7 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
             fields,
             unwrap,
             prs,
+            fresh_written: 0,
         };
         // Hidden marks are kept only while no paragraph mark comes or goes (they would mark the wrong paragraph).
         let stable = e.ins.iter().flatten().all(|&j| e.cur[j].run.is_some()) && e.orig.iter().zip(&e.kept).all(|(o, k)| o.key != MARK || k.is_some());
@@ -2782,7 +2883,10 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
         if e.next != e.heads.len() {
             return Err(format!("wrote {} of {} paragraphs", e.next, e.heads.len()));
         }
-        Ok(e.out)
+        if fresh_count > 0 && (e.fresh_written != fresh_count || !s.well_formed(&e.out)) {
+            return Ok(None);
+        }
+        Ok(Some(e.out))
     }
 
     /// Where insertions at gap `g` split between its neighbours: those in the next unit's run go before it (the
@@ -2949,13 +3053,14 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
         let resized = |e: &Self, i: usize| e.kept[i].and_then(|j| (e.cur[j].size != e.orig[i].size).then(|| e.cur[j].size.clone()).flatten());
         let unchanged = (first..first + n).all(|i| {
             self.kept[i].is_some_and(|j| self.cur[j].run.as_ref().is_some_and(|r| Rc::as_ptr(r) == self.orig[i].run)) && resized(self, i).is_none()
-        }) && (first + 1..first + n).all(|g| self.ins[g].is_empty());
+        }) && (first + 1..first + n).all(|g| self.ins[g].is_empty() && self.kept[g].is_none_or(|j| self.cur[j].fresh.is_empty()));
         // A checkbox toggled, or its control's properties changed: its control written with the new
         // properties, state and face.
         let checkbox = (n == 1 && !in_run && self.s.xml[range.clone()].contains("checkbox")).then(|| self.kept[first]).flatten();
         let toggled = checkbox.map(|j| (self.cur[j].ch, self.cur[j].pr.clone())).filter(|(ch, pr)| *ch != self.orig[first].ch || pr.is_some());
         if let Some((ch, pr)) = toggled {
             self.insert(first, None, true);
+            self.fresh_before(first);
             let mut src = self.s.xml[range.clone()].to_string();
             if let Some(pr) = pr {
                 let old = sdt_pr(&src, &self.s.w).to_string();
@@ -2973,6 +3078,7 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
         }
         if unchanged {
             self.insert(first, ctx(self, first), true);
+            self.fresh_before(first);
             if in_run {
                 self.add(To::Src, None, Some(range.clone()));
             } else {
@@ -2982,9 +3088,9 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
             self.insert_after(first + n, ctx(self, first + n - 1), range.end);
             return;
         }
-        if !in_run && n > 1 {
-            // A changed element holding several units (a simple field): written from the model, as
-            // what each unit is now (a simple field becomes a complex one).
+        if n > 1 && (!in_run || !text) {
+            // A changed element holding several units (a simple field, a run child such as a fallback's text):
+            // written from the model, as what each unit is now (a simple field becomes a complex one).
             for i in first..first + n {
                 self.insert(i, None, true);
                 if let Some(j) = self.kept[i] {
@@ -2999,6 +3105,7 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
         }
         for i in first..first + n {
             self.insert(i, ctx(self, i), true);
+            self.fresh_before(i);
             if let Some(j) = self.kept[i] {
                 let run = self.cur[j].run.clone().expect("a unit in a run");
                 if !in_run {
@@ -3055,6 +3162,13 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
         }
     }
 
+    /// The markers added before orig unit `i`'s unit now, when it is kept.
+    fn fresh_before(&mut self, i: usize) {
+        if let Some(j) = self.kept[i].filter(|&j| !self.cur[j].fresh.is_empty()) {
+            self.markers(j);
+        }
+    }
+
     /// The head of gap `g`'s insertions after an element ending at `end`: deferred past a hyperlink whose content ends
     /// there.
     fn insert_after(&mut self, g: usize, ctx: Option<*const RunStyle>, end: usize) {
@@ -3083,11 +3197,12 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
     /// references from their source in the group, else from the model (those read from outside the group's paragraphs
     /// stay there).
     fn markers(&mut self, j: usize) {
-        if !self.model {
-            return;
-        }
         let w = self.s.w.clone();
-        for m in std::mem::take(&mut self.cur[j].ctl) {
+        let ms = if self.model { std::mem::take(&mut self.cur[j].ctl) } else { std::mem::take(&mut self.cur[j].fresh) };
+        if !self.model {
+            self.fresh_written += ms.len();
+        }
+        for m in ms {
             let key = m.element();
             // A comment reference is written from its run (its revisions with it).
             let src = key.filter(|_| matches!(m, Marker::Range(_))).and_then(|k| self.marker_src.get(&k)).cloned();
@@ -3106,7 +3221,8 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                 Marker::Control(id, start) => {
                     let Some(c) = self.s.controls.get(&id) else { continue };
                     self.flush();
-                    self.open_to(self.stack.len());
+                    let level = self.stack.iter().rposition(|o| o.run).unwrap_or(self.stack.len());
+                    self.open_to(level);
                     let x = if start { control_open(&w, id, c) } else { control_close(&w, c) };
                     self.out.push_str(&x);
                 }
@@ -3116,6 +3232,12 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                     self.open_to(level);
                     let x = self.range_xml(&r);
                     self.out.push_str(&x);
+                }
+                Marker::Opaque(o) => {
+                    self.flush();
+                    let level = self.stack.iter().rposition(|o| o.run).unwrap_or(self.stack.len());
+                    self.open_to(level);
+                    self.out.push_str(o.xml.0.as_deref().unwrap_or(""));
                 }
                 Marker::Comment(id, run) => {
                     self.add(To::Own(run), None, None);

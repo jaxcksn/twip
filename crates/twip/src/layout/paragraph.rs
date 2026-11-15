@@ -61,6 +61,7 @@ pub fn vanished(p: &crate::docx::Paragraph) -> bool {
             Inline::Text(t, r) => t.is_empty() || r.hidden,
             Inline::Tab(r) | Inline::Break(_, r) => r.hidden,
             Inline::Bookmark(_)
+            | Inline::Opaque(_)
             | Inline::Range(_)
             | Inline::ControlStart(_)
             | Inline::ControlEnd(_)
@@ -77,7 +78,9 @@ pub fn shows_nothing(p: &crate::docx::Paragraph, view: crate::docx::review::Mark
     use crate::docx::Inline;
     p.inlines.iter().all(|i| match i {
         Inline::Text(t, r) => t.is_empty() || r.hidden || view.hides(&r.rev),
-        Inline::Bookmark(_) | Inline::Range(_) | Inline::ControlStart(_) | Inline::ControlEnd(_) | Inline::CommentRef { .. } => true,
+        Inline::Bookmark(_) | Inline::Opaque(_) | Inline::Range(_) | Inline::ControlStart(_) | Inline::ControlEnd(_) | Inline::CommentRef { .. } => {
+            true
+        }
         i => i.run().is_some_and(|r| r.hidden || view.hides(&r.rev)),
     })
 }

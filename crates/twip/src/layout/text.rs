@@ -914,7 +914,15 @@ impl<'a> Builder<'a> {
                 at += inl.units() as u32;
                 continue;
             }
-            if matches!(inl, Inline::Bookmark(_) | Inline::Range(_) | Inline::CommentRef { .. } | Inline::ControlStart(_) | Inline::ControlEnd(_)) {
+            if matches!(
+                inl,
+                Inline::Bookmark(_)
+                    | Inline::Opaque(_)
+                    | Inline::Range(_)
+                    | Inline::CommentRef { .. }
+                    | Inline::ControlStart(_)
+                    | Inline::ControlEnd(_)
+            ) {
                 continue;
             }
             self.flush_text(&mut pend, &mut pend_runs, &mut pend_units)?;
@@ -1742,7 +1750,7 @@ fn continues_after_break(para: &Paragraph, space: &ShapeSpace) -> bool {
         && para
             .inlines
             .iter()
-            .find(|i| !matches!(i, Inline::Bookmark(_) | Inline::Range(_)) && !matches!(i, Inline::Text(t, _) if t.is_empty()))
+            .find(|i| !matches!(i, Inline::Bookmark(_) | Inline::Opaque(_) | Inline::Range(_)) && !matches!(i, Inline::Text(t, _) if t.is_empty()))
             .is_some_and(|i| matches!(i, Inline::Break(BreakKind::Page | BreakKind::Column, _)))
 }
 

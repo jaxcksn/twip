@@ -33,7 +33,7 @@ Chunk numbers are [roadmap](../roadmap#docx) chunks.
 | Hyperlinks | `w:hyperlink` | API; `tooltip`, `tgtFrame` and `history` are Lost when a link is rewritten, 2.3 |
 | Header and footer references | `w:headerReference`, `w:footerReference` | API for editing; link to previous and removal are Model, 2.6 |
 | Section properties | `w:sectPr` | API (see [Sections](#sections)) |
-| Unknown elements | anything not listed here | Lost on edited paragraphs: kept as an opaque node, 2.2 |
+| Unknown elements | anything not listed here | Between runs: Kept as an opaque node, moved with its text, and reported as unsupported content. Inside a run: Lost when its paragraph is pasted or written from the model, 2.3 |
 
 ## Run content
 
@@ -42,16 +42,16 @@ Chunk numbers are [roadmap](../roadmap#docx) chunks.
 | Text, tabs and breaks | `w:t`, `w:tab`, `w:br`, `w:cr`, `w:noBreakHyphen`, `w:softHyphen` | API |
 | Absolute position tabs | `w:ptab` | Laid out; inserting one (Insert Alignment Tab) is 2.6 |
 | Symbols | `w:sym` | API to insert; the font is Lost when an edited paragraph is rewritten, 2.3 |
-| Symbol extensions | `w16se:symEx` | Kept, 2.2 |
+| Symbol extensions | `w16se:symEx` | Kept, its fallback character shown; Lost when cut and pasted, 2.3 |
 | Page number in a run | `w:pgNum` | Laid out; inserting one is API (`insertPageNumber` inserts a PAGE field) |
 | Date blocks | `w:dayShort`, `w:dayLong`, `w:monthShort`, `w:monthLong`, `w:yearShort`, `w:yearLong` | Laid out; Word inserts them only from old documents |
 | Deleted text | `w:delText`, `w:delInstrText` | API (track changes) |
 | Ruby | `w:ruby`, `w:rubyPr`, `w:rubyAlign`, `w:hps`, `w:hpsRaise`, `w:hpsBaseText`, `w:rubyBase`, `w:rt`, `w:lid`, `w:dirty` | After 1.0 (laid out, not settable) |
 | Rendered page breaks | `w:lastRenderedPageBreak` | Application (Word's layout cache) |
 | Proofing marks | `w:proofErr` | Application (Word's spelling state) |
-| Ink | `w:contentPart`, `w14:contentPart`, `w14:nvContentPartPr`, `w14:cNvPr`, `w14:cNvContentPartPr`, `w14:xfrm` | Lost on edited paragraphs: opaque node, 2.2 (draws from its fallback picture) |
-| Movies (Word 97) | `w:movie` | Kept, 2.2 (opaque) |
-| Equations | `w:oMath` (the run property) | Not in 1.0 |
+| Ink | `w:contentPart`, `w14:contentPart`, `w14:nvContentPartPr`, `w14:cNvPr`, `w14:cNvContentPartPr`, `w14:xfrm` | Drawn from its fallback picture; Kept, Lost when pasted, 2.3 |
+| Movies (Word 97) | `w:movie` | Kept; Lost when pasted, 2.3 |
+| Equations | `w:oMath` (the run property) | Not in 1.0 (an equation is kept as an opaque node and reported as unsupported content) |
 
 ## Fields
 
@@ -71,7 +71,7 @@ Chunk numbers are [roadmap](../roadmap#docx) chunks.
 | Bold, italic, caps, strike | `w:b`, `w:i`, `w:caps`, `w:smallCaps`, `w:strike`, `w:dstrike` | API |
 | Colour, highlight, shading, border | `w:color`, `w:highlight`, `w:shd`, `w:bdr` | API |
 | Position, spacing, super- and subscript | `w:position`, `w:spacing`, `w:vertAlign` | API |
-| Hidden text | `w:vanish` | API to set; hidden runs in a document are Lost on edit (not read into the model), 2.2 |
+| Hidden text | `w:vanish` | API |
 | Underline | `w:u` | API for the style; its colour is Lost on new runs, Model and API, 2.4 |
 | Character style | `w:rStyle` | Model (style dialog only), 2.4 |
 | Scale and kerning | `w:w`, `w:kern` | Model, 2.4 |
@@ -182,8 +182,8 @@ Chunk numbers are [roadmap](../roadmap#docx) chunks.
 
 | Construct | Elements | Status |
 |---|---|---|
-| Bookmarks | `w:bookmarkStart`, `w:bookmarkEnd` | Lost on rewritten paragraphs, 2.2; API, 2.8 |
-| Editing permissions | `w:permStart`, `w:permEnd` | Lost on rewritten paragraphs, 2.2; API, 2.14 |
+| Bookmarks | `w:bookmarkStart`, `w:bookmarkEnd` | Kept; Lost when pasted or written from the model, 2.3; API, 2.8 |
+| Editing permissions | `w:permStart`, `w:permEnd` | Kept as an opaque node; Model and API, 2.14 |
 
 ## Content controls
 
@@ -206,8 +206,8 @@ Word 2010 and later remove custom XML markup when they open a document, so it is
 
 | Construct | Elements | Status |
 |---|---|---|
-| Custom XML elements | `w:customXml`, `w:customXmlPr`, `w:attr` | Kept (content inside is read as ordinary content) |
-| Custom XML revisions | `w:customXmlInsRangeStart`, `w:customXmlInsRangeEnd`, `w:customXmlDelRangeStart`, `w:customXmlDelRangeEnd`, `w:customXmlMoveFromRangeStart`, `w:customXmlMoveFromRangeEnd`, `w:customXmlMoveToRangeStart`, `w:customXmlMoveToRangeEnd`, `w14:customXmlConflictInsRangeStart`, `w14:customXmlConflictInsRangeEnd`, `w14:customXmlConflictDelRangeStart`, `w14:customXmlConflictDelRangeEnd`, `w14:conflictIns`, `w14:conflictDel`, `w14:conflictMode` | Kept, 2.2 (opaque) |
+| Custom XML elements | `w:customXml`, `w:customXmlPr`, `w:attr` | Kept (content inside is read as ordinary content); Lost when cut and pasted, 2.3 |
+| Custom XML revisions | `w:customXmlInsRangeStart`, `w:customXmlInsRangeEnd`, `w:customXmlDelRangeStart`, `w:customXmlDelRangeEnd`, `w:customXmlMoveFromRangeStart`, `w:customXmlMoveFromRangeEnd`, `w:customXmlMoveToRangeStart`, `w:customXmlMoveToRangeEnd`, `w14:customXmlConflictInsRangeStart`, `w14:customXmlConflictInsRangeEnd`, `w14:customXmlConflictDelRangeStart`, `w14:customXmlConflictDelRangeEnd`, `w14:conflictIns`, `w14:conflictDel`, `w14:conflictMode` | Kept as an opaque node |
 
 ## Embedded content
 
@@ -215,9 +215,9 @@ Word 2010 and later remove custom XML markup when they open a document, so it is
 |---|---|---|
 | Drawings | `w:drawing`, `w:pict` | API (see [DrawingML and VML](#drawing)) |
 | OLE objects | `w:object`, `w:objectEmbed`, `w:objectLink` | Preview picture API; the object is Lost when rewritten, opaque node in 2.2. Editing OLE objects is in the backlog |
-| ActiveX controls | `w:control` | Kept, 2.2 (opaque; drawn from its preview picture) |
+| ActiveX controls | `w:control` | Kept, drawn from its preview picture; Lost when pasted, 2.3 |
 | Imported content | `w:altChunk`, `w:altChunkPr`, `w:matchSrc` | Kept between unedited blocks; opaque block, 2.2. Drawing it is deferred with HTML paste |
-| Subdocuments | `w:subDoc` | Lost on rewritten paragraphs; opaque node, 2.2 |
+| Subdocuments | `w:subDoc` | Kept as an opaque node, reported as unsupported content. Drawing them is in the backlog |
 | Page background | `w:background`, `w:displayBackgroundShape` | Page colour in 3.7 |
 
 ## Building blocks
@@ -273,6 +273,6 @@ Word 2010 and later remove custom XML markup when they open a document, so it is
 | Relative size and position (`wp14:sizeRelH`, `wp14:pctPosHOffset`, ...) | Laid out; Model, 2.10 |
 | Text box columns and autofit (`wps:bodyPr@numCol`, `a:normAutofit`) | Model; columns API in 2.10 |
 | A shape's VML fallback (`mc:Fallback`) | Lost when the shape is edited, 2.3 |
-| Alternate content (`mc:AlternateContent`, `Requires`) | First choice read, 2.2 |
+| Alternate content (`mc:AlternateContent`, `Requires`) | Laid out: the first choice whose namespaces the engine reads, else the fallback |
 | Charts (`c:chart`) | Not in 1.0 |
 | SmartArt, WordArt | Drawn from their fallback; editing in the backlog |

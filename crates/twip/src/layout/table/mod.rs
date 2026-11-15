@@ -629,7 +629,7 @@ fn hidden_tail(t: &Table) -> bool {
 fn mark_only(p: &crate::docx::Paragraph) -> bool {
     p.inlines.iter().all(|i| match i {
         Inline::Text(t, r) => t.is_empty() || r.hidden,
-        Inline::Bookmark(..) | Inline::Range(..) => true,
+        Inline::Bookmark(..) | Inline::Opaque(..) | Inline::Range(..) => true,
         i => i.run().is_some_and(|r| r.hidden),
     })
 }

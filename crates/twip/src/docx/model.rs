@@ -455,7 +455,9 @@ impl Float {
         let content: Vec<&Inline> = p
             .inlines
             .iter()
-            .filter(|i| !matches!(i, Inline::Bookmark(..) | Inline::Range(..)) && !matches!(i, Inline::Text(t, _) if t.is_empty()))
+            .filter(|i| {
+                !matches!(i, Inline::Bookmark(..) | Inline::Opaque(..) | Inline::Range(..)) && !matches!(i, Inline::Text(t, _) if t.is_empty())
+            })
             .collect();
         match content.as_slice() {
             [Inline::ControlStart(a), Inline::Picture(..), Inline::ControlEnd(b)] if a == b && picture(a) => Some(*a),
@@ -562,6 +564,16 @@ pub enum Inline {
     /// A date block (`w:dayShort`, `w:dayLong`, `w:monthShort`, `w:monthLong`, `w:yearShort`, `w:yearLong`, by its
     /// element name) and the date it shows, filled in when fields are evaluated: one unit.
     DateBlock(&'static str, String, Run),
+    /// Content the engine doesn't model, between runs (an equation, a subdocument, an editing permission's start or
+    /// end): no units, nothing drawn, saved as read wherever it moves. No units.
+    Opaque(Rc<Opaque>),
+}
+
+/// An element kept as read ([`Inline::Opaque`]).
+#[derive(Debug, PartialEq)]
+pub struct Opaque {
+    /// The element as read.
+    pub xml: Raw,
 }
 
 /// The date blocks' element names and the date pictures they show.
@@ -1399,12 +1411,12 @@ impl Inline {
             | Inline::FieldSep { run, .. }
             | Inline::FieldEnd { run, .. }
             | Inline::CommentRef { run, .. } => Some(run),
-            Inline::Bookmark(_) | Inline::Range(_) | Inline::ControlStart(_) | Inline::ControlEnd(_) => None,
+            Inline::Bookmark(_) | Inline::Range(_) | Inline::ControlStart(_) | Inline::ControlEnd(_) | Inline::Opaque(_) => None,
         }
     }
 
     /// Caret units the inline occupies: a character per character of text, one per other drawn inline, none for
-    /// bookmarks, range markers, comment references and anchored objects.
+    /// bookmarks, range markers, comment references, anchored objects and opaque content.
     pub fn units(&self) -> usize {
         match self {
             Inline::Text(s, _) => s.chars().count(),
@@ -1413,7 +1425,8 @@ impl Inline {
             | Inline::CommentRef { .. }
             | Inline::Float(..)
             | Inline::ControlStart(_)
-            | Inline::ControlEnd(_) => 0,
+            | Inline::ControlEnd(_)
+            | Inline::Opaque(_) => 0,
             _ => 1,
         }
     }
