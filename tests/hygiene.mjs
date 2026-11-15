@@ -1,5 +1,6 @@
-// Repository hygiene: planning ids (tasks, requirements, observations) mean nothing outside the prototype's specs, and
-// CI's job plan (.moon/ci-plan.json) lists exactly the tasks moon runs in CI. Exits 1, with what it found, otherwise.
+// Repository hygiene: planning ids (tasks, requirements, observations) mean nothing outside the prototype's specs,
+// CI's job plan (.moon/ci-plan.json) lists exactly the tasks moon runs in CI, and the fidelity guide lists every
+// WordprocessingML element. Exits 1, with what it found, otherwise.
 // Run: node tests/hygiene.mjs
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -24,6 +25,14 @@ const missing = inCi.filter((t) => !planned.includes(t));
 const unknown = planned.filter((t) => !inCi.includes(t));
 if (missing.length || unknown.length) {
   console.error(`CI plan: not in .moon/ci-plan.json: ${missing.join(', ') || 'none'}; not a CI task: ${unknown.join(', ') || 'none'}`);
+  failed = true;
+}
+// Fidelity guide coverage
+const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
+const listed = new Set(read('../docs/docs/guides/fidelity.md').match(/(?<=`)[a-z0-9]+:[A-Za-z0-9]+(?=`)/g));
+const unlisted = read('fidelity-elements.txt').split('\n').filter((l) => l && !l.startsWith('#') && !listed.has(l));
+if (unlisted.length) {
+  console.error(`Not in docs/docs/guides/fidelity.md: ${unlisted.join(', ')}`);
   failed = true;
 }
 process.exit(failed ? 1 : 0);

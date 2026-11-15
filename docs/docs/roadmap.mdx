@@ -188,10 +188,13 @@ them out from a `.docx` either.
 
 This phase makes the document model complete. Every construct is read into the model, survives every kind of edit
 and save, and has a command to create, change and remove it. Where a construct has no drawing yet, phase 3 adds it.
+Application settings (saving, mail merge, the user interface, web page output) stay out of the model: they're kept on
+save as read. The [fidelity guide](guides/fidelity) lists every element and the chunk that completes it.
 
 :::info Done when
 
-- Every construct in the document format, apart from charts and equations, is in the model and has an API.
+- Every construct in the document format, apart from charts and equations, is in the model and has an API: no row of
+  the [fidelity guide](guides/fidelity) is Model, Kept or Lost.
 - The round-trip gate (2.1) passes: no edit loses content the engine read.
 
 :::
@@ -219,6 +222,8 @@ and save, and has a command to create, change and remove it. Where a construct h
 - Hidden (`vanish`) runs in the model.
 - `mc:AlternateContent` honours `Requires`, and takes the fallback when a choice can't be drawn.
 - An `UnsupportedElement` warning for each opaque element, so the host knows what isn't drawn.
+- Also opaque: ActiveX controls, Word 97 movies, `w16se:symEx`, and custom XML markup and its revisions (Word removes
+  custom XML on open, so it is kept but not modeled).
 
 </Chunk>
 
@@ -257,6 +262,7 @@ and save, and has a command to create, change and remove it. Where a construct h
 - Contextual spacing and outline level as commands.
 - Mirror indents.
 - Paragraph text direction.
+- Don't hyphenate (`suppressAutoHyphens`) and Collapsed by default (`w15:collapsed`).
 - Create a drop cap (today the Frame dialog only keeps an existing one).
 
 </Chunk>
@@ -269,7 +275,9 @@ and save, and has a command to create, change and remove it. Where a construct h
 - Link to Previous, and removing a header or footer.
 - Vertical page alignment; line numbering, and suppressing it per paragraph.
 - Change an existing break's section type; apply settings from this point forward.
-- Column presets and unequal widths; mirror margins; book fold.
+- Column presets and unequal widths; mirror margins; book fold; gutter at top.
+- Different odd and even pages; page borders that don't surround the header or footer.
+- Insert Alignment Tab (`w:ptab`).
 - Section text direction.
 - `paperSrc` and printer settings are kept.
 
@@ -280,6 +288,7 @@ and save, and has a command to create, change and remove it. Where a construct h
 **Goal:** note settings and conversions.
 
 - Note position, number format, custom mark, start at and restart, per section and for the document.
+- Footnote columns (`w15:footnoteColumns`) and `noEndnote`.
 - Convert footnotes to endnotes and back.
 
 </Chunk>
@@ -299,7 +308,8 @@ and save, and has a command to create, change and remove it. Where a construct h
 **Goal:** every table property can be set.
 
 - Row exceptions and hidden rows through the API.
-- Cell text direction, preferred width in percent, fit text and no wrap.
+- Cell text direction, preferred width in percent, fit text, no wrap and `hideMark`.
+- Cell spacing, diagonal cell borders (`tl2br`, `tr2bl`) and table style band sizes.
 - Table alt text (`tblCaption`, `tblDescription`) in Table Properties.
 - Header cells (`tcPr/headers`), and `cnfStyle` kept.
 - New tables take the document's `defaultTableStyle`.
@@ -314,7 +324,7 @@ and save, and has a command to create, change and remove it. Where a construct h
 - Change Picture in place, outside picture controls too.
 - Align and distribute objects.
 - Linked pictures (`r:link`), fetched through a host service.
-- Relative size and position, text box autofit and text box columns.
+- Relative size and position, text box autofit, text box columns and `textboxTightWrap`.
 - Set Transparent Colour (`a:clrChange`).
 
 </Chunk>
@@ -324,6 +334,7 @@ and save, and has a command to create, change and remove it. Where a construct h
 **Goal:** the engine computes every field that depends only on the document.
 
 - Core, app and custom document properties: read, set through the API, and updated on save.
+- Document variables (`w:docVars`) and DOCVARIABLE.
 - DOCPROPERTY, AUTHOR, TITLE, SUBJECT, KEYWORDS, FILENAME, SAVEDATE, PRINTDATE, NOTEREF, LISTNUM and AUTONUM.
 - DATE and TIME in the host's time zone and locale.
 - `=` formulas, with table references, `decimalSymbol` and `listSeparator`.
@@ -350,6 +361,8 @@ and save, and has a command to create, change and remove it. Where a construct h
 - Use a style to format contents.
 - Show As (bounding box, tags, none) and colour (w15 `appearance` and `color`).
 - Temporary controls, which remove themselves when edited.
+- Repeating section options (`sectionTitle`, `doNotAllowInsertDeleteSection`), and inserting a building block from a
+  gallery control.
 - Data binding (`w:dataBinding`) to custom XML parts, in both directions.
 
 </Chunk>
