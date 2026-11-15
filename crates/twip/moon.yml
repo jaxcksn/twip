@@ -14,6 +14,12 @@ tasks:
   test:
     script: node ../twip-capi/build-native.mjs nextest run -p twip && node ../twip-capi/build-native.mjs test -p twip --doc
     inputs: ['src/**/*', 'build.rs', 'tests/**/*', 'examples/**/*', 'Cargo.toml', '/tests/contract/**/*', '/crates/twip-capi/build-native.mjs']
+  # The round-trip gate's saved packages against the OOXML schemas (tests/fidelity/validate, the Open XML SDK).
+  fidelity-schema:
+    script: node ../twip-capi/build-native.mjs nextest run -p twip --lib tests::fidelity && dotnet run --project tests/fidelity/validate -c Release -- ../../target/fidelity
+    env:
+      TWIP_FIDELITY_OUT: '../../target/fidelity'
+    inputs: ['src/**/*', 'tests/fidelity/**/*', 'Cargo.toml', '/crates/twip-capi/build-native.mjs']
   example:
     command: node ../twip-capi/build-native.mjs run -p twip --example session
     inputs: ['src/**/*', 'examples/**/*', 'Cargo.toml', '/crates/twip-capi/build-native.mjs']

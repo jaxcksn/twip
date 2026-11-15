@@ -64,6 +64,14 @@ not generated: each is written by hand in its language, and each follows the con
   updates it) and `bindings/dotnet/*/PublicAPI.Unshipped.txt` (the analyzer's code fix adds the entries). CI fails
   on any difference.
 
+- **Round-trip gate.** `crates/twip/src/tests/fidelity.rs` builds one document per construct the engine must keep
+  (bookmarks, equations, form fields, text effects, ...), edits next to and around it through the editor (typing,
+  formatting, a control, a comment, cut and paste, deleting its neighbours), and saves: the construct must still be
+  there, and every part the edit had no reason to touch must be byte-identical. `twip:fidelity-schema` validates
+  every saved package against the OOXML schemas with the Open XML SDK. `crates/twip/tests/fidelity/pending.txt`
+  lists the cases that still lose content; the gate fails when a listed case passes, so remove its line in the change
+  that fixes it. The [fidelity guide](../docs/docs/guides/fidelity.md) says what happens to every element.
+
 So a new command, for example, is a `Command` variant with its catalog entry and engine code, its wire fixture, a
 hand-written method in each SDK (`commands.ts`, `EditorCommands`), the two snapshots, and a contract script step.
 
@@ -89,7 +97,8 @@ benchmarks last, after everything else passes: `cargo bench -p twip [-- <filter>
 not in CI). Compare their numbers with `main`'s on the same machine.
 
 The tasks: `root:hygiene` (planning ids, the CI plan), `root:format`, `root:lint` (clippy), `root:contract-scripts`;
-`twip:test` (the unit tests, including the wire fixture check, and the rust contract runner), `twip:example` (the
+`twip:test` (the unit tests, including the wire fixture check, and the rust contract runner), `twip:fidelity-schema`
+(the round-trip gate's packages against the OOXML schemas), `twip:example` (the
 Rust API end to end), `twip-graphics:test` (the renderer's unit and golden image tests), `twip-capi:test`; `web:test` (builds the wasm module, then the unit, wire, contract and API report checks),
 `web:browser-test`, `web:latency` (the latency budgets, on a quiet machine with a GPU; not in CI); `dotnet:build`, `dotnet:test` (builds twip-capi, then the wire, contract and Native AOT smoke
 tests); `docs:build` and `docs:examples` (the guides' TypeScript and C# examples). `cargo fmt --all` fixes what
