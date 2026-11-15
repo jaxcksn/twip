@@ -226,7 +226,7 @@ save as read. The [fidelity guide](guides/fidelity) lists every element and the 
 
 </Chunk>
 
-<Chunk id="2.3" title="Lossless moves and table edits" deps={['2.2']}>
+<Chunk id="2.3" title="Lossless moves and table edits" deps={['2.2']} done>
 
 **Goal:** moved content and restructured tables keep everything they held.
 
@@ -237,7 +237,6 @@ save as read. The [fidelity guide](guides/fidelity) lists every element and the 
   rebuilding them, and keep non-paragraph cell content.
 - Custom-mark footnote references, `w:sym` with its font, and floats in their place within the paragraph.
 - Resized VML pictures, column settings, and properties that use a namespace prefix declared below the root.
-- An edited shape writes a fresh fallback picture instead of dropping it.
 
 </Chunk>
 
@@ -674,6 +673,8 @@ Pulled forward when a customer document needs one.
 ### Not planned
 
 - Embedded fonts and font substitution. The host supplies fonts.
+- A fresh Word 2007 fallback (`mc:Fallback`) for a shape edited in Twip. The shape is saved without it; Word 2010 and
+  later read the shape itself.
 
 ## Shipped in 0.1.0 {#shipped}
 

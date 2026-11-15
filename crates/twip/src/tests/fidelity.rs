@@ -30,6 +30,18 @@ const NS: &[(&str, &str)] = &[
     ("w14", "http://schemas.microsoft.com/office/word/2010/wordml"),
     ("w15", "http://schemas.microsoft.com/office/word/2012/wordml"),
     ("w16se", "http://schemas.microsoft.com/office/word/2015/wordml/symex"),
+    ("v", "urn:schemas-microsoft-com:vml"),
+    ("o", "urn:schemas-microsoft-com:office:office"),
+    ("wp", "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"),
+    ("a", "http://schemas.openxmlformats.org/drawingml/2006/main"),
+    ("pic", "http://schemas.openxmlformats.org/drawingml/2006/picture"),
+    ("wps", "http://schemas.microsoft.com/office/word/2010/wordprocessingShape"),
+];
+
+/// A 1×1 PNG, `rIdImg` in every fixture.
+const PNG: &[u8] = &[
+    137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 2, 0, 0, 0, 144, 119, 83, 222, 0, 0, 0, 12, 73, 68, 65,
+    84, 120, 156, 99, 248, 207, 192, 0, 0, 3, 1, 1, 0, 201, 254, 146, 239, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130,
 ];
 const REL: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 
@@ -76,6 +88,34 @@ const CONSTRUCTS: &[Construct] = &[
         name: "comment",
         xml: r#"<w:commentRangeStart w:id="91"/><w:r><w:t>Noted</w:t></w:r><w:commentRangeEnd w:id="91"/><w:r><w:commentReference w:id="91"/></w:r>"#,
         holds: &["w:commentRangeStart@w:id=91", "w:commentRangeEnd@w:id=91", "w:commentReference@w:id=91"],
+        parts: &[],
+        exempt: &[],
+    },
+    Construct {
+        name: "vml-picture",
+        xml: r##"<w:r><w:pict><v:shape id="p1" style="width:36pt;height:36pt" type="#_x0000_t75"><v:imagedata r:id="rIdImg" o:title=""/></v:shape></w:pict></w:r>"##,
+        holds: &["v:imagedata"],
+        parts: &[],
+        exempt: &[],
+    },
+    Construct {
+        name: "floating-picture",
+        xml: r#"<w:r><w:t>Mi</w:t></w:r><w:r><w:drawing><wp:anchor distT="0" distB="0" distL="114300" distR="114300" simplePos="0" relativeHeight="2" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV><wp:extent cx="457200" cy="457200"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapSquare wrapText="bothSides"/><wp:docPr id="5" name="Float"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="5" name="dot.png"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rIdImg"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="457200" cy="457200"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r><w:r><w:t>d</w:t></w:r>"#,
+        holds: &["wp:anchor"],
+        parts: &[],
+        exempt: &[],
+    },
+    Construct {
+        name: "shape-fallback",
+        xml: r##"<w:r><mc:AlternateContent><mc:Choice Requires="wps"><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="457200" cy="228600"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:docPr id="6" name="Shape"/><a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:wsp><wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="457200" cy="228600"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="4472C4"/></a:solidFill></wps:spPr><wps:bodyPr/></wps:wsp></a:graphicData></a:graphic></wp:inline></w:drawing></mc:Choice><mc:Fallback><w:pict><v:rect id="r6" style="width:36pt;height:18pt" fillcolor="#4472c4"/></w:pict></mc:Fallback></mc:AlternateContent></w:r>"##,
+        holds: &["wps:wsp", "v:rect"],
+        parts: &[],
+        exempt: &[],
+    },
+    Construct {
+        name: "prefix-below-root",
+        xml: r#"<w:sdt><w:sdtPr/><w:sdtContent xmlns:x14="http://schemas.microsoft.com/office/word/2010/wordml"><w:r><w:rPr><x14:textOutline x14:w="9525"><x14:solidFill><x14:srgbClr x14:val="FF0000"/></x14:solidFill></x14:textOutline></w:rPr><w:t>Prefixed</w:t></w:r></w:sdtContent></w:sdt>"#,
+        holds: &["w14:textOutline"],
         parts: &[],
         exempt: &[],
     },
@@ -288,43 +328,46 @@ fn package(c: &Construct) -> Vec<u8> {
         r#"{target}<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr>"#
     );
     let main = format!(
-        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document{decl} mc:Ignorable="w14 w15 w16se"><w:body>{body}</w:body></w:document>"#
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document{decl} mc:Ignorable="w14 w15 w16se wps"><w:body>{body}</w:body></w:document>"#
     );
     let mut types = String::from(
-        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>"#,
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>"#,
     );
     let mut rels = format!(
-        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="{REL}/styles" Target="styles.xml"/>"#
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="{REL}/styles" Target="styles.xml"/><Relationship Id="rIdImg" Type="{REL}/image" Target="media/dot.png"/>"#
     );
-    let mut files = vec![("word/document.xml".to_string(), main)];
+    let mut files = vec![("word/document.xml".to_string(), main.into_bytes()), ("word/media/dot.png".to_string(), PNG.to_vec())];
     for (k, (name, ctype, rtype, xml)) in c.parts.iter().chain([&COMMENTS]).enumerate() {
         types += &format!(r#"<Override PartName="/{name}" ContentType="{ctype}"/>"#);
         rels += &format!(r#"<Relationship Id="rIdP{k}" Type="{rtype}" Target="{}"/>"#, name.trim_start_matches("word/"));
         let root = name.trim_start_matches("word/").trim_end_matches(".xml");
         files.push((
             name.to_string(),
-            format!(r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:{root}{decl} mc:Ignorable="w14 w15 w16se">{xml}</w:{root}>"#),
+            format!(r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:{root}{decl} mc:Ignorable="w14 w15 w16se wps">{xml}</w:{root}>"#)
+                .into_bytes(),
         ));
     }
-    files.push(("[Content_Types].xml".into(), types + "</Types>"));
-    files.push(("word/_rels/document.xml.rels".into(), rels + "</Relationships>"));
+    files.push(("[Content_Types].xml".into(), (types + "</Types>").into_bytes()));
+    files.push(("word/_rels/document.xml.rels".into(), (rels + "</Relationships>").into_bytes()));
     files.push((
         "_rels/.rels".into(),
         format!(
             r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="{REL}/officeDocument" Target="word/document.xml"/></Relationships>"#
-        ),
+        )
+        .into_bytes(),
     ));
     files.push((
         "word/styles.xml".into(),
         format!(
             r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="{}"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri"/><w:sz w:val="22"/></w:rPr></w:rPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style></w:styles>"#,
             NS[0].1
-        ),
+        )
+        .into_bytes(),
     ));
     let mut z = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    for (name, xml) in files {
+    for (name, bytes) in files {
         z.start_file(name, zip::write::SimpleFileOptions::default()).expect("a zip entry");
-        z.write_all(xml.as_bytes()).expect("written");
+        z.write_all(&bytes).expect("written");
     }
     z.finish().expect("a package").into_inner()
 }
@@ -485,4 +528,50 @@ fn content_kept_as_read_is_reported() {
     let doc = crate::docx::read_editable(&package(c)).expect("reads");
     let w = doc.diagnostics.warnings.iter().find(|w| w.code == crate::docx::diagnostics::WarningCode::UnsupportedElement);
     assert!(w.is_some_and(|w| w.message.starts_with("m:oMath")), "{:?}", doc.diagnostics);
+}
+
+#[test]
+fn a_resized_vml_picture_is_saved_at_its_new_size() {
+    let c = CONSTRUCTS.iter().find(|c| c.name == "vml-picture").expect("the VML picture");
+    let mut e = Editor::open(&package(c), fonts()).expect("opens");
+    let s = spot(&e).expect("its paragraph");
+    use crate::editing::selection::{ObjectRef, Selection};
+    e.set_caret_for_benchmark(Selection::Object(ObjectRef::Inline { para: s.para, offset: s.before }));
+    let size = crate::api::command::ObjectSize {
+        width: Some(crate::api::value::Points(72.0)),
+        height: Some(crate::api::value::Points(54.0)),
+        lock_aspect: None,
+    };
+    let out = e.execute(Command::SetObjectSize(size), fonts());
+    assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
+    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let xml = String::from_utf8(entries(&saved).into_iter().find(|(n, _)| n == "word/document.xml").expect("the main part").1).expect("UTF-8");
+    assert!(xml.contains("width:72pt") && xml.contains("height:54pt") && xml.contains("v:imagedata"), "{xml}");
+}
+
+#[test]
+fn page_setup_writes_only_what_changed() {
+    use crate::api::value::Points;
+    let cols = r#"<w:cols w:num="2" w:space="720" w:equalWidth="0"><w:col w:w="3000" w:space="720"/><w:col w:w="5640"/></w:cols>"#;
+    let src = String::from_utf8(entries(&package(&CONSTRUCTS[0])).into_iter().find(|(n, _)| n == "word/document.xml").unwrap().1).unwrap();
+    let bytes = crate::editing::tests::blank_body(&src[src.find("<w:body>").unwrap() + 8..src.find("<w:sectPr>").unwrap()]);
+    let doc = String::from_utf8(entries(&bytes).into_iter().find(|(n, _)| n == "word/document.xml").unwrap().1).unwrap();
+    let bytes = with_main(&bytes, &doc.replacen(r#"<w:cols w:space="720"/>"#, cols, 1));
+    let mut e = Editor::open(&bytes, fonts()).expect("opens");
+    let margins = crate::api::command::Margins { top: Some(Points(36.0)), bottom: None, left: None, right: None, gutter: None };
+    let out = e.execute(Command::SetMargins(margins), fonts());
+    assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
+    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let xml = String::from_utf8(entries(&saved).into_iter().find(|(n, _)| n == "word/document.xml").unwrap().1).unwrap();
+    assert!(xml.contains(r#"w:top="720""#) && xml.contains(cols) && xml.contains(r#"<w:pgSz w:w="12240" w:h="15840"/>"#), "{xml}");
+}
+
+/// `package` with its main part replaced.
+fn with_main(package: &[u8], xml: &str) -> Vec<u8> {
+    let mut z = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    for (name, bytes) in entries(package) {
+        z.start_file(&*name, zip::write::SimpleFileOptions::default()).expect("a zip entry");
+        z.write_all(if name == "word/document.xml" { xml.as_bytes() } else { &bytes }).expect("written");
+    }
+    z.finish().expect("a package").into_inner()
 }

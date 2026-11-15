@@ -123,6 +123,7 @@ fn props(s: &Section) -> Section {
         footnote_columns,
         blocks: _,
         change,
+        read: _,
     } = s;
     Section {
         break_kind: *break_kind,
@@ -154,6 +155,7 @@ fn props(s: &Section) -> Section {
         footnote_columns: *footnote_columns,
         blocks: Vec::new(),
         change: change.clone(),
+        read: None,
     }
 }
 

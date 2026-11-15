@@ -33,7 +33,7 @@ Chunk numbers are [roadmap](../roadmap#docx) chunks.
 | Hyperlinks | `w:hyperlink` | API; a link rewritten as its HYPERLINK field keeps its ScreenTip (`\o`) and frame (`\t`), and drops `history`, which no field switch holds |
 | Header and footer references | `w:headerReference`, `w:footerReference` | API for editing; link to previous and removal are Model, 2.6 |
 | Section properties | `w:sectPr` | API (see [Sections](#sections)) |
-| Unknown elements | anything not listed here | Between runs: Kept as an opaque node, moved with its text, and reported as unsupported content. Inside a run: Lost when its paragraph is pasted or written from the model, 2.3 |
+| Unknown elements | anything not listed here | Between runs: Kept as an opaque node, moved with its text, and reported as unsupported content. Inside a run: Kept; Lost when pasted, as they aren't modeled |
 
 ## Run content
 
@@ -49,8 +49,8 @@ Chunk numbers are [roadmap](../roadmap#docx) chunks.
 | Ruby | `w:ruby`, `w:rubyPr`, `w:rubyAlign`, `w:hps`, `w:hpsRaise`, `w:hpsBaseText`, `w:rubyBase`, `w:rt`, `w:lid`, `w:dirty` | After 1.0 (laid out, not settable) |
 | Rendered page breaks | `w:lastRenderedPageBreak` | Application (Word's layout cache) |
 | Proofing marks | `w:proofErr` | Application (Word's spelling state) |
-| Ink | `w:contentPart`, `w14:contentPart`, `w14:nvContentPartPr`, `w14:cNvPr`, `w14:cNvContentPartPr`, `w14:xfrm` | Drawn from its fallback picture; Kept, Lost when pasted, 2.3 |
-| Movies (Word 97) | `w:movie` | Kept; Lost when pasted, 2.3 |
+| Ink | `w:contentPart`, `w14:contentPart`, `w14:nvContentPartPr`, `w14:cNvPr`, `w14:cNvContentPartPr`, `w14:xfrm` | Drawn from its fallback picture; Kept, moved with its text |
+| Movies (Word 97) | `w:movie` | Kept; Lost when pasted (not modeled) |
 | Equations | `w:oMath` (the run property) | Not in 1.0 (an equation is kept as an opaque node and reported as unsupported content) |
 
 ## Fields
@@ -206,7 +206,7 @@ Word 2010 and later remove custom XML markup when they open a document, so it is
 
 | Construct | Elements | Status |
 |---|---|---|
-| Custom XML elements | `w:customXml`, `w:customXmlPr`, `w:attr` | Kept (content inside is read as ordinary content); Lost when cut and pasted, 2.3 |
+| Custom XML elements | `w:customXml`, `w:customXmlPr`, `w:attr` | Kept (content inside is read as ordinary content); left behind when its text is cut, as Word removes custom XML markup on open |
 | Custom XML revisions | `w:customXmlInsRangeStart`, `w:customXmlInsRangeEnd`, `w:customXmlDelRangeStart`, `w:customXmlDelRangeEnd`, `w:customXmlMoveFromRangeStart`, `w:customXmlMoveFromRangeEnd`, `w:customXmlMoveToRangeStart`, `w:customXmlMoveToRangeEnd`, `w14:customXmlConflictInsRangeStart`, `w14:customXmlConflictInsRangeEnd`, `w14:customXmlConflictDelRangeStart`, `w14:customXmlConflictDelRangeEnd`, `w14:conflictIns`, `w14:conflictDel`, `w14:conflictMode` | Kept as an opaque node |
 
 ## Embedded content
@@ -215,7 +215,7 @@ Word 2010 and later remove custom XML markup when they open a document, so it is
 |---|---|---|
 | Drawings | `w:drawing`, `w:pict` | API (see [DrawingML and VML](#drawing)) |
 | OLE objects | `w:object`, `w:objectEmbed`, `w:objectLink` | Preview picture API; the object is Lost when rewritten, opaque node in 2.2. Editing OLE objects is in the backlog |
-| ActiveX controls | `w:control` | Kept, drawn from its preview picture; Lost when pasted, 2.3 |
+| ActiveX controls | `w:control` | Kept, drawn from its preview picture, moved with its text |
 | Imported content | `w:altChunk`, `w:altChunkPr`, `w:matchSrc` | Kept between unedited blocks; opaque block, 2.2. Drawing it is deferred with HTML paste |
 | Subdocuments | `w:subDoc` | Kept as an opaque node, reported as unsupported content. Drawing them is in the backlog |
 | Page background | `w:background`, `w:displayBackgroundShape` | Page colour in 3.7 |
@@ -272,7 +272,7 @@ Word 2010 and later remove custom XML markup when they open a document, so it is
 | Set transparent colour (`a:clrChange`) | Kept, 2.10 |
 | Relative size and position (`wp14:sizeRelH`, `wp14:pctPosHOffset`, ...) | Laid out; Model, 2.10 |
 | Text box columns and autofit (`wps:bodyPr@numCol`, `a:normAutofit`) | Model; columns API in 2.10 |
-| A shape's VML fallback (`mc:Fallback`) | Lost when the shape is edited, 2.3 |
+| A shape's VML fallback (`mc:Fallback`) | Kept, moved with the shape; a shape edited in Twip is saved without it (Word 2010 and later read the shape; see Not planned on the roadmap) |
 | Alternate content (`mc:AlternateContent`, `Requires`) | Laid out: the first choice whose namespaces the engine reads, else the fallback |
 | Charts (`c:chart`) | Not in 1.0 |
 | SmartArt, WordArt | Drawn from their fallback; editing in the backlog |

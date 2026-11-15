@@ -175,9 +175,22 @@ pub fn read_editable(bytes: &[u8]) -> Result<Document, String> {
     read_with(bytes, true, now_local())
 }
 
-/// The XML text of an element as written.
+/// The XML text of an element as written, with the namespaces declared between it and the root declared on it (so it
+/// parses with the part's root namespaces wherever it is written).
 fn raw(n: Node) -> Rc<str> {
-    n.document().input_text()[n.range()].into()
+    let text = &n.document().input_text()[n.range()];
+    let root = n.document().root_element();
+    if n.namespaces().len() <= root.namespaces().len() {
+        return text.into();
+    }
+    let own = |p: &str| text.split('>').next().is_some_and(|tag| tag.contains(&format!("xmlns:{p}=")));
+    let extra: String = n
+        .namespaces()
+        .filter(|ns| !root.namespaces().any(|r| r.name() == ns.name() && r.uri() == ns.uri()))
+        .filter_map(|ns| ns.name().filter(|p| !own(p)).map(|p| format!(" xmlns:{p}=\"{}\"", ns.uri().replace('&', "&amp;").replace('"', "&quot;"))))
+        .collect();
+    let at = text.find(|c: char| c.is_whitespace() || c == '>' || c == '/').unwrap_or(text.len());
+    format!("{}{extra}{}", &text[..at], &text[at..]).into()
 }
 
 // shortcut: `w:themeTint` and `w:themeShade` are not applied to a theme page colour.
@@ -1407,6 +1420,7 @@ impl Reader {
             footnote_columns: 0,
             blocks: Vec::new(),
             change: None,
+            read: None,
         }
     }
 
@@ -1533,6 +1547,9 @@ impl Reader {
                 None => self.default_sect().page(),
             };
             sec.change = Some(Rc::new(SectionChange { mark, previous, previous_raw: Raw(before.map(raw)) }));
+        }
+        if self.record {
+            sec.read = Some(Rc::new(sec.page()));
         }
         sec
     }
@@ -1797,6 +1814,17 @@ impl Reader {
         }
     }
 
+    /// The run child `c` as the source of the pictures it added (editable reads).
+    fn picture_src(&self, c: Node, added: &mut [Inline]) {
+        if self.record {
+            for i in added {
+                if let Inline::Picture(p, _) = i {
+                    p.src = Raw(Some(raw(c)));
+                }
+            }
+        }
+    }
+
     /// An element between runs the engine doesn't model, kept as read (editable reads).
     fn opaque(&mut self, e: Node, out: &mut Vec<Inline>) {
         if self.record {
@@ -1841,6 +1869,8 @@ impl Reader {
                 self.note_seg(out, prev.take());
                 prev = Some((seg.range(), units_mark(out)));
             }
+            // The pictures a run child adds keep its XML (its fallback with it).
+            let first_new = out.len();
             if is(c, MC, "AlternateContent") {
                 if let Some((ch, font)) = sym_ex(c) {
                     out.push(Inline::Sym { ch, font, run: run.clone(), control: None });
@@ -1849,6 +1879,7 @@ impl Reader {
                         self.read_drawing(d, &run, pkg, out);
                     }
                 }
+                self.picture_src(c, &mut out[first_new..]);
                 continue;
             }
             if c.tag_name().namespace() != Some(W) {
@@ -2005,8 +2036,14 @@ impl Reader {
                     let code = if code < 0x100 && is_symbol_font(&font) { code + 0xF000 } else { code };
                     out.push(Inline::Sym { ch: char::from_u32(code).unwrap_or('?'), font, run: run.clone(), control: None });
                 }
-                "drawing" => self.read_drawing(c, &run, pkg, out),
-                "pict" | "object" => self.read_pict(c, &run, pkg, out),
+                "drawing" => {
+                    self.read_drawing(c, &run, pkg, out);
+                    self.picture_src(c, &mut out[first_new..]);
+                }
+                "pict" | "object" => {
+                    self.read_pict(c, &run, pkg, out);
+                    self.picture_src(c, &mut out[first_new..]);
+                }
                 name if let Some(&(element, _)) = DATE_BLOCKS.iter().find(|(e, _)| *e == name) => {
                     out.push(Inline::DateBlock(element, String::new(), run.clone()));
                 }
@@ -2365,7 +2402,17 @@ impl Reader {
         if !st.absolute {
             let text = text_box.map(|text_box| Box::new(InlineText { id: next_para_id(), text_box }));
             out.push(Inline::Picture(
-                Picture { w: st.w, h: st.h, image, alt, lock_aspect: false, effect: [0.0; 4], shape: Some(Box::new(shape)), text },
+                Picture {
+                    w: st.w,
+                    h: st.h,
+                    image,
+                    alt,
+                    lock_aspect: false,
+                    effect: [0.0; 4],
+                    shape: Some(Box::new(shape)),
+                    text,
+                    src: Default::default(),
+                },
                 run.clone(),
             ));
             return;
@@ -2499,7 +2546,10 @@ impl Reader {
             // An inline shape's text: a stand-alone shape's (a group's children's text isn't read inline).
             let group = item.descendants().any(|n| n.tag_name().name() == "wgp");
             let text = txbx.filter(|_| !group).map(|t| Box::new(InlineText { id: next_para_id(), text_box: self.text_box(item, t, pkg) }));
-            out.push(Inline::Picture(Picture { w, h, image, alt, lock_aspect, effect, shape: Some(Box::new(shape)), text }, run.clone()));
+            out.push(Inline::Picture(
+                Picture { w, h, image, alt, lock_aspect, effect, shape: Some(Box::new(shape)), text, src: Default::default() },
+                run.clone(),
+            ));
             return;
         }
         let pos = |name: &str| item.children().find(|c| is(*c, WP, name));

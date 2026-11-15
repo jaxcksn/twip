@@ -692,7 +692,17 @@ impl Editor {
         let out = self.insert_inline(
             |run| {
                 Inline::Picture(
-                    crate::docx::Picture { w, h, image, alt: "".into(), lock_aspect: true, effect: [0.0; 4], shape: None, text: None },
+                    crate::docx::Picture {
+                        w,
+                        h,
+                        image,
+                        alt: "".into(),
+                        lock_aspect: true,
+                        effect: [0.0; 4],
+                        shape: None,
+                        text: None,
+                        src: Default::default(),
+                    },
                     run,
                 )
             },
@@ -1169,6 +1179,7 @@ impl Editor {
             effect: [0.0; 4],
             shape: fl.shape.clone(),
             text,
+            src: Default::default(),
         };
         let with = vec![Inline::Picture(pic, run.clone())];
         let mut tx = self.begin("Wrap Text");

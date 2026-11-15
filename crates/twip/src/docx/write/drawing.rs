@@ -29,6 +29,15 @@ pub(super) fn is_vml(text: &str) -> bool {
     !text.contains("<wp:") && (text.contains("<v:") || text.contains(":pict"))
 }
 
+/// A VML picture's first shape at `w` × `h` points.
+pub(super) fn vml_size(text: &str, w: f64, h: f64) -> String {
+    let Some((start, end)) = first_vml_shape(text) else { return text.to_string() };
+    let pt = |v: f64| format!("{}pt", (v * 20.0).round() / 20.0);
+    let tag = &text[start..end];
+    let style = css_set(&css_set(&attr(tag, "style").unwrap_or_default(), "width", &pt(w)), "height", &pt(h));
+    format!("{}{}{}", &text[..start], set_attr(tag, "style", &style), &text[end..])
+}
+
 pub(super) fn vml_patch(text: &str, was: &Float, now: &Float) -> String {
     use crate::drawing::paint::Fill as F;
     let Some((start, end)) = first_vml_shape(text) else { return text.to_string() };

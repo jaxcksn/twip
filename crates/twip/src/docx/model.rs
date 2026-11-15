@@ -335,6 +335,9 @@ pub struct Picture {
     pub shape: Option<Box<crate::drawing::Shape>>,
     /// An inline shape's text (`wps:txbx`): its story, edited as a text box's (`StoryId::TextBox` of its id).
     pub text: Option<Box<InlineText>>,
+    /// Its run child as read (`w:drawing`, `w:pict`, `mc:AlternateContent`; editable reads only): a copy pasted into
+    /// the part it came from is written from it.
+    pub src: Raw,
 }
 
 impl Inline {
@@ -1216,6 +1219,8 @@ pub struct Section {
     pub blocks: Vec<Block>,
     /// A tracked change of the section's properties.
     pub change: Option<Rc<SectionChange>>,
+    /// Its page as read (editable reads only): saving rewrites only the page settings that changed.
+    pub read: Option<Rc<SectionPage>>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]

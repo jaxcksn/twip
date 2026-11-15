@@ -422,7 +422,7 @@ fn section_pages(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(
     for k in edited {
         let r = sects[k].clone();
         let s = &doc.sections[k];
-        let new = sect_with_page(&xml[r.clone()], &w, &s.page(), s.change.as_deref(), &doc.people);
+        let new = sect_with_page(&xml[r.clone()], &w, &s.page(), s.read.as_deref(), s.change.as_deref(), &doc.people);
         xml.replace_range(r, &new);
     }
     match parts.iter_mut().find(|(n, _)| *n == src.main) {
@@ -433,7 +433,8 @@ fn section_pages(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(
 }
 
 /// A `w:sectPr` with `p`'s page size, margins, columns and different first page, and `change` as its tracked change.
-fn sect_with_page(sect: &str, w: &str, p: &SectionPage, change: Option<&SectionChange>, people: &People) -> String {
+/// Only those differing from `was` (the page as read) when given.
+fn sect_with_page(sect: &str, w: &str, p: &SectionPage, was: Option<&SectionPage>, change: Option<&SectionChange>, people: &People) -> String {
     // CT_SectPr's children in schema order.
     const ORDER: [&str; 22] = [
         "headerReference",
@@ -490,22 +491,31 @@ fn sect_with_page(sect: &str, w: &str, p: &SectionPage, change: Option<&SectionC
                 put(&mut base, local, None);
             }
         }
-        Raw(Some(sect_with_page(&base, w, &c.previous, None, people).into()))
+        Raw(Some(sect_with_page(&base, w, &c.previous, None, None, people).into()))
     });
     let existing = |s: &str, local: &str| find_tag(s, local, open_end).map(|(a, e)| s[a..e].to_string());
-    put(&mut s, "pgBorders", p.page_borders_xml.clone());
+    let changed = |f: &dyn Fn(&SectionPage) -> bool| was.is_none_or(f);
+    if changed(&|q| q.page_borders != p.page_borders) {
+        put(&mut s, "pgBorders", p.page_borders_xml.clone());
+    }
     let mut sz = existing(&s, "pgSz").unwrap_or_else(|| format!("<{w}pgSz/>"));
     sz = set_attr(&sz, &format!("{w}w"), &twips(p.page_w).to_string());
     sz = set_attr(&sz, &format!("{w}h"), &twips(p.page_h).to_string());
     sz = if p.page_w > p.page_h { set_attr(&sz, &format!("{w}orient"), "landscape") } else { set_attr(&sz, &format!("{w}orient"), "portrait") };
-    put(&mut s, "pgSz", Some(sz));
+    if changed(&|q| (q.page_w, q.page_h) != (p.page_w, p.page_h)) {
+        put(&mut s, "pgSz", Some(sz));
+    }
     let mut mar = existing(&s, "pgMar").unwrap_or_else(|| format!("<{w}pgMar/>"));
     for (name, v) in
         [("top", p.top), ("right", p.right), ("bottom", p.bottom), ("left", p.left), ("header", p.header), ("footer", p.footer), ("gutter", p.gutter)]
     {
         mar = set_attr(&mar, &format!("{w}{name}"), &twips(v).to_string());
     }
-    put(&mut s, "pgMar", Some(mar));
+    if changed(&|q| {
+        (q.top, q.right, q.bottom, q.left, q.header, q.footer, q.gutter) != (p.top, p.right, p.bottom, p.left, p.header, p.footer, p.gutter)
+    }) {
+        put(&mut s, "pgMar", Some(mar));
+    }
     let c = &p.columns;
     let sep = if c.separator { format!(" {w}sep=\"1\"") } else { String::new() };
     let cols = if !c.equal && c.cols.len() > 1 {
@@ -514,8 +524,12 @@ fn sect_with_page(sect: &str, w: &str, p: &SectionPage, change: Option<&SectionC
     } else {
         format!("<{w}cols {w}space=\"{}\" {w}num=\"{}\"{sep}/>", twips(c.space), c.num.max(1))
     };
-    put(&mut s, "cols", Some(cols));
-    put(&mut s, "titlePg", p.title_pg.then(|| format!("<{w}titlePg/>")));
+    if changed(&|q| q.columns != p.columns) {
+        put(&mut s, "cols", Some(cols));
+    }
+    if changed(&|q| q.title_pg != p.title_pg) {
+        put(&mut s, "titlePg", p.title_pg.then(|| format!("<{w}titlePg/>")));
+    }
     put(
         &mut s,
         "sectPrChange",
@@ -1789,7 +1803,9 @@ impl<'a, 'i> Saver<'a, 'i> {
             }
             let (open, close) = revisions::wrappers(&self.w, run.rev.ins.as_deref(), run.rev.del.as_deref(), self.people);
             let mut push = |x: &str| out.push_str(&format!("{open}<{w}r>{x}</{w}r>{close}", w = self.w));
-            let Some((r, was)) = self.float_src.get(&f.id) else {
+            // A pasted copy (a new id) is found by where it was read from, and gets drawing ids of its own.
+            let copied = f.src.as_ref().and_then(|s| self.float_src.values().find(|(r, _)| r == s)).filter(|_| !self.float_src.contains_key(&f.id));
+            let Some((r, was)) = self.float_src.get(&f.id).or(copied) else {
                 if let Some(x) = self.new_float_xml(f) {
                     push(&x);
                 }
@@ -1808,7 +1824,7 @@ impl<'a, 'i> Saver<'a, 'i> {
                 Some(pl) => pl.apply(&src),
                 None => src,
             };
-            push(&d);
+            push(&if copied.is_some() { self.new_doc_pr_ids(&d) } else { d });
         }
         out
     }
@@ -1848,6 +1864,28 @@ impl<'a, 'i> Saver<'a, 'i> {
                 })
             }
         }
+    }
+
+    /// `xml` with each `wp:docPr` given a new id (a copied drawing's must be unique).
+    fn new_doc_pr_ids(&self, xml: &str) -> String {
+        let mut out = String::with_capacity(xml.len());
+        let mut rest = xml;
+        while let Some(k) = rest.find("docPr ") {
+            let tag_end = rest[k..].find('>').map_or(rest.len(), |e| k + e);
+            let Some(a) = rest[k..tag_end].find(" id=\"").map(|a| k + a + 5) else {
+                out.push_str(&rest[..tag_end]);
+                rest = &rest[tag_end..];
+                continue;
+            };
+            let b = rest[a..].find('"').map_or(a, |e| a + e);
+            let id = self.ids.get();
+            self.ids.set(id + 1);
+            out.push_str(&rest[..a]);
+            out.push_str(&id.to_string());
+            rest = &rest[b..];
+        }
+        out.push_str(rest);
+        out
     }
 
     /// A bookmark's id: the part's for its name, else a new one, the same for its start and end.
@@ -3167,7 +3205,8 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                     // A content control around a resized picture: its drawing with the new extents.
                     if let Some(size) = resized(self, i).filter(|_| Rc::as_ptr(&run) == self.orig[i].run) {
                         let p = Placement { size: Some((size.0, size.1)), alt: Some(size.2.to_string()), ..Placement::default() };
-                        let x = p.apply(&self.src(range.clone()));
+                        let src = self.src(range.clone());
+                        let x = if drawing::is_vml(&src) { drawing::vml_size(&src, size.0, size.1) } else { p.apply(&src) };
                         self.flush();
                         self.open_to(self.stack.len());
                         self.out.push_str(&x);
@@ -3202,7 +3241,9 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                                 p.inner = Some(d.start - range.start..d.end - range.start);
                             }
                         }
-                        self.pend.push_str(&p.apply(&self.s.src_text(range.clone())));
+                        let src = self.s.src_text(range.clone());
+                        let x = if drawing::is_vml(&src) { drawing::vml_size(&src, size.0, size.1) } else { p.apply(&src) };
+                        self.pend.push_str(&x);
                     } else {
                         self.add(to, None, Some(range.clone()))
                     }
@@ -3902,6 +3943,18 @@ impl Saver<'_, '_> {
             return Some(format!("{PARA_LEVEL}{}<{w}r>{rpr}<{w}t>{ch}</{w}t></{w}r></{w}sdtContent></{w}sdt>", control_open(w, *c, &ctl)));
         }
         // A shape put in line with text: its tree in a `wp:inline`.
+        // A copy pasted into the part it came from: its source XML (its relationships are this part's), at its size now,
+        // with drawing ids of its own.
+        if let Inline::Picture(p, _) = i
+            && let Some(x) = p.src.0.as_deref().filter(|x| self.xml.contains(*x))
+        {
+            let x = if drawing::is_vml(x) {
+                drawing::vml_size(x, p.w, p.h)
+            } else {
+                Placement { size: Some((p.w, p.h)), alt: Some(p.alt.to_string()), ..Placement::default() }.apply(x)
+            };
+            return Some(self.new_doc_pr_ids(&x));
+        }
         if let Inline::Picture(p, _) = i
             && let Some(shape) = p.shape.as_deref().filter(|s| p.image.is_none() || s.pic().is_none())
         {

@@ -1739,6 +1739,7 @@ impl Editor {
                     effect: [0.0; 4],
                     shape: None,
                     text: None,
+                    src: Default::default(),
                 };
                 self.insert_inlines(
                     |run| vec![Inline::ControlStart(id), Inline::Picture(picture.clone(), run), Inline::ControlEnd(id)],
