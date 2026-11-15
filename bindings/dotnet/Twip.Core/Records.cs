@@ -114,17 +114,6 @@ public sealed record RichText
     public override string ToString() => Plain ?? string.Join("\n", Paragraphs.Select(p => string.Concat(p.Runs.Select(r => r.Text))));
 }
 
-/// <summary>A catalog entry: what an application needs to show a command in its UI.</summary>
-/// <param name="Id">The command.</param>
-/// <param name="Label">The English label.</param>
-/// <param name="Group">The group, for menus and ribbons.</param>
-/// <param name="Shortcuts">The key shortcuts per platform.</param>
-/// <param name="TakesArguments">Whether the command takes arguments.</param>
-/// <param name="Mutates">Whether it changes the document.</param>
-/// <param name="Undo">How it groups into undo steps.</param>
-public sealed record CommandInfo(
-    CommandId Id, string Label, CommandGroup Group, Shortcuts Shortcuts, bool TakesArguments, bool Mutates, UndoGrouping Undo);
-
 /// <summary>Key shortcuts as display strings, such as <c>Ctrl+B</c>.</summary>
 /// <param name="Windows">On Windows and Linux.</param>
 /// <param name="Mac">On macOS.</param>

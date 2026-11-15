@@ -355,16 +355,6 @@ public sealed record FrameDialogValues(
     bool LockAnchor,
     bool Remove);
 
-/// <summary>A style in Manage Styles.</summary>
-/// <param name="Id">The style.</param>
-/// <param name="Name">Its name.</param>
-/// <param name="Type">Its type.</param>
-/// <param name="BuiltIn">Built in (can't be deleted).</param>
-/// <param name="Visibility">Whether it shows in style lists.</param>
-/// <param name="Priority">Its sort priority.</param>
-/// <param name="Locked">Restricted while formatting is protected.</param>
-public sealed record ManagedStyle(StyleId Id, string Name, StyleType Type, bool BuiltIn, StyleVisibility Visibility, int Priority, bool Locked);
-
 /// <summary>Manage Styles' values.</summary>
 /// <param name="Tab">The tab shown.</param>
 /// <param name="Sort">How the list sorts.</param>
@@ -460,21 +450,6 @@ public sealed class FormatDialogSession<TValues> where TValues : class
 /// <param name="Value">The value.</param>
 /// <param name="Label">The label.</param>
 public sealed record FieldOption(string Value, string Label);
-
-/// <summary>A dialog field's label and state.</summary>
-/// <param name="Label">The label.</param>
-/// <param name="Enabled">Whether it can be changed now.</param>
-/// <param name="Kind">The input kind.</param>
-/// <param name="Min">The minimum.</param>
-/// <param name="Max">The maximum.</param>
-/// <param name="Step">The step.</param>
-/// <param name="Options">A choice field's options.</param>
-public sealed record FieldInfo(
-    string Label, bool Enabled, FieldKind Kind,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? Min = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? Max = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? Step = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<FieldOption>? Options = null);
 
 /// <summary>A font style in the Font dialog.</summary>
 public enum FontStyleChoice
@@ -583,13 +558,6 @@ public sealed record PageSetupDialogValues(
 /// <param name="Columns">The columns.</param>
 public sealed record InsertTableDialogValues(int Rows, int Columns);
 
-/// <summary>Cell margins.</summary>
-/// <param name="Top">Top.</param>
-/// <param name="Bottom">Bottom.</param>
-/// <param name="Left">Left.</param>
-/// <param name="Right">Right.</param>
-public sealed record CellMargins(Length Top, Length Bottom, Length Left, Length Right);
-
 /// <summary>The Table Properties dialog's values.</summary>
 /// <param name="Width">The table width.</param>
 /// <param name="Alignment">The table alignment.</param>
@@ -648,12 +616,6 @@ public sealed record TabsDialogValues(
     IReadOnlyList<TabStop> Stops, Length DefaultStop, Length? Position, TabAlignment Alignment, TabLeader Leader,
     IReadOnlyList<Length> Cleared, TabsDialogAction Action);
 
-/// <summary>An accessibility issue.</summary>
-/// <param name="Id">The issue id.</param>
-/// <param name="Text">A description.</param>
-/// <param name="Tip">Whether it is a tip rather than an error.</param>
-public sealed record AccessibilityIssue(string Id, string Text, bool Tip);
-
 /// <summary>The accessibility check's result.</summary>
 public sealed class AccessibilityCheck
 {
@@ -669,3 +631,10 @@ public sealed class AccessibilityCheck
     /// <returns>Completes when it is selected.</returns>
     public Task SelectAsync(AccessibilityIssue issue, CancellationToken ct = default) => Stage.Unsupported("selecting an accessibility issue");
 }
+
+/// <summary>Cell margins.</summary>
+/// <param name="Top">Top.</param>
+/// <param name="Bottom">Bottom.</param>
+/// <param name="Left">Left.</param>
+/// <param name="Right">Right.</param>
+public sealed record CellMargins(Length Top, Length Bottom, Length Left, Length Right);

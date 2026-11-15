@@ -200,6 +200,14 @@ const ADOPT = [
   'ControlFloat',
   'PlaceholderImage',
   'ElementMark',
+  // Dialogs
+  'ManagedStyle',
+  'FieldInfo',
+  'AccessibilityIssue',
+  // Menus
+  'ContextMenu',
+  // RecordsRest
+  'CommandInfo',
 ];
 
 /** Schema types this SDK names otherwise (Rust name: C# type). */
@@ -226,6 +234,7 @@ const NAMES: Record<string, string> = {
   'Indents': 'IndentOptions',
   'Body': 'RichText',
   'Severity': 'MarkSeverity',
+  'CommandShortcuts': 'Shortcuts',
 };
 
 /**
@@ -263,6 +272,7 @@ const FIELDS: Record<string, string> = {
   'EffectsChange.softEdge': 'EffectChange<Length>',
   'EffectsChange.blur': 'EffectChange<Length>',
   'DocumentDefaults.color': 'ColorValue?',
+  'FieldInfo.options': 'IReadOnlyList<FieldOption>?',
 };
 
 /** Fields this SDK names otherwise (`Type.field`: the C# member name). */
@@ -270,6 +280,13 @@ const MEMBERS: Record<string, string> = { 'DataBinding.xpath': 'XPath' };
 
 /** Init properties that start other than empty (`Type.field`: the C# initializer), as the state before the first. */
 const INIT: Record<string, string> = {
+  'FindQuery.matchCase': 'false',
+  'FindQuery.wholeWords': 'false',
+  'EffectsChange.outerShadow': 'default',
+  'EffectsChange.innerShadow': 'default',
+  'EffectsChange.glow': 'default',
+  'EffectsChange.softEdge': 'default',
+  'EffectsChange.blur': 'default',
   'Arrowhead.width': 'ArrowSize.Medium',
   'Arrowhead.length': 'ArrowSize.Medium',
   'PreviewSize.scale': '1',
@@ -287,7 +304,7 @@ const INIT: Record<string, string> = {
 
 /** Records written with init properties whatever their size, and positional ones whatever their size. */
 const PROPERTIES: string[] = ['SelectionSummary', 'TableSelection', 'TableStyleOptions', 'ObjectSelection', 'ShapeState', 'ShapeTextState', 'ObjectPlacement', 'TextDistance', 'CharacterFormatting', 'ParagraphFormatting', 'PageFormatting', 'HistoryState', 'ReviewState', 'SpellingState', 'RulerModel'];
-const POSITIONAL: string[] = ['Person', 'RevisionInfo', 'CommentThread', 'Comment', 'CommentAnchor', 'LinkInfo', 'HeaderFooterInfo', 'PageSize', 'PageMargins', 'RulerIndents', 'FindQuery', 'FindResult', 'FindMatch', 'Misspelling', 'Heading', 'PreviewSize', 'PreviewPicture', 'StylePreview', 'ElementMatch', 'SubTemplateInfo', 'DataPartInfo', 'DataPart', 'CellPlace', 'ListPosition', 'GestureBinding', 'TablePosition', 'GradientStop', 'Arrowhead', 'LineEnds', 'LineValue', 'Shadow', 'Glow', 'EffectsValue', 'ThemeColors', 'ChromeColors', 'ElementHover', 'ElementClick', 'ElementSelection', 'CursorOverride', 'TabTypeChoice', 'ListLevel', 'ParagraphBorderLines', 'FrameProperties', 'HorizontalPosition', 'VerticalPosition', 'LineChange', 'EffectsChange', 'ShapeTextChange', 'PictureAdjustChange', 'AutoCorrectChange', 'AutoCorrectEntry', 'DocumentDefaults', 'FieldResult', 'DataBinding', 'ControlFloat', 'PlaceholderImage', 'ElementMark'];
+const POSITIONAL: string[] = ['Person', 'RevisionInfo', 'CommentThread', 'Comment', 'CommentAnchor', 'LinkInfo', 'HeaderFooterInfo', 'PageSize', 'PageMargins', 'RulerIndents', 'FindQuery', 'FindResult', 'FindMatch', 'Misspelling', 'Heading', 'PreviewSize', 'PreviewPicture', 'StylePreview', 'ElementMatch', 'SubTemplateInfo', 'DataPartInfo', 'DataPart', 'CellPlace', 'ListPosition', 'GestureBinding', 'TablePosition', 'GradientStop', 'Arrowhead', 'LineEnds', 'LineValue', 'Shadow', 'Glow', 'EffectsValue', 'ThemeColors', 'ChromeColors', 'ElementHover', 'ElementClick', 'ElementSelection', 'CursorOverride', 'TabTypeChoice', 'ListLevel', 'ParagraphBorderLines', 'FrameProperties', 'HorizontalPosition', 'VerticalPosition', 'LineChange', 'EffectsChange', 'ShapeTextChange', 'PictureAdjustChange', 'AutoCorrectChange', 'AutoCorrectEntry', 'DocumentDefaults', 'FieldResult', 'DataBinding', 'ControlFloat', 'PlaceholderImage', 'ElementMark', 'ManagedStyle', 'FieldInfo', 'AccessibilityIssue', 'ContextMenu', 'CommandInfo'];
 const POSITIONAL_MAX = 8;
 
 
@@ -539,12 +556,14 @@ function recordDecl(d: Def & { shape: { kind: 'object' } }): string {
   if (positional) {
     // Parameters with a default (left out by the engine, or given one in INIT) come after the rest.
     const given = (m: Member) => INIT[`${d.name}.${m.wire}`];
-    const defaulted = (m: Member) => m.omitted || given(m) !== undefined;
+    // An override to a value type that can't be null is required unless INIT gives it a default.
+    const valueOverride = (m: Member) => FIELDS[`${d.name}.${m.wire}`] !== undefined && !m.type.endsWith('?') && !isReference(m.type);
+    const defaulted = (m: Member) => (m.omitted && !valueOverride(m)) || given(m) !== undefined;
     const ordered = [...ms.filter((m) => !defaulted(m)), ...ms.filter(defaulted)];
     // A field the engine may leave out defaults to null, or (overridden to a value type) to its default.
     const empty = (t: string) => (t.endsWith('?') ? 'null' : t === 'bool' ? 'false' : 'default');
     const params = ordered.map((m) => {
-      const value = given(m) ?? (m.omitted ? empty(m.type) : undefined);
+      const value = given(m) ?? (defaulted(m) ? empty(m.type) : undefined);
       return `${m.json ? `[property: ${m.json}] ` : ''}${m.type} ${m.name}${value !== undefined ? ` = ${value}` : ''}`;
     });
     const docs = ordered.map((m) => docLines(translate(m.docs, d, true), '', `<param name="${m.name}">`, '</param>')).join('');

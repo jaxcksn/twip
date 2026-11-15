@@ -3352,3 +3352,65 @@ public sealed record PlaceholderImage(ReadOnlyMemory<byte> Data, string Mime);
 /// <param name="Severity">How serious the mark is.</param>
 /// <param name="Message">The tooltip.</param>
 public sealed record ElementMark(ElementId Id, MarkSeverity Severity, string Message);
+
+/// <summary>A style in Manage Styles.</summary>
+/// <param name="Id">The style.</param>
+/// <param name="Name">Its name.</param>
+/// <param name="Type">Its type.</param>
+/// <param name="BuiltIn">Built in (can't be deleted).</param>
+/// <param name="Visibility">Whether it shows in style lists.</param>
+/// <param name="Priority">Its sort priority.</param>
+/// <param name="Locked">Restricted while formatting is protected.</param>
+public sealed record ManagedStyle(
+    StyleId Id,
+    string Name,
+    StyleType Type,
+    bool BuiltIn,
+    StyleVisibility Visibility,
+    int Priority,
+    bool Locked);
+
+/// <summary>A dialog field's label, kind, range and state.</summary>
+/// <param name="Label">The English label.</param>
+/// <param name="Enabled">Whether it can be changed now.</param>
+/// <param name="Kind">How it is edited.</param>
+/// <param name="Min">The smallest value.</param>
+/// <param name="Max">The largest value.</param>
+/// <param name="Step">The step.</param>
+/// <param name="Options">A choice's options.</param>
+public sealed record FieldInfo(
+    string Label,
+    bool Enabled,
+    FieldKind Kind,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? Min = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? Max = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? Step = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<FieldOption>? Options = null);
+
+/// <summary>One accessibility issue.</summary>
+/// <param name="Id">The issue's id.</param>
+/// <param name="Text">Its description.</param>
+/// <param name="Tip">A tip rather than an error.</param>
+public sealed record AccessibilityIssue(string Id, string Text, bool Tip);
+
+/// <summary>The context menu for the selection.</summary>
+/// <param name="Target">What the menu is for.</param>
+/// <param name="Items">Its entries, in order.</param>
+public sealed record ContextMenu(MenuTarget Target, IReadOnlyList<MenuItem> Items);
+
+/// <summary>One catalog entry.</summary>
+/// <param name="Id">The command.</param>
+/// <param name="Label">English.</param>
+/// <param name="Group">The group it belongs to, for building menus and ribbons.</param>
+/// <param name="Shortcuts">Its keys.</param>
+/// <param name="TakesArguments">Whether it takes arguments.</param>
+/// <param name="Mutates">Whether it changes the document.</param>
+/// <param name="Undo">Its undo grouping.</param>
+public sealed record CommandInfo(
+    CommandId Id,
+    string Label,
+    CommandGroup Group,
+    Shortcuts Shortcuts,
+    bool TakesArguments,
+    bool Mutates,
+    UndoGrouping Undo);

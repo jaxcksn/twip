@@ -31,11 +31,6 @@ public sealed class EditorMenus
     }
 }
 
-/// <summary>A context menu: what it is for, and its items.</summary>
-/// <param name="Target">What the menu is for.</param>
-/// <param name="Items">The items, in order.</param>
-public sealed record ContextMenu(MenuTarget Target, IReadOnlyList<MenuItem> Items);
-
 /// <summary>A context menu item.</summary>
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "kind")]
 [JsonDerivedType(typeof(CommandItem), "command")]
