@@ -183,3 +183,2008 @@ public enum ReplaceScope
     /// <summary>The selected text.</summary>
     Selection,
 }
+
+/// <summary>The kinds of section break.</summary>
+public enum SectionBreakKind
+{
+    /// <summary>Starts the new section on the next page.</summary>
+    NextPage,
+    /// <summary>Starts the new section on the same page.</summary>
+    Continuous,
+    /// <summary>Starts the new section on the next even page.</summary>
+    EvenPage,
+    /// <summary>Starts the new section on the next odd page.</summary>
+    OddPage,
+}
+
+/// <summary>The two ways along a sequence.</summary>
+public enum Direction
+{
+    /// <summary>Toward the start.</summary>
+    Backward,
+    /// <summary>Toward the end.</summary>
+    Forward,
+}
+
+/// <summary>What <c>delete</c> removes when the selection is collapsed.</summary>
+public enum DeleteUnit
+{
+    /// <summary>One character (a grapheme).</summary>
+    Character,
+    /// <summary>To the word's start or end.</summary>
+    Word,
+}
+
+/// <summary>What <c>moveSelection</c> moves by.</summary>
+public enum MoveUnit
+{
+    /// <summary>One character.</summary>
+    Character,
+    /// <summary>One word.</summary>
+    Word,
+    /// <summary>One line.</summary>
+    Line,
+    /// <summary>One paragraph.</summary>
+    Paragraph,
+    /// <summary>Home / End.</summary>
+    LineEdge,
+    /// <summary>The document's start or end (Ctrl+Home / Ctrl+End).</summary>
+    Document,
+    /// <summary>One screen (Page Up / Page Down).</summary>
+    Screen,
+    /// <summary>One page.</summary>
+    Page,
+    /// <summary>The first or last cell of the table row.</summary>
+    RowEdge,
+    /// <summary>The first or last cell of the table column.</summary>
+    ColumnEdge,
+}
+
+/// <summary><c>w:u</c> styles.</summary>
+public enum UnderlineStyle
+{
+    /// <summary>No underline.</summary>
+    None,
+    /// <summary>A single line.</summary>
+    Single,
+    /// <summary>Words only, not the spaces between them.</summary>
+    Words,
+    /// <summary>A double line.</summary>
+    Double,
+    /// <summary>A thick line.</summary>
+    Thick,
+    /// <summary>A dotted line.</summary>
+    Dotted,
+    /// <summary>A dashed line.</summary>
+    Dash,
+    /// <summary>Alternating dots and dashes.</summary>
+    DotDash,
+    /// <summary>A wavy line.</summary>
+    Wave,
+}
+
+/// <summary><c>changeCase</c>'s target.</summary>
+public enum CaseChange
+{
+    /// <summary>lowercase.</summary>
+    Lower,
+    /// <summary>UPPERCASE.</summary>
+    Upper,
+    /// <summary>Sentence case.</summary>
+    Sentence,
+    /// <summary>Capitalize Each Word.</summary>
+    Title,
+    /// <summary>tOGGLE cASE.</summary>
+    Toggle,
+}
+
+/// <summary>One level deeper or shallower.</summary>
+public enum LevelChange
+{
+    /// <summary>One level deeper.</summary>
+    Increase,
+    /// <summary>One level shallower.</summary>
+    Decrease,
+}
+
+/// <summary>How a tab stop aligns the text after it.</summary>
+public enum TabAlignment
+{
+    /// <summary>Text starts at the stop.</summary>
+    Left,
+    /// <summary>Text centres on the stop.</summary>
+    Center,
+    /// <summary>Text ends at the stop.</summary>
+    Right,
+    /// <summary>The decimal point sits at the stop.</summary>
+    Decimal,
+    /// <summary>A vertical bar at the stop, with no effect on the text.</summary>
+    Bar,
+}
+
+/// <summary>What fills the space before a tab stop.</summary>
+public enum TabLeader
+{
+    /// <summary>No leader.</summary>
+    None,
+    /// <summary>Dots.</summary>
+    Dots,
+    /// <summary>Dashes.</summary>
+    Dashes,
+    /// <summary>A line.</summary>
+    Underline,
+    /// <summary>A heavy line.</summary>
+    Heavy,
+    /// <summary>Middle dots.</summary>
+    MiddleDot,
+}
+
+/// <summary>What a page number field shows.</summary>
+public enum PageNumberFormat
+{
+    /// <summary>The page number.</summary>
+    Page,
+    /// <summary>"Page X of Y".</summary>
+    PageOfTotal,
+    /// <summary>The total page count.</summary>
+    Total,
+}
+
+/// <summary>Where <c>deleteCells</c> shifts the remaining cells.</summary>
+public enum CellShift
+{
+    /// <summary>Shifts the cells below up.</summary>
+    Up,
+    /// <summary>Shifts the cells to the right left.</summary>
+    Left,
+}
+
+/// <summary>Up or down.</summary>
+public enum VerticalDirection
+{
+    /// <summary>Up.</summary>
+    Up,
+    /// <summary>Down.</summary>
+    Down,
+}
+
+/// <summary>Text in a cell, top to bottom.</summary>
+public enum CellAlignment
+{
+    /// <summary>At the top.</summary>
+    Top,
+    /// <summary>Centred vertically.</summary>
+    Center,
+    /// <summary>At the bottom.</summary>
+    Bottom,
+}
+
+/// <summary>The cell edges <c>setCellBorders</c> sets.</summary>
+public enum BorderEdges
+{
+    /// <summary>Every edge.</summary>
+    All,
+    /// <summary>The outside edges.</summary>
+    Outside,
+    /// <summary>The inside edges.</summary>
+    Inside,
+    /// <summary>The inside horizontal edges.</summary>
+    InsideHorizontal,
+    /// <summary>The inside vertical edges.</summary>
+    InsideVertical,
+    /// <summary>The top edge.</summary>
+    Top,
+    /// <summary>The bottom edge.</summary>
+    Bottom,
+    /// <summary>The left edge.</summary>
+    Left,
+    /// <summary>The right edge.</summary>
+    Right,
+    /// <summary>Removes the borders.</summary>
+    None,
+}
+
+/// <summary>A list level's number style.</summary>
+public enum NumberFormat
+{
+    /// <summary>1, 2, 3.</summary>
+    Decimal,
+    /// <summary>I, II, III.</summary>
+    UpperRoman,
+    /// <summary>i, ii, iii.</summary>
+    LowerRoman,
+    /// <summary>A, B, C.</summary>
+    UpperLetter,
+    /// <summary>a, b, c.</summary>
+    LowerLetter,
+    /// <summary>1st, 2nd, 3rd.</summary>
+    Ordinal,
+    /// <summary>One, Two, Three.</summary>
+    CardinalText,
+    /// <summary>First, Second, Third.</summary>
+    OrdinalText,
+    /// <summary>01, 02, 03.</summary>
+    DecimalZero,
+    /// <summary>A bullet: the level's text in its font, or its picture.</summary>
+    Bullet,
+    /// <summary>No number.</summary>
+    None,
+}
+
+/// <summary>How a list level's number aligns at its position.</summary>
+public enum LevelAlignment
+{
+    /// <summary>Left.</summary>
+    Left,
+    /// <summary>Centered.</summary>
+    Center,
+    /// <summary>Right.</summary>
+    Right,
+}
+
+/// <summary>What follows a list level's number.</summary>
+public enum FollowNumber
+{
+    /// <summary>A tab.</summary>
+    Tab,
+    /// <summary>A space.</summary>
+    Space,
+    /// <summary>Nothing.</summary>
+    Nothing,
+}
+
+/// <summary>What a list definition applies to.</summary>
+public enum ListApplyTo
+{
+    /// <summary>The selection's whole list.</summary>
+    WholeList,
+    /// <summary>The list from the selection's first paragraph on: a new list.</summary>
+    ThisPointForward,
+    /// <summary>The selected paragraphs: a new list.</summary>
+    CurrentParagraph,
+}
+
+/// <summary>How Set Numbering Value sets the number.</summary>
+public enum NumberingMode
+{
+    /// <summary>Start a new list.</summary>
+    StartNew,
+    /// <summary>Continue from the previous list.</summary>
+    Continue,
+}
+
+/// <summary>What shading applies to.</summary>
+public enum ShadingTarget
+{
+    /// <summary>The selected paragraphs.</summary>
+    Paragraph,
+    /// <summary>The selected text.</summary>
+    Text,
+    /// <summary>A table style part's cells (from the style dialog's Format &gt; Border).</summary>
+    Cell,
+}
+
+/// <summary>
+/// A shading pattern: clear (the fill only), solid (the pattern color), or a percentage of the pattern color over the
+/// fill.
+/// </summary>
+public enum ShadingPattern
+{
+    /// <summary>The fill only.</summary>
+    Clear,
+    /// <summary>The pattern color only.</summary>
+    Solid,
+    /// <summary>5%.</summary>
+    Pct5,
+    /// <summary>10%.</summary>
+    Pct10,
+    /// <summary>20%.</summary>
+    Pct20,
+    /// <summary>25%.</summary>
+    Pct25,
+    /// <summary>30%.</summary>
+    Pct30,
+    /// <summary>40%.</summary>
+    Pct40,
+    /// <summary>50%.</summary>
+    Pct50,
+    /// <summary>60%.</summary>
+    Pct60,
+    /// <summary>70%.</summary>
+    Pct70,
+    /// <summary>75%.</summary>
+    Pct75,
+    /// <summary>80%.</summary>
+    Pct80,
+    /// <summary>90%.</summary>
+    Pct90,
+}
+
+/// <summary>What page borders are measured from.</summary>
+public enum PageBorderOffset
+{
+    /// <summary>The page's edge.</summary>
+    Page,
+    /// <summary>The text.</summary>
+    Text,
+}
+
+/// <summary>The pages a section's borders show on.</summary>
+public enum PageBorderDisplay
+{
+    /// <summary>Every page.</summary>
+    AllPages,
+    /// <summary>The section's first page.</summary>
+    FirstPage,
+    /// <summary>Every page but the first.</summary>
+    NotFirstPage,
+}
+
+/// <summary>The sections page borders apply to.</summary>
+public enum PageBorderScope
+{
+    /// <summary>Every section.</summary>
+    WholeDocument,
+    /// <summary>The selection's section.</summary>
+    ThisSection,
+}
+
+/// <summary>Whether text wraps around a frame.</summary>
+public enum FrameWrap
+{
+    /// <summary>Text stays above and below the frame.</summary>
+    None,
+    /// <summary>Text wraps around the frame.</summary>
+    Around,
+}
+
+/// <summary>How a frame's width is set.</summary>
+public enum FrameWidthRule
+{
+    /// <summary>As wide as its text.</summary>
+    Auto,
+    /// <summary>The width given.</summary>
+    Exactly,
+}
+
+/// <summary>How a frame's height is set.</summary>
+public enum FrameHeightRule
+{
+    /// <summary>As tall as its text.</summary>
+    Auto,
+    /// <summary>At least the height given.</summary>
+    AtLeast,
+    /// <summary>The height given.</summary>
+    Exactly,
+}
+
+/// <summary>A frame's horizontal alignment.</summary>
+public enum FrameHorizontalAlign
+{
+    /// <summary>Left.</summary>
+    Left,
+    /// <summary>Centered.</summary>
+    Center,
+    /// <summary>Right.</summary>
+    Right,
+    /// <summary>Inside (left on odd pages).</summary>
+    Inside,
+    /// <summary>Outside (right on odd pages).</summary>
+    Outside,
+}
+
+/// <summary>A frame's vertical alignment.</summary>
+public enum FrameVerticalAlign
+{
+    /// <summary>Top.</summary>
+    Top,
+    /// <summary>Centered.</summary>
+    Center,
+    /// <summary>Bottom.</summary>
+    Bottom,
+    /// <summary>Inside.</summary>
+    Inside,
+    /// <summary>Outside.</summary>
+    Outside,
+}
+
+/// <summary>What a frame's horizontal position is relative to.</summary>
+public enum FrameHorizontalRelative
+{
+    /// <summary>The page margins.</summary>
+    Margin,
+    /// <summary>The page.</summary>
+    Page,
+    /// <summary>The column.</summary>
+    Column,
+}
+
+/// <summary>What a frame's vertical position is relative to.</summary>
+public enum FrameVerticalRelative
+{
+    /// <summary>The page margins.</summary>
+    Margin,
+    /// <summary>The page.</summary>
+    Page,
+    /// <summary>The paragraph it is anchored to (it moves with the text).</summary>
+    Paragraph,
+}
+
+/// <summary>How text wraps around a picture or text box.</summary>
+public enum ObjectWrap
+{
+    /// <summary>In line with the text.</summary>
+    Inline,
+    /// <summary>Text wraps around its bounding box.</summary>
+    Square,
+    /// <summary>Text wraps tightly around its outline.</summary>
+    Tight,
+    /// <summary>Text wraps through its open parts.</summary>
+    Through,
+    /// <summary>Text sits above and below it, not beside it.</summary>
+    TopAndBottom,
+    /// <summary>Behind the text.</summary>
+    BehindText,
+    /// <summary>In front of the text.</summary>
+    InFrontOfText,
+}
+
+/// <summary>What a floating object's horizontal position is measured from.</summary>
+public enum HorizontalReference
+{
+    /// <summary>The column it is anchored in (the default).</summary>
+    Column,
+    /// <summary>The area between the left and right margins.</summary>
+    Margin,
+    /// <summary>The page's edges.</summary>
+    Page,
+    /// <summary>The character its anchor is at.</summary>
+    Character,
+    /// <summary>The left margin's area.</summary>
+    LeftMargin,
+    /// <summary>The right margin's area.</summary>
+    RightMargin,
+    /// <summary>The inside margin's area (left on odd pages, right on even ones).</summary>
+    InsideMargin,
+    /// <summary>The outside margin's area.</summary>
+    OutsideMargin,
+}
+
+/// <summary>What a floating object's vertical position is measured from.</summary>
+public enum VerticalReference
+{
+    /// <summary>Its anchor paragraph's top: it moves with the text (the default).</summary>
+    Paragraph,
+    /// <summary>Its anchor line's top: it moves with the text.</summary>
+    Line,
+    /// <summary>The area between the top and bottom margins.</summary>
+    Margin,
+    /// <summary>The page's edges: it stays where it is on the page.</summary>
+    Page,
+    /// <summary>The top margin's area.</summary>
+    TopMargin,
+    /// <summary>The bottom margin's area.</summary>
+    BottomMargin,
+    /// <summary>The inside margin's area.</summary>
+    InsideMargin,
+    /// <summary>The outside margin's area.</summary>
+    OutsideMargin,
+}
+
+/// <summary>A floating object aligned across its horizontal reference.</summary>
+public enum ObjectHorizontalAlignment
+{
+    /// <summary>At its left edge.</summary>
+    Left,
+    /// <summary>Centred.</summary>
+    Center,
+    /// <summary>At its right edge.</summary>
+    Right,
+    /// <summary>At its inside edge (left on odd pages).</summary>
+    Inside,
+    /// <summary>At its outside edge.</summary>
+    Outside,
+}
+
+/// <summary>A floating object aligned across its vertical reference.</summary>
+public enum ObjectVerticalAlignment
+{
+    /// <summary>At its top.</summary>
+    Top,
+    /// <summary>Centred.</summary>
+    Center,
+    /// <summary>At its bottom.</summary>
+    Bottom,
+    /// <summary>At its inside edge.</summary>
+    Inside,
+    /// <summary>At its outside edge.</summary>
+    Outside,
+}
+
+/// <summary>Which sides of a floating object text wraps on.</summary>
+public enum WrapSide
+{
+    /// <summary>Both sides (the default).</summary>
+    BothSides,
+    /// <summary>Its left only.</summary>
+    Left,
+    /// <summary>Its right only.</summary>
+    Right,
+    /// <summary>Whichever side has more room.</summary>
+    Largest,
+}
+
+/// <summary>Which way to flip.</summary>
+public enum FlipAxis
+{
+    /// <summary>Left to right.</summary>
+    Horizontal,
+    /// <summary>Top to bottom.</summary>
+    Vertical,
+}
+
+/// <summary>Where an object goes in the paint order.</summary>
+public enum Arrange
+{
+    /// <summary>Over the next object above it.</summary>
+    Forward,
+    /// <summary>Under the next object below it.</summary>
+    Backward,
+    /// <summary>Over every object.</summary>
+    ToFront,
+    /// <summary>Under every object.</summary>
+    ToBack,
+    /// <summary>In front of the text.</summary>
+    InFrontOfText,
+    /// <summary>Behind the text.</summary>
+    BehindText,
+}
+
+/// <summary>The kinds of content control.</summary>
+public enum ControlKind
+{
+    /// <summary>Formatted text.</summary>
+    RichText,
+    /// <summary>Unformatted text.</summary>
+    PlainText,
+    /// <summary>A picture.</summary>
+    Picture,
+    /// <summary>A checkbox.</summary>
+    Checkbox,
+    /// <summary>A date picker.</summary>
+    Date,
+    /// <summary>A drop-down list.</summary>
+    DropDown,
+    /// <summary>A combo box: a list that also takes typed text.</summary>
+    ComboBox,
+    /// <summary>A group of controls, edited only inside its child controls.</summary>
+    Group,
+    /// <summary>A section that repeats per item.</summary>
+    RepeatingSection,
+}
+
+/// <summary>What a content control's lock keeps: the control itself, its content, or both.</summary>
+public enum ControlLock
+{
+    /// <summary>Not locked.</summary>
+    None,
+    /// <summary>The control can't be deleted.</summary>
+    Control,
+    /// <summary>The content can't be edited.</summary>
+    Content,
+    /// <summary>The control can't be deleted and its content can't be edited.</summary>
+    Both,
+}
+
+/// <summary>The markup view: how revisions show. A view setting, never saved.</summary>
+public enum MarkupView
+{
+    /// <summary>Insertions and deletions shown in place, in their author's colour, with change bars.</summary>
+    All,
+    /// <summary>The changes made, with change bars.</summary>
+    Simple,
+    /// <summary>The changes made, with no markup.</summary>
+    NoMarkup,
+    /// <summary>The document before the changes.</summary>
+    Original,
+}
+
+/// <summary>
+/// A command's id: its catalog id, its key in the state's command map, and its op's <c>type</c>, all one spelling
+/// (<c>setBold</c>).
+/// </summary>
+public enum CommandId
+{
+    /// <summary>Types <c>value</c> (non-empty) at the selection, replacing it. Undo: typing.</summary>
+    InsertText,
+    /// <summary>Starts a new paragraph (Enter). Undo: one step.</summary>
+    InsertParagraph,
+    /// <summary>A line break (Shift+Enter). Undo: one step.</summary>
+    InsertLineBreak,
+    /// <summary>A page break, in the body outside tables. Undo: one step.</summary>
+    InsertPageBreak,
+    /// <summary>A column break, in the body outside tables. Undo: one step.</summary>
+    InsertColumnBreak,
+    /// <summary>A section break of the given kind, in the body outside tables. Undo: one step.</summary>
+    InsertSectionBreak,
+    /// <summary>A tab character. Undo: typing.</summary>
+    InsertTab,
+    /// <summary>One character, optionally in a symbol font. Undo: one step.</summary>
+    InsertSymbol,
+    /// <summary>Deletes backward or forward by a character or a word, or the selection. Undo: typing.</summary>
+    Delete,
+    /// <summary>Cuts the selection to the clipboard. Undo: one step.</summary>
+    Cut,
+    /// <summary>Copies the selection (also when read only). No undo step.</summary>
+    Copy,
+    /// <summary>Pastes the system clipboard, formatted or as text. Undo: one step.</summary>
+    Paste,
+    /// <summary>Pastes <c>value</c> as plain text. Undo: one step.</summary>
+    PasteText,
+    /// <summary>Undoes the last step. State value: the undo label.</summary>
+    Undo,
+    /// <summary>Redoes the last undone step. State value: the redo label.</summary>
+    Redo,
+    /// <summary>Redoes, or repeats the last repeatable action (F4). Undo: one step.</summary>
+    Repeat,
+    /// <summary>Selects the whole story. Undo: view.</summary>
+    SelectAll,
+    /// <summary>Selects the unit at the caret. Undo: view.</summary>
+    Select,
+    /// <summary>Moves or extends the selection. Undo: view.</summary>
+    MoveSelection,
+    /// <summary>
+    /// Moves to the next or previous cell; <c>next</c> from the last cell adds a row (then one step).
+    /// </summary>
+    MoveToCell,
+    /// <summary>Normal, extend (F8) or block (Ctrl+Shift+F8) selection. Undo: view.</summary>
+    SetSelectionMode,
+    /// <summary>Back to an earlier edit location (Shift+F5). Undo: view.</summary>
+    GoBack,
+    /// <summary>Leaves a header or footer, a text box, or object selection (Esc). Undo: view.</summary>
+    Escape,
+    /// <summary>Selects the next or previous floating object. Undo: view.</summary>
+    SelectNextObject,
+    /// <summary>Moves the caret to the start of page <c>value</c> (1…count). Undo: view.</summary>
+    GoToPage,
+    /// <summary>Bold on or off. Undo: one step.</summary>
+    SetBold,
+    /// <summary>Italic on or off. Undo: one step.</summary>
+    SetItalic,
+    /// <summary>The underline style (<c>none</c> removes it). Undo: one step.</summary>
+    SetUnderline,
+    /// <summary>Strikethrough on or off. Undo: one step.</summary>
+    SetStrikethrough,
+    /// <summary>Double strikethrough on or off. Undo: one step.</summary>
+    SetDoubleStrikethrough,
+    /// <summary>Subscript on or off. Undo: one step.</summary>
+    SetSubscript,
+    /// <summary>Superscript on or off. Undo: one step.</summary>
+    SetSuperscript,
+    /// <summary>Small capitals on or off. Undo: one step.</summary>
+    SetSmallCaps,
+    /// <summary>All capitals on or off. Undo: one step.</summary>
+    SetAllCaps,
+    /// <summary>Hidden text on or off. Undo: one step.</summary>
+    SetHidden,
+    /// <summary>The font family (non-empty). Undo: one step.</summary>
+    SetFont,
+    /// <summary>The font size (1…1638 pt, in 0.5 steps). Undo: one step.</summary>
+    SetFontSize,
+    /// <summary>The next size up in the standard list. Undo: one step.</summary>
+    GrowFont,
+    /// <summary>The next size down in the standard list. Undo: one step.</summary>
+    ShrinkFont,
+    /// <summary>The font colour, or automatic. Undo: one step.</summary>
+    SetFontColor,
+    /// <summary>The highlight colour, or none (<c>null</c>). Undo: one step.</summary>
+    SetHighlight,
+    /// <summary>Character spacing, expanded when positive (−1584…1584 pt). Undo: one step.</summary>
+    SetCharacterSpacing,
+    /// <summary>The raised (positive) or lowered position (−1584…1584 pt). Undo: one step.</summary>
+    SetCharacterPosition,
+    /// <summary>Removes direct character formatting. Undo: one step.</summary>
+    ClearFormatting,
+    /// <summary>Changes the case of the selected text. Undo: one step.</summary>
+    ChangeCase,
+    /// <summary>Holds the selection's formatting for <c>pasteFormatting</c> (the format painter). Undo: view.</summary>
+    CopyFormatting,
+    /// <summary>Applies the held formatting to the selection. Undo: one step.</summary>
+    PasteFormatting,
+    /// <summary>The selected paragraphs' alignment. Undo: one step.</summary>
+    SetAlignment,
+    /// <summary>The selected paragraphs' line spacing. Undo: one step.</summary>
+    SetLineSpacing,
+    /// <summary>Space before and after the selected paragraphs (0…1584 pt, or auto). Undo: one step.</summary>
+    SetParagraphSpacing,
+    /// <summary>The selected paragraphs' indents. Undo: one step.</summary>
+    SetIndents,
+    /// <summary>Indents the selected paragraphs to the next stop. Undo: one step.</summary>
+    IncreaseIndent,
+    /// <summary>Outdents the selected paragraphs to the previous stop. Undo: one step.</summary>
+    DecreaseIndent,
+    /// <summary>An existing paragraph style. Undo: one step.</summary>
+    SetParagraphStyle,
+    /// <summary>
+    /// Changes a style to the selection's formatting: its paragraph's and its first run's direct formatting become the
+    /// style's. Undo: one step.
+    /// </summary>
+    UpdateStyleToSelection,
+    /// <summary>
+    /// Deletes a style the document made: its paragraphs take the default paragraph style, its runs lose it, and the
+    /// styles based on it take its base. Built-in styles can't be deleted. Undo: one step.
+    /// </summary>
+    DeleteStyle,
+    /// <summary>Sets a style's list flags: visibility, priority, gallery, lock. Undo: one step.</summary>
+    SetStyleMeta,
+    /// <summary>Sets the document's default formatting (Manage Styles' Set Defaults). Undo: one step.</summary>
+    SetDocumentDefaults,
+    /// <summary>Bullets, numbering, or no list (<c>null</c>). Undo: one step.</summary>
+    SetList,
+    /// <summary>One list level deeper or shallower, in a list. Undo: one step.</summary>
+    SetListLevel,
+    /// <summary>
+    /// Defines the selection's list levels (Define New Bullet, Number Format, Multilevel List): for its whole list,
+    /// from this paragraph on, or for the selected paragraphs. Outside a list, makes a new one. Undo: one step.
+    /// </summary>
+    SetListDefinition,
+    /// <summary>
+    /// Set Numbering Value: starts a new list at a value, or continues the previous list. Undo: one step.
+    /// </summary>
+    SetNumberingValue,
+    /// <summary>
+    /// Applies a list gallery entry (<c>listGalleries</c>): a library or recent entry defines the selection's list (the
+    /// current level for bullets and numbering, every level for a multilevel list), or makes a new one; a document list
+    /// or list style continues that list. Undo: one step.
+    /// </summary>
+    ApplyListEntry,
+    /// <summary>Restarts the list at this paragraph, at its level's start. Undo: one step.</summary>
+    RestartNumbering,
+    /// <summary>Continues the previous list from this paragraph. Undo: one step.</summary>
+    ContinueNumbering,
+    /// <summary>
+    /// Adjust List Indents: the selection's list level's number position, text indent and what follows the number, for
+    /// its whole list. Undo: one step.
+    /// </summary>
+    AdjustListIndents,
+    /// <summary>Keep with next, keep lines together, page break before and widow control. Undo: one step.</summary>
+    SetParagraphFlow,
+    /// <summary>A box, a bottom border or none (a ½ pt single line). Undo: one step.</summary>
+    SetParagraphBorders,
+    /// <summary>Paragraph shading, or none (<c>null</c>). Undo: one step.</summary>
+    SetParagraphShading,
+    /// <summary>
+    /// The selected paragraphs' border lines: each edge set, removed (<c>null</c>) or kept (absent). Undo: one step.
+    /// </summary>
+    SetParagraphBorderLines,
+    /// <summary>
+    /// Shading of the selected paragraphs or text: its fill, pattern and pattern color. Undo: one step.
+    /// </summary>
+    SetShading,
+    /// <summary>The selected text's border: a box of one line, with a shadow or not, or none. Undo: one step.</summary>
+    SetTextBorder,
+    /// <summary>
+    /// The page borders of the selection's section, or of every section: each edge set, removed (<c>null</c>) or kept
+    /// (absent), what they're measured from, and the pages they show on. Undo: one step.
+    /// </summary>
+    SetPageBorders,
+    /// <summary>
+    /// The frame the selection is in: its wrapping, size, position and distance from text. Undo: one step.
+    /// </summary>
+    SetFrame,
+    /// <summary>
+    /// Removes the frame the selection is in: its paragraphs go back in the text, before the paragraph it was anchored
+    /// to. Undo: one step.
+    /// </summary>
+    RemoveFrame,
+    /// <summary>
+    /// Adds a tab stop to the selected paragraphs, replacing one at the same position. Undo: one step.
+    /// </summary>
+    AddTabStop,
+    /// <summary>Moves the stop at <c>from</c> (within 0.5 pt) to <c>to</c>. Undo: one step.</summary>
+    MoveTabStop,
+    /// <summary>
+    /// Deletes the stop at <c>value</c>; an inherited stop is cleared in the paragraph. Undo: one step.
+    /// </summary>
+    DeleteTabStop,
+    /// <summary>Clears the paragraphs' own and inherited stops. Undo: one step.</summary>
+    ClearTabStops,
+    /// <summary>The document's default tab spacing (1…1584 pt). Undo: one step.</summary>
+    SetDefaultTabStop,
+    /// <summary>
+    /// Automatic hyphenation for the document, with the hyphenation patterns of the text's language. Undo: one step.
+    /// </summary>
+    SetAutoHyphenation,
+    /// <summary>
+    /// The hyphenation zone (0…1584 pt): in documents in compatibility mode 14 and earlier, a word is hyphenated only
+    /// when moving it whole would leave this gap. Undo: one step.
+    /// </summary>
+    SetHyphenationZone,
+    /// <summary>
+    /// The most consecutive lines that may end in a hyphen (0…32767; 0 for no limit). Undo: one step.
+    /// </summary>
+    SetConsecutiveHyphenLimit,
+    /// <summary>Whether words in capitals are hyphenated. Undo: one step.</summary>
+    SetHyphenateCaps,
+    /// <summary>
+    /// The selection's sections' margins (0…1584 pt; left + right + gutter &lt; page width). Undo: one step.
+    /// </summary>
+    SetMargins,
+    /// <summary>Portrait or landscape. Undo: one step.</summary>
+    SetOrientation,
+    /// <summary>The paper size, in portrait (36…1584 pt). Undo: one step.</summary>
+    SetPaperSize,
+    /// <summary>Text columns (1…45), their spacing and separator. Undo: one step.</summary>
+    SetColumns,
+    /// <summary>The header and footer distances from the page edge. Undo: one step.</summary>
+    SetHeaderFooterDistance,
+    /// <summary>A different first page header and footer. Undo: one step.</summary>
+    SetDifferentFirstPage,
+    /// <summary>Different odd and even page headers and footers. Undo: one step.</summary>
+    SetDifferentOddEvenPages,
+    /// <summary>Moves a text column boundary (from the ruler). Undo: one step.</summary>
+    MoveColumnBoundary,
+    /// <summary>
+    /// Edits the caret's page's header, creating it when the page has none. Undo: one step when it creates one.
+    /// </summary>
+    EditHeader,
+    /// <summary>
+    /// Edits the caret's page's footer, creating it when the page has none. Undo: one step when it creates one.
+    /// </summary>
+    EditFooter,
+    /// <summary>Back to the body. Undo: view.</summary>
+    CloseHeaderFooter,
+    /// <summary>A page number field at the caret, or in the header or footer. Undo: one step.</summary>
+    InsertPageNumber,
+    /// <summary>A table (1…32767 rows, 1…63 columns). Undo: one step.</summary>
+    InsertTable,
+    /// <summary>A picture (PNG, JPEG, GIF, BMP, TIFF). Undo: one step.</summary>
+    InsertPicture,
+    /// <summary>A text box. Undo: one step.</summary>
+    InsertTextBox,
+    /// <summary>
+    /// A floating shape at the caret's paragraph, in front of the text, with the theme's default style. Undo: one step.
+    /// </summary>
+    InsertShape,
+    /// <summary>A footnote at the caret. Undo: one step.</summary>
+    InsertFootnote,
+    /// <summary>An endnote at the caret. Undo: one step.</summary>
+    InsertEndnote,
+    /// <summary>
+    /// A hyperlink to <c>address</c>; <c>text</c> replaces the selection (default: the selection, or the address).
+    /// Undo: one step.
+    /// </summary>
+    InsertHyperlink,
+    /// <summary>Changes the link at the selection. Undo: one step.</summary>
+    EditHyperlink,
+    /// <summary>Removes the link at the selection, keeping its text. Undo: one step.</summary>
+    RemoveHyperlink,
+    /// <summary>
+    /// A field with <c>code</c>; result <c>{ id }</c>. With a selection and an empty code, wraps it. Undo: one step.
+    /// </summary>
+    InsertField,
+    /// <summary>Rows above or below the selection (1…32767). Undo: one step.</summary>
+    InsertRows,
+    /// <summary>Columns left or right of the selection (1…63). Undo: one step.</summary>
+    InsertColumns,
+    /// <summary>Deletes the selected rows. Undo: one step.</summary>
+    DeleteRows,
+    /// <summary>Deletes the selected columns. Undo: one step.</summary>
+    DeleteColumns,
+    /// <summary>Deletes the table. Undo: one step.</summary>
+    DeleteTable,
+    /// <summary>Deletes the selected cells, shifting the rest up or left. Undo: one step.</summary>
+    DeleteCells,
+    /// <summary>Merges a rectangular block of cells. Undo: one step.</summary>
+    MergeCells,
+    /// <summary>Splits the selected cells (1…63 columns, 1…32767 rows). Undo: one step.</summary>
+    SplitCells,
+    /// <summary>Splits the table above the selection. Undo: one step.</summary>
+    SplitTable,
+    /// <summary>Gives the selected rows equal heights. Undo: one step.</summary>
+    DistributeRows,
+    /// <summary>Gives the selected columns equal widths. Undo: one step.</summary>
+    DistributeColumns,
+    /// <summary>Moves the selected rows up or down. Undo: one step.</summary>
+    MoveRows,
+    /// <summary>Fits the columns to their contents, the window, or fixed widths. Undo: one step.</summary>
+    AutoFitColumns,
+    /// <summary>The selected cells' vertical alignment. Undo: one step.</summary>
+    SetCellAlignment,
+    /// <summary>Cell shading, or none (<c>null</c>). Undo: one step.</summary>
+    SetCellShading,
+    /// <summary>Borders on the selected cells' edges. Undo: one step.</summary>
+    SetCellBorders,
+    /// <summary>The selected cells' margins (0…1584 pt). Undo: one step.</summary>
+    SetCellMargins,
+    /// <summary>Repeat the selected rows as header rows. Undo: one step.</summary>
+    SetHeaderRow,
+    /// <summary>The selected rows' height, or automatic. Undo: one step.</summary>
+    SetRowHeight,
+    /// <summary>Whether the selected rows can break across pages. Undo: one step.</summary>
+    SetRowCanBreak,
+    /// <summary>The selected columns' width (1…1584 pt). Undo: one step.</summary>
+    SetColumnWidth,
+    /// <summary>Moves a column boundary of the caret's row (from the rulers and cell edges). Undo: one step.</summary>
+    MoveTableColumnBoundary,
+    /// <summary>Moves a row boundary of the caret's table. Undo: one step.</summary>
+    MoveTableRowBoundary,
+    /// <summary>The table's preferred width. Undo: one step.</summary>
+    SetTableWidth,
+    /// <summary>The table's alignment on the page. Undo: one step.</summary>
+    SetTableAlignment,
+    /// <summary>The table's indent (−1584…1584 pt). Undo: one step.</summary>
+    SetTableIndent,
+    /// <summary>An existing table style. Undo: one step.</summary>
+    SetTableStyle,
+    /// <summary>Which parts of the table style apply. Undo: one step.</summary>
+    SetTableStyleOptions,
+    /// <summary>
+    /// Where the table is placed, and what it is measured from: a table without a position becomes positioned (text
+    /// wraps around it); none (<c>null</c>) puts it back in the text. Undo: one step.
+    /// </summary>
+    SetTablePosition,
+    /// <summary>The selected object's size (1…1584 pt). Undo: one step.</summary>
+    SetObjectSize,
+    /// <summary>The selected picture at its original size. Undo: one step.</summary>
+    ResetObjectSize,
+    /// <summary>How text wraps around the selected object. Undo: one step.</summary>
+    SetObjectWrap,
+    /// <summary>Locks a floating object's anchor. Undo: one step.</summary>
+    SetAnchorLocked,
+    /// <summary>Where the selected floating object is, and what it is measured from. Undo: one step.</summary>
+    SetObjectPosition,
+    /// <summary>
+    /// The sides text wraps on around the selected floating object, and its distance from the text. Undo: one step.
+    /// </summary>
+    SetObjectWrapOptions,
+    /// <summary>The selected object's alternative text. Undo: one step.</summary>
+    SetAltText,
+    /// <summary>Deletes the selected object. Undo: one step.</summary>
+    DeleteObject,
+    /// <summary>
+    /// The selected shape's preset geometry; its text, fill, outline and effects stay and its adjust values reset.
+    /// Undo: one step.
+    /// </summary>
+    SetShapePreset,
+    /// <summary>One of the selected shape's adjust values. Undo: one step.</summary>
+    SetShapeAdjust,
+    /// <summary>The selected objects' fill (<c>fromStyle</c>: the style reference's again). Undo: one step.</summary>
+    SetShapeFill,
+    /// <summary>The selected objects' outline; what isn't given is kept. Undo: one step.</summary>
+    SetShapeLine,
+    /// <summary>
+    /// The selected objects' shadows, glow, soft edge and blur; what isn't given is kept, <c>null</c> removes. Undo:
+    /// one step.
+    /// </summary>
+    SetShapeEffects,
+    /// <summary>The selected shape's text insets, anchor, autofit, wrapping and direction. Undo: one step.</summary>
+    SetShapeText,
+    /// <summary>The selected picture's transparency, greyscale, brightness and contrast. Undo: one step.</summary>
+    SetPictureAdjust,
+    /// <summary>The selected objects' rotation (0…360°, clockwise). Undo: one step.</summary>
+    SetObjectRotation,
+    /// <summary>Flips the selected objects. Undo: one step.</summary>
+    FlipObject,
+    /// <summary>
+    /// Moves the selected floating object in the paint order, or behind or in front of the text. Undo: one step.
+    /// </summary>
+    ArrangeObject,
+    /// <summary>Groups the selected floating objects (two or more, one story). Undo: one step.</summary>
+    GroupObjects,
+    /// <summary>Ungroups the selected group. Undo: one step.</summary>
+    UngroupObjects,
+    /// <summary>Selects the next or previous child of the selected group. Undo: view.</summary>
+    SelectGroupChild,
+    /// <summary>Changes a field's code or result. Undo: one step.</summary>
+    SetField,
+    /// <summary>
+    /// The results the application computed; <c>token</c> joins the update a <c>fieldsUpdateRequested</c> started.
+    /// Undo: one step.
+    /// </summary>
+    SetFieldResults,
+    /// <summary>
+    /// Updates fields (default: the selection's), asking the application for the ones it computes. Undo: one step.
+    /// </summary>
+    UpdateFields,
+    /// <summary>Locks or unlocks fields. Undo: one step.</summary>
+    SetFieldsLocked,
+    /// <summary>Replaces fields with their results. Undo: one step.</summary>
+    UnlinkFields,
+    /// <summary>Shows field codes or results. Undo: view.</summary>
+    ShowFieldCodes,
+    /// <summary>What design mode shows for each field code. Undo: view.</summary>
+    SetFieldLabels,
+    /// <summary>
+    /// Which fields are sub-template references: replaces the rules; an empty list turns sub-templates off. Undo: view.
+    /// </summary>
+    SetSubTemplateRules,
+    /// <summary>
+    /// The application's own field types (compared without case), replacing those set before: their fields keep their
+    /// results, show their labels in design mode and are never read as bookmark references. Undo: view.
+    /// </summary>
+    SetApplicationFieldTypes,
+    /// <summary>
+    /// Shows references' sub-template bodies in their place, or their fields (default: every reference). Undo: view.
+    /// </summary>
+    SetSubTemplateView,
+    /// <summary>
+    /// Edits a sub-template's body in this editor, on its own pages; the template shows again on Close Sub-template.
+    /// Undo: view.
+    /// </summary>
+    EditSubTemplate,
+    /// <summary>
+    /// Back to the template from a sub-template, at the template's selection from before. Undo: view.
+    /// </summary>
+    CloseSubTemplate,
+    /// <summary>A new sub-template, empty or with a DOCX's body. Undo: one step.</summary>
+    CreateSubTemplate,
+    /// <summary>Renames a sub-template, and optionally every reference to it. Undo: one step.</summary>
+    RenameSubTemplate,
+    /// <summary>Removes a sub-template; its references no longer resolve. Undo: one step.</summary>
+    RemoveSubTemplate,
+    /// <summary>
+    /// The template's body becomes a DOCX's body, on its last section's page; its sub-templates, data parts, settings,
+    /// styles, headers and footers stay. Closes a sub-template being edited first. Undo: one step.
+    /// </summary>
+    ReplaceBody,
+    /// <summary>A content control at the selection; result <c>{ id }</c>. Undo: one step.</summary>
+    InsertControl,
+    /// <summary>Changes a content control's properties. Undo: one step.</summary>
+    SetControl,
+    /// <summary>Removes a content control, keeping or deleting its content. Undo: one step.</summary>
+    RemoveControl,
+    /// <summary>Fills a control with exactly one of text, an image or a document. Undo: one step.</summary>
+    FillControl,
+    /// <summary>Checks or clears a checkbox. Undo: one step.</summary>
+    SetCheckbox,
+    /// <summary>Wraps the selection in a repeating section; result <c>{ id }</c>. Undo: one step.</summary>
+    WrapInRepeatingSection,
+    /// <summary>Removes a field, or a control with its content. Undo: one step.</summary>
+    RemoveElement,
+    /// <summary>
+    /// Replaces text in element codes, tags or titles, case-sensitive; result <c>{ changed }</c>. Undo: one step.
+    /// </summary>
+    ReplaceInElements,
+    /// <summary>
+    /// Rewrites a font family's name in the document; result <c>{ changed, skipped }</c>. Undo: one step.
+    /// </summary>
+    ReplaceFont,
+    /// <summary>Wavy marks with a tooltip on elements. Undo: view.</summary>
+    MarkElements,
+    /// <summary>
+    /// The tag prefixes whose picture controls keep their pictures (compared without case), replacing those set before:
+    /// editing can't delete, paste over or replace such a picture; <c>fillControl</c> and <c>setControl</c> still
+    /// change it, and in design mode deleting it removes its whole control. Undo: view.
+    /// </summary>
+    SetProtectedPictureControls,
+    /// <summary>
+    /// Selects a picture control (the selected one when none is named) and emits <c>pictureControlActivated</c>, in any
+    /// mode. Undo: none.
+    /// </summary>
+    ActivatePictureControl,
+    /// <summary>Writes a custom XML data part (well-formed); result <c>{ itemId }</c>. Undo: one step.</summary>
+    WriteDataPart,
+    /// <summary>Removes a custom XML data part. Undo: one step.</summary>
+    RemoveDataPart,
+    /// <summary>Track changes on or off. Undo: one step.</summary>
+    SetTrackChanges,
+    /// <summary>How revisions show. Undo: view.</summary>
+    SetMarkupView,
+    /// <summary>Accepts a revision (a move as a pair). Undo: one step.</summary>
+    AcceptRevision,
+    /// <summary>Rejects a revision (a move as a pair). Undo: one step.</summary>
+    RejectRevision,
+    /// <summary>Accepts the revisions in the selection. Undo: one step.</summary>
+    AcceptRevisionsInSelection,
+    /// <summary>Rejects the revisions in the selection. Undo: one step.</summary>
+    RejectRevisionsInSelection,
+    /// <summary>Accepts every revision, or one author's. Undo: one step.</summary>
+    AcceptAllRevisions,
+    /// <summary>Rejects every revision, or one author's. Undo: one step.</summary>
+    RejectAllRevisions,
+    /// <summary>Selects the next or previous revision. Undo: view.</summary>
+    SelectRevision,
+    /// <summary>A comment on the selection, or the word at the caret; result <c>{ id }</c>. Undo: one step.</summary>
+    AddComment,
+    /// <summary>A reply in a thread; result <c>{ id }</c>. Undo: one step.</summary>
+    ReplyToComment,
+    /// <summary>Changes a comment's body. Undo: one step.</summary>
+    EditComment,
+    /// <summary>Deletes a reply, or the whole thread when it's the first comment. Undo: one step.</summary>
+    DeleteComment,
+    /// <summary>Marks a thread done or open. Undo: one step.</summary>
+    ResolveComment,
+    /// <summary>The thread the application shows as active, or none. Undo: view.</summary>
+    SetActiveComment,
+    /// <summary>Selects and reveals a comment's range. Undo: view.</summary>
+    SelectComment,
+    /// <summary>The colour an author's revisions and comments show in. Undo: view.</summary>
+    SetAuthorColor,
+    /// <summary>The zoom (10…500 percent), or a fit. Undo: view.</summary>
+    SetZoom,
+    /// <summary>Formatting marks, gridlines and text boundaries. Undo: view.</summary>
+    SetViewOptions,
+    /// <summary>Editing or design mode. Undo: view.</summary>
+    SetMode,
+    /// <summary>What a click on the ruler adds; answers the tab type picker. Undo: view.</summary>
+    SetRulerTabType,
+    /// <summary>Asks for the tab type picker (<c>popoverRequested</c>). Undo: view.</summary>
+    ShowTabTypes,
+    /// <summary>Asks for the options of the tab stop nearest the caret (<c>popoverRequested</c>). Undo: view.</summary>
+    ShowTabStop,
+    /// <summary>What typing corrects. Undo: none (a session setting).</summary>
+    SetAutoCorrect,
+    /// <summary>Puts back what was typed in place of the correction just made. Undo: one step.</summary>
+    RevertAutoCorrect,
+    /// <summary>Reverts the correction just made and never makes it again. Undo: one step (the revert).</summary>
+    NeverAutoCorrect,
+    /// <summary>Asks for the options of the correction just made (<c>popoverRequested</c>). Undo: view.</summary>
+    ShowAutoCorrectOptions,
+    /// <summary>
+    /// Dismisses the popover asked for (<c>popoverClosed</c>): what an application that closes it itself, on Esc or a
+    /// click elsewhere, sends. With none open it does nothing. Undo: view.
+    /// </summary>
+    ClosePopover,
+    /// <summary>
+    /// Says the formatting at the caret to screen readers (paragraph style, font and size, emphasis, colour, highlight)
+    /// as an announcement; changes nothing. Undo: view.
+    /// </summary>
+    DescribeFormatting,
+}
+
+/// <summary>The dialogs the engine models.</summary>
+public enum DialogKind
+{
+    /// <summary>Font.</summary>
+    Font,
+    /// <summary>Paragraph.</summary>
+    Paragraph,
+    /// <summary>Page Setup.</summary>
+    PageSetup,
+    /// <summary>Insert Table.</summary>
+    InsertTable,
+    /// <summary>Table Properties.</summary>
+    TableProperties,
+    /// <summary>Picture Size.</summary>
+    PictureSize,
+    /// <summary>Alt Text.</summary>
+    AltText,
+    /// <summary>Hyperlink.</summary>
+    Hyperlink,
+    /// <summary>Tabs.</summary>
+    Tabs,
+    /// <summary>The accessibility checker.</summary>
+    Accessibility,
+    /// <summary>The AutoCorrect rules.</summary>
+    AutoCorrect,
+    /// <summary>Modify Style, and Create New Style from Formatting (<c>dialog_open_style</c>).</summary>
+    Style,
+    /// <summary>Manage Styles.</summary>
+    ManageStyles,
+    /// <summary>Borders and Shading.</summary>
+    BordersShading,
+    /// <summary>Frame.</summary>
+    Frame,
+    /// <summary>Banding (a table style's band sizes, from the style dialog's Format menu).</summary>
+    Banding,
+    /// <summary>Define New Bullet.</summary>
+    DefineBullet,
+    /// <summary>Define New Number Format.</summary>
+    DefineNumberFormat,
+    /// <summary>Define New Multilevel List.</summary>
+    DefineMultilevelList,
+    /// <summary>Set Numbering Value.</summary>
+    SetNumberingValue,
+    /// <summary>Adjust List Indents.</summary>
+    AdjustListIndents,
+    /// <summary>Bullets and Numbering.</summary>
+    BulletsNumbering,
+}
+
+/// <summary>Keys whose UI is the application's: pressing one never edits, and emits <c>hostCommand</c>.</summary>
+public enum HostCommand
+{
+    /// <summary>Ctrl+S.</summary>
+    Save,
+    /// <summary>F12.</summary>
+    SaveAs,
+    /// <summary>Ctrl+P.</summary>
+    Print,
+    /// <summary>Ctrl+O.</summary>
+    Open,
+    /// <summary>Ctrl+N.</summary>
+    New,
+    /// <summary>Ctrl+F.</summary>
+    Find,
+    /// <summary>Ctrl+H.</summary>
+    Replace,
+    /// <summary>Ctrl+G.</summary>
+    GoTo,
+    /// <summary>Ctrl+K.</summary>
+    InsertHyperlink,
+    /// <summary>F7.</summary>
+    NextMisspelling,
+    /// <summary>Ctrl+Shift+F.</summary>
+    FocusFont,
+    /// <summary>Ctrl+Shift+P.</summary>
+    FocusFontSize,
+    /// <summary>F1.</summary>
+    Help,
+}
+
+/// <summary>What started a transaction.</summary>
+public enum Origin
+{
+    /// <summary>Input: keys, text, pointer, clipboard.</summary>
+    User,
+    /// <summary>A command or batch the application ran.</summary>
+    Api,
+    /// <summary>An undo.</summary>
+    Undo,
+    /// <summary>A redo.</summary>
+    Redo,
+}
+
+/// <summary>
+/// The kinds of problem a read or a write reports. Each serializes as its stable name (<c>unsupported-element</c>).
+/// </summary>
+[JsonConverter(typeof(Wire.KebabEnumConverter<WarningCode>))]
+public enum WarningCode
+{
+    /// <summary>An element the reader doesn't keep: it was left out, counted per element name.</summary>
+    [JsonStringEnumMemberName("unsupported-element")]
+    UnsupportedElement,
+    /// <summary>An image whose data isn't a format the engine decodes: it draws as an empty box.</summary>
+    [JsonStringEnumMemberName("image-undecodable")]
+    ImageUndecodable,
+    /// <summary>A font family the library can't draw as the document asks: a stand-in draws it.</summary>
+    [JsonStringEnumMemberName("font-unresolved")]
+    FontUnresolved,
+    /// <summary>Content a write had to rewrite, losing bookmarks, comments or hyperlinks inside it.</summary>
+    [JsonStringEnumMemberName("rewritten-content")]
+    RewrittenContent,
+    /// <summary>Text a PDF export drew with a fallback font.</summary>
+    [JsonStringEnumMemberName("pdf-font-fallback")]
+    PdfFontFallback,
+    /// <summary>A password-protected PDF, which can't claim PDF/A conformance: the claim was left out.</summary>
+    [JsonStringEnumMemberName("pdf-archival-claim-dropped")]
+    PdfArchivalClaimDropped,
+    /// <summary>A revision without a <c>w:id</c>: it was given a new one.</summary>
+    [JsonStringEnumMemberName("revision-id-missing")]
+    RevisionIdMissing,
+    /// <summary>A comment or move range end with no start, or a start with no end.</summary>
+    [JsonStringEnumMemberName("range-unpaired")]
+    RangeUnpaired,
+    /// <summary>A revision or comment with no author: it was attributed to an empty name.</summary>
+    [JsonStringEnumMemberName("author-missing")]
+    AuthorMissing,
+    /// <summary>A comment no range or reference in the document points to.</summary>
+    [JsonStringEnumMemberName("comment-unanchored")]
+    CommentUnanchored,
+    /// <summary>A comment reference or range naming a comment the comments part doesn't have.</summary>
+    [JsonStringEnumMemberName("comment-reference-orphan")]
+    CommentReferenceOrphan,
+    /// <summary>
+    /// A shape's preset geometry the engine has no definition for: it draws as a rectangle and is kept on save.
+    /// </summary>
+    [JsonStringEnumMemberName("unknown-preset")]
+    UnknownPreset,
+    /// <summary>
+    /// A glossary building block (or the glossary part) that couldn't be read: it is kept as written.
+    /// </summary>
+    [JsonStringEnumMemberName("glossary-unreadable")]
+    GlossaryUnreadable,
+    /// <summary>Two building blocks with one name in one category: the first is the one a name finds.</summary>
+    [JsonStringEnumMemberName("duplicate-building-block")]
+    DuplicateBuildingBlock,
+    /// <summary>A sub-template reference inside a body already shown around it: it shows its field.</summary>
+    [JsonStringEnumMemberName("sub-template-cycle")]
+    SubTemplateCycle,
+    /// <summary>A sub-template reference more than 16 sub-templates deep: it shows its field.</summary>
+    [JsonStringEnumMemberName("sub-template-too-deep")]
+    SubTemplateTooDeep,
+    /// <summary>
+    /// A sub-template reference whose name matches a sub-template only in another case: it doesn't resolve.
+    /// </summary>
+    [JsonStringEnumMemberName("sub-template-near-match")]
+    SubTemplateNearMatch,
+    /// <summary>A picture bullet whose image isn't a format the engine decodes: it draws as an empty box.</summary>
+    [JsonStringEnumMemberName("picture-bullet-undecodable")]
+    PictureBulletUndecodable,
+}
+
+/// <summary>Where a command belongs in a UI.</summary>
+public enum CommandGroup
+{
+    /// <summary>Typing, breaks and symbols.</summary>
+    Text,
+    /// <summary>Cut, copy and paste.</summary>
+    Clipboard,
+    /// <summary>Undo and redo.</summary>
+    History,
+    /// <summary>Selecting and moving through the document.</summary>
+    Selection,
+    /// <summary>Character formatting.</summary>
+    Character,
+    /// <summary>Paragraph formatting.</summary>
+    Paragraph,
+    /// <summary>Tab stops.</summary>
+    Tabs,
+    /// <summary>Page setup: margins, orientation, paper size and columns.</summary>
+    Page,
+    /// <summary>Headers and footers.</summary>
+    HeaderFooter,
+    /// <summary>Inserting tables, pictures, text boxes, notes, hyperlinks and fields.</summary>
+    Insert,
+    /// <summary>Tables.</summary>
+    Table,
+    /// <summary>Pictures and other drawing objects.</summary>
+    Object,
+    /// <summary>Fields.</summary>
+    Field,
+    /// <summary>Content controls, repeating sections, elements and placeholders.</summary>
+    Control,
+    /// <summary>Custom XML data parts.</summary>
+    Data,
+    /// <summary>Revisions and comments.</summary>
+    Review,
+    /// <summary>Zoom, view options and mode.</summary>
+    View,
+}
+
+/// <summary>How a command's changes undo.</summary>
+public enum UndoGrouping
+{
+    /// <summary>One undo step.</summary>
+    Step,
+    /// <summary>Consecutive typing in one paragraph joins one step.</summary>
+    Typing,
+    /// <summary>Not an edit: no undo step and no revision.</summary>
+    View,
+}
+
+/// <summary>The kinds of revision.</summary>
+public enum RevisionKind
+{
+    /// <summary>Inserted text.</summary>
+    Insertion,
+    /// <summary>Deleted text.</summary>
+    Deletion,
+    /// <summary>The origin of moved text.</summary>
+    MoveFrom,
+    /// <summary>The destination of moved text.</summary>
+    MoveTo,
+    /// <summary>Changed character formatting.</summary>
+    Formatting,
+    /// <summary>Changed paragraph properties.</summary>
+    ParagraphProperties,
+    /// <summary>Changed section properties.</summary>
+    SectionProperties,
+    /// <summary>Changed table properties.</summary>
+    TableProperties,
+    /// <summary>An inserted table row.</summary>
+    RowInsertion,
+    /// <summary>A deleted table row.</summary>
+    RowDeletion,
+    /// <summary>An inserted table cell.</summary>
+    CellInsertion,
+    /// <summary>A deleted table cell.</summary>
+    CellDeletion,
+    /// <summary>Merged table cells.</summary>
+    CellMerge,
+}
+
+/// <summary>The kind of style the style dialog makes.</summary>
+public enum StyleDialogType
+{
+    /// <summary>A paragraph style.</summary>
+    Paragraph,
+    /// <summary>A character style.</summary>
+    Character,
+    /// <summary>A paragraph style and a character style, linked.</summary>
+    Linked,
+    /// <summary>A table style.</summary>
+    Table,
+    /// <summary>A list style.</summary>
+    List,
+}
+
+/// <summary>The parts of a table a table style formats.</summary>
+public enum TableStylePart
+{
+    /// <summary>The whole table.</summary>
+    WholeTable,
+    /// <summary>The header row.</summary>
+    HeaderRow,
+    /// <summary>The total row.</summary>
+    TotalRow,
+    /// <summary>The first column.</summary>
+    FirstColumn,
+    /// <summary>The last column.</summary>
+    LastColumn,
+    /// <summary>Odd banded rows.</summary>
+    OddBandedRows,
+    /// <summary>Even banded rows.</summary>
+    EvenBandedRows,
+    /// <summary>Odd banded columns.</summary>
+    OddBandedColumns,
+    /// <summary>Even banded columns.</summary>
+    EvenBandedColumns,
+    /// <summary>The top left cell.</summary>
+    TopLeftCell,
+    /// <summary>The top right cell.</summary>
+    TopRightCell,
+    /// <summary>The bottom left cell.</summary>
+    BottomLeftCell,
+    /// <summary>The bottom right cell.</summary>
+    BottomRightCell,
+}
+
+/// <summary>Borders and Shading's tabs.</summary>
+public enum BordersTab
+{
+    /// <summary>The paragraph's or text's borders.</summary>
+    Borders,
+    /// <summary>The page's borders.</summary>
+    PageBorder,
+    /// <summary>The shading.</summary>
+    Shading,
+}
+
+/// <summary>
+/// Borders and Shading's settings: no borders, a box, a box with a shadow, or the edges set one by one.
+/// </summary>
+public enum BorderSetting
+{
+    /// <summary>No borders.</summary>
+    None,
+    /// <summary>The four edges in one line.</summary>
+    Box,
+    /// <summary>A box with a shadow on its bottom and right edges.</summary>
+    Shadow,
+    /// <summary>The edges set one by one.</summary>
+    Custom,
+}
+
+/// <summary>Manage Styles' tabs.</summary>
+public enum ManageStylesTab
+{
+    /// <summary>The styles, to modify, delete or add to.</summary>
+    Edit,
+    /// <summary>Which styles show in lists, and in what order.</summary>
+    Recommend,
+    /// <summary>Which styles formatting protection permits.</summary>
+    Restrict,
+    /// <summary>The document's default formatting.</summary>
+    SetDefaults,
+}
+
+/// <summary>How Manage Styles sorts its list.</summary>
+public enum StyleSort
+{
+    /// <summary>By priority, then name.</summary>
+    AsRecommended,
+    /// <summary>By name.</summary>
+    Alphabetical,
+    /// <summary>By the style each is based on.</summary>
+    BasedOn,
+    /// <summary>By type.</summary>
+    ByType,
+}
+
+/// <summary>How a dialog field is edited.</summary>
+public enum FieldKind
+{
+    /// <summary>A plain number.</summary>
+    Number,
+    /// <summary>A length in points, shown in the ruler unit.</summary>
+    Length,
+    /// <summary>Text.</summary>
+    Text,
+    /// <summary>One of <see cref="FieldInfo.Options"/>.</summary>
+    Choice,
+    /// <summary>A check box.</summary>
+    Toggle,
+    /// <summary>A color.</summary>
+    Color,
+    /// <summary>A list of values.</summary>
+    List,
+}
+
+/// <summary>The Paragraph dialog's special indent.</summary>
+public enum SpecialIndent
+{
+    /// <summary>No first-line indent.</summary>
+    None,
+    /// <summary>The first line indents further.</summary>
+    FirstLine,
+    /// <summary>The lines after the first indent further.</summary>
+    Hanging,
+}
+
+/// <summary>A list gallery: bullets, numbering, or multilevel lists.</summary>
+public enum ListGalleryKind
+{
+    /// <summary>The bullet library.</summary>
+    Bullet,
+    /// <summary>The numbering library.</summary>
+    Numbering,
+    /// <summary>The multilevel list library.</summary>
+    Multilevel,
+}
+
+/// <summary>The kinds of style.</summary>
+public enum StyleType
+{
+    /// <summary>A paragraph style.</summary>
+    Paragraph,
+    /// <summary>A character style.</summary>
+    Character,
+    /// <summary>A table style.</summary>
+    Table,
+    /// <summary>A list (numbering) style.</summary>
+    List,
+}
+
+/// <summary>Whether a style shows in style lists.</summary>
+public enum StyleVisibility
+{
+    /// <summary>Shown.</summary>
+    Show,
+    /// <summary>Hidden until a paragraph or run uses it (<c>w:semiHidden</c> with <c>w:unhideWhenUsed</c>).</summary>
+    HideUntilUsed,
+    /// <summary>Hidden (<c>w:semiHidden</c>).</summary>
+    Hide,
+}
+
+/// <summary>Whether a reference's sub-template resolves, or why its body can't show.</summary>
+public enum ReferenceResolution
+{
+    /// <summary>A sub-template has the name.</summary>
+    Resolved,
+    /// <summary>No sub-template has the name.</summary>
+    Missing,
+    /// <summary>Only a name in another case matches.</summary>
+    NearMatch,
+    /// <summary>The sub-template is already being shown around it.</summary>
+    Cycle,
+    /// <summary>More than 16 sub-templates deep.</summary>
+    TooDeep,
+    /// <summary>The field shares its paragraph with other content.</summary>
+    NotAlone,
+    /// <summary>The field is in a header, footer, note or text box.</summary>
+    NotInBody,
+}
+
+/// <summary>A cell's place in a vertical merge.</summary>
+public enum VerticalMerge
+{
+    /// <summary>Not merged.</summary>
+    None,
+    /// <summary>The first cell of a merge.</summary>
+    Start,
+    /// <summary>A cell merged into the one above.</summary>
+    Continue,
+}
+
+/// <summary>An accessibility tree node's role.</summary>
+public enum AccessibleRole
+{
+    /// <summary>The document.</summary>
+    Document,
+    /// <summary>A paragraph.</summary>
+    Paragraph,
+    /// <summary>A heading (its <c>level</c>, 1 to 9).</summary>
+    Heading,
+    /// <summary>A list.</summary>
+    List,
+    /// <summary>A list item (its <c>level</c> and <c>position</c>, and a numbered item's <c>label</c>).</summary>
+    ListItem,
+    /// <summary>A table (its nesting <c>level</c>).</summary>
+    Table,
+    /// <summary>A table row.</summary>
+    Row,
+    /// <summary>A table cell (its <c>cell</c> place).</summary>
+    Cell,
+    /// <summary>A cell of a header row.</summary>
+    ColumnHeader,
+    /// <summary>A cell that heads its row.</summary>
+    RowHeader,
+    /// <summary>A picture or shape, named by its alternative text.</summary>
+    Image,
+    /// <summary>A hyperlink.</summary>
+    Link,
+    /// <summary>A text box or a shape's text.</summary>
+    TextBox,
+    /// <summary>A footnote or endnote.</summary>
+    Note,
+    /// <summary>A footnote or endnote reference (its <c>target</c> is the note).</summary>
+    NoteRef,
+    /// <summary>A comment (its <c>author</c>), with its replies as children.</summary>
+    Comment,
+    /// <summary>A header.</summary>
+    Header,
+    /// <summary>A footer.</summary>
+    Footer,
+    /// <summary>A named group after the body: headers and footers, footnotes, endnotes, comments.</summary>
+    Region,
+    /// <summary>A run of text with the same marks, author, language and comment.</summary>
+    Text,
+}
+
+/// <summary>What a text node is marked with.</summary>
+public enum AccessibleMark
+{
+    /// <summary>A tracked insertion.</summary>
+    Insertion,
+    /// <summary>A tracked deletion.</summary>
+    Deletion,
+    /// <summary>A misspelling.</summary>
+    Misspelling,
+}
+
+/// <summary>What an announcement is about.</summary>
+public enum AnnouncementKind
+{
+    /// <summary>Entering, leaving or moving through a table.</summary>
+    Table,
+    /// <summary>Entering or leaving a list.</summary>
+    List,
+    /// <summary>The caret moved to another page.</summary>
+    Page,
+    /// <summary>An insertion or deletion at the caret.</summary>
+    Review,
+    /// <summary>A commented range at the caret, with the comment.</summary>
+    Comment,
+    /// <summary>A misspelled word at the caret.</summary>
+    Spelling,
+    /// <summary>Formatting turned on or off, or described on request.</summary>
+    Formatting,
+    /// <summary>Entering or leaving a header, footer, note or text box.</summary>
+    Mode,
+    /// <summary>Read-only content: entered, or an edit refused there.</summary>
+    ReadOnly,
+    /// <summary>What a command did (undo, redo, cut, copy, paste).</summary>
+    Command,
+    /// <summary>The selection (select all).</summary>
+    Selection,
+}
+
+/// <summary>The pointer gestures the engine recognises.</summary>
+public enum GestureId
+{
+    /// <summary>A double-click in the header area: edits the header.</summary>
+    HeaderAreaDoubleClick,
+    /// <summary>A double-click in the footer area: edits the footer.</summary>
+    FooterAreaDoubleClick,
+    /// <summary>A double-click on the body while editing a header or footer: back to the body.</summary>
+    BodyDoubleClickInHeaderFooter,
+    /// <summary>A double-click on text: selects a word.</summary>
+    TextDoubleClick,
+    /// <summary>A triple-click on text: selects a paragraph.</summary>
+    TextTripleClick,
+    /// <summary>A Ctrl+click on text.</summary>
+    TextCtrlClick,
+    /// <summary>A Ctrl+click on a hyperlink.</summary>
+    LinkActivate,
+    /// <summary>A click in the left margin.</summary>
+    MarginClick,
+    /// <summary>A double-click in the left margin.</summary>
+    MarginDoubleClick,
+    /// <summary>A double-click on a table's column border.</summary>
+    TableBorderDoubleClick,
+    /// <summary>Dragging a table border: resizes.</summary>
+    TableBorderDrag,
+    /// <summary>Dragging a picture or text box.</summary>
+    ObjectDrag,
+    /// <summary>Dragging selected text: moves it.</summary>
+    TextDrag,
+    /// <summary>A double-click on a field or content control in design mode.</summary>
+    ElementDoubleClick,
+    /// <summary>A click on an unfilled picture control in editing and read-only modes: activates it.</summary>
+    PictureControlClick,
+    /// <summary>A double-click on a picture control in editing and read-only modes: activates it.</summary>
+    PictureControlDoubleClick,
+    /// <summary>A click on the ruler: adds a tab stop.</summary>
+    RulerClick,
+    /// <summary>Dragging a ruler marker.</summary>
+    RulerDrag,
+    /// <summary>Dragging a tab stop off the ruler: removes it.</summary>
+    RulerDragOff,
+    /// <summary>A double-click on the ruler: requests the Tabs dialog.</summary>
+    RulerDoubleClick,
+    /// <summary>A right-click: the context menu.</summary>
+    ContextClick,
+}
+
+/// <summary>The kinds of selection.</summary>
+public enum SelectionKind
+{
+    /// <summary>A caret, nothing selected (the default).</summary>
+    Caret,
+    /// <summary>A range of text.</summary>
+    Text,
+    /// <summary>A block of table cells.</summary>
+    Cells,
+    /// <summary>A picture or a text box.</summary>
+    Object,
+    /// <summary>A whole merge-designer element.</summary>
+    Element,
+}
+
+/// <summary>Where the selection is: the body or another story.</summary>
+public enum Story
+{
+    /// <summary>The main document.</summary>
+    Body,
+    /// <summary>A header.</summary>
+    Header,
+    /// <summary>A footer.</summary>
+    Footer,
+    /// <summary>A footnote.</summary>
+    Footnote,
+    /// <summary>An endnote.</summary>
+    Endnote,
+    /// <summary>A text box.</summary>
+    TextBox,
+    /// <summary>A sub-template's body (a building block), while the editor is on it.</summary>
+    SubTemplate,
+}
+
+/// <summary>A header or a footer.</summary>
+public enum HeaderFooterKind
+{
+    /// <summary>A header (the default).</summary>
+    Header,
+    /// <summary>A footer.</summary>
+    Footer,
+}
+
+/// <summary>Which pages a header or footer is for.</summary>
+public enum HeaderFooterType
+{
+    /// <summary>For every page (the default).</summary>
+    Default,
+    /// <summary>For the first page of the section.</summary>
+    First,
+    /// <summary>For even pages.</summary>
+    Even,
+}
+
+/// <summary>The kinds of selectable object.</summary>
+public enum ObjectKind
+{
+    /// <summary>A picture (the default).</summary>
+    Picture,
+    /// <summary>A text box.</summary>
+    TextBox,
+    /// <summary>A shape.</summary>
+    Shape,
+    /// <summary>A line or connector (a shape whose preset has no filled path).</summary>
+    Line,
+    /// <summary>A group of objects.</summary>
+    Group,
+}
+
+/// <summary>The kinds of merge-designer element.</summary>
+public enum ElementKind
+{
+    /// <summary>A field (the default).</summary>
+    Field,
+    /// <summary>A rich text control.</summary>
+    RichText,
+    /// <summary>A plain text control.</summary>
+    PlainText,
+    /// <summary>A picture control.</summary>
+    Picture,
+    /// <summary>A checkbox control.</summary>
+    Checkbox,
+    /// <summary>A date control.</summary>
+    Date,
+    /// <summary>A drop-down list control.</summary>
+    DropDown,
+    /// <summary>A combo box control.</summary>
+    ComboBox,
+    /// <summary>A group control.</summary>
+    Group,
+    /// <summary>A repeating section control.</summary>
+    RepeatingSection,
+    /// <summary>One item of a repeating section (selection context only).</summary>
+    RepeatingItem,
+}
+
+/// <summary>The unit rulers show.</summary>
+public enum RulerUnit
+{
+    /// <summary>Inches.</summary>
+    Inches,
+    /// <summary>Centimeters.</summary>
+    Centimeters,
+    /// <summary>Millimeters.</summary>
+    Millimeters,
+    /// <summary>Points.</summary>
+    Points,
+    /// <summary>Picas.</summary>
+    Picas,
+}
+
+/// <summary>What a click on the ruler adds.</summary>
+public enum TabSelector
+{
+    /// <summary>A left tab stop.</summary>
+    Left,
+    /// <summary>A center tab stop.</summary>
+    Center,
+    /// <summary>A right tab stop.</summary>
+    Right,
+    /// <summary>A decimal tab stop.</summary>
+    Decimal,
+    /// <summary>A bar tab.</summary>
+    Bar,
+    /// <summary>Sets the first-line indent.</summary>
+    FirstLineIndent,
+    /// <summary>Sets the hanging indent.</summary>
+    HangingIndent,
+}
+
+/// <summary>A gradient's shape.</summary>
+public enum GradientShape
+{
+    /// <summary>Along a direction (<c>angle</c>).</summary>
+    Linear,
+    /// <summary>From the centre outward in circles.</summary>
+    Radial,
+    /// <summary>From the centre outward in rectangles.</summary>
+    Rectangular,
+    /// <summary>Following the shape's outline.</summary>
+    Path,
+}
+
+/// <summary>A line's ends.</summary>
+public enum LineCap
+{
+    /// <summary>Square, at the end.</summary>
+    Flat,
+    /// <summary>Rounded.</summary>
+    Round,
+    /// <summary>Square, half the width past the end.</summary>
+    Square,
+}
+
+/// <summary>How a line's segments join.</summary>
+public enum LineJoin
+{
+    /// <summary>Rounded.</summary>
+    Round,
+    /// <summary>Cut off.</summary>
+    Bevel,
+    /// <summary>Pointed.</summary>
+    Miter,
+}
+
+/// <summary>An arrowhead's shape.</summary>
+public enum ArrowKind
+{
+    /// <summary>A filled triangle.</summary>
+    Triangle,
+    /// <summary>A notched triangle.</summary>
+    Stealth,
+    /// <summary>A diamond.</summary>
+    Diamond,
+    /// <summary>An oval.</summary>
+    Oval,
+    /// <summary>An open V.</summary>
+    Arrow,
+}
+
+/// <summary>An arrowhead's width or length.</summary>
+public enum ArrowSize
+{
+    /// <summary>Small.</summary>
+    Small,
+    /// <summary>Medium.</summary>
+    Medium,
+    /// <summary>Large.</summary>
+    Large,
+}
+
+/// <summary>Where text sits in a shape vertically.</summary>
+public enum TextAnchor
+{
+    /// <summary>At the top.</summary>
+    Top,
+    /// <summary>In the middle.</summary>
+    Middle,
+    /// <summary>At the bottom.</summary>
+    Bottom,
+}
+
+/// <summary>How a shape fits its text.</summary>
+public enum TextAutofit
+{
+    /// <summary>The shape keeps its size.</summary>
+    None,
+    /// <summary>The shape's height follows its text.</summary>
+    Shape,
+}
+
+/// <summary>Which way a shape's text runs.</summary>
+public enum TextDirection
+{
+    /// <summary>Left to right, lines downward.</summary>
+    Horizontal,
+    /// <summary>Turned 90° clockwise.</summary>
+    Vertical,
+    /// <summary>Turned 270° clockwise.</summary>
+    Vertical270,
+    /// <summary>East Asian vertical: CJK upright, other text turned.</summary>
+    EastAsianVertical,
+    /// <summary>Mongolian vertical.</summary>
+    MongolianVertical,
+    /// <summary>Letters stacked, one per line.</summary>
+    Stacked,
+    /// <summary>Letters stacked, right to left.</summary>
+    StackedRightToLeft,
+}
+
+/// <summary>
+/// How the document's page is drawn on screen. Saving, PDF export and printing always use the document's colours.
+/// </summary>
+public enum DocumentAppearance
+{
+    /// <summary>In the document's colours.</summary>
+    Light,
+    /// <summary>Dark mode: a dark page, with the document's colours adjusted to it.</summary>
+    Dark,
+    /// <summary>Dark mode with the page shown in its own colours (the chrome stays dark).</summary>
+    DarkWithLightPage,
+}
+
+/// <summary>How much the editor measures while you drag and hover.</summary>
+public enum MeasureDetail
+{
+    /// <summary>A chip with the value only.</summary>
+    Quiet,
+    /// <summary>Dimension lines with the value; the full set while Alt is held.</summary>
+    Standard,
+    /// <summary>Everything: changes from the start, table sizes and status lines.</summary>
+    Full,
+}
+
+/// <summary>When the dot grid objects snap to shows.</summary>
+public enum ObjectGrid
+{
+    /// <summary>Never.</summary>
+    Off,
+    /// <summary>While an object is dragged.</summary>
+    WhileDragging,
+    /// <summary>Always.</summary>
+    Always,
+}
+
+/// <summary>
+/// When fields are shaded: a grey backdrop behind each field's text on screen, never printed, exported or saved.
+/// </summary>
+public enum FieldShading
+{
+    /// <summary>Never.</summary>
+    Never,
+    /// <summary>Always: every field.</summary>
+    Always,
+    /// <summary>The field the caret or selection is in or touches.</summary>
+    WhenSelected,
+}
+
+/// <summary>What a press on an element does.</summary>
+public enum PressAction
+{
+    /// <summary>Checks or clears a checkbox.</summary>
+    Toggle,
+    /// <summary>Follows a hyperlink (with Ctrl or Cmd held, or in a read-only editor).</summary>
+    FollowLink,
+    /// <summary>Places the caret in the element's text.</summary>
+    PlaceCaret,
+    /// <summary>Nothing: the element can't be edited here.</summary>
+    None,
+}

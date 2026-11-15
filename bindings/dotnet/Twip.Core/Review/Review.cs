@@ -62,37 +62,6 @@ public sealed class EditorReview
     public IReadOnlyList<CommentAnchor> Anchors => _session.CommentAnchors;
 }
 
-/// <summary>A kind of revision.</summary>
-public enum RevisionKind
-{
-    /// <summary>Inserted text.</summary>
-    Insertion,
-    /// <summary>Deleted text.</summary>
-    Deletion,
-    /// <summary>Text moved from here.</summary>
-    MoveFrom,
-    /// <summary>Text moved to here.</summary>
-    MoveTo,
-    /// <summary>A formatting change.</summary>
-    Formatting,
-    /// <summary>A paragraph property change.</summary>
-    ParagraphProperties,
-    /// <summary>A section property change.</summary>
-    SectionProperties,
-    /// <summary>A table property change.</summary>
-    TableProperties,
-    /// <summary>An inserted row.</summary>
-    RowInsertion,
-    /// <summary>A deleted row.</summary>
-    RowDeletion,
-    /// <summary>An inserted cell.</summary>
-    CellInsertion,
-    /// <summary>A deleted cell.</summary>
-    CellDeletion,
-    /// <summary>Merged cells.</summary>
-    CellMerge,
-}
-
 /// <summary>A person with revisions or comments.</summary>
 /// <param name="Name">The name.</param>
 /// <param name="Initials">The initials.</param>

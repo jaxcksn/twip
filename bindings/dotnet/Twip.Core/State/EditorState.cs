@@ -155,21 +155,6 @@ public sealed record CommandState(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Checked = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), JsonConverter(typeof(ScalarConverter))] object? Value = null);
 
-/// <summary>What kind of selection there is.</summary>
-public enum SelectionKind
-{
-    /// <summary>A caret.</summary>
-    Caret,
-    /// <summary>A text range.</summary>
-    Text,
-    /// <summary>Table cells.</summary>
-    Cells,
-    /// <summary>A picture or text box.</summary>
-    Object,
-    /// <summary>A merge-designer element.</summary>
-    Element,
-}
-
 /// <summary>What the editor is on: the template, or one of its sub-templates.</summary>
 public enum EditingTargetKind
 {
@@ -193,25 +178,6 @@ public sealed record EditingTarget(EditingTargetKind Kind)
     /// <summary>The sub-template's building block category.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Category { get; init; }
-}
-
-/// <summary>Which story the selection is in.</summary>
-public enum Story
-{
-    /// <summary>The body.</summary>
-    Body,
-    /// <summary>A header.</summary>
-    Header,
-    /// <summary>A footer.</summary>
-    Footer,
-    /// <summary>A footnote.</summary>
-    Footnote,
-    /// <summary>An endnote.</summary>
-    Endnote,
-    /// <summary>A text box.</summary>
-    TextBox,
-    /// <summary>A sub-template's body (a building block), while the editor is on it.</summary>
-    SubTemplate,
 }
 
 /// <summary>The selection.</summary>
@@ -264,26 +230,6 @@ public sealed record SelectionSummary
 /// <param name="Address">The address.</param>
 /// <param name="Text">The link text.</param>
 public sealed record LinkInfo(string Address, string Text);
-
-/// <summary>A header or a footer.</summary>
-public enum HeaderFooterKind
-{
-    /// <summary>A header.</summary>
-    Header,
-    /// <summary>A footer.</summary>
-    Footer,
-}
-
-/// <summary>Which pages a header or footer is for.</summary>
-public enum HeaderFooterType
-{
-    /// <summary>Every page without a more specific one.</summary>
-    Default,
-    /// <summary>The first page.</summary>
-    First,
-    /// <summary>Even pages.</summary>
-    Even,
-}
 
 /// <summary>The header or footer being edited.</summary>
 /// <param name="Kind">Header or footer.</param>
@@ -365,21 +311,6 @@ public sealed record TableStyleOptions
 
     /// <summary>Banded columns.</summary>
     public bool BandedColumns { get; init; }
-}
-
-/// <summary>What kind of object is selected.</summary>
-public enum ObjectKind
-{
-    /// <summary>A picture.</summary>
-    Picture,
-    /// <summary>A text box.</summary>
-    TextBox,
-    /// <summary>A shape.</summary>
-    Shape,
-    /// <summary>A line or connector (a shape whose preset has no filled path).</summary>
-    Line,
-    /// <summary>A group of objects.</summary>
-    Group,
 }
 
 /// <summary>The selected object.</summary>
@@ -529,33 +460,6 @@ public sealed record TextDistance
 
     /// <summary>On its right.</summary>
     public Length Right { get; init; }
-}
-
-/// <summary>What a merge-designer element is.</summary>
-public enum ElementKind
-{
-    /// <summary>A field.</summary>
-    Field,
-    /// <summary>A rich text control.</summary>
-    RichText,
-    /// <summary>A plain text control.</summary>
-    PlainText,
-    /// <summary>A picture control.</summary>
-    Picture,
-    /// <summary>A checkbox control.</summary>
-    Checkbox,
-    /// <summary>A date control.</summary>
-    Date,
-    /// <summary>A drop-down list control.</summary>
-    DropDown,
-    /// <summary>A combo box control.</summary>
-    ComboBox,
-    /// <summary>A group control.</summary>
-    Group,
-    /// <summary>A repeating section.</summary>
-    RepeatingSection,
-    /// <summary>One item of a repeating section.</summary>
-    RepeatingItem,
 }
 
 /// <summary>An element around the selection.</summary>
@@ -771,40 +675,6 @@ public sealed record PageCounts
 
     /// <summary>Whether background layout has finished, so <see cref="Count"/> is the document's page count.</summary>
     public bool Complete { get; init; } = true;
-}
-
-/// <summary>A ruler measurement unit.</summary>
-public enum RulerUnit
-{
-    /// <summary>Inches.</summary>
-    Inches,
-    /// <summary>Centimetres.</summary>
-    Centimeters,
-    /// <summary>Millimetres.</summary>
-    Millimeters,
-    /// <summary>Points.</summary>
-    Points,
-    /// <summary>Picas.</summary>
-    Picas,
-}
-
-/// <summary>What a click on the ruler adds: a tab stop of an alignment, or an indent marker.</summary>
-public enum TabSelector
-{
-    /// <summary>A left tab.</summary>
-    Left,
-    /// <summary>A centre tab.</summary>
-    Center,
-    /// <summary>A right tab.</summary>
-    Right,
-    /// <summary>A decimal tab.</summary>
-    Decimal,
-    /// <summary>A bar tab.</summary>
-    Bar,
-    /// <summary>The first-line indent.</summary>
-    FirstLineIndent,
-    /// <summary>The hanging indent.</summary>
-    HangingIndent,
 }
 
 /// <summary>View settings.</summary>

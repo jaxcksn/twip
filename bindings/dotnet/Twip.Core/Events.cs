@@ -98,55 +98,6 @@ public sealed class ContextMenuRequestedEventArgs : EditorEventArgs
     public MenuInvocation Via { get; }
 }
 
-/// <summary>A dialog.</summary>
-public enum DialogKind
-{
-    /// <summary>Font.</summary>
-    Font,
-    /// <summary>Paragraph.</summary>
-    Paragraph,
-    /// <summary>Page setup.</summary>
-    PageSetup,
-    /// <summary>Insert table.</summary>
-    InsertTable,
-    /// <summary>Table properties.</summary>
-    TableProperties,
-    /// <summary>Picture size.</summary>
-    PictureSize,
-    /// <summary>Alternative text.</summary>
-    AltText,
-    /// <summary>Hyperlink.</summary>
-    Hyperlink,
-    /// <summary>Tabs.</summary>
-    Tabs,
-    /// <summary>The accessibility check.</summary>
-    Accessibility,
-    /// <summary>The AutoCorrect rules.</summary>
-    AutoCorrect,
-    /// <summary>Modify Style, and Create New Style from Formatting (<see cref="EditorDialogs.OpenStyleAsync"/>).</summary>
-    Style,
-    /// <summary>Manage Styles.</summary>
-    ManageStyles,
-    /// <summary>Borders and Shading.</summary>
-    BordersShading,
-    /// <summary>Frame.</summary>
-    Frame,
-    /// <summary>Define New Bullet.</summary>
-    DefineBullet,
-    /// <summary>Define New Number Format.</summary>
-    DefineNumberFormat,
-    /// <summary>Define New Multilevel List.</summary>
-    DefineMultilevelList,
-    /// <summary>Set Numbering Value.</summary>
-    SetNumberingValue,
-    /// <summary>Adjust List Indents.</summary>
-    AdjustListIndents,
-    /// <summary>Bullets and Numbering (the style dialog's Format > Numbering).</summary>
-    BulletsNumbering,
-    /// <summary>Banding (a table style's, from the style dialog's Format menu).</summary>
-    Banding,
-}
-
 /// <summary>
 /// A click or command asked for a popover. Show it at the popover's anchor, or let <c>DocumentEditor</c> show its own
 /// when nothing handles this event. Opening one closes the one open.
@@ -166,37 +117,6 @@ public sealed class DialogRequestedEventArgs : EditorEventArgs
 
     /// <summary>The dialog.</summary>
     public DialogKind Kind { get; }
-}
-
-/// <summary>A key the application owns.</summary>
-public enum HostCommand
-{
-    /// <summary>Save (Ctrl+S).</summary>
-    Save,
-    /// <summary>Save as (F12).</summary>
-    SaveAs,
-    /// <summary>Print (Ctrl+P).</summary>
-    Print,
-    /// <summary>Open (Ctrl+O).</summary>
-    Open,
-    /// <summary>New (Ctrl+N).</summary>
-    New,
-    /// <summary>Find (Ctrl+F).</summary>
-    Find,
-    /// <summary>Replace (Ctrl+H).</summary>
-    Replace,
-    /// <summary>Go to (Ctrl+G).</summary>
-    GoTo,
-    /// <summary>Insert hyperlink (Ctrl+K).</summary>
-    InsertHyperlink,
-    /// <summary>Next misspelling (F7).</summary>
-    NextMisspelling,
-    /// <summary>Focus the font box (Ctrl+Shift+F).</summary>
-    FocusFont,
-    /// <summary>Focus the font size box (Ctrl+Shift+P).</summary>
-    FocusFontSize,
-    /// <summary>Help (F1).</summary>
-    Help,
 }
 
 /// <summary>The user pressed a key the application owns.</summary>

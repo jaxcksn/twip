@@ -64,19 +64,6 @@ public enum EditorMode
     Design,
 }
 
-/// <summary>Where a committed change came from.</summary>
-public enum Origin
-{
-    /// <summary>The end user's input.</summary>
-    User,
-    /// <summary>An API call.</summary>
-    Api,
-    /// <summary>An undo.</summary>
-    Undo,
-    /// <summary>A redo.</summary>
-    Redo,
-}
-
 /// <summary>One committed transaction.</summary>
 /// <param name="Id">The transaction id.</param>
 /// <param name="Revision">The document revision it produced.</param>
@@ -141,48 +128,6 @@ public sealed class EditorException : Exception
     public object? Details { get; }
 
     internal static EditorException Unsupported(string what) => new(EditorErrorCode.Unsupported, $"{what} is not supported yet");
-}
-
-/// <summary>A kind of import or export approximation.</summary>
-[JsonConverter(typeof(KebabEnumConverter<WarningCode>))]
-public enum WarningCode
-{
-    /// <summary>An element the engine doesn't support was kept but not shown.</summary>
-    UnsupportedElement,
-    /// <summary>An image couldn't be decoded.</summary>
-    ImageUndecodable,
-    /// <summary>A font couldn't be drawn as the document asks; a stand-in draws it.</summary>
-    FontUnresolved,
-    /// <summary>Content was rewritten to be valid.</summary>
-    RewrittenContent,
-    /// <summary>A PDF used a fallback font.</summary>
-    PdfFontFallback,
-    /// <summary>A revision had no id.</summary>
-    RevisionIdMissing,
-    /// <summary>A range start or end had no partner.</summary>
-    RangeUnpaired,
-    /// <summary>A revision or comment had no author.</summary>
-    AuthorMissing,
-    /// <summary>A comment had no anchor in the text.</summary>
-    CommentUnanchored,
-    /// <summary>A comment reference pointed at no comment.</summary>
-    CommentReferenceOrphan,
-    /// <summary>A shape's preset geometry the engine doesn't define; it draws as a rectangle and is kept on save.</summary>
-    UnknownPreset,
-    /// <summary>A glossary building block, or the glossary part, couldn't be read; it is kept as written.</summary>
-    GlossaryUnreadable,
-    /// <summary>Two building blocks share a name in one category; a name finds the first.</summary>
-    DuplicateBuildingBlock,
-    /// <summary>A sub-template reference inside a body already shown around it; it shows its field.</summary>
-    SubTemplateCycle,
-    /// <summary>A sub-template reference more than 16 sub-templates deep; it shows its field.</summary>
-    SubTemplateTooDeep,
-    /// <summary>A sub-template reference whose name matches only in another case; it doesn't resolve.</summary>
-    SubTemplateNearMatch,
-    /// <summary>A password-protected PDF, which can't claim PDF/A conformance; the claim was left out.</summary>
-    PdfArchivalClaimDropped,
-    /// <summary>A picture bullet's image couldn't be decoded; it draws as an empty box.</summary>
-    PictureBulletUndecodable,
 }
 
 /// <summary>An import or export approximation, aggregated per code and part.</summary>
@@ -275,52 +220,3 @@ public sealed record Shortcuts(IReadOnlyList<string> Windows, IReadOnlyList<stri
 /// <param name="Presets">Its presets, in Word's order.</param>
 public sealed record ShapeGalleryGroup(string Label, IReadOnlyList<ShapePreset> Presets);
 
-/// <summary>A command group.</summary>
-public enum CommandGroup
-{
-    /// <summary>Typing and deleting.</summary>
-    Text,
-    /// <summary>Cut, copy and paste.</summary>
-    Clipboard,
-    /// <summary>Undo and redo.</summary>
-    History,
-    /// <summary>Selection and navigation.</summary>
-    Selection,
-    /// <summary>Character formatting.</summary>
-    Character,
-    /// <summary>Paragraph formatting.</summary>
-    Paragraph,
-    /// <summary>Tab stops.</summary>
-    Tabs,
-    /// <summary>Page layout.</summary>
-    Page,
-    /// <summary>Headers and footers.</summary>
-    HeaderFooter,
-    /// <summary>Inserting objects.</summary>
-    Insert,
-    /// <summary>Tables.</summary>
-    Table,
-    /// <summary>Pictures and text boxes.</summary>
-    Object,
-    /// <summary>Fields.</summary>
-    Field,
-    /// <summary>Content controls.</summary>
-    Control,
-    /// <summary>Data parts.</summary>
-    Data,
-    /// <summary>Review.</summary>
-    Review,
-    /// <summary>View settings.</summary>
-    View,
-}
-
-/// <summary>How a command groups into undo steps.</summary>
-public enum UndoGrouping
-{
-    /// <summary>One undo step.</summary>
-    Step,
-    /// <summary>Joins consecutive typing in one paragraph.</summary>
-    Typing,
-    /// <summary>Not an edit: no undo step and no revision.</summary>
-    View,
-}

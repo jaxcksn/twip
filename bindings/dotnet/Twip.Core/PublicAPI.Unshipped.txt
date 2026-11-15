@@ -235,140 +235,240 @@ Twip.CommandGroup.Tabs = 6 -> Twip.CommandGroup
 Twip.CommandGroup.Text = 0 -> Twip.CommandGroup
 Twip.CommandGroup.View = 16 -> Twip.CommandGroup
 Twip.CommandId
-Twip.CommandId.AddTabStop = 59 -> Twip.CommandId
-Twip.CommandId.AutoFitColumns = 98 -> Twip.CommandId
+Twip.CommandId.AcceptAllRevisions = 192 -> Twip.CommandId
+Twip.CommandId.AcceptRevision = 188 -> Twip.CommandId
+Twip.CommandId.AcceptRevisionsInSelection = 190 -> Twip.CommandId
+Twip.CommandId.ActivatePictureControl = 183 -> Twip.CommandId
+Twip.CommandId.AddComment = 195 -> Twip.CommandId
+Twip.CommandId.AddTabStop = 75 -> Twip.CommandId
+Twip.CommandId.AdjustListIndents = 65 -> Twip.CommandId
+Twip.CommandId.ApplyListEntry = 62 -> Twip.CommandId
+Twip.CommandId.ArrangeObject = 152 -> Twip.CommandId
+Twip.CommandId.AutoFitColumns = 118 -> Twip.CommandId
+Twip.CommandId.ClearTabStops = 78 -> Twip.CommandId
+Twip.CommandId.CloseHeaderFooter = 94 -> Twip.CommandId
+Twip.CommandId.ClosePopover = 213 -> Twip.CommandId
+Twip.CommandId.CloseSubTemplate = 167 -> Twip.CommandId
+Twip.CommandId.ContinueNumbering = 64 -> Twip.CommandId
+Twip.CommandId.CreateSubTemplate = 168 -> Twip.CommandId
+Twip.CommandId.DeleteCells = 111 -> Twip.CommandId
+Twip.CommandId.DeleteColumns = 109 -> Twip.CommandId
+Twip.CommandId.DeleteComment = 198 -> Twip.CommandId
+Twip.CommandId.DeleteObject = 142 -> Twip.CommandId
+Twip.CommandId.DeleteRows = 108 -> Twip.CommandId
+Twip.CommandId.DeleteStyle = 55 -> Twip.CommandId
+Twip.CommandId.DeleteTabStop = 77 -> Twip.CommandId
+Twip.CommandId.DeleteTable = 110 -> Twip.CommandId
+Twip.CommandId.DescribeFormatting = 214 -> Twip.CommandId
+Twip.CommandId.DistributeColumns = 116 -> Twip.CommandId
+Twip.CommandId.DistributeRows = 115 -> Twip.CommandId
+Twip.CommandId.EditComment = 197 -> Twip.CommandId
+Twip.CommandId.EditFooter = 93 -> Twip.CommandId
+Twip.CommandId.EditHeader = 92 -> Twip.CommandId
+Twip.CommandId.EditHyperlink = 103 -> Twip.CommandId
+Twip.CommandId.EditSubTemplate = 166 -> Twip.CommandId
+Twip.CommandId.FillControl = 175 -> Twip.CommandId
+Twip.CommandId.FlipObject = 151 -> Twip.CommandId
+Twip.CommandId.GroupObjects = 153 -> Twip.CommandId
+Twip.CommandId.InsertColumns = 107 -> Twip.CommandId
+Twip.CommandId.InsertControl = 172 -> Twip.CommandId
+Twip.CommandId.InsertEndnote = 101 -> Twip.CommandId
+Twip.CommandId.InsertField = 105 -> Twip.CommandId
+Twip.CommandId.InsertFootnote = 100 -> Twip.CommandId
+Twip.CommandId.InsertHyperlink = 102 -> Twip.CommandId
+Twip.CommandId.InsertPageNumber = 95 -> Twip.CommandId
+Twip.CommandId.InsertPicture = 97 -> Twip.CommandId
+Twip.CommandId.InsertRows = 106 -> Twip.CommandId
+Twip.CommandId.InsertShape = 99 -> Twip.CommandId
+Twip.CommandId.InsertTable = 96 -> Twip.CommandId
+Twip.CommandId.InsertTextBox = 98 -> Twip.CommandId
+Twip.CommandId.MarkElements = 181 -> Twip.CommandId
+Twip.CommandId.MergeCells = 112 -> Twip.CommandId
+Twip.CommandId.MoveColumnBoundary = 91 -> Twip.CommandId
+Twip.CommandId.MoveRows = 117 -> Twip.CommandId
+Twip.CommandId.MoveTabStop = 76 -> Twip.CommandId
+Twip.CommandId.MoveTableColumnBoundary = 127 -> Twip.CommandId
+Twip.CommandId.MoveTableRowBoundary = 128 -> Twip.CommandId
+Twip.CommandId.NeverAutoCorrect = 211 -> Twip.CommandId
+Twip.CommandId.RejectAllRevisions = 193 -> Twip.CommandId
+Twip.CommandId.RejectRevision = 189 -> Twip.CommandId
+Twip.CommandId.RejectRevisionsInSelection = 191 -> Twip.CommandId
+Twip.CommandId.RemoveControl = 174 -> Twip.CommandId
+Twip.CommandId.RemoveDataPart = 185 -> Twip.CommandId
+Twip.CommandId.RemoveElement = 178 -> Twip.CommandId
+Twip.CommandId.RemoveFrame = 74 -> Twip.CommandId
+Twip.CommandId.RemoveHyperlink = 104 -> Twip.CommandId
+Twip.CommandId.RemoveSubTemplate = 170 -> Twip.CommandId
+Twip.CommandId.RenameSubTemplate = 169 -> Twip.CommandId
+Twip.CommandId.ReplaceBody = 171 -> Twip.CommandId
+Twip.CommandId.ReplaceFont = 180 -> Twip.CommandId
+Twip.CommandId.ReplaceInElements = 179 -> Twip.CommandId
+Twip.CommandId.ReplyToComment = 196 -> Twip.CommandId
+Twip.CommandId.ResetObjectSize = 136 -> Twip.CommandId
+Twip.CommandId.ResolveComment = 199 -> Twip.CommandId
+Twip.CommandId.RestartNumbering = 63 -> Twip.CommandId
+Twip.CommandId.RevertAutoCorrect = 210 -> Twip.CommandId
+Twip.CommandId.SelectComment = 201 -> Twip.CommandId
+Twip.CommandId.SelectGroupChild = 155 -> Twip.CommandId
+Twip.CommandId.SelectRevision = 194 -> Twip.CommandId
+Twip.CommandId.SetActiveComment = 200 -> Twip.CommandId
+Twip.CommandId.SetAltText = 141 -> Twip.CommandId
+Twip.CommandId.SetAnchorLocked = 138 -> Twip.CommandId
+Twip.CommandId.SetApplicationFieldTypes = 164 -> Twip.CommandId
+Twip.CommandId.SetAuthorColor = 202 -> Twip.CommandId
+Twip.CommandId.SetAutoCorrect = 209 -> Twip.CommandId
+Twip.CommandId.SetAutoHyphenation = 80 -> Twip.CommandId
+Twip.CommandId.SetCellAlignment = 119 -> Twip.CommandId
+Twip.CommandId.SetCellBorders = 121 -> Twip.CommandId
+Twip.CommandId.SetCellMargins = 122 -> Twip.CommandId
+Twip.CommandId.SetCellShading = 120 -> Twip.CommandId
+Twip.CommandId.SetCheckbox = 176 -> Twip.CommandId
+Twip.CommandId.SetColumnWidth = 126 -> Twip.CommandId
+Twip.CommandId.SetColumns = 87 -> Twip.CommandId
+Twip.CommandId.SetConsecutiveHyphenLimit = 82 -> Twip.CommandId
+Twip.CommandId.SetControl = 173 -> Twip.CommandId
+Twip.CommandId.SetDefaultTabStop = 79 -> Twip.CommandId
+Twip.CommandId.SetDifferentFirstPage = 89 -> Twip.CommandId
+Twip.CommandId.SetDifferentOddEvenPages = 90 -> Twip.CommandId
+Twip.CommandId.SetDocumentDefaults = 57 -> Twip.CommandId
+Twip.CommandId.SetField = 156 -> Twip.CommandId
+Twip.CommandId.SetFieldLabels = 162 -> Twip.CommandId
+Twip.CommandId.SetFieldResults = 157 -> Twip.CommandId
+Twip.CommandId.SetFieldsLocked = 159 -> Twip.CommandId
+Twip.CommandId.SetFrame = 73 -> Twip.CommandId
+Twip.CommandId.SetHeaderFooterDistance = 88 -> Twip.CommandId
+Twip.CommandId.SetHeaderRow = 123 -> Twip.CommandId
+Twip.CommandId.SetHyphenateCaps = 83 -> Twip.CommandId
+Twip.CommandId.SetHyphenationZone = 81 -> Twip.CommandId
+Twip.CommandId.SetList = 58 -> Twip.CommandId
+Twip.CommandId.SetListDefinition = 60 -> Twip.CommandId
+Twip.CommandId.SetListLevel = 59 -> Twip.CommandId
+Twip.CommandId.SetMargins = 84 -> Twip.CommandId
+Twip.CommandId.SetMarkupView = 187 -> Twip.CommandId
+Twip.CommandId.SetMode = 205 -> Twip.CommandId
+Twip.CommandId.SetNumberingValue = 61 -> Twip.CommandId
+Twip.CommandId.SetObjectPosition = 139 -> Twip.CommandId
+Twip.CommandId.SetObjectRotation = 150 -> Twip.CommandId
+Twip.CommandId.SetObjectSize = 135 -> Twip.CommandId
+Twip.CommandId.SetObjectWrap = 137 -> Twip.CommandId
+Twip.CommandId.SetObjectWrapOptions = 140 -> Twip.CommandId
+Twip.CommandId.SetOrientation = 85 -> Twip.CommandId
+Twip.CommandId.SetPageBorders = 72 -> Twip.CommandId
+Twip.CommandId.SetPaperSize = 86 -> Twip.CommandId
+Twip.CommandId.SetParagraphBorderLines = 69 -> Twip.CommandId
+Twip.CommandId.SetParagraphBorders = 67 -> Twip.CommandId
+Twip.CommandId.SetParagraphFlow = 66 -> Twip.CommandId
+Twip.CommandId.SetParagraphShading = 68 -> Twip.CommandId
+Twip.CommandId.SetPictureAdjust = 149 -> Twip.CommandId
+Twip.CommandId.SetProtectedPictureControls = 182 -> Twip.CommandId
+Twip.CommandId.SetRowCanBreak = 125 -> Twip.CommandId
+Twip.CommandId.SetRowHeight = 124 -> Twip.CommandId
+Twip.CommandId.SetRulerTabType = 206 -> Twip.CommandId
+Twip.CommandId.SetShading = 70 -> Twip.CommandId
+Twip.CommandId.SetShapeAdjust = 144 -> Twip.CommandId
+Twip.CommandId.SetShapeEffects = 147 -> Twip.CommandId
+Twip.CommandId.SetShapeFill = 145 -> Twip.CommandId
+Twip.CommandId.SetShapeLine = 146 -> Twip.CommandId
+Twip.CommandId.SetShapePreset = 143 -> Twip.CommandId
+Twip.CommandId.SetShapeText = 148 -> Twip.CommandId
+Twip.CommandId.SetStyleMeta = 56 -> Twip.CommandId
+Twip.CommandId.SetSubTemplateRules = 163 -> Twip.CommandId
+Twip.CommandId.SetSubTemplateView = 165 -> Twip.CommandId
+Twip.CommandId.SetTableAlignment = 130 -> Twip.CommandId
+Twip.CommandId.SetTableIndent = 131 -> Twip.CommandId
+Twip.CommandId.SetTablePosition = 134 -> Twip.CommandId
+Twip.CommandId.SetTableStyle = 132 -> Twip.CommandId
+Twip.CommandId.SetTableStyleOptions = 133 -> Twip.CommandId
+Twip.CommandId.SetTableWidth = 129 -> Twip.CommandId
+Twip.CommandId.SetTextBorder = 71 -> Twip.CommandId
+Twip.CommandId.SetTrackChanges = 186 -> Twip.CommandId
+Twip.CommandId.SetViewOptions = 204 -> Twip.CommandId
+Twip.CommandId.SetZoom = 203 -> Twip.CommandId
+Twip.CommandId.ShowAutoCorrectOptions = 212 -> Twip.CommandId
+Twip.CommandId.ShowFieldCodes = 161 -> Twip.CommandId
+Twip.CommandId.ShowTabStop = 208 -> Twip.CommandId
+Twip.CommandId.ShowTabTypes = 207 -> Twip.CommandId
+Twip.CommandId.SplitCells = 113 -> Twip.CommandId
+Twip.CommandId.SplitTable = 114 -> Twip.CommandId
+Twip.CommandId.UngroupObjects = 154 -> Twip.CommandId
+Twip.CommandId.UnlinkFields = 160 -> Twip.CommandId
+Twip.CommandId.UpdateFields = 158 -> Twip.CommandId
+Twip.CommandId.UpdateStyleToSelection = 54 -> Twip.CommandId
+Twip.CommandId.WrapInRepeatingSection = 177 -> Twip.CommandId
+Twip.CommandId.WriteDataPart = 184 -> Twip.CommandId
+Twip.DialogKind.AdjustListIndents = 20 -> Twip.DialogKind
+Twip.DialogKind.Banding = 15 -> Twip.DialogKind
+Twip.DialogKind.BulletsNumbering = 21 -> Twip.DialogKind
+Twip.DialogKind.DefineBullet = 16 -> Twip.DialogKind
+Twip.DialogKind.DefineMultilevelList = 18 -> Twip.DialogKind
+Twip.DialogKind.DefineNumberFormat = 17 -> Twip.DialogKind
+Twip.DialogKind.SetNumberingValue = 19 -> Twip.DialogKind
+Twip.WarningCode.AuthorMissing = 8 -> Twip.WarningCode
+Twip.WarningCode.CommentReferenceOrphan = 10 -> Twip.WarningCode
+Twip.WarningCode.CommentUnanchored = 9 -> Twip.WarningCode
+Twip.WarningCode.DuplicateBuildingBlock = 13 -> Twip.WarningCode
+Twip.WarningCode.GlossaryUnreadable = 12 -> Twip.WarningCode
+Twip.WarningCode.PdfArchivalClaimDropped = 5 -> Twip.WarningCode
+Twip.WarningCode.RangeUnpaired = 7 -> Twip.WarningCode
+Twip.WarningCode.RevisionIdMissing = 6 -> Twip.WarningCode
+Twip.WarningCode.SubTemplateCycle = 14 -> Twip.WarningCode
+Twip.WarningCode.SubTemplateNearMatch = 16 -> Twip.WarningCode
+Twip.WarningCode.SubTemplateTooDeep = 15 -> Twip.WarningCode
+Twip.WarningCode.UnknownPreset = 11 -> Twip.WarningCode
 Twip.CommandId.ChangeCase = 44 -> Twip.CommandId
 Twip.CommandId.ClearFormatting = 43 -> Twip.CommandId
-Twip.CommandId.ClearTabStops = 62 -> Twip.CommandId
-Twip.CommandId.CloseHeaderFooter = 74 -> Twip.CommandId
 Twip.CommandId.Copy = 10 -> Twip.CommandId
 Twip.CommandId.CopyFormatting = 45 -> Twip.CommandId
 Twip.CommandId.Cut = 9 -> Twip.CommandId
 Twip.CommandId.DecreaseIndent = 52 -> Twip.CommandId
 Twip.CommandId.Delete = 8 -> Twip.CommandId
-Twip.CommandId.DeleteCells = 91 -> Twip.CommandId
-Twip.CommandId.DeleteColumns = 89 -> Twip.CommandId
-Twip.CommandId.DeleteObject = 121 -> Twip.CommandId
-Twip.CommandId.DeleteRows = 88 -> Twip.CommandId
-Twip.CommandId.DeleteTabStop = 61 -> Twip.CommandId
-Twip.CommandId.DeleteTable = 90 -> Twip.CommandId
-Twip.CommandId.DistributeColumns = 96 -> Twip.CommandId
-Twip.CommandId.DistributeRows = 95 -> Twip.CommandId
-Twip.CommandId.EditFooter = 73 -> Twip.CommandId
-Twip.CommandId.EditHeader = 72 -> Twip.CommandId
-Twip.CommandId.EditHyperlink = 83 -> Twip.CommandId
 Twip.CommandId.Escape = 22 -> Twip.CommandId
-Twip.CommandId.FillControl = 145 -> Twip.CommandId
 Twip.CommandId.GoBack = 21 -> Twip.CommandId
 Twip.CommandId.GoToPage = 24 -> Twip.CommandId
 Twip.CommandId.GrowFont = 37 -> Twip.CommandId
 Twip.CommandId.IncreaseIndent = 51 -> Twip.CommandId
 Twip.CommandId.InsertColumnBreak = 4 -> Twip.CommandId
-Twip.CommandId.InsertColumns = 87 -> Twip.CommandId
-Twip.CommandId.InsertControl = 142 -> Twip.CommandId
-Twip.CommandId.InsertEndnote = 81 -> Twip.CommandId
-Twip.CommandId.InsertField = 85 -> Twip.CommandId
-Twip.CommandId.InsertFootnote = 80 -> Twip.CommandId
-Twip.CommandId.InsertHyperlink = 82 -> Twip.CommandId
 Twip.CommandId.InsertLineBreak = 2 -> Twip.CommandId
 Twip.CommandId.InsertPageBreak = 3 -> Twip.CommandId
-Twip.CommandId.InsertPageNumber = 75 -> Twip.CommandId
 Twip.CommandId.InsertParagraph = 1 -> Twip.CommandId
-Twip.CommandId.InsertPicture = 77 -> Twip.CommandId
-Twip.CommandId.InsertRows = 86 -> Twip.CommandId
 Twip.CommandId.InsertSectionBreak = 5 -> Twip.CommandId
 Twip.CommandId.InsertSymbol = 7 -> Twip.CommandId
 Twip.CommandId.InsertTab = 6 -> Twip.CommandId
-Twip.CommandId.InsertTable = 76 -> Twip.CommandId
 Twip.CommandId.InsertText = 0 -> Twip.CommandId
-Twip.CommandId.InsertTextBox = 78 -> Twip.CommandId
-Twip.CommandId.MergeCells = 92 -> Twip.CommandId
-Twip.CommandId.MoveColumnBoundary = 71 -> Twip.CommandId
-Twip.CommandId.MoveRows = 97 -> Twip.CommandId
 Twip.CommandId.MoveSelection = 18 -> Twip.CommandId
-Twip.CommandId.MoveTabStop = 60 -> Twip.CommandId
-Twip.CommandId.MoveTableColumnBoundary = 107 -> Twip.CommandId
-Twip.CommandId.MoveTableRowBoundary = 108 -> Twip.CommandId
 Twip.CommandId.MoveToCell = 19 -> Twip.CommandId
 Twip.CommandId.Paste = 11 -> Twip.CommandId
 Twip.CommandId.PasteFormatting = 46 -> Twip.CommandId
 Twip.CommandId.PasteText = 12 -> Twip.CommandId
 Twip.CommandId.Redo = 14 -> Twip.CommandId
-Twip.CommandId.RemoveControl = 144 -> Twip.CommandId
-Twip.CommandId.RemoveElement = 148 -> Twip.CommandId
-Twip.CommandId.RemoveHyperlink = 84 -> Twip.CommandId
 Twip.CommandId.Repeat = 15 -> Twip.CommandId
-Twip.CommandId.ReplaceInElements = 149 -> Twip.CommandId
-Twip.CommandId.ResetObjectSize = 115 -> Twip.CommandId
 Twip.CommandId.Select = 17 -> Twip.CommandId
 Twip.CommandId.SelectAll = 16 -> Twip.CommandId
 Twip.CommandId.SelectNextObject = 23 -> Twip.CommandId
 Twip.CommandId.SetAlignment = 47 -> Twip.CommandId
 Twip.CommandId.SetAllCaps = 33 -> Twip.CommandId
-Twip.CommandId.SetAltText = 120 -> Twip.CommandId
-Twip.CommandId.SetAnchorLocked = 117 -> Twip.CommandId
 Twip.CommandId.SetBold = 25 -> Twip.CommandId
-Twip.CommandId.SetCellAlignment = 99 -> Twip.CommandId
-Twip.CommandId.SetCellBorders = 101 -> Twip.CommandId
-Twip.CommandId.SetCellMargins = 102 -> Twip.CommandId
-Twip.CommandId.SetCellShading = 100 -> Twip.CommandId
 Twip.CommandId.SetCharacterPosition = 42 -> Twip.CommandId
 Twip.CommandId.SetCharacterSpacing = 41 -> Twip.CommandId
-Twip.CommandId.SetCheckbox = 146 -> Twip.CommandId
-Twip.CommandId.SetColumnWidth = 106 -> Twip.CommandId
-Twip.CommandId.SetColumns = 67 -> Twip.CommandId
-Twip.CommandId.SetControl = 143 -> Twip.CommandId
-Twip.CommandId.SetDefaultTabStop = 63 -> Twip.CommandId
-Twip.CommandId.SetDifferentFirstPage = 69 -> Twip.CommandId
-Twip.CommandId.SetDifferentOddEvenPages = 70 -> Twip.CommandId
 Twip.CommandId.SetDoubleStrikethrough = 29 -> Twip.CommandId
-Twip.CommandId.SetField = 135 -> Twip.CommandId
-Twip.CommandId.SetFieldLabels = 141 -> Twip.CommandId
-Twip.CommandId.SetFieldResults = 136 -> Twip.CommandId
-Twip.CommandId.SetFieldsLocked = 138 -> Twip.CommandId
 Twip.CommandId.SetFont = 35 -> Twip.CommandId
 Twip.CommandId.SetFontColor = 39 -> Twip.CommandId
 Twip.CommandId.SetFontSize = 36 -> Twip.CommandId
-Twip.CommandId.SetHeaderFooterDistance = 68 -> Twip.CommandId
-Twip.CommandId.SetHeaderRow = 103 -> Twip.CommandId
 Twip.CommandId.SetHidden = 34 -> Twip.CommandId
 Twip.CommandId.SetHighlight = 40 -> Twip.CommandId
 Twip.CommandId.SetIndents = 50 -> Twip.CommandId
 Twip.CommandId.SetItalic = 26 -> Twip.CommandId
 Twip.CommandId.SetLineSpacing = 48 -> Twip.CommandId
-Twip.CommandId.SetList = 54 -> Twip.CommandId
-Twip.CommandId.SetListLevel = 55 -> Twip.CommandId
-Twip.CommandId.SetMargins = 64 -> Twip.CommandId
-Twip.CommandId.SetObjectSize = 114 -> Twip.CommandId
-Twip.CommandId.SetObjectWrap = 116 -> Twip.CommandId
-Twip.CommandId.SetOrientation = 65 -> Twip.CommandId
-Twip.CommandId.SetPaperSize = 66 -> Twip.CommandId
-Twip.CommandId.SetParagraphBorders = 57 -> Twip.CommandId
-Twip.CommandId.SetParagraphFlow = 56 -> Twip.CommandId
-Twip.CommandId.SetParagraphShading = 58 -> Twip.CommandId
 Twip.CommandId.SetParagraphSpacing = 49 -> Twip.CommandId
 Twip.CommandId.SetParagraphStyle = 53 -> Twip.CommandId
-Twip.CommandId.SetRowCanBreak = 105 -> Twip.CommandId
-Twip.CommandId.SetRowHeight = 104 -> Twip.CommandId
 Twip.CommandId.SetSelectionMode = 20 -> Twip.CommandId
 Twip.CommandId.SetSmallCaps = 32 -> Twip.CommandId
 Twip.CommandId.SetStrikethrough = 28 -> Twip.CommandId
 Twip.CommandId.SetSubscript = 30 -> Twip.CommandId
 Twip.CommandId.SetSuperscript = 31 -> Twip.CommandId
-Twip.CommandId.SetTableAlignment = 110 -> Twip.CommandId
-Twip.CommandId.SetTableIndent = 111 -> Twip.CommandId
-Twip.CommandId.SetTableStyle = 112 -> Twip.CommandId
-Twip.CommandId.SetTableStyleOptions = 113 -> Twip.CommandId
-Twip.CommandId.SetTableWidth = 109 -> Twip.CommandId
 Twip.CommandId.SetUnderline = 27 -> Twip.CommandId
-Twip.CommandId.ShowFieldCodes = 140 -> Twip.CommandId
 Twip.CommandId.ShrinkFont = 38 -> Twip.CommandId
-Twip.CommandId.SplitCells = 93 -> Twip.CommandId
-Twip.CommandId.SplitTable = 94 -> Twip.CommandId
 Twip.CommandId.Undo = 13 -> Twip.CommandId
-Twip.CommandId.UnlinkFields = 139 -> Twip.CommandId
-Twip.CommandId.UpdateFields = 137 -> Twip.CommandId
-Twip.CommandId.WrapInRepeatingSection = 147 -> Twip.CommandId
 Twip.CommandInfo
 Twip.CommandInfo.<Clone>$() -> Twip.CommandInfo!
 Twip.CommandInfo.CommandInfo(Twip.CommandId Id, string! Label, Twip.CommandGroup Group, Twip.Shortcuts! Shortcuts, bool TakesArguments, bool Mutates, Twip.UndoGrouping Undo) -> void
@@ -2851,15 +2951,9 @@ Twip.Warning.Message.get -> string!
 Twip.Warning.Message.init -> void
 Twip.Warning.Warning(Twip.WarningCode Code, string! Message, int Count, Twip.WarningLocation? Location = null) -> void
 Twip.WarningCode
-Twip.WarningCode.AuthorMissing = 7 -> Twip.WarningCode
-Twip.WarningCode.CommentReferenceOrphan = 9 -> Twip.WarningCode
-Twip.WarningCode.UnknownPreset = 10 -> Twip.WarningCode
-Twip.WarningCode.CommentUnanchored = 8 -> Twip.WarningCode
 Twip.WarningCode.FontUnresolved = 2 -> Twip.WarningCode
 Twip.WarningCode.ImageUndecodable = 1 -> Twip.WarningCode
 Twip.WarningCode.PdfFontFallback = 4 -> Twip.WarningCode
-Twip.WarningCode.RangeUnpaired = 6 -> Twip.WarningCode
-Twip.WarningCode.RevisionIdMissing = 5 -> Twip.WarningCode
 Twip.WarningCode.RewrittenContent = 3 -> Twip.WarningCode
 Twip.WarningCode.UnsupportedElement = 0 -> Twip.WarningCode
 Twip.WarningEventArgs
@@ -4029,8 +4123,6 @@ Twip.VerticalPosition.Align.get -> Twip.ObjectVerticalAlignment?
 Twip.VerticalPosition.Align.init -> void
 Twip.VerticalPosition.Offset.get -> Twip.Length?
 Twip.VerticalPosition.Offset.init -> void
-Twip.CommandId.SetObjectWrapOptions = 119 -> Twip.CommandId
-Twip.CommandId.SetObjectPosition = 118 -> Twip.CommandId
 Twip.VerticalReference
 Twip.HorizontalReference
 Twip.ObjectHorizontalAlignment
@@ -4163,20 +4255,6 @@ Twip.ColorTransformKind.SatMod = 4 -> Twip.ColorTransformKind
 Twip.ColorTransformKind.SatOff = 5 -> Twip.ColorTransformKind
 Twip.ColorTransformKind.Shade = 1 -> Twip.ColorTransformKind
 Twip.ColorTransformKind.Tint = 0 -> Twip.ColorTransformKind
-Twip.CommandId.ArrangeObject = 131 -> Twip.CommandId
-Twip.CommandId.FlipObject = 130 -> Twip.CommandId
-Twip.CommandId.GroupObjects = 132 -> Twip.CommandId
-Twip.CommandId.InsertShape = 79 -> Twip.CommandId
-Twip.CommandId.SelectGroupChild = 134 -> Twip.CommandId
-Twip.CommandId.SetObjectRotation = 129 -> Twip.CommandId
-Twip.CommandId.SetPictureAdjust = 128 -> Twip.CommandId
-Twip.CommandId.SetShapeAdjust = 123 -> Twip.CommandId
-Twip.CommandId.SetShapeEffects = 126 -> Twip.CommandId
-Twip.CommandId.SetShapeFill = 124 -> Twip.CommandId
-Twip.CommandId.SetShapeLine = 125 -> Twip.CommandId
-Twip.CommandId.SetShapePreset = 122 -> Twip.CommandId
-Twip.CommandId.SetShapeText = 127 -> Twip.CommandId
-Twip.CommandId.UngroupObjects = 133 -> Twip.CommandId
 Twip.EditorAccessibility.GoAsync(long id, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorAccessibility.SetAnnouncementsAsync(System.Collections.Generic.IReadOnlyList<Twip.AnnouncementKind>! kinds, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.ArrangeObjectAsync(Twip.Arrange arrange, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
@@ -5084,8 +5162,6 @@ Twip.SubTemplateReference.Resolution.init -> void
 Twip.SubTemplateReference.SubTemplateReference(string! Name, Twip.ReferenceResolution Resolution, bool Expanded) -> void
 Twip.ViewState.SubTemplateRules.get -> System.Collections.Generic.IReadOnlyList<Twip.ReferenceRule!>?
 Twip.ViewState.SubTemplateRules.init -> void
-Twip.WarningCode.DuplicateBuildingBlock = 12 -> Twip.WarningCode
-Twip.WarningCode.GlossaryUnreadable = 11 -> Twip.WarningCode
 override Twip.ReferenceRule.Equals(object? obj) -> bool
 override Twip.ReferenceRule.GetHashCode() -> int
 override Twip.ReferenceRule.ToString() -> string!
@@ -5162,10 +5238,6 @@ static Twip.SubTemplateInfo.operator ==(Twip.SubTemplateInfo? left, Twip.SubTemp
 Twip.EditorSubTemplates.CreateAsync(string! name, string? category = null, System.ReadOnlyMemory<byte>? from = null, string? copyOf = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorSubTemplates.RemoveAsync(string! name, string? category = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorSubTemplates.RenameAsync(string! name, string! to, bool updateReferences = false, string? category = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-Twip.WarningCode.SubTemplateCycle = 13 -> Twip.WarningCode
-Twip.WarningCode.SubTemplateNearMatch = 15 -> Twip.WarningCode
-Twip.WarningCode.SubTemplateTooDeep = 14 -> Twip.WarningCode
-Twip.WarningCode.PdfArchivalClaimDropped = 16 -> Twip.WarningCode
 static Twip.EditorOperation.CreateSubTemplate(string! name, string? category = null, System.ReadOnlyMemory<byte>? from = null, string? copyOf = null) -> Twip.EditorOperation!
 static Twip.EditorOperation.RemoveSubTemplate(string! name, string? category = null) -> Twip.EditorOperation!
 static Twip.EditorOperation.RenameSubTemplate(string! name, string! to, bool? updateReferences = null, string? category = null) -> Twip.EditorOperation!
@@ -5436,49 +5508,6 @@ static Twip.FontDescription.operator !=(Twip.FontDescription? left, Twip.FontDes
 static Twip.FontDescription.operator ==(Twip.FontDescription? left, Twip.FontDescription? right) -> bool
 static Twip.FontSource.FromCategory(Twip.GenericFamily category) -> Twip.FontSource!
 static Twip.FontSource.FromFamily(string! family) -> Twip.FontSource!
-Twip.CommandId.AcceptAllRevisions = 162 -> Twip.CommandId
-Twip.CommandId.AcceptRevision = 158 -> Twip.CommandId
-Twip.CommandId.AcceptRevisionsInSelection = 160 -> Twip.CommandId
-Twip.CommandId.AddComment = 165 -> Twip.CommandId
-Twip.CommandId.ClosePopover = 184 -> Twip.CommandId
-Twip.CommandId.CloseSubTemplate = 188 -> Twip.CommandId
-Twip.CommandId.CreateSubTemplate = 189 -> Twip.CommandId
-Twip.CommandId.DeleteComment = 168 -> Twip.CommandId
-Twip.CommandId.DescribeFormatting = 192 -> Twip.CommandId
-Twip.CommandId.EditComment = 167 -> Twip.CommandId
-Twip.CommandId.EditSubTemplate = 187 -> Twip.CommandId
-Twip.CommandId.MarkElements = 151 -> Twip.CommandId
-Twip.CommandId.NeverAutoCorrect = 181 -> Twip.CommandId
-Twip.CommandId.RejectAllRevisions = 163 -> Twip.CommandId
-Twip.CommandId.RejectRevision = 159 -> Twip.CommandId
-Twip.CommandId.RejectRevisionsInSelection = 161 -> Twip.CommandId
-Twip.CommandId.RemoveDataPart = 155 -> Twip.CommandId
-Twip.CommandId.RemoveSubTemplate = 191 -> Twip.CommandId
-Twip.CommandId.RenameSubTemplate = 190 -> Twip.CommandId
-Twip.CommandId.ReplaceBody = 194 -> Twip.CommandId
-Twip.CommandId.ReplaceFont = 150 -> Twip.CommandId
-Twip.CommandId.ReplyToComment = 166 -> Twip.CommandId
-Twip.CommandId.ResolveComment = 169 -> Twip.CommandId
-Twip.CommandId.RevertAutoCorrect = 180 -> Twip.CommandId
-Twip.CommandId.SelectComment = 171 -> Twip.CommandId
-Twip.CommandId.SelectRevision = 164 -> Twip.CommandId
-Twip.CommandId.SetActiveComment = 170 -> Twip.CommandId
-Twip.CommandId.SetApplicationFieldTypes = 193 -> Twip.CommandId
-Twip.CommandId.SetAuthorColor = 172 -> Twip.CommandId
-Twip.CommandId.SetAutoCorrect = 179 -> Twip.CommandId
-Twip.CommandId.SetMarkupView = 157 -> Twip.CommandId
-Twip.CommandId.SetMode = 175 -> Twip.CommandId
-Twip.CommandId.SetRulerTabType = 176 -> Twip.CommandId
-Twip.CommandId.SetSubTemplateRules = 185 -> Twip.CommandId
-Twip.CommandId.SetSubTemplateView = 186 -> Twip.CommandId
-Twip.CommandId.SetTablePosition = 183 -> Twip.CommandId
-Twip.CommandId.SetTrackChanges = 156 -> Twip.CommandId
-Twip.CommandId.SetViewOptions = 174 -> Twip.CommandId
-Twip.CommandId.SetZoom = 173 -> Twip.CommandId
-Twip.CommandId.ShowAutoCorrectOptions = 182 -> Twip.CommandId
-Twip.CommandId.ShowTabStop = 178 -> Twip.CommandId
-Twip.CommandId.ShowTabTypes = 177 -> Twip.CommandId
-Twip.CommandId.WriteDataPart = 154 -> Twip.CommandId
 Twip.EditorCommands.ReplaceFontAsync(string! from, string! to, Twip.ReplaceScope scope = Twip.ReplaceScope.Document, bool? bold = null, bool? italic = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Twip.FontReplaceResult!>!
 Twip.FontReplaceResult
 Twip.FontReplaceResult.<Clone>$() -> Twip.FontReplaceResult!
@@ -5506,8 +5535,6 @@ static Twip.SymbolFallback.FromFile(string! path) -> Twip.SymbolFallback!
 static Twip.SymbolFallback.Off.get -> Twip.SymbolFallback!
 Twip.PdfFontSetOptions.SymbolFallback.get -> Twip.SymbolFallback!
 Twip.PdfFontSetOptions.SymbolFallback.init -> void
-Twip.CommandId.SetProtectedPictureControls = 152 -> Twip.CommandId
-Twip.CommandId.ActivatePictureControl = 153 -> Twip.CommandId
 Twip.GestureId.PictureControlClick = 14 -> Twip.GestureId
 Twip.GestureId.PictureControlDoubleClick = 15 -> Twip.GestureId
 Twip.EditorCommands.SetProtectedPictureControlsAsync(System.Collections.Generic.IReadOnlyList<string!>! tagPrefixes, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
@@ -6267,12 +6294,6 @@ Twip.DefineNumberFormatDialogValues.Format.get -> Twip.NumberFormat
 Twip.DefineNumberFormatDialogValues.Format.init -> void
 Twip.DefineNumberFormatDialogValues.Text.get -> string!
 Twip.DefineNumberFormatDialogValues.Text.init -> void
-Twip.DialogKind.AdjustListIndents = 19 -> Twip.DialogKind
-Twip.DialogKind.BulletsNumbering = 20 -> Twip.DialogKind
-Twip.DialogKind.DefineBullet = 15 -> Twip.DialogKind
-Twip.DialogKind.DefineMultilevelList = 17 -> Twip.DialogKind
-Twip.DialogKind.DefineNumberFormat = 16 -> Twip.DialogKind
-Twip.DialogKind.SetNumberingValue = 18 -> Twip.DialogKind
 Twip.EditorCommands.AdjustListIndentsAsync(Twip.ListIndentOptions! options, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.ApplyListEntryAsync(string! id, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.ContinueNumberingAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
@@ -6501,7 +6522,6 @@ Twip.BordersShadingDialogValues.PageSetting.get -> Twip.BorderSetting
 Twip.BordersShadingDialogValues.PageSetting.init -> void
 Twip.BordersShadingDialogValues.PageTop.get -> Twip.CellBorder?
 Twip.BordersShadingDialogValues.PageTop.init -> void
-Twip.DialogKind.Banding = 21 -> Twip.DialogKind
 Twip.EditorCommands.SetPageBordersAsync(Twip.PageBordersOptions! borders, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.SetTextBorderAsync(Twip.TextBorderOptions! border, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.PageBorderDisplay
@@ -6545,26 +6565,6 @@ Twip.TextBorderOptions.Equals(Twip.TextBorderOptions? other) -> bool
 Twip.TextBorderOptions.Shadow.get -> bool
 Twip.TextBorderOptions.Shadow.init -> void
 Twip.TextBorderOptions.TextBorderOptions(Twip.CellBorder? Border, bool Shadow = false) -> void
-Twip.CommandId.AdjustListIndents = 208 -> Twip.CommandId
-Twip.CommandId.ApplyListEntry = 205 -> Twip.CommandId
-Twip.CommandId.ContinueNumbering = 207 -> Twip.CommandId
-Twip.CommandId.DeleteStyle = 196 -> Twip.CommandId
-Twip.CommandId.RemoveFrame = 202 -> Twip.CommandId
-Twip.CommandId.RestartNumbering = 206 -> Twip.CommandId
-Twip.CommandId.SetDocumentDefaults = 198 -> Twip.CommandId
-Twip.CommandId.SetFrame = 201 -> Twip.CommandId
-Twip.CommandId.SetListDefinition = 203 -> Twip.CommandId
-Twip.CommandId.SetNumberingValue = 204 -> Twip.CommandId
-Twip.CommandId.SetPageBorders = 210 -> Twip.CommandId
-Twip.CommandId.SetParagraphBorderLines = 199 -> Twip.CommandId
-Twip.CommandId.SetShading = 200 -> Twip.CommandId
-Twip.CommandId.SetStyleMeta = 197 -> Twip.CommandId
-Twip.CommandId.SetTextBorder = 209 -> Twip.CommandId
-Twip.CommandId.UpdateStyleToSelection = 195 -> Twip.CommandId
-Twip.CommandId.SetAutoHyphenation = 211 -> Twip.CommandId
-Twip.CommandId.SetConsecutiveHyphenLimit = 213 -> Twip.CommandId
-Twip.CommandId.SetHyphenateCaps = 214 -> Twip.CommandId
-Twip.CommandId.SetHyphenationZone = 212 -> Twip.CommandId
 Twip.WarningCode.PictureBulletUndecodable = 17 -> Twip.WarningCode
 Twip.TooltipKind.Ruler = 4 -> Twip.TooltipKind
 Twip.ViewState.ControlLabels.get -> bool

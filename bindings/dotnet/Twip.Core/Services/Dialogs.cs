@@ -190,21 +190,6 @@ public sealed record StyleOpen
     public static StyleOpen Modify(StyleId style) => new(style);
 }
 
-/// <summary>The kind of style the style dialog makes.</summary>
-public enum StyleDialogType
-{
-    /// <summary>A paragraph style.</summary>
-    Paragraph,
-    /// <summary>A character style.</summary>
-    Character,
-    /// <summary>A paragraph style and a character style, linked.</summary>
-    Linked,
-    /// <summary>A table style.</summary>
-    Table,
-    /// <summary>A list style.</summary>
-    List,
-}
-
 /// <summary>The style dialog's values.</summary>
 /// <param name="Open">Creating a style, or modifying one.</param>
 /// <param name="ShortForm">The short form: the name and the preview.</param>
@@ -240,37 +225,6 @@ public sealed record StyleDialogValues(
     UnderlineStyle Underline, ColorValue Color, ParagraphAlignment Alignment, LineSpacing LineSpacing, Length SpaceBefore, Length SpaceAfter,
     Length LeftIndent, bool Quick, bool AutoUpdate, TableStylePart TablePart, ColorValue? Fill, CellAlignment CellAlignment, CellBorder? Border,
     int RowBand, int ColumnBand, IReadOnlyList<ListLevel> ListLevels, int ListLevel, string Description, string Pending);
-
-/// <summary>The parts of a table a table style formats.</summary>
-public enum TableStylePart
-{
-    /// <summary>The whole table.</summary>
-    WholeTable,
-    /// <summary>The header row.</summary>
-    HeaderRow,
-    /// <summary>The total row.</summary>
-    TotalRow,
-    /// <summary>The first column.</summary>
-    FirstColumn,
-    /// <summary>The last column.</summary>
-    LastColumn,
-    /// <summary>Odd banded rows.</summary>
-    OddBandedRows,
-    /// <summary>Even banded rows.</summary>
-    EvenBandedRows,
-    /// <summary>Odd banded columns.</summary>
-    OddBandedColumns,
-    /// <summary>Even banded columns.</summary>
-    EvenBandedColumns,
-    /// <summary>The top left cell.</summary>
-    TopLeftCell,
-    /// <summary>The top right cell.</summary>
-    TopRightCell,
-    /// <summary>The bottom left cell.</summary>
-    BottomLeftCell,
-    /// <summary>The bottom right cell.</summary>
-    BottomRightCell,
-}
 
 /// <summary>Define New Bullet's values.</summary>
 /// <param name="Text">The bullet's character.</param>
@@ -311,30 +265,6 @@ public sealed record AdjustListIndentsDialogValues(Length NumberPosition, Length
 /// <param name="Gallery">The gallery shown.</param>
 /// <param name="Entry">The gallery entry, or null for no list.</param>
 public sealed record BulletsNumberingDialogValues(ListGalleryKind Gallery, string? Entry);
-
-/// <summary>Borders and Shading's tabs.</summary>
-public enum BordersTab
-{
-    /// <summary>The paragraph's or text's borders.</summary>
-    Borders,
-    /// <summary>The page's borders.</summary>
-    PageBorder,
-    /// <summary>The shading.</summary>
-    Shading,
-}
-
-/// <summary>Borders and Shading's settings.</summary>
-public enum BorderSetting
-{
-    /// <summary>No borders.</summary>
-    None,
-    /// <summary>The four edges in one line.</summary>
-    Box,
-    /// <summary>A box with a shadow on its bottom and right edges.</summary>
-    Shadow,
-    /// <summary>The edges set one by one.</summary>
-    Custom,
-}
 
 /// <summary>Borders and Shading's values: a setting sets the edges with the line; setting an edge makes it custom.</summary>
 /// <param name="Tab">The tab shown.</param>
@@ -424,32 +354,6 @@ public sealed record FrameDialogValues(
     bool MoveWithText,
     bool LockAnchor,
     bool Remove);
-
-/// <summary>Manage Styles' tabs.</summary>
-public enum ManageStylesTab
-{
-    /// <summary>The styles, to modify, delete or add to.</summary>
-    Edit,
-    /// <summary>Which styles show in lists, and in what order.</summary>
-    Recommend,
-    /// <summary>Which styles formatting protection permits.</summary>
-    Restrict,
-    /// <summary>The document's default formatting.</summary>
-    SetDefaults,
-}
-
-/// <summary>How Manage Styles sorts its list.</summary>
-public enum StyleSort
-{
-    /// <summary>By priority, then name.</summary>
-    AsRecommended,
-    /// <summary>By name.</summary>
-    Alphabetical,
-    /// <summary>By the style each is based on.</summary>
-    BasedOn,
-    /// <summary>By type.</summary>
-    ByType,
-}
 
 /// <summary>A style in Manage Styles.</summary>
 /// <param name="Id">The style.</param>
@@ -552,25 +456,6 @@ public sealed class FormatDialogSession<TValues> where TValues : class
     public void Cancel() { }
 }
 
-/// <summary>What kind of input a dialog field takes.</summary>
-public enum FieldKind
-{
-    /// <summary>A number.</summary>
-    Number,
-    /// <summary>A length.</summary>
-    Length,
-    /// <summary>Text.</summary>
-    Text,
-    /// <summary>One of a set of options.</summary>
-    Choice,
-    /// <summary>On or off.</summary>
-    Toggle,
-    /// <summary>A colour.</summary>
-    Color,
-    /// <summary>A list.</summary>
-    List,
-}
-
 /// <summary>An option of a choice field.</summary>
 /// <param name="Value">The value.</param>
 /// <param name="Label">The label.</param>
@@ -625,17 +510,6 @@ public sealed record FontDialogValues(
     FormatValue<UnderlineStyle> Underline, FormatValue<ColorValue> UnderlineColor, FormatValue<bool> Strikethrough,
     FormatValue<bool> DoubleStrikethrough, FormatValue<bool> Superscript, FormatValue<bool> Subscript, FormatValue<bool> SmallCaps,
     FormatValue<bool> AllCaps, FormatValue<bool> Hidden, FormatValue<Length> CharacterSpacing, FormatValue<Length> Position);
-
-/// <summary>A special indent in the Paragraph dialog.</summary>
-public enum SpecialIndent
-{
-    /// <summary>None.</summary>
-    None,
-    /// <summary>A first-line indent.</summary>
-    FirstLine,
-    /// <summary>A hanging indent.</summary>
-    Hanging,
-}
 
 /// <summary>A paragraph's outline level: 1 to 9, or body text.</summary>
 [JsonConverter(typeof(OutlineLevelConverter))]

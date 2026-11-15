@@ -194,17 +194,6 @@ public sealed record PreviewSize(double Width, double Height, double Scale = 1);
 /// <param name="Height">Its height, device pixels.</param>
 public sealed record PreviewPicture(byte[] Png, int Width, int Height);
 
-/// <summary>A list gallery.</summary>
-public enum ListGalleryKind
-{
-    /// <summary>The bullet library.</summary>
-    Bullet,
-    /// <summary>The numbering library.</summary>
-    Numbering,
-    /// <summary>The multilevel list library.</summary>
-    Multilevel,
-}
-
 /// <summary>A section of a list gallery.</summary>
 public enum ListGallerySectionKind
 {
@@ -273,19 +262,6 @@ public sealed class EditorLists
         _session.CallAsync<PreviewPicture>(Method.CharacterPicture, WireJson.ToUtf8(new CharacterPictureRequest(family, character, size)), ct);
 }
 
-/// <summary>A style type.</summary>
-public enum StyleType
-{
-    /// <summary>A paragraph style.</summary>
-    Paragraph,
-    /// <summary>A character style.</summary>
-    Character,
-    /// <summary>A table style.</summary>
-    Table,
-    /// <summary>A list (numbering) style.</summary>
-    List,
-}
-
 /// <summary>How a style gallery tile looks.</summary>
 /// <param name="Font">The family.</param>
 /// <param name="Size">The size.</param>
@@ -314,17 +290,6 @@ public sealed record StyleInfo(
     /// <summary>Its other names; none when null.</summary>
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<string>? Aliases { get; init; }
-}
-
-/// <summary>Whether a style shows in style lists.</summary>
-public enum StyleVisibility
-{
-    /// <summary>Shown.</summary>
-    Show,
-    /// <summary>Hidden until a paragraph or run uses it.</summary>
-    HideUntilUsed,
-    /// <summary>Hidden.</summary>
-    Hide,
 }
 
 /// <summary>Merge-designer elements: fields and content controls.</summary>
@@ -527,25 +492,6 @@ public sealed record ReferenceRule(string FieldType, string Category)
     public string? Gallery { get; init; }
 }
 
-/// <summary>Whether a reference's sub-template resolves, or why its body can't show.</summary>
-public enum ReferenceResolution
-{
-    /// <summary>A sub-template has the name.</summary>
-    Resolved,
-    /// <summary>No sub-template has the name.</summary>
-    Missing,
-    /// <summary>Only a name in another case matches.</summary>
-    NearMatch,
-    /// <summary>The sub-template is already being shown around it.</summary>
-    Cycle,
-    /// <summary>More than 16 sub-templates deep.</summary>
-    TooDeep,
-    /// <summary>The field shares its paragraph with other content.</summary>
-    NotAlone,
-    /// <summary>The field is in a header, footer, note or text box.</summary>
-    NotInBody,
-}
-
 /// <summary>What a sub-template reference field names and whether its body shows.</summary>
 /// <param name="Name">The sub-template's name, as the field gives it.</param>
 /// <param name="Resolution">Whether it names a sub-template whose body can show in its place.</param>
@@ -579,17 +525,6 @@ public sealed record ElementDetail(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] DataBinding? Binding,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ControlOptions? Options,
     IReadOnlyList<ElementId> Children) : ElementInfo(Id, Kind, Code, Tag, Title, Display, Story, Parent, Locked);
-
-/// <summary>A vertical cell merge.</summary>
-public enum VerticalMerge
-{
-    /// <summary>Not merged.</summary>
-    None,
-    /// <summary>Starts a merge.</summary>
-    Start,
-    /// <summary>Continues the merge above.</summary>
-    Continue,
-}
 
 /// <summary>A block of the document structure: a paragraph or a table.</summary>
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "kind")]
@@ -678,62 +613,6 @@ public sealed class EditorAccessibility
         _session.CallAsync(Method.AnnouncementsSet, WireJson.ToUtf8(kinds), ct);
 }
 
-/// <summary>An accessible node's role.</summary>
-public enum AccessibleRole
-{
-    /// <summary>The document.</summary>
-    Document,
-    /// <summary>A paragraph.</summary>
-    Paragraph,
-    /// <summary>A heading (its <c>Level</c>, 1 to 9).</summary>
-    Heading,
-    /// <summary>A list.</summary>
-    List,
-    /// <summary>A list item (its <c>Level</c> and <c>Position</c>, and a numbered item's <c>Label</c>).</summary>
-    ListItem,
-    /// <summary>A table (its nesting <c>Level</c>).</summary>
-    Table,
-    /// <summary>A row.</summary>
-    Row,
-    /// <summary>A cell (its <c>Cell</c> place).</summary>
-    Cell,
-    /// <summary>A cell of a header row.</summary>
-    ColumnHeader,
-    /// <summary>A cell that heads its row.</summary>
-    RowHeader,
-    /// <summary>A picture or shape, named by its alternative text.</summary>
-    Image,
-    /// <summary>A link.</summary>
-    Link,
-    /// <summary>A text box or a shape's text.</summary>
-    TextBox,
-    /// <summary>A footnote or endnote.</summary>
-    Note,
-    /// <summary>A footnote or endnote reference (its <c>Target</c> is the note).</summary>
-    NoteRef,
-    /// <summary>A comment (its <c>Author</c>), with its replies as children.</summary>
-    Comment,
-    /// <summary>A header.</summary>
-    Header,
-    /// <summary>A footer.</summary>
-    Footer,
-    /// <summary>A named group after the body: headers and footers, footnotes, endnotes, comments.</summary>
-    Region,
-    /// <summary>A run of text with the same marks, author, language and comment.</summary>
-    Text,
-}
-
-/// <summary>A mark on accessible text.</summary>
-public enum AccessibleMark
-{
-    /// <summary>An insertion.</summary>
-    Insertion,
-    /// <summary>A deletion.</summary>
-    Deletion,
-    /// <summary>A misspelling.</summary>
-    Misspelling,
-}
-
 /// <summary>Where a cell is in its table's grid: its row and column (from 1) and how many it spans.</summary>
 /// <param name="Row">Its row, from 1.</param>
 /// <param name="Col">Its first grid column, from 1.</param>
@@ -795,80 +674,6 @@ public sealed record AccessibleNode(long Id, AccessibleRole Role, IReadOnlyList<
     /// <summary>The note a note reference points to; for a sub-template body shown in place, its reference's paragraph.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public long? Target { get; init; }
-}
-
-/// <summary>What an announcement is about.</summary>
-public enum AnnouncementKind
-{
-    /// <summary>Entering, leaving or moving through a table.</summary>
-    Table,
-    /// <summary>Entering or leaving a list.</summary>
-    List,
-    /// <summary>The caret moved to another page.</summary>
-    Page,
-    /// <summary>An insertion or deletion at the caret.</summary>
-    Review,
-    /// <summary>A commented range at the caret, with the comment.</summary>
-    Comment,
-    /// <summary>A misspelled word at the caret.</summary>
-    Spelling,
-    /// <summary>Formatting turned on or off, or described on request.</summary>
-    Formatting,
-    /// <summary>Entering or leaving a header, footer, note or text box.</summary>
-    Mode,
-    /// <summary>Read-only content: entered, or an edit refused there.</summary>
-    ReadOnly,
-    /// <summary>What a command did (undo, redo, cut, copy, paste).</summary>
-    Command,
-    /// <summary>The selection (select all).</summary>
-    Selection,
-}
-
-/// <summary>A pointer gesture the engine recognises.</summary>
-public enum GestureId
-{
-    /// <summary>A double-click in a page's top margin.</summary>
-    HeaderAreaDoubleClick,
-    /// <summary>A double-click in a page's bottom margin.</summary>
-    FooterAreaDoubleClick,
-    /// <summary>A double-click in the body while a header or footer is being edited.</summary>
-    BodyDoubleClickInHeaderFooter,
-    /// <summary>A double-click on text.</summary>
-    TextDoubleClick,
-    /// <summary>A triple-click on text.</summary>
-    TextTripleClick,
-    /// <summary>A Ctrl+click on text.</summary>
-    TextCtrlClick,
-    /// <summary>A Ctrl+click on a link, or a click when read only.</summary>
-    LinkActivate,
-    /// <summary>A click in the left margin.</summary>
-    MarginClick,
-    /// <summary>A double-click in the left margin.</summary>
-    MarginDoubleClick,
-    /// <summary>A double-click on a table column border.</summary>
-    TableBorderDoubleClick,
-    /// <summary>Dragging a table border.</summary>
-    TableBorderDrag,
-    /// <summary>Dragging a picture or text box, or its handles.</summary>
-    ObjectDrag,
-    /// <summary>Dragging selected text.</summary>
-    TextDrag,
-    /// <summary>A double-click on an element in design mode.</summary>
-    ElementDoubleClick,
-    /// <summary>A click on an unfilled picture control in editing and read-only modes: activates it.</summary>
-    PictureControlClick,
-    /// <summary>A double-click on a picture control in editing and read-only modes: activates it.</summary>
-    PictureControlDoubleClick,
-    /// <summary>A click on an empty spot of the horizontal ruler.</summary>
-    RulerClick,
-    /// <summary>Dragging a ruler marker or boundary.</summary>
-    RulerDrag,
-    /// <summary>Dragging a tab stop off the ruler.</summary>
-    RulerDragOff,
-    /// <summary>A double-click on the ruler.</summary>
-    RulerDoubleClick,
-    /// <summary>A right-click, or the context-menu key.</summary>
-    ContextClick,
 }
 
 /// <summary>What a gesture does: its default, an event, nothing, or an operation.</summary>

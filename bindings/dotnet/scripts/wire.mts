@@ -23,6 +23,95 @@ const ADOPT = [
   'MissingFont',
   'MissingCharacters',
   'ReplaceScope',
+  // Enums
+  'SectionBreakKind',
+  'Direction',
+  'DeleteUnit',
+  'MoveUnit',
+  'UnderlineStyle',
+  'CaseChange',
+  'LevelChange',
+  'TabAlignment',
+  'TabLeader',
+  'PageNumberFormat',
+  'CellShift',
+  'VerticalDirection',
+  'CellAlignment',
+  'BorderEdges',
+  'NumberFormat',
+  'LevelAlignment',
+  'FollowNumber',
+  'ListApplyTo',
+  'NumberingMode',
+  'ShadingTarget',
+  'ShadingPattern',
+  'PageBorderOffset',
+  'PageBorderDisplay',
+  'PageBorderScope',
+  'FrameWrap',
+  'FrameWidthRule',
+  'FrameHeightRule',
+  'FrameHorizontalAlign',
+  'FrameVerticalAlign',
+  'FrameHorizontalRelative',
+  'FrameVerticalRelative',
+  'ObjectWrap',
+  'HorizontalReference',
+  'VerticalReference',
+  'ObjectHorizontalAlignment',
+  'ObjectVerticalAlignment',
+  'WrapSide',
+  'FlipAxis',
+  'Arrange',
+  'ControlKind',
+  'ControlLock',
+  'MarkupView',
+  'CommandId',
+  'DialogKind',
+  'HostCommand',
+  'Origin',
+  'WarningCode',
+  'CommandGroup',
+  'UndoGrouping',
+  'RevisionKind',
+  'StyleDialogType',
+  'TableStylePart',
+  'BordersTab',
+  'BorderSetting',
+  'ManageStylesTab',
+  'StyleSort',
+  'FieldKind',
+  'SpecialIndent',
+  'ListGalleryKind',
+  'StyleType',
+  'StyleVisibility',
+  'ReferenceResolution',
+  'VerticalMerge',
+  'AccessibleRole',
+  'AccessibleMark',
+  'AnnouncementKind',
+  'GestureId',
+  'SelectionKind',
+  'Story',
+  'HeaderFooterKind',
+  'HeaderFooterType',
+  'ObjectKind',
+  'ElementKind',
+  'RulerUnit',
+  'TabSelector',
+  'GradientShape',
+  'LineCap',
+  'LineJoin',
+  'ArrowKind',
+  'ArrowSize',
+  'TextAnchor',
+  'TextAutofit',
+  'TextDirection',
+  'DocumentAppearance',
+  'MeasureDetail',
+  'ObjectGrid',
+  'FieldShading',
+  'PressAction',
 ];
 
 /** Schema types this SDK names otherwise (Rust name: C# type). */
@@ -172,7 +261,9 @@ function translate(text: string, owner: Def | undefined, positional: boolean): s
   return xml(text)
     .replace(/\[`(\w+)::(\w+)`\](?:\([^)]*\))?/g, (_, t: string, v: string) => {
       const name = typeRef(t);
-      return name ? `<see cref="${name}.${v}"/>` : `<c>${v}</c>`;
+      // A lowercase name is a field: its C# property.
+      const member = /^[a-z]/.test(v) ? memberName(v) : v;
+      return name ? `<see cref="${name}.${member}"/>` : `<c>${member}</c>`;
     })
     .replace(/\[`([^`\]]+)`\](?:\([^)]*\))?/g, (_, t: string) => {
       const name = typeRef(t);
@@ -221,7 +312,9 @@ function enumDecl(d: Def & { shape: { kind: 'units' } }): string {
       return `${summary(v.docs, '    ', d, false, `${d.name}.${v.name}`)}${attr}    ${name},\n`;
     })
     .join('');
-  return `${summary(d.docs, '', d, false, d.name)}public enum ${d.name}\n{\n${members}}\n`;
+  // Kebab-case names (`unsupported-element`) have their own converter.
+  const kebab = d.shape.variants.some((v) => v.name.includes('-')) ? `[JsonConverter(typeof(Wire.KebabEnumConverter<${d.name}>))]\n` : '';
+  return `${summary(d.docs, '', d, false, d.name)}${kebab}public enum ${d.name}\n{\n${members}}\n`;
 }
 
 interface Member {

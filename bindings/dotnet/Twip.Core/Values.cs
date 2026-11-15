@@ -513,19 +513,6 @@ public sealed record ShapeColor(
     public static ShapeColor FromRgb(ColorValue rgb) => new(Rgb: rgb);
 }
 
-/// <summary>A gradient's shape.</summary>
-public enum GradientShape
-{
-    /// <summary>Along a direction.</summary>
-    Linear,
-    /// <summary>From the centre outward in circles.</summary>
-    Radial,
-    /// <summary>From the centre outward in rectangles.</summary>
-    Rectangular,
-    /// <summary>Following the shape's outline.</summary>
-    Path,
-}
-
 /// <summary>A gradient stop.</summary>
 /// <param name="Position">0 to 1 along the gradient.</param>
 /// <param name="Color">The colour there.</param>
@@ -589,54 +576,6 @@ public enum LineCompound
     Triple,
 }
 
-/// <summary>A line's ends.</summary>
-public enum LineCap
-{
-    /// <summary>Square, at the end.</summary>
-    Flat,
-    /// <summary>Rounded.</summary>
-    Round,
-    /// <summary>Square, half the width past the end.</summary>
-    Square,
-}
-
-/// <summary>How a line's segments join.</summary>
-public enum LineJoin
-{
-    /// <summary>Rounded.</summary>
-    Round,
-    /// <summary>Cut off.</summary>
-    Bevel,
-    /// <summary>Pointed.</summary>
-    Miter,
-}
-
-/// <summary>An arrowhead's shape.</summary>
-public enum ArrowKind
-{
-    /// <summary>A filled triangle.</summary>
-    Triangle,
-    /// <summary>A notched triangle.</summary>
-    Stealth,
-    /// <summary>A diamond.</summary>
-    Diamond,
-    /// <summary>An oval.</summary>
-    Oval,
-    /// <summary>An open V.</summary>
-    Arrow,
-}
-
-/// <summary>An arrowhead's width or length.</summary>
-public enum ArrowSize
-{
-    /// <summary>Small.</summary>
-    Small,
-    /// <summary>Medium.</summary>
-    Medium,
-    /// <summary>Large.</summary>
-    Large,
-}
-
 /// <summary>An arrowhead.</summary>
 /// <param name="Kind">Its shape.</param>
 /// <param name="Width">Its width.</param>
@@ -684,45 +623,6 @@ public sealed record EffectsValue(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Glow? Glow = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? SoftEdge = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Blur = null);
-
-/// <summary>Where text sits in a shape vertically.</summary>
-public enum TextAnchor
-{
-    /// <summary>At the top.</summary>
-    Top,
-    /// <summary>In the middle.</summary>
-    Middle,
-    /// <summary>At the bottom.</summary>
-    Bottom,
-}
-
-/// <summary>How a shape fits its text.</summary>
-public enum TextAutofit
-{
-    /// <summary>The shape keeps its size.</summary>
-    None,
-    /// <summary>The shape's height follows its text.</summary>
-    Shape,
-}
-
-/// <summary>Which way a shape's text runs.</summary>
-public enum TextDirection
-{
-    /// <summary>Left to right, lines downward.</summary>
-    Horizontal,
-    /// <summary>Turned 90° clockwise.</summary>
-    Vertical,
-    /// <summary>Turned 270° clockwise.</summary>
-    Vertical270,
-    /// <summary>East Asian vertical: CJK upright, other text turned.</summary>
-    EastAsianVertical,
-    /// <summary>Mongolian vertical.</summary>
-    MongolianVertical,
-    /// <summary>Letters stacked, one per line.</summary>
-    Stacked,
-    /// <summary>Letters stacked, right to left.</summary>
-    StackedRightToLeft,
-}
 
 /// <summary>
 /// The editor chrome's colour scheme: the desk, rulers, handles, guides and readouts. <see cref="Light"/>,
@@ -796,66 +696,6 @@ public sealed record ChromeColors(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ColorValue? SecondaryText = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ColorValue? FaintText = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ColorValue? Line = null);
-
-/// <summary>How the document's page is drawn on screen. Saving, PDF export and printing always use the document's colours.</summary>
-public enum DocumentAppearance
-{
-    /// <summary>In the document's colours.</summary>
-    Light,
-    /// <summary>Dark mode: a dark page, with the document's colours adjusted to it.</summary>
-    Dark,
-    /// <summary>Dark mode with the page shown in its own colours (the chrome stays dark).</summary>
-    DarkWithLightPage,
-}
-
-/// <summary>How much the editor measures while you drag and hover.</summary>
-public enum MeasureDetail
-{
-    /// <summary>A chip with the value only.</summary>
-    Quiet,
-    /// <summary>Dimension lines with the value; the full set while Alt is held (the default).</summary>
-    Standard,
-    /// <summary>Everything: changes from the start, table sizes and status lines.</summary>
-    Full,
-}
-
-/// <summary>When the dot grid objects snap to shows.</summary>
-public enum ObjectGrid
-{
-    /// <summary>Never.</summary>
-    Off,
-    /// <summary>While an object is dragged (the default).</summary>
-    WhileDragging,
-    /// <summary>Always.</summary>
-    Always,
-}
-
-/// <summary>
-/// When fields are shaded: a grey backdrop behind each field's text on screen, so a field's result can be told from the
-/// text around it. It's never printed, exported or saved.
-/// </summary>
-public enum FieldShading
-{
-    /// <summary>Never.</summary>
-    Never,
-    /// <summary>Always: every field.</summary>
-    Always,
-    /// <summary>The field the caret or selection is in or touches (the default).</summary>
-    WhenSelected,
-}
-
-/// <summary>What a press on an element does.</summary>
-public enum PressAction
-{
-    /// <summary>Checks or clears a checkbox.</summary>
-    Toggle,
-    /// <summary>Follows a hyperlink (with Ctrl held, or in a read-only editor).</summary>
-    FollowLink,
-    /// <summary>Places the caret in the element's text.</summary>
-    PlaceCaret,
-    /// <summary>Nothing: the element can't be edited here.</summary>
-    None,
-}
 
 /// <summary>The field or content control under the pointer.</summary>
 /// <param name="Element">The element; <see cref="ElementContext.Exact"/> is always false.</param>

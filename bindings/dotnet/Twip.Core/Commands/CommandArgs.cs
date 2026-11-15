@@ -3,37 +3,6 @@ using Twip.Wire;
 
 namespace Twip;
 
-/// <summary>Where a new section starts.</summary>
-public enum SectionBreakKind
-{
-    /// <summary>On the next page.</summary>
-    NextPage,
-    /// <summary>On the same page.</summary>
-    Continuous,
-    /// <summary>On the next even page.</summary>
-    EvenPage,
-    /// <summary>On the next odd page.</summary>
-    OddPage,
-}
-
-/// <summary>A direction in the text.</summary>
-public enum Direction
-{
-    /// <summary>Towards the start.</summary>
-    Backward,
-    /// <summary>Towards the end.</summary>
-    Forward,
-}
-
-/// <summary>What one delete removes next to the caret.</summary>
-public enum DeleteUnit
-{
-    /// <summary>One character.</summary>
-    Character,
-    /// <summary>One word.</summary>
-    Word,
-}
-
 /// <summary>How to paste.</summary>
 public enum PasteMode
 {
@@ -62,31 +31,6 @@ public enum SelectionUnit
     Table,
 }
 
-/// <summary>A unit to move the selection by.</summary>
-public enum MoveUnit
-{
-    /// <summary>A character.</summary>
-    Character,
-    /// <summary>A word.</summary>
-    Word,
-    /// <summary>A line.</summary>
-    Line,
-    /// <summary>A paragraph.</summary>
-    Paragraph,
-    /// <summary>To the start or end of the line.</summary>
-    LineEdge,
-    /// <summary>To the start or end of the document.</summary>
-    Document,
-    /// <summary>A screen.</summary>
-    Screen,
-    /// <summary>A page.</summary>
-    Page,
-    /// <summary>To the first or last cell of the row.</summary>
-    RowEdge,
-    /// <summary>To the first or last cell of the column.</summary>
-    ColumnEdge,
-}
-
 /// <summary>Next or previous.</summary>
 public enum NavigationDirection
 {
@@ -107,81 +51,6 @@ public enum TextSelectionMode
     Block,
 }
 
-/// <summary>An underline style.</summary>
-public enum UnderlineStyle
-{
-    /// <summary>No underline.</summary>
-    None,
-    /// <summary>A single line.</summary>
-    Single,
-    /// <summary>Words only.</summary>
-    Words,
-    /// <summary>A double line.</summary>
-    Double,
-    /// <summary>A thick line.</summary>
-    Thick,
-    /// <summary>A dotted line.</summary>
-    Dotted,
-    /// <summary>A dashed line.</summary>
-    Dash,
-    /// <summary>Dots and dashes.</summary>
-    DotDash,
-    /// <summary>A wavy line.</summary>
-    Wave,
-}
-
-/// <summary>A highlight colour.</summary>
-public enum HighlightColor
-{
-    /// <summary>No highlight.</summary>
-    None,
-    /// <summary>Yellow.</summary>
-    Yellow,
-    /// <summary>Bright green.</summary>
-    BrightGreen,
-    /// <summary>Turquoise.</summary>
-    Turquoise,
-    /// <summary>Pink.</summary>
-    Pink,
-    /// <summary>Blue.</summary>
-    Blue,
-    /// <summary>Red.</summary>
-    Red,
-    /// <summary>Dark blue.</summary>
-    DarkBlue,
-    /// <summary>Teal.</summary>
-    Teal,
-    /// <summary>Green.</summary>
-    Green,
-    /// <summary>Violet.</summary>
-    Violet,
-    /// <summary>Dark red.</summary>
-    DarkRed,
-    /// <summary>Dark yellow.</summary>
-    DarkYellow,
-    /// <summary>50% gray.</summary>
-    Gray50,
-    /// <summary>25% gray.</summary>
-    Gray25,
-    /// <summary>Black.</summary>
-    Black,
-}
-
-/// <summary>A case change.</summary>
-public enum CaseChange
-{
-    /// <summary>lowercase.</summary>
-    Lower,
-    /// <summary>UPPERCASE.</summary>
-    Upper,
-    /// <summary>Sentence case.</summary>
-    Sentence,
-    /// <summary>Title Case.</summary>
-    Title,
-    /// <summary>tOGGLE cASE.</summary>
-    Toggle,
-}
-
 /// <summary>A paragraph alignment.</summary>
 public enum ParagraphAlignment
 {
@@ -193,26 +62,6 @@ public enum ParagraphAlignment
     Right,
     /// <summary>Justified.</summary>
     Justify,
-}
-
-/// <summary>A list kind.</summary>
-public enum ListKind
-{
-    /// <summary>Not a list.</summary>
-    None,
-    /// <summary>A bulleted list.</summary>
-    Bullet,
-    /// <summary>A numbered list.</summary>
-    Numbered,
-}
-
-/// <summary>A list level change.</summary>
-public enum LevelChange
-{
-    /// <summary>One level in.</summary>
-    Increase,
-    /// <summary>One level out.</summary>
-    Decrease,
 }
 
 /// <summary>Paragraph borders.</summary>
@@ -228,38 +77,6 @@ public enum ParagraphBorders
     Other,
 }
 
-/// <summary>A tab stop alignment.</summary>
-public enum TabAlignment
-{
-    /// <summary>Left.</summary>
-    Left,
-    /// <summary>Centred.</summary>
-    Center,
-    /// <summary>Right.</summary>
-    Right,
-    /// <summary>On the decimal point.</summary>
-    Decimal,
-    /// <summary>A vertical bar.</summary>
-    Bar,
-}
-
-/// <summary>A tab leader.</summary>
-public enum TabLeader
-{
-    /// <summary>No leader.</summary>
-    None,
-    /// <summary>Dots.</summary>
-    Dots,
-    /// <summary>Dashes.</summary>
-    Dashes,
-    /// <summary>An underline.</summary>
-    Underline,
-    /// <summary>A heavy line.</summary>
-    Heavy,
-    /// <summary>Middle dots.</summary>
-    MiddleDot,
-}
-
 /// <summary>A page orientation.</summary>
 public enum PageOrientation
 {
@@ -267,17 +84,6 @@ public enum PageOrientation
     Portrait,
     /// <summary>Landscape.</summary>
     Landscape,
-}
-
-/// <summary>What a page number shows.</summary>
-public enum PageNumberFormat
-{
-    /// <summary>The page number.</summary>
-    Page,
-    /// <summary>"Page X of Y".</summary>
-    PageOfTotal,
-    /// <summary>The page count.</summary>
-    Total,
 }
 
 /// <summary>Where a page number goes.</summary>
@@ -320,24 +126,6 @@ public enum ColumnPosition
     Right,
 }
 
-/// <summary>Which way deleted cells shift the rest.</summary>
-public enum CellShift
-{
-    /// <summary>Cells below move up.</summary>
-    Up,
-    /// <summary>Cells to the right move left.</summary>
-    Left,
-}
-
-/// <summary>Up or down.</summary>
-public enum VerticalDirection
-{
-    /// <summary>Up.</summary>
-    Up,
-    /// <summary>Down.</summary>
-    Down,
-}
-
 /// <summary>How columns fit.</summary>
 public enum AutoFitBehavior
 {
@@ -347,42 +135,6 @@ public enum AutoFitBehavior
     Window,
     /// <summary>Fixed widths.</summary>
     Fixed,
-}
-
-/// <summary>A cell's vertical alignment.</summary>
-public enum CellAlignment
-{
-    /// <summary>Top.</summary>
-    Top,
-    /// <summary>Centred.</summary>
-    Center,
-    /// <summary>Bottom.</summary>
-    Bottom,
-}
-
-/// <summary>Which cell edges a border applies to.</summary>
-public enum BorderEdges
-{
-    /// <summary>All edges.</summary>
-    All,
-    /// <summary>The outside edges.</summary>
-    Outside,
-    /// <summary>The inside edges.</summary>
-    Inside,
-    /// <summary>The inside horizontal edges.</summary>
-    InsideHorizontal,
-    /// <summary>The inside vertical edges.</summary>
-    InsideVertical,
-    /// <summary>The top edge.</summary>
-    Top,
-    /// <summary>The bottom edge.</summary>
-    Bottom,
-    /// <summary>The left edge.</summary>
-    Left,
-    /// <summary>The right edge.</summary>
-    Right,
-    /// <summary>No edges: removes the borders.</summary>
-    None,
 }
 
 /// <summary>A border line style.</summary>
@@ -422,75 +174,6 @@ public enum LineStyle
     Outset,
     /// <summary>Inset.</summary>
     Inset,
-}
-
-/// <summary>A list level's number style.</summary>
-public enum NumberFormat
-{
-    /// <summary>1, 2, 3.</summary>
-    Decimal,
-    /// <summary>I, II, III.</summary>
-    UpperRoman,
-    /// <summary>i, ii, iii.</summary>
-    LowerRoman,
-    /// <summary>A, B, C.</summary>
-    UpperLetter,
-    /// <summary>a, b, c.</summary>
-    LowerLetter,
-    /// <summary>1st, 2nd, 3rd.</summary>
-    Ordinal,
-    /// <summary>One, Two, Three.</summary>
-    CardinalText,
-    /// <summary>First, Second, Third.</summary>
-    OrdinalText,
-    /// <summary>01, 02, 03.</summary>
-    DecimalZero,
-    /// <summary>A bullet.</summary>
-    Bullet,
-    /// <summary>No number.</summary>
-    None,
-}
-
-/// <summary>How a list level's number aligns.</summary>
-public enum LevelAlignment
-{
-    /// <summary>Left.</summary>
-    Left,
-    /// <summary>Centered.</summary>
-    Center,
-    /// <summary>Right.</summary>
-    Right,
-}
-
-/// <summary>What follows a list level's number.</summary>
-public enum FollowNumber
-{
-    /// <summary>A tab.</summary>
-    Tab,
-    /// <summary>A space.</summary>
-    Space,
-    /// <summary>Nothing.</summary>
-    Nothing,
-}
-
-/// <summary>What a list definition applies to.</summary>
-public enum ListApplyTo
-{
-    /// <summary>The selection's whole list.</summary>
-    WholeList,
-    /// <summary>The list from the selection's first paragraph on.</summary>
-    ThisPointForward,
-    /// <summary>The selected paragraphs.</summary>
-    CurrentParagraph,
-}
-
-/// <summary>How Set Numbering Value sets the number.</summary>
-public enum NumberingMode
-{
-    /// <summary>Start a new list.</summary>
-    StartNew,
-    /// <summary>Continue from the previous list.</summary>
-    Continue,
 }
 
 /// <summary>A list level: its number or bullet, and where it and the text start.</summary>
@@ -548,83 +231,10 @@ public sealed record ListIndentOptions(
     FollowNumber Follow,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Tab = null);
 
-/// <summary>What shading applies to.</summary>
-public enum ShadingTarget
-{
-    /// <summary>The selected paragraphs.</summary>
-    Paragraph,
-    /// <summary>The selected text.</summary>
-    Text,
-    /// <summary>A table style part's cells.</summary>
-    Cell,
-}
-
-/// <summary>A shading pattern: the fill only, the pattern color only, or a percentage of the pattern color over the fill.</summary>
-public enum ShadingPattern
-{
-    /// <summary>The fill only.</summary>
-    Clear,
-    /// <summary>The pattern color only.</summary>
-    Solid,
-    /// <summary>5%.</summary>
-    Pct5,
-    /// <summary>10%.</summary>
-    Pct10,
-    /// <summary>20%.</summary>
-    Pct20,
-    /// <summary>25%.</summary>
-    Pct25,
-    /// <summary>30%.</summary>
-    Pct30,
-    /// <summary>40%.</summary>
-    Pct40,
-    /// <summary>50%.</summary>
-    Pct50,
-    /// <summary>60%.</summary>
-    Pct60,
-    /// <summary>70%.</summary>
-    Pct70,
-    /// <summary>75%.</summary>
-    Pct75,
-    /// <summary>80%.</summary>
-    Pct80,
-    /// <summary>90%.</summary>
-    Pct90,
-}
-
 /// <summary>The text's border for <see cref="EditorCommands.SetTextBorderAsync"/>.</summary>
 /// <param name="Border">The box's line; null removes it.</param>
 /// <param name="Shadow">A shadow.</param>
 public sealed record TextBorderOptions(CellBorder? Border, bool Shadow = false);
-
-/// <summary>What page borders are measured from.</summary>
-public enum PageBorderOffset
-{
-    /// <summary>The page's edge.</summary>
-    Page,
-    /// <summary>The text.</summary>
-    Text,
-}
-
-/// <summary>The pages a section's borders show on.</summary>
-public enum PageBorderDisplay
-{
-    /// <summary>Every page.</summary>
-    AllPages,
-    /// <summary>The section's first page.</summary>
-    FirstPage,
-    /// <summary>Every page but the first.</summary>
-    NotFirstPage,
-}
-
-/// <summary>The sections page borders apply to.</summary>
-public enum PageBorderScope
-{
-    /// <summary>Every section.</summary>
-    WholeDocument,
-    /// <summary>The selection's section.</summary>
-    ThisSection,
-}
 
 /// <summary>Page borders for <see cref="EditorCommands.SetPageBordersAsync"/>: every edge is set, and null removes it.</summary>
 /// <param name="Top">The top edge.</param>
@@ -671,87 +281,6 @@ public sealed record ShadingOptions(
     ShadingPattern Pattern = ShadingPattern.Clear,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ColorValue? Color = null);
 
-/// <summary>Whether text wraps around a frame.</summary>
-public enum FrameWrap
-{
-    /// <summary>Text stays above and below the frame.</summary>
-    None,
-    /// <summary>Text wraps around the frame.</summary>
-    Around,
-}
-
-/// <summary>How a frame's width is set.</summary>
-public enum FrameWidthRule
-{
-    /// <summary>As wide as its text.</summary>
-    Auto,
-    /// <summary>The width given.</summary>
-    Exactly,
-}
-
-/// <summary>How a frame's height is set.</summary>
-public enum FrameHeightRule
-{
-    /// <summary>As tall as its text.</summary>
-    Auto,
-    /// <summary>At least the height given.</summary>
-    AtLeast,
-    /// <summary>The height given.</summary>
-    Exactly,
-}
-
-/// <summary>A frame's horizontal alignment.</summary>
-public enum FrameHorizontalAlign
-{
-    /// <summary>Left.</summary>
-    Left,
-    /// <summary>Centered.</summary>
-    Center,
-    /// <summary>Right.</summary>
-    Right,
-    /// <summary>Inside.</summary>
-    Inside,
-    /// <summary>Outside.</summary>
-    Outside,
-}
-
-/// <summary>A frame's vertical alignment.</summary>
-public enum FrameVerticalAlign
-{
-    /// <summary>Top.</summary>
-    Top,
-    /// <summary>Centered.</summary>
-    Center,
-    /// <summary>Bottom.</summary>
-    Bottom,
-    /// <summary>Inside.</summary>
-    Inside,
-    /// <summary>Outside.</summary>
-    Outside,
-}
-
-/// <summary>What a frame's horizontal position is relative to.</summary>
-public enum FrameHorizontalRelative
-{
-    /// <summary>The page margins.</summary>
-    Margin,
-    /// <summary>The page.</summary>
-    Page,
-    /// <summary>The column.</summary>
-    Column,
-}
-
-/// <summary>What a frame's vertical position is relative to.</summary>
-public enum FrameVerticalRelative
-{
-    /// <summary>The page margins.</summary>
-    Margin,
-    /// <summary>The page.</summary>
-    Page,
-    /// <summary>The paragraph it is anchored to: it moves with the text.</summary>
-    Paragraph,
-}
-
 /// <summary>A frame's wrapping, size, position and distance from text.</summary>
 /// <param name="Wrap">Text wrapping.</param>
 /// <param name="WidthRule">How the width is set.</param>
@@ -794,110 +323,6 @@ public enum TableAlignment
     Right,
 }
 
-/// <summary>How text wraps around an object.</summary>
-public enum ObjectWrap
-{
-    /// <summary>In line with the text.</summary>
-    Inline,
-    /// <summary>Square.</summary>
-    Square,
-    /// <summary>Tight.</summary>
-    Tight,
-    /// <summary>Through.</summary>
-    Through,
-    /// <summary>Top and bottom.</summary>
-    TopAndBottom,
-    /// <summary>Behind the text.</summary>
-    BehindText,
-    /// <summary>In front of the text.</summary>
-    InFrontOfText,
-}
-
-/// <summary>What a floating object's horizontal position is measured from.</summary>
-public enum HorizontalReference
-{
-    /// <summary>The column it is anchored in.</summary>
-    Column,
-    /// <summary>The area between the left and right margins.</summary>
-    Margin,
-    /// <summary>The page's edges.</summary>
-    Page,
-    /// <summary>The character its anchor is at.</summary>
-    Character,
-    /// <summary>The left margin's area.</summary>
-    LeftMargin,
-    /// <summary>The right margin's area.</summary>
-    RightMargin,
-    /// <summary>The inside margin's area (left on odd pages, right on even ones).</summary>
-    InsideMargin,
-    /// <summary>The outside margin's area.</summary>
-    OutsideMargin,
-}
-
-/// <summary>What a floating object's vertical position is measured from.</summary>
-public enum VerticalReference
-{
-    /// <summary>Its anchor paragraph's top: it moves with the text.</summary>
-    Paragraph,
-    /// <summary>Its anchor line's top: it moves with the text.</summary>
-    Line,
-    /// <summary>The area between the top and bottom margins.</summary>
-    Margin,
-    /// <summary>The page's edges: it stays where it is on the page.</summary>
-    Page,
-    /// <summary>The top margin's area.</summary>
-    TopMargin,
-    /// <summary>The bottom margin's area.</summary>
-    BottomMargin,
-    /// <summary>The inside margin's area.</summary>
-    InsideMargin,
-    /// <summary>The outside margin's area.</summary>
-    OutsideMargin,
-}
-
-/// <summary>A floating object aligned across its horizontal reference.</summary>
-public enum ObjectHorizontalAlignment
-{
-    /// <summary>At its left edge.</summary>
-    Left,
-    /// <summary>Centred.</summary>
-    Center,
-    /// <summary>At its right edge.</summary>
-    Right,
-    /// <summary>At its inside edge (left on odd pages).</summary>
-    Inside,
-    /// <summary>At its outside edge.</summary>
-    Outside,
-}
-
-/// <summary>A floating object aligned across its vertical reference.</summary>
-public enum ObjectVerticalAlignment
-{
-    /// <summary>At its top.</summary>
-    Top,
-    /// <summary>Centred.</summary>
-    Center,
-    /// <summary>At its bottom.</summary>
-    Bottom,
-    /// <summary>At its inside edge.</summary>
-    Inside,
-    /// <summary>At its outside edge.</summary>
-    Outside,
-}
-
-/// <summary>Which sides of a floating object text wraps on.</summary>
-public enum WrapSide
-{
-    /// <summary>Both sides.</summary>
-    BothSides,
-    /// <summary>Its left only.</summary>
-    Left,
-    /// <summary>Its right only.</summary>
-    Right,
-    /// <summary>Whichever side has more room.</summary>
-    Largest,
-}
-
 /// <summary>
 /// A floating object's horizontal place: aligned across its reference, or an offset from the reference's left edge.
 /// Set with neither, the object stays where it is, measured from the new reference.
@@ -921,32 +346,6 @@ public sealed record VerticalPosition(
     VerticalReference RelativeTo,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ObjectVerticalAlignment? Align = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Offset = null);
-
-/// <summary>Which way to flip an object.</summary>
-public enum FlipAxis
-{
-    /// <summary>Left to right.</summary>
-    Horizontal,
-    /// <summary>Top to bottom.</summary>
-    Vertical,
-}
-
-/// <summary>Where an object goes in the paint order.</summary>
-public enum Arrange
-{
-    /// <summary>Over the next object above it.</summary>
-    Forward,
-    /// <summary>Under the next object below it.</summary>
-    Backward,
-    /// <summary>Over every object.</summary>
-    ToFront,
-    /// <summary>Under every object.</summary>
-    ToBack,
-    /// <summary>In front of the text.</summary>
-    InFrontOfText,
-    /// <summary>Behind the text.</summary>
-    BehindText,
-}
 
 /// <summary>An outline change; unset values are kept.</summary>
 /// <param name="Width">The width, 0 to 1584 pt.</param>
@@ -1037,42 +436,6 @@ public sealed record PictureAdjustChange(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? Brightness = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? Contrast = null);
 
-/// <summary>A content control kind.</summary>
-public enum ControlKind
-{
-    /// <summary>Rich text.</summary>
-    RichText,
-    /// <summary>Plain text.</summary>
-    PlainText,
-    /// <summary>A picture.</summary>
-    Picture,
-    /// <summary>A checkbox.</summary>
-    Checkbox,
-    /// <summary>A date picker.</summary>
-    Date,
-    /// <summary>A drop-down list.</summary>
-    DropDown,
-    /// <summary>A combo box.</summary>
-    ComboBox,
-    /// <summary>A group.</summary>
-    Group,
-    /// <summary>A repeating section.</summary>
-    RepeatingSection,
-}
-
-/// <summary>What a content control's lock prevents.</summary>
-public enum ControlLock
-{
-    /// <summary>Nothing.</summary>
-    None,
-    /// <summary>Deleting the control.</summary>
-    Control,
-    /// <summary>Editing the content.</summary>
-    Content,
-    /// <summary>Both.</summary>
-    Both,
-}
-
 /// <summary>Which element text a replacement applies to.</summary>
 public enum ElementTextField
 {
@@ -1102,19 +465,6 @@ public enum MarkSeverity
     Warning,
     /// <summary>Information.</summary>
     Info,
-}
-
-/// <summary>How revisions and comments show.</summary>
-public enum MarkupView
-{
-    /// <summary>All markup.</summary>
-    All,
-    /// <summary>Simple markup.</summary>
-    Simple,
-    /// <summary>No markup: the document as if accepted.</summary>
-    NoMarkup,
-    /// <summary>The original, as if rejected.</summary>
-    Original,
 }
 
 /// <summary>An AutoCorrect change: the rules given switch, the lists given replace the shipped ones; unset values are kept.</summary>
@@ -1393,3 +743,50 @@ public sealed record ControlContent
 /// <param name="Message">The tooltip text.</param>
 public sealed record ElementMark(ElementId Id, MarkSeverity Severity, string Message);
 
+/// <summary>A highlight colour.</summary>
+public enum HighlightColor
+{
+    /// <summary>No highlight.</summary>
+    None,
+    /// <summary>Yellow.</summary>
+    Yellow,
+    /// <summary>Bright green.</summary>
+    BrightGreen,
+    /// <summary>Turquoise.</summary>
+    Turquoise,
+    /// <summary>Pink.</summary>
+    Pink,
+    /// <summary>Blue.</summary>
+    Blue,
+    /// <summary>Red.</summary>
+    Red,
+    /// <summary>Dark blue.</summary>
+    DarkBlue,
+    /// <summary>Teal.</summary>
+    Teal,
+    /// <summary>Green.</summary>
+    Green,
+    /// <summary>Violet.</summary>
+    Violet,
+    /// <summary>Dark red.</summary>
+    DarkRed,
+    /// <summary>Dark yellow.</summary>
+    DarkYellow,
+    /// <summary>50% gray.</summary>
+    Gray50,
+    /// <summary>25% gray.</summary>
+    Gray25,
+    /// <summary>Black.</summary>
+    Black,
+}
+
+/// <summary>A list kind.</summary>
+public enum ListKind
+{
+    /// <summary>Not a list.</summary>
+    None,
+    /// <summary>A bulleted list.</summary>
+    Bullet,
+    /// <summary>A numbered list.</summary>
+    Numbered,
+}
