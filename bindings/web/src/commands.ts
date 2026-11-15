@@ -36,25 +36,11 @@ import type {
   StyleId,
 } from './types.js';
 import type { DocumentDefaults } from './wire.generated.js';
+import type { FollowNumber, NumberFormat, ReplaceScope, ShadingPattern } from './wire.generated.js';
+
+export type { FollowNumber, NumberFormat, ReplaceScope, ShadingPattern } from './wire.generated.js';
 
 export type { DocumentDefaults } from './wire.generated.js';
-
-/** A list level's number style. */
-export type NumberFormat =
-  | 'decimal'
-  | 'upperRoman'
-  | 'lowerRoman'
-  | 'upperLetter'
-  | 'lowerLetter'
-  | 'ordinal'
-  | 'cardinalText'
-  | 'ordinalText'
-  | 'decimalZero'
-  | 'bullet'
-  | 'none';
-
-/** What follows a list level's number. */
-export type FollowNumber = 'tab' | 'space' | 'nothing';
 
 /** A list gallery entry, by its id. */
 export type ListEntryId = string;
@@ -118,23 +104,6 @@ export interface BorderLine {
   /** The color, or automatic. */
   color: Color | 'auto';
 }
-
-/** A shading pattern: clear (the fill only), solid (the pattern color), or a percentage of the pattern color over the fill. */
-export type ShadingPattern =
-  | 'clear'
-  | 'solid'
-  | 'pct5'
-  | 'pct10'
-  | 'pct20'
-  | 'pct25'
-  | 'pct30'
-  | 'pct40'
-  | 'pct50'
-  | 'pct60'
-  | 'pct70'
-  | 'pct75'
-  | 'pct80'
-  | 'pct90';
 
 /** A frame's wrapping, size, position and distance from text. */
 export type FrameProperties = {
@@ -1109,6 +1078,3 @@ export function createCommands(run: (op: Op) => Promise<unknown>): Commands {
   for (const id of Object.keys(encodings) as CommandId[]) commands[id] = (arg) => run(toOp(id, arg));
   return Object.freeze(commands) as unknown as Commands;
 }
-
-/** Where `replaceFont` rewrites: the whole document (every story, and the tables below the text) or the selected text. */
-export type ReplaceScope = 'document' | 'selection';

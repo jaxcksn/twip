@@ -177,10 +177,25 @@ const ADOPT = [
   'PdfOptions',
   // commands.ts
   'DocumentDefaults',
+  'NumberFormat',
+  'FollowNumber',
+  'ShadingPattern',
+  'ReplaceScope',
+  // transport/protocol.ts
+  'Cursor',
+  'ClipboardData',
+  'HostRequest',
+  'CaretWindow',
+  'WindowSegment',
+  'WindowPoint',
+  'A11yUpdate',
+  // errors.ts
+  'ErrorCode',
 ];
 
 /** Schema types written out at each use rather than named. */
 const INLINE = [
+  'A11yChange',
   'AccessibilityDialog',
   'AccessibilityIssue',
   'AccessibleMark',
@@ -207,6 +222,8 @@ const INLINE = [
   'CheckboxOptions',
   'ChoiceOption',
   'ColumnLayout',
+  'CommandGroup',
+  'CommandShortcuts',
   'ControlLock',
   'CursorTarget',
   'DateOptions',
@@ -293,9 +310,12 @@ const INLINE = [
   'TabsAction',
   'TabsDialog',
   'TooltipKind',
+  'UndoGrouping',
   'VerticalMerge',
   'VerticalRuler',
   'WarningCode',
+  'WindowLine',
+  'WindowParagraph',
 ];
 
 /** Fields this SDK types more precisely than the schema can (`Type.field`: the TypeScript type). */

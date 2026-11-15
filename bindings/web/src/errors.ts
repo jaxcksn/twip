@@ -1,15 +1,6 @@
-/** The stable code of an {@link EditorError}. */
-export type ErrorCode =
-  | 'destroyed'
-  | 'invalid-argument'
-  | 'unavailable'
-  | 'read-only'
-  | 'import-failed'
-  | 'export-failed'
-  | 'aborted'
-  | 'not-allowed'
-  | 'unsupported'
-  | 'internal';
+import type { ErrorCode } from './wire.generated.js';
+
+export type { ErrorCode } from './wire.generated.js';
 
 /** Why an operation failed. Every rejected promise of the API rejects with one. */
 export class EditorError extends Error {

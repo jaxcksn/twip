@@ -8,6 +8,7 @@ pub enum PointerKind {
     Cancel,
 }
 
+/// A pointer shape over the document.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, twip_wire::Encode, twip_wire::Decode)]
 #[wire(rename_all = "camelCase")]
 pub enum Cursor {

@@ -1543,7 +1543,27 @@ export interface ElementSelection {
 }
 
 // @public
-export type ErrorCode = 'destroyed' | 'invalid-argument' | 'unavailable' | 'read-only' | 'import-failed' | 'export-failed' | 'aborted' | 'not-allowed' | 'unsupported' | 'internal';
+export type ErrorCode =
+/** The session was closed. */
+'destroyed'
+/** An argument is out of its range, or names something that doesn't exist. */
+| 'invalid-argument'
+/** The operation can't run here now (nothing to undo, no table at the selection). */
+| 'unavailable'
+/** The operation changes the document, and the session is read only. */
+| 'read-only'
+/** The bytes aren't a document the engine reads. The open document stays. */
+| 'import-failed'
+/** The document couldn't be written in the requested format. */
+| 'export-failed'
+/** The operation was cancelled. */
+| 'aborted'
+/** The platform refused (a browser denying clipboard access). */
+| 'not-allowed'
+/** The engine doesn't do this yet. */
+| 'unsupported'
+/** A fault in the engine. The session rejects later operations. */
+| 'internal';
 
 // @public
 export type ExportOptions = {
@@ -1669,7 +1689,13 @@ export type FlipAxis =
 | 'vertical';
 
 // @public
-export type FollowNumber = 'tab' | 'space' | 'nothing';
+export type FollowNumber =
+/** A tab. */
+'tab'
+/** A space. */
+| 'space'
+/** Nothing. */
+| 'nothing';
 
 // @public
 export type FontAnswer = Uint8Array | URL | string | {
@@ -2327,7 +2353,29 @@ export type NoArgumentCommandId = {
 }[CommandId];
 
 // @public
-export type NumberFormat = 'decimal' | 'upperRoman' | 'lowerRoman' | 'upperLetter' | 'lowerLetter' | 'ordinal' | 'cardinalText' | 'ordinalText' | 'decimalZero' | 'bullet' | 'none';
+export type NumberFormat =
+/** 1, 2, 3. */
+'decimal'
+/** I, II, III. */
+| 'upperRoman'
+/** i, ii, iii. */
+| 'lowerRoman'
+/** A, B, C. */
+| 'upperLetter'
+/** a, b, c. */
+| 'lowerLetter'
+/** 1st, 2nd, 3rd. */
+| 'ordinal'
+/** One, Two, Three. */
+| 'cardinalText'
+/** First, Second, Third. */
+| 'ordinalText'
+/** 01, 02, 03. */
+| 'decimalZero'
+/** A bullet: the level's text in its font, or its picture. */
+| 'bullet'
+/** No number. */
+| 'none';
 
 // @public
 export type ObjectGrid =
@@ -2596,7 +2644,11 @@ export interface ReferenceRule {
 }
 
 // @public
-export type ReplaceScope = 'document' | 'selection';
+export type ReplaceScope =
+/** The whole document: every story, and the tables below the text. */
+'document'
+/** The selected text. */
+| 'selection';
 
 // @public
 export interface Review {
@@ -2781,7 +2833,35 @@ export interface SessionOptions {
 }
 
 // @public
-export type ShadingPattern = 'clear' | 'solid' | 'pct5' | 'pct10' | 'pct20' | 'pct25' | 'pct30' | 'pct40' | 'pct50' | 'pct60' | 'pct70' | 'pct75' | 'pct80' | 'pct90';
+export type ShadingPattern =
+/** The fill only. */
+'clear'
+/** The pattern color only. */
+| 'solid'
+/** 5%. */
+| 'pct5'
+/** 10%. */
+| 'pct10'
+/** 20%. */
+| 'pct20'
+/** 25%. */
+| 'pct25'
+/** 30%. */
+| 'pct30'
+/** 40%. */
+| 'pct40'
+/** 50%. */
+| 'pct50'
+/** 60%. */
+| 'pct60'
+/** 70%. */
+| 'pct70'
+/** 75%. */
+| 'pct75'
+/** 80%. */
+| 'pct80'
+/** 90%. */
+| 'pct90';
 
 // @public
 export interface Shadow {

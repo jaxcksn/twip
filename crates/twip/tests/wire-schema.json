@@ -8210,6 +8210,7 @@
       }
     },
     {
+      "docs": "A pointer shape over the document.",
       "module": "twip::editing::input",
       "name": "Cursor",
       "shape": {

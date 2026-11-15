@@ -42,7 +42,8 @@ Each of these rewrites checked-in expectations; review the diff before committin
   Failures draw changed pages to `target/layout-diff/index.html`. A PR that changes them needs the `layout-change`
   label and a `fix(layout)` title saying what moves.
 - Wire fixtures (`crates/twip/tests/wire`) and the wire schema (`crates/twip/tests/wire-schema.json`):
-  `TWIP_WRITE_WIRE=1 cargo nextest run -p twip --lib fixtures_are_current` after changing any `twip::api` type.
+  `TWIP_WRITE_WIRE=1 cargo nextest run -p twip --lib fixtures_are_current` after changing any `twip::api` type, then
+  `node scripts/wire.ts` in `bindings/web` (the web SDK's types generated from the schema, `src/wire.generated.ts`).
 - Graphics goldens: `TWIP_GRAPHICS_BLESS=1 cargo nextest run -p twip-graphics --test golden`.
 - SDK surface: `pnpm exec api-extractor run --local` in `bindings/web`; `.NET` uses `PublicAPI.Unshipped.txt`.
 
@@ -59,7 +60,8 @@ Pipeline: DOCX → document model (`crates/twip/src/docx`) → layout (`layout`)
 - **Single-threaded core.** The engine is synchronous and uses `Rc`, not `Arc`; pointer identity is used for caching.
   Async exists only at the SDK boundary.
 - **`twip::api` is the contract.** `crates/twip/src/api` defines every command, state field, event, error and warning.
-  SDKs are not generated. A new command means: `Command` variant + catalog entry + engine code, a wire fixture, a
+  SDK methods are hand-written; the web SDK's wire types are generated from the schema (`bindings/web/scripts/wire.ts`
+  lists them, and the overrides for types it shapes its own way). A new command means: `Command` variant + catalog entry + engine code, a wire fixture, a
   hand-written method in each SDK (`bindings/web/src/commands.ts`, .NET `EditorCommands`), both surface snapshots,
   and a step in a `tests/contract/*.json` script. All runners (Rust, web headless/worker, .NET) must agree;
   `tests/contract/pending.txt` lists scripts awaiting their feature (runners fail when a pending one passes).

@@ -6,6 +6,17 @@ import type { TwipEvents } from '../events.js';
 import type { FaceInfo } from '../fonts/library.js';
 import type { AccessibleId, AccessibleNode } from '../services/accessibility.js';
 import type { Warning } from '../types.js';
+import type { HostRequest } from '../wire.generated.js';
+
+export type {
+  A11yUpdate,
+  CaretWindow,
+  ClipboardData,
+  Cursor,
+  HostRequest,
+  WindowPoint,
+  WindowSegment,
+} from '../wire.generated.js';
 
 /** Structured call numbers: `TwipMethod` in `twip.h`, the C ABI's `Method`. The two lists must match exactly. */
 /** An export's options on the wire: the format, and a PDF's options beside it. */
@@ -125,88 +136,6 @@ export const Kind = {
   FontRequest: 5,
   HostRequest: 6,
 } as const;
-
-/** A pointer shape over the document: the engine's `Cursor`. */
-export type Cursor =
-  | 'default'
-  | 'text'
-  | 'pointer'
-  | 'move'
-  | 'resizeHorizontal'
-  | 'resizeVertical'
-  | 'resizeNorthWestSouthEast'
-  | 'resizeNorthEastSouthWest'
-  | 'crosshair'
-  | 'notAllowed'
-  | 'copy'
-  | 'cellSelect'
-  | 'columnSelect'
-  | 'rowSelect'
-  | 'rotate';
-
-/** What a copy puts on the clipboard: the engine's `ClipboardData`. */
-export interface ClipboardData {
-  text: string;
-  html?: string;
-  /** The engine's own copy, for a paste back into it. */
-  internal?: string;
-}
-
-/** Something only the view showing a session can do: the {@link Kind.HostRequest} payload. Content CSS px. */
-export type HostRequest =
-  | { type: 'cursor'; cursor: Cursor }
-  /** Send every pointer event to the view until `release`. */
-  | { type: 'capture' }
-  | { type: 'release' }
-  /** A cut or copy from the keyboard, for the system clipboard. */
-  | { type: 'clipboard'; data: ClipboardData }
-  /** The caret moved: for the IME and the system caret. */
-  | { type: 'caret'; x: number; y: number; height: number; visible: boolean }
-  /** Scroll the viewport's top-left to this point, after the next frame sizes the content (a zoom). */
-  | { type: 'scroll'; x: number; y: number }
-  /** Scroll so this rectangle shows. */
-  | { type: 'scroll_to'; x: number; y: number; width: number; height: number }
-  /** The text around the caret and the selection in it changed: for the focused editing element. */
-  | { type: 'caret_text'; window: CaretWindow }
-  /** The accessibility tree changed: the whole tree, or the changes since the last one. */
-  | { type: 'a11y'; update: A11yUpdate };
-
-/** The text around the caret: the caret's paragraph and its neighbours in its container, in laid-out lines. */
-export interface CaretWindow {
-  paragraphs: {
-    id: AccessibleId;
-    role: 'paragraph' | 'heading' | 'listItem';
-    level?: number;
-    /** A numbered item's number: not part of the text or its offsets. */
-    label?: string;
-    lines: { segments: WindowSegment[] }[];
-  }[];
-  anchor: WindowPoint;
-  focus: WindowPoint;
-  /** The selection is all of its story. */
-  all: boolean;
-  lang: string;
-  readOnly: boolean;
-}
-
-/** Text of a line with the same marks, author and language. */
-export interface WindowSegment {
-  text: string;
-  marks?: ('insertion' | 'deletion' | 'misspelling')[];
-  author?: string;
-  lang?: string;
-}
-
-/** A place in a caret window: a paragraph's index and an offset in its text (characters, without the label). */
-export interface WindowPoint {
-  paragraph: number;
-  offset: number;
-}
-
-/** The accessibility tree, or what changed in it: a node and its subtree replaced, or a node's children reordered. */
-export type A11yUpdate =
-  | { full: AccessibleNode }
-  | { patch: ({ type: 'replace'; node: AccessibleNode } | { type: 'children'; parent: AccessibleId; ids: AccessibleId[] })[] };
 
 /** One engine-to-SDK message. `payload` is the decoded JSON, or undefined for kinds without one. */
 export interface Message {

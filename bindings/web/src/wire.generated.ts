@@ -2,7 +2,6 @@
 import type { CommandId, Op } from './commands.js';
 import type { MenuAction } from './services/menus.js';
 import type { Mixed, RowHeight, Tri } from './state.js';
-import type { Cursor } from './transport/protocol.js';
 import type { Color, CommentId, Degrees, ElementId, HeadingId, MatchId, Points, RevisionId, StyleId } from './types.js';
 
 /** A font table's general class of a family. */
@@ -2467,3 +2466,193 @@ export interface DocumentDefaults {
     hanging?: Points;
   };
 }
+
+/** A list level's number style. */
+export type NumberFormat =
+  /** 1, 2, 3. */
+  | 'decimal'
+  /** I, II, III. */
+  | 'upperRoman'
+  /** i, ii, iii. */
+  | 'lowerRoman'
+  /** A, B, C. */
+  | 'upperLetter'
+  /** a, b, c. */
+  | 'lowerLetter'
+  /** 1st, 2nd, 3rd. */
+  | 'ordinal'
+  /** One, Two, Three. */
+  | 'cardinalText'
+  /** First, Second, Third. */
+  | 'ordinalText'
+  /** 01, 02, 03. */
+  | 'decimalZero'
+  /** A bullet: the level's text in its font, or its picture. */
+  | 'bullet'
+  /** No number. */
+  | 'none';
+
+/** What follows a list level's number. */
+export type FollowNumber =
+  /** A tab. */
+  | 'tab'
+  /** A space. */
+  | 'space'
+  /** Nothing. */
+  | 'nothing';
+
+/**
+ * A shading pattern: clear (the fill only), solid (the pattern color), or a percentage of the pattern color over the
+ * fill.
+ */
+export type ShadingPattern =
+  /** The fill only. */
+  | 'clear'
+  /** The pattern color only. */
+  | 'solid'
+  /** 5%. */
+  | 'pct5'
+  /** 10%. */
+  | 'pct10'
+  /** 20%. */
+  | 'pct20'
+  /** 25%. */
+  | 'pct25'
+  /** 30%. */
+  | 'pct30'
+  /** 40%. */
+  | 'pct40'
+  /** 50%. */
+  | 'pct50'
+  /** 60%. */
+  | 'pct60'
+  /** 70%. */
+  | 'pct70'
+  /** 75%. */
+  | 'pct75'
+  /** 80%. */
+  | 'pct80'
+  /** 90%. */
+  | 'pct90';
+
+/** Where `replaceFont` rewrites. */
+export type ReplaceScope =
+  /** The whole document: every story, and the tables below the text. */
+  | 'document'
+  /** The selected text. */
+  | 'selection';
+
+/** A pointer shape over the document. */
+export type Cursor = 'default' | 'text' | 'pointer' | 'move' | 'resizeHorizontal' | 'resizeVertical' | 'resizeNorthWestSouthEast' | 'resizeNorthEastSouthWest' | 'crosshair' | 'notAllowed' | 'copy' | 'cellSelect' | 'columnSelect' | 'rowSelect' | 'rotate';
+
+/** What a copy puts on the clipboard, and what a paste takes from it. */
+export interface ClipboardData {
+  /** The plain text (`text/plain`). */
+  text: string;
+  /** The HTML (`text/html`), when there is any. */
+  html?: string;
+  /** A token naming the engine's internal fragment: a paste in any session of the engine keeps its formatting. */
+  internal?: string;
+}
+
+/**
+ * Something only the host showing the session can do, given to the sink `attach` takes. Positions are content CSS px:
+ * they scroll with the document. On the wire it is the `host_request` callback, `type` tagged.
+ */
+export type HostRequest =
+  | { type: 'cursor'; cursor: Cursor }
+  | { type: 'capture' }
+  | { type: 'release' }
+  | { type: 'clipboard'; data: ClipboardData }
+  | { type: 'caret'; x: number; y: number; height: number; visible: boolean }
+  | { type: 'scroll'; x: number; y: number }
+  | { type: 'scroll_to'; x: number; y: number; width: number; height: number }
+  | { type: 'caret_text'; window: CaretWindow }
+  | { type: 'a11y'; update: A11yUpdate };
+
+/**
+ * The text around the caret, for the element that has the keyboard focus while the editor does: the caret's paragraph,
+ * the one before it and the ones after it (up to about 2,000 characters), all in the caret's container (the body, a
+ * cell, a note, a header or footer, a text box), each split into its laid-out lines; and the selection in it.
+ */
+export interface CaretWindow {
+  /** The paragraphs, in order. */
+  paragraphs: {
+    /** Its id: the same as its node's in the accessibility tree. */
+    id: AccessibleId;
+    /** `paragraph`, `heading` or `listItem`. */
+    role: 'document' | 'paragraph' | 'heading' | 'list' | 'listItem' | 'table' | 'row' | 'cell' | 'columnHeader' | 'rowHeader' | 'image' | 'link' | 'textBox' | 'note' | 'noteRef' | 'comment' | 'header' | 'footer' | 'region' | 'text';
+    /** A heading's level. */
+    level?: number;
+    /** A numbered list item's number as shown; it isn't part of the text or its offsets. */
+    label?: string;
+    /** Its laid-out lines; a line break ends one too. */
+    lines: {
+      /** Its text, split where marks, author or language change. */
+      segments: WindowSegment[];
+    }[];
+  }[];
+  /** The selection's anchor, at the window's edge when it is outside. */
+  anchor: WindowPoint;
+  /** The selection's focus: the caret. */
+  focus: WindowPoint;
+  /** The selection is all of its story. */
+  all: boolean;
+  /** The caret's language (BCP 47). */
+  lang: string;
+  /** The caret is where text can't go in (a locked control, a read-only document). */
+  readOnly: boolean;
+}
+
+/** Text of a caret window's line with the same marks, author and language. */
+export interface WindowSegment {
+  /** Its text. */
+  text: string;
+  /** Its review and spelling marks. */
+  marks?: ('insertion' | 'deletion' | 'misspelling')[];
+  /** Whose marks they are. */
+  author?: string;
+  /** Its language, where it differs from the document's. */
+  lang?: string;
+}
+
+/**
+ * A place in a caret window: a paragraph (its index in the window) and an offset in its text (characters, not counting
+ * a list item's label).
+ */
+export interface WindowPoint {
+  /** The paragraph's index in the window. */
+  paragraph: number;
+  /** The offset in its text. */
+  offset: number;
+}
+
+/** The accessibility tree, or what changed in it since the last update. */
+export type A11yUpdate =
+  | { full: AccessibleNode }
+  | { patch: (
+      | { type: 'replace'; node: AccessibleNode }
+      | { type: 'children'; parent: AccessibleId; ids: AccessibleId[] })[] };
+
+/** Why an operation failed. Each serializes as its stable name (`invalid-argument`). */
+export type ErrorCode =
+  /** The session was closed. */
+  | 'destroyed'
+  /** An argument is out of its range, or names something that doesn't exist. */
+  | 'invalid-argument'
+  /** The operation can't run here now (nothing to undo, no table at the selection). */
+  | 'unavailable'
+  /** The operation changes the document, and the session is read only. */
+  | 'read-only'
+  /** The bytes aren't a document the engine reads. The open document stays. */
+  | 'import-failed'
+  /** The document couldn't be written in the requested format. */
+  | 'export-failed'
+  /** The operation was cancelled. */
+  | 'aborted'
+  /** The platform refused (a browser denying clipboard access). */
+  | 'not-allowed'
+  /** The engine doesn't do this yet. */
+  | 'unsupported'
+  /** A fault in the engine. The session rejects later operations. */
+  | 'internal';
