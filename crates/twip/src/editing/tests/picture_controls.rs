@@ -93,7 +93,7 @@ fn picture_control_geometry_follows_mode_and_lock() {
             Command::SetObjectSize(crate::api::command::ObjectSize {
                 width: Some(crate::api::value::Points(20.0)),
                 height: Some(crate::api::value::Points(20.0)),
-                lock_aspect: None,
+                ..Default::default()
             }),
             fonts(),
         )

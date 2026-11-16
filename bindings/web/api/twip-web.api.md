@@ -320,12 +320,17 @@ export interface Commands {
         follow: FollowNumber;
         tab?: Points;
     }): Promise<void>;
+    alignObjects(options: {
+        align: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom' | 'distributeHorizontally' | 'distributeVertically';
+        relativeTo?: 'page' | 'margin' | 'selectedObjects';
+    }): Promise<void>;
     applyCharacterStyle(styleId: StyleId | null): Promise<void>;
     // Warning: (ae-forgotten-export) The symbol "ListEntryId" needs to be exported by the entry point index.d.ts
     applyListEntry(id: ListEntryId): Promise<void>;
     arrangeObject(where: Arrange): Promise<void>;
     autoFitColumns(to: 'contents' | 'window' | 'fixed'): Promise<void>;
     changeCase(to: 'lower' | 'upper' | 'sentence' | 'title' | 'toggle'): Promise<void>;
+    changePicture(data: Uint8Array): Promise<void>;
     clearFormatting(): Promise<void>;
     clearTabStops(): Promise<void>;
     closeHeaderFooter(): Promise<void>;
@@ -733,6 +738,8 @@ export interface Commands {
         width?: Points;
         height?: Points;
         lockAspect?: boolean;
+        relativeWidth?: RelativeSize | 'none';
+        relativeHeight?: RelativeSize | 'none';
     }): Promise<void>;
     setObjectWrap(wrap: ObjectWrap): Promise<void>;
     setObjectWrapOptions(options: {
@@ -785,6 +792,7 @@ export interface Commands {
         widowControl?: boolean;
         dontHyphenate?: boolean;
         suppressLineNumbers?: boolean;
+        textboxTightWrap?: TightWrap;
     }): Promise<void>;
     setParagraphShading(color: Color | null): Promise<void>;
     setParagraphSpacing(options: {
@@ -795,6 +803,12 @@ export interface Commands {
     setParagraphStyle(styleId: StyleId): Promise<void>;
     setParagraphTextDirection(direction: TextFlow): Promise<void>;
     setPictureAdjust(change: PictureAdjustChange): Promise<void>;
+    setPictureCrop(crop: {
+        left?: number;
+        top?: number;
+        right?: number;
+        bottom?: number;
+    }): Promise<void>;
     setProtectedPictureControls(options: {
         tagPrefixes: string[];
     }): Promise<void>;
@@ -1890,6 +1904,7 @@ export type HighlightColor = 'yellow' | 'brightGreen' | 'turquoise' | 'pink' | '
 export interface HorizontalPosition {
     align?: ObjectHorizontalAlignment;
     offset?: Points;
+    percent?: number;
     relativeTo: HorizontalReference;
 }
 
@@ -2210,14 +2225,23 @@ export interface ObjectSelection {
     anchorLocked: boolean | null;
     childPath: number[];
     count: number;
+    crop?: {
+        left: number;
+        top: number;
+        right: number;
+        bottom: number;
+    };
     decorative: boolean;
     flipH: boolean;
     flipV: boolean;
     height: Points;
     kind: 'picture' | 'textBox' | 'shape' | 'line' | 'group';
     placement: ObjectPlacement | null;
+    relativeHeight?: RelativeSize;
+    relativeWidth?: RelativeSize;
     rotation: Degrees;
     shape: ShapeState | null;
+    transparentColor?: Color;
     width: Points;
     wrap: ObjectWrap;
 }
@@ -2313,6 +2337,7 @@ export interface ParagraphFormatting {
         widowControl: Tri;
         dontHyphenate: Tri;
         suppressLineNumbers: Tri;
+        textboxTightWrap: Mixed<TightWrap>;
     };
     indents: {
         left: Mixed<Points>;
@@ -2355,6 +2380,7 @@ export interface PictureAdjustChange {
     contrast?: number;
     grayscale?: boolean;
     transparency?: number;
+    transparentColor?: Color | 'none';
 }
 
 // @public
@@ -2419,6 +2445,12 @@ export interface ReferenceRule {
     category: string;
     fieldType: string;
     gallery?: string;
+}
+
+// @public
+export interface RelativeSize {
+    percent: number;
+    relativeTo: 'margin' | 'page' | 'leftMargin' | 'rightMargin' | 'insideMargin' | 'outsideMargin' | 'topMargin' | 'bottomMargin';
 }
 
 // @public
@@ -2646,6 +2678,7 @@ export interface ShapeState {
 export interface ShapeTextChange {
     anchor?: TextAnchor;
     autofit?: TextAutofit;
+    columns?: TextColumns;
     direction?: TextDirection;
     insets?: [Points, Points, Points, Points];
     wrapText?: boolean;
@@ -2655,6 +2688,7 @@ export interface ShapeTextChange {
 export interface ShapeTextState {
     anchor: TextAnchor;
     autofit: TextAutofit;
+    columns: TextColumns;
     direction: TextDirection;
     insets: [Points, Points, Points, Points];
     wrapText: boolean;
@@ -2908,7 +2942,13 @@ export interface TabTypeChoice {
 export type TextAnchor = 'top' | 'middle' | 'bottom';
 
 // @public
-export type TextAutofit = 'none' | 'shape';
+export type TextAutofit = 'none' | 'shape' | 'shrinkText';
+
+// @public
+export interface TextColumns {
+    count: number;
+    spacing: Points;
+}
 
 // @public
 export type TextDirection = 'horizontal' | 'vertical' | 'vertical270' | 'eastAsianVertical' | 'mongolianVertical' | 'stacked' | 'stackedRightToLeft';
@@ -2932,6 +2972,9 @@ export interface ThemeColors {
 
 // @public
 export type ThemeColour = 'text1' | 'background1' | 'text2' | 'background2' | 'accent1' | 'accent2' | 'accent3' | 'accent4' | 'accent5' | 'accent6' | 'hyperlink' | 'followedHyperlink';
+
+// @public
+export type TightWrap = 'none' | 'allLines' | 'firstAndLastLine' | 'firstLineOnly' | 'lastLineOnly';
 
 // @public
 export interface Tooltip {
@@ -3053,6 +3096,7 @@ export type UnderlineStyle = 'none' | 'single' | 'words' | 'double' | 'thick' | 
 export interface VerticalPosition {
     align?: ObjectVerticalAlignment;
     offset?: Points;
+    percent?: number;
     relativeTo: VerticalReference;
 }
 

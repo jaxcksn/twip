@@ -759,7 +759,6 @@ Twip.EditorCommands.SetListLevelAsync(Twip.LevelChange change, System.Threading.
 Twip.EditorCommands.SetMarginsAsync(Twip.MarginOptions! options, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.SetMarkupViewAsync(Twip.MarkupView view, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.SetModeAsync(Twip.EditorMode mode, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-Twip.EditorCommands.SetObjectSizeAsync(Twip.Length? width = null, Twip.Length? height = null, bool? lockAspect = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.SetObjectWrapAsync(Twip.ObjectWrap wrap, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.SetOrientationAsync(Twip.PageOrientation orientation, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.SetPaperSizeAsync(Twip.Length width, Twip.Length height, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
@@ -3522,7 +3521,6 @@ static Twip.EditorOperation.SetListLevel(Twip.LevelChange change) -> Twip.Editor
 static Twip.EditorOperation.SetMargins(Twip.MarginOptions! options) -> Twip.EditorOperation!
 static Twip.EditorOperation.SetMarkupView(Twip.MarkupView view) -> Twip.EditorOperation!
 static Twip.EditorOperation.SetMode(Twip.EditorMode mode) -> Twip.EditorOperation!
-static Twip.EditorOperation.SetObjectSize(Twip.Length? width = null, Twip.Length? height = null, bool? lockAspect = null) -> Twip.EditorOperation!
 static Twip.EditorOperation.SetObjectWrap(Twip.ObjectWrap wrap) -> Twip.EditorOperation!
 static Twip.EditorOperation.SetOrientation(Twip.PageOrientation orientation) -> Twip.EditorOperation!
 static Twip.EditorOperation.SetPaperSize(Twip.Length width, Twip.Length height) -> Twip.EditorOperation!
@@ -4030,7 +4028,6 @@ override Twip.HorizontalPosition.GetHashCode() -> int
 override Twip.HorizontalPosition.Equals(object? obj) -> bool
 Twip.HorizontalPosition.Equals(Twip.HorizontalPosition? other) -> bool
 Twip.HorizontalPosition.<Clone>$() -> Twip.HorizontalPosition!
-Twip.HorizontalPosition.Deconstruct(out Twip.HorizontalReference RelativeTo, out Twip.ObjectHorizontalAlignment? Align, out Twip.Length? Offset) -> void
 Twip.VerticalPosition
 override Twip.VerticalPosition.ToString() -> string!
 static Twip.VerticalPosition.operator !=(Twip.VerticalPosition? left, Twip.VerticalPosition? right) -> bool
@@ -4039,7 +4036,6 @@ override Twip.VerticalPosition.GetHashCode() -> int
 override Twip.VerticalPosition.Equals(object? obj) -> bool
 Twip.VerticalPosition.Equals(Twip.VerticalPosition? other) -> bool
 Twip.VerticalPosition.<Clone>$() -> Twip.VerticalPosition!
-Twip.VerticalPosition.Deconstruct(out Twip.VerticalReference RelativeTo, out Twip.ObjectVerticalAlignment? Align, out Twip.Length? Offset) -> void
 Twip.ObjectPlacement
 override Twip.ObjectPlacement.ToString() -> string!
 static Twip.ObjectPlacement.operator !=(Twip.ObjectPlacement? left, Twip.ObjectPlacement? right) -> bool
@@ -4058,8 +4054,6 @@ override Twip.TextDistance.Equals(object? obj) -> bool
 Twip.TextDistance.Equals(Twip.TextDistance? other) -> bool
 Twip.TextDistance.<Clone>$() -> Twip.TextDistance!
 Twip.TextDistance.TextDistance() -> void
-Twip.VerticalPosition.VerticalPosition(Twip.VerticalReference RelativeTo, Twip.ObjectVerticalAlignment? Align = null, Twip.Length? Offset = null) -> void
-Twip.HorizontalPosition.HorizontalPosition(Twip.HorizontalReference RelativeTo, Twip.ObjectHorizontalAlignment? Align = null, Twip.Length? Offset = null) -> void
 Twip.ObjectPlacement.Horizontal.init -> void
 Twip.TextDistance.Top.init -> void
 Twip.TextDistance.Top.get -> Twip.Length
@@ -4394,11 +4388,9 @@ Twip.PictureAdjustChange.Brightness.get -> double?
 Twip.PictureAdjustChange.Brightness.init -> void
 Twip.PictureAdjustChange.Contrast.get -> double?
 Twip.PictureAdjustChange.Contrast.init -> void
-Twip.PictureAdjustChange.Deconstruct(out double? Transparency, out bool? Grayscale, out double? Brightness, out double? Contrast) -> void
 Twip.PictureAdjustChange.Equals(Twip.PictureAdjustChange? other) -> bool
 Twip.PictureAdjustChange.Grayscale.get -> bool?
 Twip.PictureAdjustChange.Grayscale.init -> void
-Twip.PictureAdjustChange.PictureAdjustChange(double? Transparency = null, bool? Grayscale = null, double? Brightness = null, double? Contrast = null) -> void
 Twip.PictureAdjustChange.Transparency.get -> double?
 Twip.PictureAdjustChange.Transparency.init -> void
 Twip.Shadow
@@ -4465,13 +4457,11 @@ Twip.ShapeTextChange.Anchor.get -> Twip.TextAnchor?
 Twip.ShapeTextChange.Anchor.init -> void
 Twip.ShapeTextChange.Autofit.get -> Twip.TextAutofit?
 Twip.ShapeTextChange.Autofit.init -> void
-Twip.ShapeTextChange.Deconstruct(out System.Collections.Generic.IReadOnlyList<Twip.Length>? Insets, out Twip.TextAnchor? Anchor, out Twip.TextAutofit? Autofit, out bool? WrapText, out Twip.TextDirection? Direction) -> void
 Twip.ShapeTextChange.Direction.get -> Twip.TextDirection?
 Twip.ShapeTextChange.Direction.init -> void
 Twip.ShapeTextChange.Equals(Twip.ShapeTextChange? other) -> bool
 Twip.ShapeTextChange.Insets.get -> System.Collections.Generic.IReadOnlyList<Twip.Length>?
 Twip.ShapeTextChange.Insets.init -> void
-Twip.ShapeTextChange.ShapeTextChange(System.Collections.Generic.IReadOnlyList<Twip.Length>? Insets = null, Twip.TextAnchor? Anchor = null, Twip.TextAutofit? Autofit = null, bool? WrapText = null, Twip.TextDirection? Direction = null) -> void
 Twip.ShapeTextChange.WrapText.get -> bool?
 Twip.ShapeTextChange.WrapText.init -> void
 Twip.ShapeTextState
@@ -6689,10 +6679,8 @@ Twip.ParagraphFlow.DontHyphenate.get -> Twip.FormatValue<bool>
 Twip.ParagraphFlow.DontHyphenate.init -> void
 Twip.ParagraphFlow.SuppressLineNumbers.get -> Twip.FormatValue<bool>
 Twip.ParagraphFlow.SuppressLineNumbers.init -> void
-Twip.ParagraphFlowOptions.Deconstruct(out bool? KeepWithNext, out bool? KeepLinesTogether, out bool? PageBreakBefore, out bool? WidowControl, out bool? DontHyphenate, out bool? SuppressLineNumbers) -> void
 Twip.ParagraphFlowOptions.DontHyphenate.get -> bool?
 Twip.ParagraphFlowOptions.DontHyphenate.init -> void
-Twip.ParagraphFlowOptions.ParagraphFlowOptions(bool? KeepWithNext = null, bool? KeepLinesTogether = null, bool? PageBreakBefore = null, bool? WidowControl = null, bool? DontHyphenate = null, bool? SuppressLineNumbers = null) -> void
 Twip.ParagraphFlowOptions.SuppressLineNumbers.get -> bool?
 Twip.ParagraphFlowOptions.SuppressLineNumbers.init -> void
 Twip.ParagraphFormatting.Collapsed.get -> Twip.FormatValue<bool>
@@ -7112,3 +7100,122 @@ static Twip.RowExceptions.operator !=(Twip.RowExceptions? left, Twip.RowExceptio
 static Twip.RowExceptions.operator ==(Twip.RowExceptions? left, Twip.RowExceptions? right) -> bool
 Twip.CellPropertiesOptions.CellPropertiesOptions(Twip.TableWidth? Width = null, Twip.TextFlow? TextDirection = null, bool? WrapText = null, bool? FitText = null, bool? HideMark = null) -> void
 Twip.CellPropertiesOptions.Deconstruct(out Twip.TableWidth? Width, out Twip.TextFlow? TextDirection, out bool? WrapText, out bool? FitText, out bool? HideMark) -> void
+Twip.AlignReference
+Twip.AlignReference.Margin = 1 -> Twip.AlignReference
+Twip.AlignReference.Page = 0 -> Twip.AlignReference
+Twip.AlignReference.SelectedObjects = 2 -> Twip.AlignReference
+Twip.CommandId.AlignObjects = 244 -> Twip.CommandId
+Twip.CommandId.ChangePicture = 243 -> Twip.CommandId
+Twip.CommandId.SetPictureCrop = 242 -> Twip.CommandId
+Twip.EditorCommands.AlignObjectsAsync(Twip.ObjectAlign align, Twip.AlignReference? relativeTo = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.ChangePictureAsync(System.ReadOnlyMemory<byte> data, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetObjectSizeAsync(Twip.Length? width = null, Twip.Length? height = null, bool? lockAspect = null, Twip.RelativeSize? relativeWidth = null, Twip.RelativeSize? relativeHeight = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetPictureCropAsync(Twip.PictureCrop! crop, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.HorizontalPosition.Deconstruct(out Twip.HorizontalReference RelativeTo, out Twip.ObjectHorizontalAlignment? Align, out Twip.Length? Offset, out double? Percent) -> void
+Twip.HorizontalPosition.HorizontalPosition(Twip.HorizontalReference RelativeTo, Twip.ObjectHorizontalAlignment? Align = null, Twip.Length? Offset = null, double? Percent = null) -> void
+Twip.HorizontalPosition.Percent.get -> double?
+Twip.HorizontalPosition.Percent.init -> void
+Twip.ObjectAlign
+Twip.ObjectAlign.Bottom = 5 -> Twip.ObjectAlign
+Twip.ObjectAlign.Center = 1 -> Twip.ObjectAlign
+Twip.ObjectAlign.DistributeHorizontally = 6 -> Twip.ObjectAlign
+Twip.ObjectAlign.DistributeVertically = 7 -> Twip.ObjectAlign
+Twip.ObjectAlign.Left = 0 -> Twip.ObjectAlign
+Twip.ObjectAlign.Middle = 4 -> Twip.ObjectAlign
+Twip.ObjectAlign.Right = 2 -> Twip.ObjectAlign
+Twip.ObjectAlign.Top = 3 -> Twip.ObjectAlign
+Twip.ObjectSelection.Crop.get -> Twip.PictureCrop?
+Twip.ObjectSelection.Crop.init -> void
+Twip.ObjectSelection.RelativeHeight.get -> Twip.RelativeSize?
+Twip.ObjectSelection.RelativeHeight.init -> void
+Twip.ObjectSelection.RelativeWidth.get -> Twip.RelativeSize?
+Twip.ObjectSelection.RelativeWidth.init -> void
+Twip.ObjectSelection.TransparentColor.get -> Twip.ColorValue?
+Twip.ObjectSelection.TransparentColor.init -> void
+Twip.ParagraphFlow.TextboxTightWrap.get -> Twip.FormatValue<Twip.TightWrap>
+Twip.ParagraphFlow.TextboxTightWrap.init -> void
+Twip.ParagraphFlowOptions.Deconstruct(out bool? KeepWithNext, out bool? KeepLinesTogether, out bool? PageBreakBefore, out bool? WidowControl, out bool? DontHyphenate, out bool? SuppressLineNumbers, out Twip.TightWrap? TextboxTightWrap) -> void
+Twip.ParagraphFlowOptions.ParagraphFlowOptions(bool? KeepWithNext = null, bool? KeepLinesTogether = null, bool? PageBreakBefore = null, bool? WidowControl = null, bool? DontHyphenate = null, bool? SuppressLineNumbers = null, Twip.TightWrap? TextboxTightWrap = null) -> void
+Twip.ParagraphFlowOptions.TextboxTightWrap.get -> Twip.TightWrap?
+Twip.ParagraphFlowOptions.TextboxTightWrap.init -> void
+Twip.PictureAdjustChange.Deconstruct(out double? Transparency, out bool? Grayscale, out double? Brightness, out double? Contrast, out Twip.ColorValue? TransparentColor) -> void
+Twip.PictureAdjustChange.PictureAdjustChange(double? Transparency = null, bool? Grayscale = null, double? Brightness = null, double? Contrast = null, Twip.ColorValue? TransparentColor = null) -> void
+Twip.PictureAdjustChange.TransparentColor.get -> Twip.ColorValue?
+Twip.PictureAdjustChange.TransparentColor.init -> void
+Twip.PictureCrop
+Twip.PictureCrop.<Clone>$() -> Twip.PictureCrop!
+Twip.PictureCrop.Bottom.get -> double?
+Twip.PictureCrop.Bottom.init -> void
+Twip.PictureCrop.Deconstruct(out double? Left, out double? Top, out double? Right, out double? Bottom) -> void
+Twip.PictureCrop.Equals(Twip.PictureCrop? other) -> bool
+Twip.PictureCrop.Left.get -> double?
+Twip.PictureCrop.Left.init -> void
+Twip.PictureCrop.PictureCrop(double? Left = null, double? Top = null, double? Right = null, double? Bottom = null) -> void
+Twip.PictureCrop.Right.get -> double?
+Twip.PictureCrop.Right.init -> void
+Twip.PictureCrop.Top.get -> double?
+Twip.PictureCrop.Top.init -> void
+Twip.RelativeSize
+Twip.RelativeSize.<Clone>$() -> Twip.RelativeSize!
+Twip.RelativeSize.Deconstruct(out double Percent, out Twip.RelativeSizeReference RelativeTo) -> void
+Twip.RelativeSize.Equals(Twip.RelativeSize? other) -> bool
+Twip.RelativeSize.Percent.get -> double
+Twip.RelativeSize.Percent.init -> void
+Twip.RelativeSize.RelativeSize(double Percent, Twip.RelativeSizeReference RelativeTo) -> void
+Twip.RelativeSize.RelativeTo.get -> Twip.RelativeSizeReference
+Twip.RelativeSize.RelativeTo.init -> void
+Twip.RelativeSizeReference
+Twip.RelativeSizeReference.BottomMargin = 7 -> Twip.RelativeSizeReference
+Twip.RelativeSizeReference.InsideMargin = 4 -> Twip.RelativeSizeReference
+Twip.RelativeSizeReference.LeftMargin = 2 -> Twip.RelativeSizeReference
+Twip.RelativeSizeReference.Margin = 0 -> Twip.RelativeSizeReference
+Twip.RelativeSizeReference.OutsideMargin = 5 -> Twip.RelativeSizeReference
+Twip.RelativeSizeReference.Page = 1 -> Twip.RelativeSizeReference
+Twip.RelativeSizeReference.RightMargin = 3 -> Twip.RelativeSizeReference
+Twip.RelativeSizeReference.TopMargin = 6 -> Twip.RelativeSizeReference
+Twip.ShapeTextChange.Columns.get -> Twip.TextColumns?
+Twip.ShapeTextChange.Columns.init -> void
+Twip.ShapeTextChange.Deconstruct(out System.Collections.Generic.IReadOnlyList<Twip.Length>? Insets, out Twip.TextAnchor? Anchor, out Twip.TextAutofit? Autofit, out bool? WrapText, out Twip.TextDirection? Direction, out Twip.TextColumns? Columns) -> void
+Twip.ShapeTextChange.ShapeTextChange(System.Collections.Generic.IReadOnlyList<Twip.Length>? Insets = null, Twip.TextAnchor? Anchor = null, Twip.TextAutofit? Autofit = null, bool? WrapText = null, Twip.TextDirection? Direction = null, Twip.TextColumns? Columns = null) -> void
+Twip.ShapeTextState.Columns.get -> Twip.TextColumns!
+Twip.ShapeTextState.Columns.init -> void
+Twip.TextAutofit.ShrinkText = 2 -> Twip.TextAutofit
+Twip.TextColumns
+Twip.TextColumns.<Clone>$() -> Twip.TextColumns!
+Twip.TextColumns.Count.get -> int
+Twip.TextColumns.Count.init -> void
+Twip.TextColumns.Deconstruct(out int Count, out Twip.Length Spacing) -> void
+Twip.TextColumns.Equals(Twip.TextColumns? other) -> bool
+Twip.TextColumns.Spacing.get -> Twip.Length
+Twip.TextColumns.Spacing.init -> void
+Twip.TextColumns.TextColumns(int Count, Twip.Length Spacing) -> void
+Twip.TightWrap
+Twip.TightWrap.AllLines = 1 -> Twip.TightWrap
+Twip.TightWrap.FirstAndLastLine = 2 -> Twip.TightWrap
+Twip.TightWrap.FirstLineOnly = 3 -> Twip.TightWrap
+Twip.TightWrap.LastLineOnly = 4 -> Twip.TightWrap
+Twip.TightWrap.None = 0 -> Twip.TightWrap
+Twip.VerticalPosition.Deconstruct(out Twip.VerticalReference RelativeTo, out Twip.ObjectVerticalAlignment? Align, out Twip.Length? Offset, out double? Percent) -> void
+Twip.VerticalPosition.Percent.get -> double?
+Twip.VerticalPosition.Percent.init -> void
+Twip.VerticalPosition.VerticalPosition(Twip.VerticalReference RelativeTo, Twip.ObjectVerticalAlignment? Align = null, Twip.Length? Offset = null, double? Percent = null) -> void
+override Twip.PictureCrop.Equals(object? obj) -> bool
+override Twip.PictureCrop.GetHashCode() -> int
+override Twip.PictureCrop.ToString() -> string!
+override Twip.RelativeSize.Equals(object? obj) -> bool
+override Twip.RelativeSize.GetHashCode() -> int
+override Twip.RelativeSize.ToString() -> string!
+override Twip.TextColumns.Equals(object? obj) -> bool
+override Twip.TextColumns.GetHashCode() -> int
+override Twip.TextColumns.ToString() -> string!
+static Twip.EditorOperation.AlignObjects(Twip.ObjectAlign align, Twip.AlignReference? relativeTo = null) -> Twip.EditorOperation!
+static Twip.EditorOperation.ChangePicture(System.ReadOnlyMemory<byte> data) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetObjectSize(Twip.Length? width = null, Twip.Length? height = null, bool? lockAspect = null, Twip.RelativeSize? relativeWidth = null, Twip.RelativeSize? relativeHeight = null) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetPictureCrop(Twip.PictureCrop! crop) -> Twip.EditorOperation!
+static Twip.PictureCrop.operator !=(Twip.PictureCrop? left, Twip.PictureCrop? right) -> bool
+static Twip.PictureCrop.operator ==(Twip.PictureCrop? left, Twip.PictureCrop? right) -> bool
+static Twip.RelativeSize.Absolute.get -> Twip.RelativeSize!
+static Twip.RelativeSize.operator !=(Twip.RelativeSize? left, Twip.RelativeSize? right) -> bool
+static Twip.RelativeSize.operator ==(Twip.RelativeSize? left, Twip.RelativeSize? right) -> bool
+static Twip.TextColumns.operator !=(Twip.TextColumns? left, Twip.TextColumns? right) -> bool
+static Twip.TextColumns.operator ==(Twip.TextColumns? left, Twip.TextColumns? right) -> bool

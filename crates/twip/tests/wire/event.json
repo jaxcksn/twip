@@ -205,6 +205,7 @@
         "keepWithNext": true,
         "pageBreakBefore": "mixed",
         "suppressLineNumbers": "mixed",
+        "textboxTightWrap": "none",
         "widowControl": true
       },
       "indents": {
@@ -322,6 +323,12 @@
           1
         ],
         "count": 1,
+        "crop": {
+          "bottom": 0.0,
+          "left": 0.1,
+          "right": 0.25,
+          "top": 0.0
+        },
         "decorative": false,
         "flipH": true,
         "flipV": false,
@@ -345,6 +352,10 @@
             "relativeTo": "page"
           },
           "wrapSide": "bothSides"
+        },
+        "relativeWidth": {
+          "percent": 50.0,
+          "relativeTo": "page"
         },
         "rotation": 30.5,
         "shape": {
@@ -421,6 +432,10 @@
           "text": {
             "anchor": "middle",
             "autofit": "shape",
+            "columns": {
+              "count": 2,
+              "spacing": 18.5
+            },
             "direction": "vertical270",
             "insets": [
               7.2,
@@ -431,6 +446,7 @@
             "wrapText": true
           }
         },
+        "transparentColor": "#FFFFFF",
         "width": 144.5,
         "wrap": "inFrontOfText"
       },
@@ -585,6 +601,12 @@
         1
       ],
       "count": 1,
+      "crop": {
+        "bottom": 0.0,
+        "left": 0.1,
+        "right": 0.25,
+        "top": 0.0
+      },
       "decorative": false,
       "flipH": true,
       "flipV": false,
@@ -608,6 +630,10 @@
           "relativeTo": "page"
         },
         "wrapSide": "bothSides"
+      },
+      "relativeWidth": {
+        "percent": 50.0,
+        "relativeTo": "page"
       },
       "rotation": 30.5,
       "shape": {
@@ -684,6 +710,10 @@
         "text": {
           "anchor": "middle",
           "autofit": "shape",
+          "columns": {
+            "count": 2,
+            "spacing": 18.5
+          },
           "direction": "vertical270",
           "insets": [
             7.2,
@@ -694,6 +724,7 @@
           "wrapText": true
         }
       },
+      "transparentColor": "#FFFFFF",
       "width": 144.5,
       "wrap": "inFrontOfText"
     },

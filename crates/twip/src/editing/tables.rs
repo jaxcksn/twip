@@ -863,6 +863,7 @@ impl Editor {
                 _ => HA::Left,
             }),
             offset: p.x_spec.is_none().then_some(Points(p.x)),
+            percent: None,
         };
         let y_spec = p.y_spec.filter(|_| p.v_anchor != TableAnchor::Text);
         let vertical = VerticalPosition {
@@ -877,6 +878,7 @@ impl Editor {
                 _ => VA::Top,
             }),
             offset: y_spec.is_none().then_some(Points(p.y)),
+            percent: None,
         };
         let [top, bottom, left, right] = p.dist.map(Points);
         Some(TablePosition {

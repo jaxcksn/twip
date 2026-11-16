@@ -552,6 +552,9 @@ pub struct HorizontalPosition {
     /// Right of the reference's left edge (−1584…1584 pt).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub offset: Option<Points>,
+    /// Right of the reference's left edge by a share of its width (−1000…1000 %, `wp14:pctPosHOffset`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub percent: Option<f64>,
 }
 
 /// A floating object's vertical place: aligned across its reference, or an offset below the reference's top. Given
@@ -567,6 +570,9 @@ pub struct VerticalPosition {
     /// Below the reference's top (−1584…1584 pt).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub offset: Option<Points>,
+    /// Below the reference's top by a share of its height (−1000…1000 %, `wp14:pctPosVOffset`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub percent: Option<f64>,
 }
 
 /// A table's preferred width.

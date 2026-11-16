@@ -458,12 +458,21 @@ commands! {
     SetShapeText(ShapeTextChange),
     /// The selected picture's transparency, greyscale, brightness and contrast. Undo: one step.
     SetPictureAdjust(PictureAdjustChange),
+    /// Crops the selected picture, inline or floating, by fractions of its image from each edge (0…1; negative values
+    /// pad it): its box follows the part shown, at the scale it is drawn. Undo: one step.
+    SetPictureCrop(PictureCrop),
+    /// Replaces the selected picture's image (PNG, JPEG, GIF, BMP or TIFF), keeping its width, effects and place; its
+    /// height follows the new image and the crop is cleared. Undo: one step.
+    ChangePicture(#[serde(with = "value")] Bytes),
     /// The selected objects' rotation (0…360°, clockwise). Undo: one step.
     SetObjectRotation(#[serde(with = "value")] Degrees),
     /// Flips the selected objects. Undo: one step.
     FlipObject(#[serde(with = "value")] FlipAxis),
     /// Moves the selected floating object in the paint order, or behind or in front of the text. Undo: one step.
     ArrangeObject(#[serde(with = "value")] Arrange),
+    /// Aligns or distributes the selected floating objects across their page, its margins, or the box around them.
+    /// Undo: one step.
+    AlignObjects(AlignObjects),
     /// Groups the selected floating objects (two or more, one story). Undo: one step.
     GroupObjects,
     /// Ungroups the selected group. Undo: one step.
@@ -1789,6 +1798,39 @@ pub struct ParagraphFlow {
     /// Leaves the paragraph's lines out of line numbering.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub suppress_line_numbers: Option<bool>,
+    /// In a text box, which lines text around the box wraps tightly to (`w:textboxTightWrap`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub textbox_tight_wrap: Option<TightWrap>,
+}
+
+/// Which of a text box's lines text around it wraps tightly to.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TightWrap {
+    /// The box's edges.
+    #[default]
+    None,
+    /// Every line.
+    AllLines,
+    /// The first and last lines.
+    FirstAndLastLine,
+    /// The first line.
+    FirstLineOnly,
+    /// The last line.
+    LastLineOnly,
+}
+
+impl TightWrap {
+    /// The OOXML value, and the model's number for it.
+    pub(crate) fn ooxml(self) -> (&'static str, u8) {
+        match self {
+            TightWrap::None => ("none", 0),
+            TightWrap::AllLines => ("allLines", 1),
+            TightWrap::FirstAndLastLine => ("firstAndLastLine", 2),
+            TightWrap::FirstLineOnly => ("firstLineOnly", 3),
+            TightWrap::LastLineOnly => ("lastLineOnly", 4),
+        }
+    }
 }
 
 /// `setOutline`'s options.
@@ -2006,6 +2048,69 @@ pub struct Picture {
     /// The alternative text.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub alt_text: Option<String>,
+}
+
+/// `alignObjects`'s options.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AlignObjects {
+    /// How they line up.
+    pub align: ObjectAlign,
+    /// What they line up in. Default: the box around them for two or more, else the margins.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub relative_to: Option<AlignReference>,
+}
+
+/// How `alignObjects` lines objects up.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ObjectAlign {
+    /// Left edges.
+    Left,
+    /// Centres, across.
+    Center,
+    /// Right edges.
+    Right,
+    /// Top edges.
+    Top,
+    /// Middles, down.
+    Middle,
+    /// Bottom edges.
+    Bottom,
+    /// Even gaps across.
+    DistributeHorizontally,
+    /// Even gaps down.
+    DistributeVertically,
+}
+
+/// What `alignObjects` lines objects up in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AlignReference {
+    /// The page.
+    Page,
+    /// The page's margins.
+    Margin,
+    /// The box around the selected objects.
+    SelectedObjects,
+}
+
+/// `setPictureCrop`'s options: what isn't given is kept.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PictureCrop {
+    /// The share of the image's width cut from its left.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub left: Option<f64>,
+    /// The share of its height cut from its top.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub top: Option<f64>,
+    /// The share of its width cut from its right.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub right: Option<f64>,
+    /// The share of its height cut from its bottom.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bottom: Option<f64>,
 }
 
 /// `insertHyperlink`'s options.
@@ -2396,6 +2501,45 @@ pub struct ObjectSize {
     /// Keeps the aspect ratio when one side is set.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lock_aspect: Option<bool>,
+    /// A floating object's width as a share of a box across the page (`wp14:sizeRelH`), or absolute (`none`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub relative_width: Option<NoneOr<RelativeSize>>,
+    /// A floating object's height as a share of a box down the page (`wp14:sizeRelV`), or absolute (`none`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub relative_height: Option<NoneOr<RelativeSize>>,
+}
+
+/// A floating object's size as a share of a box on the page.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RelativeSize {
+    /// The share, 1…1000 %.
+    pub percent: f64,
+    /// The box.
+    pub relative_to: RelativeSizeReference,
+}
+
+/// The box a relative size is a share of.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum RelativeSizeReference {
+    /// Between the margins.
+    #[default]
+    Margin,
+    /// The page.
+    Page,
+    /// The left margin (widths).
+    LeftMargin,
+    /// The right margin (widths).
+    RightMargin,
+    /// The inside margin (widths).
+    InsideMargin,
+    /// The outside margin (widths).
+    OutsideMargin,
+    /// The top margin (heights).
+    TopMargin,
+    /// The bottom margin (heights).
+    BottomMargin,
 }
 
 /// `setObjectPosition`'s options; what isn't given is kept.

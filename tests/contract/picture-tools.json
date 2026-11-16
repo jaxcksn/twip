@@ -1,0 +1,27 @@
+{
+  "name": "picture-tools",
+  "fixture": "editor/FX-OBJ.docx",
+  "steps": [
+    { "op": "open" },
+    { "op": "command", "command": { "type": "setPictureCrop", "left": 0.1 } },
+    { "op": "expectError", "code": "unavailable" },
+    { "op": "command", "command": { "type": "selectNextObject", "value": "next" } },
+    { "op": "expectState", "match": { "selection": { "object": { "kind": "picture" } } } },
+    { "op": "command", "command": { "type": "setPictureCrop", "left": 0.25, "top": 2 } },
+    { "op": "expectError", "code": "invalid-argument" },
+    { "op": "command", "command": { "type": "setPictureCrop", "left": 0.25 } },
+    { "op": "command", "command": { "type": "setPictureAdjust", "transparentColor": "#FFFFFF" } },
+    { "op": "command", "command": { "type": "setObjectSize", "relativeWidth": { "percent": 40, "relativeTo": "margin" } } },
+    { "op": "command", "command": { "type": "alignObjects", "align": "center", "relativeTo": "page" } },
+    { "op": "expectState", "match": { "selection": { "object": {
+      "crop": { "left": 0.25, "top": 0, "right": 0, "bottom": 0 }, "transparentColor": "#FFFFFF",
+      "relativeWidth": { "percent": 40, "relativeTo": "margin" }
+    } } } },
+    { "op": "export", "format": "docx" },
+    { "op": "reopen" },
+    { "op": "command", "command": { "type": "selectNextObject", "value": "next" } },
+    { "op": "expectState", "match": { "selection": { "object": {
+      "crop": { "left": 0.25 }, "transparentColor": "#FFFFFF", "relativeWidth": { "percent": 40, "relativeTo": "margin" }
+    } } } }
+  ]
+}

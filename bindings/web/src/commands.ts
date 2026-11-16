@@ -9,8 +9,10 @@ import type {
   LineSpacing,
   MarkupView,
   ObjectWrap,
+  RelativeSize,
   RowHeight,
   TablePosition,
+  TightWrap,
   TableWidth,
   UnderlineStyle,
   VerticalPosition,
@@ -482,6 +484,8 @@ export interface Commands {
     dontHyphenate?: boolean;
     /** Leaves the paragraph's lines out of line numbering. */
     suppressLineNumbers?: boolean;
+    /** In a text box, which lines text around the box wraps tightly to. */
+    textboxTightWrap?: TightWrap;
   }): Promise<void>;
   /** Sets the outline level (1 to 9, or 0 for body text) and whether the paragraphs open collapsed; unset fields keep their value. */
   setOutline(options: { level?: number; collapsed?: boolean }): Promise<void>;
@@ -783,7 +787,15 @@ export interface Commands {
 
   // Objects: the selected object
   /** Sets the object's size, 1 to 1584. */
-  setObjectSize(options: { width?: Points; height?: Points; lockAspect?: boolean }): Promise<void>;
+  setObjectSize(options: {
+    width?: Points;
+    height?: Points;
+    lockAspect?: boolean;
+    /** A floating object's width as a share of a box on the page, or absolute (`'none'`). */
+    relativeWidth?: RelativeSize | 'none';
+    /** A floating object's height as a share of a box on the page, or absolute (`'none'`). */
+    relativeHeight?: RelativeSize | 'none';
+  }): Promise<void>;
   /** Resets the object to its original size. */
   resetObjectSize(): Promise<void>;
   /** Sets how text wraps around the object. */
@@ -819,14 +831,29 @@ export interface Commands {
   setShapeEffects(change: EffectsChange): Promise<void>;
   /** Sets the shape's text insets, anchor, autofit, wrapping and direction; unset fields keep their value. */
   setShapeText(change: ShapeTextChange): Promise<void>;
-  /** Sets the picture's transparency, greyscale, brightness and contrast; unset fields keep their value. */
+  /** Sets the picture's transparency, greyscale, brightness, contrast and transparent colour; unset fields keep their value. */
   setPictureAdjust(change: PictureAdjustChange): Promise<void>;
+  /**
+   * Crops the selected picture by fractions of its image from each edge (0 to 1; negative pads it): its box follows
+   * the part shown, at the scale it is drawn. Unset fields keep their value.
+   */
+  setPictureCrop(crop: { left?: number; top?: number; right?: number; bottom?: number }): Promise<void>;
+  /** Replaces the selected picture's image, keeping its width, effects and place; its height follows the new image. */
+  changePicture(data: Uint8Array): Promise<void>;
   /** Sets the selected objects' rotation, 0 to 360 degrees clockwise. */
   setObjectRotation(degrees: Degrees): Promise<void>;
   /** Flips the selected objects. */
   flipObject(axis: FlipAxis): Promise<void>;
   /** Moves the floating object in the paint order, or behind or in front of the text. */
   arrangeObject(where: Arrange): Promise<void>;
+  /**
+   * Aligns or distributes the selected floating objects across their page, its margins, or the box around them (the
+   * default for two or more; else the margins).
+   */
+  alignObjects(options: {
+    align: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom' | 'distributeHorizontally' | 'distributeVertically';
+    relativeTo?: 'page' | 'margin' | 'selectedObjects';
+  }): Promise<void>;
   /** Groups the selected floating objects: two or more, in one story. The group is selected. */
   groupObjects(): Promise<void>;
   /** Ungroups the selected group. Its children are selected. */
@@ -1288,9 +1315,12 @@ const encodings: { [K in CommandId]: Encoding<K> } = {
   setShapeEffects: 'spread',
   setShapeText: 'spread',
   setPictureAdjust: 'spread',
+  setPictureCrop: 'spread',
+  changePicture: 'value',
   setObjectRotation: 'value',
   flipObject: 'value',
   arrangeObject: 'value',
+  alignObjects: 'spread',
   groupObjects: 'none',
   ungroupObjects: 'none',
   selectGroupChild: 'value',

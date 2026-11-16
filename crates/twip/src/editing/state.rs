@@ -231,6 +231,13 @@ pub(super) fn paragraph(paras: &[(&ParaStyle, Option<bool>)]) -> ParagraphFormat
             widow_control: tri(&|p| p.widow_control),
             dont_hyphenate: tri(&|p| p.suppress_auto_hyphens),
             suppress_line_numbers: tri(&|p| p.suppress_line_numbers),
+            textbox_tight_wrap: fold(paras.iter().map(|(p, _)| {
+                use crate::api::command::TightWrap as T;
+                [T::None, T::AllLines, T::FirstAndLastLine, T::FirstLineOnly, T::LastLineOnly]
+                    .get(usize::from(p.tight_wrap))
+                    .copied()
+                    .unwrap_or_default()
+            })),
         },
         borders: fold(paras.iter().map(|(p, _)| borders_of(p))),
         shading: fold(paras.iter().map(|(p, _)| p.shading.map_or(NoneOr::None, |c| NoneOr::Value(Color(c))))),
@@ -539,6 +546,10 @@ impl Editor {
                 ) => (editable && in_table, (None, None)),
                 (C::SetTablePosition, _) => (editable && in_table, (None, self.table_position().map(CommandValue::TablePosition))),
                 (C::SetObjectSize | C::SetObjectWrap | C::SetAltText | C::DeleteObject, _) => (editable && object.is_some(), (None, None)),
+                (C::AlignObjects, _) => (editable && floating, (None, None)),
+                (C::SetPictureCrop | C::ChangePicture, _) => {
+                    (editable && matches!(object, Some(ObjectKind::Picture | ObjectKind::Float)), (None, None))
+                }
                 (C::ResetObjectSize, _) => (editable && matches!(object, Some(ObjectKind::Picture | ObjectKind::Float)), (None, None)),
                 (C::SetAnchorLocked | C::SetObjectPosition | C::SetObjectWrapOptions, _) => (editable && floating, (None, None)),
                 (C::SetShapePreset | C::SetShapeAdjust | C::SetShapeText, _) => (editable && shape.as_ref().is_some_and(|s| s.sp), (None, None)),
@@ -691,6 +702,10 @@ impl Editor {
             flip_v: shape.flip_v,
             child_path: shape.child_path,
             count: shape.count.max(1),
+            crop: self.selected_picture_crop(),
+            transparent_color: self.selected_transparent_color(),
+            relative_width: self.selected_relative_size(0),
+            relative_height: self.selected_relative_size(1),
         })
     }
 

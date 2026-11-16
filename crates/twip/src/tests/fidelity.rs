@@ -517,6 +517,9 @@ fn every_edit_keeps_every_construct() {
         std::fs::write(d.join("section-settings.docx"), section_settings_package()).expect("writes");
         std::fs::write(d.join("converted-notes.docx"), converted_notes_package()).expect("writes");
         std::fs::write(d.join("table-properties.docx"), table_properties_package()).expect("writes");
+        let (pictures, boxes) = picture_tools_packages();
+        std::fs::write(d.join("picture-tools.docx"), pictures).expect("writes");
+        std::fs::write(d.join("text-box-columns.docx"), boxes).expect("writes");
     }
     let cases: Vec<(&Construct, &str, fn(&mut Editor, &Spot) -> Outcome)> = CONSTRUCTS
         .iter()
@@ -563,7 +566,7 @@ fn a_resized_vml_picture_is_saved_at_its_new_size() {
     let size = crate::api::command::ObjectSize {
         width: Some(crate::api::value::Points(72.0)),
         height: Some(crate::api::value::Points(54.0)),
-        lock_aspect: None,
+        ..Default::default()
     };
     let out = e.execute(Command::SetObjectSize(size), fonts());
     assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
@@ -743,4 +746,57 @@ fn table_properties_are_saved_and_read_back() {
     // The new table follows the last one with nothing between: they read as one.
     let row = &new.rows[new.rows.len() - 2];
     assert!(row.hidden && row.cells[0].hide_mark && row.cells[0].diagonals.as_ref().is_some_and(|d| d[1].is_some()));
+}
+
+/// A floating picture cropped, recoloured, sized and placed relative to the page, and a text box in two columns, saved.
+fn picture_tools_packages() -> (Vec<u8>, Vec<u8>) {
+    use crate::editing::selection::{ObjectRef, Selection};
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-OBJ.docx");
+    let mut e = Editor::open(&std::fs::read(path).expect("the fixture"), fonts()).expect("opens");
+    let n = |v: serde_json::Value| serde_json::from_value::<Command>(v).expect("a command");
+    let floats: Vec<(u64, bool)> = crate::editing::tests::texts_ids(&e)
+        .into_iter()
+        .filter_map(|p| e.index().para(e.document(), p))
+        .flat_map(|p| p.inlines.iter())
+        .filter_map(|i| match i {
+            crate::docx::Inline::Float(f, _) => Some((f.id, f.text_box.is_some())),
+            _ => None,
+        })
+        .collect();
+    let pic = floats.iter().find(|f| !f.1).expect("a floating picture").0;
+    e.set_caret_for_benchmark(Selection::Object(ObjectRef::Floating(crate::layout::FloatId(pic))));
+    for c in [
+        serde_json::json!({ "type": "setPictureCrop", "left": 0.1, "bottom": 0.2 }),
+        serde_json::json!({ "type": "setPictureAdjust", "transparentColor": "#FFFFFF", "grayscale": true }),
+        serde_json::json!({ "type": "setObjectSize", "relativeWidth": { "percent": 40, "relativeTo": "margin" }, "relativeHeight": { "percent": 20, "relativeTo": "page" } }),
+        serde_json::json!({ "type": "setObjectPosition", "horizontal": { "relativeTo": "page", "percent": 10 }, "vertical": { "relativeTo": "page", "percent": 15 } }),
+    ] {
+        let out = e.execute(n(c.clone()), fonts());
+        assert!(matches!(out, Outcome::Changed(_)), "{c}: {out:?}");
+    }
+    let saved = crate::docx::write::save(e.document()).expect("saves");
+    // A text box in two columns, in a document of its own.
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-NEST-2-BOX.docx");
+    let mut e = Editor::open(&std::fs::read(path).expect("the fixture"), fonts()).expect("opens");
+    let tb = crate::editing::tests::texts_ids(&e)
+        .into_iter()
+        .filter_map(|p| e.index().para(e.document(), p))
+        .flat_map(|p| p.inlines.iter())
+        .find_map(|i| match i {
+            crate::docx::Inline::Float(f, _) if f.text_box.is_some() && f.shape.is_some() => Some(f.id),
+            _ => None,
+        })
+        .expect("a text box");
+    e.set_caret_for_benchmark(Selection::Object(ObjectRef::Floating(crate::layout::FloatId(tb))));
+    let out = e.execute(n(serde_json::json!({ "type": "setShapeText", "columns": { "count": 2, "spacing": 18 }, "autofit": "shrinkText" })), fonts());
+    assert!(matches!(out, Outcome::Changed(_)), "text box columns: {out:?}");
+    let boxed = crate::docx::write::save(e.document()).expect("saves");
+    let xml = crate::docx::package::read(&boxed, &[], "word/document.xml").expect("reads").expect("the main part");
+    assert!(xml.contains("numCol=\"2\"") && xml.contains("<a:normAutofit"), "the columns are saved");
+    (saved, boxed)
+}
+
+#[test]
+fn picture_tools_and_text_box_columns_are_saved() {
+    picture_tools_packages();
 }

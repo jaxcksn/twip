@@ -384,6 +384,9 @@ impl Editor {
             Command::SetObjectPosition(p) => self.set_object_position(p, fonts),
             Command::SetObjectWrapOptions(w) => self.set_object_wrap_options(w, fonts),
             Command::SetAltText(a) => self.alt_text(a, fonts),
+            Command::SetPictureCrop(c) => self.set_picture_crop(c, fonts),
+            Command::AlignObjects(a) => self.align_objects(a, fonts),
+            Command::ChangePicture(data) => self.change_picture(data.0, fonts),
             Command::DeleteObject => self.delete_selected_object(fonts),
             c @ (Command::InsertShape(_)
             | Command::SetShapePreset(_)

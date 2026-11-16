@@ -1165,10 +1165,12 @@ public enum WrapSide
 /// <param name="RelativeTo">What it is measured from.</param>
 /// <param name="Align">Aligned across the reference.</param>
 /// <param name="Offset">Right of the reference's left edge, −1584 to 1584 pt.</param>
+/// <param name="Percent">Right of the reference's left edge by a share of its width, −1000 to 1000 percent.</param>
 public sealed record HorizontalPosition(
     HorizontalReference RelativeTo,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ObjectHorizontalAlignment? Align = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Offset = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Offset = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? Percent = null);
 
 /// <summary>
 /// A floating object's vertical place: aligned across its reference, or an offset below the reference's top. Set with
@@ -1177,10 +1179,106 @@ public sealed record HorizontalPosition(
 /// <param name="RelativeTo">What it is measured from.</param>
 /// <param name="Align">Aligned across the reference.</param>
 /// <param name="Offset">Below the reference's top, −1584 to 1584 pt.</param>
+/// <param name="Percent">Below the reference's top by a share of its height, −1000 to 1000 percent.</param>
 public sealed record VerticalPosition(
     VerticalReference RelativeTo,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ObjectVerticalAlignment? Align = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Offset = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Offset = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? Percent = null);
+
+/// <summary>A floating object's size as a share of a box on the page.</summary>
+/// <param name="Percent">The share, 1 to 1000 percent; 0 (<see cref="Absolute"/>) makes the size absolute.</param>
+/// <param name="RelativeTo">The box.</param>
+[JsonConverter(typeof(RelativeSizeConverter))]
+public sealed record RelativeSize(double Percent, RelativeSizeReference RelativeTo)
+{
+    /// <summary>No relative size: the object's size is its own.</summary>
+    public static RelativeSize Absolute { get; } = new(0, RelativeSizeReference.Margin);
+}
+
+/// <summary>The box a relative size is a share of.</summary>
+public enum RelativeSizeReference
+{
+    /// <summary>Between the margins.</summary>
+    Margin,
+    /// <summary>The page.</summary>
+    Page,
+    /// <summary>The left margin (widths).</summary>
+    LeftMargin,
+    /// <summary>The right margin (widths).</summary>
+    RightMargin,
+    /// <summary>The inside margin (widths).</summary>
+    InsideMargin,
+    /// <summary>The outside margin (widths).</summary>
+    OutsideMargin,
+    /// <summary>The top margin (heights).</summary>
+    TopMargin,
+    /// <summary>The bottom margin (heights).</summary>
+    BottomMargin,
+}
+
+/// <summary>A picture's crop, by fractions of its image from each edge (0 to 1; negative pads it); unset values are kept.</summary>
+/// <param name="Left">Cut from the left.</param>
+/// <param name="Top">Cut from the top.</param>
+/// <param name="Right">Cut from the right.</param>
+/// <param name="Bottom">Cut from the bottom.</param>
+public sealed record PictureCrop(
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? Left = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? Top = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? Right = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? Bottom = null);
+
+/// <summary>How <see cref="EditorCommands.AlignObjectsAsync"/> lines objects up.</summary>
+public enum ObjectAlign
+{
+    /// <summary>Left edges.</summary>
+    Left,
+    /// <summary>Centres, across.</summary>
+    Center,
+    /// <summary>Right edges.</summary>
+    Right,
+    /// <summary>Top edges.</summary>
+    Top,
+    /// <summary>Middles, down.</summary>
+    Middle,
+    /// <summary>Bottom edges.</summary>
+    Bottom,
+    /// <summary>Even gaps across.</summary>
+    DistributeHorizontally,
+    /// <summary>Even gaps down.</summary>
+    DistributeVertically,
+}
+
+/// <summary>What <see cref="EditorCommands.AlignObjectsAsync"/> lines objects up in.</summary>
+public enum AlignReference
+{
+    /// <summary>The page.</summary>
+    Page,
+    /// <summary>The page's margins.</summary>
+    Margin,
+    /// <summary>The box around the selected objects.</summary>
+    SelectedObjects,
+}
+
+/// <summary>A text box's text columns.</summary>
+/// <param name="Count">How many, 1 to 16.</param>
+/// <param name="Spacing">The space between them, 0 to 1584 pt.</param>
+public sealed record TextColumns(int Count, Length Spacing);
+
+/// <summary>Which of a text box's lines text around it wraps tightly to.</summary>
+public enum TightWrap
+{
+    /// <summary>The box's edges.</summary>
+    None,
+    /// <summary>Every line.</summary>
+    AllLines,
+    /// <summary>The first and last lines.</summary>
+    FirstAndLastLine,
+    /// <summary>The first line.</summary>
+    FirstLineOnly,
+    /// <summary>The last line.</summary>
+    LastLineOnly,
+}
 
 /// <summary>Which way to flip an object.</summary>
 public enum FlipAxis
@@ -1279,23 +1377,27 @@ public sealed record EffectsChange(
 /// <param name="Autofit">How the shape fits it.</param>
 /// <param name="WrapText">Lines wrap at the shape's width.</param>
 /// <param name="Direction">Which way it runs.</param>
+/// <param name="Columns">Its columns.</param>
 public sealed record ShapeTextChange(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<Length>? Insets = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TextAnchor? Anchor = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TextAutofit? Autofit = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? WrapText = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TextDirection? Direction = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TextDirection? Direction = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TextColumns? Columns = null);
 
 /// <summary>A picture adjustment change; unset values are kept.</summary>
 /// <param name="Transparency">How see-through the picture is, 0 (opaque) to 1 (invisible).</param>
 /// <param name="Grayscale">Shown in shades of grey.</param>
 /// <param name="Brightness">Lighter (positive) or darker, −1 to 1.</param>
 /// <param name="Contrast">More (positive) or less contrast, −1 to 1.</param>
+/// <param name="TransparentColor">Set Transparent Colour: the colour drawn see-through, or <see cref="ColorValue.None"/>.</param>
 public sealed record PictureAdjustChange(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? Transparency = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Grayscale = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? Brightness = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? Contrast = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? Contrast = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ColorValue? TransparentColor = null);
 
 /// <summary>A content control kind.</summary>
 public enum ControlKind
@@ -1470,13 +1572,15 @@ public sealed record IndentOptions(
 /// <param name="WidowControl">Avoid single lines at a page's top or bottom.</param>
 /// <param name="DontHyphenate">Don't hyphenate the paragraph.</param>
 /// <param name="SuppressLineNumbers">Leave the paragraph's lines out of line numbering.</param>
+/// <param name="TextboxTightWrap">In a text box, which lines text around the box wraps tightly to.</param>
 public sealed record ParagraphFlowOptions(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? KeepWithNext = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? KeepLinesTogether = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? PageBreakBefore = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? WidowControl = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? DontHyphenate = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? SuppressLineNumbers = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? SuppressLineNumbers = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TightWrap? TextboxTightWrap = null);
 
 /// <summary>Outline settings to change; unset values are kept.</summary>
 /// <param name="Level">The outline level (1 to 9), or body text (0).</param>

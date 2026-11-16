@@ -764,6 +764,7 @@ fn commands() -> Vec<Command> {
             widow_control: Some(true),
             dont_hyphenate: Some(true),
             suppress_line_numbers: Some(false),
+            textbox_tight_wrap: Some(TightWrap::FirstAndLastLine),
         }),
         Command::SetOutline(Outline { level: Some(2), collapsed: Some(true) }),
         Command::SetParagraphTextDirection(TextFlow::TbRl),
@@ -958,17 +959,19 @@ fn commands() -> Vec<Command> {
         }),
         Command::SetDefaultTableStyle(Some(style("GridTable4"))),
         Command::SetTablePosition(Some(table_position())),
-        Command::SetObjectSize(ObjectSize { width: Some(Points(144.5)), height: Some(Points(72.5)), lock_aspect: Some(true) }),
+        Command::SetObjectSize(ObjectSize {
+            width: Some(Points(144.5)),
+            height: Some(Points(72.5)),
+            lock_aspect: Some(true),
+            relative_width: Some(NoneOr::Value(RelativeSize { percent: 50.0, relative_to: RelativeSizeReference::Margin })),
+            relative_height: Some(NoneOr::None),
+        }),
         Command::ResetObjectSize,
         Command::SetObjectWrap(ObjectWrap::Square),
         Command::SetAnchorLocked(true),
         Command::SetObjectPosition(ObjectPosition {
-            horizontal: Some(HorizontalPosition {
-                relative_to: HorizontalReference::Margin,
-                align: Some(ObjectHorizontalAlignment::Right),
-                offset: None,
-            }),
-            vertical: Some(VerticalPosition { relative_to: VerticalReference::Paragraph, align: None, offset: Some(Points(12.5)) }),
+            horizontal: Some(HorizontalPosition { relative_to: HorizontalReference::Margin, align: None, offset: None, percent: Some(25.5) }),
+            vertical: Some(VerticalPosition { relative_to: VerticalReference::Paragraph, align: None, offset: Some(Points(12.5)), percent: None }),
             allow_overlap: Some(false),
             layout_in_cell: Some(true),
         }),
@@ -988,9 +991,12 @@ fn commands() -> Vec<Command> {
         Command::SetShapeEffects(effects_change()),
         Command::SetShapeText(text_change()),
         Command::SetPictureAdjust(picture_adjust()),
+        Command::SetPictureCrop(PictureCrop { left: Some(0.1), top: None, right: Some(0.25), bottom: Some(0.0) }),
+        Command::ChangePicture(picture_bytes()),
         Command::SetObjectRotation(45.5),
         Command::FlipObject(dr::FlipAxis::Horizontal),
         Command::ArrangeObject(dr::Arrange::ToFront),
+        Command::AlignObjects(AlignObjects { align: ObjectAlign::DistributeHorizontally, relative_to: Some(AlignReference::Margin) }),
         Command::GroupObjects,
         Command::UngroupObjects,
         Command::SelectGroupChild(Order::Next),
@@ -1193,8 +1199,8 @@ fn command_values() -> Vec<CommandValue> {
 
 fn table_position() -> TablePosition {
     TablePosition {
-        horizontal: Some(HorizontalPosition { relative_to: HorizontalReference::Margin, align: None, offset: Some(Points(72.5)) }),
-        vertical: Some(VerticalPosition { relative_to: VerticalReference::Paragraph, align: None, offset: Some(Points(36.5)) }),
+        horizontal: Some(HorizontalPosition { relative_to: HorizontalReference::Margin, align: None, offset: Some(Points(72.5)), percent: None }),
+        vertical: Some(VerticalPosition { relative_to: VerticalReference::Paragraph, align: None, offset: Some(Points(36.5)), percent: None }),
         wrap_distance: Some(TextDistance { top: Points(0.0), bottom: Points(0.0), left: Points(9.0), right: Points(9.0) }),
     }
 }
@@ -1249,8 +1255,13 @@ fn selection() -> SelectionSummary {
             decorative: false,
             anchor_locked: Some(true),
             placement: Some(ObjectPlacement {
-                horizontal: HorizontalPosition { relative_to: HorizontalReference::Column, align: None, offset: Some(Points(36.5)) },
-                vertical: VerticalPosition { relative_to: VerticalReference::Page, align: Some(ObjectVerticalAlignment::Top), offset: None },
+                horizontal: HorizontalPosition { relative_to: HorizontalReference::Column, align: None, offset: Some(Points(36.5)), percent: None },
+                vertical: VerticalPosition {
+                    relative_to: VerticalReference::Page,
+                    align: Some(ObjectVerticalAlignment::Top),
+                    offset: None,
+                    percent: None,
+                },
                 allow_overlap: true,
                 layout_in_cell: true,
                 wrap_side: WrapSide::BothSides,
@@ -1262,6 +1273,10 @@ fn selection() -> SelectionSummary {
             flip_v: false,
             child_path: vec![1],
             count: 1,
+            crop: Some(PictureCrop { left: Some(0.1), top: Some(0.0), right: Some(0.25), bottom: Some(0.0) }),
+            transparent_color: Some(Color(0xFFFFFF)),
+            relative_width: Some(RelativeSize { percent: 50.0, relative_to: RelativeSizeReference::Page }),
+            relative_height: None,
         }),
         context: vec![ElementContext {
             id: id("field-1"),
@@ -1344,6 +1359,7 @@ fn paragraph() -> ParagraphFormatting {
             widow_control: Tri::Uniform(true),
             dont_hyphenate: Tri::Uniform(false),
             suppress_line_numbers: Tri::Mixed,
+            textbox_tight_wrap: Tri::Uniform(TightWrap::None),
         },
         borders: Tri::Uniform(BorderState::Other),
         shading: Tri::Uniform(NoneOr::Value(Color(0xD9E2F3))),
@@ -2262,15 +2278,28 @@ fn text_state() -> dr::ShapeTextState {
         autofit: dr::TextAutofit::Shape,
         wrap_text: true,
         direction: dr::TextDirection::Vertical270,
+        columns: dr::TextColumns { count: 2, spacing: Points(18.5) },
     }
 }
 
 fn text_change() -> dr::ShapeTextChange {
-    dr::ShapeTextChange { anchor: Some(dr::TextAnchor::Bottom), wrap_text: Some(false), ..Default::default() }
+    dr::ShapeTextChange {
+        anchor: Some(dr::TextAnchor::Bottom),
+        wrap_text: Some(false),
+        autofit: Some(dr::TextAutofit::ShrinkText),
+        columns: Some(dr::TextColumns { count: 2, spacing: Points(18.5) }),
+        ..Default::default()
+    }
 }
 
 fn picture_adjust() -> dr::PictureAdjustChange {
-    dr::PictureAdjustChange { transparency: Some(0.25), grayscale: Some(true), brightness: None, contrast: Some(-0.5) }
+    dr::PictureAdjustChange {
+        transparency: Some(0.25),
+        grayscale: Some(true),
+        brightness: None,
+        contrast: Some(-0.5),
+        transparent_color: Some(NoneOr::Value(Color(0xFFFFFF))),
+    }
 }
 
 fn shape_state() -> dr::ShapeState {

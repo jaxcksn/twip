@@ -103,7 +103,7 @@ Chunk numbers are [roadmap](../roadmap#docx) chunks.
 | Outline level | `w:outlineLvl` | API (`setOutline`) |
 | Collapsed by default | `w15:collapsed` | API (`setOutline`) |
 | Text direction | `w:textDirection` | API for paragraphs (`setParagraphTextDirection`); API for sections (`setSectionTextDirection`); API for cells (`setCellProperties`) |
-| Text box tight wrap | `w:textboxTightWrap` | Laid out; Model, 2.10 |
+| Text box tight wrap | `w:textboxTightWrap` | API (`setParagraphFlow`) |
 | Don't hyphenate | `w:suppressAutoHyphens` | API (`setParagraphFlow`) |
 | Line numbers | `w:suppressLineNumbers` | API (`setParagraphFlow`) |
 | HTML divisions | `w:divId`, `w:divs`, `w:div`, `w:divBdr`, `w:divsChild`, `w:blockQuote`, `w:bodyDiv`, `w:marLeft`, `w:marRight`, `w:marTop`, `w:marBottom` | Laid out (from pasted HTML; Word has no setting for them) |
@@ -267,12 +267,12 @@ Word 2010 and later remove custom XML markup when they open a document, so it is
 
 | Feature | Status |
 |---|---|
-| Inline and floating pictures, shapes, text boxes, groups, canvases | API |
-| Crop (`a:srcRect`) | Laid out; Lost when a picture is rewritten, Model and API, 2.10 |
+| Inline and floating pictures, shapes, text boxes, groups, canvases | API (`changePicture` replaces a picture's image; `alignObjects` aligns and distributes floating objects) |
+| Crop (`a:srcRect`) | API (`setPictureCrop`, inline and floating; kept when a picture is rewritten). Crop handles are 2.10 |
 | Linked pictures (`r:link`) | Lost (drawn empty), 2.10 |
-| Set transparent colour (`a:clrChange`) | Kept, 2.10 |
-| Relative size and position (`wp14:sizeRelH`, `wp14:pctPosHOffset`, ...) | Laid out; Model, 2.10 |
-| Text box columns and autofit (`wps:bodyPr@numCol`, `a:normAutofit`) | Model; columns API in 2.10 |
+| Set transparent colour (`a:clrChange`) | API (`setPictureAdjust`'s `transparentColor`); drawn in phase 3 |
+| Relative size and position (`wp14:sizeRelH`, `wp14:pctPosHOffset`, ...) | API (`setObjectSize`'s `relativeWidth` and `relativeHeight`, `setObjectPosition`'s `percent`) |
+| Text box columns and autofit (`wps:bodyPr@numCol`, `a:normAutofit`) | API (`setShapeText`'s `columns` and `shrinkText` autofit); the text is laid out in one column for now |
 | A shape's VML fallback (`mc:Fallback`) | Kept, moved with the shape; a shape edited in Twip is saved without it (Word 2010 and later read the shape; see Not planned on the roadmap) |
 | Alternate content (`mc:AlternateContent`, `Requires`) | Laid out: the first choice whose namespaces the engine reads, else the fallback |
 | Charts (`c:chart`) | Not in 1.0 |

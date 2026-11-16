@@ -406,6 +406,31 @@ internal sealed class PageNumberingOptionsConverter : JsonConverter<PageNumberin
     }
 }
 
+internal sealed class RelativeSizeConverter : JsonConverter<RelativeSize>
+{
+    public override RelativeSize Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        var o = JsonElement.ParseValue(ref reader);
+        if (o.ValueKind == JsonValueKind.String) return RelativeSize.Absolute;
+        var to = o.TryGetProperty("relativeTo", out var r) ? r.Deserialize(TwipJsonContext.Default.RelativeSizeReference) : RelativeSizeReference.Margin;
+        return new RelativeSize(o.GetProperty("percent").GetDouble(), to);
+    }
+
+    public override void Write(Utf8JsonWriter writer, RelativeSize value, JsonSerializerOptions options)
+    {
+        if (value.Percent <= 0)
+        {
+            writer.WriteStringValue("none");
+            return;
+        }
+        writer.WriteStartObject();
+        writer.WriteNumber("percent", value.Percent);
+        writer.WritePropertyName("relativeTo");
+        JsonSerializer.Serialize(writer, value.RelativeTo, TwipJsonContext.Default.RelativeSizeReference);
+        writer.WriteEndObject();
+    }
+}
+
 internal sealed class MenuActionConverter : JsonConverter<MenuAction>
 {
     public override MenuAction Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) => new(JsonNode.Parse(ref reader));

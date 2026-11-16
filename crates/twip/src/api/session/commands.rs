@@ -204,6 +204,13 @@ impl Session {
             C::SetShapeText(t) => t.apply(&crate::drawing::text::BodyProps::default()).map(|_| ()).map_err(Error::invalid),
             C::SetPictureAdjust(a) => a.apply(&[]).map(|_| ()).map_err(Error::invalid),
             C::SetObjectRotation(d) => within("the rotation", *d, 0.0, 360.0),
+            C::SetPictureCrop(c) => {
+                for v in [c.left, c.top, c.right, c.bottom].into_iter().flatten() {
+                    within("the crop", v, -1.0, 1.0)?;
+                }
+                Ok(())
+            }
+            C::ChangePicture(data) => picture(&data.0),
             C::SetShapeAdjust(a) => {
                 let count = self.editor.shape_info().and_then(|s| s.state).map_or(0, |s| s.adjust.len());
                 if usize::from(a.index) < count { Ok(()) } else { Err(Error::invalid(format!("the shape has {count} adjust values"))) }

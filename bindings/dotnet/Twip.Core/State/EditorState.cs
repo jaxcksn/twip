@@ -450,6 +450,22 @@ public sealed record ObjectSelection
 
     /// <summary>How many objects are selected: 2 or more is a multi-selection, the other properties describing the first.</summary>
     public int Count { get; init; }
+
+    /// <summary>A picture's crop, by fractions of its image from each edge; null when uncropped.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PictureCrop? Crop { get; init; }
+
+    /// <summary>A picture's Set Transparent Colour; null for none.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ColorValue? TransparentColor { get; init; }
+
+    /// <summary>A floating object's width as a share of a box on the page; null for an absolute width.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public RelativeSize? RelativeWidth { get; init; }
+
+    /// <summary>Its height as a share of a box on the page; null for an absolute height.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public RelativeSize? RelativeHeight { get; init; }
 }
 
 /// <summary>The selected shape's properties, as written.</summary>
@@ -515,6 +531,9 @@ public sealed record ShapeTextState
 
     /// <summary>Which way it runs.</summary>
     public TextDirection Direction { get; init; }
+
+    /// <summary>Its columns.</summary>
+    public TextColumns Columns { get; init; } = new(1, default);
 }
 
 /// <summary>A floating object's place and its wrapping options.</summary>
@@ -785,6 +804,9 @@ public sealed record ParagraphFlow
 
     /// <summary>Left out of line numbering.</summary>
     public FormatValue<bool> SuppressLineNumbers { get; init; }
+
+    /// <summary>In a text box, which lines text around it wraps tightly to.</summary>
+    public FormatValue<TightWrap> TextboxTightWrap { get; init; }
 }
 
 /// <summary>The selection's section page layout.</summary>

@@ -1087,6 +1087,7 @@ pub fn commands(values: &DialogValues, state: &State, cx: &Context) -> Result<Ve
                 widow_control: set(&v.widow_control, &n.widow_control),
                 dont_hyphenate: None,
                 suppress_line_numbers: None,
+                textbox_tight_wrap: None,
             };
             if flow != ParagraphFlow::default() {
                 out.push(Command::SetParagraphFlow(flow));
@@ -1179,7 +1180,7 @@ pub fn commands(values: &DialogValues, state: &State, cx: &Context) -> Result<Ve
                 out.push(Command::ResetObjectSize);
             } else if (v.width, v.height) != (n.width, n.height) {
                 check(v.width.0 >= 1.0 && v.height.0 >= 1.0, "the size is at least 1 point each way")?;
-                out.push(Command::SetObjectSize(ObjectSize { width: Some(v.width), height: Some(v.height), lock_aspect: None }));
+                out.push(Command::SetObjectSize(ObjectSize { width: Some(v.width), height: Some(v.height), ..Default::default() }));
             }
         }
         (DialogValues::AltText(v), DialogValues::AltText(n)) => {

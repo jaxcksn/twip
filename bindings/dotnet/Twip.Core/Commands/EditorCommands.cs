@@ -1009,9 +1009,11 @@ public sealed class EditorCommands
     /// <param name="width">The width, 1 to 1584 pt.</param>
     /// <param name="height">The height, 1 to 1584 pt.</param>
     /// <param name="lockAspect">Keep the aspect ratio.</param>
+    /// <param name="relativeWidth">A floating object's width as a share of a box on the page; <see cref="RelativeSize.Absolute"/> makes it absolute.</param>
+    /// <param name="relativeHeight">A floating object's height as a share of a box on the page; <see cref="RelativeSize.Absolute"/> makes it absolute.</param>
     /// <param name="ct">Cancels the command before it runs.</param>
     /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
-    public Task SetObjectSizeAsync(Length? width = null, Length? height = null, bool? lockAspect = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetObjectSize(width, height, lockAspect), ct);
+    public Task SetObjectSizeAsync(Length? width = null, Length? height = null, bool? lockAspect = null, RelativeSize? relativeWidth = null, RelativeSize? relativeHeight = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetObjectSize(width, height, lockAspect, relativeWidth, relativeHeight), ct);
 
     /// <summary>Restores the selected picture's original size.</summary>
     /// <param name="ct">Cancels the command before it runs.</param>
@@ -1107,6 +1109,25 @@ public sealed class EditorCommands
     /// <param name="ct">Cancels the command before it runs.</param>
     /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
     public Task SetPictureAdjustAsync(PictureAdjustChange options, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetPictureAdjust(options), ct);
+
+    /// <summary>Crops the selected picture, inline or floating: its box follows the part shown, at the scale it is drawn.</summary>
+    /// <param name="crop">The fractions of its image cut from each edge.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SetPictureCropAsync(PictureCrop crop, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetPictureCrop(crop), ct);
+
+    /// <summary>Replaces the selected picture's image, keeping its width, effects and place; its height follows the new image and the crop is cleared.</summary>
+    /// <param name="data">The image: PNG, JPEG, GIF, BMP or TIFF.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task ChangePictureAsync(ReadOnlyMemory<byte> data, CancellationToken ct = default) => _session.RunAsync(EditorOperation.ChangePicture(data), ct);
+
+    /// <summary>Aligns or distributes the selected floating objects across their page, its margins, or the box around them.</summary>
+    /// <param name="align">How they line up.</param>
+    /// <param name="relativeTo">What they line up in; the box around them for two or more, else the margins, when null.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task AlignObjectsAsync(ObjectAlign align, AlignReference? relativeTo = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.AlignObjects(align, relativeTo), ct);
 
     /// <summary>Rotates the selected objects.</summary>
     /// <param name="degrees">The rotation, 0 to 360 degrees clockwise.</param>

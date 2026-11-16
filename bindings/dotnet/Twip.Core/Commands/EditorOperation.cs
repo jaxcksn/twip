@@ -830,8 +830,10 @@ public abstract partial record EditorOperation
     /// <param name="width">The width, 1 to 1584 pt.</param>
     /// <param name="height">The height, 1 to 1584 pt.</param>
     /// <param name="lockAspect">Keep the aspect ratio.</param>
+    /// <param name="relativeWidth">A floating object's width as a share of a box on the page; <see cref="RelativeSize.Absolute"/> makes it absolute.</param>
+    /// <param name="relativeHeight">A floating object's height as a share of a box on the page; <see cref="RelativeSize.Absolute"/> makes it absolute.</param>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
-    public static EditorOperation SetObjectSize(Length? width = null, Length? height = null, bool? lockAspect = null) => Op(CommandId.SetObjectSize, new Arg("width", width is { } width_ ? Node(width_) : null, Optional: true), new Arg("height", height is { } height_ ? Node(height_) : null, Optional: true), new Arg("lockAspect", lockAspect is { } lockAspect_ ? Node(lockAspect_) : null, Optional: true));
+    public static EditorOperation SetObjectSize(Length? width = null, Length? height = null, bool? lockAspect = null, RelativeSize? relativeWidth = null, RelativeSize? relativeHeight = null) => Op(CommandId.SetObjectSize, new Arg("width", width is { } width_ ? Node(width_) : null, Optional: true), new Arg("height", height is { } height_ ? Node(height_) : null, Optional: true), new Arg("lockAspect", lockAspect is { } lockAspect_ ? Node(lockAspect_) : null, Optional: true), new Arg("relativeWidth", relativeWidth is null ? null : Node(relativeWidth), Optional: true), new Arg("relativeHeight", relativeHeight is null ? null : Node(relativeHeight), Optional: true));
 
     /// <summary>Restores the selected picture's original size.</summary>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
@@ -913,6 +915,22 @@ public abstract partial record EditorOperation
     /// <param name="options">The adjustments to change.</param>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation SetPictureAdjust(PictureAdjustChange options) => Op(CommandId.SetPictureAdjust, Arg.Flatten(options));
+
+    /// <summary>Crops the selected picture, inline or floating: its box follows the part shown, at the scale it is drawn.</summary>
+    /// <param name="crop">The fractions of its image cut from each edge.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetPictureCrop(PictureCrop crop) => Op(CommandId.SetPictureCrop, Arg.Flatten(crop));
+
+    /// <summary>Replaces the selected picture's image, keeping its width, effects and place; its height follows the new image and the crop is cleared.</summary>
+    /// <param name="data">The image: PNG, JPEG, GIF, BMP or TIFF.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation ChangePicture(ReadOnlyMemory<byte> data) => Op(CommandId.ChangePicture, new Arg("value", Node(data)));
+
+    /// <summary>Aligns or distributes the selected floating objects across their page, its margins, or the box around them.</summary>
+    /// <param name="align">How they line up.</param>
+    /// <param name="relativeTo">What they line up in; the box around them for two or more, else the margins, when null.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation AlignObjects(ObjectAlign align, AlignReference? relativeTo = null) => Op(CommandId.AlignObjects, new Arg("align", Node(align)), new Arg("relativeTo", Nullable(relativeTo), Optional: true));
 
     /// <summary>Rotates the selected objects.</summary>
     /// <param name="degrees">The rotation, 0 to 360 degrees clockwise.</param>

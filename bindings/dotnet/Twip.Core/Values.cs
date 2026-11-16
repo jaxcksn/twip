@@ -706,6 +706,8 @@ public enum TextAutofit
     None,
     /// <summary>The shape's height follows its text.</summary>
     Shape,
+    /// <summary>The text shrinks when it overflows the shape.</summary>
+    ShrinkText,
 }
 
 /// <summary>Which way a shape's text runs.</summary>

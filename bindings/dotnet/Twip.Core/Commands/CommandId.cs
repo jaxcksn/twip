@@ -487,4 +487,10 @@ public enum CommandId
     SetTableAltText,
     /// <summary>Sets the table style new tables take.</summary>
     SetDefaultTableStyle,
+    /// <summary>Crops the selected picture.</summary>
+    SetPictureCrop,
+    /// <summary>Replaces the selected picture's image.</summary>
+    ChangePicture,
+    /// <summary>Aligns or distributes the selected floating objects.</summary>
+    AlignObjects,
 }

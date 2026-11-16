@@ -255,8 +255,8 @@ fn a_selection_shows_its_status_line_at_the_full_level() {
 
 fn position(x: f64, y: f64) -> TablePosition {
     TablePosition {
-        horizontal: Some(HorizontalPosition { relative_to: HorizontalReference::Margin, align: None, offset: Some(Points(x)) }),
-        vertical: Some(VerticalPosition { relative_to: VerticalReference::Paragraph, align: None, offset: Some(Points(y)) }),
+        horizontal: Some(HorizontalPosition { relative_to: HorizontalReference::Margin, align: None, offset: Some(Points(x)), percent: None }),
+        vertical: Some(VerticalPosition { relative_to: VerticalReference::Paragraph, align: None, offset: Some(Points(y)), percent: None }),
         wrap_distance: None,
     }
 }
@@ -292,7 +292,7 @@ fn set_table_position_saves_reopens_and_undoes() {
     e.execute(Command::Undo, fonts());
     assert_eq!((floating(&e, d.table), e.history.next_undo()), (None, None), "one step");
     let mut bad = position(0.0, 0.0);
-    bad.horizontal = Some(HorizontalPosition { relative_to: HorizontalReference::Character, align: None, offset: None });
+    bad.horizontal = Some(HorizontalPosition { relative_to: HorizontalReference::Character, align: None, offset: None, percent: None });
     assert!(matches!(e.execute(Command::SetTablePosition(Some(bad)), fonts()), Outcome::Refused(_)));
 }
 
@@ -302,8 +302,8 @@ fn a_reference_given_alone_keeps_the_table_where_it_is() {
     let d = Drawn::of(&mut e);
     click(&mut e, (d.edges[0] + d.edges[1]) / 2.0, (d.rows[1][1] + d.rows[1][3]) / 2.0);
     let stay = TablePosition {
-        horizontal: Some(HorizontalPosition { relative_to: HorizontalReference::Page, align: None, offset: None }),
-        vertical: Some(VerticalPosition { relative_to: VerticalReference::Page, align: None, offset: None }),
+        horizontal: Some(HorizontalPosition { relative_to: HorizontalReference::Page, align: None, offset: None, percent: None }),
+        vertical: Some(VerticalPosition { relative_to: VerticalReference::Page, align: None, offset: None, percent: None }),
         wrap_distance: None,
     };
     assert!(matches!(e.execute(Command::SetTablePosition(Some(stay)), fonts()), Outcome::Changed(_)));

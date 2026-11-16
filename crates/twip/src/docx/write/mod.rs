@@ -4020,10 +4020,31 @@ impl Saver<'_, '_> {
         let id = self.ids.get();
         self.ids.set(id + 1);
         let (cx, cy) = (emu(f.w), emu(f.h));
-        let pos = |name: &str, rel: &str, align: &Option<String>, off: f64| match align {
-            Some(a) => format!("<wp:{name} relativeFrom=\"{rel}\"><wp:align>{}</wp:align></wp:{name}>", props::esc(a)),
-            None => format!("<wp:{name} relativeFrom=\"{rel}\"><wp:posOffset>{}</wp:posOffset></wp:{name}>", emu(off)),
+        const WP14: &str = "http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing";
+        let pos = |name: &str, rel: &str, align: &Option<String>, off: f64| {
+            let (k, el) = if name == "positionH" { (0, "pctPosHOffset") } else { (1, "pctPosVOffset") };
+            match (align, f.relative.pos[k]) {
+                (Some(a), _) => format!("<wp:{name} relativeFrom=\"{rel}\"><wp:align>{}</wp:align></wp:{name}>", props::esc(a)),
+                (None, Some(t)) => {
+                    format!(r#"<wp:{name} relativeFrom="{rel}"><wp14:{el} xmlns:wp14="{WP14}">{}</wp14:{el}></wp:{name}>"#, t * 100)
+                }
+                (None, None) => format!("<wp:{name} relativeFrom=\"{rel}\"><wp:posOffset>{}</wp:posOffset></wp:{name}>", emu(off)),
+            }
         };
+        let sizes: String = f
+            .relative
+            .size
+            .iter()
+            .zip([("sizeRelH", "pctWidth"), ("sizeRelV", "pctHeight")])
+            .filter_map(|(v, (el, pct))| {
+                let (from, t) = v.as_ref()?;
+                Some(format!(
+                    r#"<wp14:{el} xmlns:wp14="{WP14}" relativeFrom="{}"><wp14:{pct}>{}</wp14:{pct}></wp14:{el}>"#,
+                    props::esc(from),
+                    t * 100
+                ))
+            })
+            .collect();
         // A float made with a shape tree writes it (its extent the float's), its story in `wps:txbx`.
         let made = match f.shape.as_deref() {
             Some(shape) => {
@@ -4101,7 +4122,7 @@ impl Saver<'_, '_> {
                 r#"<{w}drawing><wp:anchor xmlns:wp="{wp}" distT="{dt}" distB="{db}" distL="{dl}" distR="{dr}" simplePos="0" relativeHeight="{id}" "#,
                 r#"behindDoc="{behind}" locked="{locked}" layoutInCell="{cell}" allowOverlap="{overlap}"><wp:simplePos x="0" y="0"/>{h}{v}"#,
                 r#"<wp:extent cx="{cx}" cy="{cy}"/><wp:effectExtent l="0" t="0" r="0" b="0"/>{wrap}<wp:docPr id="{id}" name="{kind} {id}"{descr}/>"#,
-                r#"<wp:cNvGraphicFramePr>{locks}</wp:cNvGraphicFramePr><a:graphic xmlns:a="{a}">{graphic}</a:graphic></wp:anchor></{w}drawing>"#
+                r#"<wp:cNvGraphicFramePr>{locks}</wp:cNvGraphicFramePr><a:graphic xmlns:a="{a}">{graphic}</a:graphic>{sizes}</wp:anchor></{w}drawing>"#
             ),
             w = self.w,
             wp = WP,
@@ -4127,6 +4148,7 @@ impl Saver<'_, '_> {
             descr = descr_attr(&f.alt),
             locks = if f.lock_aspect { format!(r#"<a:graphicFrameLocks xmlns:a="{A}" noChangeAspect="1"/>"#) } else { String::new() },
             graphic = graphic,
+            sizes = sizes,
         ))
     }
 
@@ -4456,6 +4478,9 @@ struct Placement {
     inner: Option<Range<usize>>,
     /// The whole text written instead (a VML object patched as VML).
     replace: Option<String>,
+    /// Relative size and position (`wp14:sizeRelH`, `wp14:pctPosHOffset`, ...), with the offsets a position left
+    /// relative goes back to.
+    relative: Option<(crate::docx::Relative, [f64; 2])>,
 }
 
 impl Placement {
@@ -4496,8 +4521,11 @@ impl Placement {
             shape: None,
             inner: None,
             replace: None,
+            relative: (a.relative.size != b.relative.size || a.relative.pos != b.relative.pos)
+                .then(|| (b.relative.clone(), [b.h_offset, b.v_offset])),
         };
         let any = p.h.is_some()
+            || p.relative.is_some()
             || p.v.is_some()
             || p.size.is_some()
             || p.wrap.is_some()
@@ -4529,6 +4557,37 @@ impl Placement {
                 Some(a) => format!("<{p}align>{}</{p}align>", props::esc(a)),
                 None => format!("<{p}posOffset>{}</{p}posOffset>", emu(*off)),
             });
+        }
+        if let Some((r, offsets)) = &self.relative {
+            const WP14: &str = "http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing";
+            for (k, (name, el)) in [("positionH", "pctPosHOffset"), ("positionV", "pctPosVOffset")].into_iter().enumerate() {
+                match r.pos[k] {
+                    Some(t) => set_content(&mut s, name, |_| format!(r#"<wp14:{el} xmlns:wp14="{WP14}">{}</wp14:{el}>"#, t * 100)),
+                    None if s.contains(el) => set_content(&mut s, name, |p| format!("<{p}posOffset>{}</{p}posOffset>", emu(offsets[k]))),
+                    None => {}
+                }
+            }
+            for el in ["sizeRelH", "sizeRelV"] {
+                while let Some(at) = element(&s, el) {
+                    s.replace_range(at, "");
+                }
+            }
+            let sizes: String = r
+                .size
+                .iter()
+                .zip([("sizeRelH", "pctWidth"), ("sizeRelV", "pctHeight")])
+                .filter_map(|(v, (el, pct))| {
+                    let (from, t) = v.as_ref()?;
+                    Some(format!(
+                        r#"<wp14:{el} xmlns:wp14="{WP14}" relativeFrom="{}"><wp14:{pct}>{}</wp14:{pct}></wp14:{el}>"#,
+                        props::esc(from),
+                        t * 100
+                    ))
+                })
+                .collect();
+            if let Some(end) = s.rfind(":anchor>").and_then(|k| s[..k].rfind("</")) {
+                s.insert_str(end, &sizes);
+            }
         }
         if let Some((start, end)) = find_tag(&s, "anchor", 0) {
             let mut tag = s[start..end].to_string();

@@ -1,6 +1,11 @@
 [
   {
     "anchor": "bottom",
+    "autofit": "shrinkText",
+    "columns": {
+      "count": 2,
+      "spacing": 18.5
+    },
     "wrapText": false
   }
 ]

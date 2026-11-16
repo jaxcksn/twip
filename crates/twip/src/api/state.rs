@@ -382,6 +382,18 @@ pub struct ObjectSelection {
     /// How many objects are selected (2 or more: a multi-selection, the other fields describing the first).
     #[serde(default)]
     pub count: u16,
+    /// A picture's crop, by fractions of its image from each edge; absent when uncropped.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub crop: Option<crate::api::command::PictureCrop>,
+    /// A picture's Set Transparent Colour; absent for none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transparent_color: Option<Color>,
+    /// A floating object's width as a share of a box on the page; absent for an absolute width.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub relative_width: Option<crate::api::command::RelativeSize>,
+    /// Its height as a share of a box on the page; absent for an absolute height.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub relative_height: Option<crate::api::command::RelativeSize>,
 }
 
 /// A floating object's place and its wrapping options.
@@ -648,6 +660,8 @@ pub struct FlowState {
     pub dont_hyphenate: Tri<bool>,
     /// Left out of line numbering.
     pub suppress_line_numbers: Tri<bool>,
+    /// In a text box, which lines text around it wraps tightly to.
+    pub textbox_tight_wrap: Tri<crate::api::command::TightWrap>,
 }
 
 /// The selection's paragraph formatting.

@@ -37,6 +37,7 @@ pub mod navigate;
 mod notes;
 pub mod objects;
 pub mod picture_controls;
+mod pictures;
 pub mod pointer;
 pub mod position;
 mod preview;

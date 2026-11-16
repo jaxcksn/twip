@@ -171,6 +171,11 @@ impl Editor {
                         None => {}
                     }
                 }
+                match f.textbox_tight_wrap.map(|t| t.ooxml().0) {
+                    Some("none") => p.set("textboxTightWrap", String::new()),
+                    Some(v) => p.set("textboxTightWrap", format!("<{w}textboxTightWrap {w}val=\"{v}\"/>")),
+                    None => {}
+                }
             },
             fonts,
         )

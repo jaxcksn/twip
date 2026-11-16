@@ -184,6 +184,11 @@ namespace Twip.Wire;
         typeof(FormatValueConverter<CellAlignment>),
         typeof(FormatValueConverter<RowHeight>),
         typeof(FormatValueConverter<TableWidth>),
+        typeof(FormatValueConverter<TightWrap>),
+        typeof(CamelEnum<TightWrap>),
+        typeof(CamelEnum<RelativeSizeReference>),
+        typeof(CamelEnum<ObjectAlign>),
+        typeof(CamelEnum<AlignReference>),
         typeof(FormatValueConverter<FontStyleChoice>),
         typeof(FormatValueConverter<OutlineLevel>),
         typeof(FormatValueConverter<SpecialIndent>),
@@ -617,6 +622,13 @@ namespace Twip.Wire;
 [JsonSerializable(typeof(CellPropertiesOptions))]
 [JsonSerializable(typeof(RowExceptions))]
 [JsonSerializable(typeof(RowBorders))]
+[JsonSerializable(typeof(RelativeSize))]
+[JsonSerializable(typeof(RelativeSizeReference))]
+[JsonSerializable(typeof(PictureCrop))]
+[JsonSerializable(typeof(ObjectAlign))]
+[JsonSerializable(typeof(AlignReference))]
+[JsonSerializable(typeof(TextColumns))]
+[JsonSerializable(typeof(TightWrap))]
 [JsonSerializable(typeof(TableWidthKind))]
 [JsonSerializable(typeof(TabsDialogAction))]
 [JsonSerializable(typeof(TabsDialogValues))]

@@ -309,6 +309,9 @@ export interface TableStyleOptions {
 /** A table width. */
 export type TableWidth = { kind: 'auto' } | { kind: 'points'; value: Points } | { kind: 'percent'; value: number };
 
+/** Which of a text box's lines text around it wraps tightly to. */
+export type TightWrap = 'none' | 'allLines' | 'firstAndLastLine' | 'firstLineOnly' | 'lastLineOnly';
+
 /** The selected object. */
 export interface ObjectSelection {
   /** A picture, a text box, a shape, a line or connector (a shape with no filled path), or a group. */
@@ -339,6 +342,22 @@ export interface ObjectSelection {
   childPath: number[];
   /** How many objects are selected: 2 or more for a multi-selection, the other fields describing the first. */
   count: number;
+  /** A picture's crop, by fractions of its image from each edge; absent when uncropped. */
+  crop?: { left: number; top: number; right: number; bottom: number };
+  /** A picture's Set Transparent Colour; absent for none. */
+  transparentColor?: Color;
+  /** A floating object's width as a share of a box on the page; absent for an absolute width. */
+  relativeWidth?: RelativeSize;
+  /** Its height as a share of a box on the page; absent for an absolute height. */
+  relativeHeight?: RelativeSize;
+}
+
+/** A floating object's size as a share of a box on the page: 1 to 1000 percent. */
+export interface RelativeSize {
+  /** The share. */
+  percent: number;
+  /** The box: margins, page, or a margin (widths: left, right, inside, outside; heights: top, bottom). */
+  relativeTo: 'margin' | 'page' | 'leftMargin' | 'rightMargin' | 'insideMargin' | 'outsideMargin' | 'topMargin' | 'bottomMargin';
 }
 
 /** How text wraps around an object. */
@@ -386,6 +405,8 @@ export interface HorizontalPosition {
   align?: ObjectHorizontalAlignment;
   /** Right of the reference's left edge, −1584 to 1584. */
   offset?: Points;
+  /** Right of the reference's left edge by a share of its width, −1000 to 1000 percent. */
+  percent?: number;
 }
 
 /**
@@ -399,6 +420,8 @@ export interface VerticalPosition {
   align?: ObjectVerticalAlignment;
   /** Below the reference's top, −1584 to 1584. */
   offset?: Points;
+  /** Below the reference's top by a share of its height, −1000 to 1000 percent. */
+  percent?: number;
 }
 
 /** How far text keeps from a floating object. */
@@ -547,7 +570,15 @@ export interface ParagraphFormatting {
   /** The list level. */
   listLevel: Mixed<number>;
   /** The pagination flags. */
-  flow: { keepWithNext: Tri; keepLinesTogether: Tri; pageBreakBefore: Tri; widowControl: Tri; dontHyphenate: Tri; suppressLineNumbers: Tri };
+  flow: {
+    keepWithNext: Tri;
+    keepLinesTogether: Tri;
+    pageBreakBefore: Tri;
+    widowControl: Tri;
+    dontHyphenate: Tri;
+    suppressLineNumbers: Tri;
+    textboxTightWrap: Mixed<TightWrap>;
+  };
   /** The borders. */
   borders: Mixed<'box' | 'bottom' | 'none' | 'other'>;
   /** The shading. */

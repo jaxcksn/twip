@@ -1075,7 +1075,7 @@ fn reset_size_gives_a_picture_its_own_size() {
         Command::SetObjectSize(crate::api::command::ObjectSize {
             width: Some(crate::api::value::Points(20.0)),
             height: Some(crate::api::value::Points(10.0)),
-            lock_aspect: None,
+            ..Default::default()
         }),
         fonts(),
     );
@@ -1267,6 +1267,7 @@ fn position_commands_place_the_float_and_the_state_reports_it() {
                 relative_to: HorizontalReference::Margin,
                 align: Some(ObjectHorizontalAlignment::Right),
                 offset: None,
+                percent: None,
             }),
             ..Default::default()
         }),
@@ -1279,7 +1280,7 @@ fn position_commands_place_the_float_and_the_state_reports_it() {
     assert!((now[1] - before[1]).abs() < 0.1, "vertically where it was");
     e.execute(
         Command::SetObjectPosition(ObjectPosition {
-            vertical: Some(VerticalPosition { relative_to: VerticalReference::Page, align: None, offset: None }),
+            vertical: Some(VerticalPosition { relative_to: VerticalReference::Page, align: None, offset: None, percent: None }),
             ..Default::default()
         }),
         fonts(),
@@ -2515,7 +2516,8 @@ fn a_picture_floated_from_its_paragraphs_first_line_stays_below_the_paragraph_be
     let mut e = super::super::Editor::open(&super::blank_body(&xml), fonts()).expect("opens");
     e.set_caret_for_benchmark(Selection::Caret(Position::text(StoryId::Body, super::para_id(&e, 1), Unit(0))));
     e.execute(Command::InsertPicture(crate::api::command::Picture { data: crate::api::value::Bytes(data), alt_text: None }), fonts());
-    let size = crate::api::command::ObjectSize { width: Some(Points(150.0)), height: Some(Points(90.0)), lock_aspect: Some(false) };
+    let size =
+        crate::api::command::ObjectSize { width: Some(Points(150.0)), height: Some(Points(90.0)), lock_aspect: Some(false), ..Default::default() };
     e.execute(Command::SetObjectSize(size), fonts());
     let first = |e: &mut super::super::Editor| {
         while e.idle(fonts()) {}

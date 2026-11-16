@@ -533,7 +533,7 @@ export interface EffectsChange {
 export type TextAnchor = 'top' | 'middle' | 'bottom';
 
 /** How a shape fits its text: it keeps its size, or its height follows the text. */
-export type TextAutofit = 'none' | 'shape';
+export type TextAutofit = 'none' | 'shape' | 'shrinkText';
 
 /**
  * Which way a shape's text runs: left to right; turned 90° or 270° clockwise; East Asian vertical (CJK upright,
@@ -560,6 +560,16 @@ export interface ShapeTextState {
   wrapText: boolean;
   /** Which way it runs. */
   direction: TextDirection;
+  /** Its columns. */
+  columns: TextColumns;
+}
+
+/** A text box's text columns: 1 to 16, 0 to 1584 apart. */
+export interface TextColumns {
+  /** How many. */
+  count: number;
+  /** The space between them. */
+  spacing: Points;
 }
 
 /** `setShapeText`'s change; what isn't given is kept. */
@@ -574,6 +584,8 @@ export interface ShapeTextChange {
   wrapText?: boolean;
   /** Which way it runs. */
   direction?: TextDirection;
+  /** Its columns. */
+  columns?: TextColumns;
 }
 
 /** `setPictureAdjust`'s change; what isn't given is kept. */
@@ -586,6 +598,8 @@ export interface PictureAdjustChange {
   brightness?: number;
   /** More (positive) or less contrast, −1 to 1. */
   contrast?: number;
+  /** Set Transparent Colour: the colour drawn see-through, or `'none'`. */
+  transparentColor?: Color | 'none';
 }
 
 /** `insertShape`'s options. */

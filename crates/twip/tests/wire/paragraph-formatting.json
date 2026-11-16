@@ -10,6 +10,7 @@
       "keepWithNext": true,
       "pageBreakBefore": "mixed",
       "suppressLineNumbers": "mixed",
+      "textboxTightWrap": "none",
       "widowControl": true
     },
     "indents": {

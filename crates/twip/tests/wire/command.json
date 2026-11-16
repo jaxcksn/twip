@@ -325,6 +325,7 @@
     "keepWithNext": true,
     "pageBreakBefore": true,
     "suppressLineNumbers": false,
+    "textboxTightWrap": "firstAndLastLine",
     "type": "setParagraphFlow",
     "widowControl": true
   },
@@ -820,6 +821,11 @@
   {
     "height": 72.5,
     "lockAspect": true,
+    "relativeHeight": "none",
+    "relativeWidth": {
+      "percent": 50.0,
+      "relativeTo": "margin"
+    },
     "type": "setObjectSize",
     "width": 144.5
   },
@@ -837,7 +843,7 @@
   {
     "allowOverlap": false,
     "horizontal": {
-      "align": "right",
+      "percent": 25.5,
       "relativeTo": "margin"
     },
     "layoutInCell": true,
@@ -913,6 +919,11 @@
   },
   {
     "anchor": "bottom",
+    "autofit": "shrinkText",
+    "columns": {
+      "count": 2,
+      "spacing": 18.5
+    },
     "type": "setShapeText",
     "wrapText": false
   },
@@ -920,7 +931,18 @@
     "contrast": -0.5,
     "grayscale": true,
     "transparency": 0.25,
+    "transparentColor": "#FFFFFF",
     "type": "setPictureAdjust"
+  },
+  {
+    "bottom": 0.0,
+    "left": 0.1,
+    "right": 0.25,
+    "type": "setPictureCrop"
+  },
+  {
+    "type": "changePicture",
+    "value": "iVBORw=="
   },
   {
     "type": "setObjectRotation",
@@ -933,6 +955,11 @@
   {
     "type": "arrangeObject",
     "value": "toFront"
+  },
+  {
+    "align": "distributeHorizontally",
+    "relativeTo": "margin",
+    "type": "alignObjects"
   },
   {
     "type": "groupObjects"

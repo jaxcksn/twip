@@ -938,9 +938,11 @@ impl Editor {
         let mut stay = [false; 2];
         if let Some(h) = p.horizontal {
             n.h_relative = ooxml(h.relative_to);
+            n.relative.pos[0] = h.percent.map(|v| (v * 10.0).round() as i64);
             (n.h_align, n.h_offset) = match (h.align, h.offset) {
                 (Some(a), _) => (Some(ooxml(a)), n.h_offset),
                 (None, Some(o)) => (None, twips(o.0)),
+                (None, None) if h.percent.is_some() => (None, n.h_offset),
                 (None, None) => {
                     stay[0] = true;
                     (None, 0.0)
@@ -949,9 +951,11 @@ impl Editor {
         }
         if let Some(v) = p.vertical {
             n.v_relative = ooxml(v.relative_to);
+            n.relative.pos[1] = v.percent.map(|p| (p * 10.0).round() as i64);
             (n.v_align, n.v_offset) = match (v.align, v.offset) {
                 (Some(a), _) => (Some(ooxml(a)), n.v_offset),
                 (None, Some(o)) => (None, twips(o.0)),
+                (None, None) if v.percent.is_some() => (None, n.v_offset),
                 (None, None) => {
                     stay[1] = true;
                     (None, 0.0)
@@ -997,12 +1001,14 @@ impl Editor {
             horizontal: HorizontalPosition {
                 relative_to: from_ooxml(&fl.h_relative),
                 align: fl.h_align.as_deref().map(from_ooxml),
-                offset: fl.h_align.is_none().then_some(Points(fl.h_offset)),
+                offset: (fl.h_align.is_none() && fl.relative.pos[0].is_none()).then_some(Points(fl.h_offset)),
+                percent: fl.relative.pos[0].map(|t| t as f64 / 10.0),
             },
             vertical: VerticalPosition {
                 relative_to: from_ooxml(&fl.v_relative),
                 align: fl.v_align.as_deref().map(from_ooxml),
-                offset: fl.v_align.is_none().then_some(Points(fl.v_offset)),
+                offset: (fl.v_align.is_none() && fl.relative.pos[1].is_none()).then_some(Points(fl.v_offset)),
+                percent: fl.relative.pos[1].map(|t| t as f64 / 10.0),
             },
             allow_overlap: fl.allow_overlap,
             layout_in_cell: fl.layout_in_cell,
@@ -1277,7 +1283,7 @@ impl Editor {
         Some(dest)
     }
 
-    fn moved_float(&mut self, f: FloatId, page: usize, old: [f64; 4], new: [f64; 4]) -> Option<crate::docx::Float> {
+    pub(super) fn moved_float(&mut self, f: FloatId, page: usize, old: [f64; 4], new: [f64; 4]) -> Option<crate::docx::Float> {
         let anchor = self.index.float_anchor(f)?;
         let section = self.snapshot().info().get(page).map_or(0, |i| i.section);
         let sec = self.doc.sections.get(section).cloned();
