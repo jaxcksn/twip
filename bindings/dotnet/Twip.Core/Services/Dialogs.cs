@@ -704,6 +704,8 @@ public enum PageSetupScope
     Section,
     /// <summary>The whole document.</summary>
     WholeDocument,
+    /// <summary>From the selection on: a new-page section break goes there, and the section after it takes the setup.</summary>
+    ThisPointForward,
 }
 
 /// <summary>The Page Setup dialog's values.</summary>

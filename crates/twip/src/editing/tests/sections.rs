@@ -148,3 +148,39 @@ fn sections_drag_across() {
     let anchor = s.anchor().and_then(|p| p.para_offset()).map(|(p, _)| text_of(&e, p)).unwrap_or_default();
     assert_eq!((section(&anchor), section(&caret_text(&e))), (Some(1), Some(3)), "the drag spans sections 1 to 3");
 }
+
+#[test]
+fn a_section_break_splits_its_section_and_saves_a_sectpr_of_its_own() {
+    use super::super::commands::{Command, Outcome};
+    use crate::api::command::SectionBreakKind;
+    use crate::docx::SectionBreak;
+    let mut e = fixture();
+    let starts = |e: &Editor| e.document().sections.iter().map(|s| s.break_kind).collect::<Vec<_>>();
+    let before = starts(&e);
+    let texts = |e: &Editor| super::texts(e);
+    // Mid-paragraph in the first section, and at the end of the paragraph holding its `w:sectPr`.
+    let p2 = super::para_id(&e, texts(&e).iter().position(|t| t.starts_with("S1 P2")).expect("S1 P2"));
+    e.select_range(p2, Unit(5), Unit(5), fonts());
+    assert!(matches!(e.execute(Command::InsertSectionBreak(SectionBreakKind::Continuous), fonts()), Outcome::Changed(_)));
+    assert_eq!(starts(&e).len(), before.len() + 1);
+    assert_eq!(starts(&e)[..2], [before[0], SectionBreak::Continuous]);
+    assert!(texts(&e).iter().any(|t| t == "S1 P2"), "{:?}", texts(&e));
+    let p4 = super::para_id(&e, texts(&e).iter().position(|t| t.starts_with("S1 P4")).expect("S1 P4"));
+    let end = Unit(texts(&e).iter().find(|t| t.starts_with("S1 P4")).map_or(0, |t| t.chars().count() as u32));
+    e.select_range(p4, end, end, fonts());
+    assert!(matches!(e.execute(Command::InsertSectionBreak(SectionBreakKind::NextPage), fonts()), Outcome::Changed(_)));
+    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let again = Editor::open(&saved, fonts()).expect("reopens");
+    assert_eq!(starts(&again), starts(&e));
+    assert_eq!(texts(&again), texts(&e));
+    let (a, b) = (&again.document().sections[0], &e.document().sections[0]);
+    assert_eq!((a.page_w, a.top, a.columns.num), (b.page_w, b.top, b.columns.num));
+    let xml = crate::docx::package::read(&saved, &[], "word/document.xml").expect("reads").expect("the main part");
+    assert_eq!(xml.matches("<w:sectPr").count(), before.len() + 2, "{xml}");
+    // Undone, the document saves as it was read.
+    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo, fonts());
+    assert_eq!(starts(&e), before);
+    let back = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
+    assert_eq!(starts(&back), before);
+}

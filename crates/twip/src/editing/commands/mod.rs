@@ -17,7 +17,6 @@ pub(crate) use character::highlight_value;
 use crate::api::command::CommandId;
 
 pub(crate) const UNSUPPORTED: &[CommandId] = &[
-    CommandId::InsertSectionBreak,
     CommandId::CopyFormatting,
     CommandId::PasteFormatting,
     CommandId::MoveColumnBoundary,
@@ -200,7 +199,7 @@ impl Editor {
             Command::InsertLineBreak => self.line_break(fonts),
             Command::InsertPageBreak => self.page_break(fonts),
             Command::InsertColumnBreak => self.column_break(fonts),
-            Command::InsertSectionBreak(kind) => self.section_break(kind),
+            Command::InsertSectionBreak(kind) => self.section_break(kind, fonts),
             Command::InsertTab => self.tab(fonts),
             Command::InsertSymbol(s) => self.symbol(s, fonts),
             Command::Delete(d) => self.delete_by(d, fonts),

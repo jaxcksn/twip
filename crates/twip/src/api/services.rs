@@ -1228,6 +1228,8 @@ pub enum ApplyTo {
     Section,
     /// Every section.
     WholeDocument,
+    /// From the selection on: a new-page section break goes there, and the section after it takes the setup.
+    ThisPointForward,
 }
 
 dialog! {

@@ -130,7 +130,7 @@ Chunk numbers are [roadmap](../roadmap#docx) chunks.
 | Columns | `w:cols`, `w:col` | API (`setColumns`, unequal widths too) |
 | Title page | `w:titlePg` | API |
 | Odd and even headers | `w:evenAndOddHeaders` | API (`setDifferentOddEvenPages`) |
-| Section type | `w:type` | API (`setSectionBreakType`); inserting a section break is still unsupported |
+| Section type | `w:type` | API (`setSectionBreakType`, `insertSectionBreak`: the text before the break ends a new section with its own `w:sectPr`; Page Setup applies from this point forward) |
 | Page numbering | `w:pgNumType` | API (`setPageNumbering`) |
 | Line numbering | `w:lnNumType` | API (`setLineNumbering`) |
 | Vertical alignment | `w:vAlign` | API (`setPageVerticalAlignment`; `setCellAlignment` for cells) |

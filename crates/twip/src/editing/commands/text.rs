@@ -13,8 +13,60 @@ impl Editor {
         self.insert_inline(|run| Inline::Break(BreakKind::Line, run), "Line Break", fonts)
     }
 
-    pub(in crate::editing) fn section_break(&mut self, _kind: SectionBreakKind) -> Outcome {
-        Outcome::unsupported("section breaks")
+    /// A section break at the selection: its paragraph splits there, the text before it ends a new section with the
+    /// page setup the section had (and how it started), and the section after starts as `kind` says.
+    pub(in crate::editing) fn section_break(&mut self, kind: SectionBreakKind, fonts: &Fonts) -> Outcome {
+        use crate::docx::SectionBreak as B;
+        use crate::editing::position::{Place, Position};
+        use crate::editing::step::{SectionBack, Step};
+        if self.style_target.is_some() {
+            return Outcome::unavailable("not in a style");
+        }
+        let mut tx = self.begin("Section Break");
+        let caret = match self.delete_range(&mut tx) {
+            Ok(Some(p)) => p,
+            _ => {
+                self.abort(tx);
+                return Outcome::Unchanged("no caret");
+            }
+        };
+        let Place::Text { para, offset, .. } = caret.place else {
+            self.abort(tx);
+            return Outcome::unavailable("not in text");
+        };
+        let slot = self.index.para_slot(para);
+        let Some((section, block)) = slot.and_then(|s| match s.container {
+            crate::editing::index::Container::Section(k) => Some((k, s.block)),
+            _ => None,
+        }) else {
+            self.abort(tx);
+            return Outcome::unavailable("a section break goes in the body's text, not a table, box, note or header");
+        };
+        let (Some(second), Some(s)) = (self.split_template(para), self.doc.sections.get(section)) else {
+            self.abort(tx);
+            return Outcome::Unchanged("no paragraph");
+        };
+        let new = s.without_blocks();
+        let mut after = s.page();
+        after.break_kind = match kind {
+            SectionBreakKind::NextPage => B::NextPage,
+            SectionBreakKind::Continuous => B::Continuous,
+            SectionBreakKind::EvenPage => B::EvenPage,
+            SectionBreakKind::OddPage => B::OddPage,
+            SectionBreakKind::NextColumn => B::NextColumn,
+        };
+        let change = s.change.clone();
+        let next = crate::layout::ParaId(second.id);
+        let back = Box::new(SectionBack { blocks: block + 1, section: new, sources: 0, edited: true });
+        let ok = self.step(&mut tx, Step::Split { para, at: offset, second }).is_ok()
+            && self.step(&mut tx, Step::SectionBreak { section, back: Some(back) }).is_ok()
+            && self.step(&mut tx, Step::SectionPage { section: section + 1, page: Box::new(after), change }).is_ok();
+        if !ok {
+            self.abort(tx);
+            return Outcome::Unchanged("stale selection");
+        }
+        self.selection = crate::editing::selection::Selection::Caret(Position::text(caret.story, next, crate::layout::Unit(0)));
+        self.commit(tx, None, fonts)
     }
 
     pub(in crate::editing) fn tab(&mut self, fonts: &Fonts) -> Outcome {

@@ -18,6 +18,8 @@
     { "op": "expectError", "code": "invalid-argument" },
     { "op": "command", "command": { "type": "setSectionTextDirection", "value": "lrTb" } },
     { "op": "command", "command": { "type": "setPageNumbering", "start": null, "chapter": null } },
+    { "op": "command", "command": { "type": "insertSectionBreak", "value": "continuous" } },
+    { "op": "expectState", "match": { "page": { "breakType": "continuous", "textDirection": "lrTb", "verticalAlignment": "center" } } },
     { "op": "export", "format": "docx" },
     { "op": "reopen" },
     { "op": "expectState", "match": { "page": { "pageNumberFormat": "lowerRoman", "pageNumberStart": null, "chapterNumbers": null, "verticalAlignment": "center", "lineNumbers": { "start": 1, "countBy": 5, "restart": "eachSection" }, "breakType": "oddPage", "textDirection": "lrTb", "columns": { "count": 2 }, "multiplePages": "mirrorMargins", "gutterAtTop": true, "differentOddEven": true } } }

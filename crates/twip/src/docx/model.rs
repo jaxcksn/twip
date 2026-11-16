@@ -1224,6 +1224,48 @@ impl Section {
         }
     }
 
+    /// The section's settings without its blocks, read page or tracked change: a new section made from it.
+    pub fn without_blocks(&self) -> Section {
+        Section { change: None, ..self.settings() }
+    }
+
+    /// The section's settings and tracked change, without its blocks or read page.
+    pub fn settings(&self) -> Section {
+        Section {
+            break_kind: self.break_kind,
+            page_w: self.page_w,
+            page_h: self.page_h,
+            top: self.top,
+            bottom: self.bottom,
+            left: self.left,
+            right: self.right,
+            header: self.header,
+            footer: self.footer,
+            gutter: self.gutter,
+            columns: self.columns.clone(),
+            title_pg: self.title_pg,
+            headers: self.headers.clone(),
+            footers: self.footers.clone(),
+            pg_start: self.pg_start,
+            pg_fmt: self.pg_fmt.clone(),
+            chapter: self.chapter.clone(),
+            line_numbers: self.line_numbers.clone(),
+            v_align: self.v_align.clone(),
+            page_borders: self.page_borders.clone(),
+            page_borders_xml: self.page_borders_xml.clone(),
+            line_grid: self.line_grid,
+            notes: self.notes.clone(),
+            no_endnote: self.no_endnote,
+            text_flow: self.text_flow,
+            rtl_gutter: self.rtl_gutter,
+            footnote_columns: self.footnote_columns,
+            form_protected: self.form_protected,
+            blocks: Vec::new(),
+            change: self.change.clone(),
+            read: None,
+        }
+    }
+
     pub fn set_page(&mut self, p: SectionPage) {
         (self.page_w, self.page_h, self.top, self.bottom, self.left, self.right) = (p.page_w, p.page_h, p.top, p.bottom, p.left, p.right);
         (self.header, self.footer, self.gutter, self.columns, self.title_pg) = (p.header, p.footer, p.gutter, p.columns, p.title_pg);

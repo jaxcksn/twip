@@ -105,7 +105,7 @@ fn patched(doc: &Document, g: &Glossary, gs: &GlossarySource) -> Result<Option<S
         splices.push((close..close, text));
     }
     let (orig, now): (Vec<&[Block]>, Vec<&[Block]>) = lists.iter().copied().unzip();
-    part_xml_with(&gs.xml, &boxes(&orig, &now), &lists, &splices, &[], &doc.controls, &gone_controls(doc), &doc.people)
+    part_xml_with(&gs.xml, &boxes(&orig, &now), &lists, &splices, &super::SectionEdits::default(), &doc.controls, &gone_controls(doc), &doc.people)
 }
 
 #[cfg(test)]

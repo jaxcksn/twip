@@ -428,9 +428,7 @@ fn fields(values: &DialogValues, cx: &Context) -> BTreeMap<String, FieldInfo> {
             ("footerDistance", number("Footer", FieldKind::Length, 0.0, 1584.0, 1.0)),
             ("differentFirstPage", field("Different first page", FieldKind::Toggle)),
             ("differentOddEven", field("Different odd and even", FieldKind::Toggle)),
-            // shortcut: page setup applies to the selection's sections; the whole document needs a command for every
-            // section.
-            ("applyTo", off(choice("Apply to", &[("section", "This section"), ("wholeDocument", "Whole document")]))),
+            ("applyTo", choice("Apply to", &[("section", "This section"), ("thisPointForward", "This point forward")])),
             (
                 "multiplePages",
                 choice(
@@ -1241,6 +1239,12 @@ pub fn commands(values: &DialogValues, state: &State, cx: &Context) -> Result<Ve
             }
             check(v.left.0 + v.right.0 + v.gutter.0 < v.width.0, "the margins leave no room on the page")?;
             check(v.width.0 >= 72.0 && v.height.0 >= 72.0, "the paper is at least 72 points each way")?;
+            // shortcut: the whole document isn't offered; page setup applies to the selection's sections, and every
+            // section would need its own commands.
+            check(v.apply_to != crate::api::services::ApplyTo::WholeDocument, "page setup applies to this section or from this point")?;
+            if v.apply_to == crate::api::services::ApplyTo::ThisPointForward {
+                out.push(Command::InsertSectionBreak(crate::api::command::SectionBreakKind::NextPage));
+            }
             if v.orientation != n.orientation {
                 out.push(Command::SetOrientation(v.orientation));
             }

@@ -3154,3 +3154,22 @@ fn form_protection_leaves_the_sections_it_is_told_to_open() {
     assert_eq!(doc.sections.iter().map(|s| s.form_protected).collect::<Vec<_>>(), [true, false, true, true]);
     assert!(doc.settings.protection.and_then(|p| p.password).is_some_and(|p| p.matches("Example")));
 }
+
+#[test]
+fn page_setup_applies_from_this_point_forward() {
+    use crate::api::services::{ApplyTo, DialogKind, DialogPatch, PageSetupPatch};
+    let (mut engine, _) = engine();
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    s.run(Command::InsertText("Before".into())).expect("types");
+    let m = s.dialog_open(DialogKind::PageSetup).expect("opens");
+    let patch = PageSetupPatch { apply_to: Some(ApplyTo::ThisPointForward), top: Some(Points(100.0)), ..PageSetupPatch::default() };
+    let m = s.dialog_update(m, DialogPatch::PageSetup(patch)).expect("updates");
+    s.dialog_apply(m).expect("applies");
+    let tops: Vec<f64> = s.editor.document().sections.iter().map(|x| x.top).collect();
+    assert_eq!(tops.len(), 2);
+    assert!(tops[0] != 100.0 && tops[1] == 100.0, "{tops:?}");
+    let saved = s.export(&ExportOptions::Docx).expect("saves").bytes.0;
+    let again = crate::docx::read_editable(&saved).expect("reads back");
+    assert_eq!(again.sections.iter().map(|x| x.top).collect::<Vec<_>>(), tops);
+}

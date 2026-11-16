@@ -199,7 +199,7 @@ export interface DialogValues {
     footerDistance: Points;
     differentFirstPage: boolean;
     differentOddEven: boolean;
-    applyTo: 'section' | 'wholeDocument';
+    applyTo: 'section' | 'wholeDocument' | 'thisPointForward';
     multiplePages: MultiplePagesMode;
     gutterAtTop: boolean;
     /** Where the section starts. */

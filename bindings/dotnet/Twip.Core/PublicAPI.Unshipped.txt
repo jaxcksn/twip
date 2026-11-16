@@ -7671,3 +7671,4 @@ Twip.ControlContent.BuildingBlock.get -> string?
 Twip.ControlInfo.BuildingBlocks.get -> System.Collections.Generic.IReadOnlyList<string!>!
 Twip.ControlInfo.BuildingBlocks.init -> void
 static Twip.ControlContent.FromBuildingBlock(string! name) -> Twip.ControlContent!
+Twip.PageSetupScope.ThisPointForward = 2 -> Twip.PageSetupScope

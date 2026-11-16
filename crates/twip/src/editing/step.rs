@@ -963,7 +963,7 @@ impl Step {
                     Some(back) => {
                         let SectionBack { blocks, section: mut s, sources, edited } = *back;
                         let next = doc.sections.get_mut(section).ok_or(StepError::Missing)?;
-                        if blocks > next.blocks.len() || doc.section_sources[section] <= sources {
+                        if blocks >= next.blocks.len() || doc.section_sources[section] < sources {
                             return Err(StepError::OutOfRange);
                         }
                         s.blocks = next.blocks.drain(..blocks).collect();
