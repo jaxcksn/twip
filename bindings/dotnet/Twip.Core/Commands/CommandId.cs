@@ -497,4 +497,12 @@ public enum CommandId
     SetDocumentProperties,
     /// <summary>Sets or removes a document variable.</summary>
     SetDocumentVariable,
+    /// <summary>Inserts a legacy form field.</summary>
+    InsertFormField,
+    /// <summary>Sets a legacy form field's options.</summary>
+    SetFormField,
+    /// <summary>Fills in a legacy form field.</summary>
+    FillFormField,
+    /// <summary>Shades legacy form fields, or not.</summary>
+    SetFormFieldShading,
 }

@@ -547,6 +547,7 @@ impl Editor {
                 (C::SetTablePosition, _) => (editable && in_table, (None, self.table_position().map(CommandValue::TablePosition))),
                 (C::SetObjectSize | C::SetObjectWrap | C::SetAltText | C::DeleteObject, _) => (editable && object.is_some(), (None, None)),
                 (C::AlignObjects, _) => (editable && floating, (None, None)),
+                (C::SetFormFieldShading, _) => (editable, (Some(!self.doc.settings.no_form_shading), None)),
                 (C::SetPictureCrop | C::ChangePicture, _) => {
                     (editable && matches!(object, Some(ObjectKind::Picture | ObjectKind::Float)), (None, None))
                 }
@@ -727,7 +728,13 @@ impl Editor {
                     let s = crate::docx::fields::span_at(&p.inlines, k)?;
                     Some(crate::docx::fields::code_text(&p.inlines, s).trim().to_string())
                 });
-                ElementContext { id, kind: ElementKind::Field, exact, code, tag: None, title: None, size: None }
+                let form = para.and_then(|p| {
+                    p.inlines.iter().find_map(|i| match i {
+                        crate::docx::Inline::FieldBegin { id, form: Some(ff), .. } if *id == f => Some(Box::new(super::forms::info(&ff.data))),
+                        _ => None,
+                    })
+                });
+                ElementContext { id, kind: ElementKind::Field, exact, code, tag: None, title: None, size: None, form }
             }
             crate::docx::ElementId::Control(c) => {
                 let props = self.doc.controls.get(&c).map(|k| k.props.clone()).unwrap_or_default();
@@ -743,7 +750,7 @@ impl Editor {
                     crate::docx::ControlKind::RepeatingItem => ElementKind::RepeatingItem,
                     crate::docx::ControlKind::RichText | crate::docx::ControlKind::Other => ElementKind::RichText,
                 };
-                ElementContext { id, kind, exact, code: None, tag: props.tag, title: props.alias, size: self.picture_control_size(c) }
+                ElementContext { id, kind, exact, code: None, tag: props.tag, title: props.alias, size: self.picture_control_size(c), form: None }
             }
         }
     }

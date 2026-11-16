@@ -1260,6 +1260,95 @@ public enum AlignReference
     SelectedObjects,
 }
 
+/// <summary>A legacy form field's kind.</summary>
+public enum FormFieldType
+{
+    /// <summary>A text form field (FORMTEXT).</summary>
+    Text,
+    /// <summary>A check box (FORMCHECKBOX).</summary>
+    CheckBox,
+    /// <summary>A drop-down list (FORMDROPDOWN).</summary>
+    DropDown,
+}
+
+/// <summary>What a text form field takes.</summary>
+public enum TextInputType
+{
+    /// <summary>Any text.</summary>
+    Regular,
+    /// <summary>A number.</summary>
+    Number,
+    /// <summary>A date.</summary>
+    Date,
+    /// <summary>Today's date.</summary>
+    CurrentDate,
+    /// <summary>The time now.</summary>
+    CurrentTime,
+    /// <summary>A calculation.</summary>
+    Calculation,
+}
+
+/// <summary>A legacy form field's options to change; unset values are kept, and only the field's own kind's options apply.</summary>
+/// <param name="Id">The field; the one at the selection when null.</param>
+/// <param name="Name">Its bookmark name.</param>
+/// <param name="Enabled">It can be filled in.</param>
+/// <param name="CalculateOnExit">The document's fields update when it is left.</param>
+/// <param name="EntryMacro">The macro run on entry.</param>
+/// <param name="ExitMacro">The macro run on exit.</param>
+/// <param name="HelpText">The help F1 shows.</param>
+/// <param name="StatusText">The help the status bar shows.</param>
+/// <param name="Text">A text form field's options.</param>
+/// <param name="CheckBox">A check box's options.</param>
+/// <param name="DropDown">A drop-down's options.</param>
+public sealed record FormFieldChange(
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ElementId? Id = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Name = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Enabled = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? CalculateOnExit = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? EntryMacro = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ExitMacro = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? HelpText = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? StatusText = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TextFormOptions? Text = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CheckBoxFormOptions? CheckBox = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] DropDownFormOptions? DropDown = null);
+
+/// <summary>A text form field's options.</summary>
+/// <param name="InputType">What it takes.</param>
+/// <param name="Default">Its default text.</param>
+/// <param name="MaxLength">The most characters it takes; 0 for any.</param>
+/// <param name="Format">Its text format.</param>
+public sealed record TextFormOptions(
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TextInputType? InputType = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Default = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? MaxLength = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Format = null);
+
+/// <summary>A check box form field's options.</summary>
+/// <param name="Size">Its size, 1 to 1584 pt, or its text's (<see cref="SpacingValue.Auto"/>).</param>
+/// <param name="CheckedByDefault">Checked by default.</param>
+public sealed record CheckBoxFormOptions(
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] SpacingValue? Size = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? CheckedByDefault = null);
+
+/// <summary>A drop-down form field's options.</summary>
+/// <param name="Entries">Its entries: 25 at most, each 1 to 50 characters.</param>
+/// <param name="Default">The entry shown by default, from 0.</param>
+public sealed record DropDownFormOptions(
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? Entries = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Default = null);
+
+/// <summary>A legacy form field's value to fill in.</summary>
+/// <param name="Id">The field; the one at the selection when null.</param>
+/// <param name="Text">A text field's text.</param>
+/// <param name="Checked">A check box's state.</param>
+/// <param name="Entry">A drop-down's entry, from 0.</param>
+public sealed record FormFieldFill(
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ElementId? Id = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Text = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Checked = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Entry = null);
+
 /// <summary>Document properties to change; unset values are kept, an empty text removes one, and <paramref name="Custom"/> replaces the custom properties.</summary>
 /// <param name="Title">The title.</param>
 /// <param name="Subject">The subject.</param>

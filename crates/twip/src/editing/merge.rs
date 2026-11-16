@@ -1222,7 +1222,7 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
-    fn set_result(&mut self, tx: &mut super::Tx, f: FieldId, display: &str) -> bool {
+    pub(super) fn set_result(&mut self, tx: &mut super::Tx, f: FieldId, display: &str) -> bool {
         let Some(Where::Inline { para, first, last, .. }) = self.locate(ElementId::Field(f)) else { return false };
         let Some(p) = self.index.para(&self.doc, para).cloned() else { return false };
         let Some(s) = crate::docx::fields::span_at(&p.inlines, first).filter(|s| s.end == last) else { return false };

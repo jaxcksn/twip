@@ -330,6 +330,7 @@ fn settings_part(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(
         ("evenAndOddHeaders", read.even_and_odd, now.even_and_odd),
         ("mirrorMargins", read.mirror_margins, now.mirror_margins),
         ("gutterAtTop", read.gutter_at_top, now.gutter_at_top),
+        ("doNotShadeFormData", read.no_form_shading, now.no_form_shading),
         ("bordersDoNotSurroundHeader", read.borders_do_not_surround_header, now.borders_do_not_surround_header),
         ("bordersDoNotSurroundFooter", read.borders_do_not_surround_footer, now.borders_do_not_surround_footer),
         ("bookFoldPrinting", read.book_fold == Some(false), now.book_fold == Some(false)),
@@ -2440,6 +2441,9 @@ fn same_inline(x: &Inline, y: &Inline) -> bool {
         (Inline::Float(a, r), Inline::Float(b, q)) => {
             a.id == b.id && Placement::changed(a, b).is_none() && !drawing::differs(a, b) && Rc::ptr_eq(r, q)
         }
+        (Inline::FieldBegin { form: a, run: r, .. }, Inline::FieldBegin { form: b, run: q, .. }) => {
+            a.as_ref().map(|f| &f.data) == b.as_ref().map(|f| &f.data) && Rc::ptr_eq(r, q)
+        }
         // A resized picture is written patched.
         (Inline::Picture(a, r), Inline::Picture(b, q)) => a.image == b.image && a.w == b.w && a.h == b.h && a.alt == b.alt && Rc::ptr_eq(r, q),
         _ => {
@@ -2497,8 +2501,10 @@ fn unit_keys(i: &Inline, out: &mut Vec<(u64, char)>) {
                 Inline::Sym { control: Some(c), .. } => c.hash(&mut h),
                 Inline::Sym { ch, font, .. } => (ch, font).hash(&mut h),
                 Inline::PTab(t, _) => t.hash(&mut h),
-                // A field's markers by their field: editing its code keeps them.
-                Inline::FieldBegin { id, .. } | Inline::FieldSep { id, .. } | Inline::FieldEnd { id, .. } => id.hash(&mut h),
+                // A field's markers by their field: editing its code keeps them; a form field's changed data is
+                // written anew.
+                Inline::FieldBegin { id, form, .. } => (id, form.as_ref().is_some_and(|f| f.data != f.read)).hash(&mut h),
+                Inline::FieldSep { id, .. } | Inline::FieldEnd { id, .. } => id.hash(&mut h),
                 _ => {}
             }
             // A checkbox's face writes as its character; other objects (a symbol too) as U+FFFC.
@@ -4472,7 +4478,11 @@ fn object_xml(w: &str, i: &Inline) -> Option<String> {
         Inline::FieldBegin { lock, dirty, form, .. } => {
             let lock = if *lock { format!(" {w}fldLock=\"1\"") } else { String::new() };
             let dirty = if *dirty { format!(" {w}dirty=\"1\"") } else { String::new() };
-            Some(match form.as_ref().and_then(|f| f.xml.0.as_deref()) {
+            let ff = form.as_ref().map(|f| match f.xml.0.as_deref() {
+                Some(x) if f.data == f.read => x.to_string(),
+                _ => f.data.xml(w),
+            });
+            Some(match ff {
                 Some(ff) => format!("<{w}fldChar {w}fldCharType=\"begin\"{lock}{dirty}>{ff}</{w}fldChar>"),
                 None => format!("<{w}fldChar {w}fldCharType=\"begin\"{lock}{dirty}/>"),
             })

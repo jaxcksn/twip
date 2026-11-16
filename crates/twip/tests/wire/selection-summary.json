@@ -5,6 +5,18 @@
       {
         "code": "MERGEFIELD Name",
         "exact": true,
+        "form": {
+          "calculateOnExit": false,
+          "enabled": true,
+          "entries": [
+            "Yes",
+            "No"
+          ],
+          "entry": 1,
+          "kind": "dropDown",
+          "name": "Dropdown1",
+          "statusText": "Pick one"
+        },
         "id": "field-1",
         "kind": "field",
         "size": {

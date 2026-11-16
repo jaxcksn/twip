@@ -625,10 +625,13 @@ impl Opaque {
 }
 
 /// A legacy form field's data: what saving writes back.
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct FormField {
-    /// The `w:ffData` as read.
+    /// The `w:ffData` as read, written while `data` is as read.
     pub xml: Raw,
+    /// Its settings and value, and as read.
+    pub data: super::forms::FormData,
+    pub read: super::forms::FormData,
 }
 
 /// An element kept as read ([`Inline::Opaque`]).
@@ -1320,6 +1323,8 @@ pub struct Settings {
     pub gutter_at_top: bool,
     /// The style new tables take (`w:defaultTableStyle`).
     pub default_table_style: Option<String>,
+    /// Legacy form fields aren't shaded (`w:doNotShadeFormData`).
+    pub no_form_shading: bool,
     /// The document variables (`w:docVars`), in order.
     pub variables: Vec<(String, String)>,
     /// `w:bookFoldPrinting` / `w:bookFoldRevPrinting`: `Some(reversed)`.

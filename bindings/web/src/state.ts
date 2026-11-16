@@ -11,6 +11,7 @@ import type {
   NumberSpacing,
   SectionBreakKind,
   TextFlow,
+  TextInputType,
 } from './commands.js';
 import type { FontsState } from './fonts/library.js';
 import type { DialogKind } from './services/dialogs.js';
@@ -483,6 +484,36 @@ export interface ElementContext {
   title?: string;
   /** A picture control's picture size (inline or floating). */
   size?: { width: Points; height: Points };
+  /** A legacy form field's options and value. */
+  form?: FormFieldInfo;
+}
+
+/** A legacy form field's options and value; what doesn't apply to its kind is absent. */
+export interface FormFieldInfo {
+  /** Its kind. */
+  kind: 'text' | 'checkBox' | 'dropDown';
+  /** Its bookmark name. */
+  name: string;
+  /** It can be filled in. */
+  enabled: boolean;
+  /** The document's fields update when it is left. */
+  calculateOnExit: boolean;
+  /** The help F1 shows. */
+  helpText?: string;
+  /** The help the status bar shows. */
+  statusText?: string;
+  /** What a text field takes. */
+  inputType?: TextInputType;
+  /** A text field's default text. */
+  defaultText?: string;
+  /** The most characters a text field takes (0: any). */
+  maxLength?: number;
+  /** A check box is checked. */
+  checked?: boolean;
+  /** A drop-down's entries. */
+  entries?: string[];
+  /** The entry a drop-down shows. */
+  entry?: number;
 }
 
 /** The selection's character formatting. */

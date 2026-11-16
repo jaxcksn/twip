@@ -7338,3 +7338,157 @@ static Twip.DocumentVariable.operator !=(Twip.DocumentVariable? left, Twip.Docum
 static Twip.DocumentVariable.operator ==(Twip.DocumentVariable? left, Twip.DocumentVariable? right) -> bool
 static Twip.EditorOperation.SetDocumentProperties(Twip.DocumentPropertiesChange! change) -> Twip.EditorOperation!
 static Twip.EditorOperation.SetDocumentVariable(Twip.DocumentVariable! variable) -> Twip.EditorOperation!
+Twip.CheckBoxFormOptions
+Twip.CheckBoxFormOptions.<Clone>$() -> Twip.CheckBoxFormOptions!
+Twip.CheckBoxFormOptions.CheckBoxFormOptions(Twip.SpacingValue? Size = null, bool? CheckedByDefault = null) -> void
+Twip.CheckBoxFormOptions.CheckedByDefault.get -> bool?
+Twip.CheckBoxFormOptions.CheckedByDefault.init -> void
+Twip.CheckBoxFormOptions.Deconstruct(out Twip.SpacingValue? Size, out bool? CheckedByDefault) -> void
+Twip.CheckBoxFormOptions.Equals(Twip.CheckBoxFormOptions? other) -> bool
+Twip.CheckBoxFormOptions.Size.get -> Twip.SpacingValue?
+Twip.CheckBoxFormOptions.Size.init -> void
+Twip.CommandId.FillFormField = 249 -> Twip.CommandId
+Twip.CommandId.InsertFormField = 247 -> Twip.CommandId
+Twip.CommandId.SetFormField = 248 -> Twip.CommandId
+Twip.CommandId.SetFormFieldShading = 250 -> Twip.CommandId
+Twip.DropDownFormOptions
+Twip.DropDownFormOptions.<Clone>$() -> Twip.DropDownFormOptions!
+Twip.DropDownFormOptions.Deconstruct(out System.Collections.Generic.IReadOnlyList<string!>? Entries, out int? Default) -> void
+Twip.DropDownFormOptions.Default.get -> int?
+Twip.DropDownFormOptions.Default.init -> void
+Twip.DropDownFormOptions.DropDownFormOptions(System.Collections.Generic.IReadOnlyList<string!>? Entries = null, int? Default = null) -> void
+Twip.DropDownFormOptions.Entries.get -> System.Collections.Generic.IReadOnlyList<string!>?
+Twip.DropDownFormOptions.Entries.init -> void
+Twip.DropDownFormOptions.Equals(Twip.DropDownFormOptions? other) -> bool
+Twip.EditorCommands.FillFormFieldAsync(Twip.FormFieldFill! fill, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.InsertFormFieldAsync(Twip.FormFieldType kind, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Twip.ElementId>!
+Twip.EditorCommands.SetFormFieldAsync(Twip.FormFieldChange! change, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetFormFieldShadingAsync(bool on, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.ElementContext.Form.get -> Twip.FormFieldInfo?
+Twip.ElementContext.Form.init -> void
+Twip.FormFieldChange
+Twip.FormFieldChange.<Clone>$() -> Twip.FormFieldChange!
+Twip.FormFieldChange.CalculateOnExit.get -> bool?
+Twip.FormFieldChange.CalculateOnExit.init -> void
+Twip.FormFieldChange.CheckBox.get -> Twip.CheckBoxFormOptions?
+Twip.FormFieldChange.CheckBox.init -> void
+Twip.FormFieldChange.Deconstruct(out Twip.ElementId? Id, out string? Name, out bool? Enabled, out bool? CalculateOnExit, out string? EntryMacro, out string? ExitMacro, out string? HelpText, out string? StatusText, out Twip.TextFormOptions? Text, out Twip.CheckBoxFormOptions? CheckBox, out Twip.DropDownFormOptions? DropDown) -> void
+Twip.FormFieldChange.DropDown.get -> Twip.DropDownFormOptions?
+Twip.FormFieldChange.DropDown.init -> void
+Twip.FormFieldChange.Enabled.get -> bool?
+Twip.FormFieldChange.Enabled.init -> void
+Twip.FormFieldChange.EntryMacro.get -> string?
+Twip.FormFieldChange.EntryMacro.init -> void
+Twip.FormFieldChange.Equals(Twip.FormFieldChange? other) -> bool
+Twip.FormFieldChange.ExitMacro.get -> string?
+Twip.FormFieldChange.ExitMacro.init -> void
+Twip.FormFieldChange.FormFieldChange(Twip.ElementId? Id = null, string? Name = null, bool? Enabled = null, bool? CalculateOnExit = null, string? EntryMacro = null, string? ExitMacro = null, string? HelpText = null, string? StatusText = null, Twip.TextFormOptions? Text = null, Twip.CheckBoxFormOptions? CheckBox = null, Twip.DropDownFormOptions? DropDown = null) -> void
+Twip.FormFieldChange.HelpText.get -> string?
+Twip.FormFieldChange.HelpText.init -> void
+Twip.FormFieldChange.Id.get -> Twip.ElementId?
+Twip.FormFieldChange.Id.init -> void
+Twip.FormFieldChange.Name.get -> string?
+Twip.FormFieldChange.Name.init -> void
+Twip.FormFieldChange.StatusText.get -> string?
+Twip.FormFieldChange.StatusText.init -> void
+Twip.FormFieldChange.Text.get -> Twip.TextFormOptions?
+Twip.FormFieldChange.Text.init -> void
+Twip.FormFieldFill
+Twip.FormFieldFill.<Clone>$() -> Twip.FormFieldFill!
+Twip.FormFieldFill.Checked.get -> bool?
+Twip.FormFieldFill.Checked.init -> void
+Twip.FormFieldFill.Deconstruct(out Twip.ElementId? Id, out string? Text, out bool? Checked, out int? Entry) -> void
+Twip.FormFieldFill.Entry.get -> int?
+Twip.FormFieldFill.Entry.init -> void
+Twip.FormFieldFill.Equals(Twip.FormFieldFill? other) -> bool
+Twip.FormFieldFill.FormFieldFill(Twip.ElementId? Id = null, string? Text = null, bool? Checked = null, int? Entry = null) -> void
+Twip.FormFieldFill.Id.get -> Twip.ElementId?
+Twip.FormFieldFill.Id.init -> void
+Twip.FormFieldFill.Text.get -> string?
+Twip.FormFieldFill.Text.init -> void
+Twip.FormFieldInfo
+Twip.FormFieldInfo.<Clone>$() -> Twip.FormFieldInfo!
+Twip.FormFieldInfo.CalculateOnExit.get -> bool
+Twip.FormFieldInfo.CalculateOnExit.init -> void
+Twip.FormFieldInfo.Checked.get -> bool?
+Twip.FormFieldInfo.Checked.init -> void
+Twip.FormFieldInfo.DefaultText.get -> string?
+Twip.FormFieldInfo.DefaultText.init -> void
+Twip.FormFieldInfo.Enabled.get -> bool
+Twip.FormFieldInfo.Enabled.init -> void
+Twip.FormFieldInfo.Entries.get -> System.Collections.Generic.IReadOnlyList<string!>?
+Twip.FormFieldInfo.Entries.init -> void
+Twip.FormFieldInfo.Entry.get -> int?
+Twip.FormFieldInfo.Entry.init -> void
+Twip.FormFieldInfo.Equals(Twip.FormFieldInfo? other) -> bool
+Twip.FormFieldInfo.FormFieldInfo() -> void
+Twip.FormFieldInfo.HelpText.get -> string?
+Twip.FormFieldInfo.HelpText.init -> void
+Twip.FormFieldInfo.InputType.get -> Twip.TextInputType?
+Twip.FormFieldInfo.InputType.init -> void
+Twip.FormFieldInfo.Kind.get -> Twip.FormFieldType
+Twip.FormFieldInfo.Kind.init -> void
+Twip.FormFieldInfo.MaxLength.get -> int?
+Twip.FormFieldInfo.MaxLength.init -> void
+Twip.FormFieldInfo.Name.get -> string!
+Twip.FormFieldInfo.Name.init -> void
+Twip.FormFieldInfo.StatusText.get -> string?
+Twip.FormFieldInfo.StatusText.init -> void
+Twip.FormFieldType
+Twip.FormFieldType.CheckBox = 1 -> Twip.FormFieldType
+Twip.FormFieldType.DropDown = 2 -> Twip.FormFieldType
+Twip.FormFieldType.Text = 0 -> Twip.FormFieldType
+Twip.TextFormOptions
+Twip.TextFormOptions.<Clone>$() -> Twip.TextFormOptions!
+Twip.TextFormOptions.Deconstruct(out Twip.TextInputType? InputType, out string? Default, out int? MaxLength, out string? Format) -> void
+Twip.TextFormOptions.Default.get -> string?
+Twip.TextFormOptions.Default.init -> void
+Twip.TextFormOptions.Equals(Twip.TextFormOptions? other) -> bool
+Twip.TextFormOptions.Format.get -> string?
+Twip.TextFormOptions.Format.init -> void
+Twip.TextFormOptions.InputType.get -> Twip.TextInputType?
+Twip.TextFormOptions.InputType.init -> void
+Twip.TextFormOptions.MaxLength.get -> int?
+Twip.TextFormOptions.MaxLength.init -> void
+Twip.TextFormOptions.TextFormOptions(Twip.TextInputType? InputType = null, string? Default = null, int? MaxLength = null, string? Format = null) -> void
+Twip.TextInputType
+Twip.TextInputType.Calculation = 5 -> Twip.TextInputType
+Twip.TextInputType.CurrentDate = 3 -> Twip.TextInputType
+Twip.TextInputType.CurrentTime = 4 -> Twip.TextInputType
+Twip.TextInputType.Date = 2 -> Twip.TextInputType
+Twip.TextInputType.Number = 1 -> Twip.TextInputType
+Twip.TextInputType.Regular = 0 -> Twip.TextInputType
+override Twip.CheckBoxFormOptions.Equals(object? obj) -> bool
+override Twip.CheckBoxFormOptions.GetHashCode() -> int
+override Twip.CheckBoxFormOptions.ToString() -> string!
+override Twip.DropDownFormOptions.Equals(object? obj) -> bool
+override Twip.DropDownFormOptions.GetHashCode() -> int
+override Twip.DropDownFormOptions.ToString() -> string!
+override Twip.FormFieldChange.Equals(object? obj) -> bool
+override Twip.FormFieldChange.GetHashCode() -> int
+override Twip.FormFieldChange.ToString() -> string!
+override Twip.FormFieldFill.Equals(object? obj) -> bool
+override Twip.FormFieldFill.GetHashCode() -> int
+override Twip.FormFieldFill.ToString() -> string!
+override Twip.FormFieldInfo.Equals(object? obj) -> bool
+override Twip.FormFieldInfo.GetHashCode() -> int
+override Twip.FormFieldInfo.ToString() -> string!
+override Twip.TextFormOptions.Equals(object? obj) -> bool
+override Twip.TextFormOptions.GetHashCode() -> int
+override Twip.TextFormOptions.ToString() -> string!
+static Twip.CheckBoxFormOptions.operator !=(Twip.CheckBoxFormOptions? left, Twip.CheckBoxFormOptions? right) -> bool
+static Twip.CheckBoxFormOptions.operator ==(Twip.CheckBoxFormOptions? left, Twip.CheckBoxFormOptions? right) -> bool
+static Twip.DropDownFormOptions.operator !=(Twip.DropDownFormOptions? left, Twip.DropDownFormOptions? right) -> bool
+static Twip.DropDownFormOptions.operator ==(Twip.DropDownFormOptions? left, Twip.DropDownFormOptions? right) -> bool
+static Twip.EditorOperation.FillFormField(Twip.FormFieldFill! fill) -> Twip.EditorOperation!
+static Twip.EditorOperation.InsertFormField(Twip.FormFieldType kind) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetFormField(Twip.FormFieldChange! change) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetFormFieldShading(bool on) -> Twip.EditorOperation!
+static Twip.FormFieldChange.operator !=(Twip.FormFieldChange? left, Twip.FormFieldChange? right) -> bool
+static Twip.FormFieldChange.operator ==(Twip.FormFieldChange? left, Twip.FormFieldChange? right) -> bool
+static Twip.FormFieldFill.operator !=(Twip.FormFieldFill? left, Twip.FormFieldFill? right) -> bool
+static Twip.FormFieldFill.operator ==(Twip.FormFieldFill? left, Twip.FormFieldFill? right) -> bool
+static Twip.FormFieldInfo.operator !=(Twip.FormFieldInfo? left, Twip.FormFieldInfo? right) -> bool
+static Twip.FormFieldInfo.operator ==(Twip.FormFieldInfo? left, Twip.FormFieldInfo? right) -> bool
+static Twip.TextFormOptions.operator !=(Twip.TextFormOptions? left, Twip.TextFormOptions? right) -> bool
+static Twip.TextFormOptions.operator ==(Twip.TextFormOptions? left, Twip.TextFormOptions? right) -> bool

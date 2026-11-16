@@ -912,6 +912,16 @@ fn commands() -> Vec<Command> {
         Command::RemoveHyperlink,
         Command::InsertBookmark("Summary".into()),
         Command::DeleteBookmark("Summary".into()),
+        Command::InsertFormField(FormFieldType::CheckBox),
+        Command::SetFormField(FormFieldChange {
+            id: Some(id("field-1")),
+            name: Some("Agree".into()),
+            status_text: Some("Tick to agree".into()),
+            check_box: Some(CheckBoxFormOptions { size: Some(AutoOr::Value(Points(12.0))), checked_by_default: Some(false) }),
+            ..Default::default()
+        }),
+        Command::FillFormField(FormFieldFill { id: None, text: None, checked: Some(true), entry: None }),
+        Command::SetFormFieldShading(false),
         Command::SetDocumentProperties(DocumentPropertiesChange {
             title: Some("Annual report".into()),
             author: Some("Ada Lovelace".into()),
@@ -1307,6 +1317,20 @@ fn selection() -> SelectionSummary {
             tag: Some("name".into()),
             title: Some("Name".into()),
             size: Some(Size { width: Points(216.0), height: Points(54.0) }),
+            form: Some(Box::new(FormFieldInfo {
+                kind: FormFieldType::DropDown,
+                name: "Dropdown1".into(),
+                enabled: true,
+                calculate_on_exit: false,
+                help_text: String::new(),
+                status_text: "Pick one".into(),
+                input_type: None,
+                default_text: None,
+                max_length: None,
+                checked: None,
+                entries: vec!["Yes".into(), "No".into()],
+                entry: Some(1),
+            })),
         }],
         link: Some(LinkInfo { address: "https://example.com".into(), text: "Example".into() }),
         comment: Some(CommentId("c4".into())),
@@ -2089,6 +2113,7 @@ fn hovered() -> ElementContext {
         tag: Some("agree".into()),
         title: Some("Agree".into()),
         size: None,
+        form: None,
     }
 }
 

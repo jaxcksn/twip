@@ -15,6 +15,7 @@ mod field_shading;
 pub mod find;
 mod fonts;
 pub mod format;
+mod forms;
 mod frames;
 pub mod geometry;
 pub(crate) mod gestures;

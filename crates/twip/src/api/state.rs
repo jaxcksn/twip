@@ -479,6 +479,47 @@ pub struct ElementContext {
     /// A picture control's picture size.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub size: Option<super::value::Size>,
+    /// A legacy form field's options and value.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub form: Option<Box<FormFieldInfo>>,
+}
+
+/// A legacy form field's options and value; what doesn't apply to its kind is absent.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct FormFieldInfo {
+    /// Its kind.
+    pub kind: super::command::FormFieldType,
+    /// Its bookmark name.
+    pub name: String,
+    /// It can be filled in.
+    pub enabled: bool,
+    /// The document's fields update when it is left.
+    pub calculate_on_exit: bool,
+    /// The help F1 shows.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub help_text: String,
+    /// The help the status bar shows.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub status_text: String,
+    /// What a text field takes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_type: Option<super::command::TextInputType>,
+    /// A text field's default text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_text: Option<String>,
+    /// The most characters a text field takes (0: any).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_length: Option<u32>,
+    /// A check box is checked.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checked: Option<bool>,
+    /// A drop-down's entries.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub entries: Vec<String>,
+    /// The entry a drop-down shows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entry: Option<u32>,
 }
 
 /// The link at the selection.

@@ -630,6 +630,28 @@
     "value": "Summary"
   },
   {
+    "type": "insertFormField",
+    "value": "checkBox"
+  },
+  {
+    "checkBox": {
+      "checkedByDefault": false,
+      "size": 12.0
+    },
+    "id": "field-1",
+    "name": "Agree",
+    "statusText": "Tick to agree",
+    "type": "setFormField"
+  },
+  {
+    "checked": true,
+    "type": "fillFormField"
+  },
+  {
+    "type": "setFormFieldShading",
+    "value": false
+  },
+  {
     "author": "Ada Lovelace",
     "company": "Analytical Engines",
     "custom": [

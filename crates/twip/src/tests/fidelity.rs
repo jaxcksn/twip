@@ -518,6 +518,7 @@ fn every_edit_keeps_every_construct() {
         std::fs::write(d.join("converted-notes.docx"), converted_notes_package()).expect("writes");
         std::fs::write(d.join("table-properties.docx"), table_properties_package()).expect("writes");
         std::fs::write(d.join("document-properties.docx"), document_properties_package()).expect("writes");
+        std::fs::write(d.join("form-fields.docx"), form_fields_package()).expect("writes");
         let (pictures, boxes) = picture_tools_packages();
         std::fs::write(d.join("picture-tools.docx"), pictures).expect("writes");
         std::fs::write(d.join("text-box-columns.docx"), boxes).expect("writes");
@@ -838,4 +839,52 @@ fn document_properties_and_variables_are_saved() {
     let doc = crate::docx::read_editable(&saved).expect("reads back");
     assert_eq!(doc.properties.lookup("client").as_deref(), Some("Acme"));
     assert_eq!(doc.settings.variables, vec![("CaseNumber".to_string(), "42".to_string())]);
+}
+
+/// Legacy form fields inserted, set and filled, the source's own text field filled too, saved.
+fn form_fields_package() -> Vec<u8> {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-STORIES.docx");
+    let mut e = Editor::open(&std::fs::read(path).expect("the fixture"), fonts()).expect("opens");
+    let n = |v: serde_json::Value| serde_json::from_value::<Command>(v).expect("a command");
+    e.select_range(para_id(&e, 0), Unit(0), Unit(0), fonts());
+    let run = |e: &mut Editor, v: serde_json::Value| {
+        let out = e.execute(n(v.clone()), fonts());
+        assert!(matches!(out, Outcome::Changed(_)), "{v}: {out:?}");
+    };
+    run(&mut e, serde_json::json!({ "type": "insertFormField", "value": "dropDown" }));
+    let dd = e.document().sections[0].blocks.iter().find_map(|b| match b {
+        crate::docx::Block::Para(p) => p.inlines.iter().find_map(|i| match i {
+            crate::docx::Inline::FieldBegin { id, form: Some(_), .. } => Some(*id),
+            _ => None,
+        }),
+        _ => None,
+    });
+    let id = crate::editing::elements::id_str(crate::docx::ElementId::Field(dd.expect("the drop-down")));
+    run(
+        &mut e,
+        serde_json::json!({ "type": "setFormField", "id": id, "name": "Choice", "statusText": "Pick one", "dropDown": { "entries": ["Red", "Green"], "default": 1 } }),
+    );
+    run(&mut e, serde_json::json!({ "type": "fillFormField", "id": id, "entry": 0 }));
+    run(&mut e, serde_json::json!({ "type": "insertFormField", "value": "checkBox" }));
+    run(&mut e, serde_json::json!({ "type": "insertFormField", "value": "text" }));
+    run(&mut e, serde_json::json!({ "type": "setFormFieldShading", "value": false }));
+    crate::docx::write::save(e.document()).expect("saves")
+}
+
+#[test]
+fn form_fields_are_saved_and_read_back() {
+    let saved = form_fields_package();
+    let xml = crate::docx::package::read(&saved, &[], "word/document.xml").expect("reads").expect("the main part");
+    for el in [
+        "<w:name w:val=\"Choice\"/>",
+        "<w:listEntry w:val=\"Green\"/>",
+        "<w:result w:val=\"0\"/>",
+        "<w:name w:val=\"Check1\"/>",
+        "<w:textInput>",
+        "FORMDROPDOWN",
+    ] {
+        assert!(xml.contains(el), "{el}");
+    }
+    let settings = crate::docx::package::read(&saved, &[], "word/settings.xml").expect("reads").unwrap_or_default();
+    assert!(settings.contains("doNotShadeFormData"));
 }

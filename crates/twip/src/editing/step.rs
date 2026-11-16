@@ -143,6 +143,7 @@ pub struct PageSettings {
     pub no_surround_header: bool,
     pub no_surround_footer: bool,
     pub endnotes_sect_end: bool,
+    pub no_form_shading: bool,
 }
 
 impl PageSettings {
@@ -155,6 +156,7 @@ impl PageSettings {
             no_surround_header: s.borders_do_not_surround_header,
             no_surround_footer: s.borders_do_not_surround_footer,
             endnotes_sect_end: s.endnotes_sect_end,
+            no_form_shading: s.no_form_shading,
         }
     }
 }
@@ -930,6 +932,7 @@ impl Step {
                 (s.even_and_odd, s.mirror_margins, s.gutter_at_top, s.book_fold) = (p.even_and_odd, p.mirror_margins, p.gutter_at_top, p.book_fold);
                 (s.borders_do_not_surround_header, s.borders_do_not_surround_footer) = (p.no_surround_header, p.no_surround_footer);
                 s.endnotes_sect_end = p.endnotes_sect_end;
+                s.no_form_shading = p.no_form_shading;
                 Ok(Applied { inverse: Step::PageSettings(old), map: Map::Same, hint: None })
             }
             Step::SectionBreak { section, back } => {

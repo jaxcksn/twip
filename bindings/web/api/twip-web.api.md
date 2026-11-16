@@ -385,6 +385,12 @@ export interface Commands {
         image?: Uint8Array;
         docx?: Uint8Array;
     }): Promise<void>;
+    fillFormField(options: {
+        id?: ElementId;
+        text?: string;
+        checked?: boolean;
+        entry?: number;
+    }): Promise<void>;
     flipObject(axis: FlipAxis): Promise<void>;
     goBack(): Promise<void>;
     goToBookmark(name: string): Promise<void>;
@@ -430,6 +436,9 @@ export interface Commands {
         id: ElementId;
     }>;
     insertFootnote(): Promise<void>;
+    insertFormField(kind: 'text' | 'checkBox' | 'dropDown'): Promise<{
+        id: ElementId;
+    }>;
     insertHyperlink(options: {
         address: string;
         text?: string;
@@ -686,6 +695,31 @@ export interface Commands {
     setFont(family: string): Promise<void>;
     setFontColor(color: Color | 'auto'): Promise<void>;
     setFontSize(size: Points): Promise<void>;
+    setFormField(options: {
+        id?: ElementId;
+        name?: string;
+        enabled?: boolean;
+        calculateOnExit?: boolean;
+        entryMacro?: string;
+        exitMacro?: string;
+        helpText?: string;
+        statusText?: string;
+        text?: {
+            inputType?: TextInputType;
+            default?: string;
+            maxLength?: number;
+            format?: string;
+        };
+        checkBox?: {
+            size?: Points | 'auto';
+            checkedByDefault?: boolean;
+        };
+        dropDown?: {
+            entries?: string[];
+            default?: number;
+        };
+    }): Promise<void>;
+    setFormFieldShading(on: boolean): Promise<void>;
     setFrame(properties: FrameProperties): Promise<void>;
     setHeaderFooterDistance(options: {
         header?: Points;
@@ -1536,6 +1570,7 @@ export interface ElementClick {
 export interface ElementContext {
     code?: string;
     exact: boolean;
+    form?: FormFieldInfo;
     id: ElementId;
     kind: 'field' | ControlKind | 'repeatingItem';
     size?: {
@@ -1803,6 +1838,22 @@ export type FormatDialogKind = 'font' | 'paragraph' | 'tabs' | 'bordersShading' 
 export interface FormatDialogSession<K extends FormatDialogKind> extends Omit<DialogSession<K>, 'update' | 'apply'> {
     apply(): Promise<StyleDialogSession>;
     update(patch: Partial<DialogValues[K]>): Promise<FormatDialogSession<K>>;
+}
+
+// @public
+export interface FormFieldInfo {
+    calculateOnExit: boolean;
+    checked?: boolean;
+    defaultText?: string;
+    enabled: boolean;
+    entries?: string[];
+    entry?: number;
+    helpText?: string;
+    inputType?: TextInputType;
+    kind: 'text' | 'checkBox' | 'dropDown';
+    maxLength?: number;
+    name: string;
+    statusText?: string;
 }
 
 // @public
@@ -3013,6 +3064,9 @@ export interface TextDistance {
 
 // @public
 export type TextFlow = 'lrTb' | 'tbRl' | 'btLr' | 'lrTbV' | 'tbRlV' | 'tbLrV';
+
+// @public
+export type TextInputType = 'regular' | 'number' | 'date' | 'currentDate' | 'currentTime' | 'calculation';
 
 // @public
 export interface ThemeColors {

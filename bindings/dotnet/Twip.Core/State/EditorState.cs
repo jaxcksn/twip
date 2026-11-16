@@ -617,6 +617,47 @@ public sealed record ElementContext(
     /// <summary>A picture control's picture size (inline or floating).</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public PictureSize? Size { get; init; }
+
+    /// <summary>A legacy form field's options and value.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public FormFieldInfo? Form { get; init; }
+}
+
+/// <summary>A legacy form field's options and value; what doesn't apply to its kind is null.</summary>
+public sealed record FormFieldInfo
+{
+    /// <summary>Its kind.</summary>
+    public FormFieldType Kind { get; init; }
+    /// <summary>Its bookmark name.</summary>
+    public string Name { get; init; } = "";
+    /// <summary>It can be filled in.</summary>
+    public bool Enabled { get; init; }
+    /// <summary>The document's fields update when it is left.</summary>
+    public bool CalculateOnExit { get; init; }
+    /// <summary>The help F1 shows.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? HelpText { get; init; }
+    /// <summary>The help the status bar shows.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? StatusText { get; init; }
+    /// <summary>What a text field takes.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public TextInputType? InputType { get; init; }
+    /// <summary>A text field's default text.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? DefaultText { get; init; }
+    /// <summary>The most characters a text field takes; 0 for any.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? MaxLength { get; init; }
+    /// <summary>A check box is checked.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? Checked { get; init; }
+    /// <summary>A drop-down's entries.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<string>? Entries { get; init; }
+    /// <summary>The entry a drop-down shows.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? Entry { get; init; }
 }
 
 /// <summary>The selection's character formatting.</summary>

@@ -645,6 +645,26 @@ public abstract partial record EditorOperation
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation DeleteBookmark(string name) => Op(CommandId.DeleteBookmark, new Arg("value", Node(name)));
 
+    /// <summary>Inserts a legacy form field (FORMTEXT, FORMCHECKBOX, FORMDROPDOWN) at the selection.</summary>
+    /// <param name="kind">Its kind.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation InsertFormField(FormFieldType kind) => Op(CommandId.InsertFormField, new Arg("value", Node(kind)));
+
+    /// <summary>Sets a legacy form field's options.</summary>
+    /// <param name="change">The options to change.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetFormField(FormFieldChange change) => Op(CommandId.SetFormField, Arg.Flatten(change));
+
+    /// <summary>Fills in a legacy form field: a text field's text, a check box's state, a drop-down's entry.</summary>
+    /// <param name="fill">The value.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation FillFormField(FormFieldFill fill) => Op(CommandId.FillFormField, Arg.Flatten(fill));
+
+    /// <summary>Shades legacy form fields, or not.</summary>
+    /// <param name="on">Shaded.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetFormFieldShading(bool on) => Op(CommandId.SetFormFieldShading, new Arg("value", Node(on)));
+
     /// <summary>Sets the document's properties; unset values are kept.</summary>
     /// <param name="change">The properties to change.</param>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>

@@ -59,8 +59,8 @@ Chunk numbers are [roadmap](../roadmap#docx) chunks.
 |---|---|---|
 | Fields | `w:fldChar`, `w:fldSimple`, `w:instrText` | API (`insertField`, `setField`, `updateFields`; the engine computes the document property and variable fields). FILENAME, NOTEREF, LISTNUM, AUTONUM, `=` formulas and DATE in the host's time zone are 2.11 |
 | Field data | `w:fldData` | Application (binary data Word keeps for a field) |
-| Legacy form fields | `w:ffData`, `w:name`, `w:enabled`, `w:calcOnExit`, `w:entryMacro`, `w:exitMacro`, `w:helpText`, `w:statusText`, `w:checkBox`, `w:size`, `w:sizeAuto`, `w:default`, `w:checked`, `w:ddList`, `w:result`, `w:listEntry`, `w:textInput`, `w:type`, `w:maxLength`, `w:format` | Kept (with the field when it is rewritten or moved); check box and drop-down drawn. Model and API, 2.12 |
-| Form field shading | `w:doNotShadeFormData` | 2.12 |
+| Legacy form fields | `w:ffData`, `w:name`, `w:enabled`, `w:calcOnExit`, `w:entryMacro`, `w:exitMacro`, `w:helpText`, `w:statusText`, `w:checkBox`, `w:size`, `w:sizeAuto`, `w:default`, `w:checked`, `w:ddList`, `w:result`, `w:listEntry`, `w:textInput`, `w:type`, `w:maxLength`, `w:format` | API (`insertFormField`, `setFormField`, `fillFormField`; the selection's field in `selection.context[].form`); check box and drop-down drawn. Macros (`w:entryMacro`, `w:exitMacro`) are kept and settable, never run |
+| Form field shading | `w:doNotShadeFormData` | API (`setFormFieldShading`); drawing the shading is in phase 3 |
 | Document variables | `w:docVars`, `w:docVar` | API (`setDocumentVariable`, `documentProperties`; DOCVARIABLE shows them) |
 
 ## Character formatting

@@ -41,6 +41,7 @@ export type {
   SectionBreakKind,
   ShadingPattern,
   TextFlow,
+  TextInputType,
   Typography,
 } from './commands.js';
 export type {
@@ -53,6 +54,7 @@ export type {
   EditingTarget,
   EditorState,
   ElementContext,
+  FormFieldInfo,
   HighlightColor,
   HorizontalPosition,
   HorizontalReference,

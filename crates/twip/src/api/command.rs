@@ -349,6 +349,14 @@ commands! {
     InsertBookmark(#[serde(with = "value")] String),
     /// Deletes bookmark `value` (compared without case), keeping its text. Undo: one step.
     DeleteBookmark(#[serde(with = "value")] String),
+    /// A legacy form field (FORMTEXT, FORMCHECKBOX, FORMDROPDOWN) at the selection; result `{ id }`. Undo: one step.
+    InsertFormField(#[serde(with = "value")] FormFieldType),
+    /// Sets a legacy form field's options (Form Field Options); default: the one at the selection. Undo: one step.
+    SetFormField(FormFieldChange),
+    /// Fills in a legacy form field: a text field's text, a check box's state, a drop-down's entry. Undo: one step.
+    FillFormField(FormFieldFill),
+    /// Shades legacy form fields (Form Field Shading; `w:doNotShadeFormData` when off). Undo: one step.
+    SetFormFieldShading(#[serde(with = "value")] bool),
     /// Sets the document's properties (File > Info, Advanced Properties); what isn't given is kept, an empty text removes
     /// it, and `custom` replaces the custom properties. Undo: one step.
     SetDocumentProperties(DocumentPropertiesChange),
@@ -2053,6 +2061,136 @@ pub struct Picture {
     /// The alternative text.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub alt_text: Option<String>,
+}
+
+/// A legacy form field's kind.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum FormFieldType {
+    /// A text form field (FORMTEXT).
+    Text,
+    /// A check box (FORMCHECKBOX).
+    CheckBox,
+    /// A drop-down list (FORMDROPDOWN).
+    DropDown,
+}
+
+/// What a text form field takes.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TextInputType {
+    /// Any text.
+    #[default]
+    Regular,
+    /// A number.
+    Number,
+    /// A date.
+    Date,
+    /// Today's date.
+    CurrentDate,
+    /// The time now.
+    CurrentTime,
+    /// A calculation.
+    Calculation,
+}
+
+/// `setFormField`'s options: what isn't given is kept; only the field's own kind's options apply.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct FormFieldChange {
+    /// The field. Default: the one at the selection.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<ElementId>,
+    /// Its bookmark name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// It can be filled in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+    /// The document's fields update when it is left.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub calculate_on_exit: Option<bool>,
+    /// The macro run on entry.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entry_macro: Option<String>,
+    /// The macro run on exit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exit_macro: Option<String>,
+    /// The help F1 shows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub help_text: Option<String>,
+    /// The help the status bar shows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status_text: Option<String>,
+    /// A text form field's options.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<TextFormOptions>,
+    /// A check box's options.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub check_box: Option<CheckBoxFormOptions>,
+    /// A drop-down's options.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drop_down: Option<DropDownFormOptions>,
+}
+
+/// A text form field's options.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TextFormOptions {
+    /// What it takes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_type: Option<TextInputType>,
+    /// Its default text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default: Option<String>,
+    /// The most characters it takes (0: any).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_length: Option<u32>,
+    /// Its text format (`Uppercase`, a number or date picture).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub format: Option<String>,
+}
+
+/// A check box form field's options.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CheckBoxFormOptions {
+    /// Its size (1…1584 pt), or its text's (`auto`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<AutoOr<Points>>,
+    /// Checked by default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checked_by_default: Option<bool>,
+}
+
+/// A drop-down form field's options.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DropDownFormOptions {
+    /// Its entries (25 at most, each 50 characters at most).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entries: Option<Vec<String>>,
+    /// The entry shown by default, from 0.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default: Option<u32>,
+}
+
+/// `fillFormField`'s options: the value for the field's kind.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct FormFieldFill {
+    /// The field. Default: the one at the selection.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<ElementId>,
+    /// A text field's text (cut to its maximum length).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    /// A check box's state.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checked: Option<bool>,
+    /// A drop-down's entry, from 0.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entry: Option<u32>,
 }
 
 /// `setDocumentProperties`'s options.

@@ -806,6 +806,7 @@ pub(crate) fn read_settings(xml: Option<&str>) -> Settings {
     s.even_and_odd = flag(root, "evenAndOddHeaders").unwrap_or(false);
     s.mirror_margins = flag(root, "mirrorMargins").unwrap_or(false);
     s.gutter_at_top = flag(root, "gutterAtTop").unwrap_or(false);
+    s.no_form_shading = flag(root, "doNotShadeFormData").unwrap_or(false);
     s.default_table_style = child(root, "defaultTableStyle").and_then(val).filter(|v| !v.is_empty()).map(str::to_string);
     s.variables = child(root, "docVars")
         .into_iter()
@@ -1919,7 +1920,10 @@ impl Reader {
                             form: child(c, "ffData").and_then(form_data),
                         });
                         let (lock, dirty) = (flag("fldLock"), flag("dirty"));
-                        let form = child(c, "ffData").filter(|_| self.record).map(|f| Rc::new(FormField { xml: Raw(Some(raw(f))) }));
+                        let form = child(c, "ffData").filter(|_| self.record).map(|f| {
+                            let data = super::forms::FormData::parse(f);
+                            Rc::new(FormField { xml: Raw(Some(raw(f))), read: data.clone(), data })
+                        });
                         out.push(Inline::FieldBegin {
                             id,
                             kind: None,

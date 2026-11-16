@@ -789,6 +789,30 @@ public sealed class EditorCommands
     /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
     public Task DeleteBookmarkAsync(string name, CancellationToken ct = default) => _session.RunAsync(EditorOperation.DeleteBookmark(name), ct);
 
+    /// <summary>Inserts a legacy form field (FORMTEXT, FORMCHECKBOX, FORMDROPDOWN) at the selection.</summary>
+    /// <param name="kind">Its kind.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>The new field's id, once the change has committed.</returns>
+    public Task<ElementId> InsertFormFieldAsync(FormFieldType kind, CancellationToken ct = default) => _session.RunAsync(EditorOperation.InsertFormField(kind), CommitValue.ElementId, ct);
+
+    /// <summary>Sets a legacy form field's options.</summary>
+    /// <param name="change">The options to change.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SetFormFieldAsync(FormFieldChange change, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetFormField(change), ct);
+
+    /// <summary>Fills in a legacy form field: a text field's text, a check box's state, a drop-down's entry.</summary>
+    /// <param name="fill">The value.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task FillFormFieldAsync(FormFieldFill fill, CancellationToken ct = default) => _session.RunAsync(EditorOperation.FillFormField(fill), ct);
+
+    /// <summary>Shades legacy form fields, or not.</summary>
+    /// <param name="on">Shaded.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SetFormFieldShadingAsync(bool on, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetFormFieldShading(on), ct);
+
     /// <summary>Sets the document's properties; unset values are kept.</summary>
     /// <param name="change">The properties to change.</param>
     /// <param name="ct">Cancels the command before it runs.</param>

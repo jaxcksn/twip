@@ -201,6 +201,9 @@ export interface NoteSettings {
 /** How the document's pages pair. */
 export type MultiplePagesMode = 'normal' | 'mirrorMargins' | 'bookFold' | 'reverseBookFold';
 
+/** What a text form field takes. */
+export type TextInputType = 'regular' | 'number' | 'date' | 'currentDate' | 'currentTime' | 'calculation';
+
 /** The edges `setCellBorders` sets: sides, the inside lines, or each cell's diagonals. */
 export type CellBorderEdges =
   | 'all'
@@ -680,6 +683,26 @@ export interface Commands {
   insertBookmark(name: string): Promise<void>;
   /** Deletes a bookmark (compared without case), keeping its text. */
   deleteBookmark(name: string): Promise<void>;
+  /** Inserts a legacy form field (FORMTEXT, FORMCHECKBOX, FORMDROPDOWN) at the selection. */
+  insertFormField(kind: 'text' | 'checkBox' | 'dropDown'): Promise<{ id: ElementId }>;
+  /** Sets a legacy form field's options (default: the one at the selection); only its own kind's options apply. */
+  setFormField(options: {
+    id?: ElementId;
+    name?: string;
+    enabled?: boolean;
+    calculateOnExit?: boolean;
+    entryMacro?: string;
+    exitMacro?: string;
+    helpText?: string;
+    statusText?: string;
+    text?: { inputType?: TextInputType; default?: string; maxLength?: number; format?: string };
+    checkBox?: { size?: Points | 'auto'; checkedByDefault?: boolean };
+    dropDown?: { entries?: string[]; default?: number };
+  }): Promise<void>;
+  /** Fills in a legacy form field (default: the one at the selection): a text field's text, a check box's state, a drop-down's entry. */
+  fillFormField(options: { id?: ElementId; text?: string; checked?: boolean; entry?: number }): Promise<void>;
+  /** Shades legacy form fields, or not. */
+  setFormFieldShading(on: boolean): Promise<void>;
   /**
    * Sets the document's properties; unset fields keep their value, an empty text removes one, and `custom` replaces
    * the custom properties.
@@ -1286,6 +1309,10 @@ const encodings: { [K in CommandId]: Encoding<K> } = {
   removeHyperlink: 'none',
   insertBookmark: 'value',
   deleteBookmark: 'value',
+  insertFormField: 'value',
+  setFormField: 'spread',
+  fillFormField: 'spread',
+  setFormFieldShading: 'value',
   setDocumentProperties: 'spread',
   setDocumentVariable: 'spread',
   insertField: 'spread',

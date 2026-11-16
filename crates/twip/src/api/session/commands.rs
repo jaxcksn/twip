@@ -167,6 +167,22 @@ impl Session {
             C::InsertPicture(p) => picture(&p.data.0),
             C::InsertHyperlink(h) => text("the address", &h.address),
             C::SetDocumentVariable(d) => text("the variable's name", &d.name),
+            C::SetFormField(f) => {
+                if let Some(n) = &f.name
+                    && !crate::editing::bookmarks::valid_name(n)
+                {
+                    return Err(Error::invalid("a form field's name is a bookmark name"));
+                }
+                if let Some(entries) = f.drop_down.as_ref().and_then(|d| d.entries.as_ref())
+                    && (entries.len() > 25 || entries.iter().any(|e| e.is_empty() || e.chars().count() > 50))
+                {
+                    return Err(Error::invalid("a drop-down has at most 25 entries of 1 to 50 characters"));
+                }
+                if let Some(crate::api::value::AutoOr::Value(p)) = f.check_box.and_then(|c| c.size) {
+                    within("the size", p.0, 1.0, MAX)?;
+                }
+                Ok(())
+            }
             C::SetDocumentProperties(p) => {
                 let custom = p.custom.as_deref().unwrap_or_default();
                 for (k, c) in custom.iter().enumerate() {

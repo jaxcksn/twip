@@ -310,3 +310,34 @@ mod tests {
         assert!(e2.object_selection().is_some_and(|o| o.crop.is_none()));
     }
 }
+
+#[cfg(test)]
+mod inline_tests {
+    use crate::editing::commands::{Command, Outcome};
+    use crate::editing::selection::{ObjectRef, Selection};
+    use crate::editing::tests::{fonts, open};
+    use crate::layout::Unit;
+
+    #[test]
+    fn an_inline_picture_keeps_its_crop() {
+        let mut e = open("FX-OBJ.docx");
+        let at = crate::editing::tests::texts_ids(&e).into_iter().find_map(|p| {
+            let para = e.index().para(e.document(), p)?;
+            let mut u = 0u32;
+            for i in &para.inlines {
+                if matches!(i, crate::docx::Inline::Picture(pic, _) if pic.shape.as_deref().and_then(|s| s.pic()).is_some()) {
+                    return Some((p, u));
+                }
+                u += i.units() as u32;
+            }
+            None
+        });
+        let (para, u) = at.expect("an inline picture with DrawingML properties");
+        e.set_caret_for_benchmark(Selection::Object(ObjectRef::Inline { para, offset: Unit(u) }));
+        let c: Command = serde_json::from_value(serde_json::json!({ "type": "setPictureCrop", "right": 0.5 })).expect("a command");
+        assert!(matches!(e.execute(c, fonts()), Outcome::Changed(_)));
+        let saved = crate::docx::write::save(e.document()).expect("saves");
+        let xml = crate::docx::package::read(&saved, &[], "word/document.xml").expect("reads").expect("the main part");
+        assert!(xml.contains("r=\"50000\""), "the crop is saved");
+    }
+}

@@ -5,6 +5,7 @@ pub mod comments;
 pub mod diagnostics;
 pub mod fields;
 pub mod font_table;
+pub mod forms;
 pub(crate) mod frames;
 pub mod glossary;
 pub mod image;
