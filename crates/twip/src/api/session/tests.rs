@@ -2210,6 +2210,108 @@ fn a_format_menu_dialog_changes_the_style_dialog_not_the_document() {
 }
 
 #[test]
+fn every_font_and_paragraph_dialog_setting_reaches_the_style() {
+    use crate::api::command::{Ligatures, NumberForm, NumberSpacing};
+    use crate::api::services::{DialogKind, DialogPatch, FontPatch, ParagraphPatch, StyleOpen};
+    use crate::api::value::{AutoOr, Color, OutlineLevel, StyleId};
+    let mut engine = Engine::new(FontLibrary::system());
+    let id = styles_session(&mut engine);
+    let s = engine.session(id).expect("a session");
+    let revision = s.state().revision;
+    let style = style_values(&s.dialog_open_style(StyleOpen::Modify(StyleId("Quote".into()))).expect("opens"));
+    let font = s.dialog_open_on_style(DialogKind::Font, style).expect("opens Format > Font");
+    fn u<T>(v: T) -> Option<Tri<T>> {
+        Some(Tri::Uniform(v))
+    }
+    let patch = FontPatch {
+        underline: u(crate::api::value::UnderlineStyle::Single),
+        underline_color: u(AutoOr::Value(Color(0xC00000))),
+        emboss: u(true),
+        shadow: u(true),
+        scale: u(90.0),
+        kerning: u(Points(14.0)),
+        ligatures: u(Ligatures::All),
+        number_spacing: u(NumberSpacing::Tabular),
+        number_form: u(NumberForm::OldStyle),
+        stylistic_set: u(3),
+        contextual_alternates: u(true),
+        ..FontPatch::default()
+    };
+    let font = s.dialog_update(font, DialogPatch::Font(patch)).expect("updates");
+    let style = style_values(&s.dialog_apply_to_style(font).expect("applies to the style dialog"));
+    let again = s.dialog_open_on_style(DialogKind::Font, style.clone()).expect("opens Format > Font again");
+    let crate::api::services::DialogValues::Font(f) = &again.values else { panic!("not the font dialog") };
+    assert_eq!(
+        (&f.underline_color, &f.emboss, &f.shadow, &f.scale, &f.kerning, &f.ligatures),
+        (
+            &Tri::Uniform(AutoOr::Value(Color(0xC00000))),
+            &Tri::Uniform(true),
+            &Tri::Uniform(true),
+            &Tri::Uniform(90.0),
+            &Tri::Uniform(Points(14.0)),
+            &Tri::Uniform(Ligatures::All)
+        ),
+        "{}",
+        style.pending
+    );
+    assert_eq!(
+        (&f.number_spacing, &f.number_form, &f.stylistic_set, &f.contextual_alternates),
+        (&Tri::Uniform(NumberSpacing::Tabular), &Tri::Uniform(NumberForm::OldStyle), &Tri::Uniform(3), &Tri::Uniform(true)),
+        "{}",
+        style.pending
+    );
+    let para = s.dialog_open_on_style(DialogKind::Paragraph, style).expect("opens Format > Paragraph");
+    let patch = ParagraphPatch {
+        outline_level: u(OutlineLevel::Level(2)),
+        collapsed: u(true),
+        mirror_indents: u(true),
+        contextual_spacing: u(true),
+        suppress_line_numbers: u(true),
+        dont_hyphenate: u(true),
+        ..ParagraphPatch::default()
+    };
+    let para = s.dialog_update(para, DialogPatch::Paragraph(patch)).expect("updates");
+    let model = s.dialog_apply_to_style(para).expect("applies to the style dialog");
+    let style = style_values(&model);
+    let again = s.dialog_open_on_style(DialogKind::Paragraph, style.clone()).expect("opens Format > Paragraph again");
+    let crate::api::services::DialogValues::Paragraph(p) = &again.values else { panic!("not the paragraph dialog") };
+    assert_eq!(
+        (&p.outline_level, &p.collapsed, &p.mirror_indents, &p.contextual_spacing, &p.suppress_line_numbers, &p.dont_hyphenate),
+        (
+            &Tri::Uniform(OutlineLevel::Level(2)),
+            &Tri::Uniform(true),
+            &Tri::Uniform(true),
+            &Tri::Uniform(true),
+            &Tri::Uniform(true),
+            &Tri::Uniform(true)
+        ),
+        "{}",
+        style.pending
+    );
+    assert_eq!(s.state().revision, revision, "the document didn't change");
+    // Applied and saved, the style keeps them.
+    s.dialog_apply(model).expect("applies the style dialog");
+    let saved = s.export(&ExportOptions::Docx).expect("exports").bytes.0;
+    let styles = crate::docx::package::read(&saved, &[], "word/styles.xml").expect("reads").expect("the styles part");
+    let quote = &styles[styles.find("w:styleId=\"Quote\"").expect("Quote")..];
+    let quote = &quote[..quote.find("</w:style>").expect("its end")];
+    for el in [
+        "w14:ligatures",
+        "w14:numSpacing",
+        "w14:cntxtAlts",
+        "<w:emboss",
+        "<w:contextualSpacing",
+        "<w:outlineLvl w:val=\"1\"",
+        "<w:suppressAutoHyphens",
+        "<w:mirrorIndents",
+        "w15:collapsed",
+    ] {
+        assert!(quote.contains(el), "{el} in {quote}");
+    }
+    assert!(roxmltree::Document::parse(&styles).is_ok(), "the styles part parses");
+}
+
+#[test]
 fn create_style_refuses_taken_names_and_applies_a_new_one_to_the_selection() {
     use crate::api::services::{FindQuery, StyleOpen, StylePatch};
     use crate::api::value::Order;

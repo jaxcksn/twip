@@ -133,7 +133,11 @@ impl Editor {
     }
 
     pub(in crate::editing) fn set_typography(&mut self, t: Typography, fonts: &Fonts) -> Outcome {
-        let cx = self.cx();
+        // The part the w14 elements go in declares their namespace or not: the styles part when a style is formatted.
+        let cx = match (&self.style_target, &self.doc.resolver) {
+            (Some(_), Some(r)) => r.styles.cx(),
+            _ => self.cx(),
+        };
         self.format_runs(
             "Advanced Font",
             &|p, w, _| {
