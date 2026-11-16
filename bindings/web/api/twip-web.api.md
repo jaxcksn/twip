@@ -1328,6 +1328,17 @@ export interface DialogValues {
         hidden: Tri;
         characterSpacing: Mixed<Points>;
         position: Mixed<Points>;
+        emboss: Tri;
+        engrave: Tri;
+        outline: Tri;
+        shadow: Tri;
+        scale: Mixed<number>;
+        kerning: Mixed<Points>;
+        ligatures: Mixed<Ligatures>;
+        numberSpacing: Mixed<NumberSpacing>;
+        numberForm: Mixed<NumberForm>;
+        stylisticSet: Mixed<number>;
+        contextualAlternates: Tri;
     };
     frame: FrameProperties & {
         moveWithText: boolean;
@@ -1373,6 +1384,11 @@ export interface DialogValues {
         differentFirstPage: boolean;
         differentOddEven: boolean;
         applyTo: 'section' | 'wholeDocument';
+        multiplePages: MultiplePagesMode;
+        gutterAtTop: boolean;
+        sectionStart: SectionBreakKind;
+        verticalAlignment: 'top' | 'center' | 'justified' | 'bottom';
+        lineNumbers: LineNumbers | null;
     };
     paragraph: {
         alignment: Mixed<'left' | 'center' | 'right' | 'justify'>;
@@ -1388,6 +1404,11 @@ export interface DialogValues {
         keepLinesTogether: Tri;
         pageBreakBefore: Tri;
         widowControl: Tri;
+        collapsed: Tri;
+        mirrorIndents: Tri;
+        contextualSpacing: Tri;
+        suppressLineNumbers: Tri;
+        dontHyphenate: Tri;
     };
     pictureSize: {
         width: Points;

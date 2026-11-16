@@ -620,11 +620,25 @@ public enum FontStyleChoice
 /// <param name="Hidden">Hidden.</param>
 /// <param name="CharacterSpacing">Character spacing.</param>
 /// <param name="Position">Raised or lowered position.</param>
+/// <param name="Emboss">Emboss.</param>
+/// <param name="Engrave">Engrave.</param>
+/// <param name="Outline">Outline.</param>
+/// <param name="Shadow">Shadow.</param>
+/// <param name="Scale">The character width scale, percent.</param>
+/// <param name="Kerning">Kerning from this size up; 0 for none.</param>
+/// <param name="Ligatures">The OpenType ligatures.</param>
+/// <param name="NumberSpacing">The number spacing.</param>
+/// <param name="NumberForm">The number forms.</param>
+/// <param name="StylisticSet">The stylistic set, 1 to 20; 0 for the default.</param>
+/// <param name="ContextualAlternates">Contextual alternates.</param>
 public sealed record FontDialogValues(
     FormatValue<string> Font, FormatValue<FontStyleChoice> Style, FormatValue<Length> Size, FormatValue<ColorValue> Color,
     FormatValue<UnderlineStyle> Underline, FormatValue<ColorValue> UnderlineColor, FormatValue<bool> Strikethrough,
     FormatValue<bool> DoubleStrikethrough, FormatValue<bool> Superscript, FormatValue<bool> Subscript, FormatValue<bool> SmallCaps,
-    FormatValue<bool> AllCaps, FormatValue<bool> Hidden, FormatValue<Length> CharacterSpacing, FormatValue<Length> Position);
+    FormatValue<bool> AllCaps, FormatValue<bool> Hidden, FormatValue<Length> CharacterSpacing, FormatValue<Length> Position,
+    FormatValue<bool> Emboss, FormatValue<bool> Engrave, FormatValue<bool> Outline, FormatValue<bool> Shadow, FormatValue<double> Scale,
+    FormatValue<Length> Kerning, FormatValue<Ligatures> Ligatures, FormatValue<NumberSpacing> NumberSpacing, FormatValue<NumberForm> NumberForm,
+    FormatValue<int> StylisticSet, FormatValue<bool> ContextualAlternates);
 
 /// <summary>A special indent in the Paragraph dialog.</summary>
 public enum SpecialIndent
@@ -671,11 +685,17 @@ public readonly record struct OutlineLevel
 /// <param name="KeepLinesTogether">Keep lines together.</param>
 /// <param name="PageBreakBefore">Page break before.</param>
 /// <param name="WidowControl">Widow control.</param>
+/// <param name="Collapsed">Collapsed by default (with an outline level).</param>
+/// <param name="MirrorIndents">Mirror indents.</param>
+/// <param name="ContextualSpacing">Don't add space between paragraphs of the same style.</param>
+/// <param name="SuppressLineNumbers">Suppress line numbers.</param>
+/// <param name="DontHyphenate">Don't hyphenate.</param>
 public sealed record ParagraphDialogValues(
     FormatValue<ParagraphAlignment> Alignment, FormatValue<OutlineLevel> OutlineLevel, FormatValue<Length> Left, FormatValue<Length> Right,
     FormatValue<SpecialIndent> Special, FormatValue<Length> By, FormatValue<SpacingValue> Before, FormatValue<SpacingValue> After,
     FormatValue<LineSpacing> LineSpacing, FormatValue<bool> KeepWithNext, FormatValue<bool> KeepLinesTogether,
-    FormatValue<bool> PageBreakBefore, FormatValue<bool> WidowControl);
+    FormatValue<bool> PageBreakBefore, FormatValue<bool> WidowControl, FormatValue<bool> Collapsed, FormatValue<bool> MirrorIndents,
+    FormatValue<bool> ContextualSpacing, FormatValue<bool> SuppressLineNumbers, FormatValue<bool> DontHyphenate);
 
 /// <summary>What page setup applies to.</summary>
 public enum PageSetupScope
@@ -700,9 +720,15 @@ public enum PageSetupScope
 /// <param name="DifferentFirstPage">A different first page.</param>
 /// <param name="DifferentOddEven">Different odd and even pages.</param>
 /// <param name="ApplyTo">What the values apply to.</param>
+/// <param name="MultiplePages">Multiple pages: normal, mirror margins or book fold.</param>
+/// <param name="GutterAtTop">The gutter is at the top.</param>
+/// <param name="SectionStart">Where the section starts.</param>
+/// <param name="VerticalAlignment">The text's vertical alignment on the page.</param>
+/// <param name="LineNumbers">Line numbers; null for none.</param>
 public sealed record PageSetupDialogValues(
     Length Top, Length Bottom, Length Left, Length Right, Length Gutter, PageOrientation Orientation, Length Width, Length Height,
-    Length HeaderDistance, Length FooterDistance, bool DifferentFirstPage, bool DifferentOddEven, PageSetupScope ApplyTo);
+    Length HeaderDistance, Length FooterDistance, bool DifferentFirstPage, bool DifferentOddEven, PageSetupScope ApplyTo,
+    MultiplePagesMode MultiplePages, bool GutterAtTop, SectionBreakKind SectionStart, PageVerticalAlignment VerticalAlignment, LineNumbers? LineNumbers);
 
 /// <summary>The Insert Table dialog's values.</summary>
 /// <param name="Rows">The rows.</param>

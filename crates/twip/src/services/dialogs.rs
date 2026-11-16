@@ -15,7 +15,7 @@ use crate::api::services::{
     PictureSizeDialog, SpecialIndent, StyleDialog, StyleDialogType, TablePropertiesDialog, TabsAction, TabsDialog,
 };
 use crate::api::state::{State, Tri};
-use crate::api::value::{AutoOr, Orientation, Points};
+use crate::api::value::{Orientation, Points};
 
 /// What a dialog shows besides the state: the selected text, the document's accessibility issues and the font
 /// families.
@@ -92,8 +92,7 @@ pub fn values(kind: DialogKind, state: &State, cx: &Context) -> Result<DialogVal
             size: f.size,
             color: f.color,
             underline: f.underline,
-            // shortcut: the state has no underline colour; it shows automatic and no command sets it.
-            underline_color: Tri::Uniform(AutoOr::Auto),
+            underline_color: f.underline_color,
             strikethrough: f.strikethrough,
             double_strikethrough: f.double_strikethrough,
             superscript: f.superscript,
@@ -103,6 +102,17 @@ pub fn values(kind: DialogKind, state: &State, cx: &Context) -> Result<DialogVal
             hidden: f.hidden,
             character_spacing: f.character_spacing,
             position: f.position,
+            emboss: f.emboss,
+            engrave: f.engrave,
+            outline: f.outline,
+            shadow: f.shadow,
+            scale: f.scale,
+            kerning: f.kerning,
+            ligatures: f.ligatures,
+            number_spacing: f.number_spacing,
+            number_form: f.number_form,
+            stylistic_set: f.stylistic_set,
+            contextual_alternates: f.contextual_alternates,
         }),
         DialogKind::Paragraph => {
             let i = &p.indents;
@@ -115,8 +125,12 @@ pub fn values(kind: DialogKind, state: &State, cx: &Context) -> Result<DialogVal
             };
             DialogValues::Paragraph(ParagraphDialog {
                 alignment: p.alignment,
-                // shortcut: no command sets a paragraph's own outline level; the field shows body text, disabled.
-                outline_level: Tri::Unavailable,
+                outline_level: match p.outline_level {
+                    Tri::Uniform(0) => Tri::Uniform(crate::api::value::OutlineLevel::Body),
+                    Tri::Uniform(n) => Tri::Uniform(crate::api::value::OutlineLevel::Level(n)),
+                    Tri::Mixed => Tri::Mixed,
+                    Tri::Unavailable => Tri::Unavailable,
+                },
                 left: i.left,
                 right: i.right,
                 special,
@@ -128,6 +142,11 @@ pub fn values(kind: DialogKind, state: &State, cx: &Context) -> Result<DialogVal
                 keep_lines_together: p.flow.keep_lines_together,
                 page_break_before: p.flow.page_break_before,
                 widow_control: p.flow.widow_control,
+                collapsed: p.collapsed,
+                mirror_indents: i.mirror,
+                contextual_spacing: p.contextual_spacing,
+                suppress_line_numbers: p.flow.suppress_line_numbers,
+                dont_hyphenate: p.flow.dont_hyphenate,
             })
         }
         DialogKind::PageSetup => {
@@ -146,6 +165,11 @@ pub fn values(kind: DialogKind, state: &State, cx: &Context) -> Result<DialogVal
                 different_first_page: g.different_first_page,
                 different_odd_even: g.different_odd_even,
                 apply_to: ApplyTo::Section,
+                multiple_pages: g.multiple_pages,
+                gutter_at_top: g.gutter_at_top,
+                section_start: g.break_type,
+                vertical_alignment: g.vertical_alignment,
+                line_numbers: g.line_numbers.clone(),
             })
         }
         DialogKind::InsertTable => DialogValues::InsertTable(InsertTableDialog { rows: 2, columns: 5 }),
@@ -305,7 +329,7 @@ fn fields(values: &DialogValues, cx: &Context) -> BTreeMap<String, FieldInfo> {
             ("size", number("Size", FieldKind::Number, 1.0, 1638.0, 0.5)),
             ("color", field("Font color", FieldKind::Color)),
             ("underline", choice("Underline style", &UNDERLINES)),
-            ("underlineColor", off(field("Underline color", FieldKind::Color))),
+            ("underlineColor", field("Underline color", FieldKind::Color)),
             ("strikethrough", field("Strikethrough", FieldKind::Toggle)),
             ("doubleStrikethrough", field("Double strikethrough", FieldKind::Toggle)),
             ("superscript", field("Superscript", FieldKind::Toggle)),
@@ -315,6 +339,29 @@ fn fields(values: &DialogValues, cx: &Context) -> BTreeMap<String, FieldInfo> {
             ("hidden", field("Hidden", FieldKind::Toggle)),
             ("characterSpacing", number("Spacing", FieldKind::Length, -1584.0, 1584.0, 0.1)),
             ("position", number("Position", FieldKind::Length, -1584.0, 1584.0, 0.5)),
+            ("emboss", field("Emboss", FieldKind::Toggle)),
+            ("engrave", field("Engrave", FieldKind::Toggle)),
+            ("outline", field("Outline", FieldKind::Toggle)),
+            ("shadow", field("Shadow", FieldKind::Toggle)),
+            ("scale", number("Scale", FieldKind::Number, 1.0, 600.0, 1.0)),
+            ("kerning", number("Kerning for fonts", FieldKind::Length, 0.0, 1638.0, 0.5)),
+            (
+                "ligatures",
+                choice(
+                    "Ligatures",
+                    &[
+                        ("none", "None"),
+                        ("standard", "Standard Only"),
+                        ("standardContextual", "Standard and Contextual"),
+                        ("historicalDiscretional", "Historical and Discretionary"),
+                        ("all", "All"),
+                    ],
+                ),
+            ),
+            ("numberSpacing", choice("Number spacing", &[("default", "Default"), ("proportional", "Proportional"), ("tabular", "Tabular")])),
+            ("numberForm", choice("Number forms", &[("default", "Default"), ("lining", "Lining"), ("oldStyle", "Old-style")])),
+            ("stylisticSet", number("Stylistic sets", FieldKind::Number, 0.0, 20.0, 1.0)),
+            ("contextualAlternates", field("Use Contextual Alternates", FieldKind::Toggle)),
         ],
         DialogValues::Paragraph(v) => {
             let special = !matches!(v.special, Tri::Uniform(SpecialIndent::None));
@@ -323,7 +370,33 @@ fn fields(values: &DialogValues, cx: &Context) -> BTreeMap<String, FieldInfo> {
             by.enabled = special;
             vec![
                 ("alignment", choice("Alignment", &[("left", "Left"), ("center", "Centered"), ("right", "Right"), ("justify", "Justified")])),
-                ("outlineLevel", off(choice("Outline level", &[("body", "Body Text")]))),
+                (
+                    "outlineLevel",
+                    choice(
+                        "Outline level",
+                        &[
+                            ("body", "Body Text"),
+                            ("1", "Level 1"),
+                            ("2", "Level 2"),
+                            ("3", "Level 3"),
+                            ("4", "Level 4"),
+                            ("5", "Level 5"),
+                            ("6", "Level 6"),
+                            ("7", "Level 7"),
+                            ("8", "Level 8"),
+                            ("9", "Level 9"),
+                        ],
+                    ),
+                ),
+                (
+                    "collapsed",
+                    FieldInfo {
+                        enabled: !matches!(v.outline_level, Tri::Uniform(crate::api::value::OutlineLevel::Body)),
+                        ..field("Collapsed by default", FieldKind::Toggle)
+                    },
+                ),
+                ("mirrorIndents", field("Mirror indents", FieldKind::Toggle)),
+                ("contextualSpacing", field("Don't add space between paragraphs of the same style", FieldKind::Toggle)),
                 ("left", number("Left", FieldKind::Length, -1584.0, 1584.0, 1.0)),
                 ("right", number("Right", FieldKind::Length, -1584.0, 1584.0, 1.0)),
                 ("special", choice("Special", &[("none", "(none)"), ("firstLine", "First line"), ("hanging", "Hanging")])),
@@ -335,6 +408,8 @@ fn fields(values: &DialogValues, cx: &Context) -> BTreeMap<String, FieldInfo> {
                 ("keepLinesTogether", field("Keep lines together", FieldKind::Toggle)),
                 ("pageBreakBefore", field("Page break before", FieldKind::Toggle)),
                 ("widowControl", field("Widow/Orphan control", FieldKind::Toggle)),
+                ("suppressLineNumbers", field("Suppress line numbers", FieldKind::Toggle)),
+                ("dontHyphenate", field("Don't hyphenate", FieldKind::Toggle)),
             ]
         }
         DialogValues::PageSetup(_) => vec![
@@ -353,6 +428,32 @@ fn fields(values: &DialogValues, cx: &Context) -> BTreeMap<String, FieldInfo> {
             // shortcut: page setup applies to the selection's sections; the whole document needs a command for every
             // section.
             ("applyTo", off(choice("Apply to", &[("section", "This section"), ("wholeDocument", "Whole document")]))),
+            (
+                "multiplePages",
+                choice(
+                    "Multiple pages",
+                    &[("normal", "Normal"), ("mirrorMargins", "Mirror margins"), ("bookFold", "Book fold"), ("reverseBookFold", "Reverse book fold")],
+                ),
+            ),
+            ("gutterAtTop", choice("Gutter position", &[("false", "Left"), ("true", "Top")])),
+            (
+                "sectionStart",
+                choice(
+                    "Section start",
+                    &[
+                        ("continuous", "Continuous"),
+                        ("nextColumn", "New column"),
+                        ("nextPage", "New page"),
+                        ("evenPage", "Even page"),
+                        ("oddPage", "Odd page"),
+                    ],
+                ),
+            ),
+            (
+                "verticalAlignment",
+                choice("Vertical alignment", &[("top", "Top"), ("center", "Center"), ("justified", "Justified"), ("bottom", "Bottom")]),
+            ),
+            ("lineNumbers", field("Line Numbers", FieldKind::Number)),
         ],
         DialogValues::InsertTable(_) => vec![
             ("rows", number("Number of rows", FieldKind::Number, 1.0, 32767.0, 1.0)),
@@ -1056,6 +1157,32 @@ pub fn commands(values: &DialogValues, state: &State, cx: &Context) -> Result<Ve
             out.extend(set(&v.hidden, &n.hidden).map(Command::SetHidden));
             out.extend(set(&v.character_spacing, &n.character_spacing).map(Command::SetCharacterSpacing));
             out.extend(set(&v.position, &n.position).map(Command::SetCharacterPosition));
+            out.extend(set(&v.underline_color, &n.underline_color).map(Command::SetUnderlineColor));
+            let effects = crate::api::command::CharacterEffects {
+                emboss: set(&v.emboss, &n.emboss),
+                engrave: set(&v.engrave, &n.engrave),
+                outline: set(&v.outline, &n.outline),
+                shadow: set(&v.shadow, &n.shadow),
+            };
+            if effects != crate::api::command::CharacterEffects::default() {
+                out.push(Command::SetCharacterEffects(effects));
+            }
+            let typography = crate::api::command::Typography {
+                scale: set(&v.scale, &n.scale),
+                kerning: set(&v.kerning, &n.kerning),
+                ligatures: set(&v.ligatures, &n.ligatures),
+                number_spacing: set(&v.number_spacing, &n.number_spacing),
+                number_form: set(&v.number_form, &n.number_form),
+                stylistic_set: set(&v.stylistic_set, &n.stylistic_set),
+                contextual_alternates: set(&v.contextual_alternates, &n.contextual_alternates),
+            };
+            if let Some(s) = typography.scale {
+                check((1.0..=600.0).contains(&s), "scale is 1 to 600 percent")?;
+            }
+            check(typography.stylistic_set.is_none_or(|s| s <= 20), "stylistic set is 0 to 20")?;
+            if typography != crate::api::command::Typography::default() {
+                out.push(Command::SetTypography(typography));
+            }
         }
         (DialogValues::Paragraph(v), DialogValues::Paragraph(n)) => {
             out.extend(set(&v.alignment, &n.alignment).map(Command::SetAlignment));
@@ -1071,13 +1198,21 @@ pub fn commands(values: &DialogValues, state: &State, cx: &Context) -> Result<Ve
                 _ => (None, None),
             };
             check(!matches!(v.by, Tri::Uniform(Points(b)) if b < 0.0), "by is 0 or more")?;
-            let indents = Indents { left, right, first_line, hanging, mirror: None };
+            let indents = Indents { left, right, first_line, hanging, mirror: set(&v.mirror_indents, &n.mirror_indents) };
             if indents != Indents::default() {
                 out.push(Command::SetIndents(indents));
             }
-            let (before, after) = (set(&v.before, &n.before), set(&v.after, &n.after));
-            if before.is_some() || after.is_some() {
-                out.push(Command::SetParagraphSpacing(ParagraphSpacing { before, after, contextual: None }));
+            let (before, after, contextual) = (set(&v.before, &n.before), set(&v.after, &n.after), set(&v.contextual_spacing, &n.contextual_spacing));
+            if before.is_some() || after.is_some() || contextual.is_some() {
+                out.push(Command::SetParagraphSpacing(ParagraphSpacing { before, after, contextual }));
+            }
+            let level = set(&v.outline_level, &n.outline_level).map(|l| match l {
+                crate::api::value::OutlineLevel::Body => 0,
+                crate::api::value::OutlineLevel::Level(n) => n,
+            });
+            let collapsed = set(&v.collapsed, &n.collapsed);
+            if level.is_some() || collapsed.is_some() {
+                out.push(Command::SetOutline(crate::api::command::Outline { level, collapsed }));
             }
             out.extend(set(&v.line_spacing, &n.line_spacing).map(Command::SetLineSpacing));
             let flow = ParagraphFlow {
@@ -1085,8 +1220,8 @@ pub fn commands(values: &DialogValues, state: &State, cx: &Context) -> Result<Ve
                 keep_lines_together: set(&v.keep_lines_together, &n.keep_lines_together),
                 page_break_before: set(&v.page_break_before, &n.page_break_before),
                 widow_control: set(&v.widow_control, &n.widow_control),
-                dont_hyphenate: None,
-                suppress_line_numbers: None,
+                dont_hyphenate: set(&v.dont_hyphenate, &n.dont_hyphenate),
+                suppress_line_numbers: set(&v.suppress_line_numbers, &n.suppress_line_numbers),
                 textbox_tight_wrap: None,
             };
             if flow != ParagraphFlow::default() {
@@ -1128,6 +1263,21 @@ pub fn commands(values: &DialogValues, state: &State, cx: &Context) -> Result<Ve
             }
             if v.different_odd_even != n.different_odd_even {
                 out.push(Command::SetDifferentOddEvenPages(v.different_odd_even));
+            }
+            if (v.multiple_pages, v.gutter_at_top) != (n.multiple_pages, n.gutter_at_top) {
+                out.push(Command::SetMultiplePages(crate::api::command::MultiplePages {
+                    mode: (v.multiple_pages != n.multiple_pages).then_some(v.multiple_pages),
+                    gutter_at_top: (v.gutter_at_top != n.gutter_at_top).then_some(v.gutter_at_top),
+                }));
+            }
+            if v.section_start != n.section_start {
+                out.push(Command::SetSectionBreakType(v.section_start));
+            }
+            if v.vertical_alignment != n.vertical_alignment {
+                out.push(Command::SetPageVerticalAlignment(v.vertical_alignment));
+            }
+            if v.line_numbers != n.line_numbers {
+                out.push(Command::SetLineNumbering(v.line_numbers.clone()));
             }
         }
         (DialogValues::InsertTable(v), _) => {

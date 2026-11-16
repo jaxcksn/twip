@@ -1237,13 +1237,11 @@ Twip.FontDialogValues.CharacterSpacing.get -> Twip.FormatValue<Twip.Length>
 Twip.FontDialogValues.CharacterSpacing.init -> void
 Twip.FontDialogValues.Color.get -> Twip.FormatValue<Twip.ColorValue>
 Twip.FontDialogValues.Color.init -> void
-Twip.FontDialogValues.Deconstruct(out Twip.FormatValue<string!> Font, out Twip.FormatValue<Twip.FontStyleChoice> Style, out Twip.FormatValue<Twip.Length> Size, out Twip.FormatValue<Twip.ColorValue> Color, out Twip.FormatValue<Twip.UnderlineStyle> Underline, out Twip.FormatValue<Twip.ColorValue> UnderlineColor, out Twip.FormatValue<bool> Strikethrough, out Twip.FormatValue<bool> DoubleStrikethrough, out Twip.FormatValue<bool> Superscript, out Twip.FormatValue<bool> Subscript, out Twip.FormatValue<bool> SmallCaps, out Twip.FormatValue<bool> AllCaps, out Twip.FormatValue<bool> Hidden, out Twip.FormatValue<Twip.Length> CharacterSpacing, out Twip.FormatValue<Twip.Length> Position) -> void
 Twip.FontDialogValues.DoubleStrikethrough.get -> Twip.FormatValue<bool>
 Twip.FontDialogValues.DoubleStrikethrough.init -> void
 Twip.FontDialogValues.Equals(Twip.FontDialogValues? other) -> bool
 Twip.FontDialogValues.Font.get -> Twip.FormatValue<string!>
 Twip.FontDialogValues.Font.init -> void
-Twip.FontDialogValues.FontDialogValues(Twip.FormatValue<string!> Font, Twip.FormatValue<Twip.FontStyleChoice> Style, Twip.FormatValue<Twip.Length> Size, Twip.FormatValue<Twip.ColorValue> Color, Twip.FormatValue<Twip.UnderlineStyle> Underline, Twip.FormatValue<Twip.ColorValue> UnderlineColor, Twip.FormatValue<bool> Strikethrough, Twip.FormatValue<bool> DoubleStrikethrough, Twip.FormatValue<bool> Superscript, Twip.FormatValue<bool> Subscript, Twip.FormatValue<bool> SmallCaps, Twip.FormatValue<bool> AllCaps, Twip.FormatValue<bool> Hidden, Twip.FormatValue<Twip.Length> CharacterSpacing, Twip.FormatValue<Twip.Length> Position) -> void
 Twip.FontDialogValues.Hidden.get -> Twip.FormatValue<bool>
 Twip.FontDialogValues.Hidden.init -> void
 Twip.FontDialogValues.Position.get -> Twip.FormatValue<Twip.Length>
@@ -2027,7 +2025,6 @@ Twip.PageSetupDialogValues.ApplyTo.get -> Twip.PageSetupScope
 Twip.PageSetupDialogValues.ApplyTo.init -> void
 Twip.PageSetupDialogValues.Bottom.get -> Twip.Length
 Twip.PageSetupDialogValues.Bottom.init -> void
-Twip.PageSetupDialogValues.Deconstruct(out Twip.Length Top, out Twip.Length Bottom, out Twip.Length Left, out Twip.Length Right, out Twip.Length Gutter, out Twip.PageOrientation Orientation, out Twip.Length Width, out Twip.Length Height, out Twip.Length HeaderDistance, out Twip.Length FooterDistance, out bool DifferentFirstPage, out bool DifferentOddEven, out Twip.PageSetupScope ApplyTo) -> void
 Twip.PageSetupDialogValues.DifferentFirstPage.get -> bool
 Twip.PageSetupDialogValues.DifferentFirstPage.init -> void
 Twip.PageSetupDialogValues.DifferentOddEven.get -> bool
@@ -2045,7 +2042,6 @@ Twip.PageSetupDialogValues.Left.get -> Twip.Length
 Twip.PageSetupDialogValues.Left.init -> void
 Twip.PageSetupDialogValues.Orientation.get -> Twip.PageOrientation
 Twip.PageSetupDialogValues.Orientation.init -> void
-Twip.PageSetupDialogValues.PageSetupDialogValues(Twip.Length Top, Twip.Length Bottom, Twip.Length Left, Twip.Length Right, Twip.Length Gutter, Twip.PageOrientation Orientation, Twip.Length Width, Twip.Length Height, Twip.Length HeaderDistance, Twip.Length FooterDistance, bool DifferentFirstPage, bool DifferentOddEven, Twip.PageSetupScope ApplyTo) -> void
 Twip.PageSetupDialogValues.Right.get -> Twip.Length
 Twip.PageSetupDialogValues.Right.init -> void
 Twip.PageSetupDialogValues.Top.get -> Twip.Length
@@ -2084,7 +2080,6 @@ Twip.ParagraphDialogValues.Before.get -> Twip.FormatValue<Twip.SpacingValue>
 Twip.ParagraphDialogValues.Before.init -> void
 Twip.ParagraphDialogValues.By.get -> Twip.FormatValue<Twip.Length>
 Twip.ParagraphDialogValues.By.init -> void
-Twip.ParagraphDialogValues.Deconstruct(out Twip.FormatValue<Twip.ParagraphAlignment> Alignment, out Twip.FormatValue<Twip.OutlineLevel> OutlineLevel, out Twip.FormatValue<Twip.Length> Left, out Twip.FormatValue<Twip.Length> Right, out Twip.FormatValue<Twip.SpecialIndent> Special, out Twip.FormatValue<Twip.Length> By, out Twip.FormatValue<Twip.SpacingValue> Before, out Twip.FormatValue<Twip.SpacingValue> After, out Twip.FormatValue<Twip.LineSpacing!> LineSpacing, out Twip.FormatValue<bool> KeepWithNext, out Twip.FormatValue<bool> KeepLinesTogether, out Twip.FormatValue<bool> PageBreakBefore, out Twip.FormatValue<bool> WidowControl) -> void
 Twip.ParagraphDialogValues.Equals(Twip.ParagraphDialogValues? other) -> bool
 Twip.ParagraphDialogValues.KeepLinesTogether.get -> Twip.FormatValue<bool>
 Twip.ParagraphDialogValues.KeepLinesTogether.init -> void
@@ -2098,7 +2093,6 @@ Twip.ParagraphDialogValues.OutlineLevel.get -> Twip.FormatValue<Twip.OutlineLeve
 Twip.ParagraphDialogValues.OutlineLevel.init -> void
 Twip.ParagraphDialogValues.PageBreakBefore.get -> Twip.FormatValue<bool>
 Twip.ParagraphDialogValues.PageBreakBefore.init -> void
-Twip.ParagraphDialogValues.ParagraphDialogValues(Twip.FormatValue<Twip.ParagraphAlignment> Alignment, Twip.FormatValue<Twip.OutlineLevel> OutlineLevel, Twip.FormatValue<Twip.Length> Left, Twip.FormatValue<Twip.Length> Right, Twip.FormatValue<Twip.SpecialIndent> Special, Twip.FormatValue<Twip.Length> By, Twip.FormatValue<Twip.SpacingValue> Before, Twip.FormatValue<Twip.SpacingValue> After, Twip.FormatValue<Twip.LineSpacing!> LineSpacing, Twip.FormatValue<bool> KeepWithNext, Twip.FormatValue<bool> KeepLinesTogether, Twip.FormatValue<bool> PageBreakBefore, Twip.FormatValue<bool> WidowControl) -> void
 Twip.ParagraphDialogValues.Right.get -> Twip.FormatValue<Twip.Length>
 Twip.ParagraphDialogValues.Right.init -> void
 Twip.ParagraphDialogValues.Special.get -> Twip.FormatValue<Twip.SpecialIndent>
@@ -7612,3 +7606,51 @@ Twip.NotePropertiesOptions.Deconstruct(out Twip.NoteType Kind, out Twip.NotePosi
 Twip.NotePropertiesOptions.NotePropertiesOptions(Twip.NoteType Kind, Twip.NotePosition? Position = null, Twip.NumberFormat? Format = null, int? Start = null, Twip.NoteRestart? Restart = null, Twip.NoteScope? ApplyTo = null, int? Columns = null) -> void
 Twip.PageFormatting.FootnoteColumns.get -> int
 Twip.PageFormatting.FootnoteColumns.init -> void
+Twip.FontDialogValues.ContextualAlternates.get -> Twip.FormatValue<bool>
+Twip.FontDialogValues.ContextualAlternates.init -> void
+Twip.FontDialogValues.Deconstruct(out Twip.FormatValue<string!> Font, out Twip.FormatValue<Twip.FontStyleChoice> Style, out Twip.FormatValue<Twip.Length> Size, out Twip.FormatValue<Twip.ColorValue> Color, out Twip.FormatValue<Twip.UnderlineStyle> Underline, out Twip.FormatValue<Twip.ColorValue> UnderlineColor, out Twip.FormatValue<bool> Strikethrough, out Twip.FormatValue<bool> DoubleStrikethrough, out Twip.FormatValue<bool> Superscript, out Twip.FormatValue<bool> Subscript, out Twip.FormatValue<bool> SmallCaps, out Twip.FormatValue<bool> AllCaps, out Twip.FormatValue<bool> Hidden, out Twip.FormatValue<Twip.Length> CharacterSpacing, out Twip.FormatValue<Twip.Length> Position, out Twip.FormatValue<bool> Emboss, out Twip.FormatValue<bool> Engrave, out Twip.FormatValue<bool> Outline, out Twip.FormatValue<bool> Shadow, out Twip.FormatValue<double> Scale, out Twip.FormatValue<Twip.Length> Kerning, out Twip.FormatValue<Twip.Ligatures> Ligatures, out Twip.FormatValue<Twip.NumberSpacing> NumberSpacing, out Twip.FormatValue<Twip.NumberForm> NumberForm, out Twip.FormatValue<int> StylisticSet, out Twip.FormatValue<bool> ContextualAlternates) -> void
+Twip.FontDialogValues.Emboss.get -> Twip.FormatValue<bool>
+Twip.FontDialogValues.Emboss.init -> void
+Twip.FontDialogValues.Engrave.get -> Twip.FormatValue<bool>
+Twip.FontDialogValues.Engrave.init -> void
+Twip.FontDialogValues.FontDialogValues(Twip.FormatValue<string!> Font, Twip.FormatValue<Twip.FontStyleChoice> Style, Twip.FormatValue<Twip.Length> Size, Twip.FormatValue<Twip.ColorValue> Color, Twip.FormatValue<Twip.UnderlineStyle> Underline, Twip.FormatValue<Twip.ColorValue> UnderlineColor, Twip.FormatValue<bool> Strikethrough, Twip.FormatValue<bool> DoubleStrikethrough, Twip.FormatValue<bool> Superscript, Twip.FormatValue<bool> Subscript, Twip.FormatValue<bool> SmallCaps, Twip.FormatValue<bool> AllCaps, Twip.FormatValue<bool> Hidden, Twip.FormatValue<Twip.Length> CharacterSpacing, Twip.FormatValue<Twip.Length> Position, Twip.FormatValue<bool> Emboss, Twip.FormatValue<bool> Engrave, Twip.FormatValue<bool> Outline, Twip.FormatValue<bool> Shadow, Twip.FormatValue<double> Scale, Twip.FormatValue<Twip.Length> Kerning, Twip.FormatValue<Twip.Ligatures> Ligatures, Twip.FormatValue<Twip.NumberSpacing> NumberSpacing, Twip.FormatValue<Twip.NumberForm> NumberForm, Twip.FormatValue<int> StylisticSet, Twip.FormatValue<bool> ContextualAlternates) -> void
+Twip.FontDialogValues.Kerning.get -> Twip.FormatValue<Twip.Length>
+Twip.FontDialogValues.Kerning.init -> void
+Twip.FontDialogValues.Ligatures.get -> Twip.FormatValue<Twip.Ligatures>
+Twip.FontDialogValues.Ligatures.init -> void
+Twip.FontDialogValues.NumberForm.get -> Twip.FormatValue<Twip.NumberForm>
+Twip.FontDialogValues.NumberForm.init -> void
+Twip.FontDialogValues.NumberSpacing.get -> Twip.FormatValue<Twip.NumberSpacing>
+Twip.FontDialogValues.NumberSpacing.init -> void
+Twip.FontDialogValues.Outline.get -> Twip.FormatValue<bool>
+Twip.FontDialogValues.Outline.init -> void
+Twip.FontDialogValues.Scale.get -> Twip.FormatValue<double>
+Twip.FontDialogValues.Scale.init -> void
+Twip.FontDialogValues.Shadow.get -> Twip.FormatValue<bool>
+Twip.FontDialogValues.Shadow.init -> void
+Twip.FontDialogValues.StylisticSet.get -> Twip.FormatValue<int>
+Twip.FontDialogValues.StylisticSet.init -> void
+Twip.PageSetupDialogValues.Deconstruct(out Twip.Length Top, out Twip.Length Bottom, out Twip.Length Left, out Twip.Length Right, out Twip.Length Gutter, out Twip.PageOrientation Orientation, out Twip.Length Width, out Twip.Length Height, out Twip.Length HeaderDistance, out Twip.Length FooterDistance, out bool DifferentFirstPage, out bool DifferentOddEven, out Twip.PageSetupScope ApplyTo, out Twip.MultiplePagesMode MultiplePages, out bool GutterAtTop, out Twip.SectionBreakKind SectionStart, out Twip.PageVerticalAlignment VerticalAlignment, out Twip.LineNumbers? LineNumbers) -> void
+Twip.PageSetupDialogValues.GutterAtTop.get -> bool
+Twip.PageSetupDialogValues.GutterAtTop.init -> void
+Twip.PageSetupDialogValues.LineNumbers.get -> Twip.LineNumbers?
+Twip.PageSetupDialogValues.LineNumbers.init -> void
+Twip.PageSetupDialogValues.MultiplePages.get -> Twip.MultiplePagesMode
+Twip.PageSetupDialogValues.MultiplePages.init -> void
+Twip.PageSetupDialogValues.PageSetupDialogValues(Twip.Length Top, Twip.Length Bottom, Twip.Length Left, Twip.Length Right, Twip.Length Gutter, Twip.PageOrientation Orientation, Twip.Length Width, Twip.Length Height, Twip.Length HeaderDistance, Twip.Length FooterDistance, bool DifferentFirstPage, bool DifferentOddEven, Twip.PageSetupScope ApplyTo, Twip.MultiplePagesMode MultiplePages, bool GutterAtTop, Twip.SectionBreakKind SectionStart, Twip.PageVerticalAlignment VerticalAlignment, Twip.LineNumbers? LineNumbers) -> void
+Twip.PageSetupDialogValues.SectionStart.get -> Twip.SectionBreakKind
+Twip.PageSetupDialogValues.SectionStart.init -> void
+Twip.PageSetupDialogValues.VerticalAlignment.get -> Twip.PageVerticalAlignment
+Twip.PageSetupDialogValues.VerticalAlignment.init -> void
+Twip.ParagraphDialogValues.Collapsed.get -> Twip.FormatValue<bool>
+Twip.ParagraphDialogValues.Collapsed.init -> void
+Twip.ParagraphDialogValues.ContextualSpacing.get -> Twip.FormatValue<bool>
+Twip.ParagraphDialogValues.ContextualSpacing.init -> void
+Twip.ParagraphDialogValues.Deconstruct(out Twip.FormatValue<Twip.ParagraphAlignment> Alignment, out Twip.FormatValue<Twip.OutlineLevel> OutlineLevel, out Twip.FormatValue<Twip.Length> Left, out Twip.FormatValue<Twip.Length> Right, out Twip.FormatValue<Twip.SpecialIndent> Special, out Twip.FormatValue<Twip.Length> By, out Twip.FormatValue<Twip.SpacingValue> Before, out Twip.FormatValue<Twip.SpacingValue> After, out Twip.FormatValue<Twip.LineSpacing!> LineSpacing, out Twip.FormatValue<bool> KeepWithNext, out Twip.FormatValue<bool> KeepLinesTogether, out Twip.FormatValue<bool> PageBreakBefore, out Twip.FormatValue<bool> WidowControl, out Twip.FormatValue<bool> Collapsed, out Twip.FormatValue<bool> MirrorIndents, out Twip.FormatValue<bool> ContextualSpacing, out Twip.FormatValue<bool> SuppressLineNumbers, out Twip.FormatValue<bool> DontHyphenate) -> void
+Twip.ParagraphDialogValues.DontHyphenate.get -> Twip.FormatValue<bool>
+Twip.ParagraphDialogValues.DontHyphenate.init -> void
+Twip.ParagraphDialogValues.MirrorIndents.get -> Twip.FormatValue<bool>
+Twip.ParagraphDialogValues.MirrorIndents.init -> void
+Twip.ParagraphDialogValues.ParagraphDialogValues(Twip.FormatValue<Twip.ParagraphAlignment> Alignment, Twip.FormatValue<Twip.OutlineLevel> OutlineLevel, Twip.FormatValue<Twip.Length> Left, Twip.FormatValue<Twip.Length> Right, Twip.FormatValue<Twip.SpecialIndent> Special, Twip.FormatValue<Twip.Length> By, Twip.FormatValue<Twip.SpacingValue> Before, Twip.FormatValue<Twip.SpacingValue> After, Twip.FormatValue<Twip.LineSpacing!> LineSpacing, Twip.FormatValue<bool> KeepWithNext, Twip.FormatValue<bool> KeepLinesTogether, Twip.FormatValue<bool> PageBreakBefore, Twip.FormatValue<bool> WidowControl, Twip.FormatValue<bool> Collapsed, Twip.FormatValue<bool> MirrorIndents, Twip.FormatValue<bool> ContextualSpacing, Twip.FormatValue<bool> SuppressLineNumbers, Twip.FormatValue<bool> DontHyphenate) -> void
+Twip.ParagraphDialogValues.SuppressLineNumbers.get -> Twip.FormatValue<bool>
+Twip.ParagraphDialogValues.SuppressLineNumbers.init -> void

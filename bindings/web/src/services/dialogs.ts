@@ -4,9 +4,15 @@ import type {
   DocumentDefaults,
   FollowNumber,
   FrameProperties,
+  Ligatures,
+  LineNumbers,
   ListEntryId,
   ListLevel,
+  MultiplePagesMode,
+  NumberForm,
   NumberFormat,
+  NumberSpacing,
+  SectionBreakKind,
   ShadingPattern,
 } from '../commands.js';
 import type { Session } from '../editor.js';
@@ -141,6 +147,20 @@ export interface DialogValues {
     hidden: Tri;
     characterSpacing: Mixed<Points>;
     position: Mixed<Points>;
+    emboss: Tri;
+    engrave: Tri;
+    outline: Tri;
+    shadow: Tri;
+    /** The character width scale, percent. */
+    scale: Mixed<number>;
+    /** Kerning from this size up; 0 for none. */
+    kerning: Mixed<Points>;
+    ligatures: Mixed<Ligatures>;
+    numberSpacing: Mixed<NumberSpacing>;
+    numberForm: Mixed<NumberForm>;
+    /** The stylistic set, 1 to 20; 0 for the default. */
+    stylisticSet: Mixed<number>;
+    contextualAlternates: Tri;
   };
   /** The Paragraph dialog. */
   paragraph: {
@@ -157,6 +177,13 @@ export interface DialogValues {
     keepLinesTogether: Tri;
     pageBreakBefore: Tri;
     widowControl: Tri;
+    /** Collapsed by default (with an outline level). */
+    collapsed: Tri;
+    mirrorIndents: Tri;
+    /** Don't add space between paragraphs of the same style. */
+    contextualSpacing: Tri;
+    suppressLineNumbers: Tri;
+    dontHyphenate: Tri;
   };
   /** The Page setup dialog. */
   pageSetup: {
@@ -173,6 +200,13 @@ export interface DialogValues {
     differentFirstPage: boolean;
     differentOddEven: boolean;
     applyTo: 'section' | 'wholeDocument';
+    multiplePages: MultiplePagesMode;
+    gutterAtTop: boolean;
+    /** Where the section starts. */
+    sectionStart: SectionBreakKind;
+    verticalAlignment: 'top' | 'center' | 'justified' | 'bottom';
+    /** Line numbers, or none. */
+    lineNumbers: LineNumbers | null;
   };
   /** The Insert table dialog. */
   insertTable: { rows: number; columns: number };

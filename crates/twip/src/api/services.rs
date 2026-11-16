@@ -1137,6 +1137,28 @@ dialog! {
         pub character_spacing: Tri<Points>,
         /// The baseline offset; positive raises.
         pub position: Tri<Points>,
+        /// Emboss.
+        pub emboss: Tri<bool>,
+        /// Engrave.
+        pub engrave: Tri<bool>,
+        /// Outline.
+        pub outline: Tri<bool>,
+        /// Shadow.
+        pub shadow: Tri<bool>,
+        /// The character width scale, percent.
+        pub scale: Tri<f64>,
+        /// Kerning from this size up; 0 for none.
+        pub kerning: Tri<Points>,
+        /// The OpenType ligatures.
+        pub ligatures: Tri<crate::api::command::Ligatures>,
+        /// The number spacing.
+        pub number_spacing: Tri<crate::api::command::NumberSpacing>,
+        /// The number forms.
+        pub number_form: Tri<crate::api::command::NumberForm>,
+        /// The stylistic set, 1 to 20; 0 for the default.
+        pub stylistic_set: Tri<u8>,
+        /// Contextual alternates.
+        pub contextual_alternates: Tri<bool>,
     }
 }
 
@@ -1184,6 +1206,16 @@ dialog! {
         pub page_break_before: Tri<bool>,
         /// Widow and orphan control.
         pub widow_control: Tri<bool>,
+        /// Collapsed by default (with an outline level).
+        pub collapsed: Tri<bool>,
+        /// Mirror indents: inside and outside instead of left and right.
+        pub mirror_indents: Tri<bool>,
+        /// Don't add space between paragraphs of the same style.
+        pub contextual_spacing: Tri<bool>,
+        /// Suppress line numbers.
+        pub suppress_line_numbers: Tri<bool>,
+        /// Don't hyphenate.
+        pub dont_hyphenate: Tri<bool>,
     }
 }
 
@@ -1229,6 +1261,16 @@ dialog! {
         pub different_odd_even: bool,
         /// Where it applies.
         pub apply_to: ApplyTo,
+        /// Multiple pages: normal, mirror margins or book fold.
+        pub multiple_pages: crate::api::command::MultiplePagesMode,
+        /// The gutter is at the top.
+        pub gutter_at_top: bool,
+        /// Where the section starts.
+        pub section_start: crate::api::command::SectionBreakKind,
+        /// The text's vertical alignment on the page.
+        pub vertical_alignment: crate::api::command::PageVerticalAlignment,
+        /// Line numbers, or none.
+        pub line_numbers: Option<crate::api::command::LineNumbers>,
     }
 }
 
