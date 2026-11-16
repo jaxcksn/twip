@@ -1552,7 +1552,7 @@ dependencies = [
 
 [[package]]
 name = "twip"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "aes",
  "divan",
@@ -1572,7 +1572,7 @@ dependencies = [
 
 [[package]]
 name = "twip-capi"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -1584,7 +1584,7 @@ dependencies = [
 
 [[package]]
 name = "twip-graphics"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "allocation-counter",
  "divan",
@@ -1618,7 +1618,7 @@ dependencies = [
 
 [[package]]
 name = "twip-wasm"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "talc",
  "twip-capi",
