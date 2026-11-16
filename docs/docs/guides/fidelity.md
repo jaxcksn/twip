@@ -192,10 +192,10 @@ Chunk numbers are [roadmap](../roadmap#docx) chunks.
 |---|---|---|
 | Controls | `w:sdt`, `w:sdtPr`, `w:sdtContent`, `w:sdtEndPr`, `w:alias`, `w:tag`, `w:id`, `w:lock`, `w:placeholder`, `w:docPart`, `w:showingPlcHdr` | API |
 | Kinds | `w:text`, `w:richText`, `w:comboBox`, `w:dropDownList`, `w:listItem`, `w:date`, `w:dateFormat`, `w:storeMappedDataAs`, `w:calendar`, `w:picture`, `w:group`, `w14:checkbox`, `w14:checked`, `w14:checkedState`, `w14:uncheckedState`, `w15:repeatingSection`, `w15:repeatingSectionItem` | API (check box symbols in `setControl`'s options; a check box shows its new symbol when it is next toggled) |
-| Building block galleries | `w:docPartObj`, `w:docPartList`, `w:docPartGallery`, `w:docPartCategory`, `w:docPartUnique` | Model; inserting from a gallery is 2.13 |
+| Building block galleries | `w:docPartObj`, `w:docPartList`, `w:docPartGallery`, `w:docPartCategory`, `w:docPartUnique` | API (a gallery control's `buildingBlocks` in its state; `fillControl`'s `buildingBlock` puts one's content in it) |
 | Citations, bibliography, equations | `w:citation`, `w:bibliography`, `w:equation` | Kept as the control kind; their content is ordinary content |
-| Data binding | `w:dataBinding`, `w15:dataBinding` | Model; evaluated both ways in 2.13 |
-| Temporary | `w:temporary` | API (`setControl`'s `temporary`); removing itself when its content is edited is 2.13 |
+| Data binding | `w:dataBinding`, `w15:dataBinding` | API (`setControl`'s `binding`): text, date and drop-down controls show their node from the custom XML part when opened and when the part is written, and editing one writes its node (XPaths of element steps by name and position, then an attribute or `text()`; others, check boxes and pictures, and `w15:dataBinding` are kept) |
+| Temporary | `w:temporary` | API (`setControl`'s `temporary`): the control goes when its content is edited, leaving the content |
 | Appearance and colour | `w15:appearance`, `w15:color` | API (`setControl`'s `appearance` and `color`; the selection's control in `selection.context[].control`) |
 | Repeating section options | `w15:sectionTitle`, `w15:doNotAllowInsertDeleteSection` | API (`setControl`'s options) |
 | Entity picker | `w14:entityPicker` | Kept (SharePoint metadata) |

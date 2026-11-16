@@ -396,7 +396,7 @@ pub fn kind_at(inlines: &[Inline], s: FieldSpan) -> Option<FieldKind> {
     parse(&code_text(inlines, s)).kind()
 }
 
-fn paras(blocks: &mut [Block], f: &mut dyn FnMut(&mut Paragraph)) {
+pub(crate) fn paras(blocks: &mut [Block], f: &mut dyn FnMut(&mut Paragraph)) {
     for b in blocks {
         match b {
             Block::Para(p) => {
@@ -947,6 +947,11 @@ fn formula_values(
             }
         }
     }
+}
+
+/// `secs` in a date picture (`M/d/yyyy`).
+pub(crate) fn date_text(picture: &str, secs: i64) -> String {
+    date(&format!("\\@ \"{picture}\""), secs)
 }
 
 fn date(code: &str, secs: i64) -> String {

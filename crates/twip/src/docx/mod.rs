@@ -1,5 +1,6 @@
 //! Reading DOCX into the layout engine's model.
 
+pub mod binding;
 pub mod blank;
 pub mod comments;
 pub mod diagnostics;

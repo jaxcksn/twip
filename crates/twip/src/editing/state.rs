@@ -750,7 +750,11 @@ impl Editor {
                     crate::docx::ControlKind::RepeatingItem => ElementKind::RepeatingItem,
                     crate::docx::ControlKind::RichText | crate::docx::ControlKind::Other => ElementKind::RichText,
                 };
-                let control = Some(Box::new(control_info(&props)));
+                let mut info = control_info(&props);
+                if let Some(category) = props.gallery() {
+                    info.building_blocks = self.gallery_entries(category.as_deref()).map(|b| b.name.clone()).collect();
+                }
+                let control = Some(Box::new(info));
                 ElementContext {
                     id,
                     kind,
@@ -920,7 +924,7 @@ fn control_info(p: &crate::docx::ControlProps) -> crate::api::state::ControlInfo
     let mut info = crate::api::state::ControlInfo {
         appearance,
         color: rest("color").and_then(|x| val(x, "val=\"")).and_then(|v| u32::from_str_radix(&v, 16).ok()).map(Color),
-        temporary: rest("temporary").is_some_and(|x| !x.contains("val=\"0\"") && !x.contains("val=\"false\"")),
+        temporary: p.temporary(),
         style: rest("rPr").and_then(|x| val(&x[x.find("rStyle")?..], "val=\"")).map(StyleId),
         ..Default::default()
     };

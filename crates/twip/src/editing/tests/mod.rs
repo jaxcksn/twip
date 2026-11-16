@@ -2,6 +2,7 @@
 
 mod backgrounds;
 mod basics;
+mod bindings;
 mod checkboxes;
 mod cursors;
 mod custom_lists;

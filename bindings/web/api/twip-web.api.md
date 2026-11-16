@@ -393,6 +393,7 @@ export interface Commands {
         text?: string;
         image?: Uint8Array;
         docx?: Uint8Array;
+        buildingBlock?: string;
     }): Promise<void>;
     fillFormField(options: {
         id?: ElementId;
@@ -1136,6 +1137,7 @@ export interface ContextMenuEvent {
 export interface ControlInfo {
     allowInsertDelete?: boolean;
     appearance: 'boundingBox' | 'tags' | 'hidden';
+    buildingBlocks?: string[];
     checkedSymbol?: string;
     color?: Color;
     sectionTitle?: string;

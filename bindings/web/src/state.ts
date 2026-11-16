@@ -508,6 +508,8 @@ export interface ControlInfo {
   sectionTitle?: string;
   /** A repeating section's items can be added and removed. */
   allowInsertDelete?: boolean;
+  /** A building block gallery's entries: the package's building blocks in its category, by name. */
+  buildingBlocks?: string[];
 }
 
 /** A legacy form field's options and value; what doesn't apply to its kind is absent. */

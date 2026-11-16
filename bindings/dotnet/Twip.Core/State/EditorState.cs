@@ -652,6 +652,8 @@ public sealed record ControlInfo
     /// <summary>A repeating section's items can be added and removed.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? AllowInsertDelete { get; init; }
+    /// <summary>A building block gallery's entries: the package's building blocks in its category, by name.</summary>
+    public IReadOnlyList<string> BuildingBlocks { get; init; } = [];
 }
 
 /// <summary>A legacy form field's options and value; what doesn't apply to its kind is null.</summary>

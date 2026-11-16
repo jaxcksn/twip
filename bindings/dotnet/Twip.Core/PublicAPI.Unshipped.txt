@@ -7667,3 +7667,7 @@ Twip.ProtectionState.UnprotectedSections.init -> void
 Twip.CommandId.SetFileName = 254 -> Twip.CommandId
 Twip.EditorCommands.SetFileNameAsync(string! name, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 static Twip.EditorOperation.SetFileName(string! name) -> Twip.EditorOperation!
+Twip.ControlContent.BuildingBlock.get -> string?
+Twip.ControlInfo.BuildingBlocks.get -> System.Collections.Generic.IReadOnlyList<string!>!
+Twip.ControlInfo.BuildingBlocks.init -> void
+static Twip.ControlContent.FromBuildingBlock(string! name) -> Twip.ControlContent!

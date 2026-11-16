@@ -1021,8 +1021,11 @@ export interface Commands {
   }): Promise<void>;
   /** Removes a content control, optionally keeping its content. */
   removeControl(options: { id: ElementId; keepContent?: boolean }): Promise<void>;
-  /** Fills a content control with exactly one of text, an image (fitted to its box) or DOCX content. */
-  fillControl(options: { id: ElementId; text?: string; image?: Uint8Array; docx?: Uint8Array }): Promise<void>;
+  /**
+   * Fills a content control with exactly one of text, an image (fitted to its box), DOCX content, or a building block
+   * gallery's entry (its `buildingBlocks`).
+   */
+  fillControl(options: { id: ElementId; text?: string; image?: Uint8Array; docx?: Uint8Array; buildingBlock?: string }): Promise<void>;
   /** Checks or unchecks a checkbox control. */
   setCheckbox(options: { id: ElementId; checked: boolean }): Promise<void>;
   /** Wraps the selected paragraphs or table rows in a repeating section. */

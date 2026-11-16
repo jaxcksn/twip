@@ -261,7 +261,7 @@ const EDITS: &[(&str, fn(&mut Editor, &Spot) -> Outcome)] = &[
             return Outcome::Unchanged("no control");
         };
         let id = ElementId(crate::editing::elements::id_str(crate::docx::ElementId::Control(*c)));
-        e.execute(Command::FillControl(FillControl { id, text: Some("Filled".into()), image: None, docx: None }), fonts())
+        e.execute(Command::FillControl(FillControl { id, text: Some("Filled".into()), image: None, docx: None, building_block: None }), fonts())
     }),
     ("delete-comment", |e, _| e.execute(Command::DeleteComment(crate::api::value::CommentId("c90".into())), fonts())),
     ("comment", |e, s| {

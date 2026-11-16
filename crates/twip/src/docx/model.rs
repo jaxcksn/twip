@@ -888,6 +888,24 @@ pub struct Control {
     pub at: Option<(usize, usize)>,
 }
 
+impl ControlProps {
+    /// A building block gallery (`w:docPartList`): `Some` of its category (`None`: any).
+    pub fn gallery(&self) -> Option<Option<String>> {
+        let x = self.kind_xml.as_deref().filter(|x| x.contains("docPartList"))?;
+        let cat = x.find("docPartCategory").and_then(|k| {
+            let rest = &x[k..];
+            let v = rest.find("val=\"")? + 5;
+            Some(rest[v..v + rest[v..].find('"')?].to_string())
+        });
+        Some(cat.filter(|c| !c.is_empty()))
+    }
+
+    /// `w:temporary`: the control goes when its content is edited, leaving the content.
+    pub fn temporary(&self) -> bool {
+        self.rest.iter().any(|(n, x)| n == "temporary" && !x.contains("val=\"0\"") && !x.contains("val=\"false\""))
+    }
+}
+
 impl Control {
     /// A new control (no markup read).
     pub fn new(props: ControlProps) -> Control {

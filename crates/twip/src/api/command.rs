@@ -3166,7 +3166,7 @@ pub struct RemoveControl {
     pub keep_content: Option<bool>,
 }
 
-/// `fillControl`'s options: exactly one of `text`, `image` and `docx`.
+/// `fillControl`'s options: exactly one of `text`, `image`, `docx` and `buildingBlock`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FillControl {
@@ -3181,6 +3181,9 @@ pub struct FillControl {
     /// DOCX content.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub docx: Option<Bytes>,
+    /// A building block gallery's entry (`buildingBlocks` in its state): that building block's content.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub building_block: Option<String>,
 }
 
 /// `setCheckbox`'s options.

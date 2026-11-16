@@ -304,6 +304,9 @@
           "code": "MERGEFIELD Name",
           "control": {
             "appearance": "tags",
+            "buildingBlocks": [
+              "Signature"
+            ],
             "checkedSymbol": "☒",
             "color": "#2E74B5",
             "style": "Strong",
@@ -602,6 +605,9 @@
         "code": "MERGEFIELD Name",
         "control": {
           "appearance": "tags",
+          "buildingBlocks": [
+            "Signature"
+          ],
           "checkedSymbol": "☒",
           "color": "#2E74B5",
           "style": "Strong",

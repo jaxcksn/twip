@@ -1992,7 +1992,7 @@ public sealed record ControlChanges(
     public StyleId? Style { get; init; }
 }
 
-/// <summary>What to fill a content control with: exactly one of text, a picture or a document.</summary>
+/// <summary>What to fill a content control with: exactly one of text, a picture, a document or a building block.</summary>
 public sealed record ControlContent
 {
     private ControlContent() { }
@@ -2009,6 +2009,10 @@ public sealed record ControlContent
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public ReadOnlyMemory<byte>? Docx { get; private init; }
 
+    /// <summary>The building block's name.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? BuildingBlock { get; private init; }
+
     /// <summary>Plain text.</summary>
     /// <param name="text">The text.</param>
     public static ControlContent FromText(string text) => new() { Text = text };
@@ -2020,6 +2024,10 @@ public sealed record ControlContent
     /// <summary>The body of a DOCX document.</summary>
     /// <param name="docx">The DOCX bytes.</param>
     public static ControlContent FromDocx(ReadOnlyMemory<byte> docx) => new() { Docx = docx };
+
+    /// <summary>A building block gallery's entry (<see cref="ControlInfo.BuildingBlocks"/>): its content.</summary>
+    /// <param name="name">The building block's name.</param>
+    public static ControlContent FromBuildingBlock(string name) => new() { BuildingBlock = name };
 }
 
 /// <summary>A mark on an element: a wavy line with a tooltip.</summary>

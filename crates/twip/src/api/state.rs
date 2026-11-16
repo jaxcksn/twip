@@ -513,6 +513,9 @@ pub struct ControlInfo {
     /// A repeating section's items can be added and removed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub allow_insert_delete: Option<bool>,
+    /// A building block gallery's entries (`w:docPartList`): the package's building blocks in its category, by name.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub building_blocks: Vec<String>,
 }
 
 /// A legacy form field's options and value; what doesn't apply to its kind is absent.

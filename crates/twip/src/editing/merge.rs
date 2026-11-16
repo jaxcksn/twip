@@ -727,13 +727,15 @@ impl Editor {
             self.fill_images(&[image], data, size, label, false, fonts)
         } else {
             let given = f.text.clone().unwrap_or_default();
-            let frag = match (&f.docx, &f.text) {
-                (Some(d), _) => Some(self.fragment_of(&d.0)?),
-                (None, Some(_)) => None,
-                (None, None) => return Err(bad("text")),
+            let gallery = control.props.gallery();
+            let frag = match (&f.building_block, &f.docx, &f.text) {
+                (Some(name), ..) => Some(self.building_block_fragment(name, gallery.as_ref().ok_or_else(|| bad("id"))?.as_deref())?),
+                (None, Some(d), _) => Some(self.fragment_of(&d.0)?),
+                (None, None, Some(_)) => None,
+                (None, None, None) => return Err(bad("text")),
             };
             let plain = matches!(control.props.kind, ControlKind::PlainText { .. } | ControlKind::Date { .. });
-            if !plain && control.props.kind != ControlKind::RichText {
+            if !plain && control.props.kind != ControlKind::RichText && gallery.is_none() {
                 return Err(bad("id"));
             }
             match (&w, frag) {
@@ -822,6 +824,26 @@ impl Editor {
             self.commit(tx, None, fonts);
         }
         Ok(out)
+    }
+
+    /// The live building blocks a gallery of `category` (`None`: any) offers.
+    pub(super) fn gallery_entries<'a>(&'a self, category: Option<&'a str>) -> impl Iterator<Item = &'a crate::docx::BuildingBlock> + 'a {
+        self.doc
+            .glossary
+            .iter()
+            .flat_map(|g| g.parts.iter())
+            .filter(move |b| b.state != crate::docx::PartState::Removed && b.editable && category.is_none_or(|c| b.category == c))
+    }
+
+    /// A building block's body, to fill a gallery control with.
+    fn building_block_fragment(&self, name: &str, category: Option<&str>) -> Result<super::clipboard::Fragment, Refused> {
+        let part = self.gallery_entries(category).find(|b| b.name == name).ok_or_else(|| bad("buildingBlock"))?;
+        let mut blocks = part.body.clone();
+        if blocks.len() > 1 && matches!(blocks.last(), Some(Block::Para(p)) if super::step::para_len(p) == Unit(0)) {
+            blocks.pop();
+        }
+        let controls = super::clipboard::controls_of(&blocks, &self.doc);
+        Ok(super::clipboard::Fragment { id: 0, blocks, open_end: true, cells: None, controls, refs: Default::default() })
     }
 
     fn fragment_of(&self, bytes: &[u8]) -> Result<super::clipboard::Fragment, Refused> {
@@ -2116,6 +2138,55 @@ fn picture_size(o: &crate::api::value::PictureOptions, was: (f64, f64)) -> Resul
         None => Ok(was),
     };
     Ok((side(o.width, was.0)?, side(o.height, was.1)?))
+}
+
+impl Editor {
+    /// Temporary controls whose content the transaction edited go, leaving their content.
+    pub(super) fn drop_temporary_controls(&mut self, tx: &mut super::Tx) {
+        let temporary = |c: &ControlId| self.doc.controls.get(c).is_some_and(|k| k.props.temporary());
+        let mut gone: Vec<ControlId> = Vec::new();
+        for s in &tx.undo {
+            let Step::Text { para, range, .. } = s else { continue };
+            let Some(p) = self.index.para(&self.doc, *para) else { continue };
+            gone.extend(p.controls.iter().filter(|c| temporary(c)));
+            // Inline ones around the edit.
+            let (mut unit, mut open) = (0u32, Vec::new());
+            for i in &p.inlines {
+                match i {
+                    Inline::ControlStart(c) => open.push((*c, unit)),
+                    Inline::ControlEnd(c) => {
+                        if let Some(k) = open.iter().rposition(|(o, _)| o == c) {
+                            let (c, start) = open.remove(k);
+                            if start <= range.start.0 && range.end.0 <= unit && temporary(&c) {
+                                gone.push(c);
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+                unit += i.units() as u32;
+            }
+        }
+        gone.sort_unstable();
+        gone.dedup();
+        for c in gone {
+            let step = match self.locate(ElementId::Control(c)) {
+                Some(Where::Inline { para, .. }) => self.index.para(&self.doc, para).map(|p| Step::Restyle {
+                    para,
+                    inlines: p.inlines.iter().filter(|i| !matches!(i, Inline::ControlStart(x) | Inline::ControlEnd(x) if *x == c)).cloned().collect(),
+                }),
+                Some(Where::Blocks { container, range }) => self.index.blocks(&self.doc, container).map(|blocks| Step::Blocks {
+                    container,
+                    with: blocks[range.clone()].iter().map(|b| without_control(b, c)).collect(),
+                    range,
+                }),
+                _ => None,
+            };
+            if let Some(step) = step {
+                let _ = self.step(tx, step);
+            }
+        }
+    }
 }
 
 fn without_control(b: &Block, c: ControlId) -> Block {

@@ -1638,7 +1638,13 @@ fn a_picture_control_activates_and_fills() {
     let data = open("FX-OBJ.docx").document().images.last().cloned().expect("an image");
     let id = crate::api::value::ElementId(crate::editing::elements::id_str(crate::docx::ElementId::Control(c)));
     let out = r.e.execute(
-        Command::FillControl(crate::api::command::FillControl { id, text: None, image: Some(crate::api::value::Bytes(data.clone())), docx: None }),
+        Command::FillControl(crate::api::command::FillControl {
+            id,
+            text: None,
+            image: Some(crate::api::value::Bytes(data.clone())),
+            docx: None,
+            building_block: None,
+        }),
         fonts(),
     );
     assert!(matches!(out, super::super::Outcome::Changed(_)), "{out:?}");

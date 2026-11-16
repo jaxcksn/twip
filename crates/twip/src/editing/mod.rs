@@ -1,6 +1,7 @@
 //! Editor
 
 pub mod autocorrect;
+mod bindings;
 pub mod bookmarks;
 mod borders_dialog;
 mod cell_clipboard;
@@ -904,6 +905,10 @@ impl Editor {
             }
         }
         self.drop_orphan_notes(tx);
+        if tx.replayed.is_none() {
+            self.drop_temporary_controls(tx);
+            self.sync_bindings(tx);
+        }
         self.drop_orphan_controls(tx);
         self.drop_orphan_comments(tx);
         tx.tracked = tracked;

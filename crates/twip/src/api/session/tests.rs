@@ -1816,6 +1816,7 @@ fn an_activated_picture_control_names_it() {
         text: None,
         image: Some(crate::api::value::Bytes(image)),
         docx: None,
+        building_block: None,
     }))
     .expect("fills");
     activated(&events);
