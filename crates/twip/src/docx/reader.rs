@@ -1889,6 +1889,20 @@ impl Reader {
         }
     }
 
+    /// A run child the engine doesn't model (`w:movie`, an element it doesn't know), kept as a run of its own with the
+    /// run's start tag and properties as read: it is written back, moved and pasted with its text (editable reads).
+    fn run_opaque(&mut self, r: Node, c: Node, out: &mut Vec<Inline>) {
+        if !self.record {
+            return;
+        }
+        let whole = raw(r);
+        let open = &whole[..whole.find('>').map_or(0, |k| k + 1)];
+        let name = &open[1..open.find(|ch: char| ch.is_whitespace() || ch == '>' || ch == '/').unwrap_or(1)];
+        let rpr = child(r, "rPr").map_or_else(String::new, |p| raw(p).to_string());
+        let xml = format!("{open}{rpr}{}</{name}>", raw(c));
+        out.push(Inline::Opaque(Rc::new(Opaque { xml: Raw(Some(xml.into())) })));
+    }
+
     /// [`Reader::opaque`], reported as content that isn't drawn.
     fn unsupported(&mut self, e: Node, out: &mut Vec<Inline>) {
         let name = e.tag_name();
@@ -1940,6 +1954,7 @@ impl Reader {
                 continue;
             }
             if c.tag_name().namespace() != Some(W) {
+                self.run_opaque(r, c, out);
                 continue;
             }
             let name = c.tag_name().name();
@@ -2121,7 +2136,9 @@ impl Reader {
                 "endnoteRef" => out.push(Inline::NoteMark(NoteKind::End, self.note_id, run.clone())),
                 "separator" => out.push(Inline::Separator { continuation: false, full: false, run: run.clone() }),
                 "continuationSeparator" => out.push(Inline::Separator { continuation: true, full: self.in_endnotes, run: run.clone() }),
-                _ => {}
+                // Word's layout cache and a comment's own mark: never kept.
+                "lastRenderedPageBreak" | "annotationRef" | "instrText" | "delInstrText" => {}
+                _ => self.run_opaque(r, c, out),
             }
         }
         if self.record {

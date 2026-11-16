@@ -33,7 +33,7 @@ Chunk numbers are [roadmap](../roadmap#docx) chunks.
 | Hyperlinks | `w:hyperlink` | API; a link rewritten as its HYPERLINK field keeps its ScreenTip (`\o`) and frame (`\t`), and drops `history`, which no field switch holds |
 | Header and footer references | `w:headerReference`, `w:footerReference` | API (editing, `setHeaderFooterLinked`, `removeHeaderFooter`) |
 | Section properties | `w:sectPr` | API (see [Sections](#sections)) |
-| Unknown elements | anything not listed here | Between runs: Kept as an opaque node, moved with its text, and reported as unsupported content. Inside a run: Kept; Lost when pasted, as they aren't modeled |
+| Unknown elements | anything not listed here | Between runs: Kept as an opaque node, moved with its text, and reported as unsupported content. Inside a run: Kept as a run of its own (the run's start tag and properties with it), moved and pasted with its text |
 
 ## Run content
 
@@ -50,7 +50,7 @@ Chunk numbers are [roadmap](../roadmap#docx) chunks.
 | Rendered page breaks | `w:lastRenderedPageBreak` | Application (Word's layout cache) |
 | Proofing marks | `w:proofErr` | Application (Word's spelling state) |
 | Ink | `w:contentPart`, `w14:contentPart`, `w14:nvContentPartPr`, `w14:cNvPr`, `w14:cNvContentPartPr`, `w14:xfrm` | Drawn from its fallback picture; Kept, moved with its text |
-| Movies (Word 97) | `w:movie` | Kept; Lost when pasted (not modeled) |
+| Movies (Word 97) | `w:movie` | Kept as a run of its own, moved and pasted with its text, as any element a run holds that the engine doesn't model (not in the schemas Word 2007 and later write) |
 | Equations | `w:oMath` (the run property) | Not in 1.0 (an equation is kept as an opaque node and reported as unsupported content) |
 
 ## Fields
@@ -215,7 +215,7 @@ Word 2010 and later remove custom XML markup when they open a document, so it is
 | Construct | Elements | Status |
 |---|---|---|
 | Drawings | `w:drawing`, `w:pict` | API (see [DrawingML and VML](#drawing)) |
-| OLE objects | `w:object`, `w:objectEmbed`, `w:objectLink` | Preview picture API; the object is Lost when rewritten, opaque node in 2.2. Editing OLE objects is in the backlog |
+| OLE objects | `w:object`, `w:objectEmbed`, `w:objectLink` | Preview picture API; the object (`w:object` with its `o:OLEObject`) is kept as read through every edit, moved and pasted with its text. Editing OLE objects is in the backlog |
 | ActiveX controls | `w:control` | Kept, drawn from its preview picture, moved with its text |
 | Imported content | `w:altChunk`, `w:altChunkPr`, `w:matchSrc` | Kept between unedited blocks; opaque block, 2.2. Drawing it is deferred with HTML paste |
 | Subdocuments | `w:subDoc` | Kept as an opaque node, reported as unsupported content. Drawing them is in the backlog |

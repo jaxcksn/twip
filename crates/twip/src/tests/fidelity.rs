@@ -212,6 +212,20 @@ const CONSTRUCTS: &[Construct] = &[
         exempt: &[],
     },
     Construct {
+        name: "ole-object",
+        xml: r##"<w:r><w:t>Ole</w:t></w:r><w:r><w:object w:dxaOrig="720" w:dyaOrig="720"><v:shape id="ole1" type="#_x0000_t75" style="width:36pt;height:36pt" o:ole=""><v:imagedata r:id="rIdImg" o:title=""/></v:shape><o:OLEObject Type="Embed" ProgID="Package" ShapeID="ole1" DrawAspect="Icon" ObjectID="_1"/></w:object></w:r>"##,
+        holds: &["w:object", "o:OLEObject", "~ProgID=\"Package\"", "v:imagedata"],
+        parts: &[],
+        exempt: &[],
+    },
+    Construct {
+        name: "run-unknown",
+        xml: r#"<w:r xmlns:x1="urn:example:future" mc:Ignorable="x1"><w:rPr><w:i/></w:rPr><w:t>Un</w:t><x1:future x1:val="1"/><w:t>known</w:t></w:r>"#,
+        holds: &["~mc:Ignorable=\"x1\"", "~<x1:future"],
+        parts: &[],
+        exempt: &[],
+    },
+    Construct {
         name: "symbol-extension",
         xml: r#"<w:r><mc:AlternateContent><mc:Choice Requires="w16se"><w16se:symEx w16se:font="Segoe UI Emoji" w16se:char="1F600"/></mc:Choice><mc:Fallback><w:t>😀</w:t></mc:Fallback></mc:AlternateContent></w:r>"#,
         holds: &["w16se:symEx"],
@@ -240,6 +254,26 @@ const CONSTRUCTS: &[Construct] = &[
         exempt: &[],
     },
 ];
+
+/// A Word 97 movie: kept as a run of its own like any element a run holds that the engine doesn't model. Not in the
+/// schemas the saved packages are checked against, so outside [`CONSTRUCTS`].
+const MOVIE: Construct = Construct {
+    name: "movie",
+    xml: r#"<w:r><w:t>Mo</w:t><w:movie r:id="rIdImg"/><w:t>vie</w:t></w:r>"#,
+    holds: &["w:movie@r:id=rIdImg"],
+    parts: &[],
+    exempt: &[],
+};
+
+#[test]
+fn every_edit_keeps_a_movie() {
+    let lost: Vec<String> = EDITS
+        .iter()
+        .filter(|(name, _)| !name.starts_with("table-"))
+        .filter_map(|(name, edit)| Some(format!("{name}: {}", check_caught(&MOVIE, *edit, None, name)?)))
+        .collect();
+    assert!(lost.is_empty(), "{lost:?}");
+}
 
 /// The edits: name, and what it does to the editor holding the construct's paragraph.
 const EDITS: &[(&str, fn(&mut Editor, &Spot) -> Outcome)] = &[
