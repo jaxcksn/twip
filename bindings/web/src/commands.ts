@@ -683,6 +683,20 @@ export interface Commands {
   insertBookmark(name: string): Promise<void>;
   /** Deletes a bookmark (compared without case), keeping its text. */
   deleteBookmark(name: string): Promise<void>;
+  /**
+   * Restrict Editing: what the document allows, and starting or stopping its enforcement. Starting takes the password
+   * stopping will need (none when absent); stopping a password-protected document needs it.
+   */
+  setDocumentProtection(options: {
+    kind?: 'none' | 'readOnly' | 'comments' | 'trackedChanges' | 'forms';
+    formatting?: boolean;
+    enforce?: boolean;
+    password?: string;
+  }): Promise<void>;
+  /** Makes the selection a range everyone (or `editor`) may edit while the document is protected. */
+  addEditableRange(options?: { editor?: string }): Promise<void>;
+  /** Removes the editable ranges at the selection. */
+  removeEditableRanges(): Promise<void>;
   /** Inserts a legacy form field (FORMTEXT, FORMCHECKBOX, FORMDROPDOWN) at the selection. */
   insertFormField(kind: 'text' | 'checkBox' | 'dropDown'): Promise<{ id: ElementId }>;
   /** Sets a legacy form field's options (default: the one at the selection); only its own kind's options apply. */
@@ -1317,6 +1331,9 @@ const encodings: { [K in CommandId]: Encoding<K> } = {
   removeHyperlink: 'none',
   insertBookmark: 'value',
   deleteBookmark: 'value',
+  setDocumentProtection: 'spread',
+  addEditableRange: 'spread',
+  removeEditableRanges: 'none',
   insertFormField: 'value',
   setFormField: 'spread',
   fillFormField: 'spread',

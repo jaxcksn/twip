@@ -155,7 +155,7 @@ pub(crate) fn base64(data: &[u8]) -> String {
 }
 
 /// Standard base64 with optional padding; `None` on any other character.
-fn from_base64(s: &str) -> Option<Vec<u8>> {
+pub(crate) fn from_base64(s: &str) -> Option<Vec<u8>> {
     let digit = |c: u8| match c {
         b'A'..=b'Z' => Some(c - b'A'),
         b'a'..=b'z' => Some(c - b'a' + 26),

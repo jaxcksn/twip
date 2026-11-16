@@ -913,6 +913,14 @@ fn commands() -> Vec<Command> {
         Command::RemoveHyperlink,
         Command::InsertBookmark("Summary".into()),
         Command::DeleteBookmark("Summary".into()),
+        Command::SetDocumentProtection(DocumentProtection {
+            kind: Some(ProtectionKind::ReadOnly),
+            formatting: Some(false),
+            enforce: Some(true),
+            password: Some("secret".into()),
+        }),
+        Command::AddEditableRange(EditableRange { editor: None }),
+        Command::RemoveEditableRanges,
         Command::InsertFormField(FormFieldType::CheckBox),
         Command::SetFormField(FormFieldChange {
             id: Some(id("field-1")),
@@ -1469,6 +1477,13 @@ fn review_state() -> ReviewState {
     ReviewState {
         tracking: true,
         tracking_locked: false,
+        protection: Some(ProtectionState {
+            kind: ProtectionKind::ReadOnly,
+            enforced: true,
+            formatting: false,
+            password: true,
+            in_editable_range: true,
+        }),
         markup_view: MarkupView::All,
         revisions: 3,
         comments: 2,

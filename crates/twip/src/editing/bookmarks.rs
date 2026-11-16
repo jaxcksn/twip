@@ -66,7 +66,7 @@ fn markers_at(p: &Paragraph, u: Unit) -> u32 {
 
 impl Editor {
     /// Paragraphs in document order: the body's, then every other story's.
-    fn paras_in_order(&self) -> Vec<ParaId> {
+    pub(super) fn paras_in_order(&self) -> Vec<ParaId> {
         fn walk(blocks: &[Block], out: &mut Vec<ParaId>) {
             for b in blocks {
                 match b {

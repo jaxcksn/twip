@@ -789,6 +789,23 @@ public sealed class EditorCommands
     /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
     public Task DeleteBookmarkAsync(string name, CancellationToken ct = default) => _session.RunAsync(EditorOperation.DeleteBookmark(name), ct);
 
+    /// <summary>Restrict Editing: what the document allows, and starting or stopping its enforcement; stopping a password-protected document needs the password.</summary>
+    /// <param name="protection">The settings to change.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SetDocumentProtectionAsync(DocumentProtection protection, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetDocumentProtection(protection), ct);
+
+    /// <summary>Makes the selection a range everyone (or <paramref name="editor"/>) may edit while the document is protected.</summary>
+    /// <param name="editor">Who may edit it; everyone when null.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task AddEditableRangeAsync(string? editor = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.AddEditableRange(editor), ct);
+
+    /// <summary>Removes the editable ranges at the selection.</summary>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task RemoveEditableRangesAsync(CancellationToken ct = default) => _session.RunAsync(EditorOperation.RemoveEditableRanges(), ct);
+
     /// <summary>Inserts a legacy form field (FORMTEXT, FORMCHECKBOX, FORMDROPDOWN) at the selection.</summary>
     /// <param name="kind">Its kind.</param>
     /// <param name="ct">Cancels the command before it runs.</param>

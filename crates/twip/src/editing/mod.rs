@@ -43,6 +43,7 @@ pub mod pointer;
 pub mod position;
 mod preview;
 mod properties;
+pub mod protection;
 mod resize;
 pub mod revisions;
 pub mod section;

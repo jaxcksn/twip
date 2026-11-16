@@ -751,6 +751,16 @@ export interface ReviewState {
   tracking: boolean;
   /** Document protection keeps tracking on. */
   trackingLocked: boolean;
+  /** What the document's protection allows, when it has one. */
+  protection?: {
+    kind: 'none' | 'readOnly' | 'comments' | 'trackedChanges' | 'forms';
+    enforced: boolean;
+    formatting: boolean;
+    /** Stopping it needs a password. */
+    password: boolean;
+    /** The selection is in a range the author may edit. */
+    inEditableRange: boolean;
+  };
   /** The markup view. */
   markupView: MarkupView;
   /** The revision count. */

@@ -317,6 +317,13 @@ fn settings_part(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(
             None => set_setting(&mut out, "endnotePr", pos.map(|p| format!("<{w}endnotePr>{p}</{w}endnotePr>")))?,
         }
     }
+    let same = match (&read.protection, &now.protection) {
+        (Some(a), Some(b)) => a.same(b),
+        (a, b) => a.is_none() && b.is_none(),
+    };
+    if !same {
+        set_setting(&mut out, "documentProtection", now.protection.as_ref().map(|p| p.xml(&w)))?;
+    }
     if read.variables != now.variables {
         let vars: String =
             now.variables.iter().map(|(n, v)| format!("<{w}docVar {w}name=\"{}\" {w}val=\"{}\"/>", props::esc(n), props::esc(v))).collect();

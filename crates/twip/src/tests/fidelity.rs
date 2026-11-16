@@ -520,6 +520,7 @@ fn every_edit_keeps_every_construct() {
         std::fs::write(d.join("document-properties.docx"), document_properties_package()).expect("writes");
         std::fs::write(d.join("form-fields.docx"), form_fields_package()).expect("writes");
         std::fs::write(d.join("control-options.docx"), control_options_package()).expect("writes");
+        std::fs::write(d.join("protection.docx"), protection_package()).expect("writes");
         let (pictures, boxes) = picture_tools_packages();
         std::fs::write(d.join("picture-tools.docx"), pictures).expect("writes");
         std::fs::write(d.join("text-box-columns.docx"), boxes).expect("writes");
@@ -929,4 +930,30 @@ fn control_options_are_saved_and_read_back() {
     }
     let doc = crate::docx::read_editable(&saved).expect("reads back");
     assert!(doc.controls.values().any(|c| matches!(c.props.kind, crate::docx::ControlKind::Checkbox { checked: '\u{FC}', .. })));
+}
+
+/// A read-only document with a password and a range everyone may edit, saved.
+fn protection_package() -> Vec<u8> {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-STORIES.docx");
+    let mut e = Editor::open(&std::fs::read(path).expect("the fixture"), fonts()).expect("opens");
+    let n = |v: serde_json::Value| serde_json::from_value::<Command>(v).expect("a command");
+    e.select_range(para_id(&e, 0), Unit(0), Unit(4), fonts());
+    for c in [
+        serde_json::json!({ "type": "addEditableRange" }),
+        serde_json::json!({ "type": "setDocumentProtection", "kind": "readOnly", "enforce": true, "password": "secret" }),
+    ] {
+        let out = e.execute(n(c.clone()), fonts());
+        assert!(matches!(out, Outcome::Changed(_)), "{c}: {out:?}");
+    }
+    crate::docx::write::save(e.document()).expect("saves")
+}
+
+#[test]
+fn protection_and_editable_ranges_are_saved() {
+    let saved = protection_package();
+    let xml = crate::docx::package::read(&saved, &[], "word/document.xml").expect("reads").expect("the main part");
+    assert!(xml.contains("w:edGrp=\"everyone\"") && xml.contains("<w:permEnd"), "the editable range");
+    let doc = crate::docx::read_editable(&saved).expect("reads back");
+    let p = doc.settings.protection.expect("protection");
+    assert!(p.enforced && p.password.as_ref().is_some_and(|pw| pw.matches("secret") && !pw.matches("Secret")));
 }

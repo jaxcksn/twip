@@ -645,6 +645,20 @@ public abstract partial record EditorOperation
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation DeleteBookmark(string name) => Op(CommandId.DeleteBookmark, new Arg("value", Node(name)));
 
+    /// <summary>Restrict Editing: what the document allows, and starting or stopping its enforcement; stopping a password-protected document needs the password.</summary>
+    /// <param name="protection">The settings to change.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetDocumentProtection(DocumentProtection protection) => Op(CommandId.SetDocumentProtection, Arg.Flatten(protection));
+
+    /// <summary>Makes the selection a range everyone (or <paramref name="editor"/>) may edit while the document is protected.</summary>
+    /// <param name="editor">Who may edit it; everyone when null.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation AddEditableRange(string? editor = null) => Op(CommandId.AddEditableRange, new Arg("editor", editor is { } e ? Node(e) : null, Optional: true));
+
+    /// <summary>Removes the editable ranges at the selection.</summary>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation RemoveEditableRanges() => Op(CommandId.RemoveEditableRanges);
+
     /// <summary>Inserts a legacy form field (FORMTEXT, FORMCHECKBOX, FORMDROPDOWN) at the selection.</summary>
     /// <param name="kind">Its kind.</param>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>

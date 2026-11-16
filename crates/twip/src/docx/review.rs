@@ -429,10 +429,83 @@ pub struct Protection {
     pub enforced: bool,
     /// `w:formatting`: formatting is limited to the styles that aren't locked.
     pub formatting: bool,
+    /// The password's hash, salt, spin count and algorithm (`w:cryptAlgorithmSid` or `w:algorithmName`).
+    pub password: Option<Password>,
     pub raw: Raw,
 }
 
+/// A protection password as stored: never the password itself.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Password {
+    /// `SHA-512`, `SHA-384`, `SHA-256`, or what the document names.
+    pub algorithm: String,
+    /// Base64.
+    pub hash: String,
+    pub salt: String,
+    pub spin: u32,
+}
+
+impl Password {
+    /// The stored form of `password`: salted, hashed and spun as ECMA-376 describes (SHA-512, 100 000 rounds).
+    pub fn new(password: &str) -> Password {
+        let mut salt = [0u8; 16];
+        getrandom::fill(&mut salt).expect("the operating system provides random bytes");
+        let spin = 100_000;
+        let hash = hash("SHA-512", &salt, password, spin).unwrap_or_default();
+        Password { algorithm: "SHA-512".into(), hash: crate::api::value::base64(&hash), salt: crate::api::value::base64(&salt), spin }
+    }
+
+    /// `password` is this one. An algorithm this doesn't compute never matches.
+    pub fn matches(&self, password: &str) -> bool {
+        let Some(salt) = crate::api::value::from_base64(&self.salt) else { return false };
+        // shortcut: the spin count is capped, so a document can't make a check take minutes; Word writes 100 000.
+        let spin = self.spin.min(10_000_000);
+        hash(&self.algorithm, &salt, password, spin).is_some_and(|h| crate::api::value::base64(&h) == self.hash)
+    }
+}
+
+/// H(salt + password as UTF-16LE), then `spin` rounds of H(previous + round number as 32-bit little endian).
+fn hash(algorithm: &str, salt: &[u8], password: &str, spin: u32) -> Option<Vec<u8>> {
+    use sha2::Digest;
+    fn run<D: Digest>(salt: &[u8], pw: &[u8], spin: u32) -> Vec<u8> {
+        let mut h = D::new().chain_update(salt).chain_update(pw).finalize().to_vec();
+        for i in 0..spin {
+            h = D::new().chain_update(&h).chain_update(i.to_le_bytes()).finalize().to_vec();
+        }
+        h
+    }
+    let pw: Vec<u8> = password.encode_utf16().flat_map(u16::to_le_bytes).collect();
+    Some(match algorithm.to_ascii_uppercase().as_str() {
+        "SHA-512" | "14" => run::<sha2::Sha512>(salt, &pw, spin),
+        "SHA-384" | "13" => run::<sha2::Sha384>(salt, &pw, spin),
+        "SHA-256" | "12" => run::<sha2::Sha256>(salt, &pw, spin),
+        _ => return None,
+    })
+}
+
 impl Protection {
+    /// The `w:documentProtection` element (`w`: the prefix with its colon).
+    pub fn xml(&self, w: &str) -> String {
+        let edit = match self.edit {
+            ProtectionKind::None => "none",
+            ProtectionKind::ReadOnly => "readOnly",
+            ProtectionKind::Comments => "comments",
+            ProtectionKind::TrackedChanges => "trackedChanges",
+            ProtectionKind::Forms => "forms",
+        };
+        let flag = |b: bool| if b { "1" } else { "0" };
+        let pw = self.password.as_ref().map_or(String::new(), |p| {
+            format!(" {w}algorithmName=\"{}\" {w}hashValue=\"{}\" {w}saltValue=\"{}\" {w}spinCount=\"{}\"", p.algorithm, p.hash, p.salt, p.spin)
+        });
+        let formatting = if self.formatting { format!(" {w}formatting=\"1\"") } else { String::new() };
+        format!("<{w}documentProtection {w}edit=\"{edit}\"{formatting} {w}enforcement=\"{}\"{pw}/>", flag(self.enforced))
+    }
+
+    /// The same settings, the element as read aside.
+    pub fn same(&self, o: &Protection) -> bool {
+        (self.edit, self.enforced, self.formatting, &self.password) == (o.edit, o.enforced, o.formatting, &o.password)
+    }
+
     /// Formatting is limited to the unlocked styles, and direct formatting is refused.
     pub fn limits_formatting(&self) -> bool {
         self.enforced && self.formatting

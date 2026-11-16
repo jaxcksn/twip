@@ -349,6 +349,13 @@ commands! {
     InsertBookmark(#[serde(with = "value")] String),
     /// Deletes bookmark `value` (compared without case), keeping its text. Undo: one step.
     DeleteBookmark(#[serde(with = "value")] String),
+    /// Restrict Editing: what the document allows, and starting or stopping its enforcement. Stopping a password-protected
+    /// document needs the password. Undo: one step.
+    SetDocumentProtection(DocumentProtection),
+    /// Makes the selection a range everyone (or `editor`) may edit while the document is protected. Undo: one step.
+    AddEditableRange(EditableRange),
+    /// Removes the editable ranges at the selection. Undo: one step.
+    RemoveEditableRanges,
     /// A legacy form field (FORMTEXT, FORMCHECKBOX, FORMDROPDOWN) at the selection; result `{ id }`. Undo: one step.
     InsertFormField(#[serde(with = "value")] FormFieldType),
     /// Sets a legacy form field's options (Form Field Options); default: the one at the selection. Undo: one step.
@@ -2061,6 +2068,50 @@ pub struct Picture {
     /// The alternative text.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub alt_text: Option<String>,
+}
+
+/// What a protected document allows.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ProtectionKind {
+    /// Any change.
+    #[default]
+    None,
+    /// No changes, but in editable ranges.
+    ReadOnly,
+    /// Comments, and changes in editable ranges.
+    Comments,
+    /// Changes, tracked.
+    TrackedChanges,
+    /// Filling in forms (form fields and content controls) in the protected sections.
+    Forms,
+}
+
+/// `setDocumentProtection`'s options; what isn't given is kept.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DocumentProtection {
+    /// What the document allows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<ProtectionKind>,
+    /// Formatting is limited to the styles that aren't locked.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub formatting: Option<bool>,
+    /// Starts (`true`) or stops enforcing it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enforce: Option<bool>,
+    /// Starting: the password stopping will need (none when absent or empty). Stopping: the password.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub password: Option<String>,
+}
+
+/// `addEditableRange`'s options.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct EditableRange {
+    /// Who may edit it (an author's name or email, `w:ed`). Default: everyone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub editor: Option<String>,
 }
 
 /// A legacy form field's kind.

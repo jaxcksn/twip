@@ -505,4 +505,10 @@ public enum CommandId
     FillFormField,
     /// <summary>Shades legacy form fields, or not.</summary>
     SetFormFieldShading,
+    /// <summary>Restrict Editing: sets, starts or stops the document's protection.</summary>
+    SetDocumentProtection,
+    /// <summary>Makes the selection an editable range.</summary>
+    AddEditableRange,
+    /// <summary>Removes the editable ranges at the selection.</summary>
+    RemoveEditableRanges,
 }

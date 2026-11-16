@@ -630,6 +630,19 @@
     "value": "Summary"
   },
   {
+    "enforce": true,
+    "formatting": false,
+    "kind": "readOnly",
+    "password": "secret",
+    "type": "setDocumentProtection"
+  },
+  {
+    "type": "addEditableRange"
+  },
+  {
+    "type": "removeEditableRanges"
+  },
+  {
     "type": "insertFormField",
     "value": "checkBox"
   },

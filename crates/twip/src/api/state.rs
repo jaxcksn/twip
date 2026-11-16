@@ -1020,6 +1020,9 @@ pub struct ReviewState {
     pub tracking: bool,
     /// Document protection keeps tracking on.
     pub tracking_locked: bool,
+    /// What the document's protection allows, when it has one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub protection: Option<ProtectionState>,
     /// How revisions and comments show.
     pub markup_view: MarkupView,
     /// The number of revisions.
@@ -1028,6 +1031,22 @@ pub struct ReviewState {
     pub comments: u32,
     /// The active comment thread, or `None`.
     pub active_comment: Option<CommentId>,
+}
+
+/// A document's protection (Restrict Editing).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProtectionState {
+    /// What it allows.
+    pub kind: super::command::ProtectionKind,
+    /// It is enforced.
+    pub enforced: bool,
+    /// Formatting is limited to the styles that aren't locked.
+    pub formatting: bool,
+    /// Stopping it needs a password.
+    pub password: bool,
+    /// The selection is in a range the author may edit.
+    pub in_editable_range: bool,
 }
 
 /// Spell checking.
@@ -1190,6 +1209,7 @@ pub(crate) fn build(editor: &mut crate::editing::Editor, flags: Flags<'_>) -> St
     let review = ReviewState {
         tracking: editor.tracking(),
         tracking_locked: doc.settings.protection.as_ref().is_some_and(|p| p.forces_tracking()),
+        protection: None,
         markup_view: doc.review.view,
         revisions: 0,
         comments: doc.comments.by_id.len() as u32,

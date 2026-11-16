@@ -78,6 +78,19 @@ impl Session {
                 _ => {}
             }
         }
+        // Restrict Editing: what the protection allows, and any change in a range the author may edit.
+        if let Some(p) = doc.settings.protection.as_ref()
+            && info(id).is_some_and(|i| i.mutates)
+            && !crate::editing::protection::allows(p, id)
+        {
+            let ranges = matches!(p.edit, crate::docx::review::ProtectionKind::ReadOnly | crate::docx::review::ProtectionKind::Comments);
+            let in_form = p.edit == crate::docx::review::ProtectionKind::Forms
+                && matches!(command, Command::InsertText(_) | Command::Delete(_) | Command::PasteText(_))
+                && self.state.selection.context.iter().any(|c| c.form.is_some() || c.control.is_some());
+            if !(ranges && self.editor.in_editable_range(&self.author.name)) && !in_form {
+                return Err(Error::new(ErrorCode::NotAllowed, "the document is protected"));
+            }
+        }
         if self.state.commands.get(&id).is_some_and(|s| !s.enabled) {
             return Err(Error::unavailable(format!("{} isn't available here", id_name(id))));
         }

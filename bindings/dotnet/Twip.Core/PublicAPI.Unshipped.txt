@@ -7553,3 +7553,58 @@ static Twip.CheckboxSymbol.operator !=(Twip.CheckboxSymbol? left, Twip.CheckboxS
 static Twip.CheckboxSymbol.operator ==(Twip.CheckboxSymbol? left, Twip.CheckboxSymbol? right) -> bool
 static Twip.ControlInfo.operator !=(Twip.ControlInfo? left, Twip.ControlInfo? right) -> bool
 static Twip.ControlInfo.operator ==(Twip.ControlInfo? left, Twip.ControlInfo? right) -> bool
+Twip.CommandId.AddEditableRange = 252 -> Twip.CommandId
+Twip.CommandId.RemoveEditableRanges = 253 -> Twip.CommandId
+Twip.CommandId.SetDocumentProtection = 251 -> Twip.CommandId
+Twip.DocumentProtection
+Twip.DocumentProtection.<Clone>$() -> Twip.DocumentProtection!
+Twip.DocumentProtection.Deconstruct(out Twip.ProtectionKind? Kind, out bool? Formatting, out bool? Enforce, out string? Password) -> void
+Twip.DocumentProtection.DocumentProtection(Twip.ProtectionKind? Kind = null, bool? Formatting = null, bool? Enforce = null, string? Password = null) -> void
+Twip.DocumentProtection.Enforce.get -> bool?
+Twip.DocumentProtection.Enforce.init -> void
+Twip.DocumentProtection.Equals(Twip.DocumentProtection? other) -> bool
+Twip.DocumentProtection.Formatting.get -> bool?
+Twip.DocumentProtection.Formatting.init -> void
+Twip.DocumentProtection.Kind.get -> Twip.ProtectionKind?
+Twip.DocumentProtection.Kind.init -> void
+Twip.DocumentProtection.Password.get -> string?
+Twip.DocumentProtection.Password.init -> void
+Twip.EditorCommands.AddEditableRangeAsync(string? editor = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.RemoveEditableRangesAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetDocumentProtectionAsync(Twip.DocumentProtection! protection, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.ProtectionKind
+Twip.ProtectionKind.Comments = 2 -> Twip.ProtectionKind
+Twip.ProtectionKind.Forms = 4 -> Twip.ProtectionKind
+Twip.ProtectionKind.None = 0 -> Twip.ProtectionKind
+Twip.ProtectionKind.ReadOnly = 1 -> Twip.ProtectionKind
+Twip.ProtectionKind.TrackedChanges = 3 -> Twip.ProtectionKind
+Twip.ProtectionState
+Twip.ProtectionState.<Clone>$() -> Twip.ProtectionState!
+Twip.ProtectionState.Deconstruct(out Twip.ProtectionKind Kind, out bool Enforced, out bool Formatting, out bool Password, out bool InEditableRange) -> void
+Twip.ProtectionState.Enforced.get -> bool
+Twip.ProtectionState.Enforced.init -> void
+Twip.ProtectionState.Equals(Twip.ProtectionState? other) -> bool
+Twip.ProtectionState.Formatting.get -> bool
+Twip.ProtectionState.Formatting.init -> void
+Twip.ProtectionState.InEditableRange.get -> bool
+Twip.ProtectionState.InEditableRange.init -> void
+Twip.ProtectionState.Kind.get -> Twip.ProtectionKind
+Twip.ProtectionState.Kind.init -> void
+Twip.ProtectionState.Password.get -> bool
+Twip.ProtectionState.Password.init -> void
+Twip.ProtectionState.ProtectionState(Twip.ProtectionKind Kind, bool Enforced, bool Formatting, bool Password, bool InEditableRange) -> void
+Twip.ReviewState.Protection.get -> Twip.ProtectionState?
+Twip.ReviewState.Protection.init -> void
+override Twip.DocumentProtection.Equals(object? obj) -> bool
+override Twip.DocumentProtection.GetHashCode() -> int
+override Twip.DocumentProtection.ToString() -> string!
+override Twip.ProtectionState.Equals(object? obj) -> bool
+override Twip.ProtectionState.GetHashCode() -> int
+override Twip.ProtectionState.ToString() -> string!
+static Twip.DocumentProtection.operator !=(Twip.DocumentProtection? left, Twip.DocumentProtection? right) -> bool
+static Twip.DocumentProtection.operator ==(Twip.DocumentProtection? left, Twip.DocumentProtection? right) -> bool
+static Twip.EditorOperation.AddEditableRange(string? editor = null) -> Twip.EditorOperation!
+static Twip.EditorOperation.RemoveEditableRanges() -> Twip.EditorOperation!
+static Twip.EditorOperation.SetDocumentProtection(Twip.DocumentProtection! protection) -> Twip.EditorOperation!
+static Twip.ProtectionState.operator !=(Twip.ProtectionState? left, Twip.ProtectionState? right) -> bool
+static Twip.ProtectionState.operator ==(Twip.ProtectionState? left, Twip.ProtectionState? right) -> bool

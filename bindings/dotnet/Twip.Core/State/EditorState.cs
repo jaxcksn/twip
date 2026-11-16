@@ -1139,6 +1139,10 @@ public sealed record ReviewState
     /// <summary>Whether document protection keeps tracking on.</summary>
     public bool TrackingLocked { get; init; }
 
+    /// <summary>What the document's protection allows; null when it has none.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ProtectionState? Protection { get; init; }
+
     /// <summary>How markup shows.</summary>
     public MarkupView MarkupView { get; init; }
 
@@ -1252,3 +1256,11 @@ public sealed record VerticalRulerModel
     /// <summary>The row boundaries of the caret's table on this page.</summary>
     public IReadOnlyList<Length> TableRows { get; init; } = [];
 }
+
+/// <summary>A document's protection (Restrict Editing).</summary>
+/// <param name="Kind">What it allows.</param>
+/// <param name="Enforced">It is enforced.</param>
+/// <param name="Formatting">Formatting is limited to the styles that aren't locked.</param>
+/// <param name="Password">Stopping it needs a password.</param>
+/// <param name="InEditableRange">The selection is in a range the author may edit.</param>
+public sealed record ProtectionState(ProtectionKind Kind, bool Enforced, bool Formatting, bool Password, bool InEditableRange);

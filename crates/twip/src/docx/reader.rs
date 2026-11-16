@@ -841,6 +841,17 @@ pub(crate) fn read_settings(xml: Option<&str>) -> Settings {
         },
         enforced: matches!(attr(n, "enforcement"), Some("1" | "true" | "on")),
         formatting: matches!(attr(n, "formatting"), Some("1" | "true" | "on")),
+        password: {
+            let a = |k: &str| attr(n, k).map(str::to_string);
+            let algorithm = a("algorithmName").or_else(|| a("cryptAlgorithmSid"));
+            let hash = a("hashValue").or_else(|| a("hash"));
+            let salt = a("saltValue").or_else(|| a("salt"));
+            let spin = a("spinCount").or_else(|| a("cryptSpinCount")).and_then(|s| s.parse().ok()).unwrap_or(0);
+            match (algorithm, hash, salt) {
+                (Some(algorithm), Some(hash), Some(salt)) => Some(super::review::Password { algorithm, hash, salt, spin }),
+                _ => None,
+            }
+        },
         raw: Raw(Some(raw(n))),
     });
     s.revision_view_raw = Raw(child(root, "revisionView").map(raw));

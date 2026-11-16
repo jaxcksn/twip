@@ -191,6 +191,7 @@ namespace Twip.Wire;
         typeof(CamelEnum<AlignReference>),
         typeof(CamelEnum<CustomPropertyKind>),
         typeof(CamelEnum<FormFieldType>),
+        typeof(CamelEnum<ProtectionKind>),
         typeof(CamelEnum<ControlAppearance>),
         typeof(CamelEnum<TextInputType>),
         typeof(FormatValueConverter<FontStyleChoice>),
@@ -636,6 +637,9 @@ namespace Twip.Wire;
 [JsonSerializable(typeof(DropDownFormOptions))]
 [JsonSerializable(typeof(FormFieldFill))]
 [JsonSerializable(typeof(FormFieldInfo))]
+[JsonSerializable(typeof(ProtectionKind))]
+[JsonSerializable(typeof(DocumentProtection))]
+[JsonSerializable(typeof(ProtectionState))]
 [JsonSerializable(typeof(ControlInfo))]
 [JsonSerializable(typeof(ControlAppearance))]
 [JsonSerializable(typeof(CheckboxSymbol))]

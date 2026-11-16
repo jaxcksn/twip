@@ -1260,6 +1260,32 @@ public enum AlignReference
     SelectedObjects,
 }
 
+/// <summary>What a protected document allows.</summary>
+public enum ProtectionKind
+{
+    /// <summary>Any change.</summary>
+    None,
+    /// <summary>No changes, but in editable ranges.</summary>
+    ReadOnly,
+    /// <summary>Comments, and changes in editable ranges.</summary>
+    Comments,
+    /// <summary>Changes, tracked.</summary>
+    TrackedChanges,
+    /// <summary>Filling in forms.</summary>
+    Forms,
+}
+
+/// <summary>Restrict Editing settings to change; unset values are kept.</summary>
+/// <param name="Kind">What the document allows.</param>
+/// <param name="Formatting">Formatting is limited to the styles that aren't locked.</param>
+/// <param name="Enforce">Starts (true) or stops enforcing it.</param>
+/// <param name="Password">Starting: the password stopping will need (none when null or empty). Stopping: the password.</param>
+public sealed record DocumentProtection(
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ProtectionKind? Kind = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Formatting = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Enforce = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Password = null);
+
 /// <summary>A legacy form field's kind.</summary>
 public enum FormFieldType
 {

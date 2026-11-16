@@ -315,6 +315,9 @@ export interface Commands {
     addComment(body: string | RichText): Promise<{
         id: CommentId;
     }>;
+    addEditableRange(options?: {
+        editor?: string;
+    }): Promise<void>;
     addTabStop(options: {
         position: Points;
         alignment?: TabAlignment;
@@ -534,6 +537,7 @@ export interface Commands {
         namespace: string;
         itemId?: string;
     }): Promise<void>;
+    removeEditableRanges(): Promise<void>;
     removeElement(id: ElementId): Promise<void>;
     removeFrame(): Promise<void>;
     removeHeaderFooter(options: {
@@ -677,6 +681,12 @@ export interface Commands {
         manager?: string;
         hyperlinkBase?: string;
         custom?: CustomProperty[];
+    }): Promise<void>;
+    setDocumentProtection(options: {
+        kind?: 'none' | 'readOnly' | 'comments' | 'trackedChanges' | 'forms';
+        formatting?: boolean;
+        enforce?: boolean;
+        password?: string;
     }): Promise<void>;
     setDocumentVariable(options: {
         name: string;
@@ -2600,6 +2610,13 @@ export interface ReviewState {
     activeComment: CommentId | null;
     comments: number;
     markupView: MarkupView;
+    protection?: {
+        kind: 'none' | 'readOnly' | 'comments' | 'trackedChanges' | 'forms';
+        enforced: boolean;
+        formatting: boolean;
+        password: boolean;
+        inEditableRange: boolean;
+    };
     revisions: number;
     tracking: boolean;
     trackingLocked: boolean;
