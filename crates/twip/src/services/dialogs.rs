@@ -183,6 +183,7 @@ pub fn values(kind: DialogKind, state: &State, cx: &Context) -> Result<DialogVal
                 row_can_break: t.row_can_break,
                 header_row: t.header_row,
                 column_width: t.column_width,
+                cell_width: t.cell_width,
                 cell_alignment: t.cell_alignment,
                 // shortcut: the state has no cell margins; the dialog starts from the default (5.4 pt left and right),
                 // and sets them only when changed.
@@ -205,6 +206,8 @@ pub fn values(kind: DialogKind, state: &State, cx: &Context) -> Result<DialogVal
                 scale_height: 100.0,
                 lock_aspect: true,
                 reset: false,
+                relative_width: o.relative_width,
+                relative_height: o.relative_height,
             })
         }
         DialogKind::AltText => {
@@ -470,6 +473,7 @@ fn fields(values: &DialogValues, cx: &Context) -> BTreeMap<String, FieldInfo> {
                 ("rowCanBreak", field("Allow row to break across pages", FieldKind::Toggle)),
                 ("headerRow", field("Repeat as header row at the top of each page", FieldKind::Toggle)),
                 ("columnWidth", number("Column width", FieldKind::Length, 0.0, 1584.0, 1.0)),
+                ("cellWidth", field("Cell preferred width", FieldKind::Length)),
                 ("cellAlignment", choice("Vertical alignment", &[("top", "Top"), ("center", "Center"), ("bottom", "Bottom")])),
                 ("cellMargins", field("Cell margins", FieldKind::Length)),
                 ("allowSpacing", field("Allow spacing between cells", FieldKind::Toggle)),
@@ -487,6 +491,8 @@ fn fields(values: &DialogValues, cx: &Context) -> BTreeMap<String, FieldInfo> {
             ("scaleHeight", number("Scale height (%)", FieldKind::Number, 1.0, 1000.0, 1.0)),
             ("lockAspect", field("Lock aspect ratio", FieldKind::Toggle)),
             ("reset", field("Reset", FieldKind::Toggle)),
+            ("relativeWidth", field("Relative width", FieldKind::Number)),
+            ("relativeHeight", field("Relative height", FieldKind::Number)),
         ],
         DialogValues::AltText(v) => {
             let mut text = field("Description", FieldKind::Text);
@@ -1299,6 +1305,9 @@ pub fn commands(values: &DialogValues, state: &State, cx: &Context) -> Result<Ve
             out.extend(set(&v.row_can_break, &n.row_can_break).map(Command::SetRowCanBreak));
             out.extend(set(&v.header_row, &n.header_row).map(Command::SetHeaderRow));
             out.extend(set(&v.column_width, &n.column_width).map(Command::SetColumnWidth));
+            if let Some(width) = set(&v.cell_width, &n.cell_width) {
+                out.push(Command::SetCellProperties(crate::api::command::CellProperties { width: Some(width), ..Default::default() }));
+            }
             out.extend(set(&v.cell_alignment, &n.cell_alignment).map(Command::SetCellAlignment));
             let (m, was) = (v.cell_margins, n.cell_margins);
             if m != was {
@@ -1328,9 +1337,24 @@ pub fn commands(values: &DialogValues, state: &State, cx: &Context) -> Result<Ve
         (DialogValues::PictureSize(v), DialogValues::PictureSize(n)) => {
             if v.reset {
                 out.push(Command::ResetObjectSize);
-            } else if (v.width, v.height) != (n.width, n.height) {
-                check(v.width.0 >= 1.0 && v.height.0 >= 1.0, "the size is at least 1 point each way")?;
-                out.push(Command::SetObjectSize(ObjectSize { width: Some(v.width), height: Some(v.height), ..Default::default() }));
+            } else {
+                let relative = |a: Option<crate::api::command::RelativeSize>, b: Option<crate::api::command::RelativeSize>| {
+                    (a != b).then(|| a.map_or(crate::api::value::NoneOr::None, crate::api::value::NoneOr::Value))
+                };
+                let (rw, rh) = (relative(v.relative_width, n.relative_width), relative(v.relative_height, n.relative_height));
+                let sized = (v.width, v.height) != (n.width, n.height);
+                if sized {
+                    check(v.width.0 >= 1.0 && v.height.0 >= 1.0, "the size is at least 1 point each way")?;
+                }
+                if sized || rw.is_some() || rh.is_some() {
+                    out.push(Command::SetObjectSize(ObjectSize {
+                        width: Some(v.width),
+                        height: Some(v.height),
+                        lock_aspect: None,
+                        relative_width: rw,
+                        relative_height: rh,
+                    }));
+                }
             }
         }
         (DialogValues::AltText(v), DialogValues::AltText(n)) => {

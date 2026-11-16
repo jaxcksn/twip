@@ -302,6 +302,10 @@
       "top": 0.5
     },
     "cellSpacing": 1.5,
+    "cellWidth": {
+      "kind": "percent",
+      "value": 25.0
+    },
     "columnWidth": 120.5,
     "description": "Yearly totals by region",
     "fitText": false,
@@ -320,6 +324,11 @@
     "height": 72.5,
     "kind": "pictureSize",
     "lockAspect": true,
+    "relativeHeight": null,
+    "relativeWidth": {
+      "percent": 50.0,
+      "relativeTo": "margin"
+    },
     "reset": false,
     "scaleHeight": 50.5,
     "scaleWidth": 50.5,

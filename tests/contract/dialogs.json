@@ -56,10 +56,10 @@
     { "op": "call", "method": "find.next", "args": [{ "text": "Cell one" }], "result": { "found": true } },
     { "op": "expectState", "match": { "dialogs": { "tableProperties": true, "pictureSize": false } } },
     { "op": "call", "method": "dialogs.open", "args": ["tableProperties"], "save": "table", "result": { "values": { "alignment": "left" } } },
-    { "op": "call", "method": "@table.update", "args": [{ "alignment": "center" }], "save": "table", "result": { "values": { "alignment": "center" } } },
+    { "op": "call", "method": "@table.update", "args": [{ "alignment": "center", "cellWidth": { "kind": "percent", "value": 40 } }], "save": "table", "result": { "values": { "alignment": "center" } } },
     { "op": "call", "method": "@table.apply" },
     { "op": "expectEvents", "match": [{ "type": "documentChanged", "revision": 7 }] },
-    { "op": "expectState", "match": { "revision": 7, "selection": { "table": { "alignment": "center", "rows": 2 } } } },
+    { "op": "expectState", "match": { "revision": 7, "selection": { "table": { "alignment": "center", "rows": 2, "cellWidth": { "kind": "percent", "value": 40 } } } } },
 
     { "op": "call", "method": "dialogs.open", "args": ["accessibility"], "save": "check", "result": {
       "kind": "accessibility", "values": { "issues": [{ "id": { "$type": "string" }, "text": { "$type": "string" } }] }

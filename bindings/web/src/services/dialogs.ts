@@ -16,7 +16,7 @@ import type {
   ShadingPattern,
 } from '../commands.js';
 import type { Session } from '../editor.js';
-import type { LineSpacing, Mixed, RowHeight, TableWidth, Tri, UnderlineStyle } from '../state.js';
+import type { LineSpacing, Mixed, RelativeSize, RowHeight, TableWidth, Tri, UnderlineStyle } from '../state.js';
 import { Method } from '../transport/protocol.js';
 import { type PreviewPicture, type PreviewSize, toPicture } from './navigation.js';
 import type { Color, Points, StyleId } from '../types.js';
@@ -219,6 +219,8 @@ export interface DialogValues {
     rowCanBreak: Tri;
     headerRow: Tri;
     columnWidth: Mixed<Points>;
+    /** The selected cells' preferred width. */
+    cellWidth: Mixed<TableWidth>;
     cellAlignment: Mixed<'top' | 'center' | 'bottom'>;
     cellMargins: { top: Points; bottom: Points; left: Points; right: Points };
     allowSpacing: boolean;
@@ -229,7 +231,18 @@ export interface DialogValues {
     description: string;
   };
   /** The Picture size dialog. */
-  pictureSize: { width: Points; height: Points; scaleWidth: number; scaleHeight: number; lockAspect: boolean; reset: boolean };
+  pictureSize: {
+    width: Points;
+    height: Points;
+    scaleWidth: number;
+    scaleHeight: number;
+    lockAspect: boolean;
+    reset: boolean;
+    /** A floating object's width as a share of a box on the page; null for an absolute width. */
+    relativeWidth: RelativeSize | null;
+    /** Its height as a share of a box on the page; null for an absolute height. */
+    relativeHeight: RelativeSize | null;
+  };
   /** The Alt text dialog. */
   altText: { text: string; decorative: boolean };
   /** The Hyperlink dialog. */

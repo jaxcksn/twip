@@ -2178,13 +2178,11 @@ Twip.Person.Name.init -> void
 Twip.Person.Person(string! Name, string? Initials, Twip.Identity? Identity, Twip.ColorValue Color) -> void
 Twip.PictureSizeDialogValues
 Twip.PictureSizeDialogValues.<Clone>$() -> Twip.PictureSizeDialogValues!
-Twip.PictureSizeDialogValues.Deconstruct(out Twip.Length Width, out Twip.Length Height, out double ScaleWidth, out double ScaleHeight, out bool LockAspect, out bool Reset) -> void
 Twip.PictureSizeDialogValues.Equals(Twip.PictureSizeDialogValues? other) -> bool
 Twip.PictureSizeDialogValues.Height.get -> Twip.Length
 Twip.PictureSizeDialogValues.Height.init -> void
 Twip.PictureSizeDialogValues.LockAspect.get -> bool
 Twip.PictureSizeDialogValues.LockAspect.init -> void
-Twip.PictureSizeDialogValues.PictureSizeDialogValues(Twip.Length Width, Twip.Length Height, double ScaleWidth, double ScaleHeight, bool LockAspect, bool Reset) -> void
 Twip.PictureSizeDialogValues.Reset.get -> bool
 Twip.PictureSizeDialogValues.Reset.init -> void
 Twip.PictureSizeDialogValues.ScaleHeight.get -> double
@@ -7042,12 +7040,10 @@ Twip.TablePropertiesDialogValues.AllowSpacing.get -> bool
 Twip.TablePropertiesDialogValues.AllowSpacing.init -> void
 Twip.TablePropertiesDialogValues.CellSpacing.get -> Twip.Length
 Twip.TablePropertiesDialogValues.CellSpacing.init -> void
-Twip.TablePropertiesDialogValues.Deconstruct(out Twip.TableWidth! Width, out Twip.TableAlignment Alignment, out Twip.Length Indent, out Twip.FormatValue<Twip.RowHeight!> RowHeight, out Twip.FormatValue<bool> RowCanBreak, out Twip.FormatValue<bool> HeaderRow, out Twip.FormatValue<Twip.Length> ColumnWidth, out Twip.FormatValue<Twip.CellAlignment> CellAlignment, out Twip.CellMargins! CellMargins, out bool AllowSpacing, out Twip.Length CellSpacing, out Twip.FormatValue<bool> WrapText, out Twip.FormatValue<bool> FitText, out string! Title, out string! Description) -> void
 Twip.TablePropertiesDialogValues.Description.get -> string!
 Twip.TablePropertiesDialogValues.Description.init -> void
 Twip.TablePropertiesDialogValues.FitText.get -> Twip.FormatValue<bool>
 Twip.TablePropertiesDialogValues.FitText.init -> void
-Twip.TablePropertiesDialogValues.TablePropertiesDialogValues(Twip.TableWidth! Width, Twip.TableAlignment Alignment, Twip.Length Indent, Twip.FormatValue<Twip.RowHeight!> RowHeight, Twip.FormatValue<bool> RowCanBreak, Twip.FormatValue<bool> HeaderRow, Twip.FormatValue<Twip.Length> ColumnWidth, Twip.FormatValue<Twip.CellAlignment> CellAlignment, Twip.CellMargins! CellMargins, bool AllowSpacing, Twip.Length CellSpacing, Twip.FormatValue<bool> WrapText, Twip.FormatValue<bool> FitText, string! Title, string! Description) -> void
 Twip.TablePropertiesDialogValues.Title.get -> string!
 Twip.TablePropertiesDialogValues.Title.init -> void
 Twip.TablePropertiesDialogValues.WrapText.get -> Twip.FormatValue<bool>
@@ -7654,3 +7650,13 @@ Twip.ParagraphDialogValues.MirrorIndents.init -> void
 Twip.ParagraphDialogValues.ParagraphDialogValues(Twip.FormatValue<Twip.ParagraphAlignment> Alignment, Twip.FormatValue<Twip.OutlineLevel> OutlineLevel, Twip.FormatValue<Twip.Length> Left, Twip.FormatValue<Twip.Length> Right, Twip.FormatValue<Twip.SpecialIndent> Special, Twip.FormatValue<Twip.Length> By, Twip.FormatValue<Twip.SpacingValue> Before, Twip.FormatValue<Twip.SpacingValue> After, Twip.FormatValue<Twip.LineSpacing!> LineSpacing, Twip.FormatValue<bool> KeepWithNext, Twip.FormatValue<bool> KeepLinesTogether, Twip.FormatValue<bool> PageBreakBefore, Twip.FormatValue<bool> WidowControl, Twip.FormatValue<bool> Collapsed, Twip.FormatValue<bool> MirrorIndents, Twip.FormatValue<bool> ContextualSpacing, Twip.FormatValue<bool> SuppressLineNumbers, Twip.FormatValue<bool> DontHyphenate) -> void
 Twip.ParagraphDialogValues.SuppressLineNumbers.get -> Twip.FormatValue<bool>
 Twip.ParagraphDialogValues.SuppressLineNumbers.init -> void
+Twip.PictureSizeDialogValues.Deconstruct(out Twip.Length Width, out Twip.Length Height, out double ScaleWidth, out double ScaleHeight, out bool LockAspect, out bool Reset, out Twip.RelativeSize? RelativeWidth, out Twip.RelativeSize? RelativeHeight) -> void
+Twip.PictureSizeDialogValues.PictureSizeDialogValues(Twip.Length Width, Twip.Length Height, double ScaleWidth, double ScaleHeight, bool LockAspect, bool Reset, Twip.RelativeSize? RelativeWidth, Twip.RelativeSize? RelativeHeight) -> void
+Twip.PictureSizeDialogValues.RelativeHeight.get -> Twip.RelativeSize?
+Twip.PictureSizeDialogValues.RelativeHeight.init -> void
+Twip.PictureSizeDialogValues.RelativeWidth.get -> Twip.RelativeSize?
+Twip.PictureSizeDialogValues.RelativeWidth.init -> void
+Twip.TablePropertiesDialogValues.CellWidth.get -> Twip.FormatValue<Twip.TableWidth!>
+Twip.TablePropertiesDialogValues.CellWidth.init -> void
+Twip.TablePropertiesDialogValues.Deconstruct(out Twip.TableWidth! Width, out Twip.TableAlignment Alignment, out Twip.Length Indent, out Twip.FormatValue<Twip.RowHeight!> RowHeight, out Twip.FormatValue<bool> RowCanBreak, out Twip.FormatValue<bool> HeaderRow, out Twip.FormatValue<Twip.Length> ColumnWidth, out Twip.FormatValue<Twip.CellAlignment> CellAlignment, out Twip.CellMargins! CellMargins, out bool AllowSpacing, out Twip.Length CellSpacing, out Twip.FormatValue<bool> WrapText, out Twip.FormatValue<bool> FitText, out string! Title, out string! Description, out Twip.FormatValue<Twip.TableWidth!> CellWidth) -> void
+Twip.TablePropertiesDialogValues.TablePropertiesDialogValues(Twip.TableWidth! Width, Twip.TableAlignment Alignment, Twip.Length Indent, Twip.FormatValue<Twip.RowHeight!> RowHeight, Twip.FormatValue<bool> RowCanBreak, Twip.FormatValue<bool> HeaderRow, Twip.FormatValue<Twip.Length> ColumnWidth, Twip.FormatValue<Twip.CellAlignment> CellAlignment, Twip.CellMargins! CellMargins, bool AllowSpacing, Twip.Length CellSpacing, Twip.FormatValue<bool> WrapText, Twip.FormatValue<bool> FitText, string! Title, string! Description, Twip.FormatValue<Twip.TableWidth!> CellWidth) -> void

@@ -1417,6 +1417,8 @@ export interface DialogValues {
         scaleHeight: number;
         lockAspect: boolean;
         reset: boolean;
+        relativeWidth: RelativeSize | null;
+        relativeHeight: RelativeSize | null;
     };
     setNumberingValue: {
         mode: 'startNew' | 'continue';
@@ -1432,6 +1434,7 @@ export interface DialogValues {
         rowCanBreak: Tri;
         headerRow: Tri;
         columnWidth: Mixed<Points>;
+        cellWidth: Mixed<TableWidth>;
         cellAlignment: Mixed<'top' | 'center' | 'bottom'>;
         cellMargins: {
             top: Points;

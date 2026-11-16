@@ -1319,6 +1319,8 @@ dialog! {
         pub header_row: Tri<bool>,
         /// The selected columns' width.
         pub column_width: Tri<Points>,
+        /// The selected cells' preferred width.
+        pub cell_width: Tri<TableWidth>,
         /// The selected cells' vertical alignment.
         pub cell_alignment: Tri<CellAlignment>,
         /// The table's default cell margins.
@@ -1355,6 +1357,10 @@ dialog! {
         pub lock_aspect: bool,
         /// Back to the original size on apply.
         pub reset: bool,
+        /// A floating object's width as a share of a box on the page; none for an absolute width.
+        pub relative_width: Option<crate::api::command::RelativeSize>,
+        /// Its height as a share of a box on the page; none for an absolute height.
+        pub relative_height: Option<crate::api::command::RelativeSize>,
     }
 }
 

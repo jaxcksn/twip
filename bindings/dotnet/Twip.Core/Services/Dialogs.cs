@@ -758,10 +758,12 @@ public sealed record CellMargins(Length Top, Length Bottom, Length Left, Length 
 /// <param name="FitText">The selected cells' text is squeezed to fit.</param>
 /// <param name="Title">The alternative text's title.</param>
 /// <param name="Description">The alternative text's description.</param>
+/// <param name="CellWidth">The selected cells' preferred width.</param>
 public sealed record TablePropertiesDialogValues(
     TableWidth Width, TableAlignment Alignment, Length Indent, FormatValue<RowHeight> RowHeight, FormatValue<bool> RowCanBreak,
     FormatValue<bool> HeaderRow, FormatValue<Length> ColumnWidth, FormatValue<CellAlignment> CellAlignment, CellMargins CellMargins,
-    bool AllowSpacing, Length CellSpacing, FormatValue<bool> WrapText, FormatValue<bool> FitText, string Title, string Description);
+    bool AllowSpacing, Length CellSpacing, FormatValue<bool> WrapText, FormatValue<bool> FitText, string Title, string Description,
+    FormatValue<TableWidth> CellWidth);
 
 /// <summary>The picture Size dialog's values.</summary>
 /// <param name="Width">The width.</param>
@@ -770,7 +772,10 @@ public sealed record TablePropertiesDialogValues(
 /// <param name="ScaleHeight">The height scale, in percent.</param>
 /// <param name="LockAspect">Lock the aspect ratio.</param>
 /// <param name="Reset">Reset to the original size.</param>
-public sealed record PictureSizeDialogValues(Length Width, Length Height, double ScaleWidth, double ScaleHeight, bool LockAspect, bool Reset);
+/// <param name="RelativeWidth">A floating object's width as a share of a box on the page; null for an absolute width.</param>
+/// <param name="RelativeHeight">Its height as a share of a box on the page; null for an absolute height.</param>
+public sealed record PictureSizeDialogValues(
+    Length Width, Length Height, double ScaleWidth, double ScaleHeight, bool LockAspect, bool Reset, RelativeSize? RelativeWidth, RelativeSize? RelativeHeight);
 
 /// <summary>The Alt Text dialog's values.</summary>
 /// <param name="Text">The alternative text.</param>
