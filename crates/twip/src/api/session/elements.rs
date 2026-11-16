@@ -88,7 +88,9 @@ fn attribute(xml: &str, name: &str) -> Option<String> {
 fn options(s: &Session, e: &Element) -> Option<ControlOptions> {
     let p = e.props.as_ref()?;
     Some(match &p.kind {
-        ControlKind::Checkbox { checked, .. } => ControlOptions::Checkbox(CheckboxOptions { checked: Some(e.display == checked.to_string()) }),
+        ControlKind::Checkbox { checked, .. } => {
+            ControlOptions::Checkbox(CheckboxOptions { checked: Some(e.display == checked.to_string()), ..Default::default() })
+        }
         ControlKind::Date { format, lid } => {
             ControlOptions::Date(DateOptions { format: Some(format.clone()).filter(|f| !f.is_empty()), locale: lid.clone() })
         }

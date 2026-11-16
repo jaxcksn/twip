@@ -3081,6 +3081,18 @@ pub struct SetControl {
     /// A picture control's new placeholder picture, while it shows its placeholder.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub placeholder_image: Option<PlaceholderImage>,
+    /// How it shows its edges.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub appearance: Option<crate::api::value::ControlAppearance>,
+    /// Its colour (`w15:color`), or the default (`none`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<NoneOr<Color>>,
+    /// It goes when its content is edited, leaving the content (`w:temporary`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub temporary: Option<bool>,
+    /// The character style text typed into it takes (`sdtPr/w:rPr`), or none (`none`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub style: Option<NoneOr<StyleId>>,
 }
 
 /// `removeControl`'s options.

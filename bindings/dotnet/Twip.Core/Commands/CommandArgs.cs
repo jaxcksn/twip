@@ -1861,6 +1861,10 @@ public sealed record ControlListItem(string Text, string Value);
 /// <param name="Multiline">Whether plain text allows line breaks.</param>
 /// <param name="Width">A picture's width, 1 to 1584 pt: its placeholder's, and the picture's once filled.</param>
 /// <param name="Height">A picture's height, 1 to 1584 pt.</param>
+/// <param name="CheckedSymbol">A checkbox's checked symbol.</param>
+/// <param name="UncheckedSymbol">A checkbox's unchecked symbol.</param>
+/// <param name="SectionTitle">What a repeating section's items are called.</param>
+/// <param name="AllowInsertDelete">A repeating section's items can be added and removed.</param>
 public sealed record ControlOptions(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Checked = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Format = null,
@@ -1868,7 +1872,27 @@ public sealed record ControlOptions(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<ControlListItem>? Items = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Multiline = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Width = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Height = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Height = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CheckboxSymbol? CheckedSymbol = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CheckboxSymbol? UncheckedSymbol = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? SectionTitle = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? AllowInsertDelete = null);
+
+/// <summary>A checkbox control's checked or unchecked symbol.</summary>
+/// <param name="Font">Its font.</param>
+/// <param name="Character">The character, one.</param>
+public sealed record CheckboxSymbol(string Font, string Character);
+
+/// <summary>How a content control shows its edges.</summary>
+public enum ControlAppearance
+{
+    /// <summary>A box around it.</summary>
+    BoundingBox,
+    /// <summary>Start and end tags.</summary>
+    Tags,
+    /// <summary>Nothing.</summary>
+    Hidden,
+}
 
 /// <summary>A content control to insert.</summary>
 /// <param name="Kind">The kind.</param>
@@ -1923,7 +1947,20 @@ public sealed record PlaceholderImage(ReadOnlyMemory<byte> Data, string Mime);
 [JsonConverter(typeof(ControlChangesConverter))]
 public sealed record ControlChanges(
     ElementId Id, string? Tag = null, string? Title = null, ControlLock? Lock = null, string? Placeholder = null,
-    DataBinding? Binding = null, ControlOptions? Options = null, bool RemoveBinding = false, PlaceholderImage? PlaceholderImage = null);
+    DataBinding? Binding = null, ControlOptions? Options = null, bool RemoveBinding = false, PlaceholderImage? PlaceholderImage = null)
+{
+    /// <summary>How it shows its edges.</summary>
+    public ControlAppearance? Appearance { get; init; }
+
+    /// <summary>Its colour; <see cref="ColorValue.None"/> for the default.</summary>
+    public ColorValue? Color { get; init; }
+
+    /// <summary>It goes when its content is edited, leaving the content.</summary>
+    public bool? Temporary { get; init; }
+
+    /// <summary>The character style text typed into it takes; <see cref="StyleId.None"/> for none.</summary>
+    public StyleId? Style { get; init; }
+}
 
 /// <summary>What to fill a content control with: exactly one of text, a picture or a document.</summary>
 public sealed record ControlContent

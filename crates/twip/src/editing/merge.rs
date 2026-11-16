@@ -1918,13 +1918,102 @@ impl Editor {
                         *lid = o.locale.clone();
                     }
                 }
-                (ControlKind::Checkbox { .. }, ControlOptions::Checkbox(_)) => {}
+                (ControlKind::Checkbox { checked, unchecked }, ControlOptions::Checkbox(o)) => {
+                    if o.checked_symbol.is_some() || o.unchecked_symbol.is_some() {
+                        let font = |x: &str, name: &str| {
+                            let at = x.find(&format!("{name} "))?;
+                            let f = x[at..].find("font=\"")? + at + 6;
+                            Some(x[f..f + x[f..].find('"')?].to_string())
+                        };
+                        let was = p.kind_xml.clone().unwrap_or_default();
+                        let one = |s: &crate::api::value::CheckboxSymbol| s.character.chars().next();
+                        if let Some(c) = o.checked_symbol.as_ref().and_then(one) {
+                            *checked = c;
+                        }
+                        if let Some(c) = o.unchecked_symbol.as_ref().and_then(one) {
+                            *unchecked = c;
+                        }
+                        let f_on = o
+                            .checked_symbol
+                            .as_ref()
+                            .map(|s| s.font.clone())
+                            .or_else(|| font(&was, "checkedState"))
+                            .unwrap_or_else(|| "MS Gothic".into());
+                        let f_off = o
+                            .unchecked_symbol
+                            .as_ref()
+                            .map(|s| s.font.clone())
+                            .or_else(|| font(&was, "uncheckedState"))
+                            .unwrap_or_else(|| "MS Gothic".into());
+                        let on = was.contains("checked w14:val=\"1\"") || was.contains("checked w14:val=\"true\"");
+                        let w14 = crate::docx::xml::W14;
+                        let esc = crate::docx::write::props::esc;
+                        p.kind_xml = Some(format!(
+                            r#"<w14:checkbox xmlns:w14="{w14}"><w14:checked w14:val="{}"/><w14:checkedState w14:val="{:04X}" w14:font="{}"/><w14:uncheckedState w14:val="{:04X}" w14:font="{}"/></w14:checkbox>"#,
+                            u8::from(on),
+                            *checked as u32,
+                            esc(&f_on),
+                            *unchecked as u32,
+                            esc(&f_off)
+                        ));
+                    }
+                }
+                (ControlKind::RepeatingSection, ControlOptions::RepeatingSection(o)) => {
+                    let was = p.kind_xml.clone().unwrap_or_default();
+                    let title = o.section_title.clone().or_else(|| {
+                        let at = was.find("sectionTitle ")?;
+                        let v = was[at..].find("val=\"")? + at + 5;
+                        Some(was[v..v + was[v..].find('"')?].to_string())
+                    });
+                    let fixed = o.allow_insert_delete.map_or(was.contains("doNotAllowInsertDeleteSection"), |a| !a);
+                    let w15 = crate::docx::xml::W15;
+                    let title = title
+                        .filter(|t| !t.is_empty())
+                        .map_or(String::new(), |t| format!(r#"<w15:sectionTitle w15:val="{}"/>"#, crate::docx::write::props::esc(&t)));
+                    let fixed = if fixed { "<w15:doNotAllowInsertDeleteSection/>" } else { "" };
+                    p.kind_xml = Some(format!(r#"<w15:repeatingSection xmlns:w15="{w15}">{title}{fixed}</w15:repeatingSection>"#));
+                }
                 (ControlKind::Picture, ControlOptions::Picture(o)) => resize = Some(o.clone()),
                 _ => return Err(Error::invalid("options for another kind of control")),
             }
-            if !matches!(p.kind, ControlKind::DropDown | ControlKind::Checkbox { .. } | ControlKind::Picture) {
+            if !matches!(p.kind, ControlKind::DropDown | ControlKind::Checkbox { .. } | ControlKind::Picture | ControlKind::RepeatingSection) {
                 p.kind_xml = None;
             }
+        }
+        // Appearance, colour, temporary and the contents' style: `w:sdtPr` children by local name.
+        let mut rest = |name: &str, xml: Option<String>| {
+            p.rest.retain(|(n, _)| n != name);
+            if let Some(x) = xml {
+                p.rest.push((name.to_string(), x));
+            }
+        };
+        let w15 = crate::docx::xml::W15;
+        if let Some(a) = set.appearance {
+            let v = match a {
+                crate::api::value::ControlAppearance::BoundingBox => "boundingBox",
+                crate::api::value::ControlAppearance::Tags => "tags",
+                crate::api::value::ControlAppearance::Hidden => "hidden",
+            };
+            rest("appearance", Some(format!(r#"<w15:appearance xmlns:w15="{w15}" w15:val="{v}"/>"#)));
+        }
+        if let Some(c) = set.color {
+            let xml = match c {
+                crate::api::value::NoneOr::None => None,
+                crate::api::value::NoneOr::Value(c) => Some(format!(r#"<w15:color xmlns:w15="{w15}" {prefix}val="{:06X}"/>"#, c.0)),
+            };
+            rest("color", xml);
+        }
+        if let Some(t) = set.temporary {
+            rest("temporary", t.then(|| format!("<{prefix}temporary/>")));
+        }
+        if let Some(s) = &set.style {
+            let xml = match s {
+                crate::api::value::NoneOr::None => None,
+                crate::api::value::NoneOr::Value(id) => {
+                    Some(format!("<{prefix}rPr><{prefix}rStyle {prefix}val=\"{}\"/></{prefix}rPr>", crate::docx::write::props::esc(&id.0)))
+                }
+            };
+            rest("rPr", xml);
         }
         let placeholder = set.placeholder;
         let showing = p.showing_placeholder;

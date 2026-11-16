@@ -148,11 +148,20 @@ export interface PlaceholderImage {
  * its placeholder's, and the picture's once filled (fitted to it); `setControl` keeps a side not given.
  */
 export type ControlOptions =
-  | { checked?: boolean }
+  | { checked?: boolean; checkedSymbol?: CheckboxSymbol; uncheckedSymbol?: CheckboxSymbol }
+  | { sectionTitle?: string; allowInsertDelete?: boolean }
   | { format?: string; locale?: string }
   | { items: { text: string; value: string }[] }
   | { multiline?: boolean }
   | { width?: Points; height?: Points };
+
+/** A check box control's checked or unchecked symbol: one character in a font. */
+export interface CheckboxSymbol {
+  /** Its font. */
+  font: string;
+  /** The character. */
+  character: string;
+}
 
 /** A block of the document structure. */
 export type Block =

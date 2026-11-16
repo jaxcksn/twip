@@ -291,6 +291,14 @@
       "context": [
         {
           "code": "MERGEFIELD Name",
+          "control": {
+            "appearance": "tags",
+            "checkedSymbol": "☒",
+            "color": "#2E74B5",
+            "style": "Strong",
+            "temporary": false,
+            "uncheckedSymbol": "☐"
+          },
           "exact": true,
           "form": {
             "calculateOnExit": false,
@@ -581,6 +589,14 @@
     "context": [
       {
         "code": "MERGEFIELD Name",
+        "control": {
+          "appearance": "tags",
+          "checkedSymbol": "☒",
+          "color": "#2E74B5",
+          "style": "Strong",
+          "temporary": false,
+          "uncheckedSymbol": "☐"
+        },
         "exact": true,
         "form": {
           "calculateOnExit": false,

@@ -987,6 +987,14 @@ export interface Commands {
     binding?: DataBinding | null;
     options?: ControlOptions;
     placeholderImage?: PlaceholderImage;
+    /** How it shows its edges. */
+    appearance?: 'boundingBox' | 'tags' | 'hidden';
+    /** Its colour, or the default (`'none'`). */
+    color?: Color | 'none';
+    /** It goes when its content is edited, leaving the content. */
+    temporary?: boolean;
+    /** The character style text typed into it takes, or none (`'none'`). */
+    style?: StyleId | 'none';
   }): Promise<void>;
   /** Removes a content control, optionally keeping its content. */
   removeControl(options: { id: ElementId; keepContent?: boolean }): Promise<void>;

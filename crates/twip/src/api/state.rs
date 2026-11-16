@@ -482,6 +482,37 @@ pub struct ElementContext {
     /// A legacy form field's options and value.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub form: Option<Box<FormFieldInfo>>,
+    /// A content control's look and options.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub control: Option<Box<ControlInfo>>,
+}
+
+/// A content control's look and options; what doesn't apply to its kind is absent.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ControlInfo {
+    /// How it shows its edges.
+    pub appearance: super::value::ControlAppearance,
+    /// Its colour; absent for the default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<Color>,
+    /// It goes when its content is edited.
+    pub temporary: bool,
+    /// The character style text typed into it takes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub style: Option<StyleId>,
+    /// A check box's checked symbol.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checked_symbol: Option<String>,
+    /// A check box's unchecked symbol.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unchecked_symbol: Option<String>,
+    /// What a repeating section's items are called.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub section_title: Option<String>,
+    /// A repeating section's items can be added and removed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allow_insert_delete: Option<bool>,
 }
 
 /// A legacy form field's options and value; what doesn't apply to its kind is absent.

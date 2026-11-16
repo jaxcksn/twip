@@ -1150,17 +1150,25 @@
     "wrapSelection": false
   },
   {
+    "appearance": "tags",
     "binding": null,
+    "color": "#2E74B5",
     "id": "control-3",
     "lock": "none",
     "options": {
-      "checked": false
+      "checked": false,
+      "checkedSymbol": {
+        "character": "ü",
+        "font": "Wingdings"
+      }
     },
     "placeholderImage": {
       "data": "iVBORw==",
       "mime": "image/png"
     },
+    "style": "Strong",
     "tag": "status",
+    "temporary": true,
     "type": "setControl"
   },
   {

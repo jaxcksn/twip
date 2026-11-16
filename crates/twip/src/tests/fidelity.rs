@@ -519,6 +519,7 @@ fn every_edit_keeps_every_construct() {
         std::fs::write(d.join("table-properties.docx"), table_properties_package()).expect("writes");
         std::fs::write(d.join("document-properties.docx"), document_properties_package()).expect("writes");
         std::fs::write(d.join("form-fields.docx"), form_fields_package()).expect("writes");
+        std::fs::write(d.join("control-options.docx"), control_options_package()).expect("writes");
         let (pictures, boxes) = picture_tools_packages();
         std::fs::write(d.join("picture-tools.docx"), pictures).expect("writes");
         std::fs::write(d.join("text-box-columns.docx"), boxes).expect("writes");
@@ -887,4 +888,45 @@ fn form_fields_are_saved_and_read_back() {
     }
     let settings = crate::docx::package::read(&saved, &[], "word/settings.xml").expect("reads").unwrap_or_default();
     assert!(settings.contains("doNotShadeFormData"));
+}
+
+/// Content controls with their look, contents' style, check box symbols and repeating section options set, saved.
+fn control_options_package() -> Vec<u8> {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-STORIES.docx");
+    let mut e = Editor::open(&std::fs::read(path).expect("the fixture"), fonts()).expect("opens");
+    let n = |v: serde_json::Value| serde_json::from_value::<Command>(v).expect("a command");
+    let run = |e: &mut Editor, v: serde_json::Value| {
+        let out = e.execute(n(v.clone()), fonts());
+        assert!(matches!(out, Outcome::Changed(_)), "{v}: {out:?}");
+    };
+    let id_of = |e: &Editor, tag: &str| {
+        let (c, _) = e.document().controls.iter().find(|(_, k)| k.props.tag.as_deref() == Some(tag)).expect("the control");
+        crate::editing::elements::id_str(crate::docx::ElementId::Control(*c))
+    };
+    e.select_range(para_id(&e, 0), Unit(0), Unit(0), fonts());
+    run(&mut e, serde_json::json!({ "type": "insertControl", "kind": "richText", "tag": "Look" }));
+    let look = id_of(&e, "Look");
+    run(
+        &mut e,
+        serde_json::json!({ "type": "setControl", "id": look, "appearance": "tags", "color": "#2E74B5", "temporary": true, "style": "Strong" }),
+    );
+    e.select_range(para_id(&e, 1), Unit(0), Unit(0), fonts());
+    run(&mut e, serde_json::json!({ "type": "insertControl", "kind": "checkbox", "tag": "Tick" }));
+    let tick = id_of(&e, "Tick");
+    run(
+        &mut e,
+        serde_json::json!({ "type": "setControl", "id": tick, "options": { "checkedSymbol": { "font": "Wingdings", "character": "\u{FC}" } } }),
+    );
+    crate::docx::write::save(e.document()).expect("saves")
+}
+
+#[test]
+fn control_options_are_saved_and_read_back() {
+    let saved = control_options_package();
+    let xml = crate::docx::package::read(&saved, &[], "word/document.xml").expect("reads").expect("the main part");
+    for el in ["w15:val=\"tags\"", "<w15:color", "<w:temporary/>", "<w:rStyle w:val=\"Strong\"/>", "w14:font=\"Wingdings\"", "w14:val=\"00FC\""] {
+        assert!(xml.contains(el), "{el}");
+    }
+    let doc = crate::docx::read_editable(&saved).expect("reads back");
+    assert!(doc.controls.values().any(|c| matches!(c.props.kind, crate::docx::ControlKind::Checkbox { checked: '\u{FC}', .. })));
 }

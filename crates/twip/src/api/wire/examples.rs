@@ -615,7 +615,8 @@ fn binding() -> DataBinding {
 
 fn control_options() -> Vec<ControlOptions> {
     vec![
-        ControlOptions::Checkbox(CheckboxOptions { checked: Some(true) }),
+        ControlOptions::Checkbox(CheckboxOptions { checked: Some(true), ..Default::default() }),
+        ControlOptions::RepeatingSection(RepeatingSectionOptions { section_title: Some("Line".into()), allow_insert_delete: Some(false) }),
         ControlOptions::Date(DateOptions { format: Some("yyyy-MM-dd".into()), locale: Some("en-GB".into()) }),
         ControlOptions::List(ListOptions { items: vec![ListItem { text: "Yes".into(), value: "y".into() }] }),
         ControlOptions::PlainText(PlainTextOptions { multiline: Some(true) }),
@@ -1083,8 +1084,16 @@ fn commands() -> Vec<Command> {
             lock: Some(ControlLock::None),
             placeholder: None,
             binding: Some(None),
-            options: Some(ControlOptions::Checkbox(CheckboxOptions { checked: Some(false) })),
+            options: Some(ControlOptions::Checkbox(CheckboxOptions {
+                checked: Some(false),
+                checked_symbol: Some(CheckboxSymbol { font: "Wingdings".into(), character: "\u{FC}".into() }),
+                unchecked_symbol: None,
+            })),
             placeholder_image: Some(PlaceholderImage { data: picture_bytes(), mime: "image/png".into() }),
+            appearance: Some(ControlAppearance::Tags),
+            color: Some(NoneOr::Value(Color(0x2E74B5))),
+            temporary: Some(true),
+            style: Some(NoneOr::Value(style("Strong"))),
         }),
         Command::RemoveControl(RemoveControl { id: id("control-3"), keep_content: Some(true) }),
         Command::FillControl(FillControl { id: id("control-4"), text: None, image: Some(picture_bytes()), docx: None }),
@@ -1330,6 +1339,16 @@ fn selection() -> SelectionSummary {
                 checked: None,
                 entries: vec!["Yes".into(), "No".into()],
                 entry: Some(1),
+            })),
+            control: Some(Box::new(ControlInfo {
+                appearance: ControlAppearance::Tags,
+                color: Some(Color(0x2E74B5)),
+                temporary: false,
+                style: Some(style("Strong")),
+                checked_symbol: Some("\u{2612}".into()),
+                unchecked_symbol: Some("\u{2610}".into()),
+                section_title: None,
+                allow_insert_delete: None,
             })),
         }],
         link: Some(LinkInfo { address: "https://example.com".into(), text: "Example".into() }),
@@ -2114,6 +2133,7 @@ fn hovered() -> ElementContext {
         title: Some("Agree".into()),
         size: None,
         form: None,
+        control: None,
     }
 }
 

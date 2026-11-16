@@ -3291,7 +3291,16 @@ fn control_props(pr: Option<Node>, xml: &str) -> ControlProps {
             "richText" => kind = Some((ControlKind::RichText, raw())),
             "picture" => kind = Some((ControlKind::Picture, raw())),
             "checkbox" if c.tag_name().namespace() == Some(W14) => {
-                kind = Some((ControlKind::Checkbox { checked: '\u{2612}', unchecked: '\u{2610}' }, raw()))
+                let state = |name: &str, d: char| {
+                    c.children()
+                        .find(|s| s.tag_name().name() == name)
+                        .and_then(|s| s.attribute((W14, "val")))
+                        .and_then(|v| u32::from_str_radix(v, 16).ok())
+                        .and_then(char::from_u32)
+                        .unwrap_or(d)
+                };
+                let (checked, unchecked) = (state("checkedState", '\u{2612}'), state("uncheckedState", '\u{2610}'));
+                kind = Some((ControlKind::Checkbox { checked, unchecked }, raw()))
             }
             "date" => {
                 let format = child(c, "dateFormat").and_then(|f| attr(f, "val")).unwrap_or("").to_string();

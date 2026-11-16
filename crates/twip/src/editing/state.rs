@@ -734,7 +734,7 @@ impl Editor {
                         _ => None,
                     })
                 });
-                ElementContext { id, kind: ElementKind::Field, exact, code, tag: None, title: None, size: None, form }
+                ElementContext { id, kind: ElementKind::Field, exact, code, tag: None, title: None, size: None, form, control: None }
             }
             crate::docx::ElementId::Control(c) => {
                 let props = self.doc.controls.get(&c).map(|k| k.props.clone()).unwrap_or_default();
@@ -750,7 +750,18 @@ impl Editor {
                     crate::docx::ControlKind::RepeatingItem => ElementKind::RepeatingItem,
                     crate::docx::ControlKind::RichText | crate::docx::ControlKind::Other => ElementKind::RichText,
                 };
-                ElementContext { id, kind, exact, code: None, tag: props.tag, title: props.alias, size: self.picture_control_size(c), form: None }
+                let control = Some(Box::new(control_info(&props)));
+                ElementContext {
+                    id,
+                    kind,
+                    exact,
+                    code: None,
+                    tag: props.tag,
+                    title: props.alias,
+                    size: self.picture_control_size(c),
+                    form: None,
+                    control,
+                }
             }
         }
     }
@@ -891,4 +902,37 @@ fn note_settings(n: &crate::docx::NoteProps, position: NotePosition, default: Nu
             crate::docx::NoteRestart::EachPage => crate::api::command::NoteRestart::EachPage,
         },
     }
+}
+
+/// A content control's look and options, from its properties as kept.
+fn control_info(p: &crate::docx::ControlProps) -> crate::api::state::ControlInfo {
+    let rest = |name: &str| p.rest.iter().find(|(n, _)| n == name).map(|(_, x)| x.as_str());
+    let val = |x: &str, key: &str| {
+        let at = x.find(key)? + key.len();
+        Some(x[at..at + x[at..].find('"')?].to_string())
+    };
+    let appearance = match rest("appearance").and_then(|x| val(x, "val=\"")).as_deref() {
+        Some("tags") => crate::api::value::ControlAppearance::Tags,
+        Some("hidden") => crate::api::value::ControlAppearance::Hidden,
+        _ => crate::api::value::ControlAppearance::BoundingBox,
+    };
+    let mut info = crate::api::state::ControlInfo {
+        appearance,
+        color: rest("color").and_then(|x| val(x, "val=\"")).and_then(|v| u32::from_str_radix(&v, 16).ok()).map(Color),
+        temporary: rest("temporary").is_some_and(|x| !x.contains("val=\"0\"") && !x.contains("val=\"false\"")),
+        style: rest("rPr").and_then(|x| val(&x[x.find("rStyle")?..], "val=\"")).map(StyleId),
+        ..Default::default()
+    };
+    match &p.kind {
+        crate::docx::ControlKind::Checkbox { checked, unchecked } => {
+            (info.checked_symbol, info.unchecked_symbol) = (Some(checked.to_string()), Some(unchecked.to_string()));
+        }
+        crate::docx::ControlKind::RepeatingSection => {
+            let x = p.kind_xml.as_deref().unwrap_or_default();
+            info.section_title = x.find("sectionTitle").and_then(|at| val(&x[at..], "val=\""));
+            info.allow_insert_delete = Some(!x.contains("doNotAllowInsertDeleteSection"));
+        }
+        _ => {}
+    }
+    info
 }

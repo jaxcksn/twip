@@ -693,6 +693,43 @@ pub enum ControlOptions {
     PlainText(PlainTextOptions),
     /// A picture control's picture size.
     Picture(PictureOptions),
+    /// A repeating section's options.
+    RepeatingSection(RepeatingSectionOptions),
+}
+
+/// A repeating section control's options.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RepeatingSectionOptions {
+    /// What its items are called in its menu (`w15:sectionTitle`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub section_title: Option<String>,
+    /// Its items can be added and removed (`false`: `w15:doNotAllowInsertDeleteSection`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allow_insert_delete: Option<bool>,
+}
+
+/// A check box control's checked or unchecked symbol.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CheckboxSymbol {
+    /// Its font.
+    pub font: String,
+    /// The character, one.
+    pub character: String,
+}
+
+/// How a content control shows its edges (`w15:appearance`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ControlAppearance {
+    /// A box around it.
+    #[default]
+    BoundingBox,
+    /// Start and end tags.
+    Tags,
+    /// Nothing.
+    Hidden,
 }
 
 /// A checkbox's state.
@@ -702,6 +739,12 @@ pub struct CheckboxOptions {
     /// Whether it is checked.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub checked: Option<bool>,
+    /// The symbol it shows checked (`w14:checkedState`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checked_symbol: Option<CheckboxSymbol>,
+    /// The symbol it shows unchecked (`w14:uncheckedState`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unchecked_symbol: Option<CheckboxSymbol>,
 }
 
 /// A date picker's display format and locale.

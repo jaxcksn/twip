@@ -191,13 +191,13 @@ Chunk numbers are [roadmap](../roadmap#docx) chunks.
 | Construct | Elements | Status |
 |---|---|---|
 | Controls | `w:sdt`, `w:sdtPr`, `w:sdtContent`, `w:sdtEndPr`, `w:alias`, `w:tag`, `w:id`, `w:lock`, `w:placeholder`, `w:docPart`, `w:showingPlcHdr` | API |
-| Kinds | `w:text`, `w:richText`, `w:comboBox`, `w:dropDownList`, `w:listItem`, `w:date`, `w:dateFormat`, `w:storeMappedDataAs`, `w:calendar`, `w:picture`, `w:group`, `w14:checkbox`, `w14:checked`, `w14:checkedState`, `w14:uncheckedState`, `w15:repeatingSection`, `w15:repeatingSectionItem` | API; check box symbols are 2.13 |
+| Kinds | `w:text`, `w:richText`, `w:comboBox`, `w:dropDownList`, `w:listItem`, `w:date`, `w:dateFormat`, `w:storeMappedDataAs`, `w:calendar`, `w:picture`, `w:group`, `w14:checkbox`, `w14:checked`, `w14:checkedState`, `w14:uncheckedState`, `w15:repeatingSection`, `w15:repeatingSectionItem` | API (check box symbols in `setControl`'s options; a check box shows its new symbol when it is next toggled) |
 | Building block galleries | `w:docPartObj`, `w:docPartList`, `w:docPartGallery`, `w:docPartCategory`, `w:docPartUnique` | Model; inserting from a gallery is 2.13 |
 | Citations, bibliography, equations | `w:citation`, `w:bibliography`, `w:equation` | Kept as the control kind; their content is ordinary content |
 | Data binding | `w:dataBinding`, `w15:dataBinding` | Model; evaluated both ways in 2.13 |
-| Temporary | `w:temporary` | Kept, 2.13 |
-| Appearance and colour | `w15:appearance`, `w15:color` | Kept, 2.13 |
-| Repeating section options | `w15:sectionTitle`, `w15:doNotAllowInsertDeleteSection` | Kept, 2.13 |
+| Temporary | `w:temporary` | API (`setControl`'s `temporary`); removing itself when its content is edited is 2.13 |
+| Appearance and colour | `w15:appearance`, `w15:color` | API (`setControl`'s `appearance` and `color`; the selection's control in `selection.context[].control`) |
+| Repeating section options | `w15:sectionTitle`, `w15:doNotAllowInsertDeleteSection` | API (`setControl`'s options) |
 | Entity picker | `w14:entityPicker` | Kept (SharePoint metadata) |
 | Web extensions | `w15:webExtensionCreated`, `w15:webExtensionLinked` | Application |
 

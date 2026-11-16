@@ -215,6 +215,12 @@ export interface CharRange {
 }
 
 // @public
+export interface CheckboxSymbol {
+    character: string;
+    font: string;
+}
+
+// @public
 export interface ChromeColors {
     desk?: Color;
     faintText?: Color;
@@ -648,6 +654,10 @@ export interface Commands {
         binding?: DataBinding | null;
         options?: ControlOptions;
         placeholderImage?: PlaceholderImage;
+        appearance?: 'boundingBox' | 'tags' | 'hidden';
+        color?: Color | 'none';
+        temporary?: boolean;
+        style?: StyleId | 'none';
     }): Promise<void>;
     setDefaultTableStyle(styleId: StyleId | null): Promise<void>;
     setDefaultTabStop(spacing: Points): Promise<void>;
@@ -1110,11 +1120,28 @@ export interface ContextMenuEvent {
 }
 
 // @public
+export interface ControlInfo {
+    allowInsertDelete?: boolean;
+    appearance: 'boundingBox' | 'tags' | 'hidden';
+    checkedSymbol?: string;
+    color?: Color;
+    sectionTitle?: string;
+    style?: StyleId;
+    temporary: boolean;
+    uncheckedSymbol?: string;
+}
+
+// @public
 export type ControlKind = 'richText' | 'plainText' | 'picture' | 'checkbox' | 'date' | 'dropDown' | 'comboBox' | 'group' | 'repeatingSection';
 
 // @public
 export type ControlOptions = {
     checked?: boolean;
+    checkedSymbol?: CheckboxSymbol;
+    uncheckedSymbol?: CheckboxSymbol;
+} | {
+    sectionTitle?: string;
+    allowInsertDelete?: boolean;
 } | {
     format?: string;
     locale?: string;
@@ -1569,6 +1596,7 @@ export interface ElementClick {
 // @public
 export interface ElementContext {
     code?: string;
+    control?: ControlInfo;
     exact: boolean;
     form?: FormFieldInfo;
     id: ElementId;

@@ -53,6 +53,7 @@ export type {
   CommandValues,
   EditingTarget,
   EditorState,
+  ControlInfo,
   ElementContext,
   FormFieldInfo,
   HighlightColor,
@@ -136,6 +137,7 @@ export type { Dictionary, Spelling } from './services/spelling.js';
 export type {
   Block,
   ControlKind,
+  CheckboxSymbol,
   ControlOptions,
   PlaceholderImage,
   DataBinding,

@@ -543,8 +543,6 @@ Twip.ControlOptions
 Twip.ControlOptions.<Clone>$() -> Twip.ControlOptions!
 Twip.ControlOptions.Checked.get -> bool?
 Twip.ControlOptions.Checked.init -> void
-Twip.ControlOptions.ControlOptions(bool? Checked = null, string? Format = null, string? Locale = null, System.Collections.Generic.IReadOnlyList<Twip.ControlListItem!>? Items = null, bool? Multiline = null, Twip.Length? Width = null, Twip.Length? Height = null) -> void
-Twip.ControlOptions.Deconstruct(out bool? Checked, out string? Format, out string? Locale, out System.Collections.Generic.IReadOnlyList<Twip.ControlListItem!>? Items, out bool? Multiline, out Twip.Length? Width, out Twip.Length? Height) -> void
 Twip.ControlOptions.Equals(Twip.ControlOptions? other) -> bool
 Twip.ControlOptions.Format.get -> string?
 Twip.ControlOptions.Format.init -> void
@@ -7492,3 +7490,66 @@ static Twip.FormFieldInfo.operator !=(Twip.FormFieldInfo? left, Twip.FormFieldIn
 static Twip.FormFieldInfo.operator ==(Twip.FormFieldInfo? left, Twip.FormFieldInfo? right) -> bool
 static Twip.TextFormOptions.operator !=(Twip.TextFormOptions? left, Twip.TextFormOptions? right) -> bool
 static Twip.TextFormOptions.operator ==(Twip.TextFormOptions? left, Twip.TextFormOptions? right) -> bool
+Twip.CheckboxSymbol
+Twip.CheckboxSymbol.<Clone>$() -> Twip.CheckboxSymbol!
+Twip.CheckboxSymbol.Character.get -> string!
+Twip.CheckboxSymbol.Character.init -> void
+Twip.CheckboxSymbol.CheckboxSymbol(string! Font, string! Character) -> void
+Twip.CheckboxSymbol.Deconstruct(out string! Font, out string! Character) -> void
+Twip.CheckboxSymbol.Equals(Twip.CheckboxSymbol? other) -> bool
+Twip.CheckboxSymbol.Font.get -> string!
+Twip.CheckboxSymbol.Font.init -> void
+Twip.ControlAppearance
+Twip.ControlAppearance.BoundingBox = 0 -> Twip.ControlAppearance
+Twip.ControlAppearance.Hidden = 2 -> Twip.ControlAppearance
+Twip.ControlAppearance.Tags = 1 -> Twip.ControlAppearance
+Twip.ControlChanges.Appearance.get -> Twip.ControlAppearance?
+Twip.ControlChanges.Appearance.init -> void
+Twip.ControlChanges.Color.get -> Twip.ColorValue?
+Twip.ControlChanges.Color.init -> void
+Twip.ControlChanges.Style.get -> Twip.StyleId?
+Twip.ControlChanges.Style.init -> void
+Twip.ControlChanges.Temporary.get -> bool?
+Twip.ControlChanges.Temporary.init -> void
+Twip.ControlInfo
+Twip.ControlInfo.<Clone>$() -> Twip.ControlInfo!
+Twip.ControlInfo.AllowInsertDelete.get -> bool?
+Twip.ControlInfo.AllowInsertDelete.init -> void
+Twip.ControlInfo.Appearance.get -> Twip.ControlAppearance
+Twip.ControlInfo.Appearance.init -> void
+Twip.ControlInfo.CheckedSymbol.get -> string?
+Twip.ControlInfo.CheckedSymbol.init -> void
+Twip.ControlInfo.Color.get -> Twip.ColorValue?
+Twip.ControlInfo.Color.init -> void
+Twip.ControlInfo.ControlInfo() -> void
+Twip.ControlInfo.Equals(Twip.ControlInfo? other) -> bool
+Twip.ControlInfo.SectionTitle.get -> string?
+Twip.ControlInfo.SectionTitle.init -> void
+Twip.ControlInfo.Style.get -> Twip.StyleId?
+Twip.ControlInfo.Style.init -> void
+Twip.ControlInfo.Temporary.get -> bool
+Twip.ControlInfo.Temporary.init -> void
+Twip.ControlInfo.UncheckedSymbol.get -> string?
+Twip.ControlInfo.UncheckedSymbol.init -> void
+Twip.ControlOptions.AllowInsertDelete.get -> bool?
+Twip.ControlOptions.AllowInsertDelete.init -> void
+Twip.ControlOptions.CheckedSymbol.get -> Twip.CheckboxSymbol?
+Twip.ControlOptions.CheckedSymbol.init -> void
+Twip.ControlOptions.ControlOptions(bool? Checked = null, string? Format = null, string? Locale = null, System.Collections.Generic.IReadOnlyList<Twip.ControlListItem!>? Items = null, bool? Multiline = null, Twip.Length? Width = null, Twip.Length? Height = null, Twip.CheckboxSymbol? CheckedSymbol = null, Twip.CheckboxSymbol? UncheckedSymbol = null, string? SectionTitle = null, bool? AllowInsertDelete = null) -> void
+Twip.ControlOptions.Deconstruct(out bool? Checked, out string? Format, out string? Locale, out System.Collections.Generic.IReadOnlyList<Twip.ControlListItem!>? Items, out bool? Multiline, out Twip.Length? Width, out Twip.Length? Height, out Twip.CheckboxSymbol? CheckedSymbol, out Twip.CheckboxSymbol? UncheckedSymbol, out string? SectionTitle, out bool? AllowInsertDelete) -> void
+Twip.ControlOptions.SectionTitle.get -> string?
+Twip.ControlOptions.SectionTitle.init -> void
+Twip.ControlOptions.UncheckedSymbol.get -> Twip.CheckboxSymbol?
+Twip.ControlOptions.UncheckedSymbol.init -> void
+Twip.ElementContext.Control.get -> Twip.ControlInfo?
+Twip.ElementContext.Control.init -> void
+override Twip.CheckboxSymbol.Equals(object? obj) -> bool
+override Twip.CheckboxSymbol.GetHashCode() -> int
+override Twip.CheckboxSymbol.ToString() -> string!
+override Twip.ControlInfo.Equals(object? obj) -> bool
+override Twip.ControlInfo.GetHashCode() -> int
+override Twip.ControlInfo.ToString() -> string!
+static Twip.CheckboxSymbol.operator !=(Twip.CheckboxSymbol? left, Twip.CheckboxSymbol? right) -> bool
+static Twip.CheckboxSymbol.operator ==(Twip.CheckboxSymbol? left, Twip.CheckboxSymbol? right) -> bool
+static Twip.ControlInfo.operator !=(Twip.ControlInfo? left, Twip.ControlInfo? right) -> bool
+static Twip.ControlInfo.operator ==(Twip.ControlInfo? left, Twip.ControlInfo? right) -> bool

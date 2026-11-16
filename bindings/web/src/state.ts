@@ -486,6 +486,28 @@ export interface ElementContext {
   size?: { width: Points; height: Points };
   /** A legacy form field's options and value. */
   form?: FormFieldInfo;
+  /** A content control's look and options. */
+  control?: ControlInfo;
+}
+
+/** A content control's look and options; what doesn't apply to its kind is absent. */
+export interface ControlInfo {
+  /** How it shows its edges. */
+  appearance: 'boundingBox' | 'tags' | 'hidden';
+  /** Its colour; absent for the default. */
+  color?: Color;
+  /** It goes when its content is edited. */
+  temporary: boolean;
+  /** The character style text typed into it takes. */
+  style?: StyleId;
+  /** A check box's checked symbol. */
+  checkedSymbol?: string;
+  /** A check box's unchecked symbol. */
+  uncheckedSymbol?: string;
+  /** What a repeating section's items are called. */
+  sectionTitle?: string;
+  /** A repeating section's items can be added and removed. */
+  allowInsertDelete?: boolean;
 }
 
 /** A legacy form field's options and value; what doesn't apply to its kind is absent. */

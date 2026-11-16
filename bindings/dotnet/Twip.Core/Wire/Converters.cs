@@ -360,7 +360,13 @@ internal sealed class ControlChangesConverter : JsonConverter<ControlChanges>
             !removed && o.TryGetProperty("binding", out var b) ? b.Deserialize(TwipJsonContext.Default.DataBinding) : null,
             o.TryGetProperty("options", out var opts) ? opts.Deserialize(TwipJsonContext.Default.ControlOptions) : null,
             removed,
-            o.TryGetProperty("placeholderImage", out var pi) ? pi.Deserialize(TwipJsonContext.Default.PlaceholderImage) : null);
+            o.TryGetProperty("placeholderImage", out var pi) ? pi.Deserialize(TwipJsonContext.Default.PlaceholderImage) : null)
+        {
+            Appearance = o.TryGetProperty("appearance", out var ap) ? ap.Deserialize(TwipJsonContext.Default.ControlAppearance) : null,
+            Color = o.TryGetProperty("color", out var co) ? co.Deserialize(TwipJsonContext.Default.ColorValue) : null,
+            Temporary = o.TryGetProperty("temporary", out var t) ? t.GetBoolean() : null,
+            Style = Str("style") is { } st ? new StyleId(st) : null,
+        };
     }
 
     public override void Write(Utf8JsonWriter writer, ControlChanges value, JsonSerializerOptions options)
@@ -375,6 +381,10 @@ internal sealed class ControlChangesConverter : JsonConverter<ControlChanges>
         else if (value.RemoveBinding) writer.WriteNull("binding");
         if (value.Options is not null) { writer.WritePropertyName("options"); JsonSerializer.Serialize(writer, value.Options, TwipJsonContext.Default.ControlOptions); }
         if (value.PlaceholderImage is not null) { writer.WritePropertyName("placeholderImage"); JsonSerializer.Serialize(writer, value.PlaceholderImage, TwipJsonContext.Default.PlaceholderImage); }
+        if (value.Appearance is { } ap) { writer.WritePropertyName("appearance"); JsonSerializer.Serialize(writer, ap, TwipJsonContext.Default.ControlAppearance); }
+        if (value.Color is { } co) { writer.WritePropertyName("color"); JsonSerializer.Serialize(writer, co, TwipJsonContext.Default.ColorValue); }
+        if (value.Temporary is { } t) writer.WriteBoolean("temporary", t);
+        if (value.Style is { } st) writer.WriteString("style", st.Value);
         writer.WriteEndObject();
     }
 }

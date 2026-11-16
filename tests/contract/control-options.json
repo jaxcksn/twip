@@ -1,0 +1,15 @@
+{
+  "name": "control-options",
+  "fixture": "editor/FX-STORIES.docx",
+  "steps": [
+    { "op": "open" },
+    { "op": "command", "command": { "type": "insertControl", "kind": "richText", "tag": "Look" } },
+    { "op": "call", "method": "elements.list", "save": "els" },
+    { "op": "command", "command": { "type": "setControl", "id": { "$saved": "els", "path": [{ "tag": "Look" }, "id"] },
+      "appearance": "tags", "color": "#2E74B5", "temporary": true, "style": "none" } },
+    { "op": "expectState", "match": { "selection": { "context": [{ "kind": "richText", "control": { "appearance": "tags", "color": "#2E74B5", "temporary": true } }] } } },
+    { "op": "export", "format": "docx" },
+    { "op": "reopen" },
+    { "op": "call", "method": "elements.list", "result": { "$has": [{ "tag": "Look" }] } }
+  ]
+}

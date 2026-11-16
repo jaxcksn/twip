@@ -4225,7 +4225,18 @@ impl Saver<'_, '_> {
             // From its properties (alias, tag, lock and the rest), with the state it shows now.
             let mut ctl = self.controls[c].clone();
             ctl.open.clear();
-            ctl.props.kind_xml = Some(format!(
+            // Its own states (their fonts) when it has them, checked as it shows.
+            let own = ctl.props.kind_xml.as_deref().filter(|x| x.contains("checkedState")).map(|x| {
+                let mut x = x.to_string();
+                if let Some(k) = x.find(":checked ")
+                    && let Some(v) = x[k..].find("val=\"").map(|v| k + v + 5)
+                    && let Some(e) = x[v..].find('"').map(|e| v + e)
+                {
+                    x.replace_range(v..e, if on == 1 { "1" } else { "0" });
+                }
+                x
+            });
+            ctl.props.kind_xml = own.or(Some(format!(
                 concat!(
                     "<w14:checkbox xmlns:w14=\"http://schemas.microsoft.com/office/word/2010/wordml\">",
                     "<w14:checked w14:val=\"{on}\"/><w14:checkedState w14:val=\"{cs}\" w14:font=\"{f}\"/><w14:uncheckedState w14:val=\"{us}\" w14:font=\"{f}\"/>",
@@ -4235,7 +4246,7 @@ impl Saver<'_, '_> {
                 cs = cs,
                 us = us,
                 f = f,
-            ));
+            )));
             return Some(format!("{PARA_LEVEL}{}<{w}r>{rpr}<{w}t>{ch}</{w}t></{w}r></{w}sdtContent></{w}sdt>", control_open(w, *c, &ctl)));
         }
         // A shape put in line with text: its tree in a `wp:inline`.

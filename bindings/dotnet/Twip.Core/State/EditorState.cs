@@ -621,6 +621,37 @@ public sealed record ElementContext(
     /// <summary>A legacy form field's options and value.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public FormFieldInfo? Form { get; init; }
+
+    /// <summary>A content control's look and options.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ControlInfo? Control { get; init; }
+}
+
+/// <summary>A content control's look and options; what doesn't apply to its kind is null.</summary>
+public sealed record ControlInfo
+{
+    /// <summary>How it shows its edges.</summary>
+    public ControlAppearance Appearance { get; init; }
+    /// <summary>Its colour; null for the default.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ColorValue? Color { get; init; }
+    /// <summary>It goes when its content is edited.</summary>
+    public bool Temporary { get; init; }
+    /// <summary>The character style text typed into it takes.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public StyleId? Style { get; init; }
+    /// <summary>A checkbox's checked symbol.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? CheckedSymbol { get; init; }
+    /// <summary>A checkbox's unchecked symbol.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? UncheckedSymbol { get; init; }
+    /// <summary>What a repeating section's items are called.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? SectionTitle { get; init; }
+    /// <summary>A repeating section's items can be added and removed.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? AllowInsertDelete { get; init; }
 }
 
 /// <summary>A legacy form field's options and value; what doesn't apply to its kind is null.</summary>
