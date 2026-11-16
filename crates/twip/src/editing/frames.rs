@@ -139,7 +139,7 @@ pub fn frame_xml(w: &str, p: &FrameProperties, old: Option<&FramePr>) -> String 
 impl Editor {
     /// The frame the selection is in, or is.
     pub(super) fn frame_here(&self) -> Option<FloatId> {
-        let frame = |f: FloatId| self.float_of(f).is_some_and(|fl| fl.frame_src.is_some());
+        let frame = |f: FloatId| self.float_of(f).is_some_and(crate::docx::Float::is_frame);
         if let Selection::Object(ObjectRef::Floating(f)) = self.selection
             && frame(f)
         {
@@ -156,7 +156,7 @@ impl Editor {
     }
 
     /// The `w:framePr` of the frame's first paragraph.
-    fn frame_pr(&self, f: FloatId) -> Option<FramePr> {
+    pub(super) fn frame_pr(&self, f: FloatId) -> Option<FramePr> {
         let res = self.doc.resolver.as_ref()?;
         let cx = self.cx();
         let tb = self.float_of(f)?.text_box.as_ref()?;

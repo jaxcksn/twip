@@ -34,7 +34,7 @@ fn unavailable(what: &str) -> Error {
 }
 
 /// Every dialog, in the state's order.
-const KINDS: [DialogKind; 21] = [
+const KINDS: [DialogKind; 22] = [
     DialogKind::Font,
     DialogKind::Paragraph,
     DialogKind::PageSetup,
@@ -49,6 +49,7 @@ const KINDS: [DialogKind; 21] = [
     DialogKind::ManageStyles,
     DialogKind::BordersShading,
     DialogKind::Frame,
+    DialogKind::DropCap,
     DialogKind::Banding,
     DialogKind::DefineBullet,
     DialogKind::DefineNumberFormat,
@@ -211,6 +212,15 @@ pub fn values(kind: DialogKind, state: &State, cx: &Context) -> Result<DialogVal
                 crop: o.kind.eq(&crate::api::state::ObjectKind::Picture).then(|| o.crop.unwrap_or_default()),
             })
         }
+        DialogKind::DropCap => {
+            let d = state.paragraph.drop_cap.clone().unwrap_or_default();
+            DialogValues::DropCap(crate::api::services::DropCapDialog {
+                position: d.position,
+                font: d.font.unwrap_or_default(),
+                lines: d.lines.unwrap_or(3),
+                distance: d.distance.unwrap_or_default(),
+            })
+        }
         DialogKind::AltText => {
             let o = state.selection.object.as_ref().ok_or_else(|| unavailable("picture or text box"))?;
             DialogValues::AltText(AltTextDialog { text: o.alt_text.clone(), decorative: o.decorative })
@@ -269,6 +279,7 @@ fn kind_of(v: &DialogValues) -> DialogKind {
         DialogValues::TableProperties(_) => DialogKind::TableProperties,
         DialogValues::PictureSize(_) => DialogKind::PictureSize,
         DialogValues::AltText(_) => DialogKind::AltText,
+        DialogValues::DropCap(_) => DialogKind::DropCap,
         DialogValues::Hyperlink(_) => DialogKind::Hyperlink,
         DialogValues::Tabs(_) => DialogKind::Tabs,
         DialogValues::Accessibility(_) => DialogKind::Accessibility,
@@ -494,6 +505,16 @@ fn fields(values: &DialogValues, cx: &Context) -> BTreeMap<String, FieldInfo> {
             ("relativeHeight", field("Relative height", FieldKind::Number)),
             ("crop", if v.crop.is_some() { field("Crop from", FieldKind::Number) } else { off(field("Crop from", FieldKind::Number)) }),
         ],
+        DialogValues::DropCap(v) => {
+            let dropped = v.position != crate::api::command::DropCapPosition::None;
+            let with = |f: FieldInfo| if dropped { f } else { off(f) };
+            vec![
+                ("position", choice("Position", &[("none", "None"), ("dropped", "Dropped"), ("inMargin", "In margin")])),
+                ("font", with(field("Font", FieldKind::Text))),
+                ("lines", with(number("Lines to drop", FieldKind::Number, 1.0, 10.0, 1.0))),
+                ("distance", with(number("Distance from text", FieldKind::Length, 0.0, 1584.0, 1.0))),
+            ]
+        }
         DialogValues::AltText(v) => {
             let mut text = field("Description", FieldKind::Text);
             text.enabled = !v.decorative;
@@ -1368,6 +1389,18 @@ pub fn commands(values: &DialogValues, state: &State, cx: &Context) -> Result<Ve
                 }
             }
         }
+        (DialogValues::DropCap(v), DialogValues::DropCap(n)) => {
+            if v != n {
+                check((1..=10).contains(&v.lines), "a drop cap drops 1 to 10 lines")?;
+                let dropped = v.position != crate::api::command::DropCapPosition::None;
+                out.push(Command::SetDropCap(crate::api::command::DropCap {
+                    position: v.position,
+                    font: Some(v.font.trim().to_string()).filter(|f| dropped && !f.is_empty()),
+                    lines: dropped.then_some(v.lines),
+                    distance: dropped.then_some(v.distance),
+                }));
+            }
+        }
         (DialogValues::AltText(v), DialogValues::AltText(n)) => {
             if v != n {
                 out.push(Command::SetAltText(AltText { text: v.text.trim().to_string(), decorative: Some(v.decorative) }));
@@ -1416,6 +1449,7 @@ pub fn label(kind: DialogKind) -> &'static str {
         DialogKind::TableProperties => "Table Properties",
         DialogKind::PictureSize => "Picture Size",
         DialogKind::AltText => "Alt Text",
+        DialogKind::DropCap => "Drop Cap",
         DialogKind::Hyperlink => "Hyperlink",
         DialogKind::Tabs => "Tabs",
         DialogKind::Accessibility => "Check Accessibility",

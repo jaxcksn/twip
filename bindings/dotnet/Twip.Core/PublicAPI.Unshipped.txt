@@ -6231,12 +6231,6 @@ Twip.DefineNumberFormatDialogValues.Format.get -> Twip.NumberFormat
 Twip.DefineNumberFormatDialogValues.Format.init -> void
 Twip.DefineNumberFormatDialogValues.Text.get -> string!
 Twip.DefineNumberFormatDialogValues.Text.init -> void
-Twip.DialogKind.AdjustListIndents = 19 -> Twip.DialogKind
-Twip.DialogKind.BulletsNumbering = 20 -> Twip.DialogKind
-Twip.DialogKind.DefineBullet = 15 -> Twip.DialogKind
-Twip.DialogKind.DefineMultilevelList = 17 -> Twip.DialogKind
-Twip.DialogKind.DefineNumberFormat = 16 -> Twip.DialogKind
-Twip.DialogKind.SetNumberingValue = 18 -> Twip.DialogKind
 Twip.EditorCommands.AdjustListIndentsAsync(Twip.ListIndentOptions! options, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.ApplyListEntryAsync(string! id, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.ContinueNumberingAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
@@ -6465,7 +6459,6 @@ Twip.BordersShadingDialogValues.PageSetting.get -> Twip.BorderSetting
 Twip.BordersShadingDialogValues.PageSetting.init -> void
 Twip.BordersShadingDialogValues.PageTop.get -> Twip.CellBorder?
 Twip.BordersShadingDialogValues.PageTop.init -> void
-Twip.DialogKind.Banding = 21 -> Twip.DialogKind
 Twip.EditorCommands.SetPageBordersAsync(Twip.PageBordersOptions! borders, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.SetTextBorderAsync(Twip.TextBorderOptions! border, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.PageBorderDisplay
@@ -7674,3 +7667,57 @@ Twip.PictureSizeDialogValues.Crop.get -> Twip.PictureCrop?
 Twip.PictureSizeDialogValues.Crop.init -> void
 Twip.PictureSizeDialogValues.Deconstruct(out Twip.Length Width, out Twip.Length Height, out double ScaleWidth, out double ScaleHeight, out bool LockAspect, out bool Reset, out Twip.RelativeSize? RelativeWidth, out Twip.RelativeSize? RelativeHeight, out Twip.PictureCrop? Crop) -> void
 Twip.PictureSizeDialogValues.PictureSizeDialogValues(Twip.Length Width, Twip.Length Height, double ScaleWidth, double ScaleHeight, bool LockAspect, bool Reset, Twip.RelativeSize? RelativeWidth, Twip.RelativeSize? RelativeHeight, Twip.PictureCrop? Crop) -> void
+Twip.CommandId.SetDropCap = 255 -> Twip.CommandId
+Twip.DialogKind.AdjustListIndents = 20 -> Twip.DialogKind
+Twip.DialogKind.Banding = 22 -> Twip.DialogKind
+Twip.DialogKind.BulletsNumbering = 21 -> Twip.DialogKind
+Twip.DialogKind.DefineBullet = 16 -> Twip.DialogKind
+Twip.DialogKind.DefineMultilevelList = 18 -> Twip.DialogKind
+Twip.DialogKind.DefineNumberFormat = 17 -> Twip.DialogKind
+Twip.DialogKind.DropCap = 15 -> Twip.DialogKind
+Twip.DialogKind.SetNumberingValue = 19 -> Twip.DialogKind
+Twip.DropCap
+Twip.DropCap.<Clone>$() -> Twip.DropCap!
+Twip.DropCap.Deconstruct(out Twip.DropCapPosition Position, out string? Font, out uint? Lines, out Twip.Length? Distance) -> void
+Twip.DropCap.Distance.get -> Twip.Length?
+Twip.DropCap.Distance.init -> void
+Twip.DropCap.DropCap(Twip.DropCapPosition Position, string? Font = null, uint? Lines = null, Twip.Length? Distance = null) -> void
+Twip.DropCap.Equals(Twip.DropCap? other) -> bool
+Twip.DropCap.Font.get -> string?
+Twip.DropCap.Font.init -> void
+Twip.DropCap.Lines.get -> uint?
+Twip.DropCap.Lines.init -> void
+Twip.DropCap.Position.get -> Twip.DropCapPosition
+Twip.DropCap.Position.init -> void
+Twip.DropCapDialogValues
+Twip.DropCapDialogValues.<Clone>$() -> Twip.DropCapDialogValues!
+Twip.DropCapDialogValues.Deconstruct(out Twip.DropCapPosition Position, out string! Font, out uint Lines, out Twip.Length Distance) -> void
+Twip.DropCapDialogValues.Distance.get -> Twip.Length
+Twip.DropCapDialogValues.Distance.init -> void
+Twip.DropCapDialogValues.DropCapDialogValues(Twip.DropCapPosition Position, string! Font, uint Lines, Twip.Length Distance) -> void
+Twip.DropCapDialogValues.Equals(Twip.DropCapDialogValues? other) -> bool
+Twip.DropCapDialogValues.Font.get -> string!
+Twip.DropCapDialogValues.Font.init -> void
+Twip.DropCapDialogValues.Lines.get -> uint
+Twip.DropCapDialogValues.Lines.init -> void
+Twip.DropCapDialogValues.Position.get -> Twip.DropCapPosition
+Twip.DropCapDialogValues.Position.init -> void
+Twip.DropCapPosition
+Twip.DropCapPosition.Dropped = 1 -> Twip.DropCapPosition
+Twip.DropCapPosition.InMargin = 2 -> Twip.DropCapPosition
+Twip.DropCapPosition.None = 0 -> Twip.DropCapPosition
+Twip.EditorCommands.SetDropCapAsync(Twip.DropCap! dropCap, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorDialogs.OpenDropCapAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Twip.DialogSession<Twip.DropCapDialogValues!>!>!
+Twip.ParagraphFormatting.DropCap.get -> Twip.DropCap?
+Twip.ParagraphFormatting.DropCap.init -> void
+override Twip.DropCap.Equals(object? obj) -> bool
+override Twip.DropCap.GetHashCode() -> int
+override Twip.DropCap.ToString() -> string!
+override Twip.DropCapDialogValues.Equals(object? obj) -> bool
+override Twip.DropCapDialogValues.GetHashCode() -> int
+override Twip.DropCapDialogValues.ToString() -> string!
+static Twip.DropCap.operator !=(Twip.DropCap? left, Twip.DropCap? right) -> bool
+static Twip.DropCap.operator ==(Twip.DropCap? left, Twip.DropCap? right) -> bool
+static Twip.DropCapDialogValues.operator !=(Twip.DropCapDialogValues? left, Twip.DropCapDialogValues? right) -> bool
+static Twip.DropCapDialogValues.operator ==(Twip.DropCapDialogValues? left, Twip.DropCapDialogValues? right) -> bool
+static Twip.EditorOperation.SetDropCap(Twip.DropCap! dropCap) -> Twip.EditorOperation!

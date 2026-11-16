@@ -695,6 +695,7 @@ export interface Commands {
         value?: string;
     }): Promise<void>;
     setDoubleStrikethrough(on: boolean): Promise<void>;
+    setDropCap(dropCap: DropCap): Promise<void>;
     setField(options: {
         id: ElementId;
         code?: string;
@@ -1219,7 +1220,7 @@ export interface DataParts {
 export type Degrees = number;
 
 // @public
-export type DialogKind = 'font' | 'paragraph' | 'pageSetup' | 'insertTable' | 'tableProperties' | 'pictureSize' | 'altText' | 'hyperlink' | 'tabs' | 'accessibility' | 'autoCorrect' | 'style' | 'manageStyles' | 'bordersShading' | 'frame' | 'banding' | 'defineBullet' | 'defineNumberFormat' | 'defineMultilevelList' | 'setNumberingValue' | 'adjustListIndents' | 'bulletsNumbering';
+export type DialogKind = 'font' | 'paragraph' | 'pageSetup' | 'insertTable' | 'tableProperties' | 'pictureSize' | 'altText' | 'hyperlink' | 'tabs' | 'accessibility' | 'autoCorrect' | 'style' | 'manageStyles' | 'bordersShading' | 'frame' | 'dropCap' | 'banding' | 'defineBullet' | 'defineNumberFormat' | 'defineMultilevelList' | 'setNumberingValue' | 'adjustListIndents' | 'bulletsNumbering';
 
 // @public
 export interface Dialogs {
@@ -1315,6 +1316,12 @@ export interface DialogValues {
         text: string;
         font: string | null;
         alignment: 'left' | 'center' | 'right';
+    };
+    dropCap: {
+        position: 'none' | 'dropped' | 'inMargin';
+        font: string;
+        lines: number;
+        distance: Points;
     };
     font: {
         font: Mixed<string>;
@@ -1527,6 +1534,14 @@ export interface DocumentProperties {
         value?: string;
     }[];
 }
+
+// @public
+export type DropCap = {
+    position: 'none' | 'dropped' | 'inMargin';
+    font?: string;
+    lines?: number;
+    distance?: Points;
+};
 
 // @public
 export type EditingTarget = {
@@ -2505,6 +2520,7 @@ export interface ParagraphFormatting {
     borders: Mixed<'box' | 'bottom' | 'none' | 'other'>;
     collapsed: Tri;
     contextualSpacing: Tri;
+    dropCap?: DropCap;
     flow: {
         keepWithNext: Tri;
         keepLinesTogether: Tri;

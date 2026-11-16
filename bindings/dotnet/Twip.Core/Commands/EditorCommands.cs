@@ -476,6 +476,12 @@ public sealed class EditorCommands
     /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
     public Task RemoveFrameAsync(CancellationToken ct = default) => _session.RunAsync(EditorOperation.RemoveFrame(), ct);
 
+    /// <summary>Sets the selection's paragraph's drop cap: its first letter dropped into the text or in the margin, or put back.</summary>
+    /// <param name="dropCap">The drop cap; <see cref="DropCapPosition.None"/> puts the letter back.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SetDropCapAsync(DropCap dropCap, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetDropCap(dropCap), ct);
+
     /// <summary>Defines the selection's list levels for its whole list, from this paragraph on, or for the selected paragraphs; outside a list, makes a new one.</summary>
     /// <param name="definition">The levels and what they apply to.</param>
     /// <param name="ct">Cancels the command before it runs.</param>

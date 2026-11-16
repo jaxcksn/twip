@@ -200,6 +200,7 @@ const ENTRIES: &[Entry] = {
         (C::SetPageBorders, "Page Borders", G::Paragraph, &[], &[], true, true, U::Step),
         (C::SetFrame, "Frame", G::Paragraph, &[], &[], true, true, U::Step),
         (C::RemoveFrame, "Remove Frame", G::Paragraph, &[], &[], false, true, U::Step),
+        (C::SetDropCap, "Drop Cap", G::Paragraph, &[], &[], true, true, U::Step),
         (C::AddTabStop, "Add Tab Stop", G::Tabs, &[], &[], true, true, U::Step),
         (C::MoveTabStop, "Move Tab Stop", G::Tabs, &[], &[], true, true, U::Step),
         (C::DeleteTabStop, "Delete Tab Stop", G::Tabs, &[], &[], true, true, U::Step),

@@ -933,6 +933,28 @@ public sealed record ShadingOptions(
     ShadingPattern Pattern = ShadingPattern.Clear,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ColorValue? Color = null);
 
+/// <summary>Where a drop cap goes.</summary>
+public enum DropCapPosition
+{
+    /// <summary>No drop cap: the letter goes back in the text.</summary>
+    None,
+    /// <summary>Dropped into the text, which wraps beside it.</summary>
+    Dropped,
+    /// <summary>In the margin, beside the text.</summary>
+    InMargin,
+}
+
+/// <summary>A paragraph's drop cap (the Drop Cap dialog).</summary>
+/// <param name="Position">Where the letter goes.</param>
+/// <param name="Font">The letter's font; null for the text's.</param>
+/// <param name="Lines">How many lines it drops, 1 to 10; null for 3.</param>
+/// <param name="Distance">How far the text keeps from it; null for none.</param>
+public sealed record DropCap(
+    DropCapPosition Position,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Font = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] uint? Lines = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Distance = null);
+
 /// <summary>Whether text wraps around a frame.</summary>
 public enum FrameWrap
 {

@@ -2,6 +2,7 @@ import type {
   ChapterNumbers,
   ColumnWidth,
   CommandId,
+  DropCap,
   Ligatures,
   LineNumbers,
   MultiplePagesMode,
@@ -646,6 +647,8 @@ export interface ParagraphFormatting {
   collapsed: Tri;
   /** The text direction. */
   textDirection: Mixed<TextFlow>;
+  /** The selection's paragraph's drop cap, when it has one. */
+  dropCap?: DropCap;
 }
 
 /** The selection's section. */

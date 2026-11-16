@@ -413,6 +413,13 @@
     "type": "removeFrame"
   },
   {
+    "distance": 4.0,
+    "font": "Georgia",
+    "lines": 3,
+    "position": "dropped",
+    "type": "setDropCap"
+  },
+  {
     "alignment": "decimal",
     "leader": "dots",
     "position": 72.5,

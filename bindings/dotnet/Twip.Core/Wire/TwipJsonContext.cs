@@ -64,6 +64,7 @@ namespace Twip.Wire;
         typeof(CamelEnum<BorderSetting>),
         typeof(CamelEnum<ShadingTarget>),
         typeof(CamelEnum<ShadingPattern>),
+        typeof(CamelEnum<DropCapPosition>),
         typeof(CamelEnum<FrameWrap>),
         typeof(CamelEnum<FrameWidthRule>),
         typeof(CamelEnum<FrameHeightRule>),
@@ -470,6 +471,8 @@ namespace Twip.Wire;
 [JsonSerializable(typeof(ParagraphBorderLines))]
 [JsonSerializable(typeof(ShadingOptions))]
 [JsonSerializable(typeof(FrameProperties))]
+[JsonSerializable(typeof(DropCap))]
+[JsonSerializable(typeof(DropCapDialogValues))]
 [JsonSerializable(typeof(ManagedStyle))]
 [JsonSerializable(typeof(DocumentDefaults))]
 [JsonSerializable(typeof(StyleMetaOptions))]

@@ -272,6 +272,17 @@ export interface CharacterEffects {
   shadow?: boolean;
 }
 
+/** A paragraph's drop cap: where its first letter goes, its font, how many lines it drops and its distance from text. */
+export type DropCap = {
+  position: 'none' | 'dropped' | 'inMargin';
+  /** The letter's font; default: the text's. */
+  font?: string;
+  /** Lines it drops, 1 to 10; default 3. */
+  lines?: number;
+  /** How far the text keeps from it. */
+  distance?: Points;
+};
+
 /** A frame's wrapping, size, position and distance from text. */
 export type FrameProperties = {
   /** Text wrapping: around the frame, or above and below it (`'none'`). */
@@ -537,6 +548,8 @@ export interface Commands {
   setFrame(properties: FrameProperties): Promise<void>;
   /** Removes the frame the selection is in: its paragraphs go back in the text, before the paragraph it was anchored to. */
   removeFrame(): Promise<void>;
+  /** The selection's paragraph's drop cap: its first letter dropped into the text or in the margin, or put back (`'none'`). */
+  setDropCap(dropCap: DropCap): Promise<void>;
   /**
    * Defines the selection's list levels (level `k` of `levels` is level `k`; the levels after them are kept) for the
    * whole list, from this paragraph on, or for the selected paragraphs. Outside a list, makes a new one.
@@ -1293,6 +1306,7 @@ const encodings: { [K in CommandId]: Encoding<K> } = {
   setPageBorders: 'spread',
   setFrame: 'spread',
   removeFrame: 'none',
+  setDropCap: 'spread',
   setListDefinition: 'spread',
   setNumberingValue: 'spread',
   restartNumbering: 'none',

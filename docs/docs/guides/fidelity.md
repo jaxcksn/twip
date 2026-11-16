@@ -97,7 +97,7 @@ Chunk numbers are [roadmap](../roadmap#docx) chunks.
 | Borders and shading | `w:pBdr`, `w:top`, `w:left`, `w:bottom`, `w:right`, `w:between`, `w:bar`, `w:start`, `w:end`, `w:shd` | API |
 | Tabs | `w:tabs`, `w:tab` | API |
 | Lists | `w:numPr`, `w:ilvl`, `w:numId` | API |
-| Frames and drop caps | `w:framePr`, `w:suppressOverlap` | API; creating a drop cap is 2.5 |
+| Frames and drop caps | `w:framePr`, `w:suppressOverlap` | API (`setFrame`, `removeFrame`; `setDropCap` and the Drop Cap dialog make, change and remove a drop cap, saved as a framed paragraph before its own) |
 | Contextual spacing | `w:contextualSpacing` | API (`setParagraphSpacing`) |
 | Mirror indents | `w:mirrorIndents` | API (`setIndents`) |
 | Outline level | `w:outlineLvl` | API (`setOutline`) |
@@ -217,7 +217,7 @@ Word 2010 and later remove custom XML markup when they open a document, so it is
 | Drawings | `w:drawing`, `w:pict` | API (see [DrawingML and VML](#drawing)) |
 | OLE objects | `w:object`, `w:objectEmbed`, `w:objectLink` | Preview picture API; the object (`w:object` with its `o:OLEObject`) is kept as read through every edit, moved and pasted with its text. Editing OLE objects is in the backlog |
 | ActiveX controls | `w:control` | Kept, drawn from its preview picture, moved with its text |
-| Imported content | `w:altChunk`, `w:altChunkPr`, `w:matchSrc` | Kept between unedited blocks; opaque block, 2.2. Drawing it is deferred with HTML paste |
+| Imported content | `w:altChunk`, `w:altChunkPr`, `w:matchSrc` | Kept between unedited blocks, as an opaque block. Drawing it is deferred with HTML paste |
 | Subdocuments | `w:subDoc` | Kept as an opaque node, reported as unsupported content. Drawing them is in the backlog |
 | Page background | `w:background`, `w:displayBackgroundShape` | Page colour in 3.7 |
 
@@ -225,7 +225,7 @@ Word 2010 and later remove custom XML markup when they open a document, so it is
 
 | Construct | Elements | Status |
 |---|---|---|
-| Glossary entries | `w:docParts`, `w:docPartPr`, `w:docPartBody`, `w:category`, `w:gallery`, `w:behaviors`, `w:behavior`, `w:description`, `w:types`, `w:guid` | Model (placeholders and sub-templates); inserting one is 2.13 |
+| Glossary entries | `w:docParts`, `w:docPartPr`, `w:docPartBody`, `w:category`, `w:gallery`, `w:behaviors`, `w:behavior`, `w:description`, `w:types`, `w:guid` | Model (placeholders and sub-templates); a gallery control inserts one (`fillControl`'s `buildingBlock`) |
 
 ## Document settings
 

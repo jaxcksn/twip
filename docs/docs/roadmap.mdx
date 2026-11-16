@@ -19,7 +19,7 @@ you. The work between them runs in four phases, in this order:
 <Phases
   items={[
     { n: '01', title: 'Layout', href: '#layout', range: '1.1 – 1.11', blurb: 'Every line and page breaks where it should, and stays there.', done: true },
-    { n: '02', title: 'DOCX fidelity', href: '#docx', range: '2.1 – 2.14', blurb: 'Everything in the file is read, kept and settable.' },
+    { n: '02', title: 'DOCX fidelity', href: '#docx', range: '2.1 – 2.14', blurb: 'Everything in the file is read, kept and settable.', done: true },
     { n: '03', title: 'Rendering', href: '#rendering', range: '3.1 – 3.11', blurb: 'Everything in the model is drawn.' },
     { n: '04', title: 'Editor and platform', href: '#editor', range: '4.1 – 4.12', blurb: 'The workflows, packages and API freeze.' },
   ]}
@@ -256,7 +256,7 @@ save as read. The [fidelity guide](guides/fidelity) lists every element and the 
 
 </Chunk>
 
-<Chunk id="2.5" title="Paragraph formatting" deps={['2.2']}>
+<Chunk id="2.5" title="Paragraph formatting" deps={['2.2']} done>
 
 **Goal:** everything in Word's Paragraph dialog can be set.
 
@@ -264,8 +264,7 @@ save as read. The [fidelity guide](guides/fidelity) lists every element and the 
 - Mirror indents.
 - Paragraph text direction.
 - Don't hyphenate (`suppressAutoHyphens`) and Collapsed by default (`w15:collapsed`).
-- Create a drop cap (today the Frame dialog only keeps an existing one). This needs a new frame to be saved as a
-  framed paragraph before its anchor, which the writer doesn't do yet.
+- Drop Cap: create, change and remove a drop cap, dropped or in the margin.
 
 </Chunk>
 

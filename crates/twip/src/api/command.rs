@@ -245,6 +245,9 @@ commands! {
     /// Removes the frame the selection is in: its paragraphs go back in the text, before the paragraph it was
     /// anchored to. Undo: one step.
     RemoveFrame,
+    /// The selection's paragraph's drop cap (Drop Cap): its first letter in a frame dropped into the text or in the
+    /// margin, changed, or put back (`none`). Undo: one step.
+    SetDropCap(DropCap),
 
     // Tab stops
     /// Adds a tab stop to the selected paragraphs, replacing one at the same position. Undo: one step.
@@ -1279,6 +1282,36 @@ pub struct ShadingChange {
     /// The pattern's color.
     #[serde(default)]
     pub color: AutoOr<Color>,
+}
+
+/// Where a drop cap goes.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DropCapPosition {
+    /// No drop cap: the letter goes back in the text.
+    #[default]
+    None,
+    /// Dropped into the text, which wraps beside it.
+    Dropped,
+    /// In the margin, beside the text.
+    InMargin,
+}
+
+/// `setDropCap`'s options (the Drop Cap dialog).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DropCap {
+    /// Where the letter goes.
+    pub position: DropCapPosition,
+    /// The letter's font; default: the text's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub font: Option<String>,
+    /// How many lines it drops, 1 to 10. Default: 3.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lines: Option<u32>,
+    /// How far the text keeps from it. Default: none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub distance: Option<Points>,
 }
 
 /// Whether text wraps around a frame.

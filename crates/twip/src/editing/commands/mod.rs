@@ -266,6 +266,7 @@ impl Editor {
             Command::SetPageBorders(b) => self.set_page_borders(b, fonts),
             Command::SetFrame(p) => self.set_frame(p, fonts),
             Command::RemoveFrame => self.remove_frame(fonts),
+            Command::SetDropCap(d) => self.set_drop_cap(d, fonts),
             Command::SetStyleMeta(m) => self.set_style_meta(m, fonts),
             Command::SetDocumentDefaults(d) => self.set_document_defaults(d, fonts),
             Command::SetList(kind) => self.set_list(kind, fonts),

@@ -69,6 +69,7 @@ export type DialogKind =
   | 'manageStyles'
   | 'bordersShading'
   | 'frame'
+  | 'dropCap'
   | 'banding'
   | 'defineBullet'
   | 'defineNumberFormat'
@@ -352,6 +353,8 @@ export interface DialogValues {
     /** Remove Frame: applying removes the frame. */
     remove: boolean;
   };
+  /** Drop Cap, on the selection's paragraph: where its first letter goes, its font (empty: the text's), lines and distance. */
+  dropCap: { position: 'none' | 'dropped' | 'inMargin'; font: string; lines: number; distance: Points };
   /** Define New Bullet: the bullet of the selection's list level (or a new list's). */
   defineBullet: { text: string; font: string | null; picture: string | null; alignment: 'left' | 'center' | 'right' };
   /** Define New Number Format: the number of the selection's list level (or a new list's). */

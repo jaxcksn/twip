@@ -381,6 +381,11 @@ public abstract partial record EditorOperation
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation RemoveFrame() => Op(CommandId.RemoveFrame);
 
+    /// <summary>Sets the selection's paragraph's drop cap: its first letter dropped into the text or in the margin, or put back.</summary>
+    /// <param name="dropCap">The drop cap; <see cref="DropCapPosition.None"/> puts the letter back.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetDropCap(DropCap dropCap) => Op(CommandId.SetDropCap, Arg.Flatten(dropCap));
+
     /// <summary>Defines the selection's list levels.</summary>
     /// <param name="definition">The levels and what they apply to.</param>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>

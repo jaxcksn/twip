@@ -184,3 +184,37 @@ fn a_section_break_splits_its_section_and_saves_a_sectpr_of_its_own() {
     let back = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
     assert_eq!(starts(&back), before);
 }
+
+#[test]
+fn a_drop_cap_is_made_saved_as_a_framed_paragraph_and_put_back() {
+    use super::super::commands::{Command, Outcome};
+    use crate::api::command::{DropCap, DropCapPosition};
+    use crate::api::value::Points;
+    let mut e = fixture();
+    let first = super::texts(&e)[0].clone();
+    let p = super::para_id(&e, 0);
+    e.select_range(p, Unit(2), Unit(2), fonts());
+    let dropped = DropCap { position: DropCapPosition::Dropped, font: Some("Georgia".into()), lines: Some(3), distance: Some(Points(4.0)) };
+    assert!(matches!(e.execute(Command::SetDropCap(dropped.clone()), fonts()), Outcome::Changed(_)));
+    assert_eq!(e.drop_cap(), Some(dropped.clone()));
+    assert!(super::texts(&e).iter().any(|t| *t == first[1..]), "the letter left its paragraph");
+    let saved = crate::docx::write::save(e.document()).expect("saves");
+    if let Some(d) = std::env::var_os("TWIP_DROP_CAP_OUT") {
+        std::fs::write(std::path::Path::new(&d).join("drop-cap.docx"), &saved).expect("writes");
+    }
+    let xml = crate::docx::package::read(&saved, &[], "word/document.xml").expect("reads").expect("the main part");
+    let frame = xml.find("w:dropCap=\"drop\"").expect("a framed paragraph");
+    assert!(frame < xml.find(&first[1..12]).expect("the paragraph's text"), "before its paragraph");
+    let mut again = Editor::open(&saved, fonts()).expect("reopens");
+    let q = super::para_id(&again, 0);
+    again.select_range(q, Unit(1), Unit(1), fonts());
+    assert_eq!(again.drop_cap(), Some(dropped));
+    // In the margin, then back in the text.
+    let margin = DropCap { position: DropCapPosition::InMargin, font: None, lines: Some(2), distance: None };
+    assert!(matches!(e.execute(Command::SetDropCap(margin), fonts()), Outcome::Changed(_)));
+    assert_eq!(e.drop_cap().map(|d| (d.position, d.lines)), Some((DropCapPosition::InMargin, Some(2))));
+    let none = DropCap { position: DropCapPosition::None, font: None, lines: None, distance: None };
+    assert!(matches!(e.execute(Command::SetDropCap(none.clone()), fonts()), Outcome::Changed(_)));
+    assert_eq!(super::texts(&e)[0], first, "the letter is back");
+    assert!(matches!(e.execute(Command::SetDropCap(none), fonts()), Outcome::Unchanged(_)));
+}

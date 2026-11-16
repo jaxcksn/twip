@@ -9,6 +9,7 @@ pub mod clipboard;
 mod clipped;
 pub mod commands;
 pub mod comments;
+mod drop_caps;
 mod element_feedback;
 pub mod elements;
 pub mod extend;

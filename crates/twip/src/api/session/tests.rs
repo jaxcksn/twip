@@ -3173,3 +3173,22 @@ fn page_setup_applies_from_this_point_forward() {
     let again = crate::docx::read_editable(&saved).expect("reads back");
     assert_eq!(again.sections.iter().map(|x| x.top).collect::<Vec<_>>(), tops);
 }
+
+#[test]
+fn the_drop_cap_dialog_drops_the_first_letter() {
+    use crate::api::command::DropCapPosition;
+    use crate::api::services::{DialogKind, DialogPatch, DialogValues, DropCapPatch};
+    let (mut engine, _) = engine();
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    s.run(Command::InsertText("Once upon a time".into())).expect("types");
+    let m = s.dialog_open(DialogKind::DropCap).expect("opens");
+    assert!(matches!(&m.values, DialogValues::DropCap(v) if v.position == DropCapPosition::None && v.lines == 3));
+    let patch = DropCapPatch { position: Some(DropCapPosition::Dropped), lines: Some(2), ..DropCapPatch::default() };
+    let m = s.dialog_update(m, DialogPatch::DropCap(patch)).expect("updates");
+    s.dialog_apply(m).expect("applies");
+    let d = s.state().paragraph.drop_cap.clone().expect("a drop cap");
+    assert_eq!((d.position, d.lines), (DropCapPosition::Dropped, Some(2)));
+    let m = s.dialog_open(DialogKind::DropCap).expect("opens again");
+    assert!(matches!(&m.values, DialogValues::DropCap(v) if v.position == DropCapPosition::Dropped && v.lines == 2));
+}

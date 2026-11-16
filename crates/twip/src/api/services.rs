@@ -265,6 +265,8 @@ pub enum DialogKind {
     BordersShading,
     /// Frame.
     Frame,
+    /// Drop Cap.
+    DropCap,
     /// Banding (a table style's band sizes, from the style dialog's Format menu).
     Banding,
     /// Define New Bullet.
@@ -343,6 +345,8 @@ pub enum DialogValues {
     BordersShading(BordersShadingDialog),
     /// The Frame dialog's.
     Frame(FrameDialog),
+    /// The Drop Cap dialog's.
+    DropCap(DropCapDialog),
     /// Banding's.
     Banding(BandingDialog),
     /// Define New Bullet's.
@@ -391,6 +395,8 @@ pub enum DialogPatch {
     BordersShading(BordersShadingPatch),
     /// The Frame dialog's.
     Frame(FramePatch),
+    /// The Drop Cap dialog's.
+    DropCap(DropCapPatch),
     /// Banding's.
     Banding(BandingPatch),
     /// Define New Bullet's.
@@ -425,6 +431,7 @@ impl DialogPatch {
             (DialogPatch::ManageStyles(p), DialogValues::ManageStyles(v)) => p.apply(v),
             (DialogPatch::BordersShading(p), DialogValues::BordersShading(v)) => p.apply(v),
             (DialogPatch::Frame(p), DialogValues::Frame(v)) => p.apply(v),
+            (DialogPatch::DropCap(p), DialogValues::DropCap(v)) => p.apply(v),
             (DialogPatch::Banding(p), DialogValues::Banding(v)) => p.apply(v),
             (DialogPatch::DefineBullet(p), DialogValues::DefineBullet(v)) => p.apply(v),
             (DialogPatch::DefineNumberFormat(p), DialogValues::DefineNumberFormat(v)) => p.apply(v),
@@ -1216,6 +1223,22 @@ dialog! {
         pub suppress_line_numbers: Tri<bool>,
         /// Don't hyphenate.
         pub dont_hyphenate: Tri<bool>,
+    }
+}
+
+dialog! {
+    /// The Drop Cap dialog, on the selection's paragraph (`setDropCap`).
+    #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase", default, deny_unknown_fields)]
+    pub struct DropCapDialog / DropCapPatch {
+        /// Where the letter goes.
+        pub position: super::command::DropCapPosition,
+        /// The letter's font; empty for the text's.
+        pub font: String,
+        /// How many lines it drops, 1 to 10.
+        pub lines: u32,
+        /// How far the text keeps from it.
+        pub distance: Points,
     }
 }
 

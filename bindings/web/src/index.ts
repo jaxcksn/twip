@@ -21,6 +21,7 @@ export type {
   CommandInfo,
   Commands,
   DocumentDefaults,
+  DropCap,
   FieldTargets,
   FollowNumber,
   FrameProperties,

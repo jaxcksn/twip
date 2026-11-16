@@ -131,6 +131,8 @@ public enum DialogKind
     BordersShading,
     /// <summary>Frame.</summary>
     Frame,
+    /// <summary>Drop Cap.</summary>
+    DropCap,
     /// <summary>Define New Bullet.</summary>
     DefineBullet,
     /// <summary>Define New Number Format.</summary>

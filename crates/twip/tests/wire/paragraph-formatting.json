@@ -4,6 +4,11 @@
     "borders": "other",
     "collapsed": false,
     "contextualSpacing": true,
+    "dropCap": {
+      "distance": 0.0,
+      "lines": 3,
+      "position": "dropped"
+    },
     "flow": {
       "dontHyphenate": false,
       "keepLinesTogether": false,

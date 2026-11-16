@@ -610,6 +610,7 @@ internal sealed class DialogValuesConverter : JsonConverter<DialogValues>
             DialogKind.ManageStyles => ctx.ManageStylesDialogValues,
             DialogKind.BordersShading => ctx.BordersShadingDialogValues,
             DialogKind.Frame => ctx.FrameDialogValues,
+            DialogKind.DropCap => ctx.DropCapDialogValues,
             DialogKind.Banding => ctx.BandingDialogValues,
             DialogKind.DefineBullet => ctx.DefineBulletDialogValues,
             DialogKind.DefineNumberFormat => ctx.DefineNumberFormatDialogValues,

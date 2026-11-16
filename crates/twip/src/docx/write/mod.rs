@@ -1629,6 +1629,18 @@ impl<'a, 'i> Saver<'a, 'i> {
             return Ok(());
         }
         let mut text = Emit::group(self, &qs, &srcs, &ps)?;
+        // Frames made since reading (a drop cap): their paragraphs, each with its `w:framePr`, go before the paragraph
+        // they anchor at.
+        let made: String = ps
+            .iter()
+            .flat_map(|p| p.inlines.iter())
+            .filter_map(|i| match i {
+                Inline::Float(f, _) if f.frame_src.is_none() && f.is_frame() => f.text_box.as_ref(),
+                _ => None,
+            })
+            .map(|tb| new_blocks_xml(self.xml, &tb.blocks, &self.controls, self.people))
+            .collect::<Result<_, _>>()?;
+        text.insert_str(0, &made);
         match srcs.first() {
             Some(first) => {
                 // Frames between joined paragraphs (frames.rs anchored them in the next paragraph, now joined into
@@ -2124,7 +2136,8 @@ impl<'a, 'i> Saver<'a, 'i> {
         let mut out = String::new();
         for i in &p.inlines {
             let Inline::Float(f, run) = i else { continue };
-            if here(f.id, run) {
+            // A new frame is written as its paragraphs, before this one.
+            if here(f.id, run) || (f.frame_src.is_none() && f.is_frame()) {
                 continue;
             }
             let (open, close) = revisions::wrappers(&self.w, run.rev.ins.as_deref(), run.rev.del.as_deref(), self.people);

@@ -82,6 +82,7 @@
   "setPageBorders",
   "setFrame",
   "removeFrame",
+  "setDropCap",
   "addTabStop",
   "moveTabStop",
   "deleteTabStop",

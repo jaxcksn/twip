@@ -831,6 +831,12 @@ fn commands() -> Vec<Command> {
             lock_anchor: true,
         }),
         Command::RemoveFrame,
+        Command::SetDropCap(crate::api::command::DropCap {
+            position: crate::api::command::DropCapPosition::Dropped,
+            font: Some("Georgia".into()),
+            lines: Some(3),
+            distance: Some(Points(4.0)),
+        }),
         Command::AddTabStop(AddTabStop { position: Points(72.5), alignment: Some(TabAlignment::Decimal), leader: Some(TabLeader::Dots) }),
         Command::MoveTabStop(MoveTabStop { from: Points(72.5), to: Points(90.5) }),
         Command::DeleteTabStop(Points(90.5)),
@@ -1443,6 +1449,12 @@ fn paragraph() -> ParagraphFormatting {
         outline_level: Tri::Uniform(2),
         collapsed: Tri::Uniform(false),
         text_direction: Tri::Uniform(TextFlow::LrTb),
+        drop_cap: Some(crate::api::command::DropCap {
+            position: crate::api::command::DropCapPosition::Dropped,
+            font: None,
+            lines: Some(3),
+            distance: Some(Points(0.0)),
+        }),
     }
 }
 

@@ -513,4 +513,6 @@ public enum CommandId
     RemoveEditableRanges,
     /// <summary>Sets the file name FILENAME shows.</summary>
     SetFileName,
+    /// <summary>Sets the selection's paragraph's drop cap.</summary>
+    SetDropCap,
 }

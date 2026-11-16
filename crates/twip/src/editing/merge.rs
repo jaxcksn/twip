@@ -1521,7 +1521,7 @@ impl Editor {
         Ok(self.commit(tx, None, fonts))
     }
 
-    fn follow(&mut self, tx: &super::Tx) {
+    pub(super) fn follow(&mut self, tx: &super::Tx) {
         let map = |p: Position| tx.maps.iter().fold(p, |p, m| m.apply(p));
         self.selection = match self.selection {
             Selection::Caret(p) => Selection::Caret(map(p)),

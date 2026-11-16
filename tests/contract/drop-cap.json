@@ -1,0 +1,16 @@
+{
+  "name": "drop-cap",
+  "fixture": "editor/FX-SECTIONS.docx",
+  "steps": [
+    { "op": "open" },
+    { "op": "command", "command": { "type": "setDropCap", "position": "dropped", "lines": 11 } },
+    { "op": "expectError", "code": "invalid-argument" },
+    { "op": "command", "command": { "type": "setDropCap", "position": "dropped", "lines": 2, "distance": 4 } },
+    { "op": "expectState", "match": { "paragraph": { "dropCap": { "position": "dropped", "lines": 2, "distance": 4 } } } },
+    { "op": "export", "format": "docx" },
+    { "op": "reopen" },
+    { "op": "expectState", "match": { "paragraph": { "dropCap": { "position": "dropped", "lines": 2, "distance": 4 } } } },
+    { "op": "command", "command": { "type": "setDropCap", "position": "none" } },
+    { "op": "expectState", "match": { "paragraph": { "dropCap": null } } }
+  ]
+}

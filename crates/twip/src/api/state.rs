@@ -773,6 +773,9 @@ pub struct ParagraphFormatting {
     pub collapsed: Tri<bool>,
     /// The text direction.
     pub text_direction: Tri<crate::api::command::TextFlow>,
+    /// The selection's paragraph's drop cap, when it has one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drop_cap: Option<crate::api::command::DropCap>,
 }
 
 /// A page size.

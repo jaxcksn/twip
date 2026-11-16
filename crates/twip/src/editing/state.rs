@@ -258,6 +258,7 @@ pub(super) fn paragraph(paras: &[(&ParaStyle, Option<bool>)]) -> ParagraphFormat
                 _ => D::LrTb,
             }
         })),
+        drop_cap: None,
     }
 }
 
@@ -290,7 +291,8 @@ impl Editor {
         }
         let styles: Vec<(Rc<ParaStyle>, Option<bool>)> =
             paras.iter().filter_map(|&p| Some((self.index.para(&self.doc, p)?.style.clone(), self.para_list(p)))).collect();
-        let paragraph = self::paragraph(&styles.iter().map(|(s, l)| (&**s, *l)).collect::<Vec<_>>());
+        let mut paragraph = self::paragraph(&styles.iter().map(|(s, l)| (&**s, *l)).collect::<Vec<_>>());
+        paragraph.drop_cap = self.drop_cap().filter(|d| d.position != crate::api::command::DropCapPosition::None);
         let level = focus.and_then(|p| self.index.chain_of(&p).last().copied());
         let table = match self.selection {
             Selection::Cells { table, .. } => Some(table),

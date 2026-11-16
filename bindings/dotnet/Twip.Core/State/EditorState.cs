@@ -837,6 +837,10 @@ public sealed record ParagraphFormatting
 
     /// <summary>The text direction.</summary>
     public FormatValue<TextFlow> TextDirection { get; init; }
+
+    /// <summary>The selection's paragraph's drop cap, when it has one.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DropCap? DropCap { get; init; }
 }
 
 /// <summary>Paragraph indents.</summary>

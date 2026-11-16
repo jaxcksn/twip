@@ -384,6 +384,13 @@ pub struct Picture {
     pub src: Raw,
 }
 
+impl Float {
+    /// A frame (`w:framePr` paragraphs made a float): read from one, or made since.
+    pub fn is_frame(&self) -> bool {
+        self.frame_src.is_some() || self.text_box.as_ref().is_some_and(|tb| tb.blocks.iter().any(|b| matches!(b, Block::Para(p) if p.style.in_frame)))
+    }
+}
+
 impl Inline {
     /// The story this inline holds and the id it goes by: a float's text box, or an inline shape's text.
     pub fn story(&self) -> Option<(u64, &TextBox)> {

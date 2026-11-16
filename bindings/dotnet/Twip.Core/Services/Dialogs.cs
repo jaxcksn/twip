@@ -81,6 +81,11 @@ public sealed class EditorDialogs
     /// <returns>The dialog session.</returns>
     public Task<DialogSession<FrameDialogValues>> OpenFrameAsync(CancellationToken ct = default) => OpenAsync<FrameDialogValues>(DialogKind.Frame, ct);
 
+    /// <summary>Opens Drop Cap on the selection's paragraph.</summary>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>The dialog session.</returns>
+    public Task<DialogSession<DropCapDialogValues>> OpenDropCapAsync(CancellationToken ct = default) => OpenAsync<DropCapDialogValues>(DialogKind.DropCap, ct);
+
     /// <summary>Opens Define New Bullet on the selection's list level.</summary>
     /// <param name="ct">Cancels the request.</param>
     /// <returns>The dialog session.</returns>
@@ -389,6 +394,13 @@ public sealed record BordersShadingDialogValues(
 /// <param name="RowBand">The rows in each band.</param>
 /// <param name="ColumnBand">The columns in each band.</param>
 public sealed record BandingDialogValues(int RowBand, int ColumnBand);
+
+/// <summary>The Drop Cap dialog's values.</summary>
+/// <param name="Position">Where the letter goes.</param>
+/// <param name="Font">The letter's font; empty for the text's.</param>
+/// <param name="Lines">How many lines it drops, 1 to 10.</param>
+/// <param name="Distance">How far the text keeps from it.</param>
+public sealed record DropCapDialogValues(DropCapPosition Position, string Font, uint Lines, Length Distance);
 
 /// <summary>The Frame dialog's values: the frame's properties, Move with text and Remove Frame.</summary>
 /// <param name="Wrap">Text wrapping.</param>
