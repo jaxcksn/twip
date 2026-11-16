@@ -645,6 +645,16 @@ public abstract partial record EditorOperation
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation DeleteBookmark(string name) => Op(CommandId.DeleteBookmark, new Arg("value", Node(name)));
 
+    /// <summary>Sets the document's properties; unset values are kept.</summary>
+    /// <param name="change">The properties to change.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetDocumentProperties(DocumentPropertiesChange change) => Op(CommandId.SetDocumentProperties, Arg.Flatten(change));
+
+    /// <summary>Sets a document variable (read by DOCVARIABLE), or removes it.</summary>
+    /// <param name="variable">The variable; a null value removes it.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetDocumentVariable(DocumentVariable variable) => Op(CommandId.SetDocumentVariable, Arg.Flatten(variable));
+
     /// <summary>Inserts a field. With a selection and an empty code, wraps the selection.</summary>
     /// <param name="options">The field.</param>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>

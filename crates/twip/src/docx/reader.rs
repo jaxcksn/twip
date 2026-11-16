@@ -500,6 +500,9 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
     doc.diagnostics = r.diagnostics;
     doc.resolver = Some(Rc::new(r.res));
     doc.font_descriptions = font_descriptions;
+    let mut prop = |kind: &str| root_rels.values().find(|(k, _)| k == kind).and_then(|(_, t)| pkg.read_str(t));
+    doc.properties =
+        super::properties::read(prop("core-properties").as_deref(), prop("extended-properties").as_deref(), prop("custom-properties").as_deref());
     super::fields::evaluate(&mut doc, now);
     super::frames::convert(&mut doc);
     doc.derive_image_sets();
@@ -804,6 +807,11 @@ pub(crate) fn read_settings(xml: Option<&str>) -> Settings {
     s.mirror_margins = flag(root, "mirrorMargins").unwrap_or(false);
     s.gutter_at_top = flag(root, "gutterAtTop").unwrap_or(false);
     s.default_table_style = child(root, "defaultTableStyle").and_then(val).filter(|v| !v.is_empty()).map(str::to_string);
+    s.variables = child(root, "docVars")
+        .into_iter()
+        .flat_map(|v| children(v, "docVar"))
+        .filter_map(|v| Some((attr(v, "name")?.to_string(), attr(v, "val").unwrap_or_default().to_string())))
+        .collect();
     let rev = flag(root, "bookFoldRevPrinting").unwrap_or(false);
     s.book_fold = (rev || flag(root, "bookFoldPrinting").unwrap_or(false)).then_some(rev);
     s.strict_kinsoku = flag(root, "strictFirstAndLastChars").unwrap_or(false);

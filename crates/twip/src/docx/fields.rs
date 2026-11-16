@@ -350,6 +350,18 @@ impl FieldCode {
             "SEQ" => FieldKind::Seq(arg()),
             "STYLEREF" => FieldKind::StyleRef(arg()),
             "DATE" | "TIME" => FieldKind::Date,
+            "DOCPROPERTY" => FieldKind::DocProperty(arg()),
+            "DOCVARIABLE" => FieldKind::DocVariable(arg()),
+            "AUTHOR" => FieldKind::DocProperty("Author".into()),
+            "TITLE" => FieldKind::DocProperty("Title".into()),
+            "SUBJECT" => FieldKind::DocProperty("Subject".into()),
+            "KEYWORDS" => FieldKind::DocProperty("Keywords".into()),
+            "COMMENTS" => FieldKind::DocProperty("Comments".into()),
+            "LASTSAVEDBY" => FieldKind::DocProperty("LastSavedBy".into()),
+            "REVNUM" => FieldKind::DocProperty("RevisionNumber".into()),
+            "CREATEDATE" => FieldKind::DocDate("created"),
+            "SAVEDATE" => FieldKind::DocDate("modified"),
+            "PRINTDATE" => FieldKind::DocDate("lastPrinted"),
             "IF" => FieldKind::If,
             n if !n.is_empty()
                 && !n.starts_with(['=', '\\'])
@@ -536,6 +548,8 @@ fn error_run(inlines: &[Inline], sp: FieldSpan) -> Option<Run> {
 
 pub fn evaluate(doc: &mut Document, now: i64) {
     date_blocks(doc, now);
+    let properties = doc.properties.clone();
+    let variables = doc.settings.variables.clone();
     let resolver = doc.resolver.clone();
     let styles = resolver.as_deref().map(|r| &r.styles);
     // Bookmark texts (to the bookmark's end, at most the end of its paragraph; codes left out) and every paragraph's
@@ -615,6 +629,9 @@ pub fn evaluate(doc: &mut Document, now: i64) {
                     FieldKind::If => if_field(&w),
                     FieldKind::Invalid => Some(String::new()),
                     FieldKind::Date => Some(date(code, now)),
+                    FieldKind::DocProperty(_) | FieldKind::DocVariable(_) | FieldKind::DocDate(_) => {
+                        Some(document_value(kind, code, &properties, &variables))
+                    }
                     // In the body: the nearest text in the style before the field, else the next one.
                     FieldKind::StyleRef(_) => {
                         let q = StyleQuery::new(code, styles);
@@ -752,6 +769,25 @@ pub(crate) fn if_field(w: &[String]) -> Option<String> {
 
 /// `DATE`/`TIME` with a `\@` picture (default M/d/yyyy) at `secs` since 1970, UTC.
 // shortcut: UTC, no time zone; English month/day names.
+/// A document property, variable or date field's result: Word's error text when it has none.
+pub(crate) fn document_value(kind: &FieldKind, code: &str, p: &crate::docx::properties::Properties, vars: &[(String, String)]) -> String {
+    match kind {
+        FieldKind::DocProperty(name) => {
+            p.lookup(name).map_or_else(|| "Error! Unknown document property name.".into(), |v| format_field(&v, code, None))
+        }
+        FieldKind::DocVariable(name) => vars
+            .iter()
+            .find(|(n, _)| n.eq_ignore_ascii_case(name))
+            .map_or_else(|| "Error! No document variable supplied.".into(), |(_, v)| format_field(v, code, None)),
+        FieldKind::DocDate(name) => {
+            // A date Word never set (an unprinted document's print date) shows as zero.
+            let secs = p.core(name).and_then(|v| crate::docx::review::Timestamp::parse(v).utc);
+            secs.map_or_else(|| "0".into(), |s| date(code, s))
+        }
+        _ => String::new(),
+    }
+}
+
 fn date(code: &str, secs: i64) -> String {
     let (days, sod) = (secs.div_euclid(86400), secs.rem_euclid(86400));
     // Civil date from days since 1970-01-01 (H. Hinnant).
@@ -1050,7 +1086,8 @@ mod tests {
             ("=1+2", None),
             ("QUOTE x", None),
             ("umber", Some(FieldKind::Bookmark("UMBER".into()))),
-            ("AUTHOR", None),
+            ("AUTHOR", Some(FieldKind::DocProperty("Author".into()))),
+            ("DOCVARIABLE Case", Some(FieldKind::DocVariable("Case".into()))),
             ("NUM PAGES", Some(FieldKind::Bookmark("NUM".into()))),
             ("1ABC", Some(FieldKind::Invalid)),
         ] {

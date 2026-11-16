@@ -237,4 +237,6 @@ export type {
   TransformKind,
   Warning,
   WordCount,
+  CustomProperty,
+  DocumentProperties,
 } from './types.js';

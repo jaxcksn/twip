@@ -95,7 +95,52 @@ pub fn edited_parts(doc: &Document) -> Result<Vec<(String, Vec<u8>)>, String> {
     settings_part(doc, &mut parts)?;
     add_images(&src.package, &doc.images, &mut parts)?;
     data_parts(doc, &mut parts)?;
+    property_parts(doc, &mut parts)?;
     Ok(parts)
+}
+
+/// The document properties parts, when the properties changed or anything else did: an edited document's last saved
+/// time and revision follow.
+fn property_parts(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
+    use super::properties as p;
+    let src = doc.source.as_ref().ok_or("the document was not read for editing")?;
+    let part = |rel: &str, parts: &[(String, Vec<u8>)]| package::related(&src.package, parts, "", rel);
+    let (core, app, custom) = (part(p::CORE, parts)?, part(p::APP, parts)?, part(p::CUSTOM, parts)?);
+    let read_of =
+        |n: &Option<String>, parts: &[(String, Vec<u8>)]| n.as_ref().map(|n| package::read(&src.package, parts, n)).transpose().map(Option::flatten);
+    let (core_x, app_x, custom_x) = (read_of(&core, parts)?, read_of(&app, parts)?, read_of(&custom, parts)?);
+    let read = p::read(core_x.as_deref(), app_x.as_deref(), custom_x.as_deref());
+    let mut now = doc.properties.clone();
+    if !parts.is_empty() && core.is_some() {
+        let secs = crate::clock::unix_secs();
+        now.set_core("modified", Some(crate::docx::review::Timestamp::from_utc(secs).raw.to_string()));
+        let rev = read.core("revision").and_then(|r| r.parse::<u64>().ok()).unwrap_or(0) + 1;
+        if now.core("revision") == read.core("revision") {
+            now.set_core("revision", Some(rev.to_string()));
+        }
+    }
+    if now.core != read.core {
+        let name = core.clone().unwrap_or_else(|| "docProps/core.xml".into());
+        if core.is_none() {
+            package::add_part(&src.package, parts, "", &name, "application/vnd.openxmlformats-package.core-properties+xml", p::CORE)?;
+        }
+        package::set(parts, &name, p::core_xml(core_x.as_deref(), &now).into_bytes());
+    }
+    if now.app != read.app {
+        let name = app.clone().unwrap_or_else(|| "docProps/app.xml".into());
+        if app.is_none() {
+            package::add_part(&src.package, parts, "", &name, "application/vnd.openxmlformats-officedocument.extended-properties+xml", p::APP)?;
+        }
+        package::set(parts, &name, p::app_xml(app_x.as_deref(), &now).into_bytes());
+    }
+    if now.custom != read.custom {
+        let name = custom.clone().unwrap_or_else(|| "docProps/custom.xml".into());
+        if custom.is_none() {
+            package::add_part(&src.package, parts, "", &name, "application/vnd.openxmlformats-officedocument.custom-properties+xml", p::CUSTOM)?;
+        }
+        package::set(parts, &name, p::custom_xml(&now).into_bytes());
+    }
+    Ok(())
 }
 
 const SETTINGS: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings";
@@ -215,6 +260,8 @@ const TAB_AND_HYPHENATION: &[&str] = &[
     "hdrShapeDefaults",
     "footnotePr",
     "endnotePr",
+    "compat",
+    "docVars",
 ];
 
 /// The settings part with the default tab spacing and the hyphenation settings, where they changed since reading.
@@ -269,6 +316,11 @@ fn settings_part(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(
             }
             None => set_setting(&mut out, "endnotePr", pos.map(|p| format!("<{w}endnotePr>{p}</{w}endnotePr>")))?,
         }
+    }
+    if read.variables != now.variables {
+        let vars: String =
+            now.variables.iter().map(|(n, v)| format!("<{w}docVar {w}name=\"{}\" {w}val=\"{}\"/>", props::esc(n), props::esc(v))).collect();
+        set_setting(&mut out, "docVars", (!vars.is_empty()).then(|| format!("<{w}docVars>{vars}</{w}docVars>")))?;
     }
     if read.default_table_style != now.default_table_style {
         let el = now.default_table_style.as_ref().map(|s| format!("<{w}defaultTableStyle {w}val=\"{}\"/>", props::esc(s)));

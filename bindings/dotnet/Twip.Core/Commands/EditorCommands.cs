@@ -789,6 +789,18 @@ public sealed class EditorCommands
     /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
     public Task DeleteBookmarkAsync(string name, CancellationToken ct = default) => _session.RunAsync(EditorOperation.DeleteBookmark(name), ct);
 
+    /// <summary>Sets the document's properties; unset values are kept.</summary>
+    /// <param name="change">The properties to change.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SetDocumentPropertiesAsync(DocumentPropertiesChange change, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetDocumentProperties(change), ct);
+
+    /// <summary>Sets a document variable (read by DOCVARIABLE), or removes it.</summary>
+    /// <param name="variable">The variable; a null value removes it.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SetDocumentVariableAsync(DocumentVariable variable, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetDocumentVariable(variable), ct);
+
     /// <summary>Inserts a field. With a selection and an empty code, wraps the selection.</summary>
     /// <param name="options">The field.</param>
     /// <param name="ct">Cancels the command before it runs.</param>

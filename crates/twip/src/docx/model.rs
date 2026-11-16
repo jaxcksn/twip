@@ -344,6 +344,13 @@ pub enum FieldKind {
     },
     /// A legacy drop-down (FORMDROPDOWN): it shows its entry as its value, a blank without one.
     DropDown,
+    /// A document property, by DOCPROPERTY's name (AUTHOR, TITLE, SUBJECT, KEYWORDS, COMMENTS, LASTSAVEDBY and
+    /// REVNUM read theirs).
+    DocProperty(String),
+    /// A document variable (DOCVARIABLE).
+    DocVariable(String),
+    /// A document date property (CREATEDATE, SAVEDATE, PRINTDATE): its core property's name.
+    DocDate(&'static str),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1313,6 +1320,8 @@ pub struct Settings {
     pub gutter_at_top: bool,
     /// The style new tables take (`w:defaultTableStyle`).
     pub default_table_style: Option<String>,
+    /// The document variables (`w:docVars`), in order.
+    pub variables: Vec<(String, String)>,
     /// `w:bookFoldPrinting` / `w:bookFoldRevPrinting`: `Some(reversed)`.
     pub book_fold: Option<bool>,
     /// `w:strictFirstAndLastChars`: the strict East Asian line-breaking level.
@@ -1365,6 +1374,8 @@ pub struct Document {
     /// Footnote separator / continuation separator stories, when the document defines them.
     pub separators: HashMap<String, Vec<Block>>,
     pub images: Vec<Vec<u8>>,
+    /// The core, extended and custom document properties.
+    pub properties: super::properties::Properties,
     /// The hyphenation patterns the host supplied.
     pub hyphenation: Option<crate::layout::hyphenate::Hyphenation>,
     /// Content controls the model keeps: row-level wrappers (repeating sections and their items) and checkboxes,

@@ -7219,3 +7219,122 @@ static Twip.RelativeSize.operator !=(Twip.RelativeSize? left, Twip.RelativeSize?
 static Twip.RelativeSize.operator ==(Twip.RelativeSize? left, Twip.RelativeSize? right) -> bool
 static Twip.TextColumns.operator !=(Twip.TextColumns? left, Twip.TextColumns? right) -> bool
 static Twip.TextColumns.operator ==(Twip.TextColumns? left, Twip.TextColumns? right) -> bool
+Twip.CommandId.SetDocumentProperties = 245 -> Twip.CommandId
+Twip.CommandId.SetDocumentVariable = 246 -> Twip.CommandId
+Twip.CustomProperty
+Twip.CustomProperty.<Clone>$() -> Twip.CustomProperty!
+Twip.CustomProperty.CustomProperty(string! Name, Twip.CustomPropertyKind Kind, string! Value) -> void
+Twip.CustomProperty.Deconstruct(out string! Name, out Twip.CustomPropertyKind Kind, out string! Value) -> void
+Twip.CustomProperty.Equals(Twip.CustomProperty? other) -> bool
+Twip.CustomProperty.Kind.get -> Twip.CustomPropertyKind
+Twip.CustomProperty.Kind.init -> void
+Twip.CustomProperty.Name.get -> string!
+Twip.CustomProperty.Name.init -> void
+Twip.CustomProperty.Value.get -> string!
+Twip.CustomProperty.Value.init -> void
+Twip.CustomPropertyKind
+Twip.CustomPropertyKind.Date = 3 -> Twip.CustomPropertyKind
+Twip.CustomPropertyKind.Number = 1 -> Twip.CustomPropertyKind
+Twip.CustomPropertyKind.Text = 0 -> Twip.CustomPropertyKind
+Twip.CustomPropertyKind.YesNo = 2 -> Twip.CustomPropertyKind
+Twip.DocumentProperties
+Twip.DocumentProperties.<Clone>$() -> Twip.DocumentProperties!
+Twip.DocumentProperties.Author.get -> string?
+Twip.DocumentProperties.Author.init -> void
+Twip.DocumentProperties.Category.get -> string?
+Twip.DocumentProperties.Category.init -> void
+Twip.DocumentProperties.Comments.get -> string?
+Twip.DocumentProperties.Comments.init -> void
+Twip.DocumentProperties.Company.get -> string?
+Twip.DocumentProperties.Company.init -> void
+Twip.DocumentProperties.Created.get -> string?
+Twip.DocumentProperties.Created.init -> void
+Twip.DocumentProperties.Custom.get -> System.Collections.Generic.IReadOnlyList<Twip.CustomProperty!>!
+Twip.DocumentProperties.Custom.init -> void
+Twip.DocumentProperties.DocumentProperties() -> void
+Twip.DocumentProperties.Equals(Twip.DocumentProperties? other) -> bool
+Twip.DocumentProperties.HyperlinkBase.get -> string?
+Twip.DocumentProperties.HyperlinkBase.init -> void
+Twip.DocumentProperties.Keywords.get -> string?
+Twip.DocumentProperties.Keywords.init -> void
+Twip.DocumentProperties.LastModifiedBy.get -> string?
+Twip.DocumentProperties.LastModifiedBy.init -> void
+Twip.DocumentProperties.LastPrinted.get -> string?
+Twip.DocumentProperties.LastPrinted.init -> void
+Twip.DocumentProperties.Manager.get -> string?
+Twip.DocumentProperties.Manager.init -> void
+Twip.DocumentProperties.Modified.get -> string?
+Twip.DocumentProperties.Modified.init -> void
+Twip.DocumentProperties.Revision.get -> string?
+Twip.DocumentProperties.Revision.init -> void
+Twip.DocumentProperties.Status.get -> string?
+Twip.DocumentProperties.Status.init -> void
+Twip.DocumentProperties.Subject.get -> string?
+Twip.DocumentProperties.Subject.init -> void
+Twip.DocumentProperties.Title.get -> string?
+Twip.DocumentProperties.Title.init -> void
+Twip.DocumentProperties.Variables.get -> System.Collections.Generic.IReadOnlyList<Twip.DocumentVariable!>!
+Twip.DocumentProperties.Variables.init -> void
+Twip.DocumentPropertiesChange
+Twip.DocumentPropertiesChange.<Clone>$() -> Twip.DocumentPropertiesChange!
+Twip.DocumentPropertiesChange.Author.get -> string?
+Twip.DocumentPropertiesChange.Author.init -> void
+Twip.DocumentPropertiesChange.Category.get -> string?
+Twip.DocumentPropertiesChange.Category.init -> void
+Twip.DocumentPropertiesChange.Comments.get -> string?
+Twip.DocumentPropertiesChange.Comments.init -> void
+Twip.DocumentPropertiesChange.Company.get -> string?
+Twip.DocumentPropertiesChange.Company.init -> void
+Twip.DocumentPropertiesChange.Custom.get -> System.Collections.Generic.IReadOnlyList<Twip.CustomProperty!>?
+Twip.DocumentPropertiesChange.Custom.init -> void
+Twip.DocumentPropertiesChange.Deconstruct(out string? Title, out string? Subject, out string? Author, out string? Keywords, out string? Comments, out string? Category, out string? Status, out string? LastModifiedBy, out string? Company, out string? Manager, out string? HyperlinkBase, out System.Collections.Generic.IReadOnlyList<Twip.CustomProperty!>? Custom) -> void
+Twip.DocumentPropertiesChange.DocumentPropertiesChange(string? Title = null, string? Subject = null, string? Author = null, string? Keywords = null, string? Comments = null, string? Category = null, string? Status = null, string? LastModifiedBy = null, string? Company = null, string? Manager = null, string? HyperlinkBase = null, System.Collections.Generic.IReadOnlyList<Twip.CustomProperty!>? Custom = null) -> void
+Twip.DocumentPropertiesChange.Equals(Twip.DocumentPropertiesChange? other) -> bool
+Twip.DocumentPropertiesChange.HyperlinkBase.get -> string?
+Twip.DocumentPropertiesChange.HyperlinkBase.init -> void
+Twip.DocumentPropertiesChange.Keywords.get -> string?
+Twip.DocumentPropertiesChange.Keywords.init -> void
+Twip.DocumentPropertiesChange.LastModifiedBy.get -> string?
+Twip.DocumentPropertiesChange.LastModifiedBy.init -> void
+Twip.DocumentPropertiesChange.Manager.get -> string?
+Twip.DocumentPropertiesChange.Manager.init -> void
+Twip.DocumentPropertiesChange.Status.get -> string?
+Twip.DocumentPropertiesChange.Status.init -> void
+Twip.DocumentPropertiesChange.Subject.get -> string?
+Twip.DocumentPropertiesChange.Subject.init -> void
+Twip.DocumentPropertiesChange.Title.get -> string?
+Twip.DocumentPropertiesChange.Title.init -> void
+Twip.DocumentVariable
+Twip.DocumentVariable.<Clone>$() -> Twip.DocumentVariable!
+Twip.DocumentVariable.Deconstruct(out string! Name, out string? Value) -> void
+Twip.DocumentVariable.DocumentVariable(string! Name, string? Value = null) -> void
+Twip.DocumentVariable.Equals(Twip.DocumentVariable? other) -> bool
+Twip.DocumentVariable.Name.get -> string!
+Twip.DocumentVariable.Name.init -> void
+Twip.DocumentVariable.Value.get -> string?
+Twip.DocumentVariable.Value.init -> void
+Twip.EditorCommands.SetDocumentPropertiesAsync(Twip.DocumentPropertiesChange! change, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetDocumentVariableAsync(Twip.DocumentVariable! variable, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorSession.GetDocumentPropertiesAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Twip.DocumentProperties!>!
+override Twip.CustomProperty.Equals(object? obj) -> bool
+override Twip.CustomProperty.GetHashCode() -> int
+override Twip.CustomProperty.ToString() -> string!
+override Twip.DocumentProperties.Equals(object? obj) -> bool
+override Twip.DocumentProperties.GetHashCode() -> int
+override Twip.DocumentProperties.ToString() -> string!
+override Twip.DocumentPropertiesChange.Equals(object? obj) -> bool
+override Twip.DocumentPropertiesChange.GetHashCode() -> int
+override Twip.DocumentPropertiesChange.ToString() -> string!
+override Twip.DocumentVariable.Equals(object? obj) -> bool
+override Twip.DocumentVariable.GetHashCode() -> int
+override Twip.DocumentVariable.ToString() -> string!
+static Twip.CustomProperty.operator !=(Twip.CustomProperty? left, Twip.CustomProperty? right) -> bool
+static Twip.CustomProperty.operator ==(Twip.CustomProperty? left, Twip.CustomProperty? right) -> bool
+static Twip.DocumentProperties.operator !=(Twip.DocumentProperties? left, Twip.DocumentProperties? right) -> bool
+static Twip.DocumentProperties.operator ==(Twip.DocumentProperties? left, Twip.DocumentProperties? right) -> bool
+static Twip.DocumentPropertiesChange.operator !=(Twip.DocumentPropertiesChange? left, Twip.DocumentPropertiesChange? right) -> bool
+static Twip.DocumentPropertiesChange.operator ==(Twip.DocumentPropertiesChange? left, Twip.DocumentPropertiesChange? right) -> bool
+static Twip.DocumentVariable.operator !=(Twip.DocumentVariable? left, Twip.DocumentVariable? right) -> bool
+static Twip.DocumentVariable.operator ==(Twip.DocumentVariable? left, Twip.DocumentVariable? right) -> bool
+static Twip.EditorOperation.SetDocumentProperties(Twip.DocumentPropertiesChange! change) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetDocumentVariable(Twip.DocumentVariable! variable) -> Twip.EditorOperation!

@@ -7,7 +7,7 @@ use crate::api::command::{
 use crate::api::error::Error;
 use crate::api::review::Body;
 use crate::api::value::{ControlKind as KindArg, ControlLock, ControlOptions, DataBinding};
-use crate::docx::{Block, Control, ControlId, ControlKind, ControlProps, ElementId, FieldId, FieldView, Inline, Lock};
+use crate::docx::{Block, Control, ControlId, ControlKind, ControlProps, ElementId, FieldId, FieldKind, FieldView, Inline, Lock};
 use crate::font::Fonts;
 use crate::layout::{ParaId, Unit};
 
@@ -1161,10 +1161,37 @@ impl Editor {
             o @ Outcome::Changed(_) => o,
             _ => Outcome::Moved,
         };
+        // Document properties and variables: the engine's to compute.
+        let own: Vec<(FieldId, String)> = unlocked
+            .iter()
+            .filter_map(|(f, para)| {
+                let p = self.index.para(&self.doc, *para)?;
+                let k = p.inlines.iter().position(|i| matches!(i, Inline::FieldBegin { id, .. } if id == f))?;
+                let Inline::FieldBegin { kind: Some(kind), .. } = &p.inlines[k] else { return None };
+                if !matches!(kind, FieldKind::DocProperty(_) | FieldKind::DocVariable(_) | FieldKind::DocDate(_)) {
+                    return None;
+                }
+                let code = crate::docx::fields::code_text(&p.inlines, crate::docx::fields::span_at(&p.inlines, k)?);
+                Some((*f, crate::docx::fields::document_value(kind, code.trim(), &self.doc.properties, &self.doc.settings.variables)))
+            })
+            .collect();
+        let out = if own.is_empty() {
+            out
+        } else {
+            let mut tx = self.begin("Update Fields");
+            for (f, v) in &own {
+                self.set_result(&mut tx, *f, v);
+            }
+            match self.commit(tx, None, fonts) {
+                o @ Outcome::Changed(_) => o,
+                _ => out,
+            }
+        };
         self.update_token += 1;
         let token = self.update_token;
         let fields: Vec<(ElementId, String)> = unlocked
             .iter()
+            .filter(|(f, _)| !own.iter().any(|(g, _)| g == f))
             .filter_map(|(f, para)| {
                 let p = self.index.para(&self.doc, *para)?;
                 let k = p.inlines.iter().position(|i| matches!(i, Inline::FieldBegin { id, .. } if id == f))?;

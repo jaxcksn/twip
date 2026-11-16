@@ -137,6 +137,57 @@ export interface Warning {
   location?: { part: string; paragraph?: number };
 }
 
+/**
+ * A custom document property: its value as text (a decimal number, `true` or `false`, or an ISO 8601 date and time
+ * for those kinds).
+ */
+export interface CustomProperty {
+  /** Its name. */
+  name: string;
+  /** What it holds. */
+  kind: 'text' | 'number' | 'yesNo' | 'date';
+  /** Its value. */
+  value: string;
+}
+
+/** The document's properties and variables; a property the document lacks is absent. */
+export interface DocumentProperties {
+  /** The title. */
+  title?: string;
+  /** The subject. */
+  subject?: string;
+  /** The author. */
+  author?: string;
+  /** The keywords. */
+  keywords?: string;
+  /** The comments. */
+  comments?: string;
+  /** The category. */
+  category?: string;
+  /** The status. */
+  status?: string;
+  /** Who saved it last. */
+  lastModifiedBy?: string;
+  /** How many times it was saved. */
+  revision?: string;
+  /** When it was made (ISO 8601). */
+  created?: string;
+  /** When it was last saved (ISO 8601). */
+  modified?: string;
+  /** When it was last printed (ISO 8601). */
+  lastPrinted?: string;
+  /** The company. */
+  company?: string;
+  /** The manager. */
+  manager?: string;
+  /** The base relative hyperlinks resolve against. */
+  hyperlinkBase?: string;
+  /** The custom properties. */
+  custom: CustomProperty[];
+  /** The document variables. */
+  variables: { name: string; value?: string }[];
+}
+
 /** Word, character, paragraph, line and page counts, computed on request. */
 export interface WordCount {
   /** Words. */

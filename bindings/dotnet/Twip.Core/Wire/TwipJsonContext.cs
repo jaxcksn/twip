@@ -189,6 +189,7 @@ namespace Twip.Wire;
         typeof(CamelEnum<RelativeSizeReference>),
         typeof(CamelEnum<ObjectAlign>),
         typeof(CamelEnum<AlignReference>),
+        typeof(CamelEnum<CustomPropertyKind>),
         typeof(FormatValueConverter<FontStyleChoice>),
         typeof(FormatValueConverter<OutlineLevel>),
         typeof(FormatValueConverter<SpecialIndent>),
@@ -623,6 +624,11 @@ namespace Twip.Wire;
 [JsonSerializable(typeof(RowExceptions))]
 [JsonSerializable(typeof(RowBorders))]
 [JsonSerializable(typeof(RelativeSize))]
+[JsonSerializable(typeof(DocumentPropertiesChange))]
+[JsonSerializable(typeof(DocumentProperties))]
+[JsonSerializable(typeof(CustomProperty))]
+[JsonSerializable(typeof(CustomPropertyKind))]
+[JsonSerializable(typeof(DocumentVariable))]
 [JsonSerializable(typeof(RelativeSizeReference))]
 [JsonSerializable(typeof(PictureCrop))]
 [JsonSerializable(typeof(ObjectAlign))]

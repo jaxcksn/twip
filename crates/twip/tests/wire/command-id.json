@@ -126,6 +126,8 @@
   "removeHyperlink",
   "insertBookmark",
   "deleteBookmark",
+  "setDocumentProperties",
+  "setDocumentVariable",
   "insertField",
   "insertRows",
   "insertColumns",

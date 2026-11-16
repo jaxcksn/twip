@@ -128,6 +128,8 @@ pub enum Step {
     },
     /// The style new tables take.
     DefaultTableStyle(Option<String>),
+    /// The document's properties and variables.
+    Info(Box<(crate::docx::properties::Properties, Vec<(String, String)>)>),
 }
 
 /// The document's page settings: odd and even headers, how pages pair, the gutter's place, and the page borders
@@ -912,6 +914,11 @@ impl Step {
                 };
                 (s.auto_hyphenation, s.hyphenation_zone, s.consecutive_hyphen_limit, s.do_not_hyphenate_caps) = (h.auto, h.zone, h.limit, h.caps);
                 Ok(Applied { inverse: Step::Hyphenation(old), map: Map::Same, hint: None })
+            }
+            Step::Info(info) => {
+                let (p, v) = *info;
+                let old = (std::mem::replace(&mut doc.properties, p), std::mem::replace(&mut doc.settings.variables, v));
+                Ok(Applied { inverse: Step::Info(Box::new(old)), map: Map::Same, hint: None })
             }
             Step::DefaultTableStyle(id) => {
                 let old = std::mem::replace(&mut doc.settings.default_table_style, id);

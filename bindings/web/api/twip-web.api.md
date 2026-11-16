@@ -645,6 +645,24 @@ export interface Commands {
     setDifferentFirstPage(on: boolean): Promise<void>;
     setDifferentOddEvenPages(on: boolean): Promise<void>;
     setDocumentDefaults(defaults: DocumentDefaults): Promise<void>;
+    setDocumentProperties(options: {
+        title?: string;
+        subject?: string;
+        author?: string;
+        keywords?: string;
+        comments?: string;
+        category?: string;
+        status?: string;
+        lastModifiedBy?: string;
+        company?: string;
+        manager?: string;
+        hyperlinkBase?: string;
+        custom?: CustomProperty[];
+    }): Promise<void>;
+    setDocumentVariable(options: {
+        name: string;
+        value?: string;
+    }): Promise<void>;
     setDoubleStrikethrough(on: boolean): Promise<void>;
     setField(options: {
         id: ElementId;
@@ -1092,6 +1110,13 @@ export interface CursorOverride {
 }
 
 // @public
+export interface CustomProperty {
+    kind: 'text' | 'number' | 'yesNo' | 'date';
+    name: string;
+    value: string;
+}
+
+// @public
 export interface DataBinding {
     prefixMappings?: string;
     storeItemId?: string;
@@ -1371,6 +1396,30 @@ export interface DocumentDefaults {
         before?: Points | 'auto';
         after?: Points | 'auto';
     };
+}
+
+// @public
+export interface DocumentProperties {
+    author?: string;
+    category?: string;
+    comments?: string;
+    company?: string;
+    created?: string;
+    custom: CustomProperty[];
+    hyperlinkBase?: string;
+    keywords?: string;
+    lastModifiedBy?: string;
+    lastPrinted?: string;
+    manager?: string;
+    modified?: string;
+    revision?: string;
+    status?: string;
+    subject?: string;
+    title?: string;
+    variables: {
+        name: string;
+        value?: string;
+    }[];
 }
 
 // @public
@@ -1869,6 +1918,7 @@ export class HeadlessEditor {
     readonly data: DataParts;
     destroy(): Promise<void>;
     readonly dialogs: Dialogs;
+    documentProperties(): Promise<DocumentProperties>;
     readonly elements: Elements;
     export(options: ExportOptions): Promise<ExportResult>;
     readonly find: Find;

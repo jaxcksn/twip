@@ -28,7 +28,7 @@ import type { EditorState } from './state.js';
 import { directTransport } from './transport/direct.js';
 import { chooseExecution, workerTransport } from './transport/worker.js';
 import { decodeEvent, type FrameInfo, Kind, Method, type Input, type Message, type Transport } from './transport/protocol.js';
-import type { Author, ClientRect, Color, OverlayColors, ShapeGalleryGroup, Warning, WordCount } from './types.js';
+import type { Author, ClientRect, Color, DocumentProperties, OverlayColors, ShapeGalleryGroup, Warning, WordCount } from './types.js';
 
 /** Options for a new session. */
 export interface SessionOptions {
@@ -510,6 +510,11 @@ export class HeadlessEditor {
   /** Counts words, characters, paragraphs, lines and pages. */
   wordCount(): Promise<WordCount> {
     return sessionOf(this).call(Method.WordCount);
+  }
+
+  /** The document's properties (core, extended and custom) and variables. */
+  documentProperties(): Promise<DocumentProperties> {
+    return sessionOf(this).call(Method.DocumentProperties);
   }
 
   /** Releases the editor. Idempotent; later calls reject `destroyed`. */

@@ -1471,6 +1471,61 @@ pub struct Heading {
     pub page: u32,
 }
 
+/// The document's properties and variables, for File > Info and Advanced Properties.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DocumentProperties {
+    /// The title.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// The subject.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subject: Option<String>,
+    /// The author.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub author: Option<String>,
+    /// The keywords.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keywords: Option<String>,
+    /// The comments.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub comments: Option<String>,
+    /// The category.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
+    /// The status.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    /// Who saved it last.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_modified_by: Option<String>,
+    /// How many times it was saved.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revision: Option<String>,
+    /// When it was made (ISO 8601).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created: Option<String>,
+    /// When it was last saved (ISO 8601).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub modified: Option<String>,
+    /// When it was last printed (ISO 8601).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_printed: Option<String>,
+    /// The company.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub company: Option<String>,
+    /// The manager.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub manager: Option<String>,
+    /// The base relative hyperlinks resolve against.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hyperlink_base: Option<String>,
+    /// The custom properties.
+    pub custom: Vec<super::command::CustomProperty>,
+    /// The document variables (`w:docVars`).
+    pub variables: Vec<super::command::DocumentVariable>,
+}
+
 /// A bookmark, for the Bookmark dialog.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

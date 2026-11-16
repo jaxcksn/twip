@@ -590,6 +590,11 @@ impl Session {
         crate::services::headings(&mut self.editor)
     }
 
+    /// The document's properties (core, extended and custom) and variables.
+    pub fn document_properties(&self) -> crate::api::services::DocumentProperties {
+        self.editor.document_properties()
+    }
+
     /// The document's bookmarks, hidden ones too, in document order.
     pub fn bookmarks(&self) -> Vec<crate::api::services::BookmarkInfo> {
         self.editor

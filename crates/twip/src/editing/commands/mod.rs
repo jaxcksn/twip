@@ -338,6 +338,8 @@ impl Editor {
             Command::ConvertNotes(c) => self.convert_notes(c, fonts),
             Command::InsertHyperlink(h) => self.insert_hyperlink(h, fonts),
             Command::InsertBookmark(name) => self.insert_bookmark(&name, fonts),
+            Command::SetDocumentProperties(p) => self.set_document_properties(p, fonts),
+            Command::SetDocumentVariable(v) => self.set_document_variable(v, fonts),
             Command::DeleteBookmark(name) => self.delete_bookmark(&name, fonts),
             Command::EditHyperlink(h) => self.edit_hyperlink(h, fonts),
             Command::RemoveHyperlink => self.remove_hyperlink(fonts),

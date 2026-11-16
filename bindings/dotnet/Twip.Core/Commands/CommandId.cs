@@ -493,4 +493,8 @@ public enum CommandId
     ChangePicture,
     /// <summary>Aligns or distributes the selected floating objects.</summary>
     AlignObjects,
+    /// <summary>Sets the document's properties.</summary>
+    SetDocumentProperties,
+    /// <summary>Sets or removes a document variable.</summary>
+    SetDocumentVariable,
 }

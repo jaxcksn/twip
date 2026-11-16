@@ -630,6 +630,24 @@
     "value": "Summary"
   },
   {
+    "author": "Ada Lovelace",
+    "company": "Analytical Engines",
+    "custom": [
+      {
+        "kind": "text",
+        "name": "Client",
+        "value": "Acme"
+      }
+    ],
+    "title": "Annual report",
+    "type": "setDocumentProperties"
+  },
+  {
+    "name": "CaseNumber",
+    "type": "setDocumentVariable",
+    "value": "2026-0042"
+  },
+  {
     "code": "MERGEFIELD Name",
     "display": "«Name»",
     "showCode": false,

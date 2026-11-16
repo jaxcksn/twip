@@ -11,6 +11,7 @@ pub mod image;
 pub mod model;
 pub mod numbering;
 pub mod package;
+pub mod properties;
 pub mod props;
 mod reader;
 pub mod resolve;

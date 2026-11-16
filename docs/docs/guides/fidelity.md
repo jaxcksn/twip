@@ -57,11 +57,11 @@ Chunk numbers are [roadmap](../roadmap#docx) chunks.
 
 | Construct | Elements | Status |
 |---|---|---|
-| Fields | `w:fldChar`, `w:fldSimple`, `w:instrText` | API (`insertField`, `setField`, `updateFields`); more computed kinds in 2.11 |
+| Fields | `w:fldChar`, `w:fldSimple`, `w:instrText` | API (`insertField`, `setField`, `updateFields`; the engine computes the document property and variable fields). FILENAME, NOTEREF, LISTNUM, AUTONUM, `=` formulas and DATE in the host's time zone are 2.11 |
 | Field data | `w:fldData` | Application (binary data Word keeps for a field) |
 | Legacy form fields | `w:ffData`, `w:name`, `w:enabled`, `w:calcOnExit`, `w:entryMacro`, `w:exitMacro`, `w:helpText`, `w:statusText`, `w:checkBox`, `w:size`, `w:sizeAuto`, `w:default`, `w:checked`, `w:ddList`, `w:result`, `w:listEntry`, `w:textInput`, `w:type`, `w:maxLength`, `w:format` | Kept (with the field when it is rewritten or moved); check box and drop-down drawn. Model and API, 2.12 |
 | Form field shading | `w:doNotShadeFormData` | 2.12 |
-| Document variables | `w:docVars`, `w:docVar` | Kept; Model and API, with DOCVARIABLE, 2.11 |
+| Document variables | `w:docVars`, `w:docVar` | API (`setDocumentVariable`, `documentProperties`; DOCVARIABLE shows them) |
 
 ## Character formatting
 
@@ -261,7 +261,7 @@ Word 2010 and later remove custom XML markup when they open a document, so it is
 
 | Construct | Part | Status |
 |---|---|---|
-| Core, extended and custom properties | `docProps/core.xml`, `docProps/app.xml`, `docProps/custom.xml` | Kept; Model and API, and updated on save, 2.11 |
+| Core, extended and custom properties | `docProps/core.xml`, `docProps/app.xml`, `docProps/custom.xml` | API (`setDocumentProperties`, `documentProperties`; DOCPROPERTY, AUTHOR, TITLE, SUBJECT, KEYWORDS, COMMENTS, LASTSAVEDBY, REVNUM, CREATEDATE, SAVEDATE and PRINTDATE show them). An edited document's last saved time and revision follow its save; the statistics (pages, words) are kept as read |
 
 ## DrawingML and VML {#drawing}
 

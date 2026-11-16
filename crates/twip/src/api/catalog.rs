@@ -244,6 +244,8 @@ const ENTRIES: &[Entry] = {
         (C::RemoveHyperlink, "Remove Link", G::Insert, &[], &[], false, true, U::Step),
         (C::InsertBookmark, "Bookmark", G::Insert, &[], &[], true, true, U::Step),
         (C::DeleteBookmark, "Delete Bookmark", G::Insert, &[], &[], true, true, U::Step),
+        (C::SetDocumentProperties, "Properties", G::Insert, &[], &[], true, true, U::Step),
+        (C::SetDocumentVariable, "Document Variable", G::Insert, &[], &[], true, true, U::Step),
         (C::InsertField, "Field", G::Insert, &["Ctrl+F9"], &["⌘F9"], true, true, U::Step),
         (C::InsertRows, "Insert Rows", G::Table, &[], &[], true, true, U::Step),
         (C::InsertColumns, "Insert Columns", G::Table, &[], &[], true, true, U::Step),

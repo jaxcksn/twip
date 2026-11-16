@@ -200,6 +200,60 @@ public sealed record Warning(
 public sealed record WarningLocation(
     string Part, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Paragraph = null);
 
+/// <summary>The document's properties and variables; a property the document lacks is null.</summary>
+public sealed record DocumentProperties
+{
+    /// <summary>The title.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Title { get; init; }
+    /// <summary>The subject.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Subject { get; init; }
+    /// <summary>The author.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Author { get; init; }
+    /// <summary>The keywords.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Keywords { get; init; }
+    /// <summary>The comments.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Comments { get; init; }
+    /// <summary>The category.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Category { get; init; }
+    /// <summary>The status.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Status { get; init; }
+    /// <summary>Who saved it last.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? LastModifiedBy { get; init; }
+    /// <summary>How many times it was saved.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Revision { get; init; }
+    /// <summary>When it was made (ISO 8601).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Created { get; init; }
+    /// <summary>When it was last saved (ISO 8601).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Modified { get; init; }
+    /// <summary>When it was last printed (ISO 8601).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? LastPrinted { get; init; }
+    /// <summary>The company.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Company { get; init; }
+    /// <summary>The manager.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Manager { get; init; }
+    /// <summary>The base relative hyperlinks resolve against.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? HyperlinkBase { get; init; }
+    /// <summary>The custom properties.</summary>
+    public IReadOnlyList<CustomProperty> Custom { get; init; } = [];
+    /// <summary>The document variables.</summary>
+    public IReadOnlyList<DocumentVariable> Variables { get; init; } = [];
+}
+
 /// <summary>Document statistics, computed on request.</summary>
 /// <param name="Words">Words.</param>
 /// <param name="Characters">Characters without spaces.</param>

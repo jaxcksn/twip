@@ -163,6 +163,7 @@ pub fn step_bytes(s: &Step) -> usize {
         | Step::Hyphenation(_)
         | Step::PageSettings(_)
         | Step::DefaultTableStyle(_)
+        | Step::Info(_)
         | Step::SectionBreak { .. } => 32,
         Step::ImageData { data, .. } => 32 + data.len(),
         Step::AddImage { data, .. } => 32 + data.as_ref().map_or(0, Vec::len),

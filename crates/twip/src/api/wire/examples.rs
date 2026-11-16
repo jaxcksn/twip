@@ -361,6 +361,19 @@ pub fn fixtures() -> Vec<Fixture> {
         fixture!("misspelling", Misspelling, vec![Misspelling { word: "teh".into(), suggestions: vec!["the".into(), "ten".into()] }]),
         fixture!("heading", Heading, vec![Heading { id: HeadingId("h2".into()), level: 2, text: "Terms".into(), page: 3 }]),
         fixture!(
+            "document-properties",
+            DocumentProperties,
+            vec![DocumentProperties {
+                title: Some("Annual report".into()),
+                author: Some("Ada Lovelace".into()),
+                revision: Some("3".into()),
+                modified: Some("2026-11-15T12:00:00Z".into()),
+                custom: vec![CustomProperty { name: "Client".into(), kind: CustomPropertyKind::Text, value: "Acme".into() }],
+                variables: vec![DocumentVariable { name: "CaseNumber".into(), value: Some("2026-0042".into()) }],
+                ..Default::default()
+            }]
+        ),
+        fixture!(
             "bookmark-info",
             BookmarkInfo,
             vec![
@@ -899,6 +912,14 @@ fn commands() -> Vec<Command> {
         Command::RemoveHyperlink,
         Command::InsertBookmark("Summary".into()),
         Command::DeleteBookmark("Summary".into()),
+        Command::SetDocumentProperties(DocumentPropertiesChange {
+            title: Some("Annual report".into()),
+            author: Some("Ada Lovelace".into()),
+            company: Some("Analytical Engines".into()),
+            custom: Some(vec![CustomProperty { name: "Client".into(), kind: CustomPropertyKind::Text, value: "Acme".into() }]),
+            ..Default::default()
+        }),
+        Command::SetDocumentVariable(DocumentVariable { name: "CaseNumber".into(), value: Some("2026-0042".into()) }),
         Command::InsertField(InsertField { code: "MERGEFIELD Name".into(), display: Some("«Name»".into()), show_code: Some(false) }),
         Command::InsertRows(InsertRows { side: VerticalSide::Below, count: Some(2) }),
         Command::InsertColumns(InsertColumns { side: HorizontalSide::Left, count: Some(1) }),

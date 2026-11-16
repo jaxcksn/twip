@@ -166,6 +166,20 @@ impl Session {
             C::InsertTable(t) => count("the rows", Some(t.rows), 32767).and(count("the columns", Some(t.columns), 63)),
             C::InsertPicture(p) => picture(&p.data.0),
             C::InsertHyperlink(h) => text("the address", &h.address),
+            C::SetDocumentVariable(d) => text("the variable's name", &d.name),
+            C::SetDocumentProperties(p) => {
+                let custom = p.custom.as_deref().unwrap_or_default();
+                for (k, c) in custom.iter().enumerate() {
+                    text("a custom property's name", &c.name)?;
+                    if custom[..k].iter().any(|d| d.name.eq_ignore_ascii_case(&c.name)) {
+                        return Err(Error::invalid(format!("two custom properties are named {}", c.name)));
+                    }
+                    if c.kind == crate::api::command::CustomPropertyKind::Number && c.value.trim().parse::<f64>().is_err() {
+                        return Err(Error::invalid(format!("{} isn't a number", c.value)));
+                    }
+                }
+                Ok(())
+            }
             C::InsertBookmark(n) if !crate::editing::bookmarks::valid_name(n) => {
                 Err(Error::invalid("a bookmark name starts with a letter and holds letters, digits and underscores, 40 at most"))
             }

@@ -349,6 +349,11 @@ commands! {
     InsertBookmark(#[serde(with = "value")] String),
     /// Deletes bookmark `value` (compared without case), keeping its text. Undo: one step.
     DeleteBookmark(#[serde(with = "value")] String),
+    /// Sets the document's properties (File > Info, Advanced Properties); what isn't given is kept, an empty text removes
+    /// it, and `custom` replaces the custom properties. Undo: one step.
+    SetDocumentProperties(DocumentPropertiesChange),
+    /// Sets a document variable (`w:docVars`, read by DOCVARIABLE), or removes it (`value` absent). Undo: one step.
+    SetDocumentVariable(DocumentVariable),
     /// A field with `code`; result `{ id }`. With a selection and an empty code, wraps it. Undo: one step.
     InsertField(InsertField),
 
@@ -2048,6 +2053,85 @@ pub struct Picture {
     /// The alternative text.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub alt_text: Option<String>,
+}
+
+/// `setDocumentProperties`'s options.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DocumentPropertiesChange {
+    /// The title (`dc:title`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// The subject (`dc:subject`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subject: Option<String>,
+    /// The author (`dc:creator`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub author: Option<String>,
+    /// The keywords (`cp:keywords`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keywords: Option<String>,
+    /// The comments (`dc:description`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub comments: Option<String>,
+    /// The category (`cp:category`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
+    /// The status (`cp:contentStatus`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    /// Who saved it last (`cp:lastModifiedBy`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_modified_by: Option<String>,
+    /// The company (extended properties).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub company: Option<String>,
+    /// The manager (extended properties).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub manager: Option<String>,
+    /// The base relative hyperlinks resolve against (extended properties).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hyperlink_base: Option<String>,
+    /// The custom properties, replacing those there were.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom: Option<Vec<CustomProperty>>,
+}
+
+/// A custom document property.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CustomProperty {
+    /// Its name (non-empty).
+    pub name: String,
+    /// What its value is.
+    pub kind: CustomPropertyKind,
+    /// Its value: the text, a decimal number, `true` or `false`, or an ISO 8601 date and time.
+    pub value: String,
+}
+
+/// What a custom property holds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CustomPropertyKind {
+    /// Text.
+    Text,
+    /// A number.
+    Number,
+    /// Yes or no.
+    YesNo,
+    /// A date.
+    Date,
+}
+
+/// `setDocumentVariable`'s options.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DocumentVariable {
+    /// Its name (non-empty).
+    pub name: String,
+    /// Its value; the variable is removed when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
 }
 
 /// `alignObjects`'s options.

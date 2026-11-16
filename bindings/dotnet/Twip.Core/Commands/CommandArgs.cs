@@ -1260,6 +1260,57 @@ public enum AlignReference
     SelectedObjects,
 }
 
+/// <summary>Document properties to change; unset values are kept, an empty text removes one, and <paramref name="Custom"/> replaces the custom properties.</summary>
+/// <param name="Title">The title.</param>
+/// <param name="Subject">The subject.</param>
+/// <param name="Author">The author.</param>
+/// <param name="Keywords">The keywords.</param>
+/// <param name="Comments">The comments.</param>
+/// <param name="Category">The category.</param>
+/// <param name="Status">The status.</param>
+/// <param name="LastModifiedBy">Who saved it last.</param>
+/// <param name="Company">The company.</param>
+/// <param name="Manager">The manager.</param>
+/// <param name="HyperlinkBase">The base relative hyperlinks resolve against.</param>
+/// <param name="Custom">The custom properties.</param>
+public sealed record DocumentPropertiesChange(
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Title = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Subject = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Author = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Keywords = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Comments = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Category = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Status = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? LastModifiedBy = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Company = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Manager = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? HyperlinkBase = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<CustomProperty>? Custom = null);
+
+/// <summary>A custom document property.</summary>
+/// <param name="Name">Its name.</param>
+/// <param name="Kind">What it holds.</param>
+/// <param name="Value">Its value as text: a decimal number, <c>true</c> or <c>false</c>, or an ISO 8601 date and time for those kinds.</param>
+public sealed record CustomProperty(string Name, CustomPropertyKind Kind, string Value);
+
+/// <summary>What a custom property holds.</summary>
+public enum CustomPropertyKind
+{
+    /// <summary>Text.</summary>
+    Text,
+    /// <summary>A number.</summary>
+    Number,
+    /// <summary>Yes or no.</summary>
+    YesNo,
+    /// <summary>A date.</summary>
+    Date,
+}
+
+/// <summary>A document variable.</summary>
+/// <param name="Name">Its name.</param>
+/// <param name="Value">Its value; null removes it.</param>
+public sealed record DocumentVariable(string Name, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Value = null);
+
 /// <summary>A text box's text columns.</summary>
 /// <param name="Count">How many, 1 to 16.</param>
 /// <param name="Spacing">The space between them, 0 to 1584 pt.</param>

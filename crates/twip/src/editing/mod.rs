@@ -41,6 +41,7 @@ mod pictures;
 pub mod pointer;
 pub mod position;
 mod preview;
+mod properties;
 mod resize;
 pub mod revisions;
 pub mod section;

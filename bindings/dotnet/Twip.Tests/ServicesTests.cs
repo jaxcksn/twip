@@ -27,7 +27,7 @@ public sealed class ServicesTests
         "styles.list", "styles.listOne", "review.revisions", "review.comments", "review.people", "elements.list",
         "elements.listFiltered", "elements.get", "elements.structure", "elements.select",
         "dataParts.list", "dataParts.get", "accessibility.tree", "gestures.bindings", "gestures.set", "gestures.reset",
-        "shortcuts.register", "shortcuts.lookup", "wordCount",
+        "shortcuts.register", "shortcuts.lookup", "wordCount", "documentProperties",
     ];
 
     [Theory]
@@ -114,6 +114,7 @@ public sealed class ServicesTests
             case "shortcuts.register": s.Shortcuts.Register("lock", "Ctrl+Shift+L", "Cmd+Shift+L").Dispose(); break;
             case "shortcuts.lookup": _ = s.Shortcuts.Lookup("Ctrl+B"); break;
             case "wordCount": await s.GetWordCountAsync(Ct); break;
+            case "documentProperties": await s.GetDocumentPropertiesAsync(Ct); break;
             default: throw new Xunit.Sdk.XunitException($"no call for {member}");
         }
     }

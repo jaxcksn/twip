@@ -400,6 +400,7 @@ impl Runner {
             "spelling.next" => to_json(s.spelling().next_misspelling()),
             "navigation.headings" => to_json(s.headings()),
             "navigation.bookmarks" => to_json(s.bookmarks()),
+            "documentProperties" => to_json(s.document_properties()),
             "navigation.select" => to_json(s.select_heading(arg_of(arg(0))?).map_err(Ok)?),
             "styles.list" => to_json(s.styles(arg_of(arg(0).get("type").cloned().unwrap_or(Value::Null))?)),
             "lists.galleries" => to_json(s.list_galleries(arg_of(arg(0))?)),

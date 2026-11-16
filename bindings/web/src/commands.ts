@@ -22,6 +22,7 @@ import type {
   Arrange,
   Color,
   CommentId,
+  CustomProperty,
   Degrees,
   EffectsChange,
   ElementId,
@@ -679,6 +680,26 @@ export interface Commands {
   insertBookmark(name: string): Promise<void>;
   /** Deletes a bookmark (compared without case), keeping its text. */
   deleteBookmark(name: string): Promise<void>;
+  /**
+   * Sets the document's properties; unset fields keep their value, an empty text removes one, and `custom` replaces
+   * the custom properties.
+   */
+  setDocumentProperties(options: {
+    title?: string;
+    subject?: string;
+    author?: string;
+    keywords?: string;
+    comments?: string;
+    category?: string;
+    status?: string;
+    lastModifiedBy?: string;
+    company?: string;
+    manager?: string;
+    hyperlinkBase?: string;
+    custom?: CustomProperty[];
+  }): Promise<void>;
+  /** Sets a document variable (read by DOCVARIABLE), or removes it when `value` is absent. */
+  setDocumentVariable(options: { name: string; value?: string }): Promise<void>;
   /** Inserts a field. With a selection and an empty code, wraps it (Ctrl+F9). */
   insertField(options: { code: string; display?: string; showCode?: boolean }): Promise<{ id: ElementId }>;
 
@@ -1265,6 +1286,8 @@ const encodings: { [K in CommandId]: Encoding<K> } = {
   removeHyperlink: 'none',
   insertBookmark: 'value',
   deleteBookmark: 'value',
+  setDocumentProperties: 'spread',
+  setDocumentVariable: 'spread',
   insertField: 'spread',
   insertRows: 'spread',
   insertColumns: 'spread',

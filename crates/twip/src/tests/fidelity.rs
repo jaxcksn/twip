@@ -517,6 +517,7 @@ fn every_edit_keeps_every_construct() {
         std::fs::write(d.join("section-settings.docx"), section_settings_package()).expect("writes");
         std::fs::write(d.join("converted-notes.docx"), converted_notes_package()).expect("writes");
         std::fs::write(d.join("table-properties.docx"), table_properties_package()).expect("writes");
+        std::fs::write(d.join("document-properties.docx"), document_properties_package()).expect("writes");
         let (pictures, boxes) = picture_tools_packages();
         std::fs::write(d.join("picture-tools.docx"), pictures).expect("writes");
         std::fs::write(d.join("text-box-columns.docx"), boxes).expect("writes");
@@ -799,4 +800,42 @@ fn picture_tools_packages() -> (Vec<u8>, Vec<u8>) {
 #[test]
 fn picture_tools_and_text_box_columns_are_saved() {
     picture_tools_packages();
+}
+
+/// A document with its properties and a variable set, and fields that show them, saved.
+fn document_properties_package() -> Vec<u8> {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-STORIES.docx");
+    let mut e = Editor::open(&std::fs::read(path).expect("the fixture"), fonts()).expect("opens");
+    let n = |v: serde_json::Value| serde_json::from_value::<Command>(v).expect("a command");
+    e.select_range(para_id(&e, 0), Unit(0), Unit(0), fonts());
+    for c in [
+        serde_json::json!({ "type": "setDocumentProperties", "title": "Annual report", "author": "Ada", "company": "Engines & Co",
+            "custom": [{ "name": "Client", "kind": "text", "value": "Acme" }, { "name": "Year", "kind": "number", "value": "2026" }] }),
+        serde_json::json!({ "type": "setDocumentVariable", "name": "CaseNumber", "value": "42" }),
+        serde_json::json!({ "type": "insertField", "code": "DOCPROPERTY Client" }),
+        serde_json::json!({ "type": "insertField", "code": "DOCVARIABLE CaseNumber" }),
+        serde_json::json!({ "type": "insertField", "code": "TITLE" }),
+        serde_json::json!({ "type": "selectAll" }),
+        serde_json::json!({ "type": "updateFields" }),
+    ] {
+        let out = e.execute(n(c.clone()), fonts());
+        assert!(matches!(out, Outcome::Changed(_) | Outcome::Moved), "{c}: {out:?}");
+    }
+    let shown = texts(&e)[0].clone();
+    assert!(shown.contains("Acme") && shown.contains("42") && shown.contains("Annual report"), "{shown}");
+    crate::docx::write::save(e.document()).expect("saves")
+}
+
+#[test]
+fn document_properties_and_variables_are_saved() {
+    let saved = document_properties_package();
+    let part = |n: &str| crate::docx::package::read(&saved, &[], n).expect("reads").unwrap_or_default();
+    assert!(part("docProps/core.xml").contains("<dc:title>Annual report</dc:title>"));
+    assert!(part("docProps/app.xml").contains("<Company>Engines &amp; Co</Company>"));
+    assert!(part("docProps/custom.xml").contains("name=\"Client\"><vt:lpwstr>Acme</vt:lpwstr>"));
+    assert!(part("word/settings.xml").contains("w:name=\"CaseNumber\" w:val=\"42\""), "{}", part("word/settings.xml"));
+    assert!(part("_rels/.rels").contains("custom-properties"));
+    let doc = crate::docx::read_editable(&saved).expect("reads back");
+    assert_eq!(doc.properties.lookup("client").as_deref(), Some("Acme"));
+    assert_eq!(doc.settings.variables, vec![("CaseNumber".to_string(), "42".to_string())]);
 }
