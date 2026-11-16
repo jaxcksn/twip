@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/jaxcksn/twip/compare/v0.2.0...v0.2.1) (2026-11-16)
+
+
+### Bug Fixes
+
+* **pdf:** keep kerned pairs' text in the PDF ([#28](https://github.com/jaxcksn/twip/issues/28)) ([ba54e1f](https://github.com/jaxcksn/twip/commit/ba54e1ff1d1a74f5fc1e8672bfbba00e4e624c2f))
+
 ## [0.2.0](https://github.com/jaxcksn/twip/compare/v0.1.1...v0.2.0) (2026-11-15)
 
 
