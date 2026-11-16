@@ -906,6 +906,7 @@ fn commands() -> Vec<Command> {
             start: Some(3),
             restart: Some(NoteRestart::EachSection),
             apply_to: Some(NoteScope::ThisSection),
+            columns: Some(0),
         }),
         Command::ConvertNotes(NoteConversion::Swap),
         Command::InsertHyperlink(Hyperlink { address: "https://example.com".into(), text: Some("Example".into()) }),
@@ -1470,6 +1471,7 @@ fn page() -> PageFormatting {
         footer_links: HeaderFooterLinks::default(),
         footnotes: NoteSettings { position: NotePosition::BeneathText, format: NumberFormat::Decimal, start: 1, restart: NoteRestart::EachPage },
         endnotes: NoteSettings::default(),
+        footnote_columns: 2,
     }
 }
 

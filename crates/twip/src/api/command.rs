@@ -755,6 +755,9 @@ pub struct NoteProperties {
     /// The caret section, or every section (the default).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub apply_to: Option<NoteScope>,
+    /// Footnotes only: the footnote area's columns (1…4), or the section's own (0, Match section layout).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub columns: Option<u32>,
 }
 
 /// Where notes go.

@@ -793,6 +793,7 @@ export interface Commands {
         start?: number;
         restart?: 'continuous' | 'eachSection' | 'eachPage';
         applyTo?: 'wholeDocument' | 'thisSection';
+        columns?: number;
     }): Promise<void>;
     setNumberingValue(options: {
         mode: 'startNew' | 'continue';
@@ -2435,6 +2436,7 @@ export interface PageFormatting {
         first: boolean;
         even: boolean;
     };
+    footnoteColumns: number;
     footnotes: NoteSettings;
     gutterAtTop: boolean;
     headerDistance: Points;

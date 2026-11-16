@@ -946,6 +946,9 @@ public sealed record PageFormatting
 
     /// <summary>The section's endnote settings.</summary>
     public NoteSettings Endnotes { get; init; } = new(NotePosition.DocumentEnd, NumberFormat.LowerRoman, 1, NoteRestart.Continuous);
+
+    /// <summary>The footnote area's columns; 0 for the section's own.</summary>
+    public int FootnoteColumns { get; init; }
 }
 
 /// <summary>A section's footnote or endnote settings.</summary>

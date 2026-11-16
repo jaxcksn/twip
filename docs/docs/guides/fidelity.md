@@ -135,7 +135,7 @@ Chunk numbers are [roadmap](../roadmap#docx) chunks.
 | Line numbering | `w:lnNumType` | API (`setLineNumbering`) |
 | Vertical alignment | `w:vAlign` | API (`setPageVerticalAlignment`; `setCellAlignment` for cells) |
 | Mirror margins, book fold, gutter | `w:mirrorMargins`, `w:bookFoldPrinting`, `w:bookFoldRevPrinting`, `w:bookFoldPrintingSheets`, `w:gutterAtTop` | API (`setMultiplePages`; sheets per booklet is kept) |
-| Notes in a section | `w:footnotePr`, `w:endnotePr`, `w:pos`, `w:numStart`, `w:numRestart`, `w15:footnoteColumns` | API (`setNoteProperties`); footnote columns (`w15:footnoteColumns`) are laid out and kept |
+| Notes in a section | `w:footnotePr`, `w:endnotePr`, `w:pos`, `w:numStart`, `w:numRestart`, `w15:footnoteColumns` | API (`setNoteProperties`, footnote columns too) |
 | No endnotes | `w:noEndnote` | Laid out; kept (Word sets it only for sections in a master document) |
 | Form protection | `w:formProt` | Kept, 2.14 |
 | Printer | `w:paperSrc`, `w:printerSettings` | Application |

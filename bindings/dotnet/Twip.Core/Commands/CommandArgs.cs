@@ -857,13 +857,15 @@ public enum NoteConversion
 /// <param name="Start">The first number (1 to 16383).</param>
 /// <param name="Restart">When numbering starts again.</param>
 /// <param name="ApplyTo">The caret section, or every section when null.</param>
+/// <param name="Columns">Footnotes only: the footnote area's columns, 1 to 4, or the section's own (0).</param>
 public sealed record NotePropertiesOptions(
     NoteType Kind,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NotePosition? Position = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NumberFormat? Format = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Start = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NoteRestart? Restart = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NoteScope? ApplyTo = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NoteScope? ApplyTo = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Columns = null);
 
 /// <summary>How text aligns at an alignment tab.</summary>
 public enum AlignmentTabKind

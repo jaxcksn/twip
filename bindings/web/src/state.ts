@@ -690,6 +690,8 @@ export interface PageFormatting {
   footnotes: NoteSettings;
   /** The section's endnote settings. */
   endnotes: NoteSettings;
+  /** The footnote area's columns; 0 for the section's own. */
+  footnoteColumns: number;
 }
 
 /** View settings. */

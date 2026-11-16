@@ -22,6 +22,7 @@
       "even": false,
       "first": false
     },
+    "footnoteColumns": 2,
     "footnotes": {
       "format": "decimal",
       "position": "beneathText",

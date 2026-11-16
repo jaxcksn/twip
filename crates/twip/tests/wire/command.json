@@ -598,6 +598,7 @@
   },
   {
     "applyTo": "thisSection",
+    "columns": 0,
     "format": "upperRoman",
     "kind": "endnote",
     "position": "sectionEnd",

@@ -6910,13 +6910,11 @@ Twip.NotePropertiesOptions
 Twip.NotePropertiesOptions.<Clone>$() -> Twip.NotePropertiesOptions!
 Twip.NotePropertiesOptions.ApplyTo.get -> Twip.NoteScope?
 Twip.NotePropertiesOptions.ApplyTo.init -> void
-Twip.NotePropertiesOptions.Deconstruct(out Twip.NoteType Kind, out Twip.NotePosition? Position, out Twip.NumberFormat? Format, out int? Start, out Twip.NoteRestart? Restart, out Twip.NoteScope? ApplyTo) -> void
 Twip.NotePropertiesOptions.Equals(Twip.NotePropertiesOptions? other) -> bool
 Twip.NotePropertiesOptions.Format.get -> Twip.NumberFormat?
 Twip.NotePropertiesOptions.Format.init -> void
 Twip.NotePropertiesOptions.Kind.get -> Twip.NoteType
 Twip.NotePropertiesOptions.Kind.init -> void
-Twip.NotePropertiesOptions.NotePropertiesOptions(Twip.NoteType Kind, Twip.NotePosition? Position = null, Twip.NumberFormat? Format = null, int? Start = null, Twip.NoteRestart? Restart = null, Twip.NoteScope? ApplyTo = null) -> void
 Twip.NotePropertiesOptions.Position.get -> Twip.NotePosition?
 Twip.NotePropertiesOptions.Position.init -> void
 Twip.NotePropertiesOptions.Restart.get -> Twip.NoteRestart?
@@ -7608,3 +7606,9 @@ static Twip.EditorOperation.RemoveEditableRanges() -> Twip.EditorOperation!
 static Twip.EditorOperation.SetDocumentProtection(Twip.DocumentProtection! protection) -> Twip.EditorOperation!
 static Twip.ProtectionState.operator !=(Twip.ProtectionState? left, Twip.ProtectionState? right) -> bool
 static Twip.ProtectionState.operator ==(Twip.ProtectionState? left, Twip.ProtectionState? right) -> bool
+Twip.NotePropertiesOptions.Columns.get -> int?
+Twip.NotePropertiesOptions.Columns.init -> void
+Twip.NotePropertiesOptions.Deconstruct(out Twip.NoteType Kind, out Twip.NotePosition? Position, out Twip.NumberFormat? Format, out int? Start, out Twip.NoteRestart? Restart, out Twip.NoteScope? ApplyTo, out int? Columns) -> void
+Twip.NotePropertiesOptions.NotePropertiesOptions(Twip.NoteType Kind, Twip.NotePosition? Position = null, Twip.NumberFormat? Format = null, int? Start = null, Twip.NoteRestart? Restart = null, Twip.NoteScope? ApplyTo = null, int? Columns = null) -> void
+Twip.PageFormatting.FootnoteColumns.get -> int
+Twip.PageFormatting.FootnoteColumns.init -> void

@@ -667,6 +667,8 @@ export interface Commands {
     start?: number;
     restart?: 'continuous' | 'eachSection' | 'eachPage';
     applyTo?: 'wholeDocument' | 'thisSection';
+    /** Footnotes only: the footnote area's columns, 1 to 4, or the section's own (0). */
+    columns?: number;
   }): Promise<void>;
   /** Turns every footnote into an endnote, every endnote into a footnote, or both (`'swap'`). */
   convertNotes(conversion: 'footnotesToEndnotes' | 'endnotesToFootnotes' | 'swap'): Promise<void>;

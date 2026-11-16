@@ -880,6 +880,7 @@ impl Editor {
                 if self.doc.settings.endnotes_sect_end { NotePosition::SectionEnd } else { NotePosition::DocumentEnd },
                 NumberFormat::LowerRoman,
             ),
+            footnote_columns: s.footnote_columns,
         }
     }
 }

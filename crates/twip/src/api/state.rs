@@ -858,6 +858,8 @@ pub struct PageFormatting {
     pub footnotes: NoteSettings,
     /// The section's endnote settings.
     pub endnotes: NoteSettings,
+    /// The footnote area's columns; 0 for the section's own.
+    pub footnote_columns: u32,
 }
 
 /// A section's footnote or endnote settings.

@@ -673,6 +673,11 @@ fn sect_with_page(sect: &str, w: &str, p: &SectionPage, was: Option<&SectionPage
     }
     // The rest only when it changed since reading (a tracked change's earlier page keeps its source's).
     if let Some(was) = was {
+        if was.footnote_columns != p.footnote_columns {
+            let w15 = crate::docx::xml::W15;
+            let tag = (p.footnote_columns > 0).then(|| format!(r#"<w15:footnoteColumns xmlns:w15="{w15}" {w}val="{}"/>"#, p.footnote_columns));
+            put(&mut s, "footnoteColumns", tag);
+        }
         if was.break_kind != p.break_kind {
             let v = match p.break_kind {
                 SectionBreak::NextPage => "nextPage",

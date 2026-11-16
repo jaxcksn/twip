@@ -141,6 +141,9 @@ impl Editor {
         if p.start.is_some_and(|s| !(1..=16383).contains(&s)) {
             return Outcome::invalid("the first number is 1…16383");
         }
+        if p.columns.is_some_and(|c| !foot || c > 4) {
+            return Outcome::invalid("footnotes take 0 to 4 columns; endnotes take none");
+        }
         let k = usize::from(!foot);
         let sections: Vec<usize> = match p.apply_to.unwrap_or_default() {
             NoteScope::WholeDocument => (0..self.doc.sections.len()).collect(),
@@ -167,6 +170,9 @@ impl Editor {
             }
             if foot && let Some(pos) = p.position {
                 n.beneath = pos == Pos::BeneathText;
+            }
+            if let Some(c) = p.columns {
+                page.footnote_columns = c;
             }
             if page == s.page() {
                 continue;

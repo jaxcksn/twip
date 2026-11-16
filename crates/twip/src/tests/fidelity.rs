@@ -657,6 +657,7 @@ fn converted_notes_package() -> Vec<u8> {
         serde_json::json!({ "type": "insertNote", "kind": "footnote", "customMark": "*" }),
         serde_json::json!({ "type": "convertNotes", "value": "swap" }),
         serde_json::json!({ "type": "setNoteProperties", "kind": "endnote", "position": "sectionEnd", "format": "lowerRoman", "restart": "eachSection" }),
+        serde_json::json!({ "type": "setNoteProperties", "kind": "footnote", "columns": 2 }),
     ] {
         let out = e.execute(n(c.clone()), fonts());
         assert!(matches!(out, Outcome::Changed(_)), "{c}: {out:?}");
@@ -675,6 +676,8 @@ fn converted_notes_keep_their_references_and_bodies() {
     let saved = converted_notes_package();
     // The new footnote (its own mark) became an endnote with the others.
     assert_eq!(refs(&saved), (e, f + 1, 1), "references swapped");
+    let main = crate::docx::package::read(&saved, &[], "word/document.xml").expect("reads").expect("the main part");
+    assert!(main.contains("footnoteColumns") && main.contains("w:val=\"2\"/>"), "footnote columns");
     let doc = crate::docx::read_editable(&saved).expect("reads back");
     assert_eq!((doc.footnotes.keys().filter(|k| **k > 0).count(), doc.endnotes.keys().filter(|k| **k > 0).count()), (e, f + 1), "bodies swapped");
 }
