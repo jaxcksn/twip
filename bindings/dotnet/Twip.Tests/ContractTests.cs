@@ -351,6 +351,7 @@ public sealed class ContractTests
                 case "spelling.suggestions": return Json(await _session.Spelling.GetSuggestionsAsync(Parse<string>(0), Arg(1)?.GetValue<string>()));
                 case "spelling.next": return Json(await _session.Spelling.NextAsync(ct));
                 case "navigation.headings": return Json(await _session.Navigation.GetHeadingsAsync(ct));
+                case "navigation.bookmarks": return Json(await _session.Navigation.GetBookmarksAsync(ct));
                 case "navigation.select": await _session.Navigation.SelectAsync(Parse<HeadingId>(0), ct); return null;
                 case "styles.list": return Json(await _session.Styles.ListAsync(Arg(0)?["type"]?.Deserialize(WireJson.Info<StyleType>()), ct));
                 case "lists.galleries": return Json(await _session.Lists.GalleriesAsync(Parse<ListGalleryKind>(0), ct));

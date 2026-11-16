@@ -746,8 +746,9 @@ public sealed record AltTextDialogValues(string Text, bool Decorative);
 
 /// <summary>The Hyperlink dialog's values.</summary>
 /// <param name="Text">The text to display.</param>
-/// <param name="Address">The address.</param>
-public sealed record HyperlinkDialogValues(string Text, string Address);
+/// <param name="Address">The address: a URL or a file, empty for a place in this document.</param>
+/// <param name="Bookmark">The bookmark the link goes to (<c>_top</c>: the document's start), in this document or, with an address, in that one; empty for none.</param>
+public sealed record HyperlinkDialogValues(string Text, string Address, string Bookmark = "");
 
 /// <summary>The Tabs dialog's button actions, applied by <see cref="DialogSession{TValues}.UpdateAsync"/>.</summary>
 public enum TabsDialogAction

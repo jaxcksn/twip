@@ -111,6 +111,7 @@ export const Method = {
   ListEntryPreview: 94,
   FontCharacters: 95,
   CharacterPicture: 96,
+  Bookmarks: 97,
 } as const;
 
 /** A structured call number. */

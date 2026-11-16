@@ -305,6 +305,7 @@
   },
   {
     "address": "https://example.com",
+    "bookmark": "Summary",
     "kind": "hyperlink",
     "text": "Example"
   },

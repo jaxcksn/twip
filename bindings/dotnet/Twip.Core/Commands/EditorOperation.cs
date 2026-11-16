@@ -137,6 +137,11 @@ public abstract partial record EditorOperation
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation GoToPage(int page) => Op(CommandId.GoToPage, new Arg("value", Node(page)));
 
+    /// <summary>Selects a bookmark's text, or puts the caret at it when it holds none (Go To); <c>_top</c> is the document's start.</summary>
+    /// <param name="name">The bookmark, compared without case.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation GoToBookmark(string name) => Op(CommandId.GoToBookmark, new Arg("value", Node(name)));
+
     /// <summary>Sets or clears bold on the selection.</summary>
     /// <param name="on">Whether bold is on.</param>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
@@ -629,6 +634,16 @@ public abstract partial record EditorOperation
     /// <summary>Removes the hyperlink at the selection, keeping its text.</summary>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation RemoveHyperlink() => Op(CommandId.RemoveHyperlink);
+
+    /// <summary>Bookmarks the selection. A bookmark of the same name (compared without case) moves here.</summary>
+    /// <param name="name">A letter (or <c>_</c>, for a hidden bookmark) first, then letters, digits and <c>_</c>, 40 at most.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation InsertBookmark(string name) => Op(CommandId.InsertBookmark, new Arg("value", Node(name)));
+
+    /// <summary>Deletes a bookmark, keeping its text.</summary>
+    /// <param name="name">The bookmark, compared without case.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation DeleteBookmark(string name) => Op(CommandId.DeleteBookmark, new Arg("value", Node(name)));
 
     /// <summary>Inserts a field. With a selection and an empty code, wraps the selection.</summary>
     /// <param name="options">The field.</param>
@@ -1176,8 +1191,9 @@ public abstract partial record EditorOperation
     /// <param name="fieldShading">When fields are shaded (default <see cref="FieldShading.WhenSelected"/>).</param>
     /// <param name="cursorOverrides">Pointer shapes over elements instead of the editor's own, replacing those set before; the first match wins, and an empty list clears them.</param>
     /// <param name="controlLabels">Labels content controls and shown sub-templates while the caret is in them or the pointer is over them (default on); a control whose <c>w15:appearance</c> is <c>hidden</c> is never labelled.</param>
+    /// <param name="bookmarks">Shows bookmarks as brackets around their text (an I-beam where they hold none); hidden ones never show.</param>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
-    public static EditorOperation SetViewOptions(bool? formattingMarks = null, bool? gridlines = null, bool? textBoundaries = null, bool? liveLayout = null, ChromeTheme? theme = null, ColorValue? accent = null, DocumentAppearance? appearance = null, MeasureDetail? detail = null, ObjectGrid? objectGrid = null, ThemeColors? themeColors = null, FieldShading? fieldShading = null, IReadOnlyList<CursorOverride>? cursorOverrides = null, bool? controlLabels = null) => Op(CommandId.SetViewOptions, new Arg("formattingMarks", Nullable(formattingMarks), Optional: true), new Arg("gridlines", Nullable(gridlines), Optional: true), new Arg("textBoundaries", Nullable(textBoundaries), Optional: true), new Arg("liveLayout", Nullable(liveLayout), Optional: true), new Arg("theme", theme is null ? null : Node(theme), Optional: true), new Arg("accent", Nullable(accent), Optional: true), new Arg("appearance", Nullable(appearance), Optional: true), new Arg("detail", Nullable(detail), Optional: true), new Arg("objectGrid", Nullable(objectGrid), Optional: true), new Arg("themeColors", themeColors is null ? null : Node(themeColors), Optional: true), new Arg("fieldShading", Nullable(fieldShading), Optional: true), new Arg("cursorOverrides", cursorOverrides is null ? null : Node(cursorOverrides), Optional: true), new Arg("controlLabels", Nullable(controlLabels), Optional: true));
+    public static EditorOperation SetViewOptions(bool? formattingMarks = null, bool? gridlines = null, bool? textBoundaries = null, bool? liveLayout = null, ChromeTheme? theme = null, ColorValue? accent = null, DocumentAppearance? appearance = null, MeasureDetail? detail = null, ObjectGrid? objectGrid = null, ThemeColors? themeColors = null, FieldShading? fieldShading = null, IReadOnlyList<CursorOverride>? cursorOverrides = null, bool? controlLabels = null, bool? bookmarks = null) => Op(CommandId.SetViewOptions, new Arg("formattingMarks", Nullable(formattingMarks), Optional: true), new Arg("gridlines", Nullable(gridlines), Optional: true), new Arg("textBoundaries", Nullable(textBoundaries), Optional: true), new Arg("liveLayout", Nullable(liveLayout), Optional: true), new Arg("theme", theme is null ? null : Node(theme), Optional: true), new Arg("accent", Nullable(accent), Optional: true), new Arg("appearance", Nullable(appearance), Optional: true), new Arg("detail", Nullable(detail), Optional: true), new Arg("objectGrid", Nullable(objectGrid), Optional: true), new Arg("themeColors", themeColors is null ? null : Node(themeColors), Optional: true), new Arg("fieldShading", Nullable(fieldShading), Optional: true), new Arg("cursorOverrides", cursorOverrides is null ? null : Node(cursorOverrides), Optional: true), new Arg("controlLabels", Nullable(controlLabels), Optional: true), new Arg("bookmarks", Nullable(bookmarks), Optional: true));
 
     /// <summary>Switches between editing and design mode.</summary>
     /// <param name="mode">The mode.</param>

@@ -356,6 +356,8 @@ export interface Commands {
   selectNextObject(direction: 'next' | 'previous'): Promise<void>;
   /** Moves the caret to a page, from 1. */
   goToPage(page: number): Promise<void>;
+  /** Selects a bookmark's text, or puts the caret at it when it holds none (Go To); `'_top'` is the document's start. */
+  goToBookmark(name: string): Promise<void>;
 
   // Character formatting
   /** Sets bold (Ctrl+B). */
@@ -651,6 +653,13 @@ export interface Commands {
   editHyperlink(options: { address?: string; text?: string }): Promise<void>;
   /** Removes the link at the selection, keeping its text. */
   removeHyperlink(): Promise<void>;
+  /**
+   * Bookmarks the selection: the name starts with a letter (or `_`, for a hidden bookmark) and holds letters, digits
+   * and `_`, 40 at most. A bookmark of the same name (compared without case) moves here.
+   */
+  insertBookmark(name: string): Promise<void>;
+  /** Deletes a bookmark (compared without case), keeping its text. */
+  deleteBookmark(name: string): Promise<void>;
   /** Inserts a field. With a selection and an empty code, wraps it (Ctrl+F9). */
   insertField(options: { code: string; display?: string; showCode?: boolean }): Promise<{ id: ElementId }>;
 
@@ -1084,6 +1093,7 @@ const encodings: { [K in CommandId]: Encoding<K> } = {
   escape: 'none',
   selectNextObject: 'value',
   goToPage: 'value',
+  goToBookmark: 'value',
   setBold: 'value',
   setItalic: 'value',
   setUnderline: 'value',
@@ -1183,6 +1193,8 @@ const encodings: { [K in CommandId]: Encoding<K> } = {
   insertHyperlink: 'spread',
   editHyperlink: 'spread',
   removeHyperlink: 'none',
+  insertBookmark: 'value',
+  deleteBookmark: 'value',
   insertField: 'spread',
   insertRows: 'spread',
   insertColumns: 'spread',

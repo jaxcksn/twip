@@ -54,6 +54,8 @@ pub struct Session {
     text_boundaries: bool,
     /// When fields are shaded.
     field_shading: crate::api::services::FieldShading,
+    /// Bookmarks show.
+    show_bookmarks: bool,
     /// Pointer shapes over elements instead of the editor's own.
     cursor_overrides: Vec<crate::api::services::CursorOverride>,
     /// The modifier keys of the last pointer input.
@@ -106,6 +108,7 @@ impl Session {
             formatting_marks: false,
             text_boundaries: false,
             field_shading: Default::default(),
+            show_bookmarks: false,
             cursor_overrides: Vec::new(),
             pointer_mods: Default::default(),
             pressed: None,

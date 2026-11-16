@@ -586,6 +586,7 @@ pub(super) fn fill_state(s: &Session, state: &mut crate::api::state::State) {
     state.view.formatting_marks = s.formatting_marks;
     state.view.text_boundaries = s.text_boundaries;
     state.view.field_shading = s.field_shading;
+    state.view.bookmarks = s.show_bookmarks;
     state.view.cursor_overrides.clone_from(&s.cursor_overrides);
     state.view.live_layout = s.editor.live_layout;
     state.view.control_labels = s.editor.control_labels;
@@ -1203,7 +1204,10 @@ impl HostSurface<'_> {
             s.editor.ensure_page(visible.end - 1, &fonts);
         }
         let marks = s.services.spelling.squiggles(&mut s.editor, visible.clone(), &s.language);
-        let formatting_marks = if s.formatting_marks { s.editor.formatting_marks(visible.clone()) } else { Vec::new() };
+        let mut formatting_marks = if s.formatting_marks { s.editor.formatting_marks(visible.clone()) } else { Vec::new() };
+        if s.show_bookmarks {
+            formatting_marks.extend(s.editor.bookmark_marks(visible.clone()));
+        }
         let boundaries = if s.text_boundaries { s.editor.text_boundaries(visible.clone()) } else { Vec::new() };
         let field_shading = s.editor.field_shading(visible.clone(), s.field_shading);
         let mut view = s.editor.view(visible);

@@ -1001,6 +1001,9 @@ public sealed record ViewState
     /// <summary>When fields are shaded.</summary>
     public FieldShading FieldShading { get; init; } = FieldShading.WhenSelected;
 
+    /// <summary>Bookmarks are shown.</summary>
+    public bool Bookmarks { get; init; }
+
     /// <summary>The pointer shapes shown over elements instead of the editor's own; none when null.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<CursorOverride>? CursorOverrides { get; init; }

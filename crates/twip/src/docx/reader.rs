@@ -1193,6 +1193,22 @@ impl Reader {
 
     /// A comment or move range marker, paired with the other end in the story being read. An end with no start, and
     /// a comment range or reference whose comment is missing, are reported and left out.
+    /// A `w:bookmarkStart`'s or `w:bookmarkEnd`'s marker.
+    fn bookmark(&mut self, e: Node) -> Option<Inline> {
+        if !is_w(e, "bookmarkStart") && !is_w(e, "bookmarkEnd") {
+            return None;
+        }
+        let id = attr(e, "id");
+        if e.tag_name().name() == "bookmarkEnd" {
+            return id.and_then(|id| self.bookmarks.get(id)).map(|name| Inline::Bookmark(format!("/{name}")));
+        }
+        let name = attr(e, "name").filter(|n| !n.is_empty() && !n.starts_with('/'))?;
+        if let Some(id) = id {
+            self.bookmarks.insert(id.to_string(), name.to_string());
+        }
+        Some(Inline::Bookmark(name.to_string()))
+    }
+
     fn range(&mut self, e: Node) -> Option<RangeMark> {
         if e.tag_name().namespace() != Some(W) {
             return None;
@@ -1371,6 +1387,8 @@ impl Reader {
                 out.extend(self.walk_blocks(c, pkg, table));
             } else if let Some(m) = self.range(n) {
                 self.pending_marks.push(Inline::Range(m));
+            } else if let Some(b) = self.bookmark(n) {
+                self.pending_marks.push(b);
             }
         }
         // Markers after the container's last paragraph end it.
@@ -1785,19 +1803,7 @@ impl Reader {
                             self.segs.push((e.range(), 1));
                         }
                     }
-                    "bookmarkStart" => {
-                        if let Some(name) = attr(e, "name") {
-                            if let Some(id) = attr(e, "id") {
-                                self.bookmarks.insert(id.to_string(), name.to_string());
-                            }
-                            out.push(Inline::Bookmark(name.to_string()));
-                        }
-                    }
-                    "bookmarkEnd" => {
-                        if let Some(name) = attr(e, "id").and_then(|id| self.bookmarks.get(id)) {
-                            out.push(Inline::Bookmark(format!("/{name}")));
-                        }
-                    }
+                    "bookmarkStart" | "bookmarkEnd" => out.extend(self.bookmark(e)),
                     // Properties, read with their element; Word's spelling state, rebuilt by Word.
                     "pPr" | "rPr" | "customXmlPr" | "smartTagPr" | "sdtPr" | "sdtEndPr" | "proofErr" => {}
                     // Editing permissions: kept until protection reads them.

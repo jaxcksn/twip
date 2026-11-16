@@ -867,6 +867,8 @@ pub struct ViewState {
     pub control_labels: bool,
     /// When fields are shaded.
     pub field_shading: super::services::FieldShading,
+    /// Bookmarks are shown.
+    pub bookmarks: bool,
     /// The pointer shapes shown over elements instead of the editor's own.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub cursor_overrides: Vec<super::services::CursorOverride>,
@@ -898,6 +900,7 @@ impl Default for ViewState {
             object_grid: super::services::ObjectGrid::WhileDragging,
             control_labels: true,
             field_shading: super::services::FieldShading::WhenSelected,
+            bookmarks: false,
             cursor_overrides: Vec::new(),
             sub_template_rules: Vec::new(),
         }

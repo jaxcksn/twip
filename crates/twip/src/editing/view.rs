@@ -242,6 +242,8 @@ pub enum MarkKind {
     LineBreak,
     Break,
     Hidden,
+    BookmarkStart,
+    BookmarkEnd,
 }
 
 #[derive(Clone, Debug, PartialEq)]

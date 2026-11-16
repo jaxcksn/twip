@@ -486,6 +486,7 @@
       "accentOn": "#FFFFFF",
       "appearance": "light",
       "background": "#E8E7E3",
+      "bookmarks": false,
       "controlLabels": true,
       "detail": "standard",
       "fieldCodes": false,

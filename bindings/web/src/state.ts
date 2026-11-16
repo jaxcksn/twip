@@ -634,6 +634,8 @@ export interface ViewState {
   controlLabels: boolean;
   /** When fields are shaded. */
   fieldShading: FieldShading;
+  /** Bookmarks are shown. */
+  bookmarks: boolean;
   /** The pointer shapes shown over elements instead of the editor's own; absent when none are set. */
   cursorOverrides?: CursorOverride[];
   /** Which fields are sub-template references (`setSubTemplateRules`); absent when none are. */

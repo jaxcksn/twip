@@ -91,6 +91,10 @@
     "value": 3
   },
   {
+    "type": "goToBookmark",
+    "value": "Summary"
+  },
+  {
     "type": "setBold",
     "value": true
   },
@@ -615,6 +619,14 @@
   },
   {
     "type": "removeHyperlink"
+  },
+  {
+    "type": "insertBookmark",
+    "value": "Summary"
+  },
+  {
+    "type": "deleteBookmark",
+    "value": "Summary"
   },
   {
     "code": "MERGEFIELD Name",
@@ -1214,6 +1226,7 @@
   {
     "accent": "#0A74E4",
     "appearance": "darkWithLightPage",
+    "bookmarks": true,
     "controlLabels": false,
     "cursorOverrides": [
       {

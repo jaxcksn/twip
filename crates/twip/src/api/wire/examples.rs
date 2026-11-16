@@ -360,6 +360,14 @@ pub fn fixtures() -> Vec<Fixture> {
         fixture!("find-match", FindMatch, vec![find_match()]),
         fixture!("misspelling", Misspelling, vec![Misspelling { word: "teh".into(), suggestions: vec!["the".into(), "ten".into()] }]),
         fixture!("heading", Heading, vec![Heading { id: HeadingId("h2".into()), level: 2, text: "Terms".into(), page: 3 }]),
+        fixture!(
+            "bookmark-info",
+            BookmarkInfo,
+            vec![
+                BookmarkInfo { name: "Summary".into(), hidden: false, empty: false },
+                BookmarkInfo { name: "_Toc1".into(), hidden: true, empty: true }
+            ]
+        ),
         fixture!("style-info", StyleInfo, vec![style_info()]),
         fixture!("element-filter", ElementFilter, vec![element_filter(), ElementFilter::default()]),
         fixture!("element-info", ElementInfo, vec![element_info(), reference_info()]),
@@ -653,6 +661,7 @@ fn commands() -> Vec<Command> {
         Command::Escape,
         Command::SelectNextObject(Order::Previous),
         Command::GoToPage(3),
+        Command::GoToBookmark("Summary".into()),
         Command::SetBold(true),
         Command::SetItalic(false),
         Command::SetUnderline(UnderlineStyle::Double),
@@ -887,6 +896,8 @@ fn commands() -> Vec<Command> {
         Command::InsertHyperlink(Hyperlink { address: "https://example.com".into(), text: Some("Example".into()) }),
         Command::EditHyperlink(HyperlinkEdit { address: Some("https://example.org".into()), text: None }),
         Command::RemoveHyperlink,
+        Command::InsertBookmark("Summary".into()),
+        Command::DeleteBookmark("Summary".into()),
         Command::InsertField(InsertField { code: "MERGEFIELD Name".into(), display: Some("«Name»".into()), show_code: Some(false) }),
         Command::InsertRows(InsertRows { side: VerticalSide::Below, count: Some(2) }),
         Command::InsertColumns(InsertColumns { side: HorizontalSide::Left, count: Some(1) }),
@@ -1083,6 +1094,7 @@ fn commands() -> Vec<Command> {
             detail: Some(MeasureDetail::Full),
             object_grid: Some(ObjectGrid::Always),
             control_labels: Some(false),
+            bookmarks: Some(true),
             field_shading: Some(FieldShading::Always),
             cursor_overrides: Some(vec![
                 CursorOverride { on: CursorTarget::Action(PressAction::Toggle), cursor: Cursor::Pointer },
@@ -1709,7 +1721,7 @@ fn dialog_values() -> Vec<DialogValues> {
             reset: false,
         }),
         DialogValues::AltText(AltTextDialog { text: "A chart".into(), decorative: false }),
-        DialogValues::Hyperlink(HyperlinkDialog { text: "Example".into(), address: "https://example.com".into() }),
+        DialogValues::Hyperlink(HyperlinkDialog { text: "Example".into(), address: "https://example.com".into(), bookmark: "Summary".into() }),
         DialogValues::Tabs(TabsDialog {
             stops: vec![tab_stop()],
             default_stop: Points(36.5),

@@ -113,6 +113,8 @@ commands! {
     SelectNextObject(#[serde(with = "value")] Order),
     /// Moves the caret to the start of page `value` (1…count). Undo: view.
     GoToPage(#[serde(with = "value")] u32),
+    /// Selects bookmark `value`'s text, or puts the caret at it when it holds none (Go To). Undo: view.
+    GoToBookmark(#[serde(with = "value")] String),
 
     // Character formatting
     /// Bold on or off. Undo: one step.
@@ -342,6 +344,11 @@ commands! {
     EditHyperlink(HyperlinkEdit),
     /// Removes the link at the selection, keeping its text. Undo: one step.
     RemoveHyperlink,
+    /// Bookmarks the selection as `value`: a letter (or `_`, for a hidden bookmark) first, then letters, digits and
+    /// `_`, 40 at most. A bookmark of the same name (compared without case) moves here. Undo: one step.
+    InsertBookmark(#[serde(with = "value")] String),
+    /// Deletes bookmark `value` (compared without case), keeping its text. Undo: one step.
+    DeleteBookmark(#[serde(with = "value")] String),
     /// A field with `code`; result `{ id }`. With a selection and an empty code, wraps it. Undo: one step.
     InsertField(InsertField),
 
@@ -2945,6 +2952,9 @@ pub struct ViewOptions {
     /// When fields are shaded. Default: when selected.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub field_shading: Option<super::services::FieldShading>,
+    /// Shows bookmarks as brackets around their text (an I-beam where they hold none); hidden ones never show.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bookmarks: Option<bool>,
     /// Pointer shapes over elements instead of the editor's own, replacing those set before; the first that matches
     /// the hovered element wins, and `[]` clears them.
     #[serde(default, skip_serializing_if = "Option::is_none")]

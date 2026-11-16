@@ -23,7 +23,7 @@ public sealed class ServicesTests
         "menus.contextMenu", "menus.invoke", "dialogs.open", "dialogs.update", "dialogs.apply", "dialogs.accessibility",
         "find.next", "find.previous", "find.all", "find.select", "find.replace", "find.replaceAll",
         "spelling.addDictionary", "spelling.setEnabled", "spelling.setLanguage", "spelling.ignore", "spelling.add",
-        "spelling.loadUserWords", "spelling.suggestions", "spelling.next", "navigation.headings", "navigation.select",
+        "spelling.loadUserWords", "spelling.suggestions", "spelling.next", "navigation.headings", "navigation.bookmarks", "navigation.select",
         "styles.list", "styles.listOne", "review.revisions", "review.comments", "review.people", "elements.list",
         "elements.listFiltered", "elements.get", "elements.structure", "elements.select",
         "dataParts.list", "dataParts.get", "accessibility.tree", "gestures.bindings", "gestures.set", "gestures.reset",
@@ -93,6 +93,7 @@ public sealed class ServicesTests
             case "spelling.suggestions": await s.Spelling.GetSuggestionsAsync("teh", "en-US"); break;
             case "spelling.next": await s.Spelling.NextAsync(Ct); break;
             case "navigation.headings": await s.Navigation.GetHeadingsAsync(Ct); break;
+            case "navigation.bookmarks": await s.Navigation.GetBookmarksAsync(Ct); break;
             case "navigation.select": await s.Navigation.SelectAsync(Wire<HeadingId>("heading-id"), Ct); break;
             case "styles.list": await s.Styles.ListAsync(ct: Ct); break;
             case "styles.listOne": await s.Styles.ListAsync(StyleType.Paragraph, Ct); break;

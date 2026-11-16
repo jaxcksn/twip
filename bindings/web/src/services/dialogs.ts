@@ -193,7 +193,11 @@ export interface DialogValues {
   /** The Alt text dialog. */
   altText: { text: string; decorative: boolean };
   /** The Hyperlink dialog. */
-  hyperlink: { text: string; address: string };
+  /**
+   * The Hyperlink dialog: `bookmark` is the place it goes to (`'_top'`: the document's start), in this document or, with
+   * an address, in that one; the `bookmark` field's options list this document's.
+   */
+  hyperlink: { text: string; address: string; bookmark: string };
   /** The Tabs dialog. */
   tabs: {
     stops: { position: Points; alignment: TabAlignment; leader: TabLeader; inherited: boolean }[];

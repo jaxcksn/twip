@@ -1,6 +1,7 @@
 //! Editor
 
 pub mod autocorrect;
+pub mod bookmarks;
 mod borders_dialog;
 mod cell_clipboard;
 pub mod clipboard;
@@ -2222,7 +2223,7 @@ impl Editor {
                     && let Some(address) = self.link_under(x, y, fonts)
                 {
                     match address.strip_prefix('#') {
-                        Some(name) => _ = self.go_to_bookmark(name, fonts),
+                        Some(name) => _ = self.go_to_bookmark(name, false, fonts),
                         None => self.events.push(input::Notice::Link { address, ctrl: mods.ctrl || mods.meta }),
                     }
                     return;

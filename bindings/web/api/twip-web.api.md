@@ -132,6 +132,13 @@ export type Block = {
 };
 
 // @public
+export interface BookmarkInfo {
+    empty: boolean;
+    hidden: boolean;
+    name: string;
+}
+
+// @public
 export interface BorderLine {
     color: Color | 'auto';
     style: BorderLineStyle;
@@ -337,6 +344,7 @@ export interface Commands {
         direction: 'backward' | 'forward';
         unit?: 'character' | 'word';
     }): Promise<void>;
+    deleteBookmark(name: string): Promise<void>;
     deleteCells(shift: 'up' | 'left'): Promise<void>;
     deleteColumns(): Promise<void>;
     deleteComment(id: CommentId): Promise<void>;
@@ -371,6 +379,7 @@ export interface Commands {
     }): Promise<void>;
     flipObject(axis: FlipAxis): Promise<void>;
     goBack(): Promise<void>;
+    goToBookmark(name: string): Promise<void>;
     goToPage(page: number): Promise<void>;
     groupObjects(): Promise<void>;
     growFont(): Promise<void>;
@@ -380,6 +389,7 @@ export interface Commands {
         relativeTo: 'margin' | 'indent';
         leader?: TabLeader;
     }): Promise<void>;
+    insertBookmark(name: string): Promise<void>;
     insertColumnBreak(): Promise<void>;
     insertColumns(options: {
         where: 'left' | 'right';
@@ -1186,6 +1196,7 @@ export interface DialogValues {
     hyperlink: {
         text: string;
         address: string;
+        bookmark: string;
     };
     insertTable: {
         rows: number;
@@ -2111,6 +2122,7 @@ export type MultiplePagesMode = 'normal' | 'mirrorMargins' | 'bookFold' | 'rever
 
 // @public
 interface Navigation_2 {
+    bookmarks(): Promise<BookmarkInfo[]>;
     headings(): Promise<Heading[]>;
     select(heading: HeadingId): Promise<void>;
 }
@@ -3025,6 +3037,7 @@ export interface View {
 export interface ViewOptions {
     accent?: Color;
     appearance?: DocumentAppearance;
+    bookmarks?: boolean;
     controlLabels?: boolean;
     cursorOverrides?: CursorOverride[];
     detail?: MeasureDetail;
@@ -3044,6 +3057,7 @@ export interface ViewState {
     accentOn: Color;
     appearance: DocumentAppearance;
     background: Color;
+    bookmarks: boolean;
     controlLabels: boolean;
     cursorOverrides?: CursorOverride[];
     detail: MeasureDetail;

@@ -170,6 +170,12 @@ public sealed class EditorCommands
     /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
     public Task GoToPageAsync(int page, CancellationToken ct = default) => _session.RunAsync(EditorOperation.GoToPage(page), ct);
 
+    /// <summary>Selects a bookmark's text, or puts the caret at it when it holds none (Go To); <c>_top</c> is the document's start.</summary>
+    /// <param name="name">The bookmark, compared without case.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task GoToBookmarkAsync(string name, CancellationToken ct = default) => _session.RunAsync(EditorOperation.GoToBookmark(name), ct);
+
     /// <summary>Sets or clears bold on the selection.</summary>
     /// <param name="on">Whether bold is on.</param>
     /// <param name="ct">Cancels the command before it runs.</param>
@@ -770,6 +776,18 @@ public sealed class EditorCommands
     /// <param name="ct">Cancels the command before it runs.</param>
     /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
     public Task RemoveHyperlinkAsync(CancellationToken ct = default) => _session.RunAsync(EditorOperation.RemoveHyperlink(), ct);
+
+    /// <summary>Bookmarks the selection. A bookmark of the same name (compared without case) moves here.</summary>
+    /// <param name="name">A letter (or <c>_</c>, for a hidden bookmark) first, then letters, digits and <c>_</c>, 40 at most.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task InsertBookmarkAsync(string name, CancellationToken ct = default) => _session.RunAsync(EditorOperation.InsertBookmark(name), ct);
+
+    /// <summary>Deletes a bookmark, keeping its text.</summary>
+    /// <param name="name">The bookmark, compared without case.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task DeleteBookmarkAsync(string name, CancellationToken ct = default) => _session.RunAsync(EditorOperation.DeleteBookmark(name), ct);
 
     /// <summary>Inserts a field. With a selection and an empty code, wraps the selection.</summary>
     /// <param name="options">The field.</param>
@@ -1426,9 +1444,10 @@ public sealed class EditorCommands
     /// <param name="fieldShading">When fields are shaded (default <see cref="FieldShading.WhenSelected"/>).</param>
     /// <param name="cursorOverrides">Pointer shapes over elements instead of the editor's own, replacing those set before; the first match wins, and an empty list clears them.</param>
     /// <param name="controlLabels">Labels content controls and shown sub-templates while the caret is in them or the pointer is over them (default on); a control whose <c>w15:appearance</c> is <c>hidden</c> is never labelled.</param>
+    /// <param name="bookmarks">Shows bookmarks as brackets around their text (an I-beam where they hold none); hidden ones never show.</param>
     /// <param name="ct">Cancels the command before it runs.</param>
     /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
-    public Task SetViewOptionsAsync(bool? formattingMarks = null, bool? gridlines = null, bool? textBoundaries = null, bool? liveLayout = null, ChromeTheme? theme = null, ColorValue? accent = null, DocumentAppearance? appearance = null, MeasureDetail? detail = null, ObjectGrid? objectGrid = null, ThemeColors? themeColors = null, FieldShading? fieldShading = null, IReadOnlyList<CursorOverride>? cursorOverrides = null, bool? controlLabels = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetViewOptions(formattingMarks, gridlines, textBoundaries, liveLayout, theme, accent, appearance, detail, objectGrid, themeColors, fieldShading, cursorOverrides, controlLabels), ct);
+    public Task SetViewOptionsAsync(bool? formattingMarks = null, bool? gridlines = null, bool? textBoundaries = null, bool? liveLayout = null, ChromeTheme? theme = null, ColorValue? accent = null, DocumentAppearance? appearance = null, MeasureDetail? detail = null, ObjectGrid? objectGrid = null, ThemeColors? themeColors = null, FieldShading? fieldShading = null, IReadOnlyList<CursorOverride>? cursorOverrides = null, bool? controlLabels = null, bool? bookmarks = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetViewOptions(formattingMarks, gridlines, textBoundaries, liveLayout, theme, accent, appearance, detail, objectGrid, themeColors, fieldShading, cursorOverrides, controlLabels, bookmarks), ct);
 
     /// <summary>Switches between editing and design mode.</summary>
     /// <param name="mode">The mode.</param>

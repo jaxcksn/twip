@@ -2,10 +2,12 @@ import type { Session } from '../editor.js';
 import { Method } from '../transport/protocol.js';
 import type { Color, HeadingId, Points, StyleId } from '../types.js';
 
-/** The document's headings, for a navigation pane. */
+/** The document's headings and bookmarks, for a navigation pane and the Bookmark dialog. */
 export interface Navigation {
   /** The headings, in document order. */
   headings(): Promise<Heading[]>;
+  /** The bookmarks, hidden ones too, in document order. Go to one with the `goToBookmark` command. */
+  bookmarks(): Promise<BookmarkInfo[]>;
   /** Selects and reveals a heading. */
   select(heading: HeadingId): Promise<void>;
 }
@@ -20,6 +22,16 @@ export interface Heading {
   text: string;
   /** Its page. */
   page: number;
+}
+
+/** A bookmark. */
+export interface BookmarkInfo {
+  /** Its name. */
+  name: string;
+  /** Hidden: Word's own (`_Toc`, `_Ref`), named with a leading `_`. */
+  hidden: boolean;
+  /** Its text holds nothing: it marks a place. */
+  empty: boolean;
 }
 
 /** The document's styles, for a style gallery. */
@@ -89,6 +101,7 @@ export interface StyleInfo {
 export function createNavigation(s: Session): Navigation {
   return {
     headings: () => s.call(Method.Headings),
+    bookmarks: () => s.call(Method.Bookmarks),
     select: (heading) => s.call(Method.SelectHeading, heading),
   };
 }

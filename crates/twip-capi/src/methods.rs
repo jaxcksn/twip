@@ -238,6 +238,8 @@ methods! {
     FontCharacters = 95,
     /// `{ family, character, size }` → `Picture`: a character in a font.
     CharacterPicture = 96,
+    /// → `BookmarkInfo[]`.
+    Bookmarks = 97,
 }
 
 /// A resolver's answer to a font request.
@@ -607,6 +609,7 @@ fn session_call(s: &mut Session, method: Method, json: &[u8]) -> Result<Value, E
         }
         Method::SpellingNext => to_value(s.spelling().next_misspelling()),
         Method::Headings => to_value(s.headings()),
+        Method::Bookmarks => to_value(s.bookmarks()),
         Method::SelectHeading => to_value(s.select_heading(request::<HeadingId>(json)?)?),
         Method::Styles => to_value(s.styles(request::<Option<StyleType>>(json)?)),
         Method::Revisions => to_value(s.revisions()),

@@ -182,7 +182,7 @@ Chunk numbers are [roadmap](../roadmap#docx) chunks.
 
 | Construct | Elements | Status |
 |---|---|---|
-| Bookmarks | `w:bookmarkStart`, `w:bookmarkEnd` | Model (kept, moved with their text); API, 2.8 |
+| Bookmarks | `w:bookmarkStart`, `w:bookmarkEnd` | API (`insertBookmark`, `deleteBookmark`, `goToBookmark`, `navigation.bookmarks` with hidden ones, the Hyperlink dialog's bookmark picker, and the `bookmarks` view option); between blocks too. A table column bookmark's `w:colFirst` and `w:colLast` are dropped when its paragraph is rewritten |
 | Editing permissions | `w:permStart`, `w:permEnd` | Kept as an opaque node, moved with their text; Model and API, 2.14 |
 
 ## Content controls

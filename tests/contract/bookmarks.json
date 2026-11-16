@@ -1,0 +1,25 @@
+{
+  "name": "bookmarks",
+  "fixture": "editor/FX-outline.docx",
+  "steps": [
+    { "op": "open" },
+    { "op": "call", "method": "find.next", "args": [{ "text": "survey" }], "result": { "found": true } },
+    { "op": "command", "command": { "type": "insertBookmark", "value": "Survey" } },
+    { "op": "command", "command": { "type": "insertBookmark", "value": "1st" } },
+    { "op": "expectError", "code": "invalid-argument" },
+    { "op": "command", "command": { "type": "deleteBookmark", "value": "Gone" } },
+    { "op": "expectError", "code": "invalid-argument" },
+    { "op": "call", "method": "navigation.bookmarks", "result": [{ "name": "Survey", "hidden": false, "empty": false }] },
+    { "op": "call", "method": "find.next", "args": [{ "text": "Data" }], "result": { "found": true } },
+    { "op": "command", "command": { "type": "goToBookmark", "value": "survey" } },
+    { "op": "expectState", "match": { "selection": { "text": "survey", "page": 1 } } },
+    { "op": "command", "command": { "type": "setViewOptions", "bookmarks": true } },
+    { "op": "expectState", "match": { "view": { "bookmarks": true } } },
+    { "op": "call", "method": "dialogs.open", "args": ["hyperlink"], "result": { "values": { "bookmark": "" } } },
+    { "op": "export", "format": "docx" },
+    { "op": "reopen" },
+    { "op": "call", "method": "navigation.bookmarks", "result": [{ "name": "Survey", "hidden": false, "empty": false }] },
+    { "op": "command", "command": { "type": "deleteBookmark", "value": "Survey" } },
+    { "op": "call", "method": "navigation.bookmarks", "result": [] }
+  ]
+}

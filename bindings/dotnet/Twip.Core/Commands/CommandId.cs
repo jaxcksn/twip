@@ -471,4 +471,10 @@ public enum CommandId
     SetNoteProperties,
     /// <summary>Converts footnotes and endnotes.</summary>
     ConvertNotes,
+    /// <summary>Selects a bookmark's text (Go To).</summary>
+    GoToBookmark,
+    /// <summary>Bookmarks the selection.</summary>
+    InsertBookmark,
+    /// <summary>Deletes a bookmark.</summary>
+    DeleteBookmark,
 }

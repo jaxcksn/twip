@@ -85,6 +85,18 @@ const CONSTRUCTS: &[Construct] = &[
         exempt: &[],
     },
     Construct {
+        name: "bookmark-blocks",
+        xml: r#"<w:bookmarkStart w:id="8" w:name="Around"/>{PARA}<w:bookmarkEnd w:id="8"/>"#,
+        holds: &["w:bookmarkStart@w:name=Around", "w:bookmarkEnd@w:id"],
+        parts: &[],
+        exempt: &[
+            ("table-insert-row", "not in a table"),
+            ("table-insert-column", "not in a table"),
+            ("table-split", "not in a table"),
+            ("table-merge", "not in a table"),
+        ],
+    },
+    Construct {
         name: "comment",
         xml: r#"<w:commentRangeStart w:id="91"/><w:r><w:t>Noted</w:t></w:r><w:commentRangeEnd w:id="91"/><w:r><w:commentReference w:id="91"/></w:r>"#,
         holds: &["w:commentRangeStart@w:id=91", "w:commentRangeEnd@w:id=91", "w:commentReference@w:id=91"],

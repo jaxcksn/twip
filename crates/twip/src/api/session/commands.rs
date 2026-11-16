@@ -162,6 +162,11 @@ impl Session {
             C::InsertTable(t) => count("the rows", Some(t.rows), 32767).and(count("the columns", Some(t.columns), 63)),
             C::InsertPicture(p) => picture(&p.data.0),
             C::InsertHyperlink(h) => text("the address", &h.address),
+            C::InsertBookmark(n) if !crate::editing::bookmarks::valid_name(n) => {
+                Err(Error::invalid("a bookmark name starts with a letter and holds letters, digits and underscores, 40 at most"))
+            }
+            C::GoToBookmark(n) if !n.eq_ignore_ascii_case("_top") && self.editor.bookmark(n).is_none() => Err(Error::invalid("no such bookmark")),
+            C::DeleteBookmark(n) if self.editor.bookmark(n).is_none() => Err(Error::invalid("no such bookmark")),
             C::EditHyperlink(h) => h.address.as_deref().map_or(Ok(()), |a| text("the address", a)),
             C::InsertRows(r) => count("the rows", r.count, 32767),
             C::InsertColumns(c) => count("the columns", c.count, 63),
@@ -332,6 +337,9 @@ impl Session {
                 }
                 if let Some(f) = v.field_shading {
                     self.field_shading = f;
+                }
+                if let Some(b) = v.bookmarks {
+                    self.show_bookmarks = b;
                 }
                 if let Some(o) = &v.cursor_overrides {
                     self.cursor_overrides.clone_from(o);

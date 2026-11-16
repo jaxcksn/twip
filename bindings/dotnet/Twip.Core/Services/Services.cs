@@ -133,7 +133,7 @@ public sealed class EditorSpelling
 /// <param name="Suggestions">The suggestions, best first.</param>
 public sealed record Misspelling(string Word, IReadOnlyList<string> Suggestions);
 
-/// <summary>Headings, for a navigation pane.</summary>
+/// <summary>Headings and bookmarks, for a navigation pane and the Bookmark dialog.</summary>
 public sealed class EditorNavigation
 {
     private readonly EditorSession _session;
@@ -144,6 +144,11 @@ public sealed class EditorNavigation
     /// <param name="ct">Cancels the request.</param>
     /// <returns>The headings in document order.</returns>
     public Task<IReadOnlyList<Heading>> GetHeadingsAsync(CancellationToken ct = default) => _session.CallAsync<IReadOnlyList<Heading>>(Method.Headings, [], ct);
+
+    /// <summary>The document's bookmarks, hidden ones too. Go to one with <see cref="EditorCommands.GoToBookmarkAsync"/>.</summary>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>The bookmarks in document order.</returns>
+    public Task<IReadOnlyList<BookmarkInfo>> GetBookmarksAsync(CancellationToken ct = default) => _session.CallAsync<IReadOnlyList<BookmarkInfo>>(Method.Bookmarks, [], ct);
 
     /// <summary>Selects and reveals a heading.</summary>
     /// <param name="heading">The heading.</param>
@@ -158,6 +163,12 @@ public sealed class EditorNavigation
 /// <param name="Text">Its text.</param>
 /// <param name="Page">Its page.</param>
 public sealed record Heading(HeadingId Id, int Level, string Text, int Page);
+
+/// <summary>A bookmark.</summary>
+/// <param name="Name">Its name.</param>
+/// <param name="Hidden">Hidden: Word's own (<c>_Toc</c>, <c>_Ref</c>), named with a leading <c>_</c>.</param>
+/// <param name="Empty">Its text holds nothing: it marks a place.</param>
+public sealed record BookmarkInfo(string Name, bool Hidden, bool Empty);
 
 /// <summary>The document's styles, for a style gallery.</summary>
 public sealed class EditorStyles

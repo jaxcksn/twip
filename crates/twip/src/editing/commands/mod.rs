@@ -222,6 +222,7 @@ impl Editor {
             Command::Escape => self.escape(),
             Command::SelectNextObject(o) => self.next_object(o),
             Command::GoToPage(page) => self.go_to_page(page, fonts),
+            Command::GoToBookmark(name) => self.go_to_bookmark(&name, true, fonts),
             // Character formatting
             Command::SetBold(on) => self.set_toggle(super::format::Toggle::Bold, on, fonts),
             Command::SetItalic(on) => self.set_toggle(super::format::Toggle::Italic, on, fonts),
@@ -336,6 +337,8 @@ impl Editor {
             Command::SetNoteProperties(p) => self.set_note_properties(p, fonts),
             Command::ConvertNotes(c) => self.convert_notes(c, fonts),
             Command::InsertHyperlink(h) => self.insert_hyperlink(h, fonts),
+            Command::InsertBookmark(name) => self.insert_bookmark(&name, fonts),
+            Command::DeleteBookmark(name) => self.delete_bookmark(&name, fonts),
             Command::EditHyperlink(h) => self.edit_hyperlink(h, fonts),
             Command::RemoveHyperlink => self.remove_hyperlink(fonts),
             Command::InsertField(f) => self.insert_field(f, fonts),

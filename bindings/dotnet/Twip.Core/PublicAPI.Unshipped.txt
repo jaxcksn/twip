@@ -1685,9 +1685,7 @@ Twip.HyperlinkDialogValues
 Twip.HyperlinkDialogValues.<Clone>$() -> Twip.HyperlinkDialogValues!
 Twip.HyperlinkDialogValues.Address.get -> string!
 Twip.HyperlinkDialogValues.Address.init -> void
-Twip.HyperlinkDialogValues.Deconstruct(out string! Text, out string! Address) -> void
 Twip.HyperlinkDialogValues.Equals(Twip.HyperlinkDialogValues? other) -> bool
-Twip.HyperlinkDialogValues.HyperlinkDialogValues(string! Text, string! Address) -> void
 Twip.HyperlinkDialogValues.Text.get -> string!
 Twip.HyperlinkDialogValues.Text.init -> void
 Twip.Identity
@@ -4711,7 +4709,6 @@ Twip.DocumentAppearance.Dark = 1 -> Twip.DocumentAppearance
 Twip.DocumentAppearance.DarkWithLightPage = 2 -> Twip.DocumentAppearance
 Twip.DocumentAppearance.Light = 0 -> Twip.DocumentAppearance
 Twip.EditorCommands.SetRulerTabTypeAsync(Twip.TabSelector value, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-Twip.EditorCommands.SetViewOptionsAsync(bool? formattingMarks = null, bool? gridlines = null, bool? textBoundaries = null, bool? liveLayout = null, Twip.ChromeTheme? theme = null, Twip.ColorValue? accent = null, Twip.DocumentAppearance? appearance = null, Twip.MeasureDetail? detail = null, Twip.ObjectGrid? objectGrid = null, Twip.ThemeColors? themeColors = null, Twip.FieldShading? fieldShading = null, System.Collections.Generic.IReadOnlyList<Twip.CursorOverride!>? cursorOverrides = null, bool? controlLabels = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.ShowTabStopAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.ShowTabTypesAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorSession.PopoverClosed -> System.EventHandler?
@@ -4839,7 +4836,6 @@ static Twip.ChromeTheme.Light.get -> Twip.ChromeTheme!
 static Twip.ChromeTheme.operator !=(Twip.ChromeTheme? left, Twip.ChromeTheme? right) -> bool
 static Twip.ChromeTheme.operator ==(Twip.ChromeTheme? left, Twip.ChromeTheme? right) -> bool
 static Twip.EditorOperation.SetRulerTabType(Twip.TabSelector value) -> Twip.EditorOperation!
-static Twip.EditorOperation.SetViewOptions(bool? formattingMarks = null, bool? gridlines = null, bool? textBoundaries = null, bool? liveLayout = null, Twip.ChromeTheme? theme = null, Twip.ColorValue? accent = null, Twip.DocumentAppearance? appearance = null, Twip.MeasureDetail? detail = null, Twip.ObjectGrid? objectGrid = null, Twip.ThemeColors? themeColors = null, Twip.FieldShading? fieldShading = null, System.Collections.Generic.IReadOnlyList<Twip.CursorOverride!>? cursorOverrides = null, bool? controlLabels = null) -> Twip.EditorOperation!
 static Twip.EditorOperation.ShowTabStop() -> Twip.EditorOperation!
 static Twip.EditorOperation.ShowTabTypes() -> Twip.EditorOperation!
 static Twip.HighContrastColors.operator !=(Twip.HighContrastColors? left, Twip.HighContrastColors? right) -> bool
@@ -6983,3 +6979,37 @@ static Twip.NotePropertiesOptions.operator !=(Twip.NotePropertiesOptions? left, 
 static Twip.NotePropertiesOptions.operator ==(Twip.NotePropertiesOptions? left, Twip.NotePropertiesOptions? right) -> bool
 static Twip.NoteSettings.operator !=(Twip.NoteSettings? left, Twip.NoteSettings? right) -> bool
 static Twip.NoteSettings.operator ==(Twip.NoteSettings? left, Twip.NoteSettings? right) -> bool
+Twip.BookmarkInfo
+Twip.BookmarkInfo.<Clone>$() -> Twip.BookmarkInfo!
+Twip.BookmarkInfo.BookmarkInfo(string! Name, bool Hidden, bool Empty) -> void
+Twip.BookmarkInfo.Deconstruct(out string! Name, out bool Hidden, out bool Empty) -> void
+Twip.BookmarkInfo.Empty.get -> bool
+Twip.BookmarkInfo.Empty.init -> void
+Twip.BookmarkInfo.Equals(Twip.BookmarkInfo? other) -> bool
+Twip.BookmarkInfo.Hidden.get -> bool
+Twip.BookmarkInfo.Hidden.init -> void
+Twip.BookmarkInfo.Name.get -> string!
+Twip.BookmarkInfo.Name.init -> void
+Twip.CommandId.DeleteBookmark = 236 -> Twip.CommandId
+Twip.CommandId.GoToBookmark = 234 -> Twip.CommandId
+Twip.CommandId.InsertBookmark = 235 -> Twip.CommandId
+Twip.EditorCommands.DeleteBookmarkAsync(string! name, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.GoToBookmarkAsync(string! name, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.InsertBookmarkAsync(string! name, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetViewOptionsAsync(bool? formattingMarks = null, bool? gridlines = null, bool? textBoundaries = null, bool? liveLayout = null, Twip.ChromeTheme? theme = null, Twip.ColorValue? accent = null, Twip.DocumentAppearance? appearance = null, Twip.MeasureDetail? detail = null, Twip.ObjectGrid? objectGrid = null, Twip.ThemeColors? themeColors = null, Twip.FieldShading? fieldShading = null, System.Collections.Generic.IReadOnlyList<Twip.CursorOverride!>? cursorOverrides = null, bool? controlLabels = null, bool? bookmarks = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorNavigation.GetBookmarksAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Twip.BookmarkInfo!>!>!
+Twip.HyperlinkDialogValues.Bookmark.get -> string!
+Twip.HyperlinkDialogValues.Bookmark.init -> void
+Twip.HyperlinkDialogValues.Deconstruct(out string! Text, out string! Address, out string! Bookmark) -> void
+Twip.HyperlinkDialogValues.HyperlinkDialogValues(string! Text, string! Address, string! Bookmark = "") -> void
+Twip.ViewState.Bookmarks.get -> bool
+Twip.ViewState.Bookmarks.init -> void
+override Twip.BookmarkInfo.Equals(object? obj) -> bool
+override Twip.BookmarkInfo.GetHashCode() -> int
+override Twip.BookmarkInfo.ToString() -> string!
+static Twip.BookmarkInfo.operator !=(Twip.BookmarkInfo? left, Twip.BookmarkInfo? right) -> bool
+static Twip.BookmarkInfo.operator ==(Twip.BookmarkInfo? left, Twip.BookmarkInfo? right) -> bool
+static Twip.EditorOperation.DeleteBookmark(string! name) -> Twip.EditorOperation!
+static Twip.EditorOperation.GoToBookmark(string! name) -> Twip.EditorOperation!
+static Twip.EditorOperation.InsertBookmark(string! name) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetViewOptions(bool? formattingMarks = null, bool? gridlines = null, bool? textBoundaries = null, bool? liveLayout = null, Twip.ChromeTheme? theme = null, Twip.ColorValue? accent = null, Twip.DocumentAppearance? appearance = null, Twip.MeasureDetail? detail = null, Twip.ObjectGrid? objectGrid = null, Twip.ThemeColors? themeColors = null, Twip.FieldShading? fieldShading = null, System.Collections.Generic.IReadOnlyList<Twip.CursorOverride!>? cursorOverrides = null, bool? controlLabels = null, bool? bookmarks = null) -> Twip.EditorOperation!

@@ -24,6 +24,8 @@ pub struct Context {
     pub selected_text: String,
     pub issues: Vec<AccessibilityIssue>,
     pub fonts: Vec<String>,
+    /// The document's shown bookmarks, in document order.
+    pub bookmarks: Vec<String>,
 }
 
 /// The error for a dialog whose object the selection doesn't have.
@@ -180,11 +182,15 @@ pub fn values(kind: DialogKind, state: &State, cx: &Context) -> Result<DialogVal
             DialogValues::AltText(AltTextDialog { text: o.alt_text.clone(), decorative: o.decorative })
         }
         DialogKind::Hyperlink => DialogValues::Hyperlink(match &state.selection.link {
-            Some(l) => HyperlinkDialog { text: l.text.clone(), address: l.address.clone() },
+            // A link to a place in this document shows its bookmark, not its address.
+            Some(l) => match l.address.strip_prefix('#') {
+                Some(b) => HyperlinkDialog { text: l.text.clone(), address: String::new(), bookmark: b.to_string() },
+                None => HyperlinkDialog { text: l.text.clone(), address: l.address.clone(), bookmark: String::new() },
+            },
             // The selected text (in one paragraph) is the link's text.
             None => HyperlinkDialog {
                 text: if cx.selected_text.contains('\n') { String::new() } else { cx.selected_text.clone() },
-                address: String::new(),
+                ..HyperlinkDialog::default()
             },
         }),
         DialogKind::Tabs => {
@@ -374,7 +380,16 @@ fn fields(values: &DialogValues, cx: &Context) -> BTreeMap<String, FieldInfo> {
             text.enabled = !v.decorative;
             vec![("text", text), ("decorative", field("Mark as decorative", FieldKind::Toggle))]
         }
-        DialogValues::Hyperlink(_) => vec![("text", field("Text to display", FieldKind::Text)), ("address", field("Address", FieldKind::Text))],
+        DialogValues::Hyperlink(_) => {
+            // Word's Place in This Document: the top, then the bookmarks.
+            let top = std::iter::once(ChoiceOption { value: "_top".into(), label: "Top of the Document".into() });
+            let marks = cx.bookmarks.iter().map(|b| ChoiceOption { value: b.clone(), label: b.clone() });
+            vec![
+                ("text", field("Text to display", FieldKind::Text)),
+                ("address", field("Address", FieldKind::Text)),
+                ("bookmark", FieldInfo { options: Some(top.chain(marks).collect()), ..field("Place in this document", FieldKind::Text) }),
+            ]
+        }
         DialogValues::Tabs(_) => vec![
             ("stops", field("Tab stop position", FieldKind::List)),
             ("defaultStop", number("Default tab stops", FieldKind::Length, 0.0, 1584.0, 1.0)),
@@ -1147,7 +1162,8 @@ pub fn commands(values: &DialogValues, state: &State, cx: &Context) -> Result<Ve
             }
         }
         (DialogValues::Hyperlink(v), DialogValues::Hyperlink(n)) => {
-            let address = v.address.trim().to_string();
+            let (address, bookmark) = (v.address.trim(), v.bookmark.trim());
+            let address = if bookmark.is_empty() { address.to_string() } else { format!("{address}#{bookmark}") };
             check(!address.is_empty(), "the link needs an address")?;
             let text = Some(v.text.trim().to_string()).filter(|t| !t.is_empty());
             if state.selection.link.is_some() {

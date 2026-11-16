@@ -1323,8 +1323,11 @@ dialog! {
     pub struct HyperlinkDialog / HyperlinkPatch {
         /// The text to display.
         pub text: String,
-        /// The address.
+        /// The address: a URL or a file, empty for a place in this document.
         pub address: String,
+        /// The bookmark the link goes to (`_top`: the document's start), in this document or, with an address, in
+        /// that one. Empty for none.
+        pub bookmark: String,
     }
 }
 
@@ -1454,6 +1457,18 @@ pub struct Heading {
     pub text: String,
     /// Its page.
     pub page: u32,
+}
+
+/// A bookmark, for the Bookmark dialog.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct BookmarkInfo {
+    /// Its name.
+    pub name: String,
+    /// Hidden: Word's own (`_Toc`, `_Ref`), named with a leading `_`.
+    pub hidden: bool,
+    /// Its text holds nothing: it marks a place.
+    pub empty: bool,
 }
 
 /// The kinds of style.

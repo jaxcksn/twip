@@ -147,7 +147,7 @@ export type {
 } from './services/elements.js';
 export type { Accessibility, AccessibleId, AccessibleNode, AnnouncementKind, CellPlace, ListPosition, Shortcuts } from './services/accessibility.js';
 export type { CharRange, ListEntry, ListGallerySection, Lists } from './services/lists.js';
-export type { Heading, Navigation, PreviewPicture, PreviewSize, StyleInfo, Styles } from './services/navigation.js';
+export type { BookmarkInfo, Heading, Navigation, PreviewPicture, PreviewSize, StyleInfo, Styles } from './services/navigation.js';
 export type {
   Ruler,
   RulerModel,
