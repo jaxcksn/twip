@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use crate::api::catalog::catalog;
-use crate::api::command::{Command, CommandId, ParagraphSpacing};
+use crate::api::command::{Command, CommandId, MultiplePagesMode, NumberFormat, PageVerticalAlignment, ParagraphSpacing, SectionBreakKind, TextFlow};
 use crate::api::state::{
     BorderState, CharacterFormatting, ColumnLayout, CommandState, CommandValue, ElementContext, ElementKind, FlowState, HeaderFooterInfo,
     HeaderFooterKind, HeaderFooterType, IndentState, LinkInfo, ListState, ObjectSelection, PageFormatting, PageMargins, PageSize,
@@ -749,11 +749,71 @@ impl Editor {
                 right: Points(s.right),
                 gutter: Points(s.gutter),
             },
-            columns: ColumnLayout { count: s.columns.num.max(1) as u32, spacing: Points(s.columns.space), separator: s.columns.separator },
+            columns: ColumnLayout {
+                count: s.columns.num.max(1) as u32,
+                spacing: Points(s.columns.space),
+                separator: s.columns.separator,
+                widths: if s.columns.equal {
+                    Vec::new()
+                } else {
+                    s.columns.cols.iter().map(|&(w, sp)| crate::api::command::ColumnWidth { width: Points(w), spacing: Points(sp) }).collect()
+                },
+            },
             header_distance: Points(s.header),
             footer_distance: Points(s.footer),
             different_first_page: s.title_pg,
             different_odd_even: self.doc.settings.even_and_odd,
+            page_number_format: s.pg_fmt.as_deref().map_or(NumberFormat::Decimal, NumberFormat::of_val),
+            page_number_start: s.pg_start.and_then(|n| u32::try_from(n).ok()),
+            chapter_numbers: s.chapter.as_ref().and_then(|(level, sep)| {
+                use crate::api::command::ChapterSeparator as S;
+                let separator = match sep.as_str() {
+                    "." => S::Period,
+                    ":" => S::Colon,
+                    "\u{2014}" => S::EmDash,
+                    "\u{2013}" => S::EnDash,
+                    _ => S::Hyphen,
+                };
+                Some(crate::api::command::ChapterNumbers { level: u8::try_from(*level).ok()?, separator })
+            }),
+            vertical_alignment: match s.v_align.as_str() {
+                "center" => PageVerticalAlignment::Center,
+                "both" => PageVerticalAlignment::Justified,
+                "bottom" => PageVerticalAlignment::Bottom,
+                _ => PageVerticalAlignment::Top,
+            },
+            line_numbers: s.line_numbers.as_ref().map(|l| crate::api::command::LineNumbers {
+                start: u32::try_from(l.start + 1).ok(),
+                count_by: u32::try_from(l.count_by).ok(),
+                distance: (l.distance > 0.0).then_some(Points(l.distance)),
+                restart: Some(match l.restart.as_str() {
+                    "newSection" => crate::api::command::LineNumberRestart::EachSection,
+                    "continuous" => crate::api::command::LineNumberRestart::Continuous,
+                    _ => crate::api::command::LineNumberRestart::EachPage,
+                }),
+            }),
+            break_type: match s.break_kind {
+                crate::docx::SectionBreak::NextPage => SectionBreakKind::NextPage,
+                crate::docx::SectionBreak::Continuous => SectionBreakKind::Continuous,
+                crate::docx::SectionBreak::EvenPage => SectionBreakKind::EvenPage,
+                crate::docx::SectionBreak::OddPage => SectionBreakKind::OddPage,
+                crate::docx::SectionBreak::NextColumn => SectionBreakKind::NextColumn,
+            },
+            text_direction: match s.text_flow {
+                1 => TextFlow::TbRl,
+                3 => TextFlow::BtLr,
+                4 => TextFlow::LrTbV,
+                5 => TextFlow::TbRlV,
+                7 => TextFlow::TbLrV,
+                _ => TextFlow::LrTb,
+            },
+            multiple_pages: match (self.doc.settings.mirror_margins, self.doc.settings.book_fold) {
+                (_, Some(true)) => MultiplePagesMode::ReverseBookFold,
+                (_, Some(false)) => MultiplePagesMode::BookFold,
+                (true, None) => MultiplePagesMode::MirrorMargins,
+                (false, None) => MultiplePagesMode::Normal,
+            },
+            gutter_at_top: self.doc.settings.gutter_at_top,
         }
     }
 }

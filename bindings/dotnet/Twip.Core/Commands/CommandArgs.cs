@@ -14,6 +14,8 @@ public enum SectionBreakKind
     EvenPage,
     /// <summary>On the next odd page.</summary>
     OddPage,
+    /// <summary>In the next column.</summary>
+    NextColumn,
 }
 
 /// <summary>A direction in the text.</summary>
@@ -707,6 +709,8 @@ public enum PageBorderScope
 /// <param name="OffsetFrom">What the borders are measured from; null keeps it.</param>
 /// <param name="Display">The pages they show on; null keeps it.</param>
 /// <param name="ApplyTo">The sections they apply to.</param>
+/// <param name="SurroundHeader">The borders go around the header (every section's); null keeps it.</param>
+/// <param name="SurroundFooter">The borders go around the footer (every section's); null keeps it.</param>
 public sealed record PageBordersOptions(
     CellBorder? Top = null,
     CellBorder? Bottom = null,
@@ -715,7 +719,99 @@ public sealed record PageBordersOptions(
     bool Shadow = false,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PageBorderOffset? OffsetFrom = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PageBorderDisplay? Display = null,
-    PageBorderScope ApplyTo = PageBorderScope.ThisSection);
+    PageBorderScope ApplyTo = PageBorderScope.ThisSection,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? SurroundHeader = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? SurroundFooter = null);
+
+/// <summary>A column's width and the space after it.</summary>
+/// <param name="Width">The width.</param>
+/// <param name="Spacing">The space after it (none after the last).</param>
+public sealed record ColumnWidth(Length Width, Length Spacing);
+
+/// <summary>Page numbering to change for <see cref="EditorCommands.SetPageNumberingAsync"/>; unset values are kept.</summary>
+/// <param name="Format">The number format (decimal, Roman or letters).</param>
+/// <param name="Start">The section's first page number, 0 to 32767.</param>
+/// <param name="ContinueFromPrevious">Continue from the section before (ignored when <paramref name="Start"/> is set).</param>
+/// <param name="Chapter">Chapter numbers before the page number.</param>
+/// <param name="NoChapterNumbers">Remove the chapter numbers (ignored when <paramref name="Chapter"/> is set).</param>
+[JsonConverter(typeof(PageNumberingOptionsConverter))]
+public sealed record PageNumberingOptions(
+    NumberFormat? Format = null, int? Start = null, bool ContinueFromPrevious = false, ChapterNumbers? Chapter = null, bool NoChapterNumbers = false);
+
+/// <summary>Chapter numbers in page numbers: the number of the last heading of a level, then a separator.</summary>
+/// <param name="Level">The heading level whose number leads (1 to 9).</param>
+/// <param name="Separator">Between the chapter and page numbers.</param>
+public sealed record ChapterNumbers(int Level, ChapterSeparator Separator);
+
+/// <summary>What separates a chapter number from a page number.</summary>
+public enum ChapterSeparator
+{
+    /// <summary><c>-</c>.</summary>
+    Hyphen,
+    /// <summary><c>.</c>.</summary>
+    Period,
+    /// <summary><c>:</c>.</summary>
+    Colon,
+    /// <summary>An em dash.</summary>
+    EmDash,
+    /// <summary>An en dash.</summary>
+    EnDash,
+}
+
+/// <summary>Where text sits between a section's top and bottom margins.</summary>
+public enum PageVerticalAlignment
+{
+    /// <summary>At the top.</summary>
+    Top,
+    /// <summary>In the middle.</summary>
+    Center,
+    /// <summary>Spread from top to bottom.</summary>
+    Justified,
+    /// <summary>At the bottom.</summary>
+    Bottom,
+}
+
+/// <summary>A section's line numbering.</summary>
+/// <param name="Start">The first number (1 to 32767); 1 when null.</param>
+/// <param name="CountBy">Shows every nth number (1 to 100); 1 when null.</param>
+/// <param name="Distance">From the text (0 to 1584 pt); automatic when null.</param>
+/// <param name="Restart">When numbering starts again; each page when null.</param>
+public sealed record LineNumbers(
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Start = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? CountBy = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Distance = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] LineNumberRestart? Restart = null);
+
+/// <summary>When line numbering starts again.</summary>
+public enum LineNumberRestart
+{
+    /// <summary>On each page.</summary>
+    EachPage,
+    /// <summary>In each section.</summary>
+    EachSection,
+    /// <summary>Never: it continues.</summary>
+    Continuous,
+}
+
+/// <summary>How the document's pages pair.</summary>
+public enum MultiplePagesMode
+{
+    /// <summary>Each page on its own.</summary>
+    Normal,
+    /// <summary>Facing pages: inside and outside margins.</summary>
+    MirrorMargins,
+    /// <summary>A booklet folded down the middle.</summary>
+    BookFold,
+    /// <summary>A booklet folded down the middle, read right to left.</summary>
+    ReverseBookFold,
+}
+
+/// <summary>Multiple pages settings to change; unset values are kept.</summary>
+/// <param name="Mode">How pages pair.</param>
+/// <param name="GutterAtTop">The gutter is at the top rather than the left.</param>
+public sealed record MultiplePagesOptions(
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] MultiplePagesMode? Mode = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? GutterAtTop = null);
 
 /// <summary>The paragraph border lines for <see cref="EditorCommands.SetParagraphBorderLinesAsync"/>: every edge is set, and null removes it.</summary>
 /// <param name="Top">The top edge.</param>

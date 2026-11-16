@@ -501,6 +501,8 @@ fn every_edit_keeps_every_construct() {
     if let Some(d) = &out {
         let _ = std::fs::remove_dir_all(d);
         std::fs::create_dir_all(d).expect("the output directory");
+        // Section and page settings, for the schema check too.
+        std::fs::write(d.join("section-settings.docx"), section_settings_package()).expect("writes");
     }
     let cases: Vec<(&Construct, &str, fn(&mut Editor, &Spot) -> Outcome)> = CONSTRUCTS
         .iter()
@@ -581,4 +583,35 @@ fn with_main(package: &[u8], xml: &str) -> Vec<u8> {
         z.write_all(if name == "word/document.xml" { xml.as_bytes() } else { &bytes }).expect("written");
     }
     z.finish().expect("a package").into_inner()
+}
+
+/// A document with every section and page setting set, saved.
+fn section_settings_package() -> Vec<u8> {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-SECTIONS.docx");
+    let mut e = Editor::open(&std::fs::read(path).expect("the fixture"), fonts()).expect("opens");
+    let n = |v: serde_json::Value| serde_json::from_value::<Command>(v).expect("a command");
+    for c in [
+        serde_json::json!({ "type": "setPageNumbering", "format": "lowerRoman", "start": 3, "chapter": { "level": 1, "separator": "enDash" } }),
+        serde_json::json!({ "type": "setPageVerticalAlignment", "value": "center" }),
+        serde_json::json!({ "type": "setLineNumbering", "value": { "countBy": 5, "distance": 18 } }),
+        serde_json::json!({ "type": "setSectionBreakType", "value": "oddPage" }),
+        serde_json::json!({ "type": "setSectionTextDirection", "value": "tbRl" }),
+        serde_json::json!({ "type": "setColumns", "count": 2, "widths": [{ "width": 144, "spacing": 36 }, { "width": 288, "spacing": 0 }] }),
+        serde_json::json!({ "type": "setMultiplePages", "mode": "bookFold", "gutterAtTop": true }),
+        serde_json::json!({ "type": "setDifferentOddEvenPages", "value": true }),
+        serde_json::json!({ "type": "setPageBorders", "top": { "style": "single", "width": 0.5, "color": "auto" }, "surroundHeader": false }),
+    ] {
+        let out = e.execute(n(c.clone()), fonts());
+        assert!(matches!(out, Outcome::Changed(_)), "{c}: {out:?}");
+    }
+    crate::docx::write::save(e.document()).expect("saves")
+}
+
+#[test]
+fn section_settings_are_saved_where_the_schema_puts_them() {
+    let saved = section_settings_package();
+    let settings = String::from_utf8(entries(&saved).into_iter().find(|(n, _)| n == "word/settings.xml").expect("settings").1).expect("UTF-8");
+    for el in ["evenAndOddHeaders", "gutterAtTop", "bookFoldPrinting", "bordersDoNotSurroundHeader"] {
+        assert!(settings.contains(&format!("w:{el}")), "{el}: {settings}");
+    }
 }

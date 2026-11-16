@@ -1,14 +1,24 @@
 [
   {
+    "breakType": "nextPage",
+    "chapterNumbers": null,
     "columns": {
       "count": 1,
       "separator": false,
-      "spacing": 36.5
+      "spacing": 36.5,
+      "widths": []
     },
     "differentFirstPage": true,
     "differentOddEven": false,
     "footerDistance": 36.5,
+    "gutterAtTop": false,
     "headerDistance": 36.5,
+    "lineNumbers": {
+      "countBy": 1,
+      "distance": 18.5,
+      "restart": "eachPage",
+      "start": 1
+    },
     "margins": {
       "bottom": 72.5,
       "gutter": 0.5,
@@ -16,10 +26,15 @@
       "right": 72.5,
       "top": 72.5
     },
+    "multiplePages": "normal",
     "orientation": "portrait",
+    "pageNumberFormat": "decimal",
+    "pageNumberStart": 1,
     "size": {
       "height": 792.5,
       "width": 612.5
-    }
+    },
+    "textDirection": "lrTb",
+    "verticalAlignment": "top"
   }
 ]

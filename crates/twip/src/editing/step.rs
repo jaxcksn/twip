@@ -121,10 +121,36 @@ pub enum Step {
     },
     DefaultTab(f64),
     Hyphenation(Hyphenating),
+    PageSettings(PageSettings),
     SectionBreak {
         section: usize,
         back: Option<Box<SectionBack>>,
     },
+}
+
+/// The document's page settings: odd and even headers, how pages pair, the gutter's place, and the page borders
+/// around headers and footers.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PageSettings {
+    pub even_and_odd: bool,
+    pub mirror_margins: bool,
+    pub gutter_at_top: bool,
+    pub book_fold: Option<bool>,
+    pub no_surround_header: bool,
+    pub no_surround_footer: bool,
+}
+
+impl PageSettings {
+    pub fn of(s: &crate::docx::Settings) -> PageSettings {
+        PageSettings {
+            even_and_odd: s.even_and_odd,
+            mirror_margins: s.mirror_margins,
+            gutter_at_top: s.gutter_at_top,
+            book_fold: s.book_fold,
+            no_surround_header: s.borders_do_not_surround_header,
+            no_surround_footer: s.borders_do_not_surround_footer,
+        }
+    }
 }
 
 /// The document's hyphenation settings.
@@ -876,6 +902,13 @@ impl Step {
                 };
                 (s.auto_hyphenation, s.hyphenation_zone, s.consecutive_hyphen_limit, s.do_not_hyphenate_caps) = (h.auto, h.zone, h.limit, h.caps);
                 Ok(Applied { inverse: Step::Hyphenation(old), map: Map::Same, hint: None })
+            }
+            Step::PageSettings(p) => {
+                let old = PageSettings::of(&doc.settings);
+                let s = &mut doc.settings;
+                (s.even_and_odd, s.mirror_margins, s.gutter_at_top, s.book_fold) = (p.even_and_odd, p.mirror_margins, p.gutter_at_top, p.book_fold);
+                (s.borders_do_not_surround_header, s.borders_do_not_surround_footer) = (p.no_surround_header, p.no_surround_footer);
+                Ok(Applied { inverse: Step::PageSettings(old), map: Map::Same, hint: None })
             }
             Step::SectionBreak { section, back } => {
                 let n = doc.sections.len();

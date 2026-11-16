@@ -102,7 +102,7 @@ Chunk numbers are [roadmap](../roadmap#docx) chunks.
 | Mirror indents | `w:mirrorIndents` | API (`setIndents`) |
 | Outline level | `w:outlineLvl` | API (`setOutline`) |
 | Collapsed by default | `w15:collapsed` | API (`setOutline`) |
-| Text direction | `w:textDirection` | API for paragraphs (`setParagraphTextDirection`); Model for sections and cells, 2.6 and 2.9 |
+| Text direction | `w:textDirection` | API for paragraphs (`setParagraphTextDirection`); API for sections (`setSectionTextDirection`); Model for cells, 2.9 |
 | Text box tight wrap | `w:textboxTightWrap` | Laid out; Model, 2.10 |
 | Don't hyphenate | `w:suppressAutoHyphens` | API (`setParagraphFlow`) |
 | Line numbers | `w:suppressLineNumbers` | API (`setParagraphFlow`) |
@@ -126,15 +126,15 @@ Chunk numbers are [roadmap](../roadmap#docx) chunks.
 | Construct | Elements | Status |
 |---|---|---|
 | Page size, margins, borders | `w:pgSz`, `w:pgMar`, `w:pgBorders` | API |
-| Page borders around headers | `w:bordersDoNotSurroundHeader`, `w:bordersDoNotSurroundFooter` | Laid out; Model, 2.6 |
-| Columns | `w:cols`, `w:col` | API for equal columns; presets and unequal widths are Model, 2.6 |
+| Page borders around headers | `w:bordersDoNotSurroundHeader`, `w:bordersDoNotSurroundFooter` | API (`setPageBorders`) |
+| Columns | `w:cols`, `w:col` | API (`setColumns`, unequal widths too) |
 | Title page | `w:titlePg` | API |
-| Odd and even headers | `w:evenAndOddHeaders` | Model (`setDifferentOddEvenPages` is unsupported), 2.6 |
-| Section type | `w:type` | Model, 2.6 |
-| Page numbering | `w:pgNumType` | Model, 2.6 |
-| Line numbering | `w:lnNumType` | Model, 2.6 |
-| Vertical alignment | `w:vAlign` | Model for sections, 2.6; API for cells |
-| Mirror margins, book fold, gutter | `w:mirrorMargins`, `w:bookFoldPrinting`, `w:bookFoldRevPrinting`, `w:bookFoldPrintingSheets`, `w:gutterAtTop` | Model, 2.6 |
+| Odd and even headers | `w:evenAndOddHeaders` | API (`setDifferentOddEvenPages`) |
+| Section type | `w:type` | API (`setSectionBreakType`); inserting a section break is still unsupported |
+| Page numbering | `w:pgNumType` | API (`setPageNumbering`) |
+| Line numbering | `w:lnNumType` | API (`setLineNumbering`) |
+| Vertical alignment | `w:vAlign` | API (`setPageVerticalAlignment`; `setCellAlignment` for cells) |
+| Mirror margins, book fold, gutter | `w:mirrorMargins`, `w:bookFoldPrinting`, `w:bookFoldRevPrinting`, `w:bookFoldPrintingSheets`, `w:gutterAtTop` | API (`setMultiplePages`; sheets per booklet is kept) |
 | Notes in a section | `w:footnotePr`, `w:endnotePr`, `w:pos`, `w:numStart`, `w:numRestart`, `w15:footnoteColumns` | Model, 2.7 |
 | No endnotes | `w:noEndnote` | Laid out; Model, 2.7 |
 | Form protection | `w:formProt` | Kept, 2.14 |

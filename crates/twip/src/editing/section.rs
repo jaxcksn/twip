@@ -70,6 +70,13 @@ impl Editor {
                 }
                 .into();
             }
+            // Around the header and footer: a document setting, every section's borders following it.
+            if let Some(on) = c.surround_header {
+                b.surround_header = on;
+            }
+            if let Some(on) = c.surround_footer {
+                b.surround_footer = on;
+            }
             let shadow = c.shadow.unwrap_or_else(|| b.bottom.as_ref().is_some_and(|x| x.shadow));
             // A new edge's space: 24 pt from the page's edge, or 1 pt (top, bottom) and 4 pt (sides) from the text.
             let space = |side: &str, page: bool| {
@@ -134,6 +141,17 @@ impl Editor {
             if self.step(&mut tx, Step::SectionPage { section, page, change }).is_err() {
                 self.abort(tx);
                 return Outcome::Unchanged("no section");
+            }
+            changed = true;
+        }
+        let mut settings = crate::editing::step::PageSettings::of(&self.doc.settings);
+        let was = settings;
+        settings.no_surround_header = c.surround_header.map_or(settings.no_surround_header, |on| !on);
+        settings.no_surround_footer = c.surround_footer.map_or(settings.no_surround_footer, |on| !on);
+        if settings != was {
+            if self.step(&mut tx, Step::PageSettings(settings)).is_err() {
+                self.abort(tx);
+                return Outcome::Unchanged("the setting can't change");
             }
             changed = true;
         }

@@ -789,6 +789,33 @@ public sealed record PageFormatting
 
     /// <summary>Whether odd and even pages have their own headers and footers.</summary>
     public bool DifferentOddEven { get; init; }
+
+    /// <summary>The page number format.</summary>
+    public NumberFormat PageNumberFormat { get; init; }
+
+    /// <summary>The section's first page number, or null when it continues from the section before.</summary>
+    public int? PageNumberStart { get; init; }
+
+    /// <summary>Chapter numbers in page numbers, or null.</summary>
+    public ChapterNumbers? ChapterNumbers { get; init; }
+
+    /// <summary>Where text sits between the top and bottom margins.</summary>
+    public PageVerticalAlignment VerticalAlignment { get; init; }
+
+    /// <summary>The line numbering, or null.</summary>
+    public LineNumbers? LineNumbers { get; init; }
+
+    /// <summary>The break the section starts with.</summary>
+    public SectionBreakKind BreakType { get; init; }
+
+    /// <summary>The section's text direction.</summary>
+    public TextFlow TextDirection { get; init; }
+
+    /// <summary>How the document's pages pair.</summary>
+    public MultiplePagesMode MultiplePages { get; init; }
+
+    /// <summary>The gutter is at the top.</summary>
+    public bool GutterAtTop { get; init; }
 }
 
 /// <summary>A paper size.</summary>
@@ -808,7 +835,8 @@ public sealed record PageMargins(Length Top, Length Bottom, Length Left, Length 
 /// <param name="Count">The number of columns.</param>
 /// <param name="Spacing">The space between them.</param>
 /// <param name="Separator">Whether a line separates them.</param>
-public sealed record PageColumns(int Count, Length Spacing, bool Separator);
+/// <param name="Widths">Each column's width and the space after it, when they differ.</param>
+public sealed record PageColumns(int Count, Length Spacing, bool Separator, IReadOnlyList<ColumnWidth>? Widths = null);
 
 /// <summary>Undo and redo availability.</summary>
 public sealed record HistoryState

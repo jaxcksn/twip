@@ -171,8 +171,22 @@ const BEFORE: &[&str] = &[
 const BEFORE_DEFAULT_TAB: &[&str] =
     &["trackRevisions", "doNotTrackMoves", "doNotTrackFormatting", "documentProtection", "autoFormatOverride", "styleLockTheme", "styleLockQFSet"];
 
-/// CT_Settings' children from `w:defaultTabStop` to `w:doNotHyphenateCaps`, in order.
-const TAB_AND_HYPHENATION: &[&str] = &["defaultTabStop", "autoHyphenation", "consecutiveHyphenLimit", "hyphenationZone", "doNotHyphenateCaps"];
+/// CT_Settings' children from `w:defaultTabStop` on, as far as the settings written go, in order.
+const TAB_AND_HYPHENATION: &[&str] = &[
+    "defaultTabStop",
+    "autoHyphenation",
+    "consecutiveHyphenLimit",
+    "hyphenationZone",
+    "doNotHyphenateCaps",
+    "showEnvelope",
+    "summaryLength",
+    "clickAndTypeStyle",
+    "defaultTableStyle",
+    "evenAndOddHeaders",
+    "bookFoldRevPrinting",
+    "bookFoldPrinting",
+    "bookFoldPrintingSheets",
+];
 
 /// The settings part with the default tab spacing and the hyphenation settings, where they changed since reading.
 // shortcut: a document with no settings part keeps the settings it was read with.
@@ -206,6 +220,19 @@ fn settings_part(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(
     if read.do_not_hyphenate_caps != now.do_not_hyphenate_caps {
         set_setting(&mut out, "doNotHyphenateCaps", now.do_not_hyphenate_caps.then(|| format!("<{w}doNotHyphenateCaps/>")))?;
     }
+    for (name, was, is) in [
+        ("evenAndOddHeaders", read.even_and_odd, now.even_and_odd),
+        ("mirrorMargins", read.mirror_margins, now.mirror_margins),
+        ("gutterAtTop", read.gutter_at_top, now.gutter_at_top),
+        ("bordersDoNotSurroundHeader", read.borders_do_not_surround_header, now.borders_do_not_surround_header),
+        ("bordersDoNotSurroundFooter", read.borders_do_not_surround_footer, now.borders_do_not_surround_footer),
+        ("bookFoldPrinting", read.book_fold == Some(false), now.book_fold == Some(false)),
+        ("bookFoldRevPrinting", read.book_fold == Some(true), now.book_fold == Some(true)),
+    ] {
+        if was != is {
+            set_setting(&mut out, name, is.then(|| format!("<{w}{name}/>")))?;
+        }
+    }
     if out != xml {
         package::set(parts, &name, out.into_bytes());
     }
@@ -226,8 +253,8 @@ fn set_setting(xml: &mut String, name: &str, el: Option<String>) -> Result<(), S
     if el.is_empty() {
         return Ok(());
     }
-    let earlier = TAB_AND_HYPHENATION.iter().take_while(|n| **n != name);
-    let before: Vec<&str> = BEFORE.iter().chain(BEFORE_DEFAULT_TAB).chain(earlier).copied().collect();
+    let all: Vec<&str> = BEFORE.iter().chain(BEFORE_DEFAULT_TAB).chain(TAB_AND_HYPHENATION).copied().collect();
+    let before: Vec<&str> = all.iter().take_while(|n| **n != name).copied().collect();
     let after = root.children().rfind(|c| c.is_element() && before.iter().any(|b| is_w(*c, b))).map(|c| c.range().end);
     let r = root.range();
     let tag = xml[r.clone()].to_string();
@@ -529,6 +556,87 @@ fn sect_with_page(sect: &str, w: &str, p: &SectionPage, was: Option<&SectionPage
     }
     if changed(&|q| q.title_pg != p.title_pg) {
         put(&mut s, "titlePg", p.title_pg.then(|| format!("<{w}titlePg/>")));
+    }
+    // The rest only when it changed since reading (a tracked change's earlier page keeps its source's).
+    if let Some(was) = was {
+        if was.break_kind != p.break_kind {
+            let v = match p.break_kind {
+                SectionBreak::NextPage => "nextPage",
+                SectionBreak::Continuous => "continuous",
+                SectionBreak::EvenPage => "evenPage",
+                SectionBreak::OddPage => "oddPage",
+                SectionBreak::NextColumn => "nextColumn",
+            };
+            put(&mut s, "type", Some(format!("<{w}type {w}val=\"{v}\"/>")));
+        }
+        if (was.pg_start, &was.pg_fmt, &was.chapter) != (p.pg_start, &p.pg_fmt, &p.chapter) {
+            let mut a = String::new();
+            if let Some(f) = &p.pg_fmt {
+                a += &format!(" {w}fmt=\"{}\"", props::esc(f));
+            }
+            if let Some(n) = p.pg_start {
+                a += &format!(" {w}start=\"{n}\"");
+            }
+            if let Some((level, sep)) = &p.chapter {
+                let sep = match sep.as_str() {
+                    "." => "period",
+                    ":" => "colon",
+                    "\u{2014}" => "emDash",
+                    "\u{2013}" => "enDash",
+                    _ => "hyphen",
+                };
+                a += &format!(" {w}chapStyle=\"{level}\" {w}chapSep=\"{sep}\"");
+            }
+            put(&mut s, "pgNumType", (!a.is_empty()).then(|| format!("<{w}pgNumType{a}/>")));
+        }
+        if was.line_numbers != p.line_numbers {
+            let tag = p.line_numbers.as_ref().map(|l| {
+                let distance = if l.distance > 0.0 { format!(" {w}distance=\"{}\"", twips(l.distance)) } else { String::new() };
+                format!("<{w}lnNumType {w}countBy=\"{}\" {w}start=\"{}\"{distance} {w}restart=\"{}\"/>", l.count_by, l.start, props::esc(&l.restart))
+            });
+            put(&mut s, "lnNumType", tag);
+        }
+        if was.v_align != p.v_align {
+            put(&mut s, "vAlign", (p.v_align != "top").then(|| format!("<{w}vAlign {w}val=\"{}\"/>", props::esc(&p.v_align))));
+        }
+        if was.text_flow != p.text_flow {
+            let v = match p.text_flow {
+                1 => Some("tbRl"),
+                3 => Some("btLr"),
+                4 => Some("lrTbV"),
+                5 => Some("tbRlV"),
+                7 => Some("tbLrV"),
+                _ => None,
+            };
+            put(&mut s, "textDirection", v.map(|v| format!("<{w}textDirection {w}val=\"{v}\"/>")));
+        }
+        for (k, name) in [(0, "footnotePr"), (1, "endnotePr")] {
+            if was.notes[k] != p.notes[k] {
+                let n = &p.notes[k];
+                let mut x = String::new();
+                if k == 0 && n.beneath {
+                    x += &format!("<{w}pos {w}val=\"beneathText\"/>");
+                }
+                if let Some(f) = &n.fmt {
+                    x += &format!("<{w}numFmt {w}val=\"{}\"/>", props::esc(f));
+                }
+                if n.start != 1 {
+                    x += &format!("<{w}numStart {w}val=\"{}\"/>", n.start);
+                }
+                let restart = match n.restart {
+                    NoteRestart::EachSect => Some("eachSect"),
+                    NoteRestart::EachPage => Some("eachPage"),
+                    NoteRestart::Continuous => None,
+                };
+                if let Some(r) = restart {
+                    x += &format!("<{w}numRestart {w}val=\"{r}\"/>");
+                }
+                put(&mut s, name, (!x.is_empty()).then(|| format!("<{w}{name}>{x}</{w}{name}>")));
+            }
+        }
+        if was.no_endnote != p.no_endnote {
+            put(&mut s, "noEndnote", p.no_endnote.then(|| format!("<{w}noEndnote/>")));
+        }
     }
     put(
         &mut s,

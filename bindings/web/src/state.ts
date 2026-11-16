@@ -1,4 +1,16 @@
-import type { CommandId, Ligatures, NumberForm, NumberSpacing, TextFlow } from './commands.js';
+import type {
+  ChapterNumbers,
+  ColumnWidth,
+  CommandId,
+  Ligatures,
+  LineNumbers,
+  MultiplePagesMode,
+  NumberForm,
+  NumberFormat,
+  NumberSpacing,
+  SectionBreakKind,
+  TextFlow,
+} from './commands.js';
 import type { FontsState } from './fonts/library.js';
 import type { DialogKind } from './services/dialogs.js';
 import type { ControlKind, ReferenceRule } from './services/elements.js';
@@ -542,7 +554,7 @@ export interface PageFormatting {
   /** The margins. */
   margins: { top: Points; bottom: Points; left: Points; right: Points; gutter: Points };
   /** The text columns. */
-  columns: { count: number; spacing: Points; separator: boolean };
+  columns: { count: number; spacing: Points; separator: boolean; widths: ColumnWidth[] };
   /** The header distance from the page edge. */
   headerDistance: Points;
   /** The footer distance from the page edge. */
@@ -551,6 +563,24 @@ export interface PageFormatting {
   differentFirstPage: boolean;
   /** Different odd and even pages. */
   differentOddEven: boolean;
+  /** The page number format. */
+  pageNumberFormat: NumberFormat;
+  /** The section's first page number, or `null` when it continues from the section before. */
+  pageNumberStart: number | null;
+  /** Chapter numbers in page numbers, or `null`. */
+  chapterNumbers: ChapterNumbers | null;
+  /** Where text sits between the top and bottom margins. */
+  verticalAlignment: 'top' | 'center' | 'justified' | 'bottom';
+  /** The line numbering, or `null`. */
+  lineNumbers: LineNumbers | null;
+  /** The break the section starts with. */
+  breakType: SectionBreakKind;
+  /** The section's text direction. */
+  textDirection: TextFlow;
+  /** How the document's pages pair. */
+  multiplePages: MultiplePagesMode;
+  /** The gutter is at the top. */
+  gutterAtTop: boolean;
 }
 
 /** View settings. */

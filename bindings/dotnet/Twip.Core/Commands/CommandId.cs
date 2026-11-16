@@ -447,4 +447,16 @@ public enum CommandId
     SetOutline,
     /// <summary>Sets the paragraphs' text direction.</summary>
     SetParagraphTextDirection,
+    /// <summary>Sets the section's page number format, first number and chapter numbers.</summary>
+    SetPageNumbering,
+    /// <summary>Sets where text sits between the section's top and bottom margins.</summary>
+    SetPageVerticalAlignment,
+    /// <summary>Numbers the section's lines, or stops.</summary>
+    SetLineNumbering,
+    /// <summary>Sets the break the section starts with.</summary>
+    SetSectionBreakType,
+    /// <summary>Sets the section's text direction.</summary>
+    SetSectionTextDirection,
+    /// <summary>Sets how the document's pages pair and where the gutter is.</summary>
+    SetMultiplePages,
 }

@@ -731,7 +731,6 @@ Twip.EditorCommands.SetCharacterPositionAsync(Twip.Length position, System.Threa
 Twip.EditorCommands.SetCharacterSpacingAsync(Twip.Length spacing, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.SetCheckboxAsync(Twip.ElementId id, bool isChecked, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.SetColumnWidthAsync(Twip.Length width, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-Twip.EditorCommands.SetColumnsAsync(int count, Twip.Length? spacing = null, bool? separator = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.SetControlAsync(Twip.ControlChanges! changes, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.SetDefaultTabStopAsync(Twip.Length spacing, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.SetAutoHyphenationAsync(bool on, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
@@ -1953,9 +1952,7 @@ Twip.PageColumns
 Twip.PageColumns.<Clone>$() -> Twip.PageColumns!
 Twip.PageColumns.Count.get -> int
 Twip.PageColumns.Count.init -> void
-Twip.PageColumns.Deconstruct(out int Count, out Twip.Length Spacing, out bool Separator) -> void
 Twip.PageColumns.Equals(Twip.PageColumns? other) -> bool
-Twip.PageColumns.PageColumns(int Count, Twip.Length Spacing, bool Separator) -> void
 Twip.PageColumns.Separator.get -> bool
 Twip.PageColumns.Separator.init -> void
 Twip.PageColumns.Spacing.get -> Twip.Length
@@ -3501,7 +3498,6 @@ static Twip.EditorOperation.SetCharacterPosition(Twip.Length position) -> Twip.E
 static Twip.EditorOperation.SetCharacterSpacing(Twip.Length spacing) -> Twip.EditorOperation!
 static Twip.EditorOperation.SetCheckbox(Twip.ElementId id, bool isChecked) -> Twip.EditorOperation!
 static Twip.EditorOperation.SetColumnWidth(Twip.Length width) -> Twip.EditorOperation!
-static Twip.EditorOperation.SetColumns(int count, Twip.Length? spacing = null, bool? separator = null) -> Twip.EditorOperation!
 static Twip.EditorOperation.SetControl(Twip.ControlChanges! changes) -> Twip.EditorOperation!
 static Twip.EditorOperation.SetDefaultTabStop(Twip.Length spacing) -> Twip.EditorOperation!
 static Twip.EditorOperation.SetAutoHyphenation(bool on) -> Twip.EditorOperation!
@@ -6514,7 +6510,6 @@ Twip.PageBordersOptions.ApplyTo.get -> Twip.PageBorderScope
 Twip.PageBordersOptions.ApplyTo.init -> void
 Twip.PageBordersOptions.Bottom.get -> Twip.CellBorder?
 Twip.PageBordersOptions.Bottom.init -> void
-Twip.PageBordersOptions.Deconstruct(out Twip.CellBorder? Top, out Twip.CellBorder? Bottom, out Twip.CellBorder? Left, out Twip.CellBorder? Right, out bool Shadow, out Twip.PageBorderOffset? OffsetFrom, out Twip.PageBorderDisplay? Display, out Twip.PageBorderScope ApplyTo) -> void
 Twip.PageBordersOptions.Display.get -> Twip.PageBorderDisplay?
 Twip.PageBordersOptions.Display.init -> void
 Twip.PageBordersOptions.Equals(Twip.PageBordersOptions? other) -> bool
@@ -6522,7 +6517,6 @@ Twip.PageBordersOptions.Left.get -> Twip.CellBorder?
 Twip.PageBordersOptions.Left.init -> void
 Twip.PageBordersOptions.OffsetFrom.get -> Twip.PageBorderOffset?
 Twip.PageBordersOptions.OffsetFrom.init -> void
-Twip.PageBordersOptions.PageBordersOptions(Twip.CellBorder? Top = null, Twip.CellBorder? Bottom = null, Twip.CellBorder? Left = null, Twip.CellBorder? Right = null, bool Shadow = false, Twip.PageBorderOffset? OffsetFrom = null, Twip.PageBorderDisplay? Display = null, Twip.PageBorderScope ApplyTo = Twip.PageBorderScope.ThisSection) -> void
 Twip.PageBordersOptions.Right.get -> Twip.CellBorder?
 Twip.PageBordersOptions.Right.init -> void
 Twip.PageBordersOptions.Shadow.get -> bool
@@ -6732,3 +6726,152 @@ static Twip.EditorOperation.SetParagraphSpacing(Twip.SpacingValue? before = null
 static Twip.EditorOperation.SetParagraphTextDirection(Twip.TextFlow direction) -> Twip.EditorOperation!
 static Twip.OutlineOptions.operator !=(Twip.OutlineOptions? left, Twip.OutlineOptions? right) -> bool
 static Twip.OutlineOptions.operator ==(Twip.OutlineOptions? left, Twip.OutlineOptions? right) -> bool
+Twip.ChapterNumbers
+Twip.ChapterNumbers.<Clone>$() -> Twip.ChapterNumbers!
+Twip.ChapterNumbers.ChapterNumbers(int Level, Twip.ChapterSeparator Separator) -> void
+Twip.ChapterNumbers.Deconstruct(out int Level, out Twip.ChapterSeparator Separator) -> void
+Twip.ChapterNumbers.Equals(Twip.ChapterNumbers? other) -> bool
+Twip.ChapterNumbers.Level.get -> int
+Twip.ChapterNumbers.Level.init -> void
+Twip.ChapterNumbers.Separator.get -> Twip.ChapterSeparator
+Twip.ChapterNumbers.Separator.init -> void
+Twip.ChapterSeparator
+Twip.ChapterSeparator.Colon = 2 -> Twip.ChapterSeparator
+Twip.ChapterSeparator.EmDash = 3 -> Twip.ChapterSeparator
+Twip.ChapterSeparator.EnDash = 4 -> Twip.ChapterSeparator
+Twip.ChapterSeparator.Hyphen = 0 -> Twip.ChapterSeparator
+Twip.ChapterSeparator.Period = 1 -> Twip.ChapterSeparator
+Twip.ColumnWidth
+Twip.ColumnWidth.<Clone>$() -> Twip.ColumnWidth!
+Twip.ColumnWidth.ColumnWidth(Twip.Length Width, Twip.Length Spacing) -> void
+Twip.ColumnWidth.Deconstruct(out Twip.Length Width, out Twip.Length Spacing) -> void
+Twip.ColumnWidth.Equals(Twip.ColumnWidth? other) -> bool
+Twip.ColumnWidth.Spacing.get -> Twip.Length
+Twip.ColumnWidth.Spacing.init -> void
+Twip.ColumnWidth.Width.get -> Twip.Length
+Twip.ColumnWidth.Width.init -> void
+Twip.CommandId.SetLineNumbering = 224 -> Twip.CommandId
+Twip.CommandId.SetMultiplePages = 227 -> Twip.CommandId
+Twip.CommandId.SetPageNumbering = 222 -> Twip.CommandId
+Twip.CommandId.SetPageVerticalAlignment = 223 -> Twip.CommandId
+Twip.CommandId.SetSectionBreakType = 225 -> Twip.CommandId
+Twip.CommandId.SetSectionTextDirection = 226 -> Twip.CommandId
+Twip.EditorCommands.SetColumnsAsync(int count, Twip.Length? spacing = null, bool? separator = null, System.Collections.Generic.IReadOnlyList<Twip.ColumnWidth!>? widths = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetLineNumberingAsync(Twip.LineNumbers? numbers, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetMultiplePagesAsync(Twip.MultiplePagesOptions! options, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetPageNumberingAsync(Twip.PageNumberingOptions! options, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetPageVerticalAlignmentAsync(Twip.PageVerticalAlignment alignment, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetSectionBreakTypeAsync(Twip.SectionBreakKind kind, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetSectionTextDirectionAsync(Twip.TextFlow direction, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.LineNumberRestart
+Twip.LineNumberRestart.Continuous = 2 -> Twip.LineNumberRestart
+Twip.LineNumberRestart.EachPage = 0 -> Twip.LineNumberRestart
+Twip.LineNumberRestart.EachSection = 1 -> Twip.LineNumberRestart
+Twip.LineNumbers
+Twip.LineNumbers.<Clone>$() -> Twip.LineNumbers!
+Twip.LineNumbers.CountBy.get -> int?
+Twip.LineNumbers.CountBy.init -> void
+Twip.LineNumbers.Deconstruct(out int? Start, out int? CountBy, out Twip.Length? Distance, out Twip.LineNumberRestart? Restart) -> void
+Twip.LineNumbers.Distance.get -> Twip.Length?
+Twip.LineNumbers.Distance.init -> void
+Twip.LineNumbers.Equals(Twip.LineNumbers? other) -> bool
+Twip.LineNumbers.LineNumbers(int? Start = null, int? CountBy = null, Twip.Length? Distance = null, Twip.LineNumberRestart? Restart = null) -> void
+Twip.LineNumbers.Restart.get -> Twip.LineNumberRestart?
+Twip.LineNumbers.Restart.init -> void
+Twip.LineNumbers.Start.get -> int?
+Twip.LineNumbers.Start.init -> void
+Twip.MultiplePagesMode
+Twip.MultiplePagesMode.BookFold = 2 -> Twip.MultiplePagesMode
+Twip.MultiplePagesMode.MirrorMargins = 1 -> Twip.MultiplePagesMode
+Twip.MultiplePagesMode.Normal = 0 -> Twip.MultiplePagesMode
+Twip.MultiplePagesMode.ReverseBookFold = 3 -> Twip.MultiplePagesMode
+Twip.MultiplePagesOptions
+Twip.MultiplePagesOptions.<Clone>$() -> Twip.MultiplePagesOptions!
+Twip.MultiplePagesOptions.Deconstruct(out Twip.MultiplePagesMode? Mode, out bool? GutterAtTop) -> void
+Twip.MultiplePagesOptions.Equals(Twip.MultiplePagesOptions? other) -> bool
+Twip.MultiplePagesOptions.GutterAtTop.get -> bool?
+Twip.MultiplePagesOptions.GutterAtTop.init -> void
+Twip.MultiplePagesOptions.Mode.get -> Twip.MultiplePagesMode?
+Twip.MultiplePagesOptions.Mode.init -> void
+Twip.MultiplePagesOptions.MultiplePagesOptions(Twip.MultiplePagesMode? Mode = null, bool? GutterAtTop = null) -> void
+Twip.PageBordersOptions.Deconstruct(out Twip.CellBorder? Top, out Twip.CellBorder? Bottom, out Twip.CellBorder? Left, out Twip.CellBorder? Right, out bool Shadow, out Twip.PageBorderOffset? OffsetFrom, out Twip.PageBorderDisplay? Display, out Twip.PageBorderScope ApplyTo, out bool? SurroundHeader, out bool? SurroundFooter) -> void
+Twip.PageBordersOptions.PageBordersOptions(Twip.CellBorder? Top = null, Twip.CellBorder? Bottom = null, Twip.CellBorder? Left = null, Twip.CellBorder? Right = null, bool Shadow = false, Twip.PageBorderOffset? OffsetFrom = null, Twip.PageBorderDisplay? Display = null, Twip.PageBorderScope ApplyTo = Twip.PageBorderScope.ThisSection, bool? SurroundHeader = null, bool? SurroundFooter = null) -> void
+Twip.PageBordersOptions.SurroundFooter.get -> bool?
+Twip.PageBordersOptions.SurroundFooter.init -> void
+Twip.PageBordersOptions.SurroundHeader.get -> bool?
+Twip.PageBordersOptions.SurroundHeader.init -> void
+Twip.PageColumns.Deconstruct(out int Count, out Twip.Length Spacing, out bool Separator, out System.Collections.Generic.IReadOnlyList<Twip.ColumnWidth!>? Widths) -> void
+Twip.PageColumns.PageColumns(int Count, Twip.Length Spacing, bool Separator, System.Collections.Generic.IReadOnlyList<Twip.ColumnWidth!>? Widths = null) -> void
+Twip.PageColumns.Widths.get -> System.Collections.Generic.IReadOnlyList<Twip.ColumnWidth!>?
+Twip.PageColumns.Widths.init -> void
+Twip.PageFormatting.BreakType.get -> Twip.SectionBreakKind
+Twip.PageFormatting.BreakType.init -> void
+Twip.PageFormatting.ChapterNumbers.get -> Twip.ChapterNumbers?
+Twip.PageFormatting.ChapterNumbers.init -> void
+Twip.PageFormatting.GutterAtTop.get -> bool
+Twip.PageFormatting.GutterAtTop.init -> void
+Twip.PageFormatting.LineNumbers.get -> Twip.LineNumbers?
+Twip.PageFormatting.LineNumbers.init -> void
+Twip.PageFormatting.MultiplePages.get -> Twip.MultiplePagesMode
+Twip.PageFormatting.MultiplePages.init -> void
+Twip.PageFormatting.PageNumberFormat.get -> Twip.NumberFormat
+Twip.PageFormatting.PageNumberFormat.init -> void
+Twip.PageFormatting.PageNumberStart.get -> int?
+Twip.PageFormatting.PageNumberStart.init -> void
+Twip.PageFormatting.TextDirection.get -> Twip.TextFlow
+Twip.PageFormatting.TextDirection.init -> void
+Twip.PageFormatting.VerticalAlignment.get -> Twip.PageVerticalAlignment
+Twip.PageFormatting.VerticalAlignment.init -> void
+Twip.PageNumberingOptions
+Twip.PageNumberingOptions.<Clone>$() -> Twip.PageNumberingOptions!
+Twip.PageNumberingOptions.Chapter.get -> Twip.ChapterNumbers?
+Twip.PageNumberingOptions.Chapter.init -> void
+Twip.PageNumberingOptions.ContinueFromPrevious.get -> bool
+Twip.PageNumberingOptions.ContinueFromPrevious.init -> void
+Twip.PageNumberingOptions.Deconstruct(out Twip.NumberFormat? Format, out int? Start, out bool ContinueFromPrevious, out Twip.ChapterNumbers? Chapter, out bool NoChapterNumbers) -> void
+Twip.PageNumberingOptions.Equals(Twip.PageNumberingOptions? other) -> bool
+Twip.PageNumberingOptions.Format.get -> Twip.NumberFormat?
+Twip.PageNumberingOptions.Format.init -> void
+Twip.PageNumberingOptions.NoChapterNumbers.get -> bool
+Twip.PageNumberingOptions.NoChapterNumbers.init -> void
+Twip.PageNumberingOptions.PageNumberingOptions(Twip.NumberFormat? Format = null, int? Start = null, bool ContinueFromPrevious = false, Twip.ChapterNumbers? Chapter = null, bool NoChapterNumbers = false) -> void
+Twip.PageNumberingOptions.Start.get -> int?
+Twip.PageNumberingOptions.Start.init -> void
+Twip.PageVerticalAlignment
+Twip.PageVerticalAlignment.Bottom = 3 -> Twip.PageVerticalAlignment
+Twip.PageVerticalAlignment.Center = 1 -> Twip.PageVerticalAlignment
+Twip.PageVerticalAlignment.Justified = 2 -> Twip.PageVerticalAlignment
+Twip.PageVerticalAlignment.Top = 0 -> Twip.PageVerticalAlignment
+Twip.SectionBreakKind.NextColumn = 4 -> Twip.SectionBreakKind
+override Twip.ChapterNumbers.Equals(object? obj) -> bool
+override Twip.ChapterNumbers.GetHashCode() -> int
+override Twip.ChapterNumbers.ToString() -> string!
+override Twip.ColumnWidth.Equals(object? obj) -> bool
+override Twip.ColumnWidth.GetHashCode() -> int
+override Twip.ColumnWidth.ToString() -> string!
+override Twip.LineNumbers.Equals(object? obj) -> bool
+override Twip.LineNumbers.GetHashCode() -> int
+override Twip.LineNumbers.ToString() -> string!
+override Twip.MultiplePagesOptions.Equals(object? obj) -> bool
+override Twip.MultiplePagesOptions.GetHashCode() -> int
+override Twip.MultiplePagesOptions.ToString() -> string!
+override Twip.PageNumberingOptions.Equals(object? obj) -> bool
+override Twip.PageNumberingOptions.GetHashCode() -> int
+override Twip.PageNumberingOptions.ToString() -> string!
+static Twip.ChapterNumbers.operator !=(Twip.ChapterNumbers? left, Twip.ChapterNumbers? right) -> bool
+static Twip.ChapterNumbers.operator ==(Twip.ChapterNumbers? left, Twip.ChapterNumbers? right) -> bool
+static Twip.ColumnWidth.operator !=(Twip.ColumnWidth? left, Twip.ColumnWidth? right) -> bool
+static Twip.ColumnWidth.operator ==(Twip.ColumnWidth? left, Twip.ColumnWidth? right) -> bool
+static Twip.EditorOperation.SetColumns(int count, Twip.Length? spacing = null, bool? separator = null, System.Collections.Generic.IReadOnlyList<Twip.ColumnWidth!>? widths = null) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetLineNumbering(Twip.LineNumbers? numbers) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetMultiplePages(Twip.MultiplePagesOptions! options) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetPageNumbering(Twip.PageNumberingOptions! options) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetPageVerticalAlignment(Twip.PageVerticalAlignment alignment) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetSectionBreakType(Twip.SectionBreakKind kind) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetSectionTextDirection(Twip.TextFlow direction) -> Twip.EditorOperation!
+static Twip.LineNumbers.operator !=(Twip.LineNumbers? left, Twip.LineNumbers? right) -> bool
+static Twip.LineNumbers.operator ==(Twip.LineNumbers? left, Twip.LineNumbers? right) -> bool
+static Twip.MultiplePagesOptions.operator !=(Twip.MultiplePagesOptions? left, Twip.MultiplePagesOptions? right) -> bool
+static Twip.MultiplePagesOptions.operator ==(Twip.MultiplePagesOptions? left, Twip.MultiplePagesOptions? right) -> bool
+static Twip.PageNumberingOptions.operator !=(Twip.PageNumberingOptions? left, Twip.PageNumberingOptions? right) -> bool
+static Twip.PageNumberingOptions.operator ==(Twip.PageNumberingOptions? left, Twip.PageNumberingOptions? right) -> bool

@@ -759,6 +759,8 @@ pub fn borders_shading_commands(start: &BordersShadingDialog, now: &BordersShadi
             offset_from: Some(now.page_offset_from),
             display: Some(now.page_display),
             apply_to: now.page_apply_to,
+            surround_header: None,
+            surround_footer: None,
         }));
     }
     let shading = |v: &BordersShadingDialog| (v.apply_to, v.fill, v.pattern, v.pattern_color);

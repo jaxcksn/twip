@@ -378,6 +378,8 @@
     "offsetFrom": "text",
     "right": null,
     "shadow": true,
+    "surroundFooter": true,
+    "surroundHeader": false,
     "top": {
       "color": "#7030A0",
       "style": "wave",
@@ -464,7 +466,17 @@
     "count": 2,
     "separator": true,
     "spacing": 36.5,
-    "type": "setColumns"
+    "type": "setColumns",
+    "widths": [
+      {
+        "spacing": 36.5,
+        "width": 144.5
+      },
+      {
+        "spacing": 0.5,
+        "width": 288.5
+      }
+    ]
   },
   {
     "footer": 30.5,
@@ -478,6 +490,40 @@
   {
     "type": "setDifferentOddEvenPages",
     "value": false
+  },
+  {
+    "chapter": {
+      "level": 1,
+      "separator": "enDash"
+    },
+    "format": "lowerRoman",
+    "start": null,
+    "type": "setPageNumbering"
+  },
+  {
+    "type": "setPageVerticalAlignment",
+    "value": "center"
+  },
+  {
+    "type": "setLineNumbering",
+    "value": {
+      "countBy": 5,
+      "restart": "eachSection",
+      "start": 1
+    }
+  },
+  {
+    "type": "setSectionBreakType",
+    "value": "oddPage"
+  },
+  {
+    "type": "setSectionTextDirection",
+    "value": "tbRl"
+  },
+  {
+    "gutterAtTop": false,
+    "mode": "mirrorMargins",
+    "type": "setMultiplePages"
   },
   {
     "column": 0,

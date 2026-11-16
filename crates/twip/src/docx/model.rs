@@ -1105,7 +1105,8 @@ pub enum SectionBreak {
     NextColumn,
 }
 
-/// A section's page: size, margins, columns and a different first page (Page Setup, Layout commands).
+/// A section's settings the Page Setup, Layout and header and footer commands change: size, margins, columns, a
+/// different first page, borders, its break, page and line numbering, vertical alignment, text direction and notes.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SectionPage {
     pub page_w: f64,
@@ -1122,6 +1123,15 @@ pub struct SectionPage {
     pub page_borders: Option<PageBorders>,
     /// The `w:pgBorders` as written (what isn't modelled, art borders' ids, is kept), or as last set.
     pub page_borders_xml: Option<String>,
+    pub break_kind: SectionBreak,
+    pub pg_start: Option<i64>,
+    pub pg_fmt: Option<String>,
+    pub chapter: Option<(i64, String)>,
+    pub line_numbers: Option<LineNumbering>,
+    pub v_align: String,
+    pub text_flow: u8,
+    pub notes: [NoteProps; 2],
+    pub no_endnote: bool,
 }
 
 impl Section {
@@ -1140,6 +1150,15 @@ impl Section {
             title_pg: self.title_pg,
             page_borders: self.page_borders.clone(),
             page_borders_xml: self.page_borders_xml.clone(),
+            break_kind: self.break_kind,
+            pg_start: self.pg_start,
+            pg_fmt: self.pg_fmt.clone(),
+            chapter: self.chapter.clone(),
+            line_numbers: self.line_numbers.clone(),
+            v_align: self.v_align.clone(),
+            text_flow: self.text_flow,
+            notes: self.notes.clone(),
+            no_endnote: self.no_endnote,
         }
     }
 
@@ -1147,6 +1166,9 @@ impl Section {
         (self.page_w, self.page_h, self.top, self.bottom, self.left, self.right) = (p.page_w, p.page_h, p.top, p.bottom, p.left, p.right);
         (self.header, self.footer, self.gutter, self.columns, self.title_pg) = (p.header, p.footer, p.gutter, p.columns, p.title_pg);
         (self.page_borders, self.page_borders_xml) = (p.page_borders, p.page_borders_xml);
+        (self.break_kind, self.pg_start, self.pg_fmt, self.chapter, self.line_numbers) =
+            (p.break_kind, p.pg_start, p.pg_fmt, p.chapter, p.line_numbers);
+        (self.v_align, self.text_flow, self.notes, self.no_endnote) = (p.v_align, p.text_flow, p.notes, p.no_endnote);
     }
 }
 

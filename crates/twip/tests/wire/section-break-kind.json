@@ -2,5 +2,6 @@
   "nextPage",
   "continuous",
   "evenPage",
-  "oddPage"
+  "oddPage",
+  "nextColumn"
 ]

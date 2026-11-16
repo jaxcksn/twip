@@ -282,6 +282,19 @@ commands! {
     SetDifferentFirstPage(#[serde(with = "value")] bool),
     /// Different odd and even page headers and footers. Undo: one step.
     SetDifferentOddEvenPages(#[serde(with = "value")] bool),
+    /// The section's page number format, first number and chapter numbers; what isn't given is kept. Undo: one step.
+    SetPageNumbering(PageNumbering),
+    /// Where text sits between the section's top and bottom margins. Undo: one step.
+    SetPageVerticalAlignment(#[serde(with = "value")] PageVerticalAlignment),
+    /// Numbers the section's lines, or stops (`null`). Undo: one step.
+    SetLineNumbering(#[serde(with = "value")] Option<LineNumbers>),
+    /// Where the section starts: the break before it. Undo: one step.
+    SetSectionBreakType(#[serde(with = "value")] SectionBreakKind),
+    /// The section's text direction. Undo: one step.
+    SetSectionTextDirection(#[serde(with = "value")] TextFlow),
+    /// How the document's pages pair (mirror margins, book fold) and where the gutter is; what isn't given is kept.
+    /// Undo: one step.
+    SetMultiplePages(MultiplePages),
     /// Moves a text column boundary (from the ruler). Undo: one step.
     MoveColumnBoundary(ColumnBoundaryMove),
 
@@ -562,10 +575,11 @@ commands! {
 }
 
 /// The kinds of section break.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum SectionBreakKind {
     /// Starts the new section on the next page.
+    #[default]
     NextPage,
     /// Starts the new section on the same page.
     Continuous,
@@ -573,6 +587,121 @@ pub enum SectionBreakKind {
     EvenPage,
     /// Starts the new section on the next odd page.
     OddPage,
+    /// Starts the new section in the next column.
+    NextColumn,
+}
+
+/// `setPageNumbering`'s options.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PageNumbering {
+    /// The number format (decimal, Roman or letters).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub format: Option<NumberFormat>,
+    /// The section's first page number (0…32767), or `null` to continue from the section before.
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "super::wire::nullable")]
+    pub start: Option<Option<u32>>,
+    /// Chapter numbers before the page number, or none (`null`).
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "super::wire::nullable")]
+    pub chapter: Option<Option<ChapterNumbers>>,
+}
+
+/// Chapter numbers in page numbers: the number of the last heading of a level, then a separator.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ChapterNumbers {
+    /// The heading level whose number leads (1…9).
+    pub level: u8,
+    /// Between the chapter and page numbers.
+    pub separator: ChapterSeparator,
+}
+
+/// What separates a chapter number from a page number.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ChapterSeparator {
+    /// `-`.
+    Hyphen,
+    /// `.`.
+    Period,
+    /// `:`.
+    Colon,
+    /// `—`.
+    EmDash,
+    /// `–`.
+    EnDash,
+}
+
+/// Where text sits between a section's top and bottom margins.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PageVerticalAlignment {
+    /// At the top.
+    #[default]
+    Top,
+    /// In the middle.
+    Center,
+    /// Spread from top to bottom.
+    Justified,
+    /// At the bottom.
+    Bottom,
+}
+
+/// A section's line numbering.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct LineNumbers {
+    /// The first number (1…32767). Default: 1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start: Option<u32>,
+    /// Shows every nth number (1…100). Default: 1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub count_by: Option<u32>,
+    /// From the text (0…1584 pt); automatic when not given.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub distance: Option<Points>,
+    /// When numbering starts again. Default: each page.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub restart: Option<LineNumberRestart>,
+}
+
+/// When line numbering starts again.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum LineNumberRestart {
+    /// On each page.
+    EachPage,
+    /// In each section.
+    EachSection,
+    /// Never: it continues.
+    Continuous,
+}
+
+/// `setMultiplePages`' options.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MultiplePages {
+    /// How pages pair.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<MultiplePagesMode>,
+    /// The gutter is at the top rather than the left.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gutter_at_top: Option<bool>,
+}
+
+/// How the document's pages pair.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum MultiplePagesMode {
+    /// Each page on its own.
+    #[default]
+    Normal,
+    /// Facing pages: inside and outside margins.
+    MirrorMargins,
+    /// A booklet folded down the middle.
+    BookFold,
+    /// A booklet folded down the middle, read right to left.
+    ReverseBookFold,
 }
 
 /// `insertSymbol`'s options.
@@ -801,6 +930,12 @@ pub struct PageBordersChange {
     /// The sections they apply to.
     #[serde(default)]
     pub apply_to: PageBorderScope,
+    /// The borders go around the header (every section's).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub surround_header: Option<bool>,
+    /// The borders go around the footer (every section's).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub surround_footer: Option<bool>,
 }
 
 /// `setTextBorder`'s options: the box's line, or none to remove it.
@@ -1482,10 +1617,11 @@ pub struct Outline {
 
 /// Which way text flows: lines left to right, top to bottom (`lrTb`); vertical lines right to left (`tbRl`) or
 /// bottom to top (`btLr`); and their East Asian forms with characters turned (`lrTbV`, `tbRlV`, `tbLrV`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum TextFlow {
     /// Horizontal.
+    #[default]
     LrTb,
     /// Vertical, lines right to left.
     TbRl,
@@ -1578,6 +1714,19 @@ pub struct Columns {
     /// Draws a line between columns.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub separator: Option<bool>,
+    /// Columns of their own widths (`count` of them), each with the space after it; equal columns when not given.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub widths: Option<Vec<ColumnWidth>>,
+}
+
+/// A column's width and the space after it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ColumnWidth {
+    /// The width.
+    pub width: Points,
+    /// The space after it (none after the last).
+    pub spacing: Points,
 }
 
 /// `setHeaderFooterDistance`'s options.

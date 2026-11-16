@@ -472,8 +472,9 @@ public abstract partial record EditorOperation
     /// <param name="count">The number of columns, 1 to 45.</param>
     /// <param name="spacing">The space between columns.</param>
     /// <param name="separator">Whether a line separates the columns.</param>
+    /// <param name="widths">Columns of their own widths, each with the space after it; equal columns when null.</param>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
-    public static EditorOperation SetColumns(int count, Length? spacing = null, bool? separator = null) => Op(CommandId.SetColumns, new Arg("count", Node(count)), new Arg("spacing", spacing is { } spacing_ ? Node(spacing_) : null, Optional: true), new Arg("separator", separator is { } separator_ ? Node(separator_) : null, Optional: true));
+    public static EditorOperation SetColumns(int count, Length? spacing = null, bool? separator = null, IReadOnlyList<ColumnWidth>? widths = null) => Op(CommandId.SetColumns, new Arg("count", Node(count)), new Arg("spacing", spacing is { } spacing_ ? Node(spacing_) : null, Optional: true), new Arg("separator", separator is { } separator_ ? Node(separator_) : null, Optional: true), new Arg("widths", widths is { } widths_ ? Node(widths_) : null, Optional: true));
 
     /// <summary>Sets the header and footer distances from the page edge. Unset values are kept.</summary>
     /// <param name="header">The header distance.</param>
@@ -490,6 +491,36 @@ public abstract partial record EditorOperation
     /// <param name="on">Whether odd and even pages differ.</param>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation SetDifferentOddEvenPages(bool on) => Op(CommandId.SetDifferentOddEvenPages, new Arg("value", Node(on)));
+
+    /// <summary>Sets the section's page number format, first number and chapter numbers; unset values are kept.</summary>
+    /// <param name="options">The numbering.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetPageNumbering(PageNumberingOptions options) => Op(CommandId.SetPageNumbering, Arg.Flatten(options));
+
+    /// <summary>Sets where text sits between the section's top and bottom margins.</summary>
+    /// <param name="alignment">The alignment.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetPageVerticalAlignment(PageVerticalAlignment alignment) => Op(CommandId.SetPageVerticalAlignment, new Arg("value", Node(alignment)));
+
+    /// <summary>Numbers the section's lines, or stops.</summary>
+    /// <param name="numbers">The numbering; <see langword="null"/> stops it.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetLineNumbering(LineNumbers? numbers) => Op(CommandId.SetLineNumbering, new Arg("value", numbers is { } n ? Node(n) : null));
+
+    /// <summary>Sets where the section starts: the break before it.</summary>
+    /// <param name="kind">The break.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetSectionBreakType(SectionBreakKind kind) => Op(CommandId.SetSectionBreakType, new Arg("value", Node(kind)));
+
+    /// <summary>Sets the section's text direction.</summary>
+    /// <param name="direction">The direction.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetSectionTextDirection(TextFlow direction) => Op(CommandId.SetSectionTextDirection, new Arg("value", Node(direction)));
+
+    /// <summary>Sets how the document's pages pair and where the gutter is; unset values are kept.</summary>
+    /// <param name="options">The settings.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetMultiplePages(MultiplePagesOptions options) => Op(CommandId.SetMultiplePages, Arg.Flatten(options));
 
     /// <summary>Moves a text column boundary of the section.</summary>
     /// <param name="column">The column index.</param>

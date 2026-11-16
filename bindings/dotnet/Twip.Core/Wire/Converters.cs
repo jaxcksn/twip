@@ -379,6 +379,33 @@ internal sealed class ControlChangesConverter : JsonConverter<ControlChanges>
     }
 }
 
+internal sealed class PageNumberingOptionsConverter : JsonConverter<PageNumberingOptions>
+{
+    public override PageNumberingOptions Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        var o = JsonElement.ParseValue(ref reader);
+        var start = o.TryGetProperty("start", out var s) ? s : default;
+        var chapter = o.TryGetProperty("chapter", out var c) ? c : default;
+        return new PageNumberingOptions(
+            o.TryGetProperty("format", out var f) ? f.Deserialize(TwipJsonContext.Default.NumberFormat) : null,
+            start.ValueKind == JsonValueKind.Number ? start.GetInt32() : null,
+            start.ValueKind == JsonValueKind.Null,
+            chapter.ValueKind == JsonValueKind.Object ? chapter.Deserialize(TwipJsonContext.Default.ChapterNumbers) : null,
+            chapter.ValueKind == JsonValueKind.Null);
+    }
+
+    public override void Write(Utf8JsonWriter writer, PageNumberingOptions value, JsonSerializerOptions options)
+    {
+        writer.WriteStartObject();
+        if (value.Format is { } f) { writer.WritePropertyName("format"); JsonSerializer.Serialize(writer, f, TwipJsonContext.Default.NumberFormat); }
+        if (value.Start is { } n) writer.WriteNumber("start", n);
+        else if (value.ContinueFromPrevious) writer.WriteNull("start");
+        if (value.Chapter is not null) { writer.WritePropertyName("chapter"); JsonSerializer.Serialize(writer, value.Chapter, TwipJsonContext.Default.ChapterNumbers); }
+        else if (value.NoChapterNumbers) writer.WriteNull("chapter");
+        writer.WriteEndObject();
+    }
+}
+
 internal sealed class MenuActionConverter : JsonConverter<MenuAction>
 {
     public override MenuAction Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) => new(JsonNode.Parse(ref reader));

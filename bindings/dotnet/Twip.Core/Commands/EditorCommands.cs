@@ -583,9 +583,10 @@ public sealed class EditorCommands
     /// <param name="count">The number of columns, 1 to 45.</param>
     /// <param name="spacing">The space between columns.</param>
     /// <param name="separator">Whether a line separates the columns.</param>
+    /// <param name="widths">Columns of their own widths, each with the space after it; equal columns when null.</param>
     /// <param name="ct">Cancels the command before it runs.</param>
     /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
-    public Task SetColumnsAsync(int count, Length? spacing = null, bool? separator = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetColumns(count, spacing, separator), ct);
+    public Task SetColumnsAsync(int count, Length? spacing = null, bool? separator = null, IReadOnlyList<ColumnWidth>? widths = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetColumns(count, spacing, separator, widths), ct);
 
     /// <summary>Sets the header and footer distances from the page edge. Unset values are kept.</summary>
     /// <param name="header">The header distance.</param>
@@ -605,6 +606,42 @@ public sealed class EditorCommands
     /// <param name="ct">Cancels the command before it runs.</param>
     /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
     public Task SetDifferentOddEvenPagesAsync(bool on, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetDifferentOddEvenPages(on), ct);
+
+    /// <summary>Sets the section's page number format, first number and chapter numbers; unset values are kept.</summary>
+    /// <param name="options">The numbering.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SetPageNumberingAsync(PageNumberingOptions options, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetPageNumbering(options), ct);
+
+    /// <summary>Sets where text sits between the section's top and bottom margins.</summary>
+    /// <param name="alignment">The alignment.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SetPageVerticalAlignmentAsync(PageVerticalAlignment alignment, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetPageVerticalAlignment(alignment), ct);
+
+    /// <summary>Numbers the section's lines, or stops.</summary>
+    /// <param name="numbers">The numbering; <see langword="null"/> stops it.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SetLineNumberingAsync(LineNumbers? numbers, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetLineNumbering(numbers), ct);
+
+    /// <summary>Sets where the section starts: the break before it.</summary>
+    /// <param name="kind">The break.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SetSectionBreakTypeAsync(SectionBreakKind kind, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetSectionBreakType(kind), ct);
+
+    /// <summary>Sets the section's text direction.</summary>
+    /// <param name="direction">The direction.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SetSectionTextDirectionAsync(TextFlow direction, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetSectionTextDirection(direction), ct);
+
+    /// <summary>Sets how the document's pages pair and where the gutter is; unset values are kept.</summary>
+    /// <param name="options">The settings.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SetMultiplePagesAsync(MultiplePagesOptions options, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetMultiplePages(options), ct);
 
     /// <summary>Moves a text column boundary of the section.</summary>
     /// <param name="column">The column index.</param>

@@ -149,6 +149,40 @@ export type ShadingPattern =
   | 'pct80'
   | 'pct90';
 
+/** Where a section starts. */
+export type SectionBreakKind = 'nextPage' | 'continuous' | 'evenPage' | 'oddPage' | 'nextColumn';
+
+/** A column's width and the space after it. */
+export interface ColumnWidth {
+  /** The width. */
+  width: Points;
+  /** The space after it (none after the last). */
+  spacing: Points;
+}
+
+/** Chapter numbers in page numbers: the number of the last heading of a level, then a separator. */
+export interface ChapterNumbers {
+  /** The heading level whose number leads (1 to 9). */
+  level: number;
+  /** Between the chapter and page numbers. */
+  separator: 'hyphen' | 'period' | 'colon' | 'emDash' | 'enDash';
+}
+
+/** A section's line numbering. */
+export interface LineNumbers {
+  /** The first number (1 to 32767). Default: 1. */
+  start?: number;
+  /** Shows every nth number (1 to 100). Default: 1. */
+  countBy?: number;
+  /** From the text (0 to 1584 pt); automatic when not given. */
+  distance?: Points;
+  /** When numbering starts again. Default: each page. */
+  restart?: 'eachPage' | 'eachSection' | 'continuous';
+}
+
+/** How the document's pages pair. */
+export type MultiplePagesMode = 'normal' | 'mirrorMargins' | 'bookFold' | 'reverseBookFold';
+
 /**
  * Which way text flows: lines left to right, top to bottom (`lrTb`); vertical lines right to left (`tbRl`) or bottom to
  * top (`btLr`); and their East Asian forms with characters turned (`lrTbV`, `tbRlV`, `tbLrV`).
@@ -260,7 +294,7 @@ export interface Commands {
   /** Inserts a column break (Ctrl+Shift+Enter); in the body, not in a table. */
   insertColumnBreak(): Promise<void>;
   /** Inserts a section break; in the body, not in a table. */
-  insertSectionBreak(kind: 'nextPage' | 'continuous' | 'evenPage' | 'oddPage'): Promise<void>;
+  insertSectionBreak(kind: SectionBreakKind): Promise<void>;
   /** Inserts a tab character. Typing. */
   insertTab(): Promise<void>;
   /** Inserts one character, optionally in a symbol font. */
@@ -454,6 +488,10 @@ export interface Commands {
     offsetFrom?: 'page' | 'text';
     display?: 'allPages' | 'firstPage' | 'notFirstPage';
     applyTo?: 'wholeDocument' | 'thisSection';
+    /** The borders go around the header (every section's). */
+    surroundHeader?: boolean;
+    /** The borders go around the footer (every section's). */
+    surroundFooter?: boolean;
   }): Promise<void>;
   /** Sets the properties of the frame the selection is in (`unavailable` outside a frame). */
   setFrame(properties: FrameProperties): Promise<void>;
@@ -511,13 +549,31 @@ export interface Commands {
   /** Sets the paper size, in portrait, 36 to 1584. */
   setPaperSize(options: { width: Points; height: Points }): Promise<void>;
   /** Sets the text columns: 1 to 45, with spacing and a separator line. */
-  setColumns(options: { count: number; spacing?: Points; separator?: boolean }): Promise<void>;
+  setColumns(options: {
+    count: number;
+    spacing?: Points;
+    separator?: boolean;
+    /** Columns of their own widths (`count` of them), each with the space after it; equal columns when not given. */
+    widths?: ColumnWidth[];
+  }): Promise<void>;
   /** Sets the header and footer distances; unset fields keep their value. */
   setHeaderFooterDistance(options: { header?: Points; footer?: Points }): Promise<void>;
   /** Sets a different first page header and footer. */
   setDifferentFirstPage(on: boolean): Promise<void>;
   /** Sets different odd and even page headers and footers. */
   setDifferentOddEvenPages(on: boolean): Promise<void>;
+  /** Sets the section's page number format, first number (`null` continues from the section before) and chapter numbers (`null` for none); unset fields keep their value. */
+  setPageNumbering(options: { format?: NumberFormat; start?: number | null; chapter?: ChapterNumbers | null }): Promise<void>;
+  /** Sets where text sits between the section's top and bottom margins. */
+  setPageVerticalAlignment(alignment: 'top' | 'center' | 'justified' | 'bottom'): Promise<void>;
+  /** Numbers the section's lines, or stops (`null`). */
+  setLineNumbering(numbers: LineNumbers | null): Promise<void>;
+  /** Sets where the section starts: the break before it. */
+  setSectionBreakType(kind: SectionBreakKind): Promise<void>;
+  /** Sets the section's text direction. */
+  setSectionTextDirection(direction: TextFlow): Promise<void>;
+  /** Sets how the document's pages pair and where the gutter is; unset fields keep their value. */
+  setMultiplePages(options: { mode?: MultiplePagesMode; gutterAtTop?: boolean }): Promise<void>;
   /** Moves a section text column's boundary. */
   moveColumnBoundary(options: { column: number; to: Points }): Promise<void>;
 
@@ -1063,6 +1119,12 @@ const encodings: { [K in CommandId]: Encoding<K> } = {
   setHeaderFooterDistance: 'spread',
   setDifferentFirstPage: 'value',
   setDifferentOddEvenPages: 'value',
+  setPageNumbering: 'spread',
+  setPageVerticalAlignment: 'value',
+  setLineNumbering: 'value',
+  setSectionBreakType: 'value',
+  setSectionTextDirection: 'value',
+  setMultiplePages: 'spread',
   moveColumnBoundary: 'spread',
   editHeader: 'none',
   editFooter: 'none',

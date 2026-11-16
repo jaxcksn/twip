@@ -694,7 +694,7 @@ pub struct PageMargins {
 }
 
 /// A section's text columns.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ColumnLayout {
     /// The number of columns.
@@ -703,6 +703,8 @@ pub struct ColumnLayout {
     pub spacing: Points,
     /// A line is drawn between columns.
     pub separator: bool,
+    /// Each column's width and the space after it, when they differ.
+    pub widths: Vec<crate::api::command::ColumnWidth>,
 }
 
 /// The selection's section's page setup.
@@ -725,6 +727,24 @@ pub struct PageFormatting {
     pub different_first_page: bool,
     /// Odd and even pages have their own headers and footers.
     pub different_odd_even: bool,
+    /// The page number format.
+    pub page_number_format: crate::api::command::NumberFormat,
+    /// The section's first page number, or `null` when it continues from the section before.
+    pub page_number_start: Option<u32>,
+    /// Chapter numbers in page numbers, or `null`.
+    pub chapter_numbers: Option<crate::api::command::ChapterNumbers>,
+    /// Where text sits between the top and bottom margins.
+    pub vertical_alignment: crate::api::command::PageVerticalAlignment,
+    /// The line numbering, or `null`.
+    pub line_numbers: Option<crate::api::command::LineNumbers>,
+    /// The break the section starts with.
+    pub break_type: crate::api::command::SectionBreakKind,
+    /// The section's text direction.
+    pub text_direction: crate::api::command::TextFlow,
+    /// How the document's pages pair.
+    pub multiple_pages: crate::api::command::MultiplePagesMode,
+    /// The gutter is at the top.
+    pub gutter_at_top: bool,
 }
 
 /// What can be undone and redone.

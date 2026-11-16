@@ -150,6 +150,12 @@ export interface CellPlace {
 }
 
 // @public
+export interface ChapterNumbers {
+    level: number;
+    separator: 'hyphen' | 'period' | 'colon' | 'emDash' | 'enDash';
+}
+
+// @public
 export interface CharacterEffects {
     emboss?: boolean;
     engrave?: boolean;
@@ -246,6 +252,12 @@ export interface ColourValue {
     rgb?: Color;
     theme?: ThemeColour;
     transforms?: ColourTransform[];
+}
+
+// @public
+export interface ColumnWidth {
+    spacing: Points;
+    width: Points;
 }
 
 // @public
@@ -414,7 +426,7 @@ export interface Commands {
         where: 'above' | 'below';
         count?: number;
     }): Promise<void>;
-    insertSectionBreak(kind: 'nextPage' | 'continuous' | 'evenPage' | 'oddPage'): Promise<void>;
+    insertSectionBreak(kind: SectionBreakKind): Promise<void>;
     insertShape(options: ShapeInsert): Promise<void>;
     insertSymbol(options: {
         char: string;
@@ -575,6 +587,7 @@ export interface Commands {
         count: number;
         spacing?: Points;
         separator?: boolean;
+        widths?: ColumnWidth[];
     }): Promise<void>;
     setColumnWidth(width: Points): Promise<void>;
     setConsecutiveHyphenLimit(limit: number): Promise<void>;
@@ -634,6 +647,7 @@ export interface Commands {
     }): Promise<void>;
     setItalic(on: boolean): Promise<void>;
     setLanguage(language: Language): Promise<void>;
+    setLineNumbering(numbers: LineNumbers | null): Promise<void>;
     setLineSpacing(spacing: LineSpacing): Promise<void>;
     setList(kind: 'bullet' | 'numbered' | null): Promise<void>;
     setListDefinition(options: {
@@ -651,6 +665,10 @@ export interface Commands {
     }): Promise<void>;
     setMarkupView(view: MarkupView): Promise<void>;
     setMode(mode: 'editing' | 'design'): Promise<void>;
+    setMultiplePages(options: {
+        mode?: MultiplePagesMode;
+        gutterAtTop?: boolean;
+    }): Promise<void>;
     setNumberingValue(options: {
         mode: 'startNew' | 'continue';
         value: number;
@@ -690,7 +708,15 @@ export interface Commands {
         offsetFrom?: 'page' | 'text';
         display?: 'allPages' | 'firstPage' | 'notFirstPage';
         applyTo?: 'wholeDocument' | 'thisSection';
+        surroundHeader?: boolean;
+        surroundFooter?: boolean;
     }): Promise<void>;
+    setPageNumbering(options: {
+        format?: NumberFormat;
+        start?: number | null;
+        chapter?: ChapterNumbers | null;
+    }): Promise<void>;
+    setPageVerticalAlignment(alignment: 'top' | 'center' | 'justified' | 'bottom'): Promise<void>;
     setPaperSize(options: {
         width: Points;
         height: Points;
@@ -727,6 +753,8 @@ export interface Commands {
     setRowCanBreak(on: boolean): Promise<void>;
     setRowHeight(height: RowHeight): Promise<void>;
     setRulerTabType(type: TabSelector): Promise<void>;
+    setSectionBreakType(kind: SectionBreakKind): Promise<void>;
+    setSectionTextDirection(direction: TextFlow): Promise<void>;
     setSelectionMode(mode: 'normal' | 'extend' | 'block'): Promise<void>;
     setShading(options: {
         target: 'paragraph' | 'text' | 'cell';
@@ -1834,6 +1862,14 @@ export interface LineEnds {
 export type LineJoin = 'round' | 'bevel' | 'miter';
 
 // @public
+export interface LineNumbers {
+    countBy?: number;
+    distance?: Points;
+    restart?: 'eachPage' | 'eachSection' | 'continuous';
+    start?: number;
+}
+
+// @public
 export type LineSpacing = {
     rule: 'multiple';
     lines: number;
@@ -2044,6 +2080,9 @@ export interface MountOptions extends SessionOptions {
 }
 
 // @public
+export type MultiplePagesMode = 'normal' | 'mirrorMargins' | 'bookFold' | 'reverseBookFold';
+
+// @public
 interface Navigation_2 {
     headings(): Promise<Heading[]>;
     select(heading: HeadingId): Promise<void>;
@@ -2131,15 +2170,20 @@ export interface OverlayColors {
 
 // @public
 export interface PageFormatting {
+    breakType: SectionBreakKind;
+    chapterNumbers: ChapterNumbers | null;
     columns: {
         count: number;
         spacing: Points;
         separator: boolean;
+        widths: ColumnWidth[];
     };
     differentFirstPage: boolean;
     differentOddEven: boolean;
     footerDistance: Points;
+    gutterAtTop: boolean;
     headerDistance: Points;
+    lineNumbers: LineNumbers | null;
     margins: {
         top: Points;
         bottom: Points;
@@ -2147,11 +2191,16 @@ export interface PageFormatting {
         right: Points;
         gutter: Points;
     };
+    multiplePages: MultiplePagesMode;
     orientation: 'portrait' | 'landscape';
+    pageNumberFormat: NumberFormat;
+    pageNumberStart: number | null;
     size: {
         width: Points;
         height: Points;
     };
+    textDirection: TextFlow;
+    verticalAlignment: 'top' | 'center' | 'justified' | 'bottom';
 }
 
 // @public
@@ -2409,6 +2458,9 @@ export interface RulerView {
         scale: number;
     };
 }
+
+// @public
+export type SectionBreakKind = 'nextPage' | 'continuous' | 'evenPage' | 'oddPage' | 'nextColumn';
 
 // @public
 export interface SelectionSummary {

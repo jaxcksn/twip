@@ -19,6 +19,10 @@ namespace Twip.Wire;
         typeof(CamelEnum<CaseChange>),
         typeof(CamelEnum<Ligatures>),
         typeof(CamelEnum<TextFlow>),
+        typeof(CamelEnum<ChapterSeparator>),
+        typeof(CamelEnum<PageVerticalAlignment>),
+        typeof(CamelEnum<LineNumberRestart>),
+        typeof(CamelEnum<MultiplePagesMode>),
         typeof(CamelEnum<NumberSpacing>),
         typeof(CamelEnum<NumberForm>),
         typeof(CamelEnum<CellAlignment>),
@@ -211,6 +215,17 @@ namespace Twip.Wire;
 [JsonSerializable(typeof(CaseChange))]
 [JsonSerializable(typeof(TypographyOptions))]
 [JsonSerializable(typeof(OutlineOptions))]
+[JsonSerializable(typeof(PageNumberingOptions))]
+[JsonSerializable(typeof(NumberFormat))]
+[JsonSerializable(typeof(ChapterNumbers))]
+[JsonSerializable(typeof(LineNumbers))]
+[JsonSerializable(typeof(MultiplePagesOptions))]
+[JsonSerializable(typeof(ColumnWidth))]
+[JsonSerializable(typeof(IReadOnlyList<ColumnWidth>))]
+[JsonSerializable(typeof(ChapterSeparator))]
+[JsonSerializable(typeof(PageVerticalAlignment))]
+[JsonSerializable(typeof(LineNumberRestart))]
+[JsonSerializable(typeof(MultiplePagesMode))]
 [JsonSerializable(typeof(TextFlow))]
 [JsonSerializable(typeof(LanguageOptions))]
 [JsonSerializable(typeof(CharacterEffectsOptions))]

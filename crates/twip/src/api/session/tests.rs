@@ -80,7 +80,7 @@ fn export_captures_the_revision_and_clears_modified() {
 }
 
 #[test]
-fn a_typical_state_is_under_12_kb() {
+fn a_typical_state_is_under_16_kb() {
     let (mut engine, _) = engine();
     let id = engine.create_session(SessionOptions::default());
     let s = engine.session(id).expect("a session");
@@ -92,7 +92,8 @@ fn a_typical_state_is_under_12_kb() {
     let text = state.selection.text.take().expect("a short selection's text");
     assert!(text.contains('\n'), "{text:?}");
     let json = serde_json::to_string(&state).expect("serializes");
-    assert!(json.len() < 12 * 1024, "{} bytes", json.len());
+    // ponytail: grows with the catalog (each command's state); a compact command-state encoding if it nears this.
+    assert!(json.len() < 16 * 1024, "{} bytes", json.len());
 }
 
 #[test]
