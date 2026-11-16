@@ -351,6 +351,16 @@ pub enum FieldKind {
     DocVariable(String),
     /// A document date property (CREATEDATE, SAVEDATE, PRINTDATE): its core property's name.
     DocDate(&'static str),
+    /// FILENAME: the name the host gave the document ([`Document::file_name`]).
+    FileName,
+    /// NOTEREF: a bookmark's note, and the note its first note reference is (found when fields are evaluated).
+    NoteRef(String, Option<(NoteKind, i64)>),
+    /// LISTNUM: the next number of a list kept in fields.
+    ListNum,
+    /// AUTONUM: the count of AUTONUM fields to here.
+    AutoNum,
+    /// An `=` formula.
+    Formula,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1336,6 +1346,9 @@ pub struct Settings {
     pub no_form_shading: bool,
     /// The document variables (`w:docVars`), in order.
     pub variables: Vec<(String, String)>,
+    /// `w:decimalSymbol` and `w:listSeparator`: what `=` formulas read numbers and arguments with.
+    pub decimal_symbol: Option<char>,
+    pub list_separator: Option<char>,
     /// `w:bookFoldPrinting` / `w:bookFoldRevPrinting`: `Some(reversed)`.
     pub book_fold: Option<bool>,
     /// `w:strictFirstAndLastChars`: the strict East Asian line-breaking level.
@@ -1390,6 +1403,8 @@ pub struct Document {
     pub images: Vec<Vec<u8>>,
     /// The core, extended and custom document properties.
     pub properties: super::properties::Properties,
+    /// The file's name, and folder when the host gave one: what FILENAME shows. Not saved.
+    pub file_name: Option<String>,
     /// The hyphenation patterns the host supplied.
     pub hyphenation: Option<crate::layout::hyphenate::Hyphenation>,
     /// Content controls the model keeps: row-level wrappers (repeating sections and their items) and checkboxes,

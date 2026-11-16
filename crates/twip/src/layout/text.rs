@@ -1814,6 +1814,8 @@ pub fn shape_space(
                         fields.value(kind, crate::docx::fields::code_text(&para.inlines, *s).trim()).or_else(|| value.clone())
                     })
                     .and_then(|c| crate::docx::fields::if_field(&crate::docx::fields::words(&c))),
+                    // A NOTEREF: its note's number, as the reference shows it.
+                    (FieldKind::NoteRef(_, Some(n)), _) => notes.get(n).cloned(),
                     _ => fields.value(kind, code.trim()),
                 };
                 space.fields.push(value.map(|v| chapter.cloned().unwrap_or_default() + &v))

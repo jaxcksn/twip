@@ -713,6 +713,7 @@ export interface Commands {
     setFieldsLocked(options: {
         locked: boolean;
     } & FieldTargets): Promise<void>;
+    setFileName(name: string): Promise<void>;
     setFont(family: string): Promise<void>;
     setFontColor(color: Color | 'auto'): Promise<void>;
     setFontSize(size: Points): Promise<void>;

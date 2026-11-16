@@ -511,4 +511,6 @@ public enum CommandId
     AddEditableRange,
     /// <summary>Removes the editable ranges at the selection.</summary>
     RemoveEditableRanges,
+    /// <summary>Sets the file name FILENAME shows.</summary>
+    SetFileName,
 }

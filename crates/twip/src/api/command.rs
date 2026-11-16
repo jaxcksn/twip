@@ -369,6 +369,9 @@ commands! {
     SetDocumentProperties(DocumentPropertiesChange),
     /// Sets a document variable (`w:docVars`, read by DOCVARIABLE), or removes it (`value` absent). Undo: one step.
     SetDocumentVariable(DocumentVariable),
+    /// The document's file name, with its folder when FILENAME `\p` should show one: what FILENAME shows. Not saved.
+    /// Undo: view.
+    SetFileName(#[serde(with = "value")] String),
     /// A field with `code`; result `{ id }`. With a selection and an empty code, wraps it. Undo: one step.
     InsertField(InsertField),
 

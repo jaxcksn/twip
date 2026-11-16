@@ -347,6 +347,7 @@ impl Editor {
             Command::SetFormFieldShading(on) => self.set_form_shading(on, fonts),
             Command::SetDocumentProperties(p) => self.set_document_properties(p, fonts),
             Command::SetDocumentVariable(v) => self.set_document_variable(v, fonts),
+            Command::SetFileName(n) => self.set_file_name(n),
             Command::DeleteBookmark(name) => self.delete_bookmark(&name, fonts),
             Command::EditHyperlink(h) => self.edit_hyperlink(h, fonts),
             Command::RemoveHyperlink => self.remove_hyperlink(fonts),

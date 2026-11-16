@@ -333,14 +333,14 @@ save as read. The [fidelity guide](guides/fidelity) lists every element and the 
 
 </Chunk>
 
-<Chunk id="2.11" title="Fields and document properties" deps={['2.2']}>
+<Chunk id="2.11" title="Fields and document properties" deps={['2.2']} done>
 
 **Goal:** the engine computes every field that depends only on the document.
 
 - Core, app and custom document properties: read, set through the API, and updated on save.
 - Document variables (`w:docVars`) and DOCVARIABLE.
 - DOCPROPERTY, AUTHOR, TITLE, SUBJECT, KEYWORDS, FILENAME, SAVEDATE, PRINTDATE, NOTEREF, LISTNUM and AUTONUM.
-- DATE and TIME in the host's time zone and locale.
+- DATE and TIME in the host's time zone.
 - `=` formulas, with table references, `decimalSymbol` and `listSeparator`.
 - `webSettings` is read and kept.
 
@@ -635,6 +635,8 @@ The workflows on top of a complete model, the framework packages, and the API fr
 - An extensions surface for custom drawing (comment bubbles, custom rulers)
 - Equations (OMML)
 - Charts
+- DATE and TIME in the host's locale: their month and day names and default picture are en-US's. Every locale's
+  names would be CLDR data in the WASM bundle; a host service could supply them instead
 - Right-to-left and East Asian layout and editing, with IME (below)
 - The caret, selection and hit testing in vertical sections: vertical documents lay out and draw in 1.0, but editing
   them places the caret as if the page weren't turned

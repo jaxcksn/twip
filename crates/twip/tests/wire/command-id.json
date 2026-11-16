@@ -135,6 +135,7 @@
   "setFormFieldShading",
   "setDocumentProperties",
   "setDocumentVariable",
+  "setFileName",
   "insertField",
   "insertRows",
   "insertColumns",

@@ -687,6 +687,10 @@
     "value": "2026-0042"
   },
   {
+    "type": "setFileName",
+    "value": "C:\\Cases\\2026-0042.docx"
+  },
+  {
     "code": "MERGEFIELD Name",
     "display": "«Name»",
     "showCode": false,

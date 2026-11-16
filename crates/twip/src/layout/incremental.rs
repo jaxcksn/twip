@@ -406,6 +406,7 @@ fn references(blocks: &[Block], notes: &std::collections::HashSet<(NoteKind, i64
         Block::Para(p) => p.inlines.iter().any(|i| match i {
             Inline::NoteRef { kind, id, .. } => notes.contains(&(*kind, *id)),
             Inline::NoteMark(kind, id, _) => notes.contains(&super::node::mark_key(*kind, *id)),
+            Inline::FieldBegin { kind: Some(crate::docx::FieldKind::NoteRef(_, Some(n))), .. } => notes.contains(n),
             _ => false,
         }),
         Block::Table(t) => t.rows.iter().any(|r| r.cells.iter().any(|c| references(&c.blocks, notes))),

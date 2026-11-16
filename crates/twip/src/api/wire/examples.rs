@@ -941,6 +941,7 @@ fn commands() -> Vec<Command> {
             ..Default::default()
         }),
         Command::SetDocumentVariable(DocumentVariable { name: "CaseNumber".into(), value: Some("2026-0042".into()) }),
+        Command::SetFileName("C:\\Cases\\2026-0042.docx".into()),
         Command::InsertField(InsertField { code: "MERGEFIELD Name".into(), display: Some("«Name»".into()), show_code: Some(false) }),
         Command::InsertRows(InsertRows { side: VerticalSide::Below, count: Some(2) }),
         Command::InsertColumns(InsertColumns { side: HorizontalSide::Left, count: Some(1) }),

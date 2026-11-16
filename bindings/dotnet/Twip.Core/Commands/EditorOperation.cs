@@ -689,6 +689,11 @@ public abstract partial record EditorOperation
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation SetDocumentVariable(DocumentVariable variable) => Op(CommandId.SetDocumentVariable, Arg.Flatten(variable));
 
+    /// <summary>Sets the file name FILENAME shows. Not saved, and not an edit.</summary>
+    /// <param name="name">The file's name, with its folder when FILENAME <c>\p</c> should show one.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetFileName(string name) => Op(CommandId.SetFileName, new Arg("value", Node(name)));
+
     /// <summary>Inserts a field. With a selection and an empty code, wraps the selection.</summary>
     /// <param name="options">The field.</param>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>

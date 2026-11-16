@@ -1045,3 +1045,13 @@ fn text_with_a_deleted_mark_ending_a_notes_story_takes_the_normal_styles_propert
     let x = page.windows(4).find(|w| w.iter().map(|c| c.0).eq("Tail".chars())).map(|w| w[0].1).expect("the note");
     assert!(x < 100.0, "left-aligned as Normal: {x}");
 }
+
+#[test]
+fn a_noteref_shows_its_bookmarked_notes_number() {
+    let noteref = r#"<w:p><w:r><w:t xml:space="preserve">See </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> NOTEREF Second \h </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>Q</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>"#;
+    let marked = r#"<w:p><w:r><w:t>b</w:t></w:r><w:bookmarkStart w:id="0" w:name="Second"/><w:r><w:footnoteReference w:id="2"/></w:r><w:bookmarkEnd w:id="0"/></w:p>"#;
+    let body = para("a", &["f1"]) + marked + noteref + &sect(r#"<w:footnotePr><w:numFmt w:val="lowerRoman"/></w:footnotePr>"#, true);
+    let Some(doc) = notes_doc(&body, "") else { return };
+    let chars: String = super::page_chars(&doc)[0].iter().map(|c| c.0).collect();
+    assert!(chars.contains("See ii") && !chars.contains('Q'), "{chars}");
+}

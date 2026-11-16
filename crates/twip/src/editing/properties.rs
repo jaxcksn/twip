@@ -57,6 +57,18 @@ impl Editor {
         self.set_info(self.doc.properties.clone(), vars, "Document Variable", fonts)
     }
 
+    /// The name FILENAME shows: its fields show it now, as layout does, without an undo step.
+    pub(in crate::editing) fn set_file_name(&mut self, name: String) -> Outcome {
+        if self.doc.file_name.as_deref() == Some(name.as_str()) {
+            return Outcome::Unchanged("already so");
+        }
+        self.doc.file_name = Some(name);
+        if crate::docx::fields::show_file_name(&mut self.doc) {
+            self.relayout([None]);
+        }
+        Outcome::Moved
+    }
+
     fn set_info(&mut self, p: Properties, vars: Vec<(String, String)>, label: &'static str, fonts: &Fonts) -> Outcome {
         if p == self.doc.properties && vars == self.doc.settings.variables {
             return Outcome::Unchanged("already so");

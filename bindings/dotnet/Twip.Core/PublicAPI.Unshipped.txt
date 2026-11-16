@@ -7664,3 +7664,6 @@ Twip.ProtectionState.Deconstruct(out Twip.ProtectionKind Kind, out bool Enforced
 Twip.ProtectionState.ProtectionState(Twip.ProtectionKind Kind, bool Enforced, bool Formatting, bool Password, bool InEditableRange, System.Collections.Generic.IReadOnlyList<uint>! UnprotectedSections) -> void
 Twip.ProtectionState.UnprotectedSections.get -> System.Collections.Generic.IReadOnlyList<uint>!
 Twip.ProtectionState.UnprotectedSections.init -> void
+Twip.CommandId.SetFileName = 254 -> Twip.CommandId
+Twip.EditorCommands.SetFileNameAsync(string! name, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+static Twip.EditorOperation.SetFileName(string! name) -> Twip.EditorOperation!

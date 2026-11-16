@@ -7,6 +7,7 @@
     { "op": "command", "command": { "type": "setDocumentProperties", "custom": [{ "name": "Year", "kind": "number", "value": "soon" }] } },
     { "op": "expectError", "code": "invalid-argument" },
     { "op": "command", "command": { "type": "setDocumentVariable", "name": "CaseNumber", "value": "42" } },
+    { "op": "command", "command": { "type": "setFileName", "value": "C:\\Cases\\Brief.docx" } },
     { "op": "command", "command": { "type": "setDocumentVariable", "name": "" } },
     { "op": "expectError", "code": "invalid-argument" },
     { "op": "call", "method": "documentProperties", "result": {

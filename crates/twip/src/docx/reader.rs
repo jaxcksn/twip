@@ -129,8 +129,21 @@ pub fn now_local() -> i64 {
     t + local_offset(t)
 }
 
-/// The local time zone's offset from UTC at `t` (seconds since 1970, UTC), in seconds; 0 without a time zone.
+/// The local time zone's offset from UTC at `t` (seconds since 1970, UTC), in seconds; 0 without a time zone. In the
+/// browser, the page's.
 fn local_offset(t: i64) -> i64 {
+    #[cfg(all(target_family = "wasm", target_os = "unknown"))]
+    {
+        crate::clock::local_offset(t)
+    }
+    #[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
+    {
+        native_offset(t)
+    }
+}
+
+#[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
+fn native_offset(t: i64) -> i64 {
     // The fields `struct tm` starts with on every platform, with room for the rest.
     #[repr(C)]
     #[derive(Default)]
@@ -813,6 +826,8 @@ pub(crate) fn read_settings(xml: Option<&str>) -> Settings {
         .flat_map(|v| children(v, "docVar"))
         .filter_map(|v| Some((attr(v, "name")?.to_string(), attr(v, "val").unwrap_or_default().to_string())))
         .collect();
+    let symbol = |name: &str| child(root, name).and_then(val).and_then(|v| v.chars().next());
+    (s.decimal_symbol, s.list_separator) = (symbol("decimalSymbol"), symbol("listSeparator"));
     let rev = flag(root, "bookFoldRevPrinting").unwrap_or(false);
     s.book_fold = (rev || flag(root, "bookFoldPrinting").unwrap_or(false)).then_some(rev);
     s.strict_kinsoku = flag(root, "strictFirstAndLastChars").unwrap_or(false);

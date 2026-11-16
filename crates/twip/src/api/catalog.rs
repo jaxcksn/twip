@@ -253,6 +253,7 @@ const ENTRIES: &[Entry] = {
         (C::SetFormFieldShading, "Form Field Shading", G::Insert, &[], &[], true, true, U::Step),
         (C::SetDocumentProperties, "Properties", G::Insert, &[], &[], true, true, U::Step),
         (C::SetDocumentVariable, "Document Variable", G::Insert, &[], &[], true, true, U::Step),
+        (C::SetFileName, "File Name", G::Field, &[], &[], true, false, U::View),
         (C::InsertField, "Field", G::Insert, &["Ctrl+F9"], &["⌘F9"], true, true, U::Step),
         (C::InsertRows, "Insert Rows", G::Table, &[], &[], true, true, U::Step),
         (C::InsertColumns, "Insert Columns", G::Table, &[], &[], true, true, U::Step),

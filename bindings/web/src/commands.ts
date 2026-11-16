@@ -741,6 +741,11 @@ export interface Commands {
   }): Promise<void>;
   /** Sets a document variable (read by DOCVARIABLE), or removes it when `value` is absent. */
   setDocumentVariable(options: { name: string; value?: string }): Promise<void>;
+  /**
+   * The document's file name, with its folder when FILENAME `\p` should show one: what FILENAME shows. Not saved, and
+   * not an edit.
+   */
+  setFileName(name: string): Promise<void>;
   /** Inserts a field. With a selection and an empty code, wraps it (Ctrl+F9). */
   insertField(options: { code: string; display?: string; showCode?: boolean }): Promise<{ id: ElementId }>;
 
@@ -1344,6 +1349,7 @@ const encodings: { [K in CommandId]: Encoding<K> } = {
   setFormFieldShading: 'value',
   setDocumentProperties: 'spread',
   setDocumentVariable: 'spread',
+  setFileName: 'value',
   insertField: 'spread',
   insertRows: 'spread',
   insertColumns: 'spread',

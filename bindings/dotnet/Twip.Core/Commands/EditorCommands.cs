@@ -842,6 +842,12 @@ public sealed class EditorCommands
     /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
     public Task SetDocumentVariableAsync(DocumentVariable variable, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetDocumentVariable(variable), ct);
 
+    /// <summary>Sets the file name FILENAME shows. Not saved, and not an edit.</summary>
+    /// <param name="name">The file's name, with its folder when FILENAME <c>\p</c> should show one.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when <see cref="EditorSession.State"/> shows it.</returns>
+    public Task SetFileNameAsync(string name, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetFileName(name), ct);
+
     /// <summary>Inserts a field. With a selection and an empty code, wraps the selection.</summary>
     /// <param name="options">The field.</param>
     /// <param name="ct">Cancels the command before it runs.</param>
