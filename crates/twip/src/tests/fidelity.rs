@@ -212,6 +212,13 @@ const CONSTRUCTS: &[Construct] = &[
         exempt: &[],
     },
     Construct {
+        name: "linked-picture",
+        xml: r#"<w:r><w:t>Li</w:t></w:r><w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="457200" cy="457200"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:docPr id="6" name="Linked"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="6" name="linked.png"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:link="rIdLink"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="457200" cy="457200"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r><w:r><w:t>nk</w:t></w:r>"#,
+        holds: &["a:blip@r:link=rIdLink", "~TargetMode=\"External\""],
+        parts: &[],
+        exempt: &[],
+    },
+    Construct {
         name: "ole-object",
         xml: r##"<w:r><w:t>Ole</w:t></w:r><w:r><w:object w:dxaOrig="720" w:dyaOrig="720"><v:shape id="ole1" type="#_x0000_t75" style="width:36pt;height:36pt" o:ole=""><v:imagedata r:id="rIdImg" o:title=""/></v:shape><o:OLEObject Type="Embed" ProgID="Package" ShapeID="ole1" DrawAspect="Icon" ObjectID="_1"/></w:object></w:r>"##,
         holds: &["w:object", "o:OLEObject", "~ProgID=\"Package\"", "v:imagedata"],
@@ -387,7 +394,7 @@ fn package(c: &Construct) -> Vec<u8> {
         r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>"#,
     );
     let mut rels = format!(
-        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="{REL}/styles" Target="styles.xml"/><Relationship Id="rIdImg" Type="{REL}/image" Target="media/dot.png"/>"#
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="{REL}/styles" Target="styles.xml"/><Relationship Id="rIdImg" Type="{REL}/image" Target="media/dot.png"/><Relationship Id="rIdLink" Type="{REL}/image" Target="file:///C:/linked.png" TargetMode="External"/>"#
     );
     let mut files = vec![("word/document.xml".to_string(), main.into_bytes()), ("word/media/dot.png".to_string(), PNG.to_vec())];
     for (k, (name, ctype, rtype, xml)) in c.parts.iter().chain([&COMMENTS]).enumerate() {

@@ -318,14 +318,14 @@ save as read. The [fidelity guide](guides/fidelity) lists every element and the 
 
 </Chunk>
 
-<Chunk id="2.10" title="Pictures and drawings" deps={['2.2']}>
+<Chunk id="2.10" title="Pictures and drawings" deps={['2.2']} done>
 
 **Goal:** Word's picture tools, as commands.
 
-- Crop, with handles.
+- Crop, in the Picture Size dialog too.
 - Change Picture in place, outside picture controls too.
 - Align and distribute objects.
-- Linked pictures (`r:link`), fetched through a host service.
+- Linked pictures (`r:link`) kept through every edit.
 - Relative size and position, text box autofit, text box columns and `textboxTightWrap`.
 - Set Transparent Colour (`a:clrChange`).
 
@@ -633,6 +633,12 @@ The workflows on top of a complete model, the framework packages, and the API fr
 - An extensions surface for custom drawing (comment bubbles, custom rulers)
 - Equations (OMML)
 - Charts
+- Crop handles: Word's crop mode, the picture's whole image with handles on its crop. Crop is set by
+  `setPictureCrop` and the Picture Size dialog; the handles are an interaction on top that waits on overlay drawing
+  for them
+- Drawing linked pictures (`r:link`): they're kept, and drawn empty. Drawing one needs the host to fetch it, and a
+  host service a document from anyone can point at a path or URL needs its own design (what a host may fetch, and
+  when)
 - DATE and TIME in the host's locale: their month and day names and default picture are en-US's. Every locale's
   names would be CLDR data in the WASM bundle; a host service could supply them instead
 - Right-to-left and East Asian layout and editing, with IME (below)

@@ -1878,6 +1878,7 @@ fn dialog_values() -> Vec<DialogValues> {
             reset: false,
             relative_width: Some(RelativeSize { percent: 50.0, relative_to: RelativeSizeReference::Margin }),
             relative_height: None,
+            crop: Some(crate::api::command::PictureCrop { left: Some(0.1), top: None, right: None, bottom: Some(0.25) }),
         }),
         DialogValues::AltText(AltTextDialog { text: "A chart".into(), decorative: false }),
         DialogValues::Hyperlink(HyperlinkDialog { text: "Example".into(), address: "https://example.com".into(), bookmark: "Summary".into() }),

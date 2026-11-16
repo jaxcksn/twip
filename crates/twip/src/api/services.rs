@@ -1363,6 +1363,8 @@ dialog! {
         pub relative_width: Option<crate::api::command::RelativeSize>,
         /// Its height as a share of a box on the page; none for an absolute height.
         pub relative_height: Option<crate::api::command::RelativeSize>,
+        /// A picture's crop (Crop from), by fractions of its image from each edge; none for an object that isn't one.
+        pub crop: Option<crate::api::command::PictureCrop>,
     }
 }
 

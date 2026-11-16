@@ -321,6 +321,10 @@
     "wrapText": true
   },
   {
+    "crop": {
+      "bottom": 0.25,
+      "left": 0.1
+    },
     "height": 72.5,
     "kind": "pictureSize",
     "lockAspect": true,

@@ -1423,6 +1423,12 @@ export interface DialogValues {
         reset: boolean;
         relativeWidth: RelativeSize | null;
         relativeHeight: RelativeSize | null;
+        crop: {
+            left?: number;
+            top?: number;
+            right?: number;
+            bottom?: number;
+        } | null;
     };
     setNumberingValue: {
         mode: 'startNew' | 'continue';

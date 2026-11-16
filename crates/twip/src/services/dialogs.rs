@@ -208,6 +208,7 @@ pub fn values(kind: DialogKind, state: &State, cx: &Context) -> Result<DialogVal
                 reset: false,
                 relative_width: o.relative_width,
                 relative_height: o.relative_height,
+                crop: o.kind.eq(&crate::api::state::ObjectKind::Picture).then(|| o.crop.unwrap_or_default()),
             })
         }
         DialogKind::AltText => {
@@ -482,7 +483,7 @@ fn fields(values: &DialogValues, cx: &Context) -> BTreeMap<String, FieldInfo> {
                 ("description", field("Description", FieldKind::Text)),
             ]
         }
-        DialogValues::PictureSize(_) => vec![
+        DialogValues::PictureSize(v) => vec![
             ("width", number("Width", FieldKind::Length, 1.0, 1584.0, 1.0)),
             ("height", number("Height", FieldKind::Length, 1.0, 1584.0, 1.0)),
             ("scaleWidth", number("Scale width (%)", FieldKind::Number, 1.0, 1000.0, 1.0)),
@@ -491,6 +492,7 @@ fn fields(values: &DialogValues, cx: &Context) -> BTreeMap<String, FieldInfo> {
             ("reset", field("Reset", FieldKind::Toggle)),
             ("relativeWidth", field("Relative width", FieldKind::Number)),
             ("relativeHeight", field("Relative height", FieldKind::Number)),
+            ("crop", if v.crop.is_some() { field("Crop from", FieldKind::Number) } else { off(field("Crop from", FieldKind::Number)) }),
         ],
         DialogValues::AltText(v) => {
             let mut text = field("Description", FieldKind::Text);
@@ -1359,6 +1361,11 @@ pub fn commands(values: &DialogValues, state: &State, cx: &Context) -> Result<Ve
                         relative_height: rh,
                     }));
                 }
+                if let Some(c) = v.crop.filter(|c| Some(*c) != n.crop) {
+                    let ok = |x: Option<f64>| x.is_none_or(|x| (0.0..1.0).contains(&x));
+                    check(ok(c.left) && ok(c.top) && ok(c.right) && ok(c.bottom), "a crop is a fraction of the image, under 1")?;
+                    out.push(Command::SetPictureCrop(c));
+                }
             }
         }
         (DialogValues::AltText(v), DialogValues::AltText(n)) => {
@@ -1565,6 +1572,22 @@ mod tests {
         let DialogValues::PictureSize(v) = &m.values else { panic!() };
         assert_eq!((v.width, v.height, v.scale_width), (Points(144.0), Points(108.0), 200.0));
         assert!(open(DialogKind::TableProperties, &state, &cx).is_err(), "no table");
+    }
+
+    #[test]
+    fn the_picture_size_dialog_crops_a_picture() {
+        use crate::api::command::PictureCrop;
+        let mut state = State::default();
+        state.selection.object = Some(ObjectSelection { width: Points(72.0), height: Points(54.0), ..ObjectSelection::default() });
+        let cx = Context::default();
+        let m = open(DialogKind::PictureSize, &state, &cx).expect("opens");
+        let DialogValues::PictureSize(mut v) = m.values.clone() else { panic!() };
+        assert_eq!(v.crop, Some(PictureCrop::default()));
+        v.crop = Some(PictureCrop { left: Some(0.25), ..PictureCrop::default() });
+        let crop = |v: &PictureSizeDialog| commands(&DialogValues::PictureSize(v.clone()), &state, &cx);
+        assert_eq!(crop(&v).expect("valid"), [Command::SetPictureCrop(PictureCrop { left: Some(0.25), ..PictureCrop::default() })]);
+        v.crop = Some(PictureCrop { right: Some(1.5), ..PictureCrop::default() });
+        assert!(crop(&v).is_err(), "more than the image");
     }
 
     #[test]

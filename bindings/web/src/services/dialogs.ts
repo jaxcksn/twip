@@ -242,6 +242,8 @@ export interface DialogValues {
     relativeWidth: RelativeSize | null;
     /** Its height as a share of a box on the page; null for an absolute height. */
     relativeHeight: RelativeSize | null;
+    /** A picture's crop (Crop from), by fractions of its image from each edge; null for an object that isn't one. */
+    crop: { left?: number; top?: number; right?: number; bottom?: number } | null;
   };
   /** The Alt text dialog. */
   altText: { text: string; decorative: boolean };

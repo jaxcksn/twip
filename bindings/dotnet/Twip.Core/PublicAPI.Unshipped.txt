@@ -7646,8 +7646,6 @@ Twip.ParagraphDialogValues.MirrorIndents.init -> void
 Twip.ParagraphDialogValues.ParagraphDialogValues(Twip.FormatValue<Twip.ParagraphAlignment> Alignment, Twip.FormatValue<Twip.OutlineLevel> OutlineLevel, Twip.FormatValue<Twip.Length> Left, Twip.FormatValue<Twip.Length> Right, Twip.FormatValue<Twip.SpecialIndent> Special, Twip.FormatValue<Twip.Length> By, Twip.FormatValue<Twip.SpacingValue> Before, Twip.FormatValue<Twip.SpacingValue> After, Twip.FormatValue<Twip.LineSpacing!> LineSpacing, Twip.FormatValue<bool> KeepWithNext, Twip.FormatValue<bool> KeepLinesTogether, Twip.FormatValue<bool> PageBreakBefore, Twip.FormatValue<bool> WidowControl, Twip.FormatValue<bool> Collapsed, Twip.FormatValue<bool> MirrorIndents, Twip.FormatValue<bool> ContextualSpacing, Twip.FormatValue<bool> SuppressLineNumbers, Twip.FormatValue<bool> DontHyphenate) -> void
 Twip.ParagraphDialogValues.SuppressLineNumbers.get -> Twip.FormatValue<bool>
 Twip.ParagraphDialogValues.SuppressLineNumbers.init -> void
-Twip.PictureSizeDialogValues.Deconstruct(out Twip.Length Width, out Twip.Length Height, out double ScaleWidth, out double ScaleHeight, out bool LockAspect, out bool Reset, out Twip.RelativeSize? RelativeWidth, out Twip.RelativeSize? RelativeHeight) -> void
-Twip.PictureSizeDialogValues.PictureSizeDialogValues(Twip.Length Width, Twip.Length Height, double ScaleWidth, double ScaleHeight, bool LockAspect, bool Reset, Twip.RelativeSize? RelativeWidth, Twip.RelativeSize? RelativeHeight) -> void
 Twip.PictureSizeDialogValues.RelativeHeight.get -> Twip.RelativeSize?
 Twip.PictureSizeDialogValues.RelativeHeight.init -> void
 Twip.PictureSizeDialogValues.RelativeWidth.get -> Twip.RelativeSize?
@@ -7672,3 +7670,7 @@ Twip.ControlInfo.BuildingBlocks.get -> System.Collections.Generic.IReadOnlyList<
 Twip.ControlInfo.BuildingBlocks.init -> void
 static Twip.ControlContent.FromBuildingBlock(string! name) -> Twip.ControlContent!
 Twip.PageSetupScope.ThisPointForward = 2 -> Twip.PageSetupScope
+Twip.PictureSizeDialogValues.Crop.get -> Twip.PictureCrop?
+Twip.PictureSizeDialogValues.Crop.init -> void
+Twip.PictureSizeDialogValues.Deconstruct(out Twip.Length Width, out Twip.Length Height, out double ScaleWidth, out double ScaleHeight, out bool LockAspect, out bool Reset, out Twip.RelativeSize? RelativeWidth, out Twip.RelativeSize? RelativeHeight, out Twip.PictureCrop? Crop) -> void
+Twip.PictureSizeDialogValues.PictureSizeDialogValues(Twip.Length Width, Twip.Length Height, double ScaleWidth, double ScaleHeight, bool LockAspect, bool Reset, Twip.RelativeSize? RelativeWidth, Twip.RelativeSize? RelativeHeight, Twip.PictureCrop? Crop) -> void

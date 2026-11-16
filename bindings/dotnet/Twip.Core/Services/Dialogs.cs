@@ -776,8 +776,17 @@ public sealed record TablePropertiesDialogValues(
 /// <param name="Reset">Reset to the original size.</param>
 /// <param name="RelativeWidth">A floating object's width as a share of a box on the page; null for an absolute width.</param>
 /// <param name="RelativeHeight">Its height as a share of a box on the page; null for an absolute height.</param>
+/// <param name="Crop">A picture's crop (Crop from), by fractions of its image from each edge; null for an object that isn't one.</param>
 public sealed record PictureSizeDialogValues(
-    Length Width, Length Height, double ScaleWidth, double ScaleHeight, bool LockAspect, bool Reset, RelativeSize? RelativeWidth, RelativeSize? RelativeHeight);
+    Length Width,
+    Length Height,
+    double ScaleWidth,
+    double ScaleHeight,
+    bool LockAspect,
+    bool Reset,
+    RelativeSize? RelativeWidth,
+    RelativeSize? RelativeHeight,
+    PictureCrop? Crop);
 
 /// <summary>The Alt Text dialog's values.</summary>
 /// <param name="Text">The alternative text.</param>
