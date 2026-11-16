@@ -762,6 +762,8 @@ export interface ReviewState {
     password: boolean;
     /** The selection is in a range the author may edit. */
     inEditableRange: boolean;
+    /** Filling in forms: the sections (by index) anyone may edit. */
+    unprotectedSections: number[];
   };
   /** The markup view. */
   markupView: MarkupView;

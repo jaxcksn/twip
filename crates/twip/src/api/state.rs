@@ -1049,6 +1049,8 @@ pub struct ProtectionState {
     pub password: bool,
     /// The selection is in a range the author may edit.
     pub in_editable_range: bool,
+    /// Filling in forms: the sections (by index) anyone may edit.
+    pub unprotected_sections: Vec<u32>,
 }
 
 /// Spell checking.

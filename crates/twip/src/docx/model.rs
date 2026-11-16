@@ -1157,6 +1157,8 @@ pub struct SectionPage {
     pub no_endnote: bool,
     /// `w15:footnoteColumns` (0 when absent).
     pub footnote_columns: u32,
+    /// `w:formProt`: filling-in-forms protection covers the section (Word writes it only when off).
+    pub form_protected: bool,
     /// The parts of its headers and footers (default, first, even); `None`: the section before's.
     pub headers: HfRefs,
     pub footers: HfRefs,
@@ -1188,6 +1190,7 @@ impl Section {
             notes: self.notes.clone(),
             no_endnote: self.no_endnote,
             footnote_columns: self.footnote_columns,
+            form_protected: self.form_protected,
             headers: self.headers.clone(),
             footers: self.footers.clone(),
         }
@@ -1200,7 +1203,7 @@ impl Section {
         (self.break_kind, self.pg_start, self.pg_fmt, self.chapter, self.line_numbers) =
             (p.break_kind, p.pg_start, p.pg_fmt, p.chapter, p.line_numbers);
         (self.v_align, self.text_flow, self.notes, self.no_endnote) = (p.v_align, p.text_flow, p.notes, p.no_endnote);
-        self.footnote_columns = p.footnote_columns;
+        (self.footnote_columns, self.form_protected) = (p.footnote_columns, p.form_protected);
         (self.headers, self.footers) = (p.headers, p.footers);
     }
 }
@@ -1298,6 +1301,8 @@ pub struct Section {
     pub rtl_gutter: bool,
     /// `w15:footnoteColumns`: the footnote area's column count (0 when absent).
     pub footnote_columns: u32,
+    /// `w:formProt`: filling-in-forms protection covers the section.
+    pub form_protected: bool,
     pub blocks: Vec<Block>,
     /// A tracked change of the section's properties.
     pub change: Option<Rc<SectionChange>>,

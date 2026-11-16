@@ -3116,3 +3116,40 @@ fn gpu_frames_draw_as_cpu_frames() {
         }
     }
 }
+
+#[test]
+fn form_protection_leaves_the_sections_it_is_told_to_open() {
+    use crate::api::command::{DocumentProtection, MoveSelection, MoveUnit, ProtectionKind};
+    use crate::api::value::Direction;
+    use std::io::Read;
+    let mut engine = Engine::new(FontLibrary::system());
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-SECTIONS.docx");
+    s.open(&std::fs::read(path).expect("fixture")).expect("opens");
+    let protect = |enforce, open: Option<Vec<u32>>| {
+        Command::SetDocumentProtection(DocumentProtection {
+            kind: Some(ProtectionKind::Forms),
+            enforce: Some(enforce),
+            password: enforce.then(|| "Example".into()),
+            unprotected_sections: open,
+            ..DocumentProtection::default()
+        })
+    };
+    s.run(protect(true, Some(vec![1]))).expect("protects");
+    assert_eq!(s.state().review.protection.as_ref().map(|p| p.unprotected_sections.clone()), Some(vec![1]));
+    assert_eq!(s.run(Command::InsertText("x".into())).expect_err("protected").code, ErrorCode::NotAllowed);
+    assert_eq!(s.run(protect(true, Some(vec![]))).expect_err("enforced").code, ErrorCode::NotAllowed);
+    for _ in 0..4 {
+        s.run(Command::MoveSelection(MoveSelection { by: MoveUnit::Paragraph, direction: Direction::Forward, extend: None })).expect("moves");
+    }
+    s.run(Command::InsertText("x".into())).expect("the second section is open");
+    let saved = s.export(&ExportOptions::Docx).expect("saves").bytes.0;
+    let mut z = zip::ZipArchive::new(std::io::Cursor::new(saved.clone())).expect("a package");
+    let mut xml = String::new();
+    z.by_name("word/document.xml").unwrap().read_to_string(&mut xml).unwrap();
+    assert_eq!(xml.matches(r#"<w:formProt w:val="0"/>"#).count(), 1, "{xml}");
+    let doc = crate::docx::read_editable(&saved).expect("reads back");
+    assert_eq!(doc.sections.iter().map(|s| s.form_protected).collect::<Vec<_>>(), [true, false, true, true]);
+    assert!(doc.settings.protection.and_then(|p| p.password).is_some_and(|p| p.matches("Example")));
+}

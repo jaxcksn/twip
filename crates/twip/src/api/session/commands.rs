@@ -87,7 +87,8 @@ impl Session {
             let in_form = p.edit == crate::docx::review::ProtectionKind::Forms
                 && matches!(command, Command::InsertText(_) | Command::Delete(_) | Command::PasteText(_))
                 && self.state.selection.context.iter().any(|c| c.form.is_some() || c.control.is_some());
-            if !(ranges && self.editor.in_editable_range(&self.author.name)) && !in_form {
+            let open_section = p.edit == crate::docx::review::ProtectionKind::Forms && self.editor.in_unprotected_section();
+            if !(ranges && self.editor.in_editable_range(&self.author.name)) && !in_form && !open_section {
                 return Err(Error::new(ErrorCode::NotAllowed, "the document is protected"));
             }
         }

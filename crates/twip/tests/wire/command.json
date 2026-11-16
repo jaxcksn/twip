@@ -635,7 +635,10 @@
     "formatting": false,
     "kind": "readOnly",
     "password": "secret",
-    "type": "setDocumentProtection"
+    "type": "setDocumentProtection",
+    "unprotectedSections": [
+      1
+    ]
   },
   {
     "type": "addEditableRange"

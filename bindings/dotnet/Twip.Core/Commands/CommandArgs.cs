@@ -1282,11 +1282,13 @@ public enum ProtectionKind
 /// <param name="Formatting">Formatting is limited to the styles that aren't locked.</param>
 /// <param name="Enforce">Starts (true) or stops enforcing it.</param>
 /// <param name="Password">Starting: the password stopping will need (none when null or empty). Stopping: the password.</param>
+/// <param name="UnprotectedSections">Filling in forms: the sections (by index) anyone may edit. Not while enforced.</param>
 public sealed record DocumentProtection(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ProtectionKind? Kind = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Formatting = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Enforce = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Password = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Password = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<uint>? UnprotectedSections = null);
 
 /// <summary>A legacy form field's kind.</summary>
 public enum FormFieldType

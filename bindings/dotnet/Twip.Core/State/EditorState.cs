@@ -1266,4 +1266,11 @@ public sealed record VerticalRulerModel
 /// <param name="Formatting">Formatting is limited to the styles that aren't locked.</param>
 /// <param name="Password">Stopping it needs a password.</param>
 /// <param name="InEditableRange">The selection is in a range the author may edit.</param>
-public sealed record ProtectionState(ProtectionKind Kind, bool Enforced, bool Formatting, bool Password, bool InEditableRange);
+/// <param name="UnprotectedSections">Filling in forms: the sections (by index) anyone may edit.</param>
+public sealed record ProtectionState(
+    ProtectionKind Kind,
+    bool Enforced,
+    bool Formatting,
+    bool Password,
+    bool InEditableRange,
+    IReadOnlyList<uint> UnprotectedSections);

@@ -687,13 +687,15 @@ export interface Commands {
   deleteBookmark(name: string): Promise<void>;
   /**
    * Restrict Editing: what the document allows, and starting or stopping its enforcement. Starting takes the password
-   * stopping will need (none when absent); stopping a password-protected document needs it.
+   * stopping will need (none when absent); stopping a password-protected document needs it. With filling in forms,
+   * `unprotectedSections` are the sections (by index) anyone may edit; it can't change while enforced.
    */
   setDocumentProtection(options: {
     kind?: 'none' | 'readOnly' | 'comments' | 'trackedChanges' | 'forms';
     formatting?: boolean;
     enforce?: boolean;
     password?: string;
+    unprotectedSections?: number[];
   }): Promise<void>;
   /** Makes the selection a range everyone (or `editor`) may edit while the document is protected. */
   addEditableRange(options?: { editor?: string }): Promise<void>;

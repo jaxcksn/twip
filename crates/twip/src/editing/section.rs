@@ -25,12 +25,16 @@ impl Editor {
                     .position(|s| s.headers.iter().chain(s.footers.iter()).flatten().any(|n| Some(n.as_str()) == name))
                     .unwrap_or(0)
             }
-            _ => focus
-                .para_offset()
-                .and_then(|(p, _)| self.index.para_slot(p))
-                .and_then(|s| self.index.top_block(s.container, s.block))
-                .map_or(0, |(sec, _, _)| sec),
+            _ => self.section_at(&focus).unwrap_or(0),
         }
+    }
+
+    /// The section a position in the body is in.
+    pub(super) fn section_at(&self, at: &super::position::Position) -> Option<usize> {
+        if matches!(at.story, StoryId::HeaderFooter(_)) {
+            return None;
+        }
+        at.para_offset().and_then(|(p, _)| self.index.para_slot(p)).and_then(|s| self.index.top_block(s.container, s.block)).map(|(sec, _, _)| sec)
     }
 
     /// The selection's section's index.

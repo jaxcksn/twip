@@ -83,14 +83,27 @@ impl Editor {
             formatting: p.formatting,
             password: p.password.is_some(),
             in_editable_range: self.in_editable_range(author),
+            unprotected_sections: self.unprotected_sections().collect(),
         })
+    }
+
+    /// The sections filling-in-forms protection leaves open.
+    fn unprotected_sections(&self) -> impl Iterator<Item = u32> + '_ {
+        self.doc.sections.iter().enumerate().filter(|(_, s)| !s.form_protected).map(|(k, _)| k as u32)
+    }
+
+    /// The selection is in a section filling-in-forms protection leaves open.
+    pub fn in_unprotected_section(&self) -> bool {
+        let Some((a, b)) = self.selection.ordered(&self.index) else { return false };
+        let open = |p: &Position| self.section_at(p).and_then(|k| self.doc.sections.get(k)).is_some_and(|s| !s.form_protected);
+        open(&a) && open(&b) && self.section_at(&a) == self.section_at(&b)
     }
 
     pub(in crate::editing) fn set_document_protection(&mut self, d: DocumentProtection, fonts: &Fonts) -> Outcome {
         let was = self.doc.settings.protection.clone();
         let mut p = was.clone().unwrap_or_default();
         let enforced = p.enforced;
-        if enforced && d.enforce != Some(false) && (d.kind.is_some() || d.formatting.is_some()) {
+        if enforced && d.enforce != Some(false) && (d.kind.is_some() || d.formatting.is_some() || d.unprotected_sections.is_some()) {
             return Outcome::Refused(Error::new(ErrorCode::NotAllowed, "stop the protection before changing it"));
         }
         if d.enforce == Some(false) && enforced {
@@ -120,13 +133,34 @@ impl Editor {
             p.enforced = e;
         }
         let now = (p.edit != ProtectionKind::None || p.formatting || p.enforced).then_some(p);
-        if now.as_ref().map(|p| (p.edit, p.enforced, p.formatting, p.password.clone()))
-            == was.as_ref().map(|p| (p.edit, p.enforced, p.formatting, p.password.clone()))
+        let sections: Vec<(usize, crate::docx::SectionPage)> = d.unprotected_sections.map_or_else(Vec::new, |open| {
+            let open: std::collections::HashSet<u32> = open.into_iter().collect();
+            self.doc
+                .sections
+                .iter()
+                .enumerate()
+                .filter(|(k, s)| s.form_protected == open.contains(&(*k as u32)))
+                .map(|(k, s)| (k, crate::docx::SectionPage { form_protected: !s.form_protected, ..s.page() }))
+                .collect()
+        });
+        if sections.is_empty()
+            && now.as_ref().map(|p| (p.edit, p.enforced, p.formatting, p.password.clone()))
+                == was.as_ref().map(|p| (p.edit, p.enforced, p.formatting, p.password.clone()))
         {
             return Outcome::Unchanged("already so");
         }
         let mut tx = self.begin("Restrict Editing");
-        if self.step(&mut tx, Step::Protection(now.map(Box::new))).is_err() {
+        for (section, page) in sections {
+            let change = self.doc.sections[section].change.clone();
+            if self.step(&mut tx, Step::SectionPage { section, page: Box::new(page), change }).is_err() {
+                self.abort(tx);
+                return Outcome::Unchanged("no section");
+            }
+        }
+        if now.as_ref().map(|p| (p.edit, p.enforced, p.formatting, &p.password))
+            != was.as_ref().map(|p| (p.edit, p.enforced, p.formatting, &p.password))
+            && self.step(&mut tx, Step::Protection(now.map(Box::new))).is_err()
+        {
             self.abort(tx);
             return Outcome::Unchanged("protection failed");
         }

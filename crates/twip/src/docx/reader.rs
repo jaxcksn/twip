@@ -843,7 +843,7 @@ pub(crate) fn read_settings(xml: Option<&str>) -> Settings {
         formatting: matches!(attr(n, "formatting"), Some("1" | "true" | "on")),
         password: {
             let a = |k: &str| attr(n, k).map(str::to_string);
-            let algorithm = a("algorithmName").or_else(|| a("cryptAlgorithmSid"));
+            let algorithm = a("algorithmName").or_else(|| a("cryptAlgorithmSid").map(|s| super::review::algorithm_name(&s).to_string()));
             let hash = a("hashValue").or_else(|| a("hash"));
             let salt = a("saltValue").or_else(|| a("salt"));
             let spin = a("spinCount").or_else(|| a("cryptSpinCount")).and_then(|s| s.parse().ok()).unwrap_or(0);
@@ -1457,6 +1457,7 @@ impl Reader {
             text_flow: 0,
             rtl_gutter: false,
             footnote_columns: 0,
+            form_protected: true,
             blocks: Vec::new(),
             change: None,
             read: None,
@@ -1504,6 +1505,7 @@ impl Reader {
         }
         sec.title_pg = flag(s, "titlePg").unwrap_or(false);
         sec.rtl_gutter = flag(s, "rtlGutter").unwrap_or(false);
+        sec.form_protected = flag(s, "formProt").unwrap_or(true);
         sec.footnote_columns = s
             .children()
             .find(|c| c.tag_name().namespace() == Some(W15) && c.tag_name().name() == "footnoteColumns")

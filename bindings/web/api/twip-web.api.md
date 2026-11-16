@@ -687,6 +687,7 @@ export interface Commands {
         formatting?: boolean;
         enforce?: boolean;
         password?: string;
+        unprotectedSections?: number[];
     }): Promise<void>;
     setDocumentVariable(options: {
         name: string;
@@ -2642,6 +2643,7 @@ export interface ReviewState {
         formatting: boolean;
         password: boolean;
         inEditableRange: boolean;
+        unprotectedSections: number[];
     };
     revisions: number;
     tracking: boolean;

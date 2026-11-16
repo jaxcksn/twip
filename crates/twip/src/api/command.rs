@@ -2106,6 +2106,9 @@ pub struct DocumentProtection {
     /// Starting: the password stopping will need (none when absent or empty). Stopping: the password.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub password: Option<String>,
+    /// Filling in forms: the sections (by index) anyone may edit; the others are protected. Not while enforced.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unprotected_sections: Option<Vec<u32>>,
 }
 
 /// `addEditableRange`'s options.

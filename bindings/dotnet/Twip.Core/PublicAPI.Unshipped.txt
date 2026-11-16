@@ -7546,8 +7546,6 @@ Twip.CommandId.RemoveEditableRanges = 253 -> Twip.CommandId
 Twip.CommandId.SetDocumentProtection = 251 -> Twip.CommandId
 Twip.DocumentProtection
 Twip.DocumentProtection.<Clone>$() -> Twip.DocumentProtection!
-Twip.DocumentProtection.Deconstruct(out Twip.ProtectionKind? Kind, out bool? Formatting, out bool? Enforce, out string? Password) -> void
-Twip.DocumentProtection.DocumentProtection(Twip.ProtectionKind? Kind = null, bool? Formatting = null, bool? Enforce = null, string? Password = null) -> void
 Twip.DocumentProtection.Enforce.get -> bool?
 Twip.DocumentProtection.Enforce.init -> void
 Twip.DocumentProtection.Equals(Twip.DocumentProtection? other) -> bool
@@ -7568,7 +7566,6 @@ Twip.ProtectionKind.ReadOnly = 1 -> Twip.ProtectionKind
 Twip.ProtectionKind.TrackedChanges = 3 -> Twip.ProtectionKind
 Twip.ProtectionState
 Twip.ProtectionState.<Clone>$() -> Twip.ProtectionState!
-Twip.ProtectionState.Deconstruct(out Twip.ProtectionKind Kind, out bool Enforced, out bool Formatting, out bool Password, out bool InEditableRange) -> void
 Twip.ProtectionState.Enforced.get -> bool
 Twip.ProtectionState.Enforced.init -> void
 Twip.ProtectionState.Equals(Twip.ProtectionState? other) -> bool
@@ -7580,7 +7577,6 @@ Twip.ProtectionState.Kind.get -> Twip.ProtectionKind
 Twip.ProtectionState.Kind.init -> void
 Twip.ProtectionState.Password.get -> bool
 Twip.ProtectionState.Password.init -> void
-Twip.ProtectionState.ProtectionState(Twip.ProtectionKind Kind, bool Enforced, bool Formatting, bool Password, bool InEditableRange) -> void
 Twip.ReviewState.Protection.get -> Twip.ProtectionState?
 Twip.ReviewState.Protection.init -> void
 override Twip.DocumentProtection.Equals(object? obj) -> bool
@@ -7660,3 +7656,11 @@ Twip.TablePropertiesDialogValues.CellWidth.get -> Twip.FormatValue<Twip.TableWid
 Twip.TablePropertiesDialogValues.CellWidth.init -> void
 Twip.TablePropertiesDialogValues.Deconstruct(out Twip.TableWidth! Width, out Twip.TableAlignment Alignment, out Twip.Length Indent, out Twip.FormatValue<Twip.RowHeight!> RowHeight, out Twip.FormatValue<bool> RowCanBreak, out Twip.FormatValue<bool> HeaderRow, out Twip.FormatValue<Twip.Length> ColumnWidth, out Twip.FormatValue<Twip.CellAlignment> CellAlignment, out Twip.CellMargins! CellMargins, out bool AllowSpacing, out Twip.Length CellSpacing, out Twip.FormatValue<bool> WrapText, out Twip.FormatValue<bool> FitText, out string! Title, out string! Description, out Twip.FormatValue<Twip.TableWidth!> CellWidth) -> void
 Twip.TablePropertiesDialogValues.TablePropertiesDialogValues(Twip.TableWidth! Width, Twip.TableAlignment Alignment, Twip.Length Indent, Twip.FormatValue<Twip.RowHeight!> RowHeight, Twip.FormatValue<bool> RowCanBreak, Twip.FormatValue<bool> HeaderRow, Twip.FormatValue<Twip.Length> ColumnWidth, Twip.FormatValue<Twip.CellAlignment> CellAlignment, Twip.CellMargins! CellMargins, bool AllowSpacing, Twip.Length CellSpacing, Twip.FormatValue<bool> WrapText, Twip.FormatValue<bool> FitText, string! Title, string! Description, Twip.FormatValue<Twip.TableWidth!> CellWidth) -> void
+Twip.DocumentProtection.Deconstruct(out Twip.ProtectionKind? Kind, out bool? Formatting, out bool? Enforce, out string? Password, out System.Collections.Generic.IReadOnlyList<uint>? UnprotectedSections) -> void
+Twip.DocumentProtection.DocumentProtection(Twip.ProtectionKind? Kind = null, bool? Formatting = null, bool? Enforce = null, string? Password = null, System.Collections.Generic.IReadOnlyList<uint>? UnprotectedSections = null) -> void
+Twip.DocumentProtection.UnprotectedSections.get -> System.Collections.Generic.IReadOnlyList<uint>?
+Twip.DocumentProtection.UnprotectedSections.init -> void
+Twip.ProtectionState.Deconstruct(out Twip.ProtectionKind Kind, out bool Enforced, out bool Formatting, out bool Password, out bool InEditableRange, out System.Collections.Generic.IReadOnlyList<uint>! UnprotectedSections) -> void
+Twip.ProtectionState.ProtectionState(Twip.ProtectionKind Kind, bool Enforced, bool Formatting, bool Password, bool InEditableRange, System.Collections.Generic.IReadOnlyList<uint>! UnprotectedSections) -> void
+Twip.ProtectionState.UnprotectedSections.get -> System.Collections.Generic.IReadOnlyList<uint>!
+Twip.ProtectionState.UnprotectedSections.init -> void

@@ -753,6 +753,9 @@ fn sect_with_page(sect: &str, w: &str, p: &SectionPage, was: Option<&SectionPage
                 put(&mut s, name, (!x.is_empty()).then(|| format!("<{w}{name}>{x}</{w}{name}>")));
             }
         }
+        if was.form_protected != p.form_protected {
+            put(&mut s, "formProt", (!p.form_protected).then(|| format!("<{w}formProt {w}val=\"0\"/>")));
+        }
         if was.no_endnote != p.no_endnote {
             put(&mut s, "noEndnote", p.no_endnote.then(|| format!("<{w}noEndnote/>")));
         }
