@@ -413,11 +413,22 @@ impl Face {
         if harfrust::shape(&sf, &mut buf, ShapeOptions::new().plan(Some(&plan)).features(&feats)).is_err() {
             return Vec::new();
         }
-        buf.glyph_infos()
+        let mut glyphs: Vec<Glyph> = buf
+            .glyph_infos()
             .iter()
             .zip(buf.glyph_positions())
             .map(|(i, p)| Glyph { id: i.glyph_id, cluster: i.cluster, advance: p.x_advance as f64, dx: p.x_offset as f64, dy: p.y_offset as f64 })
-            .collect()
+            .collect();
+        // A cluster's leading offset, in the advance before it: a legacy kern pair whole on its first glyph.
+        for i in 1..glyphs.len() {
+            let dx = glyphs[i].dx;
+            if dx != 0.0 && glyphs[i].cluster != glyphs[i - 1].cluster {
+                glyphs[i - 1].advance += dx;
+                glyphs[i].advance -= dx;
+                glyphs[i].dx = 0.0;
+            }
+        }
+        glyphs
     }
 }
 
@@ -1615,5 +1626,46 @@ mod tests {
         lib.add(ZZYZX).unwrap();
         assert_eq!(lib.check(faces, &Default::default()), Default::default());
         assert_eq!(asked.borrow().len(), 2);
+    }
+
+    /// `sfnt`'s tables with `extra` added, as a TrueType file.
+    fn with_table(sfnt: &[u8], extra: ([u8; 4], &[u8])) -> Vec<u8> {
+        let mut t = sfnt_tables(sfnt);
+        t.push(extra);
+        t.sort_by_key(|x| x.0);
+        let mut out = sfnt[..4].to_vec();
+        out.extend_from_slice(&(t.len() as u16).to_be_bytes());
+        out.extend_from_slice(&[0; 6]);
+        let mut offset = 12 + 16 * t.len();
+        for (tag, data) in &t {
+            out.extend_from_slice(tag);
+            for v in [0, offset, data.len()] {
+                out.extend_from_slice(&(v as u32).to_be_bytes());
+            }
+            offset += data.len().next_multiple_of(4);
+        }
+        for (_, data) in &t {
+            out.extend_from_slice(data);
+            out.resize(out.len().next_multiple_of(4), 0);
+        }
+        out
+    }
+
+    #[test]
+    fn a_legacy_kern_pair_is_whole_on_its_first_glyph() {
+        let mut plain = Fonts::default();
+        plain.add_bytes(SANS.to_vec()).unwrap();
+        let face = plain.face("Stand-in Sans", None, false, false).unwrap();
+        let (y, o) = (face.glyph('Y').unwrap(), face.glyph('o').unwrap());
+        // A version 0 kern table: one horizontal format 0 subtable with the pair (Y, o) at -101.
+        let mut kern = vec![0, 0, 0, 1, 0, 0, 0, 20, 0, 1, 0, 1, 0, 6, 0, 0, 0, 0];
+        for v in [y as u16, o as u16, (-101i16) as u16] {
+            kern.extend_from_slice(&v.to_be_bytes());
+        }
+        let mut kerned = Fonts::default();
+        kerned.add_bytes(with_table(SANS, (*b"kern", &kern))).unwrap();
+        let face = kerned.face("Stand-in Sans", None, false, false).unwrap();
+        let g = face.shape("Yo", true, 0, 0);
+        assert_eq!(g.iter().map(|g| (g.id, g.advance, g.dx)).collect::<Vec<_>>(), [(y, face.advance(y) - 101.0, 0.0), (o, face.advance(o), 0.0)]);
     }
 }
