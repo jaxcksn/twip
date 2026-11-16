@@ -32,6 +32,8 @@ jobs:
         if: github.event_name == 'push'
         uses: googleapis/release-please-action@v5
         with:
+          # A maintainer's token, so the release PR, tag and release are theirs (and CI runs on the PR).
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
           target-branch: ${{ github.ref_name }}
           config-file: .github/release-please-config.json
           manifest-file: .github/.release-please-manifest.json
@@ -39,10 +41,12 @@ jobs:
       # PR's changelog entry. Rewritten on every run: release-please rebuilds the entry when it updates the PR.
       - uses: actions/checkout@v7
         if: github.event_name == 'push'
+        with:
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
       - name: Layout changes
         if: github.event_name == 'push'
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
         run: |
           branch=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --label 'autorelease: pending' --json headRefName --jq '.[0].headRefName // ""')
           [ -n "$branch" ] || exit 0
@@ -69,7 +73,9 @@ jobs:
           open('CHANGELOG.md', 'w', newline='').write(text[:head.end()] + section + body + text[end:])
           EOF
           git diff --quiet && exit 0
-          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+          # The token owner's noreply identity.
+          user=$(gh api user --jq '"\(.id)+\(.login)"')
+          git -c user.name="${user#*+}" -c user.email="$user@users.noreply.github.com" \
             commit -qam 'chore(release): list layout changes'
           git push origin "HEAD:$branch"
 
