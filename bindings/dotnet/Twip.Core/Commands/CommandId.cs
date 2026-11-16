@@ -477,4 +477,14 @@ public enum CommandId
     InsertBookmark,
     /// <summary>Deletes a bookmark.</summary>
     DeleteBookmark,
+    /// <summary>Sets the selected cells' preferred width, text direction, wrapping and fitting.</summary>
+    SetCellProperties,
+    /// <summary>Hides rows and sets their exceptions.</summary>
+    SetRowProperties,
+    /// <summary>Sets the space between a table's cells.</summary>
+    SetTableCellSpacing,
+    /// <summary>Sets a table's alternative text.</summary>
+    SetTableAltText,
+    /// <summary>Sets the table style new tables take.</summary>
+    SetDefaultTableStyle,
 }

@@ -288,6 +288,25 @@ pub struct TableSelection {
     pub alignment: HorizontalAlignment,
     /// The table indent.
     pub indent: Points,
+    /// The cells' preferred width.
+    pub cell_width: Tri<TableWidth>,
+    /// The direction the cells' text runs in.
+    pub text_direction: Tri<crate::api::command::TextFlow>,
+    /// The cells' text wraps.
+    pub wrap_text: Tri<bool>,
+    /// The cells' text is squeezed to fit.
+    pub fit_text: Tri<bool>,
+    /// The rows' end marks are hidden.
+    pub row_hidden: Tri<bool>,
+    /// The space between the table's cells; none when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cell_spacing: Option<Points>,
+    /// The table's alternative text title.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub title: String,
+    /// The table's alternative text description.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub description: String,
 }
 
 /// Which parts of a table style apply.

@@ -1281,6 +1281,18 @@ dialog! {
         pub cell_alignment: Tri<CellAlignment>,
         /// The table's default cell margins.
         pub cell_margins: CellMarginValues,
+        /// Allow spacing between cells.
+        pub allow_spacing: bool,
+        /// The space between cells, when allowed.
+        pub cell_spacing: Points,
+        /// The selected cells' text wraps.
+        pub wrap_text: Tri<bool>,
+        /// The selected cells' text is squeezed to fit.
+        pub fit_text: Tri<bool>,
+        /// The alternative text's title.
+        pub title: String,
+        /// The alternative text's description.
+        pub description: String,
     }
 }
 

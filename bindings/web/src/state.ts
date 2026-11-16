@@ -269,6 +269,22 @@ export interface TableSelection {
   alignment: 'left' | 'center' | 'right';
   /** The table indent. */
   indent: Points;
+  /** The cells' preferred width. */
+  cellWidth: Mixed<TableWidth>;
+  /** The direction the cells' text runs in. */
+  textDirection: Mixed<TextFlow>;
+  /** The cells' text wraps. */
+  wrapText: Tri;
+  /** The cells' text is squeezed to fit. */
+  fitText: Tri;
+  /** The rows' end marks are hidden. */
+  rowHidden: Tri;
+  /** The space between the table's cells; absent for none. */
+  cellSpacing?: Points;
+  /** The table's alternative text title; absent when empty. */
+  title?: string;
+  /** The table's alternative text description; absent when empty. */
+  description?: string;
 }
 
 /** A row height. */

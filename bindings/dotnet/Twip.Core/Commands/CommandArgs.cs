@@ -455,8 +455,12 @@ public enum BorderEdges
     Left,
     /// <summary>The right edge.</summary>
     Right,
-    /// <summary>No edges: removes the borders.</summary>
+    /// <summary>No edges: removes the borders, diagonals too.</summary>
     None,
+    /// <summary>Each cell's diagonal from its top left to its bottom right corner (cells only).</summary>
+    DiagonalDown,
+    /// <summary>Each cell's diagonal from its top right to its bottom left corner (cells only).</summary>
+    DiagonalUp,
 }
 
 /// <summary>A border line style.</summary>
@@ -1524,6 +1528,37 @@ public sealed record CellMarginOptions(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Bottom = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Left = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Right = null);
+
+/// <summary>Cell properties to change (Table Properties' Cell tab); unset values are kept.</summary>
+/// <param name="Width">The preferred width: automatic, points (0 to 1584) or percent of the table (0 to 100).</param>
+/// <param name="TextDirection">The direction text runs in.</param>
+/// <param name="WrapText">Text wraps in the cell.</param>
+/// <param name="FitText">Text is squeezed to fit the cell's width.</param>
+/// <param name="HideMark">The cell's end mark takes no height: an empty cell is as tall as its margins.</param>
+public sealed record CellPropertiesOptions(
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TableWidth? Width = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TextFlow? TextDirection = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? WrapText = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? FitText = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? HideMark = null);
+
+/// <summary>The table properties rows override (row exceptions); unset values are kept.</summary>
+/// <param name="Reset">Removes the rows' exceptions first.</param>
+/// <param name="Alignment">The rows' alignment.</param>
+/// <param name="CellSpacing">The space between the rows' cells, 0 to 1584.</param>
+/// <param name="Shading">The rows' shading.</param>
+/// <param name="Borders">The table borders on the rows' edges.</param>
+public sealed record RowExceptions(
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Reset = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TableAlignment? Alignment = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? CellSpacing = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ColorValue? Shading = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] RowBorders? Borders = null);
+
+/// <summary>Borders on some edges of rows.</summary>
+/// <param name="Edges">Which edges.</param>
+/// <param name="Border">The line; a ½ pt single automatic line when null.</param>
+public sealed record RowBorders(BorderEdges Edges, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CellBorder? Border = null);
 
 /// <summary>Table style options to change; unset values are kept.</summary>
 /// <param name="HeaderRow">Format the header row.</param>

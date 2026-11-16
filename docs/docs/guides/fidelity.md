@@ -102,19 +102,19 @@ Chunk numbers are [roadmap](../roadmap#docx) chunks.
 | Mirror indents | `w:mirrorIndents` | API (`setIndents`) |
 | Outline level | `w:outlineLvl` | API (`setOutline`) |
 | Collapsed by default | `w15:collapsed` | API (`setOutline`) |
-| Text direction | `w:textDirection` | API for paragraphs (`setParagraphTextDirection`); API for sections (`setSectionTextDirection`); Model for cells, 2.9 |
+| Text direction | `w:textDirection` | API for paragraphs (`setParagraphTextDirection`); API for sections (`setSectionTextDirection`); API for cells (`setCellProperties`) |
 | Text box tight wrap | `w:textboxTightWrap` | Laid out; Model, 2.10 |
 | Don't hyphenate | `w:suppressAutoHyphens` | API (`setParagraphFlow`) |
 | Line numbers | `w:suppressLineNumbers` | API (`setParagraphFlow`) |
 | HTML divisions | `w:divId`, `w:divs`, `w:div`, `w:divBdr`, `w:divsChild`, `w:blockQuote`, `w:bodyDiv`, `w:marLeft`, `w:marRight`, `w:marTop`, `w:marBottom` | Laid out (from pasted HTML; Word has no setting for them) |
-| Conditional formatting | `w:cnfStyle` | Kept |
+| Conditional formatting | `w:cnfStyle` | Application (Word's cache of the table style regions a paragraph, row or cell is in; kept as read, and Word recomputes it) |
 | Bidirectional and East Asian | `w:bidi`, `w:adjustRightInd`, `w:kinsoku`, `w:wordWrap`, `w:overflowPunct`, `w:topLinePunct`, `w:autoSpaceDE`, `w:autoSpaceDN`, `w:textAlignment` | After 1.0 |
 
 ## Styles and numbering
 
 | Construct | Elements | Status |
 |---|---|---|
-| Styles | `w:style`, `w:name`, `w:aliases`, `w:basedOn`, `w:next`, `w:link`, `w:autoRedefine`, `w:hidden`, `w:uiPriority`, `w:semiHidden`, `w:unhideWhenUsed`, `w:qFormat`, `w:locked`, `w:personal`, `w:personalCompose`, `w:personalReply`, `w:tblStylePr`, `w:tblStyleRowBandSize`, `w:tblStyleColBandSize` | API (style dialog, `setStyleMeta`); band sizes are Model, 2.9 |
+| Styles | `w:style`, `w:name`, `w:aliases`, `w:basedOn`, `w:next`, `w:link`, `w:autoRedefine`, `w:hidden`, `w:uiPriority`, `w:semiHidden`, `w:unhideWhenUsed`, `w:qFormat`, `w:locked`, `w:personal`, `w:personalCompose`, `w:personalReply`, `w:tblStylePr`, `w:tblStyleRowBandSize`, `w:tblStyleColBandSize` | API (style dialog, `setStyleMeta`; band sizes in the Banding dialog) |
 | Defaults | `w:docDefaults`, `w:rPrDefault`, `w:pPrDefault` | API (`setDocumentDefaults`) |
 | Latent styles | `w:latentStyles`, `w:lsdException` | Application (the style gallery's list) |
 | Lists | `w:abstractNum`, `w:nsid`, `w:multiLevelType`, `w:tmpl`, `w:styleLink`, `w:numStyleLink`, `w:lvl`, `w:start`, `w:numFmt`, `w:lvlRestart`, `w:isLgl`, `w:suff`, `w:lvlText`, `w:lvlPicBulletId`, `w:lvlJc`, `w:num`, `w:abstractNumId`, `w:lvlOverride`, `w:startOverride`, `w:numPicBullet` | API (`setListDefinition`) |
@@ -147,17 +147,18 @@ Chunk numbers are [roadmap](../roadmap#docx) chunks.
 |---|---|---|
 | Tables, rows, cells | `w:tbl`, `w:tblPr`, `w:tblGrid`, `w:gridCol`, `w:tr`, `w:trPr`, `w:tc`, `w:tcPr` | API |
 | Table properties | `w:tblStyle`, `w:tblW`, `w:tblInd`, `w:tblBorders`, `w:tblCellMar`, `w:tblLook`, `w:tblLayout`, `w:tblpPr`, `w:tblOverlap` | API |
-| Cell spacing | `w:tblCellSpacing` | Model, 2.9 |
-| Alt text | `w:tblCaption`, `w:tblDescription` | Kept, 2.9 |
+| Cell spacing | `w:tblCellSpacing` | API (`setTableCellSpacing` and Table Properties; a row's own through `setRowProperties`) |
+| Alt text | `w:tblCaption`, `w:tblDescription` | API (`setTableAltText`, Table Properties' Alt Text tab) |
 | Row properties | `w:trHeight`, `w:cantSplit`, `w:tblHeader` | API |
 | Row grid | `w:gridBefore`, `w:gridAfter`, `w:wBefore`, `w:wAfter` | Laid out, kept |
-| Hidden rows | `w:hidden` | Laid out; Model, 2.9 |
-| Row exceptions | `w:tblPrEx` | Laid out, kept on rewritten and new rows; Model, 2.9 |
-| Cell properties | `w:tcW`, `w:gridSpan`, `w:vMerge`, `w:tcBorders`, `w:insideH`, `w:insideV`, `w:tcMar` | API; percent widths are 2.9 |
+| Hidden rows | `w:hidden` | API (`setRowProperties`: the row-end mark; the row hides when its text is hidden too) |
+| Row exceptions | `w:tblPrEx` | API (`setRowProperties`: alignment, cell spacing, shading and borders); the width, indent, layout, margins and look a row overrides are laid out |
+| Cell properties | `w:tcW`, `w:gridSpan`, `w:vMerge`, `w:tcBorders`, `w:insideH`, `w:insideV`, `w:tcMar` | API (`setCellProperties` sets the preferred width in points or percent) |
 | Horizontal merge (Word 97) | `w:hMerge` | Laid out as a span; a rewritten row writes it as `w:gridSpan` |
-| Diagonal borders | `w:tl2br`, `w:tr2bl` | Kept; Model, 2.9 (drawn in 3.6) |
-| Cell text | `w:noWrap`, `w:tcFitText`, `w:hideMark` | Laid out; Model, 2.9 |
-| Default table style | `w:defaultTableStyle` | Lost on new tables, 2.9 |
+| Diagonal borders | `w:tl2br`, `w:tr2bl` | API (`setCellBorders` with `diagonalDown`, `diagonalUp`); drawn in 3.6 |
+| Cell text | `w:noWrap`, `w:tcFitText`, `w:hideMark` | API (`setCellProperties`; wrapping and fitting in Table Properties too) |
+| Header cells | `w:headers` | Kept with its cell as read: Word's schema doesn't have it, so the API doesn't write it |
+| Default table style | `w:defaultTableStyle` | API (`setDefaultTableStyle`, Set as Default; new tables take it) |
 | Right-to-left tables | `w:bidiVisual` | After 1.0 |
 
 ## Notes and comments

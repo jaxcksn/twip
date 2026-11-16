@@ -126,6 +126,8 @@ pub enum Step {
         section: usize,
         back: Option<Box<SectionBack>>,
     },
+    /// The style new tables take.
+    DefaultTableStyle(Option<String>),
 }
 
 /// The document's page settings: odd and even headers, how pages pair, the gutter's place, and the page borders
@@ -184,6 +186,8 @@ pub struct TableProps {
     pub borders: [Option<crate::docx::props::Border>; 6],
     pub bands: (i64, i64),
     pub floating: Option<crate::docx::props::TablePos>,
+    pub cell_spacing: f64,
+    pub alt: Option<Rc<crate::docx::TableAlt>>,
 }
 
 impl Step {
@@ -361,6 +365,8 @@ impl TableProps {
             borders: t.borders.clone(),
             bands: t.bands,
             floating: t.floating,
+            cell_spacing: t.cell_spacing,
+            alt: t.alt.clone(),
         }
     }
 }
@@ -907,6 +913,10 @@ impl Step {
                 (s.auto_hyphenation, s.hyphenation_zone, s.consecutive_hyphen_limit, s.do_not_hyphenate_caps) = (h.auto, h.zone, h.limit, h.caps);
                 Ok(Applied { inverse: Step::Hyphenation(old), map: Map::Same, hint: None })
             }
+            Step::DefaultTableStyle(id) => {
+                let old = std::mem::replace(&mut doc.settings.default_table_style, id);
+                Ok(Applied { inverse: Step::DefaultTableStyle(old), map: Map::Same, hint: None })
+            }
             Step::PageSettings(p) => {
                 let old = PageSettings::of(&doc.settings);
                 let s = &mut doc.settings;
@@ -968,8 +978,19 @@ impl Step {
             Step::TableProps { table, props } => {
                 let t = idx.table_mut(doc, table).ok_or(StepError::Missing)?;
                 let old = TableProps::of(t);
-                (t.style_id, t.look, t.width, t.jc, t.ind, t.ind_pct, t.borders, t.bands, t.floating) =
-                    (props.style_id, props.look, props.width, props.jc, props.ind, props.ind_pct, props.borders, props.bands, props.floating);
+                (t.style_id, t.look, t.width, t.jc, t.ind, t.ind_pct, t.borders, t.bands, t.floating, t.cell_spacing, t.alt) = (
+                    props.style_id,
+                    props.look,
+                    props.width,
+                    props.jc,
+                    props.ind,
+                    props.ind_pct,
+                    props.borders,
+                    props.bands,
+                    props.floating,
+                    props.cell_spacing,
+                    props.alt,
+                );
                 let slot = idx.table_slot(table).ok_or(StepError::Missing)?;
                 let hint = idx.top_block(slot.container, slot.block).map(|(section, b, row)| Change {
                     section,

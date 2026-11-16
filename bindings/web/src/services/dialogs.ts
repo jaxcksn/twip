@@ -187,6 +187,12 @@ export interface DialogValues {
     columnWidth: Mixed<Points>;
     cellAlignment: Mixed<'top' | 'center' | 'bottom'>;
     cellMargins: { top: Points; bottom: Points; left: Points; right: Points };
+    allowSpacing: boolean;
+    cellSpacing: Points;
+    wrapText: Tri;
+    fitText: Tri;
+    title: string;
+    description: string;
   };
   /** The Picture size dialog. */
   pictureSize: { width: Points; height: Points; scaleWidth: number; scaleHeight: number; lockAspect: boolean; reset: boolean };

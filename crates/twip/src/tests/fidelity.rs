@@ -516,6 +516,7 @@ fn every_edit_keeps_every_construct() {
         // Section and page settings, for the schema check too.
         std::fs::write(d.join("section-settings.docx"), section_settings_package()).expect("writes");
         std::fs::write(d.join("converted-notes.docx"), converted_notes_package()).expect("writes");
+        std::fs::write(d.join("table-properties.docx"), table_properties_package()).expect("writes");
     }
     let cases: Vec<(&Construct, &str, fn(&mut Editor, &Spot) -> Outcome)> = CONSTRUCTS
         .iter()
@@ -669,4 +670,77 @@ fn converted_notes_keep_their_references_and_bodies() {
     assert_eq!(refs(&saved), (e, f + 1, 1), "references swapped");
     let doc = crate::docx::read_editable(&saved).expect("reads back");
     assert_eq!((doc.footnotes.keys().filter(|k| **k > 0).count(), doc.endnotes.keys().filter(|k| **k > 0).count()), (e, f + 1), "bodies swapped");
+}
+
+/// A table with every cell, row and table property set, and a new table in the default table style, saved.
+fn table_properties_package() -> Vec<u8> {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-TBL-BASIC.docx");
+    let mut e = Editor::open(&std::fs::read(path).expect("the fixture"), fonts()).expect("opens");
+    let n = |v: serde_json::Value| serde_json::from_value::<Command>(v).expect("a command");
+    let first = crate::editing::tests::texts_ids(&e)
+        .into_iter()
+        .find(|p| e.index().para_slot(*p).is_some_and(|s| matches!(s.container, crate::editing::index::Container::Cell { .. })));
+    e.select_range(first.expect("a cell"), Unit(0), Unit(0), fonts());
+    for c in [
+        serde_json::json!({ "type": "setCellProperties", "width": { "kind": "percent", "value": 30 }, "textDirection": "btLr", "wrapText": false, "fitText": true, "hideMark": true }),
+        serde_json::json!({ "type": "setCellBorders", "edges": "diagonalDown" }),
+        serde_json::json!({ "type": "setRowProperties", "hidden": true, "exceptions": { "alignment": "center", "cellSpacing": 1.5, "shading": "#D9E2F3", "borders": { "edges": "outside" } } }),
+        serde_json::json!({ "type": "setTableCellSpacing", "value": 2 }),
+        serde_json::json!({ "type": "setTableAltText", "title": "Totals", "description": "Yearly totals" }),
+        serde_json::json!({ "type": "setDefaultTableStyle", "value": "TableNormal" }),
+    ] {
+        let out = e.execute(n(c.clone()), fonts());
+        assert!(matches!(out, Outcome::Changed(_)), "{c}: {out:?}");
+    }
+    let last = *crate::editing::tests::texts_ids(&e).last().expect("a paragraph");
+    e.select_range(last, Unit(0), Unit(0), fonts());
+    for c in [
+        serde_json::json!({ "type": "insertTable", "rows": 2, "columns": 2 }),
+        serde_json::json!({ "type": "setCellBorders", "edges": "diagonalUp" }),
+        serde_json::json!({ "type": "setCellProperties", "hideMark": true }),
+        serde_json::json!({ "type": "setRowProperties", "hidden": true }),
+        serde_json::json!({ "type": "setTableAltText", "title": "New" }),
+    ] {
+        let out = e.execute(n(c.clone()), fonts());
+        assert!(matches!(out, Outcome::Changed(_)), "{c}: {out:?}");
+    }
+    crate::docx::write::save(e.document()).expect("saves")
+}
+
+#[test]
+fn table_properties_are_saved_and_read_back() {
+    let saved = table_properties_package();
+    let xml = String::from_utf8(entries(&saved).into_iter().find(|(n, _)| n == "word/document.xml").expect("the main part").1).expect("UTF-8");
+    for el in [
+        "<w:tcW w:w=\"1500\" w:type=\"pct\"/>",
+        "<w:textDirection w:val=\"btLr\"/>",
+        "<w:noWrap/>",
+        "<w:tcFitText/>",
+        "<w:hideMark/>",
+        "<w:tl2br ",
+        "<w:tr2bl ",
+        "<w:hidden/>",
+        "<w:tblPrEx>",
+        "<w:tblCellSpacing w:w=\"40\" w:type=\"dxa\"/>",
+        "<w:tblCaption w:val=\"Totals\"/>",
+        "<w:tblDescription w:val=\"Yearly totals\"/>",
+        "<w:tblCaption w:val=\"New\"/>",
+    ] {
+        assert!(xml.contains(el), "{el} in {xml}");
+    }
+    let settings = String::from_utf8(entries(&saved).into_iter().find(|(n, _)| n == "word/settings.xml").expect("settings").1).expect("UTF-8");
+    assert!(settings.contains("<w:defaultTableStyle w:val=\"TableNormal\"/>"), "{settings}");
+    let doc = crate::docx::read_editable(&saved).expect("reads back");
+    let tables: Vec<&crate::docx::Table> =
+        doc.sections.iter().flat_map(|s| s.blocks.iter()).filter_map(|b| if let crate::docx::Block::Table(t) = b { Some(t) } else { None }).collect();
+    let (t, new) = (tables[0], tables[tables.len() - 1]);
+    let c = &t.rows[0].cells[0];
+    assert_eq!((c.text_direction.as_str(), c.no_wrap, c.fit_text, c.hide_mark), ("btLr", true, true, true));
+    assert!(c.diagonals.as_ref().is_some_and(|d| d[0].is_some()));
+    assert!(t.rows[0].hidden && t.rows[0].shading == Some(0xD9E2F3) && t.rows[0].borders.is_some());
+    assert_eq!((t.cell_spacing, t.alt.as_ref().map(|a| a.title.as_str())), (2.0, Some("Totals")));
+    assert!(xml.contains("<w:tblStyle w:val=\"TableNormal\"/>"), "the new table takes the default style");
+    // The new table follows the last one with nothing between: they read as one.
+    let row = &new.rows[new.rows.len() - 2];
+    assert!(row.hidden && row.cells[0].hide_mark && row.cells[0].diagonals.as_ref().is_some_and(|d| d[1].is_some()));
 }

@@ -149,6 +149,9 @@ export interface BorderLine {
 export type BorderLineStyle = 'single' | 'double' | 'dotted' | 'dashed' | 'thick' | 'dotDash' | 'dotDotDash' | 'triple' | 'thinThickSmallGap' | 'thickThinSmallGap' | 'thinThickThinSmallGap' | 'wave' | 'doubleWave' | 'threeDEmboss' | 'threeDEngrave' | 'outset' | 'inset';
 
 // @public
+export type CellBorderEdges = 'all' | 'outside' | 'inside' | 'insideHorizontal' | 'insideVertical' | 'top' | 'bottom' | 'left' | 'right' | 'diagonalDown' | 'diagonalUp' | 'none';
+
+// @public
 export interface CellPlace {
     col: number;
     colSpan: number;
@@ -590,7 +593,7 @@ export interface Commands {
     setBold(on: boolean): Promise<void>;
     setCellAlignment(vertical: 'top' | 'center' | 'bottom'): Promise<void>;
     setCellBorders(options: {
-        edges: 'all' | 'outside' | 'inside' | 'insideHorizontal' | 'insideVertical' | 'top' | 'bottom' | 'left' | 'right' | 'none';
+        edges: CellBorderEdges;
         border?: BorderLine;
     }): Promise<void>;
     setCellMargins(options: {
@@ -598,6 +601,13 @@ export interface Commands {
         bottom?: Points;
         left?: Points;
         right?: Points;
+    }): Promise<void>;
+    setCellProperties(options: {
+        width?: TableWidth;
+        textDirection?: TextFlow;
+        wrapText?: boolean;
+        fitText?: boolean;
+        hideMark?: boolean;
     }): Promise<void>;
     setCellShading(color: Color | null): Promise<void>;
     setCharacterEffects(effects: CharacterEffects): Promise<void>;
@@ -625,6 +635,7 @@ export interface Commands {
         options?: ControlOptions;
         placeholderImage?: PlaceholderImage;
     }): Promise<void>;
+    setDefaultTableStyle(styleId: StyleId | null): Promise<void>;
     setDefaultTabStop(spacing: Points): Promise<void>;
     setDifferentFirstPage(on: boolean): Promise<void>;
     setDifferentOddEvenPages(on: boolean): Promise<void>;
@@ -789,6 +800,19 @@ export interface Commands {
     }): Promise<void>;
     setRowCanBreak(on: boolean): Promise<void>;
     setRowHeight(height: RowHeight): Promise<void>;
+    setRowProperties(options: {
+        hidden?: boolean;
+        exceptions?: {
+            reset?: boolean;
+            alignment?: 'left' | 'center' | 'right';
+            cellSpacing?: Points;
+            shading?: Color;
+            borders?: {
+                edges: CellBorderEdges;
+                border?: BorderLine;
+            };
+        };
+    }): Promise<void>;
     setRulerTabType(type: TabSelector): Promise<void>;
     setSectionBreakType(kind: SectionBreakKind): Promise<void>;
     setSectionTextDirection(direction: TextFlow): Promise<void>;
@@ -824,6 +848,11 @@ export interface Commands {
     }): Promise<void>;
     setSuperscript(on: boolean): Promise<void>;
     setTableAlignment(alignment: 'left' | 'center' | 'right'): Promise<void>;
+    setTableAltText(options: {
+        title?: string;
+        description?: string;
+    }): Promise<void>;
+    setTableCellSpacing(spacing: Points | null): Promise<void>;
     setTableIndent(indent: Points): Promise<void>;
     setTablePosition(position: TablePosition | null): Promise<void>;
     setTableStyle(styleId: StyleId): Promise<void>;
@@ -1278,6 +1307,12 @@ export interface DialogValues {
             left: Points;
             right: Points;
         };
+        allowSpacing: boolean;
+        cellSpacing: Points;
+        wrapText: Tri;
+        fitText: Tri;
+        title: string;
+        description: string;
     };
     tabs: {
         stops: {
@@ -2816,18 +2851,26 @@ export interface TableSelection {
     canMerge: boolean;
     cellAlignment: Mixed<'top' | 'center' | 'bottom'>;
     cellShading: Mixed<Color | 'none'>;
+    cellSpacing?: Points;
+    cellWidth: Mixed<TableWidth>;
     column: number;
     columns: number;
     columnWidth: Mixed<Points>;
+    description?: string;
+    fitText: Tri;
     headerRow: Tri;
     indent: Points;
     row: number;
     rowCanBreak: Tri;
     rowHeight: Mixed<RowHeight>;
+    rowHidden: Tri;
     rows: number;
     style: StyleId | null;
     styleOptions: TableStyleOptions;
+    textDirection: Mixed<TextFlow>;
+    title?: string;
     width: TableWidth;
+    wrapText: Tri;
 }
 
 // @public

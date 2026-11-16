@@ -343,6 +343,30 @@ public sealed record TableSelection
 
     /// <summary>The table's indent.</summary>
     public Length Indent { get; init; }
+
+    /// <summary>The cells' preferred width.</summary>
+    public FormatValue<TableWidth> CellWidth { get; init; }
+
+    /// <summary>The direction the cells' text runs in.</summary>
+    public FormatValue<TextFlow> TextDirection { get; init; }
+
+    /// <summary>The cells' text wraps.</summary>
+    public FormatValue<bool> WrapText { get; init; }
+
+    /// <summary>The cells' text is squeezed to fit.</summary>
+    public FormatValue<bool> FitText { get; init; }
+
+    /// <summary>The rows' end marks are hidden.</summary>
+    public FormatValue<bool> RowHidden { get; init; }
+
+    /// <summary>The space between the table's cells; null for none.</summary>
+    public Length? CellSpacing { get; init; }
+
+    /// <summary>The table's alternative text title.</summary>
+    public string Title { get; init; } = "";
+
+    /// <summary>The table's alternative text description.</summary>
+    public string Description { get; init; } = "";
 }
 
 /// <summary>Which parts of a table style apply.</summary>

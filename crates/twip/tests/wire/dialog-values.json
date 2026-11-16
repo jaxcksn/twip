@@ -272,6 +272,7 @@
   },
   {
     "alignment": "left",
+    "allowSpacing": true,
     "cellAlignment": "mixed",
     "cellMargins": {
       "bottom": 0.5,
@@ -279,15 +280,20 @@
       "right": 5.5,
       "top": 0.5
     },
+    "cellSpacing": 1.5,
     "columnWidth": 120.5,
+    "description": "Yearly totals by region",
+    "fitText": false,
     "headerRow": false,
     "indent": 5.5,
     "kind": "tableProperties",
     "rowCanBreak": true,
     "rowHeight": "auto",
+    "title": "Totals",
     "width": {
       "kind": "auto"
-    }
+    },
+    "wrapText": true
   },
   {
     "height": 72.5,

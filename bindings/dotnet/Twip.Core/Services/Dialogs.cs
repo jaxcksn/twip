@@ -726,9 +726,16 @@ public sealed record CellMargins(Length Top, Length Bottom, Length Left, Length 
 /// <param name="ColumnWidth">The column width.</param>
 /// <param name="CellAlignment">The cell vertical alignment.</param>
 /// <param name="CellMargins">The default cell margins.</param>
+/// <param name="AllowSpacing">Allow spacing between cells.</param>
+/// <param name="CellSpacing">The space between cells, when allowed.</param>
+/// <param name="WrapText">The selected cells' text wraps.</param>
+/// <param name="FitText">The selected cells' text is squeezed to fit.</param>
+/// <param name="Title">The alternative text's title.</param>
+/// <param name="Description">The alternative text's description.</param>
 public sealed record TablePropertiesDialogValues(
     TableWidth Width, TableAlignment Alignment, Length Indent, FormatValue<RowHeight> RowHeight, FormatValue<bool> RowCanBreak,
-    FormatValue<bool> HeaderRow, FormatValue<Length> ColumnWidth, FormatValue<CellAlignment> CellAlignment, CellMargins CellMargins);
+    FormatValue<bool> HeaderRow, FormatValue<Length> ColumnWidth, FormatValue<CellAlignment> CellAlignment, CellMargins CellMargins,
+    bool AllowSpacing, Length CellSpacing, FormatValue<bool> WrapText, FormatValue<bool> FitText, string Title, string Description);
 
 /// <summary>The picture Size dialog's values.</summary>
 /// <param name="Width">The width.</param>

@@ -913,6 +913,9 @@ pub struct Borders {
     pub right: Option<Border>,
     pub inside_h: Option<Border>,
     pub inside_v: Option<Border>,
+    /// A cell's diagonals: top left to bottom right, top right to bottom left.
+    pub tl2br: Option<Border>,
+    pub tr2bl: Option<Border>,
 }
 
 impl Borders {
@@ -925,6 +928,8 @@ impl Borders {
             right: b("right").or_else(|| b("end")),
             inside_h: b("insideH"),
             inside_v: b("insideV"),
+            tl2br: b("tl2br"),
+            tr2bl: b("tr2bl"),
         }
     }
 
@@ -932,7 +937,7 @@ impl Borders {
         macro_rules! take {
             ($($f:ident),*) => { $( if o.$f.is_some() { self.$f = o.$f.clone(); } )* };
         }
-        take!(top, left, bottom, right, inside_h, inside_v);
+        take!(top, left, bottom, right, inside_h, inside_v, tl2br, tr2bl);
     }
 }
 

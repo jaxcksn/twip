@@ -522,6 +522,10 @@ impl Editor {
                     | C::SetCellShading
                     | C::SetCellBorders
                     | C::SetCellMargins
+                    | C::SetCellProperties
+                    | C::SetRowProperties
+                    | C::SetTableCellSpacing
+                    | C::SetTableAltText
                     | C::SetHeaderRow
                     | C::SetRowHeight
                     | C::SetRowCanBreak
@@ -639,6 +643,20 @@ impl Editor {
                 _ => HorizontalAlignment::Left,
             },
             indent: Points(t.ind),
+            cell_width: fold(cells.iter().map(|c| match c.width {
+                Some(crate::docx::props::Width::Dxa(v)) => TableWidth::Points { value: Points(v) },
+                Some(crate::docx::props::Width::Pct(f)) => TableWidth::Percent { value: f * 100.0 },
+                _ => TableWidth::Auto,
+            })),
+            text_direction: fold(
+                cells.iter().map(|c| serde_json::from_value(serde_json::Value::String(c.text_direction.clone())).unwrap_or_default()),
+            ),
+            wrap_text: fold(cells.iter().map(|c| !c.no_wrap)),
+            fit_text: fold(cells.iter().map(|c| c.fit_text)),
+            row_hidden: fold(rows.iter().map(|r| r.hidden)),
+            cell_spacing: (t.cell_spacing > 0.0).then_some(Points(t.cell_spacing)),
+            title: t.alt.as_ref().map(|a| a.title.clone()).unwrap_or_default(),
+            description: t.alt.as_ref().map(|a| a.description.clone()).unwrap_or_default(),
         })
     }
 

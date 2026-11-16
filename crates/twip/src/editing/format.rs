@@ -125,6 +125,9 @@ impl Editor {
                     c.v_align = tcp.v_align.clone().unwrap_or_else(|| "top".into());
                     c.text_direction = tcp.text_direction.clone().unwrap_or_else(|| "lrTb".into());
                     c.no_wrap = tcp.no_wrap.unwrap_or(false);
+                    c.fit_text = tcp.fit_text.unwrap_or(false);
+                    let b = &tcp.borders;
+                    c.diagonals = (b.tl2br.is_some() || b.tr2bl.is_some()).then(|| Rc::new([b.tl2br.clone(), b.tr2bl.clone()]));
                 }
             }
             if rows != t.rows {

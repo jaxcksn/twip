@@ -803,6 +803,7 @@ pub(crate) fn read_settings(xml: Option<&str>) -> Settings {
     s.even_and_odd = flag(root, "evenAndOddHeaders").unwrap_or(false);
     s.mirror_margins = flag(root, "mirrorMargins").unwrap_or(false);
     s.gutter_at_top = flag(root, "gutterAtTop").unwrap_or(false);
+    s.default_table_style = child(root, "defaultTableStyle").and_then(val).filter(|v| !v.is_empty()).map(str::to_string);
     let rev = flag(root, "bookFoldRevPrinting").unwrap_or(false);
     s.book_fold = (rev || flag(root, "bookFoldPrinting").unwrap_or(false)).then_some(rev);
     s.strict_kinsoku = flag(root, "strictFirstAndLastChars").unwrap_or(false);
@@ -2905,6 +2906,8 @@ impl Reader {
                     no_wrap: tcp.no_wrap.unwrap_or(false),
                     fit_text: tcp.fit_text.unwrap_or(false),
                     hide_mark: tc_pr.and_then(|p| child(p, "hideMark")).is_some_and(|n| !matches!(attr(n, "val"), Some("0" | "false" | "off"))),
+                    diagonals: (tcp.borders.tl2br.is_some() || tcp.borders.tr2bl.is_some())
+                        .then(|| Rc::new([tcp.borders.tl2br.clone(), tcp.borders.tr2bl.clone()])),
                     direct: Raw(child(*cn, "tcPr").map(|n| Rc::from(&n.document().input_text()[n.range()]))),
                     blocks,
                     controls: cell_controls.clone(),
@@ -2940,6 +2943,7 @@ impl Reader {
                 cell_spacing: trp.cell_spacing.or(ex.cell_spacing).map(|s| s.max(0.0)),
                 run: (ex.fixed == Some(true) && tbl.fixed != Some(true)).then(|| ex.width.or(tbl.width).unwrap_or(Width::Auto)),
                 nudge: None,
+                hidden: tr_pr.and_then(|p| child(p, "hidden")).is_some_and(on_off),
                 vanished: tr_pr.and_then(|p| child(p, "hidden")).is_some_and(|n| !matches!(attr(n, "val"), Some("0" | "false" | "off")))
                     && cells.iter().all(|c| {
                         c.blocks.iter().all(|b| match b {
@@ -3008,6 +3012,11 @@ impl Reader {
             cell_spacing: tbl.cell_spacing.unwrap_or(0.0),
             look: direct.look,
             bands: (row_band, col_band),
+            alt: {
+                let text = |name: &str| child(t, "tblPr").and_then(|p| child(p, name)).and_then(val).unwrap_or_default().to_string();
+                let alt = crate::docx::TableAlt { title: text("tblCaption"), description: text("tblDescription") };
+                (alt != crate::docx::TableAlt::default()).then(|| Rc::new(alt))
+            },
             floating: tbl.floating,
             bidi_visual: tbl.bidi_visual.unwrap_or(false),
             grid,

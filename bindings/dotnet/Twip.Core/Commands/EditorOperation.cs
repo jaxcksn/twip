@@ -732,6 +732,28 @@ public abstract partial record EditorOperation
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation SetCellMargins(CellMarginOptions options) => Op(CommandId.SetCellMargins, Arg.Flatten(options));
 
+    /// <summary>Sets the selected cells' preferred width, text direction, wrapping, fitting and end mark.</summary>
+    /// <param name="options">The properties to change.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetCellProperties(CellPropertiesOptions options) => Op(CommandId.SetCellProperties, Arg.Flatten(options));
+
+    /// <summary>Hides the selected rows' end marks (a row hides when its text is hidden too), and sets the table properties they override.</summary>
+    /// <param name="hidden">The rows' end marks are hidden; kept when null.</param>
+    /// <param name="exceptions">The table properties the rows override; kept when null.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetRowProperties(bool? hidden = null, RowExceptions? exceptions = null) => Op(CommandId.SetRowProperties, new Arg("hidden", Nullable(hidden), Optional: true), new Arg("exceptions", exceptions is null ? null : Node(exceptions), Optional: true));
+
+    /// <summary>Sets the space between the table's cells, or none.</summary>
+    /// <param name="spacing">0 to 1584 points; null for none.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetTableCellSpacing(Length? spacing) => Op(CommandId.SetTableCellSpacing, new Arg("value", Nullable(spacing)));
+
+    /// <summary>Sets the table's alternative text.</summary>
+    /// <param name="title">The title; kept when null, removed when empty.</param>
+    /// <param name="description">The description; kept when null, removed when empty.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetTableAltText(string? title = null, string? description = null) => Op(CommandId.SetTableAltText, new Arg("title", title is { } title_ ? Node(title_) : null, Optional: true), new Arg("description", description is { } description_ ? Node(description_) : null, Optional: true));
+
     /// <summary>Repeats the selected rows as a header row on each page.</summary>
     /// <param name="on">Whether they repeat.</param>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
@@ -783,6 +805,11 @@ public abstract partial record EditorOperation
     /// <param name="styleId">An existing table style.</param>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation SetTableStyle(StyleId styleId) => Op(CommandId.SetTableStyle, new Arg("value", Node(styleId)));
+
+    /// <summary>Sets the table style new tables take (Set as Default).</summary>
+    /// <param name="styleId">A table style; null for Table Grid.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetDefaultTableStyle(StyleId? styleId) => Op(CommandId.SetDefaultTableStyle, new Arg("value", styleId is { } s ? Node(s) : null));
 
     /// <summary>Sets which parts of the table style apply. Unset values are kept.</summary>
     /// <param name="options">The options to change.</param>

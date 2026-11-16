@@ -1,0 +1,29 @@
+{
+  "name": "table-properties",
+  "fixture": "editor/FX-TBL-BASIC.docx",
+  "steps": [
+    { "op": "open" },
+    { "op": "call", "method": "find.next", "args": [{ "text": "B3" }], "result": { "found": true } },
+    { "op": "command", "command": { "type": "setCellProperties", "width": { "kind": "percent", "value": 30 }, "textDirection": "btLr", "wrapText": false, "fitText": true } },
+    { "op": "command", "command": { "type": "setCellProperties", "width": { "kind": "percent", "value": 130 } } },
+    { "op": "expectError", "code": "invalid-argument" },
+    { "op": "command", "command": { "type": "setCellBorders", "edges": "diagonalDown" } },
+    { "op": "command", "command": { "type": "setRowProperties", "hidden": true, "exceptions": { "alignment": "center", "shading": "#D9E2F3" } } },
+    { "op": "command", "command": { "type": "setTableCellSpacing", "value": 2 } },
+    { "op": "command", "command": { "type": "setTableAltText", "title": "Totals", "description": "Yearly totals" } },
+    { "op": "expectState", "match": { "selection": { "table": {
+      "cellWidth": { "kind": "percent", "value": 30 }, "textDirection": "btLr", "wrapText": false, "fitText": true, "rowHidden": true,
+      "cellSpacing": 2, "title": "Totals", "description": "Yearly totals"
+    } } } },
+    { "op": "export", "format": "docx" },
+    { "op": "reopen" },
+    { "op": "call", "method": "find.next", "args": [{ "text": "B3" }], "result": { "found": true } },
+    { "op": "expectState", "match": { "selection": { "table": {
+      "cellWidth": { "kind": "percent", "value": 30 }, "textDirection": "btLr", "wrapText": false, "fitText": true, "rowHidden": true,
+      "cellSpacing": 2, "title": "Totals"
+    } } } },
+    { "op": "command", "command": { "type": "setTableCellSpacing", "value": null } },
+    { "op": "command", "command": { "type": "setDefaultTableStyle", "value": "Nope" } },
+    { "op": "expectError", "code": "invalid-argument" }
+  ]
+}

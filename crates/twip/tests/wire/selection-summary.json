@@ -156,9 +156,16 @@
       "canMerge": true,
       "cellAlignment": "bottom",
       "cellShading": "none",
+      "cellSpacing": 1.5,
+      "cellWidth": {
+        "kind": "percent",
+        "value": 25.0
+      },
       "column": 2,
       "columnWidth": "mixed",
       "columns": 3,
+      "description": "Yearly totals by region",
+      "fitText": "mixed",
       "headerRow": true,
       "indent": 0.5,
       "row": 1,
@@ -167,6 +174,7 @@
         "height": 20.5,
         "rule": "exact"
       },
+      "rowHidden": false,
       "rows": 4,
       "style": "TableGrid",
       "styleOptions": {
@@ -177,10 +185,13 @@
         "lastColumn": false,
         "totalRow": false
       },
+      "textDirection": "btLr",
+      "title": "Totals",
       "width": {
         "kind": "points",
         "value": 432.5
-      }
+      },
+      "wrapText": true
     },
     "text": "Total due"
   }

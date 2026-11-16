@@ -163,6 +163,12 @@ pub fn values(kind: DialogKind, state: &State, cx: &Context) -> Result<DialogVal
                 // shortcut: the state has no cell margins; the dialog starts from the default (5.4 pt left and right),
                 // and sets them only when changed.
                 cell_margins: CellMarginValues { left: Points(5.4), right: Points(5.4), ..CellMarginValues::default() },
+                allow_spacing: t.cell_spacing.is_some(),
+                cell_spacing: t.cell_spacing.unwrap_or_default(),
+                wrap_text: t.wrap_text,
+                fit_text: t.fit_text,
+                title: t.title.clone(),
+                description: t.description.clone(),
             })
         }
         DialogKind::PictureSize => {
@@ -365,6 +371,12 @@ fn fields(values: &DialogValues, cx: &Context) -> BTreeMap<String, FieldInfo> {
                 ("columnWidth", number("Column width", FieldKind::Length, 0.0, 1584.0, 1.0)),
                 ("cellAlignment", choice("Vertical alignment", &[("top", "Top"), ("center", "Center"), ("bottom", "Bottom")])),
                 ("cellMargins", field("Cell margins", FieldKind::Length)),
+                ("allowSpacing", field("Allow spacing between cells", FieldKind::Toggle)),
+                ("cellSpacing", FieldInfo { enabled: v.allow_spacing, ..number("Spacing between cells", FieldKind::Length, 0.0, 1584.0, 0.05) }),
+                ("wrapText", field("Wrap text", FieldKind::Toggle)),
+                ("fitText", field("Fit text", FieldKind::Toggle)),
+                ("title", field("Title", FieldKind::Text)),
+                ("description", field("Description", FieldKind::Text)),
             ]
         }
         DialogValues::PictureSize(_) => vec![
@@ -1145,6 +1157,20 @@ pub fn commands(values: &DialogValues, state: &State, cx: &Context) -> Result<Ve
                     bottom: changed(m.bottom, was.bottom),
                     left: changed(m.left, was.left),
                     right: changed(m.right, was.right),
+                }));
+            }
+            let spacing = |d: &crate::api::services::TablePropertiesDialog| d.allow_spacing.then_some(d.cell_spacing);
+            if spacing(v) != spacing(n) {
+                out.push(Command::SetTableCellSpacing(spacing(v)));
+            }
+            let (wrap, fit) = (set(&v.wrap_text, &n.wrap_text), set(&v.fit_text, &n.fit_text));
+            if wrap.is_some() || fit.is_some() {
+                out.push(Command::SetCellProperties(crate::api::command::CellProperties { wrap_text: wrap, fit_text: fit, ..Default::default() }));
+            }
+            if (&v.title, &v.description) != (&n.title, &n.description) {
+                out.push(Command::SetTableAltText(crate::api::command::TableAltText {
+                    title: Some(v.title.clone()),
+                    description: Some(v.description.clone()),
                 }));
             }
         }

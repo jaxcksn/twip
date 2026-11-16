@@ -1005,6 +1005,8 @@ pub struct Cell {
     pub fit_text: bool,
     /// `w:hideMark`.
     pub hide_mark: bool,
+    /// The diagonal borders, top left to bottom right and top right to bottom left (`w:tl2br`, `w:tr2bl`).
+    pub diagonals: Option<Rc<[Option<Border>; 2]>>,
     /// The cell's `w:tcPr` as read (or as table formatting changed it): what re-resolution merges over the cell's
     /// table-style region when its place in the table changes.
     pub direct: Raw,
@@ -1033,6 +1035,8 @@ pub struct Row {
     pub borders: Option<Rc<[Option<Border>; 6]>>,
     /// The row's exception shading (`w:tblPrEx/w:shd`).
     pub shading: Option<u32>,
+    /// The row-end mark is hidden (`trPr/w:hidden`).
+    pub hidden: bool,
     /// Every character of the row, its row-end mark included, is hidden.
     pub vanished: bool,
     /// The row's own cell spacing (`trPr` or `w:tblPrEx`).
@@ -1056,6 +1060,13 @@ pub struct Row {
     pub rev: RowRevisions,
 }
 
+/// A table's alternative text.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct TableAlt {
+    pub title: String,
+    pub description: String,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Table {
     pub style_id: Option<String>,
@@ -1072,6 +1083,8 @@ pub struct Table {
     pub cell_spacing: f64,
     pub look: Option<Look>,
     pub bands: (i64, i64),
+    /// The alternative text's title and description (`w:tblCaption`, `w:tblDescription`).
+    pub alt: Option<Rc<TableAlt>>,
     pub floating: Option<TablePos>,
     pub bidi_visual: bool,
     pub grid: Vec<f64>,
@@ -1298,6 +1311,8 @@ pub struct Settings {
     pub even_and_odd: bool,
     pub mirror_margins: bool,
     pub gutter_at_top: bool,
+    /// The style new tables take (`w:defaultTableStyle`).
+    pub default_table_style: Option<String>,
     /// `w:bookFoldPrinting` / `w:bookFoldRevPrinting`: `Some(reversed)`.
     pub book_fold: Option<bool>,
     /// `w:strictFirstAndLastChars`: the strict East Asian line-breaking level.

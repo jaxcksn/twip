@@ -2608,7 +2608,6 @@ Twip.TablePropertiesDialogValues.CellMargins.get -> Twip.CellMargins!
 Twip.TablePropertiesDialogValues.CellMargins.init -> void
 Twip.TablePropertiesDialogValues.ColumnWidth.get -> Twip.FormatValue<Twip.Length>
 Twip.TablePropertiesDialogValues.ColumnWidth.init -> void
-Twip.TablePropertiesDialogValues.Deconstruct(out Twip.TableWidth! Width, out Twip.TableAlignment Alignment, out Twip.Length Indent, out Twip.FormatValue<Twip.RowHeight!> RowHeight, out Twip.FormatValue<bool> RowCanBreak, out Twip.FormatValue<bool> HeaderRow, out Twip.FormatValue<Twip.Length> ColumnWidth, out Twip.FormatValue<Twip.CellAlignment> CellAlignment, out Twip.CellMargins! CellMargins) -> void
 Twip.TablePropertiesDialogValues.Equals(Twip.TablePropertiesDialogValues? other) -> bool
 Twip.TablePropertiesDialogValues.HeaderRow.get -> Twip.FormatValue<bool>
 Twip.TablePropertiesDialogValues.HeaderRow.init -> void
@@ -2618,7 +2617,6 @@ Twip.TablePropertiesDialogValues.RowCanBreak.get -> Twip.FormatValue<bool>
 Twip.TablePropertiesDialogValues.RowCanBreak.init -> void
 Twip.TablePropertiesDialogValues.RowHeight.get -> Twip.FormatValue<Twip.RowHeight!>
 Twip.TablePropertiesDialogValues.RowHeight.init -> void
-Twip.TablePropertiesDialogValues.TablePropertiesDialogValues(Twip.TableWidth! Width, Twip.TableAlignment Alignment, Twip.Length Indent, Twip.FormatValue<Twip.RowHeight!> RowHeight, Twip.FormatValue<bool> RowCanBreak, Twip.FormatValue<bool> HeaderRow, Twip.FormatValue<Twip.Length> ColumnWidth, Twip.FormatValue<Twip.CellAlignment> CellAlignment, Twip.CellMargins! CellMargins) -> void
 Twip.TablePropertiesDialogValues.Width.get -> Twip.TableWidth!
 Twip.TablePropertiesDialogValues.Width.init -> void
 Twip.TableSelection
@@ -7013,3 +7011,104 @@ static Twip.EditorOperation.DeleteBookmark(string! name) -> Twip.EditorOperation
 static Twip.EditorOperation.GoToBookmark(string! name) -> Twip.EditorOperation!
 static Twip.EditorOperation.InsertBookmark(string! name) -> Twip.EditorOperation!
 static Twip.EditorOperation.SetViewOptions(bool? formattingMarks = null, bool? gridlines = null, bool? textBoundaries = null, bool? liveLayout = null, Twip.ChromeTheme? theme = null, Twip.ColorValue? accent = null, Twip.DocumentAppearance? appearance = null, Twip.MeasureDetail? detail = null, Twip.ObjectGrid? objectGrid = null, Twip.ThemeColors? themeColors = null, Twip.FieldShading? fieldShading = null, System.Collections.Generic.IReadOnlyList<Twip.CursorOverride!>? cursorOverrides = null, bool? controlLabels = null, bool? bookmarks = null) -> Twip.EditorOperation!
+Twip.BorderEdges.DiagonalDown = 10 -> Twip.BorderEdges
+Twip.BorderEdges.DiagonalUp = 11 -> Twip.BorderEdges
+Twip.CellPropertiesOptions
+Twip.CellPropertiesOptions.<Clone>$() -> Twip.CellPropertiesOptions!
+Twip.CellPropertiesOptions.Equals(Twip.CellPropertiesOptions? other) -> bool
+Twip.CellPropertiesOptions.FitText.get -> bool?
+Twip.CellPropertiesOptions.FitText.init -> void
+Twip.CellPropertiesOptions.HideMark.get -> bool?
+Twip.CellPropertiesOptions.HideMark.init -> void
+Twip.CellPropertiesOptions.TextDirection.get -> Twip.TextFlow?
+Twip.CellPropertiesOptions.TextDirection.init -> void
+Twip.CellPropertiesOptions.Width.get -> Twip.TableWidth?
+Twip.CellPropertiesOptions.Width.init -> void
+Twip.CellPropertiesOptions.WrapText.get -> bool?
+Twip.CellPropertiesOptions.WrapText.init -> void
+Twip.CommandId.SetCellProperties = 237 -> Twip.CommandId
+Twip.CommandId.SetDefaultTableStyle = 241 -> Twip.CommandId
+Twip.CommandId.SetRowProperties = 238 -> Twip.CommandId
+Twip.CommandId.SetTableAltText = 240 -> Twip.CommandId
+Twip.CommandId.SetTableCellSpacing = 239 -> Twip.CommandId
+Twip.EditorCommands.SetCellPropertiesAsync(Twip.CellPropertiesOptions! options, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetDefaultTableStyleAsync(Twip.StyleId? styleId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetRowPropertiesAsync(bool? hidden = null, Twip.RowExceptions? exceptions = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetTableAltTextAsync(string? title = null, string? description = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetTableCellSpacingAsync(Twip.Length? spacing, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.RowBorders
+Twip.RowBorders.<Clone>$() -> Twip.RowBorders!
+Twip.RowBorders.Border.get -> Twip.CellBorder?
+Twip.RowBorders.Border.init -> void
+Twip.RowBorders.Deconstruct(out Twip.BorderEdges Edges, out Twip.CellBorder? Border) -> void
+Twip.RowBorders.Edges.get -> Twip.BorderEdges
+Twip.RowBorders.Edges.init -> void
+Twip.RowBorders.Equals(Twip.RowBorders? other) -> bool
+Twip.RowBorders.RowBorders(Twip.BorderEdges Edges, Twip.CellBorder? Border = null) -> void
+Twip.RowExceptions
+Twip.RowExceptions.<Clone>$() -> Twip.RowExceptions!
+Twip.RowExceptions.Alignment.get -> Twip.TableAlignment?
+Twip.RowExceptions.Alignment.init -> void
+Twip.RowExceptions.Borders.get -> Twip.RowBorders?
+Twip.RowExceptions.Borders.init -> void
+Twip.RowExceptions.CellSpacing.get -> Twip.Length?
+Twip.RowExceptions.CellSpacing.init -> void
+Twip.RowExceptions.Deconstruct(out bool? Reset, out Twip.TableAlignment? Alignment, out Twip.Length? CellSpacing, out Twip.ColorValue? Shading, out Twip.RowBorders? Borders) -> void
+Twip.RowExceptions.Equals(Twip.RowExceptions? other) -> bool
+Twip.RowExceptions.Reset.get -> bool?
+Twip.RowExceptions.Reset.init -> void
+Twip.RowExceptions.RowExceptions(bool? Reset = null, Twip.TableAlignment? Alignment = null, Twip.Length? CellSpacing = null, Twip.ColorValue? Shading = null, Twip.RowBorders? Borders = null) -> void
+Twip.RowExceptions.Shading.get -> Twip.ColorValue?
+Twip.RowExceptions.Shading.init -> void
+Twip.TablePropertiesDialogValues.AllowSpacing.get -> bool
+Twip.TablePropertiesDialogValues.AllowSpacing.init -> void
+Twip.TablePropertiesDialogValues.CellSpacing.get -> Twip.Length
+Twip.TablePropertiesDialogValues.CellSpacing.init -> void
+Twip.TablePropertiesDialogValues.Deconstruct(out Twip.TableWidth! Width, out Twip.TableAlignment Alignment, out Twip.Length Indent, out Twip.FormatValue<Twip.RowHeight!> RowHeight, out Twip.FormatValue<bool> RowCanBreak, out Twip.FormatValue<bool> HeaderRow, out Twip.FormatValue<Twip.Length> ColumnWidth, out Twip.FormatValue<Twip.CellAlignment> CellAlignment, out Twip.CellMargins! CellMargins, out bool AllowSpacing, out Twip.Length CellSpacing, out Twip.FormatValue<bool> WrapText, out Twip.FormatValue<bool> FitText, out string! Title, out string! Description) -> void
+Twip.TablePropertiesDialogValues.Description.get -> string!
+Twip.TablePropertiesDialogValues.Description.init -> void
+Twip.TablePropertiesDialogValues.FitText.get -> Twip.FormatValue<bool>
+Twip.TablePropertiesDialogValues.FitText.init -> void
+Twip.TablePropertiesDialogValues.TablePropertiesDialogValues(Twip.TableWidth! Width, Twip.TableAlignment Alignment, Twip.Length Indent, Twip.FormatValue<Twip.RowHeight!> RowHeight, Twip.FormatValue<bool> RowCanBreak, Twip.FormatValue<bool> HeaderRow, Twip.FormatValue<Twip.Length> ColumnWidth, Twip.FormatValue<Twip.CellAlignment> CellAlignment, Twip.CellMargins! CellMargins, bool AllowSpacing, Twip.Length CellSpacing, Twip.FormatValue<bool> WrapText, Twip.FormatValue<bool> FitText, string! Title, string! Description) -> void
+Twip.TablePropertiesDialogValues.Title.get -> string!
+Twip.TablePropertiesDialogValues.Title.init -> void
+Twip.TablePropertiesDialogValues.WrapText.get -> Twip.FormatValue<bool>
+Twip.TablePropertiesDialogValues.WrapText.init -> void
+Twip.TableSelection.CellSpacing.get -> Twip.Length?
+Twip.TableSelection.CellSpacing.init -> void
+Twip.TableSelection.CellWidth.get -> Twip.FormatValue<Twip.TableWidth!>
+Twip.TableSelection.CellWidth.init -> void
+Twip.TableSelection.Description.get -> string!
+Twip.TableSelection.Description.init -> void
+Twip.TableSelection.FitText.get -> Twip.FormatValue<bool>
+Twip.TableSelection.FitText.init -> void
+Twip.TableSelection.RowHidden.get -> Twip.FormatValue<bool>
+Twip.TableSelection.RowHidden.init -> void
+Twip.TableSelection.TextDirection.get -> Twip.FormatValue<Twip.TextFlow>
+Twip.TableSelection.TextDirection.init -> void
+Twip.TableSelection.Title.get -> string!
+Twip.TableSelection.Title.init -> void
+Twip.TableSelection.WrapText.get -> Twip.FormatValue<bool>
+Twip.TableSelection.WrapText.init -> void
+override Twip.CellPropertiesOptions.Equals(object? obj) -> bool
+override Twip.CellPropertiesOptions.GetHashCode() -> int
+override Twip.CellPropertiesOptions.ToString() -> string!
+override Twip.RowBorders.Equals(object? obj) -> bool
+override Twip.RowBorders.GetHashCode() -> int
+override Twip.RowBorders.ToString() -> string!
+override Twip.RowExceptions.Equals(object? obj) -> bool
+override Twip.RowExceptions.GetHashCode() -> int
+override Twip.RowExceptions.ToString() -> string!
+static Twip.CellPropertiesOptions.operator !=(Twip.CellPropertiesOptions? left, Twip.CellPropertiesOptions? right) -> bool
+static Twip.CellPropertiesOptions.operator ==(Twip.CellPropertiesOptions? left, Twip.CellPropertiesOptions? right) -> bool
+static Twip.EditorOperation.SetCellProperties(Twip.CellPropertiesOptions! options) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetDefaultTableStyle(Twip.StyleId? styleId) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetRowProperties(bool? hidden = null, Twip.RowExceptions? exceptions = null) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetTableAltText(string? title = null, string? description = null) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetTableCellSpacing(Twip.Length? spacing) -> Twip.EditorOperation!
+static Twip.RowBorders.operator !=(Twip.RowBorders? left, Twip.RowBorders? right) -> bool
+static Twip.RowBorders.operator ==(Twip.RowBorders? left, Twip.RowBorders? right) -> bool
+static Twip.RowExceptions.operator !=(Twip.RowExceptions? left, Twip.RowExceptions? right) -> bool
+static Twip.RowExceptions.operator ==(Twip.RowExceptions? left, Twip.RowExceptions? right) -> bool
+Twip.CellPropertiesOptions.CellPropertiesOptions(Twip.TableWidth? Width = null, Twip.TextFlow? TextDirection = null, bool? WrapText = null, bool? FitText = null, bool? HideMark = null) -> void
+Twip.CellPropertiesOptions.Deconstruct(out Twip.TableWidth? Width, out Twip.TextFlow? TextDirection, out bool? WrapText, out bool? FitText, out bool? HideMark) -> void

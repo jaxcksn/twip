@@ -537,6 +537,7 @@ impl Editor {
                 left: Points(m.left.unwrap_or(5.4)),
                 right: Points(m.right.unwrap_or(5.4)),
             },
+            ..Default::default()
         })
     }
 

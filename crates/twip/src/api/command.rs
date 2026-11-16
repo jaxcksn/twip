@@ -387,6 +387,16 @@ commands! {
     SetCellBorders(CellBorders),
     /// The selected cells' margins (0…1584 pt). Undo: one step.
     SetCellMargins(CellMargins),
+    /// The selected cells' preferred width, text direction, wrapping and fitting (Table Properties' Cell tab). Undo: one
+    /// step.
+    SetCellProperties(CellProperties),
+    /// Hides the selected rows' end marks (a row hides when its text is hidden too), and sets the table properties
+    /// they override (row exceptions). Undo: one step.
+    SetRowProperties(RowProperties),
+    /// Space between the table's cells (0…1584 pt), or none (`null`). Undo: one step.
+    SetTableCellSpacing(#[serde(with = "value")] Option<Points>),
+    /// The table's alternative text: its title and description (Table Properties' Alt Text tab). Undo: one step.
+    SetTableAltText(TableAltText),
     /// Repeat the selected rows as header rows. Undo: one step.
     SetHeaderRow(#[serde(with = "value")] bool),
     /// The selected rows' height, or automatic. Undo: one step.
@@ -409,6 +419,8 @@ commands! {
     SetTableStyle(#[serde(with = "value")] StyleId),
     /// Which parts of the table style apply. Undo: one step.
     SetTableStyleOptions(TableStyleChange),
+    /// The table style new tables take (Set as Default, `w:defaultTableStyle`), or Table Grid (`null`). Undo: one step.
+    SetDefaultTableStyle(#[serde(with = "value")] Option<StyleId>),
     /// Where the table is placed, and what it is measured from: a table without a position becomes positioned (text
     /// wraps around it); none (`null`) puts it back in the text. Undo: one step.
     SetTablePosition(#[serde(with = "value")] Option<TablePosition>),
@@ -2142,7 +2154,11 @@ pub enum BorderEdges {
     Left,
     /// The right edge.
     Right,
-    /// Removes the borders.
+    /// Each cell's diagonal from its top left to its bottom right corner (cells only).
+    DiagonalDown,
+    /// Each cell's diagonal from its top right to its bottom left corner (cells only).
+    DiagonalUp,
+    /// Removes the borders, diagonals too.
     None,
 }
 
@@ -2257,6 +2273,72 @@ pub struct CellBorders {
     /// Default: a ½ pt single automatic line.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub border: Option<Border>,
+}
+
+/// `setCellProperties`'s options.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CellProperties {
+    /// The preferred width: automatic, points (0…1584) or percent of the table (0…100).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub width: Option<TableWidth>,
+    /// The direction text runs in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text_direction: Option<TextFlow>,
+    /// Text wraps in the cell (`false`: `w:noWrap`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wrap_text: Option<bool>,
+    /// Text is squeezed to fit the cell's width (`w:tcFitText`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fit_text: Option<bool>,
+    /// The cell's end mark takes no height (`w:hideMark`): an empty cell is as tall as its margins.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hide_mark: Option<bool>,
+}
+
+/// `setRowProperties`'s options.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RowProperties {
+    /// The row's end mark is hidden (`trPr/w:hidden`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hidden: Option<bool>,
+    /// The table properties the rows override.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exceptions: Option<RowExceptions>,
+}
+
+/// The table properties rows override (`w:tblPrEx`).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RowExceptions {
+    /// Removes the rows' exceptions first: they take the table's properties.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reset: Option<bool>,
+    /// The rows' alignment.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alignment: Option<HorizontalAlignment>,
+    /// The space between the rows' cells (0…1584 pt).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cell_spacing: Option<Points>,
+    /// The rows' shading.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shading: Option<Color>,
+    /// The table borders on the rows' edges (the diagonals don't apply).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub borders: Option<CellBorders>,
+}
+
+/// `setTableAltText`'s options.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TableAltText {
+    /// The title (`w:tblCaption`); empty for none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// The description (`w:tblDescription`); empty for none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
 }
 
 /// `setCellMargins`'s options.

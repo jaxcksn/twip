@@ -707,6 +707,39 @@
     "type": "setCellMargins"
   },
   {
+    "fitText": true,
+    "hideMark": true,
+    "textDirection": "btLr",
+    "type": "setCellProperties",
+    "width": {
+      "kind": "percent",
+      "value": 25.0
+    },
+    "wrapText": false
+  },
+  {
+    "exceptions": {
+      "alignment": "center",
+      "borders": {
+        "edges": "outside"
+      },
+      "cellSpacing": 1.5,
+      "reset": true,
+      "shading": "#D9E2F3"
+    },
+    "hidden": true,
+    "type": "setRowProperties"
+  },
+  {
+    "type": "setTableCellSpacing",
+    "value": 1.5
+  },
+  {
+    "description": "Yearly totals by region",
+    "title": "Totals",
+    "type": "setTableAltText"
+  },
+  {
     "type": "setHeaderRow",
     "value": true
   },
@@ -760,6 +793,10 @@
     "lastColumn": false,
     "totalRow": false,
     "type": "setTableStyleOptions"
+  },
+  {
+    "type": "setDefaultTableStyle",
+    "value": "GridTable4"
   },
   {
     "type": "setTablePosition",

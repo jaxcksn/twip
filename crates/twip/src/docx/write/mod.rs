@@ -270,6 +270,10 @@ fn settings_part(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(
             None => set_setting(&mut out, "endnotePr", pos.map(|p| format!("<{w}endnotePr>{p}</{w}endnotePr>")))?,
         }
     }
+    if read.default_table_style != now.default_table_style {
+        let el = now.default_table_style.as_ref().map(|s| format!("<{w}defaultTableStyle {w}val=\"{}\"/>", props::esc(s)));
+        set_setting(&mut out, "defaultTableStyle", el)?;
+    }
     for (name, was, is) in [
         ("evenAndOddHeaders", read.even_and_odd, now.even_and_odd),
         ("mirrorMargins", read.mirror_margins, now.mirror_margins),
@@ -1639,6 +1643,21 @@ impl<'a, 'i> Saver<'a, 'i> {
                             };
                             fix.push(self.set_child(p, "jc", format!("<{w}jc {w}val=\"{v}\"/>"), before("jc")));
                         }
+                        if a.cell_spacing != t.cell_spacing {
+                            let tag = if t.cell_spacing > 0.0 { width(&w, "tblCellSpacing", &Width::Dxa(t.cell_spacing)) } else { String::new() };
+                            fix.push(self.set_child(p, "tblCellSpacing", tag, before("tblCellSpacing")));
+                        }
+                        if a.alt != t.alt {
+                            let (title, description) = t.alt.as_deref().map_or(("", ""), |a| (a.title.as_str(), a.description.as_str()));
+                            let tag = |name: &str, v: &str| if v.is_empty() { String::new() } else { format!("<{w}{name} {w}val=\"{}\"/>", props::esc(v)) };
+                            fix.extend(self.set_children(
+                                p,
+                                vec![
+                                    ("tblCaption", tag("tblCaption", title), before("tblCaption")),
+                                    ("tblDescription", tag("tblDescription", description), before("tblDescription")),
+                                ],
+                            ));
+                        }
                         if (a.ind, a.ind_pct) != (t.ind, t.ind_pct) {
                             fix.push(self.set_child(p, "tblInd", format!("<{w}tblInd {w}w=\"{}\" {w}type=\"dxa\"/>", twips(t.ind)), before("tblInd")));
                         }
@@ -1846,6 +1865,29 @@ impl<'a, 'i> Saver<'a, 'i> {
         // The table exceptions' tracked change.
         let change = if was.rev.ex_change != now.rev.ex_change { Some(revisions::ex_change(&w, &now.rev, self.people)) } else { None };
         match ex {
+            // Exceptions the API set: the row's, whole.
+            _ if was.exceptions.0 != now.exceptions.0 => {
+                let mut p = Props::parse(now.exceptions.0.as_deref(), "tblPrEx", &self.cx);
+                p.reorder(revisions::TBLPREX);
+                for (name, tag, _) in later {
+                    if p.get(name).is_none() {
+                        p.set(name, tag);
+                    }
+                }
+                p.remove("tblPrExChange");
+                let change = revisions::ex_change(&w, &now.rev, self.people);
+                if !change.is_empty() {
+                    p.set("tblPrExChange", change);
+                }
+                let xml = p.xml().unwrap_or_default();
+                match ex {
+                    Some(e) => out.push((e.range(), xml)),
+                    None => {
+                        let at = self.open_end(n);
+                        out.push((at..at, xml));
+                    }
+                }
+            }
             Some(p) => {
                 if let Some(tag) = change {
                     out.push(self.set_child(p, "tblPrExChange", tag, revisions::before(revisions::TBLPREX, "tblPrExChange")));
@@ -1877,6 +1919,9 @@ impl<'a, 'i> Saver<'a, 'i> {
         }
         if was.header != now.header {
             tr.push(("tblHeader", if now.header { format!("<{w}tblHeader/>") } else { format!("<{w}tblHeader {w}val=\"0\"/>") }, BASE));
+        }
+        if was.hidden != now.hidden {
+            tr.push(("hidden", if now.hidden { format!("<{w}hidden/>") } else { String::new() }, BASE));
         }
         if was.height != now.height {
             let tag = match &now.height {
@@ -1929,17 +1974,9 @@ impl<'a, 'i> Saver<'a, 'i> {
                 // Shading and vertical alignment that table formatting set as direct properties (resolved values that
                 // a style region gives aren't written).
                 let (da, db) = (Props::parse(a.direct.0.as_deref(), "tcPr", &self.cx), Props::parse(b.direct.0.as_deref(), "tcPr", &self.cx));
-                for (name, after) in [
-                    ("tcBorders", &["cnfStyle", "tcW", "gridSpan", "hMerge", "vMerge"][..]),
-                    ("shd", &["cnfStyle", "tcW", "gridSpan", "hMerge", "vMerge", "tcBorders"][..]),
-                    ("tcMar", &["cnfStyle", "tcW", "gridSpan", "hMerge", "vMerge", "tcBorders", "shd", "noWrap"][..]),
-                    (
-                        "vAlign",
-                        &["cnfStyle", "tcW", "gridSpan", "hMerge", "vMerge", "tcBorders", "shd", "noWrap", "tcMar", "textDirection", "tcFitText"][..],
-                    ),
-                ] {
+                for name in ["tcBorders", "shd", "noWrap", "tcMar", "textDirection", "tcFitText", "vAlign", "hideMark", "headers"] {
                     if da.get(name) != db.get(name) {
-                        fix.push((name, db.get(name).unwrap_or("").to_string(), after));
+                        fix.push((name, db.get(name).unwrap_or("").to_string(), revisions::before(revisions::TCPR, name)));
                     }
                 }
                 // The cell's insertion, deletion or merge, and its property change.
@@ -4819,11 +4856,19 @@ fn tbl_pr(w: &str, t: &Table, people: &People) -> String {
             bit(l.no_v_band)
         ));
     }
+    s.push_str(&alt_xml(w, t.alt.as_deref()));
     if let Some(c) = &t.change {
         s.push_str(&revisions::table_change(w, "tblPrChange", "tblPr", c, people));
     }
     s.push_str(&format!("</{w}tblPr>"));
     s
+}
+
+/// A table's `w:tblCaption` and `w:tblDescription`.
+fn alt_xml(w: &str, alt: Option<&crate::docx::TableAlt>) -> String {
+    let Some(a) = alt else { return String::new() };
+    let tag = |name: &str, v: &str| if v.is_empty() { String::new() } else { format!("<{w}{name} {w}val=\"{}\"/>", props::esc(v)) };
+    tag("tblCaption", &a.title) + &tag("tblDescription", &a.description)
 }
 
 /// A row's `w:trPr` from the model, in CT_TrPr order; empty when it has nothing to say.
@@ -4844,6 +4889,9 @@ fn tr_pr(w: &str, r: &Row, people: &People) -> String {
     }
     if r.header {
         s.push_str(&format!("<{w}tblHeader/>"));
+    }
+    if r.hidden {
+        s.push_str(&format!("<{w}hidden/>"));
     }
     if let Some(jc) = r.jc {
         let v = match jc {
@@ -4902,12 +4950,15 @@ fn tc_pr(w: &str, c: &Cell, people: &People, cx: &Cx) -> String {
         VMerge::Continue => s.push_str(&format!("<{w}vMerge/>")),
         VMerge::None => {}
     }
-    if c.top.is_some() || c.left.is_some() || c.bottom.is_some() || c.right.is_some() {
+    let [tl2br, tr2bl] = c.diagonals.as_deref().cloned().unwrap_or_default();
+    if c.top.is_some() || c.left.is_some() || c.bottom.is_some() || c.right.is_some() || tl2br.is_some() || tr2bl.is_some() {
         s.push_str(&format!("<{w}tcBorders>"));
         s.push_str(&border(w, "top", &c.top));
         s.push_str(&border(w, "left", &c.left));
         s.push_str(&border(w, "bottom", &c.bottom));
         s.push_str(&border(w, "right", &c.right));
+        s.push_str(&border(w, "tl2br", &tl2br));
+        s.push_str(&border(w, "tr2bl", &tr2bl));
         s.push_str(&format!("</{w}tcBorders>"));
     }
     s.push_str(&shading(w, c.shading));
@@ -4930,6 +4981,9 @@ fn tc_pr(w: &str, c: &Cell, people: &People, cx: &Cx) -> String {
     }
     if c.v_align != "top" {
         s.push_str(&format!("<{w}vAlign {w}val=\"{}\"/>", c.v_align));
+    }
+    if c.hide_mark {
+        s.push_str(&format!("<{w}hideMark/>"));
     }
     for (_, tag) in revisions::cell_marks(w, &c.rev, people) {
         s.push_str(&tag);

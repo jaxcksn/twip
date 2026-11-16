@@ -183,6 +183,7 @@ namespace Twip.Wire;
         typeof(FormatValueConverter<ParagraphBorders>),
         typeof(FormatValueConverter<CellAlignment>),
         typeof(FormatValueConverter<RowHeight>),
+        typeof(FormatValueConverter<TableWidth>),
         typeof(FormatValueConverter<FontStyleChoice>),
         typeof(FormatValueConverter<OutlineLevel>),
         typeof(FormatValueConverter<SpecialIndent>),
@@ -613,6 +614,9 @@ namespace Twip.Wire;
 [JsonSerializable(typeof(TableStyleOptionsUpdate))]
 [JsonSerializable(typeof(TablePosition))]
 [JsonSerializable(typeof(TableWidth))]
+[JsonSerializable(typeof(CellPropertiesOptions))]
+[JsonSerializable(typeof(RowExceptions))]
+[JsonSerializable(typeof(RowBorders))]
 [JsonSerializable(typeof(TableWidthKind))]
 [JsonSerializable(typeof(TabsDialogAction))]
 [JsonSerializable(typeof(TabsDialogValues))]

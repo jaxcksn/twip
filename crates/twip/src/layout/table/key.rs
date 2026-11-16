@@ -98,6 +98,7 @@ fn shell(t: &Table) -> Table {
         bands,
         floating,
         bidi_visual,
+        alt: _,
         grid,
         rows,
         src: _,
@@ -123,6 +124,7 @@ fn shell(t: &Table) -> Table {
                 div,
                 borders,
                 shading,
+                hidden: _,
                 vanished,
                 cell_spacing: row_spacing,
                 run,
@@ -152,6 +154,7 @@ fn shell(t: &Table) -> Table {
                         no_wrap,
                         fit_text,
                         hide_mark,
+                        diagonals,
                         blocks: _,
                         direct: _,
                         controls: _,
@@ -172,6 +175,7 @@ fn shell(t: &Table) -> Table {
                         no_wrap: *no_wrap,
                         fit_text: *fit_text,
                         hide_mark: *hide_mark,
+                        diagonals: diagonals.clone(),
                         blocks: Vec::new(),
                         direct: Default::default(),
                         controls: Vec::new(),
@@ -192,6 +196,7 @@ fn shell(t: &Table) -> Table {
                 div: div.clone(),
                 borders: borders.clone(),
                 shading: *shading,
+                hidden: false,
                 vanished: *vanished,
                 cell_spacing: *row_spacing,
                 run: *run,
@@ -218,6 +223,7 @@ fn shell(t: &Table) -> Table {
         cell_spacing: *cell_spacing,
         look: *look,
         bands: *bands,
+        alt: None,
         floating: *floating,
         bidi_visual: *bidi_visual,
         grid: grid.clone(),
@@ -247,6 +253,7 @@ pub(crate) fn same_shell(s: &Table, t: &Table) -> bool {
         bands,
         floating,
         bidi_visual,
+        alt: _,
         grid,
         rows,
         src: _,
@@ -289,6 +296,7 @@ pub(crate) fn same_shell(s: &Table, t: &Table) -> bool {
                 div,
                 borders,
                 shading,
+                hidden: _,
                 vanished,
                 cell_spacing: row_spacing,
                 run,
@@ -334,6 +342,7 @@ pub(crate) fn same_shell(s: &Table, t: &Table) -> bool {
                         no_wrap,
                         fit_text,
                         hide_mark,
+                        diagonals,
                         blocks: _,
                         direct: _,
                         controls: _,
@@ -353,6 +362,7 @@ pub(crate) fn same_shell(s: &Table, t: &Table) -> bool {
                         && *no_wrap == d.no_wrap
                         && *fit_text == d.fit_text
                         && *hide_mark == d.hide_mark
+                        && *diagonals == d.diagonals
                         && *rev == d.rev
                 })
         })

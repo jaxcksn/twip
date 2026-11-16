@@ -12,6 +12,7 @@ export type { ExportOptions, ExportResult, MountOptions, PdfOptions, SessionOpti
 export type {
   BorderLine,
   BorderLineStyle,
+  CellBorderEdges,
   ChapterNumbers,
   CharacterEffects,
   ColumnWidth,
@@ -28,9 +29,9 @@ export type {
   LineNumbers,
   ListLevel,
   MultiplePagesMode,
+  NoArgumentCommandId,
   NotePosition,
   NoteSettings,
-  NoArgumentCommandId,
   NumberForm,
   NumberFormat,
   NumberSpacing,

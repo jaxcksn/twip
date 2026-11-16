@@ -198,6 +198,21 @@ export interface NoteSettings {
 /** How the document's pages pair. */
 export type MultiplePagesMode = 'normal' | 'mirrorMargins' | 'bookFold' | 'reverseBookFold';
 
+/** The edges `setCellBorders` sets: sides, the inside lines, or each cell's diagonals. */
+export type CellBorderEdges =
+  | 'all'
+  | 'outside'
+  | 'inside'
+  | 'insideHorizontal'
+  | 'insideVertical'
+  | 'top'
+  | 'bottom'
+  | 'left'
+  | 'right'
+  | 'diagonalDown'
+  | 'diagonalUp'
+  | 'none';
+
 /**
  * Which way text flows: lines left to right, top to bottom (`lrTb`); vertical lines right to left (`tbRl`) or bottom to
  * top (`btLr`); and their East Asian forms with characters turned (`lrTbV`, `tbRlV`, `tbLrV`).
@@ -694,13 +709,39 @@ export interface Commands {
   setCellAlignment(vertical: 'top' | 'center' | 'bottom'): Promise<void>;
   /** Sets or removes (`null`) the cell shading. */
   setCellShading(color: Color | null): Promise<void>;
-  /** Sets the cell borders on some edges; no border removes them. */
-  setCellBorders(options: {
-    edges: 'all' | 'outside' | 'inside' | 'insideHorizontal' | 'insideVertical' | 'top' | 'bottom' | 'left' | 'right' | 'none';
-    border?: BorderLine;
-  }): Promise<void>;
+  /** Sets the cell borders on some edges, or the cells' diagonals; `'none'` removes them all, diagonals too. */
+  setCellBorders(options: { edges: CellBorderEdges; border?: BorderLine }): Promise<void>;
   /** Sets the cell margins, 0 to 1584; unset fields keep their value. */
   setCellMargins(options: { top?: Points; bottom?: Points; left?: Points; right?: Points }): Promise<void>;
+  /**
+   * Sets the cells' preferred width (points 0 to 1584, or percent of the table 0 to 100), text direction, wrapping,
+   * fitting and end mark height (`hideMark`); unset fields keep their value.
+   */
+  setCellProperties(options: {
+    width?: TableWidth;
+    textDirection?: TextFlow;
+    wrapText?: boolean;
+    fitText?: boolean;
+    hideMark?: boolean;
+  }): Promise<void>;
+  /**
+   * Hides the rows' end marks (a row hides when its text is hidden too), and sets the table properties the rows
+   * override: `reset` drops their own first.
+   */
+  setRowProperties(options: {
+    hidden?: boolean;
+    exceptions?: {
+      reset?: boolean;
+      alignment?: 'left' | 'center' | 'right';
+      cellSpacing?: Points;
+      shading?: Color;
+      borders?: { edges: CellBorderEdges; border?: BorderLine };
+    };
+  }): Promise<void>;
+  /** Sets the space between the table's cells, 0 to 1584, or none (`null`). */
+  setTableCellSpacing(spacing: Points | null): Promise<void>;
+  /** Sets the table's alternative text title and description; unset fields keep their value. */
+  setTableAltText(options: { title?: string; description?: string }): Promise<void>;
   /** Repeats the rows as a header row. */
   setHeaderRow(on: boolean): Promise<void>;
   /** Sets the row height. */
@@ -730,6 +771,8 @@ export interface Commands {
     bandedRows?: boolean;
     bandedColumns?: boolean;
   }): Promise<void>;
+  /** Sets the table style new tables take (Set as Default), or Table Grid (`null`). */
+  setDefaultTableStyle(styleId: StyleId | null): Promise<void>;
   /**
    * Positions the caret's table, so text wraps around it, as dragging its move handle does: a table without a
    * position gets one across from the margin and down from the paragraph, and each axis given is aligned, offset, or
@@ -1213,6 +1256,10 @@ const encodings: { [K in CommandId]: Encoding<K> } = {
   setCellShading: 'value',
   setCellBorders: 'spread',
   setCellMargins: 'spread',
+  setCellProperties: 'spread',
+  setRowProperties: 'spread',
+  setTableCellSpacing: 'value',
+  setTableAltText: 'spread',
   setHeaderRow: 'value',
   setRowHeight: 'value',
   setRowCanBreak: 'value',
@@ -1224,6 +1271,7 @@ const encodings: { [K in CommandId]: Encoding<K> } = {
   setTableIndent: 'value',
   setTableStyle: 'value',
   setTableStyleOptions: 'spread',
+  setDefaultTableStyle: 'value',
   setTablePosition: 'value',
   setObjectSize: 'spread',
   resetObjectSize: 'none',

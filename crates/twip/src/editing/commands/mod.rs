@@ -360,6 +360,10 @@ impl Editor {
             Command::SetCellShading(c) => self.table_format(&super::table_format::TableFormat::CellShading(c.map(|c| c.0)), fonts),
             Command::SetCellBorders(b) => self.set_cell_borders(b, fonts),
             Command::SetCellMargins(m) => self.set_cell_margins(m, fonts),
+            Command::SetCellProperties(p) => self.table_format(&super::table_format::TableFormat::CellProps(p), fonts),
+            Command::SetRowProperties(p) => self.set_row_properties(p, fonts),
+            Command::SetTableCellSpacing(s) => self.table_format(&super::table_format::TableFormat::CellSpacing(s.map_or(0.0, |s| s.0)), fonts),
+            Command::SetTableAltText(a) => self.table_format(&super::table_format::TableFormat::Alt(a), fonts),
             Command::SetHeaderRow(on) => self.set_header_row(on, fonts),
             Command::SetRowHeight(h) => self.set_row_height(h, fonts),
             Command::SetRowCanBreak(on) => self.set_row_can_break(on, fonts),
@@ -370,6 +374,7 @@ impl Editor {
             Command::SetTableIndent(i) => self.table_format(&super::table_format::TableFormat::TableIndent(i.0), fonts),
             Command::SetTableStyle(id) => self.set_table_style(id, fonts),
             Command::SetTableStyleOptions(o) => self.set_table_style_options(o, fonts),
+            Command::SetDefaultTableStyle(s) => self.set_default_table_style(s.map(|s| s.0), fonts),
             Command::SetTablePosition(p) => self.set_table_position(p, fonts),
             // Objects
             Command::SetObjectSize(s) => self.set_object_size(s, fonts),

@@ -894,6 +894,32 @@ public sealed class EditorCommands
     /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
     public Task SetCellMarginsAsync(CellMarginOptions options, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetCellMargins(options), ct);
 
+    /// <summary>Sets the selected cells' preferred width, text direction, wrapping, fitting and end mark.</summary>
+    /// <param name="options">The properties to change.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SetCellPropertiesAsync(CellPropertiesOptions options, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetCellProperties(options), ct);
+
+    /// <summary>Hides the selected rows' end marks (a row hides when its text is hidden too), and sets the table properties they override.</summary>
+    /// <param name="hidden">The rows' end marks are hidden; kept when null.</param>
+    /// <param name="exceptions">The table properties the rows override; kept when null.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SetRowPropertiesAsync(bool? hidden = null, RowExceptions? exceptions = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetRowProperties(hidden, exceptions), ct);
+
+    /// <summary>Sets the space between the table's cells, or none.</summary>
+    /// <param name="spacing">0 to 1584 points; null for none.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SetTableCellSpacingAsync(Length? spacing, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetTableCellSpacing(spacing), ct);
+
+    /// <summary>Sets the table's alternative text.</summary>
+    /// <param name="title">The title; kept when null, removed when empty.</param>
+    /// <param name="description">The description; kept when null, removed when empty.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SetTableAltTextAsync(string? title = null, string? description = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetTableAltText(title, description), ct);
+
     /// <summary>Repeats the selected rows as a header row on each page.</summary>
     /// <param name="on">Whether they repeat.</param>
     /// <param name="ct">Cancels the command before it runs.</param>
@@ -955,6 +981,12 @@ public sealed class EditorCommands
     /// <param name="ct">Cancels the command before it runs.</param>
     /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
     public Task SetTableStyleAsync(StyleId styleId, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetTableStyle(styleId), ct);
+
+    /// <summary>Sets the table style new tables take (Set as Default).</summary>
+    /// <param name="styleId">A table style; null for Table Grid.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SetDefaultTableStyleAsync(StyleId? styleId, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetDefaultTableStyle(styleId), ct);
 
     /// <summary>Sets which parts of the table style apply. Unset values are kept.</summary>
     /// <param name="options">The options to change.</param>

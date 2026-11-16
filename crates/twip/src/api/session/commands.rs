@@ -143,6 +143,10 @@ impl Session {
                     Err(Error::invalid(format!("no style {}", m.id.0)))
                 }
             }
+            C::SetDefaultTableStyle(Some(s)) => match self.editor.document().resolver.as_ref().and_then(|r| r.styles.by_id.get(&s.0)) {
+                Some(st) if st.kind == crate::docx::styles::StyleKind::Table => Ok(()),
+                _ => Err(Error::invalid(format!("no table style {}", s.0))),
+            },
             C::SetParagraphStyle(s) | C::SetTableStyle(s) | C::UpdateStyleToSelection(s) | C::DeleteStyle(s) => {
                 if self.editor.document().resolver.as_ref().is_some_and(|r| r.styles.by_id.contains_key(&s.0)) {
                     Ok(())
@@ -182,6 +186,16 @@ impl Session {
             C::SetColumnWidth(w) => within("the width", w.0, 1.0, MAX),
             C::SetTableWidth(TableWidth::Points { value }) => within("the width", value.0, 0.0, MAX),
             C::SetTableWidth(TableWidth::Percent { value }) => within("the width", *value, 1.0, 600.0),
+            C::SetCellProperties(p) => {
+                match p.width {
+                    Some(TableWidth::Points { value }) => within("the width", value.0, 0.0, MAX)?,
+                    Some(TableWidth::Percent { value }) => within("the width", value, 0.0, 100.0)?,
+                    _ => {}
+                }
+                Ok(())
+            }
+            C::SetTableCellSpacing(s) => length("the spacing", *s, 0.0, MAX),
+            C::SetRowProperties(p) => length("the spacing", p.exceptions.as_ref().and_then(|x| x.cell_spacing), 0.0, MAX),
             C::SetObjectSize(s) => length("the width", s.width, 1.0, MAX).and(length("the height", s.height, 1.0, MAX)),
             C::InsertShape(i) => length("the width", i.width, 0.0, MAX).and(length("the height", i.height, 0.0, MAX)),
             C::SetShapeFill(f) => f.to_model(&mut |data| crate::docx::image::image_info(data).map(|_| 0)).map(|_| ()).map_err(Error::invalid),
