@@ -24,6 +24,11 @@ namespace Twip.Wire;
         typeof(CamelEnum<LineNumberRestart>),
         typeof(CamelEnum<MultiplePagesMode>),
         typeof(CamelEnum<AlignmentTabKind>),
+        typeof(CamelEnum<NoteType>),
+        typeof(CamelEnum<NotePosition>),
+        typeof(CamelEnum<NoteRestart>),
+        typeof(CamelEnum<NoteScope>),
+        typeof(CamelEnum<NoteConversion>),
         typeof(CamelEnum<AlignmentTabBase>),
         typeof(CamelEnum<NumberSpacing>),
         typeof(CamelEnum<NumberForm>),
@@ -229,6 +234,10 @@ namespace Twip.Wire;
 [JsonSerializable(typeof(LineNumberRestart))]
 [JsonSerializable(typeof(MultiplePagesMode))]
 [JsonSerializable(typeof(AlignmentTabKind))]
+[JsonSerializable(typeof(NoteType))]
+[JsonSerializable(typeof(NoteConversion))]
+[JsonSerializable(typeof(NotePropertiesOptions))]
+[JsonSerializable(typeof(NoteSettings))]
 [JsonSerializable(typeof(AlignmentTabBase))]
 [JsonSerializable(typeof(HeaderFooterLinks))]
 [JsonSerializable(typeof(TextFlow))]

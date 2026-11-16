@@ -793,6 +793,74 @@ public enum LineNumberRestart
     Continuous,
 }
 
+/// <summary>Footnote or endnote.</summary>
+public enum NoteType
+{
+    /// <summary>A footnote.</summary>
+    Footnote,
+    /// <summary>An endnote.</summary>
+    Endnote,
+}
+
+/// <summary>Where notes go.</summary>
+public enum NotePosition
+{
+    /// <summary>Footnotes at the bottom of the page.</summary>
+    PageBottom,
+    /// <summary>Footnotes right after the page's text.</summary>
+    BeneathText,
+    /// <summary>Endnotes at the end of each section.</summary>
+    SectionEnd,
+    /// <summary>Endnotes at the end of the document.</summary>
+    DocumentEnd,
+}
+
+/// <summary>When note numbering starts again.</summary>
+public enum NoteRestart
+{
+    /// <summary>Never: it continues.</summary>
+    Continuous,
+    /// <summary>In each section.</summary>
+    EachSection,
+    /// <summary>On each page (footnotes).</summary>
+    EachPage,
+}
+
+/// <summary>Which sections note settings apply to.</summary>
+public enum NoteScope
+{
+    /// <summary>Every section.</summary>
+    WholeDocument,
+    /// <summary>The caret section.</summary>
+    ThisSection,
+}
+
+/// <summary>What <see cref="EditorCommands.ConvertNotesAsync"/> turns into what.</summary>
+public enum NoteConversion
+{
+    /// <summary>Every footnote becomes an endnote.</summary>
+    FootnotesToEndnotes,
+    /// <summary>Every endnote becomes a footnote.</summary>
+    EndnotesToFootnotes,
+    /// <summary>Both at once.</summary>
+    Swap,
+}
+
+/// <summary>Footnote or endnote settings to change; unset values are kept.</summary>
+/// <param name="Kind">Footnotes' or endnotes'.</param>
+/// <param name="Position">Where the notes go (footnotes: page bottom or beneath text; endnotes, the whole document's: section or document end).</param>
+/// <param name="Format">The number format.</param>
+/// <param name="Start">The first number (1 to 16383).</param>
+/// <param name="Restart">When numbering starts again.</param>
+/// <param name="ApplyTo">The caret section, or every section when null.</param>
+public sealed record NotePropertiesOptions(
+    NoteType Kind,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NotePosition? Position = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NumberFormat? Format = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Start = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NoteRestart? Restart = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NoteScope? ApplyTo = null);
+
 /// <summary>How text aligns at an alignment tab.</summary>
 public enum AlignmentTabKind
 {

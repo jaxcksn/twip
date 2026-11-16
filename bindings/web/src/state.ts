@@ -5,6 +5,7 @@ import type {
   Ligatures,
   LineNumbers,
   MultiplePagesMode,
+  NoteSettings,
   NumberForm,
   NumberFormat,
   NumberSpacing,
@@ -585,6 +586,10 @@ export interface PageFormatting {
   headerLinks: { default: boolean; first: boolean; even: boolean };
   /** Which of its footers do. */
   footerLinks: { default: boolean; first: boolean; even: boolean };
+  /** The section's footnote settings. */
+  footnotes: NoteSettings;
+  /** The section's endnote settings. */
+  endnotes: NoteSettings;
 }
 
 /** View settings. */

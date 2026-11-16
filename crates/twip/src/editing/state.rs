@@ -4,7 +4,9 @@ use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use crate::api::catalog::catalog;
-use crate::api::command::{Command, CommandId, MultiplePagesMode, NumberFormat, PageVerticalAlignment, ParagraphSpacing, SectionBreakKind, TextFlow};
+use crate::api::command::{
+    Command, CommandId, MultiplePagesMode, NotePosition, NumberFormat, PageVerticalAlignment, ParagraphSpacing, SectionBreakKind, TextFlow,
+};
 use crate::api::state::{
     BorderState, CharacterFormatting, ColumnLayout, CommandState, CommandValue, ElementContext, ElementKind, FlowState, HeaderFooterInfo,
     HeaderFooterKind, HeaderFooterType, IndentState, LinkInfo, ListState, ObjectSelection, PageFormatting, PageMargins, PageSize,
@@ -817,6 +819,16 @@ impl Editor {
             // Linked: none of its own, and a section before to take it from.
             header_links: links(section > 0, &s.headers),
             footer_links: links(section > 0, &s.footers),
+            footnotes: note_settings(
+                &s.notes[0],
+                if s.notes[0].beneath { NotePosition::BeneathText } else { NotePosition::PageBottom },
+                NumberFormat::Decimal,
+            ),
+            endnotes: note_settings(
+                &s.notes[1],
+                if self.doc.settings.endnotes_sect_end { NotePosition::SectionEnd } else { NotePosition::DocumentEnd },
+                NumberFormat::LowerRoman,
+            ),
         }
     }
 }
@@ -825,4 +837,18 @@ impl Editor {
 fn links(has_before: bool, refs: &crate::docx::HfRefs) -> crate::api::state::HeaderFooterLinks {
     let l = |k: usize| has_before && refs[k].is_none();
     crate::api::state::HeaderFooterLinks { default: l(0), first: l(1), even: l(2) }
+}
+
+/// A section's note settings as state reports them; `default` is the kind's format when none is set.
+fn note_settings(n: &crate::docx::NoteProps, position: NotePosition, default: NumberFormat) -> crate::api::state::NoteSettings {
+    crate::api::state::NoteSettings {
+        position,
+        format: n.fmt.as_deref().map_or(default, NumberFormat::of_val),
+        start: u32::try_from(n.start).unwrap_or(1),
+        restart: match n.restart {
+            crate::docx::NoteRestart::Continuous => crate::api::command::NoteRestart::Continuous,
+            crate::docx::NoteRestart::EachSect => crate::api::command::NoteRestart::EachSection,
+            crate::docx::NoteRestart::EachPage => crate::api::command::NoteRestart::EachPage,
+        },
+    }
 }

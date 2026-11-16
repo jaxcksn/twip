@@ -135,8 +135,8 @@ Chunk numbers are [roadmap](../roadmap#docx) chunks.
 | Line numbering | `w:lnNumType` | API (`setLineNumbering`) |
 | Vertical alignment | `w:vAlign` | API (`setPageVerticalAlignment`; `setCellAlignment` for cells) |
 | Mirror margins, book fold, gutter | `w:mirrorMargins`, `w:bookFoldPrinting`, `w:bookFoldRevPrinting`, `w:bookFoldPrintingSheets`, `w:gutterAtTop` | API (`setMultiplePages`; sheets per booklet is kept) |
-| Notes in a section | `w:footnotePr`, `w:endnotePr`, `w:pos`, `w:numStart`, `w:numRestart`, `w15:footnoteColumns` | Model, 2.7 |
-| No endnotes | `w:noEndnote` | Laid out; Model, 2.7 |
+| Notes in a section | `w:footnotePr`, `w:endnotePr`, `w:pos`, `w:numStart`, `w:numRestart`, `w15:footnoteColumns` | API (`setNoteProperties`); footnote columns (`w15:footnoteColumns`) are laid out and kept |
+| No endnotes | `w:noEndnote` | Laid out; kept (Word sets it only for sections in a master document) |
 | Form protection | `w:formProt` | Kept, 2.14 |
 | Printer | `w:paperSrc`, `w:printerSettings` | Application |
 | Document grid, gutter on the right | `w:docGrid`, `w:rtlGutter` | After 1.0 (line pitch laid out) |
@@ -164,7 +164,7 @@ Chunk numbers are [roadmap](../roadmap#docx) chunks.
 
 | Construct | Elements | Status |
 |---|---|---|
-| Footnotes and endnotes | `w:footnote`, `w:endnote`, `w:footnoteReference`, `w:endnoteReference`, `w:footnoteRef`, `w:endnoteRef`, `w:separator`, `w:continuationSeparator` | API to insert; notes move with cut and paste; settings and conversion are 2.7 |
+| Footnotes and endnotes | `w:footnote`, `w:endnote`, `w:footnoteReference`, `w:endnoteReference`, `w:footnoteRef`, `w:endnoteRef`, `w:separator`, `w:continuationSeparator` | API (`insertNote` with custom marks, `setNoteProperties`, `convertNotes`); notes move with cut and paste |
 | Comments | `w:comment`, `w:commentRangeStart`, `w:commentRangeEnd`, `w:commentReference`, `w:annotationRef`, `w15:commentsEx`, `w15:commentEx`, `w16cid:commentsIds`, `w16cid:commentId`, `w16cex:commentsExtensible`, `w16cex:commentExtensible`, `w16cex:extLst`, `w16cur:ext` | API |
 | People | `w15:people`, `w15:person`, `w15:presenceInfo` | API (authors) |
 

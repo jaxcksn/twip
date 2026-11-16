@@ -28,6 +28,8 @@ export type {
   LineNumbers,
   ListLevel,
   MultiplePagesMode,
+  NotePosition,
+  NoteSettings,
   NoArgumentCommandId,
   NumberForm,
   NumberFormat,

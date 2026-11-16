@@ -180,6 +180,21 @@ export interface LineNumbers {
   restart?: 'eachPage' | 'eachSection' | 'continuous';
 }
 
+/** Where notes go: footnotes at the page's bottom or beneath the text, endnotes at a section's or the document's end. */
+export type NotePosition = 'pageBottom' | 'beneathText' | 'sectionEnd' | 'documentEnd';
+
+/** A section's footnote or endnote settings. */
+export interface NoteSettings {
+  /** Where the notes go. */
+  position: NotePosition;
+  /** The number format. */
+  format: NumberFormat;
+  /** The first number. */
+  start: number;
+  /** When numbering starts again. */
+  restart: 'continuous' | 'eachSection' | 'eachPage';
+}
+
 /** How the document's pages pair. */
 export type MultiplePagesMode = 'normal' | 'mirrorMargins' | 'bookFold' | 'reverseBookFold';
 
@@ -613,6 +628,23 @@ export interface Commands {
   insertFootnote(): Promise<void>;
   /** Inserts an endnote. */
   insertEndnote(): Promise<void>;
+  /** Inserts a footnote or an endnote at the caret, numbered or with its own mark (1 to 10 characters). */
+  insertNote(options: { kind: 'footnote' | 'endnote'; customMark?: string }): Promise<void>;
+  /**
+   * Sets footnotes' or endnotes' position, number format, first number and restarting, for the caret section or the
+   * whole document (the default); unset fields keep their value. Footnotes go at the `pageBottom` or `beneathText`;
+   * endnotes at the `sectionEnd` or `documentEnd` (the whole document's).
+   */
+  setNoteProperties(options: {
+    kind: 'footnote' | 'endnote';
+    position?: NotePosition;
+    format?: NumberFormat;
+    start?: number;
+    restart?: 'continuous' | 'eachSection' | 'eachPage';
+    applyTo?: 'wholeDocument' | 'thisSection';
+  }): Promise<void>;
+  /** Turns every footnote into an endnote, every endnote into a footnote, or both (`'swap'`). */
+  convertNotes(conversion: 'footnotesToEndnotes' | 'endnotesToFootnotes' | 'swap'): Promise<void>;
   /** Inserts a link; `text` replaces the selection (default: the selection, or the address). */
   insertHyperlink(options: { address: string; text?: string }): Promise<void>;
   /** Changes the link at the selection. */
@@ -1145,6 +1177,9 @@ const encodings: { [K in CommandId]: Encoding<K> } = {
   insertShape: 'spread',
   insertFootnote: 'none',
   insertEndnote: 'none',
+  insertNote: 'spread',
+  setNoteProperties: 'spread',
+  convertNotes: 'value',
   insertHyperlink: 'spread',
   editHyperlink: 'spread',
   removeHyperlink: 'none',

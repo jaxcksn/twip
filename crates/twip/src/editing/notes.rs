@@ -38,7 +38,10 @@ fn refs_inline(inlines: &[Inline], out: &mut Vec<(NoteKind, i64)>) {
 }
 
 impl Editor {
-    pub(super) fn insert_note(&mut self, kind: NoteKind, fonts: &Fonts) -> Outcome {
+    pub(super) fn insert_note(&mut self, kind: NoteKind, custom: Option<&str>, fonts: &Fonts) -> Outcome {
+        if custom.is_some_and(|m| m.is_empty() || m.chars().count() > 10) {
+            return Outcome::invalid("a custom mark is 1…10 characters");
+        }
         if self.selection.focus().map(|p| p.story) != Some(StoryId::Body) {
             return Outcome::Unchanged("notes are inserted in the body");
         }
@@ -81,8 +84,10 @@ impl Editor {
         let mut p = Props::parse(run.direct.0.as_deref(), "rPr", &cx);
         mark_prop(&mut p);
         let ref_run = res.run_from_xml(&base, p.xml().as_deref(), &cx);
-        let reference = Inline::NoteRef { kind, id, custom: false, run: ref_run };
-        if self.step(&mut tx, Step::Text { para, range: offset..offset, with: vec![reference], edges: Default::default() }).is_err() {
+        // A custom mark follows its reference, in its run.
+        let mut with = vec![Inline::NoteRef { kind, id, custom: custom.is_some(), run: ref_run.clone() }];
+        with.extend(custom.map(|m| Inline::Text(m.to_string(), ref_run)));
+        if self.step(&mut tx, Step::Text { para, range: offset..offset, with, edges: Default::default() }).is_err() {
             self.abort(tx);
             return Outcome::Unchanged("stale caret");
         }
@@ -100,7 +105,13 @@ impl Editor {
             style: Rc::new(r.style),
             mark: text_run.clone(),
             list: None,
-            inlines: vec![Inline::NoteMark(kind, id, mark_run), Inline::Text(" ".into(), text_run)],
+            inlines: vec![
+                match custom {
+                    Some(m) => Inline::Text(m.to_string(), mark_run),
+                    None => Inline::NoteMark(kind, id, mark_run),
+                },
+                Inline::Text(" ".into(), text_run),
+            ],
             src: None,
             id: pid,
             div: None,
@@ -110,7 +121,168 @@ impl Editor {
             self.abort(tx);
             return Outcome::Unchanged("note failed");
         }
-        self.selection = Selection::Caret(Position::text(story(kind, id), ParaId(pid), Unit(2)));
+        let after = custom.map_or(1, |m| m.chars().count() as u32) + 1;
+        self.selection = Selection::Caret(Position::text(story(kind, id), ParaId(pid), Unit(after)));
+        self.commit(tx, None, fonts)
+    }
+
+    pub(super) fn set_note_properties(&mut self, p: crate::api::command::NoteProperties, fonts: &Fonts) -> Outcome {
+        use crate::api::command::{NotePosition as Pos, NoteRestart as R, NoteScope, NoteType, NumberFormat};
+        let foot = p.kind == NoteType::Footnote;
+        if p.position.is_some_and(|pos| matches!(pos, Pos::PageBottom | Pos::BeneathText) != foot) {
+            return Outcome::invalid("footnotes go at the page's bottom or beneath the text; endnotes at a section's or the document's end");
+        }
+        if !foot && p.restart == Some(R::EachPage) {
+            return Outcome::invalid("endnotes don't restart on each page");
+        }
+        if p.format.is_some_and(|f| matches!(f, NumberFormat::Bullet | NumberFormat::None)) {
+            return Outcome::invalid("a note number format is a number style");
+        }
+        if p.start.is_some_and(|s| !(1..=16383).contains(&s)) {
+            return Outcome::invalid("the first number is 1…16383");
+        }
+        let k = usize::from(!foot);
+        let sections: Vec<usize> = match p.apply_to.unwrap_or_default() {
+            NoteScope::WholeDocument => (0..self.doc.sections.len()).collect(),
+            NoteScope::ThisSection => vec![self.focus_section()],
+        };
+        let mut tx = self.begin("Note Options");
+        let mut changed = false;
+        for section in sections {
+            let Some(s) = self.doc.sections.get(section) else { continue };
+            let mut page = s.page();
+            let n = &mut page.notes[k];
+            if let Some(f) = p.format {
+                n.fmt = Some(f.val().to_string());
+            }
+            if let Some(start) = p.start {
+                n.start = i64::from(start);
+            }
+            if let Some(r) = p.restart {
+                n.restart = match r {
+                    R::Continuous => crate::docx::NoteRestart::Continuous,
+                    R::EachSection => crate::docx::NoteRestart::EachSect,
+                    R::EachPage => crate::docx::NoteRestart::EachPage,
+                };
+            }
+            if foot && let Some(pos) = p.position {
+                n.beneath = pos == Pos::BeneathText;
+            }
+            if page == s.page() {
+                continue;
+            }
+            let change = s.change.clone();
+            if self.step(&mut tx, Step::SectionPage { section, page: Box::new(page), change }).is_err() {
+                self.abort(tx);
+                return Outcome::Unchanged("no section");
+            }
+            changed = true;
+        }
+        // Where endnotes go is the document's.
+        if !foot && let Some(pos) = p.position {
+            let mut settings = super::step::PageSettings::of(&self.doc.settings);
+            let was = settings;
+            settings.endnotes_sect_end = pos == Pos::SectionEnd;
+            if settings != was {
+                if self.step(&mut tx, Step::PageSettings(settings)).is_err() {
+                    self.abort(tx);
+                    return Outcome::Unchanged("the setting can't change");
+                }
+                changed = true;
+            }
+        }
+        if !changed {
+            self.abort(tx);
+            return Outcome::Unchanged("already so");
+        }
+        self.commit(tx, None, fonts)
+    }
+
+    /// Footnotes become endnotes, endnotes footnotes, or both: each note's body moves to the other kind under a new
+    /// number, and its reference with it.
+    pub(super) fn convert_notes(&mut self, c: crate::api::command::NoteConversion, fonts: &Fonts) -> Outcome {
+        use crate::api::command::NoteConversion as C;
+        let kinds: &[NoteKind] = match c {
+            C::FootnotesToEndnotes => &[NoteKind::Foot],
+            C::EndnotesToFootnotes => &[NoteKind::End],
+            C::Swap => &[NoteKind::Foot, NoteKind::End],
+        };
+        let other = |k: NoteKind| if k == NoteKind::Foot { NoteKind::End } else { NoteKind::Foot };
+        let notes = |e: &Self, k: NoteKind| if k == NoteKind::Foot { e.doc.footnotes.clone() } else { e.doc.endnotes.clone() };
+        // New numbers above every note of the kind they become (the separators' are below 1).
+        let mut map: std::collections::HashMap<(NoteKind, i64), i64> = std::collections::HashMap::new();
+        let mut moves = Vec::new();
+        for &from in kinds {
+            let to = other(from);
+            let first = notes(self, to).keys().copied().max().unwrap_or(0).max(0) + 1;
+            // In their order, so the numbers keep it.
+            let mut from_notes: Vec<(i64, Vec<Block>)> = notes(self, from).into_iter().filter(|(id, _)| *id > 0).collect();
+            from_notes.sort_by_key(|(id, _)| *id);
+            for (next, (id, body)) in (first..).zip(from_notes) {
+                map.insert((from, id), next);
+                moves.push((from, id, next, body));
+            }
+        }
+        if moves.is_empty() {
+            return Outcome::Unchanged("no notes to convert");
+        }
+        // A caret in a note that moves goes with it, to the same place in its body.
+        let caret = self.selection.focus().and_then(|f| {
+            let (kind, id) = match f.story {
+                StoryId::Footnote(id) => (NoteKind::Foot, id),
+                StoryId::Endnote(id) => (NoteKind::End, id),
+                _ => return None,
+            };
+            let (para, offset) = f.para_offset()?;
+            Some((story(other(kind), *map.get(&(kind, id))?), para, offset))
+        });
+        let mut tx = self.begin("Convert Notes");
+        for (from, id, _, _) in &moves {
+            if self.step(&mut tx, Step::Note { kind: *from, id: *id, blocks: None }).is_err() {
+                self.abort(tx);
+                return Outcome::Unchanged("a note can't move");
+            }
+        }
+        for (from, _, to_id, mut body) in moves {
+            let to = other(from);
+            for b in &mut body {
+                if let Block::Para(p) = b {
+                    for i in &mut p.inlines {
+                        if let Inline::NoteMark(k, n, _) = i {
+                            (*k, *n) = (to, to_id);
+                        }
+                    }
+                }
+            }
+            if self.step(&mut tx, Step::Note { kind: to, id: to_id, blocks: Some(body) }).is_err() {
+                self.abort(tx);
+                return Outcome::Unchanged("a note can't move");
+            }
+        }
+        let paras: Vec<ParaId> = self.index.para_ids().collect();
+        for para in paras {
+            let Some(p) = self.index.para(&self.doc, para) else { continue };
+            if !p.inlines.iter().any(|i| matches!(i, Inline::NoteRef { kind, id, .. } if map.contains_key(&(*kind, *id)))) {
+                continue;
+            }
+            let inlines: Vec<Inline> = p
+                .inlines
+                .iter()
+                .map(|i| match i {
+                    Inline::NoteRef { kind, id, custom, run } if map.contains_key(&(*kind, *id)) => {
+                        Inline::NoteRef { kind: other(*kind), id: map[&(*kind, *id)], custom: *custom, run: run.clone() }
+                    }
+                    i => i.clone(),
+                })
+                .collect();
+            if self.step(&mut tx, Step::Restyle { para, inlines }).is_err() {
+                self.abort(tx);
+                return Outcome::Unchanged("a reference can't change");
+            }
+        }
+        if let Some((story, para, offset)) = caret {
+            self.selection = Selection::Caret(Position::text(story, para, offset));
+        }
         self.commit(tx, None, fonts)
     }
 

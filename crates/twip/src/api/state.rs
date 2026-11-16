@@ -749,6 +749,24 @@ pub struct PageFormatting {
     pub header_links: HeaderFooterLinks,
     /// Which of its footers do.
     pub footer_links: HeaderFooterLinks,
+    /// The section's footnote settings.
+    pub footnotes: NoteSettings,
+    /// The section's endnote settings.
+    pub endnotes: NoteSettings,
+}
+
+/// A section's footnote or endnote settings.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct NoteSettings {
+    /// Where the notes go.
+    pub position: crate::api::command::NotePosition,
+    /// The number format.
+    pub format: crate::api::command::NumberFormat,
+    /// The first number.
+    pub start: u32,
+    /// When numbering starts again.
+    pub restart: crate::api::command::NoteRestart,
 }
 
 /// Which of a section's headers or footers take the section before's.

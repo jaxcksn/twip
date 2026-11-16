@@ -874,6 +874,16 @@ fn commands() -> Vec<Command> {
         Command::InsertShape(dr::ShapeInsert { preset: preset("star5"), width: Some(Points(90.5)), height: None }),
         Command::InsertFootnote,
         Command::InsertEndnote,
+        Command::InsertNote(NoteInsert { kind: NoteType::Footnote, custom_mark: Some("*".into()) }),
+        Command::SetNoteProperties(NoteProperties {
+            kind: NoteType::Endnote,
+            position: Some(NotePosition::SectionEnd),
+            format: Some(NumberFormat::UpperRoman),
+            start: Some(3),
+            restart: Some(NoteRestart::EachSection),
+            apply_to: Some(NoteScope::ThisSection),
+        }),
+        Command::ConvertNotes(NoteConversion::Swap),
         Command::InsertHyperlink(Hyperlink { address: "https://example.com".into(), text: Some("Example".into()) }),
         Command::EditHyperlink(HyperlinkEdit { address: Some("https://example.org".into()), text: None }),
         Command::RemoveHyperlink,
@@ -1330,6 +1340,8 @@ fn page() -> PageFormatting {
         gutter_at_top: false,
         header_links: HeaderFooterLinks { default: true, first: false, even: true },
         footer_links: HeaderFooterLinks::default(),
+        footnotes: NoteSettings { position: NotePosition::BeneathText, format: NumberFormat::Decimal, start: 1, restart: NoteRestart::EachPage },
+        endnotes: NoteSettings::default(),
     }
 }
 

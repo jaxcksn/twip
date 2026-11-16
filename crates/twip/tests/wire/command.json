@@ -587,6 +587,24 @@
     "type": "insertEndnote"
   },
   {
+    "customMark": "*",
+    "kind": "footnote",
+    "type": "insertNote"
+  },
+  {
+    "applyTo": "thisSection",
+    "format": "upperRoman",
+    "kind": "endnote",
+    "position": "sectionEnd",
+    "restart": "eachSection",
+    "start": 3,
+    "type": "setNoteProperties"
+  },
+  {
+    "type": "convertNotes",
+    "value": "swap"
+  },
+  {
     "address": "https://example.com",
     "text": "Example",
     "type": "insertHyperlink"

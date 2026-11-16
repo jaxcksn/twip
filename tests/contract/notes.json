@@ -1,0 +1,23 @@
+{
+  "name": "notes",
+  "fixture": "editor/FX-STORIES.docx",
+  "steps": [
+    { "op": "open" },
+    { "op": "command", "command": { "type": "setNoteProperties", "kind": "footnote", "position": "beneathText", "format": "lowerLetter", "start": 2, "restart": "eachPage" } },
+    { "op": "command", "command": { "type": "setNoteProperties", "kind": "endnote", "position": "sectionEnd", "format": "upperRoman" } },
+    { "op": "expectState", "match": { "page": { "footnotes": { "position": "beneathText", "format": "lowerLetter", "start": 2, "restart": "eachPage" }, "endnotes": { "position": "sectionEnd", "format": "upperRoman" } } } },
+    { "op": "command", "command": { "type": "setNoteProperties", "kind": "footnote", "position": "sectionEnd" } },
+    { "op": "expectError", "code": "invalid-argument" },
+    { "op": "command", "command": { "type": "setNoteProperties", "kind": "endnote", "restart": "eachPage" } },
+    { "op": "expectError", "code": "invalid-argument" },
+    { "op": "command", "command": { "type": "insertNote", "kind": "footnote", "customMark": "*" } },
+    { "op": "command", "command": { "type": "insertNote", "kind": "endnote", "customMark": "" } },
+    { "op": "expectError", "code": "invalid-argument" },
+    { "op": "command", "command": { "type": "convertNotes", "value": "swap" } },
+    { "op": "command", "command": { "type": "undo" } },
+    { "op": "command", "command": { "type": "convertNotes", "value": "footnotesToEndnotes" } },
+    { "op": "export", "format": "docx" },
+    { "op": "reopen" },
+    { "op": "expectState", "match": { "page": { "footnotes": { "position": "beneathText", "format": "lowerLetter", "start": 2, "restart": "eachPage" }, "endnotes": { "position": "sectionEnd", "format": "upperRoman" } } } }
+  ]
+}

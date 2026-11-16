@@ -6911,3 +6911,75 @@ static Twip.EditorOperation.RemoveHeaderFooter(Twip.HeaderFooterKind kind, Twip.
 static Twip.EditorOperation.SetHeaderFooterLinked(Twip.HeaderFooterKind kind, Twip.HeaderFooterType pages, bool linked) -> Twip.EditorOperation!
 static Twip.HeaderFooterLinks.operator !=(Twip.HeaderFooterLinks? left, Twip.HeaderFooterLinks? right) -> bool
 static Twip.HeaderFooterLinks.operator ==(Twip.HeaderFooterLinks? left, Twip.HeaderFooterLinks? right) -> bool
+Twip.CommandId.ConvertNotes = 233 -> Twip.CommandId
+Twip.CommandId.InsertNote = 231 -> Twip.CommandId
+Twip.CommandId.SetNoteProperties = 232 -> Twip.CommandId
+Twip.EditorCommands.ConvertNotesAsync(Twip.NoteConversion conversion, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.InsertNoteAsync(Twip.NoteType kind, string? customMark = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetNotePropertiesAsync(Twip.NotePropertiesOptions! options, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.NoteConversion
+Twip.NoteConversion.EndnotesToFootnotes = 1 -> Twip.NoteConversion
+Twip.NoteConversion.FootnotesToEndnotes = 0 -> Twip.NoteConversion
+Twip.NoteConversion.Swap = 2 -> Twip.NoteConversion
+Twip.NotePosition
+Twip.NotePosition.BeneathText = 1 -> Twip.NotePosition
+Twip.NotePosition.DocumentEnd = 3 -> Twip.NotePosition
+Twip.NotePosition.PageBottom = 0 -> Twip.NotePosition
+Twip.NotePosition.SectionEnd = 2 -> Twip.NotePosition
+Twip.NotePropertiesOptions
+Twip.NotePropertiesOptions.<Clone>$() -> Twip.NotePropertiesOptions!
+Twip.NotePropertiesOptions.ApplyTo.get -> Twip.NoteScope?
+Twip.NotePropertiesOptions.ApplyTo.init -> void
+Twip.NotePropertiesOptions.Deconstruct(out Twip.NoteType Kind, out Twip.NotePosition? Position, out Twip.NumberFormat? Format, out int? Start, out Twip.NoteRestart? Restart, out Twip.NoteScope? ApplyTo) -> void
+Twip.NotePropertiesOptions.Equals(Twip.NotePropertiesOptions? other) -> bool
+Twip.NotePropertiesOptions.Format.get -> Twip.NumberFormat?
+Twip.NotePropertiesOptions.Format.init -> void
+Twip.NotePropertiesOptions.Kind.get -> Twip.NoteType
+Twip.NotePropertiesOptions.Kind.init -> void
+Twip.NotePropertiesOptions.NotePropertiesOptions(Twip.NoteType Kind, Twip.NotePosition? Position = null, Twip.NumberFormat? Format = null, int? Start = null, Twip.NoteRestart? Restart = null, Twip.NoteScope? ApplyTo = null) -> void
+Twip.NotePropertiesOptions.Position.get -> Twip.NotePosition?
+Twip.NotePropertiesOptions.Position.init -> void
+Twip.NotePropertiesOptions.Restart.get -> Twip.NoteRestart?
+Twip.NotePropertiesOptions.Restart.init -> void
+Twip.NotePropertiesOptions.Start.get -> int?
+Twip.NotePropertiesOptions.Start.init -> void
+Twip.NoteRestart
+Twip.NoteRestart.Continuous = 0 -> Twip.NoteRestart
+Twip.NoteRestart.EachPage = 2 -> Twip.NoteRestart
+Twip.NoteRestart.EachSection = 1 -> Twip.NoteRestart
+Twip.NoteScope
+Twip.NoteScope.ThisSection = 1 -> Twip.NoteScope
+Twip.NoteScope.WholeDocument = 0 -> Twip.NoteScope
+Twip.NoteSettings
+Twip.NoteSettings.<Clone>$() -> Twip.NoteSettings!
+Twip.NoteSettings.Deconstruct(out Twip.NotePosition Position, out Twip.NumberFormat Format, out int Start, out Twip.NoteRestart Restart) -> void
+Twip.NoteSettings.Equals(Twip.NoteSettings? other) -> bool
+Twip.NoteSettings.Format.get -> Twip.NumberFormat
+Twip.NoteSettings.Format.init -> void
+Twip.NoteSettings.NoteSettings(Twip.NotePosition Position, Twip.NumberFormat Format, int Start, Twip.NoteRestart Restart) -> void
+Twip.NoteSettings.Position.get -> Twip.NotePosition
+Twip.NoteSettings.Position.init -> void
+Twip.NoteSettings.Restart.get -> Twip.NoteRestart
+Twip.NoteSettings.Restart.init -> void
+Twip.NoteSettings.Start.get -> int
+Twip.NoteSettings.Start.init -> void
+Twip.NoteType
+Twip.NoteType.Endnote = 1 -> Twip.NoteType
+Twip.NoteType.Footnote = 0 -> Twip.NoteType
+Twip.PageFormatting.Endnotes.get -> Twip.NoteSettings!
+Twip.PageFormatting.Endnotes.init -> void
+Twip.PageFormatting.Footnotes.get -> Twip.NoteSettings!
+Twip.PageFormatting.Footnotes.init -> void
+override Twip.NotePropertiesOptions.Equals(object? obj) -> bool
+override Twip.NotePropertiesOptions.GetHashCode() -> int
+override Twip.NotePropertiesOptions.ToString() -> string!
+override Twip.NoteSettings.Equals(object? obj) -> bool
+override Twip.NoteSettings.GetHashCode() -> int
+override Twip.NoteSettings.ToString() -> string!
+static Twip.EditorOperation.ConvertNotes(Twip.NoteConversion conversion) -> Twip.EditorOperation!
+static Twip.EditorOperation.InsertNote(Twip.NoteType kind, string? customMark = null) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetNoteProperties(Twip.NotePropertiesOptions! options) -> Twip.EditorOperation!
+static Twip.NotePropertiesOptions.operator !=(Twip.NotePropertiesOptions? left, Twip.NotePropertiesOptions? right) -> bool
+static Twip.NotePropertiesOptions.operator ==(Twip.NotePropertiesOptions? left, Twip.NotePropertiesOptions? right) -> bool
+static Twip.NoteSettings.operator !=(Twip.NoteSettings? left, Twip.NoteSettings? right) -> bool
+static Twip.NoteSettings.operator ==(Twip.NoteSettings? left, Twip.NoteSettings? right) -> bool

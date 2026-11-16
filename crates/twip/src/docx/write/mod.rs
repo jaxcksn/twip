@@ -186,6 +186,35 @@ const TAB_AND_HYPHENATION: &[&str] = &[
     "bookFoldRevPrinting",
     "bookFoldPrinting",
     "bookFoldPrintingSheets",
+    "drawingGridHorizontalSpacing",
+    "drawingGridVerticalSpacing",
+    "displayHorizontalDrawingGridEvery",
+    "displayVerticalDrawingGridEvery",
+    "doNotUseMarginsForDrawingGridOrigin",
+    "drawingGridHorizontalOrigin",
+    "drawingGridVerticalOrigin",
+    "doNotShadeFormData",
+    "noPunctuationKerning",
+    "characterSpacingControl",
+    "printTwoOnOne",
+    "strictFirstAndLastChars",
+    "noLineBreaksAfter",
+    "noLineBreaksBefore",
+    "savePreviewPicture",
+    "doNotValidateAgainstSchema",
+    "saveInvalidXml",
+    "ignoreMixedContent",
+    "alwaysShowPlaceholderText",
+    "doNotDemarcateInvalidXml",
+    "saveXmlDataOnly",
+    "useXSLTWhenSaving",
+    "saveThroughXslt",
+    "showXMLTags",
+    "alwaysMergeEmptyNamespace",
+    "updateFields",
+    "hdrShapeDefaults",
+    "footnotePr",
+    "endnotePr",
 ];
 
 /// The settings part with the default tab spacing and the hyphenation settings, where they changed since reading.
@@ -219,6 +248,27 @@ fn settings_part(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(
     }
     if read.do_not_hyphenate_caps != now.do_not_hyphenate_caps {
         set_setting(&mut out, "doNotHyphenateCaps", now.do_not_hyphenate_caps.then(|| format!("<{w}doNotHyphenateCaps/>")))?;
+    }
+    // Endnotes at each section's end: `w:endnotePr/w:pos`, its note list kept.
+    if read.endnotes_sect_end != now.endnotes_sect_end {
+        let dom = roxmltree::Document::parse(&out).map_err(|e| e.to_string())?;
+        let pr = dom.root_element().children().find(|c| is_w(*c, "endnotePr")).map(|n| (n.range(), child(n, "pos").map(|p| p.range())));
+        drop(dom);
+        let pos = now.endnotes_sect_end.then(|| format!("<{w}pos {w}val=\"sectEnd\"/>"));
+        match pr {
+            Some((_, Some(p))) => out.replace_range(p, pos.as_deref().unwrap_or("")),
+            Some((r, None)) => {
+                if let Some(pos) = pos {
+                    let x = out[r.clone()].to_string();
+                    let new = match x.strip_suffix("/>") {
+                        Some(open) => format!("{open}>{pos}</{w}endnotePr>"),
+                        None => x.replacen('>', &format!(">{pos}"), 1),
+                    };
+                    out.replace_range(r, &new);
+                }
+            }
+            None => set_setting(&mut out, "endnotePr", pos.map(|p| format!("<{w}endnotePr>{p}</{w}endnotePr>")))?,
+        }
     }
     for (name, was, is) in [
         ("evenAndOddHeaders", read.even_and_odd, now.even_and_odd),
@@ -2289,6 +2339,9 @@ fn same_inline(x: &Inline, y: &Inline) -> bool {
         (Inline::Text(s, r), Inline::Text(t, q)) => s == t && Rc::ptr_eq(r, q),
         (Inline::Bookmark(a), Inline::Bookmark(b)) => a == b,
         (Inline::Opaque(a), Inline::Opaque(b)) => Rc::ptr_eq(a, b),
+        (Inline::NoteRef { kind: k, id: a, custom: c, run: r }, Inline::NoteRef { kind: l, id: b, custom: d, run: q }) => {
+            (k, a, c) == (l, b, d) && Rc::ptr_eq(r, q)
+        }
         (Inline::Range(a), Inline::Range(b)) => a == b,
         (Inline::CommentRef { id: a, run: r }, Inline::CommentRef { id: b, run: q }) => a == b && Rc::ptr_eq(r, q),
         (Inline::ControlStart(a), Inline::ControlStart(b)) | (Inline::ControlEnd(a), Inline::ControlEnd(b)) => a == b,
@@ -2350,7 +2403,7 @@ fn unit_keys(i: &Inline, out: &mut Vec<(u64, char)>) {
             match other {
                 // By its image: a resized picture is kept, its size patched (`Emit::seg`).
                 Inline::Picture(p, _) => p.image.hash(&mut h),
-                Inline::NoteRef { id, .. } => id.hash(&mut h),
+                Inline::NoteRef { kind, id, .. } => (*kind as u8, id).hash(&mut h),
                 // A checkbox by its control: toggling keeps it (its face is patched, `Emit::seg`).
                 Inline::Sym { control: Some(c), .. } => c.hash(&mut h),
                 Inline::Sym { ch, font, .. } => (ch, font).hash(&mut h),

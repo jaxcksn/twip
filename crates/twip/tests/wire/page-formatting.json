@@ -10,11 +10,23 @@
     },
     "differentFirstPage": true,
     "differentOddEven": false,
+    "endnotes": {
+      "format": "decimal",
+      "position": "pageBottom",
+      "restart": "continuous",
+      "start": 0
+    },
     "footerDistance": 36.5,
     "footerLinks": {
       "default": false,
       "even": false,
       "first": false
+    },
+    "footnotes": {
+      "format": "decimal",
+      "position": "beneathText",
+      "restart": "eachPage",
+      "start": 1
     },
     "gutterAtTop": false,
     "headerDistance": 36.5,

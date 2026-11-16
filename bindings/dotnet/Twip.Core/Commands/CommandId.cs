@@ -465,4 +465,10 @@ public enum CommandId
     RemoveHeaderFooter,
     /// <summary>Inserts an alignment tab.</summary>
     InsertAlignmentTab,
+    /// <summary>Inserts a footnote or an endnote, numbered or with its own mark.</summary>
+    InsertNote,
+    /// <summary>Sets footnote or endnote options.</summary>
+    SetNoteProperties,
+    /// <summary>Converts footnotes and endnotes.</summary>
+    ConvertNotes,
 }

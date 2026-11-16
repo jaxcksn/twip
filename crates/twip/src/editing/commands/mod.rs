@@ -327,8 +327,14 @@ impl Editor {
             Command::InsertTable(t) => self.insert_table(t.rows as usize, t.columns as usize, fonts),
             Command::InsertPicture(p) => self.insert_picture_with(p, fonts),
             Command::InsertTextBox => self.insert_text_box(fonts),
-            Command::InsertFootnote => self.insert_note(crate::docx::NoteKind::Foot, fonts),
-            Command::InsertEndnote => self.insert_note(crate::docx::NoteKind::End, fonts),
+            Command::InsertFootnote => self.insert_note(crate::docx::NoteKind::Foot, None, fonts),
+            Command::InsertEndnote => self.insert_note(crate::docx::NoteKind::End, None, fonts),
+            Command::InsertNote(n) => {
+                let kind = if n.kind == crate::api::command::NoteType::Footnote { crate::docx::NoteKind::Foot } else { crate::docx::NoteKind::End };
+                self.insert_note(kind, n.custom_mark.as_deref(), fonts)
+            }
+            Command::SetNoteProperties(p) => self.set_note_properties(p, fonts),
+            Command::ConvertNotes(c) => self.convert_notes(c, fonts),
             Command::InsertHyperlink(h) => self.insert_hyperlink(h, fonts),
             Command::EditHyperlink(h) => self.edit_hyperlink(h, fonts),
             Command::RemoveHyperlink => self.remove_hyperlink(fonts),

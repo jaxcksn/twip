@@ -503,6 +503,7 @@ fn every_edit_keeps_every_construct() {
         std::fs::create_dir_all(d).expect("the output directory");
         // Section and page settings, for the schema check too.
         std::fs::write(d.join("section-settings.docx"), section_settings_package()).expect("writes");
+        std::fs::write(d.join("converted-notes.docx"), converted_notes_package()).expect("writes");
     }
     let cases: Vec<(&Construct, &str, fn(&mut Editor, &Spot) -> Outcome)> = CONSTRUCTS
         .iter()
@@ -625,4 +626,35 @@ fn section_settings_are_saved_where_the_schema_puts_them() {
     for el in ["evenAndOddHeaders", "gutterAtTop", "bookFoldPrinting", "bordersDoNotSurroundHeader"] {
         assert!(settings.contains(&format!("w:{el}")), "{el}: {settings}");
     }
+}
+
+/// A document whose footnotes and endnotes were swapped, with a new footnote of its own mark, saved.
+fn converted_notes_package() -> Vec<u8> {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-STORIES.docx");
+    let mut e = Editor::open(&std::fs::read(path).expect("the fixture"), fonts()).expect("opens");
+    let n = |v: serde_json::Value| serde_json::from_value::<Command>(v).expect("a command");
+    for c in [
+        serde_json::json!({ "type": "insertNote", "kind": "footnote", "customMark": "*" }),
+        serde_json::json!({ "type": "convertNotes", "value": "swap" }),
+        serde_json::json!({ "type": "setNoteProperties", "kind": "endnote", "position": "sectionEnd", "format": "lowerRoman", "restart": "eachSection" }),
+    ] {
+        let out = e.execute(n(c.clone()), fonts());
+        assert!(matches!(out, Outcome::Changed(_)), "{c}: {out:?}");
+    }
+    crate::docx::write::save(e.document()).expect("saves")
+}
+
+#[test]
+fn converted_notes_keep_their_references_and_bodies() {
+    let refs = |pkg: &[u8]| {
+        let xml = String::from_utf8(entries(pkg).into_iter().find(|(n, _)| n == "word/document.xml").expect("the main part").1).expect("UTF-8");
+        (xml.matches("<w:footnoteReference").count(), xml.matches("<w:endnoteReference").count(), xml.matches("customMarkFollows").count())
+    };
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-STORIES.docx");
+    let (f, e, _) = refs(&std::fs::read(path).expect("the fixture"));
+    let saved = converted_notes_package();
+    // The new footnote (its own mark) became an endnote with the others.
+    assert_eq!(refs(&saved), (e, f + 1, 1), "references swapped");
+    let doc = crate::docx::read_editable(&saved).expect("reads back");
+    assert_eq!((doc.footnotes.keys().filter(|k| **k > 0).count(), doc.endnotes.keys().filter(|k| **k > 0).count()), (e, f + 1), "bodies swapped");
 }

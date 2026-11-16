@@ -322,6 +322,7 @@ export interface Commands {
     closePopover(): Promise<void>;
     closeSubTemplate(): Promise<void>;
     continueNumbering(): Promise<void>;
+    convertNotes(conversion: 'footnotesToEndnotes' | 'endnotesToFootnotes' | 'swap'): Promise<void>;
     copy(): Promise<void>;
     copyFormatting(): Promise<void>;
     createSubTemplate(options: {
@@ -416,6 +417,10 @@ export interface Commands {
         text?: string;
     }): Promise<void>;
     insertLineBreak(): Promise<void>;
+    insertNote(options: {
+        kind: 'footnote' | 'endnote';
+        customMark?: string;
+    }): Promise<void>;
     insertPageBreak(): Promise<void>;
     insertPageNumber(options: {
         format: 'page' | 'pageOfTotal' | 'total';
@@ -682,6 +687,14 @@ export interface Commands {
     setMultiplePages(options: {
         mode?: MultiplePagesMode;
         gutterAtTop?: boolean;
+    }): Promise<void>;
+    setNoteProperties(options: {
+        kind: 'footnote' | 'endnote';
+        position?: NotePosition;
+        format?: NumberFormat;
+        start?: number;
+        restart?: 'continuous' | 'eachSection' | 'eachPage';
+        applyTo?: 'wholeDocument' | 'thisSection';
     }): Promise<void>;
     setNumberingValue(options: {
         mode: 'startNew' | 'continue';
@@ -2109,6 +2122,17 @@ export type NoArgumentCommandId = {
 }[CommandId];
 
 // @public
+export type NotePosition = 'pageBottom' | 'beneathText' | 'sectionEnd' | 'documentEnd';
+
+// @public
+export interface NoteSettings {
+    format: NumberFormat;
+    position: NotePosition;
+    restart: 'continuous' | 'eachSection' | 'eachPage';
+    start: number;
+}
+
+// @public
 export type NumberForm = 'default' | 'lining' | 'oldStyle';
 
 // @public
@@ -2194,12 +2218,14 @@ export interface PageFormatting {
     };
     differentFirstPage: boolean;
     differentOddEven: boolean;
+    endnotes: NoteSettings;
     footerDistance: Points;
     footerLinks: {
         default: boolean;
         first: boolean;
         even: boolean;
     };
+    footnotes: NoteSettings;
     gutterAtTop: boolean;
     headerDistance: Points;
     headerLinks: {

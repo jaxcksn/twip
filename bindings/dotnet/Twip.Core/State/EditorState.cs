@@ -822,7 +822,20 @@ public sealed record PageFormatting
 
     /// <summary>Which of its footers do.</summary>
     public HeaderFooterLinks FooterLinks { get; init; } = new(false, false, false);
+
+    /// <summary>The section's footnote settings.</summary>
+    public NoteSettings Footnotes { get; init; } = new(NotePosition.PageBottom, NumberFormat.Decimal, 1, NoteRestart.Continuous);
+
+    /// <summary>The section's endnote settings.</summary>
+    public NoteSettings Endnotes { get; init; } = new(NotePosition.DocumentEnd, NumberFormat.LowerRoman, 1, NoteRestart.Continuous);
 }
+
+/// <summary>A section's footnote or endnote settings.</summary>
+/// <param name="Position">Where the notes go.</param>
+/// <param name="Format">The number format.</param>
+/// <param name="Start">The first number.</param>
+/// <param name="Restart">When numbering starts again.</param>
+public sealed record NoteSettings(NotePosition Position, NumberFormat Format, int Start, NoteRestart Restart);
 
 /// <summary>Which of a section's headers or footers take the section before's.</summary>
 /// <param name="Default">For every page.</param>

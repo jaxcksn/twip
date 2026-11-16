@@ -598,6 +598,22 @@ public abstract partial record EditorOperation
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation InsertEndnote() => Op(CommandId.InsertEndnote);
 
+    /// <summary>Inserts a footnote or an endnote at the caret, numbered or with its own mark.</summary>
+    /// <param name="kind">A footnote or an endnote.</param>
+    /// <param name="customMark">Its own mark (1 to 10 characters) instead of a number.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation InsertNote(NoteType kind, string? customMark = null) => Op(CommandId.InsertNote, new Arg("kind", Node(kind)), new Arg("customMark", customMark is { } m ? Node(m) : null, Optional: true));
+
+    /// <summary>Sets footnotes' or endnotes' position, number format, first number and restarting; unset values are kept.</summary>
+    /// <param name="options">The settings.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetNoteProperties(NotePropertiesOptions options) => Op(CommandId.SetNoteProperties, Arg.Flatten(options));
+
+    /// <summary>Turns every footnote into an endnote, every endnote into a footnote, or both.</summary>
+    /// <param name="conversion">What turns into what.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation ConvertNotes(NoteConversion conversion) => Op(CommandId.ConvertNotes, new Arg("value", Node(conversion)));
+
     /// <summary>Inserts a hyperlink.</summary>
     /// <param name="address">The address (non-empty).</param>
     /// <param name="text">The text; by default the selection, or the address.</param>

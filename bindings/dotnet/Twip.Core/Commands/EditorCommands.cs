@@ -733,6 +733,25 @@ public sealed class EditorCommands
     /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
     public Task InsertEndnoteAsync(CancellationToken ct = default) => _session.RunAsync(EditorOperation.InsertEndnote(), ct);
 
+    /// <summary>Inserts a footnote or an endnote at the caret, numbered or with its own mark.</summary>
+    /// <param name="kind">A footnote or an endnote.</param>
+    /// <param name="customMark">Its own mark (1 to 10 characters) instead of a number.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task InsertNoteAsync(NoteType kind, string? customMark = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.InsertNote(kind, customMark), ct);
+
+    /// <summary>Sets footnotes' or endnotes' position, number format, first number and restarting; unset values are kept.</summary>
+    /// <param name="options">The settings.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SetNotePropertiesAsync(NotePropertiesOptions options, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetNoteProperties(options), ct);
+
+    /// <summary>Turns every footnote into an endnote, every endnote into a footnote, or both.</summary>
+    /// <param name="conversion">What turns into what.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task ConvertNotesAsync(NoteConversion conversion, CancellationToken ct = default) => _session.RunAsync(EditorOperation.ConvertNotes(conversion), ct);
+
     /// <summary>Inserts a hyperlink.</summary>
     /// <param name="address">The address (non-empty).</param>
     /// <param name="text">The text; by default the selection, or the address.</param>

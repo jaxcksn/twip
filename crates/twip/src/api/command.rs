@@ -328,6 +328,14 @@ commands! {
     InsertFootnote,
     /// An endnote at the caret. Undo: one step.
     InsertEndnote,
+    /// A footnote or an endnote at the caret, numbered or with its own mark (the Footnote and Endnote dialog's Insert).
+    /// Undo: one step.
+    InsertNote(NoteInsert),
+    /// Footnotes' or endnotes' position, number format, first number and restarting, for the caret section or the whole
+    /// document; what isn't given is kept. Undo: one step.
+    SetNoteProperties(NoteProperties),
+    /// Turns every footnote into an endnote, every endnote into a footnote, or both. Undo: one step.
+    ConvertNotes(#[serde(with = "value")] NoteConversion),
     /// A hyperlink to `address`; `text` replaces the selection (default: the selection, or the address). Undo: one step.
     InsertHyperlink(Hyperlink),
     /// Changes the link at the selection. Undo: one step.
@@ -653,6 +661,103 @@ pub enum AlignmentTabBase {
     Margin,
     /// The paragraph's indents.
     Indent,
+}
+
+/// Footnote or endnote.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum NoteType {
+    /// A footnote.
+    #[default]
+    Footnote,
+    /// An endnote.
+    Endnote,
+}
+
+/// `insertNote`'s options.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct NoteInsert {
+    /// A footnote or an endnote.
+    pub kind: NoteType,
+    /// Its own mark (1…10 characters) instead of a number.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom_mark: Option<String>,
+}
+
+/// `setNoteProperties`' options.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct NoteProperties {
+    /// Footnotes' or endnotes'.
+    pub kind: NoteType,
+    /// Where the notes go: `pageBottom` or `beneathText` for footnotes, `sectionEnd` or `documentEnd` for endnotes (the
+    /// whole document's, whatever `applyTo` says).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub position: Option<NotePosition>,
+    /// The number format.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub format: Option<NumberFormat>,
+    /// The first number (1…16383).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start: Option<u32>,
+    /// When numbering starts again.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub restart: Option<NoteRestart>,
+    /// The caret section, or every section (the default).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub apply_to: Option<NoteScope>,
+}
+
+/// Where notes go.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum NotePosition {
+    /// Footnotes at the bottom of the page.
+    #[default]
+    PageBottom,
+    /// Footnotes right after the page's text.
+    BeneathText,
+    /// Endnotes at the end of each section.
+    SectionEnd,
+    /// Endnotes at the end of the document.
+    DocumentEnd,
+}
+
+/// When note numbering starts again.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum NoteRestart {
+    /// Never: it continues.
+    #[default]
+    Continuous,
+    /// In each section.
+    EachSection,
+    /// On each page (footnotes).
+    EachPage,
+}
+
+/// Which sections note settings apply to.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum NoteScope {
+    /// Every section.
+    #[default]
+    WholeDocument,
+    /// The caret section.
+    ThisSection,
+}
+
+/// What `convertNotes` turns into what.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum NoteConversion {
+    /// Every footnote becomes an endnote.
+    FootnotesToEndnotes,
+    /// Every endnote becomes a footnote.
+    EndnotesToFootnotes,
+    /// Both at once.
+    Swap,
 }
 
 /// `setPageNumbering`'s options.
