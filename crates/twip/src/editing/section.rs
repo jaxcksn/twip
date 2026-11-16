@@ -138,7 +138,7 @@ impl Editor {
                 continue;
             }
             let change = s.change.clone();
-            if self.step(&mut tx, Step::SectionPage { section, page, change }).is_err() {
+            if self.step(&mut tx, Step::SectionPage { section, page: Box::new(page), change }).is_err() {
                 self.abort(tx);
                 return Outcome::Unchanged("no section");
             }
@@ -185,7 +185,7 @@ impl Editor {
         }
         let change = s.change.clone();
         let mut tx = self.begin(label);
-        if self.step(&mut tx, Step::SectionPage { section, page, change }).is_err() {
+        if self.step(&mut tx, Step::SectionPage { section, page: Box::new(page), change }).is_err() {
             self.abort(tx);
             return Outcome::Unchanged("no section");
         }

@@ -23,6 +23,8 @@ namespace Twip.Wire;
         typeof(CamelEnum<PageVerticalAlignment>),
         typeof(CamelEnum<LineNumberRestart>),
         typeof(CamelEnum<MultiplePagesMode>),
+        typeof(CamelEnum<AlignmentTabKind>),
+        typeof(CamelEnum<AlignmentTabBase>),
         typeof(CamelEnum<NumberSpacing>),
         typeof(CamelEnum<NumberForm>),
         typeof(CamelEnum<CellAlignment>),
@@ -226,6 +228,9 @@ namespace Twip.Wire;
 [JsonSerializable(typeof(PageVerticalAlignment))]
 [JsonSerializable(typeof(LineNumberRestart))]
 [JsonSerializable(typeof(MultiplePagesMode))]
+[JsonSerializable(typeof(AlignmentTabKind))]
+[JsonSerializable(typeof(AlignmentTabBase))]
+[JsonSerializable(typeof(HeaderFooterLinks))]
 [JsonSerializable(typeof(TextFlow))]
 [JsonSerializable(typeof(LanguageOptions))]
 [JsonSerializable(typeof(CharacterEffectsOptions))]

@@ -581,6 +581,10 @@ export interface PageFormatting {
   multiplePages: MultiplePagesMode;
   /** The gutter is at the top. */
   gutterAtTop: boolean;
+  /** Which of the section's headers take the section before's (Link to Previous). */
+  headerLinks: { default: boolean; first: boolean; even: boolean };
+  /** Which of its footers do. */
+  footerLinks: { default: boolean; first: boolean; even: boolean };
 }
 
 /** View settings. */

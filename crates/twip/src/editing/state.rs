@@ -814,6 +814,15 @@ impl Editor {
                 (false, None) => MultiplePagesMode::Normal,
             },
             gutter_at_top: self.doc.settings.gutter_at_top,
+            // Linked: none of its own, and a section before to take it from.
+            header_links: links(section > 0, &s.headers),
+            footer_links: links(section > 0, &s.footers),
         }
     }
+}
+
+/// Which of a section's header or footer slots take the section before's.
+fn links(has_before: bool, refs: &crate::docx::HfRefs) -> crate::api::state::HeaderFooterLinks {
+    let l = |k: usize| has_before && refs[k].is_none();
+    crate::api::state::HeaderFooterLinks { default: l(0), first: l(1), even: l(2) }
 }

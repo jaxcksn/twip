@@ -816,7 +816,19 @@ public sealed record PageFormatting
 
     /// <summary>The gutter is at the top.</summary>
     public bool GutterAtTop { get; init; }
+
+    /// <summary>Which of the section's headers take the section before's (Link to Previous).</summary>
+    public HeaderFooterLinks HeaderLinks { get; init; } = new(false, false, false);
+
+    /// <summary>Which of its footers do.</summary>
+    public HeaderFooterLinks FooterLinks { get; init; } = new(false, false, false);
 }
+
+/// <summary>Which of a section's headers or footers take the section before's.</summary>
+/// <param name="Default">For every page.</param>
+/// <param name="First">For the first page.</param>
+/// <param name="Even">For even pages.</param>
+public sealed record HeaderFooterLinks(bool Default, bool First, bool Even);
 
 /// <summary>A paper size.</summary>
 /// <param name="Width">The width.</param>

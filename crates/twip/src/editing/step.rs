@@ -86,7 +86,7 @@ pub enum Step {
     },
     SectionPage {
         section: usize,
-        page: crate::docx::SectionPage,
+        page: Box<crate::docx::SectionPage>,
         change: Option<Rc<crate::docx::review::SectionChange>>,
     },
     Control {
@@ -790,6 +790,8 @@ impl Step {
             }
             Step::HeaderPart { name, section, footer, slot, blocks } => {
                 let sec = doc.sections.get_mut(section).ok_or(StepError::Missing)?;
+                // Its `w:sectPr` loses the reference of a header it no longer has.
+                doc.edited_sections.insert(section);
                 let refs = if footer { &mut sec.footers } else { &mut sec.headers };
                 let r = refs.get_mut(slot).ok_or(StepError::OutOfRange)?;
                 match blocks {
@@ -954,8 +956,8 @@ impl Step {
             }
             Step::SectionPage { section, page, change } => {
                 let s = doc.sections.get_mut(section).ok_or(StepError::Missing)?;
-                let old = s.page();
-                s.set_page(page);
+                let old = Box::new(s.page());
+                s.set_page(*page);
                 let old_change = std::mem::replace(&mut s.change, change);
                 doc.edited_sections.insert(section);
                 Ok(Applied { inverse: Step::SectionPage { section, page: old, change: old_change }, map: Map::Same, hint: None })

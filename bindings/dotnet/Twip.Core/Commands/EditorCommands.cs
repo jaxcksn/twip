@@ -673,6 +673,29 @@ public sealed class EditorCommands
     /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
     public Task InsertPageNumberAsync(PageNumberFormat format, PageNumberPlacement? where = null, PageNumberAlignment? alignment = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.InsertPageNumber(format, where, alignment), ct);
 
+    /// <summary>The caret section's header or footer takes the section before's (Link to Previous), or gets its own copy of it.</summary>
+    /// <param name="kind">A header or a footer.</param>
+    /// <param name="pages">Which pages it is for.</param>
+    /// <param name="linked">Takes the section before's.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SetHeaderFooterLinkedAsync(HeaderFooterKind kind, HeaderFooterType pages, bool linked, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetHeaderFooterLinked(kind, pages, linked), ct);
+
+    /// <summary>Empties the caret section's header or footer (its own, so a linked one stops linking).</summary>
+    /// <param name="kind">A header or a footer.</param>
+    /// <param name="pages">Which pages it is for.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task RemoveHeaderFooterAsync(HeaderFooterKind kind, HeaderFooterType pages, CancellationToken ct = default) => _session.RunAsync(EditorOperation.RemoveHeaderFooter(kind, pages), ct);
+
+    /// <summary>Inserts a tab to a place set from the margin or the indent, not from the tab stops (Insert Alignment Tab).</summary>
+    /// <param name="alignment">How the text after it aligns at its place.</param>
+    /// <param name="relativeTo">What its place is measured in.</param>
+    /// <param name="leader">What fills the space before it; none when null.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task InsertAlignmentTabAsync(AlignmentTabKind alignment, AlignmentTabBase relativeTo, TabLeader? leader = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.InsertAlignmentTab(alignment, relativeTo, leader), ct);
+
     /// <summary>Inserts a table at the selection.</summary>
     /// <param name="rows">The number of rows, 1 to 32767.</param>
     /// <param name="columns">The number of columns, 1 to 63.</param>

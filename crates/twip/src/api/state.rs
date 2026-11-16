@@ -745,6 +745,22 @@ pub struct PageFormatting {
     pub multiple_pages: crate::api::command::MultiplePagesMode,
     /// The gutter is at the top.
     pub gutter_at_top: bool,
+    /// Which of the section's headers take the section before's (Link to Previous).
+    pub header_links: HeaderFooterLinks,
+    /// Which of its footers do.
+    pub footer_links: HeaderFooterLinks,
+}
+
+/// Which of a section's headers or footers take the section before's.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct HeaderFooterLinks {
+    /// For every page.
+    pub default: bool,
+    /// For the first page.
+    pub first: bool,
+    /// For even pages.
+    pub even: bool,
 }
 
 /// What can be undone and redone.

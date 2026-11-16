@@ -365,7 +365,7 @@ impl Editor {
             let s = &self.doc.sections[section];
             let Some(c) = s.change.as_ref().filter(|c| pick.block(&c.mark)) else { continue };
             let page = if accept { s.page() } else { c.previous.clone() };
-            self.step(tx, Step::SectionPage { section, page, change: None })?;
+            self.step(tx, Step::SectionPage { section, page: Box::new(page), change: None })?;
         }
         let (tables, _) = tables_and_paras(&self.doc, self.index.flow);
         for t in tables {

@@ -141,8 +141,18 @@
       "differentFirstPage": true,
       "differentOddEven": false,
       "footerDistance": 36.5,
+      "footerLinks": {
+        "default": false,
+        "even": false,
+        "first": false
+      },
       "gutterAtTop": false,
       "headerDistance": 36.5,
+      "headerLinks": {
+        "default": true,
+        "even": true,
+        "first": false
+      },
       "lineNumbers": {
         "countBy": 1,
         "distance": 18.5,

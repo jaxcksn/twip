@@ -307,6 +307,13 @@ commands! {
     CloseHeaderFooter,
     /// A page number field at the caret, or in the header or footer. Undo: one step.
     InsertPageNumber(PageNumber),
+    /// The caret section's header or footer takes the section before's (Link to Previous), or gets its own copy of it.
+    /// Undo: one step.
+    SetHeaderFooterLinked(HeaderFooterLink),
+    /// Empties the caret section's header or footer (its own, so a linked one stops linking). Undo: one step.
+    RemoveHeaderFooter(HeaderFooterSlot),
+    /// A tab to a place set from the margin or the indent, not from the tab stops (Insert Alignment Tab). Undo: one step.
+    InsertAlignmentTab(AlignmentTab),
 
     // Insert
     /// A table (1…32767 rows, 1…63 columns). Undo: one step.
@@ -589,6 +596,63 @@ pub enum SectionBreakKind {
     OddPage,
     /// Starts the new section in the next column.
     NextColumn,
+}
+
+/// `setHeaderFooterLinked`'s options.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct HeaderFooterLink {
+    /// A header or a footer.
+    pub kind: crate::api::state::HeaderFooterKind,
+    /// Which pages it is for.
+    pub pages: crate::api::state::HeaderFooterType,
+    /// Takes the section before's.
+    pub linked: bool,
+}
+
+/// `removeHeaderFooter`'s options.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct HeaderFooterSlot {
+    /// A header or a footer.
+    pub kind: crate::api::state::HeaderFooterKind,
+    /// Which pages it is for.
+    pub pages: crate::api::state::HeaderFooterType,
+}
+
+/// `insertAlignmentTab`'s options.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AlignmentTab {
+    /// How the text after it aligns at its place.
+    pub alignment: AlignmentTabKind,
+    /// Its place: the margin's or the indent's left, middle or right.
+    pub relative_to: AlignmentTabBase,
+    /// What fills the space before it. Default: none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub leader: Option<TabLeader>,
+}
+
+/// How text aligns at an alignment tab.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AlignmentTabKind {
+    /// Left, at the left edge.
+    Left,
+    /// Centred, in the middle.
+    Center,
+    /// Right, at the right edge.
+    Right,
+}
+
+/// What an alignment tab's place is measured in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AlignmentTabBase {
+    /// The margins.
+    Margin,
+    /// The paragraph's indents.
+    Indent,
 }
 
 /// `setPageNumbering`'s options.

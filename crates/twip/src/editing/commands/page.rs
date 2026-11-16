@@ -23,7 +23,7 @@ impl Editor {
         }
         let change = s.change.clone();
         let mut tx = self.begin(label);
-        if self.step(&mut tx, Step::SectionPage { section, page, change }).is_err() {
+        if self.step(&mut tx, Step::SectionPage { section, page: Box::new(page), change }).is_err() {
             self.abort(tx);
             return Outcome::Unchanged("no section");
         }
@@ -203,6 +203,28 @@ impl Editor {
             },
             fonts,
         )
+    }
+
+    pub(in crate::editing) fn insert_alignment_tab(&mut self, t: crate::api::command::AlignmentTab, fonts: &Fonts) -> Outcome {
+        use crate::api::command::{AlignmentTabBase, AlignmentTabKind};
+        use crate::api::value::TabLeader;
+        use crate::docx::props::{Leader, TabKind};
+        let tab = crate::docx::PTab {
+            align: match t.alignment {
+                AlignmentTabKind::Left => TabKind::Left,
+                AlignmentTabKind::Center => TabKind::Center,
+                AlignmentTabKind::Right => TabKind::Right,
+            },
+            margin: t.relative_to == AlignmentTabBase::Margin,
+            leader: match t.leader.unwrap_or_default() {
+                TabLeader::None => Leader::None,
+                TabLeader::Dots => Leader::Dot,
+                TabLeader::Dashes => Leader::Hyphen,
+                TabLeader::Underline | TabLeader::Heavy => Leader::Underscore,
+                TabLeader::MiddleDot => Leader::MiddleDot,
+            },
+        };
+        self.insert_inline(|run| Inline::PTab(tab, run), "Alignment Tab", fonts)
     }
 
     pub(in crate::editing) fn set_header_footer_distance(&mut self, d: HeaderFooterDistance, fonts: &Fonts) -> Outcome {

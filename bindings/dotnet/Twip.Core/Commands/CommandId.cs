@@ -459,4 +459,10 @@ public enum CommandId
     SetSectionTextDirection,
     /// <summary>Sets how the document's pages pair and where the gutter is.</summary>
     SetMultiplePages,
+    /// <summary>Links a header or footer to the section before's, or gives it its own.</summary>
+    SetHeaderFooterLinked,
+    /// <summary>Empties a header or footer.</summary>
+    RemoveHeaderFooter,
+    /// <summary>Inserts an alignment tab.</summary>
+    InsertAlignmentTab,
 }

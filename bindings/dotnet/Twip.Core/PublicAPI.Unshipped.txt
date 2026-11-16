@@ -6875,3 +6875,39 @@ static Twip.MultiplePagesOptions.operator !=(Twip.MultiplePagesOptions? left, Tw
 static Twip.MultiplePagesOptions.operator ==(Twip.MultiplePagesOptions? left, Twip.MultiplePagesOptions? right) -> bool
 static Twip.PageNumberingOptions.operator !=(Twip.PageNumberingOptions? left, Twip.PageNumberingOptions? right) -> bool
 static Twip.PageNumberingOptions.operator ==(Twip.PageNumberingOptions? left, Twip.PageNumberingOptions? right) -> bool
+Twip.AlignmentTabBase
+Twip.AlignmentTabBase.Indent = 1 -> Twip.AlignmentTabBase
+Twip.AlignmentTabBase.Margin = 0 -> Twip.AlignmentTabBase
+Twip.AlignmentTabKind
+Twip.AlignmentTabKind.Center = 1 -> Twip.AlignmentTabKind
+Twip.AlignmentTabKind.Left = 0 -> Twip.AlignmentTabKind
+Twip.AlignmentTabKind.Right = 2 -> Twip.AlignmentTabKind
+Twip.CommandId.InsertAlignmentTab = 230 -> Twip.CommandId
+Twip.CommandId.RemoveHeaderFooter = 229 -> Twip.CommandId
+Twip.CommandId.SetHeaderFooterLinked = 228 -> Twip.CommandId
+Twip.EditorCommands.InsertAlignmentTabAsync(Twip.AlignmentTabKind alignment, Twip.AlignmentTabBase relativeTo, Twip.TabLeader? leader = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.RemoveHeaderFooterAsync(Twip.HeaderFooterKind kind, Twip.HeaderFooterType pages, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetHeaderFooterLinkedAsync(Twip.HeaderFooterKind kind, Twip.HeaderFooterType pages, bool linked, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.HeaderFooterLinks
+Twip.HeaderFooterLinks.<Clone>$() -> Twip.HeaderFooterLinks!
+Twip.HeaderFooterLinks.Deconstruct(out bool Default, out bool First, out bool Even) -> void
+Twip.HeaderFooterLinks.Default.get -> bool
+Twip.HeaderFooterLinks.Default.init -> void
+Twip.HeaderFooterLinks.Equals(Twip.HeaderFooterLinks? other) -> bool
+Twip.HeaderFooterLinks.Even.get -> bool
+Twip.HeaderFooterLinks.Even.init -> void
+Twip.HeaderFooterLinks.First.get -> bool
+Twip.HeaderFooterLinks.First.init -> void
+Twip.HeaderFooterLinks.HeaderFooterLinks(bool Default, bool First, bool Even) -> void
+Twip.PageFormatting.FooterLinks.get -> Twip.HeaderFooterLinks!
+Twip.PageFormatting.FooterLinks.init -> void
+Twip.PageFormatting.HeaderLinks.get -> Twip.HeaderFooterLinks!
+Twip.PageFormatting.HeaderLinks.init -> void
+override Twip.HeaderFooterLinks.Equals(object? obj) -> bool
+override Twip.HeaderFooterLinks.GetHashCode() -> int
+override Twip.HeaderFooterLinks.ToString() -> string!
+static Twip.EditorOperation.InsertAlignmentTab(Twip.AlignmentTabKind alignment, Twip.AlignmentTabBase relativeTo, Twip.TabLeader? leader = null) -> Twip.EditorOperation!
+static Twip.EditorOperation.RemoveHeaderFooter(Twip.HeaderFooterKind kind, Twip.HeaderFooterType pages) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetHeaderFooterLinked(Twip.HeaderFooterKind kind, Twip.HeaderFooterType pages, bool linked) -> Twip.EditorOperation!
+static Twip.HeaderFooterLinks.operator !=(Twip.HeaderFooterLinks? left, Twip.HeaderFooterLinks? right) -> bool
+static Twip.HeaderFooterLinks.operator ==(Twip.HeaderFooterLinks? left, Twip.HeaderFooterLinks? right) -> bool

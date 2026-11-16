@@ -637,6 +637,24 @@ fn sect_with_page(sect: &str, w: &str, p: &SectionPage, was: Option<&SectionPage
         if was.no_endnote != p.no_endnote {
             put(&mut s, "noEndnote", p.no_endnote.then(|| format!("<{w}noEndnote/>")));
         }
+        // A header or footer it now takes from the section before: its reference goes (new ones are `new_stories`').
+        for (el, was, now) in [("headerReference", &was.headers, &p.headers), ("footerReference", &was.footers, &p.footers)] {
+            for (slot, t) in ["default", "first", "even"].into_iter().enumerate() {
+                if was[slot].is_some() && now[slot].is_none() {
+                    let open = format!("<{w}{el} ");
+                    let mut at = open_end;
+                    while let Some(k) = s[at..].find(&open).map(|k| at + k) {
+                        let end = s[k..].find("/>").map_or(s.len(), |e| k + e + 2);
+                        let tag = &s[k..end];
+                        if tag.contains(&format!("{w}type=\"{t}\"")) || (t == "default" && !tag.contains(&format!("{w}type="))) {
+                            s.replace_range(k..end, "");
+                            break;
+                        }
+                        at = end;
+                    }
+                }
+            }
+        }
     }
     put(
         &mut s,

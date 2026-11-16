@@ -374,6 +374,11 @@ export interface Commands {
     groupObjects(): Promise<void>;
     growFont(): Promise<void>;
     increaseIndent(): Promise<void>;
+    insertAlignmentTab(options: {
+        alignment: 'left' | 'center' | 'right';
+        relativeTo: 'margin' | 'indent';
+        leader?: TabLeader;
+    }): Promise<void>;
     insertColumnBreak(): Promise<void>;
     insertColumns(options: {
         where: 'left' | 'right';
@@ -493,6 +498,10 @@ export interface Commands {
     }): Promise<void>;
     removeElement(id: ElementId): Promise<void>;
     removeFrame(): Promise<void>;
+    removeHeaderFooter(options: {
+        kind: 'header' | 'footer';
+        pages: 'default' | 'first' | 'even';
+    }): Promise<void>;
     removeHyperlink(): Promise<void>;
     removeSubTemplate(options: {
         name: string;
@@ -632,6 +641,11 @@ export interface Commands {
     setHeaderFooterDistance(options: {
         header?: Points;
         footer?: Points;
+    }): Promise<void>;
+    setHeaderFooterLinked(options: {
+        kind: 'header' | 'footer';
+        pages: 'default' | 'first' | 'even';
+        linked: boolean;
     }): Promise<void>;
     setHeaderRow(on: boolean): Promise<void>;
     setHidden(on: boolean): Promise<void>;
@@ -2181,8 +2195,18 @@ export interface PageFormatting {
     differentFirstPage: boolean;
     differentOddEven: boolean;
     footerDistance: Points;
+    footerLinks: {
+        default: boolean;
+        first: boolean;
+        even: boolean;
+    };
     gutterAtTop: boolean;
     headerDistance: Points;
+    headerLinks: {
+        default: boolean;
+        first: boolean;
+        even: boolean;
+    };
     lineNumbers: LineNumbers | null;
     margins: {
         top: Points;

@@ -546,6 +546,23 @@
     "where": "footer"
   },
   {
+    "kind": "footer",
+    "linked": false,
+    "pages": "first",
+    "type": "setHeaderFooterLinked"
+  },
+  {
+    "kind": "header",
+    "pages": "default",
+    "type": "removeHeaderFooter"
+  },
+  {
+    "alignment": "right",
+    "leader": "dots",
+    "relativeTo": "margin",
+    "type": "insertAlignmentTab"
+  },
+  {
     "columns": 2,
     "rows": 3,
     "type": "insertTable"

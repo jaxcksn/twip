@@ -793,6 +793,26 @@ public enum LineNumberRestart
     Continuous,
 }
 
+/// <summary>How text aligns at an alignment tab.</summary>
+public enum AlignmentTabKind
+{
+    /// <summary>Left, at the left edge.</summary>
+    Left,
+    /// <summary>Centred, in the middle.</summary>
+    Center,
+    /// <summary>Right, at the right edge.</summary>
+    Right,
+}
+
+/// <summary>What an alignment tab's place is measured in.</summary>
+public enum AlignmentTabBase
+{
+    /// <summary>The margins.</summary>
+    Margin,
+    /// <summary>The paragraph's indents.</summary>
+    Indent,
+}
+
 /// <summary>How the document's pages pair.</summary>
 public enum MultiplePagesMode
 {

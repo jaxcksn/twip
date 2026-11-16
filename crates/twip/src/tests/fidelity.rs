@@ -604,6 +604,17 @@ fn section_settings_package() -> Vec<u8> {
         let out = e.execute(n(c.clone()), fonts());
         assert!(matches!(out, Outcome::Changed(_)), "{c}: {out:?}");
     }
+    // The second section's own header, an empty first-page footer, and an alignment tab.
+    let k = texts(&e).iter().position(|t| t.starts_with("S2 P1")).expect("the second section");
+    e.select_range(para_id(&e, k), Unit(0), Unit(0), fonts());
+    for c in [
+        serde_json::json!({ "type": "setHeaderFooterLinked", "kind": "header", "pages": "default", "linked": false }),
+        serde_json::json!({ "type": "removeHeaderFooter", "kind": "footer", "pages": "first" }),
+        serde_json::json!({ "type": "insertAlignmentTab", "alignment": "center", "relativeTo": "margin" }),
+    ] {
+        let out = e.execute(n(c.clone()), fonts());
+        assert!(matches!(out, Outcome::Changed(_)), "{c}: {out:?}");
+    }
     crate::docx::write::save(e.document()).expect("saves")
 }
 

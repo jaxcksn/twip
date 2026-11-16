@@ -590,6 +590,12 @@ export interface Commands {
     where?: 'caret' | 'header' | 'footer';
     alignment?: 'left' | 'center' | 'right';
   }): Promise<void>;
+  /** The caret section's header or footer takes the section before's (Link to Previous), or gets its own copy of it. */
+  setHeaderFooterLinked(options: { kind: 'header' | 'footer'; pages: 'default' | 'first' | 'even'; linked: boolean }): Promise<void>;
+  /** Empties the caret section's header or footer (its own, so a linked one stops linking). */
+  removeHeaderFooter(options: { kind: 'header' | 'footer'; pages: 'default' | 'first' | 'even' }): Promise<void>;
+  /** Inserts a tab to a place set from the margin or the indent, not from the tab stops (Insert Alignment Tab). */
+  insertAlignmentTab(options: { alignment: 'left' | 'center' | 'right'; relativeTo: 'margin' | 'indent'; leader?: TabLeader }): Promise<void>;
 
   // Insert
   /** Inserts a table of 1 to 32767 rows and 1 to 63 columns. */
@@ -1130,6 +1136,9 @@ const encodings: { [K in CommandId]: Encoding<K> } = {
   editFooter: 'none',
   closeHeaderFooter: 'none',
   insertPageNumber: 'spread',
+  setHeaderFooterLinked: 'spread',
+  removeHeaderFooter: 'spread',
+  insertAlignmentTab: 'spread',
   insertTable: 'spread',
   insertPicture: 'spread',
   insertTextBox: 'none',

@@ -131,6 +131,102 @@ impl Editor {
         }
     }
 
+    /// An empty header's or footer's paragraph, in the Header or Footer style when the document has it.
+    pub(super) fn empty_story_para(&self, footer: bool) -> Option<crate::docx::Paragraph> {
+        let res = self.doc.resolver.clone()?;
+        let cx = self.cx();
+        let w = cx.w.clone();
+        let style = if footer { "Footer" } else { "Header" };
+        let mut pp = crate::docx::write::props::Props::parse(None, "pPr", &cx);
+        if res.styles.by_id.contains_key(style) {
+            pp.set("pStyle", format!("<{w}pStyle {w}val=\"{style}\"/>"));
+        }
+        let r = res.para_from_xml(pp.xml().as_deref(), None, &cx);
+        let run = res.run_from_xml(&r.base, None, &cx);
+        Some(crate::docx::Paragraph {
+            style: std::rc::Rc::new(r.style),
+            mark: run,
+            list: None,
+            inlines: Vec::new(),
+            src: None,
+            id: crate::docx::next_para_id(),
+            div: None,
+            controls: Vec::new(),
+        })
+    }
+
+    /// A part name for a new header or footer.
+    pub(super) fn new_story_name(&self, footer: bool) -> String {
+        let kind = if footer { "footer" } else { "header" };
+        let n = (1..)
+            .find(|n| {
+                !self.doc.stories.contains_key(&format!("word/header{n}.xml")) && !self.doc.stories.contains_key(&format!("word/footer{n}.xml"))
+            })
+            .unwrap_or(1);
+        format!("word/{kind}{n}.xml")
+    }
+
+    /// Link to Previous for the caret section's header or footer: it takes the section before's (its own part goes), or
+    /// gets its own copy of the one it takes.
+    pub(super) fn set_header_footer_linked(&mut self, l: crate::api::command::HeaderFooterLink, fonts: &Fonts) -> Outcome {
+        let (section, footer, slot) = (self.focus_section(), l.kind == crate::api::state::HeaderFooterKind::Footer, hf_slot(l.pages));
+        if section == 0 {
+            return Outcome::unavailable("the first section has no section before it");
+        }
+        let refs = |e: &Self, k: usize| e.doc.sections.get(k).map(|s| if footer { s.footers.clone() } else { s.headers.clone() });
+        let Some(own) = refs(self, section).map(|r| r[slot].clone()) else { return Outcome::Unchanged("no section") };
+        let mut tx = self.begin("Link to Previous");
+        let step = match (l.linked, own) {
+            (true, Some(name)) => super::step::Step::HeaderPart { name, section, footer, slot, blocks: None },
+            (false, None) => {
+                // A copy of what it shows now: the nearest section before's.
+                let inherited = (0..section).rev().find_map(|k| refs(self, k).and_then(|r| r[slot].clone()));
+                let blocks = match inherited.and_then(|n| self.doc.stories.get(&n)) {
+                    Some(b) => b.iter().map(super::clipboard::fresh).collect(),
+                    None => match self.empty_story_para(footer) {
+                        Some(p) => vec![crate::docx::Block::Para(p)],
+                        None => return Outcome::Unchanged("no styles"),
+                    },
+                };
+                super::step::Step::HeaderPart { name: self.new_story_name(footer), section, footer, slot, blocks: Some(blocks) }
+            }
+            _ => {
+                self.abort(tx);
+                return Outcome::Unchanged("already so");
+            }
+        };
+        if self.step(&mut tx, step).is_err() {
+            self.abort(tx);
+            return Outcome::Unchanged("the header can't change");
+        }
+        self.commit(tx, None, fonts)
+    }
+
+    /// Empties the caret section's header or footer: its own part's content goes, or it gets an empty one of its own.
+    pub(super) fn remove_header_footer(&mut self, h: crate::api::command::HeaderFooterSlot, fonts: &Fonts) -> Outcome {
+        let (section, footer, slot) = (self.focus_section(), h.kind == crate::api::state::HeaderFooterKind::Footer, hf_slot(h.pages));
+        let Some(s) = self.doc.sections.get(section) else { return Outcome::Unchanged("no section") };
+        let own = if footer { s.footers[slot].clone() } else { s.headers[slot].clone() };
+        let Some(para) = self.empty_story_para(footer) else { return Outcome::Unchanged("no styles") };
+        let mut tx = self.begin(if footer { "Remove Footer" } else { "Remove Header" });
+        let name = match own {
+            Some(name) => {
+                if self.step(&mut tx, super::step::Step::HeaderPart { name: name.clone(), section, footer, slot, blocks: None }).is_err() {
+                    self.abort(tx);
+                    return Outcome::Unchanged("the header can't change");
+                }
+                name
+            }
+            None => self.new_story_name(footer),
+        };
+        let blocks = Some(vec![crate::docx::Block::Para(para)]);
+        if self.step(&mut tx, super::step::Step::HeaderPart { name, section, footer, slot, blocks }).is_err() {
+            self.abort(tx);
+            return Outcome::Unchanged("the header can't change");
+        }
+        self.commit(tx, None, fonts)
+    }
+
     pub(super) fn edit_header_footer(&mut self, page: Option<usize>, footer: bool, fonts: &Fonts) -> Outcome {
         self.end_provisional(fonts);
         let page = page.or_else(|| self.caret_view().map(|c| c.page)).unwrap_or(self.near);
@@ -145,34 +241,8 @@ impl Editor {
         let name = match part {
             Some(n) => n,
             None => {
-                let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
-                let cx = self.cx();
-                let w = cx.w.clone();
-                let style = if footer { "Footer" } else { "Header" };
-                let mut pp = crate::docx::write::props::Props::parse(None, "pPr", &cx);
-                if res.styles.by_id.contains_key(style) {
-                    pp.set("pStyle", format!("<{w}pStyle {w}val=\"{style}\"/>"));
-                }
-                let r = res.para_from_xml(pp.xml().as_deref(), None, &cx);
-                let run = res.run_from_xml(&r.base, None, &cx);
-                let para = crate::docx::Paragraph {
-                    style: std::rc::Rc::new(r.style),
-                    mark: run,
-                    list: None,
-                    inlines: Vec::new(),
-                    src: None,
-                    id: crate::docx::next_para_id(),
-                    div: None,
-                    controls: Vec::new(),
-                };
-                let kind = if footer { "footer" } else { "header" };
-                let n = (1..)
-                    .find(|n| {
-                        !self.doc.stories.contains_key(&format!("word/header{n}.xml"))
-                            && !self.doc.stories.contains_key(&format!("word/footer{n}.xml"))
-                    })
-                    .unwrap_or(1);
-                let name = format!("word/{kind}{n}.xml");
+                let Some(para) = self.empty_story_para(footer) else { return Outcome::Unchanged("no styles") };
+                let name = self.new_story_name(footer);
                 let mut t = self.begin(if footer { "Footer" } else { "Header" });
                 if self
                     .step(
@@ -389,5 +459,14 @@ impl Editor {
         self.near = page;
         let s = l.nearest(x)?;
         Some(Position::text(geo.stories[l.story].story, s.para, s.unit))
+    }
+}
+
+/// The header or footer slot a page kind is ([`crate::docx::HfRefs`] order).
+fn hf_slot(t: crate::api::state::HeaderFooterType) -> usize {
+    match t {
+        crate::api::state::HeaderFooterType::Default => 0,
+        crate::api::state::HeaderFooterType::First => 1,
+        crate::api::state::HeaderFooterType::Even => 2,
     }
 }

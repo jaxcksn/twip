@@ -861,6 +861,13 @@ fn commands() -> Vec<Command> {
             place: Some(PageNumberPlace::Footer),
             alignment: Some(HorizontalAlignment::Center),
         }),
+        Command::SetHeaderFooterLinked(HeaderFooterLink { kind: HeaderFooterKind::Footer, pages: HeaderFooterType::First, linked: false }),
+        Command::RemoveHeaderFooter(HeaderFooterSlot { kind: HeaderFooterKind::Header, pages: HeaderFooterType::Default }),
+        Command::InsertAlignmentTab(AlignmentTab {
+            alignment: AlignmentTabKind::Right,
+            relative_to: AlignmentTabBase::Margin,
+            leader: Some(TabLeader::Dots),
+        }),
         Command::InsertTable(TableSize { rows: 3, columns: 2 }),
         Command::InsertPicture(Picture { data: picture_bytes(), alt_text: Some("Company logo".into()) }),
         Command::InsertTextBox,
@@ -1321,6 +1328,8 @@ fn page() -> PageFormatting {
         text_direction: TextFlow::LrTb,
         multiple_pages: MultiplePagesMode::Normal,
         gutter_at_top: false,
+        header_links: HeaderFooterLinks { default: true, first: false, even: true },
+        footer_links: HeaderFooterLinks::default(),
     }
 }
 

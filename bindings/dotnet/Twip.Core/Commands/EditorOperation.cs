@@ -547,6 +547,26 @@ public abstract partial record EditorOperation
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation InsertPageNumber(PageNumberFormat format, PageNumberPlacement? where = null, PageNumberAlignment? alignment = null) => Op(CommandId.InsertPageNumber, new Arg("format", Node(format)), new Arg("where", where is { } where_ ? Node(where_) : null, Optional: true), new Arg("alignment", alignment is { } alignment_ ? Node(alignment_) : null, Optional: true));
 
+    /// <summary>The caret section's header or footer takes the section before's (Link to Previous), or gets its own copy of it.</summary>
+    /// <param name="kind">A header or a footer.</param>
+    /// <param name="pages">Which pages it is for.</param>
+    /// <param name="linked">Takes the section before's.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetHeaderFooterLinked(HeaderFooterKind kind, HeaderFooterType pages, bool linked) => Op(CommandId.SetHeaderFooterLinked, new Arg("kind", Node(kind)), new Arg("pages", Node(pages)), new Arg("linked", Node(linked)));
+
+    /// <summary>Empties the caret section's header or footer (its own, so a linked one stops linking).</summary>
+    /// <param name="kind">A header or a footer.</param>
+    /// <param name="pages">Which pages it is for.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation RemoveHeaderFooter(HeaderFooterKind kind, HeaderFooterType pages) => Op(CommandId.RemoveHeaderFooter, new Arg("kind", Node(kind)), new Arg("pages", Node(pages)));
+
+    /// <summary>Inserts a tab to a place set from the margin or the indent, not from the tab stops (Insert Alignment Tab).</summary>
+    /// <param name="alignment">How the text after it aligns at its place.</param>
+    /// <param name="relativeTo">What its place is measured in.</param>
+    /// <param name="leader">What fills the space before it; none when null.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation InsertAlignmentTab(AlignmentTabKind alignment, AlignmentTabBase relativeTo, TabLeader? leader = null) => Op(CommandId.InsertAlignmentTab, new Arg("alignment", Node(alignment)), new Arg("relativeTo", Node(relativeTo)), new Arg("leader", leader is { } leader_ ? Node(leader_) : null, Optional: true));
+
     /// <summary>Inserts a table at the selection.</summary>
     /// <param name="rows">The number of rows, 1 to 32767.</param>
     /// <param name="columns">The number of columns, 1 to 63.</param>

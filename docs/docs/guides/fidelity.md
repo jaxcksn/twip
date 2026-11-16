@@ -31,7 +31,7 @@ Chunk numbers are [roadmap](../roadmap#docx) chunks.
 | Parts and stories | `w:document`, `w:body`, `w:hdr`, `w:ftr`, `w:footnotes`, `w:endnotes`, `w:comments`, `w:settings`, `w:styles`, `w:numbering`, `w:fonts`, `w:webSettings`, `w:glossaryDocument`, `w:txbxContent` | API |
 | Paragraphs and runs | `w:p`, `w:r`, `w:pPr`, `w:rPr`, `w:t` | API |
 | Hyperlinks | `w:hyperlink` | API; a link rewritten as its HYPERLINK field keeps its ScreenTip (`\o`) and frame (`\t`), and drops `history`, which no field switch holds |
-| Header and footer references | `w:headerReference`, `w:footerReference` | API for editing; link to previous and removal are Model, 2.6 |
+| Header and footer references | `w:headerReference`, `w:footerReference` | API (editing, `setHeaderFooterLinked`, `removeHeaderFooter`) |
 | Section properties | `w:sectPr` | API (see [Sections](#sections)) |
 | Unknown elements | anything not listed here | Between runs: Kept as an opaque node, moved with its text, and reported as unsupported content. Inside a run: Kept; Lost when pasted, as they aren't modeled |
 
@@ -40,7 +40,7 @@ Chunk numbers are [roadmap](../roadmap#docx) chunks.
 | Construct | Elements | Status |
 |---|---|---|
 | Text, tabs and breaks | `w:t`, `w:tab`, `w:br`, `w:cr`, `w:noBreakHyphen`, `w:softHyphen` | API |
-| Absolute position tabs | `w:ptab` | Laid out; inserting one (Insert Alignment Tab) is 2.6 |
+| Absolute position tabs | `w:ptab` | API (`insertAlignmentTab`) |
 | Symbols | `w:sym` | API |
 | Symbol extensions | `w16se:symEx` | API (read as a symbol in its font) |
 | Page number in a run | `w:pgNum` | Laid out; inserting one is API (`insertPageNumber` inserts a PAGE field) |
