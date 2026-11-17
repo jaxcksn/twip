@@ -1343,6 +1343,47 @@ fn a_pct_grid_after_beside_a_dropped_grid_line_stays_in_its_column() {
 }
 
 #[test]
+fn a_merged_region_in_a_spaced_table_ends_with_its_rows_bottom_gap() {
+    let para = |t: &str| {
+        let rpr = r#"<w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="22"/></w:rPr>"#;
+        format!(
+            r#"<w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/>{rpr}</w:pPr><w:r>{rpr}<w:t xml:space="preserve">{t}</w:t></w:r></w:p>"#
+        )
+    };
+    let tc = |body: &str, vm: &str| format!(r#"<w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/>{vm}</w:tcPr>{body}</w:tc>"#);
+    let tall: String = (1..=10).map(|i| para(&format!("Merged line {i}"))).collect();
+    let table = |third: bool| {
+        let mut rows = format!("<w:tr>{}{}</w:tr>", tc(&tall, r#"<w:vMerge w:val="restart"/>"#), tc(&para("Right one"), ""));
+        rows += &format!("<w:tr>{}{}</w:tr>", tc(&para(""), "<w:vMerge/>"), tc(&para("Right two"), ""));
+        if third {
+            rows += &format!("<w:tr>{}{}</w:tr>", tc(&para("Below left"), ""), tc(&para("Below right"), ""));
+        }
+        format!(
+            r#"<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblCellSpacing w:w="100" w:type="dxa"/>{BORDERS}<w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="108" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/><w:gridCol w:w="3000"/></w:tblGrid>{rows}</w:tbl>{}"#,
+            para("After the table.")
+        )
+    };
+    let baseline = |body: &str, text: &str| {
+        let mut doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), body)).expect("reads");
+        doc.settings.compat_mode = 15;
+        let mut y = None;
+        crate::layout::traverse::paint(&layout(&doc, &fonts()).pages()[0], &mut |p| {
+            if let crate::layout::fragment::Item::Glyphs(r) = p.absolute()
+                && r.chars.iter().map(|g| g.0).collect::<String>().starts_with(text)
+            {
+                y = y.or(Some(r.baseline));
+            }
+        });
+        y.unwrap_or_else(|| panic!("{text} drawn"))
+    };
+    // Word's PDF, points
+    for (third, text, word) in [(false, "After", 230.78), (true, "Below", 230.78), (true, "After", 254.45)] {
+        let y = baseline(&table(third), text);
+        assert!((y - word).abs() < 0.25, "{text} (third row {third}): {y} vs Word {word}");
+    }
+}
+
+#[test]
 fn a_one_column_pct_skip_is_a_pct_cell_of_its_column() {
     let cell = |w: u32, span: u32, t: char| {
         format!(r#"<w:tc><w:tcPr><w:tcW w:w="{w}" w:type="pct"/><w:gridSpan w:val="{span}"/></w:tcPr><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:tc>"#)

@@ -746,7 +746,7 @@ fn fit_merged(rows: &mut [RowBox], t: &Table, geo: &[Vec<CellGeo>], env: &StoryE
                 last += 1;
             }
             let c = &rows[ri].cells[ci];
-            let need = rows[ri].top_border + c.margins[0] + c.content_h + c.margins[2];
+            let need = rows[ri].top_border + c.margins[0] + c.content_h + c.margins[2] + rows[last].bottom_gap;
             let have: f64 = rows[ri..=last].iter().map(|r| r.height).sum();
             if need > have + EPS && !rows[last].exact {
                 rows[last].height += need - have;
