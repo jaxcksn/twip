@@ -68,3 +68,24 @@ fn eviction_keeps_results_and_budget() {
     assert!(after <= BUDGET, "cache bytes after eviction: {after} > {BUDGET}");
     assert_eq!(dump::page_text(&layout_with(&d, &fonts, &mut cache), &d), dump::page_text(&layout(&d, &fonts), &d), "after eviction");
 }
+
+#[test]
+fn warm_cache_equals_fresh_layout_after_editing_a_turned_cell() {
+    let fonts = fonts();
+    let cell =
+        |pr: &str, t: &str| format!(r#"<w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/>{pr}</w:tcPr><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:tc>"#);
+    let turned = r#"<w:textDirection w:val="btLr"/>"#;
+    let body = format!(
+        r#"<w:tbl><w:tblPr><w:tblW w:w="4000" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:trPr><w:trHeight w:val="2000"/></w:trPr>{}{}</w:tr></w:tbl><w:p/>"#,
+        cell(turned, "Hello"),
+        cell("", "plain")
+    );
+    let mut d = crate::docx::read(&super::rows::with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
+    let mut cache = LayoutCache::new();
+    let _ = layout_with(&d, &fonts, &mut cache);
+    let Some(Block::Table(t)) = d.sections[0].blocks.iter_mut().find(|b| matches!(b, Block::Table(_))) else { panic!("a table") };
+    let Block::Para(p) = &mut t.rows[0].cells[0].blocks[0] else { panic!("a paragraph") };
+    let Some(Inline::Text(text, _)) = p.inlines.iter_mut().find(|i| matches!(i, Inline::Text(..))) else { panic!("text") };
+    *text = "World".into();
+    assert_eq!(dump::page_text(&layout_with(&d, &fonts, &mut cache), &d), dump::page_text(&layout(&d, &fonts), &d));
+}

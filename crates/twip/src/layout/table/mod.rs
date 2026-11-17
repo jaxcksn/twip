@@ -620,7 +620,7 @@ fn mark_only(p: &crate::docx::Paragraph) -> bool {
     })
 }
 
-fn closing_para(c: &Cell) -> Option<(ParaId, f64)> {
+pub(super) fn closing_para(c: &Cell) -> Option<(ParaId, f64)> {
     let bordered = |s: &crate::docx::ParaStyle| {
         [&s.border_top, &s.border_left, &s.border_bottom, &s.border_right, &s.border_between].iter().any(|b| b.is_some())
     };
