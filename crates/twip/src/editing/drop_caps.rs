@@ -157,7 +157,8 @@ impl Editor {
         let drop = f64::from(lines) * line;
         // shortcut: Word sizes the letter from its font's cap height; four thirds of the drop is what it gives for
         // the usual fonts, lowered by a twelfth of its size.
-        let size = (drop * 4.0 / 3.0 * 2.0).round() / 2.0;
+        // At most Word's largest font size.
+        let size = ((drop * 4.0 / 3.0 * 2.0).round() / 2.0).min(1638.0);
         let lower = (size / 12.0 * 2.0).round();
         let twips = |pt: f64| (pt * 20.0).round() as i64;
         let (kind, h_anchor) = if d.position == DropCapPosition::InMargin { ("margin", "page") } else { ("drop", "text") };

@@ -1,5 +1,6 @@
 //! Content control data binding (`w:dataBinding`): a bounded XPath subset over custom XML data parts
 
+use std::cell::OnceCell;
 use std::collections::HashMap;
 use std::ops::Range;
 
@@ -113,17 +114,35 @@ impl Binding {
         Binding::parse(props.binding.as_deref()?)
     }
 
-    /// The data part it reads: the one its store item id names (compared without case), else the first with its node.
-    pub fn part<'p>(&self, parts: &'p [DataPart]) -> Option<&'p DataPart> {
+    /// The index of the data part it reads: the one its store item id names (compared without case), else the first
+    /// with its node.
+    pub fn part(&self, parts: &Parts) -> Option<usize> {
         match &self.store {
-            Some(id) => parts.iter().find(|p| p.item_id.trim_matches(['{', '}']).eq_ignore_ascii_case(id.trim_matches(['{', '}']))),
-            None => parts.iter().find(|p| read(&p.xml, &self.path).is_some()),
+            Some(id) => parts.parts.iter().position(|p| p.item_id.trim_matches(['{', '}']).eq_ignore_ascii_case(id.trim_matches(['{', '}']))),
+            None => (0..parts.parts.len()).find(|&k| parts.doc(k).is_some_and(|d| self.path.element(d).is_some())),
         }
     }
 
     /// The bound node's text, from the data parts.
-    pub fn value(&self, parts: &[DataPart]) -> Option<String> {
-        read(&self.part(parts)?.xml, &self.path)
+    pub fn value(&self, parts: &Parts) -> Option<String> {
+        read_in(parts.doc(self.part(parts)?)?, &self.path)
+    }
+}
+
+/// The data parts, each parsed once when a binding first reads it: many controls bind into the same part.
+pub struct Parts<'a> {
+    parts: &'a [DataPart],
+    docs: Vec<OnceCell<Option<roxmltree::Document<'a>>>>,
+}
+
+impl<'a> Parts<'a> {
+    pub fn new(parts: &'a [DataPart]) -> Parts<'a> {
+        Parts { parts, docs: parts.iter().map(|_| OnceCell::new()).collect() }
+    }
+
+    fn doc(&self, k: usize) -> Option<&roxmltree::Document<'a>> {
+        let xml: &'a str = &self.parts.get(k)?.xml;
+        self.docs[k].get_or_init(|| roxmltree::Document::parse(xml).ok()).as_ref()
     }
 }
 
@@ -186,8 +205,11 @@ impl Path {
 
 /// The bound node's text in a data part's XML: an attribute's value, or an element's text.
 pub fn read(xml: &str, path: &Path) -> Option<String> {
-    let doc = roxmltree::Document::parse(xml).ok()?;
-    let el = path.element(&doc)?;
+    read_in(&roxmltree::Document::parse(xml).ok()?, path)
+}
+
+fn read_in(doc: &roxmltree::Document, path: &Path) -> Option<String> {
+    let el = path.element(doc)?;
     match &path.attr {
         Some((ns, name)) => el.attributes().find(|a| a.name() == name && a.namespace() == ns.as_deref()).map(|a| a.value().to_string()),
         None => Some(el.descendants().filter(|n| n.is_text()).filter_map(|n| n.text()).collect()),
@@ -204,7 +226,8 @@ pub fn write(xml: &str, path: &Path, value: &str) -> Option<String> {
         Some((ns, name)) => {
             let a = el.attributes().find(|a| a.name() == name && a.namespace() == ns.as_deref())?;
             let r = a.range_value();
-            out.replace_range(r, &esc(value).replace('"', "&quot;"));
+            // Either quote can delimit it.
+            out.replace_range(r, &esc(value).replace('\'', "&apos;"));
         }
         None => {
             if el.children().any(|c| c.is_element()) {
@@ -301,12 +324,18 @@ pub fn spans(inlines: &[Inline], controls: &HashMap<ControlId, Control>) -> Vec<
             _ => {}
         }
     }
+    // One holding or crossing another isn't shown or written: Word doesn't bind nested controls, and replacing both
+    // would leave the outer one's range stale.
+    let holds = |a: &Range<usize>, b: &Range<usize>| a.start <= b.start && b.end <= a.end;
+    let crosses = |a: &Range<usize>, b: &Range<usize>| a.start < b.start && b.start < a.end && a.end < b.end;
+    let ranges: Vec<Range<usize>> = out.iter().map(|s| s.inner.clone()).collect();
+    out.retain(|s| !ranges.iter().any(|r| *r != s.inner && (holds(&s.inner, r) || crosses(&s.inner, r) || crosses(r, &s.inner))));
     out
 }
 
 /// Shows each bound control in the paragraph with its node's value from the data parts (one with no value, or one
 /// already showing it, is left); whether one changed. Read time: Word shows the data a document opens with.
-pub fn refresh(p: &mut Paragraph, controls: &mut HashMap<ControlId, Control>, parts: &[DataPart]) -> bool {
+pub fn refresh(p: &mut Paragraph, controls: &mut HashMap<ControlId, Control>, parts: &Parts) -> bool {
     let inlines = &mut p.inlines;
     let mut changed = false;
     let mut found = spans(inlines, controls);

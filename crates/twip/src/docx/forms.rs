@@ -9,6 +9,9 @@ use super::xml::{attr, child, children, int, val};
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct FormData {
     pub name: String,
+    /// `w:label` and `w:tabIndex`, which the engine keeps but doesn't use.
+    pub label: Option<i64>,
+    pub tab_index: Option<i64>,
     pub enabled: bool,
     pub calc_on_exit: bool,
     pub entry_macro: String,
@@ -65,6 +68,8 @@ impl FormData {
         };
         FormData {
             name: s("name"),
+            label: child(ff, "label").and_then(|n| int(val(n))),
+            tab_index: child(ff, "tabIndex").and_then(|n| int(val(n))),
             enabled: on(child(ff, "enabled")).unwrap_or(true),
             calc_on_exit: on(child(ff, "calcOnExit")).unwrap_or(false),
             entry_macro: s("entryMacro"),
@@ -87,6 +92,11 @@ impl FormData {
         };
         let flag = |b: bool| if b { "1" } else { "0" };
         let mut s = format!("<{w}ffData>{}", attr_el("name", &self.name));
+        for (name, v) in [("label", self.label), ("tabIndex", self.tab_index)] {
+            if let Some(v) = v {
+                s.push_str(&format!("<{w}{name} {w}val=\"{v}\"/>"));
+            }
+        }
         s.push_str(&if self.enabled { format!("<{w}enabled/>") } else { format!("<{w}enabled {w}val=\"0\"/>") });
         s.push_str(&format!("<{w}calcOnExit {w}val=\"{}\"/>", flag(self.calc_on_exit)));
         s.push_str(&attr_el("entryMacro", &self.entry_macro));
@@ -154,11 +164,12 @@ mod tests {
 
     #[test]
     fn form_data_reads_and_writes_back() {
-        let xml = r#"<w:ffData xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:name w:val="Agree"/><w:enabled/><w:calcOnExit w:val="0"/><w:statusText w:type="text" w:val="Tick it"/><w:checkBox><w:size w:val="24"/><w:default w:val="0"/><w:checked/></w:checkBox></w:ffData>"#;
+        let xml = r#"<w:ffData xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:name w:val="Agree"/><w:label w:val="3"/><w:tabIndex w:val="7"/><w:enabled/><w:calcOnExit w:val="0"/><w:statusText w:type="text" w:val="Tick it"/><w:checkBox><w:size w:val="24"/><w:default w:val="0"/><w:checked/></w:checkBox></w:ffData>"#;
         let d = roxmltree::Document::parse(xml).expect("parses");
         let f = FormData::parse(d.root_element());
         assert_eq!((f.name.as_str(), f.checked(), f.status.1.as_str()), ("Agree", Some(true), "Tick it"));
         assert!(matches!(f.kind, FormKind::CheckBox { size: Some(12.0), .. }));
+        assert_eq!((f.label, f.tab_index), (Some(3), Some(7)));
         let again = format!(r#"<x xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">{}</x>"#, f.xml("w:"));
         let d = roxmltree::Document::parse(&again).expect("parses");
         assert_eq!(FormData::parse(d.root_element().first_element_child().expect("ffData")), f);

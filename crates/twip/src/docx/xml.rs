@@ -192,9 +192,54 @@ pub fn choose<'a, 'i>(ac: roxmltree::Node<'a, 'i>) -> Option<roxmltree::Node<'a,
     ac.children().find(|c| is(*c, MC, "Choice") && understood(c)).or_else(|| ac.children().find(|c| is(*c, MC, "Fallback")))
 }
 
+/// A checkbox's `w14:checked` start tag (any prefix) in its XML, and its value's range when it has one.
+fn checked_tag(x: &str) -> Option<(std::ops::Range<usize>, usize, Option<std::ops::Range<usize>>)> {
+    let k = x.match_indices(":checked").map(|(k, _)| k).find(|&k| matches!(x.as_bytes().get(k + 8), Some(b' ' | b'/' | b'>')))?;
+    let lt = x[..k].rfind('<')?;
+    let end = k + x[k..].find('>')? + 1;
+    let val = x[k..end].find("val=").and_then(|v| {
+        let q = k + v + 4;
+        let quote = *x.as_bytes().get(q)? as char;
+        let close = x[q + 1..end].find(quote)?;
+        Some(q + 1..q + 1 + close)
+    });
+    Some((lt..end, k, val))
+}
+
+/// Whether a checkbox's XML shows it checked (`<w14:checked/>` is); `None` without the element.
+pub fn checkbox_checked(x: &str) -> Option<bool> {
+    let (_, _, val) = checked_tag(x)?;
+    Some(val.is_none_or(|r| !matches!(&x[r], "0" | "false" | "off")))
+}
+
+/// Sets a checkbox's `w14:checked`, its value added when it has none.
+pub fn set_checkbox_checked(x: &mut String, on: bool) {
+    let Some((tag, colon, val)) = checked_tag(x) else { return };
+    let v = if on { "1" } else { "0" };
+    match val {
+        Some(r) => x.replace_range(r, v),
+        None => {
+            let at = if x[..tag.end].ends_with("/>") { tag.end - 2 } else { tag.end - 1 };
+            let attr = format!(" {}:val=\"{v}\"", &x[tag.start + 1..colon]);
+            x.insert_str(at, &attr);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{MC, choose, too_deep};
+    use super::{MC, checkbox_checked, choose, set_checkbox_checked, too_deep};
+
+    #[test]
+    fn a_checkbox_reads_and_sets_its_checked_state() {
+        let mut x = r#"<w14:checkbox><w14:checked/><w14:checkedState w14:val="2612"/></w14:checkbox>"#.to_string();
+        assert_eq!(checkbox_checked(&x), Some(true));
+        set_checkbox_checked(&mut x, false);
+        assert!(x.contains(r#"<w14:checked w14:val="0"/><w14:checkedState w14:val="2612"/>"#), "{x}");
+        set_checkbox_checked(&mut x, true);
+        assert_eq!(checkbox_checked(&x), Some(true));
+        assert_eq!(checkbox_checked("<w14:checkbox/>"), None);
+    }
 
     #[test]
     fn depth_counts_elements_only() {

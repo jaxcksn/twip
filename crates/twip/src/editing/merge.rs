@@ -1970,7 +1970,7 @@ impl Editor {
                             .map(|s| s.font.clone())
                             .or_else(|| font(&was, "uncheckedState"))
                             .unwrap_or_else(|| "MS Gothic".into());
-                        let on = was.contains("checked w14:val=\"1\"") || was.contains("checked w14:val=\"true\"");
+                        let on = crate::docx::xml::checkbox_checked(&was).unwrap_or(false);
                         let w14 = crate::docx::xml::W14;
                         let esc = crate::docx::write::props::esc;
                         p.kind_xml = Some(format!(

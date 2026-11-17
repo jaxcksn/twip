@@ -2621,3 +2621,40 @@ fn a_paragraph_cut_and_pasted_in_a_header_or_note_is_a_tracked_move() {
         assert!(moved_away.clone().all(|s| !s.contains("delText")), "{part}");
     }
 }
+
+#[test]
+fn pasting_cut_notes_after_a_new_one_keeps_every_note() {
+    use super::para_id;
+    let mut e = super::super::Editor::open(&super::blank_body("<w:p><w:r><w:t>one two three four</w:t></w:r></w:p>"), fonts()).expect("opens");
+    let refs = |e: &super::super::Editor| -> Vec<i64> {
+        e.document().sections[0]
+            .blocks
+            .iter()
+            .flat_map(|b| match b {
+                crate::docx::Block::Para(p) => {
+                    p.inlines.iter().filter_map(|i| if let crate::docx::Inline::NoteRef { id, .. } = i { Some(*id) } else { None }).collect()
+                }
+                _ => Vec::new(),
+            })
+            .collect()
+    };
+    let p = para_id(&e, 0);
+    for at in [3, 8] {
+        e.select_range(p, Unit(at), Unit(at), fonts());
+        e.execute(Command::InsertFootnote, fonts());
+    }
+    e.select_range(p, Unit(0), Unit(9), fonts());
+    e.execute(Command::Cut, fonts());
+    let p = para_id(&e, 0);
+    e.select_range(p, Unit(11), Unit(11), fonts());
+    e.execute(Command::InsertFootnote, fonts());
+    let p = para_id(&e, 0);
+    e.select_range(p, Unit(0), Unit(0), fonts());
+    e.execute(Command::Paste(Default::default()), fonts());
+    let mut ids = refs(&e);
+    let mut notes: Vec<i64> = e.document().footnotes.keys().copied().filter(|k| *k > 0).collect();
+    ids.sort();
+    notes.sort();
+    assert_eq!(ids, notes, "each note has its own reference");
+    assert_eq!(ids.len(), 3);
+}

@@ -8,6 +8,8 @@
     { "op": "command", "command": { "type": "setDocumentProtection", "kind": "readOnly", "enforce": true, "password": "secret" } },
     { "op": "expectState", "match": { "review": { "protection": { "kind": "readOnly", "enforced": true, "password": true, "inEditableRange": true } } } },
     { "op": "command", "command": { "type": "insertText", "value": "the " } },
+    { "op": "command", "command": { "type": "setDocumentProperties", "title": "Changed" } },
+    { "op": "expectError", "code": "not-allowed" },
     { "op": "call", "method": "find.next", "args": [{ "text": "Data" }], "result": { "found": true } },
     { "op": "command", "command": { "type": "insertText", "value": "x" } },
     { "op": "expectError", "code": "not-allowed" },
@@ -18,6 +20,9 @@
     { "op": "expectState", "match": { "review": { "protection": { "kind": "readOnly", "enforced": true, "password": true } } } },
     { "op": "command", "command": { "type": "setDocumentProtection", "enforce": false, "password": "secret" } },
     { "op": "expectState", "match": { "review": { "protection": { "enforced": false, "password": false } } } },
-    { "op": "command", "command": { "type": "insertText", "value": "x" } }
+    { "op": "command", "command": { "type": "insertText", "value": "x" } },
+    { "op": "call", "method": "find.next", "args": [{ "text": "survey" }], "result": { "found": true } },
+    { "op": "command", "command": { "type": "removeEditableRanges" } },
+    { "op": "expectState", "match": { "review": { "protection": { "inEditableRange": false } } } }
   ]
 }

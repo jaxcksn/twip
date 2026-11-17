@@ -89,15 +89,20 @@ impl Editor {
     /// Every bookmark, in document order (a name read twice, the first).
     pub fn bookmarks(&self) -> Vec<Found> {
         let mut out: Vec<Found> = Vec::new();
+        // Each name's place in `out`, without case.
+        let mut seen: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
         for para in self.paras_in_order() {
             let Some(p) = self.index.para(&self.doc, para) else { continue };
             let mut unit = 0u32;
             for i in &p.inlines {
                 if let Some((name, end)) = marker(i) {
                     let at = End { para, unit: Unit(unit) };
-                    match out.iter_mut().find(|f| f.name.eq_ignore_ascii_case(name)) {
+                    match seen.get(&name.to_ascii_lowercase()).map(|&k| &mut out[k]) {
                         Some(f) if end && f.end.is_none() => f.end = Some(at),
-                        None if !end => out.push(Found { name: name.to_string(), start: at, end: None }),
+                        None if !end => {
+                            seen.insert(name.to_ascii_lowercase(), out.len());
+                            out.push(Found { name: name.to_string(), start: at, end: None });
+                        }
                         _ => {}
                     }
                 }
@@ -131,7 +136,10 @@ impl Editor {
         let steps = if pa == pb && oa == ob {
             vec![Step::Text { para: pa, range: oa..oa, with: vec![start, end], edges: Edges::default() }]
         } else {
-            let Some(under) = self.index.para(&self.doc, pb).map(|p| markers_at(p, ob)) else { return Outcome::Unchanged("no paragraph") };
+            let Some(under) = self.index.para(&self.doc, pb).map(|p| markers_at(p, ob)) else {
+                self.abort(tx);
+                return Outcome::Unchanged("no paragraph");
+            };
             vec![
                 Step::Text { para: pb, range: ob..ob, with: vec![end], edges: Edges { under, ..Edges::default() } },
                 Step::Text { para: pa, range: oa..oa, with: vec![start], edges: Edges::default() },

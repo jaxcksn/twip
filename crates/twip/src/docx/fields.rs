@@ -798,8 +798,6 @@ pub(crate) fn if_field(w: &[String]) -> Option<String> {
     Some(if hit { yes.clone() } else { no })
 }
 
-/// `DATE`/`TIME` with a `\@` picture (default M/d/yyyy) at `secs` since 1970, UTC.
-// shortcut: UTC, no time zone; English month/day names.
 /// A document property, variable or date field's result: Word's error text when it has none.
 pub(crate) fn document_value(kind: &FieldKind, code: &str, p: &crate::docx::properties::Properties, vars: &[(String, String)]) -> String {
     match kind {
@@ -855,7 +853,7 @@ fn list_num(code: &FieldCode, lists: &mut HashMap<String, [i64; 9]>) -> String {
     let name = code.args.first().map_or_else(|| "NumberDefault".to_string(), |n| n.to_string());
     let level = switch('l').unwrap_or(1).clamp(1, 9) as usize - 1;
     let n = lists.entry(name.to_ascii_lowercase()).or_insert([0; 9]);
-    n[level] = switch('s').unwrap_or(n[level] + 1);
+    n[level] = switch('s').unwrap_or(n[level].saturating_add(1));
     n[level + 1..].fill(0);
     let fmt = |v: i64, f: &str| crate::docx::numbering::format_number(v, f);
     const NUMBER: [(&str, &str, &str); 9] = [
@@ -954,6 +952,8 @@ pub(crate) fn date_text(picture: &str, secs: i64) -> String {
     date(&format!("\\@ \"{picture}\""), secs)
 }
 
+/// `DATE`/`TIME` with a `\@` picture (default M/d/yyyy) at `secs` since 1970, UTC.
+// shortcut: UTC, no time zone; English month/day names.
 fn date(code: &str, secs: i64) -> String {
     let (days, sod) = (secs.div_euclid(86400), secs.rem_euclid(86400));
     // Civil date from days since 1970-01-01 (H. Hinnant).

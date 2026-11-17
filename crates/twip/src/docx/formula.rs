@@ -279,9 +279,12 @@ impl Parser<'_, '_> {
                 && let Some(b) = cell(to)
             {
                 self.at += 3;
+                // Cells past the table's have no number: the range stops at its edges (`R1C1:R99999999C99999999`).
+                let width = rows.iter().map(Vec::len).max().unwrap_or(0);
+                let (r1, c1) = (a.0.max(b.0).min(rows.len().saturating_sub(1)), a.1.max(b.1).min(width.saturating_sub(1)));
                 let mut v = Vec::new();
-                for r in a.0.min(b.0)..=a.0.max(b.0) {
-                    for c in a.1.min(b.1)..=a.1.max(b.1) {
+                for r in a.0.min(b.0)..=r1 {
+                    for c in a.1.min(b.1)..=c1 {
                         v.extend(self.cell_value(rows, (r, c)));
                     }
                 }
@@ -489,6 +492,7 @@ mod tests {
         assert_eq!(evaluate("SUM(ABOVE)", &e), Ok(1203.5));
         assert_eq!(evaluate("B2+B3*2", &e), Ok(1206.5));
         assert_eq!(evaluate("AVERAGE(B2:B3)", &e), Ok(601.75));
+        assert_eq!(evaluate("SUM(R1C1:R4294967295C4294967295)", &e), Ok(1203.5), "a range past the table stops at its edges");
         assert_eq!(evaluate("IF(B3>2,10,20)", &e), Ok(10.0));
         assert_eq!(evaluate("-2^2 + 50%", &e), Ok(4.5));
         assert_eq!(evaluate("1/0", &e), Err(ZERO.into()));

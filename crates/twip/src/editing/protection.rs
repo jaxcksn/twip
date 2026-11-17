@@ -41,9 +41,16 @@ fn api_kind(k: ProtectionKind) -> Kind {
 }
 
 impl Editor {
-    /// The editable ranges `author` may edit, start and end, in document order.
-    fn editable_ranges(&self, author: &str) -> Vec<(Position, Position)> {
-        let mut open: Vec<(String, Position, bool)> = Vec::new();
+    /// Every editable range, in document order: who may edit it, its start and end. Found once per revision: the
+    /// state asks on every change of selection.
+    fn editable_ranges(&self) -> Rc<Vec<(Option<String>, Position, Position)>> {
+        let mut cache = self.editable_cache.borrow_mut();
+        if let Some((rev, r)) = cache.as_ref()
+            && *rev == self.revision()
+        {
+            return r.clone();
+        }
+        let mut open: Vec<(String, Position, Option<String>)> = Vec::new();
         let mut out = Vec::new();
         for para in self.paras_in_order() {
             let Some(p) = self.index.para(&self.doc, para) else { continue };
@@ -54,25 +61,43 @@ impl Editor {
                 if let Some((start, id, who)) = perm(i) {
                     let at = Position::text(story, para, Unit(unit));
                     if start {
-                        let ok = who.is_some_and(|w| w.eq_ignore_ascii_case("everyone") || w.eq_ignore_ascii_case(author));
-                        open.push((id, at, ok));
+                        open.push((id, at, who));
                     } else if let Some(k) = open.iter().position(|(o, ..)| *o == id) {
-                        let (_, from, ok) = open.remove(k);
-                        if ok {
-                            out.push((from, at));
-                        }
+                        let (_, from, who) = open.remove(k);
+                        out.push((who, from, at));
                     }
                 }
                 unit += i.units() as u32;
             }
         }
+        let out = Rc::new(out);
+        *cache = Some((self.revision(), out.clone()));
         out
     }
 
     /// The selection is in a range `author` may edit.
     pub fn in_editable_range(&self, author: &str) -> bool {
         let Some((a, b)) = self.selection.ordered(&self.index) else { return false };
-        self.editable_ranges(author).iter().any(|(s, e)| self.index.cmp(s, &a).is_le() && self.index.cmp(&b, e).is_le())
+        let may = |w: &Option<String>| w.as_deref().is_some_and(|w| w.eq_ignore_ascii_case("everyone") || w.eq_ignore_ascii_case(author));
+        self.editable_ranges().iter().any(|(w, s, e)| may(w) && self.index.cmp(s, &a).is_le() && self.index.cmp(&b, e).is_le())
+    }
+
+    /// Both ends of the selection are in the same legacy form field or content control.
+    pub fn in_form_field(&self) -> bool {
+        let (Some(focus), anchor) = (self.selection.focus(), self.selection.anchor()) else { return false };
+        let fields = |at: Position| -> Vec<crate::docx::ElementId> {
+            super::elements::context(&self.doc, &self.index, &super::selection::Selection::Caret(at))
+                .into_iter()
+                .map(|(e, _)| e)
+                .filter(|e| match e {
+                    crate::docx::ElementId::Control(_) => true,
+                    crate::docx::ElementId::Field(_) => self.element_context_of(*e, false).form.is_some(),
+                })
+                .collect()
+        };
+        let here = fields(focus);
+        let there = anchor.filter(|a| *a != focus).map(fields);
+        here.iter().any(|e| there.as_ref().is_none_or(|t| t.contains(e)))
     }
 
     pub fn protection_state(&self, author: &str) -> Option<crate::api::state::ProtectionState> {
@@ -246,6 +271,32 @@ impl Editor {
         }
         self.commit(tx, None, fonts)
     }
+}
+
+/// Whether a command changes only what the selection holds: what an editable range, or a section that
+/// filling-in-forms protection leaves open, lets run (a whole open section also its tables and objects).
+pub fn edits_selection(id: crate::api::command::CommandId, section: bool) -> bool {
+    use crate::api::catalog::CommandGroup as G;
+    use crate::api::command::CommandId as C;
+    let Some(info) = crate::api::catalog::info(id) else { return false };
+    // What changes the document beyond the selection: its sections, styles, list definitions, defaults and fonts.
+    let document = matches!(
+        id,
+        C::InsertSectionBreak
+            | C::ReplaceFont
+            | C::SetDocumentDefaults
+            | C::DeleteStyle
+            | C::SetStyleMeta
+            | C::UpdateStyleToSelection
+            | C::SetPageBorders
+            | C::SetListDefinition
+            | C::SetDefaultTabStop
+            | C::SetDefaultTableStyle
+    );
+    let here = matches!(info.group, G::Text | G::Clipboard | G::Character | G::Paragraph | G::Tabs)
+        || matches!(id, C::InsertHyperlink | C::EditHyperlink | C::RemoveHyperlink | C::InsertPicture | C::InsertField | C::InsertSymbol)
+        || (section && matches!(info.group, G::Table | G::Object));
+    here && !document
 }
 
 /// Whether a protection lets a command run: comments in a comments-only document, filling in forms in a forms one.

@@ -507,9 +507,9 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
     doc.data_parts = data_parts(&mut pkg, &rels);
     // Bound controls show their data.
     if !doc.data_parts.is_empty() {
-        let (controls, parts) = (&mut doc.controls, &doc.data_parts);
+        let (controls, parts) = (&mut doc.controls, super::binding::Parts::new(&doc.data_parts));
         let mut show = |p: &mut Paragraph| {
-            super::binding::refresh(p, controls, parts);
+            super::binding::refresh(p, controls, &parts);
         };
         for s in &mut doc.sections {
             super::fields::paras(&mut s.blocks, &mut show);

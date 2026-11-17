@@ -218,3 +218,46 @@ fn a_drop_cap_is_made_saved_as_a_framed_paragraph_and_put_back() {
     assert_eq!(super::texts(&e)[0], first, "the letter is back");
     assert!(matches!(e.execute(Command::SetDropCap(none), fonts()), Outcome::Unchanged(_)));
 }
+
+#[test]
+fn linking_a_section_to_the_previous_keeps_a_header_part_another_section_shares() {
+    use super::super::commands::{Command, Outcome};
+    let blank = crate::docx::blank::blank_docx();
+    let read = |name: &str| crate::docx::package::read(&blank, &[], name).expect("reads").expect(name);
+    let rels = read("word/_rels/document.xml.rels").replace(
+        "</Relationships>",
+        r#"<Relationship Id="rIdH" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/></Relationships>"#,
+    );
+    let types = read("[Content_Types].xml").replace(
+        "</Types>",
+        r#"<Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/></Types>"#,
+    );
+    let ns = r#"xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships""#;
+    let header = format!(r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:hdr {ns}><w:p><w:r><w:t>Shared</w:t></w:r></w:p></w:hdr>"#);
+    let r = r#"<w:headerReference w:type="default" r:id="rIdH"/>"#;
+    let document = format!(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document {ns}><w:body><w:p><w:pPr><w:sectPr/></w:pPr><w:r><w:t>One</w:t></w:r></w:p><w:p><w:pPr><w:sectPr>{r}</w:sectPr></w:pPr><w:r><w:t>Two</w:t></w:r></w:p><w:p><w:r><w:t>Three</w:t></w:r></w:p><w:sectPr>{r}</w:sectPr></w:body></w:document>"#
+    );
+    let bytes = crate::docx::write::repackage(
+        &blank,
+        &[
+            ("word/_rels/document.xml.rels".into(), rels.into_bytes()),
+            ("[Content_Types].xml".into(), types.into_bytes()),
+            ("word/header1.xml".into(), header.into_bytes()),
+            ("word/document.xml".into(), document.into_bytes()),
+        ],
+        zip::CompressionMethod::Deflated,
+    )
+    .expect("repackages");
+    let mut e = Editor::open(&bytes, fonts()).expect("opens");
+    let two = para(&e, "Two");
+    e.select_range(two, Unit(0), Unit(0), fonts());
+    let link = serde_json::from_value(serde_json::json!({ "kind": "header", "pages": "default", "linked": true })).expect("a link");
+    assert!(matches!(e.execute(Command::SetHeaderFooterLinked(link), fonts()), Outcome::Changed(_)));
+    let doc = e.document();
+    assert!(doc.sections[1].headers[0].is_none(), "the second section takes the first's");
+    let name = doc.sections[2].headers[0].clone().expect("the third keeps its header");
+    assert!(doc.stories.contains_key(&name), "the part the third shows stays");
+    let again = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
+    assert!(again.document().sections[2].headers[0].is_some() && again.document().sections[1].headers[0].is_none());
+}

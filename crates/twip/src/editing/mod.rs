@@ -172,6 +172,8 @@ pub struct Editor {
     made: Option<crate::api::command::CommandResult>,
     pending_controls: Vec<(crate::docx::ControlId, crate::docx::Control)>,
     pending_images: Vec<Vec<u8>>,
+    /// The editable ranges as of a revision ([`Editor::editable_ranges`]).
+    editable_cache: std::cell::RefCell<Option<(u64, Rc<Vec<(Option<String>, Position, Position)>>)>>,
     drop: Option<Position>,
     field_labels: HashMap<String, String>,
     sub_template_rules: Vec<sub_templates::Rule>,
@@ -339,6 +341,7 @@ impl Editor {
             made: None,
             pending_controls: Vec::new(),
             pending_images: Vec::new(),
+            editable_cache: Default::default(),
             drop: None,
             field_labels: HashMap::new(),
             sub_template_rules: Vec::new(),

@@ -542,12 +542,18 @@ fn legacy_key(password: &str, pad: bool) -> String {
 /// H(salt + password as UTF-16LE), then `spin` rounds of H(previous + round number as 32-bit little endian).
 fn hash(algorithm: &str, salt: &[u8], password: &str, spin: u32) -> Option<Vec<u8>> {
     use sha2::Digest;
-    fn run<D: Digest>(salt: &[u8], pw: &[u8], spin: u32) -> Vec<u8> {
-        let mut h = D::new().chain_update(salt).chain_update(pw).finalize().to_vec();
+    // One digest buffer for every round.
+    fn run<D: Digest + sha2::digest::FixedOutputReset>(salt: &[u8], pw: &[u8], spin: u32) -> Vec<u8> {
+        let mut d = D::new();
+        Digest::update(&mut d, salt);
+        Digest::update(&mut d, pw);
+        let mut h = d.finalize_reset();
         for i in 0..spin {
-            h = D::new().chain_update(&h).chain_update(i.to_le_bytes()).finalize().to_vec();
+            Digest::update(&mut d, &h);
+            Digest::update(&mut d, i.to_le_bytes());
+            Digest::finalize_into_reset(&mut d, &mut h);
         }
-        h
+        h.to_vec()
     }
     let pw: Vec<u8> = password.encode_utf16().flat_map(u16::to_le_bytes).collect();
     Some(match algorithm_name(&algorithm.to_ascii_uppercase()) {
@@ -571,7 +577,14 @@ impl Protection {
         };
         let flag = |b: bool| if b { "1" } else { "0" };
         let pw = self.password.as_ref().map_or(String::new(), |p| {
-            format!(" {w}algorithmName=\"{}\" {w}hashValue=\"{}\" {w}saltValue=\"{}\" {w}spinCount=\"{}\"", p.algorithm, p.hash, p.salt, p.spin)
+            let esc = crate::docx::write::props::esc;
+            format!(
+                " {w}algorithmName=\"{}\" {w}hashValue=\"{}\" {w}saltValue=\"{}\" {w}spinCount=\"{}\"",
+                esc(&p.algorithm),
+                esc(&p.hash),
+                esc(&p.salt),
+                p.spin
+            )
         });
         let formatting = if self.formatting { format!(" {w}formatting=\"1\"") } else { String::new() };
         format!("<{w}documentProtection {w}edit=\"{edit}\"{formatting} {w}enforcement=\"{}\"{pw}/>", flag(self.enforced))
@@ -771,6 +784,17 @@ mod tests {
             };
             assert!(p.matches("Example") && !p.matches("Other"), "{algorithm}");
         }
+        // Word 16.112 protecting a document with "Example" (`w:cryptAlgorithmSid="14"`).
+        let word = Password {
+            algorithm: "14".into(),
+            hash: "aqKd5zF+ZLDhXamFt+PhIOVMMDHd6mvzt30mAzZQNGV9pwjlCwKexsb0sjaSOJD/nw05xlAb+FGU3TNUgKq0oA==".into(),
+            salt: "mRL8HCYKqg4tYiEVGBiVZA==".into(),
+            spin: 100_000,
+        };
+        assert!(word.matches("Example") && !word.matches("example"));
+        let salt = crate::api::value::from_base64(&word.salt).expect("base64");
+        let h = hash("SHA-512", &salt, &legacy_key("Example", true), word.spin).expect("computed");
+        assert_eq!(crate::api::value::base64(&h), word.hash, "Password::new's form");
     }
 
     #[test]

@@ -3192,3 +3192,24 @@ fn the_drop_cap_dialog_drops_the_first_letter() {
     let m = s.dialog_open(DialogKind::DropCap).expect("opens again");
     assert!(matches!(&m.values, DialogValues::DropCap(v) if v.position == DropCapPosition::Dropped && v.lines == 2));
 }
+
+#[test]
+fn a_new_document_saves_its_protection_in_a_settings_part_it_adds() {
+    use crate::api::command::{DocumentProtection, ProtectionKind};
+    let (mut engine, _) = engine();
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    s.run(Command::SetTrackChanges(true)).expect("tracks");
+    s.run(Command::SetDocumentProtection(DocumentProtection {
+        kind: Some(ProtectionKind::ReadOnly),
+        enforce: Some(true),
+        password: Some("Example".into()),
+        ..DocumentProtection::default()
+    }))
+    .expect("protects");
+    let saved = s.export(&ExportOptions::Docx).expect("saves").bytes.0;
+    let doc = crate::docx::read_editable(&saved).expect("reads back");
+    assert!(doc.settings.track_revisions);
+    let p = doc.settings.protection.expect("protection");
+    assert!(p.enforced && p.password.is_some_and(|p| p.matches("Example")));
+}

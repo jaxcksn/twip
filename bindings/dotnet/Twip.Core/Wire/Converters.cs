@@ -428,7 +428,8 @@ internal sealed class RelativeSizeConverter : JsonConverter<RelativeSize>
 
     public override void Write(Utf8JsonWriter writer, RelativeSize value, JsonSerializerOptions options)
     {
-        if (value.Percent <= 0)
+        // Only the Absolute sentinel means "none"; any other percent goes as given, for the engine to check.
+        if (ReferenceEquals(value, RelativeSize.Absolute))
         {
             writer.WriteStringValue("none");
             return;

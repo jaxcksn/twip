@@ -166,6 +166,23 @@ impl Editor {
         format!("word/{kind}{n}.xml")
     }
 
+    /// The step that takes section `section`'s own header or footer `name` away: the part goes with it, unless another
+    /// section or slot shows it too (generated documents share one part), when only this reference goes.
+    fn drop_story_ref(&self, name: String, section: usize, footer: bool, slot: usize) -> Option<super::step::Step> {
+        let refs = self.doc.sections.iter().flat_map(|s| s.headers.iter().chain(s.footers.iter())).flatten().filter(|n| **n == name).count();
+        if refs <= 1 {
+            return Some(super::step::Step::HeaderPart { name, section, footer, slot, blocks: None });
+        }
+        let s = self.doc.sections.get(section)?;
+        let mut page = s.page();
+        if footer {
+            page.footers[slot] = None
+        } else {
+            page.headers[slot] = None
+        }
+        Some(super::step::Step::SectionPage { section, page: Box::new(page), change: s.change.clone() })
+    }
+
     /// Link to Previous for the caret section's header or footer: it takes the section before's (its own part goes), or
     /// gets its own copy of the one it takes.
     pub(super) fn set_header_footer_linked(&mut self, l: crate::api::command::HeaderFooterLink, fonts: &Fonts) -> Outcome {
@@ -177,7 +194,13 @@ impl Editor {
         let Some(own) = refs(self, section).map(|r| r[slot].clone()) else { return Outcome::Unchanged("no section") };
         let mut tx = self.begin("Link to Previous");
         let step = match (l.linked, own) {
-            (true, Some(name)) => super::step::Step::HeaderPart { name, section, footer, slot, blocks: None },
+            (true, Some(name)) => match self.drop_story_ref(name, section, footer, slot) {
+                Some(step) => step,
+                None => {
+                    self.abort(tx);
+                    return Outcome::Unchanged("no section");
+                }
+            },
             (false, None) => {
                 // A copy of what it shows now: the nearest section before's.
                 let inherited = (0..section).rev().find_map(|k| refs(self, k).and_then(|r| r[slot].clone()));
@@ -211,11 +234,14 @@ impl Editor {
         let mut tx = self.begin(if footer { "Remove Footer" } else { "Remove Header" });
         let name = match own {
             Some(name) => {
-                if self.step(&mut tx, super::step::Step::HeaderPart { name: name.clone(), section, footer, slot, blocks: None }).is_err() {
+                let step = self.drop_story_ref(name.clone(), section, footer, slot);
+                let shared = !matches!(step, Some(super::step::Step::HeaderPart { .. }));
+                if !step.is_some_and(|step| self.step(&mut tx, step).is_ok()) {
                     self.abort(tx);
                     return Outcome::Unchanged("the header can't change");
                 }
-                name
+                // A shared part stays the others'; this section gets an empty one of its own.
+                if shared { self.new_story_name(footer) } else { name }
             }
             None => self.new_story_name(footer),
         };

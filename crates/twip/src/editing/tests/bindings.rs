@@ -100,3 +100,23 @@ fn a_gallery_control_takes_a_building_block_of_its_category() {
     let again = Editor::open(&saved, fonts()).expect("reopens");
     assert!(texts(&again).iter().any(|t| t == "Violation notice"));
 }
+
+#[test]
+fn a_bound_control_inside_another_opens_and_shows_its_node() {
+    let mut e = open("FX-MERGE-CONTROLS.docx");
+    let ns = "urn:case";
+    run(
+        &mut e,
+        Command::WriteDataPart(WriteDataPart { namespace: ns.into(), item_id: None, xml: format!("<case xmlns=\"{ns}\"><name>Ada</name></case>") }),
+    );
+    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let bind = r#"<w:dataBinding w:prefixMappings="xmlns:c='urn:case'" w:xpath="/c:case[1]/c:name[1]"/>"#;
+    let inner = r#"<w:r><w:t>b</w:t></w:r><w:r><w:rPr><w:b/></w:rPr><w:t>c</w:t></w:r><w:r><w:rPr><w:i/></w:rPr><w:t>d</w:t></w:r>"#;
+    let xml = format!(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:sdt><w:sdtPr><w:alias w:val="Outer"/><w:id w:val="11"/>{bind}<w:richText/></w:sdtPr><w:sdtContent><w:r><w:t>a</w:t></w:r><w:sdt><w:sdtPr><w:alias w:val="Inner"/><w:id w:val="12"/>{bind}<w:text/></w:sdtPr><w:sdtContent>{inner}</w:sdtContent></w:sdt><w:r><w:t>e</w:t></w:r></w:sdtContent></w:sdt></w:p><w:sectPr/></w:body></w:document>"#
+    );
+    let bytes = crate::docx::write::repackage(&saved, &[("word/document.xml".into(), xml.into_bytes())], zip::CompressionMethod::Deflated)
+        .expect("repackages");
+    let e = Editor::open(&bytes, fonts()).expect("opens");
+    assert_eq!(texts(&e), ["aAdae"], "the inner control shows its node; the one holding it keeps its text");
+}

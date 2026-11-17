@@ -138,7 +138,7 @@ fn property_parts(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<
         if custom.is_none() {
             package::add_part(&src.package, parts, "", &name, "application/vnd.openxmlformats-officedocument.custom-properties+xml", p::CUSTOM)?;
         }
-        package::set(parts, &name, p::custom_xml(&now).into_bytes());
+        package::set(parts, &name, p::custom_xml(custom_x.as_deref(), &now).into_bytes());
     }
     Ok(())
 }
@@ -264,12 +264,21 @@ const TAB_AND_HYPHENATION: &[&str] = &[
     "docVars",
 ];
 
-/// The settings part with the default tab spacing and the hyphenation settings, where they changed since reading.
-// shortcut: a document with no settings part keeps the settings it was read with.
+/// The settings part with the default tab spacing and the hyphenation settings, where they changed since reading; a
+/// document without one gets one when a setting is written.
 fn settings_part(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
     let src = doc.source.as_ref().ok_or("the document was not read for editing")?;
-    let Some(name) = package::related(&src.package, parts, &src.main, SETTINGS)? else { return Ok(()) };
-    let Some(xml) = package::read(&src.package, parts, &name)? else { return Ok(()) };
+    let existing = package::related(&src.package, parts, &src.main, SETTINGS)?;
+    let xml = match &existing {
+        Some(n) => package::read(&src.package, parts, n)?.unwrap_or_default(),
+        None => format!(
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:settings xmlns:w="{W}"/>"#
+        ),
+    };
+    if xml.is_empty() {
+        return Ok(());
+    }
     let (read, now) = (super::reader::read_settings(Some(&xml)), &doc.settings);
     let w = {
         let dom = roxmltree::Document::parse(&xml).map_err(|e| e.to_string())?;
@@ -347,9 +356,23 @@ fn settings_part(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(
             set_setting(&mut out, name, is.then(|| format!("<{w}{name}/>")))?;
         }
     }
-    if out != xml {
-        package::set(parts, &name, out.into_bytes());
+    // A new part: tracking too, which the review parts set only in a part there is.
+    if existing.is_none() && now.track_revisions {
+        out = with_track_revisions(&out, true)?;
     }
+    if out == xml {
+        return Ok(());
+    }
+    let name = match existing {
+        Some(n) => n,
+        None => {
+            let name = src.main.rsplit_once('/').map_or_else(|| "settings.xml".into(), |(dir, _)| format!("{dir}/settings.xml"));
+            let ct = "application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml";
+            package::add_part(&src.package, parts, &src.main, &name, ct, SETTINGS)?;
+            name
+        }
+    };
+    package::set(parts, &name, out.into_bytes());
     Ok(())
 }
 
@@ -4102,12 +4125,7 @@ fn checkbox_xml(src: &str, face: char) -> String {
     };
     let checked = state("checkedState").map_or(face == '\u{2612}', |c| c == face);
     let mut s = src.to_string();
-    if let Some(k) = s.find(":checked ")
-        && let Some(v) = s[k..].find("val=\"").map(|v| k + v + 5)
-        && let Some(e) = s[v..].find('"').map(|e| v + e)
-    {
-        s.replace_range(v..e, if checked { "1" } else { "0" });
-    }
+    crate::docx::xml::set_checkbox_checked(&mut s, checked);
     // The face: the content's first text (the first `t` start tag, any prefix).
     let start = s.match_indices(":t").map(|(k, _)| k).find(|&k| {
         let lt = s[..k].rfind('<');
@@ -4301,12 +4319,7 @@ impl Saver<'_, '_> {
             // Its own states (their fonts) when it has them, checked as it shows.
             let own = ctl.props.kind_xml.as_deref().filter(|x| x.contains("checkedState")).map(|x| {
                 let mut x = x.to_string();
-                if let Some(k) = x.find(":checked ")
-                    && let Some(v) = x[k..].find("val=\"").map(|v| k + v + 5)
-                    && let Some(e) = x[v..].find('"').map(|e| v + e)
-                {
-                    x.replace_range(v..e, if on == 1 { "1" } else { "0" });
-                }
+                crate::docx::xml::set_checkbox_checked(&mut x, on == 1);
                 x
             });
             ctl.props.kind_xml = own.or(Some(format!(

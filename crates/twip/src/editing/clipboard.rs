@@ -430,22 +430,36 @@ impl Editor {
     fn paste_refs(&mut self, tx: &mut super::Tx, blocks: &mut [Block], refs: &Refs) {
         use crate::docx::NoteKind;
         use crate::docx::review::{CommentId, RangeKind};
+        // Every note's new id first, then the references renumbered once: renumbering one at a time would catch
+        // references an earlier note was just given.
+        let mut to_ids: HashMap<(NoteKind, i64), i64> = HashMap::new();
+        for &(kind, id, _) in &refs.notes {
+            let notes = if kind == NoteKind::Foot { &self.doc.footnotes } else { &self.doc.endnotes };
+            let taken = |n: i64, map: &HashMap<(NoteKind, i64), i64>| notes.contains_key(&n) || map.iter().any(|(k, v)| k.0 == kind && *v == n);
+            let to = if taken(id, &to_ids) {
+                let used = map_max(&to_ids, kind).max(notes.keys().copied().max().unwrap_or(0));
+                used.max(refs.notes.iter().filter(|n| n.0 == kind).map(|n| n.1).max().unwrap_or(0)) + 1
+            } else {
+                id
+            };
+            to_ids.insert((kind, id), to);
+        }
+        if to_ids.iter().any(|((_, id), to)| id != to) {
+            each_inline(blocks, &mut |i| {
+                if let Inline::NoteRef { kind, id, .. } = i
+                    && let Some(&to) = to_ids.get(&(*kind, *id))
+                {
+                    *id = to;
+                }
+            });
+        }
         for (kind, id, body) in &refs.notes {
-            let notes = if *kind == NoteKind::Foot { &self.doc.footnotes } else { &self.doc.endnotes };
-            let to = if notes.contains_key(id) { notes.keys().max().map_or(1, |m| m + 1) } else { *id };
+            let to = to_ids[&(*kind, *id)];
             let mut body: Vec<Block> = body.iter().map(fresh).collect();
             for (c, k) in adopt(&mut body, &self.doc.controls) {
                 let _ = self.step(tx, Step::Control { id: c, control: Some(k) });
             }
             if to != *id {
-                each_inline(blocks, &mut |i| {
-                    if let Inline::NoteRef { kind: k, id: n, .. } = i
-                        && *k == *kind
-                        && *n == *id
-                    {
-                        *n = to;
-                    }
-                });
                 each_inline(&mut body, &mut |i| {
                     if let Inline::NoteMark(k, n, _) = i
                         && *k == *kind
@@ -1005,4 +1019,9 @@ pub(super) fn drop_partial(blocks: &mut [Block], index: &super::index::DocIndex)
         }
     }
     walk(blocks, &whole);
+}
+
+/// The highest id given so far to notes of `kind`.
+fn map_max(map: &HashMap<(crate::docx::NoteKind, i64), i64>, kind: crate::docx::NoteKind) -> i64 {
+    map.iter().filter(|(k, _)| k.0 == kind).map(|(_, v)| *v).max().unwrap_or(0)
 }

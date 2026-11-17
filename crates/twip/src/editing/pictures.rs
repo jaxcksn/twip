@@ -140,7 +140,7 @@ impl Editor {
     pub(in crate::editing) fn change_picture(&mut self, data: Vec<u8>, fonts: &Fonts) -> Outcome {
         let Some((pw, ph, ..)) = crate::docx::image::image_info(&data) else { return Outcome::invalid("not a picture") };
         let k = self.pending_image(data);
-        self.edit_picture(
+        let out = self.edit_picture(
             "Change Picture",
             |e| {
                 *e.image = Some(k);
@@ -154,7 +154,12 @@ impl Editor {
                 true
             },
             fonts,
-        )
+        );
+        // Refused before a transaction began: the image isn't left for the next one.
+        if !matches!(out, Outcome::Changed(_)) {
+            self.pending_images.clear();
+        }
+        out
     }
 }
 

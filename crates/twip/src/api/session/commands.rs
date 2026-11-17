@@ -83,12 +83,15 @@ impl Session {
             && info(id).is_some_and(|i| i.mutates)
             && !crate::editing::protection::allows(p, id)
         {
-            let ranges = matches!(p.edit, crate::docx::review::ProtectionKind::ReadOnly | crate::docx::review::ProtectionKind::Comments);
-            let in_form = p.edit == crate::docx::review::ProtectionKind::Forms
+            use crate::docx::review::ProtectionKind as K;
+            use crate::editing::protection::edits_selection;
+            let ranges =
+                matches!(p.edit, K::ReadOnly | K::Comments) && edits_selection(id, false) && self.editor.in_editable_range(&self.author.name);
+            let in_form = p.edit == K::Forms
                 && matches!(command, Command::InsertText(_) | Command::Delete(_) | Command::PasteText(_))
-                && self.state.selection.context.iter().any(|c| c.form.is_some() || c.control.is_some());
-            let open_section = p.edit == crate::docx::review::ProtectionKind::Forms && self.editor.in_unprotected_section();
-            if !(ranges && self.editor.in_editable_range(&self.author.name)) && !in_form && !open_section {
+                && self.editor.in_form_field();
+            let open_section = p.edit == K::Forms && edits_selection(id, true) && self.editor.in_unprotected_section();
+            if !ranges && !in_form && !open_section {
                 return Err(Error::new(ErrorCode::NotAllowed, "the document is protected"));
             }
         }
