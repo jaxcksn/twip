@@ -117,14 +117,14 @@ pub fn int(s: Option<&str>) -> Option<i64> {
 }
 
 pub fn num(s: Option<&str>) -> Option<f64> {
-    s?.trim().parse::<f64>().ok()
+    s?.trim().parse::<f64>().ok().filter(|v| v.is_finite())
 }
 
 /// ST_TwipsMeasure / ST_SignedTwipsMeasure in points: twips, or a universal measure ("1in", "12pt", "2.5cm").
 pub fn twips(s: Option<&str>) -> Option<f64> {
     let s = s?.trim();
     if let Ok(v) = s.parse::<f64>() {
-        return Some(v / 20.0);
+        return v.is_finite().then_some(v / 20.0);
     }
     measure(s)
 }
@@ -134,7 +134,7 @@ pub fn measure(s: &str) -> Option<f64> {
         return None;
     }
     let (v, unit) = s.split_at(s.len() - 2);
-    let v: f64 = v.parse().ok()?;
+    let v: f64 = v.parse().ok().filter(|v: &f64| v.is_finite())?;
     Some(match unit {
         "pt" => v,
         "in" => v * 72.0,

@@ -285,3 +285,29 @@ fn hostile_values_in_a_package_are_bounded() {
     assert_eq!(read(&crowd, ""), Ok(()), "a crowd of floats");
     assert!(started.elapsed() < std::time::Duration::from_secs(60), "laid out in {:?}", started.elapsed());
 }
+
+#[test]
+fn hostile_table_measures_are_bounded() {
+    let table = |tblpr: &str, tcpr: &str| {
+        format!(
+            r#"<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/>{tblpr}</w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:trPr><w:trHeight w:val="14000"/></w:trPr><w:tc><w:tcPr>{tcpr}</w:tcPr><w:p/></w:tc></w:tr></w:tbl><w:p/>"#
+        )
+    };
+    for (name, tblpr, tcpr) in [
+        ("pct width", "", r#"<w:tcW w:w="-1e30" w:type="pct"/>"#),
+        ("infinite pct width", "", r#"<w:tcW w:w="inf" w:type="pct"/>"#),
+        ("cell margins", r#"<w:tblCellMar><w:left w:w="1e30" w:type="dxa"/><w:right w:w="1e30" w:type="dxa"/></w:tblCellMar>"#, ""),
+        ("cell spacing", r#"<w:tblCellSpacing w:w="1e30" w:type="dxa"/>"#, ""),
+        ("border size", "", r#"<w:tcBorders><w:left w:val="single" w:sz="1e30"/><w:right w:val="single" w:sz="1e30"/></w:tcBorders>"#),
+    ] {
+        assert_eq!(read_on_small_stack(hostile(&table(tblpr, tcpr), &[])), Ok(()), "{name}");
+    }
+    // A dotted border a fraction of an eighth of a point thick is drawn as one eighth: a few thousand dots.
+    let dotted = table("", r#"<w:tcBorders><w:left w:val="dotted" w:sz="0.00001"/></w:tcBorders>"#);
+    let d = crate::docx::read(&hostile(&dotted, &[])).expect("reads");
+    let mut items = 0usize;
+    for p in layout(&d, &fonts()).pages().iter() {
+        crate::layout::traverse::paint(p, &mut |_| items += 1);
+    }
+    assert!(items < 10_000, "{items} items");
+}
