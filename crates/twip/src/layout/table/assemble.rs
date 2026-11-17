@@ -259,7 +259,7 @@ pub(super) fn cell_edges<'k>(t: &Table, ncols: usize, single: bool, kept: &dyn F
             let right_t = if col + span >= ncols { &tb[3] } else { &tb[5] };
             let (top, left, bottom, right) = (side(&c.top, top_t), side(&c.left, left_t), side(&c.bottom, bot_t), side(&c.right, right_t));
             let neighbour = |rr: usize, cc: usize| -> Option<&Cell> {
-                t.rows.get(rr).and_then(|row| grid_cells[rr].iter().position(|&(c0, s)| cc >= c0 && cc < c0 + s).map(|i| &row.cells[i]))
+                t.rows.get(rr).and_then(|row| covering(&grid_cells[rr], cc, |&g| g).map(|i| &row.cells[i]))
             };
             let top_e = if ri == 0 || alone || framed(t, ri - 1) {
                 conflict((top.b, top.cell), (None, false))
@@ -464,7 +464,7 @@ pub(super) fn assemble(
                         }
                     };
                     let (start, end) = (a.x - bw(&a.edges[1]) / 2.0, a.x + a.w + bw(&a.edges[3]) / 2.0);
-                    let under = cells_geo.iter().find(|b| a.col >= b.col && a.col < b.col + b.span);
+                    let under = covering(cells_geo, a.col, |b| (b.col, b.span)).map(|i| &cells_geo[i]);
                     if under.is_some_and(|b| b.col != a.col && r.cells[b.ci].v_merge != VMerge::Continue) {
                         seam(start, end, a.edges[2].clone());
                         continue;
@@ -472,7 +472,8 @@ pub(super) fn assemble(
                     // Over the columns the row leaves out
                     let own = || own_or(&t.rows[ri - 1].cells[a.ci].bottom, &row_borders(t, ri - 1)[4]);
                     let (mut col, mut x) = (a.col, start);
-                    for b in cells_geo.iter().filter(|b| b.col + b.span > a.col && b.col < a.col + a.span) {
+                    let first = cells_geo.partition_point(|b| b.col + b.span <= a.col);
+                    for b in cells_geo[first..].iter().take_while(|b| b.col < a.col + a.span) {
                         if b.col > col {
                             seam(x, b.x, own());
                         }
@@ -732,6 +733,13 @@ fn row_top(t: &Table, ri: usize, r: &Row, cells_geo: &[CellGeo], cells: &mut [Ce
     (part_top, header_top)
 }
 
+/// The cell covering grid column `col`, of cells in column order with their first column and span.
+fn covering<T>(cells: &[T], col: usize, at: impl Fn(&T) -> (usize, usize)) -> Option<usize> {
+    let i = cells.partition_point(|c| at(c).0 <= col).checked_sub(1)?;
+    let (first, span) = at(&cells[i]);
+    (col < first + span).then_some(i)
+}
+
 // Merged regions
 fn fit_merged(rows: &mut [RowBox], t: &Table, geo: &[Vec<CellGeo>], env: &StoryEnv, memos: &mut Memos) -> Result<(), Yield> {
     let mut regions = Vec::new();
@@ -742,7 +750,8 @@ fn fit_merged(rows: &mut [RowBox], t: &Table, geo: &[Vec<CellGeo>], env: &StoryE
             }
             let col = rows[ri].cells[ci].col;
             let mut last = ri;
-            while last + 1 < rows.len() && rows[last + 1].cells.iter().any(|c| c.col == col && c.v_merge == VMerge::Continue) {
+            let continues = |r: &RowBox| r.cells.binary_search_by_key(&col, |c| c.col).is_ok_and(|i| r.cells[i].v_merge == VMerge::Continue);
+            while last + 1 < rows.len() && continues(&rows[last + 1]) {
                 last += 1;
             }
             let c = &rows[ri].cells[ci];
@@ -836,4 +845,17 @@ fn tint(review: &ReviewView, r: &Row, c: &Cell) -> Option<u32> {
     let (a, b) = (review.palette.color(m.author), c.shading.unwrap_or(0xFFFFFF));
     let mix = |s: u32| ((((a >> s) & 0xFF) + 3 * ((b >> s) & 0xFF)) / 4) << s;
     Some(mix(16) | mix(8) | mix(0))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::covering;
+
+    #[test]
+    fn the_cell_covering_a_column_is_found_by_its_first_column() {
+        let cells = [(0, 2), (2, 0), (2, 1), (3, 3)];
+        let at = |col| covering(&cells, col, |&c| c);
+        assert_eq!([0, 1, 2, 3, 5, 6].map(at), [Some(0), Some(0), Some(2), Some(3), Some(3), None]);
+        assert_eq!(covering(&[(1, 1)], 0, |&c: &(usize, usize)| c), None);
+    }
 }

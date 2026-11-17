@@ -308,7 +308,8 @@ pub fn draw_row(tb: &TableLayout, ri: usize, left: f64, top: f64, height: f64, p
         for c in order {
             let (l, r) = if tb.rtl { (c.col + c.span, c.col) } else { (c.col, c.col + c.span) };
             for e in [(x0 + c.x, l), (x0 + c.x + c.w, r)] {
-                if !edges.iter().any(|x| x.1 == e.1) {
+                // In column order: a shared edge is the one just pushed.
+                if edges.last().is_none_or(|x| x.1 != e.1) {
                     edges.push(e);
                 }
             }
@@ -318,13 +319,14 @@ pub fn draw_row(tb: &TableLayout, ri: usize, left: f64, top: f64, height: f64, p
     if let Some(fill) = row.shading {
         background.push(Item::rect(rect, fill));
     }
+    let below_margin = row.cells.iter().map(|c| c.margins[2]).fold(0.0, f64::max);
     for (k, c) in row.cells.iter().enumerate() {
         let part = parts.map(|p| p[k]).unwrap_or(CellPart { units: &c.units.units, base: 0.0, ends: true, cont: false });
         let ch = if part.ends && part.base == 0.0 && part.units.len() == c.units.units.len() { c.align_h } else { part.height() };
         let height = height + c.below;
         // Every cell aligns in the row's box: below the row's widest top border and margin, above its largest bottom
         // margin.
-        let inner = height - row.top_border - c.margins[0] - row.cells.iter().map(|c| c.margins[2]).fold(0.0, f64::max);
+        let inner = height - row.top_border - c.margins[0] - below_margin;
         let off = match c.v_align.as_str() {
             _ if part.cont => 0.0,
             "center" => ((inner - ch) / 2.0).max(0.0),
@@ -333,7 +335,6 @@ pub fn draw_row(tb: &TableLayout, ri: usize, left: f64, top: f64, height: f64, p
         };
         let base_y = top + row.top_border + c.margins[0] + off;
         let base_x = x0 + c.x + c.cx;
-        let below_margin = row.cells.iter().map(|c| c.margins[2]).fold(0.0, f64::max);
         let clip = if row.exact { top + height - below_margin } else { f64::INFINITY };
         let mut content = Vec::new();
         let mut hidden = Vec::new();
