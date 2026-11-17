@@ -1277,6 +1277,71 @@ fn a_pct_table_width_does_not_take_off_the_indent() {
     assert!((x(-1440) - x(0)).abs() < 0.06 && (x(1440) - x(0)).abs() < 0.06, "{} {} {}", x(-1440), x(0), x(1440));
 }
 
+const BORDERS: &str = r#"<w:tblBorders><w:top w:val="single" w:sz="4" w:space="0" w:color="000000"/><w:left w:val="single" w:sz="4" w:space="0" w:color="000000"/><w:bottom w:val="single" w:sz="4" w:space="0" w:color="000000"/><w:right w:val="single" w:sz="4" w:space="0" w:color="000000"/><w:insideH w:val="single" w:sz="4" w:space="0" w:color="000000"/><w:insideV w:val="single" w:sz="4" w:space="0" w:color="000000"/></w:tblBorders>"#;
+
+#[test]
+fn grid_lines_no_cell_ends_on_join_the_column_to_their_left() {
+    let grid = [645, 831, 114, 1290, 552, 48, 1080, 3027, 78, 1485, 42, 1473, 15, 225];
+    let cell = |span: u32, w: u32, t: &str| {
+        format!(
+            r#"<w:tc><w:tcPr><w:tcW w:w="{w}" w:type="dxa"/><w:gridSpan w:val="{span}"/></w:tcPr><w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="18"/></w:rPr><w:t xml:space="preserve">{t}</w:t></w:r></w:p></w:tc>"#
+        )
+    };
+    let row = |cells: &[(u32, u32, &str)]| format!("<w:tr>{}</w:tr>", cells.iter().map(|&(s, w, t)| cell(s, w, t)).collect::<String>());
+    let body = format!(
+        r#"<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblInd w:w="138" w:type="dxa"/>{BORDERS}<w:tblCellMar><w:left w:w="108" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid>{}</w:tblGrid>{}{}{}</w:tbl><w:p/>"#,
+        grid.iter().map(|g| format!(r#"<w:gridCol w:w="{g}"/>"#)).collect::<String>(),
+        row(&[(14, 10905, "Title")]),
+        row(&[(3, 1590, "Case No"), (3, 1890, "Filing Date"), (3, 4185, "Party Name"), (1, 1485, "Court"), (3, 1530, "County Seat"), (1, 225, "")]),
+        row(&[(1, 645, ""), (3, 2235, "Judge Name"), (3, 1680, "Docket"), (7, 6345, "Clerk Signature")]),
+    );
+    let mut doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
+    doc.settings.compat_mode = 15;
+    let mut runs: Vec<(String, f64)> = Vec::new();
+    crate::layout::traverse::paint(&layout(&doc, &fonts()).pages()[0], &mut |p| {
+        if let crate::layout::fragment::Item::Glyphs(r) = p.absolute()
+            && let Some(&(_, x, _)) = r.chars.first()
+        {
+            runs.push((r.chars.iter().map(|g| g.0).collect(), x));
+        }
+    });
+    // Word's PDF, twips from the page's left
+    for (t, word) in [
+        ("Case No", 1692.5),
+        ("Filing Date", 3046.0),
+        ("Party Name", 4685.8),
+        ("Court", 8043.8),
+        ("County Seat", 9328.4),
+        ("Judge Name", 2292.4),
+        ("Docket", 4150.6),
+        ("Clerk Signature", 5612.2),
+    ] {
+        let x = runs.iter().find(|r| r.0 == t).map(|r| r.1 * 20.0);
+        assert!(x.is_some_and(|x| (x - word).abs() < 5.0), "{t}: {x:?} vs Word {word}; {runs:?}");
+    }
+}
+
+#[test]
+fn a_pct_grid_after_beside_a_dropped_grid_line_stays_in_its_column() {
+    let cell = |span: u32, w: u32, t: &str| {
+        format!(
+            r#"<w:tc><w:tcPr><w:tcW w:w="{w}" w:type="dxa"/><w:gridSpan w:val="{span}"/></w:tcPr><w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="18"/></w:rPr><w:t>{t}</w:t></w:r></w:p></w:tc>"#
+        )
+    };
+    let body = format!(
+        r#"<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblInd w:w="138" w:type="dxa"/>{BORDERS}<w:tblCellMar><w:left w:w="108" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/></w:tblGrid><w:tr>{}{}</w:tr><w:tr><w:trPr><w:gridAfter w:val="1"/><w:wAfter w:w="1000" w:type="pct"/></w:trPr>{}{}</w:tr></w:tbl><w:p/>"#,
+        cell(2, 4000, "Alpha"),
+        cell(2, 4000, "Beta"),
+        cell(2, 4000, "Gamma"),
+        cell(1, 2000, "Delta")
+    );
+    // Word's PDF, points
+    for c in ['B', 'D'] {
+        let x = glyph_x_in(&body, 15, &[], c);
+        assert!((x - 269.57).abs() < 0.25, "{c}: {x}");
+    }
+}
+
 #[test]
 fn a_one_column_pct_skip_is_a_pct_cell_of_its_column() {
     let cell = |w: u32, span: u32, t: char| {

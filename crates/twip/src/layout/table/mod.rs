@@ -29,7 +29,7 @@ pub use key::{RowKey, TableKey};
 
 use assemble::{assemble, cell_edges, edge_add, place, row_borders, spacing_of, vertical_cell};
 use key::{TableProbe, table_bytes};
-use widths::{Fit, fit_inputs, grid_columns, resolve_fit, twips};
+use widths::{Fit, fit_inputs, grid_bounds, grid_columns, resolve_fit, twips};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct CellBox {
@@ -315,21 +315,7 @@ fn layout_runs_of(
 /// remaining column edge was on the old grid.
 fn own_grid(t: &mut Table) -> Vec<usize> {
     let n = grid_columns(t);
-    if t.grid_change.is_some() {
-        return (0..=n).collect();
-    }
-    let mut edge = vec![false; n + 1];
-    (edge[0], edge[n]) = (true, true);
-    for r in &t.rows {
-        let mut x = r.grid_before.min(n);
-        edge[x] = true;
-        for c in &r.cells {
-            x = (x + c.span).min(n);
-            edge[x] = true;
-        }
-        edge[(x + r.grid_after).min(n)] = true;
-    }
-    let bounds: Vec<usize> = (0..=n).filter(|&g| edge[g]).collect();
+    let bounds = grid_bounds(t, n);
     if bounds.len() == n + 1 {
         return bounds;
     }
