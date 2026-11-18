@@ -19,7 +19,7 @@ tasks:
     script: node ../twip-capi/build-native.mjs nextest run -p twip --lib tests::fidelity && dotnet run --project tests/fidelity/validate -c Release -- ../../target/fidelity
     env:
       TWIP_FIDELITY_OUT: '../../target/fidelity'
-    inputs: ['src/**/*', 'tests/fidelity/**/*', 'Cargo.toml', '/crates/twip-capi/build-native.mjs']
+    inputs: ['src/**/*', 'tests/fidelity/**/*', '!tests/fidelity/validate/bin/**', '!tests/fidelity/validate/obj/**', 'Cargo.toml', '/crates/twip-capi/build-native.mjs']
   example:
     command: node ../twip-capi/build-native.mjs run -p twip --example session
     inputs: ['src/**/*', 'examples/**/*', 'Cargo.toml', '/crates/twip-capi/build-native.mjs']

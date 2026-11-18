@@ -5,7 +5,15 @@ tasks:
   # Planning ids and the CI plan (tests/hygiene.mjs).
   hygiene:
     command: node tests/hygiene.mjs
-    inputs: ['**/*']
+    inputs:
+      - '**/*'
+      - '!target/**'
+      - '!.moon/cache/**'
+      - '!**/node_modules/**'
+      - '!**/bin/**'
+      - '!bindings/dotnet/*/obj/**'
+      - '!crates/twip/tests/fidelity/validate/obj/**'
+      - '!docs/examples/dotnet/obj/**'
   format:
     command: cargo fmt --all --check
     inputs: ['crates/**/*.rs', 'rustfmt.toml']
