@@ -2398,7 +2398,7 @@ fn style_previews_are_pngs_of_the_size_asked_that_follow_the_dialog_and_the_appe
     use crate::api::command::ViewOptions;
     use crate::api::services::{DocumentAppearance, PreviewSize, StyleOpen, StylePatch};
     use crate::api::value::StyleId;
-    let mut engine = Engine::new(FontLibrary::system());
+    let mut engine = Engine::new(FontLibrary::system_recommended());
     let id = styles_session(&mut engine);
     let s = engine.session(id).expect("a session");
     let png = |p: &crate::api::services::PreviewPicture| p.png.0.starts_with(b"\x89PNG");
