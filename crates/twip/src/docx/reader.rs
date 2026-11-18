@@ -2948,90 +2948,13 @@ impl Reader {
             let mut cells = Vec::new();
             for (ci, (cn, cell_controls)) in cell_nodes.iter().enumerate() {
                 let region = Rc::new(self.res.cell_region(style_id.as_deref(), look, (row_band, col_band), (ri, ci), (nrows, ncols), headers));
-                let mut tcp = region.tc.clone();
-                let tc_pr = child(*cn, "tcPr");
-                tcp.merge(&TcProps::parse(tc_pr, &self.res.styles.colours));
-                let unset = if style_id.is_none() { 0.5 } else { 0.0 };
                 let tm = &row_tbl.margins;
-                let rev = self.cell_revisions(tc_pr, &region.tc, tm, unset);
+                let rev = self.cell_revisions(child(*cn, "tcPr"), &region.tc, tm, unset);
                 let ctx = TableCtx { region: region.clone() };
                 let blocks = self.read_blocks(*cn, pkg, Some(&ctx));
-                let bv = |b: &Option<Border>| b.clone();
-                cells.push(Cell {
-                    width: tcp.width,
-                    span: tcp.grid_span.unwrap_or(1).max(1) as usize,
-                    v_merge: match tcp.v_merge {
-                        Some(true) => VMerge::Restart,
-                        Some(false) => VMerge::Continue,
-                        None => VMerge::None,
-                    },
-                    top: bv(&tcp.borders.top),
-                    left: bv(&tcp.borders.left),
-                    bottom: bv(&tcp.borders.bottom),
-                    right: bv(&tcp.borders.right),
-                    shading: tcp.shading.flatten(),
-                    margins: cell_margins(&tcp, tm, unset),
-                    v_align: tcp.v_align.clone().unwrap_or_else(|| "top".into()),
-                    text_direction: tcp.text_direction.clone().unwrap_or_else(|| "lrTb".into()),
-                    no_wrap: tcp.no_wrap.unwrap_or(false),
-                    fit_text: tcp.fit_text.unwrap_or(false),
-                    hide_mark: tc_pr.and_then(|p| child(p, "hideMark")).is_some_and(|n| !matches!(attr(n, "val"), Some("0" | "false" | "off"))),
-                    diagonals: (tcp.borders.tl2br.is_some() || tcp.borders.tr2bl.is_some())
-                        .then(|| Rc::new([tcp.borders.tl2br.clone(), tcp.borders.tr2bl.clone()])),
-                    direct: Raw(child(*cn, "tcPr").map(|n| Rc::from(&n.document().input_text()[n.range()]))),
-                    blocks,
-                    controls: cell_controls.clone(),
-                    rev,
-                });
+                cells.push(self.cell(*cn, &region.tc, tm, unset, blocks, cell_controls.clone(), rev));
             }
-            let tr_pr = child(*rn, "trPr");
-            let rev = RowRevisions {
-                ins: self.mark_at(tr_pr, "ins", MarkKind::Insert),
-                del: self.mark_at(tr_pr, "del", MarkKind::Delete),
-                change: self.table_change(tr_pr, "trPrChange", |_, before| {
-                    let mut tr = style_region.tr.clone();
-                    tr.merge(&TrProps::parse(before));
-                    Some(PreviousProps::Row { height: tr.height, cant_split: tr.cant_split.unwrap_or(false), header: tr.header.unwrap_or(false) })
-                }),
-                ex_change: self.table_change(child(*rn, "tblPrEx"), "tblPrExChange", |_, _| None),
-            };
-            rows.push(Row {
-                height: trp.height.clone(),
-                cant_split: trp.cant_split.unwrap_or(false),
-                header: trp.header.unwrap_or(false),
-                grid_before: trp.grid_before.unwrap_or(0).max(0) as usize,
-                grid_after: trp.grid_after.unwrap_or(0).max(0) as usize,
-                w_before: trp.w_before,
-                w_after: trp.w_after,
-                ind: ex.ind.map(Width::dxa).filter(|_| ex.fixed == Some(true) && tbl.fixed != Some(true)),
-                jc: trp.jc,
-                div: tr_pr
-                    .and_then(|p| child(p, "divId"))
-                    .and_then(|n| int(val(n)))
-                    .map(|id| Rc::new(RowDiv { id, shift: 0.0, lead: 0.0, trail: 0.0, boxes: Rc::from([]) })),
-                shading: ex.shading.flatten(),
-                cell_spacing: trp.cell_spacing.or(ex.cell_spacing).map(|s| s.max(0.0)),
-                run: (ex.fixed == Some(true) && tbl.fixed != Some(true)).then(|| ex.width.or(tbl.width).unwrap_or(Width::Auto)),
-                nudge: None,
-                hidden: tr_pr.and_then(|p| child(p, "hidden")).is_some_and(on_off),
-                vanished: tr_pr.and_then(|p| child(p, "hidden")).is_some_and(|n| !matches!(attr(n, "val"), Some("0" | "false" | "off")))
-                    && cells.iter().all(|c| {
-                        c.blocks.iter().all(|b| match b {
-                            Block::Para(p) => p.mark.hidden && p.inlines.iter().all(|i| i.run().is_none_or(|r| r.hidden)),
-                            Block::Table(_) => false,
-                        })
-                    }),
-                borders: (ex.borders != Borders::default()).then(|| {
-                    let b = &row_tbl.borders;
-                    Rc::new([b.top.clone(), b.left.clone(), b.bottom.clone(), b.right.clone(), b.inside_h.clone(), b.inside_v.clone()])
-                }),
-                cells,
-                controls: row_controls.clone(),
-                direct: Raw(tr_pr.filter(|_| self.record).map(raw)),
-                exceptions: Raw(child(*rn, "tblPrEx").filter(|_| self.record).map(raw)),
-                src: self.record.then(|| Rc::new(rn.range())),
-                rev,
-            });
+            rows.push(self.row(*rn, &trp, &ex, &tbl, &row_tbl, &style_region, cells, row_controls.clone()));
             if let Some(r) = rows.last_mut() {
                 bound_spans(r);
             }
@@ -3097,6 +3020,107 @@ impl Reader {
             controls: Vec::new(),
             change,
             grid_change,
+        }
+    }
+
+    /// A table cell: its properties over its style region's `base`, the table's cell margins `tm`, and its content.
+    #[allow(clippy::too_many_arguments, reason = "the cell, its properties' context and the content read before it")]
+    #[inline(never)]
+    fn cell(&self, cn: Node, base: &TcProps, tm: &Margins, unset: f64, blocks: Vec<Block>, controls: Vec<ControlId>, rev: CellRevisions) -> Cell {
+        let tc_pr = child(cn, "tcPr");
+        let mut tcp = base.clone();
+        tcp.merge(&TcProps::parse(tc_pr, &self.res.styles.colours));
+        let bv = |b: &Option<Border>| b.clone();
+        Cell {
+            width: tcp.width,
+            span: tcp.grid_span.unwrap_or(1).max(1) as usize,
+            v_merge: match tcp.v_merge {
+                Some(true) => VMerge::Restart,
+                Some(false) => VMerge::Continue,
+                None => VMerge::None,
+            },
+            top: bv(&tcp.borders.top),
+            left: bv(&tcp.borders.left),
+            bottom: bv(&tcp.borders.bottom),
+            right: bv(&tcp.borders.right),
+            shading: tcp.shading.flatten(),
+            margins: cell_margins(&tcp, tm, unset),
+            v_align: tcp.v_align.clone().unwrap_or_else(|| "top".into()),
+            text_direction: tcp.text_direction.clone().unwrap_or_else(|| "lrTb".into()),
+            no_wrap: tcp.no_wrap.unwrap_or(false),
+            fit_text: tcp.fit_text.unwrap_or(false),
+            hide_mark: tc_pr.and_then(|p| child(p, "hideMark")).is_some_and(|n| !matches!(attr(n, "val"), Some("0" | "false" | "off"))),
+            diagonals: (tcp.borders.tl2br.is_some() || tcp.borders.tr2bl.is_some())
+                .then(|| Rc::new([tcp.borders.tl2br.clone(), tcp.borders.tr2bl.clone()])),
+            direct: Raw(tc_pr.map(|n| Rc::from(&n.document().input_text()[n.range()]))),
+            blocks,
+            controls,
+            rev,
+        }
+    }
+
+    /// A table row: its properties `trp` and exceptions `ex` over the table's `tbl` (`row_tbl` with the exceptions),
+    /// and its cells.
+    #[allow(clippy::too_many_arguments, reason = "the row, the table properties it resolves over and its cells")]
+    #[inline(never)]
+    fn row(
+        &mut self,
+        rn: Node,
+        trp: &TrProps,
+        ex: &TblProps,
+        tbl: &TblProps,
+        row_tbl: &TblProps,
+        style_region: &Region,
+        cells: Vec<Cell>,
+        controls: Vec<ControlId>,
+    ) -> Row {
+        let tr_pr = child(rn, "trPr");
+        let rev = RowRevisions {
+            ins: self.mark_at(tr_pr, "ins", MarkKind::Insert),
+            del: self.mark_at(tr_pr, "del", MarkKind::Delete),
+            change: self.table_change(tr_pr, "trPrChange", |_, before| {
+                let mut tr = style_region.tr.clone();
+                tr.merge(&TrProps::parse(before));
+                Some(PreviousProps::Row { height: tr.height, cant_split: tr.cant_split.unwrap_or(false), header: tr.header.unwrap_or(false) })
+            }),
+            ex_change: self.table_change(child(rn, "tblPrEx"), "tblPrExChange", |_, _| None),
+        };
+        Row {
+            height: trp.height.clone(),
+            cant_split: trp.cant_split.unwrap_or(false),
+            header: trp.header.unwrap_or(false),
+            grid_before: trp.grid_before.unwrap_or(0).max(0) as usize,
+            grid_after: trp.grid_after.unwrap_or(0).max(0) as usize,
+            w_before: trp.w_before,
+            w_after: trp.w_after,
+            ind: ex.ind.map(Width::dxa).filter(|_| ex.fixed == Some(true) && tbl.fixed != Some(true)),
+            jc: trp.jc,
+            div: tr_pr
+                .and_then(|p| child(p, "divId"))
+                .and_then(|n| int(val(n)))
+                .map(|id| Rc::new(RowDiv { id, shift: 0.0, lead: 0.0, trail: 0.0, boxes: Rc::from([]) })),
+            shading: ex.shading.flatten(),
+            cell_spacing: trp.cell_spacing.or(ex.cell_spacing).map(|s| s.max(0.0)),
+            run: (ex.fixed == Some(true) && tbl.fixed != Some(true)).then(|| ex.width.or(tbl.width).unwrap_or(Width::Auto)),
+            nudge: None,
+            hidden: tr_pr.and_then(|p| child(p, "hidden")).is_some_and(on_off),
+            vanished: tr_pr.and_then(|p| child(p, "hidden")).is_some_and(|n| !matches!(attr(n, "val"), Some("0" | "false" | "off")))
+                && cells.iter().all(|c| {
+                    c.blocks.iter().all(|b| match b {
+                        Block::Para(p) => p.mark.hidden && p.inlines.iter().all(|i| i.run().is_none_or(|r| r.hidden)),
+                        Block::Table(_) => false,
+                    })
+                }),
+            borders: (ex.borders != Borders::default()).then(|| {
+                let b = &row_tbl.borders;
+                Rc::new([b.top.clone(), b.left.clone(), b.bottom.clone(), b.right.clone(), b.inside_h.clone(), b.inside_v.clone()])
+            }),
+            cells,
+            controls,
+            direct: Raw(tr_pr.filter(|_| self.record).map(raw)),
+            exceptions: Raw(child(rn, "tblPrEx").filter(|_| self.record).map(raw)),
+            src: self.record.then(|| Rc::new(rn.range())),
+            rev,
         }
     }
 
