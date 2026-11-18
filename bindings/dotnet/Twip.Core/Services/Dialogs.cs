@@ -81,6 +81,11 @@ public sealed class EditorDialogs
     /// <returns>The dialog session.</returns>
     public Task<DialogSession<FrameDialogValues>> OpenFrameAsync(CancellationToken ct = default) => OpenAsync<FrameDialogValues>(DialogKind.Frame, ct);
 
+    /// <summary>Opens Drop Cap on the selection's paragraph.</summary>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>The dialog session.</returns>
+    public Task<DialogSession<DropCapDialogValues>> OpenDropCapAsync(CancellationToken ct = default) => OpenAsync<DropCapDialogValues>(DialogKind.DropCap, ct);
+
     /// <summary>Opens Define New Bullet on the selection's list level.</summary>
     /// <param name="ct">Cancels the request.</param>
     /// <returns>The dialog session.</returns>
@@ -390,6 +395,13 @@ public sealed record BordersShadingDialogValues(
 /// <param name="ColumnBand">The columns in each band.</param>
 public sealed record BandingDialogValues(int RowBand, int ColumnBand);
 
+/// <summary>The Drop Cap dialog's values.</summary>
+/// <param name="Position">Where the letter goes.</param>
+/// <param name="Font">The letter's font; empty for the text's.</param>
+/// <param name="Lines">How many lines it drops, 1 to 10.</param>
+/// <param name="Distance">How far the text keeps from it.</param>
+public sealed record DropCapDialogValues(DropCapPosition Position, string Font, uint Lines, Length Distance);
+
 /// <summary>The Frame dialog's values: the frame's properties, Move with text and Remove Frame.</summary>
 /// <param name="Wrap">Text wrapping.</param>
 /// <param name="WidthRule">How the width is set.</param>
@@ -620,11 +632,25 @@ public enum FontStyleChoice
 /// <param name="Hidden">Hidden.</param>
 /// <param name="CharacterSpacing">Character spacing.</param>
 /// <param name="Position">Raised or lowered position.</param>
+/// <param name="Emboss">Emboss.</param>
+/// <param name="Engrave">Engrave.</param>
+/// <param name="Outline">Outline.</param>
+/// <param name="Shadow">Shadow.</param>
+/// <param name="Scale">The character width scale, percent.</param>
+/// <param name="Kerning">Kerning from this size up; 0 for none.</param>
+/// <param name="Ligatures">The OpenType ligatures.</param>
+/// <param name="NumberSpacing">The number spacing.</param>
+/// <param name="NumberForm">The number forms.</param>
+/// <param name="StylisticSet">The stylistic set, 1 to 20; 0 for the default.</param>
+/// <param name="ContextualAlternates">Contextual alternates.</param>
 public sealed record FontDialogValues(
     FormatValue<string> Font, FormatValue<FontStyleChoice> Style, FormatValue<Length> Size, FormatValue<ColorValue> Color,
     FormatValue<UnderlineStyle> Underline, FormatValue<ColorValue> UnderlineColor, FormatValue<bool> Strikethrough,
     FormatValue<bool> DoubleStrikethrough, FormatValue<bool> Superscript, FormatValue<bool> Subscript, FormatValue<bool> SmallCaps,
-    FormatValue<bool> AllCaps, FormatValue<bool> Hidden, FormatValue<Length> CharacterSpacing, FormatValue<Length> Position);
+    FormatValue<bool> AllCaps, FormatValue<bool> Hidden, FormatValue<Length> CharacterSpacing, FormatValue<Length> Position,
+    FormatValue<bool> Emboss, FormatValue<bool> Engrave, FormatValue<bool> Outline, FormatValue<bool> Shadow, FormatValue<double> Scale,
+    FormatValue<Length> Kerning, FormatValue<Ligatures> Ligatures, FormatValue<NumberSpacing> NumberSpacing, FormatValue<NumberForm> NumberForm,
+    FormatValue<int> StylisticSet, FormatValue<bool> ContextualAlternates);
 
 /// <summary>A special indent in the Paragraph dialog.</summary>
 public enum SpecialIndent
@@ -671,11 +697,17 @@ public readonly record struct OutlineLevel
 /// <param name="KeepLinesTogether">Keep lines together.</param>
 /// <param name="PageBreakBefore">Page break before.</param>
 /// <param name="WidowControl">Widow control.</param>
+/// <param name="Collapsed">Collapsed by default (with an outline level).</param>
+/// <param name="MirrorIndents">Mirror indents.</param>
+/// <param name="ContextualSpacing">Don't add space between paragraphs of the same style.</param>
+/// <param name="SuppressLineNumbers">Suppress line numbers.</param>
+/// <param name="DontHyphenate">Don't hyphenate.</param>
 public sealed record ParagraphDialogValues(
     FormatValue<ParagraphAlignment> Alignment, FormatValue<OutlineLevel> OutlineLevel, FormatValue<Length> Left, FormatValue<Length> Right,
     FormatValue<SpecialIndent> Special, FormatValue<Length> By, FormatValue<SpacingValue> Before, FormatValue<SpacingValue> After,
     FormatValue<LineSpacing> LineSpacing, FormatValue<bool> KeepWithNext, FormatValue<bool> KeepLinesTogether,
-    FormatValue<bool> PageBreakBefore, FormatValue<bool> WidowControl);
+    FormatValue<bool> PageBreakBefore, FormatValue<bool> WidowControl, FormatValue<bool> Collapsed, FormatValue<bool> MirrorIndents,
+    FormatValue<bool> ContextualSpacing, FormatValue<bool> SuppressLineNumbers, FormatValue<bool> DontHyphenate);
 
 /// <summary>What page setup applies to.</summary>
 public enum PageSetupScope
@@ -684,6 +716,8 @@ public enum PageSetupScope
     Section,
     /// <summary>The whole document.</summary>
     WholeDocument,
+    /// <summary>From the selection on: a new-page section break goes there, and the section after it takes the setup.</summary>
+    ThisPointForward,
 }
 
 /// <summary>The Page Setup dialog's values.</summary>
@@ -700,9 +734,15 @@ public enum PageSetupScope
 /// <param name="DifferentFirstPage">A different first page.</param>
 /// <param name="DifferentOddEven">Different odd and even pages.</param>
 /// <param name="ApplyTo">What the values apply to.</param>
+/// <param name="MultiplePages">Multiple pages: normal, mirror margins or book fold.</param>
+/// <param name="GutterAtTop">The gutter is at the top.</param>
+/// <param name="SectionStart">Where the section starts.</param>
+/// <param name="VerticalAlignment">The text's vertical alignment on the page.</param>
+/// <param name="LineNumbers">Line numbers; null for none.</param>
 public sealed record PageSetupDialogValues(
     Length Top, Length Bottom, Length Left, Length Right, Length Gutter, PageOrientation Orientation, Length Width, Length Height,
-    Length HeaderDistance, Length FooterDistance, bool DifferentFirstPage, bool DifferentOddEven, PageSetupScope ApplyTo);
+    Length HeaderDistance, Length FooterDistance, bool DifferentFirstPage, bool DifferentOddEven, PageSetupScope ApplyTo,
+    MultiplePagesMode MultiplePages, bool GutterAtTop, SectionBreakKind SectionStart, PageVerticalAlignment VerticalAlignment, LineNumbers? LineNumbers);
 
 /// <summary>The Insert Table dialog's values.</summary>
 /// <param name="Rows">The rows.</param>
@@ -726,9 +766,18 @@ public sealed record CellMargins(Length Top, Length Bottom, Length Left, Length 
 /// <param name="ColumnWidth">The column width.</param>
 /// <param name="CellAlignment">The cell vertical alignment.</param>
 /// <param name="CellMargins">The default cell margins.</param>
+/// <param name="AllowSpacing">Allow spacing between cells.</param>
+/// <param name="CellSpacing">The space between cells, when allowed.</param>
+/// <param name="WrapText">The selected cells' text wraps.</param>
+/// <param name="FitText">The selected cells' text is squeezed to fit.</param>
+/// <param name="Title">The alternative text's title.</param>
+/// <param name="Description">The alternative text's description.</param>
+/// <param name="CellWidth">The selected cells' preferred width.</param>
 public sealed record TablePropertiesDialogValues(
     TableWidth Width, TableAlignment Alignment, Length Indent, FormatValue<RowHeight> RowHeight, FormatValue<bool> RowCanBreak,
-    FormatValue<bool> HeaderRow, FormatValue<Length> ColumnWidth, FormatValue<CellAlignment> CellAlignment, CellMargins CellMargins);
+    FormatValue<bool> HeaderRow, FormatValue<Length> ColumnWidth, FormatValue<CellAlignment> CellAlignment, CellMargins CellMargins,
+    bool AllowSpacing, Length CellSpacing, FormatValue<bool> WrapText, FormatValue<bool> FitText, string Title, string Description,
+    FormatValue<TableWidth> CellWidth);
 
 /// <summary>The picture Size dialog's values.</summary>
 /// <param name="Width">The width.</param>
@@ -737,7 +786,19 @@ public sealed record TablePropertiesDialogValues(
 /// <param name="ScaleHeight">The height scale, in percent.</param>
 /// <param name="LockAspect">Lock the aspect ratio.</param>
 /// <param name="Reset">Reset to the original size.</param>
-public sealed record PictureSizeDialogValues(Length Width, Length Height, double ScaleWidth, double ScaleHeight, bool LockAspect, bool Reset);
+/// <param name="RelativeWidth">A floating object's width as a share of a box on the page; null for an absolute width.</param>
+/// <param name="RelativeHeight">Its height as a share of a box on the page; null for an absolute height.</param>
+/// <param name="Crop">A picture's crop (Crop from), by fractions of its image from each edge; null for an object that isn't one.</param>
+public sealed record PictureSizeDialogValues(
+    Length Width,
+    Length Height,
+    double ScaleWidth,
+    double ScaleHeight,
+    bool LockAspect,
+    bool Reset,
+    RelativeSize? RelativeWidth,
+    RelativeSize? RelativeHeight,
+    PictureCrop? Crop);
 
 /// <summary>The Alt Text dialog's values.</summary>
 /// <param name="Text">The alternative text.</param>
@@ -746,8 +807,9 @@ public sealed record AltTextDialogValues(string Text, bool Decorative);
 
 /// <summary>The Hyperlink dialog's values.</summary>
 /// <param name="Text">The text to display.</param>
-/// <param name="Address">The address.</param>
-public sealed record HyperlinkDialogValues(string Text, string Address);
+/// <param name="Address">The address: a URL or a file, empty for a place in this document.</param>
+/// <param name="Bookmark">The bookmark the link goes to (<c>_top</c>: the document's start), in this document or, with an address, in that one; empty for none.</param>
+public sealed record HyperlinkDialogValues(string Text, string Address, string Bookmark = "");
 
 /// <summary>The Tabs dialog's button actions, applied by <see cref="DialogSession{TValues}.UpdateAsync"/>.</summary>
 public enum TabsDialogAction

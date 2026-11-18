@@ -17,6 +17,21 @@ namespace Twip.Wire;
         typeof(CamelEnum<AutoFitBehavior>),
         typeof(CamelEnum<BorderEdges>),
         typeof(CamelEnum<CaseChange>),
+        typeof(CamelEnum<Ligatures>),
+        typeof(CamelEnum<TextFlow>),
+        typeof(CamelEnum<ChapterSeparator>),
+        typeof(CamelEnum<PageVerticalAlignment>),
+        typeof(CamelEnum<LineNumberRestart>),
+        typeof(CamelEnum<MultiplePagesMode>),
+        typeof(CamelEnum<AlignmentTabKind>),
+        typeof(CamelEnum<NoteType>),
+        typeof(CamelEnum<NotePosition>),
+        typeof(CamelEnum<NoteRestart>),
+        typeof(CamelEnum<NoteScope>),
+        typeof(CamelEnum<NoteConversion>),
+        typeof(CamelEnum<AlignmentTabBase>),
+        typeof(CamelEnum<NumberSpacing>),
+        typeof(CamelEnum<NumberForm>),
         typeof(CamelEnum<CellAlignment>),
         typeof(CamelEnum<CellShift>),
         typeof(CamelEnum<ColumnPosition>),
@@ -49,6 +64,7 @@ namespace Twip.Wire;
         typeof(CamelEnum<BorderSetting>),
         typeof(CamelEnum<ShadingTarget>),
         typeof(CamelEnum<ShadingPattern>),
+        typeof(CamelEnum<DropCapPosition>),
         typeof(CamelEnum<FrameWrap>),
         typeof(CamelEnum<FrameWidthRule>),
         typeof(CamelEnum<FrameHeightRule>),
@@ -160,9 +176,25 @@ namespace Twip.Wire;
         typeof(FormatValueConverter<SpacingValue>),
         typeof(FormatValueConverter<ListKind>),
         typeof(FormatValueConverter<int>),
+        typeof(FormatValueConverter<double>),
+        typeof(FormatValueConverter<Ligatures>),
+        typeof(FormatValueConverter<TextFlow>),
+        typeof(FormatValueConverter<NumberSpacing>),
+        typeof(FormatValueConverter<NumberForm>),
         typeof(FormatValueConverter<ParagraphBorders>),
         typeof(FormatValueConverter<CellAlignment>),
         typeof(FormatValueConverter<RowHeight>),
+        typeof(FormatValueConverter<TableWidth>),
+        typeof(FormatValueConverter<TightWrap>),
+        typeof(CamelEnum<TightWrap>),
+        typeof(CamelEnum<RelativeSizeReference>),
+        typeof(CamelEnum<ObjectAlign>),
+        typeof(CamelEnum<AlignReference>),
+        typeof(CamelEnum<CustomPropertyKind>),
+        typeof(CamelEnum<FormFieldType>),
+        typeof(CamelEnum<ProtectionKind>),
+        typeof(CamelEnum<ControlAppearance>),
+        typeof(CamelEnum<TextInputType>),
         typeof(FormatValueConverter<FontStyleChoice>),
         typeof(FormatValueConverter<OutlineLevel>),
         typeof(FormatValueConverter<SpecialIndent>),
@@ -200,6 +232,32 @@ namespace Twip.Wire;
 [JsonSerializable(typeof(bool))]
 [JsonSerializable(typeof(BorderEdges))]
 [JsonSerializable(typeof(CaseChange))]
+[JsonSerializable(typeof(TypographyOptions))]
+[JsonSerializable(typeof(OutlineOptions))]
+[JsonSerializable(typeof(PageNumberingOptions))]
+[JsonSerializable(typeof(NumberFormat))]
+[JsonSerializable(typeof(ChapterNumbers))]
+[JsonSerializable(typeof(LineNumbers))]
+[JsonSerializable(typeof(MultiplePagesOptions))]
+[JsonSerializable(typeof(ColumnWidth))]
+[JsonSerializable(typeof(IReadOnlyList<ColumnWidth>))]
+[JsonSerializable(typeof(ChapterSeparator))]
+[JsonSerializable(typeof(PageVerticalAlignment))]
+[JsonSerializable(typeof(LineNumberRestart))]
+[JsonSerializable(typeof(MultiplePagesMode))]
+[JsonSerializable(typeof(AlignmentTabKind))]
+[JsonSerializable(typeof(NoteType))]
+[JsonSerializable(typeof(NoteConversion))]
+[JsonSerializable(typeof(NotePropertiesOptions))]
+[JsonSerializable(typeof(NoteSettings))]
+[JsonSerializable(typeof(AlignmentTabBase))]
+[JsonSerializable(typeof(HeaderFooterLinks))]
+[JsonSerializable(typeof(TextFlow))]
+[JsonSerializable(typeof(LanguageOptions))]
+[JsonSerializable(typeof(CharacterEffectsOptions))]
+[JsonSerializable(typeof(Ligatures))]
+[JsonSerializable(typeof(NumberSpacing))]
+[JsonSerializable(typeof(NumberForm))]
 [JsonSerializable(typeof(CellAlignment))]
 [JsonSerializable(typeof(CellBorder))]
 [JsonSerializable(typeof(CellMarginOptions))]
@@ -320,6 +378,7 @@ namespace Twip.Wire;
 [JsonSerializable(typeof(HeaderFooterKind))]
 [JsonSerializable(typeof(HeaderFooterType))]
 [JsonSerializable(typeof(Heading))]
+[JsonSerializable(typeof(BookmarkInfo))]
 [JsonSerializable(typeof(HeadingId))]
 [JsonSerializable(typeof(HighlightColor))]
 [JsonSerializable(typeof(HistoryState))]
@@ -351,6 +410,7 @@ namespace Twip.Wire;
 [JsonSerializable(typeof(IReadOnlyList<FindMatch>))]
 [JsonSerializable(typeof(IReadOnlyList<GestureBinding>))]
 [JsonSerializable(typeof(IReadOnlyList<Heading>))]
+[JsonSerializable(typeof(IReadOnlyList<BookmarkInfo>))]
 [JsonSerializable(typeof(IReadOnlyList<Person>))]
 [JsonSerializable(typeof(IReadOnlyList<RevisionInfo>))]
 [JsonSerializable(typeof(IReadOnlyList<string>))]
@@ -411,6 +471,8 @@ namespace Twip.Wire;
 [JsonSerializable(typeof(ParagraphBorderLines))]
 [JsonSerializable(typeof(ShadingOptions))]
 [JsonSerializable(typeof(FrameProperties))]
+[JsonSerializable(typeof(DropCap))]
+[JsonSerializable(typeof(DropCapDialogValues))]
 [JsonSerializable(typeof(ManagedStyle))]
 [JsonSerializable(typeof(DocumentDefaults))]
 [JsonSerializable(typeof(StyleMetaOptions))]
@@ -565,6 +627,35 @@ namespace Twip.Wire;
 [JsonSerializable(typeof(TableStyleOptionsUpdate))]
 [JsonSerializable(typeof(TablePosition))]
 [JsonSerializable(typeof(TableWidth))]
+[JsonSerializable(typeof(CellPropertiesOptions))]
+[JsonSerializable(typeof(RowExceptions))]
+[JsonSerializable(typeof(RowBorders))]
+[JsonSerializable(typeof(RelativeSize))]
+[JsonSerializable(typeof(DocumentPropertiesChange))]
+[JsonSerializable(typeof(FormFieldType))]
+[JsonSerializable(typeof(TextInputType))]
+[JsonSerializable(typeof(FormFieldChange))]
+[JsonSerializable(typeof(TextFormOptions))]
+[JsonSerializable(typeof(CheckBoxFormOptions))]
+[JsonSerializable(typeof(DropDownFormOptions))]
+[JsonSerializable(typeof(FormFieldFill))]
+[JsonSerializable(typeof(FormFieldInfo))]
+[JsonSerializable(typeof(ProtectionKind))]
+[JsonSerializable(typeof(DocumentProtection))]
+[JsonSerializable(typeof(ProtectionState))]
+[JsonSerializable(typeof(ControlInfo))]
+[JsonSerializable(typeof(ControlAppearance))]
+[JsonSerializable(typeof(CheckboxSymbol))]
+[JsonSerializable(typeof(DocumentProperties))]
+[JsonSerializable(typeof(CustomProperty))]
+[JsonSerializable(typeof(CustomPropertyKind))]
+[JsonSerializable(typeof(DocumentVariable))]
+[JsonSerializable(typeof(RelativeSizeReference))]
+[JsonSerializable(typeof(PictureCrop))]
+[JsonSerializable(typeof(ObjectAlign))]
+[JsonSerializable(typeof(AlignReference))]
+[JsonSerializable(typeof(TextColumns))]
+[JsonSerializable(typeof(TightWrap))]
 [JsonSerializable(typeof(TableWidthKind))]
 [JsonSerializable(typeof(TabsDialogAction))]
 [JsonSerializable(typeof(TabsDialogValues))]

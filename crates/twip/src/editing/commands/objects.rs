@@ -20,7 +20,37 @@ impl Editor {
             (None, Some(h)) if aspect => (w0 * h / h0, h),
             (w, h) => (w.unwrap_or(w0), h.unwrap_or(h0)),
         };
+        if s.relative_width.is_some() || s.relative_height.is_some() {
+            return self.set_relative_size(w, h, [s.relative_width, s.relative_height], fonts);
+        }
         self.object_cmd(ObjectCmd::Size(w, h), fonts)
+    }
+
+    /// A floating object's size, and its width and height as shares of boxes on the page.
+    fn set_relative_size(
+        &mut self,
+        w: f64,
+        h: f64,
+        relative: [Option<crate::api::value::NoneOr<crate::api::command::RelativeSize>>; 2],
+        fonts: &Fonts,
+    ) -> Outcome {
+        use crate::api::value::NoneOr;
+        let Selection::Object(crate::editing::selection::ObjectRef::Floating(f)) = self.selection else {
+            return Outcome::unavailable("a relative size is for floating objects");
+        };
+        let Some(mut n) = self.float_of(f).cloned() else { return Outcome::Unchanged("no float") };
+        (n.w, n.h) = ((w.max(1.0) * 20.0).round() / 20.0, (h.max(1.0) * 20.0).round() / 20.0);
+        for (k, r) in relative.into_iter().enumerate() {
+            match r {
+                Some(NoneOr::None) => n.relative.size[k] = None,
+                Some(NoneOr::Value(r)) => {
+                    let from = serde_json::to_value(r.relative_to).ok().and_then(|v| v.as_str().map(str::to_string)).unwrap_or_default();
+                    n.relative.size[k] = Some((from, (r.percent * 10.0).round() as i64));
+                }
+                None => {}
+            }
+        }
+        self.set_float(n, "Size", fonts)
     }
 
     pub(in crate::editing) fn set_object_wrap(&mut self, w: ObjectWrap, fonts: &Fonts) -> Outcome {

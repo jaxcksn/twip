@@ -4,13 +4,19 @@ import type {
   DocumentDefaults,
   FollowNumber,
   FrameProperties,
+  Ligatures,
+  LineNumbers,
   ListEntryId,
   ListLevel,
+  MultiplePagesMode,
+  NumberForm,
   NumberFormat,
+  NumberSpacing,
+  SectionBreakKind,
   ShadingPattern,
 } from '../commands.js';
 import type { Session } from '../editor.js';
-import type { LineSpacing, Mixed, RowHeight, TableWidth, Tri, UnderlineStyle } from '../state.js';
+import type { LineSpacing, Mixed, RelativeSize, RowHeight, TableWidth, Tri, UnderlineStyle } from '../state.js';
 import { Method } from '../transport/protocol.js';
 import { type PreviewPicture, type PreviewSize, toPicture } from './navigation.js';
 import type { Color, Points, StyleId } from '../types.js';
@@ -63,6 +69,7 @@ export type DialogKind =
   | 'manageStyles'
   | 'bordersShading'
   | 'frame'
+  | 'dropCap'
   | 'banding'
   | 'defineBullet'
   | 'defineNumberFormat'
@@ -141,6 +148,20 @@ export interface DialogValues {
     hidden: Tri;
     characterSpacing: Mixed<Points>;
     position: Mixed<Points>;
+    emboss: Tri;
+    engrave: Tri;
+    outline: Tri;
+    shadow: Tri;
+    /** The character width scale, percent. */
+    scale: Mixed<number>;
+    /** Kerning from this size up; 0 for none. */
+    kerning: Mixed<Points>;
+    ligatures: Mixed<Ligatures>;
+    numberSpacing: Mixed<NumberSpacing>;
+    numberForm: Mixed<NumberForm>;
+    /** The stylistic set, 1 to 20; 0 for the default. */
+    stylisticSet: Mixed<number>;
+    contextualAlternates: Tri;
   };
   /** The Paragraph dialog. */
   paragraph: {
@@ -157,6 +178,13 @@ export interface DialogValues {
     keepLinesTogether: Tri;
     pageBreakBefore: Tri;
     widowControl: Tri;
+    /** Collapsed by default (with an outline level). */
+    collapsed: Tri;
+    mirrorIndents: Tri;
+    /** Don't add space between paragraphs of the same style. */
+    contextualSpacing: Tri;
+    suppressLineNumbers: Tri;
+    dontHyphenate: Tri;
   };
   /** The Page setup dialog. */
   pageSetup: {
@@ -172,7 +200,14 @@ export interface DialogValues {
     footerDistance: Points;
     differentFirstPage: boolean;
     differentOddEven: boolean;
-    applyTo: 'section' | 'wholeDocument';
+    applyTo: 'section' | 'wholeDocument' | 'thisPointForward';
+    multiplePages: MultiplePagesMode;
+    gutterAtTop: boolean;
+    /** Where the section starts. */
+    sectionStart: SectionBreakKind;
+    verticalAlignment: 'top' | 'center' | 'justified' | 'bottom';
+    /** Line numbers, or none. */
+    lineNumbers: LineNumbers | null;
   };
   /** The Insert table dialog. */
   insertTable: { rows: number; columns: number };
@@ -185,15 +220,40 @@ export interface DialogValues {
     rowCanBreak: Tri;
     headerRow: Tri;
     columnWidth: Mixed<Points>;
+    /** The selected cells' preferred width. */
+    cellWidth: Mixed<TableWidth>;
     cellAlignment: Mixed<'top' | 'center' | 'bottom'>;
     cellMargins: { top: Points; bottom: Points; left: Points; right: Points };
+    allowSpacing: boolean;
+    cellSpacing: Points;
+    wrapText: Tri;
+    fitText: Tri;
+    title: string;
+    description: string;
   };
   /** The Picture size dialog. */
-  pictureSize: { width: Points; height: Points; scaleWidth: number; scaleHeight: number; lockAspect: boolean; reset: boolean };
+  pictureSize: {
+    width: Points;
+    height: Points;
+    scaleWidth: number;
+    scaleHeight: number;
+    lockAspect: boolean;
+    reset: boolean;
+    /** A floating object's width as a share of a box on the page; null for an absolute width. */
+    relativeWidth: RelativeSize | null;
+    /** Its height as a share of a box on the page; null for an absolute height. */
+    relativeHeight: RelativeSize | null;
+    /** A picture's crop (Crop from), by fractions of its image from each edge; null for an object that isn't one. */
+    crop: { left?: number; top?: number; right?: number; bottom?: number } | null;
+  };
   /** The Alt text dialog. */
   altText: { text: string; decorative: boolean };
   /** The Hyperlink dialog. */
-  hyperlink: { text: string; address: string };
+  /**
+   * The Hyperlink dialog: `bookmark` is the place it goes to (`'_top'`: the document's start), in this document or, with
+   * an address, in that one; the `bookmark` field's options list this document's.
+   */
+  hyperlink: { text: string; address: string; bookmark: string };
   /** The Tabs dialog. */
   tabs: {
     stops: { position: Points; alignment: TabAlignment; leader: TabLeader; inherited: boolean }[];
@@ -293,6 +353,8 @@ export interface DialogValues {
     /** Remove Frame: applying removes the frame. */
     remove: boolean;
   };
+  /** Drop Cap, on the selection's paragraph: where its first letter goes, its font (empty: the text's), lines and distance. */
+  dropCap: { position: 'none' | 'dropped' | 'inMargin'; font: string; lines: number; distance: Points };
   /** Define New Bullet: the bullet of the selection's list level (or a new list's). */
   defineBullet: { text: string; font: string | null; picture: string | null; alignment: 'left' | 'center' | 'right' };
   /** Define New Number Format: the number of the selection's list level (or a new list's). */

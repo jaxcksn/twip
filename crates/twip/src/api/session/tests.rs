@@ -80,7 +80,7 @@ fn export_captures_the_revision_and_clears_modified() {
 }
 
 #[test]
-fn a_typical_state_is_under_12_kb() {
+fn a_typical_state_is_under_16_kb() {
     let (mut engine, _) = engine();
     let id = engine.create_session(SessionOptions::default());
     let s = engine.session(id).expect("a session");
@@ -92,7 +92,8 @@ fn a_typical_state_is_under_12_kb() {
     let text = state.selection.text.take().expect("a short selection's text");
     assert!(text.contains('\n'), "{text:?}");
     let json = serde_json::to_string(&state).expect("serializes");
-    assert!(json.len() < 12 * 1024, "{} bytes", json.len());
+    // ponytail: grows with the catalog (each command's state); a compact command-state encoding if it nears this.
+    assert!(json.len() < 16 * 1024, "{} bytes", json.len());
 }
 
 #[test]
@@ -1815,6 +1816,7 @@ fn an_activated_picture_control_names_it() {
         text: None,
         image: Some(crate::api::value::Bytes(image)),
         docx: None,
+        building_block: None,
     }))
     .expect("fills");
     activated(&events);
@@ -2209,6 +2211,108 @@ fn a_format_menu_dialog_changes_the_style_dialog_not_the_document() {
 }
 
 #[test]
+fn every_font_and_paragraph_dialog_setting_reaches_the_style() {
+    use crate::api::command::{Ligatures, NumberForm, NumberSpacing};
+    use crate::api::services::{DialogKind, DialogPatch, FontPatch, ParagraphPatch, StyleOpen};
+    use crate::api::value::{AutoOr, Color, OutlineLevel, StyleId};
+    let mut engine = Engine::new(FontLibrary::system());
+    let id = styles_session(&mut engine);
+    let s = engine.session(id).expect("a session");
+    let revision = s.state().revision;
+    let style = style_values(&s.dialog_open_style(StyleOpen::Modify(StyleId("Quote".into()))).expect("opens"));
+    let font = s.dialog_open_on_style(DialogKind::Font, style).expect("opens Format > Font");
+    fn u<T>(v: T) -> Option<Tri<T>> {
+        Some(Tri::Uniform(v))
+    }
+    let patch = FontPatch {
+        underline: u(crate::api::value::UnderlineStyle::Single),
+        underline_color: u(AutoOr::Value(Color(0xC00000))),
+        emboss: u(true),
+        shadow: u(true),
+        scale: u(90.0),
+        kerning: u(Points(14.0)),
+        ligatures: u(Ligatures::All),
+        number_spacing: u(NumberSpacing::Tabular),
+        number_form: u(NumberForm::OldStyle),
+        stylistic_set: u(3),
+        contextual_alternates: u(true),
+        ..FontPatch::default()
+    };
+    let font = s.dialog_update(font, DialogPatch::Font(patch)).expect("updates");
+    let style = style_values(&s.dialog_apply_to_style(font).expect("applies to the style dialog"));
+    let again = s.dialog_open_on_style(DialogKind::Font, style.clone()).expect("opens Format > Font again");
+    let crate::api::services::DialogValues::Font(f) = &again.values else { panic!("not the font dialog") };
+    assert_eq!(
+        (&f.underline_color, &f.emboss, &f.shadow, &f.scale, &f.kerning, &f.ligatures),
+        (
+            &Tri::Uniform(AutoOr::Value(Color(0xC00000))),
+            &Tri::Uniform(true),
+            &Tri::Uniform(true),
+            &Tri::Uniform(90.0),
+            &Tri::Uniform(Points(14.0)),
+            &Tri::Uniform(Ligatures::All)
+        ),
+        "{}",
+        style.pending
+    );
+    assert_eq!(
+        (&f.number_spacing, &f.number_form, &f.stylistic_set, &f.contextual_alternates),
+        (&Tri::Uniform(NumberSpacing::Tabular), &Tri::Uniform(NumberForm::OldStyle), &Tri::Uniform(3), &Tri::Uniform(true)),
+        "{}",
+        style.pending
+    );
+    let para = s.dialog_open_on_style(DialogKind::Paragraph, style).expect("opens Format > Paragraph");
+    let patch = ParagraphPatch {
+        outline_level: u(OutlineLevel::Level(2)),
+        collapsed: u(true),
+        mirror_indents: u(true),
+        contextual_spacing: u(true),
+        suppress_line_numbers: u(true),
+        dont_hyphenate: u(true),
+        ..ParagraphPatch::default()
+    };
+    let para = s.dialog_update(para, DialogPatch::Paragraph(patch)).expect("updates");
+    let model = s.dialog_apply_to_style(para).expect("applies to the style dialog");
+    let style = style_values(&model);
+    let again = s.dialog_open_on_style(DialogKind::Paragraph, style.clone()).expect("opens Format > Paragraph again");
+    let crate::api::services::DialogValues::Paragraph(p) = &again.values else { panic!("not the paragraph dialog") };
+    assert_eq!(
+        (&p.outline_level, &p.collapsed, &p.mirror_indents, &p.contextual_spacing, &p.suppress_line_numbers, &p.dont_hyphenate),
+        (
+            &Tri::Uniform(OutlineLevel::Level(2)),
+            &Tri::Uniform(true),
+            &Tri::Uniform(true),
+            &Tri::Uniform(true),
+            &Tri::Uniform(true),
+            &Tri::Uniform(true)
+        ),
+        "{}",
+        style.pending
+    );
+    assert_eq!(s.state().revision, revision, "the document didn't change");
+    // Applied and saved, the style keeps them.
+    s.dialog_apply(model).expect("applies the style dialog");
+    let saved = s.export(&ExportOptions::Docx).expect("exports").bytes.0;
+    let styles = crate::docx::package::read(&saved, &[], "word/styles.xml").expect("reads").expect("the styles part");
+    let quote = &styles[styles.find("w:styleId=\"Quote\"").expect("Quote")..];
+    let quote = &quote[..quote.find("</w:style>").expect("its end")];
+    for el in [
+        "w14:ligatures",
+        "w14:numSpacing",
+        "w14:cntxtAlts",
+        "<w:emboss",
+        "<w:contextualSpacing",
+        "<w:outlineLvl w:val=\"1\"",
+        "<w:suppressAutoHyphens",
+        "<w:mirrorIndents",
+        "w15:collapsed",
+    ] {
+        assert!(quote.contains(el), "{el} in {quote}");
+    }
+    assert!(roxmltree::Document::parse(&styles).is_ok(), "the styles part parses");
+}
+
+#[test]
 fn create_style_refuses_taken_names_and_applies_a_new_one_to_the_selection() {
     use crate::api::services::{FindQuery, StyleOpen, StylePatch};
     use crate::api::value::Order;
@@ -2294,7 +2398,7 @@ fn style_previews_are_pngs_of_the_size_asked_that_follow_the_dialog_and_the_appe
     use crate::api::command::ViewOptions;
     use crate::api::services::{DocumentAppearance, PreviewSize, StyleOpen, StylePatch};
     use crate::api::value::StyleId;
-    let mut engine = Engine::new(FontLibrary::system());
+    let mut engine = Engine::new(FontLibrary::system_recommended());
     let id = styles_session(&mut engine);
     let s = engine.session(id).expect("a session");
     let png = |p: &crate::api::services::PreviewPicture| p.png.0.starts_with(b"\x89PNG");
@@ -3012,4 +3116,100 @@ fn gpu_frames_draw_as_cpu_frames() {
             assert!(over <= (w * h) as usize / 5000, "{fixture} at {scroll}: {over} pixels differ by more than 2 (worst {worst})");
         }
     }
+}
+
+#[test]
+fn form_protection_leaves_the_sections_it_is_told_to_open() {
+    use crate::api::command::{DocumentProtection, MoveSelection, MoveUnit, ProtectionKind};
+    use crate::api::value::Direction;
+    use std::io::Read;
+    let mut engine = Engine::new(FontLibrary::system());
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-SECTIONS.docx");
+    s.open(&std::fs::read(path).expect("fixture")).expect("opens");
+    let protect = |enforce, open: Option<Vec<u32>>| {
+        Command::SetDocumentProtection(DocumentProtection {
+            kind: Some(ProtectionKind::Forms),
+            enforce: Some(enforce),
+            password: enforce.then(|| "Example".into()),
+            unprotected_sections: open,
+            ..DocumentProtection::default()
+        })
+    };
+    s.run(protect(true, Some(vec![1]))).expect("protects");
+    assert_eq!(s.state().review.protection.as_ref().map(|p| p.unprotected_sections.clone()), Some(vec![1]));
+    assert_eq!(s.run(Command::InsertText("x".into())).expect_err("protected").code, ErrorCode::NotAllowed);
+    assert_eq!(s.run(protect(true, Some(vec![]))).expect_err("enforced").code, ErrorCode::NotAllowed);
+    for _ in 0..4 {
+        s.run(Command::MoveSelection(MoveSelection { by: MoveUnit::Paragraph, direction: Direction::Forward, extend: None })).expect("moves");
+    }
+    s.run(Command::InsertText("x".into())).expect("the second section is open");
+    let saved = s.export(&ExportOptions::Docx).expect("saves").bytes.0;
+    let mut z = zip::ZipArchive::new(std::io::Cursor::new(saved.clone())).expect("a package");
+    let mut xml = String::new();
+    z.by_name("word/document.xml").unwrap().read_to_string(&mut xml).unwrap();
+    assert_eq!(xml.matches(r#"<w:formProt w:val="0"/>"#).count(), 1, "{xml}");
+    let doc = crate::docx::read_editable(&saved).expect("reads back");
+    assert_eq!(doc.sections.iter().map(|s| s.form_protected).collect::<Vec<_>>(), [true, false, true, true]);
+    assert!(doc.settings.protection.and_then(|p| p.password).is_some_and(|p| p.matches("Example")));
+}
+
+#[test]
+fn page_setup_applies_from_this_point_forward() {
+    use crate::api::services::{ApplyTo, DialogKind, DialogPatch, PageSetupPatch};
+    let (mut engine, _) = engine();
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    s.run(Command::InsertText("Before".into())).expect("types");
+    let m = s.dialog_open(DialogKind::PageSetup).expect("opens");
+    let patch = PageSetupPatch { apply_to: Some(ApplyTo::ThisPointForward), top: Some(Points(100.0)), ..PageSetupPatch::default() };
+    let m = s.dialog_update(m, DialogPatch::PageSetup(patch)).expect("updates");
+    s.dialog_apply(m).expect("applies");
+    let tops: Vec<f64> = s.editor.document().sections.iter().map(|x| x.top).collect();
+    assert_eq!(tops.len(), 2);
+    assert!(tops[0] != 100.0 && tops[1] == 100.0, "{tops:?}");
+    let saved = s.export(&ExportOptions::Docx).expect("saves").bytes.0;
+    let again = crate::docx::read_editable(&saved).expect("reads back");
+    assert_eq!(again.sections.iter().map(|x| x.top).collect::<Vec<_>>(), tops);
+}
+
+#[test]
+fn the_drop_cap_dialog_drops_the_first_letter() {
+    use crate::api::command::DropCapPosition;
+    use crate::api::services::{DialogKind, DialogPatch, DialogValues, DropCapPatch};
+    let (mut engine, _) = engine();
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    s.run(Command::InsertText("Once upon a time".into())).expect("types");
+    let m = s.dialog_open(DialogKind::DropCap).expect("opens");
+    assert!(matches!(&m.values, DialogValues::DropCap(v) if v.position == DropCapPosition::None && v.lines == 3));
+    let patch = DropCapPatch { position: Some(DropCapPosition::Dropped), lines: Some(2), ..DropCapPatch::default() };
+    let m = s.dialog_update(m, DialogPatch::DropCap(patch)).expect("updates");
+    s.dialog_apply(m).expect("applies");
+    let d = s.state().paragraph.drop_cap.clone().expect("a drop cap");
+    assert_eq!((d.position, d.lines), (DropCapPosition::Dropped, Some(2)));
+    let m = s.dialog_open(DialogKind::DropCap).expect("opens again");
+    assert!(matches!(&m.values, DialogValues::DropCap(v) if v.position == DropCapPosition::Dropped && v.lines == 2));
+}
+
+#[test]
+fn a_new_document_saves_its_protection_in_a_settings_part_it_adds() {
+    use crate::api::command::{DocumentProtection, ProtectionKind};
+    let (mut engine, _) = engine();
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    s.run(Command::SetTrackChanges(true)).expect("tracks");
+    s.run(Command::SetDocumentProtection(DocumentProtection {
+        kind: Some(ProtectionKind::ReadOnly),
+        enforce: Some(true),
+        password: Some("Example".into()),
+        ..DocumentProtection::default()
+    }))
+    .expect("protects");
+    let saved = s.export(&ExportOptions::Docx).expect("saves").bytes.0;
+    let doc = crate::docx::read_editable(&saved).expect("reads back");
+    assert!(doc.settings.track_revisions);
+    let p = doc.settings.protection.expect("protection");
+    assert!(p.enforced && p.password.is_some_and(|p| p.matches("Example")));
 }

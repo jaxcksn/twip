@@ -132,6 +132,13 @@ export type Block = {
 };
 
 // @public
+export interface BookmarkInfo {
+    empty: boolean;
+    hidden: boolean;
+    name: string;
+}
+
+// @public
 export interface BorderLine {
     color: Color | 'auto';
     style: BorderLineStyle;
@@ -142,6 +149,9 @@ export interface BorderLine {
 export type BorderLineStyle = 'single' | 'double' | 'dotted' | 'dashed' | 'thick' | 'dotDash' | 'dotDotDash' | 'triple' | 'thinThickSmallGap' | 'thickThinSmallGap' | 'thinThickThinSmallGap' | 'wave' | 'doubleWave' | 'threeDEmboss' | 'threeDEngrave' | 'outset' | 'inset';
 
 // @public
+export type CellBorderEdges = 'all' | 'outside' | 'inside' | 'insideHorizontal' | 'insideVertical' | 'top' | 'bottom' | 'left' | 'right' | 'diagonalDown' | 'diagonalUp' | 'none';
+
+// @public
 export interface CellPlace {
     col: number;
     colSpan: number;
@@ -150,29 +160,64 @@ export interface CellPlace {
 }
 
 // @public
+export interface ChapterNumbers {
+    level: number;
+    separator: 'hyphen' | 'period' | 'colon' | 'emDash' | 'enDash';
+}
+
+// @public
+export interface CharacterEffects {
+    emboss?: boolean;
+    engrave?: boolean;
+    outline?: boolean;
+    shadow?: boolean;
+}
+
+// @public
 export interface CharacterFormatting {
     allCaps: Tri;
     bold: Tri;
     characterSpacing: Mixed<Points>;
+    characterStyle: Mixed<StyleId | 'none'>;
     color: Mixed<Color | 'auto'>;
+    contextualAlternates: Tri;
     doubleStrikethrough: Tri;
+    emboss: Tri;
+    engrave: Tri;
     font: Mixed<string>;
     hidden: Tri;
     highlight: Mixed<HighlightColor | 'none'>;
     italic: Tri;
+    kerning: Mixed<Points>;
+    language: Mixed<string>;
+    ligatures: Mixed<Ligatures>;
+    noProof: Tri;
+    numberForm: Mixed<NumberForm>;
+    numberSpacing: Mixed<NumberSpacing>;
+    outline: Tri;
     position: Mixed<Points>;
+    scale: Mixed<number>;
+    shadow: Tri;
     size: Mixed<Points>;
     smallCaps: Tri;
     strikethrough: Tri;
+    stylisticSet: Mixed<number>;
     subscript: Tri;
     superscript: Tri;
     underline: Mixed<UnderlineStyle>;
+    underlineColor: Mixed<Color | 'auto'>;
 }
 
 // @public
 export interface CharRange {
     first: number;
     last: number;
+}
+
+// @public
+export interface CheckboxSymbol {
+    character: string;
+    font: string;
 }
 
 // @public
@@ -226,6 +271,12 @@ export interface ColourValue {
 }
 
 // @public
+export interface ColumnWidth {
+    spacing: Points;
+    width: Points;
+}
+
+// @public
 export interface CommandEntry {
     group: 'text' | 'clipboard' | 'history' | 'selection' | 'character' | 'paragraph' | 'tabs' | 'page' | 'headerFooter' | 'insert' | 'table' | 'object' | 'field' | 'control' | 'data' | 'review' | 'view';
     id: CommandId;
@@ -264,6 +315,9 @@ export interface Commands {
     addComment(body: string | RichText): Promise<{
         id: CommentId;
     }>;
+    addEditableRange(options?: {
+        editor?: string;
+    }): Promise<void>;
     addTabStop(options: {
         position: Points;
         alignment?: TabAlignment;
@@ -275,17 +329,24 @@ export interface Commands {
         follow: FollowNumber;
         tab?: Points;
     }): Promise<void>;
+    alignObjects(options: {
+        align: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom' | 'distributeHorizontally' | 'distributeVertically';
+        relativeTo?: 'page' | 'margin' | 'selectedObjects';
+    }): Promise<void>;
+    applyCharacterStyle(styleId: StyleId | null): Promise<void>;
     // Warning: (ae-forgotten-export) The symbol "ListEntryId" needs to be exported by the entry point index.d.ts
     applyListEntry(id: ListEntryId): Promise<void>;
     arrangeObject(where: Arrange): Promise<void>;
     autoFitColumns(to: 'contents' | 'window' | 'fixed'): Promise<void>;
     changeCase(to: 'lower' | 'upper' | 'sentence' | 'title' | 'toggle'): Promise<void>;
+    changePicture(data: Uint8Array): Promise<void>;
     clearFormatting(): Promise<void>;
     clearTabStops(): Promise<void>;
     closeHeaderFooter(): Promise<void>;
     closePopover(): Promise<void>;
     closeSubTemplate(): Promise<void>;
     continueNumbering(): Promise<void>;
+    convertNotes(conversion: 'footnotesToEndnotes' | 'endnotesToFootnotes' | 'swap'): Promise<void>;
     copy(): Promise<void>;
     copyFormatting(): Promise<void>;
     createSubTemplate(options: {
@@ -300,6 +361,7 @@ export interface Commands {
         direction: 'backward' | 'forward';
         unit?: 'character' | 'word';
     }): Promise<void>;
+    deleteBookmark(name: string): Promise<void>;
     deleteCells(shift: 'up' | 'left'): Promise<void>;
     deleteColumns(): Promise<void>;
     deleteComment(id: CommentId): Promise<void>;
@@ -331,13 +393,27 @@ export interface Commands {
         text?: string;
         image?: Uint8Array;
         docx?: Uint8Array;
+        buildingBlock?: string;
+    }): Promise<void>;
+    fillFormField(options: {
+        id?: ElementId;
+        text?: string;
+        checked?: boolean;
+        entry?: number;
     }): Promise<void>;
     flipObject(axis: FlipAxis): Promise<void>;
     goBack(): Promise<void>;
+    goToBookmark(name: string): Promise<void>;
     goToPage(page: number): Promise<void>;
     groupObjects(): Promise<void>;
     growFont(): Promise<void>;
     increaseIndent(): Promise<void>;
+    insertAlignmentTab(options: {
+        alignment: 'left' | 'center' | 'right';
+        relativeTo: 'margin' | 'indent';
+        leader?: TabLeader;
+    }): Promise<void>;
+    insertBookmark(name: string): Promise<void>;
     insertColumnBreak(): Promise<void>;
     insertColumns(options: {
         where: 'left' | 'right';
@@ -370,11 +446,18 @@ export interface Commands {
         id: ElementId;
     }>;
     insertFootnote(): Promise<void>;
+    insertFormField(kind: 'text' | 'checkBox' | 'dropDown'): Promise<{
+        id: ElementId;
+    }>;
     insertHyperlink(options: {
         address: string;
         text?: string;
     }): Promise<void>;
     insertLineBreak(): Promise<void>;
+    insertNote(options: {
+        kind: 'footnote' | 'endnote';
+        customMark?: string;
+    }): Promise<void>;
     insertPageBreak(): Promise<void>;
     insertPageNumber(options: {
         format: 'page' | 'pageOfTotal' | 'total';
@@ -390,7 +473,7 @@ export interface Commands {
         where: 'above' | 'below';
         count?: number;
     }): Promise<void>;
-    insertSectionBreak(kind: 'nextPage' | 'continuous' | 'evenPage' | 'oddPage'): Promise<void>;
+    insertSectionBreak(kind: SectionBreakKind): Promise<void>;
     insertShape(options: ShapeInsert): Promise<void>;
     insertSymbol(options: {
         char: string;
@@ -455,8 +538,13 @@ export interface Commands {
         namespace: string;
         itemId?: string;
     }): Promise<void>;
+    removeEditableRanges(): Promise<void>;
     removeElement(id: ElementId): Promise<void>;
     removeFrame(): Promise<void>;
+    removeHeaderFooter(options: {
+        kind: 'header' | 'footer';
+        pages: 'default' | 'first' | 'even';
+    }): Promise<void>;
     removeHyperlink(): Promise<void>;
     removeSubTemplate(options: {
         name: string;
@@ -530,7 +618,7 @@ export interface Commands {
     setBold(on: boolean): Promise<void>;
     setCellAlignment(vertical: 'top' | 'center' | 'bottom'): Promise<void>;
     setCellBorders(options: {
-        edges: 'all' | 'outside' | 'inside' | 'insideHorizontal' | 'insideVertical' | 'top' | 'bottom' | 'left' | 'right' | 'none';
+        edges: CellBorderEdges;
         border?: BorderLine;
     }): Promise<void>;
     setCellMargins(options: {
@@ -539,7 +627,15 @@ export interface Commands {
         left?: Points;
         right?: Points;
     }): Promise<void>;
+    setCellProperties(options: {
+        width?: TableWidth;
+        textDirection?: TextFlow;
+        wrapText?: boolean;
+        fitText?: boolean;
+        hideMark?: boolean;
+    }): Promise<void>;
     setCellShading(color: Color | null): Promise<void>;
+    setCharacterEffects(effects: CharacterEffects): Promise<void>;
     setCharacterPosition(position: Points): Promise<void>;
     setCharacterSpacing(spacing: Points): Promise<void>;
     setCheckbox(options: {
@@ -550,6 +646,7 @@ export interface Commands {
         count: number;
         spacing?: Points;
         separator?: boolean;
+        widths?: ColumnWidth[];
     }): Promise<void>;
     setColumnWidth(width: Points): Promise<void>;
     setConsecutiveHyphenLimit(limit: number): Promise<void>;
@@ -562,12 +659,43 @@ export interface Commands {
         binding?: DataBinding | null;
         options?: ControlOptions;
         placeholderImage?: PlaceholderImage;
+        appearance?: 'boundingBox' | 'tags' | 'hidden';
+        color?: Color | 'none';
+        temporary?: boolean;
+        style?: StyleId | 'none';
     }): Promise<void>;
+    setDefaultTableStyle(styleId: StyleId | null): Promise<void>;
     setDefaultTabStop(spacing: Points): Promise<void>;
     setDifferentFirstPage(on: boolean): Promise<void>;
     setDifferentOddEvenPages(on: boolean): Promise<void>;
     setDocumentDefaults(defaults: DocumentDefaults): Promise<void>;
+    setDocumentProperties(options: {
+        title?: string;
+        subject?: string;
+        author?: string;
+        keywords?: string;
+        comments?: string;
+        category?: string;
+        status?: string;
+        lastModifiedBy?: string;
+        company?: string;
+        manager?: string;
+        hyperlinkBase?: string;
+        custom?: CustomProperty[];
+    }): Promise<void>;
+    setDocumentProtection(options: {
+        kind?: 'none' | 'readOnly' | 'comments' | 'trackedChanges' | 'forms';
+        formatting?: boolean;
+        enforce?: boolean;
+        password?: string;
+        unprotectedSections?: number[];
+    }): Promise<void>;
+    setDocumentVariable(options: {
+        name: string;
+        value?: string;
+    }): Promise<void>;
     setDoubleStrikethrough(on: boolean): Promise<void>;
+    setDropCap(dropCap: DropCap): Promise<void>;
     setField(options: {
         id: ElementId;
         code?: string;
@@ -587,13 +715,44 @@ export interface Commands {
     setFieldsLocked(options: {
         locked: boolean;
     } & FieldTargets): Promise<void>;
+    setFileName(name: string): Promise<void>;
     setFont(family: string): Promise<void>;
     setFontColor(color: Color | 'auto'): Promise<void>;
     setFontSize(size: Points): Promise<void>;
+    setFormField(options: {
+        id?: ElementId;
+        name?: string;
+        enabled?: boolean;
+        calculateOnExit?: boolean;
+        entryMacro?: string;
+        exitMacro?: string;
+        helpText?: string;
+        statusText?: string;
+        text?: {
+            inputType?: TextInputType;
+            default?: string;
+            maxLength?: number;
+            format?: string;
+        };
+        checkBox?: {
+            size?: Points | 'auto';
+            checkedByDefault?: boolean;
+        };
+        dropDown?: {
+            entries?: string[];
+            default?: number;
+        };
+    }): Promise<void>;
+    setFormFieldShading(on: boolean): Promise<void>;
     setFrame(properties: FrameProperties): Promise<void>;
     setHeaderFooterDistance(options: {
         header?: Points;
         footer?: Points;
+    }): Promise<void>;
+    setHeaderFooterLinked(options: {
+        kind: 'header' | 'footer';
+        pages: 'default' | 'first' | 'even';
+        linked: boolean;
     }): Promise<void>;
     setHeaderRow(on: boolean): Promise<void>;
     setHidden(on: boolean): Promise<void>;
@@ -605,8 +764,11 @@ export interface Commands {
         right?: Points;
         firstLine?: Points;
         hanging?: Points;
+        mirror?: boolean;
     }): Promise<void>;
     setItalic(on: boolean): Promise<void>;
+    setLanguage(language: Language): Promise<void>;
+    setLineNumbering(numbers: LineNumbers | null): Promise<void>;
     setLineSpacing(spacing: LineSpacing): Promise<void>;
     setList(kind: 'bullet' | 'numbered' | null): Promise<void>;
     setListDefinition(options: {
@@ -624,6 +786,19 @@ export interface Commands {
     }): Promise<void>;
     setMarkupView(view: MarkupView): Promise<void>;
     setMode(mode: 'editing' | 'design'): Promise<void>;
+    setMultiplePages(options: {
+        mode?: MultiplePagesMode;
+        gutterAtTop?: boolean;
+    }): Promise<void>;
+    setNoteProperties(options: {
+        kind: 'footnote' | 'endnote';
+        position?: NotePosition;
+        format?: NumberFormat;
+        start?: number;
+        restart?: 'continuous' | 'eachSection' | 'eachPage';
+        applyTo?: 'wholeDocument' | 'thisSection';
+        columns?: number;
+    }): Promise<void>;
     setNumberingValue(options: {
         mode: 'startNew' | 'continue';
         value: number;
@@ -640,6 +815,8 @@ export interface Commands {
         width?: Points;
         height?: Points;
         lockAspect?: boolean;
+        relativeWidth?: RelativeSize | 'none';
+        relativeHeight?: RelativeSize | 'none';
     }): Promise<void>;
     setObjectWrap(wrap: ObjectWrap): Promise<void>;
     setObjectWrapOptions(options: {
@@ -650,6 +827,10 @@ export interface Commands {
         right?: Points;
     }): Promise<void>;
     setOrientation(orientation: 'portrait' | 'landscape'): Promise<void>;
+    setOutline(options: {
+        level?: number;
+        collapsed?: boolean;
+    }): Promise<void>;
     setPageBorders(options: {
         top?: BorderLine | null;
         bottom?: BorderLine | null;
@@ -659,7 +840,15 @@ export interface Commands {
         offsetFrom?: 'page' | 'text';
         display?: 'allPages' | 'firstPage' | 'notFirstPage';
         applyTo?: 'wholeDocument' | 'thisSection';
+        surroundHeader?: boolean;
+        surroundFooter?: boolean;
     }): Promise<void>;
+    setPageNumbering(options: {
+        format?: NumberFormat;
+        start?: number | null;
+        chapter?: ChapterNumbers | null;
+    }): Promise<void>;
+    setPageVerticalAlignment(alignment: 'top' | 'center' | 'justified' | 'bottom'): Promise<void>;
     setPaperSize(options: {
         width: Points;
         height: Points;
@@ -678,20 +867,46 @@ export interface Commands {
         keepLinesTogether?: boolean;
         pageBreakBefore?: boolean;
         widowControl?: boolean;
+        dontHyphenate?: boolean;
+        suppressLineNumbers?: boolean;
+        textboxTightWrap?: TightWrap;
     }): Promise<void>;
     setParagraphShading(color: Color | null): Promise<void>;
     setParagraphSpacing(options: {
         before?: Points | 'auto';
         after?: Points | 'auto';
+        contextual?: boolean;
     }): Promise<void>;
     setParagraphStyle(styleId: StyleId): Promise<void>;
+    setParagraphTextDirection(direction: TextFlow): Promise<void>;
     setPictureAdjust(change: PictureAdjustChange): Promise<void>;
+    setPictureCrop(crop: {
+        left?: number;
+        top?: number;
+        right?: number;
+        bottom?: number;
+    }): Promise<void>;
     setProtectedPictureControls(options: {
         tagPrefixes: string[];
     }): Promise<void>;
     setRowCanBreak(on: boolean): Promise<void>;
     setRowHeight(height: RowHeight): Promise<void>;
+    setRowProperties(options: {
+        hidden?: boolean;
+        exceptions?: {
+            reset?: boolean;
+            alignment?: 'left' | 'center' | 'right';
+            cellSpacing?: Points;
+            shading?: Color;
+            borders?: {
+                edges: CellBorderEdges;
+                border?: BorderLine;
+            };
+        };
+    }): Promise<void>;
     setRulerTabType(type: TabSelector): Promise<void>;
+    setSectionBreakType(kind: SectionBreakKind): Promise<void>;
+    setSectionTextDirection(direction: TextFlow): Promise<void>;
     setSelectionMode(mode: 'normal' | 'extend' | 'block'): Promise<void>;
     setShading(options: {
         target: 'paragraph' | 'text' | 'cell';
@@ -724,6 +939,11 @@ export interface Commands {
     }): Promise<void>;
     setSuperscript(on: boolean): Promise<void>;
     setTableAlignment(alignment: 'left' | 'center' | 'right'): Promise<void>;
+    setTableAltText(options: {
+        title?: string;
+        description?: string;
+    }): Promise<void>;
+    setTableCellSpacing(spacing: Points | null): Promise<void>;
     setTableIndent(indent: Points): Promise<void>;
     setTablePosition(position: TablePosition | null): Promise<void>;
     setTableStyle(styleId: StyleId): Promise<void>;
@@ -741,7 +961,9 @@ export interface Commands {
         shadow?: boolean;
     }): Promise<void>;
     setTrackChanges(on: boolean): Promise<void>;
+    setTypography(typography: Typography): Promise<void>;
     setUnderline(style: UnderlineStyle): Promise<void>;
+    setUnderlineColor(color: Color | 'auto'): Promise<void>;
     setViewOptions(options: ViewOptions): Promise<void>;
     setZoom(zoom: number | 'pageWidth' | 'wholePage'): Promise<void>;
     showAutoCorrectOptions(): Promise<void>;
@@ -913,11 +1135,29 @@ export interface ContextMenuEvent {
 }
 
 // @public
+export interface ControlInfo {
+    allowInsertDelete?: boolean;
+    appearance: 'boundingBox' | 'tags' | 'hidden';
+    buildingBlocks?: string[];
+    checkedSymbol?: string;
+    color?: Color;
+    sectionTitle?: string;
+    style?: StyleId;
+    temporary: boolean;
+    uncheckedSymbol?: string;
+}
+
+// @public
 export type ControlKind = 'richText' | 'plainText' | 'picture' | 'checkbox' | 'date' | 'dropDown' | 'comboBox' | 'group' | 'repeatingSection';
 
 // @public
 export type ControlOptions = {
     checked?: boolean;
+    checkedSymbol?: CheckboxSymbol;
+    uncheckedSymbol?: CheckboxSymbol;
+} | {
+    sectionTitle?: string;
+    allowInsertDelete?: boolean;
 } | {
     format?: string;
     locale?: string;
@@ -947,6 +1187,13 @@ export interface CursorOverride {
 }
 
 // @public
+export interface CustomProperty {
+    kind: 'text' | 'number' | 'yesNo' | 'date';
+    name: string;
+    value: string;
+}
+
+// @public
 export interface DataBinding {
     prefixMappings?: string;
     storeItemId?: string;
@@ -973,7 +1220,7 @@ export interface DataParts {
 export type Degrees = number;
 
 // @public
-export type DialogKind = 'font' | 'paragraph' | 'pageSetup' | 'insertTable' | 'tableProperties' | 'pictureSize' | 'altText' | 'hyperlink' | 'tabs' | 'accessibility' | 'autoCorrect' | 'style' | 'manageStyles' | 'bordersShading' | 'frame' | 'banding' | 'defineBullet' | 'defineNumberFormat' | 'defineMultilevelList' | 'setNumberingValue' | 'adjustListIndents' | 'bulletsNumbering';
+export type DialogKind = 'font' | 'paragraph' | 'pageSetup' | 'insertTable' | 'tableProperties' | 'pictureSize' | 'altText' | 'hyperlink' | 'tabs' | 'accessibility' | 'autoCorrect' | 'style' | 'manageStyles' | 'bordersShading' | 'frame' | 'dropCap' | 'banding' | 'defineBullet' | 'defineNumberFormat' | 'defineMultilevelList' | 'setNumberingValue' | 'adjustListIndents' | 'bulletsNumbering';
 
 // @public
 export interface Dialogs {
@@ -1070,6 +1317,12 @@ export interface DialogValues {
         font: string | null;
         alignment: 'left' | 'center' | 'right';
     };
+    dropCap: {
+        position: 'none' | 'dropped' | 'inMargin';
+        font: string;
+        lines: number;
+        distance: Points;
+    };
     font: {
         font: Mixed<string>;
         style: Mixed<'regular' | 'italic' | 'bold' | 'boldItalic'>;
@@ -1086,6 +1339,17 @@ export interface DialogValues {
         hidden: Tri;
         characterSpacing: Mixed<Points>;
         position: Mixed<Points>;
+        emboss: Tri;
+        engrave: Tri;
+        outline: Tri;
+        shadow: Tri;
+        scale: Mixed<number>;
+        kerning: Mixed<Points>;
+        ligatures: Mixed<Ligatures>;
+        numberSpacing: Mixed<NumberSpacing>;
+        numberForm: Mixed<NumberForm>;
+        stylisticSet: Mixed<number>;
+        contextualAlternates: Tri;
     };
     frame: FrameProperties & {
         moveWithText: boolean;
@@ -1094,6 +1358,7 @@ export interface DialogValues {
     hyperlink: {
         text: string;
         address: string;
+        bookmark: string;
     };
     insertTable: {
         rows: number;
@@ -1129,7 +1394,12 @@ export interface DialogValues {
         footerDistance: Points;
         differentFirstPage: boolean;
         differentOddEven: boolean;
-        applyTo: 'section' | 'wholeDocument';
+        applyTo: 'section' | 'wholeDocument' | 'thisPointForward';
+        multiplePages: MultiplePagesMode;
+        gutterAtTop: boolean;
+        sectionStart: SectionBreakKind;
+        verticalAlignment: 'top' | 'center' | 'justified' | 'bottom';
+        lineNumbers: LineNumbers | null;
     };
     paragraph: {
         alignment: Mixed<'left' | 'center' | 'right' | 'justify'>;
@@ -1145,6 +1415,11 @@ export interface DialogValues {
         keepLinesTogether: Tri;
         pageBreakBefore: Tri;
         widowControl: Tri;
+        collapsed: Tri;
+        mirrorIndents: Tri;
+        contextualSpacing: Tri;
+        suppressLineNumbers: Tri;
+        dontHyphenate: Tri;
     };
     pictureSize: {
         width: Points;
@@ -1153,6 +1428,14 @@ export interface DialogValues {
         scaleHeight: number;
         lockAspect: boolean;
         reset: boolean;
+        relativeWidth: RelativeSize | null;
+        relativeHeight: RelativeSize | null;
+        crop: {
+            left?: number;
+            top?: number;
+            right?: number;
+            bottom?: number;
+        } | null;
     };
     setNumberingValue: {
         mode: 'startNew' | 'continue';
@@ -1168,6 +1451,7 @@ export interface DialogValues {
         rowCanBreak: Tri;
         headerRow: Tri;
         columnWidth: Mixed<Points>;
+        cellWidth: Mixed<TableWidth>;
         cellAlignment: Mixed<'top' | 'center' | 'bottom'>;
         cellMargins: {
             top: Points;
@@ -1175,6 +1459,12 @@ export interface DialogValues {
             left: Points;
             right: Points;
         };
+        allowSpacing: boolean;
+        cellSpacing: Points;
+        wrapText: Tri;
+        fitText: Tri;
+        title: string;
+        description: string;
     };
     tabs: {
         stops: {
@@ -1220,6 +1510,38 @@ export interface DocumentDefaults {
         after?: Points | 'auto';
     };
 }
+
+// @public
+export interface DocumentProperties {
+    author?: string;
+    category?: string;
+    comments?: string;
+    company?: string;
+    created?: string;
+    custom: CustomProperty[];
+    hyperlinkBase?: string;
+    keywords?: string;
+    lastModifiedBy?: string;
+    lastPrinted?: string;
+    manager?: string;
+    modified?: string;
+    revision?: string;
+    status?: string;
+    subject?: string;
+    title?: string;
+    variables: {
+        name: string;
+        value?: string;
+    }[];
+}
+
+// @public
+export type DropCap = {
+    position: 'none' | 'dropped' | 'inMargin';
+    font?: string;
+    lines?: number;
+    distance?: Points;
+};
 
 // @public
 export type EditingTarget = {
@@ -1334,7 +1656,9 @@ export interface ElementClick {
 // @public
 export interface ElementContext {
     code?: string;
+    control?: ControlInfo;
     exact: boolean;
+    form?: FormFieldInfo;
     id: ElementId;
     kind: 'field' | ControlKind | 'repeatingItem';
     size?: {
@@ -1605,6 +1929,22 @@ export interface FormatDialogSession<K extends FormatDialogKind> extends Omit<Di
 }
 
 // @public
+export interface FormFieldInfo {
+    calculateOnExit: boolean;
+    checked?: boolean;
+    defaultText?: string;
+    enabled: boolean;
+    entries?: string[];
+    entry?: number;
+    helpText?: string;
+    inputType?: TextInputType;
+    kind: 'text' | 'checkBox' | 'dropDown';
+    maxLength?: number;
+    name: string;
+    statusText?: string;
+}
+
+// @public
 export type FrameProperties = {
     wrap: 'none' | 'around';
     widthRule: 'auto' | 'exactly';
@@ -1717,6 +2057,7 @@ export class HeadlessEditor {
     readonly data: DataParts;
     destroy(): Promise<void>;
     readonly dialogs: Dialogs;
+    documentProperties(): Promise<DocumentProperties>;
     readonly elements: Elements;
     export(options: ExportOptions): Promise<ExportResult>;
     readonly find: Find;
@@ -1752,6 +2093,7 @@ export type HighlightColor = 'yellow' | 'brightGreen' | 'turquoise' | 'pink' | '
 export interface HorizontalPosition {
     align?: ObjectHorizontalAlignment;
     offset?: Points;
+    percent?: number;
     relativeTo: HorizontalReference;
 }
 
@@ -1763,6 +2105,15 @@ export type HostCommand = 'save' | 'saveAs' | 'print' | 'open' | 'new' | 'find' 
 
 // @public
 export function inches(n: number): Points;
+
+// @public
+export interface Language {
+    language?: string;
+    noProof?: boolean;
+}
+
+// @public
+export type Ligatures = 'none' | 'standard' | 'standardContextual' | 'historicalDiscretional' | 'all';
 
 // @public
 export type LineCap = 'flat' | 'round' | 'square';
@@ -1786,6 +2137,14 @@ export interface LineEnds {
 
 // @public
 export type LineJoin = 'round' | 'bevel' | 'miter';
+
+// @public
+export interface LineNumbers {
+    countBy?: number;
+    distance?: Points;
+    restart?: 'eachPage' | 'eachSection' | 'continuous';
+    start?: number;
+}
 
 // @public
 export type LineSpacing = {
@@ -1998,7 +2357,11 @@ export interface MountOptions extends SessionOptions {
 }
 
 // @public
+export type MultiplePagesMode = 'normal' | 'mirrorMargins' | 'bookFold' | 'reverseBookFold';
+
+// @public
 interface Navigation_2 {
+    bookmarks(): Promise<BookmarkInfo[]>;
     headings(): Promise<Heading[]>;
     select(heading: HeadingId): Promise<void>;
 }
@@ -2010,7 +2373,24 @@ export type NoArgumentCommandId = {
 }[CommandId];
 
 // @public
+export type NotePosition = 'pageBottom' | 'beneathText' | 'sectionEnd' | 'documentEnd';
+
+// @public
+export interface NoteSettings {
+    format: NumberFormat;
+    position: NotePosition;
+    restart: 'continuous' | 'eachSection' | 'eachPage';
+    start: number;
+}
+
+// @public
+export type NumberForm = 'default' | 'lining' | 'oldStyle';
+
+// @public
 export type NumberFormat = 'decimal' | 'upperRoman' | 'lowerRoman' | 'upperLetter' | 'lowerLetter' | 'ordinal' | 'cardinalText' | 'ordinalText' | 'decimalZero' | 'bullet' | 'none';
+
+// @public
+export type NumberSpacing = 'default' | 'proportional' | 'tabular';
 
 // @public
 export type ObjectGrid = 'off' | 'whileDragging' | 'always';
@@ -2034,14 +2414,23 @@ export interface ObjectSelection {
     anchorLocked: boolean | null;
     childPath: number[];
     count: number;
+    crop?: {
+        left: number;
+        top: number;
+        right: number;
+        bottom: number;
+    };
     decorative: boolean;
     flipH: boolean;
     flipV: boolean;
     height: Points;
     kind: 'picture' | 'textBox' | 'shape' | 'line' | 'group';
     placement: ObjectPlacement | null;
+    relativeHeight?: RelativeSize;
+    relativeWidth?: RelativeSize;
     rotation: Degrees;
     shape: ShapeState | null;
+    transparentColor?: Color;
     width: Points;
     wrap: ObjectWrap;
 }
@@ -2079,15 +2468,33 @@ export interface OverlayColors {
 
 // @public
 export interface PageFormatting {
+    breakType: SectionBreakKind;
+    chapterNumbers: ChapterNumbers | null;
     columns: {
         count: number;
         spacing: Points;
         separator: boolean;
+        widths: ColumnWidth[];
     };
     differentFirstPage: boolean;
     differentOddEven: boolean;
+    endnotes: NoteSettings;
     footerDistance: Points;
+    footerLinks: {
+        default: boolean;
+        first: boolean;
+        even: boolean;
+    };
+    footnoteColumns: number;
+    footnotes: NoteSettings;
+    gutterAtTop: boolean;
     headerDistance: Points;
+    headerLinks: {
+        default: boolean;
+        first: boolean;
+        even: boolean;
+    };
+    lineNumbers: LineNumbers | null;
     margins: {
         top: Points;
         bottom: Points;
@@ -2095,36 +2502,50 @@ export interface PageFormatting {
         right: Points;
         gutter: Points;
     };
+    multiplePages: MultiplePagesMode;
     orientation: 'portrait' | 'landscape';
+    pageNumberFormat: NumberFormat;
+    pageNumberStart: number | null;
     size: {
         width: Points;
         height: Points;
     };
+    textDirection: TextFlow;
+    verticalAlignment: 'top' | 'center' | 'justified' | 'bottom';
 }
 
 // @public
 export interface ParagraphFormatting {
     alignment: Mixed<'left' | 'center' | 'right' | 'justify'>;
     borders: Mixed<'box' | 'bottom' | 'none' | 'other'>;
+    collapsed: Tri;
+    contextualSpacing: Tri;
+    dropCap?: DropCap;
     flow: {
         keepWithNext: Tri;
         keepLinesTogether: Tri;
         pageBreakBefore: Tri;
         widowControl: Tri;
+        dontHyphenate: Tri;
+        suppressLineNumbers: Tri;
+        textboxTightWrap: Mixed<TightWrap>;
     };
     indents: {
         left: Mixed<Points>;
         right: Mixed<Points>;
         firstLine: Mixed<Points>;
         hanging: Mixed<Points>;
+        mirror: Tri;
     };
     lineSpacing: Mixed<LineSpacing>;
     list: Mixed<'bullet' | 'numbered' | 'none'>;
     listLevel: Mixed<number>;
+    outlineLevel: Mixed<number>;
     shading: Mixed<Color | 'none'>;
     spaceAfter: Mixed<Points | 'auto'>;
     spaceBefore: Mixed<Points | 'auto'>;
     style: Mixed<StyleId>;
+    textDirection: Mixed<TextFlow>;
 }
 
 // @public
@@ -2150,6 +2571,7 @@ export interface PictureAdjustChange {
     contrast?: number;
     grayscale?: boolean;
     transparency?: number;
+    transparentColor?: Color | 'none';
 }
 
 // @public
@@ -2217,6 +2639,12 @@ export interface ReferenceRule {
 }
 
 // @public
+export interface RelativeSize {
+    percent: number;
+    relativeTo: 'margin' | 'page' | 'leftMargin' | 'rightMargin' | 'insideMargin' | 'outsideMargin' | 'topMargin' | 'bottomMargin';
+}
+
+// @public
 export type ReplaceScope = 'document' | 'selection';
 
 // @public
@@ -2234,6 +2662,14 @@ export interface ReviewState {
     activeComment: CommentId | null;
     comments: number;
     markupView: MarkupView;
+    protection?: {
+        kind: 'none' | 'readOnly' | 'comments' | 'trackedChanges' | 'forms';
+        enforced: boolean;
+        formatting: boolean;
+        password: boolean;
+        inEditableRange: boolean;
+        unprotectedSections: number[];
+    };
     revisions: number;
     tracking: boolean;
     trackingLocked: boolean;
@@ -2352,6 +2788,9 @@ export interface RulerView {
 }
 
 // @public
+export type SectionBreakKind = 'nextPage' | 'continuous' | 'evenPage' | 'oddPage' | 'nextColumn';
+
+// @public
 export interface SelectionSummary {
     comment: CommentId | null;
     context: ElementContext[];
@@ -2438,6 +2877,7 @@ export interface ShapeState {
 export interface ShapeTextChange {
     anchor?: TextAnchor;
     autofit?: TextAutofit;
+    columns?: TextColumns;
     direction?: TextDirection;
     insets?: [Points, Points, Points, Points];
     wrapText?: boolean;
@@ -2447,6 +2887,7 @@ export interface ShapeTextChange {
 export interface ShapeTextState {
     anchor: TextAnchor;
     autofit: TextAutofit;
+    columns: TextColumns;
     direction: TextDirection;
     insets: [Points, Points, Points, Points];
     wrapText: boolean;
@@ -2643,18 +3084,26 @@ export interface TableSelection {
     canMerge: boolean;
     cellAlignment: Mixed<'top' | 'center' | 'bottom'>;
     cellShading: Mixed<Color | 'none'>;
+    cellSpacing?: Points;
+    cellWidth: Mixed<TableWidth>;
     column: number;
     columns: number;
     columnWidth: Mixed<Points>;
+    description?: string;
+    fitText: Tri;
     headerRow: Tri;
     indent: Points;
     row: number;
     rowCanBreak: Tri;
     rowHeight: Mixed<RowHeight>;
+    rowHidden: Tri;
     rows: number;
     style: StyleId | null;
     styleOptions: TableStyleOptions;
+    textDirection: Mixed<TextFlow>;
+    title?: string;
     width: TableWidth;
+    wrapText: Tri;
 }
 
 // @public
@@ -2692,7 +3141,13 @@ export interface TabTypeChoice {
 export type TextAnchor = 'top' | 'middle' | 'bottom';
 
 // @public
-export type TextAutofit = 'none' | 'shape';
+export type TextAutofit = 'none' | 'shape' | 'shrinkText';
+
+// @public
+export interface TextColumns {
+    count: number;
+    spacing: Points;
+}
 
 // @public
 export type TextDirection = 'horizontal' | 'vertical' | 'vertical270' | 'eastAsianVertical' | 'mongolianVertical' | 'stacked' | 'stackedRightToLeft';
@@ -2706,6 +3161,12 @@ export interface TextDistance {
 }
 
 // @public
+export type TextFlow = 'lrTb' | 'tbRl' | 'btLr' | 'lrTbV' | 'tbRlV' | 'tbLrV';
+
+// @public
+export type TextInputType = 'regular' | 'number' | 'date' | 'currentDate' | 'currentTime' | 'calculation';
+
+// @public
 export interface ThemeColors {
     dark?: ChromeColors;
     light?: ChromeColors;
@@ -2713,6 +3174,9 @@ export interface ThemeColors {
 
 // @public
 export type ThemeColour = 'text1' | 'background1' | 'text2' | 'background2' | 'accent1' | 'accent2' | 'accent3' | 'accent4' | 'accent5' | 'accent6' | 'hyperlink' | 'followedHyperlink';
+
+// @public
+export type TightWrap = 'none' | 'allLines' | 'firstAndLastLine' | 'firstLineOnly' | 'lastLineOnly';
 
 // @public
 export interface Tooltip {
@@ -2817,12 +3281,24 @@ export interface TwipEvents {
 }
 
 // @public
+export interface Typography {
+    contextualAlternates?: boolean;
+    kerning?: Points;
+    ligatures?: Ligatures;
+    numberForm?: NumberForm;
+    numberSpacing?: NumberSpacing;
+    scale?: number;
+    stylisticSet?: number;
+}
+
+// @public
 export type UnderlineStyle = 'none' | 'single' | 'words' | 'double' | 'thick' | 'dotted' | 'dash' | 'dotDash' | 'wave';
 
 // @public
 export interface VerticalPosition {
     align?: ObjectVerticalAlignment;
     offset?: Points;
+    percent?: number;
     relativeTo: VerticalReference;
 }
 
@@ -2850,6 +3326,7 @@ export interface View {
 export interface ViewOptions {
     accent?: Color;
     appearance?: DocumentAppearance;
+    bookmarks?: boolean;
     controlLabels?: boolean;
     cursorOverrides?: CursorOverride[];
     detail?: MeasureDetail;
@@ -2869,6 +3346,7 @@ export interface ViewState {
     accentOn: Color;
     appearance: DocumentAppearance;
     background: Color;
+    bookmarks: boolean;
     controlLabels: boolean;
     cursorOverrides?: CursorOverride[];
     detail: MeasureDetail;

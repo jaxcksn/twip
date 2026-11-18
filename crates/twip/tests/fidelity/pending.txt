@@ -1,0 +1,2 @@
+# Round-trip gate cases that still fail, one `construct edit` per line (src/tests/fidelity.rs). A listed case that
+# passes fails the run: delete its line.

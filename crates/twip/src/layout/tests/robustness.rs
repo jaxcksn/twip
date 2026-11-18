@@ -99,7 +99,17 @@ fn odd_documents_lay_out() {
     let picture = para_with(
         &p,
         vec![Inline::Picture(
-            Picture { w: 0.0, h: 0.0, image: None, alt: "".into(), lock_aspect: false, effect: [0.0; 4], shape: None, text: None },
+            Picture {
+                w: 0.0,
+                h: 0.0,
+                image: None,
+                alt: "".into(),
+                lock_aspect: false,
+                effect: [0.0; 4],
+                shape: None,
+                text: None,
+                src: Default::default(),
+            },
             run.clone(),
         )],
     );

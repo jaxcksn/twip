@@ -360,7 +360,13 @@ internal sealed class ControlChangesConverter : JsonConverter<ControlChanges>
             !removed && o.TryGetProperty("binding", out var b) ? b.Deserialize(TwipJsonContext.Default.DataBinding) : null,
             o.TryGetProperty("options", out var opts) ? opts.Deserialize(TwipJsonContext.Default.ControlOptions) : null,
             removed,
-            o.TryGetProperty("placeholderImage", out var pi) ? pi.Deserialize(TwipJsonContext.Default.PlaceholderImage) : null);
+            o.TryGetProperty("placeholderImage", out var pi) ? pi.Deserialize(TwipJsonContext.Default.PlaceholderImage) : null)
+        {
+            Appearance = o.TryGetProperty("appearance", out var ap) ? ap.Deserialize(TwipJsonContext.Default.ControlAppearance) : null,
+            Color = o.TryGetProperty("color", out var co) ? co.Deserialize(TwipJsonContext.Default.ColorValue) : null,
+            Temporary = o.TryGetProperty("temporary", out var t) ? t.GetBoolean() : null,
+            Style = Str("style") is { } st ? new StyleId(st) : null,
+        };
     }
 
     public override void Write(Utf8JsonWriter writer, ControlChanges value, JsonSerializerOptions options)
@@ -375,6 +381,63 @@ internal sealed class ControlChangesConverter : JsonConverter<ControlChanges>
         else if (value.RemoveBinding) writer.WriteNull("binding");
         if (value.Options is not null) { writer.WritePropertyName("options"); JsonSerializer.Serialize(writer, value.Options, TwipJsonContext.Default.ControlOptions); }
         if (value.PlaceholderImage is not null) { writer.WritePropertyName("placeholderImage"); JsonSerializer.Serialize(writer, value.PlaceholderImage, TwipJsonContext.Default.PlaceholderImage); }
+        if (value.Appearance is { } ap) { writer.WritePropertyName("appearance"); JsonSerializer.Serialize(writer, ap, TwipJsonContext.Default.ControlAppearance); }
+        if (value.Color is { } co) { writer.WritePropertyName("color"); JsonSerializer.Serialize(writer, co, TwipJsonContext.Default.ColorValue); }
+        if (value.Temporary is { } t) writer.WriteBoolean("temporary", t);
+        if (value.Style is { } st) writer.WriteString("style", st.Value);
+        writer.WriteEndObject();
+    }
+}
+
+internal sealed class PageNumberingOptionsConverter : JsonConverter<PageNumberingOptions>
+{
+    public override PageNumberingOptions Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        var o = JsonElement.ParseValue(ref reader);
+        var start = o.TryGetProperty("start", out var s) ? s : default;
+        var chapter = o.TryGetProperty("chapter", out var c) ? c : default;
+        return new PageNumberingOptions(
+            o.TryGetProperty("format", out var f) ? f.Deserialize(TwipJsonContext.Default.NumberFormat) : null,
+            start.ValueKind == JsonValueKind.Number ? start.GetInt32() : null,
+            start.ValueKind == JsonValueKind.Null,
+            chapter.ValueKind == JsonValueKind.Object ? chapter.Deserialize(TwipJsonContext.Default.ChapterNumbers) : null,
+            chapter.ValueKind == JsonValueKind.Null);
+    }
+
+    public override void Write(Utf8JsonWriter writer, PageNumberingOptions value, JsonSerializerOptions options)
+    {
+        writer.WriteStartObject();
+        if (value.Format is { } f) { writer.WritePropertyName("format"); JsonSerializer.Serialize(writer, f, TwipJsonContext.Default.NumberFormat); }
+        if (value.Start is { } n) writer.WriteNumber("start", n);
+        else if (value.ContinueFromPrevious) writer.WriteNull("start");
+        if (value.Chapter is not null) { writer.WritePropertyName("chapter"); JsonSerializer.Serialize(writer, value.Chapter, TwipJsonContext.Default.ChapterNumbers); }
+        else if (value.NoChapterNumbers) writer.WriteNull("chapter");
+        writer.WriteEndObject();
+    }
+}
+
+internal sealed class RelativeSizeConverter : JsonConverter<RelativeSize>
+{
+    public override RelativeSize Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        var o = JsonElement.ParseValue(ref reader);
+        if (o.ValueKind == JsonValueKind.String) return RelativeSize.Absolute;
+        var to = o.TryGetProperty("relativeTo", out var r) ? r.Deserialize(TwipJsonContext.Default.RelativeSizeReference) : RelativeSizeReference.Margin;
+        return new RelativeSize(o.GetProperty("percent").GetDouble(), to);
+    }
+
+    public override void Write(Utf8JsonWriter writer, RelativeSize value, JsonSerializerOptions options)
+    {
+        // Only the Absolute sentinel means "none"; any other percent goes as given, for the engine to check.
+        if (ReferenceEquals(value, RelativeSize.Absolute))
+        {
+            writer.WriteStringValue("none");
+            return;
+        }
+        writer.WriteStartObject();
+        writer.WriteNumber("percent", value.Percent);
+        writer.WritePropertyName("relativeTo");
+        JsonSerializer.Serialize(writer, value.RelativeTo, TwipJsonContext.Default.RelativeSizeReference);
         writer.WriteEndObject();
     }
 }
@@ -548,6 +611,7 @@ internal sealed class DialogValuesConverter : JsonConverter<DialogValues>
             DialogKind.ManageStyles => ctx.ManageStylesDialogValues,
             DialogKind.BordersShading => ctx.BordersShadingDialogValues,
             DialogKind.Frame => ctx.FrameDialogValues,
+            DialogKind.DropCap => ctx.DropCapDialogValues,
             DialogKind.Banding => ctx.BandingDialogValues,
             DialogKind.DefineBullet => ctx.DefineBulletDialogValues,
             DialogKind.DefineNumberFormat => ctx.DefineNumberFormatDialogValues,

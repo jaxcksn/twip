@@ -1075,7 +1075,7 @@ fn reset_size_gives_a_picture_its_own_size() {
         Command::SetObjectSize(crate::api::command::ObjectSize {
             width: Some(crate::api::value::Points(20.0)),
             height: Some(crate::api::value::Points(10.0)),
-            lock_aspect: None,
+            ..Default::default()
         }),
         fonts(),
     );
@@ -1267,6 +1267,7 @@ fn position_commands_place_the_float_and_the_state_reports_it() {
                 relative_to: HorizontalReference::Margin,
                 align: Some(ObjectHorizontalAlignment::Right),
                 offset: None,
+                percent: None,
             }),
             ..Default::default()
         }),
@@ -1279,7 +1280,7 @@ fn position_commands_place_the_float_and_the_state_reports_it() {
     assert!((now[1] - before[1]).abs() < 0.1, "vertically where it was");
     e.execute(
         Command::SetObjectPosition(ObjectPosition {
-            vertical: Some(VerticalPosition { relative_to: VerticalReference::Page, align: None, offset: None }),
+            vertical: Some(VerticalPosition { relative_to: VerticalReference::Page, align: None, offset: None, percent: None }),
             ..Default::default()
         }),
         fonts(),
@@ -1637,7 +1638,13 @@ fn a_picture_control_activates_and_fills() {
     let data = open("FX-OBJ.docx").document().images.last().cloned().expect("an image");
     let id = crate::api::value::ElementId(crate::editing::elements::id_str(crate::docx::ElementId::Control(c)));
     let out = r.e.execute(
-        Command::FillControl(crate::api::command::FillControl { id, text: None, image: Some(crate::api::value::Bytes(data.clone())), docx: None }),
+        Command::FillControl(crate::api::command::FillControl {
+            id,
+            text: None,
+            image: Some(crate::api::value::Bytes(data.clone())),
+            docx: None,
+            building_block: None,
+        }),
         fonts(),
     );
     assert!(matches!(out, super::super::Outcome::Changed(_)), "{out:?}");
@@ -2515,7 +2522,8 @@ fn a_picture_floated_from_its_paragraphs_first_line_stays_below_the_paragraph_be
     let mut e = super::super::Editor::open(&super::blank_body(&xml), fonts()).expect("opens");
     e.set_caret_for_benchmark(Selection::Caret(Position::text(StoryId::Body, super::para_id(&e, 1), Unit(0))));
     e.execute(Command::InsertPicture(crate::api::command::Picture { data: crate::api::value::Bytes(data), alt_text: None }), fonts());
-    let size = crate::api::command::ObjectSize { width: Some(Points(150.0)), height: Some(Points(90.0)), lock_aspect: Some(false) };
+    let size =
+        crate::api::command::ObjectSize { width: Some(Points(150.0)), height: Some(Points(90.0)), lock_aspect: Some(false), ..Default::default() };
     e.execute(Command::SetObjectSize(size), fonts());
     let first = |e: &mut super::super::Editor| {
         while e.idle(fonts()) {}
@@ -2612,4 +2620,41 @@ fn a_paragraph_cut_and_pasted_in_a_header_or_note_is_a_tracked_move() {
         let moved_away = xml.split("<w:moveFrom ").skip(1).filter_map(|s| s.split("</w:moveFrom>").next());
         assert!(moved_away.clone().all(|s| !s.contains("delText")), "{part}");
     }
+}
+
+#[test]
+fn pasting_cut_notes_after_a_new_one_keeps_every_note() {
+    use super::para_id;
+    let mut e = super::super::Editor::open(&super::blank_body("<w:p><w:r><w:t>one two three four</w:t></w:r></w:p>"), fonts()).expect("opens");
+    let refs = |e: &super::super::Editor| -> Vec<i64> {
+        e.document().sections[0]
+            .blocks
+            .iter()
+            .flat_map(|b| match b {
+                crate::docx::Block::Para(p) => {
+                    p.inlines.iter().filter_map(|i| if let crate::docx::Inline::NoteRef { id, .. } = i { Some(*id) } else { None }).collect()
+                }
+                _ => Vec::new(),
+            })
+            .collect()
+    };
+    let p = para_id(&e, 0);
+    for at in [3, 8] {
+        e.select_range(p, Unit(at), Unit(at), fonts());
+        e.execute(Command::InsertFootnote, fonts());
+    }
+    e.select_range(p, Unit(0), Unit(9), fonts());
+    e.execute(Command::Cut, fonts());
+    let p = para_id(&e, 0);
+    e.select_range(p, Unit(11), Unit(11), fonts());
+    e.execute(Command::InsertFootnote, fonts());
+    let p = para_id(&e, 0);
+    e.select_range(p, Unit(0), Unit(0), fonts());
+    e.execute(Command::Paste(Default::default()), fonts());
+    let mut ids = refs(&e);
+    let mut notes: Vec<i64> = e.document().footnotes.keys().copied().filter(|k| *k > 0).collect();
+    ids.sort();
+    notes.sort();
+    assert_eq!(ids, notes, "each note has its own reference");
+    assert_eq!(ids.len(), 3);
 }

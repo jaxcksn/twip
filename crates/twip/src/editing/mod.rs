@@ -1,12 +1,15 @@
 //! Editor
 
 pub mod autocorrect;
+mod bindings;
+pub mod bookmarks;
 mod borders_dialog;
 mod cell_clipboard;
 pub mod clipboard;
 mod clipped;
 pub mod commands;
 pub mod comments;
+mod drop_caps;
 mod element_feedback;
 pub mod elements;
 pub mod extend;
@@ -14,6 +17,7 @@ mod field_shading;
 pub mod find;
 mod fonts;
 pub mod format;
+mod forms;
 mod frames;
 pub mod geometry;
 pub(crate) mod gestures;
@@ -36,9 +40,12 @@ pub mod navigate;
 mod notes;
 pub mod objects;
 pub mod picture_controls;
+mod pictures;
 pub mod pointer;
 pub mod position;
 mod preview;
+mod properties;
+pub mod protection;
 mod resize;
 pub mod revisions;
 pub mod section;
@@ -165,6 +172,8 @@ pub struct Editor {
     made: Option<crate::api::command::CommandResult>,
     pending_controls: Vec<(crate::docx::ControlId, crate::docx::Control)>,
     pending_images: Vec<Vec<u8>>,
+    /// The editable ranges as of a revision ([`Editor::editable_ranges`]).
+    editable_cache: std::cell::RefCell<Option<(u64, Rc<Vec<(Option<String>, Position, Position)>>)>>,
     drop: Option<Position>,
     field_labels: HashMap<String, String>,
     sub_template_rules: Vec<sub_templates::Rule>,
@@ -332,6 +341,7 @@ impl Editor {
             made: None,
             pending_controls: Vec::new(),
             pending_images: Vec::new(),
+            editable_cache: Default::default(),
             drop: None,
             field_labels: HashMap::new(),
             sub_template_rules: Vec::new(),
@@ -899,6 +909,10 @@ impl Editor {
             }
         }
         self.drop_orphan_notes(tx);
+        if tx.replayed.is_none() {
+            self.drop_temporary_controls(tx);
+            self.sync_bindings(tx);
+        }
         self.drop_orphan_controls(tx);
         self.drop_orphan_comments(tx);
         tx.tracked = tracked;
@@ -1325,16 +1339,21 @@ impl Editor {
                 lone.push((c, start));
             }
         }
-        if !lone.is_empty() {
+        // Bookmarks and editing permissions on the range's edges go with it when the rest of them does (comments go
+        // with `remove_comments`).
+        let bound = clipboard::bound_markers(self.index.para(&self.doc, para).ok_or(StepError::Missing)?, range.start, range.end, false);
+        if !lone.is_empty() || !bound.is_empty() {
             let p = self.index.para(&self.doc, para).ok_or(StepError::Missing)?;
             let inlines: Vec<Inline> = p
                 .inlines
                 .iter()
-                .filter(|i| {
-                    !matches!(i, Inline::ControlStart(c) if lone.contains(&(*c, true)))
+                .enumerate()
+                .filter(|(k, i)| {
+                    !bound.contains(k)
+                        && !matches!(i, Inline::ControlStart(c) if lone.contains(&(*c, true)))
                         && !matches!(i, Inline::ControlEnd(c) if lone.contains(&(*c, false)))
                 })
-                .cloned()
+                .map(|(_, i)| i.clone())
                 .collect();
             self.step(tx, Step::Restyle { para, inlines })?;
         }
@@ -2217,7 +2236,7 @@ impl Editor {
                     && let Some(address) = self.link_under(x, y, fonts)
                 {
                     match address.strip_prefix('#') {
-                        Some(name) => _ = self.go_to_bookmark(name, fonts),
+                        Some(name) => _ = self.go_to_bookmark(name, false, fonts),
                         None => self.events.push(input::Notice::Link { address, ctrl: mods.ctrl || mods.meta }),
                     }
                     return;

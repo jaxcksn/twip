@@ -1,0 +1,26 @@
+{
+  "name": "header-footer-links",
+  "fixture": "editor/FX-SECTIONS.docx",
+  "steps": [
+    { "op": "open" },
+    { "op": "command", "command": { "type": "setHeaderFooterLinked", "kind": "header", "pages": "default", "linked": false } },
+    { "op": "expectError", "code": "unavailable" },
+    { "op": "call", "method": "find.next", "args": [{ "text": "S2 P1" }], "result": { "found": true } },
+    { "op": "expectState", "match": { "page": { "headerLinks": { "default": true }, "footerLinks": { "default": true } } } },
+    { "op": "command", "command": { "type": "setHeaderFooterLinked", "kind": "header", "pages": "default", "linked": false } },
+    { "op": "expectState", "match": { "page": { "headerLinks": { "default": false }, "footerLinks": { "default": true } } } },
+    { "op": "command", "command": { "type": "removeHeaderFooter", "kind": "footer", "pages": "first" } },
+    { "op": "expectState", "match": { "page": { "footerLinks": { "default": true, "first": false } } } },
+    { "op": "export", "format": "docx" },
+    { "op": "reopen" },
+    { "op": "call", "method": "find.next", "args": [{ "text": "S2 P1" }], "result": { "found": true } },
+    { "op": "expectState", "match": { "page": { "headerLinks": { "default": false }, "footerLinks": { "first": false } } } },
+    { "op": "command", "command": { "type": "setHeaderFooterLinked", "kind": "header", "pages": "default", "linked": true } },
+    { "op": "command", "command": { "type": "setHeaderFooterLinked", "kind": "footer", "pages": "first", "linked": true } },
+    { "op": "export", "format": "docx" },
+    { "op": "reopen" },
+    { "op": "call", "method": "find.next", "args": [{ "text": "S2 P1" }], "result": { "found": true } },
+    { "op": "expectState", "match": { "page": { "headerLinks": { "default": true }, "footerLinks": { "first": true } } } },
+    { "op": "command", "command": { "type": "insertAlignmentTab", "alignment": "right", "relativeTo": "margin", "leader": "dots" } }
+  ]
+}

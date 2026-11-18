@@ -7,7 +7,7 @@ use crate::api::command::{
 use crate::api::error::Error;
 use crate::api::review::Body;
 use crate::api::value::{ControlKind as KindArg, ControlLock, ControlOptions, DataBinding};
-use crate::docx::{Block, Control, ControlId, ControlKind, ControlProps, ElementId, FieldId, FieldView, Inline, Lock};
+use crate::docx::{Block, Control, ControlId, ControlKind, ControlProps, ElementId, FieldId, FieldKind, FieldView, Inline, Lock};
 use crate::font::Fonts;
 use crate::layout::{ParaId, Unit};
 
@@ -727,13 +727,15 @@ impl Editor {
             self.fill_images(&[image], data, size, label, false, fonts)
         } else {
             let given = f.text.clone().unwrap_or_default();
-            let frag = match (&f.docx, &f.text) {
-                (Some(d), _) => Some(self.fragment_of(&d.0)?),
-                (None, Some(_)) => None,
-                (None, None) => return Err(bad("text")),
+            let gallery = control.props.gallery();
+            let frag = match (&f.building_block, &f.docx, &f.text) {
+                (Some(name), ..) => Some(self.building_block_fragment(name, gallery.as_ref().ok_or_else(|| bad("id"))?.as_deref())?),
+                (None, Some(d), _) => Some(self.fragment_of(&d.0)?),
+                (None, None, Some(_)) => None,
+                (None, None, None) => return Err(bad("text")),
             };
             let plain = matches!(control.props.kind, ControlKind::PlainText { .. } | ControlKind::Date { .. });
-            if !plain && control.props.kind != ControlKind::RichText {
+            if !plain && control.props.kind != ControlKind::RichText && gallery.is_none() {
                 return Err(bad("id"));
             }
             match (&w, frag) {
@@ -824,6 +826,26 @@ impl Editor {
         Ok(out)
     }
 
+    /// The live building blocks a gallery of `category` (`None`: any) offers.
+    pub(super) fn gallery_entries<'a>(&'a self, category: Option<&'a str>) -> impl Iterator<Item = &'a crate::docx::BuildingBlock> + 'a {
+        self.doc
+            .glossary
+            .iter()
+            .flat_map(|g| g.parts.iter())
+            .filter(move |b| b.state != crate::docx::PartState::Removed && b.editable && category.is_none_or(|c| b.category == c))
+    }
+
+    /// A building block's body, to fill a gallery control with.
+    fn building_block_fragment(&self, name: &str, category: Option<&str>) -> Result<super::clipboard::Fragment, Refused> {
+        let part = self.gallery_entries(category).find(|b| b.name == name).ok_or_else(|| bad("buildingBlock"))?;
+        let mut blocks = part.body.clone();
+        if blocks.len() > 1 && matches!(blocks.last(), Some(Block::Para(p)) if super::step::para_len(p) == Unit(0)) {
+            blocks.pop();
+        }
+        let controls = super::clipboard::controls_of(&blocks, &self.doc);
+        Ok(super::clipboard::Fragment { id: 0, blocks, open_end: true, cells: None, controls, refs: Default::default() })
+    }
+
     fn fragment_of(&self, bytes: &[u8]) -> Result<super::clipboard::Fragment, Refused> {
         let doc = crate::docx::read_editable(bytes).map_err(|_| bad("docx"))?;
         let mut blocks: Vec<Block> = doc.sections.iter().flat_map(|s| s.blocks.iter().cloned()).collect();
@@ -831,7 +853,7 @@ impl Editor {
             blocks.pop();
         }
         let controls = super::clipboard::controls_of(&blocks, &doc);
-        Ok(super::clipboard::Fragment { id: 0, blocks, open_end: true, cells: None, controls })
+        Ok(super::clipboard::Fragment { id: 0, blocks, open_end: true, cells: None, controls, refs: Default::default() })
     }
 
     // Locks
@@ -1161,10 +1183,40 @@ impl Editor {
             o @ Outcome::Changed(_) => o,
             _ => Outcome::Moved,
         };
+        // Document properties and variables: the engine's to compute.
+        let own: Vec<(FieldId, String)> = unlocked
+            .iter()
+            .filter_map(|(f, para)| {
+                let p = self.index.para(&self.doc, *para)?;
+                let k = p.inlines.iter().position(|i| matches!(i, Inline::FieldBegin { id, .. } if id == f))?;
+                let Inline::FieldBegin { kind: Some(kind), .. } = &p.inlines[k] else { return None };
+                let code = crate::docx::fields::code_text(&p.inlines, crate::docx::fields::span_at(&p.inlines, k)?);
+                if *kind == FieldKind::FileName {
+                    return Some((*f, crate::docx::fields::file_name_shown(self.doc.file_name.as_deref()?, &code)));
+                }
+                if !matches!(kind, FieldKind::DocProperty(_) | FieldKind::DocVariable(_) | FieldKind::DocDate(_)) {
+                    return None;
+                }
+                Some((*f, crate::docx::fields::document_value(kind, code.trim(), &self.doc.properties, &self.doc.settings.variables)))
+            })
+            .collect();
+        let out = if own.is_empty() {
+            out
+        } else {
+            let mut tx = self.begin("Update Fields");
+            for (f, v) in &own {
+                self.set_result(&mut tx, *f, v);
+            }
+            match self.commit(tx, None, fonts) {
+                o @ Outcome::Changed(_) => o,
+                _ => out,
+            }
+        };
         self.update_token += 1;
         let token = self.update_token;
         let fields: Vec<(ElementId, String)> = unlocked
             .iter()
+            .filter(|(f, _)| !own.iter().any(|(g, _)| g == f))
             .filter_map(|(f, para)| {
                 let p = self.index.para(&self.doc, *para)?;
                 let k = p.inlines.iter().position(|i| matches!(i, Inline::FieldBegin { id, .. } if id == f))?;
@@ -1195,7 +1247,7 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
-    fn set_result(&mut self, tx: &mut super::Tx, f: FieldId, display: &str) -> bool {
+    pub(super) fn set_result(&mut self, tx: &mut super::Tx, f: FieldId, display: &str) -> bool {
         let Some(Where::Inline { para, first, last, .. }) = self.locate(ElementId::Field(f)) else { return false };
         let Some(p) = self.index.para(&self.doc, para).cloned() else { return false };
         let Some(s) = crate::docx::fields::span_at(&p.inlines, first).filter(|s| s.end == last) else { return false };
@@ -1469,7 +1521,7 @@ impl Editor {
         Ok(self.commit(tx, None, fonts))
     }
 
-    fn follow(&mut self, tx: &super::Tx) {
+    pub(super) fn follow(&mut self, tx: &super::Tx) {
         let map = |p: Position| tx.maps.iter().fold(p, |p, m| m.apply(p));
         self.selection = match self.selection {
             Selection::Caret(p) => Selection::Caret(map(p)),
@@ -1739,6 +1791,7 @@ impl Editor {
                     effect: [0.0; 4],
                     shape: None,
                     text: None,
+                    src: Default::default(),
                 };
                 self.insert_inlines(
                     |run| vec![Inline::ControlStart(id), Inline::Picture(picture.clone(), run), Inline::ControlEnd(id)],
@@ -1890,13 +1943,102 @@ impl Editor {
                         *lid = o.locale.clone();
                     }
                 }
-                (ControlKind::Checkbox { .. }, ControlOptions::Checkbox(_)) => {}
+                (ControlKind::Checkbox { checked, unchecked }, ControlOptions::Checkbox(o)) => {
+                    if o.checked_symbol.is_some() || o.unchecked_symbol.is_some() {
+                        let font = |x: &str, name: &str| {
+                            let at = x.find(&format!("{name} "))?;
+                            let f = x[at..].find("font=\"")? + at + 6;
+                            Some(x[f..f + x[f..].find('"')?].to_string())
+                        };
+                        let was = p.kind_xml.clone().unwrap_or_default();
+                        let one = |s: &crate::api::value::CheckboxSymbol| s.character.chars().next();
+                        if let Some(c) = o.checked_symbol.as_ref().and_then(one) {
+                            *checked = c;
+                        }
+                        if let Some(c) = o.unchecked_symbol.as_ref().and_then(one) {
+                            *unchecked = c;
+                        }
+                        let f_on = o
+                            .checked_symbol
+                            .as_ref()
+                            .map(|s| s.font.clone())
+                            .or_else(|| font(&was, "checkedState"))
+                            .unwrap_or_else(|| "MS Gothic".into());
+                        let f_off = o
+                            .unchecked_symbol
+                            .as_ref()
+                            .map(|s| s.font.clone())
+                            .or_else(|| font(&was, "uncheckedState"))
+                            .unwrap_or_else(|| "MS Gothic".into());
+                        let on = crate::docx::xml::checkbox_checked(&was).unwrap_or(false);
+                        let w14 = crate::docx::xml::W14;
+                        let esc = crate::docx::write::props::esc;
+                        p.kind_xml = Some(format!(
+                            r#"<w14:checkbox xmlns:w14="{w14}"><w14:checked w14:val="{}"/><w14:checkedState w14:val="{:04X}" w14:font="{}"/><w14:uncheckedState w14:val="{:04X}" w14:font="{}"/></w14:checkbox>"#,
+                            u8::from(on),
+                            *checked as u32,
+                            esc(&f_on),
+                            *unchecked as u32,
+                            esc(&f_off)
+                        ));
+                    }
+                }
+                (ControlKind::RepeatingSection, ControlOptions::RepeatingSection(o)) => {
+                    let was = p.kind_xml.clone().unwrap_or_default();
+                    let title = o.section_title.clone().or_else(|| {
+                        let at = was.find("sectionTitle ")?;
+                        let v = was[at..].find("val=\"")? + at + 5;
+                        Some(was[v..v + was[v..].find('"')?].to_string())
+                    });
+                    let fixed = o.allow_insert_delete.map_or(was.contains("doNotAllowInsertDeleteSection"), |a| !a);
+                    let w15 = crate::docx::xml::W15;
+                    let title = title
+                        .filter(|t| !t.is_empty())
+                        .map_or(String::new(), |t| format!(r#"<w15:sectionTitle w15:val="{}"/>"#, crate::docx::write::props::esc(&t)));
+                    let fixed = if fixed { "<w15:doNotAllowInsertDeleteSection/>" } else { "" };
+                    p.kind_xml = Some(format!(r#"<w15:repeatingSection xmlns:w15="{w15}">{title}{fixed}</w15:repeatingSection>"#));
+                }
                 (ControlKind::Picture, ControlOptions::Picture(o)) => resize = Some(o.clone()),
                 _ => return Err(Error::invalid("options for another kind of control")),
             }
-            if !matches!(p.kind, ControlKind::DropDown | ControlKind::Checkbox { .. } | ControlKind::Picture) {
+            if !matches!(p.kind, ControlKind::DropDown | ControlKind::Checkbox { .. } | ControlKind::Picture | ControlKind::RepeatingSection) {
                 p.kind_xml = None;
             }
+        }
+        // Appearance, colour, temporary and the contents' style: `w:sdtPr` children by local name.
+        let mut rest = |name: &str, xml: Option<String>| {
+            p.rest.retain(|(n, _)| n != name);
+            if let Some(x) = xml {
+                p.rest.push((name.to_string(), x));
+            }
+        };
+        let w15 = crate::docx::xml::W15;
+        if let Some(a) = set.appearance {
+            let v = match a {
+                crate::api::value::ControlAppearance::BoundingBox => "boundingBox",
+                crate::api::value::ControlAppearance::Tags => "tags",
+                crate::api::value::ControlAppearance::Hidden => "hidden",
+            };
+            rest("appearance", Some(format!(r#"<w15:appearance xmlns:w15="{w15}" w15:val="{v}"/>"#)));
+        }
+        if let Some(c) = set.color {
+            let xml = match c {
+                crate::api::value::NoneOr::None => None,
+                crate::api::value::NoneOr::Value(c) => Some(format!(r#"<w15:color xmlns:w15="{w15}" {prefix}val="{:06X}"/>"#, c.0)),
+            };
+            rest("color", xml);
+        }
+        if let Some(t) = set.temporary {
+            rest("temporary", t.then(|| format!("<{prefix}temporary/>")));
+        }
+        if let Some(s) = &set.style {
+            let xml = match s {
+                crate::api::value::NoneOr::None => None,
+                crate::api::value::NoneOr::Value(id) => {
+                    Some(format!("<{prefix}rPr><{prefix}rStyle {prefix}val=\"{}\"/></{prefix}rPr>", crate::docx::write::props::esc(&id.0)))
+                }
+            };
+            rest("rPr", xml);
         }
         let placeholder = set.placeholder;
         let showing = p.showing_placeholder;
@@ -1996,6 +2138,55 @@ fn picture_size(o: &crate::api::value::PictureOptions, was: (f64, f64)) -> Resul
         None => Ok(was),
     };
     Ok((side(o.width, was.0)?, side(o.height, was.1)?))
+}
+
+impl Editor {
+    /// Temporary controls whose content the transaction edited go, leaving their content.
+    pub(super) fn drop_temporary_controls(&mut self, tx: &mut super::Tx) {
+        let temporary = |c: &ControlId| self.doc.controls.get(c).is_some_and(|k| k.props.temporary());
+        let mut gone: Vec<ControlId> = Vec::new();
+        for s in &tx.undo {
+            let Step::Text { para, range, .. } = s else { continue };
+            let Some(p) = self.index.para(&self.doc, *para) else { continue };
+            gone.extend(p.controls.iter().filter(|c| temporary(c)));
+            // Inline ones around the edit.
+            let (mut unit, mut open) = (0u32, Vec::new());
+            for i in &p.inlines {
+                match i {
+                    Inline::ControlStart(c) => open.push((*c, unit)),
+                    Inline::ControlEnd(c) => {
+                        if let Some(k) = open.iter().rposition(|(o, _)| o == c) {
+                            let (c, start) = open.remove(k);
+                            if start <= range.start.0 && range.end.0 <= unit && temporary(&c) {
+                                gone.push(c);
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+                unit += i.units() as u32;
+            }
+        }
+        gone.sort_unstable();
+        gone.dedup();
+        for c in gone {
+            let step = match self.locate(ElementId::Control(c)) {
+                Some(Where::Inline { para, .. }) => self.index.para(&self.doc, para).map(|p| Step::Restyle {
+                    para,
+                    inlines: p.inlines.iter().filter(|i| !matches!(i, Inline::ControlStart(x) | Inline::ControlEnd(x) if *x == c)).cloned().collect(),
+                }),
+                Some(Where::Blocks { container, range }) => self.index.blocks(&self.doc, container).map(|blocks| Step::Blocks {
+                    container,
+                    with: blocks[range.clone()].iter().map(|b| without_control(b, c)).collect(),
+                    range,
+                }),
+                _ => None,
+            };
+            if let Some(step) = step {
+                let _ = self.step(tx, step);
+            }
+        }
+    }
 }
 
 fn without_control(b: &Block, c: ControlId) -> Block {

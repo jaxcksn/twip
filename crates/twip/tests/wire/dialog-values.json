@@ -216,15 +216,26 @@
     "allCaps": false,
     "characterSpacing": 0.5,
     "color": "auto",
+    "contextualAlternates": true,
     "doubleStrikethrough": false,
+    "emboss": false,
+    "engrave": true,
     "font": "Calibri",
     "hidden": false,
+    "kerning": 12.0,
     "kind": "font",
+    "ligatures": "standardContextual",
+    "numberForm": "oldStyle",
+    "numberSpacing": "tabular",
+    "outline": "mixed",
     "position": null,
+    "scale": 90.5,
+    "shadow": false,
     "size": "mixed",
     "smallCaps": true,
     "strikethrough": false,
     "style": "boldItalic",
+    "stylisticSet": 3,
     "subscript": false,
     "superscript": false,
     "underline": "wave",
@@ -235,6 +246,9 @@
     "alignment": "right",
     "before": "auto",
     "by": 18.5,
+    "collapsed": true,
+    "contextualSpacing": "mixed",
+    "dontHyphenate": false,
     "keepLinesTogether": "mixed",
     "keepWithNext": true,
     "kind": "paragraph",
@@ -243,10 +257,12 @@
       "rule": "exact",
       "size": 14.5
     },
+    "mirrorIndents": false,
     "outlineLevel": 1,
     "pageBreakBefore": false,
     "right": 0.5,
     "special": "hanging",
+    "suppressLineNumbers": true,
     "widowControl": true
   },
   {
@@ -256,13 +272,18 @@
     "differentOddEven": true,
     "footerDistance": 36.5,
     "gutter": 0.5,
+    "gutterAtTop": false,
     "headerDistance": 36.5,
     "height": 612.5,
     "kind": "pageSetup",
     "left": 90.5,
+    "lineNumbers": null,
+    "multiplePages": "mirrorMargins",
     "orientation": "landscape",
     "right": 90.5,
+    "sectionStart": "oddPage",
     "top": 72.5,
+    "verticalAlignment": "center",
     "width": 792.5
   },
   {
@@ -272,6 +293,7 @@
   },
   {
     "alignment": "left",
+    "allowSpacing": true,
     "cellAlignment": "mixed",
     "cellMargins": {
       "bottom": 0.5,
@@ -279,20 +301,38 @@
       "right": 5.5,
       "top": 0.5
     },
+    "cellSpacing": 1.5,
+    "cellWidth": {
+      "kind": "percent",
+      "value": 25.0
+    },
     "columnWidth": 120.5,
+    "description": "Yearly totals by region",
+    "fitText": false,
     "headerRow": false,
     "indent": 5.5,
     "kind": "tableProperties",
     "rowCanBreak": true,
     "rowHeight": "auto",
+    "title": "Totals",
     "width": {
       "kind": "auto"
-    }
+    },
+    "wrapText": true
   },
   {
+    "crop": {
+      "bottom": 0.25,
+      "left": 0.1
+    },
     "height": 72.5,
     "kind": "pictureSize",
     "lockAspect": true,
+    "relativeHeight": null,
+    "relativeWidth": {
+      "percent": 50.0,
+      "relativeTo": "margin"
+    },
     "reset": false,
     "scaleHeight": 50.5,
     "scaleWidth": 50.5,
@@ -305,6 +345,7 @@
   },
   {
     "address": "https://example.com",
+    "bookmark": "Summary",
     "kind": "hyperlink",
     "text": "Example"
   },

@@ -36,6 +36,10 @@ pub fn formats_a_style(c: &Command) -> bool {
             | Command::SetHighlight(_)
             | Command::SetCharacterSpacing(_)
             | Command::SetCharacterPosition(_)
+            | Command::SetTypography(_)
+            | Command::SetLanguage(_)
+            | Command::SetCharacterEffects(_)
+            | Command::SetUnderlineColor(_)
             | Command::SetAlignment(_)
             | Command::SetLineSpacing(_)
             | Command::SetParagraphSpacing(_)
@@ -43,6 +47,8 @@ pub fn formats_a_style(c: &Command) -> bool {
             | Command::IncreaseIndent
             | Command::DecreaseIndent
             | Command::SetParagraphFlow(_)
+            | Command::SetOutline(_)
+            | Command::SetParagraphTextDirection(_)
             | Command::SetParagraphBorders(_)
             | Command::SetParagraphShading(_)
             | Command::SetParagraphBorderLines(_)

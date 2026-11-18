@@ -17,14 +17,14 @@
       "values": { "style": "mixed", "size": 11, "subscript": false, "superscript": false },
       "fields": { "size": { "label": { "$type": "string" }, "enabled": true }, "style": { "kind": "choice" } }
     } },
-    { "op": "call", "method": "@font.update", "args": [{ "size": 14 }], "save": "font", "result": { "values": { "size": 14, "style": "mixed" } } },
+    { "op": "call", "method": "@font.update", "args": [{ "size": 14, "emboss": true, "ligatures": "all" }], "save": "font", "result": { "values": { "size": 14, "style": "mixed", "emboss": true, "ligatures": "all" } } },
     { "op": "call", "method": "@font.update", "args": [{ "subscript": true }], "save": "font", "result": { "values": { "subscript": true, "superscript": false } } },
     { "op": "call", "method": "@font.update", "args": [{ "superscript": true }], "save": "font", "result": { "values": { "superscript": true, "subscript": false } } },
     { "op": "call", "method": "@font.update", "args": [{ "superscript": false }], "save": "font", "result": { "values": { "superscript": false, "subscript": false } } },
     { "op": "expectState", "match": { "revision": 1, "formatting": { "size": 11 } } },
     { "op": "call", "method": "@font.apply" },
     { "op": "expectEvents", "match": [{ "type": "documentChanged", "revision": 2 }] },
-    { "op": "expectState", "match": { "revision": 2, "formatting": { "size": 14, "superscript": false }, "history": { "canUndo": true } } },
+    { "op": "expectState", "match": { "revision": 2, "formatting": { "size": 14, "superscript": false, "emboss": true, "ligatures": "all" }, "history": { "canUndo": true } } },
     { "op": "command", "command": { "type": "undo" } },
     { "op": "expectState", "match": { "revision": 3, "formatting": { "size": 11 }, "history": { "canUndo": false } } },
     { "op": "call", "method": "dialogs.open", "args": ["font"], "save": "font2" },
@@ -34,16 +34,16 @@
 
     { "op": "call", "method": "find.next", "args": [{ "text": "Teh" }], "result": { "found": true } },
     { "op": "call", "method": "dialogs.open", "args": ["paragraph"], "save": "para", "result": { "kind": "paragraph", "values": { "alignment": "left" } } },
-    { "op": "call", "method": "@para.update", "args": [{ "alignment": "center" }], "save": "para", "result": { "values": { "alignment": "center" } } },
+    { "op": "call", "method": "@para.update", "args": [{ "alignment": "center", "contextualSpacing": true, "dontHyphenate": true, "outlineLevel": 2 }], "save": "para", "result": { "values": { "alignment": "center", "outlineLevel": 2 } } },
     { "op": "call", "method": "@para.apply" },
     { "op": "expectEvents", "match": [{ "type": "documentChanged", "revision": 4 }] },
-    { "op": "expectState", "match": { "revision": 4, "paragraph": { "alignment": "center" } } },
+    { "op": "expectState", "match": { "revision": 4, "paragraph": { "alignment": "center", "contextualSpacing": true, "outlineLevel": 2, "flow": { "dontHyphenate": true } } } },
 
     { "op": "call", "method": "dialogs.open", "args": ["pageSetup"], "save": "page", "result": { "values": { "orientation": "portrait", "width": 612, "height": 792 } } },
-    { "op": "call", "method": "@page.update", "args": [{ "orientation": "landscape" }], "save": "page", "result": { "values": { "orientation": "landscape", "width": 792, "height": 612 } } },
+    { "op": "call", "method": "@page.update", "args": [{ "orientation": "landscape", "verticalAlignment": "center", "multiplePages": "mirrorMargins" }], "save": "page", "result": { "values": { "orientation": "landscape", "width": 792, "height": 612 } } },
     { "op": "call", "method": "@page.apply" },
     { "op": "expectEvents", "match": [{ "type": "documentChanged", "revision": 5 }] },
-    { "op": "expectState", "match": { "revision": 5, "page": { "orientation": "landscape", "size": { "width": 792, "height": 612 } } } },
+    { "op": "expectState", "match": { "revision": 5, "page": { "orientation": "landscape", "size": { "width": 792, "height": 612 }, "verticalAlignment": "center", "multiplePages": "mirrorMargins" } } },
 
     { "op": "call", "method": "find.next", "args": [{ "text": "End." }], "result": { "found": true } },
     { "op": "command", "command": { "type": "moveSelection", "by": "lineEdge", "direction": "forward" } },
@@ -56,10 +56,10 @@
     { "op": "call", "method": "find.next", "args": [{ "text": "Cell one" }], "result": { "found": true } },
     { "op": "expectState", "match": { "dialogs": { "tableProperties": true, "pictureSize": false } } },
     { "op": "call", "method": "dialogs.open", "args": ["tableProperties"], "save": "table", "result": { "values": { "alignment": "left" } } },
-    { "op": "call", "method": "@table.update", "args": [{ "alignment": "center" }], "save": "table", "result": { "values": { "alignment": "center" } } },
+    { "op": "call", "method": "@table.update", "args": [{ "alignment": "center", "cellWidth": { "kind": "percent", "value": 40 } }], "save": "table", "result": { "values": { "alignment": "center" } } },
     { "op": "call", "method": "@table.apply" },
     { "op": "expectEvents", "match": [{ "type": "documentChanged", "revision": 7 }] },
-    { "op": "expectState", "match": { "revision": 7, "selection": { "table": { "alignment": "center", "rows": 2 } } } },
+    { "op": "expectState", "match": { "revision": 7, "selection": { "table": { "alignment": "center", "rows": 2, "cellWidth": { "kind": "percent", "value": 40 } } } } },
 
     { "op": "call", "method": "dialogs.open", "args": ["accessibility"], "save": "check", "result": {
       "kind": "accessibility", "values": { "issues": [{ "id": { "$type": "string" }, "text": { "$type": "string" } }] }

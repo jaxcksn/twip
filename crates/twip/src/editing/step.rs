@@ -86,7 +86,7 @@ pub enum Step {
     },
     SectionPage {
         section: usize,
-        page: crate::docx::SectionPage,
+        page: Box<crate::docx::SectionPage>,
         change: Option<Rc<crate::docx::review::SectionChange>>,
     },
     Control {
@@ -121,10 +121,46 @@ pub enum Step {
     },
     DefaultTab(f64),
     Hyphenation(Hyphenating),
+    PageSettings(PageSettings),
     SectionBreak {
         section: usize,
         back: Option<Box<SectionBack>>,
     },
+    /// The style new tables take.
+    DefaultTableStyle(Option<String>),
+    /// The document's protection.
+    Protection(Option<Box<crate::docx::review::Protection>>),
+    /// The document's properties and variables.
+    Info(Box<(crate::docx::properties::Properties, Vec<(String, String)>)>),
+}
+
+/// The document's page settings: odd and even headers, how pages pair, the gutter's place, and the page borders
+/// around headers and footers.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PageSettings {
+    pub even_and_odd: bool,
+    pub mirror_margins: bool,
+    pub gutter_at_top: bool,
+    pub book_fold: Option<bool>,
+    pub no_surround_header: bool,
+    pub no_surround_footer: bool,
+    pub endnotes_sect_end: bool,
+    pub no_form_shading: bool,
+}
+
+impl PageSettings {
+    pub fn of(s: &crate::docx::Settings) -> PageSettings {
+        PageSettings {
+            even_and_odd: s.even_and_odd,
+            mirror_margins: s.mirror_margins,
+            gutter_at_top: s.gutter_at_top,
+            book_fold: s.book_fold,
+            no_surround_header: s.borders_do_not_surround_header,
+            no_surround_footer: s.borders_do_not_surround_footer,
+            endnotes_sect_end: s.endnotes_sect_end,
+            no_form_shading: s.no_form_shading,
+        }
+    }
 }
 
 /// The document's hyphenation settings.
@@ -156,6 +192,8 @@ pub struct TableProps {
     pub borders: [Option<crate::docx::props::Border>; 6],
     pub bands: (i64, i64),
     pub floating: Option<crate::docx::props::TablePos>,
+    pub cell_spacing: f64,
+    pub alt: Option<Rc<crate::docx::TableAlt>>,
 }
 
 impl Step {
@@ -333,6 +371,8 @@ impl TableProps {
             borders: t.borders.clone(),
             bands: t.bands,
             floating: t.floating,
+            cell_spacing: t.cell_spacing,
+            alt: t.alt.clone(),
         }
     }
 }
@@ -424,7 +464,7 @@ pub fn run_of(i: &Inline) -> Option<&Run> {
         | Inline::FieldSep { run, .. }
         | Inline::FieldEnd { run, .. }
         | Inline::CommentRef { run, .. } => Some(run),
-        Inline::Bookmark(_) | Inline::Range(_) | Inline::ControlStart(_) | Inline::ControlEnd(_) => None,
+        Inline::Bookmark(_) | Inline::Range(_) | Inline::ControlStart(_) | Inline::ControlEnd(_) | Inline::Opaque(_) => None,
     }
 }
 
@@ -764,6 +804,8 @@ impl Step {
             }
             Step::HeaderPart { name, section, footer, slot, blocks } => {
                 let sec = doc.sections.get_mut(section).ok_or(StepError::Missing)?;
+                // Its `w:sectPr` loses the reference of a header it no longer has.
+                doc.edited_sections.insert(section);
                 let refs = if footer { &mut sec.footers } else { &mut sec.headers };
                 let r = refs.get_mut(slot).ok_or(StepError::OutOfRange)?;
                 match blocks {
@@ -877,6 +919,28 @@ impl Step {
                 (s.auto_hyphenation, s.hyphenation_zone, s.consecutive_hyphen_limit, s.do_not_hyphenate_caps) = (h.auto, h.zone, h.limit, h.caps);
                 Ok(Applied { inverse: Step::Hyphenation(old), map: Map::Same, hint: None })
             }
+            Step::Protection(p) => {
+                let old = std::mem::replace(&mut doc.settings.protection, p.map(|p| *p));
+                Ok(Applied { inverse: Step::Protection(old.map(Box::new)), map: Map::Same, hint: None })
+            }
+            Step::Info(info) => {
+                let (p, v) = *info;
+                let old = (std::mem::replace(&mut doc.properties, p), std::mem::replace(&mut doc.settings.variables, v));
+                Ok(Applied { inverse: Step::Info(Box::new(old)), map: Map::Same, hint: None })
+            }
+            Step::DefaultTableStyle(id) => {
+                let old = std::mem::replace(&mut doc.settings.default_table_style, id);
+                Ok(Applied { inverse: Step::DefaultTableStyle(old), map: Map::Same, hint: None })
+            }
+            Step::PageSettings(p) => {
+                let old = PageSettings::of(&doc.settings);
+                let s = &mut doc.settings;
+                (s.even_and_odd, s.mirror_margins, s.gutter_at_top, s.book_fold) = (p.even_and_odd, p.mirror_margins, p.gutter_at_top, p.book_fold);
+                (s.borders_do_not_surround_header, s.borders_do_not_surround_footer) = (p.no_surround_header, p.no_surround_footer);
+                s.endnotes_sect_end = p.endnotes_sect_end;
+                s.no_form_shading = p.no_form_shading;
+                Ok(Applied { inverse: Step::PageSettings(old), map: Map::Same, hint: None })
+            }
             Step::SectionBreak { section, back } => {
                 let n = doc.sections.len();
                 if doc.section_sources.len() != n {
@@ -899,7 +963,7 @@ impl Step {
                     Some(back) => {
                         let SectionBack { blocks, section: mut s, sources, edited } = *back;
                         let next = doc.sections.get_mut(section).ok_or(StepError::Missing)?;
-                        if blocks > next.blocks.len() || doc.section_sources[section] <= sources {
+                        if blocks >= next.blocks.len() || doc.section_sources[section] < sources {
                             return Err(StepError::OutOfRange);
                         }
                         s.blocks = next.blocks.drain(..blocks).collect();
@@ -921,8 +985,8 @@ impl Step {
             }
             Step::SectionPage { section, page, change } => {
                 let s = doc.sections.get_mut(section).ok_or(StepError::Missing)?;
-                let old = s.page();
-                s.set_page(page);
+                let old = Box::new(s.page());
+                s.set_page(*page);
                 let old_change = std::mem::replace(&mut s.change, change);
                 doc.edited_sections.insert(section);
                 Ok(Applied { inverse: Step::SectionPage { section, page: old, change: old_change }, map: Map::Same, hint: None })
@@ -930,8 +994,19 @@ impl Step {
             Step::TableProps { table, props } => {
                 let t = idx.table_mut(doc, table).ok_or(StepError::Missing)?;
                 let old = TableProps::of(t);
-                (t.style_id, t.look, t.width, t.jc, t.ind, t.ind_pct, t.borders, t.bands, t.floating) =
-                    (props.style_id, props.look, props.width, props.jc, props.ind, props.ind_pct, props.borders, props.bands, props.floating);
+                (t.style_id, t.look, t.width, t.jc, t.ind, t.ind_pct, t.borders, t.bands, t.floating, t.cell_spacing, t.alt) = (
+                    props.style_id,
+                    props.look,
+                    props.width,
+                    props.jc,
+                    props.ind,
+                    props.ind_pct,
+                    props.borders,
+                    props.bands,
+                    props.floating,
+                    props.cell_spacing,
+                    props.alt,
+                );
                 let slot = idx.table_slot(table).ok_or(StepError::Missing)?;
                 let hint = idx.top_block(slot.container, slot.block).map(|(section, b, row)| Change {
                     section,

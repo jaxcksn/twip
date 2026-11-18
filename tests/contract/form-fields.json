@@ -1,0 +1,19 @@
+{
+  "name": "form-fields",
+  "fixture": "editor/FX-STORIES.docx",
+  "steps": [
+    { "op": "open" },
+    { "op": "command", "command": { "type": "fillFormField", "checked": true } },
+    { "op": "expectError", "code": "unavailable" },
+    { "op": "command", "command": { "type": "insertFormField", "value": "checkBox" }, "result": { "id": { "$type": "string" } } },
+    { "op": "command", "command": { "type": "setFormField", "name": "1st" } },
+    { "op": "expectError", "code": "invalid-argument" },
+    { "op": "command", "command": { "type": "setFormField", "dropDown": { "entries": [""] } } },
+    { "op": "expectError", "code": "invalid-argument" },
+    { "op": "command", "command": { "type": "setFormFieldShading", "value": false } },
+    { "op": "expectState", "match": { "commands": { "setFormFieldShading": { "checked": false } } } },
+    { "op": "export", "format": "docx" },
+    { "op": "reopen" },
+    { "op": "expectState", "match": { "commands": { "setFormFieldShading": { "checked": false } } } }
+  ]
+}

@@ -343,6 +343,30 @@ public sealed record TableSelection
 
     /// <summary>The table's indent.</summary>
     public Length Indent { get; init; }
+
+    /// <summary>The cells' preferred width.</summary>
+    public FormatValue<TableWidth> CellWidth { get; init; }
+
+    /// <summary>The direction the cells' text runs in.</summary>
+    public FormatValue<TextFlow> TextDirection { get; init; }
+
+    /// <summary>The cells' text wraps.</summary>
+    public FormatValue<bool> WrapText { get; init; }
+
+    /// <summary>The cells' text is squeezed to fit.</summary>
+    public FormatValue<bool> FitText { get; init; }
+
+    /// <summary>The rows' end marks are hidden.</summary>
+    public FormatValue<bool> RowHidden { get; init; }
+
+    /// <summary>The space between the table's cells; null for none.</summary>
+    public Length? CellSpacing { get; init; }
+
+    /// <summary>The table's alternative text title.</summary>
+    public string Title { get; init; } = "";
+
+    /// <summary>The table's alternative text description.</summary>
+    public string Description { get; init; } = "";
 }
 
 /// <summary>Which parts of a table style apply.</summary>
@@ -426,6 +450,22 @@ public sealed record ObjectSelection
 
     /// <summary>How many objects are selected: 2 or more is a multi-selection, the other properties describing the first.</summary>
     public int Count { get; init; }
+
+    /// <summary>A picture's crop, by fractions of its image from each edge; null when uncropped.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PictureCrop? Crop { get; init; }
+
+    /// <summary>A picture's Set Transparent Colour; null for none.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ColorValue? TransparentColor { get; init; }
+
+    /// <summary>A floating object's width as a share of a box on the page; null for an absolute width.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public RelativeSize? RelativeWidth { get; init; }
+
+    /// <summary>Its height as a share of a box on the page; null for an absolute height.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public RelativeSize? RelativeHeight { get; init; }
 }
 
 /// <summary>The selected shape's properties, as written.</summary>
@@ -491,6 +531,9 @@ public sealed record ShapeTextState
 
     /// <summary>Which way it runs.</summary>
     public TextDirection Direction { get; init; }
+
+    /// <summary>Its columns.</summary>
+    public TextColumns Columns { get; init; } = new(1, default);
 }
 
 /// <summary>A floating object's place and its wrapping options.</summary>
@@ -574,6 +617,80 @@ public sealed record ElementContext(
     /// <summary>A picture control's picture size (inline or floating).</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public PictureSize? Size { get; init; }
+
+    /// <summary>A legacy form field's options and value.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public FormFieldInfo? Form { get; init; }
+
+    /// <summary>A content control's look and options.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ControlInfo? Control { get; init; }
+}
+
+/// <summary>A content control's look and options; what doesn't apply to its kind is null.</summary>
+public sealed record ControlInfo
+{
+    /// <summary>How it shows its edges.</summary>
+    public ControlAppearance Appearance { get; init; }
+    /// <summary>Its colour; null for the default.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ColorValue? Color { get; init; }
+    /// <summary>It goes when its content is edited.</summary>
+    public bool Temporary { get; init; }
+    /// <summary>The character style text typed into it takes.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public StyleId? Style { get; init; }
+    /// <summary>A checkbox's checked symbol.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? CheckedSymbol { get; init; }
+    /// <summary>A checkbox's unchecked symbol.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? UncheckedSymbol { get; init; }
+    /// <summary>What a repeating section's items are called.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? SectionTitle { get; init; }
+    /// <summary>A repeating section's items can be added and removed.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? AllowInsertDelete { get; init; }
+    /// <summary>A building block gallery's entries: the package's building blocks in its category, by name.</summary>
+    public IReadOnlyList<string> BuildingBlocks { get; init; } = [];
+}
+
+/// <summary>A legacy form field's options and value; what doesn't apply to its kind is null.</summary>
+public sealed record FormFieldInfo
+{
+    /// <summary>Its kind.</summary>
+    public FormFieldType Kind { get; init; }
+    /// <summary>Its bookmark name.</summary>
+    public string Name { get; init; } = "";
+    /// <summary>It can be filled in.</summary>
+    public bool Enabled { get; init; }
+    /// <summary>The document's fields update when it is left.</summary>
+    public bool CalculateOnExit { get; init; }
+    /// <summary>The help F1 shows.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? HelpText { get; init; }
+    /// <summary>The help the status bar shows.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? StatusText { get; init; }
+    /// <summary>What a text field takes.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public TextInputType? InputType { get; init; }
+    /// <summary>A text field's default text.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? DefaultText { get; init; }
+    /// <summary>The most characters a text field takes; 0 for any.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? MaxLength { get; init; }
+    /// <summary>A check box is checked.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? Checked { get; init; }
+    /// <summary>A drop-down's entries.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<string>? Entries { get; init; }
+    /// <summary>The entry a drop-down shows.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? Entry { get; init; }
 }
 
 /// <summary>The selection's character formatting.</summary>
@@ -626,6 +743,51 @@ public sealed record CharacterFormatting
 
     /// <summary>The raised or lowered position.</summary>
     public FormatValue<Length> Position { get; init; }
+
+    /// <summary>The character style; <see cref="StyleId.None"/> for none.</summary>
+    public FormatValue<StyleId> CharacterStyle { get; init; }
+
+    /// <summary>The horizontal scale, percent.</summary>
+    public FormatValue<double> Scale { get; init; }
+
+    /// <summary>Kerning at or above this size; 0 when off.</summary>
+    public FormatValue<Length> Kerning { get; init; }
+
+    /// <summary>The ligatures used (a combination Word's dialog doesn't offer reads as mixed).</summary>
+    public FormatValue<Ligatures> Ligatures { get; init; }
+
+    /// <summary>The digits' widths.</summary>
+    public FormatValue<NumberSpacing> NumberSpacing { get; init; }
+
+    /// <summary>The digits' forms.</summary>
+    public FormatValue<NumberForm> NumberForm { get; init; }
+
+    /// <summary>The stylistic set (1 to 20), or 0 for the font's default.</summary>
+    public FormatValue<int> StylisticSet { get; init; }
+
+    /// <summary>Contextual alternates.</summary>
+    public FormatValue<bool> ContextualAlternates { get; init; }
+
+    /// <summary>The language (a BCP 47 tag).</summary>
+    public FormatValue<string> Language { get; init; }
+
+    /// <summary>Spelling and grammar are not checked.</summary>
+    public FormatValue<bool> NoProof { get; init; }
+
+    /// <summary>Emboss.</summary>
+    public FormatValue<bool> Emboss { get; init; }
+
+    /// <summary>Engrave.</summary>
+    public FormatValue<bool> Engrave { get; init; }
+
+    /// <summary>Outline.</summary>
+    public FormatValue<bool> Outline { get; init; }
+
+    /// <summary>Shadow.</summary>
+    public FormatValue<bool> Shadow { get; init; }
+
+    /// <summary>The underline's colour, or the text's (<see cref="ColorValue.Auto"/>).</summary>
+    public FormatValue<ColorValue> UnderlineColor { get; init; }
 }
 
 /// <summary>The selected paragraphs' formatting.</summary>
@@ -663,6 +825,22 @@ public sealed record ParagraphFormatting
 
     /// <summary>The shading; <see cref="ColorValue.None"/> for none.</summary>
     public FormatValue<ColorValue> Shading { get; init; }
+
+    /// <summary>No space between paragraphs of the same style.</summary>
+    public FormatValue<bool> ContextualSpacing { get; init; }
+
+    /// <summary>The outline level (1 to 9), or body text (0).</summary>
+    public FormatValue<int> OutlineLevel { get; init; }
+
+    /// <summary>Collapsed when the document opens.</summary>
+    public FormatValue<bool> Collapsed { get; init; }
+
+    /// <summary>The text direction.</summary>
+    public FormatValue<TextFlow> TextDirection { get; init; }
+
+    /// <summary>The selection's paragraph's drop cap, when it has one.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DropCap? DropCap { get; init; }
 }
 
 /// <summary>Paragraph indents.</summary>
@@ -679,6 +857,9 @@ public sealed record ParagraphIndents
 
     /// <summary>The hanging indent.</summary>
     public FormatValue<Length> Hanging { get; init; }
+
+    /// <summary>Mirror indents (inside and outside on facing pages).</summary>
+    public FormatValue<bool> Mirror { get; init; }
 }
 
 /// <summary>How paragraphs break across pages.</summary>
@@ -695,6 +876,15 @@ public sealed record ParagraphFlow
 
     /// <summary>Avoid single lines at a page's top or bottom.</summary>
     public FormatValue<bool> WidowControl { get; init; }
+
+    /// <summary>Don't hyphenate.</summary>
+    public FormatValue<bool> DontHyphenate { get; init; }
+
+    /// <summary>Left out of line numbering.</summary>
+    public FormatValue<bool> SuppressLineNumbers { get; init; }
+
+    /// <summary>In a text box, which lines text around it wraps tightly to.</summary>
+    public FormatValue<TightWrap> TextboxTightWrap { get; init; }
 }
 
 /// <summary>The selection's section page layout.</summary>
@@ -723,7 +913,62 @@ public sealed record PageFormatting
 
     /// <summary>Whether odd and even pages have their own headers and footers.</summary>
     public bool DifferentOddEven { get; init; }
+
+    /// <summary>The page number format.</summary>
+    public NumberFormat PageNumberFormat { get; init; }
+
+    /// <summary>The section's first page number, or null when it continues from the section before.</summary>
+    public int? PageNumberStart { get; init; }
+
+    /// <summary>Chapter numbers in page numbers, or null.</summary>
+    public ChapterNumbers? ChapterNumbers { get; init; }
+
+    /// <summary>Where text sits between the top and bottom margins.</summary>
+    public PageVerticalAlignment VerticalAlignment { get; init; }
+
+    /// <summary>The line numbering, or null.</summary>
+    public LineNumbers? LineNumbers { get; init; }
+
+    /// <summary>The break the section starts with.</summary>
+    public SectionBreakKind BreakType { get; init; }
+
+    /// <summary>The section's text direction.</summary>
+    public TextFlow TextDirection { get; init; }
+
+    /// <summary>How the document's pages pair.</summary>
+    public MultiplePagesMode MultiplePages { get; init; }
+
+    /// <summary>The gutter is at the top.</summary>
+    public bool GutterAtTop { get; init; }
+
+    /// <summary>Which of the section's headers take the section before's (Link to Previous).</summary>
+    public HeaderFooterLinks HeaderLinks { get; init; } = new(false, false, false);
+
+    /// <summary>Which of its footers do.</summary>
+    public HeaderFooterLinks FooterLinks { get; init; } = new(false, false, false);
+
+    /// <summary>The section's footnote settings.</summary>
+    public NoteSettings Footnotes { get; init; } = new(NotePosition.PageBottom, NumberFormat.Decimal, 1, NoteRestart.Continuous);
+
+    /// <summary>The section's endnote settings.</summary>
+    public NoteSettings Endnotes { get; init; } = new(NotePosition.DocumentEnd, NumberFormat.LowerRoman, 1, NoteRestart.Continuous);
+
+    /// <summary>The footnote area's columns; 0 for the section's own.</summary>
+    public int FootnoteColumns { get; init; }
 }
+
+/// <summary>A section's footnote or endnote settings.</summary>
+/// <param name="Position">Where the notes go.</param>
+/// <param name="Format">The number format.</param>
+/// <param name="Start">The first number.</param>
+/// <param name="Restart">When numbering starts again.</param>
+public sealed record NoteSettings(NotePosition Position, NumberFormat Format, int Start, NoteRestart Restart);
+
+/// <summary>Which of a section's headers or footers take the section before's.</summary>
+/// <param name="Default">For every page.</param>
+/// <param name="First">For the first page.</param>
+/// <param name="Even">For even pages.</param>
+public sealed record HeaderFooterLinks(bool Default, bool First, bool Even);
 
 /// <summary>A paper size.</summary>
 /// <param name="Width">The width.</param>
@@ -742,7 +987,8 @@ public sealed record PageMargins(Length Top, Length Bottom, Length Left, Length 
 /// <param name="Count">The number of columns.</param>
 /// <param name="Spacing">The space between them.</param>
 /// <param name="Separator">Whether a line separates them.</param>
-public sealed record PageColumns(int Count, Length Spacing, bool Separator);
+/// <param name="Widths">Each column's width and the space after it, when they differ.</param>
+public sealed record PageColumns(int Count, Length Spacing, bool Separator, IReadOnlyList<ColumnWidth>? Widths = null);
 
 /// <summary>Undo and redo availability.</summary>
 public sealed record HistoryState
@@ -882,6 +1128,9 @@ public sealed record ViewState
     /// <summary>When fields are shaded.</summary>
     public FieldShading FieldShading { get; init; } = FieldShading.WhenSelected;
 
+    /// <summary>Bookmarks are shown.</summary>
+    public bool Bookmarks { get; init; }
+
     /// <summary>The pointer shapes shown over elements instead of the editor's own; none when null.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<CursorOverride>? CursorOverrides { get; init; }
@@ -898,6 +1147,10 @@ public sealed record ReviewState
 
     /// <summary>Whether document protection keeps tracking on.</summary>
     public bool TrackingLocked { get; init; }
+
+    /// <summary>What the document's protection allows; null when it has none.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ProtectionState? Protection { get; init; }
 
     /// <summary>How markup shows.</summary>
     public MarkupView MarkupView { get; init; }
@@ -1012,3 +1265,18 @@ public sealed record VerticalRulerModel
     /// <summary>The row boundaries of the caret's table on this page.</summary>
     public IReadOnlyList<Length> TableRows { get; init; } = [];
 }
+
+/// <summary>A document's protection (Restrict Editing).</summary>
+/// <param name="Kind">What it allows.</param>
+/// <param name="Enforced">It is enforced.</param>
+/// <param name="Formatting">Formatting is limited to the styles that aren't locked.</param>
+/// <param name="Password">Stopping it needs a password.</param>
+/// <param name="InEditableRange">The selection is in a range the author may edit.</param>
+/// <param name="UnprotectedSections">Filling in forms: the sections (by index) anyone may edit.</param>
+public sealed record ProtectionState(
+    ProtectionKind Kind,
+    bool Enforced,
+    bool Formatting,
+    bool Password,
+    bool InEditableRange,
+    IReadOnlyList<uint> UnprotectedSections);

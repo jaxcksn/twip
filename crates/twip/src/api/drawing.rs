@@ -849,6 +849,18 @@ pub enum TextAutofit {
     None,
     /// The shape's height follows its text.
     Shape,
+    /// The text shrinks when it overflows the shape (`a:normAutofit`).
+    ShrinkText,
+}
+
+/// A text box's text columns.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TextColumns {
+    /// How many (1…16).
+    pub count: u32,
+    /// The space between them (0…1584 pt).
+    pub spacing: Points,
 }
 
 /// Which way a shape's text runs.
@@ -886,6 +898,8 @@ pub struct ShapeTextState {
     pub wrap_text: bool,
     /// Which way it runs.
     pub direction: TextDirection,
+    /// Its columns.
+    pub columns: TextColumns,
 }
 
 /// `setShapeText`'s change; what isn't given is kept.
@@ -907,6 +921,9 @@ pub struct ShapeTextChange {
     /// Which way it runs.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub direction: Option<TextDirection>,
+    /// Its columns.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub columns: Option<TextColumns>,
 }
 
 impl ShapeTextState {
@@ -919,7 +936,11 @@ impl ShapeTextState {
                 VAnchor::Bottom => TextAnchor::Bottom,
                 _ => TextAnchor::Top,
             },
-            autofit: if matches!(b.autofit, AutoFit::Shape) { TextAutofit::Shape } else { TextAutofit::None },
+            autofit: match b.autofit {
+                AutoFit::Shape => TextAutofit::Shape,
+                AutoFit::Normal { .. } => TextAutofit::ShrinkText,
+                AutoFit::None => TextAutofit::None,
+            },
             wrap_text: !b.no_wrap,
             direction: match b.direction {
                 t::TextDirection::Horizontal => TextDirection::Horizontal,
@@ -930,6 +951,7 @@ impl ShapeTextState {
                 t::TextDirection::WordArtVert => TextDirection::Stacked,
                 t::TextDirection::WordArtVertRtl => TextDirection::StackedRightToLeft,
             },
+            columns: TextColumns { count: u32::from(b.columns.0), spacing: points(b.columns.1) },
         }
     }
 }
@@ -953,7 +975,18 @@ impl ShapeTextChange {
             };
         }
         if let Some(a) = self.autofit {
-            b.autofit = if a == TextAutofit::Shape { AutoFit::Shape } else { AutoFit::None };
+            b.autofit = match a {
+                TextAutofit::Shape => AutoFit::Shape,
+                TextAutofit::ShrinkText if matches!(b.autofit, AutoFit::Normal { .. }) => b.autofit,
+                TextAutofit::ShrinkText => AutoFit::Normal { font_scale: Pct::ONE, line_reduction: Pct(0) },
+                TextAutofit::None => AutoFit::None,
+            };
+        }
+        if let Some(c) = self.columns {
+            if !(1..=16).contains(&c.count) || !(0.0..=1584.0).contains(&c.spacing.0) {
+                return Err("a text box has 1 to 16 columns, 0 to 1584 pt apart".into());
+            }
+            b.columns = (c.count as u16, emu(c.spacing));
         }
         if let Some(w) = self.wrap_text {
             b.no_wrap = !w;
@@ -989,6 +1022,9 @@ pub struct PictureAdjustChange {
     /// More (positive) or less contrast.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub contrast: Option<f64>,
+    /// Set Transparent Colour: the colour drawn see-through, or `none` (`a:clrChange`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transparent_color: Option<crate::api::value::NoneOr<crate::api::value::Color>>,
 }
 
 impl PictureAdjustChange {
@@ -1023,6 +1059,14 @@ impl PictureAdjustChange {
             let (b, c) = (self.brightness.map_or(b0, pct), self.contrast.map_or(c0, pct));
             if b.0 != 0 || c.0 != 0 {
                 out.push(A::Lum { bright: b, contrast: c });
+            }
+        }
+        if let Some(t) = self.transparent_color {
+            out.retain(|a| !matches!(a, A::ClrChange { .. }));
+            if let crate::api::value::NoneOr::Value(c) = t {
+                let mut to = crate::drawing::colour::Colour::srgb(c.0);
+                to.mods.push(crate::drawing::colour::ColourMod::Alpha(Pct(0)));
+                out.push(A::ClrChange { from: crate::drawing::colour::Colour::srgb(c.0), to });
             }
         }
         Ok(out)

@@ -97,9 +97,17 @@ pub enum BlipMode {
 pub enum BlipAdjust {
     AlphaModFix(Pct),
     Grayscale,
-    Lum { bright: Pct, contrast: Pct },
+    Lum {
+        bright: Pct,
+        contrast: Pct,
+    },
     BiLevel(Pct),
     Duotone([Colour; 2]),
+    /// Set Transparent Colour (`a:clrChange`): `from` is drawn as `to`.
+    ClrChange {
+        from: Colour,
+        to: Colour,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -136,6 +144,12 @@ impl BlipFill {
                     "duotone" => {
                         let mut cs = e.children().filter(Node::is_element).filter_map(Colour::parse);
                         BlipAdjust::Duotone([cs.next()?, cs.next()?])
+                    }
+                    "clrChange" => {
+                        let c = |name: &str| {
+                            e.children().find(|c| c.tag_name().name() == name)?.children().filter(Node::is_element).find_map(Colour::parse)
+                        };
+                        BlipAdjust::ClrChange { from: c("clrFrom")?, to: c("clrTo")? }
                     }
                     _ => return None,
                 })
@@ -580,12 +594,16 @@ pub fn paint(f: &Fill, p: Palette, ph: Option<Rgba>, group: &Paint) -> Paint {
             adjust: b
                 .adjust
                 .iter()
-                .map(|a| match a {
-                    BlipAdjust::AlphaModFix(v) => ResolvedBlipAdjust::Alpha(v.fraction().clamp(0.0, 1.0)),
-                    BlipAdjust::Grayscale => ResolvedBlipAdjust::Grayscale,
-                    BlipAdjust::Lum { bright, contrast } => ResolvedBlipAdjust::Lum { bright: bright.fraction(), contrast: contrast.fraction() },
-                    BlipAdjust::BiLevel(t) => ResolvedBlipAdjust::BiLevel(t.fraction()),
-                    BlipAdjust::Duotone([a, b]) => ResolvedBlipAdjust::Duotone([p.colour(a, ph), p.colour(b, ph)]),
+                .filter_map(|a| {
+                    Some(match a {
+                        BlipAdjust::AlphaModFix(v) => ResolvedBlipAdjust::Alpha(v.fraction().clamp(0.0, 1.0)),
+                        BlipAdjust::Grayscale => ResolvedBlipAdjust::Grayscale,
+                        BlipAdjust::Lum { bright, contrast } => ResolvedBlipAdjust::Lum { bright: bright.fraction(), contrast: contrast.fraction() },
+                        BlipAdjust::BiLevel(t) => ResolvedBlipAdjust::BiLevel(t.fraction()),
+                        BlipAdjust::Duotone([a, b]) => ResolvedBlipAdjust::Duotone([p.colour(a, ph), p.colour(b, ph)]),
+                        // Drawn in phase 3.
+                        BlipAdjust::ClrChange { .. } => return None,
+                    })
                 })
                 .collect(),
             rot_with_shape: b.rot_with_shape,

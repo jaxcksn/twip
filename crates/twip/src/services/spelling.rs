@@ -167,10 +167,21 @@ pub fn check_text(e: &Editor, para: ParaId) -> Vec<char> {
     let Some(p) = e.index().para(e.document(), para) else { return Vec::new() };
     let view = e.document().review.view;
     let t = UnitText::masked(p, |rev| rev.del.is_some() || view.hides(rev));
+    // Text marked Do not check spelling (`w:noProof`) isn't checked.
+    let mut skip = Vec::with_capacity(t.text.len());
+    for i in &p.inlines {
+        skip.extend(std::iter::repeat_n(i.run().is_some_and(|r| r.no_proof), i.units()));
+    }
     t.text
         .chars()
         .enumerate()
-        .map(|(u, c)| if t.is_hidden(Unit(u as u32)) || matches!(c, '\t' | '\u{2028}' | '\u{c}' | OBJECT) { ' ' } else { c })
+        .map(|(u, c)| {
+            if t.is_hidden(Unit(u as u32)) || skip.get(u).copied().unwrap_or(false) || matches!(c, '\t' | '\u{2028}' | '\u{c}' | OBJECT) {
+                ' '
+            } else {
+                c
+            }
+        })
         .collect()
 }
 

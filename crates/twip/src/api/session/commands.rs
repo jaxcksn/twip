@@ -78,6 +78,23 @@ impl Session {
                 _ => {}
             }
         }
+        // Restrict Editing: what the protection allows, and any change in a range the author may edit.
+        if let Some(p) = doc.settings.protection.as_ref()
+            && info(id).is_some_and(|i| i.mutates)
+            && !crate::editing::protection::allows(p, id)
+        {
+            use crate::docx::review::ProtectionKind as K;
+            use crate::editing::protection::edits_selection;
+            let ranges =
+                matches!(p.edit, K::ReadOnly | K::Comments) && edits_selection(id, false) && self.editor.in_editable_range(&self.author.name);
+            let in_form = p.edit == K::Forms
+                && matches!(command, Command::InsertText(_) | Command::Delete(_) | Command::PasteText(_))
+                && self.editor.in_form_field();
+            let open_section = p.edit == K::Forms && edits_selection(id, true) && self.editor.in_unprotected_section();
+            if !ranges && !in_form && !open_section {
+                return Err(Error::new(ErrorCode::NotAllowed, "the document is protected"));
+            }
+        }
         if self.state.commands.get(&id).is_some_and(|s| !s.enabled) {
             return Err(Error::unavailable(format!("{} isn't available here", id_name(id))));
         }
@@ -95,6 +112,22 @@ impl Session {
                 within("the page", f64::from(*p), 1.0, last)
             }
             C::SetFont(f) => text("the font", f),
+            C::SetTypography(t) => {
+                if let Some(s) = t.scale {
+                    within("the scale", s, 1.0, 600.0)?;
+                }
+                length("the kerning size", t.kerning, 0.0, 1638.0)?;
+                match t.stylistic_set {
+                    Some(n) if n > 20 => Err(Error::invalid("the stylistic set is 0…20")),
+                    _ => Ok(()),
+                }
+            }
+            C::SetLanguage(l) => match &l.language {
+                Some(tag) if tag.is_empty() || tag.len() > 35 || !tag.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') => {
+                    Err(Error::invalid("the language is a BCP 47 tag"))
+                }
+                _ => Ok(()),
+            },
             C::SetFontSize(s) => {
                 within("the size", s.0, 1.0, 1638.0)?;
                 if (s.0 * 2.0).fract() != 0.0 { Err(Error::invalid("the size goes in 0.5 pt steps")) } else { Ok(()) }
@@ -127,6 +160,10 @@ impl Session {
                     Err(Error::invalid(format!("no style {}", m.id.0)))
                 }
             }
+            C::SetDefaultTableStyle(Some(s)) => match self.editor.document().resolver.as_ref().and_then(|r| r.styles.by_id.get(&s.0)) {
+                Some(st) if st.kind == crate::docx::styles::StyleKind::Table => Ok(()),
+                _ => Err(Error::invalid(format!("no table style {}", s.0))),
+            },
             C::SetParagraphStyle(s) | C::SetTableStyle(s) | C::UpdateStyleToSelection(s) | C::DeleteStyle(s) => {
                 if self.editor.document().resolver.as_ref().is_some_and(|r| r.styles.by_id.contains_key(&s.0)) {
                     Ok(())
@@ -146,6 +183,41 @@ impl Session {
             C::InsertTable(t) => count("the rows", Some(t.rows), 32767).and(count("the columns", Some(t.columns), 63)),
             C::InsertPicture(p) => picture(&p.data.0),
             C::InsertHyperlink(h) => text("the address", &h.address),
+            C::SetDocumentVariable(d) => text("the variable's name", &d.name),
+            C::SetFormField(f) => {
+                if let Some(n) = &f.name
+                    && !crate::editing::bookmarks::valid_name(n)
+                {
+                    return Err(Error::invalid("a form field's name is a bookmark name"));
+                }
+                if let Some(entries) = f.drop_down.as_ref().and_then(|d| d.entries.as_ref())
+                    && (entries.len() > 25 || entries.iter().any(|e| e.is_empty() || e.chars().count() > 50))
+                {
+                    return Err(Error::invalid("a drop-down has at most 25 entries of 1 to 50 characters"));
+                }
+                if let Some(crate::api::value::AutoOr::Value(p)) = f.check_box.and_then(|c| c.size) {
+                    within("the size", p.0, 1.0, MAX)?;
+                }
+                Ok(())
+            }
+            C::SetDocumentProperties(p) => {
+                let custom = p.custom.as_deref().unwrap_or_default();
+                for (k, c) in custom.iter().enumerate() {
+                    text("a custom property's name", &c.name)?;
+                    if custom[..k].iter().any(|d| d.name.eq_ignore_ascii_case(&c.name)) {
+                        return Err(Error::invalid(format!("two custom properties are named {}", c.name)));
+                    }
+                    if c.kind == crate::api::command::CustomPropertyKind::Number && c.value.trim().parse::<f64>().is_err() {
+                        return Err(Error::invalid(format!("{} isn't a number", c.value)));
+                    }
+                }
+                Ok(())
+            }
+            C::InsertBookmark(n) if !crate::editing::bookmarks::valid_name(n) => {
+                Err(Error::invalid("a bookmark name starts with a letter and holds letters, digits and underscores, 40 at most"))
+            }
+            C::GoToBookmark(n) if !n.eq_ignore_ascii_case("_top") && self.editor.bookmark(n).is_none() => Err(Error::invalid("no such bookmark")),
+            C::DeleteBookmark(n) if self.editor.bookmark(n).is_none() => Err(Error::invalid("no such bookmark")),
             C::EditHyperlink(h) => h.address.as_deref().map_or(Ok(()), |a| text("the address", a)),
             C::InsertRows(r) => count("the rows", r.count, 32767),
             C::InsertColumns(c) => count("the columns", c.count, 63),
@@ -161,6 +233,16 @@ impl Session {
             C::SetColumnWidth(w) => within("the width", w.0, 1.0, MAX),
             C::SetTableWidth(TableWidth::Points { value }) => within("the width", value.0, 0.0, MAX),
             C::SetTableWidth(TableWidth::Percent { value }) => within("the width", *value, 1.0, 600.0),
+            C::SetCellProperties(p) => {
+                match p.width {
+                    Some(TableWidth::Points { value }) => within("the width", value.0, 0.0, MAX)?,
+                    Some(TableWidth::Percent { value }) => within("the width", value, 0.0, 100.0)?,
+                    _ => {}
+                }
+                Ok(())
+            }
+            C::SetTableCellSpacing(s) => length("the spacing", *s, 0.0, MAX),
+            C::SetRowProperties(p) => length("the spacing", p.exceptions.as_ref().and_then(|x| x.cell_spacing), 0.0, MAX),
             C::SetObjectSize(s) => length("the width", s.width, 1.0, MAX).and(length("the height", s.height, 1.0, MAX)),
             C::InsertShape(i) => length("the width", i.width, 0.0, MAX).and(length("the height", i.height, 0.0, MAX)),
             C::SetShapeFill(f) => f.to_model(&mut |data| crate::docx::image::image_info(data).map(|_| 0)).map(|_| ()).map_err(Error::invalid),
@@ -169,6 +251,13 @@ impl Session {
             C::SetShapeText(t) => t.apply(&crate::drawing::text::BodyProps::default()).map(|_| ()).map_err(Error::invalid),
             C::SetPictureAdjust(a) => a.apply(&[]).map(|_| ()).map_err(Error::invalid),
             C::SetObjectRotation(d) => within("the rotation", *d, 0.0, 360.0),
+            C::SetPictureCrop(c) => {
+                for v in [c.left, c.top, c.right, c.bottom].into_iter().flatten() {
+                    within("the crop", v, -1.0, 1.0)?;
+                }
+                Ok(())
+            }
+            C::ChangePicture(data) => picture(&data.0),
             C::SetShapeAdjust(a) => {
                 let count = self.editor.shape_info().and_then(|s| s.state).map_or(0, |s| s.adjust.len());
                 if usize::from(a.index) < count { Ok(()) } else { Err(Error::invalid(format!("the shape has {count} adjust values"))) }
@@ -316,6 +405,9 @@ impl Session {
                 }
                 if let Some(f) = v.field_shading {
                     self.field_shading = f;
+                }
+                if let Some(b) = v.bookmarks {
+                    self.show_bookmarks = b;
                 }
                 if let Some(o) = &v.cursor_overrides {
                     self.cursor_overrides.clone_from(o);

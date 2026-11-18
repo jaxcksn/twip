@@ -80,6 +80,8 @@ export interface ViewOptions {
   controlLabels?: boolean;
   /** When fields are shaded. Default `'whenSelected'`. */
   fieldShading?: FieldShading;
+  /** Shows bookmarks as brackets around their text (an I-beam where they hold none); hidden ones never show. */
+  bookmarks?: boolean;
   /** Pointer shapes over elements instead of the editor's own, replacing those set before; the first match wins. */
   cursorOverrides?: CursorOverride[];
 }

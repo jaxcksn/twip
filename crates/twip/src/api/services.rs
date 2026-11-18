@@ -265,6 +265,8 @@ pub enum DialogKind {
     BordersShading,
     /// Frame.
     Frame,
+    /// Drop Cap.
+    DropCap,
     /// Banding (a table style's band sizes, from the style dialog's Format menu).
     Banding,
     /// Define New Bullet.
@@ -343,6 +345,8 @@ pub enum DialogValues {
     BordersShading(BordersShadingDialog),
     /// The Frame dialog's.
     Frame(FrameDialog),
+    /// The Drop Cap dialog's.
+    DropCap(DropCapDialog),
     /// Banding's.
     Banding(BandingDialog),
     /// Define New Bullet's.
@@ -391,6 +395,8 @@ pub enum DialogPatch {
     BordersShading(BordersShadingPatch),
     /// The Frame dialog's.
     Frame(FramePatch),
+    /// The Drop Cap dialog's.
+    DropCap(DropCapPatch),
     /// Banding's.
     Banding(BandingPatch),
     /// Define New Bullet's.
@@ -425,6 +431,7 @@ impl DialogPatch {
             (DialogPatch::ManageStyles(p), DialogValues::ManageStyles(v)) => p.apply(v),
             (DialogPatch::BordersShading(p), DialogValues::BordersShading(v)) => p.apply(v),
             (DialogPatch::Frame(p), DialogValues::Frame(v)) => p.apply(v),
+            (DialogPatch::DropCap(p), DialogValues::DropCap(v)) => p.apply(v),
             (DialogPatch::Banding(p), DialogValues::Banding(v)) => p.apply(v),
             (DialogPatch::DefineBullet(p), DialogValues::DefineBullet(v)) => p.apply(v),
             (DialogPatch::DefineNumberFormat(p), DialogValues::DefineNumberFormat(v)) => p.apply(v),
@@ -1137,6 +1144,28 @@ dialog! {
         pub character_spacing: Tri<Points>,
         /// The baseline offset; positive raises.
         pub position: Tri<Points>,
+        /// Emboss.
+        pub emboss: Tri<bool>,
+        /// Engrave.
+        pub engrave: Tri<bool>,
+        /// Outline.
+        pub outline: Tri<bool>,
+        /// Shadow.
+        pub shadow: Tri<bool>,
+        /// The character width scale, percent.
+        pub scale: Tri<f64>,
+        /// Kerning from this size up; 0 for none.
+        pub kerning: Tri<Points>,
+        /// The OpenType ligatures.
+        pub ligatures: Tri<crate::api::command::Ligatures>,
+        /// The number spacing.
+        pub number_spacing: Tri<crate::api::command::NumberSpacing>,
+        /// The number forms.
+        pub number_form: Tri<crate::api::command::NumberForm>,
+        /// The stylistic set, 1 to 20; 0 for the default.
+        pub stylistic_set: Tri<u8>,
+        /// Contextual alternates.
+        pub contextual_alternates: Tri<bool>,
     }
 }
 
@@ -1184,6 +1213,32 @@ dialog! {
         pub page_break_before: Tri<bool>,
         /// Widow and orphan control.
         pub widow_control: Tri<bool>,
+        /// Collapsed by default (with an outline level).
+        pub collapsed: Tri<bool>,
+        /// Mirror indents: inside and outside instead of left and right.
+        pub mirror_indents: Tri<bool>,
+        /// Don't add space between paragraphs of the same style.
+        pub contextual_spacing: Tri<bool>,
+        /// Suppress line numbers.
+        pub suppress_line_numbers: Tri<bool>,
+        /// Don't hyphenate.
+        pub dont_hyphenate: Tri<bool>,
+    }
+}
+
+dialog! {
+    /// The Drop Cap dialog, on the selection's paragraph (`setDropCap`).
+    #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase", default, deny_unknown_fields)]
+    pub struct DropCapDialog / DropCapPatch {
+        /// Where the letter goes.
+        pub position: super::command::DropCapPosition,
+        /// The letter's font; empty for the text's.
+        pub font: String,
+        /// How many lines it drops, 1 to 10.
+        pub lines: u32,
+        /// How far the text keeps from it.
+        pub distance: Points,
     }
 }
 
@@ -1196,6 +1251,8 @@ pub enum ApplyTo {
     Section,
     /// Every section.
     WholeDocument,
+    /// From the selection on: a new-page section break goes there, and the section after it takes the setup.
+    ThisPointForward,
 }
 
 dialog! {
@@ -1229,6 +1286,16 @@ dialog! {
         pub different_odd_even: bool,
         /// Where it applies.
         pub apply_to: ApplyTo,
+        /// Multiple pages: normal, mirror margins or book fold.
+        pub multiple_pages: crate::api::command::MultiplePagesMode,
+        /// The gutter is at the top.
+        pub gutter_at_top: bool,
+        /// Where the section starts.
+        pub section_start: crate::api::command::SectionBreakKind,
+        /// The text's vertical alignment on the page.
+        pub vertical_alignment: crate::api::command::PageVerticalAlignment,
+        /// Line numbers, or none.
+        pub line_numbers: Option<crate::api::command::LineNumbers>,
     }
 }
 
@@ -1277,10 +1344,24 @@ dialog! {
         pub header_row: Tri<bool>,
         /// The selected columns' width.
         pub column_width: Tri<Points>,
+        /// The selected cells' preferred width.
+        pub cell_width: Tri<TableWidth>,
         /// The selected cells' vertical alignment.
         pub cell_alignment: Tri<CellAlignment>,
         /// The table's default cell margins.
         pub cell_margins: CellMarginValues,
+        /// Allow spacing between cells.
+        pub allow_spacing: bool,
+        /// The space between cells, when allowed.
+        pub cell_spacing: Points,
+        /// The selected cells' text wraps.
+        pub wrap_text: Tri<bool>,
+        /// The selected cells' text is squeezed to fit.
+        pub fit_text: Tri<bool>,
+        /// The alternative text's title.
+        pub title: String,
+        /// The alternative text's description.
+        pub description: String,
     }
 }
 
@@ -1301,6 +1382,12 @@ dialog! {
         pub lock_aspect: bool,
         /// Back to the original size on apply.
         pub reset: bool,
+        /// A floating object's width as a share of a box on the page; none for an absolute width.
+        pub relative_width: Option<crate::api::command::RelativeSize>,
+        /// Its height as a share of a box on the page; none for an absolute height.
+        pub relative_height: Option<crate::api::command::RelativeSize>,
+        /// A picture's crop (Crop from), by fractions of its image from each edge; none for an object that isn't one.
+        pub crop: Option<crate::api::command::PictureCrop>,
     }
 }
 
@@ -1323,8 +1410,11 @@ dialog! {
     pub struct HyperlinkDialog / HyperlinkPatch {
         /// The text to display.
         pub text: String,
-        /// The address.
+        /// The address: a URL or a file, empty for a place in this document.
         pub address: String,
+        /// The bookmark the link goes to (`_top`: the document's start), in this document or, with an address, in
+        /// that one. Empty for none.
+        pub bookmark: String,
     }
 }
 
@@ -1454,6 +1544,73 @@ pub struct Heading {
     pub text: String,
     /// Its page.
     pub page: u32,
+}
+
+/// The document's properties and variables, for File > Info and Advanced Properties.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DocumentProperties {
+    /// The title.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// The subject.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subject: Option<String>,
+    /// The author.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub author: Option<String>,
+    /// The keywords.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keywords: Option<String>,
+    /// The comments.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub comments: Option<String>,
+    /// The category.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
+    /// The status.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    /// Who saved it last.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_modified_by: Option<String>,
+    /// How many times it was saved.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revision: Option<String>,
+    /// When it was made (ISO 8601).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created: Option<String>,
+    /// When it was last saved (ISO 8601).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub modified: Option<String>,
+    /// When it was last printed (ISO 8601).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_printed: Option<String>,
+    /// The company.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub company: Option<String>,
+    /// The manager.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub manager: Option<String>,
+    /// The base relative hyperlinks resolve against.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hyperlink_base: Option<String>,
+    /// The custom properties.
+    pub custom: Vec<super::command::CustomProperty>,
+    /// The document variables (`w:docVars`).
+    pub variables: Vec<super::command::DocumentVariable>,
+}
+
+/// A bookmark, for the Bookmark dialog.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct BookmarkInfo {
+    /// Its name.
+    pub name: String,
+    /// Hidden: Word's own (`_Toc`, `_Ref`), named with a leading `_`.
+    pub hidden: bool,
+    /// Its text holds nothing: it marks a place.
+    pub empty: bool,
 }
 
 /// The kinds of style.

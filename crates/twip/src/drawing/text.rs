@@ -73,6 +73,8 @@ pub struct BodyProps {
     pub rot: Angle,
     pub upright: bool,
     pub kept: bool,
+    /// Text columns (`numCol`, `spcCol`): how many, and the space between them.
+    pub columns: (u16, Emu),
 }
 
 impl Default for BodyProps {
@@ -86,6 +88,7 @@ impl Default for BodyProps {
             rot: Angle(0),
             upright: false,
             kept: false,
+            columns: (1, Emu(0)),
         }
     }
 }
@@ -116,7 +119,11 @@ impl BodyProps {
             direction: TextDirection::parse(n.attribute("vert")),
             rot: n.attribute("rot").and_then(Angle::parse).unwrap_or_default(),
             upright: matches!(n.attribute("upright"), Some("1" | "true")),
-            kept: el("prstTxWarp").is_some() || el("scene3d").is_some() || el("flatTx").is_some() || n.attribute("numCol").is_some_and(|v| v != "1"),
+            kept: el("prstTxWarp").is_some() || el("scene3d").is_some() || el("flatTx").is_some(),
+            columns: (
+                n.attribute("numCol").and_then(|v| v.parse::<u16>().ok()).unwrap_or(1).clamp(1, 16),
+                n.attribute("spcCol").and_then(Emu::parse).unwrap_or_default(),
+            ),
         }
     }
 }

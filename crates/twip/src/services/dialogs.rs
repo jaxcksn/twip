@@ -15,7 +15,7 @@ use crate::api::services::{
     PictureSizeDialog, SpecialIndent, StyleDialog, StyleDialogType, TablePropertiesDialog, TabsAction, TabsDialog,
 };
 use crate::api::state::{State, Tri};
-use crate::api::value::{AutoOr, Orientation, Points};
+use crate::api::value::{Orientation, Points};
 
 /// What a dialog shows besides the state: the selected text, the document's accessibility issues and the font
 /// families.
@@ -24,6 +24,8 @@ pub struct Context {
     pub selected_text: String,
     pub issues: Vec<AccessibilityIssue>,
     pub fonts: Vec<String>,
+    /// The document's shown bookmarks, in document order.
+    pub bookmarks: Vec<String>,
 }
 
 /// The error for a dialog whose object the selection doesn't have.
@@ -32,7 +34,7 @@ fn unavailable(what: &str) -> Error {
 }
 
 /// Every dialog, in the state's order.
-const KINDS: [DialogKind; 21] = [
+const KINDS: [DialogKind; 22] = [
     DialogKind::Font,
     DialogKind::Paragraph,
     DialogKind::PageSetup,
@@ -47,6 +49,7 @@ const KINDS: [DialogKind; 21] = [
     DialogKind::ManageStyles,
     DialogKind::BordersShading,
     DialogKind::Frame,
+    DialogKind::DropCap,
     DialogKind::Banding,
     DialogKind::DefineBullet,
     DialogKind::DefineNumberFormat,
@@ -90,8 +93,7 @@ pub fn values(kind: DialogKind, state: &State, cx: &Context) -> Result<DialogVal
             size: f.size,
             color: f.color,
             underline: f.underline,
-            // shortcut: the state has no underline colour; it shows automatic and no command sets it.
-            underline_color: Tri::Uniform(AutoOr::Auto),
+            underline_color: f.underline_color,
             strikethrough: f.strikethrough,
             double_strikethrough: f.double_strikethrough,
             superscript: f.superscript,
@@ -101,6 +103,17 @@ pub fn values(kind: DialogKind, state: &State, cx: &Context) -> Result<DialogVal
             hidden: f.hidden,
             character_spacing: f.character_spacing,
             position: f.position,
+            emboss: f.emboss,
+            engrave: f.engrave,
+            outline: f.outline,
+            shadow: f.shadow,
+            scale: f.scale,
+            kerning: f.kerning,
+            ligatures: f.ligatures,
+            number_spacing: f.number_spacing,
+            number_form: f.number_form,
+            stylistic_set: f.stylistic_set,
+            contextual_alternates: f.contextual_alternates,
         }),
         DialogKind::Paragraph => {
             let i = &p.indents;
@@ -113,8 +126,12 @@ pub fn values(kind: DialogKind, state: &State, cx: &Context) -> Result<DialogVal
             };
             DialogValues::Paragraph(ParagraphDialog {
                 alignment: p.alignment,
-                // shortcut: no command sets a paragraph's own outline level; the field shows body text, disabled.
-                outline_level: Tri::Unavailable,
+                outline_level: match p.outline_level {
+                    Tri::Uniform(0) => Tri::Uniform(crate::api::value::OutlineLevel::Body),
+                    Tri::Uniform(n) => Tri::Uniform(crate::api::value::OutlineLevel::Level(n)),
+                    Tri::Mixed => Tri::Mixed,
+                    Tri::Unavailable => Tri::Unavailable,
+                },
                 left: i.left,
                 right: i.right,
                 special,
@@ -126,6 +143,11 @@ pub fn values(kind: DialogKind, state: &State, cx: &Context) -> Result<DialogVal
                 keep_lines_together: p.flow.keep_lines_together,
                 page_break_before: p.flow.page_break_before,
                 widow_control: p.flow.widow_control,
+                collapsed: p.collapsed,
+                mirror_indents: i.mirror,
+                contextual_spacing: p.contextual_spacing,
+                suppress_line_numbers: p.flow.suppress_line_numbers,
+                dont_hyphenate: p.flow.dont_hyphenate,
             })
         }
         DialogKind::PageSetup => {
@@ -144,6 +166,11 @@ pub fn values(kind: DialogKind, state: &State, cx: &Context) -> Result<DialogVal
                 different_first_page: g.different_first_page,
                 different_odd_even: g.different_odd_even,
                 apply_to: ApplyTo::Section,
+                multiple_pages: g.multiple_pages,
+                gutter_at_top: g.gutter_at_top,
+                section_start: g.break_type,
+                vertical_alignment: g.vertical_alignment,
+                line_numbers: g.line_numbers.clone(),
             })
         }
         DialogKind::InsertTable => DialogValues::InsertTable(InsertTableDialog { rows: 2, columns: 5 }),
@@ -157,10 +184,17 @@ pub fn values(kind: DialogKind, state: &State, cx: &Context) -> Result<DialogVal
                 row_can_break: t.row_can_break,
                 header_row: t.header_row,
                 column_width: t.column_width,
+                cell_width: t.cell_width,
                 cell_alignment: t.cell_alignment,
                 // shortcut: the state has no cell margins; the dialog starts from the default (5.4 pt left and right),
                 // and sets them only when changed.
                 cell_margins: CellMarginValues { left: Points(5.4), right: Points(5.4), ..CellMarginValues::default() },
+                allow_spacing: t.cell_spacing.is_some(),
+                cell_spacing: t.cell_spacing.unwrap_or_default(),
+                wrap_text: t.wrap_text,
+                fit_text: t.fit_text,
+                title: t.title.clone(),
+                description: t.description.clone(),
             })
         }
         DialogKind::PictureSize => {
@@ -173,6 +207,18 @@ pub fn values(kind: DialogKind, state: &State, cx: &Context) -> Result<DialogVal
                 scale_height: 100.0,
                 lock_aspect: true,
                 reset: false,
+                relative_width: o.relative_width,
+                relative_height: o.relative_height,
+                crop: o.kind.eq(&crate::api::state::ObjectKind::Picture).then(|| o.crop.unwrap_or_default()),
+            })
+        }
+        DialogKind::DropCap => {
+            let d = state.paragraph.drop_cap.clone().unwrap_or_default();
+            DialogValues::DropCap(crate::api::services::DropCapDialog {
+                position: d.position,
+                font: d.font.unwrap_or_default(),
+                lines: d.lines.unwrap_or(3),
+                distance: d.distance.unwrap_or_default(),
             })
         }
         DialogKind::AltText => {
@@ -180,11 +226,15 @@ pub fn values(kind: DialogKind, state: &State, cx: &Context) -> Result<DialogVal
             DialogValues::AltText(AltTextDialog { text: o.alt_text.clone(), decorative: o.decorative })
         }
         DialogKind::Hyperlink => DialogValues::Hyperlink(match &state.selection.link {
-            Some(l) => HyperlinkDialog { text: l.text.clone(), address: l.address.clone() },
+            // A link to a place in this document shows its bookmark, not its address.
+            Some(l) => match l.address.strip_prefix('#') {
+                Some(b) => HyperlinkDialog { text: l.text.clone(), address: String::new(), bookmark: b.to_string() },
+                None => HyperlinkDialog { text: l.text.clone(), address: l.address.clone(), bookmark: String::new() },
+            },
             // The selected text (in one paragraph) is the link's text.
             None => HyperlinkDialog {
                 text: if cx.selected_text.contains('\n') { String::new() } else { cx.selected_text.clone() },
-                address: String::new(),
+                ..HyperlinkDialog::default()
             },
         }),
         DialogKind::Tabs => {
@@ -229,6 +279,7 @@ fn kind_of(v: &DialogValues) -> DialogKind {
         DialogValues::TableProperties(_) => DialogKind::TableProperties,
         DialogValues::PictureSize(_) => DialogKind::PictureSize,
         DialogValues::AltText(_) => DialogKind::AltText,
+        DialogValues::DropCap(_) => DialogKind::DropCap,
         DialogValues::Hyperlink(_) => DialogKind::Hyperlink,
         DialogValues::Tabs(_) => DialogKind::Tabs,
         DialogValues::Accessibility(_) => DialogKind::Accessibility,
@@ -293,7 +344,7 @@ fn fields(values: &DialogValues, cx: &Context) -> BTreeMap<String, FieldInfo> {
             ("size", number("Size", FieldKind::Number, 1.0, 1638.0, 0.5)),
             ("color", field("Font color", FieldKind::Color)),
             ("underline", choice("Underline style", &UNDERLINES)),
-            ("underlineColor", off(field("Underline color", FieldKind::Color))),
+            ("underlineColor", field("Underline color", FieldKind::Color)),
             ("strikethrough", field("Strikethrough", FieldKind::Toggle)),
             ("doubleStrikethrough", field("Double strikethrough", FieldKind::Toggle)),
             ("superscript", field("Superscript", FieldKind::Toggle)),
@@ -303,6 +354,29 @@ fn fields(values: &DialogValues, cx: &Context) -> BTreeMap<String, FieldInfo> {
             ("hidden", field("Hidden", FieldKind::Toggle)),
             ("characterSpacing", number("Spacing", FieldKind::Length, -1584.0, 1584.0, 0.1)),
             ("position", number("Position", FieldKind::Length, -1584.0, 1584.0, 0.5)),
+            ("emboss", field("Emboss", FieldKind::Toggle)),
+            ("engrave", field("Engrave", FieldKind::Toggle)),
+            ("outline", field("Outline", FieldKind::Toggle)),
+            ("shadow", field("Shadow", FieldKind::Toggle)),
+            ("scale", number("Scale", FieldKind::Number, 1.0, 600.0, 1.0)),
+            ("kerning", number("Kerning for fonts", FieldKind::Length, 0.0, 1638.0, 0.5)),
+            (
+                "ligatures",
+                choice(
+                    "Ligatures",
+                    &[
+                        ("none", "None"),
+                        ("standard", "Standard Only"),
+                        ("standardContextual", "Standard and Contextual"),
+                        ("historicalDiscretional", "Historical and Discretionary"),
+                        ("all", "All"),
+                    ],
+                ),
+            ),
+            ("numberSpacing", choice("Number spacing", &[("default", "Default"), ("proportional", "Proportional"), ("tabular", "Tabular")])),
+            ("numberForm", choice("Number forms", &[("default", "Default"), ("lining", "Lining"), ("oldStyle", "Old-style")])),
+            ("stylisticSet", number("Stylistic sets", FieldKind::Number, 0.0, 20.0, 1.0)),
+            ("contextualAlternates", field("Use Contextual Alternates", FieldKind::Toggle)),
         ],
         DialogValues::Paragraph(v) => {
             let special = !matches!(v.special, Tri::Uniform(SpecialIndent::None));
@@ -311,7 +385,33 @@ fn fields(values: &DialogValues, cx: &Context) -> BTreeMap<String, FieldInfo> {
             by.enabled = special;
             vec![
                 ("alignment", choice("Alignment", &[("left", "Left"), ("center", "Centered"), ("right", "Right"), ("justify", "Justified")])),
-                ("outlineLevel", off(choice("Outline level", &[("body", "Body Text")]))),
+                (
+                    "outlineLevel",
+                    choice(
+                        "Outline level",
+                        &[
+                            ("body", "Body Text"),
+                            ("1", "Level 1"),
+                            ("2", "Level 2"),
+                            ("3", "Level 3"),
+                            ("4", "Level 4"),
+                            ("5", "Level 5"),
+                            ("6", "Level 6"),
+                            ("7", "Level 7"),
+                            ("8", "Level 8"),
+                            ("9", "Level 9"),
+                        ],
+                    ),
+                ),
+                (
+                    "collapsed",
+                    FieldInfo {
+                        enabled: !matches!(v.outline_level, Tri::Uniform(crate::api::value::OutlineLevel::Body)),
+                        ..field("Collapsed by default", FieldKind::Toggle)
+                    },
+                ),
+                ("mirrorIndents", field("Mirror indents", FieldKind::Toggle)),
+                ("contextualSpacing", field("Don't add space between paragraphs of the same style", FieldKind::Toggle)),
                 ("left", number("Left", FieldKind::Length, -1584.0, 1584.0, 1.0)),
                 ("right", number("Right", FieldKind::Length, -1584.0, 1584.0, 1.0)),
                 ("special", choice("Special", &[("none", "(none)"), ("firstLine", "First line"), ("hanging", "Hanging")])),
@@ -323,6 +423,8 @@ fn fields(values: &DialogValues, cx: &Context) -> BTreeMap<String, FieldInfo> {
                 ("keepLinesTogether", field("Keep lines together", FieldKind::Toggle)),
                 ("pageBreakBefore", field("Page break before", FieldKind::Toggle)),
                 ("widowControl", field("Widow/Orphan control", FieldKind::Toggle)),
+                ("suppressLineNumbers", field("Suppress line numbers", FieldKind::Toggle)),
+                ("dontHyphenate", field("Don't hyphenate", FieldKind::Toggle)),
             ]
         }
         DialogValues::PageSetup(_) => vec![
@@ -338,9 +440,33 @@ fn fields(values: &DialogValues, cx: &Context) -> BTreeMap<String, FieldInfo> {
             ("footerDistance", number("Footer", FieldKind::Length, 0.0, 1584.0, 1.0)),
             ("differentFirstPage", field("Different first page", FieldKind::Toggle)),
             ("differentOddEven", field("Different odd and even", FieldKind::Toggle)),
-            // shortcut: page setup applies to the selection's sections; the whole document needs a command for every
-            // section.
-            ("applyTo", off(choice("Apply to", &[("section", "This section"), ("wholeDocument", "Whole document")]))),
+            ("applyTo", choice("Apply to", &[("section", "This section"), ("thisPointForward", "This point forward")])),
+            (
+                "multiplePages",
+                choice(
+                    "Multiple pages",
+                    &[("normal", "Normal"), ("mirrorMargins", "Mirror margins"), ("bookFold", "Book fold"), ("reverseBookFold", "Reverse book fold")],
+                ),
+            ),
+            ("gutterAtTop", choice("Gutter position", &[("false", "Left"), ("true", "Top")])),
+            (
+                "sectionStart",
+                choice(
+                    "Section start",
+                    &[
+                        ("continuous", "Continuous"),
+                        ("nextColumn", "New column"),
+                        ("nextPage", "New page"),
+                        ("evenPage", "Even page"),
+                        ("oddPage", "Odd page"),
+                    ],
+                ),
+            ),
+            (
+                "verticalAlignment",
+                choice("Vertical alignment", &[("top", "Top"), ("center", "Center"), ("justified", "Justified"), ("bottom", "Bottom")]),
+            ),
+            ("lineNumbers", field("Line Numbers", FieldKind::Number)),
         ],
         DialogValues::InsertTable(_) => vec![
             ("rows", number("Number of rows", FieldKind::Number, 1.0, 32767.0, 1.0)),
@@ -357,24 +483,53 @@ fn fields(values: &DialogValues, cx: &Context) -> BTreeMap<String, FieldInfo> {
                 ("rowCanBreak", field("Allow row to break across pages", FieldKind::Toggle)),
                 ("headerRow", field("Repeat as header row at the top of each page", FieldKind::Toggle)),
                 ("columnWidth", number("Column width", FieldKind::Length, 0.0, 1584.0, 1.0)),
+                ("cellWidth", field("Cell preferred width", FieldKind::Length)),
                 ("cellAlignment", choice("Vertical alignment", &[("top", "Top"), ("center", "Center"), ("bottom", "Bottom")])),
                 ("cellMargins", field("Cell margins", FieldKind::Length)),
+                ("allowSpacing", field("Allow spacing between cells", FieldKind::Toggle)),
+                ("cellSpacing", FieldInfo { enabled: v.allow_spacing, ..number("Spacing between cells", FieldKind::Length, 0.0, 1584.0, 0.05) }),
+                ("wrapText", field("Wrap text", FieldKind::Toggle)),
+                ("fitText", field("Fit text", FieldKind::Toggle)),
+                ("title", field("Title", FieldKind::Text)),
+                ("description", field("Description", FieldKind::Text)),
             ]
         }
-        DialogValues::PictureSize(_) => vec![
+        DialogValues::PictureSize(v) => vec![
             ("width", number("Width", FieldKind::Length, 1.0, 1584.0, 1.0)),
             ("height", number("Height", FieldKind::Length, 1.0, 1584.0, 1.0)),
             ("scaleWidth", number("Scale width (%)", FieldKind::Number, 1.0, 1000.0, 1.0)),
             ("scaleHeight", number("Scale height (%)", FieldKind::Number, 1.0, 1000.0, 1.0)),
             ("lockAspect", field("Lock aspect ratio", FieldKind::Toggle)),
             ("reset", field("Reset", FieldKind::Toggle)),
+            ("relativeWidth", field("Relative width", FieldKind::Number)),
+            ("relativeHeight", field("Relative height", FieldKind::Number)),
+            ("crop", if v.crop.is_some() { field("Crop from", FieldKind::Number) } else { off(field("Crop from", FieldKind::Number)) }),
         ],
+        DialogValues::DropCap(v) => {
+            let dropped = v.position != crate::api::command::DropCapPosition::None;
+            let with = |f: FieldInfo| if dropped { f } else { off(f) };
+            vec![
+                ("position", choice("Position", &[("none", "None"), ("dropped", "Dropped"), ("inMargin", "In margin")])),
+                ("font", with(field("Font", FieldKind::Text))),
+                ("lines", with(number("Lines to drop", FieldKind::Number, 1.0, 10.0, 1.0))),
+                ("distance", with(number("Distance from text", FieldKind::Length, 0.0, 1584.0, 1.0))),
+            ]
+        }
         DialogValues::AltText(v) => {
             let mut text = field("Description", FieldKind::Text);
             text.enabled = !v.decorative;
             vec![("text", text), ("decorative", field("Mark as decorative", FieldKind::Toggle))]
         }
-        DialogValues::Hyperlink(_) => vec![("text", field("Text to display", FieldKind::Text)), ("address", field("Address", FieldKind::Text))],
+        DialogValues::Hyperlink(_) => {
+            // Word's Place in This Document: the top, then the bookmarks.
+            let top = std::iter::once(ChoiceOption { value: "_top".into(), label: "Top of the Document".into() });
+            let marks = cx.bookmarks.iter().map(|b| ChoiceOption { value: b.clone(), label: b.clone() });
+            vec![
+                ("text", field("Text to display", FieldKind::Text)),
+                ("address", field("Address", FieldKind::Text)),
+                ("bookmark", FieldInfo { options: Some(top.chain(marks).collect()), ..field("Place in this document", FieldKind::Text) }),
+            ]
+        }
         DialogValues::Tabs(_) => vec![
             ("stops", field("Tab stop position", FieldKind::List)),
             ("defaultStop", number("Default tab stops", FieldKind::Length, 0.0, 1584.0, 1.0)),
@@ -759,6 +914,8 @@ pub fn borders_shading_commands(start: &BordersShadingDialog, now: &BordersShadi
             offset_from: Some(now.page_offset_from),
             display: Some(now.page_display),
             apply_to: now.page_apply_to,
+            surround_header: None,
+            surround_footer: None,
         }));
     }
     let shading = |v: &BordersShadingDialog| (v.apply_to, v.fill, v.pattern, v.pattern_color);
@@ -1027,6 +1184,32 @@ pub fn commands(values: &DialogValues, state: &State, cx: &Context) -> Result<Ve
             out.extend(set(&v.hidden, &n.hidden).map(Command::SetHidden));
             out.extend(set(&v.character_spacing, &n.character_spacing).map(Command::SetCharacterSpacing));
             out.extend(set(&v.position, &n.position).map(Command::SetCharacterPosition));
+            out.extend(set(&v.underline_color, &n.underline_color).map(Command::SetUnderlineColor));
+            let effects = crate::api::command::CharacterEffects {
+                emboss: set(&v.emboss, &n.emboss),
+                engrave: set(&v.engrave, &n.engrave),
+                outline: set(&v.outline, &n.outline),
+                shadow: set(&v.shadow, &n.shadow),
+            };
+            if effects != crate::api::command::CharacterEffects::default() {
+                out.push(Command::SetCharacterEffects(effects));
+            }
+            let typography = crate::api::command::Typography {
+                scale: set(&v.scale, &n.scale),
+                kerning: set(&v.kerning, &n.kerning),
+                ligatures: set(&v.ligatures, &n.ligatures),
+                number_spacing: set(&v.number_spacing, &n.number_spacing),
+                number_form: set(&v.number_form, &n.number_form),
+                stylistic_set: set(&v.stylistic_set, &n.stylistic_set),
+                contextual_alternates: set(&v.contextual_alternates, &n.contextual_alternates),
+            };
+            if let Some(s) = typography.scale {
+                check((1.0..=600.0).contains(&s), "scale is 1 to 600 percent")?;
+            }
+            check(typography.stylistic_set.is_none_or(|s| s <= 20), "stylistic set is 0 to 20")?;
+            if typography != crate::api::command::Typography::default() {
+                out.push(Command::SetTypography(typography));
+            }
         }
         (DialogValues::Paragraph(v), DialogValues::Paragraph(n)) => {
             out.extend(set(&v.alignment, &n.alignment).map(Command::SetAlignment));
@@ -1042,13 +1225,21 @@ pub fn commands(values: &DialogValues, state: &State, cx: &Context) -> Result<Ve
                 _ => (None, None),
             };
             check(!matches!(v.by, Tri::Uniform(Points(b)) if b < 0.0), "by is 0 or more")?;
-            let indents = Indents { left, right, first_line, hanging };
+            let indents = Indents { left, right, first_line, hanging, mirror: set(&v.mirror_indents, &n.mirror_indents) };
             if indents != Indents::default() {
                 out.push(Command::SetIndents(indents));
             }
-            let (before, after) = (set(&v.before, &n.before), set(&v.after, &n.after));
-            if before.is_some() || after.is_some() {
-                out.push(Command::SetParagraphSpacing(ParagraphSpacing { before, after }));
+            let (before, after, contextual) = (set(&v.before, &n.before), set(&v.after, &n.after), set(&v.contextual_spacing, &n.contextual_spacing));
+            if before.is_some() || after.is_some() || contextual.is_some() {
+                out.push(Command::SetParagraphSpacing(ParagraphSpacing { before, after, contextual }));
+            }
+            let level = set(&v.outline_level, &n.outline_level).map(|l| match l {
+                crate::api::value::OutlineLevel::Body => 0,
+                crate::api::value::OutlineLevel::Level(n) => n,
+            });
+            let collapsed = set(&v.collapsed, &n.collapsed);
+            if level.is_some() || collapsed.is_some() {
+                out.push(Command::SetOutline(crate::api::command::Outline { level, collapsed }));
             }
             out.extend(set(&v.line_spacing, &n.line_spacing).map(Command::SetLineSpacing));
             let flow = ParagraphFlow {
@@ -1056,6 +1247,9 @@ pub fn commands(values: &DialogValues, state: &State, cx: &Context) -> Result<Ve
                 keep_lines_together: set(&v.keep_lines_together, &n.keep_lines_together),
                 page_break_before: set(&v.page_break_before, &n.page_break_before),
                 widow_control: set(&v.widow_control, &n.widow_control),
+                dont_hyphenate: set(&v.dont_hyphenate, &n.dont_hyphenate),
+                suppress_line_numbers: set(&v.suppress_line_numbers, &n.suppress_line_numbers),
+                textbox_tight_wrap: None,
             };
             if flow != ParagraphFlow::default() {
                 out.push(Command::SetParagraphFlow(flow));
@@ -1068,6 +1262,12 @@ pub fn commands(values: &DialogValues, state: &State, cx: &Context) -> Result<Ve
             }
             check(v.left.0 + v.right.0 + v.gutter.0 < v.width.0, "the margins leave no room on the page")?;
             check(v.width.0 >= 72.0 && v.height.0 >= 72.0, "the paper is at least 72 points each way")?;
+            // shortcut: the whole document isn't offered; page setup applies to the selection's sections, and every
+            // section would need its own commands.
+            check(v.apply_to != crate::api::services::ApplyTo::WholeDocument, "page setup applies to this section or from this point")?;
+            if v.apply_to == crate::api::services::ApplyTo::ThisPointForward {
+                out.push(Command::InsertSectionBreak(crate::api::command::SectionBreakKind::NextPage));
+            }
             if v.orientation != n.orientation {
                 out.push(Command::SetOrientation(v.orientation));
             }
@@ -1097,6 +1297,21 @@ pub fn commands(values: &DialogValues, state: &State, cx: &Context) -> Result<Ve
             if v.different_odd_even != n.different_odd_even {
                 out.push(Command::SetDifferentOddEvenPages(v.different_odd_even));
             }
+            if (v.multiple_pages, v.gutter_at_top) != (n.multiple_pages, n.gutter_at_top) {
+                out.push(Command::SetMultiplePages(crate::api::command::MultiplePages {
+                    mode: (v.multiple_pages != n.multiple_pages).then_some(v.multiple_pages),
+                    gutter_at_top: (v.gutter_at_top != n.gutter_at_top).then_some(v.gutter_at_top),
+                }));
+            }
+            if v.section_start != n.section_start {
+                out.push(Command::SetSectionBreakType(v.section_start));
+            }
+            if v.vertical_alignment != n.vertical_alignment {
+                out.push(Command::SetPageVerticalAlignment(v.vertical_alignment));
+            }
+            if v.line_numbers != n.line_numbers {
+                out.push(Command::SetLineNumbering(v.line_numbers.clone()));
+            }
         }
         (DialogValues::InsertTable(v), _) => {
             check((1..=32767).contains(&v.rows), "rows is 1 to 32767")?;
@@ -1117,6 +1332,9 @@ pub fn commands(values: &DialogValues, state: &State, cx: &Context) -> Result<Ve
             out.extend(set(&v.row_can_break, &n.row_can_break).map(Command::SetRowCanBreak));
             out.extend(set(&v.header_row, &n.header_row).map(Command::SetHeaderRow));
             out.extend(set(&v.column_width, &n.column_width).map(Command::SetColumnWidth));
+            if let Some(width) = set(&v.cell_width, &n.cell_width) {
+                out.push(Command::SetCellProperties(crate::api::command::CellProperties { width: Some(width), ..Default::default() }));
+            }
             out.extend(set(&v.cell_alignment, &n.cell_alignment).map(Command::SetCellAlignment));
             let (m, was) = (v.cell_margins, n.cell_margins);
             if m != was {
@@ -1128,13 +1346,59 @@ pub fn commands(values: &DialogValues, state: &State, cx: &Context) -> Result<Ve
                     right: changed(m.right, was.right),
                 }));
             }
+            let spacing = |d: &crate::api::services::TablePropertiesDialog| d.allow_spacing.then_some(d.cell_spacing);
+            if spacing(v) != spacing(n) {
+                out.push(Command::SetTableCellSpacing(spacing(v)));
+            }
+            let (wrap, fit) = (set(&v.wrap_text, &n.wrap_text), set(&v.fit_text, &n.fit_text));
+            if wrap.is_some() || fit.is_some() {
+                out.push(Command::SetCellProperties(crate::api::command::CellProperties { wrap_text: wrap, fit_text: fit, ..Default::default() }));
+            }
+            if (&v.title, &v.description) != (&n.title, &n.description) {
+                out.push(Command::SetTableAltText(crate::api::command::TableAltText {
+                    title: Some(v.title.clone()),
+                    description: Some(v.description.clone()),
+                }));
+            }
         }
         (DialogValues::PictureSize(v), DialogValues::PictureSize(n)) => {
             if v.reset {
                 out.push(Command::ResetObjectSize);
-            } else if (v.width, v.height) != (n.width, n.height) {
-                check(v.width.0 >= 1.0 && v.height.0 >= 1.0, "the size is at least 1 point each way")?;
-                out.push(Command::SetObjectSize(ObjectSize { width: Some(v.width), height: Some(v.height), lock_aspect: None }));
+            } else {
+                let relative = |a: Option<crate::api::command::RelativeSize>, b: Option<crate::api::command::RelativeSize>| {
+                    (a != b).then(|| a.map_or(crate::api::value::NoneOr::None, crate::api::value::NoneOr::Value))
+                };
+                let (rw, rh) = (relative(v.relative_width, n.relative_width), relative(v.relative_height, n.relative_height));
+                let sized = (v.width, v.height) != (n.width, n.height);
+                if sized {
+                    check(v.width.0 >= 1.0 && v.height.0 >= 1.0, "the size is at least 1 point each way")?;
+                }
+                if sized || rw.is_some() || rh.is_some() {
+                    out.push(Command::SetObjectSize(ObjectSize {
+                        width: Some(v.width),
+                        height: Some(v.height),
+                        lock_aspect: None,
+                        relative_width: rw,
+                        relative_height: rh,
+                    }));
+                }
+                if let Some(c) = v.crop.filter(|c| Some(*c) != n.crop) {
+                    let ok = |x: Option<f64>| x.is_none_or(|x| (0.0..1.0).contains(&x));
+                    check(ok(c.left) && ok(c.top) && ok(c.right) && ok(c.bottom), "a crop is a fraction of the image, under 1")?;
+                    out.push(Command::SetPictureCrop(c));
+                }
+            }
+        }
+        (DialogValues::DropCap(v), DialogValues::DropCap(n)) => {
+            if v != n {
+                check((1..=10).contains(&v.lines), "a drop cap drops 1 to 10 lines")?;
+                let dropped = v.position != crate::api::command::DropCapPosition::None;
+                out.push(Command::SetDropCap(crate::api::command::DropCap {
+                    position: v.position,
+                    font: Some(v.font.trim().to_string()).filter(|f| dropped && !f.is_empty()),
+                    lines: dropped.then_some(v.lines),
+                    distance: dropped.then_some(v.distance),
+                }));
             }
         }
         (DialogValues::AltText(v), DialogValues::AltText(n)) => {
@@ -1143,7 +1407,8 @@ pub fn commands(values: &DialogValues, state: &State, cx: &Context) -> Result<Ve
             }
         }
         (DialogValues::Hyperlink(v), DialogValues::Hyperlink(n)) => {
-            let address = v.address.trim().to_string();
+            let (address, bookmark) = (v.address.trim(), v.bookmark.trim());
+            let address = if bookmark.is_empty() { address.to_string() } else { format!("{address}#{bookmark}") };
             check(!address.is_empty(), "the link needs an address")?;
             let text = Some(v.text.trim().to_string()).filter(|t| !t.is_empty());
             if state.selection.link.is_some() {
@@ -1184,6 +1449,7 @@ pub fn label(kind: DialogKind) -> &'static str {
         DialogKind::TableProperties => "Table Properties",
         DialogKind::PictureSize => "Picture Size",
         DialogKind::AltText => "Alt Text",
+        DialogKind::DropCap => "Drop Cap",
         DialogKind::Hyperlink => "Hyperlink",
         DialogKind::Tabs => "Tabs",
         DialogKind::Accessibility => "Check Accessibility",
@@ -1340,6 +1606,22 @@ mod tests {
         let DialogValues::PictureSize(v) = &m.values else { panic!() };
         assert_eq!((v.width, v.height, v.scale_width), (Points(144.0), Points(108.0), 200.0));
         assert!(open(DialogKind::TableProperties, &state, &cx).is_err(), "no table");
+    }
+
+    #[test]
+    fn the_picture_size_dialog_crops_a_picture() {
+        use crate::api::command::PictureCrop;
+        let mut state = State::default();
+        state.selection.object = Some(ObjectSelection { width: Points(72.0), height: Points(54.0), ..ObjectSelection::default() });
+        let cx = Context::default();
+        let m = open(DialogKind::PictureSize, &state, &cx).expect("opens");
+        let DialogValues::PictureSize(mut v) = m.values.clone() else { panic!() };
+        assert_eq!(v.crop, Some(PictureCrop::default()));
+        v.crop = Some(PictureCrop { left: Some(0.25), ..PictureCrop::default() });
+        let crop = |v: &PictureSizeDialog| commands(&DialogValues::PictureSize(v.clone()), &state, &cx);
+        assert_eq!(crop(&v).expect("valid"), [Command::SetPictureCrop(PictureCrop { left: Some(0.25), ..PictureCrop::default() })]);
+        v.crop = Some(PictureCrop { right: Some(1.5), ..PictureCrop::default() });
+        assert!(crop(&v).is_err(), "more than the image");
     }
 
     #[test]

@@ -1,7 +1,7 @@
 //! Character formatting
 
-use crate::api::command::CaseChange;
-use crate::api::value::{AutoOr, Color, HighlightColor, Points, UnderlineStyle};
+use crate::api::command::{CaseChange, CharacterEffects, Language, Ligatures, NumberForm, NumberSpacing, Typography};
+use crate::api::value::{AutoOr, Color, HighlightColor, Points, StyleId, UnderlineStyle};
 use crate::docx::Inline;
 use crate::font::Fonts;
 
@@ -9,6 +9,31 @@ use super::Outcome;
 use crate::editing::format::{Format, Toggle};
 use crate::editing::step::Step;
 use crate::editing::{Editor, Tx};
+
+/// A run toggle as written: on, or explicitly off (over a style's).
+fn toggle_xml(w: &str, name: &str, on: bool) -> String {
+    if on { format!("<{w}{name}/>") } else { format!("<{w}{name} {w}val=\"0\"/>") }
+}
+
+/// `tag` without the attribute `name`.
+fn strip(tag: &str, name: &str) -> String {
+    let Some(k) = tag.find(&format!(" {name}=\"")) else { return tag.to_string() };
+    let from = k + name.len() + 3;
+    let to = tag[from..].find('"').map_or(tag.len(), |e| from + e + 1);
+    format!("{}{}", &tag[..k], &tag[to..])
+}
+
+/// `tag` (one start tag or empty element) with the attribute `name` set.
+fn with_attr(tag: &str, name: &str, value: &str) -> String {
+    let v = crate::docx::write::props::esc(value);
+    if let Some(k) = tag.find(&format!(" {name}=\"")) {
+        let from = k + name.len() + 3;
+        let to = tag[from..].find('"').map_or(tag.len(), |e| from + e);
+        return format!("{}{v}{}", &tag[..from], &tag[to..]);
+    }
+    let at = tag.rfind("/>").or_else(|| tag.rfind('>')).unwrap_or(tag.len());
+    format!("{} {name}=\"{v}\"{}", &tag[..at], &tag[at..])
+}
 
 pub(crate) fn underline_value(style: UnderlineStyle) -> &'static str {
     match style {
@@ -84,6 +109,132 @@ impl Editor {
         self.format_runs(
             "Position",
             &|p, w, _| if hp == 0 { p.remove("position") } else { p.set("position", format!("<{w}position {w}val=\"{hp}\"/>")) },
+            fonts,
+        )
+    }
+
+    pub(in crate::editing) fn apply_character_style(&mut self, id: Option<StyleId>, fonts: &Fonts) -> Outcome {
+        use crate::docx::styles::StyleKind;
+        let Some(id) = id else { return self.format_runs("Style", &|p, _, _| p.remove("rStyle"), fonts) };
+        let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
+        // A linked paragraph style's character half.
+        let id = match res.styles.by_id.get(&id.0) {
+            Some(s) if s.kind == StyleKind::Character => id.0,
+            Some(s) if s.kind == StyleKind::Paragraph => {
+                match s.link.as_ref().filter(|l| res.styles.by_id.get(*l).is_some_and(|c| c.kind == StyleKind::Character)) {
+                    Some(l) => l.clone(),
+                    None => return Outcome::invalid("a paragraph style with no linked character style"),
+                }
+            }
+            Some(_) => return Outcome::invalid("not a character style"),
+            None => return Outcome::invalid("no such style"),
+        };
+        self.format(&Format::CharStyle(id), fonts)
+    }
+
+    pub(in crate::editing) fn set_typography(&mut self, t: Typography, fonts: &Fonts) -> Outcome {
+        // The part the w14 elements go in declares their namespace or not: the styles part when a style is formatted.
+        let cx = match (&self.style_target, &self.doc.resolver) {
+            (Some(_), Some(r)) => r.styles.cx(),
+            _ => self.cx(),
+        };
+        self.format_runs(
+            "Advanced Font",
+            &|p, w, _| {
+                if let Some(s) = t.scale {
+                    let pct = s.round() as i64;
+                    if pct == 100 { p.remove("w") } else { p.set("w", format!("<{w}w {w}val=\"{pct}\"/>")) }
+                }
+                if let Some(k) = t.kerning {
+                    p.set("kern", format!("<{w}kern {w}val=\"{}\"/>", (k.0 * 2.0).round() as i64));
+                }
+                if let Some(l) = t.ligatures {
+                    let v = match l {
+                        Ligatures::None => "none",
+                        Ligatures::Standard => "standard",
+                        Ligatures::StandardContextual => "standardContextual",
+                        Ligatures::HistoricalDiscretional => "historicalDiscretional",
+                        Ligatures::All => "all",
+                    };
+                    p.set("w14:ligatures", cx.w14("ligatures", &[("val", v)], ""));
+                }
+                if let Some(n) = t.number_spacing {
+                    let v = match n {
+                        NumberSpacing::Default => "default",
+                        NumberSpacing::Proportional => "proportional",
+                        NumberSpacing::Tabular => "tabular",
+                    };
+                    p.set("w14:numSpacing", cx.w14("numSpacing", &[("val", v)], ""));
+                }
+                if let Some(n) = t.number_form {
+                    let v = match n {
+                        NumberForm::Default => "default",
+                        NumberForm::Lining => "lining",
+                        NumberForm::OldStyle => "oldStyle",
+                    };
+                    p.set("w14:numForm", cx.w14("numForm", &[("val", v)], ""));
+                }
+                match t.stylistic_set {
+                    Some(0) => p.remove("w14:stylisticSets"),
+                    Some(n) => p.set("w14:stylisticSets", cx.w14("stylisticSets", &[], &format!("<{{w14}}styleSet {{w14}}id=\"{n}\"/>"))),
+                    None => {}
+                }
+                if let Some(on) = t.contextual_alternates {
+                    p.set("w14:cntxtAlts", cx.w14("cntxtAlts", &[("val", if on { "1" } else { "0" })], ""));
+                }
+            },
+            fonts,
+        )
+    }
+
+    pub(in crate::editing) fn set_language(&mut self, l: Language, fonts: &Fonts) -> Outcome {
+        self.format_runs(
+            "Language",
+            &|p, w, _| {
+                if let Some(tag) = &l.language {
+                    let now = p.get("lang").map_or_else(|| format!("<{w}lang/>"), str::to_string);
+                    p.set("lang", with_attr(&now, &format!("{w}val"), tag));
+                }
+                if let Some(off) = l.no_proof {
+                    p.set("noProof", toggle_xml(w, "noProof", off));
+                }
+            },
+            fonts,
+        )
+    }
+
+    pub(in crate::editing) fn set_character_effects(&mut self, e: CharacterEffects, fonts: &Fonts) -> Outcome {
+        // Emboss and engrave exclude each other, as in Word.
+        let engrave = e.engrave.or(e.emboss.filter(|on| *on).map(|_| false));
+        let emboss = e.emboss.or(e.engrave.filter(|on| *on).map(|_| false));
+        let flags = [("emboss", emboss), ("imprint", engrave), ("outline", e.outline), ("shadow", e.shadow)];
+        self.format_runs(
+            "Font Effects",
+            &|p, w, _| {
+                for (name, on) in flags {
+                    if let Some(on) = on {
+                        p.set(name, toggle_xml(w, name, on));
+                    }
+                }
+            },
+            fonts,
+        )
+    }
+
+    pub(in crate::editing) fn set_underline_color(&mut self, c: AutoOr<Color>, fonts: &Fonts) -> Outcome {
+        self.format_runs(
+            "Underline Color",
+            &|p, w, run| {
+                // Only underlined text has an underline colour: its underline written with it.
+                let Some(u) = run.underline.as_deref() else { return };
+                let now = p.get("u").map_or_else(|| format!("<{w}u {w}val=\"{u}\"/>"), str::to_string);
+                let now = ["themeColor", "themeTint", "themeShade"].iter().fold(now, |t, a| strip(&t, &format!("{w}{a}")));
+                let hex = match c {
+                    AutoOr::Auto => "auto".to_string(),
+                    AutoOr::Value(c) => format!("{:06X}", c.0),
+                };
+                p.set("u", with_attr(&now, &format!("{w}color"), &hex));
+            },
             fonts,
         )
     }

@@ -1,0 +1,27 @@
+{
+  "name": "section-setup",
+  "fixture": "editor/FX-SECTIONS.docx",
+  "steps": [
+    { "op": "open" },
+    { "op": "command", "command": { "type": "setPageNumbering", "format": "lowerRoman", "start": 3, "chapter": { "level": 1, "separator": "enDash" } } },
+    { "op": "command", "command": { "type": "setPageVerticalAlignment", "value": "center" } },
+    { "op": "command", "command": { "type": "setLineNumbering", "value": { "start": 1, "countBy": 5, "restart": "eachSection" } } },
+    { "op": "command", "command": { "type": "setSectionBreakType", "value": "oddPage" } },
+    { "op": "command", "command": { "type": "setSectionTextDirection", "value": "tbRl" } },
+    { "op": "command", "command": { "type": "setColumns", "count": 2, "widths": [{ "width": 144, "spacing": 36 }, { "width": 288, "spacing": 0 }] } },
+    { "op": "command", "command": { "type": "setMultiplePages", "mode": "mirrorMargins", "gutterAtTop": true } },
+    { "op": "command", "command": { "type": "setDifferentOddEvenPages", "value": true } },
+    { "op": "expectState", "match": { "page": { "pageNumberFormat": "lowerRoman", "pageNumberStart": 3, "chapterNumbers": { "level": 1, "separator": "enDash" }, "verticalAlignment": "center", "lineNumbers": { "start": 1, "countBy": 5, "restart": "eachSection" }, "breakType": "oddPage", "textDirection": "tbRl", "columns": { "count": 2, "widths": [{ "width": 144 }, { "width": 288 }] }, "multiplePages": "mirrorMargins", "gutterAtTop": true, "differentOddEven": true } } },
+    { "op": "command", "command": { "type": "setPageNumbering", "format": "bullet" } },
+    { "op": "expectError", "code": "invalid-argument" },
+    { "op": "command", "command": { "type": "setLineNumbering", "value": { "countBy": 0 } } },
+    { "op": "expectError", "code": "invalid-argument" },
+    { "op": "command", "command": { "type": "setSectionTextDirection", "value": "lrTb" } },
+    { "op": "command", "command": { "type": "setPageNumbering", "start": null, "chapter": null } },
+    { "op": "command", "command": { "type": "insertSectionBreak", "value": "continuous" } },
+    { "op": "expectState", "match": { "page": { "breakType": "continuous", "textDirection": "lrTb", "verticalAlignment": "center" } } },
+    { "op": "export", "format": "docx" },
+    { "op": "reopen" },
+    { "op": "expectState", "match": { "page": { "pageNumberFormat": "lowerRoman", "pageNumberStart": null, "chapterNumbers": null, "verticalAlignment": "center", "lineNumbers": { "start": 1, "countBy": 5, "restart": "eachSection" }, "breakType": "oddPage", "textDirection": "lrTb", "columns": { "count": 2 }, "multiplePages": "mirrorMargins", "gutterAtTop": true, "differentOddEven": true } } }
+  ]
+}

@@ -2,16 +2,27 @@
   {
     "alignment": "left",
     "borders": "other",
+    "collapsed": false,
+    "contextualSpacing": true,
+    "dropCap": {
+      "distance": 0.0,
+      "lines": 3,
+      "position": "dropped"
+    },
     "flow": {
+      "dontHyphenate": false,
       "keepLinesTogether": false,
       "keepWithNext": true,
       "pageBreakBefore": "mixed",
+      "suppressLineNumbers": "mixed",
+      "textboxTightWrap": "none",
       "widowControl": true
     },
     "indents": {
       "firstLine": "mixed",
       "hanging": null,
       "left": 0.5,
+      "mirror": false,
       "right": 0.5
     },
     "lineSpacing": {
@@ -20,9 +31,11 @@
     },
     "list": "bullet",
     "listLevel": 1,
+    "outlineLevel": 2,
     "shading": "#D9E2F3",
     "spaceAfter": 8.5,
     "spaceBefore": "auto",
-    "style": "Normal"
+    "style": "Normal",
+    "textDirection": "lrTb"
   }
 ]

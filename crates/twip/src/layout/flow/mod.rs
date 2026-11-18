@@ -288,7 +288,7 @@ impl<'d> PageFill<'d, '_> {
         let style = p.para_style_in(view);
         let breaks_first = |b: Option<&Block>| {
             let Some(Block::Para(q)) = b else { return false };
-            let mut shown = q.inlines.iter().filter(|i| !matches!(i, Inline::Bookmark(..) | Inline::Range(..)));
+            let mut shown = q.inlines.iter().filter(|i| !matches!(i, Inline::Bookmark(..) | Inline::Opaque(..) | Inline::Range(..)));
             matches!(shown.next(), Some(Inline::Break(crate::docx::model::BreakKind::Page | crate::docx::model::BreakKind::Column, _)))
         };
         let prev = prev.filter(|_| !breaks_first(self.sec.blocks.get(bi)));

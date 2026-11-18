@@ -2,6 +2,10 @@
   {
     "anchor": "middle",
     "autofit": "shape",
+    "columns": {
+      "count": 2,
+      "spacing": 18.5
+    },
     "direction": "vertical270",
     "insets": [
       7.2,

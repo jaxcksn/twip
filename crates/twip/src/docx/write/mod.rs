@@ -95,7 +95,52 @@ pub fn edited_parts(doc: &Document) -> Result<Vec<(String, Vec<u8>)>, String> {
     settings_part(doc, &mut parts)?;
     add_images(&src.package, &doc.images, &mut parts)?;
     data_parts(doc, &mut parts)?;
+    property_parts(doc, &mut parts)?;
     Ok(parts)
+}
+
+/// The document properties parts, when the properties changed or anything else did: an edited document's last saved
+/// time and revision follow.
+fn property_parts(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
+    use super::properties as p;
+    let src = doc.source.as_ref().ok_or("the document was not read for editing")?;
+    let part = |rel: &str, parts: &[(String, Vec<u8>)]| package::related(&src.package, parts, "", rel);
+    let (core, app, custom) = (part(p::CORE, parts)?, part(p::APP, parts)?, part(p::CUSTOM, parts)?);
+    let read_of =
+        |n: &Option<String>, parts: &[(String, Vec<u8>)]| n.as_ref().map(|n| package::read(&src.package, parts, n)).transpose().map(Option::flatten);
+    let (core_x, app_x, custom_x) = (read_of(&core, parts)?, read_of(&app, parts)?, read_of(&custom, parts)?);
+    let read = p::read(core_x.as_deref(), app_x.as_deref(), custom_x.as_deref());
+    let mut now = doc.properties.clone();
+    if !parts.is_empty() && core.is_some() {
+        let secs = crate::clock::unix_secs();
+        now.set_core("modified", Some(crate::docx::review::Timestamp::from_utc(secs).raw.to_string()));
+        let rev = read.core("revision").and_then(|r| r.parse::<u64>().ok()).unwrap_or(0) + 1;
+        if now.core("revision") == read.core("revision") {
+            now.set_core("revision", Some(rev.to_string()));
+        }
+    }
+    if now.core != read.core {
+        let name = core.clone().unwrap_or_else(|| "docProps/core.xml".into());
+        if core.is_none() {
+            package::add_part(&src.package, parts, "", &name, "application/vnd.openxmlformats-package.core-properties+xml", p::CORE)?;
+        }
+        package::set(parts, &name, p::core_xml(core_x.as_deref(), &now).into_bytes());
+    }
+    if now.app != read.app {
+        let name = app.clone().unwrap_or_else(|| "docProps/app.xml".into());
+        if app.is_none() {
+            package::add_part(&src.package, parts, "", &name, "application/vnd.openxmlformats-officedocument.extended-properties+xml", p::APP)?;
+        }
+        package::set(parts, &name, p::app_xml(app_x.as_deref(), &now).into_bytes());
+    }
+    if now.custom != read.custom {
+        let name = custom.clone().unwrap_or_else(|| "docProps/custom.xml".into());
+        if custom.is_none() {
+            package::add_part(&src.package, parts, "", &name, "application/vnd.openxmlformats-officedocument.custom-properties+xml", p::CUSTOM)?;
+        }
+        package::set(parts, &name, p::custom_xml(custom_x.as_deref(), &now).into_bytes());
+    }
+    Ok(())
 }
 
 const SETTINGS: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings";
@@ -171,15 +216,69 @@ const BEFORE: &[&str] = &[
 const BEFORE_DEFAULT_TAB: &[&str] =
     &["trackRevisions", "doNotTrackMoves", "doNotTrackFormatting", "documentProtection", "autoFormatOverride", "styleLockTheme", "styleLockQFSet"];
 
-/// CT_Settings' children from `w:defaultTabStop` to `w:doNotHyphenateCaps`, in order.
-const TAB_AND_HYPHENATION: &[&str] = &["defaultTabStop", "autoHyphenation", "consecutiveHyphenLimit", "hyphenationZone", "doNotHyphenateCaps"];
+/// CT_Settings' children from `w:defaultTabStop` on, as far as the settings written go, in order.
+const TAB_AND_HYPHENATION: &[&str] = &[
+    "defaultTabStop",
+    "autoHyphenation",
+    "consecutiveHyphenLimit",
+    "hyphenationZone",
+    "doNotHyphenateCaps",
+    "showEnvelope",
+    "summaryLength",
+    "clickAndTypeStyle",
+    "defaultTableStyle",
+    "evenAndOddHeaders",
+    "bookFoldRevPrinting",
+    "bookFoldPrinting",
+    "bookFoldPrintingSheets",
+    "drawingGridHorizontalSpacing",
+    "drawingGridVerticalSpacing",
+    "displayHorizontalDrawingGridEvery",
+    "displayVerticalDrawingGridEvery",
+    "doNotUseMarginsForDrawingGridOrigin",
+    "drawingGridHorizontalOrigin",
+    "drawingGridVerticalOrigin",
+    "doNotShadeFormData",
+    "noPunctuationKerning",
+    "characterSpacingControl",
+    "printTwoOnOne",
+    "strictFirstAndLastChars",
+    "noLineBreaksAfter",
+    "noLineBreaksBefore",
+    "savePreviewPicture",
+    "doNotValidateAgainstSchema",
+    "saveInvalidXml",
+    "ignoreMixedContent",
+    "alwaysShowPlaceholderText",
+    "doNotDemarcateInvalidXml",
+    "saveXmlDataOnly",
+    "useXSLTWhenSaving",
+    "saveThroughXslt",
+    "showXMLTags",
+    "alwaysMergeEmptyNamespace",
+    "updateFields",
+    "hdrShapeDefaults",
+    "footnotePr",
+    "endnotePr",
+    "compat",
+    "docVars",
+];
 
-/// The settings part with the default tab spacing and the hyphenation settings, where they changed since reading.
-// shortcut: a document with no settings part keeps the settings it was read with.
+/// The settings part with the default tab spacing and the hyphenation settings, where they changed since reading; a
+/// document without one gets one when a setting is written.
 fn settings_part(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
     let src = doc.source.as_ref().ok_or("the document was not read for editing")?;
-    let Some(name) = package::related(&src.package, parts, &src.main, SETTINGS)? else { return Ok(()) };
-    let Some(xml) = package::read(&src.package, parts, &name)? else { return Ok(()) };
+    let existing = package::related(&src.package, parts, &src.main, SETTINGS)?;
+    let xml = match &existing {
+        Some(n) => package::read(&src.package, parts, n)?.unwrap_or_default(),
+        None => format!(
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:settings xmlns:w="{W}"/>"#
+        ),
+    };
+    if xml.is_empty() {
+        return Ok(());
+    }
     let (read, now) = (super::reader::read_settings(Some(&xml)), &doc.settings);
     let w = {
         let dom = roxmltree::Document::parse(&xml).map_err(|e| e.to_string())?;
@@ -206,9 +305,74 @@ fn settings_part(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(
     if read.do_not_hyphenate_caps != now.do_not_hyphenate_caps {
         set_setting(&mut out, "doNotHyphenateCaps", now.do_not_hyphenate_caps.then(|| format!("<{w}doNotHyphenateCaps/>")))?;
     }
-    if out != xml {
-        package::set(parts, &name, out.into_bytes());
+    // Endnotes at each section's end: `w:endnotePr/w:pos`, its note list kept.
+    if read.endnotes_sect_end != now.endnotes_sect_end {
+        let dom = roxmltree::Document::parse(&out).map_err(|e| e.to_string())?;
+        let pr = dom.root_element().children().find(|c| is_w(*c, "endnotePr")).map(|n| (n.range(), child(n, "pos").map(|p| p.range())));
+        drop(dom);
+        let pos = now.endnotes_sect_end.then(|| format!("<{w}pos {w}val=\"sectEnd\"/>"));
+        match pr {
+            Some((_, Some(p))) => out.replace_range(p, pos.as_deref().unwrap_or("")),
+            Some((r, None)) => {
+                if let Some(pos) = pos {
+                    let x = out[r.clone()].to_string();
+                    let new = match x.strip_suffix("/>") {
+                        Some(open) => format!("{open}>{pos}</{w}endnotePr>"),
+                        None => x.replacen('>', &format!(">{pos}"), 1),
+                    };
+                    out.replace_range(r, &new);
+                }
+            }
+            None => set_setting(&mut out, "endnotePr", pos.map(|p| format!("<{w}endnotePr>{p}</{w}endnotePr>")))?,
+        }
     }
+    let same = match (&read.protection, &now.protection) {
+        (Some(a), Some(b)) => a.same(b),
+        (a, b) => a.is_none() && b.is_none(),
+    };
+    if !same {
+        set_setting(&mut out, "documentProtection", now.protection.as_ref().map(|p| p.xml(&w)))?;
+    }
+    if read.variables != now.variables {
+        let vars: String =
+            now.variables.iter().map(|(n, v)| format!("<{w}docVar {w}name=\"{}\" {w}val=\"{}\"/>", props::esc(n), props::esc(v))).collect();
+        set_setting(&mut out, "docVars", (!vars.is_empty()).then(|| format!("<{w}docVars>{vars}</{w}docVars>")))?;
+    }
+    if read.default_table_style != now.default_table_style {
+        let el = now.default_table_style.as_ref().map(|s| format!("<{w}defaultTableStyle {w}val=\"{}\"/>", props::esc(s)));
+        set_setting(&mut out, "defaultTableStyle", el)?;
+    }
+    for (name, was, is) in [
+        ("evenAndOddHeaders", read.even_and_odd, now.even_and_odd),
+        ("mirrorMargins", read.mirror_margins, now.mirror_margins),
+        ("gutterAtTop", read.gutter_at_top, now.gutter_at_top),
+        ("doNotShadeFormData", read.no_form_shading, now.no_form_shading),
+        ("bordersDoNotSurroundHeader", read.borders_do_not_surround_header, now.borders_do_not_surround_header),
+        ("bordersDoNotSurroundFooter", read.borders_do_not_surround_footer, now.borders_do_not_surround_footer),
+        ("bookFoldPrinting", read.book_fold == Some(false), now.book_fold == Some(false)),
+        ("bookFoldRevPrinting", read.book_fold == Some(true), now.book_fold == Some(true)),
+    ] {
+        if was != is {
+            set_setting(&mut out, name, is.then(|| format!("<{w}{name}/>")))?;
+        }
+    }
+    // A new part: tracking too, which the review parts set only in a part there is.
+    if existing.is_none() && now.track_revisions {
+        out = with_track_revisions(&out, true)?;
+    }
+    if out == xml {
+        return Ok(());
+    }
+    let name = match existing {
+        Some(n) => n,
+        None => {
+            let name = src.main.rsplit_once('/').map_or_else(|| "settings.xml".into(), |(dir, _)| format!("{dir}/settings.xml"));
+            let ct = "application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml";
+            package::add_part(&src.package, parts, &src.main, &name, ct, SETTINGS)?;
+            name
+        }
+    };
+    package::set(parts, &name, out.into_bytes());
     Ok(())
 }
 
@@ -226,8 +390,8 @@ fn set_setting(xml: &mut String, name: &str, el: Option<String>) -> Result<(), S
     if el.is_empty() {
         return Ok(());
     }
-    let earlier = TAB_AND_HYPHENATION.iter().take_while(|n| **n != name);
-    let before: Vec<&str> = BEFORE.iter().chain(BEFORE_DEFAULT_TAB).chain(earlier).copied().collect();
+    let all: Vec<&str> = BEFORE.iter().chain(BEFORE_DEFAULT_TAB).chain(TAB_AND_HYPHENATION).copied().collect();
+    let before: Vec<&str> = all.iter().take_while(|n| **n != name).copied().collect();
     let after = root.children().rfind(|c| c.is_element() && before.iter().any(|b| is_w(*c, b))).map(|c| c.range().end);
     let r = root.range();
     let tag = xml[r.clone()].to_string();
@@ -422,7 +586,7 @@ fn section_pages(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(
     for k in edited {
         let r = sects[k].clone();
         let s = &doc.sections[k];
-        let new = sect_with_page(&xml[r.clone()], &w, &s.page(), s.change.as_deref(), &doc.people);
+        let new = sect_with_page(&xml[r.clone()], &w, &s.page(), s.read.as_deref(), s.change.as_deref(), &doc.people);
         xml.replace_range(r, &new);
     }
     match parts.iter_mut().find(|(n, _)| *n == src.main) {
@@ -433,7 +597,8 @@ fn section_pages(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(
 }
 
 /// A `w:sectPr` with `p`'s page size, margins, columns and different first page, and `change` as its tracked change.
-fn sect_with_page(sect: &str, w: &str, p: &SectionPage, change: Option<&SectionChange>, people: &People) -> String {
+/// Only those differing from `was` (the page as read) when given.
+fn sect_with_page(sect: &str, w: &str, p: &SectionPage, was: Option<&SectionPage>, change: Option<&SectionChange>, people: &People) -> String {
     // CT_SectPr's children in schema order.
     const ORDER: [&str; 22] = [
         "headerReference",
@@ -490,22 +655,31 @@ fn sect_with_page(sect: &str, w: &str, p: &SectionPage, change: Option<&SectionC
                 put(&mut base, local, None);
             }
         }
-        Raw(Some(sect_with_page(&base, w, &c.previous, None, people).into()))
+        Raw(Some(sect_with_page(&base, w, &c.previous, None, None, people).into()))
     });
     let existing = |s: &str, local: &str| find_tag(s, local, open_end).map(|(a, e)| s[a..e].to_string());
-    put(&mut s, "pgBorders", p.page_borders_xml.clone());
+    let changed = |f: &dyn Fn(&SectionPage) -> bool| was.is_none_or(f);
+    if changed(&|q| q.page_borders != p.page_borders) {
+        put(&mut s, "pgBorders", p.page_borders_xml.clone());
+    }
     let mut sz = existing(&s, "pgSz").unwrap_or_else(|| format!("<{w}pgSz/>"));
     sz = set_attr(&sz, &format!("{w}w"), &twips(p.page_w).to_string());
     sz = set_attr(&sz, &format!("{w}h"), &twips(p.page_h).to_string());
     sz = if p.page_w > p.page_h { set_attr(&sz, &format!("{w}orient"), "landscape") } else { set_attr(&sz, &format!("{w}orient"), "portrait") };
-    put(&mut s, "pgSz", Some(sz));
+    if changed(&|q| (q.page_w, q.page_h) != (p.page_w, p.page_h)) {
+        put(&mut s, "pgSz", Some(sz));
+    }
     let mut mar = existing(&s, "pgMar").unwrap_or_else(|| format!("<{w}pgMar/>"));
     for (name, v) in
         [("top", p.top), ("right", p.right), ("bottom", p.bottom), ("left", p.left), ("header", p.header), ("footer", p.footer), ("gutter", p.gutter)]
     {
         mar = set_attr(&mar, &format!("{w}{name}"), &twips(v).to_string());
     }
-    put(&mut s, "pgMar", Some(mar));
+    if changed(&|q| {
+        (q.top, q.right, q.bottom, q.left, q.header, q.footer, q.gutter) != (p.top, p.right, p.bottom, p.left, p.header, p.footer, p.gutter)
+    }) {
+        put(&mut s, "pgMar", Some(mar));
+    }
     let c = &p.columns;
     let sep = if c.separator { format!(" {w}sep=\"1\"") } else { String::new() };
     let cols = if !c.equal && c.cols.len() > 1 {
@@ -514,8 +688,119 @@ fn sect_with_page(sect: &str, w: &str, p: &SectionPage, change: Option<&SectionC
     } else {
         format!("<{w}cols {w}space=\"{}\" {w}num=\"{}\"{sep}/>", twips(c.space), c.num.max(1))
     };
-    put(&mut s, "cols", Some(cols));
-    put(&mut s, "titlePg", p.title_pg.then(|| format!("<{w}titlePg/>")));
+    if changed(&|q| q.columns != p.columns) {
+        put(&mut s, "cols", Some(cols));
+    }
+    if changed(&|q| q.title_pg != p.title_pg) {
+        put(&mut s, "titlePg", p.title_pg.then(|| format!("<{w}titlePg/>")));
+    }
+    // The rest only when it changed since reading (a tracked change's earlier page keeps its source's).
+    if let Some(was) = was {
+        if was.footnote_columns != p.footnote_columns {
+            let w15 = crate::docx::xml::W15;
+            let tag = (p.footnote_columns > 0).then(|| format!(r#"<w15:footnoteColumns xmlns:w15="{w15}" {w}val="{}"/>"#, p.footnote_columns));
+            put(&mut s, "footnoteColumns", tag);
+        }
+        if was.break_kind != p.break_kind {
+            let v = match p.break_kind {
+                SectionBreak::NextPage => "nextPage",
+                SectionBreak::Continuous => "continuous",
+                SectionBreak::EvenPage => "evenPage",
+                SectionBreak::OddPage => "oddPage",
+                SectionBreak::NextColumn => "nextColumn",
+            };
+            put(&mut s, "type", Some(format!("<{w}type {w}val=\"{v}\"/>")));
+        }
+        if (was.pg_start, &was.pg_fmt, &was.chapter) != (p.pg_start, &p.pg_fmt, &p.chapter) {
+            let mut a = String::new();
+            if let Some(f) = &p.pg_fmt {
+                a += &format!(" {w}fmt=\"{}\"", props::esc(f));
+            }
+            if let Some(n) = p.pg_start {
+                a += &format!(" {w}start=\"{n}\"");
+            }
+            if let Some((level, sep)) = &p.chapter {
+                let sep = match sep.as_str() {
+                    "." => "period",
+                    ":" => "colon",
+                    "\u{2014}" => "emDash",
+                    "\u{2013}" => "enDash",
+                    _ => "hyphen",
+                };
+                a += &format!(" {w}chapStyle=\"{level}\" {w}chapSep=\"{sep}\"");
+            }
+            put(&mut s, "pgNumType", (!a.is_empty()).then(|| format!("<{w}pgNumType{a}/>")));
+        }
+        if was.line_numbers != p.line_numbers {
+            let tag = p.line_numbers.as_ref().map(|l| {
+                let distance = if l.distance > 0.0 { format!(" {w}distance=\"{}\"", twips(l.distance)) } else { String::new() };
+                format!("<{w}lnNumType {w}countBy=\"{}\" {w}start=\"{}\"{distance} {w}restart=\"{}\"/>", l.count_by, l.start, props::esc(&l.restart))
+            });
+            put(&mut s, "lnNumType", tag);
+        }
+        if was.v_align != p.v_align {
+            put(&mut s, "vAlign", (p.v_align != "top").then(|| format!("<{w}vAlign {w}val=\"{}\"/>", props::esc(&p.v_align))));
+        }
+        if was.text_flow != p.text_flow {
+            let v = match p.text_flow {
+                1 => Some("tbRl"),
+                3 => Some("btLr"),
+                4 => Some("lrTbV"),
+                5 => Some("tbRlV"),
+                7 => Some("tbLrV"),
+                _ => None,
+            };
+            put(&mut s, "textDirection", v.map(|v| format!("<{w}textDirection {w}val=\"{v}\"/>")));
+        }
+        for (k, name) in [(0, "footnotePr"), (1, "endnotePr")] {
+            if was.notes[k] != p.notes[k] {
+                let n = &p.notes[k];
+                let mut x = String::new();
+                if k == 0 && n.beneath {
+                    x += &format!("<{w}pos {w}val=\"beneathText\"/>");
+                }
+                if let Some(f) = &n.fmt {
+                    x += &format!("<{w}numFmt {w}val=\"{}\"/>", props::esc(f));
+                }
+                if n.start != 1 {
+                    x += &format!("<{w}numStart {w}val=\"{}\"/>", n.start);
+                }
+                let restart = match n.restart {
+                    NoteRestart::EachSect => Some("eachSect"),
+                    NoteRestart::EachPage => Some("eachPage"),
+                    NoteRestart::Continuous => None,
+                };
+                if let Some(r) = restart {
+                    x += &format!("<{w}numRestart {w}val=\"{r}\"/>");
+                }
+                put(&mut s, name, (!x.is_empty()).then(|| format!("<{w}{name}>{x}</{w}{name}>")));
+            }
+        }
+        if was.form_protected != p.form_protected {
+            put(&mut s, "formProt", (!p.form_protected).then(|| format!("<{w}formProt {w}val=\"0\"/>")));
+        }
+        if was.no_endnote != p.no_endnote {
+            put(&mut s, "noEndnote", p.no_endnote.then(|| format!("<{w}noEndnote/>")));
+        }
+        // A header or footer it now takes from the section before: its reference goes (new ones are `new_stories`').
+        for (el, was, now) in [("headerReference", &was.headers, &p.headers), ("footerReference", &was.footers, &p.footers)] {
+            for (slot, t) in ["default", "first", "even"].into_iter().enumerate() {
+                if was[slot].is_some() && now[slot].is_none() {
+                    let open = format!("<{w}{el} ");
+                    let mut at = open_end;
+                    while let Some(k) = s[at..].find(&open).map(|k| at + k) {
+                        let end = s[k..].find("/>").map_or(s.len(), |e| k + e + 2);
+                        let tag = &s[k..end];
+                        if tag.contains(&format!("{w}type=\"{t}\"")) || (t == "default" && !tag.contains(&format!("{w}type="))) {
+                            s.replace_range(k..end, "");
+                            break;
+                        }
+                        at = end;
+                    }
+                }
+            }
+        }
+    }
     put(
         &mut s,
         "sectPrChange",
@@ -860,7 +1145,7 @@ fn notes_xml(
         }
     }
     // One pass: the kept notes' edits and these whole-note splices never overlap (removed notes aren't in `lists`).
-    part_xml_with(xml, inner, lists, &splices, &[], controls, gone, people)
+    part_xml_with(xml, inner, lists, &splices, &SectionEdits::default(), controls, gone, people)
 }
 
 /// The controls read that the document no longer has (removed, or emptied of every member).
@@ -875,6 +1160,7 @@ fn new_blocks_xml(xml: &str, blocks: &[Block], controls: &HashMap<ControlId, Con
         Some(p) if !p.is_empty() => format!("{p}:"),
         _ => String::new(),
     };
+    let made = HashMap::new();
     let mut s = Saver {
         xml,
         paras: HashMap::new(),
@@ -888,6 +1174,8 @@ fn new_blocks_xml(xml: &str, blocks: &[Block], controls: &HashMap<ControlId, Con
         ids: std::cell::Cell::new(DRAWING_IDS),
         people,
         dropped: &[],
+        made: &made,
+        bookmarks: Default::default(),
     };
     s.blocks_xml(None, blocks)
 }
@@ -920,41 +1208,75 @@ fn boxes<'d>(orig: &[&'d [Block]], now: &[&'d [Block]]) -> Vec<(&'d [Block], &'d
     o.into_iter().rev().filter_map(|(id, a)| Some((a, n.iter().find(|(m, _)| *m == id)?.1))).collect()
 }
 
+/// Section breaks changed since reading: the `w:sectPr`s of those deleted, and the ones a new section's last paragraph
+/// takes, by paragraph id.
+#[derive(Default)]
+struct SectionEdits {
+    dropped: Vec<Range<usize>>,
+    made: HashMap<u64, String>,
+}
+
 /// The main part's XML after the edits; `None` when nothing changed.
 pub fn main_xml(doc: &Document) -> Result<Option<String>, String> {
+    use std::borrow::Cow;
     let src = doc.source.as_ref().ok_or("the document was not read for editing")?;
     let sources = if doc.section_sources.is_empty() { vec![1; doc.sections.len()] } else { doc.section_sources.clone() };
-    if sources.len() != doc.sections.len() || sources.iter().sum::<usize>() != src.blocks.len() {
-        return Err("sections were added (not supported yet)".into());
+    if sources.len() != doc.sections.len() || sources.iter().sum::<usize>() != src.blocks.len() || sources.last() == Some(&0) {
+        return Err("the sections don't match the source's".into());
     }
+    // The source's `w:sectPr`s, when a break was deleted or a section made.
+    let (sects, w): (Vec<Range<usize>>, String) = if sources.iter().all(|&n| n == 1) {
+        (Vec::new(), String::new())
+    } else {
+        let dom = roxmltree::Document::parse(&src.xml).map_err(|e| e.to_string())?;
+        let w = dom.root_element().lookup_prefix(W).filter(|p| !p.is_empty()).map_or(String::new(), |p| format!("{p}:"));
+        let sects = dom
+            .descendants()
+            .filter(|n| is_w(*n, "sectPr") && n.parent().is_some_and(|p| is_w(p, "body") || is_w(p, "pPr")))
+            .map(|n| n.range())
+            .collect();
+        (sects, w)
+    };
+    let sect = |k: usize| sects.get(k).cloned().ok_or("a section without its sectPr");
     // A section holding several as read (their breaks deleted) is compared with their blocks together, and the
-    // `w:sectPr`s of the breaks deleted go.
-    let mut orig: Vec<std::borrow::Cow<[Block]>> = Vec::new();
-    let mut gone: Vec<usize> = Vec::new();
-    let mut at = 0;
-    for &n in &sources {
+    // `w:sectPr`s of the breaks deleted go. A section made since reading is compared with the one after it, its last
+    // paragraph taking a `w:sectPr` made from that one's as read.
+    let mut orig: Vec<Cow<[Block]>> = Vec::new();
+    let mut now: Vec<Cow<[Block]>> = Vec::new();
+    let mut edits = SectionEdits::default();
+    let (mut at, mut made) = (0, Vec::new());
+    for (k, &n) in sources.iter().enumerate() {
+        if n == 0 {
+            made.push(k);
+            continue;
+        }
         orig.push(match n {
-            1 => std::borrow::Cow::Borrowed(src.blocks[at].as_slice()),
-            _ => std::borrow::Cow::Owned(src.blocks[at..at + n].concat()),
+            1 => Cow::Borrowed(src.blocks[at].as_slice()),
+            _ => Cow::Owned(src.blocks[at..at + n].concat()),
         });
-        gone.extend(at..at + n - 1);
+        for g in at..at + n - 1 {
+            edits.dropped.push(sect(g)?);
+        }
+        let s = &doc.sections[k];
+        if made.is_empty() {
+            now.push(Cow::Borrowed(s.blocks.as_slice()));
+        } else {
+            let base = &src.xml[sect(at + n - 1)?];
+            let mut blocks = Vec::new();
+            for j in made.drain(..) {
+                let new = &doc.sections[j];
+                let Some(Block::Para(last)) = new.blocks.last() else { return Err("a new section that doesn't end in a paragraph".into()) };
+                edits.made.insert(last.id, sect_with_page(base, &w, &new.page(), s.read.as_deref(), None, &doc.people));
+                blocks.extend(new.blocks.iter().cloned());
+            }
+            blocks.extend(s.blocks.iter().cloned());
+            now.push(Cow::Owned(blocks));
+        }
         at += n;
     }
-    let dropped: Vec<Range<usize>> = match gone.is_empty() {
-        true => Vec::new(),
-        false => {
-            let dom = roxmltree::Document::parse(&src.xml).map_err(|e| e.to_string())?;
-            let sects: Vec<Range<usize>> = dom
-                .descendants()
-                .filter(|n| is_w(*n, "sectPr") && n.parent().is_some_and(|p| is_w(p, "body") || is_w(p, "pPr")))
-                .map(|n| n.range())
-                .collect();
-            gone.iter().map(|&k| sects.get(k).cloned().ok_or("a section without its sectPr")).collect::<Result<_, _>>()?
-        }
-    };
-    let lists: Vec<(&[Block], &[Block])> = orig.iter().zip(&doc.sections).map(|(a, s)| (a.as_ref(), s.blocks.as_slice())).collect();
+    let lists: Vec<(&[Block], &[Block])> = orig.iter().zip(&now).map(|(a, b)| (a.as_ref(), b.as_ref())).collect();
     let (o, n): (Vec<&[Block]>, Vec<&[Block]>) = lists.iter().copied().unzip();
-    part_xml_with(&src.xml, &boxes(&o, &n), &lists, &[], &dropped, &doc.controls, &gone_controls(doc), &doc.people)
+    part_xml_with(&src.xml, &boxes(&o, &n), &lists, &[], &edits, &doc.controls, &gone_controls(doc), &doc.people)
 }
 
 /// A part's XML with its block lists (as read, now) written back; `None` when none changed.
@@ -966,7 +1288,7 @@ fn part_xml(
     gone: &[Control],
     people: &People,
 ) -> Result<Option<String>, String> {
-    part_xml_with(xml, inner, lists, &[], &[], controls, gone, people)
+    part_xml_with(xml, inner, lists, &[], &SectionEdits::default(), controls, gone, people)
 }
 
 /// [`part_xml`] with `extra` splices of the original part added (whole notes in and out), and the section breaks
@@ -977,7 +1299,7 @@ fn part_xml_with<'a>(
     inner: &[(&[Block], &[Block])],
     lists: &[(&[Block], &[Block])],
     extra: &[Splice],
-    dropped: &'a [Range<usize>],
+    sections: &'a SectionEdits,
     controls: &HashMap<ControlId, Control>,
     gone: &[Control],
     people: &'a People,
@@ -1022,7 +1344,9 @@ fn part_xml_with<'a>(
         controls: controls.clone(),
         ids: std::cell::Cell::new(DRAWING_IDS),
         people,
-        dropped,
+        dropped: &sections.dropped,
+        made: &sections.made,
+        bookmarks: Default::default(),
     };
     for (orig, now) in inner {
         s.container(orig, now)?;
@@ -1042,7 +1366,7 @@ fn part_xml_with<'a>(
     s.splices.extend(s.changed_controls(gone));
     // A dropped break in a paragraph written again went with it; else it goes from the paragraph as read.
     let rewritten = |r: &Range<usize>| s.splices.iter().any(|(o, _)| o.start <= r.start && r.end <= o.end);
-    let unwritten: Vec<Splice> = dropped.iter().filter(|r| !rewritten(r)).map(|r| (r.clone(), String::new())).collect();
+    let unwritten: Vec<Splice> = sections.dropped.iter().filter(|r| !rewritten(r)).map(|r| (r.clone(), String::new())).collect();
     s.splices.extend(unwritten);
     s.splices.extend(extra.iter().cloned());
     if s.splices.is_empty() {
@@ -1124,6 +1448,10 @@ struct Saver<'a, 'i> {
     people: &'a People,
     /// The `w:sectPr`s of section breaks deleted: a paragraph written again doesn't keep one.
     dropped: &'a [Range<usize>],
+    /// The `w:sectPr`s new sections' last paragraphs take, by paragraph id.
+    made: &'a HashMap<u64, String>,
+    /// Bookmark ids by name: the part's, and those given to bookmarks written new.
+    bookmarks: std::cell::RefCell<Option<HashMap<String, i64>>>,
 }
 
 fn block_src(b: &Block) -> Option<*const ()> {
@@ -1293,7 +1621,13 @@ impl<'a, 'i> Saver<'a, 'i> {
         if qs.is_empty() && ps.is_empty() {
             return Ok(());
         }
-        if qs.len() == 1 && ps.len() == 1 && same_para(qs[0], ps[0]) && qs[0].controls == ps[0].controls && !self.changed_inline(ps[0]) {
+        if qs.len() == 1
+            && ps.len() == 1
+            && same_para(qs[0], ps[0])
+            && qs[0].controls == ps[0].controls
+            && !self.changed_inline(ps[0])
+            && !self.made.contains_key(&ps[0].id)
+        {
             return Ok(());
         }
         // A deleted frame (frames.rs made its paragraphs a float of the next one): its paragraphs go too.
@@ -1318,6 +1652,18 @@ impl<'a, 'i> Saver<'a, 'i> {
             return Ok(());
         }
         let mut text = Emit::group(self, &qs, &srcs, &ps)?;
+        // Frames made since reading (a drop cap): their paragraphs, each with its `w:framePr`, go before the paragraph
+        // they anchor at.
+        let made: String = ps
+            .iter()
+            .flat_map(|p| p.inlines.iter())
+            .filter_map(|i| match i {
+                Inline::Float(f, _) if f.frame_src.is_none() && f.is_frame() => f.text_box.as_ref(),
+                _ => None,
+            })
+            .map(|tb| new_blocks_xml(self.xml, &tb.blocks, &self.controls, self.people))
+            .collect::<Result<_, _>>()?;
+        text.insert_str(0, &made);
         match srcs.first() {
             Some(first) => {
                 // Frames between joined paragraphs (frames.rs anchored them in the next paragraph, now joined into
@@ -1445,6 +1791,21 @@ impl<'a, 'i> Saver<'a, 'i> {
                             };
                             fix.push(self.set_child(p, "jc", format!("<{w}jc {w}val=\"{v}\"/>"), before("jc")));
                         }
+                        if a.cell_spacing != t.cell_spacing {
+                            let tag = if t.cell_spacing > 0.0 { width(&w, "tblCellSpacing", &Width::Dxa(t.cell_spacing)) } else { String::new() };
+                            fix.push(self.set_child(p, "tblCellSpacing", tag, before("tblCellSpacing")));
+                        }
+                        if a.alt != t.alt {
+                            let (title, description) = t.alt.as_deref().map_or(("", ""), |a| (a.title.as_str(), a.description.as_str()));
+                            let tag = |name: &str, v: &str| if v.is_empty() { String::new() } else { format!("<{w}{name} {w}val=\"{}\"/>", props::esc(v)) };
+                            fix.extend(self.set_children(
+                                p,
+                                vec![
+                                    ("tblCaption", tag("tblCaption", title), before("tblCaption")),
+                                    ("tblDescription", tag("tblDescription", description), before("tblDescription")),
+                                ],
+                            ));
+                        }
                         if (a.ind, a.ind_pct) != (t.ind, t.ind_pct) {
                             fix.push(self.set_child(p, "tblInd", format!("<{w}tblInd {w}w=\"{}\" {w}type=\"dxa\"/>", twips(t.ind)), before("tblInd")));
                         }
@@ -1532,7 +1893,7 @@ impl<'a, 'i> Saver<'a, 'i> {
                     let mut cells_open = Vec::new();
                     for c in &row.cells {
                         wrap(&mut out, &c.controls, &mut cells_open, self);
-                        out.push_str(&format!("<{w}tc>{}", tc_pr(&w, c, self.people)));
+                        out.push_str(&format!("<{w}tc>{}", tc_pr(&w, c, self.people, &self.cx)));
                         out.push_str(&self.blocks_xml(orig, &c.blocks)?);
                         out.push_str(&format!("</{w}tc>"));
                     }
@@ -1591,7 +1952,14 @@ impl<'a, 'i> Saver<'a, 'i> {
     fn row_props(&self, n: Option<Node>, was: Option<&Row>, row: &Row) -> String {
         let w = &self.w;
         let same = was.is_some_and(|k| k.rev == row.rev);
-        let src = |name: &str| n.and_then(|n| child(n, name)).map(|p| &self.xml[p.range()]);
+        // A row rewritten from the model (its cells changed) patches the properties it was read with.
+        let src = |name: &str| {
+            n.and_then(|n| child(n, name)).map(|p| &self.xml[p.range()]).or(if name == "trPr" {
+                row.direct.0.as_deref()
+            } else {
+                row.exceptions.0.as_deref()
+            })
+        };
         let mut out = String::new();
         match src("tblPrEx") {
             Some(x) if same => out.push_str(x),
@@ -1645,6 +2013,29 @@ impl<'a, 'i> Saver<'a, 'i> {
         // The table exceptions' tracked change.
         let change = if was.rev.ex_change != now.rev.ex_change { Some(revisions::ex_change(&w, &now.rev, self.people)) } else { None };
         match ex {
+            // Exceptions the API set: the row's, whole.
+            _ if was.exceptions.0 != now.exceptions.0 => {
+                let mut p = Props::parse(now.exceptions.0.as_deref(), "tblPrEx", &self.cx);
+                p.reorder(revisions::TBLPREX);
+                for (name, tag, _) in later {
+                    if p.get(name).is_none() {
+                        p.set(name, tag);
+                    }
+                }
+                p.remove("tblPrExChange");
+                let change = revisions::ex_change(&w, &now.rev, self.people);
+                if !change.is_empty() {
+                    p.set("tblPrExChange", change);
+                }
+                let xml = p.xml().unwrap_or_default();
+                match ex {
+                    Some(e) => out.push((e.range(), xml)),
+                    None => {
+                        let at = self.open_end(n);
+                        out.push((at..at, xml));
+                    }
+                }
+            }
             Some(p) => {
                 if let Some(tag) = change {
                     out.push(self.set_child(p, "tblPrExChange", tag, revisions::before(revisions::TBLPREX, "tblPrExChange")));
@@ -1676,6 +2067,9 @@ impl<'a, 'i> Saver<'a, 'i> {
         }
         if was.header != now.header {
             tr.push(("tblHeader", if now.header { format!("<{w}tblHeader/>") } else { format!("<{w}tblHeader {w}val=\"0\"/>") }, BASE));
+        }
+        if was.hidden != now.hidden {
+            tr.push(("hidden", if now.hidden { format!("<{w}hidden/>") } else { String::new() }, BASE));
         }
         if was.height != now.height {
             let tag = match &now.height {
@@ -1728,17 +2122,9 @@ impl<'a, 'i> Saver<'a, 'i> {
                 // Shading and vertical alignment that table formatting set as direct properties (resolved values that
                 // a style region gives aren't written).
                 let (da, db) = (Props::parse(a.direct.0.as_deref(), "tcPr", &self.cx), Props::parse(b.direct.0.as_deref(), "tcPr", &self.cx));
-                for (name, after) in [
-                    ("tcBorders", &["cnfStyle", "tcW", "gridSpan", "hMerge", "vMerge"][..]),
-                    ("shd", &["cnfStyle", "tcW", "gridSpan", "hMerge", "vMerge", "tcBorders"][..]),
-                    ("tcMar", &["cnfStyle", "tcW", "gridSpan", "hMerge", "vMerge", "tcBorders", "shd", "noWrap"][..]),
-                    (
-                        "vAlign",
-                        &["cnfStyle", "tcW", "gridSpan", "hMerge", "vMerge", "tcBorders", "shd", "noWrap", "tcMar", "textDirection", "tcFitText"][..],
-                    ),
-                ] {
+                for name in ["tcBorders", "shd", "noWrap", "tcMar", "textDirection", "tcFitText", "vAlign", "hideMark", "headers"] {
                     if da.get(name) != db.get(name) {
-                        fix.push((name, db.get(name).unwrap_or("").to_string(), after));
+                        fix.push((name, db.get(name).unwrap_or("").to_string(), revisions::before(revisions::TCPR, name)));
                     }
                 }
                 // The cell's insertion, deletion or merge, and its property change.
@@ -1773,12 +2159,15 @@ impl<'a, 'i> Saver<'a, 'i> {
         let mut out = String::new();
         for i in &p.inlines {
             let Inline::Float(f, run) = i else { continue };
-            if here(f.id, run) {
+            // A new frame is written as its paragraphs, before this one.
+            if here(f.id, run) || (f.frame_src.is_none() && f.is_frame()) {
                 continue;
             }
             let (open, close) = revisions::wrappers(&self.w, run.rev.ins.as_deref(), run.rev.del.as_deref(), self.people);
             let mut push = |x: &str| out.push_str(&format!("{open}<{w}r>{x}</{w}r>{close}", w = self.w));
-            let Some((r, was)) = self.float_src.get(&f.id) else {
+            // A pasted copy (a new id) is found by where it was read from, and gets drawing ids of its own.
+            let copied = f.src.as_ref().and_then(|s| self.float_src.values().find(|(r, _)| r == s)).filter(|_| !self.float_src.contains_key(&f.id));
+            let Some((r, was)) = self.float_src.get(&f.id).or(copied) else {
                 if let Some(x) = self.new_float_xml(f) {
                     push(&x);
                 }
@@ -1797,12 +2186,96 @@ impl<'a, 'i> Saver<'a, 'i> {
                 Some(pl) => pl.apply(&src),
                 None => src,
             };
-            push(&d);
+            push(&if copied.is_some() { self.new_doc_pr_ids(&d) } else { d });
         }
         out
     }
 
     /// The source element at exactly `r`, inside one of the part's paragraphs.
+    /// A marker's element in the group's source paragraphs: a range or comment reference by its name and id, opaque
+    /// content by its text.
+    fn marker_range(&self, m: &Marker, srcs: &[&ParaSrc]) -> Option<Range<usize>> {
+        let mut nodes = srcs.iter().flat_map(|x| x.ranges.iter()).filter_map(|r| self.paras.get(&r.start));
+        match m {
+            Marker::Bookmark(n) => {
+                let (name, start) = n.strip_prefix('/').map_or((n.as_str(), true), |n| (n, false));
+                let id = self.bookmark_id(name);
+                let (el, by) = if start { ("bookmarkStart", None) } else { ("bookmarkEnd", Some(id.to_string())) };
+                nodes.find_map(|p| {
+                    p.descendants()
+                        .find(|d| {
+                            is_w(*d, el)
+                                && match &by {
+                                    None => d.attribute((W, "name")) == Some(name),
+                                    Some(id) => d.attribute((W, "id")).map(str::trim) == Some(id.as_str()),
+                                }
+                        })
+                        .map(|d| d.range())
+                })
+            }
+            Marker::Opaque(o) => {
+                let raw = o.xml.0.as_deref()?;
+                srcs.iter().flat_map(|x| x.ranges.iter()).find_map(|r| self.xml[r.clone()].find(raw).map(|k| r.start + k..r.start + k + raw.len()))
+            }
+            _ => {
+                let (name, id) = m.element()?;
+                nodes.find_map(|n| {
+                    n.descendants()
+                        .find(|d| is_w(*d, name) && d.attribute((W, "id")).and_then(|v| v.trim().parse::<i64>().ok()) == Some(id))
+                        .map(|d| d.range())
+                })
+            }
+        }
+    }
+
+    /// `xml` with each `wp:docPr` given a new id (a copied drawing's must be unique).
+    fn new_doc_pr_ids(&self, xml: &str) -> String {
+        let mut out = String::with_capacity(xml.len());
+        let mut rest = xml;
+        while let Some(k) = rest.find("docPr ") {
+            let tag_end = rest[k..].find('>').map_or(rest.len(), |e| k + e);
+            let Some(a) = rest[k..tag_end].find(" id=\"").map(|a| k + a + 5) else {
+                out.push_str(&rest[..tag_end]);
+                rest = &rest[tag_end..];
+                continue;
+            };
+            let b = rest[a..].find('"').map_or(a, |e| a + e);
+            let id = self.ids.get();
+            self.ids.set(id + 1);
+            out.push_str(&rest[..a]);
+            out.push_str(&id.to_string());
+            rest = &rest[b..];
+        }
+        out.push_str(rest);
+        out
+    }
+
+    /// A bookmark's id: the part's for its name, else a new one, the same for its start and end.
+    fn bookmark_id(&self, name: &str) -> i64 {
+        let mut map = self.bookmarks.borrow_mut();
+        let map = map.get_or_insert_with(|| {
+            let Some(root) = self.paras.values().next().map(|n| n.document().root_element()) else { return HashMap::new() };
+            root.descendants()
+                .filter(|d| is_w(*d, "bookmarkStart"))
+                .filter_map(|d| Some((d.attribute((W, "name"))?.to_string(), d.attribute((W, "id"))?.trim().parse().ok()?)))
+                .collect()
+        });
+        if let Some(&id) = map.get(name) {
+            return id;
+        }
+        let id = map.values().max().map_or(0, |m| m + 1);
+        map.insert(name.to_string(), id);
+        id
+    }
+
+    /// Whether `xml` (content of a part's body) parses, with the part's namespaces.
+    fn well_formed(&self, xml: &str) -> bool {
+        let Some(root) = self.paras.values().next().map(|n| n.document().root_element()) else { return true };
+        let decl: String =
+            root.namespaces().map(|n| format!(" xmlns{}=\"{}\"", n.name().map_or(String::new(), |p| format!(":{p}")), props::esc(n.uri()))).collect();
+        roxmltree::Document::parse(&format!("<x{decl}>{xml}</x>")).is_ok()
+    }
+
     fn node_at(&self, r: Range<usize>) -> Option<Node<'a, 'i>> {
         self.paras.values().filter(|p| p.range().start <= r.start && r.end <= p.range().end).find_map(|p| p.descendants().find(|n| n.range() == r))
     }
@@ -1987,15 +2460,37 @@ enum Marker {
     Range(RangeMark),
     /// A comment's reference mark, in its run's formatting.
     Comment(CommentId, Run),
+    /// Content kept as read ([`Inline::Opaque`]).
+    Opaque(Rc<super::model::Opaque>),
+    /// A bookmark's start, or (`/` and its name) end.
+    Bookmark(String),
 }
 
 impl Marker {
     /// The element it is in the source, and the id that names it there.
     fn element(&self) -> Option<(&'static str, i64)> {
         match self {
-            Marker::Control(..) => None,
+            Marker::Control(..) | Marker::Opaque(_) | Marker::Bookmark(_) => None,
             Marker::Range(r) => Some((range_element(r.kind), r.id)),
             Marker::Comment(id, _) => Some(("commentReference", id.0)),
+        }
+    }
+}
+
+impl Marker {
+    /// What names it, whatever its formatting: two markers with the same key are the same marker.
+    fn key(&self) -> (u8, i64) {
+        match self {
+            Marker::Control(id, start) => (u8::from(*start), id.0 as i64),
+            Marker::Range(r) => (2 + r.kind as u8, r.id),
+            Marker::Comment(id, _) => (u8::MAX, id.0),
+            Marker::Opaque(o) => (u8::MAX - 1, Rc::as_ptr(o) as usize as i64),
+            Marker::Bookmark(n) => {
+                use std::hash::{Hash, Hasher};
+                let mut h = std::hash::DefaultHasher::new();
+                n.hash(&mut h);
+                (u8::MAX - 2, h.finish() as i64)
+            }
         }
     }
 }
@@ -2019,6 +2514,8 @@ fn marker(i: &Inline, pend: &mut Vec<Marker>) {
         Inline::ControlEnd(c) => pend.push(Marker::Control(*c, false)),
         Inline::Range(r) => pend.push(Marker::Range(r.clone())),
         Inline::CommentRef { id, run } => pend.push(Marker::Comment(*id, run.clone())),
+        Inline::Opaque(o) => pend.push(Marker::Opaque(o.clone())),
+        Inline::Bookmark(n) => pend.push(Marker::Bookmark(n.clone())),
         _ => {}
     }
 }
@@ -2027,6 +2524,10 @@ fn same_inline(x: &Inline, y: &Inline) -> bool {
     match (x, y) {
         (Inline::Text(s, r), Inline::Text(t, q)) => s == t && Rc::ptr_eq(r, q),
         (Inline::Bookmark(a), Inline::Bookmark(b)) => a == b,
+        (Inline::Opaque(a), Inline::Opaque(b)) => Rc::ptr_eq(a, b),
+        (Inline::NoteRef { kind: k, id: a, custom: c, run: r }, Inline::NoteRef { kind: l, id: b, custom: d, run: q }) => {
+            (k, a, c) == (l, b, d) && Rc::ptr_eq(r, q)
+        }
         (Inline::Range(a), Inline::Range(b)) => a == b,
         (Inline::CommentRef { id: a, run: r }, Inline::CommentRef { id: b, run: q }) => a == b && Rc::ptr_eq(r, q),
         (Inline::ControlStart(a), Inline::ControlStart(b)) | (Inline::ControlEnd(a), Inline::ControlEnd(b)) => a == b,
@@ -2035,6 +2536,9 @@ fn same_inline(x: &Inline, y: &Inline) -> bool {
         // Moved or resized floats are written patched (their text boxes' content is its own container).
         (Inline::Float(a, r), Inline::Float(b, q)) => {
             a.id == b.id && Placement::changed(a, b).is_none() && !drawing::differs(a, b) && Rc::ptr_eq(r, q)
+        }
+        (Inline::FieldBegin { form: a, run: r, .. }, Inline::FieldBegin { form: b, run: q, .. }) => {
+            a.as_ref().map(|f| &f.data) == b.as_ref().map(|f| &f.data) && Rc::ptr_eq(r, q)
         }
         // A resized picture is written patched.
         (Inline::Picture(a, r), Inline::Picture(b, q)) => a.image == b.image && a.w == b.w && a.h == b.h && a.alt == b.alt && Rc::ptr_eq(r, q),
@@ -2074,7 +2578,13 @@ fn unit_keys(i: &Inline, out: &mut Vec<(u64, char)>) {
         Inline::Break(BreakKind::ClearAll, _) => out.push((ATOM | BreakKind::ClearAll as u64, '\u{3}')),
         Inline::Break(BreakKind::Column, _) => out.push((ATOM | BreakKind::Column as u64, '\u{e}')),
         Inline::Break(k, _) => out.push((ATOM | *k as u64, '\u{c}')),
-        Inline::Bookmark(_) | Inline::Range(_) | Inline::CommentRef { .. } | Inline::Float(..) | Inline::ControlStart(_) | Inline::ControlEnd(_) => {}
+        Inline::Bookmark(_)
+        | Inline::Opaque(_)
+        | Inline::Range(_)
+        | Inline::CommentRef { .. }
+        | Inline::Float(..)
+        | Inline::ControlStart(_)
+        | Inline::ControlEnd(_) => {}
         other => {
             let mut h = std::hash::DefaultHasher::new();
             // By what the object is, not its formatting: reformatting keeps it.
@@ -2082,17 +2592,19 @@ fn unit_keys(i: &Inline, out: &mut Vec<(u64, char)>) {
             match other {
                 // By its image: a resized picture is kept, its size patched (`Emit::seg`).
                 Inline::Picture(p, _) => p.image.hash(&mut h),
-                Inline::NoteRef { id, .. } => id.hash(&mut h),
+                Inline::NoteRef { kind, id, .. } => (*kind as u8, id).hash(&mut h),
                 // A checkbox by its control: toggling keeps it (its face is patched, `Emit::seg`).
                 Inline::Sym { control: Some(c), .. } => c.hash(&mut h),
                 Inline::Sym { ch, font, .. } => (ch, font).hash(&mut h),
                 Inline::PTab(t, _) => t.hash(&mut h),
-                // A field's markers by their field: editing its code keeps them.
-                Inline::FieldBegin { id, .. } | Inline::FieldSep { id, .. } | Inline::FieldEnd { id, .. } => id.hash(&mut h),
+                // A field's markers by their field: editing its code keeps them; a form field's changed data is
+                // written anew.
+                Inline::FieldBegin { id, form, .. } => (id, form.as_ref().is_some_and(|f| f.data != f.read)).hash(&mut h),
+                Inline::FieldSep { id, .. } | Inline::FieldEnd { id, .. } => id.hash(&mut h),
                 _ => {}
             }
-            // A symbol writes as its character (a checkbox's face); other objects as U+FFFC.
-            let ch = if let Inline::Sym { ch, .. } = other { *ch } else { '\u{FFFC}' };
+            // A checkbox's face writes as its character; other objects (a symbol too) as U+FFFC.
+            let ch = if let Inline::Sym { ch, control: Some(_), .. } = other { *ch } else { '\u{FFFC}' };
             out.push((ATOM | (h.finish() >> 24) << 41, ch));
         }
     }
@@ -2244,6 +2756,8 @@ struct Cur {
     /// The markers right before it (inline controls, comment and move ranges, comment references, in order): written
     /// when the group is written from the model.
     ctl: Vec<Marker>,
+    /// Those of `ctl` the group's source doesn't have, when the source is walked: written where they are now.
+    fresh: Vec<Marker>,
     /// A checkbox whose control's properties changed: its new `w:sdtPr`, patched into its source ([`Emit::seg`]).
     pr: Option<String>,
 }
@@ -2375,10 +2889,23 @@ struct Emit<'s, 'a, 'i> {
     unwrap: Vec<usize>,
     /// Changed controls' `w:sdtPr` ranges, with the properties written there.
     prs: Vec<(Range<usize>, String)>,
+    /// Fresh markers written so far ([`Cur::fresh`]).
+    fresh_written: usize,
 }
 
 impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
+    /// A group's XML: its source walked, with markers added since reading written where they are, when that comes out
+    /// whole (well-formed, every added marker written); else as [`Emit::group_as`] without them.
     fn group(s: &'s Saver<'a, 'i>, qs: &[&Paragraph], srcs: &[&ParaSrc], ps: &[&Paragraph]) -> Result<String, String> {
+        match Emit::group_as(s, qs, srcs, ps, true)? {
+            Some(x) => Ok(x),
+            None => Emit::group_as(s, qs, srcs, ps, false).map(|x| x.unwrap_or_default()),
+        }
+    }
+
+    /// With `fresh`, `None` when the source can't be walked with the markers added since reading, or what that wrote
+    /// isn't whole.
+    fn group_as(s: &'s Saver<'a, 'i>, qs: &[&Paragraph], srcs: &[&ParaSrc], ps: &[&Paragraph], fresh: bool) -> Result<Option<String>, String> {
         // The source text can be walked when every unit has its element and no element holds another's.
         let mut segs = Vec::new();
         let mut orig = Vec::new();
@@ -2454,10 +2981,11 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                     obj: obj.clone(),
                     size: size.clone(),
                     ctl: if k == 0 { std::mem::take(&mut pend) } else { Vec::new() },
+                    fresh: Vec::new(),
                     pr: pr.clone(),
                 }));
             }
-            cur.push(Cur { key: MARK, ch: '\n', code: false, run: None, obj: None, size: None, ctl: pend, pr: None });
+            cur.push(Cur { key: MARK, ch: '\n', code: false, run: None, obj: None, size: None, ctl: pend, fresh: Vec::new(), pr: None });
         }
         let keys_of = |orig: &[Orig]| orig.iter().map(|o| o.key).collect::<Vec<_>>();
         let cur_keys: Vec<u64> = cur.iter().map(|c| c.key).collect();
@@ -2494,6 +3022,34 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
         }
         let live: Vec<Vec<Marker>> =
             orig_ctl.iter().map(|ms| ms.iter().filter(|m| !matches!(m, Marker::Control(id, _) if gone.contains(id))).cloned().collect()).collect();
+        // Markers the source doesn't have, set aside to be written where they are (a new comment's range, a new
+        // control's markup).
+        let mut fresh_ids = Vec::new();
+        if fresh {
+            let had: std::collections::HashSet<(u8, i64)> = orig_ctl.iter().flatten().map(Marker::key).collect();
+            for c in &mut cur {
+                let (old, new): (Vec<Marker>, Vec<Marker>) = std::mem::take(&mut c.ctl).into_iter().partition(|m| had.contains(&m.key()));
+                c.ctl = old;
+                fresh_ids.extend(new.iter().filter_map(|m| if let Marker::Control(id, _) = m { Some(*id) } else { None }));
+                c.fresh = new;
+            }
+        }
+        let fresh_count: usize = cur.iter().map(|c| c.fresh.len()).sum();
+        now_ids.retain(|id| !fresh_ids.contains(id));
+        // Markers gone since reading (a deleted comment's range and reference, deleted opaque content), their source
+        // elements left out of the walk; controls go as `gone`.
+        let mut removed = Vec::new();
+        if fresh {
+            let now: std::collections::HashSet<(u8, i64)> = cur.iter().flat_map(|c| c.ctl.iter().chain(&c.fresh)).map(Marker::key).collect();
+            for m in orig_ctl.iter().flatten().filter(|m| !matches!(m, Marker::Control(..)) && !now.contains(&m.key())) {
+                match s.marker_range(m, srcs) {
+                    Some(r) => removed.push((m.key(), r)),
+                    None => return Ok(None),
+                }
+            }
+        }
+        let live: Vec<Vec<Marker>> =
+            live.into_iter().map(|ms| ms.into_iter().filter(|m| !removed.iter().any(|(k, _)| *k == m.key())).collect()).collect();
         let faithful = |kept: &[Option<usize>]| {
             let mut taken = vec![false; cur.len()];
             kept.iter().flatten().for_each(|&j| taken[j] = true);
@@ -2506,6 +3062,9 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
         let (mut cut, mut fills) = (HashMap::new(), HashMap::new());
         let content = |id: ControlId| sdt_of(&id).and_then(|a| sdts[&a].0);
         mapped = mapped && place(&orig, &live, &cur, &kept, &mut ins, &mut cut, &mut fills, &content);
+        if !mapped && (fresh_count > 0 || !removed.is_empty()) {
+            return Ok(None);
+        }
         if !mapped {
             // shortcut: written from the model (an unmappable source such as a field across runs of different parents,
             // or inline markers added, removed or moved), so the group's content the model doesn't hold (bookmarks,
@@ -2586,7 +3145,7 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                 // The paragraph it continues: same formatting, else the one it came from, else the group's first.
                 let by_style = qs.iter().position(|q| Rc::ptr_eq(&q.style, &p.style));
                 let by_src = qs.iter().position(|q| q.src.as_ref().zip(p.src.as_ref()).is_some_and(|(a, b)| Rc::ptr_eq(a, b)));
-                let sect = sect.filter(|_| last);
+                let sect = s.made.get(&p.id).map(String::as_str).or(sect.filter(|_| last));
                 match by_style.or(by_src).or((!qs.is_empty()).then_some(0)) {
                     Some(k) => {
                         let (mut open, close) = s.tags(nodes[k]);
@@ -2634,6 +3193,7 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
             .into_iter()
             .filter(|(id, _, r)| !now.iter().any(|(n, _, q)| n == id && same_rev(r, q)))
             .filter_map(|(_, src, _)| src)
+            .chain(removed.iter().map(|(_, r)| r.clone()))
             .collect();
         let all = |ps: &[&Paragraph]| -> Vec<Float> {
             ps.iter().flat_map(|p| p.inlines.iter()).filter_map(|i| if let Inline::Float(f, _) = i { Some((**f).clone()) } else { None }).collect()
@@ -2703,6 +3263,8 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
             let mut read = Vec::new();
             qs.iter().flat_map(|q| q.inlines.iter()).for_each(|i| marker(i, &mut read));
             marker_outside = read.iter().filter_map(Marker::element).filter(|k| !marker_src.contains_key(k)).collect();
+        }
+        if !mapped || fresh_count > 0 {
             moves = ps
                 .iter()
                 .flat_map(|p| p.inlines.iter())
@@ -2748,6 +3310,7 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
             fields,
             unwrap,
             prs,
+            fresh_written: 0,
         };
         // Hidden marks are kept only while no paragraph mark comes or goes (they would mark the wrong paragraph).
         let stable = e.ins.iter().flatten().all(|&j| e.cur[j].run.is_some()) && e.orig.iter().zip(&e.kept).all(|(o, k)| o.key != MARK || k.is_some());
@@ -2782,7 +3345,10 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
         if e.next != e.heads.len() {
             return Err(format!("wrote {} of {} paragraphs", e.next, e.heads.len()));
         }
-        Ok(e.out)
+        if fresh_count > 0 && (e.fresh_written != fresh_count || !s.well_formed(&e.out)) {
+            return Ok(None);
+        }
+        Ok(Some(e.out))
     }
 
     /// Where insertions at gap `g` split between its neighbours: those in the next unit's run go before it (the
@@ -2949,13 +3515,14 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
         let resized = |e: &Self, i: usize| e.kept[i].and_then(|j| (e.cur[j].size != e.orig[i].size).then(|| e.cur[j].size.clone()).flatten());
         let unchanged = (first..first + n).all(|i| {
             self.kept[i].is_some_and(|j| self.cur[j].run.as_ref().is_some_and(|r| Rc::as_ptr(r) == self.orig[i].run)) && resized(self, i).is_none()
-        }) && (first + 1..first + n).all(|g| self.ins[g].is_empty());
+        }) && (first + 1..first + n).all(|g| self.ins[g].is_empty() && self.kept[g].is_none_or(|j| self.cur[j].fresh.is_empty()));
         // A checkbox toggled, or its control's properties changed: its control written with the new
         // properties, state and face.
         let checkbox = (n == 1 && !in_run && self.s.xml[range.clone()].contains("checkbox")).then(|| self.kept[first]).flatten();
         let toggled = checkbox.map(|j| (self.cur[j].ch, self.cur[j].pr.clone())).filter(|(ch, pr)| *ch != self.orig[first].ch || pr.is_some());
         if let Some((ch, pr)) = toggled {
             self.insert(first, None, true);
+            self.fresh_before(first);
             let mut src = self.s.xml[range.clone()].to_string();
             if let Some(pr) = pr {
                 let old = sdt_pr(&src, &self.s.w).to_string();
@@ -2973,6 +3540,7 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
         }
         if unchanged {
             self.insert(first, ctx(self, first), true);
+            self.fresh_before(first);
             if in_run {
                 self.add(To::Src, None, Some(range.clone()));
             } else {
@@ -2982,9 +3550,9 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
             self.insert_after(first + n, ctx(self, first + n - 1), range.end);
             return;
         }
-        if !in_run && n > 1 {
-            // A changed element holding several units (a simple field): written from the model, as
-            // what each unit is now (a simple field becomes a complex one).
+        if n > 1 && (!in_run || !text) {
+            // A changed element holding several units (a simple field, a run child such as a fallback's text):
+            // written from the model, as what each unit is now (a simple field becomes a complex one).
             for i in first..first + n {
                 self.insert(i, None, true);
                 if let Some(j) = self.kept[i] {
@@ -2999,6 +3567,7 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
         }
         for i in first..first + n {
             self.insert(i, ctx(self, i), true);
+            self.fresh_before(i);
             if let Some(j) = self.kept[i] {
                 let run = self.cur[j].run.clone().expect("a unit in a run");
                 if !in_run {
@@ -3006,7 +3575,8 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                     // A content control around a resized picture: its drawing with the new extents.
                     if let Some(size) = resized(self, i).filter(|_| Rc::as_ptr(&run) == self.orig[i].run) {
                         let p = Placement { size: Some((size.0, size.1)), alt: Some(size.2.to_string()), ..Placement::default() };
-                        let x = p.apply(&self.src(range.clone()));
+                        let src = self.src(range.clone());
+                        let x = if drawing::is_vml(&src) { drawing::vml_size(&src, size.0, size.1) } else { p.apply(&src) };
                         self.flush();
                         self.open_to(self.stack.len());
                         self.out.push_str(&x);
@@ -3041,7 +3611,9 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                                 p.inner = Some(d.start - range.start..d.end - range.start);
                             }
                         }
-                        self.pend.push_str(&p.apply(&self.s.src_text(range.clone())));
+                        let src = self.s.src_text(range.clone());
+                        let x = if drawing::is_vml(&src) { drawing::vml_size(&src, size.0, size.1) } else { p.apply(&src) };
+                        self.pend.push_str(&x);
                     } else {
                         self.add(to, None, Some(range.clone()))
                     }
@@ -3052,6 +3624,13 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
             } else {
                 self.insert(i + 1, ctx(self, i), false);
             }
+        }
+    }
+
+    /// The markers added before orig unit `i`'s unit now, when it is kept.
+    fn fresh_before(&mut self, i: usize) {
+        if let Some(j) = self.kept[i].filter(|&j| !self.cur[j].fresh.is_empty()) {
+            self.markers(j);
         }
     }
 
@@ -3083,11 +3662,12 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
     /// references from their source in the group, else from the model (those read from outside the group's paragraphs
     /// stay there).
     fn markers(&mut self, j: usize) {
-        if !self.model {
-            return;
-        }
         let w = self.s.w.clone();
-        for m in std::mem::take(&mut self.cur[j].ctl) {
+        let ms = if self.model { std::mem::take(&mut self.cur[j].ctl) } else { std::mem::take(&mut self.cur[j].fresh) };
+        if !self.model {
+            self.fresh_written += ms.len();
+        }
+        for m in ms {
             let key = m.element();
             // A comment reference is written from its run (its revisions with it).
             let src = key.filter(|_| matches!(m, Marker::Range(_))).and_then(|k| self.marker_src.get(&k)).cloned();
@@ -3106,7 +3686,8 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                 Marker::Control(id, start) => {
                     let Some(c) = self.s.controls.get(&id) else { continue };
                     self.flush();
-                    self.open_to(self.stack.len());
+                    let level = self.stack.iter().rposition(|o| o.run).unwrap_or(self.stack.len());
+                    self.open_to(level);
                     let x = if start { control_open(&w, id, c) } else { control_close(&w, c) };
                     self.out.push_str(&x);
                 }
@@ -3116,6 +3697,25 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                     self.open_to(level);
                     let x = self.range_xml(&r);
                     self.out.push_str(&x);
+                }
+                Marker::Bookmark(n) => {
+                    self.flush();
+                    let level = self.stack.iter().rposition(|o| o.run).unwrap_or(self.stack.len());
+                    self.open_to(level);
+                    let (name, start) = n.strip_prefix('/').map_or((n.as_str(), true), |n| (n, false));
+                    let id = self.s.bookmark_id(name);
+                    let x = if start {
+                        format!("<{w}bookmarkStart {w}id=\"{id}\" {w}name=\"{}\"/>", props::esc(name))
+                    } else {
+                        format!("<{w}bookmarkEnd {w}id=\"{id}\"/>")
+                    };
+                    self.out.push_str(&x);
+                }
+                Marker::Opaque(o) => {
+                    self.flush();
+                    let level = self.stack.iter().rposition(|o| o.run).unwrap_or(self.stack.len());
+                    self.open_to(level);
+                    self.out.push_str(o.xml.0.as_deref().unwrap_or(""));
                 }
                 Marker::Comment(id, run) => {
                     self.add(To::Own(run), None, None);
@@ -3525,12 +4125,7 @@ fn checkbox_xml(src: &str, face: char) -> String {
     };
     let checked = state("checkedState").map_or(face == '\u{2612}', |c| c == face);
     let mut s = src.to_string();
-    if let Some(k) = s.find(":checked ")
-        && let Some(v) = s[k..].find("val=\"").map(|v| k + v + 5)
-        && let Some(e) = s[v..].find('"').map(|e| v + e)
-    {
-        s.replace_range(v..e, if checked { "1" } else { "0" });
-    }
+    crate::docx::xml::set_checkbox_checked(&mut s, checked);
     // The face: the content's first text (the first `t` start tag, any prefix).
     let start = s.match_indices(":t").map(|(k, _)| k).find(|&k| {
         let lt = s[..k].rfind('<');
@@ -3574,10 +4169,31 @@ impl Saver<'_, '_> {
         let id = self.ids.get();
         self.ids.set(id + 1);
         let (cx, cy) = (emu(f.w), emu(f.h));
-        let pos = |name: &str, rel: &str, align: &Option<String>, off: f64| match align {
-            Some(a) => format!("<wp:{name} relativeFrom=\"{rel}\"><wp:align>{}</wp:align></wp:{name}>", props::esc(a)),
-            None => format!("<wp:{name} relativeFrom=\"{rel}\"><wp:posOffset>{}</wp:posOffset></wp:{name}>", emu(off)),
+        const WP14: &str = "http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing";
+        let pos = |name: &str, rel: &str, align: &Option<String>, off: f64| {
+            let (k, el) = if name == "positionH" { (0, "pctPosHOffset") } else { (1, "pctPosVOffset") };
+            match (align, f.relative.pos[k]) {
+                (Some(a), _) => format!("<wp:{name} relativeFrom=\"{rel}\"><wp:align>{}</wp:align></wp:{name}>", props::esc(a)),
+                (None, Some(t)) => {
+                    format!(r#"<wp:{name} relativeFrom="{rel}"><wp14:{el} xmlns:wp14="{WP14}">{}</wp14:{el}></wp:{name}>"#, t * 100)
+                }
+                (None, None) => format!("<wp:{name} relativeFrom=\"{rel}\"><wp:posOffset>{}</wp:posOffset></wp:{name}>", emu(off)),
+            }
         };
+        let sizes: String = f
+            .relative
+            .size
+            .iter()
+            .zip([("sizeRelH", "pctWidth"), ("sizeRelV", "pctHeight")])
+            .filter_map(|(v, (el, pct))| {
+                let (from, t) = v.as_ref()?;
+                Some(format!(
+                    r#"<wp14:{el} xmlns:wp14="{WP14}" relativeFrom="{}"><wp14:{pct}>{}</wp14:{pct}></wp14:{el}>"#,
+                    props::esc(from),
+                    t * 100
+                ))
+            })
+            .collect();
         // A float made with a shape tree writes it (its extent the float's), its story in `wps:txbx`.
         let made = match f.shape.as_deref() {
             Some(shape) => {
@@ -3655,7 +4271,7 @@ impl Saver<'_, '_> {
                 r#"<{w}drawing><wp:anchor xmlns:wp="{wp}" distT="{dt}" distB="{db}" distL="{dl}" distR="{dr}" simplePos="0" relativeHeight="{id}" "#,
                 r#"behindDoc="{behind}" locked="{locked}" layoutInCell="{cell}" allowOverlap="{overlap}"><wp:simplePos x="0" y="0"/>{h}{v}"#,
                 r#"<wp:extent cx="{cx}" cy="{cy}"/><wp:effectExtent l="0" t="0" r="0" b="0"/>{wrap}<wp:docPr id="{id}" name="{kind} {id}"{descr}/>"#,
-                r#"<wp:cNvGraphicFramePr>{locks}</wp:cNvGraphicFramePr><a:graphic xmlns:a="{a}">{graphic}</a:graphic></wp:anchor></{w}drawing>"#
+                r#"<wp:cNvGraphicFramePr>{locks}</wp:cNvGraphicFramePr><a:graphic xmlns:a="{a}">{graphic}</a:graphic>{sizes}</wp:anchor></{w}drawing>"#
             ),
             w = self.w,
             wp = WP,
@@ -3681,6 +4297,7 @@ impl Saver<'_, '_> {
             descr = descr_attr(&f.alt),
             locks = if f.lock_aspect { format!(r#"<a:graphicFrameLocks xmlns:a="{A}" noChangeAspect="1"/>"#) } else { String::new() },
             graphic = graphic,
+            sizes = sizes,
         ))
     }
 
@@ -3699,7 +4316,13 @@ impl Saver<'_, '_> {
             // From its properties (alias, tag, lock and the rest), with the state it shows now.
             let mut ctl = self.controls[c].clone();
             ctl.open.clear();
-            ctl.props.kind_xml = Some(format!(
+            // Its own states (their fonts) when it has them, checked as it shows.
+            let own = ctl.props.kind_xml.as_deref().filter(|x| x.contains("checkedState")).map(|x| {
+                let mut x = x.to_string();
+                crate::docx::xml::set_checkbox_checked(&mut x, on == 1);
+                x
+            });
+            ctl.props.kind_xml = own.or(Some(format!(
                 concat!(
                     "<w14:checkbox xmlns:w14=\"http://schemas.microsoft.com/office/word/2010/wordml\">",
                     "<w14:checked w14:val=\"{on}\"/><w14:checkedState w14:val=\"{cs}\" w14:font=\"{f}\"/><w14:uncheckedState w14:val=\"{us}\" w14:font=\"{f}\"/>",
@@ -3709,10 +4332,22 @@ impl Saver<'_, '_> {
                 cs = cs,
                 us = us,
                 f = f,
-            ));
+            )));
             return Some(format!("{PARA_LEVEL}{}<{w}r>{rpr}<{w}t>{ch}</{w}t></{w}r></{w}sdtContent></{w}sdt>", control_open(w, *c, &ctl)));
         }
         // A shape put in line with text: its tree in a `wp:inline`.
+        // A copy pasted into the part it came from: its source XML (its relationships are this part's), at its size now,
+        // with drawing ids of its own.
+        if let Inline::Picture(p, _) = i
+            && let Some(x) = p.src.0.as_deref().filter(|x| self.xml.contains(*x))
+        {
+            let x = if drawing::is_vml(x) {
+                drawing::vml_size(x, p.w, p.h)
+            } else {
+                Placement { size: Some((p.w, p.h)), alt: Some(p.alt.to_string()), ..Placement::default() }.apply(x)
+            };
+            return Some(self.new_doc_pr_ids(&x));
+        }
         if let Inline::Picture(p, _) = i
             && let Some(shape) = p.shape.as_deref().filter(|s| p.image.is_none() || s.pic().is_none())
         {
@@ -3915,16 +4550,40 @@ fn svg_blips(xml: &str, k: usize, svg: &[u8]) -> Option<(Vec<u8>, String)> {
 /// The run content a new object writes as, for those the model can write without a source.
 fn object_xml(w: &str, i: &Inline) -> Option<String> {
     match i {
-        Inline::NoteRef { kind: NoteKind::Foot, id, custom: false, .. } => Some(format!("<{w}footnoteReference {w}id=\"{id}\"/>")),
-        Inline::NoteRef { kind: NoteKind::End, id, custom: false, .. } => Some(format!("<{w}endnoteReference {w}id=\"{id}\"/>")),
+        Inline::NoteRef { kind, id, custom, .. } => {
+            let el = if *kind == NoteKind::Foot { "footnoteReference" } else { "endnoteReference" };
+            let mark = if *custom { format!(" {w}customMarkFollows=\"1\"") } else { String::new() };
+            Some(format!("<{w}{el}{mark} {w}id=\"{id}\"/>"))
+        }
+        // A character past U+FFFF, which `w:char` can't hold: Word 2016's symbol, with the character as its fallback.
+        Inline::Sym { ch, font, control: None, .. } if *ch as u32 > 0xFFFF => Some(format!(
+            concat!(
+                "<mc:AlternateContent xmlns:mc=\"http://schemas.openxmlformats.org/markup-compatibility/2006\">",
+                "<mc:Choice xmlns:w16se=\"http://schemas.microsoft.com/office/word/2015/wordml/symex\" Requires=\"w16se\">",
+                "<w16se:symEx w16se:font=\"{f}\" w16se:char=\"{c:X}\"/></mc:Choice><mc:Fallback><{w}t>{ch}</{w}t></mc:Fallback>",
+                "</mc:AlternateContent>"
+            ),
+            f = props::esc(font),
+            c = *ch as u32,
+            ch = ch,
+            w = w
+        )),
+        Inline::Sym { ch, font, control: None, .. } => Some(format!("<{w}sym {w}font=\"{}\" {w}char=\"{:04X}\"/>", props::esc(font), *ch as u32)),
         Inline::NoteMark(NoteKind::Foot, ..) => Some(format!("<{w}footnoteRef/>")),
         Inline::NoteMark(NoteKind::End, ..) => Some(format!("<{w}endnoteRef/>")),
         // each marker is its `fldChar`, in a run of the field's formatting.
-        Inline::FieldBegin { lock, dirty, .. } => Some(format!(
-            "<{w}fldChar {w}fldCharType=\"begin\"{}{}/>",
-            if *lock { format!(" {w}fldLock=\"1\"") } else { String::new() },
-            if *dirty { format!(" {w}dirty=\"1\"") } else { String::new() }
-        )),
+        Inline::FieldBegin { lock, dirty, form, .. } => {
+            let lock = if *lock { format!(" {w}fldLock=\"1\"") } else { String::new() };
+            let dirty = if *dirty { format!(" {w}dirty=\"1\"") } else { String::new() };
+            let ff = form.as_ref().map(|f| match f.xml.0.as_deref() {
+                Some(x) if f.data == f.read => x.to_string(),
+                _ => f.data.xml(w),
+            });
+            Some(match ff {
+                Some(ff) => format!("<{w}fldChar {w}fldCharType=\"begin\"{lock}{dirty}>{ff}</{w}fldChar>"),
+                None => format!("<{w}fldChar {w}fldCharType=\"begin\"{lock}{dirty}/>"),
+            })
+        }
         Inline::Ruby(r, _) => r.xml.0.as_deref().map(str::to_string),
         Inline::DateBlock(name, ..) => Some(format!("<{w}{name}/>")),
         Inline::FieldSep { .. } => Some(format!("<{w}fldChar {w}fldCharType=\"separate\"/>")),
@@ -3978,6 +4637,9 @@ struct Placement {
     inner: Option<Range<usize>>,
     /// The whole text written instead (a VML object patched as VML).
     replace: Option<String>,
+    /// Relative size and position (`wp14:sizeRelH`, `wp14:pctPosHOffset`, ...), with the offsets a position left
+    /// relative goes back to.
+    relative: Option<(crate::docx::Relative, [f64; 2])>,
 }
 
 impl Placement {
@@ -4018,8 +4680,11 @@ impl Placement {
             shape: None,
             inner: None,
             replace: None,
+            relative: (a.relative.size != b.relative.size || a.relative.pos != b.relative.pos)
+                .then(|| (b.relative.clone(), [b.h_offset, b.v_offset])),
         };
         let any = p.h.is_some()
+            || p.relative.is_some()
             || p.v.is_some()
             || p.size.is_some()
             || p.wrap.is_some()
@@ -4051,6 +4716,37 @@ impl Placement {
                 Some(a) => format!("<{p}align>{}</{p}align>", props::esc(a)),
                 None => format!("<{p}posOffset>{}</{p}posOffset>", emu(*off)),
             });
+        }
+        if let Some((r, offsets)) = &self.relative {
+            const WP14: &str = "http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing";
+            for (k, (name, el)) in [("positionH", "pctPosHOffset"), ("positionV", "pctPosVOffset")].into_iter().enumerate() {
+                match r.pos[k] {
+                    Some(t) => set_content(&mut s, name, |_| format!(r#"<wp14:{el} xmlns:wp14="{WP14}">{}</wp14:{el}>"#, t * 100)),
+                    None if s.contains(el) => set_content(&mut s, name, |p| format!("<{p}posOffset>{}</{p}posOffset>", emu(offsets[k]))),
+                    None => {}
+                }
+            }
+            for el in ["sizeRelH", "sizeRelV"] {
+                while let Some(at) = element(&s, el) {
+                    s.replace_range(at, "");
+                }
+            }
+            let sizes: String = r
+                .size
+                .iter()
+                .zip([("sizeRelH", "pctWidth"), ("sizeRelV", "pctHeight")])
+                .filter_map(|(v, (el, pct))| {
+                    let (from, t) = v.as_ref()?;
+                    Some(format!(
+                        r#"<wp14:{el} xmlns:wp14="{WP14}" relativeFrom="{}"><wp14:{pct}>{}</wp14:{pct}></wp14:{el}>"#,
+                        props::esc(from),
+                        t * 100
+                    ))
+                })
+                .collect();
+            if let Some(end) = s.rfind(":anchor>").and_then(|k| s[..k].rfind("</")) {
+                s.insert_str(end, &sizes);
+            }
         }
         if let Some((start, end)) = find_tag(&s, "anchor", 0) {
             let mut tag = s[start..end].to_string();
@@ -4378,11 +5074,19 @@ fn tbl_pr(w: &str, t: &Table, people: &People) -> String {
             bit(l.no_v_band)
         ));
     }
+    s.push_str(&alt_xml(w, t.alt.as_deref()));
     if let Some(c) = &t.change {
         s.push_str(&revisions::table_change(w, "tblPrChange", "tblPr", c, people));
     }
     s.push_str(&format!("</{w}tblPr>"));
     s
+}
+
+/// A table's `w:tblCaption` and `w:tblDescription`.
+fn alt_xml(w: &str, alt: Option<&crate::docx::TableAlt>) -> String {
+    let Some(a) = alt else { return String::new() };
+    let tag = |name: &str, v: &str| if v.is_empty() { String::new() } else { format!("<{w}{name} {w}val=\"{}\"/>", props::esc(v)) };
+    tag("tblCaption", &a.title) + &tag("tblDescription", &a.description)
 }
 
 /// A row's `w:trPr` from the model, in CT_TrPr order; empty when it has nothing to say.
@@ -4404,6 +5108,9 @@ fn tr_pr(w: &str, r: &Row, people: &People) -> String {
     if r.header {
         s.push_str(&format!("<{w}tblHeader/>"));
     }
+    if r.hidden {
+        s.push_str(&format!("<{w}hidden/>"));
+    }
     if let Some(jc) = r.jc {
         let v = match jc {
             Jc::Center => "center",
@@ -4419,7 +5126,36 @@ fn tr_pr(w: &str, r: &Row, people: &People) -> String {
 }
 
 /// A cell's `w:tcPr` from the model, in CT_TcPr order.
-fn tc_pr(w: &str, c: &Cell, people: &People) -> String {
+/// A cell's `w:tcPr`: the properties it was read with (which table formatting keeps current), its width, span,
+/// vertical merge and revisions as the model has them now; else written from the model.
+fn tc_pr(w: &str, c: &Cell, people: &People, cx: &Cx) -> String {
+    if let Some(raw) = c.direct.0.as_deref() {
+        let mut p = Props::parse(Some(raw), "tcPr", cx);
+        p.reorder(props::TCPR);
+        match &c.width {
+            Some(x) => p.set("tcW", width(w, "tcW", x)),
+            None => p.remove("tcW"),
+        }
+        if c.span > 1 {
+            p.set("gridSpan", format!("<{w}gridSpan {w}val=\"{}\"/>", c.span));
+        } else {
+            p.remove("gridSpan");
+        }
+        // A Word 97 horizontal merge is read as a span.
+        p.remove("hMerge");
+        match c.v_merge {
+            VMerge::Restart => p.set("vMerge", format!("<{w}vMerge {w}val=\"restart\"/>")),
+            VMerge::Continue => p.set("vMerge", format!("<{w}vMerge/>")),
+            VMerge::None => p.remove("vMerge"),
+        }
+        for (name, tag) in revisions::cell_marks(w, &c.rev, people) {
+            p.remove(name);
+            if !tag.is_empty() {
+                p.set(name, tag);
+            }
+        }
+        return p.xml().unwrap_or_default();
+    }
     let mut s = format!("<{w}tcPr>");
     if let Some(width_) = &c.width {
         s.push_str(&width(w, "tcW", width_));
@@ -4432,12 +5168,15 @@ fn tc_pr(w: &str, c: &Cell, people: &People) -> String {
         VMerge::Continue => s.push_str(&format!("<{w}vMerge/>")),
         VMerge::None => {}
     }
-    if c.top.is_some() || c.left.is_some() || c.bottom.is_some() || c.right.is_some() {
+    let [tl2br, tr2bl] = c.diagonals.as_deref().cloned().unwrap_or_default();
+    if c.top.is_some() || c.left.is_some() || c.bottom.is_some() || c.right.is_some() || tl2br.is_some() || tr2bl.is_some() {
         s.push_str(&format!("<{w}tcBorders>"));
         s.push_str(&border(w, "top", &c.top));
         s.push_str(&border(w, "left", &c.left));
         s.push_str(&border(w, "bottom", &c.bottom));
         s.push_str(&border(w, "right", &c.right));
+        s.push_str(&border(w, "tl2br", &tl2br));
+        s.push_str(&border(w, "tr2bl", &tr2bl));
         s.push_str(&format!("</{w}tcBorders>"));
     }
     s.push_str(&shading(w, c.shading));
@@ -4460,6 +5199,9 @@ fn tc_pr(w: &str, c: &Cell, people: &People) -> String {
     }
     if c.v_align != "top" {
         s.push_str(&format!("<{w}vAlign {w}val=\"{}\"/>", c.v_align));
+    }
+    if c.hide_mark {
+        s.push_str(&format!("<{w}hideMark/>"));
     }
     for (_, tag) in revisions::cell_marks(w, &c.rev, people) {
         s.push_str(&tag);

@@ -72,6 +72,41 @@ impl Editor {
     }
 
     pub(in crate::editing) fn set_cell_borders(&mut self, b: CellBorders, fonts: &Fonts) -> Outcome {
+        let (edges, border) = cell_borders(b);
+        self.table_format(&TableFormat::CellBorders(edges, border), fonts)
+    }
+
+    pub(in crate::editing) fn set_default_table_style(&mut self, id: Option<String>, fonts: &Fonts) -> Outcome {
+        if self.doc.settings.default_table_style == id {
+            return Outcome::Unchanged("already so");
+        }
+        let mut tx = self.begin("Set as Default");
+        if self.step(&mut tx, super::super::step::Step::DefaultTableStyle(id)).is_err() {
+            self.abort(tx);
+            return Outcome::Unchanged("setting failed");
+        }
+        self.commit(tx, None, fonts)
+    }
+
+    pub(in crate::editing) fn set_row_properties(&mut self, p: crate::api::command::RowProperties, fonts: &Fonts) -> Outcome {
+        let exceptions = p.exceptions.map(|x| super::super::table_format::RowEx {
+            reset: x.reset.unwrap_or(false),
+            jc: x.alignment.map(|a| match a {
+                crate::api::value::HorizontalAlignment::Center => Jc::Center,
+                crate::api::value::HorizontalAlignment::Right => Jc::Right,
+                _ => Jc::Left,
+            }),
+            cell_spacing: x.cell_spacing.map(|s| s.0),
+            shading: x.shading.map(|c| c.0),
+            borders: x.borders.map(cell_borders),
+        });
+        self.table_format(&TableFormat::RowProps { hidden: p.hidden, exceptions }, fonts)
+    }
+}
+
+/// `setCellBorders`'s edges and line.
+fn cell_borders(b: CellBorders) -> (Edges, Border) {
+    {
         let edges = match b.edges {
             BorderEdges::All => Edges::All,
             BorderEdges::Outside => Edges::Outside,
@@ -82,6 +117,8 @@ impl Editor {
             BorderEdges::Bottom => Edges::Bottom,
             BorderEdges::Left => Edges::Left,
             BorderEdges::Right => Edges::Right,
+            BorderEdges::DiagonalDown => Edges::DiagonalDown,
+            BorderEdges::DiagonalUp => Edges::DiagonalUp,
             BorderEdges::None => Edges::None,
         };
         let border = match b.border {
@@ -95,9 +132,11 @@ impl Editor {
             }
             None => Border { style: "single".into(), width: 0.5, space: 0.0, shadow: false, color: None },
         };
-        self.table_format(&TableFormat::CellBorders(edges, border), fonts)
+        (edges, border)
     }
+}
 
+impl Editor {
     pub(in crate::editing) fn set_cell_margins(&mut self, m: CellMargins, fonts: &Fonts) -> Outcome {
         let Some(tg) = self.table_target() else { return Outcome::unavailable("not in a table") };
         let now = self

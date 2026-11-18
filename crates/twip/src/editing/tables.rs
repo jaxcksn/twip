@@ -510,7 +510,10 @@ impl Editor {
             controls: Vec::new(),
         };
         let border = Some(crate::docx::props::Border { style: "single".into(), width: 0.5, space: 0.0, shadow: false, color: None });
-        let grid_style = self.doc.resolver.as_ref().is_some_and(|r| r.styles.by_id.contains_key("TableGrid"));
+        // The document's default table style, else Table Grid.
+        let has = |id: &str| self.doc.resolver.as_ref().is_some_and(|r| r.styles.by_id.contains_key(id));
+        let style = self.doc.settings.default_table_style.clone().filter(|s| has(s)).or_else(|| has("TableGrid").then(|| "TableGrid".to_string()));
+        let grid_style = style.is_some();
         let cell = |w: f64| Cell {
             width: Some(crate::docx::props::Width::Dxa(w)),
             span: 1,
@@ -526,6 +529,7 @@ impl Editor {
             no_wrap: false,
             fit_text: false,
             hide_mark: false,
+            diagonals: None,
             direct: Default::default(),
             blocks: vec![Block::Para(cell_para())],
             controls: Vec::new(),
@@ -533,7 +537,7 @@ impl Editor {
         };
         let w = (width / ncols as f64 * 20.0).floor() / 20.0;
         let table = Table {
-            style_id: grid_style.then(|| "TableGrid".to_string()),
+            style_id: style,
             width: crate::docx::props::Width::Auto,
             jc: crate::docx::props::Jc::Left,
             own_jc: None,
@@ -549,6 +553,7 @@ impl Editor {
             cell_spacing: 0.0,
             look: None,
             bands: (0, 0),
+            alt: None,
             floating: None,
             bidi_visual: false,
             grid: vec![w; ncols],
@@ -566,12 +571,15 @@ impl Editor {
                     div: None,
                     borders: None,
                     shading: None,
+                    hidden: false,
                     vanished: false,
                     cell_spacing: None,
                     run: None,
                     nudge: None,
                     cells: (0..ncols).map(|_| cell(w)).collect(),
                     src: None,
+                    direct: Default::default(),
+                    exceptions: Default::default(),
                     controls: Vec::new(),
                     rev: Default::default(),
                 })
@@ -855,6 +863,7 @@ impl Editor {
                 _ => HA::Left,
             }),
             offset: p.x_spec.is_none().then_some(Points(p.x)),
+            percent: None,
         };
         let y_spec = p.y_spec.filter(|_| p.v_anchor != TableAnchor::Text);
         let vertical = VerticalPosition {
@@ -869,6 +878,7 @@ impl Editor {
                 _ => VA::Top,
             }),
             offset: y_spec.is_none().then_some(Points(p.y)),
+            percent: None,
         };
         let [top, bottom, left, right] = p.dist.map(Points);
         Some(TablePosition {

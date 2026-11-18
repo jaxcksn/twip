@@ -1,4 +1,19 @@
-import type { CommandId } from './commands.js';
+import type {
+  ChapterNumbers,
+  ColumnWidth,
+  CommandId,
+  DropCap,
+  Ligatures,
+  LineNumbers,
+  MultiplePagesMode,
+  NoteSettings,
+  NumberForm,
+  NumberFormat,
+  NumberSpacing,
+  SectionBreakKind,
+  TextFlow,
+  TextInputType,
+} from './commands.js';
 import type { FontsState } from './fonts/library.js';
 import type { DialogKind } from './services/dialogs.js';
 import type { ControlKind, ReferenceRule } from './services/elements.js';
@@ -256,6 +271,22 @@ export interface TableSelection {
   alignment: 'left' | 'center' | 'right';
   /** The table indent. */
   indent: Points;
+  /** The cells' preferred width. */
+  cellWidth: Mixed<TableWidth>;
+  /** The direction the cells' text runs in. */
+  textDirection: Mixed<TextFlow>;
+  /** The cells' text wraps. */
+  wrapText: Tri;
+  /** The cells' text is squeezed to fit. */
+  fitText: Tri;
+  /** The rows' end marks are hidden. */
+  rowHidden: Tri;
+  /** The space between the table's cells; absent for none. */
+  cellSpacing?: Points;
+  /** The table's alternative text title; absent when empty. */
+  title?: string;
+  /** The table's alternative text description; absent when empty. */
+  description?: string;
 }
 
 /** A row height. */
@@ -279,6 +310,9 @@ export interface TableStyleOptions {
 
 /** A table width. */
 export type TableWidth = { kind: 'auto' } | { kind: 'points'; value: Points } | { kind: 'percent'; value: number };
+
+/** Which of a text box's lines text around it wraps tightly to. */
+export type TightWrap = 'none' | 'allLines' | 'firstAndLastLine' | 'firstLineOnly' | 'lastLineOnly';
 
 /** The selected object. */
 export interface ObjectSelection {
@@ -310,6 +344,22 @@ export interface ObjectSelection {
   childPath: number[];
   /** How many objects are selected: 2 or more for a multi-selection, the other fields describing the first. */
   count: number;
+  /** A picture's crop, by fractions of its image from each edge; absent when uncropped. */
+  crop?: { left: number; top: number; right: number; bottom: number };
+  /** A picture's Set Transparent Colour; absent for none. */
+  transparentColor?: Color;
+  /** A floating object's width as a share of a box on the page; absent for an absolute width. */
+  relativeWidth?: RelativeSize;
+  /** Its height as a share of a box on the page; absent for an absolute height. */
+  relativeHeight?: RelativeSize;
+}
+
+/** A floating object's size as a share of a box on the page: 1 to 1000 percent. */
+export interface RelativeSize {
+  /** The share. */
+  percent: number;
+  /** The box: margins, page, or a margin (widths: left, right, inside, outside; heights: top, bottom). */
+  relativeTo: 'margin' | 'page' | 'leftMargin' | 'rightMargin' | 'insideMargin' | 'outsideMargin' | 'topMargin' | 'bottomMargin';
 }
 
 /** How text wraps around an object. */
@@ -357,6 +407,8 @@ export interface HorizontalPosition {
   align?: ObjectHorizontalAlignment;
   /** Right of the reference's left edge, −1584 to 1584. */
   offset?: Points;
+  /** Right of the reference's left edge by a share of its width, −1000 to 1000 percent. */
+  percent?: number;
 }
 
 /**
@@ -370,6 +422,8 @@ export interface VerticalPosition {
   align?: ObjectVerticalAlignment;
   /** Below the reference's top, −1584 to 1584. */
   offset?: Points;
+  /** Below the reference's top by a share of its height, −1000 to 1000 percent. */
+  percent?: number;
 }
 
 /** How far text keeps from a floating object. */
@@ -431,6 +485,60 @@ export interface ElementContext {
   title?: string;
   /** A picture control's picture size (inline or floating). */
   size?: { width: Points; height: Points };
+  /** A legacy form field's options and value. */
+  form?: FormFieldInfo;
+  /** A content control's look and options. */
+  control?: ControlInfo;
+}
+
+/** A content control's look and options; what doesn't apply to its kind is absent. */
+export interface ControlInfo {
+  /** How it shows its edges. */
+  appearance: 'boundingBox' | 'tags' | 'hidden';
+  /** Its colour; absent for the default. */
+  color?: Color;
+  /** It goes when its content is edited. */
+  temporary: boolean;
+  /** The character style text typed into it takes. */
+  style?: StyleId;
+  /** A check box's checked symbol. */
+  checkedSymbol?: string;
+  /** A check box's unchecked symbol. */
+  uncheckedSymbol?: string;
+  /** What a repeating section's items are called. */
+  sectionTitle?: string;
+  /** A repeating section's items can be added and removed. */
+  allowInsertDelete?: boolean;
+  /** A building block gallery's entries: the package's building blocks in its category, by name. */
+  buildingBlocks?: string[];
+}
+
+/** A legacy form field's options and value; what doesn't apply to its kind is absent. */
+export interface FormFieldInfo {
+  /** Its kind. */
+  kind: 'text' | 'checkBox' | 'dropDown';
+  /** Its bookmark name. */
+  name: string;
+  /** It can be filled in. */
+  enabled: boolean;
+  /** The document's fields update when it is left. */
+  calculateOnExit: boolean;
+  /** The help F1 shows. */
+  helpText?: string;
+  /** The help the status bar shows. */
+  statusText?: string;
+  /** What a text field takes. */
+  inputType?: TextInputType;
+  /** A text field's default text. */
+  defaultText?: string;
+  /** The most characters a text field takes (0: any). */
+  maxLength?: number;
+  /** A check box is checked. */
+  checked?: boolean;
+  /** A drop-down's entries. */
+  entries?: string[];
+  /** The entry a drop-down shows. */
+  entry?: number;
 }
 
 /** The selection's character formatting. */
@@ -467,6 +575,36 @@ export interface CharacterFormatting {
   characterSpacing: Mixed<Points>;
   /** The raised (positive) or lowered position. */
   position: Mixed<Points>;
+  /** The character style, or `'none'`. */
+  characterStyle: Mixed<StyleId | 'none'>;
+  /** The horizontal scale, percent. */
+  scale: Mixed<number>;
+  /** Kerning at or above this size; 0: off. */
+  kerning: Mixed<Points>;
+  /** The ligatures used (a combination Word's dialog doesn't offer reads as mixed). */
+  ligatures: Mixed<Ligatures>;
+  /** The digits' widths. */
+  numberSpacing: Mixed<NumberSpacing>;
+  /** The digits' forms. */
+  numberForm: Mixed<NumberForm>;
+  /** The stylistic set (1…20), or 0 for the font's default. */
+  stylisticSet: Mixed<number>;
+  /** Contextual alternates. */
+  contextualAlternates: Tri;
+  /** The language (a BCP 47 tag). */
+  language: Mixed<string>;
+  /** Spelling and grammar are not checked. */
+  noProof: Tri;
+  /** Emboss. */
+  emboss: Tri;
+  /** Engrave. */
+  engrave: Tri;
+  /** Outline. */
+  outline: Tri;
+  /** Shadow. */
+  shadow: Tri;
+  /** The underline's colour, or the text's (`'auto'`). */
+  underlineColor: Mixed<Color | 'auto'>;
 }
 
 /** The selection's paragraph formatting. */
@@ -482,17 +620,35 @@ export interface ParagraphFormatting {
   /** The space after. */
   spaceAfter: Mixed<Points | 'auto'>;
   /** The indents. */
-  indents: { left: Mixed<Points>; right: Mixed<Points>; firstLine: Mixed<Points>; hanging: Mixed<Points> };
+  indents: { left: Mixed<Points>; right: Mixed<Points>; firstLine: Mixed<Points>; hanging: Mixed<Points>; mirror: Tri };
   /** The list kind. */
   list: Mixed<'bullet' | 'numbered' | 'none'>;
   /** The list level. */
   listLevel: Mixed<number>;
   /** The pagination flags. */
-  flow: { keepWithNext: Tri; keepLinesTogether: Tri; pageBreakBefore: Tri; widowControl: Tri };
+  flow: {
+    keepWithNext: Tri;
+    keepLinesTogether: Tri;
+    pageBreakBefore: Tri;
+    widowControl: Tri;
+    dontHyphenate: Tri;
+    suppressLineNumbers: Tri;
+    textboxTightWrap: Mixed<TightWrap>;
+  };
   /** The borders. */
   borders: Mixed<'box' | 'bottom' | 'none' | 'other'>;
   /** The shading. */
   shading: Mixed<Color | 'none'>;
+  /** No space between paragraphs of the same style. */
+  contextualSpacing: Tri;
+  /** The outline level (1 to 9), or body text (0). */
+  outlineLevel: Mixed<number>;
+  /** Collapsed when the document opens. */
+  collapsed: Tri;
+  /** The text direction. */
+  textDirection: Mixed<TextFlow>;
+  /** The selection's paragraph's drop cap, when it has one. */
+  dropCap?: DropCap;
 }
 
 /** The selection's section. */
@@ -504,7 +660,7 @@ export interface PageFormatting {
   /** The margins. */
   margins: { top: Points; bottom: Points; left: Points; right: Points; gutter: Points };
   /** The text columns. */
-  columns: { count: number; spacing: Points; separator: boolean };
+  columns: { count: number; spacing: Points; separator: boolean; widths: ColumnWidth[] };
   /** The header distance from the page edge. */
   headerDistance: Points;
   /** The footer distance from the page edge. */
@@ -513,6 +669,34 @@ export interface PageFormatting {
   differentFirstPage: boolean;
   /** Different odd and even pages. */
   differentOddEven: boolean;
+  /** The page number format. */
+  pageNumberFormat: NumberFormat;
+  /** The section's first page number, or `null` when it continues from the section before. */
+  pageNumberStart: number | null;
+  /** Chapter numbers in page numbers, or `null`. */
+  chapterNumbers: ChapterNumbers | null;
+  /** Where text sits between the top and bottom margins. */
+  verticalAlignment: 'top' | 'center' | 'justified' | 'bottom';
+  /** The line numbering, or `null`. */
+  lineNumbers: LineNumbers | null;
+  /** The break the section starts with. */
+  breakType: SectionBreakKind;
+  /** The section's text direction. */
+  textDirection: TextFlow;
+  /** How the document's pages pair. */
+  multiplePages: MultiplePagesMode;
+  /** The gutter is at the top. */
+  gutterAtTop: boolean;
+  /** Which of the section's headers take the section before's (Link to Previous). */
+  headerLinks: { default: boolean; first: boolean; even: boolean };
+  /** Which of its footers do. */
+  footerLinks: { default: boolean; first: boolean; even: boolean };
+  /** The section's footnote settings. */
+  footnotes: NoteSettings;
+  /** The section's endnote settings. */
+  endnotes: NoteSettings;
+  /** The footnote area's columns; 0 for the section's own. */
+  footnoteColumns: number;
 }
 
 /** View settings. */
@@ -557,6 +741,8 @@ export interface ViewState {
   controlLabels: boolean;
   /** When fields are shaded. */
   fieldShading: FieldShading;
+  /** Bookmarks are shown. */
+  bookmarks: boolean;
   /** The pointer shapes shown over elements instead of the editor's own; absent when none are set. */
   cursorOverrides?: CursorOverride[];
   /** Which fields are sub-template references (`setSubTemplateRules`); absent when none are. */
@@ -572,6 +758,18 @@ export interface ReviewState {
   tracking: boolean;
   /** Document protection keeps tracking on. */
   trackingLocked: boolean;
+  /** What the document's protection allows, when it has one. */
+  protection?: {
+    kind: 'none' | 'readOnly' | 'comments' | 'trackedChanges' | 'forms';
+    enforced: boolean;
+    formatting: boolean;
+    /** Stopping it needs a password. */
+    password: boolean;
+    /** The selection is in a range the author may edit. */
+    inEditableRange: boolean;
+    /** Filling in forms: the sections (by index) anyone may edit. */
+    unprotectedSections: number[];
+  };
   /** The markup view. */
   markupView: MarkupView;
   /** The revision count. */

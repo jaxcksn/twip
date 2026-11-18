@@ -91,6 +91,10 @@
     "value": 3
   },
   {
+    "type": "goToBookmark",
+    "value": "Summary"
+  },
+  {
     "type": "setBold",
     "value": true
   },
@@ -161,6 +165,34 @@
     "value": -2.5
   },
   {
+    "type": "applyCharacterStyle",
+    "value": "Strong"
+  },
+  {
+    "contextualAlternates": true,
+    "kerning": 12.0,
+    "ligatures": "standardContextual",
+    "numberForm": "oldStyle",
+    "numberSpacing": "tabular",
+    "scale": 90.0,
+    "stylisticSet": 2,
+    "type": "setTypography"
+  },
+  {
+    "language": "en-GB",
+    "noProof": true,
+    "type": "setLanguage"
+  },
+  {
+    "emboss": true,
+    "outline": false,
+    "type": "setCharacterEffects"
+  },
+  {
+    "type": "setUnderlineColor",
+    "value": "#C00000"
+  },
+  {
     "type": "clearFormatting"
   },
   {
@@ -185,11 +217,13 @@
   {
     "after": 8.5,
     "before": "auto",
+    "contextual": true,
     "type": "setParagraphSpacing"
   },
   {
     "firstLine": 18.5,
     "left": 36.5,
+    "mirror": true,
     "right": 0.5,
     "type": "setIndents"
   },
@@ -286,11 +320,23 @@
     "type": "adjustListIndents"
   },
   {
+    "dontHyphenate": true,
     "keepLinesTogether": false,
     "keepWithNext": true,
     "pageBreakBefore": true,
+    "suppressLineNumbers": false,
+    "textboxTightWrap": "firstAndLastLine",
     "type": "setParagraphFlow",
     "widowControl": true
+  },
+  {
+    "collapsed": true,
+    "level": 2,
+    "type": "setOutline"
+  },
+  {
+    "type": "setParagraphTextDirection",
+    "value": "tbRl"
   },
   {
     "type": "setParagraphBorders",
@@ -337,6 +383,8 @@
     "offsetFrom": "text",
     "right": null,
     "shadow": true,
+    "surroundFooter": true,
+    "surroundHeader": false,
     "top": {
       "color": "#7030A0",
       "style": "wave",
@@ -363,6 +411,13 @@
   },
   {
     "type": "removeFrame"
+  },
+  {
+    "distance": 4.0,
+    "font": "Georgia",
+    "lines": 3,
+    "position": "dropped",
+    "type": "setDropCap"
   },
   {
     "alignment": "decimal",
@@ -423,7 +478,17 @@
     "count": 2,
     "separator": true,
     "spacing": 36.5,
-    "type": "setColumns"
+    "type": "setColumns",
+    "widths": [
+      {
+        "spacing": 36.5,
+        "width": 144.5
+      },
+      {
+        "spacing": 0.5,
+        "width": 288.5
+      }
+    ]
   },
   {
     "footer": 30.5,
@@ -437,6 +502,40 @@
   {
     "type": "setDifferentOddEvenPages",
     "value": false
+  },
+  {
+    "chapter": {
+      "level": 1,
+      "separator": "enDash"
+    },
+    "format": "lowerRoman",
+    "start": null,
+    "type": "setPageNumbering"
+  },
+  {
+    "type": "setPageVerticalAlignment",
+    "value": "center"
+  },
+  {
+    "type": "setLineNumbering",
+    "value": {
+      "countBy": 5,
+      "restart": "eachSection",
+      "start": 1
+    }
+  },
+  {
+    "type": "setSectionBreakType",
+    "value": "oddPage"
+  },
+  {
+    "type": "setSectionTextDirection",
+    "value": "tbRl"
+  },
+  {
+    "gutterAtTop": false,
+    "mode": "mirrorMargins",
+    "type": "setMultiplePages"
   },
   {
     "column": 0,
@@ -457,6 +556,23 @@
     "format": "pageOfTotal",
     "type": "insertPageNumber",
     "where": "footer"
+  },
+  {
+    "kind": "footer",
+    "linked": false,
+    "pages": "first",
+    "type": "setHeaderFooterLinked"
+  },
+  {
+    "kind": "header",
+    "pages": "default",
+    "type": "removeHeaderFooter"
+  },
+  {
+    "alignment": "right",
+    "leader": "dots",
+    "relativeTo": "margin",
+    "type": "insertAlignmentTab"
   },
   {
     "columns": 2,
@@ -483,6 +599,25 @@
     "type": "insertEndnote"
   },
   {
+    "customMark": "*",
+    "kind": "footnote",
+    "type": "insertNote"
+  },
+  {
+    "applyTo": "thisSection",
+    "columns": 0,
+    "format": "upperRoman",
+    "kind": "endnote",
+    "position": "sectionEnd",
+    "restart": "eachSection",
+    "start": 3,
+    "type": "setNoteProperties"
+  },
+  {
+    "type": "convertNotes",
+    "value": "swap"
+  },
+  {
     "address": "https://example.com",
     "text": "Example",
     "type": "insertHyperlink"
@@ -493,6 +628,74 @@
   },
   {
     "type": "removeHyperlink"
+  },
+  {
+    "type": "insertBookmark",
+    "value": "Summary"
+  },
+  {
+    "type": "deleteBookmark",
+    "value": "Summary"
+  },
+  {
+    "enforce": true,
+    "formatting": false,
+    "kind": "readOnly",
+    "password": "secret",
+    "type": "setDocumentProtection",
+    "unprotectedSections": [
+      1
+    ]
+  },
+  {
+    "type": "addEditableRange"
+  },
+  {
+    "type": "removeEditableRanges"
+  },
+  {
+    "type": "insertFormField",
+    "value": "checkBox"
+  },
+  {
+    "checkBox": {
+      "checkedByDefault": false,
+      "size": 12.0
+    },
+    "id": "field-1",
+    "name": "Agree",
+    "statusText": "Tick to agree",
+    "type": "setFormField"
+  },
+  {
+    "checked": true,
+    "type": "fillFormField"
+  },
+  {
+    "type": "setFormFieldShading",
+    "value": false
+  },
+  {
+    "author": "Ada Lovelace",
+    "company": "Analytical Engines",
+    "custom": [
+      {
+        "kind": "text",
+        "name": "Client",
+        "value": "Acme"
+      }
+    ],
+    "title": "Annual report",
+    "type": "setDocumentProperties"
+  },
+  {
+    "name": "CaseNumber",
+    "type": "setDocumentVariable",
+    "value": "2026-0042"
+  },
+  {
+    "type": "setFileName",
+    "value": "C:\\Cases\\2026-0042.docx"
   },
   {
     "code": "MERGEFIELD Name",
@@ -573,6 +776,39 @@
     "type": "setCellMargins"
   },
   {
+    "fitText": true,
+    "hideMark": true,
+    "textDirection": "btLr",
+    "type": "setCellProperties",
+    "width": {
+      "kind": "percent",
+      "value": 25.0
+    },
+    "wrapText": false
+  },
+  {
+    "exceptions": {
+      "alignment": "center",
+      "borders": {
+        "edges": "outside"
+      },
+      "cellSpacing": 1.5,
+      "reset": true,
+      "shading": "#D9E2F3"
+    },
+    "hidden": true,
+    "type": "setRowProperties"
+  },
+  {
+    "type": "setTableCellSpacing",
+    "value": 1.5
+  },
+  {
+    "description": "Yearly totals by region",
+    "title": "Totals",
+    "type": "setTableAltText"
+  },
+  {
     "type": "setHeaderRow",
     "value": true
   },
@@ -628,6 +864,10 @@
     "type": "setTableStyleOptions"
   },
   {
+    "type": "setDefaultTableStyle",
+    "value": "GridTable4"
+  },
+  {
     "type": "setTablePosition",
     "value": {
       "horizontal": {
@@ -649,6 +889,11 @@
   {
     "height": 72.5,
     "lockAspect": true,
+    "relativeHeight": "none",
+    "relativeWidth": {
+      "percent": 50.0,
+      "relativeTo": "margin"
+    },
     "type": "setObjectSize",
     "width": 144.5
   },
@@ -666,7 +911,7 @@
   {
     "allowOverlap": false,
     "horizontal": {
-      "align": "right",
+      "percent": 25.5,
       "relativeTo": "margin"
     },
     "layoutInCell": true,
@@ -742,6 +987,11 @@
   },
   {
     "anchor": "bottom",
+    "autofit": "shrinkText",
+    "columns": {
+      "count": 2,
+      "spacing": 18.5
+    },
     "type": "setShapeText",
     "wrapText": false
   },
@@ -749,7 +999,18 @@
     "contrast": -0.5,
     "grayscale": true,
     "transparency": 0.25,
+    "transparentColor": "#FFFFFF",
     "type": "setPictureAdjust"
+  },
+  {
+    "bottom": 0.0,
+    "left": 0.1,
+    "right": 0.25,
+    "type": "setPictureCrop"
+  },
+  {
+    "type": "changePicture",
+    "value": "iVBORw=="
   },
   {
     "type": "setObjectRotation",
@@ -762,6 +1023,11 @@
   {
     "type": "arrangeObject",
     "value": "toFront"
+  },
+  {
+    "align": "distributeHorizontally",
+    "relativeTo": "margin",
+    "type": "alignObjects"
   },
   {
     "type": "groupObjects"
@@ -912,17 +1178,25 @@
     "wrapSelection": false
   },
   {
+    "appearance": "tags",
     "binding": null,
+    "color": "#2E74B5",
     "id": "control-3",
     "lock": "none",
     "options": {
-      "checked": false
+      "checked": false,
+      "checkedSymbol": {
+        "character": "ü",
+        "font": "Wingdings"
+      }
     },
     "placeholderImage": {
       "data": "iVBORw==",
       "mime": "image/png"
     },
+    "style": "Strong",
     "tag": "status",
+    "temporary": true,
     "type": "setControl"
   },
   {
@@ -1092,6 +1366,7 @@
   {
     "accent": "#0A74E4",
     "appearance": "darkWithLightPage",
+    "bookmarks": true,
     "controlLabels": false,
     "cursorOverrides": [
       {

@@ -155,7 +155,7 @@ pub(crate) fn base64(data: &[u8]) -> String {
 }
 
 /// Standard base64 with optional padding; `None` on any other character.
-fn from_base64(s: &str) -> Option<Vec<u8>> {
+pub(crate) fn from_base64(s: &str) -> Option<Vec<u8>> {
     let digit = |c: u8| match c {
         b'A'..=b'Z' => Some(c - b'A'),
         b'a'..=b'z' => Some(c - b'a' + 26),
@@ -552,6 +552,9 @@ pub struct HorizontalPosition {
     /// Right of the reference's left edge (−1584…1584 pt).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub offset: Option<Points>,
+    /// Right of the reference's left edge by a share of its width (−1000…1000 %, `wp14:pctPosHOffset`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub percent: Option<f64>,
 }
 
 /// A floating object's vertical place: aligned across its reference, or an offset below the reference's top. Given
@@ -567,6 +570,9 @@ pub struct VerticalPosition {
     /// Below the reference's top (−1584…1584 pt).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub offset: Option<Points>,
+    /// Below the reference's top by a share of its height (−1000…1000 %, `wp14:pctPosVOffset`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub percent: Option<f64>,
 }
 
 /// A table's preferred width.
@@ -687,6 +693,43 @@ pub enum ControlOptions {
     PlainText(PlainTextOptions),
     /// A picture control's picture size.
     Picture(PictureOptions),
+    /// A repeating section's options.
+    RepeatingSection(RepeatingSectionOptions),
+}
+
+/// A repeating section control's options.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RepeatingSectionOptions {
+    /// What its items are called in its menu (`w15:sectionTitle`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub section_title: Option<String>,
+    /// Its items can be added and removed (`false`: `w15:doNotAllowInsertDeleteSection`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allow_insert_delete: Option<bool>,
+}
+
+/// A check box control's checked or unchecked symbol.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CheckboxSymbol {
+    /// Its font.
+    pub font: String,
+    /// The character, one.
+    pub character: String,
+}
+
+/// How a content control shows its edges (`w15:appearance`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ControlAppearance {
+    /// A box around it.
+    #[default]
+    BoundingBox,
+    /// Start and end tags.
+    Tags,
+    /// Nothing.
+    Hidden,
 }
 
 /// A checkbox's state.
@@ -696,6 +739,12 @@ pub struct CheckboxOptions {
     /// Whether it is checked.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub checked: Option<bool>,
+    /// The symbol it shows checked (`w14:checkedState`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checked_symbol: Option<CheckboxSymbol>,
+    /// The symbol it shows unchecked (`w14:uncheckedState`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unchecked_symbol: Option<CheckboxSymbol>,
 }
 
 /// A date picker's display format and locale.

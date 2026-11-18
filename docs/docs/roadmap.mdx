@@ -19,7 +19,7 @@ you. The work between them runs in four phases, in this order:
 <Phases
   items={[
     { n: '01', title: 'Layout', href: '#layout', range: '1.1 – 1.11', blurb: 'Every line and page breaks where it should, and stays there.', done: true },
-    { n: '02', title: 'DOCX fidelity', href: '#docx', range: '2.1 – 2.14', blurb: 'Everything in the file is read, kept and settable.' },
+    { n: '02', title: 'DOCX fidelity', href: '#docx', range: '2.1 – 2.14', blurb: 'Everything in the file is read, kept and settable.', done: true },
     { n: '03', title: 'Rendering', href: '#rendering', range: '3.1 – 3.11', blurb: 'Everything in the model is drawn.' },
     { n: '04', title: 'Editor and platform', href: '#editor', range: '4.1 – 4.12', blurb: 'The workflows, packages and API freeze.' },
   ]}
@@ -188,15 +188,19 @@ them out from a `.docx` either.
 
 This phase makes the document model complete. Every construct is read into the model, survives every kind of edit
 and save, and has a command to create, change and remove it. Where a construct has no drawing yet, phase 3 adds it.
+Application settings (saving, mail merge, the user interface, web page output) stay out of the model: they're kept on
+save as read. The [fidelity guide](guides/fidelity) lists every element and the chunk that completes it.
 
 :::info Done when
 
-- Every construct in the document format, apart from charts and equations, is in the model and has an API.
+- Every construct in the document format, apart from charts and equations, is in the model and has an API: no row of
+  the [fidelity guide](guides/fidelity) is Model, Kept or Lost, apart from text effects, whose API comes with their
+  drawing (3.5).
 - The round-trip gate (2.1) passes: no edit loses content the engine read.
 
 :::
 
-<Chunk id="2.1" title="Round-trip gate" gate deps={['1.1']}>
+<Chunk id="2.1" title="Round-trip gate" gate deps={['1.1']} done>
 
 **Goal:** no edit can lose content without failing CI.
 
@@ -208,34 +212,36 @@ and save, and has a command to create, change and remove it. Where a construct h
 
 </Chunk>
 
-<Chunk id="2.2" title="Document model refinement" deps={['2.1']}>
+<Chunk id="2.2" title="Document model refinement" deps={['2.1']} done>
 
 **Goal:** the model holds everything the reader sees, even what the engine doesn't understand.
 
 - An opaque inline and block node that carries the raw XML of every element the engine doesn't model: equations,
   charts, OLE objects, ink, subdocuments, `altChunk`, and w14 and w15 elements.
-- A model writer for bookmarks. The model holds them, but a paragraph written from the model loses them today.
 - Editing permission ranges (`permStart`, `permEnd`) as model nodes, with writers.
 - Hidden (`vanish`) runs in the model.
 - `mc:AlternateContent` honours `Requires`, and takes the fallback when a choice can't be drawn.
 - An `UnsupportedElement` warning for each opaque element, so the host knows what isn't drawn.
+- Also opaque: ActiveX controls, Word 97 movies, `w16se:symEx`, and custom XML markup and its revisions (Word removes
+  custom XML on open, so it is kept but not modeled).
 
 </Chunk>
 
-<Chunk id="2.3" title="Lossless moves and table edits" deps={['2.2']}>
+<Chunk id="2.3" title="Lossless moves and table edits" deps={['2.2']} done>
 
 **Goal:** moved content and restructured tables keep everything they held.
 
-- Cut, copy, paste and drag keep the source XML of the content they move.
+- Cut, copy, paste and drag keep the source XML of the content they move, and a commented range moves with its
+  comment.
+- A model writer for bookmarks. The model holds them, but a paragraph pasted or written from the model loses them.
 - Merging, splitting and adding or removing columns patch each cell's `tcPr` and the table grid, rather than
   rebuilding them, and keep non-paragraph cell content.
 - Custom-mark footnote references, `w:sym` with its font, and floats in their place within the paragraph.
 - Resized VML pictures, column settings, and properties that use a namespace prefix declared below the root.
-- An edited shape writes a fresh fallback picture instead of dropping it.
 
 </Chunk>
 
-<Chunk id="2.4" title="Character formatting" deps={['2.2']}>
+<Chunk id="2.4" title="Character formatting" deps={['2.2']} done>
 
 **Goal:** everything in Word's Font dialog can be set.
 
@@ -245,46 +251,50 @@ and save, and has a command to create, change and remove it. Where a construct h
 - Language per run.
 - Do not check spelling (`noProof`), and spell checking skips those runs.
 - Underline colour: read it, and apply the Font dialog's colour field, which is offered but not applied yet.
-- Emboss, engrave, outline and shadow; w14 text effects.
+- Emboss, engrave, outline and shadow. (w14 text effects get their API with their drawing, in 3.5.)
 - `w:effect`, `webHidden` and `specVanish` are kept on save.
 
 </Chunk>
 
-<Chunk id="2.5" title="Paragraph formatting" deps={['2.2']}>
+<Chunk id="2.5" title="Paragraph formatting" deps={['2.2']} done>
 
 **Goal:** everything in Word's Paragraph dialog can be set.
 
 - Contextual spacing and outline level as commands.
 - Mirror indents.
 - Paragraph text direction.
-- Create a drop cap (today the Frame dialog only keeps an existing one).
+- Don't hyphenate (`suppressAutoHyphens`) and Collapsed by default (`w15:collapsed`).
+- Drop Cap: create, change and remove a drop cap, dropped or in the margin.
 
 </Chunk>
 
-<Chunk id="2.6" title="Sections, headers and footers" deps={['2.2']}>
+<Chunk id="2.6" title="Sections, headers and footers" deps={['2.2']} done>
 
 **Goal:** the page setup that legal and report templates need.
 
 - Format Page Numbers: format, chapter numbers and start at.
 - Link to Previous, and removing a header or footer.
 - Vertical page alignment; line numbering, and suppressing it per paragraph.
-- Change an existing break's section type; apply settings from this point forward.
-- Column presets and unequal widths; mirror margins; book fold.
+- Change an existing break's section type; insert a section break, and apply settings from this point forward.
+- Column presets and unequal widths; mirror margins; book fold; gutter at top.
+- Different odd and even pages; page borders that don't surround the header or footer.
+- Insert Alignment Tab (`w:ptab`).
 - Section text direction.
 - `paperSrc` and printer settings are kept.
 
 </Chunk>
 
-<Chunk id="2.7" title="Footnotes and endnotes" deps={['2.6']}>
+<Chunk id="2.7" title="Footnotes and endnotes" deps={['2.6']} done>
 
 **Goal:** note settings and conversions.
 
 - Note position, number format, custom mark, start at and restart, per section and for the document.
+- Footnote columns (`w15:footnoteColumns`) and `noEndnote` are laid out and kept.
 - Convert footnotes to endnotes and back.
 
 </Chunk>
 
-<Chunk id="2.8" title="Bookmarks" deps={['2.2']}>
+<Chunk id="2.8" title="Bookmarks" deps={['2.2']} done>
 
 **Goal:** templates can hold working bookmarks.
 
@@ -294,44 +304,46 @@ and save, and has a command to create, change and remove it. Where a construct h
 
 </Chunk>
 
-<Chunk id="2.9" title="Tables" deps={['2.3']}>
+<Chunk id="2.9" title="Tables" deps={['2.3']} done>
 
 **Goal:** every table property can be set.
 
 - Row exceptions and hidden rows through the API.
-- Cell text direction, preferred width in percent, fit text and no wrap.
+- Cell text direction, preferred width in percent, fit text, no wrap and `hideMark`.
+- Cell spacing, diagonal cell borders (`tl2br`, `tr2bl`) and table style band sizes.
 - Table alt text (`tblCaption`, `tblDescription`) in Table Properties.
 - Header cells (`tcPr/headers`), and `cnfStyle` kept.
 - New tables take the document's `defaultTableStyle`.
 
 </Chunk>
 
-<Chunk id="2.10" title="Pictures and drawings" deps={['2.2']}>
+<Chunk id="2.10" title="Pictures and drawings" deps={['2.2']} done>
 
 **Goal:** Word's picture tools, as commands.
 
-- Crop, with handles.
+- Crop, in the Picture Size dialog too.
 - Change Picture in place, outside picture controls too.
 - Align and distribute objects.
-- Linked pictures (`r:link`), fetched through a host service.
-- Relative size and position, text box autofit and text box columns.
+- Linked pictures (`r:link`) kept through every edit.
+- Relative size and position, text box autofit, text box columns and `textboxTightWrap`.
 - Set Transparent Colour (`a:clrChange`).
 
 </Chunk>
 
-<Chunk id="2.11" title="Fields and document properties" deps={['2.2']}>
+<Chunk id="2.11" title="Fields and document properties" deps={['2.2']} done>
 
 **Goal:** the engine computes every field that depends only on the document.
 
 - Core, app and custom document properties: read, set through the API, and updated on save.
+- Document variables (`w:docVars`) and DOCVARIABLE.
 - DOCPROPERTY, AUTHOR, TITLE, SUBJECT, KEYWORDS, FILENAME, SAVEDATE, PRINTDATE, NOTEREF, LISTNUM and AUTONUM.
-- DATE and TIME in the host's time zone and locale.
+- DATE and TIME in the host's time zone.
 - `=` formulas, with table references, `decimalSymbol` and `listSeparator`.
 - `webSettings` is read and kept.
 
 </Chunk>
 
-<Chunk id="2.12" title="Legacy form fields" deps={['2.2']}>
+<Chunk id="2.12" title="Legacy form fields" deps={['2.2']} done>
 
 **Goal:** pre-2007 forms, common in court and government work, open, fill and save.
 
@@ -342,7 +354,7 @@ and save, and has a command to create, change and remove it. Where a construct h
 
 </Chunk>
 
-<Chunk id="2.13" title="Content controls" deps={['2.2']}>
+<Chunk id="2.13" title="Content controls" deps={['2.2']} done>
 
 **Goal:** content controls match Word's feature set.
 
@@ -350,11 +362,13 @@ and save, and has a command to create, change and remove it. Where a construct h
 - Use a style to format contents.
 - Show As (bounding box, tags, none) and colour (w15 `appearance` and `color`).
 - Temporary controls, which remove themselves when edited.
+- Repeating section options (`sectionTitle`, `doNotAllowInsertDeleteSection`), and inserting a building block from a
+  gallery control.
 - Data binding (`w:dataBinding`) to custom XML parts, in both directions.
 
 </Chunk>
 
-<Chunk id="2.14" title="Document protection" deps={['2.2', '2.12']}>
+<Chunk id="2.14" title="Document protection" deps={['2.2', '2.12']} done>
 
 **Goal:** a protected document behaves as it does in Word.
 
@@ -418,7 +432,7 @@ Everything in the model is drawn, on screen and in PDF, and looks as it does in 
 
 **Goal:** Word 2010 text effects.
 
-- w14 glow, shadow and reflection.
+- w14 glow, shadow and reflection, read into the model and set through the API (`setTextEffects`).
 - Text fill (solid, gradient, none) and text outline.
 - 3-D text drawn flat, as a fallback.
 
@@ -618,6 +632,14 @@ The workflows on top of a complete model, the framework packages, and the API fr
 - An extensions surface for custom drawing (comment bubbles, custom rulers)
 - Equations (OMML)
 - Charts
+- Crop handles: Word's crop mode, the picture's whole image with handles on its crop. Crop is set by
+  `setPictureCrop` and the Picture Size dialog; the handles are an interaction on top that waits on overlay drawing
+  for them
+- Drawing linked pictures (`r:link`): they're kept, and drawn empty. Drawing one needs the host to fetch it, and a
+  host service a document from anyone can point at a path or URL needs its own design (what a host may fetch, and
+  when)
+- DATE and TIME in the host's locale: their month and day names and default picture are en-US's. Every locale's
+  names would be CLDR data in the WASM bundle; a host service could supply them instead
 - Right-to-left and East Asian layout and editing, with IME (below)
 - The caret, selection and hit testing in vertical sections: vertical documents lay out and draw in 1.0, but editing
   them places the caret as if the page weren't turned
@@ -660,6 +682,8 @@ Pulled forward when a customer document needs one.
 ### Not planned
 
 - Embedded fonts and font substitution. The host supplies fonts.
+- A fresh Word 2007 fallback (`mc:Fallback`) for a shape edited in Twip. The shape is saved without it; Word 2010 and
+  later read the shape itself.
 
 ## Shipped in 0.1.0 {#shipped}
 

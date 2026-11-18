@@ -8,5 +8,7 @@
   "bottom",
   "left",
   "right",
+  "diagonalDown",
+  "diagonalUp",
   "none"
 ]

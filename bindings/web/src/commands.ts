@@ -9,8 +9,10 @@ import type {
   LineSpacing,
   MarkupView,
   ObjectWrap,
+  RelativeSize,
   RowHeight,
   TablePosition,
+  TightWrap,
   TableWidth,
   UnderlineStyle,
   VerticalPosition,
@@ -20,6 +22,7 @@ import type {
   Arrange,
   Color,
   CommentId,
+  CustomProperty,
   Degrees,
   EffectsChange,
   ElementId,
@@ -149,6 +152,137 @@ export type ShadingPattern =
   | 'pct80'
   | 'pct90';
 
+/** Where a section starts. */
+export type SectionBreakKind = 'nextPage' | 'continuous' | 'evenPage' | 'oddPage' | 'nextColumn';
+
+/** A column's width and the space after it. */
+export interface ColumnWidth {
+  /** The width. */
+  width: Points;
+  /** The space after it (none after the last). */
+  spacing: Points;
+}
+
+/** Chapter numbers in page numbers: the number of the last heading of a level, then a separator. */
+export interface ChapterNumbers {
+  /** The heading level whose number leads (1 to 9). */
+  level: number;
+  /** Between the chapter and page numbers. */
+  separator: 'hyphen' | 'period' | 'colon' | 'emDash' | 'enDash';
+}
+
+/** A section's line numbering. */
+export interface LineNumbers {
+  /** The first number (1 to 32767). Default: 1. */
+  start?: number;
+  /** Shows every nth number (1 to 100). Default: 1. */
+  countBy?: number;
+  /** From the text (0 to 1584 pt); automatic when not given. */
+  distance?: Points;
+  /** When numbering starts again. Default: each page. */
+  restart?: 'eachPage' | 'eachSection' | 'continuous';
+}
+
+/** Where notes go: footnotes at the page's bottom or beneath the text, endnotes at a section's or the document's end. */
+export type NotePosition = 'pageBottom' | 'beneathText' | 'sectionEnd' | 'documentEnd';
+
+/** A section's footnote or endnote settings. */
+export interface NoteSettings {
+  /** Where the notes go. */
+  position: NotePosition;
+  /** The number format. */
+  format: NumberFormat;
+  /** The first number. */
+  start: number;
+  /** When numbering starts again. */
+  restart: 'continuous' | 'eachSection' | 'eachPage';
+}
+
+/** How the document's pages pair. */
+export type MultiplePagesMode = 'normal' | 'mirrorMargins' | 'bookFold' | 'reverseBookFold';
+
+/** What a text form field takes. */
+export type TextInputType = 'regular' | 'number' | 'date' | 'currentDate' | 'currentTime' | 'calculation';
+
+/** The edges `setCellBorders` sets: sides, the inside lines, or each cell's diagonals. */
+export type CellBorderEdges =
+  | 'all'
+  | 'outside'
+  | 'inside'
+  | 'insideHorizontal'
+  | 'insideVertical'
+  | 'top'
+  | 'bottom'
+  | 'left'
+  | 'right'
+  | 'diagonalDown'
+  | 'diagonalUp'
+  | 'none';
+
+/**
+ * Which way text flows: lines left to right, top to bottom (`lrTb`); vertical lines right to left (`tbRl`) or bottom to
+ * top (`btLr`); and their East Asian forms with characters turned (`lrTbV`, `tbRlV`, `tbLrV`).
+ */
+export type TextFlow = 'lrTb' | 'tbRl' | 'btLr' | 'lrTbV' | 'tbRlV' | 'tbLrV';
+
+/** The ligatures text may use (Word's choices). */
+export type Ligatures = 'none' | 'standard' | 'standardContextual' | 'historicalDiscretional' | 'all';
+
+/** The digits' widths: the font's, proportional or tabular. */
+export type NumberSpacing = 'default' | 'proportional' | 'tabular';
+
+/** The digits' forms: the font's, lining or old style. */
+export type NumberForm = 'default' | 'lining' | 'oldStyle';
+
+/** The scale, kerning and OpenType features to set (the Font dialog's Advanced tab); what isn't given is kept. */
+export interface Typography {
+  /** The horizontal scale, percent (1…600). */
+  scale?: number;
+  /** Kerning for text at or above this size (0…1638 pt); 0 turns it off. */
+  kerning?: Points;
+  /** Which ligatures the font may use. */
+  ligatures?: Ligatures;
+  /** The digits' widths. */
+  numberSpacing?: NumberSpacing;
+  /** The digits' forms. */
+  numberForm?: NumberForm;
+  /** The font's stylistic set (1…20), or its default (0). */
+  stylisticSet?: number;
+  /** The font's contextual alternates. */
+  contextualAlternates?: boolean;
+}
+
+/** The text's language and proofing to set; what isn't given is kept. */
+export interface Language {
+  /** The language, a BCP 47 tag (`en-GB`). */
+  language?: string;
+  /** Do not check spelling or grammar. */
+  noProof?: boolean;
+}
+
+/** Character effects to set; what isn't given is kept. Emboss and engrave exclude each other. */
+export interface CharacterEffects {
+  /** Raised relief. */
+  emboss?: boolean;
+  /** Sunken relief. */
+  engrave?: boolean;
+  /** The letters' outlines only. */
+  outline?: boolean;
+  /** A shadow behind the letters. */
+  shadow?: boolean;
+}
+
+/** A paragraph's drop cap: where its first letter goes, its font, how many lines it drops and its distance from text. */
+export type DropCap = {
+  position: 'none' | 'dropped' | 'inMargin';
+  /** The letter's font; default: the text's. */
+  font?: string;
+  /** Lines it drops, 1 to 10; default 3. */
+  lines?: number;
+  /** How far the text keeps from it. */
+  distance?: Points;
+};
+
 /** A frame's wrapping, size, position and distance from text. */
 export type FrameProperties = {
   /** Text wrapping: around the frame, or above and below it (`'none'`). */
@@ -207,7 +341,7 @@ export interface Commands {
   /** Inserts a column break (Ctrl+Shift+Enter); in the body, not in a table. */
   insertColumnBreak(): Promise<void>;
   /** Inserts a section break; in the body, not in a table. */
-  insertSectionBreak(kind: 'nextPage' | 'continuous' | 'evenPage' | 'oddPage'): Promise<void>;
+  insertSectionBreak(kind: SectionBreakKind): Promise<void>;
   /** Inserts a tab character. Typing. */
   insertTab(): Promise<void>;
   /** Inserts one character, optionally in a symbol font. */
@@ -254,6 +388,8 @@ export interface Commands {
   selectNextObject(direction: 'next' | 'previous'): Promise<void>;
   /** Moves the caret to a page, from 1. */
   goToPage(page: number): Promise<void>;
+  /** Selects a bookmark's text, or puts the caret at it when it holds none (Go To); `'_top'` is the document's start. */
+  goToBookmark(name: string): Promise<void>;
 
   // Character formatting
   /** Sets bold (Ctrl+B). */
@@ -292,6 +428,16 @@ export interface Commands {
   setCharacterSpacing(spacing: Points): Promise<void>;
   /** Raises (positive) or lowers the text, -1584 to 1584. */
   setCharacterPosition(position: Points): Promise<void>;
+  /** Applies a character style to the selected text (a linked paragraph style's character half), or removes it (`null`). */
+  applyCharacterStyle(styleId: StyleId | null): Promise<void>;
+  /** Sets the scale, kerning and OpenType features; what isn't given is kept. */
+  setTypography(typography: Typography): Promise<void>;
+  /** Sets the text's language and whether spelling is checked; what isn't given is kept. */
+  setLanguage(language: Language): Promise<void>;
+  /** Sets emboss, engrave, outline and shadow; what isn't given is kept. */
+  setCharacterEffects(effects: CharacterEffects): Promise<void>;
+  /** Sets the underline's colour, or the text's (`'auto'`); underlined text only. */
+  setUnderlineColor(color: Color | 'auto'): Promise<void>;
   /** Clears character formatting (Ctrl+Space). */
   clearFormatting(): Promise<void>;
   /** Changes the case of the selection (Shift+F3 cycles). */
@@ -307,9 +453,21 @@ export interface Commands {
   /** Sets the line spacing: 0.06 to 132 lines, or 0.7 to 1584 points. */
   setLineSpacing(spacing: LineSpacing): Promise<void>;
   /** Sets the space before and after, 0 to 1584; unset fields keep their value. */
-  setParagraphSpacing(options: { before?: Points | 'auto'; after?: Points | 'auto' }): Promise<void>;
+  setParagraphSpacing(options: {
+    before?: Points | 'auto';
+    after?: Points | 'auto';
+    /** No space between paragraphs of the same style. */
+    contextual?: boolean;
+  }): Promise<void>;
   /** Sets the indents, -1584 to 1584; `firstLine` and `hanging` are exclusive. Unset fields keep their value. */
-  setIndents(options: { left?: Points; right?: Points; firstLine?: Points; hanging?: Points }): Promise<void>;
+  setIndents(options: {
+    left?: Points;
+    right?: Points;
+    firstLine?: Points;
+    hanging?: Points;
+    /** Mirror indents: on facing pages `left` is the inside indent and `right` the outside. */
+    mirror?: boolean;
+  }): Promise<void>;
   /** Increases the left indent (Ctrl+M). */
   increaseIndent(): Promise<void>;
   /** Decreases the left indent (Ctrl+Shift+M). */
@@ -337,7 +495,17 @@ export interface Commands {
     keepLinesTogether?: boolean;
     pageBreakBefore?: boolean;
     widowControl?: boolean;
+    /** Don't hyphenate the paragraph. */
+    dontHyphenate?: boolean;
+    /** Leaves the paragraph's lines out of line numbering. */
+    suppressLineNumbers?: boolean;
+    /** In a text box, which lines text around the box wraps tightly to. */
+    textboxTightWrap?: TightWrap;
   }): Promise<void>;
+  /** Sets the outline level (1 to 9, or 0 for body text) and whether the paragraphs open collapsed; unset fields keep their value. */
+  setOutline(options: { level?: number; collapsed?: boolean }): Promise<void>;
+  /** Sets the selected paragraphs' text direction. */
+  setParagraphTextDirection(direction: TextFlow): Promise<void>;
   /** Sets the paragraph borders (a half-point single line). */
   setParagraphBorders(preset: 'box' | 'bottom' | 'none'): Promise<void>;
   /** Sets or removes (`null`) the paragraph shading. */
@@ -371,11 +539,17 @@ export interface Commands {
     offsetFrom?: 'page' | 'text';
     display?: 'allPages' | 'firstPage' | 'notFirstPage';
     applyTo?: 'wholeDocument' | 'thisSection';
+    /** The borders go around the header (every section's). */
+    surroundHeader?: boolean;
+    /** The borders go around the footer (every section's). */
+    surroundFooter?: boolean;
   }): Promise<void>;
   /** Sets the properties of the frame the selection is in (`unavailable` outside a frame). */
   setFrame(properties: FrameProperties): Promise<void>;
   /** Removes the frame the selection is in: its paragraphs go back in the text, before the paragraph it was anchored to. */
   removeFrame(): Promise<void>;
+  /** The selection's paragraph's drop cap: its first letter dropped into the text or in the margin, or put back (`'none'`). */
+  setDropCap(dropCap: DropCap): Promise<void>;
   /**
    * Defines the selection's list levels (level `k` of `levels` is level `k`; the levels after them are kept) for the
    * whole list, from this paragraph on, or for the selected paragraphs. Outside a list, makes a new one.
@@ -428,13 +602,31 @@ export interface Commands {
   /** Sets the paper size, in portrait, 36 to 1584. */
   setPaperSize(options: { width: Points; height: Points }): Promise<void>;
   /** Sets the text columns: 1 to 45, with spacing and a separator line. */
-  setColumns(options: { count: number; spacing?: Points; separator?: boolean }): Promise<void>;
+  setColumns(options: {
+    count: number;
+    spacing?: Points;
+    separator?: boolean;
+    /** Columns of their own widths (`count` of them), each with the space after it; equal columns when not given. */
+    widths?: ColumnWidth[];
+  }): Promise<void>;
   /** Sets the header and footer distances; unset fields keep their value. */
   setHeaderFooterDistance(options: { header?: Points; footer?: Points }): Promise<void>;
   /** Sets a different first page header and footer. */
   setDifferentFirstPage(on: boolean): Promise<void>;
   /** Sets different odd and even page headers and footers. */
   setDifferentOddEvenPages(on: boolean): Promise<void>;
+  /** Sets the section's page number format, first number (`null` continues from the section before) and chapter numbers (`null` for none); unset fields keep their value. */
+  setPageNumbering(options: { format?: NumberFormat; start?: number | null; chapter?: ChapterNumbers | null }): Promise<void>;
+  /** Sets where text sits between the section's top and bottom margins. */
+  setPageVerticalAlignment(alignment: 'top' | 'center' | 'justified' | 'bottom'): Promise<void>;
+  /** Numbers the section's lines, or stops (`null`). */
+  setLineNumbering(numbers: LineNumbers | null): Promise<void>;
+  /** Sets where the section starts: the break before it. */
+  setSectionBreakType(kind: SectionBreakKind): Promise<void>;
+  /** Sets the section's text direction. */
+  setSectionTextDirection(direction: TextFlow): Promise<void>;
+  /** Sets how the document's pages pair and where the gutter is; unset fields keep their value. */
+  setMultiplePages(options: { mode?: MultiplePagesMode; gutterAtTop?: boolean }): Promise<void>;
   /** Moves a section text column's boundary. */
   moveColumnBoundary(options: { column: number; to: Points }): Promise<void>;
 
@@ -451,6 +643,12 @@ export interface Commands {
     where?: 'caret' | 'header' | 'footer';
     alignment?: 'left' | 'center' | 'right';
   }): Promise<void>;
+  /** The caret section's header or footer takes the section before's (Link to Previous), or gets its own copy of it. */
+  setHeaderFooterLinked(options: { kind: 'header' | 'footer'; pages: 'default' | 'first' | 'even'; linked: boolean }): Promise<void>;
+  /** Empties the caret section's header or footer (its own, so a linked one stops linking). */
+  removeHeaderFooter(options: { kind: 'header' | 'footer'; pages: 'default' | 'first' | 'even' }): Promise<void>;
+  /** Inserts a tab to a place set from the margin or the indent, not from the tab stops (Insert Alignment Tab). */
+  insertAlignmentTab(options: { alignment: 'left' | 'center' | 'right'; relativeTo: 'margin' | 'indent'; leader?: TabLeader }): Promise<void>;
 
   // Insert
   /** Inserts a table of 1 to 32767 rows and 1 to 63 columns. */
@@ -468,12 +666,99 @@ export interface Commands {
   insertFootnote(): Promise<void>;
   /** Inserts an endnote. */
   insertEndnote(): Promise<void>;
+  /** Inserts a footnote or an endnote at the caret, numbered or with its own mark (1 to 10 characters). */
+  insertNote(options: { kind: 'footnote' | 'endnote'; customMark?: string }): Promise<void>;
+  /**
+   * Sets footnotes' or endnotes' position, number format, first number and restarting, for the caret section or the
+   * whole document (the default); unset fields keep their value. Footnotes go at the `pageBottom` or `beneathText`;
+   * endnotes at the `sectionEnd` or `documentEnd` (the whole document's).
+   */
+  setNoteProperties(options: {
+    kind: 'footnote' | 'endnote';
+    position?: NotePosition;
+    format?: NumberFormat;
+    start?: number;
+    restart?: 'continuous' | 'eachSection' | 'eachPage';
+    applyTo?: 'wholeDocument' | 'thisSection';
+    /** Footnotes only: the footnote area's columns, 1 to 4, or the section's own (0). */
+    columns?: number;
+  }): Promise<void>;
+  /** Turns every footnote into an endnote, every endnote into a footnote, or both (`'swap'`). */
+  convertNotes(conversion: 'footnotesToEndnotes' | 'endnotesToFootnotes' | 'swap'): Promise<void>;
   /** Inserts a link; `text` replaces the selection (default: the selection, or the address). */
   insertHyperlink(options: { address: string; text?: string }): Promise<void>;
   /** Changes the link at the selection. */
   editHyperlink(options: { address?: string; text?: string }): Promise<void>;
   /** Removes the link at the selection, keeping its text. */
   removeHyperlink(): Promise<void>;
+  /**
+   * Bookmarks the selection: the name starts with a letter (or `_`, for a hidden bookmark) and holds letters, digits
+   * and `_`, 40 at most. A bookmark of the same name (compared without case) moves here.
+   */
+  insertBookmark(name: string): Promise<void>;
+  /** Deletes a bookmark (compared without case), keeping its text. */
+  deleteBookmark(name: string): Promise<void>;
+  /**
+   * Restrict Editing: what the document allows, and starting or stopping its enforcement. Starting takes the password
+   * stopping will need (none when absent); stopping a password-protected document needs it. With filling in forms,
+   * `unprotectedSections` are the sections (by index) anyone may edit; it can't change while enforced.
+   */
+  setDocumentProtection(options: {
+    kind?: 'none' | 'readOnly' | 'comments' | 'trackedChanges' | 'forms';
+    formatting?: boolean;
+    enforce?: boolean;
+    password?: string;
+    unprotectedSections?: number[];
+  }): Promise<void>;
+  /** Makes the selection a range everyone (or `editor`) may edit while the document is protected. */
+  addEditableRange(options?: { editor?: string }): Promise<void>;
+  /** Removes the editable ranges at the selection. */
+  removeEditableRanges(): Promise<void>;
+  /** Inserts a legacy form field (FORMTEXT, FORMCHECKBOX, FORMDROPDOWN) at the selection. */
+  insertFormField(kind: 'text' | 'checkBox' | 'dropDown'): Promise<{ id: ElementId }>;
+  /** Sets a legacy form field's options (default: the one at the selection); only its own kind's options apply. */
+  setFormField(options: {
+    id?: ElementId;
+    name?: string;
+    enabled?: boolean;
+    calculateOnExit?: boolean;
+    entryMacro?: string;
+    exitMacro?: string;
+    helpText?: string;
+    statusText?: string;
+    text?: { inputType?: TextInputType; default?: string; maxLength?: number; format?: string };
+    checkBox?: { size?: Points | 'auto'; checkedByDefault?: boolean };
+    dropDown?: { entries?: string[]; default?: number };
+  }): Promise<void>;
+  /** Fills in a legacy form field (default: the one at the selection): a text field's text, a check box's state, a drop-down's entry. */
+  fillFormField(options: { id?: ElementId; text?: string; checked?: boolean; entry?: number }): Promise<void>;
+  /** Shades legacy form fields, or not. */
+  setFormFieldShading(on: boolean): Promise<void>;
+  /**
+   * Sets the document's properties; unset fields keep their value, an empty text removes one, and `custom` replaces
+   * the custom properties.
+   */
+  setDocumentProperties(options: {
+    title?: string;
+    subject?: string;
+    author?: string;
+    keywords?: string;
+    comments?: string;
+    category?: string;
+    status?: string;
+    lastModifiedBy?: string;
+    company?: string;
+    manager?: string;
+    hyperlinkBase?: string;
+    custom?: CustomProperty[];
+  }): Promise<void>;
+  /** Sets a document variable (read by DOCVARIABLE), or removes it when `value` is absent. */
+  setDocumentVariable(options: { name: string; value?: string }): Promise<void>;
+  /**
+   * The document's file name, with its folder when FILENAME `\p` should show one: what FILENAME shows. Not saved, and
+   * not an edit.
+   */
+  setFileName(name: string): Promise<void>;
   /** Inserts a field. With a selection and an empty code, wraps it (Ctrl+F9). */
   insertField(options: { code: string; display?: string; showCode?: boolean }): Promise<{ id: ElementId }>;
 
@@ -508,13 +793,39 @@ export interface Commands {
   setCellAlignment(vertical: 'top' | 'center' | 'bottom'): Promise<void>;
   /** Sets or removes (`null`) the cell shading. */
   setCellShading(color: Color | null): Promise<void>;
-  /** Sets the cell borders on some edges; no border removes them. */
-  setCellBorders(options: {
-    edges: 'all' | 'outside' | 'inside' | 'insideHorizontal' | 'insideVertical' | 'top' | 'bottom' | 'left' | 'right' | 'none';
-    border?: BorderLine;
-  }): Promise<void>;
+  /** Sets the cell borders on some edges, or the cells' diagonals; `'none'` removes them all, diagonals too. */
+  setCellBorders(options: { edges: CellBorderEdges; border?: BorderLine }): Promise<void>;
   /** Sets the cell margins, 0 to 1584; unset fields keep their value. */
   setCellMargins(options: { top?: Points; bottom?: Points; left?: Points; right?: Points }): Promise<void>;
+  /**
+   * Sets the cells' preferred width (points 0 to 1584, or percent of the table 0 to 100), text direction, wrapping,
+   * fitting and end mark height (`hideMark`); unset fields keep their value.
+   */
+  setCellProperties(options: {
+    width?: TableWidth;
+    textDirection?: TextFlow;
+    wrapText?: boolean;
+    fitText?: boolean;
+    hideMark?: boolean;
+  }): Promise<void>;
+  /**
+   * Hides the rows' end marks (a row hides when its text is hidden too), and sets the table properties the rows
+   * override: `reset` drops their own first.
+   */
+  setRowProperties(options: {
+    hidden?: boolean;
+    exceptions?: {
+      reset?: boolean;
+      alignment?: 'left' | 'center' | 'right';
+      cellSpacing?: Points;
+      shading?: Color;
+      borders?: { edges: CellBorderEdges; border?: BorderLine };
+    };
+  }): Promise<void>;
+  /** Sets the space between the table's cells, 0 to 1584, or none (`null`). */
+  setTableCellSpacing(spacing: Points | null): Promise<void>;
+  /** Sets the table's alternative text title and description; unset fields keep their value. */
+  setTableAltText(options: { title?: string; description?: string }): Promise<void>;
   /** Repeats the rows as a header row. */
   setHeaderRow(on: boolean): Promise<void>;
   /** Sets the row height. */
@@ -544,6 +855,8 @@ export interface Commands {
     bandedRows?: boolean;
     bandedColumns?: boolean;
   }): Promise<void>;
+  /** Sets the table style new tables take (Set as Default), or Table Grid (`null`). */
+  setDefaultTableStyle(styleId: StyleId | null): Promise<void>;
   /**
    * Positions the caret's table, so text wraps around it, as dragging its move handle does: a table without a
    * position gets one across from the margin and down from the paragraph, and each axis given is aligned, offset, or
@@ -554,7 +867,15 @@ export interface Commands {
 
   // Objects: the selected object
   /** Sets the object's size, 1 to 1584. */
-  setObjectSize(options: { width?: Points; height?: Points; lockAspect?: boolean }): Promise<void>;
+  setObjectSize(options: {
+    width?: Points;
+    height?: Points;
+    lockAspect?: boolean;
+    /** A floating object's width as a share of a box on the page, or absolute (`'none'`). */
+    relativeWidth?: RelativeSize | 'none';
+    /** A floating object's height as a share of a box on the page, or absolute (`'none'`). */
+    relativeHeight?: RelativeSize | 'none';
+  }): Promise<void>;
   /** Resets the object to its original size. */
   resetObjectSize(): Promise<void>;
   /** Sets how text wraps around the object. */
@@ -590,14 +911,29 @@ export interface Commands {
   setShapeEffects(change: EffectsChange): Promise<void>;
   /** Sets the shape's text insets, anchor, autofit, wrapping and direction; unset fields keep their value. */
   setShapeText(change: ShapeTextChange): Promise<void>;
-  /** Sets the picture's transparency, greyscale, brightness and contrast; unset fields keep their value. */
+  /** Sets the picture's transparency, greyscale, brightness, contrast and transparent colour; unset fields keep their value. */
   setPictureAdjust(change: PictureAdjustChange): Promise<void>;
+  /**
+   * Crops the selected picture by fractions of its image from each edge (0 to 1; negative pads it): its box follows
+   * the part shown, at the scale it is drawn. Unset fields keep their value.
+   */
+  setPictureCrop(crop: { left?: number; top?: number; right?: number; bottom?: number }): Promise<void>;
+  /** Replaces the selected picture's image, keeping its width, effects and place; its height follows the new image. */
+  changePicture(data: Uint8Array): Promise<void>;
   /** Sets the selected objects' rotation, 0 to 360 degrees clockwise. */
   setObjectRotation(degrees: Degrees): Promise<void>;
   /** Flips the selected objects. */
   flipObject(axis: FlipAxis): Promise<void>;
   /** Moves the floating object in the paint order, or behind or in front of the text. */
   arrangeObject(where: Arrange): Promise<void>;
+  /**
+   * Aligns or distributes the selected floating objects across their page, its margins, or the box around them (the
+   * default for two or more; else the margins).
+   */
+  alignObjects(options: {
+    align: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom' | 'distributeHorizontally' | 'distributeVertically';
+    relativeTo?: 'page' | 'margin' | 'selectedObjects';
+  }): Promise<void>;
   /** Groups the selected floating objects: two or more, in one story. The group is selected. */
   groupObjects(): Promise<void>;
   /** Ungroups the selected group. Its children are selected. */
@@ -687,11 +1023,22 @@ export interface Commands {
     binding?: DataBinding | null;
     options?: ControlOptions;
     placeholderImage?: PlaceholderImage;
+    /** How it shows its edges. */
+    appearance?: 'boundingBox' | 'tags' | 'hidden';
+    /** Its colour, or the default (`'none'`). */
+    color?: Color | 'none';
+    /** It goes when its content is edited, leaving the content. */
+    temporary?: boolean;
+    /** The character style text typed into it takes, or none (`'none'`). */
+    style?: StyleId | 'none';
   }): Promise<void>;
   /** Removes a content control, optionally keeping its content. */
   removeControl(options: { id: ElementId; keepContent?: boolean }): Promise<void>;
-  /** Fills a content control with exactly one of text, an image (fitted to its box) or DOCX content. */
-  fillControl(options: { id: ElementId; text?: string; image?: Uint8Array; docx?: Uint8Array }): Promise<void>;
+  /**
+   * Fills a content control with exactly one of text, an image (fitted to its box), DOCX content, or a building block
+   * gallery's entry (its `buildingBlocks`).
+   */
+  fillControl(options: { id: ElementId; text?: string; image?: Uint8Array; docx?: Uint8Array; buildingBlock?: string }): Promise<void>;
   /** Checks or unchecks a checkbox control. */
   setCheckbox(options: { id: ElementId; checked: boolean }): Promise<void>;
   /** Wraps the selected paragraphs or table rows in a repeating section. */
@@ -907,6 +1254,7 @@ const encodings: { [K in CommandId]: Encoding<K> } = {
   escape: 'none',
   selectNextObject: 'value',
   goToPage: 'value',
+  goToBookmark: 'value',
   setBold: 'value',
   setItalic: 'value',
   setUnderline: 'value',
@@ -925,6 +1273,11 @@ const encodings: { [K in CommandId]: Encoding<K> } = {
   setHighlight: 'value',
   setCharacterSpacing: 'value',
   setCharacterPosition: 'value',
+  applyCharacterStyle: 'value',
+  setTypography: 'spread',
+  setLanguage: 'spread',
+  setCharacterEffects: 'spread',
+  setUnderlineColor: 'value',
   clearFormatting: 'none',
   changeCase: 'value',
   copyFormatting: 'none',
@@ -943,6 +1296,8 @@ const encodings: { [K in CommandId]: Encoding<K> } = {
   setList: 'value',
   setListLevel: 'value',
   setParagraphFlow: 'spread',
+  setOutline: 'spread',
+  setParagraphTextDirection: 'value',
   setParagraphBorders: 'value',
   setParagraphShading: 'value',
   setParagraphBorderLines: 'spread',
@@ -951,6 +1306,7 @@ const encodings: { [K in CommandId]: Encoding<K> } = {
   setPageBorders: 'spread',
   setFrame: 'spread',
   removeFrame: 'none',
+  setDropCap: 'spread',
   setListDefinition: 'spread',
   setNumberingValue: 'spread',
   restartNumbering: 'none',
@@ -973,20 +1329,44 @@ const encodings: { [K in CommandId]: Encoding<K> } = {
   setHeaderFooterDistance: 'spread',
   setDifferentFirstPage: 'value',
   setDifferentOddEvenPages: 'value',
+  setPageNumbering: 'spread',
+  setPageVerticalAlignment: 'value',
+  setLineNumbering: 'value',
+  setSectionBreakType: 'value',
+  setSectionTextDirection: 'value',
+  setMultiplePages: 'spread',
   moveColumnBoundary: 'spread',
   editHeader: 'none',
   editFooter: 'none',
   closeHeaderFooter: 'none',
   insertPageNumber: 'spread',
+  setHeaderFooterLinked: 'spread',
+  removeHeaderFooter: 'spread',
+  insertAlignmentTab: 'spread',
   insertTable: 'spread',
   insertPicture: 'spread',
   insertTextBox: 'none',
   insertShape: 'spread',
   insertFootnote: 'none',
   insertEndnote: 'none',
+  insertNote: 'spread',
+  setNoteProperties: 'spread',
+  convertNotes: 'value',
   insertHyperlink: 'spread',
   editHyperlink: 'spread',
   removeHyperlink: 'none',
+  insertBookmark: 'value',
+  deleteBookmark: 'value',
+  setDocumentProtection: 'spread',
+  addEditableRange: 'spread',
+  removeEditableRanges: 'none',
+  insertFormField: 'value',
+  setFormField: 'spread',
+  fillFormField: 'spread',
+  setFormFieldShading: 'value',
+  setDocumentProperties: 'spread',
+  setDocumentVariable: 'spread',
+  setFileName: 'value',
   insertField: 'spread',
   insertRows: 'spread',
   insertColumns: 'spread',
@@ -1005,6 +1385,10 @@ const encodings: { [K in CommandId]: Encoding<K> } = {
   setCellShading: 'value',
   setCellBorders: 'spread',
   setCellMargins: 'spread',
+  setCellProperties: 'spread',
+  setRowProperties: 'spread',
+  setTableCellSpacing: 'value',
+  setTableAltText: 'spread',
   setHeaderRow: 'value',
   setRowHeight: 'value',
   setRowCanBreak: 'value',
@@ -1016,6 +1400,7 @@ const encodings: { [K in CommandId]: Encoding<K> } = {
   setTableIndent: 'value',
   setTableStyle: 'value',
   setTableStyleOptions: 'spread',
+  setDefaultTableStyle: 'value',
   setTablePosition: 'value',
   setObjectSize: 'spread',
   resetObjectSize: 'none',
@@ -1032,9 +1417,12 @@ const encodings: { [K in CommandId]: Encoding<K> } = {
   setShapeEffects: 'spread',
   setShapeText: 'spread',
   setPictureAdjust: 'spread',
+  setPictureCrop: 'spread',
+  changePicture: 'value',
   setObjectRotation: 'value',
   flipObject: 'value',
   arrangeObject: 'value',
+  alignObjects: 'spread',
   groupObjects: 'none',
   ungroupObjects: 'none',
   selectGroupChild: 'value',

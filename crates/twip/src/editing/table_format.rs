@@ -23,6 +23,20 @@ pub enum TableFormat {
     TableIndent(f64),
     TableStyle(String),
     TableLook(Look),
+    CellProps(crate::api::command::CellProperties),
+    RowProps { hidden: Option<bool>, exceptions: Option<RowEx> },
+    CellSpacing(f64),
+    Alt(crate::api::command::TableAltText),
+}
+
+/// Row exceptions to set: `reset` drops the rows' own first.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RowEx {
+    pub reset: bool,
+    pub jc: Option<Jc>,
+    pub cell_spacing: Option<f64>,
+    pub shading: Option<u32>,
+    pub borders: Option<(Edges, Border)>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -36,6 +50,8 @@ pub enum Edges {
     Bottom,
     Left,
     Right,
+    DiagonalDown,
+    DiagonalUp,
     None,
 }
 
@@ -54,6 +70,84 @@ fn border_xml(w: &str, name: &str, b: &Border) -> String {
         (b.width * 8.0).round() as i64,
         b.space.round() as i64
     )
+}
+
+/// A cell's `w:tcBorders` from its model borders.
+fn tc_borders(w: &str, cell: &crate::docx::Cell) -> String {
+    let side = |name: &str, b: &Option<Border>| b.as_ref().map_or(String::new(), |b| border_xml(w, name, b));
+    let [tl2br, tr2bl] = cell.diagonals.as_deref().cloned().unwrap_or_default();
+    format!(
+        "<{w}tcBorders>{}{}{}{}{}{}</{w}tcBorders>",
+        side("top", &cell.top),
+        side("left", &cell.left),
+        side("bottom", &cell.bottom),
+        side("right", &cell.right),
+        side("tl2br", &tl2br),
+        side("tr2bl", &tr2bl)
+    )
+}
+
+/// Every character of the row is hidden: with its end mark, the row hides.
+fn row_text_hidden(row: &crate::docx::Row) -> bool {
+    row.cells.iter().all(|c| {
+        c.blocks.iter().all(|b| match b {
+            crate::docx::Block::Para(p) => p.mark.hidden && p.inlines.iter().all(|i| i.run().is_none_or(|r| r.hidden)),
+            crate::docx::Block::Table(_) => false,
+        })
+    })
+}
+
+/// Sets a row's exceptions (`w:tblPrEx`) and what the model reads from them.
+fn set_exceptions(row: &mut crate::docx::Row, ex: &RowEx, table: &[Option<Border>; 6], cx: &crate::docx::write::props::Cx) {
+    let w = &cx.w;
+    let mut p = crate::docx::write::props::Props::parse(if ex.reset { None } else { row.exceptions.0.as_deref() }, "tblPrEx", cx);
+    // CT_TblPrEx's children are CT_TblPr's, in its order.
+    p.reorder(crate::docx::write::props::TBLPR);
+    if ex.reset {
+        (row.shading, row.cell_spacing, row.borders) = (None, None, None);
+    }
+    if let Some(j) = ex.jc {
+        let v = match j {
+            Jc::Center => "center",
+            Jc::Right => "right",
+            _ => "left",
+        };
+        p.set("jc", format!("<{w}jc {w}val=\"{v}\"/>"));
+        row.jc = Some(j);
+    }
+    if let Some(s) = ex.cell_spacing {
+        let s = (s.max(0.0) * 20.0).round() / 20.0;
+        p.set("tblCellSpacing", format!("<{w}tblCellSpacing {w}w=\"{}\" {w}type=\"dxa\"/>", (s * 20.0).round() as i64));
+        row.cell_spacing = Some(s);
+    }
+    if let Some(fill) = ex.shading {
+        p.set("shd", format!("<{w}shd {w}val=\"clear\" {w}color=\"auto\" {w}fill=\"{fill:06X}\"/>"));
+        row.shading = Some(fill);
+    }
+    if let Some((edges, b)) = &ex.borders {
+        let mut now = row.borders.as_deref().cloned().unwrap_or_else(|| table.clone());
+        let value = if *edges == Edges::None { nil() } else { b.clone() };
+        let picks: &[usize] = match edges {
+            Edges::All | Edges::None => &[0, 1, 2, 3, 4, 5],
+            Edges::Outside => &[0, 1, 2, 3],
+            Edges::Inside => &[4, 5],
+            Edges::InsideH => &[4],
+            Edges::InsideV => &[5],
+            Edges::Top => &[0],
+            Edges::Left => &[1],
+            Edges::Bottom => &[2],
+            Edges::Right => &[3],
+            Edges::DiagonalDown | Edges::DiagonalUp => &[],
+        };
+        for &k in picks {
+            now[k] = Some(value.clone());
+        }
+        let names = ["top", "left", "bottom", "right", "insideH", "insideV"];
+        let x: String = now.iter().zip(names).filter_map(|(b, n)| b.as_ref().map(|b| border_xml(w, n, b))).collect();
+        p.set("tblBorders", format!("<{w}tblBorders>{x}</{w}tblBorders>"));
+        row.borders = Some(std::rc::Rc::new(now));
+    }
+    row.exceptions = crate::docx::Raw(p.xml().map(|x| std::rc::Rc::from(x.as_str())));
 }
 
 impl Editor {
@@ -116,6 +210,21 @@ impl Editor {
                     }
                 }
             }
+            TableFormat::CellBorders(edges @ (Edges::DiagonalDown | Edges::DiagonalUp), b) => {
+                let k = usize::from(*edges == Edges::DiagonalUp);
+                for (r, row) in rows.iter_mut().enumerate() {
+                    for (j, cell) in row.cells.iter_mut().enumerate() {
+                        let Some(&(c, s, _)) = g.rows[r].get(j) else { continue };
+                        if !in_block(r, c, s) {
+                            continue;
+                        }
+                        let mut d = cell.diagonals.as_deref().cloned().unwrap_or_default();
+                        d[k] = Some(b.clone());
+                        cell.diagonals = Some(std::rc::Rc::new(d));
+                        set_direct(cell, "tcBorders", tc_borders(&w, cell));
+                    }
+                }
+            }
             TableFormat::CellBorders(edges, b) => {
                 let (c0, c1) = tg.cols;
                 let want = |outside: bool, horizontal: bool, side: Edges| match edges {
@@ -124,6 +233,7 @@ impl Editor {
                     Edges::Inside => !outside,
                     Edges::InsideH => !outside && horizontal,
                     Edges::InsideV => !outside && !horizontal,
+                    Edges::DiagonalDown | Edges::DiagonalUp => false,
                     e => outside && *e == side,
                 };
                 let value = if *edges == Edges::None { nil() } else { b.clone() };
@@ -178,16 +288,74 @@ impl Editor {
                 touched.dedup();
                 for (r, k) in touched {
                     let cell = &mut rows[r].cells[k];
-                    let side = |name: &str, b: &Option<Border>| b.as_ref().map_or(String::new(), |b| border_xml(&w, name, b));
-                    let x = format!(
-                        "<{w}tcBorders>{}{}{}{}</{w}tcBorders>",
-                        side("top", &cell.top),
-                        side("left", &cell.left),
-                        side("bottom", &cell.bottom),
-                        side("right", &cell.right)
-                    );
-                    set_direct(cell, "tcBorders", x);
+                    // No Border clears the selected cells' diagonals too.
+                    if *edges == Edges::None && in_block(r, g.rows[r][k].0, g.rows[r][k].1) {
+                        cell.diagonals = None;
+                    }
+                    set_direct(cell, "tcBorders", tc_borders(&w, cell));
                 }
+            }
+            TableFormat::CellProps(p) => {
+                use crate::api::value::TableWidth as W;
+                for (r, row) in rows.iter_mut().enumerate() {
+                    for (k, cell) in row.cells.iter_mut().enumerate() {
+                        let Some(&(c, s, _)) = g.rows[r].get(k) else { continue };
+                        if !in_block(r, c, s) {
+                            continue;
+                        }
+                        if let Some(v) = p.width {
+                            let width = match v {
+                                W::Auto => Width::Auto,
+                                W::Points { value } => Width::Dxa(value.0),
+                                W::Percent { value } => Width::Pct(value / 100.0),
+                            };
+                            cell.width = Some(width);
+                        }
+                        if let Some(d) = p.text_direction {
+                            let v = serde_json::to_value(d).ok().and_then(|v| v.as_str().map(str::to_string)).unwrap_or_else(|| "lrTb".into());
+                            set_direct(cell, "textDirection", format!("<{w}textDirection {w}val=\"{v}\"/>"));
+                            cell.text_direction = v;
+                        }
+                        let flag = |name: &str, on: bool| if on { format!("<{w}{name}/>") } else { String::new() };
+                        if let Some(wrap) = p.wrap_text {
+                            cell.no_wrap = !wrap;
+                            set_direct(cell, "noWrap", flag("noWrap", !wrap));
+                        }
+                        if let Some(on) = p.fit_text {
+                            cell.fit_text = on;
+                            set_direct(cell, "tcFitText", flag("tcFitText", on));
+                        }
+                        if let Some(on) = p.hide_mark {
+                            cell.hide_mark = on;
+                            set_direct(cell, "hideMark", flag("hideMark", on));
+                        }
+                    }
+                }
+            }
+            TableFormat::RowProps { hidden, exceptions } => {
+                for row in &mut rows[r0..=r1] {
+                    if let Some(h) = *hidden {
+                        let mut p = crate::docx::write::props::Props::parse(row.direct.0.as_deref(), "trPr", &cx);
+                        p.set("hidden", if h { format!("<{w}hidden/>") } else { String::new() });
+                        row.direct = crate::docx::Raw(p.xml().map(|x| std::rc::Rc::from(x.as_str())));
+                        row.hidden = h;
+                        row.vanished = h && row_text_hidden(row);
+                    }
+                    if let Some(ex) = exceptions {
+                        set_exceptions(row, ex, &t.borders, &cx);
+                    }
+                }
+            }
+            &TableFormat::CellSpacing(v) => props.cell_spacing = ((v.max(0.0)) * 20.0).round() / 20.0,
+            TableFormat::Alt(a) => {
+                let mut alt = t.alt.as_deref().cloned().unwrap_or_default();
+                if let Some(v) = &a.title {
+                    alt.title = v.trim().to_string();
+                }
+                if let Some(v) = &a.description {
+                    alt.description = v.trim().to_string();
+                }
+                props.alt = (alt != crate::docx::TableAlt::default()).then(|| std::rc::Rc::new(alt));
             }
             &TableFormat::HeaderRow(on) => {
                 rows[..=r1].iter_mut().for_each(|r| r.header = on);
@@ -256,12 +424,16 @@ impl Editor {
                 restyle = true;
             }
         }
-        if rows == t.rows && grid.is_none() && props == TableProps::of(t) {
+        // `Raw` compares equal whatever it holds: the properties as written count too.
+        let same_raw = rows.iter().zip(&t.rows).all(|(a, b)| {
+            a.direct.0 == b.direct.0 && a.exceptions.0 == b.exceptions.0 && a.cells.iter().zip(&b.cells).all(|(c, d)| c.direct.0 == d.direct.0)
+        });
+        let rows_changed = rows != t.rows || !same_raw || grid.is_some();
+        let props_changed = props != TableProps::of(t);
+        if !rows_changed && !props_changed {
             return Outcome::Unchanged("already so");
         }
         let n = rows.len();
-        let props_changed = props != TableProps::of(t);
-        let rows_changed = rows != t.rows || grid.is_some();
         let mut tx = self.begin("Table Properties");
         let ok = (!props_changed || self.step(&mut tx, Step::TableProps { table: tg.table, props }).is_ok())
             && (!rows_changed || self.step(&mut tx, Step::Rows { table: tg.table, range: 0..n, with: rows, grid }).is_ok());
@@ -270,7 +442,14 @@ impl Editor {
             return Outcome::Unchanged("table edit failed");
         }
         if restyle
-            || matches!(f, TableFormat::CellShading(_) | TableFormat::CellAlign(_) | TableFormat::CellBorders(..) | TableFormat::CellMargins(_))
+            || matches!(
+                f,
+                TableFormat::CellShading(_)
+                    | TableFormat::CellAlign(_)
+                    | TableFormat::CellBorders(..)
+                    | TableFormat::CellMargins(_)
+                    | TableFormat::CellProps(_)
+            )
         {
             tx.stale_tables.push(tg.table);
         }

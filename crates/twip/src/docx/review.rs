@@ -429,10 +429,172 @@ pub struct Protection {
     pub enforced: bool,
     /// `w:formatting`: formatting is limited to the styles that aren't locked.
     pub formatting: bool,
+    /// The password's hash, salt, spin count and algorithm (`w:cryptAlgorithmSid` or `w:algorithmName`).
+    pub password: Option<Password>,
     pub raw: Raw,
 }
 
+/// A protection password as stored: never the password itself.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Password {
+    /// `SHA-512`, `SHA-384`, `SHA-256`, or what the document names.
+    pub algorithm: String,
+    /// Base64.
+    pub hash: String,
+    pub salt: String,
+    pub spin: u32,
+}
+
+impl Password {
+    /// The stored form of `password`, as Word stores it: Word's legacy key for it, salted, hashed with SHA-512 and spun
+    /// 100 000 times.
+    pub fn new(password: &str) -> Password {
+        let mut salt = [0u8; 16];
+        getrandom::fill(&mut salt).expect("the operating system provides random bytes");
+        let spin = 100_000;
+        let key = legacy_key(password, true);
+        let hash = hash("SHA-512", &salt, &key, spin).unwrap_or_default();
+        Password { algorithm: "SHA-512".into(), hash: crate::api::value::base64(&hash), salt: crate::api::value::base64(&salt), spin }
+    }
+
+    /// `password` is this one: hashed from Word's legacy key for it (its hex digits padded or not) or, as ECMA-376
+    /// describes, from the password itself. An algorithm this doesn't compute never matches.
+    pub fn matches(&self, password: &str) -> bool {
+        let Some(salt) = crate::api::value::from_base64(&self.salt) else { return false };
+        // shortcut: the spin count is capped, so a document can't make a check take minutes; Word writes 100 000.
+        let spin = self.spin.min(10_000_000);
+        let tries = [legacy_key(password, true), legacy_key(password, false), password.to_string()];
+        let mut seen: Vec<&str> = Vec::with_capacity(3);
+        tries.iter().any(|t| {
+            if seen.contains(&t.as_str()) {
+                return false;
+            }
+            seen.push(t);
+            hash(&self.algorithm, &salt, t, spin).is_some_and(|h| crate::api::value::base64(&h) == self.hash)
+        })
+    }
+}
+
+/// The algorithm name for `w:cryptAlgorithmSid`'s number.
+pub fn algorithm_name(sid: &str) -> &str {
+    match sid {
+        "4" => "SHA-1",
+        "12" => "SHA-256",
+        "13" => "SHA-384",
+        "14" => "SHA-512",
+        s => s,
+    }
+}
+
+/// Word's legacy 32-bit password key (ECMA-376 1st edition, 17.15.1.29), its bytes reversed, as upper-case hex
+/// (`pad`: two digits a byte). Empty for an empty password.
+fn legacy_key(password: &str, pad: bool) -> String {
+    const INITIAL: [u16; 15] =
+        [0xE1F0, 0x1D0F, 0xCC9C, 0x84C0, 0x110C, 0x0E10, 0xF1CE, 0x313E, 0x1872, 0xE139, 0xD40F, 0x84F9, 0x280C, 0xA96A, 0x4EC3];
+    const MATRIX: [[u16; 7]; 15] = [
+        [0xAEFC, 0x4DD9, 0x9BB2, 0x2745, 0x4E8A, 0x9D14, 0x2A09],
+        [0x7B61, 0xF6C2, 0xFDA5, 0xEB6B, 0xC6F7, 0x9DCF, 0x2BBF],
+        [0x4563, 0x8AC6, 0x05AD, 0x0B5A, 0x16B4, 0x2D68, 0x5AD0],
+        [0x0375, 0x06EA, 0x0DD4, 0x1BA8, 0x3750, 0x6EA0, 0xDD40],
+        [0xD849, 0xA0B3, 0x5147, 0xA28E, 0x553D, 0xAA7A, 0x44D5],
+        [0x6F45, 0xDE8A, 0xAD35, 0x4A4B, 0x9496, 0x390D, 0x721A],
+        [0xEB23, 0xC667, 0x9CEF, 0x29FF, 0x53FE, 0xA7FC, 0x5FD9],
+        [0x47D3, 0x8FA6, 0x0F6D, 0x1EDA, 0x3DB4, 0x7B68, 0xF6D0],
+        [0xB861, 0x60E3, 0xC1C6, 0x93AD, 0x377B, 0x6EF6, 0xDDEC],
+        [0x45A0, 0x8B40, 0x06A1, 0x0D42, 0x1A84, 0x3508, 0x6A10],
+        [0xAA51, 0x4483, 0x8906, 0x022D, 0x045A, 0x08B4, 0x1168],
+        [0x76B4, 0xED68, 0xCAF1, 0x85C3, 0x1BA7, 0x374E, 0x6E9C],
+        [0x3730, 0x6E60, 0xDCC0, 0xA9A1, 0x4363, 0x86C6, 0x1DAD],
+        [0x3331, 0x6662, 0xCCC4, 0x89A9, 0x0373, 0x06E6, 0x0DCC],
+        [0x1021, 0x2042, 0x4084, 0x8108, 0x1231, 0x2462, 0x48C4],
+    ];
+    // Each character's low byte, or its high byte when that is zero; at most 15.
+    let bytes: Vec<u8> = password
+        .encode_utf16()
+        .take(15)
+        .map(|c| {
+            let [lo, hi] = c.to_le_bytes();
+            if lo == 0 { hi } else { lo }
+        })
+        .collect();
+    if bytes.is_empty() {
+        return String::new();
+    }
+    let n = bytes.len();
+    let mut high = INITIAL[n - 1];
+    for (i, b) in bytes.iter().enumerate() {
+        for (bit, m) in MATRIX[15 - n + i].iter().enumerate() {
+            if b & (1 << bit) != 0 {
+                high ^= m;
+            }
+        }
+    }
+    let rotate = |v: u16| ((v >> 14) & 1) | ((v << 1) & 0x7FFF);
+    let mut low = 0u16;
+    for b in bytes.iter().rev() {
+        low = rotate(low) ^ u16::from(*b);
+    }
+    low = rotate(low) ^ n as u16 ^ 0xCE4B;
+    let key = (u32::from(high) << 16) | u32::from(low);
+    key.to_le_bytes().iter().map(|b| if pad { format!("{b:02X}") } else { format!("{b:X}") }).collect()
+}
+
+/// H(salt + password as UTF-16LE), then `spin` rounds of H(previous + round number as 32-bit little endian).
+fn hash(algorithm: &str, salt: &[u8], password: &str, spin: u32) -> Option<Vec<u8>> {
+    use sha2::Digest;
+    // One digest buffer for every round.
+    fn run<D: Digest + sha2::digest::FixedOutputReset>(salt: &[u8], pw: &[u8], spin: u32) -> Vec<u8> {
+        let mut d = D::new();
+        Digest::update(&mut d, salt);
+        Digest::update(&mut d, pw);
+        let mut h = d.finalize_reset();
+        for i in 0..spin {
+            Digest::update(&mut d, &h);
+            Digest::update(&mut d, i.to_le_bytes());
+            Digest::finalize_into_reset(&mut d, &mut h);
+        }
+        h.to_vec()
+    }
+    let pw: Vec<u8> = password.encode_utf16().flat_map(u16::to_le_bytes).collect();
+    Some(match algorithm_name(&algorithm.to_ascii_uppercase()) {
+        "SHA-512" => run::<sha2::Sha512>(salt, &pw, spin),
+        "SHA-384" => run::<sha2::Sha384>(salt, &pw, spin),
+        "SHA-256" => run::<sha2::Sha256>(salt, &pw, spin),
+        "SHA-1" => run::<sha1::Sha1>(salt, &pw, spin),
+        _ => return None,
+    })
+}
+
 impl Protection {
+    /// The `w:documentProtection` element (`w`: the prefix with its colon).
+    pub fn xml(&self, w: &str) -> String {
+        let edit = match self.edit {
+            ProtectionKind::None => "none",
+            ProtectionKind::ReadOnly => "readOnly",
+            ProtectionKind::Comments => "comments",
+            ProtectionKind::TrackedChanges => "trackedChanges",
+            ProtectionKind::Forms => "forms",
+        };
+        let flag = |b: bool| if b { "1" } else { "0" };
+        let pw = self.password.as_ref().map_or(String::new(), |p| {
+            let esc = crate::docx::write::props::esc;
+            format!(
+                " {w}algorithmName=\"{}\" {w}hashValue=\"{}\" {w}saltValue=\"{}\" {w}spinCount=\"{}\"",
+                esc(&p.algorithm),
+                esc(&p.hash),
+                esc(&p.salt),
+                p.spin
+            )
+        });
+        let formatting = if self.formatting { format!(" {w}formatting=\"1\"") } else { String::new() };
+        format!("<{w}documentProtection {w}edit=\"{edit}\"{formatting} {w}enforcement=\"{}\"{pw}/>", flag(self.enforced))
+    }
+
+    /// The same settings, the element as read aside.
+    pub fn same(&self, o: &Protection) -> bool {
+        (self.edit, self.enforced, self.formatting, &self.password) == (o.edit, o.enforced, o.formatting, &o.password)
+    }
+
     /// Formatting is limited to the unlocked styles, and direct formatting is refused.
     pub fn limits_formatting(&self) -> bool {
         self.enforced && self.formatting
@@ -603,6 +765,37 @@ impl IdCounter {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn passwords_hash_from_words_legacy_key() {
+        // ECMA-376 1st edition's example: "Example" keys to 0x64CEED7E, written reversed.
+        assert_eq!(legacy_key("Example", true), "7EEDCE64");
+        assert_eq!(legacy_key("", true), "");
+        let p = Password::new("Example");
+        assert!(p.matches("Example") && !p.matches("example") && !p.matches(""));
+        // A hash of the password itself, and Word 2007's SHA-1 (`w:cryptAlgorithmSid="4"`).
+        for algorithm in ["SHA-256", "SHA-1"] {
+            let h = hash(algorithm, b"0123456789abcdef", "Example", 10).expect("computed");
+            let p = Password {
+                algorithm: algorithm.into(),
+                hash: crate::api::value::base64(&h),
+                salt: crate::api::value::base64(b"0123456789abcdef"),
+                spin: 10,
+            };
+            assert!(p.matches("Example") && !p.matches("Other"), "{algorithm}");
+        }
+        // Word 16.112 protecting a document with "Example" (`w:cryptAlgorithmSid="14"`).
+        let word = Password {
+            algorithm: "14".into(),
+            hash: "aqKd5zF+ZLDhXamFt+PhIOVMMDHd6mvzt30mAzZQNGV9pwjlCwKexsb0sjaSOJD/nw05xlAb+FGU3TNUgKq0oA==".into(),
+            salt: "mRL8HCYKqg4tYiEVGBiVZA==".into(),
+            spin: 100_000,
+        };
+        assert!(word.matches("Example") && !word.matches("example"));
+        let salt = crate::api::value::from_base64(&word.salt).expect("base64");
+        let h = hash("SHA-512", &salt, &legacy_key("Example", true), word.spin).expect("computed");
+        assert_eq!(crate::api::value::base64(&h), word.hash, "Password::new's form");
+    }
 
     #[test]
     fn dates_read_and_write() {

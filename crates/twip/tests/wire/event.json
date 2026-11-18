@@ -36,6 +36,7 @@
       "defineBullet": true,
       "defineMultilevelList": true,
       "defineNumberFormat": true,
+      "dropCap": true,
       "font": true,
       "frame": true,
       "hyperlink": true,
@@ -91,19 +92,34 @@
       "allCaps": false,
       "bold": "mixed",
       "characterSpacing": 0.5,
+      "characterStyle": "Emphasis",
       "color": "auto",
+      "contextualAlternates": false,
       "doubleStrikethrough": false,
+      "emboss": false,
+      "engrave": false,
       "font": "Calibri",
       "hidden": false,
       "highlight": "yellow",
       "italic": false,
+      "kerning": 0.0,
+      "language": "en-US",
+      "ligatures": "mixed",
+      "noProof": false,
+      "numberForm": "lining",
+      "numberSpacing": "default",
+      "outline": true,
       "position": null,
+      "scale": 100.0,
+      "shadow": false,
       "size": 11.5,
       "smallCaps": false,
       "strikethrough": false,
+      "stylisticSet": 0,
       "subscript": false,
       "superscript": false,
-      "underline": "none"
+      "underline": "none",
+      "underlineColor": "auto"
     },
     "history": {
       "canRedo": false,
@@ -115,15 +131,48 @@
     "mode": "editing",
     "modified": true,
     "page": {
+      "breakType": "nextPage",
+      "chapterNumbers": null,
       "columns": {
         "count": 1,
         "separator": false,
-        "spacing": 36.5
+        "spacing": 36.5,
+        "widths": []
       },
       "differentFirstPage": true,
       "differentOddEven": false,
+      "endnotes": {
+        "format": "decimal",
+        "position": "pageBottom",
+        "restart": "continuous",
+        "start": 0
+      },
       "footerDistance": 36.5,
+      "footerLinks": {
+        "default": false,
+        "even": false,
+        "first": false
+      },
+      "footnoteColumns": 2,
+      "footnotes": {
+        "format": "decimal",
+        "position": "beneathText",
+        "restart": "eachPage",
+        "start": 1
+      },
+      "gutterAtTop": false,
       "headerDistance": 36.5,
+      "headerLinks": {
+        "default": true,
+        "even": true,
+        "first": false
+      },
+      "lineNumbers": {
+        "countBy": 1,
+        "distance": 18.5,
+        "restart": "eachPage",
+        "start": 1
+      },
       "margins": {
         "bottom": 72.5,
         "gutter": 0.5,
@@ -131,11 +180,16 @@
         "right": 72.5,
         "top": 72.5
       },
+      "multiplePages": "normal",
       "orientation": "portrait",
+      "pageNumberFormat": "decimal",
+      "pageNumberStart": 1,
       "size": {
         "height": 792.5,
         "width": 612.5
-      }
+      },
+      "textDirection": "lrTb",
+      "verticalAlignment": "top"
     },
     "pages": {
       "complete": false,
@@ -145,16 +199,27 @@
     "paragraph": {
       "alignment": "left",
       "borders": "other",
+      "collapsed": false,
+      "contextualSpacing": true,
+      "dropCap": {
+        "distance": 0.0,
+        "lines": 3,
+        "position": "dropped"
+      },
       "flow": {
+        "dontHyphenate": false,
         "keepLinesTogether": false,
         "keepWithNext": true,
         "pageBreakBefore": "mixed",
+        "suppressLineNumbers": "mixed",
+        "textboxTightWrap": "none",
         "widowControl": true
       },
       "indents": {
         "firstLine": "mixed",
         "hanging": null,
         "left": 0.5,
+        "mirror": false,
         "right": 0.5
       },
       "lineSpacing": {
@@ -163,16 +228,28 @@
       },
       "list": "bullet",
       "listLevel": 1,
+      "outlineLevel": 2,
       "shading": "#D9E2F3",
       "spaceAfter": 8.5,
       "spaceBefore": "auto",
-      "style": "Normal"
+      "style": "Normal",
+      "textDirection": "lrTb"
     },
     "readOnly": false,
     "review": {
       "activeComment": "c4",
       "comments": 2,
       "markupView": "all",
+      "protection": {
+        "enforced": true,
+        "formatting": false,
+        "inEditableRange": true,
+        "kind": "readOnly",
+        "password": true,
+        "unprotectedSections": [
+          1
+        ]
+      },
       "revisions": 3,
       "tracking": true,
       "trackingLocked": false
@@ -231,7 +308,30 @@
       "context": [
         {
           "code": "MERGEFIELD Name",
+          "control": {
+            "appearance": "tags",
+            "buildingBlocks": [
+              "Signature"
+            ],
+            "checkedSymbol": "☒",
+            "color": "#2E74B5",
+            "style": "Strong",
+            "temporary": false,
+            "uncheckedSymbol": "☐"
+          },
           "exact": true,
+          "form": {
+            "calculateOnExit": false,
+            "enabled": true,
+            "entries": [
+              "Yes",
+              "No"
+            ],
+            "entry": 1,
+            "kind": "dropDown",
+            "name": "Dropdown1",
+            "statusText": "Pick one"
+          },
           "id": "field-1",
           "kind": "field",
           "size": {
@@ -263,6 +363,12 @@
           1
         ],
         "count": 1,
+        "crop": {
+          "bottom": 0.0,
+          "left": 0.1,
+          "right": 0.25,
+          "top": 0.0
+        },
         "decorative": false,
         "flipH": true,
         "flipV": false,
@@ -286,6 +392,10 @@
             "relativeTo": "page"
           },
           "wrapSide": "bothSides"
+        },
+        "relativeWidth": {
+          "percent": 50.0,
+          "relativeTo": "page"
         },
         "rotation": 30.5,
         "shape": {
@@ -362,6 +472,10 @@
           "text": {
             "anchor": "middle",
             "autofit": "shape",
+            "columns": {
+              "count": 2,
+              "spacing": 18.5
+            },
             "direction": "vertical270",
             "insets": [
               7.2,
@@ -372,6 +486,7 @@
             "wrapText": true
           }
         },
+        "transparentColor": "#FFFFFF",
         "width": 144.5,
         "wrap": "inFrontOfText"
       },
@@ -383,9 +498,16 @@
         "canMerge": true,
         "cellAlignment": "bottom",
         "cellShading": "none",
+        "cellSpacing": 1.5,
+        "cellWidth": {
+          "kind": "percent",
+          "value": 25.0
+        },
         "column": 2,
         "columnWidth": "mixed",
         "columns": 3,
+        "description": "Yearly totals by region",
+        "fitText": "mixed",
         "headerRow": true,
         "indent": 0.5,
         "row": 1,
@@ -394,6 +516,7 @@
           "height": 20.5,
           "rule": "exact"
         },
+        "rowHidden": false,
         "rows": 4,
         "style": "TableGrid",
         "styleOptions": {
@@ -404,10 +527,13 @@
           "lastColumn": false,
           "totalRow": false
         },
+        "textDirection": "btLr",
+        "title": "Totals",
         "width": {
           "kind": "points",
           "value": 432.5
-        }
+        },
+        "wrapText": true
       },
       "text": "Total due"
     },
@@ -427,6 +553,7 @@
       "accentOn": "#FFFFFF",
       "appearance": "light",
       "background": "#E8E7E3",
+      "bookmarks": false,
       "controlLabels": true,
       "detail": "standard",
       "fieldCodes": false,
@@ -482,7 +609,30 @@
     "context": [
       {
         "code": "MERGEFIELD Name",
+        "control": {
+          "appearance": "tags",
+          "buildingBlocks": [
+            "Signature"
+          ],
+          "checkedSymbol": "☒",
+          "color": "#2E74B5",
+          "style": "Strong",
+          "temporary": false,
+          "uncheckedSymbol": "☐"
+        },
         "exact": true,
+        "form": {
+          "calculateOnExit": false,
+          "enabled": true,
+          "entries": [
+            "Yes",
+            "No"
+          ],
+          "entry": 1,
+          "kind": "dropDown",
+          "name": "Dropdown1",
+          "statusText": "Pick one"
+        },
         "id": "field-1",
         "kind": "field",
         "size": {
@@ -514,6 +664,12 @@
         1
       ],
       "count": 1,
+      "crop": {
+        "bottom": 0.0,
+        "left": 0.1,
+        "right": 0.25,
+        "top": 0.0
+      },
       "decorative": false,
       "flipH": true,
       "flipV": false,
@@ -537,6 +693,10 @@
           "relativeTo": "page"
         },
         "wrapSide": "bothSides"
+      },
+      "relativeWidth": {
+        "percent": 50.0,
+        "relativeTo": "page"
       },
       "rotation": 30.5,
       "shape": {
@@ -613,6 +773,10 @@
         "text": {
           "anchor": "middle",
           "autofit": "shape",
+          "columns": {
+            "count": 2,
+            "spacing": 18.5
+          },
           "direction": "vertical270",
           "insets": [
             7.2,
@@ -623,6 +787,7 @@
           "wrapText": true
         }
       },
+      "transparentColor": "#FFFFFF",
       "width": 144.5,
       "wrap": "inFrontOfText"
     },
@@ -634,9 +799,16 @@
       "canMerge": true,
       "cellAlignment": "bottom",
       "cellShading": "none",
+      "cellSpacing": 1.5,
+      "cellWidth": {
+        "kind": "percent",
+        "value": 25.0
+      },
       "column": 2,
       "columnWidth": "mixed",
       "columns": 3,
+      "description": "Yearly totals by region",
+      "fitText": "mixed",
       "headerRow": true,
       "indent": 0.5,
       "row": 1,
@@ -645,6 +817,7 @@
         "height": 20.5,
         "rule": "exact"
       },
+      "rowHidden": false,
       "rows": 4,
       "style": "TableGrid",
       "styleOptions": {
@@ -655,10 +828,13 @@
         "lastColumn": false,
         "totalRow": false
       },
+      "textDirection": "btLr",
+      "title": "Totals",
       "width": {
         "kind": "points",
         "value": 432.5
-      }
+      },
+      "wrapText": true
     },
     "text": "Total due",
     "type": "selectionChanged"

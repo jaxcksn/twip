@@ -137,6 +137,57 @@ export interface Warning {
   location?: { part: string; paragraph?: number };
 }
 
+/**
+ * A custom document property: its value as text (a decimal number, `true` or `false`, or an ISO 8601 date and time
+ * for those kinds).
+ */
+export interface CustomProperty {
+  /** Its name. */
+  name: string;
+  /** What it holds. */
+  kind: 'text' | 'number' | 'yesNo' | 'date';
+  /** Its value. */
+  value: string;
+}
+
+/** The document's properties and variables; a property the document lacks is absent. */
+export interface DocumentProperties {
+  /** The title. */
+  title?: string;
+  /** The subject. */
+  subject?: string;
+  /** The author. */
+  author?: string;
+  /** The keywords. */
+  keywords?: string;
+  /** The comments. */
+  comments?: string;
+  /** The category. */
+  category?: string;
+  /** The status. */
+  status?: string;
+  /** Who saved it last. */
+  lastModifiedBy?: string;
+  /** How many times it was saved. */
+  revision?: string;
+  /** When it was made (ISO 8601). */
+  created?: string;
+  /** When it was last saved (ISO 8601). */
+  modified?: string;
+  /** When it was last printed (ISO 8601). */
+  lastPrinted?: string;
+  /** The company. */
+  company?: string;
+  /** The manager. */
+  manager?: string;
+  /** The base relative hyperlinks resolve against. */
+  hyperlinkBase?: string;
+  /** The custom properties. */
+  custom: CustomProperty[];
+  /** The document variables. */
+  variables: { name: string; value?: string }[];
+}
+
 /** Word, character, paragraph, line and page counts, computed on request. */
 export interface WordCount {
   /** Words. */
@@ -533,7 +584,7 @@ export interface EffectsChange {
 export type TextAnchor = 'top' | 'middle' | 'bottom';
 
 /** How a shape fits its text: it keeps its size, or its height follows the text. */
-export type TextAutofit = 'none' | 'shape';
+export type TextAutofit = 'none' | 'shape' | 'shrinkText';
 
 /**
  * Which way a shape's text runs: left to right; turned 90° or 270° clockwise; East Asian vertical (CJK upright,
@@ -560,6 +611,16 @@ export interface ShapeTextState {
   wrapText: boolean;
   /** Which way it runs. */
   direction: TextDirection;
+  /** Its columns. */
+  columns: TextColumns;
+}
+
+/** A text box's text columns: 1 to 16, 0 to 1584 apart. */
+export interface TextColumns {
+  /** How many. */
+  count: number;
+  /** The space between them. */
+  spacing: Points;
 }
 
 /** `setShapeText`'s change; what isn't given is kept. */
@@ -574,6 +635,8 @@ export interface ShapeTextChange {
   wrapText?: boolean;
   /** Which way it runs. */
   direction?: TextDirection;
+  /** Its columns. */
+  columns?: TextColumns;
 }
 
 /** `setPictureAdjust`'s change; what isn't given is kept. */
@@ -586,6 +649,8 @@ export interface PictureAdjustChange {
   brightness?: number;
   /** More (positive) or less contrast, −1 to 1. */
   contrast?: number;
+  /** Set Transparent Colour: the colour drawn see-through, or `'none'`. */
+  transparentColor?: Color | 'none';
 }
 
 /** `insertShape`'s options. */

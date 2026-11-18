@@ -70,6 +70,8 @@ pub struct RunProps {
     /// `w:noProof`.
     pub no_proof: Option<bool>,
     pub underline: Option<String>,
+    /// `w:u`'s colour; `Some(None)` = the text's.
+    pub underline_color: Option<Option<u32>>,
     /// `Some(None)` = auto.
     pub color: Option<Option<u32>>,
     pub highlight: Option<Option<u32>>,
@@ -184,7 +186,10 @@ impl RunProps {
                 "cs" => p.complex = Some(on_off(e)),
                 "dstrike" => p.dstrike = Some(on_off(e)),
                 "noProof" => p.no_proof = Some(on_off(e)),
-                "u" => p.underline = Some(val(e).unwrap_or("single").to_string()),
+                "u" => {
+                    p.underline = Some(val(e).unwrap_or("single").to_string());
+                    p.underline_color = Some(tc.colour(e, "color", "themeColor", "themeTint", "themeShade"));
+                }
                 "color" => p.color = Some(tc.colour(e, "val", "themeColor", "themeTint", "themeShade")),
                 "highlight" => {
                     p.highlight = Some(match val(e) {
@@ -256,6 +261,7 @@ impl RunProps {
             dstrike,
             no_proof,
             underline,
+            underline_color,
             color,
             highlight,
             shading,
@@ -597,6 +603,8 @@ pub struct ParaProps {
     pub text_flow: Option<u8>,
     pub text_alignment: Option<String>,
     pub outline_lvl: Option<i64>,
+    /// `w15:collapsed`: the heading opens collapsed.
+    pub collapsed: Option<bool>,
     pub mark_size: Option<f64>,
 }
 
@@ -604,6 +612,9 @@ impl ParaProps {
     pub fn parse(ppr: Option<Node>, tc: &ThemeColours) -> ParaProps {
         let mut p = ParaProps::default();
         let Some(ppr) = ppr else { return p };
+        if let Some(c) = ppr.children().find(|c| is(*c, W15, "collapsed")) {
+            p.collapsed = Some(!matches!(c.attribute((W15, "val")), Some("0" | "false" | "off")));
+        }
         for e in ppr.children().filter(|c| c.is_element() && c.tag_name().namespace() == Some(W)) {
             match e.tag_name().name() {
                 "pStyle" => p.style = val(e).map(str::to_string),
@@ -780,7 +791,8 @@ impl ParaProps {
             frame,
             text_flow,
             text_alignment,
-            outline_lvl
+            outline_lvl,
+            collapsed
         );
         self.tabs.extend(o.tabs.iter().copied());
     }
@@ -901,6 +913,9 @@ pub struct Borders {
     pub right: Option<Border>,
     pub inside_h: Option<Border>,
     pub inside_v: Option<Border>,
+    /// A cell's diagonals: top left to bottom right, top right to bottom left.
+    pub tl2br: Option<Border>,
+    pub tr2bl: Option<Border>,
 }
 
 impl Borders {
@@ -913,6 +928,8 @@ impl Borders {
             right: b("right").or_else(|| b("end")),
             inside_h: b("insideH"),
             inside_v: b("insideV"),
+            tl2br: b("tl2br"),
+            tr2bl: b("tr2bl"),
         }
     }
 
@@ -920,7 +937,7 @@ impl Borders {
         macro_rules! take {
             ($($f:ident),*) => { $( if o.$f.is_some() { self.$f = o.$f.clone(); } )* };
         }
-        take!(top, left, bottom, right, inside_h, inside_v);
+        take!(top, left, bottom, right, inside_h, inside_v, tl2br, tr2bl);
     }
 }
 

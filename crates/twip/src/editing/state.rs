@@ -4,7 +4,9 @@ use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use crate::api::catalog::catalog;
-use crate::api::command::{Command, CommandId, ParagraphSpacing};
+use crate::api::command::{
+    Command, CommandId, MultiplePagesMode, NotePosition, NumberFormat, PageVerticalAlignment, ParagraphSpacing, SectionBreakKind, TextFlow,
+};
 use crate::api::state::{
     BorderState, CharacterFormatting, ColumnLayout, CommandState, CommandValue, ElementContext, ElementKind, FlowState, HeaderFooterInfo,
     HeaderFooterKind, HeaderFooterType, IndentState, LinkInfo, ListState, ObjectSelection, PageFormatting, PageMargins, PageSize,
@@ -131,6 +133,53 @@ pub(super) fn character(runs: &[&RunStyle]) -> CharacterFormatting {
         highlight: fold(runs.iter().map(|r| highlight_of(r))),
         character_spacing: fold(runs.iter().map(|r| Points(r.spacing))),
         position: fold(runs.iter().map(|r| Points(r.position))),
+        character_style: fold(runs.iter().map(|r| r.style_id.clone().map_or(NoneOr::None, |s| NoneOr::Value(StyleId(s))))),
+        scale: fold(runs.iter().map(|r| r.scale)),
+        kerning: fold(runs.iter().map(|r| Points(r.kern))),
+        ligatures: {
+            use crate::api::command::Ligatures as L;
+            let l = |r: &RunStyle| match r.typography.ligatures {
+                0 => Some(L::None),
+                1 => Some(L::Standard),
+                3 => Some(L::StandardContextual),
+                12 => Some(L::HistoricalDiscretional),
+                15 => Some(L::All),
+                _ => None,
+            };
+            if runs.iter().any(|r| l(r).is_none()) {
+                if runs.is_empty() { Tri::Unavailable } else { Tri::Mixed }
+            } else {
+                fold(runs.iter().filter_map(|r| l(r)))
+            }
+        },
+        number_spacing: fold(runs.iter().map(|r| {
+            use crate::api::command::NumberSpacing as N;
+            match r.typography.number_spacing {
+                4 => N::Proportional,
+                8 => N::Tabular,
+                _ => N::Default,
+            }
+        })),
+        number_form: fold(runs.iter().map(|r| {
+            use crate::api::command::NumberForm as N;
+            match r.typography.number_form {
+                1 => N::Lining,
+                2 => N::OldStyle,
+                _ => N::Default,
+            }
+        })),
+        stylistic_set: fold(runs.iter().map(|r| {
+            let s = r.typography.stylistic_sets;
+            if s == 0 { 0 } else { s.trailing_zeros() as u8 + 1 }
+        })),
+        contextual_alternates: tri(&|r| r.typography.contextual_alternates),
+        language: fold(runs.iter().map(|r| r.lang.clone())),
+        no_proof: tri(&|r| r.no_proof),
+        emboss: tri(&|r| r.emboss),
+        engrave: tri(&|r| r.imprint),
+        outline: tri(&|r| r.outline),
+        shadow: tri(&|r| r.shadow),
+        underline_color: fold(runs.iter().map(|r| r.underline_color.map_or(AutoOr::Auto, |c| AutoOr::Value(Color(c))))),
     }
 }
 
@@ -167,6 +216,7 @@ pub(super) fn paragraph(paras: &[(&ParaStyle, Option<bool>)]) -> ParagraphFormat
             right: pt(&|p| p.ind_right),
             first_line: pt(&|p| p.ind_first.max(0.0)),
             hanging: pt(&|p| (-p.ind_first).max(0.0)),
+            mirror: tri(&|p| p.mirror_indents),
         },
         list: fold(paras.iter().map(|(_, l)| match l {
             Some(true) => ListState::Bullet,
@@ -179,9 +229,36 @@ pub(super) fn paragraph(paras: &[(&ParaStyle, Option<bool>)]) -> ParagraphFormat
             keep_lines_together: tri(&|p| p.keep_lines),
             page_break_before: tri(&|p| p.page_break_before),
             widow_control: tri(&|p| p.widow_control),
+            dont_hyphenate: tri(&|p| p.suppress_auto_hyphens),
+            suppress_line_numbers: tri(&|p| p.suppress_line_numbers),
+            textbox_tight_wrap: fold(paras.iter().map(|(p, _)| {
+                use crate::api::command::TightWrap as T;
+                [T::None, T::AllLines, T::FirstAndLastLine, T::FirstLineOnly, T::LastLineOnly]
+                    .get(usize::from(p.tight_wrap))
+                    .copied()
+                    .unwrap_or_default()
+            })),
         },
         borders: fold(paras.iter().map(|(p, _)| borders_of(p))),
         shading: fold(paras.iter().map(|(p, _)| p.shading.map_or(NoneOr::None, |c| NoneOr::Value(Color(c))))),
+        contextual_spacing: tri(&|p| p.contextual),
+        outline_level: fold(paras.iter().map(|(p, _)| match p.outline_lvl {
+            Some(l @ 0..=8) => l as u8 + 1,
+            _ => 0,
+        })),
+        collapsed: tri(&|p| p.collapsed),
+        text_direction: fold(paras.iter().map(|(p, _)| {
+            use crate::api::command::TextFlow as D;
+            match p.text_flow {
+                1 => D::TbRl,
+                3 => D::BtLr,
+                4 => D::LrTbV,
+                5 => D::TbRlV,
+                7 => D::TbLrV,
+                _ => D::LrTb,
+            }
+        })),
+        drop_cap: None,
     }
 }
 
@@ -214,7 +291,8 @@ impl Editor {
         }
         let styles: Vec<(Rc<ParaStyle>, Option<bool>)> =
             paras.iter().filter_map(|&p| Some((self.index.para(&self.doc, p)?.style.clone(), self.para_list(p)))).collect();
-        let paragraph = self::paragraph(&styles.iter().map(|(s, l)| (&**s, *l)).collect::<Vec<_>>());
+        let mut paragraph = self::paragraph(&styles.iter().map(|(s, l)| (&**s, *l)).collect::<Vec<_>>());
+        paragraph.drop_cap = self.drop_cap().filter(|d| d.position != crate::api::command::DropCapPosition::None);
         let level = focus.and_then(|p| self.index.chain_of(&p).last().copied());
         let table = match self.selection {
             Selection::Cells { table, .. } => Some(table),
@@ -316,7 +394,11 @@ impl Editor {
             Toggle::Align(a) => Command::SetAlignment(if f.paragraph.alignment == Tri::Uniform(a) { Alignment::Left } else { a }),
             Toggle::SpaceBefore => {
                 let some = f.para.space_before > 0.0;
-                Command::SetParagraphSpacing(ParagraphSpacing { before: Some(AutoOr::Value(Points(if some { 0.0 } else { 12.0 }))), after: None })
+                Command::SetParagraphSpacing(ParagraphSpacing {
+                    before: Some(AutoOr::Value(Points(if some { 0.0 } else { 12.0 }))),
+                    after: None,
+                    contextual: None,
+                })
             }
             Toggle::TrackChanges | Toggle::FieldCodes { .. } => return None,
         })
@@ -386,6 +468,16 @@ impl Editor {
                 (C::SetHighlight, Some(f)) => (formatted, (None, Some(CommandValue::Highlight(f.character.highlight)))),
                 (C::SetCharacterSpacing, Some(f)) => (formatted, (None, Some(CommandValue::Length(f.character.character_spacing)))),
                 (C::SetCharacterPosition, Some(f)) => (formatted, (None, Some(CommandValue::Length(f.character.position)))),
+                (
+                    C::ApplyCharacterStyle
+                    | C::SetTypography
+                    | C::SetLanguage
+                    | C::SetCharacterEffects
+                    | C::SetUnderlineColor
+                    | C::SetOutline
+                    | C::SetParagraphTextDirection,
+                    Some(_),
+                ) => (formatted, (None, None)),
                 (C::ChangeCase, _) => (editable && selected, (None, None)),
                 (C::SetAlignment, Some(f)) => (formatted, (None, Some(CommandValue::Alignment(f.paragraph.alignment)))),
                 (C::SetLineSpacing, Some(f)) => (formatted, (None, Some(CommandValue::LineSpacing(f.paragraph.line_spacing)))),
@@ -439,6 +531,10 @@ impl Editor {
                     | C::SetCellShading
                     | C::SetCellBorders
                     | C::SetCellMargins
+                    | C::SetCellProperties
+                    | C::SetRowProperties
+                    | C::SetTableCellSpacing
+                    | C::SetTableAltText
                     | C::SetHeaderRow
                     | C::SetRowHeight
                     | C::SetRowCanBreak
@@ -452,6 +548,11 @@ impl Editor {
                 ) => (editable && in_table, (None, None)),
                 (C::SetTablePosition, _) => (editable && in_table, (None, self.table_position().map(CommandValue::TablePosition))),
                 (C::SetObjectSize | C::SetObjectWrap | C::SetAltText | C::DeleteObject, _) => (editable && object.is_some(), (None, None)),
+                (C::AlignObjects, _) => (editable && floating, (None, None)),
+                (C::SetFormFieldShading, _) => (editable, (Some(!self.doc.settings.no_form_shading), None)),
+                (C::SetPictureCrop | C::ChangePicture, _) => {
+                    (editable && matches!(object, Some(ObjectKind::Picture | ObjectKind::Float)), (None, None))
+                }
                 (C::ResetObjectSize, _) => (editable && matches!(object, Some(ObjectKind::Picture | ObjectKind::Float)), (None, None)),
                 (C::SetAnchorLocked | C::SetObjectPosition | C::SetObjectWrapOptions, _) => (editable && floating, (None, None)),
                 (C::SetShapePreset | C::SetShapeAdjust | C::SetShapeText, _) => (editable && shape.as_ref().is_some_and(|s| s.sp), (None, None)),
@@ -556,6 +657,20 @@ impl Editor {
                 _ => HorizontalAlignment::Left,
             },
             indent: Points(t.ind),
+            cell_width: fold(cells.iter().map(|c| match c.width {
+                Some(crate::docx::props::Width::Dxa(v)) => TableWidth::Points { value: Points(v) },
+                Some(crate::docx::props::Width::Pct(f)) => TableWidth::Percent { value: f * 100.0 },
+                _ => TableWidth::Auto,
+            })),
+            text_direction: fold(
+                cells.iter().map(|c| serde_json::from_value(serde_json::Value::String(c.text_direction.clone())).unwrap_or_default()),
+            ),
+            wrap_text: fold(cells.iter().map(|c| !c.no_wrap)),
+            fit_text: fold(cells.iter().map(|c| c.fit_text)),
+            row_hidden: fold(rows.iter().map(|r| r.hidden)),
+            cell_spacing: (t.cell_spacing > 0.0).then_some(Points(t.cell_spacing)),
+            title: t.alt.as_ref().map(|a| a.title.clone()).unwrap_or_default(),
+            description: t.alt.as_ref().map(|a| a.description.clone()).unwrap_or_default(),
         })
     }
 
@@ -590,6 +705,10 @@ impl Editor {
             flip_v: shape.flip_v,
             child_path: shape.child_path,
             count: shape.count.max(1),
+            crop: self.selected_picture_crop(),
+            transparent_color: self.selected_transparent_color(),
+            relative_width: self.selected_relative_size(0),
+            relative_height: self.selected_relative_size(1),
         })
     }
 
@@ -611,7 +730,13 @@ impl Editor {
                     let s = crate::docx::fields::span_at(&p.inlines, k)?;
                     Some(crate::docx::fields::code_text(&p.inlines, s).trim().to_string())
                 });
-                ElementContext { id, kind: ElementKind::Field, exact, code, tag: None, title: None, size: None }
+                let form = para.and_then(|p| {
+                    p.inlines.iter().find_map(|i| match i {
+                        crate::docx::Inline::FieldBegin { id, form: Some(ff), .. } if *id == f => Some(Box::new(super::forms::info(&ff.data))),
+                        _ => None,
+                    })
+                });
+                ElementContext { id, kind: ElementKind::Field, exact, code, tag: None, title: None, size: None, form, control: None }
             }
             crate::docx::ElementId::Control(c) => {
                 let props = self.doc.controls.get(&c).map(|k| k.props.clone()).unwrap_or_default();
@@ -627,7 +752,22 @@ impl Editor {
                     crate::docx::ControlKind::RepeatingItem => ElementKind::RepeatingItem,
                     crate::docx::ControlKind::RichText | crate::docx::ControlKind::Other => ElementKind::RichText,
                 };
-                ElementContext { id, kind, exact, code: None, tag: props.tag, title: props.alias, size: self.picture_control_size(c) }
+                let mut info = control_info(&props);
+                if let Some(category) = props.gallery() {
+                    info.building_blocks = self.gallery_entries(category.as_deref()).map(|b| b.name.clone()).collect();
+                }
+                let control = Some(Box::new(info));
+                ElementContext {
+                    id,
+                    kind,
+                    exact,
+                    code: None,
+                    tag: props.tag,
+                    title: props.alias,
+                    size: self.picture_control_size(c),
+                    form: None,
+                    control,
+                }
             }
         }
     }
@@ -668,11 +808,138 @@ impl Editor {
                 right: Points(s.right),
                 gutter: Points(s.gutter),
             },
-            columns: ColumnLayout { count: s.columns.num.max(1) as u32, spacing: Points(s.columns.space), separator: s.columns.separator },
+            columns: ColumnLayout {
+                count: s.columns.num.max(1) as u32,
+                spacing: Points(s.columns.space),
+                separator: s.columns.separator,
+                widths: if s.columns.equal {
+                    Vec::new()
+                } else {
+                    s.columns.cols.iter().map(|&(w, sp)| crate::api::command::ColumnWidth { width: Points(w), spacing: Points(sp) }).collect()
+                },
+            },
             header_distance: Points(s.header),
             footer_distance: Points(s.footer),
             different_first_page: s.title_pg,
             different_odd_even: self.doc.settings.even_and_odd,
+            page_number_format: s.pg_fmt.as_deref().map_or(NumberFormat::Decimal, NumberFormat::of_val),
+            page_number_start: s.pg_start.and_then(|n| u32::try_from(n).ok()),
+            chapter_numbers: s.chapter.as_ref().and_then(|(level, sep)| {
+                use crate::api::command::ChapterSeparator as S;
+                let separator = match sep.as_str() {
+                    "." => S::Period,
+                    ":" => S::Colon,
+                    "\u{2014}" => S::EmDash,
+                    "\u{2013}" => S::EnDash,
+                    _ => S::Hyphen,
+                };
+                Some(crate::api::command::ChapterNumbers { level: u8::try_from(*level).ok()?, separator })
+            }),
+            vertical_alignment: match s.v_align.as_str() {
+                "center" => PageVerticalAlignment::Center,
+                "both" => PageVerticalAlignment::Justified,
+                "bottom" => PageVerticalAlignment::Bottom,
+                _ => PageVerticalAlignment::Top,
+            },
+            line_numbers: s.line_numbers.as_ref().map(|l| crate::api::command::LineNumbers {
+                start: u32::try_from(l.start + 1).ok(),
+                count_by: u32::try_from(l.count_by).ok(),
+                distance: (l.distance > 0.0).then_some(Points(l.distance)),
+                restart: Some(match l.restart.as_str() {
+                    "newSection" => crate::api::command::LineNumberRestart::EachSection,
+                    "continuous" => crate::api::command::LineNumberRestart::Continuous,
+                    _ => crate::api::command::LineNumberRestart::EachPage,
+                }),
+            }),
+            break_type: match s.break_kind {
+                crate::docx::SectionBreak::NextPage => SectionBreakKind::NextPage,
+                crate::docx::SectionBreak::Continuous => SectionBreakKind::Continuous,
+                crate::docx::SectionBreak::EvenPage => SectionBreakKind::EvenPage,
+                crate::docx::SectionBreak::OddPage => SectionBreakKind::OddPage,
+                crate::docx::SectionBreak::NextColumn => SectionBreakKind::NextColumn,
+            },
+            text_direction: match s.text_flow {
+                1 => TextFlow::TbRl,
+                3 => TextFlow::BtLr,
+                4 => TextFlow::LrTbV,
+                5 => TextFlow::TbRlV,
+                7 => TextFlow::TbLrV,
+                _ => TextFlow::LrTb,
+            },
+            multiple_pages: match (self.doc.settings.mirror_margins, self.doc.settings.book_fold) {
+                (_, Some(true)) => MultiplePagesMode::ReverseBookFold,
+                (_, Some(false)) => MultiplePagesMode::BookFold,
+                (true, None) => MultiplePagesMode::MirrorMargins,
+                (false, None) => MultiplePagesMode::Normal,
+            },
+            gutter_at_top: self.doc.settings.gutter_at_top,
+            // Linked: none of its own, and a section before to take it from.
+            header_links: links(section > 0, &s.headers),
+            footer_links: links(section > 0, &s.footers),
+            footnotes: note_settings(
+                &s.notes[0],
+                if s.notes[0].beneath { NotePosition::BeneathText } else { NotePosition::PageBottom },
+                NumberFormat::Decimal,
+            ),
+            endnotes: note_settings(
+                &s.notes[1],
+                if self.doc.settings.endnotes_sect_end { NotePosition::SectionEnd } else { NotePosition::DocumentEnd },
+                NumberFormat::LowerRoman,
+            ),
+            footnote_columns: s.footnote_columns,
         }
     }
+}
+
+/// Which of a section's header or footer slots take the section before's.
+fn links(has_before: bool, refs: &crate::docx::HfRefs) -> crate::api::state::HeaderFooterLinks {
+    let l = |k: usize| has_before && refs[k].is_none();
+    crate::api::state::HeaderFooterLinks { default: l(0), first: l(1), even: l(2) }
+}
+
+/// A section's note settings as state reports them; `default` is the kind's format when none is set.
+fn note_settings(n: &crate::docx::NoteProps, position: NotePosition, default: NumberFormat) -> crate::api::state::NoteSettings {
+    crate::api::state::NoteSettings {
+        position,
+        format: n.fmt.as_deref().map_or(default, NumberFormat::of_val),
+        start: u32::try_from(n.start).unwrap_or(1),
+        restart: match n.restart {
+            crate::docx::NoteRestart::Continuous => crate::api::command::NoteRestart::Continuous,
+            crate::docx::NoteRestart::EachSect => crate::api::command::NoteRestart::EachSection,
+            crate::docx::NoteRestart::EachPage => crate::api::command::NoteRestart::EachPage,
+        },
+    }
+}
+
+/// A content control's look and options, from its properties as kept.
+fn control_info(p: &crate::docx::ControlProps) -> crate::api::state::ControlInfo {
+    let rest = |name: &str| p.rest.iter().find(|(n, _)| n == name).map(|(_, x)| x.as_str());
+    let val = |x: &str, key: &str| {
+        let at = x.find(key)? + key.len();
+        Some(x[at..at + x[at..].find('"')?].to_string())
+    };
+    let appearance = match rest("appearance").and_then(|x| val(x, "val=\"")).as_deref() {
+        Some("tags") => crate::api::value::ControlAppearance::Tags,
+        Some("hidden") => crate::api::value::ControlAppearance::Hidden,
+        _ => crate::api::value::ControlAppearance::BoundingBox,
+    };
+    let mut info = crate::api::state::ControlInfo {
+        appearance,
+        color: rest("color").and_then(|x| val(x, "val=\"")).and_then(|v| u32::from_str_radix(&v, 16).ok()).map(Color),
+        temporary: p.temporary(),
+        style: rest("rPr").and_then(|x| val(&x[x.find("rStyle")?..], "val=\"")).map(StyleId),
+        ..Default::default()
+    };
+    match &p.kind {
+        crate::docx::ControlKind::Checkbox { checked, unchecked } => {
+            (info.checked_symbol, info.unchecked_symbol) = (Some(checked.to_string()), Some(unchecked.to_string()));
+        }
+        crate::docx::ControlKind::RepeatingSection => {
+            let x = p.kind_xml.as_deref().unwrap_or_default();
+            info.section_title = x.find("sectionTitle").and_then(|at| val(&x[at..], "val=\""));
+            info.allow_insert_delete = Some(!x.contains("doNotAllowInsertDeleteSection"));
+        }
+        _ => {}
+    }
+    info
 }

@@ -396,6 +396,13 @@ impl Graphics {
                     rec.line((b - head, mid + head).into(), (b, mid).into(), &line, ink);
                 }
                 MarkKind::Break => rec.line((x0, mid).into(), (x1, mid).into(), &dashed(1.0 / px, 3.0 / px, 2.0 / px), ink),
+                MarkKind::BookmarkStart | MarkKind::BookmarkEnd => {
+                    let w = if m.kind == MarkKind::BookmarkStart { h * 0.12 } else { -h * 0.12 };
+                    let (t, b) = (top + h * 0.1, bottom - h * 0.1);
+                    rec.line((x0, t).into(), (x0, b).into(), &line, ink);
+                    rec.line((x0, t).into(), (x0 + w, t).into(), &line, ink);
+                    rec.line((x0, b).into(), (x0 + w, b).into(), &line, ink);
+                }
                 MarkKind::Hidden => {
                     let y = bottom - 1.0 / px;
                     rec.line((x0, y).into(), (x1, y).into(), &dashed(1.0 / px, 1.0 / px, 1.0 / px), ink);

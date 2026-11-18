@@ -93,7 +93,7 @@ fn picture_control_geometry_follows_mode_and_lock() {
             Command::SetObjectSize(crate::api::command::ObjectSize {
                 width: Some(crate::api::value::Points(20.0)),
                 height: Some(crate::api::value::Points(20.0)),
-                lock_aspect: None,
+                ..Default::default()
             }),
             fonts(),
         )
@@ -300,7 +300,13 @@ fn floating_picture_control_round_trip() {
     let png = super::open("FX-OBJ.docx").document().images.last().cloned().expect("an image");
     let id = crate::api::value::ElementId(crate::editing::elements::id_str(crate::docx::ElementId::Control(c)));
     let out = r.e.execute(
-        Command::FillControl(crate::api::command::FillControl { id, text: None, image: Some(crate::api::value::Bytes(png)), docx: None }),
+        Command::FillControl(crate::api::command::FillControl {
+            id,
+            text: None,
+            image: Some(crate::api::value::Bytes(png)),
+            docx: None,
+            building_block: None,
+        }),
         fonts(),
     );
     assert!(matches!(out, super::super::Outcome::Changed(_)), "{out:?}");

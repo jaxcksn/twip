@@ -543,8 +543,6 @@ Twip.ControlOptions
 Twip.ControlOptions.<Clone>$() -> Twip.ControlOptions!
 Twip.ControlOptions.Checked.get -> bool?
 Twip.ControlOptions.Checked.init -> void
-Twip.ControlOptions.ControlOptions(bool? Checked = null, string? Format = null, string? Locale = null, System.Collections.Generic.IReadOnlyList<Twip.ControlListItem!>? Items = null, bool? Multiline = null, Twip.Length? Width = null, Twip.Length? Height = null) -> void
-Twip.ControlOptions.Deconstruct(out bool? Checked, out string? Format, out string? Locale, out System.Collections.Generic.IReadOnlyList<Twip.ControlListItem!>? Items, out bool? Multiline, out Twip.Length? Width, out Twip.Length? Height) -> void
 Twip.ControlOptions.Equals(Twip.ControlOptions? other) -> bool
 Twip.ControlOptions.Format.get -> string?
 Twip.ControlOptions.Format.init -> void
@@ -731,7 +729,6 @@ Twip.EditorCommands.SetCharacterPositionAsync(Twip.Length position, System.Threa
 Twip.EditorCommands.SetCharacterSpacingAsync(Twip.Length spacing, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.SetCheckboxAsync(Twip.ElementId id, bool isChecked, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.SetColumnWidthAsync(Twip.Length width, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-Twip.EditorCommands.SetColumnsAsync(int count, Twip.Length? spacing = null, bool? separator = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.SetControlAsync(Twip.ControlChanges! changes, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.SetDefaultTabStopAsync(Twip.Length spacing, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.SetAutoHyphenationAsync(bool on, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
@@ -760,14 +757,12 @@ Twip.EditorCommands.SetListLevelAsync(Twip.LevelChange change, System.Threading.
 Twip.EditorCommands.SetMarginsAsync(Twip.MarginOptions! options, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.SetMarkupViewAsync(Twip.MarkupView view, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.SetModeAsync(Twip.EditorMode mode, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-Twip.EditorCommands.SetObjectSizeAsync(Twip.Length? width = null, Twip.Length? height = null, bool? lockAspect = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.SetObjectWrapAsync(Twip.ObjectWrap wrap, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.SetOrientationAsync(Twip.PageOrientation orientation, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.SetPaperSizeAsync(Twip.Length width, Twip.Length height, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.SetParagraphBordersAsync(Twip.ParagraphBorders preset, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.SetParagraphFlowAsync(Twip.ParagraphFlowOptions! options, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.SetParagraphShadingAsync(Twip.ColorValue color, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-Twip.EditorCommands.SetParagraphSpacingAsync(Twip.SpacingValue? before = null, Twip.SpacingValue? after = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.SetParagraphStyleAsync(Twip.StyleId styleId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.SetRowCanBreakAsync(bool on, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.SetRowHeightAsync(Twip.RowHeight! height, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
@@ -1242,13 +1237,11 @@ Twip.FontDialogValues.CharacterSpacing.get -> Twip.FormatValue<Twip.Length>
 Twip.FontDialogValues.CharacterSpacing.init -> void
 Twip.FontDialogValues.Color.get -> Twip.FormatValue<Twip.ColorValue>
 Twip.FontDialogValues.Color.init -> void
-Twip.FontDialogValues.Deconstruct(out Twip.FormatValue<string!> Font, out Twip.FormatValue<Twip.FontStyleChoice> Style, out Twip.FormatValue<Twip.Length> Size, out Twip.FormatValue<Twip.ColorValue> Color, out Twip.FormatValue<Twip.UnderlineStyle> Underline, out Twip.FormatValue<Twip.ColorValue> UnderlineColor, out Twip.FormatValue<bool> Strikethrough, out Twip.FormatValue<bool> DoubleStrikethrough, out Twip.FormatValue<bool> Superscript, out Twip.FormatValue<bool> Subscript, out Twip.FormatValue<bool> SmallCaps, out Twip.FormatValue<bool> AllCaps, out Twip.FormatValue<bool> Hidden, out Twip.FormatValue<Twip.Length> CharacterSpacing, out Twip.FormatValue<Twip.Length> Position) -> void
 Twip.FontDialogValues.DoubleStrikethrough.get -> Twip.FormatValue<bool>
 Twip.FontDialogValues.DoubleStrikethrough.init -> void
 Twip.FontDialogValues.Equals(Twip.FontDialogValues? other) -> bool
 Twip.FontDialogValues.Font.get -> Twip.FormatValue<string!>
 Twip.FontDialogValues.Font.init -> void
-Twip.FontDialogValues.FontDialogValues(Twip.FormatValue<string!> Font, Twip.FormatValue<Twip.FontStyleChoice> Style, Twip.FormatValue<Twip.Length> Size, Twip.FormatValue<Twip.ColorValue> Color, Twip.FormatValue<Twip.UnderlineStyle> Underline, Twip.FormatValue<Twip.ColorValue> UnderlineColor, Twip.FormatValue<bool> Strikethrough, Twip.FormatValue<bool> DoubleStrikethrough, Twip.FormatValue<bool> Superscript, Twip.FormatValue<bool> Subscript, Twip.FormatValue<bool> SmallCaps, Twip.FormatValue<bool> AllCaps, Twip.FormatValue<bool> Hidden, Twip.FormatValue<Twip.Length> CharacterSpacing, Twip.FormatValue<Twip.Length> Position) -> void
 Twip.FontDialogValues.Hidden.get -> Twip.FormatValue<bool>
 Twip.FontDialogValues.Hidden.init -> void
 Twip.FontDialogValues.Position.get -> Twip.FormatValue<Twip.Length>
@@ -1687,9 +1680,7 @@ Twip.HyperlinkDialogValues
 Twip.HyperlinkDialogValues.<Clone>$() -> Twip.HyperlinkDialogValues!
 Twip.HyperlinkDialogValues.Address.get -> string!
 Twip.HyperlinkDialogValues.Address.init -> void
-Twip.HyperlinkDialogValues.Deconstruct(out string! Text, out string! Address) -> void
 Twip.HyperlinkDialogValues.Equals(Twip.HyperlinkDialogValues? other) -> bool
-Twip.HyperlinkDialogValues.HyperlinkDialogValues(string! Text, string! Address) -> void
 Twip.HyperlinkDialogValues.Text.get -> string!
 Twip.HyperlinkDialogValues.Text.init -> void
 Twip.Identity
@@ -1710,13 +1701,11 @@ Twip.ImportResult.Warnings.get -> System.Collections.Generic.IReadOnlyList<Twip.
 Twip.ImportResult.Warnings.init -> void
 Twip.IndentOptions
 Twip.IndentOptions.<Clone>$() -> Twip.IndentOptions!
-Twip.IndentOptions.Deconstruct(out Twip.Length? Left, out Twip.Length? Right, out Twip.Length? FirstLine, out Twip.Length? Hanging) -> void
 Twip.IndentOptions.Equals(Twip.IndentOptions? other) -> bool
 Twip.IndentOptions.FirstLine.get -> Twip.Length?
 Twip.IndentOptions.FirstLine.init -> void
 Twip.IndentOptions.Hanging.get -> Twip.Length?
 Twip.IndentOptions.Hanging.init -> void
-Twip.IndentOptions.IndentOptions(Twip.Length? Left = null, Twip.Length? Right = null, Twip.Length? FirstLine = null, Twip.Length? Hanging = null) -> void
 Twip.IndentOptions.Left.get -> Twip.Length?
 Twip.IndentOptions.Left.init -> void
 Twip.IndentOptions.Right.get -> Twip.Length?
@@ -1956,9 +1945,7 @@ Twip.PageColumns
 Twip.PageColumns.<Clone>$() -> Twip.PageColumns!
 Twip.PageColumns.Count.get -> int
 Twip.PageColumns.Count.init -> void
-Twip.PageColumns.Deconstruct(out int Count, out Twip.Length Spacing, out bool Separator) -> void
 Twip.PageColumns.Equals(Twip.PageColumns? other) -> bool
-Twip.PageColumns.PageColumns(int Count, Twip.Length Spacing, bool Separator) -> void
 Twip.PageColumns.Separator.get -> bool
 Twip.PageColumns.Separator.init -> void
 Twip.PageColumns.Spacing.get -> Twip.Length
@@ -2038,7 +2025,6 @@ Twip.PageSetupDialogValues.ApplyTo.get -> Twip.PageSetupScope
 Twip.PageSetupDialogValues.ApplyTo.init -> void
 Twip.PageSetupDialogValues.Bottom.get -> Twip.Length
 Twip.PageSetupDialogValues.Bottom.init -> void
-Twip.PageSetupDialogValues.Deconstruct(out Twip.Length Top, out Twip.Length Bottom, out Twip.Length Left, out Twip.Length Right, out Twip.Length Gutter, out Twip.PageOrientation Orientation, out Twip.Length Width, out Twip.Length Height, out Twip.Length HeaderDistance, out Twip.Length FooterDistance, out bool DifferentFirstPage, out bool DifferentOddEven, out Twip.PageSetupScope ApplyTo) -> void
 Twip.PageSetupDialogValues.DifferentFirstPage.get -> bool
 Twip.PageSetupDialogValues.DifferentFirstPage.init -> void
 Twip.PageSetupDialogValues.DifferentOddEven.get -> bool
@@ -2056,7 +2042,6 @@ Twip.PageSetupDialogValues.Left.get -> Twip.Length
 Twip.PageSetupDialogValues.Left.init -> void
 Twip.PageSetupDialogValues.Orientation.get -> Twip.PageOrientation
 Twip.PageSetupDialogValues.Orientation.init -> void
-Twip.PageSetupDialogValues.PageSetupDialogValues(Twip.Length Top, Twip.Length Bottom, Twip.Length Left, Twip.Length Right, Twip.Length Gutter, Twip.PageOrientation Orientation, Twip.Length Width, Twip.Length Height, Twip.Length HeaderDistance, Twip.Length FooterDistance, bool DifferentFirstPage, bool DifferentOddEven, Twip.PageSetupScope ApplyTo) -> void
 Twip.PageSetupDialogValues.Right.get -> Twip.Length
 Twip.PageSetupDialogValues.Right.init -> void
 Twip.PageSetupDialogValues.Top.get -> Twip.Length
@@ -2095,7 +2080,6 @@ Twip.ParagraphDialogValues.Before.get -> Twip.FormatValue<Twip.SpacingValue>
 Twip.ParagraphDialogValues.Before.init -> void
 Twip.ParagraphDialogValues.By.get -> Twip.FormatValue<Twip.Length>
 Twip.ParagraphDialogValues.By.init -> void
-Twip.ParagraphDialogValues.Deconstruct(out Twip.FormatValue<Twip.ParagraphAlignment> Alignment, out Twip.FormatValue<Twip.OutlineLevel> OutlineLevel, out Twip.FormatValue<Twip.Length> Left, out Twip.FormatValue<Twip.Length> Right, out Twip.FormatValue<Twip.SpecialIndent> Special, out Twip.FormatValue<Twip.Length> By, out Twip.FormatValue<Twip.SpacingValue> Before, out Twip.FormatValue<Twip.SpacingValue> After, out Twip.FormatValue<Twip.LineSpacing!> LineSpacing, out Twip.FormatValue<bool> KeepWithNext, out Twip.FormatValue<bool> KeepLinesTogether, out Twip.FormatValue<bool> PageBreakBefore, out Twip.FormatValue<bool> WidowControl) -> void
 Twip.ParagraphDialogValues.Equals(Twip.ParagraphDialogValues? other) -> bool
 Twip.ParagraphDialogValues.KeepLinesTogether.get -> Twip.FormatValue<bool>
 Twip.ParagraphDialogValues.KeepLinesTogether.init -> void
@@ -2109,7 +2093,6 @@ Twip.ParagraphDialogValues.OutlineLevel.get -> Twip.FormatValue<Twip.OutlineLeve
 Twip.ParagraphDialogValues.OutlineLevel.init -> void
 Twip.ParagraphDialogValues.PageBreakBefore.get -> Twip.FormatValue<bool>
 Twip.ParagraphDialogValues.PageBreakBefore.init -> void
-Twip.ParagraphDialogValues.ParagraphDialogValues(Twip.FormatValue<Twip.ParagraphAlignment> Alignment, Twip.FormatValue<Twip.OutlineLevel> OutlineLevel, Twip.FormatValue<Twip.Length> Left, Twip.FormatValue<Twip.Length> Right, Twip.FormatValue<Twip.SpecialIndent> Special, Twip.FormatValue<Twip.Length> By, Twip.FormatValue<Twip.SpacingValue> Before, Twip.FormatValue<Twip.SpacingValue> After, Twip.FormatValue<Twip.LineSpacing!> LineSpacing, Twip.FormatValue<bool> KeepWithNext, Twip.FormatValue<bool> KeepLinesTogether, Twip.FormatValue<bool> PageBreakBefore, Twip.FormatValue<bool> WidowControl) -> void
 Twip.ParagraphDialogValues.Right.get -> Twip.FormatValue<Twip.Length>
 Twip.ParagraphDialogValues.Right.init -> void
 Twip.ParagraphDialogValues.Special.get -> Twip.FormatValue<Twip.SpecialIndent>
@@ -2130,7 +2113,6 @@ Twip.ParagraphFlow.WidowControl.get -> Twip.FormatValue<bool>
 Twip.ParagraphFlow.WidowControl.init -> void
 Twip.ParagraphFlowOptions
 Twip.ParagraphFlowOptions.<Clone>$() -> Twip.ParagraphFlowOptions!
-Twip.ParagraphFlowOptions.Deconstruct(out bool? KeepWithNext, out bool? KeepLinesTogether, out bool? PageBreakBefore, out bool? WidowControl) -> void
 Twip.ParagraphFlowOptions.Equals(Twip.ParagraphFlowOptions? other) -> bool
 Twip.ParagraphFlowOptions.KeepLinesTogether.get -> bool?
 Twip.ParagraphFlowOptions.KeepLinesTogether.init -> void
@@ -2138,7 +2120,6 @@ Twip.ParagraphFlowOptions.KeepWithNext.get -> bool?
 Twip.ParagraphFlowOptions.KeepWithNext.init -> void
 Twip.ParagraphFlowOptions.PageBreakBefore.get -> bool?
 Twip.ParagraphFlowOptions.PageBreakBefore.init -> void
-Twip.ParagraphFlowOptions.ParagraphFlowOptions(bool? KeepWithNext = null, bool? KeepLinesTogether = null, bool? PageBreakBefore = null, bool? WidowControl = null) -> void
 Twip.ParagraphFlowOptions.WidowControl.get -> bool?
 Twip.ParagraphFlowOptions.WidowControl.init -> void
 Twip.ParagraphFormatting
@@ -2197,13 +2178,11 @@ Twip.Person.Name.init -> void
 Twip.Person.Person(string! Name, string? Initials, Twip.Identity? Identity, Twip.ColorValue Color) -> void
 Twip.PictureSizeDialogValues
 Twip.PictureSizeDialogValues.<Clone>$() -> Twip.PictureSizeDialogValues!
-Twip.PictureSizeDialogValues.Deconstruct(out Twip.Length Width, out Twip.Length Height, out double ScaleWidth, out double ScaleHeight, out bool LockAspect, out bool Reset) -> void
 Twip.PictureSizeDialogValues.Equals(Twip.PictureSizeDialogValues? other) -> bool
 Twip.PictureSizeDialogValues.Height.get -> Twip.Length
 Twip.PictureSizeDialogValues.Height.init -> void
 Twip.PictureSizeDialogValues.LockAspect.get -> bool
 Twip.PictureSizeDialogValues.LockAspect.init -> void
-Twip.PictureSizeDialogValues.PictureSizeDialogValues(Twip.Length Width, Twip.Length Height, double ScaleWidth, double ScaleHeight, bool LockAspect, bool Reset) -> void
 Twip.PictureSizeDialogValues.Reset.get -> bool
 Twip.PictureSizeDialogValues.Reset.init -> void
 Twip.PictureSizeDialogValues.ScaleHeight.get -> double
@@ -2618,7 +2597,6 @@ Twip.TablePropertiesDialogValues.CellMargins.get -> Twip.CellMargins!
 Twip.TablePropertiesDialogValues.CellMargins.init -> void
 Twip.TablePropertiesDialogValues.ColumnWidth.get -> Twip.FormatValue<Twip.Length>
 Twip.TablePropertiesDialogValues.ColumnWidth.init -> void
-Twip.TablePropertiesDialogValues.Deconstruct(out Twip.TableWidth! Width, out Twip.TableAlignment Alignment, out Twip.Length Indent, out Twip.FormatValue<Twip.RowHeight!> RowHeight, out Twip.FormatValue<bool> RowCanBreak, out Twip.FormatValue<bool> HeaderRow, out Twip.FormatValue<Twip.Length> ColumnWidth, out Twip.FormatValue<Twip.CellAlignment> CellAlignment, out Twip.CellMargins! CellMargins) -> void
 Twip.TablePropertiesDialogValues.Equals(Twip.TablePropertiesDialogValues? other) -> bool
 Twip.TablePropertiesDialogValues.HeaderRow.get -> Twip.FormatValue<bool>
 Twip.TablePropertiesDialogValues.HeaderRow.init -> void
@@ -2628,7 +2606,6 @@ Twip.TablePropertiesDialogValues.RowCanBreak.get -> Twip.FormatValue<bool>
 Twip.TablePropertiesDialogValues.RowCanBreak.init -> void
 Twip.TablePropertiesDialogValues.RowHeight.get -> Twip.FormatValue<Twip.RowHeight!>
 Twip.TablePropertiesDialogValues.RowHeight.init -> void
-Twip.TablePropertiesDialogValues.TablePropertiesDialogValues(Twip.TableWidth! Width, Twip.TableAlignment Alignment, Twip.Length Indent, Twip.FormatValue<Twip.RowHeight!> RowHeight, Twip.FormatValue<bool> RowCanBreak, Twip.FormatValue<bool> HeaderRow, Twip.FormatValue<Twip.Length> ColumnWidth, Twip.FormatValue<Twip.CellAlignment> CellAlignment, Twip.CellMargins! CellMargins) -> void
 Twip.TablePropertiesDialogValues.Width.get -> Twip.TableWidth!
 Twip.TablePropertiesDialogValues.Width.init -> void
 Twip.TableSelection
@@ -3506,7 +3483,6 @@ static Twip.EditorOperation.SetCharacterPosition(Twip.Length position) -> Twip.E
 static Twip.EditorOperation.SetCharacterSpacing(Twip.Length spacing) -> Twip.EditorOperation!
 static Twip.EditorOperation.SetCheckbox(Twip.ElementId id, bool isChecked) -> Twip.EditorOperation!
 static Twip.EditorOperation.SetColumnWidth(Twip.Length width) -> Twip.EditorOperation!
-static Twip.EditorOperation.SetColumns(int count, Twip.Length? spacing = null, bool? separator = null) -> Twip.EditorOperation!
 static Twip.EditorOperation.SetControl(Twip.ControlChanges! changes) -> Twip.EditorOperation!
 static Twip.EditorOperation.SetDefaultTabStop(Twip.Length spacing) -> Twip.EditorOperation!
 static Twip.EditorOperation.SetAutoHyphenation(bool on) -> Twip.EditorOperation!
@@ -3535,14 +3511,12 @@ static Twip.EditorOperation.SetListLevel(Twip.LevelChange change) -> Twip.Editor
 static Twip.EditorOperation.SetMargins(Twip.MarginOptions! options) -> Twip.EditorOperation!
 static Twip.EditorOperation.SetMarkupView(Twip.MarkupView view) -> Twip.EditorOperation!
 static Twip.EditorOperation.SetMode(Twip.EditorMode mode) -> Twip.EditorOperation!
-static Twip.EditorOperation.SetObjectSize(Twip.Length? width = null, Twip.Length? height = null, bool? lockAspect = null) -> Twip.EditorOperation!
 static Twip.EditorOperation.SetObjectWrap(Twip.ObjectWrap wrap) -> Twip.EditorOperation!
 static Twip.EditorOperation.SetOrientation(Twip.PageOrientation orientation) -> Twip.EditorOperation!
 static Twip.EditorOperation.SetPaperSize(Twip.Length width, Twip.Length height) -> Twip.EditorOperation!
 static Twip.EditorOperation.SetParagraphBorders(Twip.ParagraphBorders preset) -> Twip.EditorOperation!
 static Twip.EditorOperation.SetParagraphFlow(Twip.ParagraphFlowOptions! options) -> Twip.EditorOperation!
 static Twip.EditorOperation.SetParagraphShading(Twip.ColorValue color) -> Twip.EditorOperation!
-static Twip.EditorOperation.SetParagraphSpacing(Twip.SpacingValue? before = null, Twip.SpacingValue? after = null) -> Twip.EditorOperation!
 static Twip.EditorOperation.SetParagraphStyle(Twip.StyleId styleId) -> Twip.EditorOperation!
 static Twip.EditorOperation.SetRowCanBreak(bool on) -> Twip.EditorOperation!
 static Twip.EditorOperation.SetRowHeight(Twip.RowHeight! height) -> Twip.EditorOperation!
@@ -4044,7 +4018,6 @@ override Twip.HorizontalPosition.GetHashCode() -> int
 override Twip.HorizontalPosition.Equals(object? obj) -> bool
 Twip.HorizontalPosition.Equals(Twip.HorizontalPosition? other) -> bool
 Twip.HorizontalPosition.<Clone>$() -> Twip.HorizontalPosition!
-Twip.HorizontalPosition.Deconstruct(out Twip.HorizontalReference RelativeTo, out Twip.ObjectHorizontalAlignment? Align, out Twip.Length? Offset) -> void
 Twip.VerticalPosition
 override Twip.VerticalPosition.ToString() -> string!
 static Twip.VerticalPosition.operator !=(Twip.VerticalPosition? left, Twip.VerticalPosition? right) -> bool
@@ -4053,7 +4026,6 @@ override Twip.VerticalPosition.GetHashCode() -> int
 override Twip.VerticalPosition.Equals(object? obj) -> bool
 Twip.VerticalPosition.Equals(Twip.VerticalPosition? other) -> bool
 Twip.VerticalPosition.<Clone>$() -> Twip.VerticalPosition!
-Twip.VerticalPosition.Deconstruct(out Twip.VerticalReference RelativeTo, out Twip.ObjectVerticalAlignment? Align, out Twip.Length? Offset) -> void
 Twip.ObjectPlacement
 override Twip.ObjectPlacement.ToString() -> string!
 static Twip.ObjectPlacement.operator !=(Twip.ObjectPlacement? left, Twip.ObjectPlacement? right) -> bool
@@ -4072,8 +4044,6 @@ override Twip.TextDistance.Equals(object? obj) -> bool
 Twip.TextDistance.Equals(Twip.TextDistance? other) -> bool
 Twip.TextDistance.<Clone>$() -> Twip.TextDistance!
 Twip.TextDistance.TextDistance() -> void
-Twip.VerticalPosition.VerticalPosition(Twip.VerticalReference RelativeTo, Twip.ObjectVerticalAlignment? Align = null, Twip.Length? Offset = null) -> void
-Twip.HorizontalPosition.HorizontalPosition(Twip.HorizontalReference RelativeTo, Twip.ObjectHorizontalAlignment? Align = null, Twip.Length? Offset = null) -> void
 Twip.ObjectPlacement.Horizontal.init -> void
 Twip.TextDistance.Top.init -> void
 Twip.TextDistance.Top.get -> Twip.Length
@@ -4408,11 +4378,9 @@ Twip.PictureAdjustChange.Brightness.get -> double?
 Twip.PictureAdjustChange.Brightness.init -> void
 Twip.PictureAdjustChange.Contrast.get -> double?
 Twip.PictureAdjustChange.Contrast.init -> void
-Twip.PictureAdjustChange.Deconstruct(out double? Transparency, out bool? Grayscale, out double? Brightness, out double? Contrast) -> void
 Twip.PictureAdjustChange.Equals(Twip.PictureAdjustChange? other) -> bool
 Twip.PictureAdjustChange.Grayscale.get -> bool?
 Twip.PictureAdjustChange.Grayscale.init -> void
-Twip.PictureAdjustChange.PictureAdjustChange(double? Transparency = null, bool? Grayscale = null, double? Brightness = null, double? Contrast = null) -> void
 Twip.PictureAdjustChange.Transparency.get -> double?
 Twip.PictureAdjustChange.Transparency.init -> void
 Twip.Shadow
@@ -4479,13 +4447,11 @@ Twip.ShapeTextChange.Anchor.get -> Twip.TextAnchor?
 Twip.ShapeTextChange.Anchor.init -> void
 Twip.ShapeTextChange.Autofit.get -> Twip.TextAutofit?
 Twip.ShapeTextChange.Autofit.init -> void
-Twip.ShapeTextChange.Deconstruct(out System.Collections.Generic.IReadOnlyList<Twip.Length>? Insets, out Twip.TextAnchor? Anchor, out Twip.TextAutofit? Autofit, out bool? WrapText, out Twip.TextDirection? Direction) -> void
 Twip.ShapeTextChange.Direction.get -> Twip.TextDirection?
 Twip.ShapeTextChange.Direction.init -> void
 Twip.ShapeTextChange.Equals(Twip.ShapeTextChange? other) -> bool
 Twip.ShapeTextChange.Insets.get -> System.Collections.Generic.IReadOnlyList<Twip.Length>?
 Twip.ShapeTextChange.Insets.init -> void
-Twip.ShapeTextChange.ShapeTextChange(System.Collections.Generic.IReadOnlyList<Twip.Length>? Insets = null, Twip.TextAnchor? Anchor = null, Twip.TextAutofit? Autofit = null, bool? WrapText = null, Twip.TextDirection? Direction = null) -> void
 Twip.ShapeTextChange.WrapText.get -> bool?
 Twip.ShapeTextChange.WrapText.init -> void
 Twip.ShapeTextState
@@ -4721,7 +4687,6 @@ Twip.DocumentAppearance.Dark = 1 -> Twip.DocumentAppearance
 Twip.DocumentAppearance.DarkWithLightPage = 2 -> Twip.DocumentAppearance
 Twip.DocumentAppearance.Light = 0 -> Twip.DocumentAppearance
 Twip.EditorCommands.SetRulerTabTypeAsync(Twip.TabSelector value, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-Twip.EditorCommands.SetViewOptionsAsync(bool? formattingMarks = null, bool? gridlines = null, bool? textBoundaries = null, bool? liveLayout = null, Twip.ChromeTheme? theme = null, Twip.ColorValue? accent = null, Twip.DocumentAppearance? appearance = null, Twip.MeasureDetail? detail = null, Twip.ObjectGrid? objectGrid = null, Twip.ThemeColors? themeColors = null, Twip.FieldShading? fieldShading = null, System.Collections.Generic.IReadOnlyList<Twip.CursorOverride!>? cursorOverrides = null, bool? controlLabels = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.ShowTabStopAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.ShowTabTypesAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorSession.PopoverClosed -> System.EventHandler?
@@ -4849,7 +4814,6 @@ static Twip.ChromeTheme.Light.get -> Twip.ChromeTheme!
 static Twip.ChromeTheme.operator !=(Twip.ChromeTheme? left, Twip.ChromeTheme? right) -> bool
 static Twip.ChromeTheme.operator ==(Twip.ChromeTheme? left, Twip.ChromeTheme? right) -> bool
 static Twip.EditorOperation.SetRulerTabType(Twip.TabSelector value) -> Twip.EditorOperation!
-static Twip.EditorOperation.SetViewOptions(bool? formattingMarks = null, bool? gridlines = null, bool? textBoundaries = null, bool? liveLayout = null, Twip.ChromeTheme? theme = null, Twip.ColorValue? accent = null, Twip.DocumentAppearance? appearance = null, Twip.MeasureDetail? detail = null, Twip.ObjectGrid? objectGrid = null, Twip.ThemeColors? themeColors = null, Twip.FieldShading? fieldShading = null, System.Collections.Generic.IReadOnlyList<Twip.CursorOverride!>? cursorOverrides = null, bool? controlLabels = null) -> Twip.EditorOperation!
 static Twip.EditorOperation.ShowTabStop() -> Twip.EditorOperation!
 static Twip.EditorOperation.ShowTabTypes() -> Twip.EditorOperation!
 static Twip.HighContrastColors.operator !=(Twip.HighContrastColors? left, Twip.HighContrastColors? right) -> bool
@@ -6267,12 +6231,6 @@ Twip.DefineNumberFormatDialogValues.Format.get -> Twip.NumberFormat
 Twip.DefineNumberFormatDialogValues.Format.init -> void
 Twip.DefineNumberFormatDialogValues.Text.get -> string!
 Twip.DefineNumberFormatDialogValues.Text.init -> void
-Twip.DialogKind.AdjustListIndents = 19 -> Twip.DialogKind
-Twip.DialogKind.BulletsNumbering = 20 -> Twip.DialogKind
-Twip.DialogKind.DefineBullet = 15 -> Twip.DialogKind
-Twip.DialogKind.DefineMultilevelList = 17 -> Twip.DialogKind
-Twip.DialogKind.DefineNumberFormat = 16 -> Twip.DialogKind
-Twip.DialogKind.SetNumberingValue = 18 -> Twip.DialogKind
 Twip.EditorCommands.AdjustListIndentsAsync(Twip.ListIndentOptions! options, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.ApplyListEntryAsync(string! id, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.ContinueNumberingAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
@@ -6501,7 +6459,6 @@ Twip.BordersShadingDialogValues.PageSetting.get -> Twip.BorderSetting
 Twip.BordersShadingDialogValues.PageSetting.init -> void
 Twip.BordersShadingDialogValues.PageTop.get -> Twip.CellBorder?
 Twip.BordersShadingDialogValues.PageTop.init -> void
-Twip.DialogKind.Banding = 21 -> Twip.DialogKind
 Twip.EditorCommands.SetPageBordersAsync(Twip.PageBordersOptions! borders, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.EditorCommands.SetTextBorderAsync(Twip.TextBorderOptions! border, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Twip.PageBorderDisplay
@@ -6520,7 +6477,6 @@ Twip.PageBordersOptions.ApplyTo.get -> Twip.PageBorderScope
 Twip.PageBordersOptions.ApplyTo.init -> void
 Twip.PageBordersOptions.Bottom.get -> Twip.CellBorder?
 Twip.PageBordersOptions.Bottom.init -> void
-Twip.PageBordersOptions.Deconstruct(out Twip.CellBorder? Top, out Twip.CellBorder? Bottom, out Twip.CellBorder? Left, out Twip.CellBorder? Right, out bool Shadow, out Twip.PageBorderOffset? OffsetFrom, out Twip.PageBorderDisplay? Display, out Twip.PageBorderScope ApplyTo) -> void
 Twip.PageBordersOptions.Display.get -> Twip.PageBorderDisplay?
 Twip.PageBordersOptions.Display.init -> void
 Twip.PageBordersOptions.Equals(Twip.PageBordersOptions? other) -> bool
@@ -6528,7 +6484,6 @@ Twip.PageBordersOptions.Left.get -> Twip.CellBorder?
 Twip.PageBordersOptions.Left.init -> void
 Twip.PageBordersOptions.OffsetFrom.get -> Twip.PageBorderOffset?
 Twip.PageBordersOptions.OffsetFrom.init -> void
-Twip.PageBordersOptions.PageBordersOptions(Twip.CellBorder? Top = null, Twip.CellBorder? Bottom = null, Twip.CellBorder? Left = null, Twip.CellBorder? Right = null, bool Shadow = false, Twip.PageBorderOffset? OffsetFrom = null, Twip.PageBorderDisplay? Display = null, Twip.PageBorderScope ApplyTo = Twip.PageBorderScope.ThisSection) -> void
 Twip.PageBordersOptions.Right.get -> Twip.CellBorder?
 Twip.PageBordersOptions.Right.init -> void
 Twip.PageBordersOptions.Shadow.get -> bool
@@ -6569,3 +6524,1200 @@ Twip.WarningCode.PictureBulletUndecodable = 17 -> Twip.WarningCode
 Twip.TooltipKind.Ruler = 4 -> Twip.TooltipKind
 Twip.ViewState.ControlLabels.get -> bool
 Twip.ViewState.ControlLabels.init -> void
+Twip.CharacterEffectsOptions
+Twip.CharacterEffectsOptions.<Clone>$() -> Twip.CharacterEffectsOptions!
+Twip.CharacterEffectsOptions.CharacterEffectsOptions(bool? Emboss = null, bool? Engrave = null, bool? Outline = null, bool? Shadow = null) -> void
+Twip.CharacterEffectsOptions.Deconstruct(out bool? Emboss, out bool? Engrave, out bool? Outline, out bool? Shadow) -> void
+Twip.CharacterEffectsOptions.Emboss.get -> bool?
+Twip.CharacterEffectsOptions.Emboss.init -> void
+Twip.CharacterEffectsOptions.Engrave.get -> bool?
+Twip.CharacterEffectsOptions.Engrave.init -> void
+Twip.CharacterEffectsOptions.Equals(Twip.CharacterEffectsOptions? other) -> bool
+Twip.CharacterEffectsOptions.Outline.get -> bool?
+Twip.CharacterEffectsOptions.Outline.init -> void
+Twip.CharacterEffectsOptions.Shadow.get -> bool?
+Twip.CharacterEffectsOptions.Shadow.init -> void
+Twip.CharacterFormatting.CharacterStyle.get -> Twip.FormatValue<Twip.StyleId>
+Twip.CharacterFormatting.CharacterStyle.init -> void
+Twip.CharacterFormatting.ContextualAlternates.get -> Twip.FormatValue<bool>
+Twip.CharacterFormatting.ContextualAlternates.init -> void
+Twip.CharacterFormatting.Emboss.get -> Twip.FormatValue<bool>
+Twip.CharacterFormatting.Emboss.init -> void
+Twip.CharacterFormatting.Engrave.get -> Twip.FormatValue<bool>
+Twip.CharacterFormatting.Engrave.init -> void
+Twip.CharacterFormatting.Kerning.get -> Twip.FormatValue<Twip.Length>
+Twip.CharacterFormatting.Kerning.init -> void
+Twip.CharacterFormatting.Language.get -> Twip.FormatValue<string!>
+Twip.CharacterFormatting.Language.init -> void
+Twip.CharacterFormatting.Ligatures.get -> Twip.FormatValue<Twip.Ligatures>
+Twip.CharacterFormatting.Ligatures.init -> void
+Twip.CharacterFormatting.NoProof.get -> Twip.FormatValue<bool>
+Twip.CharacterFormatting.NoProof.init -> void
+Twip.CharacterFormatting.NumberForm.get -> Twip.FormatValue<Twip.NumberForm>
+Twip.CharacterFormatting.NumberForm.init -> void
+Twip.CharacterFormatting.NumberSpacing.get -> Twip.FormatValue<Twip.NumberSpacing>
+Twip.CharacterFormatting.NumberSpacing.init -> void
+Twip.CharacterFormatting.Outline.get -> Twip.FormatValue<bool>
+Twip.CharacterFormatting.Outline.init -> void
+Twip.CharacterFormatting.Scale.get -> Twip.FormatValue<double>
+Twip.CharacterFormatting.Scale.init -> void
+Twip.CharacterFormatting.Shadow.get -> Twip.FormatValue<bool>
+Twip.CharacterFormatting.Shadow.init -> void
+Twip.CharacterFormatting.StylisticSet.get -> Twip.FormatValue<int>
+Twip.CharacterFormatting.StylisticSet.init -> void
+Twip.CharacterFormatting.UnderlineColor.get -> Twip.FormatValue<Twip.ColorValue>
+Twip.CharacterFormatting.UnderlineColor.init -> void
+Twip.CommandId.ApplyCharacterStyle = 215 -> Twip.CommandId
+Twip.CommandId.SetCharacterEffects = 218 -> Twip.CommandId
+Twip.CommandId.SetLanguage = 217 -> Twip.CommandId
+Twip.CommandId.SetTypography = 216 -> Twip.CommandId
+Twip.CommandId.SetUnderlineColor = 219 -> Twip.CommandId
+Twip.EditorCommands.ApplyCharacterStyleAsync(Twip.StyleId? styleId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetCharacterEffectsAsync(Twip.CharacterEffectsOptions! options, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetLanguageAsync(Twip.LanguageOptions! options, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetTypographyAsync(Twip.TypographyOptions! options, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetUnderlineColorAsync(Twip.ColorValue color, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.LanguageOptions
+Twip.LanguageOptions.<Clone>$() -> Twip.LanguageOptions!
+Twip.LanguageOptions.Deconstruct(out string? Language, out bool? NoProof) -> void
+Twip.LanguageOptions.Equals(Twip.LanguageOptions? other) -> bool
+Twip.LanguageOptions.Language.get -> string?
+Twip.LanguageOptions.Language.init -> void
+Twip.LanguageOptions.LanguageOptions(string? Language = null, bool? NoProof = null) -> void
+Twip.LanguageOptions.NoProof.get -> bool?
+Twip.LanguageOptions.NoProof.init -> void
+Twip.Ligatures
+Twip.Ligatures.All = 4 -> Twip.Ligatures
+Twip.Ligatures.HistoricalDiscretional = 3 -> Twip.Ligatures
+Twip.Ligatures.None = 0 -> Twip.Ligatures
+Twip.Ligatures.Standard = 1 -> Twip.Ligatures
+Twip.Ligatures.StandardContextual = 2 -> Twip.Ligatures
+Twip.NumberForm
+Twip.NumberForm.Default = 0 -> Twip.NumberForm
+Twip.NumberForm.Lining = 1 -> Twip.NumberForm
+Twip.NumberForm.OldStyle = 2 -> Twip.NumberForm
+Twip.NumberSpacing
+Twip.NumberSpacing.Default = 0 -> Twip.NumberSpacing
+Twip.NumberSpacing.Proportional = 1 -> Twip.NumberSpacing
+Twip.NumberSpacing.Tabular = 2 -> Twip.NumberSpacing
+Twip.TypographyOptions
+Twip.TypographyOptions.<Clone>$() -> Twip.TypographyOptions!
+Twip.TypographyOptions.ContextualAlternates.get -> bool?
+Twip.TypographyOptions.ContextualAlternates.init -> void
+Twip.TypographyOptions.Deconstruct(out double? Scale, out Twip.Length? Kerning, out Twip.Ligatures? Ligatures, out Twip.NumberSpacing? NumberSpacing, out Twip.NumberForm? NumberForm, out int? StylisticSet, out bool? ContextualAlternates) -> void
+Twip.TypographyOptions.Equals(Twip.TypographyOptions? other) -> bool
+Twip.TypographyOptions.Kerning.get -> Twip.Length?
+Twip.TypographyOptions.Kerning.init -> void
+Twip.TypographyOptions.Ligatures.get -> Twip.Ligatures?
+Twip.TypographyOptions.Ligatures.init -> void
+Twip.TypographyOptions.NumberForm.get -> Twip.NumberForm?
+Twip.TypographyOptions.NumberForm.init -> void
+Twip.TypographyOptions.NumberSpacing.get -> Twip.NumberSpacing?
+Twip.TypographyOptions.NumberSpacing.init -> void
+Twip.TypographyOptions.Scale.get -> double?
+Twip.TypographyOptions.Scale.init -> void
+Twip.TypographyOptions.StylisticSet.get -> int?
+Twip.TypographyOptions.StylisticSet.init -> void
+Twip.TypographyOptions.TypographyOptions(double? Scale = null, Twip.Length? Kerning = null, Twip.Ligatures? Ligatures = null, Twip.NumberSpacing? NumberSpacing = null, Twip.NumberForm? NumberForm = null, int? StylisticSet = null, bool? ContextualAlternates = null) -> void
+override Twip.CharacterEffectsOptions.Equals(object? obj) -> bool
+override Twip.CharacterEffectsOptions.GetHashCode() -> int
+override Twip.CharacterEffectsOptions.ToString() -> string!
+override Twip.LanguageOptions.Equals(object? obj) -> bool
+override Twip.LanguageOptions.GetHashCode() -> int
+override Twip.LanguageOptions.ToString() -> string!
+override Twip.TypographyOptions.Equals(object? obj) -> bool
+override Twip.TypographyOptions.GetHashCode() -> int
+override Twip.TypographyOptions.ToString() -> string!
+static Twip.CharacterEffectsOptions.operator !=(Twip.CharacterEffectsOptions? left, Twip.CharacterEffectsOptions? right) -> bool
+static Twip.CharacterEffectsOptions.operator ==(Twip.CharacterEffectsOptions? left, Twip.CharacterEffectsOptions? right) -> bool
+static Twip.EditorOperation.ApplyCharacterStyle(Twip.StyleId? styleId) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetCharacterEffects(Twip.CharacterEffectsOptions! options) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetLanguage(Twip.LanguageOptions! options) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetTypography(Twip.TypographyOptions! options) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetUnderlineColor(Twip.ColorValue color) -> Twip.EditorOperation!
+static Twip.LanguageOptions.operator !=(Twip.LanguageOptions? left, Twip.LanguageOptions? right) -> bool
+static Twip.LanguageOptions.operator ==(Twip.LanguageOptions? left, Twip.LanguageOptions? right) -> bool
+static Twip.StyleId.None.get -> Twip.StyleId
+static Twip.TypographyOptions.operator !=(Twip.TypographyOptions? left, Twip.TypographyOptions? right) -> bool
+static Twip.TypographyOptions.operator ==(Twip.TypographyOptions? left, Twip.TypographyOptions? right) -> bool
+Twip.CommandId.SetOutline = 220 -> Twip.CommandId
+Twip.CommandId.SetParagraphTextDirection = 221 -> Twip.CommandId
+Twip.EditorCommands.SetOutlineAsync(Twip.OutlineOptions! options, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetParagraphSpacingAsync(Twip.SpacingValue? before = null, Twip.SpacingValue? after = null, bool? contextual = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetParagraphTextDirectionAsync(Twip.TextFlow direction, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.IndentOptions.Deconstruct(out Twip.Length? Left, out Twip.Length? Right, out Twip.Length? FirstLine, out Twip.Length? Hanging, out bool? Mirror) -> void
+Twip.IndentOptions.IndentOptions(Twip.Length? Left = null, Twip.Length? Right = null, Twip.Length? FirstLine = null, Twip.Length? Hanging = null, bool? Mirror = null) -> void
+Twip.IndentOptions.Mirror.get -> bool?
+Twip.IndentOptions.Mirror.init -> void
+Twip.OutlineOptions
+Twip.OutlineOptions.<Clone>$() -> Twip.OutlineOptions!
+Twip.OutlineOptions.Collapsed.get -> bool?
+Twip.OutlineOptions.Collapsed.init -> void
+Twip.OutlineOptions.Deconstruct(out int? Level, out bool? Collapsed) -> void
+Twip.OutlineOptions.Equals(Twip.OutlineOptions? other) -> bool
+Twip.OutlineOptions.Level.get -> int?
+Twip.OutlineOptions.Level.init -> void
+Twip.OutlineOptions.OutlineOptions(int? Level = null, bool? Collapsed = null) -> void
+Twip.ParagraphFlow.DontHyphenate.get -> Twip.FormatValue<bool>
+Twip.ParagraphFlow.DontHyphenate.init -> void
+Twip.ParagraphFlow.SuppressLineNumbers.get -> Twip.FormatValue<bool>
+Twip.ParagraphFlow.SuppressLineNumbers.init -> void
+Twip.ParagraphFlowOptions.DontHyphenate.get -> bool?
+Twip.ParagraphFlowOptions.DontHyphenate.init -> void
+Twip.ParagraphFlowOptions.SuppressLineNumbers.get -> bool?
+Twip.ParagraphFlowOptions.SuppressLineNumbers.init -> void
+Twip.ParagraphFormatting.Collapsed.get -> Twip.FormatValue<bool>
+Twip.ParagraphFormatting.Collapsed.init -> void
+Twip.ParagraphFormatting.ContextualSpacing.get -> Twip.FormatValue<bool>
+Twip.ParagraphFormatting.ContextualSpacing.init -> void
+Twip.ParagraphFormatting.OutlineLevel.get -> Twip.FormatValue<int>
+Twip.ParagraphFormatting.OutlineLevel.init -> void
+Twip.ParagraphFormatting.TextDirection.get -> Twip.FormatValue<Twip.TextFlow>
+Twip.ParagraphFormatting.TextDirection.init -> void
+Twip.ParagraphIndents.Mirror.get -> Twip.FormatValue<bool>
+Twip.ParagraphIndents.Mirror.init -> void
+Twip.TextFlow
+Twip.TextFlow.BtLr = 2 -> Twip.TextFlow
+Twip.TextFlow.LrTb = 0 -> Twip.TextFlow
+Twip.TextFlow.LrTbV = 3 -> Twip.TextFlow
+Twip.TextFlow.TbLrV = 5 -> Twip.TextFlow
+Twip.TextFlow.TbRl = 1 -> Twip.TextFlow
+Twip.TextFlow.TbRlV = 4 -> Twip.TextFlow
+override Twip.OutlineOptions.Equals(object? obj) -> bool
+override Twip.OutlineOptions.GetHashCode() -> int
+override Twip.OutlineOptions.ToString() -> string!
+static Twip.EditorOperation.SetOutline(Twip.OutlineOptions! options) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetParagraphSpacing(Twip.SpacingValue? before = null, Twip.SpacingValue? after = null, bool? contextual = null) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetParagraphTextDirection(Twip.TextFlow direction) -> Twip.EditorOperation!
+static Twip.OutlineOptions.operator !=(Twip.OutlineOptions? left, Twip.OutlineOptions? right) -> bool
+static Twip.OutlineOptions.operator ==(Twip.OutlineOptions? left, Twip.OutlineOptions? right) -> bool
+Twip.ChapterNumbers
+Twip.ChapterNumbers.<Clone>$() -> Twip.ChapterNumbers!
+Twip.ChapterNumbers.ChapterNumbers(int Level, Twip.ChapterSeparator Separator) -> void
+Twip.ChapterNumbers.Deconstruct(out int Level, out Twip.ChapterSeparator Separator) -> void
+Twip.ChapterNumbers.Equals(Twip.ChapterNumbers? other) -> bool
+Twip.ChapterNumbers.Level.get -> int
+Twip.ChapterNumbers.Level.init -> void
+Twip.ChapterNumbers.Separator.get -> Twip.ChapterSeparator
+Twip.ChapterNumbers.Separator.init -> void
+Twip.ChapterSeparator
+Twip.ChapterSeparator.Colon = 2 -> Twip.ChapterSeparator
+Twip.ChapterSeparator.EmDash = 3 -> Twip.ChapterSeparator
+Twip.ChapterSeparator.EnDash = 4 -> Twip.ChapterSeparator
+Twip.ChapterSeparator.Hyphen = 0 -> Twip.ChapterSeparator
+Twip.ChapterSeparator.Period = 1 -> Twip.ChapterSeparator
+Twip.ColumnWidth
+Twip.ColumnWidth.<Clone>$() -> Twip.ColumnWidth!
+Twip.ColumnWidth.ColumnWidth(Twip.Length Width, Twip.Length Spacing) -> void
+Twip.ColumnWidth.Deconstruct(out Twip.Length Width, out Twip.Length Spacing) -> void
+Twip.ColumnWidth.Equals(Twip.ColumnWidth? other) -> bool
+Twip.ColumnWidth.Spacing.get -> Twip.Length
+Twip.ColumnWidth.Spacing.init -> void
+Twip.ColumnWidth.Width.get -> Twip.Length
+Twip.ColumnWidth.Width.init -> void
+Twip.CommandId.SetLineNumbering = 224 -> Twip.CommandId
+Twip.CommandId.SetMultiplePages = 227 -> Twip.CommandId
+Twip.CommandId.SetPageNumbering = 222 -> Twip.CommandId
+Twip.CommandId.SetPageVerticalAlignment = 223 -> Twip.CommandId
+Twip.CommandId.SetSectionBreakType = 225 -> Twip.CommandId
+Twip.CommandId.SetSectionTextDirection = 226 -> Twip.CommandId
+Twip.EditorCommands.SetColumnsAsync(int count, Twip.Length? spacing = null, bool? separator = null, System.Collections.Generic.IReadOnlyList<Twip.ColumnWidth!>? widths = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetLineNumberingAsync(Twip.LineNumbers? numbers, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetMultiplePagesAsync(Twip.MultiplePagesOptions! options, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetPageNumberingAsync(Twip.PageNumberingOptions! options, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetPageVerticalAlignmentAsync(Twip.PageVerticalAlignment alignment, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetSectionBreakTypeAsync(Twip.SectionBreakKind kind, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetSectionTextDirectionAsync(Twip.TextFlow direction, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.LineNumberRestart
+Twip.LineNumberRestart.Continuous = 2 -> Twip.LineNumberRestart
+Twip.LineNumberRestart.EachPage = 0 -> Twip.LineNumberRestart
+Twip.LineNumberRestart.EachSection = 1 -> Twip.LineNumberRestart
+Twip.LineNumbers
+Twip.LineNumbers.<Clone>$() -> Twip.LineNumbers!
+Twip.LineNumbers.CountBy.get -> int?
+Twip.LineNumbers.CountBy.init -> void
+Twip.LineNumbers.Deconstruct(out int? Start, out int? CountBy, out Twip.Length? Distance, out Twip.LineNumberRestart? Restart) -> void
+Twip.LineNumbers.Distance.get -> Twip.Length?
+Twip.LineNumbers.Distance.init -> void
+Twip.LineNumbers.Equals(Twip.LineNumbers? other) -> bool
+Twip.LineNumbers.LineNumbers(int? Start = null, int? CountBy = null, Twip.Length? Distance = null, Twip.LineNumberRestart? Restart = null) -> void
+Twip.LineNumbers.Restart.get -> Twip.LineNumberRestart?
+Twip.LineNumbers.Restart.init -> void
+Twip.LineNumbers.Start.get -> int?
+Twip.LineNumbers.Start.init -> void
+Twip.MultiplePagesMode
+Twip.MultiplePagesMode.BookFold = 2 -> Twip.MultiplePagesMode
+Twip.MultiplePagesMode.MirrorMargins = 1 -> Twip.MultiplePagesMode
+Twip.MultiplePagesMode.Normal = 0 -> Twip.MultiplePagesMode
+Twip.MultiplePagesMode.ReverseBookFold = 3 -> Twip.MultiplePagesMode
+Twip.MultiplePagesOptions
+Twip.MultiplePagesOptions.<Clone>$() -> Twip.MultiplePagesOptions!
+Twip.MultiplePagesOptions.Deconstruct(out Twip.MultiplePagesMode? Mode, out bool? GutterAtTop) -> void
+Twip.MultiplePagesOptions.Equals(Twip.MultiplePagesOptions? other) -> bool
+Twip.MultiplePagesOptions.GutterAtTop.get -> bool?
+Twip.MultiplePagesOptions.GutterAtTop.init -> void
+Twip.MultiplePagesOptions.Mode.get -> Twip.MultiplePagesMode?
+Twip.MultiplePagesOptions.Mode.init -> void
+Twip.MultiplePagesOptions.MultiplePagesOptions(Twip.MultiplePagesMode? Mode = null, bool? GutterAtTop = null) -> void
+Twip.PageBordersOptions.Deconstruct(out Twip.CellBorder? Top, out Twip.CellBorder? Bottom, out Twip.CellBorder? Left, out Twip.CellBorder? Right, out bool Shadow, out Twip.PageBorderOffset? OffsetFrom, out Twip.PageBorderDisplay? Display, out Twip.PageBorderScope ApplyTo, out bool? SurroundHeader, out bool? SurroundFooter) -> void
+Twip.PageBordersOptions.PageBordersOptions(Twip.CellBorder? Top = null, Twip.CellBorder? Bottom = null, Twip.CellBorder? Left = null, Twip.CellBorder? Right = null, bool Shadow = false, Twip.PageBorderOffset? OffsetFrom = null, Twip.PageBorderDisplay? Display = null, Twip.PageBorderScope ApplyTo = Twip.PageBorderScope.ThisSection, bool? SurroundHeader = null, bool? SurroundFooter = null) -> void
+Twip.PageBordersOptions.SurroundFooter.get -> bool?
+Twip.PageBordersOptions.SurroundFooter.init -> void
+Twip.PageBordersOptions.SurroundHeader.get -> bool?
+Twip.PageBordersOptions.SurroundHeader.init -> void
+Twip.PageColumns.Deconstruct(out int Count, out Twip.Length Spacing, out bool Separator, out System.Collections.Generic.IReadOnlyList<Twip.ColumnWidth!>? Widths) -> void
+Twip.PageColumns.PageColumns(int Count, Twip.Length Spacing, bool Separator, System.Collections.Generic.IReadOnlyList<Twip.ColumnWidth!>? Widths = null) -> void
+Twip.PageColumns.Widths.get -> System.Collections.Generic.IReadOnlyList<Twip.ColumnWidth!>?
+Twip.PageColumns.Widths.init -> void
+Twip.PageFormatting.BreakType.get -> Twip.SectionBreakKind
+Twip.PageFormatting.BreakType.init -> void
+Twip.PageFormatting.ChapterNumbers.get -> Twip.ChapterNumbers?
+Twip.PageFormatting.ChapterNumbers.init -> void
+Twip.PageFormatting.GutterAtTop.get -> bool
+Twip.PageFormatting.GutterAtTop.init -> void
+Twip.PageFormatting.LineNumbers.get -> Twip.LineNumbers?
+Twip.PageFormatting.LineNumbers.init -> void
+Twip.PageFormatting.MultiplePages.get -> Twip.MultiplePagesMode
+Twip.PageFormatting.MultiplePages.init -> void
+Twip.PageFormatting.PageNumberFormat.get -> Twip.NumberFormat
+Twip.PageFormatting.PageNumberFormat.init -> void
+Twip.PageFormatting.PageNumberStart.get -> int?
+Twip.PageFormatting.PageNumberStart.init -> void
+Twip.PageFormatting.TextDirection.get -> Twip.TextFlow
+Twip.PageFormatting.TextDirection.init -> void
+Twip.PageFormatting.VerticalAlignment.get -> Twip.PageVerticalAlignment
+Twip.PageFormatting.VerticalAlignment.init -> void
+Twip.PageNumberingOptions
+Twip.PageNumberingOptions.<Clone>$() -> Twip.PageNumberingOptions!
+Twip.PageNumberingOptions.Chapter.get -> Twip.ChapterNumbers?
+Twip.PageNumberingOptions.Chapter.init -> void
+Twip.PageNumberingOptions.ContinueFromPrevious.get -> bool
+Twip.PageNumberingOptions.ContinueFromPrevious.init -> void
+Twip.PageNumberingOptions.Deconstruct(out Twip.NumberFormat? Format, out int? Start, out bool ContinueFromPrevious, out Twip.ChapterNumbers? Chapter, out bool NoChapterNumbers) -> void
+Twip.PageNumberingOptions.Equals(Twip.PageNumberingOptions? other) -> bool
+Twip.PageNumberingOptions.Format.get -> Twip.NumberFormat?
+Twip.PageNumberingOptions.Format.init -> void
+Twip.PageNumberingOptions.NoChapterNumbers.get -> bool
+Twip.PageNumberingOptions.NoChapterNumbers.init -> void
+Twip.PageNumberingOptions.PageNumberingOptions(Twip.NumberFormat? Format = null, int? Start = null, bool ContinueFromPrevious = false, Twip.ChapterNumbers? Chapter = null, bool NoChapterNumbers = false) -> void
+Twip.PageNumberingOptions.Start.get -> int?
+Twip.PageNumberingOptions.Start.init -> void
+Twip.PageVerticalAlignment
+Twip.PageVerticalAlignment.Bottom = 3 -> Twip.PageVerticalAlignment
+Twip.PageVerticalAlignment.Center = 1 -> Twip.PageVerticalAlignment
+Twip.PageVerticalAlignment.Justified = 2 -> Twip.PageVerticalAlignment
+Twip.PageVerticalAlignment.Top = 0 -> Twip.PageVerticalAlignment
+Twip.SectionBreakKind.NextColumn = 4 -> Twip.SectionBreakKind
+override Twip.ChapterNumbers.Equals(object? obj) -> bool
+override Twip.ChapterNumbers.GetHashCode() -> int
+override Twip.ChapterNumbers.ToString() -> string!
+override Twip.ColumnWidth.Equals(object? obj) -> bool
+override Twip.ColumnWidth.GetHashCode() -> int
+override Twip.ColumnWidth.ToString() -> string!
+override Twip.LineNumbers.Equals(object? obj) -> bool
+override Twip.LineNumbers.GetHashCode() -> int
+override Twip.LineNumbers.ToString() -> string!
+override Twip.MultiplePagesOptions.Equals(object? obj) -> bool
+override Twip.MultiplePagesOptions.GetHashCode() -> int
+override Twip.MultiplePagesOptions.ToString() -> string!
+override Twip.PageNumberingOptions.Equals(object? obj) -> bool
+override Twip.PageNumberingOptions.GetHashCode() -> int
+override Twip.PageNumberingOptions.ToString() -> string!
+static Twip.ChapterNumbers.operator !=(Twip.ChapterNumbers? left, Twip.ChapterNumbers? right) -> bool
+static Twip.ChapterNumbers.operator ==(Twip.ChapterNumbers? left, Twip.ChapterNumbers? right) -> bool
+static Twip.ColumnWidth.operator !=(Twip.ColumnWidth? left, Twip.ColumnWidth? right) -> bool
+static Twip.ColumnWidth.operator ==(Twip.ColumnWidth? left, Twip.ColumnWidth? right) -> bool
+static Twip.EditorOperation.SetColumns(int count, Twip.Length? spacing = null, bool? separator = null, System.Collections.Generic.IReadOnlyList<Twip.ColumnWidth!>? widths = null) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetLineNumbering(Twip.LineNumbers? numbers) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetMultiplePages(Twip.MultiplePagesOptions! options) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetPageNumbering(Twip.PageNumberingOptions! options) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetPageVerticalAlignment(Twip.PageVerticalAlignment alignment) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetSectionBreakType(Twip.SectionBreakKind kind) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetSectionTextDirection(Twip.TextFlow direction) -> Twip.EditorOperation!
+static Twip.LineNumbers.operator !=(Twip.LineNumbers? left, Twip.LineNumbers? right) -> bool
+static Twip.LineNumbers.operator ==(Twip.LineNumbers? left, Twip.LineNumbers? right) -> bool
+static Twip.MultiplePagesOptions.operator !=(Twip.MultiplePagesOptions? left, Twip.MultiplePagesOptions? right) -> bool
+static Twip.MultiplePagesOptions.operator ==(Twip.MultiplePagesOptions? left, Twip.MultiplePagesOptions? right) -> bool
+static Twip.PageNumberingOptions.operator !=(Twip.PageNumberingOptions? left, Twip.PageNumberingOptions? right) -> bool
+static Twip.PageNumberingOptions.operator ==(Twip.PageNumberingOptions? left, Twip.PageNumberingOptions? right) -> bool
+Twip.AlignmentTabBase
+Twip.AlignmentTabBase.Indent = 1 -> Twip.AlignmentTabBase
+Twip.AlignmentTabBase.Margin = 0 -> Twip.AlignmentTabBase
+Twip.AlignmentTabKind
+Twip.AlignmentTabKind.Center = 1 -> Twip.AlignmentTabKind
+Twip.AlignmentTabKind.Left = 0 -> Twip.AlignmentTabKind
+Twip.AlignmentTabKind.Right = 2 -> Twip.AlignmentTabKind
+Twip.CommandId.InsertAlignmentTab = 230 -> Twip.CommandId
+Twip.CommandId.RemoveHeaderFooter = 229 -> Twip.CommandId
+Twip.CommandId.SetHeaderFooterLinked = 228 -> Twip.CommandId
+Twip.EditorCommands.InsertAlignmentTabAsync(Twip.AlignmentTabKind alignment, Twip.AlignmentTabBase relativeTo, Twip.TabLeader? leader = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.RemoveHeaderFooterAsync(Twip.HeaderFooterKind kind, Twip.HeaderFooterType pages, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetHeaderFooterLinkedAsync(Twip.HeaderFooterKind kind, Twip.HeaderFooterType pages, bool linked, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.HeaderFooterLinks
+Twip.HeaderFooterLinks.<Clone>$() -> Twip.HeaderFooterLinks!
+Twip.HeaderFooterLinks.Deconstruct(out bool Default, out bool First, out bool Even) -> void
+Twip.HeaderFooterLinks.Default.get -> bool
+Twip.HeaderFooterLinks.Default.init -> void
+Twip.HeaderFooterLinks.Equals(Twip.HeaderFooterLinks? other) -> bool
+Twip.HeaderFooterLinks.Even.get -> bool
+Twip.HeaderFooterLinks.Even.init -> void
+Twip.HeaderFooterLinks.First.get -> bool
+Twip.HeaderFooterLinks.First.init -> void
+Twip.HeaderFooterLinks.HeaderFooterLinks(bool Default, bool First, bool Even) -> void
+Twip.PageFormatting.FooterLinks.get -> Twip.HeaderFooterLinks!
+Twip.PageFormatting.FooterLinks.init -> void
+Twip.PageFormatting.HeaderLinks.get -> Twip.HeaderFooterLinks!
+Twip.PageFormatting.HeaderLinks.init -> void
+override Twip.HeaderFooterLinks.Equals(object? obj) -> bool
+override Twip.HeaderFooterLinks.GetHashCode() -> int
+override Twip.HeaderFooterLinks.ToString() -> string!
+static Twip.EditorOperation.InsertAlignmentTab(Twip.AlignmentTabKind alignment, Twip.AlignmentTabBase relativeTo, Twip.TabLeader? leader = null) -> Twip.EditorOperation!
+static Twip.EditorOperation.RemoveHeaderFooter(Twip.HeaderFooterKind kind, Twip.HeaderFooterType pages) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetHeaderFooterLinked(Twip.HeaderFooterKind kind, Twip.HeaderFooterType pages, bool linked) -> Twip.EditorOperation!
+static Twip.HeaderFooterLinks.operator !=(Twip.HeaderFooterLinks? left, Twip.HeaderFooterLinks? right) -> bool
+static Twip.HeaderFooterLinks.operator ==(Twip.HeaderFooterLinks? left, Twip.HeaderFooterLinks? right) -> bool
+Twip.CommandId.ConvertNotes = 233 -> Twip.CommandId
+Twip.CommandId.InsertNote = 231 -> Twip.CommandId
+Twip.CommandId.SetNoteProperties = 232 -> Twip.CommandId
+Twip.EditorCommands.ConvertNotesAsync(Twip.NoteConversion conversion, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.InsertNoteAsync(Twip.NoteType kind, string? customMark = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetNotePropertiesAsync(Twip.NotePropertiesOptions! options, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.NoteConversion
+Twip.NoteConversion.EndnotesToFootnotes = 1 -> Twip.NoteConversion
+Twip.NoteConversion.FootnotesToEndnotes = 0 -> Twip.NoteConversion
+Twip.NoteConversion.Swap = 2 -> Twip.NoteConversion
+Twip.NotePosition
+Twip.NotePosition.BeneathText = 1 -> Twip.NotePosition
+Twip.NotePosition.DocumentEnd = 3 -> Twip.NotePosition
+Twip.NotePosition.PageBottom = 0 -> Twip.NotePosition
+Twip.NotePosition.SectionEnd = 2 -> Twip.NotePosition
+Twip.NotePropertiesOptions
+Twip.NotePropertiesOptions.<Clone>$() -> Twip.NotePropertiesOptions!
+Twip.NotePropertiesOptions.ApplyTo.get -> Twip.NoteScope?
+Twip.NotePropertiesOptions.ApplyTo.init -> void
+Twip.NotePropertiesOptions.Equals(Twip.NotePropertiesOptions? other) -> bool
+Twip.NotePropertiesOptions.Format.get -> Twip.NumberFormat?
+Twip.NotePropertiesOptions.Format.init -> void
+Twip.NotePropertiesOptions.Kind.get -> Twip.NoteType
+Twip.NotePropertiesOptions.Kind.init -> void
+Twip.NotePropertiesOptions.Position.get -> Twip.NotePosition?
+Twip.NotePropertiesOptions.Position.init -> void
+Twip.NotePropertiesOptions.Restart.get -> Twip.NoteRestart?
+Twip.NotePropertiesOptions.Restart.init -> void
+Twip.NotePropertiesOptions.Start.get -> int?
+Twip.NotePropertiesOptions.Start.init -> void
+Twip.NoteRestart
+Twip.NoteRestart.Continuous = 0 -> Twip.NoteRestart
+Twip.NoteRestart.EachPage = 2 -> Twip.NoteRestart
+Twip.NoteRestart.EachSection = 1 -> Twip.NoteRestart
+Twip.NoteScope
+Twip.NoteScope.ThisSection = 1 -> Twip.NoteScope
+Twip.NoteScope.WholeDocument = 0 -> Twip.NoteScope
+Twip.NoteSettings
+Twip.NoteSettings.<Clone>$() -> Twip.NoteSettings!
+Twip.NoteSettings.Deconstruct(out Twip.NotePosition Position, out Twip.NumberFormat Format, out int Start, out Twip.NoteRestart Restart) -> void
+Twip.NoteSettings.Equals(Twip.NoteSettings? other) -> bool
+Twip.NoteSettings.Format.get -> Twip.NumberFormat
+Twip.NoteSettings.Format.init -> void
+Twip.NoteSettings.NoteSettings(Twip.NotePosition Position, Twip.NumberFormat Format, int Start, Twip.NoteRestart Restart) -> void
+Twip.NoteSettings.Position.get -> Twip.NotePosition
+Twip.NoteSettings.Position.init -> void
+Twip.NoteSettings.Restart.get -> Twip.NoteRestart
+Twip.NoteSettings.Restart.init -> void
+Twip.NoteSettings.Start.get -> int
+Twip.NoteSettings.Start.init -> void
+Twip.NoteType
+Twip.NoteType.Endnote = 1 -> Twip.NoteType
+Twip.NoteType.Footnote = 0 -> Twip.NoteType
+Twip.PageFormatting.Endnotes.get -> Twip.NoteSettings!
+Twip.PageFormatting.Endnotes.init -> void
+Twip.PageFormatting.Footnotes.get -> Twip.NoteSettings!
+Twip.PageFormatting.Footnotes.init -> void
+override Twip.NotePropertiesOptions.Equals(object? obj) -> bool
+override Twip.NotePropertiesOptions.GetHashCode() -> int
+override Twip.NotePropertiesOptions.ToString() -> string!
+override Twip.NoteSettings.Equals(object? obj) -> bool
+override Twip.NoteSettings.GetHashCode() -> int
+override Twip.NoteSettings.ToString() -> string!
+static Twip.EditorOperation.ConvertNotes(Twip.NoteConversion conversion) -> Twip.EditorOperation!
+static Twip.EditorOperation.InsertNote(Twip.NoteType kind, string? customMark = null) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetNoteProperties(Twip.NotePropertiesOptions! options) -> Twip.EditorOperation!
+static Twip.NotePropertiesOptions.operator !=(Twip.NotePropertiesOptions? left, Twip.NotePropertiesOptions? right) -> bool
+static Twip.NotePropertiesOptions.operator ==(Twip.NotePropertiesOptions? left, Twip.NotePropertiesOptions? right) -> bool
+static Twip.NoteSettings.operator !=(Twip.NoteSettings? left, Twip.NoteSettings? right) -> bool
+static Twip.NoteSettings.operator ==(Twip.NoteSettings? left, Twip.NoteSettings? right) -> bool
+Twip.BookmarkInfo
+Twip.BookmarkInfo.<Clone>$() -> Twip.BookmarkInfo!
+Twip.BookmarkInfo.BookmarkInfo(string! Name, bool Hidden, bool Empty) -> void
+Twip.BookmarkInfo.Deconstruct(out string! Name, out bool Hidden, out bool Empty) -> void
+Twip.BookmarkInfo.Empty.get -> bool
+Twip.BookmarkInfo.Empty.init -> void
+Twip.BookmarkInfo.Equals(Twip.BookmarkInfo? other) -> bool
+Twip.BookmarkInfo.Hidden.get -> bool
+Twip.BookmarkInfo.Hidden.init -> void
+Twip.BookmarkInfo.Name.get -> string!
+Twip.BookmarkInfo.Name.init -> void
+Twip.CommandId.DeleteBookmark = 236 -> Twip.CommandId
+Twip.CommandId.GoToBookmark = 234 -> Twip.CommandId
+Twip.CommandId.InsertBookmark = 235 -> Twip.CommandId
+Twip.EditorCommands.DeleteBookmarkAsync(string! name, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.GoToBookmarkAsync(string! name, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.InsertBookmarkAsync(string! name, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetViewOptionsAsync(bool? formattingMarks = null, bool? gridlines = null, bool? textBoundaries = null, bool? liveLayout = null, Twip.ChromeTheme? theme = null, Twip.ColorValue? accent = null, Twip.DocumentAppearance? appearance = null, Twip.MeasureDetail? detail = null, Twip.ObjectGrid? objectGrid = null, Twip.ThemeColors? themeColors = null, Twip.FieldShading? fieldShading = null, System.Collections.Generic.IReadOnlyList<Twip.CursorOverride!>? cursorOverrides = null, bool? controlLabels = null, bool? bookmarks = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorNavigation.GetBookmarksAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Twip.BookmarkInfo!>!>!
+Twip.HyperlinkDialogValues.Bookmark.get -> string!
+Twip.HyperlinkDialogValues.Bookmark.init -> void
+Twip.HyperlinkDialogValues.Deconstruct(out string! Text, out string! Address, out string! Bookmark) -> void
+Twip.HyperlinkDialogValues.HyperlinkDialogValues(string! Text, string! Address, string! Bookmark = "") -> void
+Twip.ViewState.Bookmarks.get -> bool
+Twip.ViewState.Bookmarks.init -> void
+override Twip.BookmarkInfo.Equals(object? obj) -> bool
+override Twip.BookmarkInfo.GetHashCode() -> int
+override Twip.BookmarkInfo.ToString() -> string!
+static Twip.BookmarkInfo.operator !=(Twip.BookmarkInfo? left, Twip.BookmarkInfo? right) -> bool
+static Twip.BookmarkInfo.operator ==(Twip.BookmarkInfo? left, Twip.BookmarkInfo? right) -> bool
+static Twip.EditorOperation.DeleteBookmark(string! name) -> Twip.EditorOperation!
+static Twip.EditorOperation.GoToBookmark(string! name) -> Twip.EditorOperation!
+static Twip.EditorOperation.InsertBookmark(string! name) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetViewOptions(bool? formattingMarks = null, bool? gridlines = null, bool? textBoundaries = null, bool? liveLayout = null, Twip.ChromeTheme? theme = null, Twip.ColorValue? accent = null, Twip.DocumentAppearance? appearance = null, Twip.MeasureDetail? detail = null, Twip.ObjectGrid? objectGrid = null, Twip.ThemeColors? themeColors = null, Twip.FieldShading? fieldShading = null, System.Collections.Generic.IReadOnlyList<Twip.CursorOverride!>? cursorOverrides = null, bool? controlLabels = null, bool? bookmarks = null) -> Twip.EditorOperation!
+Twip.BorderEdges.DiagonalDown = 10 -> Twip.BorderEdges
+Twip.BorderEdges.DiagonalUp = 11 -> Twip.BorderEdges
+Twip.CellPropertiesOptions
+Twip.CellPropertiesOptions.<Clone>$() -> Twip.CellPropertiesOptions!
+Twip.CellPropertiesOptions.Equals(Twip.CellPropertiesOptions? other) -> bool
+Twip.CellPropertiesOptions.FitText.get -> bool?
+Twip.CellPropertiesOptions.FitText.init -> void
+Twip.CellPropertiesOptions.HideMark.get -> bool?
+Twip.CellPropertiesOptions.HideMark.init -> void
+Twip.CellPropertiesOptions.TextDirection.get -> Twip.TextFlow?
+Twip.CellPropertiesOptions.TextDirection.init -> void
+Twip.CellPropertiesOptions.Width.get -> Twip.TableWidth?
+Twip.CellPropertiesOptions.Width.init -> void
+Twip.CellPropertiesOptions.WrapText.get -> bool?
+Twip.CellPropertiesOptions.WrapText.init -> void
+Twip.CommandId.SetCellProperties = 237 -> Twip.CommandId
+Twip.CommandId.SetDefaultTableStyle = 241 -> Twip.CommandId
+Twip.CommandId.SetRowProperties = 238 -> Twip.CommandId
+Twip.CommandId.SetTableAltText = 240 -> Twip.CommandId
+Twip.CommandId.SetTableCellSpacing = 239 -> Twip.CommandId
+Twip.EditorCommands.SetCellPropertiesAsync(Twip.CellPropertiesOptions! options, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetDefaultTableStyleAsync(Twip.StyleId? styleId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetRowPropertiesAsync(bool? hidden = null, Twip.RowExceptions? exceptions = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetTableAltTextAsync(string? title = null, string? description = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetTableCellSpacingAsync(Twip.Length? spacing, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.RowBorders
+Twip.RowBorders.<Clone>$() -> Twip.RowBorders!
+Twip.RowBorders.Border.get -> Twip.CellBorder?
+Twip.RowBorders.Border.init -> void
+Twip.RowBorders.Deconstruct(out Twip.BorderEdges Edges, out Twip.CellBorder? Border) -> void
+Twip.RowBorders.Edges.get -> Twip.BorderEdges
+Twip.RowBorders.Edges.init -> void
+Twip.RowBorders.Equals(Twip.RowBorders? other) -> bool
+Twip.RowBorders.RowBorders(Twip.BorderEdges Edges, Twip.CellBorder? Border = null) -> void
+Twip.RowExceptions
+Twip.RowExceptions.<Clone>$() -> Twip.RowExceptions!
+Twip.RowExceptions.Alignment.get -> Twip.TableAlignment?
+Twip.RowExceptions.Alignment.init -> void
+Twip.RowExceptions.Borders.get -> Twip.RowBorders?
+Twip.RowExceptions.Borders.init -> void
+Twip.RowExceptions.CellSpacing.get -> Twip.Length?
+Twip.RowExceptions.CellSpacing.init -> void
+Twip.RowExceptions.Deconstruct(out bool? Reset, out Twip.TableAlignment? Alignment, out Twip.Length? CellSpacing, out Twip.ColorValue? Shading, out Twip.RowBorders? Borders) -> void
+Twip.RowExceptions.Equals(Twip.RowExceptions? other) -> bool
+Twip.RowExceptions.Reset.get -> bool?
+Twip.RowExceptions.Reset.init -> void
+Twip.RowExceptions.RowExceptions(bool? Reset = null, Twip.TableAlignment? Alignment = null, Twip.Length? CellSpacing = null, Twip.ColorValue? Shading = null, Twip.RowBorders? Borders = null) -> void
+Twip.RowExceptions.Shading.get -> Twip.ColorValue?
+Twip.RowExceptions.Shading.init -> void
+Twip.TablePropertiesDialogValues.AllowSpacing.get -> bool
+Twip.TablePropertiesDialogValues.AllowSpacing.init -> void
+Twip.TablePropertiesDialogValues.CellSpacing.get -> Twip.Length
+Twip.TablePropertiesDialogValues.CellSpacing.init -> void
+Twip.TablePropertiesDialogValues.Description.get -> string!
+Twip.TablePropertiesDialogValues.Description.init -> void
+Twip.TablePropertiesDialogValues.FitText.get -> Twip.FormatValue<bool>
+Twip.TablePropertiesDialogValues.FitText.init -> void
+Twip.TablePropertiesDialogValues.Title.get -> string!
+Twip.TablePropertiesDialogValues.Title.init -> void
+Twip.TablePropertiesDialogValues.WrapText.get -> Twip.FormatValue<bool>
+Twip.TablePropertiesDialogValues.WrapText.init -> void
+Twip.TableSelection.CellSpacing.get -> Twip.Length?
+Twip.TableSelection.CellSpacing.init -> void
+Twip.TableSelection.CellWidth.get -> Twip.FormatValue<Twip.TableWidth!>
+Twip.TableSelection.CellWidth.init -> void
+Twip.TableSelection.Description.get -> string!
+Twip.TableSelection.Description.init -> void
+Twip.TableSelection.FitText.get -> Twip.FormatValue<bool>
+Twip.TableSelection.FitText.init -> void
+Twip.TableSelection.RowHidden.get -> Twip.FormatValue<bool>
+Twip.TableSelection.RowHidden.init -> void
+Twip.TableSelection.TextDirection.get -> Twip.FormatValue<Twip.TextFlow>
+Twip.TableSelection.TextDirection.init -> void
+Twip.TableSelection.Title.get -> string!
+Twip.TableSelection.Title.init -> void
+Twip.TableSelection.WrapText.get -> Twip.FormatValue<bool>
+Twip.TableSelection.WrapText.init -> void
+override Twip.CellPropertiesOptions.Equals(object? obj) -> bool
+override Twip.CellPropertiesOptions.GetHashCode() -> int
+override Twip.CellPropertiesOptions.ToString() -> string!
+override Twip.RowBorders.Equals(object? obj) -> bool
+override Twip.RowBorders.GetHashCode() -> int
+override Twip.RowBorders.ToString() -> string!
+override Twip.RowExceptions.Equals(object? obj) -> bool
+override Twip.RowExceptions.GetHashCode() -> int
+override Twip.RowExceptions.ToString() -> string!
+static Twip.CellPropertiesOptions.operator !=(Twip.CellPropertiesOptions? left, Twip.CellPropertiesOptions? right) -> bool
+static Twip.CellPropertiesOptions.operator ==(Twip.CellPropertiesOptions? left, Twip.CellPropertiesOptions? right) -> bool
+static Twip.EditorOperation.SetCellProperties(Twip.CellPropertiesOptions! options) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetDefaultTableStyle(Twip.StyleId? styleId) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetRowProperties(bool? hidden = null, Twip.RowExceptions? exceptions = null) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetTableAltText(string? title = null, string? description = null) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetTableCellSpacing(Twip.Length? spacing) -> Twip.EditorOperation!
+static Twip.RowBorders.operator !=(Twip.RowBorders? left, Twip.RowBorders? right) -> bool
+static Twip.RowBorders.operator ==(Twip.RowBorders? left, Twip.RowBorders? right) -> bool
+static Twip.RowExceptions.operator !=(Twip.RowExceptions? left, Twip.RowExceptions? right) -> bool
+static Twip.RowExceptions.operator ==(Twip.RowExceptions? left, Twip.RowExceptions? right) -> bool
+Twip.CellPropertiesOptions.CellPropertiesOptions(Twip.TableWidth? Width = null, Twip.TextFlow? TextDirection = null, bool? WrapText = null, bool? FitText = null, bool? HideMark = null) -> void
+Twip.CellPropertiesOptions.Deconstruct(out Twip.TableWidth? Width, out Twip.TextFlow? TextDirection, out bool? WrapText, out bool? FitText, out bool? HideMark) -> void
+Twip.AlignReference
+Twip.AlignReference.Margin = 1 -> Twip.AlignReference
+Twip.AlignReference.Page = 0 -> Twip.AlignReference
+Twip.AlignReference.SelectedObjects = 2 -> Twip.AlignReference
+Twip.CommandId.AlignObjects = 244 -> Twip.CommandId
+Twip.CommandId.ChangePicture = 243 -> Twip.CommandId
+Twip.CommandId.SetPictureCrop = 242 -> Twip.CommandId
+Twip.EditorCommands.AlignObjectsAsync(Twip.ObjectAlign align, Twip.AlignReference? relativeTo = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.ChangePictureAsync(System.ReadOnlyMemory<byte> data, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetObjectSizeAsync(Twip.Length? width = null, Twip.Length? height = null, bool? lockAspect = null, Twip.RelativeSize? relativeWidth = null, Twip.RelativeSize? relativeHeight = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetPictureCropAsync(Twip.PictureCrop! crop, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.HorizontalPosition.Deconstruct(out Twip.HorizontalReference RelativeTo, out Twip.ObjectHorizontalAlignment? Align, out Twip.Length? Offset, out double? Percent) -> void
+Twip.HorizontalPosition.HorizontalPosition(Twip.HorizontalReference RelativeTo, Twip.ObjectHorizontalAlignment? Align = null, Twip.Length? Offset = null, double? Percent = null) -> void
+Twip.HorizontalPosition.Percent.get -> double?
+Twip.HorizontalPosition.Percent.init -> void
+Twip.ObjectAlign
+Twip.ObjectAlign.Bottom = 5 -> Twip.ObjectAlign
+Twip.ObjectAlign.Center = 1 -> Twip.ObjectAlign
+Twip.ObjectAlign.DistributeHorizontally = 6 -> Twip.ObjectAlign
+Twip.ObjectAlign.DistributeVertically = 7 -> Twip.ObjectAlign
+Twip.ObjectAlign.Left = 0 -> Twip.ObjectAlign
+Twip.ObjectAlign.Middle = 4 -> Twip.ObjectAlign
+Twip.ObjectAlign.Right = 2 -> Twip.ObjectAlign
+Twip.ObjectAlign.Top = 3 -> Twip.ObjectAlign
+Twip.ObjectSelection.Crop.get -> Twip.PictureCrop?
+Twip.ObjectSelection.Crop.init -> void
+Twip.ObjectSelection.RelativeHeight.get -> Twip.RelativeSize?
+Twip.ObjectSelection.RelativeHeight.init -> void
+Twip.ObjectSelection.RelativeWidth.get -> Twip.RelativeSize?
+Twip.ObjectSelection.RelativeWidth.init -> void
+Twip.ObjectSelection.TransparentColor.get -> Twip.ColorValue?
+Twip.ObjectSelection.TransparentColor.init -> void
+Twip.ParagraphFlow.TextboxTightWrap.get -> Twip.FormatValue<Twip.TightWrap>
+Twip.ParagraphFlow.TextboxTightWrap.init -> void
+Twip.ParagraphFlowOptions.Deconstruct(out bool? KeepWithNext, out bool? KeepLinesTogether, out bool? PageBreakBefore, out bool? WidowControl, out bool? DontHyphenate, out bool? SuppressLineNumbers, out Twip.TightWrap? TextboxTightWrap) -> void
+Twip.ParagraphFlowOptions.ParagraphFlowOptions(bool? KeepWithNext = null, bool? KeepLinesTogether = null, bool? PageBreakBefore = null, bool? WidowControl = null, bool? DontHyphenate = null, bool? SuppressLineNumbers = null, Twip.TightWrap? TextboxTightWrap = null) -> void
+Twip.ParagraphFlowOptions.TextboxTightWrap.get -> Twip.TightWrap?
+Twip.ParagraphFlowOptions.TextboxTightWrap.init -> void
+Twip.PictureAdjustChange.Deconstruct(out double? Transparency, out bool? Grayscale, out double? Brightness, out double? Contrast, out Twip.ColorValue? TransparentColor) -> void
+Twip.PictureAdjustChange.PictureAdjustChange(double? Transparency = null, bool? Grayscale = null, double? Brightness = null, double? Contrast = null, Twip.ColorValue? TransparentColor = null) -> void
+Twip.PictureAdjustChange.TransparentColor.get -> Twip.ColorValue?
+Twip.PictureAdjustChange.TransparentColor.init -> void
+Twip.PictureCrop
+Twip.PictureCrop.<Clone>$() -> Twip.PictureCrop!
+Twip.PictureCrop.Bottom.get -> double?
+Twip.PictureCrop.Bottom.init -> void
+Twip.PictureCrop.Deconstruct(out double? Left, out double? Top, out double? Right, out double? Bottom) -> void
+Twip.PictureCrop.Equals(Twip.PictureCrop? other) -> bool
+Twip.PictureCrop.Left.get -> double?
+Twip.PictureCrop.Left.init -> void
+Twip.PictureCrop.PictureCrop(double? Left = null, double? Top = null, double? Right = null, double? Bottom = null) -> void
+Twip.PictureCrop.Right.get -> double?
+Twip.PictureCrop.Right.init -> void
+Twip.PictureCrop.Top.get -> double?
+Twip.PictureCrop.Top.init -> void
+Twip.RelativeSize
+Twip.RelativeSize.<Clone>$() -> Twip.RelativeSize!
+Twip.RelativeSize.Deconstruct(out double Percent, out Twip.RelativeSizeReference RelativeTo) -> void
+Twip.RelativeSize.Equals(Twip.RelativeSize? other) -> bool
+Twip.RelativeSize.Percent.get -> double
+Twip.RelativeSize.Percent.init -> void
+Twip.RelativeSize.RelativeSize(double Percent, Twip.RelativeSizeReference RelativeTo) -> void
+Twip.RelativeSize.RelativeTo.get -> Twip.RelativeSizeReference
+Twip.RelativeSize.RelativeTo.init -> void
+Twip.RelativeSizeReference
+Twip.RelativeSizeReference.BottomMargin = 7 -> Twip.RelativeSizeReference
+Twip.RelativeSizeReference.InsideMargin = 4 -> Twip.RelativeSizeReference
+Twip.RelativeSizeReference.LeftMargin = 2 -> Twip.RelativeSizeReference
+Twip.RelativeSizeReference.Margin = 0 -> Twip.RelativeSizeReference
+Twip.RelativeSizeReference.OutsideMargin = 5 -> Twip.RelativeSizeReference
+Twip.RelativeSizeReference.Page = 1 -> Twip.RelativeSizeReference
+Twip.RelativeSizeReference.RightMargin = 3 -> Twip.RelativeSizeReference
+Twip.RelativeSizeReference.TopMargin = 6 -> Twip.RelativeSizeReference
+Twip.ShapeTextChange.Columns.get -> Twip.TextColumns?
+Twip.ShapeTextChange.Columns.init -> void
+Twip.ShapeTextChange.Deconstruct(out System.Collections.Generic.IReadOnlyList<Twip.Length>? Insets, out Twip.TextAnchor? Anchor, out Twip.TextAutofit? Autofit, out bool? WrapText, out Twip.TextDirection? Direction, out Twip.TextColumns? Columns) -> void
+Twip.ShapeTextChange.ShapeTextChange(System.Collections.Generic.IReadOnlyList<Twip.Length>? Insets = null, Twip.TextAnchor? Anchor = null, Twip.TextAutofit? Autofit = null, bool? WrapText = null, Twip.TextDirection? Direction = null, Twip.TextColumns? Columns = null) -> void
+Twip.ShapeTextState.Columns.get -> Twip.TextColumns!
+Twip.ShapeTextState.Columns.init -> void
+Twip.TextAutofit.ShrinkText = 2 -> Twip.TextAutofit
+Twip.TextColumns
+Twip.TextColumns.<Clone>$() -> Twip.TextColumns!
+Twip.TextColumns.Count.get -> int
+Twip.TextColumns.Count.init -> void
+Twip.TextColumns.Deconstruct(out int Count, out Twip.Length Spacing) -> void
+Twip.TextColumns.Equals(Twip.TextColumns? other) -> bool
+Twip.TextColumns.Spacing.get -> Twip.Length
+Twip.TextColumns.Spacing.init -> void
+Twip.TextColumns.TextColumns(int Count, Twip.Length Spacing) -> void
+Twip.TightWrap
+Twip.TightWrap.AllLines = 1 -> Twip.TightWrap
+Twip.TightWrap.FirstAndLastLine = 2 -> Twip.TightWrap
+Twip.TightWrap.FirstLineOnly = 3 -> Twip.TightWrap
+Twip.TightWrap.LastLineOnly = 4 -> Twip.TightWrap
+Twip.TightWrap.None = 0 -> Twip.TightWrap
+Twip.VerticalPosition.Deconstruct(out Twip.VerticalReference RelativeTo, out Twip.ObjectVerticalAlignment? Align, out Twip.Length? Offset, out double? Percent) -> void
+Twip.VerticalPosition.Percent.get -> double?
+Twip.VerticalPosition.Percent.init -> void
+Twip.VerticalPosition.VerticalPosition(Twip.VerticalReference RelativeTo, Twip.ObjectVerticalAlignment? Align = null, Twip.Length? Offset = null, double? Percent = null) -> void
+override Twip.PictureCrop.Equals(object? obj) -> bool
+override Twip.PictureCrop.GetHashCode() -> int
+override Twip.PictureCrop.ToString() -> string!
+override Twip.RelativeSize.Equals(object? obj) -> bool
+override Twip.RelativeSize.GetHashCode() -> int
+override Twip.RelativeSize.ToString() -> string!
+override Twip.TextColumns.Equals(object? obj) -> bool
+override Twip.TextColumns.GetHashCode() -> int
+override Twip.TextColumns.ToString() -> string!
+static Twip.EditorOperation.AlignObjects(Twip.ObjectAlign align, Twip.AlignReference? relativeTo = null) -> Twip.EditorOperation!
+static Twip.EditorOperation.ChangePicture(System.ReadOnlyMemory<byte> data) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetObjectSize(Twip.Length? width = null, Twip.Length? height = null, bool? lockAspect = null, Twip.RelativeSize? relativeWidth = null, Twip.RelativeSize? relativeHeight = null) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetPictureCrop(Twip.PictureCrop! crop) -> Twip.EditorOperation!
+static Twip.PictureCrop.operator !=(Twip.PictureCrop? left, Twip.PictureCrop? right) -> bool
+static Twip.PictureCrop.operator ==(Twip.PictureCrop? left, Twip.PictureCrop? right) -> bool
+static Twip.RelativeSize.Absolute.get -> Twip.RelativeSize!
+static Twip.RelativeSize.operator !=(Twip.RelativeSize? left, Twip.RelativeSize? right) -> bool
+static Twip.RelativeSize.operator ==(Twip.RelativeSize? left, Twip.RelativeSize? right) -> bool
+static Twip.TextColumns.operator !=(Twip.TextColumns? left, Twip.TextColumns? right) -> bool
+static Twip.TextColumns.operator ==(Twip.TextColumns? left, Twip.TextColumns? right) -> bool
+Twip.CommandId.SetDocumentProperties = 245 -> Twip.CommandId
+Twip.CommandId.SetDocumentVariable = 246 -> Twip.CommandId
+Twip.CustomProperty
+Twip.CustomProperty.<Clone>$() -> Twip.CustomProperty!
+Twip.CustomProperty.CustomProperty(string! Name, Twip.CustomPropertyKind Kind, string! Value) -> void
+Twip.CustomProperty.Deconstruct(out string! Name, out Twip.CustomPropertyKind Kind, out string! Value) -> void
+Twip.CustomProperty.Equals(Twip.CustomProperty? other) -> bool
+Twip.CustomProperty.Kind.get -> Twip.CustomPropertyKind
+Twip.CustomProperty.Kind.init -> void
+Twip.CustomProperty.Name.get -> string!
+Twip.CustomProperty.Name.init -> void
+Twip.CustomProperty.Value.get -> string!
+Twip.CustomProperty.Value.init -> void
+Twip.CustomPropertyKind
+Twip.CustomPropertyKind.Date = 3 -> Twip.CustomPropertyKind
+Twip.CustomPropertyKind.Number = 1 -> Twip.CustomPropertyKind
+Twip.CustomPropertyKind.Text = 0 -> Twip.CustomPropertyKind
+Twip.CustomPropertyKind.YesNo = 2 -> Twip.CustomPropertyKind
+Twip.DocumentProperties
+Twip.DocumentProperties.<Clone>$() -> Twip.DocumentProperties!
+Twip.DocumentProperties.Author.get -> string?
+Twip.DocumentProperties.Author.init -> void
+Twip.DocumentProperties.Category.get -> string?
+Twip.DocumentProperties.Category.init -> void
+Twip.DocumentProperties.Comments.get -> string?
+Twip.DocumentProperties.Comments.init -> void
+Twip.DocumentProperties.Company.get -> string?
+Twip.DocumentProperties.Company.init -> void
+Twip.DocumentProperties.Created.get -> string?
+Twip.DocumentProperties.Created.init -> void
+Twip.DocumentProperties.Custom.get -> System.Collections.Generic.IReadOnlyList<Twip.CustomProperty!>!
+Twip.DocumentProperties.Custom.init -> void
+Twip.DocumentProperties.DocumentProperties() -> void
+Twip.DocumentProperties.Equals(Twip.DocumentProperties? other) -> bool
+Twip.DocumentProperties.HyperlinkBase.get -> string?
+Twip.DocumentProperties.HyperlinkBase.init -> void
+Twip.DocumentProperties.Keywords.get -> string?
+Twip.DocumentProperties.Keywords.init -> void
+Twip.DocumentProperties.LastModifiedBy.get -> string?
+Twip.DocumentProperties.LastModifiedBy.init -> void
+Twip.DocumentProperties.LastPrinted.get -> string?
+Twip.DocumentProperties.LastPrinted.init -> void
+Twip.DocumentProperties.Manager.get -> string?
+Twip.DocumentProperties.Manager.init -> void
+Twip.DocumentProperties.Modified.get -> string?
+Twip.DocumentProperties.Modified.init -> void
+Twip.DocumentProperties.Revision.get -> string?
+Twip.DocumentProperties.Revision.init -> void
+Twip.DocumentProperties.Status.get -> string?
+Twip.DocumentProperties.Status.init -> void
+Twip.DocumentProperties.Subject.get -> string?
+Twip.DocumentProperties.Subject.init -> void
+Twip.DocumentProperties.Title.get -> string?
+Twip.DocumentProperties.Title.init -> void
+Twip.DocumentProperties.Variables.get -> System.Collections.Generic.IReadOnlyList<Twip.DocumentVariable!>!
+Twip.DocumentProperties.Variables.init -> void
+Twip.DocumentPropertiesChange
+Twip.DocumentPropertiesChange.<Clone>$() -> Twip.DocumentPropertiesChange!
+Twip.DocumentPropertiesChange.Author.get -> string?
+Twip.DocumentPropertiesChange.Author.init -> void
+Twip.DocumentPropertiesChange.Category.get -> string?
+Twip.DocumentPropertiesChange.Category.init -> void
+Twip.DocumentPropertiesChange.Comments.get -> string?
+Twip.DocumentPropertiesChange.Comments.init -> void
+Twip.DocumentPropertiesChange.Company.get -> string?
+Twip.DocumentPropertiesChange.Company.init -> void
+Twip.DocumentPropertiesChange.Custom.get -> System.Collections.Generic.IReadOnlyList<Twip.CustomProperty!>?
+Twip.DocumentPropertiesChange.Custom.init -> void
+Twip.DocumentPropertiesChange.Deconstruct(out string? Title, out string? Subject, out string? Author, out string? Keywords, out string? Comments, out string? Category, out string? Status, out string? LastModifiedBy, out string? Company, out string? Manager, out string? HyperlinkBase, out System.Collections.Generic.IReadOnlyList<Twip.CustomProperty!>? Custom) -> void
+Twip.DocumentPropertiesChange.DocumentPropertiesChange(string? Title = null, string? Subject = null, string? Author = null, string? Keywords = null, string? Comments = null, string? Category = null, string? Status = null, string? LastModifiedBy = null, string? Company = null, string? Manager = null, string? HyperlinkBase = null, System.Collections.Generic.IReadOnlyList<Twip.CustomProperty!>? Custom = null) -> void
+Twip.DocumentPropertiesChange.Equals(Twip.DocumentPropertiesChange? other) -> bool
+Twip.DocumentPropertiesChange.HyperlinkBase.get -> string?
+Twip.DocumentPropertiesChange.HyperlinkBase.init -> void
+Twip.DocumentPropertiesChange.Keywords.get -> string?
+Twip.DocumentPropertiesChange.Keywords.init -> void
+Twip.DocumentPropertiesChange.LastModifiedBy.get -> string?
+Twip.DocumentPropertiesChange.LastModifiedBy.init -> void
+Twip.DocumentPropertiesChange.Manager.get -> string?
+Twip.DocumentPropertiesChange.Manager.init -> void
+Twip.DocumentPropertiesChange.Status.get -> string?
+Twip.DocumentPropertiesChange.Status.init -> void
+Twip.DocumentPropertiesChange.Subject.get -> string?
+Twip.DocumentPropertiesChange.Subject.init -> void
+Twip.DocumentPropertiesChange.Title.get -> string?
+Twip.DocumentPropertiesChange.Title.init -> void
+Twip.DocumentVariable
+Twip.DocumentVariable.<Clone>$() -> Twip.DocumentVariable!
+Twip.DocumentVariable.Deconstruct(out string! Name, out string? Value) -> void
+Twip.DocumentVariable.DocumentVariable(string! Name, string? Value = null) -> void
+Twip.DocumentVariable.Equals(Twip.DocumentVariable? other) -> bool
+Twip.DocumentVariable.Name.get -> string!
+Twip.DocumentVariable.Name.init -> void
+Twip.DocumentVariable.Value.get -> string?
+Twip.DocumentVariable.Value.init -> void
+Twip.EditorCommands.SetDocumentPropertiesAsync(Twip.DocumentPropertiesChange! change, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetDocumentVariableAsync(Twip.DocumentVariable! variable, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorSession.GetDocumentPropertiesAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Twip.DocumentProperties!>!
+override Twip.CustomProperty.Equals(object? obj) -> bool
+override Twip.CustomProperty.GetHashCode() -> int
+override Twip.CustomProperty.ToString() -> string!
+override Twip.DocumentProperties.Equals(object? obj) -> bool
+override Twip.DocumentProperties.GetHashCode() -> int
+override Twip.DocumentProperties.ToString() -> string!
+override Twip.DocumentPropertiesChange.Equals(object? obj) -> bool
+override Twip.DocumentPropertiesChange.GetHashCode() -> int
+override Twip.DocumentPropertiesChange.ToString() -> string!
+override Twip.DocumentVariable.Equals(object? obj) -> bool
+override Twip.DocumentVariable.GetHashCode() -> int
+override Twip.DocumentVariable.ToString() -> string!
+static Twip.CustomProperty.operator !=(Twip.CustomProperty? left, Twip.CustomProperty? right) -> bool
+static Twip.CustomProperty.operator ==(Twip.CustomProperty? left, Twip.CustomProperty? right) -> bool
+static Twip.DocumentProperties.operator !=(Twip.DocumentProperties? left, Twip.DocumentProperties? right) -> bool
+static Twip.DocumentProperties.operator ==(Twip.DocumentProperties? left, Twip.DocumentProperties? right) -> bool
+static Twip.DocumentPropertiesChange.operator !=(Twip.DocumentPropertiesChange? left, Twip.DocumentPropertiesChange? right) -> bool
+static Twip.DocumentPropertiesChange.operator ==(Twip.DocumentPropertiesChange? left, Twip.DocumentPropertiesChange? right) -> bool
+static Twip.DocumentVariable.operator !=(Twip.DocumentVariable? left, Twip.DocumentVariable? right) -> bool
+static Twip.DocumentVariable.operator ==(Twip.DocumentVariable? left, Twip.DocumentVariable? right) -> bool
+static Twip.EditorOperation.SetDocumentProperties(Twip.DocumentPropertiesChange! change) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetDocumentVariable(Twip.DocumentVariable! variable) -> Twip.EditorOperation!
+Twip.CheckBoxFormOptions
+Twip.CheckBoxFormOptions.<Clone>$() -> Twip.CheckBoxFormOptions!
+Twip.CheckBoxFormOptions.CheckBoxFormOptions(Twip.SpacingValue? Size = null, bool? CheckedByDefault = null) -> void
+Twip.CheckBoxFormOptions.CheckedByDefault.get -> bool?
+Twip.CheckBoxFormOptions.CheckedByDefault.init -> void
+Twip.CheckBoxFormOptions.Deconstruct(out Twip.SpacingValue? Size, out bool? CheckedByDefault) -> void
+Twip.CheckBoxFormOptions.Equals(Twip.CheckBoxFormOptions? other) -> bool
+Twip.CheckBoxFormOptions.Size.get -> Twip.SpacingValue?
+Twip.CheckBoxFormOptions.Size.init -> void
+Twip.CommandId.FillFormField = 249 -> Twip.CommandId
+Twip.CommandId.InsertFormField = 247 -> Twip.CommandId
+Twip.CommandId.SetFormField = 248 -> Twip.CommandId
+Twip.CommandId.SetFormFieldShading = 250 -> Twip.CommandId
+Twip.DropDownFormOptions
+Twip.DropDownFormOptions.<Clone>$() -> Twip.DropDownFormOptions!
+Twip.DropDownFormOptions.Deconstruct(out System.Collections.Generic.IReadOnlyList<string!>? Entries, out int? Default) -> void
+Twip.DropDownFormOptions.Default.get -> int?
+Twip.DropDownFormOptions.Default.init -> void
+Twip.DropDownFormOptions.DropDownFormOptions(System.Collections.Generic.IReadOnlyList<string!>? Entries = null, int? Default = null) -> void
+Twip.DropDownFormOptions.Entries.get -> System.Collections.Generic.IReadOnlyList<string!>?
+Twip.DropDownFormOptions.Entries.init -> void
+Twip.DropDownFormOptions.Equals(Twip.DropDownFormOptions? other) -> bool
+Twip.EditorCommands.FillFormFieldAsync(Twip.FormFieldFill! fill, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.InsertFormFieldAsync(Twip.FormFieldType kind, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Twip.ElementId>!
+Twip.EditorCommands.SetFormFieldAsync(Twip.FormFieldChange! change, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetFormFieldShadingAsync(bool on, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.ElementContext.Form.get -> Twip.FormFieldInfo?
+Twip.ElementContext.Form.init -> void
+Twip.FormFieldChange
+Twip.FormFieldChange.<Clone>$() -> Twip.FormFieldChange!
+Twip.FormFieldChange.CalculateOnExit.get -> bool?
+Twip.FormFieldChange.CalculateOnExit.init -> void
+Twip.FormFieldChange.CheckBox.get -> Twip.CheckBoxFormOptions?
+Twip.FormFieldChange.CheckBox.init -> void
+Twip.FormFieldChange.Deconstruct(out Twip.ElementId? Id, out string? Name, out bool? Enabled, out bool? CalculateOnExit, out string? EntryMacro, out string? ExitMacro, out string? HelpText, out string? StatusText, out Twip.TextFormOptions? Text, out Twip.CheckBoxFormOptions? CheckBox, out Twip.DropDownFormOptions? DropDown) -> void
+Twip.FormFieldChange.DropDown.get -> Twip.DropDownFormOptions?
+Twip.FormFieldChange.DropDown.init -> void
+Twip.FormFieldChange.Enabled.get -> bool?
+Twip.FormFieldChange.Enabled.init -> void
+Twip.FormFieldChange.EntryMacro.get -> string?
+Twip.FormFieldChange.EntryMacro.init -> void
+Twip.FormFieldChange.Equals(Twip.FormFieldChange? other) -> bool
+Twip.FormFieldChange.ExitMacro.get -> string?
+Twip.FormFieldChange.ExitMacro.init -> void
+Twip.FormFieldChange.FormFieldChange(Twip.ElementId? Id = null, string? Name = null, bool? Enabled = null, bool? CalculateOnExit = null, string? EntryMacro = null, string? ExitMacro = null, string? HelpText = null, string? StatusText = null, Twip.TextFormOptions? Text = null, Twip.CheckBoxFormOptions? CheckBox = null, Twip.DropDownFormOptions? DropDown = null) -> void
+Twip.FormFieldChange.HelpText.get -> string?
+Twip.FormFieldChange.HelpText.init -> void
+Twip.FormFieldChange.Id.get -> Twip.ElementId?
+Twip.FormFieldChange.Id.init -> void
+Twip.FormFieldChange.Name.get -> string?
+Twip.FormFieldChange.Name.init -> void
+Twip.FormFieldChange.StatusText.get -> string?
+Twip.FormFieldChange.StatusText.init -> void
+Twip.FormFieldChange.Text.get -> Twip.TextFormOptions?
+Twip.FormFieldChange.Text.init -> void
+Twip.FormFieldFill
+Twip.FormFieldFill.<Clone>$() -> Twip.FormFieldFill!
+Twip.FormFieldFill.Checked.get -> bool?
+Twip.FormFieldFill.Checked.init -> void
+Twip.FormFieldFill.Deconstruct(out Twip.ElementId? Id, out string? Text, out bool? Checked, out int? Entry) -> void
+Twip.FormFieldFill.Entry.get -> int?
+Twip.FormFieldFill.Entry.init -> void
+Twip.FormFieldFill.Equals(Twip.FormFieldFill? other) -> bool
+Twip.FormFieldFill.FormFieldFill(Twip.ElementId? Id = null, string? Text = null, bool? Checked = null, int? Entry = null) -> void
+Twip.FormFieldFill.Id.get -> Twip.ElementId?
+Twip.FormFieldFill.Id.init -> void
+Twip.FormFieldFill.Text.get -> string?
+Twip.FormFieldFill.Text.init -> void
+Twip.FormFieldInfo
+Twip.FormFieldInfo.<Clone>$() -> Twip.FormFieldInfo!
+Twip.FormFieldInfo.CalculateOnExit.get -> bool
+Twip.FormFieldInfo.CalculateOnExit.init -> void
+Twip.FormFieldInfo.Checked.get -> bool?
+Twip.FormFieldInfo.Checked.init -> void
+Twip.FormFieldInfo.DefaultText.get -> string?
+Twip.FormFieldInfo.DefaultText.init -> void
+Twip.FormFieldInfo.Enabled.get -> bool
+Twip.FormFieldInfo.Enabled.init -> void
+Twip.FormFieldInfo.Entries.get -> System.Collections.Generic.IReadOnlyList<string!>?
+Twip.FormFieldInfo.Entries.init -> void
+Twip.FormFieldInfo.Entry.get -> int?
+Twip.FormFieldInfo.Entry.init -> void
+Twip.FormFieldInfo.Equals(Twip.FormFieldInfo? other) -> bool
+Twip.FormFieldInfo.FormFieldInfo() -> void
+Twip.FormFieldInfo.HelpText.get -> string?
+Twip.FormFieldInfo.HelpText.init -> void
+Twip.FormFieldInfo.InputType.get -> Twip.TextInputType?
+Twip.FormFieldInfo.InputType.init -> void
+Twip.FormFieldInfo.Kind.get -> Twip.FormFieldType
+Twip.FormFieldInfo.Kind.init -> void
+Twip.FormFieldInfo.MaxLength.get -> int?
+Twip.FormFieldInfo.MaxLength.init -> void
+Twip.FormFieldInfo.Name.get -> string!
+Twip.FormFieldInfo.Name.init -> void
+Twip.FormFieldInfo.StatusText.get -> string?
+Twip.FormFieldInfo.StatusText.init -> void
+Twip.FormFieldType
+Twip.FormFieldType.CheckBox = 1 -> Twip.FormFieldType
+Twip.FormFieldType.DropDown = 2 -> Twip.FormFieldType
+Twip.FormFieldType.Text = 0 -> Twip.FormFieldType
+Twip.TextFormOptions
+Twip.TextFormOptions.<Clone>$() -> Twip.TextFormOptions!
+Twip.TextFormOptions.Deconstruct(out Twip.TextInputType? InputType, out string? Default, out int? MaxLength, out string? Format) -> void
+Twip.TextFormOptions.Default.get -> string?
+Twip.TextFormOptions.Default.init -> void
+Twip.TextFormOptions.Equals(Twip.TextFormOptions? other) -> bool
+Twip.TextFormOptions.Format.get -> string?
+Twip.TextFormOptions.Format.init -> void
+Twip.TextFormOptions.InputType.get -> Twip.TextInputType?
+Twip.TextFormOptions.InputType.init -> void
+Twip.TextFormOptions.MaxLength.get -> int?
+Twip.TextFormOptions.MaxLength.init -> void
+Twip.TextFormOptions.TextFormOptions(Twip.TextInputType? InputType = null, string? Default = null, int? MaxLength = null, string? Format = null) -> void
+Twip.TextInputType
+Twip.TextInputType.Calculation = 5 -> Twip.TextInputType
+Twip.TextInputType.CurrentDate = 3 -> Twip.TextInputType
+Twip.TextInputType.CurrentTime = 4 -> Twip.TextInputType
+Twip.TextInputType.Date = 2 -> Twip.TextInputType
+Twip.TextInputType.Number = 1 -> Twip.TextInputType
+Twip.TextInputType.Regular = 0 -> Twip.TextInputType
+override Twip.CheckBoxFormOptions.Equals(object? obj) -> bool
+override Twip.CheckBoxFormOptions.GetHashCode() -> int
+override Twip.CheckBoxFormOptions.ToString() -> string!
+override Twip.DropDownFormOptions.Equals(object? obj) -> bool
+override Twip.DropDownFormOptions.GetHashCode() -> int
+override Twip.DropDownFormOptions.ToString() -> string!
+override Twip.FormFieldChange.Equals(object? obj) -> bool
+override Twip.FormFieldChange.GetHashCode() -> int
+override Twip.FormFieldChange.ToString() -> string!
+override Twip.FormFieldFill.Equals(object? obj) -> bool
+override Twip.FormFieldFill.GetHashCode() -> int
+override Twip.FormFieldFill.ToString() -> string!
+override Twip.FormFieldInfo.Equals(object? obj) -> bool
+override Twip.FormFieldInfo.GetHashCode() -> int
+override Twip.FormFieldInfo.ToString() -> string!
+override Twip.TextFormOptions.Equals(object? obj) -> bool
+override Twip.TextFormOptions.GetHashCode() -> int
+override Twip.TextFormOptions.ToString() -> string!
+static Twip.CheckBoxFormOptions.operator !=(Twip.CheckBoxFormOptions? left, Twip.CheckBoxFormOptions? right) -> bool
+static Twip.CheckBoxFormOptions.operator ==(Twip.CheckBoxFormOptions? left, Twip.CheckBoxFormOptions? right) -> bool
+static Twip.DropDownFormOptions.operator !=(Twip.DropDownFormOptions? left, Twip.DropDownFormOptions? right) -> bool
+static Twip.DropDownFormOptions.operator ==(Twip.DropDownFormOptions? left, Twip.DropDownFormOptions? right) -> bool
+static Twip.EditorOperation.FillFormField(Twip.FormFieldFill! fill) -> Twip.EditorOperation!
+static Twip.EditorOperation.InsertFormField(Twip.FormFieldType kind) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetFormField(Twip.FormFieldChange! change) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetFormFieldShading(bool on) -> Twip.EditorOperation!
+static Twip.FormFieldChange.operator !=(Twip.FormFieldChange? left, Twip.FormFieldChange? right) -> bool
+static Twip.FormFieldChange.operator ==(Twip.FormFieldChange? left, Twip.FormFieldChange? right) -> bool
+static Twip.FormFieldFill.operator !=(Twip.FormFieldFill? left, Twip.FormFieldFill? right) -> bool
+static Twip.FormFieldFill.operator ==(Twip.FormFieldFill? left, Twip.FormFieldFill? right) -> bool
+static Twip.FormFieldInfo.operator !=(Twip.FormFieldInfo? left, Twip.FormFieldInfo? right) -> bool
+static Twip.FormFieldInfo.operator ==(Twip.FormFieldInfo? left, Twip.FormFieldInfo? right) -> bool
+static Twip.TextFormOptions.operator !=(Twip.TextFormOptions? left, Twip.TextFormOptions? right) -> bool
+static Twip.TextFormOptions.operator ==(Twip.TextFormOptions? left, Twip.TextFormOptions? right) -> bool
+Twip.CheckboxSymbol
+Twip.CheckboxSymbol.<Clone>$() -> Twip.CheckboxSymbol!
+Twip.CheckboxSymbol.Character.get -> string!
+Twip.CheckboxSymbol.Character.init -> void
+Twip.CheckboxSymbol.CheckboxSymbol(string! Font, string! Character) -> void
+Twip.CheckboxSymbol.Deconstruct(out string! Font, out string! Character) -> void
+Twip.CheckboxSymbol.Equals(Twip.CheckboxSymbol? other) -> bool
+Twip.CheckboxSymbol.Font.get -> string!
+Twip.CheckboxSymbol.Font.init -> void
+Twip.ControlAppearance
+Twip.ControlAppearance.BoundingBox = 0 -> Twip.ControlAppearance
+Twip.ControlAppearance.Hidden = 2 -> Twip.ControlAppearance
+Twip.ControlAppearance.Tags = 1 -> Twip.ControlAppearance
+Twip.ControlChanges.Appearance.get -> Twip.ControlAppearance?
+Twip.ControlChanges.Appearance.init -> void
+Twip.ControlChanges.Color.get -> Twip.ColorValue?
+Twip.ControlChanges.Color.init -> void
+Twip.ControlChanges.Style.get -> Twip.StyleId?
+Twip.ControlChanges.Style.init -> void
+Twip.ControlChanges.Temporary.get -> bool?
+Twip.ControlChanges.Temporary.init -> void
+Twip.ControlInfo
+Twip.ControlInfo.<Clone>$() -> Twip.ControlInfo!
+Twip.ControlInfo.AllowInsertDelete.get -> bool?
+Twip.ControlInfo.AllowInsertDelete.init -> void
+Twip.ControlInfo.Appearance.get -> Twip.ControlAppearance
+Twip.ControlInfo.Appearance.init -> void
+Twip.ControlInfo.CheckedSymbol.get -> string?
+Twip.ControlInfo.CheckedSymbol.init -> void
+Twip.ControlInfo.Color.get -> Twip.ColorValue?
+Twip.ControlInfo.Color.init -> void
+Twip.ControlInfo.ControlInfo() -> void
+Twip.ControlInfo.Equals(Twip.ControlInfo? other) -> bool
+Twip.ControlInfo.SectionTitle.get -> string?
+Twip.ControlInfo.SectionTitle.init -> void
+Twip.ControlInfo.Style.get -> Twip.StyleId?
+Twip.ControlInfo.Style.init -> void
+Twip.ControlInfo.Temporary.get -> bool
+Twip.ControlInfo.Temporary.init -> void
+Twip.ControlInfo.UncheckedSymbol.get -> string?
+Twip.ControlInfo.UncheckedSymbol.init -> void
+Twip.ControlOptions.AllowInsertDelete.get -> bool?
+Twip.ControlOptions.AllowInsertDelete.init -> void
+Twip.ControlOptions.CheckedSymbol.get -> Twip.CheckboxSymbol?
+Twip.ControlOptions.CheckedSymbol.init -> void
+Twip.ControlOptions.ControlOptions(bool? Checked = null, string? Format = null, string? Locale = null, System.Collections.Generic.IReadOnlyList<Twip.ControlListItem!>? Items = null, bool? Multiline = null, Twip.Length? Width = null, Twip.Length? Height = null, Twip.CheckboxSymbol? CheckedSymbol = null, Twip.CheckboxSymbol? UncheckedSymbol = null, string? SectionTitle = null, bool? AllowInsertDelete = null) -> void
+Twip.ControlOptions.Deconstruct(out bool? Checked, out string? Format, out string? Locale, out System.Collections.Generic.IReadOnlyList<Twip.ControlListItem!>? Items, out bool? Multiline, out Twip.Length? Width, out Twip.Length? Height, out Twip.CheckboxSymbol? CheckedSymbol, out Twip.CheckboxSymbol? UncheckedSymbol, out string? SectionTitle, out bool? AllowInsertDelete) -> void
+Twip.ControlOptions.SectionTitle.get -> string?
+Twip.ControlOptions.SectionTitle.init -> void
+Twip.ControlOptions.UncheckedSymbol.get -> Twip.CheckboxSymbol?
+Twip.ControlOptions.UncheckedSymbol.init -> void
+Twip.ElementContext.Control.get -> Twip.ControlInfo?
+Twip.ElementContext.Control.init -> void
+override Twip.CheckboxSymbol.Equals(object? obj) -> bool
+override Twip.CheckboxSymbol.GetHashCode() -> int
+override Twip.CheckboxSymbol.ToString() -> string!
+override Twip.ControlInfo.Equals(object? obj) -> bool
+override Twip.ControlInfo.GetHashCode() -> int
+override Twip.ControlInfo.ToString() -> string!
+static Twip.CheckboxSymbol.operator !=(Twip.CheckboxSymbol? left, Twip.CheckboxSymbol? right) -> bool
+static Twip.CheckboxSymbol.operator ==(Twip.CheckboxSymbol? left, Twip.CheckboxSymbol? right) -> bool
+static Twip.ControlInfo.operator !=(Twip.ControlInfo? left, Twip.ControlInfo? right) -> bool
+static Twip.ControlInfo.operator ==(Twip.ControlInfo? left, Twip.ControlInfo? right) -> bool
+Twip.CommandId.AddEditableRange = 252 -> Twip.CommandId
+Twip.CommandId.RemoveEditableRanges = 253 -> Twip.CommandId
+Twip.CommandId.SetDocumentProtection = 251 -> Twip.CommandId
+Twip.DocumentProtection
+Twip.DocumentProtection.<Clone>$() -> Twip.DocumentProtection!
+Twip.DocumentProtection.Enforce.get -> bool?
+Twip.DocumentProtection.Enforce.init -> void
+Twip.DocumentProtection.Equals(Twip.DocumentProtection? other) -> bool
+Twip.DocumentProtection.Formatting.get -> bool?
+Twip.DocumentProtection.Formatting.init -> void
+Twip.DocumentProtection.Kind.get -> Twip.ProtectionKind?
+Twip.DocumentProtection.Kind.init -> void
+Twip.DocumentProtection.Password.get -> string?
+Twip.DocumentProtection.Password.init -> void
+Twip.EditorCommands.AddEditableRangeAsync(string? editor = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.RemoveEditableRangesAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetDocumentProtectionAsync(Twip.DocumentProtection! protection, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.ProtectionKind
+Twip.ProtectionKind.Comments = 2 -> Twip.ProtectionKind
+Twip.ProtectionKind.Forms = 4 -> Twip.ProtectionKind
+Twip.ProtectionKind.None = 0 -> Twip.ProtectionKind
+Twip.ProtectionKind.ReadOnly = 1 -> Twip.ProtectionKind
+Twip.ProtectionKind.TrackedChanges = 3 -> Twip.ProtectionKind
+Twip.ProtectionState
+Twip.ProtectionState.<Clone>$() -> Twip.ProtectionState!
+Twip.ProtectionState.Enforced.get -> bool
+Twip.ProtectionState.Enforced.init -> void
+Twip.ProtectionState.Equals(Twip.ProtectionState? other) -> bool
+Twip.ProtectionState.Formatting.get -> bool
+Twip.ProtectionState.Formatting.init -> void
+Twip.ProtectionState.InEditableRange.get -> bool
+Twip.ProtectionState.InEditableRange.init -> void
+Twip.ProtectionState.Kind.get -> Twip.ProtectionKind
+Twip.ProtectionState.Kind.init -> void
+Twip.ProtectionState.Password.get -> bool
+Twip.ProtectionState.Password.init -> void
+Twip.ReviewState.Protection.get -> Twip.ProtectionState?
+Twip.ReviewState.Protection.init -> void
+override Twip.DocumentProtection.Equals(object? obj) -> bool
+override Twip.DocumentProtection.GetHashCode() -> int
+override Twip.DocumentProtection.ToString() -> string!
+override Twip.ProtectionState.Equals(object? obj) -> bool
+override Twip.ProtectionState.GetHashCode() -> int
+override Twip.ProtectionState.ToString() -> string!
+static Twip.DocumentProtection.operator !=(Twip.DocumentProtection? left, Twip.DocumentProtection? right) -> bool
+static Twip.DocumentProtection.operator ==(Twip.DocumentProtection? left, Twip.DocumentProtection? right) -> bool
+static Twip.EditorOperation.AddEditableRange(string? editor = null) -> Twip.EditorOperation!
+static Twip.EditorOperation.RemoveEditableRanges() -> Twip.EditorOperation!
+static Twip.EditorOperation.SetDocumentProtection(Twip.DocumentProtection! protection) -> Twip.EditorOperation!
+static Twip.ProtectionState.operator !=(Twip.ProtectionState? left, Twip.ProtectionState? right) -> bool
+static Twip.ProtectionState.operator ==(Twip.ProtectionState? left, Twip.ProtectionState? right) -> bool
+Twip.NotePropertiesOptions.Columns.get -> int?
+Twip.NotePropertiesOptions.Columns.init -> void
+Twip.NotePropertiesOptions.Deconstruct(out Twip.NoteType Kind, out Twip.NotePosition? Position, out Twip.NumberFormat? Format, out int? Start, out Twip.NoteRestart? Restart, out Twip.NoteScope? ApplyTo, out int? Columns) -> void
+Twip.NotePropertiesOptions.NotePropertiesOptions(Twip.NoteType Kind, Twip.NotePosition? Position = null, Twip.NumberFormat? Format = null, int? Start = null, Twip.NoteRestart? Restart = null, Twip.NoteScope? ApplyTo = null, int? Columns = null) -> void
+Twip.PageFormatting.FootnoteColumns.get -> int
+Twip.PageFormatting.FootnoteColumns.init -> void
+Twip.FontDialogValues.ContextualAlternates.get -> Twip.FormatValue<bool>
+Twip.FontDialogValues.ContextualAlternates.init -> void
+Twip.FontDialogValues.Deconstruct(out Twip.FormatValue<string!> Font, out Twip.FormatValue<Twip.FontStyleChoice> Style, out Twip.FormatValue<Twip.Length> Size, out Twip.FormatValue<Twip.ColorValue> Color, out Twip.FormatValue<Twip.UnderlineStyle> Underline, out Twip.FormatValue<Twip.ColorValue> UnderlineColor, out Twip.FormatValue<bool> Strikethrough, out Twip.FormatValue<bool> DoubleStrikethrough, out Twip.FormatValue<bool> Superscript, out Twip.FormatValue<bool> Subscript, out Twip.FormatValue<bool> SmallCaps, out Twip.FormatValue<bool> AllCaps, out Twip.FormatValue<bool> Hidden, out Twip.FormatValue<Twip.Length> CharacterSpacing, out Twip.FormatValue<Twip.Length> Position, out Twip.FormatValue<bool> Emboss, out Twip.FormatValue<bool> Engrave, out Twip.FormatValue<bool> Outline, out Twip.FormatValue<bool> Shadow, out Twip.FormatValue<double> Scale, out Twip.FormatValue<Twip.Length> Kerning, out Twip.FormatValue<Twip.Ligatures> Ligatures, out Twip.FormatValue<Twip.NumberSpacing> NumberSpacing, out Twip.FormatValue<Twip.NumberForm> NumberForm, out Twip.FormatValue<int> StylisticSet, out Twip.FormatValue<bool> ContextualAlternates) -> void
+Twip.FontDialogValues.Emboss.get -> Twip.FormatValue<bool>
+Twip.FontDialogValues.Emboss.init -> void
+Twip.FontDialogValues.Engrave.get -> Twip.FormatValue<bool>
+Twip.FontDialogValues.Engrave.init -> void
+Twip.FontDialogValues.FontDialogValues(Twip.FormatValue<string!> Font, Twip.FormatValue<Twip.FontStyleChoice> Style, Twip.FormatValue<Twip.Length> Size, Twip.FormatValue<Twip.ColorValue> Color, Twip.FormatValue<Twip.UnderlineStyle> Underline, Twip.FormatValue<Twip.ColorValue> UnderlineColor, Twip.FormatValue<bool> Strikethrough, Twip.FormatValue<bool> DoubleStrikethrough, Twip.FormatValue<bool> Superscript, Twip.FormatValue<bool> Subscript, Twip.FormatValue<bool> SmallCaps, Twip.FormatValue<bool> AllCaps, Twip.FormatValue<bool> Hidden, Twip.FormatValue<Twip.Length> CharacterSpacing, Twip.FormatValue<Twip.Length> Position, Twip.FormatValue<bool> Emboss, Twip.FormatValue<bool> Engrave, Twip.FormatValue<bool> Outline, Twip.FormatValue<bool> Shadow, Twip.FormatValue<double> Scale, Twip.FormatValue<Twip.Length> Kerning, Twip.FormatValue<Twip.Ligatures> Ligatures, Twip.FormatValue<Twip.NumberSpacing> NumberSpacing, Twip.FormatValue<Twip.NumberForm> NumberForm, Twip.FormatValue<int> StylisticSet, Twip.FormatValue<bool> ContextualAlternates) -> void
+Twip.FontDialogValues.Kerning.get -> Twip.FormatValue<Twip.Length>
+Twip.FontDialogValues.Kerning.init -> void
+Twip.FontDialogValues.Ligatures.get -> Twip.FormatValue<Twip.Ligatures>
+Twip.FontDialogValues.Ligatures.init -> void
+Twip.FontDialogValues.NumberForm.get -> Twip.FormatValue<Twip.NumberForm>
+Twip.FontDialogValues.NumberForm.init -> void
+Twip.FontDialogValues.NumberSpacing.get -> Twip.FormatValue<Twip.NumberSpacing>
+Twip.FontDialogValues.NumberSpacing.init -> void
+Twip.FontDialogValues.Outline.get -> Twip.FormatValue<bool>
+Twip.FontDialogValues.Outline.init -> void
+Twip.FontDialogValues.Scale.get -> Twip.FormatValue<double>
+Twip.FontDialogValues.Scale.init -> void
+Twip.FontDialogValues.Shadow.get -> Twip.FormatValue<bool>
+Twip.FontDialogValues.Shadow.init -> void
+Twip.FontDialogValues.StylisticSet.get -> Twip.FormatValue<int>
+Twip.FontDialogValues.StylisticSet.init -> void
+Twip.PageSetupDialogValues.Deconstruct(out Twip.Length Top, out Twip.Length Bottom, out Twip.Length Left, out Twip.Length Right, out Twip.Length Gutter, out Twip.PageOrientation Orientation, out Twip.Length Width, out Twip.Length Height, out Twip.Length HeaderDistance, out Twip.Length FooterDistance, out bool DifferentFirstPage, out bool DifferentOddEven, out Twip.PageSetupScope ApplyTo, out Twip.MultiplePagesMode MultiplePages, out bool GutterAtTop, out Twip.SectionBreakKind SectionStart, out Twip.PageVerticalAlignment VerticalAlignment, out Twip.LineNumbers? LineNumbers) -> void
+Twip.PageSetupDialogValues.GutterAtTop.get -> bool
+Twip.PageSetupDialogValues.GutterAtTop.init -> void
+Twip.PageSetupDialogValues.LineNumbers.get -> Twip.LineNumbers?
+Twip.PageSetupDialogValues.LineNumbers.init -> void
+Twip.PageSetupDialogValues.MultiplePages.get -> Twip.MultiplePagesMode
+Twip.PageSetupDialogValues.MultiplePages.init -> void
+Twip.PageSetupDialogValues.PageSetupDialogValues(Twip.Length Top, Twip.Length Bottom, Twip.Length Left, Twip.Length Right, Twip.Length Gutter, Twip.PageOrientation Orientation, Twip.Length Width, Twip.Length Height, Twip.Length HeaderDistance, Twip.Length FooterDistance, bool DifferentFirstPage, bool DifferentOddEven, Twip.PageSetupScope ApplyTo, Twip.MultiplePagesMode MultiplePages, bool GutterAtTop, Twip.SectionBreakKind SectionStart, Twip.PageVerticalAlignment VerticalAlignment, Twip.LineNumbers? LineNumbers) -> void
+Twip.PageSetupDialogValues.SectionStart.get -> Twip.SectionBreakKind
+Twip.PageSetupDialogValues.SectionStart.init -> void
+Twip.PageSetupDialogValues.VerticalAlignment.get -> Twip.PageVerticalAlignment
+Twip.PageSetupDialogValues.VerticalAlignment.init -> void
+Twip.ParagraphDialogValues.Collapsed.get -> Twip.FormatValue<bool>
+Twip.ParagraphDialogValues.Collapsed.init -> void
+Twip.ParagraphDialogValues.ContextualSpacing.get -> Twip.FormatValue<bool>
+Twip.ParagraphDialogValues.ContextualSpacing.init -> void
+Twip.ParagraphDialogValues.Deconstruct(out Twip.FormatValue<Twip.ParagraphAlignment> Alignment, out Twip.FormatValue<Twip.OutlineLevel> OutlineLevel, out Twip.FormatValue<Twip.Length> Left, out Twip.FormatValue<Twip.Length> Right, out Twip.FormatValue<Twip.SpecialIndent> Special, out Twip.FormatValue<Twip.Length> By, out Twip.FormatValue<Twip.SpacingValue> Before, out Twip.FormatValue<Twip.SpacingValue> After, out Twip.FormatValue<Twip.LineSpacing!> LineSpacing, out Twip.FormatValue<bool> KeepWithNext, out Twip.FormatValue<bool> KeepLinesTogether, out Twip.FormatValue<bool> PageBreakBefore, out Twip.FormatValue<bool> WidowControl, out Twip.FormatValue<bool> Collapsed, out Twip.FormatValue<bool> MirrorIndents, out Twip.FormatValue<bool> ContextualSpacing, out Twip.FormatValue<bool> SuppressLineNumbers, out Twip.FormatValue<bool> DontHyphenate) -> void
+Twip.ParagraphDialogValues.DontHyphenate.get -> Twip.FormatValue<bool>
+Twip.ParagraphDialogValues.DontHyphenate.init -> void
+Twip.ParagraphDialogValues.MirrorIndents.get -> Twip.FormatValue<bool>
+Twip.ParagraphDialogValues.MirrorIndents.init -> void
+Twip.ParagraphDialogValues.ParagraphDialogValues(Twip.FormatValue<Twip.ParagraphAlignment> Alignment, Twip.FormatValue<Twip.OutlineLevel> OutlineLevel, Twip.FormatValue<Twip.Length> Left, Twip.FormatValue<Twip.Length> Right, Twip.FormatValue<Twip.SpecialIndent> Special, Twip.FormatValue<Twip.Length> By, Twip.FormatValue<Twip.SpacingValue> Before, Twip.FormatValue<Twip.SpacingValue> After, Twip.FormatValue<Twip.LineSpacing!> LineSpacing, Twip.FormatValue<bool> KeepWithNext, Twip.FormatValue<bool> KeepLinesTogether, Twip.FormatValue<bool> PageBreakBefore, Twip.FormatValue<bool> WidowControl, Twip.FormatValue<bool> Collapsed, Twip.FormatValue<bool> MirrorIndents, Twip.FormatValue<bool> ContextualSpacing, Twip.FormatValue<bool> SuppressLineNumbers, Twip.FormatValue<bool> DontHyphenate) -> void
+Twip.ParagraphDialogValues.SuppressLineNumbers.get -> Twip.FormatValue<bool>
+Twip.ParagraphDialogValues.SuppressLineNumbers.init -> void
+Twip.PictureSizeDialogValues.RelativeHeight.get -> Twip.RelativeSize?
+Twip.PictureSizeDialogValues.RelativeHeight.init -> void
+Twip.PictureSizeDialogValues.RelativeWidth.get -> Twip.RelativeSize?
+Twip.PictureSizeDialogValues.RelativeWidth.init -> void
+Twip.TablePropertiesDialogValues.CellWidth.get -> Twip.FormatValue<Twip.TableWidth!>
+Twip.TablePropertiesDialogValues.CellWidth.init -> void
+Twip.TablePropertiesDialogValues.Deconstruct(out Twip.TableWidth! Width, out Twip.TableAlignment Alignment, out Twip.Length Indent, out Twip.FormatValue<Twip.RowHeight!> RowHeight, out Twip.FormatValue<bool> RowCanBreak, out Twip.FormatValue<bool> HeaderRow, out Twip.FormatValue<Twip.Length> ColumnWidth, out Twip.FormatValue<Twip.CellAlignment> CellAlignment, out Twip.CellMargins! CellMargins, out bool AllowSpacing, out Twip.Length CellSpacing, out Twip.FormatValue<bool> WrapText, out Twip.FormatValue<bool> FitText, out string! Title, out string! Description, out Twip.FormatValue<Twip.TableWidth!> CellWidth) -> void
+Twip.TablePropertiesDialogValues.TablePropertiesDialogValues(Twip.TableWidth! Width, Twip.TableAlignment Alignment, Twip.Length Indent, Twip.FormatValue<Twip.RowHeight!> RowHeight, Twip.FormatValue<bool> RowCanBreak, Twip.FormatValue<bool> HeaderRow, Twip.FormatValue<Twip.Length> ColumnWidth, Twip.FormatValue<Twip.CellAlignment> CellAlignment, Twip.CellMargins! CellMargins, bool AllowSpacing, Twip.Length CellSpacing, Twip.FormatValue<bool> WrapText, Twip.FormatValue<bool> FitText, string! Title, string! Description, Twip.FormatValue<Twip.TableWidth!> CellWidth) -> void
+Twip.DocumentProtection.Deconstruct(out Twip.ProtectionKind? Kind, out bool? Formatting, out bool? Enforce, out string? Password, out System.Collections.Generic.IReadOnlyList<uint>? UnprotectedSections) -> void
+Twip.DocumentProtection.DocumentProtection(Twip.ProtectionKind? Kind = null, bool? Formatting = null, bool? Enforce = null, string? Password = null, System.Collections.Generic.IReadOnlyList<uint>? UnprotectedSections = null) -> void
+Twip.DocumentProtection.UnprotectedSections.get -> System.Collections.Generic.IReadOnlyList<uint>?
+Twip.DocumentProtection.UnprotectedSections.init -> void
+Twip.ProtectionState.Deconstruct(out Twip.ProtectionKind Kind, out bool Enforced, out bool Formatting, out bool Password, out bool InEditableRange, out System.Collections.Generic.IReadOnlyList<uint>! UnprotectedSections) -> void
+Twip.ProtectionState.ProtectionState(Twip.ProtectionKind Kind, bool Enforced, bool Formatting, bool Password, bool InEditableRange, System.Collections.Generic.IReadOnlyList<uint>! UnprotectedSections) -> void
+Twip.ProtectionState.UnprotectedSections.get -> System.Collections.Generic.IReadOnlyList<uint>!
+Twip.ProtectionState.UnprotectedSections.init -> void
+Twip.CommandId.SetFileName = 254 -> Twip.CommandId
+Twip.EditorCommands.SetFileNameAsync(string! name, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+static Twip.EditorOperation.SetFileName(string! name) -> Twip.EditorOperation!
+Twip.ControlContent.BuildingBlock.get -> string?
+Twip.ControlInfo.BuildingBlocks.get -> System.Collections.Generic.IReadOnlyList<string!>!
+Twip.ControlInfo.BuildingBlocks.init -> void
+static Twip.ControlContent.FromBuildingBlock(string! name) -> Twip.ControlContent!
+Twip.PageSetupScope.ThisPointForward = 2 -> Twip.PageSetupScope
+Twip.PictureSizeDialogValues.Crop.get -> Twip.PictureCrop?
+Twip.PictureSizeDialogValues.Crop.init -> void
+Twip.PictureSizeDialogValues.Deconstruct(out Twip.Length Width, out Twip.Length Height, out double ScaleWidth, out double ScaleHeight, out bool LockAspect, out bool Reset, out Twip.RelativeSize? RelativeWidth, out Twip.RelativeSize? RelativeHeight, out Twip.PictureCrop? Crop) -> void
+Twip.PictureSizeDialogValues.PictureSizeDialogValues(Twip.Length Width, Twip.Length Height, double ScaleWidth, double ScaleHeight, bool LockAspect, bool Reset, Twip.RelativeSize? RelativeWidth, Twip.RelativeSize? RelativeHeight, Twip.PictureCrop? Crop) -> void
+Twip.CommandId.SetDropCap = 255 -> Twip.CommandId
+Twip.DialogKind.AdjustListIndents = 20 -> Twip.DialogKind
+Twip.DialogKind.Banding = 22 -> Twip.DialogKind
+Twip.DialogKind.BulletsNumbering = 21 -> Twip.DialogKind
+Twip.DialogKind.DefineBullet = 16 -> Twip.DialogKind
+Twip.DialogKind.DefineMultilevelList = 18 -> Twip.DialogKind
+Twip.DialogKind.DefineNumberFormat = 17 -> Twip.DialogKind
+Twip.DialogKind.DropCap = 15 -> Twip.DialogKind
+Twip.DialogKind.SetNumberingValue = 19 -> Twip.DialogKind
+Twip.DropCap
+Twip.DropCap.<Clone>$() -> Twip.DropCap!
+Twip.DropCap.Deconstruct(out Twip.DropCapPosition Position, out string? Font, out uint? Lines, out Twip.Length? Distance) -> void
+Twip.DropCap.Distance.get -> Twip.Length?
+Twip.DropCap.Distance.init -> void
+Twip.DropCap.DropCap(Twip.DropCapPosition Position, string? Font = null, uint? Lines = null, Twip.Length? Distance = null) -> void
+Twip.DropCap.Equals(Twip.DropCap? other) -> bool
+Twip.DropCap.Font.get -> string?
+Twip.DropCap.Font.init -> void
+Twip.DropCap.Lines.get -> uint?
+Twip.DropCap.Lines.init -> void
+Twip.DropCap.Position.get -> Twip.DropCapPosition
+Twip.DropCap.Position.init -> void
+Twip.DropCapDialogValues
+Twip.DropCapDialogValues.<Clone>$() -> Twip.DropCapDialogValues!
+Twip.DropCapDialogValues.Deconstruct(out Twip.DropCapPosition Position, out string! Font, out uint Lines, out Twip.Length Distance) -> void
+Twip.DropCapDialogValues.Distance.get -> Twip.Length
+Twip.DropCapDialogValues.Distance.init -> void
+Twip.DropCapDialogValues.DropCapDialogValues(Twip.DropCapPosition Position, string! Font, uint Lines, Twip.Length Distance) -> void
+Twip.DropCapDialogValues.Equals(Twip.DropCapDialogValues? other) -> bool
+Twip.DropCapDialogValues.Font.get -> string!
+Twip.DropCapDialogValues.Font.init -> void
+Twip.DropCapDialogValues.Lines.get -> uint
+Twip.DropCapDialogValues.Lines.init -> void
+Twip.DropCapDialogValues.Position.get -> Twip.DropCapPosition
+Twip.DropCapDialogValues.Position.init -> void
+Twip.DropCapPosition
+Twip.DropCapPosition.Dropped = 1 -> Twip.DropCapPosition
+Twip.DropCapPosition.InMargin = 2 -> Twip.DropCapPosition
+Twip.DropCapPosition.None = 0 -> Twip.DropCapPosition
+Twip.EditorCommands.SetDropCapAsync(Twip.DropCap! dropCap, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorDialogs.OpenDropCapAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Twip.DialogSession<Twip.DropCapDialogValues!>!>!
+Twip.ParagraphFormatting.DropCap.get -> Twip.DropCap?
+Twip.ParagraphFormatting.DropCap.init -> void
+override Twip.DropCap.Equals(object? obj) -> bool
+override Twip.DropCap.GetHashCode() -> int
+override Twip.DropCap.ToString() -> string!
+override Twip.DropCapDialogValues.Equals(object? obj) -> bool
+override Twip.DropCapDialogValues.GetHashCode() -> int
+override Twip.DropCapDialogValues.ToString() -> string!
+static Twip.DropCap.operator !=(Twip.DropCap? left, Twip.DropCap? right) -> bool
+static Twip.DropCap.operator ==(Twip.DropCap? left, Twip.DropCap? right) -> bool
+static Twip.DropCapDialogValues.operator !=(Twip.DropCapDialogValues? left, Twip.DropCapDialogValues? right) -> bool
+static Twip.DropCapDialogValues.operator ==(Twip.DropCapDialogValues? left, Twip.DropCapDialogValues? right) -> bool
+static Twip.EditorOperation.SetDropCap(Twip.DropCap! dropCap) -> Twip.EditorOperation!

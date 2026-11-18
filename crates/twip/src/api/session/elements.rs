@@ -88,7 +88,9 @@ fn attribute(xml: &str, name: &str) -> Option<String> {
 fn options(s: &Session, e: &Element) -> Option<ControlOptions> {
     let p = e.props.as_ref()?;
     Some(match &p.kind {
-        ControlKind::Checkbox { checked, .. } => ControlOptions::Checkbox(CheckboxOptions { checked: Some(e.display == checked.to_string()) }),
+        ControlKind::Checkbox { checked, .. } => {
+            ControlOptions::Checkbox(CheckboxOptions { checked: Some(e.display == checked.to_string()), ..Default::default() })
+        }
         ControlKind::Date { format, lid } => {
             ControlOptions::Date(DateOptions { format: Some(format.clone()).filter(|f| !f.is_empty()), locale: lid.clone() })
         }
@@ -378,7 +380,13 @@ mod tests {
         assert!(!all.is_empty(), "{all:?}");
         let obj = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-OBJ.docx")).expect("fixture");
         let png = crate::docx::read(&obj).expect("reads").images.last().cloned().expect("an image");
-        let fill = crate::api::command::FillControl { id: all[0].id.clone(), text: None, image: Some(crate::api::value::Bytes(png)), docx: None };
+        let fill = crate::api::command::FillControl {
+            id: all[0].id.clone(),
+            text: None,
+            image: Some(crate::api::value::Bytes(png)),
+            docx: None,
+            building_block: None,
+        };
         s.run(crate::api::command::Command::FillControl(fill)).expect("fills");
         assert!(unfilled(s).iter().all(|e| e.id != all[0].id), "filled ones go");
     }

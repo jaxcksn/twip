@@ -3,6 +3,16 @@
     "activeComment": "c4",
     "comments": 2,
     "markupView": "all",
+    "protection": {
+      "enforced": true,
+      "formatting": false,
+      "inEditableRange": true,
+      "kind": "readOnly",
+      "password": true,
+      "unprotectedSections": [
+        1
+      ]
+    },
     "revisions": 3,
     "tracking": true,
     "trackingLocked": false

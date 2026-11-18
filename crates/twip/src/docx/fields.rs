@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use super::model::{Block, DATE_BLOCKS, Document, FieldId, FieldKind, FieldView, Inline, Paragraph, Run};
+use super::model::{Block, DATE_BLOCKS, Document, FieldId, FieldKind, FieldView, Inline, NoteKind, Paragraph, Run};
 
 /// A field's markers in a paragraph's inlines: the indexes of its begin, separator (if it has one) and
 /// end.
@@ -233,7 +233,17 @@ pub fn field_inlines(code: &str, display: &str, run: &Run) -> Vec<Inline> {
 /// [`field_inlines`] with the field's id given.
 pub fn field_inlines_with(id: FieldId, code: &str, display: &str, run: &Run) -> Vec<Inline> {
     let kind = parse(code).kind();
-    let mut v = vec![Inline::FieldBegin { id, kind, lock: false, dirty: false, view: FieldView::Result, label: None, value: None, run: run.clone() }];
+    let mut v = vec![Inline::FieldBegin {
+        id,
+        kind,
+        lock: false,
+        dirty: false,
+        view: FieldView::Result,
+        label: None,
+        value: None,
+        form: None,
+        run: run.clone(),
+    }];
     if !code.is_empty() {
         v.push(Inline::Text(code.into(), run.clone()));
     }
@@ -340,6 +350,23 @@ impl FieldCode {
             "SEQ" => FieldKind::Seq(arg()),
             "STYLEREF" => FieldKind::StyleRef(arg()),
             "DATE" | "TIME" => FieldKind::Date,
+            "DOCPROPERTY" => FieldKind::DocProperty(arg()),
+            "DOCVARIABLE" => FieldKind::DocVariable(arg()),
+            "AUTHOR" => FieldKind::DocProperty("Author".into()),
+            "TITLE" => FieldKind::DocProperty("Title".into()),
+            "SUBJECT" => FieldKind::DocProperty("Subject".into()),
+            "KEYWORDS" => FieldKind::DocProperty("Keywords".into()),
+            "COMMENTS" => FieldKind::DocProperty("Comments".into()),
+            "LASTSAVEDBY" => FieldKind::DocProperty("LastSavedBy".into()),
+            "REVNUM" => FieldKind::DocProperty("RevisionNumber".into()),
+            "CREATEDATE" => FieldKind::DocDate("created"),
+            "SAVEDATE" => FieldKind::DocDate("modified"),
+            "PRINTDATE" => FieldKind::DocDate("lastPrinted"),
+            "FILENAME" => FieldKind::FileName,
+            "NOTEREF" => FieldKind::NoteRef(arg(), None),
+            "LISTNUM" => FieldKind::ListNum,
+            "AUTONUM" => FieldKind::AutoNum,
+            n if n.starts_with('=') => FieldKind::Formula,
             "IF" => FieldKind::If,
             n if !n.is_empty()
                 && !n.starts_with(['=', '\\'])
@@ -369,7 +396,7 @@ pub fn kind_at(inlines: &[Inline], s: FieldSpan) -> Option<FieldKind> {
     parse(&code_text(inlines, s)).kind()
 }
 
-fn paras(blocks: &mut [Block], f: &mut dyn FnMut(&mut Paragraph)) {
+pub(crate) fn paras(blocks: &mut [Block], f: &mut dyn FnMut(&mut Paragraph)) {
     for b in blocks {
         match b {
             Block::Para(p) => {
@@ -526,6 +553,8 @@ fn error_run(inlines: &[Inline], sp: FieldSpan) -> Option<Run> {
 
 pub fn evaluate(doc: &mut Document, now: i64) {
     date_blocks(doc, now);
+    let properties = doc.properties.clone();
+    let variables = doc.settings.variables.clone();
     let resolver = doc.resolver.clone();
     let styles = resolver.as_deref().map(|r| &r.styles);
     // Bookmark texts (to the bookmark's end, at most the end of its paragraph; codes left out) and every paragraph's
@@ -534,6 +563,8 @@ pub fn evaluate(doc: &mut Document, now: i64) {
     // Each bookmark's first shown run, and its paragraph's style formatting.
     let mut sources: HashMap<String, (Run, Run)> = HashMap::new();
     let mut order: Vec<Vec<(String, bool, String)>> = Vec::new();
+    // Each bookmark's first note reference.
+    let mut notes: HashMap<String, (NoteKind, i64)> = HashMap::new();
     for s in &mut doc.sections {
         paras(&mut s.blocks, &mut |p| {
             for (k, i) in p.inlines.iter().enumerate() {
@@ -549,6 +580,9 @@ pub fn evaluate(doc: &mut Document, now: i64) {
                         .map_or(p.inlines.len(), |e| start + e);
                     let part = &p.inlines[start.min(stop)..stop];
                     marks.entry(name.clone()).or_insert_with(|| visible(part));
+                    if let Some(n) = part.iter().find_map(|i| if let Inline::NoteRef { kind, id, .. } = i { Some((*kind, *id)) } else { None }) {
+                        notes.entry(name.to_ascii_lowercase()).or_insert(n);
+                    }
                     let first = part.iter().zip(shown(part)).find_map(|(i, s)| match (i, s) {
                         (Inline::Text(_, r), Shown::Itself) if !r.hidden => Some(r.clone()),
                         _ => None,
@@ -563,7 +597,15 @@ pub fn evaluate(doc: &mut Document, now: i64) {
             order.push(style_hits(p));
         });
     }
+    let (decimal, list) = (doc.settings.decimal_symbol.unwrap_or('.'), doc.settings.list_separator.unwrap_or(','));
+    let mut formulas = HashMap::new();
+    for s in &doc.sections {
+        formula_values(&s.blocks, None, decimal, list, &marks, &mut formulas);
+    }
+    let file_name = doc.file_name.clone();
     let mut seq: HashMap<String, i64> = HashMap::new();
+    let mut lists: HashMap<String, [i64; 9]> = HashMap::new();
+    let mut autonum = 0;
     let mut at = 0;
     for s in &mut doc.sections {
         paras(&mut s.blocks, &mut |p| {
@@ -572,7 +614,7 @@ pub fn evaluate(doc: &mut Document, now: i64) {
                 let error_run = error_run(&p.inlines, sp);
                 let cached_empty = result_text(&p.inlines, sp).is_empty();
                 let nested = p.inlines[sp.begin + 1..sp.code_end()].iter().any(|i| matches!(i, Inline::FieldBegin { .. }));
-                let Inline::FieldBegin { kind: Some(kind), value: slot, run, .. } = &mut p.inlines[sp.begin] else { continue };
+                let Inline::FieldBegin { id, kind: Some(kind), value: slot, run, .. } = &mut p.inlines[sp.begin] else { continue };
                 let code = &code;
                 let w = words(code);
                 let has = |sw: &str| w.iter().any(|x| x.eq_ignore_ascii_case(sw));
@@ -605,6 +647,22 @@ pub fn evaluate(doc: &mut Document, now: i64) {
                     FieldKind::If => if_field(&w),
                     FieldKind::Invalid => Some(String::new()),
                     FieldKind::Date => Some(date(code, now)),
+                    FieldKind::Formula => formulas.get(id).cloned(),
+                    FieldKind::FileName => file_name.as_deref().map(|n| file_name_shown(n, code)),
+                    // The note's number is the layout's; a bookmark without a note is Word's error.
+                    FieldKind::NoteRef(name, note) => {
+                        *note = notes.get(&name.to_ascii_lowercase()).copied();
+                        note.is_none().then(|| "Error! Reference source not found.".into())
+                    }
+                    FieldKind::AutoNum => {
+                        autonum += 1;
+                        let sep = parse(code).switches.iter().find(|s| s.flag.eq_ignore_ascii_case(&'s')).and_then(|s| s.arg.clone());
+                        Some(format!("{autonum}{}", sep.as_deref().and_then(|s| s.chars().next()).unwrap_or('.')))
+                    }
+                    FieldKind::ListNum => Some(list_num(&parse(code), &mut lists)),
+                    FieldKind::DocProperty(_) | FieldKind::DocVariable(_) | FieldKind::DocDate(_) => {
+                        Some(document_value(kind, code, &properties, &variables))
+                    }
                     // In the body: the nearest text in the style before the field, else the next one.
                     FieldKind::StyleRef(_) => {
                         let q = StyleQuery::new(code, styles);
@@ -740,6 +798,160 @@ pub(crate) fn if_field(w: &[String]) -> Option<String> {
     Some(if hit { yes.clone() } else { no })
 }
 
+/// A document property, variable or date field's result: Word's error text when it has none.
+pub(crate) fn document_value(kind: &FieldKind, code: &str, p: &crate::docx::properties::Properties, vars: &[(String, String)]) -> String {
+    match kind {
+        FieldKind::DocProperty(name) => {
+            p.lookup(name).map_or_else(|| "Error! Unknown document property name.".into(), |v| format_field(&v, code, None))
+        }
+        FieldKind::DocVariable(name) => vars
+            .iter()
+            .find(|(n, _)| n.eq_ignore_ascii_case(name))
+            .map_or_else(|| "Error! No document variable supplied.".into(), |(_, v)| format_field(v, code, None)),
+        FieldKind::DocDate(name) => {
+            // A date Word never set (an unprinted document's print date) shows as zero.
+            let secs = p.core(name).and_then(|v| crate::docx::review::Timestamp::parse(v).utc);
+            secs.map_or_else(|| "0".into(), |s| date(code, s))
+        }
+        _ => String::new(),
+    }
+}
+
+/// Every FILENAME field's value from [`Document::file_name`]; whether one changed.
+pub fn show_file_name(doc: &mut Document) -> bool {
+    let Some(name) = doc.file_name.clone() else { return false };
+    let mut changed = false;
+    let mut visit = |p: &mut Paragraph| {
+        for sp in spans(&p.inlines) {
+            let code = code_text(&p.inlines, sp);
+            if let Inline::FieldBegin { kind: Some(FieldKind::FileName), value, lock: false, .. } = &mut p.inlines[sp.begin] {
+                let v = Some(file_name_shown(&name, &code));
+                changed |= *value != v;
+                *value = v;
+            }
+        }
+    };
+    for s in &mut doc.sections {
+        paras(&mut s.blocks, &mut visit);
+    }
+    for b in doc.stories.values_mut().chain(doc.footnotes.values_mut()).chain(doc.endnotes.values_mut()) {
+        paras(b, &mut visit);
+    }
+    changed
+}
+
+/// FILENAME's text: the name, or with `\p` its folder too.
+pub fn file_name_shown(name: &str, code: &str) -> String {
+    let path = parse(code).switches.iter().any(|s| s.flag.eq_ignore_ascii_case(&'p'));
+    if path { name.to_string() } else { name.rsplit(['/', '\\']).next().unwrap_or(name).to_string() }
+}
+
+/// LISTNUM's number: the next at its level (`\l`, 1–9; `\s` sets it) in its list (`NumberDefault`, `OutlineDefault`
+/// or `LegalDefault`; another name numbers as `NumberDefault`), deeper levels starting again.
+fn list_num(code: &FieldCode, lists: &mut HashMap<String, [i64; 9]>) -> String {
+    let switch = |f: char| code.switches.iter().find(|s| s.flag.eq_ignore_ascii_case(&f)).and_then(|s| s.arg.as_deref()?.trim().parse::<i64>().ok());
+    let name = code.args.first().map_or_else(|| "NumberDefault".to_string(), |n| n.to_string());
+    let level = switch('l').unwrap_or(1).clamp(1, 9) as usize - 1;
+    let n = lists.entry(name.to_ascii_lowercase()).or_insert([0; 9]);
+    n[level] = switch('s').unwrap_or(n[level].saturating_add(1));
+    n[level + 1..].fill(0);
+    let fmt = |v: i64, f: &str| crate::docx::numbering::format_number(v, f);
+    const NUMBER: [(&str, &str, &str); 9] = [
+        ("", "decimal", ")"),
+        ("", "lowerLetter", ")"),
+        ("", "lowerRoman", ")"),
+        ("(", "decimal", ")"),
+        ("(", "lowerLetter", ")"),
+        ("(", "lowerRoman", ")"),
+        ("", "decimal", "."),
+        ("", "lowerLetter", "."),
+        ("", "lowerRoman", "."),
+    ];
+    const OUTLINE: [(&str, &str, &str); 9] = [
+        ("", "upperRoman", "."),
+        ("", "upperLetter", "."),
+        ("", "decimal", "."),
+        ("", "lowerLetter", ")"),
+        ("(", "decimal", ")"),
+        ("(", "lowerLetter", ")"),
+        ("(", "lowerRoman", ")"),
+        ("(", "lowerLetter", ")"),
+        ("(", "lowerRoman", ")"),
+    ];
+    match name.to_ascii_lowercase().as_str() {
+        "legaldefault" => n[..=level].iter().map(|v| format!("{v}.")).collect(),
+        k => {
+            let (open, f, close) = if k == "outlinedefault" { OUTLINE[level] } else { NUMBER[level] };
+            format!("{open}{}{close}", fmt(n[level], f))
+        }
+    }
+}
+
+/// The `=` formulas' values in `blocks`, by field; `table`: the cells' texts of the table they are in, and which.
+fn formula_values(
+    blocks: &[Block],
+    table: Option<(&[Vec<String>], (usize, usize))>,
+    decimal: char,
+    list: char,
+    marks: &HashMap<String, String>,
+    out: &mut HashMap<FieldId, String>,
+) {
+    use super::formula;
+    for b in blocks {
+        match b {
+            Block::Para(p) => {
+                for sp in spans(&p.inlines) {
+                    let Inline::FieldBegin { id, kind: Some(FieldKind::Formula), .. } = &p.inlines[sp.begin] else { continue };
+                    // One with nested fields keeps its result.
+                    if p.inlines[sp.begin + 1..sp.code_end()].iter().any(|i| matches!(i, Inline::FieldBegin { .. })) {
+                        continue;
+                    }
+                    let code = code_text(&p.inlines, sp);
+                    let expr = code.trim_start().trim_start_matches('=');
+                    let expr = expr.split('\\').next().unwrap_or_default();
+                    let bookmark = |n: &str| marks.iter().find(|(k, _)| k.eq_ignore_ascii_case(n)).map(|(_, v)| v.clone());
+                    let env = formula::Env { decimal, list, table, bookmark: &bookmark };
+                    let pic = parse(&code).switches.into_iter().find(|s| s.flag == '#').and_then(|s| s.arg);
+                    let v = match formula::evaluate(expr, &env) {
+                        Ok(v) => pic.map_or_else(|| formula::general(v, decimal), |pic| formula::picture(v, &pic, decimal)),
+                        Err(e) => e,
+                    };
+                    out.insert(*id, v);
+                }
+            }
+            Block::Table(t) => {
+                // Cells by grid column: a merged cell's text in each column it spans.
+                let cell_text = |c: &super::model::Cell| {
+                    c.blocks.iter().filter_map(|b| if let Block::Para(p) = b { Some(text(p)) } else { None }).collect::<Vec<_>>().join(" ")
+                };
+                let rows: Vec<Vec<String>> = t
+                    .rows
+                    .iter()
+                    .map(|r| {
+                        let mut v = vec![String::new(); r.grid_before];
+                        for c in &r.cells {
+                            v.extend(std::iter::repeat_n(cell_text(c), c.span.max(1)));
+                        }
+                        v
+                    })
+                    .collect();
+                for (ri, r) in t.rows.iter().enumerate() {
+                    let mut col = r.grid_before;
+                    for c in &r.cells {
+                        formula_values(&c.blocks, Some((&rows, (ri, col))), decimal, list, marks, out);
+                        col += c.span.max(1);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// `secs` in a date picture (`M/d/yyyy`).
+pub(crate) fn date_text(picture: &str, secs: i64) -> String {
+    date(&format!("\\@ \"{picture}\""), secs)
+}
+
 /// `DATE`/`TIME` with a `\@` picture (default M/d/yyyy) at `secs` since 1970, UTC.
 // shortcut: UTC, no time zone; English month/day names.
 fn date(code: &str, secs: i64) -> String {
@@ -868,6 +1080,79 @@ mod tests {
     use super::*;
 
     #[test]
+    fn formulas_lists_autonum_noteref_and_filename_compute() {
+        let field = |code: &str, cached: &str| {
+            format!(
+                r#"<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve">{code}</w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>{cached}</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>"#
+            )
+        };
+        let cell = |x: &str| format!("<w:tc><w:p>{x}</w:p></w:tc>");
+        let p = |x: &str| format!("<w:p>{x}</w:p>");
+        let body = [
+            format!(
+                "<w:tbl><w:tr>{}{}{}</w:tr><w:tr>{}{}{}</w:tr></w:tbl>",
+                cell("<w:r><w:t>2</w:t></w:r>"),
+                cell("<w:r><w:t>$1,000.50</w:t></w:r>"),
+                cell(&field(r##" =SUM(LEFT) \# "#,##0.00" "##, "?")),
+                cell(&field(" =A1*B1 ", "?")),
+                cell(&field(" =AVERAGE(ABOVE) ", "?")),
+                cell(&field(" =C1/0 ", "?")),
+            ),
+            p(&field(" =ROUND(2.5*2.25,1)+Total ", "?")),
+            p(r#"<w:bookmarkStart w:id="0" w:name="Total"/><w:r><w:t>4</w:t></w:r><w:bookmarkEnd w:id="0"/>"#),
+            p(&(field(" LISTNUM ", "") + &field(r#" LISTNUM \l 2 "#, "") + &field(r#" LISTNUM \l 2 "#, "") + &field(" LISTNUM ", ""))),
+            p(&(field(r#" LISTNUM LegalDefault \l 1 \s 3 "#, "") + &field(r#" LISTNUM LegalDefault \l 2 "#, ""))),
+            p(&(field(" AUTONUM ", "") + &field(r#" AUTONUM \s : "#, ""))),
+            p(&(field(" FILENAME ", "old.docx") + &field(" NOTEREF Missing ", "1"))),
+        ]
+        .concat();
+        let xml = format!(
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>{body}<w:sectPr/></w:body></w:document>"#
+        );
+        let bytes = crate::docx::write::repackage(
+            &crate::docx::blank::blank_docx(),
+            &[("word/document.xml".into(), xml.into_bytes())],
+            zip::CompressionMethod::Deflated,
+        )
+        .expect("repackages");
+        let mut doc = crate::docx::read(&bytes).expect("reads");
+        let texts = |doc: &Document| -> Vec<String> {
+            let mut out = Vec::new();
+            for b in &doc.sections[0].blocks {
+                match b {
+                    Block::Para(p) => out.push(text(p)),
+                    Block::Table(t) => out.extend(t.rows.iter().flat_map(|r| r.cells.iter()).filter_map(|c| match &c.blocks[0] {
+                        Block::Para(p) => Some(text(p)),
+                        _ => None,
+                    })),
+                }
+            }
+            out
+        };
+        assert_eq!(
+            texts(&doc),
+            [
+                "2",
+                "$1,000.50",
+                "1,002.50",
+                "2001",
+                "1000.5",
+                "!Zero Divide",
+                "9.6",
+                "4",
+                "1)a)b)2)",
+                "3.3.1.",
+                "1.2:",
+                "old.docxError! Reference source not found.",
+            ]
+            .map(|s| s.to_string())
+        );
+        doc.file_name = Some("C:\\Cases\\Brief.docx".into());
+        assert!(show_file_name(&mut doc));
+        assert!(texts(&doc)[11].starts_with("Brief.docx"));
+    }
+
+    #[test]
     fn the_local_clock_is_utc_moved_by_quarter_hours() {
         let off = crate::docx::now_local() - crate::docx::now_utc();
         assert!(off.abs() <= 14 * 3600 && (off + 1).rem_euclid(900) <= 2, "{off}");
@@ -986,6 +1271,7 @@ mod tests {
                 view: FieldView::Result,
                 label: None,
                 value: None,
+                form: None,
                 run: code.clone(),
             },
             Inline::Text(r#" REF B \* MERGEFORMAT "#.into(), code.clone()),
@@ -1036,10 +1322,11 @@ mod tests {
             ("STYLEREF \"Heading 1\"", Some(FieldKind::StyleRef("Heading 1".into()))),
             ("TIME", Some(FieldKind::Date)),
             (r#""http://example.com/a""#, Some(FieldKind::Invalid)),
-            ("=1+2", None),
+            ("=1+2", Some(FieldKind::Formula)),
             ("QUOTE x", None),
             ("umber", Some(FieldKind::Bookmark("UMBER".into()))),
-            ("AUTHOR", None),
+            ("AUTHOR", Some(FieldKind::DocProperty("Author".into()))),
+            ("DOCVARIABLE Case", Some(FieldKind::DocVariable("Case".into()))),
             ("NUM PAGES", Some(FieldKind::Bookmark("NUM".into()))),
             ("1ABC", Some(FieldKind::Invalid)),
         ] {
@@ -1063,6 +1350,7 @@ mod tests {
             view: FieldView::Result,
             label: None,
             value: None,
+            form: None,
             run: run.clone(),
         };
         let t = |s: &str| Inline::Text(s.into(), run.clone());

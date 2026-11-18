@@ -137,6 +137,11 @@ public abstract partial record EditorOperation
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation GoToPage(int page) => Op(CommandId.GoToPage, new Arg("value", Node(page)));
 
+    /// <summary>Selects a bookmark's text, or puts the caret at it when it holds none (Go To); <c>_top</c> is the document's start.</summary>
+    /// <param name="name">The bookmark, compared without case.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation GoToBookmark(string name) => Op(CommandId.GoToBookmark, new Arg("value", Node(name)));
+
     /// <summary>Sets or clears bold on the selection.</summary>
     /// <param name="on">Whether bold is on.</param>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
@@ -224,6 +229,21 @@ public abstract partial record EditorOperation
     /// <param name="position">The offset, -1584 to 1584 pt; positive raises.</param>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation SetCharacterPosition(Length position) => Op(CommandId.SetCharacterPosition, new Arg("value", Node(position)));
+    /// <summary>Applies a character style to the selected text (a linked paragraph style's character half), or removes it.</summary>
+    /// <param name="styleId">The style; <see langword="null"/> removes the character style.</param>
+    public static EditorOperation ApplyCharacterStyle(StyleId? styleId) => Op(CommandId.ApplyCharacterStyle, new Arg("value", styleId is { } id ? Node(id) : null));
+    /// <summary>Sets the scale, kerning and OpenType features; unset values are kept.</summary>
+    /// <param name="options">The settings.</param>
+    public static EditorOperation SetTypography(TypographyOptions options) => Op(CommandId.SetTypography, Arg.Flatten(options));
+    /// <summary>Sets the text's language and whether spelling is checked; unset values are kept.</summary>
+    /// <param name="options">The settings.</param>
+    public static EditorOperation SetLanguage(LanguageOptions options) => Op(CommandId.SetLanguage, Arg.Flatten(options));
+    /// <summary>Sets emboss, engrave, outline and shadow; unset values are kept.</summary>
+    /// <param name="options">The effects.</param>
+    public static EditorOperation SetCharacterEffects(CharacterEffectsOptions options) => Op(CommandId.SetCharacterEffects, Arg.Flatten(options));
+    /// <summary>Sets the underline's colour, or the text's (<see cref="ColorValue.Auto"/>); underlined text only.</summary>
+    /// <param name="color">The colour.</param>
+    public static EditorOperation SetUnderlineColor(ColorValue color) => Op(CommandId.SetUnderlineColor, new Arg("value", Node(color)));
 
     /// <summary>Removes direct character formatting from the selection.</summary>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
@@ -255,13 +275,24 @@ public abstract partial record EditorOperation
     /// <summary>Sets the space before and after the selected paragraphs. Unset values are kept.</summary>
     /// <param name="before">The space before, 0 to 1584 pt, or automatic.</param>
     /// <param name="after">The space after, 0 to 1584 pt, or automatic.</param>
+    /// <param name="contextual">No space between paragraphs of the same style.</param>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
-    public static EditorOperation SetParagraphSpacing(SpacingValue? before = null, SpacingValue? after = null) => Op(CommandId.SetParagraphSpacing, new Arg("before", before is { } before_ ? Node(before_) : null, Optional: true), new Arg("after", after is { } after_ ? Node(after_) : null, Optional: true));
+    public static EditorOperation SetParagraphSpacing(SpacingValue? before = null, SpacingValue? after = null, bool? contextual = null) => Op(CommandId.SetParagraphSpacing, new Arg("before", before is { } before_ ? Node(before_) : null, Optional: true), new Arg("after", after is { } after_ ? Node(after_) : null, Optional: true), new Arg("contextual", contextual is { } contextual_ ? Node(contextual_) : null, Optional: true));
 
     /// <summary>Sets the indents of the selected paragraphs. Unset values are kept.</summary>
     /// <param name="options">The indents to change.</param>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation SetIndents(IndentOptions options) => Op(CommandId.SetIndents, Arg.Flatten(options));
+
+    /// <summary>Sets the outline level and whether the paragraphs open collapsed; unset values are kept.</summary>
+    /// <param name="options">The settings.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetOutline(OutlineOptions options) => Op(CommandId.SetOutline, Arg.Flatten(options));
+
+    /// <summary>Sets the selected paragraphs' text direction.</summary>
+    /// <param name="direction">The direction.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetParagraphTextDirection(TextFlow direction) => Op(CommandId.SetParagraphTextDirection, new Arg("value", Node(direction)));
 
     /// <summary>Increases the left indent to the next tab stop.</summary>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
@@ -349,6 +380,11 @@ public abstract partial record EditorOperation
     /// <summary>Removes the frame the selection is in.</summary>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation RemoveFrame() => Op(CommandId.RemoveFrame);
+
+    /// <summary>Sets the selection's paragraph's drop cap: its first letter dropped into the text or in the margin, or put back.</summary>
+    /// <param name="dropCap">The drop cap; <see cref="DropCapPosition.None"/> puts the letter back.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetDropCap(DropCap dropCap) => Op(CommandId.SetDropCap, Arg.Flatten(dropCap));
 
     /// <summary>Defines the selection's list levels.</summary>
     /// <param name="definition">The levels and what they apply to.</param>
@@ -446,8 +482,9 @@ public abstract partial record EditorOperation
     /// <param name="count">The number of columns, 1 to 45.</param>
     /// <param name="spacing">The space between columns.</param>
     /// <param name="separator">Whether a line separates the columns.</param>
+    /// <param name="widths">Columns of their own widths, each with the space after it; equal columns when null.</param>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
-    public static EditorOperation SetColumns(int count, Length? spacing = null, bool? separator = null) => Op(CommandId.SetColumns, new Arg("count", Node(count)), new Arg("spacing", spacing is { } spacing_ ? Node(spacing_) : null, Optional: true), new Arg("separator", separator is { } separator_ ? Node(separator_) : null, Optional: true));
+    public static EditorOperation SetColumns(int count, Length? spacing = null, bool? separator = null, IReadOnlyList<ColumnWidth>? widths = null) => Op(CommandId.SetColumns, new Arg("count", Node(count)), new Arg("spacing", spacing is { } spacing_ ? Node(spacing_) : null, Optional: true), new Arg("separator", separator is { } separator_ ? Node(separator_) : null, Optional: true), new Arg("widths", widths is { } widths_ ? Node(widths_) : null, Optional: true));
 
     /// <summary>Sets the header and footer distances from the page edge. Unset values are kept.</summary>
     /// <param name="header">The header distance.</param>
@@ -464,6 +501,36 @@ public abstract partial record EditorOperation
     /// <param name="on">Whether odd and even pages differ.</param>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation SetDifferentOddEvenPages(bool on) => Op(CommandId.SetDifferentOddEvenPages, new Arg("value", Node(on)));
+
+    /// <summary>Sets the section's page number format, first number and chapter numbers; unset values are kept.</summary>
+    /// <param name="options">The numbering.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetPageNumbering(PageNumberingOptions options) => Op(CommandId.SetPageNumbering, Arg.Flatten(options));
+
+    /// <summary>Sets where text sits between the section's top and bottom margins.</summary>
+    /// <param name="alignment">The alignment.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetPageVerticalAlignment(PageVerticalAlignment alignment) => Op(CommandId.SetPageVerticalAlignment, new Arg("value", Node(alignment)));
+
+    /// <summary>Numbers the section's lines, or stops.</summary>
+    /// <param name="numbers">The numbering; <see langword="null"/> stops it.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetLineNumbering(LineNumbers? numbers) => Op(CommandId.SetLineNumbering, new Arg("value", numbers is { } n ? Node(n) : null));
+
+    /// <summary>Sets where the section starts: the break before it.</summary>
+    /// <param name="kind">The break.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetSectionBreakType(SectionBreakKind kind) => Op(CommandId.SetSectionBreakType, new Arg("value", Node(kind)));
+
+    /// <summary>Sets the section's text direction.</summary>
+    /// <param name="direction">The direction.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetSectionTextDirection(TextFlow direction) => Op(CommandId.SetSectionTextDirection, new Arg("value", Node(direction)));
+
+    /// <summary>Sets how the document's pages pair and where the gutter is; unset values are kept.</summary>
+    /// <param name="options">The settings.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetMultiplePages(MultiplePagesOptions options) => Op(CommandId.SetMultiplePages, Arg.Flatten(options));
 
     /// <summary>Moves a text column boundary of the section.</summary>
     /// <param name="column">The column index.</param>
@@ -489,6 +556,26 @@ public abstract partial record EditorOperation
     /// <param name="alignment">The alignment in a header or footer.</param>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation InsertPageNumber(PageNumberFormat format, PageNumberPlacement? where = null, PageNumberAlignment? alignment = null) => Op(CommandId.InsertPageNumber, new Arg("format", Node(format)), new Arg("where", where is { } where_ ? Node(where_) : null, Optional: true), new Arg("alignment", alignment is { } alignment_ ? Node(alignment_) : null, Optional: true));
+
+    /// <summary>The caret section's header or footer takes the section before's (Link to Previous), or gets its own copy of it.</summary>
+    /// <param name="kind">A header or a footer.</param>
+    /// <param name="pages">Which pages it is for.</param>
+    /// <param name="linked">Takes the section before's.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetHeaderFooterLinked(HeaderFooterKind kind, HeaderFooterType pages, bool linked) => Op(CommandId.SetHeaderFooterLinked, new Arg("kind", Node(kind)), new Arg("pages", Node(pages)), new Arg("linked", Node(linked)));
+
+    /// <summary>Empties the caret section's header or footer (its own, so a linked one stops linking).</summary>
+    /// <param name="kind">A header or a footer.</param>
+    /// <param name="pages">Which pages it is for.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation RemoveHeaderFooter(HeaderFooterKind kind, HeaderFooterType pages) => Op(CommandId.RemoveHeaderFooter, new Arg("kind", Node(kind)), new Arg("pages", Node(pages)));
+
+    /// <summary>Inserts a tab to a place set from the margin or the indent, not from the tab stops (Insert Alignment Tab).</summary>
+    /// <param name="alignment">How the text after it aligns at its place.</param>
+    /// <param name="relativeTo">What its place is measured in.</param>
+    /// <param name="leader">What fills the space before it; none when null.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation InsertAlignmentTab(AlignmentTabKind alignment, AlignmentTabBase relativeTo, TabLeader? leader = null) => Op(CommandId.InsertAlignmentTab, new Arg("alignment", Node(alignment)), new Arg("relativeTo", Node(relativeTo)), new Arg("leader", leader is { } leader_ ? Node(leader_) : null, Optional: true));
 
     /// <summary>Inserts a table at the selection.</summary>
     /// <param name="rows">The number of rows, 1 to 32767.</param>
@@ -521,6 +608,22 @@ public abstract partial record EditorOperation
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation InsertEndnote() => Op(CommandId.InsertEndnote);
 
+    /// <summary>Inserts a footnote or an endnote at the caret, numbered or with its own mark.</summary>
+    /// <param name="kind">A footnote or an endnote.</param>
+    /// <param name="customMark">Its own mark (1 to 10 characters) instead of a number.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation InsertNote(NoteType kind, string? customMark = null) => Op(CommandId.InsertNote, new Arg("kind", Node(kind)), new Arg("customMark", customMark is { } m ? Node(m) : null, Optional: true));
+
+    /// <summary>Sets footnotes' or endnotes' position, number format, first number and restarting; unset values are kept.</summary>
+    /// <param name="options">The settings.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetNoteProperties(NotePropertiesOptions options) => Op(CommandId.SetNoteProperties, Arg.Flatten(options));
+
+    /// <summary>Turns every footnote into an endnote, every endnote into a footnote, or both.</summary>
+    /// <param name="conversion">What turns into what.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation ConvertNotes(NoteConversion conversion) => Op(CommandId.ConvertNotes, new Arg("value", Node(conversion)));
+
     /// <summary>Inserts a hyperlink.</summary>
     /// <param name="address">The address (non-empty).</param>
     /// <param name="text">The text; by default the selection, or the address.</param>
@@ -536,6 +639,65 @@ public abstract partial record EditorOperation
     /// <summary>Removes the hyperlink at the selection, keeping its text.</summary>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation RemoveHyperlink() => Op(CommandId.RemoveHyperlink);
+
+    /// <summary>Bookmarks the selection. A bookmark of the same name (compared without case) moves here.</summary>
+    /// <param name="name">A letter (or <c>_</c>, for a hidden bookmark) first, then letters, digits and <c>_</c>, 40 at most.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation InsertBookmark(string name) => Op(CommandId.InsertBookmark, new Arg("value", Node(name)));
+
+    /// <summary>Deletes a bookmark, keeping its text.</summary>
+    /// <param name="name">The bookmark, compared without case.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation DeleteBookmark(string name) => Op(CommandId.DeleteBookmark, new Arg("value", Node(name)));
+
+    /// <summary>Restrict Editing: what the document allows, and starting or stopping its enforcement; stopping a password-protected document needs the password.</summary>
+    /// <param name="protection">The settings to change.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetDocumentProtection(DocumentProtection protection) => Op(CommandId.SetDocumentProtection, Arg.Flatten(protection));
+
+    /// <summary>Makes the selection a range everyone (or <paramref name="editor"/>) may edit while the document is protected.</summary>
+    /// <param name="editor">Who may edit it; everyone when null.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation AddEditableRange(string? editor = null) => Op(CommandId.AddEditableRange, new Arg("editor", editor is { } e ? Node(e) : null, Optional: true));
+
+    /// <summary>Removes the editable ranges at the selection.</summary>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation RemoveEditableRanges() => Op(CommandId.RemoveEditableRanges);
+
+    /// <summary>Inserts a legacy form field (FORMTEXT, FORMCHECKBOX, FORMDROPDOWN) at the selection.</summary>
+    /// <param name="kind">Its kind.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation InsertFormField(FormFieldType kind) => Op(CommandId.InsertFormField, new Arg("value", Node(kind)));
+
+    /// <summary>Sets a legacy form field's options.</summary>
+    /// <param name="change">The options to change.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetFormField(FormFieldChange change) => Op(CommandId.SetFormField, Arg.Flatten(change));
+
+    /// <summary>Fills in a legacy form field: a text field's text, a check box's state, a drop-down's entry.</summary>
+    /// <param name="fill">The value.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation FillFormField(FormFieldFill fill) => Op(CommandId.FillFormField, Arg.Flatten(fill));
+
+    /// <summary>Shades legacy form fields, or not.</summary>
+    /// <param name="on">Shaded.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetFormFieldShading(bool on) => Op(CommandId.SetFormFieldShading, new Arg("value", Node(on)));
+
+    /// <summary>Sets the document's properties; unset values are kept.</summary>
+    /// <param name="change">The properties to change.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetDocumentProperties(DocumentPropertiesChange change) => Op(CommandId.SetDocumentProperties, Arg.Flatten(change));
+
+    /// <summary>Sets a document variable (read by DOCVARIABLE), or removes it.</summary>
+    /// <param name="variable">The variable; a null value removes it.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetDocumentVariable(DocumentVariable variable) => Op(CommandId.SetDocumentVariable, Arg.Flatten(variable));
+
+    /// <summary>Sets the file name FILENAME shows. Not saved, and not an edit.</summary>
+    /// <param name="name">The file's name, with its folder when FILENAME <c>\p</c> should show one.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetFileName(string name) => Op(CommandId.SetFileName, new Arg("value", Node(name)));
 
     /// <summary>Inserts a field. With a selection and an empty code, wraps the selection.</summary>
     /// <param name="options">The field.</param>
@@ -624,6 +786,28 @@ public abstract partial record EditorOperation
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation SetCellMargins(CellMarginOptions options) => Op(CommandId.SetCellMargins, Arg.Flatten(options));
 
+    /// <summary>Sets the selected cells' preferred width, text direction, wrapping, fitting and end mark.</summary>
+    /// <param name="options">The properties to change.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetCellProperties(CellPropertiesOptions options) => Op(CommandId.SetCellProperties, Arg.Flatten(options));
+
+    /// <summary>Hides the selected rows' end marks (a row hides when its text is hidden too), and sets the table properties they override.</summary>
+    /// <param name="hidden">The rows' end marks are hidden; kept when null.</param>
+    /// <param name="exceptions">The table properties the rows override; kept when null.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetRowProperties(bool? hidden = null, RowExceptions? exceptions = null) => Op(CommandId.SetRowProperties, new Arg("hidden", Nullable(hidden), Optional: true), new Arg("exceptions", exceptions is null ? null : Node(exceptions), Optional: true));
+
+    /// <summary>Sets the space between the table's cells, or none.</summary>
+    /// <param name="spacing">0 to 1584 points; null for none.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetTableCellSpacing(Length? spacing) => Op(CommandId.SetTableCellSpacing, new Arg("value", Nullable(spacing)));
+
+    /// <summary>Sets the table's alternative text.</summary>
+    /// <param name="title">The title; kept when null, removed when empty.</param>
+    /// <param name="description">The description; kept when null, removed when empty.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetTableAltText(string? title = null, string? description = null) => Op(CommandId.SetTableAltText, new Arg("title", title is { } title_ ? Node(title_) : null, Optional: true), new Arg("description", description is { } description_ ? Node(description_) : null, Optional: true));
+
     /// <summary>Repeats the selected rows as a header row on each page.</summary>
     /// <param name="on">Whether they repeat.</param>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
@@ -676,6 +860,11 @@ public abstract partial record EditorOperation
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation SetTableStyle(StyleId styleId) => Op(CommandId.SetTableStyle, new Arg("value", Node(styleId)));
 
+    /// <summary>Sets the table style new tables take (Set as Default).</summary>
+    /// <param name="styleId">A table style; null for Table Grid.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetDefaultTableStyle(StyleId? styleId) => Op(CommandId.SetDefaultTableStyle, new Arg("value", styleId is { } s ? Node(s) : null));
+
     /// <summary>Sets which parts of the table style apply. Unset values are kept.</summary>
     /// <param name="options">The options to change.</param>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
@@ -695,8 +884,10 @@ public abstract partial record EditorOperation
     /// <param name="width">The width, 1 to 1584 pt.</param>
     /// <param name="height">The height, 1 to 1584 pt.</param>
     /// <param name="lockAspect">Keep the aspect ratio.</param>
+    /// <param name="relativeWidth">A floating object's width as a share of a box on the page; <see cref="RelativeSize.Absolute"/> makes it absolute.</param>
+    /// <param name="relativeHeight">A floating object's height as a share of a box on the page; <see cref="RelativeSize.Absolute"/> makes it absolute.</param>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
-    public static EditorOperation SetObjectSize(Length? width = null, Length? height = null, bool? lockAspect = null) => Op(CommandId.SetObjectSize, new Arg("width", width is { } width_ ? Node(width_) : null, Optional: true), new Arg("height", height is { } height_ ? Node(height_) : null, Optional: true), new Arg("lockAspect", lockAspect is { } lockAspect_ ? Node(lockAspect_) : null, Optional: true));
+    public static EditorOperation SetObjectSize(Length? width = null, Length? height = null, bool? lockAspect = null, RelativeSize? relativeWidth = null, RelativeSize? relativeHeight = null) => Op(CommandId.SetObjectSize, new Arg("width", width is { } width_ ? Node(width_) : null, Optional: true), new Arg("height", height is { } height_ ? Node(height_) : null, Optional: true), new Arg("lockAspect", lockAspect is { } lockAspect_ ? Node(lockAspect_) : null, Optional: true), new Arg("relativeWidth", relativeWidth is null ? null : Node(relativeWidth), Optional: true), new Arg("relativeHeight", relativeHeight is null ? null : Node(relativeHeight), Optional: true));
 
     /// <summary>Restores the selected picture's original size.</summary>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
@@ -778,6 +969,22 @@ public abstract partial record EditorOperation
     /// <param name="options">The adjustments to change.</param>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation SetPictureAdjust(PictureAdjustChange options) => Op(CommandId.SetPictureAdjust, Arg.Flatten(options));
+
+    /// <summary>Crops the selected picture, inline or floating: its box follows the part shown, at the scale it is drawn.</summary>
+    /// <param name="crop">The fractions of its image cut from each edge.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetPictureCrop(PictureCrop crop) => Op(CommandId.SetPictureCrop, Arg.Flatten(crop));
+
+    /// <summary>Replaces the selected picture's image, keeping its width, effects and place; its height follows the new image and the crop is cleared.</summary>
+    /// <param name="data">The image: PNG, JPEG, GIF, BMP or TIFF.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation ChangePicture(ReadOnlyMemory<byte> data) => Op(CommandId.ChangePicture, new Arg("value", Node(data)));
+
+    /// <summary>Aligns or distributes the selected floating objects across their page, its margins, or the box around them.</summary>
+    /// <param name="align">How they line up.</param>
+    /// <param name="relativeTo">What they line up in; the box around them for two or more, else the margins, when null.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation AlignObjects(ObjectAlign align, AlignReference? relativeTo = null) => Op(CommandId.AlignObjects, new Arg("align", Node(align)), new Arg("relativeTo", Nullable(relativeTo), Optional: true));
 
     /// <summary>Rotates the selected objects.</summary>
     /// <param name="degrees">The rotation, 0 to 360 degrees clockwise.</param>
@@ -1083,8 +1290,9 @@ public abstract partial record EditorOperation
     /// <param name="fieldShading">When fields are shaded (default <see cref="FieldShading.WhenSelected"/>).</param>
     /// <param name="cursorOverrides">Pointer shapes over elements instead of the editor's own, replacing those set before; the first match wins, and an empty list clears them.</param>
     /// <param name="controlLabels">Labels content controls and shown sub-templates while the caret is in them or the pointer is over them (default on); a control whose <c>w15:appearance</c> is <c>hidden</c> is never labelled.</param>
+    /// <param name="bookmarks">Shows bookmarks as brackets around their text (an I-beam where they hold none); hidden ones never show.</param>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
-    public static EditorOperation SetViewOptions(bool? formattingMarks = null, bool? gridlines = null, bool? textBoundaries = null, bool? liveLayout = null, ChromeTheme? theme = null, ColorValue? accent = null, DocumentAppearance? appearance = null, MeasureDetail? detail = null, ObjectGrid? objectGrid = null, ThemeColors? themeColors = null, FieldShading? fieldShading = null, IReadOnlyList<CursorOverride>? cursorOverrides = null, bool? controlLabels = null) => Op(CommandId.SetViewOptions, new Arg("formattingMarks", Nullable(formattingMarks), Optional: true), new Arg("gridlines", Nullable(gridlines), Optional: true), new Arg("textBoundaries", Nullable(textBoundaries), Optional: true), new Arg("liveLayout", Nullable(liveLayout), Optional: true), new Arg("theme", theme is null ? null : Node(theme), Optional: true), new Arg("accent", Nullable(accent), Optional: true), new Arg("appearance", Nullable(appearance), Optional: true), new Arg("detail", Nullable(detail), Optional: true), new Arg("objectGrid", Nullable(objectGrid), Optional: true), new Arg("themeColors", themeColors is null ? null : Node(themeColors), Optional: true), new Arg("fieldShading", Nullable(fieldShading), Optional: true), new Arg("cursorOverrides", cursorOverrides is null ? null : Node(cursorOverrides), Optional: true), new Arg("controlLabels", Nullable(controlLabels), Optional: true));
+    public static EditorOperation SetViewOptions(bool? formattingMarks = null, bool? gridlines = null, bool? textBoundaries = null, bool? liveLayout = null, ChromeTheme? theme = null, ColorValue? accent = null, DocumentAppearance? appearance = null, MeasureDetail? detail = null, ObjectGrid? objectGrid = null, ThemeColors? themeColors = null, FieldShading? fieldShading = null, IReadOnlyList<CursorOverride>? cursorOverrides = null, bool? controlLabels = null, bool? bookmarks = null) => Op(CommandId.SetViewOptions, new Arg("formattingMarks", Nullable(formattingMarks), Optional: true), new Arg("gridlines", Nullable(gridlines), Optional: true), new Arg("textBoundaries", Nullable(textBoundaries), Optional: true), new Arg("liveLayout", Nullable(liveLayout), Optional: true), new Arg("theme", theme is null ? null : Node(theme), Optional: true), new Arg("accent", Nullable(accent), Optional: true), new Arg("appearance", Nullable(appearance), Optional: true), new Arg("detail", Nullable(detail), Optional: true), new Arg("objectGrid", Nullable(objectGrid), Optional: true), new Arg("themeColors", themeColors is null ? null : Node(themeColors), Optional: true), new Arg("fieldShading", Nullable(fieldShading), Optional: true), new Arg("cursorOverrides", cursorOverrides is null ? null : Node(cursorOverrides), Optional: true), new Arg("controlLabels", Nullable(controlLabels), Optional: true), new Arg("bookmarks", Nullable(bookmarks), Optional: true));
 
     /// <summary>Switches between editing and design mode.</summary>
     /// <param name="mode">The mode.</param>

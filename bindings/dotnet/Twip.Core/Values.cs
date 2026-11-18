@@ -204,6 +204,9 @@ public readonly record struct MatchId(string Value)
 [JsonConverter(typeof(StyleIdConverter))]
 public readonly record struct StyleId(string Value)
 {
+    /// <summary>No style, as state reports it (<c>none</c>).</summary>
+    public static StyleId None => new("none");
+
     /// <inheritdoc/>
     public override string ToString() => Value;
 }
@@ -703,6 +706,8 @@ public enum TextAutofit
     None,
     /// <summary>The shape's height follows its text.</summary>
     Shape,
+    /// <summary>The text shrinks when it overflows the shape.</summary>
+    ShrinkText,
 }
 
 /// <summary>Which way a shape's text runs.</summary>

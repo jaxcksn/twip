@@ -1,0 +1,21 @@
+[
+  {
+    "author": "Ada Lovelace",
+    "custom": [
+      {
+        "kind": "text",
+        "name": "Client",
+        "value": "Acme"
+      }
+    ],
+    "modified": "2026-11-15T12:00:00Z",
+    "revision": "3",
+    "title": "Annual report",
+    "variables": [
+      {
+        "name": "CaseNumber",
+        "value": "2026-0042"
+      }
+    ]
+  }
+]

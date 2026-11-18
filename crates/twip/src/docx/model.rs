@@ -32,6 +32,16 @@ pub struct RunStyle {
     /// `w:noProof`: no automatic hyphenation either.
     pub no_proof: bool,
     pub underline: Option<String>,
+    /// The underline's own colour (`w:u/@w:color`); `None`: the text's.
+    pub underline_color: Option<u32>,
+    /// Emboss, engrave (`w:imprint`), outline and shadow.
+    pub emboss: bool,
+    pub imprint: bool,
+    pub outline: bool,
+    pub shadow: bool,
+    /// The OpenType features as set, whatever the compatibility mode makes of them ([`RunStyle::ligatures`] and
+    /// [`RunStyle::figures`] are what layout applies).
+    pub typography: Typography,
     pub color: Option<u32>,
     pub highlight: Option<u32>,
     pub shading: Option<u32>,
@@ -79,6 +89,21 @@ impl RunStyle {
 }
 
 pub type Run = Rc<RunStyle>;
+
+/// A run's OpenType settings as written (`w14:ligatures`, `w14:cntxtAlts`, `w14:numForm`, `w14:numSpacing`,
+/// `w14:stylisticSets`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Typography {
+    /// 1 standard, 2 contextual, 4 historical, 8 discretionary.
+    pub ligatures: u8,
+    pub contextual_alternates: bool,
+    /// 1 lining, 2 old style, 0 the font's default.
+    pub number_form: u32,
+    /// 4 proportional, 8 tabular, 0 the font's default.
+    pub number_spacing: u32,
+    /// Bit n − 1 for stylistic set n.
+    pub stylistic_sets: u32,
+}
 
 /// Source XML carried for saving (a run's `w:rPr`, a paragraph's `w:pPr`). Never part of equality: formatting
 /// compares by its effect.
@@ -212,6 +237,8 @@ pub struct ParaStyle {
     pub in_frame: bool,
     pub text_alignment: String,
     pub outline_lvl: Option<i64>,
+    /// `w15:collapsed`: the heading opens collapsed.
+    pub collapsed: bool,
     pub list_jc: String,
     /// The list the paragraph is in (numId, ilvl; direct or from its style), and that level's `w:numFmt`.
     pub num: Option<(i64, i64)>,
@@ -317,6 +344,23 @@ pub enum FieldKind {
     },
     /// A legacy drop-down (FORMDROPDOWN): it shows its entry as its value, a blank without one.
     DropDown,
+    /// A document property, by DOCPROPERTY's name (AUTHOR, TITLE, SUBJECT, KEYWORDS, COMMENTS, LASTSAVEDBY and
+    /// REVNUM read theirs).
+    DocProperty(String),
+    /// A document variable (DOCVARIABLE).
+    DocVariable(String),
+    /// A document date property (CREATEDATE, SAVEDATE, PRINTDATE): its core property's name.
+    DocDate(&'static str),
+    /// FILENAME: the name the host gave the document ([`Document::file_name`]).
+    FileName,
+    /// NOTEREF: a bookmark's note, and the note its first note reference is (found when fields are evaluated).
+    NoteRef(String, Option<(NoteKind, i64)>),
+    /// LISTNUM: the next number of a list kept in fields.
+    ListNum,
+    /// AUTONUM: the count of AUTONUM fields to here.
+    AutoNum,
+    /// An `=` formula.
+    Formula,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -335,6 +379,16 @@ pub struct Picture {
     pub shape: Option<Box<crate::drawing::Shape>>,
     /// An inline shape's text (`wps:txbx`): its story, edited as a text box's (`StoryId::TextBox` of its id).
     pub text: Option<Box<InlineText>>,
+    /// Its run child as read (`w:drawing`, `w:pict`, `mc:AlternateContent`; editable reads only): a copy pasted into
+    /// the part it came from is written from it.
+    pub src: Raw,
+}
+
+impl Float {
+    /// A frame (`w:framePr` paragraphs made a float): read from one, or made since.
+    pub fn is_frame(&self) -> bool {
+        self.frame_src.is_some() || self.text_box.as_ref().is_some_and(|tb| tb.blocks.iter().any(|b| matches!(b, Block::Para(p) if p.style.in_frame)))
+    }
 }
 
 impl Inline {
@@ -455,7 +509,9 @@ impl Float {
         let content: Vec<&Inline> = p
             .inlines
             .iter()
-            .filter(|i| !matches!(i, Inline::Bookmark(..) | Inline::Range(..)) && !matches!(i, Inline::Text(t, _) if t.is_empty()))
+            .filter(|i| {
+                !matches!(i, Inline::Bookmark(..) | Inline::Opaque(..) | Inline::Range(..)) && !matches!(i, Inline::Text(t, _) if t.is_empty())
+            })
             .collect();
         match content.as_slice() {
             [Inline::ControlStart(a), Inline::Picture(..), Inline::ControlEnd(b)] if a == b && picture(a) => Some(*a),
@@ -530,6 +586,8 @@ pub enum Inline {
         /// Template design: what an empty result shows; not saved.
         label: Option<Rc<str>>,
         value: Option<String>,
+        /// A legacy form field's data (`w:ffData`).
+        form: Option<Rc<FormField>>,
         run: Run,
     },
     /// `w:fldChar separate`: the end of a field's code, the start of its result.
@@ -562,6 +620,42 @@ pub enum Inline {
     /// A date block (`w:dayShort`, `w:dayLong`, `w:monthShort`, `w:monthLong`, `w:yearShort`, `w:yearLong`, by its
     /// element name) and the date it shows, filled in when fields are evaluated: one unit.
     DateBlock(&'static str, String, Run),
+    /// Content the engine doesn't model, between runs (an equation, a subdocument, an editing permission's start or
+    /// end): no units, nothing drawn, saved as read wherever it moves. No units.
+    Opaque(Rc<Opaque>),
+}
+
+impl Opaque {
+    /// An editing permission's start (`true`) or end, and its id.
+    pub fn permission(&self) -> Option<(bool, i64)> {
+        let x = self.xml.0.as_deref()?;
+        let name = x.strip_prefix('<')?.split(|c: char| c.is_whitespace() || c == '/' || c == '>').next()?;
+        let start = match name.rsplit(':').next()? {
+            "permStart" => true,
+            "permEnd" => false,
+            _ => return None,
+        };
+        let at = x.find(":id=\"").or_else(|| x.find(" id=\""))?;
+        let v = x[at..].split('"').nth(1)?;
+        Some((start, v.trim().parse().ok()?))
+    }
+}
+
+/// A legacy form field's data: what saving writes back.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FormField {
+    /// The `w:ffData` as read, written while `data` is as read.
+    pub xml: Raw,
+    /// Its settings and value, and as read.
+    pub data: super::forms::FormData,
+    pub read: super::forms::FormData,
+}
+
+/// An element kept as read ([`Inline::Opaque`]).
+#[derive(Debug, PartialEq)]
+pub struct Opaque {
+    /// The element as read.
+    pub xml: Raw,
 }
 
 /// The date blocks' element names and the date pictures they show.
@@ -801,6 +895,24 @@ pub struct Control {
     pub at: Option<(usize, usize)>,
 }
 
+impl ControlProps {
+    /// A building block gallery (`w:docPartList`): `Some` of its category (`None`: any).
+    pub fn gallery(&self) -> Option<Option<String>> {
+        let x = self.kind_xml.as_deref().filter(|x| x.contains("docPartList"))?;
+        let cat = x.find("docPartCategory").and_then(|k| {
+            let rest = &x[k..];
+            let v = rest.find("val=\"")? + 5;
+            Some(rest[v..v + rest[v..].find('"')?].to_string())
+        });
+        Some(cat.filter(|c| !c.is_empty()))
+    }
+
+    /// `w:temporary`: the control goes when its content is edited, leaving the content.
+    pub fn temporary(&self) -> bool {
+        self.rest.iter().any(|(n, x)| n == "temporary" && !x.contains("val=\"0\"") && !x.contains("val=\"false\""))
+    }
+}
+
 impl Control {
     /// A new control (no markup read).
     pub fn new(props: ControlProps) -> Control {
@@ -938,6 +1050,8 @@ pub struct Cell {
     pub fit_text: bool,
     /// `w:hideMark`.
     pub hide_mark: bool,
+    /// The diagonal borders, top left to bottom right and top right to bottom left (`w:tl2br`, `w:tr2bl`).
+    pub diagonals: Option<Rc<[Option<Border>; 2]>>,
     /// The cell's `w:tcPr` as read (or as table formatting changed it): what re-resolution merges over the cell's
     /// table-style region when its place in the table changes.
     pub direct: Raw,
@@ -966,6 +1080,8 @@ pub struct Row {
     pub borders: Option<Rc<[Option<Border>; 6]>>,
     /// The row's exception shading (`w:tblPrEx/w:shd`).
     pub shading: Option<u32>,
+    /// The row-end mark is hidden (`trPr/w:hidden`).
+    pub hidden: bool,
     /// Every character of the row, its row-end mark included, is hidden.
     pub vanished: bool,
     /// The row's own cell spacing (`trPr` or `w:tblPrEx`).
@@ -981,8 +1097,19 @@ pub struct Row {
     /// The `w:tr` element's byte range in [`Source::xml`] (editable reads only): saving keeps a row it still has. A
     /// copied row needs `None`, or it would be written as the row it was copied from.
     pub src: Option<Rc<std::ops::Range<usize>>>,
+    /// The row's `w:trPr` and `w:tblPrEx` as read (editable reads only): what a rewritten row's properties are patched
+    /// from.
+    pub direct: Raw,
+    pub exceptions: Raw,
     /// Tracked insertion or deletion of the row, and tracked changes of its properties.
     pub rev: RowRevisions,
+}
+
+/// A table's alternative text.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct TableAlt {
+    pub title: String,
+    pub description: String,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1001,6 +1128,8 @@ pub struct Table {
     pub cell_spacing: f64,
     pub look: Option<Look>,
     pub bands: (i64, i64),
+    /// The alternative text's title and description (`w:tblCaption`, `w:tblDescription`).
+    pub alt: Option<Rc<TableAlt>>,
     pub floating: Option<TablePos>,
     pub bidi_visual: bool,
     pub grid: Vec<f64>,
@@ -1034,7 +1163,8 @@ pub enum SectionBreak {
     NextColumn,
 }
 
-/// A section's page: size, margins, columns and a different first page (Page Setup, Layout commands).
+/// A section's settings the Page Setup, Layout and header and footer commands change: size, margins, columns, a
+/// different first page, borders, its break, page and line numbering, vertical alignment, text direction and notes.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SectionPage {
     pub page_w: f64,
@@ -1051,6 +1181,22 @@ pub struct SectionPage {
     pub page_borders: Option<PageBorders>,
     /// The `w:pgBorders` as written (what isn't modelled, art borders' ids, is kept), or as last set.
     pub page_borders_xml: Option<String>,
+    pub break_kind: SectionBreak,
+    pub pg_start: Option<i64>,
+    pub pg_fmt: Option<String>,
+    pub chapter: Option<(i64, String)>,
+    pub line_numbers: Option<LineNumbering>,
+    pub v_align: String,
+    pub text_flow: u8,
+    pub notes: [NoteProps; 2],
+    pub no_endnote: bool,
+    /// `w15:footnoteColumns` (0 when absent).
+    pub footnote_columns: u32,
+    /// `w:formProt`: filling-in-forms protection covers the section (Word writes it only when off).
+    pub form_protected: bool,
+    /// The parts of its headers and footers (default, first, even); `None`: the section before's.
+    pub headers: HfRefs,
+    pub footers: HfRefs,
 }
 
 impl Section {
@@ -1069,6 +1215,61 @@ impl Section {
             title_pg: self.title_pg,
             page_borders: self.page_borders.clone(),
             page_borders_xml: self.page_borders_xml.clone(),
+            break_kind: self.break_kind,
+            pg_start: self.pg_start,
+            pg_fmt: self.pg_fmt.clone(),
+            chapter: self.chapter.clone(),
+            line_numbers: self.line_numbers.clone(),
+            v_align: self.v_align.clone(),
+            text_flow: self.text_flow,
+            notes: self.notes.clone(),
+            no_endnote: self.no_endnote,
+            footnote_columns: self.footnote_columns,
+            form_protected: self.form_protected,
+            headers: self.headers.clone(),
+            footers: self.footers.clone(),
+        }
+    }
+
+    /// The section's settings without its blocks, read page or tracked change: a new section made from it.
+    pub fn without_blocks(&self) -> Section {
+        Section { change: None, ..self.settings() }
+    }
+
+    /// The section's settings and tracked change, without its blocks or read page.
+    pub fn settings(&self) -> Section {
+        Section {
+            break_kind: self.break_kind,
+            page_w: self.page_w,
+            page_h: self.page_h,
+            top: self.top,
+            bottom: self.bottom,
+            left: self.left,
+            right: self.right,
+            header: self.header,
+            footer: self.footer,
+            gutter: self.gutter,
+            columns: self.columns.clone(),
+            title_pg: self.title_pg,
+            headers: self.headers.clone(),
+            footers: self.footers.clone(),
+            pg_start: self.pg_start,
+            pg_fmt: self.pg_fmt.clone(),
+            chapter: self.chapter.clone(),
+            line_numbers: self.line_numbers.clone(),
+            v_align: self.v_align.clone(),
+            page_borders: self.page_borders.clone(),
+            page_borders_xml: self.page_borders_xml.clone(),
+            line_grid: self.line_grid,
+            notes: self.notes.clone(),
+            no_endnote: self.no_endnote,
+            text_flow: self.text_flow,
+            rtl_gutter: self.rtl_gutter,
+            footnote_columns: self.footnote_columns,
+            form_protected: self.form_protected,
+            blocks: Vec::new(),
+            change: self.change.clone(),
+            read: None,
         }
     }
 
@@ -1076,6 +1277,11 @@ impl Section {
         (self.page_w, self.page_h, self.top, self.bottom, self.left, self.right) = (p.page_w, p.page_h, p.top, p.bottom, p.left, p.right);
         (self.header, self.footer, self.gutter, self.columns, self.title_pg) = (p.header, p.footer, p.gutter, p.columns, p.title_pg);
         (self.page_borders, self.page_borders_xml) = (p.page_borders, p.page_borders_xml);
+        (self.break_kind, self.pg_start, self.pg_fmt, self.chapter, self.line_numbers) =
+            (p.break_kind, p.pg_start, p.pg_fmt, p.chapter, p.line_numbers);
+        (self.v_align, self.text_flow, self.notes, self.no_endnote) = (p.v_align, p.text_flow, p.notes, p.no_endnote);
+        (self.footnote_columns, self.form_protected) = (p.footnote_columns, p.form_protected);
+        (self.headers, self.footers) = (p.headers, p.footers);
     }
 }
 
@@ -1172,9 +1378,13 @@ pub struct Section {
     pub rtl_gutter: bool,
     /// `w15:footnoteColumns`: the footnote area's column count (0 when absent).
     pub footnote_columns: u32,
+    /// `w:formProt`: filling-in-forms protection covers the section.
+    pub form_protected: bool,
     pub blocks: Vec<Block>,
     /// A tracked change of the section's properties.
     pub change: Option<Rc<SectionChange>>,
+    /// Its page as read (editable reads only): saving rewrites only the page settings that changed.
+    pub read: Option<Rc<SectionPage>>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -1197,6 +1407,15 @@ pub struct Settings {
     pub even_and_odd: bool,
     pub mirror_margins: bool,
     pub gutter_at_top: bool,
+    /// The style new tables take (`w:defaultTableStyle`).
+    pub default_table_style: Option<String>,
+    /// Legacy form fields aren't shaded (`w:doNotShadeFormData`).
+    pub no_form_shading: bool,
+    /// The document variables (`w:docVars`), in order.
+    pub variables: Vec<(String, String)>,
+    /// `w:decimalSymbol` and `w:listSeparator`: what `=` formulas read numbers and arguments with.
+    pub decimal_symbol: Option<char>,
+    pub list_separator: Option<char>,
     /// `w:bookFoldPrinting` / `w:bookFoldRevPrinting`: `Some(reversed)`.
     pub book_fold: Option<bool>,
     /// `w:strictFirstAndLastChars`: the strict East Asian line-breaking level.
@@ -1249,6 +1468,10 @@ pub struct Document {
     /// Footnote separator / continuation separator stories, when the document defines them.
     pub separators: HashMap<String, Vec<Block>>,
     pub images: Vec<Vec<u8>>,
+    /// The core, extended and custom document properties.
+    pub properties: super::properties::Properties,
+    /// The file's name, and folder when the host gave one: what FILENAME shows. Not saved.
+    pub file_name: Option<String>,
     /// The hyphenation patterns the host supplied.
     pub hyphenation: Option<crate::layout::hyphenate::Hyphenation>,
     /// Content controls the model keeps: row-level wrappers (repeating sections and their items) and checkboxes,
@@ -1399,12 +1622,12 @@ impl Inline {
             | Inline::FieldSep { run, .. }
             | Inline::FieldEnd { run, .. }
             | Inline::CommentRef { run, .. } => Some(run),
-            Inline::Bookmark(_) | Inline::Range(_) | Inline::ControlStart(_) | Inline::ControlEnd(_) => None,
+            Inline::Bookmark(_) | Inline::Range(_) | Inline::ControlStart(_) | Inline::ControlEnd(_) | Inline::Opaque(_) => None,
         }
     }
 
     /// Caret units the inline occupies: a character per character of text, one per other drawn inline, none for
-    /// bookmarks, range markers, comment references and anchored objects.
+    /// bookmarks, range markers, comment references, anchored objects and opaque content.
     pub fn units(&self) -> usize {
         match self {
             Inline::Text(s, _) => s.chars().count(),
@@ -1413,7 +1636,8 @@ impl Inline {
             | Inline::CommentRef { .. }
             | Inline::Float(..)
             | Inline::ControlStart(_)
-            | Inline::ControlEnd(_) => 0,
+            | Inline::ControlEnd(_)
+            | Inline::Opaque(_) => 0,
             _ => 1,
         }
     }

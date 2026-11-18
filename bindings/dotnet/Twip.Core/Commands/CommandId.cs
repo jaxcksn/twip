@@ -433,4 +433,86 @@ public enum CommandId
     SetConsecutiveHyphenLimit,
     /// <summary>Hyphenates words in capitals, or not.</summary>
     SetHyphenateCaps,
+    /// <summary>Applies a character style to the selected text, or removes it.</summary>
+    ApplyCharacterStyle,
+    /// <summary>Sets the scale, kerning and OpenType features.</summary>
+    SetTypography,
+    /// <summary>Sets the text's language and whether spelling is checked.</summary>
+    SetLanguage,
+    /// <summary>Sets emboss, engrave, outline and shadow.</summary>
+    SetCharacterEffects,
+    /// <summary>Sets the underline's colour.</summary>
+    SetUnderlineColor,
+    /// <summary>Sets the outline level and whether paragraphs open collapsed.</summary>
+    SetOutline,
+    /// <summary>Sets the paragraphs' text direction.</summary>
+    SetParagraphTextDirection,
+    /// <summary>Sets the section's page number format, first number and chapter numbers.</summary>
+    SetPageNumbering,
+    /// <summary>Sets where text sits between the section's top and bottom margins.</summary>
+    SetPageVerticalAlignment,
+    /// <summary>Numbers the section's lines, or stops.</summary>
+    SetLineNumbering,
+    /// <summary>Sets the break the section starts with.</summary>
+    SetSectionBreakType,
+    /// <summary>Sets the section's text direction.</summary>
+    SetSectionTextDirection,
+    /// <summary>Sets how the document's pages pair and where the gutter is.</summary>
+    SetMultiplePages,
+    /// <summary>Links a header or footer to the section before's, or gives it its own.</summary>
+    SetHeaderFooterLinked,
+    /// <summary>Empties a header or footer.</summary>
+    RemoveHeaderFooter,
+    /// <summary>Inserts an alignment tab.</summary>
+    InsertAlignmentTab,
+    /// <summary>Inserts a footnote or an endnote, numbered or with its own mark.</summary>
+    InsertNote,
+    /// <summary>Sets footnote or endnote options.</summary>
+    SetNoteProperties,
+    /// <summary>Converts footnotes and endnotes.</summary>
+    ConvertNotes,
+    /// <summary>Selects a bookmark's text (Go To).</summary>
+    GoToBookmark,
+    /// <summary>Bookmarks the selection.</summary>
+    InsertBookmark,
+    /// <summary>Deletes a bookmark.</summary>
+    DeleteBookmark,
+    /// <summary>Sets the selected cells' preferred width, text direction, wrapping and fitting.</summary>
+    SetCellProperties,
+    /// <summary>Hides rows and sets their exceptions.</summary>
+    SetRowProperties,
+    /// <summary>Sets the space between a table's cells.</summary>
+    SetTableCellSpacing,
+    /// <summary>Sets a table's alternative text.</summary>
+    SetTableAltText,
+    /// <summary>Sets the table style new tables take.</summary>
+    SetDefaultTableStyle,
+    /// <summary>Crops the selected picture.</summary>
+    SetPictureCrop,
+    /// <summary>Replaces the selected picture's image.</summary>
+    ChangePicture,
+    /// <summary>Aligns or distributes the selected floating objects.</summary>
+    AlignObjects,
+    /// <summary>Sets the document's properties.</summary>
+    SetDocumentProperties,
+    /// <summary>Sets or removes a document variable.</summary>
+    SetDocumentVariable,
+    /// <summary>Inserts a legacy form field.</summary>
+    InsertFormField,
+    /// <summary>Sets a legacy form field's options.</summary>
+    SetFormField,
+    /// <summary>Fills in a legacy form field.</summary>
+    FillFormField,
+    /// <summary>Shades legacy form fields, or not.</summary>
+    SetFormFieldShading,
+    /// <summary>Restrict Editing: sets, starts or stops the document's protection.</summary>
+    SetDocumentProtection,
+    /// <summary>Makes the selection an editable range.</summary>
+    AddEditableRange,
+    /// <summary>Removes the editable ranges at the selection.</summary>
+    RemoveEditableRanges,
+    /// <summary>Sets the file name FILENAME shows.</summary>
+    SetFileName,
+    /// <summary>Sets the selection's paragraph's drop cap.</summary>
+    SetDropCap,
 }

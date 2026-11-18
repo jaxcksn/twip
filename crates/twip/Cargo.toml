@@ -25,6 +25,7 @@ wuff = "0.2.9"
 # PDF open passwords (pdf::encrypt): the AES block cipher, SHA-256/384/512 for the password hash, and random keys and
 # salts from the operating system.
 aes = "0.8.4"
+sha1 = { version = "0.10.6", default-features = false }
 sha2 = { version = "0.10.9", default-features = false }
 getrandom = "0.4.3"
 # Twip's 2D graphics (crates/twip-graphics): the screen, image decoding and PDF. Published

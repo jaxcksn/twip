@@ -914,7 +914,15 @@ impl<'a> Builder<'a> {
                 at += inl.units() as u32;
                 continue;
             }
-            if matches!(inl, Inline::Bookmark(_) | Inline::Range(_) | Inline::CommentRef { .. } | Inline::ControlStart(_) | Inline::ControlEnd(_)) {
+            if matches!(
+                inl,
+                Inline::Bookmark(_)
+                    | Inline::Opaque(_)
+                    | Inline::Range(_)
+                    | Inline::CommentRef { .. }
+                    | Inline::ControlStart(_)
+                    | Inline::ControlEnd(_)
+            ) {
                 continue;
             }
             self.flush_text(&mut pend, &mut pend_runs, &mut pend_units)?;
@@ -1022,6 +1030,7 @@ impl<'a> Builder<'a> {
                         effect: f.effect,
                         shape: f.shape.clone(),
                         text: f.text_box.clone().map(|text_box| Box::new(crate::docx::model::InlineText { id: f.id, text_box })),
+                        src: Default::default(),
                     },
                     run,
                 ),
@@ -1099,6 +1108,7 @@ impl<'a> Builder<'a> {
                         effect: [0.0; 4],
                         shape: None,
                         text: None,
+                        src: Default::default(),
                     }));
                     self.atom(p, "\u{FFFC}");
                 }
@@ -1598,6 +1608,12 @@ fn shapes_alike(a: &Run, b: &Run) -> bool {
         hidden,
         no_proof,
         underline,
+        underline_color: _,
+        emboss: _,
+        imprint: _,
+        outline: _,
+        shadow: _,
+        typography: _,
         color,
         highlight,
         shading,
@@ -1742,7 +1758,7 @@ fn continues_after_break(para: &Paragraph, space: &ShapeSpace) -> bool {
         && para
             .inlines
             .iter()
-            .find(|i| !matches!(i, Inline::Bookmark(_) | Inline::Range(_)) && !matches!(i, Inline::Text(t, _) if t.is_empty()))
+            .find(|i| !matches!(i, Inline::Bookmark(_) | Inline::Opaque(_) | Inline::Range(_)) && !matches!(i, Inline::Text(t, _) if t.is_empty()))
             .is_some_and(|i| matches!(i, Inline::Break(BreakKind::Page | BreakKind::Column, _)))
 }
 
@@ -1798,6 +1814,8 @@ pub fn shape_space(
                         fields.value(kind, crate::docx::fields::code_text(&para.inlines, *s).trim()).or_else(|| value.clone())
                     })
                     .and_then(|c| crate::docx::fields::if_field(&crate::docx::fields::words(&c))),
+                    // A NOTEREF: its note's number, as the reference shows it.
+                    (FieldKind::NoteRef(_, Some(n)), _) => notes.get(n).cloned(),
                     _ => fields.value(kind, code.trim()),
                 };
                 space.fields.push(value.map(|v| chapter.cloned().unwrap_or_default() + &v))

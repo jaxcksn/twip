@@ -188,7 +188,7 @@ fn content_widths_uncached(blocks: &[LaidBlock], env: &StoryEnv, fixed: bool, me
                     if let Inline::Float(f, _) = i
                         && f.layout_in_cell
                         && f.wrap != "none"
-                        && !(f.vml || f.hidden() || f.in_note || f.frame_src.is_some())
+                        && !(f.vml || f.hidden() || f.in_note || f.is_frame())
                     {
                         let box_w = (f.w * 20.0 + 1e-6).trunc() as i64;
                         mn = mn.max(box_w + twips(f.effect[0]) + twips(f.effect[2]));

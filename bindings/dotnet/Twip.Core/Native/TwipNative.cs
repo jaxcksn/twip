@@ -135,6 +135,8 @@ internal enum Method : uint
     ListEntryPreview = 94,
     FontCharacters = 95,
     CharacterPicture = 96,
+    Bookmarks = 97,
+    DocumentProperties = 98,
 }
 
 /// <summary>Status codes the C functions return.</summary>

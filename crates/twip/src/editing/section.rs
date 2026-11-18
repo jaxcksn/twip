@@ -25,12 +25,16 @@ impl Editor {
                     .position(|s| s.headers.iter().chain(s.footers.iter()).flatten().any(|n| Some(n.as_str()) == name))
                     .unwrap_or(0)
             }
-            _ => focus
-                .para_offset()
-                .and_then(|(p, _)| self.index.para_slot(p))
-                .and_then(|s| self.index.top_block(s.container, s.block))
-                .map_or(0, |(sec, _, _)| sec),
+            _ => self.section_at(&focus).unwrap_or(0),
         }
+    }
+
+    /// The section a position in the body is in.
+    pub(super) fn section_at(&self, at: &super::position::Position) -> Option<usize> {
+        if matches!(at.story, StoryId::HeaderFooter(_)) {
+            return None;
+        }
+        at.para_offset().and_then(|(p, _)| self.index.para_slot(p)).and_then(|s| self.index.top_block(s.container, s.block)).map(|(sec, _, _)| sec)
     }
 
     /// The selection's section's index.
@@ -69,6 +73,13 @@ impl Editor {
                     PageBorderDisplay::NotFirstPage => "notFirstPage",
                 }
                 .into();
+            }
+            // Around the header and footer: a document setting, every section's borders following it.
+            if let Some(on) = c.surround_header {
+                b.surround_header = on;
+            }
+            if let Some(on) = c.surround_footer {
+                b.surround_footer = on;
             }
             let shadow = c.shadow.unwrap_or_else(|| b.bottom.as_ref().is_some_and(|x| x.shadow));
             // A new edge's space: 24 pt from the page's edge, or 1 pt (top, bottom) and 4 pt (sides) from the text.
@@ -131,9 +142,20 @@ impl Editor {
                 continue;
             }
             let change = s.change.clone();
-            if self.step(&mut tx, Step::SectionPage { section, page, change }).is_err() {
+            if self.step(&mut tx, Step::SectionPage { section, page: Box::new(page), change }).is_err() {
                 self.abort(tx);
                 return Outcome::Unchanged("no section");
+            }
+            changed = true;
+        }
+        let mut settings = crate::editing::step::PageSettings::of(&self.doc.settings);
+        let was = settings;
+        settings.no_surround_header = c.surround_header.map_or(settings.no_surround_header, |on| !on);
+        settings.no_surround_footer = c.surround_footer.map_or(settings.no_surround_footer, |on| !on);
+        if settings != was {
+            if self.step(&mut tx, Step::PageSettings(settings)).is_err() {
+                self.abort(tx);
+                return Outcome::Unchanged("the setting can't change");
             }
             changed = true;
         }
@@ -167,7 +189,7 @@ impl Editor {
         }
         let change = s.change.clone();
         let mut tx = self.begin(label);
-        if self.step(&mut tx, Step::SectionPage { section, page, change }).is_err() {
+        if self.step(&mut tx, Step::SectionPage { section, page: Box::new(page), change }).is_err() {
             self.abort(tx);
             return Outcome::Unchanged("no section");
         }

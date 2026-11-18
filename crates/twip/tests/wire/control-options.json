@@ -3,6 +3,10 @@
     "checked": true
   },
   {
+    "allowInsertDelete": false,
+    "sectionTitle": "Line"
+  },
+  {
     "format": "yyyy-MM-dd",
     "locale": "en-GB"
   },

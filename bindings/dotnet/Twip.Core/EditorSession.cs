@@ -256,6 +256,11 @@ public sealed class EditorSession : IDisposable, IAsyncDisposable, ICallbackSink
     /// <returns>The counts.</returns>
     public Task<WordCount> GetWordCountAsync(CancellationToken ct = default) => CallAsync<WordCount>(Method.WordCount, [], ct);
 
+    /// <summary>The document's properties (core, extended and custom) and variables.</summary>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>The properties.</returns>
+    public Task<DocumentProperties> GetDocumentPropertiesAsync(CancellationToken ct = default) => CallAsync<DocumentProperties>(Method.DocumentProperties, [], ct);
+
     // Hosting
 
     /// <summary>Attaches a presentation. For control authors: see <see cref="IEditorHostAdapter"/>.</summary>

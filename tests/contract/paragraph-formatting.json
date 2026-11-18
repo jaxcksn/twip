@@ -1,0 +1,22 @@
+{
+  "name": "paragraph-formatting",
+  "fixture": "editor/FX-STYLES.docx",
+  "steps": [
+    { "op": "open" },
+    { "op": "command", "command": { "type": "selectAll" } },
+    { "op": "command", "command": { "type": "setParagraphSpacing", "contextual": true } },
+    { "op": "command", "command": { "type": "setIndents", "left": 18, "mirror": true } },
+    { "op": "command", "command": { "type": "setParagraphFlow", "dontHyphenate": true, "suppressLineNumbers": true } },
+    { "op": "command", "command": { "type": "setOutline", "level": 2, "collapsed": true } },
+    { "op": "command", "command": { "type": "setParagraphTextDirection", "value": "tbRl" } },
+    { "op": "expectState", "match": { "paragraph": { "contextualSpacing": true, "indents": { "left": 18, "mirror": true }, "flow": { "dontHyphenate": true, "suppressLineNumbers": true }, "outlineLevel": 2, "collapsed": true, "textDirection": "tbRl" } } },
+    { "op": "command", "command": { "type": "setOutline", "level": 10 } },
+    { "op": "expectError", "code": "invalid-argument" },
+    { "op": "command", "command": { "type": "setParagraphTextDirection", "value": "lrTb" } },
+    { "op": "command", "command": { "type": "setOutline", "level": 0 } },
+    { "op": "export", "format": "docx" },
+    { "op": "reopen" },
+    { "op": "command", "command": { "type": "selectAll" } },
+    { "op": "expectState", "match": { "paragraph": { "contextualSpacing": true, "indents": { "mirror": true }, "flow": { "dontHyphenate": true, "suppressLineNumbers": true }, "outlineLevel": 0, "collapsed": true, "textDirection": "lrTb" } } }
+  ]
+}

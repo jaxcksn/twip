@@ -76,7 +76,7 @@ pub(super) fn with_run(i: &Inline, run: &Run) -> Inline {
         Inline::Picture(p, _) => Inline::Picture(p.clone(), run),
         Inline::NoteRef { kind, id, custom, .. } => Inline::NoteRef { kind: *kind, id: *id, custom: *custom, run },
         Inline::NoteMark(k, id, _) => Inline::NoteMark(*k, *id, run),
-        Inline::FieldBegin { id, kind, lock, dirty, view, label, value, .. } => Inline::FieldBegin {
+        Inline::FieldBegin { id, kind, lock, dirty, view, label, value, form, .. } => Inline::FieldBegin {
             id: *id,
             kind: kind.clone(),
             lock: *lock,
@@ -84,6 +84,7 @@ pub(super) fn with_run(i: &Inline, run: &Run) -> Inline {
             view: *view,
             label: label.clone(),
             value: value.clone(),
+            form: form.clone(),
             run,
         },
         Inline::FieldSep { id, .. } => Inline::FieldSep { id: *id, run },
@@ -124,6 +125,9 @@ impl Editor {
                     c.v_align = tcp.v_align.clone().unwrap_or_else(|| "top".into());
                     c.text_direction = tcp.text_direction.clone().unwrap_or_else(|| "lrTb".into());
                     c.no_wrap = tcp.no_wrap.unwrap_or(false);
+                    c.fit_text = tcp.fit_text.unwrap_or(false);
+                    let b = &tcp.borders;
+                    c.diagonals = (b.tl2br.is_some() || b.tr2bl.is_some()).then(|| Rc::new([b.tl2br.clone(), b.tr2bl.clone()]));
                 }
             }
             if rows != t.rows {

@@ -78,7 +78,10 @@ impl Session {
     fn dialog_context(&mut self, kind: DialogKind) -> dialogs::Context {
         let mut cx = dialogs::Context::default();
         match kind {
-            DialogKind::Hyperlink => cx.selected_text = self.editor.selected_text(),
+            DialogKind::Hyperlink => {
+                cx.selected_text = self.editor.selected_text();
+                cx.bookmarks = self.editor.bookmarks().into_iter().map(|b| b.name).filter(|n| !n.starts_with('_')).collect();
+            }
             DialogKind::Accessibility => cx.issues = dialogs::issues(self.editor.document()),
             DialogKind::Font => cx.fonts = self.fonts.families(),
             _ => {}
@@ -146,6 +149,7 @@ impl Session {
             spacing: Some(ParagraphSpacing {
                 before: Some(AutoOr::Value(Points(ppr.space_before.unwrap_or(0.0)))),
                 after: Some(AutoOr::Value(Points(ppr.space_after.unwrap_or(0.0)))),
+                contextual: None,
             }),
             line_spacing: Some(match (ppr.line, ppr.line_rule) {
                 (Some(l), Some(crate::docx::props::LineRule::Exact)) => LineSpacing::Exact { size: Points(l / 20.0) },
@@ -158,6 +162,7 @@ impl Session {
                 right: Some(Points(ppr.ind_right.unwrap_or(0.0))),
                 first_line: None,
                 hanging: None,
+                mirror: None,
             }),
         }
     }
@@ -585,6 +590,20 @@ impl Session {
         crate::services::headings(&mut self.editor)
     }
 
+    /// The document's properties (core, extended and custom) and variables.
+    pub fn document_properties(&self) -> crate::api::services::DocumentProperties {
+        self.editor.document_properties()
+    }
+
+    /// The document's bookmarks, hidden ones too, in document order.
+    pub fn bookmarks(&self) -> Vec<crate::api::services::BookmarkInfo> {
+        self.editor
+            .bookmarks()
+            .into_iter()
+            .map(|b| crate::api::services::BookmarkInfo { hidden: b.name.starts_with('_'), empty: b.end.is_none_or(|e| e == b.start), name: b.name })
+            .collect()
+    }
+
     /// Puts the caret at the start of a heading and reveals it.
     pub fn select_heading(&mut self, id: HeadingId) -> Result<(), Error> {
         let para = id.0.parse::<u64>().map(crate::layout::ParaId).map_err(|_| Error::invalid("not a heading id"))?;
@@ -882,5 +901,18 @@ mod tests {
         let link = s.dialog_update(link, patch).expect("updates");
         let DialogValues::Hyperlink(h) = &link.values else { panic!() };
         assert_eq!((h.text.as_str(), h.address.as_str()), ("the example site", "https://example.org/"), "fields left out keep their values");
+        // A link to a bookmark: the picker lists the shown ones.
+        s.run(crate::api::command::Command::InsertBookmark("Terms".into())).expect("bookmarks");
+        s.run(crate::api::command::Command::InsertBookmark("_Ref1".into())).expect("bookmarks");
+        let link = s.dialog_open(DialogKind::Hyperlink).expect("opens");
+        let options: Vec<&str> = link.fields["bookmark"].options.iter().flatten().map(|o| o.value.as_str()).collect();
+        assert_eq!(options, ["_top", "Terms"], "hidden bookmarks aren't offered");
+        let patch = serde_json::from_str(r#"{"kind":"hyperlink","address":"","bookmark":"Terms"}"#).expect("a patch");
+        let link = s.dialog_update(link, patch).expect("updates");
+        s.dialog_apply(link).expect("applies");
+        assert_eq!(s.state().selection.link.as_ref().map(|l| l.address.as_str()), Some("#Terms"));
+        let link = s.dialog_open(DialogKind::Hyperlink).expect("opens");
+        let DialogValues::Hyperlink(h) = &link.values else { panic!() };
+        assert_eq!((h.address.as_str(), h.bookmark.as_str()), ("", "Terms"));
     }
 }

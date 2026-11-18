@@ -331,6 +331,8 @@ pub(super) fn fill_state(s: &mut Session, state: &mut State) {
     let r = &mut state.review;
     r.tracking = e.tracking();
     r.tracking_locked = e.document().settings.protection.as_ref().is_some_and(|p| p.forces_tracking());
+    let author = s.author.name.clone();
+    r.protection = e.protection_state(&author);
     r.markup_view = e.document().review.view;
     let revision = e.revision();
     r.revisions = match s.services.revision_count {

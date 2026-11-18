@@ -288,6 +288,25 @@ pub struct TableSelection {
     pub alignment: HorizontalAlignment,
     /// The table indent.
     pub indent: Points,
+    /// The cells' preferred width.
+    pub cell_width: Tri<TableWidth>,
+    /// The direction the cells' text runs in.
+    pub text_direction: Tri<crate::api::command::TextFlow>,
+    /// The cells' text wraps.
+    pub wrap_text: Tri<bool>,
+    /// The cells' text is squeezed to fit.
+    pub fit_text: Tri<bool>,
+    /// The rows' end marks are hidden.
+    pub row_hidden: Tri<bool>,
+    /// The space between the table's cells; none when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cell_spacing: Option<Points>,
+    /// The table's alternative text title.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub title: String,
+    /// The table's alternative text description.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub description: String,
 }
 
 /// Which parts of a table style apply.
@@ -363,6 +382,18 @@ pub struct ObjectSelection {
     /// How many objects are selected (2 or more: a multi-selection, the other fields describing the first).
     #[serde(default)]
     pub count: u16,
+    /// A picture's crop, by fractions of its image from each edge; absent when uncropped.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub crop: Option<crate::api::command::PictureCrop>,
+    /// A picture's Set Transparent Colour; absent for none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transparent_color: Option<Color>,
+    /// A floating object's width as a share of a box on the page; absent for an absolute width.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub relative_width: Option<crate::api::command::RelativeSize>,
+    /// Its height as a share of a box on the page; absent for an absolute height.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub relative_height: Option<crate::api::command::RelativeSize>,
 }
 
 /// A floating object's place and its wrapping options.
@@ -448,6 +479,81 @@ pub struct ElementContext {
     /// A picture control's picture size.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub size: Option<super::value::Size>,
+    /// A legacy form field's options and value.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub form: Option<Box<FormFieldInfo>>,
+    /// A content control's look and options.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub control: Option<Box<ControlInfo>>,
+}
+
+/// A content control's look and options; what doesn't apply to its kind is absent.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ControlInfo {
+    /// How it shows its edges.
+    pub appearance: super::value::ControlAppearance,
+    /// Its colour; absent for the default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<Color>,
+    /// It goes when its content is edited.
+    pub temporary: bool,
+    /// The character style text typed into it takes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub style: Option<StyleId>,
+    /// A check box's checked symbol.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checked_symbol: Option<String>,
+    /// A check box's unchecked symbol.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unchecked_symbol: Option<String>,
+    /// What a repeating section's items are called.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub section_title: Option<String>,
+    /// A repeating section's items can be added and removed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allow_insert_delete: Option<bool>,
+    /// A building block gallery's entries (`w:docPartList`): the package's building blocks in its category, by name.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub building_blocks: Vec<String>,
+}
+
+/// A legacy form field's options and value; what doesn't apply to its kind is absent.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct FormFieldInfo {
+    /// Its kind.
+    pub kind: super::command::FormFieldType,
+    /// Its bookmark name.
+    pub name: String,
+    /// It can be filled in.
+    pub enabled: bool,
+    /// The document's fields update when it is left.
+    pub calculate_on_exit: bool,
+    /// The help F1 shows.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub help_text: String,
+    /// The help the status bar shows.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub status_text: String,
+    /// What a text field takes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_type: Option<super::command::TextInputType>,
+    /// A text field's default text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_text: Option<String>,
+    /// The most characters a text field takes (0: any).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_length: Option<u32>,
+    /// A check box is checked.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checked: Option<bool>,
+    /// A drop-down's entries.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub entries: Vec<String>,
+    /// The entry a drop-down shows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entry: Option<u32>,
 }
 
 /// The link at the selection.
@@ -537,6 +643,36 @@ pub struct CharacterFormatting {
     pub character_spacing: Tri<Points>,
     /// The raised (positive) or lowered position.
     pub position: Tri<Points>,
+    /// The character style, or none.
+    pub character_style: Tri<NoneOr<StyleId>>,
+    /// The horizontal scale, percent.
+    pub scale: Tri<f64>,
+    /// Kerning at or above this size; 0: off.
+    pub kerning: Tri<Points>,
+    /// The ligatures used (a combination Word's dialog doesn't offer reads as mixed).
+    pub ligatures: Tri<crate::api::command::Ligatures>,
+    /// The digits' widths.
+    pub number_spacing: Tri<crate::api::command::NumberSpacing>,
+    /// The digits' forms.
+    pub number_form: Tri<crate::api::command::NumberForm>,
+    /// The stylistic set (1…20), or 0 for the font's default.
+    pub stylistic_set: Tri<u8>,
+    /// Contextual alternates.
+    pub contextual_alternates: Tri<bool>,
+    /// The language (a BCP 47 tag).
+    pub language: Tri<String>,
+    /// Spelling and grammar are not checked.
+    pub no_proof: Tri<bool>,
+    /// Emboss.
+    pub emboss: Tri<bool>,
+    /// Engrave.
+    pub engrave: Tri<bool>,
+    /// Outline.
+    pub outline: Tri<bool>,
+    /// Shadow.
+    pub shadow: Tri<bool>,
+    /// The underline's colour, or the text's (`auto`).
+    pub underline_color: Tri<AutoOr<Color>>,
 }
 
 /// A paragraph's list.
@@ -579,6 +715,8 @@ pub struct IndentState {
     pub first_line: Tri<Points>,
     /// The hanging indent.
     pub hanging: Tri<Points>,
+    /// Mirror indents (inside and outside on facing pages).
+    pub mirror: Tri<bool>,
 }
 
 /// The selected paragraphs' pagination settings.
@@ -593,6 +731,12 @@ pub struct FlowState {
     pub page_break_before: Tri<bool>,
     /// Widow and orphan control.
     pub widow_control: Tri<bool>,
+    /// Don't hyphenate.
+    pub dont_hyphenate: Tri<bool>,
+    /// Left out of line numbering.
+    pub suppress_line_numbers: Tri<bool>,
+    /// In a text box, which lines text around it wraps tightly to.
+    pub textbox_tight_wrap: Tri<crate::api::command::TightWrap>,
 }
 
 /// The selection's paragraph formatting.
@@ -621,6 +765,17 @@ pub struct ParagraphFormatting {
     pub borders: Tri<BorderState>,
     /// The shading, or none.
     pub shading: Tri<NoneOr<Color>>,
+    /// No space between paragraphs of the same style.
+    pub contextual_spacing: Tri<bool>,
+    /// The outline level (1…9), or body text (0).
+    pub outline_level: Tri<u8>,
+    /// Collapsed when the document opens.
+    pub collapsed: Tri<bool>,
+    /// The text direction.
+    pub text_direction: Tri<crate::api::command::TextFlow>,
+    /// The selection's paragraph's drop cap, when it has one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drop_cap: Option<crate::api::command::DropCap>,
 }
 
 /// A page size.
@@ -650,7 +805,7 @@ pub struct PageMargins {
 }
 
 /// A section's text columns.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ColumnLayout {
     /// The number of columns.
@@ -659,6 +814,8 @@ pub struct ColumnLayout {
     pub spacing: Points,
     /// A line is drawn between columns.
     pub separator: bool,
+    /// Each column's width and the space after it, when they differ.
+    pub widths: Vec<crate::api::command::ColumnWidth>,
 }
 
 /// The selection's section's page setup.
@@ -681,6 +838,60 @@ pub struct PageFormatting {
     pub different_first_page: bool,
     /// Odd and even pages have their own headers and footers.
     pub different_odd_even: bool,
+    /// The page number format.
+    pub page_number_format: crate::api::command::NumberFormat,
+    /// The section's first page number, or `null` when it continues from the section before.
+    pub page_number_start: Option<u32>,
+    /// Chapter numbers in page numbers, or `null`.
+    pub chapter_numbers: Option<crate::api::command::ChapterNumbers>,
+    /// Where text sits between the top and bottom margins.
+    pub vertical_alignment: crate::api::command::PageVerticalAlignment,
+    /// The line numbering, or `null`.
+    pub line_numbers: Option<crate::api::command::LineNumbers>,
+    /// The break the section starts with.
+    pub break_type: crate::api::command::SectionBreakKind,
+    /// The section's text direction.
+    pub text_direction: crate::api::command::TextFlow,
+    /// How the document's pages pair.
+    pub multiple_pages: crate::api::command::MultiplePagesMode,
+    /// The gutter is at the top.
+    pub gutter_at_top: bool,
+    /// Which of the section's headers take the section before's (Link to Previous).
+    pub header_links: HeaderFooterLinks,
+    /// Which of its footers do.
+    pub footer_links: HeaderFooterLinks,
+    /// The section's footnote settings.
+    pub footnotes: NoteSettings,
+    /// The section's endnote settings.
+    pub endnotes: NoteSettings,
+    /// The footnote area's columns; 0 for the section's own.
+    pub footnote_columns: u32,
+}
+
+/// A section's footnote or endnote settings.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct NoteSettings {
+    /// Where the notes go.
+    pub position: crate::api::command::NotePosition,
+    /// The number format.
+    pub format: crate::api::command::NumberFormat,
+    /// The first number.
+    pub start: u32,
+    /// When numbering starts again.
+    pub restart: crate::api::command::NoteRestart,
+}
+
+/// Which of a section's headers or footers take the section before's.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct HeaderFooterLinks {
+    /// For every page.
+    pub default: bool,
+    /// For the first page.
+    pub first: bool,
+    /// For even pages.
+    pub even: bool,
 }
 
 /// What can be undone and redone.
@@ -769,6 +980,8 @@ pub struct ViewState {
     pub control_labels: bool,
     /// When fields are shaded.
     pub field_shading: super::services::FieldShading,
+    /// Bookmarks are shown.
+    pub bookmarks: bool,
     /// The pointer shapes shown over elements instead of the editor's own.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub cursor_overrides: Vec<super::services::CursorOverride>,
@@ -800,6 +1013,7 @@ impl Default for ViewState {
             object_grid: super::services::ObjectGrid::WhileDragging,
             control_labels: true,
             field_shading: super::services::FieldShading::WhenSelected,
+            bookmarks: false,
             cursor_overrides: Vec::new(),
             sub_template_rules: Vec::new(),
         }
@@ -814,6 +1028,9 @@ pub struct ReviewState {
     pub tracking: bool,
     /// Document protection keeps tracking on.
     pub tracking_locked: bool,
+    /// What the document's protection allows, when it has one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub protection: Option<ProtectionState>,
     /// How revisions and comments show.
     pub markup_view: MarkupView,
     /// The number of revisions.
@@ -822,6 +1039,24 @@ pub struct ReviewState {
     pub comments: u32,
     /// The active comment thread, or `None`.
     pub active_comment: Option<CommentId>,
+}
+
+/// A document's protection (Restrict Editing).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProtectionState {
+    /// What it allows.
+    pub kind: super::command::ProtectionKind,
+    /// It is enforced.
+    pub enforced: bool,
+    /// Formatting is limited to the styles that aren't locked.
+    pub formatting: bool,
+    /// Stopping it needs a password.
+    pub password: bool,
+    /// The selection is in a range the author may edit.
+    pub in_editable_range: bool,
+    /// Filling in forms: the sections (by index) anyone may edit.
+    pub unprotected_sections: Vec<u32>,
 }
 
 /// Spell checking.
@@ -984,6 +1219,7 @@ pub(crate) fn build(editor: &mut crate::editing::Editor, flags: Flags<'_>) -> St
     let review = ReviewState {
         tracking: editor.tracking(),
         tracking_locked: doc.settings.protection.as_ref().is_some_and(|p| p.forces_tracking()),
+        protection: None,
         markup_view: doc.review.view,
         revisions: 0,
         comments: doc.comments.by_id.len() as u32,

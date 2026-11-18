@@ -148,3 +148,116 @@ fn sections_drag_across() {
     let anchor = s.anchor().and_then(|p| p.para_offset()).map(|(p, _)| text_of(&e, p)).unwrap_or_default();
     assert_eq!((section(&anchor), section(&caret_text(&e))), (Some(1), Some(3)), "the drag spans sections 1 to 3");
 }
+
+#[test]
+fn a_section_break_splits_its_section_and_saves_a_sectpr_of_its_own() {
+    use super::super::commands::{Command, Outcome};
+    use crate::api::command::SectionBreakKind;
+    use crate::docx::SectionBreak;
+    let mut e = fixture();
+    let starts = |e: &Editor| e.document().sections.iter().map(|s| s.break_kind).collect::<Vec<_>>();
+    let before = starts(&e);
+    let texts = |e: &Editor| super::texts(e);
+    // Mid-paragraph in the first section, and at the end of the paragraph holding its `w:sectPr`.
+    let p2 = super::para_id(&e, texts(&e).iter().position(|t| t.starts_with("S1 P2")).expect("S1 P2"));
+    e.select_range(p2, Unit(5), Unit(5), fonts());
+    assert!(matches!(e.execute(Command::InsertSectionBreak(SectionBreakKind::Continuous), fonts()), Outcome::Changed(_)));
+    assert_eq!(starts(&e).len(), before.len() + 1);
+    assert_eq!(starts(&e)[..2], [before[0], SectionBreak::Continuous]);
+    assert!(texts(&e).iter().any(|t| t == "S1 P2"), "{:?}", texts(&e));
+    let p4 = super::para_id(&e, texts(&e).iter().position(|t| t.starts_with("S1 P4")).expect("S1 P4"));
+    let end = Unit(texts(&e).iter().find(|t| t.starts_with("S1 P4")).map_or(0, |t| t.chars().count() as u32));
+    e.select_range(p4, end, end, fonts());
+    assert!(matches!(e.execute(Command::InsertSectionBreak(SectionBreakKind::NextPage), fonts()), Outcome::Changed(_)));
+    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let again = Editor::open(&saved, fonts()).expect("reopens");
+    assert_eq!(starts(&again), starts(&e));
+    assert_eq!(texts(&again), texts(&e));
+    let (a, b) = (&again.document().sections[0], &e.document().sections[0]);
+    assert_eq!((a.page_w, a.top, a.columns.num), (b.page_w, b.top, b.columns.num));
+    let xml = crate::docx::package::read(&saved, &[], "word/document.xml").expect("reads").expect("the main part");
+    assert_eq!(xml.matches("<w:sectPr").count(), before.len() + 2, "{xml}");
+    // Undone, the document saves as it was read.
+    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo, fonts());
+    assert_eq!(starts(&e), before);
+    let back = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
+    assert_eq!(starts(&back), before);
+}
+
+#[test]
+fn a_drop_cap_is_made_saved_as_a_framed_paragraph_and_put_back() {
+    use super::super::commands::{Command, Outcome};
+    use crate::api::command::{DropCap, DropCapPosition};
+    use crate::api::value::Points;
+    let mut e = fixture();
+    let first = super::texts(&e)[0].clone();
+    let p = super::para_id(&e, 0);
+    e.select_range(p, Unit(2), Unit(2), fonts());
+    let dropped = DropCap { position: DropCapPosition::Dropped, font: Some("Georgia".into()), lines: Some(3), distance: Some(Points(4.0)) };
+    assert!(matches!(e.execute(Command::SetDropCap(dropped.clone()), fonts()), Outcome::Changed(_)));
+    assert_eq!(e.drop_cap(), Some(dropped.clone()));
+    assert!(super::texts(&e).iter().any(|t| *t == first[1..]), "the letter left its paragraph");
+    let saved = crate::docx::write::save(e.document()).expect("saves");
+    if let Some(d) = std::env::var_os("TWIP_DROP_CAP_OUT") {
+        std::fs::write(std::path::Path::new(&d).join("drop-cap.docx"), &saved).expect("writes");
+    }
+    let xml = crate::docx::package::read(&saved, &[], "word/document.xml").expect("reads").expect("the main part");
+    let frame = xml.find("w:dropCap=\"drop\"").expect("a framed paragraph");
+    assert!(frame < xml.find(&first[1..12]).expect("the paragraph's text"), "before its paragraph");
+    let mut again = Editor::open(&saved, fonts()).expect("reopens");
+    let q = super::para_id(&again, 0);
+    again.select_range(q, Unit(1), Unit(1), fonts());
+    assert_eq!(again.drop_cap(), Some(dropped));
+    // In the margin, then back in the text.
+    let margin = DropCap { position: DropCapPosition::InMargin, font: None, lines: Some(2), distance: None };
+    assert!(matches!(e.execute(Command::SetDropCap(margin), fonts()), Outcome::Changed(_)));
+    assert_eq!(e.drop_cap().map(|d| (d.position, d.lines)), Some((DropCapPosition::InMargin, Some(2))));
+    let none = DropCap { position: DropCapPosition::None, font: None, lines: None, distance: None };
+    assert!(matches!(e.execute(Command::SetDropCap(none.clone()), fonts()), Outcome::Changed(_)));
+    assert_eq!(super::texts(&e)[0], first, "the letter is back");
+    assert!(matches!(e.execute(Command::SetDropCap(none), fonts()), Outcome::Unchanged(_)));
+}
+
+#[test]
+fn linking_a_section_to_the_previous_keeps_a_header_part_another_section_shares() {
+    use super::super::commands::{Command, Outcome};
+    let blank = crate::docx::blank::blank_docx();
+    let read = |name: &str| crate::docx::package::read(&blank, &[], name).expect("reads").expect(name);
+    let rels = read("word/_rels/document.xml.rels").replace(
+        "</Relationships>",
+        r#"<Relationship Id="rIdH" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/></Relationships>"#,
+    );
+    let types = read("[Content_Types].xml").replace(
+        "</Types>",
+        r#"<Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/></Types>"#,
+    );
+    let ns = r#"xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships""#;
+    let header = format!(r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:hdr {ns}><w:p><w:r><w:t>Shared</w:t></w:r></w:p></w:hdr>"#);
+    let r = r#"<w:headerReference w:type="default" r:id="rIdH"/>"#;
+    let document = format!(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document {ns}><w:body><w:p><w:pPr><w:sectPr/></w:pPr><w:r><w:t>One</w:t></w:r></w:p><w:p><w:pPr><w:sectPr>{r}</w:sectPr></w:pPr><w:r><w:t>Two</w:t></w:r></w:p><w:p><w:r><w:t>Three</w:t></w:r></w:p><w:sectPr>{r}</w:sectPr></w:body></w:document>"#
+    );
+    let bytes = crate::docx::write::repackage(
+        &blank,
+        &[
+            ("word/_rels/document.xml.rels".into(), rels.into_bytes()),
+            ("[Content_Types].xml".into(), types.into_bytes()),
+            ("word/header1.xml".into(), header.into_bytes()),
+            ("word/document.xml".into(), document.into_bytes()),
+        ],
+        zip::CompressionMethod::Deflated,
+    )
+    .expect("repackages");
+    let mut e = Editor::open(&bytes, fonts()).expect("opens");
+    let two = para(&e, "Two");
+    e.select_range(two, Unit(0), Unit(0), fonts());
+    let link = serde_json::from_value(serde_json::json!({ "kind": "header", "pages": "default", "linked": true })).expect("a link");
+    assert!(matches!(e.execute(Command::SetHeaderFooterLinked(link), fonts()), Outcome::Changed(_)));
+    let doc = e.document();
+    assert!(doc.sections[1].headers[0].is_none(), "the second section takes the first's");
+    let name = doc.sections[2].headers[0].clone().expect("the third keeps its header");
+    assert!(doc.stories.contains_key(&name), "the part the third shows stays");
+    let again = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
+    assert!(again.document().sections[2].headers[0].is_some() && again.document().sections[1].headers[0].is_none());
+}

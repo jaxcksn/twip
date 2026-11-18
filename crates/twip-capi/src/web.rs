@@ -1,6 +1,6 @@
 //! The browser module's host: the engine's callbacks go to the page's `globalThis.twipHost.emit(kind, session, ptr,
 //! len)` (the SDK sets it before it starts the module; the payload is readable in the module's memory during the call),
-//! and the engine's clocks are the page's `performance.now()` and `Date.now()`. The GPU screen draws into the page's
+//! and the engine's clocks are the page's `performance.now()` and `Date.now()`, in its time zone. The GPU screen draws into the page's
 //! canvases: [`twip_gpu_start`] makes the device, [`twip_attach_canvas`] gives a session its canvas, and
 //! `twip_frame_window` draws into it.
 
@@ -24,6 +24,20 @@ extern "C" {
     fn date_now() -> f64;
 }
 
+#[wasm_bindgen]
+extern "C" {
+    type Date;
+    #[wasm_bindgen(constructor)]
+    fn new(ms: f64) -> Date;
+    #[wasm_bindgen(method, js_name = getTimezoneOffset)]
+    fn timezone_offset(this: &Date) -> f64;
+}
+
+/// The page's time zone at `ms`: minutes east of UTC (`getTimezoneOffset` counts west).
+fn zone(ms: f64) -> f64 {
+    -Date::new(ms).timezone_offset()
+}
+
 /// Hands a callback's payload to the page.
 pub fn emit(kind: u32, session: u32, payload: &[u8]) {
     host_emit(kind, session, payload.as_ptr() as usize, payload.len());
@@ -31,7 +45,7 @@ pub fn emit(kind: u32, session: u32, payload: &[u8]) {
 
 /// Gives the engine the page's clocks.
 pub fn clocks() {
-    engine::internal::clock::set(performance_now, date_now);
+    engine::internal::clock::set(performance_now, date_now, zone);
 }
 
 /// Makes the page's WebGPU device when there is none, or it was lost: 0 when there is none to draw with, 1 when the one

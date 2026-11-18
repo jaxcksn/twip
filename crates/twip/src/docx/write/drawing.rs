@@ -29,6 +29,15 @@ pub(super) fn is_vml(text: &str) -> bool {
     !text.contains("<wp:") && (text.contains("<v:") || text.contains(":pict"))
 }
 
+/// A VML picture's first shape at `w` × `h` points.
+pub(super) fn vml_size(text: &str, w: f64, h: f64) -> String {
+    let Some((start, end)) = first_vml_shape(text) else { return text.to_string() };
+    let pt = |v: f64| format!("{}pt", (v * 20.0).round() / 20.0);
+    let tag = &text[start..end];
+    let style = css_set(&css_set(&attr(tag, "style").unwrap_or_default(), "width", &pt(w)), "height", &pt(h));
+    format!("{}{}{}", &text[..start], set_attr(tag, "style", &style), &text[end..])
+}
+
 pub(super) fn vml_patch(text: &str, was: &Float, now: &Float) -> String {
     use crate::drawing::paint::Fill as F;
     let Some((start, end)) = first_vml_shape(text) else { return text.to_string() };
@@ -216,6 +225,12 @@ fn shape_edits(a: &Shape, b: &Shape, base: usize, text: &str, out: &mut Vec<Edit
                 && let Some(g) = &sp.geom
             {
                 out.push((rel(g), geometry_xml(&y.geom)));
+            }
+            if (&x.blip.src, &x.blip.adjust) != (&y.blip.src, &y.blip.adjust)
+                && let Some(f) = &sp.fill
+                && let Some(t) = text.get(rel(f))
+            {
+                out.push((rel(f), blip_patch(t, &y.blip)));
             }
             props_edits(sp, (&None, &None), (&x.line, &y.line), (&x.effects, &y.effects), &rel, out);
         }
@@ -424,7 +439,47 @@ fn blip_xml(b: &BlipFill, tag: &str) -> String {
         }
     };
     let embed = b.image.map_or(String::new(), |i| format!(r#" r:embed="{}{i}""#, super::NEW_IMAGE));
-    format!(r#"<{tag} rotWithShape="{}"><a:blip{embed}/>{src}{mode}</{tag}>"#, u8::from(b.rot_with_shape))
+    let adjust = adjust_xml(&b.adjust);
+    let blip = if adjust.is_empty() { format!("<a:blip{embed}/>") } else { format!("<a:blip{embed}>{adjust}</a:blip>") };
+    format!(r#"<{tag} rotWithShape="{}">{blip}{src}{mode}</{tag}>"#, u8::from(b.rot_with_shape))
+}
+
+/// A blip's picture adjustments.
+fn adjust_xml(adjust: &[crate::drawing::paint::BlipAdjust]) -> String {
+    use crate::drawing::paint::BlipAdjust;
+    adjust
+        .iter()
+        .map(|a| match a {
+            BlipAdjust::AlphaModFix(p) => format!(r#"<a:alphaModFix amt="{}"/>"#, p.0),
+            BlipAdjust::Grayscale => "<a:grayscl/>".into(),
+            BlipAdjust::Lum { bright, contrast } => format!(r#"<a:lum bright="{}" contrast="{}"/>"#, bright.0, contrast.0),
+            BlipAdjust::BiLevel(p) => format!(r#"<a:biLevel thresh="{}"/>"#, p.0),
+            BlipAdjust::Duotone([a, b]) => format!("<a:duotone>{}{}</a:duotone>", colour_xml(a), colour_xml(b)),
+            BlipAdjust::ClrChange { from, to } => {
+                format!("<a:clrChange><a:clrFrom>{}</a:clrFrom><a:clrTo>{}</a:clrTo></a:clrChange>", colour_xml(from), colour_xml(to))
+            }
+        })
+        .collect()
+}
+
+/// A picture's `pic:blipFill` as read (`src`) with its crop and adjustments as `b` has them: the blip's start tag (its
+/// relationship) and extensions kept.
+fn blip_patch(src: &str, b: &BlipFill) -> String {
+    let mut s = src.to_string();
+    if let Some(r) = super::element(&s, "srcRect") {
+        s.replace_range(r, "");
+    }
+    let Some(r) = super::element(&s, "blip") else { return s };
+    let el = s[r.clone()].to_string();
+    let Some(open_end) = el.find('>').map(|k| k + 1) else { return s };
+    let name = el[1..].split(|c: char| c.is_whitespace() || c == '/' || c == '>').next().unwrap_or("a:blip").to_string();
+    let open = el[..open_end].trim_end_matches("/>").trim_end_matches('>').to_string();
+    let ext = super::element(&el, "extLst").map(|e| el[e].to_string()).unwrap_or_default();
+    let inner = adjust_xml(&b.adjust) + &ext;
+    let blip = if inner.is_empty() { format!("{open}/>") } else { format!("{open}>{inner}</{name}>") };
+    let crop = if b.src.iter().any(|v| v.0 != 0) { rect4("srcRect", &b.src) } else { String::new() };
+    s.replace_range(r, &(blip + &crop));
+    s
 }
 
 fn end_xml(tag: &str, e: &Option<LineEnd>) -> String {
@@ -536,8 +591,9 @@ fn body_xml(b: &BodyProps) -> String {
         }
     };
     let up = if b.upright { r#" upright="1""# } else { "" };
+    let cols = if b.columns.0 > 1 { format!(r#" numCol="{}" spcCol="{}""#, b.columns.0, b.columns.1.0) } else { String::new() };
     format!(
-        r#"<wps:bodyPr rot="{}" vert="{}" wrap="{}" lIns="{}" tIns="{}" rIns="{}" bIns="{}" anchor="{anchor}" anchorCtr="0"{up}>{fit}</wps:bodyPr>"#,
+        r#"<wps:bodyPr rot="{}" vert="{}" wrap="{}" lIns="{}" tIns="{}" rIns="{}" bIns="{}"{cols} anchor="{anchor}" anchorCtr="0"{up}>{fit}</wps:bodyPr>"#,
         b.rot.0,
         b.direction.name(),
         if b.no_wrap { "none" } else { "square" },
