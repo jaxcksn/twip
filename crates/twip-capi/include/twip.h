@@ -169,7 +169,9 @@ enum TwipMethod {
     TWIP_LIST_GALLERIES = 93, /* ListGalleryKind -> ListGallerySection[] */
     TWIP_LIST_ENTRY_PREVIEW = 94, /* { id, size } -> Picture: a list gallery entry's preview */
     TWIP_FONT_CHARACTERS = 95, /* string (a family) -> CharRange[]: the characters the font has */
-    TWIP_CHARACTER_PICTURE = 96 /* { family, character, size } -> Picture: a character in a font */
+    TWIP_CHARACTER_PICTURE = 96, /* { family, character, size } -> Picture: a character in a font */
+    TWIP_BOOKMARKS = 97, /* -> BookmarkInfo[] */
+    TWIP_DOCUMENT_PROPERTIES = 98 /* -> DocumentProperties */
 };
 
 int32_t twip_call(TwipEngine* engine, uint32_t session, uint32_t method, const uint8_t* req, size_t len, TwipBuf* out);
