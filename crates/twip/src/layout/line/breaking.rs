@@ -170,11 +170,22 @@ pub fn band(
                 a + l2 + if first < 0.0 && l != l2 { first + l - l2 } else { first }
             }
         };
-        let right = match b >= frame.width - EPS {
+        let mut right = match b >= frame.width - EPS {
             true => right_edge,
             false if frame.drop_cut_indents => b,
             false => b.min(right_edge),
         };
+        // Compat ≤ 14, a line of several pieces: Word drops a piece only when its line is force-broken, and a line
+        // that ends at the paragraph mark isn't, so the mark alone, spaces or one character or object before it take
+        // the piece however narrow, from its start. After a piece of tabs alone the whole line is retried (below).
+        let tabs_only = s > start && pieces[start..s].iter().all(|q| matches!(q.kind, Kind::Tab | Kind::Anchor));
+        if frame.compat == Compat::Legacy
+            && intervals.len() > 1
+            && !tabs_only
+            && let Some(w) = mark_rest(sp, pieces, s)
+        {
+            right = right.max(left + w + 2.0 * EPS);
+        }
         if right - left <= EPS {
             continue;
         }
@@ -1015,6 +1026,25 @@ fn justified_tab_end(
     }
     let best = choose_end(&ends)?;
     (best.at != greedy.end).then_some((best.at, best.point))
+}
+
+/// The width of the rest of the paragraph from `from` when it is the paragraph mark alone, or spaces, one character or
+/// one object before it: what a line ending at the mark holds.
+fn mark_rest(sp: &ShapedPara, pieces: &[Piece], from: usize) -> Option<f64> {
+    let mut seen = false;
+    let mut w = 0.0;
+    for q in pieces.get(from..)? {
+        match q.kind {
+            Kind::Anchor => {}
+            Kind::Space => w += q.width,
+            Kind::Object if !seen => (seen, w) = (true, w + q.width),
+            Kind::Text if !seen && sp.text.get(q.text.0 as usize..q.text.1 as usize).is_some_and(|t| t.chars().count() == 1) => {
+                (seen, w) = (true, w + q.width)
+            }
+            _ => return None,
+        }
+    }
+    Some(w)
 }
 
 fn segment_end(pieces: &[Piece], from: usize) -> usize {

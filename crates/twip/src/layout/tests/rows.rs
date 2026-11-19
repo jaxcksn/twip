@@ -323,6 +323,22 @@ fn compat_14_a_line_beside_a_too_narrow_strip_of_a_floating_table_steps_down() {
 }
 
 #[test]
+fn compat_14_an_empty_paragraph_takes_a_strip_its_indent_leaves_no_room_in() {
+    // A centred floating table leaves 29.6pt strips: an empty paragraph with a 36pt first-line indent still takes the
+    // left one (its line ends at the mark, so Word doesn't drop it), as one without the indent does.
+    let y = |ind: &str, mode: i64| {
+        let body = format!(
+            r#"<w:p><w:r><w:t>Lead</w:t></w:r></w:p><w:tbl><w:tblPr><w:tblpPr w:leftFromText="180" w:rightFromText="180" w:vertAnchor="text" w:horzAnchor="margin" w:tblpXSpec="center" w:tblpY="64"/><w:tblW w:w="7600" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="7600"/></w:tblGrid><w:tr><w:trPr><w:trHeight w:val="800"/></w:trPr><w:tc><w:tcPr><w:tcW w:w="7600" w:type="dxa"/></w:tcPr><w:p/></w:tc></w:tr></w:tbl><w:p><w:pPr>{ind}</w:pPr></w:p><w:p><w:r><w:t>Words too long for the strip q</w:t></w:r></w:p>"#
+        );
+        let mut doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
+        doc.settings.compat_mode = mode;
+        glyphs(&doc)[0].iter().find(|g| g.0 == 'q').map(|g| g.1).expect("drawn")
+    };
+    let (ind, plain) = (y(r#"<w:ind w:firstLine="720"/>"#, 12), y("", 12));
+    assert!((ind - plain).abs() < 0.01, "compat 12: indented {ind}, plain {plain}");
+}
+
+#[test]
 fn a_nested_table_with_a_dxa_width_widens_its_autofit_cell() {
     // An autofit 9000 cell holding a 9300 nested table: with a dxa `tblW` its resolved width is the cell's min, so the
     // cell grows past its own preferred width (Word: 9526 in compat 12) and the centred `M` moves right by half.
