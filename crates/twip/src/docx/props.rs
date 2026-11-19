@@ -321,6 +321,11 @@ fn val_any<'a>(n: Node<'a, '_>) -> Option<&'a str> {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ThemeColours([u32; 16]);
 
+/// 22 inches in points: Word's largest page side, and the bound on a table width, margin or border.
+const MAX_MEASURE: f64 = 1584.0;
+/// 10000% as a fraction: far past any table share, small enough that sums of shares can't overflow.
+const MAX_PCT: f64 = 100.0;
+
 const THEME_COLOUR_NAMES: [&str; 16] = [
     "dark1",
     "light1",
@@ -492,8 +497,14 @@ pub struct Border {
 impl Border {
     pub fn parse(e: Node, tc: &ThemeColours) -> Border {
         let style = val(e).unwrap_or("none").to_string();
+        // Eighths of a point: a fraction of 1 is 1; 0 or none is a hairline that takes no space.
+        let sz = match num(attr(e, "sz")) {
+            Some(v) if v > 0.0 && v < 1.0 => 1.0,
+            Some(v) => v.clamp(0.0, MAX_MEASURE * 8.0),
+            None => 0.0,
+        };
         Border {
-            width: num(attr(e, "sz")).unwrap_or(4.0) / 8.0,
+            width: sz / 8.0,
             space: num(attr(e, "space")).unwrap_or(0.0),
             shadow: matches!(attr(e, "shadow"), Some("1" | "true" | "on")),
             color: tc.colour(e, "color", "themeColor", "themeTint", "themeShade"),
@@ -502,7 +513,7 @@ impl Border {
     }
 
     pub fn visible(&self) -> bool {
-        !matches!(self.style.as_str(), "none" | "nil") && self.width > 0.0
+        !matches!(self.style.as_str(), "none" | "nil")
     }
 }
 
@@ -836,6 +847,18 @@ pub enum Width {
 
 impl Width {
     pub fn parse(e: Node) -> Width {
+        Width::parse_raw(e).clamped()
+    }
+
+    fn clamped(self) -> Width {
+        match self {
+            Width::Dxa(v) => Width::Dxa(v.clamp(-MAX_MEASURE, MAX_MEASURE)),
+            Width::Pct(f) => Width::Pct(f.clamp(-MAX_PCT, MAX_PCT)),
+            w => w,
+        }
+    }
+
+    fn parse_raw(e: Node) -> Width {
         let w = attr(e, "w");
         match attr(e, "type") {
             Some("nil") => Width::Nil,
@@ -843,9 +866,9 @@ impl Width {
                 // 50ths of a percent, or "50%".
                 let s = w.unwrap_or("0");
                 if let Some(p) = s.strip_suffix('%') {
-                    Width::Pct(p.parse::<f64>().unwrap_or(0.0) / 100.0)
+                    Width::Pct(num(Some(p)).unwrap_or(0.0) / 100.0)
                 } else {
-                    Width::Pct(s.parse::<f64>().unwrap_or(0.0) / 5000.0)
+                    Width::Pct(num(Some(s)).unwrap_or(0.0) / 5000.0)
                 }
             }
             Some("auto") => Width::Auto,

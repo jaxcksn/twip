@@ -9,7 +9,7 @@ use crate::layout::cache::CacheKey;
 use crate::layout::env::TextEnv;
 use crate::layout::story::StoryLayout;
 
-use super::{CellBox, RowBox, TableLayout};
+use super::{CellBox, RowBox, TableLayout, assemble::vertical_cell, closing_para};
 
 // Table cache
 #[derive(Debug)]
@@ -20,6 +20,7 @@ pub struct TableKey {
     cols: Vec<f64>,
     fit: (i64, i64, i64),
     cells: Vec<Option<Rc<StoryLayout>>>,
+    loose: Loose,
     text: TextEnv,
     fonts: u64,
 }
@@ -66,6 +67,7 @@ impl CacheKey for TableKey {
             && self.cells.len() == p.cells.len()
             && self.cells.iter().zip(p.cells).all(|(a, b)| same_story(a, b))
             && same_shell(&self.shell, p.table)
+            && self.loose.matches(p.table, p.text)
     }
 
     fn from_probe(p: &TableProbe) -> TableKey {
@@ -76,9 +78,53 @@ impl CacheKey for TableKey {
             cols: p.cols.to_vec(),
             fit: p.fit,
             cells: p.cells.to_vec(),
+            loose: Loose::of(p.table, p.text),
             text: p.text.clone(),
             fonts: p.fonts,
         }
+    }
+}
+
+// Cell content outside the stories
+/// What assembling reads from cells besides their stories: every block of a cell without one (turned and
+/// continuation cells), each cell's closing paragraph, and the keep and break flags of each row's first paragraph.
+#[derive(Debug)]
+struct Loose {
+    blocks: Vec<Block>,
+    closings: Vec<Option<(crate::layout::ids::ParaId, f64)>>,
+    rows: Vec<(bool, bool)>,
+}
+
+fn storyless(c: &Cell) -> bool {
+    c.v_merge == VMerge::Continue || vertical_cell(c).is_some()
+}
+
+fn loose_blocks(t: &Table) -> impl Iterator<Item = &Block> {
+    t.rows.iter().flat_map(|r| &r.cells).filter(|c| storyless(c)).flat_map(|c| &c.blocks)
+}
+
+fn closings(t: &Table) -> impl Iterator<Item = Option<(crate::layout::ids::ParaId, f64)>> + '_ {
+    t.rows.iter().flat_map(|r| &r.cells).map(closing_para)
+}
+
+fn row_flags<'a>(t: &'a Table, text: &TextEnv) -> impl Iterator<Item = (bool, bool)> + 'a {
+    let view = text.review.view;
+    t.rows.iter().map(move |r| match r.cells.first().and_then(|c| c.blocks.first()) {
+        Some(Block::Para(p)) => {
+            let s = p.para_style_in(view);
+            (s.keep_next, s.page_break_before)
+        }
+        _ => (false, false),
+    })
+}
+
+impl Loose {
+    fn of(t: &Table, text: &TextEnv) -> Loose {
+        Loose { blocks: loose_blocks(t).cloned().collect(), closings: closings(t).collect(), rows: row_flags(t, text).collect() }
+    }
+
+    fn matches(&self, t: &Table, text: &TextEnv) -> bool {
+        self.blocks.iter().eq(loose_blocks(t)) && self.closings.iter().copied().eq(closings(t)) && self.rows.iter().copied().eq(row_flags(t, text))
     }
 }
 

@@ -253,6 +253,25 @@ pub(super) fn grid_columns(t: &Table) -> usize {
     t.grid.len().max(t.rows.iter().map(|r| r.grid_before + r.cells.iter().map(|c| c.span).sum::<usize>() + r.grid_after).max().unwrap_or(0))
 }
 
+/// The grid lines rows use: cell, `gridBefore` and `gridAfter` edges.
+pub(super) fn grid_bounds(t: &Table, n: usize) -> Vec<usize> {
+    if t.grid_change.is_some() {
+        return (0..=n).collect();
+    }
+    let mut edge = vec![false; n + 1];
+    (edge[0], edge[n]) = (true, true);
+    for r in &t.rows {
+        let mut x = r.grid_before.min(n);
+        edge[x] = true;
+        for c in &r.cells {
+            x = (x + c.span).min(n);
+            edge[x] = true;
+        }
+        edge[(x + r.grid_after).min(n)] = true;
+    }
+    (0..=n).filter(|&g| edge[g]).collect()
+}
+
 pub(super) fn fit_inputs<'k>(
     t: &Table,
     env: &StoryEnv,
@@ -329,6 +348,11 @@ pub(super) fn fit_inputs<'k>(
 
 pub(super) fn resolve_fit(t: &Table, text_w: f64, env: &StoryEnv, avail: Option<i64>, nested: bool, inputs: &[FitRow]) -> Fit {
     let n = grid_columns(t);
+    // Merged grid
+    let bounds = grid_bounds(t, n);
+    let m = bounds.len() - 1;
+    let at = |g: usize| bounds.partition_point(|&b| b < g.min(n));
+    let span_at = |first: usize, span: usize| (at(first), at(first + span) - at(first));
     // Compat ≤ 14 widens the room by the edge allowances only for an outermost table.
     let (add_l, add_r) = edge_add(if nested { Compat::Generic } else { env.ctx.env.text.compat }, t);
     let a = avail.unwrap_or_else(|| twips(text_w - t.ind + add_l + add_r));
@@ -338,11 +362,20 @@ pub(super) fn resolve_fit(t: &Table, text_w: f64, env: &StoryEnv, avail: Option<
     let (a, pct_base) = if boxed { (a - 1, pct_base + 15) } else { (a, pct_base) };
     let s2 = twips(2.0 * t.cell_spacing.max(0.0));
     let own: Vec<autofit::Cell> = inputs.iter().flat_map(|r| r.cells.iter().copied()).collect();
-    let gaps = skipped(t, n, &own);
-    let mut cells = pct_skips(t, n);
+    let mut gaps = skipped(t, n, &own);
+    let mut cells = pct_skips(t, n, at);
     cells.extend(own);
-    let cols = autofit::columns(n, &cells, s2, &gaps, t.fixed);
-    let pad_total = s2 * (n as i64 + 1);
+    if m < n {
+        for c in &mut cells {
+            (c.first, c.span) = span_at(c.first, c.span);
+        }
+        for (e, k, _) in gaps.iter_mut().flatten() {
+            let (first, span) = span_at((*e + 1).saturating_sub(*k), *k);
+            (*e, *k) = ((first + span).saturating_sub(1), span);
+        }
+    }
+    let cols = autofit::columns(m, &cells, s2, &gaps, t.fixed);
+    let pad_total = s2 * (m as i64 + 1);
     let tbl_w = match t.width {
         Width::Dxa(w) => twips(w),
         Width::Pct(p) => autofit::rdiv(pct_base, (p * 5000.0).round() as i64, 5000),
@@ -353,12 +386,15 @@ pub(super) fn resolve_fit(t: &Table, text_w: f64, env: &StoryEnv, avail: Option<
     let r = autofit::resolve(&cols, pad_total, tbl_w, a, t.fixed, no_grow);
     let mut widths = r.widths.clone();
     autofit::with_spacing(&mut widths, s2);
-    Fit { cols: widths.iter().map(|&w| w as f64 / 20.0).collect(), min_t: r.min_t, width: r.width, hard_t: r.hard_t }
+    // Back to the table's grid
+    let cols = (0..n).map(|g| bounds.binary_search(&g).map_or(0.0, |j| widths[j] as f64 / 20.0)).collect();
+    Fit { cols, min_t: r.min_t, width: r.width, hard_t: r.hard_t }
 }
 
 /// The one-column pct skips (`gridBefore` / `gridAfter` 1 with a pct `wBefore` / `wAfter`) as pct cells of their
 /// column, each where a cell with a written dxa or pct width reaches it. A pct skip over more columns counts nothing.
-fn pct_skips(t: &Table, n: usize) -> Vec<autofit::Cell> {
+/// Skip widths count columns of the merged grid (`at`).
+fn pct_skips(t: &Table, n: usize, at: impl Fn(usize) -> usize) -> Vec<autofit::Cell> {
     let written: Vec<(usize, usize)> = t
         .rows
         .iter()
@@ -372,9 +408,9 @@ fn pct_skips(t: &Table, n: usize) -> Vec<autofit::Cell> {
         .filter(|(c, _)| matches!(c.width, Some(Width::Dxa(_) | Width::Pct(_))))
         .map(|(c, at)| (at, at + c.span))
         .collect();
-    let cell = |row: usize, col: usize, p: f64| autofit::Cell {
+    let cell = |row: usize, col: usize, span: usize, p: f64| autofit::Cell {
         first: col,
-        span: 1,
+        span,
         min: 0,
         max: 0,
         hard: 0,
@@ -386,16 +422,16 @@ fn pct_skips(t: &Table, n: usize) -> Vec<autofit::Cell> {
     let mut out = Vec::new();
     for (ri, r) in t.rows.iter().enumerate() {
         let end = r.grid_before + r.cells.iter().map(|c| c.span).sum::<usize>();
-        if let (1, Some(p)) = (r.grid_before, r.w_before.and_then(Width::pct))
+        if let (1, Some(p)) = (at(r.grid_before), r.w_before.and_then(Width::pct))
             && written.iter().any(|&(a, _)| a < 1)
         {
-            out.push(cell(ri, 0, p));
+            out.push(cell(ri, 0, r.grid_before, p));
         }
-        if let (1, Some(p)) = (r.grid_after, r.w_after.and_then(Width::pct))
+        if let (1, Some(p)) = (at(end + r.grid_after) - at(end), r.w_after.and_then(Width::pct))
             && end < n
             && written.iter().any(|&(_, b)| b > end)
         {
-            out.push(cell(ri, end, p));
+            out.push(cell(ri, end, r.grid_after, p));
         }
     }
     out

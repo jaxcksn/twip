@@ -45,6 +45,9 @@ const ORDER: [&str; 27] = [
     "inset",
 ];
 
+/// sz 1, in points.
+const HAIRLINE: f64 = 0.125;
+
 fn style_rank(style: &str) -> usize {
     ORDER.iter().position(|s| *s == style).unwrap_or(2)
 }
@@ -104,6 +107,9 @@ pub(super) fn space_h(b: &Option<Border>) -> f64 {
     if let Some(a) = art(b) {
         return b.space.clamp(0.0, 31.0) + if b.shadow { 2.0 } else { 1.0 } * a;
     }
+    if b.width <= 0.0 {
+        return b.space.clamp(0.0, 31.0);
+    }
     let w = (b.width.clamp(0.25, 12.0) * 20.0 + 1e-6).floor() / 20.0;
     let line = match b.style.as_str() {
         "wave" if (b.width - 1.5).abs() < EPS => 3.75,
@@ -152,6 +158,12 @@ fn stripes(b: &Border) -> Vec<f64> {
 }
 
 pub(in crate::layout) fn edge(out: &mut Vec<Item>, rect: [f64; 4], horizontal: bool, far: bool, b: &Border) {
+    // Hairline: drawn as sz 1
+    if b.width < HAIRLINE && drawn(b) {
+        let h = Border { width: HAIRLINE, ..b.clone() };
+        let ([x0, y0, x1, y1], t) = (rect, thick(&h));
+        return edge(out, if horizontal { [x0, y0, x1, y0 + t] } else { [x0, y0, x0 + t, y1] }, horizontal, far, &h);
+    }
     let colour = b.color.unwrap_or(0);
     let [x0, y0, x1, y1] = rect;
     let st = stripes(b);
