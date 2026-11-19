@@ -323,6 +323,27 @@ fn compat_14_a_line_beside_a_too_narrow_strip_of_a_floating_table_steps_down() {
 }
 
 #[test]
+fn compat_14_a_line_stepping_beside_a_float_stops_at_the_next_floats_top() {
+    // A centred floating table leaves strips too narrow for the first word. A second table starts 25pt down on the
+    // left: compat 12 steps the line to that table's top, then breaks the word into the right strip there.
+    let tbl = |pos: &str, w: i32, h: i32| {
+        format!(
+            r#"<w:tbl><w:tblPr><w:tblpPr w:leftFromText="180" w:rightFromText="180" w:vertAnchor="page" {pos}/><w:tblW w:w="{w}" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="{w}"/></w:tblGrid><w:tr><w:trPr><w:trHeight w:val="{h}" w:hRule="exact"/></w:trPr><w:tc><w:tcPr><w:tcW w:w="{w}" w:type="dxa"/></w:tcPr><w:p/></w:tc></w:tr></w:tbl>"#
+        )
+    };
+    let para = "<w:p><w:r><w:t>Wordswordswords q</w:t></w:r></w:p>";
+    let y = |body: &str| {
+        let mut doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), body)).expect("reads");
+        doc.settings.compat_mode = 12;
+        glyphs(&doc)[0].iter().find(|g| g.0 == 'W').map(|g| g.1).expect("drawn")
+    };
+    let wide = tbl(r#"w:horzAnchor="margin" w:tblpXSpec="center" w:tblpY="1440""#, 8000, 2000);
+    let left = tbl(r#"w:horzAnchor="page" w:tblpX="1440" w:tblpY="1940""#, 3000, 1000);
+    let (got, plain) = (y(&format!("{wide}{left}{para}")), y(para));
+    assert!((got - 97.0 - (plain - 72.0)).abs() < 0.05, "baseline {got}, a plain first line's {plain}");
+}
+
+#[test]
 fn compat_14_an_empty_paragraph_takes_a_strip_its_indent_leaves_no_room_in() {
     // A centred floating table leaves 29.6pt strips: an empty paragraph with a 36pt first-line indent still takes the
     // left one (its line ends at the mark, so Word doesn't drop it), as one without the indent does.

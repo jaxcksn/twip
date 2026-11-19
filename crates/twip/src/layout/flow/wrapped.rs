@@ -78,6 +78,8 @@ struct Tried {
     trial: Option<f64>,
     no_room: bool,
     h: f64,
+    // How far below the line's top a float already counted in the pieces it didn't fit.
+    slack: f64,
 }
 
 // Anchored floats of the paragraph
@@ -91,6 +93,16 @@ struct Anchors {
 
 fn band_of(bands: &[(f64, Vec<Line>)], k: usize) -> Option<usize> {
     bands.iter().position(|(_, segs)| segs.iter().any(|l| k >= l.start && k < l.end.max(l.start + 1)))
+}
+
+// Compat ≤ 14 steps a line that fits no piece in whole steps to the end of its strip, never past the top of a float
+// starting further than the slack below it.
+fn strip_step(floats: &[Placed], cx0: f64, cx1: f64, y: f64, step: f64, slack: f64) -> f64 {
+    let across = |f: &&Placed| f.wrap != Wrap::None && f.excl[2] > cx0 + EPS && f.excl[0] < cx1 - EPS;
+    let top = floats.iter().filter(across).map(|f| f.excl[1]).filter(|&t| t > y + slack + EPS).fold(f64::INFINITY, f64::min);
+    let end = floats.iter().filter(across).filter(|f| f.excl[1] <= y + slack + EPS).map(|f| f.excl[3]).filter(|&b| b > y + EPS).fold(top, f64::min);
+    let k = if end.is_finite() { ((end - y - EPS) / step).floor().max(0.0) + 1.0 } else { 1.0 };
+    (y + k * step).min(top)
 }
 
 impl<'d> PageFill<'d, '_> {
@@ -515,6 +527,23 @@ impl<'d> PageFill<'d, '_> {
         let mut trial = None;
         // Every piece of the line was cut away or too narrow.
         let mut no_room = false;
+        let first = (first_part || restarts) && bands.is_empty();
+        let lift = if first { (top - origin_y).max(0.0) } else { 0.0 };
+        // Compat ≤ 14 first fits the line into the pieces the floats over its top leave; when it fits none of two or
+        // more, it steps before a float starting lower in the line counts.
+        let starts_in =
+            |f: &Placed| f.wrap != Wrap::None && f.excl[1] > yy + EPS && f.excl[1] < yy + h - EPS && f.excl[0] < cx1 - EPS && f.excl[2] > cx0 + EPS;
+        if compat == Compat::Legacy && forced.is_none() && cutting.iter().any(starts_in) {
+            let refs: Vec<&Placed> = cutting.iter().collect();
+            let over = float::strip(&refs, cx0, cx1, yy, yy + h, 0.0).unwrap_or_default();
+            if over.len() > 1 {
+                let ivc: Vec<(f64, f64)> = over.iter().map(|p| (p.0 - cx0, p.1 - cx0)).collect();
+                let mark = p.mark_in(self.ctx.env.text.review.view);
+                if let Err(t) = band(sp, pieces, s, &ivc, first, style, mark, frame, self.ctx.fonts, lone_picture) {
+                    return Tried { got: None, blocked: true, trial: Some(t + lift), no_room: false, h, slack: 0.0 };
+                }
+            }
+        }
         for attempt in 0..2 {
             let free = match &forced {
                 Some(iv) => Some(iv.clone()),
@@ -536,7 +565,6 @@ impl<'d> PageFill<'d, '_> {
                     // A word too long for the line breaks after the last character that fits: in an uncut line,
                     // and in compat ≤ 14 in a line's only piece beside a float.
                     let open = iv.len() == 1 && (compat == Compat::Legacy || (iv[0].0 - cx0).abs() < EPS && (iv[0].1 - cx1).abs() < EPS);
-                    let first = (first_part || restarts) && bands.is_empty();
                     let r = band(
                         sp,
                         pieces,
@@ -570,14 +598,14 @@ impl<'d> PageFill<'d, '_> {
                         }
                         Err(t) => {
                             blocked = true;
-                            trial = Some(t + if first { (top - origin_y).max(0.0) } else { 0.0 });
+                            trial = Some(t + lift);
                             break;
                         }
                     }
                 }
             }
         }
-        Tried { got, blocked, trial, no_room, h }
+        Tried { got, blocked, trial, no_room, h, slack: h }
     }
 
     // Bands
@@ -624,7 +652,7 @@ impl<'d> PageFill<'d, '_> {
             yy = moved_to;
             let Some(Strip { uncut, forced, fitted, reuse }) = strip else { continue };
             let cutting = uncut.as_deref().unwrap_or(here);
-            let Tried { got, blocked, trial, no_room, h } = self.try_band(w, &bands, cutting, &forced, lead, &frame, s, yy, h, below);
+            let Tried { got, blocked, trial, no_room, h, slack } = self.try_band(w, &bands, cutting, &forced, lead, &frame, s, yy, h, below);
             match (got, blocked) {
                 (Some((segs, e)), false) => {
                     let ph = segs[0].pitch;
@@ -696,7 +724,7 @@ impl<'d> PageFill<'d, '_> {
                         let next = match no_room {
                             true if starts < yy + h - EPS => starts,
                             true => (yy + t).min(covers.max(yy + EPS)),
-                            false => yy + t,
+                            false => strip_step(here, cx0, cx1, yy, t, slack),
                         };
                         yy = next.min(col.bottom.to_pt().max(yy + EPS));
                         continue;
