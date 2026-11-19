@@ -73,6 +73,11 @@ pub(in crate::layout) fn clip_x(children: &Rc<[Child]>, lo: f64, hi: f64, bottom
 /// `children` without the glyphs whose ink lies wholly outside `lo .. hi` across or `top .. bottom` down, with their
 /// nested tables' borders and shading cut to the box once a side of it is open.
 pub(in crate::layout) fn clip_box(children: &Rc<[Child]>, lo: f64, hi: f64, top: f64, bottom: f64) -> Option<Rc<[Child]>> {
+    clip_cut(children, lo, hi, top, bottom, true)
+}
+
+/// As [`clip_box`], a nested table's borders and shading cut only with `borders`.
+fn clip_cut(children: &Rc<[Child]>, lo: f64, hi: f64, top: f64, bottom: f64, borders: bool) -> Option<Rc<[Child]>> {
     let inside = |r: &GlyphRun, g: &(u32, f64), dx: f64, dy: f64| {
         let k = r.size / r.face.upem;
         if bottom.is_finite() && r.face.ink_top(g.0).is_some_and(|t| dy + r.baseline - t * k >= bottom - EPS) {
@@ -96,7 +101,7 @@ pub(in crate::layout) fn clip_box(children: &Rc<[Child]>, lo: f64, hi: f64, top:
             _ => false,
         })
     };
-    let nested: Vec<Option<Child>> = children.iter().map(|c| clip_nested(c, lo, hi, top, bottom)).collect();
+    let nested: Vec<Option<Child>> = children.iter().map(|c| clip_nested(c, lo, hi, top, bottom, borders)).collect();
     if !children.iter().any(|c| matches!(c, Child::Line { placed, .. } if spills(placed))) && nested.iter().all(Option::is_none) {
         return None;
     }
@@ -144,14 +149,14 @@ pub(in crate::layout) fn clip_box(children: &Rc<[Child]>, lo: f64, hi: f64, top:
     Some(clipped.collect())
 }
 
-fn clip_nested(c: &Child, lo: f64, hi: f64, top: f64, bottom: f64) -> Option<Child> {
+fn clip_nested(c: &Child, lo: f64, hi: f64, top: f64, bottom: f64, borders: bool) -> Option<Child> {
     match c {
-        Child::Group { offset, children } => clip_box(children, lo - offset.0, hi - offset.0, top - offset.1, bottom - offset.1)
+        Child::Group { offset, children } => clip_cut(children, lo - offset.0, hi - offset.0, top - offset.1, bottom - offset.1, borders)
             .map(|children| Child::Group { offset: *offset, children }),
         Child::Table(t) => {
             let mut any = false;
             // A nested table's borders and shading are cut with its text once the enclosing cell's clip is open.
-            let open = lo.is_finite() || hi.is_finite();
+            let open = borders && (lo.is_finite() || hi.is_finite());
             let rows: Vec<RowFragment> = {
                 let mut cut = |items: &[Item]| -> Box<[Item]> {
                     if !open {
@@ -175,8 +180,10 @@ fn clip_nested(c: &Child, lo: f64, hi: f64, top: f64, bottom: f64) -> Option<Chi
             };
             let rows = rows.iter().map(|r| {
                 let cells = r.cells.iter().map(|cell| {
-                    let content =
-                        cell.content.iter().map(|c| clip_nested(c, lo, hi, top, bottom).inspect(|_| any = true).unwrap_or_else(|| c.clone()));
+                    let content = cell
+                        .content
+                        .iter()
+                        .map(|c| clip_nested(c, lo, hi, top, bottom, borders).inspect(|_| any = true).unwrap_or_else(|| c.clone()));
                     CellFragment { content: content.collect(), ..cell.clone() }
                 });
                 RowFragment { cells: cells.collect(), ..r.clone() }
@@ -373,14 +380,16 @@ pub fn draw_row(tb: &TableLayout, ri: usize, left: f64, top: f64, height: f64, p
                 source_units(&u.content, &mut hidden);
                 continue;
             }
-            let shown = u.row.is_none() || open;
+            // A floating table's text clips from the start, its borders not.
+            let floating = u.row.as_ref().is_some_and(|r| r.floating);
+            let shown = u.row.is_none() || floating || open;
             let (lo, hi, top, bottom) = if shown {
                 (lo, hi, y0 - (base_y + ut), y1 - (base_y + ut) + INK_SLACK)
             } else {
                 (f64::NEG_INFINITY, f64::INFINITY, f64::NEG_INFINITY, bottom)
             };
             open |= u.row.is_none();
-            let children = clip_box(&u.content, lo, hi, top, bottom).unwrap_or_else(|| u.content.clone());
+            let children = clip_cut(&u.content, lo, hi, top, bottom, !floating).unwrap_or_else(|| u.content.clone());
             let children = unaligned_floats(&children, off, &c.fixed_floats).unwrap_or(children);
             content.push(Child::Group { offset: (base_x, base_y + ut), children });
         }

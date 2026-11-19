@@ -397,6 +397,23 @@ fn an_unlined_centred_vml_box_wraps_to_its_right_edges_pixel() {
 }
 
 #[test]
+fn a_cells_floating_table_drops_the_glyphs_past_the_cells_right_border() {
+    // A floating table wider than its cell overhangs it on the right: its right-aligned text there isn't drawn, its
+    // left text is; an inline table's is.
+    let b = r#"<w:tblBorders><w:top w:val="single" w:sz="4" w:space="0" w:color="000000"/><w:left w:val="single" w:sz="4" w:space="0" w:color="000000"/><w:bottom w:val="single" w:sz="4" w:space="0" w:color="000000"/><w:right w:val="single" w:sz="4" w:space="0" w:color="000000"/></w:tblBorders>"#;
+    let drawn = |pos: &str| {
+        let body = format!(
+            r#"<w:tbl><w:tblPr><w:tblW w:w="9360" w:type="dxa"/>{b}<w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="9360"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="9360" w:type="dxa"/></w:tcPr><w:tbl><w:tblPr>{pos}<w:tblW w:w="10000" w:type="dxa"/>{b}<w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="10000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="10000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>Lft</w:t></w:r></w:p><w:p><w:pPr><w:jc w:val="right"/></w:pPr><w:r><w:t>Rgt</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p><w:r><w:t>Heading</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#
+        );
+        let doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
+        glyphs(&doc)[0].iter().map(|g| g.0).collect::<String>()
+    };
+    let floating = drawn(r#"<w:tblpPr w:leftFromText="180" w:rightFromText="180" w:vertAnchor="text" w:horzAnchor="margin" w:tblpY="257"/>"#);
+    assert!(floating.contains("Lft") && !floating.contains('R'), "floating: {floating}");
+    assert!(drawn("").contains("Rgt"), "inline");
+}
+
+#[test]
 fn compat_14_an_empty_paragraph_takes_a_strip_its_indent_leaves_no_room_in() {
     // A centred floating table leaves 29.6pt strips: an empty paragraph with a 36pt first-line indent still takes the
     // left one (its line ends at the mark, so Word doesn't drop it), as one without the indent does.

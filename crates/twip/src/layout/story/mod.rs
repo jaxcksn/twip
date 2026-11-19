@@ -57,6 +57,8 @@ pub struct NestedRow {
     pub ri: usize,
     pub shift: f64,
     pub rest: Option<Rc<[Vec<StoryUnit>]>>,
+    /// A row of a floating table, which its cell clips across from the start.
+    pub floating: bool,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -549,9 +551,11 @@ fn stack_table(w: &StoryIn, st: &mut Stack, bi: usize, t: &Table, memos: &mut Me
     for mut u in rows {
         u.block = bi;
         u.top += top;
-        if shift != 0.0 {
-            u.content = Rc::from([Child::Group { offset: (shift, 0.0), children: u.content }]);
-            u.row = u.row.map(|r| Rc::new(NestedRow { shift, ..(*r).clone() }));
+        if shift != 0.0 || fp.is_some() {
+            if shift != 0.0 {
+                u.content = Rc::from([Child::Group { offset: (shift, 0.0), children: u.content }]);
+            }
+            u.row = u.row.map(|r| Rc::new(NestedRow { shift, floating: fp.is_some(), ..(*r).clone() }));
         }
         units.push(u);
     }
