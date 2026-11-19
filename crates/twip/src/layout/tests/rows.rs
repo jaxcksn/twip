@@ -287,6 +287,26 @@ fn compat_14_a_floating_table_at_vertical_position_0_stands_in_the_flow() {
 }
 
 #[test]
+fn compat_14_a_line_below_a_floating_table_in_a_cell_starts_at_its_bottom() {
+    // A floating table as wide as the cell, `tblpY` 257 below the cell top: the 14pt line after it doesn't fit
+    // above it and starts at its bottom, as in compat 15, not a text height at a time.
+    let float = r#"<w:tbl><w:tblPr><w:tblpPr w:leftFromText="180" w:rightFromText="180" w:vertAnchor="text" w:horzAnchor="margin" w:tblpY="257"/><w:tblW w:w="9000" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="9000"/></w:tblGrid><w:tr><w:trPr><w:trHeight w:val="786"/></w:trPr><w:tc><w:tcPr><w:tcW w:w="9000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>x</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#;
+    let heading = r#"<w:p><w:pPr><w:spacing w:after="200" w:line="276" w:lineRule="auto"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="28"/></w:rPr><w:t>H</w:t></w:r></w:p>"#;
+    let body = format!(
+        r#"<w:tbl><w:tblPr><w:tblW w:w="9360" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="9360"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="9360" w:type="dxa"/></w:tcPr>{float}{heading}<w:p/></w:tc></w:tr></w:tbl><w:p/>"#
+    );
+    let y = |mode: i64| {
+        let mut doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
+        doc.settings.compat_mode = mode;
+        let page = &glyphs(&doc)[0];
+        let at = |c: char| page.iter().find(|g| g.0 == c).map(|g| g.1).expect("drawn");
+        (at('x'), at('H'))
+    };
+    let ((x12, h12), (_, h15)) = (y(12), y(15));
+    assert!(h12 > x12 && (h12 - h15).abs() < 0.5, "compat 12: x {x12} H {h12}; compat 15: H {h15}");
+}
+
+#[test]
 fn a_table_in_the_flow_is_placed_again_below_text_a_later_table_pushed() {
     let tbl = |pos: &str, cells: &[&str]| {
         let rows: String = cells.iter().map(|t| format!("<w:tr>{}</w:tr>", dxa_cell(9360, t))).collect();

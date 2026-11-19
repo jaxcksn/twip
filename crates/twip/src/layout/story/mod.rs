@@ -662,7 +662,9 @@ fn wrap_bands(
             s = e;
             continue;
         }
-        let square = floats.iter().filter(|f| f.in_band(yy, yy + h)).all(|f| f.float.wrap == "square");
+        // Compat ≤ 14 steps down by the text's height past square-wrapped shapes; past a floating table the line goes
+        // to its bottom.
+        let square = floats.iter().filter(|f| f.in_band(yy, yy + h)).all(|f| f.float.wrap == "square" && f.key.2 != float::TABLE_PIECE);
         // A first line that goes below a floating table keeps its space before below it.
         let table = bands.is_empty() && floats.iter().any(|f| f.key.2 == float::TABLE_PIECE && f.in_band(yy, yy + h));
         yy = match trial.filter(|&t| ps.env.compat == Compat::Legacy && square && t > EPS) {
