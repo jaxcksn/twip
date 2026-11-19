@@ -132,3 +132,37 @@ fn shading_fills_to_a_right_border_and_to_a_left_one_only_with_a_right() {
         assert_eq!(got, want, "{sides:?}: {shade:?}");
     }
 }
+
+#[test]
+fn a_zero_size_border_draws_a_hairline_that_takes_no_space() {
+    let edges = |sz: &str| ["top", "bottom"].map(|side| format!(r#"<w:{side} w:val="dotted"{sz} w:space="0" w:color="C00000"/>"#)).concat();
+    let para = |sz: &str| {
+        let ppr = if sz == "-" { String::new() } else { format!("<w:pBdr>{}</w:pBdr>", edges(sz)) };
+        format!(r#"<w:p><w:pPr>{ppr}</w:pPr><w:r><w:t>Boxed</w:t></w:r></w:p><w:p><w:r><w:t>After</w:t></w:r></w:p>"#)
+    };
+    let row = |sz: &str| {
+        let pr = if sz == "-" { String::new() } else { format!("<w:tcBorders>{}</w:tcBorders>", edges(sz)) };
+        let tr = |pr: &str, t: &str| {
+            format!(r#"<w:tr><w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/>{pr}</w:tcPr><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:tc></w:tr>"#)
+        };
+        format!(
+            r#"<w:tbl><w:tblPr><w:tblW w:w="3000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid>{}{}</w:tbl><w:p/>"#,
+            tr(&pr, "Boxed"),
+            tr("", "After")
+        )
+    };
+    let after = |body: &str| {
+        let doc = crate::docx::read(&bytes(body).expect("a package")).expect("reads");
+        super::page_chars(&doc)[0].iter().find(|c| c.0 == 'A').expect("After").2
+    };
+    let red = |body: &str| rects(body).into_iter().filter(|(_, c)| *c == 0xC00000).map(|(r, _)| [r[0], r[3] - r[1]]).collect::<Vec<_>>();
+    let one = r#" w:sz="1""#;
+    for body in [&para as &dyn Fn(&str) -> String, &row] {
+        let plain = after(&body("-"));
+        assert!(after(&body(one)) > plain, "sz 1 takes its width");
+        for sz in [r#" w:sz="0""#, ""] {
+            assert_eq!(after(&body(sz)), plain, "{sz:?} takes no space");
+            assert_eq!(red(&body(sz)), red(&body(one)), "{sz:?} draws as sz 1");
+        }
+    }
+}

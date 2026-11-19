@@ -497,11 +497,11 @@ pub struct Border {
 impl Border {
     pub fn parse(e: Node, tc: &ThemeColours) -> Border {
         let style = val(e).unwrap_or("none").to_string();
-        // Eighths of a point: Word draws a fraction of 1 as 1.
+        // Eighths of a point: a fraction of 1 is 1; 0 or none is a hairline that takes no space.
         let sz = match num(attr(e, "sz")) {
             Some(v) if v > 0.0 && v < 1.0 => 1.0,
-            Some(v) => v.min(MAX_MEASURE * 8.0),
-            None => 4.0,
+            Some(v) => v.clamp(0.0, MAX_MEASURE * 8.0),
+            None => 0.0,
         };
         Border {
             width: sz / 8.0,
@@ -513,7 +513,7 @@ impl Border {
     }
 
     pub fn visible(&self) -> bool {
-        !matches!(self.style.as_str(), "none" | "nil") && self.width > 0.0
+        !matches!(self.style.as_str(), "none" | "nil")
     }
 }
 
