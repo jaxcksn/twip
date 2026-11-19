@@ -323,6 +323,24 @@ fn compat_14_a_line_beside_a_too_narrow_strip_of_a_floating_table_steps_down() {
 }
 
 #[test]
+fn a_nested_table_with_a_dxa_width_widens_its_autofit_cell() {
+    // An autofit 9000 cell holding a 9300 nested table: with a dxa `tblW` its resolved width is the cell's min, so the
+    // cell grows past its own preferred width (Word: 9526 in compat 12) and the centred `M` moves right by half.
+    let m = r#"<w:tblCellMar><w:left w:w="108" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar>"#;
+    let x = |width: &str| {
+        let nested = format!(
+            r#"<w:tbl><w:tblPr>{width}{m}</w:tblPr><w:tblGrid><w:gridCol w:w="9300"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="9300" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#
+        );
+        let body = format!(
+            r#"<w:tbl><w:tblPr><w:tblW w:w="9000" w:type="dxa"/>{m}</w:tblPr><w:tblGrid><w:gridCol w:w="9000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="9000" w:type="dxa"/></w:tcPr>{nested}<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>M</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#
+        );
+        glyph_x_in(&body, 12, &[], 'M')
+    };
+    let d = x(r#"<w:tblW w:w="9300" w:type="dxa"/>"#) - x(r#"<w:tblW w:w="0" w:type="auto"/>"#);
+    assert!((d - 13.15).abs() < 0.5, "{d}");
+}
+
+#[test]
 fn a_floating_table_wider_than_its_cell_moves_left_onto_the_cells_box() {
     // A 9500-wide bordered floating table in a 9360 fixed cell: its left border sits on the cell's left border.
     let m = r#"<w:tblCellMar><w:left w:w="108" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar>"#;

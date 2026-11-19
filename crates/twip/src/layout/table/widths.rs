@@ -226,7 +226,9 @@ fn content_widths_uncached(blocks: &[LaidBlock], env: &StoryEnv, fixed: bool, me
                 let f = fit(t, 0.0, env, Some(autofit::MAXW), memos)?;
                 let (al, ar) = edge_add(Compat::Generic, t);
                 let e = twips(al) + twips(ar) - twips(t.ind);
-                mn = mn.max(f.min_t - e);
+                // A nested table with a dxa width is as wide at least as it resolves.
+                let floor = if matches!(t.width, Width::Dxa(_)) { f.width } else { f.min_t };
+                mn = mn.max(floor - e);
                 mx = mx.max(f.width - e);
                 hard = hard.max(f.hard_t - e);
             }
