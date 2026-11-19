@@ -339,6 +339,19 @@ fn compat_14_an_empty_paragraph_takes_a_strip_its_indent_leaves_no_room_in() {
 }
 
 #[test]
+fn a_centred_floating_table_in_a_cell_sits_as_in_compat_15() {
+    // A cell's floating table is placed with compat 15's rules in every mode: its text stands as far from the cell's
+    // text in compat 12 as in compat 15.
+    let m = r#"<w:tblCellMar><w:left w:w="108" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar>"#;
+    let b = r#"<w:tblBorders><w:left w:val="single" w:sz="4" w:space="0" w:color="000000"/><w:right w:val="single" w:sz="4" w:space="0" w:color="000000"/></w:tblBorders>"#;
+    let body = format!(
+        r#"<w:tbl><w:tblPr><w:tblW w:w="9000" w:type="dxa"/>{b}<w:tblLayout w:type="fixed"/>{m}</w:tblPr><w:tblGrid><w:gridCol w:w="9000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="9000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>o</w:t></w:r></w:p><w:tbl><w:tblPr><w:tblpPr w:leftFromText="180" w:rightFromText="180" w:vertAnchor="text" w:horzAnchor="margin" w:tblpXSpec="center" w:tblpY="0"/><w:tblW w:w="4000" w:type="dxa"/>{b}<w:tblLayout w:type="fixed"/>{m}</w:tblPr><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="4000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>k</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/></w:tc></w:tr></w:tbl><w:p/>"#
+    );
+    let d = |mode: i64| glyph_x_in(&body, mode, &[], 'k') - glyph_x_in(&body, mode, &[], 'o');
+    assert!((d(12) - d(15)).abs() < 0.05, "compat 12 {} compat 15 {}", d(12), d(15));
+}
+
+#[test]
 fn a_nested_table_with_a_dxa_width_widens_its_autofit_cell() {
     // An autofit 9000 cell holding a 9300 nested table: with a dxa `tblW` its resolved width is the cell's min, so the
     // cell grows past its own preferred width (Word: 9526 in compat 12) and the centred `M` moves right by half.

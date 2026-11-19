@@ -506,7 +506,9 @@ fn stack_table(w: &StoryIn, st: &mut Stack, bi: usize, t: &Table, memos: &mut Me
         _ => nested_layout(t, cell, width, env, false, memos)?,
     };
     let (rows, h) = super::table::table_units(&tl);
-    let mut shift = if in_cell && text.compat == Compat::Legacy { super::table::nested_shift(t, text.single_cell_borders) } else { 0.0 };
+    // A cell's floating table is placed as in compat 15: no compat ≤ 14 nested shift.
+    let mut shift =
+        if in_cell && text.compat == Compat::Legacy && t.floating.is_none() { super::table::nested_shift(t, text.single_cell_borders) } else { 0.0 };
     // A floating table in a header, a footer or a cell takes no room in the story: it stands `tblpY` below
     // where it starts (from the text) and the text after it wraps around it. Compat ≤ 14: a header's or
     // footer's text runs over it. A cell holds it.
@@ -522,6 +524,16 @@ fn stack_table(w: &StoryIn, st: &mut Stack, bi: usize, t: &Table, memos: &mut Me
             (_, 0) => (0.0, width),
             (l, wd) => (-l as f64 / 20.0, (wd - l) as f64 / 20.0),
         };
+        // Against the page: the cell's box inside its borders, not its text.
+        if let Some(fp) = fp.filter(|fp| fp.h_page) {
+            let free = (hi - lo) - width;
+            shift += lo
+                + match fp.x_align() {
+                    Some(crate::docx::props::Jc::Center) => free / 2.0,
+                    Some(crate::docx::props::Jc::Right) => free,
+                    _ => 0.0,
+                };
+        }
         let (l, r) = super::table::float_box(&tl, t, false);
         shift += (hi - r - shift).min(0.0).max((lo - l - shift).min(0.0));
     }
@@ -545,8 +557,7 @@ fn stack_table(w: &StoryIn, st: &mut Stack, bi: usize, t: &Table, memos: &mut Me
     }
     match fp {
         Some(fp) => {
-            let legacy = in_cell && text.compat == Compat::Legacy;
-            let (bl, br) = super::table::float_box(&tl, t, legacy);
+            let (bl, br) = super::table::float_box(&tl, t, false);
             // In a cell the right distance has no minimum.
             let mut dist = float::table_dist(&fp, false);
             if in_cell {
