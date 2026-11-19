@@ -344,6 +344,26 @@ fn compat_14_a_line_stepping_beside_a_float_stops_at_the_next_floats_top() {
 }
 
 #[test]
+fn compat_14_a_never_overlap_table_steps_by_its_height_and_stops_short_of_9_twips() {
+    // A never-overlap table 20pt tall moves down a 50pt table in steps of its height: 5 twips short of the last
+    // step it stays, overlapping; level with it, it lands a twip short of the bottom.
+    let tbl = |y: i32, w: i32, h: i32, never: bool| {
+        let o = if never { r#"<w:tblOverlap w:val="never"/>"# } else { "" };
+        format!(
+            r#"<w:tbl><w:tblPr><w:tblpPr w:vertAnchor="page" w:horzAnchor="margin" w:tblpX="0" w:tblpY="{y}"/>{o}<w:tblW w:w="{w}" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="{w}"/></w:tblGrid><w:tr><w:trPr><w:trHeight w:val="{h}" w:hRule="exact"/></w:trPr><w:tc><w:tcPr><w:tcW w:w="{w}" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>k</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#
+        )
+    };
+    let y = |start: i32| {
+        let body = format!("{}{}<w:p/>", tbl(1440, 9360, 1000, false), tbl(start, 5000, 400, true));
+        let mut doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
+        doc.settings.compat_mode = 12;
+        glyphs(&doc)[0].iter().filter(|g| g.0 == 'k').map(|g| g.1).fold(f64::NEG_INFINITY, f64::max)
+    };
+    let (short, level) = (y(1634), y(1639));
+    assert!((level - short - 0.25).abs() < 0.02, "5 twips short {short}, level {level}");
+}
+
+#[test]
 fn compat_14_an_empty_paragraph_takes_a_strip_its_indent_leaves_no_room_in() {
     // A centred floating table leaves 29.6pt strips: an empty paragraph with a 36pt first-line indent still takes the
     // left one (its line ends at the mark, so Word doesn't drop it), as one without the indent does.

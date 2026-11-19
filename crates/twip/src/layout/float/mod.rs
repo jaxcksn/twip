@@ -298,7 +298,17 @@ pub fn avoid(f: &mut Placed, placed: &[Placed], (lo, hi): (f64, f64), (top, bott
         if slid >= lo - EPS && slid + w <= hi + EPS {
             f.moved_to(slid, y);
         } else if hit.rect[3] + hb + ft - short + h <= bottom + EPS {
-            f.moved_to(original.0, hit.rect[3] + hb + ft - short);
+            let low = hit.rect[3] + hb - short;
+            let y = if table {
+                // In steps of its own height, the last one taken only for 9 twips or more.
+                let (own, tall) = (f.rect[1] - ft, f.rect[3] + fb - (f.rect[1] - ft));
+                let t = (own + tall).min(low);
+                let t = t + ((low - t) / tall).floor() * tall;
+                if low - t >= 0.45 - EPS { low } else { t }
+            } else {
+                low
+            };
+            f.moved_to(original.0, y + ft);
         } else if (frame(f) || frame(hit)) && above >= top - EPS && above < f.rect[1] - EPS {
             // A frame, or a table meeting a frame, with no room below goes above it.
             f.moved_to(original.0, above);
