@@ -307,6 +307,27 @@ fn compat_14_a_line_below_a_floating_table_in_a_cell_starts_at_its_bottom() {
 }
 
 #[test]
+fn a_floating_table_wider_than_its_cell_moves_left_onto_the_cells_box() {
+    // A 9500-wide bordered floating table in a 9360 fixed cell: its left border sits on the cell's left border.
+    let m = r#"<w:tblCellMar><w:left w:w="108" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar>"#;
+    let b = r#"<w:tblBorders><w:top w:val="single" w:sz="4" w:space="0" w:color="000000"/><w:left w:val="single" w:sz="4" w:space="0" w:color="000000"/><w:bottom w:val="single" w:sz="4" w:space="0" w:color="000000"/><w:right w:val="single" w:sz="4" w:space="0" w:color="000000"/></w:tblBorders>"#;
+    let x = |fw: i32, mode: i64| {
+        let float = format!(
+            r#"<w:tbl><w:tblPr><w:tblpPr w:leftFromText="180" w:rightFromText="180" w:vertAnchor="text" w:horzAnchor="margin" w:tblpY="257"/><w:tblW w:w="{fw}" w:type="dxa"/>{b}<w:tblLayout w:type="fixed"/>{m}</w:tblPr><w:tblGrid><w:gridCol w:w="{fw}"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="{fw}" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>L</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#
+        );
+        let body = format!(
+            r#"<w:tbl><w:tblPr><w:tblW w:w="9360" w:type="dxa"/>{b}<w:tblLayout w:type="fixed"/>{m}</w:tblPr><w:tblGrid><w:gridCol w:w="9360"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="9360" w:type="dxa"/></w:tcPr>{float}<w:p/></w:tc></w:tr></w:tbl><w:p/>"#
+        );
+        glyph_x_in(&body, mode, &[], 'L')
+    };
+    // Word: 103 twips left of a 9000-wide one, which stays at the cell's text, in both modes.
+    for mode in [12, 15] {
+        let d = x(9000, mode) - x(9500, mode);
+        assert!((d - 5.15).abs() < 0.05, "compat {mode}: {d}");
+    }
+}
+
+#[test]
 fn a_table_in_the_flow_is_placed_again_below_text_a_later_table_pushed() {
     let tbl = |pos: &str, cells: &[&str]| {
         let rows: String = cells.iter().map(|t| format!("<w:tr>{}</w:tr>", dxa_cell(9360, t))).collect();

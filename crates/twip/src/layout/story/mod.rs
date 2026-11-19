@@ -506,7 +506,7 @@ fn stack_table(w: &StoryIn, st: &mut Stack, bi: usize, t: &Table, memos: &mut Me
         _ => nested_layout(t, cell, width, env, false, memos)?,
     };
     let (rows, h) = super::table::table_units(&tl);
-    let shift = if in_cell && text.compat == Compat::Legacy { super::table::nested_shift(t, text.single_cell_borders) } else { 0.0 };
+    let mut shift = if in_cell && text.compat == Compat::Legacy { super::table::nested_shift(t, text.single_cell_borders) } else { 0.0 };
     // A floating table in a header, a footer or a cell takes no room in the story: it stands `tblpY` below
     // where it starts (from the text) and the text after it wraps around it. Compat ≤ 14: a header's or
     // footer's text runs over it. A cell holds it.
@@ -515,6 +515,16 @@ fn stack_table(w: &StoryIn, st: &mut Stack, bi: usize, t: &Table, memos: &mut Me
     // ponytail: a cell's against the page or the margin, and `tblpYSpec` center or bottom, start where the
     // story is.
     let fp = t.floating.filter(|_| hf.is_some() || in_cell);
+    // A cell's floating table past the right of the cell's box inside its borders moves left, to the box's left
+    // at most; its drawn outer borders count, an undrawn one doesn't.
+    if fp.is_some() && in_cell {
+        let (lo, hi) = match w.ends.page {
+            (_, 0) => (0.0, width),
+            (l, wd) => (-l as f64 / 20.0, (wd - l) as f64 / 20.0),
+        };
+        let (l, r) = super::table::float_box(&tl, t, false);
+        shift += (hi - r - shift).min(0.0).max((lo - l - shift).min(0.0));
+    }
     let top = match (fp, hf) {
         (Some(fp), _) if fp.v_anchor == crate::docx::props::TableAnchor::Text => y + fp.y,
         (Some(fp), Some((at, margin))) if fp.y_spec.is_none_or(|j| j == crate::docx::props::Jc::Left) => {
