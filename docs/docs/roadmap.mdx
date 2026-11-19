@@ -20,8 +20,8 @@ you. The work between them runs in four phases, in this order:
   items={[
     { n: '01', title: 'Layout', href: '#layout', range: '1.1 – 1.11', blurb: 'Every line and page breaks where it should, and stays there.', done: true },
     { n: '02', title: 'DOCX fidelity', href: '#docx', range: '2.1 – 2.14', blurb: 'Everything in the file is read, kept and settable.', done: true },
-    { n: '03', title: 'Rendering', href: '#rendering', range: '3.1 – 3.11', blurb: 'Everything in the model is drawn.' },
-    { n: '04', title: 'Editor and platform', href: '#editor', range: '4.1 – 4.12', blurb: 'The workflows, packages and API freeze.' },
+    { n: '03', title: 'Rendering', href: '#rendering', range: '3.1 – 3.10', blurb: 'Everything in the model is drawn.' },
+    { n: '04', title: 'Editor and platform', href: '#editor', range: '4.1 – 4.13', blurb: 'The workflows, packages and API freeze.' },
   ]}
 />
 
@@ -472,16 +472,7 @@ Everything in the model is drawn, on screen and in PDF, and looks as it does in 
 
 </Chunk>
 
-<Chunk id="3.9" title="WordArt and 3-D" deps={['3.5']}>
-
-**Goal:** shaped and 3-D text and shapes look right.
-
-- WordArt warps (`a:prstTxWarp`), every preset.
-- 3-D rotation, bevel and extrusion (`scene3d`, `sp3d`, VML extrusion), drawn as Word draws them.
-
-</Chunk>
-
-<Chunk id="3.10" title="Glyph quality" deps={['3.1']}>
+<Chunk id="3.9" title="Glyph quality" deps={['3.1']}>
 
 **Goal:** sharper text, with layout unchanged.
 
@@ -490,7 +481,7 @@ Everything in the model is drawn, on screen and in PDF, and looks as it does in 
 
 </Chunk>
 
-<Chunk id="3.11" title="Accessible, linked PDF" deps={['2.9']}>
+<Chunk id="3.10" title="Accessible, linked PDF" deps={['2.9']}>
 
 **Goal:** PDF output that's clickable and passes accessibility checks.
 
@@ -611,7 +602,18 @@ The workflows on top of a complete model, the framework packages, and the API fr
 
 </Chunk>
 
-<Chunk id="4.12" title="1.0 API freeze" deps={['4.1', '4.2', '4.3', '4.4', '4.5', '4.6', '4.7', '4.8', '4.9', '4.10', '4.11']}>
+<Chunk id="4.12" title="Editing vertical text" deps={['1.11']}>
+
+**Goal:** vertical sections, paragraphs, cells and text boxes edit as Word edits them.
+
+- The caret, selection and hit testing in vertical lines (`tbRl`, `btLr`, `lrTbV`, `tbRlV`, `tbLrV`), drawn turned
+  with the text.
+- Arrow keys, Home and End, and extending the selection follow the line direction.
+- Drag, drop and resize handles in vertical sections and text boxes.
+
+</Chunk>
+
+<Chunk id="4.13" title="1.0 API freeze" deps={['4.1', '4.2', '4.3', '4.4', '4.5', '4.6', '4.7', '4.8', '4.9', '4.10', '4.11', '4.12']}>
 
 **Goal:** an API we can keep for the 1.x line.
 
@@ -641,8 +643,8 @@ The workflows on top of a complete model, the framework packages, and the API fr
 - DATE and TIME in the host's locale: their month and day names and default picture are en-US's. Every locale's
   names would be CLDR data in the WASM bundle; a host service could supply them instead
 - Right-to-left and East Asian layout and editing, with IME (below)
-- The caret, selection and hit testing in vertical sections: vertical documents lay out and draw in 1.0, but editing
-  them places the caret as if the page weren't turned
+- WordArt warps (`a:prstTxWarp`) and 3-D rotation, bevel and extrusion (`scene3d`, `sp3d`, VML extrusion): kept on
+  save, drawn without them
 
 ### Right-to-left and East Asian
 
