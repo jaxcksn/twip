@@ -625,6 +625,9 @@ impl<'d> PageFill<'d, '_> {
         // measured), both reset with each paragraph, and a second drop keeps the first slack.
         let mut ordered: Vec<&Placed> = floats.iter().collect();
         ordered.sort_by_key(|f| f.key);
+        // A strip kept from a line's own query: floating tables and frames cut the line before shapes do.
+        let mut figures_first = ordered.clone();
+        figures_first.sort_by_key(|f| f.key.2 != float::TABLE_PIECE && !(f.float.text_box.is_some() && f.float.shape.is_none()));
         let mut strip_at: Option<(Vec<(f64, f64)>, f64, f64)> = None;
         let mut slack_on = 0.0;
         // Compat 15: the page's first line, holding the anchor of a float that found no place, goes below the page's
@@ -667,7 +670,23 @@ impl<'d> PageFill<'d, '_> {
                             slack_on = ph + drop;
                         }
                     } else if !reuse {
-                        strip_at = None;
+                        // Compat ≤ 14 keeps a line's pieces for the next lines while none of them ends, though a float
+                        // that took a piece away ends sooner.
+                        let same = |k: &[(f64, f64, f64)], u: &[(f64, f64)]| {
+                            k.len() == u.len() && k.iter().zip(u).all(|(k, u)| (k.0 - u.0).abs() < EPS && (k.1 - u.1).abs() < EPS)
+                        };
+                        strip_at = (compat == Compat::Legacy && forced.is_none() && !here.is_empty())
+                            .then(|| {
+                                let kept = float::strip(&figures_first, cx0, cx1, yy, yy + ph, 0.0)?;
+                                let used = float::intervals(cutting, cx0, cx1, yy, yy + ph, true)?;
+                                let end = kept.iter().map(|p| p.2).fold(f64::INFINITY, f64::min);
+                                // Only a strip ending at a float's bottom, which a line may overhang; none beside a
+                                // wrap polygon, which is queried again for every line.
+                                let at_top = here.iter().any(|f| f.excl[1] > yy + EPS && (f.excl[1] - end).abs() < EPS);
+                                let polygon = here.iter().any(|f| f.contour.is_some() && f.excl[1] < end && f.excl[3] > yy);
+                                (!kept.is_empty() && end.is_finite() && !at_top && !polygon && same(&kept, &used)).then_some((used, end, 0.0))
+                            })
+                            .flatten();
                     }
                     bands.push((yy, segs));
                     let next = yy + ph;

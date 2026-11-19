@@ -364,6 +364,30 @@ fn compat_14_a_never_overlap_table_steps_by_its_height_and_stops_short_of_9_twip
 }
 
 #[test]
+fn compat_14_a_strip_holds_while_its_kept_piece_does_though_a_float_beside_it_ends() {
+    // A centred table leaves two 25pt strips; a left table from 25pt down takes the left one. Its bottom doesn't end
+    // the right strip the paragraph's lines are in: they stay there down to the centred table's bottom.
+    let tbl = |pos: &str, w: i32, h: i32| {
+        format!(
+            r#"<w:tbl><w:tblPr><w:tblpPr w:leftFromText="180" w:rightFromText="180" w:vertAnchor="page" {pos}/><w:tblW w:w="{w}" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="{w}"/></w:tblGrid><w:tr><w:trPr><w:trHeight w:val="{h}" w:hRule="exact"/></w:trPr><w:tc><w:tcPr><w:tcW w:w="{w}" w:type="dxa"/></w:tcPr><w:p/></w:tc></w:tr></w:tbl>"#
+        )
+    };
+    let wide = tbl(r#"w:horzAnchor="margin" w:tblpXSpec="center" w:tblpY="1440""#, 8000, 3000);
+    let left = tbl(r#"w:horzAnchor="page" w:tblpX="1440" w:tblpY="1940""#, 3000, 1000);
+    let body = format!("{wide}{left}<w:p><w:r><w:t>Wordswordswordsw a b c d e f g h i j k l m n o p q r s t u v w x y z</w:t></w:r></w:p>");
+    let mut doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
+    doc.settings.compat_mode = 12;
+    let between: Vec<f64> = crate::layout::traverse::paint_items(&layout(&doc, &fonts()).pages()[0])
+        .into_iter()
+        .filter_map(|i| match i {
+            crate::layout::fragment::Item::Glyphs(r) if r.baseline > 150.0 && r.baseline < 220.0 && !r.chars.is_empty() => Some(r.x),
+            _ => None,
+        })
+        .collect();
+    assert!(!between.is_empty() && between.iter().all(|&x| x > 400.0), "lines between the two bottoms at x {between:?}");
+}
+
+#[test]
 fn compat_14_an_empty_paragraph_takes_a_strip_its_indent_leaves_no_room_in() {
     // A centred floating table leaves 29.6pt strips: an empty paragraph with a 36pt first-line indent still takes the
     // left one (its line ends at the mark, so Word doesn't drop it), as one without the indent does.
