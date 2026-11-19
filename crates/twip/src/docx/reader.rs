@@ -2537,9 +2537,14 @@ impl Reader {
         let line = shape.sp().and_then(|s| s.line.as_ref()).or_else(|| shape.pic().and_then(|p| p.line.as_ref()));
         let pen = line.filter(|l| !matches!(l.fill, Some(crate::drawing::paint::Fill::None))).map(|l| l.width.map_or(15.0, |w| w.0 as f64 / 635.0));
         let (h_align, v_align) = (align(&st.h_align), align(&st.v_align));
-        // A line grows the stored box to its pixel bounds, aligned or not; an aligned shape without one grows none.
-        let unlined_aligned = pen.is_none() && (h_align.is_some() || v_align.is_some());
-        let effect = vml_effect(pen, (!unlined_aligned).then(|| [tw(st.x), tw(st.y), tw(st.x) + tw(st.w), tw(st.y) + tw(st.h)]));
+        // A line grows the stored box to its pixel bounds, aligned or not. Without one, a shape aligned on one axis
+        // grows only at its right and bottom, one aligned on both not at all.
+        let aligned = (h_align.is_some(), v_align.is_some());
+        let effect = match (pen, aligned) {
+            (None, (true, true)) => [0.0; 4],
+            _ => vml_effect(pen, Some([tw(st.x), tw(st.y), tw(st.x) + tw(st.w), tw(st.y) + tw(st.h)])),
+        };
+        let effect = if pen.is_none() && (aligned.0 || aligned.1) { [0.0, 0.0, effect[2], effect[3]] } else { effect };
         self.float_order += 1;
         out.push(Inline::Float(
             Box::new(Float {

@@ -388,6 +388,15 @@ fn compat_14_a_strip_holds_while_its_kept_piece_does_though_a_float_beside_it_en
 }
 
 #[test]
+fn an_unlined_centred_vml_box_wraps_to_its_right_edges_pixel() {
+    // A box with no line, 7855 twips wide, grows to whole pixels on its right (7860) and is centred with that:
+    // 2190 to 10050, the text beside it 9pt past.
+    let body = r##"<w:p><w:r><w:pict xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w10="urn:schemas-microsoft-com:office:word"><v:shape id="b" type="#_x0000_t202" stroked="f" style="position:absolute;margin-left:0;margin-top:0;width:392.75pt;height:100pt;z-index:1;mso-wrap-distance-left:9pt;mso-wrap-distance-right:9pt;mso-position-horizontal:center;mso-position-horizontal-relative:margin;mso-position-vertical:absolute;mso-position-vertical-relative:text"><v:textbox><w:txbxContent><w:p/></w:txbxContent></v:textbox><w10:wrap type="square"/></v:shape></w:pict></w:r></w:p><w:p><w:r><w:t>Lead xyz</w:t></w:r></w:p>"##;
+    let x = glyph_x_in(body, 15, &[], 'x');
+    assert!((x - 511.5).abs() < 0.02, "right strip text at {x}");
+}
+
+#[test]
 fn compat_14_an_empty_paragraph_takes_a_strip_its_indent_leaves_no_room_in() {
     // A centred floating table leaves 29.6pt strips: an empty paragraph with a 36pt first-line indent still takes the
     // left one (its line ends at the mark, so Word doesn't drop it), as one without the indent does.
