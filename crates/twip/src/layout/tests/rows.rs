@@ -1152,6 +1152,32 @@ fn compat_12_single_borders_give_a_shared_edge_to_the_right_cell() {
 }
 
 #[test]
+fn a_cells_bottom_border_runs_over_columns_the_row_below_leaves_out() {
+    use crate::layout::fragment::Item;
+    let bottom = |tbl_pr: &str, row2: &str| {
+        let body = format!(
+            r#"<w:tbl><w:tblPr>{tbl_pr}<w:tblInd w:w="0" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="2880"/><w:gridCol w:w="5760"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="8640" w:type="dxa"/><w:gridSpan w:val="2"/><w:tcBorders><w:bottom w:val="single" w:sz="12" w:space="0" w:color="FF0000"/></w:tcBorders></w:tcPr><w:p/></w:tc></w:tr><w:tr>{row2}</w:tr></w:tbl><w:p/>"#
+        );
+        let doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
+        let mut bars: Vec<[f64; 4]> = crate::layout::traverse::paint_items(&layout(&doc, &fonts()).pages()[0])
+            .into_iter()
+            .filter_map(|i| if let Item::Rect { rect, colour: 0xFF0000 } = i { Some(rect) } else { None })
+            .collect();
+        bars.sort_by(|a, b| a[0].total_cmp(&b[0]));
+        let len: f64 = bars.iter().map(|r| r[2] - r[0]).sum();
+        (bars.first().map_or(0.0, |r| r[0]), bars.last().map_or(0.0, |r| r[2]), len)
+    };
+    let cell = |w: u32| format!(r#"<w:tc><w:tcPr><w:tcW w:w="{w}" w:type="dxa"/></w:tcPr><w:p/></w:tc>"#);
+    let after = format!(r#"<w:trPr><w:gridAfter w:val="1"/><w:wAfter w:w="5760" w:type="dxa"/></w:trPr>{}"#, cell(2880));
+    let before = format!(r#"<w:trPr><w:gridBefore w:val="1"/><w:wBefore w:w="2880" w:type="dxa"/></w:trPr>{}"#, cell(5760));
+    // Once each over the full 432 pt: over the row's cell and over the skipped column.
+    for (tbl_pr, row2) in [("", &after), ("", &before), ("<w:bidiVisual/>", &after), ("<w:bidiVisual/>", &before)] {
+        let (x0, x1, len) = bottom(tbl_pr, row2);
+        assert!((x1 - x0 - 432.0).abs() < 0.01 && (len - 432.0).abs() < 0.01, "{tbl_pr} {row2}: {x0} {x1} {len}");
+    }
+}
+
+#[test]
 fn a_rows_top_border_takes_its_width_in_whole_twips() {
     let baseline = |sz: u32| {
         let b = format!(r#"w:val="single" w:sz="{sz}" w:space="0" w:color="000000""#);

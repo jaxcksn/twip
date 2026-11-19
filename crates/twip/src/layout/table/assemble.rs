@@ -455,19 +455,35 @@ pub(super) fn assemble(
                 || cells_geo.iter().any(|g| r.cells[g.ci].rev.structural.is_some() || r.cells[g.ci].rev.change.is_some()));
         let mut top_border = cells.iter().map(|c| space_h(&c.edges[0])).fold(0.0, f64::max);
         let seams: Vec<(f64, f64, Border)> = match ri.checked_sub(1).and_then(|p| geo.get(p)) {
-            Some(above) if row_s.is_none() && !framed(t, ri - 1) => above
-                .iter()
-                .filter(|a| !cells_geo.iter().any(|b| b.col == a.col))
-                .filter(|a| {
-                    cells_geo.iter().find(|b| a.col >= b.col && a.col < b.col + b.span).is_some_and(|b| r.cells[b.ci].v_merge != VMerge::Continue)
-                })
-                .filter_map(|a| {
-                    let b = a.edges[2].clone().filter(|b| b.visible())?;
-                    let (l, r) = if rtl { (&a.edges[3], &a.edges[1]) } else { (&a.edges[1], &a.edges[3]) };
-                    let x = mirror(a.x, a.w);
-                    Some((x - bw(l) / 2.0, x + a.w + bw(r) / 2.0, b))
-                })
-                .collect(),
+            Some(above) if row_s.is_none() && !framed(t, ri - 1) => {
+                let mut seams = Vec::new();
+                for a in above {
+                    let mut seam = |x0: f64, x1: f64, b: Option<Border>| {
+                        if let Some(b) = b.filter(|b| b.visible()) {
+                            seams.push(if rtl { (total - x1, total - x0, b) } else { (x0, x1, b) });
+                        }
+                    };
+                    let (start, end) = (a.x - bw(&a.edges[1]) / 2.0, a.x + a.w + bw(&a.edges[3]) / 2.0);
+                    let under = cells_geo.iter().find(|b| a.col >= b.col && a.col < b.col + b.span);
+                    if under.is_some_and(|b| b.col != a.col && r.cells[b.ci].v_merge != VMerge::Continue) {
+                        seam(start, end, a.edges[2].clone());
+                        continue;
+                    }
+                    // Over the columns the row leaves out
+                    let own = || own_or(&t.rows[ri - 1].cells[a.ci].bottom, &row_borders(t, ri - 1)[4]);
+                    let (mut col, mut x) = (a.col, start);
+                    for b in cells_geo.iter().filter(|b| b.col + b.span > a.col && b.col < a.col + a.span) {
+                        if b.col > col {
+                            seam(x, b.x, own());
+                        }
+                        (col, x) = (b.col + b.span, b.x + b.w);
+                    }
+                    if col < a.col + a.span {
+                        seam(x, end, own());
+                    }
+                }
+                seams
+            }
             _ => Vec::new(),
         };
         top_border = seams.iter().map(|s| thick(&s.2)).fold(top_border, f64::max);
