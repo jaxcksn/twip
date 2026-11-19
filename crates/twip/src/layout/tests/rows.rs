@@ -307,6 +307,22 @@ fn compat_14_a_line_below_a_floating_table_in_a_cell_starts_at_its_bottom() {
 }
 
 #[test]
+fn compat_14_a_line_beside_a_too_narrow_strip_of_a_floating_table_steps_down() {
+    // A centred floating table 40pt tall: with a strip each side too narrow for the text, compat 12 moves the line
+    // down a text height at a time, past the table's bottom; with no strip it goes to the bottom, as compat 15 does.
+    let y = |fw: i32, mode: i64| {
+        let body = format!(
+            r#"<w:p><w:r><w:t>Lead</w:t></w:r></w:p><w:tbl><w:tblPr><w:tblpPr w:leftFromText="180" w:rightFromText="180" w:vertAnchor="text" w:horzAnchor="margin" w:tblpXSpec="center" w:tblpY="64"/><w:tblW w:w="{fw}" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="{fw}"/></w:tblGrid><w:tr><w:trPr><w:trHeight w:val="800"/></w:trPr><w:tc><w:tcPr><w:tcW w:w="{fw}" w:type="dxa"/></w:tcPr><w:p/></w:tc></w:tr></w:tbl><w:p><w:r><w:t>Words too long for the strip q</w:t></w:r></w:p>"#
+        );
+        let mut doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
+        doc.settings.compat_mode = mode;
+        glyphs(&doc)[0].iter().find(|g| g.0 == 'q').map(|g| g.1).expect("drawn")
+    };
+    assert!(y(8000, 12) > y(8000, 15) + 2.0, "strip: compat 12 {} compat 15 {}", y(8000, 12), y(8000, 15));
+    assert!((y(9360, 12) - y(9360, 15)).abs() < 0.5, "no strip: compat 12 {} compat 15 {}", y(9360, 12), y(9360, 15));
+}
+
+#[test]
 fn a_floating_table_wider_than_its_cell_moves_left_onto_the_cells_box() {
     // A 9500-wide bordered floating table in a 9360 fixed cell: its left border sits on the cell's left border.
     let m = r#"<w:tblCellMar><w:left w:w="108" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar>"#;

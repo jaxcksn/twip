@@ -644,10 +644,11 @@ fn wrap_bands(
         if s >= n && !bands.is_empty() {
             break;
         }
-        let (mut h, mut got, mut trial) = (est, None, None);
+        let (mut h, mut got, mut trial, mut no_room) = (est, None, None, false);
         for attempt in 0..2 {
             got = None;
             let Some(iv) = float::intervals(floats, 0.0, ps.width, yy, yy + h, ps.env.compat == crate::docx::Compat::Legacy) else { break };
+            no_room = iv.is_empty();
             let open = iv.len() == 1 && iv[0].0.abs() < EPS && (iv[0].1 - ps.width).abs() < EPS;
             match band(&lines.shaped, pieces, s, &iv, bands.is_empty(), style, mark, &frame, fonts, open) {
                 Ok((segs, e)) => {
@@ -672,9 +673,9 @@ fn wrap_bands(
             s = e;
             continue;
         }
-        // Compat ≤ 14 steps down by the text's height past square-wrapped shapes; past a floating table the line goes
-        // to its bottom.
-        let square = floats.iter().filter(|f| f.in_band(yy, yy + h)).all(|f| f.float.wrap == "square" && f.key.2 != float::TABLE_PIECE);
+        // Compat ≤ 14 steps down by the text's height past square-wrapped floats; a floating table that leaves no piece
+        // sends the line to its bottom.
+        let square = floats.iter().filter(|f| f.in_band(yy, yy + h)).all(|f| f.float.wrap == "square" && !(no_room && f.key.2 == float::TABLE_PIECE));
         // A first line that goes below a floating table keeps its space before below it.
         let table = bands.is_empty() && floats.iter().any(|f| f.key.2 == float::TABLE_PIECE && f.in_band(yy, yy + h));
         yy = match trial.filter(|&t| ps.env.compat == Compat::Legacy && square && t > EPS) {

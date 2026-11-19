@@ -509,7 +509,7 @@ impl<'d> PageFill<'d, '_> {
         mut h: f64,
         mut below: f64,
     ) -> Tried {
-        let &WrapIn { p, style, sp, pieces, n, top_extra, cx0, cx1, compat, restarts, lone_picture, kept_after, first_part, top, y0, .. } = w;
+        let &WrapIn { p, style, sp, pieces, n, top_extra, cx0, cx1, compat, restarts, lone_picture, kept_after, first_part, top, origin_y, .. } = w;
         let mut got = None;
         let mut blocked = false;
         let mut trial = None;
@@ -570,7 +570,7 @@ impl<'d> PageFill<'d, '_> {
                         }
                         Err(t) => {
                             blocked = true;
-                            trial = Some(t + if first { top - y0 } else { 0.0 });
+                            trial = Some(t + if first { (top - origin_y).max(0.0) } else { 0.0 });
                             break;
                         }
                     }
@@ -675,7 +675,9 @@ impl<'d> PageFill<'d, '_> {
                 }
                 _ => {
                     let meets = |f: &&Placed| f.in_band(yy, yy + h) && f.excl[2] > cx0 + EPS && f.excl[0] < cx1 - EPS;
-                    if first_part && bands.is_empty() && here.iter().filter(meets).any(|f| f.key.2 == float::TABLE_PIECE) {
+                    // Compat ≤ 14: a line with a piece too narrow for it steps down instead (below).
+                    let steps = compat == Compat::Legacy && trial.is_some() && !no_room;
+                    if first_part && bands.is_empty() && !steps && here.iter().filter(meets).any(|f| f.key.2 == float::TABLE_PIECE) {
                         // To the nearest bottom among the floats it meets, then tried again there.
                         let below = here.iter().filter(meets).map(|f| f.excl[3]).filter(|&b| b > yy + EPS).fold(f64::INFINITY, f64::min);
                         let below = if below.is_finite() { below } else { yy };
