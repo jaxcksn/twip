@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.2.2](https://github.com/jaxcksn/twip/compare/v0.2.1...v0.2.2) (2026-11-20)
+
+
+### Features
+
+* add full DOCX roundtrip capabilities ([#30](https://github.com/jaxcksn/twip/issues/30)) ([706af62](https://github.com/jaxcksn/twip/commit/706af629ea1f8bdf8dc2613d0b4d76e4f56b0dbb))
+
+
+### Bug Fixes
+
+* **layout:** close additional layout gaps ([#34](https://github.com/jaxcksn/twip/issues/34)) ([b24e8f2](https://github.com/jaxcksn/twip/commit/b24e8f2a097eb6539402e0239965b159c5fb3d0c))
+* **layout:** draw a cell's bottom border over columns the prior leaves out ([#31](https://github.com/jaxcksn/twip/issues/31)) ([cc73823](https://github.com/jaxcksn/twip/commit/cc738238e6cdc011cb1997f1192bdb15be2a4431))
+* **layout:** merge grid lines no cell ends on ([#33](https://github.com/jaxcksn/twip/issues/33)) ([70afc6e](https://github.com/jaxcksn/twip/commit/70afc6ed2d201b9204f36566bb0c5145d54885bd))
+
 ## [0.2.1](https://github.com/jaxcksn/twip/compare/v0.2.0...v0.2.1) (2026-11-16)
 
 
