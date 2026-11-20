@@ -57,6 +57,8 @@ pub struct NestedRow {
     pub ri: usize,
     pub shift: f64,
     pub rest: Option<Rc<[Vec<StoryUnit>]>>,
+    /// A row of a floating table, which its cell clips across from the start.
+    pub floating: bool,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -506,7 +508,9 @@ fn stack_table(w: &StoryIn, st: &mut Stack, bi: usize, t: &Table, memos: &mut Me
         _ => nested_layout(t, cell, width, env, false, memos)?,
     };
     let (rows, h) = super::table::table_units(&tl);
-    let shift = if in_cell && text.compat == Compat::Legacy { super::table::nested_shift(t, text.single_cell_borders) } else { 0.0 };
+    // A cell's floating table is placed as in compat 15: no compat ≤ 14 nested shift.
+    let mut shift =
+        if in_cell && text.compat == Compat::Legacy && t.floating.is_none() { super::table::nested_shift(t, text.single_cell_borders) } else { 0.0 };
     // A floating table in a header, a footer or a cell takes no room in the story: it stands `tblpY` below
     // where it starts (from the text) and the text after it wraps around it. Compat ≤ 14: a header's or
     // footer's text runs over it. A cell holds it.
@@ -515,6 +519,26 @@ fn stack_table(w: &StoryIn, st: &mut Stack, bi: usize, t: &Table, memos: &mut Me
     // ponytail: a cell's against the page or the margin, and `tblpYSpec` center or bottom, start where the
     // story is.
     let fp = t.floating.filter(|_| hf.is_some() || in_cell);
+    // A cell's floating table past the right of the cell's box inside its borders moves left, to the box's left
+    // at most; its drawn outer borders count, an undrawn one doesn't.
+    if fp.is_some() && in_cell {
+        let (lo, hi) = match w.ends.page {
+            (_, 0) => (0.0, width),
+            (l, wd) => (-l as f64 / 20.0, (wd - l) as f64 / 20.0),
+        };
+        // Against the page: the cell's box inside its borders, not its text.
+        if let Some(fp) = fp.filter(|fp| fp.h_page) {
+            let free = (hi - lo) - width;
+            shift += lo
+                + match fp.x_align() {
+                    Some(crate::docx::props::Jc::Center) => free / 2.0,
+                    Some(crate::docx::props::Jc::Right) => free,
+                    _ => 0.0,
+                };
+        }
+        let (l, r) = super::table::float_box(&tl, t, false);
+        shift += (hi - r - shift).min(0.0).max((lo - l - shift).min(0.0));
+    }
     let top = match (fp, hf) {
         (Some(fp), _) if fp.v_anchor == crate::docx::props::TableAnchor::Text => y + fp.y,
         (Some(fp), Some((at, margin))) if fp.y_spec.is_none_or(|j| j == crate::docx::props::Jc::Left) => {
@@ -527,16 +551,17 @@ fn stack_table(w: &StoryIn, st: &mut Stack, bi: usize, t: &Table, memos: &mut Me
     for mut u in rows {
         u.block = bi;
         u.top += top;
-        if shift != 0.0 {
-            u.content = Rc::from([Child::Group { offset: (shift, 0.0), children: u.content }]);
-            u.row = u.row.map(|r| Rc::new(NestedRow { shift, ..(*r).clone() }));
+        if shift != 0.0 || fp.is_some() {
+            if shift != 0.0 {
+                u.content = Rc::from([Child::Group { offset: (shift, 0.0), children: u.content }]);
+            }
+            u.row = u.row.map(|r| Rc::new(NestedRow { shift, floating: fp.is_some(), ..(*r).clone() }));
         }
         units.push(u);
     }
     match fp {
         Some(fp) => {
-            let legacy = in_cell && text.compat == Compat::Legacy;
-            let (bl, br) = super::table::float_box(&tl, t, legacy);
+            let (bl, br) = super::table::float_box(&tl, t, false);
             // In a cell the right distance has no minimum.
             let mut dist = float::table_dist(&fp, false);
             if in_cell {
@@ -634,10 +659,11 @@ fn wrap_bands(
         if s >= n && !bands.is_empty() {
             break;
         }
-        let (mut h, mut got, mut trial) = (est, None, None);
+        let (mut h, mut got, mut trial, mut no_room) = (est, None, None, false);
         for attempt in 0..2 {
             got = None;
             let Some(iv) = float::intervals(floats, 0.0, ps.width, yy, yy + h, ps.env.compat == crate::docx::Compat::Legacy) else { break };
+            no_room = iv.is_empty();
             let open = iv.len() == 1 && iv[0].0.abs() < EPS && (iv[0].1 - ps.width).abs() < EPS;
             match band(&lines.shaped, pieces, s, &iv, bands.is_empty(), style, mark, &frame, fonts, open) {
                 Ok((segs, e)) => {
@@ -662,7 +688,9 @@ fn wrap_bands(
             s = e;
             continue;
         }
-        let square = floats.iter().filter(|f| f.in_band(yy, yy + h)).all(|f| f.float.wrap == "square");
+        // Compat ≤ 14 steps down by the text's height past square-wrapped floats; a floating table that leaves no piece
+        // sends the line to its bottom.
+        let square = floats.iter().filter(|f| f.in_band(yy, yy + h)).all(|f| f.float.wrap == "square" && !(no_room && f.key.2 == float::TABLE_PIECE));
         // A first line that goes below a floating table keeps its space before below it.
         let table = bands.is_empty() && floats.iter().any(|f| f.key.2 == float::TABLE_PIECE && f.in_band(yy, yy + h));
         yy = match trial.filter(|&t| ps.env.compat == Compat::Legacy && square && t > EPS) {

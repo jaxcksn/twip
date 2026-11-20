@@ -665,7 +665,7 @@ pub fn table_units(tb: &Rc<TableLayout>) -> (Vec<StoryUnit>, f64) {
             keep_next: false,
             keep_lines: false,
             notes: notes.into_boxed_slice(),
-            row: Some(Rc::new(NestedRow { table: tb.clone(), ri, shift: 0.0, rest: None })),
+            row: Some(Rc::new(NestedRow { table: tb.clone(), ri, shift: 0.0, rest: None, floating: false })),
         });
         y += h + extra;
     }

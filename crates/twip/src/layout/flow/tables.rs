@@ -963,8 +963,8 @@ impl<'d> PageFill<'d, '_> {
             let f = float::table_float(t.id, br - bl, h, float::table_dist(&fp, in_flow), !fp.never_overlap);
             let mut probe = Placed::new((self.sec.index, pos.block, float::TABLE_PIECE), ParaId(t.id), &f, at_x + bl, top, h);
             let body_bottom = self.page_h - self.sec.section.section_in(self.ctx.env.text.review.view).bottom;
-            // It moves off the tables and frames placed before it that it may not overlap, or that may not overlap it.
-            let frames = self.at.found.iter().filter(|o| o.key.2 != float::TABLE_PIECE && o.float.text_box.is_some() && o.float.shape.is_none());
+            // It moves off the tables and floats placed before it that it may not overlap, or that may not overlap it.
+            let frames = self.at.found.iter().filter(|o| o.key.2 != float::TABLE_PIECE);
             let others: Vec<Placed> = tables.iter().filter(|o| !under.contains(&o.key)).chain(frames).cloned().collect();
             // Its area: the box its horizontal and vertical anchors name.
             let across = match () {

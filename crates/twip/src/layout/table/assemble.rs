@@ -630,6 +630,8 @@ fn table_x0(
     }
     // Floating tables
     if let Some(fp) = t.floating {
+        // A cell's floating table is placed as in compat 15 in every mode.
+        let compat = if nested { Compat::Generic } else { compat };
         let (e0, ind) = match compat {
             Compat::Generic => (half_border(lw), 0.0),
             Compat::Legacy => (-edge_gap(t, lw, lmar), t.ind),

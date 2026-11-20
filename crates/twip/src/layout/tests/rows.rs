@@ -287,6 +287,201 @@ fn compat_14_a_floating_table_at_vertical_position_0_stands_in_the_flow() {
 }
 
 #[test]
+fn compat_14_a_line_below_a_floating_table_in_a_cell_starts_at_its_bottom() {
+    // A floating table as wide as the cell, `tblpY` 257 below the cell top: the 14pt line after it doesn't fit
+    // above it and starts at its bottom, as in compat 15, not a text height at a time.
+    let float = r#"<w:tbl><w:tblPr><w:tblpPr w:leftFromText="180" w:rightFromText="180" w:vertAnchor="text" w:horzAnchor="margin" w:tblpY="257"/><w:tblW w:w="9000" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="9000"/></w:tblGrid><w:tr><w:trPr><w:trHeight w:val="786"/></w:trPr><w:tc><w:tcPr><w:tcW w:w="9000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>x</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#;
+    let heading = r#"<w:p><w:pPr><w:spacing w:after="200" w:line="276" w:lineRule="auto"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="28"/></w:rPr><w:t>H</w:t></w:r></w:p>"#;
+    let body = format!(
+        r#"<w:tbl><w:tblPr><w:tblW w:w="9360" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="9360"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="9360" w:type="dxa"/></w:tcPr>{float}{heading}<w:p/></w:tc></w:tr></w:tbl><w:p/>"#
+    );
+    let y = |mode: i64| {
+        let mut doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
+        doc.settings.compat_mode = mode;
+        let page = &glyphs(&doc)[0];
+        let at = |c: char| page.iter().find(|g| g.0 == c).map(|g| g.1).expect("drawn");
+        (at('x'), at('H'))
+    };
+    let ((x12, h12), (_, h15)) = (y(12), y(15));
+    assert!(h12 > x12 && (h12 - h15).abs() < 0.5, "compat 12: x {x12} H {h12}; compat 15: H {h15}");
+}
+
+#[test]
+fn compat_14_a_line_beside_a_too_narrow_strip_of_a_floating_table_steps_down() {
+    // A centred floating table 40pt tall: with a strip each side too narrow for the text, compat 12 moves the line
+    // down a text height at a time, past the table's bottom; with no strip it goes to the bottom, as compat 15 does.
+    let y = |fw: i32, mode: i64| {
+        let body = format!(
+            r#"<w:p><w:r><w:t>Lead</w:t></w:r></w:p><w:tbl><w:tblPr><w:tblpPr w:leftFromText="180" w:rightFromText="180" w:vertAnchor="text" w:horzAnchor="margin" w:tblpXSpec="center" w:tblpY="64"/><w:tblW w:w="{fw}" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="{fw}"/></w:tblGrid><w:tr><w:trPr><w:trHeight w:val="800"/></w:trPr><w:tc><w:tcPr><w:tcW w:w="{fw}" w:type="dxa"/></w:tcPr><w:p/></w:tc></w:tr></w:tbl><w:p><w:r><w:t>Words too long for the strip q</w:t></w:r></w:p>"#
+        );
+        let mut doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
+        doc.settings.compat_mode = mode;
+        glyphs(&doc)[0].iter().find(|g| g.0 == 'q').map(|g| g.1).expect("drawn")
+    };
+    assert!(y(8000, 12) > y(8000, 15) + 2.0, "strip: compat 12 {} compat 15 {}", y(8000, 12), y(8000, 15));
+    assert!((y(9360, 12) - y(9360, 15)).abs() < 0.5, "no strip: compat 12 {} compat 15 {}", y(9360, 12), y(9360, 15));
+}
+
+#[test]
+fn compat_14_a_line_stepping_beside_a_float_stops_at_the_next_floats_top() {
+    // A centred floating table leaves strips too narrow for the first word. A second table starts 25pt down on the
+    // left: compat 12 steps the line to that table's top, then breaks the word into the right strip there.
+    let tbl = |pos: &str, w: i32, h: i32| {
+        format!(
+            r#"<w:tbl><w:tblPr><w:tblpPr w:leftFromText="180" w:rightFromText="180" w:vertAnchor="page" {pos}/><w:tblW w:w="{w}" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="{w}"/></w:tblGrid><w:tr><w:trPr><w:trHeight w:val="{h}" w:hRule="exact"/></w:trPr><w:tc><w:tcPr><w:tcW w:w="{w}" w:type="dxa"/></w:tcPr><w:p/></w:tc></w:tr></w:tbl>"#
+        )
+    };
+    let para = "<w:p><w:r><w:t>Wordswordswords q</w:t></w:r></w:p>";
+    let y = |body: &str| {
+        let mut doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), body)).expect("reads");
+        doc.settings.compat_mode = 12;
+        glyphs(&doc)[0].iter().find(|g| g.0 == 'W').map(|g| g.1).expect("drawn")
+    };
+    let wide = tbl(r#"w:horzAnchor="margin" w:tblpXSpec="center" w:tblpY="1440""#, 8000, 2000);
+    let left = tbl(r#"w:horzAnchor="page" w:tblpX="1440" w:tblpY="1940""#, 3000, 1000);
+    let (got, plain) = (y(&format!("{wide}{left}{para}")), y(para));
+    assert!((got - 97.0 - (plain - 72.0)).abs() < 0.05, "baseline {got}, a plain first line's {plain}");
+}
+
+#[test]
+fn compat_14_a_never_overlap_table_steps_by_its_height_and_stops_short_of_9_twips() {
+    // A never-overlap table 20pt tall moves down a 50pt table in steps of its height: 5 twips short of the last
+    // step it stays, overlapping; level with it, it lands a twip short of the bottom.
+    let tbl = |y: i32, w: i32, h: i32, never: bool| {
+        let o = if never { r#"<w:tblOverlap w:val="never"/>"# } else { "" };
+        format!(
+            r#"<w:tbl><w:tblPr><w:tblpPr w:vertAnchor="page" w:horzAnchor="margin" w:tblpX="0" w:tblpY="{y}"/>{o}<w:tblW w:w="{w}" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="{w}"/></w:tblGrid><w:tr><w:trPr><w:trHeight w:val="{h}" w:hRule="exact"/></w:trPr><w:tc><w:tcPr><w:tcW w:w="{w}" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>k</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#
+        )
+    };
+    let y = |start: i32| {
+        let body = format!("{}{}<w:p/>", tbl(1440, 9360, 1000, false), tbl(start, 5000, 400, true));
+        let mut doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
+        doc.settings.compat_mode = 12;
+        glyphs(&doc)[0].iter().filter(|g| g.0 == 'k').map(|g| g.1).fold(f64::NEG_INFINITY, f64::max)
+    };
+    let (short, level) = (y(1634), y(1639));
+    assert!((level - short - 0.25).abs() < 0.02, "5 twips short {short}, level {level}");
+}
+
+#[test]
+fn compat_14_a_strip_holds_while_its_kept_piece_does_though_a_float_beside_it_ends() {
+    // A centred table leaves two 25pt strips; a left table from 25pt down takes the left one. Its bottom doesn't end
+    // the right strip the paragraph's lines are in: they stay there down to the centred table's bottom.
+    let tbl = |pos: &str, w: i32, h: i32| {
+        format!(
+            r#"<w:tbl><w:tblPr><w:tblpPr w:leftFromText="180" w:rightFromText="180" w:vertAnchor="page" {pos}/><w:tblW w:w="{w}" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="{w}"/></w:tblGrid><w:tr><w:trPr><w:trHeight w:val="{h}" w:hRule="exact"/></w:trPr><w:tc><w:tcPr><w:tcW w:w="{w}" w:type="dxa"/></w:tcPr><w:p/></w:tc></w:tr></w:tbl>"#
+        )
+    };
+    let wide = tbl(r#"w:horzAnchor="margin" w:tblpXSpec="center" w:tblpY="1440""#, 8000, 3000);
+    let left = tbl(r#"w:horzAnchor="page" w:tblpX="1440" w:tblpY="1940""#, 3000, 1000);
+    let body = format!("{wide}{left}<w:p><w:r><w:t>Wordswordswordsw a b c d e f g h i j k l m n o p q r s t u v w x y z</w:t></w:r></w:p>");
+    let mut doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
+    doc.settings.compat_mode = 12;
+    let between: Vec<f64> = crate::layout::traverse::paint_items(&layout(&doc, &fonts()).pages()[0])
+        .into_iter()
+        .filter_map(|i| match i {
+            crate::layout::fragment::Item::Glyphs(r) if r.baseline > 150.0 && r.baseline < 220.0 && !r.chars.is_empty() => Some(r.x),
+            _ => None,
+        })
+        .collect();
+    assert!(!between.is_empty() && between.iter().all(|&x| x > 400.0), "lines between the two bottoms at x {between:?}");
+}
+
+#[test]
+fn an_unlined_centred_vml_box_wraps_to_its_right_edges_pixel() {
+    // A box with no line, 7855 twips wide, grows to whole pixels on its right (7860) and is centred with that:
+    // 2190 to 10050, the text beside it 9pt past.
+    let body = r##"<w:p><w:r><w:pict xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w10="urn:schemas-microsoft-com:office:word"><v:shape id="b" type="#_x0000_t202" stroked="f" style="position:absolute;margin-left:0;margin-top:0;width:392.75pt;height:100pt;z-index:1;mso-wrap-distance-left:9pt;mso-wrap-distance-right:9pt;mso-position-horizontal:center;mso-position-horizontal-relative:margin;mso-position-vertical:absolute;mso-position-vertical-relative:text"><v:textbox><w:txbxContent><w:p/></w:txbxContent></v:textbox><w10:wrap type="square"/></v:shape></w:pict></w:r></w:p><w:p><w:r><w:t>Lead xyz</w:t></w:r></w:p>"##;
+    let x = glyph_x_in(body, 15, &[], 'x');
+    assert!((x - 511.5).abs() < 0.02, "right strip text at {x}");
+}
+
+#[test]
+fn a_cells_floating_table_drops_the_glyphs_past_the_cells_right_border() {
+    // A floating table wider than its cell overhangs it on the right: its right-aligned text there isn't drawn, its
+    // left text is; an inline table's is.
+    let b = r#"<w:tblBorders><w:top w:val="single" w:sz="4" w:space="0" w:color="000000"/><w:left w:val="single" w:sz="4" w:space="0" w:color="000000"/><w:bottom w:val="single" w:sz="4" w:space="0" w:color="000000"/><w:right w:val="single" w:sz="4" w:space="0" w:color="000000"/></w:tblBorders>"#;
+    let drawn = |pos: &str| {
+        let body = format!(
+            r#"<w:tbl><w:tblPr><w:tblW w:w="9360" w:type="dxa"/>{b}<w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="9360"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="9360" w:type="dxa"/></w:tcPr><w:tbl><w:tblPr>{pos}<w:tblW w:w="10000" w:type="dxa"/>{b}<w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="10000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="10000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>Lft</w:t></w:r></w:p><w:p><w:pPr><w:jc w:val="right"/></w:pPr><w:r><w:t>Rgt</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p><w:r><w:t>Heading</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#
+        );
+        let doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
+        glyphs(&doc)[0].iter().map(|g| g.0).collect::<String>()
+    };
+    let floating = drawn(r#"<w:tblpPr w:leftFromText="180" w:rightFromText="180" w:vertAnchor="text" w:horzAnchor="margin" w:tblpY="257"/>"#);
+    assert!(floating.contains("Lft") && !floating.contains('R'), "floating: {floating}");
+    assert!(drawn("").contains("Rgt"), "inline");
+}
+
+#[test]
+fn compat_14_an_empty_paragraph_takes_a_strip_its_indent_leaves_no_room_in() {
+    // A centred floating table leaves 29.6pt strips: an empty paragraph with a 36pt first-line indent still takes the
+    // left one (its line ends at the mark, so Word doesn't drop it), as one without the indent does.
+    let y = |ind: &str, mode: i64| {
+        let body = format!(
+            r#"<w:p><w:r><w:t>Lead</w:t></w:r></w:p><w:tbl><w:tblPr><w:tblpPr w:leftFromText="180" w:rightFromText="180" w:vertAnchor="text" w:horzAnchor="margin" w:tblpXSpec="center" w:tblpY="64"/><w:tblW w:w="7600" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="7600"/></w:tblGrid><w:tr><w:trPr><w:trHeight w:val="800"/></w:trPr><w:tc><w:tcPr><w:tcW w:w="7600" w:type="dxa"/></w:tcPr><w:p/></w:tc></w:tr></w:tbl><w:p><w:pPr>{ind}</w:pPr></w:p><w:p><w:r><w:t>Words too long for the strip q</w:t></w:r></w:p>"#
+        );
+        let mut doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
+        doc.settings.compat_mode = mode;
+        glyphs(&doc)[0].iter().find(|g| g.0 == 'q').map(|g| g.1).expect("drawn")
+    };
+    let (ind, plain) = (y(r#"<w:ind w:firstLine="720"/>"#, 12), y("", 12));
+    assert!((ind - plain).abs() < 0.01, "compat 12: indented {ind}, plain {plain}");
+}
+
+#[test]
+fn a_centred_floating_table_in_a_cell_sits_as_in_compat_15() {
+    // A cell's floating table is placed with compat 15's rules in every mode: its text stands as far from the cell's
+    // text in compat 12 as in compat 15.
+    let m = r#"<w:tblCellMar><w:left w:w="108" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar>"#;
+    let b = r#"<w:tblBorders><w:left w:val="single" w:sz="4" w:space="0" w:color="000000"/><w:right w:val="single" w:sz="4" w:space="0" w:color="000000"/></w:tblBorders>"#;
+    let body = format!(
+        r#"<w:tbl><w:tblPr><w:tblW w:w="9000" w:type="dxa"/>{b}<w:tblLayout w:type="fixed"/>{m}</w:tblPr><w:tblGrid><w:gridCol w:w="9000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="9000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>o</w:t></w:r></w:p><w:tbl><w:tblPr><w:tblpPr w:leftFromText="180" w:rightFromText="180" w:vertAnchor="text" w:horzAnchor="margin" w:tblpXSpec="center" w:tblpY="0"/><w:tblW w:w="4000" w:type="dxa"/>{b}<w:tblLayout w:type="fixed"/>{m}</w:tblPr><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="4000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>k</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/></w:tc></w:tr></w:tbl><w:p/>"#
+    );
+    let d = |mode: i64| glyph_x_in(&body, mode, &[], 'k') - glyph_x_in(&body, mode, &[], 'o');
+    assert!((d(12) - d(15)).abs() < 0.05, "compat 12 {} compat 15 {}", d(12), d(15));
+}
+
+#[test]
+fn a_nested_table_with_a_dxa_width_widens_its_autofit_cell() {
+    // An autofit 9000 cell holding a 9300 nested table: with a dxa `tblW` its resolved width is the cell's min, so the
+    // cell grows past its own preferred width (Word: 9526 in compat 12) and the centred `M` moves right by half.
+    let m = r#"<w:tblCellMar><w:left w:w="108" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar>"#;
+    let x = |width: &str| {
+        let nested = format!(
+            r#"<w:tbl><w:tblPr>{width}{m}</w:tblPr><w:tblGrid><w:gridCol w:w="9300"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="9300" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#
+        );
+        let body = format!(
+            r#"<w:tbl><w:tblPr><w:tblW w:w="9000" w:type="dxa"/>{m}</w:tblPr><w:tblGrid><w:gridCol w:w="9000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="9000" w:type="dxa"/></w:tcPr>{nested}<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>M</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#
+        );
+        glyph_x_in(&body, 12, &[], 'M')
+    };
+    let d = x(r#"<w:tblW w:w="9300" w:type="dxa"/>"#) - x(r#"<w:tblW w:w="0" w:type="auto"/>"#);
+    assert!((d - 13.15).abs() < 0.5, "{d}");
+}
+
+#[test]
+fn a_floating_table_wider_than_its_cell_moves_left_onto_the_cells_box() {
+    // A 9500-wide bordered floating table in a 9360 fixed cell: its left border sits on the cell's left border.
+    let m = r#"<w:tblCellMar><w:left w:w="108" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar>"#;
+    let b = r#"<w:tblBorders><w:top w:val="single" w:sz="4" w:space="0" w:color="000000"/><w:left w:val="single" w:sz="4" w:space="0" w:color="000000"/><w:bottom w:val="single" w:sz="4" w:space="0" w:color="000000"/><w:right w:val="single" w:sz="4" w:space="0" w:color="000000"/></w:tblBorders>"#;
+    let x = |fw: i32, mode: i64| {
+        let float = format!(
+            r#"<w:tbl><w:tblPr><w:tblpPr w:leftFromText="180" w:rightFromText="180" w:vertAnchor="text" w:horzAnchor="margin" w:tblpY="257"/><w:tblW w:w="{fw}" w:type="dxa"/>{b}<w:tblLayout w:type="fixed"/>{m}</w:tblPr><w:tblGrid><w:gridCol w:w="{fw}"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="{fw}" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>L</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#
+        );
+        let body = format!(
+            r#"<w:tbl><w:tblPr><w:tblW w:w="9360" w:type="dxa"/>{b}<w:tblLayout w:type="fixed"/>{m}</w:tblPr><w:tblGrid><w:gridCol w:w="9360"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="9360" w:type="dxa"/></w:tcPr>{float}<w:p/></w:tc></w:tr></w:tbl><w:p/>"#
+        );
+        glyph_x_in(&body, mode, &[], 'L')
+    };
+    // Word: 103 twips left of a 9000-wide one, which stays at the cell's text, in both modes.
+    for mode in [12, 15] {
+        let d = x(9000, mode) - x(9500, mode);
+        assert!((d - 5.15).abs() < 0.05, "compat {mode}: {d}");
+    }
+}
+
+#[test]
 fn a_table_in_the_flow_is_placed_again_below_text_a_later_table_pushed() {
     let tbl = |pos: &str, cells: &[&str]| {
         let rows: String = cells.iter().map(|t| format!("<w:tr>{}</w:tr>", dxa_cell(9360, t))).collect();

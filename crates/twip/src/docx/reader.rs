@@ -2537,8 +2537,14 @@ impl Reader {
         let line = shape.sp().and_then(|s| s.line.as_ref()).or_else(|| shape.pic().and_then(|p| p.line.as_ref()));
         let pen = line.filter(|l| !matches!(l.fill, Some(crate::drawing::paint::Fill::None))).map(|l| l.width.map_or(15.0, |w| w.0 as f64 / 635.0));
         let (h_align, v_align) = (align(&st.h_align), align(&st.v_align));
-        let effect =
-            vml_effect(pen, (h_align.is_none() && v_align.is_none()).then(|| [tw(st.x), tw(st.y), tw(st.x) + tw(st.w), tw(st.y) + tw(st.h)]));
+        // A line grows the stored box to its pixel bounds, aligned or not. Without one, a shape aligned on one axis
+        // grows only at its right and bottom, one aligned on both not at all.
+        let aligned = (h_align.is_some(), v_align.is_some());
+        let effect = match (pen, aligned) {
+            (None, (true, true)) => [0.0; 4],
+            _ => vml_effect(pen, Some([tw(st.x), tw(st.y), tw(st.x) + tw(st.w), tw(st.y) + tw(st.h)])),
+        };
+        let effect = if pen.is_none() && (aligned.0 || aligned.1) { [0.0, 0.0, effect[2], effect[3]] } else { effect };
         self.float_order += 1;
         out.push(Inline::Float(
             Box::new(Float {
@@ -3476,7 +3482,7 @@ fn vml_effect(pen: Option<f64>, rect: Option<[f64; 4]>) -> [f64; 4] {
     let bounds = match pen {
         Some(w) => {
             let h = (w / 30.0).max(0.5);
-            [(px(l) - h).floor(), (px(t) - h).floor(), (px(r) + h).ceil(), (px(b) + h).floor() + 1.0]
+            [(px(l) - h).floor(), (px(t) - h).floor(), (px(r) + h).ceil(), (px(b) + h).ceil()]
         }
         None => [px(l).round(), px(t).round(), px(r).round(), px(b).round()],
     }
@@ -3492,6 +3498,8 @@ mod tests {
         assert_eq!(tw(super::vml_effect(Some(15.0), Some([2002.0, 0.0, 3442.0, 800.0]))), [22.0, 15.0, 8.0, 10.0]);
         assert_eq!(tw(super::vml_effect(Some(15.0), Some([2007.0, 0.0, 3459.0, 800.0])))[2], 21.0);
         assert_eq!(tw(super::vml_effect(Some(60.0), Some([2000.0, 0.0, 3440.0, 800.0])))[2], 40.0);
+        // A 3pt line whose bottom edge lands on the pixel grid: rounded up to it, not a pixel past.
+        assert_eq!(tw(super::vml_effect(Some(60.0), Some([2000.0, 0.0, 3440.0, 795.0])))[3], 30.0);
         assert_eq!(tw(super::vml_effect(None, Some([2002.0, 0.0, 3442.0, 800.0]))), [7.0, 0.0, 0.0, 0.0]);
         assert_eq!(super::vml_effect(Some(15.0), None), [0.0; 4]);
     }

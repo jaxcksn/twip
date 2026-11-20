@@ -208,11 +208,16 @@ impl Placed {
         (!self.allow_overlap || !o.allow_overlap) && ((self.wrap == Wrap::None) == (o.wrap == Wrap::None))
     }
 
-    /// The room a frame or a floating table keeps around it from other objects that may not overlap it; a
-    /// picture keeps none.
+    /// The room a frame or a floating table keeps around it from other objects that may not overlap it; a VML shape
+    /// its outline's pixels (its effect extents); a picture none.
     fn apart(&self) -> [f64; 4] {
         let frame = self.float.text_box.is_some() && self.float.shape.is_none();
-        if frame || self.key.2 == TABLE_PIECE { self.float.dist } else { [0.0; 4] }
+        let [l, t, r, b] = self.float.effect;
+        match () {
+            _ if frame || self.key.2 == TABLE_PIECE => self.float.dist,
+            _ if self.float.vml => [t, b, l, r],
+            _ => [0.0; 4],
+        }
     }
 
     /// The two boxes, each grown by the room it keeps, overlap.
@@ -278,15 +283,32 @@ pub fn avoid(f: &mut Placed, placed: &[Placed], (lo, hi): (f64, f64), (top, bott
     let leftward = f.float.h_align.as_deref() == Some("right");
     let frame = |o: &Placed| o.float.text_box.is_some() && o.float.shape.is_none() && o.key.2 != TABLE_PIECE;
     for _ in 0..32 {
-        let Some(hit) = obstacles.iter().find(|o| f.overlaps(o)) else { return true };
+        // A table leaves under 9 twips of overlap down as it is, and moves to a twip short of the bottom.
+        let table = f.key.2 == TABLE_PIECE;
+        let down = |o: &Placed| {
+            let [ot, ob, ..] = o.apart();
+            (o.rect[3] + ob).min(f.rect[3] + fb) - (o.rect[1] - ot).max(f.rect[1] - ft)
+        };
+        let Some(hit) = obstacles.iter().find(|o| f.overlaps(o) && !(table && down(o) < 0.45 - EPS)) else { return true };
         let [ht, hb, hl, hr] = hit.apart();
+        let short = if table { 0.05 } else { 0.0 };
         let y = f.rect[1];
         let slid = if leftward { hit.rect[0] - hl - fr - w } else { hit.rect[2] + hr + fl };
         let above = hit.rect[1] - ht - fb - h;
         if slid >= lo - EPS && slid + w <= hi + EPS {
             f.moved_to(slid, y);
-        } else if hit.rect[3] + hb + ft + h <= bottom + EPS {
-            f.moved_to(original.0, hit.rect[3] + hb + ft);
+        } else if hit.rect[3] + hb + ft - short + h <= bottom + EPS {
+            let low = hit.rect[3] + hb - short;
+            let y = if table {
+                // In steps of its own height, the last one taken only for 9 twips or more.
+                let (own, tall) = (f.rect[1] - ft, f.rect[3] + fb - (f.rect[1] - ft));
+                let t = (own + tall).min(low);
+                let t = t + ((low - t) / tall).floor() * tall;
+                if low - t >= 0.45 - EPS { low } else { t }
+            } else {
+                low
+            };
+            f.moved_to(original.0, y + ft);
         } else if (frame(f) || frame(hit)) && above >= top - EPS && above < f.rect[1] - EPS {
             // A frame, or a table meeting a frame, with no room below goes above it.
             f.moved_to(original.0, above);
@@ -438,6 +460,24 @@ mod tests {
         f.key = (0, 0, key);
         f.allow_overlap = false;
         f
+    }
+
+    #[test]
+    fn compat_14_a_never_overlap_table_goes_a_twip_short_of_a_vml_shapes_outline() {
+        let (across, down) = ((0.0, 612.0), (0.0, 720.0));
+        // A VML shape 0..100 whose outline's pixels reach 0.9pt lower, and a table ending at 60 before it.
+        let mut shape = apart(0.0, 612.0, 0);
+        let mut v = (*shape.float).clone();
+        (v.vml, v.effect) = (true, [0.0, 0.0, 0.0, 0.9]);
+        shape.float = Rc::new(v);
+        let mut table = apart(0.0, 612.0, 1);
+        (table.key.2, table.rect[3]) = (TABLE_PIECE, 60.0);
+        let mut f = apart(100.0, 300.0, 2);
+        f.key.2 = TABLE_PIECE;
+        f.moved_to(100.0, 50.0);
+        // Below the table first, a twip short; the twip left over isn't avoided, the shape's outline is.
+        assert!(avoid(&mut f, &[table, shape], across, down, Compat::Legacy));
+        assert!((f.rect[1] - 100.85).abs() < 1e-9, "{}", f.rect[1]);
     }
 
     #[test]
