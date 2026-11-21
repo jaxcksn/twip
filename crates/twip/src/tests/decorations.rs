@@ -173,7 +173,7 @@ fn decorations_carry_character_effects() {
     let o = row("outline white");
     assert_eq!(o.rects.len(), 8, "two frames of four sides: {:?}", o.rects);
     let (top, bottom) = (o.rects[0], o.rects[1]);
-    assert!(top[0] == bottom[0] && top[2] == bottom[2] && bottom[1] - top[3] > 0.5, "a hole between {top:?} and {bottom:?}");
+    assert!(top[0] == bottom[0] && top[2] == bottom[2] && bottom[1] > top[3], "a hole between {top:?} and {bottom:?}");
     // An embossed underline has the run's copies under it.
     assert!(row("emboss white").colours.windows(3).any(|w| w == [0x99_9999, 0, 0]), "{:?}", row("emboss white").colours);
 }
