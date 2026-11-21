@@ -172,7 +172,18 @@ impl FontRegistry {
         let Some(face) = self.faces.get(font.0 as usize) else { return false };
         let Ok(f) = FontRef::from_index((*face.data).as_ref(), face.index) else { return false };
         let Some(g) = f.outline_glyphs().get(GlyphId::new(glyph)) else { return false };
-        g.draw(DrawSettings::unhinted(Size::new(1.0), &face.location), &mut Pen(out)).is_ok()
+        // In font units, scaled here: skrifa scales TrueType outlines in 26.6 fixed point, which at one pixel per em
+        // rounds every point to 1/64 em (a visible notch at display sizes).
+        let Some(upem) = f.head().ok().map(|h| h.units_per_em()).filter(|&u| u > 0) else { return false };
+        let start = out.elements().len();
+        if g.draw(DrawSettings::unhinted(Size::unscaled(), &face.location), &mut Pen(out)).is_err() {
+            return false;
+        }
+        let em = 1.0 / f64::from(upem);
+        for el in &mut out.elements_mut()[start..] {
+            *el = kurbo::Affine::scale(em) * *el;
+        }
+        true
     }
 
     /// A light (vertical-only) hinting instance for `font` at `ppem` pixels per em, which keeps advances and
