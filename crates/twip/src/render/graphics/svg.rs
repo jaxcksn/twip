@@ -354,7 +354,10 @@ fn lay(g: &mut Graphics, t: &Text<'_>) -> Option<Line> {
                 },
             }
         };
-        let advance = t.advances.and_then(|a| a.get(i).copied()).unwrap_or_else(|| f.advance(glyph) * f.scale(em));
+        let advance = t
+            .advances
+            .and_then(|a| a.get(i).copied())
+            .unwrap_or_else(|| f.advance(glyph) * f.scale(em) + t.extra + if c == 0x20 { t.space_extra } else { 0.0 });
         glyphs.push(Placed { face: f, glyph, x, y });
         x += advance;
         y += t.rises.and_then(|r| r.get(i).copied()).unwrap_or(0.0);

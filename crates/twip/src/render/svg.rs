@@ -92,6 +92,9 @@ pub struct Text<'a> {
     pub glyph_ids: bool,
     /// Each character's advance; the face's own when `None`.
     pub advances: Option<&'a [f64]>,
+    /// Extra advance after each character, and after each space, where `advances` is `None`.
+    pub extra: f64,
+    pub space_extra: f64,
     /// Each character's move down the line's y axis to the next one's origin; none when `None`.
     pub rises: Option<&'a [f64]>,
     /// Where the line's origin is on it: left 0, centre 1, right 2; and top 0, baseline 1, bottom 2.

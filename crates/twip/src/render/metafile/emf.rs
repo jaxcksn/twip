@@ -86,49 +86,49 @@ pub fn play(sink: &mut impl Sink, d: &[u8]) -> bool {
 
 /// A record's bytes, read little-endian; every read checked against them.
 #[derive(Clone, Copy)]
-struct Rec<'a>(&'a [u8]);
+pub(super) struct Rec<'a>(pub(super) &'a [u8]);
 
 impl<'a> Rec<'a> {
-    fn bytes<const N: usize>(&self, o: usize) -> Option<[u8; N]> {
+    pub(super) fn bytes<const N: usize>(&self, o: usize) -> Option<[u8; N]> {
         self.0.get(o..o.checked_add(N)?)?.try_into().ok()
     }
-    fn u32(&self, o: usize) -> Option<u32> {
+    pub(super) fn u32(&self, o: usize) -> Option<u32> {
         self.bytes(o).map(u32::from_le_bytes)
     }
-    fn i32(&self, o: usize) -> Option<i32> {
+    pub(super) fn i32(&self, o: usize) -> Option<i32> {
         self.bytes(o).map(i32::from_le_bytes)
     }
-    fn u16(&self, o: usize) -> Option<u16> {
+    pub(super) fn u16(&self, o: usize) -> Option<u16> {
         self.bytes(o).map(u16::from_le_bytes)
     }
-    fn i16(&self, o: usize) -> Option<i16> {
+    pub(super) fn i16(&self, o: usize) -> Option<i16> {
         self.bytes(o).map(i16::from_le_bytes)
     }
-    fn f32(&self, o: usize) -> Option<f64> {
+    pub(super) fn f32(&self, o: usize) -> Option<f64> {
         self.bytes(o).map(f32::from_le_bytes).map(f64::from).filter(|v| v.is_finite())
     }
-    fn point(&self, o: usize) -> Option<Point> {
+    pub(super) fn point(&self, o: usize) -> Option<Point> {
         Some(Point::new(f64::from(self.i32(o)?), f64::from(self.i32(o + 4)?)))
     }
-    fn point16(&self, o: usize) -> Option<Point> {
+    pub(super) fn point16(&self, o: usize) -> Option<Point> {
         Some(Point::new(f64::from(self.i16(o)?), f64::from(self.i16(o + 2)?)))
     }
-    fn size(&self, o: usize) -> Option<Vec2> {
+    pub(super) fn size(&self, o: usize) -> Option<Vec2> {
         Some(Point::new(f64::from(self.i32(o)?), f64::from(self.i32(o + 4)?)).to_vec2())
     }
-    fn rect(&self, o: usize) -> Option<kurbo::Rect> {
+    pub(super) fn rect(&self, o: usize) -> Option<kurbo::Rect> {
         Some(kurbo::Rect::from_points(self.point(o)?, self.point(o + 8)?))
     }
-    fn xform(&self, o: usize) -> Option<Affine> {
+    pub(super) fn xform(&self, o: usize) -> Option<Affine> {
         let a = Affine::new([self.f32(o)?, self.f32(o + 4)?, self.f32(o + 8)?, self.f32(o + 12)?, self.f32(o + 16)?, self.f32(o + 20)?]);
         a.is_finite().then_some(a)
     }
     /// `n` items of `each` bytes from `o`, when they are all inside the record.
-    fn slice(&self, o: usize, n: usize, each: usize) -> Option<&'a [u8]> {
+    pub(super) fn slice(&self, o: usize, n: usize, each: usize) -> Option<&'a [u8]> {
         self.0.get(o..o.checked_add(n.checked_mul(each)?)?)
     }
     /// `n` points from `o`: 32-bit, or 16-bit when `short`.
-    fn points(&self, o: usize, n: usize, short: bool) -> Option<Vec<Point>> {
+    pub(super) fn points(&self, o: usize, n: usize, short: bool) -> Option<Vec<Point>> {
         let each = if short { 4 } else { 8 };
         self.slice(o, n, each)?;
         (0..n).map(|i| if short { self.point16(o + i * 4) } else { self.point(o + i * 8) }).collect()
@@ -139,32 +139,32 @@ impl<'a> Rec<'a> {
 /// (`DIB_RGB_COLORS` 0, `DIB_PAL_COLORS` 1: indices into the selected palette, `DIB_PAL_INDICES` 2: no table, the
 /// pixels themselves palette indices).
 #[derive(Clone, Copy)]
-struct DibAt {
-    bmi: (u32, u32),
-    bits: (u32, u32),
-    usage: u32,
+pub(super) struct DibAt {
+    pub(super) bmi: (u32, u32),
+    pub(super) bits: (u32, u32),
+    pub(super) usage: u32,
 }
 
 impl DibAt {
     /// The offsets and sizes from `bmi` (`offBmi`, `cbBmi`, `offBits`, `cbBits`), the usage at `usage`.
-    fn at(r: &Rec<'_>, bmi: usize, usage: usize) -> Option<DibAt> {
+    pub(super) fn at(r: &Rec<'_>, bmi: usize, usage: usize) -> Option<DibAt> {
         Some(DibAt { bmi: (r.u32(bmi)?, r.u32(bmi + 4)?), bits: (r.u32(bmi + 8)?, r.u32(bmi + 12)?), usage: r.u32(usage)? })
     }
 }
 
 /// A DIB as a file the image registry reads: a BMP (or the PNG or JPEG a `BI_PNG` or `BI_JPEG` DIB holds), with its
 /// height, and whether its rows run bottom up.
-struct Dib {
-    file: Arc<Vec<u8>>,
-    h: u32,
-    bottom_up: bool,
+pub(super) struct Dib {
+    pub(super) file: Arc<Vec<u8>>,
+    pub(super) h: u32,
+    pub(super) bottom_up: bool,
 }
 
 /// The DIB at `at` in `r` as a file, its pixels counted against the player's budget. Its colour table comes from the
 /// selected palette when its usage says so. With `alpha`, a 32-bit DIB's fourth byte is premultiplied alpha
 /// (`AlphaBlend`'s `AC_SRC_ALPHA`), kept. With `scans`, the bits hold only that many scans: the file is that strip,
 /// and its height theirs.
-fn dib<S: Sink>(p: &mut Player<'_, S>, r: Rec<'_>, at: DibAt, alpha: bool, scans: Option<u32>) -> Option<Dib> {
+pub(super) fn dib_packed<S: Sink>(p: &mut Player<'_, S>, r: Rec<'_>, at: DibAt, alpha: bool, scans: Option<u32>) -> Option<Dib> {
     let bmi = r.slice(at.bmi.0 as usize, at.bmi.1 as usize, 1)?;
     let bits = r.slice(at.bits.0 as usize, at.bits.1 as usize, 1)?;
     let h = Rec(bmi);
@@ -256,17 +256,130 @@ fn dib<S: Sink>(p: &mut Player<'_, S>, r: Rec<'_>, at: DibAt, alpha: bool, scans
     Some(Dib { file: Arc::new(file), h: ht, bottom_up })
 }
 
+/// [`dib_packed`] with the rows of a bitmap of one to eight bits a pixel unpacked to 24 bits, as the image decoder
+/// reads their padding wrongly.
+pub(super) fn dib<S: Sink>(p: &mut Player<'_, S>, r: Rec<'_>, at: DibAt, alpha: bool, scans: Option<u32>) -> Option<Dib> {
+    let d = dib_packed(p, r, at, alpha, scans)?;
+    Some(Dib { file: unpack(&d.file, None)?, ..d })
+}
+
+/// The BMP `file` of an uncompressed bitmap of one to eight bits a pixel as one of 24 bits (rows in the same
+/// order), its pixels through its colour table, or through `ink` (a table of two, in blue, green and red) when
+/// given. Any other file as it is; `None` when the bitmap is malformed.
+pub(super) fn unpack(file: &Arc<Vec<u8>>, ink: Option<[[u8; 3]; 2]>) -> Option<Arc<Vec<u8>>> {
+    let d = Rec(file);
+    if file.get(..2) != Some(b"BM") {
+        return Some(Arc::clone(file));
+    }
+    let (data, header) = (d.u32(10)? as usize, d.u32(14)? as usize);
+    let (w, h, bpp, compression, used, entry) = match header {
+        12 => (u32::from(d.u16(18)?), i32::from(d.u16(20)?), usize::from(d.u16(24)?), 0, 0, 3),
+        40.. => (d.i32(18)?.unsigned_abs(), d.i32(22)?, usize::from(d.u16(28)?), d.u32(30)?, d.u32(46)? as usize, 4),
+        _ => return Some(Arc::clone(file)),
+    };
+    if compression != 0 || !matches!(bpp, 1 | 2 | 4 | 8) {
+        // Not a depth that packs whole pixels into a byte: another depth is another decoder's, and these (3, 5, 6, 7)
+        // are no bitmap's.
+        return if (1..=8).contains(&bpp) { None } else { Some(Arc::clone(file)) };
+    }
+    let rows = h.unsigned_abs();
+    twip_graphics::image::fits(w, rows).ok()?;
+    let colours = if used == 0 || used > 1 << bpp { 1usize << bpp } else { used };
+    let table = file.get(14 + header..)?;
+    let colour = |i: usize| -> [u8; 3] {
+        match ink {
+            Some(t) => t.get(i).copied().unwrap_or([0; 3]),
+            None => table.get(i * entry..i * entry + 3).filter(|_| i < colours).map_or([0; 3], |c| [c[0], c[1], c[2]]),
+        }
+    };
+    let (w, rows) = (w as usize, rows as usize);
+    let (stride, out_stride) = ((w * bpp).div_ceil(32) * 4, (w * 3).next_multiple_of(4));
+    let bits = file.get(data..)?.get(..stride.checked_mul(rows)?)?;
+    let mut out = Vec::with_capacity(54 + out_stride * rows + 16);
+    out.extend_from_slice(b"BM");
+    out.extend_from_slice(&((54 + out_stride * rows + 16) as u32).to_le_bytes());
+    out.extend_from_slice(&[0; 4]);
+    out.extend_from_slice(&54u32.to_le_bytes());
+    out.extend_from_slice(&40u32.to_le_bytes());
+    out.extend_from_slice(&(w as i32).to_le_bytes());
+    out.extend_from_slice(&h.to_le_bytes());
+    out.extend_from_slice(&1u16.to_le_bytes());
+    out.extend_from_slice(&24u16.to_le_bytes());
+    out.extend_from_slice(&[0; 4]);
+    out.extend_from_slice(&((out_stride * rows) as u32).to_le_bytes());
+    out.extend_from_slice(&[0; 16]);
+    for row in bits.chunks_exact(stride.max(1)).take(rows) {
+        for x in 0..w {
+            let at = x * bpp;
+            let index = usize::from(row[at / 8] >> (8 - bpp - at % 8) & ((1u16 << bpp) - 1) as u8);
+            out.extend_from_slice(&colour(index));
+        }
+        out.resize(out.len() + out_stride - w * 3, 0);
+    }
+    out.resize(out.len() + 16, 0);
+    Some(Arc::new(out))
+}
+
 impl Dib {
     /// A DIB record's source rect from its corner `at` and `size`, in the decoded rows (top down): a bottom-up DIB
     /// counts them from its bottom.
-    fn src(&self, at: Point, size: Vec2) -> kurbo::Rect {
+    pub(super) fn src(&self, at: Point, size: Vec2) -> kurbo::Rect {
         let top = if self.bottom_up { f64::from(self.h) - at.y - size.y } else { at.y };
         kurbo::Rect::new(at.x, top, at.x + size.x, top + size.y)
     }
 
-    fn source(&self, src: kurbo::Rect, opacity: f32) -> Source<'_> {
+    pub(super) fn source(&self, src: kurbo::Rect, opacity: f32) -> Source<'_> {
         Source { bitmap: &self.file, src, opacity }
     }
+}
+
+/// `SetDIBitsToDevice`: the bits at `at` hold `count` scans from `first` (from the bottom of a bottom-up DIB), and
+/// what of the source rect is in them is drawn at `dst_at`, a pixel a unit. `geometry` is the destination corner,
+/// source corner and size.
+pub(super) fn set_dibits<S: Sink>(
+    p: &mut Player<'_, S>,
+    r: Rec<'_>,
+    at: DibAt,
+    (first, count): (u32, u32),
+    geometry: (Point, Point, Vec2),
+) -> Option<()> {
+    let (dst_at, src_at, size) = geometry;
+    let header = Rec(r.slice(at.bmi.0 as usize, at.bmi.1 as usize, 1)?);
+    let full = if header.u32(0)? == 12 { u32::from(header.u16(6)?) } else { header.i32(8)?.unsigned_abs() };
+    let d = dib(p, r, at, false, Some(count))?;
+    // The strip's first row and the source rect, in the whole bitmap's rows top down.
+    let strip = f64::from(if d.bottom_up { full.saturating_sub(first.saturating_add(d.h)) } else { first });
+    let (strip_h, d) = (d.h, Dib { h: full, ..d });
+    let src = d.src(src_at, size);
+    let (y0, y1) = (src.y0.max(strip), src.y1.min(strip + f64::from(strip_h)));
+    if y1 <= y0 || size.x == 0.0 {
+        return Some(());
+    }
+    let dst = (Point::new(dst_at.x, dst_at.y + (y0 - src.y0)), Vec2::new(size.x, y1 - y0));
+    let to = p.onto(dst);
+    let src = kurbo::Rect::new(src.x0, y0 - strip, src.x1, y1 - strip);
+    p.blit(0xCC, to, Some(d.source(src, 1.0)));
+    Some(())
+}
+
+/// `StretchDIBits`: the DIB at `at` (none when it has no bitmap: the pattern alone) from the source rect onto the
+/// destination, by the ternary raster operation `rop`.
+pub(super) fn stretch_dibits<S: Sink>(p: &mut Player<'_, S>, r: Rec<'_>, at: DibAt, dst: (Point, Vec2), src: (Point, Vec2), rop: u8) -> Option<()> {
+    let to = p.onto(dst);
+    if at.bmi.1 == 0 {
+        p.blit(rop, to, None);
+        return Some(());
+    }
+    let d = dib(p, r, at, false, None)?;
+    let src = d.src(src.0, src.1);
+    p.blit(rop, to, Some(d.source(src, 1.0)));
+    Some(())
+}
+
+/// A pen from a `LOGPEN`'s style and width: wider than one unit it is solid.
+pub(super) fn logpen(style: u32, width: f64, colour: u32) -> Pen {
+    let style = if width > 1.0 && style != super::PS_NULL { 0 } else { style };
+    Pen::new(style, width, colour)
 }
 
 /// A monochrome mask DIB's size, and a test of its bit at (x, y), rows top down.
@@ -293,12 +406,39 @@ fn mask_bits<'a>(r: Rec<'a>, at: DibAt) -> Option<(u32, u32, impl Fn(u32, u32) -
 }
 
 /// Characters of an `ExtTextOutA` string: Windows-1252.
-fn ansi(b: u8) -> u32 {
-    const HIGH: [u16; 32] = [
-        0x20AC, 0x81, 0x201A, 0x0192, 0x201E, 0x2026, 0x2020, 0x2021, 0x02C6, 0x2030, 0x0160, 0x2039, 0x0152, 0x8D, 0x017D, 0x8F, 0x90, 0x2018,
-        0x2019, 0x201C, 0x201D, 0x2022, 0x2013, 0x2014, 0x02DC, 0x2122, 0x0161, 0x203A, 0x0153, 0x9D, 0x017E, 0x0178,
-    ];
-    if (0x80..0xA0).contains(&b) { u32::from(HIGH[usize::from(b - 0x80)]) } else { u32::from(b) }
+pub(super) fn ansi(b: u8) -> u32 {
+    narrow_char(2, b)
+}
+
+/// The character of byte `b` in code page `page` (an index into the tables).
+fn narrow_char(page: usize, b: u8) -> u32 {
+    if b < 0x80 { u32::from(b) } else { u32::from(super::codepages::TABLES[page][usize::from(b - 0x80)]) }
+}
+
+/// Appends the characters of the 8-bit string `bytes` in the GDI character set `charset`: the Windows code page the
+/// set names, or the private-use page of a symbol font. False, appending nothing, for the double-byte sets.
+// ponytail: Shift-JIS, Korean, Johab, GB 2312 and Big5 strings draw nothing (rather than the wrong characters):
+// decoding them needs their double-byte tables, which the engine doesn't carry.
+pub(super) fn narrow(out: &mut Vec<u32>, bytes: &[u8], charset: u8) -> bool {
+    let page = match charset {
+        2 => {
+            out.extend(bytes.iter().map(|&b| 0xF000 + u32::from(b)));
+            return true;
+        }
+        128..=130 | 134 | 136 => return false,
+        238 => 0,
+        204 => 1,
+        161 => 3,
+        162 => 4,
+        177 => 5,
+        178 => 6,
+        186 => 7,
+        163 => 8,
+        222 => 9,
+        _ => 2,
+    };
+    out.extend(bytes.iter().map(|&b| narrow_char(page, b)));
+    true
 }
 
 /// Reads one record into the player; `None` when it is too short for what it holds.
@@ -340,15 +480,7 @@ fn record<S: Sink>(p: &mut Player<'_, S>, kind: u32, r: Rec<'_>) -> Option<()> {
         12 => p.dc.vp_org = r.point(8)?,
         13 => p.dc.brush_org = r.point(8)?,
         // EMR_SETPIXELV: a device pixel.
-        15 => {
-            let at = p.m() * r.point(8)?;
-            let c = p.rgb(r.u32(16)?);
-            let px = p.px();
-            let rect = kurbo::Shape::to_path(&kurbo::Rect::new(at.x, at.y, at.x + px, at.y + px), 0.1);
-            if !p.in_path {
-                p.under_clip(super::COPY, |me| me.sink.fill(&rect, false, &crate::render::svg::Brush::Solid(c)));
-            }
-        }
+        15 => p.pixel(r.point(8)?, r.u32(16)?),
         17 => p.set_map_mode(r.u32(8)?),
         18 => p.dc.opaque = r.u32(8)? == 2,
         19 => p.dc.even_odd = r.u32(8)? != 2,
@@ -386,8 +518,7 @@ fn record<S: Sink>(p: &mut Player<'_, S>, kind: u32, r: Rec<'_>) -> Option<()> {
         // EMR_CREATEPEN: a LOGPEN. Wider than one unit, it is solid.
         38 => {
             let (style, width) = (r.u32(12)? & 0xF, f64::from(r.i32(16)?.unsigned_abs()));
-            let style = if width > 1.0 && style != super::PS_NULL { 0 } else { style };
-            p.create(r.u32(8)?, Object::Pen(Pen::new(style, width, r.u32(24)?)));
+            p.create(r.u32(8)?, Object::Pen(logpen(style, width, r.u32(24)?)));
         }
         // EMR_CREATEBRUSHINDIRECT: a LOGBRUSH.
         39 => {
@@ -529,40 +660,15 @@ fn record<S: Sink>(p: &mut Player<'_, S>, kind: u32, r: Rec<'_>) -> Option<()> {
             let mask = if mask_at.bmi.1 == 0 { None } else { Some(mask(p, r, mask_at, r.point(112)?, size)?) };
             p.masked_blit(0xCC, NOP, to, Some(d.source(src, 1.0)), mask.as_deref());
         }
-        // EMR_SETDIBITSTODEVICE: a pixel a unit; the bits hold `cScans` scans from `iStartScan` (from the bottom of a
-        // bottom-up DIB), and what of the source rect is in them is drawn.
+        // EMR_SETDIBITSTODEVICE: a pixel a unit.
         80 => {
-            let (first, count) = (r.u32(68)?, r.u32(72)?);
             let at = DibAt::at(&r, 48, 64)?;
-            let header = Rec(r.slice(at.bmi.0 as usize, at.bmi.1 as usize, 1)?);
-            let full = if header.u32(0)? == 12 { u32::from(header.u16(6)?) } else { header.i32(8)?.unsigned_abs() };
-            let d = dib(p, r, at, false, Some(count))?;
-            let (dst_at, src_at, size) = (r.point(24)?, r.point(32)?, r.size(40)?);
-            // The strip's first row and the source rect, in the whole bitmap's rows top down.
-            let strip = f64::from(if d.bottom_up { full.saturating_sub(first.saturating_add(d.h)) } else { first });
-            let (strip_h, d) = (d.h, Dib { h: full, ..d });
-            let src = d.src(src_at, size);
-            let (y0, y1) = (src.y0.max(strip), src.y1.min(strip + f64::from(strip_h)));
-            if y1 <= y0 || size.x == 0.0 {
-                return Some(());
-            }
-            let dst = (Point::new(dst_at.x, dst_at.y + (y0 - src.y0)), Vec2::new(size.x, y1 - y0));
-            let to = p.onto(dst);
-            let src = kurbo::Rect::new(src.x0, y0 - strip, src.x1, y1 - strip);
-            p.blit(0xCC, to, Some(d.source(src, 1.0)));
+            set_dibits(p, r, at, (r.u32(68)?, r.u32(72)?), (r.point(24)?, r.point(32)?, r.size(40)?))?;
         }
         // EMR_STRETCHDIBITS: the source rect counts rows from the bottom of a bottom-up DIB.
         81 => {
-            let to = p.onto((r.point(24)?, r.size(72)?));
-            let rop = (r.u32(68)? >> 16) as u8;
             let at = DibAt::at(&r, 48, 64)?;
-            if at.bmi.1 == 0 {
-                p.blit(rop, to, None);
-                return Some(());
-            }
-            let d = dib(p, r, at, false, None)?;
-            let src = d.src(r.point(32)?, r.size(40)?);
-            p.blit(rop, to, Some(d.source(src, 1.0)));
+            stretch_dibits(p, r, at, (r.point(24)?, r.size(72)?), (r.point(32)?, r.size(40)?), (r.u32(68)? >> 16) as u8)?;
         }
         // EMR_EXTFLOODFILL
         // ponytail: a flood fill spreads over the pixels already drawn, which a recorded vector picture doesn't have
@@ -581,6 +687,7 @@ fn record<S: Sink>(p: &mut Player<'_, S>, kind: u32, r: Rec<'_>) -> Option<()> {
                 italic: r.bytes::<1>(32)?[0] != 0,
                 underline: r.bytes::<1>(33)?[0] != 0,
                 strike: r.bytes::<1>(34)?[0] != 0,
+                charset: r.bytes::<1>(35)?[0],
             };
             p.create(r.u32(8)?, Object::Font(std::rc::Rc::new(f)));
         }
@@ -596,7 +703,8 @@ fn record<S: Sink>(p: &mut Player<'_, S>, kind: u32, r: Rec<'_>) -> Option<()> {
         }
         // EMR_CREATEMONOBRUSH (its bits drawn in the text and background colours), CREATEDIBPATTERNBRUSHPT
         93 | 94 => {
-            let d = dib(p, r, DibAt::at(&r, 16, 12)?, false, None)?;
+            let at = DibAt::at(&r, 16, 12)?;
+            let d = if kind == 93 { dib_packed(p, r, at, false, None)? } else { dib(p, r, at, false, None)? };
             p.create(r.u32(8)?, Object::Brush(LogBrush::Bitmap(d.file, kind == 93)));
         }
         // EMR_EXTCREATEPEN: a LOGPENEX with its brush (solid, hatched or a pattern) and user style's dashes.
@@ -643,7 +751,10 @@ fn record<S: Sink>(p: &mut Player<'_, S>, kind: u32, r: Rec<'_>) -> Option<()> {
             let mut chars = std::mem::take(&mut p.chars);
             chars.clear();
             if options & 0x200 != 0 {
-                chars.extend(r.slice(start, n, 1)?.iter().map(|&b| ansi(b)));
+                if !narrow(&mut chars, r.slice(start, n, 1)?, p.dc.font.charset) {
+                    p.chars = chars;
+                    return Some(());
+                }
             } else {
                 utf16(&mut chars, r.slice(start, n, 2)?);
             }
@@ -653,6 +764,7 @@ fn record<S: Sink>(p: &mut Player<'_, S>, kind: u32, r: Rec<'_>) -> Option<()> {
                 glyph_ids: options & 0x10 != 0,
                 advances: None,
                 rises: None,
+                extra: (0.0, 0.0),
                 rect,
                 opaque: options & 2 != 0,
                 clipped: options & 4 != 0,
@@ -719,7 +831,7 @@ fn mask<S: Sink>(p: &mut Player<'_, S>, r: Rec<'_>, at: DibAt, corner: Point, si
 }
 
 /// UTF-16LE code units as code points; unpaired surrogates become U+FFFD.
-fn utf16(out: &mut Vec<u32>, b: &[u8]) {
+pub(super) fn utf16(out: &mut Vec<u32>, b: &[u8]) {
     out.extend(char::decode_utf16(b.as_chunks::<2>().0.iter().map(|c| u16::from_le_bytes(*c))).map(|c| c.map_or(0xFFFD, u32::from)));
 }
 
@@ -742,7 +854,10 @@ fn text<S: Sink>(p: &mut Player<'_, S>, r: &Rec<'_>, at: usize, wide: bool) -> O
     if wide {
         utf16(&mut chars, r.slice(off_string, n, 2)?);
     } else {
-        chars.extend(r.slice(off_string, n, 1)?.iter().map(|&b| ansi(b)));
+        if !narrow(&mut chars, r.slice(off_string, n, 1)?, p.dc.font.charset) {
+            p.chars = chars;
+            return Some(());
+        }
     }
     // With ETO_PDY, an x and a y for each character.
     let pairs = options & 0x2000 != 0;
@@ -762,6 +877,7 @@ fn text<S: Sink>(p: &mut Player<'_, S>, r: &Rec<'_>, at: usize, wide: bool) -> O
         glyph_ids: options & 0x10 != 0,
         advances: (dx.len() == chars.len() && !dx.is_empty()).then_some(&dx[..]),
         rises: (dy.len() == chars.len() && !dy.is_empty()).then_some(&dy[..]),
+        extra: (0.0, 0.0),
         rect: (rect.width() != 0.0 && rect.height() != 0.0).then_some(rect),
         opaque: options & 2 != 0,
         clipped: options & 4 != 0,

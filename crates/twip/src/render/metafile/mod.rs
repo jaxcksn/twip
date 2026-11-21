@@ -5,11 +5,15 @@
 //! Metafiles are untrusted. Every record is checked against the data before it is read, and the records, objects,
 //! saved states, path points, clips, bitmap pixels and the work replayed are capped. Nothing recurses.
 
+mod codepages;
 pub mod emf;
 mod raster;
 mod region;
 #[cfg(test)]
 pub(crate) mod tests;
+pub mod wmf;
+#[cfg(test)]
+mod wmf_tests;
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -20,6 +24,16 @@ use std::sync::Arc;
 use twip_graphics::kurbo::{self, Affine, BezPath, PathEl, Point, Shape, Vec2};
 
 use super::svg::{Brush, GradientKind, MaskStep, Sink, Spread, SvgGradient, Text};
+
+/// The size in points of the metafile `d` (an EMF or a WMF), or none when it is neither.
+pub fn size(d: &[u8]) -> Option<kurbo::Size> {
+    emf::Header::read(d).map(|h| h.size).or_else(|| wmf::Header::read(d).map(|h| h.size))
+}
+
+/// Plays the metafile `d` (an EMF or a WMF) into `sink`, in the picture's space; false when it is neither.
+pub fn play(sink: &mut impl Sink, d: &[u8]) -> bool {
+    emf::play(sink, d) || wmf::play(sink, d)
+}
 
 /// The most records one metafile plays.
 const MAX_RECORDS: u32 = 1 << 20;
@@ -87,6 +101,8 @@ struct LogFont {
     underline: bool,
     strike: bool,
     escapement: f64,
+    /// The GDI character set its 8-bit strings are in.
+    charset: u8,
 }
 
 #[derive(Clone, Debug)]
@@ -124,7 +140,16 @@ fn stock(i: u32) -> Option<Object> {
 }
 
 fn default_font() -> Rc<LogFont> {
-    Rc::new(LogFont { family: "Arial".into(), height: -12.0, weight: 400, italic: false, underline: false, strike: false, escapement: 0.0 })
+    Rc::new(LogFont {
+        family: "Arial".into(),
+        height: -12.0,
+        weight: 400,
+        italic: false,
+        underline: false,
+        strike: false,
+        escapement: 0.0,
+        charset: 0,
+    })
 }
 
 /// A `COLORREF` (`0x00BBGGRR`), opaque.
@@ -269,6 +294,8 @@ struct TextOut<'a> {
     advances: Option<&'a [f64]>,
     /// Each character's move up to the next one's origin (`ETO_PDY`), in logical units.
     rises: Option<&'a [f64]>,
+    /// Extra advance after each character and after each space (logical units), where there is no spacing array.
+    extra: (f64, f64),
     /// The `ETO_OPAQUE` or `ETO_CLIPPED` rectangle.
     rect: Option<kurbo::Rect>,
     opaque: bool,
@@ -464,7 +491,9 @@ impl<'s, S: Sink> Player<'s, S> {
 
     /// `SetWindowExtEx` and `SetViewportExtEx`, which only the scalable modes take.
     fn set_ext(&mut self, viewport: bool, v: Vec2) {
-        if matches!(self.dc.map_mode, MM_ISOTROPIC | MM_ANISOTROPIC) && v.x != 0.0 && v.y != 0.0 {
+        // Extents that scaling has driven out of a sane range are refused, as a zero one is.
+        let sane = |x: f64| x.is_finite() && (1e-6..=1e12).contains(&x.abs());
+        if matches!(self.dc.map_mode, MM_ISOTROPIC | MM_ANISOTROPIC) && sane(v.x) && sane(v.y) {
             *(if viewport { &mut self.dc.vp_ext } else { &mut self.dc.win_ext }) = v;
         }
     }
@@ -667,18 +696,15 @@ impl<'s, S: Sink> Player<'s, S> {
         });
         let (size, w, h) = header?;
         let (w, h) = if size == 12 { (w & 0xFFFF, w >> 16) } else { (w, h) };
+        // A copy is 24 bits a pixel: counted three times.
         if !self.spend_pixels(w, h) {
             return None;
         }
-        let mut file = (**b).clone();
-        let entry = if size == 12 { 3 } else { 4 };
-        for (i, bgr) in [[tb, tg, tr], [bb, bg, br]].into_iter().enumerate() {
-            let at = 14 + size + i * entry;
-            if let Some(t) = file.get_mut(at..at + 3) {
-                t.copy_from_slice(&bgr);
-            }
+        self.pixels.set(self.pixels.get().saturating_add(2 * u64::from(w) * u64::from(h)));
+        if self.pixels.get() > MAX_PIXELS {
+            return None;
         }
-        let coloured = Arc::new(file);
+        let coloured = emf::unpack(b, Some([[tb, tg, tr], [bb, bg, br]]))?;
         // The pattern is kept with its copies, so its address isn't another's while they are cached.
         self.mono.borrow_mut().insert(key, (Arc::clone(b), Arc::clone(&coloured)));
         Some(coloured)
@@ -1056,6 +1082,18 @@ impl<'s, S: Sink> Player<'s, S> {
         self.under_clip(COPY, |me| me.sink.fill(&p, false, &Brush::Gradient(g)));
     }
 
+    /// `SetPixel`: a device pixel at the logical point `at`.
+    fn pixel(&mut self, at: Point, c: u32) {
+        if self.in_path {
+            return;
+        }
+        let at = self.m() * at;
+        let c = self.rgb(c);
+        let px = self.px();
+        let rect = kurbo::Rect::new(at.x, at.y, at.x + px, at.y + px).to_path(0.1);
+        self.under_clip(COPY, |me| me.sink.fill(&rect, false, &Brush::Solid(c)));
+    }
+
     /// A gradient fill's triangle (logical units), shaded between its corners' colours.
     fn gradient_triangle(&mut self, pts: [Point; 3], cs: [[f32; 4]; 3]) {
         if self.in_path || !self.spend(4) {
@@ -1132,6 +1170,8 @@ impl<'s, S: Sink> Player<'s, S> {
             chars: t.chars,
             glyph_ids: t.glyph_ids,
             advances: t.advances.map(|_| &scaled[..]),
+            extra: t.extra.0 * kx / ky,
+            space_extra: t.extra.1 * kx / ky,
             rises: t.rises.map(|_| &rises[..]),
             align,
             transform,

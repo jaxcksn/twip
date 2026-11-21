@@ -653,7 +653,7 @@ export interface Commands {
   // Insert
   /** Inserts a table of 1 to 32767 rows and 1 to 63 columns. */
   insertTable(options: { rows: number; columns: number }): Promise<void>;
-  /** Inserts a picture (PNG, JPEG, GIF, BMP or TIFF). */
+  /** Inserts a picture (PNG, JPEG, GIF, BMP, TIFF, EMF or WMF). */
   insertPicture(options: { data: Uint8Array; altText?: string }): Promise<void>;
   /** Inserts a text box. */
   insertTextBox(): Promise<void>;

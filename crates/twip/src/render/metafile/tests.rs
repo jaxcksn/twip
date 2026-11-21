@@ -19,7 +19,7 @@ pub(crate) struct Emf {
 /// The stock `NULL_PEN`'s handle.
 const NULL_PEN: i32 = 0x8000_0008u32.cast_signed();
 
-fn le(v: &[i32]) -> Vec<u8> {
+pub(super) fn le(v: &[i32]) -> Vec<u8> {
     v.iter().flat_map(|x| x.to_le_bytes()).collect()
 }
 
@@ -78,12 +78,12 @@ impl Emf {
 
 /// What the player drew, a line an operation, with bounds in points to a tenth.
 #[derive(Default)]
-struct Log {
-    ops: Vec<String>,
-    depth: i32,
+pub(super) struct Log {
+    pub(super) ops: Vec<String>,
+    pub(super) depth: i32,
 }
 
-fn bounds(r: kurbo::Rect) -> String {
+pub(super) fn bounds(r: kurbo::Rect) -> String {
     // Rounded, then plus zero: no "-0.0".
     let v = |x: f64| (x * 10.0).round() / 10.0 + 0.0;
     format!("{:.1},{:.1},{:.1},{:.1}", v(r.x0), v(r.y0), v(r.x1), v(r.y1))
@@ -135,6 +135,9 @@ impl Sink for Log {
         if let Some(a) = t.advances {
             write!(line, " {a:?}").unwrap();
         }
+        if t.extra != 0.0 || t.space_extra != 0.0 {
+            write!(line, " extra {:.1} space {:.1}", t.extra, t.space_extra).unwrap();
+        }
         if let Some(r) = t.rises {
             write!(line, " rises {r:?}").unwrap();
         }
@@ -151,7 +154,7 @@ fn log(e: Emf) -> Vec<String> {
 }
 
 /// The operations that draw.
-fn drawn(ops: &[String]) -> Vec<&str> {
+pub(super) fn drawn(ops: &[String]) -> Vec<&str> {
     ops.iter().map(String::as_str).filter(|o| *o != "save" && *o != "restore").collect()
 }
 
@@ -379,7 +382,7 @@ const BLACK: [u8; 3] = [0; 3];
 const WHITE: [u8; 3] = [255; 3];
 
 /// A BITMAPINFOHEADER (bottom up) and its colour table, and its rows each padded to four bytes.
-fn dib(w: i32, h: i32, bpp: u16, table: &[u8], rows: &[&[u8]], used: i32) -> (Vec<u8>, Vec<u8>) {
+pub(super) fn dib(w: i32, h: i32, bpp: u16, table: &[u8], rows: &[&[u8]], used: i32) -> (Vec<u8>, Vec<u8>) {
     let mut bmi = le(&[40, w, h]);
     bmi.extend(1u16.to_le_bytes());
     bmi.extend(bpp.to_le_bytes());
@@ -602,7 +605,7 @@ fn keyed_masked_and_parallelogram_blits() {
 // ---------------- hostile files ----------------
 
 /// Plays `d`, which must finish quickly and leave the sink balanced.
-fn survives(d: &[u8]) -> Vec<String> {
+pub(super) fn survives(d: &[u8]) -> Vec<String> {
     let start = Instant::now();
     let mut l = Log::default();
     play(&mut l, d);
@@ -725,12 +728,12 @@ fn the_fixture_reads_without_undecodable_pictures() {
 /// What a sink is sent, counted: path elements filled, stroked and clipped by; each mask's once (a sink records a
 /// mask the first time and places it after) and one a draw under it; the bitmaps' bytes, each once.
 #[derive(Default)]
-struct Count {
-    elements: u64,
+pub(super) struct Count {
+    pub(super) elements: u64,
     masks: std::collections::HashSet<usize>,
-    bitmaps: std::collections::HashSet<usize>,
-    bitmap_bytes: u64,
-    depth: i32,
+    pub(super) bitmaps: std::collections::HashSet<usize>,
+    pub(super) bitmap_bytes: u64,
+    pub(super) depth: i32,
 }
 
 impl Count {
@@ -783,7 +786,7 @@ impl Sink for Count {
 }
 
 /// Plays `d` into a counting sink, quickly.
-fn counted(d: &[u8]) -> Count {
+pub(super) fn counted(d: &[u8]) -> Count {
     let start = Instant::now();
     let mut c = Count::default();
     play(&mut c, d);
@@ -793,7 +796,7 @@ fn counted(d: &[u8]) -> Count {
 }
 
 /// EMR_EXTSELECTCLIPRGN of `n` one-pixel rects down a column, by `mode`.
-fn many_rects(e: Emf, n: i32, mode: i32) -> Emf {
+pub(super) fn many_rects(e: Emf, n: i32, mode: i32) -> Emf {
     let mut rgn = le(&[32, 1, n, 16 * n, 0, 0, 1, n]);
     for i in 0..n {
         rgn.extend(le(&[0, i, 1, i + 1]));
@@ -833,6 +836,6 @@ fn a_recoloured_monochrome_brush_is_copied_within_the_budget() {
         e = e.r(24, &[i]).r(43, &[0, 0, 10, 10]);
     }
     let c = counted(&e.bytes());
-    // Each copy's 2^20 pixels count against the 2^26 a metafile may draw: at most 64 copies of 132 KB.
-    assert!(c.bitmaps.len() <= 64 && c.bitmap_bytes < 10 << 20, "{} bitmaps, {} bytes", c.bitmaps.len(), c.bitmap_bytes);
+    // Each copy is 24 bits a pixel, counted so against the 2^26 pixels a metafile may draw: at most 22 copies.
+    assert!(c.bitmaps.len() <= 22 && c.bitmap_bytes < 100 << 20, "{} bitmaps, {} bytes", c.bitmaps.len(), c.bitmap_bytes);
 }

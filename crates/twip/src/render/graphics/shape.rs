@@ -695,7 +695,7 @@ impl Graphics {
                 // A vector picture tiled: at its own size (an SVG without one fills the box), each tile its picture.
                 let bytes = image.and_then(|i| images.get(i)).map_or(&[][..], Vec::as_slice);
                 let natural = match crate::docx::image::vector(bytes) {
-                    Some(crate::docx::image::Vector::Emf(s)) => Some((s.0 / 0.75, s.1 / 0.75)),
+                    Some(crate::docx::image::Vector::Emf(s) | crate::docx::image::Vector::Wmf(s)) => Some((s.0 / 0.75, s.1 / 0.75)),
                     _ => crate::render::svg::natural_size(bytes),
                 };
                 let (iw, ih) = natural.unwrap_or((size[0] / 0.75, size[1] / 0.75));

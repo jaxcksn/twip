@@ -1,5 +1,10 @@
 """Writes the metafile drawing fixtures into tests/fixtures/render/ (next to this file).
 
+metafile-wmf.docx: inline WMF pictures, placeable and plain, each built record by record: shapes, pens, hatches and
+polygons; map modes, a window and a clipped group; text; embedded and device bitmaps; regions, a pattern brush and a
+palette; the shapes picture again, cropped. ole-preview.docx: the previews of embedded objects (`w:object`), as EMF,
+WMF and PNG, at their shapes' sizes.
+
 metafile-emf.docx: inline EMF pictures, each built record by record here: shapes, pens and dashes; a clipped and
 turned group; text; embedded bitmaps; gradients; a dual EMF and EMF+ file whose plain records draw; and the shapes
 picture again, cropped; raster operations and masks; regions, palettes and paths. Each EMF's device is 96 dpi and
@@ -142,6 +147,117 @@ class Emf:
         header = i32(HEADER, 108, *bounds, *frame, 0x464D4520, 0x10000, size, self.count + 2)
         header += struct.pack("<HH", 16, 0) + i32(0, 0, 0, 1920, 1080, 508, 286, 0, 0, 0, 508000, 285750)
         return header + self.body + eof
+
+
+class Wmf:
+    """A placeable WMF of `w` × `h` inches, drawn in thousandths of an inch (`per_inch` units to the inch)."""
+
+    def __init__(self, w, h, per_inch=1000, placeable=True):
+        self.w, self.h, self.per_inch, self.placeable = w, h, per_inch, placeable
+        self.body = b""
+        self.free = []
+        self.used = 0
+        self.longest = 3
+        # The window the way a Win32 recorder writes it: anisotropic, the whole picture.
+        self.w16(0x0103, 8).w16(0x020B, 0, 0).w16(0x020C, round(h * per_inch), round(w * per_inch))
+
+    def rec(self, func, params=b""):
+        params += b"\0" * (len(params) % 2)
+        words = (len(params) + 6) // 2
+        self.longest = max(self.longest, words)
+        self.body += struct.pack("<IH", words, func) + params
+        return self
+
+    def w16(self, func, *v):
+        """A record of 16-bit parameters, given in the order of the call's arguments reversed (as stored)."""
+        return self.rec(func, struct.pack(f"<{len(v)}h", *v))
+
+    def obj(self, func, params):
+        """Creates an object at the lowest free index, which is returned."""
+        self.rec(func, params)
+        if self.free:
+            return self.free.pop(0)
+        self.used += 1
+        return self.used - 1
+
+    def select(self, i):
+        return self.w16(0x012D, i)
+
+    def delete(self, i):
+        self.free = sorted(self.free + [i])
+        return self.w16(0x01F0, i)
+
+    def pen(self, style, width, colour):
+        i = self.obj(0x02FA, struct.pack("<Hhh", style, width, 0) + struct.pack("<I", rgb(colour)))
+        return self.select(i)
+
+    def brush(self, style, colour, hatch=0):
+        i = self.obj(0x02FC, struct.pack("<H", style) + struct.pack("<I", rgb(colour)) + struct.pack("<H", hatch))
+        return self.select(i)
+
+    def font(self, height, face="JetBrains Mono", weight=400, italic=0, underline=0, escapement=0):
+        params = struct.pack("<hhhhh", height, 0, escapement, escapement, weight) + bytes([italic, underline, 0, 0, 0, 0, 0, 0])
+        return self.select(self.obj(0x02FB, params + face.encode("latin-1").ljust(32, b"\0")))
+
+    def colour(self, func, c):
+        return self.rec(func, struct.pack("<I", rgb(c)))
+
+    def rect(self, func, l, t, r, b):
+        return self.w16(func, b, r, t, l)
+
+    def poly(self, func, pts):
+        return self.w16(func, len(pts), *[v for q in pts for v in q])
+
+    def polypolygon(self, polys):
+        pts = [q for poly in polys for q in poly]
+        return self.w16(0x0538, len(polys), *[len(poly) for poly in polys], *[v for q in pts for v in q])
+
+    def arc(self, func, box, start, end):
+        l, t, r, b = box
+        return self.w16(func, end[1], end[0], start[1], start[0], b, r, t, l)
+
+    def text(self, x, y, s):
+        chars = s.encode("latin-1")
+        chars += b"\0" * (len(chars) % 2)
+        return self.rec(0x0521, struct.pack("<h", len(s)) + chars + struct.pack("<hh", y, x))
+
+    def ext_text(self, x, y, s, dx=None, options=0, box=None):
+        chars = s.encode("latin-1")
+        chars += b"\0" * (len(chars) % 2)
+        params = struct.pack("<hhhH", y, x, len(s), options) + (struct.pack("<4h", *box) if box else b"") + chars
+        if dx:
+            params += struct.pack(f"<{len(s)}h", *([dx] * len(s)))
+        return self.rec(0x0A32, params)
+
+    def stretch_dib(self, dst, src, bmi, rows, rop=0x00CC0020, usage=0):
+        """META_STRETCHDIB: `dst` and `src` are (x, y, w, h)."""
+        params = struct.pack("<IH", rop, usage) + struct.pack("<8h", src[3], src[2], src[1], src[0], dst[3], dst[2], dst[1], dst[0])
+        return self.rec(0x0F43, params + bmi + rows)
+
+    def region(self, rects):
+        """META_CREATEREGION of rects (left, top, right, bottom) that share their scans' rows; returns its index."""
+        scans = {}
+        for l, t, r, b in rects:
+            scans.setdefault((t, b), []).append((l, r))
+        body = b"".join(struct.pack("<HHH", 2 * len(runs), t, b) + b"".join(struct.pack("<HH", *run) for run in runs) + struct.pack("<H", 2 * len(runs))
+                        for (t, b), runs in sorted(scans.items()))
+        left, top = min(r[0] for r in rects), min(r[1] for r in rects)
+        right, bottom = max(r[2] for r in rects), max(r[3] for r in rects)
+        head = struct.pack("<HHIhhhhhhh", 0, 6, 1, 0, len(scans), 0, left, top, right, bottom)
+        return self.obj(0x06FF, head + body)
+
+    def bytes(self, name_seed=0):
+        eof = struct.pack("<IH", 3, 0)
+        words = (18 + len(self.body) + len(eof)) // 2
+        std = struct.pack("<HHHIHIH", 1, 9, 0x300, words, self.used, self.longest, 0)
+        if not self.placeable:
+            return std + self.body + eof
+        bbox = (0, 0, round(self.w * self.per_inch), round(self.h * self.per_inch))
+        head = struct.pack("<IHhhhhHI", 0x9AC6CDD7, 0, *bbox, self.per_inch, 0)
+        check = 0
+        for k in range(0, 20, 2):
+            check ^= struct.unpack_from("<H", head, k)[0]
+        return head + struct.pack("<H", check) + std + self.body + eof
 
 
 def shapes():
@@ -324,6 +440,112 @@ def regions_palettes_paths():
     return e.bytes()
 
 
+def wmf_shapes():
+    e = Wmf(3, 1.5)
+    e.pen(0, 20, 0x1F3864).brush(0, 0xC00000).rect(0x041B, 100, 100, 700, 600)
+    e.pen(0, 30, 0x2E75B6).brush(0, 0xBDD7EE).rect(0x0418, 850, 100, 1550, 650)
+    e.pen(2, 0, 0x000000).poly(0x0325, [(100, 800), (400, 1300), (700, 800), (1000, 1300)])
+    e.w16(0x0102, 1).pen(0, 10, 0x385723).brush(2, 0x70AD47, 5).w16(0x061C, 150, 200, 650, 2400, 100, 1700)
+    e.pen(0, 25, 0x7030A0).brush(0, 0xFFC000).arc(0x081A, (2500, 100, 2900, 500), (2900, 300), (2700, 100))
+    # A star filled by the alternate rule, then by the winding rule beside it, and a polypolygon.
+    star = [(round(500 + 300 * math.sin(i * 4 * math.pi / 5)), round(1050 - 300 * math.cos(i * 4 * math.pi / 5))) for i in range(5)]
+    e.pen(0, 0, 0x000000).brush(0, 0xED7D31).w16(0x0106, 1).poly(0x0324, [(x + 1200, y) for x, y in star])
+    e.w16(0x0106, 2).brush(0, 0xED7D31).poly(0x0324, [(x + 1900, y) for x, y in star])
+    e.pen(0, 15, 0xC00000).brush(1, 0).polypolygon([[(2500, 800), (2900, 800), (2900, 1000), (2500, 1000)], [(2600, 850), (2800, 850), (2700, 950)]])
+    e.arc(0x0817, (2500, 1050, 2900, 1450), (2900, 1250), (2500, 1250))
+    return e.bytes()
+
+
+def wmf_window():
+    """Map modes and a clipped group, in twips."""
+    e = Wmf(3, 1.5, per_inch=1440)
+    e.pen(5, 0, 0).brush(0, 0xDEEBF7).rect(0x041B, 0, 0, 4320, 2160)
+    # An exclusion of the big square, then an intersection inside it: the clip is empty, and the ellipse is not drawn.
+    e.w16(0x001E).rect(0x0415, 288, 288, 1872, 1872).rect(0x0416, 864, 864, 1296, 1296)
+    e.brush(0, 0x2E75B6).rect(0x0418, 0, 0, 2160, 2160)
+    e.w16(0x0127, -1)
+    # MM_LOMETRIC: tenths of a millimetre, y up from the window's origin set to the picture's bottom.
+    e.w16(0x0103, 2).w16(0x020B, 0, 0).brush(0, 0x70AD47).rect(0x041B, 500, -100, 700, -300)
+    # An anisotropic window of 100 × 100 on the right-hand 1.5 in, flipped down to up.
+    e.w16(0x0103, 8).w16(0x020C, 100, 100).w16(0x020E, 108, 144)
+    e.w16(0x020B, 0, 0).w16(0x020D, 0, 144)
+    e.brush(0, 0xC00000).rect(0x041B, 10, 10, 90, 90).brush(0, 0xFFC000).rect(0x0418, 25, 25, 75, 75)
+    return e.bytes()
+
+
+def wmf_text():
+    e = Wmf(3, 1)
+    e.w16(0x0102, 1).colour(0x0209, 0x1F3864).w16(0x012E, 24)
+    e.font(-160).text(100, 300, "Metafile text")
+    e.colour(0x0209, 0xC00000).font(-120, weight=700, italic=1, underline=1).ext_text(100, 600, "Bold italic with spacing", dx=70)
+    e.w16(0x012E, 6).colour(0x0209, 0x385723).font(-100, escapement=900).text(2700, 780, "Turned")
+    e.w16(0x012E, 24).w16(0x0102, 2).colour(0x0201, 0xFFC000).colour(0x0209, 0x7030A0).font(-110)
+    e.ext_text(1500, 100, "Boxed", options=2, box=(1480, 40, 2200, 240))
+    return e.bytes()
+
+
+def wmf_bitmaps():
+    e = Wmf(3, 1.5)
+    red, blue = b"\x00\x00\xff", b"\xff\x00\x00"
+    bmi, rows = Emf.dib(None, 4, 4, checker(4, 4, red, blue))
+    e.stretch_dib((100, 100, 1300, 1300), (0, 0, 4, 4), bmi, rows)
+    # An 8-bit DIB through its own colour table, then the same bits drawn bottom half only.
+    table = bytes([0xC0, 0x00, 0x00, 0, 0x2E, 0x75, 0xB6, 0, 0x70, 0xAD, 0x47, 0, 0xFF, 0xC0, 0x00, 0])
+    table = b"".join(bytes([t[2], t[1], t[0], 0]) for t in (table[i:i + 4] for i in range(0, 16, 4)))
+    bmi, rows = Emf.dib(None, 4, 2, bytes([0, 1, 2, 3, 3, 2, 1, 0]), 8, table)
+    e.stretch_dib((1500, 100, 700, 350), (0, 0, 4, 2), bmi, rows)
+    e.stretch_dib((1500, 500, 700, 350), (0, 1, 4, 1), bmi, rows)
+    # DIBBITBLT and DIBSTRETCHBLT of a green diamond, with PATBLT stripes beneath.
+    e.pen(5, 0, 0).brush(2, 0x7030A0, 4)
+    e.rec(0x061D, struct.pack("<I", 0x00F00021) + struct.pack("<4h", 400, 700, 950, 1500))
+    diamond = b"".join(b"\x50\xb0\x00" if abs(x - 3.5) + abs(y - 3.5) < 4 else b"\xff\xff\xff" for y in range(8) for x in range(8))
+    bmi, rows = Emf.dib(None, 8, 8, diamond)
+    e.rec(0x0B41, struct.pack("<I8h", 0x00CC0020, 8, 8, 0, 0, 500, 500, 100, 2300) + bmi + rows)
+    # A device bitmap, monochrome: a stripe pattern in the text and background colours.
+    e.colour(0x0209, 0xC00000).colour(0x0201, 0xFFC000)
+    ddb = struct.pack("<hhhhBB", 0, 8, 8, 2, 1, 1) + bytes([0xF0, 0, 0xF0, 0, 0xF0, 0, 0xF0, 0, 0x0F, 0, 0x0F, 0, 0x0F, 0, 0x0F, 0])
+    e.rec(0x0B23, struct.pack("<I8h", 0x00CC0020, 8, 8, 0, 0, 500, 500, 800, 2300) + ddb)
+    return e.bytes()
+
+
+def wmf_regions():
+    e = Wmf(3, 2)
+    e.pen(5, 0, 0)
+    # FillRegion and FrameRegion of an L; InvertRegion over a half black square.
+    ell = e.region([(100, 100, 1100, 500), (100, 500, 500, 1000)])
+    e.brush(0, 0x2E75B6)
+    e.w16(0x0228, ell, e.used - 1)
+    e.brush(0, 0xC00000)
+    e.w16(0x0429, ell, e.used - 1, 40, 40)
+    e.brush(0, 0x000000).rect(0x041B, 1300, 100, 1700, 500)
+    sq = e.region([(1250, 50, 1750, 550)])
+    e.w16(0x012A, sq)
+    # A clip region of two rects: a bar filled across it.
+    clip = e.region([(1900, 100, 2300, 500), (2400, 300, 2800, 700)])
+    e.w16(0x012C, clip).brush(0, 0x70AD47).rect(0x041B, 1800, 0, 2900, 800)
+    e.w16(0x012C, 0)
+    # A pattern brush from a DIB, and a palette selected with a DIB indexing it.
+    bmi, rows = Emf.dib(None, 8, 8, checker(8, 8, b"\x00\x00\xc0", b"\xff\xc0\x00"))
+    e.select(e.obj(0x0142, struct.pack("<HH", 5, 0) + bmi + rows))
+    e.rect(0x041B, 100, 1100, 900, 1450)
+    entries = bytes([0xC0, 0, 0, 0, 0xFF, 0xC0, 0, 0, 0x70, 0xAD, 0x47, 0, 0x2E, 0x75, 0xB6, 0])
+    pal = e.obj(0x00F7, struct.pack("<HH", 0x300, 4) + entries)
+    e.w16(0x0234, pal)
+    bmi, rows = Emf.dib(None, 4, 1, bytes([0, 1, 2, 3]), 8, struct.pack("<4H", 3, 2, 1, 0), 4)
+    e.stretch_dib((1050, 1100, 850, 150), (0, 0, 4, 1), bmi, rows, usage=1)
+    # Rop2 of the pen over what is there.
+    e.w16(0x0104, 7).brush(0, 0xFFFFFF).rect(0x041B, 2000, 1100, 2900, 1450)
+    return e.bytes()
+
+
+def wmf_plain():
+    """A file without a placeable header: sized by its window, a unit a pixel."""
+    e = Wmf(2, 1, per_inch=96, placeable=False)
+    e.pen(0, 4, 0x1F3864).brush(0, 0xBDD7EE).rect(0x041B, 8, 8, 184, 88).pen(0, 2, 0xC00000)
+    e.poly(0x0325, [(16, 80), (60, 16), (100, 80), (144, 16), (176, 80)])
+    return e.bytes()
+
+
 def picture(d, rid, name, w, h, crop=""):
     i = d.uid()
     cx, cy = round(w * EMU), round(h * EMU)
@@ -357,7 +579,52 @@ def metafile_emf(d):
     return body, lf.sect()
 
 
-FIXTURES = [("metafile-emf", metafile_emf)]
+def metafile_wmf(d):
+    d.defaults.append(("wmf", "image/x-wmf"))
+    body = ""
+    pictures = [("Shapes, pens, hatches and polygons", wmf_shapes(), 3, 1.5), ("Map modes, a window and a clipped group", wmf_window(), 3, 1.5),
+                ("Text", wmf_text(), 3, 1), ("Bitmaps", wmf_bitmaps(), 3, 1.5), ("Regions, a pattern brush and a palette", wmf_regions(), 3, 2),
+                ("A file without a placeable header", wmf_plain(), 2, 1)]
+    rids = []
+    for n, (label, data, w, h) in enumerate(pictures, 1):
+        name = f"image{n}.wmf"
+        rid = d.rel("image", f"media/{name}")
+        rids.append(rid)
+        d.parts.append((f"word/media/{name}", data, None))
+        body += P(label) + p(picture(d, rid, name, w, h))
+    body += P("The shapes, cropped") + p(picture(d, rids[0], "image1.wmf", 1.5, 1.5, '<a:srcRect l="25000" r="25000"/>'))
+    return body, lf.sect()
+
+
+def ole_object(d, rid, ole_rid, shape_id, w, h, prog):
+    """An embedded object: its preview picture `rid` in a VML shape of w × h points, and the object part."""
+    i = d.uid()
+    return (
+        '<w:r><w:object w:dxaOrig="%d" w:dyaOrig="%d">' % (round(w * 20), round(h * 20))
+        + f'<v:shape id="_x0000_i{1024 + i}" type="#_x0000_t75" style="width:{w}pt;height:{h}pt" o:ole="">'
+        + f'<v:imagedata r:id="{rid}" o:title=""/></v:shape>'
+        + f'<o:OLEObject Type="Embed" ProgID="{prog}" ShapeID="_x0000_i{1024 + i}" DrawAspect="Content" ObjectID="_{1000000 + i}" r:id="{ole_rid}"/>'
+        "</w:object></w:r>"
+    )
+
+
+def ole_preview(d):
+    d.defaults += [("emf", "image/x-emf"), ("wmf", "image/x-wmf"), ("bin", "application/vnd.openxmlformats-officedocument.oleObject")]
+    body = ""
+    # Each preview's shape has its own size; most differ from the picture's frame (3 × 1.5 in, or 2 × 1 in).
+    previews = [("An EMF preview, at its frame's size", "emf", shapes(), 216, 108), ("A WMF preview, at its frame's size", "wmf", wmf_shapes(), 216, 108),
+                ("An EMF preview in a square shape", "emf", shapes(), 108, 108), ("A WMF preview in a smaller shape", "wmf", wmf_plain(), 108, 54),
+                ("A WMF preview in a taller shape", "wmf", wmf_shapes(), 72, 144), ("A PNG preview", "png", lf.png(lf.mf.COLOURS[0]), 108, 108)]
+    for n, (label, ext, data, w, h) in enumerate(previews, 1):
+        rid = d.rel("image", f"media/preview{n}.{ext}")
+        ole = d.rel("oleObject", f"embeddings/oleObject{n}.bin")
+        d.parts.append((f"word/media/preview{n}.{ext}", data, None))
+        d.parts.append((f"word/embeddings/oleObject{n}.bin", bytes(range(64)), None))
+        body += P(label) + p(ole_object(d, rid, ole, n, w, h, "Visio.Drawing.11"))
+    return body, lf.sect()
+
+
+FIXTURES = [("metafile-emf", metafile_emf), ("metafile-wmf", metafile_wmf), ("ole-preview", ole_preview)]
 
 
 def main():

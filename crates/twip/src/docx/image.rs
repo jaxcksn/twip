@@ -2,7 +2,7 @@
 
 /// Pixel size (orientation applied) and resolution of an image. A metafile's is its frame at 96 dpi.
 pub fn image_info(data: &[u8]) -> Option<(f64, f64, f64, f64)> {
-    if let Some(Vector::Emf(size)) = vector(data) {
+    if let Some(Vector::Emf(size) | Vector::Wmf(size)) = vector(data) {
         return Some((size.0 * 96.0 / 72.0, size.1 * 96.0 / 72.0, 96.0, 96.0));
     }
     // The probe's size already has the EXIF orientation applied: a quarter turn swaps it.
@@ -68,17 +68,22 @@ pub enum Vector {
     Svg,
     /// An EMF, with its frame's size in points.
     Emf((f64, f64)),
+    /// A WMF, with its extent's size in points.
+    Wmf((f64, f64)),
 }
 
-/// Whether the bytes are a picture drawn as vectors: an SVG, or an EMF with a frame.
+/// Whether the bytes are a picture drawn as vectors: an SVG, or an EMF or a WMF with a frame.
 pub fn vector(d: &[u8]) -> Option<Vector> {
     if let Some(h) = crate::render::metafile::emf::Header::read(d) {
         return Some(Vector::Emf((h.size.width, h.size.height)));
     }
+    if let Some(h) = crate::render::metafile::wmf::Header::read(d) {
+        return Some(Vector::Wmf((h.size.width, h.size.height)));
+    }
     is_svg(d).then_some(Vector::Svg)
 }
 
-/// MIME type and extension from the file signature (PNG, JPEG, GIF, BMP, TIFF, SVG, EMF).
+/// MIME type and extension from the file signature (PNG, JPEG, GIF, BMP, TIFF, SVG, EMF, WMF).
 pub fn image_type(d: &[u8]) -> Option<(&'static str, &'static str)> {
     if d.len() < 4 {
         return None;
@@ -86,6 +91,7 @@ pub fn image_type(d: &[u8]) -> Option<(&'static str, &'static str)> {
     match vector(d) {
         Some(Vector::Svg) => return Some(("image/svg+xml", "svg")),
         Some(Vector::Emf(_)) => return Some(("image/x-emf", "emf")),
+        Some(Vector::Wmf(_)) => return Some(("image/x-wmf", "wmf")),
         None => {}
     }
     Some(match d {

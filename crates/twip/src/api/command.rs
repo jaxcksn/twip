@@ -323,7 +323,7 @@ commands! {
     // Insert
     /// A table (1…32767 rows, 1…63 columns). Undo: one step.
     InsertTable(TableSize),
-    /// A picture (PNG, JPEG, GIF, BMP, TIFF). Undo: one step.
+    /// A picture (PNG, JPEG, GIF, BMP, TIFF, SVG, EMF or WMF). Undo: one step.
     InsertPicture(Picture),
     /// A text box. Undo: one step.
     InsertTextBox,
@@ -487,7 +487,7 @@ commands! {
     /// Crops the selected picture, inline or floating, by fractions of its image from each edge (0…1; negative values
     /// pad it): its box follows the part shown, at the scale it is drawn. Undo: one step.
     SetPictureCrop(PictureCrop),
-    /// Replaces the selected picture's image (PNG, JPEG, GIF, BMP or TIFF), keeping its width, effects and place; its
+    /// Replaces the selected picture's image (PNG, JPEG, GIF, BMP, TIFF, SVG, EMF or WMF), keeping its width, effects and place; its
     /// height follows the new image and the crop is cleared. Undo: one step.
     ChangePicture(#[serde(with = "value")] Bytes),
     /// The selected objects' rotation (0…360°, clockwise). Undo: one step.

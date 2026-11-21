@@ -170,9 +170,9 @@ impl Graphics {
         if let Some(m) = self.metafiles.get(&key) {
             return m.clone();
         }
-        let size = crate::render::metafile::emf::Header::read(bytes).map(|h| h.size);
+        let size = crate::render::metafile::size(bytes);
         let mut rec = Recorder::new();
-        let drawn = size.filter(|_| crate::render::metafile::emf::play(&mut svg::Recording::new(&mut rec, Some(self)), bytes));
+        let drawn = size.filter(|_| crate::render::metafile::play(&mut svg::Recording::new(&mut rec, Some(self)), bytes));
         let m = drawn.map(|size| (rec.finish(), size));
         self.metafiles.insert(key, m.clone());
         m
@@ -319,7 +319,7 @@ impl Graphics {
                 }
                 drawn
             }
-            crate::docx::image::Vector::Emf(_) => {
+            crate::docx::image::Vector::Emf(_) | crate::docx::image::Vector::Wmf(_) => {
                 let Some((picture, size)) = self.metafile(key, bytes) else { return false };
                 // Clipped to the box only when it draws outside it: a clip edge on a fill's edge anti-aliases it twice.
                 let frame = kurbo::Rect::new(0.0, 0.0, size.width, size.height).inflate(size.width * 1e-6, size.height * 1e-6);
