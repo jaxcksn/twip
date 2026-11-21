@@ -64,6 +64,8 @@ page 1 612 792
   op ET
   op EMC
   op Q
+  op EMC
+  op /P << /MCID 2 >> BDC
   op q
   op /Span << /ActualText <20776169747320666f7220746865206e6578742073656374696f6e2e20496e76656e746f72792072656c6576616e7420> >> BDC
   op 0 0 0 rg
@@ -105,7 +107,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 2 >> BDC
+  op /P << /MCID 3 >> BDC
   op q
   op /Span << /ActualText <456e64206f662073656374696f6e20312e> >> BDC
   op 0 0 0 rg
@@ -117,7 +119,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 3 >> BDC
+  op /P << /MCID 4 >> BDC
   op q
   op /Span << /ActualText <53656374696f6e20322074616b657320656e646e6f7465733a20697473206f776e> >> BDC
   op 0 0 0 rg
@@ -138,6 +140,8 @@ page 1 612 792
   op ET
   op EMC
   op Q
+  op EMC
+  op /P << /MCID 5 >> BDC
   op q
   op /Span << /ActualText <20616e642073656374696f6e203127732e204e6f7469636520636c61696d207465616d206578706f727420737461666620> >> BDC
   op 0 0 0 rg
@@ -179,7 +183,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 4 >> BDC
+  op /P << /MCID 6 >> BDC
   op q
   op /Span << /ActualText <456e64206f662073656374696f6e20322e> >> BDC
   op 0 0 0 rg
@@ -198,7 +202,7 @@ page 1 612 792
   op f
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /P << /MCID 7 >> BDC
   op q
   op /Span << /ActualText <69> >> BDC
   op 0 0 0 rg
@@ -219,6 +223,8 @@ page 1 612 792
   op ET
   op EMC
   op Q
+  op EMC
+  op /P << /MCID 8 >> BDC
   op q
   op /Span << /ActualText <6969> >> BDC
   op 0 0 0 rg
@@ -240,7 +246,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 5 >> BDC
+  op /P << /MCID 9 >> BDC
   op q
   op /Span << /ActualText <53656374696f6e20332c20746865206c6173742c20686173206e6f456e646e6f746520746f6f3a206974207374696c6c2074616b65732077686174206973206c656674> >> BDC
   op 0 0 0 rg
@@ -261,6 +267,8 @@ page 1 612 792
   op ET
   op EMC
   op Q
+  op EMC
+  op /P << /MCID 10 >> BDC
   op q
   op /Span << /ActualText <2e2050696c6f74207265636569707420> >> BDC
   op 0 0 0 rg
@@ -299,7 +307,7 @@ page 1 612 792
   op f
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /P << /MCID 11 >> BDC
   op q
   op /Span << /ActualText <696969> >> BDC
   op 0 0 0 rg
@@ -325,9 +333,15 @@ structure
   Document
     H1
     P
+      Note ID="endnote-1"
+        P
     P
     P
+      Note ID="endnote-2"
+        P
     P
     P
+      Note ID="endnote-3"
+        P
 outline
   "Sections without endnotes"

@@ -16,7 +16,7 @@ page 1 612 792
   text regional maintenance accessibility tax finds record proposal denied 
   text contract onboarding. Support network scheduled trend.
   op 1 0 0 -1 0 792 cm
-  op /Artifact << /Type /Layout >> BDC
+  op /Artifact << /Type /Pagination /Subtype /Header >> BDC
   op q
   op 0.71 -0.71 0.71 0.71 72.73 535.97 cm
   op q
@@ -177,7 +177,7 @@ page 2 612 792
   text Profitable insights the meeting forecast hereby vendors practical 
   text schedule state entry estimate. Management action budget inventory.
   op 1 0 0 -1 0 792 cm
-  op /Artifact << /Type /Layout >> BDC
+  op /Artifact << /Type /Pagination /Subtype /Header >> BDC
   op q
   op 1 0 0 1 72 337.5 cm
   op q

@@ -393,7 +393,7 @@ structure
         TD
           P
       TR
-        TD
+        TD RowSpan=2
           P
         TD
           P

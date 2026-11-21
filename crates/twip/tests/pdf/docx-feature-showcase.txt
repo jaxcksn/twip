@@ -150,8 +150,17 @@ page 1 612 792
   op BT
   op 1 0 0 -1 72 390.75 Tm
   op /F3 12 Tf
-  op [<0002> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0001> <0002> <0002> <0002> <0002> <0002> <0001> <0000> <0001> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0001> <0002> <0002> <0001> <0002> <0002> 0 <0002> <0002> <0002> <0002> <0001> <0002> 0 <0002> <0002> <0002> <0002> <0001> <0002> 0 <0002> <0001> <0002> <0002> <0002> <0001> <0002> 0 <0002> <0002> <0002> <0002> <0002>] TJ
+  op [<0002> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0001> <0002> <0002> <0002> <0002> <0002> <0001> -500 <0001> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0001> <0002> <0002> <0001> <0002> <0002> 0 <0002> <0002> <0002> <0002> <0001> <0002> 0 <0002> <0002> <0002> <0002> <0001> <0002> 0 <0002> <0001> <0002> <0002> <0002> <0001> <0002> 0 <0002> <0002> <0002> <0002> <0002>] TJ
   op ET
+  op q
+  op 0.17 0.17 0.17 rg
+  op 170.96 390.75 m
+  op 170.96 382.31 l
+  op 175.84 382.31 l
+  op 175.84 390.75 l
+  op h
+  op f
+  op Q
   op EMC
   op Q
   op EMC
@@ -355,7 +364,7 @@ page 1 612 792
   op Q
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /P << /MCID 12 >> BDC
   op q
   op /Span << /ActualText <5469703a20> >> BDC
   op 1 0.78 0.34 rg
@@ -376,10 +385,23 @@ page 1 612 792
   op BT
   op 1 0 0 -1 141.3 522.68 Tm
   op /F3 11 Tf
-  op [<0002> 0 <0002> <0002> <0002> <0001> <0002> <0002> 0 <0002> <0001> <0002> <0002> <0002> <0002> 0 <0002> <0002> <0002> <0002> <0002> 0 <0002> <0001> <0002> 0 <0002> 0 <0002> 0 <0002> 0 <0001> <0000> <0001> <0002> 0 <0002> 0 <0002> 0 <0002> 0 <0002> 0 <0001> <0002> 0 <0002> 0 <0002> 0 <0002> 0 <0002> 0 <0002> 0 <0002> 0 <0001> <0002> 0 <0002> 0 <0001> <0002> 0 <0001> <0002> 0 <0002> 0 <0002> 0 <0002> 0 <0001> <0002> 0 <0002> 0 <0002> 0 <0002> 0 <0002> 0 <0002> 0 <0002> 0 <0001> <0002> 0 <0002> 0 <0002> 0 <0002> 0 <0002> 0 <0002>] TJ
+  op [<0002> 0 <0002> <0002> <0002> <0001> <0002> <0002> 0 <0002> <0001> <0002> <0002> <0002> <0002> 0 <0002> <0002> <0002> <0002> <0002> 0 <0002> <0001> <0002> 0 <0002> 0 <0002> 0 <0002> 0 <0001> -500 <0001> <0002> 0 <0002> 0 <0002> 0 <0002> 0 <0002> 0 <0001> <0002> 0 <0002> 0 <0002> 0 <0002> 0 <0002> 0 <0002> 0 <0002> 0 <0001> <0002> 0 <0002> 0 <0001> <0002> 0 <0001> <0002> 0 <0002> 0 <0002> 0 <0002> 0 <0001> <0002> 0 <0002> 0 <0002> 0 <0002> 0 <0002> 0 <0002> 0 <0002> 0 <0001> <0002> 0 <0002> 0 <0002> 0 <0002> 0 <0002> 0 <0002>] TJ
   op ET
+  op q
+  op 1 1 1 rg
+  op 279.87 522.68 m
+  op 279.87 514.94 l
+  op 284.34 514.94 l
+  op 284.34 522.68 l
+  op h
+  op f
+  op Q
   op EMC
   op Q
+  op EMC
+  op /Artifact << /Type /Pagination /Subtype /Header >> BDC
+  op EMC
+  op /Artifact << /Type /Pagination /Subtype /Footer >> BDC
   op EMC
 page 2 612 792
   text Contents
@@ -405,6 +427,26 @@ page 2 612 792
   text 10Multi-Column Layout..................................................10
   text Even page headerDOCX Feature Showcase
   text Page 2  •  Section 2
+  annot Subtype /Link Rect [72 676.3 539.5 687.3] Contents <feff0031000900570065006c0063006f006d006500090033> A << /Type /Action /D <5f546f63323433393039313131> /S /GoTo >>
+  annot Subtype /Link Rect [72 658.65 539.5 669.65] Contents <feff00320009005400790070006f00670072006100700068007900090033> A << /Type /Action /D <5f546f63323433393039313132> /S /GoTo >>
+  annot Subtype /Link Rect [72 641 539.5 652] Contents <feff0033000900500061007200610067007200610070006800200046006f0072006d0061007400740069006e006700090034> A << /Type /Action /D <5f546f63323433393039313133> /S /GoTo >>
+  annot Subtype /Link Rect [83 623.35 539.5 634.35] Contents <feff0033002e003100090041006c00690067006e006d0065006e007400090034> A << /Type /Action /D <5f546f63323433393039313134> /S /GoTo >>
+  annot Subtype /Link Rect [83 605.7 539.5 616.7] Contents <feff0033002e003200090049006e00640065006e0074006100740069006f006e00200026002000530070006100630069006e006700090034> A << /Type /Action /D <5f546f63323433393039313135> /S /GoTo >>
+  annot Subtype /Link Rect [83 588.05 539.5 599.05] Contents <feff0033002e003300090042006f0072006400650072007300200026002000530068006100640069006e006700090034> A << /Type /Action /D <5f546f63323433393039313136> /S /GoTo >>
+  annot Subtype /Link Rect [83 570.4 539.5 581.4] Contents <feff0033002e00340009005400610062002000530074006f00700073002000260020004c00650061006400650072007300090035> A << /Type /Action /D <5f546f63323433393039313137> /S /GoTo >>
+  annot Subtype /Link Rect [72 552.75 539.5 563.75] Contents <feff00340009004c006900730074007300090035> A << /Type /Action /D <5f546f63323433393039313138> /S /GoTo >>
+  annot Subtype /Link Rect [72 535.1 539.5 546.1] Contents <feff00350009005400610062006c0065007300090036> A << /Type /Action /D <5f546f63323433393039313139> /S /GoTo >>
+  annot Subtype /Link Rect [83 517.45 539.5 528.45] Contents <feff0035002e00310009004100750074006f00460069007400200074006f00200043006f006e00740065006e0074007300090036> A << /Type /Action /D <5f546f63323433393039313230> /S /GoTo >>
+  annot Subtype /Link Rect [83 499.8 539.5 510.8] Contents <feff0035002e00320009004100750074006f00460069007400200074006f002000570069006e0064006f007700090036> A << /Type /Action /D <5f546f63323433393039313231> /S /GoTo >>
+  annot Subtype /Link Rect [72 482.15 539.5 493.15] Contents <feff003600090049006d0061006700650073002000260020004f0062006a006500630074007300090037> A << /Type /Action /D <5f546f63323433393039313232> /S /GoTo >>
+  annot Subtype /Link Rect [83 464.5 539.5 475.5] Contents <feff0036002e003100090046006c006f006100740069006e006700200049006d0061006700650020007700690074006800200053007100750061007200650020005700720061007000090037> A << /Type /Action /D <5f546f63323433393039313233> /S /GoTo >>
+  annot Subtype /Link Rect [83 446.85 539.5 457.85] Contents <feff0036002e00320009004e0061007400690076006500200043006800610072007400090037> A << /Type /Action /D <5f546f63323433393039313234> /S /GoTo >>
+  annot Subtype /Link Rect [83 429.2 539.5 440.2] Contents <feff0036002e00330009005300680061007000650073002000260020005400650078007400200042006f007800090038> A << /Type /Action /D <5f546f63323433393039313235> /S /GoTo >>
+  annot Subtype /Link Rect [83 411.55 539.5 422.55] Contents <feff0036002e00340009004500710075006100740069006f006e007300090038> A << /Type /Action /D <5f546f63323433393039313236> /S /GoTo >>
+  annot Subtype /Link Rect [72 393.9 539.5 404.9] Contents <feff00370009004c0069006e006b0073002c0020004e006f007400650073002000260020004600690065006c0064007300090038> A << /Type /Action /D <5f546f63323433393039313237> /S /GoTo >>
+  annot Subtype /Link Rect [72 376.25 539.5 387.25] Contents <feff003800090052006500760069006500770020002600200043006f006c006c00610062006f0072006100740069006f006e00090038> A << /Type /Action /D <5f546f63323433393039313238> /S /GoTo >>
+  annot Subtype /Link Rect [72 358.6 539.5 369.6] Contents <feff0039000900540068006500200043006f006d0070006c006500780020005400610062006c006500090039> A << /Type /Action /D <5f546f63323433393039313239> /S /GoTo >>
+  annot Subtype /Link Rect [72 340.95 539.5 351.95] Contents <feff003100300009004d0075006c00740069002d0043006f006c0075006d006e0020004c00610079006f00750074000900310030> A << /Type /Action /D <5f546f63323433393039313330> /S /GoTo >>
   op 1 0 0 -1 0 792 cm
   op /P << /MCID 0 >> BDC
   op q
@@ -1351,7 +1393,7 @@ page 2 612 792
   op f
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /Artifact << /Type /Pagination /Subtype /Header >> BDC
   op q
   op /Span << /ActualText <4576656e207061676520686561646572> >> BDC
   op 0.91 0.41 0.29 rg
@@ -1384,7 +1426,7 @@ page 2 612 792
   op f
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /Artifact << /Type /Pagination /Subtype /Footer >> BDC
   op q
   op /Span << /ActualText <5061676520> >> BDC
   op 0.42 0.45 0.5 rg
@@ -1489,14 +1531,16 @@ page 3 612 792
   text SIZES
   text 8 11 14 20 28
   text CHAR STYLESPress Ctrl + S to save — Accent Emphasis is a character style.
-  text SYMBOLS
-  text   ✓     Unicode: ★ → © ™ ½ π ∞
+  text SYMBOLS
+  text   ✓     Unicode: ★ → © ™ ½ π ∞
   text “Typography is what language looks like.”  — Ellen Lupton
   text 1
   text Footnotes are stored in word/footnotes.xml and referenced by id from the body.
   text D
   text DOCX Feature ShowcaseOdd page header
   text Page 3  •  Section 2
+  annot Subtype /Link Rect [427.8 636.85 535.6 647.85] Contents <4a756d7020746f2074686520636f6d706c6578207461626c65> A << /Type /Action /D <636f6d706c65785f7461626c65> /S /GoTo >>
+  annot Subtype /Link Rect [72 624.2 102.25 635.2] Contents <4a756d7020746f2074686520636f6d706c6578207461626c65> A << /Type /Action /D <636f6d706c65785f7461626c65> /S /GoTo >>
 page 4 612 792
   text 3Paragraph Formatting
   text 3.1Alignment
@@ -1659,6 +1703,9 @@ page 8 612 792
   text with text bodies, so both object models are represented.
   text Even page headerDOCX Feature Showcase
   text Page 8  •  Section 2
+  annot Subtype /Link Rect [186.4 447.4 411.35 458.4] Contents <feff004f00700065006e00200058004d004c002000530044004b0020201400200057006f0072006400700072006f00630065007300730069006e0067004d004c0020006f0076006500720076006900650077> A << /Type /Action /S /URI /URI <68747470733a2f2f6c6561726e2e6d6963726f736f66742e636f6d2f656e2d75732f6f66666963652f6f70656e2d786d6c2f776f72642f6f76657276696577> >>
+  annot Subtype /Link Rect [261.2 427.75 357.45 438.75] Contents <74686520636f6d706c6578207461626c65> A << /Type /Action /D <636f6d706c65785f7461626c65> /S /GoTo >>
+  annot Subtype /Link Rect [294.58 80.5 384.79 91.5] Contents <6c696e6b20746f2045434d412d333736> A << /Type /Action /S /URI /URI <68747470733a2f2f7777772e65636d612d696e7465726e6174696f6e616c2e6f72672f7075626c69636174696f6e732d616e642d7374616e64617264732f7374616e64617264732f65636d612d3337362f> >>
 page 9 792 612
   text 9The Complex Table
   text A landscape section with a fixed-layout table that combines: a diagonally split corner cell spanning 2×2, three-
@@ -1754,6 +1801,8 @@ page 10 612 792
 structure
   Document
     P
+      Figure Alt="Abstract navy and teal gradient banner"
+    P
     P
     P
     Table
@@ -1778,19 +1827,144 @@ structure
         TD
           P
     P
+      Div
+        P
+    P
+    P
+      Link
+    P
+      Link
+    P
+      Link
+    P
+      Link
+    P
+      Link
+    P
+      Link
+    P
+      Link
+    P
+      Link
+    P
+      Link
+    P
+      Link
+    P
+      Link
+    P
+      Link
+    P
+      Link
+    P
+      Link
+    P
+      Link
+    P
+      Link
+    P
+      Link
+    P
+      Link
+    P
+      Link
+    P
+      Link
+    H1
+    P
+      Link
+      Note ID="footnote-1"
+        P
+      Div
+        P
+    P
+    H1
+    P
+    Table
+      TR
+        TD
+          P
+        TD
+          P
+      TR
+        TD
+          P
+        TD
+          P
+      TR
+        TD
+          P
+        TD
+          P
+      TR
+        TD
+          P
+        TD
+          P
+      TR
+        TD
+          P
+        TD
+          P
+      TR
+        TD
+          P
+        TD
+          P
+      TR
+        TD
+          P
+        TD
+          P
+      TR
+        TD
+          P
+        TD
+          P
+      TR
+        TD
+          P
+        TD
+          P
+      TR
+        TD
+          P
+        TD
+          P
+      TR
+        TD
+          P
+        TD
+          P
+      TR
+        TD
+          P
+        TD
+          P
+      TR
+        TD
+          P
+        TD
+          P
+    P
+    H1
+    H2
+    P
+    P
+    P
+    P
+    H2
+    P
+    P
+    P
+    P
+    H2
     P
     P
     P
     P
     P
-    P
-    P
-    P
-    P
-    P
-    P
-    P
-    P
+    H2
     P
     P
     P
@@ -1799,274 +1973,224 @@ structure
     P
     P
     H1
+    H2
+    L ListNumbering=/Disc
+      LI
+        Lbl
+        LBody
+          L ListNumbering=/Disc
+            LI
+              Lbl
+              LBody
+                L ListNumbering=/Disc
+                  LI
+                    Lbl
+                    LBody
+            LI
+              Lbl
+              LBody
+      LI
+        Lbl
+        LBody
+    H3
+    L ListNumbering=/Decimal
+      LI
+        Lbl
+        LBody
+          L ListNumbering=/LowerAlpha
+            LI
+              Lbl
+              LBody
+            LI
+              Lbl
+              LBody
+                L ListNumbering=/LowerRoman
+                  LI
+                    Lbl
+                    LBody
+                  LI
+                    Lbl
+                    LBody
+      LI
+        Lbl
+        LBody
+    H3
+    L ListNumbering=/Decimal
+      LI
+        Lbl
+        LBody
+          L ListNumbering=/Decimal
+            LI
+              Lbl
+              LBody
+            LI
+              Lbl
+              LBody
+                L ListNumbering=/Decimal
+                  LI
+                    Lbl
+                    LBody
+      LI
+        Lbl
+        LBody
+    H3
+    L ListNumbering=/Disc
+      LI
+        Lbl
+        LBody
+      LI
+        Lbl
+        LBody
+      LI
+        Lbl
+        LBody
+    H3
+    L ListNumbering=/UpperRoman
+      LI
+        Lbl
+        LBody
+      LI
+        Lbl
+        LBody
+      LI
+        Lbl
+        LBody
+    H3
+    P
+    P
+    P
+    P
+    H1
+    P
+    H2
+    Table
+      TR
+        TH Scope=/Column
+          P
+        TH Scope=/Column
+          P
+        TH Scope=/Column
+          P
+      TR
+        TD
+          P
+        TD
+          P
+        TD
+          P
+      TR
+        TD
+          P
+        TD
+          P
+        TD
+          P
+      TR
+        TD
+          P
+        TD
+          P
+        TD
+          P
+      TR
+        TD
+          P
+        TD
+          P
+        TD
+          P
+    P
+    H2
+    Table
+      TR
+        TH Scope=/Column
+          P
+        TH Scope=/Column
+          P
+      TR
+        TD
+          P
+        TD
+          P
+      TR
+        TD
+          P
+        TD
+          P
+      TR
+        TD
+          P
+        TD
+          P
+    P
+    H1
+    H2
+    P
+      Figure Alt="Geometric tile pattern"
+    P
+    H2
+    P
+    H2
+    P
+      Div
+        P
+      Figure
+      Div
+        P
+      Figure
+      Div
+        P
+    P
+      Div
+        P
+    H2
+    P
+    H1
+    P
+      Link
+    P
+      Link
+    P
+      Note ID="footnote-2"
+        P
+          Link
+      Note ID="endnote-1"
+        P
+    P
+    H1
+    P
     P
     P
     H1
     P
     Table
       TR
-        TD
+        TH Scope=/Column RowSpan=2 ColSpan=2
           P
-        TD
           P
-      TR
-        TD
+        TH Scope=/Column ColSpan=2
           P
-        TD
+        TH Scope=/Column ColSpan=2
           P
-      TR
-        TD
+        TH Scope=/Column ColSpan=2
           P
-        TD
+        TH Scope=/Column RowSpan=2
           P
       TR
-        TD
+        TH Scope=/Column
           P
-        TD
+        TH Scope=/Column
           P
-      TR
-        TD
+        TH Scope=/Column
           P
-        TD
+        TH Scope=/Column
           P
-      TR
-        TD
+        TH Scope=/Column
           P
-        TD
+        TH Scope=/Column
           P
       TR
-        TD
-          P
-        TD
-          P
-      TR
-        TD
-          P
-        TD
-          P
-      TR
-        TD
-          P
-        TD
-          P
-      TR
-        TD
-          P
-        TD
-          P
-      TR
-        TD
-          P
-        TD
-          P
-      TR
-        TD
-          P
-        TD
-          P
-      TR
-        TD
-          P
-        TD
-          P
-    P
-    H1
-    H2
-    P
-    P
-    P
-    P
-    H2
-    P
-    P
-    P
-    P
-    H2
-    P
-    P
-    P
-    P
-    P
-    H2
-    P
-    P
-    P
-    P
-    P
-    P
-    P
-    H1
-    H3
-    L
-      LI
-        LBody
-      LI
-        LBody
-      LI
-        LBody
-      LI
-        LBody
-      LI
-        LBody
-    H3
-    L
-      LI
-        LBody
-      LI
-        LBody
-      LI
-        LBody
-      LI
-        LBody
-      LI
-        LBody
-      LI
-        LBody
-    H3
-    L
-      LI
-        LBody
-      LI
-        LBody
-      LI
-        LBody
-      LI
-        LBody
-      LI
-        LBody
-    H3
-    L
-      LI
-        LBody
-      LI
-        LBody
-      LI
-        LBody
-    H3
-    L
-      LI
-        LBody
-      LI
-        LBody
-      LI
-        LBody
-    H3
-    P
-    P
-    P
-    P
-    H1
-    P
-    H2
-    Table
-      TR
-        TH
-          P
-        TH
-          P
-        TH
-          P
-      TR
-        TD
-          P
-        TD
-          P
-        TD
-          P
-      TR
-        TD
-          P
-        TD
-          P
-        TD
-          P
-      TR
-        TD
-          P
-        TD
-          P
-        TD
-          P
-      TR
-        TD
-          P
-        TD
-          P
-        TD
-          P
-    P
-    H2
-    Table
-      TR
-        TH
-          P
-        TH
-          P
-      TR
-        TD
-          P
-        TD
-          P
-      TR
-        TD
-          P
-        TD
-          P
-      TR
-        TD
-          P
-        TD
-          P
-    P
-    H1
-    H2
-    P
-    P
-    H2
-    P
-      Figure Alt="Picture"
-    H2
-    H2
-    P
-    H1
-    P
-    P
-    P
-    P
-    H1
-    P
-    P
-    P
-    H1
-    P
-    Table
-      TR
-        TH
-          P
-          P
-        TH
-          P
-        TH
-          P
-        TH
-          P
-        TH
-          P
-      TR
-        TH
-          P
-        TH
-          P
-        TH
-          P
-        TH
-          P
-        TH
-          P
-        TH
-          P
-      TR
-        TD
+        TD RowSpan=3
           P
         TD
           P
@@ -2081,6 +2205,8 @@ structure
         TD
           P
         TD
+          P
+        TD RowSpan=3
           P
           Table
             TR
@@ -2129,7 +2255,7 @@ structure
         TD
           P
       TR
-        TD
+        TD RowSpan=2
           P
         TD
           P
@@ -2144,13 +2270,19 @@ structure
         TD
           P
         TD
-          L
+          P
+        TD RowSpan=2
+          L ListNumbering=/Disc
             LI
+              Lbl
               LBody
             LI
+              Lbl
               LBody
-            LI
-              LBody
+                L ListNumbering=/Disc
+                  LI
+                    Lbl
+                    LBody
       TR
         TD
           P
@@ -2171,6 +2303,27 @@ structure
           P
         TD
           P
+        TD ColSpan=6
+          P
+        TD
+          P
+      TR
+        TD RowSpan=2
+          P
+        TD
+          P
+        TD
+          P
+        TD
+          P
+        TD
+          P
+        TD
+          P
+        TD
+          P
+        TD
+          P
         TD
           P
       TR
@@ -2191,24 +2344,7 @@ structure
         TD
           P
       TR
-        TD
-          P
-        TD
-          P
-        TD
-          P
-        TD
-          P
-        TD
-          P
-        TD
-          P
-        TD
-          P
-        TD
-          P
-      TR
-        TD
+        TD ColSpan=2
           P
         TD
           P
@@ -2233,7 +2369,6 @@ structure
     P
     P
     P
-    Figure Alt="Picture"
 outline
   "Welcome"
   "Typography"

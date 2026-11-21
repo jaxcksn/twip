@@ -58,6 +58,6 @@ structure
   Document
     H1
     P
-      Figure Alt="Picture"
+      Figure
 outline
   "9 Barcodes"

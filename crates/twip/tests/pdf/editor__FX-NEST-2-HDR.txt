@@ -53,7 +53,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /Artifact << /Type /Pagination /Subtype /Header >> BDC
   op q
   op /Span << /ActualText <46582d4e4553542d32> >> BDC
   op 0 0 0 rg
@@ -131,7 +131,7 @@ page 1 612 792
   op f
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /Artifact << /Type /Pagination /Subtype /Header >> BDC
   op q
   op /Span << /ActualText <496e6e65722041205232204331> >> BDC
   op 0 0 0 rg
@@ -195,7 +195,7 @@ page 1 612 792
   op f
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /Artifact << /Type /Pagination /Subtype /Header >> BDC
   op q
   op /Span << /ActualText <546578742061667465722074686520696e6e6572207461626c652e> >> BDC
   op 0 0 0 rg
@@ -259,7 +259,7 @@ page 1 612 792
   op f
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /Artifact << /Type /Pagination /Subtype /Header >> BDC
   op q
   op /Span << /ActualText <4f6e6c7920636f6e74656e74205232204331> >> BDC
   op 0 0 0 rg
@@ -353,7 +353,7 @@ page 1 612 792
   op f
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /Artifact << /Type /Pagination /Subtype /Header >> BDC
   op q
   op /Span << /ActualText <506c61696e206f757465722063656c6c> >> BDC
   op 0 0 0 rg
@@ -437,7 +437,7 @@ page 1 612 792
   op f
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /Artifact << /Type /Pagination /Subtype /Header >> BDC
   op q
   op /Span << /ActualText <496e6e65722042205232> >> BDC
   op 0 0 0 rg
@@ -491,7 +491,7 @@ page 1 612 792
   op f
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /Artifact << /Type /Pagination /Subtype /Header >> BDC
   op q
   op /Span << /ActualText <496e6e65722042205233> >> BDC
   op 0 0 0 rg
@@ -595,7 +595,7 @@ page 1 612 792
   op f
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /Artifact << /Type /Pagination /Subtype /Header >> BDC
   op q
   op /Span << /ActualText <50617261677261706820616674657220746865206f75746572207461626c652e> >> BDC
   op 0 0 0 rg

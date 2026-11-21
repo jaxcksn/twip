@@ -94,8 +94,8 @@ structure
   Document
     H1
     P
-      Figure Alt="Picture"
+      Figure
     P
-      Figure Alt="Picture"
+      Figure
 outline
   "8, 3.4 Photo and logo"

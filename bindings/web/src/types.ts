@@ -128,7 +128,8 @@ export interface Warning {
     | 'duplicate-building-block'
     | 'sub-template-cycle'
     | 'sub-template-too-deep'
-    | 'sub-template-near-match';
+    | 'sub-template-near-match'
+    | 'pdf-figure-without-alt';
   /** A readable description. */
   message: string;
   /** How many times it occurred. */

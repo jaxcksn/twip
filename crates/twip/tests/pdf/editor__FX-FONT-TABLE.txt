@@ -74,7 +74,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 5 >> BDC
   op q
   op 0 0 0 rg
   op BT
@@ -84,7 +84,7 @@ page 1 612 792
   op ET
   op Q
   op EMC
-  op /P << /MCID 5 >> BDC
+  op /P << /MCID 6 >> BDC
   op q
   op /Span << /ActualText <412053796d626f6c2062756c6c65742e> >> BDC
   op 0 0 0 rg
@@ -96,7 +96,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 7 >> BDC
   op q
   op 0 0 0 rg
   op BT
@@ -106,7 +106,7 @@ page 1 612 792
   op ET
   op Q
   op EMC
-  op /P << /MCID 6 >> BDC
+  op /P << /MCID 8 >> BDC
   op q
   op /Span << /ActualText <412057696e6764696e67732062756c6c65742e> >> BDC
   op 0 0 0 rg
@@ -118,7 +118,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 7 >> BDC
+  op /P << /MCID 9 >> BDC
   op q
   op /Span << /ActualText <434a4b3a20> >> BDC
   op 0 0 0 rg
@@ -148,7 +148,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 8 >> BDC
+  op /P << /MCID 10 >> BDC
   op q
   op /Span << /ActualText <5368617265643a20> >> BDC
   op 0 0 0 rg
@@ -253,10 +253,12 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     P
     P

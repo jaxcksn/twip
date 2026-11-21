@@ -572,7 +572,7 @@ page 1 612 792
   op f
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /P << /MCID 6 >> BDC
   op q
   op /Span << /ActualText <31> >> BDC
   op 0 0 0 rg
@@ -638,7 +638,7 @@ page 1 612 792
   op Q
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /P << /MCID 7 >> BDC
   op q
   op /Span << /ActualText <5465787420626f782c20666972737420> >> BDC
   op 0 0 0 rg
@@ -659,6 +659,8 @@ page 1 612 792
   op ET
   op EMC
   op Q
+  op EMC
+  op /P << /MCID 8 >> BDC
   op q
   op /Span << /ActualText <5465787420626f782c207365636f6e6420> >> BDC
   op 0 0 0 rg
@@ -679,6 +681,8 @@ page 1 612 792
   op ET
   op EMC
   op Q
+  op EMC
+  op /Artifact << /Type /Pagination /Subtype /Header >> BDC
   op q
   op /Span << /ActualText <46697273742d7061676520686561646572> >> BDC
   op 0 0 0 rg
@@ -689,6 +693,8 @@ page 1 612 792
   op ET
   op EMC
   op Q
+  op EMC
+  op /Artifact << /Type /Pagination /Subtype /Footer >> BDC
   op q
   op /Span << /ActualText <46697273742d7061676520666f6f746572> >> BDC
   op 0 0 0 rg
@@ -1255,7 +1261,7 @@ page 2 612 792
   op f
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /P << /MCID 5 >> BDC
   op q
   op /Span << /ActualText <32> >> BDC
   op 0 0 0 rg
@@ -1286,6 +1292,8 @@ page 2 612 792
   op ET
   op EMC
   op Q
+  op EMC
+  op /P << /MCID 6 >> BDC
   op q
   op /Span << /ActualText <33> >> BDC
   op 0 0 0 rg
@@ -1316,6 +1324,8 @@ page 2 612 792
   op ET
   op EMC
   op Q
+  op EMC
+  op /Artifact << /Type /Pagination /Subtype /Header >> BDC
   op q
   op /Span << /ActualText <4576656e2d7061676520686561646572> >> BDC
   op 0 0 0 rg
@@ -1326,6 +1336,8 @@ page 2 612 792
   op ET
   op EMC
   op Q
+  op EMC
+  op /Artifact << /Type /Pagination /Subtype /Footer >> BDC
   op q
   op /Span << /ActualText <4576656e2d7061676520666f6f7465722c20706167652032> >> BDC
   op 0 0 0 rg
@@ -1465,21 +1477,42 @@ structure
   Document
     H1
     P
+      Div
+        P
+        P
+    P
+      Note ID="footnote-1"
+        P
+    P
+    P
+      Note ID="endnote-1"
+        P
+    P
+      Note ID="footnote-2"
+        P
     P
     P
     P
+      Note ID="footnote-3"
+        P
+    P
+      Note ID="endnote-2"
+        P
+    P
+    P
+      Note ID="footnote-4"
+        P
     P
     P
     P
+      Note ID="footnote-5"
+        P
+      Note ID="endnote-3"
+        P
     P
     P
     P
-    P
-    P
-    P
-    P
-    P
-    P
-    P
+      Note ID="footnote-6"
+        P
 outline
   "FX-STORIES"

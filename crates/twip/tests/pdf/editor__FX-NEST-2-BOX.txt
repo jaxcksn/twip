@@ -87,7 +87,7 @@ page 1 612 792
   op Q
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /P << /MCID 3 >> BDC
   op q
   op /Span << /ActualText <46582d4e4553542d32> >> BDC
   op 0 0 0 rg
@@ -102,6 +102,8 @@ page 1 612 792
   op ET
   op EMC
   op Q
+  op EMC
+  op /P << /MCID 4 >> BDC
   op q
   op /Span << /ActualText <54657874206265666f72652074686520696e6e6572207461626c652e> >> BDC
   op 0 0 0 rg
@@ -112,6 +114,8 @@ page 1 612 792
   op ET
   op EMC
   op Q
+  op EMC
+  op /P << /MCID 5 >> BDC
   op q
   op /Span << /ActualText <496e6e65722041205231204331> >> BDC
   op 0 0 0 rg
@@ -122,6 +126,8 @@ page 1 612 792
   op ET
   op EMC
   op Q
+  op EMC
+  op /P << /MCID 6 >> BDC
   op q
   op /Span << /ActualText <496e6e65722041205231204332> >> BDC
   op 0 0 0 rg
@@ -165,7 +171,7 @@ page 1 612 792
   op f
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /P << /MCID 7 >> BDC
   op q
   op /Span << /ActualText <496e6e65722041205232204331> >> BDC
   op 0 0 0 rg
@@ -176,6 +182,8 @@ page 1 612 792
   op ET
   op EMC
   op Q
+  op EMC
+  op /P << /MCID 8 >> BDC
   op q
   op /Span << /ActualText <496e6e65722041205232204332> >> BDC
   op 0 0 0 rg
@@ -229,7 +237,7 @@ page 1 612 792
   op f
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /P << /MCID 9 >> BDC
   op q
   op /Span << /ActualText <546578742061667465722074686520696e6e6572207461626c652e> >> BDC
   op 0 0 0 rg
@@ -240,6 +248,8 @@ page 1 612 792
   op ET
   op EMC
   op Q
+  op EMC
+  op /P << /MCID 10 >> BDC
   op q
   op /Span << /ActualText <4f6e6c7920636f6e74656e74205231204331> >> BDC
   op 0 0 0 rg
@@ -250,6 +260,8 @@ page 1 612 792
   op ET
   op EMC
   op Q
+  op EMC
+  op /P << /MCID 11 >> BDC
   op q
   op /Span << /ActualText <4f6e6c7920636f6e74656e74205231204332> >> BDC
   op 0 0 0 rg
@@ -293,7 +305,7 @@ page 1 612 792
   op f
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /P << /MCID 12 >> BDC
   op q
   op /Span << /ActualText <4f6e6c7920636f6e74656e74205232204331> >> BDC
   op 0 0 0 rg
@@ -304,6 +316,8 @@ page 1 612 792
   op ET
   op EMC
   op Q
+  op EMC
+  op /P << /MCID 13 >> BDC
   op q
   op /Span << /ActualText <4f6e6c7920636f6e74656e74205232204332> >> BDC
   op 0 0 0 rg
@@ -387,7 +401,7 @@ page 1 612 792
   op f
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /P << /MCID 14 >> BDC
   op q
   op /Span << /ActualText <506c61696e206f757465722063656c6c> >> BDC
   op 0 0 0 rg
@@ -398,6 +412,8 @@ page 1 612 792
   op ET
   op EMC
   op Q
+  op EMC
+  op /P << /MCID 15 >> BDC
   op q
   op /Span << /ActualText <4f7574657220746578742c207468656e20616e20696e6e6572207461626c65206f66203320> >> BDC
   op 0 0 0 rg
@@ -418,6 +434,8 @@ page 1 612 792
   op ET
   op EMC
   op Q
+  op EMC
+  op /P << /MCID 16 >> BDC
   op q
   op /Span << /ActualText <496e6e65722042205231> >> BDC
   op 0 0 0 rg
@@ -428,6 +446,8 @@ page 1 612 792
   op ET
   op EMC
   op Q
+  op EMC
+  op /P << /MCID 17 >> BDC
   op q
   op /Span << /ActualText <78> >> BDC
   op 0 0 0 rg
@@ -471,7 +491,7 @@ page 1 612 792
   op f
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /P << /MCID 18 >> BDC
   op q
   op /Span << /ActualText <496e6e65722042205232> >> BDC
   op 0 0 0 rg
@@ -482,6 +502,8 @@ page 1 612 792
   op ET
   op EMC
   op Q
+  op EMC
+  op /P << /MCID 19 >> BDC
   op q
   op /Span << /ActualText <78> >> BDC
   op 0 0 0 rg
@@ -525,7 +547,7 @@ page 1 612 792
   op f
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /P << /MCID 20 >> BDC
   op q
   op /Span << /ActualText <496e6e65722042205233> >> BDC
   op 0 0 0 rg
@@ -536,6 +558,8 @@ page 1 612 792
   op ET
   op EMC
   op Q
+  op EMC
+  op /P << /MCID 21 >> BDC
   op q
   op /Span << /ActualText <78> >> BDC
   op 0 0 0 rg
@@ -629,7 +653,7 @@ page 1 612 792
   op f
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /P << /MCID 22 >> BDC
   op q
   op /Span << /ActualText <50617261677261706820616674657220746865206f75746572207461626c652e> >> BDC
   op 0 0 0 rg
@@ -644,6 +668,59 @@ page 1 612 792
 structure
   Document
     P
+      Div
+        H1
+        Table
+          TR
+            TD
+              P
+              Table
+                TR
+                  TD
+                    P
+                  TD
+                    P
+                TR
+                  TD
+                    P
+                  TD
+                    P
+              P
+            TD
+              Table
+                TR
+                  TD
+                    P
+                  TD
+                    P
+                TR
+                  TD
+                    P
+                  TD
+                    P
+          TR
+            TD
+              P
+            TD
+              P
+              Table
+                TR
+                  TD
+                    P
+                  TD
+                    P
+                TR
+                  TD
+                    P
+                  TD
+                    P
+                TR
+                  TD
+                    P
+                  TD
+                    P
+        P
     P
     P
 outline
+  "FX-NEST-2"

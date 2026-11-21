@@ -477,7 +477,7 @@ page 1 612 792
   op Q
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /P << /MCID 5 >> BDC
   op q
   op /Span << /ActualText <546865206d656574696e6720666f726563617374206865726562792076656e646f727320> >> BDC
   op 0 0 0 rg
@@ -548,6 +548,8 @@ page 1 612 792
   op ET
   op EMC
   op Q
+  op EMC
+  op /P << /MCID 6 >> BDC
   op q
   op /Span << /ActualText <496e76656e746f72792072656c6576616e742067726f75702072656c69656620> >> BDC
   op 0 0 0 rg
@@ -593,7 +595,7 @@ page 1 612 792
   op Q
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /P << /MCID 7 >> BDC
   op q
   op /Span << /ActualText <546865206d656574696e6720666f726563617374206865726562792076656e646f727320> >> BDC
   op 0 0 0 rg
@@ -664,6 +666,8 @@ page 1 612 792
   op ET
   op EMC
   op Q
+  op EMC
+  op /P << /MCID 8 >> BDC
   op q
   op /Span << /ActualText <496e76656e746f72792072656c6576616e742067726f75702072656c69656620> >> BDC
   op 0 0 0 rg
@@ -729,8 +733,14 @@ structure
   Document
     H1
     P
+      Div
+        P
+        P
     P
     P
+      Div
+        P
+        P
     P
 outline
   "Text box autofit and columns"

@@ -98,6 +98,7 @@ impl Editor {
                             direct: Default::default(),
                             blocks: vec![paragraph(Rc::new(para.style), run, t.to_string())],
                             controls: Vec::new(),
+                            ids: None,
                             rev: Default::default(),
                         }
                     })

@@ -1284,7 +1284,9 @@ structure
     P
     P
     P
+      Figure
     P
+      Figure
     P
     Table
       TR
@@ -1293,31 +1295,35 @@ structure
         TD
           P
     P
-      Figure Alt="Picture"
-      Figure Alt="Picture"
     Table
       TR
         TD
           P
+            Figure
         TD
           P
           P
     P
+      Figure
     P
-      Figure Alt="Picture"
-    P
-    P
-    P
-    P
-    P
-      Figure Alt="Picture"
-      Figure Alt="Picture"
+      Figure
     P
     P
     P
     P
     P
     P
+    P
+    P
+    P
+      Note ID="footnote-1"
+        P
+    P
+      Note ID="footnote-2"
+        P
+    P
+      Note ID="footnote-3"
+        P
     P
     P
     P

@@ -43,6 +43,9 @@ pub enum WarningCode {
     SubTemplateNearMatch,
     /// A picture bullet whose image isn't a format the engine decodes: it draws as an empty box.
     PictureBulletUndecodable,
+    /// A picture a PDF export tagged as a figure without alternative text: it has none and isn't marked decorative,
+    /// so the PDF isn't PDF/UA conformant.
+    PdfFigureWithoutAlt,
 }
 
 impl WarningCode {
@@ -56,6 +59,7 @@ impl WarningCode {
             WarningCode::RewrittenContent => "rewritten-content",
             WarningCode::PdfFontFallback => "pdf-font-fallback",
             WarningCode::PdfArchivalClaimDropped => "pdf-archival-claim-dropped",
+            WarningCode::PdfFigureWithoutAlt => "pdf-figure-without-alt",
             WarningCode::RevisionIdMissing => "revision-id-missing",
             WarningCode::RangeUnpaired => "range-unpaired",
             WarningCode::AuthorMissing => "author-missing",

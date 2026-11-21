@@ -28,22 +28,52 @@ page 1 612 792
   op BT
   op 1 0 0 -1 72 110.07 Tm
   op /F1 11 Tf
-  op [<0000> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0000>] TJ
+  op [-500 <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0002>] TJ
   op ET
+  op q
+  op 0 0 0 rg
+  op 72.52 110.07 m
+  op 72.52 102.33 l
+  op 76.98 102.33 l
+  op 76.98 110.07 l
+  op h
+  op 132.47 110.07 m
+  op 132.47 102.33 l
+  op 136.93 102.33 l
+  op 136.93 110.07 l
+  op h
+  op f
+  op Q
   op EMC
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /Artifact << /Type /Pagination /Subtype /Header >> BDC
   op q
   op /Span << /ActualText <feff00ab004e0061006d006500bb> >> BDC
   op 0 0 0 rg
   op BT
   op 1 0 0 -1 72 44.8 Tm
   op /F1 11 Tf
-  op [<0000> <0002> <0002> <0002> <0002> <0000>] TJ
+  op [-500 <0002> <0002> <0002> <0002>] TJ
   op ET
+  op q
+  op 0 0 0 rg
+  op 72.52 44.8 m
+  op 72.52 37.07 l
+  op 76.98 37.07 l
+  op 76.98 44.8 l
+  op h
+  op 102.22 44.8 m
+  op 102.22 37.07 l
+  op 106.68 37.07 l
+  op 106.68 44.8 l
+  op h
+  op f
+  op Q
   op EMC
   op Q
+  op EMC
+  op /Artifact << /Type /Pagination /Subtype /Footer >> BDC
   op q
   op /Span << /ActualText <506167652031> >> BDC
   op 0 0 0 rg

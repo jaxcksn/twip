@@ -2101,15 +2101,12 @@ structure
     P
     P
     P
-    P
-    P
-      Figure Alt="Picture"
-    P
+      Figure
     P
     P
     P
     P
-      Figure Alt="Picture"
+      Figure
     P
     P
     P
@@ -2117,6 +2114,9 @@ structure
     P
     P
     P
-      Figure Alt="Picture"
+    P
+      Figure
+    P
+    P
 outline
   "Floats in columns"

@@ -8,7 +8,7 @@ page 1 612 792
   text pilot receipt corporate.
   text End of the tbRl section.
   op 1 0 0 -1 0 792 cm
-  op /Artifact << /Type /Layout >> BDC
+  op /P << /MCID 0 >> BDC
   op q
   op 0 1 -1 0 612 0 cm
   op q
@@ -102,6 +102,8 @@ page 1 612 792
   op EMC
   op Q
   op Q
+  op EMC
+  op /P << /MCID 1 >> BDC
   op q
   op 0 1 -1 0 612 0 cm
   op q
@@ -257,6 +259,8 @@ page 1 612 792
   op EMC
   op Q
   op Q
+  op EMC
+  op /P << /MCID 2 >> BDC
   op q
   op 0 1 -1 0 612 0 cm
   op q
@@ -346,6 +350,8 @@ page 1 612 792
   op EMC
   op Q
   op Q
+  op EMC
+  op /P << /MCID 3 >> BDC
   op q
   op 0 1 -1 0 612 0 cm
   op q
@@ -364,7 +370,7 @@ page 2 612 792
   text tbLrV: lines from the left, 漢漢漢漢 upright. Pilot receipt corporate requirement standard fact that products 
   text distribution filed logistics chapter. Plan regional maintenance accessibility tax finds record proposal.
   op 1 0 0 -1 0 792 cm
-  op /Artifact << /Type /Layout >> BDC
+  op /P << /MCID 0 >> BDC
   op q
   op 0 1 -1 0 155.35 0 cm
   op q
@@ -448,4 +454,9 @@ page 2 612 792
   op EMC
 structure
   Document
+    P
+    P
+    P
+    P
+    P
 outline

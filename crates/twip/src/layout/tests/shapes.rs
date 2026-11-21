@@ -509,3 +509,34 @@ fn a_box_that_does_not_wrap_is_as_wide_as_its_tables_grid() {
     // The box takes the grid's 150pt less the outer margins, not its own 50pt: the second cell starts past 130.
     assert!(z > 130.0, "{z}");
 }
+
+/// A float anchored in a table cell in a floating text box is its own float when painted, inside the box's.
+#[test]
+fn a_float_in_a_text_box_float_paints_as_its_own() {
+    let inner = anchor(10, 10, 40, 20, 2, false, 3, &sp(0, 0, 40, 20, "rect", "", "FF0000"))
+        .replace(r#"<wp:positionH relativeFrom="page">"#, r#"<wp:positionH relativeFrom="column">"#)
+        .replace(r#"<wp:positionV relativeFrom="page">"#, r#"<wp:positionV relativeFrom="paragraph">"#);
+    let text_box = format!(
+        r#"<wps:wsp><wps:cNvSpPr txBox="1"/><wps:spPr>{}<a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill></wps:spPr><wps:txbx><w:txbxContent><w:tbl><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:tc><w:p>{inner}<w:r><w:t>Inner</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/></w:txbxContent></wps:txbx><wps:bodyPr/></wps:wsp>"#,
+        xfrm(0, 0, 200, 100, "")
+    );
+    let Some(doc) = doc(&format!("<w:p>{}<w:r><w:t>Body</w:t></w:r></w:p>", anchor(100, 100, 200, 100, 1, false, 2, &text_box))) else { return };
+    let float_of = |blocks: &[crate::docx::Block]| match blocks.first() {
+        Some(crate::docx::Block::Para(p)) => {
+            p.inlines.iter().find_map(|i| if let crate::docx::Inline::Float(f, _) = i { Some(f.clone()) } else { None })
+        }
+        _ => None,
+    };
+    let outer = float_of(&doc.sections[0].blocks).expect("the text box");
+    let Some(crate::docx::Block::Table(t)) = outer.text_box.as_ref().expect("its text").blocks.first() else { panic!("a table") };
+    let inside = float_of(&t.rows[0].cells[0].blocks).expect("the float in it");
+    let snap = crate::layout::layout(&doc, &crate::layout::tests::fonts());
+    let mut floats = Vec::new();
+    crate::layout::traverse::paint(&snap.pages()[0], &mut |p| {
+        if let Item::Shape(s) = p.item {
+            floats.push((s.float, p.float.map(|f| f.0)));
+        }
+    });
+    assert!(floats.contains(&(inside.id, Some(inside.id))), "{floats:?}");
+    assert!(floats.contains(&(outer.id, Some(outer.id))), "{floats:?}");
+}

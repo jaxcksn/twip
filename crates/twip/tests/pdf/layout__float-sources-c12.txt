@@ -582,7 +582,7 @@ page 1 612 792
   op Q
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /P << /MCID 7 >> BDC
   op q
   op /Span << /ActualText <5465787420626f78> >> BDC
   op 0 0 0 rg
@@ -594,7 +594,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 7 >> BDC
+  op /P << /MCID 8 >> BDC
   op q
   op 1 0 0 1 72 101.25 cm
   op q
@@ -617,7 +617,7 @@ page 1 612 792
   op Q
   op Q
   op EMC
-  op /Artifact << /Type /Layout >> BDC
+  op /P << /MCID 9 >> BDC
   op q
   op 1 0 0 1 417.6 221.5 cm
   op q
@@ -650,6 +650,8 @@ page 1 612 792
   op f
   op Q
   op Q
+  op EMC
+  op /P << /MCID 10 >> BDC
   op q
   op 1 0 0 1 72 439.3 cm
   op q
@@ -666,6 +668,8 @@ page 1 612 792
   op f
   op Q
   op Q
+  op EMC
+  op /P << /MCID 11 >> BDC
   op q
   op 1 0 0 1 432 558.45 cm
   op q
@@ -873,7 +877,7 @@ page 2 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact << /Type /Layout >> BDC
+  op /P << /MCID 3 >> BDC
   op q
   op 1 0 0 1 396 115.6 cm
   op q
@@ -911,13 +915,19 @@ structure
   Document
     H1
     P
+      Figure
+    P
+      Figure
+    P
+      Div
+        P
+    P
+      Figure
+    P
+      Figure
     P
     P
-    P
-    P
-    P
-      Figure Alt="Picture"
-    P
+      Figure
     P
 outline
   "One float model for every source"

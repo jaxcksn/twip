@@ -183,6 +183,8 @@ public enum WarningCode
     PdfArchivalClaimDropped,
     /// <summary>A picture bullet's image couldn't be decoded; it draws as an empty box.</summary>
     PictureBulletUndecodable,
+    /// <summary>A PDF tagged a picture without alternative text (not marked decorative) as a figure; the PDF isn't PDF/UA conformant.</summary>
+    PdfFigureWithoutAlt,
 }
 
 /// <summary>An import or export approximation, aggregated per code and part.</summary>

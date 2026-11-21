@@ -77,7 +77,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact << /Type /Layout >> BDC
+  op /P << /MCID 1 >> BDC
   op q
   op 0 1 -1 0 238.62 24.12 cm
   op q
@@ -121,6 +121,8 @@ page 1 612 792
   op EMC
   op Q
   op Q
+  op EMC
+  op /P << /MCID 2 >> BDC
   op q
   op 0 -1 1 0 45.88 368.92 cm
   op q
@@ -164,6 +166,8 @@ page 1 612 792
   op EMC
   op Q
   op Q
+  op EMC
+  op /P << /MCID 3 >> BDC
   op q
   op 0 1 -1 0 378.62 -115.88 cm
   op q
@@ -240,6 +244,8 @@ page 1 612 792
   op Q
   op Q
   op Q
+  op EMC
+  op /P << /MCID 4 >> BDC
   op q
   op 0 1 -1 0 400.77 -185.88 cm
   op q
@@ -293,7 +299,7 @@ page 1 612 792
   op Q
   op Q
   op EMC
-  op /P << /MCID 1 >> BDC
+  op /P << /MCID 5 >> BDC
   op q
   op /Span << /ActualText <4120686f72697a6f6e74616c20> >> BDC
   op 0 0 0 rg
@@ -427,7 +433,7 @@ page 1 612 792
   op f
   op Q
   op EMC
-  op /P << /MCID 2 >> BDC
+  op /P << /MCID 6 >> BDC
   op q
   op /Span << /ActualText <416e206175746f2d68656967687420726f773a20766572746963616c2063656c6c7320616464206e6f7468696e6720746f20697473206865696768742e> >> BDC
   op 0 0 0 rg
@@ -439,7 +445,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact << /Type /Layout >> BDC
+  op /P << /MCID 7 >> BDC
   op q
   op 0 1 -1 0 378.99 164.49 cm
   op q
@@ -504,7 +510,7 @@ page 1 612 792
   op Q
   op Q
   op EMC
-  op /P << /MCID 3 >> BDC
+  op /P << /MCID 8 >> BDC
   op q
   op /Span << /ActualText <486f72697a6f6e74616c> >> BDC
   op 0 0 0 rg
@@ -558,7 +564,7 @@ page 1 612 792
   op f
   op Q
   op EMC
-  op /P << /MCID 4 >> BDC
+  op /P << /MCID 9 >> BDC
   op q
   op /Span << /ActualText <526567696f6e616c206d61696e74656e616e636520> >> BDC
   op 0 0 0 rg
@@ -840,7 +846,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 5 >> BDC
+  op /P << /MCID 10 >> BDC
   op q
   op /Span << /ActualText <5472656e642073756767657374696f6e7320626f617264206f7264657220757064617465206772616e7465642061677265656d656e74206d61726b6574696e672070726f6d6f74696f6e20> >> BDC
   op 0 0 0 rg
@@ -915,6 +921,8 @@ page 1 612 792
   op f
   op Q
   op Q
+  op EMC
+  op /P << /MCID 11 >> BDC
   op q
   op 0 1 -1 0 150.95 266.36 cm
   op q
@@ -978,6 +986,8 @@ page 1 612 792
   op EMC
   op Q
   op Q
+  op EMC
+  op /Artifact << /Type /Layout >> BDC
   op q
   op 1 0 0 1 360 262.51 cm
   op q
@@ -1010,6 +1020,8 @@ page 1 612 792
   op f
   op Q
   op Q
+  op EMC
+  op /P << /MCID 12 >> BDC
   op q
   op 0 -1 1 0 367.45 402.66 cm
   op q
@@ -1081,12 +1093,26 @@ structure
       TR
         TD
           P
+        TD
+          P
+        TD
+          P
+        TD
+          P
+        TD
+          P
     P
     Table
       TR
         TD
           P
+        TD
+          P
     P
+      Div
+        P
+      Div
+        P
     P
 outline
   "One vertical model for cells and text boxes"

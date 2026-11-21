@@ -2345,15 +2345,21 @@ page 2 612 792
 structure
   Document
     P
-      Figure Alt="Picture"
     P
-      Figure Alt="Picture"
+      Figure
     P
-      Figure Alt="Picture"
     P
-      Figure Alt="Picture"
+      Figure
     P
-      Figure Alt="Picture"
     P
-      Figure Alt="Picture"
+      Figure
+    P
+    P
+      Figure
+    P
+    P
+      Figure
+    P
+    P
+      Figure
 outline

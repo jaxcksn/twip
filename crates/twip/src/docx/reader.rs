@@ -3062,6 +3062,7 @@ impl Reader {
             blocks,
             controls,
             rev,
+            ids: cell_ids(cn, tc_pr),
         }
     }
 
@@ -3488,6 +3489,22 @@ fn vml_effect(pen: Option<f64>, rect: Option<[f64; 4]>) -> [f64; 4] {
     }
     .map(|v| v * 15.0);
     [l - bounds[0], t - bounds[1], bounds[2] - r, bounds[3] - b].map(|e| e.max(0.0) / 20.0)
+}
+
+/// The header cells a cell lists, at most this many are read (a write keeps the others as read).
+pub(crate) const MAX_CELL_HEADERS: usize = 1024;
+
+/// A cell's identifier (`w:tc/@w:id`) and its header cells' (`tcPr/w:headers`), when it has either.
+fn cell_ids(tc: Node, tc_pr: Option<Node>) -> Option<Rc<crate::docx::CellIds>> {
+    let id = attr(tc, "id").map(str::trim).filter(|v| !v.is_empty()).map(str::to_string);
+    let headers: Vec<String> = tc_pr
+        .and_then(|p| child(p, "headers"))
+        .into_iter()
+        .flat_map(|h| children(h, "header"))
+        .filter_map(|h| val(h).map(str::trim).filter(|v| !v.is_empty()).map(str::to_string))
+        .take(MAX_CELL_HEADERS)
+        .collect();
+    (id.is_some() || !headers.is_empty()).then(|| Rc::new(crate::docx::CellIds { id, headers }))
 }
 
 #[cfg(test)]

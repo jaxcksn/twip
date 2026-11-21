@@ -474,7 +474,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact << /Type /Layout >> BDC
+  op /P << /MCID 7 >> BDC
   op q
   op 1 0 0 1 172.35 409.65 cm
   op q
@@ -508,7 +508,7 @@ page 1 612 792
   op Q
   op Q
   op EMC
-  op /P << /MCID 7 >> BDC
+  op /P << /MCID 8 >> BDC
   op q
   op 1 0 0 1 85.4 133.06 cm
   op q
@@ -531,7 +531,7 @@ page 1 612 792
   op Q
   op Q
   op EMC
-  op /P << /MCID 8 >> BDC
+  op /P << /MCID 9 >> BDC
   op q
   op 1 0 0 1 308.2 229.05 cm
   op q
@@ -554,7 +554,7 @@ page 1 612 792
   op Q
   op Q
   op EMC
-  op /Artifact << /Type /Layout >> BDC
+  op /P << /MCID 10 >> BDC
   op q
   op 1 0 0 1 71.95 315.2 cm
   op q
@@ -593,11 +593,13 @@ structure
     H1
     P
     P
+      Figure
     P
+      Figure
     P
+      Figure
     P
+      Figure
     P
-      Figure Alt="Picture"
-      Figure Alt="Picture"
 outline
   "Float rectangles in whole twips"

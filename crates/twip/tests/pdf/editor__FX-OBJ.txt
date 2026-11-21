@@ -1329,32 +1329,33 @@ page 4 612 792
 structure
   Document
     H1
-      Figure Alt="Picture"
+    P
+      Figure
+    P
+      Figure
+    P
+      Figure
+    P
+      Figure
+    P
+      Figure
+    P
+      Figure
+    P
+      Figure
+    P
+      Figure
+    P
+      Figure
+    P
+      Figure
+    P
+      Figure
+      Figure
+    P
+      Figure
     P
     P
-      Figure Alt="Picture"
-    P
-      Figure Alt="Picture"
-      Figure Alt="Picture"
-    P
-    P
-      Figure Alt="Picture"
-      Figure Alt="Picture"
-      Figure Alt="Picture"
-    P
-    P
-    P
-    P
-      Figure Alt="Picture"
-      Figure Alt="Picture"
-      Figure Alt="Picture"
-    P
-    P
-    P
-    P
-      Figure Alt="Picture"
-      Figure Alt="Picture"
-      Figure Alt="Picture"
     P
 outline
   "FX-OBJ"

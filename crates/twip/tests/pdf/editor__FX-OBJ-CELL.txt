@@ -709,7 +709,7 @@ page 1 612 792
   op Q
   op Q
   op EMC
-  op /P << /MCID 14 >> BDC
+  op /Artifact BMC
   op q
   op 0 0 0 rg
   op BT
@@ -718,6 +718,8 @@ page 1 612 792
   op [<0001>] TJ
   op ET
   op Q
+  op EMC
+  op /P << /MCID 14 >> BDC
   op q
   op /Span << /ActualText <5472656e642073756767657374696f6e7320626f617264206f726465722075706461746520> >> BDC
   op 0 0 0 rg
@@ -842,13 +844,14 @@ page 1 612 792
 structure
   Document
     H1
-      Figure Alt="Picture"
     Table
       TR
         TD
           P
+            Figure
         TD
           P
+            Figure
       TR
         TD
           P
@@ -856,20 +859,20 @@ structure
             TR
               TD
                 P
-                  Figure Alt="Picture"
+                  Figure
               TD
                 P
+                  Figure
             TR
               TD
                 P
               TD
                 P
-                  Figure Alt="Picture"
+                P
+                  Figure
         TD
           P
-            Figure Alt="Picture"
+            Figure
     P
-      Figure Alt="Picture"
-      Figure Alt="Picture"
 outline
   "FX-OBJ-CELL"

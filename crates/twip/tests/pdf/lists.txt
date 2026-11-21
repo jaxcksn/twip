@@ -69,7 +69,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 2 >> BDC
   op q
   op 0 0 0 rg
   op BT
@@ -79,7 +79,7 @@ page 1 612 792
   op ET
   op Q
   op EMC
-  op /P << /MCID 2 >> BDC
+  op /P << /MCID 3 >> BDC
   op q
   op /Span << /ActualText <4672756974> >> BDC
   op 0 0 0 rg
@@ -91,7 +91,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 4 >> BDC
   op q
   op 0 0 0 rg
   op BT
@@ -101,7 +101,7 @@ page 1 612 792
   op ET
   op Q
   op EMC
-  op /P << /MCID 3 >> BDC
+  op /P << /MCID 5 >> BDC
   op q
   op /Span << /ActualText <4170706c6573> >> BDC
   op 0 0 0 rg
@@ -113,7 +113,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 6 >> BDC
   op q
   op 0 0 0 rg
   op BT
@@ -123,7 +123,7 @@ page 1 612 792
   op ET
   op Q
   op EMC
-  op /P << /MCID 4 >> BDC
+  op /P << /MCID 7 >> BDC
   op q
   op /Span << /ActualText <4772616e6e7920536d697468> >> BDC
   op 0 0 0 rg
@@ -135,7 +135,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 8 >> BDC
   op q
   op 0 0 0 rg
   op BT
@@ -145,7 +145,7 @@ page 1 612 792
   op ET
   op Q
   op EMC
-  op /P << /MCID 5 >> BDC
+  op /P << /MCID 9 >> BDC
   op q
   op /Span << /ActualText <486f6e65796372697370> >> BDC
   op 0 0 0 rg
@@ -157,7 +157,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 10 >> BDC
   op q
   op 0 0 0 rg
   op BT
@@ -167,7 +167,7 @@ page 1 612 792
   op ET
   op Q
   op EMC
-  op /P << /MCID 6 >> BDC
+  op /P << /MCID 11 >> BDC
   op q
   op /Span << /ActualText <5065617273> >> BDC
   op 0 0 0 rg
@@ -179,7 +179,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 12 >> BDC
   op q
   op 0 0 0 rg
   op BT
@@ -189,7 +189,7 @@ page 1 612 792
   op ET
   op Q
   op EMC
-  op /P << /MCID 7 >> BDC
+  op /P << /MCID 13 >> BDC
   op q
   op /Span << /ActualText <566567657461626c6573> >> BDC
   op 0 0 0 rg
@@ -201,7 +201,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 14 >> BDC
   op q
   op 0 0 0 rg
   op BT
@@ -211,7 +211,7 @@ page 1 612 792
   op ET
   op Q
   op EMC
-  op /P << /MCID 8 >> BDC
+  op /P << /MCID 15 >> BDC
   op q
   op /Span << /ActualText <436172726f7473> >> BDC
   op 0 0 0 rg
@@ -223,7 +223,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 16 >> BDC
   op q
   op 0 0 0 rg
   op BT
@@ -233,7 +233,7 @@ page 1 612 792
   op ET
   op Q
   op EMC
-  op /P << /MCID 9 >> BDC
+  op /P << /MCID 17 >> BDC
   op q
   op /Span << /ActualText <477261696e732c20776974682061206c6f6e676572206974656d2074686174207772617073206f6e746f2061207365636f6e64206c696e6520736f207468652068616e67696e6720696e64656e7420> >> BDC
   op 0 0 0 rg
@@ -255,7 +255,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 10 >> BDC
+  op /P << /MCID 18 >> BDC
   op q
   op /Span << /ActualText <4e756d6265726564206c69737420312e202f20612e202f20692e> >> BDC
   op 0.06 0.28 0.38 rg
@@ -267,7 +267,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 19 >> BDC
   op q
   op /Span << /ActualText <312e> >> BDC
   op 0 0 0 rg
@@ -279,7 +279,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 11 >> BDC
+  op /P << /MCID 20 >> BDC
   op q
   op /Span << /ActualText <507265706172652074686520776f726b7370616365> >> BDC
   op 0 0 0 rg
@@ -291,7 +291,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 21 >> BDC
   op q
   op /Span << /ActualText <612e> >> BDC
   op 0 0 0 rg
@@ -303,7 +303,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 12 >> BDC
+  op /P << /MCID 22 >> BDC
   op q
   op /Span << /ActualText <436c65617220746865206465736b> >> BDC
   op 0 0 0 rg
@@ -315,7 +315,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 23 >> BDC
   op q
   op /Span << /ActualText <622e> >> BDC
   op 0 0 0 rg
@@ -327,7 +327,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 13 >> BDC
+  op /P << /MCID 24 >> BDC
   op q
   op /Span << /ActualText <4761746865722074686520746f6f6c73> >> BDC
   op 0 0 0 rg
@@ -339,7 +339,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 25 >> BDC
   op q
   op /Span << /ActualText <692e> >> BDC
   op 0 0 0 rg
@@ -351,7 +351,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 14 >> BDC
+  op /P << /MCID 26 >> BDC
   op q
   op /Span << /ActualText <5363726577647269766572> >> BDC
   op 0 0 0 rg
@@ -363,7 +363,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 27 >> BDC
   op q
   op /Span << /ActualText <69692e> >> BDC
   op 0 0 0 rg
@@ -375,7 +375,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 15 >> BDC
+  op /P << /MCID 28 >> BDC
   op q
   op /Span << /ActualText <4d6561737572696e672074617065> >> BDC
   op 0 0 0 rg
@@ -387,7 +387,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 29 >> BDC
   op q
   op /Span << /ActualText <322e> >> BDC
   op 0 0 0 rg
@@ -399,7 +399,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 16 >> BDC
+  op /P << /MCID 30 >> BDC
   op q
   op /Span << /ActualText <417373656d626c6520746865206672616d65> >> BDC
   op 0 0 0 rg
@@ -411,7 +411,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 31 >> BDC
   op q
   op /Span << /ActualText <612e> >> BDC
   op 0 0 0 rg
@@ -423,7 +423,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 17 >> BDC
+  op /P << /MCID 32 >> BDC
   op q
   op /Span << /ActualText <4174746163682074686520736964652070616e656c73> >> BDC
   op 0 0 0 rg
@@ -435,7 +435,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 33 >> BDC
   op q
   op /Span << /ActualText <332e> >> BDC
   op 0 0 0 rg
@@ -447,7 +447,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 18 >> BDC
+  op /P << /MCID 34 >> BDC
   op q
   op /Span << /ActualText <496e73706563742074686520726573756c74> >> BDC
   op 0 0 0 rg
@@ -459,7 +459,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 19 >> BDC
+  op /P << /MCID 35 >> BDC
   op q
   op /Span << /ActualText <4c69737420696e7465727275707465642062792061206e6f726d616c207061726167726170682c207468656e20636f6e74696e756564> >> BDC
   op 0.06 0.28 0.38 rg
@@ -471,7 +471,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 36 >> BDC
   op q
   op /Span << /ActualText <312e> >> BDC
   op 0 0 0 rg
@@ -483,7 +483,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 20 >> BDC
+  op /P << /MCID 37 >> BDC
   op q
   op /Span << /ActualText <46697273742073746570206265666f72652074686520696e74657272757074696f6e> >> BDC
   op 0 0 0 rg
@@ -495,7 +495,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 38 >> BDC
   op q
   op /Span << /ActualText <322e> >> BDC
   op 0 0 0 rg
@@ -507,7 +507,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 21 >> BDC
+  op /P << /MCID 39 >> BDC
   op q
   op /Span << /ActualText <5365636f6e642073746570206265666f72652074686520696e74657272757074696f6e> >> BDC
   op 0 0 0 rg
@@ -519,7 +519,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 22 >> BDC
+  op /P << /MCID 40 >> BDC
   op q
   op /Span << /ActualText <54686973206e6f726d616c2070617261677261706820696e746572727570747320746865206c6973743b20746865206e657874206974656d20636f6e74696e75657320746865206e756d626572696e6720617420> >> BDC
   op 0 0 0 rg
@@ -541,7 +541,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 41 >> BDC
   op q
   op /Span << /ActualText <332e> >> BDC
   op 0 0 0 rg
@@ -553,7 +553,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 23 >> BDC
+  op /P << /MCID 42 >> BDC
   op q
   op /Span << /ActualText <546869726420737465702c206e756d626572696e6720636f6e74696e756564> >> BDC
   op 0 0 0 rg
@@ -565,7 +565,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 43 >> BDC
   op q
   op /Span << /ActualText <342e> >> BDC
   op 0 0 0 rg
@@ -577,7 +577,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 24 >> BDC
+  op /P << /MCID 44 >> BDC
   op q
   op /Span << /ActualText <466f757274682073746570> >> BDC
   op 0 0 0 rg
@@ -589,7 +589,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 25 >> BDC
+  op /P << /MCID 45 >> BDC
   op q
   op /Span << /ActualText <53616d65206c697374207374796c65207265737461727465642061742031> >> BDC
   op 0.06 0.28 0.38 rg
@@ -601,7 +601,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 46 >> BDC
   op q
   op /Span << /ActualText <312e> >> BDC
   op 0 0 0 rg
@@ -613,7 +613,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 26 >> BDC
+  op /P << /MCID 47 >> BDC
   op q
   op /Span << /ActualText <526573746172746564206c697374206974656d206f6e65> >> BDC
   op 0 0 0 rg
@@ -625,7 +625,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 48 >> BDC
   op q
   op /Span << /ActualText <322e> >> BDC
   op 0 0 0 rg
@@ -637,7 +637,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 27 >> BDC
+  op /P << /MCID 49 >> BDC
   op q
   op /Span << /ActualText <526573746172746564206c697374206974656d2074776f> >> BDC
   op 0 0 0 rg
@@ -649,7 +649,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 50 >> BDC
   op q
   op /Span << /ActualText <332e> >> BDC
   op 0 0 0 rg
@@ -661,7 +661,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 28 >> BDC
+  op /P << /MCID 51 >> BDC
   op q
   op /Span << /ActualText <526573746172746564206c697374206974656d207468726565> >> BDC
   op 0 0 0 rg
@@ -673,7 +673,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 29 >> BDC
+  op /P << /MCID 52 >> BDC
   op q
   op /Span << /ActualText <526f6d616e206e756d6572616c206c697374> >> BDC
   op 0.06 0.28 0.38 rg
@@ -685,7 +685,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 53 >> BDC
   op q
   op /Span << /ActualText <492e> >> BDC
   op 0 0 0 rg
@@ -697,7 +697,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 30 >> BDC
+  op /P << /MCID 54 >> BDC
   op q
   op /Span << /ActualText <496e74726f64756374696f6e> >> BDC
   op 0 0 0 rg
@@ -709,7 +709,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 55 >> BDC
   op q
   op /Span << /ActualText <49492e> >> BDC
   op 0 0 0 rg
@@ -721,7 +721,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 31 >> BDC
+  op /P << /MCID 56 >> BDC
   op q
   op /Span << /ActualText <4d6574686f6473> >> BDC
   op 0 0 0 rg
@@ -733,7 +733,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 57 >> BDC
   op q
   op /Span << /ActualText <412e> >> BDC
   op 0 0 0 rg
@@ -745,7 +745,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 32 >> BDC
+  op /P << /MCID 58 >> BDC
   op q
   op /Span << /ActualText <53616d706c696e67> >> BDC
   op 0 0 0 rg
@@ -757,7 +757,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 59 >> BDC
   op q
   op /Span << /ActualText <422e> >> BDC
   op 0 0 0 rg
@@ -769,7 +769,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 33 >> BDC
+  op /P << /MCID 60 >> BDC
   op q
   op /Span << /ActualText <416e616c79736973> >> BDC
   op 0 0 0 rg
@@ -781,7 +781,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 61 >> BDC
   op q
   op /Span << /ActualText <4949492e> >> BDC
   op 0 0 0 rg
@@ -793,7 +793,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 34 >> BDC
+  op /P << /MCID 62 >> BDC
   op q
   op /Span << /ActualText <526573756c7473> >> BDC
   op 0 0 0 rg
@@ -805,7 +805,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 63 >> BDC
   op q
   op /Span << /ActualText <49562e> >> BDC
   op 0 0 0 rg
@@ -817,7 +817,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 35 >> BDC
+  op /P << /MCID 64 >> BDC
   op q
   op /Span << /ActualText <44697363757373696f6e> >> BDC
   op 0 0 0 rg
@@ -829,7 +829,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 36 >> BDC
+  op /P << /MCID 65 >> BDC
   op q
   op /Span << /ActualText <4c6973742077697468206120637573746f6d2073746172742076616c75652028737461727473206174203529> >> BDC
   op 0.06 0.28 0.38 rg
@@ -841,7 +841,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 66 >> BDC
   op q
   op /Span << /ActualText <352e> >> BDC
   op 0 0 0 rg
@@ -853,7 +853,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 37 >> BDC
+  op /P << /MCID 67 >> BDC
   op q
   op /Span << /ActualText <4974656d2066697665> >> BDC
   op 0 0 0 rg
@@ -865,7 +865,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 68 >> BDC
   op q
   op /Span << /ActualText <362e> >> BDC
   op 0 0 0 rg
@@ -877,7 +877,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 38 >> BDC
+  op /P << /MCID 69 >> BDC
   op q
   op /Span << /ActualText <4974656d20736978> >> BDC
   op 0 0 0 rg
@@ -889,7 +889,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 70 >> BDC
   op q
   op /Span << /ActualText <286129> >> BDC
   op 0 0 0 rg
@@ -901,7 +901,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 39 >> BDC
+  op /P << /MCID 71 >> BDC
   op q
   op /Span << /ActualText <5375622d6974656d20286129> >> BDC
   op 0 0 0 rg
@@ -913,7 +913,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 72 >> BDC
   op q
   op /Span << /ActualText <286229> >> BDC
   op 0 0 0 rg
@@ -925,7 +925,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 40 >> BDC
+  op /P << /MCID 73 >> BDC
   op q
   op /Span << /ActualText <5375622d6974656d20286229> >> BDC
   op 0 0 0 rg
@@ -937,7 +937,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 74 >> BDC
   op q
   op /Span << /ActualText <372e> >> BDC
   op 0 0 0 rg
@@ -949,7 +949,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 41 >> BDC
+  op /P << /MCID 75 >> BDC
   op q
   op /Span << /ActualText <4974656d20736576656e> >> BDC
   op 0 0 0 rg
@@ -1371,87 +1371,129 @@ page 2 612 792
 structure
   Document
     P
-    H4
-    L
+    H1
+    L ListNumbering=/Disc
       LI
+        Lbl
+        LBody
+          L ListNumbering=/Disc
+            LI
+              Lbl
+              LBody
+                L ListNumbering=/Disc
+                  LI
+                    Lbl
+                    LBody
+                  LI
+                    Lbl
+                    LBody
+            LI
+              Lbl
+              LBody
+      LI
+        Lbl
+        LBody
+          L ListNumbering=/Disc
+            LI
+              Lbl
+              LBody
+      LI
+        Lbl
+        LBody
+    H2
+    L ListNumbering=/Decimal
+      LI
+        Lbl
+        LBody
+          L ListNumbering=/LowerAlpha
+            LI
+              Lbl
+              LBody
+            LI
+              Lbl
+              LBody
+                L ListNumbering=/LowerRoman
+                  LI
+                    Lbl
+                    LBody
+                  LI
+                    Lbl
+                    LBody
+      LI
+        Lbl
+        LBody
+          L ListNumbering=/LowerAlpha
+            LI
+              Lbl
+              LBody
+      LI
+        Lbl
+        LBody
+    H3
+    L ListNumbering=/Decimal
+      LI
+        Lbl
         LBody
       LI
-        LBody
-      LI
-        LBody
-      LI
-        LBody
-      LI
-        LBody
-      LI
-        LBody
-      LI
-        LBody
-      LI
-        LBody
-    H4
-    L
-      LI
-        LBody
-      LI
-        LBody
-      LI
-        LBody
-      LI
-        LBody
-      LI
-        LBody
-      LI
-        LBody
-      LI
-        LBody
-      LI
-        LBody
-    H4
-    L
-      LI
-        LBody
-      LI
+        Lbl
         LBody
     P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
-        LBody
-    H4
-    L
-      LI
-        LBody
-      LI
-        LBody
-      LI
+        Lbl
         LBody
     H4
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
-        LBody
-      LI
-        LBody
-      LI
-        LBody
-      LI
+        Lbl
         LBody
     H4
-    L
+    L ListNumbering=/UpperRoman
       LI
+        Lbl
         LBody
       LI
+        Lbl
+        LBody
+          L ListNumbering=/UpperAlpha
+            LI
+              Lbl
+              LBody
+            LI
+              Lbl
+              LBody
+      LI
+        Lbl
         LBody
       LI
+        Lbl
+        LBody
+    H4
+    L ListNumbering=/Decimal
+      LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
+          L ListNumbering=/LowerAlpha
+            LI
+              Lbl
+              LBody
+            LI
+              Lbl
+              LBody
       LI
+        Lbl
         LBody
     H4
     H1

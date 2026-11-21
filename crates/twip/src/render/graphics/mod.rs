@@ -606,7 +606,7 @@ impl Graphics {
                 }
                 rec.pop();
             }
-            Item::Image { rect: rc, key } => {
+            Item::Image { rect: rc, key, .. } => {
                 if self.vector(rec, *key, images, rect(*rc), [0.0; 4]) {
                     return;
                 }
@@ -710,13 +710,10 @@ fn blended(c: Color, blend: BlendMode) -> Paint<'static> {
     Paint { blend, ..Paint::from(c) }
 }
 
-/// Each glyph's cluster (a UTF-8 offset into the run's characters). Characters of a piece share the piece's origin,
-/// so the glyphs from one origin to the next are that piece's: one cluster per character when the counts match, else
-/// one cluster for the piece.
-pub(crate) fn clusters(r: &crate::layout::fragment::GlyphRun) -> Option<Vec<u32>> {
-    if r.glyphs.is_empty() || r.chars.is_empty() {
-        return None;
-    }
+/// A run's pieces, `(origin, first character, characters)` (its characters share their piece's origin), and each
+/// glyph's piece: the glyphs from one origin to the next are that piece's. `None` when the origins or the glyphs go
+/// back.
+pub(crate) fn glyph_pieces(r: &crate::layout::fragment::GlyphRun) -> Option<(Vec<(f64, usize, usize)>, Vec<usize>)> {
     let mut pieces: Vec<(f64, usize, usize)> = Vec::new();
     for (i, &(_, x, _)) in r.chars.iter().enumerate() {
         match pieces.last_mut() {
@@ -725,15 +722,25 @@ pub(crate) fn clusters(r: &crate::layout::fragment::GlyphRun) -> Option<Vec<u32>
             _ => pieces.push((x, i, 1)),
         }
     }
+    let piece_of: Vec<usize> = r.glyphs.iter().map(|g| pieces.partition_point(|p| p.0 <= g.1 + 1e-6).saturating_sub(1)).collect();
+    if piece_of.windows(2).any(|w| w[1] < w[0]) {
+        return None;
+    }
+    Some((pieces, piece_of))
+}
+
+/// Each glyph's cluster (a UTF-8 offset into the run's characters): one cluster per character when a piece's glyph
+/// and character counts match ([`glyph_pieces`]), else one cluster for the piece.
+pub(crate) fn clusters(r: &crate::layout::fragment::GlyphRun) -> Option<Vec<u32>> {
+    if r.glyphs.is_empty() || r.chars.is_empty() {
+        return None;
+    }
+    let (pieces, piece_of) = glyph_pieces(r)?;
     let mut byte = Vec::with_capacity(r.chars.len());
     let mut at = 0u32;
     for &(c, _, _) in r.chars.iter() {
         byte.push(at);
         at += c.len_utf8() as u32;
-    }
-    let piece_of: Vec<usize> = r.glyphs.iter().map(|g| pieces.partition_point(|p| p.0 <= g.1 + 1e-6).saturating_sub(1)).collect();
-    if piece_of.windows(2).any(|w| w[1] < w[0]) {
-        return None;
     }
     let mut count = vec![0usize; pieces.len()];
     for &p in &piece_of {
@@ -784,6 +791,7 @@ mod ink_tests {
             decoration: true,
             clip_bottom: None,
             text_float: 0,
+            of: Default::default(),
         };
         let r = Renderer { appearance: Appearance::Dark { page: PageMode::Dark }, ..Renderer::default() };
         let want = r.appearance.map(0x000000);

@@ -14,6 +14,8 @@ use crate::editing::table::Grid;
 use crate::layout::ParaId;
 
 use super::super::spelling::Spellers;
+pub(super) use super::roles::heading_level;
+use super::roles::{Alt, HeaderScope, alt, header_scopes};
 use super::{Reading, TextMarks, author, document_language};
 
 /// What a derived id names, so ids of different things never meet.
@@ -252,7 +254,7 @@ impl Builder<'_> {
         let mut lists: Vec<(i64, AccessibleNode)> = Vec::new();
         for b in list {
             match b {
-                Block::Para(p) if p.style.num.is_some() && heading_level(p).is_none() => {
+                Block::Para(p) if p.style.num.is_some() && heading_level(self.doc, p).is_none() => {
                     let level = p.style.num.map_or(0, |n| n.1).max(0);
                     let (children, floats) = self.inlines(p, depth);
                     if children.is_empty() && floats.is_empty() {
@@ -289,7 +291,7 @@ impl Builder<'_> {
                     }
                     let (children, floats) = self.inlines(p, depth);
                     if !children.is_empty() {
-                        let level = heading_level(p);
+                        let level = heading_level(self.doc, p);
                         let role = if level.is_some() { AccessibleRole::Heading } else { AccessibleRole::Paragraph };
                         out.push(AccessibleNode { id: AccessibleId(p.id), role, level, children, ..AccessibleNode::default() });
                     }
@@ -371,6 +373,7 @@ impl Builder<'_> {
         let mut rows = Vec::new();
         for (r, row) in t.rows.iter().enumerate() {
             let row_id = derived(Kind::Row, id.0, r as u64);
+            let scopes = header_scopes(t, r);
             let mut cells = Vec::new();
             for (k, cell) in row.cells.iter().enumerate() {
                 let (col, span, merge) = grid.rows.get(r).and_then(|g| g.get(k)).copied().unwrap_or((k, 1, VMerge::None));
@@ -379,7 +382,11 @@ impl Builder<'_> {
                 }
                 let continues = |g: &Vec<(usize, usize, VMerge)>| g.iter().any(|&(c, _, m)| c == col && m == VMerge::Continue);
                 let row_span = 1 + grid.rows.iter().skip(r + 1).take_while(|g| continues(g)).count() as u32;
-                let role = if row.header { AccessibleRole::ColumnHeader } else { AccessibleRole::Cell };
+                let role = match scopes.get(k).copied().flatten() {
+                    Some(HeaderScope::Column) => AccessibleRole::ColumnHeader,
+                    Some(HeaderScope::Row) => AccessibleRole::RowHeader,
+                    None => AccessibleRole::Cell,
+                };
                 cells.push(AccessibleNode {
                     id: derived(Kind::Cell, row_id.0, k as u64),
                     role,
@@ -471,21 +478,17 @@ impl Builder<'_> {
                 }
                 Inline::Picture(pic, _) => {
                     flush(&mut run, &mut out);
-                    let decorative = pic.shape.as_ref().is_some_and(|s| s.nv.decorative);
-                    match &pic.text {
-                        Some(t) => out.push(self.text_box(AccessibleId(t.id), &t.text_box.blocks, depth)),
-                        None if !decorative && !pic.alt.is_empty() => out.push(image(derived(Kind::Image, p.id, k as u64), &pic.alt)),
-                        None => {}
+                    match (&pic.text, alt(&pic.alt, pic.shape.as_deref())) {
+                        (Some(t), _) => out.push(self.text_box(AccessibleId(t.id), &t.text_box.blocks, depth)),
+                        (None, Alt::Text(alt)) => out.push(image(derived(Kind::Image, p.id, k as u64), alt)),
+                        (None, Alt::Decorative | Alt::Missing) => {}
                     }
                 }
-                Inline::Float(f, _) => {
-                    let decorative = f.shape.as_ref().is_some_and(|s| s.nv.decorative);
-                    match &f.text_box {
-                        Some(tb) => floats.push(self.text_box(AccessibleId(f.id), &tb.blocks, depth)),
-                        None if !decorative && !f.alt.is_empty() => floats.push(image(AccessibleId(f.id), &f.alt)),
-                        None => {}
-                    }
-                }
+                Inline::Float(f, _) => match (&f.text_box, alt(&f.alt, f.shape.as_deref())) {
+                    (Some(tb), _) => floats.push(self.text_box(AccessibleId(f.id), &tb.blocks, depth)),
+                    (None, Alt::Text(alt)) => floats.push(image(AccessibleId(f.id), alt)),
+                    (None, Alt::Decorative | Alt::Missing) => {}
+                },
                 _ => {
                     for u in starts[k]..starts[k] + inline.units() as u32 {
                         let Some(c) = r.char(u) else { continue };
@@ -636,11 +639,6 @@ pub(super) fn list_label(p: &Paragraph) -> Option<String> {
         return Some("•".into());
     }
     Some(l.text.trim().to_string()).filter(|t| !t.is_empty())
-}
-
-/// A heading's level, 1 to 9, from its outline level.
-pub(super) fn heading_level(p: &Paragraph) -> Option<u32> {
-    p.style.outline_lvl.filter(|l| (0..9).contains(l)).map(|l| l as u32 + 1)
 }
 
 /// Ends the innermost list being built: its items get their positions, and it goes into the last item of the list

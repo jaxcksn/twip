@@ -4,6 +4,7 @@ page 1 612 792
   text A broken picture: 
   text Visit the example site for more.
   text Type here.
+  annot Subtype /Link Rect [105 614.66 195.2 625.66] Contents <746865206578616d706c652073697465> A << /Type /Action /S /URI /URI <68747470733a2f2f6578616d706c652e636f6d2f> >>
   op 1 0 0 -1 0 792 cm
   op /P << /MCID 0 >> BDC
   op q
@@ -63,6 +64,8 @@ page 1 612 792
   op ET
   op EMC
   op Q
+  op EMC
+  op /P << /MCID 4 >> BDC
   op q
   op /Span << /ActualText <746865206578616d706c652073697465> >> BDC
   op 0.02 0.39 0.76 rg
@@ -73,6 +76,8 @@ page 1 612 792
   op ET
   op EMC
   op Q
+  op EMC
+  op /P << /MCID 5 >> BDC
   op q
   op /Span << /ActualText <20666f72206d6f72652e> >> BDC
   op 0 0 0 rg
@@ -91,7 +96,7 @@ page 1 612 792
   op f
   op Q
   op EMC
-  op /P << /MCID 4 >> BDC
+  op /P << /MCID 6 >> BDC
   op q
   op /Span << /ActualText <5479706520686572652e> >> BDC
   op 0 0 0 rg
@@ -107,8 +112,9 @@ structure
   Document
     H1
     P
-      Figure Alt="Picture"
+      Figure
     P
+      Link
     P
 outline
   "Images and links"

@@ -37,6 +37,8 @@ page 1 612 792
   op ET
   op EMC
   op Q
+  op EMC
+  op /Artifact BMC
   op q
   op 0 0 0 rg
   op BT
@@ -45,6 +47,8 @@ page 1 612 792
   op [<0001>] TJ
   op ET
   op Q
+  op EMC
+  op /P << /MCID 1 >> BDC
   op q
   op /Span << /ActualText <69> >> BDC
   op 0 0 0 rg
@@ -56,7 +60,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 1 >> BDC
+  op /P << /MCID 2 >> BDC
   op q
   op /Span << /ActualText <526567696f6e616c206d61696e74656e616e6365206163636573736962696c697479207461782066696e6473207265636f726420> >> BDC
   op 0 0 0 rg
@@ -105,7 +109,7 @@ page 1 612 792
   op f
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /P << /MCID 3 >> BDC
   op q
   op /Span << /ActualText <69> >> BDC
   op 0 0 0 rg
@@ -164,7 +168,7 @@ page 1 612 792
   op f
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /P << /MCID 4 >> BDC
   op q
   op /Span << /ActualText <31> >> BDC
   op 0 0 0 rg
@@ -245,7 +249,7 @@ page 1 612 792
   op Q
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /P << /MCID 5 >> BDC
   op q
   op /Span << /ActualText <426f7820> >> BDC
   op 0 0 0 rg
@@ -284,7 +288,7 @@ page 1 612 792
   op f
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /Artifact << /Type /Pagination /Subtype /Header >> BDC
   op q
   op /Span << /ActualText <48656164657220> >> BDC
   op 0 0 0 rg
@@ -323,7 +327,7 @@ page 1 612 792
   op f
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /Artifact << /Type /Pagination /Subtype /Footer >> BDC
   op q
   op /Span << /ActualText <466f6f74657220> >> BDC
   op 0 0 0 rg
@@ -355,5 +359,11 @@ page 1 612 792
 structure
   Document
     P
+      Note ID="footnote-1"
+        P
+      Note ID="endnote-1"
+        P
     P
+      Div
+        P
 outline

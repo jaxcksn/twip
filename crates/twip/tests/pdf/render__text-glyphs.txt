@@ -240,7 +240,7 @@ page 2 612 792
   op ET
   op Q
   op EMC
-  op /Artifact << /Type /Layout >> BDC
+  op /P << /MCID 1 >> BDC
   op q
   op 0 -1 1 0 -22.79 267.59 cm
   op q
@@ -253,7 +253,7 @@ page 2 612 792
   op Q
   op Q
   op EMC
-  op /P << /MCID 1 >> BDC
+  op /P << /MCID 2 >> BDC
   op q
   op /Span << /ActualText <42657369646520746865207475726e65642063656c6c2e> >> BDC
   op 0 0 0 rg
@@ -307,7 +307,7 @@ page 2 612 792
   op f
   op Q
   op EMC
-  op /P << /MCID 2 >> BDC
+  op /P << /MCID 3 >> BDC
   op q
   op 0 0 0 rg
   op BT
@@ -334,6 +334,8 @@ structure
     P
     Table
       TR
+        TD
+          P
         TD
           P
     P

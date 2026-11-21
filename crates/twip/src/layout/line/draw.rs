@@ -7,7 +7,7 @@ use crate::docx::model::*;
 use crate::docx::props::Jc;
 use crate::docx::review::{AuthorPalette, MarkKind, MarkupView, ReviewView};
 use crate::font::Fonts;
-use crate::layout::fragment::{Atom, GlyphRun, ImageKey, Item, LineFragment};
+use crate::layout::fragment::{Atom, GlyphRun, ImageKey, Item, LineFragment, PictureOf};
 use crate::layout::ids::{ParaId, Unit};
 use crate::layout::text::{Kind, Object, Piece, ShapedPara, symbol_unicode};
 use crate::layout::units::EPS;
@@ -55,6 +55,7 @@ fn check_box(x: f64, base: f64, advance: f64, e: f64, checked: bool, colour: Opt
         decoration: true,
         clip_bottom: None,
         text_float: 0,
+        of: Default::default(),
     }))
 }
 
@@ -254,6 +255,7 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
                     let bottom = base + drop - sp.styles[p.style as usize].run.position - pic.effect[3];
                     let x0 = x + pic.effect[0];
                     let rect = [x0, bottom - pic.h, x0 + pic.w, bottom];
+                    let of = first.map_or(PictureOf::None, |u| PictureOf::Inline(q, u));
                     match pic.shape.as_deref() {
                         Some(shape) => {
                             // A reflection of an inline picture stops at the bottom of its paragraph, spacing after included.
@@ -268,14 +270,14 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
                                 };
                                 top + to_bottom + after
                             });
-                            let mut items = crate::layout::story::shape_items(shape, rect, 0, false, o.palette, clip);
+                            let mut items = crate::layout::story::shape_items(shape, rect, 0, false, o.palette, clip, of);
                             if let Some(t) = &pic.text {
                                 // Made just now, so unshared.
                                 items.iter_mut().filter_map(Rc::get_mut).for_each(|s| s.text_float = t.id);
                             }
                             out.extend(items.into_iter().map(Item::Shape))
                         }
-                        None => out.push(Item::Image { rect, key: ImageKey { index: pic.image, generation: 0 } }),
+                        None => out.push(Item::Image { rect, key: ImageKey { index: pic.image, generation: 0 }, of }),
                     }
                     if pic.text.is_some() {
                         texts.push((rect, pic.clone()));

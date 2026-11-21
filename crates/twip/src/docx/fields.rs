@@ -212,7 +212,7 @@ fn show(inlines: &[Inline], views: bool) -> Vec<Shown> {
 }
 
 /// The text of `inlines` as results show it: codes left out, an evaluated field as its value (or its result).
-fn visible(inlines: &[Inline]) -> String {
+pub fn visible(inlines: &[Inline]) -> String {
     let mut out = String::new();
     for (i, s) in inlines.iter().zip(shown(inlines)) {
         match (s, i) {

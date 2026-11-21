@@ -1390,17 +1390,21 @@ structure
         TD
           P
         TD
+        TD
           P
       TR
         TD
+        TD
           P
           P
           P
+        TD
       TR
         TD
           P
         TD
           P
+        TD
     P
     Table
       TR

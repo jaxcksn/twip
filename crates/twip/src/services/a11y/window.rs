@@ -127,7 +127,7 @@ pub fn window(e: &mut Editor, spelling: &Spellers, language: &str, read_only: bo
         {
             lang = r.marks(at.0.min(r.len().saturating_sub(1))).lang.unwrap_or_else(|| doc_lang.clone());
         }
-        let level = heading_level(p);
+        let level = heading_level(e.document(), p);
         let role = match (level, p.style.num) {
             (Some(_), _) => AccessibleRole::Heading,
             (None, Some(_)) => AccessibleRole::ListItem,

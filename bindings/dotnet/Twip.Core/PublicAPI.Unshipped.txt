@@ -6530,6 +6530,7 @@ Twip.CommandId.SetConsecutiveHyphenLimit = 213 -> Twip.CommandId
 Twip.CommandId.SetHyphenateCaps = 214 -> Twip.CommandId
 Twip.CommandId.SetHyphenationZone = 212 -> Twip.CommandId
 Twip.WarningCode.PictureBulletUndecodable = 17 -> Twip.WarningCode
+Twip.WarningCode.PdfFigureWithoutAlt = 18 -> Twip.WarningCode
 Twip.TooltipKind.Ruler = 4 -> Twip.TooltipKind
 Twip.ViewState.ControlLabels.get -> bool
 Twip.ViewState.ControlLabels.init -> void

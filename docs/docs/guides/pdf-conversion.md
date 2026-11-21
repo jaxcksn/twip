@@ -73,6 +73,14 @@ every SDK.
 - **Keywords.** They go to the document properties readers show (the Info dictionary) and to the XMP metadata, in
   order, joined with commas. Blank entries are dropped.
 
+## Accessibility
+
+PDFs are tagged for PDF/UA-1: headings, lists with their numbers, tables with their header cells, links, notes, text
+boxes, figures with their alternative text, and text in another language. Headers, footers and decorative pictures are
+artifacts. A picture with no alternative text that isn't marked decorative is still a figure, without a description,
+and the export warns with `pdf-figure-without-alt`: give it alternative text, or mark it decorative, for a conformant
+PDF.
+
 ## Fonts on a server
 
 Twip draws with the fonts you give it, makes no font choices of its own, and doesn't download any. A font set takes

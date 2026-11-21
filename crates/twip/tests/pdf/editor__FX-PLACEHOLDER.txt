@@ -191,17 +191,23 @@ page 1 612 792
   op Q
   op Q
   op EMC
-  op /P << /MCID 5 >> BDC
+  op /Artifact BMC
+  op q
+  op /Span << /ActualText <feff0009> >> BDC
+  op 0 0 0 rg
   op q
   op 0 0 0 rg
-  op BT
-  op 1 0 0 -1 358.2 299.37 Tm
-  op /F1 11 Tf
-  op [<0000>] TJ
-  op ET
+  op 358.72 299.37 m
+  op 358.72 291.63 l
+  op 363.18 291.63 l
+  op 363.18 299.37 l
+  op h
+  op f
   op Q
   op EMC
-  op /P << /MCID 6 >> BDC
+  op Q
+  op EMC
+  op /P << /MCID 5 >> BDC
   op q
   op /Span << /ActualText <446174653a20312f312f32303236> >> BDC
   op 0 0 0 rg
@@ -219,7 +225,7 @@ structure
     P
     P
     P
-      Figure Alt="Picture"
+      Figure
     P
 outline
   "Delivery Receipt"

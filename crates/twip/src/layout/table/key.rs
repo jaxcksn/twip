@@ -205,6 +205,7 @@ fn shell(t: &Table) -> Table {
                         direct: _,
                         controls: _,
                         rev,
+                        ids: _,
                     } = c;
                     Cell {
                         width: *width,
@@ -226,6 +227,7 @@ fn shell(t: &Table) -> Table {
                         direct: Default::default(),
                         controls: Vec::new(),
                         rev: rev.clone(),
+                        ids: None,
                     }
                 })
                 .collect();
@@ -393,6 +395,7 @@ pub(crate) fn same_shell(s: &Table, t: &Table) -> bool {
                         direct: _,
                         controls: _,
                         rev,
+                        ids: _,
                     } = c;
                     *width == d.width
                         && *span == d.span

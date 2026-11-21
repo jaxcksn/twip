@@ -1,20 +1,19 @@
 //! PDF export from a layout snapshot: the pages recorded by `render::graphics` and written by twip-graphics' PDF
 //! writer, which embeds the fonts subset with ToUnicode maps (the runs carry their characters, so text extracts as
-//! typed). Tagged: body paragraphs
-//! as P/H1–H6, list items as L/LI/LBody, tables as Table/TR/TH/TD, pictures as Figures; headers, footers, notes, text
-//! boxes, list numbers, borders and shading as artifacts. A bookmarks outline from the headings, and title, language
-//! and creation date (with XMP) metadata.
+//! typed). Tagged for PDF/UA ([`super::tags`]): paragraphs as P/H1–H6, list items as L/LI/LBody, tables as
+//! Table/TR/TH/TD with their scopes and header ids, pictures with alternative text as Figures, text boxes as Divs,
+//! notes as Notes after their references, links as Links with their annotations; headers and footers as pagination
+//! artifacts, decorative pictures, list numbers, borders and shading as others. Bookmarks are named destinations; an
+//! outline from the headings, and title, language and creation date (with XMP) metadata.
 //!
 //! The pages show the markup view the snapshot was laid out in: its revision marks and change bars are layout items.
 //! Only layout items are drawn, so view overlays (comment tints, the selection, squiggles) never reach the PDF.
-// shortcut: no hyperlink annotations, figure alt text or Note elements yet: the model has hyperlinks (as HYPERLINK
-// fields) and pictures' alt text, but the export doesn't write them.
 
 use crate::api::state::FontsState;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use twip_graphics::pdf::{self, ArtifactKind, Date, Mark};
+use twip_graphics::pdf::{self, Date};
 use twip_graphics::scene::Recorder;
 
 use crate::api::error::{Error, ErrorCode};
@@ -22,93 +21,12 @@ use crate::api::session::PdfOptions;
 use crate::api::warning::Warning;
 use crate::docx::{Block, Document, Paragraph};
 use crate::font::Fonts;
-use crate::layout::fragment::Item;
 use crate::layout::{Snapshot, traverse};
 use crate::render::Renderer;
 use crate::render::graphics::Graphics;
 
-/// What an item is in the structure: a structure element's content (its id), an artifact, or (before the first item)
-/// nothing yet.
-const OTHER_ARTIFACT: i32 = -1;
-const PAGINATION_ARTIFACT: i32 = -2;
-const LAYOUT_ARTIFACT: i32 = -3;
-const NOTHING: i32 = 0;
-
-/// A structure element before it becomes the writer's. `key`: the model path a container stands for (reused by the
-/// next paragraph in it).
-struct Elem {
-    kind: String,
-    id: i32,
-    key: Option<Vec<usize>>,
-    kids: Vec<Elem>,
-}
-
-impl Elem {
-    fn new(kind: &str, id: i32, key: Option<Vec<usize>>) -> Elem {
-        Elem { kind: kind.into(), id, key, kids: Vec::new() }
-    }
-
-    /// The last kid when it is `kind` for `key`, else a new one.
-    fn child(&mut self, kind: &str, key: Option<&[usize]>, next: &mut i32) -> &mut Elem {
-        let reuse = key.is_some() && self.kids.last().is_some_and(|k| k.kind == kind && k.key.as_deref() == key);
-        if !reuse {
-            *next += 1;
-            self.kids.push(Elem::new(kind, *next, key.map(<[usize]>::to_vec)));
-        }
-        self.kids.last_mut().unwrap()
-    }
-
-    fn into_element(self) -> pdf::Element {
-        let kind = match self.kind.as_str() {
-            "P" => pdf::Kind::Paragraph,
-            "L" => pdf::Kind::List,
-            "LI" => pdf::Kind::ListItem,
-            "LBody" => pdf::Kind::ListBody,
-            "Table" => pdf::Kind::Table,
-            "TR" => pdf::Kind::Row,
-            "TH" => pdf::Kind::HeaderCell,
-            "TD" => pdf::Kind::Cell,
-            "Figure" => pdf::Kind::Figure(Some("Picture".into())),
-            h => pdf::Kind::Heading(h.strip_prefix('H').and_then(|l| l.parse().ok()).unwrap_or(1)),
-        };
-        // Paragraphs, headings and figures are content; containers hold only their kids.
-        let content =
-            matches!(kind, pdf::Kind::Paragraph | pdf::Kind::Heading(_) | pdf::Kind::ListBody | pdf::Kind::Figure(_)).then_some(self.id as u32);
-        pdf::Element { kind, content, kids: self.kids.into_iter().map(Elem::into_element).collect() }
-    }
-}
-
-/// The body's paragraphs in document order with their paths ([section, block, (row, cell, block)*]) and whether
-/// each table step is a header row.
-fn body_paragraphs(doc: &Document) -> Vec<(Vec<usize>, Vec<bool>, &Paragraph)> {
-    fn walk<'d>(blocks: &'d [Block], path: &mut Vec<usize>, header: &mut Vec<bool>, out: &mut Vec<(Vec<usize>, Vec<bool>, &'d Paragraph)>) {
-        for (k, b) in blocks.iter().enumerate() {
-            path.push(k);
-            match b {
-                Block::Para(p) => out.push((path.clone(), header.clone(), p)),
-                Block::Table(t) => {
-                    for (r, row) in t.rows.iter().enumerate() {
-                        for (c, cell) in row.cells.iter().enumerate() {
-                            path.push(r);
-                            path.push(c);
-                            header.push(row.header);
-                            walk(&cell.blocks, path, header, out);
-                            header.pop();
-                            path.pop();
-                            path.pop();
-                        }
-                    }
-                }
-            }
-            path.pop();
-        }
-    }
-    let mut out = Vec::new();
-    for (i, s) in doc.sections.iter().enumerate() {
-        walk(&s.blocks, &mut vec![i], &mut Vec::new(), &mut out);
-    }
-    out
-}
+use super::mark::Marker;
+use super::tags::{self, Tags};
 
 /// Reads `docx` and writes it as a PDF on this thread: the final document, without revision marks or comments, laid
 /// out with `fonts` in steps so `cancel` stops it early. The warnings are the read's, the text drawn in another font,
@@ -165,96 +83,10 @@ pub fn export_with(
     cancel: Option<&AtomicBool>,
     fonts: Option<&Fonts>,
 ) -> Result<(Vec<u8>, Vec<Warning>), Error> {
-    let paras = body_paragraphs(doc);
-    // Glyph runs name their paragraph by id; body paragraphs are tagged, the rest (headers, notes...) are artifacts.
-    let index: HashMap<u64, usize> = paras.iter().enumerate().map(|(i, p)| (p.2.id, i)).collect();
-    let pages: Vec<Vec<Item>> = snapshot.pages().iter().map(|p| traverse::paint_items(p)).collect();
-
-    // Node ids: paragraph i is i + 1, figures follow, then containers.
-    let n = paras.len() as i32;
-    let mut drawn = vec![false; paras.len()];
-    let mut figures: Vec<(Option<usize>, i32)> = Vec::new();
-    let mut ids: Vec<Vec<i32>> = Vec::new();
-    let mut last = None;
-    for items in &pages {
-        let mut page_ids = Vec::with_capacity(items.len());
-        for item in items {
-            page_ids.push(match item {
-                Item::Glyphs(r) => match r.para.and_then(|p| index.get(&p.0)) {
-                    // Whitespace alone (an empty paragraph's caret stop) doesn't make a paragraph's element.
-                    Some(&i) if r.chars.iter().any(|c| c.2.is_some() && !c.0.is_whitespace()) => {
-                        drawn[i] = true;
-                        last = Some(i);
-                        i as i32 + 1
-                    }
-                    Some(&i) if drawn[i] => i as i32 + 1,
-                    Some(_) => OTHER_ARTIFACT,
-                    None => PAGINATION_ARTIFACT,
-                },
-                Item::Rect { .. } | Item::Gridline { .. } | Item::Turned(_) => LAYOUT_ARTIFACT,
-                // A picture is a figure; another shape is an artifact.
-                Item::Shape(s) if !matches!(s.fill, crate::drawing::paint::Paint::Picture { .. }) => LAYOUT_ARTIFACT,
-                Item::Image { .. } | Item::Shape(_) => {
-                    figures.push((last, n + 1 + figures.len() as i32));
-                    figures.last().unwrap().1
-                }
-            });
-        }
-        ids.push(page_ids);
-    }
-    // The structure tree, in document order.
-    let mut next = n + figures.len() as i32;
-    let mut root = Elem::new("Document", 0, None);
-    for (i, (path, header, p)) in paras.iter().enumerate() {
-        if !drawn[i] && !figures.iter().any(|f| f.0 == Some(i)) {
-            continue;
-        }
-        let mut c = &mut root;
-        // A table per (row, cell) step of the path.
-        let mut k = 1;
-        let mut step = 0;
-        while k + 3 < path.len() {
-            c = c.child("Table", Some(&path[..=k]), &mut next);
-            c = c.child("TR", Some(&path[..=k + 1]), &mut next);
-            c = c.child(if header[step] { "TH" } else { "TD" }, Some(&path[..=k + 2]), &mut next);
-            k += 3;
-            step += 1;
-        }
-        let kind = match p.style.outline_lvl {
-            Some(l @ 0..6) => format!("H{}", l + 1),
-            _ => "P".into(),
-        };
-        let mut e = Elem::new(&kind, i as i32 + 1, None);
-        if kind == "P" && p.list.is_some() {
-            let li = c.child("L", Some(&[][..]), &mut next).child("LI", None, &mut next);
-            e.kind = "LBody".into();
-            li.kids.push(e);
-            c = li;
-        } else {
-            c.kids.push(e);
-        }
-        let e = c.kids.last_mut().unwrap();
-        e.kids.extend(figures.iter().filter(|f| f.0 == Some(i)).map(|f| Elem::new("Figure", f.1, None)));
-    }
-    root.id = next + 1;
-    root.kids.extend(figures.iter().filter(|f| f.0.is_none()).map(|f| Elem::new("Figure", f.1, None)));
-
-    let lang = paras.first().map(|p| p.2.mark.lang.clone()).filter(|l| !l.is_empty());
-    // The bookmarks: the drawn headings, in document order.
-    let outline: Vec<pdf::Heading> = paras
-        .iter()
-        .enumerate()
-        .filter(|&(i, _)| drawn[i])
-        .filter_map(|(i, (_, _, p))| match p.style.outline_lvl {
-            Some(l @ 0..6) => {
-                Some(pdf::Heading { level: l as u8 + 1, content: i as u32 + 1, title: crate::docx::fields::text(p).trim().to_string() })
-            }
-            _ => None,
-        })
-        .collect();
+    let tags = Tags::of(doc, first_language(doc).as_deref().unwrap_or("en-US"));
     let info = pdf::Info {
-        title: if title.trim().is_empty() { "Document".into() } else { title.into() },
-        language: Some(lang.unwrap_or_else(|| "en-US".into())),
+        title: if title.trim().is_empty() { tags::title(doc, &tags) } else { title.into() },
+        language: Some(tags.lang.clone()),
         keywords: options.keywords_line().into_iter().collect(),
         creator: "Twip".into(),
         producer: "Twip".into(),
@@ -263,7 +95,7 @@ pub fn export_with(
         archival: options.open_password.is_none(),
     };
 
-    // Each page as pictures: one per stretch of items with the same structure id.
+    // Each page as pictures: one per stretch of items with the same mark.
     let mut graphics = Graphics::default();
     graphics.with_text = true;
     if let Some(fonts) = fonts {
@@ -271,31 +103,47 @@ pub fn export_with(
     }
     let renderer = Renderer::default();
     let mut rec = Recorder::new();
-    let mut out_pages = Vec::with_capacity(pages.len());
-    for ((page, items), page_ids) in snapshot.pages().iter().zip(&pages).zip(&ids) {
+    let mut marker = Marker::new(doc, tags);
+    let mut out_pages = Vec::with_capacity(snapshot.pages().len());
+    let mut pieces = Vec::new();
+    for (index, page) in snapshot.pages().iter().enumerate() {
         cancelled(cancel)?;
+        let mut placed = Vec::new();
+        let mut lines: HashMap<u32, Option<crate::layout::ParaId>> = HashMap::new();
+        traverse::paint_lines(page, &mut |p| placed.push(p), &mut |line, para, l, dx, dy| {
+            lines.insert(line, para);
+            marker.line(index, para, l, dx, dy);
+        });
         let mut parts = Vec::new();
-        let mut current = NOTHING;
-        for (item, &id) in items.iter().zip(page_ids) {
-            if id != current {
-                if current != NOTHING {
-                    parts.push((mark(current), rec.finish()));
+        let mut current = None;
+        for p in &placed {
+            marker.mark(index, p, lines.get(&p.line).copied().flatten(), &mut pieces);
+            for (mark, item) in pieces.drain(..) {
+                if current != Some(mark) {
+                    if let Some(m) = current {
+                        parts.push((m, rec.finish()));
+                    }
+                    current = Some(mark);
                 }
-                current = id;
+                graphics.record_item(&mut rec, &renderer, &item, &doc.images);
             }
-            graphics.record_item(&mut rec, &renderer, item, &doc.images);
         }
-        if current != NOTHING {
-            parts.push((mark(current), rec.finish()));
+        if let Some(m) = current {
+            parts.push((m, rec.finish()));
         }
-        out_pages.push(pdf::Page { width: page.w, height: page.h, parts });
+        out_pages.push(pdf::Page { width: page.w, height: page.h, parts, links: Vec::new(), destinations: Vec::new() });
     }
-    let structure: Vec<pdf::Element> = root.kids.into_iter().map(Elem::into_element).collect();
-    let written =
-        pdf::write(graphics.resources(), &out_pages, &structure, &outline, &info).map_err(|e| Error::new(ErrorCode::ExportFailed, e.to_string()))?;
+    let structure = marker.finish(&mut out_pages);
+    let written = pdf::write(graphics.resources(), &out_pages, &structure.elements, &structure.outline, &info)
+        .map_err(|e| Error::new(ErrorCode::ExportFailed, e.to_string()))?;
     let archival = written.archival;
     let mut out = written.bytes;
     let mut written = crate::docx::diagnostics::Diagnostics::default();
+    for _ in 0..structure.missing_alt {
+        written.warn(crate::api::warning::WarningCode::PdfFigureWithoutAlt, None, || {
+            "a picture has no alternative text and isn't marked decorative: its figure says nothing to a screen reader".into()
+        });
+    }
     if !archival && options.open_password.is_none() {
         written.warn(crate::api::warning::WarningCode::PdfArchivalClaimDropped, None, || {
             "what the document draws breaks PDF/A-2b, so the PDF doesn't claim it".into()
@@ -318,14 +166,15 @@ pub fn subset_chars(data: &[u8], chars: &str) -> Option<Vec<u8>> {
     twip_graphics::pdf::subset_truetype(data, 0, &used)
 }
 
-/// What a structure id marks.
-fn mark(id: i32) -> Mark {
-    match id {
-        OTHER_ARTIFACT => Mark::Artifact(ArtifactKind::Other),
-        PAGINATION_ARTIFACT => Mark::Artifact(ArtifactKind::Pagination),
-        LAYOUT_ARTIFACT => Mark::Artifact(ArtifactKind::Layout),
-        id => Mark::Content(id as u32),
+/// The language of the body's first paragraph.
+fn first_language(doc: &Document) -> Option<String> {
+    fn first(blocks: &[Block]) -> Option<&Paragraph> {
+        blocks.iter().find_map(|b| match b {
+            Block::Para(p) => Some(p),
+            Block::Table(t) => t.rows.iter().flat_map(|r| &r.cells).find_map(|c| first(&c.blocks)),
+        })
     }
+    doc.sections.iter().find_map(|s| first(&s.blocks)).map(|p| p.mark.lang.clone()).filter(|l| !l.is_empty())
 }
 
 /// The current UTC time.

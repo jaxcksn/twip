@@ -25,6 +25,10 @@ page 1 612 792
   text date. Profitable insights the meeting forecast hereby.
   text 1
   text  The footnote text.
+  annot Subtype /Link Rect [204 633.65 270 648.17] Contents <746865207265706f7274> A << /Type /Action /S /URI /URI <68747470733a2f2f6578616d706c652e636f6d2f7265706f7274> >>
+  annot Subtype /Link Rect [415.2 633.65 474.6 648.17] Contents <746865207461626c65> A << /Type /Action /D <726573756c7473> /S /GoTo >>
+  annot Subtype /Link Rect [98.4 609.98 184.2 624.5] Contents <5461626c6520726573756c7473> A << /Type /Action /D <726573756c7473> /S /GoTo >>
+  annot Subtype /Link Rect [243.6 609.98 250.2 624.5] Contents <31> A << /Type /Action /D <726573756c7473> /S /GoTo >>
   op 1 0 0 -1 0 792 cm
   op /P << /MCID 0 >> BDC
   op q
@@ -59,6 +63,8 @@ page 1 612 792
   op [<0001> <011b> <03be> <00e1> <016f> <014c> <00e1> <0140> <011b> <00bd> <0113> <03be> <0113> <00ff> <011b> <0110> <03be> <014c> <0122> <03be>] TJ
   op ET
   op Q
+  op EMC
+  op /P << /MCID 3 >> BDC
   op q
   op 0.02 0.39 0.76 rg
   op BT
@@ -67,6 +73,8 @@ page 1 612 792
   op [<014c> <00fc> <00e1> <03be> <0140> <00e1> <013d> <0122> <0140> <014c>] TJ
   op ET
   op Q
+  op EMC
+  op /P << /MCID 4 >> BDC
   op q
   op 0 0 0 rg
   op BT
@@ -75,6 +83,8 @@ page 1 612 792
   op [<032a> <03be> <00bd> 0 <011b> <03be> <00ff> <011b> <014c> 0 <00e1> <0140> <011b> <00bd> <0113> 0 <03be> <0113> <00ff> <011b> <0110> 0 <03be> <014c> <0122> <03be>] TJ
   op ET
   op Q
+  op EMC
+  op /P << /MCID 5 >> BDC
   op q
   op 0.02 0.39 0.76 rg
   op BT
@@ -83,6 +93,8 @@ page 1 612 792
   op [<014c> 0 <00fc> <00e1> <03be> <014c> <00bd> 0 <00d6> <0113> <00e1>] TJ
   op ET
   op Q
+  op EMC
+  op /P << /MCID 6 >> BDC
   op q
   op 0 0 0 rg
   op BT
@@ -104,17 +116,57 @@ page 1 612 792
   op f
   op Q
   op EMC
-  op /P << /MCID 3 >> BDC
+  op /P << /MCID 7 >> BDC
   op q
   op 0 0 0 rg
   op BT
   op 1 0 0 -1 72 178.72 Tm
   op /F1 11 Tf
-  op [<0081> <00e1> <00e1> <03be> <0089> <00bd> <00d6> <0113> <00e1> <03be> <0140> <00e1> <0144> <0151> <0113> <014c> <0144> <03be> <0122> <011b> <03be> <013d> <00bd> <00f5> <00e1> <03be> <02d5> <0329>] TJ
+  op [<0081> <00e1> <00e1> <03be>] TJ
   op ET
   op Q
   op EMC
-  op /P << /MCID 4 >> BDC
+  op /P << /MCID 8 >> BDC
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 98.4 178.72 Tm
+  op /F1 11 Tf
+  op [<0089> <00bd> <00d6> <0113> <00e1> <03be> <0140> <00e1> <0144> <0151> <0113> <014c> <0144>] TJ
+  op ET
+  op Q
+  op EMC
+  op /P << /MCID 9 >> BDC
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 184.2 178.72 Tm
+  op /F1 11 Tf
+  op [<03be> <0122> <011b> <03be> <013d> <00bd> <00f5> <00e1> <03be>] TJ
+  op ET
+  op Q
+  op EMC
+  op /P << /MCID 10 >> BDC
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 243.6 178.72 Tm
+  op /F1 11 Tf
+  op [<02d5>] TJ
+  op ET
+  op Q
+  op EMC
+  op /P << /MCID 11 >> BDC
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 250.2 178.72 Tm
+  op /F1 11 Tf
+  op [<0329>] TJ
+  op ET
+  op Q
+  op EMC
+  op /P << /MCID 12 >> BDC
   op q
   op 0 0 0 rg
   op BT
@@ -124,7 +176,7 @@ page 1 612 792
   op ET
   op Q
   op EMC
-  op /P << /MCID 5 >> BDC
+  op /P << /MCID 13 >> BDC
   op q
   op 0 0 0 rg
   op BT
@@ -134,7 +186,7 @@ page 1 612 792
   op ET
   op Q
   op EMC
-  op /P << /MCID 6 >> BDC
+  op /P << /MCID 14 >> BDC
   op q
   op 0 0 0 rg
   op 0 0 0 RG
@@ -148,7 +200,7 @@ page 1 612 792
   op ET
   op Q
   op EMC
-  op /P << /MCID 7 >> BDC
+  op /P << /MCID 15 >> BDC
   op q
   op 0 0 0 rg
   op BT
@@ -165,6 +217,8 @@ page 1 612 792
   op [<02d5>] TJ
   op ET
   op Q
+  op EMC
+  op /P << /MCID 16 >> BDC
   op q
   op 0 0 0 rg
   op BT
@@ -181,6 +235,8 @@ page 1 612 792
   op [<00ff>] TJ
   op ET
   op Q
+  op EMC
+  op /P << /MCID 17 >> BDC
   op q
   op 0 0 0 rg
   op BT
@@ -190,7 +246,7 @@ page 1 612 792
   op ET
   op Q
   op EMC
-  op /P << /MCID 8 >> BDC
+  op /P << /MCID 18 >> BDC
   op q
   op 0 0 0 rg
   op BT
@@ -200,7 +256,7 @@ page 1 612 792
   op ET
   op Q
   op EMC
-  op /P << /MCID 9 >> BDC
+  op /P << /MCID 19 >> BDC
   op q
   op 0 0 0 rg
   op BT
@@ -210,7 +266,7 @@ page 1 612 792
   op ET
   op Q
   op EMC
-  op /P << /MCID 10 >> BDC
+  op /P << /MCID 20 >> BDC
   op q
   op 0 0 0 rg
   op BT
@@ -220,7 +276,7 @@ page 1 612 792
   op ET
   op Q
   op EMC
-  op /P << /MCID 11 >> BDC
+  op /P << /MCID 21 >> BDC
   op q
   op 0 0 0 rg
   op BT
@@ -277,7 +333,7 @@ page 1 612 792
   op f
   op Q
   op EMC
-  op /P << /MCID 12 >> BDC
+  op /P << /MCID 22 >> BDC
   op q
   op 0 0 0 rg
   op BT
@@ -287,7 +343,7 @@ page 1 612 792
   op ET
   op Q
   op EMC
-  op /P << /MCID 13 >> BDC
+  op /P << /MCID 23 >> BDC
   op q
   op 0 0 0 rg
   op BT
@@ -297,7 +353,7 @@ page 1 612 792
   op ET
   op Q
   op EMC
-  op /P << /MCID 14 >> BDC
+  op /P << /MCID 24 >> BDC
   op q
   op 0 0 0 rg
   op BT
@@ -354,7 +410,7 @@ page 1 612 792
   op f
   op Q
   op EMC
-  op /P << /MCID 15 >> BDC
+  op /P << /MCID 25 >> BDC
   op q
   op 0 0 0 rg
   op BT
@@ -364,7 +420,7 @@ page 1 612 792
   op ET
   op Q
   op EMC
-  op /P << /MCID 16 >> BDC
+  op /P << /MCID 26 >> BDC
   op q
   op 0 0 0 rg
   op BT
@@ -374,7 +430,7 @@ page 1 612 792
   op ET
   op Q
   op EMC
-  op /P << /MCID 17 >> BDC
+  op /P << /MCID 27 >> BDC
   op q
   op 0 0 0 rg
   op BT
@@ -446,7 +502,7 @@ page 1 612 792
   op f
   op Q
   op EMC
-  op /P << /MCID 18 >> BDC
+  op /P << /MCID 28 >> BDC
   op q
   op 0 0 0 rg
   op 0 0 0 RG
@@ -460,7 +516,7 @@ page 1 612 792
   op ET
   op Q
   op EMC
-  op /P << /MCID 19 >> BDC
+  op /P << /MCID 29 >> BDC
   op q
   op 1 0 0 1 72 371.89 cm
   op q
@@ -483,7 +539,7 @@ page 1 612 792
   op Q
   op Q
   op EMC
-  op /P << /MCID 20 >> BDC
+  op /Artifact << /Type /Layout >> BDC
   op q
   op 1 0 0 1 72 467.44 cm
   op q
@@ -506,7 +562,7 @@ page 1 612 792
   op Q
   op Q
   op EMC
-  op /P << /MCID 21 >> BDC
+  op /P << /MCID 30 >> BDC
   op q
   op 0 0 0 rg
   op BT
@@ -603,7 +659,7 @@ page 1 612 792
   op f
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /P << /MCID 31 >> BDC
   op q
   op 0 0 0 rg
   op BT
@@ -621,7 +677,7 @@ page 1 612 792
   op ET
   op Q
   op EMC
-  op /P << /MCID 22 >> BDC
+  op /P << /MCID 32 >> BDC
   op q
   op 1 0 0 1 316.8 562.99 cm
   op q
@@ -655,7 +711,7 @@ page 2 612 792
   op f
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /P << /MCID 0 >> BDC
   op q
   op 0 0 0 rg
   op BT
@@ -678,39 +734,47 @@ structure
     P
     H1
     P
+      Link
+      Link
     P
+      Link
+      Link
     H2
     P
     H2
     P
+      Note ID="footnote-1"
+        P
+      Note ID="endnote-1"
+        P
     P
-    Table
+    Table Summary="Results. Quarterly results by region"
       TR
-        TH
+        TH ID="t1-h1" Scope=/Column
           P
-        TH
+        TH ID="t1-h2" Scope=/Column
           P
-        TH
-          P
-      TR
-        TD
-          P
-        TD
-          P
-        TD
+        TH ID="t1-h3" Scope=/Column
           P
       TR
-        TD
+        TD Headers=["t1-h1"]
           P
-        TD
+        TD Headers=["t1-h2"]
           P
-        TD
+        TD Headers=["t1-h3"]
+          P
+      TR
+        TD Headers=["t1-h1"]
+          P
+        TD Headers=["t1-h2"]
+          P
+        TD Headers=["t1-h3"]
           P
     H2
-      Figure Alt="Picture"
-      Figure Alt="Picture"
     P
-      Figure Alt="Picture"
+      Figure Alt="A blue rectangle used as a figure"
+    P
+      Figure Alt="A floating blue rectangle"
 outline
   "Links and cross references"
     "Heading by outline level"

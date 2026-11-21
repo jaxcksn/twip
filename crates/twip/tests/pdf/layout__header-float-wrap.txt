@@ -604,7 +604,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /Artifact << /Type /Pagination /Subtype /Header >> BDC
   op q
   op /Span << /ActualText <486561646572> >> BDC
   op 0 0 0 rg
@@ -615,8 +615,6 @@ page 1 612 792
   op ET
   op EMC
   op Q
-  op EMC
-  op /P << /MCID 6 >> BDC
   op q
   op 1 0 0 1 237.6 252 cm
   op q
@@ -634,8 +632,6 @@ page 1 612 792
   op f
   op Q
   op Q
-  op EMC
-  op /Artifact << /Type /Layout >> BDC
   op q
   op 1 0 0 1 432 468 cm
   op q
@@ -669,7 +665,7 @@ page 1 612 792
   op Q
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /Artifact << /Type /Pagination /Subtype /Footer >> BDC
   op q
   op /Span << /ActualText <466f6f746572> >> BDC
   op 0 0 0 rg
@@ -680,8 +676,6 @@ page 1 612 792
   op ET
   op EMC
   op Q
-  op EMC
-  op /Artifact << /Type /Layout >> BDC
   op q
   op 1 0 0 1 432 612 cm
   op q
@@ -1315,7 +1309,7 @@ page 2 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /Artifact << /Type /Pagination /Subtype /Header >> BDC
   op q
   op /Span << /ActualText <486561646572> >> BDC
   op 0 0 0 rg
@@ -1326,8 +1320,6 @@ page 2 612 792
   op ET
   op EMC
   op Q
-  op EMC
-  op /P << /MCID 5 >> BDC
   op q
   op 1 0 0 1 237.6 252 cm
   op q
@@ -1345,8 +1337,6 @@ page 2 612 792
   op f
   op Q
   op Q
-  op EMC
-  op /Artifact << /Type /Layout >> BDC
   op q
   op 1 0 0 1 432 468 cm
   op q
@@ -1380,7 +1370,7 @@ page 2 612 792
   op Q
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /Artifact << /Type /Pagination /Subtype /Footer >> BDC
   op q
   op /Span << /ActualText <466f6f746572> >> BDC
   op 0 0 0 rg
@@ -1391,8 +1381,6 @@ page 2 612 792
   op ET
   op EMC
   op Q
-  op EMC
-  op /Artifact << /Type /Layout >> BDC
   op q
   op 1 0 0 1 432 612 cm
   op q
@@ -1441,12 +1429,9 @@ structure
     P
     P
     P
-      Figure Alt="Picture"
     P
     P
     P
     P
-      Figure Alt="Picture"
-      Figure Alt="Picture"
 outline
   "Header and footer floats wrap the body"

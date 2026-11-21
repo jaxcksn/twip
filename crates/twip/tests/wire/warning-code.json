@@ -16,5 +16,6 @@
   "sub-template-cycle",
   "sub-template-too-deep",
   "sub-template-near-match",
-  "picture-bullet-undecodable"
+  "picture-bullet-undecodable",
+  "pdf-figure-without-alt"
 ]

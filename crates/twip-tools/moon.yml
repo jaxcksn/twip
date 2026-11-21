@@ -10,3 +10,12 @@ tasks:
     options:
       runFromWorkspaceRoot: true
       os: linux
+  # The corpus's top-level fixtures and the accessible fixture exported and validated with veraPDF's PDF/UA-1 profile
+  # (verapdf.sh, which fetches the pinned release). Linux only: CI runs it beside pdf-readers.
+  pdf-ua:
+    command: sh crates/twip-tools/verapdf.sh
+    inputs:
+      ['/crates/twip/src/pdf/**/*', '/crates/twip-graphics/src/pdf.rs', '/crates/twip-tools/src/cli/pdf.rs', '/crates/twip-tools/verapdf.sh', '/crates/twip-tools/verapdf-known.txt', '/crates/twip/tests/fixtures/*.docx', '/crates/twip/tests/fixtures/render/pdf-accessible.docx']
+    options:
+      runFromWorkspaceRoot: true
+      os: linux

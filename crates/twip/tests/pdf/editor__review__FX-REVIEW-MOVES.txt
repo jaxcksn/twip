@@ -220,7 +220,7 @@ page 1 612 792
   op f
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 8 >> BDC
   op q
   op /Span << /ActualText <312e> >> BDC
   op 0 0 0 rg
@@ -232,7 +232,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 8 >> BDC
+  op /P << /MCID 9 >> BDC
   op q
   op /Span << /ActualText <4e756d6265726564206974656d> >> BDC
   op 0 0 0 rg
@@ -263,7 +263,8 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
 outline

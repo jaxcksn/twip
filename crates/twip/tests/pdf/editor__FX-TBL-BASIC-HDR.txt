@@ -57,7 +57,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /Artifact << /Type /Pagination /Subtype /Header >> BDC
   op q
   op /Span << /ActualText <41312c2074686520646f63756d656e742073746172747320> >> BDC
   op 0 0 0 rg
@@ -136,7 +136,7 @@ page 1 612 792
   op f
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /Artifact << /Type /Pagination /Subtype /Header >> BDC
   op q
   op /Span << /ActualText <466972737420706172616772617068206f662074686520> >> BDC
   op 0 0 0 rg
@@ -235,7 +235,7 @@ page 1 612 792
   op f
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /Artifact << /Type /Pagination /Subtype /Header >> BDC
   op q
   op /Span << /ActualText <4133> >> BDC
   op 0 0 0 rg
@@ -319,7 +319,7 @@ page 1 612 792
   op f
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /Artifact << /Type /Pagination /Subtype /Header >> BDC
   op q
   op /Span << /ActualText <506172616772617068206265747765656e2074686520666972737420616e64207365636f6e64207461626c65732e> >> BDC
   op 0 0 0 rg
@@ -408,7 +408,7 @@ page 1 612 792
   op f
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /Artifact << /Type /Pagination /Subtype /Header >> BDC
   op q
   op /Span << /ActualText <5432205232204331> >> BDC
   op 0 0 0 rg
@@ -487,7 +487,7 @@ page 1 612 792
   op f
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /Artifact << /Type /Pagination /Subtype /Header >> BDC
   op q
   op /Span << /ActualText <5432205233204331> >> BDC
   op 0 0 0 rg
@@ -581,7 +581,7 @@ page 1 612 792
   op f
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /Artifact << /Type /Pagination /Subtype /Header >> BDC
   op q
   op /Span << /ActualText <5433205231204331> >> BDC
   op 0 0 0 rg
@@ -635,7 +635,7 @@ page 1 612 792
   op f
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /Artifact << /Type /Pagination /Subtype /Header >> BDC
   op q
   op /Span << /ActualText <5433205232204331> >> BDC
   op 0 0 0 rg
@@ -699,7 +699,7 @@ page 1 612 792
   op f
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /Artifact << /Type /Pagination /Subtype /Header >> BDC
   op q
   op /Span << /ActualText <546865207365636f6e6420616e64207468697264207461626c65732061626f7665206172652073657061726174656420627920616e20656d707479207061726167726170682c20736f2074686579207374617920> >> BDC
   op 0 0 0 rg

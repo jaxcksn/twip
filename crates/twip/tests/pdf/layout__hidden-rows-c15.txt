@@ -565,36 +565,45 @@ structure
       TR
         TD
           P
+        TD
       TR
         TD
           P
+        TD
     P
     Table
       TR
         TD
           P
+        TD
       TR
         TD
           P
+        TD
     P
     Table
       TR
         TD
           P
+        TD
       TR
         TD
           P
+        TD
     P
     Table
       TR
         TD
           P
+        TD
       TR
         TD
           P
+        TD
       TR
         TD
           P
+        TD
     P
 outline
   "Hidden rows"

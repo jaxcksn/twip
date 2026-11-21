@@ -157,7 +157,7 @@ Chunk numbers are [roadmap](../roadmap#docx) chunks.
 | Horizontal merge (Word 97) | `w:hMerge` | Laid out as a span; a rewritten row writes it as `w:gridSpan` |
 | Diagonal borders | `w:tl2br`, `w:tr2bl` | API (`setCellBorders` with `diagonalDown`, `diagonalUp`); drawn in 3.6 |
 | Cell text | `w:noWrap`, `w:tcFitText`, `w:hideMark` | API (`setCellProperties`; wrapping and fitting in Table Properties too) |
-| Header cells | `w:headers` | Kept with its cell as read: Word's schema doesn't have it, so the API doesn't write it |
+| Header cells | `w:headers` | Read with the cell's `w:id`: a PDF export lists them as the cell's headers (PDF/UA `Headers`). Kept with its cell: Word's schema doesn't have it, so the API doesn't write it |
 | Default table style | `w:defaultTableStyle` | API (`setDefaultTableStyle`, Set as Default; new tables take it) |
 | Right-to-left tables | `w:bidiVisual` | After 1.0 |
 

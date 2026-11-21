@@ -12,6 +12,8 @@ pub struct Placed<'a> {
     pub item: &'a Item,
     pub line: u32,
     pub own_colours: bool,
+    /// The float whose box it is drawn in.
+    pub float: Option<FloatId>,
 }
 
 impl Placed<'_> {
@@ -41,7 +43,7 @@ fn line_items<'a>(para: Option<ParaId>, p: &'a PlacedLine, dx: f64, dy: f64, lin
     let line = lines.next();
     (lines.placed)(line, para, p, dx, dy);
     for it in p.line.items.iter() {
-        out(Placed { dx: dx + p.x, dy: dy + p.y, item: it, line, own_colours: false });
+        out(Placed { dx: dx + p.x, dy: dy + p.y, item: it, line, own_colours: false, float: None });
     }
 }
 
@@ -49,12 +51,15 @@ fn backgrounds<'a>(children: &'a [Child], dx: f64, dy: f64, skip: &dyn Fn(&BoxKi
     for c in children {
         match c {
             Child::Box(b) if skip(&b.kind) => {}
-            Child::Box(b) => backgrounds(&b.children, dx + b.offset.0, dy + b.offset.1, skip, out),
+            Child::Box(b) => match float_of(&b.kind) {
+                Some(f) => backgrounds(&b.children, dx + b.offset.0, dy + b.offset.1, skip, &mut |p| out(Placed { float: p.float.or(Some(f)), ..p })),
+                None => backgrounds(&b.children, dx + b.offset.0, dy + b.offset.1, skip, out),
+            },
             Child::Group { offset, children } => backgrounds(children, dx + offset.0, dy + offset.1, skip, out),
             Child::Table(t) => {
                 for r in t.rows.iter() {
                     for it in r.background.iter() {
-                        out(Placed { dx, dy, item: it, line: 0, own_colours: false });
+                        out(Placed { dx, dy, item: it, line: 0, own_colours: false, float: None });
                     }
                     for cell in r.cells.iter() {
                         backgrounds(&cell.content, dx, dy, skip, out);
@@ -70,7 +75,10 @@ fn flow<'a>(children: &'a [Child], dx: f64, dy: f64, skip: &dyn Fn(&BoxKind) -> 
     for c in children {
         match c {
             Child::Box(b) if skip(&b.kind) => {}
-            Child::Box(b) => flow(&b.children, dx + b.offset.0, dy + b.offset.1, skip, lines, out),
+            Child::Box(b) => match float_of(&b.kind) {
+                Some(f) => flow(&b.children, dx + b.offset.0, dy + b.offset.1, skip, lines, &mut |p| out(Placed { float: p.float.or(Some(f)), ..p })),
+                None => flow(&b.children, dx + b.offset.0, dy + b.offset.1, skip, lines, out),
+            },
             Child::Group { offset, children } => flow(children, dx + offset.0, dy + offset.1, skip, lines, out),
             Child::Para(p) => {
                 for l in p.lines.iter() {
@@ -79,7 +87,7 @@ fn flow<'a>(children: &'a [Child], dx: f64, dy: f64, skip: &dyn Fn(&BoxKind) -> 
                 for label in p.line_numbers.iter() {
                     let line = lines.next();
                     for it in label.iter() {
-                        out(Placed { dx, dy, item: it, line, own_colours: false });
+                        out(Placed { dx, dy, item: it, line, own_colours: false, float: None });
                     }
                 }
             }
@@ -92,7 +100,7 @@ fn flow<'a>(children: &'a [Child], dx: f64, dy: f64, skip: &dyn Fn(&BoxKind) -> 
             Child::Items(items) => {
                 let line = lines.next();
                 for it in items.iter() {
-                    out(Placed { dx, dy, item: it, line, own_colours: false });
+                    out(Placed { dx, dy, item: it, line, own_colours: false, float: None });
                 }
             }
         }
@@ -104,7 +112,7 @@ fn row<'a>(r: &'a RowFragment, dx: f64, dy: f64, skip: &dyn Fn(&BoxKind) -> bool
         flow(&cell.content, dx, dy, skip, lines, out);
     }
     for it in r.borders.iter() {
-        out(Placed { dx, dy, item: it, line: 0, own_colours: false });
+        out(Placed { dx, dy, item: it, line: 0, own_colours: false, float: None });
     }
 }
 
@@ -140,6 +148,13 @@ fn is_float(k: &BoxKind) -> bool {
     matches!(k, BoxKind::Float { .. })
 }
 
+fn float_of(k: &BoxKind) -> Option<FloatId> {
+    match k {
+        BoxKind::Float { float, .. } => Some(*float),
+        _ => None,
+    }
+}
+
 fn is_notes(k: &BoxKind) -> bool {
     matches!(k, BoxKind::Notes)
 }
@@ -161,7 +176,7 @@ pub fn paint_lines<'a>(
     };
     let mut lines = Lines { n: 0, placed };
     for item in page.borders.iter() {
-        visible(Placed { dx: 0.0, dy: 0.0, item, line: 0, own_colours: false });
+        visible(Placed { dx: 0.0, dy: 0.0, item, line: 0, own_colours: false, float: None });
     }
     let bodies = || page.children.iter().filter_map(|c| if let PageChild::Body(b) = c { Some(&**b) } else { None });
     let neither = |k: &BoxKind| is_float(k) || is_notes(k);
@@ -182,7 +197,8 @@ pub fn paint_lines<'a>(
     found.sort_by_key(|(fb, ..)| layer_of(&fb.kind));
     for (fb, dx, dy) in found {
         let own_colours = filled(&fb.children);
-        let mut inside = |p: Placed<'a>| visible(Placed { own_colours, ..p });
+        let float = float_of(&fb.kind);
+        let mut inside = |p: Placed<'a>| visible(Placed { own_colours, float: p.float.or(float), ..p });
         backgrounds(&fb.children, dx + fb.offset.0, dy + fb.offset.1, &|_| false, &mut inside);
         flow(&fb.children, dx + fb.offset.0, dy + fb.offset.1, &|_| false, &mut lines, &mut inside);
     }
@@ -198,7 +214,8 @@ pub fn paint_lines<'a>(
         found.sort_by_key(|(fb, ..)| layer_of(&fb.kind));
         for (fb, dx, dy) in found {
             let own_colours = filled(&fb.children);
-            let mut inside = |p: Placed<'a>| visible(Placed { own_colours, ..p });
+            let float = float_of(&fb.kind);
+            let mut inside = |p: Placed<'a>| visible(Placed { own_colours, float: p.float.or(float), ..p });
             backgrounds(&fb.children, dx + fb.offset.0, dy + fb.offset.1, &|_| false, &mut inside);
             flow(&fb.children, dx + fb.offset.0, dy + fb.offset.1, &|_| false, &mut lines, &mut inside);
         }

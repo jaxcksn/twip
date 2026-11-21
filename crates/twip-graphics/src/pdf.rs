@@ -9,7 +9,8 @@
 //! coordinates, or the colour glyph drawn by the CPU backend as an image. A run whose characters don't come back from
 //! its glyphs' ToUnicode entries (ligatures, reordered clusters) carries them as ActualText. Emboldened text is filled
 //! and stroked (Skia's fake bold); emboldened Type 3 text and text painted with a gradient are drawn as outlines with
-//! their characters as ActualText.
+//! their characters as ActualText. A run's .notdef glyphs (no PDF/UA text operator may show one) are outlines, the run's
+//! characters its ActualText.
 //!
 //! What PDF has no operator for is composited as Skia's PDF backend does, with soft masks: a fill that clears
 //! (`Clear`) or punches out (`DstOut`, solid paint) masks what its layer drew before it by the fill's inverse; a layer
@@ -28,8 +29,8 @@ use std::hash::{Hash, Hasher};
 
 use kurbo::{Affine, BezPath, PathEl, Shape};
 use pdf_writer::types::{
-    ArtifactType, BlendMode as PdfBlend, CidFontType, FontFlags, FunctionShadingType, MaskType, OutputIntentSubtype, PaintType, StructRole,
-    SystemInfo, TilingType, UnicodeCmap,
+    ArtifactSubtype, ArtifactType, BlendMode as PdfBlend, CidFontType, FontFlags, FunctionShadingType, MaskType, OutputIntentSubtype, PaintType,
+    StructRole, SystemInfo, TilingType, UnicodeCmap,
 };
 use pdf_writer::{Content, Filter, Finish, Name, Pdf, Rect as PdfRect, Ref, Str, TextStr};
 use skrifa::MetadataProvider;
@@ -59,16 +60,49 @@ pub enum Mark {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ArtifactKind {
     Pagination,
+    /// A running header, footer or watermark: pagination of that subtype.
+    Header,
+    Footer,
+    Watermark,
     Layout,
     Other,
 }
 
-/// One page: its size in points, and its pictures (in points, y down from the top left), drawn in order.
+/// One page: its size in points, its pictures (in points, y down from the top left), drawn in order, its link
+/// annotations and the named destinations on it.
 #[derive(Clone, Debug)]
 pub struct Page {
     pub width: f64,
     pub height: f64,
     pub parts: Vec<(Mark, Picture)>,
+    pub links: Vec<Link>,
+    pub destinations: Vec<Destination>,
+}
+
+/// A link annotation: the area that follows it (in points, y down), where it goes, and its description. `link`: the
+/// id a [`Node::Annotation`] tags it with (every annotation of a link spread over lines shares it).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Link {
+    pub link: u32,
+    pub rect: kurbo::Rect,
+    pub target: LinkTarget,
+    pub description: String,
+}
+
+/// Where a link goes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum LinkTarget {
+    /// A URI action.
+    Uri(String),
+    /// A named destination ([`Destination`]).
+    Named(String),
+}
+
+/// A named destination: a place on its page (points, y down).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Destination {
+    pub name: String,
+    pub at: kurbo::Point,
 }
 
 /// A structure element.
@@ -77,24 +111,86 @@ pub enum Kind {
     Paragraph,
     /// A heading of level 1 to 6.
     Heading(u8),
-    List,
+    /// A list, with how its items are numbered.
+    List(Numbering),
     ListItem,
+    /// A list item's number or bullet.
+    Label,
     ListBody,
-    Table,
+    /// A table, with its summary.
+    Table(Option<String>),
     Row,
-    /// A table header cell, heading its column.
-    HeaderCell,
-    Cell,
+    /// A table cell, a header cell when it has a scope.
+    Cell(Cell),
     /// A figure, with its alternative text.
     Figure(Option<String>),
+    /// A link: its annotations ([`Node::Annotation`]) and its text.
+    Link,
+    /// A footnote or endnote (with an [`Element::id`]).
+    Note,
+    /// A group of block content: a text box, a sub-template's body.
+    Division,
+    /// Inline content of its own (in another language: [`Element::lang`]).
+    Span,
 }
 
-/// A structure element: what it is, the content marked with its id (before its kids), and its kids.
+/// How a list's items are numbered (PDF 1.7's `ListNumbering`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Numbering {
+    #[default]
+    None,
+    Disc,
+    Circle,
+    Square,
+    Decimal,
+    LowerRoman,
+    UpperRoman,
+    LowerAlpha,
+    UpperAlpha,
+}
+
+/// A table cell's attributes: what it heads (a header cell), the ids ([`Element::id`]) of the header cells it is
+/// under, and its spans.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Cell {
+    pub scope: Option<Scope>,
+    pub headers: Vec<String>,
+    pub row_span: u32,
+    pub col_span: u32,
+}
+
+/// What a header cell heads.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Scope {
+    Row,
+    Column,
+    Both,
+}
+
+/// A structure element: what it is, its identifier (unique in the document), its language where it differs from its
+/// parent's, and its kids in reading order.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Element {
     pub kind: Kind,
-    pub content: Option<u32>,
-    pub kids: Vec<Element>,
+    pub id: Option<String>,
+    pub lang: Option<String>,
+    pub kids: Vec<Node>,
+}
+
+impl Element {
+    /// An element of `kind` without an id or a language of its own.
+    pub fn new(kind: Kind, kids: Vec<Node>) -> Element {
+        Element { kind, id: None, lang: None, kids }
+    }
+}
+
+/// A structure element's kid: the content marked with an id ([`Mark::Content`]), an element, or the link annotations
+/// with an id ([`Link::link`]).
+#[derive(Clone, Debug, PartialEq)]
+pub enum Node {
+    Content(u32),
+    Element(Element),
+    Annotation(u32),
 }
 
 /// An outline entry: a heading's level (1 to 6), its content id (the entry goes to where that is first drawn) and
@@ -166,6 +262,7 @@ pub fn write(res: &Resources, pages: &[Page], structure: &[Element], outline: &[
     let catalog = w.alloc();
     let tree = w.alloc();
     let page_refs: Vec<Ref> = pages.iter().map(|_| w.alloc()).collect();
+    w.next_key = pages.len() as i32;
     for (index, page) in pages.iter().enumerate() {
         w.page(index, page, page_refs[index], tree);
     }
@@ -416,6 +513,12 @@ struct Writer<'r> {
     marks: Vec<Vec<(i32, u32)>>,
     /// Where each structure element's content is first drawn: page, point (y down).
     firsts: FastMap<u32, (usize, kurbo::Point)>,
+    /// Each link's annotations: page, object and parent tree key.
+    annots: FastMap<u32, Vec<(usize, Ref, i32)>>,
+    /// The parent tree key the next annotation takes (after the pages').
+    next_key: i32,
+    /// The named destinations: name, page, x and y (PDF's, y up).
+    dests: Vec<(String, Ref, f32, f32)>,
     faces: FastMap<FontId, Option<FaceKind>>,
     cid: FastMap<FontId, CidFont>,
     type3: Vec<Type3>,
@@ -443,6 +546,9 @@ impl<'r> Writer<'r> {
             page_index: 0,
             marks: Vec::new(),
             firsts: FastMap::default(),
+            annots: FastMap::default(),
+            next_key: 0,
+            dests: Vec::new(),
             faces: FastMap::default(),
             cid: FastMap::default(),
             type3: Vec::new(),
@@ -494,14 +600,22 @@ impl<'r> Writer<'r> {
                     mcid += 1;
                 }
                 Mark::Artifact(kind) => {
-                    let kind = match kind {
-                        ArtifactKind::Pagination => Some(ArtifactType::Pagination),
-                        ArtifactKind::Layout => Some(ArtifactType::Layout),
-                        ArtifactKind::Other => None,
+                    let (kind, subtype) = match kind {
+                        ArtifactKind::Pagination => (Some(ArtifactType::Pagination), None),
+                        ArtifactKind::Header => (Some(ArtifactType::Pagination), Some(ArtifactSubtype::Header)),
+                        ArtifactKind::Footer => (Some(ArtifactType::Pagination), Some(ArtifactSubtype::Footer)),
+                        ArtifactKind::Watermark => (Some(ArtifactType::Pagination), Some(ArtifactSubtype::Watermark)),
+                        ArtifactKind::Layout => (Some(ArtifactType::Layout), None),
+                        ArtifactKind::Other => (None, None),
                     };
                     match kind {
                         Some(k) => {
-                            self.content().begin_marked_content_with_properties(Name(b"Artifact")).properties().artifact().kind(k);
+                            let mut props = self.content().begin_marked_content_with_properties(Name(b"Artifact"));
+                            let mut artifact = props.properties().artifact();
+                            artifact.kind(k);
+                            if let Some(sub) = subtype {
+                                artifact.subtype(sub);
+                            }
                         }
                         None => {
                             self.content().begin_marked_content(Name(b"Artifact"));
@@ -516,11 +630,50 @@ impl<'r> Writer<'r> {
         let content_ref = self.alloc();
         let data = deflate(&std::mem::replace(&mut canvas.content, Content::new()).finish());
         self.pdf.stream(content_ref, &data).filter(Filter::FlateDecode);
+        let annots = self.links(index, page, page_ref);
+        for d in &page.destinations {
+            self.dests.push((d.name.clone(), page_ref, d.at.x as f32, (page.height - d.at.y) as f32));
+        }
         let mut p = self.pdf.page(page_ref);
         p.media_box(PdfRect::new(0.0, 0.0, page.width as f32, page.height as f32)).parent(tree).contents(content_ref);
-        p.struct_parents(index as i32);
+        p.struct_parents(index as i32).tab_order(pdf_writer::types::TabOrder::StructureOrder);
+        if !annots.is_empty() {
+            p.annotations(annots);
+        }
         resources(p.resources(), &canvas);
         p.finish();
+    }
+
+    /// Writes page `index`'s link annotations, each with the next parent tree key, and returns them.
+    fn links(&mut self, index: usize, page: &Page, page_ref: Ref) -> Vec<Ref> {
+        let mut refs = Vec::with_capacity(page.links.len());
+        for l in &page.links {
+            let id = self.alloc();
+            let key = self.next_key;
+            self.next_key += 1;
+            self.annots.entry(l.link).or_default().push((index, id, key));
+            let r = l.rect;
+            let rect = PdfRect::new(r.x0 as f32, (page.height - r.y1) as f32, r.x1 as f32, (page.height - r.y0) as f32);
+            let mut a = self.pdf.annotation(id);
+            a.subtype(pdf_writer::types::AnnotationType::Link)
+                .rect(rect)
+                .page(page_ref)
+                .contents(TextStr(&l.description))
+                .flags(pdf_writer::types::AnnotationFlags::PRINT)
+                .border(0.0, 0.0, 0.0, None)
+                .struct_parent(key);
+            match &l.target {
+                LinkTarget::Uri(uri) => {
+                    a.action().action_type(pdf_writer::types::ActionType::Uri).uri(Str(&ascii_uri(uri)));
+                }
+                LinkTarget::Named(name) => {
+                    a.action().action_type(pdf_writer::types::ActionType::GoTo).pair(Name(b"D"), Str(name.as_bytes()));
+                }
+            }
+            a.finish();
+            refs.push(id);
+        }
+        refs
     }
 
     /// Draws `picture` under `ctm` (its space to the page's).
@@ -1135,14 +1288,20 @@ impl<'r> Writer<'r> {
         // Outlines, with the characters as ActualText: a gradient's text, and emboldened Type 3 text. Invisible text
         // draws nothing, so its glyphs stay text.
         if !run.invisible && (solid.is_none() || (run.synthesis.embolden && face == FaceKind::Outlines)) {
-            return self.glyph_outlines(lists, run, paint, ctm, ink, text);
+            return self.glyph_outlines(lists, run, paint, ctm, ink, text, false);
         }
+        // .notdef glyphs, which PDF/UA lets no text operator show: outlines, in the run's ActualText.
+        let notdef = glyphs.iter().any(|g| g.id() == 0);
         let colour = solid.expect("solid paint");
         let fg = unpremultiply(colour);
-        // Each glyph's font and code; whether its font's map gives back its characters.
-        let mut placed: Vec<(Option<usize>, u32, f32)> = Vec::with_capacity(glyphs.len());
+        // Each glyph's font and code (none for .notdef); whether its font's map gives back its characters.
+        let mut placed: Vec<(Option<usize>, Option<u32>, f32)> = Vec::with_capacity(glyphs.len());
         let mut round_trips = true;
         for (k, g) in glyphs.iter().enumerate() {
+            if g.id() == 0 {
+                placed.push((placed.last().and_then(|p| p.0), None, 0.0));
+                continue;
+            }
             let kind = self.res.fonts.kind(run.font, g.id());
             let chars = piece(k).to_string();
             let (font, code, width, mapped) = match (face, kind) {
@@ -1162,14 +1321,14 @@ impl<'r> Writer<'r> {
                 }
             };
             round_trips &= mapped == chars;
-            placed.push((font, code, width));
+            placed.push((font, Some(code), width));
         }
         self.content().save_state();
         if let Some(b) = native(rec.blend) {
             let s = self.state(None, Some(b), None);
             self.set_state(s);
         }
-        let actual = !round_trips && !text.is_empty();
+        let actual = (!round_trips || notdef) && !text.is_empty();
         if actual {
             self.content().begin_marked_content_with_properties(Name(b"Span")).properties().actual_text(TextStr(text));
         }
@@ -1185,17 +1344,21 @@ impl<'r> Writer<'r> {
             };
             c.set_line_width(size * embolden_em(size)).set_line_join(pdf_writer::types::LineJoinStyle::MiterJoin);
         }
-        c.begin_text();
-        if bold {
-            c.set_text_rendering_mode(pdf_writer::types::TextRenderingMode::FillStroke);
+        let shown = placed.iter().any(|p| p.1.is_some());
+        if shown {
+            c.begin_text();
+            if bold {
+                c.set_text_rendering_mode(pdf_writer::types::TextRenderingMode::FillStroke);
+            }
+            if run.invisible {
+                c.set_text_rendering_mode(pdf_writer::types::TextRenderingMode::Invisible);
+            }
+            c.set_text_matrix([1.0, 0.0, -skew, -1.0, first.x, run.baseline]);
         }
-        if run.invisible {
-            c.set_text_rendering_mode(pdf_writer::types::TextRenderingMode::Invisible);
-        }
-        c.set_text_matrix([1.0, 0.0, -skew, -1.0, first.x, run.baseline]);
         let mut k = 0;
-        while k < placed.len() {
-            let font = placed[k].0;
+        while shown && k < placed.len() {
+            // A stretch of one font, the .notdef glyphs in it (or before it) passed over.
+            let Some(font) = placed[k..].iter().find(|p| p.1.is_some()).map(|p| p.0) else { break };
             let name = match font {
                 None => self.cid_name(run.font),
                 Some(t) => self.type3[t].name.clone(),
@@ -1209,10 +1372,12 @@ impl<'r> Writer<'r> {
             c.set_font(Name(name.as_bytes()), size);
             let mut tj = c.show_positioned();
             let mut items = tj.items();
-            while k < placed.len() && placed[k].0 == font {
+            while k < placed.len() && (placed[k].1.is_none() || placed[k].0 == font) {
                 let (_, code, width) = placed[k];
-                let bytes: Vec<u8> = if font.is_none() { (code as u16).to_be_bytes().to_vec() } else { vec![code as u8] };
-                items.show(Str(&bytes));
+                if let Some(code) = code {
+                    let bytes: Vec<u8> = if font.is_none() { (code as u16).to_be_bytes().to_vec() } else { vec![code as u8] };
+                    items.show(Str(&bytes));
+                }
                 if let Some(next) = glyphs.get(k + 1) {
                     let gap = width - (next.x - glyphs[k].x) * 1000.0 / size;
                     if gap.abs() > 1e-3 {
@@ -1224,8 +1389,13 @@ impl<'r> Writer<'r> {
             drop(items);
             tj.finish();
         }
+        if shown {
+            self.content().end_text();
+        }
+        if notdef && !run.invisible {
+            self.glyph_outlines(lists, run, paint, ctm, ink, "", true);
+        }
         let c = self.content();
-        c.end_text();
         if actual {
             c.end_marked_content();
         }
@@ -1233,16 +1403,16 @@ impl<'r> Writer<'r> {
     }
 
     /// A run drawn as its glyphs' outlines (filled with its paint, emboldened and skewed as the CPU backend draws
-    /// them), its characters as ActualText.
+    /// them), its characters as ActualText; `notdef`: only its .notdef glyphs.
     #[allow(clippy::too_many_arguments, reason = "one run's place and paint")]
-    fn glyph_outlines(&mut self, lists: &Lists, run: RunRec, paint: usize, ctm: Affine, ink: Ink, text: &str) {
+    fn glyph_outlines(&mut self, lists: &Lists, run: RunRec, paint: usize, ctm: Affine, ink: Ink, text: &str, notdef: bool) {
         let glyphs = &lists.glyphs[run.glyphs.range()];
         let size = f64::from(run.size);
         let skew = f64::from(run.synthesis.skew_x);
         let base = f64::from(run.baseline);
         let mut path = BezPath::new();
         let mut one = BezPath::new();
-        for g in glyphs {
+        for g in glyphs.iter().filter(|g| !notdef || g.id() == 0) {
             one.truncate(0);
             if !self.res.fonts.em_outline(run.font, g.id(), &mut one) {
                 continue;
@@ -1255,6 +1425,9 @@ impl<'r> Writer<'r> {
             let stroke = kurbo::Stroke::new(size * f64::from(embolden_em(run.size))).with_join(kurbo::Join::Miter);
             let outline = kurbo::stroke(path.iter(), &stroke, &kurbo::StrokeOpts::default(), 0.01);
             path.extend(outline.iter());
+        }
+        if path.elements().is_empty() {
+            return;
         }
         let actual = !text.is_empty();
         if actual {
@@ -1595,7 +1768,8 @@ impl<'r> Writer<'r> {
         f.finish();
     }
 
-    /// Writes the structure tree: the document's element over `structure`, each element's marked content by page.
+    /// Writes the structure tree: the document's element over `structure`, each element's marked content by page and
+    /// its link annotations, and the identifiers' tree.
     fn structure(&mut self, structure: &[Element], pages: &[Ref]) -> Ref {
         let root = self.alloc();
         let document = self.alloc();
@@ -1606,10 +1780,10 @@ impl<'r> Writer<'r> {
                 content.entry(c).or_default().push((page, mcid));
             }
         }
-        let mut parents: Vec<Vec<(i32, Ref)>> = vec![Vec::new(); pages.len()];
+        let mut tree = Tree { content, parents: vec![Vec::new(); pages.len()], annots: Vec::new(), ids: BTreeMap::new() };
         let mut kids = Vec::new();
         for e in structure {
-            kids.push(self.element(e, document, pages, &content, &mut parents, 1));
+            kids.push(self.element(e, document, pages, &mut tree, 1));
         }
         let mut d = self.pdf.struct_element(document);
         d.kind(StructRole::Document).parent(root);
@@ -1621,7 +1795,8 @@ impl<'r> Writer<'r> {
         }
         d.finish();
         // Each page's marked content's elements, in marked-content order: the parent tree's entries.
-        let arrays: Vec<Ref> = parents
+        let arrays: Vec<Ref> = tree
+            .parents
             .iter_mut()
             .map(|list| {
                 list.sort_by_key(|(m, _)| *m);
@@ -1630,45 +1805,64 @@ impl<'r> Writer<'r> {
                 id
             })
             .collect();
+        tree.annots.sort_unstable_by_key(|a| a.0);
         let mut r = self.pdf.indirect(root).start::<pdf_writer::writers::StructTreeRoot>();
         r.child(document);
         {
-            let mut tree = r.parent_tree();
-            let mut nums = tree.nums();
+            let mut parent_tree = r.parent_tree();
+            let mut nums = parent_tree.nums();
             for (page, &a) in arrays.iter().enumerate() {
                 nums.insert(page as i32, a);
             }
+            for &(key, element) in &tree.annots {
+                nums.insert(key, element);
+            }
         }
-        r.parent_tree_next_key(pages.len() as i32);
+        if !tree.ids.is_empty() {
+            let mut ids = r.id_tree();
+            let mut names = ids.names();
+            for (id, &element) in &tree.ids {
+                names.insert(Str(id), element);
+            }
+        }
+        r.parent_tree_next_key(self.next_key);
         r.finish();
         root
     }
 
-    fn element(
-        &mut self,
-        e: &Element,
-        parent: Ref,
-        pages: &[Ref],
-        content: &FastMap<u32, Vec<(usize, i32)>>,
-        parents: &mut [Vec<(i32, Ref)>],
-        depth: u32,
-    ) -> Ref {
+    fn element(&mut self, e: &Element, parent: Ref, pages: &[Ref], tree: &mut Tree, depth: u32) -> Ref {
         let id = self.alloc();
-        let own = |e: &Element| e.content.and_then(|c| content.get(&c)).map_or(&[][..], Vec::as_slice);
-        let (kids, marked): (Vec<Ref>, Vec<(usize, i32)>) = if depth < crate::scene::MAX_DEPTH {
-            (e.kids.iter().map(|k| self.element(k, id, pages, content, parents, depth + 1)).collect(), own(e).to_vec())
-        } else {
-            // Deeper, the element's descendants fold into it (their content marked as its), where recursing on would
-            // overflow the stack; found with a stack of their own, in reading order.
-            let (mut marked, mut todo) = (Vec::new(), vec![e]);
-            while let Some(x) = todo.pop() {
-                marked.extend_from_slice(own(x));
-                todo.extend(x.kids.iter().rev());
+        // The element's kids in order: marked content (page, marked-content id), elements, annotations.
+        let mut kids: Vec<Kid> = Vec::new();
+        if depth < crate::scene::MAX_DEPTH {
+            for k in &e.kids {
+                match k {
+                    Node::Content(c) => kids.extend(tree.content.get(c).into_iter().flatten().map(|&(p, m)| Kid::Marked(p, m))),
+                    Node::Element(k) => {
+                        let r = self.element(k, id, pages, tree, depth + 1);
+                        kids.push(Kid::Element(r));
+                    }
+                    Node::Annotation(l) => kids.extend(self.annots.get(l).into_iter().flatten().map(|&(p, r, key)| Kid::Annotation(p, r, key))),
+                }
             }
-            (Vec::new(), marked)
-        };
-        for &(page, mcid) in &marked {
-            parents[page].push((mcid, id));
+        } else {
+            // Deeper, the element's descendants fold into it (their content and annotations as its), where recursing
+            // on would overflow the stack; found with a stack of their own, in reading order.
+            let mut todo: Vec<&Node> = e.kids.iter().rev().collect();
+            while let Some(x) = todo.pop() {
+                match x {
+                    Node::Content(c) => kids.extend(tree.content.get(c).into_iter().flatten().map(|&(p, m)| Kid::Marked(p, m))),
+                    Node::Element(k) => todo.extend(k.kids.iter().rev()),
+                    Node::Annotation(l) => kids.extend(self.annots.get(l).into_iter().flatten().map(|&(p, r, key)| Kid::Annotation(p, r, key))),
+                }
+            }
+        }
+        for k in &kids {
+            match *k {
+                Kid::Marked(page, mcid) => tree.parents[page].push((mcid, id)),
+                Kid::Annotation(_, _, key) => tree.annots.push((key, id)),
+                Kid::Element(_) => {}
+            }
         }
         let role = match &e.kind {
             Kind::Paragraph => StructRole::P,
@@ -1678,30 +1872,89 @@ impl<'r> Writer<'r> {
             Kind::Heading(4) => StructRole::H4,
             Kind::Heading(5) => StructRole::H5,
             Kind::Heading(_) => StructRole::H6,
-            Kind::List => StructRole::L,
+            Kind::List(_) => StructRole::L,
             Kind::ListItem => StructRole::LI,
+            Kind::Label => StructRole::Lbl,
             Kind::ListBody => StructRole::LBody,
-            Kind::Table => StructRole::Table,
+            Kind::Table(_) => StructRole::Table,
             Kind::Row => StructRole::TR,
-            Kind::HeaderCell => StructRole::TH,
-            Kind::Cell => StructRole::TD,
+            Kind::Cell(c) if c.scope.is_some() => StructRole::TH,
+            Kind::Cell(_) => StructRole::TD,
             Kind::Figure(_) => StructRole::Figure,
+            Kind::Link => StructRole::Link,
+            Kind::Note => StructRole::Note,
+            Kind::Division => StructRole::Div,
+            Kind::Span => StructRole::Span,
         };
         let mut s = self.pdf.struct_element(id);
         s.kind(role).parent(parent);
-        if let Kind::Figure(Some(alt)) = &e.kind {
-            s.alt(TextStr(alt));
+        if let Some(name) = &e.id
+            && !tree.ids.contains_key(name.as_bytes())
+        {
+            s.id(Str(name.as_bytes()));
+            tree.ids.insert(name.as_bytes().to_vec(), id);
         }
-        if e.kind == Kind::HeaderCell {
-            s.attributes().push().table().scope(pdf_writer::types::TableHeaderScope::Column);
+        if let Some(lang) = &e.lang {
+            s.lang(TextStr(lang));
+        }
+        match &e.kind {
+            Kind::Figure(Some(alt)) => {
+                s.alt(TextStr(alt));
+            }
+            Kind::List(n) if *n != Numbering::None => {
+                use pdf_writer::types::ListNumbering as L;
+                let numbering = match n {
+                    Numbering::None => L::None,
+                    Numbering::Disc => L::Disc,
+                    Numbering::Circle => L::Circle,
+                    Numbering::Square => L::Square,
+                    Numbering::Decimal => L::Decimal,
+                    Numbering::LowerRoman => L::LowerRoman,
+                    Numbering::UpperRoman => L::UpperRoman,
+                    Numbering::LowerAlpha => L::LowerAlpha,
+                    Numbering::UpperAlpha => L::UpperAlpha,
+                };
+                s.attributes().push().list().list_numbering(numbering);
+            }
+            Kind::Table(Some(summary)) => {
+                s.attributes().push().table().summary(TextStr(summary));
+            }
+            Kind::Cell(c) if c.scope.is_some() || !c.headers.is_empty() || c.row_span > 1 || c.col_span > 1 => {
+                let mut attributes = s.attributes();
+                let mut t = attributes.push().table();
+                if let Some(scope) = c.scope {
+                    t.scope(match scope {
+                        Scope::Row => pdf_writer::types::TableHeaderScope::Row,
+                        Scope::Column => pdf_writer::types::TableHeaderScope::Column,
+                        Scope::Both => pdf_writer::types::TableHeaderScope::Both,
+                    });
+                }
+                if c.row_span > 1 {
+                    t.row_span(c.row_span.min(i32::MAX as u32) as i32);
+                }
+                if c.col_span > 1 {
+                    t.col_span(c.col_span.min(i32::MAX as u32) as i32);
+                }
+                if !c.headers.is_empty() {
+                    t.headers().items(c.headers.iter().map(|h| Str(h.as_bytes())));
+                }
+            }
+            _ => {}
         }
         {
             let mut children = s.children();
-            for &(page, mcid) in &marked {
-                children.marked_content_ref().page(pages[page]).marked_content_id(mcid);
-            }
-            for &k in &kids {
-                children.struct_element(k);
+            for k in &kids {
+                match *k {
+                    Kid::Marked(page, mcid) => {
+                        children.marked_content_ref().page(pages[page]).marked_content_id(mcid);
+                    }
+                    Kid::Element(r) => {
+                        children.struct_element(r);
+                    }
+                    Kid::Annotation(page, r, _) => {
+                        children.object_ref().page(pages[page]).object(r);
+                    }
+                }
             }
         }
         s.finish();
@@ -1794,9 +2047,22 @@ impl<'r> Writer<'r> {
         }
         di.finish();
         let (metadata, icc) = (self.alloc(), self.alloc());
+        let xmp = xmp(info, &keywords);
+        self.pdf.metadata(metadata, xmp.as_bytes());
+        // The named destinations, by name (a name tree's order; the first of a name wins).
+        let mut dests: BTreeMap<&[u8], Ref> = BTreeMap::new();
+        let mut places = Vec::new();
+        for (name, page, x, y) in &self.dests {
+            if !dests.contains_key(name.as_bytes()) {
+                let r = self.next.bump();
+                dests.insert(name.as_bytes(), r);
+                places.push((r, *page, *x, *y));
+            }
+        }
+        for &(r, page, x, y) in &places {
+            self.pdf.indirect(r).start::<pdf_writer::writers::Destination>().page(page).xyz(x, y, None);
+        }
         if info.archival {
-            let xmp = xmp(info, &keywords);
-            self.pdf.metadata(metadata, xmp.as_bytes());
             let profile = srgb_profile();
             self.pdf.icc_profile(icc, &profile).n(3).range([0.0, 1.0, 0.0, 1.0, 0.0, 1.0]);
         }
@@ -1811,8 +2077,16 @@ impl<'r> Writer<'r> {
         if let Some(o) = outline {
             c.outlines(o);
         }
+        if !dests.is_empty() {
+            let mut names = c.names();
+            let mut tree = names.destinations();
+            let mut entries = tree.names();
+            for (name, &r) in &dests {
+                entries.insert(Str(name), r);
+            }
+        }
+        c.metadata(metadata);
         if info.archival {
-            c.metadata(metadata);
             c.output_intents()
                 .push()
                 .subtype(OutputIntentSubtype::PDFA)
@@ -1826,6 +2100,37 @@ impl<'r> Writer<'r> {
         let id = Hasher::finish(&h).to_be_bytes().repeat(2);
         self.pdf.set_file_id((id.clone(), id));
     }
+}
+
+/// What writing the structure tree gathers: each content id's marked content, each page's marked content's
+/// elements, each annotation's parent tree key and element, and the elements by identifier.
+struct Tree {
+    content: FastMap<u32, Vec<(usize, i32)>>,
+    parents: Vec<Vec<(i32, Ref)>>,
+    annots: Vec<(i32, Ref)>,
+    ids: BTreeMap<Vec<u8>, Ref>,
+}
+
+/// A structure element's kid as written: marked content (page, marked-content id), an element, or an annotation
+/// (page, object, parent tree key).
+enum Kid {
+    Marked(usize, i32),
+    Element(Ref),
+    Annotation(usize, Ref, i32),
+}
+
+/// A URI as PDF's URI action takes it: ASCII, other bytes percent-encoded.
+fn ascii_uri(uri: &str) -> Vec<u8> {
+    let mut out = Vec::with_capacity(uri.len());
+    for &b in uri.as_bytes() {
+        if b.is_ascii_graphic() {
+            out.push(b);
+        } else {
+            const HEX: &[u8; 16] = b"0123456789ABCDEF";
+            out.extend_from_slice(&[b'%', HEX[usize::from(b >> 4)], HEX[usize::from(b & 15)]]);
+        }
+    }
+    out
 }
 
 /// Writes a canvas's resources into a resource dictionary.
@@ -2242,7 +2547,7 @@ fn escape(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
 }
 
-/// The XMP metadata PDF/A-2b asks for, matching the document information.
+/// The XMP metadata PDF/UA-1 and PDF/A-2b ask for, matching the document information.
 fn xmp(info: &Info, keywords: &str) -> String {
     let date = info
         .created
@@ -2253,7 +2558,7 @@ fn xmp(info: &Info, keywords: &str) -> String {
     let id = format!("{:016x}{:016x}", Hasher::finish(&h), Hasher::finish(&h).rotate_left(17));
     let uuid = format!("uuid:{}-{}-{}-{}-{}", &id[0..8], &id[8..12], &id[12..16], &id[16..20], &id[20..32]);
     let mut x = String::from(
-        "<?xpacket begin=\"\u{feff}\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>\n<x:xmpmeta xmlns:x=\"adobe:ns:meta/\">\n<rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">\n<rdf:Description rdf:about=\"\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:xmp=\"http://ns.adobe.com/xap/1.0/\" xmlns:pdf=\"http://ns.adobe.com/pdf/1.3/\" xmlns:xmpMM=\"http://ns.adobe.com/xap/1.0/mm/\" xmlns:pdfaid=\"http://www.aiim.org/pdfa/ns/id/\">\n",
+        "<?xpacket begin=\"\u{feff}\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>\n<x:xmpmeta xmlns:x=\"adobe:ns:meta/\">\n<rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">\n<rdf:Description rdf:about=\"\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:xmp=\"http://ns.adobe.com/xap/1.0/\" xmlns:pdf=\"http://ns.adobe.com/pdf/1.3/\" xmlns:xmpMM=\"http://ns.adobe.com/xap/1.0/mm/\" xmlns:pdfaid=\"http://www.aiim.org/pdfa/ns/id/\" xmlns:pdfuaid=\"http://www.aiim.org/pdfua/ns/id/\" xmlns:pdfaExtension=\"http://www.aiim.org/pdfa/ns/extension/\" xmlns:pdfaSchema=\"http://www.aiim.org/pdfa/ns/schema#\" xmlns:pdfaProperty=\"http://www.aiim.org/pdfa/ns/property#\">\n",
     );
     let _ = writeln!(x, "<dc:format>application/pdf</dc:format>");
     let _ = writeln!(x, "<dc:title><rdf:Alt><rdf:li xml:lang=\"x-default\">{}</rdf:li></rdf:Alt></dc:title>", escape(&info.title));
@@ -2269,7 +2574,23 @@ fn xmp(info: &Info, keywords: &str) -> String {
         let _ = writeln!(x, "<pdf:Keywords>{}</pdf:Keywords>", escape(keywords));
     }
     let _ = writeln!(x, "<xmpMM:DocumentID>{uuid}</xmpMM:DocumentID>\n<xmpMM:InstanceID>{uuid}</xmpMM:InstanceID>");
-    x.push_str("<pdfaid:part>2</pdfaid:part>\n<pdfaid:conformance>B</pdfaid:conformance>\n</rdf:Description>\n</rdf:RDF>\n</x:xmpmeta>\n<?xpacket end=\"w\"?>");
+    // PDF/UA-1, and for PDF/A-2b the schema of its identifier (not one PDF/A predefines).
+    x.push_str("<pdfuaid:part>1</pdfuaid:part>\n");
+    if info.archival {
+        x.push_str(concat!(
+            "<pdfaid:part>2</pdfaid:part>\n<pdfaid:conformance>B</pdfaid:conformance>\n",
+            "<pdfaExtension:schemas><rdf:Bag><rdf:li rdf:parseType=\"Resource\">",
+            "<pdfaSchema:schema>PDF/UA Universal Accessibility Schema</pdfaSchema:schema>",
+            "<pdfaSchema:namespaceURI>http://www.aiim.org/pdfua/ns/id/</pdfaSchema:namespaceURI>",
+            "<pdfaSchema:prefix>pdfuaid</pdfaSchema:prefix>",
+            "<pdfaSchema:property><rdf:Seq><rdf:li rdf:parseType=\"Resource\">",
+            "<pdfaProperty:name>part</pdfaProperty:name><pdfaProperty:valueType>Integer</pdfaProperty:valueType>",
+            "<pdfaProperty:category>internal</pdfaProperty:category>",
+            "<pdfaProperty:description>Indicates, which part of ISO 14289 standard is followed</pdfaProperty:description>",
+            "</rdf:li></rdf:Seq></pdfaSchema:property></rdf:li></rdf:Bag></pdfaExtension:schemas>\n",
+        ));
+    }
+    x.push_str("</rdf:Description>\n</rdf:RDF>\n</x:xmpmeta>\n<?xpacket end=\"w\"?>");
     x
 }
 
@@ -2367,7 +2688,13 @@ mod invisible_tests {
         let mut rec = Recorder::new();
         let glyphs = [(36, 10.0), (37, 17.0)];
         rec.invisible_text(&res.fonts, &GlyphRun { font, size: 12.0, baseline: 30.0, glyphs: &glyphs, synthesis }, "AB", &[0, 1]);
-        let page = Page { width: 100.0, height: 60.0, parts: vec![(Mark::Content(1), Recorder::finish(&mut rec))] };
+        let page = Page {
+            width: 100.0,
+            height: 60.0,
+            parts: vec![(Mark::Content(1), Recorder::finish(&mut rec))],
+            links: Vec::new(),
+            destinations: Vec::new(),
+        };
         let bytes = write(&res, &[page], &[], &[], &Info::default()).expect("writes").bytes;
         let mut content = String::new();
         let mut rest = &bytes[..];

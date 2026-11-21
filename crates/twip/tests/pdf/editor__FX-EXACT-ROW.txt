@@ -611,7 +611,9 @@ structure
       TR
         TD
           P
-            Figure Alt="Picture"
+        TD
+          P
+            Figure
         TD
           P
       TR

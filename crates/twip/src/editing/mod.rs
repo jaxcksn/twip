@@ -60,7 +60,7 @@ mod style_dialog;
 mod styles;
 pub use styles::formats_a_style;
 pub mod sub_templates;
-pub mod table;
+pub use crate::docx::grid as table;
 mod table_cells;
 pub mod table_format;
 mod table_handles;

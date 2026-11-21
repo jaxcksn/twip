@@ -727,7 +727,7 @@ page 2 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 2 >> BDC
   op q
   op 0 0 0 rg
   op BT
@@ -737,7 +737,7 @@ page 2 612 792
   op ET
   op Q
   op EMC
-  op /P << /MCID 2 >> BDC
+  op /P << /MCID 3 >> BDC
   op q
   op /Span << /ActualText <70726f6772616d73206164766572746973696e67206120612066696775726573206164766572746973696e6720726576697365642066726f6d2e20> >> BDC
   op 0 0 0 rg
@@ -749,7 +749,7 @@ page 2 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 4 >> BDC
   op q
   op 0 0 0 rg
   op BT
@@ -759,7 +759,7 @@ page 2 612 792
   op ET
   op Q
   op EMC
-  op /P << /MCID 3 >> BDC
+  op /P << /MCID 5 >> BDC
   op q
   op /Span << /ActualText <66756e64696e6720746865207265766973656420747261696e696e672070726f6772616d73207468652066756e64696e67206275646765742e20> >> BDC
   op 0 0 0 rg
@@ -771,7 +771,7 @@ page 2 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 6 >> BDC
   op q
   op 0 0 0 rg
   op BT
@@ -781,7 +781,7 @@ page 2 612 792
   op ET
   op Q
   op EMC
-  op /P << /MCID 4 >> BDC
+  op /P << /MCID 7 >> BDC
   op q
   op /Span << /ActualText <747261696e696e67207072696e7420717561727465726c792074686520626f617264207468617420746865206164766572746973696e672e20> >> BDC
   op 0 0 0 rg
@@ -793,7 +793,7 @@ page 2 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 8 >> BDC
   op q
   op 0 0 0 rg
   op BT
@@ -803,7 +803,7 @@ page 2 612 792
   op ET
   op Q
   op EMC
-  op /P << /MCID 5 >> BDC
+  op /P << /MCID 9 >> BDC
   op q
   op /Span << /ActualText <6164766572746973696e6720666967757265732066696775726573207468617420747261696e696e67206f7574726561636820636f6d6d697474656520626f6172642e20> >> BDC
   op 0 0 0 rg
@@ -815,7 +815,7 @@ page 2 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 10 >> BDC
   op q
   op 0 0 0 rg
   op BT
@@ -825,7 +825,7 @@ page 2 612 792
   op ET
   op Q
   op EMC
-  op /P << /MCID 6 >> BDC
+  op /P << /MCID 11 >> BDC
   op q
   op /Span << /ActualText <626f61726420726576697365642066726f6d2066726f6d20747261696e696e672073686966747320746865207768696c652e20> >> BDC
   op 0 0 0 rg
@@ -837,7 +837,7 @@ page 2 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 7 >> BDC
+  op /P << /MCID 12 >> BDC
   op q
   op /Span << /ActualText <66726f6d2061207468652e20> >> BDC
   op 0 0 0 rg
@@ -849,7 +849,7 @@ page 2 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 8 >> BDC
+  op /P << /MCID 13 >> BDC
   op q
   op /Span << /ActualText <74686520636f6d6d697474656520> >> BDC
   op 0 0 0 rg
@@ -871,7 +871,7 @@ page 2 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 9 >> BDC
+  op /P << /MCID 14 >> BDC
   op q
   op /Span << /ActualText <72657669736564206f7574726561636820> >> BDC
   op 0 0 0 rg
@@ -893,7 +893,7 @@ page 2 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 10 >> BDC
+  op /P << /MCID 15 >> BDC
   op q
   op /Span << /ActualText <6f75747265616368207265766973656420> >> BDC
   op 0 0 0 rg
@@ -977,7 +977,7 @@ page 2 612 792
   op f
   op Q
   op EMC
-  op /P << /MCID 11 >> BDC
+  op /P << /MCID 16 >> BDC
   op q
   op /Span << /ActualText <66696775726573207265766973656420> >> BDC
   op 0 0 0 rg
@@ -999,7 +999,7 @@ page 2 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 12 >> BDC
+  op /P << /MCID 17 >> BDC
   op q
   op /Span << /ActualText <6164766572746973696e67207072696e7420> >> BDC
   op 0 0 0 rg
@@ -1021,7 +1021,7 @@ page 2 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 13 >> BDC
+  op /P << /MCID 18 >> BDC
   op q
   op /Span << /ActualText <616e642074686520746f776172642e20> >> BDC
   op 0 0 0 rg
@@ -1033,7 +1033,7 @@ page 2 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 14 >> BDC
+  op /P << /MCID 19 >> BDC
   op q
   op /Span << /ActualText <717561727465726c792070726f6772616d7320> >> BDC
   op 0 0 0 rg
@@ -1117,7 +1117,7 @@ page 2 612 792
   op f
   op Q
   op EMC
-  op /P << /MCID 15 >> BDC
+  op /P << /MCID 20 >> BDC
   op q
   op /Span << /ActualText <7265766973656420617070726f76656420> >> BDC
   op 0 0 0 rg
@@ -1139,7 +1139,7 @@ page 2 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 16 >> BDC
+  op /P << /MCID 21 >> BDC
   op q
   op /Span << /ActualText <746f7761726420616e6420> >> BDC
   op 0 0 0 rg
@@ -1161,7 +1161,7 @@ page 2 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 17 >> BDC
+  op /P << /MCID 22 >> BDC
   op q
   op /Span << /ActualText <746f776172642066756e64696e6720> >> BDC
   op 0 0 0 rg
@@ -1183,7 +1183,7 @@ page 2 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 18 >> BDC
+  op /P << /MCID 23 >> BDC
   op q
   op /Span << /ActualText <7265766973656420616e6420> >> BDC
   op 0 0 0 rg
@@ -1267,7 +1267,7 @@ page 2 612 792
   op f
   op Q
   op EMC
-  op /P << /MCID 19 >> BDC
+  op /P << /MCID 24 >> BDC
   op q
   op /Span << /ActualText <7072696e742074686520> >> BDC
   op 0 0 0 rg
@@ -1289,7 +1289,7 @@ page 2 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 20 >> BDC
+  op /P << /MCID 25 >> BDC
   op q
   op /Span << /ActualText <717561727465726c79207768696c6520> >> BDC
   op 0 0 0 rg
@@ -1311,7 +1311,7 @@ page 2 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 21 >> BDC
+  op /P << /MCID 26 >> BDC
   op q
   op /Span << /ActualText <746f7761726420617070726f76656420> >> BDC
   op 0 0 0 rg
@@ -1333,7 +1333,7 @@ page 2 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 22 >> BDC
+  op /P << /MCID 27 >> BDC
   op q
   op /Span << /ActualText <617070726f76656420617070726f76656420> >> BDC
   op 0 0 0 rg
@@ -1417,7 +1417,7 @@ page 2 612 792
   op f
   op Q
   op EMC
-  op /P << /MCID 23 >> BDC
+  op /P << /MCID 28 >> BDC
   op q
   op /Span << /ActualText <74686520726576696577656420> >> BDC
   op 0 0 0 rg
@@ -1439,7 +1439,7 @@ page 2 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 24 >> BDC
+  op /P << /MCID 29 >> BDC
   op q
   op /Span << /ActualText <6669677572657320616e64207468652e20> >> BDC
   op 0 0 0 rg
@@ -1451,7 +1451,7 @@ page 2 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 25 >> BDC
+  op /P << /MCID 30 >> BDC
   op q
   op /Span << /ActualText <627564676574207072696e7420> >> BDC
   op 0 0 0 rg
@@ -1473,7 +1473,7 @@ page 2 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 26 >> BDC
+  op /P << /MCID 31 >> BDC
   op q
   op /Span << /ActualText <626f61726420746865207768696c652e20> >> BDC
   op 0 0 0 rg
@@ -1547,7 +1547,7 @@ page 2 612 792
   op f
   op Q
   op EMC
-  op /P << /MCID 27 >> BDC
+  op /P << /MCID 32 >> BDC
   op q
   op /Span << /ActualText <717561727465726c7920747261696e696e6720> >> BDC
   op 0 0 0 rg
@@ -1569,7 +1569,7 @@ page 2 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 28 >> BDC
+  op /P << /MCID 33 >> BDC
   op q
   op /Span << /ActualText <7768696c6520626f617264207468652e20> >> BDC
   op 0 0 0 rg
@@ -1581,7 +1581,7 @@ page 2 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 29 >> BDC
+  op /P << /MCID 34 >> BDC
   op q
   op /Span << /ActualText <617070726f7665642074686520> >> BDC
   op 0 0 0 rg
@@ -1603,7 +1603,7 @@ page 2 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 30 >> BDC
+  op /P << /MCID 35 >> BDC
   op q
   op /Span << /ActualText <6164766572746973696e672074686520> >> BDC
   op 0 0 0 rg
@@ -1707,7 +1707,7 @@ page 2 612 792
   op f
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 36 >> BDC
   op q
   op /Span << /ActualText <31> >> BDC
   op 0 0 0 rg
@@ -1719,7 +1719,7 @@ page 2 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 31 >> BDC
+  op /P << /MCID 37 >> BDC
   op q
   op /Span << /ActualText <617070726f76656420747261696e696e672062756467657420612066726f6d20616e642e20> >> BDC
   op 0 0 0 rg
@@ -1731,7 +1731,7 @@ page 2 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 38 >> BDC
   op q
   op /Span << /ActualText <32> >> BDC
   op 0 0 0 rg
@@ -1743,7 +1743,7 @@ page 2 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 32 >> BDC
+  op /P << /MCID 39 >> BDC
   op q
   op /Span << /ActualText <73686966747320617070726f766564207468652070726f6772616d732070726f6772616d732070726f6772616d732e20> >> BDC
   op 0 0 0 rg
@@ -1755,7 +1755,7 @@ page 2 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 40 >> BDC
   op q
   op /Span << /ActualText <33> >> BDC
   op 0 0 0 rg
@@ -1767,7 +1767,7 @@ page 2 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 33 >> BDC
+  op /P << /MCID 41 >> BDC
   op q
   op /Span << /ActualText <6669677572657320636f6d6d756e6974792070726f6772616d732074686520717561727465726c7920726576697365642e20> >> BDC
   op 0 0 0 rg
@@ -1779,7 +1779,7 @@ page 2 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 42 >> BDC
   op q
   op /Span << /ActualText <34> >> BDC
   op 0 0 0 rg
@@ -1791,7 +1791,7 @@ page 2 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 34 >> BDC
+  op /P << /MCID 43 >> BDC
   op q
   op /Span << /ActualText <7072696e742066756e64696e672062756467657420636f6d6d69747465652074686520617070726f7665642e20> >> BDC
   op 0 0 0 rg
@@ -1803,7 +1803,7 @@ page 2 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 35 >> BDC
+  op /P << /MCID 44 >> BDC
   op q
   op /Span << /ActualText <436861707465722032> >> BDC
   op 0.18 0.33 0.59 rg
@@ -1815,7 +1815,7 @@ page 2 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 36 >> BDC
+  op /P << /MCID 45 >> BDC
   op q
   op /Span << /ActualText <7072696e74207768696c6520746865206f757472656163682066696775726573207368696674732066756e64696e672073686966747320636f6d6d697474656520746f7761726420726576696577656420> >> BDC
   op 0 0 0 rg
@@ -1877,7 +1877,7 @@ page 2 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 37 >> BDC
+  op /P << /MCID 46 >> BDC
   op q
   op /Span << /ActualText <7072696e7420666967757265732074686174207265766973656420736869667473206f7574726561636820746861742066726f6d2066726f6d2066726f6d206120626f6172642e206f7574726561636820> >> BDC
   op 0 0 0 rg
@@ -1939,7 +1939,7 @@ page 2 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 38 >> BDC
+  op /P << /MCID 47 >> BDC
   op q
   op /Span << /ActualText <7072696e74207072696e74207072696e7420636f6d6d697474656520747261696e696e6720626f61726420636f6d6d6974746565206120746865206164766572746973696e672066756e64696e6720> >> BDC
   op 0 0 0 rg
@@ -8537,16 +8537,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -8603,14 +8608,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -8623,16 +8632,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -8689,14 +8703,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -8709,16 +8727,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -8775,14 +8798,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -8795,16 +8822,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -8861,14 +8893,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -8881,16 +8917,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -8947,14 +8988,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -8967,16 +9012,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -9033,14 +9083,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -9053,16 +9107,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -9119,14 +9178,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -9139,16 +9202,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -9205,14 +9273,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -9225,16 +9297,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -9291,14 +9368,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -9311,16 +9392,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -9377,14 +9463,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -9397,16 +9487,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -9463,14 +9558,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -9483,16 +9582,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -9549,14 +9653,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -9569,16 +9677,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -9635,14 +9748,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -9655,16 +9772,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -9721,14 +9843,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -9741,16 +9867,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -9807,14 +9938,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -9827,16 +9962,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -9893,14 +10033,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -9913,16 +10057,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -9979,14 +10128,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -9999,16 +10152,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -10065,14 +10223,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -10085,16 +10247,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -10151,14 +10318,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -10171,16 +10342,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -10237,14 +10413,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -10257,16 +10437,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -10323,14 +10508,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -10343,16 +10532,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -10409,14 +10603,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -10429,16 +10627,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -10495,14 +10698,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -10515,16 +10722,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -10581,14 +10793,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -10601,16 +10817,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -10667,14 +10888,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -10687,16 +10912,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -10753,14 +10983,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -10773,16 +11007,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -10839,14 +11078,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -10859,16 +11102,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -10925,14 +11173,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -10945,16 +11197,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -11011,14 +11268,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -11031,16 +11292,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -11097,14 +11363,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -11117,16 +11387,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -11183,14 +11458,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -11203,16 +11482,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -11269,14 +11553,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -11289,16 +11577,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -11355,14 +11648,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -11375,16 +11672,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -11441,14 +11743,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -11461,16 +11767,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -11527,14 +11838,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -11547,16 +11862,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -11613,14 +11933,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -11633,16 +11957,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -11699,14 +12028,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -11719,16 +12052,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -11785,14 +12123,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -11805,16 +12147,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -11871,14 +12218,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -11891,16 +12242,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -11957,14 +12313,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -11977,16 +12337,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -12043,14 +12408,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -12063,16 +12432,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -12129,14 +12503,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -12149,16 +12527,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -12215,14 +12598,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -12235,16 +12622,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -12301,14 +12693,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -12321,16 +12717,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -12387,14 +12788,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -12407,16 +12812,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -12473,14 +12883,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -12493,16 +12907,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -12559,14 +12978,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -12579,16 +13002,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -12645,14 +13073,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -12665,16 +13097,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -12731,14 +13168,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -12751,16 +13192,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -12817,14 +13263,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -12837,16 +13287,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -12903,14 +13358,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -12923,16 +13382,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -12989,14 +13453,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -13009,16 +13477,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -13075,14 +13548,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -13095,16 +13572,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -13161,14 +13643,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -13181,16 +13667,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -13247,14 +13738,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -13267,16 +13762,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -13333,14 +13833,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -13353,16 +13857,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -13419,14 +13928,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -13439,16 +13952,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -13505,14 +14023,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -13525,16 +14047,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -13591,14 +14118,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     H1
     P
@@ -13611,16 +14142,21 @@ structure
     P
     P
     P
-    L
+    L ListNumbering=/Disc
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
     Table
       TR
@@ -13677,14 +14213,18 @@ structure
           P
         TD
           P
-    L
+    L ListNumbering=/Decimal
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
       LI
+        Lbl
         LBody
 outline
   "Chapter 1"

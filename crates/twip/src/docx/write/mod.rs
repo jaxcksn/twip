@@ -1893,7 +1893,8 @@ impl<'a, 'i> Saver<'a, 'i> {
                     let mut cells_open = Vec::new();
                     for c in &row.cells {
                         wrap(&mut out, &c.controls, &mut cells_open, self);
-                        out.push_str(&format!("<{w}tc>{}", tc_pr(&w, c, self.people, &self.cx)));
+                        let id = c.ids.as_ref().and_then(|i| i.id.as_deref()).map(|id| format!(" {w}id=\"{}\"", props::esc(id))).unwrap_or_default();
+                        out.push_str(&format!("<{w}tc{id}>{}", tc_pr(&w, c, self.people, &self.cx)));
                         out.push_str(&self.blocks_xml(orig, &c.blocks)?);
                         out.push_str(&format!("</{w}tc>"));
                     }
@@ -2122,10 +2123,24 @@ impl<'a, 'i> Saver<'a, 'i> {
                 // Shading and vertical alignment that table formatting set as direct properties (resolved values that
                 // a style region gives aren't written).
                 let (da, db) = (Props::parse(a.direct.0.as_deref(), "tcPr", &self.cx), Props::parse(b.direct.0.as_deref(), "tcPr", &self.cx));
-                for name in ["tcBorders", "shd", "noWrap", "tcMar", "textDirection", "tcFitText", "vAlign", "hideMark", "headers"] {
+                for name in ["tcBorders", "shd", "noWrap", "tcMar", "textDirection", "tcFitText", "vAlign", "hideMark"] {
                     if da.get(name) != db.get(name) {
                         fix.push((name, db.get(name).unwrap_or("").to_string(), revisions::before(revisions::TCPR, name)));
                     }
+                }
+                // Its header cells, and its own id (`w:tc/@w:id`).
+                fn headers(c: &Cell) -> &[String] {
+                    c.ids.as_ref().map_or(&[][..], |i| i.headers.as_slice())
+                }
+                if headers(a) != headers(b) {
+                    fix.push(("headers", header_refs(&w, b).unwrap_or_default(), revisions::before(revisions::TCPR, "headers")));
+                }
+                let id = |c: &Cell| c.ids.as_ref().and_then(|i| i.id.clone());
+                if id(a) != id(b) {
+                    let (start, at) = (tc.range().start, self.open_end(*tc));
+                    let open = strip_attr(&self.xml[start..at], "id");
+                    let attr = id(b).map(|v| format!(" {w}id=\"{}\"", props::esc(&v))).unwrap_or_default();
+                    out.push((start..at, format!("{}{attr}>", open.trim_end_matches('>'))));
                 }
                 // The cell's insertion, deletion or merge, and its property change.
                 if a.rev != b.rev {
@@ -5143,6 +5158,14 @@ fn tc_pr(w: &str, c: &Cell, people: &People, cx: &Cx) -> String {
         }
         // A Word 97 horizontal merge is read as a span.
         p.remove("hMerge");
+        // The header cells as read, unless the model's differ from what the reader took of them.
+        let read = p.get("headers").map(listed_headers).unwrap_or_default();
+        if read != c.ids.as_ref().map_or(&[][..], |i| i.headers.as_slice()) {
+            match header_refs(w, c) {
+                Some(x) => p.set("headers", x),
+                None => p.remove("headers"),
+            }
+        }
         match c.v_merge {
             VMerge::Restart => p.set("vMerge", format!("<{w}vMerge {w}val=\"restart\"/>")),
             VMerge::Continue => p.set("vMerge", format!("<{w}vMerge/>")),
@@ -5203,11 +5226,34 @@ fn tc_pr(w: &str, c: &Cell, people: &People, cx: &Cx) -> String {
     if c.hide_mark {
         s.push_str(&format!("<{w}hideMark/>"));
     }
+    s.push_str(&header_refs(w, c).unwrap_or_default());
     for (_, tag) in revisions::cell_marks(w, &c.rev, people) {
         s.push_str(&tag);
     }
     s.push_str(&format!("</{w}tcPr>"));
     s
+}
+
+/// The header cells a `w:headers` element lists, as the reader takes them (at most
+/// [`crate::docx::MAX_CELL_HEADERS`]).
+fn listed_headers(xml: &str) -> Vec<String> {
+    let unescape = |v: &str| v.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&apos;", "'").replace("&amp;", "&");
+    xml.split('<')
+        .filter(|t| t.split_whitespace().next().is_some_and(|name| name.rsplit(':').next() == Some("header")))
+        .filter_map(|t| {
+            let at = t.find(":val=\"").map(|i| i + 6).or_else(|| t.find(" val=\"").map(|i| i + 6))?;
+            let v = &t[at..at + t[at..].find('"')?];
+            Some(unescape(v).trim().to_string()).filter(|v| !v.is_empty())
+        })
+        .take(crate::docx::MAX_CELL_HEADERS)
+        .collect()
+}
+
+/// A cell's `w:headers`: the header cells it lists, when it lists any.
+fn header_refs(w: &str, c: &Cell) -> Option<String> {
+    let ids = c.ids.as_ref().filter(|i| !i.headers.is_empty())?;
+    let list: String = ids.headers.iter().map(|h| format!("<{w}header {w}val=\"{}\"/>", props::esc(h))).collect();
+    Some(format!("<{w}headers>{list}</{w}headers>"))
 }
 
 /// A start tag without the attribute `*:name="..."`.

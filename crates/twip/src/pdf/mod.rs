@@ -20,8 +20,10 @@
 
 pub(crate) mod encrypt;
 pub(crate) mod export;
+mod mark;
 #[cfg(test)]
-mod output;
+pub(crate) mod output;
+mod tags;
 #[cfg(test)]
 pub(crate) mod tests;
 

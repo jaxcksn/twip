@@ -16,7 +16,7 @@ page 1 612 792
   text notice claim team export staff newsletter review matter presenter 
   text advisor. Account served savings pilot.
   op 1 0 0 -1 0 792 cm
-  op /P << /MCID 0 >> BDC
+  op /Artifact << /Type /Pagination /Subtype /Header >> BDC
   op q
   op 1 0 0 1 156 283.5 cm
   op q
@@ -39,7 +39,7 @@ page 1 612 792
   op Q
   op Q
   op EMC
-  op /P << /MCID 1 >> BDC
+  op /P << /MCID 0 >> BDC
   op q
   op 0 0 0 rg
   op 0 0 0 RG
@@ -53,7 +53,7 @@ page 1 612 792
   op ET
   op Q
   op EMC
-  op /P << /MCID 2 >> BDC
+  op /P << /MCID 1 >> BDC
   op q
   op 0 0 0 rg
   op BT
@@ -127,7 +127,7 @@ page 1 612 792
   op ET
   op Q
   op EMC
-  op /P << /MCID 3 >> BDC
+  op /P << /MCID 2 >> BDC
   op q
   op 0 0 0 rg
   op BT
@@ -186,7 +186,7 @@ page 2 612 792
   text regional maintenance accessibility tax finds record proposal denied 
   text contract onboarding. Support network scheduled trend.
   op 1 0 0 -1 0 792 cm
-  op /P << /MCID 0 >> BDC
+  op /Artifact << /Type /Pagination /Subtype /Header >> BDC
   op q
   op 1 0 0 1 156 283.5 cm
   op q
@@ -209,7 +209,7 @@ page 2 612 792
   op Q
   op Q
   op EMC
-  op /P << /MCID 1 >> BDC
+  op /P << /MCID 0 >> BDC
   op q
   op 0 0 0 rg
   op 0 0 0 RG
@@ -223,7 +223,7 @@ page 2 612 792
   op ET
   op Q
   op EMC
-  op /P << /MCID 2 >> BDC
+  op /P << /MCID 1 >> BDC
   op q
   op 0 0 0 rg
   op BT
@@ -297,7 +297,7 @@ page 2 612 792
   op ET
   op Q
   op EMC
-  op /P << /MCID 3 >> BDC
+  op /P << /MCID 2 >> BDC
   op q
   op 0 0 0 rg
   op BT
@@ -344,11 +344,9 @@ structure
     H1
     P
     P
-      Figure Alt="Picture"
     H1
     P
     P
-    Figure Alt="Picture"
 outline
   "Picture watermark with washout"
   "Picture watermark without washout"

@@ -438,7 +438,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact << /Type /Layout >> BDC
+  op /P << /MCID 4 >> BDC
   op q
   op 1 0 0 1 144 25.2 cm
   op q
@@ -472,7 +472,7 @@ page 1 612 792
   op Q
   op Q
   op EMC
-  op /P << /MCID 4 >> BDC
+  op /P << /MCID 5 >> BDC
   op q
   op 1 0 0 1 216 161.75 cm
   op q
@@ -495,7 +495,7 @@ page 1 612 792
   op Q
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /Artifact << /Type /Pagination /Subtype /Header >> BDC
   op q
   op /Span << /ActualText <486561646572207465787420777261707320746865206865616465722773206f776e20666c6f61742c206e6f742074686520> >> BDC
   op 0 0 0 rg
@@ -566,8 +566,6 @@ page 1 612 792
   op ET
   op EMC
   op Q
-  op EMC
-  op /P << /MCID 5 >> BDC
   op q
   op 1 0 0 1 396 21.6 cm
   op q
@@ -586,7 +584,7 @@ page 1 612 792
   op Q
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /Artifact << /Type /Pagination /Subtype /Footer >> BDC
   op q
   op /Span << /ActualText <466f6f7465722074657874206265736964652074686520666f6f746572277320666c6f61742e204e6f7469636520636c61696d207465616d20> >> BDC
   op 0 0 0 rg
@@ -617,8 +615,6 @@ page 1 612 792
   op ET
   op EMC
   op Q
-  op EMC
-  op /Artifact << /Type /Layout >> BDC
   op q
   op 1 0 0 1 108 720 cm
   op q
@@ -655,9 +651,9 @@ page 1 612 792
 structure
   Document
     P
+      Figure
+    P
+      Figure
     P
     P
-    P
-      Figure Alt="Picture"
-      Figure Alt="Picture"
 outline

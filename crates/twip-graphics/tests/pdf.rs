@@ -14,7 +14,7 @@ use twip_graphics::Resources;
 use twip_graphics::cpu::{Draw, Format, Frame, Renderer, Target};
 use twip_graphics::kurbo::{self, Affine, Shape};
 use twip_graphics::paint::{BlendMode, Color, Paint};
-use twip_graphics::pdf::{ArtifactKind, Element, Heading, Info, Kind, Mark, Page, write};
+use twip_graphics::pdf::{ArtifactKind, Element, Heading, Info, Kind, Mark, Node, Page, write};
 use twip_graphics::scene::{Filter, Layer, Picture, Recorder};
 
 mod common;
@@ -24,7 +24,13 @@ use common::scenes::{self, rect};
 const SCALE: f64 = 2.0;
 
 fn page(picture: &Picture, (w, h): (u32, u32)) -> Page {
-    Page { width: f64::from(w), height: f64::from(h), parts: vec![(Mark::Artifact(ArtifactKind::Other), picture.clone())] }
+    Page {
+        width: f64::from(w),
+        height: f64::from(h),
+        parts: vec![(Mark::Artifact(ArtifactKind::Other), picture.clone())],
+        links: Vec::new(),
+        destinations: Vec::new(),
+    }
 }
 
 /// The PDF's first page rendered by hayro at [`SCALE`] over white: premultiplied RGBA.
@@ -253,10 +259,7 @@ fn structure_outline_and_metadata() {
     rec.fill_rect(rect(10.0, 45.0, 90.0, 46.0), Color::BLACK);
     let rule = rec.finish();
     let parts = vec![(Mark::Content(1), heading), (Mark::Content(2), body), (Mark::Artifact(ArtifactKind::Layout), rule)];
-    let structure = [
-        Element { kind: Kind::Heading(1), content: Some(1), kids: Vec::new() },
-        Element { kind: Kind::Paragraph, content: Some(2), kids: Vec::new() },
-    ];
+    let structure = [Element::new(Kind::Heading(1), vec![Node::Content(1)]), Element::new(Kind::Paragraph, vec![Node::Content(2)])];
     let outline = [Heading { level: 1, content: 1, title: "Title".into() }];
     let info = Info {
         title: "A test".into(),
@@ -267,7 +270,14 @@ fn structure_outline_and_metadata() {
         created: Some(twip_graphics::pdf::Date { year: 2026, month: 11, day: 12, hour: 9, minute: 30, second: 0 }),
         ..Info::default()
     };
-    let written = write(&Resources::default(), &[Page { width: 100.0, height: 60.0, parts }], &structure, &outline, &info).expect("writes");
+    let written = write(
+        &Resources::default(),
+        &[Page { width: 100.0, height: 60.0, parts, links: Vec::new(), destinations: Vec::new() }],
+        &structure,
+        &outline,
+        &info,
+    )
+    .expect("writes");
     assert!(written.archival, "PDF/A-2b is claimed");
     let text = String::from_utf8_lossy(&written.bytes);
     // The heading and the paragraph are marked content 0 and 1; the rule, an artifact, is no structure's.
@@ -275,4 +285,150 @@ fn structure_outline_and_metadata() {
         assert!(text.contains(key), "{key} is written");
     }
     assert!(!text.contains("/MCID 2"), "the artifact isn't tagged");
+}
+
+/// Links, notes, header cells and header artifacts: a link's text and its annotation in one element, a named
+/// destination, identifiers in the tree, table attributes, and PDF/UA's identifier.
+#[test]
+fn links_notes_and_table_cells_are_tagged() {
+    use twip_graphics::pdf::{Cell, Destination, Link, LinkTarget, Numbering, Scope};
+    let square = |y: f64| {
+        let mut rec = Recorder::new();
+        rec.fill_rect(rect(10.0, y, 90.0, y + 8.0), Color::BLACK);
+        rec.finish()
+    };
+    let parts = vec![
+        (Mark::Artifact(ArtifactKind::Header), square(2.0)),
+        (Mark::Content(1), square(12.0)),
+        (Mark::Content(2), square(22.0)),
+        (Mark::Content(3), square(32.0)),
+        (Mark::Content(4), square(42.0)),
+    ];
+    let links = vec![
+        Link {
+            link: 7,
+            rect: kurbo::Rect::new(10.0, 12.0, 50.0, 20.0),
+            target: LinkTarget::Uri("https://example.com/ä".into()),
+            description: "the report".into(),
+        },
+        Link {
+            link: 8,
+            rect: kurbo::Rect::new(10.0, 22.0, 50.0, 30.0),
+            target: LinkTarget::Named("results".into()),
+            description: "the table".into(),
+        },
+    ];
+    let destinations = vec![Destination { name: "results".into(), at: kurbo::Point::new(10.0, 32.0) }];
+    let cell = |scope, headers: &[&str], kids| {
+        Element::new(Kind::Cell(Cell { scope, headers: headers.iter().map(|h| h.to_string()).collect(), row_span: 1, col_span: 1 }), kids)
+    };
+    let mut th = cell(Some(Scope::Column), &[], vec![Node::Content(3)]);
+    th.id = Some("t1-h1".into());
+    let note = Element {
+        kind: Kind::Note,
+        id: Some("note-1".into()),
+        lang: None,
+        kids: vec![Node::Element(Element::new(Kind::Paragraph, vec![Node::Content(4)]))],
+    };
+    let structure = [
+        Element::new(
+            Kind::Paragraph,
+            vec![
+                Node::Element(Element::new(Kind::Link, vec![Node::Content(1), Node::Annotation(7)])),
+                Node::Element(Element::new(Kind::Link, vec![Node::Content(2), Node::Annotation(8)])),
+                Node::Element(note),
+            ],
+        ),
+        Element::new(
+            Kind::List(Numbering::Decimal),
+            vec![Node::Element(Element::new(
+                Kind::ListItem,
+                vec![
+                    Node::Element(Element::new(Kind::Label, vec![Node::Content(5)])),
+                    Node::Element(Element::new(
+                        Kind::ListBody,
+                        vec![Node::Element(Element { kind: Kind::Span, id: None, lang: Some("fr-FR".into()), kids: vec![Node::Content(6)] })],
+                    )),
+                ],
+            ))],
+        ),
+        Element::new(
+            Kind::Table(Some("Quarterly results".into())),
+            vec![
+                Node::Element(Element::new(Kind::Row, vec![Node::Element(th)])),
+                Node::Element(Element::new(Kind::Row, vec![Node::Element(cell(None, &["t1-h1"], Vec::new()))])),
+            ],
+        ),
+    ];
+    let info = Info { title: "Links".into(), language: Some("en-US".into()), archival: true, ..Info::default() };
+    let page = Page { width: 100.0, height: 60.0, parts, links, destinations };
+    let written = write(&Resources::default(), &[page], &structure, &[], &info).expect("writes");
+    let text = String::from_utf8_lossy(&written.bytes);
+    for key in [
+        "/S/Link",
+        "/Type/OBJR",
+        "/StructParent 1",
+        "/Subtype/Link",
+        "/Contents(the report)",
+        "/URI(https://example.com/%C3%A4)",
+        "/D(results)",
+        "/Dests",
+        "/S/Note",
+        "/ID(note-1)",
+        "/IDTree",
+        "/Scope/Column",
+        "/Headers[(t1-h1)]",
+        "/Summary(Quarterly results)",
+        "/Tabs/S",
+        "<pdfuaid:part>1</pdfuaid:part>",
+        "pdfaExtension:schemas",
+        "/ParentTreeNextKey 3",
+        "/S/Lbl",
+        "/ListNumbering/Decimal",
+        "/S/Span",
+        "/Lang(fr-FR)",
+    ] {
+        assert!(text.contains(key), "{key} is written");
+    }
+    // Without PDF/A the metadata still names PDF/UA, without PDF/A's schemas.
+    let info = Info { archival: false, ..info };
+    let page = Page { width: 100.0, height: 60.0, parts: Vec::new(), links: Vec::new(), destinations: Vec::new() };
+    let text = String::from_utf8_lossy(&write(&Resources::default(), &[page], &[], &[], &info).expect("writes").bytes).into_owned();
+    assert!(text.contains("<pdfuaid:part>1</pdfuaid:part>") && !text.contains("<pdfaid:part>") && !text.contains("<pdfaExtension:schemas>"));
+}
+
+/// A run that draws .notdef shows its other glyphs as text and its .notdef glyph as an outline, all in the run's
+/// ActualText: no text operator shows glyph 0.
+#[test]
+fn notdef_glyphs_are_outlines() {
+    use twip_graphics::scene::{GlyphRun, Synthesis};
+    let mut res = Resources::default();
+    let mono = scenes::Mono::new();
+    let font = res.fonts.add(mono.data.clone(), 0, &[]).expect("the test face registers");
+    let text = "A\u{E000}B";
+    let glyphs = mono.set(text, 20.0, 4.0);
+    assert_eq!(glyphs[1].0, 0, "the private use character has no glyph");
+    let mut rec = Recorder::new();
+    let run = GlyphRun { font, size: 20.0, baseline: 30.0, glyphs: &glyphs, synthesis: Synthesis::default() };
+    rec.glyphs_text(&res.fonts, &run, text, &[0, 1, 4], Color::BLACK);
+    let picture = rec.finish();
+    same("notdef", (80, 40), &picture, &res);
+    let pdf = write(&res, &[page(&picture, (80, 40))], &[], &[], &Info::default()).expect("writes").bytes;
+    // The page's content: the stream with the run's ActualText.
+    let mut content = Vec::new();
+    let mut at = 0;
+    while let Some(k) = pdf[at..].windows(7).position(|w| w == b"stream\n") {
+        let start = at + k + 7;
+        let end = start + pdf[start..].windows(9).position(|w| w == b"endstream").expect("an end");
+        let s = miniz_oxide::inflate::decompress_to_vec_zlib(&pdf[start..end]).unwrap_or_default();
+        if s.windows(11).any(|w| w == b"/ActualText") {
+            content = s;
+        }
+        at = end + 9;
+    }
+    assert!(!content.windows(4).any(|w| w == b"(\0\0)"), "glyph 0 isn't shown");
+    let content = String::from_utf8_lossy(&content);
+    assert_eq!(content.matches("/ActualText").count(), 1, "{content}");
+    let (span, text, fill, end) = (content.find("/ActualText"), content.find(" TJ"), content.find("\nf\n"), content.rfind("EMC"));
+    assert!(span < text && text < fill && fill < end, "the text, then the .notdef outline, in the span: {content}");
 }

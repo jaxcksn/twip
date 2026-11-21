@@ -416,14 +416,19 @@ structure
   Document
     H1
     P
-      Figure Alt="Picture"
-      Figure Alt="Picture"
+      Figure
     P
+      Figure
     P
+      Div
+        P
+          Figure
     P
-      Figure Alt="Picture"
+      Div
+        P
+          Figure
     P
-      Figure Alt="Picture"
-      Figure Alt="Picture"
+      Figure
+    P
 outline
   "FX-PICTURE-CONTROLS"

@@ -1369,16 +1369,9 @@ structure
     P
     P
     P
+      Figure
     P
-      Figure Alt="Picture"
-      Figure Alt="Picture"
-    P
-    Table
-      TR
-        TD
-          P
-        TD
-          P
+      Figure
     P
     Table
       TR
@@ -1386,23 +1379,36 @@ structure
           P
         TD
           P
+    P
+    Table
+      TR
+        TD
+          P
+            Figure
+        TD
+          P
           P
     P
+      Figure
     P
-      Figure Alt="Picture"
-    P
-    P
-    P
-    P
-    P
-      Figure Alt="Picture"
-      Figure Alt="Picture"
+      Figure
     P
     P
     P
     P
     P
     P
+    P
+    P
+    P
+      Note ID="footnote-1"
+        P
+    P
+      Note ID="footnote-2"
+        P
+    P
+      Note ID="footnote-3"
+        P
     P
     P
     P

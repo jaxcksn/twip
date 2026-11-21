@@ -1026,7 +1026,7 @@ structure
               TD
                 P
       TR
-        TD
+        TD ColSpan=2
           P
           Table
             TR

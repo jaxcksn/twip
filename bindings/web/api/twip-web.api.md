@@ -3372,7 +3372,7 @@ export interface ViewState {
 
 // @public
 export interface Warning {
-    code: 'unsupported-element' | 'image-undecodable' | 'picture-bullet-undecodable' | 'font-unresolved' | 'rewritten-content' | 'pdf-font-fallback' | 'pdf-archival-claim-dropped' | 'revision-id-missing' | 'range-unpaired' | 'author-missing' | 'comment-unanchored' | 'comment-reference-orphan' | 'unknown-preset' | 'glossary-unreadable' | 'duplicate-building-block' | 'sub-template-cycle' | 'sub-template-too-deep' | 'sub-template-near-match';
+    code: 'unsupported-element' | 'image-undecodable' | 'picture-bullet-undecodable' | 'font-unresolved' | 'rewritten-content' | 'pdf-font-fallback' | 'pdf-archival-claim-dropped' | 'revision-id-missing' | 'range-unpaired' | 'author-missing' | 'comment-unanchored' | 'comment-reference-orphan' | 'unknown-preset' | 'glossary-unreadable' | 'duplicate-building-block' | 'sub-template-cycle' | 'sub-template-too-deep' | 'sub-template-near-match' | 'pdf-figure-without-alt';
     count: number;
     location?: {
         part: string;

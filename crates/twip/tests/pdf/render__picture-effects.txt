@@ -342,16 +342,19 @@ structure
   Document
     H1
     P
-      Figure Alt="Picture"
-      Figure Alt="Picture"
-      Figure Alt="Picture"
     P
-      Figure Alt="Picture"
-      Figure Alt="Picture"
-      Figure Alt="Picture"
-      Figure Alt="Picture"
+      Figure
+      Figure
+      Figure
     P
-      Figure Alt="Picture"
-      Figure Alt="Picture"
+    P
+      Figure
+      Figure
+      Figure
+      Figure
+    P
+    P
+      Figure
+      Figure
 outline
   "Picture effects"

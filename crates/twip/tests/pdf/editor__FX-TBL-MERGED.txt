@@ -1216,9 +1216,51 @@ structure
         TD
           P
       TR
+        TD ColSpan=2
+          P
+        TD ColSpan=2
+          P
         TD
           P
         TD
+          P
+      TR
+        TD RowSpan=3
+          P
+        TD
+          P
+        TD ColSpan=3
+          P
+        TD
+          P
+      TR
+        TD RowSpan=2 ColSpan=2
+          P
+        TD
+          P
+        TD
+          P
+        TD
+          P
+      TR
+        TD
+          P
+        TD ColSpan=2
+          P
+      TR
+        TD
+        TD
+          P
+        TD
+          P
+        TD
+          P
+        TD
+          P
+        TD
+      TR
+        TD ColSpan=2
+        TD ColSpan=2
           P
         TD
           P
@@ -1231,52 +1273,14 @@ structure
           P
         TD
           P
-        TD
+        TD ColSpan=3
+      TR
+        TD ColSpan=3
+          P
+        TD ColSpan=3
           P
       TR
-        TD
-          P
-        TD
-          P
-        TD
-          P
-        TD
-          P
-      TR
-        TD
-          P
-        TD
-          P
-      TR
-        TD
-          P
-        TD
-          P
-        TD
-          P
-        TD
-          P
-      TR
-        TD
-          P
-        TD
-          P
-        TD
-          P
-      TR
-        TD
-          P
-        TD
-          P
-        TD
-          P
-      TR
-        TD
-          P
-        TD
-          P
-      TR
-        TD
+        TD ColSpan=6
           P
     P
 outline

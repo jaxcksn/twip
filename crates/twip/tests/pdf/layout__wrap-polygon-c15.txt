@@ -832,13 +832,13 @@ structure
   Document
     H1
     P
+      Figure
     P
     P
+      Figure
     P
     P
-      Figure Alt="Picture"
-      Figure Alt="Picture"
-      Figure Alt="Picture"
+      Figure
     P
 outline
   "Tight and through wrapping around the polygon"

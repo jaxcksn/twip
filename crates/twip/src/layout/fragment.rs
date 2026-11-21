@@ -61,7 +61,7 @@ pub struct ImageKey {
 pub enum Item {
     Glyphs(GlyphRun),
     Rect { rect: [f64; 4], colour: u32 },
-    Image { rect: [f64; 4], key: ImageKey },
+    Image { rect: [f64; 4], key: ImageKey, of: PictureOf },
     Gridline { line: [f64; 4] },
     Shape(Rc<ShapeItem>),
     Turned(Rc<Turned>),
@@ -79,6 +79,16 @@ pub struct Layer {
     pub behind: bool,
     pub z: u32,
     pub order: usize,
+}
+
+/// The picture an image or shape item draws, in the model: an inline picture (its paragraph and unit) or a float.
+/// Drawing doesn't read it and the layout dump doesn't show it; a tagged PDF finds a figure's picture by it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum PictureOf {
+    #[default]
+    None,
+    Inline(ParaId, Unit),
+    Float(FloatId),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -105,6 +115,7 @@ pub struct ShapeItem {
     pub clip_bottom: Option<f64>,
     /// The float holding the text of an inline text box, which `float` (0 for inline) doesn't name; 0 for none.
     pub text_float: u64,
+    pub of: PictureOf,
 }
 
 impl ShapeItem {
@@ -167,6 +178,7 @@ impl ShapeItem {
             decoration: self.decoration,
             clip_bottom: self.clip_bottom.map(|y| y + dy),
             text_float: self.text_float,
+            of: self.of,
         }
     }
 }
@@ -386,7 +398,7 @@ pub fn translated(item: &Item, dx: f64, dy: f64) -> Item {
             paint: r.paint.clone(),
         }),
         Item::Rect { rect, colour } => Item::rect(r4(rect), *colour),
-        Item::Image { rect, key } => Item::Image { rect: r4(rect), key: *key },
+        Item::Image { rect, key, of } => Item::Image { rect: r4(rect), key: *key, of: *of },
         Item::Gridline { line } => Item::Gridline { line: r4(line) },
         Item::Shape(s) => Item::Shape(std::rc::Rc::new(s.moved(dx, dy))),
         Item::Turned(t) => Item::Turned(std::rc::Rc::new(super::fragment::Turned {

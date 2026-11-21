@@ -496,18 +496,11 @@ structure
     P
     Table
       TR
-        TH
+        TH Scope=/Column
           P
-        TH
+        TH Scope=/Column
           P
-        TH
-          P
-      TR
-        TD
-          P
-        TD
-          P
-        TD
+        TH Scope=/Column
           P
       TR
         TD
@@ -526,7 +519,16 @@ structure
       TR
         TD
           P
-            Figure Alt="Picture"
+        TD
+          P
+        TD
+          P
+      TR
+        TD
+          P
+        TD ColSpan=2
+          P
+            Figure
     P
 outline
   "FX-REPEAT-REGION"

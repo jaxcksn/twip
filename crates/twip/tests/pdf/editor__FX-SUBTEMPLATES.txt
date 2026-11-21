@@ -301,7 +301,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /Artifact << /Type /Pagination /Subtype /Footer >> BDC
   op EMC
 page 2 792 612
   text Error! Bookmark not defined.
@@ -335,7 +335,7 @@ page 2 792 612
   op EMC
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /Artifact << /Type /Pagination /Subtype /Footer >> BDC
   op EMC
 structure
   Document
@@ -351,9 +351,11 @@ structure
       TR
         TD
           P
+        TD
       TR
         TD
           P
+        TD
     P
     P
     P

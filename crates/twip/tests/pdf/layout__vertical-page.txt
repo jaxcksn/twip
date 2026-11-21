@@ -46,7 +46,7 @@ page 1 612 792
   text Header of a vertical section
   text Footer of a vertical section
   op 1 0 0 -1 0 792 cm
-  op /Artifact << /Type /Layout >> BDC
+  op /P << /MCID 0 >> BDC
   op q
   op 0 1 -1 0 612 0 cm
   op q
@@ -64,6 +64,8 @@ page 1 612 792
   op EMC
   op Q
   op Q
+  op EMC
+  op /P << /MCID 1 >> BDC
   op q
   op 0 1 -1 0 612 0 cm
   op q
@@ -233,6 +235,8 @@ page 1 612 792
   op EMC
   op Q
   op Q
+  op EMC
+  op /P << /MCID 2 >> BDC
   op q
   op 0 1 -1 0 612 0 cm
   op q
@@ -402,6 +406,8 @@ page 1 612 792
   op EMC
   op Q
   op Q
+  op EMC
+  op /P << /MCID 3 >> BDC
   op q
   op 0 1 -1 0 612 0 cm
   op q
@@ -571,6 +577,8 @@ page 1 612 792
   op EMC
   op Q
   op Q
+  op EMC
+  op /P << /MCID 4 >> BDC
   op q
   op 0 1 -1 0 612 0 cm
   op q
@@ -611,7 +619,7 @@ page 1 612 792
   op Q
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /Artifact << /Type /Pagination /Subtype /Header >> BDC
   op q
   op /Span << /ActualText <486561646572206f66206120766572746963616c2073656374696f6e> >> BDC
   op 0 0 0 rg
@@ -622,6 +630,8 @@ page 1 612 792
   op ET
   op EMC
   op Q
+  op EMC
+  op /Artifact << /Type /Pagination /Subtype /Footer >> BDC
   op q
   op /Span << /ActualText <466f6f746572206f66206120766572746963616c2073656374696f6e> >> BDC
   op 0 0 0 rg
@@ -683,7 +693,7 @@ page 2 612 792
   text Header of a vertical section
   text Footer of a vertical section
   op 1 0 0 -1 0 792 cm
-  op /Artifact << /Type /Layout >> BDC
+  op /P << /MCID 0 >> BDC
   op q
   op 0 1 -1 0 612 0 cm
   op q
@@ -814,6 +824,8 @@ page 2 612 792
   op EMC
   op Q
   op Q
+  op EMC
+  op /P << /MCID 1 >> BDC
   op q
   op 0 1 -1 0 612 0 cm
   op q
@@ -983,6 +995,8 @@ page 2 612 792
   op EMC
   op Q
   op Q
+  op EMC
+  op /P << /MCID 2 >> BDC
   op q
   op 0 1 -1 0 612 0 cm
   op q
@@ -1152,6 +1166,8 @@ page 2 612 792
   op EMC
   op Q
   op Q
+  op EMC
+  op /P << /MCID 3 >> BDC
   op q
   op 0 1 -1 0 612 0 cm
   op q
@@ -1283,7 +1299,7 @@ page 2 612 792
   op Q
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /Artifact << /Type /Pagination /Subtype /Header >> BDC
   op q
   op /Span << /ActualText <486561646572206f66206120766572746963616c2073656374696f6e> >> BDC
   op 0 0 0 rg
@@ -1294,6 +1310,8 @@ page 2 612 792
   op ET
   op EMC
   op Q
+  op EMC
+  op /Artifact << /Type /Pagination /Subtype /Footer >> BDC
   op q
   op /Span << /ActualText <466f6f746572206f66206120766572746963616c2073656374696f6e> >> BDC
   op 0 0 0 rg
@@ -1326,4 +1344,14 @@ page 3 612 792
   text Footer of a vertical section
 structure
   Document
+    H1
+    P
+    P
+    P
+    P
+    P
+    P
+    P
+    P
 outline
+  "A vertical page"

@@ -880,23 +880,23 @@ structure
   Document
     H1
     P
+      Figure
     P
     P
+      Figure
     P
     P
+      Figure
+      Figure
     P
     P
-    P
-      Figure Alt="Picture"
-      Figure Alt="Picture"
-      Figure Alt="Picture"
-      Figure Alt="Picture"
-      Figure Alt="Picture"
+      Figure
     P
     P
+      Figure
     P
     P
-      Figure Alt="Picture"
-      Figure Alt="Picture"
+      Figure
+    P
 outline
   "Text-wrapping breaks"

@@ -2659,11 +2659,11 @@ structure
           P
           Table
             TR
-              TH
+              TH Scope=/Column
                 P
-              TH
+              TH Scope=/Column
                 P
-              TH
+              TH Scope=/Column
                 P
             TR
               TD

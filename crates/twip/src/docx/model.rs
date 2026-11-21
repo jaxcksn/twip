@@ -1060,6 +1060,16 @@ pub struct Cell {
     pub controls: Vec<ControlId>,
     /// Tracked insertion, deletion or merge of the cell, and a tracked change of its properties.
     pub rev: CellRevisions,
+    /// Its identifier and the header cells it is under, by theirs (`w:tc/@w:id`, `tcPr/w:headers`).
+    pub ids: Option<Rc<CellIds>>,
+}
+
+/// A table cell's identifier (`w:tc/@w:id`) and the identifiers of the header cells that head it
+/// (`tcPr/w:headers/w:header/@w:val`).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct CellIds {
+    pub id: Option<String>,
+    pub headers: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]

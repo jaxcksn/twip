@@ -380,6 +380,8 @@ structure
     Table
       TR
         TD
+        TD
+        TD
           P
     P
 outline

@@ -411,7 +411,7 @@ structure
     P
     P
     P
-      Figure Alt="Picture"
+      Figure
     P
     P
     Table

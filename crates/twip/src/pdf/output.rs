@@ -176,9 +176,31 @@ fn structure(e: &Dict<'_>, depth: usize, budget: &mut usize, out: &mut String) {
     *budget -= 1;
     let role = e.get::<Name<'_>>(b"S").map_or_else(|| "?".into(), |n| n.as_str().to_owned());
     write!(out, "{}{role}", "  ".repeat(depth + 1)).unwrap();
-    for key in ["Alt", "ActualText"] {
+    for key in ["Alt", "ActualText", "ID", "Lang"] {
         if let Some(s) = e.get::<hayro_interpret::hayro_syntax::object::String<'_>>(key.as_bytes()) {
             write!(out, " {key}={:?}", text(s.as_bytes())).unwrap();
+        }
+    }
+    // Table attributes: one dictionary, or an array of them.
+    let attributes: Vec<Dict<'_>> = match e.get::<Object<'_>>(b"A") {
+        Some(Object::Dict(d)) => vec![d],
+        Some(Object::Array(a)) => a.iter::<Object<'_>>().filter_map(Object::into_dict).collect(),
+        _ => Vec::new(),
+    };
+    for a in attributes {
+        for key in ["Scope", "Headers", "RowSpan", "ColSpan", "Summary", "ListNumbering"] {
+            if let Some(v) = a.get::<Object<'_>>(key.as_bytes()) {
+                let mut s = String::new();
+                match &v {
+                    Object::String(t) => write!(s, "{:?}", text(t.as_bytes())).unwrap(),
+                    Object::Array(items) => {
+                        let list: Vec<String> = items.iter::<Object<'_>>().filter_map(|o| o.into_string()).map(|t| text(t.as_bytes())).collect();
+                        write!(s, "{list:?}").unwrap();
+                    }
+                    other => operand(other, &mut s, 0),
+                }
+                write!(out, " {key}={s}").unwrap();
+            }
         }
     }
     out.push('\n');

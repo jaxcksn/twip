@@ -579,7 +579,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /Artifact << /Type /Pagination /Subtype /Footer >> BDC
   op q
   op /Span << /ActualText <5061676520322d3120616e6420773a70674e756d20312d31> >> BDC
   op 0 0 0 rg
@@ -754,7 +754,7 @@ page 2 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /Artifact << /Type /Pagination /Subtype /Footer >> BDC
   op q
   op /Span << /ActualText <5061676520322d3220616e6420773a70674e756d20312d32> >> BDC
   op 0 0 0 rg

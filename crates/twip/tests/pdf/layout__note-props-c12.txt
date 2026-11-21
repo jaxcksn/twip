@@ -62,6 +62,8 @@ page 1 612 792
   op ET
   op EMC
   op Q
+  op EMC
+  op /P << /MCID 2 >> BDC
   op q
   op /Span << /ActualText <2c20616e6420616e20656e646e6f7465> >> BDC
   op 0 0 0 rg
@@ -82,6 +84,8 @@ page 1 612 792
   op ET
   op EMC
   op Q
+  op EMC
+  op /P << /MCID 3 >> BDC
   op q
   op /Span << /ActualText <2e20> >> BDC
   op 0 0 0 rg
@@ -133,7 +137,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 2 >> BDC
+  op /P << /MCID 4 >> BDC
   op q
   op /Span << /ActualText <41207365636f6e6420666f6f746e6f7465> >> BDC
   op 0 0 0 rg
@@ -154,6 +158,8 @@ page 1 612 792
   op ET
   op EMC
   op Q
+  op EMC
+  op /P << /MCID 5 >> BDC
   op q
   op /Span << /ActualText <20616e642061207365636f6e6420656e646e6f7465> >> BDC
   op 0 0 0 rg
@@ -174,6 +180,8 @@ page 1 612 792
   op ET
   op EMC
   op Q
+  op EMC
+  op /P << /MCID 6 >> BDC
   op q
   op /Span << /ActualText <2e> >> BDC
   op 0 0 0 rg
@@ -185,7 +193,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 3 >> BDC
+  op /P << /MCID 7 >> BDC
   op q
   op /Span << /ActualText <53656374696f6e203120656e647320686572653b2069747320656e646e6f74657320666f6c6c6f772e> >> BDC
   op 0 0 0 rg
@@ -204,7 +212,7 @@ page 1 612 792
   op f
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /P << /MCID 8 >> BDC
   op q
   op /Span << /ActualText <49> >> BDC
   op 0 0 0 rg
@@ -225,6 +233,8 @@ page 1 612 792
   op ET
   op EMC
   op Q
+  op EMC
+  op /P << /MCID 9 >> BDC
   op q
   op /Span << /ActualText <4949> >> BDC
   op 0 0 0 rg
@@ -253,7 +263,7 @@ page 1 612 792
   op f
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /P << /MCID 10 >> BDC
   op q
   op /Span << /ActualText <696969> >> BDC
   op 0 0 0 rg
@@ -274,6 +284,8 @@ page 1 612 792
   op ET
   op EMC
   op Q
+  op EMC
+  op /P << /MCID 11 >> BDC
   op q
   op /Span << /ActualText <6976> >> BDC
   op 0 0 0 rg
@@ -374,6 +386,8 @@ page 2 612 792
   op ET
   op EMC
   op Q
+  op EMC
+  op /P << /MCID 1 >> BDC
   op q
   op /Span << /ActualText <2c20616e20656e646e6f7465> >> BDC
   op 0 0 0 rg
@@ -394,6 +408,8 @@ page 2 612 792
   op ET
   op EMC
   op Q
+  op EMC
+  op /P << /MCID 2 >> BDC
   op q
   op /Span << /ActualText <2e204e6f7469636520> >> BDC
   op 0 0 0 rg
@@ -445,7 +461,7 @@ page 2 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 1 >> BDC
+  op /P << /MCID 3 >> BDC
   op q
   op /Span << /ActualText <526567696f6e616c206d61696e74656e616e6365206163636573736962696c697479207461782066696e6473207265636f72642070726f706f73616c2064656e69656420636f6e747261637420> >> BDC
   op 0 0 0 rg
@@ -567,7 +583,7 @@ page 2 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 2 >> BDC
+  op /P << /MCID 4 >> BDC
   op q
   op /Span << /ActualText <5472656e642073756767657374696f6e7320626f617264206f7264657220757064617465206772616e7465642061677265656d656e74206d61726b6574696e672070726f6d6f74696f6e20> >> BDC
   op 0 0 0 rg
@@ -689,7 +705,7 @@ page 2 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 3 >> BDC
+  op /P << /MCID 5 >> BDC
   op q
   op /Span << /ActualText <546865206d656574696e6720666f726563617374206865726562792076656e646f72732070726163746963616c207363686564756c6520737461746520656e74727920657374696d61746520> >> BDC
   op 0 0 0 rg
@@ -811,7 +827,7 @@ page 2 612 792
   op EMC
   op Q
   op EMC
-  op /P << /MCID 4 >> BDC
+  op /P << /MCID 6 >> BDC
   op q
   op /Span << /ActualText <496e76656e746f72792072656c6576616e742067726f75702072656c69656620726573756c747320726567696f6e206c656467657220627269656620757361676520636175736520636f6c6c656167756520> >> BDC
   op 0 0 0 rg
@@ -910,7 +926,7 @@ page 2 612 792
   op f
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /P << /MCID 7 >> BDC
   op q
   op /Span << /ActualText <41> >> BDC
   op 0 0 0 rg
@@ -965,14 +981,30 @@ structure
   Document
     H1
     P
+      Note ID="footnote-1"
+        P
+      Note ID="endnote-1"
+        P
+    P
+      Note ID="footnote-2"
+        P
+      Note ID="endnote-2"
+        P
+    P
+    P
+      Note ID="footnote-3"
+        P
+      Note ID="endnote-3"
+        P
     P
     P
     P
     P
     P
     P
-    P
-    P
-    P
+      Note ID="footnote-4"
+        P
+      Note ID="endnote-4"
+        P
 outline
   "Note properties in sections"

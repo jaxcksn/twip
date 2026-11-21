@@ -288,7 +288,7 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact << /Type /Layout >> BDC
+  op /P << /MCID 4 >> BDC
   op q
   op 1 0 0 1 27 101.27 cm
   op q
@@ -321,6 +321,8 @@ page 1 612 792
   op f
   op Q
   op Q
+  op EMC
+  op /P << /MCID 5 >> BDC
   op q
   op 1 0 0 1 565.2 101.27 cm
   op q
@@ -353,6 +355,8 @@ page 1 612 792
   op f
   op Q
   op Q
+  op EMC
+  op /P << /MCID 6 >> BDC
   op q
   op 1 0 0 1 27 144.47 cm
   op q
@@ -385,6 +389,8 @@ page 1 612 792
   op f
   op Q
   op Q
+  op EMC
+  op /P << /MCID 7 >> BDC
   op q
   op 1 0 0 1 567 144.47 cm
   op q
@@ -417,6 +423,8 @@ page 1 612 792
   op f
   op Q
   op Q
+  op EMC
+  op /P << /MCID 8 >> BDC
   op q
   op 1 0 0 1 0 187.67 cm
   op q
@@ -449,6 +457,8 @@ page 1 612 792
   op f
   op Q
   op Q
+  op EMC
+  op /P << /MCID 9 >> BDC
   op q
   op 1 0 0 1 576 187.67 cm
   op q
@@ -481,6 +491,8 @@ page 1 612 792
   op f
   op Q
   op Q
+  op EMC
+  op /P << /MCID 10 >> BDC
   op q
   op 1 0 0 1 306 21.6 cm
   op q
@@ -513,6 +525,8 @@ page 1 612 792
   op f
   op Q
   op Q
+  op EMC
+  op /P << /MCID 11 >> BDC
   op q
   op 1 0 0 1 162 734.4 cm
   op q
@@ -545,6 +559,8 @@ page 1 612 792
   op f
   op Q
   op Q
+  op EMC
+  op /P << /MCID 12 >> BDC
   op q
   op 1 0 0 1 234 21.6 cm
   op q
@@ -577,6 +593,8 @@ page 1 612 792
   op f
   op Q
   op Q
+  op EMC
+  op /P << /MCID 13 >> BDC
   op q
   op 1 0 0 1 306 741.6 cm
   op q
@@ -609,6 +627,8 @@ page 1 612 792
   op f
   op Q
   op Q
+  op EMC
+  op /P << /MCID 14 >> BDC
   op q
   op 1 0 0 1 90 168.62 cm
   op q
@@ -641,6 +661,8 @@ page 1 612 792
   op f
   op Q
   op Q
+  op EMC
+  op /P << /MCID 15 >> BDC
   op q
   op 1 0 0 1 522 168.62 cm
   op q
@@ -757,7 +779,7 @@ page 2 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact << /Type /Layout >> BDC
+  op /P << /MCID 2 >> BDC
   op q
   op 1 0 0 1 567 113.47 cm
   op q
@@ -790,6 +812,8 @@ page 2 612 792
   op f
   op Q
   op Q
+  op EMC
+  op /P << /MCID 3 >> BDC
   op q
   op 1 0 0 1 27 113.47 cm
   op q
@@ -822,6 +846,8 @@ page 2 612 792
   op f
   op Q
   op Q
+  op EMC
+  op /P << /MCID 4 >> BDC
   op q
   op 1 0 0 1 234 741.6 cm
   op q
@@ -854,6 +880,8 @@ page 2 612 792
   op f
   op Q
   op Q
+  op EMC
+  op /P << /MCID 5 >> BDC
   op q
   op 1 0 0 1 306 21.6 cm
   op q
@@ -886,6 +914,8 @@ page 2 612 792
   op f
   op Q
   op Q
+  op EMC
+  op /P << /MCID 6 >> BDC
   op q
   op 1 0 0 1 576 163.87 cm
   op q
@@ -918,6 +948,8 @@ page 2 612 792
   op f
   op Q
   op Q
+  op EMC
+  op /P << /MCID 7 >> BDC
   op q
   op 1 0 0 1 0 163.87 cm
   op q
@@ -955,9 +987,27 @@ structure
   Document
     H1
     P
+      Figure
+      Figure
+      Figure
+      Figure
+      Figure
+      Figure
+      Figure
+      Figure
+      Figure
+      Figure
+    P
+      Figure
+      Figure
     P
     P
     P
-    P
+      Figure
+      Figure
+      Figure
+      Figure
+      Figure
+      Figure
 outline
   "Floats relative to the margin areas"

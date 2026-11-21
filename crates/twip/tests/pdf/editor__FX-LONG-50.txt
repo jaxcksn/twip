@@ -527,7 +527,7 @@ page 1 612 792
   op f
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /P << /MCID 6 >> BDC
   op q
   op /Span << /ActualText <31> >> BDC
   op 0 0 0 rg
@@ -558,6 +558,8 @@ page 1 612 792
   op ET
   op EMC
   op Q
+  op EMC
+  op /Artifact << /Type /Pagination /Subtype /Footer >> BDC
   op q
   op /Span << /ActualText <506167652031206f66203732> >> BDC
   op 0 0 0 rg
@@ -1145,7 +1147,7 @@ page 2 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact << /Type /Pagination >> BDC
+  op /Artifact << /Type /Pagination /Subtype /Footer >> BDC
   op q
   op /Span << /ActualText <506167652032206f66203732> >> BDC
   op 0 0 0 rg
@@ -4771,25 +4773,16 @@ structure
     P
     P
     P
+      Note ID="footnote-1"
+        P
     P
     P
     P
     P
     P
     P
-    P
-    P
-    P
-    H1
-    P
-    P
-    P
-    P
-    P
-    P
-    P
-    P
-    P
+      Note ID="footnote-2"
+        P
     P
     P
     P
@@ -4797,6 +4790,25 @@ structure
     P
     P
     P
+      Note ID="footnote-3"
+        P
+    P
+    P
+    P
+    P
+    P
+    P
+      Note ID="footnote-4"
+        P
+    P
+    P
+    P
+    H1
+    P
+    P
+    P
+      Note ID="footnote-5"
+        P
     P
     P
     P
@@ -4840,6 +4852,8 @@ structure
     P
     P
     P
+      Note ID="footnote-6"
+        P
     P
     P
     P
@@ -4847,75 +4861,16 @@ structure
     P
     P
     P
+      Note ID="footnote-7"
+        P
     P
     P
     P
     P
     P
     P
-    P
-    P
-    P
-    H1
-    P
-    P
-    P
-    P
-    P
-    P
-    P
-    P
-    P
-    P
-    P
-    P
-    Table
-      TR
-        TD
-          P
-        TD
-          P
-        TD
-          P
-        TD
-          P
-      TR
-        TD
-          P
-        TD
-          P
-        TD
-          P
-        TD
-          P
-      TR
-        TD
-          P
-        TD
-          P
-        TD
-          P
-        TD
-          P
-      TR
-        TD
-          P
-        TD
-          P
-        TD
-          P
-        TD
-          P
-    H1
-    P
-    P
-    P
-    P
-    P
-    P
-    P
-    P
-    P
+      Note ID="footnote-8"
+        P
     P
     P
     P
@@ -4923,88 +4878,16 @@ structure
     P
     P
     P
+      Note ID="footnote-9"
+        P
     P
     P
     P
     P
     P
     P
-    P
-    P
-    P
-    H1
-    P
-    P
-    P
-    P
-    P
-    P
-    Table
-      TR
-        TD
-          P
-        TD
-          P
-        TD
-          P
-        TD
-          P
-      TR
-        TD
-          P
-        TD
-          P
-        TD
-          P
-        TD
-          P
-      TR
-        TD
-          P
-        TD
-          P
-        TD
-          P
-        TD
-          P
-      TR
-        TD
-          P
-        TD
-          P
-        TD
-          P
-        TD
-          P
-    P
-    P
-    P
-    P
-    P
-    P
-    H1
-    P
-    P
-    P
-    P
-    P
-    P
-    P
-    P
-    P
-    P
-    P
-    P
-    H1
-    P
-    P
-    P
-    P
-    P
-    P
-    P
-    P
-    P
+      Note ID="footnote-10"
+        P
     P
     P
     P
@@ -5049,25 +4932,16 @@ structure
     P
     P
     P
+      Note ID="footnote-11"
+        P
     P
     P
     P
     P
     P
     P
-    P
-    P
-    P
-    H1
-    P
-    P
-    P
-    P
-    P
-    P
-    P
-    P
-    P
+      Note ID="footnote-12"
+        P
     P
     P
     P
@@ -5075,6 +4949,25 @@ structure
     P
     P
     P
+      Note ID="footnote-13"
+        P
+    P
+    P
+    P
+    P
+    P
+    P
+      Note ID="footnote-14"
+        P
+    P
+    P
+    P
+    H1
+    P
+    P
+    P
+      Note ID="footnote-15"
+        P
     P
     P
     P
@@ -5118,6 +5011,8 @@ structure
     P
     P
     P
+      Note ID="footnote-16"
+        P
     P
     P
     P
@@ -5125,75 +5020,16 @@ structure
     P
     P
     P
+      Note ID="footnote-17"
+        P
     P
     P
     P
     P
     P
     P
-    P
-    P
-    P
-    H1
-    P
-    P
-    P
-    P
-    P
-    P
-    P
-    P
-    P
-    P
-    P
-    P
-    Table
-      TR
-        TD
-          P
-        TD
-          P
-        TD
-          P
-        TD
-          P
-      TR
-        TD
-          P
-        TD
-          P
-        TD
-          P
-        TD
-          P
-      TR
-        TD
-          P
-        TD
-          P
-        TD
-          P
-        TD
-          P
-      TR
-        TD
-          P
-        TD
-          P
-        TD
-          P
-        TD
-          P
-    H1
-    P
-    P
-    P
-    P
-    P
-    P
-    P
-    P
-    P
+      Note ID="footnote-18"
+        P
     P
     P
     P
@@ -5201,88 +5037,16 @@ structure
     P
     P
     P
+      Note ID="footnote-19"
+        P
     P
     P
     P
     P
     P
     P
-    P
-    P
-    P
-    H1
-    P
-    P
-    P
-    P
-    P
-    P
-    Table
-      TR
-        TD
-          P
-        TD
-          P
-        TD
-          P
-        TD
-          P
-      TR
-        TD
-          P
-        TD
-          P
-        TD
-          P
-        TD
-          P
-      TR
-        TD
-          P
-        TD
-          P
-        TD
-          P
-        TD
-          P
-      TR
-        TD
-          P
-        TD
-          P
-        TD
-          P
-        TD
-          P
-    P
-    P
-    P
-    P
-    P
-    P
-    H1
-    P
-    P
-    P
-    P
-    P
-    P
-    P
-    P
-    P
-    P
-    P
-    P
-    H1
-    P
-    P
-    P
-    P
-    P
-    P
-    P
-    P
-    P
+      Note ID="footnote-20"
+        P
     P
     P
     P
@@ -5327,25 +5091,16 @@ structure
     P
     P
     P
+      Note ID="footnote-21"
+        P
     P
     P
     P
     P
     P
     P
-    P
-    P
-    P
-    H1
-    P
-    P
-    P
-    P
-    P
-    P
-    P
-    P
-    P
+      Note ID="footnote-22"
+        P
     P
     P
     P
@@ -5353,6 +5108,25 @@ structure
     P
     P
     P
+      Note ID="footnote-23"
+        P
+    P
+    P
+    P
+    P
+    P
+    P
+      Note ID="footnote-24"
+        P
+    P
+    P
+    P
+    H1
+    P
+    P
+    P
+      Note ID="footnote-25"
+        P
     P
     P
     P
@@ -5396,6 +5170,8 @@ structure
     P
     P
     P
+      Note ID="footnote-26"
+        P
     P
     P
     P
@@ -5403,12 +5179,16 @@ structure
     P
     P
     P
+      Note ID="footnote-27"
+        P
     P
     P
     P
     P
     P
     P
+      Note ID="footnote-28"
+        P
     P
     P
     P
@@ -5416,12 +5196,334 @@ structure
     P
     P
     P
+      Note ID="footnote-29"
+        P
     P
     P
     P
     P
     P
     P
+      Note ID="footnote-30"
+        P
+    P
+    P
+    P
+    Table
+      TR
+        TD
+          P
+        TD
+          P
+        TD
+          P
+        TD
+          P
+      TR
+        TD
+          P
+        TD
+          P
+        TD
+          P
+        TD
+          P
+      TR
+        TD
+          P
+        TD
+          P
+        TD
+          P
+        TD
+          P
+      TR
+        TD
+          P
+        TD
+          P
+        TD
+          P
+        TD
+          P
+    H1
+    P
+    P
+    P
+      Note ID="footnote-31"
+        P
+    P
+    P
+    P
+    P
+    P
+    P
+      Note ID="footnote-32"
+        P
+    P
+    P
+    P
+    H1
+    P
+    P
+    P
+      Note ID="footnote-33"
+        P
+    P
+    P
+    P
+    P
+    P
+    P
+      Note ID="footnote-34"
+        P
+    P
+    P
+    P
+    H1
+    P
+    P
+    P
+      Note ID="footnote-35"
+        P
+    P
+    P
+    P
+    Table
+      TR
+        TD
+          P
+        TD
+          P
+        TD
+          P
+        TD
+          P
+      TR
+        TD
+          P
+        TD
+          P
+        TD
+          P
+        TD
+          P
+      TR
+        TD
+          P
+        TD
+          P
+        TD
+          P
+        TD
+          P
+      TR
+        TD
+          P
+        TD
+          P
+        TD
+          P
+        TD
+          P
+    P
+    P
+    P
+      Note ID="footnote-36"
+        P
+    P
+    P
+    P
+    H1
+    P
+    P
+    P
+      Note ID="footnote-37"
+        P
+    P
+    P
+    P
+    P
+    P
+    P
+      Note ID="footnote-38"
+        P
+    P
+    P
+    P
+    H1
+    P
+    P
+    P
+      Note ID="footnote-39"
+        P
+    P
+    P
+    P
+    P
+    P
+    P
+      Note ID="footnote-40"
+        P
+    P
+    P
+    P
+    Table
+      TR
+        TD
+          P
+        TD
+          P
+        TD
+          P
+        TD
+          P
+      TR
+        TD
+          P
+        TD
+          P
+        TD
+          P
+        TD
+          P
+      TR
+        TD
+          P
+        TD
+          P
+        TD
+          P
+        TD
+          P
+      TR
+        TD
+          P
+        TD
+          P
+        TD
+          P
+        TD
+          P
+    H1
+    P
+    P
+    P
+      Note ID="footnote-41"
+        P
+    P
+    P
+    P
+    P
+    P
+    P
+      Note ID="footnote-42"
+        P
+    P
+    P
+    P
+    H1
+    P
+    P
+    P
+      Note ID="footnote-43"
+        P
+    P
+    P
+    P
+    P
+    P
+    P
+      Note ID="footnote-44"
+        P
+    P
+    P
+    P
+    H1
+    P
+    P
+    P
+      Note ID="footnote-45"
+        P
+    P
+    P
+    P
+    Table
+      TR
+        TD
+          P
+        TD
+          P
+        TD
+          P
+        TD
+          P
+      TR
+        TD
+          P
+        TD
+          P
+        TD
+          P
+        TD
+          P
+      TR
+        TD
+          P
+        TD
+          P
+        TD
+          P
+        TD
+          P
+      TR
+        TD
+          P
+        TD
+          P
+        TD
+          P
+        TD
+          P
+    P
+    P
+    P
+      Note ID="footnote-46"
+        P
+    P
+    P
+    P
+    H1
+    P
+    P
+    P
+      Note ID="footnote-47"
+        P
+    P
+    P
+    P
+    P
+    P
+    P
+      Note ID="footnote-48"
+        P
+    P
+    P
+    P
+    H1
+    P
+    P
+    P
+      Note ID="footnote-49"
+        P
+    P
+    P
+    P
+    P
+    P
+    P
+      Note ID="footnote-50"
+        P
     P
     P
     P
