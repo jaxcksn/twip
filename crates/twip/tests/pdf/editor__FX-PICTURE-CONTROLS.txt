@@ -14,6 +14,11 @@ page 1 612 792
   text scheduled trend suggestions board order.
   text Locked: 
   text After the controls.
+  image /X2 64x48 1270991d1196c869
+  image /X3 64x48 b1ac61f3702cb236
+  image /X4 64x48 b1ac61f3702cb236
+  image /X5 64x48 1270991d1196c869
+  image /X6 64x48 1270991d1196c869
   op 1 0 0 -1 0 792 cm
   op /P << /MCID 0 >> BDC
   op q

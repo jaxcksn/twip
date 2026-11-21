@@ -11,6 +11,7 @@ page 1 612 792
   text DATEOctober 26, 2026
   text PAGE SIZEUS Letter, portrait + one landscape section
   text Tip: open the Navigation pane — every heading is a real outline level.
+  image /X1 1800x600 700636de883cccd7
   op 1 0 0 -1 0 792 cm
   op /Artifact << /Type /Layout >> BDC
   op q
@@ -1497,7 +1498,7 @@ page 2 612 792
   op Q
   op EMC
 page 3 612 792
-  text 1Welcome
+  text 1 Welcome
   text ocuments are more than text. This showcase is built to stress the parts of the 
   text Office Open XML format that matter most to a rich editor: inheritance through 
   text styles, multi-level numbering, section breaks with different page geometry, 
@@ -1507,7 +1508,7 @@ page 3 612 792
   text Each heading below is numbered by a real list definition attached to the Heading 
   text styles, so renumbering, the Table of Contents and the Navigation pane stay in 
   text sync automatically.
-  text 2Typography
+  text 2 Typography
   text Run-level properties applied directly to text. Each row of this borderless specimen 
   text table isolates one family of character formatting.
   text WEIGHT & SLANTBold  ·  Italic  ·  Bold italic
@@ -1542,8 +1543,8 @@ page 3 612 792
   annot Subtype /Link Rect [427.8 636.85 535.6 647.85] Contents <4a756d7020746f2074686520636f6d706c6578207461626c65> A << /Type /Action /D <636f6d706c65785f7461626c65> /S /GoTo >>
   annot Subtype /Link Rect [72 624.2 102.25 635.2] Contents <4a756d7020746f2074686520636f6d706c6578207461626c65> A << /Type /Action /D <636f6d706c65785f7461626c65> /S /GoTo >>
 page 4 612 792
-  text 3Paragraph Formatting
-  text 3.1Alignment
+  text 3 Paragraph Formatting
+  text 3.1 Alignment
   text Left aligned. The default for most body text, with a ragged right edge.
   text Centered. Useful for titles, captions and pull quotes.
   text Right aligned. Common for dates, signatures and numbers.
@@ -1552,7 +1553,7 @@ page 4 612 792
   text it faithfully preserves the author's intent as well as the words. Justification 
   text stretches inter-word spacing so both edges line up, which is why a good layout engine 
   text matters.
-  text 3.2Indentation & Spacing
+  text 3.2 Indentation & Spacing
   text First-line indent. Documents are more than text: they are structure, rhythm 
   text and intent. Every heading, list and table on this page is real Word markup, so an 
   text editor that round-trips it faithfully preserves the author's intent as well as the 
@@ -1567,7 +1568,7 @@ page 4 612 792
   text author's intent as well as the words.
   text Double spacing, 18 pt before. Line pitch is set with w:line="480" and 
   text w:lineRule="auto".
-  text 3.3Borders & Shading
+  text 3.3 Borders & Shading
   text Callout style. A paragraph style with a thick left border, tinted shading and 
   text inset indents — no table required.
   text Boxed paragraph with a double border on all four sides and a warm fill.
@@ -1577,7 +1578,7 @@ page 4 612 792
   text Even page headerDOCX Feature Showcase
   text Page 4  •  Section 2
 page 5 612 792
-  text 3.4Tab Stops & Leaders
+  text 3.4 Tab Stops & Leaders
   text Espresso...............................................................$3.50
   text Flat white..............................................................$4.75
   text Seasonal pour-over.....................................................$12.00
@@ -1585,7 +1586,7 @@ page 5 612 792
   text AlphaMiddle----------------------7.5
   text OmegaMid-----------------------42.125
   text Above: a center tab and a decimal tab with a hyphen leader — numbers align on the decimal point.
-  text 4Lists
+  text 4 Lists
   text MULTI-LEVEL BULLETS
   text ●Level one uses a teal disc
   text ○Level two uses a coral ring
@@ -1621,17 +1622,17 @@ page 6 612 792
   text ☑  Section breaks keep their orientation
   text ☐  Tracked changes accepted/rejected correctly
   text ☐  Comments anchored to the right range
-  text 5Tables
+  text 5 Tables
   text Three layout algorithms, then a stress-test table in the landscape section that 
   text follows.
-  text 5.1AutoFit to Contents
+  text 5.1 AutoFit to Contents
   text ActionWindowsmacOS
   text BoldCtrl + BCmd + B
   text Insert footnoteCtrl + Alt + FCmd + Opt + F
   text Toggle Track ChangesCtrl + Shift + ECmd + Shift + E
   text Update fieldsF9Fn + F9
   text Table 1 — Shortcut reference — autofit to contents, repeating header row, zebra shading
-  text 5.2AutoFit to Window
+  text 5.2 AutoFit to Window
   text ModeBehavior
   text AutoFit to 
   text contents
@@ -1648,8 +1649,8 @@ page 6 612 792
   text Even page headerDOCX Feature Showcase
   text Page 6  •  Section 2
 page 7 612 792
-  text 6Images & Objects
-  text 6.1Floating Image with Square Wrap
+  text 6 Images & Objects
+  text 6.1 Floating Image with Square Wrap
   text This geometric tile is anchored to this paragraph and 
   text floats against the right margin with square wrapping. 
   text Documents are more than text: they are structure, rhythm 
@@ -1667,17 +1668,18 @@ page 7 612 792
   text text: they are structure, rhythm and intent. Every heading, list and table on this 
   text page is real Word markup, so an editor that round-trips it faithfully preserves the 
   text author's intent as well as the words.
-  text 6.2Native Chart
+  text 6.2 Native Chart
   text Figure 1 — A combo chart: clustered columns on the primary axis, a line on the secondary axis (Edit Data 
   text opens Excel)
   text DOCX Feature ShowcaseOdd page header
   text Page 7  •  Section 2
+  image /X6 600x600 d51f47646451f51c
 page 8 612 792
-  text 6.3Shapes & Text Box
+  text 6.3 Shapes & Text Box
   text             
-  text 6.4Equations
+  text 6.4 Equations
   text Equation 1 — Office Math (OMML) — quadratic formula and the sum of the first n integers
-  text 7Links, Notes & Fields
+  text 7 Links, Notes & Fields
   text External hyperlink: Open XML SDK — WordprocessingML overview.
   text Internal hyperlink to a bookmark: the complex table in the landscape section.
   text Footnotes appear at the bottom of the page
@@ -1687,7 +1689,7 @@ page 8 612 792
   text i
   text Fields: this is page 8 of 10; the file name is showcase.docx; and today is November 9, 
   text 2026.
-  text 8Review & Collaboration
+  text 8 Review & Collaboration
   text Comments anchor to a range: this sentence has a reviewer comment attached, and so 
   text does this phrase.
   text Tracked changes: the launch is planned for FridayMonday morning after a final sign-
@@ -1707,7 +1709,7 @@ page 8 612 792
   annot Subtype /Link Rect [261.2 427.75 357.45 438.75] Contents <74686520636f6d706c6578207461626c65> A << /Type /Action /D <636f6d706c65785f7461626c65> /S /GoTo >>
   annot Subtype /Link Rect [294.58 80.5 384.79 91.5] Contents <6c696e6b20746f2045434d412d333736> A << /Type /Action /S /URI /URI <68747470733a2f2f7777772e65636d612d696e7465726e6174696f6e616c2e6f72672f7075626c69636174696f6e732d616e642d7374616e64617264732f7374616e64617264732f65636d612d3337362f> >>
 page 9 792 612
-  text 9The Complex Table
+  text 9 The Complex Table
   text A landscape section with a fixed-layout table that combines: a diagonally split corner cell spanning 2×2, three-
   text level column headers that repeat on every page, vertical region labels spanning multiple rows, a nested table inside 
   text a row-spanning cell, a bulleted list inside a cell, a six-column horizontal span with pattern shading, per-cell 
@@ -1746,7 +1748,7 @@ page 9 792 612
   text Landscape section · watermark lives in this header
   text Page 9  •  Section 3
 page 10 612 792
-  text 10Multi-Column Layout
+  text 10 Multi-Column Layout
   text This section switches to two newspaper 
   text columns separated by a vertical rule. 
   text Documents are more than text: they are 
@@ -2041,6 +2043,7 @@ structure
       LI
         Lbl
         LBody
+    L ListNumbering=/Disc
       LI
         Lbl
         LBody

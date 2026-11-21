@@ -70,6 +70,8 @@ page 1 612 792
   text relevant group relief results 
   text region ledger brief.
   text Middle line of three.
+  image /X2 64x48 6564e5098954f28c
+  image /X3 64x48 6564e5098954f28c
   op 1 0 0 -1 0 792 cm
   op /P << /MCID 0 >> BDC
   op q

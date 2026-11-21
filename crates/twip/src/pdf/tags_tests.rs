@@ -103,7 +103,7 @@ fn notes_referencing_notes_are_walked_without_recursion() {
     let body = r#"<w:p><w:r><w:t>Body</w:t></w:r><w:r><w:footnoteReference w:id="1"/></w:r></w:p>"#;
     let bytes = package(body, &[("footnotes.xml", "footnotes", format!("<w:footnotes {W}>{notes}</w:footnotes>"))]);
     let doc = crate::docx::read(&bytes).expect("reads");
-    let tags = Tags::of(&doc, "en-US");
+    let tags = Tags::of(&doc, "en-US", None).expect("not cancelled");
     let note = |n: &Node| matches!(n, Node::Element(e) if e.kind == Kind::Note);
     let notes_after_body = tags.root.iter().filter(|n| note(n)).count();
     assert_eq!(notes_after_body, n - 1, "the first note follows its reference; each next one follows the body");
@@ -224,4 +224,129 @@ fn list_numbers_languages_and_pictures_without_alt_text() {
     let text = String::from_utf8_lossy(&pdf);
     let figures = text.matches("/S/Figure").count();
     assert!(figures >= missing.count as usize && missing.count > 0, "{figures} figures, {} without alternative text", missing.count);
+    assert!(!text.contains("pdfuaid:part"), "a figure without alternative text: no PDF/UA claim");
+}
+
+/// `pdf` holds `word`: as bytes, or as UTF-16 text.
+fn holds(pdf: &[u8], word: &str) -> bool {
+    let utf16: Vec<u8> = word.encode_utf16().flat_map(u16::to_be_bytes).collect();
+    let hex: String = word.bytes().map(|b| format!("{b:02x}")).collect();
+    [word.as_bytes(), &utf16[..]].iter().any(|w| pdf.windows(w.len()).any(|x| x == *w))
+        || crate::pdf::output::dump(pdf.to_vec()).contains(&hex)
+        || crate::pdf::output::dump(pdf.to_vec()).contains(word)
+}
+
+fn field(code: &str, result: &str) -> String {
+    format!(
+        r#"<w:r><w:fldChar w:fldCharType="begin"/></w:r>{code}<w:r><w:fldChar w:fldCharType="separate"/></w:r>{result}<w:r><w:fldChar w:fldCharType="end"/></w:r>"#
+    )
+}
+
+/// Exported without markup, tracked deletions reach neither the title, the outline, nor a link's description.
+#[test]
+fn tracked_deletions_stay_out_of_titles_outlines_and_links() {
+    let styles = format!(
+        r#"<w:styles {W}><w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/></w:style><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/></w:style></w:styles>"#
+    );
+    let del = |t: &str| format!(r#"<w:del w:id="9" w:author="A" w:date="2026-01-01T00:00:00Z"><w:r><w:delText>{t}</w:delText></w:r></w:del>"#);
+    let code = format!(r#"<w:r><w:instrText xml:space="preserve"> HYPERLINK "https://example.com/" </w:instrText></w:r>{}"#, {
+        r#"<w:del w:id="8" w:author="A" w:date="2026-01-01T00:00:00Z"><w:r><w:delInstrText xml:space="preserve">\o "Dropttip" </w:delInstrText></w:r></w:del>"#
+    });
+    let body = format!(
+        r#"<w:p><w:pPr><w:pStyle w:val="Title"/></w:pPr><w:r><w:t xml:space="preserve">Kept </w:t></w:r>{}<w:r><w:t>title</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t xml:space="preserve">Kept heading </w:t></w:r>{}</w:p><w:p>{}</w:p>"#,
+        del("Droptitle"),
+        del("Dropheading"),
+        field(&code, &format!(r#"<w:r><w:t xml:space="preserve">Kept link </w:t></w:r>{}"#, del("Droplink")))
+    );
+    let mut doc = crate::docx::read(&package(&body, &[("styles.xml", "styles", styles)])).expect("reads");
+    doc.review.view = crate::docx::review::MarkupView::NoMarkup;
+    let fonts = bundled_fonts();
+    let (pdf, _) = super::super::export::export(&doc, &crate::layout::layout(&doc, &fonts), "", &PdfOptions::default(), None).expect("exports");
+    for kept in ["Kept title", "Kept heading", "Kept link"] {
+        assert!(holds(&pdf, kept), "{kept} is written");
+    }
+    for dropped in ["Droptitle", "Dropheading", "Droplink", "Dropttip"] {
+        assert!(!holds(&pdf, dropped), "{dropped} is written");
+    }
+}
+
+/// Lists of different numbering definitions stay apart, side by side or only a blank paragraph between them; one
+/// list around a blank paragraph is one list.
+#[test]
+fn lists_keep_their_numbering_identity() {
+    let numbering = format!(
+        r#"<w:numbering {W}><w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num><w:num w:numId="2"><w:abstractNumId w:val="0"/><w:lvlOverride w:ilvl="0"><w:startOverride w:val="1"/></w:lvlOverride></w:num></w:numbering>"#
+    );
+    let item = |num: u32, t: &str| {
+        format!(r#"<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="{num}"/></w:numPr></w:pPr><w:r><w:t>{t}</w:t></w:r></w:p>"#)
+    };
+    let body = [item(1, "One"), item(2, "Other"), item(1, "Two"), "<w:p/>".into(), item(1, "Three")].concat();
+    let dump = crate::pdf::output::dump(export(&package(&body, &[("numbering.xml", "numbering", numbering)])));
+    let lists = dump.lines().filter(|l| l.trim_start().starts_with("L ")).count();
+    assert_eq!(lists, 3, "{dump}");
+}
+
+/// A picture inside a hyperlink is the link's figure, with the link's annotation over it.
+#[test]
+fn a_linked_picture_has_its_link() {
+    use crate::layout::tests::shapes::sp;
+    let ns = r#"xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape""#;
+    let picture = format!(
+        r#"<w:r><w:drawing {ns}><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="254000" cy="127000"/><wp:docPr id="9" name="P" descr="A linked box"/><a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">{}</a:graphicData></a:graphic></wp:inline></w:drawing></w:r>"#,
+        sp(0, 0, 20, 10, "rect", "", "FF0000")
+    );
+    let code = r#"<w:r><w:instrText xml:space="preserve"> HYPERLINK "https://example.com/box" </w:instrText></w:r>"#;
+    let body = format!(r#"<w:p><w:r><w:t xml:space="preserve">Before </w:t></w:r>{}</w:p>"#, field(code, &picture));
+    let dump = crate::pdf::output::dump(export(&package(&body, &[])));
+    assert_eq!(dump.matches("annot Subtype /Link").count(), 1, "{dump}");
+    let link = dump.lines().position(|l| l.trim() == "Link").expect("a Link element");
+    assert!(dump.lines().nth(link + 1).is_some_and(|l| l.contains("Figure Alt=\"A linked box\"")), "{dump}");
+}
+
+/// A link's text flowing through two columns has an area per line in each column: none spans the gap.
+#[test]
+fn a_link_through_columns_has_an_area_per_column_line() {
+    let words = "linked words flow on ".repeat(120);
+    let code = r#"<w:r><w:instrText xml:space="preserve"> HYPERLINK "https://example.com/" </w:instrText></w:r>"#;
+    let body = format!(
+        r#"<w:p>{}</w:p><w:sectPr><w:pgSz w:w="12240" w:h="5000"/><w:pgMar w:top="720" w:right="1440" w:bottom="720" w:left="1440" w:header="0" w:footer="0" w:gutter="0"/><w:cols w:num="2" w:space="720"/></w:sectPr>"#,
+        field(code, &format!("<w:r><w:t>{words}</w:t></w:r>"))
+    );
+    let dump = crate::pdf::output::dump(export(&package(&body, &[])));
+    let widths: Vec<f64> = dump
+        .lines()
+        .filter_map(|l| l.trim().strip_prefix("annot Subtype /Link Rect ["))
+        .filter_map(|r| {
+            let v: Vec<f64> = r.split([' ', ']']).take(4).filter_map(|n| n.parse().ok()).collect();
+            (v.len() == 4).then(|| v[2] - v[0])
+        })
+        .collect();
+    assert!(widths.len() > 4, "{dump}");
+    assert!(widths.iter().all(|&w| w <= 216.5), "a column is 216 pt wide: {widths:?}");
+}
+
+/// Tagging stops once cancelled.
+#[test]
+fn tagging_stops_when_cancelled() {
+    let doc = crate::docx::read(&fixture()).expect("reads");
+    assert!(Tags::of(&doc, "en-US", Some(&std::sync::atomic::AtomicBool::new(true))).is_none());
+    let snap = crate::layout::layout(&doc, &bundled_fonts());
+    let err = super::super::export::export(&doc, &snap, "", &PdfOptions::default(), Some(&std::sync::atomic::AtomicBool::new(true)))
+        .expect_err("cancelled");
+    assert_eq!(err.code, crate::api::error::ErrorCode::Aborted);
+}
+
+/// An exact-height row's cells clip what they draw: a line that reaches past the row's bottom is cut there.
+#[test]
+fn an_exact_rows_cells_clip_their_content() {
+    let doc = crate::docx::read(&std::fs::read(root().join("fixtures/editor/FX-ROW-CLIP.docx")).expect("the fixture")).expect("reads");
+    let snap = crate::layout::layout(&doc, &bundled_fonts());
+    let mut runs = Vec::new();
+    crate::layout::traverse::paint(&snap.pages()[0], &mut |p| {
+        if let crate::layout::fragment::Item::Glyphs(r) = p.item {
+            runs.push((r.baseline + p.dy, p.clip));
+        }
+    });
+    assert!(runs.iter().any(|(y, c)| c.is_some_and(|c| *y > c[3])), "a line past its row's bottom is clipped: {runs:?}");
+    assert!(runs.iter().any(|(_, c)| c.is_none()), "a row of its content's height clips nothing");
 }

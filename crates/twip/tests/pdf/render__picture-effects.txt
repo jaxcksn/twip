@@ -8,6 +8,16 @@ page 1 612 792
   text   
   text A blip with only r:link, and one with r:link and r:embed
   text   
+  image /X10 64x48 2d07a41ae9927700
+  image /X11 64x48 6564e5098954f28c
+  image /X2 64x48 masked f3cc103136423a57
+  form /X4
+    image /X3 510x390 masked 4d549099ab369715
+  image /X5 64x48 6564e5098954f28c
+  image /X6 64x48 4059223dc0c2b2a5
+  image /X7 64x48 596606bf61579cd3
+  image /X8 64x48 d6d7135ffbf06340
+  image /X9 64x48 d322f366573faafe
   op 1 0 0 -1 0 792 cm
   op /P << /MCID 0 >> BDC
   op q

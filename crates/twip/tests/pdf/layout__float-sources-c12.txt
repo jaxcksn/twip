@@ -49,6 +49,7 @@ page 1 612 792
   text cause colleague. Partner section notice claim team export 
   text staff newsletter review matter presenter advisor. Account 
   text Text box
+  image /X2 64x48 6564e5098954f28c
   op 1 0 0 -1 0 792 cm
   op /P << /MCID 0 >> BDC
   op q

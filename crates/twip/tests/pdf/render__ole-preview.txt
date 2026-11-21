@@ -1801,6 +1801,7 @@ page 1 612 792
   op EMC
 page 2 612 792
   text A PNG preview
+  image /X6 64x48 6564e5098954f28c
   op 1 0 0 -1 0 792 cm
   op /P << /MCID 0 >> BDC
   op q

@@ -73,6 +73,10 @@ page 1 612 792
   op EMC
   op /P << /MCID 1 >> BDC
   op q
+  op 66.6 101.27 70 120 re
+  op W
+  op n
+  op q
   op 0 1 -1 0 232.97 29.77 cm
   op q
   op /Span << /ActualText <766572746963616c2063656c6c207465787420> >> BDC
@@ -115,8 +119,13 @@ page 1 612 792
   op EMC
   op Q
   op Q
+  op Q
   op EMC
   op /P << /MCID 2 >> BDC
+  op q
+  op 136.6 101.27 70 120 re
+  op W
+  op n
   op q
   op 0 -1 1 0 40.23 363.27 cm
   op q
@@ -160,8 +169,13 @@ page 1 612 792
   op EMC
   op Q
   op Q
+  op Q
   op EMC
   op /P << /MCID 3 >> BDC
+  op q
+  op 206.6 101.27 70 120 re
+  op W
+  op n
   op q
   op 0 1 -1 0 372.97 -110.23 cm
   op q
@@ -238,8 +252,13 @@ page 1 612 792
   op Q
   op Q
   op Q
+  op Q
   op EMC
   op /P << /MCID 4 >> BDC
+  op q
+  op 276.6 101.27 70 120 re
+  op W
+  op n
   op q
   op 0 1 -1 0 395.12 -180.23 cm
   op q
@@ -292,8 +311,13 @@ page 1 612 792
   op EMC
   op Q
   op Q
+  op Q
   op EMC
   op /P << /MCID 5 >> BDC
+  op q
+  op 346.6 101.27 100 120 re
+  op W
+  op n
   op q
   op /Span << /ActualText <4120686f72697a6f6e74616c20> >> BDC
   op 0 0 0 rg
@@ -323,6 +347,7 @@ page 1 612 792
   op [<0002> 0 <0002> 0 <0002> 0 <0002> 0 <0002>] TJ
   op ET
   op EMC
+  op Q
   op Q
   op EMC
   op /Artifact << /Type /Layout >> BDC

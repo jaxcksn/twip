@@ -15,6 +15,7 @@ page 1 612 792
   text claim team export staff newsletter.
   text Received by: 	
   text Date: 1/1/2026
+  image /X2 64x48 1270991d1196c869
   op 1 0 0 -1 0 792 cm
   op /P << /MCID 0 >> BDC
   op q

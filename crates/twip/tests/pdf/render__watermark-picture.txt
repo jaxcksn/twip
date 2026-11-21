@@ -15,6 +15,7 @@ page 1 612 792
   text results region ledger brief usage cause colleague. Partner section 
   text notice claim team export staff newsletter review matter presenter 
   text advisor. Account served savings pilot.
+  image /X1 64x48 596606bf61579cd3
   op 1 0 0 -1 0 792 cm
   op /Artifact << /Type /Pagination /Subtype /Header >> BDC
   op q
@@ -185,6 +186,7 @@ page 2 612 792
   text standard fact that products distribution filed logistics. Chapter plan 
   text regional maintenance accessibility tax finds record proposal denied 
   text contract onboarding. Support network scheduled trend.
+  image /X3 64x48 6564e5098954f28c
   op 1 0 0 -1 0 792 cm
   op /Artifact << /Type /Pagination /Subtype /Header >> BDC
   op q

@@ -52,14 +52,23 @@ pub fn span_at(inlines: &[Inline], begin: usize) -> Option<FieldSpan> {
 
 /// A field's own code text: the text from its begin to its separator, the fields nested in it left out.
 pub fn code_text(inlines: &[Inline], s: FieldSpan) -> String {
+    code_where(inlines, s, |_| true)
+}
+
+/// [`code_text`] as `view` shows it: without the revisions the view hides.
+pub fn code_text_in(inlines: &[Inline], s: FieldSpan, view: super::review::MarkupView) -> String {
+    code_where(inlines, s, |r| !view.hides(&r.rev))
+}
+
+fn code_where(inlines: &[Inline], s: FieldSpan, keep: impl Fn(&Run) -> bool) -> String {
     let mut depth = 0usize;
     let mut out = String::new();
     for i in &inlines[s.begin + 1..s.code_end()] {
         match i {
             Inline::FieldBegin { .. } => depth += 1,
             Inline::FieldEnd { .. } => depth = depth.saturating_sub(1),
-            Inline::Text(t, _) if depth == 0 => out.push_str(t),
-            Inline::Tab(_) | Inline::PTab(..) if depth == 0 => out.push('\t'),
+            Inline::Text(t, r) if depth == 0 && keep(r) => out.push_str(t),
+            Inline::Tab(_) | Inline::PTab(..) if depth == 0 && i.run().is_none_or(&keep) => out.push('\t'),
             _ => {}
         }
     }
@@ -213,8 +222,21 @@ fn show(inlines: &[Inline], views: bool) -> Vec<Shown> {
 
 /// The text of `inlines` as results show it: codes left out, an evaluated field as its value (or its result).
 pub fn visible(inlines: &[Inline]) -> String {
+    visible_where(inlines, |_| true)
+}
+
+/// [`visible`] as `view` draws it: without hidden text and the revisions the view hides.
+pub fn visible_in(inlines: &[Inline], view: super::review::MarkupView) -> String {
+    visible_where(inlines, |r| !r.hidden && !view.hides(&r.rev))
+}
+
+/// [`visible`] of the inlines whose runs `keep` takes.
+fn visible_where(inlines: &[Inline], keep: impl Fn(&Run) -> bool) -> String {
     let mut out = String::new();
     for (i, s) in inlines.iter().zip(shown(inlines)) {
+        if i.run().is_some_and(|r| !keep(r)) {
+            continue;
+        }
         match (s, i) {
             (Shown::Value(v), _) => out.push_str(&v),
             (Shown::Itself, Inline::Text(t, _)) => out.push_str(t),

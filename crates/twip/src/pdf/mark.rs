@@ -10,7 +10,7 @@ use std::rc::Rc;
 use twip_graphics::kurbo::{self, Affine};
 use twip_graphics::pdf::{self, ArtifactKind, Kind, Mark, Node};
 
-use super::tags::{Places, Tag, Tags, Target, prune};
+use super::tags::{Kept, Places, Tag, Tags, Target, prune};
 use crate::docx::Document;
 use crate::layout::ParaId;
 use crate::layout::fragment::{GlyphRun, Item, PictureOf, PlacedLine, Turned};
@@ -34,6 +34,9 @@ struct Instance {
     after: Option<u32>,
 }
 
+/// A link's line: the placed line, and in turned text (one placed line for the whole box) the run's baseline.
+type LineKey = (u32, Option<i64>);
+
 /// Whose places a drawn item's paragraph is in.
 #[derive(Clone, Copy)]
 enum Source {
@@ -52,16 +55,24 @@ impl Source {
     }
 }
 
+/// The line an item is drawn on: its page, its id there and its paragraph.
+#[derive(Clone, Copy)]
+struct Line {
+    page: usize,
+    id: u32,
+    para: Option<ParaId>,
+}
+
 pub(super) struct Marker<'d> {
     doc: &'d Document,
-    tags: Tags,
+    tags: Tags<'d>,
     /// Whether each content id has been drawn.
     drawn: Vec<bool>,
-    /// The first page each header row's run (paragraph, first unit) is drawn on.
-    header_runs: HashMap<(u64, u32), usize>,
+    /// The first page each header row's run (whose places, paragraph, first unit) is drawn on.
+    header_runs: HashMap<(usize, u64, u32), usize>,
     /// Each link's areas, one per line: (link, page, area), and where each line's is.
     areas: Vec<(u32, usize, kurbo::Rect)>,
-    area_at: HashMap<(u32, usize, i64), usize>,
+    area_at: HashMap<(u32, usize, LineKey), usize>,
     /// The bookmarks found: (page, name, place), and each paragraph's next bookmark.
     dests: Vec<(usize, String, kurbo::Point)>,
     next_bookmark: HashMap<u64, usize>,
@@ -80,7 +91,7 @@ pub(super) struct Marker<'d> {
 }
 
 impl<'d> Marker<'d> {
-    pub fn new(doc: &'d Document, tags: Tags) -> Marker<'d> {
+    pub fn new(doc: &'d Document, tags: Tags<'d>) -> Marker<'d> {
         let n = tags.content_ids() as usize + 1;
         Marker {
             doc,
@@ -149,26 +160,29 @@ impl<'d> Marker<'d> {
     /// line it is on.
     pub fn mark(&mut self, page: usize, p: &Placed<'_>, line: Option<ParaId>, out: &mut Vec<(Mark, Item)>) {
         let float = p.float.map(|f| f.0);
+        let at = Line { page, id: p.line, para: line };
         match p.absolute() {
-            Item::Glyphs(r) => self.glyphs(page, r, None, out),
+            Item::Glyphs(r) => self.glyphs(at, r, None, out),
             item @ (Item::Rect { .. } | Item::Gridline { .. }) => out.push((Mark::Artifact(ArtifactKind::Layout), item)),
             item @ Item::Image { .. } => {
                 let Item::Image { rect, of, .. } = &item else { return };
-                let mark = self.picture(page, *of, float, *rect, line, None);
+                let mark = self.picture(at, *of, float, *rect, None);
                 out.push((mark, item));
             }
             Item::Shape(s) => {
                 let of = if s.of == PictureOf::None && s.float != 0 { PictureOf::Float(crate::layout::FloatId(s.float)) } else { s.of };
-                let mark = self.picture(page, of, float, s.rect, line, None);
+                let mark = self.picture(at, of, float, s.rect, None);
                 out.push((mark, Item::Shape(s)));
             }
-            Item::Turned(t) => self.turned(page, t, float, line, out),
+            Item::Turned(t) => self.turned(at, t, float, out),
         }
     }
 
     /// A picture's or shape's mark: the inline picture or float it draws, else the float it is drawn in, as tagged;
-    /// else the artifact of the header or footer it is in, else a layout artifact. `rot`: the turn it is drawn under.
-    fn picture(&mut self, page: usize, of: PictureOf, float: Option<u64>, rect: [f64; 4], line: Option<ParaId>, rot: Option<Affine>) -> Mark {
+    /// else the artifact of the header or footer it is in, else a layout artifact. A linked picture adds its box to
+    /// its link's area. `rot`: the turn it is drawn under.
+    fn picture(&mut self, line: Line, of: PictureOf, float: Option<u64>, rect: [f64; 4], rot: Option<Affine>) -> Mark {
+        let page = line.page;
         let centre = kurbo::Point::new((rect[0] + rect[2]) / 2.0, (rect[1] + rect[3]) / 2.0);
         let at = rot.map_or(centre, |t| t * centre);
         let tag = |m: &Self, f: &dyn Fn(&Places) -> Option<Tag>| m.find(page, at, |pl| f(pl).is_some()).and_then(|s| f(m.places(s)));
@@ -181,13 +195,17 @@ impl<'d> Marker<'d> {
         match found {
             Some(Tag::Content(c)) => {
                 self.drawn[c as usize] = true;
+                if let Some(&link) = self.tags.link_of.get(&c) {
+                    let area = kurbo::Rect::new(rect[0], rect[1], rect[2], rect[3]);
+                    self.link_area(link, line, rot.map(|_| centre.y), rot.map_or(area, |t| t.transform_rect_bbox(area)));
+                }
                 Mark::Content(c)
             }
             Some(Tag::Artifact(k)) => Mark::Artifact(k),
             None => {
                 let para = match of {
                     PictureOf::Inline(p, _) => Some(p),
-                    _ => line,
+                    _ => line.para,
                 };
                 Mark::Artifact(para.and_then(|p| self.tags.artifact(p.0)).unwrap_or(ArtifactKind::Layout))
             }
@@ -195,22 +213,22 @@ impl<'d> Marker<'d> {
     }
 
     /// Turned text: its items marked, each stretch of one mark turned as the whole is.
-    fn turned(&mut self, page: usize, t: Rc<Turned>, float: Option<u64>, line: Option<ParaId>, out: &mut Vec<(Mark, Item)>) {
+    fn turned(&mut self, line: Line, t: Rc<Turned>, float: Option<u64>, out: &mut Vec<(Mark, Item)>) {
         let rot = Affine::rotate_about(t.deg.to_radians(), kurbo::Point::new(t.centre[0], t.centre[1]));
         let mut inner = Vec::new();
         for item in &t.items {
             match item {
-                Item::Glyphs(r) => self.glyphs(page, r.clone(), Some(rot), &mut inner),
+                Item::Glyphs(r) => self.glyphs(line, r.clone(), Some(rot), &mut inner),
                 Item::Image { rect, of, .. } => {
-                    let mark = self.picture(page, *of, float, *rect, line, Some(rot));
+                    let mark = self.picture(line, *of, float, *rect, Some(rot));
                     inner.push((mark, item.clone()));
                 }
                 Item::Shape(s) => {
                     let of = if s.of == PictureOf::None && s.float != 0 { PictureOf::Float(crate::layout::FloatId(s.float)) } else { s.of };
-                    let mark = self.picture(page, of, float, s.rect, line, Some(rot));
+                    let mark = self.picture(line, of, float, s.rect, Some(rot));
                     inner.push((mark, item.clone()));
                 }
-                Item::Turned(u) => self.turned(page, Rc::clone(u), float, line, &mut inner),
+                Item::Turned(u) => self.turned(line, Rc::clone(u), float, &mut inner),
                 other => inner.push((Mark::Artifact(ArtifactKind::Layout), other.clone())),
             }
         }
@@ -239,7 +257,8 @@ impl<'d> Marker<'d> {
     /// where its stretches change, a run before its text without units being its list number; another paragraph's
     /// is tagged as a loose paragraph; a run of no paragraph (a line number) is pagination. `rot`: the turn it is
     /// drawn under.
-    fn glyphs(&mut self, page: usize, r: GlyphRun, rot: Option<Affine>, out: &mut Vec<(Mark, Item)>) {
+    fn glyphs(&mut self, line: Line, r: GlyphRun, rot: Option<Affine>, out: &mut Vec<(Mark, Item)>) {
+        let page = line.page;
         let Some(para) = r.para.map(|p| p.0) else {
             out.push((Mark::Artifact(ArtifactKind::Pagination), Item::Glyphs(r)));
             return;
@@ -264,7 +283,7 @@ impl<'d> Marker<'d> {
         if self.tags.repeated.contains(&para)
             && let Some(u) = r.chars.iter().find_map(|c| c.2)
         {
-            match self.header_runs.entry((para, u.0)) {
+            match self.header_runs.entry((src.key(), para, u.0)) {
                 Entry::Occupied(e) if *e.get() < page => {
                     out.push((Mark::Artifact(ArtifactKind::Pagination), Item::Glyphs(r)));
                     return;
@@ -286,6 +305,8 @@ impl<'d> Marker<'d> {
             out.push((Mark::Artifact(ArtifactKind::Other), Item::Glyphs(r)));
             return;
         }
+        // A numbered heading's number is its text's first content, and reads apart from it.
+        let heading = label.is_some() && stretches.first().map(|s| s.1) == label;
         let content = |u: u32| stretches.get(stretches.partition_point(|s| s.0 <= u).saturating_sub(1)).map(|s| s.1);
         // Each character's content: its unit's stretch's, the list number's before the paragraph's text, else its
         // neighbours'.
@@ -333,7 +354,8 @@ impl<'d> Marker<'d> {
         }
         if parts.len() == 1 {
             let c = parts[0].0;
-            let mark = self.text_mark(c, Some(c) == label, &r, page, rot);
+            let r = if heading { spaced(r) } else { r };
+            let mark = self.text_mark(c, Some(c) == label, &r, line, rot);
             if Some(c) != label {
                 self.last = (key, c);
             }
@@ -352,7 +374,8 @@ impl<'d> Marker<'d> {
                 para: r.para,
                 paint: r.paint.clone(),
             };
-            let mark = self.text_mark(c, Some(c) == label, &part, page, rot);
+            let part = if heading { spaced(part) } else { part };
+            let mark = self.text_mark(c, Some(c) == label, &part, line, rot);
             if Some(c) != label {
                 self.last = (key, c);
             }
@@ -362,7 +385,7 @@ impl<'d> Marker<'d> {
 
     /// The mark of run `r`, text of content `c` (a list number's when `label`): white space alone (an empty
     /// paragraph's caret stop) is an artifact until the content has drawn more. A link's text adds to its area.
-    fn text_mark(&mut self, c: u32, label: bool, r: &GlyphRun, page: usize, rot: Option<Affine>) -> Mark {
+    fn text_mark(&mut self, c: u32, label: bool, r: &GlyphRun, line: Line, rot: Option<Affine>) -> Mark {
         if r.chars.iter().any(|ch| (label || ch.2.is_some()) && !ch.0.is_whitespace()) {
             self.drawn[c as usize] = true;
         }
@@ -375,17 +398,21 @@ impl<'d> Marker<'d> {
             let scale = r.face.scale(r.size);
             let x1 = last.1 + r.face.advance(last.0) * scale;
             let area = kurbo::Rect::new(first.1, r.baseline - r.face.ascent * scale, x1, r.baseline + r.face.descent.abs() * scale);
-            let area = rot.map_or(area, |t| t.transform_rect_bbox(area));
-            let key = (link, page, (r.baseline * 4.0).round() as i64);
-            match self.area_at.get(&key) {
-                Some(&i) => self.areas[i].2 = self.areas[i].2.union(area),
-                None => {
-                    self.area_at.insert(key, self.areas.len());
-                    self.areas.push((link, page, area));
-                }
-            }
+            self.link_area(link, line, rot.map(|_| r.baseline), rot.map_or(area, |t| t.transform_rect_bbox(area)));
         }
         Mark::Content(c)
+    }
+
+    /// Adds `area` to link `link`'s area on `line` (at `turned`, the baseline in turned text).
+    fn link_area(&mut self, link: u32, line: Line, turned: Option<f64>, area: kurbo::Rect) {
+        let key = (link, line.page, (line.id, turned.map(|y| (y * 4.0).round() as i64)));
+        match self.area_at.get(&key) {
+            Some(&i) => self.areas[i].2 = self.areas[i].2.union(area),
+            None => {
+                self.area_at.insert(key, self.areas.len());
+                self.areas.push((link, line.page, area));
+            }
+        }
     }
 
     /// The bookmarks of `para` the run's characters are at or after.
@@ -454,12 +481,23 @@ impl<'d> Marker<'d> {
             })
             .collect();
         let missing_alt = self.tags.missing_alt.iter().filter(|&&c| drawn(c)).count();
-        let mut elements: Vec<pdf::Element> = prune(root, &drawn, &|l| annotated.get(l as usize).copied().unwrap_or(false))
-            .into_iter()
-            .filter_map(|n| if let Node::Element(e) = n { Some(e) } else { None })
-            .collect();
+        let kept = Kept { drawn, annotated: |l: u32| annotated.get(l as usize).copied().unwrap_or(false), lists: &self.tags.lists };
+        let mut elements: Vec<pdf::Element> =
+            prune(root, &kept).into_iter().filter_map(|n| if let Node::Element(e) = n { Some(e) } else { None }).collect();
         heading_levels(&mut elements);
         Structure { elements, outline, missing_alt }
+    }
+}
+
+/// A heading's number (a run of no unit) with a space after its characters, so that it reads apart from the text.
+fn spaced(r: GlyphRun) -> GlyphRun {
+    match r.chars.last() {
+        Some(&(c, x, None)) if !c.is_whitespace() && r.chars.iter().all(|ch| ch.2.is_none()) => {
+            let mut chars = r.chars.into_vec();
+            chars.push((' ', x, None));
+            GlyphRun { chars: chars.into(), ..r }
+        }
+        _ => r,
     }
 }
 

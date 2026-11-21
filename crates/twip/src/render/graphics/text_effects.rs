@@ -66,7 +66,7 @@ impl Graphics {
     fn glyphs_as<'p>(&mut self, rec: &mut Recorder, g: &Run, run: &GlyphRun<'_>, paint: impl Into<Paint<'p>>, how: As) {
         match how {
             As::Text if self.with_text => {
-                let text: String = g.chars.iter().map(|c| c.0).collect();
+                let text = super::run_text(g);
                 let clusters = super::clusters(g).unwrap_or_default();
                 rec.glyphs_text(&self.res.fonts, run, &text, &clusters, paint);
             }
@@ -86,7 +86,7 @@ impl Graphics {
     /// The characters of glyphs drawn some other way: a PDF's invisible text.
     fn invisible(&mut self, rec: &mut Recorder, g: &Run, run: &GlyphRun<'_>) {
         if self.with_text {
-            let text: String = g.chars.iter().map(|c| c.0).collect();
+            let text = super::run_text(g);
             let clusters = super::clusters(g).unwrap_or_default();
             rec.invisible_text(&self.res.fonts, run, &text, &clusters);
         }

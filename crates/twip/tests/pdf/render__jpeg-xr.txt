@@ -8,6 +8,11 @@ page 1 612 792
   text   
   text A PNG whose artistic effect keeps its source as a JPEG XR layer: the 
   text PNG is drawn
+  image /X2 120x100 3d10cc0f67a6f091
+  image /X3 47x39 90a97e744701f59d
+  image /X4 170x80 masked 227d6ab00d563639
+  image /X5 170x80 masked 483b03bb5d0fe2e1
+  image /X6 64x48 6564e5098954f28c
   op 1 0 0 -1 0 792 cm
   op /P << /MCID 0 >> BDC
   op q

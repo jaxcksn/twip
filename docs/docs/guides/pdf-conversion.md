@@ -79,12 +79,14 @@ EMF, WMF and EMF+ pictures export as vector drawing, not a raster; JPEG XR (`.wd
 
 ## Accessibility
 
-PDFs are tagged for PDF/UA-1: headings, lists with their labels, tables with their header cells, links, notes, text
-boxes, figures with their alternative text, and text in another language (`Lang`). Hyperlinks and cross-references are
-link annotations, and the headings make the outline. The output is checked with veraPDF. Headers, footers and decorative pictures are
-artifacts. A picture with no alternative text that isn't marked decorative is still a figure, without a description,
-and the export warns with `pdf-figure-without-alt`: give it alternative text, or mark it decorative, for a conformant
-PDF.
+PDFs are tagged for PDF/UA-1: headings (with their numbers), lists with their labels, tables with their header cells,
+links (linked pictures too), notes, text boxes, figures with their alternative text, and text in another language
+(`Lang`). Hyperlinks and cross-references are link annotations, and the headings make the outline. The output is checked
+with veraPDF. Headers, footers and decorative pictures are artifacts. A picture with no alternative text that isn't
+marked decorative is still a figure, without a description: the PDF keeps its tags but doesn't claim PDF/UA, and the
+export warns with `pdf-figure-without-alt`. Give it alternative text, or mark it decorative, for a conformant PDF. The
+title, outline and link descriptions come from the text as exported, so tracked deletions a conversion hides don't
+reach them.
 
 ## Fonts on a server
 

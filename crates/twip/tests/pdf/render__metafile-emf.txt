@@ -8,6 +8,8 @@ page 1 612 792
   text Small
   text Bitmaps
   text Gradients
+  image /X4 4x4 73c46b84b052576e
+  image /X6 8x1 masked b18f5267d488006c
   op 1 0 0 -1 0 792 cm
   op /P << /MCID 0 >> BDC
   op q
@@ -929,6 +931,13 @@ page 2 612 792
   text e
   text s
   text The shapes, cropped
+  image /X10 882x601 masked efcc339bca4d8d3c
+  form /X14
+    form /X13
+  form /X19
+    form /X18
+  form /X24
+  image /X27 4x1 56184178f3c833e0
   op 1 0 0 -1 0 792 cm
   op /P << /MCID 0 >> BDC
   op q

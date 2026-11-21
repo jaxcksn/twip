@@ -2,6 +2,7 @@ pages 1
 page 1 612 792
   text 9 Barcodes
   text Shipment barcode: 
+  image /X2 64x48 b1ac61f3702cb236
   op 1 0 0 -1 0 792 cm
   op /P << /MCID 0 >> BDC
   op q

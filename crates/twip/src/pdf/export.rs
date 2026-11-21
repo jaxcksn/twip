@@ -1,10 +1,12 @@
 //! PDF export from a layout snapshot: the pages recorded by `render::graphics` and written by twip-graphics' PDF
 //! writer, which embeds the fonts subset with ToUnicode maps (the runs carry their characters, so text extracts as
-//! typed). Tagged for PDF/UA ([`super::tags`]): paragraphs as P/H1–H6, list items as L/LI/LBody, tables as
-//! Table/TR/TH/TD with their scopes and header ids, pictures with alternative text as Figures, text boxes as Divs,
-//! notes as Notes after their references, links as Links with their annotations; headers and footers as pagination
-//! artifacts, decorative pictures, list numbers, borders and shading as others. Bookmarks are named destinations; an
-//! outline from the headings, and title, language and creation date (with XMP) metadata.
+//! typed). Tagged for PDF/UA ([`super::tags`]): paragraphs as P/H1–H6 (a heading's number in it), list items as
+//! L/LI/Lbl/LBody, tables as Table/TR/TH/TD with their scopes and header ids, pictures with alternative text as
+//! Figures, text boxes as Divs, notes as Notes after their references, links (their text and pictures) as Links with
+//! their annotations; headers and footers as pagination artifacts, decorative pictures, borders and shading as others.
+//! PDF/UA is claimed while every figure has alternative text. Bookmarks are named destinations; an outline from the
+//! headings, and title, language and creation date (with XMP) metadata, all of the text as the snapshot's markup view
+//! shows it.
 //!
 //! The pages show the markup view the snapshot was laid out in: its revision marks and change bars are layout items.
 //! Only layout items are drawn, so view overlays (comment tints, the selection, squiggles) never reach the PDF.
@@ -13,8 +15,9 @@ use crate::api::state::FontsState;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use twip_graphics::kurbo;
 use twip_graphics::pdf::{self, Date};
-use twip_graphics::scene::Recorder;
+use twip_graphics::scene::{Clip, Recorder};
 
 use crate::api::error::{Error, ErrorCode};
 use crate::api::session::PdfOptions;
@@ -83,8 +86,10 @@ pub fn export_with(
     cancel: Option<&AtomicBool>,
     fonts: Option<&Fonts>,
 ) -> Result<(Vec<u8>, Vec<Warning>), Error> {
-    let tags = Tags::of(doc, first_language(doc).as_deref().unwrap_or("en-US"));
-    let info = pdf::Info {
+    cancelled(cancel)?;
+    let tags = Tags::of(doc, first_language(doc).as_deref().unwrap_or("en-US"), cancel)
+        .ok_or_else(|| cancelled(cancel).expect_err("tagging stops only when cancelled"))?;
+    let mut info = pdf::Info {
         title: if title.trim().is_empty() { tags::title(doc, &tags) } else { title.into() },
         language: Some(tags.lang.clone()),
         keywords: options.keywords_line().into_iter().collect(),
@@ -93,6 +98,7 @@ pub fn export_with(
         created: Some(now()),
         // XMP metadata (title, dates) and a document id; dropped when encrypted, or when what's drawn breaks it.
         archival: options.open_password.is_none(),
+        accessible: true,
     };
 
     // Each page as pictures: one per stretch of items with the same mark.
@@ -116,24 +122,43 @@ pub fn export_with(
         });
         let mut parts = Vec::new();
         let mut current = None;
+        // The clip open in `rec`.
+        let mut clip: Option<[f64; 4]> = None;
         for p in &placed {
             marker.mark(index, p, lines.get(&p.line).copied().flatten(), &mut pieces);
             for (mark, item) in pieces.drain(..) {
                 if current != Some(mark) {
                     if let Some(m) = current {
+                        if clip.take().is_some() {
+                            rec.pop();
+                        }
                         parts.push((m, rec.finish()));
                     }
                     current = Some(mark);
+                }
+                if clip != p.clip {
+                    if clip.is_some() {
+                        rec.pop();
+                    }
+                    if let Some([x0, y0, x1, y1]) = p.clip {
+                        rec.push_clip(Clip::Rect { rect: kurbo::Rect::new(x0, y0, x1, y1), aa: true });
+                    }
+                    clip = p.clip;
                 }
                 graphics.record_item(&mut rec, &renderer, &item, &doc.images);
             }
         }
         if let Some(m) = current {
+            if clip.is_some() {
+                rec.pop();
+            }
             parts.push((m, rec.finish()));
         }
         out_pages.push(pdf::Page { width: page.w, height: page.h, parts, links: Vec::new(), destinations: Vec::new() });
     }
     let structure = marker.finish(&mut out_pages);
+    // The PDF/UA claim: none with a figure that says nothing.
+    info.accessible = structure.missing_alt == 0;
     let written = pdf::write(graphics.resources(), &out_pages, &structure.elements, &structure.outline, &info)
         .map_err(|e| Error::new(ErrorCode::ExportFailed, e.to_string()))?;
     let archival = written.archival;
@@ -141,7 +166,7 @@ pub fn export_with(
     let mut written = crate::docx::diagnostics::Diagnostics::default();
     for _ in 0..structure.missing_alt {
         written.warn(crate::api::warning::WarningCode::PdfFigureWithoutAlt, None, || {
-            "a picture has no alternative text and isn't marked decorative: its figure says nothing to a screen reader".into()
+            "a picture has no alternative text and isn't marked decorative: its figure says nothing to a screen reader, so the PDF doesn't claim PDF/UA".into()
         });
     }
     if !archival && options.open_password.is_none() {

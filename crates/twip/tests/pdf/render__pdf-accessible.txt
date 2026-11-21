@@ -29,6 +29,9 @@ page 1 612 792
   annot Subtype /Link Rect [415.2 633.65 474.6 648.17] Contents <746865207461626c65> A << /Type /Action /D <726573756c7473> /S /GoTo >>
   annot Subtype /Link Rect [98.4 609.98 184.2 624.5] Contents <5461626c6520726573756c7473> A << /Type /Action /D <726573756c7473> /S /GoTo >>
   annot Subtype /Link Rect [243.6 609.98 250.2 624.5] Contents <31> A << /Type /Action /D <726573756c7473> /S /GoTo >>
+  image /X2 64x48 6564e5098954f28c
+  image /X3 64x48 6564e5098954f28c
+  image /X4 64x48 6564e5098954f28c
   op 1 0 0 -1 0 792 cm
   op /P << /MCID 0 >> BDC
   op q

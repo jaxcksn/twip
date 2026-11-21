@@ -285,6 +285,9 @@ pub struct Info {
     pub created: Option<Date>,
     /// Claims PDF/A-2b conformance.
     pub archival: bool,
+    /// Claims PDF/UA-1 conformance, when the document is tagged: false when what it holds breaks PDF/UA (a figure
+    /// without alternative text).
+    pub accessible: bool,
 }
 
 /// A written PDF, and whether it claims PDF/A-2b.
@@ -334,7 +337,7 @@ pub fn write(res: &Resources, pages: &[Page], structure: &[Element], outline: &[
     w.fonts_out();
     let struct_root = w.structure(structure, &page_refs);
     let outline_root = w.outline(outline, pages, &page_refs);
-    w.document(catalog, tree, struct_root, outline_root, info, !structure.is_empty());
+    w.document(catalog, tree, struct_root, outline_root, info, info.accessible && !structure.is_empty());
     Ok(Written { bytes: w.pdf.finish(), archival: info.archival })
 }
 
@@ -2778,7 +2781,7 @@ fn escape(s: &str) -> String {
 }
 
 /// The XMP metadata PDF/UA-1 and PDF/A-2b ask for, matching the document information; PDF/UA is declared only for a
-/// `tagged` document (one with a structure tree).
+/// `tagged` document (one with a structure tree that claims it).
 fn xmp(info: &Info, keywords: &str, tagged: bool) -> String {
     let date = info
         .created

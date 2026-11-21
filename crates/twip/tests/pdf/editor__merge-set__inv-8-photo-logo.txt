@@ -3,6 +3,8 @@ page 1 612 792
   text 8, 3.4 Photo and logo
   text Recipient photo: 
   text Store logo: 
+  image /X2 64x48 b1ac61f3702cb236
+  image /X3 64x48 b1ac61f3702cb236
   op 1 0 0 -1 0 792 cm
   op /P << /MCID 0 >> BDC
   op q

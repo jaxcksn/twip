@@ -9,13 +9,13 @@ page 1 612 792
   text Section 1.Section format one
   text Section 2.Section format two
   text a.Section format sub-item
-  text Article I.Legal article one
-  text Section 1.01Legal section one
-  text (a)Legal clause one
-  text (b)Legal clause two
-  text Section 1.02Legal section two
-  text Article II.Legal article two
-  text Section 2.01Legal section three
+  text Article I. Legal article one
+  text Section 1.01 Legal section one
+  text (a) Legal clause one
+  text (b) Legal clause two
+  text Section 1.02 Legal section two
+  text Article II. Legal article two
+  text Section 2.01 Legal section three
   text 1.Decimal one
   text 2.Decimal two
   text Cell ACell B
@@ -26,6 +26,8 @@ page 1 612 792
   text Part H:Part override two
   text 1.Restarted at one
   text 2.Restarted two
+  image /X3 12x12 0de3e07eddec1280
+  image /X4 12x12 0de3e07eddec1280
   op 1 0 0 -1 0 792 cm
   op /P << /MCID 0 >> BDC
   op q
@@ -215,9 +217,9 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 15 >> BDC
   op q
-  op /Span << /ActualText <41727469636c6520492e> >> BDC
+  op /Span << /ActualText <41727469636c6520492e20> >> BDC
   op 0 0 0 rg
   op 0 0 0 RG
   op 0.45 w
@@ -230,8 +232,6 @@ page 1 612 792
   op ET
   op EMC
   op Q
-  op EMC
-  op /P << /MCID 15 >> BDC
   op q
   op /Span << /ActualText <4c6567616c2061727469636c65206f6e65> >> BDC
   op 0 0 0 rg
@@ -247,9 +247,9 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 16 >> BDC
   op q
-  op /Span << /ActualText <53656374696f6e20312e3031> >> BDC
+  op /Span << /ActualText <53656374696f6e20312e303120> >> BDC
   op 0 0 0 rg
   op 0 0 0 RG
   op 0.45 w
@@ -262,8 +262,6 @@ page 1 612 792
   op ET
   op EMC
   op Q
-  op EMC
-  op /P << /MCID 16 >> BDC
   op q
   op /Span << /ActualText <4c6567616c2073656374696f6e206f6e65> >> BDC
   op 0 0 0 rg
@@ -279,9 +277,9 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 17 >> BDC
   op q
-  op /Span << /ActualText <286129> >> BDC
+  op /Span << /ActualText <28612920> >> BDC
   op 0 0 0 rg
   op 0 0 0 RG
   op 0.45 w
@@ -294,8 +292,6 @@ page 1 612 792
   op ET
   op EMC
   op Q
-  op EMC
-  op /P << /MCID 17 >> BDC
   op q
   op /Span << /ActualText <4c6567616c20636c61757365206f6e65> >> BDC
   op 0 0 0 rg
@@ -311,9 +307,9 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 18 >> BDC
   op q
-  op /Span << /ActualText <286229> >> BDC
+  op /Span << /ActualText <28622920> >> BDC
   op 0 0 0 rg
   op 0 0 0 RG
   op 0.45 w
@@ -326,8 +322,6 @@ page 1 612 792
   op ET
   op EMC
   op Q
-  op EMC
-  op /P << /MCID 18 >> BDC
   op q
   op /Span << /ActualText <4c6567616c20636c617573652074776f> >> BDC
   op 0 0 0 rg
@@ -343,9 +337,9 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 19 >> BDC
   op q
-  op /Span << /ActualText <53656374696f6e20312e3032> >> BDC
+  op /Span << /ActualText <53656374696f6e20312e303220> >> BDC
   op 0 0 0 rg
   op 0 0 0 RG
   op 0.45 w
@@ -358,8 +352,6 @@ page 1 612 792
   op ET
   op EMC
   op Q
-  op EMC
-  op /P << /MCID 19 >> BDC
   op q
   op /Span << /ActualText <4c6567616c2073656374696f6e2074776f> >> BDC
   op 0 0 0 rg
@@ -375,9 +367,9 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 20 >> BDC
   op q
-  op /Span << /ActualText <41727469636c652049492e> >> BDC
+  op /Span << /ActualText <41727469636c652049492e20> >> BDC
   op 0 0 0 rg
   op 0 0 0 RG
   op 0.45 w
@@ -390,8 +382,6 @@ page 1 612 792
   op ET
   op EMC
   op Q
-  op EMC
-  op /P << /MCID 20 >> BDC
   op q
   op /Span << /ActualText <4c6567616c2061727469636c652074776f> >> BDC
   op 0 0 0 rg
@@ -407,9 +397,9 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 21 >> BDC
   op q
-  op /Span << /ActualText <53656374696f6e20322e3031> >> BDC
+  op /Span << /ActualText <53656374696f6e20322e303120> >> BDC
   op 0 0 0 rg
   op 0 0 0 RG
   op 0.45 w
@@ -422,8 +412,6 @@ page 1 612 792
   op ET
   op EMC
   op Q
-  op EMC
-  op /P << /MCID 21 >> BDC
   op q
   op /Span << /ActualText <4c6567616c2073656374696f6e207468726565> >> BDC
   op 0 0 0 rg
@@ -735,10 +723,12 @@ structure
             LI
               Lbl
               LBody
+    L ListNumbering=/Disc
       LI
         LBody
       LI
         LBody
+    L ListNumbering=/Decimal
       LI
         Lbl
         LBody
@@ -773,18 +763,21 @@ structure
       LI
         Lbl
         LBody
+    L ListNumbering=/Decimal
       LI
         Lbl
         LBody
       LI
         Lbl
         LBody
+    L ListNumbering=/UpperAlpha
       LI
         Lbl
         LBody
       LI
         Lbl
         LBody
+    L ListNumbering=/Decimal
       LI
         Lbl
         LBody

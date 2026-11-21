@@ -13,6 +13,33 @@ page 1 612 792
   text d
   text Down
   text Pens, a hotkey and a copy under a clip
+  form /X219
+    form /X157
+    form /X218
+    form /X83
+  form /X4687
+    form /X1708
+    form /X3197
+    form /X4686
+  form /X4695
+    form /X4694
+      form /X4690
+      form /X4691
+      form /X4692
+  form /X4702
+    form /X4701
+  form /X4707
+    form /X4706
+  form /X4712
+    form /X4711
+  form /X4717
+    form /X4716
+  form /X4723
+    form /X4722
+  form /X4728
+    form /X4727
+  form /X4732
+    image /X4731 2105x1094 masked 18a76429abacbe1c
   op 1 0 0 -1 0 792 cm
   op /P << /MCID 0 >> BDC
   op q
@@ -989,6 +1016,8 @@ page 1 612 792
   op EMC
 page 2 612 792
   text Images, and plain records after a GetDC
+  image /X4733 4x4 masked 009c22fcd88000bd
+  image /X4734 4x4 masked 009c22fcd88000bd
   op 1 0 0 -1 0 792 cm
   op /P << /MCID 0 >> BDC
   op q

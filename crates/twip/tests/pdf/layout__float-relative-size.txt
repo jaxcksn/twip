@@ -55,6 +55,7 @@ page 1 612 792
   text Left 
   text margin, 
   text 80%
+  image /X2 64x48 6564e5098954f28c
   op 1 0 0 -1 0 792 cm
   op /P << /MCID 0 >> BDC
   op q

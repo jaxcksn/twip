@@ -257,6 +257,7 @@ structure
       LI
         Lbl
         LBody
+    L ListNumbering=/Disc
       LI
         Lbl
         LBody

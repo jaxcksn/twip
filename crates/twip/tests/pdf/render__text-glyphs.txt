@@ -242,6 +242,10 @@ page 2 612 792
   op EMC
   op /P << /MCID 1 >> BDC
   op q
+  op 72.25 99.94 60 90 re
+  op W
+  op n
+  op q
   op 0 -1 1 0 -22.79 267.59 cm
   op q
   op 0 0 0 rg
@@ -252,8 +256,13 @@ page 2 612 792
   op ET
   op Q
   op Q
+  op Q
   op EMC
   op /P << /MCID 2 >> BDC
+  op q
+  op 132.25 99.94 150 90 re
+  op W
+  op n
   op q
   op /Span << /ActualText <42657369646520746865207475726e65642063656c6c2e> >> BDC
   op 0 0 0 rg
@@ -263,6 +272,7 @@ page 2 612 792
   op [<0002> <0002> <0002> <0002> <0002> 0 <0002> <0001> <0002> <0002> <0002> <0001> <0002> 0 <0002> <0002> <0002> <0002> <0002> 0 <0001> <0002> <0002> <0002> <0002> <0002>] TJ
   op ET
   op EMC
+  op Q
   op Q
   op EMC
   op /Artifact << /Type /Layout >> BDC

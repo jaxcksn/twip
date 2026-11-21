@@ -1,16 +1,16 @@
 pages 1
 page 1 612 792
   text Don't hyphenate
-  text Hyphenated: representative hyphenation in-
-  text ternational administration responsibili-
-  text ties organisational considerations not-
+  text Hyphenated: representative hyphenation in­
+  text ternational administration responsibili­
+  text ties organisational considerations not­
   text withstanding comprehensive interpretation 
-  text documentation telecommunication characte-
-  text ristically representative hyphenation in-
-  text ternational administration responsibili-
-  text ties organisational considerations not-
+  text documentation telecommunication characte­
+  text ristically representative hyphenation in­
+  text ternational administration responsibili­
+  text ties organisational considerations not­
   text withstanding comprehensive interpretation 
-  text documentation telecommunication characte-
+  text documentation telecommunication characte­
   text ristically 
   text suppressAutoHyphens: representative 
   text hyphenation international administration 
@@ -43,7 +43,7 @@ page 1 612 792
   op EMC
   op /P << /MCID 1 >> BDC
   op q
-  op /Span << /ActualText <48797068656e617465643a20726570726573656e7461746976652068797068656e6174696f6e20696e2d> >> BDC
+  op /Span << /ActualText <feff00480079007000680065006e0061007400650064003a00200072006500700072006500730065006e007400610074006900760065002000680079007000680065006e006100740069006f006e00200069006e00ad> >> BDC
   op 0 0 0 rg
   op BT
   op 1 0 0 -1 72 110.07 Tm
@@ -53,7 +53,7 @@ page 1 612 792
   op EMC
   op Q
   op q
-  op /Span << /ActualText <7465726e6174696f6e616c2061646d696e697374726174696f6e20726573706f6e736962696c692d> >> BDC
+  op /Span << /ActualText <feff007400650072006e006100740069006f006e0061006c002000610064006d0069006e0069007300740072006100740069006f006e00200072006500730070006f006e0073006900620069006c006900ad> >> BDC
   op 0 0 0 rg
   op BT
   op 1 0 0 -1 72 121.94 Tm
@@ -63,7 +63,7 @@ page 1 612 792
   op EMC
   op Q
   op q
-  op /Span << /ActualText <74696573206f7267616e69736174696f6e616c20636f6e73696465726174696f6e73206e6f742d> >> BDC
+  op /Span << /ActualText <feff00740069006500730020006f007200670061006e00690073006100740069006f006e0061006c00200063006f006e00730069006400650072006100740069006f006e00730020006e006f007400ad> >> BDC
   op 0 0 0 rg
   op BT
   op 1 0 0 -1 72 133.81 Tm
@@ -83,7 +83,7 @@ page 1 612 792
   op EMC
   op Q
   op q
-  op /Span << /ActualText <646f63756d656e746174696f6e2074656c65636f6d6d756e69636174696f6e2063686172616374652d> >> BDC
+  op /Span << /ActualText <feff0064006f00630075006d0065006e0074006100740069006f006e002000740065006c00650063006f006d006d0075006e00690063006100740069006f006e00200063006800610072006100630074006500ad> >> BDC
   op 0 0 0 rg
   op BT
   op 1 0 0 -1 72 157.55 Tm
@@ -93,7 +93,7 @@ page 1 612 792
   op EMC
   op Q
   op q
-  op /Span << /ActualText <726973746963616c6c7920726570726573656e7461746976652068797068656e6174696f6e20696e2d> >> BDC
+  op /Span << /ActualText <feff0072006900730074006900630061006c006c007900200072006500700072006500730065006e007400610074006900760065002000680079007000680065006e006100740069006f006e00200069006e00ad> >> BDC
   op 0 0 0 rg
   op BT
   op 1 0 0 -1 72 169.42 Tm
@@ -103,7 +103,7 @@ page 1 612 792
   op EMC
   op Q
   op q
-  op /Span << /ActualText <7465726e6174696f6e616c2061646d696e697374726174696f6e20726573706f6e736962696c692d> >> BDC
+  op /Span << /ActualText <feff007400650072006e006100740069006f006e0061006c002000610064006d0069006e0069007300740072006100740069006f006e00200072006500730070006f006e0073006900620069006c006900ad> >> BDC
   op 0 0 0 rg
   op BT
   op 1 0 0 -1 72 181.29 Tm
@@ -113,7 +113,7 @@ page 1 612 792
   op EMC
   op Q
   op q
-  op /Span << /ActualText <74696573206f7267616e69736174696f6e616c20636f6e73696465726174696f6e73206e6f742d> >> BDC
+  op /Span << /ActualText <feff00740069006500730020006f007200670061006e00690073006100740069006f006e0061006c00200063006f006e00730069006400650072006100740069006f006e00730020006e006f007400ad> >> BDC
   op 0 0 0 rg
   op BT
   op 1 0 0 -1 72 193.16 Tm
@@ -133,7 +133,7 @@ page 1 612 792
   op EMC
   op Q
   op q
-  op /Span << /ActualText <646f63756d656e746174696f6e2074656c65636f6d6d756e69636174696f6e2063686172616374652d> >> BDC
+  op /Span << /ActualText <feff0064006f00630075006d0065006e0074006100740069006f006e002000740065006c00650063006f006d006d0075006e00690063006100740069006f006e00200063006800610072006100630074006500ad> >> BDC
   op 0 0 0 rg
   op BT
   op 1 0 0 -1 72 216.9 Tm

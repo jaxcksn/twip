@@ -46,6 +46,8 @@ page 1 612 792
   text Board minutes, first page
   annot Subtype /Link Rect [119.85 330.1 156.15 341.1] Contents <6167656e6461> A << /Type /Action /S /URI /URI <68747470733a2f2f6578616d706c652e636f6d2f6167656e6461> >>
   annot Subtype /Link Rect [200.7 330.1 243.05 341.1] Contents <6d696e75746573> A << /Type /Action /S /URI /URI <68747470733a2f2f6578616d706c652e636f6d2f6d696e75746573> >>
+  image /X2 64x48 6564e5098954f28c
+  image /X3 64x48 b1ac61f3702cb236
   op 1 0 0 -1 0 792 cm
   op /P << /MCID 0 >> BDC
   op q

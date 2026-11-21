@@ -1,13 +1,13 @@
 pages 3
 page 1 612 792
   text Before the first heading: w:pgNum shows 1-1.
-  text 1.Alpha
+  text 1. Alpha
   text Inventory relevant group relief results region ledger brief usage cause colleague 
   text partner. Section notice claim team export staff newsletter review matter presenter 
   text advisor account. Served savings pilot receipt corporate requirement standard fact 
   text that products distribution filed. Logistics chapter plan regional.
   text In Alpha: 1-1
-  text 2.Beta
+  text 2. Beta
   text Notice claim team export staff newsletter review matter presenter advisor account 
   text served. Savings pilot receipt corporate requirement standard fact that products 
   text distribution filed logistics. Chapter plan regional maintenance accessibility tax 
@@ -61,9 +61,9 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 1 >> BDC
   op q
-  op /Span << /ActualText <312e> >> BDC
+  op /Span << /ActualText <312e20> >> BDC
   op 0 0 0 rg
   op 0 0 0 RG
   op 0.62 w
@@ -76,8 +76,6 @@ page 1 612 792
   op ET
   op EMC
   op Q
-  op EMC
-  op /P << /MCID 1 >> BDC
   op q
   op /Span << /ActualText <416c706861> >> BDC
   op 0 0 0 rg
@@ -147,9 +145,9 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-  op /Artifact BMC
+  op /P << /MCID 4 >> BDC
   op q
-  op /Span << /ActualText <322e> >> BDC
+  op /Span << /ActualText <322e20> >> BDC
   op 0 0 0 rg
   op 0 0 0 RG
   op 0.62 w
@@ -162,8 +160,6 @@ page 1 612 792
   op ET
   op EMC
   op Q
-  op EMC
-  op /P << /MCID 4 >> BDC
   op q
   op /Span << /ActualText <42657461> >> BDC
   op 0 0 0 rg
@@ -767,7 +763,7 @@ page 2 612 792
   op Q
   op EMC
 page 3 612 792
-  text 3.Gamma
+  text 3. Gamma
   text Pilot receipt corporate requirement standard fact that products distribution filed 
   text logistics chapter. Plan regional maintenance accessibility tax finds record 
   text proposal denied contract onboarding support. Network scheduled trend suggestions 

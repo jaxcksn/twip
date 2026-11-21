@@ -5,10 +5,12 @@
 //! walked from a queue. A sub-template's body is walked where it is shown ([`Tags::instance`]).
 
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use twip_graphics::pdf::{ArtifactKind, Cell, Element, Kind, Node, Numbering, Scope};
 
 use crate::docx::grid::Grid;
+use crate::docx::review::MarkupView;
 use crate::docx::{Block, Document, Inline, NoteKind, Paragraph, Table, VMerge, fields};
 use crate::services::a11y::roles::{Alt, HeaderScope, alt, document_language, header_scopes, heading_level, other_language};
 
@@ -60,7 +62,7 @@ impl Places {
         self.paras.get(&para).map(Vec::as_slice)
     }
 
-    /// A list item's number's content.
+    /// A list number's content: a list item's label's, a numbered heading's own.
     pub fn label(&self, para: u64) -> Option<u32> {
         self.labels.get(&para).copied()
     }
@@ -82,7 +84,7 @@ impl Places {
 
 /// The document's structure and the content ids its drawing is marked with.
 #[derive(Default)]
-pub(super) struct Tags {
+pub(super) struct Tags<'c> {
     /// The top-level elements, in reading order.
     pub root: Vec<Node>,
     /// The body's, its notes' and its text boxes' places.
@@ -91,7 +93,7 @@ pub(super) struct Tags {
     pub lang: String,
     /// Links by id ([`Node::Annotation`]).
     pub links: Vec<LinkTag>,
-    /// The content ids that are a link's text, and its link.
+    /// The content ids that are a link's text or figure, and its link.
     pub link_of: HashMap<u32, u32>,
     pub headings: Vec<Heading>,
     /// Bookmark starts by paragraph: (unit, name), in unit order.
@@ -102,6 +104,8 @@ pub(super) struct Tags {
     pub title: Option<String>,
     /// The figures without alternative text (not decorative): their content ids.
     pub missing_alt: HashSet<u32>,
+    /// Each list's first number's content, and the list (`w:numId`) it numbers.
+    pub lists: HashMap<u32, i64>,
     /// Header, footer and note separator paragraphs.
     artifacts: HashMap<u64, ArtifactKind>,
     next: u32,
@@ -114,13 +118,16 @@ pub(super) struct Tags {
     in_header_row: bool,
     /// Walking a sub-template's body where it is shown: no bookmarks, headings or title of its own.
     in_instance: bool,
+    /// What stops the walk, looked at before each block, and whether it has.
+    cancel: Option<&'c AtomicBool>,
+    stopped: bool,
 }
 
-impl Tags {
+impl<'c> Tags<'c> {
     /// The structure of `doc`'s body, its notes and text boxes; headers, footers and note separators are artifacts.
-    /// `lang`: the document's language when its defaults name none.
-    pub fn of(doc: &Document, lang: &str) -> Tags {
-        let mut t = Tags { lang: document_language(doc, lang), ..Tags::default() };
+    /// `lang`: the document's language when its defaults name none. `None` once `cancel` is set.
+    pub fn of(doc: &Document, lang: &str, cancel: Option<&'c AtomicBool>) -> Option<Tags<'c>> {
+        let mut t = Tags { lang: document_language(doc, lang), cancel, ..Tags::default() };
         for s in &doc.sections {
             for (refs, kind) in [(&s.headers, ArtifactKind::Header), (&s.footers, ArtifactKind::Footer)] {
                 for name in refs.iter().flatten() {
@@ -141,6 +148,9 @@ impl Tags {
         t.in_note = true;
         let mut i = 0;
         while let Some(&(kind, id)) = t.queued.get(i) {
+            if t.stop() {
+                return None;
+            }
             i += 1;
             if let Some(n) = t.note_element(doc, kind, id) {
                 root.push(n);
@@ -148,7 +158,14 @@ impl Tags {
         }
         t.in_note = false;
         t.root = root;
-        t
+        t.cancel = None;
+        (!t.stopped).then_some(t)
+    }
+
+    /// Whether the walk is cancelled.
+    fn stop(&mut self) -> bool {
+        self.stopped |= self.cancel.is_some_and(|c| c.load(Ordering::Relaxed));
+        self.stopped
     }
 
     /// The artifact a header's, footer's or note separator's paragraph is.
@@ -210,22 +227,31 @@ impl Tags {
         }
     }
 
-    /// Blocks into `out`: consecutive list items make lists, nested by level (a deeper list in the item before it).
+    /// Blocks into `out`: consecutive list items of one list make lists, nested by level (a deeper list in the item
+    /// before it).
     fn blocks(&mut self, doc: &Document, blocks: &[Block], out: &mut Vec<Node>) {
-        let mut lists: Vec<(i64, Element)> = Vec::new();
+        let mut lists: Vec<OpenList> = Vec::new();
         for b in blocks {
+            if self.stop() {
+                return;
+            }
             match b {
                 Block::Para(p) if heading_level(doc, p).is_none() && p.list.is_some() => {
-                    let level = p.style.num.map_or(0, |n| n.1).max(0);
-                    while lists.last().is_some_and(|l| l.0 > level) {
+                    let (num, level) = p.style.num.map_or((0, 0), |n| (n.0, n.1.max(0)));
+                    while lists.last().is_some_and(|l| l.level > level || (l.level == level && l.num != num)) {
                         close(&mut lists, out);
                     }
-                    if lists.last().is_none_or(|l| l.0 < level) {
-                        lists.push((level, Element::new(Kind::List(numbering(p.style.list_fmt.as_deref())), Vec::new())));
+                    let fresh = lists.last().is_none_or(|l| l.level < level);
+                    if fresh {
+                        let list = Element::new(Kind::List(numbering(p.style.list_fmt.as_deref())), Vec::new());
+                        lists.push(OpenList { level, num, list });
                     }
                     let mut item = Vec::new();
                     self.para(doc, p, &mut item);
-                    lists.last_mut().expect("a list was pushed").1.kids.extend(item);
+                    if fresh && let Some(&label) = self.places.labels.get(&p.id) {
+                        self.lists.insert(label, num);
+                    }
+                    lists.last_mut().expect("a list was pushed").list.kids.extend(item);
                 }
                 Block::Para(p) => {
                     while !lists.is_empty() {
@@ -246,9 +272,9 @@ impl Tags {
         }
     }
 
-    /// A paragraph: a heading, a list item (its number, then its body; consecutive ones share a list) or a
-    /// paragraph, its text in stretches around its links, inline pictures, text boxes, notes and language changes,
-    /// then its floats.
+    /// A paragraph: a heading (its number in its text), a list item (its number, then its body; consecutive ones share a
+    /// list) or a paragraph, its text in stretches around its links, inline pictures, text boxes, notes and language
+    /// changes, then its floats.
     fn para(&mut self, doc: &Document, p: &Paragraph, out: &mut Vec<Node>) {
         let level = heading_level(doc, p);
         let item = level.is_none() && p.list.is_some();
@@ -261,16 +287,25 @@ impl Tags {
             self.repeated.insert(p.id);
         }
         if self.title.is_none() && !self.in_note && !self.in_instance && style_name(doc, p).is_some_and(|n| n.eq_ignore_ascii_case("title")) {
-            self.title = Some(fields::text(p).trim().to_string()).filter(|t| !t.is_empty());
+            self.title = Some(fields::visible_in(&p.inlines, doc.review.view).trim().to_string()).filter(|t| !t.is_empty());
         }
         let mut e = Element::new(kind, Vec::new());
         let mut stretches = Vec::new();
         let mut floats = Vec::new();
         self.inlines(doc, p, &mut e.kids, &mut stretches, &mut floats);
         e.kids.extend(floats);
+        // A heading's number reads with its text.
+        if level.is_some() && p.list.is_some() {
+            let number = stretches.first().map(|s| s.1).unwrap_or_else(|| {
+                let c = self.id();
+                e.kids.insert(0, Node::Content(c));
+                c
+            });
+            self.places.labels.insert(p.id, number);
+        }
         if let Some(level) = level.filter(|_| !self.in_instance) {
             let content = stretches.iter().map(|s| s.1).collect();
-            self.headings.push(Heading { level: level as u8, title: fields::text(p).trim().to_string(), content });
+            self.headings.push(Heading { level: level as u8, title: fields::visible_in(&p.inlines, doc.review.view).trim().to_string(), content });
         }
         self.places.paras.insert(p.id, stretches);
         if !item {
@@ -299,7 +334,7 @@ impl Tags {
 
     fn inlines(&mut self, doc: &Document, p: &Paragraph, kids: &mut Vec<Node>, stretches: &mut Vec<(u32, u32)>, floats: &mut Vec<Node>) {
         let starts: Vec<u32> = p.inlines.iter().scan(0u32, |at, i| Some(std::mem::replace(at, at.saturating_add(i.units() as u32)))).collect();
-        let links = self.links(p);
+        let links = self.links(p, doc.review.view);
         let mut next_link = 0;
         // The open text stretch's language, and the open link: (its end inline, its element's place in `kids`, its
         // id). Outer `None`: no stretch is open.
@@ -344,6 +379,9 @@ impl Tags {
                     }
                     (None, a) => {
                         let f = self.figure(a);
+                        if let Some((_, _, id)) = link {
+                            self.link_of.insert(f.0, id);
+                        }
                         self.places.inline.insert((p.id, u), Tag::Content(f.0));
                         inside(kids, f.1);
                         text = None;
@@ -430,15 +468,15 @@ impl Tags {
 
     /// A paragraph's links: (begin inline, end inline, link id) of each HYPERLINK field and each REF, PAGEREF and
     /// NOTEREF field that links to its bookmark (`\h`), outermost only.
-    fn links(&mut self, p: &Paragraph) -> Vec<(usize, usize, u32)> {
+    fn links(&mut self, p: &Paragraph, view: MarkupView) -> Vec<(usize, usize, u32)> {
         let mut out: Vec<(usize, usize, u32)> = Vec::new();
         for s in fields::spans(&p.inlines) {
             if out.last().is_some_and(|l| s.begin < l.1) {
                 continue;
             }
-            let code = fields::parse(&fields::code_text(&p.inlines, s));
+            let code = fields::parse(&fields::code_text_in(&p.inlines, s, view));
             let Some(target) = link_target(&code) else { continue };
-            let shown = s.sep.map(|sep| fields::visible(&p.inlines[sep + 1..s.end])).unwrap_or_default();
+            let shown = s.sep.map(|sep| fields::visible_in(&p.inlines[sep + 1..s.end], view)).unwrap_or_default();
             let tip = code.switches.iter().find(|w| w.flag == 'o').and_then(|w| w.arg.clone()).unwrap_or_default();
             let description = [tip.trim(), shown.trim()].into_iter().find(|t| !t.is_empty()).map_or_else(
                 || match &target {
@@ -572,11 +610,18 @@ fn link_target(code: &fields::FieldCode) -> Option<Target> {
     }
 }
 
+/// A list being built: its level, the list (`w:numId`) it numbers and its element.
+struct OpenList {
+    level: i64,
+    num: i64,
+    list: Element,
+}
+
 /// Ends the innermost list being built: it goes into the body of the last item of the list around it (an item holds
 /// only its label and body), or into `out`.
-fn close(lists: &mut Vec<(i64, Element)>, out: &mut Vec<Node>) {
-    let Some((_, list)) = lists.pop() else { return };
-    let body = lists.last_mut().and_then(|l| match l.1.kids.last_mut() {
+fn close(lists: &mut Vec<OpenList>, out: &mut Vec<Node>) {
+    let Some(OpenList { list, .. }) = lists.pop() else { return };
+    let body = lists.last_mut().and_then(|l| match l.list.kids.last_mut() {
         Some(Node::Element(item)) => match item.kids.last_mut() {
             Some(Node::Element(b)) if b.kind == Kind::ListBody => Some(b),
             _ => None,
@@ -620,19 +665,30 @@ pub(super) fn title(doc: &Document, tags: &Tags) -> String {
     property.or(tags.title.as_deref()).or(heading).or(file.filter(|f| !f.trim().is_empty())).unwrap_or("Document").to_string()
 }
 
-/// `kids` without what wasn't drawn: content ids not `drawn`, annotations of links without any (`annotated`), and the
-/// elements that leave empty, but the empty cells of a table with anything ([`prune_table`]). A link without
-/// annotations gives its kids to its parent; consecutive lists numbered alike merge.
-pub(super) fn prune(kids: Vec<Node>, drawn: &impl Fn(u32) -> bool, annotated: &impl Fn(u32) -> bool) -> Vec<Node> {
+/// What [`prune`] keeps: the content ids `drawn`, the links `annotated`, and the list (`w:numId`) each list's first
+/// number's content numbers ([`Tags::lists`]).
+pub(super) struct Kept<'k, D: Fn(u32) -> bool, A: Fn(u32) -> bool> {
+    pub drawn: D,
+    pub annotated: A,
+    pub lists: &'k HashMap<u32, i64>,
+}
+
+/// `kids` without what wasn't drawn: content ids not drawn, annotations of links without any, and the elements that
+/// leave empty, but the empty cells of a table with anything ([`prune_table`]). A link without annotations gives its
+/// kids to its parent; consecutive lists of one list merge.
+pub(super) fn prune<D: Fn(u32) -> bool, A: Fn(u32) -> bool>(kids: Vec<Node>, kept: &Kept<'_, D, A>) -> Vec<Node> {
     let mut out: Vec<Node> = Vec::with_capacity(kids.len());
+    // The last list kept: its place in `out` and the list it numbers.
+    let mut last_list: Option<(usize, Option<i64>)> = None;
     for k in kids {
         match k {
-            Node::Content(c) if drawn(c) => out.push(Node::Content(c)),
-            Node::Annotation(l) if annotated(l) => out.push(Node::Annotation(l)),
+            Node::Content(c) if (kept.drawn)(c) => out.push(Node::Content(c)),
+            Node::Annotation(l) if (kept.annotated)(l) => out.push(Node::Annotation(l)),
             Node::Content(_) | Node::Annotation(_) => {}
             Node::Element(mut e) => {
+                let list = matches!(e.kind, Kind::List(_)).then(|| first_number(&e).and_then(|c| kept.lists.get(&c).copied()));
                 let table = matches!(e.kind, Kind::Table(_));
-                e.kids = if table { prune_table(e.kids, drawn, annotated) } else { prune(e.kids, drawn, annotated) };
+                e.kids = if table { prune_table(e.kids, kept) } else { prune(e.kids, kept) };
                 if e.kind == Kind::Link && !e.kids.iter().any(|k| matches!(k, Node::Annotation(_))) {
                     out.extend(e.kids);
                     continue;
@@ -640,9 +696,15 @@ pub(super) fn prune(kids: Vec<Node>, drawn: &impl Fn(u32) -> bool, annotated: &i
                 if e.kids.is_empty() {
                     continue;
                 }
-                match out.last_mut() {
-                    Some(Node::Element(last)) if matches!(e.kind, Kind::List(_)) && last.kind == e.kind => last.kids.append(&mut e.kids),
-                    _ => out.push(Node::Element(e)),
+                let n = out.len();
+                match (out.last_mut(), last_list, list) {
+                    (Some(Node::Element(last)), Some((at, of)), Some(list)) if at + 1 == n && of == list && last.kind == e.kind => {
+                        last.kids.append(&mut e.kids)
+                    }
+                    _ => {
+                        last_list = list.map(|l| (out.len(), l));
+                        out.push(Node::Element(e));
+                    }
                 }
             }
         }
@@ -650,14 +712,24 @@ pub(super) fn prune(kids: Vec<Node>, drawn: &impl Fn(u32) -> bool, annotated: &i
     out
 }
 
+/// A list's first number's content, before pruning.
+fn first_number(list: &Element) -> Option<u32> {
+    let Some(Node::Element(item)) = list.kids.first() else { return None };
+    let Some(Node::Element(label)) = item.kids.first().filter(|_| item.kind == Kind::ListItem) else { return None };
+    match label.kids.first() {
+        Some(&Node::Content(c)) if label.kind == Kind::Label => Some(c),
+        _ => None,
+    }
+}
+
 /// A table's cells pruned, each kept (an empty one too, so the rows stay regular) while the table has anything drawn.
-fn prune_table(mut rows: Vec<Node>, drawn: &impl Fn(u32) -> bool, annotated: &impl Fn(u32) -> bool) -> Vec<Node> {
+fn prune_table<D: Fn(u32) -> bool, A: Fn(u32) -> bool>(mut rows: Vec<Node>, kept: &Kept<'_, D, A>) -> Vec<Node> {
     let mut any = false;
     for r in &mut rows {
         let Node::Element(tr) = r else { continue };
         for c in &mut tr.kids {
             if let Node::Element(cell) = c {
-                cell.kids = prune(std::mem::take(&mut cell.kids), drawn, annotated);
+                cell.kids = prune(std::mem::take(&mut cell.kids), kept);
                 any |= !cell.kids.is_empty();
             }
         }

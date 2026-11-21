@@ -483,17 +483,26 @@ impl Graphics {
     }
 
     /// Records `page`'s content (in its points) into `rec`. Items are recorded where layout keeps them, under a
-    /// translation to their place: no item is copied.
+    /// translation to their place (and their clip): no item is copied.
     fn page(&mut self, rec: &mut Recorder, r: &Renderer, page: &crate::layout::fragment::PageFragment, images: &[Vec<u8>]) {
         self.page_fill(rec, r, [page.w, page.h], images);
-        let mut at: Option<(f64, f64)> = None;
-        paint(page, &mut |p| {
-            if at != Some((p.dx, p.dy)) {
-                if at.is_some() {
+        let mut at: Option<(f64, f64, Option<[f64; 4]>)> = None;
+        let close = |rec: &mut Recorder, at: Option<(f64, f64, Option<[f64; 4]>)>| {
+            if let Some((_, _, clip)) = at {
+                rec.pop();
+                if clip.is_some() {
                     rec.pop();
                 }
+            }
+        };
+        paint(page, &mut |p| {
+            if at != Some((p.dx, p.dy, p.clip)) {
+                close(rec, at);
+                if let Some(c) = p.clip {
+                    rec.push_clip(Clip::Rect { rect: rect(c), aa: true });
+                }
                 rec.push_transform(Affine::translate((p.dx, p.dy)));
-                at = Some((p.dx, p.dy));
+                at = Some((p.dx, p.dy, p.clip));
             }
             // A shape with a reflection and text over it: the reflection holds the text.
             if let Item::Shape(s) = p.item
@@ -523,9 +532,7 @@ impl Graphics {
             }
             self.item(rec, r, p.own_colours, p.item, images);
         });
-        if at.is_some() {
-            rec.pop();
-        }
+        close(rec, at);
     }
 
     /// The registry's id for `face`, registered on first use.
@@ -586,7 +593,7 @@ impl Graphics {
                 match g.paint.as_deref() {
                     Some(p) => self.painted_run(rec, g, &run, p, &ink),
                     None if self.with_text => {
-                        let text: String = g.chars.iter().map(|c| c.0).collect();
+                        let text = run_text(g);
                         let clusters = clusters(g).unwrap_or_default();
                         rec.glyphs_text(&self.res.fonts, &run, &text, &clusters, ink(g.colour.unwrap_or(0)));
                     }
@@ -728,6 +735,21 @@ pub(crate) fn glyph_pieces(r: &crate::layout::fragment::GlyphRun) -> Option<(Vec
         return None;
     }
     Some((pieces, piece_of))
+}
+
+/// A run's characters as a PDF's text: the hyphen a line break adds (after the run's text, of no unit) is a soft
+/// hyphen, PDF's mark for one, so the word reads whole.
+pub(crate) fn run_text(r: &crate::layout::fragment::GlyphRun) -> String {
+    let added = match &r.chars[..] {
+        [.., before, last] => last.0 == '-' && last.2.is_none() && before.2.is_some(),
+        _ => false,
+    };
+    let mut text: String = r.chars.iter().map(|c| c.0).collect();
+    if added {
+        text.pop();
+        text.push('\u{AD}');
+    }
+    text
 }
 
 /// Each glyph's cluster (a UTF-8 offset into the run's characters): one cluster per character when a piece's glyph

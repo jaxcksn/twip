@@ -236,8 +236,44 @@ fn outline(first: Option<Dict<'_>>, depth: usize, budget: &mut usize, out: &mut 
     }
 }
 
+/// Each image a resource dictionary draws, by name (those of its forms after it, indented, to the bounds): its size
+/// and a digest of its data and its soft mask's.
+fn images(resources: Option<Dict<'_>>, depth: usize, budget: &mut usize, out: &mut String) {
+    use hayro_interpret::hayro_syntax::object::Stream;
+    use sha2::{Digest, Sha256};
+    let Some(xobjects) = resources.and_then(|r| r.get::<Dict<'_>>(b"XObject")) else { return };
+    if depth > MAX_DEPTH {
+        return;
+    }
+    let mut keys: Vec<Name<'_>> = xobjects.keys().collect();
+    keys.sort_by(|a, b| a.as_str().cmp(b.as_str()));
+    for key in keys {
+        let Some(x) = xobjects.get::<Stream<'_>>(key.as_ref()).filter(|_| *budget > 0) else { continue };
+        *budget -= 1;
+        let d = x.dict();
+        let indent = "  ".repeat(depth + 1);
+        match d.get::<Name<'_>>(b"Subtype").as_ref().map(|n| n.as_str()) {
+            Some("Image") => {
+                let mut h = Sha256::new();
+                for s in std::iter::once(x.clone()).chain(d.get::<Stream<'_>>(b"SMask")) {
+                    h.update(s.decoded().unwrap_or_else(|_| s.raw_data()));
+                }
+                let digest: String = h.finalize()[..8].iter().map(|b| format!("{b:02x}")).collect();
+                let size = |k: &[u8]| d.get::<u32>(k).unwrap_or_default();
+                let mask = if d.contains_key(b"SMask") { " masked" } else { "" };
+                writeln!(out, "{indent}image {} {}x{}{mask} {digest}", name(&key), size(b"Width"), size(b"Height")).unwrap();
+            }
+            Some("Form") => {
+                writeln!(out, "{indent}form {}", name(&key)).unwrap();
+                images(d.get::<Dict<'_>>(b"Resources"), depth + 1, budget, out);
+            }
+            _ => {}
+        }
+    }
+}
+
 /// What the snapshot records of a written PDF: the pages and their sizes, each page's text, the structure tree, the
-/// outline, the annotations, and the first pages' drawing operators.
+/// outline, the annotations, the images, and the first pages' drawing operators.
 pub(crate) fn dump(bytes: Vec<u8>) -> String {
     let pdf = Pdf::new(Arc::new(bytes)).expect("the PDF reads back");
     let mut s = String::new();
@@ -261,6 +297,7 @@ pub(crate) fn dump(bytes: Vec<u8>) -> String {
                 writeln!(s, "  annot{line}").unwrap();
             }
         }
+        images(page.raw().get::<Dict<'_>>(b"Resources"), 0, &mut MAX_ENTRIES.clone(), &mut s);
         if i < OPERATOR_PAGES {
             let mut ops = page.operations();
             while let Some(op) = ops.next() {

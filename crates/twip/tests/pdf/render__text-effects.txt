@@ -10,6 +10,30 @@ page 1 612 792
   text fill-none direct   fill-none style
   text scene3d direct   scene3d styleall direct
   text    all style
+  form /X11
+    image /X10 870x330 masked 6885626b7850b892
+  form /X13
+    image /X12 967x123 masked 31c5244854c6b05c
+  form /X15
+    image /X14 912x123 masked 666628c7cd631011
+  form /X20
+    image /X19 766x337 masked 4d5c8bd803b57cd0
+  form /X22
+    image /X21 581x123 masked b08e133d1d8a5e4c
+  form /X24
+    image /X23 833x403 masked c29ff6adbb0eea06
+  form /X27
+    image /X26 712x337 masked a80bedbb582f456b
+  form /X29
+    image /X28 526x123 masked 923a69bb2ddd0d6e
+  form /X31
+    image /X30 778x403 masked 54647ba9a4061373
+  form /X4
+    image /X2 882x397 masked 9aa787187124f2c3
+  form /X6
+    image /X5 826x397 masked 92477cfd0145557c
+  form /X9
+    image /X7 926x330 masked 48667632796096d5
   op 1 0 0 -1 0 792 cm
   op /P << /MCID 0 >> BDC
   op q

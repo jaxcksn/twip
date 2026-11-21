@@ -22,6 +22,9 @@ page 1 612 792
   text from booking flights earlier and consolidating hotel contracts. Over the next two 
   text quarters the team will focus on reliability, accessibility, and the long list of 
   text small improvements users requested. Engineering completed the migration of the 
+  image /X3 300x200 bc98eb769ea7a081
+  image /X4 200x200 b0395a64dd43a3fa
+  image /X5 200x200 b0395a64dd43a3fa
   op 1 0 0 -1 0 792 cm
   op /P << /MCID 0 >> BDC
   op q
@@ -375,6 +378,7 @@ page 2 612 792
   text  Reconciliation covered all six regions; see the appendix for details.
   annot Subtype /Link Rect [156.15 379.62 279.9 390.62] Contents <436f6e746f736f20646f63756d656e746174696f6e> A << /Type /Action /S /URI /URI <68747470733a2f2f7777772e6578616d706c652e636f6d2f646f63732f696e6465782e68746d6c> >>
   annot Subtype /Link Rect [372.85 379.62 510.9 390.62] Contents <6a756d7020746f204e6f74657320616e642073796d626f6c73> A << /Type /Action /D <4e6f746573416e6453796d626f6c73> /S /GoTo >>
+  image /X7 160x120 f69bddfd1af9551e
   op 1 0 0 -1 0 792 cm
   op /P << /MCID 0 >> BDC
   op q

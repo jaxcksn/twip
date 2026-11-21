@@ -35,6 +35,8 @@ page 1 612 792
   text division date profitable. Insights the meeting forecast hereby vendors practical 
   text schedule state entry estimate management. Action budget inventory relevant group 
   text relief results region ledger brief usage cause. Colleague partner section notice.
+  image /X2 64x48 6564e5098954f28c
+  image /X3 64x48 6564e5098954f28c
   op 1 0 0 -1 0 792 cm
   op /P << /MCID 0 >> BDC
   op q

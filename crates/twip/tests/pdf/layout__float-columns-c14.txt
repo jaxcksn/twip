@@ -103,6 +103,7 @@ page 1 612 792
   text division date profitable. Insights 
   text the meeting forecast hereby vendors 
   text practical schedule state entry 
+  image /X2 64x48 6564e5098954f28c
   op 1 0 0 -1 0 792 cm
   op /P << /MCID 0 >> BDC
   op q
@@ -1246,6 +1247,7 @@ page 2 612 792
   text Management action budget inventory 
   text relevant group relief results region 
   text ledger brief usage. Cause colleague.
+  image /X3 64x48 6564e5098954f28c
   op 1 0 0 -1 0 792 cm
   op /P << /MCID 0 >> BDC
   op q
@@ -2069,6 +2071,7 @@ page 3 612 792
   text tax finds record 
   text proposal denied 
   text contract 
+  image /X4 64x48 6564e5098954f28c
 page 4 612 792
   text onboarding support network. Scheduled 
   text trend suggestions board order update 

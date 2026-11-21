@@ -2,7 +2,9 @@
 
 use crate::docx::NoteKind;
 
-use super::fragment::{BoxFragment, BoxKind, CellPlace, Child, Item, LineFragment, PageChild, PageFragment, PlacedLine, RowFragment, translated};
+use super::fragment::{
+    BoxFragment, BoxKind, CellFragment, CellPlace, Child, Item, LineFragment, PageChild, PageFragment, PlacedLine, RowFragment, translated,
+};
 use super::ids::{FloatId, ParaId, TableId, Unit};
 
 #[derive(Clone, Copy)]
@@ -14,6 +16,8 @@ pub struct Placed<'a> {
     pub own_colours: bool,
     /// The float whose box it is drawn in.
     pub float: Option<FloatId>,
+    /// The box on the page it is clipped to: an exact-height row's cell.
+    pub clip: Option<[f64; 4]>,
 }
 
 impl Placed<'_> {
@@ -43,7 +47,7 @@ fn line_items<'a>(para: Option<ParaId>, p: &'a PlacedLine, dx: f64, dy: f64, lin
     let line = lines.next();
     (lines.placed)(line, para, p, dx, dy);
     for it in p.line.items.iter() {
-        out(Placed { dx: dx + p.x, dy: dy + p.y, item: it, line, own_colours: false, float: None });
+        out(Placed { dx: dx + p.x, dy: dy + p.y, item: it, line, own_colours: false, float: None, clip: None });
     }
 }
 
@@ -59,10 +63,10 @@ fn backgrounds<'a>(children: &'a [Child], dx: f64, dy: f64, skip: &dyn Fn(&BoxKi
             Child::Table(t) => {
                 for r in t.rows.iter() {
                     for it in r.background.iter() {
-                        out(Placed { dx, dy, item: it, line: 0, own_colours: false, float: None });
+                        out(Placed { dx, dy, item: it, line: 0, own_colours: false, float: None, clip: None });
                     }
                     for cell in r.cells.iter() {
-                        backgrounds(&cell.content, dx, dy, skip, out);
+                        clipped(cell, dx, dy, out, &mut |out| backgrounds(&cell.content, dx, dy, skip, out));
                     }
                 }
             }
@@ -87,7 +91,7 @@ fn flow<'a>(children: &'a [Child], dx: f64, dy: f64, skip: &dyn Fn(&BoxKind) -> 
                 for label in p.line_numbers.iter() {
                     let line = lines.next();
                     for it in label.iter() {
-                        out(Placed { dx, dy, item: it, line, own_colours: false, float: None });
+                        out(Placed { dx, dy, item: it, line, own_colours: false, float: None, clip: None });
                     }
                 }
             }
@@ -100,7 +104,7 @@ fn flow<'a>(children: &'a [Child], dx: f64, dy: f64, skip: &dyn Fn(&BoxKind) -> 
             Child::Items(items) => {
                 let line = lines.next();
                 for it in items.iter() {
-                    out(Placed { dx, dy, item: it, line, own_colours: false, float: None });
+                    out(Placed { dx, dy, item: it, line, own_colours: false, float: None, clip: None });
                 }
             }
         }
@@ -109,11 +113,22 @@ fn flow<'a>(children: &'a [Child], dx: f64, dy: f64, skip: &dyn Fn(&BoxKind) -> 
 
 fn row<'a>(r: &'a RowFragment, dx: f64, dy: f64, skip: &dyn Fn(&BoxKind) -> bool, lines: &mut Lines<'a, '_>, out: &mut dyn FnMut(Placed<'a>)) {
     for cell in r.cells.iter() {
-        flow(&cell.content, dx, dy, skip, lines, out);
+        clipped(cell, dx, dy, out, &mut |out| flow(&cell.content, dx, dy, skip, lines, out));
     }
     for it in r.borders.iter() {
-        out(Placed { dx, dy, item: it, line: 0, own_colours: false, float: None });
+        out(Placed { dx, dy, item: it, line: 0, own_colours: false, float: None, clip: None });
     }
+}
+
+/// What `draw` gives `out` from `cell`, clipped to the cell above its clip when its row's height is exact.
+fn clipped<'a>(cell: &CellFragment, dx: f64, dy: f64, out: &mut dyn FnMut(Placed<'a>), draw: &mut dyn FnMut(&mut dyn FnMut(Placed<'a>))) {
+    let Some(bottom) = cell.place.clip else { return draw(out) };
+    let [x0, y0, x1, _] = cell.place.rect;
+    let b = [x0 + dx, y0 + dy, x1 + dx, bottom + dy];
+    draw(&mut |p| {
+        let clip = p.clip.map_or(b, |c| [c[0].max(b[0]), c[1].max(b[1]), c[2].min(b[2]), c[3].min(b[3])]);
+        out(Placed { clip: Some(clip), ..p });
+    });
 }
 
 fn boxes_of<'a>(children: &'a [Child], dx: f64, dy: f64, want: &dyn Fn(&BoxKind) -> bool, out: &mut Vec<(&'a BoxFragment, f64, f64)>) {
@@ -176,7 +191,7 @@ pub fn paint_lines<'a>(
     };
     let mut lines = Lines { n: 0, placed };
     for item in page.borders.iter() {
-        visible(Placed { dx: 0.0, dy: 0.0, item, line: 0, own_colours: false, float: None });
+        visible(Placed { dx: 0.0, dy: 0.0, item, line: 0, own_colours: false, float: None, clip: None });
     }
     let bodies = || page.children.iter().filter_map(|c| if let PageChild::Body(b) = c { Some(&**b) } else { None });
     let neither = |k: &BoxKind| is_float(k) || is_notes(k);

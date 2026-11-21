@@ -250,19 +250,23 @@ fn dashed_rects() {
     same("dashed-rects", (256, 176), &rec.finish(), &Resources::default());
 }
 
-/// PDF/UA is declared (in the XMP, and for PDF/A its schema) only when a structure tree is written.
+/// PDF/UA is declared (in the XMP, and for PDF/A its schema) only when a structure tree is written and claims it.
 #[test]
 fn pdf_ua_is_declared_with_a_structure_tree_only() {
     let pages = [Page { width: 100.0, height: 60.0, parts: Vec::new(), links: Vec::new(), destinations: Vec::new() }];
     let structure = [Element::new(Kind::Paragraph, Vec::new())];
     for archival in [false, true] {
-        let info = Info { title: "UA".into(), archival, ..Info::default() };
-        for (structure, declared) in [(&structure[..], true), (&[][..], false)] {
-            let written = write(&Resources::default(), &pages, structure, &[], &info).expect("writes");
-            let text = String::from_utf8_lossy(&written.bytes);
-            assert_eq!(text.contains("pdfuaid:part"), declared, "archival {archival}, tagged {declared}");
-            assert_eq!(text.contains("pdfaSchema:prefix"), declared && archival, "archival {archival}, tagged {declared}");
-            assert_eq!(text.contains("pdfaid:part"), archival);
+        for accessible in [false, true] {
+            let info = Info { title: "UA".into(), archival, accessible, ..Info::default() };
+            for (structure, tagged) in [(&structure[..], true), (&[][..], false)] {
+                let declared = tagged && accessible;
+                let written = write(&Resources::default(), &pages, structure, &[], &info).expect("writes");
+                let text = String::from_utf8_lossy(&written.bytes);
+                assert_eq!(text.contains("pdfuaid:part"), declared, "archival {archival}, accessible {accessible}, tagged {tagged}");
+                assert_eq!(text.contains("pdfaSchema:prefix"), declared && archival, "archival {archival}, tagged {tagged}");
+                assert_eq!(text.contains("pdfaid:part"), archival);
+                assert_eq!(text.contains("/S/P"), tagged, "the structure is kept either way");
+            }
         }
     }
 }
@@ -490,7 +494,7 @@ fn links_notes_and_table_cells_are_tagged() {
             ],
         ),
     ];
-    let info = Info { title: "Links".into(), language: Some("en-US".into()), archival: true, ..Info::default() };
+    let info = Info { title: "Links".into(), language: Some("en-US".into()), archival: true, accessible: true, ..Info::default() };
     let page = Page { width: 100.0, height: 60.0, parts, links, destinations };
     let written = write(&Resources::default(), &[page], &structure, &[], &info).expect("writes");
     let text = String::from_utf8_lossy(&written.bytes);

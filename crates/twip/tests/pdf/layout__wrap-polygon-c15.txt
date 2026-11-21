@@ -50,6 +50,9 @@ page 1 612 792
   text partner section notice claim team export staff newsletter 
   text review matter presenter. Advisor account served 
   text savings pilot receipt corporate requirement standard fact that products. 
+  image /X2 64x48 6564e5098954f28c
+  image /X3 64x48 6564e5098954f28c
+  image /X4 64x48 6564e5098954f28c
   op 1 0 0 -1 0 792 cm
   op /P << /MCID 0 >> BDC
   op q
