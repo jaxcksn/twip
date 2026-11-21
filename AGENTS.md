@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to AI Agents when working with code in this repository.
 
 Twip is a DOCX layout, editing and rendering engine in Rust, with hand-written SDKs for the web (wasm) and .NET (C ABI).
 `.github/CONTRIBUTING.md` is the full contributor guide; this file is the short version plus agent rules.
