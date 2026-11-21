@@ -559,7 +559,7 @@ impl Editor {
         now: &crate::api::services::DialogValues,
     ) -> Result<StyleDialog, Error> {
         use crate::api::services::DialogValues;
-        use crate::docx::write::props::{TBLPR, TCPR, TRPR};
+        use crate::docx::write::props::{TBLPR, TC_BORDERS, TCPR, TRPR};
         let res = self.doc.resolver.clone().ok_or_else(|| Error::unavailable("no styles"))?;
         let cx = res.styles.cx();
         let w = cx.w.clone();
@@ -594,10 +594,20 @@ impl Editor {
                 let edges = |x: &crate::api::services::BordersShadingDialog| {
                     (x.top.clone(), x.left.clone(), x.bottom.clone(), x.right.clone(), x.between.clone(), x.inside_vertical.clone())
                 };
-                if edges(a) != edges(b) {
+                let diagonals = |x: &crate::api::services::BordersShadingDialog| (x.diagonal_down.clone(), x.diagonal_up.clone());
+                let (edged, crossed) = (edges(a) != edges(b), diagonals(a) != diagonals(b));
+                // A diagonal as set, nil once turned off, else nothing.
+                let cross = |side: &str, was: &Option<crate::api::command::Border>, now: &Option<crate::api::command::Border>| {
+                    (now.is_some() || was.is_some()).then(|| line(side, now))
+                };
+                let (down, up) = (cross("tl2br", &a.diagonal_down, &b.diagonal_down), cross("tr2bl", &a.diagonal_up, &b.diagonal_up));
+                if edged || crossed && region.is_some() {
                     let name = if region.is_some() { "tcBorders" } else { "tblBorders" };
+                    // A part's cells take the diagonals with their edges; the whole table's go in its cells' properties.
+                    let cells: String =
+                        if region.is_some() { [&down, &up].into_iter().flatten().map(String::as_str).collect() } else { String::new() };
                     let xml = format!(
-                        "<{w}{name}>{}{}{}{}{}{}</{w}{name}>",
+                        "<{w}{name}>{}{}{}{}{}{}{cells}</{w}{name}>",
                         line("top", &b.top),
                         line("left", &b.left),
                         line("bottom", &b.bottom),
@@ -609,6 +619,22 @@ impl Editor {
                         Some(r) => super::styles::edit_table_part(&raw, r, "tcPr", &cx, |p| p.set("tcBorders", xml.clone())),
                         None => root(&raw, "tblPr", TBLPR, &|p| p.set("tblBorders", xml.clone())),
                     };
+                }
+                if crossed && region.is_none() {
+                    raw = root(&raw, "tcPr", TCPR, &|p| {
+                        let mut bd = Props::parse(p.get("tcBorders"), "tcBorders", &cx);
+                        bd.reorder(TC_BORDERS);
+                        for (side, x) in [("tl2br", &down), ("tr2bl", &up)] {
+                            match x {
+                                Some(x) => bd.set(side, x.clone()),
+                                None => bd.remove(side),
+                            }
+                        }
+                        match bd.xml() {
+                            Some(x) => p.set("tcBorders", x),
+                            None => p.remove("tcBorders"),
+                        }
+                    });
                 }
                 if (a.fill, a.pattern, a.pattern_color) != (b.fill, b.pattern, b.pattern_color) {
                     let fill = match b.fill {

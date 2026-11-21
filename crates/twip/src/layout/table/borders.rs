@@ -276,6 +276,15 @@ pub(in crate::layout) fn stroked(out: &mut Vec<Item>, rect: [f64; 4], horizontal
         })
         .collect();
     let rect = if horizontal { [a0, at, a1, at + band] } else { [at, a0, at + band, a1] };
+    let shape = stroke_shape(rect, width, colour, segs);
+    // Two cells sharing an edge each draw it: once is enough.
+    if !out.iter().rev().take(8).any(|i| matches!(i, Item::Shape(s) if **s == *shape)) {
+        out.push(Item::Shape(shape));
+    }
+}
+
+/// A border's stroked path: `segs` in points from `rect`'s corner, `width` wide, round joined, flat capped.
+fn stroke_shape(rect: [f64; 4], width: f64, colour: u32, segs: Vec<Seg>) -> Rc<ShapeItem> {
     let [r0, r1, r2, r3] = rect;
     let geom = Geom {
         paths: vec![GeomPath { segs, fill: PathFill::None, stroke: true }],
@@ -284,7 +293,7 @@ pub(in crate::layout) fn stroked(out: &mut Vec<Item>, rect: [f64; 4], horizontal
         cxn: vec![],
     };
     let paint = Paint::Solid(Rgba { r: (colour >> 16) as u8, g: (colour >> 8) as u8, b: colour as u8, a: 255 });
-    let shape = Rc::new(ShapeItem {
+    Rc::new(ShapeItem {
         rect,
         rot: 0.0,
         flip_h: false,
@@ -304,11 +313,58 @@ pub(in crate::layout) fn stroked(out: &mut Vec<Item>, rect: [f64; 4], horizontal
         text_float: 0,
         of: Default::default(),
         text_path: None,
-    });
-    // Two cells sharing an edge each draw it: once is enough.
-    if !out.iter().rev().take(8).any(|i| matches!(i, Item::Shape(s) if **s == *shape)) {
-        out.push(Item::Shape(shape));
+    })
+}
+
+/// One pixel of the 300 dpi device Word draws a PDF for, in points: a dashed diagonal's width and its dashes' unit.
+const DEVICE_PX: f64 = 0.24;
+
+/// A cell's diagonal across `rect`, top left to bottom right or, `up`, bottom left to top right, as Word draws one:
+/// one line whatever the style, `thick` twice and `double` three times the border's width, and the dashed styles one
+/// device pixel wide in Word's fixed dashes.
+pub(in crate::layout) fn diagonal(out: &mut Vec<Item>, rect: [f64; 4], up: bool, b: &Border) {
+    let [x0, y0, x1, y1] = rect;
+    let (w, h) = (x1 - x0, y1 - y0);
+    let len = w.hypot(h);
+    if !(w > EPS && h > EPS && len.is_finite()) {
+        return;
     }
+    let dash: &[f64] = match b.style.as_str() {
+        "dotted" => &[3.0, 3.0],
+        "dashed" | "dashSmallGap" => &[18.0, 6.0],
+        "dotDash" => &[9.0, 6.0, 3.0, 6.0],
+        "dotDotDash" => &[9.0, 3.0, 3.0, 3.0, 3.0, 3.0],
+        _ => &[],
+    };
+    let width = match b.style.as_str() {
+        _ if !dash.is_empty() => DEVICE_PX,
+        "thick" => 2.0 * b.width,
+        "double" => 3.0 * b.width,
+        _ => b.width,
+    };
+    let (from, dir) = if up { ([0.0, h], [w / len, -h / len]) } else { ([0.0, 0.0], [w / len, h / len]) };
+    let at = |t: f64| [from[0] + dir[0] * t, from[1] + dir[1] * t];
+    let segs = if dash.is_empty() {
+        vec![Seg::Move(at(0.0)), Seg::Line(at(len))]
+    } else {
+        // A very long diagonal gets longer dashes rather than more of them.
+        let period = dash.iter().sum::<f64>() * DEVICE_PX;
+        let scale = (len / period * dash.len() as f64 / MAX_SEGMENTS).max(1.0);
+        let mut segs = Vec::new();
+        let mut t = 0.0;
+        for (k, d) in dash.iter().cycle().enumerate() {
+            if t >= len - EPS || k >= 2 * MAX_SEGMENTS as usize {
+                break;
+            }
+            let to = (t + d * DEVICE_PX * scale).min(len);
+            if k % 2 == 0 {
+                segs.extend([Seg::Move(at(t)), Seg::Line(at(to))]);
+            }
+            t = to;
+        }
+        segs
+    };
+    out.push(Item::Shape(stroke_shape(rect, width.max(DEVICE_PX), b.color.unwrap_or(0), segs)));
 }
 
 /// `waves` zigzags of a wave border along the edge, stacked across it; the rect's thickness scales Word's size down
@@ -667,6 +723,36 @@ mod tests {
         let mut none = Vec::new();
         shadow(&mut none, [0.0, 10.0, 50.0, 11.5], true, true, &plain, true, true);
         assert!(none.is_empty());
+    }
+
+    #[test]
+    fn a_diagonal_is_one_line_as_word_draws_it() {
+        let b = |style: &str| Border { style: style.into(), width: 1.5, space: 0.0, shadow: false, color: Some(0x336699) };
+        let draw = |style: &str, rect: [f64; 4], up: bool| {
+            let mut out = Vec::new();
+            diagonal(&mut out, rect, up, &b(style));
+            out
+        };
+        let width = |out: &[Item]| match &out[0] {
+            Item::Shape(s) => s.line.width,
+            _ => -1.0,
+        };
+        let rect = [10.0, 20.0, 40.0, 60.0];
+        assert_eq!(described(&draw("single", rect, false)), vec![(vec![1000, 2000, 4000, 6000, 0, 0, 3000, 4000], 1)]);
+        assert_eq!(described(&draw("single", rect, true)), vec![(vec![1000, 2000, 4000, 6000, 0, 4000, 3000, 0], 1)]);
+        let widths: Vec<f64> =
+            ["single", "thick", "double", "thinThickSmallGap", "wave", "dashed"].iter().map(|s| width(&draw(s, rect, false))).collect();
+        assert_eq!(widths, vec![1.5, 3.0, 4.5, 1.5, 1.5, DEVICE_PX]);
+        // Dashes 18 device pixels on, 6 off, along the 50 pt line.
+        let Item::Shape(dashed) = &draw("dashed", rect, false)[0] else { panic!("a stroke") };
+        let segs = &dashed.geom.paths[0].segs;
+        assert_eq!(segs.len(), 2 * (50.0_f64 / (24.0 * DEVICE_PX)).ceil() as usize);
+        let Seg::Line([x, y]) = segs[1] else { panic!("a dash") };
+        assert!((x.hypot(y) - 18.0 * DEVICE_PX).abs() < 1e-9 && (y / x - 4.0 / 3.0).abs() < 1e-9);
+        assert!(draw("single", [0.0, 0.0, 0.0, 10.0], false).is_empty(), "a box without width has none");
+        assert!(draw("dotted", [0.0, 0.0, f64::INFINITY, 10.0], false).is_empty());
+        let Item::Shape(long) = &draw("dotted", [0.0, 0.0, 1.0e7, 1.0e7], false)[0] else { panic!("a stroke") };
+        assert!(long.geom.paths[0].segs.len() <= 2 * MAX_SEGMENTS as usize + 2, "a long diagonal's dashes are bounded");
     }
 
     #[test]

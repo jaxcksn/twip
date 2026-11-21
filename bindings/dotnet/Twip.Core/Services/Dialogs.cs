@@ -365,6 +365,8 @@ public enum BorderSetting
 /// <param name="Right">The right edge, or null.</param>
 /// <param name="Between">The line between paragraphs (a table style part's inside horizontal line), or null.</param>
 /// <param name="InsideVertical">A table style part's inside vertical line, or null.</param>
+/// <param name="DiagonalDown">The cells' diagonal from their top left to their bottom right corner (applied to cells, or a table style's part), or null.</param>
+/// <param name="DiagonalUp">The cells' diagonal from their top right to their bottom left corner, or null.</param>
 /// <param name="ApplyTo">The paragraphs, the text (a box only), the selected cells (or a table style part's), or the table.</param>
 /// <param name="Fill">The shading's fill.</param>
 /// <param name="Pattern">The shading's pattern.</param>
@@ -389,6 +391,8 @@ public sealed record BordersShadingDialogValues(
     CellBorder? Right,
     CellBorder? Between,
     CellBorder? InsideVertical,
+    CellBorder? DiagonalDown,
+    CellBorder? DiagonalUp,
     ShadingTarget ApplyTo,
     ColorValue Fill,
     ShadingPattern Pattern,

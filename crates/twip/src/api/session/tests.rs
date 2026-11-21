@@ -3225,6 +3225,27 @@ fn a_table_styles_format_menu_sets_part_borders_properties_and_banding() {
     let first = &style.pending[style.pending.find("w:type=\"firstRow\"").expect("the header row")..];
     let first = &first[..first.find("</w:tblStylePr>").unwrap()];
     assert!(first.contains("<w:tcBorders><w:top w:val=\"double\"") && first.contains("w:val=\"pct20\""), "{first}");
+    // The diagonals: a part's with its edges, the whole table's in its cells' properties.
+    let pen =
+        crate::api::command::Border { style: BorderStyle::Dashed, width: crate::api::value::Points(1.0), color: crate::api::value::AutoOr::Auto };
+    let b = s.dialog_open_on_style(DialogKind::BordersShading, style.clone()).expect("opens again");
+    assert!(b.fields["diagonalDown"].enabled && b.fields["diagonalUp"].enabled);
+    let patch = BordersShadingPatch { diagonal_down: Some(Some(pen.clone())), ..BordersShadingPatch::default() };
+    let b = s.dialog_update(b, DialogPatch::BordersShading(patch)).expect("updates");
+    assert!(matches!(&b.values, DialogValues::BordersShading(v) if v.setting == BorderSetting::Custom), "a diagonal makes the setting custom");
+    let style = style_values(&s.dialog_apply_to_style(b).expect("applies"));
+    let first = &style.pending[style.pending.find("w:type=\"firstRow\"").expect("the header row")..];
+    let first = &first[..first.find("</w:tblStylePr>").unwrap()];
+    assert!(first.contains("<w:top w:val=\"double\"") && first.contains("<w:tl2br w:val=\"dashed\" w:sz=\"8\""), "{first}");
+    let b = s.dialog_open_on_style(DialogKind::BordersShading, style.clone()).expect("opens again");
+    assert!(matches!(&b.values, DialogValues::BordersShading(v) if v.diagonal_down == Some(pen.clone()) && v.diagonal_up.is_none()), "reads it back");
+    let whole = crate::api::services::StyleDialog { table_part: TableStylePart::WholeTable, ..style.clone() };
+    let b = s.dialog_open_on_style(DialogKind::BordersShading, whole).expect("opens on the whole table");
+    let patch = BordersShadingPatch { diagonal_up: Some(Some(pen)), ..BordersShadingPatch::default() };
+    let b = s.dialog_update(b, DialogPatch::BordersShading(patch)).expect("updates");
+    let after = style_values(&s.dialog_apply_to_style(b).expect("applies")).pending;
+    let root = &after[..after.find("<w:tblStylePr").unwrap_or(after.len())];
+    assert!(root.contains("<w:tcPr><w:tcBorders><w:tr2bl w:val=\"dashed\""), "{root}");
     let t = s.dialog_open_on_style(DialogKind::TableProperties, style.clone()).expect("opens Format > Table Properties");
     let patch = TablePropertiesPatch {
         alignment: Some(HorizontalAlignment::Center),

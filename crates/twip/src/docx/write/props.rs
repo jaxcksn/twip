@@ -112,6 +112,9 @@ pub const TCPR: &[&str] = &[
     "tcPrChange",
 ];
 
+/// CT_TcBorders' children in schema order.
+pub const TC_BORDERS: &[&str] = &["top", "start", "left", "bottom", "end", "right", "insideH", "insideV", "tl2br", "tr2bl"];
+
 /// CT_TblPr's children in schema order.
 pub const TBLPR: &[&str] = &[
     "tblStyle",

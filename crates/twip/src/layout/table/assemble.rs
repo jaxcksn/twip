@@ -443,6 +443,7 @@ pub(super) fn assemble(
                 span: g.span,
                 edges: g.edges.clone(),
                 cut: Rc::new([own_or(&c.top, &row_borders(t, ri)[0]), own_or(&c.bottom, &row_borders(t, ri)[2]), under_header(c, g.col)]),
+                diagonals: c.diagonals.clone().filter(|d| d.iter().flatten().any(Border::visible)),
                 shade,
                 below: 0.0,
                 index: g.ci,

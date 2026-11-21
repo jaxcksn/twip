@@ -50,6 +50,8 @@ pub struct CellBox {
     /// The top and bottom edges where a part of the table starts or ends on a page (the cell's own, else the table's
     /// top and bottom), and the top edge under a repeated header row.
     pub cut: Rc<[Option<Border>; 3]>,
+    /// The diagonals drawn, top left to bottom right and top right to bottom left.
+    pub diagonals: Option<Rc<[Option<Border>; 2]>>,
     pub shade: crate::layout::shade::Shade,
     pub below: f64,
     pub index: usize,

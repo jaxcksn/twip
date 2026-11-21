@@ -38,7 +38,8 @@ and commits everything as one undo step; `cancel()` changes nothing. The dialogs
 `patternColor`). A `setting` of `none`, `box` or `shadow` sets the edges with the line in `style`, `color` and `width`;
 setting an edge yourself (to that line, or `null`) makes the setting `custom`. `applyTo` is `paragraph`, or `text` when
 the selection is within one paragraph. Text has one border, a box (`none`, `box` or `shadow`). Changing `applyTo` shows
-that target's borders and shading.
+that target's borders and shading. Applied to cells, `diagonalDown` and `diagonalUp` are the first cell's diagonals
+(top left to bottom right, top right to bottom left); a diagonal makes the setting `custom`, and `none` removes them.
 
 The Page Border tab (`pageSetting`, `pageTop`, `pageBottom`, `pageLeft`, `pageRight`) works the same way for the
 section's pages. `pageOffsetFrom` measures them from the page's edge or the text, `pageDisplay` picks the pages they
@@ -46,7 +47,9 @@ show on, and `pageApplyTo` the section or the whole document.
 
 `apply` runs what changed: `setParagraphBorderLines`, `setTextBorder`, `setShading` and `setPageBorders`. Every border
 style draws, on paragraphs, text, cells and pages, and every shading pattern, on text, paragraphs, cells and tables. Art page
-borders are kept but not drawn. Apply to Cell and Apply to Table set shading only, so their border controls are disabled.
+borders are kept but not drawn. A cell's diagonals draw as Word draws them: one line in any style (`thick` twice and
+`double` three times as wide, the dashed styles as hairlines). Apply to Cell and Apply to Table set shading only, so
+their border controls are disabled; `setCellBorders` sets the diagonals.
 
 ### Printed Watermark and Fill Effects
 

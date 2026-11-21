@@ -336,6 +336,10 @@ export interface DialogValues {
     between: BorderLine | null;
     /** A table style part's inside vertical line. */
     insideVertical: BorderLine | null;
+    /** The cells' diagonal from their top left to their bottom right corner (applied to cells, or a table style's part). */
+    diagonalDown: BorderLine | null;
+    /** The cells' diagonal from their top right to their bottom left corner. */
+    diagonalUp: BorderLine | null;
     /** The paragraphs, the text (a box only), the selected cells (or a table style part's), or the table. */
     applyTo: 'paragraph' | 'text' | 'cell' | 'table';
     /** The shading's fill. */

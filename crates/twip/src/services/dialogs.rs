@@ -900,6 +900,8 @@ fn borders_fields(v: &BordersShadingDialog, in_table: bool) -> Vec<(&'static str
             ),
         ),
         ("insideVertical", on(field("Inside vertical", FieldKind::Toggle), matches!(v.apply_to, ShadingTarget::Cell | ShadingTarget::Table))),
+        ("diagonalDown", on(field("Diagonal down", FieldKind::Toggle), v.apply_to == ShadingTarget::Cell)),
+        ("diagonalUp", on(field("Diagonal up", FieldKind::Toggle), v.apply_to == ShadingTarget::Cell)),
         (
             "applyTo",
             if v.apply_to == ShadingTarget::Cell && !in_table {
@@ -931,8 +933,11 @@ pub fn page_border_setting(v: &BordersShadingDialog, shadow: bool) -> BorderSett
     }
 }
 
-/// The setting edges make: none, a box of one line (with a shadow if it had one), or custom.
+/// The setting edges make: none, a box of one line (with a shadow if it had one), or custom (a diagonal too).
 pub fn border_setting(v: &BordersShadingDialog, shadow: bool) -> BorderSetting {
+    if v.diagonal_down.is_some() || v.diagonal_up.is_some() {
+        return BorderSetting::Custom;
+    }
     match (&v.top, &v.bottom, &v.left, &v.right, &v.between, &v.inside_vertical) {
         (None, None, None, None, None, None) => BorderSetting::None,
         (Some(t), Some(b), Some(l), Some(r), None, None) if t == b && b == l && l == r => {
@@ -1099,9 +1104,10 @@ pub fn update(model: &DialogModel, values: DialogValues, cx: &Context) -> Result
                 if v.setting != BorderSetting::Custom {
                     (v.top, v.bottom, v.left, v.right, v.between, v.inside_vertical) =
                         (boxed.clone(), boxed.clone(), boxed.clone(), boxed, None, None);
+                    (v.diagonal_down, v.diagonal_up) = (None, None);
                 }
-            } else if (&v.top, &v.bottom, &v.left, &v.right, &v.between, &v.inside_vertical)
-                != (&was.top, &was.bottom, &was.left, &was.right, &was.between, &was.inside_vertical)
+            } else if (&v.top, &v.bottom, &v.left, &v.right, &v.between, &v.inside_vertical, &v.diagonal_down, &v.diagonal_up)
+                != (&was.top, &was.bottom, &was.left, &was.right, &was.between, &was.inside_vertical, &was.diagonal_down, &was.diagonal_up)
             {
                 v.setting = border_setting(&v, was.setting == BorderSetting::Shadow);
             }

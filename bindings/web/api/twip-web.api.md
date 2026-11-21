@@ -1286,6 +1286,8 @@ export interface DialogValues {
         right: BorderLine | null;
         between: BorderLine | null;
         insideVertical: BorderLine | null;
+        diagonalDown: BorderLine | null;
+        diagonalUp: BorderLine | null;
         applyTo: 'paragraph' | 'text' | 'cell' | 'table';
         fill: Color | 'none';
         pattern: ShadingPattern;

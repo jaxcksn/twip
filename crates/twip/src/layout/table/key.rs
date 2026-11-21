@@ -480,6 +480,7 @@ fn same_row(a: &RowBox, b: &RowBox) -> bool {
                 && x.v_merge == y.v_merge
                 && (x.col, x.span, x.index) == (y.col, y.span, y.index)
                 && x.edges == y.edges
+                && x.diagonals == y.diagonals
                 && x.shade == y.shade
                 && x.closing == y.closing
         })

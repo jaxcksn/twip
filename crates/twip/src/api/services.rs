@@ -739,6 +739,11 @@ dialog! {
         pub between: Option<super::command::Border>,
         /// A table style part's inside vertical line, or none.
         pub inside_vertical: Option<super::command::Border>,
+        /// The cells' diagonal from their top left to their bottom right corner (applied to cells, or a table style's
+        /// part), or none.
+        pub diagonal_down: Option<super::command::Border>,
+        /// The cells' diagonal from their top right to their bottom left corner, or none.
+        pub diagonal_up: Option<super::command::Border>,
         /// The paragraphs, or the text (shading only).
         pub apply_to: super::command::ShadingTarget,
         /// The shading's fill, or none.

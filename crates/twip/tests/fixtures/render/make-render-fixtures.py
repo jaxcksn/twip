@@ -371,6 +371,79 @@ def borders(d):
     return "".join(out), sect(borders=page)
 
 
+# ---- diagonal cell borders ----------------------------------------------------------------------------------------
+
+
+def diag(val="single", sz=None, color=ACCENT, which=("tl2br", "tr2bl")):
+    sz = sz or WIDTHS.get(val, 12)
+    return "".join(f'<w:{d} w:val="{val}" w:sz="{sz}" w:space="0" w:color="{color}"/>' for d in which)
+
+
+def tc_borders(inner):
+    return f"<w:tcBorders>{inner}</w:tcBorders>"
+
+
+def diagonal_style():
+    """A table style whose first row and first column carry a diagonal each."""
+    sides = "".join(lf.bdr(s) for s in ("top", "left", "bottom", "right", "insideH", "insideV"))
+    part = lambda kind, d: f'<w:tblStylePr w:type="{kind}"><w:tcPr>{tc_borders(d)}</w:tcPr></w:tblStylePr>'  # noqa: E731
+    return (
+        '<w:style w:type="table" w:styleId="DiagonalGrid"><w:name w:val="Diagonal Grid"/><w:basedOn w:val="TableNormal"/><w:uiPriority w:val="59"/>'
+        f"<w:tblPr><w:tblBorders>{sides}</w:tblBorders></w:tblPr>"
+        + part("firstRow", diag("single", 8, "C00000", ("tl2br",)))
+        + part("firstCol", diag("dashed", 8, "2E75B6", ("tr2bl",)))
+        + "</w:style>"
+    )
+
+
+def diagonals(d):
+    add_styles(d, diagonal_style())
+    tight = '<w:spacing w:after="0"/>'
+    tall = '<w:trHeight w:val="700"/><w:cantSplit/>'
+    out = [heading("Diagonal cell borders")]
+    # One diagonal, the other, both; over shading and text.
+    w = [2340] * 4
+    out.append(P("tl2br, tr2bl, both, both over shading"))
+    cells = [
+        cell(P("Down", tight), 2340, tc_borders(diag(which=("tl2br",)))),
+        cell(P("Up", tight), 2340, tc_borders(diag(which=("tr2bl",)))),
+        cell(P("Both diagonals over text", tight), 2340, tc_borders(diag())),
+        cell(P("Shaded", tight), 2340, tc_borders(diag(color="C00000")) + '<w:shd w:val="clear" w:color="auto" w:fill="FFE699"/>'),
+    ]
+    out.append(lf.table([row(cells, tall)], w))
+    # Every line style.
+    widths = [1872] * 5
+    cells = [cell(P(val, tight + '<w:jc w:val="center"/>'), 1872, tc_borders(diag(val))) for val in LINE_STYLES]
+    cells += [cell(P(""), 1872)] * (-len(cells) % 5)
+    out.append(P("Both diagonals in each line style"))
+    out.append(lf.table([row(cells[i:i + 5], tall) for i in range(0, len(cells), 5)], widths))
+    # Merged cells: across two columns and down three rows, across columns only, down rows only.
+    w = [1560] * 6
+    plain = lambda t: cell(P(t, tight), 1560)  # noqa: E731
+    m = tc_borders(diag("double", 4, "C00000"))
+    rows = [
+        row([cell(P("Merged 2 x 3", tight), 3120, '<w:gridSpan w:val="2"/><w:vMerge w:val="restart"/>' + m),
+             cell(P("Across", tight), 3120, '<w:gridSpan w:val="2"/>' + tc_borders(diag("dotted", 8))),
+             cell(P("Down", tight), 1560, '<w:vMerge w:val="restart"/>' + tc_borders(diag("thick", 8))), plain("a")], tall),
+        row([cell(P(""), 3120, '<w:gridSpan w:val="2"/><w:vMerge/>'), plain("b"), plain("c"), cell(P(""), 1560, "<w:vMerge/>"), plain("d")], tall),
+        row([cell(P(""), 3120, '<w:gridSpan w:val="2"/><w:vMerge/>'), plain("e"), plain("f"), plain("g"), plain("h")], tall),
+    ]
+    out.append(P("Merged cells: two columns by three rows, two columns, two rows"))
+    out.append(lf.table(rows, w))
+    # Thick cell borders around a diagonal, and a spaced table's cells.
+    thick = "".join(lf.bdr(s, sz=36) for s in ("top", "left", "bottom", "right"))
+    out.append(P("Thick cell borders"))
+    out.append(lf.table([row([cell(P("4.5 pt sides", tight), 2340, tc_borders(thick + diag("single", 4, "000000"))), plain("x")], tall)], [2340, 1560]))
+    out.append(P("Cell spacing"))
+    out.append(lf.table([row([cell(P("Spaced", tight), 2340, tc_borders(diag())), cell(P("Spaced", tight), 2340, tc_borders(diag("dashSmallGap", 12)))], tall)],
+                        [2340, 2340], spacing=100))
+    # A table style's conditional formats.
+    look = '<w:tblLook w:val="00A0" w:firstRow="1" w:lastRow="0" w:firstColumn="1" w:lastColumn="0" w:noHBand="1" w:noVBand="1"/>'
+    out.append(P("Table style: the first row's tl2br, the first column's tr2bl"))
+    out.append(lf.table([row([plain(f"S{i}{j}") for j in range(3)], tall) for i in range(3)], [1560] * 3, style="DiagonalGrid", borders="", look=look))
+    return "".join(out), sect()
+
+
 # ---- watermarks ---------------------------------------------------------------------------------------------------
 
 SHAPETYPE_136 = (
@@ -697,6 +770,7 @@ FIXTURES = [
     ("shading-patterns", shading_patterns),
     ("table-shading", table_shading),
     ("borders", borders),
+    ("diagonals", diagonals),
     ("watermark-text", watermark_text_doc),
     ("watermark-picture", watermark_picture_doc),
     ("page-colour", page_colour_with(PAGE_TINT, PAGE_TINT_LABEL)),

@@ -13,7 +13,8 @@ use crate::layout::story::StoryUnit;
 use crate::layout::units::EPS;
 
 use super::{
-    CellBox, INK_SLACK, RowBox, TableLayout, assemble::gap, borders::bw, borders::edge, borders::thick, ink_top, key::RowProbe, source_units,
+    CellBox, INK_SLACK, RowBox, TableLayout, assemble::gap, borders::bw, borders::diagonal, borders::edge, borders::thick, ink_top, key::RowProbe,
+    source_units,
 };
 
 // Row drawing
@@ -315,7 +316,7 @@ pub fn draw_row(tb: &TableLayout, ri: usize, left: f64, top: f64, height: f64, p
     let (outer_top, outer_bottom) = (top, top + height);
     let (top, height) = (top + lead, height - lead - trail);
     let x0 = left + tb.x0;
-    let (mut background, mut cells, mut borders) = (Vec::new(), Vec::new(), Vec::new());
+    let (mut background, mut cells, mut borders, mut diagonals) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
     let mut edges: Vec<(f64, usize)> = Vec::new();
     let mut rect = [x0, top, x0, top + height];
     if let (Some(mut first), Some(mut end)) = (row.cells.first(), row.cells.last()) {
@@ -424,13 +425,25 @@ pub fn draw_row(tb: &TableLayout, ri: usize, left: f64, top: f64, height: f64, p
             closing,
         };
         cells.push(CellFragment { cell: k, content: content.into_boxed_slice(), place });
-        if let Some(spacing) = row.spacing {
-            spaced_cell_frame(tb, row, ri, c, spacing, x0, (top, height), &mut background, &mut borders);
-            continue;
+        // A cell's diagonals: in a spaced cell between its frame's inner edges; else across the grid lines, from under
+        // its top border to the row's (a merged region's) bottom.
+        let diagonal_box = if let Some(spacing) = row.spacing {
+            let [bx0, by0, bx1, by1] = spaced_cell_frame(tb, row, ri, c, spacing, x0, (top, height), &mut background, &mut borders);
+            [bx0 + bw(el), by0 + bw(et), bx1 - bw(er), by1 - bw(eb)]
+        } else {
+            let r = [x0 + c.x, top, x0 + c.x + c.w, top + height];
+            c.shade.draw(&mut background, r, r);
+            cell_borders(tb, row, c, x0, (top, height), last_of_table, &mut borders);
+            [r[0], top + bw(et), r[2], r[3]]
+        };
+        // Diagonals, unmirrored right to left
+        if let Some(d) = c.diagonals.as_deref().filter(|_| c.v_merge != VMerge::Continue) {
+            for (b, up) in d.iter().zip([false, true]) {
+                if let Some(b) = b.as_ref().filter(|b| b.visible()) {
+                    diagonal(&mut diagonals, diagonal_box, up, b);
+                }
+            }
         }
-        let r = [x0 + c.x, top, x0 + c.x + c.w, top + height];
-        c.shade.draw(&mut background, r, r);
-        cell_borders(tb, row, c, x0, (top, height), last_of_table, &mut borders);
     }
     for (a, b, s) in &row.seams {
         edge(&mut borders, [x0 + a, top, x0 + b, top + thick(s)], true, false, s);
@@ -442,6 +455,8 @@ pub fn draw_row(tb: &TableLayout, ri: usize, left: f64, top: f64, height: f64, p
     if whole && !row.div_boxes.is_empty() {
         division_boxes(row, rect, (top, height), (outer_top, outer_bottom), &mut borders);
     }
+    // Over the borders, as Word draws them.
+    borders.append(&mut diagonals);
     RowFragment {
         row: ri,
         rect,
@@ -467,7 +482,7 @@ fn spaced_cell_frame(
     (top, height): (f64, f64),
     background: &mut Vec<Item>,
     borders: &mut Vec<Item>,
-) {
+) -> [f64; 4] {
     let frame = spaced_box(tb, row, ri, c, spacing, x0, (top, height));
     let [bx0, by0, bx1, by1] = frame;
     c.shade.draw(background, frame, frame);
@@ -485,6 +500,7 @@ fn spaced_cell_frame(
     if let Some((w, e)) = vis(r) {
         edge(borders, [bx1 - w, by0, bx1, by1], false, true, &e);
     }
+    frame
 }
 
 /// A spaced cell's border box.
