@@ -66,7 +66,7 @@ namespace Twip.Wire;
         typeof(CamelEnum<ShadingPattern>),
         typeof(CamelEnum<DropCapPosition>),
         typeof(CamelEnum<WatermarkLayout>),
-        typeof(CamelEnum<WatermarkChoice>),
+        typeof(CamelEnum<WatermarkKind>),
         typeof(CamelEnum<FillEffectsTab>),
         typeof(CamelEnum<GradientColors>),
         typeof(CamelEnum<ShadingStyle>),

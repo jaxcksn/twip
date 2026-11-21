@@ -2386,7 +2386,7 @@ impl<'a, 'i> Saver<'a, 'i> {
             // A pasted copy (a new id) is found by where it was read from, and gets drawing ids of its own.
             let copied = f.src.as_ref().and_then(|s| self.float_src.values().find(|(r, _)| r == s)).filter(|_| !self.float_src.contains_key(&f.id));
             let Some((r, was)) = self.float_src.get(&f.id).or(copied) else {
-                if let Some(x) = self.new_float_xml(f) {
+                if let Some(x) = self.new_float_xml(f, run) {
                     push(&x);
                 }
                 continue;
@@ -4377,12 +4377,12 @@ pub(crate) const NEW_IMAGE: &str = "rIdCeImg";
 impl Saver<'_, '_> {
     /// A float with no source (an inserted text box, or a picture float): its `w:drawing`, from the model. `None` for
     /// what the model can't write (a text box whose content can't be).
-    fn new_float_xml(&self, f: &Float) -> Option<String> {
+    fn new_float_xml(&self, f: &Float, run: &Run) -> Option<String> {
         // A watermark is written as Word writes one, so Word's Watermark dialog finds it.
         if let Some(m) = super::watermark::of(f) {
             let spid = f.shape.as_ref().map_or(0, |s| s.nv.id).max(2049);
             let image = f.image.map_or(String::new(), |i| format!("{NEW_IMAGE}{i}"));
-            return Some(super::watermark::vml(&m, &self.w, [f.w, f.h], spid, &image));
+            return Some(super::watermark::vml(&m, &self.w, [f.w, f.h], spid, &image, &run.lang));
         }
         const WP: &str = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
         const A: &str = "http://schemas.openxmlformats.org/drawingml/2006/main";

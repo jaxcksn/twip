@@ -140,8 +140,8 @@ fn pt(v: f64) -> String {
 
 /// The run content Word writes for a watermark `w` × `h` points (`w` the WordprocessingML prefix with its colon):
 /// `w:rPr` and the `w:pict` with its shapetype and shape, `spid` its shape number and `image` the picture's
-/// relationship id. The VML namespaces are declared on the `w:pict`.
-pub fn vml(m: &Watermark, w: &str, size: [f64; 2], spid: u32, image: &str) -> String {
+/// relationship id, `lang` the text's language (none when empty). The VML namespaces are declared on the `w:pict`.
+pub fn vml(m: &Watermark, w: &str, size: [f64; 2], spid: u32, image: &str, lang: &str) -> String {
     let esc = super::write::props::esc;
     let (width, height) = (pt(size[0]), pt(size[1]));
     let (id, ty, body) = match m {
@@ -186,13 +186,15 @@ pub fn vml(m: &Watermark, w: &str, size: [f64; 2], spid: u32, image: &str) -> St
     };
     let (body, kind) = body;
     let number = 357_476_640 + u64::from(spid);
+    let lang = if lang.is_empty() { String::new() } else { format!(r#"<{w}lang {w}val="{}"/>"#, esc(lang)) };
     format!(
         concat!(
-            r#"<{w}rPr><{w}noProof/></{w}rPr><{w}pict xmlns:v="{V}" xmlns:o="{O}" xmlns:w10="{W10}" xmlns:r="{R}">{ty}"#,
+            r#"<{w}rPr><{w}noProof/>{lang}</{w}rPr><{w}pict xmlns:v="{V}" xmlns:o="{O}" xmlns:w10="{W10}" xmlns:r="{R}">{ty}"#,
             r##"<v:shape id="{id}{number}" o:spid="_x0000_s{spid}" type="#{kind}" alt="" {body}<w10:wrap anchorx="margin" anchory="margin"/>"##,
             r#"</v:shape></{w}pict>"#
         ),
         w = w,
+        lang = lang,
         V = V,
         O = O,
         W10 = W10,
@@ -211,7 +213,7 @@ pub fn vml(m: &Watermark, w: &str, size: [f64; 2], spid: u32, image: &str) -> St
 pub fn float(m: &Watermark, size: [f64; 2], spid: u32, image: Option<usize>) -> Option<Float> {
     const WML: &str = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
     let rid = "rIdWatermark";
-    let xml = format!(r#"<w:r xmlns:w="{WML}">{}</w:r>"#, vml(m, "w:", size, spid, rid));
+    let xml = format!(r#"<w:r xmlns:w="{WML}">{}</w:r>"#, vml(m, "w:", size, spid, rid, ""));
     let dom = roxmltree::Document::parse(&xml).ok()?;
     let pict = dom.root_element().children().find(|c| c.tag_name().name() == "pict")?;
     struct One(&'static str, Option<usize>);

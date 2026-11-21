@@ -378,3 +378,19 @@ fn a_page_gradient_s_focus_rectangle_and_one_colour_round_trip() {
     let again = Editor::open(&saved, fonts()).expect("reopens");
     assert_eq!(again.page_formatting(0).background, e.page_formatting(0).background, "read as made");
 }
+
+#[test]
+fn a_text_watermark_keeps_its_language_takes_the_body_font_and_a_one_point_size() {
+    let mut e = Editor::open(&two_sections(), fonts()).expect("opens");
+    let w = TextWatermark { text: "BROUILLON".into(), language: Some("fr-FR".into()), size: Some(Points(1.0)), ..TextWatermark::default() };
+    run(&mut e, Command::SetWatermark(Watermark::Text(w.clone())));
+    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let xml = part(&saved, "word/header1.xml");
+    assert!(xml.contains(r#"<w:noProof/><w:lang w:val="fr-FR"/>"#), "{xml}");
+    let width: f64 = xml.split("width:").nth(1).and_then(|s| s.split("pt").next()).and_then(|s| s.parse().ok()).expect("a width");
+    assert!(width < 40.0, "1 pt is not Auto: {width}");
+    let again = Editor::open(&saved, fonts()).expect("reopens");
+    let Some(Watermark::Text(t)) = again.page_formatting(0).watermark else { panic!("a watermark") };
+    assert_eq!((t.language.as_deref(), t.font.as_deref()), (Some("fr-FR"), Some("Calibri")), "the theme's body font by default");
+    refused(&mut e, Command::SetWatermark(Watermark::Text(TextWatermark { language: Some("fr FR".into()), ..w })));
+}

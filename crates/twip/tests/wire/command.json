@@ -417,6 +417,13 @@
     "type": "setShading"
   },
   {
+    "color": "auto",
+    "fill": "#FFF2CC",
+    "pattern": "pct20",
+    "target": "text",
+    "type": "setShading"
+  },
+  {
     "border": {
       "color": "#C00000",
       "style": "double",

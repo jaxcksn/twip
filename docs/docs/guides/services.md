@@ -51,7 +51,7 @@ borders are kept but not drawn. Apply to Cell and Apply to Table set shading onl
 ### Printed Watermark and Fill Effects
 
 `printedWatermark` reads the section's watermark and `apply` runs `setWatermark` (or `removeWatermark`): none, a picture
-with its scale and washout, or text with its font, size, colour, transparency and layout. `fillEffects` edits the page
+with its scale and washout, or text with its font (the theme's body font by default), language, size, colour, transparency and layout. `fillEffects` edits the page
 colour (gradient, pattern, texture or picture) and `apply` runs `setPageColor`.
 
 ### Frame

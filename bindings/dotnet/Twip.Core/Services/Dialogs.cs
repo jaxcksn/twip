@@ -415,7 +415,7 @@ public sealed record BandingDialogValues(int RowBand, int ColumnBand);
 public sealed record DropCapDialogValues(DropCapPosition Position, string Font, uint Lines, Length Distance);
 
 /// <summary>What the Printed Watermark dialog sets.</summary>
-public enum WatermarkChoice
+public enum WatermarkKind
 {
     /// <summary>No watermark.</summary>
     None,
@@ -431,16 +431,17 @@ public enum WatermarkChoice
 /// <param name="Scale">Percent of the picture's size; null is Auto.</param>
 /// <param name="Washout">The picture is washed out.</param>
 /// <param name="Text">The text.</param>
-/// <param name="Font">The text's font.</param>
-/// <param name="Size">The text's size; null is Auto.</param>
+/// <param name="Font">The text's font; empty is the theme's body font.</param>
+/// <param name="Language">The text's language (a BCP 47 tag); the document's by default.</param>
+/// <param name="Size">The text's size, 1 to 1584 pt; null is Auto.</param>
 /// <param name="Color">The text's colour.</param>
 /// <param name="Transparency">Percent, 0 to 100.</param>
 /// <param name="Layout">Diagonal or horizontal.</param>
 /// <param name="Bold">Bold.</param>
 /// <param name="Italic">Italic.</param>
 public sealed record PrintedWatermarkDialogValues(
-    WatermarkChoice Watermark, ReadOnlyMemory<byte> Picture, double? Scale, bool Washout, string Text, string Font, Length? Size, ColorValue Color,
-    double Transparency, WatermarkLayout Layout, bool Bold, bool Italic);
+    WatermarkKind Watermark, ReadOnlyMemory<byte> Picture, double? Scale, bool Washout, string Text, string Font, string Language, Length? Size,
+    ColorValue Color, double Transparency, WatermarkLayout Layout, bool Bold, bool Italic);
 
 /// <summary>A Fill Effects tab.</summary>
 public enum FillEffectsTab

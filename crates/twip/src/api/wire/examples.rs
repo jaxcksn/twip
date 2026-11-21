@@ -800,6 +800,12 @@ fn commands() -> Vec<Command> {
             pattern: ShadingPattern::ThinDiagCross,
             color: AutoOr::Value(Color(0x2E75B6)),
         }),
+        Command::SetShading(ShadingChange {
+            target: ShadingTarget::Text,
+            fill: NoneOr::Value(Color(0xFFF2CC)),
+            pattern: ShadingPattern::Pct20,
+            color: AutoOr::Auto,
+        }),
         Command::SetTextBorder(TextBorderChange {
             border: Some(Border { style: BorderStyle::Double, width: Points(0.75), color: AutoOr::Value(Color(0xC00000)) }),
             shadow: true,
@@ -1513,6 +1519,7 @@ fn watermarks() -> Vec<crate::api::command::Watermark> {
         Watermark::Text(TextWatermark {
             text: "CONFIDENTIAL".into(),
             font: Some("Calibri".into()),
+            language: Some("en-US".into()),
             size: Some(Points(80.5)),
             color: Some(Color(0xC0C0C0)),
             transparency: Some(50.0),
@@ -1755,6 +1762,31 @@ fn dialog_values() -> Vec<DialogValues> {
             page_display: PageBorderDisplay::FirstPage,
             page_apply_to: PageBorderScope::ThisSection,
         }),
+        DialogValues::BordersShading(BordersShadingDialog {
+            tab: BordersTab::Shading,
+            setting: BorderSetting::Shadow,
+            style: BorderStyle::Double,
+            color: AutoOr::Value(Color(0x2F5496)),
+            width: Points(0.75),
+            top: Some(Border { style: BorderStyle::Double, width: Points(0.75), color: AutoOr::Value(Color(0x2F5496)) }),
+            bottom: None,
+            left: None,
+            right: None,
+            between: None,
+            inside_vertical: None,
+            apply_to: ShadingTarget::Paragraph,
+            fill: NoneOr::None,
+            pattern: ShadingPattern::Solid,
+            pattern_color: AutoOr::Auto,
+            page_setting: BorderSetting::Box,
+            page_top: Some(Border { style: BorderStyle::Triple, width: Points(0.5), color: AutoOr::Auto }),
+            page_bottom: None,
+            page_left: None,
+            page_right: None,
+            page_offset_from: PageBorderOffset::Text,
+            page_display: PageBorderDisplay::FirstPage,
+            page_apply_to: PageBorderScope::ThisSection,
+        }),
         DialogValues::DefineBullet(DefineBulletDialog {
             text: "\u{F0B7}".into(),
             font: Some("Symbol".into()),
@@ -1952,6 +1984,7 @@ fn dialog_values() -> Vec<DialogValues> {
             washout: true,
             text: "DRAFT".into(),
             font: "Calibri".into(),
+            language: "en-US".into(),
             size: Some(Points(80.5)),
             color: Color(0xC0C0C0),
             transparency: 50.0,
@@ -1965,7 +1998,7 @@ fn dialog_values() -> Vec<DialogValues> {
             color1: dr::ColourValue::rgb(Color(0x1F4E79)),
             color2: theme_colour(),
             lightness: 0.5,
-            preset: "Early Sunset".into(),
+            preset: "earlySunset".into(),
             shading: ShadingStyle::FromCorner,
             variant: 2,
             texture: picture_bytes(),
@@ -2544,8 +2577,10 @@ mod tests {
 
     #[test]
     fn every_command_has_an_example() {
-        let ids: Vec<CommandId> = commands().iter().map(Command::id).collect();
-        assert_eq!(ids, CommandId::ALL, "the command examples follow the command set, one each");
+        let mut ids: Vec<CommandId> = commands().iter().map(Command::id).collect();
+        // A command may have several examples, side by side.
+        ids.dedup();
+        assert_eq!(ids, CommandId::ALL, "the command examples follow the command set");
     }
 
     #[test]

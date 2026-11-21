@@ -142,11 +142,12 @@ impl Editor {
             .filter_map(|slot| (0..=section.min(sections.len().saturating_sub(1))).rev().find_map(|k| sections[k].headers[slot].as_ref()))
             .collect();
         let names = shown.into_iter().chain(sections.iter().flat_map(|s| s.headers.iter().flatten()));
-        let f = names.filter_map(|n| self.doc.stories.get(n)).find_map(|b| first_watermark(b))?;
+        let (f, run) = names.filter_map(|n| self.doc.stories.get(n)).find_map(|b| first_watermark(b))?;
         Some(match wm::of(f)? {
             wm::Watermark::Text(t) => Watermark::Text(TextWatermark {
                 text: t.text,
                 font: Some(t.family),
+                language: Some(run.lang.clone()).filter(|l| !l.is_empty()),
                 size: t.size.map(Points),
                 color: Some(Color(t.colour)),
                 transparency: Some(t.transparency),
@@ -171,6 +172,10 @@ impl Editor {
     /// Puts watermark `w` in every header of every section in place of the one there is: in each header part a
     /// section shows, and in new ones for the first section's missing headers (the sections after it show those).
     pub(super) fn set_watermark(&mut self, w: Watermark, fonts: &Fonts) -> Outcome {
+        let language = match &w {
+            Watermark::Text(t) => t.language.clone(),
+            Watermark::Picture(_) => None,
+        };
         let (mark, natural, data) = match self.mark_of(w) {
             Ok(m) => m,
             Err(why) => return Outcome::Refused(crate::api::error::Error::invalid(why)),
@@ -213,7 +218,7 @@ impl Editor {
         let mut changed = false;
         for (name, section) in self.header_parts() {
             let Some(f) = make(self, section) else { continue };
-            let Some(steps) = self.restyled(&name, Some(f)) else { continue };
+            let Some(steps) = self.restyled(&name, Some(f), language.as_deref()) else { continue };
             for s in steps {
                 if self.step(&mut tx, s).is_err() {
                     self.abort(tx);
@@ -227,7 +232,11 @@ impl Editor {
                 continue;
             }
             let (Some(f), Some(mut para)) = (make(self, 0), self.empty_story_para(false)) else { continue };
-            para.inlines.push(Inline::Float(Box::new(f), para.mark.clone()));
+            let mut run = para.mark.clone();
+            if let Some(l) = &language {
+                std::rc::Rc::make_mut(&mut run).lang.clone_from(l);
+            }
+            para.inlines.push(Inline::Float(Box::new(f), run));
             let step = Step::HeaderPart { name: self.new_story_name(false), section: 0, footer: false, slot, blocks: Some(vec![Block::Para(para)]) };
             if self.step(&mut tx, step).is_err() {
                 self.abort(tx);
@@ -247,7 +256,7 @@ impl Editor {
         let mut tx = self.begin("Remove Watermark");
         let names: Vec<String> = self.doc.stories.keys().cloned().collect();
         for name in names {
-            for s in self.restyled(&name, None).unwrap_or_default() {
+            for s in self.restyled(&name, None, None).unwrap_or_default() {
                 if self.step(&mut tx, s).is_err() {
                     self.abort(tx);
                     return Outcome::Unchanged("the header can't change");
@@ -274,8 +283,11 @@ impl Editor {
                 let family = match t.font {
                     Some(f) if f.trim().is_empty() || f.chars().count() > 64 => return Err("a font name has 1…64 characters".into()),
                     Some(f) => f,
-                    None => self.empty_story_para(false).map_or_else(|| "Calibri".to_string(), |p| p.mark.ascii.clone()),
+                    None => self.doc.resolver.as_ref().map_or_else(|| "Calibri".to_string(), |r| r.theme.minor.clone()),
                 };
+                if t.language.as_deref().is_some_and(|l| l.is_empty() || l.len() > 35 || !l.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')) {
+                    return Err("a language is a tag such as en-US".into());
+                }
                 if t.transparency.is_some_and(|v| !(0.0..=100.0).contains(&v)) {
                     return Err("a watermark's transparency is 0…100%".into());
                 }
@@ -285,8 +297,7 @@ impl Editor {
                 let mark = TextMark {
                     text,
                     family,
-                    // 1pt is Word's Auto.
-                    size: t.size.map(|s| s.0).filter(|s| *s > 1.0),
+                    size: t.size.map(|s| s.0),
                     colour: t.color.map_or(wm::SILVER, |c| c.0 & 0xFF_FFFF),
                     transparency: t.transparency.unwrap_or(50.0),
                     diagonal: t.layout.unwrap_or_default() == WatermarkLayout::Diagonal,
@@ -317,7 +328,7 @@ impl Editor {
 
     /// The image of the picture watermark there is.
     fn watermark_picture(&self) -> Option<usize> {
-        self.doc.stories.values().filter_map(|b| first_watermark(b)).find_map(|f| match wm::of(f)? {
+        self.doc.stories.values().filter_map(|b| first_watermark(b)).find_map(|(f, _)| match wm::of(f)? {
             wm::Watermark::Picture(p) => p.image,
             wm::Watermark::Text(_) => None,
         })
@@ -347,7 +358,7 @@ impl Editor {
 
     /// The steps that take the watermarks out of header part `name`, putting `with` at the start of its first
     /// paragraph; `None` when nothing changes.
-    fn restyled(&self, name: &str, with: Option<Float>) -> Option<Vec<Step>> {
+    fn restyled(&self, name: &str, with: Option<Float>, language: Option<&str>) -> Option<Vec<Step>> {
         fn paras<'b>(blocks: &'b [Block], out: &mut Vec<&'b crate::docx::Paragraph>) {
             for b in blocks {
                 match b {
@@ -371,7 +382,10 @@ impl Editor {
             if Some(p.id) == first
                 && let Some(f) = with.take()
             {
-                let run = p.inlines.iter().find_map(|i| i.run().cloned()).unwrap_or_else(|| p.mark.clone());
+                let mut run = p.inlines.iter().find_map(|i| i.run().cloned()).unwrap_or_else(|| p.mark.clone());
+                if let Some(l) = language {
+                    std::rc::Rc::make_mut(&mut run).lang = l.to_string();
+                }
                 inlines.insert(0, Inline::Float(Box::new(f), run));
             }
             steps.push(Step::Restyle { para: ParaId(p.id), inlines });
@@ -416,10 +430,10 @@ fn one_colour(f: Fill, palette: crate::drawing::paint::Palette) -> Fill {
 }
 
 /// The first watermark in a story's paragraphs.
-fn first_watermark(blocks: &[Block]) -> Option<&Float> {
+fn first_watermark(blocks: &[Block]) -> Option<(&Float, &crate::docx::Run)> {
     blocks.iter().find_map(|b| match b {
         Block::Para(p) => p.inlines.iter().find_map(|i| match i {
-            Inline::Float(f, _) if wm::is(f) => Some(&**f),
+            Inline::Float(f, run) if wm::is(f) => Some((&**f, run)),
             _ => None,
         }),
         Block::Table(t) => t.rows.iter().flat_map(|r| r.cells.iter()).find_map(|c| first_watermark(&c.blocks)),

@@ -110,6 +110,40 @@
     "width": 0.75
   },
   {
+    "applyTo": "paragraph",
+    "between": null,
+    "bottom": null,
+    "color": "#2F5496",
+    "fill": "none",
+    "insideVertical": null,
+    "kind": "bordersShading",
+    "left": null,
+    "pageApplyTo": "thisSection",
+    "pageBottom": null,
+    "pageDisplay": "firstPage",
+    "pageLeft": null,
+    "pageOffsetFrom": "text",
+    "pageRight": null,
+    "pageSetting": "box",
+    "pageTop": {
+      "color": "auto",
+      "style": "triple",
+      "width": 0.5
+    },
+    "pattern": "solid",
+    "patternColor": "auto",
+    "right": null,
+    "setting": "shadow",
+    "style": "double",
+    "tab": "shading",
+    "top": {
+      "color": "#2F5496",
+      "style": "double",
+      "width": 0.75
+    },
+    "width": 0.75
+  },
+  {
     "alignment": "center",
     "font": "Symbol",
     "kind": "defineBullet",
@@ -389,6 +423,7 @@
     "font": "Calibri",
     "italic": true,
     "kind": "printedWatermark",
+    "language": "en-US",
     "layout": "diagonal",
     "picture": "",
     "scale": 150.0,
@@ -422,7 +457,7 @@
     "lightness": 0.5,
     "pattern": "dkDnDiag",
     "picture": "iVBORw==",
-    "preset": "Early Sunset",
+    "preset": "earlySunset",
     "shading": "fromCorner",
     "tab": "gradient",
     "texture": "iVBORw==",

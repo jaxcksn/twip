@@ -394,8 +394,11 @@ export interface DialogValues {
     scale: number | null;
     washout: boolean;
     text: string;
+    /** Empty is the theme's body font. */
     font: string;
-    /** In points; `null` is Auto. */
+    /** A BCP 47 tag; the document's language by default. */
+    language: string;
+    /** In points, 1 to 1584; `null` is Auto. */
     size: Points | null;
     color: Color;
     /** Percent, 0 to 100. */

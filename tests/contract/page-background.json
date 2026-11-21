@@ -25,6 +25,19 @@
     { "op": "call", "method": "dialogs.open", "args": ["printedWatermark"], "result": { "values": { "kind": "printedWatermark", "watermark": "none" }, "fields": { "picture": { "kind": "picture" } } } },
     { "op": "call", "method": "dialogs.open", "args": ["fillEffects"], "result": { "values": { "tab": "gradient" } } },
     { "op": "command", "command": { "type": "setWatermark", "value": { "kind": "text", "text": "" } } },
-    { "op": "expectError", "code": "invalid-argument" }
+    { "op": "expectError", "code": "invalid-argument" },
+    { "op": "call", "method": "dialogs.open", "args": ["printedWatermark"], "save": "mark", "result": { "values": { "watermark": "none", "language": "en-US", "size": null } } },
+    { "op": "call", "method": "@mark.update", "args": [{ "watermark": "text", "text": "SAMPLE", "language": "fr-FR", "layout": "horizontal" }], "save": "mark", "result": { "values": { "watermark": "text", "text": "SAMPLE", "language": "fr-FR" } } },
+    { "op": "call", "method": "@mark.apply" },
+    { "op": "expectState", "match": { "page": { "watermark": { "kind": "text", "text": "SAMPLE", "language": "fr-FR", "layout": "horizontal" } } } },
+    { "op": "call", "method": "dialogs.open", "args": ["printedWatermark"], "save": "mark", "result": { "values": { "watermark": "text", "text": "SAMPLE", "language": "fr-FR", "size": null } } },
+    { "op": "call", "method": "@mark.update", "args": [{ "watermark": "none" }], "save": "mark" },
+    { "op": "call", "method": "@mark.apply" },
+    { "op": "expectState", "match": { "page": { "watermark": null } } },
+    { "op": "call", "method": "dialogs.open", "args": ["fillEffects"], "save": "fill", "result": { "values": { "tab": "gradient" } } },
+    { "op": "call", "method": "@fill.update", "args": [{ "tab": "gradient", "colors": "preset", "preset": "earlySunset" }], "save": "fill", "result": { "values": { "colors": "preset", "preset": "earlySunset" } } },
+    { "op": "call", "method": "@fill.apply" },
+    { "op": "expectState", "match": { "page": { "background": { "type": "gradient" } } } },
+    { "op": "call", "method": "dialogs.open", "args": ["fillEffects"], "result": { "values": { "tab": "gradient", "colors": "preset", "preset": "earlySunset" } } }
   ]
 }

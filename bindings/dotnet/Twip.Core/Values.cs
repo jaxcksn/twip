@@ -708,15 +708,16 @@ public abstract record Watermark
     private protected Watermark() { }
 }
 
-/// <summary>A text watermark; what is null is Word's default (Calibri, automatic size, silver, 50% transparent, diagonal).</summary>
+/// <summary>A text watermark; what is null is Word's default (the theme's body font, the document's language, automatic size, silver, 50% transparent, diagonal).</summary>
 /// <param name="Text">The text.</param>
-/// <param name="Font">The font.</param>
-/// <param name="Size">The size; null is automatic: as large as fits the page.</param>
+/// <param name="Font">The font; null is the theme's body font.</param>
+/// <param name="Size">The size, 1 to 1584 pt (1 is 1 pt); null is automatic: as large as fits the page.</param>
 /// <param name="Color">The colour.</param>
 /// <param name="Transparency">Percent, 0 (opaque) to 100.</param>
 /// <param name="Layout">Diagonal or horizontal.</param>
 /// <param name="Bold">Bold.</param>
 /// <param name="Italic">Italic.</param>
+/// <param name="Language">The text's language (a BCP 47 tag such as <c>en-US</c>); null is the document's.</param>
 public sealed record TextWatermark(
     string Text,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Font = null,
@@ -725,10 +726,11 @@ public sealed record TextWatermark(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? Transparency = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] WatermarkLayout? Layout = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Bold = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Italic = null) : Watermark;
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Italic = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Language = null) : Watermark;
 
 /// <summary>A picture watermark.</summary>
-/// <param name="Image">The image (PNG, JPEG, GIF, BMP); empty keeps the current watermark's. In the state it is always empty.</param>
+/// <param name="Image">The image (PNG, JPEG, GIF, BMP, TIFF, JPEG XR, SVG, EMF or WMF); empty keeps the current watermark's, and is empty in the state.</param>
 /// <param name="Scale">Percent of the picture's own size; null fits it to the margins.</param>
 /// <param name="Washout">Washed out, as Word's default is.</param>
 public sealed record PictureWatermark(

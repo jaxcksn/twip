@@ -603,7 +603,7 @@ public abstract partial record EditorOperation
     public static EditorOperation InsertTable(int rows, int columns) => Op(CommandId.InsertTable, new Arg("rows", Node(rows)), new Arg("columns", Node(columns)));
 
     /// <summary>Inserts a picture at the selection.</summary>
-    /// <param name="data">The image (PNG, JPEG, GIF, BMP, TIFF, JPEG XR, EMF or WMF).</param>
+    /// <param name="data">The image (PNG, JPEG, GIF, BMP, TIFF, JPEG XR, SVG, EMF or WMF).</param>
     /// <param name="altText">The alternative text.</param>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation InsertPicture(ReadOnlyMemory<byte> data, string? altText = null) => Op(CommandId.InsertPicture, new Arg("data", Node(data)), new Arg("altText", altText is { } altText_ ? Node(altText_) : null, Optional: true));
@@ -995,7 +995,7 @@ public abstract partial record EditorOperation
     public static EditorOperation SetPictureCrop(PictureCrop crop) => Op(CommandId.SetPictureCrop, Arg.Flatten(crop));
 
     /// <summary>Replaces the selected picture's image, keeping its width, effects and place; its height follows the new image and the crop is cleared.</summary>
-    /// <param name="data">The image: PNG, JPEG, GIF, BMP, TIFF, JPEG XR, EMF or WMF.</param>
+    /// <param name="data">The image: PNG, JPEG, GIF, BMP, TIFF, JPEG XR, SVG, EMF or WMF.</param>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation ChangePicture(ReadOnlyMemory<byte> data) => Op(CommandId.ChangePicture, new Arg("value", Node(data)));
 

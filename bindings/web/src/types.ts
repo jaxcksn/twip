@@ -659,15 +659,17 @@ export interface TextEffectsChange {
 /** Which way a text watermark runs. */
 export type WatermarkLayout = 'diagonal' | 'horizontal';
 
-/** A text watermark; what isn't given is Word's default (Calibri, automatic size, silver, 50% transparent, diagonal). */
+/** A text watermark; what isn't given is Word's default (the theme's body font, the document's language, automatic size, silver, 50% transparent, diagonal). */
 export interface TextWatermark {
   /** Marks a text watermark. */
   kind: 'text';
   /** The text. */
   text: string;
-  /** The font. */
+  /** The font; absent is the theme's body font. */
   font?: string;
-  /** The size in points; absent is automatic: as large as fits the page. */
+  /** The text's language (a BCP 47 tag such as `en-US`); absent is the document's. */
+  language?: string;
+  /** The size in points, 1 to 1584 (1 is 1 pt); absent is automatic: as large as fits the page. */
   size?: Points;
   /** The colour. */
   color?: Color;
@@ -685,7 +687,7 @@ export interface TextWatermark {
 export interface PictureWatermark {
   /** Marks a picture watermark. */
   kind: 'picture';
-  /** The image (PNG, JPEG, GIF, BMP); empty keeps the current watermark's. In the state it is always empty. */
+  /** The image (PNG, JPEG, GIF, BMP, TIFF, JPEG XR, SVG, EMF or WMF); empty keeps the current watermark's, and is empty in the state. */
   image: Uint8Array;
   /** Percent of the picture's own size; absent fits it to the margins. */
   scale?: number;

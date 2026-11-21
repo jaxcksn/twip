@@ -588,6 +588,15 @@ export interface Commands {
     /** The borders go around the footer (every section's). */
     surroundFooter?: boolean;
   }): Promise<void>;
+  /**
+   * Sets the page colour of the document: no fill, a solid colour (a theme colour takes one tint or shade), a gradient,
+   * a pattern, or a picture (`tile` makes it a texture). A picture fill with an empty image keeps the page's own.
+   */
+  setPageColor(fill: FillValue): Promise<void>;
+  /** Sets the document's watermark, in every header: the text or the picture replaces the one there. */
+  setWatermark(watermark: Watermark): Promise<void>;
+  /** Removes the document's watermark. */
+  removeWatermark(): Promise<void>;
   /** Sets the properties of the frame the selection is in (`unavailable` outside a frame). */
   setFrame(properties: FrameProperties): Promise<void>;
   /** Removes the frame the selection is in: its paragraphs go back in the text, before the paragraph it was anchored to. */
@@ -697,7 +706,7 @@ export interface Commands {
   // Insert
   /** Inserts a table of 1 to 32767 rows and 1 to 63 columns. */
   insertTable(options: { rows: number; columns: number }): Promise<void>;
-  /** Inserts a picture (PNG, JPEG, GIF, BMP, TIFF, JPEG XR, EMF or WMF). */
+  /** Inserts a picture (PNG, JPEG, GIF, BMP, TIFF, JPEG XR, SVG, EMF or WMF). */
   insertPicture(options: { data: Uint8Array; altText?: string }): Promise<void>;
   /** Inserts a text box. */
   insertTextBox(): Promise<void>;
@@ -740,15 +749,6 @@ export interface Commands {
    * and `_`, 40 at most. A bookmark of the same name (compared without case) moves here.
    */
   insertBookmark(name: string): Promise<void>;
-  /**
-   * Sets the page colour of the document: no fill, a solid colour (a theme colour takes one tint or shade), a gradient,
-   * a pattern, or a picture (`tile` makes it a texture). A picture fill with an empty image keeps the page's own.
-   */
-  setPageColor(fill: FillValue): Promise<void>;
-  /** Sets the document's watermark, in every header: the text or the picture replaces the one there. */
-  setWatermark(watermark: Watermark): Promise<void>;
-  /** Removes the document's watermark. */
-  removeWatermark(): Promise<void>;
   /** Deletes a bookmark (compared without case), keeping its text. */
   deleteBookmark(name: string): Promise<void>;
   /**
@@ -1358,6 +1358,9 @@ const encodings: { [K in CommandId]: Encoding<K> } = {
   setShading: 'spread',
   setTextBorder: 'spread',
   setPageBorders: 'spread',
+  setPageColor: 'value',
+  setWatermark: 'value',
+  removeWatermark: 'none',
   setFrame: 'spread',
   removeFrame: 'none',
   setDropCap: 'spread',
@@ -1467,9 +1470,6 @@ const encodings: { [K in CommandId]: Encoding<K> } = {
   setShapePreset: 'value',
   setShapeAdjust: 'spread',
   setShapeFill: 'value',
-  setPageColor: 'value',
-  setWatermark: 'value',
-  removeWatermark: 'none',
   setShapeLine: 'spread',
   setShapeEffects: 'spread',
   setShapeText: 'spread',

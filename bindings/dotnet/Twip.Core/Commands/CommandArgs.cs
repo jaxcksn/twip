@@ -686,7 +686,7 @@ public enum ShadingPattern
     Pct5,
     /// <summary>10% of the pattern color over the fill.</summary>
     Pct10,
-    /// <summary>12% of the pattern color over the fill.</summary>
+    /// <summary>12.5% of the pattern color over the fill.</summary>
     Pct12,
     /// <summary>15% of the pattern color over the fill.</summary>
     Pct15,
@@ -698,7 +698,7 @@ public enum ShadingPattern
     Pct30,
     /// <summary>35% of the pattern color over the fill.</summary>
     Pct35,
-    /// <summary>37% of the pattern color over the fill.</summary>
+    /// <summary>37.5% of the pattern color over the fill.</summary>
     Pct37,
     /// <summary>40% of the pattern color over the fill.</summary>
     Pct40,
@@ -710,7 +710,7 @@ public enum ShadingPattern
     Pct55,
     /// <summary>60% of the pattern color over the fill.</summary>
     Pct60,
-    /// <summary>62% of the pattern color over the fill.</summary>
+    /// <summary>62.5% of the pattern color over the fill.</summary>
     Pct62,
     /// <summary>65% of the pattern color over the fill.</summary>
     Pct65,
@@ -722,7 +722,7 @@ public enum ShadingPattern
     Pct80,
     /// <summary>85% of the pattern color over the fill.</summary>
     Pct85,
-    /// <summary>87% of the pattern color over the fill.</summary>
+    /// <summary>87.5% of the pattern color over the fill.</summary>
     Pct87,
     /// <summary>90% of the pattern color over the fill.</summary>
     Pct90,

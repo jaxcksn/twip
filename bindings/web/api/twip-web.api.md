@@ -1469,6 +1469,7 @@ export interface DialogValues {
         washout: boolean;
         text: string;
         font: string;
+        language: string;
         size: Points | null;
         color: Color;
         transparency: number;
@@ -3268,6 +3269,7 @@ export interface TextWatermark {
     font?: string;
     italic?: boolean;
     kind: 'text';
+    language?: string;
     layout?: WatermarkLayout;
     size?: Points;
     text: string;

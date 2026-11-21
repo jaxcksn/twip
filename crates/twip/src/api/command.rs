@@ -714,10 +714,13 @@ pub enum Watermark {
 pub struct TextWatermark {
     /// The text (1…1024 characters, on one line).
     pub text: String,
-    /// The font family; by default the theme's body font.
+    /// The font family; by default the theme's body font (what Word's Printed Watermark starts with).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub font: Option<String>,
-    /// The font size (1…1584 pt); `null` for Auto: as large as fits the page's text area.
+    /// The text's language (a BCP 47 tag, `en-US`), as Word's Language box sets it; by default the document's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    /// The font size (1…1584 pt; 1 pt is 1 pt); `null` for Auto: as large as fits the page's text area.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub size: Option<Points>,
     /// The colour; silver (`#C0C0C0`) by default.
@@ -752,7 +755,7 @@ pub enum WatermarkLayout {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PictureWatermark {
-    /// The image (PNG, JPEG, GIF, BMP, TIFF, SVG, EMF or WMF); empty keeps the picture watermark's own, and is empty
+    /// The image (PNG, JPEG, GIF, BMP, TIFF, JPEG XR, SVG, EMF or WMF); empty keeps the picture watermark's own, and is empty
     /// in the state.
     pub image: Bytes,
     /// Its size as a percentage of its own (1…5000); `null` for Auto: as large as fits the page's text area.
@@ -3759,7 +3762,7 @@ mod tests {
         assert_eq!(none, Command::SetHighlight(None));
     }
 
-    /// The command set's wire fixture: one op per variant.
+    /// The command set's wire fixture: at least one op per variant.
     fn fixture() -> Vec<serde_json::Value> {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/wire/command.json");
         serde_json::from_str(&std::fs::read_to_string(path).expect("the command fixture")).expect("JSON")
@@ -3776,7 +3779,10 @@ mod tests {
             assert_eq!(command.id(), *id);
             assert_eq!(serde_json::to_value(&command).expect("serializes")["type"], name);
         }
-        assert_eq!(ops.len(), CommandId::ALL.len(), "one op per variant");
+        // A variant may have several ops (examples of its distinct shapes); each one is a command.
+        for op in &ops {
+            serde_json::from_value::<Command>(op.clone()).unwrap_or_else(|e| panic!("{op}: {e}"));
+        }
     }
 
     #[test]

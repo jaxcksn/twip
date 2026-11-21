@@ -739,7 +739,7 @@ public sealed class EditorCommands
     public Task InsertTableAsync(int rows, int columns, CancellationToken ct = default) => _session.RunAsync(EditorOperation.InsertTable(rows, columns), ct);
 
     /// <summary>Inserts a picture at the selection.</summary>
-    /// <param name="data">The image (PNG, JPEG, GIF, BMP, TIFF, JPEG XR, EMF or WMF).</param>
+    /// <param name="data">The image (PNG, JPEG, GIF, BMP, TIFF, JPEG XR, SVG, EMF or WMF).</param>
     /// <param name="altText">The alternative text.</param>
     /// <param name="ct">Cancels the command before it runs.</param>
     /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
@@ -1205,7 +1205,7 @@ public sealed class EditorCommands
     public Task SetPictureCropAsync(PictureCrop crop, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetPictureCrop(crop), ct);
 
     /// <summary>Replaces the selected picture's image, keeping its width, effects and place; its height follows the new image and the crop is cleared.</summary>
-    /// <param name="data">The image: PNG, JPEG, GIF, BMP, TIFF, JPEG XR, EMF or WMF.</param>
+    /// <param name="data">The image: PNG, JPEG, GIF, BMP, TIFF, JPEG XR, SVG, EMF or WMF.</param>
     /// <param name="ct">Cancels the command before it runs.</param>
     /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
     public Task ChangePictureAsync(ReadOnlyMemory<byte> data, CancellationToken ct = default) => _session.RunAsync(EditorOperation.ChangePicture(data), ct);

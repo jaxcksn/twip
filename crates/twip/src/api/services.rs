@@ -976,9 +976,11 @@ dialog! {
         pub washout: bool,
         /// The text.
         pub text: String,
-        /// The text's font.
+        /// The text's font; empty for the theme's body font.
         pub font: String,
-        /// The text's size; `null` for Auto.
+        /// The text's language (a BCP 47 tag), the document's by default.
+        pub language: String,
+        /// The text's size, 1 to 1584 pt; `null` for Auto.
         pub size: Option<Points>,
         /// The text's colour.
         pub color: Color,
@@ -2803,8 +2805,8 @@ pub enum ObjectGrid {
     Always,
 }
 
-/// When fields are shaded: a grey backdrop behind each field's text on screen, never printed, exported or saved. Legacy form fields are shaded the same way whatever this is, unless the document
-/// turns that off.
+/// When fields are shaded: a grey backdrop behind each field's text on screen, never printed, exported or saved.
+/// Legacy form fields are shaded the same way whatever this is, unless the document turns that off.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum FieldShading {
