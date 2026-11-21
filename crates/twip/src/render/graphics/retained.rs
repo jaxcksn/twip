@@ -95,6 +95,8 @@ pub struct Inputs {
     /// Table gridlines (cell edges without borders) are drawn.
     pub gridlines: bool,
     pub appearance: crate::render::appearance::Appearance,
+    /// The page background's fill, by [`crate::render::Renderer::page_fill_generation`].
+    pub page_fill: u64,
 }
 
 struct Recording {

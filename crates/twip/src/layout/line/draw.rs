@@ -56,6 +56,7 @@ fn check_box(x: f64, base: f64, advance: f64, e: f64, checked: bool, colour: Opt
         clip_bottom: None,
         text_float: 0,
         of: Default::default(),
+        text_path: None,
     }))
 }
 
@@ -270,7 +271,7 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
                                 };
                                 top + to_bottom + after
                             });
-                            let mut items = crate::layout::story::shape_items(shape, rect, 0, false, o.palette, clip, of);
+                            let mut items = crate::layout::story::shape_items(shape, rect, 0, false, o.palette, clip, of, fonts);
                             if let Some(t) = &pic.text {
                                 // Made just now, so unshared.
                                 items.iter_mut().filter_map(Rc::get_mut).for_each(|s| s.text_float = t.id);

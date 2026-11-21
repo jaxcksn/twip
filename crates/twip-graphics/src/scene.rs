@@ -1019,6 +1019,24 @@ fn push_mapped(out: &mut kurbo::BezPath, els: &[PathEl], map: Affine, reversed: 
     }
 }
 
+/// Appends a run's glyph outlines to `out`, placed and styled as [`Recorder::glyph_paths`] fills them (skewed for
+/// synthetic italic, grown for synthetic bold), in the run's local units: text drawn as a shape's own geometry, filled
+/// and stroked as any path. Glyphs without an outline add nothing.
+pub fn glyph_run_outline(fonts: &FontRegistry, run: &GlyphRun<'_>, out: &mut kurbo::BezPath) {
+    if run.glyphs.is_empty() || !(run.size > 0.0 && run.size.is_finite()) {
+        return;
+    }
+    let style = Style { skew_x: run.synthesis.skew_x, bold: if run.synthesis.embolden { embolden_em(run.size as f32) } else { 0.0 } };
+    let mut ring = kurbo::StrokeCtx::default();
+    fonts.outlines(run.font, run.glyphs.iter().map(|g| g.0), |k, outline| {
+        let map = Affine::translate((run.glyphs[k].1, run.baseline)) * Affine::scale(run.size) * style.skew();
+        out.extend(outline.iter().map(|e| map * e));
+        if style.bold > 0.0 {
+            bold_rings(outline, style, &mut ring, Ring::Whole, |els, reversed| push_mapped(out, els, map, reversed));
+        }
+    });
+}
+
 /// A path's subpaths, each from its `MoveTo`.
 fn subpaths(els: &[PathEl]) -> impl Iterator<Item = &[PathEl]> {
     let mut start = 0;
@@ -1388,6 +1406,50 @@ mod tests {
         let grow = 20.0 * embolden_em(20.0) as f64 / 2.0 * 4.0;
         // The bold width is an f32; the box is f64.
         assert!((heavy.x0 - (b.x0 - grow)).abs() < 1e-4 && (heavy.y1 - (b.y1 + grow)).abs() < 1e-4, "{heavy:?} vs {b:?}");
+    }
+
+    #[test]
+    fn a_run_outline_is_the_path_glyph_paths_fill() {
+        use crate::cpu::{Draw, Format, Frame, Renderer, Target};
+        let mut resources = crate::Resources::default();
+        let mono: crate::font::FontData = Arc::new(include_bytes!("../tests/fonts/jetbrains-mono-500.ttf").to_vec());
+        let font = resources.fonts.add(mono, 0, &[]).expect("the test face registers");
+        let fonts = &resources.fonts;
+        let glyphs: Vec<(u32, f64)> = (0..6).map(|i| (i + 30, i as f64 * 12.0)).collect();
+        // Plain, each glyph's em outline placed at its origin and size, in order.
+        let run = GlyphRun { font, size: 20.0, baseline: 50.0, glyphs: &glyphs, synthesis: Synthesis::default() };
+        let mut outline = kurbo::BezPath::new();
+        glyph_run_outline(fonts, &run, &mut outline);
+        let mut want = kurbo::BezPath::new();
+        for &(g, x) in &glyphs {
+            let mut em = kurbo::BezPath::new();
+            assert!(fonts.em_outline(font, g, &mut em));
+            want.extend(em.iter().map(|e| Affine::translate((x, 50.0)) * Affine::scale(20.0) * e));
+        }
+        assert_eq!(outline, want);
+        // Synthetic bold and italic: the path covers the pixels glyph_paths does.
+        let draw = |picture: &Picture| {
+            let mut px = vec![0u8; 96 * 80 * 4];
+            let draws = [Draw { picture, transform: Affine::IDENTITY }];
+            let frame = Frame { clear: Some(Color::WHITE), draws: &draws };
+            Renderer::new().render(&mut Target::new(&mut px, 96, 80, 96 * 4, Format::Rgba8).expect("fits"), &resources, &frame);
+            px
+        };
+        let run = GlyphRun { synthesis: Synthesis { embolden: true, skew_x: -0.2 }, ..run };
+        let mut rec = Recorder::new();
+        rec.glyph_paths(fonts, &run, Color::BLACK);
+        let painted = rec.finish();
+        let mut outline = kurbo::BezPath::new();
+        glyph_run_outline(fonts, &run, &mut outline);
+        let mut rec = Recorder::new();
+        rec.fill_path(outline.elements(), Color::BLACK);
+        let filled = rec.finish();
+        assert!(outline.elements().len() > want.elements().len(), "the bold rings are added");
+        assert_eq!(filled.bounds(), painted.bounds());
+        assert!(draw(&filled) == draw(&painted), "the same pixels");
+        let mut none = kurbo::BezPath::new();
+        glyph_run_outline(fonts, &GlyphRun { font, size: f64::NAN, baseline: 0.0, glyphs: &glyphs, synthesis: Synthesis::default() }, &mut none);
+        assert!(none.is_empty());
     }
 
     #[test]

@@ -116,6 +116,23 @@ pub struct ShapeItem {
     /// The float holding the text of an inline text box, which `float` (0 for inline) doesn't name; 0 for none.
     pub text_float: u64,
     pub of: PictureOf,
+    /// A text path's glyphs, drawn in place of the geometry's outline (which stays the shape's box, for hits).
+    pub text_path: Option<Rc<TextPathItem>>,
+}
+
+/// A text path's glyphs, drawn as their outlines stretched so that their ink fills `fit`.
+#[derive(Debug)]
+pub struct TextPathItem {
+    /// Runs of glyphs, each in one face: glyph ids with the x of each glyph's origin, in ems along one baseline.
+    pub runs: Box<[(Rc<Face>, Box<[(u32, f64)]>)]>,
+    /// The box the ink fills, in the shape's own box (from its top left).
+    pub fit: [f64; 4],
+}
+
+impl PartialEq for TextPathItem {
+    fn eq(&self, o: &TextPathItem) -> bool {
+        self.fit == o.fit && self.runs.len() == o.runs.len() && self.runs.iter().zip(&o.runs).all(|(a, b)| Rc::ptr_eq(&a.0, &b.0) && a.1 == b.1)
+    }
 }
 
 impl ShapeItem {
@@ -179,6 +196,7 @@ impl ShapeItem {
             clip_bottom: self.clip_bottom.map(|y| y + dy),
             text_float: self.text_float,
             of: self.of,
+            text_path: self.text_path.clone(),
         }
     }
 }

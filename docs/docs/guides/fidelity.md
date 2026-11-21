@@ -219,7 +219,7 @@ Word 2010 and later remove custom XML markup when they open a document, so it is
 | ActiveX controls | `w:control` | Kept, drawn from its preview picture, moved with its text |
 | Imported content | `w:altChunk`, `w:altChunkPr`, `w:matchSrc` | Kept between unedited blocks, as an opaque block. Drawing it is deferred with HTML paste |
 | Subdocuments | `w:subDoc` | Kept as an opaque node, reported as unsupported content. Drawing them is in the backlog |
-| Page background | `w:background`, `w:displayBackgroundShape` | Page colour in 3.7 |
+| Page background | `w:background`, `v:background`, `w:displayBackgroundShape` | Drawn on screen: the colour (a theme colour with its tint or shade), and a gradient, pattern or tiled picture over it, as Word draws them; nothing without `w:displayBackgroundShape`, as in Word. Not in PDF export, as Word's own PDF leaves it out. Kept as read until changed, then written from the model |
 
 ## Building blocks
 
@@ -281,3 +281,4 @@ Word 2010 and later remove custom XML markup when they open a document, so it is
 | Alternate content (`mc:AlternateContent`, `Requires`) | Laid out: the first choice whose namespaces the engine reads, else the fallback |
 | Charts (`c:chart`) | Not in 1.0 |
 | SmartArt, WordArt | Drawn from their fallback; editing in the backlog |
+| Text watermarks and VML WordArt (`v:textpath`) | Drawn: the string's glyph outlines stretched to the shape's box (less 7.2 pt across and 3.6 pt down unless `trim`), in its fill, line, opacity and rotation, as Word draws them; a text path without `fitshape` draws nothing, as in Word. Text paths other than plain text draw unwarped (WordArt warps are not in 1.0). In PDF the text is paths, as in Word's |

@@ -756,6 +756,8 @@ pub struct Source {
     pub controls: HashMap<ControlId, Control>,
     /// The glossary part as read, when the package has one.
     pub glossary: Option<GlossarySource>,
+    /// The page background's colour and fill as read.
+    pub page_background: (Option<u32>, Option<crate::drawing::paint::Fill>),
 }
 
 /// The glossary part as read: its name and XML, and each building block's `w:docPart` byte range in that XML with
@@ -1445,6 +1447,18 @@ pub struct Settings {
     pub protection: Option<Protection>,
     /// `w:revisionView` as written, kept for saving.
     pub revision_view_raw: Raw,
+    /// `w:displayBackgroundShape`: the page background shows (Word shows none without it).
+    pub display_background_shape: bool,
+}
+
+impl Document {
+    /// The page background as it shows: its colour and fill, both `None` when Word doesn't display it.
+    pub fn shown_background(&self) -> (Option<u32>, Option<&crate::drawing::paint::Fill>) {
+        match self.settings.display_background_shape {
+            true => (self.page_colour, self.page_fill.as_ref()),
+            false => (None, None),
+        }
+    }
 }
 
 impl Settings {
@@ -1470,7 +1484,10 @@ pub struct Document {
     pub sections: Vec<Section>,
     pub theme: Rc<crate::drawing::theme::Theme>,
     pub colour_map: crate::drawing::theme::ColourMap,
+    /// The page background's colour (`w:background`), a theme colour's tint or shade applied.
     pub page_colour: Option<u32>,
+    /// The page background's fill over its colour (`v:background`): a gradient, pattern or picture.
+    pub page_fill: Option<crate::drawing::paint::Fill>,
     /// Headers and footers by part name, in name order (the editor addresses them by place in it).
     pub stories: std::collections::BTreeMap<String, Vec<Block>>,
     pub footnotes: HashMap<i64, Vec<Block>>,

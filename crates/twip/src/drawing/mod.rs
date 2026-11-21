@@ -74,6 +74,26 @@ pub struct SpShape {
     pub text_box: bool,
     pub connector: bool,
     pub kept_3d: bool,
+    /// A VML text path (`v:textpath`): the shape draws this text in place of its geometry.
+    pub text_path: Option<Box<TextPath>>,
+}
+
+/// A VML text path: a string drawn as glyph outlines in the shape's fill and line, as Word's text watermarks and
+/// WordArt are.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct TextPath {
+    pub string: String,
+    pub family: String,
+    /// `font-size`, points.
+    pub size: f64,
+    pub bold: bool,
+    pub italic: bool,
+    /// `fitshape`: the text is stretched to fill the shape's box. Word draws no text without it.
+    pub fit_shape: bool,
+    /// `fitpath`: the text is scaled to the path's length. Word draws a stretched text the same with or without it.
+    pub fit_path: bool,
+    /// `trim`: the text fills the whole box, without the insets a text path keeps from its edges.
+    pub trim: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]

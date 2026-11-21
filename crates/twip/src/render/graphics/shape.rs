@@ -9,22 +9,24 @@ use std::rc::Rc;
 
 use twip_graphics::kurbo::{self, Affine, BezPath, ParamCurve, ParamCurveArclen, ParamCurveDeriv, PathEl, PathSeg, Shape};
 use twip_graphics::paint::{BlendMode, Brush, Color, ColorFilter, Extend, ImagePaint, Paint, Sampling, Stop};
-use twip_graphics::scene::{Clip, Filter, Layer, Recorder};
+use twip_graphics::scene::{Clip, Filter, GlyphRun, Layer, Recorder, Synthesis, glyph_run_outline};
 
 use super::{Graphics, blended, pen, rect_path};
-use crate::drawing::colour::{Rgba, linear_to_srgb, srgb_to_linear};
+use crate::drawing::colour::{Rgba, TWO_STOP_BLEND, linear_to_srgb, srgb_to_linear};
 use crate::drawing::geom::{Geom, PathFill, Seg};
 use crate::drawing::paint::{
     BlipMode, Cap, Compound, Dash, GradientKind, GradientPath, Join, Paint as Fill, PresetDash, RectAlign, ResolvedBlipAdjust, ResolvedLine,
     ResolvedReflection, ResolvedShadow, TileFlip,
 };
 use crate::drawing::units::{Emu, Pct};
-use crate::layout::fragment::{ImageKey, ShapeItem};
+use crate::layout::fragment::{ImageKey, ShapeItem, TextPathItem};
 
-/// Shapes' outlines as paths, by geometry (the entry holds the geometry, so its address isn't reused).
+/// Shapes' outlines as paths, by geometry, and text paths' by their glyphs (each entry holds its key, so its address
+/// isn't reused).
 #[derive(Default)]
 pub(super) struct Paths {
     paths: HashMap<usize, (Rc<Geom>, Rc<Vec<BezPath>>)>,
+    text: HashMap<usize, (Rc<TextPathItem>, Rc<Vec<BezPath>>)>,
 }
 
 impl Paths {
@@ -378,6 +380,59 @@ fn direction(seg: &PathSeg, t: f64) -> kurbo::Vec2 {
 }
 
 impl Graphics {
+    /// The shape's outlines, one per geometry path: its geometry's, or for a text path its glyphs stretched to their
+    /// box (the geometry then has the one path).
+    fn outlines(&mut self, s: &ShapeItem) -> Rc<Vec<BezPath>> {
+        let Some(t) = &s.text_path else { return self.paths.get(&s.geom) };
+        let key = Rc::as_ptr(t) as usize;
+        if let Some((_, p)) = self.paths.text.get(&key) {
+            return Rc::clone(p);
+        }
+        if self.paths.text.len() > 256 {
+            self.paths.text.clear();
+        }
+        let p = Rc::new(vec![self.text_outline(t)]);
+        self.paths.text.insert(key, (Rc::clone(t), Rc::clone(&p)));
+        p
+    }
+
+    /// A text path's glyph outlines (synthetic styles applied), stretched so that their ink fills its box.
+    fn text_outline(&mut self, t: &TextPathItem) -> BezPath {
+        let [x0, y0, x1, y1] = t.fit;
+        let mut out = BezPath::new();
+        if !(x1 > x0 && y1 > y0) {
+            return out;
+        }
+        // Outlined at about the size they are drawn, for synthetic bold's width.
+        let size = y1 - y0;
+        let mut placed = Vec::new();
+        for (face, glyphs) in t.runs.iter() {
+            let Some(font) = self.font(face) else { continue };
+            placed.clear();
+            placed.extend(glyphs.iter().map(|&(g, x)| (g, x * size)));
+            let synthesis = Synthesis { embolden: face.sim_bold, skew_x: if face.sim_italic { -0.2 } else { 0.0 } };
+            glyph_run_outline(&self.res.fonts, &GlyphRun { font, size, baseline: 0.0, glyphs: &placed, synthesis }, &mut out);
+        }
+        let b = out.bounding_box();
+        if !(b.width() > 0.0 && b.height() > 0.0) {
+            return BezPath::new();
+        }
+        out.apply_affine(
+            Affine::translate((x0, y0))
+                * Affine::scale_non_uniform((x1 - x0) / b.width(), (y1 - y0) / b.height())
+                * Affine::translate((-b.x0, -b.y0)),
+        );
+        out
+    }
+
+    /// The page background's fill over a `size` page (in its points), when it has one: drawn as a shape's fill is.
+    pub(super) fn page_fill(&mut self, rec: &mut Recorder, r: &super::Renderer, size: [f64; 2], images: &[Vec<u8>]) {
+        let Some(fill) = &r.page_fill else { return };
+        let mut page = BezPath::new();
+        rect_path(kurbo::Rect::new(0.0, 0.0, size[0], size[1])).into_iter().for_each(|e| page.push(e));
+        self.fill(rec, &page, fill, PathFill::Norm, size, 0.0, [0.0, 0.0], images);
+    }
+
     pub(super) fn shape(&mut self, rec: &mut Recorder, s: &ShapeItem, images: &[Vec<u8>]) {
         self.shape_with_text(rec, s, images, None);
     }
@@ -437,7 +492,7 @@ impl Graphics {
     /// The shape's fill and line in its own box.
     fn body(&mut self, rec: &mut Recorder, s: &ShapeItem, images: &[Vec<u8>]) {
         let [x0, y0, x1, y1] = s.rect;
-        let paths = self.paths.get(&s.geom);
+        let paths = self.outlines(s);
         let line = if s.picture { ResolvedLine { width: s.line.width * 2.0, ..s.line.clone() } } else { s.line.clone() };
         let (size, origin) = ([x1 - x0, y1 - y0], [x0, y0]);
         for (gp, p) in s.geom.paths.iter().zip(paths.iter()) {
@@ -456,7 +511,7 @@ impl Graphics {
     /// The shape's filled and stroked parts in `c`, each blurred by `sigma` on its own when it is over 0 (as a
     /// mask-filtered paint blurs each draw).
     fn silhouette(&mut self, rec: &mut Recorder, s: &ShapeItem, c: Color, sigma: f32) {
-        let paths = self.paths.get(&s.geom);
+        let paths = self.outlines(s);
         let one = |rec: &mut Recorder, draw: &dyn Fn(&mut Recorder, Color)| {
             if sigma > 0.0 {
                 blur_layer(rec, sigma, f32::from(c.a) / 255.0, None);
@@ -512,7 +567,7 @@ impl Graphics {
 
     fn glow(&mut self, rec: &mut Recorder, s: &ShapeItem, m: Affine, r: f64, c: Rgba) {
         rec.push_transform(m);
-        let paths = self.paths.get(&s.geom);
+        let paths = self.outlines(s);
         let c = colour(c);
         for (gp, p) in s.geom.paths.iter().zip(paths.iter()) {
             let filled = gp.fill != PathFill::None && !s.fill.is_none();
@@ -536,7 +591,7 @@ impl Graphics {
     /// The shadow inside the shape: a ring (the shape's box, grown, less the shape) moved against the shadow's
     /// direction, blurred, and kept inside the shape. In the shape's own box.
     fn inner_shadow(&mut self, rec: &mut Recorder, s: &ShapeItem, sh: &ResolvedShadow) {
-        let paths = self.paths.get(&s.geom);
+        let paths = self.outlines(s);
         let inside: Vec<&BezPath> = s.geom.paths.iter().zip(paths.iter()).filter(|(gp, _)| gp.fill != PathFill::None).map(|(_, p)| p).collect();
         if inside.is_empty() || s.fill.is_none() {
             return;
@@ -569,7 +624,7 @@ impl Graphics {
         self.silhouette(rec, s, Color::BLACK, 0.0);
         let w = r * SOFT_ERODE * 2.0 + if s.line.paint.is_none() { 0.0 } else { s.line.width };
         let clear = pen(w).with_join(kurbo::Join::Round);
-        for p in self.paths.get(&s.geom).iter() {
+        for p in self.outlines(s).iter() {
             rec.stroke_path(p.elements(), &clear, blended(Color::BLACK, BlendMode::Clear));
         }
         rec.pop();
@@ -1006,9 +1061,6 @@ fn shaded(c: Rgba, mode: PathFill) -> Rgba {
     let f = |v: u8| (f64::from(v) * k + 255.0 * white).round() as u8;
     Rgba { r: f(c.r), g: f(c.g), b: f(c.b), a: c.a }
 }
-
-const TWO_STOP_BLEND: [f64; 17] =
-    [0.0, 0.018, 0.0472, 0.0843, 0.1404, 0.209, 0.2927, 0.3873, 0.4934, 0.5922, 0.6913, 0.778, 0.8485, 0.9054, 0.949, 0.9779, 1.0];
 
 fn gradient_at(stops: &[(f64, Rgba)], t: f64) -> Rgba {
     let (Some(first), Some(last)) = (stops.first(), stops.last()) else { return Rgba::default() };

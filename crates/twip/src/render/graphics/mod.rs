@@ -364,7 +364,7 @@ impl Graphics {
             rec.fill_rect(p, paper);
             rec.push_transform(Affine::translate((p.x0, p.y0)) * Affine::scale(k));
             if r.retain && !r.direct {
-                let inputs = retained::Inputs { gridlines: r.gridlines, appearance: r.appearance };
+                let inputs = retained::Inputs { gridlines: r.gridlines, appearance: r.appearance, page_fill: r.page_fill_generation() };
                 let picture = kept.picture(page, inputs, |content| {
                     self.recolour_log.clear();
                     self.page(content, r, page, images);
@@ -466,6 +466,7 @@ impl Graphics {
     /// Records `page`'s content (in its points) into `rec`. Items are recorded where layout keeps them, under a
     /// translation to their place: no item is copied.
     fn page(&mut self, rec: &mut Recorder, r: &Renderer, page: &crate::layout::fragment::PageFragment, images: &[Vec<u8>]) {
+        self.page_fill(rec, r, [page.w, page.h], images);
         let mut at: Option<(f64, f64)> = None;
         paint(page, &mut |p| {
             if at != Some((p.dx, p.dy)) {
@@ -792,6 +793,7 @@ mod ink_tests {
             clip_bottom: None,
             text_float: 0,
             of: Default::default(),
+            text_path: None,
         };
         let r = Renderer { appearance: Appearance::Dark { page: PageMode::Dark }, ..Renderer::default() };
         let want = r.appearance.map(0x000000);

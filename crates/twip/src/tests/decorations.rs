@@ -28,11 +28,12 @@ fn drawn_lines(name: &str) -> Vec<Drawn> {
     drawn_lines_on(name, None)
 }
 
-/// [`drawn_lines`], the document's page colour set to `page_colour`.
+/// [`drawn_lines`], the document's page colour set to `page_colour` (and shown).
 fn drawn_lines_on(name: &str, page_colour: Option<u32>) -> Vec<Drawn> {
     let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures").join(name);
     let mut doc = crate::docx::read(&std::fs::read(&p).expect("the fixture")).expect("reads");
     doc.page_colour = page_colour.or(doc.page_colour);
+    doc.settings.display_background_shape |= page_colour.is_some();
     let snapshot = crate::layout::layout(&doc, crate::editing::tests::fonts());
     let mut out: Vec<(u32, Drawn)> = Vec::new();
     paint(&snapshot.pages()[0], &mut |p| {

@@ -45,6 +45,11 @@ pub struct Renderer {
     pub overlay_colours: Option<Palette>,
     pub appearance: appearance::Appearance,
     pub page_colour: Option<u32>,
+    /// The page background's fill over `page_colour` (a gradient, pattern or picture), drawn on screen.
+    pub page_fill: Option<crate::drawing::paint::Paint>,
+    /// What `page_fill` was resolved from (the fill and the theme's address), and how many times it changed.
+    page_fill_of: (Option<crate::drawing::paint::Fill>, usize),
+    page_fills: u64,
 }
 
 /// The colours of the overlays the host can set. By default the lines and marks are at least 3:1 against the page,
@@ -82,6 +87,26 @@ pub fn rgb(c: u32) -> Color {
 }
 
 impl Renderer {
+    /// The page background `doc` shows: its colour and fill.
+    /// The fill is resolved again only when it or the theme changed.
+    pub fn set_page_background(&mut self, doc: &crate::docx::Document) {
+        let (colour, fill) = doc.shown_background();
+        self.page_colour = colour;
+        let theme = std::rc::Rc::as_ptr(&doc.theme) as usize;
+        if self.page_fill_of.0.as_ref() == fill && self.page_fill_of.1 == theme {
+            return;
+        }
+        let palette = crate::drawing::paint::Palette { theme: &doc.theme, map: &doc.colour_map };
+        self.page_fill = fill.map(|f| crate::drawing::paint::paint(f, palette, None, &crate::drawing::paint::Paint::None));
+        self.page_fill_of = (fill.cloned(), theme);
+        self.page_fills += 1;
+    }
+
+    /// A count that changes whenever [`Renderer::page_fill`] does: retained pages are drawn with it.
+    pub fn page_fill_generation(&self) -> u64 {
+        self.page_fills
+    }
+
     /// A renderer for the screen: it keeps each page's content ([`retained`]).
     pub fn retaining() -> Renderer {
         Renderer { retain: true, ..Renderer::default() }

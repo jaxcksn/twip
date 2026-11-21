@@ -253,6 +253,10 @@ fn unit(v: f64) -> u8 {
     (v.clamp(0.0, 1.0) * 255.0).round() as u8
 }
 
+/// A two-stop gradient's blend at sixteenths of the way: the share of the second colour, in linear light.
+pub const TWO_STOP_BLEND: [f64; 17] =
+    [0.0, 0.018, 0.0472, 0.0843, 0.1404, 0.209, 0.2927, 0.3873, 0.4934, 0.5922, 0.6913, 0.778, 0.8485, 0.9054, 0.949, 0.9779, 1.0];
+
 pub fn srgb_to_linear(c: f64) -> f64 {
     if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) }
 }

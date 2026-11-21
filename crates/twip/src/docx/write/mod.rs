@@ -93,6 +93,7 @@ pub fn edited_parts(doc: &Document) -> Result<Vec<(String, Vec<u8>)>, String> {
     filled_placeholders(doc, &mut parts)?;
     review_parts(doc, &mut parts)?;
     settings_part(doc, &mut parts)?;
+    page_background(doc, &mut parts)?;
     add_images(&src.package, &doc.images, &mut parts)?;
     data_parts(doc, &mut parts)?;
     property_parts(doc, &mut parts)?;
@@ -302,6 +303,9 @@ fn settings_part(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(
     if tw(read.hyphenation_zone) != tw(now.hyphenation_zone) {
         set_setting(&mut out, "hyphenationZone", Some(format!("<{w}hyphenationZone {w}val=\"{}\"/>", tw(now.hyphenation_zone))))?;
     }
+    if read.display_background_shape != now.display_background_shape {
+        set_setting(&mut out, "displayBackgroundShape", now.display_background_shape.then(|| format!("<{w}displayBackgroundShape/>")))?;
+    }
     if read.do_not_hyphenate_caps != now.do_not_hyphenate_caps {
         set_setting(&mut out, "doNotHyphenateCaps", now.do_not_hyphenate_caps.then(|| format!("<{w}doNotHyphenateCaps/>")))?;
     }
@@ -374,6 +378,132 @@ fn settings_part(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(
     };
     package::set(parts, &name, out.into_bytes());
     Ok(())
+}
+
+/// The main part's `w:background` when the page background changed since reading: the model's colour, and its fill.
+/// The fill's markup as read is kept when it still reads as the model's fill under the new colour (a gradient or
+/// pattern that names no colour of its own takes the page's); else the fill is written from the model, as Word writes
+/// it. An untouched background keeps its markup.
+fn page_background(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
+    let src = doc.source.as_ref().ok_or("the document was not read for editing")?;
+    if src.page_background.0 == doc.page_colour && src.page_background.1 == doc.page_fill {
+        return Ok(());
+    }
+    let mut xml = match parts.iter().find(|(n, _)| *n == src.main) {
+        Some((_, b)) => String::from_utf8(b.clone()).map_err(|e| e.to_string())?,
+        None => src.xml.clone(),
+    };
+    let dom = roxmltree::Document::parse(&xml).map_err(|e| e.to_string())?;
+    let root = dom.root_element();
+    let prefix = |ns: &str| root.lookup_prefix(ns).filter(|p| !p.is_empty()).map(str::to_string);
+    let w = prefix(W).map_or(String::new(), |p| format!("{p}:"));
+    let old = root.children().find(|c| is_w(*c, "background"));
+    let image = match &doc.page_fill {
+        Some(crate::drawing::paint::Fill::Blip(b)) => b.image,
+        _ => None,
+    };
+    let kept = old
+        .filter(|b| doc.page_fill.is_some() && crate::drawing::vml::background_fill(*b, doc.page_colour, &mut |_| image) == doc.page_fill)
+        .and_then(|b| b.children().find(|c| c.is_element() && c.tag_name().name() == "background" && c.tag_name().namespace() == Some(VML)))
+        .map(|v| xml[v.range()].to_string());
+    let at = match old {
+        Some(b) => b.range(),
+        None => {
+            let body = root.children().find(|c| is_w(*c, "body")).ok_or("no body")?;
+            body.range().start..body.range().start
+        }
+    };
+    // The VML, Office and relationship prefixes the root declares, those it lacks declared on it.
+    let mut declare = String::new();
+    let mut named = |ns: &str, want: &str| match prefix(ns) {
+        Some(p) => p,
+        None => {
+            declare.push_str(&format!(r#" xmlns:{want}="{ns}""#));
+            want.to_string()
+        }
+    };
+    let palette = crate::drawing::paint::Palette { theme: &doc.theme, map: &doc.colour_map };
+    let fill = match kept {
+        Some(k) => Some(k),
+        None => match &doc.page_fill {
+            Some(f) => {
+                let ns = [named(VML, "v"), named(O, "o"), named(R, "r")];
+                vml_background(f, palette, &ns)
+            }
+            None => None,
+        },
+    };
+    let root_open = root.range().start + xml[root.range()].find(|c: char| c.is_whitespace() || c == '>').unwrap_or(0);
+    drop(dom);
+    let el = match (doc.page_colour, fill) {
+        (None, None) => String::new(),
+        (colour, fill) => {
+            let c = format!("{:06X}", colour.unwrap_or(0xFF_FFFF));
+            match fill {
+                Some(f) => format!("<{w}background {w}color=\"{c}\">{f}</{w}background>"),
+                None => format!("<{w}background {w}color=\"{c}\"/>"),
+            }
+        }
+    };
+    xml.replace_range(at, &el);
+    xml.insert_str(root_open, &declare);
+    package::set(parts, &src.main, xml.into_bytes());
+    Ok(())
+}
+
+const VML: &str = "urn:schemas-microsoft-com:vml";
+const O: &str = "urn:schemas-microsoft-com:office:office";
+const R: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+
+/// A page fill as a `v:background` (prefixes `[v, o, r]`), as Word writes one: its gradient, or its picture tiled,
+/// stretched or as a two-colour pattern. `None` for a fill VML has no page form of.
+// shortcut: a DrawingML preset pattern (`Fill::Pattern`) has no VML form without a picture of its tile; it is not written.
+fn vml_background(f: &crate::drawing::paint::Fill, palette: crate::drawing::paint::Palette, [v, o, r]: &[String; 3]) -> Option<String> {
+    use crate::drawing::paint::{BlipAdjust, BlipMode, Fill, GradientKind, TileFlip};
+    let hex = |c: &crate::drawing::colour::Colour| {
+        let c = c.resolve(palette.theme, palette.map, None);
+        (format!("#{:02x}{:02x}{:02x}", c.r, c.g, c.b), f64::from(c.a) / 255.0)
+    };
+    let opacity = |name: &str, a: f64| if a < 1.0 { format!(r#" {name}="{}""#, (a * 1000.0).round() / 1000.0) } else { String::new() };
+    let fill = match f {
+        Fill::Gradient(g) if g.stops.len() >= 2 => {
+            let (radial, angle) = match g.kind {
+                GradientKind::Linear { angle, .. } => (false, (270.0 - angle.0 as f64 / 60000.0).rem_euclid(360.0)),
+                GradientKind::Path { .. } => (true, 0.0),
+            };
+            // A radial gradient is read from the outside in.
+            let stops: Vec<(f64, String, f64)> = if radial {
+                g.stops.iter().rev().map(|(p, c)| (1.0 - p.fraction(), hex(c).0, hex(c).1)).collect()
+            } else {
+                g.stops.iter().map(|(p, c)| (p.fraction(), hex(c).0, hex(c).1)).collect()
+            };
+            let (first, last) = (&stops[0], &stops[stops.len() - 1]);
+            // Two colours as Word blends them are written as the two; any other stops as a list.
+            let two = !radial && g.stops == crate::drawing::vml::two_colour(&g.stops[0].1, &g.stops[g.stops.len() - 1].1);
+            let colors = if two {
+                String::new()
+            } else {
+                let list: Vec<String> = stops.iter().map(|(p, c, _)| format!("{} {c}", (p * 100000.0).round() / 100000.0)).collect();
+                format!(r#" colors="{}""#, list.join(";"))
+            };
+            let mirrored = g.flip != TileFlip::None && g.tile != [crate::drawing::units::Pct(0); 4];
+            let kind = if radial { "gradientRadial" } else { "gradient" };
+            let focus = if mirrored { r#" focus="50%""# } else { "" };
+            let (o1, o2) = (opacity("opacity", first.2), opacity(&format!("{o}:opacity2"), last.2));
+            format!(r#"<{v}:fill type="{kind}" color="{}" color2="{}"{colors} angle="{}"{focus}{o1}{o2}/>"#, first.1, last.1, angle.round())
+        }
+        Fill::Blip(b) => {
+            let image = b.image?;
+            let (kind, colours) = match (&b.mode, b.adjust.iter().find_map(|a| if let BlipAdjust::Duotone(d) = a { Some(d) } else { None })) {
+                (BlipMode::Tile { .. }, Some([fg, bg])) => ("pattern", format!(r#" color2="{}" color="{}""#, hex(fg).0, hex(bg).0)),
+                (BlipMode::Tile { .. }, None) => ("tile", String::new()),
+                (BlipMode::Stretch(_), _) => ("frame", String::new()),
+            };
+            format!(r#"<{v}:fill {r}:id="{NEW_IMAGE}{image}"{colours} type="{kind}"/>"#)
+        }
+        _ => return None,
+    };
+    Some(format!(r#"<{v}:background id="_x0000_s1025" {o}:bwmode="white" {o}:targetscreensize="1024,768">{fill}</{v}:background>"#))
 }
 
 /// Replaces, removes (`el` of `None`) or adds the settings child `name`, where the schema puts it.
@@ -5343,6 +5473,105 @@ mod tests {
         assert_eq!(kept, "hel world");
         assert_eq!(diff(&k("abc"), &k("")), vec![None; 3]);
         assert_eq!(strip_attr(r#"<w:p w14:paraId="1A" w:rsidR="00"><"#, "paraId"), r#"<w:p w:rsidR="00"><"#);
+    }
+
+    fn render_fixture(name: &str) -> (Vec<u8>, Document) {
+        let bytes = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/render").join(name)).expect("fixture");
+        let doc = crate::docx::read_editable(&bytes).expect("reads");
+        (bytes, doc)
+    }
+
+    fn part_text(package: &[u8], name: &str) -> String {
+        let mut z = zip::ZipArchive::new(Cursor::new(package)).expect("a package");
+        let mut s = String::new();
+        std::io::Read::read_to_string(&mut z.by_name(name).expect("the part"), &mut s).expect("text");
+        s
+    }
+
+    #[test]
+    fn an_untouched_page_background_keeps_its_markup_and_a_changed_one_is_written() {
+        let (bytes, mut doc) = render_fixture("page-pattern.docx");
+        assert_eq!(save(&doc).expect("saves"), bytes, "untouched");
+        // A new colour: the fill as read is kept, the theme attributes go with the old colour.
+        let was = part_text(&bytes, "word/document.xml");
+        let fill = &was[was.find("<v:background").unwrap()..was.find("</v:background>").unwrap() + 15];
+        doc.page_colour = Some(0x12_3456);
+        doc.settings.display_background_shape = false;
+        let saved = save(&doc).expect("saves");
+        let xml = part_text(&saved, "word/document.xml");
+        assert!(xml.contains(&format!(r#"<w:background w:color="123456">{fill}</w:background>"#)), "{xml}");
+        assert!(!part_text(&saved, "word/settings.xml").contains("displayBackgroundShape"));
+        let again = crate::docx::read(&saved).expect("reads again");
+        assert_eq!((again.page_colour, again.page_fill == doc.page_fill, again.settings.display_background_shape), (Some(0x12_3456), true, false));
+        // No colour and no fill: no background.
+        doc.page_colour = None;
+        doc.page_fill = None;
+        let xml = part_text(&save(&doc).expect("saves"), "word/document.xml");
+        assert!(!xml.contains("<w:background"), "{xml}");
+    }
+
+    #[test]
+    fn a_fill_that_takes_the_page_colour_is_written_from_the_model_when_the_colour_changes() {
+        // The gradient names no first colour: it starts from the page's white.
+        let (_, mut doc) = render_fixture("page-gradient.docx");
+        let fill = doc.page_fill.clone();
+        doc.page_colour = Some(0x12_3456);
+        let saved = save(&doc).expect("saves");
+        let xml = part_text(&saved, "word/document.xml");
+        let el = &xml[xml.find("<w:background").unwrap()..xml.find("</w:background>").unwrap()];
+        assert!(!el.contains("xmlns") && !el.contains("opacity"), "as Word writes it: {el}");
+        let again = crate::docx::read(&saved).expect("reads again");
+        assert_eq!((again.page_colour, &again.page_fill), (Some(0x12_3456), &fill), "the fill as the model held it");
+    }
+
+    #[test]
+    fn a_fill_on_a_part_without_vml_declares_its_namespaces_on_the_root() {
+        let (bytes, _) = render_fixture("page-colour.docx");
+        let xml = part_text(&bytes, "word/document.xml");
+        let bare =
+            xml.replace(r#" xmlns:v="urn:schemas-microsoft-com:vml""#, "").replace(r#" xmlns:o="urn:schemas-microsoft-com:office:office""#, "");
+        assert!(!bare.contains("xmlns:v="));
+        let package = repackage(&bytes, &[("word/document.xml".into(), bare.into_bytes())], zip::CompressionMethod::Deflated).expect("repackages");
+        let mut doc = crate::docx::read_editable(&package).expect("reads");
+        doc.page_fill = render_fixture("page-gradient.docx").1.page_fill;
+        let saved = save(&doc).expect("saves");
+        let again = crate::docx::read(&saved).expect("reads again");
+        assert_eq!(again.page_fill, doc.page_fill);
+        let xml = part_text(&saved, "word/document.xml");
+        let root = &xml[xml.find("<w:document").unwrap()..];
+        assert!(root[..root.find('>').unwrap()].contains(r#"xmlns:v="urn:schemas-microsoft-com:vml""#), "{xml}");
+    }
+
+    #[test]
+    fn a_page_background_made_since_reading_is_written_in_its_model_form() {
+        use crate::drawing::paint::Fill;
+        // A gradient on a page that had none, its colour, shown.
+        let (_, mut doc) = render_fixture("watermark-text.docx");
+        let (_, gradient) = render_fixture("page-gradient.docx");
+        doc.page_colour = Some(0xFF_FFFF);
+        doc.page_fill = gradient.page_fill.clone();
+        doc.settings.display_background_shape = true;
+        let saved = save(&doc).expect("saves");
+        let xml = part_text(&saved, "word/document.xml");
+        let el = &xml[xml.find("<w:background").unwrap()..xml.find("</w:background>").unwrap()];
+        assert!(
+            el.starts_with(r#"<w:background w:color="FFFFFF"><v:background id="_x0000_s1025" o:bwmode="white""#) && !el.contains("xmlns"),
+            "{el}"
+        );
+        let again = crate::docx::read(&saved).expect("reads again");
+        assert_eq!((again.page_colour, again.settings.display_background_shape), (Some(0xFF_FFFF), true));
+        let (Some(Fill::Gradient(a)), Some(Fill::Gradient(b))) = (&again.page_fill, &gradient.page_fill) else { panic!("{:?}", again.page_fill) };
+        assert_eq!((a.kind, a.tile, a.flip), (b.kind, b.tile, b.flip));
+        assert_eq!(a.stops.len(), b.stops.len());
+        // A tiled picture: the image goes with the part.
+        let (_, picture) = render_fixture("page-picture.docx");
+        let mut doc = render_fixture("watermark-text.docx").1;
+        doc.images = picture.images.clone();
+        doc.page_fill = picture.page_fill.clone();
+        let saved = save(&doc).expect("saves");
+        let again = crate::docx::read(&saved).expect("reads again");
+        let Some(Fill::Blip(b)) = &again.page_fill else { panic!("{:?}", again.page_fill) };
+        assert_eq!(again.images[b.image.expect("its picture")], picture.images[0]);
     }
 
     #[test]

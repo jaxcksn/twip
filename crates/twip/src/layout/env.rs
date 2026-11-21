@@ -154,7 +154,7 @@ impl TextEnv {
             theme: doc.theme.clone(),
             colour_map: doc.colour_map,
             backdrop: None,
-            page_colour: doc.page_colour,
+            page_colour: doc.shown_background().0,
             vertical: None,
             hyphenation: doc.hyphenation.clone().filter(|_| s.auto_hyphenation).map(|patterns| HyphenEnv {
                 patterns,

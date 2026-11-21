@@ -33,7 +33,11 @@ pub fn float_box(f: &Float, rect: [f64; 4], anchor: ParaId, env: &StoryEnv, memo
         Some(shape) => {
             let t = &env.ctx.env.text;
             let palette = crate::drawing::paint::Palette { theme: &t.theme, map: &t.colour_map };
-            items.extend(shape_items(shape, shape_rect, f.id, f.behind, palette, None, PictureOf::Float(FloatId(f.id))).into_iter().map(Item::Shape));
+            items.extend(
+                shape_items(shape, shape_rect, f.id, f.behind, palette, None, PictureOf::Float(FloatId(f.id)), env.ctx.fonts)
+                    .into_iter()
+                    .map(Item::Shape),
+            );
         }
         None => {
             if let Some(img) = f.image {
@@ -222,6 +226,7 @@ pub(in crate::layout) fn shape_items(
     palette: crate::drawing::paint::Palette,
     clip_bottom: Option<f64>,
     of: crate::layout::fragment::PictureOf,
+    fonts: &crate::font::Fonts,
 ) -> Vec<Rc<ShapeItem>> {
     use crate::drawing::ShapeKind;
     use crate::drawing::paint::{self, Fill, Paint};
@@ -252,6 +257,15 @@ pub(in crate::layout) fn shape_items(
         if leaf.shape.nv.hidden {
             continue;
         }
+        // A text path draws its glyphs in place of the outline, or nothing; the box stays its geometry, for hits.
+        let text_path = match leaf.shape.sp().and_then(|sp| sp.text_path.as_deref()) {
+            Some(tp) => match text_path(tp, [lx1 - lx0, ly1 - ly0], fonts) {
+                Some(t) => Some(t),
+                None => continue,
+            },
+            None => None,
+        };
+        let geom = if text_path.is_some() { crate::drawing::geom::Geometry::default().evaluate(w, h) } else { geom };
         let mut line = line;
         if line.join == paint::Join::Round && leaf.shape.geometry().and_then(|g| g.preset()).is_some_and(|p| MITER_PRESETS.contains(&p.name())) {
             line.join = paint::Join::Miter(crate::drawing::units::Pct(800_000));
@@ -272,11 +286,62 @@ pub(in crate::layout) fn shape_items(
             decoration: false,
             clip_bottom,
             text_float: 0,
+            text_path,
             path: leaf.path,
             of,
         }));
     }
     out
+}
+
+/// The most glyphs a text path draws.
+const MAX_TEXT_PATH_GLYPHS: usize = 4096;
+
+/// A text path's glyphs, shaped in its face (characters it lacks in their fallback faces), and the box in the
+/// shape's own (`size`) their ink fills: the whole box when trimmed, else inset 7.2 points across and 3.6 down, as
+/// Word draws it. Word draws no text that isn't fitted to the shape, nor an empty string.
+fn text_path(tp: &crate::drawing::TextPath, size: [f64; 2], fonts: &crate::font::Fonts) -> Option<Rc<crate::layout::fragment::TextPathItem>> {
+    if !tp.fit_shape || tp.string.trim().is_empty() {
+        return None;
+    }
+    let face = fonts.face(&tp.family, None, tp.bold, tp.italic)?;
+    let face_of = |c: char| {
+        if face.has_glyph(c) || c.is_whitespace() {
+            Some(Rc::clone(&face))
+        } else {
+            fonts.fallback(c, tp.bold, tp.italic).or_else(|| Some(Rc::clone(&face)))
+        }
+    };
+    let mut runs: Vec<(Rc<crate::font::Face>, Box<[(u32, f64)]>)> = Vec::new();
+    let (mut pen, mut count) = (0.0, 0);
+    let mut chars = tp.string.chars().map(|c| if c.is_control() { ' ' } else { c }).peekable();
+    let mut text = String::new();
+    while let Some(c) = chars.next() {
+        let Some(run_face) = face_of(c) else { break };
+        text.clear();
+        text.push(c);
+        while let Some(&n) = chars.peek() {
+            if !face_of(n).is_some_and(|f| Rc::ptr_eq(&f, &run_face)) {
+                break;
+            }
+            text.push(n);
+            chars.next();
+        }
+        let em = 1.0 / run_face.upem;
+        let mut glyphs = Vec::new();
+        for g in run_face.shape(&text, true, 0, 0).into_iter().take(MAX_TEXT_PATH_GLYPHS - count) {
+            glyphs.push((g.id, pen + g.dx * em));
+            pen += g.advance * em;
+        }
+        count += glyphs.len();
+        runs.push((run_face, glyphs.into()));
+        if count >= MAX_TEXT_PATH_GLYPHS {
+            break;
+        }
+    }
+    let [w, h] = size;
+    let fit = if tp.trim { [0.0, 0.0, w, h] } else { [7.2, 3.6, w - 7.2, h - 3.6] };
+    Some(Rc::new(crate::layout::fragment::TextPathItem { runs: runs.into(), fit }))
 }
 
 const MITER_PRESETS: &[&str] = &[

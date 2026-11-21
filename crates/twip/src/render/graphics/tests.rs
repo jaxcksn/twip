@@ -703,3 +703,104 @@ fn an_inline_text_boxs_reflection_holds_its_text() {
     assert_eq!(below(&shot("")), 0, "a bare box reflects red only");
     assert!(below(&shot("MMMM")) > 50, "the text is in the reflection: {}", below(&shot("MMMM")));
 }
+
+/// A VML text path in red, `w` x 60 pt at (100, 100) on the page: `textpath` holds the `v:textpath`'s attributes,
+/// in JetBrains Mono.
+fn text_path(w: i64, textpath: &str, shape: &str) -> Shot {
+    let pict = format!(
+        r##"<w:p><w:r><w:pict xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office"><v:shapetype id="_x0000_t136" coordsize="21600,21600" o:spt="136" adj="10800" path="m@7,l@8,m@5,21600l@6,21600e"><v:path textpathok="t"/><v:textpath on="t" fitshape="t"/></v:shapetype><v:shape type="#_x0000_t136" style="position:absolute;margin-left:100pt;margin-top:100pt;width:{w}pt;height:60pt;mso-position-horizontal-relative:page;mso-position-vertical-relative:page{shape}" fillcolor="red" stroked="f"><v:textpath style="font-family:&quot;JetBrains Mono&quot;;font-size:1pt" {textpath}/></v:shape></w:pict></w:r></w:p>"##
+    );
+    let d = crate::docx::read(&package_body(&pict, None)).expect("the document reads");
+    let snap = crate::layout::layout(&d, &crate::layout::tests::output::bundled_fonts());
+    let mut g = Graphics::default();
+    let picture = g.page_picture(&Renderer::default(), &snap.pages()[0], &d.images);
+    let mut px = vec![0u8; SIZE.0 * SIZE.1 * 4];
+    let mut target = Target::new(&mut px, SIZE.0 as u32, SIZE.1 as u32, SIZE.0 * 4, Format::Rgba8).expect("a target");
+    g.render_picture(&mut target, &picture, Affine::scale(K) * Affine::translate((-ORIGIN.0, -ORIGIN.1)), Color::WHITE);
+    Shot(px)
+}
+
+/// The page x of the first and last red pixels along the row at page `y`.
+fn red_span(s: &Shot, y: f64) -> Option<(f64, f64)> {
+    let row = s.row(y, ORIGIN.0, ORIGIN.0 + SIZE.0 as f64 / K);
+    let x = |i: usize| ORIGIN.0 + i as f64 / K;
+    Some((x(row.iter().position(|p| red(*p))?), x(row.iter().rposition(|p| red(*p))?)))
+}
+
+#[test]
+fn a_text_path_stretches_its_glyphs_ink_to_its_box_less_the_insets() {
+    // An `H`'s bar runs across its ink box at mid-height.
+    let s = text_path(120, r#"string="H""#, "");
+    let (x0, x1) = red_span(&s, 130.0).expect("the bar draws");
+    assert!((x0 - 107.2).abs() <= 1.0 && (x1 - 212.8).abs() <= 1.0, "{x0} {x1}");
+    // Its stems run from 3.6 pt below the box's top to 3.6 pt above its bottom.
+    let stem = s.column(x0 + 1.0, 100.0, 160.0);
+    let (top, bottom) = (stem.iter().position(|p| red(*p)).unwrap(), stem.iter().rposition(|p| red(*p)).unwrap());
+    assert!((100.0 + top as f64 / K - 103.6).abs() <= 1.0 && (100.0 + bottom as f64 / K - 156.4).abs() <= 1.0, "{top} {bottom}");
+    // Trimmed, the ink fills the whole box.
+    let (x0, x1) = red_span(&text_path(120, r#"string="H" trim="t""#, ""), 130.0).expect("the bar draws");
+    assert!((x0 - 100.0).abs() <= 1.0 && (x1 - 220.0).abs() <= 1.0, "{x0} {x1}");
+}
+
+#[test]
+fn a_text_path_turns_with_its_shape_and_draws_nothing_unfitted_or_empty() {
+    // A half turn puts the `L`'s foot at the top.
+    let upright = text_path(120, r#"string="L" trim="t""#, "");
+    let turned = text_path(120, r#"string="L" trim="t""#, ";rotation:180");
+    let foot = |s: &Shot, y: f64| red_span(s, y).map(|(a, b)| b - a).unwrap_or(0.0);
+    assert!(foot(&upright, 158.0) > 100.0 && foot(&upright, 102.0) < 40.0);
+    assert!(foot(&turned, 102.0) > 100.0 && foot(&turned, 158.0) < 40.0);
+    for blank in [r#"string="H" fitshape="f""#, r#"string="  ""#, ""] {
+        let s = text_path(120, blank, "");
+        assert!(red_span(&s, 130.0).is_none(), "{blank}");
+        assert!(s.row(130.0, 100.0, 220.0).iter().all(|p| paper(*p)), "no box either: {blank}");
+    }
+    // The longest string read draws, squeezed into the box.
+    let long = text_path(120, &format!(r#"string="{}""#, "W".repeat(5000)), "");
+    assert!(long.row(130.0, 107.0, 213.0).iter().all(|p| !paper(*p)));
+}
+
+fn fixture(name: &str) -> crate::docx::Document {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/render").join(name);
+    crate::docx::read(&std::fs::read(path).expect("fixture")).expect("reads")
+}
+
+#[test]
+fn a_page_background_takes_its_theme_tint_or_shade_and_shows_only_when_word_shows_it() {
+    // Word writes the theme colour it shows as `w:color` too.
+    for (name, written) in [("page-colour.docx", 0xF4_B183u32), ("page-colour-shade.docx", 0x2F_5597)] {
+        let d = fixture(name);
+        let got = d.page_colour.expect("a page colour");
+        assert!((0..3).all(|i| ((got >> (8 * i)) & 0xFF).abs_diff((written >> (8 * i)) & 0xFF) <= 1), "{name}: {got:06X}");
+        assert_eq!(d.shown_background().0, Some(got));
+    }
+    let hidden = fixture("page-colour-no-shape.docx");
+    assert!(hidden.page_colour.is_some() && hidden.shown_background() == (None, None), "no displayBackgroundShape");
+    let mut r = Renderer::default();
+    r.set_page_background(&hidden);
+    assert!(r.page_colour.is_none() && r.page_fill.is_none());
+    let gradient = fixture("page-gradient.docx");
+    assert!(matches!(gradient.page_fill, Some(crate::drawing::paint::Fill::Gradient(_))));
+    r.set_page_background(&gradient);
+    assert!(matches!(r.page_fill, Some(crate::drawing::paint::Paint::Gradient { .. })));
+    let picture = fixture("page-picture.docx");
+    let Some(crate::drawing::paint::Fill::Blip(b)) = &picture.page_fill else { panic!("{:?}", picture.page_fill) };
+    assert!(b.image.is_some_and(|i| i < picture.images.len()), "the tile's picture is read");
+}
+
+#[test]
+fn a_picture_watermark_is_drawn_behind_the_body_text() {
+    use crate::layout::fragment::Item;
+    let d = fixture("watermark-picture.docx");
+    let snap = crate::layout::layout(&d, &crate::layout::tests::output::bundled_fonts());
+    for page in snap.pages() {
+        let mut order = Vec::new();
+        crate::layout::traverse::paint(page, &mut |p| match p.item {
+            Item::Shape(s) if s.picture => order.push('p'),
+            Item::Glyphs(_) => order.push('t'),
+            _ => {}
+        });
+        assert_eq!(order.first(), Some(&'p'), "{order:?}");
+        assert_eq!(order.iter().filter(|c| **c == 'p').count(), 1);
+    }
+}

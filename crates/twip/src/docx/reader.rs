@@ -206,33 +206,6 @@ fn raw(n: Node) -> Rc<str> {
     format!("{}{extra}{}", &text[..at], &text[at..]).into()
 }
 
-// shortcut: `w:themeTint` and `w:themeShade` are not applied to a theme page colour.
-fn page_colour(b: Node, theme: &crate::drawing::theme::Theme, map: &crate::drawing::theme::ColourMap) -> Option<u32> {
-    use crate::drawing::colour::SchemeSlot::*;
-    let slot = attr(b, "themeColor").and_then(|t| {
-        Some(match t {
-            "dark1" => Dk1,
-            "light1" => Lt1,
-            "dark2" => Dk2,
-            "light2" => Lt2,
-            "background1" => Bg1,
-            "text1" => Tx1,
-            "background2" => Bg2,
-            "text2" => Tx2,
-            "hyperlink" => Hlink,
-            "followedHyperlink" => FolHlink,
-            a => Accent(a.strip_prefix("accent")?.parse().ok().filter(|n| (1..=6).contains(n))?),
-        })
-    });
-    match slot {
-        Some(s) => {
-            let c = theme.colour(map.map(s));
-            Some((u32::from(c.r) << 16) | (u32::from(c.g) << 8) | u32::from(c.b))
-        }
-        None => color(attr(b, "color")),
-    }
-}
-
 /// The run line numbers draw with: the document defaults and the LineNumber character style.
 pub(crate) fn line_number_run(res: &Resolver) -> super::model::Run {
     let mut rp = res.styles.doc_rpr.clone();
@@ -371,7 +344,11 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
     {
         let dom = roxmltree::Document::parse(&xml).map_err(|e| e.to_string())?;
         let body = child(dom.root_element(), "body").ok_or("no body")?;
-        doc.page_colour = child(dom.root_element(), "background").and_then(|b| page_colour(b, &drawing_theme, &colour_map));
+        if let Some(b) = child(dom.root_element(), "background") {
+            doc.page_colour = colours.colour(b, "color", "themeColor", "themeTint", "themeShade");
+            let mut src = DrawingSource { reader: &mut r, pkg: &mut pkg };
+            doc.page_fill = crate::drawing::vml::background_fill(b, doc.page_colour, &mut |rid| crate::drawing::read::Source::image(&mut src, rid));
+        }
         r.record = editable;
         doc.sections = r.read_body(body, &mut pkg);
         shift_connector_text(&mut doc.sections);
@@ -554,6 +531,7 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
             endnotes,
             controls,
             glossary: glossary_src,
+            page_background: (doc.page_colour, doc.page_fill.clone()),
         }));
     }
     Ok(doc)
@@ -845,6 +823,7 @@ pub(crate) fn read_settings(xml: Option<&str>) -> Settings {
     s.book_fold = (rev || flag(root, "bookFoldPrinting").unwrap_or(false)).then_some(rev);
     s.strict_kinsoku = flag(root, "strictFirstAndLastChars").unwrap_or(false);
     s.auto_hyphenation = flag(root, "autoHyphenation").unwrap_or(false);
+    s.display_background_shape = flag(root, "displayBackgroundShape").unwrap_or(false);
     s.do_not_hyphenate_caps = flag(root, "doNotHyphenateCaps").unwrap_or(false);
     s.borders_do_not_surround_header = flag(root, "bordersDoNotSurroundHeader").unwrap_or(false);
     s.borders_do_not_surround_footer = flag(root, "bordersDoNotSurroundFooter").unwrap_or(false);
