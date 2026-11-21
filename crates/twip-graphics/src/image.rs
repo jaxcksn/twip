@@ -160,8 +160,15 @@ pub(crate) fn decode(bytes: &[u8]) -> Result<Pixmap, ImageError> {
     Ok(p)
 }
 
+/// `bytes` decoded (orientation applied): width, height and premultiplied RGBA8 pixels, rows packed. Fails for bytes
+/// that aren't a supported image, or one over [`fits`]' limit.
+pub fn pixels(bytes: &[u8]) -> Result<(u32, u32, Vec<u8>), ImageError> {
+    let p = decode(bytes)?;
+    Ok((p.width, p.height, p.data))
+}
+
 /// Whether `width × height` is at most [`MAX_PIXELS`], checked before a decoder allocates for it.
-pub(crate) fn fits(width: u32, height: u32) -> Result<(), ImageError> {
+pub fn fits(width: u32, height: u32) -> Result<(), ImageError> {
     if width as u64 * height as u64 > MAX_PIXELS {
         return Err(error(format_args!("{width}×{height} pixels is more than an image may have")));
     }

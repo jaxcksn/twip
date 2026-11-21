@@ -163,7 +163,7 @@ impl FontRegistry {
 
     /// Appends glyph `glyph`'s outline in em units (1 em = 1.0), y down, to `out`. False when the face or glyph is
     /// missing or its outline doesn't read.
-    pub(crate) fn em_outline(&self, font: FontId, glyph: u32, out: &mut BezPath) -> bool {
+    pub fn em_outline(&self, font: FontId, glyph: u32, out: &mut BezPath) -> bool {
         let Some(face) = self.faces.get(font.0 as usize) else { return false };
         let Ok(f) = FontRef::from_index((*face.data).as_ref(), face.index) else { return false };
         let Some(g) = f.outline_glyphs().get(GlyphId::new(glyph)) else { return false };

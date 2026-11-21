@@ -143,6 +143,11 @@ fn layer_scene() {
 }
 
 #[test]
+fn raster_op_scene() {
+    golden("raster-ops", (162, 162), &raster_ops());
+}
+
+#[test]
 fn blend_mode_scene() {
     golden("blend-modes", (254, 146), &blend_modes());
 }

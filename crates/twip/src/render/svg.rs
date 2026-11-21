@@ -9,6 +9,7 @@
 //! records it into a picture.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use roxmltree::{Document, Node};
 use twip_graphics::kurbo::{self, Affine, BezPath, Cap, Join, Point, Shape};
@@ -29,6 +30,77 @@ pub trait Sink {
     fn end_layer(&mut self);
     fn fill(&mut self, path: &BezPath, even_odd: bool, brush: &Brush);
     fn stroke(&mut self, path: &BezPath, stroke: &kurbo::Stroke, brush: &Brush);
+    /// Draws the `src` rect (in pixels) of `bitmap` (a BMP, PNG or JPEG file) over the unit square mapped by `to`, at
+    /// `opacity`, its pixels interpolated when `smooth`. A sink without an image registry draws nothing.
+    fn image(&mut self, _bitmap: &Arc<Vec<u8>>, _src: kurbo::Rect, _to: Affine, _opacity: f32, _smooth: bool) {}
+    /// Draws a line of text and returns its advance in the line's space. A sink without fonts draws nothing.
+    fn text(&mut self, _text: &Text<'_>) -> f64 {
+        0.0
+    }
+    /// Appends a line of text's outlines (and its underline and strikethrough), in user space, to `out`, and returns
+    /// its advance in the line's space. A sink without fonts appends nothing.
+    fn text_outline(&mut self, _text: &Text<'_>, _out: &mut BezPath) -> f64 {
+        0.0
+    }
+    /// The raster operation the next fills, strokes, images, text, triangles and layers combine with what is under
+    /// them by: a truth table of bit `2·s + d` (`twip_graphics::paint::BlendMode::Raster`); 12, the source, by
+    /// default.
+    fn set_raster(&mut self, _op: u8) {}
+    /// Fills the triangle `pts`, its colour shading linearly between its corners' (opaque, `0..=1`).
+    fn triangle(&mut self, pts: [Point; 3], colours: [[f32; 4]; 3]) {
+        let mut p = BezPath::new();
+        p.move_to(pts[0]);
+        p.line_to(pts[1]);
+        p.line_to(pts[2]);
+        p.close_path();
+        self.fill(&p, false, &Brush::Solid(std::array::from_fn(|i| (colours[0][i] + colours[1][i] + colours[2][i]) / 3.0)));
+    }
+    /// Draws what follows, until [`Sink::end_masked`], into a layer that combines with what is under it by the
+    /// raster operation now set, where `mask` (given to `end_masked`; the same steps by reference until the clip
+    /// changes) covers.
+    fn begin_masked(&mut self) {}
+    fn end_masked(&mut self, _mask: &std::rc::Rc<[MaskStep]>) {}
+}
+
+/// A step of drawing a mask's coverage, from none: shapes added, removed and toggled, under clips.
+#[derive(Clone, Debug, PartialEq)]
+pub enum MaskStep {
+    /// Adds a path's fill (even-odd or not).
+    Add(BezPath, bool),
+    /// Removes a path's fill.
+    Remove(BezPath, bool),
+    /// Toggles coverage inside a path's fill: its exclusive or with what is there.
+    Toggle(BezPath, bool),
+    /// Clips the steps up to the matching [`MaskStep::Pop`] to a path's fill.
+    Clip(BezPath, bool),
+    Pop,
+}
+
+/// A line of text a metafile draws: the face it names, its size, and its characters' places.
+#[derive(Clone, Debug)]
+pub struct Text<'a> {
+    pub family: &'a str,
+    pub bold: bool,
+    pub italic: bool,
+    pub underline: bool,
+    pub strike: bool,
+    /// The em size; the cell height (the em and the face's internal leading) when `cell`.
+    pub height: f64,
+    pub cell: bool,
+    /// Code points, or the face's glyph ids when `glyph_ids`.
+    pub chars: &'a [u32],
+    pub glyph_ids: bool,
+    /// Each character's advance; the face's own when `None`.
+    pub advances: Option<&'a [f64]>,
+    /// Each character's move down the line's y axis to the next one's origin; none when `None`.
+    pub rises: Option<&'a [f64]>,
+    /// Where the line's origin is on it: left 0, centre 1, right 2; and top 0, baseline 1, bottom 2.
+    pub align: (u8, u8),
+    /// From the line's space (its origin at 0, 0, y down) into user space.
+    pub transform: Affine,
+    pub colour: [f32; 4],
+    /// Fills the line's box behind it.
+    pub background: Option<[f32; 4]>,
 }
 
 /// A fill's or stroke's colour: unpremultiplied RGBA in `0..=1`, its opacity applied.
@@ -36,6 +108,19 @@ pub trait Sink {
 pub enum Brush {
     Solid([f32; 4]),
     Gradient(SvgGradient),
+    /// An 8 × 8 one-bit tile (rows top down, the high bit leftmost) in `fg` and `bg`, repeated from the origin of the
+    /// space `transform` maps into user space.
+    Hatch {
+        bits: [u8; 8],
+        fg: [f32; 4],
+        bg: [f32; 4],
+        transform: Affine,
+    },
+    /// A bitmap file (BMP, PNG or JPEG) repeated likewise, a pixel a unit.
+    Bitmap {
+        bitmap: Arc<Vec<u8>>,
+        transform: Affine,
+    },
 }
 
 /// A linear or radial gradient: its stops (offset, colour), what it paints past its ends, and the transform from its
@@ -94,6 +179,26 @@ pub fn walk(sink: &mut impl Sink, bytes: &[u8], dst: kurbo::Rect) -> bool {
     svg.children(sink, root, &Style::default(), inner);
     sink.restore();
     true
+}
+
+/// An SVG's own size in CSS pixels: its root's absolute width and height, else its `viewBox`'s. `None` for one that
+/// takes its size from its box, or bytes that aren't an SVG.
+pub fn natural_size(bytes: &[u8]) -> Option<(f64, f64)> {
+    let text = std::str::from_utf8(bytes).ok()?;
+    let opts = roxmltree::ParsingOptions { allow_dtd: entities_bounded(text), ..Default::default() };
+    let doc = Document::parse_with_options(text.trim_start_matches('\u{feff}'), opts).ok()?;
+    let root = doc.root_element();
+    if root.tag_name().name() != "svg" {
+        return None;
+    }
+    let vp = Vp { w: 0.0, h: 0.0 };
+    let size = |a: &str, axis| root.attribute(a).filter(|v| !v.contains('%')).and_then(|v| length(v, vp, axis));
+    let (w, h) = match (size("width", Axis::X), size("height", Axis::Y), view_box(root)) {
+        (Some(w), Some(h), _) => (w, h),
+        (_, _, Some(v)) => (v[2], v[3]),
+        _ => return None,
+    };
+    (w > 0.0 && h > 0.0).then(|| (f64::from(w), f64::from(h)))
 }
 
 /// Whether the text a doctype's entities expand to stays small, so the doctype may be read (illustration tools

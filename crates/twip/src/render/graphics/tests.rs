@@ -395,6 +395,28 @@ fn a_tiled_picture_repeats_at_its_scale_from_its_alignment() {
 }
 
 #[test]
+fn a_tiled_metafile_repeats_as_vectors_or_as_its_pixels() {
+    use crate::render::metafile::tests::Emf;
+    let null_pen = 0x8000_0008u32.cast_signed();
+    // Red on its left half, blue on its right: 72 pt square.
+    let emf = Emf::default().r(37, &[null_pen]).r(39, &[1, 0, 0xFF, 0]).r(37, &[1]).r(43, &[0, 0, 50, 100]);
+    let emf = emf.r(39, &[2, 0, 0xFF_0000, 0]).r(37, &[2]).r(43, &[50, 0, 100, 100]).bytes();
+    let tiled = |sx: &str| {
+        let fill = format!(r#"<a:blipFill><a:blip r:embed="rId5"/><a:tile sx="{sx}" sy="{sx}" flip="none" algn="tl"/></a:blipFill>{NO_LINE}"#);
+        draw_sized(&sized("rect", 170, 130, "", &fill), (170, 130), Some(&emf))
+    };
+    // A tenth: tiles 7.2 pt across, each placed. Three hundredths: 2.16 pt, too many to place, repeated as pixels.
+    for sx in ["10000", "3000"] {
+        let row = tiled(sx).row(130.0, 101.0, 140.0);
+        let (reds, blues) = (row.iter().any(|p| p[0] > 200 && p[2] < 80), row.iter().any(|p| p[2] > 200 && p[0] < 80));
+        assert!(reds && blues, "{sx}: red and blue across");
+    }
+    let s = tiled("10000");
+    // Tile 0's left quarter and tile 1's: the same red.
+    assert!(red(s.at(101.8, 105.0)) && red(s.at(109.0, 105.0)) && s.at(105.4, 105.0)[2] > 200, "{:?}", s.at(105.4, 105.0));
+}
+
+#[test]
 fn a_picture_fill_without_its_image_draws_a_light_frame() {
     let fill = format!(r#"<a:blipFill><a:blip r:embed="rId9"/>{STRETCH}</a:blipFill>{NO_LINE}"#);
     let s = draw(&wsp("rect", &fill));

@@ -181,6 +181,11 @@ fn blend_modes() {
 }
 
 #[test]
+fn raster_ops() {
+    same("raster-ops", (162, 162), &common::scenes::raster_ops(), &Resources::default());
+}
+
+#[test]
 fn colour_glyphs() {
     let mut resources = Resources::default();
     let picture = common::scenes::colour_glyphs(&mut resources);

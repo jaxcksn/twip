@@ -1385,6 +1385,6 @@ fn blending(mode: BlendMode) -> Option<(Blend, u32)> {
         BlendMode::DstIn => Some((Blend::Erase, 1)),
         BlendMode::Clear => Some((Blend::Erase, 2)),
         BlendMode::Dst => None,
-        mode => Some((Blend::General, (mode as u32) << 2)),
+        mode => Some((Blend::General, mode.index() << 2)),
     }
 }

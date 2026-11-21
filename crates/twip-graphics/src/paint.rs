@@ -125,6 +125,60 @@ pub enum BlendMode {
     Saturation,
     Color,
     Luminosity,
+    /// A GDI binary raster operation: each bit of the unpremultiplied 8-bit channels is `op`'s bit `2·s + d` (`s` the
+    /// source's bit, `d` the destination's; the low four bits of `op` are read), composited as the separable modes
+    /// are. 12 is the source, 10 the destination, 5 its inverse, 8 `and`, 14 `or`, 6 `xor`.
+    Raster(u8),
+}
+
+impl BlendMode {
+    /// The mode's index in declaration order, the raster operations from 28 by `op`: what the GPU shader switches on.
+    #[cfg_attr(not(feature = "gpu"), allow(dead_code, reason = "only the GPU backend switches on it"))]
+    pub(crate) fn index(self) -> u32 {
+        match self {
+            BlendMode::Raster(op) => 28 + u32::from(op & 15),
+            m => {
+                const ORDER: [BlendMode; 28] = [
+                    BlendMode::Clear,
+                    BlendMode::Src,
+                    BlendMode::Dst,
+                    BlendMode::SrcOver,
+                    BlendMode::DstOver,
+                    BlendMode::SrcIn,
+                    BlendMode::DstIn,
+                    BlendMode::SrcOut,
+                    BlendMode::DstOut,
+                    BlendMode::SrcAtop,
+                    BlendMode::DstAtop,
+                    BlendMode::Xor,
+                    BlendMode::Plus,
+                    BlendMode::Screen,
+                    BlendMode::Overlay,
+                    BlendMode::Darken,
+                    BlendMode::Lighten,
+                    BlendMode::ColorDodge,
+                    BlendMode::ColorBurn,
+                    BlendMode::HardLight,
+                    BlendMode::SoftLight,
+                    BlendMode::Difference,
+                    BlendMode::Exclusion,
+                    BlendMode::Multiply,
+                    BlendMode::Hue,
+                    BlendMode::Saturation,
+                    BlendMode::Color,
+                    BlendMode::Luminosity,
+                ];
+                ORDER.iter().position(|&o| o == m).unwrap_or(3) as u32
+            }
+        }
+    }
+}
+
+/// `op`'s truth table applied to each bit of `s` and `d`: bit `2·s + d` of `op` (see [`BlendMode::Raster`]).
+#[inline(always)]
+pub(crate) fn raster_op(op: u8, s: u8, d: u8) -> u8 {
+    let pick = |bit: u8, v: u8| if op & bit != 0 { v } else { 0 };
+    pick(1, !s & !d) | pick(2, !s & d) | pick(4, s & !d) | pick(8, s & d)
 }
 /// The colour source of a fill.
 #[derive(Clone, Copy, Debug, PartialEq)]

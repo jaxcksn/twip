@@ -129,6 +129,12 @@ fn clips() {
     same("clips", (128, 120), &scenes::clips(), &Resources::default());
 }
 
+/// Raster operations read the destination, which PDF can't: the writer draws them as a raster of the group.
+#[test]
+fn raster_ops() {
+    same("raster-ops", (162, 162), &scenes::raster_ops(), &Resources::default());
+}
+
 #[test]
 fn transforms() {
     same("transforms", (128, 128), &scenes::transforms(), &Resources::default());

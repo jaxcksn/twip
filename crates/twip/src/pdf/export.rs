@@ -128,7 +128,7 @@ pub(crate) fn convert(
     doc.review.view = crate::docx::review::MarkupView::NoMarkup;
     let snapshot = crate::layout::layout_until(&doc, fonts, || cancel.is_some_and(|c| c.load(Ordering::Relaxed)))
         .ok_or_else(|| cancelled(cancel).expect_err("layout stops only when cancelled"))?;
-    let (bytes, written) = export(&doc, &snapshot, "", options, cancel)?;
+    let (bytes, written) = export_with(&doc, &snapshot, "", options, cancel, Some(fonts))?;
     let mut warnings = doc.diagnostics.warnings.clone();
     let state = crate::api::session::unopened_document_fonts(&doc, fonts);
     warnings.extend(crate::api::session::documents::fallback_warnings(&state));
@@ -145,13 +145,25 @@ pub(crate) fn cancelled(cancel: Option<&AtomicBool>) -> Result<(), Error> {
 }
 
 /// The document's laid-out pages (`snapshot`, laid out completely) as PDF bytes, with what `options` adds, and the
-/// warnings writing them gave. Stops with `Aborted` between pages once `cancel` is set.
+/// warnings writing them gave. Stops with `Aborted` between pages once `cancel` is set. Metafile pictures draw no text.
 pub fn export(
     doc: &Document,
     snapshot: &Snapshot,
     title: &str,
     options: &PdfOptions,
     cancel: Option<&AtomicBool>,
+) -> Result<(Vec<u8>, Vec<Warning>), Error> {
+    export_with(doc, snapshot, title, options, cancel, None)
+}
+
+/// [`export`], metafile pictures' text drawn with `fonts`.
+pub fn export_with(
+    doc: &Document,
+    snapshot: &Snapshot,
+    title: &str,
+    options: &PdfOptions,
+    cancel: Option<&AtomicBool>,
+    fonts: Option<&Fonts>,
 ) -> Result<(Vec<u8>, Vec<Warning>), Error> {
     let paras = body_paragraphs(doc);
     // Glyph runs name their paragraph by id; body paragraphs are tagged, the rest (headers, notes...) are artifacts.
@@ -254,6 +266,9 @@ pub fn export(
     // Each page as pictures: one per stretch of items with the same structure id.
     let mut graphics = Graphics::default();
     graphics.with_text = true;
+    if let Some(fonts) = fonts {
+        graphics.set_fonts(fonts);
+    }
     let renderer = Renderer::default();
     let mut rec = Recorder::new();
     let mut out_pages = Vec::with_capacity(pages.len());

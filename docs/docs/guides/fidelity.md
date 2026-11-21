@@ -270,6 +270,7 @@ Word 2010 and later remove custom XML markup when they open a document, so it is
 |---|---|
 | Inline and floating pictures, shapes, text boxes, groups, canvases | API (`changePicture` replaces a picture's image; `alignObjects` aligns and distributes floating objects) |
 | Crop (`a:srcRect`) | API (`setPictureCrop`, and Crop from in the Picture Size dialog; inline and floating; kept when a picture is rewritten). Crop handles are not in 1.0 |
+| Picture formats | PNG, JPEG, GIF, BMP and SVG; EMF drawn as vectors on screen and in PDF (shapes, pens and dashes, clips, text in the document's fonts, bitmaps, gradients; a dual EMF and EMF+ file draws its EMF records). WMF and EMF+ records are not drawn yet |
 | Linked pictures (`r:link`) | Kept through every edit, moved and pasted with its text, and drawn empty: fetching the picture is not in 1.0 |
 | Set transparent colour (`a:clrChange`) | API (`setPictureAdjust`'s `transparentColor`); drawn in phase 3 |
 | Relative size and position (`wp14:sizeRelH`, `wp14:pctPosHOffset`, ...) | API (`setObjectSize`'s `relativeWidth` and `relativeHeight`, `setObjectPosition`'s `percent`) |

@@ -399,6 +399,14 @@ fn general(s: [u8; 4], d: [u8; 4], mode: BlendMode, bgra: bool) -> [u8; 4] {
             let mix = |s: f32, d: f32| s * (1.0 - da) + d * (1.0 - sa) + sa * da * separable(mode, un(s, sa), un(d, da));
             (each(&mix), sa + da - sa * da)
         }
+        BlendMode::Raster(op) => {
+            // On the 8-bit unpremultiplied channels, rounded to nearest.
+            let un = |c: f32, a: f32| if a > 0.0 { (c / a).min(1.0) } else { 0.0 };
+            let q8 = |v: f32| (v * 255.0 + 0.5) as u8;
+            let bits = |s: f32, d: f32| f32::from(crate::paint::raster_op(op, q8(un(s, sa)), q8(un(d, da)))) / 255.0;
+            let mix = |s: f32, d: f32| s * (1.0 - da) + d * (1.0 - sa) + sa * da * bits(s, d);
+            (each(&mix), sa + da - sa * da)
+        }
         BlendMode::Hue | BlendMode::Saturation | BlendMode::Color | BlendMode::Luminosity => {
             let un = |c: [f32; 3], a: f32| c.map(|v| if a > 0.0 { (v / a).min(1.0) } else { 0.0 });
             let weights = if bgra { [0.11, 0.59, 0.3] } else { [0.3, 0.59, 0.11] };
@@ -650,6 +658,12 @@ mod tests {
         assert_eq!(general(grey, white, BlendMode::Difference, false), [127, 127, 127, 255]);
         assert_eq!(general(white, black, BlendMode::Xor, false), [0, 0, 0, 0], "both opaque: nothing left");
         assert_eq!(general([0, 0, 0, 0], grey, BlendMode::Src, false), [0, 0, 0, 0]);
+        // Raster operations on the channels' bits: xor, and, the destination inverted; with half a source, half of it.
+        let (a, b) = ([0xF0, 0x0F, 0x55, 255], [0xFF, 0xFF, 0x0F, 255]);
+        assert_eq!(general(a, b, BlendMode::Raster(6), false), [0x0F, 0xF0, 0x5A, 255]);
+        assert_eq!(general(a, b, BlendMode::Raster(8), false), [0xF0, 0x0F, 0x05, 255]);
+        assert_eq!(general(a, b, BlendMode::Raster(5), false), [0x00, 0x00, 0xF0, 255]);
+        assert_eq!(general([0, 0, 0, 128], [255, 255, 255, 255], BlendMode::Raster(5), false), [127, 127, 127, 255]);
         assert_eq!(general([200, 0, 0, 255], [0, 0, 200, 255], BlendMode::Plus, false), [200, 0, 200, 255]);
         // Luminosity keeps the destination's hue and takes the source's lightness: grey on red gives a lighter red.
         let l = general(white, [255, 0, 0, 255], BlendMode::Luminosity, false);

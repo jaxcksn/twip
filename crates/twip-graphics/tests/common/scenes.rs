@@ -509,6 +509,25 @@ pub fn blend_modes() -> Picture {
     rec.finish()
 }
 
+/// The sixteen GDI raster operations, one a tile: an anti-aliased disc and a half-transparent square, each over a
+/// destination of four colours whose bits differ, on white.
+pub fn raster_ops() -> Picture {
+    let mut rec = Recorder::new();
+    // An opaque ground: what the operations read between the tiles too.
+    rec.fill_rect(rect(0.0, 0.0, 162.0, 162.0), Color::WHITE);
+    for op in 0..16u8 {
+        let (x, y) = (f64::from(op % 4) * 40.0 + 2.0, f64::from(op / 4) * 40.0 + 2.0);
+        for (k, c) in [0x00_0000, 0xFF_FFFF, 0x5A_A50F, 0xC3_3C96].into_iter().enumerate() {
+            let k = k as f64;
+            rec.fill_rect(rect(x, y + k * 9.0, x + 36.0, y + k * 9.0 + 9.0), Color::rgb(c));
+        }
+        let paint = |c: Color| Paint { blend: BlendMode::Raster(op), ..c.into() };
+        rec.fill_path(kurbo::Circle::new((x + 12.0, y + 12.0), 9.5).to_path(0.01).elements(), paint(Color::rgb(0xF0_8020)));
+        rec.fill_rect(rect(x + 18.0, y + 18.0, x + 34.0, y + 34.0), paint(BLUE.with_alpha(170)));
+    }
+    rec.finish()
+}
+
 /// Colour glyphs: COLRv0 and COLRv1 glyphs from fontations' test font (every paint type), a CBDT and an sbix glyph,
 /// and CFF outlines (Noto Sans JP), at 24 px.
 pub fn colour_glyphs(resources: &mut Resources) -> Picture {

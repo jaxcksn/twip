@@ -18,7 +18,7 @@ use crate::drawing::paint::{
     BlipMode, Cap, Compound, Dash, GradientKind, GradientPath, Join, Paint as Fill, PresetDash, RectAlign, ResolvedBlipAdjust, ResolvedLine,
     ResolvedShadow, TileFlip,
 };
-use crate::drawing::units::Pct;
+use crate::drawing::units::{Emu, Pct};
 use crate::layout::fragment::{ImageKey, ShapeItem};
 
 /// Shapes' outlines as paths, by geometry (the entry holds the geometry, so its address isn't reused).
@@ -83,6 +83,29 @@ fn is_rect(path: &BezPath) -> bool {
     };
     let axis = |p: kurbo::Point, q: kurbo::Point| (p.x == q.x) != (p.y == q.y);
     (0..4).all(|i| axis(pts[i], pts[(i + 1) % 4])) && (pts[0].x == pts[1].x) != (pts[1].x == pts[2].x)
+}
+
+/// Where a tiled picture's first tile is and its size, in the shape's box `size` (points): the picture's own size
+/// (`natural`, pixels at 96 dpi) scaled, placed by the alignment and moved by the offset.
+fn tile_place(natural: (f64, f64), (tx, ty, sx, sy, align): (Emu, Emu, Pct, Pct, RectAlign), size: [f64; 2]) -> (f64, f64, f64, f64) {
+    let (tw, th) = (natural.0 * 0.75 * sx.fraction(), natural.1 * 0.75 * sy.fraction());
+    let at = |a: u8, room: f64, tile: f64| match a {
+        0 => 0.0,
+        1 => (room - tile) / 2.0,
+        _ => room - tile,
+    };
+    let (c, r) = match align {
+        RectAlign::Tl => (0, 0),
+        RectAlign::T => (1, 0),
+        RectAlign::Tr => (2, 0),
+        RectAlign::L => (0, 1),
+        RectAlign::Ctr => (1, 1),
+        RectAlign::R => (2, 1),
+        RectAlign::Bl => (0, 2),
+        RectAlign::B => (1, 2),
+        RectAlign::Br => (2, 2),
+    };
+    (at(c, size[0], tw) + tx.to_pt(), at(r, size[1], th) + ty.to_pt(), tw, th)
 }
 
 fn colour(c: Rgba) -> Color {
@@ -449,7 +472,7 @@ impl Graphics {
     }
 
     /// The 8×8 tile of a pattern fill, registered on first use.
-    fn tile(&mut self, bits: [u8; 8], fg: Rgba, bg: Rgba) -> Option<twip_graphics::image::ImageId> {
+    pub(super) fn tile(&mut self, bits: [u8; 8], fg: Rgba, bg: Rgba) -> Option<twip_graphics::image::ImageId> {
         let key = (bits, [fg.r, fg.g, fg.b, fg.a], [bg.r, bg.g, bg.b, bg.a]);
         let res = &mut self.res;
         *self.tiles.entry(key).or_insert_with(|| {
@@ -490,15 +513,31 @@ impl Graphics {
                     rec.fill_path(path.elements(), Paint::new(Brush::Pattern { image, transform, sampling: Sampling::Nearest }));
                 }
             }
-            Fill::Picture { image, mode: BlipMode::Stretch(f), .. }
-                if image.and_then(|i| images.get(i)).is_some_and(|b| crate::docx::image::is_svg(b)) =>
+            Fill::Picture { image, src, mode: BlipMode::Stretch(f), .. }
+                if image.and_then(|i| images.get(i)).is_some_and(|b| crate::docx::image::vector(b).is_some()) =>
             {
-                // An SVG: its viewport is the box the stretch fills, clipped to the shape.
-                let bytes = image.and_then(|i| images.get(i)).map_or(&[][..], Vec::as_slice);
+                // A vector picture: the box the stretch fills, the crop cut from it, clipped to the shape.
                 let f = f.map(|v| v.fraction());
                 let (w, h) = (size[0], size[1]);
+                let dst = kurbo::Rect::new(f[0] * w, f[1] * h, w - f[2] * w, h - f[3] * h);
                 rec.push_clip(Clip::Path(path.elements()));
-                super::svg::draw(rec, bytes, kurbo::Rect::new(f[0] * w, f[1] * h, w - f[2] * w, h - f[3] * h));
+                self.vector(rec, ImageKey { index: *image, generation: 0 }, images, dst, src.map(|v| v.fraction()));
+                rec.pop();
+            }
+            Fill::Picture { image, src, mode: BlipMode::Tile { tx, ty, sx, sy, flip, align }, .. }
+                if image.and_then(|i| images.get(i)).is_some_and(|b| crate::docx::image::vector(b).is_some()) =>
+            {
+                // A vector picture tiled: at its own size (an SVG without one fills the box), each tile its picture.
+                let bytes = image.and_then(|i| images.get(i)).map_or(&[][..], Vec::as_slice);
+                let natural = match crate::docx::image::vector(bytes) {
+                    Some(crate::docx::image::Vector::Emf(s)) => Some((s.0 / 0.75, s.1 / 0.75)),
+                    _ => crate::render::svg::natural_size(bytes),
+                };
+                let (iw, ih) = natural.unwrap_or((size[0] / 0.75, size[1] / 0.75));
+                let (ox, oy, tw, th) = tile_place((iw, ih), (*tx, *ty, *sx, *sy, *align), size);
+                let key = ImageKey { index: *image, generation: 0 };
+                rec.push_clip(Clip::Path(path.elements()));
+                self.vector_tiles(rec, key, images, (ox, oy, tw, th), src.map(|v| v.fraction()), *flip, path.bounding_box());
                 rec.pop();
             }
             Fill::Picture { image, src, mode: blip, adjust, .. } => {
@@ -514,29 +553,7 @@ impl Graphics {
                 let fr = match blip {
                     BlipMode::Stretch(f) => [f[0].fraction(), f[1].fraction(), f[2].fraction(), f[3].fraction()],
                     BlipMode::Tile { tx, ty, sx, sy, align, .. } => {
-                        let (tw, th) = (iw * 0.75 * sx.fraction(), ih * 0.75 * sy.fraction());
-                        let col = |a: u8| match a {
-                            0 => 0.0,
-                            1 => (size[0] - tw) / 2.0,
-                            _ => size[0] - tw,
-                        };
-                        let row = |a: u8| match a {
-                            0 => 0.0,
-                            1 => (size[1] - th) / 2.0,
-                            _ => size[1] - th,
-                        };
-                        let (c, r) = match align {
-                            RectAlign::Tl => (0, 0),
-                            RectAlign::T => (1, 0),
-                            RectAlign::Tr => (2, 0),
-                            RectAlign::L => (0, 1),
-                            RectAlign::Ctr => (1, 1),
-                            RectAlign::R => (2, 1),
-                            RectAlign::Bl => (0, 2),
-                            RectAlign::B => (1, 2),
-                            RectAlign::Br => (2, 2),
-                        };
-                        let (ox, oy) = (col(c) + tx.to_pt(), row(r) + ty.to_pt());
+                        let (ox, oy, tw, th) = tile_place((iw, ih), (*tx, *ty, *sx, *sy, *align), size);
                         let transform = Affine::translate((ox, oy)) * Affine::scale_non_uniform(tw / iw, th / ih);
                         // A pattern brush has no colour filters: the layer carries them, and the opacity.
                         let layered = !filters.is_empty() || alpha < 1.0;

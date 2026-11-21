@@ -184,11 +184,11 @@ impl Session {
                     && self.editor.editing_sub_template().is_none()
                 {
                     self.editor.complete(&fonts);
-                    crate::pdf::export::export(self.editor.document(), &self.editor.snapshot(), "", pdf, None)?
+                    crate::pdf::export::export_with(self.editor.document(), &self.editor.snapshot(), "", pdf, None, Some(&fonts))?
                 } else {
                     let mut doc = self.editor.document().clone();
                     doc.review.view = crate::docx::review::MarkupView::NoMarkup;
-                    crate::pdf::export::export(&doc, &crate::layout::layout(&doc, &fonts), "", pdf, None)?
+                    crate::pdf::export::export_with(&doc, &crate::layout::layout(&doc, &fonts), "", pdf, None, Some(&fonts))?
                 };
                 let state = super::fonts::document_fonts(self.editor.document(), self.editor.index(), &fonts);
                 let mut warnings = fallback_warnings(&state);

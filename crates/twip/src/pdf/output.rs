@@ -270,7 +270,7 @@ fn pdf_output_matches_snapshots() {
     let mut got = BTreeMap::new();
     for (name, d) in corpus() {
         let snap = crate::layout::layout(&d, &fonts);
-        let (bytes, _) = super::export::export(&d, &snap, "", &PdfOptions::default(), None).expect("exports");
+        let (bytes, _) = super::export::export_with(&d, &snap, "", &PdfOptions::default(), None, Some(&fonts)).expect("exports");
         got.insert(format!("{name}.txt"), dump(undated(bytes)));
     }
     assert!(!got.is_empty(), "no fixtures read from {}", root().join("fixtures").display());

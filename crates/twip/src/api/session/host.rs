@@ -1217,6 +1217,7 @@ impl HostSurface<'_> {
         view.field_shading = field_shading;
         p.renderer.gridlines = s.gridlines;
         p.renderer.page_colour = s.editor.document().page_colour;
+        p.graphics.set_fonts(&fonts);
         drop(fonts);
         let ruler = s.ruler_view();
         PreparedFrame { f, view, ruler, width, height }

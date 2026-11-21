@@ -92,6 +92,7 @@ pub(crate) fn rendered() -> BTreeMap<String, Rgba> {
         let snap = crate::layout::layout(&d, &fonts);
         let r = Renderer { page_colour: d.page_colour, ..Renderer::default() };
         let mut g = Graphics::default();
+        g.set_fonts(&fonts);
         for (i, page) in snap.pages().iter().take(kept(&name, snap.pages().len())).enumerate() {
             out.insert(format!("{name}__p{}.png", i + 1), draw(&mut g, &r, page, &d.images));
         }
@@ -209,6 +210,7 @@ fn gpu_pages_match_the_cpu() {
         let r = Renderer { page_colour: d.page_colour, ..Renderer::default() };
         // One GPU renderer per document's resources.
         let (mut g, mut gpu) = (Graphics::default(), Gpu::new(&ctx, wgpu::TextureFormat::Rgba8Unorm));
+        g.set_fonts(&fonts);
         for (i, page) in snap.pages().iter().take(pages).enumerate() {
             let cpu = draw(&mut g, &r, page, &d.images);
             let picture = g.page_picture(&r, page, &d.images);

@@ -11,7 +11,8 @@
 // The output is the paint times the coverage; the pipeline's fixed-function blend does the rest. For an erase
 // (destination-in, clear) the output's alpha is what erases. The other blend modes (`general`) read a copy of the
 // destination and blend as the CPU backend's general blend does: the W3C Compositing and Blending formulas on 8-bit
-// premultiplied colour, then the destination moved towards the result by the coverage.
+// premultiplied colour (and the GDI raster operations on its bits), then the destination moved towards the result by
+// the coverage.
 
 struct Globals {
     // The pass's target size, pixels.
@@ -356,6 +357,18 @@ fn non_separable(mode: u32, s: vec3<f32>, d: vec3<f32>) -> vec3<f32> {
     }
 }
 
+// A binary raster operation: each bit of the 8-bit channels is `op`'s bit `2·s + d`.
+fn raster(op: u32, s: vec3<f32>, d: vec3<f32>) -> vec3<f32> {
+    let si = vec3<u32>(s * 255.0 + 0.5);
+    let di = vec3<u32>(d * 255.0 + 0.5);
+    let pick = vec4<u32>(select(0u, 255u, (op & 1u) != 0u), select(0u, 255u, (op & 2u) != 0u), select(0u, 255u, (op & 4u) != 0u),
+        select(0u, 255u, (op & 8u) != 0u));
+    let ns = vec3<u32>(255u) ^ si;
+    let nd = vec3<u32>(255u) ^ di;
+    let r = (ns & nd & vec3<u32>(pick.x)) | (ns & di & vec3<u32>(pick.y)) | (si & nd & vec3<u32>(pick.z)) | (si & di & vec3<u32>(pick.w));
+    return vec3<f32>(r) / 255.0;
+}
+
 fn unpremultiply(c: vec3<f32>, a: f32) -> vec3<f32> {
     return select(vec3<f32>(0.0), min(c / a, vec3<f32>(1.0)), a > 0.0);
 }
@@ -384,6 +397,11 @@ fn general(s: vec4<u32>, d: vec4<u32>, mode: u32) -> vec4<u32> {
         case 10u: { rgb = dc * sa + sc * (1.0 - da); a = sa; }
         case 11u: { rgb = sc * (1.0 - da) + dc * (1.0 - sa); a = sa * (1.0 - da) + da * (1.0 - sa); }
         case 12u: { rgb = min(sc + dc, vec3<f32>(1.0)); a = min(sa + da, 1.0); }
+        case 28u, 29u, 30u, 31u, 32u, 33u, 34u, 35u, 36u, 37u, 38u, 39u, 40u, 41u, 42u, 43u: {
+            let b = raster(mode - 28u, unpremultiply(sc, sa), unpremultiply(dc, da));
+            rgb = sc * (1.0 - da) + dc * (1.0 - sa) + sa * da * b;
+            a = sa + da - sa * da;
+        }
         case 24u, 25u, 26u, 27u: {
             let b = non_separable(mode, unpremultiply(sc, sa), unpremultiply(dc, da));
             rgb = sc * (1.0 - da) + dc * (1.0 - sa) + sa * da * b;

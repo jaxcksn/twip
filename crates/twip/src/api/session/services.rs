@@ -227,9 +227,16 @@ impl Session {
             crate::layout::expansion::lay(self.editor.document(), &blocks, if fit { f64::MAX / 4.0 } else { width }, &fonts, None);
         let items = crate::layout::traverse::items_of(&children);
         let appearance = self.presentation.appearance();
-        let (png, w, h) =
-            crate::render::preview::png(&items, height, &self.editor.document().images, (size.width, size.height, size.scale), fit, appearance)
-                .ok_or_else(|| Error::new(ErrorCode::Internal, "the preview couldn't be drawn"))?;
+        let (png, w, h) = crate::render::preview::png(
+            &items,
+            &fonts,
+            height,
+            &self.editor.document().images,
+            (size.width, size.height, size.scale),
+            fit,
+            appearance,
+        )
+        .ok_or_else(|| Error::new(ErrorCode::Internal, "the preview couldn't be drawn"))?;
         Ok(crate::api::services::PreviewPicture { png: crate::api::value::Bytes(png), width: w, height: h })
     }
 

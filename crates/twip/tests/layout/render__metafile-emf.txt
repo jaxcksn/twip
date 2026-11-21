@@ -1,0 +1,11 @@
+page 0 12240 15840
+  1440 1616 Shapes, pens and dashes
+  1440 4351 A clipped and turned group
+  1440 7086 Text
+  1440 9101 Bitmaps
+  1440 11835 Gradients
+page 1 12240 15840
+  1440 1616 A dual EMF and EMF+ file
+  1440 3631 Raster operations and masks
+  1440 7086 Regions, palettes and paths
+  1440 10541 The shapes, cropped

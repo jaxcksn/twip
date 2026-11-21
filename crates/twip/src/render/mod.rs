@@ -5,6 +5,7 @@
 
 pub mod appearance;
 pub mod graphics;
+pub mod metafile;
 pub mod preview;
 pub mod ruler;
 pub mod svg;
