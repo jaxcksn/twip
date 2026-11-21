@@ -19,7 +19,7 @@ import type { Session } from '../editor.js';
 import type { LineSpacing, Mixed, RelativeSize, RowHeight, TableWidth, Tri, UnderlineStyle } from '../state.js';
 import { Method } from '../transport/protocol.js';
 import { type PreviewPicture, type PreviewSize, toPicture } from './navigation.js';
-import type { Color, FillValue, Glow, Points, StyleId, TextOutline, TextReflection, TextShadow } from '../types.js';
+import type { Color, ColourValue, FillValue, Glow, Points, StyleId, TextOutline, TextReflection, TextShadow } from '../types.js';
 import type { TabAlignment, TabLeader } from './ruler.js';
 
 /** The editor's dialogs as typed models: the application draws them. */
@@ -76,7 +76,9 @@ export type DialogKind =
   | 'defineMultilevelList'
   | 'setNumberingValue'
   | 'adjustListIndents'
-  | 'bulletsNumbering';
+  | 'bulletsNumbering'
+  | 'printedWatermark'
+  | 'fillEffects';
 
 /** An open dialog. */
 export interface DialogSession<K extends DialogKind> {
@@ -118,7 +120,7 @@ export interface FieldInfo {
   /** Whether it can be changed now. */
   enabled: boolean;
   /** The control it wants. */
-  kind: 'number' | 'length' | 'text' | 'choice' | 'toggle' | 'color' | 'list' | 'effect';
+  kind: 'number' | 'length' | 'text' | 'choice' | 'toggle' | 'color' | 'list' | 'effect' | 'picture';
   /** The minimum. */
   min?: number;
   /** The maximum. */
@@ -383,6 +385,48 @@ export interface DialogValues {
   adjustListIndents: { numberPosition: Points; textIndent: Points; follow: FollowNumber; tab: Points | null };
   /** Bullets and Numbering (Numbering on the style dialog's Format menu): a gallery entry, or `null` for no list. */
   bulletsNumbering: { gallery: 'bullet' | 'numbering' | 'multilevel'; entry: ListEntryId | null };
+  /** Printed Watermark: none, a picture or a text watermark (Word's defaults for what isn't set). */
+  printedWatermark: {
+    watermark: 'none' | 'picture' | 'text';
+    /** The picture's image (a `picture` field); empty keeps the current one. */
+    picture: Uint8Array;
+    /** Percent of the picture's size; `null` is Auto. */
+    scale: number | null;
+    washout: boolean;
+    text: string;
+    font: string;
+    /** In points; `null` is Auto. */
+    size: Points | null;
+    color: Color;
+    /** Percent, 0 to 100. */
+    transparency: number;
+    layout: 'diagonal' | 'horizontal';
+    bold: boolean;
+    italic: boolean;
+  };
+  /** Fill Effects, for the page colour: a gradient, a texture or picture, or a pattern. */
+  fillEffects: {
+    tab: 'gradient' | 'texture' | 'pattern' | 'picture';
+    /** Gradient: one colour, two, or a preset. */
+    colors: 'one' | 'two' | 'preset';
+    color1: ColourValue;
+    color2: ColourValue;
+    /** One colour: 0 (dark) to 1 (light). */
+    lightness: number;
+    /** The preset's name. */
+    preset: string;
+    shading: 'horizontal' | 'vertical' | 'diagonalUp' | 'diagonalDown' | 'fromCorner' | 'fromCenter';
+    /** Which of the shading style's variants, from 1. */
+    variant: number;
+    /** Texture: the tile's image (a `picture` field). */
+    texture: Uint8Array;
+    /** Pattern: its ECMA-376 name. */
+    pattern: string;
+    foreground: ColourValue;
+    background: ColourValue;
+    /** Picture: the image (a `picture` field). */
+    picture: Uint8Array;
+  };
 }
 
 /** The style dialog's values. */
@@ -467,10 +511,20 @@ interface DialogModel<K extends DialogKind> {
   onStyle?: StyleDialogValues;
 }
 
+/** The picture fields of Printed Watermark and Fill Effects, base64 as the engine sends them, as bytes. */
+function fromWireBytes<V>(values: V): V {
+  const out = { ...values } as Record<string, unknown>;
+  for (const k of ['picture', 'texture']) {
+    if (typeof out[k] === 'string') out[k] = Uint8Array.from(atob(out[k] as string), (c) => c.charCodeAt(0));
+  }
+  return out as V;
+}
+
 /** The dialogs over a session. */
 export function createDialogs(s: Session): Dialogs {
   const open = <K extends DialogKind>(model: DialogModel<K>): DialogSessionOf<K> => {
-    const { kind, values, fields } = model;
+    const { kind, fields } = model;
+    const values = kind === 'printedWatermark' || kind === 'fillEffects' ? fromWireBytes(model.values) : model.values;
     const dialog: DialogSession<K> = {
       kind,
       values,

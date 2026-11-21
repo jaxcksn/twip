@@ -1,6 +1,7 @@
 //! Editor
 
 pub mod autocorrect;
+mod background;
 mod bindings;
 pub mod bookmarks;
 mod borders_dialog;

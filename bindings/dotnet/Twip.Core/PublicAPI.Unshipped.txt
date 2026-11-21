@@ -4223,9 +4223,7 @@ Twip.FillValue.FromStyle.FromStyle() -> void
 Twip.FillValue.Gradient
 Twip.FillValue.Gradient.Angle.get -> double?
 Twip.FillValue.Gradient.Angle.init -> void
-Twip.FillValue.Gradient.Deconstruct(out Twip.GradientShape Kind, out System.Collections.Generic.IReadOnlyList<Twip.GradientStop!>! Stops, out double? Angle) -> void
 Twip.FillValue.Gradient.Equals(Twip.FillValue.Gradient? other) -> bool
-Twip.FillValue.Gradient.Gradient(Twip.GradientShape Kind, System.Collections.Generic.IReadOnlyList<Twip.GradientStop!>! Stops, double? Angle = null) -> void
 Twip.FillValue.Gradient.Kind.get -> Twip.GradientShape
 Twip.FillValue.Gradient.Kind.init -> void
 Twip.FillValue.Gradient.Stops.get -> System.Collections.Generic.IReadOnlyList<Twip.GradientStop!>!
@@ -7893,3 +7891,171 @@ static Twip.TextShadow.operator !=(Twip.TextShadow? left, Twip.TextShadow? right
 static Twip.TextShadow.operator ==(Twip.TextShadow? left, Twip.TextShadow? right) -> bool
 ~override Twip.NoneOr<T>.Equals(object obj) -> bool
 ~override Twip.NoneOr<T>.ToString() -> string
+Twip.DialogKind.FillEffects = 24 -> Twip.DialogKind
+Twip.FieldKind.Picture = 8 -> Twip.FieldKind
+Twip.DialogKind.PrintedWatermark = 23 -> Twip.DialogKind
+Twip.CommandId.SetPageColor = 257 -> Twip.CommandId
+Twip.CommandId.RemoveWatermark = 259 -> Twip.CommandId
+Twip.WatermarkChoice.None = 0 -> Twip.WatermarkChoice
+Twip.WatermarkChoice.Text = 2 -> Twip.WatermarkChoice
+Twip.WatermarkChoice.Picture = 1 -> Twip.WatermarkChoice
+Twip.PrintedWatermarkDialogValues.Watermark.get -> Twip.WatermarkChoice
+Twip.PrintedWatermarkDialogValues.Picture.get -> System.ReadOnlyMemory<byte>
+Twip.PrintedWatermarkDialogValues.Watermark.init -> void
+Twip.PrintedWatermarkDialogValues.Scale.get -> double?
+Twip.PrintedWatermarkDialogValues.Picture.init -> void
+Twip.PrintedWatermarkDialogValues.Scale.init -> void
+Twip.CommandId.SetWatermark = 258 -> Twip.CommandId
+Twip.PrintedWatermarkDialogValues.Text.get -> string!
+Twip.PrintedWatermarkDialogValues.Washout.get -> bool
+Twip.PrintedWatermarkDialogValues.Text.init -> void
+Twip.PrintedWatermarkDialogValues.Font.get -> string!
+Twip.PrintedWatermarkDialogValues.Size.get -> Twip.Length?
+Twip.PrintedWatermarkDialogValues.Font.init -> void
+Twip.PrintedWatermarkDialogValues.Size.init -> void
+Twip.PrintedWatermarkDialogValues.Transparency.get -> double
+Twip.PrintedWatermarkDialogValues.Color.get -> Twip.ColorValue
+Twip.PrintedWatermarkDialogValues.Transparency.init -> void
+Twip.PrintedWatermarkDialogValues.Bold.get -> bool
+Twip.PrintedWatermarkDialogValues.Layout.get -> Twip.WatermarkLayout
+Twip.PrintedWatermarkDialogValues.Italic.get -> bool
+Twip.FillEffectsTab.Pattern = 2 -> Twip.FillEffectsTab
+Twip.PrintedWatermarkDialogValues.Color.init -> void
+Twip.PrintedWatermarkDialogValues.Bold.init -> void
+Twip.FillEffectsTab.Texture = 1 -> Twip.FillEffectsTab
+Twip.FillEffectsTab.Picture = 3 -> Twip.FillEffectsTab
+Twip.FillEffectsTab.Gradient = 0 -> Twip.FillEffectsTab
+Twip.PrintedWatermarkDialogValues.Italic.init -> void
+Twip.PrintedWatermarkDialogValues.Layout.init -> void
+Twip.GradientColors.Preset = 2 -> Twip.GradientColors
+Twip.ShadingStyle.Horizontal = 0 -> Twip.ShadingStyle
+Twip.ShadingStyle.DiagonalUp = 2 -> Twip.ShadingStyle
+Twip.ShadingStyle.Vertical = 1 -> Twip.ShadingStyle
+Twip.ShadingStyle.DiagonalDown = 3 -> Twip.ShadingStyle
+Twip.GradientColors.Two = 1 -> Twip.GradientColors
+Twip.ShadingStyle.FromCorner = 4 -> Twip.ShadingStyle
+Twip.FillEffectsDialogValues.Tab.get -> Twip.FillEffectsTab
+Twip.FillEffectsDialogValues.Colors.get -> Twip.GradientColors
+Twip.FillEffectsDialogValues.Colors.init -> void
+Twip.ShadingStyle.FromCenter = 5 -> Twip.ShadingStyle
+Twip.FillEffectsDialogValues.Color1.get -> Twip.ShapeColor!
+Twip.GradientColors.One = 0 -> Twip.GradientColors
+Twip.FillEffectsDialogValues.Tab.init -> void
+Twip.FillEffectsDialogValues.Preset.get -> string!
+Twip.FillEffectsDialogValues.Color2.get -> Twip.ShapeColor!
+Twip.FillEffectsDialogValues.Preset.init -> void
+Twip.FillEffectsDialogValues.Lightness.get -> double
+Twip.PrintedWatermarkDialogValues.Washout.init -> void
+Twip.FillEffectsDialogValues.Color2.init -> void
+Twip.FillEffectsDialogValues.Texture.get -> System.ReadOnlyMemory<byte>
+Twip.FillEffectsDialogValues.Shading.get -> Twip.ShadingStyle
+Twip.FillEffectsDialogValues.Texture.init -> void
+Twip.FillEffectsDialogValues.Lightness.init -> void
+Twip.FillEffectsDialogValues.Pattern.get -> string!
+Twip.FillEffectsDialogValues.Foreground.get -> Twip.ShapeColor!
+Twip.FillEffectsDialogValues.Shading.init -> void
+Twip.FillEffectsDialogValues.Foreground.init -> void
+Twip.FillEffectsDialogValues.Pattern.init -> void
+Twip.FillEffectsDialogValues.Background.get -> Twip.ShapeColor!
+Twip.FillEffectsDialogValues.Variant.get -> uint
+Twip.FillEffectsDialogValues.Picture.get -> System.ReadOnlyMemory<byte>
+Twip.FillEffectsDialogValues.Background.init -> void
+Twip.FillEffectsDialogValues.Variant.init -> void
+Twip.FillEffectsDialogValues.Picture.init -> void
+Twip.FillEffectsDialogValues.Color1.init -> void
+Twip.FillValue.Gradient.Deconstruct(out Twip.GradientShape Kind, out System.Collections.Generic.IReadOnlyList<Twip.GradientStop!>! Stops, out double? Angle, out System.Collections.Generic.IReadOnlyList<double>? Focus) -> void
+Twip.WatermarkLayout.Diagonal = 0 -> Twip.WatermarkLayout
+Twip.FillValue.Gradient.Focus.get -> System.Collections.Generic.IReadOnlyList<double>?
+Twip.WatermarkLayout.Horizontal = 1 -> Twip.WatermarkLayout
+Twip.FillValue.Gradient.Focus.init -> void
+Twip.TextWatermark.Text.get -> string!
+Twip.TextWatermark.Font.get -> string?
+Twip.TextWatermark.Text.init -> void
+Twip.TextWatermark.Font.init -> void
+Twip.TextWatermark.Size.get -> Twip.Length?
+Twip.TextWatermark.Color.get -> Twip.ColorValue?
+Twip.TextWatermark.Size.init -> void
+Twip.TextWatermark.Color.init -> void
+Twip.TextWatermark.Layout.get -> Twip.WatermarkLayout?
+Twip.TextWatermark.Layout.init -> void
+Twip.TextWatermark.Italic.get -> bool?
+Twip.TextWatermark.Italic.init -> void
+Twip.TextWatermark.Transparency.get -> double?
+Twip.TextWatermark.Bold.get -> bool?
+Twip.TextWatermark.Transparency.init -> void
+Twip.PictureWatermark.Image.get -> System.ReadOnlyMemory<byte>
+Twip.TextWatermark.Bold.init -> void
+Twip.PictureWatermark.Scale.get -> double?
+Twip.PictureWatermark.Scale.init -> void
+Twip.PictureWatermark.Image.init -> void
+Twip.PictureWatermark.Washout.get -> bool?
+Twip.PictureWatermark.Washout.init -> void
+Twip.FillEffectsTab
+Twip.Watermark
+virtual Twip.Watermark.EqualityContract.get -> System.Type!
+override Twip.Watermark.ToString() -> string!
+virtual Twip.Watermark.PrintMembers(System.Text.StringBuilder! builder) -> bool
+static Twip.Watermark.operator !=(Twip.Watermark? left, Twip.Watermark? right) -> bool
+static Twip.Watermark.operator ==(Twip.Watermark? left, Twip.Watermark? right) -> bool
+override Twip.Watermark.GetHashCode() -> int
+override Twip.Watermark.Equals(object? obj) -> bool
+virtual Twip.Watermark.Equals(Twip.Watermark? other) -> bool
+Twip.Watermark.Watermark(Twip.Watermark! original) -> void
+Twip.PrintedWatermarkDialogValues
+Twip.TextWatermark
+override Twip.PrintedWatermarkDialogValues.ToString() -> string!
+override Twip.TextWatermark.ToString() -> string!
+static Twip.PrintedWatermarkDialogValues.operator !=(Twip.PrintedWatermarkDialogValues? left, Twip.PrintedWatermarkDialogValues? right) -> bool
+static Twip.TextWatermark.operator !=(Twip.TextWatermark? left, Twip.TextWatermark? right) -> bool
+static Twip.TextWatermark.operator ==(Twip.TextWatermark? left, Twip.TextWatermark? right) -> bool
+static Twip.PrintedWatermarkDialogValues.operator ==(Twip.PrintedWatermarkDialogValues? left, Twip.PrintedWatermarkDialogValues? right) -> bool
+override Twip.TextWatermark.GetHashCode() -> int
+override Twip.PrintedWatermarkDialogValues.GetHashCode() -> int
+override Twip.PrintedWatermarkDialogValues.Equals(object? obj) -> bool
+override Twip.TextWatermark.Equals(object? obj) -> bool
+Twip.PrintedWatermarkDialogValues.Equals(Twip.PrintedWatermarkDialogValues? other) -> bool
+Twip.PrintedWatermarkDialogValues.<Clone>$() -> Twip.PrintedWatermarkDialogValues!
+override sealed Twip.TextWatermark.Equals(Twip.Watermark? other) -> bool
+Twip.PrintedWatermarkDialogValues.Deconstruct(out Twip.WatermarkChoice Watermark, out System.ReadOnlyMemory<byte> Picture, out double? Scale, out bool Washout, out string! Text, out string! Font, out Twip.Length? Size, out Twip.ColorValue Color, out double Transparency, out Twip.WatermarkLayout Layout, out bool Bold, out bool Italic) -> void
+Twip.TextWatermark.Equals(Twip.TextWatermark? other) -> bool
+Twip.TextWatermark.Deconstruct(out string! Text, out string? Font, out Twip.Length? Size, out Twip.ColorValue? Color, out double? Transparency, out Twip.WatermarkLayout? Layout, out bool? Bold, out bool? Italic) -> void
+Twip.ShadingStyle
+Twip.PictureWatermark
+Twip.WatermarkLayout
+Twip.PrintedWatermarkDialogValues.PrintedWatermarkDialogValues(Twip.WatermarkChoice Watermark, System.ReadOnlyMemory<byte> Picture, double? Scale, bool Washout, string! Text, string! Font, Twip.Length? Size, Twip.ColorValue Color, double Transparency, Twip.WatermarkLayout Layout, bool Bold, bool Italic) -> void
+override Twip.PictureWatermark.ToString() -> string!
+Twip.FillEffectsDialogValues.FillEffectsDialogValues(Twip.FillEffectsTab Tab, Twip.GradientColors Colors, Twip.ShapeColor! Color1, Twip.ShapeColor! Color2, double Lightness, string! Preset, Twip.ShadingStyle Shading, uint Variant, System.ReadOnlyMemory<byte> Texture, string! Pattern, Twip.ShapeColor! Foreground, Twip.ShapeColor! Background, System.ReadOnlyMemory<byte> Picture) -> void
+Twip.EditorCommands.SetPageColorAsync(Twip.FillValue! fill, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.RemoveWatermarkAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.SetWatermarkAsync(Twip.Watermark! watermark, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+static Twip.PictureWatermark.operator !=(Twip.PictureWatermark? left, Twip.PictureWatermark? right) -> bool
+Twip.EditorDialogs.OpenPrintedWatermarkAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Twip.DialogSession<Twip.PrintedWatermarkDialogValues!>!>!
+Twip.EditorDialogs.OpenFillEffectsAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Twip.DialogSession<Twip.FillEffectsDialogValues!>!>!
+Twip.PageFormatting.Background.get -> Twip.FillValue?
+Twip.PageFormatting.Watermark.get -> Twip.Watermark?
+Twip.PageFormatting.Background.init -> void
+Twip.PageFormatting.Watermark.init -> void
+Twip.FillValue.Gradient.Gradient(Twip.GradientShape Kind, System.Collections.Generic.IReadOnlyList<Twip.GradientStop!>! Stops, double? Angle = null, System.Collections.Generic.IReadOnlyList<double>? Focus = null) -> void
+Twip.PictureWatermark.PictureWatermark(System.ReadOnlyMemory<byte> Image, double? Scale = null, bool? Washout = null) -> void
+Twip.TextWatermark.TextWatermark(string! Text, string? Font = null, Twip.Length? Size = null, Twip.ColorValue? Color = null, double? Transparency = null, Twip.WatermarkLayout? Layout = null, bool? Bold = null, bool? Italic = null) -> void
+static Twip.PictureWatermark.operator ==(Twip.PictureWatermark? left, Twip.PictureWatermark? right) -> bool
+override Twip.PictureWatermark.GetHashCode() -> int
+Twip.WatermarkChoice
+override Twip.PictureWatermark.Equals(object? obj) -> bool
+override sealed Twip.PictureWatermark.Equals(Twip.Watermark? other) -> bool
+Twip.PictureWatermark.Equals(Twip.PictureWatermark? other) -> bool
+Twip.FillEffectsDialogValues
+Twip.PictureWatermark.Deconstruct(out System.ReadOnlyMemory<byte> Image, out double? Scale, out bool? Washout) -> void
+override Twip.FillEffectsDialogValues.ToString() -> string!
+static Twip.FillEffectsDialogValues.operator !=(Twip.FillEffectsDialogValues? left, Twip.FillEffectsDialogValues? right) -> bool
+static Twip.FillEffectsDialogValues.operator ==(Twip.FillEffectsDialogValues? left, Twip.FillEffectsDialogValues? right) -> bool
+override Twip.FillEffectsDialogValues.GetHashCode() -> int
+override Twip.FillEffectsDialogValues.Equals(object? obj) -> bool
+Twip.FillEffectsDialogValues.Equals(Twip.FillEffectsDialogValues? other) -> bool
+Twip.FillEffectsDialogValues.<Clone>$() -> Twip.FillEffectsDialogValues!
+Twip.FillEffectsDialogValues.Deconstruct(out Twip.FillEffectsTab Tab, out Twip.GradientColors Colors, out Twip.ShapeColor! Color1, out Twip.ShapeColor! Color2, out double Lightness, out string! Preset, out Twip.ShadingStyle Shading, out uint Variant, out System.ReadOnlyMemory<byte> Texture, out string! Pattern, out Twip.ShapeColor! Foreground, out Twip.ShapeColor! Background, out System.ReadOnlyMemory<byte> Picture) -> void
+static Twip.EditorOperation.SetWatermark(Twip.Watermark! watermark) -> Twip.EditorOperation!
+static Twip.EditorOperation.SetPageColor(Twip.FillValue! fill) -> Twip.EditorOperation!
+static Twip.EditorOperation.RemoveWatermark() -> Twip.EditorOperation!
+Twip.GradientColors
+abstract Twip.Watermark.<Clone>$() -> Twip.Watermark!

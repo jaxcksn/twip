@@ -557,9 +557,11 @@ public abstract record FillValue
     /// <param name="Kind">Its shape.</param>
     /// <param name="Stops">Two or more stops.</param>
     /// <param name="Angle">A linear gradient's direction in degrees (0: left to right).</param>
+    /// <param name="Focus">Where a path gradient starts: the fractions (0 to 1) of the shape's left, top, right and bottom edges it is inset from; null is the centre.</param>
     public sealed record Gradient(
         GradientShape Kind, IReadOnlyList<GradientStop> Stops,
-        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? Angle = null) : FillValue;
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? Angle = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<double>? Focus = null) : FillValue;
 
     /// <summary>A two-colour pattern.</summary>
     /// <param name="Preset">The ECMA-376 pattern name, such as <c>pct50</c> or <c>dkDnDiag</c>.</param>
@@ -687,6 +689,52 @@ public sealed record EffectsValue(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Glow? Glow = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? SoftEdge = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Blur = null);
+
+/// <summary>Which way a text watermark runs.</summary>
+public enum WatermarkLayout
+{
+    /// <summary>Diagonally up the page.</summary>
+    Diagonal,
+    /// <summary>Across the page.</summary>
+    Horizontal,
+}
+
+/// <summary>A watermark: text or a picture.</summary>
+[JsonPolymorphic(TypeDiscriminatorPropertyName = "kind")]
+[JsonDerivedType(typeof(TextWatermark), "text")]
+[JsonDerivedType(typeof(PictureWatermark), "picture")]
+public abstract record Watermark
+{
+    private protected Watermark() { }
+}
+
+/// <summary>A text watermark; what is null is Word's default (Calibri, automatic size, silver, 50% transparent, diagonal).</summary>
+/// <param name="Text">The text.</param>
+/// <param name="Font">The font.</param>
+/// <param name="Size">The size; null is automatic: as large as fits the page.</param>
+/// <param name="Color">The colour.</param>
+/// <param name="Transparency">Percent, 0 (opaque) to 100.</param>
+/// <param name="Layout">Diagonal or horizontal.</param>
+/// <param name="Bold">Bold.</param>
+/// <param name="Italic">Italic.</param>
+public sealed record TextWatermark(
+    string Text,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Font = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Size = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ColorValue? Color = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? Transparency = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] WatermarkLayout? Layout = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Bold = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Italic = null) : Watermark;
+
+/// <summary>A picture watermark.</summary>
+/// <param name="Image">The image (PNG, JPEG, GIF, BMP); empty keeps the current watermark's. In the state it is always empty.</param>
+/// <param name="Scale">Percent of the picture's own size; null fits it to the margins.</param>
+/// <param name="Washout">Washed out, as Word's default is.</param>
+public sealed record PictureWatermark(
+    ReadOnlyMemory<byte> Image,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? Scale = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Washout = null) : Watermark;
 
 /// <summary>A text outline: an outline without arrowheads.</summary>
 /// <param name="Width">The width, 0 to 1584 pt.</param>

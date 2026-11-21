@@ -21,6 +21,7 @@ mod reader;
 pub mod resolve;
 pub mod review;
 pub mod styles;
+pub mod watermark;
 pub mod xml;
 
 pub use model::*;

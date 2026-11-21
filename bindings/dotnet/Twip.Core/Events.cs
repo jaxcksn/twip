@@ -147,6 +147,10 @@ public enum DialogKind
     BulletsNumbering,
     /// <summary>Banding (a table style's, from the style dialog's Format menu).</summary>
     Banding,
+    /// <summary>Printed Watermark.</summary>
+    PrintedWatermark,
+    /// <summary>Fill Effects (the page colour's).</summary>
+    FillEffects,
 }
 
 /// <summary>

@@ -634,6 +634,8 @@ internal sealed class DialogValuesConverter : JsonConverter<DialogValues>
             DialogKind.SetNumberingValue => ctx.SetNumberingValueDialogValues,
             DialogKind.AdjustListIndents => ctx.AdjustListIndentsDialogValues,
             DialogKind.BulletsNumbering => ctx.BulletsNumberingDialogValues,
+            DialogKind.PrintedWatermark => ctx.PrintedWatermarkDialogValues,
+            DialogKind.FillEffects => ctx.FillEffectsDialogValues,
             _ => throw new JsonException($"no values for the {kind} dialog"),
         };
     }

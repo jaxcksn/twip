@@ -86,6 +86,18 @@ public sealed class EditorDialogs
     /// <returns>The dialog session.</returns>
     public Task<DialogSession<DropCapDialogValues>> OpenDropCapAsync(CancellationToken ct = default) => OpenAsync<DropCapDialogValues>(DialogKind.DropCap, ct);
 
+    /// <summary>Opens Printed Watermark on the document's watermark.</summary>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>The dialog session.</returns>
+    public Task<DialogSession<PrintedWatermarkDialogValues>> OpenPrintedWatermarkAsync(CancellationToken ct = default) =>
+        OpenAsync<PrintedWatermarkDialogValues>(DialogKind.PrintedWatermark, ct);
+
+    /// <summary>Opens Fill Effects on the page colour; applying it sets the page colour.</summary>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>The dialog session.</returns>
+    public Task<DialogSession<FillEffectsDialogValues>> OpenFillEffectsAsync(CancellationToken ct = default) =>
+        OpenAsync<FillEffectsDialogValues>(DialogKind.FillEffects, ct);
+
     /// <summary>Opens Define New Bullet on the selection's list level.</summary>
     /// <param name="ct">Cancels the request.</param>
     /// <returns>The dialog session.</returns>
@@ -402,6 +414,93 @@ public sealed record BandingDialogValues(int RowBand, int ColumnBand);
 /// <param name="Distance">How far the text keeps from it.</param>
 public sealed record DropCapDialogValues(DropCapPosition Position, string Font, uint Lines, Length Distance);
 
+/// <summary>What the Printed Watermark dialog sets.</summary>
+public enum WatermarkChoice
+{
+    /// <summary>No watermark.</summary>
+    None,
+    /// <summary>A picture watermark.</summary>
+    Picture,
+    /// <summary>A text watermark.</summary>
+    Text,
+}
+
+/// <summary>The Printed Watermark dialog's values.</summary>
+/// <param name="Watermark">None, a picture or a text watermark.</param>
+/// <param name="Picture">The picture's image (a <see cref="FieldKind.Picture"/> field); empty keeps the current one.</param>
+/// <param name="Scale">Percent of the picture's size; null is Auto.</param>
+/// <param name="Washout">The picture is washed out.</param>
+/// <param name="Text">The text.</param>
+/// <param name="Font">The text's font.</param>
+/// <param name="Size">The text's size; null is Auto.</param>
+/// <param name="Color">The text's colour.</param>
+/// <param name="Transparency">Percent, 0 to 100.</param>
+/// <param name="Layout">Diagonal or horizontal.</param>
+/// <param name="Bold">Bold.</param>
+/// <param name="Italic">Italic.</param>
+public sealed record PrintedWatermarkDialogValues(
+    WatermarkChoice Watermark, ReadOnlyMemory<byte> Picture, double? Scale, bool Washout, string Text, string Font, Length? Size, ColorValue Color,
+    double Transparency, WatermarkLayout Layout, bool Bold, bool Italic);
+
+/// <summary>A Fill Effects tab.</summary>
+public enum FillEffectsTab
+{
+    /// <summary>Gradient.</summary>
+    Gradient,
+    /// <summary>Texture.</summary>
+    Texture,
+    /// <summary>Pattern.</summary>
+    Pattern,
+    /// <summary>Picture.</summary>
+    Picture,
+}
+
+/// <summary>A gradient's colours in Fill Effects.</summary>
+public enum GradientColors
+{
+    /// <summary>One colour and its lightness.</summary>
+    One,
+    /// <summary>Two colours.</summary>
+    Two,
+    /// <summary>A preset.</summary>
+    Preset,
+}
+
+/// <summary>A gradient's shading style in Fill Effects.</summary>
+public enum ShadingStyle
+{
+    /// <summary>Horizontal.</summary>
+    Horizontal,
+    /// <summary>Vertical.</summary>
+    Vertical,
+    /// <summary>Diagonal up.</summary>
+    DiagonalUp,
+    /// <summary>Diagonal down.</summary>
+    DiagonalDown,
+    /// <summary>From corner.</summary>
+    FromCorner,
+    /// <summary>From center.</summary>
+    FromCenter,
+}
+
+/// <summary>The Fill Effects dialog's values.</summary>
+/// <param name="Tab">The tab.</param>
+/// <param name="Colors">Gradient: one colour, two, or a preset.</param>
+/// <param name="Color1">Gradient: the first colour.</param>
+/// <param name="Color2">Gradient: the second colour.</param>
+/// <param name="Lightness">Gradient, one colour: 0 (dark) to 1 (light).</param>
+/// <param name="Preset">Gradient: the preset's name.</param>
+/// <param name="Shading">Gradient: the shading style.</param>
+/// <param name="Variant">Gradient: which of the style's variants, from 1.</param>
+/// <param name="Texture">Texture: the tile's image (a <see cref="FieldKind.Picture"/> field).</param>
+/// <param name="Pattern">Pattern: its ECMA-376 name.</param>
+/// <param name="Foreground">Pattern: the foreground.</param>
+/// <param name="Background">Pattern: the background.</param>
+/// <param name="Picture">Picture: the image (a <see cref="FieldKind.Picture"/> field).</param>
+public sealed record FillEffectsDialogValues(
+    FillEffectsTab Tab, GradientColors Colors, ShapeColor Color1, ShapeColor Color2, double Lightness, string Preset, ShadingStyle Shading,
+    uint Variant, ReadOnlyMemory<byte> Texture, string Pattern, ShapeColor Foreground, ShapeColor Background, ReadOnlyMemory<byte> Picture);
+
 /// <summary>The Frame dialog's values: the frame's properties, Move with text and Remove Frame.</summary>
 /// <param name="Wrap">Text wrapping.</param>
 /// <param name="WidthRule">How the width is set.</param>
@@ -583,6 +682,8 @@ public enum FieldKind
     List,
     /// <summary>A text effect's settings, or none.</summary>
     Effect,
+    /// <summary>A picture: its image's bytes.</summary>
+    Picture,
 }
 
 /// <summary>An option of a choice field.</summary>

@@ -3371,3 +3371,137 @@ fn a_new_document_saves_its_protection_in_a_settings_part_it_adds() {
     let p = doc.settings.protection.expect("protection");
     assert!(p.enforced && p.password.is_some_and(|p| p.matches("Example")));
 }
+
+#[test]
+fn the_page_watermark_dialog_sets_edits_and_removes_a_watermark() {
+    use crate::api::command::{Watermark, WatermarkLayout};
+    use crate::api::services::{DialogKind, DialogPatch, DialogValues, PrintedWatermarkPatch, WatermarkKind};
+    let (mut engine, _) = engine();
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    s.run(Command::InsertText("Body".into())).expect("types");
+    let m = s.dialog_open(DialogKind::PrintedWatermark).expect("opens");
+    assert!(
+        matches!(&m.values, DialogValues::PrintedWatermark(v) if v.watermark == WatermarkKind::None && v.text == "ASAP" && v.transparency == 50.0)
+    );
+    assert!(!m.fields["text"].enabled && !m.fields["picture"].enabled, "no watermark: nothing to set");
+    let patch = PrintedWatermarkPatch {
+        watermark: Some(WatermarkKind::Text),
+        text: Some("DRAFT".into()),
+        layout: Some(WatermarkLayout::Horizontal),
+        ..PrintedWatermarkPatch::default()
+    };
+    let m = s.dialog_update(m, DialogPatch::PrintedWatermark(patch)).expect("updates");
+    assert!(m.fields["text"].enabled && !m.fields["washout"].enabled);
+    s.dialog_apply(m).expect("applies");
+    let Some(Watermark::Text(t)) = s.state().page.watermark.clone() else { panic!("a text watermark") };
+    assert_eq!((t.text.as_str(), t.layout), ("DRAFT", Some(WatermarkLayout::Horizontal)));
+    let m = s.dialog_open(DialogKind::PrintedWatermark).expect("opens again");
+    assert!(matches!(&m.values, DialogValues::PrintedWatermark(v) if v.watermark == WatermarkKind::Text && v.text == "DRAFT"));
+    let m = s
+        .dialog_update(m, DialogPatch::PrintedWatermark(PrintedWatermarkPatch { watermark: Some(WatermarkKind::None), ..Default::default() }))
+        .expect("updates");
+    s.dialog_apply(m).expect("applies");
+    assert_eq!(s.state().page.watermark, None);
+    let m = s.dialog_open(DialogKind::PrintedWatermark).expect("opens");
+    let m = s
+        .dialog_update(m, DialogPatch::PrintedWatermark(PrintedWatermarkPatch { watermark: Some(WatermarkKind::Picture), ..Default::default() }))
+        .expect("updates");
+    assert!(s.dialog_apply(m).is_err(), "a picture watermark needs a picture");
+}
+
+#[test]
+fn the_page_fill_effects_dialog_makes_word_s_gradients_and_patterns() {
+    use crate::api::drawing::{ColourValue, FillValue, GradientShape};
+    use crate::api::services::{DialogKind, DialogPatch, DialogValues, FillEffectsPatch, FillEffectsTab, GradientColors, ShadingStyle};
+    use crate::api::value::Color;
+    let (mut engine, _) = engine();
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    s.run(Command::InsertText("Body".into())).expect("types");
+    let fill = |s: &mut crate::api::session::Session, p: FillEffectsPatch| {
+        let m = s.dialog_open(DialogKind::FillEffects).expect("opens");
+        let m = s.dialog_update(m, DialogPatch::FillEffects(p)).expect("updates");
+        s.dialog_apply(m).expect("applies");
+        s.state().page.background.clone().expect("a fill")
+    };
+    let red = ColourValue::rgb(Color(0xFF0000));
+    let blue = ColourValue::rgb(Color(0x0000FF));
+    let two = FillEffectsPatch {
+        colors: Some(GradientColors::Two),
+        color1: Some(red.clone()),
+        color2: Some(blue.clone()),
+        shading: Some(ShadingStyle::Vertical),
+        variant: Some(4),
+        ..Default::default()
+    };
+    let FillValue::Gradient { kind, angle, stops, .. } = fill(s, two) else { panic!("a gradient") };
+    assert_eq!((kind, angle, stops.len()), (GradientShape::Linear, Some(180.0), 3), "the fourth variant mirrors, reversed");
+    assert_eq!((&stops[0].colour, &stops[1].colour, stops[1].position), (&blue, &red, 0.5));
+    let m = s.dialog_open(DialogKind::FillEffects).expect("opens");
+    assert!(
+        matches!(&m.values, DialogValues::FillEffects(v) if v.shading == ShadingStyle::Vertical && v.variant == 4 && v.colors == GradientColors::Two),
+        "{:?}",
+        m.values
+    );
+    let corner = FillEffectsPatch {
+        colors: Some(GradientColors::Preset),
+        preset: Some("fire".into()),
+        shading: Some(ShadingStyle::FromCorner),
+        variant: Some(4),
+        ..Default::default()
+    };
+    let FillValue::Gradient { kind, focus, stops, .. } = fill(s, corner) else { panic!("a gradient") };
+    assert_eq!((kind, focus, stops.len()), (GradientShape::Rectangular, Some([1.0, 1.0, 0.0, 0.0]), 4));
+    let m = s.dialog_open(DialogKind::FillEffects).expect("opens");
+    assert!(
+        matches!(&m.values, DialogValues::FillEffects(v) if v.preset == "fire" && v.shading == ShadingStyle::FromCorner && v.variant == 4),
+        "{:?}",
+        m.values
+    );
+    let pattern =
+        FillEffectsPatch { tab: Some(FillEffectsTab::Pattern), pattern: Some("smGrid".into()), foreground: Some(red.clone()), ..Default::default() };
+    assert!(matches!(fill(s, pattern), FillValue::Pattern { preset, .. } if preset == "smGrid"));
+    let m = s.dialog_open(DialogKind::FillEffects).expect("opens");
+    assert!(matches!(&m.values, DialogValues::FillEffects(v) if v.tab == FillEffectsTab::Pattern && v.pattern == "smGrid"));
+    assert!(m.fields["foreground"].enabled && !m.fields["preset"].enabled);
+    let one = FillEffectsPatch {
+        tab: Some(FillEffectsTab::Gradient),
+        colors: Some(GradientColors::One),
+        color1: Some(blue.clone()),
+        lightness: Some(0.3),
+        shading: Some(ShadingStyle::Horizontal),
+        variant: Some(1),
+        ..Default::default()
+    };
+    fill(s, one);
+    let saved = s.export(&ExportOptions::Docx).expect("saves").bytes.0;
+    let doc = crate::docx::read_editable(&saved).expect("reads back");
+    assert!(doc.page_fill.is_some() && doc.settings.display_background_shape);
+    let m = s.dialog_open(DialogKind::FillEffects).expect("opens");
+    assert!(
+        matches!(&m.values, DialogValues::FillEffects(v) if v.colors == GradientColors::One && (v.lightness - 0.3).abs() < 1e-9),
+        "{:?}",
+        m.values
+    );
+    // A picture: the texture tab's picture stays when Picture stretches it.
+    let png = crate::api::value::Bytes(
+        std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-OBJ.docx"))
+            .map(|b| {
+                use std::io::Read;
+                let mut z = zip::ZipArchive::new(std::io::Cursor::new(b)).expect("a package");
+                let name = (0..z.len())
+                    .filter_map(|i| z.by_index(i).ok().map(|f| f.name().unwrap_or_default().to_string()))
+                    .find(|n| n.ends_with(".png"))
+                    .expect("a png");
+                let mut out = Vec::new();
+                z.by_name(&name).expect("the png").read_to_end(&mut out).expect("reads");
+                out
+            })
+            .expect("the fixture"),
+    );
+    let texture = FillEffectsPatch { tab: Some(FillEffectsTab::Texture), texture: Some(png), ..Default::default() };
+    assert!(matches!(fill(s, texture), FillValue::Picture { tile: Some(true), .. }));
+    let stretched = FillEffectsPatch { tab: Some(FillEffectsTab::Picture), ..Default::default() };
+    assert!(matches!(fill(s, stretched), FillValue::Picture { tile: Some(false), .. }), "the page's picture, kept");
+}

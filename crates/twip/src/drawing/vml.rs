@@ -272,7 +272,7 @@ fn fill_over(el: Node, dflt: Colour, image: &mut dyn FnMut(&str) -> Option<usize
     let opacity = f.and_then(|f| f.attribute("opacity")).and_then(fraction);
     let solid = Fill::Solid(with_alpha(base.clone(), opacity));
     let Some(f) = f else { return solid };
-    let color2 = f.attribute("color2").and_then(colour).unwrap_or_else(|| Colour::srgb(0xFFFFFF));
+    let color2 = f.attribute("color2").and_then(|v| derived(v, &base).or_else(|| colour(v))).unwrap_or_else(|| Colour::srgb(0xFFFFFF));
     let opacity2 = f.attribute((O, "opacity2")).or(f.attribute("opacity2")).and_then(fraction);
     let pct = |v: f64| Pct((v * 100000.0).round() as i32);
     match f.attribute("type").unwrap_or("solid") {
@@ -328,7 +328,17 @@ fn fill_over(el: Node, dflt: Colour, image: &mut dyn FnMut(&str) -> Option<usize
             let mut stops = focus_stops(&list, focus);
             let kind = if t == "gradientRadial" {
                 stops = stops.into_iter().rev().map(|(p, c)| (Pct(100000 - p.0), c)).collect();
-                paint::GradientKind::Path { path: paint::GradientPath::Rect, focus: [Pct(50000); 4] }
+                // Where it starts, and the size of that: the centre unless placed (an empty number is 0).
+                let pair = |k: &str| -> Option<[f64; 2]> {
+                    let v = f.attribute(k)?;
+                    let mut it = v.split(',').map(|v| if v.trim().is_empty() { Some(0.0) } else { fraction(v.trim()).filter(|v| v.is_finite()) });
+                    let x = it.next()??;
+                    Some([x, it.next().unwrap_or(Some(0.0))?].map(|v| v.clamp(0.0, 1.0)))
+                };
+                let [x, y] = pair("focusposition").unwrap_or([0.5, 0.5]);
+                let [w, h] = pair("focussize").unwrap_or([0.0, 0.0]);
+                let focus = [pct(x), pct(y), pct((1.0 - x - w).max(0.0)), pct((1.0 - y - h).max(0.0))];
+                paint::GradientKind::Path { path: paint::GradientPath::Rect, focus }
             } else {
                 linear
             };
@@ -354,6 +364,45 @@ fn fill_over(el: Node, dflt: Colour, image: &mut dyn FnMut(&str) -> Option<usize
         }
         _ => solid,
     }
+}
+
+/// A colour of the fill's own (`fill`, `fill darken(n)`, `fill lighten(n)`: a one-colour gradient's second colour).
+fn derived(v: &str, base: &Colour) -> Option<Colour> {
+    let rest = v.trim().strip_prefix("fill")?.trim();
+    let super::colour::ColourBase::Srgb(rgb) = base.base else { return None };
+    if rest.is_empty() {
+        return Some(Colour::srgb(rgb));
+    }
+    let (op, n) = rest.split_once('(')?;
+    let n = n.trim_end_matches(')').trim().parse::<f64>().ok().filter(|n| n.is_finite())?.clamp(0.0, 255.0).round() as u8;
+    Some(Colour::srgb(match op.trim() {
+        "darken" => darken(rgb, n),
+        "lighten" => lighten(rgb, n),
+        _ => return None,
+    }))
+}
+
+/// VML's `darken(n)`: each channel scaled by `n`/255.
+pub fn darken(c: u32, n: u8) -> u32 {
+    [16, 8, 0].iter().map(|s| ((((c >> s) & 0xFF) * u32::from(n) + 127) / 255) << s).sum()
+}
+
+/// VML's `lighten(n)`: each channel's distance from white scaled by `n`/255.
+pub fn lighten(c: u32, n: u8) -> u32 {
+    0xFF_FFFF - darken(0xFF_FFFF - c, n)
+}
+
+/// The `darken(n)` (`false`) or `lighten(n)` (`true`) that makes `to` of `from`, when one does.
+pub fn shade_of(from: u32, to: u32) -> Option<(bool, u8)> {
+    (0..=255u8).rev().find_map(|n| {
+        if darken(from, n) == to {
+            Some((false, n))
+        } else if lighten(from, n) == to {
+            Some((true, n))
+        } else {
+            None
+        }
+    })
 }
 
 /// A two-colour gradient's stops as Word draws one: each channel runs from its lower value to its higher along the

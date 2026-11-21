@@ -166,6 +166,7 @@ pub fn step_bytes(s: &Step) -> usize {
         | Step::Info(_)
         | Step::Protection(_)
         | Step::SectionBreak { .. } => 32,
+        Step::PageBackground(_) => 64,
         Step::ImageData { data, .. } => 32 + data.len(),
         Step::AddImage { data, .. } => 32 + data.as_ref().map_or(0, Vec::len),
         Step::FieldViews { views, .. } => 32 + 16 * views.len(),

@@ -868,6 +868,12 @@ pub struct PageFormatting {
     pub endnotes: NoteSettings,
     /// The footnote area's columns; 0 for the section's own.
     pub footnote_columns: u32,
+    /// The page colour (a solid fill), its gradient, pattern or picture, or `null` for none. A picture's image is empty.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub background: Option<crate::api::drawing::FillValue>,
+    /// The watermark the pages show, or `null`. A picture's image is empty.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub watermark: Option<crate::api::command::Watermark>,
 }
 
 /// A section's footnote or endnote settings.

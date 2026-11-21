@@ -25,3 +25,5 @@ override Twip.FillValue.Solid.<Clone>$() -> Twip.FillValue!
 override Twip.Popover.AutoCorrect.<Clone>$() -> Twip.Popover!
 override Twip.Popover.TabStop.<Clone>$() -> Twip.Popover!
 override Twip.Popover.TabType.<Clone>$() -> Twip.Popover!
+override Twip.PictureWatermark.<Clone>$() -> Twip.Watermark!
+override Twip.TextWatermark.<Clone>$() -> Twip.Watermark!

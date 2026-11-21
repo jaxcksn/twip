@@ -625,6 +625,32 @@
     "type": "insertAlignmentTab"
   },
   {
+    "type": "setPageColor",
+    "value": {
+      "colour": {
+        "theme": "accent1",
+        "transforms": [
+          {
+            "kind": "lumMod",
+            "value": 0.75
+          }
+        ]
+      },
+      "type": "solid"
+    }
+  },
+  {
+    "type": "setWatermark",
+    "value": {
+      "kind": "text",
+      "layout": "horizontal",
+      "text": "DRAFT"
+    }
+  },
+  {
+    "type": "removeWatermark"
+  },
+  {
     "columns": 2,
     "rows": 3,
     "type": "insertTable"

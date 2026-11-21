@@ -563,6 +563,10 @@ fn every_edit_keeps_every_construct() {
         std::fs::write(d.join("control-options.docx"), control_options_package()).expect("writes");
         std::fs::write(d.join("protection.docx"), protection_package()).expect("writes");
         std::fs::write(d.join("text-effects.docx"), text_effects_package().0).expect("writes");
+        let (text, picture) = page_background_packages();
+        std::fs::write(d.join("watermark-text.docx"), text).expect("writes");
+        std::fs::write(d.join("watermark-picture.docx"), picture).expect("writes");
+        std::fs::write(d.join("watermark-new-headers.docx"), new_headers_package()).expect("writes");
         let (pictures, boxes) = picture_tools_packages();
         std::fs::write(d.join("picture-tools.docx"), pictures).expect("writes");
         std::fs::write(d.join("text-box-columns.docx"), boxes).expect("writes");
@@ -1131,4 +1135,81 @@ fn a_styles_effects_turn_off_on_its_runs() {
     let xml = crate::docx::package::read(&saved, &[], "word/document.xml").expect("reads").expect("the main part");
     let at = xml.find(">glow direct<").expect("the direct run");
     assert!(!xml[xml[..at].rfind("<w:r>").expect("its run")..at].contains("w14:glow"));
+}
+
+/// A document's headers given a text watermark and its page a theme colour, and another's a picture watermark and a
+/// pattern, saved.
+fn page_background_packages() -> (Vec<u8>, Vec<u8>) {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-STORIES.docx");
+    let bytes = std::fs::read(path).expect("the fixture");
+    let n = |v: serde_json::Value| serde_json::from_value::<Command>(v).expect("a command");
+    let run = |e: &mut Editor, v: serde_json::Value| {
+        let out = e.execute(n(v.clone()), fonts());
+        assert!(matches!(out, Outcome::Changed(_)), "{v}: {out:?}");
+    };
+    let mut e = Editor::open(&bytes, fonts()).expect("opens");
+    run(
+        &mut e,
+        serde_json::json!({ "type": "setWatermark", "value": { "kind": "text", "text": "CONFIDENTIAL", "font": "Calibri", "color": "#FF0000", "transparency": 0 } }),
+    );
+    run(
+        &mut e,
+        serde_json::json!({ "type": "setPageColor", "value": { "type": "solid", "colour": { "theme": "accent1", "transforms": [{ "kind": "shade", "value": 0.75 }] } } }),
+    );
+    let text = crate::docx::write::save(e.document()).expect("saves");
+    let mut e = Editor::open(&bytes, fonts()).expect("opens");
+    let png: Vec<u8> = PNG.to_vec();
+    let image = serde_json::to_value(crate::api::value::Bytes(png)).expect("bytes");
+    run(&mut e, serde_json::json!({ "type": "setWatermark", "value": { "kind": "picture", "image": image, "washout": true } }));
+    run(
+        &mut e,
+        serde_json::json!({ "type": "setPageColor", "value": { "type": "pattern", "preset": "dkDnDiag", "foreground": { "rgb": "#1F4E79" }, "background": { "rgb": "#FFFFFF" } } }),
+    );
+    let picture = crate::docx::write::save(e.document()).expect("saves");
+    (text, picture)
+}
+
+/// A document without headers given a watermark (its headers made for it), saved.
+fn new_headers_package() -> Vec<u8> {
+    let mut e = Editor::open(&crate::editing::tests::blank_body("<w:p><w:r><w:t>Body</w:t></w:r></w:p>"), fonts()).expect("opens");
+    let w = serde_json::json!({ "type": "setWatermark", "value": { "kind": "text", "text": "DRAFT", "layout": "horizontal", "size": 72 } });
+    let out = e.execute(serde_json::from_value(w).expect("a command"), fonts());
+    assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
+    crate::docx::write::save(e.document()).expect("saves")
+}
+
+#[test]
+fn a_watermark_makes_the_headers_a_document_lacks() {
+    let saved = new_headers_package();
+    let doc = crate::docx::read_editable(&saved).expect("reads back");
+    assert!(doc.sections[0].headers.iter().all(|h| h.as_ref().is_some_and(|n| doc.stories.contains_key(n))), "{:?}", doc.sections[0].headers);
+    let main = crate::docx::package::read(&saved, &[], "word/document.xml").expect("reads").unwrap_or_default();
+    for t in ["default", "first", "even"] {
+        assert!(main.contains(&format!("w:headerReference w:type=\"{t}\"")), "{t}");
+    }
+}
+
+#[test]
+fn watermarks_and_page_colours_are_saved_and_read_back() {
+    let (text, picture) = page_background_packages();
+    let part = |p: &[u8], n: &str| crate::docx::package::read(p, &[], n).expect("reads").unwrap_or_default();
+    for n in ["word/header1.xml", "word/header2.xml", "word/header3.xml"] {
+        let xml = part(&text, n);
+        assert!(
+            xml.contains("PowerPlusWaterMarkObject") && xml.contains(r#"string="CONFIDENTIAL""#) && xml.contains(r##"fillcolor="#ff0000""##),
+            "{n}: {xml}"
+        );
+        assert!(!xml.contains("opacity"), "opaque");
+        assert!(part(&picture, n).contains("WordPictureWatermark"), "{n}");
+    }
+    assert!(part(&text, "word/document.xml").contains(r#"w:themeColor="accent1" w:themeShade="BF""#));
+    assert!(part(&picture, "word/document.xml").contains(r#"type="pattern""#));
+    for p in [&text, &picture] {
+        let doc = crate::docx::read_editable(p).expect("reads back");
+        assert!(doc.settings.display_background_shape && doc.page_colour.is_some());
+        let marks = doc.stories.values().flat_map(|b| b.iter()).filter_map(|b| if let crate::docx::Block::Para(p) = b { Some(p) } else { None });
+        let n =
+            marks.flat_map(|p| p.inlines.iter()).filter(|i| matches!(i, crate::docx::Inline::Float(f, _) if crate::docx::watermark::is(f))).count();
+        assert_eq!(n, 3, "one in each header");
+    }
 }

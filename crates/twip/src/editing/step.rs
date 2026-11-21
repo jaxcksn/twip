@@ -132,6 +132,28 @@ pub enum Step {
     Protection(Option<Box<crate::docx::review::Protection>>),
     /// The document's properties and variables.
     Info(Box<(crate::docx::properties::Properties, Vec<(String, String)>)>),
+    /// The page background.
+    PageBackground(Box<PageBackground>),
+}
+
+/// The page background: its colour, the theme colour that is, its fill over it, and whether it shows.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PageBackground {
+    pub colour: Option<u32>,
+    pub theme: Option<crate::docx::ThemeColourRef>,
+    pub fill: Option<crate::drawing::paint::Fill>,
+    pub shown: bool,
+}
+
+impl PageBackground {
+    pub fn of(doc: &Document) -> PageBackground {
+        PageBackground {
+            colour: doc.page_colour,
+            theme: doc.page_colour_theme,
+            fill: doc.page_fill.clone(),
+            shown: doc.settings.display_background_shape,
+        }
+    }
 }
 
 /// The document's page settings: odd and even headers, how pages pair, the gutter's place, and the page borders
@@ -937,6 +959,13 @@ impl Step {
             Step::DefaultTableStyle(id) => {
                 let old = std::mem::replace(&mut doc.settings.default_table_style, id);
                 Ok(Applied { inverse: Step::DefaultTableStyle(old), map: Map::Same, hint: None })
+            }
+            Step::PageBackground(b) => {
+                let old = PageBackground::of(doc);
+                let PageBackground { colour, theme, fill, shown } = *b;
+                (doc.page_colour, doc.page_colour_theme, doc.page_fill) = (colour, theme, fill);
+                doc.settings.display_background_shape = shown;
+                Ok(Applied { inverse: Step::PageBackground(Box::new(old)), map: Map::Same, hint: None })
             }
             Step::PageSettings(p) => {
                 let old = PageSettings::of(&doc.settings);

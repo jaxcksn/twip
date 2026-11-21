@@ -391,6 +391,20 @@ public abstract partial record EditorOperation
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation SetTextEffects(TextEffectsChange change) => Op(CommandId.SetTextEffects, Arg.Flatten(change));
 
+    /// <summary>Sets the document's page colour; <see cref="FillValue.None"/> removes it.</summary>
+    /// <param name="fill">None, a solid colour, a gradient, a pattern or a picture (tiled, a texture).</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetPageColor(FillValue fill) => Op(CommandId.SetPageColor, new Arg("value", Node(fill)));
+
+    /// <summary>Sets the document's watermark, in every header.</summary>
+    /// <param name="watermark">The text or picture watermark.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetWatermark(Watermark watermark) => Op(CommandId.SetWatermark, new Arg("value", Node(watermark)));
+
+    /// <summary>Removes the document's watermark.</summary>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation RemoveWatermark() => Op(CommandId.RemoveWatermark);
+
     /// <summary>Defines the selection's list levels.</summary>
     /// <param name="definition">The levels and what they apply to.</param>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>

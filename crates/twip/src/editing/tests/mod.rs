@@ -11,6 +11,7 @@ mod field_shading;
 mod fuzz;
 mod json;
 mod merge;
+mod page_background;
 mod perf;
 mod picture_controls;
 mod provisional;

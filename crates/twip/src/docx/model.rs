@@ -816,6 +816,8 @@ pub struct Source {
     pub glossary: Option<GlossarySource>,
     /// The page background's colour and fill as read.
     pub page_background: (Option<u32>, Option<crate::drawing::paint::Fill>),
+    /// The page background colour's theme colour as read.
+    pub page_theme: Option<ThemeColourRef>,
 }
 
 /// The glossary part as read: its name and XML, and each building block's `w:docPart` byte range in that XML with
@@ -1518,6 +1520,15 @@ pub struct Settings {
     pub display_background_shape: bool,
 }
 
+/// A theme colour a WordprocessingML colour names (`w:themeColor`), lightened (`w:themeTint`) or darkened
+/// (`w:themeShade`) by a byte: the fraction of the colour's luminance kept.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ThemeColourRef {
+    pub slot: crate::drawing::colour::SchemeSlot,
+    pub tint: Option<u8>,
+    pub shade: Option<u8>,
+}
+
 impl Document {
     /// The page background as it shows: its colour and fill, both `None` when Word doesn't display it.
     pub fn shown_background(&self) -> (Option<u32>, Option<&crate::drawing::paint::Fill>) {
@@ -1555,6 +1566,8 @@ pub struct Document {
     pub page_colour: Option<u32>,
     /// The page background's fill over its colour (`v:background`): a gradient, pattern or picture.
     pub page_fill: Option<crate::drawing::paint::Fill>,
+    /// The theme colour `page_colour` is, when it is one.
+    pub page_colour_theme: Option<ThemeColourRef>,
     /// Headers and footers by part name, in name order (the editor addresses them by place in it).
     pub stories: std::collections::BTreeMap<String, Vec<Block>>,
     pub footnotes: HashMap<i64, Vec<Block>>,

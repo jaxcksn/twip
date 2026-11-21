@@ -346,6 +346,7 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
         let body = child(dom.root_element(), "body").ok_or("no body")?;
         if let Some(b) = child(dom.root_element(), "background") {
             doc.page_colour = colours.colour(b, "color", "themeColor", "themeTint", "themeShade");
+            doc.page_colour_theme = crate::docx::props::theme_ref(b, "themeColor", "themeTint", "themeShade");
             let mut src = DrawingSource { reader: &mut r, pkg: &mut pkg };
             doc.page_fill = crate::drawing::vml::background_fill(b, doc.page_colour, &mut |rid| crate::drawing::read::Source::image(&mut src, rid));
         }
@@ -532,6 +533,7 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
             controls,
             glossary: glossary_src,
             page_background: (doc.page_colour, doc.page_fill.clone()),
+            page_theme: doc.page_colour_theme,
         }));
     }
     Ok(doc)

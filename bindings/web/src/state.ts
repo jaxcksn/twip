@@ -19,7 +19,7 @@ import type { DialogKind } from './services/dialogs.js';
 import type { ControlKind, ReferenceRule } from './services/elements.js';
 import type { RulerModel, RulerUnit, TabSelector } from './services/ruler.js';
 import type { ChromeTheme, CursorOverride, DocumentAppearance, FieldShading, MeasureDetail, ObjectGrid, ThemeColors } from './services/view.js';
-import type { Color, CommentId, Degrees, ElementId, Points, RevisionId, ShapeState, StyleId, TextEffects } from './types.js';
+import type { Color, CommentId, Degrees, ElementId, FillValue, Points, RevisionId, ShapeState, StyleId, TextEffects, Watermark } from './types.js';
 
 /** An on/off value over the selection: `'mixed'` where it differs, `null` where it doesn't apply. */
 export type Tri = boolean | 'mixed' | null;
@@ -699,6 +699,10 @@ export interface PageFormatting {
   endnotes: NoteSettings;
   /** The footnote area's columns; 0 for the section's own. */
   footnoteColumns: number;
+  /** The page colour, gradient, pattern or picture (its image empty), or absent for none. */
+  background?: FillValue;
+  /** The watermark the pages show (a picture's image empty), or absent. */
+  watermark?: Watermark;
 }
 
 /** View settings. */

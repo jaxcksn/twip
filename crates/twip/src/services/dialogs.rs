@@ -36,7 +36,7 @@ fn unavailable(what: &str) -> Error {
 }
 
 /// Every dialog, in the state's order.
-const KINDS: [DialogKind; 22] = [
+const KINDS: [DialogKind; 24] = [
     DialogKind::Font,
     DialogKind::Paragraph,
     DialogKind::PageSetup,
@@ -59,6 +59,8 @@ const KINDS: [DialogKind; 22] = [
     DialogKind::SetNumberingValue,
     DialogKind::AdjustListIndents,
     DialogKind::BulletsNumbering,
+    DialogKind::PrintedWatermark,
+    DialogKind::FillEffects,
 ];
 
 /// Whether [`open`] opens `kind` on this state: the table and object dialogs need their table or object.
@@ -274,6 +276,8 @@ pub fn values(kind: DialogKind, state: &State, cx: &Context) -> Result<DialogVal
         DialogKind::SetNumberingValue => return Err(Error::invalid("the list dialogs open through the session")),
         DialogKind::AdjustListIndents => return Err(Error::invalid("the list dialogs open through the session")),
         DialogKind::BulletsNumbering => return Err(Error::invalid("the list dialogs open through the session")),
+        DialogKind::PrintedWatermark => DialogValues::PrintedWatermark(super::background_dialogs::watermark_values(state)),
+        DialogKind::FillEffects => DialogValues::FillEffects(super::background_dialogs::fill_effects_values(state)),
     })
 }
 
@@ -301,24 +305,26 @@ fn kind_of(v: &DialogValues) -> DialogKind {
         DialogValues::SetNumberingValue(_) => DialogKind::SetNumberingValue,
         DialogValues::AdjustListIndents(_) => DialogKind::AdjustListIndents,
         DialogValues::BulletsNumbering(_) => DialogKind::BulletsNumbering,
+        DialogValues::PrintedWatermark(_) => DialogKind::PrintedWatermark,
+        DialogValues::FillEffects(_) => DialogKind::FillEffects,
     }
 }
 
 /// A field: its label, kind, and whether it can be edited.
-fn field(label: &str, kind: FieldKind) -> FieldInfo {
+pub(super) fn field(label: &str, kind: FieldKind) -> FieldInfo {
     FieldInfo { label: label.into(), enabled: true, kind, ..FieldInfo::default() }
 }
 
-fn number(label: &str, kind: FieldKind, min: f64, max: f64, step: f64) -> FieldInfo {
+pub(super) fn number(label: &str, kind: FieldKind, min: f64, max: f64, step: f64) -> FieldInfo {
     FieldInfo { min: Some(min), max: Some(max), step: Some(step), ..field(label, kind) }
 }
 
-fn choice(label: &str, options: &[(&str, &str)]) -> FieldInfo {
+pub(super) fn choice(label: &str, options: &[(&str, &str)]) -> FieldInfo {
     let options = options.iter().map(|(value, label)| ChoiceOption { value: value.to_string(), label: label.to_string() }).collect();
     FieldInfo { options: Some(options), ..field(label, FieldKind::Choice) }
 }
 
-fn off(mut f: FieldInfo) -> FieldInfo {
+pub(super) fn off(mut f: FieldInfo) -> FieldInfo {
     f.enabled = false;
     f
 }
@@ -676,6 +682,8 @@ fn fields(values: &DialogValues, cx: &Context) -> BTreeMap<String, FieldInfo> {
             ("gallery", choice("Gallery", &[("bullet", "Bullets"), ("numbering", "Numbering"), ("multilevel", "Multilevel")])),
             ("entry", field("List", FieldKind::Choice)),
         ],
+        DialogValues::PrintedWatermark(v) => super::background_dialogs::watermark_fields(v),
+        DialogValues::FillEffects(v) => super::background_dialogs::fill_effects_fields(v),
     };
     list.into_iter().map(|(k, v)| (k.to_string(), v)).collect()
 }
@@ -1522,6 +1530,8 @@ pub fn commands(values: &DialogValues, state: &State, cx: &Context) -> Result<Ve
                 out.push(Command::SetDefaultTabStop(v.default_stop));
             }
         }
+        (DialogValues::PrintedWatermark(v), DialogValues::PrintedWatermark(n)) => out.extend(super::background_dialogs::watermark_commands(v, n)?),
+        (DialogValues::FillEffects(v), DialogValues::FillEffects(n)) => out.extend(super::background_dialogs::fill_effects_commands(v, n)?),
         // The accessibility check lists issues and applies nothing.
         _ => {}
     }
@@ -1554,6 +1564,8 @@ pub fn label(kind: DialogKind) -> &'static str {
         DialogKind::SetNumberingValue => "Set Numbering Value",
         DialogKind::AdjustListIndents => "Adjust List Indents",
         DialogKind::BulletsNumbering => "Bullets and Numbering",
+        DialogKind::PrintedWatermark => "Watermark",
+        DialogKind::FillEffects => "Fill Effects",
     }
 }
 

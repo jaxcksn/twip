@@ -382,5 +382,50 @@
       }
     ],
     "kind": "accessibility"
+  },
+  {
+    "bold": false,
+    "color": "#C0C0C0",
+    "font": "Calibri",
+    "italic": true,
+    "kind": "printedWatermark",
+    "layout": "diagonal",
+    "picture": "",
+    "scale": 150.0,
+    "size": 80.5,
+    "text": "DRAFT",
+    "transparency": 50.0,
+    "washout": true,
+    "watermark": "text"
+  },
+  {
+    "background": {
+      "rgb": "#FFFFFF"
+    },
+    "color1": {
+      "rgb": "#1F4E79"
+    },
+    "color2": {
+      "theme": "accent1",
+      "transforms": [
+        {
+          "kind": "lumMod",
+          "value": 0.75
+        }
+      ]
+    },
+    "colors": "two",
+    "foreground": {
+      "rgb": "#000000"
+    },
+    "kind": "fillEffects",
+    "lightness": 0.5,
+    "pattern": "dkDnDiag",
+    "picture": "iVBORw==",
+    "preset": "Early Sunset",
+    "shading": "fromCorner",
+    "tab": "gradient",
+    "texture": "iVBORw==",
+    "variant": 2
   }
 ]

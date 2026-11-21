@@ -377,25 +377,48 @@ impl Default for ThemeColours {
 
 impl ThemeColours {
     pub fn new(theme: &crate::drawing::theme::Theme, map: &crate::drawing::theme::ColourMap) -> ThemeColours {
-        use crate::drawing::colour::SchemeSlot::*;
-        let slots = [Dk1, Lt1, Dk2, Lt2, Accent(1), Accent(2), Accent(3), Accent(4), Accent(5), Accent(6), Hlink, FolHlink, Bg1, Tx1, Bg2, Tx2];
-        ThemeColours(slots.map(|s| {
+        ThemeColours(THEME_SLOTS.map(|s| {
             let c = theme.colour(map.map(s));
             (u32::from(c.r) << 16) | (u32::from(c.g) << 8) | u32::from(c.b)
         }))
     }
 
     pub fn colour(&self, e: Node, hex: &str, theme: &str, tint: &str, shade: &str) -> Option<u32> {
-        let Some(c) = attr(e, theme).and_then(|t| THEME_COLOUR_NAMES.iter().position(|n| *n == t)).map(|i| self.0[i]) else {
-            return color(attr(e, hex));
-        };
-        let byte = |a: &str| attr(e, a).and_then(|v| u8::from_str_radix(v, 16).ok()).map(|v| f64::from(v) / 255.0);
-        Some(match (byte(tint), byte(shade)) {
+        match theme_ref(e, theme, tint, shade) {
+            Some(r) => Some(self.resolve(r)),
+            None => color(attr(e, hex)),
+        }
+    }
+
+    /// A theme colour with its tint or shade applied.
+    pub fn resolve(&self, r: super::model::ThemeColourRef) -> u32 {
+        let k = THEME_SLOTS.iter().position(|s| *s == r.slot).unwrap_or(0);
+        let c = self.0[k];
+        let byte = |b: Option<u8>| b.map(|v| f64::from(v) / 255.0);
+        match (byte(r.tint), byte(r.shade)) {
             (Some(t), _) => with_luminance(c, |l| l * t + (1.0 - t)),
             (None, Some(s)) => with_luminance(c, |l| l * s),
             (None, None) => c,
-        })
+        }
     }
+}
+
+/// The slots of [`THEME_COLOUR_NAMES`], in its order.
+const THEME_SLOTS: [crate::drawing::colour::SchemeSlot; 16] = {
+    use crate::drawing::colour::SchemeSlot::*;
+    [Dk1, Lt1, Dk2, Lt2, Accent(1), Accent(2), Accent(3), Accent(4), Accent(5), Accent(6), Hlink, FolHlink, Bg1, Tx1, Bg2, Tx2]
+};
+
+/// The theme colour `e` names in its attribute `theme`, with its `tint` or `shade` byte.
+pub fn theme_ref(e: Node, theme: &str, tint: &str, shade: &str) -> Option<super::model::ThemeColourRef> {
+    let k = attr(e, theme).and_then(|t| THEME_COLOUR_NAMES.iter().position(|n| *n == t))?;
+    let byte = |a: &str| attr(e, a).and_then(|v| u8::from_str_radix(v, 16).ok());
+    Some(super::model::ThemeColourRef { slot: THEME_SLOTS[k], tint: byte(tint), shade: byte(shade) })
+}
+
+/// A theme slot's `w:themeColor` name.
+pub fn theme_name(slot: crate::drawing::colour::SchemeSlot) -> Option<&'static str> {
+    THEME_SLOTS.iter().position(|s| *s == slot).map(|k| THEME_COLOUR_NAMES[k])
 }
 
 /// `c` with its HSL luminance changed by `f`.

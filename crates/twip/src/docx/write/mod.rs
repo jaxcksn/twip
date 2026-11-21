@@ -386,7 +386,7 @@ fn settings_part(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(
 /// it. An untouched background keeps its markup.
 fn page_background(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
     let src = doc.source.as_ref().ok_or("the document was not read for editing")?;
-    if src.page_background.0 == doc.page_colour && src.page_background.1 == doc.page_fill {
+    if src.page_background.0 == doc.page_colour && src.page_background.1 == doc.page_fill && src.page_theme == doc.page_colour_theme {
         return Ok(());
     }
     let mut xml = match parts.iter().find(|(n, _)| *n == src.main) {
@@ -423,12 +423,17 @@ fn page_background(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result
         }
     };
     let palette = crate::drawing::paint::Palette { theme: &doc.theme, map: &doc.colour_map };
+    // A preset pattern's tile, a picture beside the main part as Word writes one.
+    let tile = match (&kept, &doc.page_fill) {
+        (None, Some(crate::drawing::paint::Fill::Pattern { preset, .. })) => Some(pattern_tile(src, parts, *preset)?),
+        _ => None,
+    };
     let fill = match kept {
         Some(k) => Some(k),
         None => match &doc.page_fill {
             Some(f) => {
                 let ns = [named(VML, "v"), named(O, "o"), named(R, "r")];
-                vml_background(f, palette, &ns)
+                vml_background(f, palette, &ns, tile.as_deref())
             }
             None => None,
         },
@@ -438,10 +443,20 @@ fn page_background(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result
     let el = match (doc.page_colour, fill) {
         (None, None) => String::new(),
         (colour, fill) => {
-            let c = format!("{:06X}", colour.unwrap_or(0xFF_FFFF));
+            let mut c = format!("{w}color=\"{:06X}\"", colour.unwrap_or(0xFF_FFFF));
+            if let Some(t) = doc.page_colour_theme
+                && let Some(name) = crate::docx::props::theme_name(t.slot)
+            {
+                c.push_str(&format!(" {w}themeColor=\"{name}\""));
+                for (attr, b) in [("themeTint", t.tint), ("themeShade", t.shade)] {
+                    if let Some(b) = b {
+                        c.push_str(&format!(" {w}{attr}=\"{b:02X}\""));
+                    }
+                }
+            }
             match fill {
-                Some(f) => format!("<{w}background {w}color=\"{c}\">{f}</{w}background>"),
-                None => format!("<{w}background {w}color=\"{c}\"/>"),
+                Some(f) => format!("<{w}background {c}>{f}</{w}background>"),
+                None => format!("<{w}background {c}/>"),
             }
         }
     };
@@ -455,10 +470,35 @@ const VML: &str = "urn:schemas-microsoft-com:vml";
 const O: &str = "urn:schemas-microsoft-com:office:office";
 const R: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 
-/// A page fill as a `v:background` (prefixes `[v, o, r]`), as Word writes one: its gradient, or its picture tiled,
-/// stretched or as a two-colour pattern. `None` for a fill VML has no page form of.
-// shortcut: a DrawingML preset pattern (`Fill::Pattern`) has no VML form without a picture of its tile; it is not written.
-fn vml_background(f: &crate::drawing::paint::Fill, palette: crate::drawing::paint::Palette, [v, o, r]: &[String; 3]) -> Option<String> {
+/// A preset pattern's tile as a PNG part beside the main part (its set bits black, the rest white), and its
+/// relationship's id: what a VML pattern fill names.
+fn pattern_tile(
+    src: &crate::docx::Source,
+    parts: &mut Vec<(String, Vec<u8>)>,
+    preset: crate::drawing::paint::PatternPreset,
+) -> Result<String, String> {
+    let bits = crate::drawing::patterns::tile(preset);
+    let rgba: Vec<u8> = (0..64).flat_map(|k| if bits[k / 8] & (0x80 >> (k % 8)) != 0 { [0, 0, 0, 255] } else { [255, 255, 255, 255] }).collect();
+    let png = crate::render::svg::png(8, 8, &rgba);
+    let dir = src.main.rsplit_once('/').map_or(String::new(), |(d, _)| format!("{d}/"));
+    let taken = |n: &str| parts.iter().any(|(m, _)| m == n) || package::read(&src.package, &[], n).ok().flatten().is_some();
+    let name = (1..).map(|k| format!("{dir}media/pattern{k}.png")).find(|n| !taken(n)).unwrap_or_default();
+    let rid = package::add_part(&src.package, parts, &src.main, &name, "image/png", IMAGE_REL)?;
+    package::set(parts, &name, png);
+    Ok(rid)
+}
+
+const IMAGE_REL: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image";
+
+/// A page fill as a `v:background` (prefixes `[v, o, r]`), as Word writes one: its gradient, its picture tiled,
+/// stretched or as a two-colour pattern, or a preset pattern from its tile picture (`tile`, its relationship). `None`
+/// for a fill VML has no page form of.
+fn vml_background(
+    f: &crate::drawing::paint::Fill,
+    palette: crate::drawing::paint::Palette,
+    [v, o, r]: &[String; 3],
+    tile: Option<&str>,
+) -> Option<String> {
     use crate::drawing::paint::{BlipAdjust, BlipMode, Fill, GradientKind, TileFlip};
     let hex = |c: &crate::drawing::colour::Colour| {
         let c = c.resolve(palette.theme, palette.map, None);
@@ -488,9 +528,22 @@ fn vml_background(f: &crate::drawing::paint::Fill, palette: crate::drawing::pain
             };
             let mirrored = g.flip != TileFlip::None && g.tile != [crate::drawing::units::Pct(0); 4];
             let kind = if radial { "gradientRadial" } else { "gradient" };
-            let focus = if mirrored { r#" focus="50%""# } else { "" };
+            let mut focus = if mirrored { r#" focus="50%""#.to_string() } else { String::new() };
+            if let GradientKind::Path { focus: at, .. } = g.kind {
+                let f = |p: crate::drawing::units::Pct| (p.fraction() * 1000.0).round() / 1000.0;
+                let size = |a: crate::drawing::units::Pct, b: crate::drawing::units::Pct| {
+                    ((1.0 - a.fraction() - b.fraction()).max(0.0) * 1000.0).round() / 1000.0
+                };
+                focus.push_str(&format!(r#" focusposition="{},{}" focussize="{},{}""#, f(at[0]), f(at[1]), size(at[0], at[2]), size(at[1], at[3])));
+            }
             let (o1, o2) = (opacity("opacity", first.2), opacity(&format!("{o}:opacity2"), last.2));
-            format!(r#"<{v}:fill type="{kind}" color="{}" color2="{}"{colors} angle="{}"{focus}{o1}{o2}/>"#, first.1, last.1, angle.round())
+            // One colour darkened or lightened is written as the fill's own, as Word writes it.
+            let rgb = |c: &crate::drawing::colour::Colour| c.resolve(palette.theme, palette.map, None).to_rgb();
+            let color2 = match two.then(|| crate::drawing::vml::shade_of(rgb(&g.stops[0].1), rgb(&g.stops[g.stops.len() - 1].1))).flatten() {
+                Some((light, n)) => format!("fill {}({n})", if light { "lighten" } else { "darken" }),
+                None => last.1.clone(),
+            };
+            format!(r#"<{v}:fill type="{kind}" color="{}" color2="{color2}"{colors} angle="{}"{focus}{o1}{o2}/>"#, first.1, angle.round())
         }
         Fill::Blip(b) => {
             let image = b.image?;
@@ -500,6 +553,14 @@ fn vml_background(f: &crate::drawing::paint::Fill, palette: crate::drawing::pain
                 (BlipMode::Stretch(_), _) => ("frame", String::new()),
             };
             format!(r#"<{v}:fill {r}:id="{NEW_IMAGE}{image}"{colours} type="{kind}"/>"#)
+        }
+        Fill::Pattern { preset, fg, bg } => {
+            let title = props::esc(crate::drawing::patterns::title(*preset));
+            let (fg, bg) = (hex(fg).0, hex(bg).0);
+            return Some(format!(
+                r#"<{v}:background id="_x0000_s1025" {o}:bwmode="white" fillcolor="{bg}" {o}:targetscreensize="1024,768"><{v}:fill {r}:id="{}" {o}:title="{title}" color2="{fg}" type="pattern"/></{v}:background>"#,
+                tile?
+            ));
         }
         _ => return None,
     };
@@ -4317,6 +4378,12 @@ impl Saver<'_, '_> {
     /// A float with no source (an inserted text box, or a picture float): its `w:drawing`, from the model. `None` for
     /// what the model can't write (a text box whose content can't be).
     fn new_float_xml(&self, f: &Float) -> Option<String> {
+        // A watermark is written as Word writes one, so Word's Watermark dialog finds it.
+        if let Some(m) = super::watermark::of(f) {
+            let spid = f.shape.as_ref().map_or(0, |s| s.nv.id).max(2049);
+            let image = f.image.map_or(String::new(), |i| format!("{NEW_IMAGE}{i}"));
+            return Some(super::watermark::vml(&m, &self.w, [f.w, f.h], spid, &image));
+        }
         const WP: &str = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
         const A: &str = "http://schemas.openxmlformats.org/drawingml/2006/main";
         const PIC: &str = "http://schemas.openxmlformats.org/drawingml/2006/picture";

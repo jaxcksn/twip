@@ -59,5 +59,84 @@
     },
     "textDirection": "lrTb",
     "verticalAlignment": "top"
+  },
+  {
+    "background": {
+      "colour": {
+        "theme": "accent1",
+        "transforms": [
+          {
+            "kind": "lumMod",
+            "value": 0.75
+          }
+        ]
+      },
+      "type": "solid"
+    },
+    "breakType": "nextPage",
+    "chapterNumbers": null,
+    "columns": {
+      "count": 1,
+      "separator": false,
+      "spacing": 36.5,
+      "widths": []
+    },
+    "differentFirstPage": true,
+    "differentOddEven": false,
+    "endnotes": {
+      "format": "decimal",
+      "position": "pageBottom",
+      "restart": "continuous",
+      "start": 0
+    },
+    "footerDistance": 36.5,
+    "footerLinks": {
+      "default": false,
+      "even": false,
+      "first": false
+    },
+    "footnoteColumns": 2,
+    "footnotes": {
+      "format": "decimal",
+      "position": "beneathText",
+      "restart": "eachPage",
+      "start": 1
+    },
+    "gutterAtTop": false,
+    "headerDistance": 36.5,
+    "headerLinks": {
+      "default": true,
+      "even": true,
+      "first": false
+    },
+    "lineNumbers": {
+      "countBy": 1,
+      "distance": 18.5,
+      "restart": "eachPage",
+      "start": 1
+    },
+    "margins": {
+      "bottom": 72.5,
+      "gutter": 0.5,
+      "left": 72.5,
+      "right": 72.5,
+      "top": 72.5
+    },
+    "multiplePages": "normal",
+    "orientation": "portrait",
+    "pageNumberFormat": "decimal",
+    "pageNumberStart": 1,
+    "size": {
+      "height": 792.5,
+      "width": 612.5
+    },
+    "textDirection": "lrTb",
+    "verticalAlignment": "top",
+    "watermark": {
+      "image": "iVBORw==",
+      "kind": "picture",
+      "scale": 150.0,
+      "washout": true
+    }
   }
 ]

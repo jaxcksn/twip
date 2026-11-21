@@ -325,6 +325,17 @@ commands! {
     /// A tab to a place set from the margin or the indent, not from the tab stops (Insert Alignment Tab). Undo: one step.
     InsertAlignmentTab(AlignmentTab),
 
+    // Page background
+    /// The page colour: `none`, a colour (a theme colour, with a tint or shade, stays one), or a gradient, two-colour
+    /// pattern or picture (Fill Effects); a picture without its image keeps the page's. It shows on screen; Word prints
+    /// and exports it only by option. Undo: one step.
+    SetPageColor(#[serde(with = "value")] FillValue),
+    /// A text or picture watermark behind every page's text, in place of the one there is: in every header of every
+    /// section (a section with none gets one), as Word writes it, so Word's Watermark dialog edits it. Undo: one step.
+    SetWatermark(#[serde(with = "value")] Watermark),
+    /// Takes the watermark out of every header. Undo: one step.
+    RemoveWatermark,
+
     // Insert
     /// A table (1…32767 rows, 1…63 columns). Undo: one step.
     InsertTable(TableSize),
@@ -685,6 +696,71 @@ pub struct HeaderFooterSlot {
     pub kind: crate::api::state::HeaderFooterKind,
     /// Which pages it is for.
     pub pages: crate::api::state::HeaderFooterType,
+}
+
+/// A watermark: text, or a picture.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
+pub enum Watermark {
+    /// Text drawn as one stretched line.
+    Text(TextWatermark),
+    /// A picture.
+    Picture(PictureWatermark),
+}
+
+/// A text watermark (Printed Watermark's Text watermark). Unset fields take Word's defaults.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TextWatermark {
+    /// The text (1…1024 characters, on one line).
+    pub text: String,
+    /// The font family; by default the theme's body font.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub font: Option<String>,
+    /// The font size (1…1584 pt); `null` for Auto: as large as fits the page's text area.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<Points>,
+    /// The colour; silver (`#C0C0C0`) by default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<Color>,
+    /// How transparent, percent (0 opaque … 100); 50 by default (Word's Semitransparent).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transparency: Option<f64>,
+    /// Diagonal (the default) or horizontal.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layout: Option<WatermarkLayout>,
+    /// Bold.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bold: Option<bool>,
+    /// Italic.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub italic: Option<bool>,
+}
+
+/// How a text watermark lies on the page.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum WatermarkLayout {
+    /// Rising from the bottom left to the top right (turned 315°).
+    #[default]
+    Diagonal,
+    /// Level.
+    Horizontal,
+}
+
+/// A picture watermark (Printed Watermark's Picture watermark).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PictureWatermark {
+    /// The image (PNG, JPEG, GIF, BMP, TIFF, SVG, EMF or WMF); empty keeps the picture watermark's own, and is empty
+    /// in the state.
+    pub image: Bytes,
+    /// Its size as a percentage of its own (1…5000); `null` for Auto: as large as fits the page's text area.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scale: Option<f64>,
+    /// Washed out (lightened, low contrast) so text over it reads; on by default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub washout: Option<bool>,
 }
 
 /// `insertAlignmentTab`'s options.

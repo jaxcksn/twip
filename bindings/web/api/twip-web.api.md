@@ -551,6 +551,7 @@ export interface Commands {
         name: string;
         category?: string;
     }): Promise<void>;
+    removeWatermark(): Promise<void>;
     renameSubTemplate(options: {
         name: string;
         to: string;
@@ -844,6 +845,7 @@ export interface Commands {
         surroundHeader?: boolean;
         surroundFooter?: boolean;
     }): Promise<void>;
+    setPageColor(fill: FillValue): Promise<void>;
     setPageNumbering(options: {
         format?: NumberFormat;
         start?: number | null;
@@ -967,6 +969,7 @@ export interface Commands {
     setUnderline(style: UnderlineStyle): Promise<void>;
     setUnderlineColor(color: Color | 'auto'): Promise<void>;
     setViewOptions(options: ViewOptions): Promise<void>;
+    setWatermark(watermark: Watermark): Promise<void>;
     setZoom(zoom: number | 'pageWidth' | 'wholePage'): Promise<void>;
     showAutoCorrectOptions(): Promise<void>;
     showFieldCodes(options: {
@@ -1222,7 +1225,7 @@ export interface DataParts {
 export type Degrees = number;
 
 // @public
-export type DialogKind = 'font' | 'paragraph' | 'pageSetup' | 'insertTable' | 'tableProperties' | 'pictureSize' | 'altText' | 'hyperlink' | 'tabs' | 'accessibility' | 'autoCorrect' | 'style' | 'manageStyles' | 'bordersShading' | 'frame' | 'dropCap' | 'banding' | 'defineBullet' | 'defineNumberFormat' | 'defineMultilevelList' | 'setNumberingValue' | 'adjustListIndents' | 'bulletsNumbering';
+export type DialogKind = 'font' | 'paragraph' | 'pageSetup' | 'insertTable' | 'tableProperties' | 'pictureSize' | 'altText' | 'hyperlink' | 'tabs' | 'accessibility' | 'autoCorrect' | 'style' | 'manageStyles' | 'bordersShading' | 'frame' | 'dropCap' | 'banding' | 'defineBullet' | 'defineNumberFormat' | 'defineMultilevelList' | 'setNumberingValue' | 'adjustListIndents' | 'bulletsNumbering' | 'printedWatermark' | 'fillEffects';
 
 // @public
 export interface Dialogs {
@@ -1324,6 +1327,21 @@ export interface DialogValues {
         font: string;
         lines: number;
         distance: Points;
+    };
+    fillEffects: {
+        tab: 'gradient' | 'texture' | 'pattern' | 'picture';
+        colors: 'one' | 'two' | 'preset';
+        color1: ColourValue;
+        color2: ColourValue;
+        lightness: number;
+        preset: string;
+        shading: 'horizontal' | 'vertical' | 'diagonalUp' | 'diagonalDown' | 'fromCorner' | 'fromCenter';
+        variant: number;
+        texture: Uint8Array;
+        pattern: string;
+        foreground: ColourValue;
+        background: ColourValue;
+        picture: Uint8Array;
     };
     font: {
         font: Mixed<string>;
@@ -1443,6 +1461,20 @@ export interface DialogValues {
             right?: number;
             bottom?: number;
         } | null;
+    };
+    printedWatermark: {
+        watermark: 'none' | 'picture' | 'text';
+        picture: Uint8Array;
+        scale: number | null;
+        washout: boolean;
+        text: string;
+        font: string;
+        size: Points | null;
+        color: Color;
+        transparency: number;
+        layout: 'diagonal' | 'horizontal';
+        bold: boolean;
+        italic: boolean;
     };
     setNumberingValue: {
         mode: 'startNew' | 'continue';
@@ -1774,7 +1806,7 @@ export interface FaceInfo {
 // @public
 export interface FieldInfo {
     enabled: boolean;
-    kind: 'number' | 'length' | 'text' | 'choice' | 'toggle' | 'color' | 'list' | 'effect';
+    kind: 'number' | 'length' | 'text' | 'choice' | 'toggle' | 'color' | 'list' | 'effect' | 'picture';
     label: string;
     max?: number;
     min?: number;
@@ -1811,6 +1843,7 @@ export type FillValue = {
     kind: GradientShape;
     angle?: Degrees;
     stops: GradientStop[];
+    focus?: [number, number, number, number];
 } | {
     type: 'pattern';
     preset: string;
@@ -2458,7 +2491,7 @@ export type Op = {
 // @public
 export type OpArgs<K extends CommandId> = Parameters<Commands[K]> extends [] ? {} : [Exclude<Parameters<Commands[K]>[0], undefined>] extends [string | number | boolean | null] ? {
     value: Exclude<Parameters<Commands[K]>[0], undefined>;
-} : [Exclude<Parameters<Commands[K]>[0], undefined>] extends [RichText | Uint8Array | FillValue | readonly unknown[]] ? {
+} : [Exclude<Parameters<Commands[K]>[0], undefined>] extends [RichText | Uint8Array | FillValue | Watermark | readonly unknown[]] ? {
     value: Exclude<Parameters<Commands[K]>[0], undefined>;
 } : [Exclude<Parameters<Commands[K]>[0], undefined>] extends [object] ? Exclude<Parameters<Commands[K]>[0], undefined> : {
     value: Exclude<Parameters<Commands[K]>[0], undefined>;
@@ -2475,6 +2508,7 @@ export interface OverlayColors {
 
 // @public
 export interface PageFormatting {
+    background?: FillValue;
     breakType: SectionBreakKind;
     chapterNumbers: ChapterNumbers | null;
     columns: {
@@ -2519,6 +2553,7 @@ export interface PageFormatting {
     };
     textDirection: TextFlow;
     verticalAlignment: 'top' | 'center' | 'justified' | 'bottom';
+    watermark?: Watermark;
 }
 
 // @public
@@ -2579,6 +2614,14 @@ export interface PictureAdjustChange {
     grayscale?: boolean;
     transparency?: number;
     transparentColor?: Color | 'none';
+}
+
+// @public
+export interface PictureWatermark {
+    image: Uint8Array;
+    kind: 'picture';
+    scale?: number;
+    washout?: boolean;
 }
 
 // @public
@@ -3219,6 +3262,19 @@ export interface TextShadow {
 }
 
 // @public
+export interface TextWatermark {
+    bold?: boolean;
+    color?: Color;
+    font?: string;
+    italic?: boolean;
+    kind: 'text';
+    layout?: WatermarkLayout;
+    size?: Points;
+    text: string;
+    transparency?: number;
+}
+
+// @public
 export interface ThemeColors {
     dark?: ChromeColors;
     light?: ChromeColors;
@@ -3432,6 +3488,12 @@ export interface Warning {
     };
     message: string;
 }
+
+// @public
+export type Watermark = TextWatermark | PictureWatermark;
+
+// @public
+export type WatermarkLayout = 'diagonal' | 'horizontal';
 
 // @public
 export interface WordCount {

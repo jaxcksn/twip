@@ -33,6 +33,7 @@ import type {
   Points,
   RevisionId,
   TextEffectsChange,
+  Watermark,
   ShapeAdjust,
   ShapeInsert,
   ShapePreset,
@@ -739,6 +740,15 @@ export interface Commands {
    * and `_`, 40 at most. A bookmark of the same name (compared without case) moves here.
    */
   insertBookmark(name: string): Promise<void>;
+  /**
+   * Sets the page colour of the document: no fill, a solid colour (a theme colour takes one tint or shade), a gradient,
+   * a pattern, or a picture (`tile` makes it a texture). A picture fill with an empty image keeps the page's own.
+   */
+  setPageColor(fill: FillValue): Promise<void>;
+  /** Sets the document's watermark, in every header: the text or the picture replaces the one there. */
+  setWatermark(watermark: Watermark): Promise<void>;
+  /** Removes the document's watermark. */
+  removeWatermark(): Promise<void>;
   /** Deletes a bookmark (compared without case), keeping its text. */
   deleteBookmark(name: string): Promise<void>;
   /**
@@ -1208,7 +1218,7 @@ export type OpArgs<K extends CommandId> = Parameters<Commands[K]> extends []
   ? {}
   : [Exclude<Parameters<Commands[K]>[0], undefined>] extends [string | number | boolean | null]
     ? { value: Exclude<Parameters<Commands[K]>[0], undefined> }
-    : [Exclude<Parameters<Commands[K]>[0], undefined>] extends [RichText | Uint8Array | FillValue | readonly unknown[]]
+    : [Exclude<Parameters<Commands[K]>[0], undefined>] extends [RichText | Uint8Array | FillValue | Watermark | readonly unknown[]]
       ? { value: Exclude<Parameters<Commands[K]>[0], undefined> }
       : [Exclude<Parameters<Commands[K]>[0], undefined>] extends [object]
         ? Exclude<Parameters<Commands[K]>[0], undefined>
@@ -1457,6 +1467,9 @@ const encodings: { [K in CommandId]: Encoding<K> } = {
   setShapePreset: 'value',
   setShapeAdjust: 'spread',
   setShapeFill: 'value',
+  setPageColor: 'value',
+  setWatermark: 'value',
+  removeWatermark: 'none',
   setShapeLine: 'spread',
   setShapeEffects: 'spread',
   setShapeText: 'spread',

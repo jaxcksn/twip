@@ -11,7 +11,7 @@ use super::command::{Command, CommandId, ElementField};
 use super::event::HostCommand;
 use super::state::{ElementKind, Tri};
 use super::value::{
-    Alignment, AutoOr, CellAlignment, Color, CommentId, ControlLock, ControlOptions, DataBinding, ElementId, HeadingId, HorizontalAlignment,
+    Alignment, AutoOr, Bytes, CellAlignment, Color, CommentId, ControlLock, ControlOptions, DataBinding, ElementId, HeadingId, HorizontalAlignment,
     LineSpacing, MatchId, NoneOr, Order, Orientation, OutlineLevel, Points, RevisionId, RowHeight, Story, StyleId, TabAlignment, TabLeader,
     TableWidth, UnderlineStyle,
 };
@@ -281,6 +281,10 @@ pub enum DialogKind {
     AdjustListIndents,
     /// Bullets and Numbering.
     BulletsNumbering,
+    /// Printed Watermark (Custom Watermark).
+    PrintedWatermark,
+    /// Fill Effects, for the page colour.
+    FillEffects,
 }
 
 impl DialogKind {
@@ -361,6 +365,10 @@ pub enum DialogValues {
     AdjustListIndents(AdjustListIndentsDialog),
     /// Bullets and Numbering's.
     BulletsNumbering(BulletsNumberingDialog),
+    /// Printed Watermark's.
+    PrintedWatermark(PrintedWatermarkDialog),
+    /// Fill Effects'.
+    FillEffects(FillEffectsDialog),
 }
 
 /// What `dialog_update` changes: the kind-tagged values with only the changed fields.
@@ -411,6 +419,10 @@ pub enum DialogPatch {
     AdjustListIndents(AdjustListIndentsPatch),
     /// Bullets and Numbering's.
     BulletsNumbering(BulletsNumberingPatch),
+    /// Printed Watermark's.
+    PrintedWatermark(PrintedWatermarkPatch),
+    /// Fill Effects'.
+    FillEffects(FillEffectsPatch),
 }
 
 impl DialogPatch {
@@ -439,6 +451,8 @@ impl DialogPatch {
             (DialogPatch::SetNumberingValue(p), DialogValues::SetNumberingValue(v)) => p.apply(v),
             (DialogPatch::AdjustListIndents(p), DialogValues::AdjustListIndents(v)) => p.apply(v),
             (DialogPatch::BulletsNumbering(p), DialogValues::BulletsNumbering(v)) => p.apply(v),
+            (DialogPatch::PrintedWatermark(p), DialogValues::PrintedWatermark(v)) => p.apply(v),
+            (DialogPatch::FillEffects(p), DialogValues::FillEffects(v)) => p.apply(v),
             _ => return false,
         }
         true
@@ -933,6 +947,133 @@ dialog! {
     }
 }
 
+/// What Printed Watermark puts behind the pages' text.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum WatermarkKind {
+    /// No watermark.
+    #[default]
+    None,
+    /// A picture watermark.
+    Picture,
+    /// A text watermark.
+    Text,
+}
+
+dialog! {
+    /// Printed Watermark (`setWatermark`, `removeWatermark`): the pages' watermark, or the dialog's defaults when there
+    /// is none.
+    #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase", default, deny_unknown_fields)]
+    pub struct PrintedWatermarkDialog / PrintedWatermarkPatch {
+        /// No watermark, a picture or text.
+        pub watermark: WatermarkKind,
+        /// The picture chosen; empty keeps the watermark's own.
+        pub picture: Bytes,
+        /// The picture's scale, percent of its own size; `null` for Auto.
+        pub scale: Option<f64>,
+        /// The picture is washed out.
+        pub washout: bool,
+        /// The text.
+        pub text: String,
+        /// The text's font.
+        pub font: String,
+        /// The text's size; `null` for Auto.
+        pub size: Option<Points>,
+        /// The text's colour.
+        pub color: Color,
+        /// How transparent the text is, percent (0 opaque … 100; Semitransparent is 50).
+        pub transparency: f64,
+        /// Diagonal or horizontal.
+        pub layout: super::command::WatermarkLayout,
+        /// Bold.
+        pub bold: bool,
+        /// Italic.
+        pub italic: bool,
+    }
+}
+
+/// Fill Effects' tabs.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum FillEffectsTab {
+    /// A gradient.
+    #[default]
+    Gradient,
+    /// A picture tiled.
+    Texture,
+    /// A two-colour pattern.
+    Pattern,
+    /// A picture stretched over the page.
+    Picture,
+}
+
+/// A gradient's colours in Fill Effects.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum GradientColors {
+    /// One colour, darkened or lightened.
+    #[default]
+    One,
+    /// Two colours.
+    Two,
+    /// A preset's colours.
+    Preset,
+}
+
+/// How a gradient runs across the page in Fill Effects.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ShadingStyle {
+    /// Bands across, changing down the page.
+    #[default]
+    Horizontal,
+    /// Bands down, changing across.
+    Vertical,
+    /// Bands rising to the right.
+    DiagonalUp,
+    /// Bands falling to the right.
+    DiagonalDown,
+    /// Out from a corner.
+    FromCorner,
+    /// Out from the centre.
+    FromCenter,
+}
+
+dialog! {
+    /// Fill Effects, for the page colour (`setPageColor`): a gradient, texture, pattern or picture.
+    #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase", default, deny_unknown_fields)]
+    pub struct FillEffectsDialog / FillEffectsPatch {
+        /// The tab: which kind of fill.
+        pub tab: FillEffectsTab,
+        /// One colour, two or a preset.
+        pub colors: GradientColors,
+        /// The first colour.
+        pub color1: super::drawing::ColourValue,
+        /// The second colour (two colours).
+        pub color2: super::drawing::ColourValue,
+        /// One colour: how light the second end is, 0 (dark) to 1 (light).
+        pub lightness: f64,
+        /// The preset (preset colours), by name (`earlySunset`).
+        pub preset: String,
+        /// How the gradient runs.
+        pub shading: ShadingStyle,
+        /// The shading's variant, 1 to 4 (1 or 2 from the centre).
+        pub variant: u32,
+        /// The texture's picture, tiled; empty keeps the page's.
+        pub texture: Bytes,
+        /// The pattern, by its ECMA-376 name (`dkDnDiag`).
+        pub pattern: String,
+        /// The pattern's colour.
+        pub foreground: super::drawing::ColourValue,
+        /// The colour behind the pattern.
+        pub background: super::drawing::ColourValue,
+        /// The picture, stretched over the page; empty keeps the page's.
+        pub picture: Bytes,
+    }
+}
+
 /// A run of characters a font has: code points `first` to `last`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -1061,6 +1202,8 @@ pub enum FieldKind {
     /// A text effect's settings (a fill, an outline, a shadow, a glow or a reflection, as `setTextEffects` takes
     /// them), or `'none'`.
     Effect,
+    /// A picture: its image's bytes.
+    Picture,
 }
 
 /// One choice of a choice field.

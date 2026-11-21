@@ -898,6 +898,8 @@ impl Editor {
                 NumberFormat::LowerRoman,
             ),
             footnote_columns: s.footnote_columns,
+            background: self.background_state(),
+            watermark: self.watermark_state(section),
         }
     }
 }

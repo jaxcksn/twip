@@ -454,12 +454,14 @@ export interface GradientStop {
 /**
  * A fill: none, one colour, a gradient of two or more stops (a linear one's `angle`, 0 left to right), a two-colour
  * pattern by its ECMA-376 name (`'pct50'`, `'dkDnDiag'`), a picture (PNG, JPEG, GIF, BMP; tiled at its own size, or
- * stretched), or `fromStyle`: the style reference's fill, no explicit one.
+ * stretched), or `fromStyle`: the style reference's fill, no explicit one. A gradient's `focus` is where it starts, as
+ * the fractions (0 to 1) of the shape's left, top, right and bottom edges it is inset from (`path` gradients; default
+ * the centre).
  */
 export type FillValue =
   | { type: 'none' }
   | { type: 'solid'; colour: ColourValue }
-  | { type: 'gradient'; kind: GradientShape; angle?: Degrees; stops: GradientStop[] }
+  | { type: 'gradient'; kind: GradientShape; angle?: Degrees; stops: GradientStop[]; focus?: [number, number, number, number] }
   | { type: 'pattern'; preset: string; foreground: ColourValue; background: ColourValue }
   | { type: 'picture'; image: Uint8Array; tile?: boolean }
   | { type: 'fromStyle' };
@@ -653,6 +655,46 @@ export interface TextEffectsChange {
   /** A reflection under the letters. */
   reflection?: TextReflection | null;
 }
+
+/** Which way a text watermark runs. */
+export type WatermarkLayout = 'diagonal' | 'horizontal';
+
+/** A text watermark; what isn't given is Word's default (Calibri, automatic size, silver, 50% transparent, diagonal). */
+export interface TextWatermark {
+  /** Marks a text watermark. */
+  kind: 'text';
+  /** The text. */
+  text: string;
+  /** The font. */
+  font?: string;
+  /** The size in points; absent is automatic: as large as fits the page. */
+  size?: Points;
+  /** The colour. */
+  color?: Color;
+  /** Percent, 0 (opaque) to 100. */
+  transparency?: number;
+  /** Diagonal or horizontal. */
+  layout?: WatermarkLayout;
+  /** Bold. */
+  bold?: boolean;
+  /** Italic. */
+  italic?: boolean;
+}
+
+/** A picture watermark. */
+export interface PictureWatermark {
+  /** Marks a picture watermark. */
+  kind: 'picture';
+  /** The image (PNG, JPEG, GIF, BMP); empty keeps the current watermark's. In the state it is always empty. */
+  image: Uint8Array;
+  /** Percent of the picture's own size; absent fits it to the margins. */
+  scale?: number;
+  /** Washed out, as Word's default is. */
+  washout?: boolean;
+}
+
+/** A watermark: text, or a picture. */
+export type Watermark = TextWatermark | PictureWatermark;
 
 /** Where text sits in a shape vertically. */
 export type TextAnchor = 'top' | 'middle' | 'bottom';

@@ -65,6 +65,11 @@ namespace Twip.Wire;
         typeof(CamelEnum<ShadingTarget>),
         typeof(CamelEnum<ShadingPattern>),
         typeof(CamelEnum<DropCapPosition>),
+        typeof(CamelEnum<WatermarkLayout>),
+        typeof(CamelEnum<WatermarkChoice>),
+        typeof(CamelEnum<FillEffectsTab>),
+        typeof(CamelEnum<GradientColors>),
+        typeof(CamelEnum<ShadingStyle>),
         typeof(CamelEnum<FrameWrap>),
         typeof(CamelEnum<FrameWidthRule>),
         typeof(CamelEnum<FrameHeightRule>),
@@ -486,6 +491,11 @@ namespace Twip.Wire;
 [JsonSerializable(typeof(ParagraphBorderLines))]
 [JsonSerializable(typeof(ShadingOptions))]
 [JsonSerializable(typeof(FrameProperties))]
+[JsonSerializable(typeof(Watermark))]
+[JsonSerializable(typeof(TextWatermark))]
+[JsonSerializable(typeof(PictureWatermark))]
+[JsonSerializable(typeof(PrintedWatermarkDialogValues))]
+[JsonSerializable(typeof(FillEffectsDialogValues))]
 [JsonSerializable(typeof(DropCap))]
 [JsonSerializable(typeof(DropCapDialogValues))]
 [JsonSerializable(typeof(ManagedStyle))]

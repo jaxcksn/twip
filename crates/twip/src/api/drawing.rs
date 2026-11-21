@@ -116,7 +116,7 @@ impl ThemeColour {
         }
     }
 
-    fn of(s: SchemeSlot) -> Option<ThemeColour> {
+    pub(crate) fn of(s: SchemeSlot) -> Option<ThemeColour> {
         Some(match s {
             SchemeSlot::Tx1 | SchemeSlot::Dk1 => ThemeColour::Text1,
             SchemeSlot::Bg1 | SchemeSlot::Lt1 => ThemeColour::Background1,
@@ -309,6 +309,10 @@ pub enum FillValue {
         angle: Option<Degrees>,
         /// Two or more stops.
         stops: Vec<GradientStop>,
+        /// Where a radial, rectangular or path gradient starts: the rectangle inset from the box's left, top, right and
+        /// bottom by these fractions (`[0, 0, 1, 1]` its top left corner, `[0.5; 4]` its centre, the default).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        focus: Option<[f64; 4]>,
     },
     /// A two-colour pattern.
     Pattern {
@@ -339,12 +343,12 @@ impl FillValue {
         Ok(Some(match self {
             FillValue::None => Fill::None,
             FillValue::Solid { colour } => Fill::Solid(colour.to_model()?),
-            FillValue::Gradient { kind, angle, stops } => {
+            FillValue::Gradient { kind, angle, stops, focus } => {
                 if stops.len() < 2 {
                     return Err("a gradient has two or more stops".into());
                 }
                 let stops = stops.iter().map(|s| Ok((pct(s.position.clamp(0.0, 1.0)), s.colour.to_model()?))).collect::<Result<_, String>>()?;
-                let half = [Pct(50000); 4];
+                let half = focus.unwrap_or([0.5; 4]).map(|v| pct(if v.is_finite() { v.clamp(0.0, 1.0) } else { 0.5 }));
                 let kind = match kind {
                     GradientShape::Linear => {
                         paint::GradientKind::Linear { angle: Angle((angle.unwrap_or(0.0).rem_euclid(360.0) * 60000.0).round() as i32), scaled: false }
@@ -393,8 +397,12 @@ impl FillValue {
                     paint::GradientKind::Path { path: paint::GradientPath::Rect, .. } => (GradientShape::Rectangular, None),
                     paint::GradientKind::Path { path: paint::GradientPath::Shape, .. } => (GradientShape::Path, None),
                 };
+                let focus = match g.kind {
+                    paint::GradientKind::Path { focus, .. } if focus != [Pct(50000); 4] => Some(focus.map(|p| p.fraction())),
+                    _ => None,
+                };
                 let stops = g.stops.iter().map(|(p, x)| GradientStop { position: f64::from(p.0) / 100000.0, colour: c(x) }).collect();
-                FillValue::Gradient { kind, angle, stops }
+                FillValue::Gradient { kind, angle, stops, focus }
             }
             Fill::Pattern { preset, fg, bg } => FillValue::Pattern { preset: preset.name().into(), foreground: c(fg), background: c(bg) },
             Fill::Blip(b) => FillValue::Picture {
