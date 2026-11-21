@@ -52,11 +52,11 @@ fn rendered(pdf: Vec<u8>) -> (Vec<u8>, (u32, u32)) {
     (pixmap.data_as_u8_slice().to_vec(), size)
 }
 
-fn cpu(picture: &Picture, resources: &Resources, (w, h): (u32, u32)) -> Vec<u8> {
+fn cpu(pictures: &[&Picture], resources: &Resources, (w, h): (u32, u32)) -> Vec<u8> {
     let (w, h) = ((f64::from(w) * SCALE) as u32, (f64::from(h) * SCALE) as u32);
     let mut px = vec![0u8; (w * h * 4) as usize];
     let mut target = Target::new(&mut px, w, h, w as usize * 4, Format::Rgba8).expect("a buffer that fits");
-    let draws = [Draw { picture, transform: Affine::scale(SCALE) }];
+    let draws: Vec<Draw<'_>> = pictures.iter().map(|&picture| Draw { picture, transform: Affine::scale(SCALE) }).collect();
     Renderer::new().render(&mut target, resources, &Frame { clear: Some(Color::WHITE), draws: &draws });
     px
 }
@@ -68,9 +68,15 @@ fn same(name: &str, size: (u32, u32), picture: &Picture, resources: &Resources) 
 
 /// [`same`], comparing the rows from `top` (points) down, with `percent` of the pixels allowed past 64.
 fn same_from(name: &str, size: (u32, u32), picture: &Picture, resources: &Resources, top: u32, percent: usize) {
-    let written = write(resources, &[page(picture, size)], &[], &[], &Info::default()).expect("writes");
+    same_page(name, size, &page(picture, size), resources, top, percent);
+}
+
+/// [`same_from`] for a page of any parts.
+fn same_page(name: &str, size: (u32, u32), page: &Page, resources: &Resources, top: u32, percent: usize) {
+    let written = write(resources, std::slice::from_ref(page), &[], &[], &Info::default()).expect("writes");
     let (ours, got) = rendered(written.bytes.clone());
-    let theirs = cpu(picture, resources, size);
+    let pictures: Vec<&Picture> = page.parts.iter().map(|(_, p)| p).collect();
+    let theirs = cpu(&pictures, resources, size);
     assert_eq!(got, ((f64::from(size.0) * SCALE) as u32, (f64::from(size.1) * SCALE) as u32), "{name}: the page's size");
     let skip = (f64::from(top) * SCALE) as usize * got.0 as usize * 4;
     let (ours, theirs) = (ours[skip..].to_vec(), theirs[skip..].to_vec());
@@ -139,6 +145,25 @@ fn clips() {
 #[test]
 fn raster_ops() {
     same("raster-ops", (162, 162), &scenes::raster_ops(), &Resources::default());
+}
+
+/// A raster operation reads what the page's parts before its own drew.
+#[test]
+fn raster_ops_over_earlier_parts() {
+    let mut rec = Recorder::new();
+    rec.fill_rect(rect(0.0, 0.0, 162.0, 162.0), Color::WHITE);
+    rec.fill_rect(rect(0.0, 60.0, 162.0, 100.0), Color::rgb(0x5A_A50F));
+    let ground = rec.finish();
+    let mut rec = Recorder::new();
+    let inverse = Paint { blend: BlendMode::Raster(5), ..Color::rgb(0xF0_8020).into() };
+    rec.fill_rect(rect(20.0, 20.0, 140.0, 140.0), inverse);
+    let ops = rec.finish();
+    let parts = vec![(Mark::Artifact(ArtifactKind::Other), ground), (Mark::Content(1), ops)];
+    let page = Page { width: 162.0, height: 162.0, parts, links: Vec::new(), destinations: Vec::new() };
+    same_page("raster-ops-over-earlier-parts", (162, 162), &page, &Resources::default(), 0, 1);
+    let theirs = cpu(&page.parts.iter().map(|(_, p)| p).collect::<Vec<_>>(), &Resources::default(), (162, 162));
+    let at = |x: usize, y: usize| &theirs[(y * 324 + x) * 4..][..3];
+    assert_eq!((at(60, 60), at(60, 160)), (&[0, 0, 0][..], &[0xA5, 0x5A, 0xF0][..]), "white and green inverted");
 }
 
 #[test]
@@ -352,6 +377,44 @@ fn structure_outline_and_metadata() {
         assert!(text.contains(key), "{key} is written");
     }
     assert!(!text.contains("/MCID 2"), "the artifact isn't tagged");
+}
+
+/// A page's parent tree array is indexed by marked-content id: content no element claims leaves a null there.
+#[test]
+fn parent_tree_entries_follow_marked_content_ids() {
+    let square = |y: f64| {
+        let mut rec = Recorder::new();
+        rec.fill_rect(rect(10.0, y, 90.0, y + 8.0), Color::BLACK);
+        rec.finish()
+    };
+    let parts = vec![(Mark::Content(1), square(10.0)), (Mark::Content(2), square(30.0))];
+    let structure = [Element::new(Kind::Paragraph, vec![Node::Content(2)])];
+    let page = Page { width: 100.0, height: 60.0, parts, links: Vec::new(), destinations: Vec::new() };
+    let written = write(&Resources::default(), &[page], &structure, &[], &Info::default()).expect("writes");
+    let text = String::from_utf8_lossy(&written.bytes);
+    let element = text.find("/S/P").map(|at| text[..at].rsplit("obj").nth(1).expect("an object")).expect("a paragraph");
+    let element = element.split_whitespace().rev().nth(1).expect("the paragraph's object number");
+    assert!(text.contains(&format!("[null {element} 0 R]")), "MCID 0 has no parent, MCID 1 the paragraph");
+}
+
+/// Below the depth the writer walks, a link stays a Link element with its annotation; what is between folds away.
+#[test]
+fn links_too_deep_to_walk_stay_links() {
+    use twip_graphics::pdf::{Link, LinkTarget};
+    let mut rec = Recorder::new();
+    rec.fill_rect(rect(10.0, 10.0, 90.0, 20.0), Color::BLACK);
+    let parts = vec![(Mark::Content(1), rec.finish())];
+    let links =
+        vec![Link { link: 7, rect: kurbo::Rect::new(10.0, 10.0, 90.0, 20.0), target: LinkTarget::Named("a".into()), description: String::new() }];
+    let mut e = Element::new(Kind::Paragraph, vec![Node::Element(Element::new(Kind::Link, vec![Node::Content(1), Node::Annotation(7)]))]);
+    for _ in 0..100 {
+        e = Element::new(Kind::Division, vec![Node::Element(e)]);
+    }
+    let page = Page { width: 100.0, height: 60.0, parts, links, destinations: Vec::new() };
+    let written = write(&Resources::default(), &[page], &[e], &[], &Info::default()).expect("writes");
+    let text = String::from_utf8_lossy(&written.bytes);
+    let link = text.split("endobj").find(|o| o.contains("/S/Link")).expect("a Link element");
+    assert!(link.contains("/Type/OBJR") && link.contains("/MCID 0"), "the link's annotation and text are the Link's");
 }
 
 /// Links, notes, header cells and header artifacts: a link's text and its annotation in one element, a named

@@ -175,6 +175,23 @@ fn pixel_tiles() {
     same("pixel-tiles", (128, 96), &picture, &resources);
 }
 
+/// Pixel sampling snaps only repeating patterns: an image drawn so samples where the CPU does.
+#[test]
+fn pixel_sampled_images() {
+    use twip_graphics::kurbo::Rect;
+    use twip_graphics::paint::{ImagePaint, Sampling};
+    let mut resources = Resources::default();
+    let image = resources.images.add_pixels(2, 1, vec![255, 0, 0, 255, 0, 0, 255, 255]).expect("pixels");
+    let mut rec = Recorder::new();
+    for y in 0..24 {
+        for x in 0..24 {
+            let (x, y) = (f64::from(x), f64::from(y));
+            rec.image(image, None, Rect::new(x, y, x + 1.0, y + 1.0), &ImagePaint { sampling: Sampling::Pixel, ..ImagePaint::default() });
+        }
+    }
+    same("pixel-sampled-images", (24, 24), &rec.finish(), &resources);
+}
+
 #[test]
 fn gradients() {
     same("gradients", (128, 144), &common::scenes::gradients(), &Resources::default());
@@ -253,6 +270,30 @@ fn kept_pictures_draw_where_they_move() {
     // The first frame draws the parts itself; the second prepares them to be kept; the third, fourth and last draw them
     // again; the fifth, a fraction of a pixel over, draws them itself.
     assert_eq!(renderer.kept_counts(), (6, 18));
+}
+
+/// Glyph origins on a half pixel left of and above the target round as they do kept and moved by whole pixels as
+/// they do drawn in the frame, and as the CPU rounds them: the same partly visible picture drawn three times.
+#[test]
+fn kept_glyphs_on_a_half_pixel_round_alike() {
+    use twip_graphics::scene::{GlyphRun, Synthesis};
+    let Some(ctx) = context() else { return };
+    let mut resources = Resources::default();
+    let mono = common::scenes::Mono::new();
+    let font = resources.fonts.add(mono.data.clone(), 0, &[]).expect("the test face registers");
+    let glyphs = mono.set("gjpqy", 24.0, 0.0);
+    let mut rec = Recorder::new();
+    rec.glyphs(&resources.fonts, &GlyphRun { font, size: 24.0, baseline: 0.0, glyphs: &glyphs, synthesis: Synthesis::default() }, Color::BLACK);
+    let line = rec.finish();
+    rec.picture(&line, Affine::translate((-0.125, -0.5)));
+    let frame = rec.finish();
+    let size = (80, 16);
+    let mut renderer = Renderer::new(ctx, FORMAT);
+    for k in 0..3 {
+        let ours = gpu(ctx, &mut renderer, &frame, &resources, size, Affine::IDENTITY);
+        compare(&format!("kept-half-pixel-{k}"), size, &ours, &cpu(&frame, &resources, size, Affine::IDENTITY));
+    }
+    assert_eq!(renderer.kept_counts(), (2, 1), "the frame and its line prepared to be kept, then drawn kept");
 }
 
 /// A page of line pictures, kept: an edit makes a new page with one new line, and the page is prepared again from its

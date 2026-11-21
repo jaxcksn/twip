@@ -102,8 +102,9 @@ impl Transform {
     /// `self` (tile to device pixels) with each texel of a tile of `size` texels one device pixel, from a pixel
     /// ([`crate::paint::Sampling::Pixel`]), its direction kept; unchanged under rotation or skew. The origin sits a
     /// quarter of a pixel past the pixel, so no pixel centre falls on a texel edge: every backend picks the same texel.
+    /// A transform that isn't invertible stays so.
     pub fn snap_tile(self, size: (u32, u32)) -> Transform {
-        if !self.is_scale_translate() || size.0 == 0 || size.1 == 0 {
+        if !self.is_scale_translate() || size.0 == 0 || size.1 == 0 || self.inverse().is_none() {
             return self;
         }
         Transform { a: 1f32.copysign(self.a), d: 1f32.copysign(self.d), e: self.e.round() + 0.25, f: self.f.round() + 0.25, ..self }
@@ -135,6 +136,10 @@ mod tests {
         }
         let turned = Transform { a: 0.3, b: 0.1, c: -0.1, d: 0.3, e: 1.0, f: 1.0 };
         assert_eq!(turned.snap_tile((8, 8)), turned, "rotation is left alone");
+        for (a, d) in [(0.0, 1.0), (1.0, 0.0), (f32::NAN, 1.0)] {
+            let flat = Transform { a, b: 0.0, c: 0.0, d, e: 1.0, f: 1.0 };
+            assert!(flat.snap_tile((8, 8)).inverse().is_none(), "a collapsed tile stays collapsed: {a} {d}");
+        }
     }
 
     #[test]

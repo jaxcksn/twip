@@ -410,12 +410,13 @@ impl Graphics {
         // Outlined at about the size they are drawn, for synthetic bold's width.
         let size = y1 - y0;
         let mut placed = Vec::new();
+        let mut ring = kurbo::StrokeCtx::default();
         for (face, glyphs) in t.runs.iter() {
             let Some(font) = self.font(face) else { continue };
             placed.clear();
             placed.extend(glyphs.iter().map(|&(g, x)| (g, x * size)));
             let synthesis = Synthesis { embolden: face.sim_bold, skew_x: if face.sim_italic { -0.2 } else { 0.0 } };
-            glyph_run_outline(&self.res.fonts, &GlyphRun { font, size, baseline: 0.0, glyphs: &placed, synthesis }, &mut out);
+            glyph_run_outline(&self.res.fonts, &GlyphRun { font, size, baseline: 0.0, glyphs: &placed, synthesis }, &mut out, &mut ring);
         }
         let b = out.bounding_box();
         if !(b.width() > 0.0 && b.height() > 0.0) {

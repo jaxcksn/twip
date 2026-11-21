@@ -782,7 +782,11 @@ mod tests {
         let (_, _, straight) = pixels_straight(pre).expect("decodes");
         let drawn = decode(pre).expect("decodes").data;
         assert!(drawn.as_chunks::<4>().0.iter().all(|p| p[0] <= p[3] && p[1] <= p[3] && p[2] <= p[3]));
-        assert!(straight.as_chunks::<4>().0.iter().zip(drawn.as_chunks::<4>().0).all(|(s, d)| s[3] == d[3] && (0..3).all(|c| s[c] >= d[c])));
+        let (straight, drawn) = (straight.as_chunks::<4>().0, drawn.as_chunks::<4>().0);
+        assert!(drawn.iter().any(|d| d[3] > 0 && d[3] < 255 && d[..3].iter().any(|&c| c > 0)), "a partly transparent colour");
+        let unpremultiplied =
+            |c: u8, a: u8| if a == 255 { c } else { (u16::from(c) * 255 + u16::from(a) / 2).checked_div(u16::from(a)).unwrap_or(0) as u8 };
+        assert!(straight.iter().zip(drawn).all(|(s, d)| s[3] == d[3] && (0..3).all(|c| s[c] == unpremultiplied(d[c], d[3]))));
         // Tiles cut short, and tile offsets left pointing past the end of the file.
         let tiles = include_bytes!("../tests/images/tiles.jxr");
         assert!(decode(tiles).is_ok());

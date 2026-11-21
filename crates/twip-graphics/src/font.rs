@@ -689,10 +689,11 @@ fn hinted_ppem(key: GlyphKey) -> Option<i32> {
 }
 
 /// A glyph origin's device coordinate `v` in quarter pixels, rounded to a whole pixel when `whole`: the baseline's
-/// coordinate across the run (y for axis-aligned text, x for text turned a quarter), as Skia rounds it.
+/// coordinate across the run (y for axis-aligned text, x for text turned a quarter), as Skia rounds it: halves up,
+/// so a coordinate moved by whole pixels rounds moved by them.
 #[inline]
 pub(crate) fn quarters(v: f32, whole: bool) -> i32 {
-    if whole { (v.round() as i32).saturating_mul(4) } else { (v * 4.0).round() as i32 }
+    if whole { ((v + 0.5).floor() as i32).saturating_mul(4) } else { (v * 4.0 + 0.5).floor() as i32 }
 }
 
 #[allow(clippy::too_many_arguments, reason = "the mask's inputs and scratch stay explicit")]

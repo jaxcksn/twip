@@ -17,7 +17,9 @@
 //! composited destination-in masks what came before it by its alpha, and one composited source-in is drawn masked by
 //! the alpha of what came before (which it replaces). Layers with filters or colour filters, and groups composited in
 //! ways the masks don't cover (other Porter-Duff modes, or those modes under a clip of the group's own), are drawn by
-//! the CPU backend at 300 dots per inch and embedded as images, as Skia rasterises what PDF can't express.
+//! the CPU backend at 300 dots per inch and embedded as images, as Skia rasterises what PDF can't express. A page's
+//! picture drawn so is drawn over what the page's pictures before it drew (on white), which raster operations read;
+//! the invisible text in what is rasterised is written as text beside the image.
 //!
 //! Gradients are shadings, drawn inside the shape's clip: axial and radial ones with stitched exponential functions
 //! (repeated and mirrored ones unrolled over the shape), sweeps as function-based shadings with a PostScript
@@ -50,7 +52,7 @@ use crate::scene::{BrushRec, ClipRec, Cmd, GlyphRun, Lists, Picture, Recorder, R
 /// What a page's picture is in the document's structure.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mark {
-    /// Content of the structure element with this id ([`Element::content`]).
+    /// Content with this id, the structure element whose [`Node::Content`] kid has it.
     Content(u32),
     /// Not content: a running header or footer and the like (`Pagination`), drawing that only lays out the page
     /// (`Layout`: borders, shading, rules), or anything else.
@@ -651,7 +653,8 @@ impl<'r> Writer<'r> {
         self.canvases.push(Canvas::new(flip));
         self.content().transform(coeffs(flip));
         let mut mcid = 0;
-        for (mark, picture) in &page.parts {
+        let mut backdrop = Backdrop::new(page, self.page);
+        for (k, (mark, picture)) in page.parts.iter().enumerate() {
             match *mark {
                 Mark::Content(c) => {
                     if let Some(b) = picture.bounds() {
@@ -685,7 +688,10 @@ impl<'r> Writer<'r> {
                     }
                 }
             }
-            self.picture(picture, Affine::IDENTITY, Ink::Paint);
+            match backdrop.as_mut().filter(|b| b.rasters[k]) {
+                Some(b) => self.over_backdrop(b, &page.parts, k),
+                None => self.picture(picture, Affine::IDENTITY, Ink::Paint),
+            }
             self.content().end_marked_content();
         }
         let mut canvas = self.canvases.pop().expect("the page's canvas");
@@ -749,7 +755,80 @@ impl<'r> Writer<'r> {
                 self.raster(area, ctm, ink, |cpu, target, res, t| {
                     cpu.render(target, res, &cpu::Frame { clear: None, draws: &[Draw { picture, transform: t }] })
                 });
+                self.invisible_text(lists, &mut 0, ctm, false, ink);
             }
+        }
+    }
+
+    /// Draws page part `k`, a raster, over what the page's parts before it drew on white paper: they are drawn into
+    /// the backdrop first, then the part, and its area of the backdrop (opaque) is embedded.
+    fn over_backdrop(&mut self, b: &mut Backdrop, parts: &[(Mark, Picture)], k: usize) {
+        let picture = &parts[k].1;
+        let t = Affine::translate((-b.px.x0, -b.px.y0)) * Affine::scale(RASTER);
+        let draws: Vec<Draw<'_>> = parts[b.drawn..=k].iter().map(|(_, picture)| Draw { picture, transform: t }).collect();
+        let (w, h) = (b.px.width() as u32, b.px.height() as u32);
+        if let Ok(mut target) = Target::new(&mut b.pixels, w, h, w as usize * 4, Format::Rgba8) {
+            let clear = (b.drawn == 0).then_some(Color::WHITE);
+            self.cpu.render(&mut target, self.res, &cpu::Frame { clear, draws: &draws });
+        }
+        b.drawn = k + 1;
+        let area = picture.bounds().map_or(self.page, |r| r.intersect(self.page));
+        let px = Affine::scale(RASTER).transform_rect_bbox(area).expand().intersect(b.px);
+        if px.width() > 0.0 && px.height() > 0.0 {
+            let (x0, y0) = ((px.x0 - b.px.x0) as usize, (px.y0 - b.px.y0) as usize);
+            let row = px.width() as usize * 4;
+            let mut pixels = Vec::with_capacity(row * px.height() as usize);
+            for y in y0..y0 + px.height() as usize {
+                let at = y * w as usize * 4 + x0 * 4;
+                pixels.extend_from_slice(&b.pixels[at..at + row]);
+            }
+            self.embed_raster(&pixels, px, Affine::IDENTITY, Ink::Paint);
+        }
+        self.invisible_text(picture.lists(), &mut 0, Affine::IDENTITY, false, Ink::Paint);
+    }
+
+    /// Writes the invisible text of `lists`' commands from `*i` (to the end, or `in_layer` through the layer's pop),
+    /// under their transforms: the characters of what a raster drew, which the raster can't carry.
+    fn invisible_text(&mut self, lists: &Lists, i: &mut usize, ctm: Affine, in_layer: bool, ink: Ink) {
+        if !lists.has_invisible_text() {
+            return;
+        }
+        let mut ctm = ctm;
+        let mut saved: Vec<Affine> = Vec::new();
+        while let Some(&cmd) = lists.cmds.get(*i) {
+            *i += 1;
+            match cmd {
+                Cmd::PushTransform { transform } => {
+                    let t = affine(lists.transforms[transform as usize]);
+                    self.content().save_state().transform(coeffs(t));
+                    saved.push(ctm);
+                    ctm *= t;
+                }
+                Cmd::PushClip { .. } => {
+                    self.content().save_state();
+                    saved.push(ctm);
+                }
+                Cmd::PushLayer { .. } => self.invisible_text(lists, i, ctm, true, ink),
+                Cmd::Pop => match saved.pop() {
+                    Some(c) => {
+                        self.content().restore_state();
+                        ctm = c;
+                    }
+                    None if in_layer => return,
+                    None => {}
+                },
+                Cmd::Picture { child, transform } if lists.children[child as usize].has_invisible_text() => {
+                    let t = affine(lists.transforms[transform as usize]);
+                    self.content().save_state().transform(coeffs(t));
+                    self.invisible_text(lists.children[child as usize].lists(), &mut 0, ctm * t, false, ink);
+                    self.content().restore_state();
+                }
+                Cmd::Glyphs { run, paint } if lists.runs[run as usize].invisible => self.glyphs(lists, run as usize, paint as usize, ctm, ink),
+                _ => {}
+            }
+        }
+        for _ in saved {
+            self.content().restore_state();
         }
     }
 
@@ -878,6 +957,7 @@ impl<'r> Writer<'r> {
             let local = rec.bounds.or(rec.content).map(Rect::to_kurbo);
             let area = local.map_or(self.page, |b| ctm.transform_rect_bbox(b.inflate(reach, reach)).intersect(self.page));
             self.raster(area, ctm, ink, |cpu, target, res, t| cpu.render_layer(target, res, lists, at, Transform::from_kurbo(t)));
+            self.invisible_text(lists, &mut (at + 1), ctm, true, ink);
         } else {
             let bounded = rec.bounds.map(|b| self.push_rect_clip(b.to_kurbo())).is_some();
             match group {
@@ -907,7 +987,14 @@ impl<'r> Writer<'r> {
             let t = Affine::translate((-px.x0, -px.y0)) * Affine::scale(RASTER) * ctm;
             render(&mut self.cpu, &mut target, self.res, t);
         }
-        let image = self.rgba_image(&pixels, w, h, ink, self.interpolates(Sampling::Linear));
+        self.embed_raster(&pixels, px, ctm, ink);
+    }
+
+    /// Embeds `pixels`, rendered at 300 dots per inch over `px` (device pixels of the page), drawn where they belong
+    /// under `ctm`.
+    fn embed_raster(&mut self, pixels: &[u8], px: kurbo::Rect, ctm: Affine, ink: Ink) {
+        let (w, h) = (px.width() as u32, px.height() as u32);
+        let image = self.rgba_image(pixels, w, h, ink, self.interpolates(Sampling::Linear));
         // The image in page points, wherever the transform is now.
         let place = ctm.inverse() * Affine::translate((px.x0 / RASTER, px.y0 / RASTER)) * Affine::scale(1.0 / RASTER);
         self.draw_image(image, (w, h), place);
@@ -1871,7 +1958,8 @@ impl<'r> Writer<'r> {
                 content.entry(c).or_default().push((page, mcid));
             }
         }
-        let mut tree = Tree { content, parents: vec![Vec::new(); pages.len()], annots: Vec::new(), ids: BTreeMap::new() };
+        let parents = self.marks.iter().map(|marks| vec![None; marks.len()]).collect();
+        let mut tree = Tree { content, parents, annots: Vec::new(), ids: BTreeMap::new() };
         let mut kids = Vec::new();
         for e in structure {
             kids.push(self.element(e, document, pages, &mut tree, 1));
@@ -1885,18 +1973,24 @@ impl<'r> Writer<'r> {
             }
         }
         d.finish();
-        // Each page's marked content's elements, in marked-content order: the parent tree's entries.
+        // Each page's marked content's elements, indexed by marked-content id: the parent tree's entries.
         let arrays: Vec<Ref> = tree
             .parents
-            .iter_mut()
+            .iter()
             .map(|list| {
-                list.sort_by_key(|(m, _)| *m);
                 let id = self.alloc();
-                self.pdf.indirect(id).array().items(list.iter().map(|(_, r)| *r));
+                let mut a = self.pdf.indirect(id).array();
+                for parent in list {
+                    match parent {
+                        Some(r) => a.item(*r),
+                        None => a.item(pdf_writer::Null),
+                    };
+                }
                 id
             })
             .collect();
-        tree.annots.sort_unstable_by_key(|a| a.0);
+        tree.annots.sort_by_key(|a| a.0);
+        tree.annots.dedup_by_key(|a| a.0);
         let mut r = self.pdf.indirect(root).start::<pdf_writer::writers::StructTreeRoot>();
         r.child(document);
         {
@@ -1938,11 +2032,16 @@ impl<'r> Writer<'r> {
             }
         } else {
             // Deeper, the element's descendants fold into it (their content and annotations as its), where recursing
-            // on would overflow the stack; found with a stack of their own, in reading order.
+            // on would overflow the stack; found with a stack of their own, in reading order. Links stay elements, one
+            // level down, each folding its own descendants.
             let mut todo: Vec<&Node> = e.kids.iter().rev().collect();
             while let Some(x) = todo.pop() {
                 match x {
                     Node::Content(c) => kids.extend(tree.content.get(c).into_iter().flatten().map(|&(p, m)| Kid::Marked(p, m))),
+                    Node::Element(k) if k.kind == Kind::Link && depth == crate::scene::MAX_DEPTH => {
+                        let r = self.element(k, id, pages, tree, depth + 1);
+                        kids.push(Kid::Element(r));
+                    }
                     Node::Element(k) => todo.extend(k.kids.iter().rev()),
                     Node::Annotation(l) => kids.extend(self.annots.get(l).into_iter().flatten().map(|&(p, r, key)| Kid::Annotation(p, r, key))),
                 }
@@ -1950,7 +2049,12 @@ impl<'r> Writer<'r> {
         }
         for k in &kids {
             match *k {
-                Kid::Marked(page, mcid) => tree.parents[page].push((mcid, id)),
+                Kid::Marked(page, mcid) => {
+                    let slot = &mut tree.parents[page][mcid as usize];
+                    if slot.is_none() {
+                        *slot = Some(id);
+                    }
+                }
                 Kid::Annotation(_, _, key) => tree.annots.push((key, id)),
                 Kid::Element(_) => {}
             }
@@ -2193,11 +2297,41 @@ impl<'r> Writer<'r> {
     }
 }
 
+/// A page's parts drawn by the CPU backend at 300 dots per inch, over white, for the parts that are rasters to draw
+/// over: each part through `drawn` already in `pixels`, which cover `px` (the rasters' areas, in device pixels).
+struct Backdrop {
+    pixels: Vec<u8>,
+    px: kurbo::Rect,
+    drawn: usize,
+    /// Which parts are rasters.
+    rasters: Vec<bool>,
+}
+
+impl Backdrop {
+    /// The backdrop of `page`'s rasters (`area`: the page in points), `None` when it has none (or they are too large).
+    fn new(page: &Page, area: kurbo::Rect) -> Option<Backdrop> {
+        let rasters: Vec<bool> = page.parts.iter().map(|(_, p)| classify(p.lists(), 0, false) == Group::Raster).collect();
+        let px = page
+            .parts
+            .iter()
+            .zip(&rasters)
+            .filter(|(_, r)| **r)
+            .map(|((_, p), _)| Affine::scale(RASTER).transform_rect_bbox(p.bounds().map_or(area, |b| b.intersect(area))).expand())
+            .reduce(|a, b| a.union(b))?
+            .intersect(Affine::scale(RASTER).transform_rect_bbox(area).expand());
+        let (w, h) = (px.width().max(0.0) as u64, px.height().max(0.0) as u64);
+        if w == 0 || h == 0 || w * h > 1 << 28 {
+            return None;
+        }
+        Some(Backdrop { pixels: vec![0; (w * h * 4) as usize], px, drawn: 0, rasters })
+    }
+}
+
 /// What writing the structure tree gathers: each content id's marked content, each page's marked content's
 /// elements, each annotation's parent tree key and element, and the elements by identifier.
 struct Tree {
     content: FastMap<u32, Vec<(usize, i32)>>,
-    parents: Vec<Vec<(i32, Ref)>>,
+    parents: Vec<Vec<Option<Ref>>>,
     annots: Vec<(i32, Ref)>,
     ids: BTreeMap<Vec<u8>, Ref>,
 }
@@ -2782,14 +2916,21 @@ mod invisible_tests {
     use super::*;
     use crate::scene::{GlyphRun, Recorder, Synthesis};
 
-    /// The PDF's content streams, inflated, and whether a Type 3 font was written.
+    /// The page's content stream (the one stream with marked content), inflated, and whether a Type 3 font was written.
     fn written(variations: &[([u8; 4], f32)], synthesis: Synthesis) -> (String, bool) {
+        written_with(variations, synthesis, |_, _, _| {})
+    }
+
+    /// [`written`], with `more` recorded after the invisible text, and the text in a layer `more` may open.
+    fn written_with(variations: &[([u8; 4], f32)], synthesis: Synthesis, more: impl FnOnce(&mut Recorder, &Resources, FontId)) -> (String, bool) {
         let mut res = Resources::default();
         let mono: crate::font::FontData = std::sync::Arc::new(include_bytes!("../tests/fonts/jetbrains-mono-500.ttf").to_vec());
         let font = res.fonts.add(mono, 0, variations).expect("the test face registers");
         let mut rec = Recorder::new();
+        rec.push_transform(Affine::translate((1.0, 2.0)));
         let glyphs = [(36, 10.0), (37, 17.0)];
         rec.invisible_text(&res.fonts, &GlyphRun { font, size: 12.0, baseline: 30.0, glyphs: &glyphs, synthesis }, "AB", &[0, 1]);
+        more(&mut rec, &res, font);
         let page = Page {
             width: 100.0,
             height: 60.0,
@@ -2801,9 +2942,14 @@ mod invisible_tests {
         let mut content = String::new();
         let mut rest = &bytes[..];
         while let Some(at) = rest.windows(7).position(|w| w == b"stream\n") {
+            // The stream's length, from its dictionary's /Length: binary data may hold "endstream".
+            let dict = String::from_utf8_lossy(&rest[at.saturating_sub(200)..at]).into_owned();
+            let len = dict.rsplit("/Length ").next().and_then(|l| l.split(|c: char| !c.is_ascii_digit()).next()?.parse().ok());
             rest = &rest[at + 7..];
-            let end = rest.windows(9).position(|w| w == b"endstream").unwrap_or(rest.len());
-            if let Ok(data) = miniz_oxide::inflate::decompress_to_vec_zlib(&rest[..end]) {
+            let end = len.unwrap_or(0).min(rest.len());
+            if let Ok(data) = miniz_oxide::inflate::decompress_to_vec_zlib(&rest[..end])
+                && data.windows(3).any(|w| w == b"BDC")
+            {
                 content.push_str(&String::from_utf8_lossy(&data));
             }
             rest = &rest[end..];
@@ -2821,8 +2967,65 @@ mod invisible_tests {
         {
             let (content, has_type3) = written(variations, synthesis);
             assert_eq!(has_type3, type3, "{variations:?}");
-            assert!(content.contains("3 Tr") && content.contains("TJ"), "{variations:?}: {content}");
-            assert!(!content.contains(" f\n") && !content.contains("2 Tr"), "no outline fill, no fill and stroke: {content}");
+            let ops: Vec<&str> = content.split_whitespace().collect();
+            assert!(ops.windows(2).any(|w| w == ["3", "Tr"]) && ops.contains(&"TJ"), "{variations:?}: {content}");
+            for op in ["f", "f*", "F", "B", "B*", "b", "b*", "S", "s", "Do"] {
+                assert!(!ops.contains(&op), "no outline drawn ({op}): {content}");
+            }
+            assert!(!ops.windows(2).any(|w| w[1] == "Tr" && w[0] != "3"), "only rendering mode 3: {content}");
+        }
+    }
+
+    /// A picture of invisible spaces draws no ink but is placed, for its characters.
+    #[test]
+    fn invisible_spaces_are_placed() {
+        let mut res = Resources::default();
+        let mono: crate::font::FontData = std::sync::Arc::new(include_bytes!("../tests/fonts/jetbrains-mono-500.ttf").to_vec());
+        let space = skrifa::FontRef::new((*mono).as_ref()).expect("reads").charmap().map(' ').expect("a space").to_u32();
+        let font = res.fonts.add(mono, 0, &[]).expect("the test face registers");
+        let mut rec = Recorder::new();
+        let glyphs = [(space, 10.0)];
+        rec.invisible_text(&res.fonts, &GlyphRun { font, size: 12.0, baseline: 30.0, glyphs: &glyphs, synthesis: Synthesis::default() }, " ", &[0]);
+        let spaces = Recorder::finish(&mut rec);
+        assert_eq!(spaces.bounds(), None);
+        rec.picture(&spaces, Affine::translate((5.0, 0.0)));
+        let line = Recorder::finish(&mut rec);
+        assert_eq!(line.bounds(), None);
+        let page = Page { width: 100.0, height: 60.0, parts: vec![(Mark::Content(1), line)], links: Vec::new(), destinations: Vec::new() };
+        let bytes = write(&res, &[page], &[], &[], &Info::default()).expect("writes").bytes;
+        assert!(String::from_utf8_lossy(&bytes).contains("/FontFile2"), "the space is written as text");
+    }
+
+    /// Invisible text in what is drawn as a raster (a picture with a raster operation, a filtered layer) is written
+    /// once, as text, beside the raster's image.
+    #[test]
+    fn invisible_text_survives_rasters() {
+        use crate::paint::{BlendMode, Color, Paint};
+        use crate::scene::{Filter, Layer};
+        let xor = |rec: &mut Recorder, _: &Resources, _: FontId| {
+            rec.fill_rect(kurbo::Rect::new(0.0, 0.0, 50.0, 50.0), Paint { blend: BlendMode::Raster(6), ..Color::BLACK.into() })
+        };
+        let blurred = |rec: &mut Recorder, res: &Resources, font: FontId| {
+            rec.pop();
+            rec.push_layer(&Layer { filters: &[Filter::Blur { sigma: 2.0 }], ..Layer::default() });
+            rec.push_transform(Affine::translate((1.0, 2.0)));
+            let glyphs = [(36, 10.0)];
+            rec.invisible_text(
+                &res.fonts,
+                &GlyphRun { font, size: 12.0, baseline: 40.0, glyphs: &glyphs, synthesis: Synthesis::default() },
+                "C",
+                &[0],
+            );
+            rec.fill_rect(kurbo::Rect::new(0.0, 0.0, 50.0, 50.0), Color::BLACK);
+        };
+        for (name, runs, more) in
+            [("plain", 1, None), ("raster op", 1, Some(&xor as &dyn Fn(&mut Recorder, &Resources, FontId))), ("filtered layer", 2, Some(&blurred))]
+        {
+            let (content, _) = written_with(&[], Synthesis::default(), |rec, res, font| more.into_iter().for_each(|m| m(rec, res, font)));
+            let ops: Vec<&str> = content.split_whitespace().collect();
+            assert_eq!(ops.iter().filter(|&&op| op == "TJ").count(), runs, "{name}: {content}");
+            assert!(ops.windows(2).any(|w| w == ["3", "Tr"]), "{name}: {content}");
+            assert_eq!(ops.contains(&"Do"), more.is_some(), "{name}: a raster's image: {content}");
         }
     }
 }

@@ -978,7 +978,7 @@ impl Prepare {
     ) -> Option<Paint> {
         let levels = self.levels(res, id)?;
         let inv = match sampling {
-            Sampling::Pixel => inv.inverse().map(|m| m.snap_tile(levels[0])).and_then(Transform::inverse).unwrap_or(inv),
+            Sampling::Pixel if repeat => inv.inverse().map(|m| m.snap_tile(levels[0])).and_then(Transform::inverse).unwrap_or(inv),
             _ => inv,
         };
         let level = mip_index(levels.len(), inv, sampling);

@@ -176,7 +176,7 @@ impl Graphics {
     fn run_path(&mut self, run: &GlyphRun<'_>) -> BezPath {
         let mut path = std::mem::take(&mut self.fx_path);
         path.truncate(0);
-        glyph_run_outline(&self.res.fonts, run, &mut path);
+        glyph_run_outline(&self.res.fonts, run, &mut path, &mut self.fx_ring);
         path
     }
 

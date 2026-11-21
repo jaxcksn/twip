@@ -11,8 +11,8 @@
 // The output is the paint times the coverage; the pipeline's fixed-function blend does the rest. For an erase
 // (destination-in, clear) the output's alpha is what erases. The other blend modes (`general`) read a copy of the
 // destination and blend as the CPU backend's general blend does: the W3C Compositing and Blending formulas on 8-bit
-// premultiplied colour (and the GDI raster operations on its bits), then the destination moved towards the result by
-// the coverage.
+// premultiplied colour (the GDI raster operations on the bits of the straight 8-bit channels, composited back into
+// premultiplied colour as the separable modes are), then the destination moved towards the result by the coverage.
 
 struct Globals {
     // The pass's target size, pixels.

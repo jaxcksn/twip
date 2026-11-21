@@ -151,6 +151,9 @@ struct Data {
     /// How deep its pictures and layers nest, itself counted (at most [`MAX_DEPTH`]).
     depth: u32,
     bounds: Option<Rect>,
+    /// Whether it, or a picture it places, carries characters (drawn or not), and invisible ones.
+    text: bool,
+    invisible: bool,
     bytes: usize,
     lists: Lists,
 }
@@ -179,6 +182,11 @@ impl Picture {
 
     pub(crate) fn lists(&self) -> &Lists {
         &self.0.lists
+    }
+
+    /// Whether it, or a picture it places, has an invisible run ([`Recorder::invisible_text`]).
+    pub(crate) fn has_invisible_text(&self) -> bool {
+        self.0.invisible
     }
 }
 
@@ -409,6 +417,11 @@ pub(crate) struct Lists {
 }
 
 impl Lists {
+    /// Whether a run here, or in a picture placed here, is invisible.
+    pub(crate) fn has_invisible_text(&self) -> bool {
+        self.runs.iter().any(|r| r.invisible) || self.children.iter().any(Picture::has_invisible_text)
+    }
+
     fn bytes(&self) -> usize {
         fn size<T>(v: &[T]) -> usize {
             std::mem::size_of_val(v)
@@ -504,9 +517,13 @@ pub struct Recorder {
     /// Stroked text's scratch: a glyph's placed outline, and a contour's synthetic bold ring.
     glyph: kurbo::BezPath,
     ring: kurbo::StrokeCtx,
+    /// A dashed stroke made safe ([`safe_dashes`]), its pattern kept for the next.
+    dashes: kurbo::Stroke,
     /// Layers open now, and the deepest nesting recorded so far ([`MAX_DEPTH`]).
     layers_open: u32,
     depth: u32,
+    /// Whether the picture carries characters so far.
+    text: bool,
 }
 
 impl Default for Recorder {
@@ -527,8 +544,10 @@ impl Recorder {
             stroker: kurbo::StrokeCtx::default(),
             glyph: kurbo::BezPath::new(),
             ring: kurbo::StrokeCtx::default(),
+            dashes: kurbo::Stroke::default(),
             layers_open: 0,
             depth: 1,
+            text: false,
         }
     }
 
@@ -616,15 +635,14 @@ impl Recorder {
         if stroke.width.is_nan() || stroke.width <= 0.0 {
             return;
         }
-        let paint = paint.into();
-        let safe;
-        let stroke = match safe_dashes(path, stroke) {
-            Some(s) => {
-                safe = s;
-                &safe
-            }
-            None => stroke,
-        };
+        let mut safe = std::mem::take(&mut self.dashes);
+        let changed = safe_dashes(path, stroke, &mut safe);
+        self.stroke_safe(path, if changed { &safe } else { stroke }, paint.into());
+        self.dashes = safe;
+    }
+
+    /// [`Recorder::stroke_path`], its dashes made safe.
+    fn stroke_safe(&mut self, path: &[PathEl], stroke: &kurbo::Stroke, paint: Paint<'_>) {
         if let Some((a, b)) = path::as_line(path)
             && (a.x == b.x || a.y == b.y)
             && let Some(square) = flat_caps(stroke)
@@ -697,6 +715,7 @@ impl Recorder {
         }
         let start = self.lists.text.len();
         self.lists.text.push_str(text);
+        self.text |= !text.is_empty();
         let text_span = Span::since(self.lists.text.as_bytes(), start);
         let start = self.lists.clusters.len();
         if clusters.len() == run.glyphs.len() && clusters.iter().all(|&c| (c as usize) < text.len().max(1)) {
@@ -796,15 +815,22 @@ impl Recorder {
         self.lists.cmds.push(Cmd::Image { image });
     }
 
-    /// Places `picture`, mapped by `transform`. The picture is shared, not copied.
+    /// Places `picture`, mapped by `transform`. The picture is shared, not copied. One that draws nothing is placed
+    /// only for the characters it carries (a PDF's text).
     pub fn picture(&mut self, picture: &Picture, transform: Affine) {
-        let Some(bounds) = picture.bounds() else { return };
+        let bounds = picture.bounds();
+        if bounds.is_none() && !picture.0.text {
+            return;
+        }
         let depth = 1 + self.layers_open + picture.0.depth;
         if depth > MAX_DEPTH {
             return;
         }
         self.depth = self.depth.max(depth);
-        self.add_bounds(transform.transform_rect_bbox(bounds));
+        self.text |= picture.0.text;
+        if let Some(bounds) = bounds {
+            self.add_bounds(transform.transform_rect_bbox(bounds));
+        }
         let child = self.lists.children.len() as u32;
         self.lists.children.push(picture.clone());
         let transform = self.transform_index(transform);
@@ -914,7 +940,9 @@ impl Recorder {
         let id = PictureId(NEXT.fetch_add(1, Ordering::Relaxed));
         let bytes = std::mem::size_of::<Data>() + lists.bytes();
         let depth = std::mem::replace(&mut self.depth, 1);
-        Picture(Arc::new(Data { id, depth, bounds, bytes, lists }))
+        let text = std::mem::take(&mut self.text);
+        let invisible = lists.has_invisible_text();
+        Picture(Arc::new(Data { id, depth, bounds, text, invisible, bytes, lists }))
     }
 
     fn paint(&mut self, paint: Paint<'_>) -> u32 {
@@ -1137,18 +1165,18 @@ fn push_mapped(out: &mut kurbo::BezPath, els: &[PathEl], map: Affine, reversed: 
 
 /// Appends a run's glyph outlines to `out`, placed and styled as [`Recorder::glyph_paths`] fills them (skewed for
 /// synthetic italic, grown for synthetic bold), in the run's local units: text drawn as a shape's own geometry, filled
-/// and stroked as any path. Glyphs without an outline add nothing.
-pub fn glyph_run_outline(fonts: &FontRegistry, run: &GlyphRun<'_>, out: &mut kurbo::BezPath) {
+/// and stroked as any path. Glyphs without an outline add nothing. `ring`: scratch for synthetic bold, kept between
+/// runs.
+pub fn glyph_run_outline(fonts: &FontRegistry, run: &GlyphRun<'_>, out: &mut kurbo::BezPath, ring: &mut kurbo::StrokeCtx) {
     if run.glyphs.is_empty() || !(run.size > 0.0 && run.size.is_finite()) {
         return;
     }
     let style = Style { skew_x: run.synthesis.skew_x, bold: if run.synthesis.embolden { embolden_em(run.size as f32) } else { 0.0 } };
-    let mut ring = kurbo::StrokeCtx::default();
     fonts.outlines(run.font, run.glyphs.iter().map(|g| g.0), |k, outline| {
         let map = Affine::translate((run.glyphs[k].1, run.baseline)) * Affine::scale(run.size) * style.skew();
         out.extend(outline.iter().map(|e| map * e));
         if style.bold > 0.0 {
-            bold_rings(outline, style, &mut ring, Ring::Whole, |els, reversed| push_mapped(out, els, map, reversed));
+            bold_rings(outline, style, ring, Ring::Whole, |els, reversed| push_mapped(out, els, map, reversed));
         }
     });
 }
@@ -1167,22 +1195,27 @@ fn subpaths(els: &[PathEl]) -> impl Iterator<Item = &[PathEl]> {
     })
 }
 
-/// `stroke` made safe to dash, when it is dashed: solid when its pattern isn't valid (an entry negative or NaN, the sum
-/// 0 or past `f64`) or is too fine for `path`, else its offset within one period (kurbo walks the pattern to an offset
-/// entry by entry, so 1e300 never ends).
-fn safe_dashes(path: &[PathEl], stroke: &kurbo::Stroke) -> Option<kurbo::Stroke> {
-    let pattern = &stroke.dash_pattern;
-    if pattern.is_empty() {
-        return None;
+/// `stroke` made safe to dash in `out`, when it is dashed (returning whether it is): solid when its pattern isn't
+/// valid (an entry negative or NaN, the sum 0 or past `f64`) or is too fine for `path`, else its offset within one
+/// period (kurbo walks the pattern to an offset entry by entry, so 1e300 never ends). `out`'s pattern keeps its memory.
+fn safe_dashes(path: &[PathEl], stroke: &kurbo::Stroke, out: &mut kurbo::Stroke) -> bool {
+    let kurbo::Stroke { width, join, miter_limit, start_cap, end_cap, ref dash_pattern, dash_offset } = *stroke;
+    if dash_pattern.is_empty() {
+        return false;
     }
-    let sum: f64 = pattern.iter().sum();
-    let period = sum * if pattern.len() % 2 == 1 { 2.0 } else { 1.0 };
-    let valid = pattern.iter().all(|&d| d >= 0.0) && sum > 0.0 && period.is_finite();
+    (out.width, out.join, out.miter_limit, out.start_cap, out.end_cap) = (width, join, miter_limit, start_cap, end_cap);
+    out.dash_pattern.clear();
+    let sum: f64 = dash_pattern.iter().sum();
+    let period = sum * if dash_pattern.len() % 2 == 1 { 2.0 } else { 1.0 };
+    let valid = dash_pattern.iter().all(|&d| d >= 0.0) && sum > 0.0 && period.is_finite();
     // The control polygon is at least as long as the path; NaN or infinity fails the test too.
-    if !(valid && polygon_length(path) / period * pattern.len() as f64 <= MAX_DASHES) {
-        return Some(kurbo::Stroke { dash_pattern: Default::default(), ..stroke.clone() });
+    if !(valid && polygon_length(path) / period * dash_pattern.len() as f64 <= MAX_DASHES) {
+        out.dash_offset = dash_offset;
+        return true;
     }
-    Some(kurbo::Stroke { dash_offset: stroke.dash_offset.rem_euclid(period), ..stroke.clone() })
+    out.dash_pattern.extend_from_slice(dash_pattern);
+    out.dash_offset = dash_offset.rem_euclid(period);
+    true
 }
 
 /// The length of `path`'s control polygon, closing segments included.
@@ -1535,7 +1568,7 @@ mod tests {
         // Plain, each glyph's em outline placed at its origin and size, in order.
         let run = GlyphRun { font, size: 20.0, baseline: 50.0, glyphs: &glyphs, synthesis: Synthesis::default() };
         let mut outline = kurbo::BezPath::new();
-        glyph_run_outline(fonts, &run, &mut outline);
+        glyph_run_outline(fonts, &run, &mut outline, &mut kurbo::StrokeCtx::default());
         let mut want = kurbo::BezPath::new();
         for &(g, x) in &glyphs {
             let mut em = kurbo::BezPath::new();
@@ -1556,7 +1589,7 @@ mod tests {
         rec.glyph_paths(fonts, &run, Color::BLACK);
         let painted = rec.finish();
         let mut outline = kurbo::BezPath::new();
-        glyph_run_outline(fonts, &run, &mut outline);
+        glyph_run_outline(fonts, &run, &mut outline, &mut kurbo::StrokeCtx::default());
         let mut rec = Recorder::new();
         rec.fill_path(outline.elements(), Color::BLACK);
         let filled = rec.finish();
@@ -1564,7 +1597,12 @@ mod tests {
         assert_eq!(filled.bounds(), painted.bounds());
         assert!(draw(&filled) == draw(&painted), "the same pixels");
         let mut none = kurbo::BezPath::new();
-        glyph_run_outline(fonts, &GlyphRun { font, size: f64::NAN, baseline: 0.0, glyphs: &glyphs, synthesis: Synthesis::default() }, &mut none);
+        glyph_run_outline(
+            fonts,
+            &GlyphRun { font, size: f64::NAN, baseline: 0.0, glyphs: &glyphs, synthesis: Synthesis::default() },
+            &mut none,
+            &mut kurbo::StrokeCtx::default(),
+        );
         assert!(none.is_empty());
     }
 
@@ -1601,5 +1639,23 @@ mod tests {
         let lists = 7;
         assert!(finishing.count_total <= lists + 1, "one allocation per non-empty list and one for the picture: {}", finishing.count_total);
         assert!(first.bytes() > 40 * 60 * std::mem::size_of::<GlyphRec>());
+        // Dashed glyph outlines: a pattern past the four entries it keeps inline costs nothing more than one that
+        // isn't (kurbo's dashing keeps a buffer of its own per path).
+        let run = GlyphRun { font, size: 11.0, baseline: 11.0, glyphs: &glyphs, synthesis: Synthesis::default() };
+        let long = kurbo::Stroke::new(0.5).with_dashes(3.0, [1.0, 0.5, 2.0, 0.5, 0.25, 0.5]);
+        let short = kurbo::Stroke::new(0.5).with_dashes(3.0, [1.0, 0.5, 2.0, 0.5]);
+        rec.stroke_glyphs(&fonts, &run, &long, RED);
+        let long = allocation_counter::measure(|| rec.stroke_glyphs(&fonts, &run, &long, RED)).count_total;
+        let short = allocation_counter::measure(|| rec.stroke_glyphs(&fonts, &run, &short, RED)).count_total;
+        assert_eq!(long, short, "a long dash pattern isn't copied per glyph");
+        // A bold run's outline, its scratch kept.
+        let bold = GlyphRun { font, size: 11.0, baseline: 11.0, glyphs: &glyphs, synthesis: Synthesis { embolden: true, skew_x: 0.0 } };
+        let (mut out, mut ring) = (kurbo::BezPath::new(), kurbo::StrokeCtx::default());
+        glyph_run_outline(&fonts, &bold, &mut out, &mut ring);
+        let outlining = allocation_counter::measure(|| {
+            out.truncate(0);
+            glyph_run_outline(&fonts, &bold, &mut out, &mut ring);
+        });
+        assert_eq!(outlining.count_total, 0, "outlining a bold run with kept scratch");
     }
 }

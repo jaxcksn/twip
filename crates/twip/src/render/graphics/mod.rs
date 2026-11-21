@@ -37,10 +37,12 @@ use crate::layout::traverse::{paint, paint_float};
 /// page pictures, and the frame being recorded. Its memory is kept between frames.
 #[derive(Default)]
 pub struct Graphics {
-    /// Text effects' scratch: a gradient's stops as the appearance shows them, their samples, and a run's outlines.
+    /// Text effects' scratch: a gradient's stops as the appearance shows them, their samples, a run's outlines and
+    /// their synthetic bold.
     fx_stops: Vec<(f64, crate::drawing::colour::Rgba)>,
     fx_samples: Vec<twip_graphics::paint::Stop>,
     fx_path: kurbo::BezPath,
+    fx_ring: kurbo::StrokeCtx,
     res: Resources,
     cpu: cpu::Renderer,
     /// Registered faces, by the face file's address, index and instance.
