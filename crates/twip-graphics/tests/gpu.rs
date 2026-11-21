@@ -296,6 +296,49 @@ fn kept_glyphs_on_a_half_pixel_round_alike() {
     assert_eq!(renderer.kept_counts(), (2, 1), "the frame and its line prepared to be kept, then drawn kept");
 }
 
+/// A two-texel pixel tile whose origin falls on a half pixel left of the target keeps its phase kept as drawn in the
+/// frame, and as the CPU draws it.
+#[test]
+fn kept_pixel_tiles_on_a_half_pixel_keep_their_phase() {
+    use twip_graphics::paint::{Brush, Paint, Sampling};
+    let Some(ctx) = context() else { return };
+    let mut resources = Resources::default();
+    let tile = resources.images.add_pixels(2, 1, vec![255, 0, 0, 255, 0, 0, 255, 255]).expect("pixels");
+    let mut rec = Recorder::new();
+    let brush = Brush::Pattern { image: tile, transform: Affine::IDENTITY, sampling: Sampling::Pixel };
+    rec.fill_rect(common::scenes::rect(0.5, 0.0, 12.5, 4.0), Paint::new(brush));
+    let tiles = rec.finish();
+    rec.picture(&tiles, Affine::translate((-0.5, 0.0)));
+    let frame = rec.finish();
+    let size = (16, 4);
+    let mut renderer = Renderer::new(ctx, FORMAT);
+    for k in 0..3 {
+        let ours = gpu(ctx, &mut renderer, &frame, &resources, size, Affine::IDENTITY);
+        compare(&format!("kept-half-pixel-tile-{k}"), size, &ours, &cpu(&frame, &resources, size, Affine::IDENTITY));
+    }
+    assert_eq!(renderer.kept_counts(), (2, 1), "the frame and its tiles prepared to be kept, then drawn kept");
+}
+
+/// A dashed rect with more dashes than are drawn whole, only part of it in the target: kept, it would be solid, so it
+/// is drawn in the frame, its visible dashes as the CPU draws them.
+#[test]
+fn kept_pictures_keep_the_dashes_the_target_sees() {
+    let Some(ctx) = context() else { return };
+    let resources = Resources::default();
+    let mut rec = Recorder::new();
+    rec.fill_dashed_rect(common::scenes::rect(0.0, 0.0, 200_002.0, 1.0), &[1, 1], Color::BLACK);
+    let line = rec.finish();
+    rec.picture(&line, Affine::translate((0.0, 2.0)));
+    let frame = rec.finish();
+    let size = (128, 4);
+    let mut renderer = Renderer::new(ctx, FORMAT);
+    for k in 0..3 {
+        let ours = gpu(ctx, &mut renderer, &frame, &resources, size, Affine::IDENTITY);
+        compare(&format!("kept-long-dashes-{k}"), size, &ours, &cpu(&frame, &resources, size, Affine::IDENTITY));
+    }
+    assert_eq!(renderer.kept_counts(), (0, 0), "neither the frame nor its line kept");
+}
+
 /// A page of line pictures, kept: an edit makes a new page with one new line, and the page is prepared again from its
 /// unchanged lines' kept preparations and the new line's.
 #[test]

@@ -401,7 +401,8 @@ impl Graphics {
             rec.pop();
         }
         if r.retain {
-            kept.trim();
+            let images = &self.res.images;
+            kept.trim(|id| images.info(id).map_or(0, |i| u64::from(i.width) * u64::from(i.height) * 4), shape::RECOLOUR_MAX_BYTES);
         }
         self.retained = kept;
         self.frame = rec;

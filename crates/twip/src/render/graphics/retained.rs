@@ -114,6 +114,8 @@ pub struct Retained {
     recordings: HashMap<u64, Recording>,
     recorder: Recorder,
     clock: u64,
+    /// The clock when the last frame ended: recordings used since are the frame's.
+    trimmed: u64,
     /// The pictures' memory past which the least recently drawn go, bytes.
     pub budget: usize,
     pub counts: Counts,
@@ -121,7 +123,7 @@ pub struct Retained {
 
 impl Default for Retained {
     fn default() -> Retained {
-        Retained { recordings: HashMap::new(), recorder: Recorder::new(), clock: 0, budget: 32 << 20, counts: Counts::default() }
+        Retained { recordings: HashMap::new(), recorder: Recorder::new(), clock: 0, trimmed: 0, budget: 32 << 20, counts: Counts::default() }
     }
 }
 
@@ -160,21 +162,92 @@ impl Retained {
         }
     }
 
-    /// After a frame: drops the least recently drawn pictures past the budget.
-    pub fn trim(&mut self) {
+    /// After a frame: drops the least recently drawn pictures past the budget, then, of those the frame didn't draw,
+    /// the least recently drawn while the pictures with a changed colour they hold (each counted once, `pixels` bytes)
+    /// are past `max_pinned` bytes.
+    pub fn trim(&mut self, pixels: impl Fn(ImageId) -> u64, max_pinned: u64) {
+        let trimmed = std::mem::replace(&mut self.trimmed, self.clock);
         let mut bytes = self.bytes();
-        if bytes <= self.budget {
+        // Pinned bytes, an image two recordings hold counted twice.
+        let pinning = self.pinned().map(&pixels).sum::<u64>() > max_pinned;
+        if bytes <= self.budget && !pinning {
             return;
         }
         let mut by_age: Vec<(u64, u64)> = self.recordings.iter().map(|(k, r)| (r.used, *k)).collect();
         by_age.sort_unstable_by_key(|(used, _)| *used);
-        for (_, k) in by_age {
-            if bytes <= self.budget {
-                break;
-            }
+        let mut by_age = by_age.into_iter().peekable();
+        while bytes > self.budget
+            && let Some((_, k)) = by_age.next()
+        {
             if let Some(r) = self.recordings.remove(&k) {
                 bytes -= r.picture.bytes();
             }
         }
+        if !pinning {
+            return;
+        }
+        let mut holders: HashMap<ImageId, u32> = HashMap::new();
+        for id in self.pinned() {
+            *holders.entry(id).or_default() += 1;
+        }
+        let mut pinned: u64 = holders.keys().map(|&id| pixels(id)).sum();
+        while pinned > max_pinned
+            && let Some((_, k)) = by_age.next_if(|&(used, _)| used <= trimmed)
+        {
+            let Some(r) = self.recordings.remove(&k) else { continue };
+            for id in r.pins {
+                if let Some(n) = holders.get_mut(&id) {
+                    *n -= 1;
+                    if *n == 0 {
+                        pinned -= pixels(id);
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::layout::ids::FragmentId;
+
+    /// Recordings holding pictures with a changed colour past the bound go, least recently drawn first, a picture two
+    /// of them hold counted once; the frame's own stay over it.
+    #[test]
+    fn pinned_pictures_past_the_bound_evict_the_recordings_holding_them() {
+        let mut images = twip_graphics::Resources::default().images;
+        let mut image = || images.add_pixels(5, 5, vec![0; 100]).expect("pixels");
+        let (shared, own) = (image(), [image(), image(), image()]);
+        let pixels = |_: ImageId| 100;
+        let pages: Vec<Rc<PageFragment>> = (0..3)
+            .map(|i| {
+                Rc::new(PageFragment {
+                    id: FragmentId::next(),
+                    w: 100.0 + f64::from(i),
+                    h: 100.0,
+                    body_area: None,
+                    children: Box::new([]),
+                    borders: Box::new([]),
+                })
+            })
+            .collect();
+        let inputs = Inputs { gridlines: false, appearance: Default::default(), page_fill: 0 };
+        let mut kept = Retained::default();
+        let draw = |kept: &mut Retained, i: usize| {
+            kept.picture(&pages[i], inputs, |_| vec![shared, own[i]]);
+        };
+        (0..3).for_each(|i| draw(&mut kept, i));
+        kept.trim(pixels, 0);
+        assert_eq!(kept.recordings.len(), 3, "the frame's recordings stay over the bound");
+        draw(&mut kept, 2);
+        kept.trim(pixels, 300);
+        assert_eq!(kept.recordings.len(), 2, "the least recently drawn goes; the shared picture counts once");
+        draw(&mut kept, 2);
+        kept.trim(pixels, 200);
+        assert_eq!(kept.recordings.len(), 1);
+        assert_eq!(kept.counts, Counts { recorded: 3, reused: 2 });
+        let left: Vec<ImageId> = kept.pinned().collect();
+        assert!(left.len() == 2 && left.contains(&shared) && left.contains(&own[2]), "{left:?}");
     }
 }

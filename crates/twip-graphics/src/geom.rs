@@ -102,12 +102,14 @@ impl Transform {
     /// `self` (tile to device pixels) with each texel of a tile of `size` texels one device pixel, from a pixel
     /// ([`crate::paint::Sampling::Pixel`]), its direction kept; unchanged under rotation or skew. The origin sits a
     /// quarter of a pixel past the pixel, so no pixel centre falls on a texel edge: every backend picks the same texel.
-    /// A transform that isn't invertible stays so.
+    /// A half pixel rounds up, so moving the transform by whole pixels moves the tile by as many. A transform that
+    /// isn't invertible stays so.
     pub fn snap_tile(self, size: (u32, u32)) -> Transform {
         if !self.is_scale_translate() || size.0 == 0 || size.1 == 0 || self.inverse().is_none() {
             return self;
         }
-        Transform { a: 1f32.copysign(self.a), d: 1f32.copysign(self.d), e: self.e.round() + 0.25, f: self.f.round() + 0.25, ..self }
+        let snap = |v: f32| (v + 0.5).floor() + 0.25;
+        Transform { a: 1f32.copysign(self.a), d: 1f32.copysign(self.d), e: snap(self.e), f: snap(self.f), ..self }
     }
 
     /// Whether axis-aligned rects stay axis-aligned rects: no rotation and no skew.
@@ -139,6 +141,18 @@ mod tests {
         for (a, d) in [(0.0, 1.0), (1.0, 0.0), (f32::NAN, 1.0)] {
             let flat = Transform { a, b: 0.0, c: 0.0, d, e: 1.0, f: 1.0 };
             assert!(flat.snap_tile((8, 8)).inverse().is_none(), "a collapsed tile stays collapsed: {a} {d}");
+        }
+    }
+
+    #[test]
+    fn a_snapped_tile_moves_with_whole_pixels() {
+        for (e, f) in [(-0.5, 0.5), (-1.5, -2.5), (0.3, -0.7), (2.5, 3.5)] {
+            let t = Transform { a: 1.0, b: 0.0, c: 0.0, d: 1.0, e, f };
+            for n in [-3.0, -1.0, 1.0, 4.0] {
+                let moved = Transform { e: e + n, f: f + n, ..t }.snap_tile((2, 1));
+                let snapped = t.snap_tile((2, 1));
+                assert_eq!((moved.e, moved.f), (snapped.e + n, snapped.f + n), "{e} {f} moved {n}");
+            }
         }
     }
 

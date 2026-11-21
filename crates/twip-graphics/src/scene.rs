@@ -25,6 +25,8 @@ use crate::image::ImageId;
 use crate::paint::{BlendMode, Brush, ColorFilter, Extend, ImagePaint, Paint, PremulColor, Sampling, Stop};
 use crate::path::{self, Verb};
 
+mod dash;
+
 /// Strokes are expanded in local units, before any zoom. 0.01 is under 0.1 device pixel at Twip's largest scale
 /// (400% zoom at dpr 2, about 10.7 pixels per point).
 const STROKE_TOLERANCE: f64 = 0.01;
@@ -517,8 +519,9 @@ pub struct Recorder {
     /// Stroked text's scratch: a glyph's placed outline, and a contour's synthetic bold ring.
     glyph: kurbo::BezPath,
     ring: kurbo::StrokeCtx,
-    /// A dashed stroke made safe ([`safe_dashes`]), its pattern kept for the next.
+    /// A dashed stroke made safe ([`safe_dashes`]), its pattern kept for the next, and the dashing's held-back elements.
     dashes: kurbo::Stroke,
+    dash_stash: Vec<PathEl>,
     /// Layers open now, and the deepest nesting recorded so far ([`MAX_DEPTH`]).
     layers_open: u32,
     depth: u32,
@@ -545,6 +548,7 @@ impl Recorder {
             glyph: kurbo::BezPath::new(),
             ring: kurbo::StrokeCtx::default(),
             dashes: kurbo::Stroke::default(),
+            dash_stash: Vec::new(),
             layers_open: 0,
             depth: 1,
             text: false,
@@ -678,8 +682,17 @@ impl Recorder {
             self.lists.cmds.push(Cmd::Frame { frame, paint });
             return;
         }
-        let mut stroker = std::mem::take(&mut self.stroker);
-        kurbo::stroke_with(path.iter().copied(), stroke, &kurbo::StrokeOpts::default(), STROKE_TOLERANCE, &mut stroker);
+        let (mut stroker, opts) = (std::mem::take(&mut self.stroker), kurbo::StrokeOpts::default());
+        if stroke.dash_pattern.is_empty() {
+            kurbo::stroke_with(path.iter().copied(), stroke, &opts, STROKE_TOLERANCE, &mut stroker);
+        } else {
+            let kurbo::Stroke { width, join, miter_limit, start_cap, end_cap, ref dash_pattern, dash_offset } = *stroke;
+            let solid = kurbo::Stroke { width, join, miter_limit, start_cap, end_cap, dash_pattern: Default::default(), dash_offset: 0.0 };
+            let mut stash = std::mem::take(&mut self.dash_stash);
+            let dashed = dash::dash(path.iter().copied(), dash_offset, dash_pattern, &mut stash);
+            kurbo::stroke_with(dashed, &solid, &opts, STROKE_TOLERANCE, &mut stroker);
+            self.dash_stash = stash;
+        }
         self.fill_path(stroker.output().elements(), paint);
         self.stroker = stroker;
     }
@@ -1639,15 +1652,17 @@ mod tests {
         let lists = 7;
         assert!(finishing.count_total <= lists + 1, "one allocation per non-empty list and one for the picture: {}", finishing.count_total);
         assert!(first.bytes() > 40 * 60 * std::mem::size_of::<GlyphRec>());
-        // Dashed glyph outlines: a pattern past the four entries it keeps inline costs nothing more than one that
-        // isn't (kurbo's dashing keeps a buffer of its own per path).
+        // Dashed glyph outlines, with patterns past the four entries a stroke keeps inline and within them.
         let run = GlyphRun { font, size: 11.0, baseline: 11.0, glyphs: &glyphs, synthesis: Synthesis::default() };
         let long = kurbo::Stroke::new(0.5).with_dashes(3.0, [1.0, 0.5, 2.0, 0.5, 0.25, 0.5]);
         let short = kurbo::Stroke::new(0.5).with_dashes(3.0, [1.0, 0.5, 2.0, 0.5]);
         rec.stroke_glyphs(&fonts, &run, &long, RED);
-        let long = allocation_counter::measure(|| rec.stroke_glyphs(&fonts, &run, &long, RED)).count_total;
-        let short = allocation_counter::measure(|| rec.stroke_glyphs(&fonts, &run, &short, RED)).count_total;
-        assert_eq!(long, short, "a long dash pattern isn't copied per glyph");
+        rec.stroke_glyphs(&fonts, &run, &short, RED);
+        let dashing = allocation_counter::measure(|| {
+            rec.stroke_glyphs(&fonts, &run, &long, RED);
+            rec.stroke_glyphs(&fonts, &run, &short, RED);
+        });
+        assert_eq!(dashing.count_total, 0, "dashing glyph outlines into a warm recorder");
         // A bold run's outline, its scratch kept.
         let bold = GlyphRun { font, size: 11.0, baseline: 11.0, glyphs: &glyphs, synthesis: Synthesis { embolden: true, skew_x: 0.0 } };
         let (mut out, mut ring) = (kurbo::BezPath::new(), kurbo::StrokeCtx::default());

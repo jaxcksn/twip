@@ -232,7 +232,7 @@ impl Memo {
 }
 
 /// The picture being prepared to be kept: the kept and colour atlas pages its masks went on (bit per page), and whether
-/// a mask didn't fit (it is then prepared again in the frame instead).
+/// a mask didn't fit or a dashed rect went solid (it is then prepared again in the frame instead).
 #[derive(Debug, Default)]
 struct Building {
     pages: u64,
@@ -613,7 +613,8 @@ impl Prepare {
     }
 
     /// `picture` under `t` from its kept preparation, prepared now when there is none (or its masks have been evicted).
-    /// `false` when it can't be kept (a mask that didn't fit the kept atlas); it is then prepared in the frame.
+    /// `false` when it can't be kept (a mask that didn't fit the kept atlas, or a dashed rect too fine to dash whole);
+    /// it is then prepared in the frame.
     fn kept_picture(&mut self, res: &Resources, picture: &Picture, bounds: Rect, t: Transform) -> bool {
         let (ox, oy) = (t.e.floor(), t.f.floor());
         if !(ox.abs() < 1.0e7 && oy.abs() < 1.0e7) {
@@ -658,7 +659,7 @@ impl Prepare {
     }
 
     /// `picture` under `local` (a translation under a pixel) prepared to be kept: unclipped but by its own bounds, its
-    /// masks in the kept atlases. `None` when a mask didn't fit.
+    /// masks in the kept atlases. `None` when a mask didn't fit or a dashed rect went solid.
     fn prepare_kept(&mut self, res: &Resources, picture: &Picture, bounds: Rect, local: Transform) -> Option<Segment> {
         let b = pixel_bounds(local.map_rect(bounds));
         // Glyph ink reaches up to a pixel past the bounds.
@@ -705,6 +706,10 @@ impl Prepare {
                     let b = clip.bounds;
                     let view = Rect { x0: b.x0 as f32, y0: b.y0 as f32, x1: b.x1 as f32, y1: b.y1 as f32 };
                     if !d.each(t, view, |r| self.rect(r, t, &clip, &paint)) {
+                        // Kept, the view is the picture's whole bounds: dashes the frame's view would draw go solid.
+                        if let Some(b) = &mut self.building {
+                            b.failed = true;
+                        }
                         self.rect(d.rect, t, &clip, &paint);
                     }
                 }
