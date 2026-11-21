@@ -43,41 +43,59 @@ pub struct PictureMark {
     pub washout: bool,
 }
 
-/// The watermark `f` is, when it is one.
-pub fn of(f: &Float) -> Option<Watermark> {
+/// A watermark shape's content: a text watermark's shape and text path, or a picture watermark's picture.
+enum Kind<'a> {
+    Text(&'a crate::drawing::SpShape, &'a crate::drawing::TextPath),
+    Picture(&'a crate::drawing::PicShape),
+}
+
+/// What watermark `f` is: its id's prefix and the content that prefix names.
+fn kind(f: &Float) -> Option<(&crate::drawing::Shape, Kind<'_>)> {
     let shape = f.shape.as_deref()?;
     let name = shape.nv.name.as_str();
-    if name.starts_with(TEXT_ID) {
+    let kind = if name.starts_with(TEXT_ID) {
         let sp = shape.sp()?;
-        let tp = sp.text_path.as_deref()?;
-        let palette = crate::drawing::theme::Theme::default();
-        let map = crate::drawing::theme::ColourMap::default();
-        let fill = match &sp.fill {
-            Some(crate::drawing::paint::Fill::Solid(c)) => Some(c.resolve(&palette, &map, None)),
-            _ => None,
-        };
-        let rot = f64::from(shape.xfrm.rot.0) / 60000.0;
-        return Some(Watermark::Text(TextMark {
-            text: tp.string.clone(),
-            family: tp.family.clone(),
-            size: (tp.size > 1.0).then_some(tp.size),
-            colour: fill.map_or(SILVER, |c| c.to_rgb()),
-            transparency: transparency(sp.fill.as_ref()),
-            diagonal: (rot - DIAGONAL).abs() < 0.5,
-            bold: tp.bold,
-            italic: tp.italic,
-        }));
-    }
-    if name.starts_with(PICTURE_ID) {
-        let pic = shape.pic()?;
-        let washout = pic
-            .blip
-            .adjust
-            .iter()
-            .any(|a| matches!(a, crate::drawing::paint::BlipAdjust::Lum { bright, contrast } if bright.0 > 0 && contrast.0 < 0));
-        return Some(Watermark::Picture(PictureMark { image: pic.blip.image, washout }));
-    }
-    None
+        Kind::Text(sp, sp.text_path.as_deref()?)
+    } else if name.starts_with(PICTURE_ID) {
+        Kind::Picture(shape.pic()?)
+    } else {
+        return None;
+    };
+    Some((shape, kind))
+}
+
+/// The watermark `f` is, when it is one.
+pub fn of(f: &Float) -> Option<Watermark> {
+    let (shape, kind) = kind(f)?;
+    Some(match kind {
+        Kind::Text(sp, tp) => {
+            let palette = crate::drawing::theme::Theme::default();
+            let map = crate::drawing::theme::ColourMap::default();
+            let fill = match &sp.fill {
+                Some(crate::drawing::paint::Fill::Solid(c)) => Some(c.resolve(&palette, &map, None)),
+                _ => None,
+            };
+            let rot = f64::from(shape.xfrm.rot.0) / 60000.0;
+            Watermark::Text(TextMark {
+                text: tp.string.clone(),
+                family: tp.family.clone(),
+                size: (tp.size > 1.0).then_some(tp.size),
+                colour: fill.map_or(SILVER, |c| c.to_rgb()),
+                transparency: transparency(sp.fill.as_ref()),
+                diagonal: (rot - DIAGONAL).abs() < 0.5,
+                bold: tp.bold,
+                italic: tp.italic,
+            })
+        }
+        Kind::Picture(pic) => {
+            let washout = pic
+                .blip
+                .adjust
+                .iter()
+                .any(|a| matches!(a, crate::drawing::paint::BlipAdjust::Lum { bright, contrast } if bright.0 > 0 && contrast.0 < 0));
+            Watermark::Picture(PictureMark { image: pic.blip.image, washout })
+        }
+    })
 }
 
 /// A text watermark's transparency, percent, from its fill's opacity (to the opacity's own precision).
@@ -99,9 +117,18 @@ fn opacity_xml(transparency: f64) -> String {
     format!(r#"<v:fill opacity="{o}"/>"#)
 }
 
-/// Whether `f` is a watermark.
+/// Whether `f` is a watermark ([`of`] reads it).
 pub fn is(f: &Float) -> bool {
-    f.shape.as_deref().is_some_and(|s| s.nv.name.starts_with(TEXT_ID) || s.nv.name.starts_with(PICTURE_ID))
+    kind(f).is_some()
+}
+
+/// Whether a font name survives a text watermark's VML: a quoted CSS `font-family` without its quotes, escapes or
+/// separators, nothing the reader trims.
+pub fn writable_family(name: &str) -> bool {
+    name == name.trim()
+        && !name.starts_with('\'')
+        && !name.ends_with('\'')
+        && !name.chars().any(|c| matches!(c, '"' | ';' | ',' | '\\') || c.is_control())
 }
 
 const V: &str = "urn:schemas-microsoft-com:vml";
@@ -149,8 +176,8 @@ pub fn vml(m: &Watermark, w: &str, size: [f64; 2], spid: u32, image: &str, lang:
             let fill = if t.colour == SILVER { "silver".to_string() } else { format!("#{:06x}", t.colour & 0xFF_FFFF) };
             let opacity = opacity_xml(t.transparency);
             let rot = if t.diagonal { ";rotation:315" } else { "" };
-            // The family is a CSS string: its quotes and separators can't be in it.
-            let family: String = t.family.chars().filter(|c| !matches!(c, '"' | '\'' | ';' | '\\') && !c.is_control()).collect();
+            // The family is a CSS string: its quotes, escapes and separators can't be in it.
+            let family: String = t.family.chars().filter(|c| !matches!(c, '"' | ';' | ',' | '\\') && !c.is_control()).collect();
             let size = t.size.map_or("1pt".to_string(), pt);
             let weight = if t.bold { ";font-weight:bold" } else { "" };
             let style = if t.italic { ";font-style:italic" } else { "" };

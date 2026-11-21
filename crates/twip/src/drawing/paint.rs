@@ -217,6 +217,8 @@ impl Fill {
         Some(match n.tag_name().name() {
             "noFill" => Fill::None,
             "solidFill" => Fill::Solid(Colour::child_of_in(n, ns).unwrap_or_else(|| Colour::srgb(0))),
+            // Word 2010's gradient without its stops is solid black.
+            "gradFill" if ns == Ns::W14 && ns.child(n, "gsLst").is_none() => Fill::Solid(Colour::srgb(0)),
             "gradFill" => {
                 let most = if ns == Ns::W14 { MAX_W14_STOPS } else { usize::MAX };
                 let stops = ns
@@ -311,6 +313,15 @@ names!(RectAlign { Tl = "tl", T = "t", Tr = "tr", L = "l", Ctr = "ctr", R = "r",
 impl RectAlign {
     fn parse_opt(v: Option<&str>) -> Option<RectAlign> {
         v.and_then(RectAlign::parse)
+    }
+
+    /// An alignment in `ns`, `dflt` when absent: Word 2010's `none` (its default) is about the box's origin, its top
+    /// left.
+    fn parse_in(ns: Ns, v: Option<&str>, dflt: RectAlign) -> RectAlign {
+        match (ns, v) {
+            (Ns::W14, None | Some("none")) => RectAlign::Tl,
+            _ => RectAlign::parse_opt(v).unwrap_or(dflt),
+        }
     }
 }
 
@@ -540,19 +551,21 @@ pub struct EffectList {
 }
 
 impl OuterShadow {
-    /// An `a:outerShdw` or a `w14:shadow`.
+    /// An `a:outerShdw` or a `w14:shadow`, with its schema's defaults (Word 2010's: no scale, no alignment).
     pub fn parse(c: Node, ns: Ns) -> OuterShadow {
         let emu = |k: &str| emu_in(ns, c, k).unwrap_or_default();
         let ang = |k: &str| angle_in(ns, c, k).unwrap_or_default();
+        let w14 = ns == Ns::W14;
+        let scale = if w14 { Pct(0) } else { Pct::ONE };
         OuterShadow {
             blur: emu("blurRad"),
             dist: emu("dist"),
             dir: ang("dir"),
-            sx: pct_in(ns, c, "sx").unwrap_or(Pct::ONE),
-            sy: pct_in(ns, c, "sy").unwrap_or(Pct::ONE),
+            sx: pct_in(ns, c, "sx").unwrap_or(scale),
+            sy: pct_in(ns, c, "sy").unwrap_or(scale),
             kx: ang("kx"),
             ky: ang("ky"),
-            align: RectAlign::parse_opt(ns.attr(c, "algn")).unwrap_or(RectAlign::B),
+            align: RectAlign::parse_in(ns, ns.attr(c, "algn"), RectAlign::B),
             colour: Colour::child_of_in(c, ns).unwrap_or_else(|| Colour::srgb(0)),
             rot_with_shape: bool_in(ns, c, "rotWithShape").unwrap_or(true),
         }
@@ -567,21 +580,23 @@ impl Glow {
 }
 
 impl Reflection {
-    /// An `a:reflection` or a `w14:reflection`, with the schema's defaults.
+    /// An `a:reflection` or a `w14:reflection`, with its schema's defaults (Word 2010's are all zero, aligned to
+    /// nothing).
     pub fn parse(c: Node, ns: Ns) -> Reflection {
         let emu = |k: &str| emu_in(ns, c, k).unwrap_or_default();
         let ang = |k: &str| angle_in(ns, c, k).unwrap_or_default();
-        let pct = |k: &str, d: i32| pct_in(ns, c, k).unwrap_or(Pct(d));
+        let w14 = ns == Ns::W14;
+        let pct = |k: &str, d: i32| pct_in(ns, c, k).unwrap_or(Pct(if w14 { 0 } else { d }));
         Reflection {
             blur: emu("blurRad"),
             dist: emu("dist"),
             dir: ang("dir"),
-            fade_dir: angle_in(ns, c, "fadeDir").unwrap_or(Angle(5_400_000)),
+            fade_dir: angle_in(ns, c, "fadeDir").unwrap_or(Angle(if w14 { 0 } else { 5_400_000 })),
             sx: pct("sx", 100_000),
             sy: pct("sy", 100_000),
             kx: ang("kx"),
             ky: ang("ky"),
-            align: RectAlign::parse_opt(ns.attr(c, "algn")).unwrap_or(RectAlign::B),
+            align: RectAlign::parse_in(ns, ns.attr(c, "algn"), RectAlign::B),
             start_alpha: pct("stA", 100_000),
             start_pos: pct("stPos", 0),
             end_alpha: pct("endA", 0),
@@ -595,6 +610,10 @@ impl EffectList {
     pub fn parse(n: Node) -> EffectList {
         let mut e = EffectList::default();
         for c in n.children().filter(Node::is_element) {
+            if c.tag_name().namespace() != Some(Ns::A.uri()) {
+                e.kept = true;
+                continue;
+            }
             let colour = || Colour::child_of(c).unwrap_or_else(|| Colour::srgb(0));
             let emu = |k: &str| emu_attr(c, k).unwrap_or_default();
             let ang = |k: &str| angle_in(Ns::A, c, k).unwrap_or_default();
@@ -1022,6 +1041,28 @@ mod tests {
         let resolved = resolve_effects(Some(&one), None, Palette { theme: &t, map: &m }).reflection.expect("resolved");
         assert_eq!((resolved.blur, resolved.scale, resolved.start, resolved.rot_with_shape), (0.5, [1.0, -1.0], (0.0, 0.5), false));
         assert_eq!(resolved.end, (0.35, 0.003));
+    }
+
+    #[test]
+    fn word_2010_effects_take_their_own_schema_defaults() {
+        let w14 = crate::drawing::colour::Ns::W14.uri();
+        let x = format!(
+            r#"<r xmlns:w14="{w14}"><w14:shadow w14:blurRad="12700"><w14:srgbClr w14:val="000000"/></w14:shadow><w14:reflection w14:stPos="0" w14:sy="-100000"/><w14:gradFill/><w14:gradFill><w14:gsLst><w14:gs w14:pos="0"><w14:srgbClr w14:val="FF0000"/></w14:gs></w14:gsLst></w14:gradFill></r>"#
+        );
+        let d = roxmltree::Document::parse(&x).unwrap();
+        let [shadow, reflection, bare, listed] = d.root_element().children().filter(Node::is_element).collect::<Vec<_>>()[..] else { panic!() };
+        let s = OuterShadow::parse(shadow, Ns::W14);
+        assert_eq!((s.sx, s.sy, s.align, s.blur), (Pct(0), Pct(0), RectAlign::Tl, Emu(12700)));
+        let r = Reflection::parse(reflection, Ns::W14);
+        assert_eq!((r.start_alpha, r.end_pos, r.fade_dir, r.sx, r.sy, r.align), (Pct(0), Pct(0), Angle(0), Pct(0), Pct(-100_000), RectAlign::Tl));
+        assert_eq!(Fill::parse_in(bare, Ns::W14, &mut |_| None), Some(Fill::Solid(Colour::srgb(0))), "no stops: solid black");
+        assert!(matches!(Fill::parse_in(listed, Ns::W14, &mut |_| None), Some(Fill::Gradient(g)) if g.stops.len() == 1));
+        // DrawingML's defaults stay its own, and a foreign effect is kept, not drawn.
+        let a = node_xml(r#"<a:effectLst><a:outerShdw/><x:reflection xmlns:x="urn:x"/></a:effectLst>"#);
+        let d = roxmltree::Document::parse(&a).unwrap();
+        let e = EffectList::parse(d.root_element().first_element_child().unwrap());
+        assert_eq!(e.outer.as_ref().map(|s| (s.sx, s.align)), Some((Pct::ONE, RectAlign::B)));
+        assert!(e.kept && e.reflection.is_none());
     }
 
     #[test]

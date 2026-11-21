@@ -287,6 +287,17 @@ fn picture_adjust(adjust: &[ResolvedBlipAdjust]) -> (Vec<ColorFilter>, f32) {
     (filters, alpha.clamp(0.0, 1.0))
 }
 
+/// A layer drawing a vector picture with its adjustments (as [`picture_adjust`] makes them; a colour change, which
+/// works on pixels, has none) and their opacity; whether one was pushed.
+fn adjusted(rec: &mut Recorder, adjust: &[ResolvedBlipAdjust]) -> bool {
+    let (filters, alpha) = picture_adjust(adjust);
+    let layered = !filters.is_empty() || alpha < 1.0;
+    if layered {
+        rec.push_layer(&Layer { opacity: alpha, color_filters: &filters, ..Layer::default() });
+    }
+    layered
+}
+
 /// A line's pen at width `w`: its caps, join and dashes. A capped dash's dashes are one width shorter and its gaps one
 /// width longer, since the caps grow each dash by half a width at either end.
 pub(super) fn line_pen(line: &ResolvedLine, w: f64) -> kurbo::Stroke {
@@ -787,7 +798,11 @@ impl Graphics {
                 let dst = kurbo::Rect::new(f[0] * w, f[1] * h, w - f[2] * w, h - f[3] * h);
                 let layered = push_adjust(rec, adjust);
                 rec.push_clip(Clip::Path(path.elements()));
+                let layered = adjusted(rec, adjust);
                 self.vector(rec, ImageKey { index: *image, generation: 0 }, images, dst, src.map(|v| v.fraction()));
+                if layered {
+                    rec.pop();
+                }
                 rec.pop();
                 if layered {
                     rec.pop();
@@ -807,7 +822,11 @@ impl Graphics {
                 let key = ImageKey { index: *image, generation: 0 };
                 let layered = push_adjust(rec, adjust);
                 rec.push_clip(Clip::Path(path.elements()));
+                let layered = adjusted(rec, adjust);
                 self.vector_tiles(rec, key, images, (ox, oy, tw, th), src.map(|v| v.fraction()), *flip, path.bounding_box());
+                if layered {
+                    rec.pop();
+                }
                 rec.pop();
                 if layered {
                     rec.pop();

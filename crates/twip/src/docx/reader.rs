@@ -2919,6 +2919,10 @@ impl Reader {
                 later.merge(&ex);
                 ex = later;
             }
+            // The row's own shading in place of its table's: one of no colour shows none.
+            if ex.shd.as_ref().is_some_and(|s| s.flat().is_none()) {
+                table_shading = Some((None, None));
+            }
             trp.jc = trp.jc.or(ex.jc);
             // Every row's alignment, or none when they differ.
             row_jc = Some(if ri == 0 || row_jc == Some(trp.jc) { trp.jc } else { None });
@@ -3484,16 +3488,15 @@ fn vml_effect(pen: Option<f64>, rect: Option<[f64; 4]>) -> [f64; 4] {
 /// The header cells a cell lists, at most this many are read (a write keeps the others as read).
 pub(crate) const MAX_CELL_HEADERS: usize = 1024;
 
+/// The header cells a `w:headers` lists, at most [`MAX_CELL_HEADERS`].
+pub(crate) fn header_list(headers: Node) -> Vec<String> {
+    children(headers, "header").filter_map(|h| val(h).map(str::trim).filter(|v| !v.is_empty()).map(str::to_string)).take(MAX_CELL_HEADERS).collect()
+}
+
 /// A cell's identifier (`w:tc/@w:id`) and its header cells' (`tcPr/w:headers`), when it has either.
 fn cell_ids(tc: Node, tc_pr: Option<Node>) -> Option<Rc<crate::docx::CellIds>> {
     let id = attr(tc, "id").map(str::trim).filter(|v| !v.is_empty()).map(str::to_string);
-    let headers: Vec<String> = tc_pr
-        .and_then(|p| child(p, "headers"))
-        .into_iter()
-        .flat_map(|h| children(h, "header"))
-        .filter_map(|h| val(h).map(str::trim).filter(|v| !v.is_empty()).map(str::to_string))
-        .take(MAX_CELL_HEADERS)
-        .collect();
+    let headers = tc_pr.and_then(|p| child(p, "headers")).map(header_list).unwrap_or_default();
     (id.is_some() || !headers.is_empty()).then(|| Rc::new(crate::docx::CellIds { id, headers }))
 }
 

@@ -390,6 +390,22 @@ fn picture_adjustments_recolour_the_image() {
 }
 
 #[test]
+fn a_vector_picture_fill_takes_its_adjustments() {
+    let svg = br##"<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="#FF0000"/></svg>"##;
+    let shot = |adjust: &str, mode: &str| {
+        let fill = format!(r#"<a:blipFill><a:blip r:embed="rId5">{adjust}</a:blip>{mode}</a:blipFill>{NO_LINE}"#);
+        draw_sized(&wsp("rect", &fill), (100, 60), Some(svg)).at(120.0, 140.0)
+    };
+    for mode in [STRETCH, r#"<a:tile tx="0" ty="0" sx="100000" sy="100000" flip="none" algn="tl"/>"#] {
+        assert!(red(shot("", mode)), "{mode}: {:?}", shot("", mode));
+        let grey = shot("<a:grayscl/>", mode);
+        assert!(grey[0] == grey[1] && grey[1] == grey[2] && grey[0] < 200, "{mode}: {grey:?}");
+        let faded = shot(r#"<a:alphaModFix amt="50000"/>"#, mode);
+        assert!(faded[0] > 240 && (100..160).contains(&faded[1]), "{mode}: red at half over white: {faded:?}");
+    }
+}
+
+#[test]
 fn a_tiled_picture_repeats_at_its_scale_from_its_alignment() {
     // Each tile is 8 px at 75%, doubled: 12 pt, so a row across 30 pt crosses red and blue.
     for algn in ["tl", "t", "tr", "l", "ctr", "r", "bl", "b", "br"] {

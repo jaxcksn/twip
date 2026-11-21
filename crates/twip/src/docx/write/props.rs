@@ -365,11 +365,19 @@ impl Props {
     }
 }
 
-/// Attribute `name`'s value (any prefix) in the element `xml` starts with, unescaped.
+/// WordprocessingML attribute `name`'s value on the element `xml` (a properties child as written, its own prefix
+/// WordprocessingML's), unescaped. `None` too for an element with other prefixes its part's root declares: a
+/// `w:shd`'s attributes are WordprocessingML's.
 pub fn attr_of(xml: &str, name: &str) -> Option<String> {
-    let (_, v) = attr_list(&xml[..xml.find('>')?]).into_iter().find(|(q, _)| q.rsplit(':').next() == Some(name))?;
-    let doc = format!("<a v=\"{v}\"/>");
-    roxmltree::Document::parse(&doc).ok()?.root_element().attribute("v").map(str::to_string)
+    let tag = xml.trim_start().strip_prefix('<')?;
+    let qname = tag.split(|c: char| c.is_whitespace() || c == '/' || c == '>').next()?;
+    let decl = match qname.split_once(':') {
+        Some((p, _)) => format!(r#"xmlns:{p}="{W_NS}""#),
+        None => format!(r#"xmlns="{W_NS}""#),
+    };
+    let text = format!("<x {decl}>{xml}</x>");
+    let doc = roxmltree::Document::parse(&text).ok()?;
+    crate::docx::xml::attr(doc.root_element().first_element_child()?, name).map(str::to_string)
 }
 
 /// `name="value"` pairs of a start tag as written (values still escaped).
@@ -390,4 +398,16 @@ fn attr_list(tag: &str) -> Vec<(String, String)> {
 
 pub fn esc(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn an_attribute_is_read_with_its_namespace_and_quotes() {
+        assert_eq!(super::attr_of(r#"<w:shd w:color="a>b" w:val="pct20" w:fill="FF0000"/>"#, "val").as_deref(), Some("pct20"));
+        assert_eq!(super::attr_of(r#"<w:shd w:val='say "x"' w:fill="FF0000"/>"#, "val").as_deref(), Some(r#"say "x""#));
+        assert_eq!(super::attr_of(r#"<q:shd xmlns:x="urn:x" x:val="no" q:val="diagStripe"/>"#, "val").as_deref(), Some("diagStripe"));
+        assert_eq!(super::attr_of(r#"<w:shd w:val="a&amp;b"/>"#, "val").as_deref(), Some("a&b"));
+        assert_eq!(super::attr_of(r#"<w:shd w:fill="FF0000"/>"#, "val"), None);
+    }
 }

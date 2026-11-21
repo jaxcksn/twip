@@ -432,6 +432,12 @@ pub(crate) fn two_colour(from: &Colour, to: &Colour) -> Vec<(Pct, Colour)> {
         .collect()
 }
 
+/// Whether a page gradient is two colours as Word blends them, which VML writes as its two colours and opacities.
+pub(crate) fn is_two_colour(g: &paint::Gradient) -> bool {
+    matches!(g.kind, paint::GradientKind::Linear { .. })
+        && matches!((g.stops.first(), g.stops.last()), (Some(a), Some(b)) if g.stops == two_colour(&a.1, &b.1))
+}
+
 /// The most `colors` entries a gradient reads.
 const MAX_COLOURS: usize = 64;
 

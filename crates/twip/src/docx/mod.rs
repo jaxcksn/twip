@@ -25,7 +25,9 @@ pub mod watermark;
 pub mod xml;
 
 pub use model::*;
+#[cfg(test)]
 pub(crate) use reader::MAX_CELL_HEADERS;
+pub(crate) use reader::header_list;
 pub(crate) use reader::line_number_run;
 pub use reader::{now_local, now_utc, read, read_at, read_editable};
 #[cfg(test)]

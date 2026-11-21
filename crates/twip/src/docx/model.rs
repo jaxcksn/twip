@@ -1157,7 +1157,7 @@ pub struct Row {
     /// Its stripe or cross, drawn over [`Row::shading`].
     pub hatch: Option<super::props::Hatch>,
     /// A row read from a later table joined to this one (nothing between them): that table's shading, fill and
-    /// hatch, in place of [`Table::shd`].
+    /// hatch, in place of [`Table::shd`]; none for a row whose exceptions' shading has no colour.
     pub table_shading: Option<(Option<u32>, Option<super::props::Hatch>)>,
     /// The row-end mark is hidden (`trPr/w:hidden`).
     pub hidden: bool,

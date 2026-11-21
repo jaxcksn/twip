@@ -200,21 +200,97 @@ fn watermark_arguments_are_checked_and_its_text_escaped() {
     refused(&mut e, Command::SetWatermark(Watermark::Picture(PictureWatermark { image: Bytes(png), scale: Some(0.0), ..Default::default() })));
     assert!(e.document().sections[0].headers.iter().all(Option::is_none), "nothing made");
 
+    // A font name the VML can't hold is refused; an apostrophe it can.
+    for font in ["A\";x:y;'B", "A, B", " A", "'A'", "A\\B"] {
+        refused(&mut e, Command::SetWatermark(Watermark::Text(TextWatermark { font: Some(font.into()), text: "A".into(), ..Default::default() })));
+    }
     let hostile = Watermark::Text(TextWatermark {
-        text: "<b>&\"quoted\"\n".into(),
-        font: Some("A\";x:y;'B".into()),
+        text: "<b>&\"quoted\"\n rIdCeImg5".into(),
+        font: Some("O'Brien Sans".into()),
         size: Some(Points(1584.0)),
         layout: Some(WatermarkLayout::Horizontal),
         ..Default::default()
     });
     run(&mut e, Command::SetWatermark(hostile));
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document()).expect("saves, the text that looks like a picture's id being text");
     let xml = part(&saved, "word/header1.xml");
     roxmltree::Document::parse(&xml).expect("well formed");
-    assert!(xml.contains("font-family:&quot;Ax:yB&quot;"), "{xml}");
+    assert!(xml.contains("font-family:&quot;O'Brien Sans&quot;"), "{xml}");
     let again = Editor::open(&saved, fonts()).expect("reopens");
     let Some(Watermark::Text(t)) = again.page_formatting(0).watermark else { panic!("a watermark") };
-    assert_eq!((t.text.as_str(), t.size), ("<b>&\"quoted\" ", Some(Points(1584.0))));
+    assert_eq!((t.text.as_str(), t.size, t.font.as_deref()), ("<b>&\"quoted\"  rIdCeImg5", Some(Points(1584.0)), Some("O'Brien Sans")));
+    // VML shows no SVG: a picture watermark or page picture of one is refused.
+    let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10"/></svg>"#.to_vec();
+    refused(&mut e, Command::SetWatermark(Watermark::Picture(PictureWatermark { image: Bytes(svg.clone()), ..Default::default() })));
+    refused(&mut e, Command::SetPageColor(FillValue::Picture { image: Bytes(svg), tile: Some(true) }));
+}
+
+#[test]
+fn a_shape_named_as_a_watermark_without_its_content_is_not_one() {
+    let fake = r#"<w:r><w:pict><v:rect id="PowerPlusWaterMarkObject1" style="position:absolute;width:10pt;height:10pt"/></w:pict></w:r>"#;
+    let real = crate::docx::watermark::vml(
+        &crate::docx::watermark::Watermark::Text(crate::docx::watermark::TextMark {
+            text: "DRAFT".into(),
+            family: "Arial".into(),
+            size: None,
+            colour: crate::docx::watermark::SILVER,
+            transparency: 50.0,
+            diagonal: true,
+            bold: false,
+            italic: false,
+        }),
+        "w:",
+        [400.0, 100.0],
+        2050,
+        "",
+        "",
+    );
+    let mut e = Editor::open(&two_sections_with(&format!("{fake}<w:r>{real}</w:r>")), fonts()).expect("opens");
+    let Some(Watermark::Text(t)) = e.page_formatting(1).watermark else { panic!("the real one, past the fake") };
+    assert_eq!(t.text, "DRAFT");
+    let floats = |e: &Editor| {
+        e.document()
+            .stories
+            .values()
+            .flatten()
+            .filter_map(|b| if let crate::docx::Block::Para(p) = b { Some(p) } else { None })
+            .flat_map(|p| p.inlines.iter())
+            .filter(|i| matches!(i, Inline::Float(..)))
+            .count()
+    };
+    assert_eq!(floats(&e), 2);
+    run(&mut e, Command::RemoveWatermark);
+    assert_eq!(floats(&e), 1, "the fake stays");
+    assert_eq!(e.page_formatting(1).watermark, None);
+}
+
+#[test]
+fn a_page_gradient_is_one_its_vml_holds() {
+    let mut e = Editor::open(&two_sections(), fonts()).expect("opens");
+    let stop = |position: f64, c: u32, alpha: Option<f64>| GradientStop {
+        position,
+        colour: ColourValue {
+            transforms: alpha.map(|a| vec![ColourTransform { kind: TransformKind::Alpha, value: a }]).unwrap_or_default(),
+            ..ColourValue::rgb(Color(c))
+        },
+    };
+    let gradient = |kind, angle, stops| FillValue::Gradient { kind, angle, stops, focus: None };
+    // A circle, and a translucent stop in a list of colours, aren't.
+    refused(&mut e, Command::SetPageColor(gradient(GradientShape::Radial, None, vec![stop(0.0, 0xFF0000, None), stop(1.0, 0xFFFFFF, None)])));
+    let clear = vec![stop(0.0, 0xFF0000, None), stop(0.5, 0x00FF00, Some(0.5)), stop(1.0, 0x0000FF, None)];
+    refused(&mut e, Command::SetPageColor(gradient(GradientShape::Linear, Some(30.0), clear)));
+    // A diagonal runs corner to corner, as VML reads it, to the angle's precision.
+    let three = vec![stop(0.0, 0xFF0000, None), stop(0.5, 0x00FF00, None), stop(1.0, 0x0000FF, None)];
+    run(&mut e, Command::SetPageColor(gradient(GradientShape::Linear, Some(30.25), three)));
+    let Some(crate::drawing::paint::Fill::Gradient(g)) = &e.document().page_fill else { panic!("a gradient") };
+    assert!(matches!(g.kind, crate::drawing::paint::GradientKind::Linear { scaled: true, .. }), "{:?}", g.kind);
+    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let again = Editor::open(&saved, fonts()).expect("reopens");
+    assert_eq!(again.document().page_fill, e.document().page_fill, "{}", part(&saved, "word/document.xml"));
+    // One following the outline is rectangular on a page.
+    run(&mut e, Command::SetPageColor(gradient(GradientShape::Path, None, vec![stop(0.0, 0xFF0000, None), stop(1.0, 0xFFFFFF, None)])));
+    let again = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
+    assert_eq!(again.document().page_fill, e.document().page_fill);
 }
 
 #[test]

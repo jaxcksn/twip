@@ -17,6 +17,8 @@ use super::step::{PageBackground, Step};
 const MAX_STOPS: usize = 64;
 /// The largest picture watermark scale, percent.
 const MAX_SCALE: f64 = 5000.0;
+/// Why an SVG can't be a watermark or the page's picture: VML, which both are written in, shows no SVG.
+const SVG_VML: &str = "a watermark or page picture is a PNG, JPEG, GIF, BMP or metafile, not an SVG";
 
 impl Editor {
     /// Sets the page colour, or its fill.
@@ -56,6 +58,7 @@ impl Editor {
             FillValue::Pattern { preset, .. } if !crate::drawing::patterns::WORD.iter().any(|(p, _)| p.name() == preset) => {
                 return Err(format!("{preset:?} isn't a pattern Word offers for the page"));
             }
+            FillValue::Picture { image, .. } if crate::docx::image::is_svg(&image.0) => return Err(SVG_VML.into()),
             _ => {
                 let mut added = None;
                 // No picture keeps the page's own.
@@ -73,7 +76,7 @@ impl Editor {
                         Some(self.doc.images.len() + self.pending_images.len())
                     })?
                     .ok_or("no fill")?;
-                let fill = one_colour(fill, palette);
+                let fill = page_gradient(one_colour(fill, palette), palette)?;
                 self.pending_images.extend(added);
                 let colour = match &fill {
                     Fill::Gradient(g) => g.stops.first().map(|(_, c)| rgb(c)),
@@ -287,6 +290,9 @@ impl Editor {
                 }
                 let family = match t.font {
                     Some(f) if f.trim().is_empty() || f.chars().count() > 64 => return Err("a font name has 1…64 characters".into()),
+                    Some(f) if !wm::writable_family(&f) => {
+                        return Err("a watermark's font name has no quotes, commas, semicolons, backslashes or outer spaces".into());
+                    }
                     Some(f) => f,
                     None => self.doc.resolver.as_ref().map_or_else(|| "Calibri".to_string(), |r| r.theme.minor.clone()),
                 };
@@ -325,6 +331,9 @@ impl Editor {
                     Err(k) => self.doc.images.get(*k).map_or(&[][..], Vec::as_slice),
                 };
                 let (w, h) = natural_size(bytes).ok_or("not a picture")?;
+                if crate::docx::image::is_svg(bytes) {
+                    return Err(SVG_VML.into());
+                }
                 let mark = PictureMark { image: None, washout: p.washout.unwrap_or(true) };
                 (wm::Watermark::Picture(mark), Some((w, h, p.scale)), Some(image))
             }
@@ -432,6 +441,23 @@ fn one_colour(f: Fill, palette: crate::drawing::paint::Palette) -> Fill {
     let second = if light { crate::drawing::vml::lighten(first, n) } else { crate::drawing::vml::darken(first, n) };
     g.stops = crate::drawing::vml::two_colour(&Colour::srgb(first), &Colour::srgb(second));
     Fill::Gradient(g)
+}
+
+/// A page gradient as the page's VML holds one: a linear one turned corner to corner of the page, one from the centre
+/// rectangular, and clear stops only in two colours as Word blends them (a list of colours has no opacity).
+fn page_gradient(f: Fill, palette: crate::drawing::paint::Palette) -> Result<Fill, String> {
+    use crate::drawing::paint::{GradientKind, GradientPath};
+    let Fill::Gradient(mut g) = f else { return Ok(f) };
+    match &mut g.kind {
+        GradientKind::Linear { scaled, .. } => *scaled = true,
+        GradientKind::Path { path: GradientPath::Circle, .. } => return Err("a page gradient is linear or rectangular, not circular".into()),
+        GradientKind::Path { path, .. } => *path = GradientPath::Rect,
+    }
+    let clear = g.stops.iter().any(|(_, c)| c.resolve(palette.theme, palette.map, None).a < 255);
+    if clear && !crate::drawing::vml::is_two_colour(&g) {
+        return Err("a page gradient's colours are opaque, or two of them blended".into());
+    }
+    Ok(Fill::Gradient(g))
 }
 
 /// The first watermark in a story's paragraphs.

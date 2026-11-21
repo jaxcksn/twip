@@ -1431,7 +1431,8 @@ mod tests {
         let o = e.outline.as_ref().expect("an outline");
         assert_eq!((o.width, o.cap, o.join), (Some(Emu(9525)), Some(crate::drawing::paint::Cap::Round), Some(crate::drawing::paint::Join::Bevel)));
         let r = e.reflection.as_ref().expect("a reflection");
-        assert_eq!((r.start_alpha, r.end_pos, r.sy, r.fade_dir), (Pct(52000), Pct(35000), Pct(-100000), Angle(5_400_000)));
+        // What it leaves out is Word 2010's default (MS-DOCX CT_Reflection): no fade turn, no horizontal scale.
+        assert_eq!((r.start_alpha, r.end_pos, r.sy, r.fade_dir, r.sx), (Pct(52000), Pct(35000), Pct(-100000), Angle(0), Pct(0)));
         assert!(w14_rpr(r#"<w:b/>"#).effects.is_none(), "a run without effects has none");
     }
 

@@ -179,6 +179,19 @@ fn a_rewritten_row_keeps_header_cells_past_the_read_bound() {
     assert!(first.starts_with(r#"<w:tc w:id="c">"#), "{}", &first[..40]);
 }
 
+#[test]
+fn a_rewritten_row_keeps_header_cells_however_quoted() {
+    let body = r#"<w:tbl><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/><w:headers><w:header w:val='a&#x26;"b'/></w:headers></w:tcPr><w:p><w:r><w:t>Cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#;
+    let mut d = crate::docx::read_editable(&package(body, &[])).expect("reads");
+    let crate::docx::Block::Table(t) = &mut d.sections[0].blocks[0] else { panic!("a table") };
+    assert_eq!(t.rows[0].cells[0].ids.as_ref().map(|i| i.headers.clone()), Some(vec![r#"a&"b"#.to_string()]));
+    let extra = crate::docx::Cell { ids: None, ..t.rows[0].cells[0].clone() };
+    t.rows[0].cells.push(extra);
+    let saved = crate::docx::write::save(&d).expect("saves");
+    let xml = crate::docx::package::read(&saved, &[], "word/document.xml").expect("reads").expect("the main part");
+    assert!(xml.contains(r#"<w:header w:val='a&#x26;"b'/>"#), "kept as written: {xml}");
+}
+
 /// An inline picture in turned text (a text box whose text runs vertically) is its figure, found by the identity it
 /// is drawn with.
 #[test]

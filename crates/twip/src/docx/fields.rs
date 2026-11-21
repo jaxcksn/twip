@@ -241,6 +241,7 @@ fn visible_where(inlines: &[Inline], keep: impl Fn(&Run) -> bool) -> String {
             (Shown::Value(v), _) => out.push_str(&v),
             (Shown::Itself, Inline::Text(t, _)) => out.push_str(t),
             (Shown::Itself, Inline::Tab(_) | Inline::PTab(..)) => out.push('\t'),
+            (Shown::Itself, Inline::Sym { ch, .. }) => out.push(*ch),
             _ => {}
         }
     }
@@ -1400,5 +1401,10 @@ mod tests {
         assert_eq!(code_text(&v, s[1]), " MERGEFIELD A ");
         assert_eq!(result_text(&v, s[0]), "y");
         assert_eq!(visible(&v), "x y z");
+        // A symbol shows as its character; one in a field's code doesn't.
+        let sym = || Inline::Sym { ch: '\u{F0E0}', font: "Wingdings".into(), run: run.clone(), control: None };
+        let link = vec![b(3), t(" HYPERLINK \"https://example.com\" "), sym(), sep(3), sym(), end(3)];
+        assert_eq!(result_text(&link, spans(&link)[0]), "\u{F0E0}");
+        assert_eq!(visible(&link), "\u{F0E0}");
     }
 }
