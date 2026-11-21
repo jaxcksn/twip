@@ -673,6 +673,8 @@ pub struct CharacterFormatting {
     pub shadow: Tri<bool>,
     /// The underline's colour, or the text's (`auto`).
     pub underline_color: Tri<AutoOr<Color>>,
+    /// The text effects (fill, outline, shadow, glow and reflection), through the character style.
+    pub text_effects: Tri<crate::api::drawing::TextEffects>,
 }
 
 /// A paragraph's list.

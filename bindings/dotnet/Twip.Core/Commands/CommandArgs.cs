@@ -1649,6 +1649,19 @@ public sealed record EffectsChange(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] EffectChange<Length> SoftEdge = default,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] EffectChange<Length> Blur = default);
 
+/// <summary>A text effects change: each effect is kept, removed (over a style's too; a fill is only removed) or set.</summary>
+/// <param name="Fill">The letters' fill: none (hollow), solid or gradient of two to ten stops.</param>
+/// <param name="Outline">The letters' outline.</param>
+/// <param name="Shadow">A shadow behind the letters.</param>
+/// <param name="Glow">A glow around the letters, 0 to 150 pt.</param>
+/// <param name="Reflection">A reflection under the letters.</param>
+public sealed record TextEffectsChange(
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] EffectChange<FillValue> Fill = default,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] EffectChange<TextOutline> Outline = default,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] EffectChange<TextShadow> Shadow = default,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] EffectChange<Glow> Glow = default,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] EffectChange<TextReflection> Reflection = default);
+
 /// <summary>A shape text body change; unset values are kept.</summary>
 /// <param name="Insets">The left, top, right and bottom insets, 0 to 1584 pt.</param>
 /// <param name="Anchor">Where the text sits.</param>

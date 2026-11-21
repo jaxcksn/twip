@@ -7569,12 +7569,10 @@ Twip.PageFormatting.FootnoteColumns.get -> int
 Twip.PageFormatting.FootnoteColumns.init -> void
 Twip.FontDialogValues.ContextualAlternates.get -> Twip.FormatValue<bool>
 Twip.FontDialogValues.ContextualAlternates.init -> void
-Twip.FontDialogValues.Deconstruct(out Twip.FormatValue<string!> Font, out Twip.FormatValue<Twip.FontStyleChoice> Style, out Twip.FormatValue<Twip.Length> Size, out Twip.FormatValue<Twip.ColorValue> Color, out Twip.FormatValue<Twip.UnderlineStyle> Underline, out Twip.FormatValue<Twip.ColorValue> UnderlineColor, out Twip.FormatValue<bool> Strikethrough, out Twip.FormatValue<bool> DoubleStrikethrough, out Twip.FormatValue<bool> Superscript, out Twip.FormatValue<bool> Subscript, out Twip.FormatValue<bool> SmallCaps, out Twip.FormatValue<bool> AllCaps, out Twip.FormatValue<bool> Hidden, out Twip.FormatValue<Twip.Length> CharacterSpacing, out Twip.FormatValue<Twip.Length> Position, out Twip.FormatValue<bool> Emboss, out Twip.FormatValue<bool> Engrave, out Twip.FormatValue<bool> Outline, out Twip.FormatValue<bool> Shadow, out Twip.FormatValue<double> Scale, out Twip.FormatValue<Twip.Length> Kerning, out Twip.FormatValue<Twip.Ligatures> Ligatures, out Twip.FormatValue<Twip.NumberSpacing> NumberSpacing, out Twip.FormatValue<Twip.NumberForm> NumberForm, out Twip.FormatValue<int> StylisticSet, out Twip.FormatValue<bool> ContextualAlternates) -> void
 Twip.FontDialogValues.Emboss.get -> Twip.FormatValue<bool>
 Twip.FontDialogValues.Emboss.init -> void
 Twip.FontDialogValues.Engrave.get -> Twip.FormatValue<bool>
 Twip.FontDialogValues.Engrave.init -> void
-Twip.FontDialogValues.FontDialogValues(Twip.FormatValue<string!> Font, Twip.FormatValue<Twip.FontStyleChoice> Style, Twip.FormatValue<Twip.Length> Size, Twip.FormatValue<Twip.ColorValue> Color, Twip.FormatValue<Twip.UnderlineStyle> Underline, Twip.FormatValue<Twip.ColorValue> UnderlineColor, Twip.FormatValue<bool> Strikethrough, Twip.FormatValue<bool> DoubleStrikethrough, Twip.FormatValue<bool> Superscript, Twip.FormatValue<bool> Subscript, Twip.FormatValue<bool> SmallCaps, Twip.FormatValue<bool> AllCaps, Twip.FormatValue<bool> Hidden, Twip.FormatValue<Twip.Length> CharacterSpacing, Twip.FormatValue<Twip.Length> Position, Twip.FormatValue<bool> Emboss, Twip.FormatValue<bool> Engrave, Twip.FormatValue<bool> Outline, Twip.FormatValue<bool> Shadow, Twip.FormatValue<double> Scale, Twip.FormatValue<Twip.Length> Kerning, Twip.FormatValue<Twip.Ligatures> Ligatures, Twip.FormatValue<Twip.NumberSpacing> NumberSpacing, Twip.FormatValue<Twip.NumberForm> NumberForm, Twip.FormatValue<int> StylisticSet, Twip.FormatValue<bool> ContextualAlternates) -> void
 Twip.FontDialogValues.Kerning.get -> Twip.FormatValue<Twip.Length>
 Twip.FontDialogValues.Kerning.init -> void
 Twip.FontDialogValues.Ligatures.get -> Twip.FormatValue<Twip.Ligatures>
@@ -7765,3 +7763,133 @@ Twip.ShadingTarget.Paragraph = 0 -> Twip.ShadingTarget
 Twip.ShadingTarget.Text = 1 -> Twip.ShadingTarget
 Twip.ShadingTarget.Cell = 2 -> Twip.ShadingTarget
 Twip.ShadingTarget.Table = 3 -> Twip.ShadingTarget
+Twip.CharacterFormatting.TextEffects.get -> Twip.FormatValue<Twip.TextEffects!>
+Twip.CharacterFormatting.TextEffects.init -> void
+Twip.CommandId.SetTextEffects = 256 -> Twip.CommandId
+Twip.EditorCommands.SetTextEffectsAsync(Twip.TextEffectsChange! change, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.FieldKind.Effect = 7 -> Twip.FieldKind
+Twip.FontDialogValues.Deconstruct(out Twip.FormatValue<string!> Font, out Twip.FormatValue<Twip.FontStyleChoice> Style, out Twip.FormatValue<Twip.Length> Size, out Twip.FormatValue<Twip.ColorValue> Color, out Twip.FormatValue<Twip.UnderlineStyle> Underline, out Twip.FormatValue<Twip.ColorValue> UnderlineColor, out Twip.FormatValue<bool> Strikethrough, out Twip.FormatValue<bool> DoubleStrikethrough, out Twip.FormatValue<bool> Superscript, out Twip.FormatValue<bool> Subscript, out Twip.FormatValue<bool> SmallCaps, out Twip.FormatValue<bool> AllCaps, out Twip.FormatValue<bool> Hidden, out Twip.FormatValue<Twip.Length> CharacterSpacing, out Twip.FormatValue<Twip.Length> Position, out Twip.FormatValue<bool> Emboss, out Twip.FormatValue<bool> Engrave, out Twip.FormatValue<bool> Outline, out Twip.FormatValue<bool> Shadow, out Twip.FormatValue<double> Scale, out Twip.FormatValue<Twip.Length> Kerning, out Twip.FormatValue<Twip.Ligatures> Ligatures, out Twip.FormatValue<Twip.NumberSpacing> NumberSpacing, out Twip.FormatValue<Twip.NumberForm> NumberForm, out Twip.FormatValue<int> StylisticSet, out Twip.FormatValue<bool> ContextualAlternates, out Twip.FormatValue<Twip.NoneOr<Twip.FillValue!>> TextFill, out Twip.FormatValue<Twip.NoneOr<Twip.TextOutline!>> TextOutline, out Twip.FormatValue<Twip.NoneOr<Twip.TextShadow!>> TextShadow, out Twip.FormatValue<Twip.NoneOr<Twip.TextReflection!>> TextReflection, out Twip.FormatValue<Twip.NoneOr<Twip.Glow!>> TextGlow) -> void
+Twip.FontDialogValues.FontDialogValues(Twip.FormatValue<string!> Font, Twip.FormatValue<Twip.FontStyleChoice> Style, Twip.FormatValue<Twip.Length> Size, Twip.FormatValue<Twip.ColorValue> Color, Twip.FormatValue<Twip.UnderlineStyle> Underline, Twip.FormatValue<Twip.ColorValue> UnderlineColor, Twip.FormatValue<bool> Strikethrough, Twip.FormatValue<bool> DoubleStrikethrough, Twip.FormatValue<bool> Superscript, Twip.FormatValue<bool> Subscript, Twip.FormatValue<bool> SmallCaps, Twip.FormatValue<bool> AllCaps, Twip.FormatValue<bool> Hidden, Twip.FormatValue<Twip.Length> CharacterSpacing, Twip.FormatValue<Twip.Length> Position, Twip.FormatValue<bool> Emboss, Twip.FormatValue<bool> Engrave, Twip.FormatValue<bool> Outline, Twip.FormatValue<bool> Shadow, Twip.FormatValue<double> Scale, Twip.FormatValue<Twip.Length> Kerning, Twip.FormatValue<Twip.Ligatures> Ligatures, Twip.FormatValue<Twip.NumberSpacing> NumberSpacing, Twip.FormatValue<Twip.NumberForm> NumberForm, Twip.FormatValue<int> StylisticSet, Twip.FormatValue<bool> ContextualAlternates, Twip.FormatValue<Twip.NoneOr<Twip.FillValue!>> TextFill, Twip.FormatValue<Twip.NoneOr<Twip.TextOutline!>> TextOutline, Twip.FormatValue<Twip.NoneOr<Twip.TextShadow!>> TextShadow, Twip.FormatValue<Twip.NoneOr<Twip.TextReflection!>> TextReflection, Twip.FormatValue<Twip.NoneOr<Twip.Glow!>> TextGlow) -> void
+Twip.FontDialogValues.TextFill.get -> Twip.FormatValue<Twip.NoneOr<Twip.FillValue!>>
+Twip.FontDialogValues.TextFill.init -> void
+Twip.FontDialogValues.TextGlow.get -> Twip.FormatValue<Twip.NoneOr<Twip.Glow!>>
+Twip.FontDialogValues.TextGlow.init -> void
+Twip.FontDialogValues.TextOutline.get -> Twip.FormatValue<Twip.NoneOr<Twip.TextOutline!>>
+Twip.FontDialogValues.TextOutline.init -> void
+Twip.FontDialogValues.TextReflection.get -> Twip.FormatValue<Twip.NoneOr<Twip.TextReflection!>>
+Twip.FontDialogValues.TextReflection.init -> void
+Twip.FontDialogValues.TextShadow.get -> Twip.FormatValue<Twip.NoneOr<Twip.TextShadow!>>
+Twip.FontDialogValues.TextShadow.init -> void
+Twip.NoneOr<T>
+Twip.NoneOr<T>.Equals(Twip.NoneOr<T> other) -> bool
+Twip.NoneOr<T>.IsNone.get -> bool
+Twip.NoneOr<T>.NoneOr() -> void
+Twip.NoneOr<T>.Value.get -> T
+Twip.TextEffects
+Twip.TextEffects.<Clone>$() -> Twip.TextEffects!
+Twip.TextEffects.Deconstruct(out Twip.FillValue? Fill, out Twip.TextOutline? Outline, out Twip.TextShadow? Shadow, out Twip.Glow? Glow, out Twip.TextReflection? Reflection) -> void
+Twip.TextEffects.Equals(Twip.TextEffects? other) -> bool
+Twip.TextEffects.Fill.get -> Twip.FillValue?
+Twip.TextEffects.Fill.init -> void
+Twip.TextEffects.Glow.get -> Twip.Glow?
+Twip.TextEffects.Glow.init -> void
+Twip.TextEffects.Outline.get -> Twip.TextOutline?
+Twip.TextEffects.Outline.init -> void
+Twip.TextEffects.Reflection.get -> Twip.TextReflection?
+Twip.TextEffects.Reflection.init -> void
+Twip.TextEffects.Shadow.get -> Twip.TextShadow?
+Twip.TextEffects.Shadow.init -> void
+Twip.TextEffects.TextEffects(Twip.FillValue? Fill = null, Twip.TextOutline? Outline = null, Twip.TextShadow? Shadow = null, Twip.Glow? Glow = null, Twip.TextReflection? Reflection = null) -> void
+Twip.TextEffectsChange
+Twip.TextEffectsChange.<Clone>$() -> Twip.TextEffectsChange!
+Twip.TextEffectsChange.Deconstruct(out Twip.EffectChange<Twip.FillValue!> Fill, out Twip.EffectChange<Twip.TextOutline!> Outline, out Twip.EffectChange<Twip.TextShadow!> Shadow, out Twip.EffectChange<Twip.Glow!> Glow, out Twip.EffectChange<Twip.TextReflection!> Reflection) -> void
+Twip.TextEffectsChange.Equals(Twip.TextEffectsChange? other) -> bool
+Twip.TextEffectsChange.Fill.get -> Twip.EffectChange<Twip.FillValue!>
+Twip.TextEffectsChange.Fill.init -> void
+Twip.TextEffectsChange.Glow.get -> Twip.EffectChange<Twip.Glow!>
+Twip.TextEffectsChange.Glow.init -> void
+Twip.TextEffectsChange.Outline.get -> Twip.EffectChange<Twip.TextOutline!>
+Twip.TextEffectsChange.Outline.init -> void
+Twip.TextEffectsChange.Reflection.get -> Twip.EffectChange<Twip.TextReflection!>
+Twip.TextEffectsChange.Reflection.init -> void
+Twip.TextEffectsChange.Shadow.get -> Twip.EffectChange<Twip.TextShadow!>
+Twip.TextEffectsChange.Shadow.init -> void
+Twip.TextEffectsChange.TextEffectsChange(Twip.EffectChange<Twip.FillValue!> Fill = default(Twip.EffectChange<Twip.FillValue!>), Twip.EffectChange<Twip.TextOutline!> Outline = default(Twip.EffectChange<Twip.TextOutline!>), Twip.EffectChange<Twip.TextShadow!> Shadow = default(Twip.EffectChange<Twip.TextShadow!>), Twip.EffectChange<Twip.Glow!> Glow = default(Twip.EffectChange<Twip.Glow!>), Twip.EffectChange<Twip.TextReflection!> Reflection = default(Twip.EffectChange<Twip.TextReflection!>)) -> void
+Twip.TextOutline
+Twip.TextOutline.<Clone>$() -> Twip.TextOutline!
+Twip.TextOutline.Cap.get -> Twip.LineCap
+Twip.TextOutline.Cap.init -> void
+Twip.TextOutline.Compound.get -> Twip.LineCompound
+Twip.TextOutline.Compound.init -> void
+Twip.TextOutline.Dash.get -> string!
+Twip.TextOutline.Dash.init -> void
+Twip.TextOutline.Deconstruct(out Twip.Length Width, out Twip.FillValue! Fill, out string! Dash, out Twip.LineCompound Compound, out Twip.LineCap Cap, out Twip.LineJoin Join) -> void
+Twip.TextOutline.Equals(Twip.TextOutline? other) -> bool
+Twip.TextOutline.Fill.get -> Twip.FillValue!
+Twip.TextOutline.Fill.init -> void
+Twip.TextOutline.Join.get -> Twip.LineJoin
+Twip.TextOutline.Join.init -> void
+Twip.TextOutline.TextOutline(Twip.Length Width, Twip.FillValue! Fill, string! Dash, Twip.LineCompound Compound, Twip.LineCap Cap, Twip.LineJoin Join) -> void
+Twip.TextOutline.Width.get -> Twip.Length
+Twip.TextOutline.Width.init -> void
+Twip.TextReflection
+Twip.TextReflection.<Clone>$() -> Twip.TextReflection!
+Twip.TextReflection.Blur.get -> Twip.Length
+Twip.TextReflection.Blur.init -> void
+Twip.TextReflection.Deconstruct(out double Transparency, out double Size, out Twip.Length Blur, out Twip.Length Distance) -> void
+Twip.TextReflection.Distance.get -> Twip.Length
+Twip.TextReflection.Distance.init -> void
+Twip.TextReflection.Equals(Twip.TextReflection? other) -> bool
+Twip.TextReflection.Size.get -> double
+Twip.TextReflection.Size.init -> void
+Twip.TextReflection.TextReflection(double Transparency, double Size, Twip.Length Blur, Twip.Length Distance) -> void
+Twip.TextReflection.Transparency.get -> double
+Twip.TextReflection.Transparency.init -> void
+Twip.TextShadow
+Twip.TextShadow.<Clone>$() -> Twip.TextShadow!
+Twip.TextShadow.Blur.get -> Twip.Length
+Twip.TextShadow.Blur.init -> void
+Twip.TextShadow.Color.get -> Twip.ShapeColor!
+Twip.TextShadow.Color.init -> void
+Twip.TextShadow.Deconstruct(out Twip.ShapeColor! Color, out double Size, out Twip.Length Blur, out Twip.Length Distance, out double Direction) -> void
+Twip.TextShadow.Direction.get -> double
+Twip.TextShadow.Direction.init -> void
+Twip.TextShadow.Distance.get -> Twip.Length
+Twip.TextShadow.Distance.init -> void
+Twip.TextShadow.Equals(Twip.TextShadow? other) -> bool
+Twip.TextShadow.Size.get -> double
+Twip.TextShadow.Size.init -> void
+Twip.TextShadow.TextShadow(Twip.ShapeColor! Color, double Size, Twip.Length Blur, Twip.Length Distance, double Direction) -> void
+override Twip.NoneOr<T>.GetHashCode() -> int
+override Twip.TextEffects.Equals(object? obj) -> bool
+override Twip.TextEffects.GetHashCode() -> int
+override Twip.TextEffects.ToString() -> string!
+override Twip.TextEffectsChange.Equals(object? obj) -> bool
+override Twip.TextEffectsChange.GetHashCode() -> int
+override Twip.TextEffectsChange.ToString() -> string!
+override Twip.TextOutline.Equals(object? obj) -> bool
+override Twip.TextOutline.GetHashCode() -> int
+override Twip.TextOutline.ToString() -> string!
+override Twip.TextReflection.Equals(object? obj) -> bool
+override Twip.TextReflection.GetHashCode() -> int
+override Twip.TextReflection.ToString() -> string!
+override Twip.TextShadow.Equals(object? obj) -> bool
+override Twip.TextShadow.GetHashCode() -> int
+override Twip.TextShadow.ToString() -> string!
+static Twip.EditorOperation.SetTextEffects(Twip.TextEffectsChange! change) -> Twip.EditorOperation!
+static Twip.NoneOr<T>.None.get -> Twip.NoneOr<T>
+static Twip.NoneOr<T>.Of(T value) -> Twip.NoneOr<T>
+static Twip.NoneOr<T>.operator !=(Twip.NoneOr<T> left, Twip.NoneOr<T> right) -> bool
+static Twip.NoneOr<T>.operator ==(Twip.NoneOr<T> left, Twip.NoneOr<T> right) -> bool
+static Twip.TextEffects.operator !=(Twip.TextEffects? left, Twip.TextEffects? right) -> bool
+static Twip.TextEffects.operator ==(Twip.TextEffects? left, Twip.TextEffects? right) -> bool
+static Twip.TextEffectsChange.operator !=(Twip.TextEffectsChange? left, Twip.TextEffectsChange? right) -> bool
+static Twip.TextEffectsChange.operator ==(Twip.TextEffectsChange? left, Twip.TextEffectsChange? right) -> bool
+static Twip.TextOutline.operator !=(Twip.TextOutline? left, Twip.TextOutline? right) -> bool
+static Twip.TextOutline.operator ==(Twip.TextOutline? left, Twip.TextOutline? right) -> bool
+static Twip.TextReflection.operator !=(Twip.TextReflection? left, Twip.TextReflection? right) -> bool
+static Twip.TextReflection.operator ==(Twip.TextReflection? left, Twip.TextReflection? right) -> bool
+static Twip.TextShadow.operator !=(Twip.TextShadow? left, Twip.TextShadow? right) -> bool
+static Twip.TextShadow.operator ==(Twip.TextShadow? left, Twip.TextShadow? right) -> bool
+~override Twip.NoneOr<T>.Equals(object obj) -> bool
+~override Twip.NoneOr<T>.ToString() -> string

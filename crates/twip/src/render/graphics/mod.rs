@@ -12,6 +12,7 @@ mod shape;
 pub(crate) mod svg;
 #[cfg(test)]
 mod tests;
+mod text_effects;
 
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -28,7 +29,7 @@ use twip_graphics::scene::{Clip, GlyphRun, Picture, Recorder, Synthesis};
 use super::{ChromeFace, Frame, Renderer};
 use crate::editing::view::View;
 use crate::font::Face;
-use crate::layout::fragment::{GlyphFill, ImageKey, Item};
+use crate::layout::fragment::{ImageKey, Item};
 use crate::layout::ids::FloatId;
 use crate::layout::traverse::{paint, paint_float};
 
@@ -36,6 +37,10 @@ use crate::layout::traverse::{paint, paint_float};
 /// page pictures, and the frame being recorded. Its memory is kept between frames.
 #[derive(Default)]
 pub struct Graphics {
+    /// Text effects' scratch: a gradient's stops as the appearance shows them, their samples, and a run's outlines.
+    fx_stops: Vec<(f64, crate::drawing::colour::Rgba)>,
+    fx_samples: Vec<twip_graphics::paint::Stop>,
+    fx_path: kurbo::BezPath,
     res: Resources,
     cpu: cpu::Renderer,
     /// Registered faces, by the face file's address, index and instance.
@@ -572,38 +577,14 @@ impl Graphics {
                 }
                 let synthesis = Synthesis { embolden: g.face.sim_bold, skew_x: if g.face.sim_italic { -0.2 } else { 0.0 } };
                 let run = GlyphRun { font, size: g.size, baseline: g.baseline, glyphs: &g.glyphs, synthesis };
-                let fill = match g.paint.as_deref() {
-                    None => Some(g.colour.unwrap_or(0)),
-                    Some(p) => {
-                        // Effect copies aren't text: drawing with text (a PDF), they are paths.
-                        for &(dx, dy, c) in p.under.iter() {
-                            rec.push_transform(Affine::translate((dx, dy)));
-                            if self.with_text {
-                                rec.glyph_paths(&self.res.fonts, &run, ink(c));
-                            } else {
-                                rec.glyphs(&self.res.fonts, &run, ink(c));
-                            }
-                            rec.pop();
-                        }
-                        match p.fill {
-                            GlyphFill::Solid(c) => Some(c),
-                            GlyphFill::None => None,
-                        }
+                match g.paint.as_deref() {
+                    Some(p) => self.painted_run(rec, g, &run, p, &ink),
+                    None if self.with_text => {
+                        let text: String = g.chars.iter().map(|c| c.0).collect();
+                        let clusters = clusters(g).unwrap_or_default();
+                        rec.glyphs_text(&self.res.fonts, &run, &text, &clusters, ink(g.colour.unwrap_or(0)));
                     }
-                };
-                if self.with_text {
-                    let text: String = g.chars.iter().map(|c| c.0).collect();
-                    let clusters = clusters(g).unwrap_or_default();
-                    match fill {
-                        Some(c) => rec.glyphs_text(&self.res.fonts, &run, &text, &clusters, ink(c)),
-                        // Hollow text keeps its characters.
-                        None => rec.invisible_text(&self.res.fonts, &run, &text, &clusters),
-                    }
-                } else if let Some(c) = fill {
-                    rec.glyphs(&self.res.fonts, &run, ink(c));
-                }
-                if let Some((width, c)) = g.paint.as_deref().and_then(|p| p.outline) {
-                    rec.stroke_glyphs(&self.res.fonts, &run, &kurbo::Stroke::new(width), ink(c));
+                    None => rec.glyphs(&self.res.fonts, &run, ink(g.colour.unwrap_or(0))),
                 }
             }
             Item::Gridline { line: [x0, y0, x1, y1] } => {

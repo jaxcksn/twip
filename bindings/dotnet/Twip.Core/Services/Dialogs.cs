@@ -581,6 +581,8 @@ public enum FieldKind
     Color,
     /// <summary>A list.</summary>
     List,
+    /// <summary>A text effect's settings, or none.</summary>
+    Effect,
 }
 
 /// <summary>An option of a choice field.</summary>
@@ -643,6 +645,11 @@ public enum FontStyleChoice
 /// <param name="NumberForm">The number forms.</param>
 /// <param name="StylisticSet">The stylistic set, 1 to 20; 0 for the default.</param>
 /// <param name="ContextualAlternates">Contextual alternates.</param>
+/// <param name="TextFill">The text fill, or none of the text's own (the font colour).</param>
+/// <param name="TextOutline">The text outline, or none of the text's own.</param>
+/// <param name="TextShadow">The shadow, or none of the text's own.</param>
+/// <param name="TextReflection">The reflection, or none of the text's own.</param>
+/// <param name="TextGlow">The glow, or none of the text's own.</param>
 public sealed record FontDialogValues(
     FormatValue<string> Font, FormatValue<FontStyleChoice> Style, FormatValue<Length> Size, FormatValue<ColorValue> Color,
     FormatValue<UnderlineStyle> Underline, FormatValue<ColorValue> UnderlineColor, FormatValue<bool> Strikethrough,
@@ -650,7 +657,9 @@ public sealed record FontDialogValues(
     FormatValue<bool> AllCaps, FormatValue<bool> Hidden, FormatValue<Length> CharacterSpacing, FormatValue<Length> Position,
     FormatValue<bool> Emboss, FormatValue<bool> Engrave, FormatValue<bool> Outline, FormatValue<bool> Shadow, FormatValue<double> Scale,
     FormatValue<Length> Kerning, FormatValue<Ligatures> Ligatures, FormatValue<NumberSpacing> NumberSpacing, FormatValue<NumberForm> NumberForm,
-    FormatValue<int> StylisticSet, FormatValue<bool> ContextualAlternates);
+    FormatValue<int> StylisticSet, FormatValue<bool> ContextualAlternates, FormatValue<NoneOr<FillValue>> TextFill,
+    FormatValue<NoneOr<TextOutline>> TextOutline, FormatValue<NoneOr<TextShadow>> TextShadow, FormatValue<NoneOr<TextReflection>> TextReflection,
+    FormatValue<NoneOr<Glow>> TextGlow);
 
 /// <summary>A special indent in the Paragraph dialog.</summary>
 public enum SpecialIndent

@@ -386,6 +386,11 @@ public abstract partial record EditorOperation
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation SetDropCap(DropCap dropCap) => Op(CommandId.SetDropCap, Arg.Flatten(dropCap));
 
+    /// <summary>Sets the text's fill, outline, shadow, glow and reflection; each is kept, removed or set.</summary>
+    /// <param name="change">The change.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetTextEffects(TextEffectsChange change) => Op(CommandId.SetTextEffects, Arg.Flatten(change));
+
     /// <summary>Defines the selection's list levels.</summary>
     /// <param name="definition">The levels and what they apply to.</param>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>

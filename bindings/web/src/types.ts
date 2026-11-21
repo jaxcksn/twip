@@ -581,6 +581,79 @@ export interface EffectsChange {
   blur?: Points | null;
 }
 
+/** A text outline: an outline without arrowheads. */
+export interface TextOutline {
+  /** The width, 0 to 1584. */
+  width: Points;
+  /** `none`, `solid` or `gradient`. */
+  fill: FillValue;
+  /** The ECMA-376 dash name (`'solid'`, `'dash'`, `'sysDot'`…). */
+  dash: string;
+  /** Single or several lines. */
+  compound: Compound;
+  /** The ends of its dashes. */
+  cap: LineCap;
+  /** The joins. */
+  join: LineJoin;
+}
+
+/** A text shadow. */
+export interface TextShadow {
+  /** Its colour, with its transparency as an `alpha` transform. */
+  colour: ColourValue;
+  /** Its size against the text's, percent, 1 to 200. */
+  size: number;
+  /** How far it blurs, 0 to 100. */
+  blur: Points;
+  /** How far from the text, 0 to 200. */
+  distance: Points;
+  /** Which way, clockwise from the right. */
+  direction: Degrees;
+}
+
+/** A text reflection: the text mirrored below its baseline, fading out. */
+export interface TextReflection {
+  /** Its transparency where it starts, percent, 0 to 100. */
+  transparency: number;
+  /** How much of the text it shows before it has faded out, percent, 0 to 100. */
+  size: number;
+  /** How far it blurs, 0 to 100. */
+  blur: Points;
+  /** How far below the text, 0 to 100. */
+  distance: Points;
+}
+
+/** Text effects as written; each one absent is not set. */
+export interface TextEffects {
+  /** The letters' fill in place of the font colour: `none` (hollow), `solid` or `gradient`. */
+  fill?: FillValue;
+  /** The letters' outline. */
+  outline?: TextOutline;
+  /** A shadow behind the letters. */
+  shadow?: TextShadow;
+  /** A glow around the letters. */
+  glow?: Glow;
+  /** A reflection under the letters. */
+  reflection?: TextReflection;
+}
+
+/**
+ * `setTextEffects`' change: each effect given replaces the text's own, `null` turns it off (over a style's too; a fill
+ * is only removed, so a style's fill shows), what isn't given is kept.
+ */
+export interface TextEffectsChange {
+  /** The letters' fill: `none` (hollow), `solid` or `gradient` of two to ten stops. */
+  fill?: FillValue | null;
+  /** The letters' outline. */
+  outline?: TextOutline | null;
+  /** A shadow behind the letters. */
+  shadow?: TextShadow | null;
+  /** A glow around the letters, 0 to 150 pt. */
+  glow?: Glow | null;
+  /** A reflection under the letters. */
+  reflection?: TextReflection | null;
+}
+
 /** Where text sits in a shape vertically. */
 export type TextAnchor = 'top' | 'middle' | 'bottom';
 

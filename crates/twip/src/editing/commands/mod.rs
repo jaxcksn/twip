@@ -247,6 +247,7 @@ impl Editor {
             Command::SetTypography(t) => self.set_typography(t, fonts),
             Command::SetLanguage(l) => self.set_language(l, fonts),
             Command::SetCharacterEffects(e) => self.set_character_effects(e, fonts),
+            Command::SetTextEffects(e) => self.set_text_effects(e, fonts),
             Command::SetUnderlineColor(c) => self.set_underline_color(c, fonts),
             Command::ClearFormatting => self.format(&super::format::Format::ClearFormatting, fonts),
             Command::ChangeCase(to) => self.change_case(to, fonts),

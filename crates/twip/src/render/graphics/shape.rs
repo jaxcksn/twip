@@ -163,7 +163,7 @@ fn pivot(b: [f64; 4], align: RectAlign) -> (f64, f64) {
 }
 
 /// A shadow's own transform about its alignment point in `b`: skew, then scale.
-fn align_matrix(b: [f64; 4], sh: &ResolvedShadow) -> Affine {
+pub(super) fn align_matrix(b: [f64; 4], sh: &ResolvedShadow) -> Affine {
     let (ax, ay) = pivot(b, sh.align);
     let (kx, ky) = (sh.skew[0].to_radians().tan(), sh.skew[1].to_radians().tan());
     Affine::translate((ax, ay))
@@ -235,7 +235,7 @@ pub(super) fn reflect(rec: &mut Recorder, m: Affine, size: [f64; 2], r: &Resolve
 }
 
 /// A layer that blurs what is drawn in it by `sigma` (none at 0).
-fn blur_layer(rec: &mut Recorder, sigma: f32, opacity: f32, bounds: Option<kurbo::Rect>) {
+pub(super) fn blur_layer(rec: &mut Recorder, sigma: f32, opacity: f32, bounds: Option<kurbo::Rect>) {
     let filters = [Filter::Blur { sigma }];
     rec.push_layer(&Layer { opacity, filters: if sigma > 0.0 { &filters } else { &[] }, bounds, ..Layer::default() });
 }
@@ -278,7 +278,7 @@ fn picture_adjust(adjust: &[ResolvedBlipAdjust]) -> (Vec<ColorFilter>, f32) {
 
 /// A line's pen at width `w`: its caps, join and dashes. A capped dash's dashes are one width shorter and its gaps one
 /// width longer, since the caps grow each dash by half a width at either end.
-fn line_pen(line: &ResolvedLine, w: f64) -> kurbo::Stroke {
+pub(super) fn line_pen(line: &ResolvedLine, w: f64) -> kurbo::Stroke {
     let cap = match line.cap {
         Cap::Round => kurbo::Cap::Round,
         Cap::Square => kurbo::Cap::Square,
@@ -845,7 +845,16 @@ impl Graphics {
     }
 
     #[allow(clippy::too_many_arguments, reason = "the line, the path it strokes, and the shape's box and turn")]
-    fn stroke(&mut self, rec: &mut Recorder, path: &BezPath, line: &ResolvedLine, size: [f64; 2], rot: f64, origin: [f64; 2], images: &[Vec<u8>]) {
+    pub(super) fn stroke(
+        &mut self,
+        rec: &mut Recorder,
+        path: &BezPath,
+        line: &ResolvedLine,
+        size: [f64; 2],
+        rot: f64,
+        origin: [f64; 2],
+        images: &[Vec<u8>],
+    ) {
         if line.paint.is_none() {
             return;
         }
@@ -912,31 +921,30 @@ impl Graphics {
     }
 }
 
-/// The 49 stops a gradient is sampled at, as twip-graphics stops.
-fn stops(stops: &[(f64, Rgba)]) -> Vec<Stop> {
+/// The 49 stops a gradient is sampled at, as twip-graphics stops, into `out`.
+fn sample_stops(stops: &[(f64, Rgba)], out: &mut Vec<Stop>) {
     let n = 48;
-    (0..=n).map(|i| i as f64 / n as f64).map(|t| Stop { offset: t as f32, color: colour(gradient_at(stops, t)) }).collect()
+    out.clear();
+    out.extend((0..=n).map(|i| i as f64 / n as f64).map(|t| Stop { offset: t as f32, color: colour(gradient_at(stops, t)) }));
 }
 
-fn gradient(
-    rec: &mut Recorder,
-    path: &BezPath,
+/// Calls `fill` with a linear or circular gradient's paint over a box of `size` that `to_box` places (its brush
+/// mapped there); a rectangular or shape path gradient is no single paint, and `fill` isn't called.
+pub(super) fn gradient_brush(
     stop_list: &[(f64, Rgba)],
     kind: GradientKind,
     size: [f64; 2],
     rot: f64,
     (tile, flip): (&[Pct; 4], TileFlip),
+    to_box: Affine,
+    samples: &mut Vec<Stop>,
+    fill: &mut dyn FnMut(Paint<'_>),
 ) {
     let [w, h] = size;
     let t = tile.map(|p| p.fraction());
     let (tx0, ty0, tx1, ty1) = (w * t[0], h * t[1], w * (1.0 - t[2]), h * (1.0 - t[3]));
     let (cx, cy) = (w / 2.0, h / 2.0);
-    let kind = match kind {
-        GradientKind::Path { path: GradientPath::Shape, focus } if is_rect(path) => GradientKind::Path { path: GradientPath::Rect, focus },
-        k => k,
-    };
-    let back = if rot != 0.0 { Affine::rotate_about((-rot).to_radians(), kurbo::Point::new(cx, cy)) } else { Affine::IDENTITY };
-    let samples = stops(stop_list);
+    let back = to_box * if rot != 0.0 { Affine::rotate_about((-rot).to_radians(), kurbo::Point::new(cx, cy)) } else { Affine::IDENTITY };
     let extend = if t == [0.0; 4] {
         Extend::Clamp
     } else if flip == TileFlip::None {
@@ -946,6 +954,7 @@ fn gradient(
     };
     match kind {
         GradientKind::Linear { angle, scaled } => {
+            sample_stops(stop_list, samples);
             let a = angle.radians();
             let (mut dx, mut dy) = (a.cos(), a.sin());
             if scaled {
@@ -957,13 +966,39 @@ fn gradient(
             let len = tw * dx.abs() + th * dy.abs();
             let start = (tcx - dx * len / 2.0, tcy - dy * len / 2.0).into();
             let end = (tcx + dx * len / 2.0, tcy + dy * len / 2.0).into();
-            rec.fill_path(path.elements(), Paint::new(Brush::Linear { start, end, stops: &samples, extend, transform: back }));
+            fill(Paint::new(Brush::Linear { start, end, stops: samples, extend, transform: back }));
         }
         GradientKind::Path { path: GradientPath::Circle, .. } => {
+            sample_stops(stop_list, samples);
             let r = cx.hypot(cy).max(f64::EPSILON);
             let c = (cx, cy).into();
-            let brush = Brush::Radial { start: c, start_radius: 0.0, end: c, end_radius: r, stops: &samples, extend, transform: back };
-            rec.fill_path(path.elements(), Paint::new(brush));
+            fill(Paint::new(Brush::Radial { start: c, start_radius: 0.0, end: c, end_radius: r, stops: samples, extend, transform: back }));
+        }
+        GradientKind::Path { .. } => {}
+    }
+}
+
+pub(super) fn gradient(
+    rec: &mut Recorder,
+    path: &BezPath,
+    stop_list: &[(f64, Rgba)],
+    kind: GradientKind,
+    size: [f64; 2],
+    rot: f64,
+    (tile, flip): (&[Pct; 4], TileFlip),
+) {
+    let [w, h] = size;
+    let (cx, cy) = (w / 2.0, h / 2.0);
+    let kind = match kind {
+        GradientKind::Path { path: GradientPath::Shape, focus } if is_rect(path) => GradientKind::Path { path: GradientPath::Rect, focus },
+        k => k,
+    };
+    match kind {
+        GradientKind::Linear { .. } | GradientKind::Path { path: GradientPath::Circle, .. } => {
+            let mut samples = Vec::new();
+            gradient_brush(stop_list, kind, size, rot, (tile, flip), Affine::IDENTITY, &mut samples, &mut |paint| {
+                rec.fill_path(path.elements(), paint)
+            });
         }
         GradientKind::Path { path: kind @ (GradientPath::Rect | GradientPath::Shape), focus } => {
             let fr = match kind {
@@ -1047,7 +1082,7 @@ fn with_ends(path: &BezPath, line: &ResolvedLine) -> Vec<BezPath> {
     regions
 }
 
-fn sigma(radius: f64) -> f32 {
+pub(super) fn sigma(radius: f64) -> f32 {
     (radius * SIGMA_PER_RADIUS) as f32
 }
 
@@ -1067,8 +1102,8 @@ pub(super) type ReflectedText<'a> = &'a mut dyn FnMut(&mut Graphics, &mut Record
 pub(super) const RECOLOUR_MAX_BYTES: u64 = 256 << 20;
 
 const SIGMA_PER_RADIUS: f64 = 0.5;
-const GLOW_GROW: f64 = 0.5;
-const GLOW_SOFT: f64 = 0.5;
+pub(super) const GLOW_GROW: f64 = 0.5;
+pub(super) const GLOW_SOFT: f64 = 0.5;
 const SOFT_ERODE: f64 = 0.85;
 const SOFT_FADE: f64 = 0.64;
 

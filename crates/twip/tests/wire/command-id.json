@@ -47,6 +47,7 @@
   "setTypography",
   "setLanguage",
   "setCharacterEffects",
+  "setTextEffects",
   "setUnderlineColor",
   "clearFormatting",
   "changeCase",

@@ -24,7 +24,7 @@ pub struct GlyphRun {
     pub paint: Option<Rc<GlyphPaint>>,
 }
 
-/// A glyph run's paint: its fill, its glyphs' outline and offset copies drawn under it.
+/// A glyph run's paint: its fill, its glyphs' outline and offset copies drawn under it, and Word 2010's text effects.
 #[derive(Debug, PartialEq)]
 pub struct GlyphPaint {
     pub fill: GlyphFill,
@@ -32,22 +32,91 @@ pub struct GlyphPaint {
     pub outline: Option<(f64, u32)>,
     /// Copies of the run drawn before it, each moved by (dx, dy) points, in a colour of its own.
     pub under: Box<[(f64, f64, u32)]>,
+    /// The run's text effects, resolved; `None` without any.
+    pub effects: Option<Box<TextEffectPaint>>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum GlyphFill {
     None,
     Solid(u32),
+    /// A text fill (`w14:textFill`): a solid with its alpha, or a gradient across the run's box (its advance wide,
+    /// from the face's ascent to its descent).
+    Paint(Box<crate::drawing::paint::Paint>),
+}
+
+/// A run's text effects in points, degrees and colours: the outline stroked over the fill, and the shadow,
+/// reflection and glow drawn under it, in the run's box as [`GlyphFill::Paint`] has it.
+#[derive(Debug, PartialEq)]
+pub struct TextEffectPaint {
+    pub outline: Option<crate::drawing::paint::ResolvedLine>,
+    pub shadow: Option<crate::drawing::paint::ResolvedShadow>,
+    /// The glow's radius and colour.
+    pub glow: Option<(f64, crate::drawing::colour::Rgba)>,
+    pub reflection: Option<crate::drawing::paint::ResolvedReflection>,
+}
+
+fn hash_paint<H: std::hash::Hasher>(p: &crate::drawing::paint::Paint, h: &mut H) {
+    use crate::drawing::paint::Paint;
+    use std::hash::Hash;
+    std::mem::discriminant(p).hash(h);
+    match p {
+        Paint::Solid(c) => c.hash(h),
+        Paint::Gradient { stops, kind, tile, flip, rot_with_shape } => {
+            stops.iter().for_each(|(t, c)| (t.to_bits(), c).hash(h));
+            (kind, tile, flip, rot_with_shape).hash(h);
+        }
+        Paint::Pattern { preset, fg, bg } => (preset, fg, bg).hash(h),
+        Paint::Hatch { fg, bg, .. } => (fg, bg).hash(h),
+        Paint::None | Paint::Picture { .. } => {}
+    }
+}
+
+fn hash_bits<H: std::hash::Hasher>(v: &[f64], h: &mut H) {
+    use std::hash::Hash;
+    v.iter().for_each(|x| x.to_bits().hash(h));
+}
+
+impl std::hash::Hash for TextEffectPaint {
+    fn hash<H: std::hash::Hasher>(&self, h: &mut H) {
+        if let Some(l) = &self.outline {
+            1u8.hash(h);
+            hash_bits(&[l.width], h);
+            hash_paint(&l.paint, h);
+            (&l.dash, l.compound, l.cap, l.join, l.inset, l.head.is_some(), l.tail.is_some()).hash(h);
+        }
+        if let Some(s) = &self.shadow {
+            2u8.hash(h);
+            hash_bits(&[s.blur, s.dist, s.dir, s.scale[0], s.scale[1], s.skew[0], s.skew[1]], h);
+            (s.align, s.colour, s.rot_with_shape).hash(h);
+        }
+        if let Some((r, c)) = self.glow {
+            3u8.hash(h);
+            hash_bits(&[r], h);
+            c.hash(h);
+        }
+        if let Some(r) = &self.reflection {
+            4u8.hash(h);
+            let v = [r.blur, r.dist, r.dir, r.fade_dir, r.scale[0], r.scale[1], r.skew[0], r.skew[1], r.start.0, r.start.1, r.end.0, r.end.1];
+            hash_bits(&v, h);
+            (r.align, r.rot_with_shape).hash(h);
+        }
+    }
 }
 
 impl std::hash::Hash for GlyphPaint {
     fn hash<H: std::hash::Hasher>(&self, h: &mut H) {
-        match self.fill {
+        match &self.fill {
             GlyphFill::None => 0u8.hash(h),
             GlyphFill::Solid(c) => (1u8, c).hash(h),
+            GlyphFill::Paint(p) => {
+                2u8.hash(h);
+                hash_paint(p, h);
+            }
         }
         self.outline.map(|(w, c)| (w.to_bits(), c)).hash(h);
         self.under.iter().for_each(|&(dx, dy, c)| (dx.to_bits(), dy.to_bits(), c).hash(h));
+        self.effects.hash(h);
     }
 }
 

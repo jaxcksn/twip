@@ -19,7 +19,7 @@ import type { Session } from '../editor.js';
 import type { LineSpacing, Mixed, RelativeSize, RowHeight, TableWidth, Tri, UnderlineStyle } from '../state.js';
 import { Method } from '../transport/protocol.js';
 import { type PreviewPicture, type PreviewSize, toPicture } from './navigation.js';
-import type { Color, Points, StyleId } from '../types.js';
+import type { Color, FillValue, Glow, Points, StyleId, TextOutline, TextReflection, TextShadow } from '../types.js';
 import type { TabAlignment, TabLeader } from './ruler.js';
 
 /** The editor's dialogs as typed models: the application draws them. */
@@ -118,7 +118,7 @@ export interface FieldInfo {
   /** Whether it can be changed now. */
   enabled: boolean;
   /** The control it wants. */
-  kind: 'number' | 'length' | 'text' | 'choice' | 'toggle' | 'color' | 'list';
+  kind: 'number' | 'length' | 'text' | 'choice' | 'toggle' | 'color' | 'list' | 'effect';
   /** The minimum. */
   min?: number;
   /** The maximum. */
@@ -162,6 +162,16 @@ export interface DialogValues {
     /** The stylistic set, 1 to 20; 0 for the default. */
     stylisticSet: Mixed<number>;
     contextualAlternates: Tri;
+    /** The text fill, or `'none'` for none of the text's own (the font colour). */
+    textFill: Mixed<FillValue | 'none'>;
+    /** The text outline, or `'none'`. */
+    textOutline: Mixed<TextOutline | 'none'>;
+    /** The shadow, or `'none'`. */
+    textShadow: Mixed<TextShadow | 'none'>;
+    /** The reflection, or `'none'`. */
+    textReflection: Mixed<TextReflection | 'none'>;
+    /** The glow, or `'none'`. */
+    textGlow: Mixed<Glow | 'none'>;
   };
   /** The Paragraph dialog. */
   paragraph: {

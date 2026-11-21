@@ -515,4 +515,6 @@ public enum CommandId
     SetFileName,
     /// <summary>Sets the selection's paragraph's drop cap.</summary>
     SetDropCap,
+    /// <summary>Sets the text's fill, outline, shadow, glow and reflection.</summary>
+    SetTextEffects,
 }

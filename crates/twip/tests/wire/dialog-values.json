@@ -238,6 +238,11 @@
     "stylisticSet": 3,
     "subscript": false,
     "superscript": false,
+    "textFill": "none",
+    "textGlow": "none",
+    "textOutline": "none",
+    "textReflection": "none",
+    "textShadow": "none",
     "underline": "wave",
     "underlineColor": "#FF0000"
   },

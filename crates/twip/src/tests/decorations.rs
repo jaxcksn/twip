@@ -187,3 +187,40 @@ fn decorations_tone_effects_from_the_page_colour() {
     assert_eq!(effect(row("emboss white")).under[0].2, 0x13_1D26, "0.6 of the page colour");
     assert_eq!(effect(row("emboss shaded")).under[0].2, 0x82_8282, "the paragraph's shading comes first");
 }
+
+/// fixtures/render/text-effects.docx: each Word 2010 effect, set directly and through a character style, paints its
+/// runs; 3-D formatting draws flat, and a text fill replaces the font colour.
+#[test]
+fn decorations_carry_text_effects() {
+    use crate::layout::fragment::GlyphFill;
+    let l = drawn_lines("render/text-effects.docx");
+    let row = |name: &str| l.iter().find(|d| d.text.starts_with(name)).unwrap_or_else(|| panic!("{name}"));
+    // Each row's direct run and its styled run paint alike.
+    let paints = |name: &str| {
+        let d = row(name);
+        let p: Vec<_> = d.paints.iter().flatten().cloned().collect();
+        assert_eq!(p.len(), 2, "{name}: {:?}", d.paints);
+        assert_eq!(p[0], p[1], "{name}: direct and styled");
+        p[0].clone()
+    };
+    let glow = paints("glow direct");
+    let (r, c) = glow.effects.as_ref().and_then(|e| e.glow).expect("a glow");
+    assert!((r - 8.0).abs() < 1e-9 && c.a == 102, "{r} {c:?}");
+    let shadow = paints("shadow direct");
+    let sh = shadow.effects.as_ref().and_then(|e| e.shadow.clone()).expect("a shadow");
+    assert!((sh.dist - 3.0).abs() < 1e-9 && (sh.blur - 4.0).abs() < 1e-9 && sh.dir == 45.0 && sh.colour.a == 153);
+    let reflection = paints("reflection direct");
+    let rf = reflection.effects.as_ref().and_then(|e| e.reflection.clone()).expect("a reflection");
+    assert_eq!((rf.scale, rf.start.1, rf.end), ([1.0, -1.0], 0.52, (0.35, 0.003)));
+    let outline = paints("outline direct");
+    let line = outline.effects.as_ref().and_then(|e| e.outline.clone()).expect("an outline");
+    assert!((line.width - 0.75).abs() < 1e-9 && outline.fill == GlyphFill::Solid(0) && outline.outline.is_none());
+    assert_eq!(paints("fill-solid direct").fill, GlyphFill::Solid(0x2E_75B6));
+    assert!(matches!(paints("fill-gradient direct").fill, GlyphFill::Paint(_)));
+    let none = paints("fill-none direct");
+    assert!(none.fill == GlyphFill::None && none.effects.is_none());
+    assert!(row("scene3d direct").paints.iter().all(Option::is_none), "3-D formatting alone draws plain text");
+    let all = paints("all direct");
+    let e = all.effects.as_ref().expect("effects");
+    assert!(e.glow.is_some() && e.shadow.is_some() && e.reflection.is_some() && e.outline.is_some() && matches!(all.fill, GlyphFill::Paint(_)));
+}

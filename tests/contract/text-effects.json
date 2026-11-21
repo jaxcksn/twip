@@ -1,0 +1,38 @@
+{
+  "name": "text-effects",
+  "fixture": "render/text-effects.docx",
+  "steps": [
+    { "op": "open" },
+    { "op": "call", "method": "find.next", "args": [{ "text": "glow direct" }], "result": { "found": true } },
+    { "op": "expectState", "match": { "formatting": { "textEffects": { "glow": { "radius": 8 }, "shadow": null, "reflection": null, "outline": null, "fill": null } } } },
+    { "op": "command", "command": { "type": "setTextEffects", "glow": { "colour": { "rgb": "#FF0000" }, "radius": 4 } } },
+    { "op": "expectState", "match": { "formatting": { "textEffects": { "glow": { "colour": { "rgb": "#FF0000" }, "radius": 4 } } } } },
+    { "op": "command", "command": { "type": "setTextEffects", "shadow": { "colour": { "rgb": "#000000" }, "size": 100, "blur": 4.5, "distance": 3.5, "direction": 45 } } },
+    { "op": "command", "command": { "type": "setTextEffects", "reflection": { "transparency": 50, "size": 35, "blur": 0.5, "distance": 0 } } },
+    { "op": "command", "command": { "type": "setTextEffects", "outline": { "width": 0.75, "fill": { "type": "solid", "colour": { "rgb": "#1F4E79" } }, "dash": "dash", "compound": "single", "cap": "flat", "join": "round" } } },
+    { "op": "command", "command": { "type": "setTextEffects", "fill": { "type": "solid", "colour": { "rgb": "#2E75B6" } } } },
+    { "op": "expectState", "match": { "formatting": { "textEffects": {
+      "glow": { "radius": 4 },
+      "shadow": { "colour": { "rgb": "#000000" }, "size": 100, "blur": 4.5, "distance": 3.5, "direction": 45 },
+      "reflection": { "transparency": 50, "size": 35, "blur": 0.5, "distance": 0 },
+      "outline": { "width": 0.75, "dash": "dash", "compound": "single", "cap": "flat", "join": "round", "fill": { "type": "solid", "colour": { "rgb": "#1F4E79" } } },
+      "fill": { "type": "solid", "colour": { "rgb": "#2E75B6" } }
+    } } } },
+    { "op": "call", "method": "dialogs.open", "args": ["font"], "result": { "values": { "textGlow": { "radius": 4 }, "textShadow": { "size": 100 }, "textReflection": { "size": 35 }, "textOutline": { "width": 0.75 }, "textFill": { "type": "solid" } }, "fields": { "textGlow": { "kind": "effect" } } } },
+    { "op": "command", "command": { "type": "setTextEffects", "glow": null, "shadow": null, "reflection": null, "outline": null, "fill": null } },
+    { "op": "expectState", "match": { "formatting": { "textEffects": { "$exact": {} } } } },
+    { "op": "call", "method": "dialogs.open", "args": ["font"], "result": { "values": { "textGlow": "none", "textShadow": "none", "textReflection": "none", "textOutline": "none", "textFill": "none" } } },
+    { "op": "command", "command": { "type": "setTextEffects", "glow": { "colour": { "rgb": "#FF0000" }, "radius": 151 } } },
+    { "op": "expectError", "code": "invalid-argument" },
+    { "op": "command", "command": { "type": "undo" } },
+    { "op": "expectState", "match": { "formatting": { "textEffects": { "glow": { "radius": 4 } } } } },
+    { "op": "call", "method": "find.next", "args": [{ "text": "all style" }], "result": { "found": true } },
+    { "op": "expectState", "match": { "formatting": { "textEffects": { "glow": { "radius": 8 }, "shadow": { "size": 100 }, "reflection": { "size": 35 }, "outline": { "width": 0.75 }, "fill": { "type": "gradient" } } } } },
+    { "op": "command", "command": { "type": "setTextEffects", "glow": null, "shadow": null, "reflection": null, "outline": null } },
+    { "op": "expectState", "match": { "formatting": { "textEffects": { "glow": null, "shadow": null, "reflection": null, "outline": null, "fill": { "type": "gradient" } } } } },
+    { "op": "export", "format": "docx" },
+    { "op": "reopen" },
+    { "op": "call", "method": "find.next", "args": [{ "text": "all style" }], "result": { "found": true } },
+    { "op": "expectState", "match": { "formatting": { "textEffects": { "glow": null, "shadow": null, "reflection": null, "outline": null, "fill": { "type": "gradient" } } } } }
+  ]
+}

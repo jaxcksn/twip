@@ -562,6 +562,7 @@ fn every_edit_keeps_every_construct() {
         std::fs::write(d.join("form-fields.docx"), form_fields_package()).expect("writes");
         std::fs::write(d.join("control-options.docx"), control_options_package()).expect("writes");
         std::fs::write(d.join("protection.docx"), protection_package()).expect("writes");
+        std::fs::write(d.join("text-effects.docx"), text_effects_package().0).expect("writes");
         let (pictures, boxes) = picture_tools_packages();
         std::fs::write(d.join("picture-tools.docx"), pictures).expect("writes");
         std::fs::write(d.join("text-box-columns.docx"), boxes).expect("writes");
@@ -1000,4 +1001,134 @@ fn protection_and_editable_ranges_are_saved() {
     let doc = crate::docx::read_editable(&saved).expect("reads back");
     let p = doc.settings.protection.expect("protection");
     assert!(p.enforced && p.password.as_ref().is_some_and(|pw| pw.matches("secret") && !pw.matches("Secret")));
+}
+
+/// Every text effect set on a word of a heading (its run had none), and a run's own glow removed, saved: the saved
+/// package and the change that made it.
+fn text_effects_package() -> (Vec<u8>, serde_json::Value) {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/render/text-effects.docx");
+    let mut e = Editor::open(&std::fs::read(path).expect("the fixture"), fonts()).expect("opens");
+    let n = |v: serde_json::Value| serde_json::from_value::<Command>(v).expect("a command");
+    let all = serde_json::json!({
+        "fill": { "type": "gradient", "kind": "linear", "angle": 90, "stops": [
+            { "position": 0, "colour": { "theme": "accent2", "transforms": [{ "kind": "lumMod", "value": 0.75 }] } },
+            { "position": 1, "colour": { "rgb": "#2E75B6", "transforms": [{ "kind": "alpha", "value": 0.5 }] } }] },
+        "outline": { "width": 0.75, "fill": { "type": "solid", "colour": { "rgb": "#C00000" } }, "dash": "sysDash", "compound": "double",
+            "cap": "round", "join": "miter" },
+        "shadow": { "colour": { "rgb": "#000000", "transforms": [{ "kind": "alpha", "value": 0.6 }] }, "size": 100, "blur": 4, "distance": 3,
+            "direction": 45 },
+        "glow": { "colour": { "theme": "accent1", "transforms": [{ "kind": "alpha", "value": 0.4 }] }, "radius": 8 },
+        "reflection": { "transparency": 48, "size": 35, "blur": 0.5, "distance": 0 },
+    });
+    e.select_range(para_id(&e, 0), Unit(0), Unit(4), fonts());
+    let mut change = all.clone();
+    change["type"] = "setTextEffects".into();
+    let out = e.execute(n(change), fonts());
+    assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
+    e.select_range(para_id(&e, 1), Unit(0), Unit(11), fonts());
+    let out = e.execute(n(serde_json::json!({ "type": "setTextEffects", "glow": null })), fonts());
+    assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
+    (crate::docx::write::save(e.document()).expect("saves"), all)
+}
+
+#[test]
+fn text_effects_are_saved_in_schema_order_and_read_back() {
+    let (saved, all) = text_effects_package();
+    let xml = crate::docx::package::read(&saved, &[], "word/document.xml").expect("reads").expect("the main part");
+    let heading = &xml[xml.find("<w:body>").expect("the body")..xml.find("</w:p>").expect("the heading")];
+    let at = |el: &str| heading.find(el).unwrap_or_else(|| panic!("{el} in {heading}"));
+    let order = ["<w14:glow", "<w14:shadow", "<w14:reflection", "<w14:textOutline", "<w14:textFill"].map(at);
+    assert!(order.windows(2).all(|w| w[0] < w[1]), "schema order: {heading}");
+    assert!(!heading.contains("xmlns:w14"), "the part's prefix: {heading}");
+    let glow = &xml[xml.find("glow direct").expect("the glow row") - 400..];
+    assert!(!glow[..400].contains("w14:glow"), "the run's own glow is removed: {}", &glow[..400]);
+    // Untouched runs keep their XML byte for byte.
+    let source = crate::docx::package::read(
+        &std::fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/render/text-effects.docx")).expect("the fixture"),
+        &[],
+        "word/document.xml",
+    )
+    .expect("reads")
+    .expect("the main part");
+    let end = source.find("all direct").expect("the all row");
+    let all_row = &source[source[..end].rfind("<w:r>").expect("its run")..];
+    let all_row = &all_row[..all_row.find("</w:r>").expect("its end") + 6];
+    assert!(xml.contains(all_row), "kept as written");
+    let mut e = Editor::open(&saved, fonts()).expect("reads back");
+    e.select_range(para_id(&e, 0), Unit(0), Unit(4), fonts());
+    let state = e.format_state().expect("a state").character.text_effects;
+    let want: crate::api::drawing::TextEffects = serde_json::from_value(all).expect("effects");
+    assert_eq!(state, crate::api::state::Tri::Uniform(want));
+    e.select_range(para_id(&e, 1), Unit(0), Unit(11), fonts());
+    let state = e.format_state().expect("a state").character.text_effects;
+    assert_eq!(state, crate::api::state::Tri::Uniform(Default::default()), "no glow of its own, and no style's");
+}
+
+#[test]
+fn text_effects_out_of_range_are_refused() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/render/text-effects.docx");
+    let mut e = Editor::open(&std::fs::read(path).expect("the fixture"), fonts()).expect("opens");
+    e.select_range(para_id(&e, 0), Unit(0), Unit(4), fonts());
+    for bad in [
+        serde_json::json!({ "type": "setTextEffects", "glow": { "colour": { "rgb": "#FF0000" }, "radius": 151 } }),
+        serde_json::json!({ "type": "setTextEffects", "shadow": { "colour": { "rgb": "#000000" }, "size": 0, "blur": 1, "distance": 1, "direction": 0 } }),
+        serde_json::json!({ "type": "setTextEffects", "reflection": { "transparency": 101, "size": 10, "blur": 0, "distance": 0 } }),
+        serde_json::json!({ "type": "setTextEffects", "fill": { "type": "gradient", "kind": "linear", "stops": [{ "position": 0, "colour": { "rgb": "#000000" } }] } }),
+        serde_json::json!({ "type": "setTextEffects", "fill": { "type": "fromStyle" } }),
+        serde_json::json!({ "type": "setTextEffects", "glow": { "colour": { "rgb": "#FF0000", "transforms": [{ "kind": "hueOff", "value": 10 }] }, "radius": 4 } }),
+        serde_json::json!({ "type": "setTextEffects", "outline": { "width": 2000, "fill": { "type": "none" }, "dash": "solid", "compound": "single", "cap": "flat", "join": "round" } }),
+    ] {
+        let out = e.execute(serde_json::from_value(bad.clone()).expect("a command"), fonts());
+        assert!(matches!(out, Outcome::Refused(_)), "{bad}: {out:?}");
+    }
+}
+
+/// A character style's glow, shadow, reflection and outline turned off on a run, through the command and through the
+/// Font dialog's `none`: Word's forms of no effect are written over the style's, and the run shows none of them.
+#[test]
+fn a_styles_effects_turn_off_on_its_runs() {
+    use crate::api::services::{DialogKind, DialogValues};
+    use crate::api::state::Tri;
+    use crate::api::value::NoneOr;
+    use crate::services::dialogs;
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/render/text-effects.docx");
+    let mut e = Editor::open(&std::fs::read(path).expect("the fixture"), fonts()).expect("opens");
+    let n = |v: serde_json::Value| serde_json::from_value::<Command>(v).expect("a command");
+    let shown = |e: &mut Editor| e.format_state().expect("a state").character.text_effects;
+    // "all style": every effect from FxAll; its glow, shadow, reflection and outline off through the command.
+    e.select_range(para_id(&e, 9), Unit(13), Unit(22), fonts());
+    let Tri::Uniform(before) = shown(&mut e) else { panic!("uniform") };
+    assert!(before.glow.is_some() && before.shadow.is_some() && before.reflection.is_some() && before.outline.is_some());
+    let off = serde_json::json!({ "type": "setTextEffects", "glow": null, "shadow": null, "reflection": null, "outline": null });
+    assert!(matches!(e.execute(n(off), fonts()), Outcome::Changed(_)));
+    let Tri::Uniform(after) = shown(&mut e) else { panic!("uniform") };
+    assert_eq!((after.glow, after.shadow, after.reflection, after.outline), (None, None, None, None));
+    assert!(after.fill.is_some(), "the style's fill shows");
+    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let xml = crate::docx::package::read(&saved, &[], "word/document.xml").expect("reads").expect("the main part");
+    let at = xml.find(">all style<").expect("the styled run");
+    let run = &xml[xml[..at].rfind("<w:r>").expect("its run")..at];
+    for el in [r#"w14:rad="0""#, r#"<w14:shadow w14:blurRad="0""#, r#"<w14:reflection w14:blurRad="0""#, "<w14:textOutline><w14:noFill/>"] {
+        assert!(run.contains(el), "{el} in {run}");
+    }
+    // "glow style": FxGlow's glow off through the Font dialog's `none`.
+    e.select_range(para_id(&e, 1), Unit(14), Unit(24), fonts());
+    let state = crate::api::state::State { formatting: e.format_state().expect("a state").character, ..Default::default() };
+    let cx = dialogs::Context::default();
+    let model = dialogs::open(DialogKind::Font, &state, &cx).expect("opens");
+    let DialogValues::Font(mut v) = model.values else { panic!("the Font dialog") };
+    assert!(matches!(v.text_glow, Tri::Uniform(NoneOr::Value(_))), "the style's glow: {:?}", v.text_glow);
+    v.text_glow = Tri::Uniform(NoneOr::None);
+    for c in dialogs::commands(&DialogValues::Font(v), &state, &cx).expect("valid") {
+        assert!(matches!(e.execute(c, fonts()), Outcome::Changed(_)));
+    }
+    let Tri::Uniform(after) = shown(&mut e) else { panic!("uniform") };
+    assert_eq!(after.glow, None, "the dialog's none turns the style's glow off");
+    // A run's own glow, with no style's under it, is removed outright.
+    e.select_range(para_id(&e, 1), Unit(0), Unit(11), fonts());
+    assert!(matches!(e.execute(n(serde_json::json!({ "type": "setTextEffects", "glow": null })), fonts()), Outcome::Changed(_)));
+    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let xml = crate::docx::package::read(&saved, &[], "word/document.xml").expect("reads").expect("the main part");
+    let at = xml.find(">glow direct<").expect("the direct run");
+    assert!(!xml[xml[..at].rfind("<w:r>").expect("its run")..at].contains("w14:glow"));
 }

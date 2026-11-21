@@ -2,7 +2,7 @@
 
 use roxmltree::Node;
 
-use super::colour::{Colour, Rgba};
+use super::colour::{Colour, Ns, Rgba};
 use super::theme::{ColourMap, Theme};
 use super::units::{Angle, Emu, Pct};
 use crate::docx::xml::A;
@@ -14,24 +14,44 @@ fn a_child<'a, 'i>(n: Node<'a, 'i>, name: &str) -> Option<Node<'a, 'i>> {
 }
 
 fn pct_attr(n: Node, k: &str) -> Option<Pct> {
-    n.attribute(k).and_then(Pct::parse)
+    pct_in(Ns::A, n, k)
 }
 
 fn emu_attr(n: Node, k: &str) -> Option<Emu> {
-    n.attribute(k).and_then(Emu::parse)
-}
-
-fn angle_attr(n: Node, k: &str) -> Option<Angle> {
-    n.attribute(k).and_then(Angle::parse)
+    emu_in(Ns::A, n, k)
 }
 
 fn bool_attr(n: Node, k: &str) -> Option<bool> {
-    n.attribute(k).map(|v| matches!(v, "1" | "true"))
+    bool_in(Ns::A, n, k)
+}
+
+fn pct_in(ns: Ns, n: Node, k: &str) -> Option<Pct> {
+    ns.attr(n, k).and_then(Pct::parse)
+}
+
+fn emu_in(ns: Ns, n: Node, k: &str) -> Option<Emu> {
+    ns.attr(n, k).and_then(Emu::parse)
+}
+
+fn angle_in(ns: Ns, n: Node, k: &str) -> Option<Angle> {
+    ns.attr(n, k).and_then(Angle::parse)
+}
+
+fn bool_in(ns: Ns, n: Node, k: &str) -> Option<bool> {
+    ns.attr(n, k).map(|v| matches!(v, "1" | "true"))
 }
 
 fn rel_rect(n: Option<Node>) -> [Pct; 4] {
-    n.map_or([Pct(0); 4], |n| ["l", "t", "r", "b"].map(|k| pct_attr(n, k).unwrap_or_default()))
+    rel_rect_in(Ns::A, n)
 }
+
+fn rel_rect_in(ns: Ns, n: Option<Node>) -> [Pct; 4] {
+    n.map_or([Pct(0); 4], |n| ["l", "t", "r", "b"].map(|k| pct_in(ns, n, k).unwrap_or_default()))
+}
+
+/// The most gradient stops a `w14:` fill keeps: Word's dialog holds ten, and a run's stops are resolved for every line
+/// it is drawn on.
+pub const MAX_W14_STOPS: usize = 32;
 
 // Fills
 
@@ -45,20 +65,20 @@ pub enum Fill {
     Group,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum GradientPath {
     Circle,
     Rect,
     Shape,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Hash)]
 pub enum GradientKind {
     Linear { angle: Angle, scaled: bool },
     Path { path: GradientPath, focus: [Pct; 4] },
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum TileFlip {
     #[default]
     None,
@@ -183,40 +203,50 @@ impl Fill {
     }
 
     pub fn parse_with(n: Node, image: ImageLookup) -> Option<Fill> {
-        if n.tag_name().namespace() != Some(A) {
+        Fill::parse_in(n, Ns::A, image)
+    }
+
+    /// [`Fill::parse_with`] in `ns`. Word 2010's text fills are no fill, a solid and a gradient, the gradient's stops
+    /// at most [`MAX_W14_STOPS`].
+    pub fn parse_in(n: Node, ns: Ns, image: ImageLookup) -> Option<Fill> {
+        if n.tag_name().namespace() != Some(ns.uri()) {
             return None;
         }
         Some(match n.tag_name().name() {
             "noFill" => Fill::None,
-            "solidFill" => Fill::Solid(Colour::child_of(n).unwrap_or_else(|| Colour::srgb(0))),
+            "solidFill" => Fill::Solid(Colour::child_of_in(n, ns).unwrap_or_else(|| Colour::srgb(0))),
             "gradFill" => {
-                let stops = a_child(n, "gsLst")
+                let most = if ns == Ns::W14 { MAX_W14_STOPS } else { usize::MAX };
+                let stops = ns
+                    .child(n, "gsLst")
                     .into_iter()
                     .flat_map(|l| l.children().filter(Node::is_element))
-                    .filter_map(|gs| Some((pct_attr(gs, "pos").unwrap_or_default(), Colour::child_of(gs)?)))
+                    .filter_map(|gs| Some((pct_in(ns, gs, "pos").unwrap_or_default(), Colour::child_of_in(gs, ns)?)))
+                    .take(most)
                     .collect();
-                let kind = if let Some(p) = a_child(n, "path") {
-                    let path = match p.attribute("path") {
+                let kind = if let Some(p) = ns.child(n, "path") {
+                    let path = match ns.attr(p, "path") {
                         Some("rect") => GradientPath::Rect,
                         Some("shape") => GradientPath::Shape,
                         _ => GradientPath::Circle,
                     };
-                    GradientKind::Path { path, focus: rel_rect(a_child(p, "fillToRect")) }
+                    GradientKind::Path { path, focus: rel_rect_in(ns, ns.child(p, "fillToRect")) }
                 } else {
-                    let lin = a_child(n, "lin");
+                    let lin = ns.child(n, "lin");
                     GradientKind::Linear {
-                        angle: lin.and_then(|l| angle_attr(l, "ang")).unwrap_or_default(),
-                        scaled: lin.and_then(|l| bool_attr(l, "scaled")).unwrap_or(false),
+                        angle: lin.and_then(|l| angle_in(ns, l, "ang")).unwrap_or_default(),
+                        scaled: lin.and_then(|l| bool_in(ns, l, "scaled")).unwrap_or(false),
                     }
                 };
                 Fill::Gradient(Gradient {
                     stops,
                     kind,
-                    tile: rel_rect(a_child(n, "tileRect")),
-                    flip: TileFlip::parse(n.attribute("flip")),
-                    rot_with_shape: bool_attr(n, "rotWithShape").unwrap_or(true),
+                    tile: rel_rect_in(ns, ns.child(n, "tileRect")),
+                    flip: TileFlip::parse(ns.attr(n, "flip")),
+                    rot_with_shape: bool_in(ns, n, "rotWithShape").unwrap_or(true),
                 })
             }
+            _ if ns == Ns::W14 => return None,
             "pattFill" => {
                 let c = |k: &str| a_child(n, k).and_then(Colour::child_of);
                 Fill::Pattern {
@@ -232,7 +262,11 @@ impl Fill {
     }
 
     pub fn child_of(n: Node, image: ImageLookup) -> Option<Fill> {
-        n.children().filter(Node::is_element).find_map(|c| Fill::parse_with(c, image))
+        Fill::child_of_in(n, Ns::A, image)
+    }
+
+    pub fn child_of_in(n: Node, ns: Ns, image: ImageLookup) -> Option<Fill> {
+        n.children().filter(Node::is_element).find_map(|c| Fill::parse_in(c, ns, image))
     }
 }
 
@@ -280,13 +314,13 @@ impl RectAlign {
 
 // Lines
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Hash)]
 pub enum Dash {
     Preset(PresetDash),
     Custom(Vec<(Pct, Pct)>),
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum Compound {
     #[default]
     Single,
@@ -296,14 +330,14 @@ pub enum Compound {
     Triple,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Cap {
     Round,
     Square,
     Flat,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Hash)]
 pub enum Join {
     Round,
     Bevel,
@@ -372,8 +406,14 @@ impl Line {
     }
 
     pub fn parse_with(n: Node, image: ImageLookup) -> Line {
-        let dash = a_child(n, "prstDash").and_then(|d| d.attribute("val")).and_then(PresetDash::parse).map(Dash::Preset).or_else(|| {
-            a_child(n, "custDash").map(|c| {
+        Line::parse_in(n, Ns::A, image)
+    }
+
+    /// [`Line::parse_with`] in `ns`. Word 2010's text outline has no custom dash and no line ends.
+    pub fn parse_in(n: Node, ns: Ns, image: ImageLookup) -> Line {
+        let a = ns == Ns::A;
+        let dash = ns.child(n, "prstDash").and_then(|d| ns.attr(d, "val")).and_then(PresetDash::parse).map(Dash::Preset).or_else(|| {
+            a_child(n, "custDash").filter(|_| a).map(|c| {
                 Dash::Custom(
                     c.children()
                         .filter(|d| d.is_element())
@@ -382,33 +422,33 @@ impl Line {
                 )
             })
         });
-        let join = if a_child(n, "round").is_some() {
+        let join = if ns.child(n, "round").is_some() {
             Some(Join::Round)
-        } else if a_child(n, "bevel").is_some() {
+        } else if ns.child(n, "bevel").is_some() {
             Some(Join::Bevel)
         } else {
-            a_child(n, "miter").map(|m| Join::Miter(pct_attr(m, "lim").unwrap_or(Pct(800_000))))
+            ns.child(n, "miter").map(|m| Join::Miter(pct_in(ns, m, "lim").unwrap_or(Pct(800_000))))
         };
         Line {
-            width: emu_attr(n, "w"),
-            fill: Fill::child_of(n, image),
+            width: emu_in(ns, n, "w"),
+            fill: Fill::child_of_in(n, ns, image),
             dash,
-            compound: n.attribute("cmpd").map(|v| match v {
+            compound: ns.attr(n, "cmpd").map(|v| match v {
                 "dbl" => Compound::Double,
                 "thickThin" => Compound::ThickThin,
                 "thinThick" => Compound::ThinThick,
                 "tri" => Compound::Triple,
                 _ => Compound::Single,
             }),
-            cap: n.attribute("cap").map(|v| match v {
+            cap: ns.attr(n, "cap").map(|v| match v {
                 "rnd" => Cap::Round,
                 "sq" => Cap::Square,
                 _ => Cap::Flat,
             }),
             join,
-            inset: n.attribute("algn").map(|v| v == "in"),
-            head: LineEnd::parse(a_child(n, "headEnd")),
-            tail: LineEnd::parse(a_child(n, "tailEnd")),
+            inset: ns.attr(n, "algn").map(|v| v == "in"),
+            head: LineEnd::parse(a_child(n, "headEnd").filter(|_| a)),
+            tail: LineEnd::parse(a_child(n, "tailEnd").filter(|_| a)),
         }
     }
 
@@ -497,55 +537,76 @@ pub struct EffectList {
     pub kept: bool,
 }
 
+impl OuterShadow {
+    /// An `a:outerShdw` or a `w14:shadow`.
+    pub fn parse(c: Node, ns: Ns) -> OuterShadow {
+        let emu = |k: &str| emu_in(ns, c, k).unwrap_or_default();
+        let ang = |k: &str| angle_in(ns, c, k).unwrap_or_default();
+        OuterShadow {
+            blur: emu("blurRad"),
+            dist: emu("dist"),
+            dir: ang("dir"),
+            sx: pct_in(ns, c, "sx").unwrap_or(Pct::ONE),
+            sy: pct_in(ns, c, "sy").unwrap_or(Pct::ONE),
+            kx: ang("kx"),
+            ky: ang("ky"),
+            align: RectAlign::parse_opt(ns.attr(c, "algn")).unwrap_or(RectAlign::B),
+            colour: Colour::child_of_in(c, ns).unwrap_or_else(|| Colour::srgb(0)),
+            rot_with_shape: bool_in(ns, c, "rotWithShape").unwrap_or(true),
+        }
+    }
+}
+
+impl Glow {
+    /// An `a:glow` or a `w14:glow`.
+    pub fn parse(c: Node, ns: Ns) -> Glow {
+        Glow { radius: emu_in(ns, c, "rad").unwrap_or_default(), colour: Colour::child_of_in(c, ns).unwrap_or_else(|| Colour::srgb(0)) }
+    }
+}
+
+impl Reflection {
+    /// An `a:reflection` or a `w14:reflection`, with the schema's defaults.
+    pub fn parse(c: Node, ns: Ns) -> Reflection {
+        let emu = |k: &str| emu_in(ns, c, k).unwrap_or_default();
+        let ang = |k: &str| angle_in(ns, c, k).unwrap_or_default();
+        let pct = |k: &str, d: i32| pct_in(ns, c, k).unwrap_or(Pct(d));
+        Reflection {
+            blur: emu("blurRad"),
+            dist: emu("dist"),
+            dir: ang("dir"),
+            fade_dir: angle_in(ns, c, "fadeDir").unwrap_or(Angle(5_400_000)),
+            sx: pct("sx", 100_000),
+            sy: pct("sy", 100_000),
+            kx: ang("kx"),
+            ky: ang("ky"),
+            align: RectAlign::parse_opt(ns.attr(c, "algn")).unwrap_or(RectAlign::B),
+            start_alpha: pct("stA", 100_000),
+            start_pos: pct("stPos", 0),
+            end_alpha: pct("endA", 0),
+            end_pos: pct("endPos", 100_000),
+            rot_with_shape: bool_in(ns, c, "rotWithShape").unwrap_or(true),
+        }
+    }
+}
+
 impl EffectList {
     pub fn parse(n: Node) -> EffectList {
         let mut e = EffectList::default();
         for c in n.children().filter(Node::is_element) {
             let colour = || Colour::child_of(c).unwrap_or_else(|| Colour::srgb(0));
             let emu = |k: &str| emu_attr(c, k).unwrap_or_default();
-            let ang = |k: &str| angle_attr(c, k).unwrap_or_default();
+            let ang = |k: &str| angle_in(Ns::A, c, k).unwrap_or_default();
             match c.tag_name().name() {
-                "outerShdw" => {
-                    e.outer = Some(OuterShadow {
-                        blur: emu("blurRad"),
-                        dist: emu("dist"),
-                        dir: ang("dir"),
-                        sx: pct_attr(c, "sx").unwrap_or(Pct::ONE),
-                        sy: pct_attr(c, "sy").unwrap_or(Pct::ONE),
-                        kx: ang("kx"),
-                        ky: ang("ky"),
-                        align: RectAlign::parse_opt(c.attribute("algn")).unwrap_or(RectAlign::B),
-                        colour: colour(),
-                        rot_with_shape: bool_attr(c, "rotWithShape").unwrap_or(true),
-                    })
-                }
+                "outerShdw" => e.outer = Some(OuterShadow::parse(c, Ns::A)),
                 "innerShdw" => e.inner = Some(InnerShadow { blur: emu("blurRad"), dist: emu("dist"), dir: ang("dir"), colour: colour() }),
                 "prstShdw" => {
                     let preset = c.attribute("prst").and_then(|p| p.strip_prefix("shdw")?.parse().ok()).filter(|n| (1..=20).contains(n)).unwrap_or(1);
                     e.preset = Some(PresetShadow { preset, dist: emu("dist"), dir: ang("dir"), colour: colour() })
                 }
-                "glow" => e.glow = Some(Glow { radius: emu("rad"), colour: colour() }),
+                "glow" => e.glow = Some(Glow::parse(c, Ns::A)),
                 "softEdge" => e.soft_edge = Some(emu("rad")),
                 "blur" => e.blur = Some(emu("rad")),
-                "reflection" => {
-                    let pct = |k: &str, d: i32| pct_attr(c, k).unwrap_or(Pct(d));
-                    e.reflection = Some(Reflection {
-                        blur: emu("blurRad"),
-                        dist: emu("dist"),
-                        dir: ang("dir"),
-                        fade_dir: angle_attr(c, "fadeDir").unwrap_or(Angle(5_400_000)),
-                        sx: pct("sx", 100_000),
-                        sy: pct("sy", 100_000),
-                        kx: ang("kx"),
-                        ky: ang("ky"),
-                        align: RectAlign::parse_opt(c.attribute("algn")).unwrap_or(RectAlign::B),
-                        start_alpha: pct("stA", 100_000),
-                        start_pos: pct("stPos", 0),
-                        end_alpha: pct("endA", 0),
-                        end_pos: pct("endPos", 100_000),
-                        rot_with_shape: bool_attr(c, "rotWithShape").unwrap_or(true),
-                    })
-                }
+                "reflection" => e.reflection = Some(Reflection::parse(c, Ns::A)),
                 _ => e.kept = true,
             }
         }

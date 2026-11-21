@@ -136,6 +136,13 @@ fn stroked_text() {
 }
 
 #[test]
+fn text_effects() {
+    let mut resources = Resources::default();
+    let picture = common::scenes::text_effects(&mut resources);
+    same("text-effects", (256, 200), &picture, &resources);
+}
+
+#[test]
 fn turned_text() {
     let mut resources = Resources::default();
     let picture = common::scenes::turned_text(&mut resources);

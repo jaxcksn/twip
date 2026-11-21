@@ -156,6 +156,7 @@ const ENTRIES: &[Entry] = {
         (C::SetTypography, "Advanced Font", G::Character, &[], &[], true, true, U::Step),
         (C::SetLanguage, "Language", G::Character, &[], &[], true, true, U::Step),
         (C::SetCharacterEffects, "Font Effects", G::Character, &[], &[], true, true, U::Step),
+        (C::SetTextEffects, "Text Effects", G::Character, &[], &[], true, true, U::Step),
         (C::SetUnderlineColor, "Underline Color", G::Character, &[], &[], true, true, U::Step),
         (C::ClearFormatting, "Clear Formatting", G::Character, &["Ctrl+Space"], &["⌘Space"], false, true, U::Step),
         (C::ChangeCase, "Change Case", G::Character, &["Shift+F3"], &["⇧F3"], true, true, U::Step),

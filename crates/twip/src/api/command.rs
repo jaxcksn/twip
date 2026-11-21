@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use super::drawing::{
     Arrange, Degrees, EffectsChange, FillValue, FlipAxis, LineChange, PictureAdjustChange, ShapeAdjust, ShapeInsert, ShapePreset, ShapeTextChange,
+    TextEffectsChange,
 };
 use super::review::{Body, MarkupView};
 use super::services::TabSelector;
@@ -163,6 +164,10 @@ commands! {
     SetLanguage(Language),
     /// Emboss, engrave, outline and shadow; what isn't given is kept. Undo: one step.
     SetCharacterEffects(CharacterEffects),
+    /// Text effects: the letters' fill, outline, shadow, glow and reflection. Each one given replaces the text's own,
+    /// `null` turns it off (over a style's too; a fill is only removed, so a style's fill shows), what isn't given is
+    /// kept. Undo: one step.
+    SetTextEffects(TextEffectsChange),
     /// The underline's colour, or the text's (`auto`); underlined text only. Undo: one step.
     SetUnderlineColor(#[serde(with = "value")] AutoOr<Color>),
     /// Removes direct character formatting. Undo: one step.

@@ -706,6 +706,7 @@ fn commands() -> Vec<Command> {
         }),
         Command::SetLanguage(Language { language: Some("en-GB".into()), no_proof: Some(true) }),
         Command::SetCharacterEffects(CharacterEffects { emboss: Some(true), engrave: None, outline: Some(false), shadow: None }),
+        Command::SetTextEffects(text_effects_change()),
         Command::SetUnderlineColor(AutoOr::Value(Color(0xC00000))),
         Command::ClearFormatting,
         Command::ChangeCase(CaseChange::Title),
@@ -1415,6 +1416,7 @@ fn character() -> CharacterFormatting {
         outline: Tri::Uniform(true),
         shadow: Tri::Uniform(false),
         underline_color: Tri::Uniform(AutoOr::Auto),
+        text_effects: Tri::Uniform(Default::default()),
     }
 }
 
@@ -1821,6 +1823,11 @@ fn dialog_values() -> Vec<DialogValues> {
             number_form: Tri::Uniform(NumberForm::OldStyle),
             stylistic_set: Tri::Uniform(3),
             contextual_alternates: Tri::Uniform(true),
+            text_fill: Tri::Uniform(NoneOr::None),
+            text_outline: Tri::Uniform(NoneOr::None),
+            text_shadow: Tri::Uniform(NoneOr::None),
+            text_reflection: Tri::Uniform(NoneOr::None),
+            text_glow: Tri::Uniform(NoneOr::None),
         }),
         DialogValues::Paragraph(ParagraphDialog {
             alignment: Tri::Uniform(Alignment::Right),
@@ -2389,6 +2396,29 @@ fn glow() -> dr::Glow {
 
 fn effects() -> dr::EffectsValue {
     dr::EffectsValue { outer_shadow: Some(shadow()), glow: Some(glow()), soft_edge: Some(Points(2.5)), ..Default::default() }
+}
+
+fn text_effects_change() -> dr::TextEffectsChange {
+    dr::TextEffectsChange {
+        fill: Some(Some(dr::FillValue::Solid { colour: theme_colour() })),
+        outline: Some(Some(dr::TextOutline {
+            width: Points(0.75),
+            fill: dr::FillValue::Solid { colour: dr::ColourValue::rgb(Color(0x1F4E79)) },
+            dash: "dash".into(),
+            compound: dr::Compound::Single,
+            cap: dr::LineCap::Flat,
+            join: dr::LineJoin::Round,
+        })),
+        shadow: Some(Some(dr::TextShadow {
+            colour: dr::ColourValue::rgb(Color(0x000000)),
+            size: 100.0,
+            blur: Points(4.5),
+            distance: Points(3.5),
+            direction: 45.5,
+        })),
+        glow: Some(Some(glow())),
+        reflection: Some(None),
+    }
 }
 
 fn effects_change() -> dr::EffectsChange {

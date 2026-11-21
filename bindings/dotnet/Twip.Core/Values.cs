@@ -688,6 +688,63 @@ public sealed record EffectsValue(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? SoftEdge = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Blur = null);
 
+/// <summary>A text outline: an outline without arrowheads.</summary>
+/// <param name="Width">The width, 0 to 1584 pt.</param>
+/// <param name="Fill"><see cref="FillValue.None"/>, <see cref="FillValue.Solid"/> or <see cref="FillValue.Gradient"/>.</param>
+/// <param name="Dash">The ECMA-376 dash name, such as <c>solid</c>, <c>dash</c> or <c>sysDot</c>.</param>
+/// <param name="Compound">Single or several lines.</param>
+/// <param name="Cap">The ends of its dashes.</param>
+/// <param name="Join">The joins.</param>
+public sealed record TextOutline(Length Width, FillValue Fill, string Dash, LineCompound Compound, LineCap Cap, LineJoin Join);
+
+/// <summary>A text shadow.</summary>
+/// <param name="Color">Its colour, with its transparency as an <see cref="ColorTransformKind.Alpha"/> transform.</param>
+/// <param name="Size">Its size against the text's, percent, 1 to 200.</param>
+/// <param name="Blur">How far it blurs, 0 to 100 pt.</param>
+/// <param name="Distance">How far from the text, 0 to 200 pt.</param>
+/// <param name="Direction">Which way, in degrees clockwise from the right.</param>
+public sealed record TextShadow([property: JsonPropertyName("colour")] ShapeColor Color, double Size, Length Blur, Length Distance, double Direction);
+
+/// <summary>A text reflection: the text mirrored below its baseline, fading out.</summary>
+/// <param name="Transparency">Its transparency where it starts, percent, 0 to 100.</param>
+/// <param name="Size">How much of the text it shows before it has faded out, percent, 0 to 100.</param>
+/// <param name="Blur">How far it blurs, 0 to 100 pt.</param>
+/// <param name="Distance">How far below the text, 0 to 100 pt.</param>
+public sealed record TextReflection(double Transparency, double Size, Length Blur, Length Distance);
+
+/// <summary>Text effects as written; each one null is not set.</summary>
+/// <param name="Fill">The letters' fill in place of the font colour: none (hollow), solid or gradient.</param>
+/// <param name="Outline">The letters' outline.</param>
+/// <param name="Shadow">A shadow behind the letters.</param>
+/// <param name="Glow">A glow around the letters.</param>
+/// <param name="Reflection">A reflection under the letters.</param>
+public sealed record TextEffects(
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] FillValue? Fill = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TextOutline? Outline = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TextShadow? Shadow = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Glow? Glow = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TextReflection? Reflection = null);
+
+/// <summary>A Font dialog text effect: none of the text's own, or its settings.</summary>
+/// <typeparam name="T">The effect's value type.</typeparam>
+public readonly record struct NoneOr<T>
+{
+    private NoneOr(bool none, T value) => (IsNone, Value) = (none, value);
+
+    /// <summary>None of the text's own.</summary>
+    public static NoneOr<T> None => new(true, default!);
+
+    /// <summary>The effect's settings.</summary>
+    /// <param name="value">The effect.</param>
+    public static NoneOr<T> Of(T value) => new(false, value);
+
+    /// <summary>Whether the text has none of its own.</summary>
+    public bool IsNone { get; }
+
+    /// <summary>The effect, unless <see cref="IsNone"/>.</summary>
+    public T Value { get; }
+}
+
 /// <summary>Where text sits in a shape vertically.</summary>
 public enum TextAnchor
 {

@@ -596,6 +596,157 @@ pub fn effects_xml(e: &EffectList) -> String {
     s
 }
 
+// Text effects
+
+/// A colour in Word 2010's text effects (`w14:`): RGB or a theme colour, with its changes. `{w14}` stands for the
+/// prefix ([`super::props::Cx::w14`] fills it in).
+fn w14_colour_xml(c: &Colour) -> String {
+    let (tag, val) = match &c.base {
+        ColourBase::Scheme(s) => ("schemeClr", s.name()),
+        b => {
+            let plain = Colour { base: b.clone(), mods: Vec::new() };
+            let rgb = plain.resolve(&crate::drawing::theme::Theme::default(), &crate::drawing::theme::ColourMap::default(), None).to_rgb();
+            ("srgbClr", format!("{rgb:06X}"))
+        }
+    };
+    let mods: String = c
+        .mods
+        .iter()
+        .filter_map(|m| {
+            let (name, v) = match *m {
+                ColourMod::Tint(p) => ("tint", p.0),
+                ColourMod::Shade(p) => ("shade", p.0),
+                ColourMod::Alpha(p) => ("alpha", p.0),
+                ColourMod::HueMod(p) => ("hueMod", p.0),
+                ColourMod::Sat(p) => ("sat", p.0),
+                ColourMod::SatOff(p) => ("satOff", p.0),
+                ColourMod::SatMod(p) => ("satMod", p.0),
+                ColourMod::Lum(p) => ("lum", p.0),
+                ColourMod::LumOff(p) => ("lumOff", p.0),
+                ColourMod::LumMod(p) => ("lumMod", p.0),
+                _ => return None,
+            };
+            Some(format!(r#"<{{w14}}{name} {{w14}}val="{v}"/>"#))
+        })
+        .collect();
+    let val = esc(&val);
+    if mods.is_empty() {
+        format!(r#"<{{w14}}{tag} {{w14}}val="{val}"/>"#)
+    } else {
+        format!(r#"<{{w14}}{tag} {{w14}}val="{val}">{mods}</{{w14}}{tag}>"#)
+    }
+}
+
+/// A text fill or a text outline's fill (`w14:noFill`, `w14:solidFill`, `w14:gradFill`), `{w14}` for the prefix.
+fn w14_fill_xml(f: &Fill) -> String {
+    match f {
+        Fill::Solid(c) => format!("<{{w14}}solidFill>{}</{{w14}}solidFill>", w14_colour_xml(c)),
+        Fill::Gradient(g) => {
+            let stops: String =
+                g.stops.iter().map(|(p, c)| format!(r#"<{{w14}}gs {{w14}}pos="{}">{}</{{w14}}gs>"#, p.0, w14_colour_xml(c))).collect();
+            let shade = match g.kind {
+                GradientKind::Linear { angle, scaled } => format!(r#"<{{w14}}lin {{w14}}ang="{}" {{w14}}scaled="{}"/>"#, angle.0, u8::from(scaled)),
+                GradientKind::Path { path, focus } => {
+                    let p = match path {
+                        GradientPath::Circle => "circle",
+                        GradientPath::Rect => "rect",
+                        GradientPath::Shape => "shape",
+                    };
+                    let [l, t, r, b] = focus.map(|v| v.0);
+                    format!(
+                        r#"<{{w14}}path {{w14}}path="{p}"><{{w14}}fillToRect {{w14}}l="{l}" {{w14}}t="{t}" {{w14}}r="{r}" {{w14}}b="{b}"/></{{w14}}path>"#
+                    )
+                }
+            };
+            format!("<{{w14}}gradFill><{{w14}}gsLst>{stops}</{{w14}}gsLst>{shade}</{{w14}}gradFill>")
+        }
+        _ => "<{w14}noFill/>".into(),
+    }
+}
+
+/// A part's element of Word 2010's namespace from its attributes and content.
+fn w14_el(cx: &super::props::Cx, local: &str, attrs: &[(&str, String)], inner: &str) -> String {
+    let attrs: Vec<(&str, &str)> = attrs.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    cx.w14(local, &attrs, inner)
+}
+
+/// `w14:textFill`, in the part's prefix.
+pub(crate) fn text_fill_xml(cx: &super::props::Cx, f: &Fill) -> String {
+    w14_el(cx, "textFill", &[], &w14_fill_xml(f))
+}
+
+/// `w14:textOutline`, in the part's prefix.
+pub(crate) fn text_outline_xml(cx: &super::props::Cx, l: &Line) -> String {
+    let cap = match l.cap.unwrap_or(Cap::Flat) {
+        Cap::Round => "rnd",
+        Cap::Square => "sq",
+        Cap::Flat => "flat",
+    };
+    let cmpd = match l.compound.unwrap_or_default() {
+        Compound::Single => "sng",
+        Compound::Double => "dbl",
+        Compound::ThickThin => "thickThin",
+        Compound::ThinThick => "thinThick",
+        Compound::Triple => "tri",
+    };
+    let attrs = [
+        ("w", l.width.map_or(9525, |w| w.0).to_string()),
+        ("cap", cap.into()),
+        ("cmpd", cmpd.into()),
+        ("algn", if l.inset == Some(true) { "in" } else { "ctr" }.into()),
+    ];
+    let mut inner = l.fill.as_ref().map_or_else(|| "<{w14}noFill/>".into(), w14_fill_xml);
+    if let Some(Dash::Preset(d)) = &l.dash {
+        inner.push_str(&format!(r#"<{{w14}}prstDash {{w14}}val="{}"/>"#, d.name()));
+    }
+    inner.push_str(&match l.join {
+        Some(Join::Bevel) => "<{w14}bevel/>".to_string(),
+        Some(Join::Miter(lim)) => format!(r#"<{{w14}}miter {{w14}}lim="{}"/>"#, lim.0),
+        _ => "<{w14}round/>".to_string(),
+    });
+    w14_el(cx, "textOutline", &attrs, &inner)
+}
+
+/// `w14:shadow`, in the part's prefix.
+pub(crate) fn text_shadow_xml(cx: &super::props::Cx, s: &crate::drawing::paint::OuterShadow) -> String {
+    let attrs = [
+        ("blurRad", s.blur.0.to_string()),
+        ("dist", s.dist.0.to_string()),
+        ("dir", s.dir.0.to_string()),
+        ("sx", s.sx.0.to_string()),
+        ("sy", s.sy.0.to_string()),
+        ("kx", s.kx.0.to_string()),
+        ("ky", s.ky.0.to_string()),
+        ("algn", s.align.name().to_string()),
+    ];
+    w14_el(cx, "shadow", &attrs, &w14_colour_xml(&s.colour))
+}
+
+/// `w14:glow`, in the part's prefix.
+pub(crate) fn text_glow_xml(cx: &super::props::Cx, g: &crate::drawing::paint::Glow) -> String {
+    w14_el(cx, "glow", &[("rad", g.radius.0.to_string())], &w14_colour_xml(&g.colour))
+}
+
+/// `w14:reflection`, in the part's prefix.
+pub(crate) fn text_reflection_xml(cx: &super::props::Cx, r: &crate::drawing::paint::Reflection) -> String {
+    let attrs = [
+        ("blurRad", r.blur.0.to_string()),
+        ("stA", r.start_alpha.0.to_string()),
+        ("stPos", r.start_pos.0.to_string()),
+        ("endA", r.end_alpha.0.to_string()),
+        ("endPos", r.end_pos.0.to_string()),
+        ("dist", r.dist.0.to_string()),
+        ("dir", r.dir.0.to_string()),
+        ("fadeDir", r.fade_dir.0.to_string()),
+        ("sx", r.sx.0.to_string()),
+        ("sy", r.sy.0.to_string()),
+        ("kx", r.kx.0.to_string()),
+        ("ky", r.ky.0.to_string()),
+        ("algn", r.align.name().to_string()),
+    ];
+    w14_el(cx, "reflection", &attrs, "")
+}
+
 fn body_xml(b: &BodyProps) -> String {
     let anchor = match b.anchor {
         VAnchor::Top | VAnchor::Other => "t",

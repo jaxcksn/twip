@@ -295,6 +295,18 @@ impl Editor {
     }
 
     pub(super) fn format_runs(&mut self, label: &'static str, edit: &dyn Fn(&mut Props, &str, &RunStyle), fonts: &Fonts) -> Outcome {
+        self.format_runs_settled(label, edit, &|_, _, _| false, fonts)
+    }
+
+    /// [`Editor::format_runs`], then `settle` sees each run as `edit` leaves it (its styles under it) and may change
+    /// its properties again, returning whether it did. A style being formatted is edited alone.
+    pub(super) fn format_runs_settled(
+        &mut self,
+        label: &'static str,
+        edit: &dyn Fn(&mut Props, &str, &RunStyle),
+        settle: &dyn Fn(&mut Props, &str, &RunStyle) -> bool,
+        fonts: &Fonts,
+    ) -> Outcome {
         if self.style_target.is_some() {
             return self.format_style_part("rPr", &|p, cx, _, run| edit(p, &cx.w, run));
         }
@@ -304,7 +316,8 @@ impl Editor {
         let patch = |run: &Run, base: &RunProps| -> Run {
             let mut p = Props::parse(run.direct.0.as_deref(), "rPr", &cx);
             edit(&mut p, &w, run);
-            res.run_from_xml(base, p.xml().as_deref(), &cx)
+            let new = res.run_from_xml(base, p.xml().as_deref(), &cx);
+            if settle(&mut p, &w, &new) { res.run_from_xml(base, p.xml().as_deref(), &cx) } else { new }
         };
         let mut ranges: Vec<(ParaId, Unit, Unit)> = Vec::new();
         let mut mark_too: Option<ParaId> = None;

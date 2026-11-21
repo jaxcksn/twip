@@ -21,7 +21,7 @@ use super::xml::{MC, W, attr, child, is, is_w};
 use super::*;
 
 mod comments;
-mod drawing;
+pub(crate) mod drawing;
 mod fonts;
 mod glossary;
 mod numbering;

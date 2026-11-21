@@ -204,6 +204,7 @@ export interface CharacterFormatting {
     stylisticSet: Mixed<number>;
     subscript: Tri;
     superscript: Tri;
+    textEffects: Mixed<TextEffects>;
     underline: Mixed<UnderlineStyle>;
     underlineColor: Mixed<Color | 'auto'>;
 }
@@ -960,6 +961,7 @@ export interface Commands {
         border: BorderLine | null;
         shadow?: boolean;
     }): Promise<void>;
+    setTextEffects(change: TextEffectsChange): Promise<void>;
     setTrackChanges(on: boolean): Promise<void>;
     setTypography(typography: Typography): Promise<void>;
     setUnderline(style: UnderlineStyle): Promise<void>;
@@ -1350,6 +1352,11 @@ export interface DialogValues {
         numberForm: Mixed<NumberForm>;
         stylisticSet: Mixed<number>;
         contextualAlternates: Tri;
+        textFill: Mixed<FillValue | 'none'>;
+        textOutline: Mixed<TextOutline | 'none'>;
+        textShadow: Mixed<TextShadow | 'none'>;
+        textReflection: Mixed<TextReflection | 'none'>;
+        textGlow: Mixed<Glow | 'none'>;
     };
     frame: FrameProperties & {
         moveWithText: boolean;
@@ -1767,7 +1774,7 @@ export interface FaceInfo {
 // @public
 export interface FieldInfo {
     enabled: boolean;
-    kind: 'number' | 'length' | 'text' | 'choice' | 'toggle' | 'color' | 'list';
+    kind: 'number' | 'length' | 'text' | 'choice' | 'toggle' | 'color' | 'list' | 'effect';
     label: string;
     max?: number;
     min?: number;
@@ -3161,10 +3168,55 @@ export interface TextDistance {
 }
 
 // @public
+export interface TextEffects {
+    fill?: FillValue;
+    glow?: Glow;
+    outline?: TextOutline;
+    reflection?: TextReflection;
+    shadow?: TextShadow;
+}
+
+// @public
+export interface TextEffectsChange {
+    fill?: FillValue | null;
+    glow?: Glow | null;
+    outline?: TextOutline | null;
+    reflection?: TextReflection | null;
+    shadow?: TextShadow | null;
+}
+
+// @public
 export type TextFlow = 'lrTb' | 'tbRl' | 'btLr' | 'lrTbV' | 'tbRlV' | 'tbLrV';
 
 // @public
 export type TextInputType = 'regular' | 'number' | 'date' | 'currentDate' | 'currentTime' | 'calculation';
+
+// @public
+export interface TextOutline {
+    cap: LineCap;
+    compound: Compound;
+    dash: string;
+    fill: FillValue;
+    join: LineJoin;
+    width: Points;
+}
+
+// @public
+export interface TextReflection {
+    blur: Points;
+    distance: Points;
+    size: number;
+    transparency: number;
+}
+
+// @public
+export interface TextShadow {
+    blur: Points;
+    colour: ColourValue;
+    direction: Degrees;
+    distance: Points;
+    size: number;
+}
 
 // @public
 export interface ThemeColors {

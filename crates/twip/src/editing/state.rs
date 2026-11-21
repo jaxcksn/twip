@@ -189,6 +189,7 @@ pub(super) fn character(runs: &[&RunStyle]) -> CharacterFormatting {
         outline: tri(&|r| r.outline),
         shadow: tri(&|r| r.shadow),
         underline_color: fold(runs.iter().map(|r| r.underline_color.map_or(AutoOr::Auto, |c| AutoOr::Value(Color(c))))),
+        text_effects: fold(runs.iter().map(|r| r.effects.as_deref().map(crate::api::drawing::TextEffects::of).unwrap_or_default())),
     }
 }
 
@@ -482,6 +483,7 @@ impl Editor {
                     | C::SetTypography
                     | C::SetLanguage
                     | C::SetCharacterEffects
+                    | C::SetTextEffects
                     | C::SetUnderlineColor
                     | C::SetOutline
                     | C::SetParagraphTextDirection,

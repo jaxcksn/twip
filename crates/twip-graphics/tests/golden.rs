@@ -214,6 +214,13 @@ fn glyph_paths_fill_as_large_glyphs_do() {
 }
 
 #[test]
+fn text_effects_scene() {
+    let mut resources = Resources::default();
+    let picture = text_effects(&mut resources);
+    golden_with("text-effects", (256, 200), &picture, &resources);
+}
+
+#[test]
 fn turned_text_scene() {
     let mut resources = Resources::default();
     let picture = turned_text(&mut resources);

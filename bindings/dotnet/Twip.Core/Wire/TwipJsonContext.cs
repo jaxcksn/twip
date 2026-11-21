@@ -164,6 +164,21 @@ namespace Twip.Wire;
         typeof(EffectChangeConverter<Shadow>),
         typeof(EffectChangeConverter<Glow>),
         typeof(EffectChangeConverter<Length>),
+        typeof(EffectChangeConverter<FillValue>),
+        typeof(EffectChangeConverter<TextOutline>),
+        typeof(EffectChangeConverter<TextShadow>),
+        typeof(EffectChangeConverter<TextReflection>),
+        typeof(NoneOrConverter<FillValue>),
+        typeof(NoneOrConverter<TextOutline>),
+        typeof(NoneOrConverter<TextShadow>),
+        typeof(NoneOrConverter<TextReflection>),
+        typeof(NoneOrConverter<Glow>),
+        typeof(FormatValueConverter<TextEffects>),
+        typeof(FormatValueConverter<NoneOr<FillValue>>),
+        typeof(FormatValueConverter<NoneOr<TextOutline>>),
+        typeof(FormatValueConverter<NoneOr<TextShadow>>),
+        typeof(FormatValueConverter<NoneOr<TextReflection>>),
+        typeof(FormatValueConverter<NoneOr<Glow>>),
         typeof(FormatValueConverter<bool>),
         typeof(FormatValueConverter<string>),
         typeof(FormatValueConverter<Length>),
@@ -698,6 +713,11 @@ namespace Twip.Wire;
 [JsonSerializable(typeof(Arrowhead))]
 [JsonSerializable(typeof(ColorTransform))]
 [JsonSerializable(typeof(EffectsChange))]
+[JsonSerializable(typeof(TextEffectsChange))]
+[JsonSerializable(typeof(TextEffects))]
+[JsonSerializable(typeof(TextOutline))]
+[JsonSerializable(typeof(TextShadow))]
+[JsonSerializable(typeof(TextReflection))]
 [JsonSerializable(typeof(EffectsValue))]
 [JsonSerializable(typeof(FillState))]
 [JsonSerializable(typeof(FillValue))]

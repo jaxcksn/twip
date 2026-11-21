@@ -1614,6 +1614,7 @@ fn shapes_alike(a: &Run, b: &Run) -> bool {
         outline,
         shadow,
         typography: _,
+        effects,
         color,
         highlight,
         shading,
@@ -1659,6 +1660,7 @@ fn shapes_alike(a: &Run, b: &Run) -> bool {
             && *imprint == b.imprint
             && *outline == b.outline
             && *shadow == b.shadow
+            && *effects == b.effects
             && *color == b.color
             && *highlight == b.highlight
             && *shading == b.shading

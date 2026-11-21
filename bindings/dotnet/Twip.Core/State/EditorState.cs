@@ -788,6 +788,9 @@ public sealed record CharacterFormatting
 
     /// <summary>The underline's colour, or the text's (<see cref="ColorValue.Auto"/>).</summary>
     public FormatValue<ColorValue> UnderlineColor { get; init; }
+
+    /// <summary>The text effects (fill, outline, shadow, glow and reflection), through the character style.</summary>
+    public FormatValue<TextEffects> TextEffects { get; init; }
 }
 
 /// <summary>The selected paragraphs' formatting.</summary>

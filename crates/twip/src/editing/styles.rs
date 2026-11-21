@@ -39,6 +39,7 @@ pub fn formats_a_style(c: &Command) -> bool {
             | Command::SetTypography(_)
             | Command::SetLanguage(_)
             | Command::SetCharacterEffects(_)
+            | Command::SetTextEffects(_)
             | Command::SetUnderlineColor(_)
             | Command::SetAlignment(_)
             | Command::SetLineSpacing(_)

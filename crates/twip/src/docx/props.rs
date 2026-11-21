@@ -104,6 +104,8 @@ pub struct RunProps {
     pub rtl: Option<bool>,
     /// `w:fitText`: the width to fit the text to (points) and its region id.
     pub fit_text: Option<(f64, i64)>,
+    /// The Word 2010 text effects this level sets.
+    pub effects: Option<std::rc::Rc<super::model::TextEffects>>,
 }
 
 fn font_ref(n: Node, name: &str) -> Option<FontRef> {
@@ -154,6 +156,8 @@ impl RunProps {
                         Some("tabular") => 8,
                         _ => 0,
                     });
+                } else if matches!(name, "textFill" | "textOutline" | "shadow" | "glow" | "reflection") {
+                    read_text_effect(e, std::rc::Rc::make_mut(p.effects.get_or_insert_with(Default::default)));
                 } else if name == "stylisticSets" {
                     let on = |s: &Node| !matches!(s.attribute((W14, "val")), Some("0" | "false" | "off"));
                     let ids = e.children().filter(|s| is(*s, W14, "styleSet") && on(s)).filter_map(|s| s.attribute((W14, "id"))?.parse::<u32>().ok());
@@ -284,6 +288,11 @@ impl RunProps {
             em,
             fit_text
         );
+        match (&mut self.effects, &o.effects) {
+            (_, None) => {}
+            (None, Some(e)) => self.effects = Some(e.clone()),
+            (Some(mine), Some(e)) => std::rc::Rc::make_mut(mine).merge(e),
+        }
         self.toggles = (self.toggles & !o.toggles_set) | (o.toggles & o.toggles_set);
         self.toggles_set |= o.toggles_set;
     }
@@ -310,6 +319,21 @@ impl RunProps {
 
     pub fn toggle(&self, bit: u16) -> bool {
         self.toggles & bit != 0
+    }
+}
+
+/// Reads a Word 2010 text effect element (`w14:textFill`, `w14:textOutline`, `w14:shadow`, `w14:glow`,
+/// `w14:reflection`) into `t`, with DrawingML's readers in the `w14` namespace.
+fn read_text_effect(e: Node, t: &mut super::model::TextEffects) {
+    use crate::drawing::colour::Ns;
+    use crate::drawing::paint::{Fill, Glow, Line, OuterShadow, Reflection};
+    match e.tag_name().name() {
+        "textFill" => t.fill = Fill::child_of_in(e, Ns::W14, &mut |_| None).or(t.fill.take()),
+        "textOutline" => t.outline = Some(Line::parse_in(e, Ns::W14, &mut |_| None)),
+        "shadow" => t.shadow = Some(OuterShadow::parse(e, Ns::W14)),
+        "glow" => t.glow = Some(Glow::parse(e, Ns::W14)),
+        "reflection" => t.reflection = Some(Reflection::parse(e, Ns::W14)),
+        _ => {}
     }
 }
 
@@ -1353,5 +1377,57 @@ mod tests {
         assert!(para.toggle(toggle::B));
         para.merge_level(&RunProps::fold_chain([&on].into_iter()));
         assert!(!para.toggle(toggle::B));
+    }
+
+    fn w14_rpr(x: &str) -> RunProps {
+        let xml = format!(
+            r#"<w:rPr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml">{x}</w:rPr>"#
+        );
+        RunProps::parse(Some(roxmltree::Document::parse(&xml).unwrap().root_element()), &super::ThemeColours::default())
+    }
+
+    #[test]
+    fn text_effects_read_with_qualified_attributes_and_merge_one_at_a_time() {
+        use crate::drawing::colour::{ColourBase, ColourMod, SchemeSlot};
+        use crate::drawing::paint::{Fill, GradientKind};
+        use crate::drawing::units::{Angle, Emu, Pct};
+        let style = w14_rpr(
+            r#"<w14:glow w14:rad="101600"><w14:schemeClr w14:val="accent1"><w14:alpha w14:val="40000"/></w14:schemeClr></w14:glow><w14:textFill><w14:noFill/></w14:textFill>"#,
+        );
+        let direct = w14_rpr(
+            r#"<w14:textFill><w14:gradFill><w14:gsLst><w14:gs w14:pos="0"><w14:srgbClr w14:val="C00000"/></w14:gs><w14:gs w14:pos="100000"><w14:srgbClr w14:val="2E75B6"/></w14:gs></w14:gsLst><w14:lin w14:ang="5400000" w14:scaled="0"/></w14:gradFill></w14:textFill><w14:textOutline w14:w="9525" w14:cap="rnd"><w14:solidFill><w14:srgbClr w14:val="FF0000"/></w14:solidFill><w14:prstDash w14:val="dash"/><w14:bevel/></w14:textOutline><w14:reflection w14:stA="52000" w14:endPos="35000" w14:sy="-100000" w14:algn="bl"/>"#,
+        );
+        let e = RunProps::fold_chain([&style, &direct].into_iter()).effects.expect("effects");
+        let glow = e.glow.as_ref().expect("the style's glow");
+        assert_eq!(
+            (glow.radius, &glow.colour.base, &glow.colour.mods[..]),
+            (Emu(101600), &ColourBase::Scheme(SchemeSlot::Accent(1)), &[ColourMod::Alpha(Pct(40000))][..])
+        );
+        let Some(Fill::Gradient(g)) = &e.fill else { panic!("the direct gradient over the style's no fill: {:?}", e.fill) };
+        assert_eq!((g.stops.len(), g.kind), (2, GradientKind::Linear { angle: Angle(5_400_000), scaled: false }));
+        let o = e.outline.as_ref().expect("an outline");
+        assert_eq!((o.width, o.cap, o.join), (Some(Emu(9525)), Some(crate::drawing::paint::Cap::Round), Some(crate::drawing::paint::Join::Bevel)));
+        let r = e.reflection.as_ref().expect("a reflection");
+        assert_eq!((r.start_alpha, r.end_pos, r.sy, r.fade_dir), (Pct(52000), Pct(35000), Pct(-100000), Angle(5_400_000)));
+        assert!(w14_rpr(r#"<w:b/>"#).effects.is_none(), "a run without effects has none");
+    }
+
+    #[test]
+    fn hostile_text_effects_are_bounded() {
+        let stops: String = (0..10_000).map(|i| format!(r#"<w14:gs w14:pos="{i}"><w14:srgbClr w14:val="FF0000"/></w14:gs>"#)).collect();
+        let mods: String = (0..10_000).map(|_| r#"<w14:lumMod w14:val="99000"/>"#).collect();
+        let r = w14_rpr(&format!(
+            r#"<w14:textFill><w14:gradFill><w14:gsLst>{stops}</w14:gsLst></w14:gradFill></w14:textFill><w14:glow w14:rad="99999999999"><w14:srgbClr w14:val="00FF00">{mods}</w14:srgbClr></w14:glow><w14:textOutline><w14:custDash><w14:ds w14:d="1" w14:sp="1"/></w14:custDash></w14:textOutline>"#
+        ));
+        let e = r.effects.expect("effects");
+        let Some(crate::drawing::paint::Fill::Gradient(g)) = &e.fill else { panic!("a gradient") };
+        assert_eq!(g.stops.len(), crate::drawing::paint::MAX_W14_STOPS);
+        assert_eq!(e.glow.as_ref().expect("a glow").colour.mods.len(), crate::drawing::colour::MAX_W14_MODS);
+        assert_eq!(e.outline.as_ref().expect("an outline").dash, None, "no custom dash in the w14 schema");
+        // The drawn glow is bounded as a shape's is.
+        let (t, m) = (crate::drawing::theme::Theme::default(), crate::drawing::theme::ColourMap::default());
+        let list = crate::drawing::paint::EffectList { glow: e.glow.clone(), ..Default::default() };
+        let fx = crate::drawing::paint::resolve_effects(Some(&list), None, crate::drawing::paint::Palette { theme: &t, map: &m });
+        assert_eq!(fx.glow.map(|g| g.0), Some(200.0));
     }
 }

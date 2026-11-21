@@ -32,6 +32,7 @@ import type {
   PictureAdjustChange,
   Points,
   RevisionId,
+  TextEffectsChange,
   ShapeAdjust,
   ShapeInsert,
   ShapePreset,
@@ -473,6 +474,11 @@ export interface Commands {
   setLanguage(language: Language): Promise<void>;
   /** Sets emboss, engrave, outline and shadow; what isn't given is kept. */
   setCharacterEffects(effects: CharacterEffects): Promise<void>;
+  /**
+   * Sets the text's fill, outline, shadow, glow and reflection: each one given replaces the text's own, `null` turns it
+   * off (over a style's too; a fill is only removed), and what isn't given is kept.
+   */
+  setTextEffects(change: TextEffectsChange): Promise<void>;
   /** Sets the underline's colour, or the text's (`'auto'`); underlined text only. */
   setUnderlineColor(color: Color | 'auto'): Promise<void>;
   /** Clears character formatting (Ctrl+Space). */
@@ -1314,6 +1320,7 @@ const encodings: { [K in CommandId]: Encoding<K> } = {
   setTypography: 'spread',
   setLanguage: 'spread',
   setCharacterEffects: 'spread',
+  setTextEffects: 'spread',
   setUnderlineColor: 'value',
   clearFormatting: 'none',
   changeCase: 'value',

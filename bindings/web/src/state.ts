@@ -19,7 +19,7 @@ import type { DialogKind } from './services/dialogs.js';
 import type { ControlKind, ReferenceRule } from './services/elements.js';
 import type { RulerModel, RulerUnit, TabSelector } from './services/ruler.js';
 import type { ChromeTheme, CursorOverride, DocumentAppearance, FieldShading, MeasureDetail, ObjectGrid, ThemeColors } from './services/view.js';
-import type { Color, CommentId, Degrees, ElementId, Points, RevisionId, ShapeState, StyleId } from './types.js';
+import type { Color, CommentId, Degrees, ElementId, Points, RevisionId, ShapeState, StyleId, TextEffects } from './types.js';
 
 /** An on/off value over the selection: `'mixed'` where it differs, `null` where it doesn't apply. */
 export type Tri = boolean | 'mixed' | null;
@@ -605,6 +605,8 @@ export interface CharacterFormatting {
   shadow: Tri;
   /** The underline's colour, or the text's (`'auto'`). */
   underlineColor: Mixed<Color | 'auto'>;
+  /** The text effects (fill, outline, shadow, glow and reflection), through the character style. */
+  textEffects: Mixed<TextEffects>;
 }
 
 /** The selection's paragraph formatting. */

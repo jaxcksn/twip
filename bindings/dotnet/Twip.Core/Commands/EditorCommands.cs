@@ -482,6 +482,12 @@ public sealed class EditorCommands
     /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
     public Task SetDropCapAsync(DropCap dropCap, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetDropCap(dropCap), ct);
 
+    /// <summary>Sets the text's fill, outline, shadow, glow and reflection: each is kept (the default), removed (over a style's too; a fill is only removed) or set.</summary>
+    /// <param name="change">The change.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SetTextEffectsAsync(TextEffectsChange change, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetTextEffects(change), ct);
+
     /// <summary>Defines the selection's list levels for its whole list, from this paragraph on, or for the selected paragraphs; outside a list, makes a new one.</summary>
     /// <param name="definition">The levels and what they apply to.</param>
     /// <param name="ct">Cancels the command before it runs.</param>

@@ -15,7 +15,7 @@ use crate::api::services::{
     PictureSizeDialog, SpecialIndent, StyleDialog, StyleDialogType, TablePropertiesDialog, TabsAction, TabsDialog,
 };
 use crate::api::state::{State, Tri};
-use crate::api::value::{Orientation, Points};
+use crate::api::value::{NoneOr, Orientation, Points};
 
 /// What a dialog shows besides the state: the selected text, the document's accessibility issues and the font
 /// families.
@@ -116,6 +116,11 @@ pub fn values(kind: DialogKind, state: &State, cx: &Context) -> Result<DialogVal
             number_form: f.number_form,
             stylistic_set: f.stylistic_set,
             contextual_alternates: f.contextual_alternates,
+            text_fill: effect(&f.text_effects, |e| e.fill.clone()),
+            text_outline: effect(&f.text_effects, |e| e.outline.clone()),
+            text_shadow: effect(&f.text_effects, |e| e.shadow.clone()),
+            text_reflection: effect(&f.text_effects, |e| e.reflection.clone()),
+            text_glow: effect(&f.text_effects, |e| e.glow.clone()),
         }),
         DialogKind::Paragraph => {
             let i = &p.indents;
@@ -339,6 +344,23 @@ const UNDERLINES: [(&str, &str); 18] = [
     ("wavyDouble", "Double wave"),
 ];
 
+/// One of the selection's text effects, `none` where the text has none of its own.
+fn effect<T>(e: &Tri<crate::api::drawing::TextEffects>, f: impl Fn(&crate::api::drawing::TextEffects) -> Option<T>) -> Tri<NoneOr<Box<T>>> {
+    match e {
+        Tri::Uniform(e) => Tri::Uniform(f(e).map_or(NoneOr::None, |v| NoneOr::Value(Box::new(v)))),
+        Tri::Mixed => Tri::Mixed,
+        Tri::Unavailable => Tri::Unavailable,
+    }
+}
+
+/// A text effect as `setTextEffects` takes it: `null` removes the text's own.
+fn own<T>(v: NoneOr<Box<T>>) -> Option<T> {
+    match v {
+        NoneOr::None => None,
+        NoneOr::Value(x) => Some(*x),
+    }
+}
+
 /// The fields of a dialog with these values: labels, ranges and choices, and which can be edited now.
 fn fields(values: &DialogValues, cx: &Context) -> BTreeMap<String, FieldInfo> {
     let list: Vec<(&str, FieldInfo)> = match values {
@@ -387,6 +409,11 @@ fn fields(values: &DialogValues, cx: &Context) -> BTreeMap<String, FieldInfo> {
             ("numberForm", choice("Number forms", &[("default", "Default"), ("lining", "Lining"), ("oldStyle", "Old-style")])),
             ("stylisticSet", number("Stylistic sets", FieldKind::Number, 0.0, 20.0, 1.0)),
             ("contextualAlternates", field("Use Contextual Alternates", FieldKind::Toggle)),
+            ("textFill", field("Text Fill", FieldKind::Effect)),
+            ("textOutline", field("Text Outline", FieldKind::Effect)),
+            ("textShadow", field("Shadow", FieldKind::Effect)),
+            ("textReflection", field("Reflection", FieldKind::Effect)),
+            ("textGlow", field("Glow", FieldKind::Effect)),
         ],
         DialogValues::Paragraph(v) => {
             let special = !matches!(v.special, Tri::Uniform(SpecialIndent::None));
@@ -1261,6 +1288,17 @@ pub fn commands(values: &DialogValues, state: &State, cx: &Context) -> Result<Ve
             if typography != crate::api::command::Typography::default() {
                 out.push(Command::SetTypography(typography));
             }
+            let effects = crate::api::drawing::TextEffectsChange {
+                fill: set(&v.text_fill, &n.text_fill).map(own),
+                outline: set(&v.text_outline, &n.text_outline).map(own),
+                shadow: set(&v.text_shadow, &n.text_shadow).map(own),
+                glow: set(&v.text_glow, &n.text_glow).map(own),
+                reflection: set(&v.text_reflection, &n.text_reflection).map(own),
+            };
+            if effects != crate::api::drawing::TextEffectsChange::default() {
+                effects.to_model().map_err(|why| Error::invalid(&why))?;
+                out.push(Command::SetTextEffects(effects));
+            }
         }
         (DialogValues::Paragraph(v), DialogValues::Paragraph(n)) => {
             out.extend(set(&v.alignment, &n.alignment).map(Command::SetAlignment));
@@ -1629,6 +1667,26 @@ mod tests {
         let mut v = font(&m);
         v.size = Tri::Uniform(Points(0.0));
         assert!(commands(&DialogValues::Font(v), &state, &cx).is_err(), "out of range");
+    }
+
+    #[test]
+    fn font_sets_only_the_text_effects_changed() {
+        use crate::api::drawing::{ColourValue, Glow, TextEffects, TextEffectsChange, TextReflection};
+        let mut state = font_state();
+        let reflection = TextReflection { transparency: 50.0, size: 35.0, blur: Points(0.5), distance: Points(0.0) };
+        state.formatting.text_effects = Tri::Uniform(TextEffects { reflection: Some(reflection), ..TextEffects::default() });
+        let cx = Context::default();
+        let m = open(DialogKind::Font, &state, &cx).expect("opens");
+        assert_eq!(m.fields["textGlow"].kind, FieldKind::Effect);
+        let mut v = font(&m);
+        assert!(matches!(v.text_reflection, Tri::Uniform(NoneOr::Value(_))) && v.text_glow == Tri::Uniform(NoneOr::None));
+        let glow = Glow { colour: ColourValue::rgb(crate::api::value::Color(0xFF_0000)), radius: Points(5.0) };
+        (v.text_glow, v.text_reflection) = (Tri::Uniform(NoneOr::Value(Box::new(glow.clone()))), Tri::Uniform(NoneOr::None));
+        let out = commands(&DialogValues::Font(v.clone()), &state, &cx).expect("valid");
+        let want = TextEffectsChange { glow: Some(Some(glow)), reflection: Some(None), ..TextEffectsChange::default() };
+        assert_eq!(out, [Command::SetTextEffects(want)]);
+        v.text_glow = Tri::Uniform(NoneOr::Value(Box::new(Glow { colour: ColourValue::default(), radius: Points(5.0) })));
+        assert!(commands(&DialogValues::Font(v), &state, &cx).is_err(), "a colour needs a base");
     }
 
     #[test]

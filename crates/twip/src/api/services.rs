@@ -1058,6 +1058,9 @@ pub enum FieldKind {
     Color,
     /// A list of values.
     List,
+    /// A text effect's settings (a fill, an outline, a shadow, a glow or a reflection, as `setTextEffects` takes
+    /// them), or `'none'`.
+    Effect,
 }
 
 /// One choice of a choice field.
@@ -1166,6 +1169,16 @@ dialog! {
         pub stylistic_set: Tri<u8>,
         /// Contextual alternates.
         pub contextual_alternates: Tri<bool>,
+        /// The text fill (Text Effects), or none of the text's own (the font colour).
+        pub text_fill: Tri<NoneOr<Box<crate::api::drawing::FillValue>>>,
+        /// The text outline, or none of the text's own.
+        pub text_outline: Tri<NoneOr<Box<crate::api::drawing::TextOutline>>>,
+        /// The shadow, or none of the text's own.
+        pub text_shadow: Tri<NoneOr<Box<crate::api::drawing::TextShadow>>>,
+        /// The reflection, or none of the text's own.
+        pub text_reflection: Tri<NoneOr<Box<crate::api::drawing::TextReflection>>>,
+        /// The glow, or none of the text's own.
+        pub text_glow: Tri<NoneOr<Box<crate::api::drawing::Glow>>>,
     }
 }
 

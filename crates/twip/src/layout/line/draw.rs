@@ -6,6 +6,7 @@ use crate::docx::Compat;
 use crate::docx::model::*;
 use crate::docx::props::Jc;
 use crate::docx::review::{AuthorPalette, MarkKind, MarkupView, ReviewView};
+use crate::drawing::paint::Palette;
 use crate::font::Fonts;
 use crate::layout::fragment::{Atom, GlyphRun, ImageKey, Item, LineFragment, PictureOf};
 use crate::layout::ids::{ParaId, Unit};
@@ -234,16 +235,16 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
             }
             if let Some(Object::Ruby(r)) = p.object.map(|o| &sp.objects[o as usize]) {
                 flush(&mut run, &mut out);
-                ruby_glyphs(&r.base, &r.base_x, x, base, r.narrow, q, o.review, behind_text, o.page_colour, &mut out);
+                ruby_glyphs(&r.base, &r.base_x, x, base, r.narrow, q, o.review, behind_text, (o.page_colour, o.palette), &mut out);
                 match r.turned {
                     Some([dx, dy]) => {
                         let (centre, mut items) = ([x + dx, base + dy], Vec::new());
-                        ruby_glyphs(&r.text, &r.text_x, centre[0], centre[1], 0.0, q, o.review, behind_text, o.page_colour, &mut items);
+                        ruby_glyphs(&r.text, &r.text_x, centre[0], centre[1], 0.0, q, o.review, behind_text, (o.page_colour, o.palette), &mut items);
                         // A vertical line of its own: East Asian glyphs stand upright in it.
                         let items = crate::layout::vertical::east_asian_turned(&items);
                         out.push(Item::Turned(Rc::new(crate::layout::fragment::Turned { centre, deg: 90.0, items })));
                     }
-                    None => ruby_glyphs(&r.text, &r.text_x, x, base - r.raise, 0.0, q, o.review, behind_text, o.page_colour, &mut out),
+                    None => ruby_glyphs(&r.text, &r.text_x, x, base - r.raise, 0.0, q, o.review, behind_text, (o.page_colour, o.palette), &mut out),
                 }
                 if let Some(unit) = first {
                     atoms.push(Atom { x0: x, x1: next_x.unwrap_or(x + line.widths[k]), para: q, unit, brk: false });
@@ -310,7 +311,7 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
             }
             let y = base - st.raise + align_drop(face, st.size, line.align, line.vertical);
             let color = ink(&st.run, o.review, behind_text);
-            let paint = glyph_paint(&st.run, st.size, color, under_text(&st.run, behind_text, o.page_colour));
+            let paint = glyph_paint(&st.run, st.size, color, under_text(&st.run, behind_text, o.page_colour), o.palette);
             let same = run.as_ref().is_some_and(|r| {
                 Rc::ptr_eq(&r.face, face)
                     && (r.size - st.size).abs() < EPS
@@ -415,7 +416,7 @@ fn ruby_glyphs(
     para: ParaId,
     review: &ReviewView,
     behind: Option<u32>,
-    page_colour: Option<u32>,
+    (page_colour, palette): (Option<u32>, Palette),
     out: &mut Vec<Item>,
 ) {
     let mut run: Option<GlyphRunBuilder> = None;
@@ -423,7 +424,7 @@ fn ruby_glyphs(
         let st = s.style(i);
         let Some(face) = &st.face else { continue };
         let (y, color, x0) = (base - st.raise, ink(&st.run, review, behind), x + px);
-        let paint = glyph_paint(&st.run, st.size, color, under_text(&st.run, behind, page_colour));
+        let paint = glyph_paint(&st.run, st.size, color, under_text(&st.run, behind, page_colour), palette);
         if !run.as_ref().is_some_and(|r| Rc::ptr_eq(&r.face, face) && r.size == st.size && r.y == y && r.color == color && r.paint == paint) {
             out.extend(run.take().map(|r| Item::Glyphs(r.finish())));
             let (glyphs, chars) = (Vec::new(), Vec::new());
@@ -487,7 +488,7 @@ fn draw_leader(o: &LineOrigin, line: &Line, k: usize, x0: f64, base: f64, behind
             color: st.run.color,
             para: None,
             x: from,
-            paint: glyph_paint(&st.run, st.size, st.run.color, under_text(&st.run, behind, o.page_colour)),
+            paint: glyph_paint(&st.run, st.size, st.run.color, under_text(&st.run, behind, o.page_colour), o.palette),
         };
         while (slot + 1.0) * w <= to + 1e-6 {
             r.glyphs.push((g, slot * w));
@@ -707,18 +708,55 @@ fn under_text(r: &RunStyle, behind: Option<u32>, page_colour: Option<u32>) -> u3
     r.highlight.or(r.shading).or(behind).or(page_colour).unwrap_or(0xFF_FFFF)
 }
 
-/// How a run's glyphs paint, in `colour` over `bg`: `None` for text without effects.
-fn glyph_paint(r: &RunStyle, size: f64, colour: Option<u32>, bg: u32) -> Option<Rc<crate::layout::fragment::GlyphPaint>> {
+/// The widest text outline drawn, points: Word's widest line.
+const MAX_OUTLINE: f64 = 1584.0;
+
+/// How a run's glyphs paint, in `colour` over `bg`, its effects' colours from `palette`: `None` for text without
+/// effects. A Word 2010 effect takes the place of the legacy one it shares a part with: a text fill or outline the
+/// hollow outline's, a shadow the grey copy.
+fn glyph_paint(r: &RunStyle, size: f64, colour: Option<u32>, bg: u32, palette: Palette) -> Option<Rc<crate::layout::fragment::GlyphPaint>> {
+    use crate::drawing::paint::{Paint, paint};
     use crate::layout::fragment::{GlyphFill, GlyphPaint};
-    if !(r.emboss || r.imprint || r.outline || r.shadow) {
+    let fx = r.effects.as_deref();
+    if !(r.emboss || r.imprint || r.outline || r.shadow || fx.is_some()) {
         return None;
     }
     let c = colour.unwrap_or(0);
+    let fill = match fx.and_then(|e| e.fill.as_ref()) {
+        Some(f) => match paint(f, palette, None, &Paint::None) {
+            Paint::None => GlyphFill::None,
+            Paint::Solid(rgba) if rgba.a == 255 => GlyphFill::Solid(rgba.to_rgb()),
+            p => GlyphFill::Paint(Box::new(p)),
+        },
+        None if r.outline => GlyphFill::None,
+        None => GlyphFill::Solid(c),
+    };
+    let own_outline = fx.is_some_and(|e| e.outline.is_some());
+    let mut copies = copies(r, size, bg);
+    if fx.is_some_and(|e| e.shadow.is_some()) {
+        copies[2] = None;
+    }
     Some(Rc::new(GlyphPaint {
-        fill: if r.outline { GlyphFill::None } else { GlyphFill::Solid(c) },
-        outline: r.outline.then_some((HAIRLINE, c)),
-        under: copies(r, size, bg).into_iter().flatten().collect(),
+        fill,
+        outline: r.outline.then_some((HAIRLINE, c)).filter(|_| !own_outline),
+        under: copies.into_iter().flatten().collect(),
+        effects: fx.and_then(|e| text_effect_paint(e, palette)),
     }))
+}
+
+/// A run's text effects resolved for drawing: `None` when none draws anything.
+fn text_effect_paint(e: &crate::docx::model::TextEffects, palette: Palette) -> Option<Box<crate::layout::fragment::TextEffectPaint>> {
+    use crate::drawing::paint::{EffectList, Paint, resolve_effects, resolve_line};
+    let list = EffectList { outer: e.shadow.clone(), glow: e.glow.clone(), reflection: e.reflection.clone(), ..EffectList::default() };
+    let fx = resolve_effects(Some(&list), None, palette);
+    let outline = e
+        .outline
+        .as_ref()
+        .map(|l| resolve_line(Some(l), None, palette, &Paint::None))
+        .filter(|l| l.is_visible() && l.width > 0.0)
+        .map(|l| crate::drawing::paint::ResolvedLine { width: l.width.min(MAX_OUTLINE), ..l });
+    let p = crate::layout::fragment::TextEffectPaint { outline, shadow: fx.outer, glow: fx.glow.filter(|g| g.0 > 0.0), reflection: fx.reflection };
+    (p.outline.is_some() || p.shadow.is_some() || p.glow.is_some() || p.reflection.is_some()).then(|| Box::new(p))
 }
 
 // Underline forms
@@ -903,7 +941,7 @@ fn split_cubic(p0: [f64; 2], p1: [f64; 2], p2: [f64; 2], p3: [f64; 2], u: f64) -
 }
 
 /// `page_colour` tones an effect's copies as the page's text.
-pub fn draw_label(text: &str, run: &Run, x_end: f64, y: f64, page_colour: Option<u32>, fonts: &Fonts) -> Vec<Item> {
+pub fn draw_label(text: &str, run: &Run, x_end: f64, y: f64, (page_colour, palette): (Option<u32>, Palette), fonts: &Fonts) -> Vec<Item> {
     let sp = crate::layout::text::shape_run(text, run, fonts);
     let w: f64 = sp.pieces.iter().map(|p| p.width).sum();
     let mut x = x_end - w;
@@ -924,7 +962,7 @@ pub fn draw_label(text: &str, run: &Run, x_end: f64, y: f64, page_colour: Option
             color: st.run.color,
             para: None,
             x,
-            paint: glyph_paint(&st.run, st.size, st.run.color, under_text(&st.run, None, page_colour)),
+            paint: glyph_paint(&st.run, st.size, st.run.color, under_text(&st.run, None, page_colour), palette),
         };
         let mut gx = x;
         for (id, advance, dx) in sp.glyphs(i) {
