@@ -21,6 +21,8 @@
 pub(crate) mod encrypt;
 pub(crate) mod export;
 #[cfg(test)]
+mod output;
+#[cfg(test)]
 pub(crate) mod tests;
 
 use std::path::PathBuf;

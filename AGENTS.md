@@ -41,6 +41,10 @@ Each of these rewrites checked-in expectations; review the diff before committin
 - Layout snapshots (`crates/twip/tests/layout`): `TWIP_WRITE_LAYOUT=1 cargo nextest run -p twip --lib layout_output`.
   Failures draw changed pages to `target/layout-diff/index.html`. A PR that changes them needs the `layout-change`
   label and a `fix(layout)` title saying what moves.
+- Render snapshots (`crates/twip/tests/render`, pages 1 and 2 of every fixture and every page under
+  `fixtures/render/`, at 96 dpi): `TWIP_WRITE_RENDER=1 cargo nextest run -p twip --lib render_output`. Failures write
+  before, after and diff images to `target/render-diff/index.html`.
+- PDF snapshots (`crates/twip/tests/pdf`): `TWIP_WRITE_PDF=1 cargo nextest run -p twip --lib pdf_output`.
 - Wire fixtures (`crates/twip/tests/wire`): `TWIP_WRITE_WIRE=1 cargo nextest run -p twip --lib fixtures_are_current`
   after changing any `twip::api` type.
 - Graphics goldens: `TWIP_GRAPHICS_BLESS=1 cargo nextest run -p twip-graphics --test golden`.

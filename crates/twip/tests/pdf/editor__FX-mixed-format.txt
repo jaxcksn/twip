@@ -1,0 +1,64 @@
+pages 1
+page 1 612 792
+  text Plain words, bold words, and Arial words.
+  op 1 0 0 -1 0 792 cm
+  op /P << /MCID 0 >> BDC
+  op q
+  op /Span << /ActualText <506c61696e20776f7264732c20> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 80.8 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002> <0002> <0002> <0001> <0002> <0002> <0002> <0002> <0002> <0002> <0001>] TJ
+  op ET
+  op EMC
+  op Q
+  op q
+  op /Span << /ActualText <626f6c6420776f726473> >> BDC
+  op 0 0 0 rg
+  op 0 0 0 RG
+  op 0.45 w
+  op 0 j
+  op BT
+  op 2 Tr
+  op 1 0 0 -1 144.05 80.8 Tm
+  op /F1 11 Tf
+  op [<0002> -1 <0002> -1 <0002> -1 <0002> -1 <0001> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op q
+  op /Span << /ActualText <2c20616e6420> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 201.36 80.8 Tm
+  op /F1 11 Tf
+  op [<0002> <0001> <0002> <0002> 0 <0002> <0001>] TJ
+  op ET
+  op EMC
+  op Q
+  op q
+  op /Span << /ActualText <417269616c20776f726473> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 231.06 80.8 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002> <0002> 0 <0002> <0001> <0002> 0 <0002> 0 <0002> 0 <0002> 0 <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op q
+  op /Span << /ActualText <2e> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 294.31 80.8 Tm
+  op /F1 11 Tf
+  op [<0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+structure
+  Document
+    P
+outline

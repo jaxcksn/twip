@@ -1,0 +1,39 @@
+pages 1
+page 1 612 792
+  text 1.9 Field picker
+  text Name: «Last_Name», «First_Name»
+  op 1 0 0 -1 0 792 cm
+  op /P << /MCID 0 >> BDC
+  op q
+  op /Span << /ActualText <312e39204669656c64207069636b6572> >> BDC
+  op 0 0 0 rg
+  op 0 0 0 RG
+  op 0.62 w
+  op 0 j
+  op BT
+  op 2 Tr
+  op 1 0 0 -1 72 96.8 Tm
+  op /F1 16 Tf
+  op [<0002> -1 <0002> -1 <0002> -1 <0001> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0001> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 1 >> BDC
+  op q
+  op /Span << /ActualText <feff004e0061006d0065003a002000ab004c006100730074005f004e0061006d006500bb002c002000ab00460069007200730074005f004e0061006d006500bb> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 110.07 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002> <0002> <0002> <0001> <0000> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0002> 0 <0002> <0000> <0002> <0001> <0000> <0002> <0002> <0002> 0 <0002> <0002> <0002> <0002> <0002> 0 <0002> <0002> <0000>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+structure
+  Document
+    H1
+    P
+outline
+  "1.9 Field picker"

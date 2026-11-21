@@ -85,3 +85,10 @@ jobs:
           name: layout-diff-${{ matrix.shard.job == 2 && 'wasm' || matrix.os }}
           path: target/layout-diff
           if-no-files-found: ignore
+      # The render snapshot check's before, after and diff images: open index.html in the artifact.
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: render-diff-${{ matrix.shard.job == 2 && 'wasm' || matrix.os }}
+          path: target/render-diff
+          if-no-files-found: ignore

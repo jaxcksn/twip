@@ -1,0 +1,364 @@
+pages 2
+page 1 612 792
+  text FX-SUBTEMPLATES
+  text Error! Bookmark not defined.
+  text After the violation.
+  text FeeAmount
+  text Error! Bookmark not defined.
+  text Total
+  text See Error! Bookmark not defined. here.
+  text Error! Bookmark not defined.
+  text Error! Bookmark not defined.
+  text Error! Bookmark not defined.
+  op 1 0 0 -1 0 792 cm
+  op /P << /MCID 0 >> BDC
+  op q
+  op /Span << /ActualText <46582d53554254454d504c41544553> >> BDC
+  op 0 0 0 rg
+  op 0 0 0 RG
+  op 0.62 w
+  op 0 j
+  op BT
+  op 2 Tr
+  op 1 0 0 -1 72 96.8 Tm
+  op /F1 16 Tf
+  op [<0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 1 >> BDC
+  op q
+  op /Span << /ActualText <4572726f722120426f6f6b6d61726b206e6f7420646566696e65642e> >> BDC
+  op 0 0 0 rg
+  op 0 0 0 RG
+  op 0.45 w
+  op 0 j
+  op BT
+  op 2 Tr
+  op 1 0 0 -1 72 110.07 Tm
+  op /F1 11 Tf
+  op [<0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0001> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0001> -1 <0002> -1 <0002> -1 <0002> -1 <0001> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 2 >> BDC
+  op q
+  op /Span << /ActualText <4166746572207468652076696f6c6174696f6e2e> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 129.94 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002> <0002> <0002> <0001> <0002> <0002> <0002> <0001> <0002> <0002> <0002> <0002> <0002> 0 <0002> <0002> <0002> <0002> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 3 >> BDC
+  op q
+  op /Span << /ActualText <466565> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 77.65 150.31 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 4 >> BDC
+  op q
+  op /Span << /ActualText <416d6f756e74> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 311.65 150.31 Tm
+  op /F1 11 Tf
+  op [<0002> 0 <0002> 0 <0002> 0 <0002> 0 <0002> 0 <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /Artifact << /Type /Layout >> BDC
+  op q
+  op 0 0 0 rg
+  op 72 141.01 234.5 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 72 141.01 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 306 141.01 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 306 141.01 234.5 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 306 141.01 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 540 141.01 0.5 20.37 re
+  op f
+  op Q
+  op EMC
+  op /P << /MCID 5 >> BDC
+  op q
+  op /Span << /ActualText <4572726f722120426f6f6b6d61726b206e6f7420646566696e65642e> >> BDC
+  op 0 0 0 rg
+  op 0 0 0 RG
+  op 0.45 w
+  op 0 j
+  op BT
+  op 2 Tr
+  op 1 0 0 -1 77.65 170.68 Tm
+  op /F1 11 Tf
+  op [<0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0001> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0001> -1 <0002> -1 <0002> -1 <0002> -1 <0001> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /Artifact BMC
+  op EMC
+  op /Artifact << /Type /Layout >> BDC
+  op q
+  op 0 0 0 rg
+  op 72 161.38 234.5 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 72 161.38 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 306 161.38 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 306 161.38 234.5 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 306 161.38 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 540 161.38 0.5 20.37 re
+  op f
+  op Q
+  op EMC
+  op /P << /MCID 6 >> BDC
+  op q
+  op /Span << /ActualText <546f74616c> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 77.65 191.05 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002> <0002> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /Artifact BMC
+  op EMC
+  op /Artifact << /Type /Layout >> BDC
+  op q
+  op 0 0 0 rg
+  op 72 181.75 234.5 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 72 181.75 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 306 181.75 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 72 202.12 234.5 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 306 181.75 234.5 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 306 181.75 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 540 181.75 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 306 202.12 234.5 0.5 re
+  op f
+  op Q
+  op EMC
+  op /P << /MCID 7 >> BDC
+  op q
+  op /Span << /ActualText <53656520> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 211.42 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002> <0001>] TJ
+  op ET
+  op EMC
+  op Q
+  op q
+  op /Span << /ActualText <4572726f722120426f6f6b6d61726b206e6f7420646566696e65642e> >> BDC
+  op 0 0 0 rg
+  op 0 0 0 RG
+  op 0.45 w
+  op 0 j
+  op BT
+  op 2 Tr
+  op 1 0 0 -1 92.9 211.42 Tm
+  op /F1 11 Tf
+  op [<0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0001> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0001> -1 <0002> -1 <0002> -1 <0002> -1 <0001> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op q
+  op /Span << /ActualText <20686572652e> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 252.71 211.42 Tm
+  op /F1 11 Tf
+  op [<0001> <0002> <0002> 0 <0002> 0 <0002> 0 <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 8 >> BDC
+  op q
+  op /Span << /ActualText <4572726f722120426f6f6b6d61726b206e6f7420646566696e65642e> >> BDC
+  op 0 0 0 rg
+  op 0 0 0 RG
+  op 0.45 w
+  op 0 j
+  op BT
+  op 2 Tr
+  op 1 0 0 -1 72 231.29 Tm
+  op /F1 11 Tf
+  op [<0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0001> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0001> -1 <0002> -1 <0002> -1 <0002> -1 <0001> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 9 >> BDC
+  op q
+  op /Span << /ActualText <4572726f722120426f6f6b6d61726b206e6f7420646566696e65642e> >> BDC
+  op 0 0 0 rg
+  op 0 0 0 RG
+  op 0.45 w
+  op 0 j
+  op BT
+  op 2 Tr
+  op 1 0 0 -1 72 251.16 Tm
+  op /F1 11 Tf
+  op [<0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0001> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0001> -1 <0002> -1 <0002> -1 <0002> -1 <0001> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 10 >> BDC
+  op q
+  op /Span << /ActualText <4572726f722120426f6f6b6d61726b206e6f7420646566696e65642e> >> BDC
+  op 0 0 0 rg
+  op 0 0 0 RG
+  op 0.45 w
+  op 0 j
+  op BT
+  op 2 Tr
+  op 1 0 0 -1 72 271.03 Tm
+  op /F1 11 Tf
+  op [<0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0001> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0001> -1 <0002> -1 <0002> -1 <0002> -1 <0001> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /Artifact << /Type /Pagination >> BDC
+  op EMC
+page 2 792 612
+  text Error! Bookmark not defined.
+  text Landscape section text.
+  op 1 0 0 -1 0 612 cm
+  op /P << /MCID 0 >> BDC
+  op q
+  op /Span << /ActualText <4572726f722120426f6f6b6d61726b206e6f7420646566696e65642e> >> BDC
+  op 0 0 0 rg
+  op 0 0 0 RG
+  op 0.45 w
+  op 0 j
+  op BT
+  op 2 Tr
+  op 1 0 0 -1 72 80.8 Tm
+  op /F1 11 Tf
+  op [<0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0001> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0001> -1 <0002> -1 <0002> -1 <0002> -1 <0001> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 1 >> BDC
+  op q
+  op /Span << /ActualText <4c616e6473636170652073656374696f6e20746578742e> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 100.67 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0001> <0002> <0002> <0002> <0002> 0 <0002> <0002> <0002> <0001> <0002> <0002> 0 <0002> <0002> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /Artifact << /Type /Pagination >> BDC
+  op EMC
+structure
+  Document
+    H1
+    P
+    P
+    Table
+      TR
+        TD
+          P
+        TD
+          P
+      TR
+        TD
+          P
+      TR
+        TD
+          P
+    P
+    P
+    P
+    P
+    P
+    P
+outline
+  "FX-SUBTEMPLATES"

@@ -9,8 +9,9 @@ tasks:
     command: node build-web.mjs
     inputs: ['src/**/*', 'build.rs', 'build-web.mjs', 'Cargo.toml', '/crates/twip-capi/src/**/*', '/crates/twip-capi/Cargo.toml', '/crates/twip/src/**/*', '/crates/twip/build.rs']
     outputs: ['/target/twip-wasm/twip-wasm.js', '/target/twip-wasm/twip_wasm.wasm']
-  # The layout snapshot check (crates/twip/src/layout/tests/output.rs) built for WebAssembly (wasm32-wasip1) and run
-  # under Node's WASI, against the same snapshots twip:test compares on Windows and Linux.
+  # The layout and render snapshot checks (crates/twip/src/layout/tests/output.rs, render/graphics/output.rs) built for
+  # WebAssembly (wasm32-wasip1) and run under Node's WASI, against the same snapshots twip:test compares on Windows and
+  # Linux.
   test:
     command: node build-web.mjs test
-    inputs: ['build-web.mjs', 'wasi-test.mjs', '/crates/twip/src/**/*', '/crates/twip/build.rs', '/crates/twip/Cargo.toml', '/crates/twip/tests/fixtures/**/*', '/crates/twip/tests/layout/**/*']
+    inputs: ['build-web.mjs', 'wasi-test.mjs', '/crates/twip/src/**/*', '/crates/twip/build.rs', '/crates/twip/Cargo.toml', '/crates/twip/tests/fixtures/**/*', '/crates/twip/tests/layout/**/*', '/crates/twip/tests/render/**/*', '/crates/twip-graphics/tests/fonts/**/*']

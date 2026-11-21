@@ -1,0 +1,67 @@
+pages 1
+page 1 612 792
+  text 4.2, 6.5 Rename cascade
+  text «Old_Name»
+  text «Old_Name»
+  text «Old_Name»
+  op 1 0 0 -1 0 792 cm
+  op /P << /MCID 0 >> BDC
+  op q
+  op /Span << /ActualText <342e322c20362e352052656e616d652063617363616465> >> BDC
+  op 0 0 0 rg
+  op 0 0 0 RG
+  op 0.62 w
+  op 0 j
+  op BT
+  op 2 Tr
+  op 1 0 0 -1 72 96.8 Tm
+  op /F1 16 Tf
+  op [<0002> -1 <0002> -1 <0002> -1 <0002> -1 <0001> -1 <0002> -1 <0002> -1 <0002> -1 <0001> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0001> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 1 >> BDC
+  op q
+  op /Span << /ActualText <feff00ab004f006c0064005f004e0061006d006500bb> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 110.07 Tm
+  op /F1 11 Tf
+  op [<0000> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0000>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 2 >> BDC
+  op q
+  op /Span << /ActualText <feff00ab004f006c0064005f004e0061006d006500bb> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 129.94 Tm
+  op /F1 11 Tf
+  op [<0000> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0000>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 3 >> BDC
+  op q
+  op /Span << /ActualText <feff00ab004f006c0064005f004e0061006d006500bb> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 149.81 Tm
+  op /F1 11 Tf
+  op [<0000> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0000>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+structure
+  Document
+    H1
+    P
+    P
+    P
+outline
+  "4.2, 6.5 Rename cascade"

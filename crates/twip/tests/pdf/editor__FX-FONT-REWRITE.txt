@@ -1,0 +1,170 @@
+pages 1
+page 1 612 792
+  text Direct Calibri.
+  text Bold Calibri.
+  text Times New Roman.
+  text Styled Calibri.
+  text Theme Calibri.
+  text Default Calibri.
+  text •A Calibri bullet.
+  text Marked.
+  text Symbol: •
+  text Before. Locked Calibri. After.
+  op 1 0 0 -1 0 792 cm
+  op /P << /MCID 0 >> BDC
+  op q
+  op /Span << /ActualText <4469726563742043616c696272692e> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 80.8 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002> <0002> <0002> <0002> <0001> <0002> <0002> <0002> <0002> <0002> <0002> <0002> 0 <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 1 >> BDC
+  op q
+  op /Span << /ActualText <426f6c642043616c696272692e> >> BDC
+  op 0 0 0 rg
+  op 0 0 0 RG
+  op 0.45 w
+  op 0 j
+  op BT
+  op 2 Tr
+  op 1 0 0 -1 72 100.67 Tm
+  op /F1 11 Tf
+  op [<0002> -1 <0002> -1 <0002> -1 <0002> -1 <0001> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 2 >> BDC
+  op q
+  op /Span << /ActualText <54696d6573204e657720526f6d616e2e> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 120.54 Tm
+  op /F2 11 Tf
+  op [<0002> <0002> <0002> <0002> <0002> <0001> <0002> <0002> <0002> <0001> <0002> <0002> <0002> <0002> <0002> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 3 >> BDC
+  op q
+  op /Span << /ActualText <5374796c65642043616c696272692e> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 140.41 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002> <0002> <0002> <0002> <0001> <0002> <0002> <0002> <0002> <0002> <0002> <0002> 0 <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 4 >> BDC
+  op q
+  op /Span << /ActualText <5468656d652043616c696272692e> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 160.28 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002> <0002> <0002> <0001> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 5 >> BDC
+  op q
+  op /Span << /ActualText <44656661756c742043616c696272692e> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 180.15 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002> <0002> <0002> <0002> <0002> <0001> <0002> <0002> <0002> <0002> <0002> <0002> 0 <0002> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /Artifact BMC
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 90 201.44 Tm
+  op /F3 11 Tf
+  op [<0005>] TJ
+  op ET
+  op Q
+  op EMC
+  op /P << /MCID 6 >> BDC
+  op q
+  op /Span << /ActualText <412043616c696272692062756c6c65742e> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 108 201.44 Tm
+  op /F1 11 Tf
+  op [<0002> <0001> <0002> <0002> <0002> <0002> <0002> <0002> <0002> 0 <0001> <0002> <0002> <0002> <0002> <0002> 0 <0002> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 7 >> BDC
+  op q
+  op /Span << /ActualText <4d61726b65642e> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 221.31 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002> <0002> <0002> <0002> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 8 >> BDC
+  op q
+  op /Span << /ActualText <53796d626f6c3a20> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 242.59 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002> <0002> <0002> <0002> <0002> <0001>] TJ
+  op ET
+  op EMC
+  op Q
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 117.1 242.59 Tm
+  op /F3 11 Tf
+  op [<0005>] TJ
+  op ET
+  op Q
+  op EMC
+  op /P << /MCID 9 >> BDC
+  op q
+  op /Span << /ActualText <4265666f72652e204c6f636b65642043616c696272692e2041667465722e> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 263 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002> <0002> <0002> <0002> <0002> <0001> <0002> <0002> <0002> <0002> <0002> <0002> 0 <0001> <0002> <0002> <0002> <0002> <0002> 0 <0002> <0002> <0002> <0001> <0002> <0002> 0 <0002> <0002> <0002> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+structure
+  Document
+    P
+    P
+    P
+    P
+    P
+    P
+    L
+      LI
+        LBody
+    P
+    P
+    P
+outline

@@ -1,0 +1,39 @@
+pages 1
+page 1 612 792
+  text 2.7 Word fields
+  text Balance due 11/9/2026 1 of 1
+  op 1 0 0 -1 0 792 cm
+  op /P << /MCID 0 >> BDC
+  op q
+  op /Span << /ActualText <322e3720576f7264206669656c6473> >> BDC
+  op 0 0 0 rg
+  op 0 0 0 RG
+  op 0.62 w
+  op 0 j
+  op BT
+  op 2 Tr
+  op 1 0 0 -1 72 96.8 Tm
+  op /F1 16 Tf
+  op [<0002> -1 <0002> -1 <0002> -1 <0001> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0001> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 1 >> BDC
+  op q
+  op /Span << /ActualText <42616c616e6365206475652031312f392f323032362031206f662031> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 110.07 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002> <0002> <0002> <0002> <0002> <0001> <0002> <0002> <0002> <0001> <0002> <0002> <0002> 0 <0002> <0002> <0002> <0002> <0002> 0 <0002> <0001> <0002> <0001> <0002> <0002> <0001> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+structure
+  Document
+    H1
+    P
+outline
+  "2.7 Word fields"

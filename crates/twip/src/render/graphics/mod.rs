@@ -3,6 +3,8 @@
 //! pixels and then rendered on the CPU. The colours, theme and appearance come from
 //! [`super::Renderer`].
 
+#[cfg(test)]
+mod output;
 mod overlay;
 pub mod retained;
 pub mod ruler;

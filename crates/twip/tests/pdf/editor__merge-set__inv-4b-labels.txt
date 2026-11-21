@@ -1,0 +1,108 @@
+pages 1
+page 1 612 792
+  text 4b Labels grid
+  text «Address»
+  op 1 0 0 -1 0 792 cm
+  op /P << /MCID 0 >> BDC
+  op q
+  op /Span << /ActualText <3462204c6162656c732067726964> >> BDC
+  op 0 0 0 rg
+  op 0 0 0 RG
+  op 0.62 w
+  op 0 j
+  op BT
+  op 2 Tr
+  op 1 0 0 -1 72 96.8 Tm
+  op /F1 16 Tf
+  op [<0002> -1 <0002> -1 <0001> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0001> -1 <0002> -1 <0002> -1 <0002> -1 <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 1 >> BDC
+  op q
+  op /Span << /ActualText <feff00ab004100640064007200650073007300bb> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 77.65 110.57 Tm
+  op /F1 11 Tf
+  op [<0000> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0000>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /Artifact BMC
+  op EMC
+  op /Artifact << /Type /Layout >> BDC
+  op q
+  op 0 0 0 rg
+  op 72 101.27 156.5 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 72 101.27 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 228 101.27 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 72 121.64 156.5 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 228 101.27 156.5 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 228 101.27 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 384 101.27 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 228 121.64 156.5 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 384 101.27 156.5 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 384 101.27 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 540 101.27 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 384 121.64 156.5 0.5 re
+  op f
+  op Q
+  op EMC
+  op /Artifact BMC
+  op EMC
+structure
+  Document
+    H1
+    Table
+      TR
+        TD
+          P
+outline
+  "4b Labels grid"

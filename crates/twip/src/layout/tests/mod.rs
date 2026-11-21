@@ -16,7 +16,7 @@ mod hyphenation;
 mod imports;
 mod metrics;
 mod notes;
-mod output;
+pub(crate) mod output;
 mod page_numbers;
 mod pending;
 mod random_edits;

@@ -1,0 +1,23 @@
+page 0 12240 15840
+  1440 1603 8 pt Sphinx of black quartz, judge my vow 0123456789
+  1440 2012 9 pt Sphinx of black quartz, judge my vow 0123456789
+  1440 2448 10 pt Sphinx of black quartz, judge my vow 0123456789
+  1440 2914 11 pt Sphinx of black quartz, judge my vow 0123456789
+  1440 3407 12 pt Sphinx of black quartz, judge my vow 0123456789
+  1440 3950 14 pt Sphinx of black quartz, judge my vow 0123456789
+  1440 4591 18 pt Sphinx of black quartz, judge my vow
+  1440 5103 0123456789
+  1440 5899 24 pt Sphinx of black quartz,
+  1440 6582 judge my vow 0123456789
+  1440 7671 36 pt Rag & 08
+  1440 9101 48 pt Rag & 08
+  1440 11118 72 pt Rag
+  1440 13170 & 08
+  1440 14137 Regular, bold, italic, bold italic.
+page 1 12240 15840
+  1440 1726 C00000 2E75B6 00B050 7030A0 FFC000
+  2753 2185 Beside the turned cell.
+  1440 4033 End.
+  turned 1781 3799 0 -1 Turned run
+  cell 1445 1999 2645 3799
+  cell 2645 1999 5645 3799
