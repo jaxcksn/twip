@@ -1184,87 +1184,148 @@ pub enum ShadingTarget {
     Paragraph,
     /// The selected text.
     Text,
-    /// A table style part's cells (from the style dialog's Format > Border).
+    /// The selected cells, or a table style part's cells (from the style dialog's Format > Border).
     Cell,
+    /// The selected tables (`w:tblPr/w:shd`): shows around their cells where they have cell spacing.
+    Table,
 }
 
-/// A shading pattern: clear (the fill only), solid (the pattern color), or a percentage of the pattern color over the
-/// fill.
+/// A shading pattern (`ST_Shd`): clear (the fill only), solid (the pattern color), a percentage of the pattern color
+/// over the fill, or stripes and crosses of it over the fill.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ShadingPattern {
+    /// No shading (`nil`).
+    Nil,
     /// The fill only.
     #[default]
     Clear,
     /// The pattern color only.
     Solid,
-    /// 5%.
+    /// 5% of the pattern color over the fill.
     Pct5,
-    /// 10%.
+    /// 10% of the pattern color over the fill.
     Pct10,
-    /// 20%.
+    /// 12.5% of the pattern color over the fill.
+    Pct12,
+    /// 15% of the pattern color over the fill.
+    Pct15,
+    /// 20% of the pattern color over the fill.
     Pct20,
-    /// 25%.
+    /// 25% of the pattern color over the fill.
     Pct25,
-    /// 30%.
+    /// 30% of the pattern color over the fill.
     Pct30,
-    /// 40%.
+    /// 35% of the pattern color over the fill.
+    Pct35,
+    /// 37.5% of the pattern color over the fill.
+    Pct37,
+    /// 40% of the pattern color over the fill.
     Pct40,
-    /// 50%.
+    /// 45% of the pattern color over the fill.
+    Pct45,
+    /// 50% of the pattern color over the fill.
     Pct50,
-    /// 60%.
+    /// 55% of the pattern color over the fill.
+    Pct55,
+    /// 60% of the pattern color over the fill.
     Pct60,
-    /// 70%.
+    /// 62.5% of the pattern color over the fill.
+    Pct62,
+    /// 65% of the pattern color over the fill.
+    Pct65,
+    /// 70% of the pattern color over the fill.
     Pct70,
-    /// 75%.
+    /// 75% of the pattern color over the fill.
     Pct75,
-    /// 80%.
+    /// 80% of the pattern color over the fill.
     Pct80,
-    /// 90%.
+    /// 85% of the pattern color over the fill.
+    Pct85,
+    /// 87.5% of the pattern color over the fill.
+    Pct87,
+    /// 90% of the pattern color over the fill.
     Pct90,
+    /// 95% of the pattern color over the fill.
+    Pct95,
+    /// Dark horizontal stripes. In the pattern color over the fill.
+    HorzStripe,
+    /// Dark vertical stripes. In the pattern color over the fill.
+    VertStripe,
+    /// Dark down-diagonal stripes. In the pattern color over the fill.
+    ReverseDiagStripe,
+    /// Dark up-diagonal stripes. In the pattern color over the fill.
+    DiagStripe,
+    /// A dark grid. In the pattern color over the fill.
+    HorzCross,
+    /// A dark trellis. In the pattern color over the fill.
+    DiagCross,
+    /// Light horizontal stripes. In the pattern color over the fill.
+    ThinHorzStripe,
+    /// Light vertical stripes. In the pattern color over the fill.
+    ThinVertStripe,
+    /// Light down-diagonal stripes. In the pattern color over the fill.
+    ThinReverseDiagStripe,
+    /// Light up-diagonal stripes. In the pattern color over the fill.
+    ThinDiagStripe,
+    /// A light grid. In the pattern color over the fill.
+    ThinHorzCross,
+    /// A light trellis. In the pattern color over the fill.
+    ThinDiagCross,
+    /// A pattern the document names that isn't one of these: setting it keeps each one's pattern as written.
+    Other,
 }
 
 impl ShadingPattern {
-    const ALL: [ShadingPattern; 14] = [
-        ShadingPattern::Clear,
-        ShadingPattern::Solid,
-        ShadingPattern::Pct5,
-        ShadingPattern::Pct10,
-        ShadingPattern::Pct20,
-        ShadingPattern::Pct25,
-        ShadingPattern::Pct30,
-        ShadingPattern::Pct40,
-        ShadingPattern::Pct50,
-        ShadingPattern::Pct60,
-        ShadingPattern::Pct70,
-        ShadingPattern::Pct75,
-        ShadingPattern::Pct80,
-        ShadingPattern::Pct90,
+    const ALL: [(ShadingPattern, &'static str); 38] = [
+        (ShadingPattern::Nil, "nil"),
+        (ShadingPattern::Clear, "clear"),
+        (ShadingPattern::Solid, "solid"),
+        (ShadingPattern::Pct5, "pct5"),
+        (ShadingPattern::Pct10, "pct10"),
+        (ShadingPattern::Pct12, "pct12"),
+        (ShadingPattern::Pct15, "pct15"),
+        (ShadingPattern::Pct20, "pct20"),
+        (ShadingPattern::Pct25, "pct25"),
+        (ShadingPattern::Pct30, "pct30"),
+        (ShadingPattern::Pct35, "pct35"),
+        (ShadingPattern::Pct37, "pct37"),
+        (ShadingPattern::Pct40, "pct40"),
+        (ShadingPattern::Pct45, "pct45"),
+        (ShadingPattern::Pct50, "pct50"),
+        (ShadingPattern::Pct55, "pct55"),
+        (ShadingPattern::Pct60, "pct60"),
+        (ShadingPattern::Pct62, "pct62"),
+        (ShadingPattern::Pct65, "pct65"),
+        (ShadingPattern::Pct70, "pct70"),
+        (ShadingPattern::Pct75, "pct75"),
+        (ShadingPattern::Pct80, "pct80"),
+        (ShadingPattern::Pct85, "pct85"),
+        (ShadingPattern::Pct87, "pct87"),
+        (ShadingPattern::Pct90, "pct90"),
+        (ShadingPattern::Pct95, "pct95"),
+        (ShadingPattern::HorzStripe, "horzStripe"),
+        (ShadingPattern::VertStripe, "vertStripe"),
+        (ShadingPattern::ReverseDiagStripe, "reverseDiagStripe"),
+        (ShadingPattern::DiagStripe, "diagStripe"),
+        (ShadingPattern::HorzCross, "horzCross"),
+        (ShadingPattern::DiagCross, "diagCross"),
+        (ShadingPattern::ThinHorzStripe, "thinHorzStripe"),
+        (ShadingPattern::ThinVertStripe, "thinVertStripe"),
+        (ShadingPattern::ThinReverseDiagStripe, "thinReverseDiagStripe"),
+        (ShadingPattern::ThinDiagStripe, "thinDiagStripe"),
+        (ShadingPattern::ThinHorzCross, "thinHorzCross"),
+        (ShadingPattern::ThinDiagCross, "thinDiagCross"),
     ];
 
-    /// The pattern a `w:val` names; clear for those not offered.
+    /// The pattern a `w:val` names; [`ShadingPattern::Other`] for one that isn't an `ST_Shd` value.
     pub fn of_val(v: &str) -> ShadingPattern {
-        ShadingPattern::ALL.into_iter().find(|p| p.val() == v).unwrap_or_default()
+        ShadingPattern::ALL.iter().find(|(_, n)| *n == v).map_or(ShadingPattern::Other, |(p, _)| *p)
     }
 
-    /// The `w:val` it is written as.
-    pub fn val(self) -> &'static str {
-        match self {
-            ShadingPattern::Clear => "clear",
-            ShadingPattern::Solid => "solid",
-            ShadingPattern::Pct5 => "pct5",
-            ShadingPattern::Pct10 => "pct10",
-            ShadingPattern::Pct20 => "pct20",
-            ShadingPattern::Pct25 => "pct25",
-            ShadingPattern::Pct30 => "pct30",
-            ShadingPattern::Pct40 => "pct40",
-            ShadingPattern::Pct50 => "pct50",
-            ShadingPattern::Pct60 => "pct60",
-            ShadingPattern::Pct70 => "pct70",
-            ShadingPattern::Pct75 => "pct75",
-            ShadingPattern::Pct80 => "pct80",
-            ShadingPattern::Pct90 => "pct90",
-        }
+    /// The `w:val` it is written as; none for [`ShadingPattern::Other`], which keeps the one written.
+    pub fn val(self) -> Option<&'static str> {
+        ShadingPattern::ALL.iter().find(|(p, _)| *p == self).map(|(_, n)| *n)
     }
 }
 
@@ -2620,6 +2681,22 @@ pub enum BorderStyle {
     Outset,
     /// Inset.
     Inset,
+    /// Dashes with small gaps.
+    DashSmallGap,
+    /// Stroked dashes and dots.
+    DashDotStroked,
+    /// A thin line and a thick one, a medium gap apart.
+    ThinThickMediumGap,
+    /// A thick line and a thin one, a medium gap apart.
+    ThickThinMediumGap,
+    /// Thin, thick, thin, medium gaps apart.
+    ThinThickThinMediumGap,
+    /// A thin line and a thick one, a large gap apart.
+    ThinThickLargeGap,
+    /// A thick line and a thin one, a large gap apart.
+    ThickThinLargeGap,
+    /// Thin, thick, thin, large gaps apart.
+    ThinThickThinLargeGap,
 }
 
 impl BorderStyle {
@@ -2643,6 +2720,14 @@ impl BorderStyle {
             BorderStyle::ThreeDEngrave => "threeDEngrave",
             BorderStyle::Outset => "outset",
             BorderStyle::Inset => "inset",
+            BorderStyle::DashSmallGap => "dashSmallGap",
+            BorderStyle::DashDotStroked => "dashDotStroked",
+            BorderStyle::ThinThickMediumGap => "thinThickMediumGap",
+            BorderStyle::ThickThinMediumGap => "thickThinMediumGap",
+            BorderStyle::ThinThickThinMediumGap => "thinThickThinMediumGap",
+            BorderStyle::ThinThickLargeGap => "thinThickLargeGap",
+            BorderStyle::ThickThinLargeGap => "thickThinLargeGap",
+            BorderStyle::ThinThickThinLargeGap => "thinThickThinLargeGap",
         }
     }
 
@@ -2665,6 +2750,14 @@ impl BorderStyle {
             BorderStyle::ThreeDEngrave,
             BorderStyle::Outset,
             BorderStyle::Inset,
+            BorderStyle::DashSmallGap,
+            BorderStyle::DashDotStroked,
+            BorderStyle::ThinThickMediumGap,
+            BorderStyle::ThickThinMediumGap,
+            BorderStyle::ThinThickThinMediumGap,
+            BorderStyle::ThinThickLargeGap,
+            BorderStyle::ThickThinLargeGap,
+            BorderStyle::ThinThickThinLargeGap,
         ]
         .into_iter()
         .find(|s| s.val() == v)

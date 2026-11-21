@@ -24,6 +24,7 @@ mod rebreak;
 mod reuse;
 mod robustness;
 mod rows;
+mod shading;
 pub(crate) mod shapes;
 mod showcase;
 mod signatures;

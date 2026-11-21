@@ -28,6 +28,7 @@ impl Editor {
         (v.top, v.bottom, v.left, v.right) = (line(&b.top), line(&b.bottom), line(&b.left), line(&b.right));
         (v.between, v.inside_vertical) = (line(&b.inside_h), line(&b.inside_v));
         v.apply_to = ShadingTarget::Cell;
+        let shd = shd.filter(|s| s.pattern != "nil");
         v.fill = shd.as_ref().map_or(r.tc.shading.flatten(), |s| s.fill).map_or(NoneOr::None, |c| NoneOr::Value(Color(c)));
         v.pattern = shd.as_ref().map_or(ShadingPattern::Clear, |s| ShadingPattern::of_val(&s.pattern));
         v.pattern_color = shd.as_ref().and_then(|s| s.color).map_or(AutoOr::Auto, |c| AutoOr::Value(Color(c)));
@@ -37,6 +38,59 @@ impl Editor {
         }
         (v.page_top, v.page_bottom, v.page_left, v.page_right, v.page_setting) = (None, None, None, None, BorderSetting::None);
         Some(v)
+    }
+
+    /// Borders and Shading's values applied to the selection's cells (shown from the first) or to its table: their
+    /// edges, each a cell's own else the table's, and their shading.
+    pub fn table_borders_shading(&self, target: ShadingTarget) -> Option<BordersShadingDialog> {
+        let mut v = self.borders_shading_values(None, false)?;
+        let tg = self.table_target()?;
+        let t = self.index.table(&self.doc, tg.table)?;
+        let tb = &t.borders;
+        let (edges, shd) = if target == ShadingTarget::Table {
+            (tb.clone(), t.shd.clone())
+        } else {
+            let g = super::table::Grid::of(t);
+            let r = tg.rows.0.min(t.rows.len().checked_sub(1)?);
+            let k = g.rows.get(r)?.iter().position(|&(c, s, _)| tg.cols.0 >= c && tg.cols.0 < c + s.max(1))?;
+            let cell = t.rows[r].cells.get(k)?;
+            let (c, s, _) = g.rows[r][k];
+            let (last_row, last_col) = (r + 1 == t.rows.len(), c + s.max(1) >= g.cols);
+            let own = |o: &Option<crate::docx::props::Border>, table: &Option<crate::docx::props::Border>| o.clone().or_else(|| table.clone());
+            let res = self.doc.resolver.as_ref();
+            let direct = cell.direct.0.as_deref().zip(res).and_then(|(raw, res)| {
+                self.cx().parse(raw, |_, n| crate::docx::props::TcProps::parse(Some(n), &res.styles.colours)).and_then(|p| p.shd)
+            });
+            let shd = direct.or_else(|| cell.shading.map(|f| crate::docx::props::Shd { pattern: "clear".into(), color: None, fill: Some(f) }));
+            let edges = [
+                own(&cell.top, &tb[if r == 0 { 0 } else { 4 }]),
+                own(&cell.left, &tb[if c == 0 { 1 } else { 5 }]),
+                own(&cell.bottom, &tb[if last_row { 2 } else { 4 }]),
+                own(&cell.right, &tb[if last_col { 3 } else { 5 }]),
+                tb[4].clone(),
+                tb[5].clone(),
+            ];
+            (edges, shd)
+        };
+        (v.top, v.left, v.bottom, v.right, v.between, v.inside_vertical) =
+            (line(&edges[0]), line(&edges[1]), line(&edges[2]), line(&edges[3]), line(&edges[4]), line(&edges[5]));
+        let shd = shd.filter(|s| s.pattern != "nil");
+        v.apply_to = target;
+        v.fill = shd.as_ref().and_then(|s| s.fill).map_or(NoneOr::None, |c| NoneOr::Value(Color(c)));
+        v.pattern = shd.as_ref().map_or(ShadingPattern::Clear, |s| ShadingPattern::of_val(&s.pattern));
+        v.pattern_color = shd.as_ref().and_then(|s| s.color).map_or(AutoOr::Auto, |c| AutoOr::Value(Color(c)));
+        v.setting = crate::services::dialogs::border_setting(&v, false);
+        Some(v)
+    }
+
+    /// Whether the selection is in a table.
+    pub fn in_table(&self) -> bool {
+        self.table_target().is_some()
+    }
+
+    /// Whether the selection is a block of cells: Borders and Shading then applies to them first.
+    pub fn cells_selected(&self) -> bool {
+        matches!(self.selection, super::Selection::Cells { .. })
     }
 
     /// Borders and Shading's values for the selection's paragraph and text (`style` none), or for text in a style's
@@ -55,7 +109,7 @@ impl Editor {
             }
         };
         // The shading as written: its pattern and colors; else the resolved fill.
-        let shd = if text { run.shd.clone() } else { p.shd.clone() };
+        let shd = if text { run.shd.clone() } else { p.shd.clone() }.filter(|s| s.pattern != "nil");
         let fill = shd.as_ref().map_or(if text { run.shading } else { p.shading }, |s| s.fill);
         let pattern = shd.as_ref().map_or(ShadingPattern::Clear, |s| ShadingPattern::of_val(&s.pattern));
         let pattern_color = shd.as_ref().and_then(|s| s.color).map_or(AutoOr::Auto, |c| AutoOr::Value(Color(c)));

@@ -428,7 +428,6 @@ pub fn highlight(v: &str) -> Option<u32> {
     })
 }
 
-/// `w:shd` → the visible fill (patterns `pctNN` blend the pattern colour over the fill).
 /// A `w:shd` as written: its pattern (`w:val`), the pattern's color and the fill (none: automatic).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Shd {
@@ -445,26 +444,84 @@ impl Shd {
             fill: tc.colour(e, "fill", "themeFill", "themeFillTint", "themeFillShade"),
         }
     }
+
+    /// The flat colour it shows: the fill, the pattern colour when solid, a `pctNN` blend of the pattern colour over
+    /// the fill; nothing for `nil`. A stripe or cross shows its fill here and its [`Shd::hatch`] over it.
+    pub fn flat(&self) -> Option<u32> {
+        let p = self.pattern.as_str();
+        match p {
+            "nil" => None,
+            "solid" => Some(self.color.unwrap_or(0)),
+            _ if p.starts_with("pct") => {
+                let pct: u32 = p[3..].parse().ok().filter(|v| *v <= 100)?;
+                let (fg, bg) = (self.color.unwrap_or(0), self.fill.unwrap_or(0xFFFFFF));
+                let mix = |s: u32| {
+                    let (a, b) = ((fg >> s) & 255, (bg >> s) & 255);
+                    ((b as i64 + (a as i64 - b as i64) * pct as i64 / 100) as u32) << s
+                };
+                Some(mix(16) | mix(8) | mix(0))
+            }
+            _ => self.fill,
+        }
+    }
+
+    /// Its stripe or cross in the pattern colour (automatic: black), if it has one.
+    pub fn hatch(&self) -> Option<Hatch> {
+        Stripe::parse(&self.pattern).map(|stripe| Hatch { stripe, colour: self.color.unwrap_or(0) })
+    }
 }
 
 pub fn shading_fill(e: Node, tc: &ThemeColours) -> Option<u32> {
-    let fill = tc.colour(e, "fill", "themeFill", "themeFillTint", "themeFillShade");
-    let pattern = || tc.colour(e, "color", "themeColor", "themeTint", "themeShade");
-    match val(e) {
-        None | Some("clear" | "nil") => fill,
-        Some("solid") => Some(pattern().unwrap_or(0)),
-        Some(p) if p.starts_with("pct") => {
-            let pct: u32 = p[3..].parse().ok()?;
-            let fg = pattern().unwrap_or(0);
-            let bg = fill.unwrap_or(0xFFFFFF);
-            let mix = |s: u32| {
-                let (a, b) = ((fg >> s) & 255, (bg >> s) & 255);
-                ((b as i64 + (a as i64 - b as i64) * pct as i64 / 100) as u32) << s
-            };
-            Some(mix(16) | mix(8) | mix(0))
-        }
-        _ => fill,
+    Shd::parse(e, tc).flat()
+}
+
+/// The stripes and crosses of `w:shd`, drawn as an 8×8 tile in the pattern colour over the fill.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Stripe {
+    Horz,
+    Vert,
+    ReverseDiag,
+    Diag,
+    HorzCross,
+    DiagCross,
+    ThinHorz,
+    ThinVert,
+    ThinReverseDiag,
+    ThinDiag,
+    ThinHorzCross,
+    ThinDiagCross,
+}
+
+impl Stripe {
+    pub const ALL: [(Stripe, &'static str); 12] = [
+        (Stripe::Horz, "horzStripe"),
+        (Stripe::Vert, "vertStripe"),
+        (Stripe::ReverseDiag, "reverseDiagStripe"),
+        (Stripe::Diag, "diagStripe"),
+        (Stripe::HorzCross, "horzCross"),
+        (Stripe::DiagCross, "diagCross"),
+        (Stripe::ThinHorz, "thinHorzStripe"),
+        (Stripe::ThinVert, "thinVertStripe"),
+        (Stripe::ThinReverseDiag, "thinReverseDiagStripe"),
+        (Stripe::ThinDiag, "thinDiagStripe"),
+        (Stripe::ThinHorzCross, "thinHorzCross"),
+        (Stripe::ThinDiagCross, "thinDiagCross"),
+    ];
+
+    pub fn parse(v: &str) -> Option<Stripe> {
+        Stripe::ALL.iter().find(|(_, n)| *n == v).map(|(s, _)| *s)
     }
+
+    pub fn val(self) -> &'static str {
+        Stripe::ALL.iter().find(|(s, _)| *s == self).map_or("clear", |(_, n)| n)
+    }
+}
+
+/// A stripe or cross and its colour.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Hatch {
+    pub stripe: Stripe,
+    pub colour: u32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -991,6 +1048,8 @@ pub struct TblProps {
     pub col_band: Option<i64>,
     pub floating: Option<TablePos>,
     pub shading: Option<Option<u32>>,
+    /// The `w:shd` as written.
+    pub shd: Option<Shd>,
     pub bidi_visual: Option<bool>,
 }
 
@@ -1102,7 +1161,10 @@ impl TblProps {
                         f.never_overlap = val(c) == Some("never");
                     }
                 }
-                "shd" => p.shading = Some(shading_fill(c, tc)),
+                "shd" => {
+                    p.shading = Some(shading_fill(c, tc));
+                    p.shd = Some(Shd::parse(c, tc));
+                }
                 "tblLook" => {
                     let bit = |name: &str, mask: i64| match attr(c, name) {
                         Some(v) => on_off_str(Some(v)),
@@ -1127,7 +1189,7 @@ impl TblProps {
         macro_rules! take {
             ($($f:ident),*) => { $( if o.$f.is_some() { self.$f = o.$f.clone(); } )* };
         }
-        take!(style, width, jc, ind, fixed, look, cell_spacing, row_band, col_band, floating, shading, bidi_visual);
+        take!(style, width, jc, ind, fixed, look, cell_spacing, row_band, col_band, floating, shading, shd, bidi_visual);
         self.borders.merge(&o.borders);
         self.margins.merge(&o.margins);
     }
@@ -1255,6 +1317,26 @@ mod tests {
         assert_eq!(rpr(r#"<w:color w:themeColor="dark1" w:themeTint="80"/>"#).color, Some(Some(0x7F7F7F)));
         let shd = rpr(r#"<w:shd w:val="clear" w:color="auto" w:fill="FFFFFF" w:themeFill="accent2"/>"#);
         assert_eq!(shd.shading, Some(Some(0xE97132)));
+    }
+
+    #[test]
+    fn shading_shows_its_fill_a_blend_or_nothing_and_stripes_their_hatch() {
+        let shd = |v: &str| super::Shd { pattern: v.into(), color: Some(0xFF0000), fill: Some(0x0000FF) };
+        assert_eq!(shd("nil").flat(), None, "nil draws nothing, whatever its fill");
+        assert_eq!(shd("clear").flat(), Some(0x0000FF));
+        assert_eq!(shd("solid").flat(), Some(0xFF0000));
+        assert_eq!(shd("pct50").flat(), Some(0x7F0080));
+        assert_eq!(shd("horzStripe").flat(), Some(0x0000FF), "a stripe's fill under it");
+        assert_eq!(shd("horzStripe").hatch(), Some(super::Hatch { stripe: super::Stripe::Horz, colour: 0xFF0000 }));
+        assert_eq!(shd("pct50").hatch(), None);
+        // Hostile percentages: none past 100 (each channel would spill into the next), and none that isn't a number.
+        for v in ["pct500", "pct4294967295", "pct-5", "pct", "pctx"] {
+            assert_eq!(shd(v).flat(), None, "{v}");
+        }
+        assert_eq!(shd("bogus").flat(), Some(0x0000FF), "an unknown pattern shows its fill");
+        for (s, v) in super::Stripe::ALL {
+            assert_eq!((super::Stripe::parse(v), s.val()), (Some(s), v));
+        }
     }
 
     #[test]

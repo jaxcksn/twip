@@ -2907,8 +2907,12 @@ impl Reader {
             trp.merge(&TrProps::parse(child(*rn, "trPr")));
             let mut ex = TblProps::parse(child(*rn, "tblPrEx"), &self.res.styles.colours);
             // A later table's rows keep its own alignment and cell margins as their exceptions.
+            let mut table_shading = None;
             if row_table[ri] > 0 {
                 let own = TblProps::parse(child(ts[row_table[ri]], "tblPr"), &self.res.styles.colours);
+                // Its own shading over its style's, which joined tables share (Word shows the style's under one without).
+                let shd = own.shd.as_ref().or(style_region.tbl.shd.as_ref());
+                table_shading = Some((shd.and_then(Shd::flat), shd.and_then(Shd::hatch)));
                 let mut later = TblProps { jc: own.jc, margins: own.margins, ..Default::default() };
                 later.merge(&ex);
                 ex = later;
@@ -2941,6 +2945,7 @@ impl Reader {
             }
             rows.push(self.row(*rn, &trp, &ex, &tbl, &row_tbl, &style_region, cells, row_controls.clone()));
             if let Some(r) = rows.last_mut() {
+                r.table_shading = table_shading;
                 bound_spans(r);
             }
         }
@@ -2988,6 +2993,7 @@ impl Reader {
             borders: [b.top.clone(), b.left.clone(), b.bottom.clone(), b.right.clone(), b.inside_h.clone(), b.inside_v.clone()],
             fixed: tbl.fixed.unwrap_or(false),
             cell_spacing: tbl.cell_spacing.unwrap_or(0.0),
+            shd: tbl.shd.clone().filter(|s| s.flat().is_some() || s.hatch().is_some()),
             look: direct.look,
             bands: (row_band, col_band),
             alt: {
@@ -3029,6 +3035,7 @@ impl Reader {
             bottom: bv(&tcp.borders.bottom),
             right: bv(&tcp.borders.right),
             shading: tcp.shading.flatten(),
+            hatch: tcp.shd.as_ref().and_then(Shd::hatch),
             margins: cell_margins(&tcp, tm, unset),
             v_align: tcp.v_align.clone().unwrap_or_else(|| "top".into()),
             text_direction: tcp.text_direction.clone().unwrap_or_else(|| "lrTb".into()),
@@ -3086,6 +3093,8 @@ impl Reader {
                 .and_then(|n| int(val(n)))
                 .map(|id| Rc::new(RowDiv { id, shift: 0.0, lead: 0.0, trail: 0.0, boxes: Rc::from([]) })),
             shading: ex.shading.flatten(),
+            hatch: ex.shd.as_ref().and_then(Shd::hatch),
+            table_shading: None,
             cell_spacing: trp.cell_spacing.or(ex.cell_spacing).map(|s| s.max(0.0)),
             run: (ex.fixed == Some(true) && tbl.fixed != Some(true)).then(|| ex.width.or(tbl.width).unwrap_or(Width::Auto)),
             nudge: None,

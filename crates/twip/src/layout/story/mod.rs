@@ -325,6 +325,7 @@ fn stack_para<'b>(w: &StoryIn<'b, '_>, st: &mut Stack<'b>, bi: usize, laid: &'b 
         env: TextEnv { line_grid, ..text.clone() },
         fit: ends.fit,
         letter_break: false,
+        shade_gap: crate::layout::line::shade_gap(text, style, next, contextual),
     };
     let lines = break_lines(&shaped, p, &ps, env.ctx.fonts, memos)?;
     let (mut before, mut after) = (space_before(text, style), space_after(text, style));

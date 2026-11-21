@@ -615,9 +615,31 @@ pub enum ResolvedBlipAdjust {
 pub enum Paint {
     None,
     Solid(Rgba),
-    Gradient { stops: Vec<(f64, Rgba)>, kind: GradientKind, tile: [Pct; 4], flip: TileFlip, rot_with_shape: bool },
-    Pattern { preset: PatternPreset, fg: Rgba, bg: Rgba },
-    Picture { image: Option<usize>, src: [Pct; 4], mode: BlipMode, adjust: Vec<ResolvedBlipAdjust>, rot_with_shape: bool },
+    Gradient {
+        stops: Vec<(f64, Rgba)>,
+        kind: GradientKind,
+        tile: [Pct; 4],
+        flip: TileFlip,
+        rot_with_shape: bool,
+    },
+    Pattern {
+        preset: PatternPreset,
+        fg: Rgba,
+        bg: Rgba,
+    },
+    /// A `w:shd` stripe or cross: Word's tile, a 300 dpi pixel a bit, from a pixel above and left of the shape.
+    Hatch {
+        stripe: crate::docx::props::Stripe,
+        fg: Rgba,
+        bg: Rgba,
+    },
+    Picture {
+        image: Option<usize>,
+        src: [Pct; 4],
+        mode: BlipMode,
+        adjust: Vec<ResolvedBlipAdjust>,
+        rot_with_shape: bool,
+    },
 }
 
 impl Paint {

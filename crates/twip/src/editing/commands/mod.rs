@@ -369,7 +369,9 @@ impl Editor {
             Command::MoveRows(d) => self.move_rows(d == crate::api::command::VerticalDirection::Up, fonts),
             Command::AutoFitColumns(to) => self.auto_fit_columns(to, fonts),
             Command::SetCellAlignment(a) => self.set_cell_alignment(a, fonts),
-            Command::SetCellShading(c) => self.table_format(&super::table_format::TableFormat::CellShading(c.map(|c| c.0)), fonts),
+            Command::SetCellShading(c) => {
+                self.table_format(&super::table_format::TableFormat::CellShading(super::table_format::Shading::fill(c.map(|c| c.0))), fonts)
+            }
             Command::SetCellBorders(b) => self.set_cell_borders(b, fonts),
             Command::SetCellMargins(m) => self.set_cell_margins(m, fonts),
             Command::SetCellProperties(p) => self.table_format(&super::table_format::TableFormat::CellProps(p), fonts),

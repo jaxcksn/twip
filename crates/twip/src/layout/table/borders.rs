@@ -299,6 +299,7 @@ pub(in crate::layout) fn stroked(out: &mut Vec<Item>, rect: [f64; 4], horizontal
         picture: false,
         ink: true,
         decoration: true,
+        snap: false,
         clip_bottom: None,
         text_float: 0,
         of: Default::default(),
@@ -560,7 +561,7 @@ mod tests {
     fn described(out: &[Item]) -> Vec<(Vec<i64>, u32)> {
         out.iter()
             .map(|i| match i {
-                Item::Rect { rect, colour } => (rect.iter().map(|v| (v * 100.0).round() as i64).collect(), *colour),
+                Item::Rect { rect, colour, .. } => (rect.iter().map(|v| (v * 100.0).round() as i64).collect(), *colour),
                 Item::Shape(s) => {
                     let pts = s.geom.paths[0].segs.iter().flat_map(|g| match g {
                         Seg::Move(p) | Seg::Line(p) => p.to_vec(),

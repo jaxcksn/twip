@@ -297,49 +297,35 @@ impl Editor {
         )
     }
 
-    /// Sets the shading of the selected paragraphs or text.
+    /// Sets the shading of the selected paragraphs, text, cells or tables.
     pub(super) fn set_shading(&mut self, s: crate::api::command::ShadingChange, fonts: &Fonts) -> Outcome {
-        use crate::api::command::ShadingTarget;
+        use super::table_format::{Shading, TableFormat};
+        use crate::api::command::{ShadingPattern, ShadingTarget};
         use crate::api::value::{AutoOr, NoneOr};
-        let xml = |w: &str| match s.fill {
-            NoneOr::None if s.pattern == crate::api::command::ShadingPattern::Clear => None,
-            fill => {
-                let fill = match fill {
-                    NoneOr::Value(c) => format!("{:06X}", c.0),
-                    NoneOr::None => "auto".to_string(),
-                };
-                let color = match s.color {
-                    AutoOr::Auto => "auto".to_string(),
-                    AutoOr::Value(c) => format!("{:06X}", c.0),
-                };
-                Some(format!("<{w}shd {w}val=\"{}\" {w}color=\"{color}\" {w}fill=\"{fill}\"/>", s.pattern.val()))
+        let fill = match s.fill {
+            NoneOr::Value(c) => Some(c.0),
+            NoneOr::None => None,
+        };
+        let color = match s.color {
+            AutoOr::Auto => None,
+            AutoOr::Value(c) => Some(c.0),
+        };
+        let sh = Shading { pattern: s.pattern.val(), color, fill };
+        // No fill and a clear pattern: no shading of their own.
+        let none = fill.is_none() && s.pattern == ShadingPattern::Clear;
+        let edit = |p: &mut Props, w: &str| {
+            if none {
+                p.remove("shd");
+            } else {
+                let x = sh.xml(w, p.get("shd"));
+                p.set("shd", x);
             }
         };
         match s.target {
-            ShadingTarget::Paragraph => self.format_paras(
-                "Shading",
-                &|p, cx, _| match xml(&cx.w) {
-                    Some(x) => p.set("shd", x),
-                    None => p.remove("shd"),
-                },
-                fonts,
-            ),
-            ShadingTarget::Text => self.format_runs(
-                "Shading",
-                &|p, w, _| match xml(w) {
-                    Some(x) => p.set("shd", x),
-                    None => p.remove("shd"),
-                },
-                fonts,
-            ),
-            // The selected cells: their fill (cell shading has no pattern here).
-            ShadingTarget::Cell => {
-                let fill = match s.fill {
-                    NoneOr::Value(c) => Some(c),
-                    NoneOr::None => None,
-                };
-                self.execute(Command::SetCellShading(fill), fonts)
-            }
+            ShadingTarget::Paragraph => self.format_paras("Shading", &|p, cx, _| edit(p, &cx.w), fonts),
+            ShadingTarget::Text => self.format_runs("Shading", &|p, w, _| edit(p, w), fonts),
+            ShadingTarget::Cell => self.table_format(&TableFormat::CellShading(sh.clone()), fonts),
+            ShadingTarget::Table => self.table_format(&TableFormat::TableShading(sh.clone()), fonts),
         }
     }
 

@@ -1045,6 +1045,8 @@ pub struct Cell {
     pub bottom: Option<Border>,
     pub right: Option<Border>,
     pub shading: Option<u32>,
+    /// The shading's stripe or cross, drawn over [`Cell::shading`].
+    pub hatch: Option<super::props::Hatch>,
     pub margins: [f64; 4],
     pub v_align: String,
     pub text_direction: String,
@@ -1092,6 +1094,11 @@ pub struct Row {
     pub borders: Option<Rc<[Option<Border>; 6]>>,
     /// The row's exception shading (`w:tblPrEx/w:shd`).
     pub shading: Option<u32>,
+    /// Its stripe or cross, drawn over [`Row::shading`].
+    pub hatch: Option<super::props::Hatch>,
+    /// A row read from a later table joined to this one (nothing between them): that table's shading, fill and
+    /// hatch, in place of [`Table::shd`].
+    pub table_shading: Option<(Option<u32>, Option<super::props::Hatch>)>,
     /// The row-end mark is hidden (`trPr/w:hidden`).
     pub hidden: bool,
     /// Every character of the row, its row-end mark included, is hidden.
@@ -1138,6 +1145,8 @@ pub struct Table {
     pub borders: [Option<Border>; 6],
     pub fixed: bool,
     pub cell_spacing: f64,
+    /// The table's shading (`w:tblPr/w:shd`, its own or its style's), drawn around spaced cells.
+    pub shd: Option<super::props::Shd>,
     pub look: Option<Look>,
     pub bands: (i64, i64),
     /// The alternative text's title and description (`w:tblCaption`, `w:tblDescription`).

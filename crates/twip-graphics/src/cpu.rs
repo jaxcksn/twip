@@ -459,9 +459,13 @@ impl Renderer {
             BrushRec::Pattern { image, transform, sampling } => {
                 // The shader borrows the decoded image while the draw borrows the renderer, so the image comes out of
                 // the cache for the draw and goes back after.
-                let inv = transform.then(t).inverse();
-                let level = |m: &Mips| inv.map_or(0, |inv| mip_index(m.count(), inv, sampling));
+                let m = transform.then(t);
+                let level = |mips: &Mips| m.inverse().map_or(0, |inv| mip_index(mips.count(), inv, sampling));
                 let (decoded, fresh) = self.take(&res.images, image, level);
+                let inv = match decoded.mips.as_ref() {
+                    Some(mips) if sampling == Sampling::Pixel => m.snap_tile(mips.size).inverse(),
+                    _ => m.inverse(),
+                };
                 match (decoded.mips.as_ref(), inv) {
                     (Some(mips), Some(inv)) => {
                         if let Some((pixmap, scale)) = mip_level(mips, inv, sampling) {
@@ -1088,7 +1092,7 @@ fn mip_level(mips: &Mips, inv: Transform, sampling: Sampling) -> Option<(&crate:
 /// The mip level (of `levels`) an image is sampled from under `inv` (device to image pixels): the base when sampled
 /// nearest, else the level whose pixels are nearest to the device's without being smaller.
 pub(crate) fn mip_index(levels: usize, inv: Transform, sampling: Sampling) -> usize {
-    if sampling == Sampling::Nearest {
+    if sampling != Sampling::Linear {
         return 0;
     }
     // Image pixels per device pixel, the larger of the two directions.

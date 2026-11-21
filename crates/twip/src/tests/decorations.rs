@@ -54,7 +54,7 @@ fn drawn_lines_on(name: &str, page_colour: Option<u32>) -> Vec<Drawn> {
                 d.baseline = r.baseline;
                 d.paints.push(r.paint.clone());
             }
-            Item::Rect { rect, colour } => {
+            Item::Rect { rect, colour, .. } => {
                 d.rects.push(rect);
                 d.colours.push(colour);
             }

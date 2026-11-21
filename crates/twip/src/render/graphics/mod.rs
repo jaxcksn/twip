@@ -81,10 +81,22 @@ pub struct Graphics {
 
 /// A shape whose line is document ink (a border, a check box) with that colour taken through the appearance, as a rect's is.
 fn ink_shape(r: &Renderer, s: &crate::layout::fragment::ShapeItem) -> crate::layout::fragment::ShapeItem {
-    let mut mapped = s.clone();
-    if let crate::drawing::paint::Paint::Solid(c) = &mut mapped.line.paint {
+    use crate::drawing::paint::Paint;
+    let map = |c: &mut crate::drawing::colour::Rgba| {
         let rgb = r.appearance.map(u32::from(c.r) << 16 | u32::from(c.g) << 8 | u32::from(c.b));
         (c.r, c.g, c.b) = ((rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8);
+    };
+    let mut mapped = s.clone();
+    if let Paint::Solid(c) = &mut mapped.line.paint {
+        map(c);
+    }
+    match &mut mapped.fill {
+        Paint::Solid(c) => map(c),
+        Paint::Hatch { fg, bg, .. } => {
+            map(fg);
+            map(bg);
+        }
+        _ => {}
     }
     mapped
 }
@@ -548,7 +560,8 @@ impl Graphics {
     fn item(&mut self, rec: &mut Recorder, r: &Renderer, own: bool, item: &Item, images: &[Vec<u8>]) {
         let ink = |c: u32| r.ink_for(own, c);
         match item {
-            Item::Rect { rect: rc, colour } => rec.fill_rect(rect(*rc), ink(*colour)),
+            Item::Rect { rect: rc, colour, snap: false } => rec.fill_rect(rect(*rc), ink(*colour)),
+            Item::Rect { rect: rc, colour, snap: true } => rec.fill_rect(rect(*rc), aliased(ink(*colour))),
             Item::Glyphs(g) => {
                 if g.glyphs.is_empty() {
                     return;
@@ -790,6 +803,7 @@ mod ink_tests {
             picture: false,
             ink: true,
             decoration: true,
+            snap: false,
             clip_bottom: None,
             text_float: 0,
             of: Default::default(),

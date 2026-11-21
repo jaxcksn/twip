@@ -118,6 +118,14 @@ export type BorderLineStyle =
   | 'thinThickSmallGap'
   | 'thickThinSmallGap'
   | 'thinThickThinSmallGap'
+  | 'dashSmallGap'
+  | 'dashDotStroked'
+  | 'thinThickMediumGap'
+  | 'thickThinMediumGap'
+  | 'thinThickThinMediumGap'
+  | 'thinThickLargeGap'
+  | 'thickThinLargeGap'
+  | 'thinThickThinLargeGap'
   | 'wave'
   | 'doubleWave'
   | 'threeDEmboss'
@@ -135,22 +143,51 @@ export interface BorderLine {
   color: Color | 'auto';
 }
 
-/** A shading pattern: clear (the fill only), solid (the pattern color), or a percentage of the pattern color over the fill. */
+/**
+ * A shading pattern (`ST_Shd`): none, clear (the fill only), solid (the pattern color), a percentage of the pattern
+ * color over the fill, or stripes and crosses of it over the fill. `other` is a pattern the document names that isn't
+ * listed: reading gives it, and setting it keeps each target's own pattern.
+ */
 export type ShadingPattern =
+  | 'nil'
   | 'clear'
   | 'solid'
   | 'pct5'
   | 'pct10'
+  | 'pct12'
+  | 'pct15'
   | 'pct20'
   | 'pct25'
   | 'pct30'
+  | 'pct35'
+  | 'pct37'
   | 'pct40'
+  | 'pct45'
   | 'pct50'
+  | 'pct55'
   | 'pct60'
+  | 'pct62'
+  | 'pct65'
   | 'pct70'
   | 'pct75'
   | 'pct80'
-  | 'pct90';
+  | 'pct85'
+  | 'pct87'
+  | 'pct90'
+  | 'pct95'
+  | 'horzStripe'
+  | 'vertStripe'
+  | 'reverseDiagStripe'
+  | 'diagStripe'
+  | 'horzCross'
+  | 'diagCross'
+  | 'thinHorzStripe'
+  | 'thinVertStripe'
+  | 'thinReverseDiagStripe'
+  | 'thinDiagStripe'
+  | 'thinHorzCross'
+  | 'thinDiagCross'
+  | 'other';
 
 /** Where a section starts. */
 export type SectionBreakKind = 'nextPage' | 'continuous' | 'evenPage' | 'oddPage' | 'nextColumn';
@@ -521,8 +558,8 @@ export interface Commands {
     /** A shadow on the bottom and right edges set here. */
     shadow?: boolean;
   }): Promise<void>;
-  /** Shades the selected paragraphs or text: the fill, and a pattern of `color` over it. `fill: 'none'` with a clear pattern removes the shading. */
-  setShading(options: { target: 'paragraph' | 'text' | 'cell'; fill: Color | 'none'; pattern?: ShadingPattern; color?: Color | 'auto' }): Promise<void>;
+  /** Shades the selected paragraphs, text, cells or tables (a table's shows around cells with spacing): the fill, and a pattern of `color` over it. `fill: 'none'` with a clear pattern removes the shading. */
+  setShading(options: { target: 'paragraph' | 'text' | 'cell' | 'table'; fill: Color | 'none'; pattern?: ShadingPattern; color?: Color | 'auto' }): Promise<void>;
   /** Sets or removes (`border: null`) the selected text's border: a box of one line, with a shadow or not. */
   setTextBorder(options: { border: BorderLine | null; shadow?: boolean }): Promise<void>;
   /**

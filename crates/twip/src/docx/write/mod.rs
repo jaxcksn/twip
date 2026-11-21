@@ -1693,6 +1693,11 @@ impl<'a, 'i> Saver<'a, 'i> {
         self.paragraphs(q, p, at)
     }
 
+    /// A table's own `w:shd` as written in its `w:tblPr` (not its style's).
+    fn direct_shd(&self, t: &Table) -> Option<String> {
+        Props::parse(t.direct.0.as_deref(), "tblPr", &self.cx).get("shd").map(str::to_string)
+    }
+
     fn table(&mut self, a: &Table, b: &Table) -> Result<(), String> {
         let same_rows = a.rows.len() == b.rows.len()
             && a.rows.iter().zip(&b.rows).all(|(x, y)| {
@@ -1712,6 +1717,7 @@ impl<'a, 'i> Saver<'a, 'i> {
             && a.grid == b.grid
             && (&a.change, &a.grid_change) == (&b.change, &b.grid_change)
             && a.width == b.width
+            && self.direct_shd(a) == self.direct_shd(b)
             && (&a.style_id, a.look, a.jc, a.ind, a.ind_pct, a.floating) == (&b.style_id, b.look, b.jc, b.ind, b.ind_pct, b.floating);
         // Tables read as one (nothing between them) are written as one.
         let joined = a.src.as_ref().is_some_and(|r| self.tables.get(&r.start).is_some_and(|n| n.range().end != r.end));
@@ -1925,6 +1931,11 @@ impl<'a, 'i> Saver<'a, 'i> {
                             let tag = if t.cell_spacing > 0.0 { width(&w, "tblCellSpacing", &Width::Dxa(t.cell_spacing)) } else { String::new() };
                             fix.push(self.set_child(p, "tblCellSpacing", tag, before("tblCellSpacing")));
                         }
+                        // The table's own shading; its style's stays the style's.
+                        let own = self.direct_shd(t);
+                        if self.direct_shd(a) != own {
+                            fix.push(self.set_child(p, "shd", own.unwrap_or_default(), before("shd")));
+                        }
                         if a.alt != t.alt {
                             let (title, description) = t.alt.as_deref().map_or(("", ""), |a| (a.title.as_str(), a.description.as_str()));
                             let tag = |name: &str, v: &str| if v.is_empty() { String::new() } else { format!("<{w}{name} {w}val=\"{}\"/>", props::esc(v)) };
@@ -1963,13 +1974,14 @@ impl<'a, 'i> Saver<'a, 'i> {
                         if fix.is_empty() { self.xml[p.range()].to_string() } else { self.spliced(p.range(), fix)? }
                     }
                     (Some(p), None) => self.xml[p.range()].to_string(),
-                    (None, _) => tbl_pr(&w, t, self.people),
+                    (None, _) => tbl_pr(&w, t, self.direct_shd(t).as_deref(), self.people),
                 });
                 close
             }
             None => {
                 out.push_str(&format!("<{w}tbl>"));
-                out.push_str(&tbl_pr(&w, t, self.people));
+                let shd = self.direct_shd(t);
+                out.push_str(&tbl_pr(&w, t, shd.as_deref(), self.people));
                 format!("</{w}tbl>")
             }
         };
@@ -5172,7 +5184,7 @@ fn shading(w: &str, fill: Option<u32>) -> String {
 
 /// A table's `w:tblPr` from the model (its resolved properties written as direct ones, its tracked change last), in
 /// CT_TblPr order.
-fn tbl_pr(w: &str, t: &Table, people: &People) -> String {
+fn tbl_pr(w: &str, t: &Table, shd: Option<&str>, people: &People) -> String {
     let mut s = format!("<{w}tblPr>");
     if let Some(id) = &t.style_id {
         s.push_str(&format!("<{w}tblStyle {w}val=\"{}\"/>", props::esc(id)));
@@ -5203,6 +5215,9 @@ fn tbl_pr(w: &str, t: &Table, people: &People) -> String {
             s.push_str(&border(w, name, b));
         }
         s.push_str(&format!("</{w}tblBorders>"));
+    }
+    if let Some(shd) = shd {
+        s.push_str(shd);
     }
     if t.fixed {
         s.push_str(&format!("<{w}tblLayout {w}type=\"fixed\"/>"));

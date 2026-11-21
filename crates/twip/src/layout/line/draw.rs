@@ -53,6 +53,7 @@ fn check_box(x: f64, base: f64, advance: f64, e: f64, checked: bool, colour: Opt
         picture: false,
         ink: true,
         decoration: true,
+        snap: false,
         clip_bottom: None,
         text_float: 0,
         of: Default::default(),
@@ -144,8 +145,9 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
             let (a, b) = pieces[ix].glyphs;
             (g + (b - a) as usize, c + text_of(sp, &pieces[ix]).len())
         });
-        for (r, c) in &line.rects {
-            out.push(Item::rect([x0 + r[0], top + r[1], x0 + r[2], top + r[3]], *c));
+        out.extend(line.shade.iter().map(|s| Item::Shape(Rc::new(s.moved(x0, top)))));
+        for &(r, colour, snap) in &line.rects {
+            out.push(Item::Rect { rect: [x0 + r[0], top + r[1], x0 + r[2], top + r[3]], colour, snap });
         }
         out.extend(line.strokes.iter().map(|s| Item::Shape(Rc::new(s.moved(x0, top)))));
         let rects_end = out.len();
@@ -531,6 +533,8 @@ fn draw_decorations(o: &LineOrigin, line: &Line, base: f64, bg_at: usize, behind
     let pieces = &o.pieces()[line.start..line.end];
     let content = pieces.iter().rposition(|p| p.kind != Kind::Space).map_or(0, |k| k + 1);
     let (mut bg, mut fg) = (Vec::new(), Vec::new());
+    // Hatched run shading: (rect, fill, hatch) of the stretch of runs drawn alike.
+    let mut hatched: Vec<([f64; 4], Option<u32>, crate::docx::props::Hatch)> = Vec::new();
     // Text borders: (border, left, right, top, bottom) of the stretch of runs drawn so far.
     let mut boxed: Option<(crate::docx::props::Border, f64, f64, f64, f64)> = None;
     let flush_box = |boxed: &mut Option<(crate::docx::props::Border, f64, f64, f64, f64)>, fg: &mut Vec<Item>| {
@@ -571,8 +575,19 @@ fn draw_decorations(o: &LineOrigin, line: &Line, base: f64, bg_at: usize, behind
             (None, _) => flush_box(&mut boxed, &mut fg),
         }
         let fill = r.highlight.or(r.shading).filter(|_| !label);
-        if let Some(fill) = fill {
-            join(&mut bg, [x, y - face.ascent * em, x + w, y + face.descent * em], fill);
+        let rect = [x, y - face.ascent * em, x + w, y + face.descent * em];
+        match r.shd.as_ref().and_then(crate::docx::props::Shd::hatch).filter(|_| r.highlight.is_none() && !label) {
+            Some(h) => match hatched.last_mut() {
+                Some((l, f, lh)) if *f == r.shading && *lh == h && l[1] == rect[1] && l[3] == rect[3] && (rect[0] - l[2]).abs() < 0.01 => {
+                    l[2] = rect[2]
+                }
+                _ => hatched.push((rect, r.shading, h)),
+            },
+            None => {
+                if let Some(fill) = fill {
+                    join(&mut bg, rect, fill);
+                }
+            }
         }
         let trailing = k >= content;
         if trailing && !o.ul_trail_space {
@@ -630,13 +645,14 @@ fn draw_decorations(o: &LineOrigin, line: &Line, base: f64, bg_at: usize, behind
         done.draw(&mut fg);
     }
     flush_box(&mut boxed, &mut fg);
+    bg.extend(hatched.into_iter().map(|(r, fill, h)| Item::Shape(crate::layout::shade::hatched(r, r, fill, h))));
     out.splice(bg_at..bg_at, bg);
     out.extend(fg);
 }
 
 /// Pushes a solid rect, or grows the one just before it that it continues (same colour and height, touching).
 fn join(v: &mut Vec<Item>, r: [f64; 4], c: u32) {
-    let joins = |it: &&mut Item| matches!(it, Item::Rect { rect: l, colour: lc } if *lc == c && (l[1] - r[1]).abs() < EPS && (l[3] - r[3]).abs() < EPS && (r[0] - l[2]).abs() < 0.01);
+    let joins = |it: &&mut Item| matches!(it, Item::Rect { rect: l, colour: lc, .. } if *lc == c && (l[1] - r[1]).abs() < EPS && (l[3] - r[3]).abs() < EPS && (r[0] - l[2]).abs() < 0.01);
     match v.iter_mut().rev().take(4).find(joins) {
         Some(Item::Rect { rect: last, .. }) => last[2] = r[2],
         _ => v.push(Item::rect(r, c)),

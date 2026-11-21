@@ -12,6 +12,9 @@
     {"op": "command", "command": {"type": "setShading", "target": "paragraph", "fill": "none"}},
     {"op": "command", "command": {"type": "setTextBorder", "border": {"style": "double", "width": 0.75, "color": "#C00000"}, "shadow": true}},
     {"op": "command", "command": {"type": "setPageBorders", "top": {"style": "wave", "width": 0.75, "color": "auto"}, "bottom": null, "offsetFrom": "text", "display": "firstPage", "applyTo": "wholeDocument"}},
-    {"op": "call", "method": "dialogs.open", "args": ["bordersShading"], "result": {"values": {"pageSetting": "custom", "pageOffsetFrom": "text", "pageDisplay": "firstPage", "pageTop": {"style": "wave"}}}}
+    {"op": "call", "method": "dialogs.open", "args": ["bordersShading"], "result": {"values": {"pageSetting": "custom", "pageOffsetFrom": "text", "pageDisplay": "firstPage", "pageTop": {"style": "wave"}}}},
+    {"op": "command", "command": {"type": "setShading", "target": "paragraph", "fill": "#FFFF00", "pattern": "horzStripe", "color": "#C00000"}},
+    {"op": "command", "command": {"type": "setParagraphBorderLines", "top": {"style": "dashDotStroked", "width": 1.5, "color": "auto"}}},
+    {"op": "call", "method": "dialogs.open", "args": ["bordersShading"], "result": {"values": {"applyTo": "paragraph", "pattern": "horzStripe", "top": {"style": "dashDotStroked"}}}}
   ]
 }

@@ -26,7 +26,27 @@ page 1 612 792
   op /Artifact << /Type /Layout >> BDC
   op q
   op 0.85 0.85 0.85 rg
-  op 72.25 235.23 300 39.94 re
+  op 72.25 235.23 300 3.6 re
+  op f
+  op Q
+  op q
+  op 0.85 0.85 0.85 rg
+  op 72.25 271.58 300 3.6 re
+  op f
+  op Q
+  op q
+  op 0.85 0.85 0.85 rg
+  op 72.25 238.83 7.2 32.74 re
+  op f
+  op Q
+  op q
+  op 0.85 0.85 0.85 rg
+  op 218.65 238.83 7.2 32.74 re
+  op f
+  op Q
+  op q
+  op 0.85 0.85 0.85 rg
+  op 365.05 238.83 7.2 32.74 re
   op f
   op Q
   op EMC

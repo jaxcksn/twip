@@ -21,6 +21,9 @@ use crate::drawing::paint::{
 use crate::drawing::units::{Emu, Pct};
 use crate::layout::fragment::{ImageKey, ShapeItem, TextPathItem};
 
+/// A hatch tile's bit, points: a pixel of Word's 300 dpi PDFs.
+const HATCH_BIT: f64 = 0.24;
+
 /// Shapes' outlines as paths, by geometry, and text paths' by their glyphs (each entry holds its key, so its address
 /// isn't reused).
 #[derive(Default)]
@@ -499,7 +502,9 @@ impl Graphics {
             if gp.stroke && s.picture {
                 self.stroke(rec, p, &line, size, s.rot, origin, images);
             }
-            if gp.fill != PathFill::None {
+            if gp.fill != PathFill::None && s.snap {
+                self.shade(rec, p, &s.fill, false);
+            } else if gp.fill != PathFill::None {
                 self.fill(rec, p, &s.fill, gp.fill, size, s.rot, origin, images);
             }
             if gp.stroke && !s.picture {
@@ -691,6 +696,22 @@ impl Graphics {
         self.recoloured_bytes = bytes;
     }
 
+    /// Shading's fill; `aa` false: aliased as Word draws it, so fills meeting at a fractional pixel (spaced rows, a
+    /// hatch beside a fill) share the pixel instead of each covering part of it, which leaves a pale seam. A hatch's
+    /// tile repeats on whole device pixels: its 300 dpi bits, finer than a screen's pixel, keep a steady pitch.
+    fn shade(&mut self, rec: &mut Recorder, path: &BezPath, fill: &Fill, aa: bool) {
+        let paint = match fill {
+            Fill::Solid(c) => Paint::from(colour(*c)),
+            Fill::Hatch { stripe, fg, bg } => {
+                let Some(image) = self.tile(crate::drawing::patterns::stripe(*stripe), *fg, *bg) else { return };
+                let transform = Affine::scale(HATCH_BIT) * Affine::translate((-1.0, -1.0));
+                Paint::new(Brush::Pattern { image, transform, sampling: Sampling::Pixel })
+            }
+            _ => return,
+        };
+        rec.fill_path(path.elements(), Paint { aa, ..paint });
+    }
+
     /// The 8×8 tile of a pattern fill, registered on first use.
     pub(super) fn tile(&mut self, bits: [u8; 8], fg: Rgba, bg: Rgba) -> Option<twip_graphics::image::ImageId> {
         let key = (bits, [fg.r, fg.g, fg.b, fg.a], [bg.r, bg.g, bg.b, bg.a]);
@@ -733,6 +754,7 @@ impl Graphics {
                     rec.fill_path(path.elements(), Paint::new(Brush::Pattern { image, transform, sampling: Sampling::Nearest }));
                 }
             }
+            Fill::Hatch { .. } => self.shade(rec, path, fill, true),
             Fill::Picture { image, src, mode: BlipMode::Stretch(f), .. }
                 if image.and_then(|i| images.get(i)).is_some_and(|b| crate::docx::image::vector(b).is_some()) =>
             {

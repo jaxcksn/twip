@@ -44,6 +44,7 @@ fn vertical_width(blocks: &[Block], env: &StoryEnv, memos: &mut Memos) -> Result
             env: env.ctx.env.text.clone(),
             fit: false,
             letter_break: false,
+            shade_gap: 0.0,
         };
         let pb = break_lines(&shaped, p, &ps, env.ctx.fonts, memos)?;
         w += twips(s.space_before + s.space_after);
@@ -104,6 +105,7 @@ fn content_widths_uncached(blocks: &[LaidBlock], env: &StoryEnv, fixed: bool, me
                     env: env.ctx.env.text.clone(),
                     fit: false,
                     letter_break: false,
+                    shade_gap: 0.0,
                 };
                 let pb = break_lines(&shaped, p, &ps, env.ctx.fonts, memos)?;
                 let ind = if old { s.ind_left + s.ind_right + s.ind_first.min(0.0) } else { s.ind_left + s.ind_right };

@@ -1518,7 +1518,7 @@ impl<'r> Writer<'r> {
 
     /// Whether an image drawn with `sampling` asks viewers to interpolate it: never under PDF/A, which forbids it.
     fn interpolates(&self, sampling: Sampling) -> bool {
-        !self.archival && sampling != Sampling::Nearest
+        !self.archival && sampling == Sampling::Linear
     }
 
     /// Image `id` with `filters` applied, embedded once: an unfiltered JPEG as its file, anything else decoded.

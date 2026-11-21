@@ -4,7 +4,7 @@ use crate::api::command::{Command, Indents, ParagraphSpacing};
 use crate::api::error::Error;
 use crate::api::services::{StyleDialog, StyleDialogType, StyleOpen, TableStylePart};
 use crate::api::state::{CharacterFormatting, ParagraphFormatting, Tri};
-use crate::api::value::{AutoOr, Color, NoneOr, StyleId};
+use crate::api::value::{AutoOr, NoneOr, StyleId};
 use crate::docx::styles::{Style, StyleKind, Styles};
 use crate::docx::write::props::{Cx, Props, STYLE, esc};
 use crate::font::Fonts;
@@ -611,7 +611,6 @@ impl Editor {
                     };
                 }
                 if (a.fill, a.pattern, a.pattern_color) != (b.fill, b.pattern, b.pattern_color) {
-                    let hex = |c: Option<Color>| c.map_or("auto".to_string(), |c| format!("{:06X}", c.0));
                     let fill = match b.fill {
                         NoneOr::Value(c) => Some(c),
                         NoneOr::None => None,
@@ -621,8 +620,15 @@ impl Editor {
                         AutoOr::Auto => None,
                     };
                     let clear = fill.is_none() && b.pattern == crate::api::command::ShadingPattern::Clear;
-                    let shd = format!("<{w}shd {w}val=\"{}\" {w}color=\"{}\" {w}fill=\"{}\"/>", b.pattern.val(), hex(color), hex(fill));
-                    raw = cell(&raw, &|p| if clear { p.remove("shd") } else { p.set("shd", shd.clone()) });
+                    let sh = super::table_format::Shading { pattern: b.pattern.val(), color: color.map(|c| c.0), fill: fill.map(|c| c.0) };
+                    raw = cell(&raw, &|p| {
+                        if clear {
+                            p.remove("shd");
+                        } else {
+                            let x = sh.xml(&w, p.get("shd"));
+                            p.set("shd", x);
+                        }
+                    });
                 }
             }
             (DialogValues::TableProperties(a), DialogValues::TableProperties(b)) => {

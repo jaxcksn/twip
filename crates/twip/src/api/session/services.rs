@@ -84,6 +84,7 @@ impl Session {
             }
             DialogKind::Accessibility => cx.issues = dialogs::issues(self.editor.document()),
             DialogKind::Font => cx.fonts = self.fonts.families(),
+            DialogKind::BordersShading => cx.in_table = self.editor.in_table(),
             _ => {}
         }
         cx
@@ -177,12 +178,30 @@ impl Session {
                 !t.is_empty() && !t.contains('\n')
             }
         };
-        self.borders_shading_for(style, text)
+        let target = match () {
+            _ if style.is_none() && self.editor.cells_selected() => crate::api::command::ShadingTarget::Cell,
+            _ if text => crate::api::command::ShadingTarget::Text,
+            _ => crate::api::command::ShadingTarget::Paragraph,
+        };
+        self.borders_shading_for(style, target)
     }
 
-    /// Borders and Shading's values for the paragraphs, or the text.
-    fn borders_shading_for(&self, style: Option<&str>, text: bool) -> Result<crate::api::services::BordersShadingDialog, Error> {
-        self.editor.borders_shading_values(style, text).ok_or_else(|| Error::unavailable("the selection has no paragraph"))
+    /// Borders and Shading's values for the paragraphs, the text, or the selection's cells or table.
+    fn borders_shading_for(
+        &self,
+        style: Option<&str>,
+        target: crate::api::command::ShadingTarget,
+    ) -> Result<crate::api::services::BordersShadingDialog, Error> {
+        use crate::api::command::ShadingTarget;
+        match target {
+            ShadingTarget::Cell | ShadingTarget::Table if style.is_none() => {
+                self.editor.table_borders_shading(target).ok_or_else(|| Error::unavailable("the selection isn't in a table"))
+            }
+            _ => self
+                .editor
+                .borders_shading_values(style, target == ShadingTarget::Text)
+                .ok_or_else(|| Error::unavailable("the selection has no paragraph")),
+        }
     }
 
     /// The Frame dialog's properties: the selection's frame's, or a style's.
@@ -193,7 +212,7 @@ impl Session {
     /// Opens a dialog on the selection's values.
     pub fn dialog_open(&mut self, kind: DialogKind) -> Result<DialogModel, Error> {
         if kind == DialogKind::BordersShading {
-            return Ok(dialogs::borders_shading_model(self.borders_shading(None)?));
+            return Ok(dialogs::borders_shading_model(self.borders_shading(None)?, self.editor.in_table()));
         }
         if kind == DialogKind::Frame {
             return Ok(dialogs::frame_model(crate::api::services::FrameDialog::of(self.frame(None)?)));
@@ -348,7 +367,7 @@ impl Session {
         } else if kind == DialogKind::Banding || kind == DialogKind::TableProperties {
             return Err(Error::invalid("that Format menu dialog formats a table style"));
         } else if kind == DialogKind::BordersShading {
-            dialogs::borders_shading_model(self.borders_shading(Some(&style.pending))?)
+            dialogs::borders_shading_model(self.borders_shading(Some(&style.pending))?, false)
         } else if kind == DialogKind::Frame {
             dialogs::frame_model(crate::api::services::FrameDialog::of(self.frame(Some(&style.pending))?))
         } else if kind == DialogKind::BulletsNumbering {
@@ -409,10 +428,7 @@ impl Session {
             return Ok(dialogs::style_model(self.editor.style_dialog_numbering(&style, num)?));
         }
         let commands = if let crate::api::services::DialogValues::BordersShading(v) = &model.values {
-            dialogs::borders_shading_commands(
-                &self.borders_shading_for(Some(&style.pending), v.apply_to == crate::api::command::ShadingTarget::Text)?,
-                v,
-            )
+            dialogs::borders_shading_commands(&self.borders_shading_for(Some(&style.pending), v.apply_to)?, v)
         } else if let crate::api::services::DialogValues::Frame(v) = &model.values {
             dialogs::frame_commands(&self.frame(Some(&style.pending))?, v)
         } else {
@@ -440,9 +456,9 @@ impl Session {
             && was.apply_to != now.apply_to
         {
             let style = model.on_style.as_ref().map(|s| s.pending.clone());
-            let mut v = self.borders_shading_for(style.as_deref(), now.apply_to == crate::api::command::ShadingTarget::Text)?;
+            let mut v = self.borders_shading_for(style.as_deref(), now.apply_to)?;
             v.tab = now.tab;
-            let mut m = dialogs::borders_shading_model(v);
+            let mut m = dialogs::borders_shading_model(v, style.is_none() && self.editor.in_table());
             m.on_style = model.on_style.clone();
             return Ok(m);
         }
@@ -450,7 +466,9 @@ impl Session {
             let fonts = self.fonts.fonts();
             return Ok(dialogs::style_model(self.editor.style_dialog_update(was, now, &fonts)?));
         }
-        let cx = self.dialog_context(model.kind);
+        let mut cx = self.dialog_context(model.kind);
+        // A style's Borders and Shading isn't on the selection's table.
+        cx.in_table &= model.on_style.is_none();
         dialogs::update(&model, values, &cx)
     }
 
@@ -489,7 +507,7 @@ impl Session {
         }
         let selection_commands = match &model.values {
             crate::api::services::DialogValues::BordersShading(v) => {
-                let start = self.borders_shading_for(None, v.apply_to == crate::api::command::ShadingTarget::Text)?;
+                let start = self.borders_shading_for(None, v.apply_to)?;
                 Some(dialogs::borders_shading_commands(&start, v))
             }
             crate::api::services::DialogValues::Frame(v) => Some(dialogs::frame_commands(&self.frame(None)?, v)),

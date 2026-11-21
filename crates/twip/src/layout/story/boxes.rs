@@ -284,6 +284,7 @@ pub(in crate::layout) fn shape_items(
             picture: leaf.shape.pic().is_some(),
             ink: false,
             decoration: false,
+            snap: false,
             clip_bottom,
             text_float: 0,
             text_path,

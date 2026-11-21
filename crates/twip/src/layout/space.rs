@@ -95,6 +95,9 @@ pub struct ParaSpace {
     pub fit: bool,
     /// The line before `start`, on an earlier page or column, broke between letters rather than at a hyphen.
     pub letter_break: bool,
+    /// How far the paragraph's shading goes on below its last line: the space to the next paragraph, when that one is
+    /// shaded too and boxed alike ([`crate::layout::line::shade_gap`]).
+    pub shade_gap: f64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

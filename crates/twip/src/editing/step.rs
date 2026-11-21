@@ -193,7 +193,11 @@ pub struct TableProps {
     pub bands: (i64, i64),
     pub floating: Option<crate::docx::props::TablePos>,
     pub cell_spacing: f64,
+    /// The table's shading, its own over its style's.
+    pub shd: Option<crate::docx::props::Shd>,
     pub alt: Option<Rc<crate::docx::TableAlt>>,
+    /// Its `w:tblPr` as written, its own shading in it.
+    pub direct: crate::docx::Raw,
 }
 
 impl Step {
@@ -372,7 +376,9 @@ impl TableProps {
             bands: t.bands,
             floating: t.floating,
             cell_spacing: t.cell_spacing,
+            shd: t.shd.clone(),
             alt: t.alt.clone(),
+            direct: t.direct.clone(),
         }
     }
 }
@@ -994,7 +1000,7 @@ impl Step {
             Step::TableProps { table, props } => {
                 let t = idx.table_mut(doc, table).ok_or(StepError::Missing)?;
                 let old = TableProps::of(t);
-                (t.style_id, t.look, t.width, t.jc, t.ind, t.ind_pct, t.borders, t.bands, t.floating, t.cell_spacing, t.alt) = (
+                (t.style_id, t.look, t.width, t.jc, t.ind, t.ind_pct, t.borders, t.bands, t.floating, t.cell_spacing, t.shd, t.alt, t.direct) = (
                     props.style_id,
                     props.look,
                     props.width,
@@ -1005,7 +1011,9 @@ impl Step {
                     props.bands,
                     props.floating,
                     props.cell_spacing,
+                    props.shd,
                     props.alt,
+                    props.direct,
                 );
                 let slot = idx.table_slot(table).ok_or(StepError::Missing)?;
                 let hint = idx.top_block(slot.container, slot.block).map(|(section, b, row)| Change {

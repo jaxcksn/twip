@@ -26,6 +26,8 @@ pub struct Context {
     pub fonts: Vec<String>,
     /// The document's shown bookmarks, in document order.
     pub bookmarks: Vec<String>,
+    /// The selection is in a table: Borders and Shading applies to its cells or the table too.
+    pub in_table: bool,
 }
 
 /// The error for a dialog whose object the selection doesn't have.
@@ -577,7 +579,7 @@ fn fields(values: &DialogValues, cx: &Context) -> BTreeMap<String, FieldInfo> {
             ("description", off(field("Description", FieldKind::Text))),
             ("defaults", field("Set Defaults", FieldKind::List)),
         ],
-        DialogValues::BordersShading(v) => borders_fields(v),
+        DialogValues::BordersShading(v) => borders_fields(v, cx.in_table),
         DialogValues::Frame(v) => frame_fields(v),
         DialogValues::Banding(_) => vec![
             ("rowBand", number("Rows in each band", FieldKind::Number, 1.0, 99.0, 1.0)),
@@ -670,9 +672,10 @@ pub fn manage_styles_model(v: crate::api::services::ManageStylesDialog) -> Dialo
 }
 
 /// Borders and Shading's model for its values.
-pub fn borders_shading_model(v: BordersShadingDialog) -> DialogModel {
+/// Borders and Shading's model; `in_table`: the selection is in a table (a style's never is).
+pub fn borders_shading_model(v: BordersShadingDialog, in_table: bool) -> DialogModel {
     let values = DialogValues::BordersShading(v);
-    DialogModel { kind: DialogKind::BordersShading, fields: fields(&values, &Context::default()), values, on_style: None }
+    DialogModel { kind: DialogKind::BordersShading, fields: fields(&values, &Context { in_table, ..Context::default() }), values, on_style: None }
 }
 
 /// The Frame dialog's model for its values.
@@ -749,9 +752,10 @@ pub fn formats_a_style(kind: DialogKind) -> bool {
     )
 }
 
-const BORDER_STYLES: [(&str, &str); 17] = [
+const BORDER_STYLES: [(&str, &str); 25] = [
     ("single", "Single"),
     ("dotted", "Dotted"),
+    ("dashSmallGap", "Dashed (small gaps)"),
     ("dashed", "Dashed"),
     ("dotDash", "Dot dash"),
     ("dotDotDash", "Dot dot dash"),
@@ -761,35 +765,69 @@ const BORDER_STYLES: [(&str, &str); 17] = [
     ("thinThickSmallGap", "Thin thick"),
     ("thickThinSmallGap", "Thick thin"),
     ("thinThickThinSmallGap", "Thin thick thin"),
+    ("thinThickMediumGap", "Thin thick (medium gap)"),
+    ("thickThinMediumGap", "Thick thin (medium gap)"),
+    ("thinThickThinMediumGap", "Thin thick thin (medium gap)"),
+    ("thinThickLargeGap", "Thin thick (large gap)"),
+    ("thickThinLargeGap", "Thick thin (large gap)"),
+    ("thinThickThinLargeGap", "Thin thick thin (large gap)"),
     ("wave", "Wave"),
     ("doubleWave", "Double wave"),
+    ("dashDotStroked", "Dash dot stroked"),
     ("threeDEmboss", "3-D emboss"),
     ("threeDEngrave", "3-D engrave"),
     ("outset", "Outset"),
     ("inset", "Inset"),
 ];
 
-const PATTERNS: [(&str, &str); 14] = [
+/// Word's shading styles, in its order.
+const PATTERNS: [(&str, &str); 37] = [
     ("clear", "Clear"),
     ("solid", "Solid (100%)"),
     ("pct5", "5%"),
     ("pct10", "10%"),
+    ("pct12", "12.5%"),
+    ("pct15", "15%"),
     ("pct20", "20%"),
     ("pct25", "25%"),
     ("pct30", "30%"),
+    ("pct35", "35%"),
+    ("pct37", "37.5%"),
     ("pct40", "40%"),
+    ("pct45", "45%"),
     ("pct50", "50%"),
+    ("pct55", "55%"),
     ("pct60", "60%"),
+    ("pct62", "62.5%"),
+    ("pct65", "65%"),
     ("pct70", "70%"),
     ("pct75", "75%"),
     ("pct80", "80%"),
+    ("pct85", "85%"),
+    ("pct87", "87.5%"),
     ("pct90", "90%"),
+    ("pct95", "95%"),
+    ("horzStripe", "Dk Horizontal"),
+    ("vertStripe", "Dk Vertical"),
+    ("reverseDiagStripe", "Dk Dwn Diagonal"),
+    ("diagStripe", "Dk Up Diagonal"),
+    ("horzCross", "Dk Grid"),
+    ("diagCross", "Dk Trellis"),
+    ("thinHorzStripe", "Lt Horizontal"),
+    ("thinVertStripe", "Lt Vertical"),
+    ("thinReverseDiagStripe", "Lt Dwn Diagonal"),
+    ("thinDiagStripe", "Lt Up Diagonal"),
+    ("thinHorzCross", "Lt Grid"),
+    ("thinDiagCross", "Lt Trellis"),
 ];
 
 /// Borders and Shading's fields: text has a box only (no custom edges), and the pattern color needs a pattern.
-fn borders_fields(v: &BordersShadingDialog) -> Vec<(&'static str, FieldInfo)> {
+fn borders_fields(v: &BordersShadingDialog, in_table: bool) -> Vec<(&'static str, FieldInfo)> {
     let para = v.apply_to != ShadingTarget::Text;
-    let on = |f: FieldInfo, yes: bool| if yes { f } else { off(f) };
+    // Applied to the selection's cells or table, only the shading is set: no command sets one edge of a cell block
+    // apart from the others (setCellBorders' none removes them all, diagonals too), nor a table's own borders.
+    let lines = !(in_table && matches!(v.apply_to, ShadingTarget::Cell | ShadingTarget::Table));
+    let on = |f: FieldInfo, yes: bool| if yes && lines { f } else { off(f) };
     let settings: &[(&str, &str)] = if para {
         &[("none", "None"), ("box", "Box"), ("shadow", "Shadow"), ("custom", "Custom")]
     } else {
@@ -808,10 +846,10 @@ fn borders_fields(v: &BordersShadingDialog) -> Vec<(&'static str, FieldInfo)> {
             choice("Apply to", &[("allPages", "All pages"), ("firstPage", "First page only"), ("notFirstPage", "All except first page")]),
         ),
         ("pageApplyTo", choice("Sections", &[("wholeDocument", "Whole document"), ("thisSection", "This section")])),
-        ("setting", choice("Setting", settings)),
-        ("style", choice("Style", &BORDER_STYLES)),
-        ("color", field("Color", FieldKind::Color)),
-        ("width", number("Width", FieldKind::Length, 0.25, 6.0, 0.25)),
+        ("setting", on(choice("Setting", settings), true)),
+        ("style", on(choice("Style", &BORDER_STYLES), true)),
+        ("color", on(field("Color", FieldKind::Color), true)),
+        ("width", on(number("Width", FieldKind::Length, 0.25, 6.0, 0.25), true)),
         ("top", on(field("Top", FieldKind::Toggle), para)),
         ("bottom", on(field("Bottom", FieldKind::Toggle), para)),
         ("left", on(field("Left", FieldKind::Toggle), para)),
@@ -819,22 +857,27 @@ fn borders_fields(v: &BordersShadingDialog) -> Vec<(&'static str, FieldInfo)> {
         (
             "between",
             on(
-                field(if v.apply_to == ShadingTarget::Cell { "Inside horizontal" } else { "Between" }, FieldKind::Toggle),
+                field(
+                    if matches!(v.apply_to, ShadingTarget::Cell | ShadingTarget::Table) { "Inside horizontal" } else { "Between" },
+                    FieldKind::Toggle,
+                ),
                 v.apply_to != ShadingTarget::Text,
             ),
         ),
-        ("insideVertical", on(field("Inside vertical", FieldKind::Toggle), v.apply_to == ShadingTarget::Cell)),
+        ("insideVertical", on(field("Inside vertical", FieldKind::Toggle), matches!(v.apply_to, ShadingTarget::Cell | ShadingTarget::Table))),
         (
             "applyTo",
-            if v.apply_to == ShadingTarget::Cell {
+            if v.apply_to == ShadingTarget::Cell && !in_table {
                 off(choice("Apply to", &[("cell", "Cell")]))
+            } else if in_table {
+                choice("Apply to", &[("text", "Text"), ("paragraph", "Paragraph"), ("cell", "Cell"), ("table", "Table")])
             } else {
-                choice("Apply to", &[("paragraph", "Paragraph"), ("text", "Text")])
+                choice("Apply to", &[("text", "Text"), ("paragraph", "Paragraph")])
             },
         ),
         ("fill", field("Fill", FieldKind::Color)),
         ("pattern", choice("Style", &PATTERNS)),
-        ("patternColor", on(field("Color", FieldKind::Color), v.pattern != ShadingPattern::Clear)),
+        ("patternColor", if v.pattern != ShadingPattern::Clear { field("Color", FieldKind::Color) } else { off(field("Color", FieldKind::Color)) }),
     ]
 }
 

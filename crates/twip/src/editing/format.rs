@@ -118,6 +118,7 @@ impl Editor {
                     let mut tcp = region.tc.clone();
                     tcp.merge(&cx.parse(&raw, |_, n| crate::docx::props::TcProps::parse(Some(n), &res.styles.colours)).unwrap_or_default());
                     c.shading = tcp.shading.flatten();
+                    c.hatch = tcp.shd.as_ref().and_then(crate::docx::props::Shd::hatch);
                     c.top = tcp.borders.top.clone();
                     c.left = tcp.borders.left.clone();
                     c.bottom = tcp.borders.bottom.clone();

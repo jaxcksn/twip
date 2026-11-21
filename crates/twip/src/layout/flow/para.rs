@@ -143,6 +143,7 @@ impl<'d> PageFill<'d, '_> {
                     env,
                     fit: false,
                     letter_break: false,
+                    shade_gap: pb.shade_gap,
                 };
                 Some(break_lines(&pb.shaped, p, &space, self.ctx.fonts, memos)?)
             }

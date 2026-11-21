@@ -145,7 +145,7 @@ impl Shader<'_> {
                 };
                 match sampling {
                     _ if axis => {}
-                    Sampling::Nearest => out.iter_mut().enumerate().for_each(|(i, px)| {
+                    Sampling::Nearest | Sampling::Pixel => out.iter_mut().enumerate().for_each(|(i, px)| {
                         let (u, v) = uv(i);
                         *px = texel(pixmap, u.floor() as i64, v.floor() as i64, repeat);
                     }),

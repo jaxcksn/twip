@@ -1765,11 +1765,6 @@ Twip.LineSpacingRule.AtLeast = 2 -> Twip.LineSpacingRule
 Twip.LineSpacingRule.Exact = 1 -> Twip.LineSpacingRule
 Twip.LineSpacingRule.Multiple = 0 -> Twip.LineSpacingRule
 Twip.LineStyle
-Twip.LineStyle.Dashed = 3 -> Twip.LineStyle
-Twip.LineStyle.Dotted = 2 -> Twip.LineStyle
-Twip.LineStyle.Double = 1 -> Twip.LineStyle
-Twip.LineStyle.Single = 0 -> Twip.LineStyle
-Twip.LineStyle.Thick = 4 -> Twip.LineStyle
 Twip.LinkActivatedEventArgs
 Twip.LinkActivatedEventArgs.Address.get -> string!
 Twip.LinkActivatedEventArgs.Via.get -> Twip.LinkActivation
@@ -6037,18 +6032,6 @@ Twip.FrameWidthRule.Exactly = 1 -> Twip.FrameWidthRule
 Twip.FrameWrap
 Twip.FrameWrap.Around = 1 -> Twip.FrameWrap
 Twip.FrameWrap.None = 0 -> Twip.FrameWrap
-Twip.LineStyle.DotDash = 5 -> Twip.LineStyle
-Twip.LineStyle.DotDotDash = 6 -> Twip.LineStyle
-Twip.LineStyle.DoubleWave = 12 -> Twip.LineStyle
-Twip.LineStyle.Inset = 16 -> Twip.LineStyle
-Twip.LineStyle.Outset = 15 -> Twip.LineStyle
-Twip.LineStyle.ThickThinSmallGap = 9 -> Twip.LineStyle
-Twip.LineStyle.ThinThickSmallGap = 8 -> Twip.LineStyle
-Twip.LineStyle.ThinThickThinSmallGap = 10 -> Twip.LineStyle
-Twip.LineStyle.ThreeDEmboss = 13 -> Twip.LineStyle
-Twip.LineStyle.ThreeDEngrave = 14 -> Twip.LineStyle
-Twip.LineStyle.Triple = 7 -> Twip.LineStyle
-Twip.LineStyle.Wave = 11 -> Twip.LineStyle
 Twip.ParagraphBorderLines
 Twip.ParagraphBorderLines.<Clone>$() -> Twip.ParagraphBorderLines!
 Twip.ParagraphBorderLines.Between.get -> Twip.CellBorder?
@@ -6080,23 +6063,7 @@ Twip.ShadingOptions.ShadingOptions(Twip.ShadingTarget Target, Twip.ColorValue Fi
 Twip.ShadingOptions.Target.get -> Twip.ShadingTarget
 Twip.ShadingOptions.Target.init -> void
 Twip.ShadingPattern
-Twip.ShadingPattern.Clear = 0 -> Twip.ShadingPattern
-Twip.ShadingPattern.Pct10 = 3 -> Twip.ShadingPattern
-Twip.ShadingPattern.Pct20 = 4 -> Twip.ShadingPattern
-Twip.ShadingPattern.Pct25 = 5 -> Twip.ShadingPattern
-Twip.ShadingPattern.Pct30 = 6 -> Twip.ShadingPattern
-Twip.ShadingPattern.Pct40 = 7 -> Twip.ShadingPattern
-Twip.ShadingPattern.Pct5 = 2 -> Twip.ShadingPattern
-Twip.ShadingPattern.Pct50 = 8 -> Twip.ShadingPattern
-Twip.ShadingPattern.Pct60 = 9 -> Twip.ShadingPattern
-Twip.ShadingPattern.Pct70 = 10 -> Twip.ShadingPattern
-Twip.ShadingPattern.Pct75 = 11 -> Twip.ShadingPattern
-Twip.ShadingPattern.Pct80 = 12 -> Twip.ShadingPattern
-Twip.ShadingPattern.Pct90 = 13 -> Twip.ShadingPattern
-Twip.ShadingPattern.Solid = 1 -> Twip.ShadingPattern
 Twip.ShadingTarget
-Twip.ShadingTarget.Paragraph = 0 -> Twip.ShadingTarget
-Twip.ShadingTarget.Text = 1 -> Twip.ShadingTarget
 override Twip.AdjustListIndentsDialogValues.Equals(object? obj) -> bool
 override Twip.AdjustListIndentsDialogValues.GetHashCode() -> int
 override Twip.AdjustListIndentsDialogValues.ToString() -> string!
@@ -6499,7 +6466,6 @@ Twip.PageBordersOptions.Shadow.get -> bool
 Twip.PageBordersOptions.Shadow.init -> void
 Twip.PageBordersOptions.Top.get -> Twip.CellBorder?
 Twip.PageBordersOptions.Top.init -> void
-Twip.ShadingTarget.Cell = 2 -> Twip.ShadingTarget
 Twip.TextBorderOptions
 Twip.TextBorderOptions.<Clone>$() -> Twip.TextBorderOptions!
 Twip.TextBorderOptions.Border.get -> Twip.CellBorder?
@@ -7731,3 +7697,71 @@ static Twip.DropCap.operator ==(Twip.DropCap? left, Twip.DropCap? right) -> bool
 static Twip.DropCapDialogValues.operator !=(Twip.DropCapDialogValues? left, Twip.DropCapDialogValues? right) -> bool
 static Twip.DropCapDialogValues.operator ==(Twip.DropCapDialogValues? left, Twip.DropCapDialogValues? right) -> bool
 static Twip.EditorOperation.SetDropCap(Twip.DropCap! dropCap) -> Twip.EditorOperation!
+Twip.ShadingPattern.Clear = 0 -> Twip.ShadingPattern
+Twip.ShadingPattern.Nil = 1 -> Twip.ShadingPattern
+Twip.ShadingPattern.Solid = 2 -> Twip.ShadingPattern
+Twip.ShadingPattern.Pct5 = 3 -> Twip.ShadingPattern
+Twip.ShadingPattern.Pct10 = 4 -> Twip.ShadingPattern
+Twip.ShadingPattern.Pct12 = 5 -> Twip.ShadingPattern
+Twip.ShadingPattern.Pct15 = 6 -> Twip.ShadingPattern
+Twip.ShadingPattern.Pct20 = 7 -> Twip.ShadingPattern
+Twip.ShadingPattern.Pct25 = 8 -> Twip.ShadingPattern
+Twip.ShadingPattern.Pct30 = 9 -> Twip.ShadingPattern
+Twip.ShadingPattern.Pct35 = 10 -> Twip.ShadingPattern
+Twip.ShadingPattern.Pct37 = 11 -> Twip.ShadingPattern
+Twip.ShadingPattern.Pct40 = 12 -> Twip.ShadingPattern
+Twip.ShadingPattern.Pct45 = 13 -> Twip.ShadingPattern
+Twip.ShadingPattern.Pct50 = 14 -> Twip.ShadingPattern
+Twip.ShadingPattern.Pct55 = 15 -> Twip.ShadingPattern
+Twip.ShadingPattern.Pct60 = 16 -> Twip.ShadingPattern
+Twip.ShadingPattern.Pct62 = 17 -> Twip.ShadingPattern
+Twip.ShadingPattern.Pct65 = 18 -> Twip.ShadingPattern
+Twip.ShadingPattern.Pct70 = 19 -> Twip.ShadingPattern
+Twip.ShadingPattern.Pct75 = 20 -> Twip.ShadingPattern
+Twip.ShadingPattern.Pct80 = 21 -> Twip.ShadingPattern
+Twip.ShadingPattern.Pct85 = 22 -> Twip.ShadingPattern
+Twip.ShadingPattern.Pct87 = 23 -> Twip.ShadingPattern
+Twip.ShadingPattern.Pct90 = 24 -> Twip.ShadingPattern
+Twip.ShadingPattern.Pct95 = 25 -> Twip.ShadingPattern
+Twip.ShadingPattern.HorzStripe = 26 -> Twip.ShadingPattern
+Twip.ShadingPattern.VertStripe = 27 -> Twip.ShadingPattern
+Twip.ShadingPattern.ReverseDiagStripe = 28 -> Twip.ShadingPattern
+Twip.ShadingPattern.DiagStripe = 29 -> Twip.ShadingPattern
+Twip.ShadingPattern.HorzCross = 30 -> Twip.ShadingPattern
+Twip.ShadingPattern.DiagCross = 31 -> Twip.ShadingPattern
+Twip.ShadingPattern.ThinHorzStripe = 32 -> Twip.ShadingPattern
+Twip.ShadingPattern.ThinVertStripe = 33 -> Twip.ShadingPattern
+Twip.ShadingPattern.ThinReverseDiagStripe = 34 -> Twip.ShadingPattern
+Twip.ShadingPattern.ThinDiagStripe = 35 -> Twip.ShadingPattern
+Twip.ShadingPattern.ThinHorzCross = 36 -> Twip.ShadingPattern
+Twip.ShadingPattern.ThinDiagCross = 37 -> Twip.ShadingPattern
+Twip.ShadingPattern.Other = 38 -> Twip.ShadingPattern
+Twip.LineStyle.Single = 0 -> Twip.LineStyle
+Twip.LineStyle.Double = 1 -> Twip.LineStyle
+Twip.LineStyle.Dotted = 2 -> Twip.LineStyle
+Twip.LineStyle.Dashed = 3 -> Twip.LineStyle
+Twip.LineStyle.Thick = 4 -> Twip.LineStyle
+Twip.LineStyle.DotDash = 5 -> Twip.LineStyle
+Twip.LineStyle.DotDotDash = 6 -> Twip.LineStyle
+Twip.LineStyle.Triple = 7 -> Twip.LineStyle
+Twip.LineStyle.ThinThickSmallGap = 8 -> Twip.LineStyle
+Twip.LineStyle.ThickThinSmallGap = 9 -> Twip.LineStyle
+Twip.LineStyle.ThinThickThinSmallGap = 10 -> Twip.LineStyle
+Twip.LineStyle.DashSmallGap = 11 -> Twip.LineStyle
+Twip.LineStyle.DashDotStroked = 12 -> Twip.LineStyle
+Twip.LineStyle.ThinThickMediumGap = 13 -> Twip.LineStyle
+Twip.LineStyle.ThickThinMediumGap = 14 -> Twip.LineStyle
+Twip.LineStyle.ThinThickThinMediumGap = 15 -> Twip.LineStyle
+Twip.LineStyle.ThinThickLargeGap = 16 -> Twip.LineStyle
+Twip.LineStyle.ThickThinLargeGap = 17 -> Twip.LineStyle
+Twip.LineStyle.ThinThickThinLargeGap = 18 -> Twip.LineStyle
+Twip.LineStyle.Wave = 19 -> Twip.LineStyle
+Twip.LineStyle.DoubleWave = 20 -> Twip.LineStyle
+Twip.LineStyle.ThreeDEmboss = 21 -> Twip.LineStyle
+Twip.LineStyle.ThreeDEngrave = 22 -> Twip.LineStyle
+Twip.LineStyle.Outset = 23 -> Twip.LineStyle
+Twip.LineStyle.Inset = 24 -> Twip.LineStyle
+Twip.ShadingTarget.Paragraph = 0 -> Twip.ShadingTarget
+Twip.ShadingTarget.Text = 1 -> Twip.ShadingTarget
+Twip.ShadingTarget.Cell = 2 -> Twip.ShadingTarget
+Twip.ShadingTarget.Table = 3 -> Twip.ShadingTarget

@@ -23,7 +23,7 @@ mod breaking;
 mod draw;
 mod size;
 
-pub use borders::{apply_borders, border_key, border_space, continued_key, neighbour_borders, top_border_extra};
+pub use borders::{apply_borders, border_key, border_space, continued_key, neighbour_borders, shade_gap, top_border_extra};
 pub use breaking::{band, break_paragraph, clear_of};
 pub use draw::{Below, LineOrigin, draw_label, draw_line};
 
@@ -43,9 +43,12 @@ pub struct Line {
     pub hard: Option<Kind>,
     pub hyphen: bool,
     pub leaders: Vec<(usize, Leader)>,
-    pub rects: Vec<([f64; 4], u32)>,
+    /// Filled rects, `snap` ones aliased ([`Item::Rect`]).
+    pub rects: Vec<([f64; 4], u32, bool)>,
     /// Stroked border paths, placed like `rects`.
     pub strokes: Vec<std::rc::Rc<crate::layout::fragment::ShapeItem>>,
+    /// The paragraph's hatched shading, placed like `rects` and under them.
+    pub shade: Option<std::rc::Rc<crate::layout::fragment::ShapeItem>>,
     /// How its runs sit on it (`w:textAlignment`): `baseline` is the reference baseline, each run's text its own
     /// [`align_drop`] below it.
     pub align: Align,
@@ -116,6 +119,7 @@ impl Line {
             leaders: Vec::new(),
             rects: Vec::new(),
             strokes: Vec::new(),
+            shade: None,
             align: Align::Baseline,
             vertical: false,
         }
@@ -197,6 +201,8 @@ pub struct ParaLines {
     pub x0: f64,
     pub para: ParaId,
     pub borders: (BorderKey, BorderKey),
+    /// The space below its last line its shading covers ([`ParaSpace::shade_gap`]).
+    pub shade_gap: f64,
     drawn: Box<[OnceCell<Rc<LineFragment>>]>,
     /// Each line's height with those after it, made when an inline picture's reflection needs one.
     heights: OnceCell<Box<[f64]>>,
@@ -220,6 +226,7 @@ impl PartialEq for ParaLines {
             x0,
             para: _,
             borders: _,
+            shade_gap: _,
             drawn: _,
             heights: _,
             compat: _,
@@ -298,7 +305,16 @@ impl ParaLines {
             + self
                 .lines
                 .iter()
-                .map(|l| size_of::<Line>() + (l.xs.len() + l.widths.len()) * 8 + l.rects.len() * 40 + l.strokes.len() * 8)
+                .map(|l| {
+                    size_of::<Line>()
+                        + (l.xs.len() + l.widths.len()) * 8
+                        + l.rects.len() * size_of::<([f64; 4], u32, bool)>()
+                        + l.strokes
+                            .iter()
+                            .chain(&l.shade)
+                            .map(|s| size_of::<std::rc::Rc<crate::layout::fragment::ShapeItem>>() + s.bytes())
+                            .sum::<usize>()
+                })
                 .sum::<usize>()
     }
 }
@@ -381,7 +397,8 @@ pub fn break_lines_uncached(
         let b = (a + 1..n).find(|&b| !std::ptr::eq(line_style(style, pieces, lines[b].start), s)).unwrap_or(n);
         let before = if a == 0 && opens { prev.clone() } else { continued_key(s) };
         let next = if b == n { space.borders.1.clone() } else { continued_key(s) };
-        apply_borders(&mut lines[a..b], s, before.as_deref(), next.as_deref(), space.width, false, opens && a == 0, b == n);
+        let gap = if b == n { space.shade_gap } else { 0.0 };
+        apply_borders(&mut lines[a..b], s, before.as_deref(), next.as_deref(), space.width, false, opens && a == 0, b == n, gap);
         a = b;
     }
     memos.meter.unit_done();
@@ -394,6 +411,7 @@ pub fn break_lines_uncached(
         x0: space.x0,
         para: para_id(para),
         borders: (prev, space.borders.1.clone()),
+        shade_gap: space.shade_gap,
         drawn: (0..n).map(|_| OnceCell::new()).collect(),
         heights: OnceCell::new(),
         compat: space.env.compat,
@@ -423,5 +441,6 @@ pub fn para_space(
             (if from > 0 { super::line::continued_key(style) } else { p }, n)
         }
     };
-    ParaSpace { width, start: from, borders, x0, env: ctx.env.text.clone(), fit: false, letter_break: false }
+    let shade_gap = shade_gap(&ctx.env.text, style, next, true);
+    ParaSpace { width, start: from, borders, x0, env: ctx.env.text.clone(), fit: false, letter_break: false, shade_gap }
 }

@@ -22,7 +22,12 @@ fn rects(body: &str) -> Vec<([f64; 4], u32)> {
     crate::layout::traverse::paint_items(&snap.pages()[0])
         .into_iter()
         .filter_map(|i| match i {
-            Item::Rect { rect, colour } => Some((rect, colour)),
+            Item::Rect { rect, colour, .. } => Some((rect, colour)),
+            // Paragraph shading, a filled decoration.
+            Item::Shape(s) => match s.fill {
+                crate::drawing::paint::Paint::Solid(c) if s.decoration => Some((s.rect, u32::from(c.r) << 16 | u32::from(c.g) << 8 | u32::from(c.b))),
+                _ => None,
+            },
             _ => None,
         })
         .collect()
@@ -103,7 +108,7 @@ fn page_rects(sect: &str, paras: usize) -> Vec<Vec<([f64; 4], u32)>> {
             crate::layout::traverse::paint_items(p)
                 .into_iter()
                 .filter_map(|i| match i {
-                    Item::Rect { rect, colour } if colour == 0x7030A0 => Some((rect, colour)),
+                    Item::Rect { rect, colour, .. } if colour == 0x7030A0 => Some((rect, colour)),
                     _ => None,
                 })
                 .collect()

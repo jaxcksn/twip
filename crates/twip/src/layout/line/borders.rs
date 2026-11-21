@@ -19,18 +19,36 @@ fn masked(b: &Option<Border>) -> Option<Border> {
     b.as_ref().map(|b| Border { space: border_space(b), ..b.clone() })
 }
 
+fn group(s: &ParaStyle) -> BorderGroup {
+    BorderGroup {
+        sides: [masked(&s.border_top), masked(&s.border_left), masked(&s.border_bottom), masked(&s.border_right)],
+        between: masked(&s.border_between),
+        edges: (s.ind_left + s.ind_first.min(0.0), s.ind_right),
+        frame: s.frame.clone(),
+        div: s.div,
+        continued: false,
+    }
+}
+
 pub fn border_key(s: &ParaStyle) -> BorderKey {
     let any = [&s.border_top, &s.border_left, &s.border_bottom, &s.border_right, &s.border_between].iter().any(|b| b.is_some());
-    any.then(|| {
-        Rc::new(BorderGroup {
-            sides: [masked(&s.border_top), masked(&s.border_left), masked(&s.border_bottom), masked(&s.border_right)],
-            between: masked(&s.border_between),
-            edges: (s.ind_left + s.ind_first.min(0.0), s.ind_right),
-            frame: s.frame.clone(),
-            div: s.div,
-            continued: false,
-        })
-    })
+    any.then(|| Rc::new(group(s)))
+}
+
+fn shaded(s: &ParaStyle) -> bool {
+    s.shading.is_some() || s.shd.as_ref().is_some_and(|d| d.hatch().is_some())
+}
+
+/// As Word draws it: a shaded paragraph's shading runs on over the space to the next paragraph (its space after and
+/// the next one's before) when the next is shaded too, with the same indents and borders, whatever its fill; also at
+/// the foot of a page. `contextual`: the space as [`crate::layout::paragraph::gap`] finds it, else the plain sum.
+pub fn shade_gap(env: &crate::layout::env::TextEnv, s: &ParaStyle, next: Option<&ParaStyle>, contextual: bool) -> f64 {
+    use crate::layout::paragraph::{gap, gap_plain, space_after, space_before};
+    match next.filter(|n| !n.page_break_before && shaded(s) && shaded(n) && group(s).joins(&group(n))) {
+        Some(n) if contextual => gap(env, s, space_after(env, s), n, space_before(env, n)).max(0.0),
+        Some(n) => gap_plain(env, space_after(env, s), space_before(env, n)).max(0.0),
+        None => 0.0,
+    }
 }
 
 /// The key of a paragraph's part continued from the page or column before.
@@ -92,10 +110,12 @@ pub fn apply_borders(
     top_pitched: bool,
     first_part: bool,
     last_part: bool,
+    shade_gap: f64,
 ) {
     let key = border_key(s);
     let n = lines.len();
-    if n == 0 || (key.is_none() && s.shading.is_none() && s.div_boxes.is_empty()) {
+    let hatch = s.shd.as_ref().and_then(crate::docx::props::Shd::hatch);
+    if n == 0 || (key.is_none() && s.shading.is_none() && hatch.is_none() && s.div_boxes.is_empty()) {
         return;
     }
     let (div_at, div_top) = if first_part { div_tops(s) } else { (vec![0.0; s.div_boxes.len()], 0.0) };
@@ -118,7 +138,7 @@ pub fn apply_borders(
         crate::layout::table::edge(&mut items, r, horizontal, far, b);
         for i in items {
             match i {
-                Item::Rect { rect, colour } => line.rects.push((rect, colour)),
+                Item::Rect { rect, colour, snap } => line.rects.push((rect, colour, snap)),
                 Item::Shape(s) => line.strokes.push(s),
                 _ => {}
             }
@@ -129,8 +149,8 @@ pub fn apply_borders(
         let mut items = Vec::new();
         crate::layout::table::shadow(&mut items, r, horizontal, true, b, lead, trail);
         for i in items {
-            if let Item::Rect { rect, colour } = i {
-                line.rects.push((rect, colour));
+            if let Item::Rect { rect, colour, snap } = i {
+                line.rects.push((rect, colour, snap));
             }
         }
     };
@@ -190,6 +210,8 @@ pub fn apply_borders(
             }
         }
     }
+    // Where the paragraph part's shading starts, down from each line's top: a hatch's tiles start there.
+    let mut shade_from = shade_top;
     for (i, l) in lines.iter_mut().enumerate() {
         let h = l.pitch;
         for (k, d) in s.div_boxes.iter().enumerate() {
@@ -215,15 +237,21 @@ pub fn apply_borders(
             let top = i == 0 && first_part && s.border_top.is_some() && !same_prev;
             cast(&mut *l, b, false, [x1 - thick(b), 0.0, x1, sides_to], top, false);
         }
-        if let Some(fill) = s.shading {
+        if s.shading.is_some() || hatch.is_some() {
             // As Word draws it (every combination of sides checked, compat 15 and earlier): the shading fills to a
             // right border, and to a left one only with a right one too; a left border alone (a callout's bar)
             // stands apart from the shaded text, top and bottom borders or not.
             let sx0 = s.border_left.as_ref().filter(|_| s.border_right.is_some()).map_or(left, |b| x0 + thick(b));
             let sx1 = s.border_right.as_ref().map_or(width - s.ind_right, |b| x1 - thick(b));
             let top = if i == 0 { shade_top } else { 0.0 };
-            let bottom = if i + 1 == n { shade_bottom.unwrap_or(h) } else { h };
-            l.rects.insert(0, ([sx0, top, sx1, bottom], fill));
+            let bottom = if i + 1 == n { shade_bottom.unwrap_or(h + if last_part { shade_gap } else { 0.0 }) } else { h };
+            let r = [sx0, top, sx1, bottom];
+            match (hatch, s.shading) {
+                (Some(hatch), fill) => l.shade = Some(crate::layout::shade::hatched([sx0, shade_from, sx1, bottom], r, fill, hatch)),
+                (None, Some(fill)) => l.rects.insert(0, (r, fill, true)),
+                (None, None) => {}
+            }
         }
+        shade_from -= h;
     }
 }

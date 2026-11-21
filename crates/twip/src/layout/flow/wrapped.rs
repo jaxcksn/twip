@@ -154,7 +154,7 @@ impl<'d> PageFill<'d, '_> {
         }
         let letter_break = !first_part && carry.letter_break;
         let env = self.ctx.env.text.clone();
-        let space = ParaSpace { width: col.width, start: pb.from, borders: (None, None), x0: col.x, env, fit: false, letter_break };
+        let space = ParaSpace { width: col.width, start: pb.from, borders: (None, None), x0: col.x, env, fit: false, letter_break, shade_gap: 0.0 };
         let frame = Frame::new(&space);
         let sp: &ShapedPara = &pb.shaped;
         let pieces = pb.pieces();
@@ -232,10 +232,15 @@ impl<'d> PageFill<'d, '_> {
             }
             return self.place_plain(p, pb, cur, col, memos);
         }
-        if border_key(style).is_some() || style.shading.is_some() || !style.div_boxes.is_empty() {
+        if border_key(style).is_some()
+            || style.shading.is_some()
+            || style.shd.as_ref().is_some_and(|s| s.hatch().is_some())
+            || !style.div_boxes.is_empty()
+        {
             let mut firsts: Vec<Line> = bands.iter().map(|(_, segs)| segs[0].clone()).collect();
             let next = if s >= n { pb.borders.1.clone() } else { border_key(style) };
-            apply_borders(&mut firsts, style, pb.borders.0.as_deref(), next.as_deref(), col.width, first_part, first_part, s >= n);
+            let gap = if s >= n { pb.shade_gap } else { 0.0 };
+            apply_borders(&mut firsts, style, pb.borders.0.as_deref(), next.as_deref(), col.width, first_part, first_part, s >= n, gap);
             for ((_, segs), l) in bands.iter_mut().zip(firsts) {
                 segs[0] = l;
             }

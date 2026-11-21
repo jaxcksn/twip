@@ -353,7 +353,7 @@ public enum BorderSetting
 /// <param name="Right">The right edge, or null.</param>
 /// <param name="Between">The line between paragraphs (a table style part's inside horizontal line), or null.</param>
 /// <param name="InsideVertical">A table style part's inside vertical line, or null.</param>
-/// <param name="ApplyTo">The paragraphs, the text (a box only), or a table style part's cells.</param>
+/// <param name="ApplyTo">The paragraphs, the text (a box only), the selected cells (or a table style part's), or the table.</param>
 /// <param name="Fill">The shading's fill.</param>
 /// <param name="Pattern">The shading's pattern.</param>
 /// <param name="PatternColor">The pattern's color.</param>

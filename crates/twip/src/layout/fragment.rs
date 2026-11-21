@@ -60,9 +60,20 @@ pub struct ImageKey {
 #[derive(Clone, Debug)]
 pub enum Item {
     Glyphs(GlyphRun),
-    Rect { rect: [f64; 4], colour: u32 },
-    Image { rect: [f64; 4], key: ImageKey, of: PictureOf },
-    Gridline { line: [f64; 4] },
+    /// A filled rect; `snap`: aliased, its edges on whole device pixels (shading, so fills that meet leave no seam).
+    Rect {
+        rect: [f64; 4],
+        colour: u32,
+        snap: bool,
+    },
+    Image {
+        rect: [f64; 4],
+        key: ImageKey,
+        of: PictureOf,
+    },
+    Gridline {
+        line: [f64; 4],
+    },
     Shape(Rc<ShapeItem>),
     Turned(Rc<Turned>),
 }
@@ -110,6 +121,8 @@ pub struct ShapeItem {
     /// Drawn for text or a table (an underline's wave, a check box, a border's stroke), not an object: never hit,
     /// selected, snapped to or taken for an inline picture.
     pub decoration: bool,
+    /// Filled aliased, its edges on whole device pixels: shading, so fills that meet leave no seam.
+    pub snap: bool,
     /// The page y below which an inline picture's reflection is clipped: the bottom of its paragraph, spacing after
     /// included.
     pub clip_bottom: Option<f64>,
@@ -136,6 +149,19 @@ impl PartialEq for TextPathItem {
 }
 
 impl ShapeItem {
+    /// The bytes it holds: itself, its geometry's paths and its child path (a cache's estimate).
+    pub fn bytes(&self) -> usize {
+        use std::mem::size_of;
+        let g = &self.geom;
+        size_of::<ShapeItem>()
+            + size_of::<crate::drawing::geom::Geom>()
+            + g.paths
+                .iter()
+                .map(|p| size_of::<crate::drawing::geom::GeomPath>() + p.segs.len() * size_of::<crate::drawing::geom::Seg>())
+                .sum::<usize>()
+            + self.path.len() * size_of::<u16>()
+    }
+
     pub fn hit(&self, x: f64, y: f64, slop: f64) -> bool {
         use crate::drawing::paint::Paint;
         let stroked = !matches!(self.line.paint, Paint::None);
@@ -193,6 +219,7 @@ impl ShapeItem {
             picture: self.picture,
             ink: self.ink,
             decoration: self.decoration,
+            snap: self.snap,
             clip_bottom: self.clip_bottom.map(|y| y + dy),
             text_float: self.text_float,
             of: self.of,
@@ -203,7 +230,12 @@ impl ShapeItem {
 
 impl Item {
     pub fn rect(rect: [f64; 4], colour: u32) -> Item {
-        Item::Rect { rect, colour }
+        Item::Rect { rect, colour, snap: false }
+    }
+
+    /// Shading's flat fill: an aliased rect.
+    pub fn fill(rect: [f64; 4], colour: u32) -> Item {
+        Item::Rect { rect, colour, snap: true }
     }
 
     pub fn top(&self) -> f64 {
@@ -415,7 +447,7 @@ pub fn translated(item: &Item, dx: f64, dy: f64) -> Item {
             para: r.para,
             paint: r.paint.clone(),
         }),
-        Item::Rect { rect, colour } => Item::rect(r4(rect), *colour),
+        Item::Rect { rect, colour, snap } => Item::Rect { rect: r4(rect), colour: *colour, snap: *snap },
         Item::Image { rect, key, of } => Item::Image { rect: r4(rect), key: *key, of: *of },
         Item::Gridline { line } => Item::Gridline { line: r4(line) },
         Item::Shape(s) => Item::Shape(std::rc::Rc::new(s.moved(dx, dy))),

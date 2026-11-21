@@ -124,9 +124,9 @@ fn clip_cut(children: &Rc<[Child]>, lo: f64, hi: f64, top: f64, bottom: f64, bor
                             r.chars.iter().copied().filter(|ch| ch.1 >= from - EPS && ch.1 <= to + EPS && !dropped(ch.1)).collect();
                         (!glyphs.is_empty() || r.glyphs.is_empty()).then(|| Item::Glyphs(GlyphRun { glyphs, chars, ..r.clone() }))
                     }
-                    Item::Rect { rect, colour } => {
+                    Item::Rect { rect, colour, snap } => {
                         let (x0, x1) = (rect[0].max(lo - dx), rect[2].min(hi - dx));
-                        (x1 > x0).then_some(Item::rect([x0, rect[1], x1, rect[3]], *colour))
+                        (x1 > x0).then_some(Item::Rect { rect: [x0, rect[1], x1, rect[3]], colour: *colour, snap: *snap })
                     }
                     Item::Shape(s) if s.ink => {
                         super::clip_stroke(s, [lo - dx, f64::NEG_INFINITY, hi - dx, f64::INFINITY]).map(|s| Item::Shape(Rc::new(s)))
@@ -169,12 +169,12 @@ fn clip_nested(c: &Child, lo: f64, hi: f64, top: f64, bottom: f64, borders: bool
                     items
                         .iter()
                         .filter_map(|i| match i {
-                            Item::Rect { rect, colour } => {
+                            Item::Rect { rect, colour, snap } => {
                                 let r = [rect[0].max(lo), rect[1].max(top), rect[2].min(hi), rect[3].min(bottom)];
                                 if r != *rect {
                                     any = true;
                                 }
-                                (r[2] > r[0] && r[3] > r[1]).then_some(Item::rect(r, *colour))
+                                (r[2] > r[0] && r[3] > r[1]).then_some(Item::Rect { rect: r, colour: *colour, snap: *snap })
                             }
                             Item::Shape(s) if s.ink => {
                                 let cut = super::clip_stroke(s, [lo, top, hi, bottom]);
@@ -258,7 +258,9 @@ pub fn frame_part(tb: &TableLayout, frag: &mut RowFragment, left: f64, open: Opt
             }
         }
         let same = |a: &Item, b: &Item| match (a, b) {
-            (Item::Rect { rect: r, colour: c }, Item::Rect { rect: q, colour: d }) => c == d && r.iter().zip(q).all(|(x, y)| (x - y).abs() < EPS),
+            (Item::Rect { rect: r, colour: c, .. }, Item::Rect { rect: q, colour: d, .. }) => {
+                c == d && r.iter().zip(q).all(|(x, y)| (x - y).abs() < EPS)
+            }
             (Item::Shape(a), Item::Shape(b)) => a == b,
             _ => false,
         };
@@ -335,8 +337,13 @@ pub fn draw_row(tb: &TableLayout, ri: usize, left: f64, top: f64, height: f64, p
         }
         rect = [x0 + first.x, top, x0 + end.x + end.w, top + height];
     }
-    if let Some(fill) = row.shading {
-        background.push(Item::rect(rect, fill));
+    // The table's shading, then the row's exceptions', show around spaced cells only.
+    if let Some(s) = row.spacing.filter(|s| *s > 0.0)
+        && !(row.ground.is_none() && row.shade.is_none())
+    {
+        let boxes: Vec<[f64; 4]> = row.cells.iter().map(|c| spaced_box(tb, row, ri, c, s, x0, (top, height))).collect();
+        row.ground.draw_around(&mut background, rect, &boxes);
+        row.shade.draw_around(&mut background, rect, &boxes);
     }
     let below_margin = row.cells.iter().map(|c| c.margins[2]).fold(0.0, f64::max);
     for (k, c) in row.cells.iter().enumerate() {
@@ -421,9 +428,8 @@ pub fn draw_row(tb: &TableLayout, ri: usize, left: f64, top: f64, height: f64, p
             spaced_cell_frame(tb, row, ri, c, spacing, x0, (top, height), &mut background, &mut borders);
             continue;
         }
-        if let Some(fill) = c.shading {
-            background.push(Item::rect([x0 + c.x, top, x0 + c.x + c.w, top + height], fill));
-        }
+        let r = [x0 + c.x, top, x0 + c.x + c.w, top + height];
+        c.shade.draw(&mut background, r, r);
         cell_borders(tb, row, c, x0, (top, height), last_of_table, &mut borders);
     }
     for (a, b, s) in &row.seams {
@@ -462,17 +468,9 @@ fn spaced_cell_frame(
     background: &mut Vec<Item>,
     borders: &mut Vec<Item>,
 ) {
-    let ncols = tb.cols.len();
-    let (mut lo, mut ro) = (c.col == 0, c.col + c.span >= ncols);
-    if tb.rtl {
-        (lo, ro) = (ro, lo);
-    }
-    let bx0 = x0 + c.x + gap(spacing, lo);
-    let bx1 = x0 + c.x + c.w - gap(spacing, ro);
-    let (by0, by1) = (top + row.gap_top, top + height - gap(spacing, tb.is_last(ri)));
-    if let Some(fill) = c.shading {
-        background.push(Item::rect([bx0, by0, bx1, by1], fill));
-    }
+    let frame = spaced_box(tb, row, ri, c, spacing, x0, (top, height));
+    let [bx0, by0, bx1, by1] = frame;
+    c.shade.draw(background, frame, frame);
     let [t, l, b, r] = drawn_edges(tb, c);
     let vis = |e: &'_ Option<Border>| e.as_ref().filter(|b| b.visible()).map(|b| (thick(b), b.clone()));
     if let Some((w, e)) = vis(t) {
@@ -487,6 +485,15 @@ fn spaced_cell_frame(
     if let Some((w, e)) = vis(r) {
         edge(borders, [bx1 - w, by0, bx1, by1], false, true, &e);
     }
+}
+
+/// A spaced cell's border box.
+fn spaced_box(tb: &TableLayout, row: &RowBox, ri: usize, c: &CellBox, spacing: f64, x0: f64, (top, height): (f64, f64)) -> [f64; 4] {
+    let (mut lo, mut ro) = (c.col == 0, c.col + c.span >= tb.cols.len());
+    if tb.rtl {
+        (lo, ro) = (ro, lo);
+    }
+    [x0 + c.x + gap(spacing, lo), top + row.gap_top, x0 + c.x + c.w - gap(spacing, ro), top + height - gap(spacing, tb.is_last(ri))]
 }
 
 // A cell's borders and gridlines

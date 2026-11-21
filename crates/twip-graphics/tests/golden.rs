@@ -127,6 +127,13 @@ fn image_scene() {
 }
 
 #[test]
+fn pixel_tile_scene() {
+    let mut resources = Resources::default();
+    let picture = pixel_tiles(&mut resources);
+    golden_with("pixel-tiles", (128, 96), &picture, &resources);
+}
+
+#[test]
 fn the_jpeg_s_orientation_turns_it_upright() {
     let info = twip_graphics::image::probe(include_bytes!("images/rotated-6.jpg")).expect("a JPEG");
     assert_eq!((info.orientation, info.width, info.height), (6, 32, 48), "stored 48 × 32, shown turned a quarter");

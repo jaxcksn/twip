@@ -362,6 +362,13 @@ impl Props {
     }
 }
 
+/// Attribute `name`'s value (any prefix) in the element `xml` starts with, unescaped.
+pub fn attr_of(xml: &str, name: &str) -> Option<String> {
+    let (_, v) = attr_list(&xml[..xml.find('>')?]).into_iter().find(|(q, _)| q.rsplit(':').next() == Some(name))?;
+    let doc = format!("<a v=\"{v}\"/>");
+    roxmltree::Document::parse(&doc).ok()?.root_element().attribute("v").map(str::to_string)
+}
+
 /// `name="value"` pairs of a start tag as written (values still escaped).
 fn attr_list(tag: &str) -> Vec<(String, String)> {
     let mut out = Vec::new();

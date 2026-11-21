@@ -1617,7 +1617,7 @@ fn shapes_alike(a: &Run, b: &Run) -> bool {
         color,
         highlight,
         shading,
-        shd: _,
+        shd,
         border,
         vert_align,
         position,
@@ -1662,6 +1662,7 @@ fn shapes_alike(a: &Run, b: &Run) -> bool {
             && *color == b.color
             && *highlight == b.highlight
             && *shading == b.shading
+            && shd.as_ref().and_then(crate::docx::props::Shd::hatch) == b.shd.as_ref().and_then(crate::docx::props::Shd::hatch)
             && *border == b.border
             && *vert_align == b.vert_align
             && *position == b.position

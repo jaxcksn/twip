@@ -324,8 +324,8 @@ export interface DialogValues {
     between: BorderLine | null;
     /** A table style part's inside vertical line. */
     insideVertical: BorderLine | null;
-    /** The paragraphs, the text (a box only), or a table style part's cells. */
-    applyTo: 'paragraph' | 'text' | 'cell';
+    /** The paragraphs, the text (a box only), the selected cells (or a table style part's), or the table. */
+    applyTo: 'paragraph' | 'text' | 'cell' | 'table';
     /** The shading's fill. */
     fill: Color | 'none';
     /** The shading's pattern, and its color. */

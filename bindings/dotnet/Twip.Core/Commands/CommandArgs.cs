@@ -506,6 +506,22 @@ public enum LineStyle
     ThickThinSmallGap,
     /// <summary>Thin, thick, thin.</summary>
     ThinThickThinSmallGap,
+    /// <summary>Short dashes.</summary>
+    DashSmallGap,
+    /// <summary>Slanted dashes.</summary>
+    DashDotStroked,
+    /// <summary>A thin line and a thick one, a medium gap apart.</summary>
+    ThinThickMediumGap,
+    /// <summary>A thick line and a thin one, a medium gap apart.</summary>
+    ThickThinMediumGap,
+    /// <summary>Thin, thick, thin, a medium gap apart.</summary>
+    ThinThickThinMediumGap,
+    /// <summary>A thin line and a thick one, a large gap apart.</summary>
+    ThinThickLargeGap,
+    /// <summary>A thick line and a thin one, a large gap apart.</summary>
+    ThickThinLargeGap,
+    /// <summary>Thin, thick, thin, a large gap apart.</summary>
+    ThinThickThinLargeGap,
     /// <summary>A wave.</summary>
     Wave,
     /// <summary>Two waves.</summary>
@@ -651,41 +667,93 @@ public enum ShadingTarget
     Paragraph,
     /// <summary>The selected text.</summary>
     Text,
-    /// <summary>A table style part's cells.</summary>
+    /// <summary>The selected cells, or a table style part's cells.</summary>
     Cell,
+    /// <summary>The selected tables: shows around their cells where they have cell spacing.</summary>
+    Table,
 }
 
-/// <summary>A shading pattern: the fill only, the pattern color only, or a percentage of the pattern color over the fill.</summary>
+/// <summary>A shading pattern (<c>ST_Shd</c>): none, the fill only, the pattern color only, a percentage of the pattern color over the fill, or stripes and crosses of it over the fill.</summary>
 public enum ShadingPattern
 {
     /// <summary>The fill only.</summary>
     Clear,
+    /// <summary>No shading.</summary>
+    Nil,
     /// <summary>The pattern color only.</summary>
     Solid,
-    /// <summary>5%.</summary>
+    /// <summary>5% of the pattern color over the fill.</summary>
     Pct5,
-    /// <summary>10%.</summary>
+    /// <summary>10% of the pattern color over the fill.</summary>
     Pct10,
-    /// <summary>20%.</summary>
+    /// <summary>12% of the pattern color over the fill.</summary>
+    Pct12,
+    /// <summary>15% of the pattern color over the fill.</summary>
+    Pct15,
+    /// <summary>20% of the pattern color over the fill.</summary>
     Pct20,
-    /// <summary>25%.</summary>
+    /// <summary>25% of the pattern color over the fill.</summary>
     Pct25,
-    /// <summary>30%.</summary>
+    /// <summary>30% of the pattern color over the fill.</summary>
     Pct30,
-    /// <summary>40%.</summary>
+    /// <summary>35% of the pattern color over the fill.</summary>
+    Pct35,
+    /// <summary>37% of the pattern color over the fill.</summary>
+    Pct37,
+    /// <summary>40% of the pattern color over the fill.</summary>
     Pct40,
-    /// <summary>50%.</summary>
+    /// <summary>45% of the pattern color over the fill.</summary>
+    Pct45,
+    /// <summary>50% of the pattern color over the fill.</summary>
     Pct50,
-    /// <summary>60%.</summary>
+    /// <summary>55% of the pattern color over the fill.</summary>
+    Pct55,
+    /// <summary>60% of the pattern color over the fill.</summary>
     Pct60,
-    /// <summary>70%.</summary>
+    /// <summary>62% of the pattern color over the fill.</summary>
+    Pct62,
+    /// <summary>65% of the pattern color over the fill.</summary>
+    Pct65,
+    /// <summary>70% of the pattern color over the fill.</summary>
     Pct70,
-    /// <summary>75%.</summary>
+    /// <summary>75% of the pattern color over the fill.</summary>
     Pct75,
-    /// <summary>80%.</summary>
+    /// <summary>80% of the pattern color over the fill.</summary>
     Pct80,
-    /// <summary>90%.</summary>
+    /// <summary>85% of the pattern color over the fill.</summary>
+    Pct85,
+    /// <summary>87% of the pattern color over the fill.</summary>
+    Pct87,
+    /// <summary>90% of the pattern color over the fill.</summary>
     Pct90,
+    /// <summary>95% of the pattern color over the fill.</summary>
+    Pct95,
+    /// <summary>Horizontal stripe of the pattern color over the fill.</summary>
+    HorzStripe,
+    /// <summary>Vertical stripe of the pattern color over the fill.</summary>
+    VertStripe,
+    /// <summary>Reverse diagonal stripe of the pattern color over the fill.</summary>
+    ReverseDiagStripe,
+    /// <summary>Diag stripe of the pattern color over the fill.</summary>
+    DiagStripe,
+    /// <summary>Horizontal cross of the pattern color over the fill.</summary>
+    HorzCross,
+    /// <summary>Diag cross of the pattern color over the fill.</summary>
+    DiagCross,
+    /// <summary>Thin horizontal stripe of the pattern color over the fill.</summary>
+    ThinHorzStripe,
+    /// <summary>Thin vertical stripe of the pattern color over the fill.</summary>
+    ThinVertStripe,
+    /// <summary>Thin reverse diagonal stripe of the pattern color over the fill.</summary>
+    ThinReverseDiagStripe,
+    /// <summary>Thin diagonal stripe of the pattern color over the fill.</summary>
+    ThinDiagStripe,
+    /// <summary>Thin horizontal cross of the pattern color over the fill.</summary>
+    ThinHorzCross,
+    /// <summary>Thin diagonal cross of the pattern color over the fill.</summary>
+    ThinDiagCross,
+    /// <summary>A pattern the document names that isn't listed: reading gives it, and setting it keeps each target's own pattern.</summary>
+    Other,
 }
 
 /// <summary>The text's border for <see cref="EditorCommands.SetTextBorderAsync"/>.</summary>

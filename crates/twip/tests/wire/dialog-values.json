@@ -76,7 +76,7 @@
     "underline": "none"
   },
   {
-    "applyTo": "paragraph",
+    "applyTo": "table",
     "between": null,
     "bottom": null,
     "color": "#2F5496",
@@ -93,10 +93,10 @@
     "pageSetting": "box",
     "pageTop": {
       "color": "auto",
-      "style": "triple",
+      "style": "dashDotStroked",
       "width": 0.5
     },
-    "pattern": "solid",
+    "pattern": "diagStripe",
     "patternColor": "auto",
     "right": null,
     "setting": "shadow",

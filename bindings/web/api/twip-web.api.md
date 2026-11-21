@@ -146,7 +146,7 @@ export interface BorderLine {
 }
 
 // @public
-export type BorderLineStyle = 'single' | 'double' | 'dotted' | 'dashed' | 'thick' | 'dotDash' | 'dotDotDash' | 'triple' | 'thinThickSmallGap' | 'thickThinSmallGap' | 'thinThickThinSmallGap' | 'wave' | 'doubleWave' | 'threeDEmboss' | 'threeDEngrave' | 'outset' | 'inset';
+export type BorderLineStyle = 'single' | 'double' | 'dotted' | 'dashed' | 'thick' | 'dotDash' | 'dotDotDash' | 'triple' | 'thinThickSmallGap' | 'thickThinSmallGap' | 'thinThickThinSmallGap' | 'dashSmallGap' | 'dashDotStroked' | 'thinThickMediumGap' | 'thickThinMediumGap' | 'thinThickThinMediumGap' | 'thinThickLargeGap' | 'thickThinLargeGap' | 'thinThickThinLargeGap' | 'wave' | 'doubleWave' | 'threeDEmboss' | 'threeDEngrave' | 'outset' | 'inset';
 
 // @public
 export type CellBorderEdges = 'all' | 'outside' | 'inside' | 'insideHorizontal' | 'insideVertical' | 'top' | 'bottom' | 'left' | 'right' | 'diagonalDown' | 'diagonalUp' | 'none';
@@ -909,7 +909,7 @@ export interface Commands {
     setSectionTextDirection(direction: TextFlow): Promise<void>;
     setSelectionMode(mode: 'normal' | 'extend' | 'block'): Promise<void>;
     setShading(options: {
-        target: 'paragraph' | 'text' | 'cell';
+        target: 'paragraph' | 'text' | 'cell' | 'table';
         fill: Color | 'none';
         pattern?: ShadingPattern;
         color?: Color | 'auto';
@@ -1281,7 +1281,7 @@ export interface DialogValues {
         right: BorderLine | null;
         between: BorderLine | null;
         insideVertical: BorderLine | null;
-        applyTo: 'paragraph' | 'text' | 'cell';
+        applyTo: 'paragraph' | 'text' | 'cell' | 'table';
         fill: Color | 'none';
         pattern: ShadingPattern;
         patternColor: Color | 'auto';
@@ -2831,7 +2831,7 @@ export interface SessionOptions {
 }
 
 // @public
-export type ShadingPattern = 'clear' | 'solid' | 'pct5' | 'pct10' | 'pct20' | 'pct25' | 'pct30' | 'pct40' | 'pct50' | 'pct60' | 'pct70' | 'pct75' | 'pct80' | 'pct90';
+export type ShadingPattern = 'nil' | 'clear' | 'solid' | 'pct5' | 'pct10' | 'pct12' | 'pct15' | 'pct20' | 'pct25' | 'pct30' | 'pct35' | 'pct37' | 'pct40' | 'pct45' | 'pct50' | 'pct55' | 'pct60' | 'pct62' | 'pct65' | 'pct70' | 'pct75' | 'pct80' | 'pct85' | 'pct87' | 'pct90' | 'pct95' | 'horzStripe' | 'vertStripe' | 'reverseDiagStripe' | 'diagStripe' | 'horzCross' | 'diagCross' | 'thinHorzStripe' | 'thinVertStripe' | 'thinReverseDiagStripe' | 'thinDiagStripe' | 'thinHorzCross' | 'thinDiagCross' | 'other';
 
 // @public
 export interface Shadow {

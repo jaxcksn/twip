@@ -2546,6 +2546,164 @@ fn border_lines_and_shading_edit_the_paragraph_and_the_text() {
 }
 
 #[test]
+fn shading_keeps_patterns_and_shades_cells_and_tables() {
+    use crate::api::command::{ShadingChange, ShadingPattern, ShadingTarget};
+    use crate::api::services::{DialogKind, DialogValues};
+    use crate::api::value::{AutoOr, Color, NoneOr};
+    use std::io::Read;
+    // Every ST_Shd value reads back as itself; another value is Other, which names none.
+    for v in ["nil", "clear", "solid", "pct12", "pct95", "horzStripe", "thinDiagCross"] {
+        assert_eq!(ShadingPattern::of_val(v).val(), Some(v));
+    }
+    assert_eq!((ShadingPattern::of_val("pct3"), ShadingPattern::Other.val()), (ShadingPattern::Other, None));
+    let cell = r#"<w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:shd w:val="horzStripe" w:color="C00000" w:fill="FFFF00"/></w:pPr><w:r><w:t>Cell</w:t></w:r></w:p></w:tc>"#;
+    let body = format!(
+        r#"<w:tbl><w:tblPr><w:tblW w:w="2000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:tr>{cell}</w:tr></w:tbl><w:p/>"#
+    );
+    let (mut engine, _) = engine();
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    s.open(&crate::layout::tests::shapes::bytes(&body).expect("a package")).expect("opens");
+    let m = s.dialog_open(DialogKind::BordersShading).expect("opens");
+    let DialogValues::BordersShading(v) = &m.values else { panic!("not Borders and Shading") };
+    assert_eq!(v.pattern, ShadingPattern::HorzStripe, "the dialog shows the stripe");
+    assert_eq!(m.fields["pattern"].options.as_ref().map(Vec::len), Some(37), "every pattern Word lists");
+    let shade = |target, fill, pattern, color| ShadingChange { target, fill: NoneOr::Value(Color(fill)), pattern, color };
+    s.run(Command::SetShading(shade(ShadingTarget::Paragraph, 0x00B050, ShadingPattern::Other, AutoOr::Auto))).expect("refills the paragraph");
+    s.run(Command::SetShading(shade(ShadingTarget::Cell, 0xFFFF00, ShadingPattern::DiagCross, AutoOr::Value(Color(0x2E75B6))))).expect("cell");
+    s.run(Command::SetShading(shade(ShadingTarget::Table, 0xFFFFFF, ShadingPattern::Pct25, AutoOr::Value(Color(0xC00000))))).expect("table");
+    let saved = s.export(&ExportOptions::Docx).expect("saves").bytes.0;
+    let mut z = zip::ZipArchive::new(std::io::Cursor::new(saved)).expect("a package");
+    let mut xml = String::new();
+    z.by_name("word/document.xml").unwrap().read_to_string(&mut xml).unwrap();
+    assert!(xml.contains(r#"<w:shd w:val="horzStripe" w:color="auto" w:fill="00B050"/>"#), "the stripe kept: {xml}");
+    assert!(xml.contains(r#"<w:tcPr><w:tcW w:w="2000" w:type="dxa"/><w:shd w:val="diagCross" w:color="2E75B6" w:fill="FFFF00"/>"#), "{xml}");
+    assert!(xml.contains(r#"<w:tblW w:w="2000" w:type="dxa"/><w:shd w:val="pct25" w:color="C00000" w:fill="FFFFFF"/>"#), "{xml}");
+}
+
+#[test]
+fn borders_and_shading_applies_to_the_cell_or_the_table() {
+    use crate::api::command::{ShadingPattern, ShadingTarget};
+    use crate::api::services::{BordersShadingPatch, DialogKind, DialogPatch, DialogValues};
+    use crate::api::value::{Color, NoneOr};
+    use std::io::Read;
+    let values = |m: &crate::api::services::DialogModel| match &m.values {
+        DialogValues::BordersShading(v) => v.clone(),
+        other => panic!("not Borders and Shading: {other:?}"),
+    };
+    let tc = r#"<w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/><w:shd w:val="horzStripe" w:color="C00000" w:fill="FFFF00"/></w:tcPr><w:p><w:r><w:t>Cell</w:t></w:r></w:p></w:tc>"#;
+    let body = format!(
+        r#"<w:tbl><w:tblPr><w:tblW w:w="2000" w:type="dxa"/><w:shd w:val="clear" w:color="auto" w:fill="FFF2CC"/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:tr>{tc}</w:tr></w:tbl><w:p/>"#
+    );
+    let (mut engine, _) = engine();
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    s.open(&crate::layout::tests::shapes::bytes(&body).expect("a package")).expect("opens");
+    let m = s.dialog_open(DialogKind::BordersShading).expect("opens");
+    let choices: Vec<String> = m.fields["applyTo"].options.iter().flatten().map(|o| o.value.clone()).collect();
+    assert_eq!(choices, ["text", "paragraph", "cell", "table"], "in a table");
+    let patch = |p: BordersShadingPatch| DialogPatch::BordersShading(p);
+    let m = s.dialog_update(m, patch(BordersShadingPatch { apply_to: Some(ShadingTarget::Cell), ..Default::default() })).expect("cell");
+    assert_eq!((values(&m).pattern, values(&m).fill), (ShadingPattern::HorzStripe, NoneOr::Value(Color(0xFFFF00))), "the cell's");
+    assert!(!m.fields["top"].enabled, "a cell block's edges aren't set from here");
+    let m = s.dialog_update(m, patch(BordersShadingPatch { apply_to: Some(ShadingTarget::Table), ..Default::default() })).expect("table");
+    assert_eq!((values(&m).pattern, values(&m).fill), (ShadingPattern::Clear, NoneOr::Value(Color(0xFFF2CC))), "the table's");
+    let m = s.dialog_update(m, patch(BordersShadingPatch { fill: Some(NoneOr::Value(Color(0x8EAADB))), ..Default::default() })).expect("fill");
+    s.dialog_apply(m).expect("applies");
+    let saved = s.export(&ExportOptions::Docx).expect("saves").bytes.0;
+    let mut z = zip::ZipArchive::new(std::io::Cursor::new(saved)).expect("a package");
+    let mut xml = String::new();
+    z.by_name("word/document.xml").unwrap().read_to_string(&mut xml).unwrap();
+    assert!(xml.contains(r#"<w:tblW w:w="2000" w:type="dxa"/><w:shd w:val="clear" w:color="auto" w:fill="8EAADB"/>"#), "{xml}");
+}
+
+/// A package from the table shading fixture with `body` and two table styles shaded around their cells.
+fn shaded_styles(body: &str) -> Vec<u8> {
+    use std::io::{Read, Write};
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/render/table-shading.docx");
+    let mut z = zip::ZipArchive::new(std::io::Cursor::new(std::fs::read(path).expect("fixture"))).expect("a package");
+    let mut out = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let style = |id: &str, fill: &str| {
+        format!(
+            r#"<w:style w:type="table" w:styleId="{id}"><w:name w:val="{id}"/><w:tblPr><w:shd w:val="clear" w:color="auto" w:fill="{fill}"/></w:tblPr></w:style>"#
+        )
+    };
+    for i in 0..z.len() {
+        let mut f = z.by_index(i).expect("a part");
+        let name = f.name().expect("a name").to_string();
+        let mut xml = String::new();
+        f.read_to_string(&mut xml).expect("text");
+        if name == "word/styles.xml" {
+            xml = xml.replace("</w:styles>", &format!("{}{}</w:styles>", style("ShadeA", "8EAADB"), style("ShadeB", "F4B183")));
+        } else if name == "word/document.xml" {
+            let (a, b) = (xml.find("<w:body>").expect("a body") + 8, xml.find("<w:sectPr").expect("a section"));
+            xml.replace_range(a..b, body);
+        }
+        out.start_file(name, zip::write::SimpleFileOptions::default()).expect("a part");
+        out.write_all(xml.as_bytes()).expect("its bytes");
+    }
+    out.finish().expect("the package").into_inner()
+}
+
+/// A table's style's shading stays its style's: changing the style shades the table with the new one, and saving
+/// writes no shading of the table's own; only Table shading does.
+#[test]
+fn a_table_follows_its_style_s_shading_and_saves_only_its_own() {
+    use crate::api::command::{ShadingChange, ShadingPattern, ShadingTarget};
+    use crate::api::value::{AutoOr, Color, NoneOr, StyleId};
+    let tc = r#"<w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>x</w:t></w:r></w:p></w:tc>"#;
+    let body = format!(
+        r#"<w:tbl><w:tblPr><w:tblStyle w:val="ShadeA"/><w:tblW w:w="2000" w:type="dxa"/><w:tblCellSpacing w:w="60" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:tr>{tc}</w:tr></w:tbl><w:p/>"#
+    );
+    let (mut engine, _) = engine();
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    s.open(&shaded_styles(&body)).expect("opens");
+    let table = |s: &super::Session| match &s.editor.document().sections[0].blocks[0] {
+        crate::docx::Block::Table(t) => t.shd.as_ref().and_then(|d| d.fill),
+        _ => None,
+    };
+    assert_eq!(table(s), Some(0x8EAADB), "its style's");
+    s.run(Command::SetTableStyle(StyleId("ShadeB".into()))).expect("restyles");
+    assert_eq!(table(s), Some(0xF4B183), "the new style's");
+    let xml = saved_part(s, "word/document.xml");
+    assert!(xml.contains(r#"<w:tblStyle w:val="ShadeB"/>"#) && !xml.contains("<w:shd"), "no shading of its own: {xml}");
+    let saved = s.export(&ExportOptions::Docx).expect("saves").bytes.0;
+    let again = engine.create_session(SessionOptions::default());
+    let r = engine.session(again).expect("a session");
+    r.open(&saved).expect("reopens");
+    assert_eq!(table(r), Some(0xF4B183), "reopened, still the style's");
+    let s = engine.session(id).expect("the first");
+    let shade =
+        ShadingChange { target: ShadingTarget::Table, fill: NoneOr::Value(Color(0xFFF2CC)), pattern: ShadingPattern::Clear, color: AutoOr::Auto };
+    s.run(Command::SetShading(shade)).expect("shades the table");
+    s.run(Command::SetTableStyle(StyleId("ShadeA".into()))).expect("restyles");
+    assert_eq!(table(s), Some(0xFFF2CC), "its own over the style's");
+    let xml = saved_part(s, "word/document.xml");
+    assert!(xml.contains(r#"<w:shd w:val="clear" w:color="auto" w:fill="FFF2CC"/>"#), "its own written: {xml}");
+}
+
+/// Word (compat 15, checked): a later table joined to a shaded one, in the same style and with no shading of its own,
+/// shows its style's shading, not the first table's own.
+#[test]
+fn a_joined_table_without_its_own_shading_shows_its_style_s() {
+    let tc = r#"<w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>x</w:t></w:r></w:p></w:tc>"#;
+    let table = |own: &str| {
+        format!(
+            r#"<w:tbl><w:tblPr><w:tblStyle w:val="ShadeB"/><w:tblW w:w="2000" w:type="dxa"/><w:tblCellSpacing w:w="60" w:type="dxa"/>{own}</w:tblPr><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:tr>{tc}</w:tr></w:tbl>"#
+        )
+    };
+    let body = format!("{}{}<w:p/>", table(r#"<w:shd w:val="clear" w:color="auto" w:fill="8EAADB"/>"#), table(""));
+    let (mut engine, _) = engine();
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    s.open(&shaded_styles(&body)).expect("opens");
+    let crate::docx::Block::Table(t) = &s.editor.document().sections[0].blocks[0] else { panic!("a table") };
+    assert_eq!(t.rows.len(), 2, "joined");
+    assert_eq!((t.shd.as_ref().and_then(|d| d.fill), t.rows[1].table_shading), (Some(0x8EAADB), Some((Some(0xF4B183), None))));
+}
+
+#[test]
 fn borders_and_shading_sets_a_box_reopens_on_it_and_formats_a_style() {
     use crate::api::command::{BorderStyle, ShadingPattern};
     use crate::api::services::{BorderSetting, BordersShadingPatch, DialogKind, DialogPatch, DialogValues, StyleOpen};

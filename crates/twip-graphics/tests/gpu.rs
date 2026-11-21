@@ -150,6 +150,13 @@ fn images() {
 }
 
 #[test]
+fn pixel_tiles() {
+    let mut resources = Resources::default();
+    let picture = common::scenes::pixel_tiles(&mut resources);
+    same("pixel-tiles", (128, 96), &picture, &resources);
+}
+
+#[test]
 fn gradients() {
     same("gradients", (128, 144), &common::scenes::gradients(), &Resources::default());
 }

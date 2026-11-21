@@ -804,3 +804,47 @@ fn a_picture_watermark_is_drawn_behind_the_body_text() {
         assert_eq!(order.iter().filter(|c| **c == 'p').count(), 1);
     }
 }
+
+/// Spaced shaded rows and shaded paragraphs joined over their spacing meet at fractional pixels without a pale seam:
+/// shading is drawn aliased.
+#[test]
+fn abutting_shading_leaves_no_seam() {
+    let fill = [0x8E, 0xAA, 0xDB, 0xFF];
+    let p = |shd: &str| {
+        format!(
+            r#"<w:p><w:pPr><w:shd w:val="clear" w:color="auto" w:fill="{shd}"/><w:spacing w:before="0" w:after="67" w:line="266" w:lineRule="exact"/></w:pPr><w:r><w:t>x</w:t></w:r></w:p>"#
+        )
+    };
+    let tc = format!(r#"<w:tc><w:tcPr><w:tcW w:w="1500" w:type="dxa"/></w:tcPr>{}</w:tc>"#, p("FFFFFF"));
+    let body = format!(
+        r#"<w:tbl><w:tblPr><w:tblW w:w="3000" w:type="dxa"/><w:tblCellSpacing w:w="61" w:type="dxa"/><w:shd w:val="clear" w:color="auto" w:fill="8EAADB"/></w:tblPr><w:tblGrid><w:gridCol w:w="1500"/><w:gridCol w:w="1500"/></w:tblGrid>{}</w:tbl>{}"#,
+        format!("<w:tr>{tc}{tc}</w:tr>").repeat(3),
+        p("8EAADB").repeat(3)
+    );
+    let d = crate::docx::read(&package_body(&body, None)).expect("the document reads");
+    let snap = crate::layout::layout(&d, &fonts());
+    let page = &snap.pages()[0];
+    let shaded: Vec<[f64; 4]> = crate::layout::traverse::paint_items(page)
+        .into_iter()
+        .filter_map(|i| match i {
+            crate::layout::fragment::Item::Rect { rect, colour: 0x8EAADB, snap: true } => Some(rect),
+            _ => None,
+        })
+        .collect();
+    // The table's gaps (left of 222 pt), then the paragraphs' lines.
+    let (table, paras): (Vec<[f64; 4]>, Vec<[f64; 4]>) = shaded.iter().partition(|r| r[2] <= 222.0 + 1e-6);
+    assert_eq!(paras.len(), 3, "{shaded:?}");
+    let top = table.iter().map(|r| r[1]).fold(f64::MAX, f64::min);
+    let bottom = table.iter().map(|r| r[3]).fold(f64::MIN, f64::max);
+    let mut g = Graphics::default();
+    let picture = g.page_picture(&Renderer::default(), page, &d.images);
+    let mut px = vec![0u8; SIZE.0 * SIZE.1 * 4];
+    let mut target = Target::new(&mut px, SIZE.0 as u32, SIZE.1 as u32, SIZE.0 * 4, Format::Rgba8).expect("a target");
+    g.render_picture(&mut target, &picture, Affine::scale(K) * Affine::translate((-ORIGIN.0, -ORIGIN.1)), Color::WHITE);
+    let shot = Shot(px);
+    // Down the table's left gap, and the paragraphs clear of their text.
+    for (x, top, bottom) in [(73.0, top, bottom), (200.0, paras[0][1], paras[2][3])] {
+        let column = shot.column(x, top + 1.0, bottom - 1.0);
+        assert!(column.iter().all(|&c| c == fill), "{:?}", column.iter().filter(|&&c| c != fill).collect::<Vec<_>>());
+    }
+}

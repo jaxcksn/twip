@@ -176,6 +176,14 @@ fn images() {
 }
 
 #[test]
+fn pixel_tiles() {
+    let mut res = Resources::default();
+    let picture = scenes::pixel_tiles(&mut res);
+    // Tiles drawn finer than a pixel a texel are placed by the viewer, snapped or not: up to a tenth of them differs.
+    same_from("pixel-tiles", (128, 96), &picture, &res, 0, 10);
+}
+
+#[test]
 fn gradients() {
     same("gradients", (128, 144), &scenes::gradients(), &Resources::default());
 }

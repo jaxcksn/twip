@@ -402,6 +402,32 @@ pub fn images(resources: &mut Resources) -> Picture {
     rec.finish()
 }
 
+/// Pixel tiles: an 8 × 8 one-pixel stripe tile drawn at fractional scales below one device pixel a texel (nearest
+/// drops and doubles stripes; snapped, the pitch is steady), at two above, under a fractional offset, and rotated
+/// (left as nearest).
+pub fn pixel_tiles(resources: &mut Resources) -> Picture {
+    use twip_graphics::paint::{Brush, Sampling};
+    let bits = [0xC0u8, 0xC0, 0xC0, 0xC0, 0xC0, 0xC0, 0xC0, 0x81];
+    let px: Vec<u8> =
+        bits.iter().flat_map(|row| (0..8).flat_map(move |i| if row & (0x80 >> i) != 0 { [192, 0, 0, 255] } else { [255, 255, 0, 255] })).collect();
+    let tile = resources.images.add_pixels(8, 8, px).expect("pixels");
+    let mut rec = Recorder::new();
+    let row = |rec: &mut Recorder, y: f64, sampling: Sampling| {
+        for (k, scale) in [0.32, 0.41, 0.77, 1.6, 2.3].into_iter().enumerate() {
+            let x = 4.0 + k as f64 * 24.0;
+            let transform = Affine::translate((x + 0.3, y + 0.6)) * Affine::scale(scale);
+            rec.fill_rect(rect(x, y, x + 20.0, y + 20.0), Paint::new(Brush::Pattern { image: tile, transform, sampling }));
+        }
+    };
+    row(&mut rec, 4.0, Sampling::Nearest);
+    row(&mut rec, 28.0, Sampling::Pixel);
+    rec.push_transform(Affine::rotate_about(0.4, kurbo::Point::new(64.0, 70.0)));
+    let transform = Affine::translate((44.0, 56.0)) * Affine::scale(0.77);
+    rec.fill_rect(rect(44.0, 56.0, 84.0, 84.0), Paint::new(Brush::Pattern { image: tile, transform, sampling: Sampling::Pixel }));
+    rec.pop();
+    rec.finish()
+}
+
 /// Gradients: linear in each extend mode, radial, two-point conical, sweep, on a rounded rect, and under rotation.
 pub fn gradients() -> Picture {
     use twip_graphics::paint::{Brush, Extend, Stop};

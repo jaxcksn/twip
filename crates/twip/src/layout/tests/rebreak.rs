@@ -30,6 +30,7 @@ fn rebreak_does_not_reshape() {
             env: env.text.clone(),
             fit: false,
             letter_break: false,
+            shade_gap: 0.0,
         };
         let lines = break_lines(&shaped, p, &space, &fonts, &mut memos).expect("unlimited");
         let fresh = break_lines_uncached(&shaped, p, &space, &fonts, &mut memos).expect("unlimited");
