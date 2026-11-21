@@ -51,6 +51,7 @@ fn check_box(x: f64, base: f64, advance: f64, e: f64, checked: bool, colour: Opt
         float: 0,
         path: Vec::new(),
         picture: false,
+        ink: true,
     }))
 }
 
@@ -126,6 +127,7 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
         for (r, c) in &line.rects {
             out.push(Item::rect([x0 + r[0], top + r[1], x0 + r[2], top + r[3]], *c));
         }
+        out.extend(line.strokes.iter().map(|s| Item::Shape(Rc::new(s.moved(x0, top)))));
         let rects_end = out.len();
         let behind_text = behind(o, src);
         let mut run: Option<GlyphRunBuilder> = None;
@@ -485,6 +487,8 @@ fn draw_decorations(o: &LineOrigin, line: &Line, base: f64, bg_at: usize, behind
         crate::layout::table::edge(fg, [l, btm - w, r, btm], true, true, &b);
         crate::layout::table::edge(fg, [l, t, l + w, btm], false, false, &b);
         crate::layout::table::edge(fg, [r - w, t, r, btm], false, true, &b);
+        crate::layout::table::shadow(fg, [l, btm - w, r, btm], true, true, &b, true, true);
+        crate::layout::table::shadow(fg, [r - w, t, r, btm], false, true, &b, true, false);
     };
     for (k, p) in pieces.iter().enumerate() {
         let st = &sp.styles[p.style as usize];

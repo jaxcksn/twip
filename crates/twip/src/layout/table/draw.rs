@@ -98,6 +98,7 @@ fn clip_cut(children: &Rc<[Child]>, lo: f64, hi: f64, top: f64, bottom: f64, bor
         l.line.items.iter().any(|i| match i {
             Item::Glyphs(r) => r.glyphs.iter().any(|g| !inside(r, g, l.x, l.y)),
             Item::Rect { rect, .. } => l.x + rect[0] < lo - EPS || l.x + rect[2] > hi + EPS,
+            Item::Shape(s) => s.ink && (l.x + s.rect[0] < lo - EPS || l.x + s.rect[2] > hi + EPS),
             _ => false,
         })
     };
@@ -126,6 +127,9 @@ fn clip_cut(children: &Rc<[Child]>, lo: f64, hi: f64, top: f64, bottom: f64, bor
                     Item::Rect { rect, colour } => {
                         let (x0, x1) = (rect[0].max(lo - dx), rect[2].min(hi - dx));
                         (x1 > x0).then_some(Item::rect([x0, rect[1], x1, rect[3]], *colour))
+                    }
+                    Item::Shape(s) if s.ink => {
+                        super::clip_stroke(s, [lo - dx, f64::NEG_INFINITY, hi - dx, f64::INFINITY]).map(|s| Item::Shape(Rc::new(s)))
                     }
                     other => Some(other.clone()),
                 })
@@ -171,6 +175,13 @@ fn clip_nested(c: &Child, lo: f64, hi: f64, top: f64, bottom: f64, borders: bool
                                     any = true;
                                 }
                                 (r[2] > r[0] && r[3] > r[1]).then_some(Item::rect(r, *colour))
+                            }
+                            Item::Shape(s) if s.ink => {
+                                let cut = super::clip_stroke(s, [lo, top, hi, bottom]);
+                                if cut.as_ref().is_none_or(|c| c.rect != s.rect) {
+                                    any = true;
+                                }
+                                cut.map(|c| Item::Shape(Rc::new(c)))
                             }
                             other => Some(other.clone()),
                         })
@@ -248,6 +259,7 @@ pub fn frame_part(tb: &TableLayout, frag: &mut RowFragment, left: f64, open: Opt
         }
         let same = |a: &Item, b: &Item| match (a, b) {
             (Item::Rect { rect: r, colour: c }, Item::Rect { rect: q, colour: d }) => c == d && r.iter().zip(q).all(|(x, y)| (x - y).abs() < EPS),
+            (Item::Shape(a), Item::Shape(b)) => a == b,
             _ => false,
         };
         let mut borders = std::mem::take(&mut frag.borders).into_vec();

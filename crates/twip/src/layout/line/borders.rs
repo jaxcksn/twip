@@ -111,15 +111,28 @@ pub fn apply_borders(
     let left = s.ind_left + s.ind_first.min(0.0);
     let (x0, x1) = (left - lx, width - s.ind_right + rx);
     // Each edge draws as a table's does: every border style, its stripes and tones.
-    let edge = |rects: &mut Vec<([f64; 4], u32)>, b: &Border, horizontal: bool, far: bool, a: f64, from: f64, to: f64| {
+    let edge = |line: &mut Line, b: &Border, horizontal: bool, far: bool, a: f64, from: f64, to: f64| {
         let w = thick(b);
         let r = if horizontal { [from, a, to, a + w] } else { [a, from, a + w, to] };
         let mut items = Vec::new();
         crate::layout::table::edge(&mut items, r, horizontal, far, b);
-        rects.extend(items.into_iter().filter_map(|i| match i {
-            Item::Rect { rect, colour } => Some((rect, colour)),
-            _ => None,
-        }));
+        for i in items {
+            match i {
+                Item::Rect { rect, colour } => line.rects.push((rect, colour)),
+                Item::Shape(s) => line.strokes.push(s),
+                _ => {}
+            }
+        }
+    };
+    // A shadowed far edge's shadow: black rects beside it.
+    let cast = |line: &mut Line, b: &Border, horizontal: bool, r: [f64; 4], lead: bool, trail: bool| {
+        let mut items = Vec::new();
+        crate::layout::table::shadow(&mut items, r, horizontal, true, b, lead, trail);
+        for i in items {
+            if let Item::Rect { rect, colour } = i {
+                line.rects.push((rect, colour));
+            }
+        }
     };
     let (mut shade_top, mut shade_bottom) = (0.0, None);
     let top_extra = top_border_extra(s, prev, first_part);
@@ -130,19 +143,19 @@ pub fn apply_borders(
     for (d, &y) in s.div_boxes.iter().zip(&div_at) {
         if let (true, true, Some(t)) = (first_part, d.starts, &d.borders[0]) {
             let (a, b) = div_x(d);
-            edge(&mut lines[0].rects, t, true, false, y, a, b);
+            edge(&mut lines[0], t, true, false, y, a, b);
         }
     }
     match prev {
         Some(p) if same_prev => {
             if let Some(b) = p.between.as_ref().filter(|_| !p.continued) {
                 let y = div_top + shadowed(b);
-                edge(&mut lines[0].rects, b, true, false, y, x0, x1);
+                edge(&mut lines[0], b, true, false, y, x0, x1);
             }
         }
         _ => {
             if let Some(t) = &s.border_top {
-                edge(&mut lines[0].rects, t, true, false, div_top + shadowed(t), x0, x1);
+                edge(&mut lines[0], t, true, false, div_top + shadowed(t), x0, x1);
                 shade_top = div_top + shadowed(t) + thick(t);
             }
         }
@@ -155,7 +168,8 @@ pub fn apply_borders(
     if let (Some(b), false) = (&s.border_bottom, same_next) {
         let l = &mut lines[n - 1];
         let y = l.pitch + border_space(b);
-        edge(&mut l.rects, b, true, true, y, x0, x1);
+        edge(&mut *l, b, true, true, y, x0, x1);
+        cast(&mut *l, b, true, [x0, y, x1, y + thick(b)], s.border_left.is_some(), s.border_right.is_some());
         shade_bottom = Some(y);
         l.pitch += border_space(b) + thick(b) + shadowed(b);
     }
@@ -169,7 +183,8 @@ pub fn apply_borders(
             if let (true, Some(b)) = (d.ends, &d.borders[2]) {
                 let y = l.pitch + border_space(b);
                 let (a, c) = div_x(d);
-                edge(&mut l.rects, b, true, true, y, a, c);
+                edge(&mut *l, b, true, true, y, a, c);
+                cast(&mut *l, b, true, [a, y, c, y + thick(b)], d.borders[1].is_some(), d.borders[3].is_some());
                 l.pitch = y + thick(b) + shadowed(b);
                 div_bottom[k] = Some(l.pitch);
             }
@@ -182,17 +197,23 @@ pub fn apply_borders(
             let from = if i == 0 && first_part && d.starts { div_at[k] } else { 0.0 };
             let to = if i + 1 == n { div_bottom[k].unwrap_or(h) } else { h };
             if let Some(b) = &d.borders[1] {
-                edge(&mut l.rects, b, false, false, a, from, to);
+                edge(&mut *l, b, false, false, a, from, to);
             }
             if let Some(b) = &d.borders[3] {
-                edge(&mut l.rects, b, false, true, c - thick(b), from, to);
+                edge(&mut *l, b, false, true, c - thick(b), from, to);
+                let top = i == 0 && first_part && d.starts && d.borders[0].is_some();
+                cast(&mut *l, b, false, [c - thick(b), from, c, to], top, false);
             }
         }
+        // The sides stop at the bottom border; its shadow is drawn clear of them.
+        let sides_to = if i + 1 == n && !same_next { h - s.border_bottom.as_ref().map_or(0.0, shadowed) } else { h };
         if let Some(b) = &s.border_left {
-            edge(&mut l.rects, b, false, false, x0, 0.0, h);
+            edge(&mut *l, b, false, false, x0, 0.0, sides_to);
         }
         if let Some(b) = &s.border_right {
-            edge(&mut l.rects, b, false, true, x1 - thick(b), 0.0, h);
+            edge(&mut *l, b, false, true, x1 - thick(b), 0.0, sides_to);
+            let top = i == 0 && first_part && s.border_top.is_some() && !same_prev;
+            cast(&mut *l, b, false, [x1 - thick(b), 0.0, x1, sides_to], top, false);
         }
         if let Some(fill) = s.shading {
             // As Word draws it (every combination of sides checked, compat 15 and earlier): the shading fills to a

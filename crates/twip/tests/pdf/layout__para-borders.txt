@@ -389,6 +389,11 @@ page 1 612 792
   op 72 414.96 468 1.5 re
   op f
   op Q
+  op q
+  op 0 0 0 rg
+  op 72 416.46 468 1.5 re
+  op f
+  op Q
   op EMC
   op /P << /MCID 14 >> BDC
   op q

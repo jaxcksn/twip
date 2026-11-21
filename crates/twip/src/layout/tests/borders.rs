@@ -3,6 +3,19 @@
 use super::shapes::bytes;
 use crate::layout::fragment::Item;
 
+/// A page's stroked border paths: their rects.
+fn strokes(body: &str, page: usize) -> Vec<[f64; 4]> {
+    let doc = crate::docx::read(&bytes(body).expect("a package")).expect("reads");
+    let snap = crate::layout::layout(&doc, &super::fonts());
+    crate::layout::traverse::paint_items(&snap.pages()[page])
+        .into_iter()
+        .filter_map(|i| match i {
+            Item::Shape(s) if s.ink => Some(s.rect),
+            _ => None,
+        })
+        .collect()
+}
+
 fn rects(body: &str) -> Vec<([f64; 4], u32)> {
     let doc = crate::docx::read(&bytes(body).expect("a package")).expect("reads");
     let snap = crate::layout::layout(&doc, &super::fonts());
@@ -64,7 +77,12 @@ fn paragraph_borders_draw_their_style() {
     assert_eq!(count("triple"), 3);
     assert_eq!(count("thinThickSmallGap"), 2);
     assert!(count("dotted") > 10, "dots");
-    assert!(count("wave") > 10, "a wave");
+    assert_eq!(count("wave"), 0, "a wave is a stroked path, not rects");
+    let strokes = |style: &str| strokes(&para(style), 0).len();
+    assert_eq!(strokes("wave"), 1, "a wave is one stroked path");
+    assert_eq!(strokes("doubleWave"), 1);
+    assert_eq!(strokes("dashDotStroked"), 1);
+    assert_eq!(strokes("single"), 0);
 }
 
 fn page_rects(sect: &str, paras: usize) -> Vec<Vec<([f64; 4], u32)>> {
@@ -163,6 +181,66 @@ fn a_zero_size_border_draws_a_hairline_that_takes_no_space() {
         for sz in [r#" w:sz="0""#, ""] {
             assert_eq!(after(&body(sz)), plain, "{sz:?} takes no space");
             assert_eq!(red(&body(sz)), red(&body(one)), "{sz:?} draws as sz 1");
+        }
+    }
+}
+
+fn overlapping(a: &[f64; 4], b: &[f64; 4]) -> bool {
+    a[0] < b[2] - 0.01 && b[0] < a[2] - 0.01 && a[1] < b[3] - 0.01 && b[1] < a[3] - 0.01
+}
+
+#[test]
+fn a_wave_bordered_table_split_across_pages_draws_each_edge_once() {
+    let rows: String = (0..90)
+        .map(|i| format!(r#"<w:tr><w:tc><w:tcPr><w:tcW w:w="4000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>row {i}</w:t></w:r></w:p></w:tc></w:tr>"#))
+        .collect();
+    let wave = |sz: u32| format!(r#"w:val="wave" w:sz="{sz}" w:space="0" w:color="1F4E79""#);
+    let body = format!(
+        r#"<w:tbl><w:tblPr><w:tblW w:w="4000" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblBorders><w:top {0}/><w:bottom {1}/><w:insideH {0}/></w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid>{rows}</w:tbl><w:p/>"#,
+        wave(12),
+        wave(24)
+    );
+    let doc = crate::docx::read(&bytes(&body).expect("a package")).expect("reads");
+    let snap = crate::layout::layout(&doc, &super::fonts());
+    assert!(snap.pages().len() > 1, "the table splits");
+    for (n, page) in snap.pages().iter().enumerate() {
+        let wide: Vec<[f64; 4]> = crate::layout::traverse::paint_items(page)
+            .into_iter()
+            .filter_map(|i| match i {
+                Item::Shape(s) if s.ink && s.rect[2] - s.rect[0] > 100.0 => Some(s.rect),
+                _ => None,
+            })
+            .collect();
+        assert!(!wide.is_empty(), "page {n} has wave edges");
+        for (i, a) in wide.iter().enumerate() {
+            for b in &wide[i + 1..] {
+                assert!(!overlapping(a, b), "page {n}: {a:?} and {b:?} are drawn over each other");
+            }
+        }
+    }
+}
+
+#[test]
+fn wave_edges_are_clipped_with_their_cell() {
+    let wave = r#"w:val="wave" w:sz="12" w:space="0" w:color="1F4E79""#;
+    let edges = format!(r#"<w:left {wave}/><w:right {wave}/><w:top {wave}/><w:bottom {wave}/>"#);
+    let single = r#"w:val="single" w:sz="4" w:space="0" w:color="000000""#;
+    let cell = |inner: &str| {
+        format!(
+            r#"<w:tbl><w:tblPr><w:tblW w:w="3000" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblBorders><w:left {single}/><w:right {single}/></w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr>{inner}</w:tc></w:tr></w:tbl><w:p/>"#
+        )
+    };
+    let spilling = format!(r#"<w:p><w:pPr><w:pBdr>{edges}</w:pBdr><w:ind w:left="-1440" w:right="-1440"/></w:pPr><w:r><w:t>text</w:t></w:r></w:p>"#);
+    let nested = format!(
+        r#"<w:tbl><w:tblPr><w:tblW w:w="6000" w:type="dxa"/><w:tblInd w:w="-1440" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblBorders>{edges}</w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="6000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="6000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>in</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#
+    );
+    // The cell's clip opens with the text before the nested table.
+    let nested = format!(r#"<w:p><w:r><w:t>lead</w:t></w:r></w:p>{nested}"#);
+    for (what, inner) in [("a paragraph", spilling), ("a nested table", nested)] {
+        let found = strokes(&cell(&inner), 0);
+        assert!(!found.is_empty(), "{what} draws wave edges");
+        for r in &found {
+            assert!(r[2] - r[0] <= 150.5, "{what}: {r:?} runs outside its 150 pt cell");
         }
     }
 }

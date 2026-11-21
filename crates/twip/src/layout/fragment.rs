@@ -52,7 +52,7 @@ pub struct Layer {
     pub order: usize,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ShapeItem {
     pub rect: [f64; 4],
     pub rot: f64,
@@ -66,6 +66,8 @@ pub struct ShapeItem {
     pub float: u64,
     pub path: crate::drawing::ChildPath,
     pub picture: bool,
+    /// Its line is a document ink colour (a border or a check box), mapped by the appearance like a rect's.
+    pub ink: bool,
 }
 
 impl ShapeItem {
@@ -119,6 +121,7 @@ impl ShapeItem {
             float: self.float,
             path: self.path.clone(),
             picture: self.picture,
+            ink: self.ink,
         }
     }
 }

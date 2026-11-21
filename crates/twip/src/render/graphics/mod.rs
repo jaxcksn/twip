@@ -59,6 +59,16 @@ pub struct Graphics {
     pub with_text: bool,
 }
 
+/// A shape whose line is document ink (a border, a check box) with that colour taken through the appearance, as a rect's is.
+fn ink_shape(r: &Renderer, s: &crate::layout::fragment::ShapeItem) -> crate::layout::fragment::ShapeItem {
+    let mut mapped = s.clone();
+    if let crate::drawing::paint::Paint::Solid(c) = &mut mapped.line.paint {
+        let rgb = r.appearance.map(u32::from(c.r) << 16 | u32::from(c.g) << 8 | u32::from(c.b));
+        (c.r, c.g, c.b) = ((rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8);
+    }
+    mapped
+}
+
 fn rect([x0, y0, x1, y1]: [f64; 4]) -> kurbo::Rect {
     kurbo::Rect::new(x0, y0, x1, y1)
 }
@@ -315,6 +325,7 @@ impl Graphics {
                     rec.line((*x0, *y0).into(), (*x1, *y1).into(), &dashed(0.75, 2.25, 1.5), ink(0x9D_C3E6));
                 }
             }
+            Item::Shape(s) if s.ink && !own && !r.appearance.is_identity() => self.shape(rec, &ink_shape(r, s), images),
             Item::Shape(s) => self.shape(rec, s, images),
             Item::Turned(t) => {
                 rec.push_transform(Affine::rotate_about(t.deg.to_radians(), kurbo::Point::new(t.centre[0], t.centre[1])));
@@ -470,4 +481,41 @@ pub(crate) fn clusters(r: &crate::layout::fragment::GlyphRun) -> Option<Vec<u32>
             })
             .collect(),
     )
+}
+
+#[cfg(test)]
+mod ink_tests {
+    use super::*;
+    use crate::render::appearance::{Appearance, PageMode};
+
+    #[test]
+    fn a_stroked_border_takes_the_appearance_like_a_rect() {
+        use crate::drawing::{
+            colour::Rgba,
+            geom::Geom,
+            paint::{Paint, ResolvedEffects, ResolvedLine},
+        };
+        let geom = Geom { paths: vec![], text_rect: [0.0; 4], handles: vec![], cxn: vec![] };
+        let line = ResolvedLine { width: 1.0, paint: Paint::Solid(Rgba { r: 0, g: 0, b: 0, a: 255 }), ..ResolvedLine::none() };
+        let s = crate::layout::fragment::ShapeItem {
+            rect: [0.0; 4],
+            rot: 0.0,
+            flip_h: false,
+            flip_v: false,
+            geom: std::rc::Rc::new(geom),
+            fill: Paint::None,
+            line,
+            effects: ResolvedEffects::default(),
+            behind: false,
+            float: 0,
+            path: Vec::new(),
+            picture: false,
+            ink: true,
+        };
+        let r = Renderer { appearance: Appearance::Dark { page: PageMode::Dark }, ..Renderer::default() };
+        let want = r.appearance.map(0x000000);
+        assert_ne!(want, 0x000000, "black is lightened on the dark page");
+        let Paint::Solid(c) = ink_shape(&r, &s).line.paint else { panic!() };
+        assert_eq!(u32::from(c.r) << 16 | u32::from(c.g) << 8 | u32::from(c.b), want);
+    }
 }

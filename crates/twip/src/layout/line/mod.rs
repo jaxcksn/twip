@@ -44,6 +44,8 @@ pub struct Line {
     pub hyphen: bool,
     pub leaders: Vec<(usize, Leader)>,
     pub rects: Vec<([f64; 4], u32)>,
+    /// Stroked border paths, placed like `rects`.
+    pub strokes: Vec<std::rc::Rc<crate::layout::fragment::ShapeItem>>,
     /// How its runs sit on it (`w:textAlignment`): `baseline` is the reference baseline, each run's text its own
     /// [`align_drop`] below it.
     pub align: Align,
@@ -113,6 +115,7 @@ impl Line {
             hyphen: false,
             leaders: Vec::new(),
             rects: Vec::new(),
+            strokes: Vec::new(),
             align: Align::Baseline,
             vertical: false,
         }
@@ -264,7 +267,12 @@ impl ParaLines {
 
     pub fn bytes(&self) -> usize {
         use std::mem::size_of;
-        size_of::<ParaLines>() + self.lines.iter().map(|l| size_of::<Line>() + (l.xs.len() + l.widths.len()) * 8 + l.rects.len() * 40).sum::<usize>()
+        size_of::<ParaLines>()
+            + self
+                .lines
+                .iter()
+                .map(|l| size_of::<Line>() + (l.xs.len() + l.widths.len()) * 8 + l.rects.len() * 40 + l.strokes.len() * 8)
+                .sum::<usize>()
     }
 }
 

@@ -266,6 +266,7 @@ pub(in crate::layout) fn shape_items(
             behind,
             float,
             picture: leaf.shape.pic().is_some(),
+            ink: false,
             path: leaf.path,
         }));
     }
