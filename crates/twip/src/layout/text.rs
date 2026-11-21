@@ -1608,11 +1608,11 @@ fn shapes_alike(a: &Run, b: &Run) -> bool {
         hidden,
         no_proof,
         underline,
-        underline_color: _,
-        emboss: _,
-        imprint: _,
-        outline: _,
-        shadow: _,
+        underline_color,
+        emboss,
+        imprint,
+        outline,
+        shadow,
         typography: _,
         color,
         highlight,
@@ -1654,6 +1654,11 @@ fn shapes_alike(a: &Run, b: &Run) -> bool {
             && *hidden == b.hidden
             && *no_proof == b.no_proof
             && *underline == b.underline
+            && *underline_color == b.underline_color
+            && *emboss == b.emboss
+            && *imprint == b.imprint
+            && *outline == b.outline
+            && *shadow == b.shadow
             && *color == b.color
             && *highlight == b.highlight
             && *shading == b.shading

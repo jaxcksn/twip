@@ -204,6 +204,7 @@ pub struct ParaLines {
     theme: std::rc::Rc<crate::drawing::theme::Theme>,
     colour_map: crate::drawing::theme::ColourMap,
     backdrop: Option<u32>,
+    page_colour: Option<u32>,
 }
 
 impl PartialEq for ParaLines {
@@ -223,6 +224,7 @@ impl PartialEq for ParaLines {
             theme: _,
             colour_map: _,
             backdrop: _,
+            page_colour: _,
         } = self;
         Rc::ptr_eq(shaped, &o.shaped) && *lines == o.lines && *from == o.from && *width == o.width && *x0 == o.x0
     }
@@ -262,6 +264,7 @@ impl ParaLines {
             ul_trail_space: self.ul_trail_space,
             palette: crate::drawing::paint::Palette { theme: &self.theme, map: &self.colour_map },
             backdrop: self.backdrop,
+            page_colour: self.page_colour,
         }
     }
 
@@ -374,6 +377,7 @@ pub fn break_lines_uncached(
         theme: space.env.theme.clone(),
         colour_map: space.env.colour_map,
         backdrop: space.env.backdrop,
+        page_colour: space.env.page_colour,
     })
 }
 

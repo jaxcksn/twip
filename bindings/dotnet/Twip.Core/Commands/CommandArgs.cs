@@ -130,6 +130,24 @@ public enum UnderlineStyle
     DotDash,
     /// <summary>A wavy line.</summary>
     Wave,
+    /// <summary>A heavy dotted line.</summary>
+    DottedHeavy,
+    /// <summary>A heavy dashed line.</summary>
+    DashedHeavy,
+    /// <summary>A line of long dashes.</summary>
+    DashLong,
+    /// <summary>A heavy line of long dashes.</summary>
+    DashLongHeavy,
+    /// <summary>Heavy alternating dots and dashes.</summary>
+    DashDotHeavy,
+    /// <summary>A dash and two dots, repeated.</summary>
+    DotDotDash,
+    /// <summary>A heavy dash and two dots, repeated.</summary>
+    DashDotDotHeavy,
+    /// <summary>A heavy wavy line.</summary>
+    WavyHeavy,
+    /// <summary>Two wavy lines.</summary>
+    WavyDouble,
 }
 
 /// <summary>A highlight colour.</summary>

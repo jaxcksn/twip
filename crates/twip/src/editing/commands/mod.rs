@@ -13,6 +13,8 @@ pub(in crate::editing) mod tabs;
 mod text;
 
 pub(crate) use character::highlight_value;
+#[cfg(test)]
+pub(crate) use character::underline_value;
 
 use crate::api::command::CommandId;
 

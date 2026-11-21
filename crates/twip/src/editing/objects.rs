@@ -119,7 +119,7 @@ impl Editor {
         let snap = self.snapshot();
         let items = crate::layout::traverse::paint_float(snap.pages().get(page)?, f);
         items.iter().rev().find_map(|it| match it {
-            crate::layout::fragment::Item::Shape(s) if s.hit(x, y, slop) => Some(s.path.clone()),
+            crate::layout::fragment::Item::Shape(s) if !s.decoration && s.hit(x, y, slop) => Some(s.path.clone()),
             _ => None,
         })
     }
@@ -165,7 +165,10 @@ impl Editor {
         let snap = self.snapshot();
         let Some(frag) = snap.pages().get(page) else { return in_box };
         let items = crate::layout::traverse::paint_float(frag, f);
-        let mut shapes = items.iter().filter_map(|it| if let crate::layout::fragment::Item::Shape(s) = it { Some(s) } else { None }).peekable();
+        let mut shapes = items
+            .iter()
+            .filter_map(|it| if let crate::layout::fragment::Item::Shape(s) = it { Some(s).filter(|s| !s.decoration) } else { None })
+            .peekable();
         if shapes.peek().is_none() { in_box } else { shapes.any(|s| s.hit(x, y, slop)) }
     }
 
@@ -1531,7 +1534,7 @@ impl Editor {
         let items = snap.pages().get(page).map(|p| crate::layout::traverse::paint_items(p)).unwrap_or_default();
         let shape_bounds = |f: u64| {
             items.iter().find_map(|it| match it {
-                Item::Shape(s) if s.float == f && s.path.is_empty() => Some(super::snap::turned_bounds(s.rect, s.rot)),
+                Item::Shape(s) if s.float == f && s.path.is_empty() && !s.decoration => Some(super::snap::turned_bounds(s.rect, s.rot)),
                 _ => None,
             })
         };
@@ -1544,7 +1547,7 @@ impl Editor {
         let in_float = |r: &[f64; 4]| floats.iter().any(|f| r[0] >= f[0] - 0.5 && r[1] >= f[1] - 0.5 && r[2] <= f[2] + 0.5 && r[3] <= f[3] + 0.5);
         for it in &items {
             match it {
-                Item::Shape(s) if s.float == 0 && s.path.is_empty() => objects.push(super::snap::turned_bounds(s.rect, s.rot)),
+                Item::Shape(s) if s.float == 0 && s.path.is_empty() && !s.decoration => objects.push(super::snap::turned_bounds(s.rect, s.rot)),
                 Item::Image { rect, .. } if !in_float(rect) => objects.push(*rect),
                 _ => {}
             }
@@ -1643,5 +1646,28 @@ fn fit_picture_control(fl: &mut crate::docx::Float, controls: &std::collections:
                 (pic.w, pic.h) = (w, h);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod decoration_tests {
+    use super::*;
+
+    /// Wavy underlines and check boxes are drawn as shapes in their lines: not objects a dragged one snaps to.
+    #[test]
+    fn decorations_are_not_snap_targets() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/render/underlines.docx");
+        let mut e = Editor::open(&std::fs::read(path).expect("the fixture"), crate::editing::tests::fonts()).expect("opens");
+        let snap = e.snapshot();
+        let waves = crate::layout::traverse::paint_items(&snap.pages()[0])
+            .iter()
+            .filter(|i| matches!(i, crate::layout::fragment::Item::Shape(s) if s.decoration))
+            .count();
+        assert!(waves >= 8, "the fixture's waves are decoration shapes: {waves}");
+        e.build_snaps(0, Dragged::Float(FloatId(u64::MAX)));
+        let objects = |l: &[SnapLine]| {
+            l.iter().filter(|l| matches!(l.kind, super::super::snap::SnapKind::ObjectEdge | super::super::snap::SnapKind::ObjectCentre)).count()
+        };
+        assert_eq!((objects(&e.snaps.x), objects(&e.snaps.y)), (0, 0));
     }
 }

@@ -20,6 +20,35 @@ pub struct GlyphRun {
     pub chars: Box<[(char, f64, Option<Unit>)]>,
     pub colour: Option<u32>,
     pub para: Option<ParaId>,
+    /// How the glyphs paint when not filled in `colour` alone; `None` for ordinary text.
+    pub paint: Option<Rc<GlyphPaint>>,
+}
+
+/// A glyph run's paint: its fill, its glyphs' outline and offset copies drawn under it.
+#[derive(Debug, PartialEq)]
+pub struct GlyphPaint {
+    pub fill: GlyphFill,
+    /// The outline's width in points and its colour.
+    pub outline: Option<(f64, u32)>,
+    /// Copies of the run drawn before it, each moved by (dx, dy) points, in a colour of its own.
+    pub under: Box<[(f64, f64, u32)]>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum GlyphFill {
+    None,
+    Solid(u32),
+}
+
+impl std::hash::Hash for GlyphPaint {
+    fn hash<H: std::hash::Hasher>(&self, h: &mut H) {
+        match self.fill {
+            GlyphFill::None => 0u8.hash(h),
+            GlyphFill::Solid(c) => (1u8, c).hash(h),
+        }
+        self.outline.map(|(w, c)| (w.to_bits(), c)).hash(h);
+        self.under.iter().for_each(|&(dx, dy, c)| (dx.to_bits(), dy.to_bits(), c).hash(h));
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -68,6 +97,9 @@ pub struct ShapeItem {
     pub picture: bool,
     /// Its line is a document ink colour (a border or a check box), mapped by the appearance like a rect's.
     pub ink: bool,
+    /// Drawn for text or a table (an underline's wave, a check box, a border's stroke), not an object: never hit,
+    /// selected, snapped to or taken for an inline picture.
+    pub decoration: bool,
 }
 
 impl ShapeItem {
@@ -122,6 +154,7 @@ impl ShapeItem {
             path: self.path.clone(),
             picture: self.picture,
             ink: self.ink,
+            decoration: self.decoration,
         }
     }
 }
@@ -322,6 +355,7 @@ pub fn translated(item: &Item, dx: f64, dy: f64) -> Item {
             chars: r.chars.iter().map(|&(c, x, u)| (c, x + dx, u)).collect(),
             colour: r.colour,
             para: r.para,
+            paint: r.paint.clone(),
         }),
         Item::Rect { rect, colour } => Item::rect(r4(rect), *colour),
         Item::Image { rect, key } => Item::Image { rect: r4(rect), key: *key },

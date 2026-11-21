@@ -72,10 +72,10 @@ Chunk numbers are [roadmap](../roadmap#docx) chunks.
 | Colour, highlight, shading, border | `w:color`, `w:highlight`, `w:shd`, `w:bdr` | API |
 | Position, spacing, super- and subscript | `w:position`, `w:spacing`, `w:vertAlign` | API |
 | Hidden text | `w:vanish` | API |
-| Underline | `w:u` | API (style and colour) |
+| Underline | `w:u` | API (style and colour); every style drawn as Word draws it: dotted, dashed, long-dashed and dot-dash forms with Word's dash lengths, heavy forms twice as thick, waves (single, heavy, double) as curves, in the underline's own colour |
 | Character style | `w:rStyle` | API (`applyCharacterStyle`, a linked style's character half too) |
 | Scale and kerning | `w:w`, `w:kern` | API (`setTypography`) |
-| Effects | `w:emboss`, `w:imprint`, `w:outline`, `w:shadow` | API (`setCharacterEffects`); drawn in 3.4 |
+| Effects | `w:emboss`, `w:imprint`, `w:outline`, `w:shadow` | API (`setCharacterEffects`); drawn as Word draws them: emboss and engrave as light and dark copies under the text, outline as hollow glyphs, shadow as a grey copy down and right, over the run's underline too. Outlined runs keep their text in a PDF, as invisible text under the outlines |
 | Do not check spelling | `w:noProof` | API (`setLanguage`); spell checking skips it |
 | Language | `w:lang` | API (`setLanguage`; the East Asian and complex-script languages after 1.0) |
 | Fit text | `w:fitText` | Laid out; Word sets it with the Asian layout tools, after 1.0 |

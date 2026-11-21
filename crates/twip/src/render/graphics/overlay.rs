@@ -121,7 +121,7 @@ impl Graphics {
                     .filter(|it| {
                         let q = match it {
                             Item::Image { rect, .. } => *rect,
-                            Item::Shape(s) => s.rect,
+                            Item::Shape(s) if !s.decoration => s.rect,
                             _ => return false,
                         };
                         q[0] >= a0 - 0.5 && q[1] >= b0 - 0.5 && q[2] <= a1 + 0.5 && q[3] <= b1 + 0.5

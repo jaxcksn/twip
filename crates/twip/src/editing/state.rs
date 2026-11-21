@@ -84,6 +84,15 @@ fn underline_of(r: &RunStyle) -> UnderlineStyle {
         Some("dash") => UnderlineStyle::Dash,
         Some("dotDash") => UnderlineStyle::DotDash,
         Some("wave") => UnderlineStyle::Wave,
+        Some("dottedHeavy") => UnderlineStyle::DottedHeavy,
+        Some("dashedHeavy") => UnderlineStyle::DashedHeavy,
+        Some("dashLong") => UnderlineStyle::DashLong,
+        Some("dashLongHeavy") => UnderlineStyle::DashLongHeavy,
+        Some("dashDotHeavy") => UnderlineStyle::DashDotHeavy,
+        Some("dotDotDash") => UnderlineStyle::DotDotDash,
+        Some("dashDotDotHeavy") => UnderlineStyle::DashDotDotHeavy,
+        Some("wavyHeavy") => UnderlineStyle::WavyHeavy,
+        Some("wavyDouble") => UnderlineStyle::WavyDouble,
         Some(_) => UnderlineStyle::Single,
     }
 }
@@ -942,4 +951,27 @@ fn control_info(p: &crate::docx::ControlProps) -> crate::api::state::ControlInfo
         _ => {}
     }
     info
+}
+
+#[cfg(test)]
+mod underline_tests {
+    use super::*;
+
+    #[test]
+    fn every_underline_style_reads_back_as_itself() {
+        let all: Vec<UnderlineStyle> = serde_json::from_str(
+            r#"["none","single","words","double","thick","dotted","dottedHeavy","dash","dashedHeavy","dashLong","dashLongHeavy",
+                "dotDash","dashDotHeavy","dotDotDash","dashDotDotHeavy","wave","wavyHeavy","wavyDouble"]"#,
+        )
+        .expect("every w:u value is a style");
+        let doc = crate::docx::read(include_bytes!("../../tests/fixtures/render/underlines.docx")).expect("reads");
+        let Some(crate::docx::Block::Para(p)) = doc.sections[0].blocks.first() else { panic!("a paragraph") };
+        let base = p.inlines.iter().find_map(crate::docx::Inline::run).expect("a run");
+        for u in all {
+            let value = serde_json::to_value(u).expect("serialises");
+            let r = RunStyle { underline: value.as_str().filter(|v| *v != "none").map(str::to_string), ..(**base).clone() };
+            assert_eq!(underline_of(&r), u, "{value}");
+            assert_eq!(crate::editing::commands::underline_value(u), value.as_str().expect("a string"));
+        }
+    }
 }

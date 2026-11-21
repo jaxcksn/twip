@@ -312,6 +312,9 @@ pub(crate) struct RunRec {
     /// in `clusters`: empty unless recorded with [`Recorder::glyphs_text`].
     pub text: Span,
     pub clusters: Span,
+    /// Only the characters, drawing nothing ([`Recorder::invisible_text`]): the screen skips the run, a PDF writes
+    /// it as invisible text.
+    pub invisible: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -473,6 +476,9 @@ pub struct Recorder {
     bounds: Option<kurbo::Rect>,
     /// Kept between strokes so expanding one reuses the last one's buffers.
     stroker: kurbo::StrokeCtx,
+    /// Stroked text's scratch: a glyph's placed outline, and a contour's synthetic bold ring.
+    glyph: kurbo::BezPath,
+    ring: kurbo::StrokeCtx,
     /// Layers open now, and the deepest nesting recorded so far ([`MAX_DEPTH`]).
     layers_open: u32,
     depth: u32,
@@ -493,6 +499,8 @@ impl Recorder {
             clip: None,
             bounds: None,
             stroker: kurbo::StrokeCtx::default(),
+            glyph: kurbo::BezPath::new(),
+            ring: kurbo::StrokeCtx::default(),
             layers_open: 0,
             depth: 1,
         }
@@ -618,6 +626,17 @@ impl Recorder {
     /// its characters start at; one per glyph). A PDF's text extracts as them; the screen draws the glyphs alone.
     /// Clusters that don't match the glyphs, or fall outside `text`, are dropped (the text is kept, for the run).
     pub fn glyphs_text<'p>(&mut self, fonts: &FontRegistry, run: &GlyphRun<'_>, text: &str, clusters: &[u32], paint: impl Into<Paint<'p>>) {
+        self.run(fonts, run, text, clusters, paint.into(), false);
+    }
+
+    /// The characters `text` at a run's glyphs (clusters as [`Recorder::glyphs_text`] takes them), drawing nothing:
+    /// the text of glyphs drawn some other way, such as [`Recorder::stroke_glyphs`]. The screen skips it; a PDF writes
+    /// it as invisible text, so the characters extract, search and tag as the run's.
+    pub fn invisible_text(&mut self, fonts: &FontRegistry, run: &GlyphRun<'_>, text: &str, clusters: &[u32]) {
+        self.run(fonts, run, text, clusters, crate::paint::Color::BLACK.into(), true);
+    }
+
+    fn run(&mut self, fonts: &FontRegistry, run: &GlyphRun<'_>, text: &str, clusters: &[u32], paint: Paint<'_>, invisible: bool) {
         if run.glyphs.is_empty() || !(run.size > 0.0 && run.size.is_finite()) {
             return;
         }
@@ -654,12 +673,62 @@ impl Recorder {
             synthesis: run.synthesis,
             text: text_span,
             clusters: cluster_span,
+            invisible,
         };
         let run = self.lists.runs.len() as u32;
         self.lists.runs.push(rec);
-        let paint = self.paint(paint.into());
+        let paint = self.paint(paint);
         self.lists.cmds.push(Cmd::Glyphs { run, paint });
     }
+    /// The outlines of a run's glyphs stroked with `stroke`: hollow text. Each glyph's outline is the edge its fill
+    /// would have (skewed for synthetic italic, grown by half synthetic bold's width), expanded into a fill as
+    /// [`Recorder::stroke_path`] expands any path, so every backend draws it as a path (and a PDF keeps no text for
+    /// it). Glyphs without an outline (spaces, colour and bitmap glyphs) draw nothing. `fonts` reads each face's
+    /// glyph outline once and keeps it.
+    pub fn stroke_glyphs<'p>(&mut self, fonts: &FontRegistry, run: &GlyphRun<'_>, stroke: &kurbo::Stroke, paint: impl Into<Paint<'p>>) {
+        if stroke.width.is_nan() || stroke.width <= 0.0 {
+            return;
+        }
+        self.glyph_outlines(fonts, run, paint.into(), Some(stroke));
+    }
+
+    /// A run's glyphs filled as paths: their outlines as [`Recorder::glyphs`] fills them, unhinted and without
+    /// characters, for drawing that is no text (a PDF extracts nothing from it). Glyphs without an outline draw nothing.
+    pub fn glyph_paths<'p>(&mut self, fonts: &FontRegistry, run: &GlyphRun<'_>, paint: impl Into<Paint<'p>>) {
+        self.glyph_outlines(fonts, run, paint.into(), None);
+    }
+
+    /// Each of a run's glyph outlines, placed, then stroked or (`stroke: None`) filled.
+    fn glyph_outlines(&mut self, fonts: &FontRegistry, run: &GlyphRun<'_>, paint: Paint<'_>, stroke: Option<&kurbo::Stroke>) {
+        if run.glyphs.is_empty() || !(run.size > 0.0 && run.size.is_finite()) {
+            return;
+        }
+        let style = Style { skew_x: run.synthesis.skew_x, bold: if run.synthesis.embolden { embolden_em(run.size as f32) } else { 0.0 } };
+        let (mut glyph, mut ring) = (std::mem::take(&mut self.glyph), std::mem::take(&mut self.ring));
+        fonts.outlines(run.font, run.glyphs.iter().map(|g| g.0), |k, outline| {
+            let map = Affine::translate((run.glyphs[k].1, run.baseline)) * Affine::scale(run.size) * style.skew();
+            glyph.truncate(0);
+            match stroke {
+                Some(stroke) => {
+                    if style.bold > 0.0 {
+                        bold_rings(outline, style, &mut ring, Ring::Edge, |els, _| glyph.extend(els.iter().map(|&e| map * e)));
+                    } else {
+                        glyph.extend(outline.iter().map(|e| map * e));
+                    }
+                    self.stroke_path(glyph.elements(), stroke, paint);
+                }
+                None => {
+                    glyph.extend(outline.iter().map(|e| map * e));
+                    if style.bold > 0.0 {
+                        bold_rings(outline, style, &mut ring, Ring::Whole, |els, reversed| push_mapped(&mut glyph, els, map, reversed));
+                    }
+                    self.fill_path(glyph.elements(), paint);
+                }
+            }
+        });
+        (self.glyph, self.ring) = (glyph, ring);
+    }
+
     /// `image`, or its `src` rect (in image pixels), drawn into `dst`.
     pub fn image(&mut self, image: ImageId, src: Option<kurbo::Rect>, dst: kurbo::Rect, paint: &ImagePaint<'_>) {
         self.add_bounds(dst.abs());
@@ -886,6 +955,83 @@ fn flat_caps(stroke: &kurbo::Stroke) -> Option<bool> {
 /// The most dash pattern entries a stroke walks: a pattern finer than this along its path (zero-length entries count)
 /// draws the stroke solid, where it would take time and memory without bound.
 const MAX_DASHES: f64 = 200_000.0;
+
+/// What [`bold_rings`] passes on of each contour's synthetic bold ring.
+#[derive(Clone, Copy, PartialEq)]
+enum Ring {
+    /// The ring, wound as the glyph is: with the outline, its non-zero fill is the bold glyph.
+    Whole,
+    /// The ring's side away from the glyph's ink (an outer contour's outer side, a hole's inner side): the bold
+    /// glyph's edge.
+    Edge,
+}
+
+/// Each contour of `outline` (em units)'s synthetic bold ring, or its edge, passed to `each` a piece at a time, with
+/// whether it is to be reversed.
+fn bold_rings(outline: &kurbo::BezPath, style: Style, ring: &mut kurbo::StrokeCtx, what: Ring, mut each: impl FnMut(&[PathEl], bool)) {
+    use kurbo::Shape;
+    let glyph_sign = outline.area().signum();
+    let pen = style.pen();
+    for c in subpaths(outline.elements()) {
+        kurbo::stroke_with(c.iter().copied(), &pen, &kurbo::StrokeOpts::default(), 1e-3, ring);
+        let out = ring.output();
+        if what == Ring::Whole {
+            // Turned to wind as the glyph does: inside the glyph the two add up, outside the ring alone covers.
+            each(out.elements(), out.area().signum() != glyph_sign);
+            continue;
+        }
+        let outer = c.area().signum() == glyph_sign;
+        let by_size = |a: &&[PathEl], b: &&[PathEl]| a.area().abs().total_cmp(&b.area().abs());
+        let side = if outer { subpaths(out.elements()).max_by(by_size) } else { subpaths(out.elements()).min_by(by_size) };
+        if let Some(side) = side {
+            each(side, false);
+        }
+    }
+}
+
+/// Appends `els` mapped by `map` to `out`, each subpath reversed when `reversed` (as kurbo's `reverse_subpaths`, in
+/// place of a new path).
+fn push_mapped(out: &mut kurbo::BezPath, els: &[PathEl], map: Affine, reversed: bool) {
+    if !reversed {
+        return out.extend(els.iter().map(|&e| map * e));
+    }
+    let end = |e: &PathEl| match *e {
+        PathEl::MoveTo(p) | PathEl::LineTo(p) | PathEl::QuadTo(_, p) | PathEl::CurveTo(_, _, p) => Some(p),
+        PathEl::ClosePath => None,
+    };
+    for sub in subpaths(els) {
+        let closed = matches!(sub.last(), Some(PathEl::ClosePath));
+        let body = if closed { &sub[..sub.len() - 1] } else { sub };
+        let Some(last) = body.last().and_then(end) else { continue };
+        out.move_to(map * last);
+        for i in (1..body.len()).rev() {
+            let Some(to) = end(&body[i - 1]) else { continue };
+            match body[i] {
+                PathEl::LineTo(_) => out.line_to(map * to),
+                PathEl::QuadTo(c, _) => out.quad_to(map * c, map * to),
+                PathEl::CurveTo(c1, c2, _) => out.curve_to(map * c2, map * c1, map * to),
+                PathEl::MoveTo(_) | PathEl::ClosePath => {}
+            }
+        }
+        if closed {
+            out.close_path();
+        }
+    }
+}
+
+/// A path's subpaths, each from its `MoveTo`.
+fn subpaths(els: &[PathEl]) -> impl Iterator<Item = &[PathEl]> {
+    let mut start = 0;
+    std::iter::from_fn(move || {
+        if start >= els.len() {
+            return None;
+        }
+        let end = els[start + 1..].iter().position(|e| matches!(e, PathEl::MoveTo(_))).map_or(els.len(), |i| start + 1 + i);
+        let sub = &els[start..end];
+        start = end;
+        Some(sub)
+    })
+}
 
 /// `stroke` made safe to dash, when it is dashed: solid when its pattern isn't valid (an entry negative or NaN, the sum
 /// 0 or past `f64`) or is too fine for `path`, else its offset within one period (kurbo walks the pattern to an offset
@@ -1204,7 +1350,10 @@ mod tests {
         assert!(matches!(l.paints[0].brush, BrushRec::Linear { stops: Span { start: 0, len: 2 }, extend: Extend::Mirror, .. }));
         assert_eq!(l.stops, stops);
         let none = Span::default();
-        assert_eq!(l.runs[0], RunRec { font, size: 12.0, baseline: 100.0, glyphs: Span { start: 0, len: 2 }, synthesis, text: none, clusters: none });
+        assert_eq!(
+            l.runs[0],
+            RunRec { font, size: 12.0, baseline: 100.0, glyphs: Span { start: 0, len: 2 }, synthesis, text: none, clusters: none, invisible: false }
+        );
         assert_eq!(l.glyphs, [GlyphRec { raw: 36, x: 10.0 }, GlyphRec { raw: 72, x: 16.5 }]);
         assert_eq!(l.images[0].color_filters, Span { start: 0, len: 2 }, "filters are kept as a chain, in order");
         assert_eq!(l.color_filters[..2], filters);
@@ -1255,6 +1404,10 @@ mod tests {
                 rec.fill_rect(rect(0.0, y, 400.0, y + 1.0), RED);
                 let run = GlyphRun { font, size: 11.0, baseline: y + 11.0, glyphs: &glyphs, synthesis: Synthesis::default() };
                 rec.glyphs(&fonts, &run, Color::BLACK);
+                rec.stroke_glyphs(&fonts, &run, &kurbo::Stroke::new(0.5), RED);
+                let bold = GlyphRun { synthesis: Synthesis { embolden: true, skew_x: -0.2 }, ..run };
+                rec.stroke_glyphs(&fonts, &bold, &kurbo::Stroke::new(0.5), RED);
+                rec.glyph_paths(&fonts, &bold, RED);
                 rec.stroke_path(&curve, &kurbo::Stroke::new(1.0), RED);
                 rec.push_clip(Clip::Rect { rect: rect(0.0, y, 400.0, y + 14.0), aa: true });
                 rec.line((0.0, y).into(), (400.0, y).into(), &butt(0.5).with_dashes(0.0, [2.0, 2.0]), RED);

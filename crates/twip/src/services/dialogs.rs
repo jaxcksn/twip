@@ -316,17 +316,25 @@ fn off(mut f: FieldInfo) -> FieldInfo {
     f
 }
 
-const UNDERLINES: [(&str, &str); 10] = [
+const UNDERLINES: [(&str, &str); 18] = [
     ("none", "(none)"),
     ("single", "Single"),
     ("words", "Words only"),
     ("double", "Double"),
     ("thick", "Thick"),
     ("dotted", "Dotted"),
+    ("dottedHeavy", "Dotted heavy"),
     ("dash", "Dash"),
+    ("dashedHeavy", "Dash heavy"),
+    ("dashLong", "Long dash"),
+    ("dashLongHeavy", "Long dash heavy"),
     ("dotDash", "Dot dash"),
+    ("dashDotHeavy", "Dot dash heavy"),
     ("dotDotDash", "Dot dot dash"),
+    ("dashDotDotHeavy", "Dot dot dash heavy"),
     ("wave", "Wave"),
+    ("wavyHeavy", "Wave heavy"),
+    ("wavyDouble", "Double wave"),
 ];
 
 /// The fields of a dialog with these values: labels, ranges and choices, and which can be edited now.

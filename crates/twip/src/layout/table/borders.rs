@@ -262,7 +262,7 @@ const HATCH_AT: [f64; 6] = [0.0, 0.72, 1.44, 2.16, 2.88, 4.32];
 
 /// A stroked path along an edge, centred across `rect` in a band of `band` (at most the rect's own thickness: the
 /// space layout reserved). `segs` are in (along, across) points from the band's corner.
-fn stroked(out: &mut Vec<Item>, rect: [f64; 4], horizontal: bool, band: f64, width: f64, colour: u32, segs: Vec<Seg>) {
+pub(in crate::layout) fn stroked(out: &mut Vec<Item>, rect: [f64; 4], horizontal: bool, band: f64, width: f64, colour: u32, segs: Vec<Seg>) {
     let [x0, y0, x1, y1] = rect;
     let (a0, a1, c0, c1) = if horizontal { (x0, x1, y0, y1) } else { (y0, y1, x0, x1) };
     let at = (c0 + c1 - band) / 2.0;
@@ -298,6 +298,7 @@ fn stroked(out: &mut Vec<Item>, rect: [f64; 4], horizontal: bool, band: f64, wid
         path: Vec::new(),
         picture: false,
         ink: true,
+        decoration: true,
     });
     // Two cells sharing an edge each draw it: once is enough.
     if !out.iter().rev().take(8).any(|i| matches!(i, Item::Shape(s) if **s == *shape)) {

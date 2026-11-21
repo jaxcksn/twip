@@ -382,6 +382,7 @@ impl Renderer {
                     let (outer, inner) = lists.frames[frame as usize];
                     self.with_paint(target, res, lists, paint, t, |r, target, src, aa| r.fill_frame(target, outer, Some(inner), t, &clip, src, aa))
                 }
+                Cmd::Glyphs { run, .. } if lists.runs[run as usize].invisible => {}
                 Cmd::Glyphs { run, paint } => {
                     let run = &lists.runs[run as usize];
                     let color = match lists.paints[paint as usize].brush {

@@ -167,6 +167,46 @@ fn text_scene() {
 }
 
 #[test]
+fn stroked_text_scene() {
+    let mut resources = Resources::default();
+    let picture = stroked_text(&mut resources);
+    golden_with("stroked-text", (256, 200), &picture, &resources);
+}
+
+/// Glyphs over 256 pixels an em draw from their outlines: as paths they cover the same pixels, synthetic bold and
+/// italic too.
+#[test]
+fn glyph_paths_fill_as_large_glyphs_do() {
+    use twip_graphics::scene::{GlyphRun, Synthesis};
+    let mut resources = Resources::default();
+    let mono = Mono::new();
+    let font = resources.fonts.add(mono.data.clone(), 0, &[]).expect("the test face registers");
+    // Skewed, so unhinted: hinting moves a large glyph's edges, and the paths are its unhinted outlines.
+    for synthesis in [Synthesis { embolden: false, skew_x: -0.2 }, Synthesis { embolden: true, skew_x: -0.2 }] {
+        let glyphs = mono.set("@g", 300.0, 10.0);
+        let run = GlyphRun { font, size: 300.0, baseline: 260.0, glyphs: &glyphs, synthesis };
+        let picture = |paths: bool| {
+            let mut rec = Recorder::new();
+            if paths {
+                rec.glyph_paths(&resources.fonts, &run, Color::BLACK);
+            } else {
+                rec.glyphs(&resources.fonts, &run, Color::BLACK);
+            }
+            rec.finish()
+        };
+        let size = (420, 340);
+        let (a, b) = (
+            draw_with(&picture(false), &resources, size, Level::new(), Format::Rgba8),
+            draw_with(&picture(true), &resources, size, Level::new(), Format::Rgba8),
+        );
+        // Glyph edges go through the text's mask gamma, the paths' don't: they differ by less than this.
+        let off = a.chunks(4).zip(b.chunks(4)).filter(|(p, q)| p[0].abs_diff(q[0]) > 96).count();
+        assert!(off < 40, "{off} pixels differ ({synthesis:?})");
+        assert!(a.chunks(4).filter(|p| p[0] < 128).count() > 10_000, "the glyphs draw");
+    }
+}
+
+#[test]
 fn turned_text_scene() {
     let mut resources = Resources::default();
     let picture = turned_text(&mut resources);

@@ -46,6 +46,15 @@ pub(crate) fn underline_value(style: UnderlineStyle) -> &'static str {
         UnderlineStyle::Dash => "dash",
         UnderlineStyle::DotDash => "dotDash",
         UnderlineStyle::Wave => "wave",
+        UnderlineStyle::DottedHeavy => "dottedHeavy",
+        UnderlineStyle::DashedHeavy => "dashedHeavy",
+        UnderlineStyle::DashLong => "dashLong",
+        UnderlineStyle::DashLongHeavy => "dashLongHeavy",
+        UnderlineStyle::DashDotHeavy => "dashDotHeavy",
+        UnderlineStyle::DotDotDash => "dotDotDash",
+        UnderlineStyle::DashDotDotHeavy => "dashDotDotHeavy",
+        UnderlineStyle::WavyHeavy => "wavyHeavy",
+        UnderlineStyle::WavyDouble => "wavyDouble",
     }
 }
 

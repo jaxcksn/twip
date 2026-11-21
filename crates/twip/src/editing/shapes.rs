@@ -27,7 +27,7 @@ impl Editor {
         let snap = self.snapshot();
         let items = crate::layout::traverse::paint_float(snap.pages().get(page)?, f);
         items.into_iter().find_map(|it| match it {
-            Item::Shape(s) if s.path == child => Some(s),
+            Item::Shape(s) if s.path == child && !s.decoration => Some(s),
             _ => None,
         })
     }
@@ -245,7 +245,7 @@ impl Editor {
         let rot = self.float_of(f)?.shape.as_ref()?.xfrm.rot.degrees();
         let snap = self.snapshot();
         let any = crate::layout::traverse::paint_float(snap.pages().get(page)?, f).into_iter().find_map(|it| match it {
-            Item::Shape(s) => Some(s),
+            Item::Shape(s) if !s.decoration => Some(s),
             _ => None,
         })?;
         let mut s = any.moved(0.0, 0.0);

@@ -728,6 +728,7 @@ impl Prepare {
                         self.path(&lists.verbs[path.verbs.range()], &lists.points[path.points.range()], t, &clip, &p, even_odd);
                     }
                 }
+                Cmd::Glyphs { run, .. } if lists.runs[run as usize].invisible => {}
                 Cmd::Glyphs { run, paint } => {
                     let color = match lists.paints[paint as usize].brush {
                         BrushRec::Solid(c) => Some(c),

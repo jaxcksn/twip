@@ -3292,7 +3292,7 @@ export interface Typography {
 }
 
 // @public
-export type UnderlineStyle = 'none' | 'single' | 'words' | 'double' | 'thick' | 'dotted' | 'dash' | 'dotDash' | 'wave';
+export type UnderlineStyle = 'none' | 'single' | 'words' | 'double' | 'thick' | 'dotted' | 'dash' | 'dotDash' | 'wave' | 'dottedHeavy' | 'dashedHeavy' | 'dashLong' | 'dashLongHeavy' | 'dashDotHeavy' | 'dotDotDash' | 'dashDotDotHeavy' | 'wavyHeavy' | 'wavyDouble';
 
 // @public
 export interface VerticalPosition {

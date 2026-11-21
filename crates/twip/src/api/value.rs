@@ -270,6 +270,24 @@ pub enum UnderlineStyle {
     DotDash,
     /// A wavy line.
     Wave,
+    /// A heavy dotted line.
+    DottedHeavy,
+    /// A heavy dashed line.
+    DashedHeavy,
+    /// A line of long dashes.
+    DashLong,
+    /// A heavy line of long dashes.
+    DashLongHeavy,
+    /// Heavy alternating dots and dashes.
+    DashDotHeavy,
+    /// A dash and two dots, repeated.
+    DotDotDash,
+    /// A heavy dash and two dots, repeated.
+    DashDotDotHeavy,
+    /// A heavy wavy line.
+    WavyHeavy,
+    /// Two wavy lines.
+    WavyDouble,
 }
 
 /// `w:highlight` colours.

@@ -32,6 +32,24 @@
     { "op": "export", "format": "docx" },
     { "op": "reopen" },
     { "op": "command", "command": { "type": "selectAll" } },
-    { "op": "expectState", "match": { "formatting": { "scale": 90, "ligatures": "standardContextual", "language": "en-GB", "engrave": true, "underlineColor": "#C00000", "characterStyle": "QuoteChar" } } }
+    { "op": "expectState", "match": { "formatting": { "scale": 90, "ligatures": "standardContextual", "language": "en-GB", "engrave": true, "underlineColor": "#C00000", "characterStyle": "QuoteChar" } } },
+    { "op": "command", "command": { "type": "setUnderline", "value": "dottedHeavy" } },
+    { "op": "expectState", "match": { "formatting": { "underline": "dottedHeavy" } } },
+    { "op": "command", "command": { "type": "setUnderline", "value": "dashedHeavy" } },
+    { "op": "expectState", "match": { "formatting": { "underline": "dashedHeavy" } } },
+    { "op": "command", "command": { "type": "setUnderline", "value": "dashLong" } },
+    { "op": "expectState", "match": { "formatting": { "underline": "dashLong" } } },
+    { "op": "command", "command": { "type": "setUnderline", "value": "dashLongHeavy" } },
+    { "op": "expectState", "match": { "formatting": { "underline": "dashLongHeavy" } } },
+    { "op": "command", "command": { "type": "setUnderline", "value": "dashDotHeavy" } },
+    { "op": "expectState", "match": { "formatting": { "underline": "dashDotHeavy" } } },
+    { "op": "command", "command": { "type": "setUnderline", "value": "dotDotDash" } },
+    { "op": "expectState", "match": { "formatting": { "underline": "dotDotDash" } } },
+    { "op": "command", "command": { "type": "setUnderline", "value": "dashDotDotHeavy" } },
+    { "op": "expectState", "match": { "formatting": { "underline": "dashDotDotHeavy" } } },
+    { "op": "command", "command": { "type": "setUnderline", "value": "wavyHeavy" } },
+    { "op": "expectState", "match": { "formatting": { "underline": "wavyHeavy" } } },
+    { "op": "command", "command": { "type": "setUnderline", "value": "wavyDouble" } },
+    { "op": "expectState", "match": { "formatting": { "underline": "wavyDouble" } } }
   ]
 }

@@ -90,6 +90,9 @@ pub struct FontRegistry {
     /// Behind a lock because recording borrows the registry shared, and the registry may be shared across threads.
     /// Keyed by `font << 32 | glyph` (one hasher step; recording looks up every glyph).
     boxes: Mutex<FastMap<u64, Option<kurbo::Rect>>>,
+    /// Each glyph's outline in em units, y down, as stroked text reads it (`None` for a glyph without one, or a colour
+    /// or bitmap glyph), filled as recording asks and keyed as `boxes` is: at most one per face and glyph id.
+    outlines: Mutex<FastMap<u64, Option<BezPath>>>,
 }
 
 impl fmt::Debug for FontRegistry {
@@ -185,6 +188,23 @@ impl FontRegistry {
         let Ok(f) = FontRef::from_index((*face.data).as_ref(), face.index) else { return false };
         let Some(g) = f.outline_glyphs().get(GlyphId::new(glyph)) else { return false };
         g.draw(DrawSettings::hinted(hinting, false), &mut Pen(out)).is_ok()
+    }
+
+    /// Calls `each(k, outline)` for the `k`th of `glyphs` that has an outline, with that outline in em units, y down,
+    /// reading the outlines it hasn't kept.
+    pub(crate) fn outlines(&self, font: FontId, glyphs: impl Iterator<Item = u32>, mut each: impl FnMut(usize, &BezPath)) {
+        // A poisoned lock still holds correct outlines: each is read before it's inserted.
+        let mut outlines = self.outlines.lock().unwrap_or_else(|e| e.into_inner());
+        for (k, glyph) in glyphs.enumerate() {
+            let glyph = glyph_id(glyph);
+            let outline = outlines.entry(u64::from(font.0) << 32 | u64::from(glyph)).or_insert_with(|| {
+                let mut path = BezPath::new();
+                (self.kind(font, glyph) == GlyphKind::Outline && self.em_outline(font, glyph, &mut path) && !path.is_empty()).then_some(path)
+            });
+            if let Some(outline) = outline {
+                each(k, outline);
+            }
+        }
     }
 
     /// Calls `each(glyph, box)` for each of `glyphs` with its control box in em units, y down (`None` without ink),
@@ -350,7 +370,7 @@ const BOLD_MITER_LIMIT: f64 = 4.0;
 impl Style {
     /// The em-space transform synthetic italic applies, `x' = x + skew_x · y` with y down: tops (negative y) lean
     /// right for a negative `skew_x`, as Skia's `setSkewX(-0.2)` does.
-    fn skew(self) -> kurbo::Affine {
+    pub(crate) fn skew(self) -> kurbo::Affine {
         kurbo::Affine::new([1.0, 0.0, self.skew_x as f64, 1.0, 0.0, 0.0])
     }
 
@@ -361,7 +381,7 @@ impl Style {
     }
 
     /// The pen whose stroke ring makes synthetic bold.
-    fn pen(self) -> kurbo::Stroke {
+    pub(crate) fn pen(self) -> kurbo::Stroke {
         kurbo::Stroke::new(self.bold as f64).with_join(kurbo::Join::Miter).with_miter_limit(BOLD_MITER_LIMIT)
     }
 
@@ -884,6 +904,21 @@ mod tests {
         assert!(g.y1 > 0.1 && g.y0 < -0.4, "a g descends below the baseline and rises above it: {g:?}");
         assert_eq!(seen[1], None, "a space has none");
         assert_eq!(fonts.boxes.lock().expect("unpoisoned").len(), 2);
+    }
+
+    #[test]
+    fn outlines_are_read_once_per_glyph() {
+        let mut fonts = FontRegistry::default();
+        let data = mono();
+        let font = fonts.add(data.clone(), 0, &[]).expect("a face");
+        let (g, space) = (glyph(&data, 'g'), glyph(&data, ' '));
+        let mut seen = Vec::new();
+        for _ in 0..2 {
+            fonts.outlines(font, [g, space, g, u32::MAX].into_iter(), |k, o| seen.push((k, o.elements().len())));
+        }
+        assert_eq!(seen.iter().map(|s| s.0).collect::<Vec<_>>(), [0, 2, 0, 2], "a space and a glyph past the face's have none");
+        assert!(seen[0].1 > 4);
+        assert_eq!(fonts.outlines.lock().expect("unpoisoned").len(), 3, "g, the space, and every id past the face's as one");
     }
 
     #[test]

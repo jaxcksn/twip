@@ -129,6 +129,13 @@ fn text() {
 }
 
 #[test]
+fn stroked_text() {
+    let mut resources = Resources::default();
+    let picture = common::scenes::stroked_text(&mut resources);
+    same("stroked-text", (256, 200), &picture, &resources);
+}
+
+#[test]
 fn turned_text() {
     let mut resources = Resources::default();
     let picture = common::scenes::turned_text(&mut resources);

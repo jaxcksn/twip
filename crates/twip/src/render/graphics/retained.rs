@@ -23,6 +23,7 @@ pub fn drawing_key(page: &PageFragment) -> u64 {
                     0u8.hash(h);
                     (Rc::as_ptr(&r.face) as usize, r.size.to_bits(), r.baseline.to_bits(), r.x.to_bits(), r.colour).hash(h);
                     r.glyphs.iter().for_each(|(g, x)| (g, x.to_bits()).hash(h));
+                    r.paint.hash(h);
                 }
                 Item::Rect { rect, colour } => (1u8, rect.map(f64::to_bits), colour).hash(h),
                 Item::Image { rect, key } => (2u8, rect.map(f64::to_bits), key.index, key.generation).hash(h),

@@ -756,6 +756,7 @@ mod tests {
                 chars: Box::new([('a', 0.0, Some(Unit(0)))]),
                 colour: None,
                 para: Some(ParaId(1)),
+                paint: None,
             })
         };
         let line = PlacedLine {

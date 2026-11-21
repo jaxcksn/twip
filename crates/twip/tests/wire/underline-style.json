@@ -7,5 +7,14 @@
   "dotted",
   "dash",
   "dotDash",
-  "wave"
+  "wave",
+  "dottedHeavy",
+  "dashedHeavy",
+  "dashLong",
+  "dashLongHeavy",
+  "dashDotHeavy",
+  "dotDotDash",
+  "dashDotDotHeavy",
+  "wavyHeavy",
+  "wavyDouble"
 ]

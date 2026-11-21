@@ -52,6 +52,7 @@ fn check_box(x: f64, base: f64, advance: f64, e: f64, checked: bool, colour: Opt
         path: Vec::new(),
         picture: false,
         ink: true,
+        decoration: true,
     }))
 }
 
@@ -103,6 +104,7 @@ pub struct LineOrigin<'a> {
     pub ul_trail_space: bool,
     pub palette: crate::drawing::paint::Palette<'a>,
     pub backdrop: Option<u32>,
+    pub page_colour: Option<u32>,
 }
 
 impl LineOrigin<'_> {
@@ -156,7 +158,17 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
         let caret = |x: f64, q: ParaId| {
             face.as_ref().map(|f| {
                 let (glyphs, chars) = (Box::new([]), Box::new([]));
-                Item::Glyphs(GlyphRun { face: f.clone(), size: mark.size, baseline: base, x, glyphs, chars, colour: None, para: Some(q) })
+                Item::Glyphs(GlyphRun {
+                    face: f.clone(),
+                    size: mark.size,
+                    baseline: base,
+                    x,
+                    glyphs,
+                    chars,
+                    colour: None,
+                    para: Some(q),
+                    paint: None,
+                })
             })
         };
         for (k, ix) in (line.start..line.end).enumerate() {
@@ -177,7 +189,7 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
             let next_x = line.xs.get(k + 1).map(|&nx| x0 + nx);
             if p.kind == Kind::Tab {
                 flush(&mut run, &mut out);
-                draw_leader(o, line, k, x0, base, &mut out);
+                draw_leader(o, line, k, x0, base, behind_text, &mut out);
                 if let Some(unit) = first {
                     atoms.push(Atom { x0: x, x1: next_x.unwrap_or(x + line.widths[k]), para: q, unit, brk: false });
                 }
@@ -202,16 +214,16 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
             }
             if let Some(Object::Ruby(r)) = p.object.map(|o| &sp.objects[o as usize]) {
                 flush(&mut run, &mut out);
-                ruby_glyphs(&r.base, &r.base_x, x, base, r.narrow, q, o.review, behind_text, &mut out);
+                ruby_glyphs(&r.base, &r.base_x, x, base, r.narrow, q, o.review, behind_text, o.page_colour, &mut out);
                 match r.turned {
                     Some([dx, dy]) => {
                         let (centre, mut items) = ([x + dx, base + dy], Vec::new());
-                        ruby_glyphs(&r.text, &r.text_x, centre[0], centre[1], 0.0, q, o.review, behind_text, &mut items);
+                        ruby_glyphs(&r.text, &r.text_x, centre[0], centre[1], 0.0, q, o.review, behind_text, o.page_colour, &mut items);
                         // A vertical line of its own: East Asian glyphs stand upright in it.
                         let items = crate::layout::vertical::east_asian_turned(&items);
                         out.push(Item::Turned(Rc::new(crate::layout::fragment::Turned { centre, deg: 90.0, items })));
                     }
-                    None => ruby_glyphs(&r.text, &r.text_x, x, base - r.raise, 0.0, q, o.review, behind_text, &mut out),
+                    None => ruby_glyphs(&r.text, &r.text_x, x, base - r.raise, 0.0, q, o.review, behind_text, o.page_colour, &mut out),
                 }
                 if let Some(unit) = first {
                     atoms.push(Atom { x0: x, x1: next_x.unwrap_or(x + line.widths[k]), para: q, unit, brk: false });
@@ -258,8 +270,14 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
             }
             let y = base - st.raise + align_drop(face, st.size, line.align, line.vertical);
             let color = ink(&st.run, o.review, behind_text);
+            let paint = glyph_paint(&st.run, st.size, color, under_text(&st.run, behind_text, o.page_colour));
             let same = run.as_ref().is_some_and(|r| {
-                Rc::ptr_eq(&r.face, face) && (r.size - st.size).abs() < EPS && (r.y - y).abs() < EPS && r.color == color && r.para == Some(q)
+                Rc::ptr_eq(&r.face, face)
+                    && (r.size - st.size).abs() < EPS
+                    && (r.y - y).abs() < EPS
+                    && r.color == color
+                    && r.para == Some(q)
+                    && r.paint == paint
             });
             if !same {
                 flush(&mut run, &mut out);
@@ -272,6 +290,7 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
                     color,
                     para: Some(q),
                     x,
+                    paint,
                 });
             }
             let Some(r) = run.as_mut() else { continue };
@@ -356,6 +375,7 @@ fn ruby_glyphs(
     para: ParaId,
     review: &ReviewView,
     behind: Option<u32>,
+    page_colour: Option<u32>,
     out: &mut Vec<Item>,
 ) {
     let mut run: Option<GlyphRunBuilder> = None;
@@ -363,10 +383,11 @@ fn ruby_glyphs(
         let st = s.style(i);
         let Some(face) = &st.face else { continue };
         let (y, color, x0) = (base - st.raise, ink(&st.run, review, behind), x + px);
-        if !run.as_ref().is_some_and(|r| Rc::ptr_eq(&r.face, face) && r.size == st.size && r.y == y && r.color == color) {
+        let paint = glyph_paint(&st.run, st.size, color, under_text(&st.run, behind, page_colour));
+        if !run.as_ref().is_some_and(|r| Rc::ptr_eq(&r.face, face) && r.size == st.size && r.y == y && r.color == color && r.paint == paint) {
             out.extend(run.take().map(|r| Item::Glyphs(r.finish())));
             let (glyphs, chars) = (Vec::new(), Vec::new());
-            run = Some(GlyphRunBuilder { face: face.clone(), size: st.size, y, glyphs, chars, color, para: Some(para), x: x0 });
+            run = Some(GlyphRunBuilder { face: face.clone(), size: st.size, y, glyphs, chars, color, para: Some(para), x: x0, paint });
         }
         let Some(r) = run.as_mut() else { continue };
         let scale = face.scale(st.size) * st.run.scale / 100.0;
@@ -402,7 +423,7 @@ fn caret_places(o: &LineOrigin, line: &Line) -> Vec<(Option<usize>, ParaId)> {
     out
 }
 
-fn draw_leader(o: &LineOrigin, line: &Line, k: usize, x0: f64, base: f64, out: &mut Vec<Item>) {
+fn draw_leader(o: &LineOrigin, line: &Line, k: usize, x0: f64, base: f64, behind: Option<u32>, out: &mut Vec<Item>) {
     {
         let sp = o.shaped;
         let p = &o.pieces()[line.start + k];
@@ -426,6 +447,7 @@ fn draw_leader(o: &LineOrigin, line: &Line, k: usize, x0: f64, base: f64, out: &
             color: st.run.color,
             para: None,
             x: from,
+            paint: glyph_paint(&st.run, st.size, st.run.color, under_text(&st.run, behind, o.page_colour)),
         };
         while (slot + 1.0) * w <= to + 1e-6 {
             r.glyphs.push((g, slot * w));
@@ -447,6 +469,7 @@ struct GlyphRunBuilder {
     color: Option<u32>,
     para: Option<ParaId>,
     x: f64,
+    paint: Option<Rc<crate::layout::fragment::GlyphPaint>>,
 }
 
 impl GlyphRunBuilder {
@@ -460,6 +483,7 @@ impl GlyphRunBuilder {
             chars: self.chars.into_boxed_slice(),
             colour: self.color,
             para: self.para,
+            paint: self.paint,
         }
     }
 }
@@ -469,13 +493,6 @@ fn draw_decorations(o: &LineOrigin, line: &Line, base: f64, bg_at: usize, behind
     let pieces = &o.pieces()[line.start..line.end];
     let content = pieces.iter().rposition(|p| p.kind != Kind::Space).map_or(0, |k| k + 1);
     let (mut bg, mut fg) = (Vec::new(), Vec::new());
-    let push = |v: &mut Vec<Item>, r: [f64; 4], c: u32| {
-        let joins = |it: &&mut Item| matches!(it, Item::Rect { rect: l, colour: lc } if *lc == c && (l[1] - r[1]).abs() < EPS && (l[3] - r[3]).abs() < EPS && (r[0] - l[2]).abs() < 0.01);
-        match v.iter_mut().rev().take(4).find(joins) {
-            Some(Item::Rect { rect: last, .. }) => last[2] = r[2],
-            _ => v.push(Item::rect(r, c)),
-        }
-    };
     // Text borders: (border, left, right, top, bottom) of the stretch of runs drawn so far.
     let mut boxed: Option<(crate::docx::props::Border, f64, f64, f64, f64)> = None;
     let flush_box = |boxed: &mut Option<(crate::docx::props::Border, f64, f64, f64, f64)>, fg: &mut Vec<Item>| {
@@ -490,6 +507,8 @@ fn draw_decorations(o: &LineOrigin, line: &Line, base: f64, bg_at: usize, behind
         crate::layout::table::shadow(fg, [l, btm - w, r, btm], true, true, &b, true, true);
         crate::layout::table::shadow(fg, [r - w, t, r, btm], false, true, &b, true, false);
     };
+    // Dashed and wavy underlines go on across pieces drawn alike, their pattern unbroken.
+    let mut span: Option<Span> = None;
     for (k, p) in pieces.iter().enumerate() {
         let st = &sp.styles[p.style as usize];
         let Some(face) = st.face.as_ref().filter(|_| matches!(p.kind, Kind::Text | Kind::Space | Kind::Tab | Kind::ListNumber)) else { continue };
@@ -515,29 +534,46 @@ fn draw_decorations(o: &LineOrigin, line: &Line, base: f64, bg_at: usize, behind
         }
         let fill = r.highlight.or(r.shading).filter(|_| !label);
         if let Some(fill) = fill {
-            push(&mut bg, [x, y - face.ascent * em, x + w, y + face.descent * em], fill);
+            join(&mut bg, [x, y - face.ascent * em, x + w, y + face.descent * em], fill);
         }
         let trailing = k >= content;
         if trailing && !o.ul_trail_space {
             continue;
         }
         let ink = ink(r, review, behind).unwrap_or(0);
-        let line_at = |v: &mut Vec<Item>, y: f64, t: f64| push(v, [x, y - t / 2.0, x + w, y + t / 2.0], ink);
+        let copies = copies(r, st.size, under_text(r, behind, o.page_colour));
+        let line_at = |v: &mut Vec<Item>, y: f64, t: f64, c: u32| lines(v, [x, y - t / 2.0, x + w, y + t / 2.0], c, &copies);
         let marked = review.view == MarkupView::All && !label;
         let kind = |m: &Option<Rc<crate::docx::review::RevisionMark>>| m.as_ref().filter(|_| marked).map(|m| m.kind);
         let (ins, del) = (kind(&r.rev.ins), kind(&r.rev.del));
         let rev_u = ins.map(|k| if k == MarkKind::MoveTo { "double" } else { "single" });
-        if let Some(u) = rev_u.or(r.underline.as_deref()).filter(|u| !label && !(*u == "words" && matches!(p.kind, Kind::Space | Kind::Tab))) {
+        let underline = rev_u.or(r.underline.as_deref()).filter(|u| !label && !(*u == "words" && matches!(p.kind, Kind::Space | Kind::Tab)));
+        let mut drawn = None;
+        if let Some(u) = underline {
             let (pos, thick) =
                 if face.underline_thick > 0.0 { (face.underline_pos, face.underline_thick) } else { (0.1 * face.upem, 0.05 * face.upem) };
             let (uy, t) = (y + pos * em, (thick * em).max(0.5));
-            match u {
-                "double" => {
-                    line_at(&mut fg, uy, t);
-                    line_at(&mut fg, uy + 2.0 * t, t);
+            // A revision's underline is in the revision's colour, as its text is.
+            let c = if rev_u.is_some() || revision_colour(r, review).is_some() { ink } else { r.underline_color.unwrap_or(ink) };
+            let form = UnderlineForm::of(u);
+            // Outlined text's underline is hollow too (its waves are already lines).
+            let hollow = r.outline && !matches!(form, UnderlineForm::Wave { .. });
+            match form {
+                UnderlineForm::Solid { heavy: false } if !hollow => line_at(&mut fg, uy, t, c),
+                UnderlineForm::Solid { heavy: true } if !hollow => line_at(&mut fg, uy + t / 2.0, 2.0 * t, c),
+                UnderlineForm::Double if !hollow => {
+                    line_at(&mut fg, uy, t, c);
+                    line_at(&mut fg, uy + 2.0 * t, t, c);
                 }
-                "thick" => line_at(&mut fg, uy + t / 2.0, 2.0 * t),
-                _ => line_at(&mut fg, uy, t),
+                form => drawn = Some(Span { form, x0: x, x1: x + w, y: uy, t, colour: c, copies, size: st.size, hollow }),
+            }
+        }
+        match (&mut span, drawn) {
+            (Some(open), Some(d)) if open.continues(&d) => open.x1 = d.x1,
+            (_, d) => {
+                if let Some(done) = std::mem::replace(&mut span, d) {
+                    done.draw(&mut fg);
+                }
             }
         }
         let dstrike = r.dstrike || del == Some(MarkKind::MoveFrom);
@@ -545,19 +581,275 @@ fn draw_decorations(o: &LineOrigin, line: &Line, base: f64, bg_at: usize, behind
             let t = (face.strike_thick * em).max(0.5);
             let sy = y - face.strike_pos * em;
             if dstrike {
-                line_at(&mut fg, sy - t, t);
-                line_at(&mut fg, sy + t, t);
+                line_at(&mut fg, sy - t, t, ink);
+                line_at(&mut fg, sy + t, t, ink);
             } else {
-                line_at(&mut fg, sy, t);
+                line_at(&mut fg, sy, t, ink);
             }
         }
+    }
+    if let Some(done) = span {
+        done.draw(&mut fg);
     }
     flush_box(&mut boxed, &mut fg);
     out.splice(bg_at..bg_at, bg);
     out.extend(fg);
 }
 
-pub fn draw_label(text: &str, run: &Run, x_end: f64, y: f64, fonts: &Fonts) -> Vec<Item> {
+/// Pushes a solid rect, or grows the one just before it that it continues (same colour and height, touching).
+fn join(v: &mut Vec<Item>, r: [f64; 4], c: u32) {
+    let joins = |it: &&mut Item| matches!(it, Item::Rect { rect: l, colour: lc } if *lc == c && (l[1] - r[1]).abs() < EPS && (l[3] - r[3]).abs() < EPS && (r[0] - l[2]).abs() < 0.01);
+    match v.iter_mut().rev().take(4).find(joins) {
+        Some(Item::Rect { rect: last, .. }) => last[2] = r[2],
+        _ => v.push(Item::rect(r, c)),
+    }
+}
+
+/// A decoration's rect in colour `c`, over the run's effect copies of it.
+fn lines(v: &mut Vec<Item>, r: [f64; 4], c: u32, copies: &Copies) {
+    for &(dx, dy, tone) in copies.iter().flatten() {
+        join(v, [r[0] + dx, r[1] + dy, r[2] + dx, r[3] + dy], tone);
+    }
+    join(v, r, c);
+}
+
+// Character effects
+/// Emboss and engrave move their copies this far each way, points: Word's PDFs move them 0.96 pt at 11, 16 and 44 pt.
+const RELIEF: f64 = 0.96;
+/// A shadow's offset right and down per point of font size: Word's PDFs move it 0.48 pt at 11 pt, 0.72 at 16, 1.92 at
+/// 44.
+const SHADOW_PER_PT: f64 = 0.0436;
+/// A shadow's grey: Word's, on white and shaded backgrounds alike.
+const SHADOW_TONE: u32 = 0xC0_C0C0;
+/// Emboss and engrave's light copy is the background at this share: Word's PDFs draw #999999 on white and #818181
+/// on #D9D9D9.
+const RELIEF_LIGHT: f64 = 0.6;
+/// Outlined text's stroke, points. Word strokes it one device pixel wide (0.24 pt in its 300 dpi PDFs); drawn at any
+/// zoom, it takes the decorations' least thickness.
+const HAIRLINE: f64 = 0.5;
+
+/// A run's effect copies drawn under its text and decorations: (dx, dy, colour), at most three.
+type Copies = [Option<(f64, f64, u32)>; 3];
+
+/// The copies `r`'s shadow, emboss or engrave draws at `size` points over `bg`: emboss a light copy down and right and
+/// a black one up and left, engrave the reverse, a shadow a grey one down and right.
+fn copies(r: &RunStyle, size: f64, bg: u32) -> Copies {
+    let light = {
+        let ch = |shift: u32| ((((bg >> shift) & 0xFF) as f64 * RELIEF_LIGHT).round() as u32) << shift;
+        ch(16) | ch(8) | ch(0)
+    };
+    let d = SHADOW_PER_PT * size;
+    let relief = match (r.emboss, r.imprint) {
+        (true, _) => [Some((RELIEF, RELIEF, light)), Some((-RELIEF, -RELIEF, 0))],
+        (false, true) => [Some((RELIEF, RELIEF, 0)), Some((-RELIEF, -RELIEF, light))],
+        _ => [None, None],
+    };
+    [relief[0], relief[1], r.shadow.then_some((d, d, SHADOW_TONE))]
+}
+
+/// What is behind a run's text: its highlight or shading, else `behind` (the paragraph's shading, a cell's or a box's
+/// fill), else the page colour, else white.
+fn under_text(r: &RunStyle, behind: Option<u32>, page_colour: Option<u32>) -> u32 {
+    r.highlight.or(r.shading).or(behind).or(page_colour).unwrap_or(0xFF_FFFF)
+}
+
+/// How a run's glyphs paint, in `colour` over `bg`: `None` for text without effects.
+fn glyph_paint(r: &RunStyle, size: f64, colour: Option<u32>, bg: u32) -> Option<Rc<crate::layout::fragment::GlyphPaint>> {
+    use crate::layout::fragment::{GlyphFill, GlyphPaint};
+    if !(r.emboss || r.imprint || r.outline || r.shadow) {
+        return None;
+    }
+    let c = colour.unwrap_or(0);
+    Some(Rc::new(GlyphPaint {
+        fill: if r.outline { GlyphFill::None } else { GlyphFill::Solid(c) },
+        outline: r.outline.then_some((HAIRLINE, c)),
+        under: copies(r, size, bg).into_iter().flatten().collect(),
+    }))
+}
+
+// Underline forms
+/// Word's dash patterns, on and off lengths in points: the same at every size and weight.
+const DOTTED: &[f64] = &[1.44, 1.44];
+const DASH: &[f64] = &[3.84, 1.92];
+const DASH_LONG: &[f64] = &[7.92, 3.84];
+const DOT_DASH: &[f64] = &[2.88, 0.96, 0.96, 0.96];
+const DOT_DOT_DASH: &[f64] = &[2.16, 0.72, 0.72, 0.72, 0.72, 0.72];
+/// A wave's half period, points (Word's, at every size), and its height per square root of the font size in points
+/// (Word's 0.48 pt at 8 pt, 0.72 at 11, 0.96 at 22 and 1.44 at 44).
+const WAVE_HALF: f64 = 1.2;
+const WAVE_HEIGHT: f64 = 0.217;
+/// The most dashes or half waves a span draws; the rest of it is solid. Word's widest page, 22 inches, holds 550 of
+/// the shortest dash patterns.
+const MAX_MARKS: usize = 4096;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum UnderlineForm {
+    Solid { heavy: bool },
+    Double,
+    Dashed { pattern: &'static [f64], heavy: bool },
+    Wave { heavy: bool, double: bool },
+}
+
+impl UnderlineForm {
+    /// The form of `w:u` value `v`: `single`, `words` and values Word doesn't define draw a single line.
+    fn of(v: &str) -> UnderlineForm {
+        use UnderlineForm::*;
+        let dashed = |pattern, heavy| Dashed { pattern, heavy };
+        match v {
+            "double" => Double,
+            "thick" => Solid { heavy: true },
+            "dotted" => dashed(DOTTED, false),
+            "dottedHeavy" => dashed(DOTTED, true),
+            "dash" => dashed(DASH, false),
+            "dashedHeavy" => dashed(DASH, true),
+            "dashLong" => dashed(DASH_LONG, false),
+            "dashLongHeavy" => dashed(DASH_LONG, true),
+            "dotDash" => dashed(DOT_DASH, false),
+            "dashDotHeavy" => dashed(DOT_DASH, true),
+            "dotDotDash" => dashed(DOT_DOT_DASH, false),
+            "dashDotDotHeavy" => dashed(DOT_DOT_DASH, true),
+            "wave" => Wave { heavy: false, double: false },
+            "wavyHeavy" => Wave { heavy: true, double: false },
+            "wavyDouble" => Wave { heavy: false, double: true },
+            _ => Solid { heavy: false },
+        }
+    }
+}
+
+/// A dashed or wavy underline from `x0` to `x1`, centred on `y`, `t` the font's underline thickness.
+#[derive(Clone, Copy, Debug)]
+struct Span {
+    form: UnderlineForm,
+    x0: f64,
+    x1: f64,
+    y: f64,
+    t: f64,
+    colour: u32,
+    copies: Copies,
+    size: f64,
+    /// Each line drawn as its outline, outside it.
+    hollow: bool,
+}
+
+impl Span {
+    /// Whether `next` carries this span on: drawn alike, starting where it ends.
+    fn continues(&self, next: &Span) -> bool {
+        self.form == next.form
+            && (next.x0 - self.x1).abs() < 0.01
+            && (self.y - next.y).abs() < EPS
+            && (self.t - next.t).abs() < EPS
+            && self.colour == next.colour
+            && self.copies == next.copies
+            && (self.size - next.size).abs() < EPS
+            && self.hollow == next.hollow
+    }
+
+    /// One of the span's lines, `rect`: solid, or hollow, a hairline frame around it.
+    fn bar(&self, out: &mut Vec<Item>, rect: [f64; 4]) {
+        if !self.hollow {
+            return lines(out, rect, self.colour, &self.copies);
+        }
+        let ([x0, y0, x1, y1], h) = (rect, HAIRLINE);
+        for side in [[x0 - h, y0 - h, x1 + h, y0], [x0 - h, y1, x1 + h, y1 + h], [x0 - h, y0, x0, y1], [x1, y0, x1 + h, y1]] {
+            lines(out, side, self.colour, &self.copies);
+        }
+    }
+
+    fn draw(&self, out: &mut Vec<Item>) {
+        let (x0, x1) = (self.x0, self.x1);
+        if ![x0, x1, self.y, self.t, self.size].iter().all(|v| v.is_finite()) {
+            return;
+        }
+        match self.form {
+            UnderlineForm::Solid { heavy } => {
+                let (y, t) = if heavy { (self.y + self.t / 2.0, 2.0 * self.t) } else { (self.y, self.t) };
+                self.bar(out, [x0, y - t / 2.0, x1, y + t / 2.0]);
+            }
+            UnderlineForm::Double => {
+                let t = self.t;
+                self.bar(out, [x0, self.y - t / 2.0, x1, self.y + t / 2.0]);
+                self.bar(out, [x0, self.y + 1.5 * t, x1, self.y + 2.5 * t]);
+            }
+            UnderlineForm::Dashed { pattern, heavy } => {
+                // Heavy forms are twice as thick, their top where the light form's is.
+                let (y, t) = if heavy { (self.y + self.t / 2.0, 2.0 * self.t) } else { (self.y, self.t) };
+                let mut at = self.x0;
+                for (k, len) in pattern.iter().cycle().enumerate() {
+                    if at >= self.x1 - EPS || k > MAX_MARKS {
+                        break;
+                    }
+                    let to = if k >= MAX_MARKS { self.x1 } else { (at + len).min(self.x1) };
+                    if k % 2 == 0 || k >= MAX_MARKS {
+                        self.bar(out, [at, y - t / 2.0, to, y + t / 2.0]);
+                    }
+                    at = to;
+                }
+            }
+            UnderlineForm::Wave { heavy, double } => {
+                let height = WAVE_HEIGHT * self.size.max(0.0).sqrt();
+                // Double: two hairline waves a hairline high, three hairlines apart (Word's 1, 1 and 3 device pixels).
+                let waves: &[(f64, f64, f64)] = if double {
+                    &[(-1.5 * HAIRLINE, HAIRLINE, HAIRLINE), (1.5 * HAIRLINE, HAIRLINE, HAIRLINE)]
+                } else if heavy {
+                    &[(0.0, height, 2.0 * HAIRLINE)]
+                } else {
+                    &[(0.0, height, HAIRLINE)]
+                };
+                for &(dy, h, w) in waves {
+                    for &(cx, cy, tone) in self.copies.iter().flatten() {
+                        wave(out, self.x0 + cx, self.x1 + cx, self.y + dy + cy, h, w, tone);
+                    }
+                    wave(out, self.x0, self.x1, self.y + dy, h, w, self.colour);
+                }
+            }
+        }
+    }
+}
+
+/// A wave from `x0` to `x1` about `mid`, `height` from crest to trough, stroked `width` wide in `colour`: one cubic
+/// per half period from the trough, the last cut where the span ends.
+fn wave(out: &mut Vec<Item>, x0: f64, x1: f64, mid: f64, height: f64, width: f64, colour: u32) {
+    use crate::drawing::geom::Seg;
+    let reach = height / 2.0 + width;
+    let (low, high) = (reach + height / 2.0, reach - height / 2.0);
+    let len = (x1 - x0).max(0.0);
+    let mut segs = vec![Seg::Move([0.0, low])];
+    let (mut at, mut up) = (0.0, true);
+    while at < len - EPS {
+        let (from, to) = if up { (low, high) } else { (high, low) };
+        let h = WAVE_HALF.min(len - at);
+        if segs.len() > MAX_MARKS {
+            segs.push(Seg::Line([len, from]));
+            break;
+        }
+        if h < WAVE_HALF {
+            // The half wave's first part, to where it reaches the span's end: its x is `at + WAVE_HALF·f(u)`.
+            let f = |u: f64| 1.5 * u * (1.0 - u) + u * u * u;
+            let (mut lo, mut hi) = (0.0, 1.0);
+            for _ in 0..30 {
+                let m = (lo + hi) / 2.0;
+                if f(m) * WAVE_HALF < h { lo = m } else { hi = m }
+            }
+            segs.push(split_cubic([at, from], [at + WAVE_HALF / 2.0, from], [at + WAVE_HALF / 2.0, to], [at + WAVE_HALF, to], lo));
+            break;
+        }
+        segs.push(Seg::Cubic([at + h / 2.0, from], [at + h / 2.0, to], [at + h, to]));
+        at += h;
+        up = !up;
+    }
+    crate::layout::table::stroked(out, [x0, mid - reach, x0 + len, mid + reach], true, 2.0 * reach, width, colour, segs);
+}
+
+/// The part of the cubic `p0 p1 p2 p3` up to parameter `u`, as a segment from `p0`.
+fn split_cubic(p0: [f64; 2], p1: [f64; 2], p2: [f64; 2], p3: [f64; 2], u: f64) -> crate::drawing::geom::Seg {
+    let lerp = |a: [f64; 2], b: [f64; 2]| [a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u];
+    let (a, b, c) = (lerp(p0, p1), lerp(p1, p2), lerp(p2, p3));
+    let (d, e) = (lerp(a, b), lerp(b, c));
+    crate::drawing::geom::Seg::Cubic(a, d, lerp(d, e))
+}
+
+/// `page_colour` tones an effect's copies as the page's text.
+pub fn draw_label(text: &str, run: &Run, x_end: f64, y: f64, page_colour: Option<u32>, fonts: &Fonts) -> Vec<Item> {
     let sp = crate::layout::text::shape_run(text, run, fonts);
     let w: f64 = sp.pieces.iter().map(|p| p.width).sum();
     let mut x = x_end - w;
@@ -569,8 +861,17 @@ pub fn draw_label(text: &str, run: &Run, x_end: f64, y: f64, fonts: &Fonts) -> V
         let st = &sp.styles[p.style as usize];
         let Some(face) = &st.face else { continue };
         let scale = face.scale(st.size);
-        let mut r =
-            GlyphRunBuilder { face: face.clone(), size: st.size, y, glyphs: Vec::new(), chars: Vec::new(), color: st.run.color, para: None, x };
+        let mut r = GlyphRunBuilder {
+            face: face.clone(),
+            size: st.size,
+            y,
+            glyphs: Vec::new(),
+            chars: Vec::new(),
+            color: st.run.color,
+            para: None,
+            x,
+            paint: glyph_paint(&st.run, st.size, st.run.color, under_text(&st.run, None, page_colour)),
+        };
         let mut gx = x;
         for (id, advance, dx) in sp.glyphs(i) {
             r.glyphs.push((id, gx + dx * scale));
@@ -583,4 +884,53 @@ pub fn draw_label(text: &str, run: &Run, x_end: f64, y: f64, fonts: &Fonts) -> V
         x += p.width;
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A document's page and tabs can be any width: a span's marks stay bounded, and the rest of it is solid.
+    #[test]
+    fn hostile_widths_draw_bounded_underlines() {
+        for (form, hollow) in [("dotted", false), ("dotted", true), ("wavyDouble", false)] {
+            let form = UnderlineForm::of(form);
+            let span = Span { form, x0: 0.0, x1: 1e300, y: 10.0, t: 0.5, colour: 0, copies: [None; 3], size: 11.0, hollow };
+            let mut out = Vec::new();
+            span.draw(&mut out);
+            let marks: usize = out
+                .iter()
+                .map(|i| match i {
+                    Item::Shape(s) => s.geom.paths[0].segs.len(),
+                    _ => 1,
+                })
+                .sum();
+            assert!(!out.is_empty() && marks <= 4 * (MAX_MARKS + 3), "{form:?}: {marks}");
+        }
+    }
+
+    /// A span whose extent isn't a number draws nothing, and every walk ends.
+    #[test]
+    fn non_finite_widths_draw_nothing() {
+        for v in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            for (form, hollow) in [("dotted", false), ("dash", true), ("wave", false), ("single", true)] {
+                let span = Span { form: UnderlineForm::of(form), x0: 0.0, x1: v, y: 10.0, t: 0.5, colour: 0, copies: [None; 3], size: 11.0, hollow };
+                let mut out = Vec::new();
+                span.draw(&mut out);
+                assert!(out.is_empty(), "{form} to {v}");
+                Span { x0: v, x1: 0.0, ..span }.draw(&mut out);
+                Span { t: v, x1: 10.0, ..span }.draw(&mut out);
+                assert!(out.is_empty(), "{form} at {v}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_wave_ends_where_its_span_does() {
+        let mut out = Vec::new();
+        wave(&mut out, 10.0, 13.0, 5.0, 0.72, 0.5, 0);
+        let Item::Shape(s) = &out[0] else { panic!() };
+        let crate::drawing::geom::Seg::Cubic(_, _, end) = s.geom.paths[0].segs.last().copied().expect("segments") else { panic!() };
+        assert!((s.rect[0] + end[0] - 13.0).abs() < 1e-6, "{end:?}");
+    }
 }

@@ -2759,13 +2759,22 @@ Twip.TransactionRecord.Time.init -> void
 Twip.TransactionRecord.TransactionRecord(long Id, long Revision, Twip.Origin Origin, Twip.Author! Author, System.DateTimeOffset Time, string! Label, Twip.ChangeSummary! Summary) -> void
 Twip.UnderlineStyle
 Twip.UnderlineStyle.Dash = 6 -> Twip.UnderlineStyle
+Twip.UnderlineStyle.DashDotDotHeavy = 15 -> Twip.UnderlineStyle
+Twip.UnderlineStyle.DashDotHeavy = 13 -> Twip.UnderlineStyle
+Twip.UnderlineStyle.DashLong = 11 -> Twip.UnderlineStyle
+Twip.UnderlineStyle.DashLongHeavy = 12 -> Twip.UnderlineStyle
+Twip.UnderlineStyle.DashedHeavy = 10 -> Twip.UnderlineStyle
 Twip.UnderlineStyle.DotDash = 7 -> Twip.UnderlineStyle
+Twip.UnderlineStyle.DotDotDash = 14 -> Twip.UnderlineStyle
 Twip.UnderlineStyle.Dotted = 5 -> Twip.UnderlineStyle
+Twip.UnderlineStyle.DottedHeavy = 9 -> Twip.UnderlineStyle
 Twip.UnderlineStyle.Double = 3 -> Twip.UnderlineStyle
 Twip.UnderlineStyle.None = 0 -> Twip.UnderlineStyle
 Twip.UnderlineStyle.Single = 1 -> Twip.UnderlineStyle
 Twip.UnderlineStyle.Thick = 4 -> Twip.UnderlineStyle
 Twip.UnderlineStyle.Wave = 8 -> Twip.UnderlineStyle
+Twip.UnderlineStyle.WavyDouble = 17 -> Twip.UnderlineStyle
+Twip.UnderlineStyle.WavyHeavy = 16 -> Twip.UnderlineStyle
 Twip.UnderlineStyle.Words = 2 -> Twip.UnderlineStyle
 Twip.UndoGrouping
 Twip.UndoGrouping.Step = 0 -> Twip.UndoGrouping

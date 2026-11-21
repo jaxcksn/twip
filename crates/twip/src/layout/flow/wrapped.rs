@@ -1175,6 +1175,7 @@ impl<'d> PageFill<'d, '_> {
             ul_trail_space: self.ctx.env.text.ul_trail_space,
             palette: crate::drawing::paint::Palette { theme: &self.ctx.env.text.theme, map: &self.ctx.env.text.colour_map },
             backdrop: self.ctx.env.text.backdrop,
+            page_colour: self.ctx.env.text.page_colour,
         };
         let mut lines = Vec::new();
         let mut numbers = Vec::new();

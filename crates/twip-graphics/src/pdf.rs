@@ -1132,8 +1132,9 @@ impl<'r> Writer<'r> {
             BrushRec::Solid(c) => Some(c),
             _ => None,
         };
-        // Outlines, with the characters as ActualText: a gradient's text, and emboldened Type 3 text.
-        if solid.is_none() || (run.synthesis.embolden && face == FaceKind::Outlines) {
+        // Outlines, with the characters as ActualText: a gradient's text, and emboldened Type 3 text. Invisible text
+        // draws nothing, so its glyphs stay text.
+        if !run.invisible && (solid.is_none() || (run.synthesis.embolden && face == FaceKind::Outlines)) {
             return self.glyph_outlines(lists, run, paint, ctm, ink, text);
         }
         let colour = solid.expect("solid paint");
@@ -1174,7 +1175,7 @@ impl<'r> Writer<'r> {
         }
         self.solid(colour, ink);
         let skew = run.synthesis.skew_x;
-        let bold = run.synthesis.embolden;
+        let bold = run.synthesis.embolden && !run.invisible;
         let c = self.content();
         if bold {
             let ink_rgb = |v: u8| if colour.a == 0 { 0.0 } else { (f32::from(v) / f32::from(colour.a)).min(1.0) };
@@ -1187,6 +1188,9 @@ impl<'r> Writer<'r> {
         c.begin_text();
         if bold {
             c.set_text_rendering_mode(pdf_writer::types::TextRenderingMode::FillStroke);
+        }
+        if run.invisible {
+            c.set_text_rendering_mode(pdf_writer::types::TextRenderingMode::Invisible);
         }
         c.set_text_matrix([1.0, 0.0, -skew, -1.0, first.x, run.baseline]);
         let mut k = 0;
@@ -2348,4 +2352,48 @@ fn srgb_profile() -> Vec<u8> {
     p.extend(table);
     p.extend(body);
     p
+}
+
+#[cfg(test)]
+mod invisible_tests {
+    use super::*;
+    use crate::scene::{GlyphRun, Recorder, Synthesis};
+
+    /// The PDF's content streams, inflated, and whether a Type 3 font was written.
+    fn written(variations: &[([u8; 4], f32)], synthesis: Synthesis) -> (String, bool) {
+        let mut res = Resources::default();
+        let mono: crate::font::FontData = std::sync::Arc::new(include_bytes!("../tests/fonts/jetbrains-mono-500.ttf").to_vec());
+        let font = res.fonts.add(mono, 0, variations).expect("the test face registers");
+        let mut rec = Recorder::new();
+        let glyphs = [(36, 10.0), (37, 17.0)];
+        rec.invisible_text(&res.fonts, &GlyphRun { font, size: 12.0, baseline: 30.0, glyphs: &glyphs, synthesis }, "AB", &[0, 1]);
+        let page = Page { width: 100.0, height: 60.0, parts: vec![(Mark::Content(1), Recorder::finish(&mut rec))] };
+        let bytes = write(&res, &[page], &[], &[], &Info::default()).expect("writes").bytes;
+        let mut content = String::new();
+        let mut rest = &bytes[..];
+        while let Some(at) = rest.windows(7).position(|w| w == b"stream\n") {
+            rest = &rest[at + 7..];
+            let end = rest.windows(9).position(|w| w == b"endstream").unwrap_or(rest.len());
+            if let Ok(data) = miniz_oxide::inflate::decompress_to_vec_zlib(&rest[..end]) {
+                content.push_str(&String::from_utf8_lossy(&data));
+            }
+            rest = &rest[end..];
+        }
+        (content, String::from_utf8_lossy(&bytes).contains("/Type3"))
+    }
+
+    /// Invisible text is text in rendering mode 3, from an embedded TrueType face and from Type 3 outlines (a face at
+    /// variation coordinates), emboldened too: never drawn as filled outlines.
+    #[test]
+    fn invisible_text_is_written_in_rendering_mode_3() {
+        let bold = Synthesis { embolden: true, skew_x: 0.0 };
+        for (variations, synthesis, type3) in
+            [(&[][..], Synthesis::default(), false), (&[(*b"wght", 500.0)][..], Synthesis::default(), true), (&[(*b"wght", 500.0)][..], bold, true)]
+        {
+            let (content, has_type3) = written(variations, synthesis);
+            assert_eq!(has_type3, type3, "{variations:?}");
+            assert!(content.contains("3 Tr") && content.contains("TJ"), "{variations:?}: {content}");
+            assert!(!content.contains(" f\n") && !content.contains("2 Tr"), "no outline fill, no fill and stroke: {content}");
+        }
+    }
 }

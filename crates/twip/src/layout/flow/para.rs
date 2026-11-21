@@ -32,7 +32,7 @@ impl<'d> PageFill<'d, '_> {
             18.0
         };
         if let Some(run) = &self.ctx.env.line_number_run {
-            let label = draw_label(&n.to_string(), run, col.x - dist, baseline, self.ctx.fonts);
+            let label = draw_label(&n.to_string(), run, col.x - dist, baseline, self.ctx.env.text.page_colour, self.ctx.fonts);
             if !label.is_empty() {
                 out.push(label.into_boxed_slice());
             }

@@ -210,7 +210,7 @@ pub fn blends() -> Picture {
 /// The test face (a JetBrains Mono subset, OFL, from Twip's chrome fonts) and the glyphs and origins of `s` set at
 /// `size` from `x`, by its advances, as Twip's layout hands runs over.
 pub struct Mono {
-    data: std::sync::Arc<Vec<u8>>,
+    pub data: std::sync::Arc<Vec<u8>>,
 }
 
 impl Mono {
@@ -274,6 +274,48 @@ pub fn text(resources: &mut Resources) -> Picture {
     run(&mut rec, "Fx", 12.0, 0.0, 0.0, plain, RED);
     rec.pop();
     run(&mut rec, "g", 300.0, 40.0, 330.0, plain, BLUE.with_alpha(90));
+    rec.finish()
+}
+
+/// Stroked glyph outlines (hollow text): at several sizes and widths, synthetic bold and italic, a colour and a
+/// translucent ink, dashed, turned, over a dark band, around the same glyphs filled as paths, and a glyph without ink
+/// (a space) and one the face lacks. Each stroked run carries its characters as invisible text.
+pub fn stroked_text(resources: &mut Resources) -> Picture {
+    use twip_graphics::scene::{GlyphRun, Synthesis};
+    let mono = Mono::new();
+    let font = resources.fonts.add(mono.data.clone(), 0, &[]).expect("the test face registers");
+    let fonts = &resources.fonts;
+    let mut rec = Recorder::new();
+    let run = |rec: &mut Recorder, s: &str, size: f64, x: f64, baseline: f64, synthesis: Synthesis, stroke: &Stroke, c: Color| {
+        let glyphs = mono.set(s, size, x);
+        let run = GlyphRun { font, size, baseline, glyphs: &glyphs, synthesis };
+        rec.stroke_glyphs(fonts, &run, stroke, c);
+        // The run's characters, invisible: nothing more draws, on screen or in a PDF.
+        let clusters: Vec<u32> = (0..s.len() as u32).collect();
+        rec.invisible_text(fonts, &run, s, &clusters);
+    };
+    let plain = Synthesis::default();
+    let mut y = 6.0;
+    for (size, w) in [(11.0, 0.5), (16.0, 0.5), (24.0, 0.75), (40.0, 1.5)] {
+        run(&mut rec, "Ag o", size, 4.0, y + size * 0.8, plain, &Stroke::new(w), INK);
+        y += size * 1.15;
+    }
+    let thin = Stroke::new(0.6);
+    run(&mut rec, "Bold", 18.0, 140.0, 22.0, Synthesis { embolden: true, skew_x: 0.0 }, &thin, INK);
+    run(&mut rec, "Italic", 18.0, 140.0, 44.0, Synthesis { embolden: false, skew_x: -0.2 }, &thin, RED);
+    run(&mut rec, "Both", 18.0, 140.0, 66.0, Synthesis { embolden: true, skew_x: -0.2 }, &thin, BLUE.with_alpha(140));
+    run(&mut rec, "Dash", 18.0, 140.0, 88.0, plain, &Stroke::new(0.8).with_dashes(0.0, [2.0, 1.5]), GREEN);
+    rec.fill_rect(rect(136.0, 94.0, 256.0, 118.0), INK);
+    run(&mut rec, "On ink", 18.0, 140.0, 112.0, plain, &thin, Color::WHITE);
+    rec.push_transform(Affine::rotate_about(-0.3, kurbo::Point::new(190.0, 150.0)));
+    run(&mut rec, "Turned", 20.0, 150.0, 156.0, plain, &thin, INK);
+    rec.pop();
+    let glyphs = mono.set("Path", 18.0, 4.0);
+    let bold = GlyphRun { font, size: 18.0, baseline: 190.0, glyphs: &glyphs, synthesis: Synthesis { embolden: true, skew_x: -0.2 } };
+    rec.glyph_paths(fonts, &bold, BLUE);
+    rec.stroke_glyphs(fonts, &bold, &thin, INK);
+    let lacked = [(u32::MAX, 140.0), (mono.set(" ", 18.0, 0.0)[0].0, 160.0)];
+    rec.stroke_glyphs(fonts, &GlyphRun { font, size: 18.0, baseline: 190.0, glyphs: &lacked, synthesis: plain }, &thin, INK);
     rec.finish()
 }
 

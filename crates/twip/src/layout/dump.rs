@@ -189,7 +189,7 @@ pub fn page_text(snapshot: &Snapshot, doc: &Document) -> String {
                 for it in placed.line.items.iter() {
                     let rect = match it {
                         Item::Image { rect, .. } => rect,
-                        Item::Shape(s) if s.float == 0 => &s.rect,
+                        Item::Shape(s) if s.float == 0 && !s.decoration => &s.rect,
                         _ => continue,
                     };
                     if placed.line.atoms.iter().any(|a| !a.brk && (a.x0 - rect[0]).abs() < 0.01) {
