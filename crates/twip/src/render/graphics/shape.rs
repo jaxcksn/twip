@@ -16,7 +16,7 @@ use crate::drawing::colour::{Rgba, linear_to_srgb, srgb_to_linear};
 use crate::drawing::geom::{Geom, PathFill, Seg};
 use crate::drawing::paint::{
     BlipMode, Cap, Compound, Dash, GradientKind, GradientPath, Join, Paint as Fill, PresetDash, RectAlign, ResolvedBlipAdjust, ResolvedLine,
-    ResolvedShadow, TileFlip,
+    ResolvedReflection, ResolvedShadow, TileFlip,
 };
 use crate::drawing::units::{Emu, Pct};
 use crate::layout::fragment::{ImageKey, ShapeItem};
@@ -130,15 +130,21 @@ fn reach(s: &ShapeItem, m: Affine) -> kurbo::Rect {
     let shadow =
         |sh: &Option<ResolvedShadow>| sh.as_ref().map_or(0.0, |sh| sh.dist * sh.scale[0].abs().max(sh.scale[1].abs()).max(1.0) + 3.0 * sh.blur);
     let pad = s.line.width + shadow(&e.outer) + e.glow.map_or(0.0, |g| 3.0 * g.0) + 3.0 * e.blur.unwrap_or(0.0) + e.soft_edge.unwrap_or(0.0) + 4.0;
-    let b = m.transform_rect_bbox(kurbo::Rect::new(0.0, 0.0, x1 - x0, y1 - y0));
+    let mut b = m.transform_rect_bbox(kurbo::Rect::new(0.0, 0.0, x1 - x0, y1 - y0));
+    let mut pad = pad;
+    if let Some(r) = &e.reflection {
+        let size = [x1 - x0, y1 - y0];
+        b = b.union(reflection_matrix(m, size, r).transform_rect_bbox(kurbo::Rect::new(0.0, 0.0, size[0], size[1])));
+        pad += 3.0 * r.blur;
+    }
     let grow = pad + if e.outer.is_some() { b.width().max(b.height()) } else { 0.0 };
     b.inflate(grow, grow)
 }
 
-/// A shadow's own transform about its alignment point in `b`: skew, then scale.
-fn align_matrix(b: [f64; 4], sh: &ResolvedShadow) -> Affine {
+/// The alignment point of `align` in the box `b`.
+fn pivot(b: [f64; 4], align: RectAlign) -> (f64, f64) {
     let (xm, ym) = ((b[0] + b[2]) / 2.0, (b[1] + b[3]) / 2.0);
-    let (ax, ay) = match sh.align {
+    match align {
         RectAlign::Tl => (b[0], b[1]),
         RectAlign::T => (xm, b[1]),
         RectAlign::Tr => (b[2], b[1]),
@@ -148,12 +154,79 @@ fn align_matrix(b: [f64; 4], sh: &ResolvedShadow) -> Affine {
         RectAlign::Bl => (b[0], b[3]),
         RectAlign::B => (xm, b[3]),
         RectAlign::Br => (b[2], b[3]),
-    };
+    }
+}
+
+/// A shadow's own transform about its alignment point in `b`: skew, then scale.
+fn align_matrix(b: [f64; 4], sh: &ResolvedShadow) -> Affine {
+    let (ax, ay) = pivot(b, sh.align);
     let (kx, ky) = (sh.skew[0].to_radians().tan(), sh.skew[1].to_radians().tan());
     Affine::translate((ax, ay))
         * Affine::new([1.0, ky, kx, 1.0, 0.0, 0.0])
         * Affine::scale_non_uniform(sh.scale[0], sh.scale[1])
         * Affine::translate((-ax, -ay))
+}
+
+/// A reflection's transform from the box of `size` (the shape's, placed by `m`) to the page: skewed, then scaled about
+/// its alignment point, then moved `dist` along `dir`. The point and the move are the shape's own when it turns with
+/// the shape, else the page's.
+fn reflection_matrix(m: Affine, size: [f64; 2], r: &ResolvedReflection) -> Affine {
+    let (dx, dy) = (r.dist * r.dir.to_radians().cos(), r.dist * r.dir.to_radians().sin());
+    let about = |b: [f64; 4]| {
+        let (ax, ay) = pivot(b, r.align);
+        let (kx, ky) = (r.skew[0].to_radians().tan(), r.skew[1].to_radians().tan());
+        Affine::translate((ax, ay))
+            * Affine::scale_non_uniform(r.scale[0], r.scale[1])
+            * Affine::new([1.0, ky, kx, 1.0, 0.0, 0.0])
+            * Affine::translate((-ax, -ay))
+    };
+    if r.rot_with_shape {
+        m * Affine::translate((dx, dy)) * about([0.0, 0.0, size[0], size[1]])
+    } else {
+        let b = m.transform_rect_bbox(kurbo::Rect::new(0.0, 0.0, size[0], size[1]));
+        Affine::translate((dx, dy)) * about([b.x0, b.y0, b.x1, b.y1]) * m
+    }
+}
+
+/// Draws a reflection of what `draw` records in a box of `size`, placed by `m` (as the shape's own drawing is):
+/// the copy under `r`'s transform, blurred, and faded by a gradient alpha along its fade direction, which turns and
+/// flips with the shape when the reflection does. A shape's reflection and a text run's use it alike.
+pub(super) fn reflect(rec: &mut Recorder, m: Affine, size: [f64; 2], r: &ResolvedReflection, draw: &mut dyn FnMut(&mut Recorder)) {
+    let t = reflection_matrix(m, size, r);
+    let bbox = t.transform_rect_bbox(kurbo::Rect::new(0.0, 0.0, size[0], size[1]));
+    let (fx, fy) = (r.fade_dir.to_radians().cos(), r.fade_dir.to_radians().sin());
+    let [a, b, c, d, ..] = m.as_coeffs();
+    let (dx, dy) = if r.rot_with_shape { (a * fx + c * fy, b * fx + d * fy) } else { (fx, fy) };
+    let n = dx.hypot(dy).max(f64::EPSILON);
+    let (dx, dy) = (dx / n, dy / n);
+    let len = bbox.width() * dx.abs() + bbox.height() * dy.abs();
+    if len <= 0.0 || !len.is_finite() {
+        return;
+    }
+    let c = bbox.center();
+    let (start, end) = (kurbo::Point::new(c.x - dx * len / 2.0, c.y - dy * len / 2.0), kurbo::Point::new(c.x + dx * len / 2.0, c.y + dy * len / 2.0));
+    // The fade holds its start alpha before its start and its end alpha after its end.
+    let ((p0, a0), (p1, a1)) = if r.start.0 <= r.end.0 { (r.start, r.end) } else { (r.end, r.start) };
+    let at = |p: f64, a: f64| Stop { offset: p as f32, color: Color::rgba(0, 0, 0, (a * 255.0).round() as u8) };
+    let mut stops = [at(0.0, a0); 4];
+    let mut n = 0;
+    for (p, a, keep) in [(0.0, a0, p0 > 0.0), (p0, a0, true), (p1, a1, true), (1.0, a1, p1 < 1.0)] {
+        if keep {
+            stops[n] = at(p, a);
+            n += 1;
+        }
+    }
+    let sigma = sigma(r.blur);
+    let filters = [Filter::Blur { sigma }];
+    let bounds = bbox.inflate(f64::from(sigma) * 3.0 + 2.0, f64::from(sigma) * 3.0 + 2.0);
+    rec.push_layer(&Layer { filters: if sigma > 0.0 { &filters } else { &[] }, bounds: Some(bounds), ..Layer::default() });
+    rec.push_transform(t);
+    draw(rec);
+    rec.pop();
+    rec.push_layer(&Layer { blend: BlendMode::DstIn, ..Layer::default() });
+    rec.fill_rect(bounds, Paint::new(Brush::Linear { start, end, stops: &stops[..n], extend: Extend::Clamp, transform: Affine::IDENTITY }));
+    rec.pop();
+    rec.pop();
 }
 
 /// A layer that blurs what is drawn in it by `sigma` (none at 0).
@@ -172,10 +245,14 @@ fn picture_adjust(adjust: &[ResolvedBlipAdjust]) -> (Vec<ColorFilter>, f32) {
             ResolvedBlipAdjust::Alpha(v) => alpha *= *v as f32,
             ResolvedBlipAdjust::Grayscale => filters.push(ColorFilter::Matrix(gray)),
             ResolvedBlipAdjust::Lum { bright, contrast } => {
-                let k = if *contrast > 0.0 { 1.0 / (1.0 - contrast.min(0.999)) } else { 1.0 + contrast } as f32;
-                let o = (0.5 - 0.5 * f64::from(k) + bright) as f32;
+                // Contrast scales about mid grey; brightness adds to it, scaled by the same slope's share of the range left.
+                let k = if *contrast > 0.0 { 1.0 / (1.0 - contrast.min(0.999)) } else { (1.0 + contrast).max(0.0) };
+                let o = (0.5 * (1.0 - k) + bright * (0.5 + 0.5 * k)) as f32;
+                let k = k as f32;
                 filters.push(ColorFilter::Matrix([k, 0.0, 0.0, 0.0, o, 0.0, k, 0.0, 0.0, o, 0.0, 0.0, k, 0.0, o, 0.0, 0.0, 0.0, 1.0, 0.0]));
             }
+            // Drawn on the image's pixels.
+            ResolvedBlipAdjust::ClrChange { .. } => {}
             ResolvedBlipAdjust::BiLevel(t) => {
                 let table: [u8; 256] = std::array::from_fn(|i| if i as f64 / 255.0 >= *t { 255 } else { 0 });
                 filters.push(ColorFilter::Matrix(gray));
@@ -302,6 +379,12 @@ fn direction(seg: &PathSeg, t: f64) -> kurbo::Vec2 {
 
 impl Graphics {
     pub(super) fn shape(&mut self, rec: &mut Recorder, s: &ShapeItem, images: &[Vec<u8>]) {
+        self.shape_with_text(rec, s, images, None);
+    }
+
+    /// [`Graphics::shape`], its reflection holding what `text` draws too (given the transform from the page to the
+    /// shape's own box): a shape's text is reflected with it.
+    pub(super) fn shape_with_text(&mut self, rec: &mut Recorder, s: &ShapeItem, images: &[Vec<u8>], mut text: Option<ReflectedText>) {
         let [x0, y0, x1, y1] = s.rect;
         let m = shape_matrix(s);
         let e = &s.effects;
@@ -314,6 +397,22 @@ impl Graphics {
         if let Some(sh) = &e.outer {
             self.outer_shadow(rec, s, m, sh, soft, area);
         }
+        if let Some(r) = &e.reflection {
+            // An inline picture's reflection ends where its paragraph does.
+            let clip = s.clip_bottom.map(|y| kurbo::Rect::new(area.x0, area.y0, area.x1, y.clamp(area.y0, area.y1)));
+            if let Some(c) = clip {
+                rec.push_clip(Clip::Path(&rect_path(c)));
+            }
+            reflect(rec, m, [x1 - x0, y1 - y0], r, &mut |rec| {
+                self.body(rec, s, images);
+                if let (Some(text), Some(back)) = (text.as_mut(), m.inverse().into()) {
+                    text(self, rec, back);
+                }
+            });
+            if clip.is_some() {
+                rec.pop();
+            }
+        }
         if soft.is_some() {
             rec.push_layer(&Layer { bounds: Some(area), ..Layer::default() });
         }
@@ -321,6 +420,23 @@ impl Graphics {
             self.glow(rec, s, m, r, c);
         }
         rec.push_transform(m);
+        self.body(rec, s, images);
+        if let Some(sh) = &e.inner {
+            self.inner_shadow(rec, s, sh);
+        }
+        rec.pop();
+        if let Some(r) = soft {
+            self.soft_edge(rec, s, m, r, area);
+            rec.pop();
+        }
+        if blur.is_some() {
+            rec.pop();
+        }
+    }
+
+    /// The shape's fill and line in its own box.
+    fn body(&mut self, rec: &mut Recorder, s: &ShapeItem, images: &[Vec<u8>]) {
+        let [x0, y0, x1, y1] = s.rect;
         let paths = self.paths.get(&s.geom);
         let line = if s.picture { ResolvedLine { width: s.line.width * 2.0, ..s.line.clone() } } else { s.line.clone() };
         let (size, origin) = ([x1 - x0, y1 - y0], [x0, y0]);
@@ -334,17 +450,6 @@ impl Graphics {
             if gp.stroke && !s.picture {
                 self.stroke(rec, p, &line, size, s.rot, origin, images);
             }
-        }
-        if let Some(sh) = &e.inner {
-            self.inner_shadow(rec, s, sh);
-        }
-        rec.pop();
-        if let Some(r) = soft {
-            self.soft_edge(rec, s, m, r, area);
-            rec.pop();
-        }
-        if blur.is_some() {
-            rec.pop();
         }
     }
 
@@ -471,6 +576,66 @@ impl Graphics {
         rec.pop();
     }
 
+    /// The picture `key` names with its pixels within one level of `from` in every channel drawn as `to`, made on first
+    /// use: the decoded pixels changed in place and handed to the registry, so a large picture costs what drawing it
+    /// does (twip-graphics reads at most 2^28 pixels). A picture that doesn't decode is the picture as it is. They are
+    /// kept by the registry's id of the picture, which no other document's picture shares, and dropped to
+    /// [`RECOLOUR_MAX_BYTES`] between frames by [`Graphics::trim_recoloured`].
+    pub(super) fn recoloured(&mut self, key: ImageKey, from: Rgba, to: Rgba, images: &[Vec<u8>]) -> Option<twip_graphics::image::ImageId> {
+        let base = self.image(key, images)?;
+        let info = self.res.images.info(base)?;
+        let k = (base, [from.r, from.g, from.b, from.a], [to.r, to.g, to.b, to.a]);
+        let frame = self.frames;
+        if let Some(r) = self.recoloured.get_mut(&k) {
+            r.last = frame;
+            if let Some(id) = r.id {
+                self.recolour_log.push(id);
+            }
+            return r.id.or(Some(base));
+        }
+        self.recolour_decodes += 1;
+        let made =
+            key.index.and_then(|i| images.get(i)).and_then(|bytes| twip_graphics::image::pixels_straight(bytes).ok()).and_then(|(w, h, mut px)| {
+                let near = |a: u8, b: u8| a.abs_diff(b) <= 1;
+                for p in px.as_chunks_mut::<4>().0 {
+                    if p[3] != 0 && near(p[0], from.r) && near(p[1], from.g) && near(p[2], from.b) {
+                        p.copy_from_slice(&[to.r, to.g, to.b, to.a]);
+                    }
+                }
+                self.res.images.add_pixels(w, h, px).ok()
+            });
+        let bytes = if made.is_some() { u64::from(info.width) * u64::from(info.height) * 4 } else { 0 };
+        self.recoloured_bytes += bytes;
+        self.recolour_log.extend(made);
+        self.recoloured.insert(k, Recoloured { id: made, bytes, last: frame });
+        made.or(Some(base))
+    }
+
+    /// Starts a frame: pictures with a changed colour past `max` bytes are dropped, the ones neither drawn in the frame
+    /// before nor held by a page recording kept for later first. What is in use is never dropped, so a view of more than
+    /// `max` bytes keeps them all and decodes nothing again.
+    pub(super) fn trim_recoloured(&mut self, max: u64) {
+        self.frames += 1;
+        self.recolour_log.clear();
+        if self.recoloured_bytes <= max {
+            return;
+        }
+        let held: std::collections::HashSet<_> = self.retained.pinned().collect();
+        let frame = self.frames;
+        let res = &mut self.res;
+        let mut bytes = self.recoloured_bytes;
+        self.recoloured.retain(|_, r| {
+            let Some(id) = r.id else { return false };
+            if bytes <= max || r.last + 1 >= frame || held.contains(&id) {
+                return true;
+            }
+            res.images.remove(id);
+            bytes -= r.bytes;
+            false
+        });
+        self.recoloured_bytes = bytes;
+    }
+
     /// The 8×8 tile of a pattern fill, registered on first use.
     pub(super) fn tile(&mut self, bits: [u8; 8], fg: Rgba, bg: Rgba) -> Option<twip_graphics::image::ImageId> {
         let key = (bits, [fg.r, fg.g, fg.b, fg.a], [bg.r, bg.g, bg.b, bg.a]);
@@ -542,7 +707,15 @@ impl Graphics {
             }
             Fill::Picture { image, src, mode: blip, adjust, .. } => {
                 let (filters, alpha) = picture_adjust(adjust);
-                let id = self.image(ImageKey { index: *image, generation: 0 }, images);
+                let key = ImageKey { index: *image, generation: 0 };
+                let change = adjust.iter().find_map(|a| match a {
+                    ResolvedBlipAdjust::ClrChange { from, to } => Some((*from, *to)),
+                    _ => None,
+                });
+                let id = match change {
+                    Some((from, to)) => self.recoloured(key, from, to, images),
+                    None => self.image(key, images),
+                };
                 let Some((id, info)) = id.and_then(|id| Some((id, self.res.images.info(id)?))) else {
                     // A picture without an image twip-graphics reads: a light frame, a CSS pixel wide at 100%.
                     rec.stroke_path(path.elements(), &pen(0.75), Paint { aa: false, ..Paint::from(Color::rgb(0xC8_C8C8)) });
@@ -800,6 +973,21 @@ fn with_ends(path: &BezPath, line: &ResolvedLine) -> Vec<BezPath> {
 fn sigma(radius: f64) -> f32 {
     (radius * SIGMA_PER_RADIUS) as f32
 }
+
+/// A picture with a changed colour: its registry id (none when it didn't decode), its pixels' bytes and the frame it was
+/// last drawn in.
+pub(super) struct Recoloured {
+    pub id: Option<twip_graphics::image::ImageId>,
+    pub bytes: u64,
+    pub last: u64,
+}
+
+/// What draws a shape's text into its reflection: the graphics, the recording and the transform from the page to the
+/// shape's own box.
+pub(super) type ReflectedText<'a> = &'a mut dyn FnMut(&mut Graphics, &mut Recorder, Affine);
+
+/// The most bytes of pictures with a changed colour kept between frames.
+pub(super) const RECOLOUR_MAX_BYTES: u64 = 256 << 20;
 
 const SIGMA_PER_RADIUS: f64 = 0.5;
 const GLOW_GROW: f64 = 0.5;

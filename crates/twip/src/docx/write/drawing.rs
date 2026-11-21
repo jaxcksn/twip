@@ -570,6 +570,25 @@ pub fn effects_xml(e: &EffectList) -> String {
     if let Some(p) = &e.preset {
         s.push_str(&format!(r#"<a:prstShdw prst="shdw{}" dist="{}" dir="{}">{}</a:prstShdw>"#, p.preset, p.dist.0, p.dir.0, colour_xml(&p.colour)));
     }
+    if let Some(r) = &e.reflection {
+        s.push_str(&format!(
+            r#"<a:reflection blurRad="{}" stA="{}" stPos="{}" endA="{}" endPos="{}" dist="{}" dir="{}" fadeDir="{}" sx="{}" sy="{}" kx="{}" ky="{}" algn="{}" rotWithShape="{}"/>"#,
+            r.blur.0,
+            r.start_alpha.0,
+            r.start_pos.0,
+            r.end_alpha.0,
+            r.end_pos.0,
+            r.dist.0,
+            r.dir.0,
+            r.fade_dir.0,
+            r.sx.0,
+            r.sy.0,
+            r.kx.0,
+            r.ky.0,
+            r.align.name(),
+            u8::from(r.rot_with_shape)
+        ));
+    }
     if let Some(r) = e.soft_edge {
         s.push_str(&format!(r#"<a:softEdge rad="{}"/>"#, r.0));
     }
@@ -783,6 +802,17 @@ mod round_trip {
         let saved = refilled(false);
         assert_eq!(saved, original.replace(r#"<a:srgbClr val="FF0000"/>"#, r#"<a:srgbClr val="00FF00"/>"#));
         assert!(saved.contains("<a:reflection") && saved.contains("<a:scene3d>"), "what isn't drawn is kept");
+    }
+
+    #[test]
+    fn a_written_reflection_reads_as_it_was() {
+        let xml = r#"<a:effectLst xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:reflection blurRad="6350" stA="50000" stPos="1000" endA="300" endPos="35000" dist="12700" dir="5400000" fadeDir="2700000" sx="90000" sy="-100000" kx="60000" ky="120000" algn="bl" rotWithShape="0"/></a:effectLst>"#;
+        let read = |x: &str| crate::drawing::paint::EffectList::parse(roxmltree::Document::parse(x).expect("xml").root_element());
+        let e = read(xml);
+        assert!(e.reflection.is_some() && !e.kept);
+        let written =
+            super::effects_xml(&e).replace("<a:effectLst>", r#"<a:effectLst xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">"#);
+        assert_eq!(read(&written), e);
     }
 
     #[test]

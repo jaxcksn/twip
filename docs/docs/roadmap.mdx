@@ -468,7 +468,8 @@ Everything in the model is drawn, on screen and in PDF, and looks as it does in 
 - Set Transparent Colour (`a:clrChange`).
 - VML picture brightness and contrast (`gain`, `blacklevel`) everywhere, not only in watermarks.
 - `a:reflection`.
-- Linked pictures.
+- Linked pictures: a blip with only `r:link` draws its placeholder frame on purpose, as Twip does not fetch the file;
+  one that also has `r:embed` draws the embedded copy.
 
 </Chunk>
 

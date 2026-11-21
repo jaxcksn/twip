@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
+use twip_graphics::image::ImageId;
 use twip_graphics::scene::{Picture, Recorder};
 
 use crate::layout::fragment::{BoxFragment, BoxKind, Child, Item, PageChild, PageFragment};
@@ -102,6 +103,8 @@ struct Recording {
     inputs: Inputs,
     picture: Picture,
     used: u64,
+    /// The pictures with a changed colour it draws: they stay while it does.
+    pins: Vec<ImageId>,
 }
 
 /// One presentation's retained page pictures.
@@ -126,12 +129,17 @@ impl Retained {
         self.recordings.clear();
     }
 
+    /// The pictures with a changed colour the recordings draw.
+    pub fn pinned(&self) -> impl Iterator<Item = ImageId> + '_ {
+        self.recordings.values().flat_map(|r| r.pins.iter().copied())
+    }
+
     pub fn bytes(&self) -> usize {
         self.recordings.values().map(|r| r.picture.bytes()).sum()
     }
 
     /// `page`'s picture (in its points), recorded with `record` first when there is none for these inputs.
-    pub fn picture(&mut self, page: &Rc<PageFragment>, inputs: Inputs, record: impl FnOnce(&mut Recorder)) -> Picture {
+    pub fn picture(&mut self, page: &Rc<PageFragment>, inputs: Inputs, record: impl FnOnce(&mut Recorder) -> Vec<ImageId>) -> Picture {
         self.clock += 1;
         let key = drawing_key(page);
         match self.recordings.get_mut(&key).filter(|r| r.inputs == inputs) {
@@ -141,9 +149,9 @@ impl Retained {
                 r.picture.clone()
             }
             None => {
-                record(&mut self.recorder);
+                let pins = record(&mut self.recorder);
                 let picture = self.recorder.finish();
-                self.recordings.insert(key, Recording { _fragment: Rc::clone(page), inputs, picture: picture.clone(), used: self.clock });
+                self.recordings.insert(key, Recording { _fragment: Rc::clone(page), inputs, picture: picture.clone(), used: self.clock, pins });
                 self.counts.recorded += 1;
                 picture
             }

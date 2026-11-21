@@ -299,6 +299,8 @@ pub(in crate::layout) fn stroked(out: &mut Vec<Item>, rect: [f64; 4], horizontal
         picture: false,
         ink: true,
         decoration: true,
+        clip_bottom: None,
+        text_float: 0,
     });
     // Two cells sharing an edge each draw it: once is enough.
     if !out.iter().rev().take(8).any(|i| matches!(i, Item::Shape(s) if **s == *shape)) {

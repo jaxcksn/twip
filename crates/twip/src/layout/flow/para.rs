@@ -165,6 +165,12 @@ impl<'d> PageFill<'d, '_> {
                 stop_kind = l.hard;
             }
         }
+        if take < n {
+            // The paragraph goes on elsewhere: an inline picture's reflection stops where this part does.
+            for l in &mut lines {
+                l.line = l.line.clipped(yy - l.y);
+            }
+        }
         out.push(Child::Para(ParaFragment { para: para_id(p), lines: lines.into_boxed_slice(), line_numbers: numbers.into_boxed_slice() }));
         *y = yy;
         *empty = false;

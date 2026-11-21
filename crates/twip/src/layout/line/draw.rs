@@ -53,6 +53,8 @@ fn check_box(x: f64, base: f64, advance: f64, e: f64, checked: bool, colour: Opt
         picture: false,
         ink: true,
         decoration: true,
+        clip_bottom: None,
+        text_float: 0,
     }))
 }
 
@@ -93,6 +95,17 @@ fn line_changed(o: &LineOrigin, line: &Line, src: &Paragraph) -> bool {
     })
 }
 
+/// How far a line's paragraph goes on below it.
+#[derive(Clone, Copy)]
+pub enum Below<'a> {
+    /// Its paragraph's lines, and its place among them.
+    Lines(&'a super::ParaLines, usize),
+    /// None: it is the last.
+    Last,
+    /// The distance from its top to the bottom of the paragraph's last line.
+    To(f64),
+}
+
 pub struct LineOrigin<'a> {
     pub shaped: &'a ShapedPara,
     pub from: usize,
@@ -105,6 +118,9 @@ pub struct LineOrigin<'a> {
     pub palette: crate::drawing::paint::Palette<'a>,
     pub backdrop: Option<u32>,
     pub page_colour: Option<u32>,
+    /// Whether a paragraph's automatic spacing is the fixed 14 points (HTML paragraph auto spacing is on).
+    pub html_auto_spacing: bool,
+    pub below: Below<'a>,
 }
 
 impl LineOrigin<'_> {
@@ -239,7 +255,26 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
                     let x0 = x + pic.effect[0];
                     let rect = [x0, bottom - pic.h, x0 + pic.w, bottom];
                     match pic.shape.as_deref() {
-                        Some(shape) => out.extend(crate::layout::story::shape_items(shape, rect, 0, false, o.palette).into_iter().map(Item::Shape)),
+                        Some(shape) => {
+                            // A reflection of an inline picture stops at the bottom of its paragraph, spacing after included.
+                            let reflected = shape.pic().is_some_and(|p| p.effects.as_ref().is_some_and(|e| e.reflection.is_some()));
+                            let clip = reflected.then(|| {
+                                let style = src.para_style_in(o.review.view);
+                                let after = if style.after_auto && o.html_auto_spacing { 14.0 } else { style.space_after };
+                                let to_bottom = match o.below {
+                                    Below::Lines(lines, i) => lines.height_from(i),
+                                    Below::Last => line.pitch,
+                                    Below::To(d) => d,
+                                };
+                                top + to_bottom + after
+                            });
+                            let mut items = crate::layout::story::shape_items(shape, rect, 0, false, o.palette, clip);
+                            if let Some(t) = &pic.text {
+                                // Made just now, so unshared.
+                                items.iter_mut().filter_map(Rc::get_mut).for_each(|s| s.text_float = t.id);
+                            }
+                            out.extend(items.into_iter().map(Item::Shape))
+                        }
                         None => out.push(Item::Image { rect, key: ImageKey { index: pic.image, generation: 0 } }),
                     }
                     if pic.text.is_some() {

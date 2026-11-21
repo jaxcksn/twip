@@ -29,7 +29,8 @@ use super::{ChromeFace, Frame, Renderer};
 use crate::editing::view::View;
 use crate::font::Face;
 use crate::layout::fragment::{GlyphFill, ImageKey, Item};
-use crate::layout::traverse::paint;
+use crate::layout::ids::FloatId;
+use crate::layout::traverse::{paint, paint_float};
 
 /// The twip-graphics side of a presentation: the fonts and images registered with it, the CPU renderer, the retained
 /// page pictures, and the frame being recorded. Its memory is kept between frames.
@@ -56,6 +57,14 @@ pub struct Graphics {
     lookup: Option<crate::font::Fonts>,
     /// 8×8 pattern fills' tiles: the bits, then the foreground and background colours.
     tiles: HashMap<([u8; 8], [u8; 4], [u8; 4]), Option<ImageId>>,
+    /// Pictures with a colour changed (`a:clrChange`), by picture, the colour and what it becomes.
+    recoloured: HashMap<(ImageId, [u8; 4], [u8; 4]), shape::Recoloured>,
+    recoloured_bytes: u64,
+    /// The frame being recorded, and the pictures with a changed colour drawn since a page recording began.
+    frames: u64,
+    recolour_log: Vec<ImageId>,
+    /// Pictures decoded to change a colour.
+    recolour_decodes: u64,
     paths: shape::Paths,
     pub retained: retained::Retained,
     /// This frame's drawing, in device pixels.
@@ -131,9 +140,10 @@ fn measure(face: &Face, text: &str, size: f64) -> f64 {
 impl Graphics {
     /// Forgets the document's pictures (a new document), their bytes too: a long session opens many documents.
     pub fn clear_images(&mut self) {
-        for id in self.images.drain().filter_map(|(_, id)| id) {
+        for id in self.images.drain().filter_map(|(_, id)| id).chain(self.recoloured.drain().filter_map(|(_, r)| r.id)) {
             self.res.images.remove(id);
         }
+        self.recoloured_bytes = 0;
         self.forget_metafiles();
     }
 
@@ -329,6 +339,7 @@ impl Graphics {
     /// Records a frame: the visible pages, then the view's overlays over them, in device pixels. What the host draws
     /// over it goes into [`Graphics::frame`]; [`Graphics::present`] renders it.
     pub fn draw(&mut self, r: &Renderer, view: &View, images: &[Vec<u8>], f: &Frame) {
+        self.trim_recoloured(shape::RECOLOUR_MAX_BYTES);
         let mut rec = std::mem::take(&mut self.frame);
         let k = f.px_per_pt;
         // The desk: the viewport outside the papers, which cover the rest. Each paper is taken a device pixel smaller
@@ -354,7 +365,11 @@ impl Graphics {
             rec.push_transform(Affine::translate((p.x0, p.y0)) * Affine::scale(k));
             if r.retain && !r.direct {
                 let inputs = retained::Inputs { gridlines: r.gridlines, appearance: r.appearance };
-                let picture = kept.picture(page, inputs, |content| self.page(content, r, page, images));
+                let picture = kept.picture(page, inputs, |content| {
+                    self.recolour_log.clear();
+                    self.page(content, r, page, images);
+                    std::mem::take(&mut self.recolour_log)
+                });
                 rec.picture(&picture, Affine::IDENTITY);
             } else {
                 self.page(&mut rec, r, page, images);
@@ -431,6 +446,7 @@ impl Graphics {
     #[doc(hidden)]
     pub fn page_picture(&mut self, r: &Renderer, page: &crate::layout::fragment::PageFragment, images: &[Vec<u8>]) -> twip_graphics::scene::Picture {
         let mut rec = Recorder::new();
+        self.recolour_log.clear();
         self.page(&mut rec, r, page, images);
         rec.finish()
     }
@@ -458,6 +474,32 @@ impl Graphics {
                 }
                 rec.push_transform(Affine::translate((p.dx, p.dy)));
                 at = Some((p.dx, p.dy));
+            }
+            // A shape with a reflection and text over it: the reflection holds the text.
+            if let Item::Shape(s) = p.item
+                && s.effects.reflection.is_some()
+                && !s.picture
+                && (s.float | s.text_float) != 0
+            {
+                let own = p.own_colours;
+                let items: Vec<Item> = paint_float(page, FloatId(if s.float != 0 { s.float } else { s.text_float }))
+                    .into_iter()
+                    .filter(|i| matches!(i, Item::Glyphs(_) | Item::Turned(_)))
+                    .collect();
+                let (dx, dy) = (p.dx, p.dy);
+                self.shape_with_text(
+                    rec,
+                    s,
+                    images,
+                    Some(&mut |g, rec, back| {
+                        rec.push_transform(back * Affine::translate((-dx, -dy)));
+                        for item in &items {
+                            g.item(rec, r, own, item, images);
+                        }
+                        rec.pop();
+                    }),
+                );
+                return;
             }
             self.item(rec, r, p.own_colours, p.item, images);
         });
@@ -740,6 +782,8 @@ mod ink_tests {
             picture: false,
             ink: true,
             decoration: true,
+            clip_bottom: None,
+            text_float: 0,
         };
         let r = Renderer { appearance: Appearance::Dark { page: PageMode::Dark }, ..Renderer::default() };
         let want = r.appearance.map(0x000000);

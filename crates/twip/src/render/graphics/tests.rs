@@ -69,8 +69,12 @@ fn sized(prst: &str, w: i64, h: i64, xfrm: &str, sp_pr: &str) -> String {
 /// The document of `graphic` anchored at (100, 100) on the page, `w` x `h` pt, with `image` as `media/image1.png`
 /// (relationship `rId5`).
 fn package(graphic: &str, (w, h): (i64, i64), image: Option<&[u8]>) -> Vec<u8> {
+    package_body(&format!("<w:p>{}</w:p>", anchor(100, 100, w, h, 1, false, 1, graphic)), image)
+}
+
+/// The document whose body is `body`, with `image` as `media/image1.png` (relationship `rId5`).
+fn package_body(body: &str, image: Option<&[u8]>) -> Vec<u8> {
     let ns = r#"xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape""#;
-    let body = format!("<w:p>{}</w:p>", anchor(100, 100, w, h, 1, false, 1, graphic));
     let document = format!(
         r#"<?xml version="1.0"?><w:document {ns}><w:body>{body}<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:body></w:document>"#
     );
@@ -100,9 +104,13 @@ fn package(graphic: &str, (w, h): (i64, i64), image: Option<&[u8]>) -> Vec<u8> {
 
 /// `graphic`, `w` x `h` pt at (100, 100), drawn on the CPU.
 fn draw_sized(graphic: &str, size: (i64, i64), image: Option<&[u8]>) -> Shot {
+    draw_in(&mut Graphics::default(), graphic, size, image)
+}
+
+/// [`draw_sized`] with the graphics `g`, as a session draws a second document with the first one's.
+fn draw_in(g: &mut Graphics, graphic: &str, size: (i64, i64), image: Option<&[u8]>) -> Shot {
     let d = crate::docx::read(&package(graphic, size, image)).expect("the document reads");
     let snap = crate::layout::layout(&d, &fonts());
-    let mut g = Graphics::default();
     let picture = g.page_picture(&Renderer::default(), &snap.pages()[0], &d.images);
     let mut px = vec![0u8; SIZE.0 * SIZE.1 * 4];
     let mut target = Target::new(&mut px, SIZE.0 as u32, SIZE.1 as u32, SIZE.0 * 4, Format::Rgba8).expect("a target");
@@ -434,4 +442,264 @@ fn a_new_document_lets_the_last_ones_images_go() {
     let id = g.image(key, &doc.images).expect("an image");
     g.clear_images();
     assert!(g.res.images.info(id).is_none(), "the registry holds the old document's bytes no longer");
+}
+
+#[test]
+fn a_linked_picture_draws_its_placeholder_and_its_embedded_copy_when_it_has_one() {
+    let draw_blip =
+        |blip: &str| draw_sized(&wsp("rect", &format!(r#"<a:blipFill>{blip}{STRETCH}</a:blipFill>{NO_LINE}"#)), (100, 60), Some(&picture()));
+    // Only a link: a light frame and nothing inside, though the package holds an image.
+    let linked = draw_blip(r#"<a:blip r:link="rId9"/>"#);
+    assert!(paper(linked.at(120.0, 140.0)) && paper(linked.at(180.0, 140.0)), "no picture without its embedded copy");
+    assert!(linked.column(100.0, 120.0, 140.0).iter().any(|p| (180..230).contains(&p[0]) && p[0] == p[1]), "a grey frame");
+    // A link and its embedded copy: the copy.
+    let both = draw_blip(r#"<a:blip r:link="rId9" r:embed="rId5"/>"#);
+    assert!(red(both.at(120.0, 140.0)) && both.at(180.0, 140.0)[2] > 240, "the embedded picture");
+}
+
+#[test]
+fn a_changed_colour_becomes_transparent_within_one_level() {
+    let change = |from: &str, to: &str| {
+        blip(&format!(r#"<a:clrChange><a:clrFrom><a:srgbClr val="{from}"/></a:clrFrom><a:clrTo>{to}</a:clrTo></a:clrChange>"#), STRETCH, "")
+    };
+    let clear = r#"<a:srgbClr val="FF0000"><a:alpha val="0"/></a:srgbClr>"#;
+    let s = change("FF0000", clear);
+    assert!(paper(s.at(120.0, 140.0)), "red goes: {:?}", s.at(120.0, 140.0));
+    assert!(s.at(180.0, 140.0)[2] > 240 && s.at(180.0, 140.0)[0] < 20, "blue stays");
+    let near = change("FE0101", clear);
+    assert!(paper(near.at(120.0, 140.0)), "a level off in a channel is the colour: {:?}", near.at(120.0, 140.0));
+    let far = change("FC0000", clear);
+    assert!(red(far.at(120.0, 140.0)), "two levels off is not: {:?}", far.at(120.0, 140.0));
+    let green = change("FF0000", r#"<a:srgbClr val="00FF00"/>"#);
+    assert!(green.at(120.0, 140.0)[1] > 240 && green.at(120.0, 140.0)[0] < 20, "drawn as the new colour: {:?}", green.at(120.0, 140.0));
+}
+
+#[test]
+fn a_picture_that_does_not_decode_keeps_its_colours() {
+    // A PNG whose header claims 10000 x 10000 pixels over 8 x 8 of data: it doesn't decode, and costs nothing.
+    let mut png = picture();
+    png[16..24].copy_from_slice(&[0, 0, 0x27, 0x10, 0, 0, 0x27, 0x10]);
+    let crc = {
+        let mut c = 0xFFFF_FFFFu32;
+        for b in &png[12..29] {
+            c ^= u32::from(*b);
+            for _ in 0..8 {
+                c = if c & 1 == 1 { (c >> 1) ^ 0xEDB8_8320 } else { c >> 1 };
+            }
+        }
+        !c
+    };
+    png[29..33].copy_from_slice(&crc.to_be_bytes());
+    let images = vec![png];
+    let mut g = Graphics::default();
+    let key = crate::layout::fragment::ImageKey { index: Some(0), generation: 0 };
+    let plain = g.image(key, &images).expect("registered by its header");
+    let from = crate::drawing::colour::Rgba::rgb(0xFF0000);
+    assert_eq!(g.recoloured(key, from, from, &images), Some(plain));
+    assert_eq!(g.recoloured_bytes, 0);
+}
+
+#[test]
+fn a_reflection_is_a_faded_copy_below_the_shape() {
+    let r = |attrs: &str| with_effects(&format!(r#"<a:reflection {attrs}/>"#));
+    let s = r(r#"stA="60000" endA="0" endPos="100000" dir="5400000" sy="-100000" algn="b" rotWithShape="0""#);
+    assert!(red(s.at(150.0, 130.0)), "the shape stays");
+    let near = s.at(150.0, 161.0);
+    let far = s.at(150.0, 195.0);
+    assert!(near[0] > 240 && (60..160).contains(&near[1]), "red at 60% under the shape: {near:?}");
+    assert!(far[1] > near[1], "fading with distance: {near:?} {far:?}");
+    assert!(paper(s.at(80.0, 170.0)), "nothing beside it");
+    // A gap of 10 pt, then the copy.
+    let apart = r(r#"stA="100000" endA="100000" dist="127000" dir="5400000" sy="-100000" algn="b" rotWithShape="0""#);
+    assert!(paper(apart.at(150.0, 165.0)) && red(apart.at(150.0, 175.0)), "{:?} {:?}", apart.at(150.0, 165.0), apart.at(150.0, 175.0));
+    // The fade runs the way fadeDir says: along x it leaves the left of a copy to its right opaque, the rest clear.
+    let side = r(r#"stA="100000" endA="0" endPos="50000" dir="0" fadeDir="0" sx="-100000" algn="r" rotWithShape="0""#);
+    assert!(side.at(205.0, 130.0)[1] < 40 && paper(side.at(255.0, 130.0)), "{:?} {:?}", side.at(205.0, 130.0), side.at(255.0, 130.0));
+    assert!(paper(with_effects("").at(150.0, 170.0)), "no reflection without the effect");
+}
+
+#[test]
+fn hostile_reflections_draw_something_bounded() {
+    for attrs in [
+        r#"sx="0" sy="0""#,
+        r#"sy="-100000000000" dist="9000000000000" dir="5400000""#,
+        r#"blurRad="9000000000000" stA="100000" endA="100000""#,
+        r#"stPos="90000" endPos="10000" stA="100000" endA="0" fadeDir="123456789""#,
+        r#"kx="5399999" ky="-5399999" sy="-100000""#,
+        r#"stA="-5" endA="999999999" stPos="-1" endPos="99999999999""#,
+    ] {
+        let s = with_effects(&format!("<a:reflection {attrs}/>"));
+        assert!(red(s.at(150.0, 130.0)), "the shape still draws with {attrs}");
+    }
+}
+
+#[test]
+fn an_absurd_blur_radius_draws_in_bounded_time() {
+    // Radii in the billions of points: drawn at the largest radius Twip draws, whatever the effect.
+    for effect in [
+        r#"<a:outerShdw blurRad="9000000000000" dist="9000000000000" dir="2700000"><a:srgbClr val="000000"/></a:outerShdw>"#,
+        r#"<a:innerShdw blurRad="9000000000000" dist="1270000"><a:srgbClr val="000000"/></a:innerShdw>"#,
+        r#"<a:glow rad="9000000000000"><a:srgbClr val="00FF00"/></a:glow>"#,
+        r#"<a:softEdge rad="9000000000000"/>"#,
+        r#"<a:blur rad="9000000000000"/>"#,
+    ] {
+        let started = std::time::Instant::now();
+        let s = with_effects(effect);
+        assert!(s.at(150.0, 130.0)[3] > 0, "{effect}");
+        assert!(started.elapsed() < std::time::Duration::from_secs(4), "{effect}: {:?}", started.elapsed());
+    }
+    // The clamp is the same drawing as asking for the largest radius.
+    let clamped = format!(r#"<a:blur rad="{}"/>"#, 200 * PT);
+    assert_eq!(with_effects(&clamped).0, with_effects(r#"<a:blur rad="9000000000000"/>"#).0);
+}
+
+#[test]
+fn a_reflection_fades_along_a_flipped_or_turned_shape() {
+    let r = |xfrm: &str, attrs: &str| {
+        let fill = format!("{RED}{NO_LINE}<a:effectLst><a:reflection {attrs}/></a:effectLst>");
+        draw(&sized("rect", 100, 60, xfrm, &fill))
+    };
+    // Flipped about its x axis the shape's copy is above it, and, turning with it, so is its fade: strongest at the
+    // shape's edge, clear far from it.
+    let up = r(r#" flipV="1""#, r#"stA="100000" endA="0" dir="5400000" sy="-100000" algn="b" rotWithShape="1""#);
+    assert!(up.at(150.0, 99.0)[1] < 60 && up.at(150.0, 70.0)[1] > up.at(150.0, 99.0)[1], "{:?} {:?}", up.at(150.0, 99.0), up.at(150.0, 70.0));
+    // Not turning with it, the same reflection lies below and fades downward.
+    let down = r(r#" flipV="1""#, r#"stA="100000" endA="0" dir="5400000" sy="-100000" algn="b" rotWithShape="0""#);
+    assert!(down.at(150.0, 161.0)[1] < 60 && down.at(150.0, 190.0)[1] > down.at(150.0, 161.0)[1], "{:?}", down.at(150.0, 161.0));
+}
+
+#[test]
+fn an_inline_pictures_reflection_stops_at_its_paragraph() {
+    let at = |after: &str| {
+        let d = crate::docx::read(&inline_package(after, "")).expect("reads");
+        let snap = crate::layout::layout(&d, &fonts());
+        let mut g = Graphics::default();
+        let picture = g.page_picture(&Renderer::default(), &snap.pages()[0], &d.images);
+        let mut px = vec![0u8; SIZE.0 * SIZE.1 * 4];
+        let mut target = Target::new(&mut px, SIZE.0 as u32, SIZE.1 as u32, SIZE.0 * 4, Format::Rgba8).expect("a target");
+        g.render_picture(&mut target, &picture, Affine::scale(K) * Affine::translate((-ORIGIN.0, -ORIGIN.1)), Color::WHITE);
+        Shot(px)
+    };
+    // The picture is 100 x 60 pt at the page's margin (72, 72); its reflection falls 60 pt below, faded.
+    let tight = at("0");
+    let roomy = at("400");
+    let below = |s: &Shot, y: f64| s.at(100.0, y);
+    assert!(!paper(below(&roomy, 145.0)), "20 pt of spacing after holds the reflection: {:?}", below(&roomy, 145.0));
+    assert!(paper(below(&roomy, 160.0)), "and no more: {:?}", below(&roomy, 160.0));
+    assert!(paper(below(&tight, 140.0)), "no spacing, no reflection past the line: {:?}", below(&tight, 140.0));
+}
+
+/// A document of one paragraph holding an inline 100 x 60 pt picture with a reflection, `after` twips of spacing after.
+fn inline_package(after: &str, tail: &str) -> Vec<u8> {
+    let graphic =
+        format!(r#"<w:p><w:pPr><w:spacing w:before="0" w:after="{after}" w:line="240" w:lineRule="auto"/></w:pPr>{}{tail}</w:p>"#, INLINE_REFLECTED);
+    package_body(&graphic, Some(&picture()))
+}
+
+const CLEAR_RED: &str = r#"<a:blipFill><a:blip r:embed="rId5"><a:clrChange><a:clrFrom><a:srgbClr val="FF0000"/></a:clrFrom><a:clrTo><a:srgbClr val="FF0000"><a:alpha val="0"/></a:srgbClr></a:clrTo></a:clrChange></a:blip><a:stretch><a:fillRect/></a:stretch></a:blipFill><a:ln><a:noFill/></a:ln>"#;
+
+#[test]
+fn a_new_document_does_not_draw_the_last_ones_changed_pictures() {
+    let rect = wsp("rect", CLEAR_RED);
+    let green = crate::render::svg::png(8, 8, &[0, 255, 0, 255].repeat(64));
+    let mut g = Graphics::default();
+    let first = draw_in(&mut g, &rect, (100, 60), Some(&picture()));
+    assert!(paper(first.at(120.0, 140.0)), "the first document's red goes");
+    g.clear_images();
+    // The same picture index, colour and change: a different image.
+    let second = draw_in(&mut g, &rect, (100, 60), Some(&green));
+    assert!(second.at(120.0, 140.0)[1] > 240 && second.at(120.0, 140.0)[0] < 20, "its own pixels: {:?}", second.at(120.0, 140.0));
+}
+
+#[test]
+fn changed_pictures_in_use_stay_over_the_cap_and_unused_ones_go() {
+    let rect = wsp("rect", CLEAR_RED);
+    let mut g = Graphics::default();
+    let first = draw_in(&mut g, &rect, (100, 60), Some(&picture()));
+    assert_eq!((g.recolour_decodes, g.recoloured.len()), (1, 1));
+    let id = g.recoloured.values().next().and_then(|r| r.id).expect("decoded");
+    // Over the cap (0), frame after frame of the same pages: nothing is dropped, nothing is decoded again.
+    for _ in 0..3 {
+        g.trim_recoloured(0);
+        let again = draw_in(&mut g, &rect, (100, 60), Some(&picture()));
+        assert_eq!(first.0, again.0);
+    }
+    assert_eq!((g.recolour_decodes, g.recoloured.len()), (1, 1), "kept while drawn");
+    // Two frames that don't draw it: gone, bytes and all, and made again when it is drawn.
+    g.trim_recoloured(0);
+    g.trim_recoloured(0);
+    assert!(g.recoloured.is_empty() && g.recoloured_bytes == 0 && g.res.images.info(id).is_none());
+    let back = draw_in(&mut g, &rect, (100, 60), Some(&picture()));
+    assert_eq!((first.0, g.recolour_decodes), (back.0, 2));
+}
+
+#[test]
+fn an_inline_reflection_runs_to_the_bottom_of_a_longer_paragraph() {
+    let d = crate::docx::read(&inline_package("0", r#"<w:r><w:br/></w:r><w:r><w:t>second line</w:t></w:r>"#)).expect("reads");
+    let snap = crate::layout::layout(&d, &fonts());
+    let mut g = Graphics::default();
+    let picture = g.page_picture(&Renderer::default(), &snap.pages()[0], &d.images);
+    let mut px = vec![0u8; SIZE.0 * SIZE.1 * 4];
+    let mut target = Target::new(&mut px, SIZE.0 as u32, SIZE.1 as u32, SIZE.0 * 4, Format::Rgba8).expect("a target");
+    g.render_picture(&mut target, &picture, Affine::scale(K) * Affine::translate((-ORIGIN.0, -ORIGIN.1)), Color::WHITE);
+    let s = Shot(px);
+    assert!(!paper(s.at(165.0, 134.0)), "the picture's line ends, its paragraph goes on: {:?}", s.at(165.0, 134.0));
+}
+
+#[test]
+fn a_shapes_reflection_holds_its_text() {
+    let shape = |text: &str| {
+        format!(
+            r#"<wps:wsp><wps:cNvSpPr txBox="0"/><wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{}" cy="{}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom>{RED}{NO_LINE}<a:effectLst><a:reflection stA="100000" endA="100000" dir="5400000" sy="-100000" algn="b" rotWithShape="0"/></a:effectLst></wps:spPr><wps:txbx><w:txbxContent><w:p><w:r><w:rPr><w:color w:val="FFFFFF"/><w:sz w:val="80"/></w:rPr><w:t>{text}</w:t></w:r></w:p></w:txbxContent></wps:txbx><wps:bodyPr/></wps:wsp>"#,
+            100 * PT,
+            60 * PT
+        )
+    };
+    let below = |s: &Shot| (0..36).flat_map(|i| s.row(162.0 + f64::from(i), 100.0, 200.0)).filter(|p| !red(*p) && !paper(*p)).count();
+    let plain = draw(&shape(""));
+    let texted = draw(&shape("MMMM"));
+    assert_eq!(below(&plain), 0, "a bare shape reflects red only");
+    assert!(below(&texted) > 50, "the white text is in the reflection: {}", below(&texted));
+}
+
+const INLINE_REFLECTED: &str = r#"<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="1270000" cy="762000"/><wp:docPr id="1" name="P"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="1" name="p.png"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rId5"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="1270000" cy="762000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:effectLst><a:reflection stA="100000" endA="100000" dir="5400000" sy="-100000" algn="b" rotWithShape="0"/></a:effectLst></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>"#;
+
+#[test]
+fn an_inline_reflection_stops_at_the_part_of_a_split_paragraph_on_its_page() {
+    // 40 lines, the picture's line, then 40 more: the paragraph splits, and the picture is on the first page, near its end.
+    let br = "<w:r><w:br/></w:r>".repeat(40);
+    let body = format!(r#"<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/></w:pPr>{br}{INLINE_REFLECTED}{br}</w:p>"#);
+    let d = crate::docx::read(&package_body(&body, Some(&picture()))).expect("reads");
+    let snap = crate::layout::layout(&d, &fonts());
+    assert!(snap.pages().len() >= 2, "the paragraph splits");
+    let clips: Vec<f64> = crate::layout::traverse::paint_items(&snap.pages()[0])
+        .into_iter()
+        .filter_map(|i| if let crate::layout::fragment::Item::Shape(s) = i { s.clip_bottom } else { None })
+        .collect();
+    assert_eq!(clips.len(), 1);
+    assert!(clips[0] <= 720.5, "clipped at the page's text area, not the paragraph's last line: {}", clips[0]);
+}
+
+#[test]
+fn an_inline_text_boxs_reflection_holds_its_text() {
+    let run = |text: &str| {
+        format!(
+            r#"<w:p><w:pPr><w:spacing w:before="0" w:after="2000"/></w:pPr><w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="{w}" cy="{h}"/><wp:docPr id="1" name="T"/><a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:wsp><wps:cNvSpPr txBox="0"/><wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{w}" cy="{h}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom>{RED}{NO_LINE}<a:effectLst><a:reflection stA="100000" endA="100000" dir="5400000" sy="-100000" algn="b" rotWithShape="0"/></a:effectLst></wps:spPr><wps:txbx><w:txbxContent><w:p><w:r><w:rPr><w:color w:val="FFFFFF"/><w:sz w:val="80"/></w:rPr><w:t>{text}</w:t></w:r></w:p></w:txbxContent></wps:txbx><wps:bodyPr/></wps:wsp></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>"#,
+            w = 100 * PT,
+            h = 60 * PT
+        )
+    };
+    let shot = |text: &str| {
+        let d = crate::docx::read(&package_body(&run(text), None)).expect("reads");
+        let snap = crate::layout::layout(&d, &fonts());
+        let mut g = Graphics::default();
+        let picture = g.page_picture(&Renderer::default(), &snap.pages()[0], &d.images);
+        let mut px = vec![0u8; SIZE.0 * SIZE.1 * 4];
+        let mut target = Target::new(&mut px, SIZE.0 as u32, SIZE.1 as u32, SIZE.0 * 4, Format::Rgba8).expect("a target");
+        g.render_picture(&mut target, &picture, Affine::scale(K) * Affine::translate((-ORIGIN.0, -ORIGIN.1)), Color::WHITE);
+        Shot(px)
+    };
+    let below = |s: &Shot| (0..30).flat_map(|i| s.row(134.0 + f64::from(i), 74.0, 170.0)).filter(|p| !red(*p) && !paper(*p)).count();
+    assert_eq!(below(&shot("")), 0, "a bare box reflects red only");
+    assert!(below(&shot("MMMM")) > 50, "the text is in the reflection: {}", below(&shot("MMMM")));
 }

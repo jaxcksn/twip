@@ -465,6 +465,26 @@ pub struct Glow {
     pub colour: Colour,
 }
 
+/// A reflection (`a:reflection`): the shape's copy, scaled and skewed about `align`, moved `dist` along `dir`, blurred and
+/// faded from `start_alpha` at `start_pos` to `end_alpha` at `end_pos` along `fade_dir`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Reflection {
+    pub blur: Emu,
+    pub dist: Emu,
+    pub dir: Angle,
+    pub fade_dir: Angle,
+    pub sx: Pct,
+    pub sy: Pct,
+    pub kx: Angle,
+    pub ky: Angle,
+    pub align: RectAlign,
+    pub start_alpha: Pct,
+    pub start_pos: Pct,
+    pub end_alpha: Pct,
+    pub end_pos: Pct,
+    pub rot_with_shape: bool,
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct EffectList {
     pub outer: Option<OuterShadow>,
@@ -473,6 +493,7 @@ pub struct EffectList {
     pub glow: Option<Glow>,
     pub soft_edge: Option<Emu>,
     pub blur: Option<Emu>,
+    pub reflection: Option<Reflection>,
     pub kept: bool,
 }
 
@@ -506,6 +527,25 @@ impl EffectList {
                 "glow" => e.glow = Some(Glow { radius: emu("rad"), colour: colour() }),
                 "softEdge" => e.soft_edge = Some(emu("rad")),
                 "blur" => e.blur = Some(emu("rad")),
+                "reflection" => {
+                    let pct = |k: &str, d: i32| pct_attr(c, k).unwrap_or(Pct(d));
+                    e.reflection = Some(Reflection {
+                        blur: emu("blurRad"),
+                        dist: emu("dist"),
+                        dir: ang("dir"),
+                        fade_dir: angle_attr(c, "fadeDir").unwrap_or(Angle(5_400_000)),
+                        sx: pct("sx", 100_000),
+                        sy: pct("sy", 100_000),
+                        kx: ang("kx"),
+                        ky: ang("ky"),
+                        align: RectAlign::parse_opt(c.attribute("algn")).unwrap_or(RectAlign::B),
+                        start_alpha: pct("stA", 100_000),
+                        start_pos: pct("stPos", 0),
+                        end_alpha: pct("endA", 0),
+                        end_pos: pct("endPos", 100_000),
+                        rot_with_shape: bool_attr(c, "rotWithShape").unwrap_or(true),
+                    })
+                }
                 _ => e.kept = true,
             }
         }
@@ -519,6 +559,7 @@ impl EffectList {
             && self.glow.is_none()
             && self.soft_edge.is_none()
             && self.blur.is_none()
+            && self.reflection.is_none()
     }
 }
 
@@ -557,9 +598,17 @@ impl Palette<'_> {
 pub enum ResolvedBlipAdjust {
     Alpha(f64),
     Grayscale,
-    Lum { bright: f64, contrast: f64 },
+    Lum {
+        bright: f64,
+        contrast: f64,
+    },
     BiLevel(f64),
     Duotone([Rgba; 2]),
+    /// Pixels within one level of `from` in every channel are drawn as `to`.
+    ClrChange {
+        from: Rgba,
+        to: Rgba,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -594,16 +643,13 @@ pub fn paint(f: &Fill, p: Palette, ph: Option<Rgba>, group: &Paint) -> Paint {
             adjust: b
                 .adjust
                 .iter()
-                .filter_map(|a| {
-                    Some(match a {
-                        BlipAdjust::AlphaModFix(v) => ResolvedBlipAdjust::Alpha(v.fraction().clamp(0.0, 1.0)),
-                        BlipAdjust::Grayscale => ResolvedBlipAdjust::Grayscale,
-                        BlipAdjust::Lum { bright, contrast } => ResolvedBlipAdjust::Lum { bright: bright.fraction(), contrast: contrast.fraction() },
-                        BlipAdjust::BiLevel(t) => ResolvedBlipAdjust::BiLevel(t.fraction()),
-                        BlipAdjust::Duotone([a, b]) => ResolvedBlipAdjust::Duotone([p.colour(a, ph), p.colour(b, ph)]),
-                        // Drawn in phase 3.
-                        BlipAdjust::ClrChange { .. } => return None,
-                    })
+                .map(|a| match a {
+                    BlipAdjust::AlphaModFix(v) => ResolvedBlipAdjust::Alpha(v.fraction().clamp(0.0, 1.0)),
+                    BlipAdjust::Grayscale => ResolvedBlipAdjust::Grayscale,
+                    BlipAdjust::Lum { bright, contrast } => ResolvedBlipAdjust::Lum { bright: bright.fraction(), contrast: contrast.fraction() },
+                    BlipAdjust::BiLevel(t) => ResolvedBlipAdjust::BiLevel(t.fraction()),
+                    BlipAdjust::Duotone([a, b]) => ResolvedBlipAdjust::Duotone([p.colour(a, ph), p.colour(b, ph)]),
+                    BlipAdjust::ClrChange { from, to } => ResolvedBlipAdjust::ClrChange { from: p.colour(from, ph), to: p.colour(to, ph) },
                 })
                 .collect(),
             rot_with_shape: b.rot_with_shape,
@@ -693,6 +739,22 @@ pub struct ResolvedEffects {
     pub glow: Option<(f64, Rgba)>,
     pub soft_edge: Option<f64>,
     pub blur: Option<f64>,
+    pub reflection: Option<ResolvedReflection>,
+}
+
+/// A reflection in points, degrees and fractions.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ResolvedReflection {
+    pub blur: f64,
+    pub dist: f64,
+    pub dir: f64,
+    pub fade_dir: f64,
+    pub scale: [f64; 2],
+    pub skew: [f64; 2],
+    pub align: RectAlign,
+    pub start: (f64, f64),
+    pub end: (f64, f64),
+    pub rot_with_shape: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -709,8 +771,26 @@ pub struct ResolvedShadow {
 
 impl ResolvedEffects {
     pub fn is_empty(&self) -> bool {
-        self.outer.is_none() && self.inner.is_none() && self.glow.is_none() && self.soft_edge.is_none() && self.blur.is_none()
+        self.outer.is_none()
+            && self.inner.is_none()
+            && self.glow.is_none()
+            && self.soft_edge.is_none()
+            && self.blur.is_none()
+            && self.reflection.is_none()
     }
+}
+
+/// The largest blur, glow or soft-edge radius, and shadow or reflection distance, drawn, in points. Word's dialogs stop
+/// at 200 pt for a shadow's distance and 150 pt for a glow's radius; a file asking for more is drawn at this, so the
+/// layers an effect draws in stay bounded.
+const MAX_EFFECT_PT: f64 = 200.0;
+
+fn radius(e: Emu) -> f64 {
+    e.to_pt().clamp(0.0, MAX_EFFECT_PT)
+}
+
+fn offset(e: Emu) -> f64 {
+    e.to_pt().clamp(-MAX_EFFECT_PT, MAX_EFFECT_PT)
 }
 
 pub fn resolve_effects(own: Option<&EffectList>, style: Option<&StyleRefs>, p: Palette) -> ResolvedEffects {
@@ -724,8 +804,8 @@ pub fn resolve_effects(own: Option<&EffectList>, style: Option<&StyleRefs>, p: P
     };
     let Some(e) = list else { return ResolvedEffects::default() };
     let outer = e.outer.as_ref().map(|s| ResolvedShadow {
-        blur: s.blur.to_pt(),
-        dist: s.dist.to_pt(),
+        blur: radius(s.blur),
+        dist: offset(s.dist),
         dir: s.dir.degrees(),
         scale: [s.sx.fraction(), s.sy.fraction()],
         skew: [s.kx.degrees(), s.ky.degrees()],
@@ -737,8 +817,8 @@ pub fn resolve_effects(own: Option<&EffectList>, style: Option<&StyleRefs>, p: P
     ResolvedEffects {
         outer,
         inner: e.inner.as_ref().map(|s| ResolvedShadow {
-            blur: s.blur.to_pt(),
-            dist: s.dist.to_pt(),
+            blur: radius(s.blur),
+            dist: offset(s.dist),
             dir: s.dir.degrees(),
             scale: [1.0, 1.0],
             skew: [0.0, 0.0],
@@ -746,16 +826,28 @@ pub fn resolve_effects(own: Option<&EffectList>, style: Option<&StyleRefs>, p: P
             colour: p.colour(&s.colour, ph),
             rot_with_shape: true,
         }),
-        glow: e.glow.as_ref().map(|g| (g.radius.to_pt(), p.colour(&g.colour, ph))),
-        soft_edge: e.soft_edge.map(Emu::to_pt),
-        blur: e.blur.map(Emu::to_pt),
+        glow: e.glow.as_ref().map(|g| (radius(g.radius), p.colour(&g.colour, ph))),
+        soft_edge: e.soft_edge.map(radius),
+        blur: e.blur.map(radius),
+        reflection: e.reflection.as_ref().map(|r| ResolvedReflection {
+            blur: radius(r.blur),
+            dist: offset(r.dist),
+            dir: r.dir.degrees(),
+            fade_dir: r.fade_dir.degrees(),
+            scale: [r.sx.fraction(), r.sy.fraction()],
+            skew: [r.kx.degrees(), r.ky.degrees()],
+            align: r.align,
+            start: (r.start_pos.fraction().clamp(0.0, 1.0), r.start_alpha.fraction().clamp(0.0, 1.0)),
+            end: (r.end_pos.fraction().clamp(0.0, 1.0), r.end_alpha.fraction().clamp(0.0, 1.0)),
+            rot_with_shape: r.rot_with_shape,
+        }),
     }
 }
 
 fn preset_shadow(s: &PresetShadow, colour: Rgba) -> ResolvedShadow {
     ResolvedShadow {
         blur: 0.0,
-        dist: s.dist.to_pt(),
+        dist: offset(s.dist),
         dir: s.dir.degrees(),
         scale: [1.0, 1.0],
         skew: [0.0, 0.0],
@@ -814,11 +906,32 @@ mod tests {
     #[test]
     fn effect_lists_note_what_is_not_drawn() {
         let x = node_xml(
-            r#"<a:effectLst><a:outerShdw blurRad="50800" dist="38100" dir="2700000"><a:srgbClr val="000000"/></a:outerShdw><a:reflection/></a:effectLst>"#,
+            r#"<a:effectLst><a:outerShdw blurRad="50800" dist="38100" dir="2700000"><a:srgbClr val="000000"/></a:outerShdw><a:fillOverlay blend="over"/></a:effectLst>"#,
         );
         let d = roxmltree::Document::parse(&x).unwrap();
         let e = EffectList::parse(d.root_element().first_element_child().unwrap());
         assert!(e.kept);
         assert_eq!(e.outer.as_ref().map(|s| (s.blur, s.dist)), Some((Emu(50800), Emu(38100))));
+    }
+
+    #[test]
+    fn a_reflection_reads_with_the_schema_defaults_and_resolves() {
+        let x = node_xml(
+            r#"<a:effectLst><a:reflection blurRad="6350" stA="50000" endA="300" endPos="35000" dir="5400000" sy="-100000" algn="bl" rotWithShape="0"/><a:reflection/></a:effectLst>"#,
+        );
+        let d = roxmltree::Document::parse(&x).unwrap();
+        let list = d.root_element().first_element_child().unwrap();
+        let e = EffectList::parse(list);
+        assert!(!e.kept && !e.is_empty(), "a reflection is drawn, not kept");
+        let r = e.reflection.as_ref().expect("the last reflection");
+        assert_eq!(
+            (r.start_alpha, r.end_alpha, r.end_pos, r.fade_dir, r.sy, r.align, r.rot_with_shape),
+            (Pct(100_000), Pct(0), Pct(100_000), Angle(5_400_000), Pct(100_000), RectAlign::B, true)
+        );
+        let one = EffectList::parse(roxmltree::Document::parse(&node_xml(r#"<a:effectLst><a:reflection blurRad="6350" stA="50000" endA="300" endPos="35000" dir="5400000" sy="-100000" algn="bl" rotWithShape="0"/></a:effectLst>"#)).unwrap().root_element().first_element_child().unwrap());
+        let (t, m) = (Theme::default(), ColourMap::default());
+        let resolved = resolve_effects(Some(&one), None, Palette { theme: &t, map: &m }).reflection.expect("resolved");
+        assert_eq!((resolved.blur, resolved.scale, resolved.start, resolved.rot_with_shape), (0.5, [1.0, -1.0], (0.0, 0.5), false));
+        assert_eq!(resolved.end, (0.35, 0.003));
     }
 }

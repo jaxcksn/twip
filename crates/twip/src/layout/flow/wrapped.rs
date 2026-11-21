@@ -10,7 +10,7 @@ use crate::layout::fragment::{Child, ParaFragment, PlacedLine};
 use crate::layout::ids::ParaId;
 use crate::layout::job::{Memos, Yield};
 use crate::layout::join::piece_para;
-use crate::layout::line::{Frame, Line, LineOrigin, ParaLines, apply_borders, band, border_key, breaks_only, draw_line, top_border_extra};
+use crate::layout::line::{Below, Frame, Line, LineOrigin, ParaLines, apply_borders, band, border_key, breaks_only, draw_line, top_border_extra};
 use crate::layout::paragraph::{gap, lines_to_take, space_after, space_before};
 use crate::layout::space::{ColumnSpace, ParaSpace};
 use crate::layout::story::StoryEnv;
@@ -1176,10 +1176,14 @@ impl<'d> PageFill<'d, '_> {
             palette: crate::drawing::paint::Palette { theme: &self.ctx.env.text.theme, map: &self.ctx.env.text.colour_map },
             backdrop: self.ctx.env.text.backdrop,
             page_colour: self.ctx.env.text.page_colour,
+            html_auto_spacing: !self.ctx.env.text.do_not_use_html_paragraph_auto_spacing,
+            below: Below::To(0.0),
         };
+        let bottom = bands[take - 1].0 + bands[take - 1].1[0].pitch;
         let mut lines = Vec::new();
         let mut numbers = Vec::new();
         for (bt, segs) in &bands[..take] {
+            let origin = LineOrigin { below: Below::To(bottom - bt), ..origin };
             for l in segs {
                 lines.push(PlacedLine { x: 0.0, y: *bt, line: Rc::new(draw_line(&origin, l, p, self.ctx.fonts)) });
                 if matches!(l.hard, Some(Kind::PageBreak | Kind::ColumnBreak)) {
@@ -1188,6 +1192,11 @@ impl<'d> PageFill<'d, '_> {
             }
             self.line_number(carry, style, col, bt + segs[0].baseline, &mut numbers);
             end_y = bt + segs[0].pitch;
+        }
+        if take < nb || s < n {
+            for l in &mut lines {
+                l.line = l.line.clipped(end_y - l.y);
+            }
         }
         out.push(Child::Para(ParaFragment { para: anchor, lines: lines.into_boxed_slice(), line_numbers: numbers.into_boxed_slice() }));
         *y = end_y;

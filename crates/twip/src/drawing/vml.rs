@@ -227,6 +227,26 @@ fn on(v: Option<&str>, dflt: bool) -> bool {
     }
 }
 
+/// A picture's `v:imagedata` colour controls as DrawingML adjustments. `gain` is the contrast slope (1 is none) and
+/// `blacklevel` half the brightness, so Word's washout (`gain` 0.3, `blacklevel` 0.35) is DrawingML's (contrast −70%,
+/// brightness +70%): a slope `k` at or under 1 is contrast `k − 1`, above 1 it is `1 − 1/k`.
+fn imagedata_adjust(d: Node) -> Vec<paint::BlipAdjust> {
+    let value = |k: &str| d.attribute(k).and_then(fraction).filter(|v| v.is_finite());
+    let mut out = Vec::new();
+    let (gain, black) = (value("gain").unwrap_or(1.0).max(0.0), value("blacklevel").unwrap_or(0.0));
+    if gain != 1.0 || black != 0.0 {
+        let contrast = if gain <= 1.0 { gain - 1.0 } else { 1.0 - 1.0 / gain };
+        out.push(paint::BlipAdjust::Lum { bright: Pct::from_fraction((2.0 * black).clamp(-1.0, 1.0)), contrast: Pct::from_fraction(contrast) });
+    }
+    if on(d.attribute("grayscale"), false) {
+        out.push(paint::BlipAdjust::Grayscale);
+    }
+    if on(d.attribute("bilevel"), false) {
+        out.push(paint::BlipAdjust::BiLevel(Pct(50000)));
+    }
+    out
+}
+
 fn fill(el: Node, image: &mut dyn FnMut(&str) -> Option<usize>) -> Fill {
     let f = child(el, "fill");
     if !on(f.and_then(|f| f.attribute("on")).or(el.attribute("filled")), true) {
@@ -882,7 +902,7 @@ fn element(el: Node, ctx: &mut Ctx) -> Option<Shape> {
                     image: img,
                     src: [crop("cropleft"), crop("croptop"), crop("cropright"), crop("cropbottom")],
                     mode: paint::BlipMode::Stretch([Pct(0); 4]),
-                    adjust: Vec::new(),
+                    adjust: data.map_or_else(Vec::new, imagedata_adjust),
                     rot_with_shape: true,
                 };
                 let line = (on(el.attribute("stroked"), false) || child(el, "stroke").is_some()).then(|| stroke(el));
@@ -1069,6 +1089,44 @@ pub fn read<'a, 'i>(pict: Node<'a, 'i>, ctx: &mut Ctx) -> Option<VmlObject<'a, '
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn imagedata(attrs: &str) -> Vec<paint::BlipAdjust> {
+        let xml = format!(r#"<v:imagedata xmlns:v="urn:schemas-microsoft-com:vml" {attrs}/>"#);
+        imagedata_adjust(roxmltree::Document::parse(&xml).unwrap().root_element())
+    }
+
+    #[test]
+    fn imagedata_gain_and_blacklevel_are_contrast_and_brightness() {
+        let lum = |bright, contrast| paint::BlipAdjust::Lum { bright: Pct(bright), contrast: Pct(contrast) };
+        assert_eq!(imagedata(""), []);
+        assert_eq!(imagedata(r#"gain="65536f" blacklevel="0""#), [], "the identity pair is no adjustment");
+        // Word's washout is DrawingML's: brightness +70%, contrast -70%.
+        let washout = &imagedata(r#"gain="19661f" blacklevel="22938f""#)[0];
+        let paint::BlipAdjust::Lum { bright, contrast } = washout else { panic!("{washout:?}") };
+        assert!((bright.0 - 70_000).abs() < 20 && (contrast.0 + 70_000).abs() < 20, "{washout:?}");
+        // A slope over 1 is contrast 1 - 1/k; a slope under, k - 1.
+        assert_eq!(imagedata(r#"gain="131072f""#), [lum(0, 50_000)]);
+        assert_eq!(imagedata(r#"gain="32768f" blacklevel="-6554f""#)[0], lum(-20_001, -50_000));
+        assert_eq!(imagedata(r#"grayscale="t" bilevel="t""#), [paint::BlipAdjust::Grayscale, paint::BlipAdjust::BiLevel(Pct(50_000))]);
+        assert_eq!(imagedata(r#"grayscale="f""#), []);
+    }
+
+    #[test]
+    fn hostile_imagedata_controls_stay_finite() {
+        for attrs in [
+            r#"gain="nan""#,
+            r#"gain="inf" blacklevel="-inf""#,
+            r#"gain="1e308f" blacklevel="1e308""#,
+            r#"gain="-5""#,
+            r#"blacklevel="99999999999f""#,
+        ] {
+            for a in imagedata(attrs) {
+                if let paint::BlipAdjust::Lum { bright, contrast } = a {
+                    assert!((-100_000..=100_000).contains(&bright.0) && (-100_000..=100_000).contains(&contrast.0), "{attrs}");
+                }
+            }
+        }
+    }
 
     #[test]
     fn lengths_fractions_and_colours() {

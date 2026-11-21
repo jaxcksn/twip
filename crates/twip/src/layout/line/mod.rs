@@ -25,7 +25,7 @@ mod size;
 
 pub use borders::{apply_borders, border_key, border_space, continued_key, neighbour_borders, top_border_extra};
 pub use breaking::{band, break_paragraph, clear_of};
-pub use draw::{LineOrigin, draw_label, draw_line};
+pub use draw::{Below, LineOrigin, draw_label, draw_line};
 
 use breaking::line_style;
 
@@ -198,6 +198,8 @@ pub struct ParaLines {
     pub para: ParaId,
     pub borders: (BorderKey, BorderKey),
     drawn: Box<[OnceCell<Rc<LineFragment>>]>,
+    /// Each line's height with those after it, made when an inline picture's reflection needs one.
+    heights: OnceCell<Box<[f64]>>,
     compat: Compat,
     review: ReviewView,
     ul_trail_space: bool,
@@ -205,6 +207,7 @@ pub struct ParaLines {
     colour_map: crate::drawing::theme::ColourMap,
     backdrop: Option<u32>,
     page_colour: Option<u32>,
+    html_auto_spacing: bool,
 }
 
 impl PartialEq for ParaLines {
@@ -218,6 +221,7 @@ impl PartialEq for ParaLines {
             para: _,
             borders: _,
             drawn: _,
+            heights: _,
             compat: _,
             review: _,
             ul_trail_space: _,
@@ -225,6 +229,7 @@ impl PartialEq for ParaLines {
             colour_map: _,
             backdrop: _,
             page_colour: _,
+            html_auto_spacing: _,
         } = self;
         Rc::ptr_eq(shaped, &o.shaped) && *lines == o.lines && *from == o.from && *width == o.width && *x0 == o.x0
     }
@@ -248,8 +253,25 @@ impl ParaLines {
         breaks_only(self.pieces(), &self.lines[i]) && self.lines[i + 1..].iter().any(|m| m.start < m.end)
     }
 
+    /// The height of line `i` and the lines after it: running totals, made once for the paragraph.
+    pub fn height_from(&self, i: usize) -> f64 {
+        let sums = self.heights.get_or_init(|| {
+            let mut sums = vec![0.0; self.lines.len() + 1];
+            for (k, l) in self.lines.iter().enumerate().rev() {
+                sums[k] = sums[k + 1] + l.pitch;
+            }
+            sums.into_boxed_slice()
+        });
+        sums.get(i).copied().unwrap_or(0.0)
+    }
+
     pub fn fragment(&self, i: usize, para: &Paragraph, fonts: &Fonts) -> Rc<LineFragment> {
-        self.drawn[i].get_or_init(|| Rc::new(draw_line(&self.origin(), &self.lines[i], para, fonts))).clone()
+        self.drawn[i]
+            .get_or_init(|| {
+                let origin = LineOrigin { below: Below::Lines(self, i), ..self.origin() };
+                Rc::new(draw_line(&origin, &self.lines[i], para, fonts))
+            })
+            .clone()
     }
 
     pub fn origin(&self) -> LineOrigin<'_> {
@@ -265,6 +287,8 @@ impl ParaLines {
             palette: crate::drawing::paint::Palette { theme: &self.theme, map: &self.colour_map },
             backdrop: self.backdrop,
             page_colour: self.page_colour,
+            html_auto_spacing: self.html_auto_spacing,
+            below: Below::Last,
         }
     }
 
@@ -371,6 +395,7 @@ pub fn break_lines_uncached(
         para: para_id(para),
         borders: (prev, space.borders.1.clone()),
         drawn: (0..n).map(|_| OnceCell::new()).collect(),
+        heights: OnceCell::new(),
         compat: space.env.compat,
         review: space.env.review.clone(),
         ul_trail_space: space.env.ul_trail_space,
@@ -378,6 +403,7 @@ pub fn break_lines_uncached(
         colour_map: space.env.colour_map,
         backdrop: space.env.backdrop,
         page_colour: space.env.page_colour,
+        html_auto_spacing: !space.env.do_not_use_html_paragraph_auto_spacing,
     })
 }
 

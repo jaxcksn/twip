@@ -138,6 +138,18 @@ pub fn probe(bytes: &[u8]) -> Option<ImageInfo> {
 
 /// Decodes `bytes` into premultiplied RGBA8, orientation applied.
 pub(crate) fn decode(bytes: &[u8]) -> Result<Pixmap, ImageError> {
+    let mut p = decode_straight(bytes)?;
+    premultiply(&mut p.data);
+    Ok(p)
+}
+
+/// [`pixels`] with straight (unpremultiplied) colour: width, height and `width × height × 4` bytes.
+pub fn pixels_straight(bytes: &[u8]) -> Result<(u32, u32, Vec<u8>), ImageError> {
+    let p = decode_straight(bytes)?;
+    Ok((p.width, p.height, p.data))
+}
+
+fn decode_straight(bytes: &[u8]) -> Result<Pixmap, ImageError> {
     let info = probe(bytes).ok_or_else(|| error("not a supported image"))?;
     fits(info.width, info.height)?;
     let options = DecoderOptions::default().set_max_width(1 << 16).set_max_height(1 << 16);
@@ -155,9 +167,7 @@ pub(crate) fn decode(bytes: &[u8]) -> Result<Pixmap, ImageError> {
         ImageFormat::Ico => ico(bytes, options)?,
         ImageFormat::Wbmp => wbmp(bytes)?,
     };
-    let mut p = orient(straight, info.orientation);
-    premultiply(&mut p.data);
-    Ok(p)
+    Ok(orient(straight, info.orientation))
 }
 
 /// `bytes` decoded (orientation applied): width, height and premultiplied RGBA8 pixels, rows packed. Fails for bytes

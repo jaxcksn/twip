@@ -271,8 +271,10 @@ Word 2010 and later remove custom XML markup when they open a document, so it is
 | Inline and floating pictures, shapes, text boxes, groups, canvases | API (`changePicture` replaces a picture's image; `alignObjects` aligns and distributes floating objects) |
 | Crop (`a:srcRect`) | API (`setPictureCrop`, and Crop from in the Picture Size dialog; inline and floating; kept when a picture is rewritten). Crop handles are not in 1.0 |
 | Picture formats | PNG, JPEG, GIF, BMP and SVG; EMF drawn as vectors on screen and in PDF (shapes, pens and dashes, clips, text in the document's fonts, bitmaps, gradients; a dual EMF and EMF+ file draws its EMF records). WMF and EMF+ records are not drawn yet |
-| Linked pictures (`r:link`) | Kept through every edit, moved and pasted with its text, and drawn empty: fetching the picture is not in 1.0 |
-| Set transparent colour (`a:clrChange`) | API (`setPictureAdjust`'s `transparentColor`); drawn in phase 3 |
+| Linked pictures (`r:link`) | Kept through every edit, moved and pasted with its text. A picture with only a link draws a light placeholder frame, on purpose: Twip does not fetch the file. One with `r:embed` too draws its embedded copy |
+| Set transparent colour (`a:clrChange`) | API (`setPictureAdjust`'s `transparentColor`); drawn: pixels within one level of the colour in every channel become the new colour |
+| Picture brightness, contrast and washout (`a:lum`, VML `gain` and `blacklevel`), grayscale, black and white (`v:imagedata@grayscale`, `@bilevel`) | Drawn |
+| Reflection (`a:reflection`) | Drawn under pictures and shapes; kept and written back with the other effects. An inline picture's reflection stops at the bottom of its paragraph, as in Word; blur, glow, soft-edge and shadow radii and distances are drawn up to 200 pt |
 | Relative size and position (`wp14:sizeRelH`, `wp14:pctPosHOffset`, ...) | API (`setObjectSize`'s `relativeWidth` and `relativeHeight`, `setObjectPosition`'s `percent`) |
 | Text box columns and autofit (`wps:bodyPr@numCol`, `a:normAutofit`) | API (`setShapeText`'s `columns` and `shrinkText` autofit); the text is laid out in one column for now |
 | A shape's VML fallback (`mc:Fallback`) | Kept, moved with the shape; a shape edited in Twip is saved without it (Word 2010 and later read the shape; see Not planned on the roadmap) |

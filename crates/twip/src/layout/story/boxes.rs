@@ -33,7 +33,7 @@ pub fn float_box(f: &Float, rect: [f64; 4], anchor: ParaId, env: &StoryEnv, memo
         Some(shape) => {
             let t = &env.ctx.env.text;
             let palette = crate::drawing::paint::Palette { theme: &t.theme, map: &t.colour_map };
-            items.extend(shape_items(shape, shape_rect, f.id, f.behind, palette).into_iter().map(Item::Shape));
+            items.extend(shape_items(shape, shape_rect, f.id, f.behind, palette, None).into_iter().map(Item::Shape));
         }
         None => {
             if let Some(img) = f.image {
@@ -220,6 +220,7 @@ pub(in crate::layout) fn shape_items(
     float: u64,
     behind: bool,
     palette: crate::drawing::paint::Palette,
+    clip_bottom: Option<f64>,
 ) -> Vec<Rc<ShapeItem>> {
     use crate::drawing::ShapeKind;
     use crate::drawing::paint::{self, Fill, Paint};
@@ -268,6 +269,8 @@ pub(in crate::layout) fn shape_items(
             picture: leaf.shape.pic().is_some(),
             ink: false,
             decoration: false,
+            clip_bottom,
+            text_float: 0,
             path: leaf.path,
         }));
     }

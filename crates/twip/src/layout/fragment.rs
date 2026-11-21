@@ -100,6 +100,11 @@ pub struct ShapeItem {
     /// Drawn for text or a table (an underline's wave, a check box, a border's stroke), not an object: never hit,
     /// selected, snapped to or taken for an inline picture.
     pub decoration: bool,
+    /// The page y below which an inline picture's reflection is clipped: the bottom of its paragraph, spacing after
+    /// included.
+    pub clip_bottom: Option<f64>,
+    /// The float holding the text of an inline text box, which `float` (0 for inline) doesn't name; 0 for none.
+    pub text_float: u64,
 }
 
 impl ShapeItem {
@@ -138,6 +143,11 @@ impl ShapeItem {
         [cx + dx * c - dy * s, cy + dx * s + dy * c]
     }
 
+    /// This shape with its reflection clipped at the page y `y`.
+    pub fn clipped_to(&self, y: f64) -> ShapeItem {
+        ShapeItem { clip_bottom: Some(y), ..self.moved(0.0, 0.0) }
+    }
+
     pub fn moved(&self, dx: f64, dy: f64) -> ShapeItem {
         let r = self.rect;
         ShapeItem {
@@ -155,6 +165,8 @@ impl ShapeItem {
             picture: self.picture,
             ink: self.ink,
             decoration: self.decoration,
+            clip_bottom: self.clip_bottom.map(|y| y + dy),
+            text_float: self.text_float,
         }
     }
 }
@@ -175,7 +187,7 @@ impl Item {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct LineFragment {
     pub items: Box<[Item]>,
     pub pitch: f64,
@@ -187,6 +199,22 @@ pub struct LineFragment {
     pub mark: Option<Unit>,
     pub texts: Box<[([f64; 4], crate::docx::Picture)]>,
     pub expansions: Box<[([f64; 4], Rc<super::expansion::Expansion>)]>,
+}
+
+impl LineFragment {
+    /// This line with the reflections of its inline pictures clipped `to` below its top, those that reach lower: the
+    /// bottom of the part of the paragraph on the page the line is placed on.
+    pub fn clipped(self: &Rc<Self>, to: f64) -> Rc<LineFragment> {
+        let lower = |i: &Item| matches!(i, Item::Shape(s) if s.clip_bottom.is_some_and(|c| c > to));
+        if !self.items.iter().any(lower) {
+            return Rc::clone(self);
+        }
+        let items = self.items.iter().map(|i| match i {
+            Item::Shape(s) if lower(i) => Item::Shape(Rc::new(s.clipped_to(to))),
+            other => other.clone(),
+        });
+        Rc::new(LineFragment { items: items.collect(), ..(**self).clone() })
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
