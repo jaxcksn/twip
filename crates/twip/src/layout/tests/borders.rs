@@ -292,3 +292,69 @@ fn a_wave_border_runs_on_from_line_to_line() {
         assert!((end[0] - start[0]).abs() < 0.01, "the wave goes on across the break: {end:?} {start:?}");
     }
 }
+
+#[test]
+fn a_dashed_border_runs_on_from_line_to_line() {
+    let dashed = r#"w:val="dashed" w:sz="12" w:space="0" w:color="1F4E79""#;
+    let body = format!(
+        r#"<w:p><w:pPr><w:pBdr><w:left {dashed}/></w:pBdr></w:pPr><w:r><w:t>one</w:t><w:br/><w:t>two</w:t><w:br/><w:t>three</w:t></w:r></w:p>"#
+    );
+    let doc = crate::docx::read(&bytes(&body).expect("a package")).expect("reads");
+    let snap = crate::layout::layout(&doc, &super::fonts());
+    let mut sides: Vec<([f64; 4], f32)> = crate::layout::traverse::paint_items(&snap.pages()[0])
+        .into_iter()
+        .filter_map(|i| match i {
+            Item::Rect { rect, phase, dash: crate::layout::fragment::Dash::Dashed, .. } if rect[0] < 200.0 => Some((rect, phase)),
+            _ => None,
+        })
+        .collect();
+    sides.sort_by(|a, b| a.0[1].total_cmp(&b.0[1]));
+    assert_eq!(sides.len(), 3, "a left side on each line");
+    for (rect, phase) in &sides {
+        let top = rect[1] - sides[0].0[1];
+        assert!((f64::from(*phase) - top).abs() < 0.01, "the dashes carry on from the line above: {phase} at {top}");
+    }
+}
+
+#[test]
+fn a_float_in_an_exact_row_is_clipped_to_the_cell() {
+    let float = r#"<w:r><w:drawing><wp:anchor xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="1" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV><wp:extent cx="254000" cy="1016000"/><wp:wrapNone/><wp:docPr id="1" name="Box"/><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:wsp xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:spPr><a:prstGeom prst="rect"/><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill></wps:spPr><wps:bodyPr/></wps:wsp></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#;
+    let body = format!(
+        r#"<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="5000"/></w:tblGrid><w:tr><w:trPr><w:trHeight w:val="200" w:hRule="exact"/></w:trPr><w:tc><w:tcPr><w:tcW w:w="5000" w:type="dxa"/></w:tcPr><w:p>{float}</w:p></w:tc></w:tr></w:tbl><w:p/>"#
+    );
+    let doc = crate::docx::read(&bytes(&body).expect("a package")).expect("reads");
+    let snap = crate::layout::layout(&doc, &super::fonts());
+    let mut inked = Vec::new();
+    crate::layout::traverse::paint(&snap.pages()[0], &mut |p| {
+        if p.float.is_some() && matches!(p.item, Item::Shape(_)) {
+            inked.push(p.clip);
+        }
+    });
+    assert!(!inked.is_empty(), "the float draws");
+    for clip in inked {
+        let clip = clip.expect("clipped to the cell");
+        assert!(clip[3] - clip[1] <= 10.0 + 1e-6, "the row is 10 pt: {clip:?}");
+    }
+}
+
+#[test]
+fn reflected_text_keeps_the_clip_of_its_exact_row() {
+    // A 12 pt line in a 10 pt exact row, in a reflected text box: its glyphs cross the row's bottom.
+    let row = r#"<w:tbl><w:tblPr><w:tblW w:w="2000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:trPr><w:trHeight w:val="200" w:hRule="exact"/></w:trPr><w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="exact"/></w:pPr><w:r><w:t>Tall</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#;
+    let float = format!(
+        r#"<w:p><w:r><w:drawing><wp:anchor xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="1" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV><wp:extent cx="1905000" cy="1270000"/><wp:wrapNone/><wp:docPr id="1" name="Box"/><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:wsp xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:spPr><a:prstGeom prst="rect"/><a:effectLst><a:reflection blurRad="0" stA="50000" endA="0" endPos="100000" dir="5400000" sy="-100000" algn="bl" rotWithShape="0"/></a:effectLst></wps:spPr><wps:txbx><w:txbxContent>{row}</w:txbxContent></wps:txbx><wps:bodyPr lIns="0" tIns="0" rIns="0" bIns="0"/></wps:wsp></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r></w:p>"#
+    );
+    let doc = crate::docx::read(&bytes(&float).expect("a package")).expect("reads");
+    let snap = crate::layout::layout(&doc, &super::fonts());
+    let items = crate::layout::traverse::paint_items(&snap.pages()[0]);
+    let text: Vec<_> = items
+        .iter()
+        .filter_map(|i| match i {
+            Item::Shape(s) => s.text.as_ref(),
+            _ => None,
+        })
+        .collect();
+    assert!(!text.is_empty(), "the reflection holds the box's text");
+    let clips: Vec<[f64; 4]> = text.iter().flat_map(|t| t.0.iter()).filter_map(|(_, c)| *c).collect();
+    assert!(!clips.is_empty() && clips.iter().all(|c| c[3] - c[1] <= 10.0 + 1e-6), "{clips:?}");
+}

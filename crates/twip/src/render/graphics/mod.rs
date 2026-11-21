@@ -29,9 +29,10 @@ use twip_graphics::scene::{Clip, GlyphRun, Picture, Recorder, Synthesis};
 use super::{ChromeFace, Frame, Renderer};
 use crate::editing::view::View;
 use crate::font::Face;
+use crate::layout::fragment::Clipped;
 use crate::layout::fragment::{Dash, ImageKey, Item};
 use crate::layout::ids::FloatId;
-use crate::layout::traverse::{paint, paint_float};
+use crate::layout::traverse::{paint, paint_float_clipped};
 
 /// The twip-graphics side of a presentation: the fonts and images registered with it, the CPU renderer, the retained
 /// page pictures, and the frame being recorded. Its memory is kept between frames.
@@ -493,8 +494,8 @@ impl Graphics {
         if s.text_float == 0 || s.picture || s.effects.reflection.is_none() {
             return false;
         }
-        let text: Vec<Item> =
-            paint_float(page, FloatId(s.text_float)).into_iter().filter(|i| matches!(i, Item::Glyphs(_) | Item::Turned(_))).collect();
+        let text: Vec<Clipped> =
+            paint_float_clipped(page, FloatId(s.text_float)).into_iter().filter(|(i, _)| matches!(i, Item::Glyphs(_) | Item::Turned(_))).collect();
         self.reflecting(rec, r, own, s, &text, shift, images);
         true
     }
@@ -507,7 +508,7 @@ impl Graphics {
         r: &Renderer,
         own: bool,
         s: &crate::layout::fragment::ShapeItem,
-        text: &[Item],
+        text: &[Clipped],
         shift: (f64, f64),
         images: &[Vec<u8>],
     ) {
@@ -518,8 +519,14 @@ impl Graphics {
             Some(&mut |g, rec, back| {
                 let with_text = std::mem::replace(&mut g.with_text, false);
                 rec.push_transform(back * Affine::translate(shift));
-                for item in text {
+                for (item, clip) in text {
+                    if let Some(c) = clip {
+                        rec.push_clip(Clip::Rect { rect: rect(*c), aa: true });
+                    }
                     g.item(rec, r, own, item, images);
+                    if clip.is_some() {
+                        rec.pop();
+                    }
                 }
                 rec.pop();
                 g.with_text = with_text;
@@ -624,11 +631,11 @@ impl Graphics {
     fn item(&mut self, rec: &mut Recorder, r: &Renderer, own: bool, item: &Item, images: &[Vec<u8>]) {
         let ink = |c: u32| r.ink_for(own, c);
         match item {
-            Item::Rect { rect: rc, colour, snap: false, dash: Dash::Solid } => rec.fill_rect(rect(*rc), ink(*colour)),
-            Item::Rect { rect: rc, colour, snap: true, dash: Dash::Solid } => rec.fill_rect(rect(*rc), aliased(ink(*colour))),
-            Item::Rect { rect: rc, colour, snap, dash } => {
+            Item::Rect { rect: rc, colour, snap: false, dash: Dash::Solid, .. } => rec.fill_rect(rect(*rc), ink(*colour)),
+            Item::Rect { rect: rc, colour, snap: true, dash: Dash::Solid, .. } => rec.fill_rect(rect(*rc), aliased(ink(*colour))),
+            Item::Rect { rect: rc, colour, snap, dash, phase } => {
                 let paint = if *snap { aliased(ink(*colour)) } else { Paint::from(ink(*colour)) };
-                rec.fill_dashed_rect(rect(*rc), dash.pattern(), paint);
+                rec.fill_dashed_rect_from(rect(*rc), dash.pattern(), f64::from(*phase), paint);
             }
             Item::Glyphs(g) => {
                 if g.glyphs.is_empty() {
@@ -657,7 +664,7 @@ impl Graphics {
             }
             Item::Shape(s) if s.ink && !own && !r.appearance.is_identity() => self.shape(rec, &ink_shape(r, s), images),
             Item::Shape(s) if s.effects.reflection.is_some() && !s.picture && s.text.is_some() => {
-                let text = s.text.as_ref().map_or(&[][..], |t| &t.0);
+                let text = s.text.as_ref().map_or(&[][..], |t| &t.0[..]);
                 self.reflecting(rec, r, own, s, text, (0.0, 0.0), images);
             }
             Item::Shape(s) => self.shape(rec, s, images),

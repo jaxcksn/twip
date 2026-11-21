@@ -2,6 +2,7 @@
 
 use crate::docx::NoteKind;
 
+use super::fragment::Clipped;
 use super::fragment::{
     BoxFragment, BoxKind, CellFragment, CellPlace, Child, Item, LineFragment, PageChild, PageFragment, PlacedLine, RowFragment, translated,
 };
@@ -122,22 +123,39 @@ fn row<'a>(r: &'a RowFragment, dx: f64, dy: f64, skip: &dyn Fn(&BoxKind) -> bool
 
 /// What `draw` gives `out` from `cell`, clipped to the cell above its clip when its row's height is exact.
 fn clipped<'a>(cell: &CellFragment, dx: f64, dy: f64, out: &mut dyn FnMut(Placed<'a>), draw: &mut dyn FnMut(&mut dyn FnMut(Placed<'a>))) {
-    let Some(bottom) = cell.place.clip else { return draw(out) };
-    let [x0, y0, x1, _] = cell.place.rect;
-    let b = [x0 + dx, y0 + dy, x1 + dx, bottom + dy];
-    draw(&mut |p| {
-        let clip = p.clip.map_or(b, |c| [c[0].max(b[0]), c[1].max(b[1]), c[2].min(b[2]), c[3].min(b[3])]);
-        out(Placed { clip: Some(clip), ..p });
-    });
+    let Some(b) = cell_clip(cell, dx, dy) else { return draw(out) };
+    draw(&mut |p| out(Placed { clip: meet(p.clip, Some(b)), ..p }));
 }
 
-fn boxes_of<'a>(children: &'a [Child], dx: f64, dy: f64, want: &dyn Fn(&BoxKind) -> bool, out: &mut Vec<(&'a BoxFragment, f64, f64)>) {
+/// The box on the page `cell` is clipped to when its row's height is exact.
+fn cell_clip(cell: &CellFragment, dx: f64, dy: f64) -> Option<[f64; 4]> {
+    let bottom = cell.place.clip?;
+    let [x0, y0, x1, _] = cell.place.rect;
+    Some([x0 + dx, y0 + dy, x1 + dx, bottom + dy])
+}
+
+/// The clip that is both `a` and `b`, either of which may be open.
+fn meet(a: Option<[f64; 4]>, b: Option<[f64; 4]>) -> Option<[f64; 4]> {
+    match (a, b) {
+        (Some(a), Some(b)) => Some([a[0].max(b[0]), a[1].max(b[1]), a[2].min(b[2]), a[3].min(b[3])]),
+        (a, b) => a.or(b),
+    }
+}
+
+/// A box found by [`boxes_of`], with its offset and the clip it is drawn under.
+type Found<'a> = (&'a BoxFragment, f64, f64, Option<[f64; 4]>);
+
+fn boxes_of<'a>(children: &'a [Child], dx: f64, dy: f64, clip: Option<[f64; 4]>, want: &dyn Fn(&BoxKind) -> bool, out: &mut Vec<Found<'a>>) {
     for c in children {
         match c {
-            Child::Box(b) if want(&b.kind) => out.push((b, dx, dy)),
-            Child::Box(b) => boxes_of(&b.children, dx + b.offset.0, dy + b.offset.1, want, out),
-            Child::Group { offset, children } => boxes_of(children, dx + offset.0, dy + offset.1, want, out),
-            Child::Table(t) => t.rows.iter().flat_map(|r| r.cells.iter()).for_each(|c| boxes_of(&c.content, dx, dy, want, out)),
+            Child::Box(b) if want(&b.kind) => out.push((b, dx, dy, clip)),
+            Child::Box(b) => boxes_of(&b.children, dx + b.offset.0, dy + b.offset.1, clip, want, out),
+            Child::Group { offset, children } => boxes_of(children, dx + offset.0, dy + offset.1, clip, want, out),
+            Child::Table(t) => {
+                for cell in t.rows.iter().flat_map(|r| r.cells.iter()) {
+                    boxes_of(&cell.content, dx, dy, meet(clip, cell_clip(cell, dx, dy)), want, out);
+                }
+            }
             _ => {}
         }
     }
@@ -207,13 +225,13 @@ pub fn paint_lines<'a>(
     let behind = |k: &BoxKind| matches!(k, BoxKind::Float { layer, .. } if layer.behind);
     let mut found = Vec::new();
     for b in stories() {
-        boxes_of(&b.children, b.offset.0, b.offset.1, &behind, &mut found);
+        boxes_of(&b.children, b.offset.0, b.offset.1, None, &behind, &mut found);
     }
     found.sort_by_key(|(fb, ..)| layer_of(&fb.kind));
-    for (fb, dx, dy) in found {
+    for (fb, dx, dy, clip) in found {
         let own_colours = filled(&fb.children);
         let float = float_of(&fb.kind);
-        let mut inside = |p: Placed<'a>| visible(Placed { own_colours, float: p.float.or(float), ..p });
+        let mut inside = |p: Placed<'a>| visible(Placed { own_colours, float: p.float.or(float), clip: meet(clip, p.clip), ..p });
         backgrounds(&fb.children, dx + fb.offset.0, dy + fb.offset.1, &|_| false, &mut inside);
         flow(&fb.children, dx + fb.offset.0, dy + fb.offset.1, &|_| false, &mut lines, &mut inside);
     }
@@ -224,13 +242,13 @@ pub fn paint_lines<'a>(
     for want in [&is_notes as &dyn Fn(&BoxKind) -> bool, &in_front] {
         let mut found = Vec::new();
         for b in bodies() {
-            boxes_of(&b.children, b.offset.0, b.offset.1, want, &mut found);
+            boxes_of(&b.children, b.offset.0, b.offset.1, None, want, &mut found);
         }
         found.sort_by_key(|(fb, ..)| layer_of(&fb.kind));
-        for (fb, dx, dy) in found {
+        for (fb, dx, dy, clip) in found {
             let own_colours = filled(&fb.children);
             let float = float_of(&fb.kind);
-            let mut inside = |p: Placed<'a>| visible(Placed { own_colours, float: p.float.or(float), ..p });
+            let mut inside = |p: Placed<'a>| visible(Placed { own_colours, float: p.float.or(float), clip: meet(clip, p.clip), ..p });
             backgrounds(&fb.children, dx + fb.offset.0, dy + fb.offset.1, &|_| false, &mut inside);
             flow(&fb.children, dx + fb.offset.0, dy + fb.offset.1, &|_| false, &mut lines, &mut inside);
         }
@@ -251,10 +269,20 @@ pub fn lines_in<'a>(children: &'a [Child], placed: &mut dyn FnMut(Option<ParaId>
 
 pub fn items_of(children: &[Child]) -> Vec<Item> {
     let mut v = Vec::new();
-    let mut out = |p: Placed| v.push(p.absolute());
-    backgrounds(children, 0.0, 0.0, &|_| false, &mut out);
-    flow(children, 0.0, 0.0, &|_| false, &mut Lines { n: 0, placed: &mut |_, _, _, _, _| {} }, &mut out);
+    each_item(children, &mut |p| v.push(p.absolute()));
     v
+}
+
+/// [`items_of`] with the box each item is clipped to.
+pub fn clipped_items_of(children: &[Child]) -> Vec<Clipped> {
+    let mut v = Vec::new();
+    each_item(children, &mut |p| v.push((p.absolute(), p.clip)));
+    v
+}
+
+fn each_item<'a>(children: &'a [Child], out: &mut dyn FnMut(Placed<'a>)) {
+    backgrounds(children, 0.0, 0.0, &|_| false, out);
+    flow(children, 0.0, 0.0, &|_| false, &mut Lines { n: 0, placed: &mut |_, _, _, _, _| {} }, out);
 }
 
 fn layer_of(k: &BoxKind) -> Option<super::fragment::Layer> {
@@ -264,17 +292,22 @@ fn layer_of(k: &BoxKind) -> Option<super::fragment::Layer> {
     }
 }
 pub fn paint_float(page: &PageFragment, id: FloatId) -> Vec<Item> {
+    paint_float_clipped(page, id).into_iter().map(|(item, _)| item).collect()
+}
+
+/// [`paint_float`] with the box each item is clipped to.
+pub fn paint_float_clipped(page: &PageFragment, id: FloatId) -> Vec<Clipped> {
     let mut found = Vec::new();
     for c in page.children.iter() {
         let b: &BoxFragment = match c {
             PageChild::Body(b) => b,
             PageChild::Header(b) | PageChild::Footer(b) => b,
         };
-        boxes_of(&b.children, b.offset.0, b.offset.1, &|k| matches!(k, BoxKind::Float { float, .. } if *float == id), &mut found);
+        boxes_of(&b.children, b.offset.0, b.offset.1, None, &|k| matches!(k, BoxKind::Float { float, .. } if *float == id), &mut found);
     }
     let mut v = Vec::new();
-    let mut out = |p: Placed| v.push(p.absolute());
-    for (fb, dx, dy) in found {
+    for (fb, dx, dy, clip) in found {
+        let mut out = |p: Placed| v.push((p.absolute(), meet(clip, p.clip)));
         let (dx, dy) = (dx + fb.offset.0, dy + fb.offset.1);
         backgrounds(&fb.children, dx, dy, &|_| false, &mut out);
         flow(&fb.children, dx, dy, &|_| false, &mut Lines { n: 0, placed: &mut |_, _, _, _, _| {} }, &mut out);

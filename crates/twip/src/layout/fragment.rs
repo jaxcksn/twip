@@ -130,12 +130,13 @@ pub struct ImageKey {
 pub enum Item {
     Glyphs(GlyphRun),
     /// A filled rect; `snap`: aliased, its edges on whole device pixels (shading, so fills that meet leave no seam);
-    /// `dash`: a border line's dashes, along its longer side.
+    /// `dash`: a border line's dashes, along its longer side, starting `phase` points into the pattern.
     Rect {
         rect: [f64; 4],
         colour: u32,
         snap: bool,
         dash: Dash,
+        phase: f32,
     },
     Image {
         rect: [f64; 4],
@@ -209,7 +210,10 @@ pub struct ShapeItem {
 /// The glyphs a shape's reflection holds, shared between the copies of the shape layout makes; equal when they are the
 /// same.
 #[derive(Clone, Debug)]
-pub struct ShapeText(pub Rc<[Item]>);
+pub struct ShapeText(pub Rc<[Clipped]>);
+
+/// An item with the box it is clipped to, if any.
+pub type Clipped = (Item, Option<[f64; 4]>);
 
 impl PartialEq for ShapeText {
     fn eq(&self, other: &ShapeText) -> bool {
@@ -306,7 +310,9 @@ impl ShapeItem {
             snap: self.snap,
             clip_bottom: self.clip_bottom.map(|y| y + dy),
             text_float: self.text_float,
-            text: self.text.as_ref().map(|t| ShapeText(t.0.iter().map(|i| translated(i, dx, dy)).collect())),
+            text: self.text.as_ref().map(|t| {
+                ShapeText(t.0.iter().map(|(i, c)| (translated(i, dx, dy), c.map(|c| [c[0] + dx, c[1] + dy, c[2] + dx, c[3] + dy]))).collect())
+            }),
             of: self.of,
             text_path: self.text_path.clone(),
         }
@@ -354,12 +360,12 @@ impl Dash {
 
 impl Item {
     pub fn rect(rect: [f64; 4], colour: u32) -> Item {
-        Item::Rect { rect, colour, snap: false, dash: Dash::Solid }
+        Item::Rect { rect, colour, snap: false, dash: Dash::Solid, phase: 0.0 }
     }
 
     /// Shading's flat fill: an aliased rect.
     pub fn fill(rect: [f64; 4], colour: u32) -> Item {
-        Item::Rect { rect, colour, snap: true, dash: Dash::Solid }
+        Item::Rect { rect, colour, snap: true, dash: Dash::Solid, phase: 0.0 }
     }
 
     pub fn top(&self) -> f64 {
@@ -571,7 +577,7 @@ pub fn translated(item: &Item, dx: f64, dy: f64) -> Item {
             para: r.para,
             paint: r.paint.clone(),
         }),
-        Item::Rect { rect, colour, snap, dash } => Item::Rect { rect: r4(rect), colour: *colour, snap: *snap, dash: *dash },
+        Item::Rect { rect, colour, snap, dash, phase } => Item::Rect { rect: r4(rect), colour: *colour, snap: *snap, dash: *dash, phase: *phase },
         Item::Image { rect, key, of } => Item::Image { rect: r4(rect), key: *key, of: *of },
         Item::Gridline { line } => Item::Gridline { line: r4(line) },
         Item::Shape(s) => Item::Shape(std::rc::Rc::new(s.moved(dx, dy))),

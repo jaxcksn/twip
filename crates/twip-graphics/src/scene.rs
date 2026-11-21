@@ -588,6 +588,12 @@ impl Recorder {
     /// the PDF writer measures them on a 300 dpi device. A pattern that is empty, odd, longer or all zero, or a brush
     /// other than a solid colour, fills the rect.
     pub fn fill_dashed_rect<'p>(&mut self, rect: kurbo::Rect, pattern: &[u8], paint: impl Into<Paint<'p>>) {
+        self.fill_dashed_rect_from(rect, pattern, 0.0, paint);
+    }
+
+    /// [`Recorder::fill_dashed_rect`] for the stretch of a longer rect that starts `phase` local units along it: the
+    /// pattern carries on from there instead of starting over. A negative or non-finite `phase` is zero.
+    pub fn fill_dashed_rect_from<'p>(&mut self, rect: kurbo::Rect, pattern: &[u8], phase: f64, paint: impl Into<Paint<'p>>) {
         let paint = paint.into();
         let valid = pattern.len().is_multiple_of(2) && pattern.len() <= 8 && pattern.iter().any(|&l| l > 0);
         let Brush::Solid(c) = paint.brush else { return self.fill_rect(rect, paint) };
@@ -606,6 +612,7 @@ impl Recorder {
             blend: paint.blend,
             pattern: lengths,
             len: pattern.len() as u8,
+            phase: if phase.is_finite() { phase.max(0.0) as f32 } else { 0.0 },
         });
         self.lists.cmds.push(Cmd::DashedRect { dashed });
     }
@@ -1063,6 +1070,7 @@ pub(crate) struct Dashed {
     pub blend: BlendMode,
     pattern: [u8; 8],
     len: u8,
+    phase: f32,
 }
 
 impl Dashed {
@@ -1094,14 +1102,16 @@ impl Dashed {
         if v1 <= v0 {
             return true;
         }
-        let (k0, k1) = (((v0 - s0) / period).floor(), ((v1 - s0) / period).ceil());
+        // The pattern's start: `phase` before the rect's.
+        let o = s0 - f64::from(self.phase);
+        let (k0, k1) = (((v0 - o) / period).floor(), ((v1 - o) / period).ceil());
         if (k1 - k0) * pattern.len() as f64 > MAX_DASHES {
             return false;
         }
         for k in k0 as u64..k1 as u64 {
             let mut at = k * u64::from(sum);
             for (i, &l) in pattern.iter().enumerate() {
-                let (from, to) = (s0 + at as f64 * unit, s0 + (at + u64::from(l)) as f64 * unit);
+                let (from, to) = (o + at as f64 * unit, o + (at + u64::from(l)) as f64 * unit);
                 at += u64::from(l);
                 let (from, to) = (from.max(s0) as f32, to.min(s1) as f32);
                 if i % 2 == 0 && to > from {
@@ -1311,6 +1321,24 @@ mod tests {
 
     fn butt(width: f64) -> kurbo::Stroke {
         kurbo::Stroke::new(width).with_caps(Cap::Butt)
+    }
+
+    #[test]
+    fn a_dashed_rect_carries_its_pattern_on_from_its_phase() {
+        let dashes = |phase: f64| {
+            let mut rec = Recorder::new();
+            // Four device pixels thick, so a unit of four: dashes of 16 on and 16 off.
+            rec.fill_dashed_rect_from(rect(0.0, 0.0, 4.0, 100.0), &[4, 4], phase, RED);
+            let mut out = Vec::new();
+            let view = Rect { x0: -1.0e6, y0: -1.0e6, x1: 1.0e6, y1: 1.0e6 };
+            assert!(rec.lists.dashed[0].each(Transform::from_kurbo(kurbo::Affine::IDENTITY), view, |r| out.push((r.y0, r.y1))));
+            out
+        };
+        assert_eq!(dashes(0.0)[0], (0.0, 16.0));
+        // Starting 16 into the pattern, the rect opens in the gap: its first dash is 16 further on.
+        assert_eq!(dashes(16.0)[0], (16.0, 32.0));
+        // Starting 8 into a dash, the rest of it is drawn.
+        assert_eq!(dashes(8.0)[0], (0.0, 8.0));
     }
 
     #[test]

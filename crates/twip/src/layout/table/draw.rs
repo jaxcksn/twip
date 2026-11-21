@@ -67,6 +67,12 @@ fn unaligned_floats(children: &Rc<[Child]>, off: f64, fixed: &[u64]) -> Option<R
     Some(children.iter().map(up).collect())
 }
 
+/// A dashed rect's phase once cut from `old` to `new`: the pattern stays where it was.
+fn cut_phase(old: &[f64; 4], new: &[f64; 4], phase: f32) -> f32 {
+    let along_x = old[2] - old[0] >= old[3] - old[1];
+    phase + (if along_x { new[0] - old[0] } else { new[1] - old[1] }) as f32
+}
+
 pub(in crate::layout) fn clip_x(children: &Rc<[Child]>, lo: f64, hi: f64, bottom: f64) -> Option<Rc<[Child]>> {
     clip_box(children, lo, hi, f64::NEG_INFINITY, bottom)
 }
@@ -125,9 +131,10 @@ fn clip_cut(children: &Rc<[Child]>, lo: f64, hi: f64, top: f64, bottom: f64, bor
                             r.chars.iter().copied().filter(|ch| ch.1 >= from - EPS && ch.1 <= to + EPS && !dropped(ch.1)).collect();
                         (!glyphs.is_empty() || r.glyphs.is_empty()).then(|| Item::Glyphs(GlyphRun { glyphs, chars, ..r.clone() }))
                     }
-                    Item::Rect { rect, colour, snap, dash } => {
+                    Item::Rect { rect, colour, snap, dash, phase } => {
                         let (x0, x1) = (rect[0].max(lo - dx), rect[2].min(hi - dx));
-                        (x1 > x0).then_some(Item::Rect { rect: [x0, rect[1], x1, rect[3]], colour: *colour, snap: *snap, dash: *dash })
+                        let cut = [x0, rect[1], x1, rect[3]];
+                        (x1 > x0).then_some(Item::Rect { rect: cut, colour: *colour, snap: *snap, dash: *dash, phase: cut_phase(rect, &cut, *phase) })
                     }
                     Item::Shape(s) if s.ink => {
                         super::clip_stroke(s, [lo - dx, f64::NEG_INFINITY, hi - dx, f64::INFINITY]).map(|s| Item::Shape(Rc::new(s)))
@@ -170,16 +177,22 @@ fn clip_nested(c: &Child, lo: f64, hi: f64, top: f64, bottom: f64, borders: bool
                     items
                         .iter()
                         .filter_map(|i| match i {
-                            Item::Rect { rect, colour, snap, dash } => {
+                            Item::Rect { rect, colour, snap, dash, phase } => {
                                 let r = [rect[0].max(lo), rect[1].max(top), rect[2].min(hi), rect[3].min(bottom)];
                                 if r != *rect {
                                     any = true;
                                 }
-                                (r[2] > r[0] && r[3] > r[1]).then_some(Item::Rect { rect: r, colour: *colour, snap: *snap, dash: *dash })
+                                (r[2] > r[0] && r[3] > r[1]).then_some(Item::Rect {
+                                    rect: r,
+                                    colour: *colour,
+                                    snap: *snap,
+                                    dash: *dash,
+                                    phase: cut_phase(rect, &r, *phase),
+                                })
                             }
                             Item::Shape(s) if s.ink => {
                                 let cut = super::clip_stroke(s, [lo, top, hi, bottom]);
-                                if cut.as_ref().is_none_or(|c| c.rect != s.rect) {
+                                if cut.as_ref().is_none_or(|c| !Rc::ptr_eq(&c.geom, &s.geom)) {
                                     any = true;
                                 }
                                 cut.map(|c| Item::Shape(Rc::new(c)))

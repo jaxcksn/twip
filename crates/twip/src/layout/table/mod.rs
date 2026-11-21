@@ -16,12 +16,14 @@ use super::story::{CellEnds, NestedRow, StoryEnv, StoryLayout, StoryUnit};
 
 mod assemble;
 mod borders;
+mod clip;
 mod draw;
 mod key;
 mod widths;
 
 pub use assemble::{cells_box, float_box, legacy_lead, nested_shift, outer_box};
-pub(super) use borders::{clip_stroke, drawn, edge, edge_from, shadow, stroked, thick};
+pub(super) use borders::{drawn, edge, edge_from, shadow, stroked, thick};
+pub(super) use clip::clip_stroke;
 pub use draw::{CellPart, DrawnRow, draw_row, draw_whole_row, frame_part, whole};
 pub(super) use draw::{clip_box, clip_x};
 pub(crate) use key::same_shell;

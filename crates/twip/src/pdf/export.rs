@@ -47,8 +47,7 @@ pub(crate) fn convert(
     crate::api::session::documents::unsupported_package(docx)?;
     let mut doc = crate::docx::read(docx).map_err(|e| Error::new(ErrorCode::ImportFailed, e))?;
     doc.review.view = crate::docx::review::MarkupView::NoMarkup;
-    let snapshot = crate::layout::layout_until(&doc, fonts, || cancel.is_some_and(|c| c.load(Ordering::Relaxed)))
-        .ok_or_else(|| cancelled(cancel).expect_err("layout stops only when cancelled"))?;
+    let snapshot = crate::layout::layout_until(&doc, fonts, || cancel.is_some_and(|c| c.load(Ordering::Relaxed))).ok_or_else(aborted)?;
     let (bytes, written) = export_with(&doc, &snapshot, "", options, cancel, Some(fonts))?;
     let mut warnings = doc.diagnostics.warnings.clone();
     let state = crate::api::session::unopened_document_fonts(&doc, fonts);
@@ -60,9 +59,13 @@ pub(crate) fn convert(
 /// Whether `cancel` asks the conversion to stop.
 pub(crate) fn cancelled(cancel: Option<&AtomicBool>) -> Result<(), Error> {
     match cancel {
-        Some(c) if c.load(Ordering::Relaxed) => Err(Error::new(ErrorCode::Aborted, "the conversion was cancelled")),
+        Some(c) if c.load(Ordering::Relaxed) => Err(aborted()),
         _ => Ok(()),
     }
+}
+
+fn aborted() -> Error {
+    Error::new(ErrorCode::Aborted, "the conversion was cancelled")
 }
 
 /// The document's laid-out pages (`snapshot`, laid out completely) as PDF bytes, with what `options` adds, and the
@@ -87,8 +90,7 @@ pub fn export_with(
     fonts: Option<&Fonts>,
 ) -> Result<(Vec<u8>, Vec<Warning>), Error> {
     cancelled(cancel)?;
-    let tags = Tags::of(doc, first_language(doc).as_deref().unwrap_or("en-US"), cancel)
-        .ok_or_else(|| cancelled(cancel).expect_err("tagging stops only when cancelled"))?;
+    let tags = Tags::of(doc, first_language(doc).as_deref().unwrap_or("en-US"), cancel).ok_or_else(aborted)?;
     let mut info = pdf::Info {
         title: if title.trim().is_empty() { tags::title(doc, &tags) } else { title.into() },
         language: Some(tags.lang.clone()),

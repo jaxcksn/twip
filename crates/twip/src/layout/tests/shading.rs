@@ -151,8 +151,8 @@ fn a_hatch_keeps_its_tiles_below_a_float_that_pushes_the_text_down() {
         })
         .collect();
     assert!(tops.len() >= 6, "a hatch for each line: {tops:?}");
-    let drop = tops.windows(2).map(|w| w[1] - w[0]).fold(0.0_f64, f64::max);
-    assert!(drop < 0.01, "the frames start at one place: {tops:?}");
+    let drift = tops.iter().map(|t| (t - tops[0]).abs()).fold(0.0_f64, f64::max);
+    assert!(drift < 0.01, "the frames start at one place: {tops:?}");
 }
 
 #[test]

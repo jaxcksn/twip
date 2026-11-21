@@ -90,11 +90,11 @@ pub fn float_box(f: &Float, rect: [f64; 4], anchor: ParaId, env: &StoryEnv, memo
     for item in &mut items {
         let Item::Shape(s) = item else { continue };
         let Some(s) = Rc::get_mut(s).filter(|s| s.effects.reflection.is_some() && !s.picture) else { continue };
-        let own: Vec<Item> = owned
+        let own: Vec<_> = owned
             .iter()
             .filter(|(path, _)| **path == s.path)
-            .flat_map(|(_, range)| crate::layout::traverse::items_of(&groups[range.clone()]))
-            .filter(|i| matches!(i, Item::Glyphs(_) | Item::Turned(_)))
+            .flat_map(|(_, range)| crate::layout::traverse::clipped_items_of(&groups[range.clone()]))
+            .filter(|(i, _)| matches!(i, Item::Glyphs(_) | Item::Turned(_)))
             .collect();
         s.text = (!own.is_empty()).then(|| crate::layout::fragment::ShapeText(own.into()));
     }

@@ -86,7 +86,7 @@ function failing(want: Image, got: Image, top: number): [number, number] {
 }
 
 async function drawnLikeTheSnapshot(page: Page, gpu: boolean): Promise<void> {
-  // Both pages on screen.
+  // Both pages on screen. The main-thread transport keeps the context on the DOM canvas, which the probe below reads.
   await page.setViewportSize({ width: 1000, height: 2300 });
   await openWithGateFonts(page, gpu);
   const docx = fixture('render/text-glyphs.docx');
@@ -95,7 +95,7 @@ async function drawnLikeTheSnapshot(page: Page, gpu: boolean): Promise<void> {
     container.style.cssText = 'width:1000px;height:2300px;';
     document.body.append(container);
     const w = window as unknown as Record<string, any>;
-    w.editor = await w.twip.Editor.mount(container, { document: new Uint8Array(docx), background: '#FFFFFF' });
+    w.editor = await w.twip.Editor.mount(container, { document: new Uint8Array(docx), background: '#FFFFFF', execution: 'main' });
   }, docx);
   await until(page, 'state.pages.complete');
   if (gpu) {

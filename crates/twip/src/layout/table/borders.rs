@@ -189,7 +189,7 @@ pub(in crate::layout) fn edge_from(out: &mut Vec<Item>, rect: [f64; 4], horizont
     }
     let dash = Dash::of(&b.style);
     if st.len() == 1 && dash != Dash::Solid {
-        out.push(Item::Rect { rect, colour, snap: false, dash });
+        out.push(Item::Rect { rect, colour, snap: false, dash, phase: phase as f32 });
         return;
     }
     match b.style.as_str() {
@@ -258,7 +258,7 @@ pub(in crate::layout) fn stroked(out: &mut Vec<Item>, rect: [f64; 4], horizontal
 }
 
 /// A border's stroked path: `segs` in points from `rect`'s corner, `width` wide, round joined, flat capped.
-fn stroke_shape(rect: [f64; 4], width: f64, colour: u32, segs: Vec<Seg>) -> Rc<ShapeItem> {
+pub(super) fn stroke_shape(rect: [f64; 4], width: f64, colour: u32, segs: Vec<Seg>) -> Rc<ShapeItem> {
     let [r0, r1, r2, r3] = rect;
     let geom = Geom {
         paths: vec![GeomPath { segs, fill: PathFill::None, stroke: true }],
@@ -427,77 +427,6 @@ pub(in crate::layout) fn shadow(out: &mut Vec<Item>, rect: [f64; 4], horizontal:
     let t = thick(b);
     let (from, to) = (if lead { t } else { 0.0 }, if trail { t } else { 0.0 });
     out.push(Item::rect(if horizontal { [x0 + from, y1, x1 + to, y1 + t] } else { [x1, y0 + from, x1 + t, y1] }, 0));
-}
-
-/// A stroked border edge cut to `clip` (page coordinates), or none if nothing of it is inside: its path is clipped
-/// segment by segment, a stroke's own width left to overhang as an uncut line's would.
-pub(in crate::layout) fn clip_stroke(s: &ShapeItem, clip: [f64; 4]) -> Option<ShapeItem> {
-    let [ox, oy, ex, ey] = s.rect;
-    let [cx0, cy0, cx1, cy1] = [clip[0].max(ox), clip[1].max(oy), clip[2].min(ex), clip[3].min(ey)];
-    if !(cx1 > cx0 && cy1 > cy0) {
-        return None;
-    }
-    let mut segs = Vec::new();
-    let mut at: Option<[f64; 2]> = None;
-    let mut pen_down = false;
-    let start = |p: [f64; 2], segs: &mut Vec<Seg>| segs.push(Seg::Move([p[0] + ox - cx0, p[1] + oy - cy0]));
-    let run = |from: [f64; 2], to: [f64; 2], segs: &mut Vec<Seg>, pen_down: &mut bool| {
-        // Liang-Barsky against the clip in local coordinates.
-        let (lo, hi) = ([cx0 - ox, cy0 - oy], [cx1 - ox, cy1 - oy]);
-        let (mut t0, mut t1) = (0.0_f64, 1.0_f64);
-        for axis in 0..2 {
-            let d = to[axis] - from[axis];
-            let (a, b) = (lo[axis] - from[axis], hi[axis] - from[axis]);
-            if d.abs() < 1e-12 {
-                if a > 0.0 || b < 0.0 {
-                    *pen_down = false;
-                    return;
-                }
-            } else {
-                let (mut u0, mut u1) = (a / d, b / d);
-                if u0 > u1 {
-                    std::mem::swap(&mut u0, &mut u1);
-                }
-                t0 = t0.max(u0);
-                t1 = t1.min(u1);
-            }
-        }
-        if t0 > t1 {
-            *pen_down = false;
-            return;
-        }
-        let at = |t: f64| [from[0] + (to[0] - from[0]) * t, from[1] + (to[1] - from[1]) * t];
-        if !*pen_down || t0 > 0.0 {
-            start(at(t0), segs);
-        }
-        segs.push(Seg::Line([at(t1)[0] + ox - cx0, at(t1)[1] + oy - cy0]));
-        *pen_down = t1 >= 1.0;
-    };
-    for seg in &s.geom.paths.first()?.segs {
-        match *seg {
-            Seg::Move(p) => {
-                at = Some(p);
-                pen_down = false;
-            }
-            Seg::Line(p) => {
-                if let Some(from) = at {
-                    run(from, p, &mut segs, &mut pen_down);
-                }
-                at = Some(p);
-            }
-            _ => {}
-        }
-    }
-    if segs.is_empty() {
-        return None;
-    }
-    let geom = Geom {
-        paths: vec![GeomPath { segs, fill: PathFill::None, stroke: true }],
-        text_rect: [0.0, 0.0, cx1 - cx0, cy1 - cy0],
-        handles: vec![],
-        cxn: vec![],
-    };
-    Some(ShapeItem { rect: [cx0, cy0, cx1, cy1], geom: Rc::new(geom), ..s.clone() })
 }
 
 fn three_d(b: &Border) -> Option<[u32; 3]> {
