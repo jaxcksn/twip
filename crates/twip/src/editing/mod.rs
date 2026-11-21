@@ -1119,6 +1119,30 @@ impl Editor {
         })
     }
 
+    /// Merges section `section` into the next, which keeps its page, headers and footers. Its own headers and
+    /// footers, which no other section shows, go with it.
+    fn merge_section(&mut self, tx: &mut Tx, section: usize) -> Result<(), StepError> {
+        let secs = &self.doc.sections;
+        let s = secs.get(section).ok_or(StepError::Missing)?;
+        let elsewhere =
+            |name: &str| secs.iter().enumerate().any(|(k, o)| k != section && o.headers.iter().chain(&o.footers).flatten().any(|n| n == name));
+        let mut own: Vec<(String, bool, usize)> = Vec::new();
+        for (footer, refs) in [(false, &s.headers), (true, &s.footers)] {
+            for (slot, name) in refs.iter().enumerate() {
+                if let Some(name) = name
+                    && !elsewhere(name)
+                    && !own.iter().any(|(n, ..)| n == name)
+                {
+                    own.push((name.clone(), footer, slot));
+                }
+            }
+        }
+        for (name, footer, slot) in own {
+            self.step(tx, Step::HeaderPart { name, section, footer, slot, blocks: None })?;
+        }
+        self.step(tx, Step::SectionBreak { section, back: None }).map(|_| ())
+    }
+
     fn delete_range_untracked(&mut self, tx: &mut Tx, join: bool) -> Result<Option<Position>, StepError> {
         if let Selection::Cells { table, anchor, .. } = self.selection
             && let Some(t) = self.index.table(&self.doc, table)
@@ -1153,7 +1177,7 @@ impl Editor {
         {
             if !tx.tracked {
                 for _ in i..j {
-                    self.step(tx, Step::SectionBreak { section: i, back: None })?;
+                    self.merge_section(tx, i)?;
                 }
                 return self.delete_range_untracked(tx, join);
             }
@@ -1788,7 +1812,7 @@ impl Editor {
             let controls = self.index.para(&self.doc, para).map(|x| &x.controls);
             if let Some((section, Some(Block::Para(q)))) = at_edge
                 && Some(&q.controls) == controls
-                && self.step(&mut tx, Step::SectionBreak { section, back: None }).is_err()
+                && self.merge_section(&mut tx, section).is_err()
             {
                 self.abort(tx);
                 return Outcome::Unchanged("section break");

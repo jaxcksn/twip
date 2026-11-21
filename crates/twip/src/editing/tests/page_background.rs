@@ -532,3 +532,30 @@ fn a_picture_watermark_keeps_its_aspect_at_the_size_limit() {
     assert!((h - 158.4).abs() < 1e-9, "{h}");
     assert_eq!(super::super::background::picture_size((100.0, 50.0), Some(100.0), [468.0, 648.0]), [100.0, 50.0]);
 }
+
+#[test]
+fn typing_over_everything_keeps_the_last_sections_watermark_through_a_save() {
+    for fx in ["watermark-text.docx", "watermark-picture.docx"] {
+        let bytes = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/render").join(fx)).expect("fixture");
+        let mut e = Editor::open(&bytes, fonts()).expect("opens");
+        let before = marks(&e);
+        assert_eq!(before.len(), 2, "{fx}: {before:?}");
+        e.execute(Command::SelectAll, fonts());
+        run(&mut e, Command::InsertText("Replaced".into()));
+        let kept = e.document().sections[0].headers[0].clone().expect("the last section's header");
+        assert_eq!(marks(&e), vec![(kept.clone(), 1)], "{fx}: the first section's header goes with it");
+
+        let saved = crate::docx::write::save(e.document()).expect("saves");
+        let again = Editor::open(&saved, fonts()).expect("reopens");
+        assert_eq!(marks(&again), marks(&e), "{fx}");
+        assert_eq!(again.page_formatting(0).watermark, e.page_formatting(0).watermark, "{fx}");
+        assert!(e.page_formatting(0).watermark.is_some(), "{fx}");
+
+        run(&mut e, Command::Undo);
+        let mut back = marks(&e);
+        back.sort();
+        let mut want = before.clone();
+        want.sort();
+        assert_eq!(back, want, "{fx}");
+    }
+}
