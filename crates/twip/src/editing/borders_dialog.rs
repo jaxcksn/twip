@@ -60,11 +60,7 @@ impl Editor {
             let (c, s, _) = g.rows[r][k];
             let (last_row, last_col) = (r + 1 == t.rows.len(), c + s.max(1) >= g.cols);
             let own = |o: &Option<crate::docx::props::Border>, table: &Option<crate::docx::props::Border>| o.clone().or_else(|| table.clone());
-            let res = self.doc.resolver.as_ref();
-            let direct = cell.direct.0.as_deref().zip(res).and_then(|(raw, res)| {
-                self.cx().parse(raw, |_, n| crate::docx::props::TcProps::parse(Some(n), &res.styles.colours)).and_then(|p| p.shd)
-            });
-            let shd = direct.or_else(|| cell.shading.map(|f| crate::docx::props::Shd { pattern: "clear".into(), color: None, fill: Some(f) }));
+            let shd = self.cell_shd(t, (r, k), cell);
             let [down, up] = cell.diagonals.as_deref().cloned().unwrap_or_default();
             (v.diagonal_down, v.diagonal_up) = (line(&down), line(&up));
             let edges = [
@@ -85,7 +81,37 @@ impl Editor {
         v.pattern = shd.as_ref().map_or(ShadingPattern::Clear, |s| ShadingPattern::of_val(&s.pattern));
         v.pattern_color = shd.as_ref().and_then(|s| s.color).map_or(AutoOr::Auto, |c| AutoOr::Value(Color(c)));
         v.setting = crate::services::dialogs::border_setting(&v, false);
+        // The line new edges take: the first edge's, else the default pen.
+        if let Some(l) =
+            [&v.top, &v.left, &v.bottom, &v.right, &v.between, &v.inside_vertical, &v.diagonal_down, &v.diagonal_up].into_iter().flatten().next()
+        {
+            (v.style, v.color, v.width) = (l.style, l.color, l.width);
+        } else {
+            (v.style, v.color, v.width) = (BorderStyle::Single, AutoOr::Auto, Points(0.5));
+        }
         Some(v)
+    }
+
+    /// A cell's shading as written: its table style's for the cell's region, under its own.
+    fn cell_shd(&self, t: &crate::docx::Table, (r, k): (usize, usize), cell: &crate::docx::Cell) -> Option<crate::docx::props::Shd> {
+        let res = self.doc.resolver.as_ref();
+        let flat = || cell.shading.map(|f| crate::docx::props::Shd { pattern: "clear".into(), color: None, fill: Some(f) });
+        let Some(res) = res else { return flat() };
+        let look = t.look.unwrap_or(crate::docx::props::Look {
+            first_row: true,
+            last_row: false,
+            first_col: true,
+            last_col: false,
+            no_h_band: false,
+            no_v_band: true,
+        });
+        let headers = t.rows.iter().enumerate().take_while(|(i, r)| r.header || *i == 0 && look.first_row).count();
+        let ncols = t.rows.get(r).map_or(0, |row| row.cells.len());
+        let mut tcp = res.cell_region(t.style_id.as_deref(), look, t.bands, (r, k), (t.rows.len(), ncols), headers).tc.clone();
+        if let Some(raw) = cell.direct.0.as_deref() {
+            tcp.merge(&self.cx().parse(raw, |_, n| crate::docx::props::TcProps::parse(Some(n), &res.styles.colours)).unwrap_or_default());
+        }
+        tcp.shd.or_else(flat)
     }
 
     /// Whether the selection is in a table.
@@ -108,9 +134,22 @@ impl Editor {
             }
             None => {
                 let focus = self.selection.focus();
-                let id = focus.and_then(|p| p.para_offset()).map(|(p, _)| p)?;
-                let para = self.index.para(&self.doc, id)?;
-                (para.style.clone(), focus.and_then(|c| self.run_at(&c)).unwrap_or_else(|| para.mark.clone()))
+                match focus.and_then(|p| p.para_offset()) {
+                    Some((id, _)) => {
+                        let para = self.index.para(&self.doc, id)?;
+                        (para.style.clone(), focus.and_then(|c| self.run_at(&c)).unwrap_or_else(|| para.mark.clone()))
+                    }
+                    // A block of cells: its first cell's first paragraph stands for the base.
+                    None => {
+                        let tg = self.table_target()?;
+                        let cell = self.index.table(&self.doc, tg.table)?.rows.get(tg.rows.0)?.cells.first()?;
+                        let para = cell.blocks.iter().find_map(|b| match b {
+                            crate::docx::Block::Para(p) => Some(p),
+                            crate::docx::Block::Table(_) => None,
+                        })?;
+                        (para.style.clone(), para.mark.clone())
+                    }
+                }
             }
         };
         // The shading as written: its pattern and colors; else the resolved fill.

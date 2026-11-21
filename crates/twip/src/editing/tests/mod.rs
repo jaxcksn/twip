@@ -23,6 +23,7 @@ mod snap;
 mod steps;
 mod styles;
 mod sub_templates;
+mod table_dialogs;
 mod table_handles;
 mod transactions;
 

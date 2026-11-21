@@ -135,14 +135,19 @@ impl Editor {
         Some(FillValue::Solid { colour: value })
     }
 
-    /// The watermark section `section`'s pages show: the first in its headers, else in any header.
-    pub(super) fn watermark_state(&self, section: usize) -> Option<Watermark> {
+    /// The first watermark section `section`'s pages show, else the first in any header.
+    fn shown_watermark(&self, section: usize) -> Option<(&Float, &crate::docx::Run)> {
         let sections = &self.doc.sections;
         let shown: Vec<&String> = (0..3)
             .filter_map(|slot| (0..=section.min(sections.len().saturating_sub(1))).rev().find_map(|k| sections[k].headers[slot].as_ref()))
             .collect();
         let names = shown.into_iter().chain(sections.iter().flat_map(|s| s.headers.iter().flatten()));
-        let (f, run) = names.filter_map(|n| self.doc.stories.get(n)).find_map(|b| first_watermark(b))?;
+        names.filter_map(|n| self.doc.stories.get(n)).find_map(|b| first_watermark(b))
+    }
+
+    /// The watermark section `section`'s pages show: the first in its headers, else in any header.
+    pub(super) fn watermark_state(&self, section: usize) -> Option<Watermark> {
+        let (f, run) = self.shown_watermark(section)?;
         Some(match wm::of(f)? {
             wm::Watermark::Text(t) => Watermark::Text(TextWatermark {
                 text: t.text,
@@ -326,12 +331,12 @@ impl Editor {
         })
     }
 
-    /// The image of the picture watermark there is.
+    /// The image of the picture watermark the edited section shows.
     fn watermark_picture(&self) -> Option<usize> {
-        self.doc.stories.values().filter_map(|b| first_watermark(b)).find_map(|(f, _)| match wm::of(f)? {
+        match wm::of(self.shown_watermark(self.selection_section())?.0)? {
             wm::Watermark::Picture(p) => p.image,
             wm::Watermark::Text(_) => None,
-        })
+        }
     }
 
     /// Each header part a section shows, once, with the first section that has it as its own.
@@ -446,9 +451,11 @@ fn spids(xml: &str) -> impl Iterator<Item = u32> + '_ {
 }
 
 /// A picture watermark's size: its own (`natural`) at `scale` percent, or Auto: fitted to the margins (`area`).
-fn picture_size((w, h): (f64, f64), scale: Option<f64>, area: [f64; 2]) -> [f64; 2] {
+pub(super) fn picture_size((w, h): (f64, f64), scale: Option<f64>, area: [f64; 2]) -> [f64; 2] {
     let k = scale.map_or_else(|| (area[0] / w).min(area[1] / h), |s| s / 100.0);
-    [(w * k).clamp(1.0, 1584.0), (h * k).clamp(1.0, 1584.0)]
+    // One factor for both sides keeps the aspect under the limit; a side is at least 1 pt.
+    let f = (1584.0 / (w * k).max(h * k)).min(1.0);
+    [(w * k * f).max(1.0), (h * k * f).max(1.0)]
 }
 
 /// A picture's own size in points (at its resolution, else 96 dpi).

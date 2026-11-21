@@ -14,4 +14,4 @@ tasks:
   # Linux.
   test:
     command: node build-web.mjs test
-    inputs: ['build-web.mjs', 'wasi-test.mjs', '/crates/twip/src/**/*', '/crates/twip/build.rs', '/crates/twip/Cargo.toml', '/crates/twip/tests/fixtures/**/*', '/crates/twip/tests/layout/**/*', '/crates/twip/tests/render/**/*', '/crates/twip-graphics/tests/fonts/**/*']
+    inputs: ['build-web.mjs', 'wasi-test.mjs', '/crates/twip/src/**/*', '/crates/twip/build.rs', '/crates/twip/Cargo.toml', '/crates/twip/tests/fixtures/**/*', '/crates/twip/tests/layout/**/*', '/crates/twip/tests/render/**/*', '/crates/twip-graphics/src/**/*', '/crates/twip-graphics/Cargo.toml', '/crates/twip-graphics/tests/fonts/**/*']

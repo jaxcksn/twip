@@ -192,11 +192,15 @@ fn render_output_matches_snapshots() {
         );
         std::fs::write(diff_root().join("index.html"), page).unwrap();
     }
+    let link = if index.is_empty() {
+        String::new()
+    } else {
+        format!("; see {} (in CI: the render-diff artifact)", diff_root().join("index.html").display())
+    };
     assert!(
         failures.is_empty(),
-        "render output changed for {} page(s); see {} (in CI: the render-diff artifact). If intended, run `TWIP_WRITE_RENDER=1 cargo nextest run -p twip --lib render_output` and commit tests/render:\n{}",
+        "render output changed for {} page(s){link}. If intended, run `TWIP_WRITE_RENDER=1 cargo nextest run -p twip --lib render_output` and commit tests/render:\n{}",
         failures.len(),
-        diff_root().join("index.html").display(),
         failures.join("\n")
     );
 }

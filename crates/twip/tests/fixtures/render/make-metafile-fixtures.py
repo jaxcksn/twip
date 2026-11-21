@@ -252,7 +252,10 @@ class Wmf:
                         for (t, b), runs in sorted(scans.items()))
         left, top = min(r[0] for r in rects), min(r[1] for r in rects)
         right, bottom = max(r[2] for r in rects), max(r[3] for r in rects)
-        head = struct.pack("<HHIhhhhhhh", 0, 6, 1, 0, len(scans), 0, left, top, right, bottom)
+        # RegionSize: the object's bytes, its scans too. MaxScan: the most points in a scan.
+        size = struct.calcsize("<HHIhhhhhhh") + len(body)
+        max_scan = 2 * max(len(runs) for runs in scans.values())
+        head = struct.pack("<HHIhhhhhhh", 0, 6, 1, size, len(scans), max_scan, left, top, right, bottom)
         return self.obj(0x06FF, head + body)
 
     def bytes(self, name_seed=0):
@@ -839,7 +842,7 @@ def ole_object(d, rid, ole_rid, shape_id, w, h, prog):
 
 
 def ole_preview(d):
-    d.defaults += [("emf", "image/x-emf"), ("wmf", "image/x-wmf"), ("bin", "application/vnd.openxmlformats-officedocument.oleObject")]
+    d.defaults += [("emf", "image/x-emf"), ("wmf", "image/x-wmf"), ("png", "image/png"), ("bin", "application/vnd.openxmlformats-officedocument.oleObject")]
     body = ""
     # Each preview's shape has its own size; most differ from the picture's frame (3 × 1.5 in, or 2 × 1 in).
     previews = [("An EMF preview, at its frame's size", "emf", shapes(), 216, 108), ("A WMF preview, at its frame's size", "wmf", wmf_shapes(), 216, 108),

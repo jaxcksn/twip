@@ -98,6 +98,14 @@ async function drawnLikeTheSnapshot(page: Page, gpu: boolean): Promise<void> {
     w.editor = await w.twip.Editor.mount(container, { document: new Uint8Array(docx), background: '#FFFFFF' });
   }, docx);
   await until(page, 'state.pages.complete');
+  if (gpu) {
+    // A canvas gives only the kind of context it already has: without a WebGPU device the editor drew on the CPU.
+    const got = await page.evaluate(() => {
+      const canvas = document.querySelector('#editor canvas') as HTMLCanvasElement;
+      return canvas.getContext('webgpu') ? 'webgpu' : 'cpu';
+    });
+    test.skip(got !== 'webgpu', `no WebGPU on this machine (the editor drew with ${got})`);
+  }
   const wants = await Promise.all(snapshots.map((png) => decode(page, png)));
   // Each page's failing pixels past the allowance. The frame after layout completes may still be on its way.
   const excess = async () => {

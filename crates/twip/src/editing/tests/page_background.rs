@@ -394,3 +394,65 @@ fn a_text_watermark_keeps_its_language_takes_the_body_font_and_a_one_point_size(
     assert_eq!((t.language.as_deref(), t.font.as_deref()), (Some("fr-FR"), Some("Calibri")), "the theme's body font by default");
     refused(&mut e, Command::SetWatermark(Watermark::Text(TextWatermark { language: Some("fr FR".into()), ..w })));
 }
+
+/// A committed render snapshot, as two pictures that differ.
+fn snapshot_png(page: u8) -> Vec<u8> {
+    std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("tests/render/render__text-glyphs__p{page}.png")))
+        .expect("a snapshot")
+}
+
+/// The pictures the sections' headers show, per header part.
+fn shown(e: &Editor) -> Vec<(String, Vec<u8>)> {
+    let d = e.document();
+    d.stories
+        .iter()
+        .filter(|(n, _)| n.contains("header"))
+        .filter_map(|(n, b)| {
+            let f = b.iter().find_map(|b| match b {
+                crate::docx::Block::Para(p) => p.inlines.iter().find_map(|i| match i {
+                    Inline::Float(f, _) if crate::docx::watermark::is(f) => Some(f.clone()),
+                    _ => None,
+                }),
+                _ => None,
+            })?;
+            let crate::docx::watermark::Watermark::Picture(p) = crate::docx::watermark::of(&f)? else { return None };
+            Some((n.clone(), d.images[p.image?].clone()))
+        })
+        .collect()
+}
+
+#[test]
+fn a_picture_watermark_kept_through_a_scale_change_is_the_edited_sections() {
+    let (a, b) = (snapshot_png(1), snapshot_png(2));
+    let mut e = Editor::open(&two_sections(), fonts()).expect("opens");
+    run(&mut e, Command::SetWatermark(Watermark::Picture(PictureWatermark { image: Bytes(a.clone()), scale: Some(100.0), washout: None })));
+    // The second section's header shows another picture.
+    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let rels = part(&saved, "word/_rels/header1.xml.rels");
+    let target = rels.split("Target=\"").nth(1).and_then(|t| t.split('"').next()).expect("a picture target").to_string();
+    let swapped = crate::docx::write::repackage(
+        &saved,
+        &[
+            ("word/_rels/header1.xml.rels".into(), rels.replace(&target, "media/second.png").into_bytes()),
+            ("word/media/second.png".into(), b.clone()),
+        ],
+        zip::CompressionMethod::Deflated,
+    )
+    .expect("repackages");
+    let mut e = Editor::open(&swapped, fonts()).expect("reopens");
+    let pictures = shown(&e);
+    assert!(pictures.iter().any(|(_, d)| *d == a) && pictures.iter().any(|(_, d)| *d == b), "two pictures");
+    // Editing the first section's scale keeps its own picture, not the first one found in the document.
+    let first = super::para_id(&e, 0);
+    e.select_range(first, crate::layout::Unit(0), crate::layout::Unit(0), fonts());
+    run(&mut e, Command::SetWatermark(Watermark::Picture(PictureWatermark { image: Bytes(Vec::new()), scale: Some(150.0), washout: None })));
+    assert!(shown(&e).iter().all(|(_, d)| *d == a), "{:?}", shown(&e).iter().map(|(n, d)| (n, d.len())).collect::<Vec<_>>());
+}
+
+#[test]
+fn a_picture_watermark_keeps_its_aspect_at_the_size_limit() {
+    let [w, h] = super::super::background::picture_size((720.0, 72.0), Some(500.0), [468.0, 648.0]);
+    assert_eq!(w, 1584.0);
+    assert!((h - 158.4).abs() < 1e-9, "{h}");
+    assert_eq!(super::super::background::picture_size((100.0, 50.0), Some(100.0), [468.0, 648.0]), [100.0, 50.0]);
+}

@@ -137,7 +137,7 @@ fn set_exceptions(row: &mut crate::docx::Row, ex: &RowEx, table: &[Option<Border
     // CT_TblPrEx's children are CT_TblPr's, in its order.
     p.reorder(crate::docx::write::props::TBLPR);
     if ex.reset {
-        (row.shading, row.cell_spacing, row.borders) = (None, None, None);
+        (row.shading, row.hatch, row.cell_spacing, row.borders) = (None, None, None, None);
     }
     if let Some(j) = ex.jc {
         let v = match j {
@@ -156,6 +156,7 @@ fn set_exceptions(row: &mut crate::docx::Row, ex: &RowEx, table: &[Option<Border
     if let Some(fill) = ex.shading {
         p.set("shd", format!("<{w}shd {w}val=\"clear\" {w}color=\"auto\" {w}fill=\"{fill:06X}\"/>"));
         row.shading = Some(fill);
+        row.hatch = None;
     }
     if let Some((edges, b)) = &ex.borders {
         let mut now = row.borders.as_deref().cloned().unwrap_or_else(|| table.clone());
@@ -475,7 +476,7 @@ impl Editor {
             a.direct.0 == b.direct.0 && a.exceptions.0 == b.exceptions.0 && a.cells.iter().zip(&b.cells).all(|(c, d)| c.direct.0 == d.direct.0)
         });
         let rows_changed = rows != t.rows || !same_raw || grid.is_some();
-        let props_changed = props != TableProps::of(t);
+        let props_changed = props != TableProps::of(t) || props.direct.0 != t.direct.0;
         if !rows_changed && !props_changed {
             return Outcome::Unchanged("already so");
         }

@@ -79,7 +79,9 @@ pub(crate) fn corpus() -> Vec<(String, crate::docx::Document)> {
         let Some(mut d) = std::fs::read(path).ok().and_then(|b| crate::docx::read_at(&b, 1_794_225_600).ok()) else { continue };
         d.hyphenation = Some(hyphenation.clone());
         let rel = path.strip_prefix(root().join("fixtures")).unwrap().to_string_lossy().replace(['\\', '/'], "__");
-        out.push((rel.trim_end_matches(".docx").to_owned(), d));
+        let name = rel.trim_end_matches(".docx").to_owned();
+        assert!(!out.iter().any(|(n, _)| *n == name), "two fixtures flatten to the snapshot name `{name}`: rename one");
+        out.push((name, d));
     }
     out
 }

@@ -322,6 +322,23 @@ impl Editor {
                 p.set("shd", x);
             }
         };
+        // A table style's shading goes in its cells' or its table's properties; no other style has them, and the
+        // document's tables stay as they are.
+        if let Some(raw) = &self.style_target
+            && matches!(s.target, ShadingTarget::Cell | ShadingTarget::Table)
+        {
+            if !raw.contains("w:type=\"table\"") {
+                return Outcome::Refused(Error::invalid("only a table style has cell or table shading"));
+            }
+            let (part, order) = match s.target {
+                ShadingTarget::Cell => ("tcPr", crate::docx::write::props::TCPR),
+                _ => ("tblPr", crate::docx::write::props::TBLPR),
+            };
+            return self.format_style_part(part, &|p, cx, _, _| {
+                p.reorder(order);
+                edit(p, &cx.w);
+            });
+        }
         match s.target {
             ShadingTarget::Paragraph => self.format_paras("Shading", &|p, cx, _| edit(p, &cx.w), fonts),
             ShadingTarget::Text => self.format_runs("Shading", &|p, w, _| edit(p, w), fonts),

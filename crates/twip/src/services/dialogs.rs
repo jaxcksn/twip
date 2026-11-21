@@ -863,6 +863,8 @@ fn borders_fields(v: &BordersShadingDialog, in_table: bool) -> Vec<(&'static str
     // apart from the others (setCellBorders' none removes them all, diagonals too), nor a table's own borders.
     let lines = !(in_table && matches!(v.apply_to, ShadingTarget::Cell | ShadingTarget::Table));
     let on = |f: FieldInfo, yes: bool| if yes && lines { f } else { off(f) };
+    // The pen is shared with the Page Border tab, whose lines don't depend on the table.
+    let pen = |f: FieldInfo| if lines || v.tab == crate::api::services::BordersTab::PageBorder { f } else { off(f) };
     let settings: &[(&str, &str)] = if para {
         &[("none", "None"), ("box", "Box"), ("shadow", "Shadow"), ("custom", "Custom")]
     } else {
@@ -882,9 +884,9 @@ fn borders_fields(v: &BordersShadingDialog, in_table: bool) -> Vec<(&'static str
         ),
         ("pageApplyTo", choice("Sections", &[("wholeDocument", "Whole document"), ("thisSection", "This section")])),
         ("setting", on(choice("Setting", settings), true)),
-        ("style", on(choice("Style", &BORDER_STYLES), true)),
-        ("color", on(field("Color", FieldKind::Color), true)),
-        ("width", on(number("Width", FieldKind::Length, 0.25, 6.0, 0.25), true)),
+        ("style", pen(choice("Style", &BORDER_STYLES))),
+        ("color", pen(field("Color", FieldKind::Color))),
+        ("width", pen(number("Width", FieldKind::Length, 0.25, 6.0, 0.25))),
         ("top", on(field("Top", FieldKind::Toggle), para)),
         ("bottom", on(field("Bottom", FieldKind::Toggle), para)),
         ("left", on(field("Left", FieldKind::Toggle), para)),
