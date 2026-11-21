@@ -748,6 +748,8 @@ checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 [[package]]
 name = "jpeg-xr"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a9eb062fdad0588d99c5410742573961f3e29e4b5632af2dc81fb9fd73a44ce9"
 
 [[package]]
 name = "js-sys"

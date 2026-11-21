@@ -26,8 +26,8 @@ zune-jpeg = "0.5"
 zune-bmp = "0.5.2"
 zune-core = "0.5"
 gif = "0.14.2"
-# JPEG XR (HD Photo, the `.wdp` parts Office writes). Its own repository beside Twip's until it is published.
-jpeg-xr = { version = "0.1", path = "../../../jpeg-xr" }
+# JPEG XR (HD Photo, the `.wdp` parts Office writes).
+jpeg-xr = "0.1"
 # The sweep gradient's atan2: the platform's maths library rounds differently between systems, and pixels must not.
 libm = "0.2.16"
 # The GPU backend (feature `gpu`): WebGPU everywhere, and natively D3D12, Vulkan and Metal. GL (WebGL 2) is left off
