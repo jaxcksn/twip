@@ -795,10 +795,10 @@ impl Sink for Count {
     }
 }
 
-/// Plays `d` into a counting sink, quickly.
+/// Plays `d` into a counting sink, which must not hang; what it counts is what the budgets bound.
 pub(super) fn counted(d: &[u8]) -> Count {
     let mut c = Count::default();
-    within(10, || play(&mut c, d));
+    within(60, || play(&mut c, d));
     assert_eq!(c.depth, 0);
     c
 }

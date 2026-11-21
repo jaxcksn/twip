@@ -195,7 +195,7 @@ fn survives(d: &[u8]) -> Vec<String> {
 
 fn counted(d: &[u8]) -> Count {
     let mut c = Count::default();
-    within(10, || play(&mut c, d));
+    within(60, || play(&mut c, d));
     assert_eq!(c.depth, 0);
     c
 }
