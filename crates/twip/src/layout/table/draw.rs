@@ -125,9 +125,9 @@ fn clip_cut(children: &Rc<[Child]>, lo: f64, hi: f64, top: f64, bottom: f64, bor
                             r.chars.iter().copied().filter(|ch| ch.1 >= from - EPS && ch.1 <= to + EPS && !dropped(ch.1)).collect();
                         (!glyphs.is_empty() || r.glyphs.is_empty()).then(|| Item::Glyphs(GlyphRun { glyphs, chars, ..r.clone() }))
                     }
-                    Item::Rect { rect, colour, snap } => {
+                    Item::Rect { rect, colour, snap, dash } => {
                         let (x0, x1) = (rect[0].max(lo - dx), rect[2].min(hi - dx));
-                        (x1 > x0).then_some(Item::Rect { rect: [x0, rect[1], x1, rect[3]], colour: *colour, snap: *snap })
+                        (x1 > x0).then_some(Item::Rect { rect: [x0, rect[1], x1, rect[3]], colour: *colour, snap: *snap, dash: *dash })
                     }
                     Item::Shape(s) if s.ink => {
                         super::clip_stroke(s, [lo - dx, f64::NEG_INFINITY, hi - dx, f64::INFINITY]).map(|s| Item::Shape(Rc::new(s)))
@@ -170,12 +170,12 @@ fn clip_nested(c: &Child, lo: f64, hi: f64, top: f64, bottom: f64, borders: bool
                     items
                         .iter()
                         .filter_map(|i| match i {
-                            Item::Rect { rect, colour, snap } => {
+                            Item::Rect { rect, colour, snap, dash } => {
                                 let r = [rect[0].max(lo), rect[1].max(top), rect[2].min(hi), rect[3].min(bottom)];
                                 if r != *rect {
                                     any = true;
                                 }
-                                (r[2] > r[0] && r[3] > r[1]).then_some(Item::Rect { rect: r, colour: *colour, snap: *snap })
+                                (r[2] > r[0] && r[3] > r[1]).then_some(Item::Rect { rect: r, colour: *colour, snap: *snap, dash: *dash })
                             }
                             Item::Shape(s) if s.ink => {
                                 let cut = super::clip_stroke(s, [lo, top, hi, bottom]);
@@ -259,8 +259,8 @@ pub fn frame_part(tb: &TableLayout, frag: &mut RowFragment, left: f64, open: Opt
             }
         }
         let same = |a: &Item, b: &Item| match (a, b) {
-            (Item::Rect { rect: r, colour: c, .. }, Item::Rect { rect: q, colour: d, .. }) => {
-                c == d && r.iter().zip(q).all(|(x, y)| (x - y).abs() < EPS)
+            (Item::Rect { rect: r, colour: c, dash: e, .. }, Item::Rect { rect: q, colour: d, dash: f, .. }) => {
+                c == d && e == f && r.iter().zip(q).all(|(x, y)| (x - y).abs() < EPS)
             }
             (Item::Shape(a), Item::Shape(b)) => a == b,
             _ => false,

@@ -2,7 +2,7 @@
 
 use crate::docx::model::*;
 use crate::docx::props::Border;
-use crate::layout::fragment::Item;
+use crate::layout::fragment::{Dash, Item};
 use crate::layout::units::EPS;
 use std::rc::Rc;
 
@@ -181,8 +181,9 @@ pub(in crate::layout) fn edge(out: &mut Vec<Item>, rect: [f64; 4], horizontal: b
         }
         return;
     }
-    if st.len() == 1 && !dash_pattern(&b.style).is_empty() {
-        out.extend(dashes(&b.style, rect, horizontal).into_iter().map(|rect| Item::rect(rect, colour)));
+    let dash = Dash::of(&b.style);
+    if st.len() == 1 && dash != Dash::Solid {
+        out.push(Item::Rect { rect, colour, snap: false, dash });
         return;
     }
     match b.style.as_str() {
@@ -209,39 +210,6 @@ pub(in crate::layout) fn edge(out: &mut Vec<Item>, rect: [f64; 4], horizontal: b
         }
         at += w;
     }
-}
-
-pub(in crate::layout) fn dash_pattern(style: &str) -> &'static [f64] {
-    match style {
-        "dotted" => &[1.0, 1.0],
-        "dashed" => &[3.0, 1.0],
-        "dotDash" => &[3.0, 1.0, 1.0, 1.0],
-        "dotDotDash" => &[3.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-        "dashSmallGap" => &[4.0, 1.0],
-        _ => &[],
-    }
-}
-
-pub(in crate::layout) fn dashes(style: &str, rect: [f64; 4], horizontal: bool) -> Vec<[f64; 4]> {
-    let [x0, y0, x1, y1] = rect;
-    let unit = if horizontal { y1 - y0 } else { x1 - x0 };
-    let (start, end) = if horizontal { (x0, x1) } else { (y0, y1) };
-    if unit <= EPS {
-        return vec![rect];
-    }
-    let mut out = Vec::new();
-    let mut at = start;
-    for (k, len) in dash_pattern(style).iter().cycle().enumerate() {
-        if at >= end - EPS || k >= 2 * MAX_SEGMENTS as usize {
-            break;
-        }
-        let to = (at + len * unit).min(end);
-        if k % 2 == 0 {
-            out.push(if horizontal { [at, y0, to, y1] } else { [x0, at, x1, to] });
-        }
-        at = to;
-    }
-    out
 }
 
 /// Most segments a stroked border edge is made of; a longer edge gets longer segments.
@@ -605,19 +573,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_dotted_border_is_drawn_as_dots() {
+    fn a_dotted_border_is_one_dotted_rect() {
         let b = Border { style: "dotted".into(), width: 1.0, space: 0.0, shadow: false, color: None };
         let mut out = Vec::new();
         edge(&mut out, [0.0, 0.0, 9.0, 1.0], true, false, &b);
-        let xs: Vec<f64> = out.iter().map(|i| if let Item::Rect { rect, .. } = i { rect[0] } else { -1.0 }).collect();
-        assert_eq!(xs, vec![0.0, 2.0, 4.0, 6.0, 8.0]);
+        assert!(matches!(out[..], [Item::Rect { rect: [0.0, 0.0, 9.0, 1.0], dash: Dash::Dotted, .. }]));
     }
 
     /// What an edge draws, comparable: rects as rounded numbers, strokes as their segment lists.
     fn described(out: &[Item]) -> Vec<(Vec<i64>, u32)> {
         out.iter()
             .map(|i| match i {
-                Item::Rect { rect, colour, .. } => (rect.iter().map(|v| (v * 100.0).round() as i64).collect(), *colour),
+                Item::Rect { rect, colour, dash, .. } => (rect.iter().map(|v| (v * 100.0).round() as i64).chain([*dash as i64]).collect(), *colour),
                 Item::Shape(s) => {
                     let pts = s.geom.paths[0].segs.iter().flat_map(|g| match g {
                         Seg::Move(p) | Seg::Line(p) => p.to_vec(),
@@ -716,7 +683,7 @@ mod tests {
         assert_eq!(out.len(), 3, "near edges cast none");
         assert_eq!(
             described(&out),
-            vec![(vec![150, 1150, 5150, 1300], 0), (vec![5000, 150, 5150, 1150], 0), (vec![0, 1150, 5000, 1300], 0)],
+            vec![(vec![150, 1150, 5150, 1300, 0], 0), (vec![5000, 150, 5150, 1150, 0], 0), (vec![0, 1150, 5000, 1300, 0], 0)],
             "a bottom edge alone is shadowed over its own span"
         );
         let plain = Border { shadow: false, ..b };

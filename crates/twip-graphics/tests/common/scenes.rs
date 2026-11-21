@@ -512,8 +512,8 @@ pub fn jpeg_xr(resources: &mut Resources) -> Picture {
 }
 
 /// Pixel tiles: an 8 × 8 one-pixel stripe tile drawn at fractional scales below one device pixel a texel (nearest
-/// drops and doubles stripes; snapped, the pitch is steady), at two above, under a fractional offset, and rotated
-/// (left as nearest).
+/// drops and doubles stripes) and at two above, under a fractional offset; snapped, a texel a pixel at every scale;
+/// and rotated (left as nearest).
 pub fn pixel_tiles(resources: &mut Resources) -> Picture {
     use twip_graphics::paint::{Brush, Sampling};
     let bits = [0xC0u8, 0xC0, 0xC0, 0xC0, 0xC0, 0xC0, 0xC0, 0x81];
@@ -533,6 +533,33 @@ pub fn pixel_tiles(resources: &mut Resources) -> Picture {
     rec.push_transform(Affine::rotate_about(0.4, kurbo::Point::new(64.0, 70.0)));
     let transform = Affine::translate((44.0, 56.0)) * Affine::scale(0.77);
     rec.fill_rect(rect(44.0, 56.0, 84.0, 84.0), Paint::new(Brush::Pattern { image: tile, transform, sampling: Sampling::Pixel }));
+    rec.pop();
+    rec.finish()
+}
+
+/// Word's five border dash patterns measured on the device, on lines 0.4, 1 and 3 units thick, at a scale of 1, 0.5
+/// and 2 (a thin line's dashes stay their size in pixels, a thick one's scale with it); then vertical ones, a
+/// fractional start, and a turned one.
+pub fn dashed_rects() -> Picture {
+    const PATTERNS: [&[u8]; 5] = [&[1, 1], &[4, 4], &[7, 3, 3, 3], &[6, 2, 2, 2, 2, 2], &[4, 1]];
+    let mut rec = Recorder::new();
+    for (y, scale) in [(4.0, 1.0), (40.0, 0.5), (62.0, 2.0)] {
+        rec.push_transform(Affine::translate((0.0, y)) * Affine::scale(scale));
+        for (i, pattern) in PATTERNS.into_iter().enumerate() {
+            for (j, thick) in [0.4, 1.0, 3.0].into_iter().enumerate() {
+                let (x, y) = (4.0 + j as f64 * 40.0, i as f64 * 6.0);
+                rec.fill_dashed_rect(rect(x, y, x + 36.0, y + thick), pattern, INK);
+            }
+        }
+        rec.pop();
+    }
+    for (k, (thick, pattern)) in [(1.0, PATTERNS[1]), (3.0, PATTERNS[2]), (2.0, PATTERNS[4])].into_iter().enumerate() {
+        let x = 4.0 + k as f64 * 8.0;
+        rec.fill_dashed_rect(rect(x, 132.0, x + thick, 172.0), pattern, BLUE);
+    }
+    rec.fill_dashed_rect(rect(40.3, 134.6, 100.0, 136.6), PATTERNS[1], RED);
+    rec.push_transform(Affine::rotate_about(0.3, kurbo::Point::new(150.0, 150.0)));
+    rec.fill_dashed_rect(rect(110.0, 150.0, 190.0, 152.0), PATTERNS[2], GREEN);
     rec.pop();
     rec.finish()
 }

@@ -97,10 +97,9 @@ pub enum Sampling {
     /// Bilinear, from the mip level just larger than the drawn size: for pictures.
     #[default]
     Linear,
-    /// The nearest pixel, a pattern's tile scaled to repeat every whole number of device pixels (at least one) and
-    /// placed on a pixel, under a transform without rotation or skew: a pixel-art tile drawn finer than a device
-    /// pixel (a 300 dpi hatch on screen) keeps a steady pitch instead of nearest sampling dropping and doubling its
-    /// pixels. PDF draws it as nearest; viewers place its pixels.
+    /// The nearest pixel, a pattern's tile drawn a texel to each device pixel and placed on a pixel, under a transform
+    /// without rotation or skew: its size in pixels is the same at any scale, as Word draws shading's stripes at any
+    /// zoom. PDF draws it as nearest, at the transform's size.
     Pixel,
 }
 

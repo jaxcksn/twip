@@ -699,6 +699,15 @@ impl Prepare {
             *i += 1;
             match cmd {
                 Cmd::SolidRect { rect, color, aa, blend } => self.rect(rect, t, &clip, &Paint::solid(color, blend, aa)),
+                Cmd::DashedRect { dashed } => {
+                    let d = lists.dashed[dashed as usize];
+                    let paint = Paint::solid(d.color, d.blend, d.aa);
+                    let b = clip.bounds;
+                    let view = Rect { x0: b.x0 as f32, y0: b.y0 as f32, x1: b.x1 as f32, y1: b.y1 as f32 };
+                    if !d.each(t, view, |r| self.rect(r, t, &clip, &paint)) {
+                        self.rect(d.rect, t, &clip, &paint);
+                    }
+                }
                 Cmd::Rect { rect, paint } => {
                     if let Some(p) = self.paint(res, lists, paint, t) {
                         self.rect(rect, t, &clip, &p);

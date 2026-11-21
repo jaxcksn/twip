@@ -13,6 +13,17 @@ use crate::render::Renderer;
 
 /// Device pixels per point: 96 dpi.
 const PX_PER_PT: f64 = 96.0 / 72.0;
+/// The fixtures also kept zoomed out and in, by these factors of [`PX_PER_PT`]: their stripes and dashes are sized in
+/// device pixels.
+const ZOOMED: [&str; 2] = ["render__borders", "render__table-shading"];
+const ZOOMS: [f64; 2] = [0.5, 2.0];
+
+/// The scales a fixture's pages are kept at, device pixels a point, with each's snapshot name suffix.
+fn scales(name: &str) -> impl Iterator<Item = (f64, String)> {
+    let zooms = if ZOOMED.contains(&name) { &ZOOMS[..] } else { &[] };
+    std::iter::once((PX_PER_PT, String::new())).chain(zooms.iter().map(|z| (z * PX_PER_PT, format!("@{z}x"))))
+}
+
 /// A pixel fails when a channel differs by more than this.
 const CHANNEL: u8 = 2;
 /// A page fails when more than one pixel in this many fails.
@@ -73,18 +84,18 @@ fn kept(name: &str, pages: usize) -> usize {
     if name.starts_with("render__") { pages } else { pages.min(2) }
 }
 
-/// One page drawn on the CPU at 96 dpi, light appearance, page only, on the document's page colour.
-pub(crate) fn draw(g: &mut Graphics, r: &Renderer, page: &crate::layout::fragment::PageFragment, images: &[Vec<u8>]) -> Rgba {
+/// One page drawn on the CPU at `k` device pixels a point, light appearance, page only, on the document's page colour.
+fn draw(g: &mut Graphics, r: &Renderer, page: &crate::layout::fragment::PageFragment, images: &[Vec<u8>], k: f64) -> Rgba {
     let picture = g.page_picture(r, page, images);
-    let (w, h) = ((page.w * PX_PER_PT).round().max(1.0) as u32, (page.h * PX_PER_PT).round().max(1.0) as u32);
+    let (w, h) = ((page.w * k).round().max(1.0) as u32, (page.h * k).round().max(1.0) as u32);
     let mut px = vec![0u8; w as usize * h as usize * 4];
     let mut target = Target::new(&mut px, w, h, w as usize * 4, Format::Rgba8).expect("a page-sized target");
     // Over the opaque page colour, so the pixels are opaque: premultiplied is straight.
-    g.render_picture(&mut target, &picture, Affine::scale(PX_PER_PT), r.ink_for(false, r.page_colour.unwrap_or(0xFF_FFFF)));
+    g.render_picture(&mut target, &picture, Affine::scale(k), r.ink_for(false, r.page_colour.unwrap_or(0xFF_FFFF)));
     Rgba { w, h, px }
 }
 
-/// Every corpus document's kept pages, by snapshot name (`<fixture>__p<N>.png`).
+/// Every corpus document's kept pages, by snapshot name (`<fixture>__p<N>.png`, `<fixture>__p<N>@<zoom>x.png`).
 pub(crate) fn rendered() -> BTreeMap<String, Rgba> {
     let fonts = bundled_fonts();
     let mut out = BTreeMap::new();
@@ -95,7 +106,9 @@ pub(crate) fn rendered() -> BTreeMap<String, Rgba> {
         let mut g = Graphics::default();
         g.set_fonts(&fonts);
         for (i, page) in snap.pages().iter().take(kept(&name, snap.pages().len())).enumerate() {
-            out.insert(format!("{name}__p{}.png", i + 1), draw(&mut g, &r, page, &d.images));
+            for (k, zoom) in scales(&name) {
+                out.insert(format!("{name}__p{}{zoom}.png", i + 1), draw(&mut g, &r, page, &d.images, k));
+            }
         }
     }
     out
@@ -213,10 +226,10 @@ fn gpu_pages_match_the_cpu() {
         // One GPU renderer per document's resources.
         let (mut g, mut gpu) = (Graphics::default(), Gpu::new(&ctx, wgpu::TextureFormat::Rgba8Unorm));
         g.set_fonts(&fonts);
-        for (i, page) in snap.pages().iter().take(pages).enumerate() {
-            let cpu = draw(&mut g, &r, page, &d.images);
+        for ((i, page), (k, zoom)) in snap.pages().iter().take(pages).enumerate().flat_map(|p| scales(&name).map(move |s| (p, s))) {
+            let cpu = draw(&mut g, &r, page, &d.images, k);
             let picture = g.page_picture(&r, page, &d.images);
-            let draws = [Draw { picture: &picture, transform: Affine::scale(PX_PER_PT) }];
+            let draws = [Draw { picture: &picture, transform: Affine::scale(k) }];
             let clear = Some(r.ink_for(false, r.page_colour.unwrap_or(0xFF_FFFF)));
             let px = gpu.draw_pixels(&ctx, g.resources(), &Frame { clear, draws: &draws }, (cpu.w, cpu.h)).expect("the device is not lost");
             let ours = Rgba { w: cpu.w, h: cpu.h, px };
@@ -228,8 +241,8 @@ fn gpu_pages_match_the_cpu() {
             };
             if let Some(why) = why {
                 std::fs::create_dir_all(gpu_diff_root()).unwrap();
-                write_diff(&gpu_diff_root(), &format!("{name}__p{}", i + 1), Some(&cpu), &ours, &why);
-                failures.push(format!("{name} page {}: {why}", i + 1));
+                write_diff(&gpu_diff_root(), &format!("{name}__p{}{zoom}", i + 1), Some(&cpu), &ours, &why);
+                failures.push(format!("{name} page {}{zoom}: {why}", i + 1));
             }
             drawn += 1;
         }

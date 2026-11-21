@@ -138,7 +138,7 @@ pub fn apply_borders(
         crate::layout::table::edge(&mut items, r, horizontal, far, b);
         for i in items {
             match i {
-                Item::Rect { rect, colour, snap } => line.rects.push((rect, colour, snap)),
+                Item::Rect { rect, colour, snap, dash } => line.rects.push((rect, colour, snap, dash)),
                 Item::Shape(s) => line.strokes.push(s),
                 _ => {}
             }
@@ -149,8 +149,8 @@ pub fn apply_borders(
         let mut items = Vec::new();
         crate::layout::table::shadow(&mut items, r, horizontal, true, b, lead, trail);
         for i in items {
-            if let Item::Rect { rect, colour, snap } = i {
-                line.rects.push((rect, colour, snap));
+            if let Item::Rect { rect, colour, snap, dash } = i {
+                line.rects.push((rect, colour, snap, dash));
             }
         }
     };
@@ -248,7 +248,7 @@ pub fn apply_borders(
             let r = [sx0, top, sx1, bottom];
             match (hatch, s.shading) {
                 (Some(hatch), fill) => l.shade = Some(crate::layout::shade::hatched([sx0, shade_from, sx1, bottom], r, fill, hatch)),
-                (None, Some(fill)) => l.rects.insert(0, (r, fill, true)),
+                (None, Some(fill)) => l.rects.insert(0, (r, fill, true, crate::layout::fragment::Dash::Solid)),
                 (None, None) => {}
             }
         }

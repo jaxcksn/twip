@@ -43,8 +43,8 @@ pub struct Line {
     pub hard: Option<Kind>,
     pub hyphen: bool,
     pub leaders: Vec<(usize, Leader)>,
-    /// Filled rects, `snap` ones aliased ([`Item::Rect`]).
-    pub rects: Vec<([f64; 4], u32, bool)>,
+    /// Filled rects, `snap` ones aliased, with their dashes ([`Item::Rect`]).
+    pub rects: Vec<([f64; 4], u32, bool, crate::layout::fragment::Dash)>,
     /// Stroked border paths, placed like `rects`.
     pub strokes: Vec<std::rc::Rc<crate::layout::fragment::ShapeItem>>,
     /// The paragraph's hatched shading, placed like `rects` and under them.
@@ -308,7 +308,7 @@ impl ParaLines {
                 .map(|l| {
                     size_of::<Line>()
                         + (l.xs.len() + l.widths.len()) * 8
-                        + l.rects.len() * size_of::<([f64; 4], u32, bool)>()
+                        + l.rects.len() * size_of::<([f64; 4], u32, bool, crate::layout::fragment::Dash)>()
                         + l.strokes
                             .iter()
                             .chain(&l.shade)

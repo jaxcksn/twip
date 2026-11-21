@@ -191,7 +191,7 @@ fn jpeg_xr() {
 
 /// The pixel tiles' stripe tile at scales and offsets that put every texel on whole device pixels at [`SCALE`], where
 /// a viewer has no placement to choose (the fractional scales and the rotation are the golden scene's, not the
-/// viewer's).
+/// viewer's); snapped, at the one scale where the PDF's texel is the CPU's device pixel.
 #[test]
 fn pixel_tiles() {
     use twip_graphics::paint::{Brush, Sampling};
@@ -203,12 +203,26 @@ fn pixel_tiles() {
     let mut rec = Recorder::new();
     for (j, sampling) in [Sampling::Nearest, Sampling::Pixel].into_iter().enumerate() {
         for (k, scale) in [0.5, 1.0, 1.5, 2.0, 2.5].into_iter().enumerate() {
+            let scale = if sampling == Sampling::Pixel { 1.0 / SCALE } else { scale };
             let (x, y) = (4.0 + k as f64 * 24.0, 4.0 + j as f64 * 24.0);
             let transform = Affine::translate((x + 0.5, y + 0.5)) * Affine::scale(scale);
             rec.fill_rect(rect(x, y, x + 20.0, y + 20.0), Paint::new(Brush::Pattern { image: tile, transform, sampling }));
         }
     }
     same("pixel-tiles", (128, 96), &rec.finish(), &res);
+}
+
+/// Device-measured dashes on lines whose dash unit is the same on the CPU at [`SCALE`] and on the PDF's 300 dpi device
+/// (6 points: 12 and 25 pixels), across, down and from a fractional start.
+#[test]
+fn dashed_rects() {
+    let mut rec = Recorder::new();
+    for (i, pattern) in [&[1u8, 1][..], &[4, 4], &[7, 3, 3, 3], &[6, 2, 2, 2, 2, 2], &[4, 1]].into_iter().enumerate() {
+        let y = 4.0 + i as f64 * 10.0;
+        rec.fill_dashed_rect(rect(4.5, y, 250.0, y + 6.0), pattern, Color::rgb(0x20_2020));
+    }
+    rec.fill_dashed_rect(rect(4.0, 60.0, 10.0, 170.0), &[4, 4], Color::rgb(0x30_60D0));
+    same("dashed-rects", (256, 176), &rec.finish(), &Resources::default());
 }
 
 /// PDF/UA is declared (in the XMP, and for PDF/A its schema) only when a structure tree is written.

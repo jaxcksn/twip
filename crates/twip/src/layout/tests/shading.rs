@@ -85,7 +85,7 @@ fn solid_frames(items: &[Item], c: u32) -> Vec<[f64; 4]> {
     items
         .iter()
         .filter_map(|i| match i {
-            Item::Rect { rect, colour, snap: true } if *colour == c => Some(*rect),
+            Item::Rect { rect, colour, snap: true, .. } if *colour == c => Some(*rect),
             _ => None,
         })
         .collect()

@@ -81,7 +81,10 @@ fn paragraph_borders_draw_their_style() {
     assert_eq!(count("double"), 2);
     assert_eq!(count("triple"), 3);
     assert_eq!(count("thinThickSmallGap"), 2);
-    assert!(count("dotted") > 10, "dots");
+    let doc = crate::docx::read(&bytes(&para("dotted")).expect("a package")).expect("reads");
+    let items = crate::layout::traverse::paint_items(&crate::layout::layout(&doc, &super::fonts()).pages()[0]);
+    let dotted = items.iter().filter(|i| matches!(i, Item::Rect { dash: crate::layout::fragment::Dash::Dotted, .. })).count();
+    assert_eq!(dotted, 1, "one dotted rect, its dots drawn on device pixels");
     assert_eq!(count("wave"), 0, "a wave is a stroked path, not rects");
     let strokes = |style: &str| strokes(&para(style), 0).len();
     assert_eq!(strokes("wave"), 1, "a wave is one stroked path");

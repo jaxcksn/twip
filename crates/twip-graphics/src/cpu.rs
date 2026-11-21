@@ -380,6 +380,15 @@ impl Renderer {
                 Cmd::Rect { rect, paint } => {
                     self.with_paint(target, res, lists, paint, t, |r, target, src, aa| r.fill_rect(target, rect, t, &clip, src, aa))
                 }
+                Cmd::DashedRect { dashed } => {
+                    let d = lists.dashed[dashed as usize];
+                    let src = Source::Solid(Solid { color: target.channels(d.color), blend: d.blend, bgra: target.bgra() });
+                    let b = clip.bounds;
+                    let view = Rect { x0: b.x0 as f32, y0: b.y0 as f32, x1: b.x1 as f32, y1: b.y1 as f32 };
+                    if !d.each(t, view, |r| self.fill_rect(target, r, t, &clip, src, d.aa)) {
+                        self.fill_rect(target, d.rect, t, &clip, src, d.aa);
+                    }
+                }
                 Cmd::RRect { rrect, paint } => {
                     let (rect, radii) = lists.rrects[rrect as usize];
                     rrect_path(rect, radii, &mut self.verbs, &mut self.points);

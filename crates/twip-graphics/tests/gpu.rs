@@ -87,6 +87,11 @@ fn rects() {
 }
 
 #[test]
+fn dashed_rects() {
+    same("dashed-rects", (256, 176), &common::scenes::dashed_rects(), &Resources::default());
+}
+
+#[test]
 fn rrects() {
     same("rrects", (128, 96), &common::scenes::rrects(), &Resources::default());
 }

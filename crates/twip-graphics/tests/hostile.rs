@@ -76,6 +76,22 @@ fn dash_patterns_that_never_end_or_never_stop() {
     }
 }
 
+/// Device-measured dashes on a line far longer than the target, straight (only the dashes in view are walked) and
+/// turned (too many to walk: drawn solid), and on a line under a scale that collapses it.
+#[test]
+fn device_dashes_along_lines_without_end() {
+    for transform in [Affine::IDENTITY, Affine::rotate(0.3), Affine::scale_non_uniform(1e-30, 1.0)] {
+        let start = Instant::now();
+        let mut rec = Recorder::new();
+        rec.push_transform(transform);
+        rec.fill_dashed_rect(Rect::new(-1.0e12, 10.0, 1.0e12, 11.0), &[1, 1], Color::BLACK);
+        rec.fill_dashed_rect(Rect::new(10.0, -1.0e12, 11.0, 1.0e12), &[1, 1], Color::BLACK);
+        rec.pop();
+        draw(&Resources::default(), &rec.finish(), (64, 64));
+        assert!(start.elapsed() < Duration::from_secs(5), "{transform:?}");
+    }
+}
+
 #[test]
 fn nesting_too_deep_to_walk() {
     let mut rec = Recorder::new();

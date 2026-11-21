@@ -235,6 +235,11 @@ fn turned_text_scene() {
 }
 
 #[test]
+fn dashed_rect_scene() {
+    golden("dashed-rects", (256, 176), &dashed_rects());
+}
+
+#[test]
 fn rect_scene() {
     golden("rects", (128, 96), &rects());
 }

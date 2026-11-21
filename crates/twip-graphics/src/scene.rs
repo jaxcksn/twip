@@ -241,6 +241,10 @@ pub(crate) enum Cmd {
         path: PathSpan,
         paint: u32,
     },
+    /// Index into `dashed`.
+    DashedRect {
+        dashed: u32,
+    },
     /// Index into `frames`.
     Frame {
         frame: u32,
@@ -389,6 +393,7 @@ pub(crate) struct Lists {
     pub rrects: Vec<(Rect, [f32; 4])>,
     /// A frame's outer rect and the hole inside it.
     pub frames: Vec<(Rect, Rect)>,
+    pub dashed: Vec<Dashed>,
     pub verbs: Vec<Verb>,
     pub points: Vec<Point>,
     pub runs: Vec<RunRec>,
@@ -414,6 +419,7 @@ impl Lists {
             + size(&self.stops)
             + size(&self.rrects)
             + size(&self.frames)
+            + size(&self.dashed)
             + size(&self.verbs)
             + size(&self.points)
             + size(&self.runs)
@@ -437,6 +443,7 @@ impl Lists {
             stops,
             rrects,
             frames,
+            dashed,
             verbs,
             points,
             runs,
@@ -456,6 +463,7 @@ impl Lists {
         stops.clear();
         rrects.clear();
         frames.clear();
+        dashed.clear();
         verbs.clear();
         points.clear();
         runs.clear();
@@ -549,6 +557,34 @@ impl Recorder {
         let rrect = self.lists.rrects.len() as u32;
         self.lists.rrects.push((Rect::from_kurbo(rect), radii));
         self.lists.cmds.push(Cmd::RRect { rrect, paint });
+    }
+
+    /// `rect` filled in dashes along its longer side, from its start: `pattern`'s on and off lengths (an even number of
+    /// them, at most eight) in units of the rect's thickness on the device, rounded down to whole device pixels and at
+    /// least one. Dashes keep their size in device pixels as the scale changes, as Word draws a border's at any zoom;
+    /// the PDF writer measures them on a 300 dpi device. A pattern that is empty, odd, longer or all zero, or a brush
+    /// other than a solid colour, fills the rect.
+    pub fn fill_dashed_rect<'p>(&mut self, rect: kurbo::Rect, pattern: &[u8], paint: impl Into<Paint<'p>>) {
+        let paint = paint.into();
+        let valid = pattern.len().is_multiple_of(2) && pattern.len() <= 8 && pattern.iter().any(|&l| l > 0);
+        let Brush::Solid(c) = paint.brush else { return self.fill_rect(rect, paint) };
+        if !valid {
+            return self.fill_rect(rect, paint);
+        }
+        let rect = rect.abs();
+        self.add_bounds(rect);
+        let mut lengths = [0; 8];
+        lengths[..pattern.len()].copy_from_slice(pattern);
+        let dashed = self.lists.dashed.len() as u32;
+        self.lists.dashed.push(Dashed {
+            rect: Rect::from_kurbo(rect),
+            color: c.premultiply(),
+            aa: paint.aa,
+            blend: paint.blend,
+            pattern: lengths,
+            len: pattern.len() as u8,
+        });
+        self.lists.cmds.push(Cmd::DashedRect { dashed });
     }
 
     /// The non-zero fill of a path.
@@ -976,6 +1012,65 @@ fn flat_caps(stroke: &kurbo::Stroke) -> Option<bool> {
 /// The most dash pattern entries a stroke walks: a pattern finer than this along its path (zero-length entries count)
 /// draws the stroke solid, where it would take time and memory without bound.
 const MAX_DASHES: f64 = 200_000.0;
+
+/// A rect filled in dashes measured on the device ([`Recorder::fill_dashed_rect`]).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Dashed {
+    pub rect: Rect,
+    pub color: PremulColor,
+    pub aa: bool,
+    pub blend: BlendMode,
+    pattern: [u8; 8],
+    len: u8,
+}
+
+impl Dashed {
+    /// Each dash under `t` (local units to device pixels) that reaches `view` (device pixels; under rotation or skew,
+    /// the whole rect), as a rect in local units. `false` when there would be more than [`MAX_DASHES`] or `t` is
+    /// degenerate: the rect is then drawn solid.
+    pub(crate) fn each(&self, t: Transform, view: Rect, mut dash: impl FnMut(Rect)) -> bool {
+        let r = self.rect;
+        let along_x = r.x1 - r.x0 >= r.y1 - r.y0;
+        let (ax, ay, cx, cy) = if along_x { (t.a, t.b, t.c, t.d) } else { (t.c, t.d, t.a, t.b) };
+        let (along, across) = (f64::from(ax).hypot(f64::from(ay)), f64::from(cx).hypot(f64::from(cy)));
+        let (s0, s1, thick) = if along_x { (r.x0, r.x1, r.y1 - r.y0) } else { (r.y0, r.y1, r.x1 - r.x0) };
+        let (s0, s1) = (f64::from(s0), f64::from(s1));
+        // A width on whole pixels but for `f32` rounding (6 points at 300 dpi: 24.999998) keeps them.
+        let unit = (f64::from(thick) * across + 1.0 / 256.0).floor().max(1.0) / along;
+        let pattern = &self.pattern[..self.len as usize];
+        let sum: u32 = pattern.iter().map(|&l| u32::from(l)).sum();
+        let period = unit * f64::from(sum);
+        if !period.is_finite() || period <= 0.0 {
+            return false;
+        }
+        // What of the rect the view sees, along it.
+        let (mut v0, mut v1) = (s0, s1);
+        if t.is_scale_translate() {
+            let (k, o, lo, hi) = if along_x { (t.a, t.e, view.x0, view.x1) } else { (t.d, t.f, view.y0, view.y1) };
+            let (a, b) = ((f64::from(lo) - f64::from(o)) / f64::from(k), (f64::from(hi) - f64::from(o)) / f64::from(k));
+            (v0, v1) = (v0.max(a.min(b)), v1.min(a.max(b)));
+        }
+        if v1 <= v0 {
+            return true;
+        }
+        let (k0, k1) = (((v0 - s0) / period).floor(), ((v1 - s0) / period).ceil());
+        if (k1 - k0) * pattern.len() as f64 > MAX_DASHES {
+            return false;
+        }
+        for k in k0 as u64..k1 as u64 {
+            let mut at = k * u64::from(sum);
+            for (i, &l) in pattern.iter().enumerate() {
+                let (from, to) = (s0 + at as f64 * unit, s0 + (at + u64::from(l)) as f64 * unit);
+                at += u64::from(l);
+                let (from, to) = (from.max(s0) as f32, to.min(s1) as f32);
+                if i % 2 == 0 && to > from {
+                    dash(if along_x { Rect { x0: from, x1: to, ..r } } else { Rect { y0: from, y1: to, ..r } });
+                }
+            }
+        }
+        true
+    }
+}
 
 /// What [`bold_rings`] passes on of each contour's synthetic bold ring.
 #[derive(Clone, Copy, PartialEq)]

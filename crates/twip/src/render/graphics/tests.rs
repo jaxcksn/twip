@@ -834,7 +834,7 @@ fn abutting_shading_leaves_no_seam() {
     let shaded: Vec<[f64; 4]> = crate::layout::traverse::paint_items(page)
         .into_iter()
         .filter_map(|i| match i {
-            crate::layout::fragment::Item::Rect { rect, colour: 0x8EAADB, snap: true } => Some(rect),
+            crate::layout::fragment::Item::Rect { rect, colour: 0x8EAADB, snap: true, .. } => Some(rect),
             _ => None,
         })
         .collect();

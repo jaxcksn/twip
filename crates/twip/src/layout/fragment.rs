@@ -129,11 +129,13 @@ pub struct ImageKey {
 #[derive(Clone, Debug)]
 pub enum Item {
     Glyphs(GlyphRun),
-    /// A filled rect; `snap`: aliased, its edges on whole device pixels (shading, so fills that meet leave no seam).
+    /// A filled rect; `snap`: aliased, its edges on whole device pixels (shading, so fills that meet leave no seam);
+    /// `dash`: a border line's dashes, along its longer side.
     Rect {
         rect: [f64; 4],
         colour: u32,
         snap: bool,
+        dash: Dash,
     },
     Image {
         rect: [f64; 4],
@@ -297,14 +299,53 @@ impl ShapeItem {
     }
 }
 
+/// A border line's dashes, drawn by the renderer in units of the line's width on whole device pixels, so they keep
+/// their size in pixels at any zoom as Word's do.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Dash {
+    #[default]
+    Solid,
+    Dotted,
+    Dashed,
+    DotDash,
+    DotDotDash,
+    DashSmallGap,
+}
+
+impl Dash {
+    /// An `ST_Border` style's dashes; solid for any other style.
+    pub fn of(style: &str) -> Dash {
+        match style {
+            "dotted" => Dash::Dotted,
+            "dashed" => Dash::Dashed,
+            "dotDash" => Dash::DotDash,
+            "dotDotDash" => Dash::DotDotDash,
+            "dashSmallGap" => Dash::DashSmallGap,
+            _ => Dash::Solid,
+        }
+    }
+
+    /// On and off lengths in line widths, as Word draws them on screen and in its PDFs; empty for solid.
+    pub fn pattern(self) -> &'static [u8] {
+        match self {
+            Dash::Solid => &[],
+            Dash::Dotted => &[1, 1],
+            Dash::Dashed => &[4, 4],
+            Dash::DotDash => &[7, 3, 3, 3],
+            Dash::DotDotDash => &[6, 2, 2, 2, 2, 2],
+            Dash::DashSmallGap => &[4, 1],
+        }
+    }
+}
+
 impl Item {
     pub fn rect(rect: [f64; 4], colour: u32) -> Item {
-        Item::Rect { rect, colour, snap: false }
+        Item::Rect { rect, colour, snap: false, dash: Dash::Solid }
     }
 
     /// Shading's flat fill: an aliased rect.
     pub fn fill(rect: [f64; 4], colour: u32) -> Item {
-        Item::Rect { rect, colour, snap: true }
+        Item::Rect { rect, colour, snap: true, dash: Dash::Solid }
     }
 
     pub fn top(&self) -> f64 {
@@ -516,7 +557,7 @@ pub fn translated(item: &Item, dx: f64, dy: f64) -> Item {
             para: r.para,
             paint: r.paint.clone(),
         }),
-        Item::Rect { rect, colour, snap } => Item::Rect { rect: r4(rect), colour: *colour, snap: *snap },
+        Item::Rect { rect, colour, snap, dash } => Item::Rect { rect: r4(rect), colour: *colour, snap: *snap, dash: *dash },
         Item::Image { rect, key, of } => Item::Image { rect: r4(rect), key: *key, of: *of },
         Item::Gridline { line } => Item::Gridline { line: r4(line) },
         Item::Shape(s) => Item::Shape(std::rc::Rc::new(s.moved(dx, dy))),

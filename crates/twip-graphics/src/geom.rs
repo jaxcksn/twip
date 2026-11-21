@@ -99,17 +99,14 @@ impl Transform {
         corners.iter().fold(empty, |b, p| Rect { x0: b.x0.min(p.x), y0: b.y0.min(p.y), x1: b.x1.max(p.x), y1: b.y1.max(p.y) })
     }
 
-    /// `self` (tile to device pixels) with a tile of `size` texels repeating every whole number of device pixels, at
-    /// least one, across and down, from a pixel ([`crate::paint::Sampling::Pixel`]); unchanged under rotation or skew.
-    /// The origin sits a quarter texel's share of a pixel (0.25 / `size`) past the pixel, so no pixel centre falls on
-    /// a texel edge (it is at least a quarter of a pixel's share away): every backend picks the same texel.
+    /// `self` (tile to device pixels) with each texel of a tile of `size` texels one device pixel, from a pixel
+    /// ([`crate::paint::Sampling::Pixel`]), its direction kept; unchanged under rotation or skew. The origin sits a
+    /// quarter of a pixel past the pixel, so no pixel centre falls on a texel edge: every backend picks the same texel.
     pub fn snap_tile(self, size: (u32, u32)) -> Transform {
         if !self.is_scale_translate() || size.0 == 0 || size.1 == 0 {
             return self;
         }
-        let step = |k: f32, n: u32| (k.abs() * n as f32).round().max(1.0).copysign(k) / n as f32;
-        let from = |v: f32, n: u32| v.round() + 0.25 / n as f32;
-        Transform { a: step(self.a, size.0), d: step(self.d, size.1), e: from(self.e, size.0), f: from(self.f, size.1), ..self }
+        Transform { a: 1f32.copysign(self.a), d: 1f32.copysign(self.d), e: self.e.round() + 0.25, f: self.f.round() + 0.25, ..self }
     }
 
     /// Whether axis-aligned rects stay axis-aligned rects: no rotation and no skew.
@@ -123,17 +120,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_snapped_tile_repeats_on_whole_pixels_and_no_centre_meets_a_texel_edge() {
-        // 0.32 px a texel: an 8-texel tile spans 2.56 px, snapped to 3.
-        let t = Transform { a: 0.32, b: 0.0, c: 0.0, d: 0.32, e: 10.3, f: 4.6 }.snap_tile((8, 8));
-        assert_eq!((t.a * 8.0, t.d * 8.0, t.e.floor(), t.f.floor()), (3.0, 3.0, 10.0, 5.0));
-        let inv = t.inverse().expect("invertible");
-        for k in 0..48 {
-            let u = inv.map_point(Point { x: k as f32 + 0.5, y: 0.0 }).x;
-            assert!((u - u.round()).abs() > 0.05, "pixel {k} centre at texel {u}");
+    fn a_snapped_tile_has_a_texel_a_pixel_and_no_centre_meets_a_texel_edge() {
+        // 0.32 px a texel at 96 dpi, or 4 at 400% zoom: one either way, an 8-texel tile 8 px.
+        for k in [0.32, 4.0] {
+            let t = Transform { a: k, b: 0.0, c: 0.0, d: -k, e: 10.3, f: 4.6 }.snap_tile((8, 8));
+            assert_eq!((t.a, t.d, t.e.floor(), t.f.floor()), (1.0, -1.0, 10.0, 5.0));
+            let inv = t.inverse().expect("invertible");
+            for k in 0..48 {
+                let u = inv.map_point(Point { x: k as f32 + 0.5, y: 0.0 }).x;
+                assert!((u - u.round()).abs() > 0.05, "pixel {k} centre at texel {u}");
+            }
+            let texel = |k: i32| inv.map_point(Point { x: k as f32 + 0.5, y: 0.0 }).x.floor().rem_euclid(8.0);
+            assert!((0..40).all(|k| texel(k) == texel(k + 8)), "an 8 px pitch");
         }
-        let texel = |k: i32| inv.map_point(Point { x: k as f32 + 0.5, y: 0.0 }).x.floor().rem_euclid(8.0);
-        assert!((0..40).all(|k| texel(k) == texel(k + 3)), "a steady 3 px pitch");
         let turned = Transform { a: 0.3, b: 0.1, c: -0.1, d: 0.3, e: 1.0, f: 1.0 };
         assert_eq!(turned.snap_tile((8, 8)), turned, "rotation is left alone");
     }

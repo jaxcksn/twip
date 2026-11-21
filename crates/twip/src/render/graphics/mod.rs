@@ -29,7 +29,7 @@ use twip_graphics::scene::{Clip, GlyphRun, Picture, Recorder, Synthesis};
 use super::{ChromeFace, Frame, Renderer};
 use crate::editing::view::View;
 use crate::font::Face;
-use crate::layout::fragment::{ImageKey, Item};
+use crate::layout::fragment::{Dash, ImageKey, Item};
 use crate::layout::ids::FloatId;
 use crate::layout::traverse::{paint, paint_float};
 
@@ -565,8 +565,12 @@ impl Graphics {
     fn item(&mut self, rec: &mut Recorder, r: &Renderer, own: bool, item: &Item, images: &[Vec<u8>]) {
         let ink = |c: u32| r.ink_for(own, c);
         match item {
-            Item::Rect { rect: rc, colour, snap: false } => rec.fill_rect(rect(*rc), ink(*colour)),
-            Item::Rect { rect: rc, colour, snap: true } => rec.fill_rect(rect(*rc), aliased(ink(*colour))),
+            Item::Rect { rect: rc, colour, snap: false, dash: Dash::Solid } => rec.fill_rect(rect(*rc), ink(*colour)),
+            Item::Rect { rect: rc, colour, snap: true, dash: Dash::Solid } => rec.fill_rect(rect(*rc), aliased(ink(*colour))),
+            Item::Rect { rect: rc, colour, snap, dash } => {
+                let paint = if *snap { aliased(ink(*colour)) } else { Paint::from(ink(*colour)) };
+                rec.fill_dashed_rect(rect(*rc), dash.pattern(), paint);
+            }
             Item::Glyphs(g) => {
                 if g.glyphs.is_empty() {
                     return;

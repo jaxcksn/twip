@@ -147,8 +147,8 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
             (g + (b - a) as usize, c + text_of(sp, &pieces[ix]).len())
         });
         out.extend(line.shade.iter().map(|s| Item::Shape(Rc::new(s.moved(x0, top)))));
-        for &(r, colour, snap) in &line.rects {
-            out.push(Item::Rect { rect: [x0 + r[0], top + r[1], x0 + r[2], top + r[3]], colour, snap });
+        for &(r, colour, snap, dash) in &line.rects {
+            out.push(Item::Rect { rect: [x0 + r[0], top + r[1], x0 + r[2], top + r[3]], colour, snap, dash });
         }
         out.extend(line.strokes.iter().map(|s| Item::Shape(Rc::new(s.moved(x0, top)))));
         let rects_end = out.len();
@@ -653,7 +653,7 @@ fn draw_decorations(o: &LineOrigin, line: &Line, base: f64, bg_at: usize, behind
 
 /// Pushes a solid rect, or grows the one just before it that it continues (same colour and height, touching).
 fn join(v: &mut Vec<Item>, r: [f64; 4], c: u32) {
-    let joins = |it: &&mut Item| matches!(it, Item::Rect { rect: l, colour: lc, .. } if *lc == c && (l[1] - r[1]).abs() < EPS && (l[3] - r[3]).abs() < EPS && (r[0] - l[2]).abs() < 0.01);
+    let joins = |it: &&mut Item| matches!(it, Item::Rect { rect: l, colour: lc, dash: crate::layout::fragment::Dash::Solid, .. } if *lc == c && (l[1] - r[1]).abs() < EPS && (l[3] - r[3]).abs() < EPS && (r[0] - l[2]).abs() < 0.01);
     match v.iter_mut().rev().take(4).find(joins) {
         Some(Item::Rect { rect: last, .. }) => last[2] = r[2],
         _ => v.push(Item::rect(r, c)),

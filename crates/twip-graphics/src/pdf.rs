@@ -1053,6 +1053,35 @@ impl<'r> Writer<'r> {
                 c.restore_state();
                 return;
             }
+            Cmd::DashedRect { dashed } => {
+                let d = lists.dashed[dashed as usize];
+                if d.blend == BlendMode::Dst {
+                    return;
+                }
+                self.content().save_state();
+                if let Some(b) = native(d.blend) {
+                    let s = self.state(None, Some(b), None);
+                    self.set_state(s);
+                }
+                self.solid(d.color, ink);
+                let c = self.content();
+                // Measured on a 300 dpi device, as Word's PDFs are.
+                let device = Transform::from_kurbo(Affine::scale(DASH_DPI / 72.0) * ctm);
+                let mut any = false;
+                let all = Rect { x0: f32::NEG_INFINITY, y0: f32::NEG_INFINITY, x1: f32::INFINITY, y1: f32::INFINITY };
+                if !d.each(device, all, |r| {
+                    any = true;
+                    rect_ops(c, r.to_kurbo());
+                }) {
+                    any = true;
+                    rect_ops(c, d.rect.to_kurbo());
+                }
+                if any {
+                    c.fill_nonzero();
+                }
+                c.restore_state();
+                return;
+            }
             Cmd::Rect { rect, paint } => {
                 self.verbs.clear();
                 self.points.clear();
@@ -2424,6 +2453,7 @@ fn classify_in(lists: &Lists, mut i: usize, in_layer: bool, masks: &mut usize) -
                 draw_need(rec.blend, matches!(rec.brush, BrushRec::Solid(_)))
             }
             Cmd::SolidRect { blend, .. } => draw_need(blend, true),
+            Cmd::DashedRect { dashed } => draw_need(lists.dashed[dashed as usize].blend, true),
             Cmd::Image { .. } => Group::Plain,
         };
         if need == Group::Masked && !matches!(cmd, Cmd::Picture { .. }) {
@@ -2450,6 +2480,7 @@ fn op_mode(op: &Op<'_>) -> BlendMode {
     match op.lists.cmds[op.at] {
         Cmd::PushLayer { layer } => op.lists.layers[layer as usize].blend,
         Cmd::SolidRect { blend, .. } => blend,
+        Cmd::DashedRect { dashed } => op.lists.dashed[dashed as usize].blend,
         Cmd::Glyphs { paint, .. }
         | Cmd::Rect { paint, .. }
         | Cmd::RRect { paint, .. }
@@ -2513,6 +2544,9 @@ fn native(mode: BlendMode) -> Option<PdfBlend> {
         _ => return None,
     })
 }
+
+/// The resolution device-measured dashes are laid out at.
+const DASH_DPI: f64 = 300.0;
 
 fn affine(t: Transform) -> Affine {
     Affine::new([t.a, t.b, t.c, t.d, t.e, t.f].map(f64::from))

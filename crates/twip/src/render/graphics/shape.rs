@@ -21,7 +21,7 @@ use crate::drawing::paint::{
 use crate::drawing::units::{Emu, Pct};
 use crate::layout::fragment::{ImageKey, ShapeItem, TextPathItem};
 
-/// A hatch tile's bit, points: a pixel of Word's 300 dpi PDFs.
+/// A hatch tile's bit in a PDF, points: a pixel of Word's 300 dpi PDFs. On screen a bit is a device pixel.
 const HATCH_BIT: f64 = 0.24;
 
 /// Shapes' outlines as paths, by geometry, and text paths' by their glyphs (each entry holds its key, so its address
@@ -699,7 +699,7 @@ impl Graphics {
 
     /// Shading's fill; `aa` false: aliased as Word draws it, so fills meeting at a fractional pixel (spaced rows, a
     /// hatch beside a fill) share the pixel instead of each covering part of it, which leaves a pale seam. A hatch's
-    /// tile repeats on whole device pixels: its 300 dpi bits, finer than a screen's pixel, keep a steady pitch.
+    /// bits are device pixels, as Word draws them at any zoom, so its stripes stay visible zoomed out.
     fn shade(&mut self, rec: &mut Recorder, path: &BezPath, fill: &Fill, aa: bool) {
         let paint = match fill {
             Fill::Solid(c) => Paint::from(colour(*c)),
