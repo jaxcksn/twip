@@ -12,8 +12,13 @@ pub fn image_info(data: &[u8]) -> Option<(f64, f64, f64, f64)> {
     Some(if info.orientation >= 5 { (w, h, dy, dx) } else { (w, h, dx, dy) })
 }
 
-/// PNG `pHYs` or JPEG JFIF density, else 96 dpi.
+/// PNG `pHYs`, JPEG JFIF density or JPEG XR resolution, else 96 dpi.
 fn dpi(d: &[u8]) -> (f64, f64) {
+    if d.starts_with(&[0x49, 0x49, 0xBC])
+        && let Some(r) = twip_graphics::image::jpeg_xr_resolution(d)
+    {
+        return r;
+    }
     let be = |p: usize| u32::from_be_bytes([d[p], d[p + 1], d[p + 2], d[p + 3]]);
     if d.len() > 16 && d[0] == 0x89 && d[1] == b'P' {
         let mut p = 8;
@@ -83,7 +88,7 @@ pub fn vector(d: &[u8]) -> Option<Vector> {
     is_svg(d).then_some(Vector::Svg)
 }
 
-/// MIME type and extension from the file signature (PNG, JPEG, GIF, BMP, TIFF, SVG, EMF, WMF).
+/// MIME type and extension from the file signature (PNG, JPEG, GIF, BMP, TIFF, JPEG XR, SVG, EMF, WMF).
 pub fn image_type(d: &[u8]) -> Option<(&'static str, &'static str)> {
     if d.len() < 4 {
         return None;
@@ -100,6 +105,7 @@ pub fn image_type(d: &[u8]) -> Option<(&'static str, &'static str)> {
         [b'G', b'I', b'F', ..] => ("image/gif", "gif"),
         [b'B', b'M', ..] => ("image/bmp", "bmp"),
         [b'I', b'I', 42, _, ..] | [b'M', b'M', _, 42, ..] => ("image/tiff", "tiff"),
+        [b'I', b'I', 0xBC, _, ..] => ("image/vnd.ms-photo", "wdp"),
         _ => return None,
     })
 }
@@ -114,5 +120,24 @@ mod tests {
         let jpeg = include_bytes!("../../../twip-graphics/tests/images/rotated-6.jpg");
         assert_eq!(image_info(jpeg), Some((32.0, 48.0, 96.0, 96.0)));
         assert_eq!(image_info(b"\x89PNG\r\n\x1a\n not a png"), None);
+    }
+
+    #[test]
+    fn jpeg_xr_is_a_wdp_picture() {
+        let wdp = include_bytes!("../../../twip-graphics/tests/images/alpha.jxr");
+        assert_eq!(image_type(wdp), Some(("image/vnd.ms-photo", "wdp")));
+        assert_eq!(image_info(wdp), Some((170.0, 80.0, 96.0, 96.0)));
+        // Its WIDTH_RESOLUTION and HEIGHT_RESOLUTION entries (FLOAT values in the first directory) set to 300 and 150.
+        let mut d = wdp.to_vec();
+        let ifd = u32::from_le_bytes(d[4..8].try_into().unwrap()) as usize;
+        for e in 0..usize::from(u16::from_le_bytes([d[ifd], d[ifd + 1]])) {
+            let at = ifd + 2 + e * 12;
+            match u16::from_le_bytes([d[at], d[at + 1]]) {
+                0xBC82 => d[at + 8..at + 12].copy_from_slice(&300f32.to_le_bytes()),
+                0xBC83 => d[at + 8..at + 12].copy_from_slice(&150f32.to_le_bytes()),
+                _ => {}
+            }
+        }
+        assert_eq!(image_info(&d), Some((170.0, 80.0, 300.0, 150.0)));
     }
 }

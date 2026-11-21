@@ -487,6 +487,30 @@ pub fn images(resources: &mut Resources) -> Picture {
     rec.finish()
 }
 
+/// JPEG XR pictures made by jxrlib: 4:2:0 lossy RGB with both overlap levels, lossy grey, and RGBA with interleaved and
+/// with separate, premultiplied alpha, both over a checkerboard so their transparency shows.
+pub fn jpeg_xr(resources: &mut Resources) -> Picture {
+    let rgb = image(resources, include_bytes!("../images/rgb-420.jxr"));
+    let gray = image(resources, include_bytes!("../images/gray.jxr"));
+    let alpha = image(resources, include_bytes!("../images/alpha.jxr"));
+    let premultiplied = image(resources, include_bytes!("../images/premultiplied.jxr"));
+    let linear = twip_graphics::paint::ImagePaint::default();
+    let mut rec = Recorder::new();
+    for y in 0..6 {
+        for x in 0..16 {
+            if (x + y) % 2 == 0 {
+                let (x, y) = (x as f64 * 8.0, 64.0 + y as f64 * 8.0);
+                rec.fill_rect(rect(x, y, x + 8.0, y + 8.0), Color::rgb(0xA0_C4E8));
+            }
+        }
+    }
+    rec.image(rgb, None, rect(4.0, 4.0, 64.0, 54.0), &linear);
+    rec.image(gray, None, rect(72.0, 4.0, 119.0, 43.0), &linear);
+    rec.image(alpha, None, rect(0.0, 66.0, 64.0, 96.0), &linear);
+    rec.image(premultiplied, None, rect(64.0, 66.0, 128.0, 96.0), &linear);
+    rec.finish()
+}
+
 /// Pixel tiles: an 8 × 8 one-pixel stripe tile drawn at fractional scales below one device pixel a texel (nearest
 /// drops and doubles stripes; snapped, the pitch is steady), at two above, under a fractional offset, and rotated
 /// (left as nearest).

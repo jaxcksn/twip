@@ -183,6 +183,13 @@ fn images() {
 }
 
 #[test]
+fn jpeg_xr() {
+    let mut res = Resources::default();
+    let picture = scenes::jpeg_xr(&mut res);
+    same("jpeg-xr", (128, 112), &picture, &res);
+}
+
+#[test]
 fn pixel_tiles() {
     let mut res = Resources::default();
     let picture = scenes::pixel_tiles(&mut res);

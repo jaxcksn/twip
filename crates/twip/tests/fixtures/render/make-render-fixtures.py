@@ -512,9 +512,9 @@ def page_picture(d):
 # ---- picture effects ----------------------------------------------------------------------------------------------
 
 
-def blip_picture(d, blip, effects="", name="Picture"):
+def blip_picture(d, blip, effects="", name="Picture", size=(1.6, 1.2)):
     i = d.uid()
-    cx, cy = round(1.6 * EMU), round(1.2 * EMU)
+    cx, cy = round(size[0] * EMU), round(size[1] * EMU)
     return (
         f'<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="{cx}" cy="{cy}"/>'
         f'<wp:effectExtent l="0" t="0" r="0" b="0"/><wp:docPr id="{i}" name="{name} {i}"/><wp:cNvGraphicFramePr/>'
@@ -562,6 +562,48 @@ def picture_effects(d):
         blip_picture(d, f'<a:blip r:link="{link}"/>', name="Linked") + run("  ")
         + blip_picture(d, f'<a:blip r:embed="{rid}" r:link="{link}"/>', name="Linked and embedded")
     ))
+    return "".join(out), sect()
+
+
+# ---- JPEG XR ------------------------------------------------------------------------------------------------------
+
+# Pictures jxrlib encoded (through the imagecodecs Python package), shared with twip-graphics' tests.
+JXR = HERE.parents[3] / "twip-graphics" / "tests" / "images"
+
+
+def wdp_image(d, name):
+    """Adds a JPEG XR part under word/media, as Word names them, and returns its relationship id."""
+    if ("wdp", "image/vnd.ms-photo") not in d.defaults:
+        d.defaults.append(("wdp", "image/vnd.ms-photo"))
+    d.parts.append((f"word/media/{name}.wdp", (JXR / f"{name}.jxr").read_bytes(), None))
+    return d.rel("image", f"media/{name}.wdp")
+
+
+def jpeg_xr(d):
+    rgb, gray, alpha, pre = (wdp_image(d, n) for n in ("rgb-420", "gray", "alpha", "premultiplied"))
+    d.image()
+    png = d.image_rid
+    pencil = (
+        '<a:extLst><a:ext uri="{BEBA8EAE-BF5A-486C-A8C5-ECC9F3942E4B}">'
+        '<a14:imgProps xmlns:a14="http://schemas.microsoft.com/office/drawing/2010/main">'
+        f'<a14:imgLayer r:embed="{gray}"><a14:imgEffect><a14:artisticPencilSketch/></a14:imgEffect></a14:imgLayer>'
+        "</a14:imgProps></a:ext></a:extLst>"
+    )
+    shaded = '<w:shd w:val="clear" w:color="auto" w:fill="A0C4E8"/>'
+    out = [heading("JPEG XR pictures")]
+    out.append(P("RGB, lossy 4:2:0 with both overlap levels; grey, lossy"))
+    out.append(line(
+        blip_picture(d, f'<a:blip r:embed="{rgb}"/>', size=(1.2, 1.0)) + run("  ")
+        + blip_picture(d, f'<a:blip r:embed="{gray}"/>', size=(0.94, 0.78))
+    ))
+    out.append(P("RGBA: interleaved alpha, and premultiplied alpha in its own plane, on a shaded paragraph"))
+    out.append(line(
+        blip_picture(d, f'<a:blip r:embed="{alpha}"/>', size=(1.7, 0.8)) + run("  ")
+        + blip_picture(d, f'<a:blip r:embed="{pre}"/>', size=(1.7, 0.8)),
+        shaded,
+    ))
+    out.append(P("A PNG whose artistic effect keeps its source as a JPEG XR layer: the PNG is drawn"))
+    out.append(line(blip_picture(d, f'<a:blip r:embed="{png}">{pencil}</a:blip>', size=(0.8, 0.6))))
     return "".join(out), sect()
 
 
@@ -665,6 +707,7 @@ FIXTURES = [
     ("page-pattern", page_pattern),
     ("page-picture", page_picture),
     ("picture-effects", picture_effects),
+    ("jpeg-xr", jpeg_xr),
     ("pdf-accessible", pdf_accessible),
 ]
 

@@ -127,6 +127,13 @@ fn image_scene() {
 }
 
 #[test]
+fn jpeg_xr_scene() {
+    let mut resources = Resources::default();
+    let picture = jpeg_xr(&mut resources);
+    golden_with("jpeg-xr", (128, 112), &picture, &resources);
+}
+
+#[test]
 fn pixel_tile_scene() {
     let mut resources = Resources::default();
     let picture = pixel_tiles(&mut resources);

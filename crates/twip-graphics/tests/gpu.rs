@@ -157,6 +157,13 @@ fn images() {
 }
 
 #[test]
+fn jpeg_xr() {
+    let mut resources = Resources::default();
+    let picture = common::scenes::jpeg_xr(&mut resources);
+    same("jpeg-xr", (128, 112), &picture, &resources);
+}
+
+#[test]
 fn pixel_tiles() {
     let mut resources = Resources::default();
     let picture = common::scenes::pixel_tiles(&mut resources);

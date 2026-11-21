@@ -1379,6 +1379,20 @@ fn an_inserted_picture_saves_with_its_image() {
 }
 
 #[test]
+fn an_inserted_jpeg_xr_picture_saves_as_a_wdp_part() {
+    let data = include_bytes!("../../../../twip-graphics/tests/images/alpha.jxr").to_vec();
+    let mut e = super::super::Editor::open(&super::blank_with("Text"), fonts()).expect("opens");
+    let out =
+        e.execute(Command::InsertPicture(crate::api::command::Picture { data: crate::api::value::Bytes(data.clone()), alt_text: None }), fonts());
+    assert!(matches!(out, super::super::Outcome::Changed(_)), "{out:?}");
+    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let types = crate::docx::package::read(&bytes, &[], "[Content_Types].xml").expect("reads").expect("content types");
+    assert!(types.contains(r#"Extension="wdp" ContentType="image/vnd.ms-photo""#), "{types}");
+    let again = super::super::Editor::open(&bytes, fonts()).expect("reopens");
+    assert!(again.document().images.contains(&data));
+}
+
+#[test]
 fn an_inserted_text_box_takes_typing_and_saves() {
     let mut e = open("FX-TEXT.docx");
     let before = body_floats(&e).len();
