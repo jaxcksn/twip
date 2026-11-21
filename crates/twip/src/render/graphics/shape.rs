@@ -338,8 +338,8 @@ fn contours(path: &BezPath) -> Vec<(Vec<PathSeg>, f64)> {
             PathEl::ClosePath => continue,
         };
         at = seg.end();
-        if let Some((segs, len)) = out.last_mut() {
-            *len += seg.arclen(1e-4);
+        if let (Some((segs, len)), Some(accuracy)) = (out.last_mut(), crate::render::arclen_accuracy(&seg, 1e-4)) {
+            *len += seg.arclen(accuracy);
             segs.push(seg);
         }
     }
@@ -352,13 +352,14 @@ fn segment(segs: &[PathSeg], from: f64, to: f64, out: &mut BezPath) {
     let mut acc = 0.0;
     let mut started = false;
     for seg in segs {
-        let len = seg.arclen(1e-4);
+        let Some(accuracy) = crate::render::arclen_accuracy(seg, 1e-4) else { continue };
+        let len = seg.arclen(accuracy);
         let (a, b) = ((from - acc).max(0.0), (to - acc).min(len));
         acc += len;
         if b <= a || len <= 0.0 {
             continue;
         }
-        let t = |d: f64| if d >= len { 1.0 } else { seg.inv_arclen(d, 1e-4) };
+        let t = |d: f64| if d >= len { 1.0 } else { seg.inv_arclen(d, accuracy) };
         let part = seg.subsegment(t(a)..t(b));
         if !started {
             out.move_to(part.start());
@@ -1197,5 +1198,20 @@ mod tests {
         let three = gradient_at(&[(0.0, Rgba::rgb(0x000000)), (0.5, Rgba::rgb(0x808080)), (1.0, Rgba::rgb(0xFFFFFF))], 0.25);
         assert_eq!(three.r, 64);
         assert_eq!(gradient_at(&[(0.2, a), (0.8, b)], 0.0), a);
+    }
+
+    #[test]
+    fn line_ends_on_a_shape_of_absurd_extent_finish() {
+        use crate::drawing::paint::{EndKind, EndSize, LineEnd};
+        let end = Some(LineEnd { kind: EndKind::Arrow, width: EndSize::Medium, length: EndSize::Medium });
+        let line = ResolvedLine { width: 1.0, head: end, tail: end, ..ResolvedLine::none() };
+        let start = std::time::Instant::now();
+        for s in [1e11, 1e18, 1e30, 1e300, f64::MAX] {
+            let mut path = BezPath::new();
+            path.move_to((0.0, 0.0));
+            path.curve_to((s, s), (-s, s), (0.0, 1.0));
+            with_ends(&path, &line);
+        }
+        assert!(start.elapsed() < std::time::Duration::from_secs(5), "took {:?}", start.elapsed());
     }
 }

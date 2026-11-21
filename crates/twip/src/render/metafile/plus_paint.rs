@@ -206,6 +206,8 @@ impl Plus {
         };
         let dashed = !pen.dashes.is_empty() && pen.dashes.iter().all(|d| d.is_finite() && *d >= 0.0) && pen.dashes.iter().sum::<f64>() > 0.0;
         let pattern: Vec<f64> = if dashed { pen.dashes.iter().map(|d| d.max(1e-3) * width).collect() } else { Vec::new() };
+        // Dashes past the most the scene makes are stroked solid, as it does, before any is made.
+        let dashed = dashed && super::dash_count(&path, &pattern) <= super::MAX_DASHES;
         let dash = dashed.then(|| (&pattern[..], pen.dash_offset * width));
         if let Some((pattern, offset)) = dash
             && !p.spend(super::dash_work(&path, &base.clone().with_dashes(offset, pattern.iter().copied())))
@@ -597,11 +599,12 @@ fn pull(fig: &mut [PathEl], end: bool, by: f64) {
         PathEl::CurveTo(a, b, q) => kurbo::PathSeg::Cubic(kurbo::CubicBez::new(from, a, b, q)),
         _ => return,
     };
-    let len = seg.arclen(1e-6);
+    let Some(accuracy) = crate::render::arclen_accuracy(&seg, 1e-6) else { return };
+    let len = seg.arclen(accuracy);
     if len.is_nan() || len <= by {
         return;
     }
-    let t = if end { seg.inv_arclen(len - by, 1e-6) } else { seg.inv_arclen(by, 1e-6) };
+    let t = if end { seg.inv_arclen(len - by, accuracy) } else { seg.inv_arclen(by, accuracy) };
     let part = if end { seg.subsegment(0.0..t) } else { seg.subsegment(t..1.0) };
     fig[i] = match part {
         kurbo::PathSeg::Line(l) => PathEl::LineTo(l.p1),

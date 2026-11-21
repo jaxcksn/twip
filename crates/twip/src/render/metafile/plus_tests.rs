@@ -916,3 +916,68 @@ fn saves_and_containers_nest_bounded_both_ways() {
     assert!(c.calls <= super::MAX_WORK && start.elapsed() < std::time::Duration::from_secs(5), "{} calls in {:?}", c.calls, start.elapsed());
     drawn_within(&d, 2);
 }
+
+// ---------------- hostile pens ----------------
+
+/// A pen one pixel wide in a solid colour, with `flags` and their optional data.
+fn pixel_pen(flags: u32, optional: &[u8]) -> Vec<u8> {
+    let mut d = u32s(&[V, 0, flags, 2]);
+    d.extend(f32s(&[1.0]));
+    d.extend(optional);
+    d.extend(solid(0xFF00_0000));
+    d
+}
+
+#[test]
+fn dashes_of_a_thousandth_of_a_width_on_a_long_line_stroke_solid() {
+    // A custom dash of 1e-6 on and off (held to a thousandth of the width) along a line 1e5 long: 5e7 dashes.
+    let optional = [u32s(&[5, 2]), f32s(&[1e-6, 1e-6])].concat();
+    let pen = pixel_pen(0x20 | 0x100, &optional);
+    let mut line = u32s(&[2]);
+    line.extend(f32s(&[0.0, 0.0, 1e5, 0.0]));
+    let d = plus(super::tests::Emf::default(), &[header(false), object(2, 1, &pen), rec(0x400D, 1, &line)]).bytes();
+    let start = Instant::now();
+    let c = counted(&d);
+    assert!(c.elements <= 64 && start.elapsed() < std::time::Duration::from_secs(2), "{} elements in {:?}", c.elements, start.elapsed());
+}
+
+#[test]
+fn a_custom_cap_on_a_huge_curve_pulls_back_without_looping() {
+    // One cubic (0,0), (1e11,1e11), (-1e11,1e11), (0,1) under a custom arrow end cap.
+    let mut cap = u32s(&[0, 1]);
+    cap.extend(f32s(&[1.0, 1.0, 0.0]));
+    cap.extend(u32s(&[1, 0, 0, 0]));
+    cap.extend(f32s(&[0.0, 1.0]));
+    let optional = [u32s(&[0xFF, 1, cap.len() as u32]), cap].concat();
+    let pen = pixel_pen(0x4 | 0x8 | 0x1000, &optional);
+    for s in [1e11f32, 1e18, 1e30, f32::MAX] {
+        let mut path = u32s(&[V, 4, 0]);
+        path.extend(f32s(&[0.0, 0.0, s, s, -s, s, 0.0, 1.0]));
+        path.extend([0u8, 3, 3, 3]);
+        let d = plus(super::tests::Emf::default(), &[header(false), object(2, 1, &pen), object(3, 2, &path), rec(0x4015, 2, &u32s(&[1]))]).bytes();
+        counted(&d);
+    }
+}
+
+#[test]
+fn miter_corners_between_huge_curves_are_bounded() {
+    // `k` looping Béziers of 1e11 across under the default miter join: each join measures two huge segments.
+    let pen = pixel_pen(0, &[]);
+    for (k, s) in [(1_000usize, 1e11f32), (20_000, 1e11), (20_000, 1e30)] {
+        let mut pts = vec![0.0f32, 0.0];
+        for _ in 0..k {
+            pts.extend([s, s, -s, s, 0.0, 0.0]);
+        }
+        let mut path = u32s(&[(1 + 3 * k) as u32]);
+        path.extend(f32s(&pts));
+        let d = plus(super::tests::Emf::default(), &[header(false), object(2, 1, &pen), rec(0x4019, 1, &path)]).bytes();
+        let start = Instant::now();
+        let c = counted(&d);
+        assert!(
+            c.elements <= super::MAX_WORK + (1 << 21) && start.elapsed() < std::time::Duration::from_secs(5),
+            "{k}: {} elements in {:?}",
+            c.elements,
+            start.elapsed()
+        );
+    }
+}

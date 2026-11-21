@@ -1334,7 +1334,17 @@ fn program(v: &[(BezPath, bool)], everything: &BezPath) -> Vec<MaskStep> {
 /// The dashes stroking `p` with `s` makes, about: along its control polygon, at most what the recorder walks before it
 /// strokes solid.
 fn dash_work(p: &BezPath, s: &kurbo::Stroke) -> usize {
-    let period: f64 = s.dash_pattern.iter().sum();
+    let n = dash_count(p, &s.dash_pattern);
+    if n.is_finite() { n.min(MAX_DASHES) as usize } else { MAX_DASHES as usize }
+}
+
+/// The most dashes a stroke is expanded into: past it the recorder and the scene stroke solid.
+const MAX_DASHES: f64 = 200_000.0;
+
+/// The dashes of `pattern` along `p`'s control polygon, uncapped (NaN or infinite for a pattern or path that isn't
+/// finite).
+fn dash_count(p: &BezPath, pattern: &[f64]) -> f64 {
+    let period: f64 = pattern.iter().sum();
     let (mut len, mut at, mut start) = (0.0, Point::ZERO, Point::ZERO);
     for el in p.elements() {
         let to = match *el {
@@ -1359,8 +1369,7 @@ fn dash_work(p: &BezPath, s: &kurbo::Stroke) -> usize {
         len += (to - at).hypot();
         at = to;
     }
-    let n = len / period * s.dash_pattern.len() as f64;
-    if n.is_finite() { n.min(200_000.0) as usize } else { 200_000 }
+    len / period * pattern.len() as f64
 }
 
 /// A flattening tolerance for curves of radius `r`: a ten-thousandth of it.

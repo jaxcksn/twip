@@ -14,6 +14,20 @@ pub mod theme;
 pub mod window;
 
 pub use theme::Color;
+
+/// The accuracy to measure or invert `seg`'s arc length at: a billionth of its control polygon (the length within a
+/// factor of three), no finer than `floor`. kurbo's inverse solver never ends once the length is about 1e17 times the
+/// accuracy, so a segment with no finite polygon (or one beyond a finite accuracy) has none.
+pub(crate) fn arclen_accuracy(seg: &twip_graphics::kurbo::PathSeg, floor: f64) -> Option<f64> {
+    use twip_graphics::kurbo::{PathSeg, Point};
+    let hypot = |a: Point, b: Point| (b - a).hypot();
+    let polygon = match *seg {
+        PathSeg::Line(l) => hypot(l.p0, l.p1),
+        PathSeg::Quad(q) => hypot(q.p0, q.p1) + hypot(q.p1, q.p2),
+        PathSeg::Cubic(c) => hypot(c.p0, c.p1) + hypot(c.p1, c.p2) + hypot(c.p2, c.p3),
+    };
+    polygon.is_finite().then(|| (polygon * 1e-9).max(floor))
+}
 /// Where and how a frame is drawn: the scroll origin (CSS px), the canvas size, device pixels per CSS pixel and CSS
 /// pixels per point.
 #[derive(Clone, Copy, Debug)]
