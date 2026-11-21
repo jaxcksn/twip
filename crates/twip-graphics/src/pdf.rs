@@ -58,13 +58,19 @@ pub enum Mark {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// What a page's non-content drawing is.
 pub enum ArtifactKind {
+    /// Pagination, such as page numbers.
     Pagination,
     /// A running header, footer or watermark: pagination of that subtype.
     Header,
+    /// A running footer.
     Footer,
+    /// A watermark.
     Watermark,
+    /// Layout only: borders, shading, rules.
     Layout,
+    /// Anything else.
     Other,
 }
 
@@ -72,10 +78,15 @@ pub enum ArtifactKind {
 /// annotations and the named destinations on it.
 #[derive(Clone, Debug)]
 pub struct Page {
+    /// The width in points.
     pub width: f64,
+    /// The height in points.
     pub height: f64,
+    /// The pictures, each marked as content or artifact, drawn in order.
     pub parts: Vec<(Mark, Picture)>,
+    /// The link annotations.
     pub links: Vec<Link>,
+    /// The named destinations.
     pub destinations: Vec<Destination>,
 }
 
@@ -83,9 +94,13 @@ pub struct Page {
 /// id a [`Node::Annotation`] tags it with (every annotation of a link spread over lines shares it).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Link {
+    /// The id its [`Node::Annotation`] uses.
     pub link: u32,
+    /// The area, in points, y down.
     pub rect: kurbo::Rect,
+    /// Where it goes.
     pub target: LinkTarget,
+    /// Its description.
     pub description: String,
 }
 
@@ -101,24 +116,30 @@ pub enum LinkTarget {
 /// A named destination: a place on its page (points, y down).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Destination {
+    /// The destination's name.
     pub name: String,
+    /// Its place on the page, in points, y down.
     pub at: kurbo::Point,
 }
 
 /// A structure element.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Kind {
+    /// A paragraph.
     Paragraph,
     /// A heading of level 1 to 6.
     Heading(u8),
     /// A list, with how its items are numbered.
     List(Numbering),
+    /// An item of a list.
     ListItem,
     /// A list item's number or bullet.
     Label,
+    /// A list item's content.
     ListBody,
     /// A table, with its summary.
     Table(Option<String>),
+    /// A table row.
     Row,
     /// A table cell, a header cell when it has a scope.
     Cell(Cell),
@@ -138,14 +159,23 @@ pub enum Kind {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Numbering {
     #[default]
+    /// No numbering.
     None,
+    /// Filled discs.
     Disc,
+    /// Open circles.
     Circle,
+    /// Filled squares.
     Square,
+    /// Decimal numbers.
     Decimal,
+    /// Lower-case roman numerals.
     LowerRoman,
+    /// Upper-case roman numerals.
     UpperRoman,
+    /// Lower-case letters.
     LowerAlpha,
+    /// Upper-case letters.
     UpperAlpha,
 }
 
@@ -153,17 +183,24 @@ pub enum Numbering {
 /// under, and its spans.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Cell {
+    /// What the cell heads, if it is a header.
     pub scope: Option<Scope>,
+    /// The ids of the header cells it is under.
     pub headers: Vec<String>,
+    /// The rows it spans.
     pub row_span: u32,
+    /// The columns it spans.
     pub col_span: u32,
 }
 
 /// What a header cell heads.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Scope {
+    /// A row.
     Row,
+    /// A column.
     Column,
+    /// Both.
     Both,
 }
 
@@ -171,9 +208,13 @@ pub enum Scope {
 /// parent's, and its kids in reading order.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Element {
+    /// What the element is.
     pub kind: Kind,
+    /// Its identifier, unique in the document.
     pub id: Option<String>,
+    /// Its language, where it differs from its parent's.
     pub lang: Option<String>,
+    /// Its kids in reading order.
     pub kids: Vec<Node>,
 }
 
@@ -188,8 +229,11 @@ impl Element {
 /// with an id ([`Link::link`]).
 #[derive(Clone, Debug, PartialEq)]
 pub enum Node {
+    /// Content marked with this id.
     Content(u32),
+    /// A child element.
     Element(Element),
+    /// The link annotations with this id.
     Annotation(u32),
 }
 
@@ -197,38 +241,56 @@ pub enum Node {
 /// its text.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Heading {
+    /// The level, 1 to 6.
     pub level: u8,
+    /// The id of the content the entry goes to.
     pub content: u32,
+    /// The entry's text.
     pub title: String,
 }
 
 /// A UTC date and time.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Date {
+    /// The year.
     pub year: u16,
+    /// The month, 1 to 12.
     pub month: u8,
+    /// The day of the month.
     pub day: u8,
+    /// The hour, 0 to 23.
     pub hour: u8,
+    /// The minute.
     pub minute: u8,
+    /// The second.
     pub second: u8,
 }
 
 /// The document's metadata, and whether it claims PDF/A-2b conformance (`archival`).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Info {
+    /// The title.
     pub title: String,
+    /// The document's language.
     pub language: Option<String>,
+    /// The keywords.
     pub keywords: Vec<String>,
+    /// The creating application.
     pub creator: String,
+    /// The producing application.
     pub producer: String,
+    /// The creation date.
     pub created: Option<Date>,
+    /// Claims PDF/A-2b conformance.
     pub archival: bool,
 }
 
 /// A written PDF, and whether it claims PDF/A-2b.
 #[derive(Clone, Debug)]
 pub struct Written {
+    /// The file's bytes.
     pub bytes: Vec<u8>,
+    /// Whether the file claims PDF/A-2b.
     pub archival: bool,
 }
 
@@ -270,7 +332,7 @@ pub fn write(res: &Resources, pages: &[Page], structure: &[Element], outline: &[
     w.fonts_out();
     let struct_root = w.structure(structure, &page_refs);
     let outline_root = w.outline(outline, pages, &page_refs);
-    w.document(catalog, tree, struct_root, outline_root, info);
+    w.document(catalog, tree, struct_root, outline_root, info, !structure.is_empty());
     Ok(Written { bytes: w.pdf.finish(), archival: info.archival })
 }
 
@@ -2024,7 +2086,7 @@ impl<'r> Writer<'r> {
     }
 
     /// The catalog, document information and, for PDF/A, the XMP metadata and output intent.
-    fn document(&mut self, catalog: Ref, tree: Ref, struct_root: Ref, outline: Option<Ref>, info: &Info) {
+    fn document(&mut self, catalog: Ref, tree: Ref, struct_root: Ref, outline: Option<Ref>, info: &Info, tagged: bool) {
         let date = info.created.map(|d| {
             pdf_writer::Date::new(d.year)
                 .month(d.month)
@@ -2047,7 +2109,7 @@ impl<'r> Writer<'r> {
         }
         di.finish();
         let (metadata, icc) = (self.alloc(), self.alloc());
-        let xmp = xmp(info, &keywords);
+        let xmp = xmp(info, &keywords, tagged);
         self.pdf.metadata(metadata, xmp.as_bytes());
         // The named destinations, by name (a name tree's order; the first of a name wins).
         let mut dests: BTreeMap<&[u8], Ref> = BTreeMap::new();
@@ -2547,8 +2609,9 @@ fn escape(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
 }
 
-/// The XMP metadata PDF/UA-1 and PDF/A-2b ask for, matching the document information.
-fn xmp(info: &Info, keywords: &str) -> String {
+/// The XMP metadata PDF/UA-1 and PDF/A-2b ask for, matching the document information; PDF/UA is declared only for a
+/// `tagged` document (one with a structure tree).
+fn xmp(info: &Info, keywords: &str, tagged: bool) -> String {
     let date = info
         .created
         .map(|d| format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}+00:00", d.year, d.month, d.day, d.hour, d.minute, d.second))
@@ -2574,11 +2637,16 @@ fn xmp(info: &Info, keywords: &str) -> String {
         let _ = writeln!(x, "<pdf:Keywords>{}</pdf:Keywords>", escape(keywords));
     }
     let _ = writeln!(x, "<xmpMM:DocumentID>{uuid}</xmpMM:DocumentID>\n<xmpMM:InstanceID>{uuid}</xmpMM:InstanceID>");
-    // PDF/UA-1, and for PDF/A-2b the schema of its identifier (not one PDF/A predefines).
-    x.push_str("<pdfuaid:part>1</pdfuaid:part>\n");
+    // PDF/UA-1.
+    if tagged {
+        x.push_str("<pdfuaid:part>1</pdfuaid:part>\n");
+    }
+    // PDF/A-2b, and the schema of PDF/UA's identifier (not one PDF/A predefines).
     if info.archival {
+        x.push_str("<pdfaid:part>2</pdfaid:part>\n<pdfaid:conformance>B</pdfaid:conformance>\n");
+    }
+    if info.archival && tagged {
         x.push_str(concat!(
-            "<pdfaid:part>2</pdfaid:part>\n<pdfaid:conformance>B</pdfaid:conformance>\n",
             "<pdfaExtension:schemas><rdf:Bag><rdf:li rdf:parseType=\"Resource\">",
             "<pdfaSchema:schema>PDF/UA Universal Accessibility Schema</pdfaSchema:schema>",
             "<pdfaSchema:namespaceURI>http://www.aiim.org/pdfua/ns/id/</pdfaSchema:namespaceURI>",

@@ -30,21 +30,32 @@ pub type ImageData = Arc<dyn AsRef<[u8]> + Send + Sync>;
 const MAX_PIXELS: u64 = 1 << 28;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+/// An image file format.
 pub enum ImageFormat {
+    /// PNG.
     Png,
+    /// JPEG.
     Jpeg,
+    /// GIF (its first frame).
     Gif,
+    /// BMP.
     Bmp,
+    /// ICO.
     Ico,
+    /// WBMP.
     Wbmp,
+    /// JPEG XR (HD Photo).
     JpegXr,
 }
 
 /// What an image file says about itself: its format and its pixel size with the EXIF orientation applied.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct ImageInfo {
+    /// The file's format.
     pub format: ImageFormat,
+    /// The width in pixels.
     pub width: u32,
+    /// The height in pixels.
     pub height: u32,
     /// EXIF orientation, 1 (as stored) to 8.
     pub orientation: u8,
@@ -591,6 +602,7 @@ impl ImageRegistry {
         Ok(id)
     }
 
+    /// What the registered image `id` says about itself, or `None` if it is not registered or was removed.
     pub fn info(&self, id: ImageId) -> Option<ImageInfo> {
         self.entries.get(id.0 as usize).filter(|e| !matches!(e.0, Entry::Removed)).map(|e| e.1)
     }

@@ -9,15 +9,22 @@ use crate::image::ImageId;
 /// An unpremultiplied 8-bit sRGB colour.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Color {
+    /// Red.
     pub r: u8,
+    /// Green.
     pub g: u8,
+    /// Blue.
     pub b: u8,
+    /// Alpha: 255 is opaque.
     pub a: u8,
 }
 
 impl Color {
+    /// Fully transparent black.
     pub const TRANSPARENT: Color = Color::rgba(0, 0, 0, 0);
+    /// Opaque black.
     pub const BLACK: Color = Color::rgb(0x00_0000);
+    /// Opaque white.
     pub const WHITE: Color = Color::rgb(0xFF_FFFF);
 
     /// An opaque colour from `0xRRGGBB` (the form Twip's document model keeps colours in).
@@ -25,10 +32,12 @@ impl Color {
         Color { r: (rgb >> 16) as u8, g: (rgb >> 8) as u8, b: rgb as u8, a: 255 }
     }
 
+    /// A colour from its channels.
     pub const fn rgba(r: u8, g: u8, b: u8, a: u8) -> Color {
         Color { r, g, b, a }
     }
 
+    /// This colour with alpha `a`.
     pub const fn with_alpha(self, a: u8) -> Color {
         Color { a, ..self }
     }
@@ -62,7 +71,9 @@ pub(crate) const fn mul_div255(a: u8, b: u8) -> u8 {
 /// between stops in unpremultiplied colour, as Skia's do by default.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Stop {
+    /// Where on the gradient (0.0 to 1.0) the colour is.
     pub offset: f32,
+    /// The colour at that offset.
     pub color: Color,
 }
 
@@ -100,35 +111,60 @@ pub enum Sampling {
 pub enum BlendMode {
     /// Erases the destination where the source covers it.
     Clear,
+    /// The source, where it covers.
     Src,
+    /// The destination, unchanged.
     Dst,
     #[default]
+    /// The source over the destination.
     SrcOver,
+    /// The destination over the source.
     DstOver,
+    /// The source where the destination is opaque.
     SrcIn,
     /// Keeps the destination where the source is opaque: a soft-edge mask.
     DstIn,
+    /// The source where the destination is transparent.
     SrcOut,
+    /// The destination where the source is transparent.
     DstOut,
+    /// The source over the destination, where the destination is opaque.
     SrcAtop,
+    /// The destination over the source, where the source is opaque.
     DstAtop,
+    /// Each where the other is transparent.
     Xor,
+    /// The sum of source and destination.
     Plus,
+    /// Inverse of the product of the inverses.
     Screen,
+    /// Hard light with source and destination swapped.
     Overlay,
+    /// The darker of the two.
     Darken,
+    /// The lighter of the two.
     Lighten,
+    /// Brightens the destination by the source.
     ColorDodge,
+    /// Darkens the destination by the source.
     ColorBurn,
+    /// Multiply or screen, by the source.
     HardLight,
+    /// Darkens or lightens, by the source, softly.
     SoftLight,
+    /// The absolute difference.
     Difference,
+    /// Difference with lower contrast.
     Exclusion,
     /// Source times destination. The GPU backend draws it exactly in two fixed-function passes.
     Multiply,
+    /// The source's hue with the destination's saturation and luminosity.
     Hue,
+    /// The source's saturation with the destination's hue and luminosity.
     Saturation,
+    /// The source's hue and saturation with the destination's luminosity.
     Color,
+    /// The source's luminosity with the destination's hue and saturation.
     Luminosity,
     /// A GDI binary raster operation: each bit of the unpremultiplied 8-bit channels is `op`'s bit `2·s + d` (`s` the
     /// source's bit, `d` the destination's; the low four bits of `op` are read), composited as the separable modes
@@ -142,39 +178,34 @@ impl BlendMode {
     pub(crate) fn index(self) -> u32 {
         match self {
             BlendMode::Raster(op) => 28 + u32::from(op & 15),
-            m => {
-                const ORDER: [BlendMode; 28] = [
-                    BlendMode::Clear,
-                    BlendMode::Src,
-                    BlendMode::Dst,
-                    BlendMode::SrcOver,
-                    BlendMode::DstOver,
-                    BlendMode::SrcIn,
-                    BlendMode::DstIn,
-                    BlendMode::SrcOut,
-                    BlendMode::DstOut,
-                    BlendMode::SrcAtop,
-                    BlendMode::DstAtop,
-                    BlendMode::Xor,
-                    BlendMode::Plus,
-                    BlendMode::Screen,
-                    BlendMode::Overlay,
-                    BlendMode::Darken,
-                    BlendMode::Lighten,
-                    BlendMode::ColorDodge,
-                    BlendMode::ColorBurn,
-                    BlendMode::HardLight,
-                    BlendMode::SoftLight,
-                    BlendMode::Difference,
-                    BlendMode::Exclusion,
-                    BlendMode::Multiply,
-                    BlendMode::Hue,
-                    BlendMode::Saturation,
-                    BlendMode::Color,
-                    BlendMode::Luminosity,
-                ];
-                ORDER.iter().position(|&o| o == m).unwrap_or(3) as u32
-            }
+            BlendMode::Clear => 0,
+            BlendMode::Src => 1,
+            BlendMode::Dst => 2,
+            BlendMode::SrcOver => 3,
+            BlendMode::DstOver => 4,
+            BlendMode::SrcIn => 5,
+            BlendMode::DstIn => 6,
+            BlendMode::SrcOut => 7,
+            BlendMode::DstOut => 8,
+            BlendMode::SrcAtop => 9,
+            BlendMode::DstAtop => 10,
+            BlendMode::Xor => 11,
+            BlendMode::Plus => 12,
+            BlendMode::Screen => 13,
+            BlendMode::Overlay => 14,
+            BlendMode::Darken => 15,
+            BlendMode::Lighten => 16,
+            BlendMode::ColorDodge => 17,
+            BlendMode::ColorBurn => 18,
+            BlendMode::HardLight => 19,
+            BlendMode::SoftLight => 20,
+            BlendMode::Difference => 21,
+            BlendMode::Exclusion => 22,
+            BlendMode::Multiply => 23,
+            BlendMode::Hue => 24,
+            BlendMode::Saturation => 25,
+            BlendMode::Color => 26,
+            BlendMode::Luminosity => 27,
         }
     }
 }
@@ -188,13 +219,19 @@ pub(crate) fn raster_op(op: u8, s: u8, d: u8) -> u8 {
 /// The colour source of a fill.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Brush<'a> {
+    /// A single colour.
     Solid(Color),
     /// From `start` to `end`, in the space `transform` maps into the draw's local space.
     Linear {
+        /// Where the gradient starts.
         start: kurbo::Point,
+        /// Where the gradient ends.
         end: kurbo::Point,
+        /// The colour stops, in offset order.
         stops: &'a [Stop],
+        /// What is painted outside the gradient's span.
         extend: Extend,
+        /// Maps gradient space into the draw's local space.
         transform: kurbo::Affine,
     },
     /// Between two circles (a two-point conical gradient): `t` is 0 on the start circle and 1 on the end one, and a
@@ -202,28 +239,44 @@ pub enum Brush<'a> {
     /// are left alone. A plain radial gradient starts at its centre with radius 0. In the space `transform` maps into
     /// the draw's local space.
     Radial {
+        /// The start circle's centre.
         start: kurbo::Point,
+        /// The start circle's radius.
         start_radius: f64,
+        /// The end circle's centre.
         end: kurbo::Point,
+        /// The end circle's radius.
         end_radius: f64,
+        /// The colour stops, in offset order.
         stops: &'a [Stop],
+        /// What is painted outside the gradient's span.
         extend: Extend,
+        /// Maps gradient space into the draw's local space.
         transform: kurbo::Affine,
     },
     /// Around `center`, from `start_angle` to `end_angle` in degrees, clockwise from the positive x axis (y is down);
     /// one turn is painted. In the space `transform` maps into the draw's local space.
     Sweep {
+        /// The sweep's centre.
         center: kurbo::Point,
+        /// The angle (degrees) at offset 0.
         start_angle: f64,
+        /// The angle (degrees) at offset 1.
         end_angle: f64,
+        /// The colour stops, in offset order.
         stops: &'a [Stop],
+        /// What is painted outside the gradient's span.
         extend: Extend,
+        /// Maps gradient space into the draw's local space.
         transform: kurbo::Affine,
     },
     /// An image repeated in both directions. `transform` maps image pixels into the draw's local space.
     Pattern {
+        /// The image to repeat.
         image: ImageId,
+        /// Maps image pixels into the draw's local space.
         transform: kurbo::Affine,
+        /// How the image is sampled.
         sampling: Sampling,
     },
 }
@@ -231,7 +284,9 @@ pub enum Brush<'a> {
 /// A fill's brush, blend mode and anti-aliasing.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Paint<'a> {
+    /// The colour source.
     pub brush: Brush<'a>,
+    /// How the fill combines with what is under it.
     pub blend: BlendMode,
     /// Anti-aliased edges. Some of Twip's draws are aliased on purpose (the paper, caret bars), and frame comparisons
     /// depend on it.
@@ -266,7 +321,9 @@ pub enum ColorFilter {
 /// brightness and contrast, duotone, bi-level), applied in order.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ImagePaint<'a> {
+    /// How the image is sampled.
     pub sampling: Sampling,
+    /// The filters applied to the image's colours, in order.
     pub color_filters: &'a [ColorFilter],
 }
 

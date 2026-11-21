@@ -189,12 +189,43 @@ fn jpeg_xr() {
     same("jpeg-xr", (128, 112), &picture, &res);
 }
 
+/// The pixel tiles' stripe tile at scales and offsets that put every texel on whole device pixels at [`SCALE`], where
+/// a viewer has no placement to choose (the fractional scales and the rotation are the golden scene's, not the
+/// viewer's).
 #[test]
 fn pixel_tiles() {
+    use twip_graphics::paint::{Brush, Sampling};
     let mut res = Resources::default();
-    let picture = scenes::pixel_tiles(&mut res);
-    // Tiles drawn finer than a pixel a texel are placed by the viewer, snapped or not: up to a tenth of them differs.
-    same_from("pixel-tiles", (128, 96), &picture, &res, 0, 10);
+    let bits = [0xC0u8, 0xC0, 0xC0, 0xC0, 0xC0, 0xC0, 0xC0, 0x81];
+    let px: Vec<u8> =
+        bits.iter().flat_map(|row| (0..8).flat_map(move |i| if row & (0x80 >> i) != 0 { [192, 0, 0, 255] } else { [255, 255, 0, 255] })).collect();
+    let tile = res.images.add_pixels(8, 8, px).expect("pixels");
+    let mut rec = Recorder::new();
+    for (j, sampling) in [Sampling::Nearest, Sampling::Pixel].into_iter().enumerate() {
+        for (k, scale) in [0.5, 1.0, 1.5, 2.0, 2.5].into_iter().enumerate() {
+            let (x, y) = (4.0 + k as f64 * 24.0, 4.0 + j as f64 * 24.0);
+            let transform = Affine::translate((x + 0.5, y + 0.5)) * Affine::scale(scale);
+            rec.fill_rect(rect(x, y, x + 20.0, y + 20.0), Paint::new(Brush::Pattern { image: tile, transform, sampling }));
+        }
+    }
+    same("pixel-tiles", (128, 96), &rec.finish(), &res);
+}
+
+/// PDF/UA is declared (in the XMP, and for PDF/A its schema) only when a structure tree is written.
+#[test]
+fn pdf_ua_is_declared_with_a_structure_tree_only() {
+    let pages = [Page { width: 100.0, height: 60.0, parts: Vec::new(), links: Vec::new(), destinations: Vec::new() }];
+    let structure = [Element::new(Kind::Paragraph, Vec::new())];
+    for archival in [false, true] {
+        let info = Info { title: "UA".into(), archival, ..Info::default() };
+        for (structure, declared) in [(&structure[..], true), (&[][..], false)] {
+            let written = write(&Resources::default(), &pages, structure, &[], &info).expect("writes");
+            let text = String::from_utf8_lossy(&written.bytes);
+            assert_eq!(text.contains("pdfuaid:part"), declared, "archival {archival}, tagged {declared}");
+            assert_eq!(text.contains("pdfaSchema:prefix"), declared && archival, "archival {archival}, tagged {declared}");
+            assert_eq!(text.contains("pdfaid:part"), archival);
+        }
+    }
 }
 
 #[test]
@@ -412,11 +443,11 @@ fn links_notes_and_table_cells_are_tagged() {
     ] {
         assert!(text.contains(key), "{key} is written");
     }
-    // Without PDF/A the metadata still names PDF/UA, without PDF/A's schemas.
+    // Without PDF/A or a structure tree the metadata names neither.
     let info = Info { archival: false, ..info };
     let page = Page { width: 100.0, height: 60.0, parts: Vec::new(), links: Vec::new(), destinations: Vec::new() };
     let text = String::from_utf8_lossy(&write(&Resources::default(), &[page], &[], &[], &info).expect("writes").bytes).into_owned();
-    assert!(text.contains("<pdfuaid:part>1</pdfuaid:part>") && !text.contains("<pdfaid:part>") && !text.contains("<pdfaExtension:schemas>"));
+    assert!(!text.contains("pdfuaid:part") && !text.contains("<pdfaid:part>") && !text.contains("<pdfaExtension:schemas>"));
 }
 
 /// A run that draws .notdef shows its other glyphs as text and its .notdef glyph as an outline, all in the run's

@@ -8,6 +8,8 @@
 //! Layering, lowest first (a module only uses the ones above it):
 //! `geom` → `image`, `font` (ids) → `path`, `paint` → `scene` → `raster` → `cpu`, `gpu`.
 
+#![warn(missing_docs)]
+
 pub use kurbo;
 
 pub mod font;
@@ -31,6 +33,8 @@ pub mod pdf;
 /// What pictures refer to by id, owned by the caller and lent to every frame.
 #[derive(Debug, Default)]
 pub struct Resources {
+    /// The fonts pictures refer to.
     pub fonts: font::FontRegistry,
+    /// The images pictures refer to.
     pub images: image::ImageRegistry,
 }

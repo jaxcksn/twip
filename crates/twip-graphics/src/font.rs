@@ -51,7 +51,9 @@ pub type FontData = Arc<dyn AsRef<[u8]> + Send + Sync>;
 /// Bytes that aren't a readable font, or a face index the file doesn't have.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FontError {
+    /// The face index asked for.
     pub index: u32,
+    /// What was wrong with the bytes.
     pub message: String,
 }
 
@@ -997,6 +999,42 @@ mod tests {
             for matrix in [[0, v, -v, 0], [0, -v, v, 0], [-v, 0, 0, -v], [v, 0, 0, v]] {
                 let m = cache.mask(&fonts, &mut raster, GlyphKey { matrix, ..e });
                 assert!(m.width <= 4096 && m.height <= 4096);
+            }
+        }
+    }
+
+    /// Hinting is vertical-only and keeps linear metrics: along the baseline no point of a glyph the gate sets moves
+    /// more than half a pixel, so its origin and advance stay where layout put them.
+    #[test]
+    fn hinting_keeps_a_glyphs_columns() {
+        let mut fonts = FontRegistry::default();
+        let data = mono();
+        let font = fonts.add(data.clone(), 0, &[]).expect("a face");
+        let f = FontRef::new((*data).as_ref()).expect("the test font reads");
+        let glyphs: Vec<u32> = "EgR&aeHfi".chars().filter_map(|c| f.charmap().map(c)).map(|g| g.to_u32()).collect();
+        assert!(glyphs.len() >= 4, "the test face has the gate's glyphs");
+        let points = |path: &BezPath| -> Vec<kurbo::Point> {
+            use kurbo::PathEl::*;
+            path.elements()
+                .iter()
+                .flat_map(|e| match *e {
+                    MoveTo(p) | LineTo(p) => vec![p],
+                    QuadTo(a, p) => vec![a, p],
+                    CurveTo(a, b, p) => vec![a, b, p],
+                    ClosePath => Vec::new(),
+                })
+                .collect()
+        };
+        for px in [9, 11, 13, 16, 20, 24, 36] {
+            let hinting = fonts.hinting(font, px as f32).expect("the face hints");
+            for &glyph in &glyphs {
+                let (mut plain, mut hinted) = (BezPath::new(), BezPath::new());
+                assert!(fonts.em_outline(font, glyph, &mut plain) && fonts.hinted_outline(font, glyph, &hinting, &mut hinted));
+                plain.apply_affine(kurbo::Affine::scale(px as f64));
+                assert_eq!(plain.elements().len(), hinted.elements().len(), "glyph {glyph} at {px} px keeps its outline's shape");
+                for (a, b) in points(&plain).iter().zip(points(&hinted)) {
+                    assert!((a.x - b.x).abs() <= 0.5, "glyph {glyph} at {px} px: x {} moved to {}", a.x, b.x);
+                }
             }
         }
     }

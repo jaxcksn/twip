@@ -45,7 +45,9 @@ use shade::{Kind, Shader};
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum Format {
     #[default]
+    /// Red, green, blue, alpha.
     Rgba8,
+    /// Blue, green, red, alpha.
     Bgra8,
 }
 
@@ -64,9 +66,13 @@ pub struct Target<'a> {
 /// A buffer too small for the size it was given as, or a stride narrower than a row.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TargetError {
+    /// The buffer's length in bytes.
     pub len: usize,
+    /// The width in pixels.
     pub width: u32,
+    /// The height in pixels.
     pub height: u32,
+    /// The bytes from one row's start to the next's.
     pub stride: usize,
 }
 
@@ -80,6 +86,7 @@ impl fmt::Display for TargetError {
 impl std::error::Error for TargetError {}
 
 impl<'a> Target<'a> {
+    /// A target over `data`, or why it doesn't fit.
     pub fn new(data: &'a mut [u8], width: u32, height: u32, stride: usize, format: Format) -> Result<Target<'a>, TargetError> {
         let error = TargetError { len: data.len(), width, height, stride };
         // Checked: past 2^30 pixels wide, a row's bytes wrap a 32-bit usize.
@@ -128,14 +135,18 @@ impl<'a> Target<'a> {
 /// A picture placed in the frame: `transform` maps its local space to the target's pixels.
 #[derive(Clone, Copy, Debug)]
 pub struct Draw<'a> {
+    /// The picture to draw.
     pub picture: &'a Picture,
+    /// Maps the picture's local space to the target's pixels.
     pub transform: kurbo::Affine,
 }
 
 /// What a frame draws: the target cleared to `clear` (or left as it is), then `draws` in order.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Frame<'a> {
+    /// The colour the target is cleared to first, or `None` to draw over what is there.
     pub clear: Option<Color>,
+    /// The pictures to draw, in order.
     pub draws: &'a [Draw<'a>],
 }
 
@@ -143,7 +154,9 @@ pub struct Frame<'a> {
 /// face or outline didn't read. Each draws nothing.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Stats {
+    /// Image draws that drew nothing.
     pub failed_images: u32,
+    /// Glyphs that drew nothing.
     pub failed_glyphs: u32,
 }
 
@@ -263,6 +276,7 @@ impl Default for Renderer {
 }
 
 impl Renderer {
+    /// A renderer using the best SIMD level the CPU has.
     pub fn new() -> Renderer {
         Renderer::with_level(Level::new())
     }
@@ -304,6 +318,7 @@ impl Renderer {
         self.stats
     }
 
+    /// Draws `frame` into `target`.
     pub fn render(&mut self, target: &mut Target<'_>, resources: &Resources, frame: &Frame<'_>) {
         self.clock += 1;
         self.filtered_pixels = 0;

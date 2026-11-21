@@ -39,12 +39,15 @@ pub(crate) const MAX_DEPTH: u32 = 64;
 /// Twip's own layout (`GlyphRun::glyphs`), so recording it copies nothing but the narrowed values.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct GlyphRun<'a> {
+    /// The face.
     pub font: FontId,
     /// The em size, in local units.
     pub size: f64,
+    /// The y of the baseline, in local units.
     pub baseline: f64,
     /// (glyph id, x of the glyph's origin).
     pub glyphs: &'a [(u32, f64)],
+    /// The styles synthesised for the face.
     pub synthesis: Synthesis,
 }
 
@@ -60,8 +63,11 @@ pub struct Synthesis {
 /// What a clip keeps: drawing outside it is discarded until the matching [`Recorder::pop`]. Clips intersect.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Clip<'a> {
+    /// A rectangle.
     Rect {
+        /// The rectangle, in local units.
         rect: kurbo::Rect,
+        /// Whether its edges are anti-aliased.
         aa: bool,
     },
     /// The non-zero fill of a path, anti-aliased.
@@ -74,7 +80,9 @@ pub enum Clip<'a> {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum FillRule {
     #[default]
+    /// Non-zero winding.
     NonZero,
+    /// Even-odd winding.
     EvenOdd,
 }
 
@@ -83,7 +91,9 @@ pub enum FillRule {
 pub struct Layer<'a> {
     /// In `0.0..=1.0`.
     pub opacity: f32,
+    /// How the layer combines with what is under it.
     pub blend: BlendMode,
+    /// Colour filters applied to the layer, in order.
     pub color_filters: &'a [ColorFilter],
     /// Applied in order, in the layer's local units.
     pub filters: &'a [Filter],
@@ -101,10 +111,16 @@ impl Default for Layer<'_> {
 /// content).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Filter {
-    /// Gaussian blur with standard deviation `sigma`.
-    Blur { sigma: f32 },
+    /// Gaussian blur.
+    Blur {
+        /// The standard deviation.
+        sigma: f32,
+    },
     /// Morphological erosion: each pixel becomes the minimum within `radius`.
-    Erode { radius: f32 },
+    Erode {
+        /// The distance the minimum is taken over.
+        radius: f32,
+    },
 }
 
 /// The largest blur sigma or erode radius drawn, in device pixels (Skia's `kMAX_BLUR_SIGMA`): a layer's buffer grows by
@@ -140,6 +156,7 @@ struct Data {
 }
 
 impl Picture {
+    /// The picture's identifier, unique among pictures.
     pub fn id(&self) -> PictureId {
         self.0.id
     }
@@ -491,6 +508,7 @@ impl Default for Recorder {
 }
 
 impl Recorder {
+    /// An empty recorder.
     pub fn new() -> Recorder {
         Recorder {
             lists: Lists::default(),
@@ -506,6 +524,7 @@ impl Recorder {
         }
     }
 
+    /// Fills `rect` with `paint`.
     pub fn fill_rect<'p>(&mut self, rect: kurbo::Rect, paint: impl Into<Paint<'p>>) {
         let paint = paint.into();
         self.add_bounds(rect.abs());
@@ -764,6 +783,7 @@ impl Recorder {
         self.lists.cmds.push(Cmd::PushTransform { transform });
     }
 
+    /// Intersects the clip with `clip` until the matching [`Recorder::pop`].
     pub fn push_clip(&mut self, clip: Clip<'_>) {
         let (bounds, rec) = match clip {
             Clip::Rect { rect, aa } => (rect.abs(), ClipRec::Rect { rect: Rect::from_kurbo(rect), aa }),
@@ -782,6 +802,7 @@ impl Recorder {
         self.lists.cmds.push(Cmd::PushClip { clip });
     }
 
+    /// Starts a layer until the matching [`Recorder::pop`].
     pub fn push_layer(&mut self, layer: &Layer<'_>) {
         if 1 + self.layers_open + 1 > MAX_DEPTH {
             return self.push_transform(Affine::IDENTITY);
