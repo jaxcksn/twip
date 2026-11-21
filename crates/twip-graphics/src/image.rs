@@ -109,7 +109,13 @@ fn format(d: &[u8]) -> Option<ImageFormat> {
 
 /// What `bytes` say about themselves, reading headers only; `None` when they aren't a supported image.
 pub fn probe(bytes: &[u8]) -> Option<ImageInfo> {
+    probe_with_resolution(bytes).map(|(info, _)| info)
+}
+
+/// [`probe`], and the resolution a JPEG XR file states (pixels per inch), from one parse of the headers.
+pub fn probe_with_resolution(bytes: &[u8]) -> Option<(ImageInfo, Option<(f64, f64)>)> {
     let format = format(bytes)?;
+    let mut resolution = None;
     let (w, h, orientation) = match format {
         ImageFormat::Png => {
             let mut d = zune_png::PngDecoder::new(ZCursor::new(bytes));
@@ -142,7 +148,8 @@ pub fn probe(bytes: &[u8]) -> Option<ImageInfo> {
             (w, h, 1)
         }
         ImageFormat::JpegXr => {
-            let i = jpeg_xr::probe(bytes).ok()?;
+            let i = jpeg_xr::probe_with(bytes, &xr_limits()).ok()?;
+            resolution = i.resolution.map(|(x, y)| (f64::from(x), f64::from(y)));
             (i.width, i.height, i.orientation)
         }
     };
@@ -150,7 +157,7 @@ pub fn probe(bytes: &[u8]) -> Option<ImageInfo> {
         return None;
     }
     let (width, height) = if orientation >= 5 { (h, w) } else { (w, h) };
-    Some(ImageInfo { format, width, height, orientation })
+    Some((ImageInfo { format, width, height, orientation }, resolution))
 }
 
 /// Decodes `bytes` into premultiplied RGBA8, orientation applied.
@@ -171,18 +178,22 @@ pub fn pixels_straight(bytes: &[u8]) -> Result<(u32, u32, Vec<u8>), ImageError> 
     Ok((p.width, p.height, p.data))
 }
 
-/// The resolution a JPEG XR file states, pixels per inch.
-pub fn jpeg_xr_resolution(bytes: &[u8]) -> Option<(f64, f64)> {
-    let (x, y) = jpeg_xr::probe(bytes).ok()?.resolution?;
-    Some((f64::from(x), f64::from(y)))
+/// The decoder's work cap: 4 bytes a coded sample held while it works, 256 MiB, which wasm32 can spare (RGB up to
+/// about 22 million pixels).
+fn xr_limits() -> jpeg_xr::Limits {
+    jpeg_xr::Limits { max_pixels: MAX_PIXELS, ..jpeg_xr::Limits::default() }
 }
 
 /// RGBA8 with the orientation applied, and whether its colour is premultiplied (as a JPEG XR file may store it).
 fn decode_rgba(bytes: &[u8]) -> Result<(Pixmap, bool), ImageError> {
+    // A JPEG XR file is parsed once, by its decode, which bounds a hostile header before it allocates.
+    if format(bytes) == Some(ImageFormat::JpegXr) {
+        return decode_xr(bytes);
+    }
     let info = probe(bytes).ok_or_else(|| error("not a supported image"))?;
     fits(info.width, info.height)?;
     let options = DecoderOptions::default().set_max_width(1 << 16).set_max_height(1 << 16);
-    let mut premultiplied = false;
+    let premultiplied = false;
     let pixels = match info.format {
         ImageFormat::Png => png(bytes, options)?,
         ImageFormat::Jpeg => {
@@ -196,25 +207,27 @@ fn decode_rgba(bytes: &[u8]) -> Result<(Pixmap, bool), ImageError> {
         ImageFormat::Bmp => bmp(bytes, options)?,
         ImageFormat::Ico => ico(bytes, options)?,
         ImageFormat::Wbmp => wbmp(bytes)?,
-        ImageFormat::JpegXr => {
-            // The decoder's default work cap: 4 bytes a coded sample held while it works, 256 MiB, which wasm32 can
-            // spare (RGB up to about 22 million pixels).
-            let limits = jpeg_xr::Limits { max_pixels: MAX_PIXELS, ..jpeg_xr::Limits::default() };
-            let mut i = jpeg_xr::decode_rgba8(bytes, &limits).map_err(error)?;
-            premultiplied = i.premultiplied;
-            if premultiplied {
-                // Lossy coding can put colour above its alpha, which premultiplied pixels never have.
-                for p in i.data.as_chunks_mut::<4>().0 {
-                    let a = p[3];
-                    for c in &mut p[..3] {
-                        *c = (*c).min(a);
-                    }
-                }
-            }
-            Pixmap { width: i.width, height: i.height, data: i.data }
-        }
+        ImageFormat::JpegXr => unreachable!("decoded above"),
     };
     Ok((orient(pixels, info.orientation), premultiplied))
+}
+
+fn decode_xr(bytes: &[u8]) -> Result<(Pixmap, bool), ImageError> {
+    let mut i = jpeg_xr::decode_rgba8(bytes, &xr_limits()).map_err(error)?;
+    let premultiplied = i.premultiplied;
+    if premultiplied {
+        // Lossy coding can put colour above its alpha, which premultiplied pixels never have.
+        for p in i.data.as_chunks_mut::<4>().0 {
+            let a = p[3];
+            for c in &mut p[..3] {
+                *c = (*c).min(a);
+            }
+        }
+    }
+    let (w, h) = if i.orientation >= 5 { (i.height, i.width) } else { (i.width, i.height) };
+    fits(w, h)?;
+    let pixmap = orient(Pixmap { width: i.width, height: i.height, data: i.data }, i.orientation);
+    Ok((pixmap, premultiplied))
 }
 
 /// `bytes` decoded (orientation applied): width, height and premultiplied RGBA8 pixels, rows packed. Fails for bytes

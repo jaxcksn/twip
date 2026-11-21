@@ -6,19 +6,14 @@ pub fn image_info(data: &[u8]) -> Option<(f64, f64, f64, f64)> {
         return Some((size.0 * 96.0 / 72.0, size.1 * 96.0 / 72.0, 96.0, 96.0));
     }
     // The probe's size already has the EXIF orientation applied: a quarter turn swaps it.
-    let info = twip_graphics::image::probe(data)?;
-    let (dx, dy) = dpi(data);
+    let (info, xr) = twip_graphics::image::probe_with_resolution(data)?;
+    let (dx, dy) = xr.unwrap_or_else(|| dpi(data));
     let (w, h) = (f64::from(info.width), f64::from(info.height));
     Some(if info.orientation >= 5 { (w, h, dy, dx) } else { (w, h, dx, dy) })
 }
 
-/// PNG `pHYs`, JPEG JFIF density or JPEG XR resolution, else 96 dpi.
+/// PNG `pHYs` or JPEG JFIF density, else 96 dpi.
 fn dpi(d: &[u8]) -> (f64, f64) {
-    if d.starts_with(&[0x49, 0x49, 0xBC])
-        && let Some(r) = twip_graphics::image::jpeg_xr_resolution(d)
-    {
-        return r;
-    }
     let be = |p: usize| u32::from_be_bytes([d[p], d[p + 1], d[p + 2], d[p + 3]]);
     if d.len() > 16 && d[0] == 0x89 && d[1] == b'P' {
         let mut p = 8;
