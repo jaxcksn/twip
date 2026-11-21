@@ -1074,7 +1074,7 @@ impl PictureAdjustChange {
             if let crate::api::value::NoneOr::Value(c) = t {
                 let mut to = crate::drawing::colour::Colour::srgb(c.0);
                 to.mods.push(crate::drawing::colour::ColourMod::Alpha(Pct(0)));
-                out.push(A::ClrChange { from: crate::drawing::colour::Colour::srgb(c.0), to });
+                out.push(A::ClrChange { from: crate::drawing::colour::Colour::srgb(c.0), to, use_a: true });
             }
         }
         Ok(out)

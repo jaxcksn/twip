@@ -123,10 +123,12 @@ pub enum BlipAdjust {
     },
     BiLevel(Pct),
     Duotone([Colour; 2]),
-    /// Set Transparent Colour (`a:clrChange`): `from` is drawn as `to`.
+    /// Set Transparent Colour (`a:clrChange`): `from` is drawn as `to`. With `use_a` (`useA`, on by default) alpha
+    /// counts in the match and the result; without it the pixel keeps its own alpha.
     ClrChange {
         from: Colour,
         to: Colour,
+        use_a: bool,
     },
 }
 
@@ -169,7 +171,7 @@ impl BlipFill {
                         let c = |name: &str| {
                             e.children().find(|c| c.tag_name().name() == name)?.children().filter(Node::is_element).find_map(Colour::parse)
                         };
-                        BlipAdjust::ClrChange { from: c("clrFrom")?, to: c("clrTo")? }
+                        BlipAdjust::ClrChange { from: c("clrFrom")?, to: c("clrTo")?, use_a: !matches!(e.attribute("useA"), Some("0" | "false")) }
                     }
                     _ => return None,
                 })
@@ -665,10 +667,12 @@ pub enum ResolvedBlipAdjust {
     },
     BiLevel(f64),
     Duotone([Rgba; 2]),
-    /// Pixels within one level of `from` in every channel are drawn as `to`.
+    /// Pixels within one level of `from` in every channel (alpha too, with `use_a`) are drawn as `to`, keeping their
+    /// own alpha without `use_a`.
     ClrChange {
         from: Rgba,
         to: Rgba,
+        use_a: bool,
     },
 }
 
@@ -732,7 +736,9 @@ pub fn paint(f: &Fill, p: Palette, ph: Option<Rgba>, group: &Paint) -> Paint {
                     BlipAdjust::Lum { bright, contrast } => ResolvedBlipAdjust::Lum { bright: bright.fraction(), contrast: contrast.fraction() },
                     BlipAdjust::BiLevel(t) => ResolvedBlipAdjust::BiLevel(t.fraction()),
                     BlipAdjust::Duotone([a, b]) => ResolvedBlipAdjust::Duotone([p.colour(a, ph), p.colour(b, ph)]),
-                    BlipAdjust::ClrChange { from, to } => ResolvedBlipAdjust::ClrChange { from: p.colour(from, ph), to: p.colour(to, ph) },
+                    BlipAdjust::ClrChange { from, to, use_a } => {
+                        ResolvedBlipAdjust::ClrChange { from: p.colour(from, ph), to: p.colour(to, ph), use_a: *use_a }
+                    }
                 })
                 .collect(),
             rot_with_shape: b.rot_with_shape,

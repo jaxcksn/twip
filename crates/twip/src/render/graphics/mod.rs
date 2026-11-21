@@ -65,7 +65,7 @@ pub struct Graphics {
     /// 8×8 pattern fills' tiles: the bits, then the foreground and background colours.
     tiles: HashMap<([u8; 8], [u8; 4], [u8; 4]), Option<ImageId>>,
     /// Pictures with a colour changed (`a:clrChange`), by picture, the colour and what it becomes.
-    recoloured: HashMap<(ImageId, [u8; 4], [u8; 4]), shape::Recoloured>,
+    recoloured: HashMap<(ImageId, [u8; 4], [u8; 4], bool), shape::Recoloured>,
     recoloured_bytes: u64,
     /// The frame being recorded, and the pictures with a changed colour drawn since a page recording began.
     frames: u64,
@@ -242,6 +242,9 @@ impl Graphics {
         };
         let (i0, i1) = (((area.x0 - x) / w).floor(), ((area.x1 - x) / w).ceil());
         let (j0, j1) = (((area.y0 - y) / h).floor(), ((area.y1 - y) / h).ceil());
+        if !(i1 > i0 && j1 > j0) {
+            return;
+        }
         if (i1 - i0) * (j1 - j0) <= MAX_TILES as f64 {
             for j in j0 as i64..j1 as i64 {
                 for i in i0 as i64..i1 as i64 {
@@ -263,7 +266,7 @@ impl Graphics {
         let mut mosaic = Recorder::new();
         mosaic.push_transform(Affine::scale(k));
         for (i, j) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
-            mosaic.picture(&tile, place(i, j) * Affine::translate((-x, -y)));
+            mosaic.picture(&tile, Affine::translate((-x, -y)) * place(i, j));
         }
         mosaic.pop();
         let mosaic = mosaic.finish();
@@ -451,9 +454,76 @@ impl Graphics {
         draw(&self.res, &cpu::Frame { clear: self.clear, draws: &draws }, &mut self.cpu)
     }
 
-    /// PDF export: one page item recorded into `rec`, in the page's points.
+    /// One item recorded into `rec`, in the points it is in.
     pub fn record_item(&mut self, rec: &mut Recorder, r: &Renderer, item: &Item, images: &[Vec<u8>]) {
         self.item(rec, r, false, item, images);
+    }
+
+    /// [`Graphics::record_item`] for an item of `page` in the page's points, which holds the text of an inline shape's
+    /// text box: PDF export.
+    pub fn record_page_item(
+        &mut self,
+        rec: &mut Recorder,
+        r: &Renderer,
+        page: &crate::layout::fragment::PageFragment,
+        item: &Item,
+        images: &[Vec<u8>],
+    ) {
+        if let Item::Shape(s) = item
+            && self.inline_reflection(rec, r, false, s, page, (0.0, 0.0), images)
+        {
+            return;
+        }
+        self.item(rec, r, false, item, images);
+    }
+
+    /// A reflected inline shape drawn with the text of its text box, which the page holds in a float of its own (`shift`
+    /// takes that text to the shape's frame); false when the shape isn't one.
+    fn inline_reflection(
+        &mut self,
+        rec: &mut Recorder,
+        r: &Renderer,
+        own: bool,
+        s: &crate::layout::fragment::ShapeItem,
+        page: &crate::layout::fragment::PageFragment,
+        shift: (f64, f64),
+        images: &[Vec<u8>],
+    ) -> bool {
+        if s.text_float == 0 || s.picture || s.effects.reflection.is_none() {
+            return false;
+        }
+        let text: Vec<Item> =
+            paint_float(page, FloatId(s.text_float)).into_iter().filter(|i| matches!(i, Item::Glyphs(_) | Item::Turned(_))).collect();
+        self.reflecting(rec, r, own, s, &text, shift, images);
+        true
+    }
+
+    /// A shape drawn with `text` (in the page's frame, moved by `shift` into the shape's) in its reflection. The text is
+    /// drawn as shapes, not as text: its own copy is the only one a PDF can select.
+    fn reflecting(
+        &mut self,
+        rec: &mut Recorder,
+        r: &Renderer,
+        own: bool,
+        s: &crate::layout::fragment::ShapeItem,
+        text: &[Item],
+        shift: (f64, f64),
+        images: &[Vec<u8>],
+    ) {
+        self.shape_with_text(
+            rec,
+            s,
+            images,
+            Some(&mut |g, rec, back| {
+                let with_text = std::mem::replace(&mut g.with_text, false);
+                rec.push_transform(back * Affine::translate(shift));
+                for item in text {
+                    g.item(rec, r, own, item, images);
+                }
+                rec.pop();
+                g.with_text = with_text;
+            }),
+        );
     }
 
     /// The fonts and images recorded pictures draw with.
@@ -504,30 +574,9 @@ impl Graphics {
                 rec.push_transform(Affine::translate((p.dx, p.dy)));
                 at = Some((p.dx, p.dy, p.clip));
             }
-            // A shape with a reflection and text over it: the reflection holds the text.
             if let Item::Shape(s) = p.item
-                && s.effects.reflection.is_some()
-                && !s.picture
-                && (s.float | s.text_float) != 0
+                && self.inline_reflection(rec, r, p.own_colours, s, page, (-p.dx, -p.dy), images)
             {
-                let own = p.own_colours;
-                let items: Vec<Item> = paint_float(page, FloatId(if s.float != 0 { s.float } else { s.text_float }))
-                    .into_iter()
-                    .filter(|i| matches!(i, Item::Glyphs(_) | Item::Turned(_)))
-                    .collect();
-                let (dx, dy) = (p.dx, p.dy);
-                self.shape_with_text(
-                    rec,
-                    s,
-                    images,
-                    Some(&mut |g, rec, back| {
-                        rec.push_transform(back * Affine::translate((-dx, -dy)));
-                        for item in &items {
-                            g.item(rec, r, own, item, images);
-                        }
-                        rec.pop();
-                    }),
-                );
                 return;
             }
             self.item(rec, r, p.own_colours, p.item, images);
@@ -606,6 +655,10 @@ impl Graphics {
                 }
             }
             Item::Shape(s) if s.ink && !own && !r.appearance.is_identity() => self.shape(rec, &ink_shape(r, s), images),
+            Item::Shape(s) if s.effects.reflection.is_some() && !s.picture && s.text.is_some() => {
+                let text = s.text.as_ref().map_or(&[][..], |t| &t.0);
+                self.reflecting(rec, r, own, s, text, (0.0, 0.0), images);
+            }
             Item::Shape(s) => self.shape(rec, s, images),
             Item::Turned(t) => {
                 rec.push_transform(Affine::rotate_about(t.deg.to_radians(), kurbo::Point::new(t.centre[0], t.centre[1])));
@@ -815,6 +868,7 @@ mod ink_tests {
             snap: false,
             clip_bottom: None,
             text_float: 0,
+            text: None,
             of: Default::default(),
             text_path: None,
         };

@@ -258,3 +258,37 @@ fn a_conversion_reports_the_fonts_an_editor_session_does() {
     let fallbacks = converted.warnings.iter().filter(|w| w.code == crate::api::warning::WarningCode::PdfFontFallback).count();
     assert!(fallbacks >= 1, "{:?}", converted.warnings);
 }
+
+#[test]
+fn a_reflection_holds_its_text_as_drawing_not_as_a_second_copy() {
+    let shape = |reflected: &str| {
+        format!(
+            r#"<w:p>{}</w:p>"#,
+            crate::layout::tests::shapes::anchor(
+                100,
+                100,
+                100,
+                60,
+                1,
+                false,
+                1,
+                &format!(
+                    r#"<wps:wsp><wps:cNvSpPr txBox="0"/><wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="1270000" cy="762000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill>{reflected}</wps:spPr><wps:txbx><w:txbxContent><w:p><w:r><w:rPr><w:sz w:val="80"/></w:rPr><w:t>MM</w:t></w:r></w:p></w:txbxContent></wps:txbx><wps:bodyPr/></wps:wsp>"#
+                )
+            )
+        )
+    };
+    let text_of = |reflected: &str| {
+        let doc = crate::docx::read(&crate::layout::tests::shapes::bytes(&shape(reflected)).expect("a package")).expect("reads");
+        let snap = crate::layout::layout(&doc, &crate::layout::tests::fonts());
+        let (bytes, _) = export::export(&doc, &snap, "t", &PdfOptions::default(), None).expect("exports");
+        output::dump(bytes)
+    };
+    let plain = text_of("");
+    let reflected =
+        text_of(r#"<a:effectLst><a:reflection stA="100000" endA="100000" dir="5400000" sy="-100000" algn="b" rotWithShape="0"/></a:effectLst>"#);
+    assert_eq!(plain.matches("MM").count(), 1, "{plain}");
+    assert_eq!(reflected.matches("MM").count(), 1, "the reflection's glyphs are not text: {reflected}");
+    assert_eq!(plain.matches('\u{FFFD}').count(), 0);
+    assert_eq!(reflected.matches('\u{FFFD}').count(), 2, "the reflection draws its two glyphs without text");
+}

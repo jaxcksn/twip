@@ -57,6 +57,7 @@ fn check_box(x: f64, base: f64, advance: f64, e: f64, checked: bool, colour: Opt
         snap: false,
         clip_bottom: None,
         text_float: 0,
+        text: None,
         of: Default::default(),
         text_path: None,
     }))
@@ -262,9 +263,11 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
                     let of = first.map_or(PictureOf::None, |u| PictureOf::Inline(q, u));
                     match pic.shape.as_deref() {
                         Some(shape) => {
-                            // A reflection of an inline picture stops at the bottom of its paragraph, spacing after included.
-                            let reflected = shape.pic().is_some_and(|p| p.effects.as_ref().is_some_and(|e| e.reflection.is_some()));
-                            let clip = reflected.then(|| {
+                            let mut items = crate::layout::story::shape_items(shape, rect, 0, false, o.palette, None, of, fonts);
+                            // A reflection of an inline picture, in a group too, stops at the bottom of its paragraph, spacing
+                            // after included.
+                            let reflected = |s: &crate::layout::fragment::ShapeItem| s.picture && s.effects.reflection.is_some();
+                            if items.iter().any(|s| reflected(s)) {
                                 let style = src.para_style_in(o.review.view);
                                 let after = if style.after_auto && o.html_auto_spacing { 14.0 } else { style.space_after };
                                 let to_bottom = match o.below {
@@ -272,12 +275,13 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
                                     Below::Last => line.pitch,
                                     Below::To(d) => d,
                                 };
-                                top + to_bottom + after
-                            });
-                            let mut items = crate::layout::story::shape_items(shape, rect, 0, false, o.palette, clip, of, fonts);
+                                let clip = top + to_bottom + after;
+                                // Made just now, so unshared.
+                                items.iter_mut().filter_map(Rc::get_mut).filter(|s| reflected(s)).for_each(|s| s.clip_bottom = Some(clip));
+                            }
                             if let Some(t) = &pic.text {
                                 // Made just now, so unshared.
-                                items.iter_mut().filter_map(Rc::get_mut).for_each(|s| s.text_float = t.id);
+                                items.iter_mut().filter_map(Rc::get_mut).filter(|s| s.path.is_empty()).for_each(|s| s.text_float = t.id);
                             }
                             out.extend(items.into_iter().map(Item::Shape))
                         }
@@ -586,7 +590,7 @@ fn draw_decorations(o: &LineOrigin, line: &Line, base: f64, bg_at: usize, behind
             },
             None => {
                 if let Some(fill) = fill {
-                    join(&mut bg, rect, fill);
+                    join(&mut bg, rect, fill, true);
                 }
             }
         }
@@ -651,21 +655,22 @@ fn draw_decorations(o: &LineOrigin, line: &Line, base: f64, bg_at: usize, behind
     out.extend(fg);
 }
 
-/// Pushes a solid rect, or grows the one just before it that it continues (same colour and height, touching).
-fn join(v: &mut Vec<Item>, r: [f64; 4], c: u32) {
-    let joins = |it: &&mut Item| matches!(it, Item::Rect { rect: l, colour: lc, dash: crate::layout::fragment::Dash::Solid, .. } if *lc == c && (l[1] - r[1]).abs() < EPS && (l[3] - r[3]).abs() < EPS && (r[0] - l[2]).abs() < 0.01);
+/// Pushes a solid rect (aliased with `snap`: shading), or grows the one just before it that it continues (same colour,
+/// snapping and height, touching).
+fn join(v: &mut Vec<Item>, r: [f64; 4], c: u32, snap: bool) {
+    let joins = |it: &&mut Item| matches!(it, Item::Rect { rect: l, colour: lc, snap: ls, dash: crate::layout::fragment::Dash::Solid } if *lc == c && *ls == snap && (l[1] - r[1]).abs() < EPS && (l[3] - r[3]).abs() < EPS && (r[0] - l[2]).abs() < 0.01);
     match v.iter_mut().rev().take(4).find(joins) {
         Some(Item::Rect { rect: last, .. }) => last[2] = r[2],
-        _ => v.push(Item::rect(r, c)),
+        _ => v.push(if snap { Item::fill(r, c) } else { Item::rect(r, c) }),
     }
 }
 
 /// A decoration's rect in colour `c`, over the run's effect copies of it.
 fn lines(v: &mut Vec<Item>, r: [f64; 4], c: u32, copies: &Copies) {
     for &(dx, dy, tone) in copies.iter().flatten() {
-        join(v, [r[0] + dx, r[1] + dy, r[2] + dx, r[3] + dy], tone);
+        join(v, [r[0] + dx, r[1] + dy, r[2] + dx, r[3] + dy], tone, false);
     }
-    join(v, r, c);
+    join(v, r, c, false);
 }
 
 // Character effects
@@ -949,21 +954,29 @@ pub fn draw_label(text: &str, run: &Run, x_end: f64, y: f64, (page_colour, palet
     if x < 0.0 {
         return out;
     }
+    // Pieces alike in face, size and paint are one run, so a gradient spans the whole label.
+    let mut run: Option<GlyphRunBuilder> = None;
     for (i, p) in sp.pieces.iter().enumerate() {
         let st = &sp.styles[p.style as usize];
         let Some(face) = &st.face else { continue };
         let scale = face.scale(st.size);
-        let mut r = GlyphRunBuilder {
-            face: face.clone(),
-            size: st.size,
-            y,
-            glyphs: Vec::new(),
-            chars: Vec::new(),
-            color: st.run.color,
-            para: None,
-            x,
-            paint: glyph_paint(&st.run, st.size, st.run.color, under_text(&st.run, None, page_colour), palette),
-        };
+        let paint = glyph_paint(&st.run, st.size, st.run.color, under_text(&st.run, None, page_colour), palette);
+        let same = run.as_ref().is_some_and(|r| Rc::ptr_eq(&r.face, face) && r.size == st.size && r.color == st.run.color && r.paint == paint);
+        if !same {
+            out.extend(run.take().map(|r| Item::Glyphs(r.finish())));
+            run = Some(GlyphRunBuilder {
+                face: face.clone(),
+                size: st.size,
+                y,
+                glyphs: Vec::new(),
+                chars: Vec::new(),
+                color: st.run.color,
+                para: None,
+                x,
+                paint,
+            });
+        }
+        let Some(r) = run.as_mut() else { continue };
         let mut gx = x;
         for (id, advance, dx) in sp.glyphs(i) {
             r.glyphs.push((id, gx + dx * scale));
@@ -972,9 +985,9 @@ pub fn draw_label(text: &str, run: &Run, x_end: f64, y: f64, (page_colour, palet
         for c in text_of(&sp, p).chars() {
             r.chars.push((c, x, None));
         }
-        out.push(Item::Glyphs(r.finish()));
         x += p.width;
     }
+    out.extend(run.map(|r| Item::Glyphs(r.finish())));
     out
 }
 
@@ -1015,6 +1028,21 @@ mod tests {
                 assert!(out.is_empty(), "{form} at {v}");
             }
         }
+    }
+
+    /// A label's digits are one glyph run (one paint to fit a gradient to), as long as they share face, size and paint.
+    #[test]
+    fn a_labels_pieces_alike_are_one_run() {
+        let (theme, map) = (crate::drawing::theme::Theme::default(), crate::drawing::theme::ColourMap::default());
+        let palette = Palette { theme: &theme, map: &map };
+        let fonts = crate::layout::tests::output::bundled_fonts();
+        let Some(doc) = crate::layout::tests::plain_doc(&["x".into()]) else { return };
+        let Some(Block::Para(p)) = doc.sections[0].blocks.first() else { unreachable!() };
+        let base = p.inlines.iter().find_map(Inline::run).expect("a run");
+        let run: Run = Rc::new(RunStyle { outline: true, ..(**base).clone() });
+        let items = draw_label("12", &run, 100.0, 20.0, (None, palette), &fonts);
+        let [Item::Glyphs(g)] = items.as_slice() else { panic!("{} items", items.len()) };
+        assert_eq!(g.chars.iter().map(|c| c.0).collect::<String>(), "12");
     }
 
     #[test]

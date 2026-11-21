@@ -240,6 +240,17 @@ pub(super) fn blur_layer(rec: &mut Recorder, sigma: f32, opacity: f32, bounds: O
     rec.push_layer(&Layer { opacity, filters: if sigma > 0.0 { &filters } else { &[] }, bounds, ..Layer::default() });
 }
 
+/// Opens a layer carrying `adjust`'s opacity and colour filters over a vector picture; false (nothing opened) when it
+/// has none.
+fn push_adjust(rec: &mut Recorder, adjust: &[ResolvedBlipAdjust]) -> bool {
+    let (filters, alpha) = picture_adjust(adjust);
+    let layered = !filters.is_empty() || alpha < 1.0;
+    if layered {
+        rec.push_layer(&Layer { opacity: alpha, color_filters: &filters, ..Layer::default() });
+    }
+    layered
+}
+
 /// The picture adjustments as colour filters in the order they apply, and the opacity they leave.
 fn picture_adjust(adjust: &[ResolvedBlipAdjust]) -> (Vec<ColorFilter>, f32) {
     const L: [f32; 3] = [0.2126, 0.7152, 0.0722];
@@ -432,7 +443,7 @@ impl Graphics {
 
     /// The page background's fill over a `size` page (in its points), when it has one: drawn as a shape's fill is.
     pub(super) fn page_fill(&mut self, rec: &mut Recorder, r: &super::Renderer, size: [f64; 2], images: &[Vec<u8>]) {
-        let Some(fill) = &r.page_fill else { return };
+        let Some(fill) = r.page_fill() else { return };
         let mut page = BezPath::new();
         rect_path(kurbo::Rect::new(0.0, 0.0, size[0], size[1])).into_iter().for_each(|e| page.push(e));
         self.fill(rec, &page, fill, PathFill::Norm, size, 0.0, [0.0, 0.0], images);
@@ -638,15 +649,23 @@ impl Graphics {
         rec.pop();
     }
 
-    /// The picture `key` names with its pixels within one level of `from` in every channel drawn as `to`, made on first
-    /// use: the decoded pixels changed in place and handed to the registry, so a large picture costs what drawing it
-    /// does (twip-graphics reads at most 2^28 pixels). A picture that doesn't decode is the picture as it is. They are
-    /// kept by the registry's id of the picture, which no other document's picture shares, and dropped to
-    /// [`RECOLOUR_MAX_BYTES`] between frames by [`Graphics::trim_recoloured`].
-    pub(super) fn recoloured(&mut self, key: ImageKey, from: Rgba, to: Rgba, images: &[Vec<u8>]) -> Option<twip_graphics::image::ImageId> {
+    /// The picture `key` names with its pixels within one level of `from` in every channel (alpha too, with `use_a`)
+    /// drawn as `to` (without `use_a`, in the pixel's own alpha), made on first use: the decoded pixels changed in place
+    /// and handed to the registry, so a large picture costs what drawing it does (twip-graphics reads at most 2^28
+    /// pixels). A picture that doesn't decode is the picture as it is. They are kept by the registry's id of the
+    /// picture, which no other document's picture shares, and dropped to [`RECOLOUR_MAX_BYTES`] between frames by
+    /// [`Graphics::trim_recoloured`].
+    pub(super) fn recoloured(
+        &mut self,
+        key: ImageKey,
+        from: Rgba,
+        to: Rgba,
+        use_a: bool,
+        images: &[Vec<u8>],
+    ) -> Option<twip_graphics::image::ImageId> {
         let base = self.image(key, images)?;
         let info = self.res.images.info(base)?;
-        let k = (base, [from.r, from.g, from.b, from.a], [to.r, to.g, to.b, to.a]);
+        let k = (base, [from.r, from.g, from.b, from.a], [to.r, to.g, to.b, to.a], use_a);
         let frame = self.frames;
         if let Some(r) = self.recoloured.get_mut(&k) {
             r.last = frame;
@@ -660,8 +679,10 @@ impl Graphics {
             key.index.and_then(|i| images.get(i)).and_then(|bytes| twip_graphics::image::pixels_straight(bytes).ok()).and_then(|(w, h, mut px)| {
                 let near = |a: u8, b: u8| a.abs_diff(b) <= 1;
                 for p in px.as_chunks_mut::<4>().0 {
-                    if p[3] != 0 && near(p[0], from.r) && near(p[1], from.g) && near(p[2], from.b) {
-                        p.copy_from_slice(&[to.r, to.g, to.b, to.a]);
+                    let seen = if use_a { near(p[3], from.a) } else { p[3] != 0 };
+                    if seen && near(p[0], from.r) && near(p[1], from.g) && near(p[2], from.b) {
+                        let a = if use_a { to.a } else { p[3] };
+                        p.copy_from_slice(&[to.r, to.g, to.b, a]);
                     }
                 }
                 self.res.images.add_pixels(w, h, px).ok()
@@ -757,18 +778,22 @@ impl Graphics {
                 }
             }
             Fill::Hatch { .. } => self.shade(rec, path, fill, true),
-            Fill::Picture { image, src, mode: BlipMode::Stretch(f), .. }
+            Fill::Picture { image, src, mode: BlipMode::Stretch(f), adjust, .. }
                 if image.and_then(|i| images.get(i)).is_some_and(|b| crate::docx::image::vector(b).is_some()) =>
             {
                 // A vector picture: the box the stretch fills, the crop cut from it, clipped to the shape.
                 let f = f.map(|v| v.fraction());
                 let (w, h) = (size[0], size[1]);
                 let dst = kurbo::Rect::new(f[0] * w, f[1] * h, w - f[2] * w, h - f[3] * h);
+                let layered = push_adjust(rec, adjust);
                 rec.push_clip(Clip::Path(path.elements()));
                 self.vector(rec, ImageKey { index: *image, generation: 0 }, images, dst, src.map(|v| v.fraction()));
                 rec.pop();
+                if layered {
+                    rec.pop();
+                }
             }
-            Fill::Picture { image, src, mode: BlipMode::Tile { tx, ty, sx, sy, flip, align }, .. }
+            Fill::Picture { image, src, mode: BlipMode::Tile { tx, ty, sx, sy, flip, align }, adjust, .. }
                 if image.and_then(|i| images.get(i)).is_some_and(|b| crate::docx::image::vector(b).is_some()) =>
             {
                 // A vector picture tiled: at its own size (an SVG without one fills the box), each tile its picture.
@@ -780,19 +805,23 @@ impl Graphics {
                 let (iw, ih) = natural.unwrap_or((size[0] / 0.75, size[1] / 0.75));
                 let (ox, oy, tw, th) = tile_place((iw, ih), (*tx, *ty, *sx, *sy, *align), size);
                 let key = ImageKey { index: *image, generation: 0 };
+                let layered = push_adjust(rec, adjust);
                 rec.push_clip(Clip::Path(path.elements()));
                 self.vector_tiles(rec, key, images, (ox, oy, tw, th), src.map(|v| v.fraction()), *flip, path.bounding_box());
                 rec.pop();
+                if layered {
+                    rec.pop();
+                }
             }
             Fill::Picture { image, src, mode: blip, adjust, .. } => {
                 let (filters, alpha) = picture_adjust(adjust);
                 let key = ImageKey { index: *image, generation: 0 };
                 let change = adjust.iter().find_map(|a| match a {
-                    ResolvedBlipAdjust::ClrChange { from, to } => Some((*from, *to)),
+                    ResolvedBlipAdjust::ClrChange { from, to, use_a } => Some((*from, *to, *use_a)),
                     _ => None,
                 });
                 let id = match change {
-                    Some((from, to)) => self.recoloured(key, from, to, images),
+                    Some((from, to, use_a)) => self.recoloured(key, from, to, use_a, images),
                     None => self.image(key, images),
                 };
                 let Some((id, info)) = id.and_then(|id| Some((id, self.res.images.info(id)?))) else {

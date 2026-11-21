@@ -145,7 +145,7 @@ pub fn export_with(
                     }
                     clip = p.clip;
                 }
-                graphics.record_item(&mut rec, &renderer, &item, &doc.images);
+                graphics.record_page_item(&mut rec, &renderer, page, &item, &doc.images);
             }
         }
         if let Some(m) = current {

@@ -164,11 +164,17 @@ fn stripes(b: &Border) -> Vec<f64> {
 }
 
 pub(in crate::layout) fn edge(out: &mut Vec<Item>, rect: [f64; 4], horizontal: bool, far: bool, b: &Border) {
+    edge_from(out, rect, horizontal, far, b, 0.0);
+}
+
+/// [`edge`] for the stretch of a longer edge that starts `phase` points along it: a wave or a hatch carries on from
+/// there instead of starting over.
+pub(in crate::layout) fn edge_from(out: &mut Vec<Item>, rect: [f64; 4], horizontal: bool, far: bool, b: &Border, phase: f64) {
     // Hairline: drawn as sz 1
     if b.width < HAIRLINE && drawn(b) {
         let h = Border { width: HAIRLINE, ..b.clone() };
         let ([x0, y0, x1, y1], t) = (rect, thick(&h));
-        return edge(out, if horizontal { [x0, y0, x1, y0 + t] } else { [x0, y0, x0 + t, y1] }, horizontal, far, &h);
+        return edge_from(out, if horizontal { [x0, y0, x1, y0 + t] } else { [x0, y0, x0 + t, y1] }, horizontal, far, &h, phase);
     }
     let colour = b.color.unwrap_or(0);
     let [x0, y0, x1, y1] = rect;
@@ -187,9 +193,9 @@ pub(in crate::layout) fn edge(out: &mut Vec<Item>, rect: [f64; 4], horizontal: b
         return;
     }
     match b.style.as_str() {
-        "wave" => return wave(out, rect, horizontal, 1, colour),
-        "doubleWave" => return wave(out, rect, horizontal, 2, colour),
-        "dashDotStroked" => return hatch(out, rect, horizontal, colour),
+        "wave" => return wave(out, rect, horizontal, 1, colour, phase),
+        "doubleWave" => return wave(out, rect, horizontal, 2, colour, phase),
+        "dashDotStroked" => return hatch(out, rect, horizontal, colour, phase),
         // Outset is light at the top and left and dark at the bottom and right; inset the other way.
         "outset" | "inset" => {
             let [light, _, dark] = tones(b.color.unwrap_or(0xA0A0A0));
@@ -279,6 +285,7 @@ fn stroke_shape(rect: [f64; 4], width: f64, colour: u32, segs: Vec<Seg>) -> Rc<S
         snap: false,
         clip_bottom: None,
         text_float: 0,
+        text: None,
         of: Default::default(),
         text_path: None,
     })
@@ -336,8 +343,8 @@ pub(in crate::layout) fn diagonal(out: &mut Vec<Item>, rect: [f64; 4], up: bool,
 }
 
 /// `waves` zigzags of a wave border along the edge, stacked across it; the rect's thickness scales Word's size down
-/// when it is smaller.
-fn wave(out: &mut Vec<Item>, rect: [f64; 4], horizontal: bool, waves: usize, colour: u32) {
+/// when it is smaller. `phase` is how far along the whole edge the rect starts.
+fn wave(out: &mut Vec<Item>, rect: [f64; 4], horizontal: bool, waves: usize, colour: u32, phase: f64) {
     let [x0, y0, x1, y1] = rect;
     let (len, across) = if horizontal { (x1 - x0, y1 - y0) } else { (y1 - y0, x1 - x0) };
     if !(len > EPS && across > 0.0) {
@@ -347,26 +354,35 @@ fn wave(out: &mut Vec<Item>, rect: [f64; 4], horizontal: bool, waves: usize, col
     let stroke = WAVE_STROKE.min(across / 3.0).max(MIN_STROKE.min(across));
     let height = ((across - stroke) / waves as f64).min(WAVE_HEIGHT);
     let half = (WAVE_HALF * height / WAVE_HEIGHT).max(len / MAX_SEGMENTS);
+    // The half period the rect starts in, and how far through it.
+    let (first, into) = if phase.is_finite() { ((phase / half).floor(), phase.rem_euclid(half)) } else { (0.0, 0.0) };
     let mut segs = Vec::new();
     for w in 0..waves {
         let mid = stroke / 2.0 + height * (w as f64 + 0.5);
-        let crest = |i: f64| mid + if i % 2.0 == 0.0 { -height / 2.0 } else { height / 2.0 };
-        let steps = (len / half).floor();
-        segs.push(Seg::Move([0.0, crest(0.0)]));
-        for i in 1..=steps as usize {
-            segs.push(Seg::Line([i as f64 * half, crest(i as f64)]));
+        let crest = |i: f64| mid + if i.rem_euclid(2.0) == 0.0 { -height / 2.0 } else { height / 2.0 };
+        let between = |i: f64, share: f64| crest(i) + (crest(i + 1.0) - crest(i)) * share;
+        segs.push(Seg::Move([0.0, between(first, into / half)]));
+        // Each vertex is a crest or a trough, `half` apart, the first at the end of the half period the rect starts in.
+        let lead = half - into;
+        let steps = ((len - lead) / half).floor().max(-1.0) + 1.0;
+        for i in 0..steps as usize {
+            segs.push(Seg::Line([lead + i as f64 * half, crest(first + 1.0 + i as f64)]));
         }
-        let rest = len - steps * half;
+        let at = if steps > 0.0 { lead + (steps - 1.0) * half } else { 0.0 };
+        let rest = len - at;
         if rest > EPS {
-            let (from, to) = (crest(steps), crest(steps + 1.0));
-            segs.push(Seg::Line([len, from + (to - from) * rest / half]));
+            let (from, to) =
+                if steps > 0.0 { (crest(first + steps), crest(first + steps + 1.0)) } else { (between(first, into / half), crest(first + 1.0)) };
+            let span = if steps > 0.0 { half } else { lead };
+            segs.push(Seg::Line([len, from + (to - from) * rest / span]));
         }
     }
     stroked(out, rect, horizontal, height * waves as f64 + stroke, stroke, colour, segs);
 }
 
-/// A `dashDotStroked` border: slanted strokes in Word's pattern filling a band.
-fn hatch(out: &mut Vec<Item>, rect: [f64; 4], horizontal: bool, colour: u32) {
+/// A `dashDotStroked` border: slanted strokes in Word's pattern filling a band. `phase` is how far along the whole
+/// edge the rect starts.
+fn hatch(out: &mut Vec<Item>, rect: [f64; 4], horizontal: bool, colour: u32, phase: f64) {
     let [x0, y0, x1, y1] = rect;
     let (len, across) = if horizontal { (x1 - x0, y1 - y0) } else { (y1 - y0, x1 - x0) };
     if !(len > EPS && across > 0.0) {
@@ -376,20 +392,26 @@ fn hatch(out: &mut Vec<Item>, rect: [f64; 4], horizontal: bool, colour: u32) {
     let (band, run, stroke) = (HATCH_BAND * k, HATCH_RUN * k, HATCH_STROKE.min(across / 3.0).max(MIN_STROKE.min(across)));
     // A very long edge gets a longer period rather than more strokes.
     let scale = (len / HATCH_PERIOD * HATCH_AT.len() as f64 / MAX_SEGMENTS).max(1.0);
+    let period = HATCH_PERIOD * scale;
     let mut segs = Vec::new();
-    let mut base = 0.0;
+    // Strokes from the period the rect starts in; one that began before it is cut at its start.
+    let mut base = if phase.is_finite() { -phase.rem_euclid(period) } else { 0.0 };
     while base < len - EPS {
         for at in HATCH_AT {
             let u = base + at * scale;
             if u >= len - EPS {
                 break;
             }
-            // A stroke runs from the band's far side to its near side, cut where it would pass the edge's end.
-            let run = run.min(len - u);
-            segs.push(Seg::Move([u, band]));
-            segs.push(Seg::Line([u + run, band * (1.0 - run / (HATCH_RUN * k))]));
+            // A stroke runs from the band's far side to its near side, cut where it would pass the edge's ends.
+            let (from, to) = (u.max(0.0), (u + run).min(len));
+            if to <= from {
+                continue;
+            }
+            let across_at = |x: f64| band * (1.0 - (x - u) / (HATCH_RUN * k));
+            segs.push(Seg::Move([from, across_at(from)]));
+            segs.push(Seg::Line([to, across_at(to)]));
         }
-        base += HATCH_PERIOD * scale;
+        base += period;
     }
     stroked(out, rect, horizontal, band, stroke, colour, segs);
 }

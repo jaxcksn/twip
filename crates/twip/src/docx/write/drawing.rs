@@ -455,9 +455,12 @@ fn adjust_xml(adjust: &[crate::drawing::paint::BlipAdjust]) -> String {
             BlipAdjust::Lum { bright, contrast } => format!(r#"<a:lum bright="{}" contrast="{}"/>"#, bright.0, contrast.0),
             BlipAdjust::BiLevel(p) => format!(r#"<a:biLevel thresh="{}"/>"#, p.0),
             BlipAdjust::Duotone([a, b]) => format!("<a:duotone>{}{}</a:duotone>", colour_xml(a), colour_xml(b)),
-            BlipAdjust::ClrChange { from, to } => {
-                format!("<a:clrChange><a:clrFrom>{}</a:clrFrom><a:clrTo>{}</a:clrTo></a:clrChange>", colour_xml(from), colour_xml(to))
-            }
+            BlipAdjust::ClrChange { from, to, use_a } => format!(
+                r#"<a:clrChange{}><a:clrFrom>{}</a:clrFrom><a:clrTo>{}</a:clrTo></a:clrChange>"#,
+                if *use_a { "" } else { r#" useA="0""# },
+                colour_xml(from),
+                colour_xml(to)
+            ),
         })
         .collect()
 }

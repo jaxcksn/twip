@@ -9,7 +9,7 @@ use twip_graphics::kurbo::{self, Affine, BezPath};
 
 use twip_graphics::kurbo::Shape;
 use twip_graphics::paint::{BlendMode, Brush as Source, Color, ColorFilter, Extend, ImagePaint, Paint, Sampling, Stop};
-use twip_graphics::scene::{Clip, FillRule, GlyphRun, Layer, Recorder, Synthesis};
+use twip_graphics::scene::{Clip, FillRule, GlyphRun, Layer, Recorder, Synthesis, glyph_run_outline};
 
 use super::Graphics;
 use crate::drawing::colour::Rgba;
@@ -207,18 +207,27 @@ impl Sink for Recording<'_> {
     fn text_outline(&mut self, t: &Text<'_>, out: &mut BezPath) -> f64 {
         let Some(g) = self.g.as_deref_mut() else { return 0.0 };
         let Some(line) = lay(g, t) else { return 0.0 };
-        let mut glyph = BezPath::new();
         let at = t.transform * Affine::translate((line.ox, 0.0));
-        for p in &line.glyphs {
-            let Some(font) = g.font(&p.face) else { continue };
-            glyph.truncate(0);
-            if !g.res.fonts.em_outline(font, p.glyph, &mut glyph) {
-                continue;
+        let mut glyphs = std::mem::take(&mut g.glyphs);
+        let mut run_path = BezPath::new();
+        let placed = &line.glyphs;
+        let mut start = 0;
+        while start < placed.len() {
+            let (f, y) = (&placed[start].face, placed[start].y);
+            let end = placed[start..].iter().position(|p| !Rc::ptr_eq(&p.face, f) || p.y != y).map_or(placed.len(), |n| start + n);
+            if let Some(font) = g.font(f) {
+                glyphs.clear();
+                glyphs.extend(placed[start..end].iter().map(|p| (p.glyph, p.x)));
+                let synthesis = Synthesis { embolden: f.sim_bold, skew_x: if f.sim_italic { -0.2 } else { 0.0 } };
+                let run = GlyphRun { font, size: line.em, baseline: line.baseline + y, glyphs: &glyphs, synthesis };
+                run_path.truncate(0);
+                glyph_run_outline(&g.res.fonts, &run, &mut run_path, &mut g.fx_ring);
+                run_path.apply_affine(at);
+                out.extend(run_path.iter());
             }
-            let skew = if p.face.sim_italic { Affine::new([1.0, 0.0, -0.2, 1.0, 0.0, 0.0]) } else { Affine::IDENTITY };
-            glyph.apply_affine(at * Affine::translate((p.x, line.baseline + p.y)) * Affine::scale(line.em) * skew);
-            out.extend(glyph.iter());
+            start = end;
         }
+        g.glyphs = glyphs;
         for r in decorations(t, &line) {
             let mut p = r.to_path(0.1);
             p.apply_affine(at);

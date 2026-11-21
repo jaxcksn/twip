@@ -89,7 +89,7 @@ fn package_body(body: &str, image: Option<&[u8]>) -> Vec<u8> {
         ),
         (
             "word/_rels/document.xml.rels",
-            br#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId5" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image1.png"/></Relationships>"#,
+            br#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId5" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image1.png"/><Relationship Id="rId9" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="file:///missing.png" TargetMode="External"/></Relationships>"#,
         ),
         ("word/document.xml", document.as_bytes()),
         ("word/media/image1.png", image.unwrap_or_default()),
@@ -468,7 +468,7 @@ fn a_changed_colour_becomes_transparent_within_one_level() {
     assert!(s.at(180.0, 140.0)[2] > 240 && s.at(180.0, 140.0)[0] < 20, "blue stays");
     let near = change("FE0101", clear);
     assert!(paper(near.at(120.0, 140.0)), "a level off in a channel is the colour: {:?}", near.at(120.0, 140.0));
-    let far = change("FC0000", clear);
+    let far = change("FD0000", clear);
     assert!(red(far.at(120.0, 140.0)), "two levels off is not: {:?}", far.at(120.0, 140.0));
     let green = change("FF0000", r#"<a:srgbClr val="00FF00"/>"#);
     assert!(green.at(120.0, 140.0)[1] > 240 && green.at(120.0, 140.0)[0] < 20, "drawn as the new colour: {:?}", green.at(120.0, 140.0));
@@ -495,7 +495,7 @@ fn a_picture_that_does_not_decode_keeps_its_colours() {
     let key = crate::layout::fragment::ImageKey { index: Some(0), generation: 0 };
     let plain = g.image(key, &images).expect("registered by its header");
     let from = crate::drawing::colour::Rgba::rgb(0xFF0000);
-    assert_eq!(g.recoloured(key, from, from, &images), Some(plain));
+    assert_eq!(g.recoloured(key, from, from, true, &images), Some(plain));
     assert_eq!(g.recoloured_bytes, 0);
 }
 
@@ -538,6 +538,7 @@ fn an_absurd_blur_radius_draws_as_the_clamped_one() {
     // Radii in the billions of points: drawn as the largest radius Twip draws (its bound is asserted where it resolves),
     // whatever the effect.
     let max = 200 * PT;
+    let plain = with_effects("");
     for (absurd, clamped) in [
         (
             r#"<a:outerShdw blurRad="9000000000000" dist="9000000000000" dir="2700000"><a:srgbClr val="000000"/></a:outerShdw>"#.to_string(),
@@ -554,9 +555,9 @@ fn an_absurd_blur_radius_draws_as_the_clamped_one() {
         (r#"<a:softEdge rad="9000000000000"/>"#.to_string(), format!(r#"<a:softEdge rad="{max}"/>"#)),
         (r#"<a:blur rad="9000000000000"/>"#.to_string(), format!(r#"<a:blur rad="{max}"/>"#)),
     ] {
-        let s = with_effects(&absurd);
-        assert!(s.at(150.0, 130.0)[3] > 0, "{absurd}");
-        assert_eq!(s.0, with_effects(&clamped).0, "{absurd}");
+        let (s, max_drawn) = (with_effects(&absurd), with_effects(&clamped));
+        assert_ne!(max_drawn.0, plain.0, "the clamped effect shows: {clamped}");
+        assert_eq!(s.0, max_drawn.0, "{absurd}");
     }
 }
 
@@ -669,6 +670,61 @@ fn a_shapes_reflection_holds_its_text() {
     assert!(below(&texted) > 50, "the white text is in the reflection: {}", below(&texted));
 }
 
+/// A floated group of two 100 x 60 pt shapes side by side: the first with a reflection (and `text` when it has any), the
+/// second with `text` in it when the first has none.
+fn reflected_group(text_in_reflected: bool) -> String {
+    let leaf = |x: i64, reflected: bool, text: &str| {
+        let effects = if reflected {
+            r#"<a:effectLst><a:reflection stA="100000" endA="100000" dir="5400000" sy="-100000" algn="b" rotWithShape="0"/></a:effectLst>"#
+        } else {
+            ""
+        };
+        let txbx = if text.is_empty() {
+            String::new()
+        } else {
+            format!(
+                r#"<wps:txbx><w:txbxContent><w:p><w:r><w:rPr><w:color w:val="FFFFFF"/><w:sz w:val="80"/></w:rPr><w:t>{text}</w:t></w:r></w:p></w:txbxContent></wps:txbx>"#
+            )
+        };
+        format!(
+            r#"<wps:wsp><wps:cNvSpPr txBox="0"/><wps:spPr><a:xfrm><a:off x="{}" y="0"/><a:ext cx="{}" cy="{}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom>{RED}{NO_LINE}{effects}</wps:spPr>{txbx}<wps:bodyPr/></wps:wsp>"#,
+            x * PT,
+            100 * PT,
+            60 * PT
+        )
+    };
+    let (first, second) = if text_in_reflected { ("MMMM", "") } else { ("", "MMMM") };
+    format!(
+        r#"<wpg:wgp xmlns:wpg="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup"><wpg:cNvGrpSpPr/><wpg:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{w}" cy="{h}"/><a:chOff x="0" y="0"/><a:chExt cx="{w}" cy="{h}"/></a:xfrm></wpg:grpSpPr>{}{}</wpg:wgp>"#,
+        leaf(0, true, first),
+        leaf(100, false, second),
+        w = 200 * PT,
+        h = 60 * PT
+    )
+}
+
+/// The reflected shapes of a page: whether each holds text in its reflection.
+fn reflections_with_text(doc: &crate::docx::Document) -> Vec<bool> {
+    let snap = crate::layout::layout(doc, &fonts());
+    crate::layout::traverse::paint_items(&snap.pages()[0])
+        .into_iter()
+        .filter_map(|i| match i {
+            crate::layout::fragment::Item::Shape(s) if s.effects.reflection.is_some() => Some(s.text.is_some()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_leafs_reflection_holds_its_own_text_and_not_its_siblings() {
+    let doc = |text_in_reflected| {
+        let body = format!("<w:p>{}</w:p>", anchor(100, 100, 200, 60, 1, false, 1, &reflected_group(text_in_reflected)));
+        crate::docx::read(&package_body(&body, None)).expect("reads")
+    };
+    assert_eq!(reflections_with_text(&doc(true)), [true], "the reflected leaf's text");
+    assert_eq!(reflections_with_text(&doc(false)), [false], "the text belongs to the sibling");
+}
+
 const INLINE_REFLECTED: &str = r#"<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="1270000" cy="762000"/><wp:docPr id="1" name="P"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="1" name="p.png"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rId5"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="1270000" cy="762000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:effectLst><a:reflection stA="100000" endA="100000" dir="5400000" sy="-100000" algn="b" rotWithShape="0"/></a:effectLst></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>"#;
 
 #[test]
@@ -684,7 +740,30 @@ fn an_inline_reflection_stops_at_the_part_of_a_split_paragraph_on_its_page() {
         .filter_map(|i| if let crate::layout::fragment::Item::Shape(s) = i { s.clip_bottom } else { None })
         .collect();
     assert_eq!(clips.len(), 1);
-    assert!(clips[0] <= 720.5, "clipped at the page's text area, not the paragraph's last line: {}", clips[0]);
+    // The text area ends at 720 pt; the part's last line ends within a line of it (a 12 pt line is under 14 pt).
+    assert!(clips[0] <= 720.5 && 720.0 - clips[0] < 14.0, "clipped at the page's text area, not the paragraph's last line: {}", clips[0]);
+}
+
+#[test]
+fn a_reflected_picture_in_an_inline_group_stops_at_its_paragraph_too() {
+    let pic = INLINE_REFLECTED
+        .split_once(r#"<pic:pic "#)
+        .and_then(|(_, rest)| rest.split_once("</pic:pic>"))
+        .map(|(inner, _)| format!("<pic:pic {inner}</pic:pic>"))
+        .expect("the picture");
+    let group = format!(
+        r#"<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="1270000" cy="762000"/><wp:docPr id="1" name="G"/><a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup"><wpg:wgp xmlns:wpg="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup"><wpg:cNvGrpSpPr/><wpg:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="1270000" cy="762000"/><a:chOff x="0" y="0"/><a:chExt cx="1270000" cy="762000"/></a:xfrm></wpg:grpSpPr>{pic}</wpg:wgp></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>"#
+    );
+    let body = format!(r#"<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/></w:pPr>{group}</w:p>"#);
+    let d = crate::docx::read(&package_body(&body, Some(&picture()))).expect("reads");
+    let snap = crate::layout::layout(&d, &fonts());
+    let shapes: Vec<_> = crate::layout::traverse::paint_items(&snap.pages()[0])
+        .into_iter()
+        .filter_map(|i| if let crate::layout::fragment::Item::Shape(s) = i { Some(s) } else { None })
+        .filter(|s| s.picture && s.effects.reflection.is_some())
+        .collect();
+    assert_eq!(shapes.len(), 1, "the group's picture is a reflected leaf");
+    assert!(shapes[0].clip_bottom.is_some(), "its reflection is cut at its paragraph");
 }
 
 #[test]
@@ -807,6 +886,7 @@ fn a_picture_watermark_is_drawn_behind_the_body_text() {
             Item::Glyphs(_) => order.push('t'),
             _ => {}
         });
+        assert!(order.contains(&'t'), "the page has body text: {order:?}");
         assert_eq!(order.first(), Some(&'p'), "{order:?}");
         assert_eq!(order.iter().filter(|c| **c == 'p').count(), 1);
     }
@@ -841,6 +921,7 @@ fn abutting_shading_leaves_no_seam() {
     // The table's gaps (left of 222 pt), then the paragraphs' lines.
     let (table, paras): (Vec<[f64; 4]>, Vec<[f64; 4]>) = shaded.iter().partition(|r| r[2] <= 222.0 + 1e-6);
     assert_eq!(paras.len(), 3, "{shaded:?}");
+    assert!(!table.is_empty(), "the table's shading is laid out: {shaded:?}");
     let top = table.iter().map(|r| r[1]).fold(f64::MAX, f64::min);
     let bottom = table.iter().map(|r| r[3]).fold(f64::MIN, f64::max);
     let mut g = Graphics::default();
@@ -852,6 +933,62 @@ fn abutting_shading_leaves_no_seam() {
     // Down the table's left gap, and the paragraphs clear of their text.
     for (x, top, bottom) in [(73.0, top, bottom), (200.0, paras[0][1], paras[2][3])] {
         let column = shot.column(x, top + 1.0, bottom - 1.0);
-        assert!(column.iter().all(|&c| c == fill), "{:?}", column.iter().filter(|&&c| c != fill).collect::<Vec<_>>());
+        assert!(!column.is_empty() && column.iter().all(|&c| c == fill), "{:?}", column.iter().filter(|&&c| c != fill).collect::<Vec<_>>());
     }
+}
+
+const SVG_RED: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="#FF0000"/></svg>"##;
+
+#[test]
+fn a_stretched_svg_takes_its_pictures_opacity() {
+    let at = |adjust: &str| {
+        let fill = format!(r#"<a:blipFill><a:blip r:embed="rId5">{adjust}</a:blip>{STRETCH}</a:blipFill>{NO_LINE}"#);
+        draw_sized(&wsp("rect", &fill), (100, 60), Some(SVG_RED.as_bytes())).at(150.0, 130.0)
+    };
+    assert!(red(at("")), "{:?}", at(""));
+    let half = at(r#"<a:alphaModFix amt="50000"/>"#);
+    assert!(half[0] > 240 && (100..160).contains(&half[1]), "red at half over white: {half:?}");
+}
+
+#[test]
+fn a_color_change_without_alpha_keeps_each_pixels_alpha() {
+    let half_red = crate::render::svg::png(8, 8, &[255, 0, 0, 128].repeat(64));
+    let at = |use_a: &str| {
+        let fill = format!(
+            r#"<a:blipFill><a:blip r:embed="rId5"><a:clrChange{use_a}><a:clrFrom><a:srgbClr val="FF0000"/></a:clrFrom><a:clrTo><a:srgbClr val="0000FF"/></a:clrTo></a:clrChange></a:blip>{STRETCH}</a:blipFill>{NO_LINE}"#
+        );
+        draw_sized(&wsp("rect", &fill), (100, 60), Some(&half_red)).at(150.0, 130.0)
+    };
+    let kept = at("");
+    assert!(kept[0] > 240 && (100..160).contains(&kept[1]), "alpha counts, a half-clear pixel isn't the opaque colour: {kept:?}");
+    let blue = at(r#" useA="0""#);
+    assert!(blue[2] > 240 && (100..160).contains(&blue[0]), "blue at the pixel's half alpha: {blue:?}");
+}
+
+#[test]
+fn a_tiled_fill_with_no_width_or_mirrored_tiles_leaves_no_gaps() {
+    use crate::render::metafile::tests::Emf;
+    let null_pen = 0x8000_0008u32.cast_signed();
+    let emf = Emf::default().r(37, &[null_pen]).r(39, &[1, 0, 0xFF, 0]).r(37, &[1]).r(43, &[0, 0, 50, 100]);
+    let emf = emf.r(39, &[2, 0, 0xFF_0000, 0]).r(37, &[2]).r(43, &[50, 0, 100, 100]).bytes();
+    // Tiles of 2.16 pt, each mirrored, from 1 pt in: the mosaic's columns meet.
+    let fill =
+        format!(r#"<a:blipFill><a:blip r:embed="rId5"/><a:tile tx="12700" ty="0" sx="3000" sy="3000" flip="x" algn="tl"/></a:blipFill>{NO_LINE}"#);
+    let s = draw_sized(&sized("rect", 170, 130, "", &fill), (170, 130), Some(&emf));
+    assert!(s.row(130.0, 110.0, 200.0).iter().all(|p| !paper(*p)), "no tile leaves a gap");
+    // An area with no width on a tile edge, a trillion points tall, draws nothing and returns.
+    let mut g = Graphics::default();
+    let mut rec = twip_graphics::scene::Recorder::new();
+    let key = crate::layout::fragment::ImageKey { index: Some(0), generation: 0 };
+    let area = twip_graphics::kurbo::Rect::new(4.0, 0.0, 4.0, 1e12);
+    g.vector_tiles(&mut rec, key, &[emf], (0.0, 0.0, 2.0, 2.0), [0.0; 4], crate::drawing::paint::TileFlip::None, area);
+}
+
+#[test]
+fn a_namespaced_svg_is_a_vector_picture() {
+    let svg = r##"<s:svg xmlns:s="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><s:rect width="10" height="10" fill="#FF0000"/></s:svg>"##;
+    assert_eq!(crate::docx::image::vector(svg.as_bytes()), Some(crate::docx::image::Vector::Svg));
+    assert!(crate::docx::image::vector(b"<s:svgx/>").is_none() && crate::docx::image::vector(b"<svgs/>").is_none());
+    let fill = format!(r#"<a:blipFill><a:blip r:embed="rId5"/>{STRETCH}</a:blipFill>{NO_LINE}"#);
+    assert!(red(draw_sized(&wsp("rect", &fill), (100, 60), Some(svg.as_bytes())).at(150.0, 130.0)));
 }

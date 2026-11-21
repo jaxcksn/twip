@@ -819,7 +819,7 @@ page 1 612 792
 page 2 612 792
   text A file without a placeable header
   text The shapes, cropped
-  image /X10 841x421 masked 27d00ae50f45e73a
+  image /X10 841x421 98a7ee0e683112a9
   op 1 0 0 -1 0 792 cm
   op /P << /MCID 0 >> BDC
   op q

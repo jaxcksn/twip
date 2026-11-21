@@ -133,3 +133,38 @@ fn joined_tables_rows_keep_their_own_shading() {
         "the third row has none"
     );
 }
+
+#[test]
+fn a_hatch_keeps_its_tiles_below_a_float_that_pushes_the_text_down() {
+    let float = super::shapes::anchor(100, 110, 100, 30, 1, false, 1, &super::shapes::sp(0, 0, 100, 30, "rect", "", "FF0000"));
+    let float = float.replace("<w:r>", "<w:r><w:t>l0</w:t>").replace("<wp:wrapNone/>", "<wp:wrapTopAndBottom/>");
+    let lines: String = (1..8).map(|i| format!("<w:br/><w:t>l{i}</w:t>")).collect();
+    let body =
+        format!(r#"<w:p><w:pPr><w:shd w:val="diagStripe" w:color="000000" w:fill="FFFFFF"/></w:pPr>{float}<w:r><w:t>text</w:t>{lines}</w:r></w:p>"#);
+    let got = items(&body);
+    // Each line's hatch is a frame its tiles start from: one frame for the paragraph, pushed down or not.
+    let tops: Vec<f64> = got
+        .iter()
+        .filter_map(|i| match i {
+            Item::Shape(s) if matches!(s.fill, Paint::Hatch { .. }) => Some(s.rect[1]),
+            _ => None,
+        })
+        .collect();
+    assert!(tops.len() >= 6, "a hatch for each line: {tops:?}");
+    let drop = tops.windows(2).map(|w| w[1] - w[0]).fold(0.0_f64, f64::max);
+    assert!(drop < 0.01, "the frames start at one place: {tops:?}");
+}
+
+#[test]
+fn a_runs_solid_shading_is_aliased_like_its_hatch_and_its_underline_is_not() {
+    let rpr = r#"<w:rPr><w:u w:val="single" w:color="FF0000"/><w:shd w:val="clear" w:color="auto" w:fill="FFFF00"/></w:rPr>"#;
+    let got = items(&format!("<w:p><w:r>{rpr}<w:t>shaded</w:t></w:r></w:p>"));
+    let snap_of = |c: u32| {
+        got.iter().find_map(|i| match i {
+            Item::Rect { colour, snap, .. } if *colour == c => Some(*snap),
+            _ => None,
+        })
+    };
+    assert_eq!(snap_of(0xFFFF00), Some(true), "the shading meets a hatch beside it on whole device pixels");
+    assert_eq!(snap_of(0xFF0000), Some(false), "the underline keeps its place");
+}

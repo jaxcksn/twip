@@ -238,9 +238,10 @@ impl<'d> PageFill<'d, '_> {
             || !style.div_boxes.is_empty()
         {
             let mut firsts: Vec<Line> = bands.iter().map(|(_, segs)| segs[0].clone()).collect();
+            let tops: Vec<f64> = bands.iter().map(|(y, _)| *y).collect();
             let next = if s >= n { pb.borders.1.clone() } else { border_key(style) };
             let gap = if s >= n { pb.shade_gap } else { 0.0 };
-            apply_borders(&mut firsts, style, pb.borders.0.as_deref(), next.as_deref(), col.width, first_part, first_part, s >= n, gap);
+            apply_borders(&mut firsts, style, pb.borders.0.as_deref(), next.as_deref(), col.width, first_part, first_part, s >= n, gap, &tops);
             for ((_, segs), l) in bands.iter_mut().zip(firsts) {
                 segs[0] = l;
             }

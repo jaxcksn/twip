@@ -125,6 +125,7 @@ fn fill_shape(frame: [f64; 4], segs: Vec<Seg>, paint: Paint) -> Rc<ShapeItem> {
         snap: true,
         clip_bottom: None,
         text_float: 0,
+        text: None,
         text_path: None,
         of: Default::default(),
     })

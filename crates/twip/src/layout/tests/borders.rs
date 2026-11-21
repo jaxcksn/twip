@@ -245,10 +245,50 @@ fn wave_edges_are_clipped_with_their_cell() {
     // The cell's clip opens with the text before the nested table.
     let nested = format!(r#"<w:p><w:r><w:t>lead</w:t></w:r></w:p>{nested}"#);
     for (what, inner) in [("a paragraph", spilling), ("a nested table", nested)] {
+        // The cell's sides: the table's black left and right borders.
+        let sides: Vec<[f64; 4]> = rects(&cell(&inner)).into_iter().filter(|(r, c)| *c == 0 && r[3] - r[1] > 5.0).map(|(r, _)| r).collect();
+        let (left, right) = (sides.iter().map(|r| r[0]).fold(f64::MAX, f64::min), sides.iter().map(|r| r[2]).fold(f64::MIN, f64::max));
+        assert!(right - left > 100.0, "{what}: the cell's sides are found: {sides:?}");
         let found = strokes(&cell(&inner), 0);
         assert!(!found.is_empty(), "{what} draws wave edges");
         for r in &found {
-            assert!(r[2] - r[0] <= 150.5, "{what}: {r:?} runs outside its 150 pt cell");
+            assert!(r[0] >= left - 0.5 && r[2] <= right + 0.5, "{what}: {r:?} runs outside its cell, {left} to {right}");
         }
+    }
+}
+
+/// The point where a stroked border's path starts or ends, on the page.
+fn stroke_end(s: &crate::layout::fragment::ShapeItem, last: bool) -> [f64; 2] {
+    use crate::drawing::geom::Seg;
+    let segs = &s.geom.paths[0].segs;
+    let p = match if last { segs.last() } else { segs.first() }.expect("a path") {
+        Seg::Move(p) | Seg::Line(p) => *p,
+        other => panic!("{other:?}"),
+    };
+    [s.rect[0] + p[0], s.rect[1] + p[1]]
+}
+
+#[test]
+fn a_wave_border_runs_on_from_line_to_line() {
+    // A 3 pt wave is 2.5 pt per half period; 14 pt lines end partway through one.
+    let wave = r#"w:val="wave" w:sz="12" w:space="0" w:color="1F4E79""#;
+    let body = format!(
+        r#"<w:p><w:pPr><w:pBdr><w:left {wave}/><w:right {wave}/></w:pBdr></w:pPr><w:r><w:t>one</w:t><w:br/><w:t>two</w:t><w:br/><w:t>three</w:t><w:br/><w:t>four</w:t></w:r></w:p>"#
+    );
+    let doc = crate::docx::read(&bytes(&body).expect("a package")).expect("reads");
+    let snap = crate::layout::layout(&doc, &super::fonts());
+    let mut sides: Vec<std::rc::Rc<crate::layout::fragment::ShapeItem>> = crate::layout::traverse::paint_items(&snap.pages()[0])
+        .into_iter()
+        .filter_map(|i| match i {
+            Item::Shape(s) if s.ink && s.rect[2] - s.rect[0] < 10.0 && s.rect[0] < 200.0 => Some(s),
+            _ => None,
+        })
+        .collect();
+    sides.sort_by(|a, b| a.rect[1].total_cmp(&b.rect[1]));
+    assert!(sides.len() >= 4, "a left side on each line: {}", sides.len());
+    for pair in sides.windows(2) {
+        let (end, start) = (stroke_end(&pair[0], true), stroke_end(&pair[1], false));
+        assert!((end[1] - start[1]).abs() < 0.01, "the lines meet: {end:?} {start:?}");
+        assert!((end[0] - start[0]).abs() < 0.01, "the wave goes on across the break: {end:?} {start:?}");
     }
 }

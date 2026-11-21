@@ -46,6 +46,9 @@ pub fn float_box(f: &Float, rect: [f64; 4], anchor: ParaId, env: &StoryEnv, memo
         }
     }
     let chain = env.ctx.env.chain_of(f.id);
+    // The text groups each leaf of the shape owns, by its path in the shape.
+    let mut owned: Vec<(&crate::drawing::ChildPath, std::ops::Range<usize>)> = Vec::new();
+    let no_path = crate::drawing::ChildPath::new();
     if let Some((c, k)) = chain {
         linked_text(c, k, f, shape_rect, env, &mut groups, memos)?;
     }
@@ -65,6 +68,7 @@ pub fn float_box(f: &Float, rect: [f64; 4], anchor: ParaId, env: &StoryEnv, memo
             outline(tb.outline, rect, &mut groups);
         }
     }
+    owned.push((&no_path, 0..groups.len()));
     let leaves = f.shape.as_deref().map(|s| s.leaves(shape_rect)).unwrap_or_default();
     for part in &f.parts {
         let r = [x0 + part.rect[0], y0 + part.rect[1], x0 + part.rect[2], y0 + part.rect[3]];
@@ -74,11 +78,25 @@ pub fn float_box(f: &Float, rect: [f64; 4], anchor: ParaId, env: &StoryEnv, memo
             items.push(Item::Image { rect: r, key: ImageKey { index: Some(img), generation: 0 }, of: PictureOf::Float(FloatId(f.id)) });
         }
         if let Some(tb) = &part.text_box {
+            let from = groups.len();
             match leaves.iter().find(|l| l.path == part.path) {
                 Some(l) => turned_text(tb, Some(l.shape), l.rect, l.rot, l.flip_v, env, &mut groups, memos)?,
                 None => text_box(tb, f.shape.as_deref().and_then(|s| s.at(&part.path)), r, env, &mut groups, memos)?,
             }
+            owned.push((&part.path, from..groups.len()));
         }
+    }
+    // A leaf's reflection holds the text of that leaf alone, not its siblings'.
+    for item in &mut items {
+        let Item::Shape(s) = item else { continue };
+        let Some(s) = Rc::get_mut(s).filter(|s| s.effects.reflection.is_some() && !s.picture) else { continue };
+        let own: Vec<Item> = owned
+            .iter()
+            .filter(|(path, _)| **path == s.path)
+            .flat_map(|(_, range)| crate::layout::traverse::items_of(&groups[range.clone()]))
+            .filter(|i| matches!(i, Item::Glyphs(_) | Item::Turned(_)))
+            .collect();
+        s.text = (!own.is_empty()).then(|| crate::layout::fragment::ShapeText(own.into()));
     }
     let mut children = Vec::new();
     if !items.is_empty() {
@@ -287,6 +305,7 @@ pub(in crate::layout) fn shape_items(
             snap: false,
             clip_bottom,
             text_float: 0,
+            text: None,
             text_path,
             path: leaf.path,
             of,

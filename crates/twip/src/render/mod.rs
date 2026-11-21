@@ -60,10 +60,17 @@ pub struct Renderer {
     pub appearance: appearance::Appearance,
     pub page_colour: Option<u32>,
     /// The page background's fill over `page_colour` (a gradient, pattern or picture), drawn on screen.
-    pub page_fill: Option<crate::drawing::paint::Paint>,
-    /// What `page_fill` was resolved from (the fill and the theme's address), and how many times it changed.
-    page_fill_of: (Option<crate::drawing::paint::Fill>, usize),
+    page_fill: Option<crate::drawing::paint::Paint>,
+    /// What `page_fill` was resolved from (the fill, the theme and the colour map), and how many times it changed.
+    page_fill_of: Option<PageFillSource>,
     page_fills: u64,
+}
+
+/// The inputs a resolved page fill came from.
+struct PageFillSource {
+    fill: Option<crate::drawing::paint::Fill>,
+    theme: std::rc::Rc<crate::drawing::theme::Theme>,
+    map: crate::drawing::theme::ColourMap,
 }
 
 /// The colours of the overlays the host can set. By default the lines and marks are at least 3:1 against the page,
@@ -102,18 +109,23 @@ pub fn rgb(c: u32) -> Color {
 
 impl Renderer {
     /// The page background `doc` shows: its colour and fill.
-    /// The fill is resolved again only when it or the theme changed.
+    /// The fill is resolved again only when it, the theme or the colour map changed.
     pub fn set_page_background(&mut self, doc: &crate::docx::Document) {
         let (colour, fill) = doc.shown_background();
         self.page_colour = colour;
-        let theme = std::rc::Rc::as_ptr(&doc.theme) as usize;
-        if self.page_fill_of.0.as_ref() == fill && self.page_fill_of.1 == theme {
+        let same_theme = |t: &std::rc::Rc<crate::drawing::theme::Theme>| std::rc::Rc::ptr_eq(t, &doc.theme) || **t == *doc.theme;
+        if self.page_fill_of.as_ref().is_some_and(|c| c.fill.as_ref() == fill && c.map == doc.colour_map && same_theme(&c.theme)) {
             return;
         }
         let palette = crate::drawing::paint::Palette { theme: &doc.theme, map: &doc.colour_map };
         self.page_fill = fill.map(|f| crate::drawing::paint::paint(f, palette, None, &crate::drawing::paint::Paint::None));
-        self.page_fill_of = (fill.cloned(), theme);
+        self.page_fill_of = Some(PageFillSource { fill: fill.cloned(), theme: doc.theme.clone(), map: doc.colour_map });
         self.page_fills += 1;
+    }
+
+    /// The page background's resolved fill, set by [`Renderer::set_page_background`].
+    pub fn page_fill(&self) -> Option<&crate::drawing::paint::Paint> {
+        self.page_fill.as_ref()
     }
 
     /// A count that changes whenever [`Renderer::page_fill`] does: retained pages are drawn with it.
@@ -186,6 +198,32 @@ impl Renderer {
 mod tests {
     use super::*;
     use theme::rgb8;
+
+    fn gradient_doc() -> crate::docx::Document {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/render/page-gradient.docx");
+        crate::docx::read(&std::fs::read(path).expect("fixture")).expect("reads")
+    }
+
+    #[test]
+    fn the_page_fill_is_resolved_again_when_the_theme_or_colour_map_changes() {
+        let mut doc = gradient_doc();
+        let mut r = Renderer::default();
+        r.set_page_background(&doc);
+        let first = r.page_fill_generation();
+        r.set_page_background(&doc);
+        assert_eq!(r.page_fill_generation(), first, "unchanged: kept");
+        doc.theme = std::rc::Rc::new((*doc.theme).clone());
+        r.set_page_background(&doc);
+        assert_eq!(r.page_fill_generation(), first, "a theme that reads the same: kept");
+        std::rc::Rc::make_mut(&mut doc.theme).colours[4].r ^= 0x40;
+        r.set_page_background(&doc);
+        assert_eq!(r.page_fill_generation(), first + 1, "a changed theme");
+        let mut other = doc.colour_map;
+        std::mem::swap(&mut other.bg1, &mut other.tx1);
+        doc.colour_map = other;
+        r.set_page_background(&doc);
+        assert_eq!(r.page_fill_generation(), first + 2, "a changed colour map");
+    }
 
     /// WCAG relative luminance.
     fn luminance(c: Color) -> f64 {

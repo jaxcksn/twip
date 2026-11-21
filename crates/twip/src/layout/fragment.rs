@@ -199,9 +199,22 @@ pub struct ShapeItem {
     pub clip_bottom: Option<f64>,
     /// The float holding the text of an inline text box, which `float` (0 for inline) doesn't name; 0 for none.
     pub text_float: u64,
+    /// The text of a floated shape with a reflection, which the reflection holds: its glyphs, in the shape's frame.
+    pub text: Option<ShapeText>,
     pub of: PictureOf,
     /// A text path's glyphs, drawn in place of the geometry's outline (which stays the shape's box, for hits).
     pub text_path: Option<Rc<TextPathItem>>,
+}
+
+/// The glyphs a shape's reflection holds, shared between the copies of the shape layout makes; equal when they are the
+/// same.
+#[derive(Clone, Debug)]
+pub struct ShapeText(pub Rc<[Item]>);
+
+impl PartialEq for ShapeText {
+    fn eq(&self, other: &ShapeText) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
+    }
 }
 
 /// A text path's glyphs, drawn as their outlines stretched so that their ink fills `fit`.
@@ -293,6 +306,7 @@ impl ShapeItem {
             snap: self.snap,
             clip_bottom: self.clip_bottom.map(|y| y + dy),
             text_float: self.text_float,
+            text: self.text.as_ref().map(|t| ShapeText(t.0.iter().map(|i| translated(i, dx, dy)).collect())),
             of: self.of,
             text_path: self.text_path.clone(),
         }

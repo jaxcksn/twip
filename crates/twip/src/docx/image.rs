@@ -59,7 +59,10 @@ pub fn is_svg(d: &[u8]) -> bool {
         let Some(end) = end else { return false };
         rest = r[end..].trim_start();
     }
-    rest.strip_prefix("<svg").is_some_and(|r| r.starts_with(|c: char| c.is_whitespace() || c == '>' || c == '/'))
+    // The root's local name, past any namespace prefix.
+    let Some(tag) = rest.strip_prefix('<') else { return false };
+    let name = tag.split(|c: char| c.is_whitespace() || c == '>' || c == '/').next().unwrap_or("");
+    name.len() < tag.len() && name.rsplit(':').next() == Some("svg")
 }
 
 /// A picture drawn as vectors.

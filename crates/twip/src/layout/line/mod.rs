@@ -398,7 +398,7 @@ pub fn break_lines_uncached(
         let before = if a == 0 && opens { prev.clone() } else { continued_key(s) };
         let next = if b == n { space.borders.1.clone() } else { continued_key(s) };
         let gap = if b == n { space.shade_gap } else { 0.0 };
-        apply_borders(&mut lines[a..b], s, before.as_deref(), next.as_deref(), space.width, false, opens && a == 0, b == n, gap);
+        apply_borders(&mut lines[a..b], s, before.as_deref(), next.as_deref(), space.width, false, opens && a == 0, b == n, gap, &[]);
         a = b;
     }
     memos.meter.unit_done();
