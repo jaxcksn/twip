@@ -240,17 +240,6 @@ pub(super) fn blur_layer(rec: &mut Recorder, sigma: f32, opacity: f32, bounds: O
     rec.push_layer(&Layer { opacity, filters: if sigma > 0.0 { &filters } else { &[] }, bounds, ..Layer::default() });
 }
 
-/// Opens a layer carrying `adjust`'s opacity and colour filters over a vector picture; false (nothing opened) when it
-/// has none.
-fn push_adjust(rec: &mut Recorder, adjust: &[ResolvedBlipAdjust]) -> bool {
-    let (filters, alpha) = picture_adjust(adjust);
-    let layered = !filters.is_empty() || alpha < 1.0;
-    if layered {
-        rec.push_layer(&Layer { opacity: alpha, color_filters: &filters, ..Layer::default() });
-    }
-    layered
-}
-
 /// The picture adjustments as colour filters in the order they apply, and the opacity they leave.
 fn picture_adjust(adjust: &[ResolvedBlipAdjust]) -> (Vec<ColorFilter>, f32) {
     const L: [f32; 3] = [0.2126, 0.7152, 0.0722];
@@ -796,7 +785,6 @@ impl Graphics {
                 let f = f.map(|v| v.fraction());
                 let (w, h) = (size[0], size[1]);
                 let dst = kurbo::Rect::new(f[0] * w, f[1] * h, w - f[2] * w, h - f[3] * h);
-                let layered = push_adjust(rec, adjust);
                 rec.push_clip(Clip::Path(path.elements()));
                 let layered = adjusted(rec, adjust);
                 self.vector(rec, ImageKey { index: *image, generation: 0 }, images, dst, src.map(|v| v.fraction()));
@@ -804,9 +792,6 @@ impl Graphics {
                     rec.pop();
                 }
                 rec.pop();
-                if layered {
-                    rec.pop();
-                }
             }
             Fill::Picture { image, src, mode: BlipMode::Tile { tx, ty, sx, sy, flip, align }, adjust, .. }
                 if image.and_then(|i| images.get(i)).is_some_and(|b| crate::docx::image::vector(b).is_some()) =>
@@ -820,7 +805,6 @@ impl Graphics {
                 let (iw, ih) = natural.unwrap_or((size[0] / 0.75, size[1] / 0.75));
                 let (ox, oy, tw, th) = tile_place((iw, ih), (*tx, *ty, *sx, *sy, *align), size);
                 let key = ImageKey { index: *image, generation: 0 };
-                let layered = push_adjust(rec, adjust);
                 rec.push_clip(Clip::Path(path.elements()));
                 let layered = adjusted(rec, adjust);
                 self.vector_tiles(rec, key, images, (ox, oy, tw, th), src.map(|v| v.fraction()), *flip, path.bounding_box());
@@ -828,9 +812,6 @@ impl Graphics {
                     rec.pop();
                 }
                 rec.pop();
-                if layered {
-                    rec.pop();
-                }
             }
             Fill::Picture { image, src, mode: blip, adjust, .. } => {
                 let (filters, alpha) = picture_adjust(adjust);
