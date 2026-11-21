@@ -119,3 +119,20 @@ fn always_shades_fields_in_headers_footers_text_boxes_and_notes() {
     assert!(stories.iter().any(|s| matches!(s, StoryId::Footnote(_))), "a footnote field: {stories:?}");
     assert!(stories.iter().any(|s| matches!(s, StoryId::Body)), "a body field");
 }
+
+#[test]
+fn form_fields_are_shaded_unless_the_document_says_not_to() {
+    let mut e = fixture();
+    e.select_range(super::para_id(&e, 0), crate::layout::Unit(0), crate::layout::Unit(0), fonts());
+    assert!(all_pages(&mut e, FieldShading::Never).is_empty(), "no form fields yet: nothing shaded with the option off");
+    let fields = all_pages(&mut e, FieldShading::Always).len();
+    let run = |e: &mut Editor, v: serde_json::Value| {
+        let c = serde_json::from_value(v).expect("a command");
+        e.execute(c, fonts());
+    };
+    run(&mut e, serde_json::json!({ "type": "insertFormField", "value": "text" }));
+    assert_eq!(all_pages(&mut e, FieldShading::Never).len(), 1, "the form field, whatever the option");
+    assert_eq!(all_pages(&mut e, FieldShading::Always).len(), fields + 1, "a form field shades once under Always");
+    run(&mut e, serde_json::json!({ "type": "setFormFieldShading", "value": false }));
+    assert!(all_pages(&mut e, FieldShading::Never).is_empty(), "doNotShadeFormData turns it off");
+}

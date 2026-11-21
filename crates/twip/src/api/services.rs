@@ -2803,7 +2803,8 @@ pub enum ObjectGrid {
     Always,
 }
 
-/// When fields are shaded: a grey backdrop behind each field's text on screen, never printed, exported or saved.
+/// When fields are shaded: a grey backdrop behind each field's text on screen, never printed, exported or saved. Legacy form fields are shaded the same way whatever this is, unless the document
+/// turns that off.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum FieldShading {

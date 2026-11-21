@@ -60,7 +60,7 @@ Chunk numbers are [roadmap](../roadmap#docx) chunks.
 | Fields | `w:fldChar`, `w:fldSimple`, `w:instrText` | API (`insertField`, `setField`, `updateFields`; the engine computes the document property and variable fields). FILENAME (the name `setFileName` gives), NOTEREF (its note's number, as layout numbers it), LISTNUM (`NumberDefault`, `OutlineDefault`, `LegalDefault`), AUTONUM, `=` formulas (functions, table references, LEFT/ABOVE, bookmarks, `\#` pictures) and DATE and TIME in the host's time zone, in en-US names |
 | Field data | `w:fldData` | Application (binary data Word keeps for a field) |
 | Legacy form fields | `w:ffData`, `w:name`, `w:enabled`, `w:calcOnExit`, `w:entryMacro`, `w:exitMacro`, `w:helpText`, `w:statusText`, `w:checkBox`, `w:size`, `w:sizeAuto`, `w:default`, `w:checked`, `w:ddList`, `w:result`, `w:listEntry`, `w:textInput`, `w:type`, `w:maxLength`, `w:format` | API (`insertFormField`, `setFormField`, `fillFormField`; the selection's field in `selection.context[].form`); check box and drop-down drawn. Macros (`w:entryMacro`, `w:exitMacro`) are kept and settable, never run |
-| Form field shading | `w:doNotShadeFormData` | API (`setFormFieldShading`); the shading isn't drawn |
+| Form field shading | `w:doNotShadeFormData` | API (`setFormFieldShading`); legacy form fields are shaded grey on screen, whatever the field shading option, and never in print or PDF |
 | Document variables | `w:docVars`, `w:docVar` | API (`setDocumentVariable`, `documentProperties`; DOCVARIABLE shows them) |
 
 ## Character formatting
