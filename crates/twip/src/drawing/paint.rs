@@ -1017,4 +1017,20 @@ mod tests {
         assert_eq!((resolved.blur, resolved.scale, resolved.start, resolved.rot_with_shape), (0.5, [1.0, -1.0], (0.0, 0.5), false));
         assert_eq!(resolved.end, (0.35, 0.003));
     }
+
+    #[test]
+    fn absurd_effect_sizes_resolve_to_the_clamp() {
+        let x = node_xml(
+            r#"<a:effectLst><a:outerShdw blurRad="9000000000000" dist="-9000000000000"><a:srgbClr val="000000"/></a:outerShdw><a:innerShdw blurRad="9000000000000" dist="9000000000000"><a:srgbClr val="000000"/></a:innerShdw><a:glow rad="9000000000000"><a:srgbClr val="00FF00"/></a:glow><a:softEdge rad="9000000000000"/><a:blur rad="9000000000000"/><a:reflection blurRad="9000000000000" dist="9000000000000"/></a:effectLst>"#,
+        );
+        let d = roxmltree::Document::parse(&x).unwrap();
+        let e = EffectList::parse(d.root_element().first_element_child().unwrap());
+        let (t, m) = (Theme::default(), ColourMap::default());
+        let r = resolve_effects(Some(&e), None, Palette { theme: &t, map: &m });
+        let (outer, inner, refl) = (r.outer.unwrap(), r.inner.unwrap(), r.reflection.unwrap());
+        assert_eq!((outer.blur, outer.dist), (MAX_EFFECT_PT, -MAX_EFFECT_PT));
+        assert_eq!((inner.blur, inner.dist), (MAX_EFFECT_PT, MAX_EFFECT_PT));
+        assert_eq!((refl.blur, refl.dist), (MAX_EFFECT_PT, MAX_EFFECT_PT));
+        assert_eq!((r.glow.map(|g| g.0), r.soft_edge, r.blur), (Some(MAX_EFFECT_PT), Some(MAX_EFFECT_PT), Some(MAX_EFFECT_PT)));
+    }
 }

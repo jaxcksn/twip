@@ -534,23 +534,30 @@ fn hostile_reflections_draw_something_bounded() {
 }
 
 #[test]
-fn an_absurd_blur_radius_draws_in_bounded_time() {
-    // Radii in the billions of points: drawn at the largest radius Twip draws, whatever the effect.
-    for effect in [
-        r#"<a:outerShdw blurRad="9000000000000" dist="9000000000000" dir="2700000"><a:srgbClr val="000000"/></a:outerShdw>"#,
-        r#"<a:innerShdw blurRad="9000000000000" dist="1270000"><a:srgbClr val="000000"/></a:innerShdw>"#,
-        r#"<a:glow rad="9000000000000"><a:srgbClr val="00FF00"/></a:glow>"#,
-        r#"<a:softEdge rad="9000000000000"/>"#,
-        r#"<a:blur rad="9000000000000"/>"#,
+fn an_absurd_blur_radius_draws_as_the_clamped_one() {
+    // Radii in the billions of points: drawn as the largest radius Twip draws (its bound is asserted where it resolves),
+    // whatever the effect.
+    let max = 200 * PT;
+    for (absurd, clamped) in [
+        (
+            r#"<a:outerShdw blurRad="9000000000000" dist="9000000000000" dir="2700000"><a:srgbClr val="000000"/></a:outerShdw>"#.to_string(),
+            format!(r#"<a:outerShdw blurRad="{max}" dist="{max}" dir="2700000"><a:srgbClr val="000000"/></a:outerShdw>"#),
+        ),
+        (
+            r#"<a:innerShdw blurRad="9000000000000" dist="1270000"><a:srgbClr val="000000"/></a:innerShdw>"#.to_string(),
+            format!(r#"<a:innerShdw blurRad="{max}" dist="1270000"><a:srgbClr val="000000"/></a:innerShdw>"#),
+        ),
+        (
+            r#"<a:glow rad="9000000000000"><a:srgbClr val="00FF00"/></a:glow>"#.to_string(),
+            format!(r#"<a:glow rad="{max}"><a:srgbClr val="00FF00"/></a:glow>"#),
+        ),
+        (r#"<a:softEdge rad="9000000000000"/>"#.to_string(), format!(r#"<a:softEdge rad="{max}"/>"#)),
+        (r#"<a:blur rad="9000000000000"/>"#.to_string(), format!(r#"<a:blur rad="{max}"/>"#)),
     ] {
-        let started = std::time::Instant::now();
-        let s = with_effects(effect);
-        assert!(s.at(150.0, 130.0)[3] > 0, "{effect}");
-        assert!(started.elapsed() < std::time::Duration::from_secs(4), "{effect}: {:?}", started.elapsed());
+        let s = with_effects(&absurd);
+        assert!(s.at(150.0, 130.0)[3] > 0, "{absurd}");
+        assert_eq!(s.0, with_effects(&clamped).0, "{absurd}");
     }
-    // The clamp is the same drawing as asking for the largest radius.
-    let clamped = format!(r#"<a:blur rad="{}"/>"#, 200 * PT);
-    assert_eq!(with_effects(&clamped).0, with_effects(r#"<a:blur rad="9000000000000"/>"#).0);
 }
 
 #[test]
