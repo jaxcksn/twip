@@ -29,7 +29,7 @@ With no listener, it does.
 for each field its label, kind, range and options. `update(patch)` recomputes dependent values; `apply()` validates
 and commits everything as one undo step; `cancel()` changes nothing. The dialogs are `font`, `paragraph`,
 `pageSetup`, `insertTable`, `tableProperties`, `pictureSize`, `altText`, `hyperlink`, `tabs`, `accessibility`,
-`bordersShading` and `frame`; the style dialogs are in [Styles](styles.md).
+`bordersShading`, `frame`, `printedWatermark` and `fillEffects`; the style dialogs are in [Styles](styles.md).
 
 ### Borders and Shading
 
@@ -45,7 +45,14 @@ section's pages. `pageOffsetFrom` measures them from the page's edge or the text
 show on, and `pageApplyTo` the section or the whole document.
 
 `apply` runs what changed: `setParagraphBorderLines`, `setTextBorder`, `setShading` and `setPageBorders`. Every border
-style draws, on paragraphs, text, cells and pages. Art page borders are kept but not drawn.
+style draws, on paragraphs, text, cells and pages, and every shading pattern, on text, paragraphs, cells and tables. Art page
+borders are kept but not drawn. Apply to Cell and Apply to Table set shading only, so their border controls are disabled.
+
+### Printed Watermark and Fill Effects
+
+`printedWatermark` reads the section's watermark and `apply` runs `setWatermark` (or `removeWatermark`): none, a picture
+with its scale and washout, or text with its font, size, colour, transparency and layout. `fillEffects` edits the page
+colour (gradient, pattern, texture or picture) and `apply` runs `setPageColor`.
 
 ### Frame
 

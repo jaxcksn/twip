@@ -49,7 +49,28 @@ same wherever it is drawn.
   look the same weight. Glyphs more than 256 pixels per em are drawn from their outlines instead of a cached mask,
   through the same gamma.
 
+Text decoration and effects draw as Word draws them: every underline style and colour, emboss, engrave, outline and
+shadow, and the Word 2010 text effects (glow, shadow, reflection, gradient or no fill, outline; `setTextEffects`).
+
 A PDF export embeds the fonts, and the viewer draws their glyphs its own way.
+
+## Pictures, shading and backgrounds
+
+- **Metafiles:** EMF and WMF pictures, and OLE object previews, draw as vectors at any zoom, not as a raster. A dual
+  EMF and EMF+ file draws its EMF records. EMF+ records, JPEG XR pictures and double-byte text in metafiles aren't
+  drawn yet.
+- **Picture effects:** set transparent colour, brightness, contrast, washout, grayscale, black and white, and
+  reflection. A linked picture draws its embedded copy when it has one, else a light placeholder frame: the engine
+  fetches nothing.
+- **Shading and borders:** every shading pattern (stripes and crosses as tiles that repeat on whole device pixels,
+  percentages flat) on text, paragraphs, cells and tables; shadowed borders and the wave, double wave and
+  dash-dot-stroked lines.
+- **Watermarks and page colour:** text and picture watermarks in the headers, and the page colour (a colour with a
+  theme tint or shade, a gradient, a pattern or a picture), draw on screen. A page colour shows only when the document
+  displays background shapes, as in Word.
+
+The same drawing is the source for the GPU, the CPU and PDF, and a regression gate compares them: pixel snapshots of
+a fixture corpus, the GPU against the CPU, and the PDF's text, structure and drawing commands.
 
 ## Web
 

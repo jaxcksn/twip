@@ -7,7 +7,7 @@ sidebar_position: 14
 
 Twip converts DOCX to PDF without an editor: no session, no window, and no engine thread. Each conversion runs on the
 thread that starts it, and any number run at once, so a service can convert as many documents in parallel as it has
-cores. The PDF shows the final document, without revision marks or comments, laid out exactly as the editor's PDF
+cores. The PDF draws what the screen draws, vectors and effects included, except the page background and colour, which Word's own PDF leaves out. It shows the final document, without revision marks or comments, laid out exactly as the editor's PDF
 export lays it out.
 
 ## .NET
@@ -75,8 +75,9 @@ every SDK.
 
 ## Accessibility
 
-PDFs are tagged for PDF/UA-1: headings, lists with their numbers, tables with their header cells, links, notes, text
-boxes, figures with their alternative text, and text in another language. Headers, footers and decorative pictures are
+PDFs are tagged for PDF/UA-1: headings, lists with their labels, tables with their header cells, links, notes, text
+boxes, figures with their alternative text, and text in another language (`Lang`). Hyperlinks and cross-references are
+link annotations, and the headings make the outline. The output is checked with veraPDF. Headers, footers and decorative pictures are
 artifacts. A picture with no alternative text that isn't marked decorative is still a figure, without a description,
 and the export warns with `pdf-figure-without-alt`: give it alternative text, or mark it decorative, for a conformant
 PDF.

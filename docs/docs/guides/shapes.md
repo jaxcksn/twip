@@ -42,7 +42,7 @@ document's 12 theme colours, in `ThemeColour` order.
 | `setShapeLine(change)` | width, fill, dash, compound, cap, join, arrowheads; what isn't given is kept |
 | `setShapeEffects(change)` | outer and inner shadow, glow, soft edge, blur; `null` removes one |
 | `setShapeText(change)` | insets, anchor, autofit, wrapping, direction of the text inside |
-| `setPictureAdjust(change)` | a picture's transparency, greyscale, brightness, contrast |
+| `setPictureAdjust(change)` | a picture's transparency, greyscale, brightness, contrast, transparent colour |
 | `setObjectRotation(degrees)`, `flipObject(axis)` | rotation and flips |
 | `arrangeObject(how)` | forward, backward, to front, to back, in front of or behind the text |
 | `groupObjects()`, `ungroupObjects()` | groups two or more selected floats, or ungroups the selected group |
@@ -57,8 +57,15 @@ press on a selected group selects the child under the pointer, and Esc goes back
 selected shape shows a rotate handle above it (Shift snaps to 15°) and yellow adjust handles, and typing into a shape
 gives it text. Dragging a handle lays the document out live.
 
+## Watermarks and page colour
+
+`setWatermark` puts a text or picture watermark in every header of every section, written as Word writes it, so Word's
+Watermark dialog edits it; `removeWatermark` takes it out. `setPageColor` sets the page colour: a colour, a theme
+colour with its tint or shade, or a gradient, pattern, texture or picture fill. They are the Printed Watermark and Fill
+Effects dialogs (see [Services](services#dialogs)). A page colour isn't drawn in a PDF export, as in Word's.
+
 ## Saving
 
 Untouched drawings are saved byte for byte. An edited shape has only the properties that changed written again, in
-Word's form; 3D, reflection and other effects the engine doesn't draw are kept. New shapes are written as Word writes
+Word's form; 3D and other effects the engine doesn't draw are kept. Reflection, glow, soft edges and shadows are drawn. New shapes are written as Word writes
 them.

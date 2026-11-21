@@ -60,7 +60,7 @@ Chunk numbers are [roadmap](../roadmap#docx) chunks.
 | Fields | `w:fldChar`, `w:fldSimple`, `w:instrText` | API (`insertField`, `setField`, `updateFields`; the engine computes the document property and variable fields). FILENAME (the name `setFileName` gives), NOTEREF (its note's number, as layout numbers it), LISTNUM (`NumberDefault`, `OutlineDefault`, `LegalDefault`), AUTONUM, `=` formulas (functions, table references, LEFT/ABOVE, bookmarks, `\#` pictures) and DATE and TIME in the host's time zone, in en-US names |
 | Field data | `w:fldData` | Application (binary data Word keeps for a field) |
 | Legacy form fields | `w:ffData`, `w:name`, `w:enabled`, `w:calcOnExit`, `w:entryMacro`, `w:exitMacro`, `w:helpText`, `w:statusText`, `w:checkBox`, `w:size`, `w:sizeAuto`, `w:default`, `w:checked`, `w:ddList`, `w:result`, `w:listEntry`, `w:textInput`, `w:type`, `w:maxLength`, `w:format` | API (`insertFormField`, `setFormField`, `fillFormField`; the selection's field in `selection.context[].form`); check box and drop-down drawn. Macros (`w:entryMacro`, `w:exitMacro`) are kept and settable, never run |
-| Form field shading | `w:doNotShadeFormData` | API (`setFormFieldShading`); drawing the shading is in phase 3 |
+| Form field shading | `w:doNotShadeFormData` | API (`setFormFieldShading`); the shading isn't drawn |
 | Document variables | `w:docVars`, `w:docVar` | API (`setDocumentVariable`, `documentProperties`; DOCVARIABLE shows them) |
 
 ## Character formatting
@@ -69,7 +69,7 @@ Chunk numbers are [roadmap](../roadmap#docx) chunks.
 |---|---|---|
 | Fonts and size | `w:rFonts`, `w:sz` | API |
 | Bold, italic, caps, strike | `w:b`, `w:i`, `w:caps`, `w:smallCaps`, `w:strike`, `w:dstrike` | API |
-| Colour, highlight, shading, border | `w:color`, `w:highlight`, `w:shd`, `w:bdr` | API |
+| Colour, highlight, shading, border | `w:color`, `w:highlight`, `w:shd`, `w:bdr` | API; every shading pattern draws (stripes and crosses as Word's 12 tiles, which repeat on whole device pixels, and percentages as a flat blend), in PDF too |
 | Position, spacing, super- and subscript | `w:position`, `w:spacing`, `w:vertAlign` | API |
 | Hidden text | `w:vanish` | API |
 | Underline | `w:u` | API (style and colour); every style drawn as Word draws it: dotted, dashed, long-dashed and dot-dash forms with Word's dash lengths, heavy forms twice as thick, waves (single, heavy, double) as curves, in the underline's own colour |
@@ -94,7 +94,7 @@ Chunk numbers are [roadmap](../roadmap#docx) chunks.
 |---|---|---|
 | Style, alignment, indents, spacing | `w:pStyle`, `w:jc`, `w:ind`, `w:spacing` | API |
 | Pagination | `w:keepNext`, `w:keepLines`, `w:pageBreakBefore`, `w:widowControl` | API |
-| Borders and shading | `w:pBdr`, `w:top`, `w:left`, `w:bottom`, `w:right`, `w:between`, `w:bar`, `w:start`, `w:end`, `w:shd` | API |
+| Borders and shading | `w:pBdr`, `w:top`, `w:left`, `w:bottom`, `w:right`, `w:between`, `w:bar`, `w:start`, `w:end`, `w:shd` | API; every shading pattern and border style draws: shadowed borders (a black shadow below and right), `wave` and `doubleWave` as stroked zigzags and `dashDotStroked` as slanted strokes, all in Word's fixed-size bands. Layout reserves the border's width for those three, so a thin one reads nearly straight |
 | Tabs | `w:tabs`, `w:tab` | API |
 | Lists | `w:numPr`, `w:ilvl`, `w:numId` | API |
 | Frames and drop caps | `w:framePr`, `w:suppressOverlap` | API (`setFrame`, `removeFrame`; `setDropCap` and the Drop Cap dialog make, change and remove a drop cap, saved as a framed paragraph before its own) |
@@ -145,7 +145,7 @@ Chunk numbers are [roadmap](../roadmap#docx) chunks.
 
 | Construct | Elements | Status |
 |---|---|---|
-| Tables, rows, cells | `w:tbl`, `w:tblPr`, `w:tblGrid`, `w:gridCol`, `w:tr`, `w:trPr`, `w:tc`, `w:tcPr` | API |
+| Tables, rows, cells | `w:tbl`, `w:tblPr`, `w:tblGrid`, `w:gridCol`, `w:tr`, `w:trPr`, `w:tc`, `w:tcPr` | API; shading layers as Word layers it, a cell's over its row exception's over the table's (own or its style's). A table's and row's shading fills only around cells, so it shows with cell spacing |
 | Table properties | `w:tblStyle`, `w:tblW`, `w:tblInd`, `w:tblBorders`, `w:tblCellMar`, `w:tblLook`, `w:tblLayout`, `w:tblpPr`, `w:tblOverlap` | API |
 | Cell spacing | `w:tblCellSpacing` | API (`setTableCellSpacing` and Table Properties; a row's own through `setRowProperties`) |
 | Alt text | `w:tblCaption`, `w:tblDescription` | API (`setTableAltText`, Table Properties' Alt Text tab) |
@@ -155,7 +155,7 @@ Chunk numbers are [roadmap](../roadmap#docx) chunks.
 | Row exceptions | `w:tblPrEx` | API (`setRowProperties`: alignment, cell spacing, shading and borders); the width, indent, layout, margins and look a row overrides are laid out |
 | Cell properties | `w:tcW`, `w:gridSpan`, `w:vMerge`, `w:tcBorders`, `w:insideH`, `w:insideV`, `w:tcMar` | API (`setCellProperties` sets the preferred width in points or percent) |
 | Horizontal merge (Word 97) | `w:hMerge` | Laid out as a span; a rewritten row writes it as `w:gridSpan` |
-| Diagonal borders | `w:tl2br`, `w:tr2bl` | API (`setCellBorders` with `diagonalDown`, `diagonalUp`); drawn in 3.6 |
+| Diagonal borders | `w:tl2br`, `w:tr2bl` | API (`setCellBorders` with `diagonalDown`, `diagonalUp`); drawn |
 | Cell text | `w:noWrap`, `w:tcFitText`, `w:hideMark` | API (`setCellProperties`; wrapping and fitting in Table Properties too) |
 | Header cells | `w:headers` | Read with the cell's `w:id`: a PDF export lists them as the cell's headers (PDF/UA `Headers`). Kept with its cell: Word's schema doesn't have it, so the API doesn't write it |
 | Default table style | `w:defaultTableStyle` | API (`setDefaultTableStyle`, Set as Default; new tables take it) |
