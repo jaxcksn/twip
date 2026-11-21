@@ -187,8 +187,17 @@ pub fn layout_shown(inlines: &[Inline]) -> Vec<Shown> {
     show(inlines, true, &|_| true)
 }
 
+/// How deep evaluated fields without a value show their results' own fields: below that, such a field shows nothing.
+/// A document nests fields with flat begin and end marks, so the depth is the file's to choose.
+const MAX_SHOWN_DEPTH: usize = 32;
+
 /// How each of `inlines` shows; an evaluated field without a value shows the runs of its result that `keep` takes.
 fn show(inlines: &[Inline], views: bool, keep: &dyn Fn(&Run) -> bool) -> Vec<Shown> {
+    show_at(inlines, views, keep, 0)
+}
+
+/// [`show`] `depth` results down.
+fn show_at(inlines: &[Inline], views: bool, keep: &dyn Fn(&Run) -> bool, depth: usize) -> Vec<Shown> {
     let mut out = vec![Shown::Itself; inlines.len()];
     for s in spans(inlines) {
         // Outer fields come first: a field inside a part that isn't drawn isn't drawn either.
@@ -210,9 +219,10 @@ fn show(inlines: &[Inline], views: bool, keep: &dyn Fn(&Run) -> bool) -> Vec<Sho
         if kind.is_some() {
             not(&mut out, s.code_end()..=s.end);
             if visible {
-                out[s.begin] = Shown::Value(
-                    value.clone().unwrap_or_else(|| s.sep.map_or_else(String::new, |sep| visible_where(&inlines[sep + 1..s.end], keep))),
-                );
+                out[s.begin] = Shown::Value(value.clone().unwrap_or_else(|| match s.sep {
+                    Some(sep) if depth < MAX_SHOWN_DEPTH => visible_at(&inlines[sep + 1..s.end], keep, depth + 1),
+                    _ => String::new(),
+                }));
             }
         } else if let (true, true, Some(l)) = (views, visible, label)
             && s.sep.is_none_or(|sep| sep + 1 == s.end)
@@ -235,8 +245,13 @@ pub fn visible_in(inlines: &[Inline], view: super::review::MarkupView) -> String
 
 /// [`visible`] of the inlines whose runs `keep` takes.
 fn visible_where(inlines: &[Inline], keep: &dyn Fn(&Run) -> bool) -> String {
+    visible_at(inlines, keep, 0)
+}
+
+/// [`visible_where`] `depth` results down.
+fn visible_at(inlines: &[Inline], keep: &dyn Fn(&Run) -> bool, depth: usize) -> String {
     let mut out = String::new();
-    for (i, s) in inlines.iter().zip(show(inlines, false, keep)) {
+    for (i, s) in inlines.iter().zip(show_at(inlines, false, keep, depth)) {
         if i.run().is_some_and(|r| !keep(r)) {
             continue;
         }
@@ -1409,6 +1424,35 @@ mod tests {
         let link = vec![b(3), t(" HYPERLINK \"https://example.com\" "), sym(), sep(3), sym(), end(3)];
         assert_eq!(result_text(&link, spans(&link)[0]), "\u{F0E0}");
         assert_eq!(visible(&link), "\u{F0E0}");
+    }
+
+    #[test]
+    fn deeply_nested_unvalued_fields_show_within_bounded_depth() {
+        let doc = crate::docx::read(&crate::docx::blank::blank_docx()).expect("the blank document reads");
+        let Some(Block::Para(p)) = doc.sections[0].blocks.first() else { panic!("a paragraph") };
+        let run = p.mark.clone();
+        let n = 4_000u64;
+        let mut v = Vec::with_capacity(n as usize * 4 + 1);
+        for id in 0..n {
+            v.push(Inline::FieldBegin {
+                id: FieldId(id),
+                kind: Some(FieldKind::Page),
+                lock: false,
+                dirty: false,
+                view: FieldView::Result,
+                label: None,
+                value: None,
+                form: None,
+                run: run.clone(),
+            });
+            v.push(Inline::FieldSep { id: FieldId(id), run: run.clone() });
+        }
+        v.push(Inline::Text("deep".into(), run.clone()));
+        v.extend((0..n).rev().map(|id| Inline::FieldEnd { id: FieldId(id), run: run.clone() }));
+        // Each field's result is the next one: past the depth bound the innermost text no longer shows.
+        assert_eq!(visible(&v), "");
+        let shallow: Vec<Inline> = v[2 * (n as usize) - 4..2 * (n as usize) + 3].to_vec();
+        assert_eq!(visible(&shallow), "deep");
     }
 
     #[test]
