@@ -129,6 +129,13 @@ fn text() {
 }
 
 #[test]
+fn turned_text() {
+    let mut resources = Resources::default();
+    let picture = common::scenes::turned_text(&mut resources);
+    same("turned-text", (560, 400), &picture, &resources);
+}
+
+#[test]
 fn images() {
     let mut resources = Resources::default();
     let picture = common::scenes::images(&mut resources);

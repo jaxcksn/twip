@@ -7,19 +7,21 @@
 //! position and rasterised once into 8-bit coverage, then reused by every draw with the same key. Like Skia, text
 //! whose em is more than 256 pixels across is drawn from its outline as a path instead of a mask.
 //!
-//! - Hinting: axis-aligned text at a uniform scale and without skew is hinted lightly (vertically only, advances and
-//!   horizontal positions kept: skrifa's light smooth target with linear metrics), as both of Twip's Skia scalers hint
-//!   it (DirectWrite natively, FreeType on the web). Against DirectWrite, hinting cut the share of text pixels that
-//!   differ by more than 64 from 14% to 4% at dpr 1 and from 16% to 0.5% at dpr 2. Other transforms are unhinted, as
-//!   hinting assumes the pixel grid.
-//! - Subpixel positions: a quarter pixel horizontally for axis-aligned text (its baseline is rounded to a whole pixel),
-//!   a quarter pixel both ways for any other transform, as Skia's strikes do.
+//! - Hinting: text at a uniform scale and without skew, upright or turned by quarter turns (vertical sections, turned
+//!   cells), is hinted lightly (skrifa's light smooth target with linear metrics: glyph origins and advances kept,
+//!   edges snapped across the baseline, and along it moved by up to half a pixel where a font's instructions move
+//!   them), as both of Twip's Skia scalers hint it (DirectWrite natively, FreeType on the web). The hinted outline is the upright one, in pixels, then turned: a quarter turn keeps the pixel grid. Against
+//!   DirectWrite, hinting cut the share of text pixels that differ by more than 64 from 14% to 4% at dpr 1 and from 16%
+//!   to 0.5% at dpr 2. Other transforms (any other angle, mirrored, skewed) are unhinted, as hinting assumes the grid.
+//! - Subpixel positions: a quarter pixel along the baseline for upright and quarter-turned text, hinted or not (skewed
+//!   or stretched too: the baseline's own coordinate is rounded to a whole pixel), a quarter pixel both ways for any
+//!   other transform, as Skia's strikes do.
 //! - Synthetic bold strokes each contour by Skia's fake-bold width (`size × lerp(1/24 at 9, 1/32 at 36)`, in em units)
 //!   and adds the stroke to the fill, each stroke turned to wind the same way as the glyph, so the non-zero fill of
 //!   the two together is the outset glyph (Skia's stroke-and-fill).
 //! - Masks go through Skia's A8 mask gamma (`SkMaskGamma`, contrast 0.5, sRGB luminance; Twip's Skia builds apply it
 //!   to A8 masks): a lookup from coverage to coverage, chosen by the text colour's luminance (8 levels). Glyphs drawn
-//!   as paths get none, as in Skia.
+//!   as paths go through the same lookup (Skia gives them none), so text keeps its weight across 256 pixels per em.
 //!
 //! Shaping is not here: Twip shapes with harfrust and records glyph ids and positions.
 
@@ -525,10 +527,10 @@ fn in_strike(glyph: u32, bin: [u8; 2]) -> u64 {
 pub(crate) struct GlyphCache {
     strikes: Vec<Strike>,
     strike_ids: FastMap<GlyphKey, usize>,
-    /// Light hinting instances by face and pixels per em (1/64), for axis-aligned text at a uniform scale.
+    /// Light hinting instances by face and pixels per em (1/64), for text on the pixel grid (see [`hinted_ppem`]).
     hinters: FastMap<(FontId, i32), Option<HintingInstance>>,
-    /// Whether masks of axis-aligned text are hinted: always, except in tests that compare the two.
-    hint: bool,
+    /// Whether masks of text on the pixel grid are hinted: always, except in tests that compare the two.
+    pub(crate) hint: bool,
     clock: u64,
     bytes: usize,
     budget: usize,
@@ -591,11 +593,9 @@ impl GlyphCache {
         let strike = &mut strikes[strike.0];
         let key = GlyphKey { glyph, bin, ..strike.key };
         let mask = strike.masks.entry(in_strike(glyph, bin)).or_insert_with(|| {
-            // Hinting assumes the pixel grid: axis-aligned, a uniform scale, no skew.
-            let [a, b, c, d] = key.matrix;
-            let hinting = (*hint && b == 0 && c == 0 && a == d && a > 0 && key.skew == 0)
-                .then(|| hinters.entry((key.font, a)).or_insert_with(|| fonts.hinting(key.font, a as f32 / 64.0)).as_ref())
-                .flatten();
+            let hinting = hinted_ppem(key)
+                .filter(|_| *hint)
+                .and_then(|ppem| hinters.entry((key.font, ppem)).or_insert_with(|| fonts.hinting(key.font, ppem as f32 / 64.0)).as_ref());
             let m = rasterize(fonts, raster, outliner, key, hinting, verbs, points);
             *bytes += m.data.len() + std::mem::size_of::<GlyphMask>();
             m
@@ -647,6 +647,21 @@ impl GlyphCache {
     }
 }
 
+/// The pixels per em (1/64) `key`'s mask is hinted at: text turned by a multiple of a quarter turn at a uniform scale,
+/// without skew, whose glyph y axis lies along a device axis. `None` for any other transform, as hinting assumes the
+/// pixel grid.
+fn hinted_ppem(key: GlyphKey) -> Option<i32> {
+    let [a, b, c, d] = key.matrix;
+    (a == d && b == -c && (a == 0) != (b == 0) && key.skew == 0).then(|| a.saturating_abs().saturating_add(b.saturating_abs()))
+}
+
+/// A glyph origin's device coordinate `v` in quarter pixels, rounded to a whole pixel when `whole`: the baseline's
+/// coordinate across the run (y for axis-aligned text, x for text turned a quarter), as Skia rounds it.
+#[inline]
+pub(crate) fn quarters(v: f32, whole: bool) -> i32 {
+    if whole { (v.round() as i32).saturating_mul(4) } else { (v * 4.0).round() as i32 }
+}
+
 #[allow(clippy::too_many_arguments, reason = "the mask's inputs and scratch stay explicit")]
 fn rasterize(
     fonts: &FontRegistry,
@@ -664,8 +679,14 @@ fn rasterize(
     }
     let [a, b, c, d] = key.matrix.map(|v| v as f64 / 64.0);
     let (dx, dy) = (key.bin[0] as f64 / 4.0, key.bin[1] as f64 / 4.0);
-    // A hinted outline is already in pixels.
-    let map = if hinting.is_some() { kurbo::Affine::translate((dx, dy)) } else { kurbo::Affine::new([a, b, c, d, dx, dy]) };
+    // A hinted outline is already in pixels: only its quarter turn is left.
+    let map = match hinting {
+        Some(h) => {
+            let s = h.size().ppem().unwrap_or(1.0) as f64;
+            kurbo::Affine::new([a / s, b / s, c / s, d / s, dx, dy])
+        }
+        None => kurbo::Affine::new([a, b, c, d, dx, dy]),
+    };
     match outliner.glyph_from(fonts, key.font, key.glyph, hinting, key.style(), map, verbs, points) {
         Ok(true) if !points.is_empty() => {}
         Ok(_) => return GlyphMask::default(),
@@ -723,7 +744,7 @@ fn linear_to_srgb(l: f32) -> f32 {
 
 /// Skia's A8 mask gamma tables, one per luminance level: `SkTMaskGamma_build_correcting_lut` with contrast 0.5 and
 /// sRGB luminance on both the text and the destination side.
-fn gamma_tables() -> &'static [[u8; 256]; 8] {
+pub(crate) fn gamma_tables() -> &'static [[u8; 256]; 8] {
     static TABLES: OnceLock<[[u8; 256]; 8]> = OnceLock::new();
     TABLES.get_or_init(|| {
         const CONTRAST: f32 = 0.5;
@@ -811,7 +832,7 @@ mod tests {
         let data = mono();
         let font = fonts.add(data.clone(), 0, &[]).expect("a face");
         let mut raster = Rasterizer::new(Level::new());
-        // Unhinted throughout, so only the transform differs (rotated text is never hinted).
+        // Unhinted throughout, so only the transform differs.
         let mut cache = GlyphCache { hint: false, ..GlyphCache::default() };
         let k = key(font, glyph(&data, 'R'), 24);
         let upright = ink(&cache.mask(&fonts, &mut raster, k).data);
@@ -889,25 +910,62 @@ mod tests {
         assert_eq!(cache.len(), n + 1);
     }
 
+    /// The mask `cache` makes for `k`: its left, top, width, height and coverage.
+    fn placed(cache: &mut GlyphCache, fonts: &FontRegistry, raster: &mut Rasterizer, k: GlyphKey) -> (i32, i32, u32, u32, Vec<u8>) {
+        let m = cache.mask(fonts, raster, k);
+        (m.left, m.top, m.width, m.height, m.data.clone())
+    }
+
     #[test]
-    fn light_hinting_moves_edges_only_vertically() {
+    fn a_quarter_turned_mask_is_the_hinted_upright_mask_turned() {
         let mut fonts = FontRegistry::default();
         let data = mono();
         let font = fonts.add(data.clone(), 0, &[]).expect("a face");
         let mut raster = Rasterizer::new(Level::new());
-        let mask = |hint: bool, k: GlyphKey, raster: &mut Rasterizer| {
-            let mut cache = GlyphCache { hint, ..GlyphCache::default() };
-            let m = cache.mask(&fonts, raster, k);
-            (m.left, m.width, m.data.clone())
-        };
+        let mut cache = GlyphCache::default();
+        for (c, px) in [('E', 11), ('g', 16), ('R', 24), ('&', 13)] {
+            let upright = key(font, glyph(&data, c), px);
+            let u = placed(&mut cache, &fonts, &mut raster, upright);
+            // Turned a quarter clockwise (y down): device (x, y) is the upright glyph's (y, -x).
+            let t = placed(&mut cache, &fonts, &mut raster, GlyphKey { matrix: [0, px * 64, -px * 64, 0], ..upright });
+            assert_eq!((t.0, t.1, t.2, t.3), (-(u.1 + u.3 as i32), u.0, u.3, u.2), "'{c}' at {px} px: the box turned");
+            // The same coverage, but where an edge on a pixel boundary rounds the other way across rows than columns.
+            let mut off = 0;
+            for y in 0..u.3 {
+                for x in 0..u.2 {
+                    let turned = t.4[(x * t.2 + (u.3 - 1 - y)) as usize];
+                    off += usize::from(u.4[(y * u.2 + x) as usize].abs_diff(turned) > 2);
+                }
+            }
+            assert!(off * 100 <= u.4.len(), "'{c}' at {px} px: {off} pixels differ");
+            // Turned a half and three quarters too, and none of them is the unhinted mask.
+            for matrix in [[-px * 64, 0, 0, -px * 64], [0, -px * 64, px * 64, 0]] {
+                let k = GlyphKey { matrix, ..upright };
+                let hinted = placed(&mut cache, &fonts, &mut raster, k);
+                assert_ne!(hinted, placed(&mut GlyphCache { hint: false, ..GlyphCache::default() }, &fonts, &mut raster, k));
+                assert_eq!(ink(&hinted.4).abs_diff(ink(&u.4)) * 100 / ink(&u.4), 0, "'{c}' at {px} px, {matrix:?}");
+            }
+        }
+        // Text at any other angle, mirrored or skewed is not hinted: the switch doesn't change it.
         let e = key(font, glyph(&data, 'E'), 11);
-        let (hinted, unhinted) = (mask(true, e, &mut raster), mask(false, e, &mut raster));
-        assert_ne!(hinted.2, unhinted.2, "hinting changes the mask");
-        assert_eq!((hinted.0, hinted.1), (unhinted.0, unhinted.1), "but not its columns: advances and x positions stay");
-        // Rotated text is never hinted, so the switch doesn't change it.
-        let turned = GlyphKey { matrix: [0, 11 * 64, -11 * 64, 0], ..e };
-        assert_eq!(mask(true, turned, &mut raster), mask(false, turned, &mut raster));
+        for k in [
+            GlyphKey { matrix: [500, 300, -300, 500], ..e },
+            GlyphKey { matrix: [-11 * 64, 0, 0, 11 * 64], ..e },
+            GlyphKey { matrix: [0, 11 * 64, 11 * 64, 0], ..e },
+            GlyphKey { skew: (-0.2f32).to_bits(), ..e },
+        ] {
+            let mut plain = GlyphCache { hint: false, ..GlyphCache::default() };
+            assert_eq!(placed(&mut cache, &fonts, &mut raster, k), placed(&mut plain, &fonts, &mut raster, k), "{k:?}");
+        }
+        // Down to a 64th of a pixel per em, every way round, and at the largest em a mask is made for: no panic.
+        for v in [1, 2, 63, 256 * 64] {
+            for matrix in [[0, v, -v, 0], [0, -v, v, 0], [-v, 0, 0, -v], [v, 0, 0, v]] {
+                let m = cache.mask(&fonts, &mut raster, GlyphKey { matrix, ..e });
+                assert!(m.width <= 4096 && m.height <= 4096);
+            }
+        }
     }
+
     #[test]
     fn hinted_ink_stays_within_its_reach() {
         // Every glyph of a TrueType and a CFF face, plain and bold, at sizes across the hinted range: the ink stays

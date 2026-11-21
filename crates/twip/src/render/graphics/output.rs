@@ -187,7 +187,7 @@ fn render_output_matches_snapshots() {
 }
 
 /// The `fixtures/render/` pages and the showcase's first drawn on the GPU agree with the CPU's within the same
-/// tolerance. Skips without a GPU adapter, unless `TWIP_GRAPHICS_GPU=1`.
+/// tolerance, and `text-glyphs`' pages exactly. Skips without a GPU adapter, unless `TWIP_GRAPHICS_GPU=1`.
 #[cfg(twip_window)]
 #[test]
 fn gpu_pages_match_the_cpu() {
@@ -216,7 +216,13 @@ fn gpu_pages_match_the_cpu() {
             let clear = Some(r.ink_for(false, r.page_colour.unwrap_or(0xFF_FFFF)));
             let px = gpu.draw_pixels(&ctx, g.resources(), &Frame { clear, draws: &draws }, (cpu.w, cpu.h)).expect("the device is not lost");
             let ours = Rgba { w: cpu.w, h: cpu.h, px };
-            if let Some(why) = differs(&cpu, &ours) {
+            // Text only, drawn from the same glyph masks: byte for byte.
+            let why = if name == "render__text-glyphs" {
+                (cpu != ours).then(|| "text drawn otherwise than the CPU's glyph masks".to_owned())
+            } else {
+                differs(&cpu, &ours)
+            };
+            if let Some(why) = why {
                 std::fs::create_dir_all(gpu_diff_root()).unwrap();
                 write_diff(&gpu_diff_root(), &format!("{name}__p{}", i + 1), Some(&cpu), &ours, &why);
                 failures.push(format!("{name} page {}: {why}", i + 1));

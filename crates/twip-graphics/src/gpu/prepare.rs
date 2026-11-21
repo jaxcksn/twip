@@ -1100,6 +1100,21 @@ impl Prepare {
     /// A path's coverage (clipped as the CPU backend clips it, by the non-zero or the even-odd rule) into the atlas, tile by
     /// tile, each tile one instance.
     fn path(&mut self, verbs: &[Verb], points: &[Point], t: Transform, clip: &Clip, paint: &Paint, even_odd: bool) {
+        self.path_through(verbs, points, t, clip, paint, even_odd, None);
+    }
+
+    /// [`Prepare::path`], its coverage through `gamma` when given (a glyph drawn as a path, as the CPU draws it).
+    #[allow(clippy::too_many_arguments, reason = "a path, its paint and its frame state")]
+    fn path_through(
+        &mut self,
+        verbs: &[Verb],
+        points: &[Point],
+        t: Transform,
+        clip: &Clip,
+        paint: &Paint,
+        even_odd: bool,
+        gamma: Option<&[u8; 256]>,
+    ) {
         let Some(first) = points.first() else { return };
         let first = t.map_point(*first);
         let (x0, y0, x1, y1) = points
@@ -1122,6 +1137,9 @@ impl Prepare {
                     atlas.row(slot, row, w).fill(0);
                 }
                 raster.fill(verbs, points, t, part, paint.aa, even_odd, |y, x, cov| {
+                    if let Some(table) = gamma {
+                        cov.iter_mut().for_each(|c| *c = table[*c as usize]);
+                    }
                     apply_clip(*level, clip, masks, y, x, cov);
                     let out = atlas.row(slot, (y - part.y0) as u32, w);
                     let at = (x - part.x0) as usize;
@@ -1165,7 +1183,10 @@ impl Prepare {
             return;
         }
         let style = Style { skew_x: run.synthesis.skew_x, bold: if run.synthesis.embolden { embolden_em(run.size) } else { 0.0 } };
+        let lum = color.map_or(4, |c| luminance_level(c.r, c.g, c.b, c.a));
         if max_scale(m) > 256.0 {
+            // Through the same mask gamma as a mask, as the CPU backend draws it.
+            let table = &crate::font::gamma_tables()[lum as usize];
             let em = kurbo::Affine::new([run.size as f64, 0.0, 0.0, run.size as f64, 0.0, 0.0]);
             for g in glyphs {
                 let (mut verbs, mut points) = (std::mem::take(&mut self.verbs), std::mem::take(&mut self.points));
@@ -1173,7 +1194,7 @@ impl Prepare {
                 points.clear();
                 let map = kurbo::Affine::translate((g.x as f64, run.baseline as f64)) * em;
                 match self.glyphs.outliner.glyph(fonts, run.font, g.id(), style, map, &mut verbs, &mut points) {
-                    Ok(true) => self.path(&verbs, &points, t, clip, &Paint { aa: true, ..*paint }, false),
+                    Ok(true) => self.path_through(&verbs, &points, t, clip, &Paint { aa: true, ..*paint }, false, Some(table)),
                     Ok(false) => {}
                     Err(()) => self.out.stats.failed_glyphs += 1,
                 }
@@ -1181,11 +1202,11 @@ impl Prepare {
             }
             return;
         }
-        let lum = color.map_or(4, |c| luminance_level(c.r, c.g, c.b, c.a));
         let matrix = m.map(|v| (v * 64.0).round() as i32);
         let key = GlyphKey { font: run.font, glyph: 0, matrix, bin: [0, 0], skew: style.skew_x.to_bits(), bold: style.bold.to_bits(), lum };
         let strike = self.glyphs.strike(key);
-        let axis_aligned = t.b == 0.0 && t.c == 0.0;
+        // The baseline's coordinate across the run, rounded: y when axis-aligned, x when turned a quarter.
+        let whole = (matrix[0] == 0 && matrix[3] == 0, matrix[1] == 0 && matrix[2] == 0);
         let inside = interior(clip);
         // A glyph whose origin is farther off the clip than any mask reaches draws nothing: no mask is made for it.
         let reach = crate::font::glyph_reach(max_scale(m), crate::font::OUTLINE_EMS);
@@ -1193,8 +1214,7 @@ impl Prepare {
         let (x0, y0, x1, y1) = (b.x0.saturating_sub(reach), b.y0.saturating_sub(reach), b.x1.saturating_add(reach), b.y1.saturating_add(reach));
         for g in glyphs {
             let o = t.map_point(Point { x: g.x, y: run.baseline });
-            let qx = (o.x * 4.0).round() as i32;
-            let qy = if axis_aligned { (o.y.round() as i32).saturating_mul(4) } else { (o.y * 4.0).round() as i32 };
+            let (qx, qy) = (crate::font::quarters(o.x, whole.0), crate::font::quarters(o.y, whole.1));
             let (ox, oy) = (qx.div_euclid(4), qy.div_euclid(4));
             if ox < x0 || ox >= x1 || oy < y0 || oy >= y1 {
                 continue;

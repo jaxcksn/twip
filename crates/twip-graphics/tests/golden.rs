@@ -162,6 +162,13 @@ fn text_scene() {
 }
 
 #[test]
+fn turned_text_scene() {
+    let mut resources = Resources::default();
+    let picture = turned_text(&mut resources);
+    golden_with("turned-text", (560, 400), &picture, &resources);
+}
+
+#[test]
 fn rect_scene() {
     golden("rects", (128, 96), &rects());
 }

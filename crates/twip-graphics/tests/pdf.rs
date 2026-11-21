@@ -142,6 +142,14 @@ fn text() {
 }
 
 #[test]
+fn turned_text() {
+    let mut res = Resources::default();
+    let picture = scenes::turned_text(&mut res);
+    // 2%: hayro sets the path glyphs a device pixel left of the CPU, and the quarter-turned runs apart (hinted or not).
+    same_from("turned-text", (560, 400), &picture, &res, 0, 2);
+}
+
+#[test]
 fn images() {
     let mut res = Resources::default();
     let picture = scenes::images(&mut res);

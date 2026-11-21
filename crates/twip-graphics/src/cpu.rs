@@ -368,14 +368,14 @@ impl Renderer {
                 Cmd::RRect { rrect, paint } => {
                     let (rect, radii) = lists.rrects[rrect as usize];
                     rrect_path(rect, radii, &mut self.verbs, &mut self.points);
-                    self.with_paint(target, res, lists, paint, t, |r, target, src, aa| r.fill_scratch_path(target, t, &clip, src, aa));
+                    self.with_paint(target, res, lists, paint, t, |r, target, src, aa| r.fill_scratch_path(target, t, &clip, src, aa, None));
                 }
                 Cmd::Path { path, paint } | Cmd::EvenOddPath { path, paint } => {
                     let even_odd = matches!(cmd, Cmd::EvenOddPath { .. });
                     let (verbs, points) = (&lists.verbs[path.verbs.range()], &lists.points[path.points.range()]);
                     self.with_paint(target, res, lists, paint, t, |r, target, src, aa| {
                         let mut s = Scratch { level: r.level, masks: &r.masks, row: &mut r.row, colors: &mut r.colors, columns: &mut r.columns };
-                        fill_path(&mut r.raster, &mut s, target, verbs, points, t, &clip, src, aa, even_odd);
+                        fill_path(&mut r.raster, &mut s, target, verbs, points, t, &clip, src, aa, even_odd, None);
                     });
                 }
                 Cmd::Frame { frame, paint } => {
@@ -614,7 +614,7 @@ impl Renderer {
                 Some(inner) => frame_path(rect, inner, &mut self.verbs, &mut self.points),
                 None => rect_path(rect, &mut self.verbs, &mut self.points),
             }
-            return self.fill_scratch_path(target, t, clip, src, aa);
+            return self.fill_scratch_path(target, t, clip, src, aa, None);
         }
         // Without anti-aliasing an edge rounds to the nearest pixel boundary, as Skia's aliased rects do.
         let q = |v: f32| if aa { fixed(v) } else { fixed((v + 0.5).floor()) };
@@ -661,10 +661,11 @@ impl Renderer {
         }
     }
 
-    /// Fills the path in `self.verbs` and `self.points`.
-    fn fill_scratch_path(&mut self, target: &mut Target<'_>, t: Transform, clip: &Clip, src: Source<'_>, aa: bool) {
+    /// Fills the path in `self.verbs` and `self.points`, its coverage through `gamma` when given.
+    #[allow(clippy::too_many_arguments, reason = "a path, its paint and its frame state")]
+    fn fill_scratch_path(&mut self, target: &mut Target<'_>, t: Transform, clip: &Clip, src: Source<'_>, aa: bool, gamma: Option<&[u8; 256]>) {
         let mut s = Scratch { level: self.level, masks: &self.masks, row: &mut self.row, colors: &mut self.colors, columns: &mut self.columns };
-        fill_path(&mut self.raster, &mut s, target, &self.verbs, &self.points, t, clip, src, aa, false);
+        fill_path(&mut self.raster, &mut s, target, &self.verbs, &self.points, t, clip, src, aa, false, gamma);
     }
 
     /// Draws a glyph run from cached masks, at any transform, or (when its em is over 256 pixels across, as Skia
@@ -691,20 +692,6 @@ impl Renderer {
             return;
         }
         let style = Style { skew_x: run.synthesis.skew_x, bold: if run.synthesis.embolden { embolden_em(run.size) } else { 0.0 } };
-        if max_scale(m) > 256.0 {
-            let em = kurbo::Affine::new([run.size as f64, 0.0, 0.0, run.size as f64, 0.0, 0.0]);
-            for g in glyphs {
-                self.verbs.clear();
-                self.points.clear();
-                let map = kurbo::Affine::translate((g.x as f64, run.baseline as f64)) * em;
-                match self.glyphs.outliner.glyph(fonts, run.font, g.id(), style, map, &mut self.verbs, &mut self.points) {
-                    Ok(true) => self.fill_scratch_path(target, t, clip, src, true),
-                    Ok(false) => {}
-                    Err(()) => self.stats.failed_glyphs += 1,
-                }
-            }
-            return;
-        }
         let lum = match (color, self.luminance) {
             (None, _) => 4,
             (Some(c), Some((last, lum))) if c == last => lum,
@@ -714,11 +701,27 @@ impl Renderer {
                 lum
             }
         };
+        if max_scale(m) > 256.0 {
+            // Through the same mask gamma as a mask, so text looks the same weight either side of 256 pixels.
+            let table = &crate::font::gamma_tables()[lum as usize];
+            let em = kurbo::Affine::new([run.size as f64, 0.0, 0.0, run.size as f64, 0.0, 0.0]);
+            for g in glyphs {
+                self.verbs.clear();
+                self.points.clear();
+                let map = kurbo::Affine::translate((g.x as f64, run.baseline as f64)) * em;
+                match self.glyphs.outliner.glyph(fonts, run.font, g.id(), style, map, &mut self.verbs, &mut self.points) {
+                    Ok(true) => self.fill_scratch_path(target, t, clip, src, true, Some(table)),
+                    Ok(false) => {}
+                    Err(()) => self.stats.failed_glyphs += 1,
+                }
+            }
+            return;
+        }
         let matrix = m.map(|v| (v * 64.0).round() as i32);
         let key = GlyphKey { font: run.font, glyph: 0, matrix, bin: [0, 0], skew: style.skew_x.to_bits(), bold: style.bold.to_bits(), lum };
         let strike = self.glyphs.strike(key);
-        // Glyph origins land on quarter pixels; an axis-aligned run's baseline rounds to a whole pixel, as in Skia.
-        let axis_aligned = t.b == 0.0 && t.c == 0.0;
+        // The baseline's coordinate across the run, rounded: y when axis-aligned, x when turned a quarter.
+        let whole = (matrix[0] == 0 && matrix[3] == 0, matrix[1] == 0 && matrix[2] == 0);
         let inside = interior(clip);
         // A glyph whose origin is farther off the clip than any mask reaches draws nothing: no mask is made for it.
         let reach = crate::font::glyph_reach(max_scale(m), crate::font::OUTLINE_EMS);
@@ -726,8 +729,7 @@ impl Renderer {
         let (x0, y0, x1, y1) = (b.x0.saturating_sub(reach), b.y0.saturating_sub(reach), b.x1.saturating_add(reach), b.y1.saturating_add(reach));
         for g in glyphs {
             let o = t.map_point(Point { x: g.x, y: run.baseline });
-            let qx = (o.x * 4.0).round() as i32;
-            let qy = if axis_aligned { (o.y.round() as i32).saturating_mul(4) } else { (o.y * 4.0).round() as i32 };
+            let (qx, qy) = (crate::font::quarters(o.x, whole.0), crate::font::quarters(o.y, whole.1));
             let (ox, oy) = (qx.div_euclid(4), qy.div_euclid(4));
             if ox < x0 || ox >= x1 || oy < y0 || oy >= y1 {
                 continue;
@@ -1106,8 +1108,12 @@ fn fill_path(
     src: Source<'_>,
     aa: bool,
     even_odd: bool,
+    gamma: Option<&[u8; 256]>,
 ) {
     raster.fill(verbs, points, t, clip.bounds, aa, even_odd, |y, x, cov| {
+        if let Some(table) = gamma {
+            cov.iter_mut().for_each(|c| *c = table[*c as usize]);
+        }
         apply_clip(s.level, clip, s.masks, y, x, cov);
         s.paint(target, y, x, cov, src);
     });
@@ -1401,6 +1407,87 @@ mod tests {
         renderer.render(&mut Target::new(&mut px, 16, 16, 64, Format::Rgba8).expect("fits"), &resources, &Frame { clear: None, draws: &draws });
         assert_eq!(renderer.stats(), Stats { failed_images: 2, failed_glyphs: 1 });
         assert!(px[16 * 8 * 4..].iter().all(|&v| v == 255), "nothing drew where the images and glyph failed");
+    }
+
+    #[test]
+    fn hinted_runs_keep_their_unhinted_advances() {
+        // A run of 40 n's at 9 px, upright and turned a quarter, hinted and not: each glyph's ink sits where the
+        // shaped advances put it, so the two never drift apart along the baseline (hinted advances, rounded to whole
+        // pixels, would put the last n 16 px off).
+        use crate::scene::{GlyphRun, Recorder, Synthesis};
+        let bytes = include_bytes!("../tests/fonts/jetbrains-mono-500.ttf");
+        let n = skrifa::MetadataProvider::charmap(&skrifa::FontRef::new(bytes).expect("reads")).map('n').expect("an n").to_u32();
+        let mut resources = Resources::default();
+        let font = resources.fonts.add(std::sync::Arc::new(bytes.to_vec()) as crate::font::FontData, 0, &[]).expect("a face");
+        let advance = 0.6 * 9.0;
+        let glyphs: Vec<(u32, f64)> = (0..40).map(|i| (n, 2.0 + i as f64 * advance)).collect();
+        let mut rec = Recorder::new();
+        rec.glyphs(&resources.fonts, &GlyphRun { font, size: 9.0, baseline: 10.0, glyphs: &glyphs, synthesis: Synthesis::default() }, Color::BLACK);
+        let picture = rec.finish();
+        let (long, short) = (224usize, 14usize);
+        for turned in [false, true] {
+            // Each glyph's ink centre along the baseline, in pixels.
+            let centres = |hint: bool| {
+                let mut r = Renderer::new();
+                r.glyphs.hint = hint;
+                let (w, h) = if turned { (short, long) } else { (long, short) };
+                let t = if turned { kurbo::Affine::new([0.0, 1.0, -1.0, 0.0, short as f64, 0.0]) } else { kurbo::Affine::IDENTITY };
+                let mut px = vec![0u8; w * h * 4];
+                let draws = [Draw { picture: &picture, transform: t }];
+                r.render(
+                    &mut Target::new(&mut px, w as u32, h as u32, w * 4, Format::Rgba8).expect("fits"),
+                    &resources,
+                    &Frame { clear: Some(Color::WHITE), draws: &draws },
+                );
+                let mut ink = vec![0f64; long];
+                for (i, p) in px.chunks(4).enumerate() {
+                    ink[if turned { i / w } else { i % w }] += f64::from(255 - p[0]);
+                }
+                (0..40)
+                    .map(|g| {
+                        let cell = (2.0 + g as f64 * advance) as usize..(2.0 + (g + 1) as f64 * advance) as usize;
+                        let (sum, total) = cell.fold((0.0, 0.0), |(s, t), x| (s + x as f64 * ink[x], t + ink[x]));
+                        sum / total
+                    })
+                    .collect::<Vec<_>>()
+            };
+            let (hinted, unhinted) = (centres(true), centres(false));
+            assert_ne!(hinted, unhinted, "hinting changes the run (turned: {turned})");
+            for (g, (h, u)) in hinted.iter().zip(&unhinted).enumerate() {
+                assert!((h - u).abs() < 0.25, "n {g} (turned: {turned}): {h} hinted, {u} not");
+            }
+        }
+    }
+
+    #[test]
+    fn glyphs_keep_their_weight_across_the_largest_mask() {
+        // An O just under 256 pixels per em (a mask) and just over (a path), black on white: the same ink, give or take
+        // the size, as both go through the mask gamma.
+        use crate::scene::{GlyphRun, Recorder, Synthesis};
+        let bytes = include_bytes!("../tests/fonts/jetbrains-mono-500.ttf");
+        let o = skrifa::MetadataProvider::charmap(&skrifa::FontRef::new(bytes).expect("reads")).map('O').expect("an O").to_u32();
+        let mut resources = Resources::default();
+        let font = resources.fonts.add(std::sync::Arc::new(bytes.to_vec()) as crate::font::FontData, 0, &[]).expect("a face");
+        let ink = |size: f64| {
+            let mut rec = Recorder::new();
+            rec.glyphs(
+                &resources.fonts,
+                &GlyphRun { font, size, baseline: 230.0, glyphs: &[(o, 4.0)], synthesis: Synthesis::default() },
+                Color::BLACK,
+            );
+            let picture = rec.finish();
+            let mut px = vec![0u8; 200 * 260 * 4];
+            let draws = [Draw { picture: &picture, transform: kurbo::Affine::IDENTITY }];
+            Renderer::new().render(
+                &mut Target::new(&mut px, 200, 260, 800, Format::Rgba8).expect("fits"),
+                &resources,
+                &Frame { clear: Some(Color::WHITE), draws: &draws },
+            );
+            px.chunks(4).map(|p| f64::from(255 - p[0])).sum::<f64>()
+        };
+        let (mask, path) = (ink(255.9), ink(256.1));
+        let scale = (256.1f64 / 255.9).powi(2);
+        assert!((path / mask / scale - 1.0).abs() < 0.002, "{mask} as a mask, {path} as a path");
     }
 
     #[test]

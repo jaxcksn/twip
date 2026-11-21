@@ -32,6 +32,25 @@ has at least 3:1 contrast against the page, except `selection`: the light blue o
 
 Under forced colours (web) or high contrast (WinForms) the editor uses the system's colours, until you set your own.
 
+## Text
+
+Glyphs are drawn from the font's outlines, the same way on the GPU, on the CPU and in every SDK, so a page looks the
+same wherever it is drawn.
+
+- **Hinted:** text upright or turned by a quarter, a half or three quarters (vertical sections, turned table cells)
+  at an even scale. Hinting is light: it snaps edges across the baseline to the pixel grid and keeps every glyph's
+  origin and advance, so line breaks are the same hinted or not and zoom never reflows a line. Along the baseline an
+  edge can still move by up to half a pixel, where the font's own hinting instructions move it.
+- **Not hinted:** text at any other angle, mirrored or stretched, synthetic italic, and colour glyphs (emoji).
+- **Positions:** glyphs land on quarter pixels along the baseline. For upright and quarter-turned text the baseline
+  itself sits on a whole pixel, hinted or not (skewed and stretched text too); at any other angle glyphs land on
+  quarter pixels both ways.
+- **Weight:** coverage goes through a gamma chosen by the text colour, so dark text on light and light text on dark
+  look the same weight. Glyphs more than 256 pixels per em are drawn from their outlines instead of a cached mask,
+  through the same gamma.
+
+A PDF export embeds the fonts, and the viewer draws their glyphs its own way.
+
 ## Web
 
 ```ts file=../../examples/web/rendering.ts

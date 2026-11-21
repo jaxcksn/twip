@@ -277,6 +277,38 @@ pub fn text(resources: &mut Resources) -> Picture {
     rec.finish()
 }
 
+/// Hinted text off the upright: runs turned a quarter, a half and three quarters (as vertical sections and turned
+/// cells draw them) at subpixel origins, against a run at 30 degrees (unhinted); and a glyph either side of the
+/// largest em drawn from a mask (250 px, a mask, and 262 px, its outline as a path), black and white on black.
+pub fn turned_text(resources: &mut Resources) -> Picture {
+    use twip_graphics::scene::{GlyphRun, Synthesis};
+    let mono = Mono::new();
+    let font = resources.fonts.add(mono.data.clone(), 0, &[]).expect("the test face registers");
+    let fonts = &resources.fonts;
+    let mut rec = Recorder::new();
+    let run = |rec: &mut Recorder, s: &str, size: f64, x: f64, baseline: f64, c: Color| {
+        let glyphs = mono.set(s, size, x);
+        rec.glyphs(fonts, &GlyphRun { font, size, baseline, glyphs: &glyphs, synthesis: Synthesis::default() }, c);
+    };
+    let quarter = std::f64::consts::FRAC_PI_2;
+    for (i, size) in [9.0, 11.0, 14.0].into_iter().enumerate() {
+        let (x, y) = (8.3 + i as f64 * 18.0, 14.2 + i as f64 * 20.0);
+        for (turn, at) in [(quarter, (x, 8.0)), (-quarter, (x + 64.0, 150.0)), (2.0 * quarter, (350.0, y))] {
+            rec.push_transform(Affine::translate(at) * Affine::rotate(turn));
+            run(&mut rec, "Hinted 0.5 Eg", size, 0.0, 0.0, INK);
+            rec.pop();
+        }
+        rec.push_transform(Affine::translate((150.0 + i as f64 * 70.0, 85.0)) * Affine::rotate(0.52));
+        run(&mut rec, "Angled 0.5", size, 0.0, 0.0, INK);
+        rec.pop();
+    }
+    rec.fill_rect(rect(280.0, 160.0, 560.0, 400.0), INK);
+    for (size, x, c) in [(250.0, -20.0, INK), (262.0, 110.0, INK), (250.0, 270.0, Color::WHITE), (262.0, 400.0, Color::WHITE)] {
+        run(&mut rec, "l", size, x, 380.0, c);
+    }
+    rec.finish()
+}
+
 pub fn image(resources: &mut Resources, bytes: &'static [u8]) -> twip_graphics::image::ImageId {
     resources.images.add(std::sync::Arc::new(bytes)).expect("the test image registers")
 }
