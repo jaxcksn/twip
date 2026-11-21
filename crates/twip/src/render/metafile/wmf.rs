@@ -594,7 +594,8 @@ fn embedded_emf(d: &[u8], first: usize) -> Option<Vec<u8>> {
         }
         data.extend_from_slice(chunk);
         if remaining == 0 {
-            if emf::Header::read(&data).is_some() {
+            // The chunks add up to the size the last one declares for the whole.
+            if r.u32(40).is_some_and(|total| total as usize == data.len()) && emf::Header::read(&data).is_some() {
                 return Some(data);
             }
             data = Vec::new();

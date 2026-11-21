@@ -123,12 +123,8 @@ impl<S: Sink> Player<'_, S> {
             let at = ((y0 + y) as usize * w as usize + (x0 + x) as usize) * 4;
             px.get(at..at + 4).is_some_and(|p| p[..3] != [r, g, b] || p[3] == 0)
         };
-        let mut work = 0usize;
-        let rects = region::runs(x1 - x0, y1 - y0, shown, |n| {
-            work += n;
-            true
-        });
-        if !self.spend(work + rects.len()) {
+        let rects = region::runs(x1 - x0, y1 - y0, shown, |n| self.spend(n));
+        if !self.spend(rects.len()) {
             return;
         }
         // From the source's pixels into the unit square.

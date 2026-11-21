@@ -811,10 +811,8 @@ fn record<S: Sink>(p: &mut Player<'_, S>, kind: u32, r: Rec<'_>) -> Option<()> {
             let mut chars = std::mem::take(&mut p.chars);
             chars.clear();
             if options & 0x200 != 0 {
-                if !narrow(&mut chars, r.slice(start, n, 1)?, p.dc.font.charset) {
-                    p.chars = chars;
-                    return Some(());
-                }
+                // Each byte is the low byte of a UTF-16 code unit, whatever the font's character set.
+                chars.extend(r.slice(start, n, 1)?.iter().map(|&b| u32::from(b)));
             } else {
                 utf16(&mut chars, r.slice(start, n, 2)?);
             }
@@ -882,12 +880,8 @@ fn mask<S: Sink>(p: &mut Player<'_, S>, r: Rec<'_>, at: DibAt, corner: Point, si
     if !p.spend_pixels(w, h) {
         return None;
     }
-    let mut work = 0usize;
-    let rects = mask_rects(&bits, (x, y, w, h), &mut |n| {
-        work += n;
-        true
-    });
-    p.spend(work + rects.len()).then_some(rects)
+    let rects = mask_rects(&bits, (x, y, w, h), &mut |n| p.spend(n));
+    p.spend(rects.len()).then_some(rects)
 }
 
 /// UTF-16LE code units as code points; unpaired surrogates become U+FFFD.

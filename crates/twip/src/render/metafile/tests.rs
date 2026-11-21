@@ -1,5 +1,6 @@
 //! The EMF player: records drawn into a log and on the CPU, and hostile files.
 
+use std::collections::HashMap;
 use std::fmt::Write;
 use std::time::{Duration, Instant};
 
@@ -140,6 +141,9 @@ impl Sink for Log {
         }
         if let Some(r) = t.rises {
             write!(line, " rises {r:?}").unwrap();
+        }
+        if t.underline {
+            line.push_str(" underlined");
         }
         self.ops.push(line);
         10.0
@@ -731,8 +735,9 @@ fn the_fixture_reads_without_undecodable_pictures() {
 #[derive(Default)]
 pub(super) struct Count {
     pub(super) elements: u64,
-    masks: std::collections::HashSet<usize>,
-    pub(super) bitmaps: std::collections::HashSet<usize>,
+    // Held, so a freed one's address can't be taken by the next and hide it.
+    masks: HashMap<usize, std::rc::Rc<[crate::render::svg::MaskStep]>>,
+    pub(super) bitmaps: HashMap<usize, std::sync::Arc<Vec<u8>>>,
     pub(super) bitmap_bytes: u64,
     pub(super) depth: i32,
     /// Every call the sink takes.
@@ -741,7 +746,7 @@ pub(super) struct Count {
 
 impl Count {
     fn bitmap(&mut self, b: &std::sync::Arc<Vec<u8>>) {
-        if self.bitmaps.insert(std::sync::Arc::as_ptr(b) as usize) {
+        if self.bitmaps.insert(std::sync::Arc::as_ptr(b) as usize, b.clone()).is_none() {
             self.bitmap_bytes += b.len() as u64;
         }
     }
@@ -767,8 +772,12 @@ impl Sink for Count {
         self.elements += p.elements().len() as u64;
         self.calls += 1;
     }
-    fn begin_layer(&mut self, _: f32) {}
-    fn end_layer(&mut self) {}
+    fn begin_layer(&mut self, _: f32) {
+        self.calls += 1;
+    }
+    fn end_layer(&mut self) {
+        self.calls += 1;
+    }
     fn fill(&mut self, p: &BezPath, _: bool, b: &Brush) {
         self.calls += 1;
         self.elements += p.elements().len() as u64;
@@ -777,15 +786,18 @@ impl Sink for Count {
         }
     }
     fn stroke(&mut self, p: &BezPath, _: &kurbo::Stroke, _: &Brush) {
+        self.calls += 1;
         self.elements += p.elements().len() as u64;
     }
     fn image(&mut self, b: &std::sync::Arc<Vec<u8>>, _: kurbo::Rect, _: Affine, _: f32, _: bool) {
+        self.calls += 1;
         self.bitmap(b);
     }
     fn end_masked(&mut self, mask: &std::rc::Rc<[crate::render::svg::MaskStep]>) {
         use crate::render::svg::MaskStep;
+        self.calls += 1;
         self.elements += 1;
-        if self.masks.insert(std::rc::Rc::as_ptr(mask) as *const () as usize) {
+        if self.masks.insert(std::rc::Rc::as_ptr(mask) as *const () as usize, mask.clone()).is_none() {
             for step in mask.iter() {
                 if let MaskStep::Add(p, _) | MaskStep::Remove(p, _) | MaskStep::Toggle(p, _) | MaskStep::Clip(p, _) = step {
                     self.elements += p.elements().len() as u64;

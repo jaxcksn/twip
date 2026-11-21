@@ -281,6 +281,11 @@ fn path_gradient_cells_shade_within_eight_bits_of_gdi_plus() {
     let steps: Vec<u32> =
         (2..48).map(|x| at(&px, x, 50).iter().zip(at(&px, x + 1, 50)).map(|(a, b)| u32::from(a.abs_diff(b))).max().unwrap()).collect();
     assert!(steps.iter().all(|&s| s <= 24), "{steps:?}");
+    // And it is the gradient: the left edge's colour half way between its corners', the blend's bends, the focus.
+    let samples = [(2, [149, 43, 43]), (10, [217, 178, 178]), (25, [242, 229, 229]), (40, WHITE), (48, WHITE)];
+    for (x, want) in samples {
+        assert!(near(at(&px, x, 50), want, 12), "x {x}: {:?} for {want:?}", at(&px, x, 50));
+    }
 }
 
 #[test]
@@ -820,6 +825,47 @@ fn a_lopsided_compound_pen_draws_each_strip_on_its_side() {
 }
 
 #[test]
+fn tab_stop_lookups_are_charged_to_the_work_budget() {
+    // 20 000 tabs under 256 stops that never reach past the line's start: each tab searches them all.
+    let s: Vec<u8> = "\t".repeat(20_000).encode_utf16().flat_map(u16::to_le_bytes).collect();
+    let format = [u32s(&[V, 0, 0, 0, 0, 0, 0]), f32s(&[0.0]), u32s(&[0]), f32s(&[0.0, 0.0, 1.0]), u32s(&[0, 256, 0]), f32s(&[0.0; 256])].concat();
+    let mut d = u32s(&[OPAQUE_RED, 2, 20_000]);
+    d.extend(f32s(&[0.0, 0.0, 0.0, 0.0]));
+    d.extend(&s);
+    let e = plus(start(), &[object(6, 1, &font(20.0)), object(7, 2, &format), rec(0x401C, 0x8001, &d)]);
+    assert!(drawn(&survives(&e.bytes())).is_empty(), "the searches spent what the picture may");
+}
+
+#[test]
+fn a_container_the_full_stack_cant_save_isnt_entered() {
+    // The stack filled, a fill, a container that scales its contents with a fill in it, its end, and a fill after: all
+    // land alike.
+    let mut r: Vec<Vec<u8>> = (0..super::MAX_SAVES as u32).map(|i| rec(0x4025, 0, &u32s(&[i]))).collect();
+    r.push(fill_rects(OPAQUE_RED, &[[0.0, 0.0, 10.0, 10.0]]));
+    let mut b = f32s(&[10.0, 10.0, 20.0, 20.0, 0.0, 0.0, 10.0, 10.0]);
+    b.extend(u32s(&[u32::MAX]));
+    r.extend([
+        rec(0x4027, 2, &b),
+        fill_rects(OPAQUE_RED, &[[0.0, 0.0, 10.0, 10.0]]),
+        rec(0x4029, 0, &u32s(&[u32::MAX])),
+        fill_rects(OPAQUE_RED, &[[0.0, 0.0, 10.0, 10.0]]),
+    ]);
+    let ops = log(plus(start(), &r));
+    let fills = drawn(&ops);
+    assert!(fills.len() == 3 && fills[0] == fills[1] && fills[1] == fills[2], "{fills:?}");
+}
+
+#[test]
+fn a_bitmaps_reserved_format_bits_are_ignored() {
+    let mut marked = bitmap();
+    // The format word's top byte, past the bits the formats use.
+    marked[23] = 0x80;
+    let px = pixels(plus(start(), &[object(5, 3, &marked), draw_image(3, [0.0, 0.0, 2.0, 2.0], [0.0, 0.0, 100.0, 100.0])]));
+    assert!(near(at(&px, 25, 25), RED, 6) && near(at(&px, 75, 75), WHITE, 6));
+    assert!(near(at(&px, 75, 25), GREEN, 6), "drawn, not refused");
+}
+
+#[test]
 fn a_shown_hotkey_prefix_underlines_its_character() {
     let s: Vec<u8> = "&Save && close".encode_utf16().flat_map(u16::to_le_bytes).collect();
     let format = [u32s(&[V, 0, 0, 0, 0, 0, 0]), f32s(&[0.0]), u32s(&[1]), f32s(&[0.0, 0.0, 1.0]), u32s(&[0, 0, 0])].concat();
@@ -829,6 +875,7 @@ fn a_shown_hotkey_prefix_underlines_its_character() {
     let ops = log(plus(start(), &[object(6, 1, &font(20.0)), object(7, 2, &format), rec(0x401C, 0x8001, &d)]));
     let texts: Vec<&str> = drawn(&ops).into_iter().filter(|o| o.starts_with("text")).collect();
     assert!(texts.len() == 2 && texts[0].starts_with("text \"S\"") && texts[1].starts_with("text \"ave & close\" Arial at 7.2,"), "{texts:?}");
+    assert!(texts[0].ends_with(" underlined") && !texts[1].contains("underlined"), "only the hotkey underlined: {texts:?}");
 }
 
 #[test]

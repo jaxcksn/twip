@@ -347,7 +347,12 @@ fn a_recoloured_monochrome_brush_is_copied_within_the_budget() {
 }
 
 /// `META_ESCAPE` chunks carrying `emf`, each `n` bytes at most, as `ENHANCED_METAFILE` comments.
-fn escapes(mut w: Wmf, emf: &[u8], n: usize) -> Wmf {
+fn escapes(w: Wmf, emf: &[u8], n: usize) -> Wmf {
+    escapes_declaring(w, emf, n, emf.len())
+}
+
+/// [`escapes`], each chunk declaring `total` bytes for the whole.
+fn escapes_declaring(mut w: Wmf, emf: &[u8], n: usize, total: usize) -> Wmf {
     let chunks: Vec<&[u8]> = emf.chunks(n).collect();
     let mut remaining = emf.len();
     for c in &chunks {
@@ -357,7 +362,7 @@ fn escapes(mut w: Wmf, emf: &[u8], n: usize) -> Wmf {
         p.extend(0x4346_4D57u32.to_le_bytes());
         p.extend([1u32, 0x10000].iter().flat_map(|v| v.to_le_bytes()));
         p.extend([0u8; 2]);
-        p.extend([0u32, chunks.len() as u32, c.len() as u32, remaining as u32, emf.len() as u32].iter().flat_map(|v| v.to_le_bytes()));
+        p.extend([0u32, chunks.len() as u32, c.len() as u32, remaining as u32, total as u32].iter().flat_map(|v| v.to_le_bytes()));
         p.extend(*c);
         w = w.rec(0x0626, &p);
     }
@@ -376,6 +381,17 @@ fn an_embedded_emf_is_the_picture() {
     assert_eq!(drawn(&ops), ["transform", "fill 0.0,0.0,72.0,72.0 #ff0000"]);
     let px = pixels(w);
     assert_eq!((px[95 * 100 + 95], px[5 * 100 + 5]), ([255, 0, 0, 255], [255, 0, 0, 255]));
+}
+
+#[test]
+fn an_embedded_emf_is_the_picture_only_at_the_size_its_chunks_declare() {
+    let emf = Emf::default().r(39, &[1, 0, 0xFF, 0]).r(37, &[1]).r(43, &[0, 0, 100, 100]).bytes();
+    let red = |total: usize| {
+        let w = escapes_declaring(Wmf::default(), &emf, emf.len() / 2 + 1, total).brush(0xFF00).select(0).rect(0, 0, 10, 10);
+        drawn(&log(w)).iter().any(|o| o.ends_with("#ff0000"))
+    };
+    assert!(red(emf.len()), "the whole EMF");
+    assert!(!red(emf.len() + 8), "a total the chunks don't reach: the file's own records draw");
 }
 
 #[test]
@@ -492,6 +508,20 @@ fn text_decodes_by_the_fonts_charset_in_both_formats() {
     };
     assert!(drawn(&emf(204))[0].contains("\u{430}"), "{:?}", emf(204));
     assert!(drawn(&emf(134)).is_empty());
+    // EMR_SMALLTEXTOUT's bytes are low bytes of UTF-16 code units: Latin-1 whatever the font's character set.
+    let small = |charset: u8| {
+        let mut f = le(&[1, -12, 0, 0, 0, 400]);
+        f.extend([0u8, 0, 0, charset]);
+        f.extend([0u8; 4 + 64 + 28]);
+        let mut t = le(&[5, 20, 1, 0x300, 1, 0, 0]);
+        t.extend([0xE9u8, 0, 0, 0]);
+        let mut l = Log::default();
+        assert!(super::emf::play(&mut l, &Emf::default().rec(82, &f).r(37, &[1]).rec(108, &t).bytes()));
+        l.ops
+    };
+    for charset in [204, 134] {
+        assert!(drawn(&small(charset))[0].contains('\u{e9}'), "charset {charset}: {:?}", small(charset));
+    }
 }
 
 #[test]
@@ -570,8 +600,6 @@ fn a_bitmap_of_three_bits_a_pixel_is_refused_and_a_pattern_brushs_usage_is_rgb()
     b.extend(&bmi);
     b.extend(&bits);
     let px = pixels(Wmf::default().rec(0x0142, &b).select(0).pen(5, 0, 0).select(1).rect(0, 0, 100, 100));
-    assert!(
-        px.iter().any(|p| p[..3] == [255, 0, 0]) || px.iter().any(|p| p[..3] == [0, 0, 255]),
-        "its own colours, not the text and background ones"
-    );
+    // Every texel is index 1, red, across the whole fill.
+    assert!(px.iter().all(|p| p[..3] == [255, 0, 0]), "its own colours, not the text and background ones");
 }

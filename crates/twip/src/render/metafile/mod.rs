@@ -3,7 +3,8 @@
 //! picture's space: its frame, in points, from its top left. [`emf`] reads EMF records into it.
 //!
 //! Metafiles are untrusted. Every record is checked against the data before it is read, and the records, objects,
-//! saved states, path points, clips, bitmap pixels and the work replayed are capped. Nothing recurses.
+//! saved states, path points, clips, bitmap pixels and the work replayed are capped. The only recursion is a metafile
+//! inside an EMF+ picture, which replays under the parent's budgets and stops at `MAX_DEPTH`.
 
 mod codepages;
 pub mod emf;

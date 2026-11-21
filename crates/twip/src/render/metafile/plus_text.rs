@@ -128,8 +128,11 @@ impl Plus {
         for a in &mut advances {
             *a *= format.tracking;
         }
-        // Tabs reach the next stop.
+        // Tabs reach the next stop; the search for it is work, a unit a stop.
         let tab = |x: f64| {
+            if !p.spend(format.tabs.len() + 1) {
+                return None;
+            }
             let mut at = format.first_tab;
             for s in &format.tabs {
                 at += s;
@@ -278,7 +281,8 @@ fn break_lines(text: &[u32], advances: &mut [f64], room: f64, wrap: bool, traili
         {
             advances[i] = stop - x;
         }
-        if wrap && !space(c) && x + advances[i] > room && i > from {
+        // A word carried to the next line that still doesn't fit there breaks between its characters.
+        while wrap && !space(c) && x + advances[i] > room && i > from {
             let at = brk.map_or(i, |b| b.0);
             lines.push(Line { from, to: at, width: width(text, advances, from, at) });
             from = at;
@@ -293,4 +297,22 @@ fn break_lines(text: &[u32], advances: &mut [f64], room: f64, wrap: bool, traili
     }
     lines.push(Line { from, to: text.len(), width: width(text, advances, from, text.len()) });
     lines
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_carried_word_that_still_overflows_breaks_between_its_characters() {
+        let text: Vec<u32> = "a bc".chars().map(u32::from).collect();
+        let mut advances = [1.0, 1.0, 1.0, 3.0];
+        let lines = break_lines(&text, &mut advances, 3.0, true, false, |_| None);
+        let spans: Vec<(usize, usize)> = lines.iter().map(|l| (l.from, l.to)).collect();
+        assert_eq!(spans, [(0, 2), (2, 3), (3, 4)]);
+        // A word that fits on the next line stays whole.
+        let mut advances = [1.0, 1.0, 1.0, 1.0];
+        let spans: Vec<(usize, usize)> = break_lines(&text, &mut advances, 3.0, true, false, |_| None).iter().map(|l| (l.from, l.to)).collect();
+        assert_eq!(spans, [(0, 2), (2, 4)]);
+    }
 }

@@ -666,6 +666,8 @@ const PF_INDEXED: u32 = 0x0001_0000;
 
 /// A bitmap's rows (`stride` bytes each, top down) of `format` as BGRA, unpremultiplied.
 fn bitmap(c: &mut Cur<'_>, w: u32, h: u32, stride: usize, format: u32) -> Option<Vec<u8>> {
+    // The format's top byte is reserved, and readers ignore it.
+    let format = format & 0x00FF_FFFF;
     let palette: Vec<[u8; 4]> = if format & PF_INDEXED != 0 {
         c.u32()?;
         let n = c.u32()? as usize;

@@ -378,10 +378,12 @@ impl Plus {
 
     // ---------------- state ----------------
 
-    fn save(&mut self, id: u32) {
-        if self.stack.len() < MAX_SAVES {
+    fn save(&mut self, id: u32) -> bool {
+        let room = self.stack.len() < MAX_SAVES;
+        if room {
             self.stack.push((id, self.s.clone()));
         }
+        room
     }
 
     /// Back to the state saved as `id`, dropping those saved after it.
@@ -400,7 +402,9 @@ impl Plus {
 
     /// `BeginContainer`: the state saved, and from inside the container `src` (in `unit`) maps onto `dst`.
     fn begin_container(&mut self, id: u32, dst: kurbo::Rect, src: kurbo::Rect, unit: u32) {
-        self.save(id);
+        if !self.save(id) {
+            return;
+        }
         let k = |v: f64| self.to_world(v, unit);
         let src = kurbo::Rect::new(k(src.x0), k(src.y0), k(src.x1), k(src.y1));
         let map = if src.width() != 0.0 && src.height() != 0.0 {
@@ -681,15 +685,16 @@ impl Plus {
             SET_INTERPOLATION_MODE => self.s.smooth = flags & 0xFF != 5,
             SET_COMPOSITING_MODE => self.s.copy = flags & 0xFF == 1,
             SET_ANTI_ALIAS_MODE => self.s.antialias = flags & 1 != 0,
-            SAVE => self.save(c.u32()?),
+            SAVE => _ = self.save(c.u32()?),
             RESTORE | END_CONTAINER => self.restore(p, c.u32()?),
             BEGIN_CONTAINER => {
                 let (dst, src) = (c.rect(false)?, c.rect(false)?);
                 self.begin_container(c.u32()?, dst, src, u32::from(flags & 0xFF));
             }
             BEGIN_CONTAINER_NO_PARAMS => {
-                self.save(c.u32()?);
-                self.enter(Affine::IDENTITY);
+                if self.save(c.u32()?) {
+                    self.enter(Affine::IDENTITY);
+                }
             }
             SET_WORLD_TRANSFORM => {
                 let m = c.matrix()?;
