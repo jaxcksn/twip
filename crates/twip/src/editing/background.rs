@@ -425,7 +425,7 @@ impl Editor {
 }
 
 /// A linear gradient from a colour to its own shade or tint (Fill Effects' One colour) as Word makes it: the second
-/// colour the first's VML `darken` or `lighten`, the two blended as Word blends two colours.
+/// colour the first's VML `darken` or `lighten`, the two blended as Word blends two colours, in the first's opacity.
 fn one_colour(f: Fill, palette: crate::drawing::paint::Palette) -> Fill {
     use crate::drawing::colour::{Colour, ColourMod};
     let Fill::Gradient(mut g) = f else { return f };
@@ -439,7 +439,10 @@ fn one_colour(f: Fill, palette: crate::drawing::paint::Palette) -> Fill {
     let first = a.resolve(palette.theme, palette.map, None).to_rgb();
     let n = (p.fraction().clamp(0.0, 1.0) * 255.0).round() as u8;
     let second = if light { crate::drawing::vml::lighten(first, n) } else { crate::drawing::vml::darken(first, n) };
-    g.stops = crate::drawing::vml::two_colour(&Colour::srgb(first), &Colour::srgb(second));
+    let opacity: Vec<ColourMod> =
+        a.mods.iter().filter(|m| matches!(m, ColourMod::Alpha(_) | ColourMod::AlphaOff(_) | ColourMod::AlphaMod(_))).cloned().collect();
+    let at = |rgb: u32| Colour { mods: opacity.clone(), ..Colour::srgb(rgb) };
+    g.stops = crate::drawing::vml::two_colour(&at(first), &at(second));
     Fill::Gradient(g)
 }
 
@@ -451,7 +454,12 @@ fn page_gradient(f: Fill, palette: crate::drawing::paint::Palette) -> Result<Fil
     match &mut g.kind {
         GradientKind::Linear { scaled, .. } => *scaled = true,
         GradientKind::Path { path: GradientPath::Circle, .. } => return Err("a page gradient is linear or rectangular, not circular".into()),
-        GradientKind::Path { path, .. } => *path = GradientPath::Rect,
+        GradientKind::Path { path, focus } => {
+            if focus[0].0 + focus[2].0 > 100_000 || focus[1].0 + focus[3].0 > 100_000 {
+                return Err("a page gradient's focus is a rectangle: its opposite insets sum to at most 1".into());
+            }
+            *path = GradientPath::Rect;
+        }
     }
     let clear = g.stops.iter().any(|(_, c)| c.resolve(palette.theme, palette.map, None).a < 255);
     if clear && !crate::drawing::vml::is_two_colour(&g) {

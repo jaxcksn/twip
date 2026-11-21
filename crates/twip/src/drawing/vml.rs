@@ -414,7 +414,12 @@ pub(crate) fn two_colour(from: &Colour, to: &Colour) -> Vec<(Pct, Colour)> {
             ColourBase::Srgb(v) => v,
             _ => 0,
         };
-        let alpha = c.mods.iter().rev().find_map(|m| if let ColourMod::Alpha(p) = m { Some(p.fraction()) } else { None }).unwrap_or(1.0);
+        let alpha = c.mods.iter().fold(1.0, |a: f64, m| match m {
+            ColourMod::Alpha(p) => p.fraction().clamp(0.0, 1.0),
+            ColourMod::AlphaOff(p) => (a + p.fraction()).clamp(0.0, 1.0),
+            ColourMod::AlphaMod(p) => (a * p.fraction()).clamp(0.0, 1.0),
+            _ => a,
+        });
         ([16, 8, 0].map(|s| f64::from((v >> s) & 0xFF)), alpha)
     };
     let ((a, aa), (b, ba)) = (parts(from), parts(to));

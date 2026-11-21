@@ -106,6 +106,17 @@ fn a_table_style_takes_cell_and_table_shading_in_its_own_xml_and_the_document_st
     let raw = e.document().resolver.as_ref().expect("styles").styles.get("Striped").expect("the style").raw.clone();
     let xml = e.format_style(&raw, vec![shade(ShadingTarget::Cell, 0x00B050), shade(ShadingTarget::Table, 0x112233)], fonts()).expect("formats it");
     assert!(xml.contains("00B050") && xml.contains("112233") && xml.contains("<w:tblPr>"), "{xml}");
+    // A table style however its type is written.
+    let w = r#"xmlns:x="http://schemas.openxmlformats.org/wordprocessingml/2006/main""#;
+    let quoted = raw.replacen(r#"w:type="table""#, "w:type='table'", 1);
+    let prefixed = raw
+        .replacen("<w:style ", &format!("<x:style {w} "), 1)
+        .replacen(r#"w:type="table""#, r#"x:type="table""#, 1)
+        .replace("</w:style>", "</x:style>");
+    for raw in [quoted, prefixed] {
+        let xml = e.format_style(&raw, vec![shade(ShadingTarget::Cell, 0x00B050)], fonts()).expect("formats it");
+        assert!(xml.contains("00B050"), "{xml}");
+    }
     assert_eq!((e.revision(), tables(&e)[0].rows[0].cells[0].shading), (revision, before), "the document's table didn't change");
     let para = e.document().resolver.as_ref().expect("styles").styles.get("Normal").expect("Normal").raw.clone();
     assert!(e.format_style(&para, vec![shade(ShadingTarget::Cell, 0x00B050)], fonts()).is_err(), "a paragraph style has no cell shading");

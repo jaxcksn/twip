@@ -3264,6 +3264,45 @@ fn a_table_styles_format_menu_sets_part_borders_properties_and_banding() {
     assert!(s.dialog_open_on_style(DialogKind::Banding, quote).is_err(), "banding is a table style's");
 }
 
+#[test]
+fn a_table_style_s_diagonal_change_keeps_the_borders_it_doesnt_change() {
+    use crate::api::command::{Border, BorderStyle};
+    use crate::api::services::{BordersShadingPatch, DialogKind, DialogPatch, StyleOpen, StylePatch, TableStylePart};
+    use crate::api::value::{AutoOr, StyleId};
+    let mut engine = Engine::new(FontLibrary::system());
+    let id = styles_session(&mut engine);
+    let s = engine.session(id).expect("a session");
+    let m = s.dialog_open_style(StyleOpen::Modify(StyleId("GridAccent".into()))).expect("opens");
+    let m = s.dialog_update(m, style_patch(StylePatch { table_part: Some(TableStylePart::HeaderRow), ..StylePatch::default() })).expect("updates");
+    let mut style = style_values(&m);
+    // A themed edge and a nil diagonal on the header row; a nil diagonal on the whole table's cells.
+    let themed = r#"<w:top w:val="single" w:sz="4" w:space="0" w:color="2E75B6" w:themeColor="accent1"/>"#;
+    let nil = r#"<w:tr2bl w:val="nil"/>"#;
+    style.pending = style
+        .pending
+        .replacen(
+            r#"<w:tcPr><w:shd w:val="clear" w:color="auto" w:fill="2E75B6"/>"#,
+            &format!(r#"<w:tcPr><w:tcBorders>{themed}{nil}</w:tcBorders><w:shd w:val="clear" w:color="auto" w:fill="2E75B6"/>"#),
+            1,
+        )
+        .replacen("<w:tblStylePr ", &format!("<w:tcPr><w:tcBorders>{nil}</w:tcBorders></w:tcPr><w:tblStylePr "), 1);
+    assert!(style.pending.matches(nil).count() == 2, "{}", style.pending);
+    let pen = Border { style: BorderStyle::Dashed, width: Points(1.0), color: AutoOr::Auto };
+    let down = |s: &mut crate::api::session::Session, style: crate::api::services::StyleDialog| {
+        let b = s.dialog_open_on_style(DialogKind::BordersShading, style).expect("opens Format > Border");
+        let patch = BordersShadingPatch { diagonal_down: Some(Some(pen.clone())), ..BordersShadingPatch::default() };
+        let b = s.dialog_update(b, DialogPatch::BordersShading(patch)).expect("updates");
+        style_values(&s.dialog_apply_to_style(b).expect("applies")).pending
+    };
+    let after = down(s, style.clone());
+    let first = &after[after.find("w:type=\"firstRow\"").expect("the header row")..];
+    let first = &first[..first.find("</w:tblStylePr>").unwrap()];
+    assert!(first.contains(themed) && first.contains(nil) && first.contains("<w:tl2br w:val=\"dashed\""), "{first}");
+    let after = down(s, crate::api::services::StyleDialog { table_part: TableStylePart::WholeTable, ..style });
+    let root = &after[..after.find("<w:tblStylePr").unwrap_or(after.len())];
+    assert!(root.contains(nil) && root.contains("<w:tl2br w:val=\"dashed\""), "{root}");
+}
+
 /// Window frames are drawn on the GPU from the pictures the CPU screen draws: the two agree (a pixel may differ by 2
 /// in each channel; beyond that, at most 0.02% of the pixels, as twip-graphics' own comparisons allow), on the first
 /// frame and on one scrolled, whose pages the GPU draws from what it kept; and after the device is lost, on the new

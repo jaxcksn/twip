@@ -456,6 +456,47 @@ fn a_page_gradient_s_focus_rectangle_and_one_colour_round_trip() {
 }
 
 #[test]
+fn a_translucent_one_colour_page_gradient_keeps_its_opacity() {
+    use crate::drawing::paint::Fill;
+    for kind in [TransformKind::Alpha, TransformKind::AlphaMod] {
+        let mut e = Editor::open(&two_sections(), fonts()).expect("opens");
+        let half = ColourTransform { kind, value: 0.5 };
+        let blue = ColourValue { transforms: vec![half], ..ColourValue::rgb(Color(0x2E75B6)) };
+        let darker = ColourValue { transforms: vec![half, ColourTransform { kind: TransformKind::Shade, value: 0.6 }], ..blue.clone() };
+        let one = vec![GradientStop { position: 0.0, colour: blue }, GradientStop { position: 1.0, colour: darker }];
+        run(&mut e, Command::SetPageColor(FillValue::Gradient { kind: GradientShape::Linear, angle: Some(90.0), stops: one, focus: None }));
+        let alphas = |e: &Editor| {
+            let d = e.document();
+            let Some(Fill::Gradient(g)) = &d.page_fill else { panic!("a gradient: {:?}", d.page_fill) };
+            g.stops.iter().map(|(_, c)| c.resolve(&d.theme, &d.colour_map, None).a).collect::<Vec<_>>()
+        };
+        assert_eq!(alphas(&e), vec![128; 17], "{kind:?}");
+        let saved = crate::docx::write::save(e.document()).expect("saves");
+        let xml = part(&saved, "word/document.xml");
+        assert!(xml.contains(r#"color2="fill darken(153)""#) && xml.contains(" opacity=") && xml.contains("o:opacity2="), "{xml}");
+        assert_eq!(alphas(&Editor::open(&saved, fonts()).expect("reopens")), vec![128; 17], "{xml}");
+    }
+}
+
+#[test]
+fn a_page_gradient_s_focus_insets_leave_a_rectangle() {
+    let mut e = Editor::open(&two_sections(), fonts()).expect("opens");
+    let stops = vec![
+        GradientStop { position: 0.0, colour: ColourValue::rgb(Color(0x2E75B6)) },
+        GradientStop { position: 1.0, colour: ColourValue::rgb(Color(0xFFFFFF)) },
+    ];
+    let rect = |focus| Command::SetPageColor(FillValue::Gradient { kind: GradientShape::Rectangular, angle: None, stops: stops.clone(), focus });
+    refused(&mut e, rect(Some([0.8, 0.5, 0.8, 0.5])));
+    refused(&mut e, rect(Some([0.5, 0.6, 0.5, 0.6])));
+    for focus in [Some([0.25; 4]), Some([0.0, 0.0, 1.0, 1.0])] {
+        run(&mut e, rect(focus));
+        let again = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
+        let Some(FillValue::Gradient { focus: read, .. }) = again.page_formatting(0).background else { panic!("a gradient") };
+        assert_eq!(read, focus);
+    }
+}
+
+#[test]
 fn a_text_watermark_keeps_its_language_takes_the_body_font_and_a_one_point_size() {
     let mut e = Editor::open(&two_sections(), fonts()).expect("opens");
     let w = TextWatermark { text: "BROUILLON".into(), language: Some("fr-FR".into()), size: Some(Points(1.0)), ..TextWatermark::default() };
@@ -522,7 +563,10 @@ fn a_picture_watermark_kept_through_a_scale_change_is_the_edited_sections() {
     let first = super::para_id(&e, 0);
     e.select_range(first, crate::layout::Unit(0), crate::layout::Unit(0), fonts());
     run(&mut e, Command::SetWatermark(Watermark::Picture(PictureWatermark { image: Bytes(Vec::new()), scale: Some(150.0), washout: None })));
-    assert!(shown(&e).iter().all(|(_, d)| *d == a), "{:?}", shown(&e).iter().map(|(n, d)| (n, d.len())).collect::<Vec<_>>());
+    let after = shown(&e);
+    let parts = |v: &[(String, Vec<u8>)]| v.iter().map(|(n, _)| n.clone()).collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(parts(&after), parts(&pictures), "every header keeps a watermark");
+    assert!(after.iter().all(|(_, d)| *d == a), "{:?}", after.iter().map(|(n, d)| (n, d.len())).collect::<Vec<_>>());
 }
 
 #[test]

@@ -408,7 +408,7 @@ fn page_background(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result
         .and_then(|b| b.children().find(|c| c.is_element() && c.tag_name().name() == "background" && c.tag_name().namespace() == Some(VML)))
         .map(|v| xml[v.range()].to_string());
     // The prefixes the kept markup has from its `w:background` and not from the root, declared on the new one.
-    let local: String = match (&kept, old) {
+    let mut local: String = match (&kept, old) {
         (Some(_), Some(b)) => b
             .namespaces()
             .filter(|n| root.lookup_namespace_uri(n.name()) != Some(n.uri()))
@@ -418,6 +418,20 @@ fn page_background(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result
             })
             .collect(),
         _ => String::new(),
+    };
+    // The prefix the new `w:background` takes: one still WordprocessingML's under those declarations.
+    let w = match (&kept, old) {
+        (Some(_), Some(b)) if !w.is_empty() && b.lookup_namespace_uri(Some(&w[..w.len() - 1])) != Some(W) => {
+            match b.namespaces().find_map(|n| n.name().filter(|_| n.uri() == W)) {
+                Some(p) => format!("{p}:"),
+                None => {
+                    let free = (1..).map(|k| format!("w{k}")).find(|p| b.lookup_namespace_uri(Some(p)).is_none()).unwrap_or_default();
+                    local.push_str(&format!(r#" xmlns:{free}="{W}""#));
+                    format!("{free}:")
+                }
+            }
+        }
+        _ => w,
     };
     let at = match old {
         Some(b) => b.range(),
@@ -5819,6 +5833,33 @@ mod tests {
         roxmltree::Document::parse(&out).expect("well formed");
         assert!(out.contains(&format!("<w:background w:color=\"FFFFEF\"{decl}><v:background")), "{out}");
         assert_eq!(crate::docx::read(&saved).expect("reads again").page_fill, doc.page_fill);
+    }
+
+    #[test]
+    fn a_kept_page_fill_s_local_declarations_leave_the_background_wordprocessingml() {
+        use crate::drawing::paint::Fill;
+        let (bytes, read) = render_fixture("page-picture.docx");
+        let xml = part_text(&bytes, "word/document.xml");
+        let open = r#"<w:background w:color="FFFFFF">"#;
+        assert!(xml.contains(open));
+        for (tag, attrs) in [("x:background", format!(r#"xmlns:x="{W}" x:color"#)), ("background", format!(r#"xmlns="{W}" color"#))] {
+            let local = xml.replacen(open, &format!(r#"<{tag} xmlns:w="urn:example:other" {attrs}="FFFFFF">"#), 1).replacen(
+                "</w:background>",
+                &format!("</{tag}>"),
+                1,
+            );
+            let package =
+                repackage(&bytes, &[("word/document.xml".into(), local.into_bytes())], zip::CompressionMethod::Deflated).expect("repackages");
+            let mut doc = crate::docx::read_editable(&package).expect("reads");
+            assert!(matches!(doc.page_fill, Some(Fill::Blip(_))), "{:?}", doc.page_fill);
+            doc.page_colour = read.page_colour.map(|c| c ^ 0x10);
+            let saved = save(&doc).expect("saves");
+            let out = part_text(&saved, "word/document.xml");
+            roxmltree::Document::parse(&out).expect("well formed");
+            assert!(out.contains(r#"xmlns:w="urn:example:other""#), "{out}");
+            let again = crate::docx::read(&saved).expect("reads again");
+            assert_eq!((again.page_colour, &again.page_fill), (doc.page_colour, &doc.page_fill), "{out}");
+        }
     }
 
     #[test]

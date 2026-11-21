@@ -327,7 +327,8 @@ impl Editor {
         if let Some(raw) = &self.style_target
             && matches!(s.target, ShadingTarget::Cell | ShadingTarget::Table)
         {
-            if !raw.contains("w:type=\"table\"") {
+            let cx = self.doc.resolver.as_ref().map(|r| r.styles.cx());
+            if !cx.and_then(|cx| cx.parse(raw, |_, n| crate::docx::xml::attr(n, "type") == Some("table"))).unwrap_or(false) {
                 return Outcome::Refused(Error::invalid("only a table style has cell or table shading"));
             }
             let (part, order) = match s.target {
