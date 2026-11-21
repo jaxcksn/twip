@@ -1,8 +1,6 @@
 //! The WMF player: records drawn into a log and on the CPU, and hostile files.
 
-use std::time::{Duration, Instant};
-
-use super::tests::{Count, Emf, Log, dib, drawn, le, many_rects};
+use super::tests::{Count, Emf, Log, dib, drawn, le, many_rects, within};
 use super::wmf::{Header, play};
 
 /// A placeable WMF made record by record: its window 100 units across on a 72 dpi inch, so a unit is a point.
@@ -189,19 +187,15 @@ fn regions_clip_and_fill() {
 
 /// Plays `d`, which must finish quickly and leave the sink balanced.
 fn survives(d: &[u8]) -> Vec<String> {
-    let start = Instant::now();
     let mut l = Log::default();
-    play(&mut l, d);
-    assert!(start.elapsed() < Duration::from_secs(5), "took {:?}", start.elapsed());
+    within(5, || play(&mut l, d));
     assert_eq!(l.depth, 0);
     l.ops
 }
 
 fn counted(d: &[u8]) -> Count {
-    let start = Instant::now();
     let mut c = Count::default();
-    play(&mut c, d);
-    assert!(start.elapsed() < Duration::from_secs(10), "took {:?}", start.elapsed());
+    within(10, || play(&mut c, d));
     assert_eq!(c.depth, 0);
     c
 }
@@ -294,9 +288,7 @@ fn degenerate_windows_and_huge_coordinates() {
     w = w.pen(2, 0, 0).select(0).w(0x0325, &[2, i16::MIN, i16::MIN, i16::MAX, i16::MAX]).w(0x0418, &[i16::MAX, i16::MAX, i16::MIN, i16::MIN]);
     let d = w.bytes();
     survives(&d);
-    let start = Instant::now();
-    crate::render::graphics::Graphics::metafile_pixels(&d, 50, 50, None);
-    assert!(start.elapsed() < Duration::from_secs(5), "drawn in {:?}", start.elapsed());
+    within(5, || crate::render::graphics::Graphics::metafile_pixels(&d, 50, 50, None));
     // Scaling the window up, and down, over and over leaves it where it last made sense: what is drawn has a place.
     for (num, den) in [(i16::MAX, 1), (1, i16::MAX)] {
         let mut w = Wmf::default().w(0x0103, &[8]);

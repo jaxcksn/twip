@@ -599,12 +599,20 @@ fn keyed_masked_and_parallelogram_blits() {
 
 // ---------------- hostile files ----------------
 
+/// Runs `f`, which must take less than `secs` seconds. Untimed under `cargo llvm-cov` (it sets `LLVM_PROFILE_FILE`),
+/// whose counters slow the engine several times over; the counted budgets still hold there.
+pub(super) fn within<T>(secs: u64, f: impl FnOnce() -> T) -> T {
+    let start = Instant::now();
+    let out = f();
+    let took = start.elapsed();
+    assert!(took < Duration::from_secs(secs) || std::env::var_os("LLVM_PROFILE_FILE").is_some(), "took {took:?}");
+    out
+}
+
 /// Plays `d`, which must finish quickly and leave the sink balanced.
 pub(super) fn survives(d: &[u8]) -> Vec<String> {
-    let start = Instant::now();
     let mut l = Log::default();
-    play(&mut l, d);
-    assert!(start.elapsed() < Duration::from_secs(5), "took {:?}", start.elapsed());
+    within(5, || play(&mut l, d));
     assert_eq!(l.depth, 0);
     l.ops
 }
@@ -707,9 +715,7 @@ fn degenerate_transforms_and_huge_coordinates() {
     e = e.r(42, &[i32::MIN, i32::MIN, i32::MAX, i32::MAX]).r(41, &[0, 0, -1, 0, 0x7F80_0000]);
     let d = e.bytes();
     survives(&d);
-    let start = Instant::now();
-    crate::render::graphics::Graphics::metafile_pixels(&d, 50, 50, None);
-    assert!(start.elapsed() < Duration::from_secs(5), "drawn in {:?}", start.elapsed());
+    within(5, || crate::render::graphics::Graphics::metafile_pixels(&d, 50, 50, None));
 }
 
 #[test]
@@ -791,10 +797,8 @@ impl Sink for Count {
 
 /// Plays `d` into a counting sink, quickly.
 pub(super) fn counted(d: &[u8]) -> Count {
-    let start = Instant::now();
     let mut c = Count::default();
-    play(&mut c, d);
-    assert!(start.elapsed() < Duration::from_secs(10), "took {:?}", start.elapsed());
+    within(10, || play(&mut c, d));
     assert_eq!(c.depth, 0);
     c
 }

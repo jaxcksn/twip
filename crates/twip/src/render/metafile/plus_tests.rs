@@ -2,7 +2,7 @@
 
 use std::time::Instant;
 
-use super::tests::{BLUE, Emf, GREEN, RED, WHITE, at, counted, drawn, le, log, pixels, stand_in, survives};
+use super::tests::{BLUE, Emf, GREEN, RED, WHITE, at, counted, drawn, le, log, pixels, stand_in, survives, within};
 
 /// `EmfPlusGraphicsVersion`.
 const V: u32 = 0xDBC0_1002;
@@ -625,10 +625,8 @@ fn drawn_within(d: &[u8], secs: u64) {
 }
 
 fn drawn_at_within(d: &[u8], (w, h): (u32, u32), secs: u64) {
-    let start = Instant::now();
-    crate::render::graphics::Graphics::metafile_pixels(d, w, h, None).expect("draws");
-    let limit = std::time::Duration::from_secs(if cfg!(debug_assertions) { secs * 12 } else { secs });
-    assert!(start.elapsed() < limit, "drawn in {:?}", start.elapsed());
+    let secs = if cfg!(debug_assertions) { secs * 12 } else { secs };
+    within(secs, || crate::render::graphics::Graphics::metafile_pixels(d, w, h, None)).expect("draws");
 }
 
 #[test]
@@ -673,9 +671,7 @@ fn shown_hotkeys_lay_out_in_linear_time() {
     d.extend(f32s(&[0.0, 0.0, 0.0, 0.0]));
     d.extend(&chars);
     let e = plus(start(), &[object(6, 1, &font(20.0)), object(7, 2, &format), rec(0x401C, 0x8001, &d)]);
-    let start = Instant::now();
-    survives(&e.bytes());
-    assert!(start.elapsed() < std::time::Duration::from_secs(2), "{:?}", start.elapsed());
+    within(2, || survives(&e.bytes()));
 }
 
 #[test]
@@ -690,9 +686,7 @@ fn a_huge_gradient_boundary_is_bounded_before_its_triangles() {
         b.extend(f32s(&[(50.0 + 50.0 * a.cos()) as f32, (50.0 + 50.0 * a.sin()) as f32]));
     }
     let e = plus(start(), &[object(1, 2, &b), rec(0x400A, 2, &[u32s(&[2, 1]), f32s(&[0.0, 0.0, 100.0, 100.0])].concat())]);
-    let start = Instant::now();
     counted(&e.bytes());
-    assert!(start.elapsed() < std::time::Duration::from_secs(10), "{:?}", start.elapsed());
 }
 
 #[test]
@@ -911,9 +905,8 @@ fn saves_and_containers_nest_bounded_both_ways() {
         r.push(fill_rects(OPAQUE_RED, &[[0.0, 0.0, 10.0, 10.0]]));
     }
     let d = plus(start(), &r).bytes();
-    let start = Instant::now();
-    let c = counted(&d);
-    assert!(c.calls <= super::MAX_WORK && start.elapsed() < std::time::Duration::from_secs(5), "{} calls in {:?}", c.calls, start.elapsed());
+    let c = within(5, || counted(&d));
+    assert!(c.calls <= super::MAX_WORK, "{} calls", c.calls);
     drawn_within(&d, 2);
 }
 
@@ -936,9 +929,8 @@ fn dashes_of_a_thousandth_of_a_width_on_a_long_line_stroke_solid() {
     let mut line = u32s(&[2]);
     line.extend(f32s(&[0.0, 0.0, 1e5, 0.0]));
     let d = plus(super::tests::Emf::default(), &[header(false), object(2, 1, &pen), rec(0x400D, 1, &line)]).bytes();
-    let start = Instant::now();
-    let c = counted(&d);
-    assert!(c.elements <= 64 && start.elapsed() < std::time::Duration::from_secs(2), "{} elements in {:?}", c.elements, start.elapsed());
+    let c = within(2, || counted(&d));
+    assert!(c.elements <= 64, "{} elements", c.elements);
 }
 
 #[test]
@@ -971,13 +963,7 @@ fn miter_corners_between_huge_curves_are_bounded() {
         let mut path = u32s(&[(1 + 3 * k) as u32]);
         path.extend(f32s(&pts));
         let d = plus(super::tests::Emf::default(), &[header(false), object(2, 1, &pen), rec(0x4019, 1, &path)]).bytes();
-        let start = Instant::now();
-        let c = counted(&d);
-        assert!(
-            c.elements <= super::MAX_WORK + (1 << 21) && start.elapsed() < std::time::Duration::from_secs(5),
-            "{k}: {} elements in {:?}",
-            c.elements,
-            start.elapsed()
-        );
+        let c = within(5, || counted(&d));
+        assert!(c.elements <= super::MAX_WORK + (1 << 21), "{k}: {} elements", c.elements);
     }
 }
