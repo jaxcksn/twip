@@ -1,0 +1,44 @@
+page 0 12240 15840
+  1440 1970 Accessible document
+  1440 2747 Links and cross references
+  1440 3101 An external link to the report, an internal link to the table.
+  1440 3574 See Table results on page 1.
+  1440 4048 Heading by outline level
+  1440 4361 Body text under a heading made only by its outline level.
+  1440 4875 Heading two by style
+  1440 5205 A sentence with a footnote1 and an endnotei.
+  1440 5678 Table results
+  1553 6162 Region
+  4673 6162 Q1
+  7793 6162 Q2
+  1553 6485 North
+  4673 6485 10
+  7793 6485 20
+  1553 6808 South
+  4673 6808 11
+  7793 6808 21
+  1440 7333 Figures
+  1440 11484 Text beside a floating picture with
+  8244 11484 alternative text.
+  1440 11798 Regional maintenance accessibility
+  8244 11798 tax finds record
+  1440 12111 proposal denied contract onboarding
+  8244 12111 support network.
+  1440 12424 Scheduled trend suggestions board
+  8244 12424 order update
+  1440 12738 granted agreement marketing
+  8244 12738 promotion division
+  1440 13051 date. Profitable insights the meeting forecast hereby.
+  1440 14273 1 The footnote text.
+  cell 1445 5927 4565 6251
+  cell 4565 5927 7685 6251
+  cell 7685 5927 10805 6251
+  cell 1445 6251 4565 6574
+  cell 4565 6251 7685 6574
+  cell 7685 6251 10805 6574
+  cell 1445 6574 4565 6897
+  cell 4565 6574 7685 6897
+  cell 7685 6574 10805 6897
+  float 6336 11260 8064 12556
+page 1 12240 15840
+  1440 1864 i The endnote text.

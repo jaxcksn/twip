@@ -1,0 +1,5 @@
+page 0 12240 15840
+  1440 2006 Picture effects
+  1440 2360 DrawingML: colour change, reflection, luminance
+  1440 4602 VML imagedata: gain and blacklevel, grayscale, bilevel
+  1440 8571 A blip with only r:link, and one with r:link and r:embed

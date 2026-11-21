@@ -25,7 +25,7 @@ _spec.loader.exec_module(mf)
 
 r, p, P, filler, font, png = mf.r, mf.p, mf.P, mf.filler, mf.font, mf.png
 B, BR, TAB, PAGE_BREAK, HEADING = mf.B, mf.BR, mf.TAB, mf.PAGE_BREAK, mf.HEADING
-EMU, XML_DECL, REL, CT, STAMP, STYLES = mf.EMU, mf.XML_DECL, mf.REL, mf.CT, mf.STAMP, mf.STYLES
+EMU, XML_DECL, REL, CT, STAMP, STYLES, EXTERNAL = mf.EMU, mf.XML_DECL, mf.REL, mf.CT, mf.STAMP, mf.STYLES, mf.EXTERNAL
 
 NS = dict(mf.NS)
 NS.update({
@@ -138,6 +138,8 @@ class Pkg:
         self.compat_settings = ""  # w:compatSetting elements after compatibilityMode
         self.settings_tail = ""  # after w:compat (decimalSymbol)
         self.web = None  # webSettings divs
+        self.doc_head = ""  # between w:document's start tag and w:body (w:background)
+        self.external = set()  # relationship ids written with TargetMode="External"
         self.image_rid = None
 
     def uid(self):
@@ -302,7 +304,7 @@ class Pkg:
     def write(self, path, body, sect_pr):
         if body.endswith("</w:tbl>"):
             body += "<w:p/>"
-        document = f"{XML_DECL}<w:document {NAMESPACES}><w:body>{body}{sect_pr}</w:body></w:document>"
+        document = f"{XML_DECL}<w:document {NAMESPACES}>{self.doc_head}<w:body>{body}{sect_pr}</w:body></w:document>"
         files = [("word/document.xml", document, f"{CT}document.main+xml"), ("word/styles.xml", self.styles, f"{CT}styles+xml")]
         rels = [("rIdStyles", REL + "styles", "styles.xml"), ("rIdSettings", REL + "settings", "settings.xml")]
         if self.numbering:
@@ -343,7 +345,7 @@ class Pkg:
         )
         relationships = '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
         package_rels = f'{XML_DECL}{relationships}<Relationship Id="rId1" Type="{REL}officeDocument" Target="word/document.xml"/></Relationships>'
-        document_rels = (f"{XML_DECL}{relationships}" + "".join(f'<Relationship Id="{i}" Type="{t}" Target="{target}"/>' for i, t, target in rels)
+        document_rels = (f"{XML_DECL}{relationships}" + "".join(f'<Relationship Id="{i}" Type="{t}" Target="{target}"{EXTERNAL if i in self.external else ""}/>' for i, t, target in rels)
                          + "</Relationships>")
         entries = [("[Content_Types].xml", content_types), ("_rels/.rels", package_rels), ("word/_rels/document.xml.rels", document_rels)]
         entries += [(name, data) for name, data, _ in files]

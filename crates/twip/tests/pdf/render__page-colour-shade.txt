@@ -1,0 +1,191 @@
+pages 1
+page 1 612 792
+  text Page colour with a theme shade
+  text Inventory relevant group relief results region ledger brief usage 
+  text cause colleague partner. Section notice claim team export staff 
+  text newsletter review matter presenter advisor account. Served savings 
+  text pilot receipt corporate requirement standard fact that products 
+  text distribution filed. Logistics chapter plan regional maintenance 
+  text accessibility tax finds record proposal denied contract. Onboarding 
+  text support network scheduled trend suggestions board order update granted 
+  text agreement marketing. Promotion division date profitable insights the 
+  text meeting forecast hereby vendors practical schedule. State entry 
+  text estimate management action budget inventory relevant.
+  text Notice claim team export staff newsletter review matter presenter 
+  text advisor account served. Savings pilot receipt corporate requirement 
+  text standard fact that products distribution filed logistics. Chapter plan 
+  text regional maintenance accessibility tax finds record proposal denied 
+  text contract onboarding. Support network scheduled trend suggestions board 
+  text order update granted agreement marketing promotion. Division date 
+  text profitable insights the meeting forecast hereby vendors practical 
+  text schedule state.
+  op 1 0 0 -1 0 792 cm
+  op /P << /MCID 0 >> BDC
+  op q
+  op 0 0 0 rg
+  op 0 0 0 RG
+  op 0.62 w
+  op 0 j
+  op BT
+  op 2 Tr
+  op 1 0 0 -1 72 100.32 Tm
+  op /F1 16 Tf
+  op [<007a> -1 <00bd> -1 <00f5> -1 <00e1> -1 <03be> -1 <00d7> -1 <0122> -1 <0113> -1 <0122> -1 <0151> -1 <0140> -1 <03be> -1 <016a> -1 <00ff> -1 <014c> -1 <00fc> -1 <03be> -1 <00bd> -1 <03be> -1 <014c> -1 <00fc> -1 <00e1> -1 <011a> -1 <00e1> -1 <03be> -1 <0144> -1 <00fc> -1 <00bd> -1 <00dd> -1 <00e1>] TJ
+  op ET
+  op Q
+  op EMC
+  op /P << /MCID 1 >> BDC
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 118.01 Tm
+  op /F1 11 Tf
+  op [<0043> <011b> <0169> <00e1> <011b> <014c> <0122> <0140> <0170> <03be> <0140> <00e1> <0113> <00e1> <0169> <00bd> <011b> <014c> <03be> <00f5> <0140> <0122> <0151> <013d> <03be> <0140> <00e1> <0113> <00ff> <00e1> <00f4> <03be> <0140> 0 <00e1> <0144> <0151> <0113> <014c> 0 <0144> <03be> <0140> <00e1> <00f5> 0 <00ff> <0122> <011b> <03be> <0113> 0 <00e1> <00dd> <00f5> <00e1> <0140> 0 <03be> <00d6> <0140> <00ff> <00e1> 0 <00f4> <03be> <0151> <0144> <00bd> 0 <00f5> <00e1> <03be>] TJ
+  op ET
+  op Q
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 133.68 Tm
+  op /F1 11 Tf
+  op [<00d7> <00bd> <0151> <0144> <00e1> <03be> <00d7> <0122> <0113> <0113> <00e1> <00bd> <00f5> <0151> <00e1> <03be> <013d> <00bd> <0140> <014c> <011b> <00e1> <0140> <0329> <03be> <0081> <00e1> <00d7> <014c> <00ff> <0122> <011b> <03be> 0 <011b> <0122> <014c> <00ff> <00d7> 0 <00e1> <03be> <00d7> <0113> <00bd> 0 <00ff> <011a> <03be> <014c> <00e1> 0 <00bd> <011a> <03be> <00e1> <016f> 0 <013d> <0122> <0140> <014c> <03be> 0 <0144> <014c> <00bd> <00f4> <00f4> 0 <03be>] TJ
+  op ET
+  op Q
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 149.35 Tm
+  op /F1 11 Tf
+  op [<011b> <00e1> <016a> <0144> <0113> <00e1> <014c> <014c> <00e1> <0140> <03be> <0140> <00e1> <0169> <00ff> <00e1> <016a> <03be> <011a> <00bd> <014c> <014c> <00e1> <0140> <03be> <013d> <0140> <00e1> <0144> <00e1> <011b> <014c> <00e1> 0 <0140> <03be> <00bd> <00dd> <0169> 0 <00ff> <0144> <0122> <0140> <03be> 0 <00bd> <00d7> <00d7> <0122> <0151> 0 <011b> <014c> <0329> <03be> <0081> 0 <00e1> <0140> <0169> <00e1> <00dd> 0 <03be> <0144> <00bd> <0169> <00ff> 0 <011b> <00f5> <0144> <03be>] TJ
+  op ET
+  op Q
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 165.02 Tm
+  op /F1 11 Tf
+  op [<013d> <00ff> <0113> <0122> <014c> <03be> <0140> <00e1> <00d7> <00e1> <00ff> <013d> <014c> <03be> <00d7> <0122> <0140> <013d> <0122> <0140> <00bd> <014c> <00e1> <03be> <0140> <00e1> <013f> <0151> <00ff> <0140> <00e1> <011a> <00e1> 0 <011b> <014c> <03be> <0144> <014c> 0 <00bd> <011b> <00dd> <00bd> <0140> 0 <00dd> <03be> <00f4> <00bd> <00d7> 0 <014c> <03be> <014c> <00fc> <00bd> 0 <014c> <03be> <013d> <0140> <0122> 0 <00dd> <0151> <00d7> <014c> <0144> 0 <03be>] TJ
+  op ET
+  op Q
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 180.69 Tm
+  op /F1 11 Tf
+  op [<00dd> <00ff> <0144> <014c> <0140> <00ff> <00d6> <0151> <014c> <00ff> <0122> <011b> <03be> <00f4> <00ff> <0113> <00e1> <00dd> <0329> <03be> <0053> <0122> <00f5> <00ff> <0144> <014c> <00ff> <00d7> <0144> <03be> <00d7> <00fc> <00bd> 0 <013d> <014c> <00e1> <0140> <03be> 0 <013d> <0113> <00bd> <011b> <03be> 0 <0140> <00e1> <00f5> <00ff> <0122> 0 <011b> <00bd> <0113> <03be> <011a> 0 <00bd> <00ff> <011b> <014c> <00e1> 0 <011b> <00bd> <011b> <00d7> <00e1> 0 <03be>] TJ
+  op ET
+  op Q
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 196.36 Tm
+  op /F1 11 Tf
+  op [<00bd> <00d7> <00d7> <00e1> <0144> <0144> <00ff> <00d6> <00ff> <0113> <00ff> <014c> <0170> <03be> <014c> <00bd> <016f> <03be> <00f4> <00ff> <011b> <00dd> <0144> <03be> <0140> <00e1> <00d7> <0122> <0140> <00dd> <03be> <013d> <0140> 0 <0122> <013d> <0122> <0144> <00bd> 0 <0113> <03be> <00dd> <00e1> <011b> 0 <00ff> <00e1> <00dd> <03be> <00d7> 0 <0122> <011b> <014c> <0140> <00bd> 0 <00d7> <014c> <0329> <03be> <0060> 0 <011b> <00d6> <0122> <00bd> <0140> 0 <00dd> <00ff> <011b> <00f5> <03be>] TJ
+  op ET
+  op Q
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 212.03 Tm
+  op /F1 11 Tf
+  op [<0144> <0151> <013d> <013d> <0122> <0140> <014c> <03be> <011b> <00e1> <014c> <016a> <0122> <0140> <0110> <03be> <0144> <00d7> <00fc> <00e1> <00dd> <0151> <0113> <00e1> <00dd> <03be> <014c> <0140> <00e1> <011b> <00dd> <03be> <0144> 0 <0151> <00f5> <00f5> <00e1> <0144> 0 <014c> <00ff> <0122> <011b> <0144> 0 <03be> <00d6> <0122> <00bd> <0140> 0 <00dd> <03be> <0122> <0140> <00dd> 0 <00e1> <0140> <03be> <0151> <013d> 0 <00dd> <00bd> <014c> <00e1> <03be> 0 <00f5> <0140> <00bd> <011b> <014c> 0 <00e1> 0 <00dd> 0 <03be>] TJ
+  op ET
+  op Q
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 227.7 Tm
+  op /F1 11 Tf
+  op [<00bd> <00f5> <0140> <00e1> <00e1> <011a> <00e1> <011b> <014c> <03be> <011a> <00bd> <0140> <0110> <00e1> <014c> <00ff> <011b> <00f5> <0329> <03be> <007a> <0140> <0122> <011a> <0122> <014c> <00ff> <0122> <011b> <03be> <00dd> <00ff> 0 <0169> <00ff> <0144> <00ff> <0122> 0 <011b> <03be> <00dd> <00bd> <014c> 0 <00e1> <03be> <013d> <0140> <0122> 0 <00f4> <00ff> <014c> <00bd> <00d6> 0 <0113> <00e1> <03be> <00ff> <011b> 0 <0144> <00ff> <00f5> <00fc> <014c> 0 <0144> <03be> <014c> <00fc> <00e1> 0 <03be>] TJ
+  op ET
+  op Q
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 243.37 Tm
+  op /F1 11 Tf
+  op [<011a> <00e1> <00e1> <014c> <00ff> <011b> <00f5> <03be> <00f4> <0122> <0140> <00e1> <00d7> <00bd> <0144> <014c> <03be> <00fc> <00e1> <0140> <00e1> <00d6> <0170> <03be> <0169> <00e1> <011b> <00dd> <0122> <0140> <0144> <03be> <013d> 0 <0140> <00bd> <00d7> <014c> <00ff> 0 <00d7> <00bd> <0113> <03be> <0144> 0 <00d7> <00fc> <00e1> <00dd> <0151> 0 <0113> <00e1> <0329> <03be> <0081> 0 <014c> <00bd> <014c> <00e1> <03be> 0 <00e1> <011b> <014c> <0140> <0170> 0 <03be>] TJ
+  op ET
+  op Q
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 259.04 Tm
+  op /F1 11 Tf
+  op [<00e1> <0144> <014c> <00ff> <011a> <00bd> <014c> <00e1> <03be> <011a> <00bd> <011b> <00bd> <00f5> <00e1> <011a> <00e1> <011b> <014c> <03be> <00bd> <00d7> <014c> <00ff> <0122> <011b> <03be> <00d6> <0151> <00dd> <00f5> <00e1> <014c> 0 <03be> <00ff> <011b> <0169> <00e1> 0 <011b> <014c> <0122> <0140> <0170> 0 <03be> <0140> <00e1> <0113> <00e1> 0 <0169> <00bd> <011b> <014c> <0329>] TJ
+  op ET
+  op Q
+  op EMC
+  op /P << /MCID 2 >> BDC
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 282.71 Tm
+  op /F1 11 Tf
+  op [<005a> <0122> <014c> <00ff> <00d7> <00e1> <03be> <00d7> <0113> <00bd> <00ff> <011a> <03be> <014c> <00e1> <00bd> <011a> <03be> <00e1> <016f> <013d> <0122> <0140> <014c> <03be> <0144> <014c> <00bd> <00f4> <00f4> <03be> <011b> <00e1> 0 <016a> <0144> <0113> <00e1> <014c> 0 <014c> <00e1> <0140> <03be> <0140> 0 <00e1> <0169> <00ff> <00e1> <016a> 0 <03be> <011a> <00bd> <014c> <014c> 0 <00e1> <0140> <03be> <013d> <0140> 0 <00e1> <0144> <00e1> <011b> <014c> 0 <00e1> <0140> <03be>] TJ
+  op ET
+  op Q
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 298.38 Tm
+  op /F1 11 Tf
+  op [<00bd> <00dd> <0169> <00ff> <0144> <0122> <0140> <03be> <00bd> <00d7> <00d7> <0122> <0151> <011b> <014c> <03be> <0144> <00e1> <0140> <0169> <00e1> <00dd> <0329> <03be> <0081> <00bd> <0169> <00ff> <011b> <00f5> <0144> <03be> <013d> 0 <00ff> <0113> <0122> <014c> <03be> 0 <0140> <00e1> <00d7> <00e1> <00ff> 0 <013d> <014c> <03be> <00d7> <0122> 0 <0140> <013d> <0122> <0140> <00bd> 0 <014c> <00e1> <03be> <0140> <00e1> 0 <013f> <0151> <00ff> <0140> <00e1> 0 <011a> <00e1> <011b> <014c> <03be>] TJ
+  op ET
+  op Q
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 314.05 Tm
+  op /F1 11 Tf
+  op [<0144> <014c> <00bd> <011b> <00dd> <00bd> <0140> <00dd> <03be> <00f4> <00bd> <00d7> <014c> <03be> <014c> <00fc> <00bd> <014c> <03be> <013d> <0140> <0122> <00dd> <0151> <00d7> <014c> <0144> <03be> <00dd> <00ff> <0144> <014c> <0140> 0 <00ff> <00d6> <0151> <014c> <00ff> 0 <0122> <011b> <03be> <00f4> <00ff> 0 <0113> <00e1> <00dd> <03be> <0113> 0 <0122> <00f5> <00ff> <0144> <014c> 0 <00ff> <00d7> <0144> <0329> <03be> 0 <001b> <00fc> <00bd> <013d> <014c> 0 <00e1> <0140> <03be> <013d> <0113> 0 <00bd> 0 <011b> 0 <03be>] TJ
+  op ET
+  op Q
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 329.71 Tm
+  op /F1 11 Tf
+  op [<0140> <00e1> <00f5> <00ff> <0122> <011b> <00bd> <0113> <03be> <011a> <00bd> <00ff> <011b> <014c> <00e1> <011b> <00bd> <011b> <00d7> <00e1> <03be> <00bd> <00d7> <00d7> <00e1> <0144> <0144> <00ff> <00d6> <00ff> <0113> <00ff> <014c> 0 <0170> <03be> <014c> <00bd> <016f> 0 <03be> <00f4> <00ff> <011b> <00dd> 0 <0144> <03be> <0140> <00e1> <00d7> 0 <0122> <0140> <00dd> <03be> <013d> 0 <0140> <0122> <013d> <0122> <0144> 0 <00bd> <0113> <03be> <00dd> <00e1> 0 <011b> <00ff> <00e1> <00dd> <03be>] TJ
+  op ET
+  op Q
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 345.38 Tm
+  op /F1 11 Tf
+  op [<00d7> <0122> <011b> <014c> <0140> <00bd> <00d7> <014c> <03be> <0122> <011b> <00d6> <0122> <00bd> <0140> <00dd> <00ff> <011b> <00f5> <0329> <03be> <0081> <0151> <013d> <013d> <0122> <0140> <014c> <03be> <011b> <00e1> <014c> <016a> 0 <0122> <0140> <0110> <03be> <0144> 0 <00d7> <00fc> <00e1> <00dd> <0151> 0 <0113> <00e1> <00dd> <03be> <014c> 0 <0140> <00e1> <011b> <00dd> <03be> 0 <0144> <0151> <00f5> <00f5> <00e1> 0 <0144> <014c> <00ff> <0122> <011b> 0 <0144> <03be> <00d6> <0122> <00bd> 0 <0140> 0 <00dd> 0 <03be>] TJ
+  op ET
+  op Q
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 361.05 Tm
+  op /F1 11 Tf
+  op [<0122> <0140> <00dd> <00e1> <0140> <03be> <0151> <013d> <00dd> <00bd> <014c> <00e1> <03be> <00f5> <0140> <00bd> <011b> <014c> <00e1> <00dd> <03be> <00bd> <00f5> <0140> <00e1> <00e1> <011a> <00e1> <011b> <014c> <03be> <011a> <00bd> 0 <0140> <0110> <00e1> <014c> <00ff> 0 <011b> <00f5> <03be> <013d> <0140> 0 <0122> <011a> <0122> <014c> <00ff> 0 <0122> <011b> <0329> <03be> <0021> 0 <00ff> <0169> <00ff> <0144> <00ff> 0 <0122> <011b> <03be> <00dd> <00bd> 0 <014c> <00e1> <03be>] TJ
+  op ET
+  op Q
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 376.72 Tm
+  op /F1 11 Tf
+  op [<013d> <0140> <0122> <00f4> <00ff> <014c> <00bd> <00d6> <0113> <00e1> <03be> <00ff> <011b> <0144> <00ff> <00f5> <00fc> <014c> <0144> <03be> <014c> <00fc> <00e1> <03be> <011a> <00e1> <00e1> <014c> <00ff> <011b> <00f5> <03be> <00f4> 0 <0122> <0140> <00e1> <00d7> <00bd> 0 <0144> <014c> <03be> <00fc> <00e1> 0 <0140> <00e1> <00d6> <0170> <03be> 0 <0169> <00e1> <011b> <00dd> <0122> 0 <0140> <0144> <03be> <013d> <0140> 0 <00bd> <00d7> <014c> <00ff> <00d7> 0 <00bd> <0113> <03be>] TJ
+  op ET
+  op Q
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 392.39 Tm
+  op /F1 11 Tf
+  op [<0144> <00d7> <00fc> <00e1> <00dd> <0151> <0113> <00e1> <03be> <0144> <014c> <00bd> <014c> <00e1> <0329>] TJ
+  op ET
+  op Q
+  op EMC
+structure
+  Document
+    H1
+    P
+    P
+outline
+  "Page colour with a theme shade"

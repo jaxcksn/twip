@@ -1,0 +1,23 @@
+page 0 12240 15840
+  1440 2006 Underline styles
+  1440 2360 single            Automatic colour sample  Coloured sample
+  1440 2691 words             Automatic colour sample  Coloured sample
+  1440 3021 double            Automatic colour sample  Coloured sample
+  1440 3351 thick             Automatic colour sample  Coloured sample
+  1440 3682 dotted            Automatic colour sample  Coloured sample
+  1440 4012 dottedHeavy       Automatic colour sample  Coloured sample
+  1440 4343 dash              Automatic colour sample  Coloured sample
+  1440 4673 dashedHeavy       Automatic colour sample  Coloured sample
+  1440 5003 dashLong          Automatic colour sample  Coloured sample
+  1440 5334 dashLongHeavy     Automatic colour sample  Coloured sample
+  1440 5664 dotDash           Automatic colour sample  Coloured sample
+  1440 5995 dashDotHeavy      Automatic colour sample  Coloured sample
+  1440 6325 dotDotDash        Automatic colour sample  Coloured sample
+  1440 6655 dashDotDotHeavy   Automatic colour sample  Coloured sample
+  1440 6986 wave              Automatic colour sample  Coloured sample
+  1440 7316 wavyHeavy         Automatic colour sample  Coloured sample
+  1440 7647 wavyDouble        Automatic colour sample  Coloured sample
+  1440 7977 none              Automatic colour sample  Coloured sample
+  1440 8307 words, tabs and spaces
+  1440 8638 alphabeta gamma   delta    end
+  1440 8968 alphabeta gamma   delta    end
