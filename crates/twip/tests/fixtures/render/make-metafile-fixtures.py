@@ -6,10 +6,17 @@ palette; the shapes picture again, cropped. ole-preview.docx: the previews of em
 WMF and PNG, at their shapes' sizes.
 
 metafile-emf.docx: inline EMF pictures, each built record by record here: shapes, pens and dashes; a clipped and
-turned group; text; embedded bitmaps; gradients; a dual EMF and EMF+ file whose plain records draw; and the shapes
-picture again, cropped; raster operations and masks; regions, palettes and paths. Each EMF's device is 96 dpi and
-its logical unit a thousandth of an inch (a sixteenth in the raster operations' picture, so its bitmaps' pixels, a
-unit each, show).
+turned group; text; embedded bitmaps; gradients; a dual EMF and EMF+ file (its EMF+ records draw, the plain ones are
+the same picture for readers without EMF+); and the shapes picture again, cropped; raster operations and masks;
+regions, palettes and paths. Each EMF's device is 96 dpi and its logical unit a thousandth of an inch (a sixteenth in
+the raster operations' picture, so its bitmaps' pixels, a unit each, show).
+
+metafile-emfplus.docx: EMF+ pictures, built record by record: a dual file's shapes, pens, caps and curves (its plain
+records a grey stand-in that must not show); brushes (hatches, linear and path gradients, a flipped texture) in an
+EMF+-only file; transforms, a container and clips combined by every mode and by a region; text laid out in a rect,
+and driver strings; pens (miters clipped and bevelled past their limit, a dashed line's and its dashes' caps,
+compound strips mirrored and lopsided), a shown hotkey prefix and a copy under a clip; and images (a bitmap, a
+skewed one, an EMF inside, and plain records after a GetDC), in the 96 dpi device's pixels.
 
 Standard library only, no randomness: the same bytes on every run. The package helpers come from
 ../layout/make-layout-fixtures.py. The metafiles' text names JetBrains Mono, the one face with real glyphs in the
@@ -58,10 +65,12 @@ def rgb(c):
 class Emf:
     """An EMF of `w` × `h` inches, on a 96 dpi device, drawn in thousandths of an inch."""
 
-    def __init__(self, w, h, per_inch=1000):
+    def __init__(self, w, h, per_inch=1000, setup=True):
         self.w, self.h = w, h
         self.body = b""
         self.count = 0
+        if not setup:
+            return
         self.r(SETMAPMODE, 8)
         self.r(SETWINDOWEXTEX, round(w * per_inch), round(h * per_inch))
         self.r(SETVIEWPORTEXTEX, round(w * 96), round(h * 96))
@@ -335,13 +344,234 @@ def dual():
         data = struct.pack("<I", 0x2B464D45) + b"".join(records)
         return e.rec(GDICOMMENT, struct.pack("<I", len(data)) + data)
 
-    # EmfPlusHeader (dual), a solid fill of rects, and the end of the EMF+ records.
-    plus(struct.pack("<HHIIIIII", 0x4001, 1, 28, 16, 0xDBC01002, 1, 96, 96))
-    plus(struct.pack("<HHIIIIffff", 0x400A, 0x8000, 32, 20, 0xFF70AD47, 1, 10, 10, 280, 80))
-    plus(struct.pack("<HHII", 0x4002, 0, 12, 0))
+    # EmfPlusHeader (dual), a solid fill of a rect, a line (a pen object), and the end of the EMF+ records.
+    plus(prec(0x4001, 1, u32(V, 1, 96, 96)), prec(0x401E, 0x09))
+    plus(prec(0x400A, 0x8000, u32(0xFF70AD47, 1) + f32(9.6, 9.6, 268.8, 76.8)))
+    plus(prec(0x4008, 0x200, pen_data(2.88, solid(0xFF385723))), prec(0x400D, 0, u32(2) + f32(9.6, 48, 278.4, 48)))
+    plus(prec(0x4002, 0))
     e.r(SELECTOBJECT, NULL_PEN).brush(1, 0, 0x70AD47).r(RECTANGLE, 100, 100, 2900, 900)
     e.pen(2, 0, 30, 0x385723).r(MOVETOEX, 100, 500).r(LINETO, 2900, 500)
     return e.bytes()
+
+
+# ---------------- EMF+ ----------------
+
+V = 0xDBC01002  # EmfPlusGraphicsVersion
+
+
+def f32(*v):
+    return struct.pack(f"<{len(v)}f", *v)
+
+
+def u32(*v):
+    return struct.pack(f"<{len(v)}I", *v)
+
+
+def prec(kind, flags, data=b""):
+    """An EMF+ record: its size padded to four bytes, its data size the data's own."""
+    return struct.pack("<HHII", kind, flags, 12 + len(data) + (-len(data) % 4), len(data)) + data + b"\0" * (-len(data) % 4)
+
+
+def solid(argb):
+    return u32(V, 0, argb)
+
+
+def pen_data(width, brush, flags=0, optional=b"", unit=0):
+    """An EmfPlusPen: `flags` (PenData) and their optional data, in `brush`."""
+    return u32(V, 0, flags, unit) + f32(width) + optional + brush
+
+
+def utf16(s):
+    return s.encode("utf-16-le")
+
+
+def font_data(em, face="JetBrains Mono", style=0):
+    return u32(V) + f32(em) + u32(2, style, 0, len(face)) + utf16(face)
+
+
+def path_data(pts, types):
+    return u32(V, len(pts), 0) + b"".join(f32(*q) for q in pts) + bytes(types)
+
+
+def bitmap_data(w, h, argb_rows):
+    """A 32-bit ARGB EmfPlusBitmap: rows top down, each pixel (a, r, g, b)."""
+    px = b"".join(bytes([b, g, r, a]) for row in argb_rows for (a, r, g, b) in row)
+    return u32(V, 1, w, h, w * 4, 0x0026200A, 0) + px
+
+
+class Plus:
+    """A metafile of EMF+ records (`w` × `h` inches, drawn in its 96 dpi device's pixels), dual (its plain records
+    then drawn by `fallback`) or EMF+ only."""
+
+    def __init__(self, w, h, dual=False):
+        self.e = Emf(w, h, setup=False)
+        # Anti-aliased, as Office writes them (GDI+'s default smoothing is none).
+        self.pending = [prec(0x4001, 1 if dual else 0, u32(V, 1, 96, 96)), prec(0x401E, 0x09)]
+
+    def add(self, *records):
+        self.pending += records
+        return self
+
+    def flush(self):
+        """The records so far, as one comment."""
+        if self.pending:
+            data = u32(0x2B464D45) + b"".join(self.pending)
+            self.e.rec(GDICOMMENT, u32(len(data)) + data)
+            self.pending = []
+        return self
+
+    def obj(self, kind, ih, data):
+        return self.add(prec(0x4008, kind << 8 | ih, data))
+
+    def fill_rect(self, brush, x, y, w, h, colour=True):
+        return self.add(prec(0x400A, 0x8000 if colour else 0, u32(brush, 1) + f32(x, y, w, h)))
+
+    def bytes(self):
+        self.add(prec(0x4002, 0)).flush()
+        return self.e.bytes()
+
+
+def plus_shapes():
+    """Dual: shapes, pens, caps and curves in EMF+; in plain records a grey box crossed out, which must not show."""
+    m = Plus(3, 1.5, dual=True)
+    m.fill_rect(0xFF70AD47, 10, 10, 80, 50).add(prec(0x400E, 0x8000, u32(0x804472C4) + f32(55, 30, 80, 55)))
+    m.obj(2, 0, pen_data(3, solid(0xFFC00000), 0x20, u32(1))).add(prec(0x400D, 0, u32(5) + f32(150, 20, 175, 60, 200, 20, 225, 60, 250, 20)))
+    m.obj(2, 1, pen_data(5, solid(0xFF7030A0), 0x2 | 0x4, u32(2, 2))).add(prec(0x4012, 1, f32(180, 180) + f32(150, 75, 60, 60)))
+    m.add(prec(0x4010, 0x8000, u32(0xFFFFC000) + f32(-30, 240) + f32(10, 80, 55, 55)))
+    m.obj(2, 2, pen_data(2, solid(0xFF000000))).add(prec(0x4011, 2, f32(-30, 240) + f32(10, 80, 55, 55)))
+    m.obj(2, 3, pen_data(3, solid(0xFF2E75B6), 0x8, u32(2))).add(prec(0x4018, 3, f32(0.5) + u32(0, 3, 4) + f32(80, 130, 100, 85, 120, 130, 140, 85)))
+    # A Bézier with an arrow at its end (an adjustable arrow cap) and an anchor at its start.
+    arrow = u32(V, 1) + f32(3, 3, 0) + u32(1, 0, 0, 0) + f32(10, 1, 0, 0, 0, 0)
+    optional = u32(0x14, 0xFF) + u32(len(arrow)) + arrow
+    m.obj(2, 4, pen_data(2, solid(0xFF385723), 0x2 | 0x4 | 0x1000, optional)).add(prec(0x4019, 4, u32(4) + f32(220, 80, 240, 140, 260, 80, 280, 135)))
+    m.add(prec(0x4016, 0x8000, u32(0xFFED7D31) + f32(0.6) + u32(4) + f32(160, 100, 185, 90, 200, 120, 170, 138)))
+    m.flush()
+    m.e.r(SELECTOBJECT, NULL_PEN).brush(1, 0, 0xA0A0A0).r(RECTANGLE, 0, 0, 3000, 1500)
+    m.e.pen(2, 0, 40, 0x000000).r(MOVETOEX, 0, 0).r(LINETO, 3000, 1500).r(MOVETOEX, 0, 1500).r(LINETO, 3000, 0)
+    return m.bytes()
+
+
+def plus_brushes():
+    """EMF+ only: hatches, linear and path gradients, and a flipped texture."""
+    m = Plus(3, 1.5)
+    for i, style in enumerate((0, 3, 5, 9, 36, 52)):
+        m.obj(1, 0, u32(V, 1, style, 0xFF1F3864, 0xFFFFF2CC)).fill_rect(0, 8 + i * 22, 8, 18, 40, colour=False)
+    # Red to blue, most of the way in its first half.
+    m.obj(1, 1, u32(V, 4, 0x08, 0) + f32(8, 54, 130, 30) + u32(0xFFC00000, 0xFF2E75B6, 0, 0) + u32(3) + f32(0, 0.5, 1, 0, 0.8, 1))
+    m.fill_rect(1, 8, 54, 130, 30, colour=False)
+    # Preset colours, turned.
+    turn = math.radians(30)
+    xf = f32(math.cos(turn), math.sin(turn), -math.sin(turn), math.cos(turn), 0, 0)
+    m.obj(1, 2, u32(V, 4, 0x02 | 0x04, 1) + f32(0, 0, 40, 30) + u32(0, 0, 0, 0) + xf + u32(3) + f32(0, 0.5, 1) + u32(0xFFFFC000, 0xFF70AD47, 0xFF7030A0))
+    m.fill_rect(2, 8, 90, 130, 22, colour=False)
+    # A square path gradient, its corners each a colour, and an ellipse's with focus scales.
+    square = u32(V, 3, 0, 4, 0xFFFFFFFF) + f32(185, 38) + u32(4, 0xFFC00000, 0xFF70AD47, 0xFF2E75B6, 0xFFFFC000) + u32(4) + f32(150, 8, 220, 8, 220, 68, 150, 68)
+    m.obj(1, 3, square).fill_rect(3, 150, 8, 70, 60, colour=False)
+    k = 0.5523
+    ellipse = path_data([(255, 8), (255 + 25 * k, 8), (280, 38 - 30 * k), (280, 38), (280, 38 + 30 * k), (255 + 25 * k, 68), (255, 68),
+                         (255 - 25 * k, 68), (230, 38 + 30 * k), (230, 38), (230, 38 - 30 * k), (255 - 25 * k, 8), (255, 8)],
+                        [0] + [3] * 11 + [0x83])
+    m.obj(1, 4, u32(V, 3, 0x01 | 0x40, 4, 0xFFFFFFFF) + f32(255, 38) + u32(1, 0xFF7030A0) + u32(len(ellipse)) + ellipse + u32(2) + f32(0.4, 0.2))
+    m.add(prec(0x400E, 4, u32(4) + f32(230, 8, 50, 60)))
+    # A glow: a path gradient fading to transparent, over a dark bar.
+    m.fill_rect(0xFF404040, 150, 100, 130, 10)
+    glow = u32(V, 3, 0, 4, 0xFFFFC000) + f32(215, 105) + u32(1, 0x00FFC000) + u32(4) + f32(150, 80, 280, 80, 280, 130, 150, 130)
+    m.obj(1, 5, glow).fill_rect(5, 150, 80, 130, 50, colour=False)
+    # A 4 × 4 texture, mirrored both ways as it tiles.
+    o, g, w = (255, 0x2E, 0x75, 0xB6), (255, 0x70, 0xAD, 0x47), (255, 255, 255, 255)
+    tile = bitmap_data(4, 4, [[o, o, g, w], [o, g, w, w], [g, w, w, w], [w, w, w, w]])
+    m.obj(1, 6, u32(V, 2, 0x02, 3) + f32(3, 0, 0, 3, 8, 116) + tile).fill_rect(6, 8, 116, 130, 24, colour=False)
+    return m.bytes()
+
+
+def plus_transforms():
+    """Transforms, a container and clips: every combine mode, and a region."""
+    m = Plus(3, 1.5)
+    # Saved, turned about (45, 45) and drawn aliased, restored.
+    m.add(prec(0x4025, 0, u32(1)), prec(0x401E, 0), prec(0x402D, 0, f32(45, 45)), prec(0x402F, 0, f32(25)), prec(0x402D, 0, f32(-45, -45)))
+    m.fill_rect(0xFFC00000, 20, 20, 50, 50).fill_rect(0xC0FFC000, 35, 35, 20, 20).add(prec(0x4026, 0, u32(1)))
+    # A container drawing its 100 × 100 units into 60 × 60.
+    m.add(prec(0x4027, 2, f32(95, 10, 60, 60, 0, 0, 100, 100) + u32(2)))
+    m.add(prec(0x400E, 0x8000, u32(0xFF2E75B6) + f32(0, 0, 100, 100))).fill_rect(0xFFFFFFFF, 25, 25, 50, 50).add(prec(0x4029, 0, u32(2)))
+    # Clips: each pair of overlapping rects combined by a mode, then filled.
+    for i, mode in enumerate((1, 2, 3, 4, 5)):
+        x = 170 + i * 22
+        m.add(prec(0x4032, 0, f32(x, 10, 14, 30)), prec(0x4032, mode << 8, f32(x + 6, 18, 14, 30)))
+        m.fill_rect(0xFF7030A0, x - 2, 6, 26, 46).add(prec(0x4031, 0))
+    # A region: a rect exclusive-or an ellipse path, as the clip of a hatch.
+    k = 0.5523
+    ellipse = path_data([(225, 75), (225 + 50 * k, 75), (275, 105 - 30 * k), (275, 105), (275, 105 + 30 * k), (225 + 50 * k, 135), (225, 135),
+                         (225 - 50 * k, 135), (175, 105 + 30 * k), (175, 105), (175, 105 - 30 * k), (225 - 50 * k, 75), (225, 75)],
+                        [0] + [3] * 11 + [0x83])
+    region = u32(V, 2, 3, 0x10000000) + f32(170, 70, 60, 70) + u32(0x10000001, len(ellipse)) + ellipse
+    m.obj(4, 3, region).add(prec(0x4034, 3)).obj(1, 4, u32(V, 1, 5, 0xFF385723, 0xFFE2F0D9)).fill_rect(4, 160, 60, 125, 85, colour=False).add(prec(0x4031, 0))
+    # A star path as the clip, excluded from a rect.
+    star = [(85 + 35 * math.sin(i * 4 * math.pi / 5), 110 - 35 * math.cos(i * 4 * math.pi / 5)) for i in range(5)]
+    m.obj(3, 5, path_data(star, [0, 1, 1, 1, 0x81])).add(prec(0x4032, 0, f32(40, 75, 90, 65)), prec(0x4033, 4 << 8 | 5))
+    m.fill_rect(0xFFED7D31, 40, 75, 90, 65).add(prec(0x4031, 0))
+    return m.bytes()
+
+
+def plus_text():
+    """Text: a string wrapped and centred in its rect, one in a gradient, a driver string and vertical text."""
+    m = Plus(3, 1.25)
+    m.obj(6, 0, font_data(13)).obj(6, 1, font_data(20, style=1))
+    centred = u32(V, 0, 0x409, 1, 1, 0, 0) + f32(0) + u32(0) + f32(0, 0, 1) + u32(0, 0, 0)
+    m.obj(7, 2, centred).add(prec(0x4032, 0, f32(0, 0, 288, 120)))
+    m.fill_rect(0xFFDEEBF7, 8, 8, 120, 64)
+    s = "EMF+ text wraps and centres in its rect"
+    m.add(prec(0x401C, 0x8000, u32(0xFF1F3864, 2, len(s)) + f32(8, 8, 120, 64) + utf16(s)))
+    m.obj(1, 3, u32(V, 4, 0, 0) + f32(140, 0, 140, 30) + u32(0xFFC00000, 0xFF2E75B6, 0, 0))
+    s = "Gradient"
+    m.add(prec(0x401C, 1, u32(3, 0xFFFFFFFF, len(s)) + f32(140, 10, 0, 0) + utf16(s)))
+    glyphs = "Spaced"
+    pos = b"".join(f32(140 + 20 * i, 70 + 4 * i) for i in range(len(glyphs)))
+    m.add(prec(0x4036, 0x8000, u32(0xFF385723, 1, 0, len(glyphs)) + b"".join(struct.pack("<H", ord(c)) for c in glyphs) + pos))
+    vertical = u32(V, 0x2, 0x409, 0, 0, 0, 0) + f32(0) + u32(0) + f32(0, 0, 1) + u32(0, 0, 0)
+    s = "Down"
+    m.obj(7, 4, vertical).add(prec(0x401C, 0x8000, u32(0xFF7030A0, 4, len(s)) + f32(255, 70, 25, 50) + utf16(s)))
+    return m.bytes()
+
+
+def plus_pens():
+    """Pens: miter joins clipped and bevelled past their limit, a dashed line's own and its dashes' caps, compound
+    strips mirrored and not; a hotkey prefix shown; a copy under a unioned clip."""
+    m = Plus(3, 1.25)
+    # A miter (clipped at its limit of 2) and a clipped miter (bevelled past it).
+    m.obj(2, 0, pen_data(8, solid(0xFF2E75B6), 0x8 | 0x10, u32(0) + f32(2))).add(prec(0x400D, 0, u32(4) + f32(10, 50, 30, 10, 50, 50, 70, 10)))
+    m.obj(2, 1, pen_data(8, solid(0xFFC00000), 0x8 | 0x10, u32(3) + f32(2))).add(prec(0x400D, 1, u32(4) + f32(80, 50, 100, 10, 120, 50, 140, 10)))
+    # Dashes with triangle caps, the line's ends round (start) and square (end), half transparent.
+    m.obj(2, 2, pen_data(8, solid(0x80385723), 0x2 | 0x4 | 0x20 | 0x40, u32(2, 1, 1, 3))).add(prec(0x400D, 2, u32(2) + f32(160, 20, 280, 20)))
+    # Compound: mirrored (thin, thick, thin) and not (thick to the left, thin to the right), along a bend.
+    mirrored = u32(6) + f32(0, 0.15, 0.35, 0.65, 0.85, 1)
+    m.obj(2, 3, pen_data(14, solid(0xFF7030A0), 0x400, mirrored)).add(prec(0x400D, 3, u32(3) + f32(160, 45, 220, 45, 250, 75)))
+    lopsided = u32(4) + f32(0, 0.6, 0.8, 1)
+    m.obj(2, 4, pen_data(14, solid(0xFFED7D31), 0x400, lopsided)).add(prec(0x400D, 4, u32(3) + f32(10, 75, 70, 75, 100, 105)))
+    # A hotkey prefix shown: the S underlined.
+    m.obj(6, 5, font_data(14)).obj(7, 6, u32(V, 0, 0x409, 0, 0, 0, 0) + f32(0) + u32(1) + f32(0, 0, 1) + u32(0, 0, 0))
+    s = "&Save && close"
+    m.add(prec(0x401C, 0x8005, u32(0xFF1F3864, 6, len(s)) + f32(115, 85, 0, 0) + utf16(s)))
+    # Under a clip of two unioned rects, a half-transparent fill copied over a red bar: the bar shows through it only
+    # outside the clip.
+    m.fill_rect(0xFFC00000, 230, 85, 50, 30)
+    m.add(prec(0x4032, 0, f32(232, 88, 20, 24)), prec(0x4032, 2 << 8, f32(258, 88, 20, 24)), prec(0x4023, 1))
+    m.fill_rect(0x402E75B6, 225, 80, 60, 40).add(prec(0x4023, 0), prec(0x4031, 0))
+    return m.bytes()
+
+
+def plus_images():
+    """Images: a bitmap, a skewed copy, an EMF inside, and plain records after a GetDC."""
+    m = Plus(3, 1.5)
+    r, b, c = (255, 0xC0, 0, 0), (255, 0x2E, 0x75, 0xB6), (128, 255, 0xC0, 0)
+    m.obj(5, 0, bitmap_data(4, 4, [[r, b, r, b], [b, c, c, r], [r, c, c, b], [b, r, b, r]]))
+    m.add(prec(0x4021, 5), prec(0x401A, 0, u32(0xFFFFFFFF, 2) + f32(0, 0, 4, 4) + f32(8, 8, 60, 60)))
+    m.add(prec(0x401B, 0, u32(0xFFFFFFFF, 2) + f32(0, 0, 4, 4) + u32(3) + f32(85, 20, 145, 8, 95, 68)))
+    inner = shapes()
+    m.obj(5, 1, u32(V, 2, 3, len(inner)) + inner).add(prec(0x4021, 2), prec(0x401A, 1, u32(0xFFFFFFFF, 2) + f32(0, 0, 288, 144) + f32(160, 8, 120, 60)))
+    m.add(prec(0x4004, 0)).flush()
+    m.e.r(SELECTOBJECT, NULL_PEN).brush(1, 2, 0x7030A0, 3).r(RECTANGLE, 8, 80, 140, 136)
+    m.e.pen(2, 0, 2, 0x000000).brush(3, 0, 0xFFC000).r(ELLIPSE, 160, 80, 280, 136)
+    return m.bytes()
 
 
 XFORM = struct.pack("<6f", 1, 0, 0, 1, 0, 0)
@@ -624,7 +854,22 @@ def ole_preview(d):
     return body, lf.sect()
 
 
-FIXTURES = [("metafile-emf", metafile_emf), ("metafile-wmf", metafile_wmf), ("ole-preview", ole_preview)]
+def metafile_emfplus(d):
+    d.defaults.append(("emf", "image/x-emf"))
+    body = ""
+    pictures = [("A dual file: shapes, pens, caps and curves", plus_shapes(), 3, 1.5), ("Brushes, EMF+ only", plus_brushes(), 3, 1.5),
+                ("Transforms, a container, clips and a region", plus_transforms(), 3, 1.5), ("Text", plus_text(), 3, 1.25),
+                ("Pens, a hotkey and a copy under a clip", plus_pens(), 3, 1.25),
+                ("Images, and plain records after a GetDC", plus_images(), 3, 1.5)]
+    for n, (label, data, w, h) in enumerate(pictures, 1):
+        name = f"image{n}.emf"
+        rid = d.rel("image", f"media/{name}")
+        d.parts.append((f"word/media/{name}", data, None))
+        body += P(label) + p(picture(d, rid, name, w, h))
+    return body, lf.sect()
+
+
+FIXTURES = [("metafile-emf", metafile_emf), ("metafile-wmf", metafile_wmf), ("ole-preview", ole_preview), ("metafile-emfplus", metafile_emfplus)]
 
 
 def main():

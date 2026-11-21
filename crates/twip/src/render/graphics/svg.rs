@@ -14,7 +14,7 @@ use twip_graphics::scene::{Clip, FillRule, GlyphRun, Layer, Recorder, Synthesis}
 use super::Graphics;
 use crate::drawing::colour::Rgba;
 use crate::font::Face;
-use crate::render::svg::{Brush, GradientKind, MaskStep, Sink, Spread, Text, walk};
+use crate::render::svg::{Brush, Combine, GradientKind, MaskStep, Sink, Spread, Text, walk};
 
 /// Records the SVG `bytes` into `rec`, filling `dst` (the picture's box, its viewport); false when the bytes aren't an
 /// SVG.
@@ -31,6 +31,10 @@ pub(super) struct Recording<'a> {
     pushed: u32,
     /// The raster operation draws combine by ([`Sink::set_raster`]), and those of the masked layers open.
     op: u8,
+    /// Draws replace what is under them ([`Sink::set_copy`]).
+    copy: bool,
+    /// Fills and strokes have aliased edges ([`Sink::set_antialias`]).
+    aliased: bool,
     masked: Vec<u8>,
     /// The masks recorded, by their steps' address (the steps kept, so it isn't another's).
     masks: std::collections::HashMap<usize, (Rc<[MaskStep]>, twip_graphics::scene::Picture)>,
@@ -62,7 +66,23 @@ fn fade(k: f32) -> ColorFilter {
 
 impl<'a> Recording<'a> {
     pub(super) fn new(rec: &'a mut Recorder, g: Option<&'a mut Graphics>) -> Recording<'a> {
-        Recording { rec, g, saved: Vec::new(), pushed: 0, op: 12, masked: Vec::new(), masks: Default::default(), stops: Vec::new() }
+        Recording {
+            rec,
+            g,
+            saved: Vec::new(),
+            pushed: 0,
+            op: 12,
+            copy: false,
+            aliased: false,
+            masked: Vec::new(),
+            masks: Default::default(),
+            stops: Vec::new(),
+        }
+    }
+
+    /// The blend mode draws combine by: the raster operation's, or the source alone in copy mode.
+    fn mode(&self) -> BlendMode {
+        if self.copy && self.op == 12 { BlendMode::Src } else { blend(self.op) }
     }
 
     /// `bitmap` in the presentation's registry, kept until its pictures go.
@@ -75,10 +95,10 @@ impl<'a> Recording<'a> {
 
     /// `brush` as a paint combining by the raster operation, drawn with `draw`.
     fn with_paint(&mut self, brush: &Brush, draw: impl FnOnce(&mut Recorder, Paint<'_>)) {
-        let blend = blend(self.op);
-        let pattern = |image, transform| Paint { blend, ..Paint::new(Source::Pattern { image, transform, sampling: Sampling::Nearest }) };
+        let (blend, aa) = (self.mode(), !self.aliased);
+        let pattern = |image, transform| Paint { blend, aa, ..Paint::new(Source::Pattern { image, transform, sampling: Sampling::Nearest }) };
         let g = match brush {
-            Brush::Solid(c) => return draw(self.rec, Paint { blend, ..Paint::from(colour(*c)) }),
+            Brush::Solid(c) => return draw(self.rec, Paint { blend, aa, ..Paint::from(colour(*c)) }),
             Brush::Gradient(g) => g,
             Brush::Hatch { bits, fg, bg, transform } => {
                 let Some(image) = self.g.as_deref_mut().and_then(|g| g.tile(*bits, rgba(*fg), rgba(*bg))) else { return };
@@ -104,7 +124,7 @@ impl<'a> Recording<'a> {
                 Source::Radial { start: centre, start_radius: 0.0, end: centre, end_radius: radius, stops, extend, transform }
             }
         };
-        draw(self.rec, Paint { blend, ..Paint::new(source) });
+        draw(self.rec, Paint { blend, aa, ..Paint::new(source) });
     }
 }
 
@@ -161,9 +181,10 @@ impl Sink for Recording<'_> {
         let fade = [fade(opacity)];
         let filters: &[ColorFilter] = if opacity < 1.0 { &fade } else { &[] };
         // An image paint has no blend mode: a layer combines it by the raster operation.
-        let layered = self.op & 15 != 12;
+        let mode = self.mode();
+        let layered = mode != BlendMode::SrcOver;
         if layered {
-            self.rec.push_layer(&Layer { blend: blend(self.op), ..Layer::default() });
+            self.rec.push_layer(&Layer { blend: mode, ..Layer::default() });
         }
         self.rec.push_transform(to);
         let sampling = if smooth { Sampling::Linear } else { Sampling::Nearest };
@@ -176,10 +197,10 @@ impl Sink for Recording<'_> {
     }
 
     fn text(&mut self, t: &Text<'_>) -> f64 {
-        let op = self.op;
+        let mode = self.mode();
         let Some(g) = self.g.as_deref_mut() else { return 0.0 };
         let Some(line) = lay(g, t) else { return 0.0 };
-        draw_text(self.rec, g, t, &line, blend(op));
+        draw_text(self.rec, g, t, &line, mode);
         line.width
     }
 
@@ -211,51 +232,66 @@ impl Sink for Recording<'_> {
     }
 
     fn triangle(&mut self, pts: [kurbo::Point; 3], colours: [[f32; 4]; 3]) {
-        let (e1, e2) = (pts[1] - pts[0], pts[2] - pts[0]);
-        let det = e1.x * e2.y - e1.y * e2.x;
-        if !(det.abs() > 1e-12 && det.is_finite()) {
-            return;
-        }
-        let mut tri = BezPath::new();
-        tri.move_to(pts[0]);
-        tri.line_to(pts[1]);
-        tri.line_to(pts[2]);
-        tri.close_path();
-        let area = tri.bounding_box().inflate(1.0, 1.0);
-        let diagonal = (area.width().powi(2) + area.height().powi(2)).sqrt();
-        // Colour is affine across the triangle, each channel shading along its own direction: one linear gradient a
-        // channel, the others black, combined by lightening (each channel's maximum, which with the other channels
-        // black is their sum), in a layer clipped to the triangle.
-        self.rec.push_clip(Clip::Path(tri.elements()));
-        self.rec.push_layer(&Layer { blend: blend(self.op), ..Layer::default() });
-        for ch in 0..3 {
-            let [c0, c1, c2] = [0, 1, 2].map(|i| f64::from(colours[i][ch].clamp(0.0, 1.0)));
-            let gx = ((c1 - c0) * e2.y - (c2 - c0) * e1.y) / det;
-            let gy = ((c2 - c0) * e1.x - (c1 - c0) * e2.x) / det;
-            let n2 = gx * gx + gy * gy;
-            let only = |v: f64| {
-                let mut c = [0.0f32, 0.0, 0.0, 1.0];
-                c[ch] = v as f32;
-                colour(c)
+        shade(self.rec, pts, colours, self.mode());
+    }
+
+    fn mesh(&mut self, triangles: &[[(kurbo::Point, [f32; 4]); 3]]) {
+        // One layer a channel: each triangle filled with that channel's linear gradient, the others black, the red
+        // layer's over nothing and the others' lightening it (each channel's maximum, which with the others black is
+        // their sum); then, where any corner is translucent, the alpha as grey, made alpha and kept by
+        // destination-in. Each layer's picture is placed over itself: where anti-aliased edges meet, each pass covers
+        // what the last left, so seams and the points many triangles share fill in (to within an 8-bit step), and
+        // inside the triangles nothing changes. Colour and alpha each shade linearly, unpremultiplied.
+        const GREY_TO_ALPHA: ColorFilter =
+            ColorFilter::Matrix([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0]);
+        let translucent = triangles.iter().any(|t| t.iter().any(|v| v.1[3] < 1.0));
+        self.rec.push_layer(&Layer { blend: self.mode(), ..Layer::default() });
+        for ch in 0..if translucent { 4 } else { 3 } {
+            let (blend, filters): (BlendMode, &[ColorFilter]) = match ch {
+                0 => (BlendMode::SrcOver, &[]),
+                3 => (BlendMode::DstIn, &[GREY_TO_ALPHA]),
+                _ => (BlendMode::Lighten, &[]),
             };
-            let mode = if ch == 0 { BlendMode::SrcOver } else { BlendMode::Lighten };
-            // Within half a step of 8 bits across the triangle: one colour.
-            if n2.sqrt() * diagonal < 0.5 / 255.0 {
-                self.rec.fill_rect(area, Paint { blend: mode, ..Paint::from(only(c0)) });
-                continue;
+            let picture = channel(triangles, ch);
+            self.rec.push_layer(&Layer { blend, color_filters: filters, ..Layer::default() });
+            for _ in 0..crate::render::svg::MESH_PASSES {
+                self.rec.picture(&picture, Affine::IDENTITY);
             }
-            let g = kurbo::Vec2::new(gx, gy) / n2;
-            let (start, end) = (pts[0] - g * c0, pts[0] + g * (1.0 - c0));
-            let stops = [Stop { offset: 0.0, color: only(0.0) }, Stop { offset: 1.0, color: only(1.0) }];
-            let source = Source::Linear { start, end, stops: &stops, extend: Extend::Clamp, transform: Affine::IDENTITY };
-            self.rec.fill_rect(area, Paint { blend: mode, ..Paint::new(source) });
+            self.rec.pop();
         }
-        self.rec.pop();
         self.rec.pop();
     }
 
-    fn begin_masked(&mut self) {
-        self.rec.push_layer(&Layer { blend: blend(self.op), ..Layer::default() });
+    fn set_copy(&mut self, on: bool) {
+        self.copy = on;
+    }
+
+    fn set_antialias(&mut self, on: bool) {
+        self.aliased = !on;
+    }
+
+    fn measure(&mut self, t: &Text<'_>, advances: &mut Vec<f64>) -> Option<crate::render::svg::LineMetrics> {
+        let g = self.g.as_deref_mut()?;
+        let line = lay(g, t)?;
+        let mut glyphs = line.glyphs.iter().peekable();
+        while let Some(p) = glyphs.next() {
+            advances.push(glyphs.peek().map_or(line.width, |n| n.x) - p.x);
+        }
+        let k = line.face.scale(line.em);
+        Some(crate::render::svg::LineMetrics { ascent: line.face.ascent * k, descent: line.face.descent * k, leading: line.face.leading * k })
+    }
+
+    fn begin_masked(&mut self, mask: &Rc<[MaskStep]>) {
+        // Copying, what is under the mask is erased first and the masked draws add to it: where the mask covers,
+        // they replace it.
+        let replace = self.copy && self.op == 12;
+        if replace {
+            let picture = self.mask(mask);
+            self.rec.push_layer(&Layer { blend: BlendMode::DstOut, ..Layer::default() });
+            self.rec.picture(&picture, Affine::IDENTITY);
+            self.rec.pop();
+        }
+        self.rec.push_layer(&Layer { blend: if replace { BlendMode::Plus } else { blend(self.op) }, ..Layer::default() });
         self.masked.push(self.op);
         self.op = 12;
         self.save();
@@ -263,21 +299,122 @@ impl Sink for Recording<'_> {
 
     fn end_masked(&mut self, mask: &Rc<[MaskStep]>) {
         self.restore();
-        // The mask's coverage, drawn from none, keeps the content where it covers: recorded once, placed after.
-        let picture = match self.masks.get(&(Rc::as_ptr(mask) as *const () as usize)) {
-            Some((_, p)) => p.clone(),
-            None => {
-                let p = mask_picture(mask);
-                self.masks.insert(Rc::as_ptr(mask) as *const () as usize, (Rc::clone(mask), p.clone()));
-                p
-            }
-        };
+        // The mask's coverage, drawn from none, keeps the content where it covers.
+        let picture = self.mask(mask);
         self.rec.push_layer(&Layer { blend: BlendMode::DstIn, ..Layer::default() });
         self.rec.picture(&picture, Affine::IDENTITY);
         self.rec.pop();
         self.rec.pop();
         self.op = self.masked.pop().unwrap_or(12);
     }
+}
+
+impl Recording<'_> {
+    /// A mask's coverage as a picture: recorded once, placed after.
+    fn mask(&mut self, mask: &Rc<[MaskStep]>) -> twip_graphics::scene::Picture {
+        let key = Rc::as_ptr(mask) as *const () as usize;
+        if let Some((_, p)) = self.masks.get(&key) {
+            return p.clone();
+        }
+        let p = mask_picture(mask);
+        self.masks.insert(key, (Rc::clone(mask), p.clone()));
+        p
+    }
+}
+
+/// Channel `ch` of triangles' colours (red, green, blue; alpha as grey), each triangle filled with it shading
+/// linearly across it, opaque: the other channels black.
+fn channel(triangles: &[[(kurbo::Point, [f32; 4]); 3]], ch: usize) -> twip_graphics::scene::Picture {
+    let mut rec = Recorder::new();
+    let mut tri = BezPath::new();
+    for t in triangles {
+        let pts = t.map(|v| v.0);
+        let (e1, e2) = (pts[1] - pts[0], pts[2] - pts[0]);
+        let det = e1.x * e2.y - e1.y * e2.x;
+        if !(det.abs() > 1e-12 && det.is_finite()) {
+            continue;
+        }
+        tri.truncate(0);
+        tri.move_to(pts[0]);
+        tri.line_to(pts[1]);
+        tri.line_to(pts[2]);
+        tri.close_path();
+        let only = |v: f64| {
+            let v = v as f32;
+            colour(if ch == 3 {
+                [v, v, v, 1.0]
+            } else {
+                std::array::from_fn(|i| {
+                    if i == ch {
+                        v
+                    } else if i == 3 {
+                        1.0
+                    } else {
+                        0.0
+                    }
+                })
+            })
+        };
+        let [c0, c1, c2] = [0, 1, 2].map(|i| f64::from(t[i].1[ch].clamp(0.0, 1.0)));
+        let gx = ((c1 - c0) * e2.y - (c2 - c0) * e1.y) / det;
+        let gy = ((c2 - c0) * e1.x - (c1 - c0) * e2.x) / det;
+        let n2 = gx * gx + gy * gy;
+        let span = [e1, e2, pts[2] - pts[1]].iter().map(|e| e.hypot()).fold(0.0, f64::max);
+        // Within half a step of 8 bits across the triangle: one colour.
+        if !n2.is_finite() || n2.sqrt() * span < 0.5 / 255.0 {
+            rec.fill_path(tri.elements(), Paint::from(only((c0 + c1 + c2) / 3.0)));
+            continue;
+        }
+        let g = kurbo::Vec2::new(gx, gy) / n2;
+        let (start, end) = (pts[0] - g * c0, pts[0] + g * (1.0 - c0));
+        let stops = [Stop { offset: 0.0, color: only(0.0) }, Stop { offset: 1.0, color: only(1.0) }];
+        rec.fill_path(tri.elements(), Paint::new(Source::Linear { start, end, stops: &stops, extend: Extend::Clamp, transform: Affine::IDENTITY }));
+    }
+    rec.finish()
+}
+
+/// A triangle shading linearly between its corners' colours (opaque), combining by `mode`: one linear gradient a
+/// channel, the others black, combined by lightening (each channel's maximum, which with the other channels black is
+/// their sum), in a layer clipped to the triangle.
+fn shade(rec: &mut Recorder, pts: [kurbo::Point; 3], colours: [[f32; 4]; 3], mode: BlendMode) {
+    let (e1, e2) = (pts[1] - pts[0], pts[2] - pts[0]);
+    let det = e1.x * e2.y - e1.y * e2.x;
+    if !(det.abs() > 1e-12 && det.is_finite()) {
+        return;
+    }
+    let mut tri = BezPath::new();
+    tri.move_to(pts[0]);
+    tri.line_to(pts[1]);
+    tri.line_to(pts[2]);
+    tri.close_path();
+    let area = tri.bounding_box().inflate(1.0, 1.0);
+    let diagonal = (area.width().powi(2) + area.height().powi(2)).sqrt();
+    rec.push_clip(Clip::Path(tri.elements()));
+    rec.push_layer(&Layer { blend: mode, ..Layer::default() });
+    for ch in 0..3 {
+        let [c0, c1, c2] = [0, 1, 2].map(|i| f64::from(colours[i][ch].clamp(0.0, 1.0)));
+        let gx = ((c1 - c0) * e2.y - (c2 - c0) * e1.y) / det;
+        let gy = ((c2 - c0) * e1.x - (c1 - c0) * e2.x) / det;
+        let n2 = gx * gx + gy * gy;
+        let only = |v: f64| {
+            let mut c = [0.0f32, 0.0, 0.0, 1.0];
+            c[ch] = v as f32;
+            colour(c)
+        };
+        let mode = if ch == 0 { BlendMode::SrcOver } else { BlendMode::Lighten };
+        // Within half a step of 8 bits across the triangle: one colour.
+        if n2.sqrt() * diagonal < 0.5 / 255.0 {
+            rec.fill_rect(area, Paint { blend: mode, ..Paint::from(only(c0)) });
+            continue;
+        }
+        let g = kurbo::Vec2::new(gx, gy) / n2;
+        let (start, end) = (pts[0] - g * c0, pts[0] + g * (1.0 - c0));
+        let stops = [Stop { offset: 0.0, color: only(0.0) }, Stop { offset: 1.0, color: only(1.0) }];
+        let source = Source::Linear { start, end, stops: &stops, extend: Extend::Clamp, transform: Affine::IDENTITY };
+        rec.fill_rect(area, Paint { blend: mode, ..Paint::new(source) });
+    }
+    rec.pop();
+    rec.pop();
 }
 
 /// A mask's coverage as a picture: its steps from none.
@@ -291,6 +428,18 @@ fn mask_picture(mask: &[MaskStep]) -> twip_graphics::scene::Picture {
             MaskStep::Toggle(p, e) => (p, *e, BlendMode::Xor),
             MaskStep::Clip(p, e) => {
                 rec.push_clip(if *e { Clip::EvenOdd(p.elements()) } else { Clip::Path(p.elements()) });
+                open += 1;
+                continue;
+            }
+            MaskStep::Group(c) => {
+                let blend = match c {
+                    Combine::Union => BlendMode::SrcOver,
+                    Combine::Intersect => BlendMode::DstIn,
+                    Combine::Xor => BlendMode::Xor,
+                    Combine::Exclude => BlendMode::DstOut,
+                    Combine::Complement => BlendMode::SrcOut,
+                };
+                rec.push_layer(&Layer { blend, ..Layer::default() });
                 open += 1;
                 continue;
             }

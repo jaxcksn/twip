@@ -56,10 +56,53 @@ pub trait Sink {
         self.fill(&p, false, &Brush::Solid(std::array::from_fn(|i| (colours[0][i] + colours[1][i] + colours[2][i]) / 3.0)));
     }
     /// Draws what follows, until [`Sink::end_masked`], into a layer that combines with what is under it by the
-    /// raster operation now set, where `mask` (given to `end_masked`; the same steps by reference until the clip
-    /// changes) covers.
-    fn begin_masked(&mut self) {}
+    /// raster operation now set (replacing it in copy mode), where `mask` (given to both; the same steps by reference
+    /// until the clip changes) covers.
+    fn begin_masked(&mut self, _mask: &std::rc::Rc<[MaskStep]>) {}
     fn end_masked(&mut self, _mask: &std::rc::Rc<[MaskStep]>) {}
+    /// Fills triangles that tile a shape (without seams where they meet), each shading linearly between its
+    /// corners' colours (unpremultiplied, `0..=1`, alpha among them).
+    fn mesh(&mut self, triangles: &[[(Point, [f32; 4]); 3]]) {
+        for t in triangles {
+            self.triangle(t.map(|v| v.0), t.map(|v| v.1));
+        }
+    }
+    /// From here, draws replace what is under them, alpha included, instead of compositing over it (when the raster
+    /// operation copies).
+    fn set_copy(&mut self, _on: bool) {}
+    /// From here, fills and strokes have anti-aliased edges (the default) or aliased ones: a pixel covered when at
+    /// least half of it is inside. Clips, text, images and meshes stay anti-aliased.
+    fn set_antialias(&mut self, _on: bool) {}
+    /// Lays out a line of text without drawing it: each character's advance (appended to `advances`) and the face's
+    /// metrics, in the line's space. A sink without fonts measures nothing.
+    fn measure(&mut self, _text: &Text<'_>, _advances: &mut Vec<f64>) -> Option<LineMetrics> {
+        None
+    }
+}
+
+/// How many times a sink draws a mesh's triangles over themselves in each of its layers (see
+/// `render::graphics::svg`): what a mesh's work is priced at.
+pub const MESH_PASSES: usize = 6;
+
+/// A face's vertical metrics at a line's size, in the line's space: above and below the baseline, and the leading
+/// between lines.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LineMetrics {
+    pub ascent: f64,
+    pub descent: f64,
+    pub leading: f64,
+}
+
+/// How a group's coverage combines with the coverage under it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Combine {
+    Union,
+    Intersect,
+    Xor,
+    /// What is under it, less the group.
+    Exclude,
+    /// The group, less what is under it.
+    Complement,
 }
 
 /// A step of drawing a mask's coverage, from none: shapes added, removed and toggled, under clips.
@@ -73,6 +116,9 @@ pub enum MaskStep {
     Toggle(BezPath, bool),
     /// Clips the steps up to the matching [`MaskStep::Pop`] to a path's fill.
     Clip(BezPath, bool),
+    /// Draws the steps up to the matching [`MaskStep::Pop`] into a coverage of their own, from none, then combines
+    /// it with the coverage under it.
+    Group(Combine),
     Pop,
 }
 

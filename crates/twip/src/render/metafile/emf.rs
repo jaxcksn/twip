@@ -4,8 +4,9 @@ use std::sync::Arc;
 
 use twip_graphics::kurbo::{self, Affine, Point, Vec2};
 
+use super::plus::Plus;
 use super::raster::{NOP, Source, mask_rects};
-use super::{LogBrush, LogFont, MAX_RECORDS, Object, Pen, Player, Poly, TextOut};
+use super::{LogBrush, LogFont, MAX_RECORDS, Object, Pen, Player, Poly, Spent, TextOut};
 use crate::render::svg::Sink;
 
 /// What an EMF's header says: the picture's size in points, the map from device pixels into it, device pixels per
@@ -57,31 +58,90 @@ impl Header {
         };
         Some(Header { size, dev, px_per_mm, handles })
     }
+
+    /// The frame in device pixels: what a picture drawing this one as an image counts its pixels in.
+    pub(super) fn frame_px(&self) -> kurbo::Rect {
+        self.dev.inverse().transform_rect_bbox(kurbo::Rect::from_origin_size(Point::ZERO, self.size))
+    }
 }
 
 /// Plays the EMF `d` into `sink`, in the picture's space (its frame, in points); false when the bytes aren't an EMF.
 pub fn play(sink: &mut impl Sink, d: &[u8]) -> bool {
-    let Some(h) = Header::read(d) else { return false };
-    let mut p = Player::new(sink, h.dev, h.size, h.px_per_mm, h.handles);
-    let mut at = 0usize;
-    let mut n = 0u32;
-    while d.len() - at >= 8 && !p.stopped.get() && n < MAX_RECORDS {
-        let r = Rec(&d[at..]);
-        let (Some(kind), Some(size)) = (r.u32(0), r.u32(4)) else { break };
-        let size = size as usize;
-        if size < 8 || !size.is_multiple_of(4) || size > d.len() - at {
-            break;
-        }
-        if kind == 14 {
-            break;
-        }
-        // A record too short for what it holds stops being read, and the next is read.
-        let _ = record(&mut p, kind, Rec(&d[at..at + size]));
-        at += size;
-        n += 1;
+    play_with(sink, d, Spent::default()).is_some()
+}
+
+/// [`play`], counting against what `spent` says an enclosing metafile has spent; what is spent after, or none when
+/// the bytes aren't an EMF. EMF+ records in its comments play, and once they have, plain records only where the last
+/// comment's records end in a `GetDC` (in a dual file the plain records are the picture again, for readers without
+/// EMF+).
+pub(super) fn play_with<S: Sink>(sink: &mut S, d: &[u8], spent: Spent) -> Option<Spent> {
+    let h = Header::read(d)?;
+    if spent.work > super::MAX_WORK {
+        return Some(spent);
     }
-    p.finish();
-    true
+    // EMF+ records that replace what is under them replace the picture's own, not the page's: it draws in a layer.
+    // Each record looked at is work, drawn or not (a picture drawn again and again inside another reads its records
+    // each time), as far as the budget left goes.
+    let mut left = (super::MAX_WORK - spent.work) as usize;
+    let mut isolated = false;
+    for (_, r) in records(d) {
+        let Some(l) = left.checked_sub(1) else { break };
+        left = l;
+        if let Some(plus) = plus_records(r)
+            && super::plus::replaces(plus, &mut left)
+        {
+            isolated = true;
+            break;
+        }
+    }
+    let mut p = Player::new(sink, h.dev, h.size, h.px_per_mm, h.handles);
+    p.inherit(spent);
+    p.spend((super::MAX_WORK - spent.work) as usize - left);
+    if isolated && p.spend_share(1.0, super::LAYER_FULL) {
+        p.sink.begin_layer(1.0);
+    } else {
+        isolated = false;
+    }
+    let mut plus = Plus::default();
+    for (kind, r) in records(d) {
+        if !p.spend(1) {
+            break;
+        }
+        if let Some(records) = plus_records(r) {
+            plus.play(&mut p, records);
+        } else if plus.plain(&mut p) {
+            // A record too short for what it holds stops being read, and the next is read.
+            let _ = record(&mut p, kind, r);
+        }
+    }
+    if isolated {
+        p.sink.end_layer();
+    }
+    Some(p.finish())
+}
+
+/// An EMF's records (their type and bytes) up to its end, at most [`MAX_RECORDS`] of them.
+fn records(d: &[u8]) -> impl Iterator<Item = (u32, Rec<'_>)> {
+    let mut at = 0usize;
+    std::iter::from_fn(move || {
+        let r = Rec(d.get(at..)?);
+        let (kind, size) = (r.u32(0)?, r.u32(4)? as usize);
+        if size < 8 || !size.is_multiple_of(4) || size > d.len() - at || kind == 14 {
+            return None;
+        }
+        at += size;
+        Some((kind, Rec(&d[at - size..at])))
+    })
+    .take(MAX_RECORDS as usize)
+}
+
+/// The EMF+ records an `EMR_COMMENT` holds, when it is an EMF+ comment.
+fn plus_records(r: Rec<'_>) -> Option<&[u8]> {
+    const EMF_PLUS: u32 = 0x2B46_4D45;
+    if r.u32(0)? != 70 || r.u32(12)? != EMF_PLUS {
+        return None;
+    }
+    r.slice(16, (r.u32(8)? as usize).checked_sub(4)?, 1)
 }
 
 /// A record's bytes, read little-endian; every read checked against them.

@@ -8,7 +8,7 @@ use std::rc::Rc;
 use twip_graphics::kurbo::{self, Affine, Point, Vec2};
 
 use super::emf::{self, DibAt, Rec, ansi, dib, dib_packed, narrow, set_dibits, stretch_dibits};
-use super::{LogBrush, LogFont, MAX_RECORDS, Object, Player, Poly, TextOut, emf::logpen};
+use super::{LogBrush, LogFont, MAX_RECORDS, Object, Player, Poly, Spent, TextOut, emf::logpen};
 use crate::render::svg::Sink;
 
 /// The key a placeable file starts with.
@@ -89,7 +89,13 @@ fn next(d: &[u8], at: usize) -> Option<(Rec<'_>, usize)> {
 
 /// Plays the WMF `d` into `sink`, in the picture's space; false when the bytes aren't a WMF.
 pub fn play(sink: &mut impl Sink, d: &[u8]) -> bool {
-    let Some(h) = Header::read(d) else { return false };
+    play_with(sink, d, Spent::default()).is_some()
+}
+
+/// [`play`], counting against what `spent` says an enclosing metafile has spent; what is spent after, or none when
+/// the bytes aren't a WMF.
+pub(super) fn play_with<S: Sink>(sink: &mut S, d: &[u8], spent: Spent) -> Option<Spent> {
+    let h = Header::read(d)?;
     // A file that carries its picture as an EMF is that picture, and its own records (a stand-in for those that can't
     // play the EMF) don't draw beside it.
     if let Some(data) = embedded_emf(d, h.first)
@@ -97,16 +103,17 @@ pub fn play(sink: &mut impl Sink, d: &[u8]) -> bool {
     {
         sink.save();
         sink.transform(Affine::scale_non_uniform(h.size.width / e.size.width, h.size.height / e.size.height));
-        emf::play(sink, &data);
+        let spent = emf::play_with(sink, &data, spent);
         sink.restore();
-        return true;
+        return spent;
     }
     let mut p = Player::new(sink, Affine::scale(0.75), h.size, Vec2::new(96.0 / 25.4, 96.0 / 25.4), MAX_OBJECTS as usize + 1);
+    p.inherit(spent);
     p.dc.map_mode = super::MM_ANISOTROPIC;
     (p.dc.win_org, p.dc.win_ext, p.dc.vp_ext) = (h.win_org, h.win_ext, h.vp_ext);
     let mut objects = Objects::default();
     let (mut at, mut n) = (h.first, 0u32);
-    while !p.stopped.get() && n < MAX_RECORDS {
+    while p.spend(1) && n < MAX_RECORDS {
         let Some((r, size)) = next(d, at) else { break };
         let Some(kind) = r.u16(4) else { break };
         if kind == 0 {
@@ -117,8 +124,7 @@ pub fn play(sink: &mut impl Sink, d: &[u8]) -> bool {
         at += size;
         n += 1;
     }
-    p.finish();
-    true
+    Some(p.finish())
 }
 
 /// The state a WMF has beyond the player's: the object table, in which a created object takes the lowest free index

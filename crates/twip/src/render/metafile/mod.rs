@@ -7,6 +7,12 @@
 
 mod codepages;
 pub mod emf;
+mod plus;
+mod plus_objects;
+mod plus_paint;
+#[cfg(test)]
+mod plus_tests;
+mod plus_text;
 mod raster;
 mod region;
 #[cfg(test)]
@@ -35,6 +41,17 @@ pub fn play(sink: &mut impl Sink, d: &[u8]) -> bool {
     emf::play(sink, d) || wmf::play(sink, d)
 }
 
+/// The work and pixels a metafile has spent, and how many metafiles it is inside.
+#[derive(Clone, Copy, Debug, Default)]
+pub(super) struct Spent {
+    work: u64,
+    pixels: u64,
+    depth: u8,
+}
+
+/// The most metafiles a metafile's pictures nest.
+const MAX_DEPTH: u8 = 4;
+
 /// The most records one metafile plays.
 const MAX_RECORDS: u32 = 1 << 20;
 /// The most saved states kept: saves past it restore nothing. A bound on what an untrusted file makes the player keep
@@ -49,6 +66,12 @@ const MAX_MASK_STEPS: usize = 256;
 /// The most work one metafile replays: the path elements it draws and clips by (each time a clip is sent again
 /// included), characters, region rects and mask bits. A bound on the picture it records, whatever its records ask.
 const MAX_WORK: u64 = 1 << 22;
+/// What drawing over the whole picture costs, as work: a mesh's layers, and a layer a mask clip or an isolated
+/// picture composites. A draw over part of it costs that share, whatever the picture's frame or the zoom, so the
+/// budget bounds how many times over a picture's area these layers composite (16 for meshes, 4096 for masks).
+const MESH_FULL: u64 = MAX_WORK / 16;
+const LAYER_FULL: u64 = MAX_WORK / 4096;
+
 /// The most bitmap pixels one metafile draws.
 const MAX_PIXELS: u64 = 1 << 26;
 
@@ -223,11 +246,40 @@ impl ClipState {
     }
 }
 
+impl ClipState {
+    /// The clip moved by `d`.
+    fn moved(&self, d: Affine) -> ClipState {
+        match self {
+            ClipState::Shapes(v) => ClipState::Shapes(
+                v.iter()
+                    .map(|(p, e)| {
+                        let mut p = p.clone();
+                        p.apply_affine(d);
+                        (p, *e)
+                    })
+                    .collect(),
+            ),
+            ClipState::Mask(steps) => ClipState::Mask(
+                steps
+                    .iter()
+                    .map(|s| {
+                        let mut s = s.clone();
+                        if let MaskStep::Add(p, _) | MaskStep::Remove(p, _) | MaskStep::Toggle(p, _) | MaskStep::Clip(p, _) = &mut s {
+                            p.apply_affine(d);
+                        }
+                        s
+                    })
+                    .collect(),
+            ),
+        }
+    }
+}
+
 impl MaskStep {
     fn cost(&self) -> usize {
         match self {
             MaskStep::Add(p, _) | MaskStep::Remove(p, _) | MaskStep::Toggle(p, _) | MaskStep::Clip(p, _) => p.elements().len(),
-            MaskStep::Pop => 1,
+            MaskStep::Group(_) | MaskStep::Pop => 1,
         }
     }
 }
@@ -325,8 +377,11 @@ pub struct Player<'s, S: Sink> {
     work: Cell<u64>,
     pixels: Cell<u64>,
     stopped: Cell<bool>,
-    /// The mask the sink last recorded.
+    /// The mask the sink last recorded, and the share of the picture its shapes cover.
     sent_mask: Option<Rc<[MaskStep]>>,
+    mask_share: f64,
+    /// How many metafiles this one is inside: a picture drawing a picture.
+    depth: u8,
     /// Scratch for text and spacing.
     chars: Vec<u32>,
     advances_in: Vec<f64>,
@@ -359,6 +414,8 @@ impl<'s, S: Sink> Player<'s, S> {
             pixels: Cell::new(0),
             stopped: Cell::new(false),
             sent_mask: None,
+            mask_share: 1.0,
+            depth: 0,
             chars: Vec::new(),
             advances_in: Vec::new(),
             rises_in: Vec::new(),
@@ -368,8 +425,34 @@ impl<'s, S: Sink> Player<'s, S> {
         }
     }
 
-    fn finish(self) {
+    fn finish(self) -> Spent {
         self.sink.restore();
+        self.spent()
+    }
+
+    /// Takes on what an enclosing metafile has spent, so a picture inside another counts against the same budgets.
+    fn inherit(&mut self, s: Spent) {
+        self.work.set(s.work);
+        self.pixels.set(s.pixels);
+        self.stopped.set(s.work > MAX_WORK);
+        self.depth = s.depth;
+    }
+
+    fn spent(&self) -> Spent {
+        Spent { work: self.work.get(), pixels: self.pixels.get(), depth: self.depth }
+    }
+
+    /// The share of the picture's area `r` (in its space) covers, 0 to 1.
+    fn share(&self, r: kurbo::Rect) -> f64 {
+        let picture = kurbo::Rect::from_origin_size(Point::ZERO, self.size);
+        let r = r.intersect(picture);
+        let (a, whole) = (r.width().max(0.0) * r.height().max(0.0), picture.area());
+        if whole > 0.0 && a.is_finite() { (a / whole).clamp(0.0, 1.0) } else { 1.0 }
+    }
+
+    /// Counts `share` of drawing over the whole picture at `full`; false past the budget.
+    fn spend_share(&self, share: f64, full: u64) -> bool {
+        self.spend((share * full as f64).ceil() as usize)
     }
 
     /// Counts `n` units of work; false (and the player stops) past [`MAX_WORK`].
@@ -570,30 +653,7 @@ impl<'s, S: Sink> Player<'s, S> {
         }
         let m = self.m();
         let d = Affine::translate(m * Point::new(v.x, v.y) - m * Point::ZERO);
-        let next = match &*self.dc.clip {
-            ClipState::Shapes(v) => ClipState::Shapes(
-                v.iter()
-                    .map(|(p, e)| {
-                        let mut p = p.clone();
-                        p.apply_affine(d);
-                        (p, *e)
-                    })
-                    .collect(),
-            ),
-            ClipState::Mask(steps) => ClipState::Mask(
-                steps
-                    .iter()
-                    .map(|s| {
-                        let mut s = s.clone();
-                        if let MaskStep::Add(p, _) | MaskStep::Remove(p, _) | MaskStep::Toggle(p, _) | MaskStep::Clip(p, _) = &mut s {
-                            p.apply_affine(d);
-                        }
-                        s
-                    })
-                    .collect(),
-            ),
-        };
-        self.dc.clip = Rc::new(next);
+        self.dc.clip = Rc::new(self.dc.clip.moved(d));
         self.clip_dirty = true;
     }
 
@@ -651,12 +711,20 @@ impl<'s, S: Sink> Player<'s, S> {
         if let ClipState::Mask(steps) = &*clip {
             // The sink records a mask the first time it sees it, and places it after: a new one is counted.
             let new = !self.sent_mask.as_ref().is_some_and(|m| Rc::ptr_eq(m, steps));
-            if !self.spend(if new { clip.cost() } else { 4 }) {
+            if new {
+                // The layer it keeps the draw in covers the mask's shapes.
+                let bounds = steps.iter().filter_map(|s| match s {
+                    MaskStep::Add(p, _) | MaskStep::Toggle(p, _) => Some(p.bounding_box()),
+                    _ => None,
+                });
+                self.mask_share = self.share(bounds.reduce(|a, b| a.union(b)).unwrap_or(kurbo::Rect::ZERO));
+            }
+            if !self.spend(if new { clip.cost() } else { 4 }) || !self.spend_share(self.mask_share, LAYER_FULL) {
                 self.sink.set_raster(COPY);
                 return;
             }
             self.sent_mask = Some(Rc::clone(steps));
-            self.sink.begin_masked();
+            self.sink.begin_masked(steps);
             draw(self);
             self.sink.end_masked(steps);
         } else {
@@ -1212,13 +1280,6 @@ impl<'s, S: Sink> Player<'s, S> {
 /// it stays as it is.
 fn combine(c: &ClipState, region: Option<(BezPath, bool)>, mode: u32, everything: BezPath) -> Option<ClipState> {
     use ClipState::{Mask, Shapes};
-    // The mask of an intersection of shapes: everything, clipped to each.
-    let program = |v: &[(BezPath, bool)]| {
-        let mut steps: Vec<MaskStep> = v.iter().map(|(p, e)| MaskStep::Clip(p.clone(), *e)).collect();
-        steps.push(MaskStep::Add(everything.clone(), false));
-        steps.extend(v.iter().map(|_| MaskStep::Pop));
-        steps
-    };
     let (r, even_odd) = match (mode, region) {
         (RGN_COPY, None) => return Some(Shapes(Vec::new())),
         (_, None) => return None,
@@ -1243,7 +1304,7 @@ fn combine(c: &ClipState, region: Option<(BezPath, bool)>, mode: u32, everything
         }
         (RGN_DIFF | RGN_OR | RGN_XOR, _) => {
             let mut steps = match c {
-                Shapes(v) => program(v),
+                Shapes(v) => program(v, &everything),
                 Mask(m) => m.to_vec(),
             };
             steps.push(match mode {
@@ -1260,6 +1321,14 @@ fn combine(c: &ClipState, region: Option<(BezPath, bool)>, mode: u32, everything
         Mask(m) => m.len() <= MAX_MASK_STEPS,
     };
     fits.then_some(next)
+}
+
+/// The mask of an intersection of shapes: everything, clipped to each.
+fn program(v: &[(BezPath, bool)], everything: &BezPath) -> Vec<MaskStep> {
+    let mut steps: Vec<MaskStep> = v.iter().map(|(p, e)| MaskStep::Clip(p.clone(), *e)).collect();
+    steps.push(MaskStep::Add(everything.clone(), false));
+    steps.extend(v.iter().map(|_| MaskStep::Pop));
+    steps
 }
 
 /// The dashes stroking `p` with `s` makes, about: along its control polygon, at most what the recorder walks before it

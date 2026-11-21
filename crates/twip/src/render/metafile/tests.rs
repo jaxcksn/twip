@@ -144,9 +144,14 @@ impl Sink for Log {
         self.ops.push(line);
         10.0
     }
+    /// Each character half the line's height across; an ascent of 0.8 of it and a descent of 0.2.
+    fn measure(&mut self, t: &Text<'_>, advances: &mut Vec<f64>) -> Option<crate::render::svg::LineMetrics> {
+        advances.extend(t.chars.iter().map(|_| t.height / 2.0));
+        Some(crate::render::svg::LineMetrics { ascent: 0.8 * t.height, descent: 0.2 * t.height, leading: 0.0 })
+    }
 }
 
-fn log(e: Emf) -> Vec<String> {
+pub(super) fn log(e: Emf) -> Vec<String> {
     let mut l = Log::default();
     assert!(play(&mut l, &e.bytes()), "plays");
     assert_eq!(l.depth, 0, "saves and restores balance: {:?}", l.ops);
@@ -302,16 +307,6 @@ fn gradients_and_hatches_shade() {
 }
 
 #[test]
-fn a_dual_file_draws_its_plain_records() {
-    // An EMF+ header comment, then a plain rectangle.
-    let mut c = le(&[0x2B46_4D45]);
-    c.extend(le(&[0x4001, 28, 16, 0x0DBC_0001, 1, 96, 96]));
-    let mut b = le(&[c.len() as i32]);
-    b.extend(&c);
-    assert_eq!(drawn(&log(Emf::default().rec(70, &b).r(43, &[0, 0, 50, 50])))[0], "fill 0.0,0.0,36.0,36.0 #ffffff");
-}
-
-#[test]
 fn every_drawing_record_draws() {
     let blit = {
         let mut b = le(&[0, 0, 0, 0, 0, 0, 50, 50, 0x00F0_0021, 0, 0]);
@@ -366,20 +361,20 @@ fn every_drawing_record_draws() {
 // ---------------- raster operations, regions, palettes and masks ----------------
 
 /// The picture drawn at 100 × 100 pixels (a device pixel each) over white.
-fn pixels(e: Emf) -> Vec<[u8; 4]> {
+pub(super) fn pixels(e: Emf) -> Vec<[u8; 4]> {
     crate::render::graphics::Graphics::metafile_pixels(&e.bytes(), 100, 100, None).expect("draws")
 }
 
-fn at(px: &[[u8; 4]], x: usize, y: usize) -> [u8; 3] {
+pub(super) fn at(px: &[[u8; 4]], x: usize, y: usize) -> [u8; 3] {
     let p = px[y * 100 + x];
     [p[0], p[1], p[2]]
 }
 
-const RED: [u8; 3] = [255, 0, 0];
-const GREEN: [u8; 3] = [0, 255, 0];
-const BLUE: [u8; 3] = [0, 0, 255];
-const BLACK: [u8; 3] = [0; 3];
-const WHITE: [u8; 3] = [255; 3];
+pub(super) const RED: [u8; 3] = [255, 0, 0];
+pub(super) const GREEN: [u8; 3] = [0, 255, 0];
+pub(super) const BLUE: [u8; 3] = [0, 0, 255];
+pub(super) const BLACK: [u8; 3] = [0; 3];
+pub(super) const WHITE: [u8; 3] = [255; 3];
 
 /// A BITMAPINFOHEADER (bottom up) and its colour table, and its rows each padded to four bytes.
 pub(super) fn dib(w: i32, h: i32, bpp: u16, table: &[u8], rows: &[&[u8]], used: i32) -> (Vec<u8>, Vec<u8>) {
@@ -494,7 +489,7 @@ fn triangles_shade_between_their_corners() {
 }
 
 /// The gates' sans stand-in, whose glyphs are boxes.
-fn stand_in() -> crate::font::Fonts {
+pub(super) fn stand_in() -> crate::font::Fonts {
     let mut fonts = crate::font::Fonts::default();
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/fonts/stand-in-sans.ttf");
     fonts.add_bytes(std::fs::read(path).expect("the stand-in")).expect("a face");
@@ -734,6 +729,8 @@ pub(super) struct Count {
     pub(super) bitmaps: std::collections::HashSet<usize>,
     pub(super) bitmap_bytes: u64,
     pub(super) depth: i32,
+    /// Every call the sink takes.
+    pub(super) calls: u64,
 }
 
 impl Count {
@@ -747,20 +744,27 @@ impl Count {
 impl Sink for Count {
     fn save(&mut self) {
         self.depth += 1;
+        self.calls += 1;
     }
     fn restore(&mut self) {
         self.depth -= 1;
+        self.calls += 1;
     }
-    fn transform(&mut self, _: Affine) {}
+    fn transform(&mut self, _: Affine) {
+        self.calls += 1;
+    }
     fn clip_rect(&mut self, _: kurbo::Rect) {
         self.elements += 5;
+        self.calls += 1;
     }
     fn clip_path(&mut self, p: &BezPath, _: bool) {
         self.elements += p.elements().len() as u64;
+        self.calls += 1;
     }
     fn begin_layer(&mut self, _: f32) {}
     fn end_layer(&mut self) {}
     fn fill(&mut self, p: &BezPath, _: bool, b: &Brush) {
+        self.calls += 1;
         self.elements += p.elements().len() as u64;
         if let Brush::Bitmap { bitmap, .. } = b {
             self.bitmap(bitmap);
