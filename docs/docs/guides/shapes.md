@@ -62,7 +62,7 @@ gives it text. Dragging a handle lays the document out live.
 `setWatermark` puts a text or picture watermark in every header of every section, written as Word writes it, so Word's
 Watermark dialog edits it; `removeWatermark` takes it out. `setPageColor` sets the page colour: a colour, a theme
 colour with its tint or shade, or a gradient, pattern, texture or picture fill. They are the Printed Watermark and Fill
-Effects dialogs (see [Services](services#dialogs)). A page colour isn't drawn in a PDF export, as in Word's.
+Effects dialogs (see [Services](services#dialogs)). A page colour isn't drawn in a PDF export, as in Word's. A picture fill or watermark can be any format the document draws, including JPEG XR and EMF+ metafiles.
 
 ## Saving
 

@@ -56,9 +56,9 @@ A PDF export embeds the fonts, and the viewer draws their glyphs its own way.
 
 ## Pictures, shading and backgrounds
 
-- **Metafiles:** EMF and WMF pictures, and OLE object previews, draw as vectors at any zoom, not as a raster. A dual
-  EMF and EMF+ file draws its EMF records. EMF+ records, JPEG XR pictures and double-byte text in metafiles aren't
-  drawn yet.
+- **Metafiles:** EMF and WMF pictures, and OLE object previews, draw as vectors at any zoom, not as a raster. EMF+ records
+  draw too, in dual EMF and EMF+ files and in EMF+-only files. JPEG XR (`.wdp`) pictures draw like any raster.
+  Double-byte text in metafiles isn't drawn.
 - **Picture effects:** set transparent colour, brightness, contrast, washout, grayscale, black and white, and
   reflection. A linked picture draws its embedded copy when it has one, else a light placeholder frame: the engine
   fetches nothing.

@@ -73,6 +73,10 @@ every SDK.
 - **Keywords.** They go to the document properties readers show (the Info dictionary) and to the XMP metadata, in
   order, joined with commas. Blank entries are dropped.
 
+## Pictures
+
+EMF, WMF and EMF+ pictures export as vector drawing, not a raster; JPEG XR (`.wdp`) pictures export as images. Double-byte text in metafiles isn't drawn.
+
 ## Accessibility
 
 PDFs are tagged for PDF/UA-1: headings, lists with their labels, tables with their header cells, links, notes, text

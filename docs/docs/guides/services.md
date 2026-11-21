@@ -99,7 +99,7 @@ A custom .NET host supplies the system clipboard through `IEditorHostAdapter.Set
 
 A picture content control with no picture shows its placeholder picture (`w:showingPlcHdr`): the editor, the saved
 DOCX and the PDF all show that picture. `insertControl({ kind: 'picture', placeholderImage })` sets it (PNG, JPEG,
-GIF, BMP or SVG), and `setControl` replaces it while the control still shows it. `elements.list()` reports each
+GIF, BMP or SVG), and `setControl` replaces it while the control still shows it. A document's own JPEG XR or EMF+ pictures draw as they do elsewhere. `elements.list()` reports each
 control's tag, size and `showingPlaceholder`, so the application finds the unfilled ones and decides what each tag
 means; `fillControl({ id, image })` fills one, fitted to its box.
 
