@@ -8,6 +8,7 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <TwipNative Condition="$([MSBuild]::IsOSPlatform('Windows'))">twip.dll</TwipNative>
     <TwipNative Condition="$([MSBuild]::IsOSPlatform('Linux'))">libtwip.so</TwipNative>
+    <TwipNative Condition="$([MSBuild]::IsOSPlatform('OSX'))">libtwip.dylib</TwipNative>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Twip.Core/Twip.Core.csproj" />
