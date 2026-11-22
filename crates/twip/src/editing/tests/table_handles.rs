@@ -233,6 +233,21 @@ fn a_table_resize_previews_its_box_and_size() {
 }
 
 #[test]
+fn a_resized_table_keeps_its_width_through_inserting_rows() {
+    let mut e = page();
+    let d = Drawn::of(&mut e);
+    let last = d.rows[3];
+    drag(&mut e, (last[2] + 3.0 * PX, last[3] + 3.0 * PX), (72.0, 0.0), NONE, true);
+    let width = |e: &Editor| e.index().table(e.document(), d.table).map(|t| (t.width, t.rows.len()));
+    let (resized, n) = width(&e).expect("the table");
+    assert_ne!(resized, crate::docx::props::Width::Dxa(270.0), "resized");
+    click(&mut e, (d.edges[0] + d.edges[1]) / 2.0, (d.rows[1][1] + d.rows[1][3]) / 2.0);
+    let below = crate::api::command::InsertRows { side: crate::api::command::VerticalSide::Below, count: Some(1) };
+    e.execute(Command::InsertRows(below), fonts());
+    assert_eq!(width(&e), Some((resized, n + 1)));
+}
+
+#[test]
 fn a_selection_shows_its_status_line_at_the_full_level() {
     let mut e = page();
     let d = Drawn::of(&mut e);

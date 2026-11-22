@@ -176,7 +176,6 @@ pub fn step_bytes(s: &Step) -> usize {
         Step::Split { second, .. } => 96 + inlines(&second.inlines),
         Step::Join { .. }
         | Step::Para { .. }
-        | Step::TableWidth { .. }
         | Step::TableProps { .. }
         | Step::SectionPage { .. }
         | Step::DefaultTab(_)

@@ -1,5 +1,6 @@
 //! Command layer
 
+pub(crate) mod bounds;
 mod character;
 mod history;
 mod insert;
@@ -18,13 +19,7 @@ pub(crate) use character::underline_value;
 
 use crate::api::command::CommandId;
 
-pub(crate) const UNSUPPORTED: &[CommandId] = &[
-    CommandId::CopyFormatting,
-    CommandId::PasteFormatting,
-    CommandId::MoveColumnBoundary,
-    CommandId::MoveTableColumnBoundary,
-    CommandId::MoveTableRowBoundary,
-];
+pub(crate) const UNSUPPORTED: &[CommandId] = &[CommandId::MoveColumnBoundary, CommandId::MoveTableColumnBoundary, CommandId::MoveTableRowBoundary];
 
 pub use crate::api::command::Command;
 use crate::api::command::CommandResult;
@@ -116,6 +111,9 @@ impl Editor {
         {
             return Outcome::Refused(e);
         }
+        if let Err(e) = bounds::bounds(&cmd) {
+            return Outcome::Refused(e);
+        }
         let out = self.execute_editable(cmd, fonts);
         self.pending_images.clear();
         self.settle_provisional(fonts);
@@ -123,6 +121,15 @@ impl Editor {
     }
 
     fn execute_editable(&mut self, cmd: Command, fonts: &Fonts) -> Outcome {
+        // A built-in style the document doesn't define yet joins it first, in the same undo step.
+        if let Some(b) = self.built_in_named(&cmd) {
+            let label = crate::api::catalog::info(cmd.id()).map_or("Style", |i| i.label.as_str());
+            return self.joined(label, fonts, |e| match e.add_built_in(b, fonts) {
+                o @ Outcome::Refused(_) => o,
+                _ if e.built_in_named(&cmd).is_some() => Outcome::Unchanged("the style couldn't be added"),
+                _ => e.execute_editable(cmd, fonts),
+            });
+        }
         let typing = match &cmd {
             Command::InsertText(_) | Command::InsertTab => Some(Typing::Insert),
             Command::Delete(d) if d.unit != Some(crate::api::command::DeleteUnit::Word) => {

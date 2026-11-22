@@ -112,7 +112,7 @@ impl Editor {
         let locked = |c: &crate::docx::ControlId| self.doc.controls.get(c).is_some_and(|k| !k.props.lock.editable());
         let paras: Vec<ParaId> = self.index.para_ids().collect();
         for para in paras {
-            let (Some(base), Some(p)) = (self.run_base(para, &res, &cx), self.index.para(&self.doc, para)) else { continue };
+            let (Some(again), Some(p)) = (self.para_again(para, None, &res, &cx), self.index.para(&self.doc, para)) else { continue };
             let para_locked = p.controls.iter().any(locked);
             let mut tally = |n: u32, locked_here: bool| {
                 if locked_here {
@@ -126,13 +126,15 @@ impl Editor {
             if styled(&p.mark, r) {
                 let mut props = Props::parse(p.mark.direct.0.as_deref(), "rPr", &cx);
                 if patch(&mut props, &p.mark, r, filtered, &cx) && tally(1, para_locked) {
-                    let mark = res.run_from_xml(&base, props.xml().as_deref(), &cx);
+                    let mark = res.rerun_xml(again.mark_base(), &p.mark, props.xml().as_deref(), &cx);
                     steps.push(Step::Para { para, style: p.style.clone(), mark, list: p.list.clone() });
                 }
             }
+            // Inlines without units (anchored objects, comment references) change in place, before the others.
+            let (first, mut zero): (usize, Option<Vec<Inline>>) = (steps.len(), None);
             let mut open = Vec::new();
             let mut at = 0u32;
-            for i in &p.inlines {
+            for (k, i) in p.inlines.iter().enumerate() {
                 match i {
                     Inline::ControlStart(c) => open.push(*c),
                     Inline::ControlEnd(c) => open.retain(|x| x != c),
@@ -140,23 +142,45 @@ impl Editor {
                 }
                 let units = i.units() as u32;
                 let range = Unit(at)..Unit(at + units);
+                let base = again.base(at);
                 at += units;
-                let Some(run) = i.run().filter(|run| styled(run, r)) else { continue };
-                let mut props = Props::parse(run.direct.0.as_deref(), "rPr", &cx);
-                let patched = patch(&mut props, run, r, filtered, &cx);
-                let new_run = if patched { res.run_from_xml(&base, props.xml().as_deref(), &cx) } else { run.clone() };
+                let Some(run) = i.run() else { continue };
+                let mut with = i.clone();
+                let mut patched = false;
+                if styled(run, r) {
+                    let mut props = Props::parse(run.direct.0.as_deref(), "rPr", &cx);
+                    if patch(&mut props, run, r, filtered, &cx) {
+                        with = with_run(i, &res.rerun_xml(base, run, props.xml().as_deref(), &cx));
+                        patched = true;
+                    }
+                }
                 let mut renamed = false;
-                let mut with = with_run(i, &new_run);
-                if let Inline::Sym { font, .. } = &mut with
-                    && font.eq_ignore_ascii_case(&r.from)
-                {
-                    *font = r.to.clone();
-                    renamed = true;
+                match &mut with {
+                    Inline::Sym { font, .. } if font.eq_ignore_ascii_case(&r.from) => {
+                        *font = r.to.clone();
+                        renamed = true;
+                    }
+                    Inline::Ruby(ruby, _) => {
+                        let edit = |xml: Option<&str>, run: &RunStyle| {
+                            let mut props = Props::parse(xml, "rPr", &cx);
+                            if styled(run, r) && patch(&mut props, run, r, filtered, &cx) { props.xml() } else { xml.map(str::to_string) }
+                        };
+                        if let Some(n) = super::format::ruby_again(ruby, base, Some((&edit, true)), &res, &cx) {
+                            (*ruby, renamed) = (n, true);
+                        }
+                    }
+                    _ => {}
                 }
                 let locked_here = para_locked || open.iter().any(locked);
                 if (patched || renamed) && tally(1, locked_here) {
-                    steps.push(Step::Text { para, range, with: vec![with], edges: Default::default() });
+                    match units {
+                        0 => zero.get_or_insert_with(|| p.inlines.clone())[k] = with,
+                        _ => steps.push(Step::Text { para, range, with: vec![with], edges: Default::default() }),
+                    }
                 }
+            }
+            if let Some(inlines) = zero {
+                steps.insert(first, Step::Restyle { para, inlines });
             }
         }
         // The tables below the text: styles, document defaults, numbering, the theme and the font table.

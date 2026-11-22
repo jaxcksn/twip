@@ -3401,6 +3401,8 @@ fn unit_keys(i: &Inline, out: &mut Vec<(u64, char)>) {
                 Inline::Sym { control: Some(c), .. } => c.hash(&mut h),
                 Inline::Sym { ch, font, .. } => (ch, font).hash(&mut h),
                 Inline::PTab(t, _) => t.hash(&mut h),
+                // A ruby by its XML: formatting its text writes it anew.
+                Inline::Ruby(r, _) => r.xml.0.as_deref().hash(&mut h),
                 // A field's markers by their field: editing its code keeps them; a form field's changed data is
                 // written anew.
                 Inline::FieldBegin { id, form, .. } => (id, form.as_ref().is_some_and(|f| f.data != f.read)).hash(&mut h),

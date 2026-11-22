@@ -423,7 +423,7 @@ impl Editor {
 
     fn reference_run(&self, para: ParaId, at: Unit, res: &Resolver, cx: &Cx) -> Option<Run> {
         if res.styles.by_id.contains_key("CommentReference") {
-            let base = self.run_base(para, res, cx)?;
+            let base = self.run_base(para, at, res, cx)?;
             let mut p = Props::parse(None, "rPr", cx);
             let w = &cx.w;
             p.set("rStyle", format!("<{w}rStyle {w}val=\"CommentReference\"/>"));

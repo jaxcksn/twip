@@ -373,7 +373,7 @@ impl Editor {
             return Outcome::Unchanged("already corrected");
         }
         let raised = match &fix.superscript {
-            Some(_) => match self.raised(para, &run) {
+            Some(_) => match self.raised(para, a, &run) {
                 Some(r) => Some(r),
                 None => return Outcome::Unchanged("no styles"),
             },
@@ -457,14 +457,14 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
-    fn raised(&self, para: crate::layout::ParaId, run: &crate::docx::Run) -> Option<crate::docx::Run> {
+    fn raised(&self, para: crate::layout::ParaId, at: Unit, run: &crate::docx::Run) -> Option<crate::docx::Run> {
         let res = self.doc.resolver.clone()?;
         let cx = self.cx();
-        let base = self.run_base(para, &res, &cx)?;
+        let base = self.run_base(para, at, &res, &cx)?;
         let mut p = crate::docx::write::props::Props::parse(run.direct.0.as_deref(), "rPr", &cx);
         let w = cx.w.clone();
         p.set("vertAlign", format!("<{w}vertAlign {w}val=\"superscript\"/>"));
-        Some(res.run_from_xml(&base, p.xml().as_deref(), &cx))
+        Some(res.rerun_xml(&base, run, p.xml().as_deref(), &cx))
     }
 }
 

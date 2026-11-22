@@ -333,39 +333,51 @@ pub(crate) fn link_code(address: &str) -> String {
 
 /// Parses a field code. An empty code gives an empty name.
 pub fn parse(code: &str) -> FieldCode {
-    // Tokens: (text, quoted).
-    let mut tokens: Vec<(String, bool)> = Vec::new();
+    parse_spans(code, None)
+}
+
+/// [`parse`], with each argument's place in `code` (its quotes too) in `spans`.
+pub fn parse_spans(code: &str, mut spans: Option<&mut Vec<std::ops::Range<usize>>>) -> FieldCode {
+    // Tokens: (text, quoted, place).
+    let mut tokens: Vec<(String, bool, std::ops::Range<usize>)> = Vec::new();
     let mut cur = String::new();
     let mut quoted = false;
-    let mut chars = code.chars().peekable();
-    while let Some(c) = chars.next() {
+    let mut start = 0;
+    let mut chars = code.char_indices().peekable();
+    while let Some((at, c)) = chars.next() {
         match c {
-            '\\' if quoted && matches!(chars.peek(), Some('"' | '\\')) => {
-                cur.extend(chars.next());
+            '\\' if quoted && chars.peek().is_some_and(|&(_, n)| matches!(n, '"' | '\\')) => {
+                cur.extend(chars.next().map(|(_, c)| c));
             }
             '"' => {
                 if quoted {
-                    tokens.push((std::mem::take(&mut cur), true));
+                    tokens.push((std::mem::take(&mut cur), true, start..at + 1));
                 } else if !cur.is_empty() {
-                    tokens.push((std::mem::take(&mut cur), false));
+                    tokens.push((std::mem::take(&mut cur), false, start..at));
                 }
                 quoted = !quoted;
+                start = at;
             }
             c if c.is_whitespace() && !quoted => {
                 if !cur.is_empty() {
-                    tokens.push((std::mem::take(&mut cur), false));
+                    tokens.push((std::mem::take(&mut cur), false, start..at));
                 }
             }
-            c => cur.push(c),
+            c => {
+                if cur.is_empty() && !quoted {
+                    start = at;
+                }
+                cur.push(c);
+            }
         }
     }
     if !cur.is_empty() {
-        tokens.push((cur, quoted));
+        tokens.push((cur, quoted, start..code.len()));
     }
     let mut it = tokens.into_iter().peekable();
-    let name = it.next().map(|(t, _)| t.to_uppercase()).unwrap_or_default();
+    let name = it.next().map(|(t, ..)| t.to_uppercase()).unwrap_or_default();
     let (mut args, mut switches) = (Vec::new(), Vec::new());
-    while let Some((t, q)) = it.next() {
+    while let Some((t, q, at)) = it.next() {
         let flag = (!q).then(|| t.strip_prefix('\\')).flatten().and_then(|f| f.chars().next());
         match flag {
             Some(flag) => {
@@ -373,18 +385,35 @@ pub fn parse(code: &str) -> FieldCode {
                 // `\@"M/d"` and `\@ "M/d"` alike; a flag alone takes the next token unless it is a switch too.
                 let arg = if !rest.is_empty() {
                     Some(rest)
-                } else if it.peek().is_some_and(|(n, nq)| *nq || !n.starts_with('\\')) {
-                    it.next().map(|(n, _)| n)
+                } else if it.peek().is_some_and(|(n, nq, _)| *nq || !n.starts_with('\\')) {
+                    it.next().map(|(n, ..)| n)
                 } else {
                     None
                 };
                 switches.push(Switch { flag, arg });
             }
-            None if switches.is_empty() => args.push(t),
+            None if switches.is_empty() => {
+                args.push(t);
+                if let Some(s) = spans.as_deref_mut() {
+                    s.push(at);
+                }
+            }
             None => {}
         }
     }
     FieldCode { name, args, switches }
+}
+
+/// `arg` as a field code argument: quoted when it holds spaces, quotes or a leading backslash, `None` for one no
+/// argument can hold (empty).
+pub fn quote_arg(arg: &str) -> Option<String> {
+    if arg.is_empty() {
+        return None;
+    }
+    if !arg.contains(|c: char| c.is_whitespace() || c == '"') && !arg.starts_with('\\') {
+        return Some(arg.to_string());
+    }
+    Some(quote(arg))
 }
 
 impl FieldCode {
@@ -1128,6 +1157,19 @@ pub(crate) fn format_field(value: &str, code: &str, default: Option<&str>) -> St
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_argument_quoted_parses_back_to_itself_in_its_place() {
+        for name in ["Plain", "Intro Part", "say \"hi\"", "\\lead", "a\\b", "a b\\", "say \\\"hi\\\""] {
+            let arg = quote_arg(name).expect("an argument");
+            let code = format!(" SUBTEMPLATE {arg} \\c Boxes ");
+            let mut spans = Vec::new();
+            let parsed = parse_spans(&code, Some(&mut spans));
+            assert_eq!(parsed.args, [name], "{code}");
+            assert_eq!(&code[spans[0].clone()], arg);
+        }
+        assert_eq!(quote_arg(""), None);
+    }
 
     #[test]
     fn formulas_lists_autonum_noteref_and_filename_compute() {

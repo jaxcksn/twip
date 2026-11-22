@@ -547,6 +547,20 @@ impl Editor {
             ids: None,
         };
         let w = (width / ncols as f64 * 20.0).floor() / 20.0;
+        // Its style, or without one its grid lines and cell margins, as re-resolving and reading find them.
+        let direct = {
+            let w = self.cx().w;
+            let own = match &style {
+                Some(id) => format!("<{w}tblStyle {w}val=\"{}\"/>", crate::docx::write::props::esc(id)),
+                None => {
+                    let line = |side: &str| format!("<{w}{side} {w}val=\"single\" {w}sz=\"4\" {w}space=\"0\" {w}color=\"auto\"/>");
+                    let sides: String = ["top", "left", "bottom", "right", "insideH", "insideV"].into_iter().map(line).collect();
+                    let mar = |side: &str| format!("<{w}{side} {w}w=\"108\" {w}type=\"dxa\"/>");
+                    format!("<{w}tblBorders>{sides}</{w}tblBorders><{w}tblCellMar>{}{}</{w}tblCellMar>", mar("left"), mar("right"))
+                }
+            };
+            crate::docx::Raw(Some(std::rc::Rc::from(format!("<{w}tblPr>{own}</{w}tblPr>").as_str())))
+        };
         let table = Table {
             style_id: style,
             width: crate::docx::props::Width::Auto,
@@ -600,7 +614,7 @@ impl Editor {
                 .collect(),
             src: None,
             id: crate::docx::next_para_id(),
-            direct: Default::default(),
+            direct,
             controls: p.controls.clone(),
             change: None,
             grid_change: None,

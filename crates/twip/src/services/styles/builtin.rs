@@ -400,6 +400,121 @@ pub const BUILT_IN: [BuiltIn; 376] = [
     b("Smart Link", "SmartLink", C, 99, true, true, false),
 ];
 
+/// Heading fonts: the theme's major ones.
+const MAJOR: &str = r#"<w:rFonts w:asciiTheme="majorHAnsi" w:eastAsiaTheme="majorEastAsia" w:hAnsiTheme="majorHAnsi" w:cstheme="majorBidi"/>"#;
+
+/// The paragraph and run properties Word gives a built-in style it adds to a document (its current defaults, the
+/// Office theme's colours as values); none for the rest.
+fn formatting(id: &str) -> (String, String) {
+    let heading = |n: u8, before: u32, after: u32, rpr: &str| {
+        (
+            format!(r#"<w:keepNext/><w:keepLines/><w:spacing w:before="{before}" w:after="{after}"/><w:outlineLvl w:val="{}"/>"#, n - 1),
+            rpr.to_string(),
+        )
+    };
+    let toc = |n: u32| (format!(r#"<w:spacing w:after="100"/><w:ind w:left="{}"/>"#, 240 * (n - 1)), String::new());
+    let s = |p: &str, r: &str| (p.to_string(), r.to_string());
+    match id {
+        "Heading1" => heading(1, 360, 80, &format!(r#"{MAJOR}<w:color w:val="0F4761"/><w:sz w:val="40"/><w:szCs w:val="40"/>"#)),
+        "Heading2" => heading(2, 160, 80, &format!(r#"{MAJOR}<w:color w:val="0F4761"/><w:sz w:val="32"/><w:szCs w:val="32"/>"#)),
+        "Heading3" => heading(3, 160, 80, r#"<w:color w:val="0F4761"/><w:sz w:val="28"/><w:szCs w:val="28"/>"#),
+        "Heading4" => heading(4, 80, 40, r#"<w:i/><w:iCs/><w:color w:val="0F4761"/>"#),
+        "Heading5" => heading(5, 80, 40, r#"<w:color w:val="0F4761"/>"#),
+        "Heading6" => heading(6, 40, 0, r#"<w:i/><w:iCs/><w:color w:val="595959"/>"#),
+        "Heading7" => heading(7, 40, 0, r#"<w:color w:val="595959"/>"#),
+        "Heading8" => heading(8, 0, 0, r#"<w:i/><w:iCs/><w:color w:val="272727"/>"#),
+        "Heading9" => heading(9, 0, 0, r#"<w:color w:val="272727"/>"#),
+        "Title" => s(
+            r#"<w:spacing w:after="80" w:line="240" w:lineRule="auto"/><w:contextualSpacing/>"#,
+            &format!(r#"{MAJOR}<w:spacing w:val="-10"/><w:kern w:val="28"/><w:sz w:val="56"/><w:szCs w:val="56"/>"#),
+        ),
+        "Subtitle" => s(r#"<w:spacing w:after="160"/>"#, r#"<w:color w:val="595959"/><w:spacing w:val="15"/><w:sz w:val="28"/><w:szCs w:val="28"/>"#),
+        "Quote" => s(r#"<w:spacing w:before="160"/><w:jc w:val="center"/>"#, r#"<w:i/><w:iCs/><w:color w:val="404040"/>"#),
+        "IntenseQuote" => s(
+            r#"<w:pBdr><w:top w:val="single" w:sz="4" w:space="10" w:color="0F4761"/><w:bottom w:val="single" w:sz="4" w:space="10" w:color="0F4761"/></w:pBdr><w:spacing w:before="360" w:after="360"/><w:ind w:left="864" w:right="864"/><w:jc w:val="center"/>"#,
+            r#"<w:i/><w:iCs/><w:color w:val="0F4761"/>"#,
+        ),
+        "ListParagraph" => s(r#"<w:ind w:left="720"/><w:contextualSpacing/>"#, ""),
+        "NoSpacing" => s(r#"<w:spacing w:after="0" w:line="240" w:lineRule="auto"/>"#, ""),
+        "Caption" => s(
+            r#"<w:spacing w:after="200" w:line="240" w:lineRule="auto"/>"#,
+            r#"<w:i/><w:iCs/><w:color w:val="0E2841"/><w:sz w:val="18"/><w:szCs w:val="18"/>"#,
+        ),
+        "TOCHeading" => (r#"<w:outlineLvl w:val="9"/>"#.to_string(), String::new()),
+        "Header" | "Footer" => s(
+            r#"<w:tabs><w:tab w:val="center" w:pos="4680"/><w:tab w:val="right" w:pos="9360"/></w:tabs><w:spacing w:after="0" w:line="240" w:lineRule="auto"/>"#,
+            "",
+        ),
+        "FootnoteText" | "EndnoteText" | "CommentText" => {
+            s(r#"<w:spacing w:after="0" w:line="240" w:lineRule="auto"/>"#, r#"<w:sz w:val="20"/><w:szCs w:val="20"/>"#)
+        }
+        "FootnoteReference" | "EndnoteReference" => s("", r#"<w:vertAlign w:val="superscript"/>"#),
+        "CommentReference" => s("", r#"<w:sz w:val="16"/><w:szCs w:val="16"/>"#),
+        "Hyperlink" => s("", r#"<w:color w:val="467886"/><w:u w:val="single"/>"#),
+        "FollowedHyperlink" => s("", r#"<w:color w:val="96607D"/><w:u w:val="single"/>"#),
+        "Strong" => s("", "<w:b/><w:bCs/>"),
+        "Emphasis" => s("", "<w:i/><w:iCs/>"),
+        "SubtleEmphasis" => s("", r#"<w:i/><w:iCs/><w:color w:val="404040"/>"#),
+        "IntenseEmphasis" => s("", r#"<w:i/><w:iCs/><w:color w:val="0F4761"/>"#),
+        "SubtleReference" => s("", r#"<w:smallCaps/><w:color w:val="5A5A5A"/>"#),
+        "IntenseReference" => s("", r#"<w:b/><w:bCs/><w:smallCaps/><w:color w:val="0F4761"/><w:spacing w:val="5"/>"#),
+        "BookTitle" => s("", r#"<w:b/><w:bCs/><w:i/><w:iCs/><w:spacing w:val="5"/>"#),
+        id if id.len() == 4 && id.starts_with("TOC") => id[3..].parse().map_or_else(|_| s("", ""), toc),
+        _ => s("", ""),
+    }
+}
+
+/// `b`'s `w:style` as Word adds it to a document that lacks it, its WordprocessingML prefix `w`: its name, kind,
+/// list flags, base (the default style of its kind) and formatting.
+pub fn definition(b: &BuiltIn, w: &str) -> String {
+    let base = match (b.kind, b.id) {
+        (_, "Normal" | "DefaultParagraphFont" | "TableNormal" | "NoList") => None,
+        (StyleKind::Paragraph, _) => Some("Normal"),
+        (StyleKind::Character, _) => Some("DefaultParagraphFont"),
+        (StyleKind::Table, _) => Some("TableNormal"),
+        (StyleKind::Numbering, _) => None,
+    };
+    let kind = match b.kind {
+        StyleKind::Paragraph => "paragraph",
+        StyleKind::Character => "character",
+        StyleKind::Table => "table",
+        StyleKind::Numbering => "numbering",
+    };
+    let mut x = format!(r#"<w:style w:type="{kind}" w:styleId="{}"><w:name w:val="{}"/>"#, b.id, b.name);
+    if let Some(base) = base {
+        x.push_str(&format!(r#"<w:basedOn w:val="{base}"/>"#));
+    }
+    if b.kind == StyleKind::Paragraph && b.id.starts_with("Heading") {
+        x.push_str(r#"<w:next w:val="Normal"/>"#);
+    }
+    x.push_str(&format!(r#"<w:uiPriority w:val="{}"/>"#, b.priority));
+    for (on, flag) in [(b.semi_hidden, "<w:semiHidden/>"), (b.unhide_when_used, "<w:unhideWhenUsed/>"), (b.quick, "<w:qFormat/>")] {
+        if on {
+            x.push_str(flag);
+        }
+    }
+    let (ppr, rpr) = formatting(b.id);
+    let ppr = match b.id {
+        "TableGrid" => String::new(),
+        _ => ppr,
+    };
+    if !ppr.is_empty() && b.kind == StyleKind::Paragraph {
+        x.push_str(&format!("<w:pPr>{ppr}</w:pPr>"));
+    }
+    if !rpr.is_empty() {
+        x.push_str(&format!("<w:rPr>{rpr}</w:rPr>"));
+    }
+    if b.id == "TableGrid" {
+        let line = |side: &str| format!(r#"<w:{side} w:val="single" w:sz="4" w:space="0" w:color="auto"/>"#);
+        let sides: String = ["top", "left", "bottom", "right", "insideH", "insideV"].into_iter().map(line).collect();
+        x.push_str(&format!(
+            r#"<w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:tblPr><w:tblBorders>{sides}</w:tblBorders></w:tblPr>"#
+        ));
+    }
+    x.push_str("</w:style>");
+    if w == "w:" { x } else { x.replace("<w:", &format!("<{w}")).replace("</w:", &format!("</{w}")).replace(" w:", &format!(" {w}")) }
+}
+
 /// The built-in style with this name (compared without case) or id.
 pub fn built_in(name_or_id: &str) -> Option<&'static BuiltIn> {
     BUILT_IN.iter().find(|b| b.name.eq_ignore_ascii_case(name_or_id) || b.id == name_or_id)

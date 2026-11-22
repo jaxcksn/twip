@@ -91,6 +91,8 @@ pub struct Style {
     /// A table style whose properties start from Word's defaults, not its base: it was read before its base and kept
     /// what it had then ([`Styles::parse`]).
     pub frozen: bool,
+    /// Its place in the styles part as read; `None` for one made since, which saving writes after them by id.
+    pub order: Option<u32>,
 }
 
 impl Style {
@@ -139,6 +141,7 @@ impl Style {
             origin: StyleOrigin::Document,
             raw: text[n.range()].to_string(),
             frozen: false,
+            order: None,
         })
     }
 }
@@ -384,49 +387,82 @@ impl Styles {
             }
             None => s.app_defaults(),
         }
-        let mut expansions = Expansions::default();
-        for n in children(root, "style") {
+        for (k, n) in children(root, "style").enumerate() {
             let Some(mut style) = Style::parse(n, text, &colours) else { continue };
-            let (kind, default) = (style.kind, style.default);
-            let base = style.based_on.clone().filter(|b| *b != style.id && expansions.read.contains_key(b));
-            expansions.read.entry(style.id.clone()).or_insert((base, false));
-            if kind == StyleKind::Table && expansions.table_style(n, &style.id) {
-                // Word's built-in run properties, the document's fonts kept.
-                let r = &mut style.base.rpr;
-                r.size = r.size.or(Some(10.0));
-                r.color = r.color.or(Some(None));
-                r.spacing = r.spacing.or(Some(0.0));
-                r.scale = r.scale.or(Some(100.0));
-            }
-            // A table style named as Word's built-in default one is that style: indent 0, cell margins 108 left and
-            // right, nothing else, whatever the file defines for it.
-            if kind == StyleKind::Table && matches!(style.name.as_str(), "Normal Table" | "Table Normal") {
-                let margins = Margins { top: Some(0.0), left: Some(5.4), bottom: Some(0.0), right: Some(5.4) };
-                style.base = Region { tbl: TblProps { ind: Some(Width::Dxa(0.0)), margins, ..TblProps::default() }, ..Region::default() };
-                style.regions.clear();
-                style.based_on = None;
-            }
-            if kind == StyleKind::Paragraph {
-                s.paragraph_order.push(style.id.clone());
-                if default {
-                    s.default_paragraph = Some(style.id.clone());
-                }
-            }
-            if kind == StyleKind::Table && default && s.default_table.is_none() {
-                s.default_table = Some(style.id.clone());
-            }
+            style.order = Some(k as u32);
             s.by_id.insert(style.id.clone(), style);
         }
-        if s.default_paragraph.is_none() && s.by_id.get("Normal").is_some_and(|st| st.kind == StyleKind::Paragraph) {
-            s.default_paragraph = Some("Normal".into());
+        s.finish();
+        s
+    }
+
+    /// What depends on the styles together, worked out as reading the part in order does: Word's handling of table
+    /// styles (the built-in default one's fixed properties, run properties stored before a base is read, styles
+    /// frozen on a base read after them), the default paragraph and table styles, and the paragraph styles' order.
+    /// Styles a glossary added keep theirs.
+    fn finish(&mut self) {
+        let cx = self.cx();
+        let colours = self.colours;
+        let mut ids: Vec<(Option<u32>, String)> =
+            self.by_id.values().filter(|s| s.origin == StyleOrigin::Document).map(|s| (s.order, s.id.clone())).collect();
+        ids.sort_unstable_by(|a, b| (a.0.is_none(), a.0, &a.1).cmp(&(b.0.is_none(), b.0, &b.1)));
+        let glossary: Vec<String> =
+            self.paragraph_order.iter().filter(|id| self.by_id.get(*id).is_some_and(|s| s.origin == StyleOrigin::Glossary)).cloned().collect();
+        let (mut order, mut default_paragraph, mut default_table) = (Vec::new(), None, None);
+        let mut expansions = Expansions::default();
+        for (_, id) in &ids {
+            let Some(style) = self.by_id.get(id) else { continue };
+            let base = style.based_on.clone().filter(|b| b != id && expansions.read.contains_key(b));
+            expansions.read.entry(id.clone()).or_insert((base, false));
+            let (kind, default) = (style.kind, style.default);
+            if kind == StyleKind::Table {
+                let was = (style.order, style.raw.clone());
+                let again = cx.parse(&was.1, |text, n| {
+                    let builtin = expansions.table_style(n, id);
+                    Style::parse(n, text, &colours).map(|st| (st, builtin))
+                });
+                if let Some((mut st, builtin)) = again.flatten() {
+                    if builtin {
+                        // Word's built-in run properties, the document's fonts kept.
+                        let r = &mut st.base.rpr;
+                        r.size = r.size.or(Some(10.0));
+                        r.color = r.color.or(Some(None));
+                        r.spacing = r.spacing.or(Some(0.0));
+                        r.scale = r.scale.or(Some(100.0));
+                    }
+                    // A table style named as Word's built-in default one is that style: indent 0, cell margins 108
+                    // left and right, nothing else, whatever the file defines for it.
+                    if matches!(st.name.as_str(), "Normal Table" | "Table Normal") {
+                        let margins = Margins { top: Some(0.0), left: Some(5.4), bottom: Some(0.0), right: Some(5.4) };
+                        st.base = Region { tbl: TblProps { ind: Some(Width::Dxa(0.0)), margins, ..TblProps::default() }, ..Region::default() };
+                        st.regions.clear();
+                        st.based_on = None;
+                    }
+                    (st.order, st.raw) = was;
+                    self.by_id.insert(id.clone(), st);
+                }
+            }
+            if kind == StyleKind::Paragraph {
+                order.push(id.clone());
+                if default {
+                    default_paragraph = Some(id.clone());
+                }
+            }
+            if kind == StyleKind::Table && default && default_table.is_none() {
+                default_table = Some(id.clone());
+            }
+        }
+        if default_paragraph.is_none() && self.by_id.get("Normal").is_some_and(|st| st.kind == StyleKind::Paragraph) {
+            default_paragraph = Some("Normal".into());
         }
         // Worked out with its base missing: frozen. The styles on one take what it has.
         for (id, (base, done)) in expansions.read {
-            if let Some(st) = s.by_id.get_mut(&id).filter(|st| st.kind == StyleKind::Table && st.based_on.is_some()) {
+            if let Some(st) = self.by_id.get_mut(&id).filter(|st| st.kind == StyleKind::Table && st.based_on.is_some()) {
                 st.frozen = done && base.is_none();
             }
         }
-        s
+        order.extend(glossary);
+        (self.paragraph_order, self.default_paragraph, self.default_table) = (order, default_paragraph, default_table);
     }
 
     /// Replaces the document defaults from their `w:docDefaults` XML. Every style's properties change.
@@ -470,9 +506,37 @@ impl Styles {
     /// Adds a style, or replaces one, from its `w:style` XML. Returns the styles whose properties changed: it and its
     /// dependants (with the ones of the style it replaced).
     pub fn set_xml(&mut self, raw: String) -> Result<Vec<String>, StyleEditError> {
+        let style = self.parse_one(&raw)?;
+        let id = style.id.clone();
+        let mut changed = if self.by_id.contains_key(&id) { self.dependants(&id) } else { Vec::new() };
+        let defaults = (self.default_paragraph.clone(), self.default_table.clone());
+        self.put(style);
+        self.finish();
+        changed.extend(self.dependants(&id));
+        // A default that moved changes what the styles' users without one of their own resolve as.
+        if defaults != (self.default_paragraph.clone(), self.default_table.clone()) {
+            changed.extend([defaults.0, defaults.1, self.default_paragraph.clone(), self.default_table.clone()].into_iter().flatten());
+        }
+        changed.sort();
+        changed.dedup();
+        Ok(changed)
+    }
+
+    /// A style from its `w:style` XML, as [`Self::set_xml`] would take it, left out of the table.
+    pub fn style_from_xml(&self, raw: &str) -> Option<Style> {
+        self.parse_one(raw).ok()
+    }
+
+    /// A style from its `w:style` XML: that one element alone, not based on itself.
+    fn parse_one(&self, raw: &str) -> Result<Style, StyleEditError> {
         let cx = self.cx();
-        let style = cx.parse(&raw, |text, n| Style::parse(n, text, &self.colours)).flatten().ok_or(StyleEditError::Malformed)?;
-        let style = Style { raw, ..style };
+        let alone = |n: roxmltree::Node| {
+            n.parent().is_some_and(|x| x.children().all(|c| c == n || c.is_text() && c.text().is_some_and(|t| t.trim().is_empty())))
+        };
+        let style = cx
+            .parse(raw, |text, n| if alone(n) && super::xml::is_w(n, "style") { Style::parse(n, text, &self.colours) } else { None })
+            .flatten()
+            .ok_or(StyleEditError::Malformed)?;
         let mut base = style.based_on.as_deref();
         let mut hops = 0;
         while let Some(b) = base {
@@ -482,16 +546,15 @@ impl Styles {
             base = self.by_id.get(b).and_then(|s| s.based_on.as_deref());
             hops += 1;
         }
-        let id = style.id.clone();
-        let mut changed = if self.by_id.contains_key(&id) { self.dependants(&id) } else { Vec::new() };
-        if style.kind == StyleKind::Paragraph && !self.paragraph_order.contains(&id) {
-            self.paragraph_order.push(id.clone());
+        Ok(style)
+    }
+
+    /// `style` in place of the one with its id, at its place in the part.
+    fn put(&mut self, mut style: Style) {
+        if let Some(was) = self.by_id.get(&style.id) {
+            (style.order, style.origin) = (was.order, was.origin);
         }
-        self.by_id.insert(id.clone(), style);
-        changed.extend(self.dependants(&id));
-        changed.sort();
-        changed.dedup();
-        Ok(changed)
+        self.by_id.insert(style.id.clone(), style);
     }
 
     /// Removes a style. The styles based on it take its base, and references to it from `w:next` and `w:link` go.
@@ -524,14 +587,12 @@ impl Styles {
             }
             el.reorder(super::write::props::STYLE);
             if let Some(raw) = el.xml() {
-                self.set_xml(raw)?;
+                let style = self.parse_one(&raw)?;
+                self.put(style);
             }
         }
         self.by_id.remove(id);
-        self.paragraph_order.retain(|p| p != id);
-        if self.default_paragraph.as_deref() == Some(id) {
-            self.default_paragraph = None;
-        }
+        self.finish();
         Ok(changed)
     }
 

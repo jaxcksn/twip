@@ -182,15 +182,23 @@ impl Editor {
         Outcome::Moved
     }
 
-    /// The target style's tab stops, and those it inherits from its base, when commands edit a style.
-    pub(super) fn style_tabs(&self) -> Option<(Vec<Tab>, Vec<Tab>)> {
-        let (para, _, cx) = self.style_target_formatting()?;
+    /// The target style's tab stops, and those it inherits from its base, when commands edit a style: the one
+    /// formatting edits, or the one the selected paragraphs are in when it updates automatically.
+    pub(super) fn style_tabs(&mut self) -> Option<(Vec<Tab>, Vec<Tab>)> {
+        let raw = match &self.style_target {
+            Some(raw) => raw.clone(),
+            None => {
+                let id = self.auto_redefined()?;
+                self.doc.resolver.as_ref()?.styles.get(&id)?.raw.clone()
+            }
+        };
+        let (para, _, cx) = self.style_formatting(&raw)?;
         let res = self.doc.resolver.as_ref()?;
         let base = res
             .styles
             .by_id
             .values()
-            .find(|s| Some(s.raw.as_str()) == self.style_target.as_deref())
+            .find(|s| s.raw == raw)
             .and_then(|s| s.based_on.clone())
             .map(|b| format!("<{w}pPr><{w}pStyle {w}val=\"{}\"/></{w}pPr>", crate::docx::write::props::esc(&b), w = cx.w));
         let inherited = res.para_from_xml(base.as_deref(), None, &cx).style.tabs.iter().filter(|t| t.kind != TabKind::Clear).copied().collect();
@@ -214,6 +222,35 @@ impl Editor {
         let run = self.caret().and_then(|c| self.run_at(&c));
         let rpr = run.and_then(|r| r.direct.0.as_deref().map(str::to_string)).and_then(|x| strip(&x, "rPr", &["rStyle", "ins", "del", "rPrChange"]));
         (ppr, rpr)
+    }
+
+    /// The built-in style `cmd` applies (or updates) when the document doesn't define it, and it is of the kind `cmd`
+    /// takes.
+    pub(super) fn built_in_named(&self, cmd: &Command) -> Option<&'static crate::services::styles::builtin::BuiltIn> {
+        let (id, kind) = match cmd {
+            Command::SetParagraphStyle(id) => (id, Some(StyleKind::Paragraph)),
+            Command::ApplyCharacterStyle(Some(id)) => (id, Some(StyleKind::Character)),
+            Command::SetTableStyle(id) => (id, Some(StyleKind::Table)),
+            Command::UpdateStyleToSelection(id) => (id, None),
+            _ => return None,
+        };
+        let styles = &self.doc.resolver.as_ref()?.styles;
+        if styles.by_id.contains_key(&id.0) {
+            return None;
+        }
+        crate::services::styles::builtin::BUILT_IN.iter().find(|b| b.id == id.0 && kind.is_none_or(|k| k == b.kind))
+    }
+
+    /// Whether `cmd` names a built-in style the document will take on its first use.
+    pub fn built_in_for(&self, cmd: &Command) -> bool {
+        self.built_in_named(cmd).is_some()
+    }
+
+    /// Adds built-in style `b` from its definition, as one undo step.
+    pub(super) fn add_built_in(&mut self, b: &crate::services::styles::builtin::BuiltIn, fonts: &Fonts) -> Outcome {
+        let Some(w) = self.doc.resolver.as_ref().map(|r| r.styles.cx().w) else { return Outcome::Unchanged("no styles") };
+        let raw = crate::services::styles::builtin::definition(b, &w);
+        self.edit_styles("New Style", |s| s.set_xml(raw), fonts)
     }
 
     /// Changes a style to the selection's formatting.
@@ -363,9 +400,80 @@ impl Editor {
         if !style.custom || self.doc.resolver.as_ref().is_some_and(|r| r.styles.default_paragraph.as_deref() == Some(id)) {
             return Outcome::Refused(Error::new(crate::api::error::ErrorCode::NotAllowed, "built-in styles can't be deleted"));
         }
-        // shortcut: paragraphs and runs keep naming the deleted style in their XML, so they resolve as the default
-        // paragraph style or no character style; a style created later under the same id would apply to them.
         self.edit_styles("Delete Style", |s| s.delete(id), fonts)
+    }
+
+    /// The paragraphs, marks, runs (a ruby's too) and tables whose direct formatting names style `id`, with the name
+    /// taken out, as stale.
+    fn drop_style_refs(&mut self, tx: &mut super::Tx, id: &str, res: &crate::docx::resolve::Resolver) {
+        use crate::docx::Inline;
+        use crate::docx::write::props::attr_of;
+        let cx = self.cx();
+        // The XML without `name` when it names the style
+        let without = |xml: Option<&str>, local: &str, name: &str| -> Option<Option<String>> {
+            let mut p = Props::parse(xml, local, &cx);
+            p.get(name).and_then(|x| attr_of(x, "val")).is_some_and(|v| v == id).then(|| {
+                p.remove(name);
+                p.xml()
+            })
+        };
+        let raw = |x: Option<String>| crate::docx::Raw(x.map(|x| Rc::from(x.as_str())));
+        let named = |r: &crate::docx::Run| r.style_id.as_deref() == Some(id);
+        let unstyled = |r: &crate::docx::Run| -> Option<crate::docx::Run> {
+            without(r.direct.0.as_deref(), "rPr", "rStyle").map(|x| Rc::new(RunStyle { direct: raw(x), ..(**r).clone() }))
+        };
+        let in_ruby = |i: &Inline| matches!(i, Inline::Ruby(r, _) if r.base.iter().chain(&r.text).any(|x| named(&x.1)));
+        let ruby_rpr = |xml: Option<&str>, _: &RunStyle| without(xml, "rPr", "rStyle").unwrap_or_else(|| xml.map(str::to_string));
+        let paras: Vec<_> = self.index.para_ids().collect();
+        for para in paras {
+            let Some(p) = self.index.para(&self.doc, para) else { continue };
+            let in_style = p.style.style_id.as_deref() == Some(id);
+            if !in_style && !named(&p.mark) && !p.inlines.iter().any(|i| i.run().is_some_and(named) || in_ruby(i)) {
+                continue;
+            }
+            let style = in_style
+                .then(|| without(p.style.direct.0.as_deref(), "pPr", "pStyle"))
+                .flatten()
+                .map(|x| Rc::new(crate::docx::ParaStyle { direct: raw(x), ..(*p.style).clone() }));
+            let mark = if named(&p.mark) { unstyled(&p.mark) } else { None };
+            let mut inlines: Option<Vec<Inline>> = None;
+            let mut at = 0;
+            for (k, i) in p.inlines.iter().enumerate() {
+                let unit = crate::layout::Unit(at);
+                at += i.units() as u32;
+                let run = i.run().filter(|r| named(r)).and_then(unstyled);
+                let mut edited = run.is_some();
+                let mut with = run.map_or_else(|| i.clone(), |r| super::format::with_run(i, &r));
+                if in_ruby(i)
+                    && let Inline::Ruby(r, _) = &mut with
+                    && let Some(base) = self.run_base(para, unit, res, &cx)
+                    && let Some(n) = super::format::ruby_again(r, &base, Some((&ruby_rpr, true)), res, &cx)
+                {
+                    (*r, edited) = (n, true);
+                }
+                if edited {
+                    inlines.get_or_insert_with(|| p.inlines.clone())[k] = with;
+                }
+            }
+            if style.is_some() || mark.is_some() {
+                let (style, mark, list) = (style.unwrap_or_else(|| p.style.clone()), mark.unwrap_or_else(|| p.mark.clone()), p.list.clone());
+                let _ = self.step(tx, Step::Para { para, style, mark, list });
+            }
+            if let Some(inlines) = inlines {
+                let _ = self.step(tx, Step::Restyle { para, inlines });
+            }
+            tx.stale_paras.push(para);
+        }
+        let tables: Vec<_> = self.index.table_ids().collect();
+        for table in tables {
+            let Some(t) = self.index.table(&self.doc, table).filter(|t| t.style_id.as_deref() == Some(id)) else { continue };
+            if let Some(x) = without(t.direct.0.as_deref(), "tblPr", "tblStyle") {
+                let mut props = super::step::TableProps::of(t);
+                props.direct = raw(x);
+                let _ = self.step(tx, Step::TableProps { table, props });
+            }
+            tx.stale_tables.push(table);
+        }
     }
 
     /// Sets a style's list flags.
@@ -442,11 +550,24 @@ impl Editor {
             Err(e) => return Outcome::Refused(e),
         };
         let el = Props::parse(Some(&edited), "style", &cx);
-        let wrap = |name: &str, part: &str| el.get(part).map_or(String::new(), |x| format!("<{w}{name}>{x}</{w}{name}>"));
-        let raw = format!("<{w}docDefaults>{}{}</{w}docDefaults>", wrap("rPrDefault", "rPr"), wrap("pPrDefault", "pPr"));
-        if Some(&raw) == res.styles.defaults_raw.as_ref() {
+        if [("pPrDefault", "pPr"), ("rPrDefault", "rPr")].iter().all(|&(wrapper, part)| el.get(part).unwrap_or_default() == inner(wrapper, part)) {
             return Outcome::Unchanged("already so");
         }
+        // The defaults as written with their properties replaced: a wrapper read empty stays (no wrapper means the
+        // application's defaults).
+        let mut out = Props::parse(Some(&defaults), "docDefaults", &cx);
+        for (wrapper, part) in [("rPrDefault", "rPr"), ("pPrDefault", "pPr")] {
+            let mut wrap = Props::parse(parts.get(wrapper), wrapper, &cx);
+            match el.get(part) {
+                Some(x) => wrap.set(part, x.to_string()),
+                None => wrap.remove(part),
+            }
+            if parts.get(wrapper).is_some() || el.get(part).is_some() {
+                out.set(wrapper, wrap.xml().unwrap_or_else(|| format!("<{w}{wrapper}/>")));
+            }
+        }
+        out.reorder(&["rPrDefault", "pPrDefault"]);
+        let raw = out.xml().unwrap_or_else(|| format!("<{w}docDefaults/>"));
         self.edit_styles("Set Defaults", |s| s.set_defaults_xml(raw), fonts)
     }
 
@@ -470,14 +591,19 @@ impl Editor {
         let Some(raw) = self.doc.resolver.as_ref().and_then(|r| r.styles.get(id)).map(|s| s.raw.clone()) else {
             return Outcome::Unchanged("no style");
         };
-        self.style_target = Some(raw);
+        self.style_target = Some(raw.clone());
         let _ = self.format_style_part("pPr", &|p, cx, para, _| edit(p, cx, para));
-        let Some(raw) = self.style_target.take() else { return Outcome::Unchanged("no style") };
-        self.edit_styles("Modify Style", |s| s.set_xml(raw), fonts)
+        let Some(now) = self.style_target.take() else { return Outcome::Unchanged("no style") };
+        // The formatting it has already, as for paragraphs formatted directly: no undo step.
+        if now == raw || self.style_formatting(&now).zip(self.style_formatting(&raw)).is_some_and(|(a, b)| a.0.style == b.0.style) {
+            return Outcome::Unchanged("the style already has it");
+        }
+        self.edit_styles("Modify Style", |s| s.set_xml(now), fonts)
     }
 
     /// Runs `edit` on the styles table as one undo step named `label`. Every paragraph, run and table whose style
-    /// changed (the edit's answer) is formatted again from the new table.
+    /// changed (the edit's answer) is formatted again from the new table; those naming a style it deleted name it no
+    /// more.
     pub(crate) fn edit_styles(
         &mut self,
         label: &'static str,
@@ -498,25 +624,43 @@ impl Editor {
             self.abort(tx);
             return Outcome::Unchanged("the styles didn't change");
         }
+        // The styles it deleted: the document's references to them go, untracked
+        let gone: Vec<&str> = res
+            .styles
+            .by_id
+            .keys()
+            .filter(|id| !self.doc.resolver.as_ref().is_some_and(|r| r.styles.by_id.contains_key(*id)))
+            .map(String::as_str)
+            .collect();
+        let tracked = std::mem::replace(&mut tx.tracked, false);
+        for id in gone {
+            self.drop_style_refs(&mut tx, id, &res);
+        }
+        tx.tracked = tracked;
         let default = self.doc.resolver.as_ref().and_then(|r| r.styles.default_paragraph.clone());
-        let uses = |id: Option<&str>| match id.or(default.as_deref()) {
-            Some(id) => changed.iter().any(|c| c == id),
-            None => false,
-        };
+        let changed: std::collections::HashSet<&str> = changed.iter().map(String::as_str).collect();
+        let uses = |id: Option<&str>| id.or(default.as_deref()).is_some_and(|id| changed.contains(id));
+        let styled = |r: &crate::docx::Run| r.style_id.as_deref().is_some_and(|s| changed.contains(s));
+        // A paragraph in a changed style, or holding a run in one: its mark, its list label, a ruby's text too.
         let paras: Vec<_> = self
             .index
             .para_ids()
             .filter(|&p| {
                 self.index.para(&self.doc, p).is_some_and(|q| {
                     uses(q.style.style_id.as_deref())
-                        || q.inlines.iter().filter_map(|i| i.run()).any(|r| r.style_id.as_deref().is_some_and(|s| changed.iter().any(|c| c == s)))
+                        || styled(&q.mark)
+                        || q.list.as_ref().is_some_and(|l| styled(&l.run))
+                        || q.inlines.iter().any(|i| {
+                            i.run().is_some_and(styled)
+                                || matches!(i, crate::docx::Inline::Ruby(r, _) if r.base.iter().chain(&r.text).any(|x| styled(&x.1)))
+                        })
                 })
             })
             .collect();
         let tables: Vec<_> = self
             .index
             .table_ids()
-            .filter(|&t| self.index.table(&self.doc, t).and_then(|t| t.style_id.as_deref()).is_some_and(|s| changed.iter().any(|c| c == s)))
+            .filter(|&t| self.index.table(&self.doc, t).and_then(|t| t.style_id.as_deref()).is_some_and(|s| changed.contains(s)))
             .collect();
         tx.stale_paras.extend(paras);
         tx.stale_tables.extend(tables);

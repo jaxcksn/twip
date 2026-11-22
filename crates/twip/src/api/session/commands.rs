@@ -8,19 +8,9 @@ use crate::api::error::{Error, ErrorCode};
 use crate::api::record::Origin;
 use crate::api::services::Popover;
 use crate::api::state::CommandState;
-use crate::api::value::{CommentId, ElementId, LineSpacing, Points, TableWidth};
+use crate::api::value::{CommentId, ElementId, TableWidth};
 
-/// The longest length most settings take, 22 in.
-const MAX: f64 = 1584.0;
-
-/// `v` within `lo..=hi`, else an error naming `what`.
-fn within(what: &str, v: f64, lo: f64, hi: f64) -> Result<(), Error> {
-    if v.is_finite() && (lo..=hi).contains(&v) { Ok(()) } else { Err(Error::invalid(format!("{what} must be from {lo} to {hi}"))) }
-}
-
-fn length(what: &str, v: Option<Points>, lo: f64, hi: f64) -> Result<(), Error> {
-    v.map_or(Ok(()), |v| within(what, v.0, lo, hi))
-}
+use crate::editing::commands::bounds::{MAX, length, within};
 
 fn count(what: &str, v: Option<u32>, hi: u32) -> Result<(), Error> {
     v.map_or(Ok(()), |v| within(what, f64::from(v), 1.0, f64::from(hi)))
@@ -91,6 +81,7 @@ impl Session {
     /// Bad ranges, counts, sizes, empty text and ids that don't exist.
     fn validate(&self, command: &Command) -> Result<(), Error> {
         use Command as C;
+        crate::editing::commands::bounds::bounds(command)?;
         match command {
             C::InsertText(t) => text("the text", t),
             // Until layout is complete the editor finds whether the page exists.
@@ -99,47 +90,12 @@ impl Session {
                 within("the page", f64::from(*p), 1.0, last)
             }
             C::SetFont(f) => text("the font", f),
-            C::SetTypography(t) => {
-                if let Some(s) = t.scale {
-                    within("the scale", s, 1.0, 600.0)?;
-                }
-                length("the kerning size", t.kerning, 0.0, 1638.0)?;
-                match t.stylistic_set {
-                    Some(n) if n > 20 => Err(Error::invalid("the stylistic set is 0…20")),
-                    _ => Ok(()),
-                }
-            }
             C::SetLanguage(l) => match &l.language {
                 Some(tag) if tag.is_empty() || tag.len() > 35 || !tag.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') => {
                     Err(Error::invalid("the language is a BCP 47 tag"))
                 }
                 _ => Ok(()),
             },
-            C::SetFontSize(s) => {
-                within("the size", s.0, 1.0, 1638.0)?;
-                if (s.0 * 2.0).fract() != 0.0 { Err(Error::invalid("the size goes in 0.5 pt steps")) } else { Ok(()) }
-            }
-            C::SetCharacterSpacing(s) | C::SetCharacterPosition(s) | C::SetTableIndent(s) => within("the length", s.0, -MAX, MAX),
-            C::SetLineSpacing(LineSpacing::Multiple { lines }) => within("the lines", *lines, 0.06, 132.0),
-            C::SetLineSpacing(LineSpacing::Exact { size } | LineSpacing::AtLeast { size }) => within("the size", size.0, 0.7, MAX),
-            C::SetParagraphSpacing(s) => {
-                for v in [&s.before, &s.after] {
-                    if let Some(crate::api::value::AutoOr::Value(p)) = v {
-                        within("the spacing", p.0, 0.0, MAX)?;
-                    }
-                }
-                Ok(())
-            }
-            C::SetIndents(i) => {
-                length("the left indent", i.left, -MAX, MAX)?;
-                length("the right indent", i.right, -MAX, MAX)?;
-                length("the first line indent", i.first_line, 0.0, MAX)?;
-                length("the hanging indent", i.hanging, 0.0, MAX)?;
-                if i.first_line.is_some() && i.hanging.is_some() {
-                    return Err(Error::invalid("firstLine and hanging exclude each other"));
-                }
-                Ok(())
-            }
             C::SetStyleMeta(m) => {
                 if self.editor.document().resolver.as_ref().is_some_and(|r| r.styles.by_id.contains_key(&m.id.0)) {
                     Ok(())
@@ -152,7 +108,8 @@ impl Session {
                 _ => Err(Error::invalid(format!("no table style {}", s.0))),
             },
             C::SetParagraphStyle(s) | C::SetTableStyle(s) | C::UpdateStyleToSelection(s) | C::DeleteStyle(s) => {
-                if self.editor.document().resolver.as_ref().is_some_and(|r| r.styles.by_id.contains_key(&s.0)) {
+                let built_in = !matches!(command, C::DeleteStyle(_)) && self.editor.built_in_for(command);
+                if built_in || self.editor.document().resolver.as_ref().is_some_and(|r| r.styles.by_id.contains_key(&s.0)) {
                     Ok(())
                 } else {
                     Err(Error::invalid(format!("no style {}", s.0)))
@@ -194,9 +151,6 @@ impl Session {
                     if custom[..k].iter().any(|d| d.name.eq_ignore_ascii_case(&c.name)) {
                         return Err(Error::invalid(format!("two custom properties are named {}", c.name)));
                     }
-                    if c.kind == crate::api::command::CustomPropertyKind::Number && c.value.trim().parse::<f64>().is_err() {
-                        return Err(Error::invalid(format!("{} isn't a number", c.value)));
-                    }
                 }
                 Ok(())
             }
@@ -209,7 +163,6 @@ impl Session {
             C::InsertRows(r) => count("the rows", r.count, 32767),
             C::InsertColumns(c) => count("the columns", c.count, 63),
             C::SplitCells(s) => count("the columns", Some(s.columns), 63).and(count("the rows", s.rows, 32767)),
-            C::SetCellBorders(b) => b.border.as_ref().map_or(Ok(()), |b| within("the width", b.width.0, 0.25, 6.0)),
             C::SetCellMargins(m) => {
                 for v in [m.top, m.bottom, m.left, m.right] {
                     length("the margin", v, 0.0, MAX)?;

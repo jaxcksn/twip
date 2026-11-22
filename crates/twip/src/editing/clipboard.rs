@@ -33,6 +33,29 @@ pub struct Refs {
     pub comments: Vec<crate::docx::review::Comment>,
 }
 
+/// The notes and comments (with their replies) `blocks`, content of `doc`, refer to.
+pub(super) fn refs_in(doc: &crate::docx::Document, blocks: &[Block]) -> Refs {
+    let mut notes = Vec::new();
+    super::notes::refs_in(blocks, &mut notes);
+    notes.sort_by_key(|&(k, id)| (k == crate::docx::NoteKind::End, id));
+    notes.dedup();
+    let notes = notes
+        .into_iter()
+        .filter_map(|(k, id)| {
+            let body = match k {
+                crate::docx::NoteKind::Foot => doc.footnotes.get(&id),
+                crate::docx::NoteKind::End => doc.endnotes.get(&id),
+            };
+            Some((k, id, body?.clone()))
+        })
+        .collect();
+    let mut ids = Vec::new();
+    super::comments::ids_in_blocks(blocks, &mut ids);
+    let ids: HashSet<_> = ids.into_iter().collect();
+    let comments = doc.comments.by_id.values().filter(|c| ids.contains(&c.id) || c.parent.is_some_and(|p| ids.contains(&p))).cloned().collect();
+    Refs { notes, comments }
+}
+
 /// Takes out the markers of comments the fragment holds only part of (its range's start, end and reference): those
 /// stay with the document.
 fn strip_partial_comments(blocks: &mut [Block]) {
@@ -404,30 +427,12 @@ impl Editor {
 
     /// The notes and comments (with their replies) `blocks` refer to.
     fn refs_of(&self, blocks: &[Block]) -> Refs {
-        let mut notes = Vec::new();
-        super::notes::refs_in(blocks, &mut notes);
-        notes.sort_by_key(|&(k, id)| (k == crate::docx::NoteKind::End, id));
-        notes.dedup();
-        let notes = notes
-            .into_iter()
-            .filter_map(|(k, id)| {
-                let body = match k {
-                    crate::docx::NoteKind::Foot => self.doc.footnotes.get(&id),
-                    crate::docx::NoteKind::End => self.doc.endnotes.get(&id),
-                };
-                Some((k, id, body?.clone()))
-            })
-            .collect();
-        let mut ids = Vec::new();
-        super::comments::ids_in_blocks(blocks, &mut ids);
-        let comments =
-            self.doc.comments.by_id.values().filter(|c| ids.contains(&c.id) || c.parent.is_some_and(|p| ids.contains(&p))).cloned().collect();
-        Refs { notes, comments }
+        refs_in(&self.doc, blocks)
     }
 
     /// Brings back the notes and comments pasted content refers to: under their own ids when those are free (they were
-    /// cut), else as copies under new ids, the pasted references renumbered.
-    fn paste_refs(&mut self, tx: &mut super::Tx, blocks: &mut [Block], refs: &Refs) {
+    /// cut), else as copies under new ids, the pasted references renumbered. Returns the notes' stories.
+    pub(super) fn paste_refs(&mut self, tx: &mut super::Tx, blocks: &mut [Block], refs: &Refs) -> Vec<super::position::StoryId> {
         use crate::docx::NoteKind;
         use crate::docx::review::{CommentId, RangeKind};
         // Every note's new id first, then the references renumbered once: renumbering one at a time would catch
@@ -453,6 +458,7 @@ impl Editor {
                 }
             });
         }
+        let mut stories = Vec::with_capacity(refs.notes.len());
         for (kind, id, body) in &refs.notes {
             let to = to_ids[&(*kind, *id)];
             let mut body: Vec<Block> = body.iter().map(fresh).collect();
@@ -469,6 +475,10 @@ impl Editor {
                 });
             }
             let _ = self.step(tx, Step::Note { kind: *kind, id: to, blocks: Some(body) });
+            stories.push(match kind {
+                NoteKind::Foot => super::position::StoryId::Footnote(to),
+                NoteKind::End => super::position::StoryId::Endnote(to),
+            });
         }
         let mut next = self.doc.comments.by_id.keys().map(|c| c.0).max().unwrap_or(0) + 1;
         let mut map: HashMap<CommentId, CommentId> = HashMap::new();
@@ -511,6 +521,7 @@ impl Editor {
             }
             let _ = self.step(tx, Step::Comment { id: to, after: Some(c) });
         }
+        stories
     }
 
     fn copy_content(&mut self) -> Option<Fragment> {

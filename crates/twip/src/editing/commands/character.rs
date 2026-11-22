@@ -381,12 +381,90 @@ impl Editor {
         }
     }
 
+    /// Holds the selection's formatting: its first character's (the caret's, collapsed), and its paragraph's when it
+    /// holds a whole paragraph or is collapsed, as Word's format painter does.
     pub(in crate::editing) fn copy_formatting(&mut self) -> Outcome {
-        Outcome::unsupported("the format painter")
+        let Some(res) = self.doc.resolver.clone() else { return Outcome::unavailable("no styles") };
+        let cx = res.styles.cx();
+        let ranges = self.selected_ranges();
+        let collapsed = self.selection.is_collapsed();
+        let (para, run) = match (collapsed, ranges.first()) {
+            (true, _) => {
+                let Some(caret) = self.caret() else { return Outcome::unavailable("no caret") };
+                let Some((para, _)) = caret.para_offset() else { return Outcome::unavailable("no paragraph") };
+                (para, self.run_at(&caret))
+            }
+            (false, Some(&(para, from, _))) => (para, self.first_run(para, from)),
+            (false, None) => return Outcome::unavailable("no text selected"),
+        };
+        let whole = collapsed || !self.selected_marks(&ranges).is_empty();
+        let Some(p) = self.index.para(&self.doc, para) else { return Outcome::unavailable("no paragraph") };
+        // Formatting, not what the text is: its revisions, section and mark
+        let strip = |x: Option<&str>, part: &str, drop: &[&str]| {
+            let mut props = Props::parse(x, part, &cx);
+            props.kids.retain(|(n, _)| !drop.contains(&n.as_str()));
+            props.xml()
+        };
+        let rpr = strip(run.as_ref().and_then(|r| r.direct.0.as_deref()), "rPr", &["ins", "del", "moveFrom", "moveTo", "rPrChange"]);
+        let ppr = whole.then(|| strip(p.style.direct.0.as_deref(), "pPr", &["sectPr", "rPr", "pPrChange"]));
+        self.painter = Some((rpr, ppr));
+        Outcome::Moved
     }
 
-    pub(in crate::editing) fn paste_formatting(&mut self, _fonts: &Fonts) -> Outcome {
-        Outcome::unsupported("the format painter")
+    /// The run of `para`'s first unit from `from`, or its mark's.
+    fn first_run(&self, para: crate::layout::ParaId, from: crate::layout::Unit) -> Option<crate::docx::Run> {
+        let p = self.index.para(&self.doc, para)?;
+        let mut at = 0;
+        for i in &p.inlines {
+            let n = i.units() as u32;
+            if n > 0
+                && at + n > from.0
+                && let Some(r) = i.run()
+            {
+                return Some(r.clone());
+            }
+            at += n;
+        }
+        Some(p.mark.clone())
+    }
+
+    /// Gives the selection the held formatting in place of its own: its runs' (the word at a collapsed caret), and its
+    /// paragraphs' when the painter took a paragraph's. One undo step.
+    pub(in crate::editing) fn paste_formatting(&mut self, fonts: &Fonts) -> Outcome {
+        use crate::docx::write::props::{PPR, RPR};
+        let Some((rpr, ppr)) = self.painter.clone() else { return Outcome::unavailable("no formatting held") };
+        let Some(res) = self.doc.resolver.clone() else { return Outcome::unavailable("no styles") };
+        let cx = res.styles.cx();
+        let held = Props::parse(rpr.as_deref(), "rPr", &cx);
+        let held_ppr = ppr.map(|x| Props::parse(x.as_deref(), "pPr", &cx));
+        self.joined("Paste Formatting", fonts, |e| {
+            let runs = e.format_runs(
+                "Paste Formatting",
+                &|p, _, _| {
+                    p.kids.retain(|(n, _)| matches!(n.as_str(), "ins" | "del" | "moveFrom" | "moveTo" | "rPrChange"));
+                    for (n, x) in &held.kids {
+                        p.set(n, x.clone());
+                    }
+                    p.reorder(RPR);
+                },
+                fonts,
+            );
+            let Some(held) = &held_ppr else { return runs };
+            if matches!(runs, Outcome::Refused(_)) {
+                return runs;
+            }
+            e.format_paras_direct(
+                "Paste Formatting",
+                &|p, _, _| {
+                    p.kids.retain(|(n, _)| matches!(n.as_str(), "sectPr" | "rPr" | "pPrChange"));
+                    for (n, x) in &held.kids {
+                        p.set(n, x.clone());
+                    }
+                    p.reorder(PPR);
+                },
+                fonts,
+            )
+        })
     }
 }
 

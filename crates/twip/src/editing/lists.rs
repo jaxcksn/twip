@@ -29,8 +29,8 @@ impl Editor {
         let Some(p) = self.index.para(&self.doc, para) else { return false };
         let mut pr = Props::parse(p.style.direct.0.as_deref(), "pPr", &cx);
         edit(&mut pr, &cx.w);
-        let region = self.region_of_para(para, &res);
-        let r = res.para_from_xml(pr.xml().as_deref(), region.as_ref(), &cx);
+        let Some(r) = self.para_again(para, Some(pr.xml().as_deref()), &res, &cx) else { return false };
+        let Some(p) = self.index.para(&self.doc, para) else { return false };
         let (mark, list) = (p.mark.clone(), p.list.clone());
         tx.stale_paras.push(para);
         self.step(tx, Step::Para { para, style: Rc::new(r.style), mark, list }).is_ok()

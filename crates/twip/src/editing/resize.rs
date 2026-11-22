@@ -144,6 +144,7 @@ impl Editor {
         let old_sum: f64 = t.grid.iter().sum();
         let (n, sized) = (t.rows.len(), !matches!(t.width, Width::Auto | Width::Nil));
         let mut rows = t.rows.clone();
+        let cx = self.cx();
         // Drawn column widths
         let mut grid = t.grid.clone();
         if let Some(geo) = self.pages.page(d.page, &self.index) {
@@ -299,7 +300,7 @@ impl Editor {
                             Some((_, rule)) if rule == "exact" => "exact",
                             _ => "atLeast",
                         };
-                        row.height = Some(((h * sy).max(1.0), rule.to_string()));
+                        super::table_format::set_height(row, Some(((h * sy).max(1.0), rule.to_string())), &cx);
                     }
                 }
             }
@@ -318,7 +319,7 @@ impl Editor {
                     Some((_, rule)) if rule == "exact" => "exact",
                     _ => "atLeast",
                 };
-                row.height = Some((h, rule.to_string()));
+                super::table_format::set_height(row, Some((h, rule.to_string())), &cx);
             }
         }
         let new_sum: f64 = grid.iter().sum();
@@ -333,8 +334,13 @@ impl Editor {
             self.abort(tx);
             return Some(Outcome::Unchanged("stale table"));
         }
-        if (new_sum - old_sum).abs() > 1e-9 && sized {
-            let _ = self.step(&mut tx, Step::TableWidth { table: d.table, width: Width::Dxa(new_sum) });
+        if (new_sum - old_sum).abs() > 1e-9
+            && sized
+            && let Some(t) = self.index.table(&self.doc, d.table)
+        {
+            let mut props = super::step::TableProps::of(t);
+            super::table_format::set_width(&mut props, Width::Dxa(new_sum), &cx);
+            let _ = self.step(&mut tx, Step::TableProps { table: d.table, props });
         }
         if new_sum > old_sum + 1e-9
             && let Some(slot) = self.index.table_slot(d.table)

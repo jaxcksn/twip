@@ -19,11 +19,13 @@ fn formatting(e: &Editor) -> Vec<String> {
         .zip(ids)
         .map(|(t, id)| {
             let p = e.index().para(e.document(), id).expect("a paragraph");
-            let runs: Vec<String> = p
+            let mut runs: Vec<String> = p
                 .inlines
                 .iter()
                 .filter_map(|i| if let Inline::Text(_, r) = i { Some(format!("{}/{:?}/{}/{}", r.size, r.color, r.bold, r.italic)) } else { None })
                 .collect();
+            // Runs formatted alike save as one.
+            runs.dedup();
             format!("{t:.20} {:?} {:?} {:?} {}", p.style.style_id, p.style.space_before, p.style.jc, runs.join(" "))
         })
         .collect()
