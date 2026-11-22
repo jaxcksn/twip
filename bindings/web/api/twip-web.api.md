@@ -1603,6 +1603,11 @@ export class Editor extends HeadlessEditor {
     focus(): void;
     readonly gestures: Gestures;
     static mount(container: HTMLElement, options?: MountOptions): Promise<Editor>;
+    open(bytes: Uint8Array, options?: {
+        signal?: AbortSignal;
+    }): Promise<{
+        warnings: Warning[];
+    }>;
     readonly review: MountedReview;
     readonly ruler: Ruler;
     readonly view: View;

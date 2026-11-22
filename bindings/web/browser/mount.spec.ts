@@ -125,6 +125,18 @@ test('mounting takes no focus, and focus() keeps the selection', async ({ page }
   expect(focused).toBe(true);
 });
 
+test('an open resolves once the new document is drawn', async ({ page }) => {
+  await mount(page);
+  const [before, after] = await page.evaluate(async (docx) => {
+    const editor = (window as any).editor;
+    const before = await editor.view.frameStats();
+    await editor.open(new Uint8Array(docx));
+    return [before, await editor.view.frameStats()];
+  }, hello);
+  expect(after.frames).toBeGreaterThan(before.frames);
+  expect(after.pagesRecorded, 'the new page was recorded and drawn').toBeGreaterThan(before.pagesRecorded);
+});
+
 test('mount, open, type, export and destroy', async ({ page }) => {
   await mount(page);
   const warnings = await page.evaluate((docx) => (window as any).editor.open(new Uint8Array(docx)).then((r: { warnings: unknown[] }) => r.warnings), hello);

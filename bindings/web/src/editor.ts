@@ -549,6 +549,7 @@ export class Editor extends HeadlessEditor {
   /** The pointer gestures. */
   readonly gestures: Gestures;
   readonly #focus: () => void;
+  readonly #drawn: () => Promise<void>;
 
   /** Editors are made by {@link Editor.mount}. */
   protected constructor() {
@@ -558,6 +559,7 @@ export class Editor extends HeadlessEditor {
     this.container = container;
     this.executionMode = mounting!.execution;
     this.#focus = host.focus;
+    this.#drawn = host.ready;
     this.ruler = createRuler(session, rulerView);
     this.review = Object.assign(createReview(session), createMountedReview(session), {
       setMarkupPaneWidth: host.setMarkupPaneWidth,
@@ -579,6 +581,17 @@ export class Editor extends HeadlessEditor {
         return command?.type === 'paste' ? host.paste(command.as ? { as: command.as } : undefined) : invoke(action);
       },
     });
+  }
+
+  /**
+   * Replaces the document, only after it was read successfully. Resolves with the read's warnings once the new
+   * document's first frame is drawn (at once while the editor has no size or the page is hidden): until then the
+   * editor shows the old document, so an application can show a loading indicator for as long as this runs.
+   */
+  override async open(bytes: Uint8Array, options?: { signal?: AbortSignal }): Promise<{ warnings: Warning[] }> {
+    const result = await super.open(bytes, options);
+    await this.#drawn();
+    return result;
   }
 
   /** Mounts an editor in `container`, which must be empty of other editors. Resolves when it accepts commands. */
@@ -605,9 +618,9 @@ export class Editor extends HeadlessEditor {
       const { rulers, rulerUnit } = options;
       if (rulers) await editor.ruler.setVisible(rulers === true ? { horizontal: true, vertical: true } : rulers);
       if (rulerUnit) await editor.ruler.setUnit(rulerUnit);
+      // Opening waits for the document's first frame; with none, the blank page's.
       if (options.document) await editor.open(options.document, { signal: options.signal });
-      abort();
-      await host.ready();
+      else await host.ready();
       abort();
       return editor;
     } catch (e) {
