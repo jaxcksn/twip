@@ -12,7 +12,10 @@ export interface Frames {
   readonly info: FrameInfo;
   /** Draws a frame at the next animation frame. */
   request(): void;
-  /** Resolves once a frame started after this call was drawn; at once while the editor has no size or the page is hidden. */
+  /**
+   * Resolves once a frame started after this call was drawn; at once while the editor has no size or the page is
+   * hidden, and when the editor is destroyed. While the canvas can't draw (its GPU device is being replaced), it waits.
+   */
   drawn(): Promise<void>;
 }
 
@@ -45,15 +48,22 @@ export async function startFrames(s: Session, dom: Dom, ledger: Ledger, report: 
     busy = true;
     started++;
     s.frame(Math.round(width * dpr), Math.round(height * dpr))
-      .then((drawn) => {
-        if (drawn) {
-          info = drawn;
-          onFrame(drawn);
-        }
-      }, report)
+      .then(
+        (drawn) => {
+          // A frame that drew nothing (a lost GPU device being replaced) leaves its waiters for the next.
+          if (drawn) {
+            info = drawn;
+            onFrame(drawn);
+            settle();
+          }
+        },
+        (e: unknown) => {
+          settle();
+          report(e);
+        },
+      )
       .finally(() => {
         busy = false;
-        settle();
         if (again) {
           again = false;
           request();
@@ -94,7 +104,7 @@ export async function startFrames(s: Session, dom: Dom, ledger: Ledger, report: 
     if (message.kind === Kind.RequestFrame) request();
   };
   s.hostListeners.add(onMessage);
-  s.disposers.push(() => s.hostListeners.delete(onMessage));
+  s.disposers.push(() => s.hostListeners.delete(onMessage), () => settle(true));
   resize();
 
   return {

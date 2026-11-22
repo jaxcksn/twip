@@ -452,6 +452,8 @@ impl Editor {
 
     fn relayout(&mut self, hints: impl IntoIterator<Item = Option<Change>>) {
         self.generation += 1;
+        // A transaction that lays nothing out (a font rename's tables) can still change what layout reads.
+        self.layout.document_changed();
         for h in hints {
             self.layout.edit(Revision(self.generation), h);
         }

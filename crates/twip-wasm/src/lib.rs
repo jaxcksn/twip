@@ -43,7 +43,8 @@ mod grow {
                 return Err(());
             }
             let base = (start * PAGE) as *mut u8;
-            let end = base.wrapping_add(pages * PAGE);
+            // Memory grown to the 4 GiB limit ends at the top of the address space.
+            let end = (base as usize).saturating_add(pages * PAGE) as *mut u8;
             if let Some(old) = talc.source.end.take()
                 && old.as_ptr() == base
             {

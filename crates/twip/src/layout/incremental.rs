@@ -542,6 +542,11 @@ impl DocumentLayout {
         }
     }
 
+    /// The document changed: its environment is read again, though nothing needs laying out again.
+    pub fn document_changed(&mut self) {
+        self.env = None;
+    }
+
     fn env(&mut self, doc: &Document) -> Rc<LayoutEnv> {
         self.env.get_or_insert_with(|| Rc::new(LayoutEnv::new(doc))).clone()
     }

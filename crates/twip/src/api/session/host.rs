@@ -474,7 +474,7 @@ impl Presentation {
     }
 
     /// Forgets what the last document's frames cached. An attached host gets the new document's accessibility tree on
-    /// the accessibility timer, after its first frame.
+    /// the accessibility timer, so building it doesn't hold up the open and the first frame.
     pub(super) fn clear(&mut self) {
         self.graphics.clear_images();
         self.graphics.retained.clear();

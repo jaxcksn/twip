@@ -586,11 +586,13 @@ export class Editor extends HeadlessEditor {
   /**
    * Replaces the document, only after it was read successfully. Resolves with the read's warnings once the new
    * document's first frame is drawn (at once while the editor has no size or the page is hidden): until then the
-   * editor shows the old document, so an application can show a loading indicator for as long as this runs.
+   * editor shows the old document, so an application can show a loading indicator for as long as this runs. Rejects
+   * with `destroyed` when the editor is destroyed first.
    */
   override async open(bytes: Uint8Array, options?: { signal?: AbortSignal }): Promise<{ warnings: Warning[] }> {
     const result = await super.open(bytes, options);
     await this.#drawn();
+    if (sessionOf(this).destroyed) throw destroyed();
     return result;
   }
 
