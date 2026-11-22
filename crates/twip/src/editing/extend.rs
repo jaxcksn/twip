@@ -44,17 +44,26 @@ impl Editor {
         let anchor = self.selection.anchor().unwrap_or(focus);
         let mut p = focus;
         for _ in 0..100_000 {
+            if let Some((para, mut u)) = p.para_offset()
+                && let Some(q) = self.index.para(&self.doc, para)
+            {
+                let t = super::text::UnitText::in_view(q, self.doc.review.view);
+                while u < t.len() {
+                    let v = t.next_grapheme(u);
+                    if v <= u {
+                        break;
+                    }
+                    if t.shows(u..v, ch) {
+                        self.selection = Selection::range(anchor, Position::text(p.story, para, v), Granularity::Char);
+                        return Outcome::Moved;
+                    }
+                    u = v;
+                }
+                p = Position::text(p.story, para, t.len());
+            }
             let next = self.nav().right(p, false);
             if next.same_place(&p) {
                 return Outcome::Unchanged("not found");
-            }
-            if let (Some((para, u)), Some((pn, un))) = (p.para_offset(), next.para_offset())
-                && para == pn
-                && let Some(q) = self.index.para(&self.doc, para)
-                && super::text::UnitText::of(q).text.chars().skip(u.0 as usize).take((un.0 - u.0) as usize).any(|c| c == ch)
-            {
-                self.selection = Selection::range(anchor, next, Granularity::Char);
-                return Outcome::Moved;
             }
             p = next;
         }

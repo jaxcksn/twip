@@ -187,8 +187,10 @@ impl Editor {
     }
 
     pub(in crate::editing) fn set_table_style(&mut self, id: StyleId, fonts: &Fonts) -> Outcome {
-        if !self.doc.resolver.as_ref().is_some_and(|r| r.styles.by_id.contains_key(&id.0)) {
-            return Outcome::invalid("no such style");
+        match self.doc.resolver.as_ref().and_then(|r| r.styles.by_id.get(&id.0)) {
+            None => return Outcome::invalid("no such style"),
+            Some(s) if s.kind != crate::docx::styles::StyleKind::Table => return Outcome::invalid("not a table style"),
+            Some(_) => {}
         }
         self.table_format(&TableFormat::TableStyle(id.0), fonts)
     }

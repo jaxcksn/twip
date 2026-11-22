@@ -329,3 +329,26 @@ fn a_self_closing_numbering_root_opens_for_a_new_list() {
     let again = crate::editing::Editor::open(&saved, super::fonts()).expect("reads again");
     assert_eq!(labels(&again)[0].1, "\u{F0B7}");
 }
+
+#[test]
+fn a_new_list_type_keeps_each_paragraphs_level() {
+    use crate::editing::position::{Position, StoryId};
+    let mut e = open("FX-LISTS.docx");
+    e.complete(super::fonts());
+    let ids = super::texts_ids(&e);
+    let num = |e: &crate::editing::Editor, id| e.index().para(e.document(), id).expect("a paragraph").style.num;
+    let items: Vec<_> = ids.iter().copied().filter(|&i| num(&e, i).is_some_and(|n| n.0 == 1)).collect();
+    let before: Vec<i64> = items.iter().map(|&i| num(&e, i).expect("in a list").1).collect();
+    assert!(before.iter().any(|&l| l > 0));
+    let (a, b) = (items[0], *items.last().expect("items"));
+    let end = e.index().para(e.document(), b).map(|p| crate::editing::text::UnitText::of(p).len()).expect("the last item");
+    e.set_caret_for_benchmark(crate::editing::selection::Selection::Text {
+        anchor: Position::text(StoryId::Body, a, crate::layout::Unit(0)),
+        focus: Position::text(StoryId::Body, b, end),
+        unit: crate::editing::selection::Granularity::Char,
+    });
+    e.execute(crate::editing::commands::Command::SetList(Some(crate::api::command::ListKind::Bullet)), super::fonts());
+    let after: Vec<i64> = items.iter().map(|&i| num(&e, i).map_or(-1, |n| n.1)).collect();
+    assert_eq!(after, before);
+    assert!(items.iter().all(|&i| e.para_list(i) == Some(true)), "bullets now");
+}

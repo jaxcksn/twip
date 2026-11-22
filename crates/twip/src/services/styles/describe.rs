@@ -56,13 +56,10 @@ fn colour(rgb: u32, theme: Option<&str>) -> String {
     if named.is_empty() { format!("Custom Color(RGB({},{},{}))", rgb >> 16, (rgb >> 8) & 0xFF, rgb & 0xFF) } else { named.to_string() }
 }
 
-/// The `w:themeColor` of `raw`'s `w:rPr` `w:color`, if any.
-fn theme_colour(raw: &str) -> Option<String> {
-    let rpr = raw.split("rPr>").nth(1)?;
-    let at = rpr.find("color ")?;
-    let tail = &rpr[at..];
-    let attr = tail.split("themeColor=\"").nth(1)?;
-    Some(attr.split('"').next()?.to_string())
+/// The `w:themeColor` of the style's own `w:rPr` `w:color`, if any.
+fn theme_colour(style: &Style, styles: &Styles) -> Option<String> {
+    use crate::docx::xml::{attr, child};
+    styles.cx().parse(&style.raw, |_, el| Some(attr(child(child(el, "rPr")?, "color")?, "themeColor")?.to_string())).flatten()
 }
 
 fn font_name(f: &FontRef) -> String {
@@ -101,7 +98,7 @@ fn tab(t: &Tab) -> String {
 }
 
 /// The character formatting items: the font group, then the effects.
-fn character(r: &RunProps, raw: &str, default_font: Option<&str>, out: &mut Vec<String>) {
+fn character(r: &RunProps, theme: Option<&str>, default_font: Option<&str>, out: &mut Vec<String>) {
     let mut font: Vec<String> = Vec::new();
     match (&r.ascii, default_font) {
         (Some(f), _) => font.push(font_name(f)),
@@ -127,7 +124,7 @@ fn character(r: &RunProps, raw: &str, default_font: Option<&str>, out: &mut Vec<
     }
     out.extend(font);
     if let Some(Some(c)) = r.color {
-        out.push(format!("Font color: {}", colour(c, theme_colour(raw).as_deref())));
+        out.push(format!("Font color: {}", colour(c, theme)));
     }
     if let Some(u) = r.underline.as_deref().filter(|u| *u != "none") {
         out.push(if u == "single" { "Underline".into() } else { format!("Underline: {u}") });
@@ -276,7 +273,7 @@ pub fn describe(style: &Style, styles: &Styles) -> String {
     if root {
         rpr.size = rpr.size.filter(|s| Some(*s) != styles.doc_rpr.size);
     }
-    character(&rpr, &style.raw, default_font.as_deref(), &mut items);
+    character(&rpr, theme_colour(style, styles).as_deref(), default_font.as_deref(), &mut items);
     if style.kind != StyleKind::Character {
         let mut ppr = own_ppr(style, styles);
         if root {
@@ -372,6 +369,13 @@ mod tests {
         assert_eq!(d("MemoBody"), "\r    Line spacing:  1.5 lines\r    Based on: Normal");
         assert_eq!(d("Locked"), "All caps, Style: Locked\r    Based on: Normal");
         assert_eq!(d("Draft"), "Font color: Custom Color(RGB(127,127,127)), Style: Hide until used, Priority: 51\r    Based on: Normal");
+        let mut draft = s.get("Draft").expect("Draft").clone();
+        draft.raw = r#"<w:style w:type="paragraph" w:styleId="Draft"><w:name w:val="Draft"/><w:pPr><w:rPr><w:color w:val="000000" w:themeColor="accent1"/></w:rPr></w:pPr><w:rPr><w:color w:val="7F7F7F"/><w:u w:val="single" w:color="C00000" w:themeColor="accent2"/></w:rPr></w:style>"#.into();
+        assert!(
+            describe(&draft, &s).starts_with("Font color: Custom Color(RGB(127,127,127))"),
+            "the colour's own theme alone: {}",
+            describe(&draft, &s)
+        );
         assert_eq!(
             d("Normal"),
             "Font: (Default) Calibri, Left\r    Line spacing:  Multiple 1.08 li, Space\r    After:  8 pt, Widow/Orphan control, Style: Show in the Styles gallery"

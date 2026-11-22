@@ -41,10 +41,21 @@ impl Editor {
         relative: [Option<crate::api::value::NoneOr<crate::api::command::RelativeSize>>; 2],
         fonts: &Fonts,
     ) -> Outcome {
+        use crate::api::command::RelativeSizeReference as R;
         use crate::api::value::NoneOr;
         let Selection::Object(crate::editing::selection::ObjectRef::Floating(f)) = self.selection else {
             return Outcome::unavailable("a relative size is for floating objects");
         };
+        // Each axis's own boxes (ST_SizeRelFromH, ST_SizeRelFromV).
+        match relative {
+            [Some(NoneOr::Value(r)), _] if matches!(r.relative_to, R::TopMargin | R::BottomMargin) => {
+                return Outcome::invalid("a width is relative to a horizontal box");
+            }
+            [_, Some(NoneOr::Value(r))] if matches!(r.relative_to, R::LeftMargin | R::RightMargin) => {
+                return Outcome::invalid("a height is relative to a vertical box");
+            }
+            _ => {}
+        }
         let Some(mut n) = self.float_of(f).cloned() else { return Outcome::Unchanged("no float") };
         (n.w, n.h) = ((w.max(1.0) * 20.0).round() / 20.0, (h.max(1.0) * 20.0).round() / 20.0);
         for (k, r) in relative.into_iter().enumerate() {

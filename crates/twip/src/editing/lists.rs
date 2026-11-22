@@ -185,6 +185,8 @@ impl Editor {
         };
         let list_style = res.styles.by_id.contains_key("ListParagraph");
         for &para in &paras {
+            // A paragraph in a list keeps its level.
+            let ilvl = kind(self, para).map_or(ilvl, |(_, (_, own))| own.clamp(0, 8));
             let ok = self.repara(&mut tx, para, &|p, w| {
                 p.set("numPr", format!("<{w}numPr><{w}ilvl {w}val=\"{ilvl}\"/><{w}numId {w}val=\"{num}\"/></{w}numPr>"));
                 p.remove("ind");

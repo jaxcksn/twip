@@ -376,6 +376,8 @@ public sealed class EditorElements
     /// <param name="depth">How deep to go.</param>
     /// <param name="ct">Cancels the request.</param>
     /// <returns>The blocks.</returns>
+    /// <exception cref="EditorException"><paramref name="root"/> is not an element id (<see cref="EditorErrorCode.InvalidArgument"/>), or
+    /// the document has no such element (<see cref="EditorErrorCode.Unavailable"/>).</exception>
     public Task<IReadOnlyList<Block>> GetStructureAsync(ElementId? root = null, int? depth = null, CancellationToken ct = default) =>
         _session.CallAsync<IReadOnlyList<Block>>(Method.Structure, WireJson.ToUtf8(new StructureRequest(root, depth)), ct);
 

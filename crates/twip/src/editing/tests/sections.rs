@@ -261,3 +261,109 @@ fn linking_a_section_to_the_previous_keeps_a_header_part_another_section_shares(
     let again = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
     assert!(again.document().sections[2].headers[0].is_some() && again.document().sections[1].headers[0].is_none());
 }
+
+mod page_setup {
+    use super::super::super::Editor;
+    use super::super::super::commands::{Command, Outcome};
+    use super::super::{blank_body, blank_with, fonts, open, para_id};
+    use crate::api::command::{ColumnWidth, Columns, Margins, PaperSize, SectionBreakKind};
+    use crate::api::value::{Orientation, Points};
+    use crate::layout::Unit;
+
+    fn blank() -> Editor {
+        Editor::open(&blank_with("x"), fonts()).expect("opens")
+    }
+
+    fn run(e: &mut Editor, c: Command) -> Outcome {
+        e.execute(c, fonts())
+    }
+
+    fn changed(o: &Outcome) -> bool {
+        matches!(o, Outcome::Changed(_))
+    }
+
+    fn margins(e: &Editor, i: usize) -> (f64, f64, f64, f64) {
+        let s = &e.document().sections[i];
+        (s.top, s.right, s.bottom, s.left)
+    }
+
+    fn uneven() -> Margins {
+        Margins { top: Some(Points(90.0)), bottom: Some(Points(54.0)), left: Some(Points(72.0)), right: Some(Points(36.0)), ..Default::default() }
+    }
+
+    #[test]
+    fn turning_to_landscape_and_back_restores_the_margins() {
+        let mut e = blank();
+        assert!(changed(&run(&mut e, Command::SetMargins(uneven()))));
+        let before = margins(&e, 0);
+        run(&mut e, Command::SetOrientation(Orientation::Landscape));
+        assert_eq!(margins(&e, 0), (72.0, 90.0, 36.0, 54.0), "the margins turn with the page");
+        run(&mut e, Command::SetOrientation(Orientation::Portrait));
+        assert_eq!(margins(&e, 0), before);
+    }
+
+    #[test]
+    fn orientation_leaves_a_square_page_alone() {
+        let mut e = blank();
+        run(&mut e, Command::SetPaperSize(PaperSize { width: Points(600.0), height: Points(600.0) }));
+        run(&mut e, Command::SetMargins(uneven()));
+        for o in [Orientation::Landscape, Orientation::Landscape, Orientation::Portrait] {
+            let out = run(&mut e, Command::SetOrientation(o));
+            assert!(!changed(&out), "{o:?}: {out:?}");
+        }
+    }
+
+    #[test]
+    fn page_setup_covers_every_selected_section() {
+        let mut e = open("FX-SECTIONS.docx");
+        e.complete(fonts());
+        let n = e.document().sections.len();
+        assert!(n >= 3);
+        run(&mut e, Command::SelectAll);
+        assert!(changed(&run(&mut e, Command::SetMargins(Margins { left: Some(Points(100.0)), ..Default::default() }))));
+        let lefts: Vec<f64> = (0..n).map(|i| margins(&e, i).3).collect();
+        assert!(lefts.iter().all(|&l| l == 100.0), "{lefts:?}");
+        run(&mut e, Command::SetOrientation(Orientation::Landscape));
+        assert!(e.document().sections.iter().all(|s| s.page_w > s.page_h), "every section turns");
+        run(&mut e, Command::Undo);
+        assert!(e.document().sections.iter().all(|s| s.page_w < s.page_h), "in one undo step");
+    }
+
+    #[test]
+    fn columns_take_one_width_each() {
+        let mut e = blank();
+        let w = |width| ColumnWidth { width: Points(width), spacing: Points(10.0) };
+        let cols = |count, widths| Command::SetColumns(Columns { count, spacing: None, separator: None, widths: Some(widths) });
+        assert!(!changed(&run(&mut e, cols(3, vec![w(100.0), w(100.0)]))), "three columns, two widths");
+        assert!(!changed(&run(&mut e, cols(2, vec![w(-5.0), w(100.0)]))), "a negative width");
+        assert!(!changed(&run(&mut e, cols(2, vec![w(400.0), w(400.0)]))), "wider than the text");
+        assert!(changed(&run(&mut e, cols(2, vec![w(200.0), w(200.0)]))));
+        let c = &e.document().sections[0].columns;
+        assert_eq!((c.num, c.cols.len(), c.equal), (2, 2, false));
+    }
+
+    #[test]
+    fn margins_must_fit_the_page() {
+        let mut e = blank();
+        let tall = Margins { top: Some(Points(700.0)), bottom: Some(Points(700.0)), ..Default::default() };
+        assert!(!changed(&run(&mut e, Command::SetMargins(tall))), "taller than the page");
+        run(&mut e, Command::SetMargins(Margins { left: Some(Points(72.0)), right: Some(Points(72.0)), ..Default::default() }));
+        let out = run(&mut e, Command::SetPaperSize(PaperSize { width: Points(140.0), height: Points(792.0) }));
+        assert!(!changed(&out), "a page narrower than its margins: {out:?}");
+        let s = &e.document().sections[0];
+        assert!(s.page_w - s.left - s.right - s.gutter > 0.0, "{} wide, margins {} {}", s.page_w, s.left, s.right);
+    }
+
+    #[test]
+    fn a_section_break_leaves_the_page_number_restart_in_the_first_half() {
+        let xml = r#"<w:p><w:r><w:t>A1</w:t></w:r></w:p><w:p><w:pPr><w:sectPr><w:pgNumType w:start="5"/></w:sectPr></w:pPr><w:r><w:t>A2 text</w:t></w:r></w:p><w:p><w:r><w:t>B1</w:t></w:r></w:p>"#;
+        let mut e = Editor::open(&blank_body(xml), fonts()).expect("opens");
+        assert_eq!(e.document().sections[0].pg_start, Some(5));
+        let p = para_id(&e, 1);
+        e.select_range(p, Unit(2), Unit(2), fonts());
+        let out = run(&mut e, Command::InsertSectionBreak(SectionBreakKind::NextPage));
+        assert!(changed(&out), "{out:?}");
+        let s = &e.document().sections;
+        assert_eq!((s[0].pg_start, s[1].pg_start), (Some(5), None));
+    }
+}

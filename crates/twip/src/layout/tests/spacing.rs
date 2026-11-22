@@ -265,3 +265,29 @@ fn line_14_the_extra_height_is_whole_font_units() {
     let Some(f) = fonts.face("MS Mincho", None, false, false) else { return };
     assert_eq!((f.ascent, f.descent, f.leading), (258.0, 74.0, 0.0));
 }
+
+#[test]
+fn a_heavy_leader_is_a_solid_line_not_underscores() {
+    use crate::docx::props::{Leader, Tab, TabKind};
+    use crate::layout::fragment::Item;
+    let page = |leader: Leader| {
+        let mut doc = plain_doc(&["A".to_string()])?;
+        let p = para_mut(&mut doc, 0);
+        Rc::make_mut(&mut p.style).tabs = vec![Tab { pos: 300.0, kind: TabKind::Right, leader }];
+        let Inline::Text(_, run) = p.inlines[0].clone() else { unreachable!() };
+        p.inlines.extend([Inline::Tab(run.clone()), Inline::Text("B".into(), run)]);
+        let snap = layout_doc(&doc, &fonts());
+        let items: Vec<(usize, f64)> = crate::layout::traverse::paint_items(&snap.pages()[0])
+            .into_iter()
+            .filter_map(|i| match i {
+                Item::Glyphs(r) => Some((r.chars.iter().filter(|c| c.0 == '_').count(), 0.0)),
+                Item::Rect { rect, .. } => Some((0, rect[2] - rect[0])),
+                _ => None,
+            })
+            .collect();
+        Some((items.iter().map(|i| i.0).sum::<usize>(), items.iter().map(|i| i.1).fold(0.0, f64::max)))
+    };
+    let (Some(thin), Some(heavy)) = (page(Leader::Underscore), page(Leader::Heavy)) else { return };
+    assert!(thin.0 > 10 && thin.1 < 100.0, "underscores: {thin:?}");
+    assert!(heavy.0 == 0 && heavy.1 > 200.0, "one solid line: {heavy:?}");
+}

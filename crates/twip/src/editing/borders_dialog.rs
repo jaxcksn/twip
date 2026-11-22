@@ -56,9 +56,20 @@ impl Editor {
             let g = super::table::Grid::of(t);
             let r = tg.rows.0.min(t.rows.len().checked_sub(1)?);
             let k = g.rows.get(r)?.iter().position(|&(c, s, _)| tg.cols.0 >= c && tg.cols.0 < c + s.max(1))?;
+            // A vertically merged cell: its first row's cell, its bottom edge the last row's.
+            let (r, k) = g.merge_start(r, k);
             let cell = t.rows[r].cells.get(k)?;
             let (c, s, _) = g.rows[r][k];
-            let (last_row, last_col) = (r + 1 == t.rows.len(), c + s.max(1) >= g.cols);
+            let mut end = r;
+            while let Some(n) = g.cell_at(end + 1, c)
+                && g.continues(end + 1, n)
+            {
+                end += 1;
+            }
+            let last = g.cell_at(end, c).and_then(|n| t.rows[end].cells.get(n)).unwrap_or(cell);
+            let (last_row, last_col) = (end + 1 == t.rows.len(), c + s.max(1) >= g.cols);
+            // Each row's own exceptions, else the table's, as layout draws them.
+            let (tb, below) = (crate::layout::table::row_borders(t, r), crate::layout::table::row_borders(t, end));
             let own = |o: &Option<crate::docx::props::Border>, table: &Option<crate::docx::props::Border>| o.clone().or_else(|| table.clone());
             let shd = self.cell_shd(t, (r, k), cell);
             let [down, up] = cell.diagonals.as_deref().cloned().unwrap_or_default();
@@ -66,7 +77,7 @@ impl Editor {
             let edges = [
                 own(&cell.top, &tb[if r == 0 { 0 } else { 4 }]),
                 own(&cell.left, &tb[if c == 0 { 1 } else { 5 }]),
-                own(&cell.bottom, &tb[if last_row { 2 } else { 4 }]),
+                own(&last.bottom, &below[if last_row { 2 } else { 4 }]),
                 own(&cell.right, &tb[if last_col { 3 } else { 5 }]),
                 tb[4].clone(),
                 tb[5].clone(),

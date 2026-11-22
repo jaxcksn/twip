@@ -17,24 +17,34 @@ pub struct UnitText {
 
 impl UnitText {
     pub fn of(p: &Paragraph) -> UnitText {
-        UnitText::masked(p, |_| false)
+        UnitText::build(p, |_| false, false)
     }
 
     pub fn of_view(p: &Paragraph, view: MarkupView) -> UnitText {
         UnitText::masked(p, |rev| view.hides(rev))
     }
 
+    /// The units as `view` shows them: the revisions it hides are hidden units that keep their characters.
+    pub fn in_view(p: &Paragraph, view: MarkupView) -> UnitText {
+        UnitText::build(p, |rev| view.hides(rev), false)
+    }
+
     pub fn masked(p: &Paragraph, mask: impl Fn(&RunRevisions) -> bool) -> UnitText {
+        UnitText::build(p, mask, true)
+    }
+
+    fn build(p: &Paragraph, mask: impl Fn(&RunRevisions) -> bool, blank: bool) -> UnitText {
         let mut text = String::new();
         let mut bytes = Vec::new();
         let mut hidden = Vec::new();
         for i in &p.inlines {
             let masked = i.run().is_some_and(|r| mask(&r.rev));
             let h = masked || i.run().is_some_and(|r| r.hidden);
+            let blank = masked && blank;
             let mut push = |c: char, text: &mut String| {
                 bytes.push(text.len());
                 hidden.push(h);
-                text.push(if masked { ' ' } else { c });
+                text.push(if blank { ' ' } else { c });
             };
             match i {
                 Inline::Text(s, _) => s.chars().for_each(|c| push(c, &mut text)),
@@ -71,6 +81,11 @@ impl UnitText {
     fn atom_at(&self, u: Unit) -> Option<(Unit, Unit)> {
         let k = self.atoms.partition_point(|a| a.1 <= u);
         self.atoms.get(k).copied().filter(|a| a.0 < u && u < a.1)
+    }
+
+    /// Whether `ch` shows at a unit of `range`.
+    pub fn shows(&self, range: std::ops::Range<Unit>, ch: char) -> bool {
+        (range.start.0..range.end.0).any(|u| !self.is_hidden(Unit(u)) && self.char_at(Unit(u)) == Some(ch))
     }
 
     pub fn is_hidden(&self, u: Unit) -> bool {
@@ -170,6 +185,11 @@ impl UnitText {
                 }
             }
             out.push((self.unit_at_byte(b + start), self.unit_at_byte(b + w.len()), class(&w[start..])));
+        }
+        for w in &mut out {
+            if w.0 < w.1 && (w.0.0..w.1.0).all(|u| self.is_hidden(Unit(u))) {
+                w.2 = Class::Space;
+            }
         }
         for &(a, b) in &self.atoms {
             out.retain(|w| !(a <= w.0 && w.1 <= b));

@@ -99,6 +99,13 @@ impl Outcome {
     }
 }
 
+/// Whether Repeat runs `c` again: an edit of the document, undo, redo and protection (its password) aside.
+fn repeats(c: &Command) -> bool {
+    use crate::api::catalog::{CommandGroup, UndoGrouping, info};
+    !matches!(c, Command::SetDocumentProtection(_))
+        && info(c.id()).is_some_and(|i| i.mutates && i.undo != UndoGrouping::View && i.group != CommandGroup::History)
+}
+
 impl Editor {
     pub fn execute(&mut self, cmd: Command, fonts: &Fonts) -> Outcome {
         self.made = None;
@@ -149,9 +156,7 @@ impl Editor {
                 (Some(Command::InsertText(prev)), true) => Some(Command::InsertText(format!("{prev}{t}"))),
                 _ => Some(cmd.clone()),
             },
-            Command::InsertParagraph | Command::InsertLineBreak | Command::InsertPageBreak | Command::InsertColumnBreak | Command::InsertTab => {
-                Some(cmd.clone())
-            }
+            c if repeats(c) => Some(c.clone()),
             _ => None,
         };
         if self.modes.extend > 0

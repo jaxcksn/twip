@@ -28,7 +28,10 @@ export interface Elements {
   }): Promise<ElementInfo[]>;
   /** One element in detail. */
   get(id: ElementId): Promise<ElementDetail>;
-  /** The body (or an element) as blocks. */
+  /**
+   * The body (or an element) as blocks. Rejects with `invalid-argument` for a root that is not an element id and
+   * `unavailable` for one the document doesn't have.
+   */
   structure(options?: { root?: ElementId; depth?: number }): Promise<Block[]>;
   /** Selects an element; enters a header or footer when needed. */
   select(id: ElementId, options?: { reveal?: boolean }): Promise<void>;

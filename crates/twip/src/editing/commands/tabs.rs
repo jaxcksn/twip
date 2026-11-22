@@ -38,6 +38,7 @@ pub(in crate::editing) fn info(t: &Tab, inherited: bool) -> TabStopInfo {
         Leader::Dot => TabLeader::Dots,
         Leader::Hyphen => TabLeader::Dashes,
         Leader::Underscore => TabLeader::Underline,
+        Leader::Heavy => TabLeader::Heavy,
         Leader::MiddleDot => TabLeader::MiddleDot,
     };
     TabStopInfo { position: Points(t.pos), alignment, leader, inherited }
@@ -55,7 +56,8 @@ fn tab(a: &AddTabStop) -> Tab {
         TabLeader::None => Leader::None,
         TabLeader::Dots => Leader::Dot,
         TabLeader::Dashes => Leader::Hyphen,
-        TabLeader::Underline | TabLeader::Heavy => Leader::Underscore,
+        TabLeader::Underline => Leader::Underscore,
+        TabLeader::Heavy => Leader::Heavy,
         TabLeader::MiddleDot => Leader::MiddleDot,
     };
     Tab { pos: twips(a.position.0), kind, leader }
@@ -79,6 +81,7 @@ fn own_xml(own: &[Tab], w: &str) -> String {
                 Leader::Dot => "dot",
                 Leader::Hyphen => "hyphen",
                 Leader::Underscore => "underscore",
+                Leader::Heavy => "heavy",
                 Leader::MiddleDot => "middleDot",
             };
             let leader = if leader.is_empty() { String::new() } else { format!(" {w}leader=\"{leader}\"") };

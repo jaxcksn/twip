@@ -111,3 +111,53 @@ fn table_structure_and_resize_commits_are_within_budget() {
     }
     assert!(p95(resizes.clone()) <= 50.0, "column resize commit p95 {:.3} ms", p95(resizes));
 }
+
+/// The fastest of three enumerations of the elements of `xml`'s document.
+fn enumeration_time(xml: &str) -> f64 {
+    let e = Editor::open(&super::blank_body(xml), super::fonts()).expect("opens");
+    (0..3)
+        .map(|_| {
+            let t = Instant::now();
+            crate::editing::elements::enumerate(e.document(), e.index(), &crate::editing::elements::Filter::default());
+            t.elapsed().as_secs_f64()
+        })
+        .fold(f64::MAX, f64::min)
+}
+
+#[test]
+fn inline_controls_enumerate_in_linear_time() {
+    let para = |n: usize| {
+        format!("<w:p>{}</w:p>", "<w:sdt><w:sdtPr><w:text/></w:sdtPr><w:sdtContent><w:r><w:t>x</w:t></w:r></w:sdtContent></w:sdt>".repeat(n))
+    };
+    let (a, b) = (enumeration_time(&para(1000)), enumeration_time(&para(4000)));
+    assert!(b < a * 8.0 + 0.1, "4x the controls took {:.2}x as long ({a:.4}s -> {b:.4}s)", b / a);
+}
+
+#[test]
+fn a_block_control_of_empty_paragraphs_enumerates_in_linear_time() {
+    let body = |n: usize| format!("<w:sdt><w:sdtPr><w:richText/></w:sdtPr><w:sdtContent>{}</w:sdtContent></w:sdt>", "<w:p/>".repeat(n));
+    let (a, b) = (enumeration_time(&body(10000)), enumeration_time(&body(40000)));
+    assert!(b < a * 8.0 + 0.1, "4x the paragraphs took {:.2}x as long ({a:.4}s -> {b:.4}s)", b / a);
+}
+
+#[test]
+fn a_paragraphs_elements_track_in_linear_time() {
+    let time = |n: usize| {
+        let body = format!(
+            "<w:p>{}{}</w:p>",
+            "<w:fldSimple w:instr=\" PAGEREF x \"><w:r><w:t xml:space=\"preserve\">5 </w:t></w:r></w:fldSimple>".repeat(n),
+            "<w:sdt><w:sdtPr><w:text/></w:sdtPr><w:sdtContent><w:r><w:t xml:space=\"preserve\">x </w:t></w:r></w:sdtContent></w:sdt>".repeat(n)
+        );
+        let e = Editor::open(&super::blank_body(&body), super::fonts()).expect("opens");
+        let para = super::para_id(&e, 0);
+        (0..3)
+            .map(|_| {
+                let t = Instant::now();
+                assert_eq!(crate::editing::elements::in_para(e.document(), e.index(), para).len(), 2 * n);
+                t.elapsed().as_secs_f64()
+            })
+            .fold(f64::MAX, f64::min)
+    };
+    let (a, b) = (time(500), time(2000));
+    assert!(b < a * 8.0 + 0.1, "4x the fields and controls took {:.2}x as long ({a:.4}s -> {b:.4}s)", b / a);
+}

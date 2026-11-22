@@ -808,8 +808,8 @@ impl Editor {
             }
             Format::ParaStyle(id) => {
                 let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
-                if !res.styles.by_id.contains_key(id) {
-                    return Outcome::Unchanged("no such style");
+                if !res.styles.by_id.get(id).is_some_and(|s| s.kind == crate::docx::styles::StyleKind::Paragraph) {
+                    return Outcome::Unchanged("no such paragraph style");
                 }
                 let v = crate::docx::write::props::esc(id);
                 self.format_paras_direct("Style", &|p, cx, _| p.set("pStyle", format!("<{w}pStyle {w}val=\"{v}\"/>", w = cx.w)), fonts)

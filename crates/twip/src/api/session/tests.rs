@@ -3734,3 +3734,76 @@ fn page_down_moves_one_screen_of_the_viewport() {
     // 600 CSS px at 200% is 225 pt.
     assert!((200.0..250.0).contains(&moved), "PageDown moved {moved} pt");
 }
+
+fn first_para(s: &crate::api::session::Session) -> crate::docx::Paragraph {
+    s.editor.document().sections[0]
+        .blocks
+        .iter()
+        .find_map(|b| if let crate::docx::Block::Para(p) = b { Some(p.clone()) } else { None })
+        .expect("a paragraph")
+}
+
+fn bold_flags(p: &crate::docx::Paragraph) -> Vec<(char, bool)> {
+    p.inlines
+        .iter()
+        .filter_map(|i| if let crate::docx::Inline::Text(t, r) = i { Some((t, r.bold)) } else { None })
+        .flat_map(|(t, b)| t.chars().map(move |c| (c, b)))
+        .collect()
+}
+
+/// A session on `body`, its caret at `caret` in the first paragraph.
+fn session_on(engine: &mut Engine, body: &str, caret: u32) -> crate::api::engine::SessionId {
+    use crate::editing::position::{Position, StoryId};
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    s.open(&crate::editing::tests::blank_body(body)).expect("opens");
+    let para = crate::editing::tests::texts_ids(&s.editor)[0];
+    s.editor.set_caret_for_benchmark(crate::editing::selection::Selection::Caret(Position::text(StoryId::Body, para, crate::layout::Unit(caret))));
+    id
+}
+
+#[test]
+fn a_tracked_correction_leaves_the_caret_after_what_was_typed() {
+    let mut engine = Engine::new(FontLibrary::system_recommended());
+    let id = session_on(&mut engine, "<w:p><w:r><w:t>teh</w:t></w:r></w:p>", 3);
+    let s = engine.session(id).expect("a session");
+    s.run(Command::SetTrackChanges(true)).expect("tracks");
+    typed(s, " ");
+    let c = s.editor.correction().expect("a correction").clone();
+    assert_eq!((c.range.start.0, c.range.end.0), (3, 6), "the correction covers the inserted word");
+    typed(s, "x");
+    let text = crate::editing::text::UnitText::of_view(&first_para(s), crate::docx::review::MarkupView::NoMarkup).text;
+    assert_eq!(text.replace(' ', "").len(), 4, "{text:?}");
+    assert!(text.ends_with("The x"), "the next character goes after the space: {text:?}");
+}
+
+#[test]
+fn a_correction_keeps_the_formatting_of_what_it_leaves() {
+    let mut engine = Engine::new(FontLibrary::system_recommended());
+    let id = session_on(&mut engine, r#"<w:p><w:r><w:t>he</w:t></w:r><w:r><w:rPr><w:b/></w:rPr><w:t>llo</w:t></w:r></w:p>"#, 5);
+    let s = engine.session(id).expect("a session");
+    typed(s, " ");
+    let flags = bold_flags(&first_para(s));
+    assert_eq!(flags[..5].iter().map(|f| f.0).collect::<String>(), "Hello");
+    assert_eq!(flags[..5].iter().map(|f| f.1).collect::<Vec<_>>(), [false, false, true, true, true], "{flags:?}");
+    // Formatting about to be typed isn't the corrected word's.
+    let id = session_on(&mut engine, "<w:p/>", 0);
+    let s = engine.session(id).expect("a session");
+    typed(s, "teh");
+    s.run(Command::SetBold(true)).expect("bold");
+    typed(s, " ");
+    let flags = bold_flags(&first_para(s));
+    assert_eq!(flags[..3].iter().map(|f| f.0).collect::<String>(), "The");
+    assert!(flags[..3].iter().all(|f| !f.1), "the corrected word stays plain: {flags:?}");
+}
+
+#[test]
+fn symbols_ending_in_a_bracket_or_equals_replace_as_typed() {
+    let mut engine = Engine::new(FontLibrary::system_recommended());
+    for (text, want) in [(":(", "\u{2639}"), (":-(", "\u{2639}"), ("<==", "\u{21d0}"), ("<--> ", "\u{2194} ")] {
+        let id = engine.create_session(SessionOptions::default());
+        let s = engine.session(id).expect("a session");
+        typed(s, text);
+        assert_eq!(paragraphs(s)[0], want, "typing {text}");
+    }
+}

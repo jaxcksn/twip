@@ -743,3 +743,31 @@ fn a_quarter_turned_shape_resizes_along_its_own_length() {
     assert!(((x1 - x0) - 230.0).abs() < 0.1 && ((y1 - y0) - 20.0).abs() < 0.1, "{o:?}");
     assert!(((y0 + y1) / 2.0 - (x1 - x0) / 2.0 - (cy - 100.0)).abs() < 0.2, "the top stays: {o:?}");
 }
+
+#[test]
+fn a_relative_size_from_the_other_axis_is_refused() {
+    use super::super::commands::{Command, Outcome};
+    use super::super::position::{Position, StoryId};
+    use crate::api::command::{ObjectSize, RelativeSize, RelativeSizeReference};
+    use crate::api::value::{NoneOr, ObjectWrap};
+    let data = super::open("FX-OBJ.docx").document().images.last().cloned().expect("an image");
+    let mut e = Editor::open(&super::blank_body(r#"<w:p><w:r><w:t>text</w:t></w:r></w:p>"#), fonts()).expect("opens");
+    let p = super::para_id(&e, 0);
+    e.set_caret_for_benchmark(Selection::Caret(Position::text(StoryId::Body, p, crate::layout::Unit(0))));
+    e.execute(Command::InsertPicture(crate::api::command::Picture { data: crate::api::value::Bytes(data), alt_text: None }), fonts());
+    e.execute(Command::SetObjectWrap(ObjectWrap::Square), fonts());
+    assert!(matches!(e.selection(), Selection::Object(ObjectRef::Floating(_))), "{:?}", e.selection());
+    let rel = |to| Some(NoneOr::Value(RelativeSize { percent: 50.0, relative_to: to }));
+    let refused = |o: &Outcome| matches!(o, Outcome::Unchanged(_) | Outcome::Refused(_));
+    let mut size = |s: ObjectSize| e.execute(Command::SetObjectSize(s), fonts());
+    let a = size(ObjectSize { relative_width: rel(RelativeSizeReference::TopMargin), ..Default::default() });
+    assert!(refused(&a), "a width relative to the top margin: {a:?}");
+    let b = size(ObjectSize { relative_height: rel(RelativeSizeReference::LeftMargin), ..Default::default() });
+    assert!(refused(&b), "a height relative to the left margin: {b:?}");
+    let c = size(ObjectSize {
+        relative_width: rel(RelativeSizeReference::LeftMargin),
+        relative_height: rel(RelativeSizeReference::TopMargin),
+        ..Default::default()
+    });
+    assert!(matches!(c, Outcome::Changed(_)), "{c:?}");
+}
