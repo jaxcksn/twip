@@ -8067,3 +8067,14 @@ static Twip.EditorOperation.SetPageColor(Twip.FillValue! fill) -> Twip.EditorOpe
 static Twip.EditorOperation.RemoveWatermark() -> Twip.EditorOperation!
 Twip.GradientColors
 abstract Twip.Watermark.<Clone>$() -> Twip.Watermark!
+Twip.CommandId.ConvertTableToText = 261 -> Twip.CommandId
+Twip.CommandId.ConvertTextToTable = 260 -> Twip.CommandId
+Twip.EditorCommands.ConvertTableToTextAsync(Twip.TextSeparator separator, string? character = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.EditorCommands.ConvertTextToTableAsync(Twip.TextSeparator separator, string? character = null, int? columns = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Twip.TextSeparator
+Twip.TextSeparator.Commas = 2 -> Twip.TextSeparator
+Twip.TextSeparator.Other = 3 -> Twip.TextSeparator
+Twip.TextSeparator.Paragraphs = 0 -> Twip.TextSeparator
+Twip.TextSeparator.Tabs = 1 -> Twip.TextSeparator
+static Twip.EditorOperation.ConvertTableToText(Twip.TextSeparator separator, string? character = null) -> Twip.EditorOperation!
+static Twip.EditorOperation.ConvertTextToTable(Twip.TextSeparator separator, string? character = null, int? columns = null) -> Twip.EditorOperation!

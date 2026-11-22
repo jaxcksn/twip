@@ -213,6 +213,7 @@ pub struct TableProps {
     pub ind: f64,
     pub ind_pct: Option<f64>,
     pub borders: [Option<crate::docx::props::Border>; 6],
+    /// Fixed column widths (`w:tblLayout` fixed), not fitted to the content.
     pub fixed: bool,
     pub bands: (i64, i64),
     pub floating: Option<crate::docx::props::TablePos>,

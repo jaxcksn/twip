@@ -6,10 +6,10 @@ use std::ops::Range;
 use std::rc::Rc;
 
 use crate::docx::review::{
-    AuthorId, FormatChange, GridChange, IdCounter, MarkKind, ParaChange, PreviousProps, RevisionId, RevisionMark, RunRevisions, SectionChange,
-    TableChange, Timestamp,
+    AuthorId, CellMarkKind, FormatChange, GridChange, IdCounter, MarkKind, ParaChange, PreviousProps, RevisionId, RevisionMark, RunRevisions,
+    SectionChange, TableChange, Timestamp,
 };
-use crate::docx::{Block, Document, Inline, NoteKind, ParaStyle, Paragraph, Raw, Row, Run, RunStyle, Section, SectionPage};
+use crate::docx::{Block, Cell, Document, Inline, NoteKind, ParaStyle, Paragraph, Raw, Row, Run, RunStyle, Section, SectionPage};
 use crate::layout::{ParaId, TableId, Unit};
 
 use super::super::index::DocIndex;
@@ -21,8 +21,14 @@ pub(in crate::editing) const SPLIT_CELLS: &str = "Split Cells";
 pub(in crate::editing) const INSERT_SHAPE: &str = "Insert Shape";
 pub(in crate::editing) const INSERT_TEXT_BOX: &str = "Insert Text Box";
 pub(in crate::editing) const DELETE: &str = "Delete";
+pub(in crate::editing) const INSERT_COLUMNS: &str = "Insert Columns";
+pub(in crate::editing) const DELETE_COLUMNS: &str = "Delete Columns";
 
 const UNTRACKED_TABLE_EDITS: [&str; 2] = [MERGE_CELLS, SPLIT_CELLS];
+
+// Edits whose cells are tracked as inserted or deleted cells: accepting them gives the untracked edit. Word tracks
+// Delete Cells as a change of the table's properties.
+const CELL_EDITS: [&str; 2] = [INSERT_COLUMNS, DELETE_COLUMNS];
 
 const FLOAT_INSERTS: [&str; 2] = [INSERT_SHAPE, INSERT_TEXT_BOX];
 
@@ -617,6 +623,19 @@ impl Recording {
         if order.windows(2).any(|w| w[0] >= w[1]) {
             return vec![Step::Rows { table, range, with, grid }];
         }
+        // Cells the kept rows lose or gain: lost cells stay, marked deleted, over the grid as it was.
+        let kept: Vec<Option<usize>> = (0..old.len()).map(|i| matched.iter().position(|m| *m == Some(i))).collect();
+        let cell_edit = CELL_EDITS.contains(&self.label);
+        let pairs: Vec<Option<Vec<CellPair>>> = kept
+            .iter()
+            .zip(old)
+            .map(|(k, o)| k.map(|k| &with[k]).filter(|n| cell_edit && n.cells.len() != o.cells.len()).and_then(|n| cell_pairs(o, n)))
+            .collect();
+        let gained = pairs.iter().flatten().flatten().any(|p| p.0.is_none());
+        let lost =
+            pairs.iter().zip(old).any(|(p, o)| p.iter().flatten().any(|&(i, k)| k.is_none() && i.is_some_and(|i| !self.own_cell(&o.cells[i]))));
+        let retain = lost && !gained;
+        let grid = if retain { None } else { grid };
         let mut notes = Vec::new();
         let mut rows = Vec::with_capacity(with.len().max(old.len()));
         let mut changed = grid.as_ref().is_some_and(|g| *g != t.grid);
@@ -625,13 +644,13 @@ impl Recording {
         let columns_go = grid.as_ref().is_some_and(|g| g.len() < t.grid.len());
         let mut next = 0;
         for (i, o) in old.iter().enumerate() {
-            match matched.iter().position(|m| *m == Some(i)) {
+            match kept[i] {
                 Some(k) => {
                     for n in &with[next..k] {
                         rows.push(self.ins_row(n.clone(), ids));
                         changed = true;
                     }
-                    let (r, c) = self.kept_row(o, &with[k], ids, &mut notes);
+                    let (r, c) = self.kept_row(o, &with[k], pairs[i].as_deref(), retain, ids, &mut notes);
                     changed |= c;
                     rows.push(r);
                     next = k + 1;
@@ -649,22 +668,60 @@ impl Recording {
             rows.push(self.ins_row(n.clone(), ids));
             changed = true;
         }
-        let grid_changed = grid.as_ref().is_some_and(|g| *g != t.grid);
+        // Rejecting inserted cells drops their columns again.
+        let grid_changed = !gained && grid.as_ref().is_some_and(|g| *g != t.grid);
         let mut out: Vec<Step> = if changed { self.table_change(table, grid_changed, doc, idx, ids).into_iter().collect() } else { Vec::new() };
         out.push(Step::Rows { table, range, with: rows, grid });
         out.extend(self.note_steps(notes, doc, ids));
         out
     }
 
-    fn kept_row(&mut self, o: &Row, n: &Row, ids: &mut IdCounter, notes: &mut Vec<(NoteKind, i64)>) -> (Row, bool) {
+    /// `n` kept in place of `o`, with `pairs` matching their cells when the count changes. With `retain`, the row
+    /// keeps `o`'s layout over the grid as it was, its lost cells marked deleted.
+    #[allow(clippy::too_many_arguments, reason = "the rows, how their cells match, then the recording state")]
+    fn kept_row(
+        &mut self,
+        o: &Row,
+        n: &Row,
+        pairs: Option<&[CellPair]>,
+        retain: bool,
+        ids: &mut IdCounter,
+        notes: &mut Vec<(NoteKind, i64)>,
+    ) -> (Row, bool) {
         let mut r = n.clone();
+        if retain {
+            (r.grid_before, r.grid_after, r.w_before, r.w_after) = (o.grid_before, o.grid_after, o.w_before, o.w_after);
+        }
         let props = (o.height.clone(), o.cant_split, o.header, o.grid_before, o.grid_after, o.w_before, o.w_after)
-            != (n.height.clone(), n.cant_split, n.header, n.grid_before, n.grid_after, n.w_before, n.w_after);
+            != (r.height.clone(), r.cant_split, r.header, r.grid_before, r.grid_after, r.w_before, r.w_after);
         if o.cells.len() != n.cells.len() {
+            let Some(pairs) = pairs else { return (r, true) };
+            let mut cells = Vec::with_capacity(pairs.len());
+            for &pair in pairs {
+                match pair {
+                    (Some(i), Some(k)) => {
+                        let mut c = n.cells[k].clone();
+                        if retain {
+                            (c.span, c.width) = (o.cells[i].span, o.cells[i].width);
+                        }
+                        if c.blocks.iter().map(block_id).ne(o.cells[i].blocks.iter().map(block_id)) {
+                            c.blocks = self.moved_in(&o.cells[i].blocks, &c.blocks, ids, notes);
+                        }
+                        cells.push(c);
+                    }
+                    (Some(i), None) if retain => cells.push(self.cell_mark(o.cells[i].clone(), CellMarkKind::Delete, ids)),
+                    (None, Some(k)) => cells.push(self.cell_mark(n.cells[k].clone(), CellMarkKind::Insert, ids)),
+                    _ => {}
+                }
+            }
+            r.cells = cells;
             return (r, true);
         }
         let mut changed = props;
         for (c, oc) in r.cells.iter_mut().zip(&o.cells) {
+            if retain {
+                (c.span, c.width) = (oc.span, oc.width);
+            }
             let looks = |x: &crate::docx::Cell| {
                 (x.width, x.span, x.v_merge, x.top.clone(), x.left.clone(), x.bottom.clone(), x.right.clone(), x.shading, x.margins)
             };
@@ -675,6 +732,18 @@ impl Recording {
             }
         }
         (r, changed)
+    }
+
+    /// `c` marked as an inserted or deleted cell, its content as it is (as Word marks cells).
+    fn cell_mark(&mut self, mut c: Cell, kind: CellMarkKind, ids: &mut IdCounter) -> Cell {
+        let mark = self.mark(ids, if kind == CellMarkKind::Insert { MarkKind::Insert } else { MarkKind::Delete });
+        c.rev.structural = Some((mark, kind));
+        c
+    }
+
+    /// `c` is a cell this author inserted, so deleting it removes it outright.
+    fn own_cell(&self, c: &Cell) -> bool {
+        c.rev.structural.as_ref().is_some_and(|(m, k)| *k == CellMarkKind::Insert && m.author == self.author)
     }
 
     fn moved_in(&mut self, old: &[Block], new: &[Block], ids: &mut IdCounter, notes: &mut Vec<(NoteKind, i64)>) -> Vec<Block> {
@@ -825,20 +894,55 @@ fn block_id(b: &Block) -> u64 {
     }
 }
 
-fn row_paras(r: &Row) -> HashSet<u64> {
-    fn walk(blocks: &[Block], out: &mut HashSet<u64>) {
-        for b in blocks {
-            match b {
-                Block::Para(p) => {
-                    out.insert(p.id);
-                }
-                Block::Table(t) => t.rows.iter().flat_map(|r| r.cells.iter()).for_each(|c| walk(&c.blocks, out)),
-            }
+fn walk_paras(blocks: &[Block], out: &mut impl FnMut(u64)) {
+    for b in blocks {
+        match b {
+            Block::Para(p) => out(p.id),
+            Block::Table(t) => t.rows.iter().flat_map(|r| r.cells.iter()).for_each(|c| walk_paras(&c.blocks, out)),
         }
     }
+}
+
+fn row_paras(r: &Row) -> HashSet<u64> {
     let mut out = HashSet::new();
-    r.cells.iter().for_each(|c| walk(&c.blocks, &mut out));
+    r.cells.iter().for_each(|c| {
+        walk_paras(&c.blocks, &mut |id| {
+            out.insert(id);
+        })
+    });
     out
+}
+
+/// A cell of the old row and the new row's cell that keeps it; one side alone for a cell lost or gained.
+type CellPair = (Option<usize>, Option<usize>);
+
+/// The cells of `o` and `n` in order, matched by their paragraphs; `None` when the matches cross.
+fn cell_pairs(o: &Row, n: &Row) -> Option<Vec<CellPair>> {
+    let mut at: HashMap<u64, usize> = HashMap::new();
+    for (i, c) in o.cells.iter().enumerate() {
+        walk_paras(&c.blocks, &mut |id| {
+            at.insert(id, i);
+        });
+    }
+    let mut out = Vec::with_capacity(o.cells.len().max(n.cells.len()));
+    let mut next = 0;
+    for (k, c) in n.cells.iter().enumerate() {
+        let mut found = None;
+        walk_paras(&c.blocks, &mut |id| {
+            found = found.or_else(|| at.get(&id).copied());
+        });
+        match found {
+            Some(i) if i >= next => {
+                out.extend((next..i).map(|j| (Some(j), None)));
+                out.push((Some(i), Some(k)));
+                next = i + 1;
+            }
+            Some(_) => return None,
+            None => out.push((None, Some(k))),
+        }
+    }
+    out.extend((next..o.cells.len()).map(|j| (Some(j), None)));
+    Some(out)
 }
 
 fn note(doc: &Document, kind: NoteKind, id: i64) -> Option<&Vec<Block>> {

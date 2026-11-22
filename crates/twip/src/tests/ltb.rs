@@ -134,8 +134,8 @@ fn ltb_11_borders_on_a_mixed_depth_selection_change_the_outer_table_only() {
 
 #[test]
 fn ltb_16_after_a_column_insert_every_row_spans_the_grid() {
-    // The grid gains one column, every row's offsets and spans add up to it,
-    // every row without offsets gains one cell, and spanning cells keep their spans.
+    // The grid gains one column, every row's offsets and spans add up to it, and every row without offsets gains
+    // one cell, or widens the spanning cell the new column falls inside.
     let cases = [(1, "right"), (1, "left"), (7, "left"), (7, "right"), (6, "right"), (24, "left"), (31, "right")];
     let mut failures = Vec::new();
     for (para, cmd) in cases {
@@ -160,12 +160,14 @@ fn ltb_16_after_a_column_insert_every_row_spans_the_grid() {
             why.push(format!("grid has {} columns", t.grid.len()));
         }
         for (k, ((plain, n, spans), (_, n2, spans2))) in before.iter().zip(shape(t)).enumerate() {
-            if *plain && n2 != n + 1 {
+            let gained = n2 == n + 1 && spans2 == *spans;
+            let widened = n2 == *n && spans2.len() == spans.len() && spans2.iter().sum::<usize>() == spans.iter().sum::<usize>() + 1;
+            if *plain && !(gained || widened) {
                 let row = &t.rows[k];
-                why.push(format!("row {k} has {n2} cells for {} (gridBefore {}, gridAfter {})", n + 1, row.grid_before, row.grid_after));
-            }
-            if *plain && spans2 != *spans {
-                why.push(format!("row {k} spans {spans2:?} for {spans:?}"));
+                why.push(format!(
+                    "row {k} has {n2} cells spanning {spans2:?} for {n} spanning {spans:?} (gridBefore {}, gridAfter {})",
+                    row.grid_before, row.grid_after
+                ));
             }
         }
         if !why.is_empty() {

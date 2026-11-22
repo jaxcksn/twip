@@ -159,6 +159,7 @@ const types: Record<string, string> = {
   'tab-stop-info': "T.RulerModel['horizontal']['tabs'][number]",
   'tabs-action': "T.DialogValues['tabs']['action']",
   timestamp: "T.TransactionRecord['time']",
+  'text-separator': "Arg<'convertTableToText'>['separator']",
   'tooltip-kind': "T.Tooltip['kind']",
   'undo-grouping': "T.CommandInfo['undo']",
   'vertical-direction': "Arg<'moveRows'>",

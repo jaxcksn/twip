@@ -35,6 +35,7 @@ namespace Twip.Wire;
         typeof(CamelEnum<CellAlignment>),
         typeof(CamelEnum<CellShift>),
         typeof(CamelEnum<ColumnPosition>),
+        typeof(CamelEnum<TextSeparator>),
         typeof(CamelEnum<CommandGroup>),
         typeof(CamelEnum<CommandId>),
         typeof(CamelEnum<CompositionPhase>),
@@ -289,6 +290,7 @@ namespace Twip.Wire;
 [JsonSerializable(typeof(ClipboardContent))]
 [JsonSerializable(typeof(ColorValue))]
 [JsonSerializable(typeof(ColumnPosition))]
+[JsonSerializable(typeof(TextSeparator))]
 [JsonSerializable(typeof(CommandGroup))]
 [JsonSerializable(typeof(CommandId))]
 [JsonSerializable(typeof(CommandInfo))]

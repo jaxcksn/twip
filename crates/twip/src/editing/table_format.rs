@@ -25,9 +25,18 @@ pub enum TableFormat {
     TableStyle(String),
     TableLook(Look),
     CellProps(crate::api::command::CellProperties),
-    RowProps { hidden: Option<bool>, exceptions: Option<RowEx> },
+    RowProps {
+        hidden: Option<bool>,
+        exceptions: Option<RowEx>,
+    },
     CellSpacing(f64),
     Alt(crate::api::command::TableAltText),
+    /// AutoFit to the window or to fixed widths: the layout, the table's width and its columns' widths.
+    Fit {
+        fixed: bool,
+        width: Width,
+        grid: Vec<f64>,
+    },
 }
 
 /// Sets `row`'s height (`None`: auto) on the model and in its `w:trPr`.
@@ -205,19 +214,34 @@ fn border_xml(w: &str, name: &str, b: &Border) -> String {
     )
 }
 
-/// A cell's `w:tcBorders` from its model borders.
-fn tc_borders(w: &str, cell: &crate::docx::Cell) -> String {
-    let side = |name: &str, b: &Option<Border>| b.as_ref().map_or(String::new(), |b| border_xml(w, name, b));
+/// A cell's `w:tcBorders` as written, with the sides in `sides` (bits: top, left, bottom, right, then the two
+/// diagonals) set from its model borders: the others stay as they were, a style's staying its style's.
+fn tc_borders(cx: &crate::docx::write::props::Cx, cell: &crate::docx::Cell, sides: u8) -> String {
+    use crate::docx::write::props::{Props, TC_BORDERS};
+    let w = &cx.w;
+    let tcpr = Props::parse(cell.direct.0.as_deref(), "tcPr", cx);
+    let mut p = Props::parse(tcpr.get("tcBorders"), "tcBorders", cx);
+    p.reorder(TC_BORDERS);
     let [tl2br, tr2bl] = cell.diagonals.as_deref().cloned().unwrap_or_default();
-    format!(
-        "<{w}tcBorders>{}{}{}{}{}{}</{w}tcBorders>",
-        side("top", &cell.top),
-        side("left", &cell.left),
-        side("bottom", &cell.bottom),
-        side("right", &cell.right),
-        side("tl2br", &tl2br),
-        side("tr2bl", &tr2bl)
-    )
+    let all = [
+        ("top", None, &cell.top),
+        ("left", Some("start"), &cell.left),
+        ("bottom", None, &cell.bottom),
+        ("right", Some("end"), &cell.right),
+        ("tl2br", None, &tl2br),
+        ("tr2bl", None, &tr2bl),
+    ];
+    for (bit, (name, bidi, b)) in all.into_iter().enumerate() {
+        if sides & (1 << bit) == 0 {
+            continue;
+        }
+        let name = bidi.filter(|n| p.get(n).is_some()).unwrap_or(name);
+        match b {
+            Some(b) => p.set(name, border_xml(w, name, b)),
+            None => p.remove(name),
+        }
+    }
+    p.xml().unwrap_or_default()
 }
 
 /// Every character of the row is hidden: with its end mark, the row hides.
@@ -357,7 +381,8 @@ impl Editor {
                         let mut d = cell.diagonals.as_deref().cloned().unwrap_or_default();
                         d[k] = Some(b.clone());
                         cell.diagonals = Some(std::rc::Rc::new(d));
-                        set_direct(cell, "tcBorders", tc_borders(&w, cell));
+                        let xml = tc_borders(&cx, cell, 16 << k);
+                        set_direct(cell, "tcBorders", xml);
                     }
                 }
             }
@@ -374,7 +399,7 @@ impl Editor {
                 };
                 let value = if *edges == Edges::None { nil() } else { b.clone() };
                 let mut shared: Vec<(usize, usize, usize)> = Vec::new();
-                let mut touched: Vec<(usize, usize)> = Vec::new();
+                let mut touched: Vec<(usize, usize, u8)> = Vec::new();
                 for r in r0..=r1 {
                     for (k, &(c, s, _)) in g.rows[r].iter().enumerate() {
                         if !in_block(r, c, s) {
@@ -388,10 +413,12 @@ impl Editor {
                             (last >= c1, false, Edges::Right),
                         ];
                         let cell = &mut rows[r].cells[k];
+                        let mut bits: u8 = if *edges == Edges::None { 48 } else { 0 };
                         for (i, (outside, horizontal, side)) in sides.into_iter().enumerate() {
                             if !want(outside, horizontal, side) {
                                 continue;
                             }
+                            bits |= 1 << i;
                             *[&mut cell.top, &mut cell.left, &mut cell.bottom, &mut cell.right][i] = Some(value.clone());
                             if outside {
                                 let overlaps = |row: usize| {
@@ -412,23 +439,30 @@ impl Editor {
                                 }
                             }
                         }
-                        touched.push((r, k));
+                        touched.push((r, k, bits));
                     }
                 }
                 for (r, k, side) in shared {
                     let cell = &mut rows[r].cells[k];
                     *[&mut cell.top, &mut cell.left, &mut cell.bottom, &mut cell.right][side] = Some(value.clone());
-                    touched.push((r, k));
+                    touched.push((r, k, 1 << side));
                 }
                 touched.sort_unstable();
-                touched.dedup();
-                for (r, k) in touched {
+                touched.dedup_by(|b, a| {
+                    let same = (a.0, a.1) == (b.0, b.1);
+                    if same {
+                        a.2 |= b.2;
+                    }
+                    same
+                });
+                for (r, k, bits) in touched {
                     let cell = &mut rows[r].cells[k];
                     // No Border clears the selected cells' diagonals too.
                     if *edges == Edges::None && in_block(r, g.rows[r][k].0, g.rows[r][k].1) {
                         cell.diagonals = None;
                     }
-                    set_direct(cell, "tcBorders", tc_borders(&w, cell));
+                    let xml = tc_borders(&cx, cell, bits);
+                    set_direct(cell, "tcBorders", xml);
                 }
             }
             TableFormat::CellProps(p) => {
@@ -533,6 +567,18 @@ impl Editor {
                 if matches!(props.width, Width::Dxa(_)) {
                     props.width = Width::Dxa(gr.iter().sum());
                 }
+                grid = Some(gr);
+            }
+            TableFormat::Fit { fixed, width, grid: widths } => {
+                let gr: Vec<f64> = widths.iter().map(|v| (v.max(0.0) * 20.0).round() / 20.0).collect();
+                for (r, row) in rows.iter_mut().enumerate() {
+                    for (k, cell) in row.cells.iter_mut().enumerate() {
+                        if let Some(&(c, s, _)) = g.rows[r].get(k) {
+                            cell.width = Some(Width::Dxa((c..c + s.max(1)).filter_map(|i| gr.get(i)).sum()));
+                        }
+                    }
+                }
+                (props.fixed, props.width) = (*fixed, *width);
                 grid = Some(gr);
             }
             TableFormat::TableWidth(v) => props.width = *v,

@@ -935,6 +935,21 @@ public sealed class EditorCommands
     /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
     public Task SplitTableAsync(CancellationToken ct = default) => _session.RunAsync(EditorOperation.SplitTable(), ct);
 
+    /// <summary>Converts the selected paragraphs to a table: a row for each paragraph, split into cells at the separator.</summary>
+    /// <param name="separator">Where the text splits into cells.</param>
+    /// <param name="character">The one character to split at, with <see cref="TextSeparator.Other"/>.</param>
+    /// <param name="columns">The number of columns, 1 to 63 (by default the most pieces a paragraph has).</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task ConvertTextToTableAsync(TextSeparator separator, string? character = null, int? columns = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.ConvertTextToTable(separator, character, columns), ct);
+
+    /// <summary>Converts the selected rows, or the whole table, to text: a paragraph for each row, its cells joined by the separator.</summary>
+    /// <param name="separator">What separates the cells' text.</param>
+    /// <param name="character">The one character between cells, with <see cref="TextSeparator.Other"/>.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task ConvertTableToTextAsync(TextSeparator separator, string? character = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.ConvertTableToText(separator, character), ct);
+
     /// <summary>Gives the selected rows equal heights.</summary>
     /// <param name="ct">Cancels the command before it runs.</param>
     /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>

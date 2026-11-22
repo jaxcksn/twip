@@ -46,13 +46,8 @@ impl Editor {
         }
         let whole_rows = shape == CellShape::Rows || (c0 == 0 && c1 + 1 >= g.cols);
         let whole_table = whole_rows && r0 == 0 && r1 + 1 >= t.rows.len();
-        let sub = Table {
-            grid: t.grid[c0..=c1.min(t.grid.len().saturating_sub(1))].to_vec(),
-            rows,
-            src: None,
-            id: crate::docx::next_para_id(),
-            ..t.clone()
-        };
+        let sub =
+            Table { grid: super::tables::full_grid(t, g.cols)[c0..=c1].to_vec(), rows, src: None, id: crate::docx::next_para_id(), ..t.clone() };
         Some(Fragment {
             id,
             blocks: vec![Block::Table(sub)],
@@ -115,7 +110,19 @@ impl Editor {
                     r
                 })
                 .collect();
-            rows.splice(tg.rows.0..tg.rows.0, new);
+            let (at, n) = (tg.rows.0, new.len());
+            rows.splice(at..at, new);
+            // A merged cell the rows land in splits around them: its part below starts again.
+            if at > 0 && n > 0 {
+                let g = Grid::of_rows(&rows, t.grid.len());
+                for k in 0..rows[at + n].cells.len() {
+                    let c = g.rows[at + n][k].0;
+                    let above = g.cell_at(at + n - 1, c).filter(|&a| g.rows[at + n - 1][a].0 == c).map(|a| g.rows[at + n - 1][a].2);
+                    if g.continues(at + n, k) && above.is_none_or(|v| v == crate::docx::VMerge::None) {
+                        rows[at + n].cells[k].v_merge = crate::docx::VMerge::Restart;
+                    }
+                }
+            }
             return Some(self.rebuild("Paste Rows", tg.table, rows, wide(&t.grid), (tg.rows.0, 0), fonts));
         }
         if block && single {
@@ -151,6 +158,7 @@ impl Editor {
             if r >= rows.len() {
                 let mut add = rows.last()?.clone();
                 add.src = None;
+                add.rev = Default::default();
                 add.cells.iter_mut().for_each(|c| *c = empty_cell(c));
                 rows.push(add);
             }

@@ -63,6 +63,7 @@ pub use styles::formats_a_style;
 pub mod sub_templates;
 pub use crate::docx::grid as table;
 mod table_cells;
+mod table_convert;
 pub mod table_format;
 mod table_handles;
 pub mod tables;

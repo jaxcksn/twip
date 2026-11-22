@@ -36,6 +36,7 @@ mod sub_template_settings;
 mod sub_templates;
 mod table_dialogs;
 mod table_handles;
+mod table_structure;
 mod tracked_structure;
 mod transactions;
 

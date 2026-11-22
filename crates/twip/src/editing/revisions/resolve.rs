@@ -4,7 +4,6 @@ use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 use std::rc::Rc;
 
-use crate::docx::props::Width;
 use crate::docx::review::{AuthorId, CellMarkKind, RangeKind, RevisionId, RevisionMark};
 use crate::docx::{Block, Document, Inline, Paragraph, Raw, Row, Run, RunStyle, Table, VMerge};
 use crate::font::Fonts;
@@ -231,38 +230,6 @@ fn tables_and_paras(doc: &Document, flow: Option<u32>) -> (Vec<TableId>, Vec<Par
     (t, p)
 }
 
-fn columns(r: &Row) -> Vec<usize> {
-    let mut at = r.grid_before;
-    r.cells
-        .iter()
-        .map(|c| {
-            let col = at;
-            at += c.span.max(1);
-            col
-        })
-        .collect()
-}
-
-fn tidy_merges(rows: &mut [Row]) {
-    let cols: Vec<Vec<usize>> = rows.iter().map(columns).collect();
-    let state = |rows: &[Row], ri: usize, col: usize| {
-        cols[ri].iter().position(|&c| c == col).and_then(|k| rows.get(ri).and_then(|r| r.cells.get(k))).map_or(VMerge::None, |c| c.v_merge)
-    };
-    for ri in 0..rows.len() {
-        for k in 0..rows[ri].cells.len() {
-            let col = cols[ri][k];
-            let above = if ri == 0 { VMerge::None } else { state(rows, ri - 1, col) };
-            let below = if ri + 1 < rows.len() { state(rows, ri + 1, col) } else { VMerge::None };
-            let c = &mut rows[ri].cells[k];
-            match c.v_merge {
-                VMerge::Restart if below != VMerge::Continue => c.v_merge = VMerge::None,
-                VMerge::Continue if above == VMerge::None => c.v_merge = VMerge::None,
-                _ => {}
-            }
-        }
-    }
-}
-
 struct TablePlan {
     rows: Option<Vec<Row>>,
     grid: Option<Vec<f64>>,
@@ -462,6 +429,8 @@ impl Editor {
         }
         let (mut restyle, mut merges) = (false, false);
         let mut rows = Vec::with_capacity(t.rows.len());
+        // Cells the resolution removes, by row and cell
+        let mut gone: Vec<(usize, usize)> = Vec::new();
         for r in &t.rows {
             if !row_picked(r) {
                 rows.push(r.clone());
@@ -515,23 +484,7 @@ impl Editor {
                 {
                     c.rev.structural = None;
                     match (kind, accept) {
-                        (CellMarkKind::Insert, false) | (CellMarkKind::Delete, true) => {
-                            let gone = r.cells.remove(k);
-                            let to = if k > 0 {
-                                Some(k - 1)
-                            } else if r.cells.is_empty() {
-                                None
-                            } else {
-                                Some(0)
-                            };
-                            if let Some(n) = to.and_then(|j| r.cells.get_mut(j)) {
-                                n.span = n.span.max(1) + gone.span.max(1);
-                                if let (Some(Width::Dxa(a)), Some(Width::Dxa(b))) = (&mut n.width, gone.width) {
-                                    *a += b;
-                                }
-                            }
-                            continue;
-                        }
+                        (CellMarkKind::Insert, false) | (CellMarkKind::Delete, true) if keep => gone.push((rows.len(), k)),
                         (CellMarkKind::Merge { v_merge_orig, .. }, false) => {
                             c.v_merge = v_merge_orig.unwrap_or(VMerge::None);
                             merges = true;
@@ -545,8 +498,16 @@ impl Editor {
                 rows.push(r);
             }
         }
+        let mut new_grid = grid.filter(|_| !accept).map(|g| g.previous.clone());
+        if !gone.is_empty() {
+            let mut g = new_grid.clone().unwrap_or_else(|| t.grid.clone());
+            if crate::editing::tables::remove_cells(&mut rows, &gone, &mut g) {
+                new_grid = Some(g);
+            }
+            merges = true;
+        }
         if merges {
-            tidy_merges(&mut rows);
+            crate::editing::tables::tidy_merges(&mut rows);
         }
         let table = own.then(|| {
             let mut x = t.clone();
@@ -572,7 +533,6 @@ impl Editor {
             }
             (x, None) => x,
         };
-        let new_grid = grid.filter(|_| !accept).map(|g| g.previous.clone());
         let changed = rows != t.rows;
         Some(TablePlan { rows: changed.then_some(rows), grid: new_grid, table, restyle })
     }
@@ -582,7 +542,9 @@ impl Editor {
         let s = match self.selection {
             Selection::Caret(p) => Selection::Caret(map(p)),
             Selection::Text { anchor, focus, unit } => Selection::range(map(anchor), map(focus), unit),
-            Selection::Cells { table, .. } if self.index.table(&self.doc, table).is_some() => self.selection,
+            Selection::Cells { table, .. } if self.index.table(&self.doc, table).is_some_and(|t| !t.rows.is_empty()) => {
+                self.normalize(self.selection)
+            }
             other => match other.focus() {
                 Some(p) => Selection::Caret(map(p)),
                 None => Selection::Caret(Position::text(StoryId::Body, ParaId(0), Unit(0))),

@@ -834,6 +834,10 @@ export interface Commands {
   splitCells(options: { columns: number; rows?: number }): Promise<void>;
   /** Splits the table above the current row. */
   splitTable(): Promise<void>;
+  /** Converts the selected paragraphs to a table: a row for each paragraph, split into cells at the separator (`character` with `'other'`); `columns` (1-63) by default the most pieces a paragraph has. */
+  convertTextToTable(options: { separator: 'paragraphs' | 'tabs' | 'commas' | 'other'; character?: string; columns?: number }): Promise<void>;
+  /** Converts the selected rows, or the whole table, to text: a paragraph for each row, its cells joined by the separator (`character` with `'other'`). */
+  convertTableToText(options: { separator: 'paragraphs' | 'tabs' | 'commas' | 'other'; character?: string }): Promise<void>;
   /** Gives the selected rows equal heights. */
   distributeRows(): Promise<void>;
   /** Gives the selected columns equal widths. */
@@ -1434,6 +1438,8 @@ const encodings: { [K in CommandId]: Encoding<K> } = {
   mergeCells: 'none',
   splitCells: 'spread',
   splitTable: 'none',
+  convertTextToTable: 'spread',
+  convertTableToText: 'spread',
   distributeRows: 'none',
   distributeColumns: 'none',
   moveRows: 'value',

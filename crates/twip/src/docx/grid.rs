@@ -1,6 +1,6 @@
 //! Table grid
 
-use crate::docx::{Table, VMerge};
+use crate::docx::{Row, Table, VMerge};
 
 pub struct Grid {
     pub rows: Vec<Vec<(usize, usize, VMerge)>>,
@@ -9,8 +9,12 @@ pub struct Grid {
 
 impl Grid {
     pub fn of(t: &Table) -> Grid {
-        let rows: Vec<Vec<(usize, usize, VMerge)>> = t
-            .rows
+        Grid::of_rows(&t.rows, t.grid.len())
+    }
+
+    /// The grid of `rows` over a `w:tblGrid` of `columns` columns.
+    pub fn of_rows(rows: &[Row], columns: usize) -> Grid {
+        let rows: Vec<Vec<(usize, usize, VMerge)>> = rows
             .iter()
             .map(|r| {
                 let mut col = r.grid_before;
@@ -24,7 +28,7 @@ impl Grid {
                     .collect()
             })
             .collect();
-        let cols = t.grid.len().max(rows.iter().filter_map(|r| r.last().map(|&(c, s, _)| c + s)).max().unwrap_or(0));
+        let cols = columns.max(rows.iter().filter_map(|r| r.last().map(|&(c, s, _)| c + s)).max().unwrap_or(0));
         Grid { rows, cols }
     }
 
