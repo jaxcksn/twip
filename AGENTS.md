@@ -84,6 +84,8 @@ against the CPU's. No "this case is rare" shortcuts.
 - **Comments name structure, they don't explain** (`//! Table autofit`, `// Row heights`). Exceptions: public API
   docs (`twip::api`, SDKs) and `// SAFETY:`. Every public member must be documented; the build enforces it.
 - Don't ever put internal planning ids or references into comments
+- Tests lay out with the test font kit (`crates/twip/tests/fonts/kit.json`), never the machine's fonts, in every
+  suite; a test of a real family's own metrics gates on `layout::tests::installed(&[..])`. See CONTRIBUTING.
 - Files are LF (`.gitattributes` `eol=lf`). Scripted edits on Windows must write LF (Python:
   `open(p, 'w', encoding='utf-8', newline='\n')`).
 - History is linear: rebase, never merge. Branch from `main`.

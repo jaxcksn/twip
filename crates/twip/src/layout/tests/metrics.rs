@@ -174,7 +174,10 @@ fn each_lines_part_of_a_broken_text_border_has_both_sides() {
 
 #[test]
 fn compat_14_fits_a_kerned_run_with_the_kern_tables_pairs() {
-    let Some(face) = super::fonts().face("Segoe UI", None, false, false).filter(|f| f.family == "Segoe UI") else { return };
+    if !super::installed(&["Segoe UI"]) {
+        return;
+    }
+    let Some(face) = super::fonts().face("Segoe UI", None, false, false) else { return };
     let text = "wry try dry ferry wry try dry ferry";
     let glyphs = face.shape(text, true, 0, 0);
     let scale = face.scale(12.0);

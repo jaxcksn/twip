@@ -36,7 +36,10 @@ ${await response.text()}` });
     }
     const twip = await import('/web/dist/index.js' as string);
     if (assets) twip.configure({ assets });
-    await twip.FontLibrary.default().add('/font.ttf');
+    // The test font kit (crates/twip/tests/fonts/kit.json), so pages draw the same on every machine.
+    const kit = await (await fetch('/kit/kit.json')).json();
+    for (const file of kit.files) await twip.FontLibrary.default().add(`/kit/${file}`);
+    twip.FontLibrary.default().setAliases(kit.aliases);
     Object.assign(window, { twip });
   }, { gpu, softwareGpu, assets: options.assets });
 }

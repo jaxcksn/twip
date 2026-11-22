@@ -179,9 +179,6 @@ fn track_setting(name: &str, on: bool) -> String {
 
 #[test]
 fn compat_15_moves_a_hyphenated_last_line_to_the_next_page() {
-    if !super::fonts().is_installed("Courier New") {
-        return;
-    }
     let Some([p1, p2]) = courier_lines(&track_settings(15, true, ""), 50, TRACK_T) else { return };
     assert_eq!((p1.len(), p1.last().map(String::as_str)), (50, Some("Fill 49")), "{p1:?}");
     assert_eq!(p2[0], "The plain cart ran representa-", "{p2:?}");
@@ -199,9 +196,6 @@ fn compat_15_moves_a_hyphenated_last_line_to_the_next_page() {
 
 #[test]
 fn compat_15_checks_the_hyphen_on_the_line_widow_control_leaves_last() {
-    if !super::fonts().is_installed("Courier New") {
-        return;
-    }
     // Four lines, the first three on the page's last three: widow control keeps two, the second ends in a hyphen and
     // moves, and the first, left alone, goes with it.
     let t = r#"<w:r><w:t>Bob and Sam met by the old inn The plain cart ran representative bottom text. Then the old fox ran on and on.</w:t></w:r>"#;
@@ -213,9 +207,6 @@ fn compat_15_checks_the_hyphen_on_the_line_widow_control_leaves_last() {
 
 #[test]
 fn compat_15_breaks_the_last_line_again_without_automatic_hyphenation() {
-    if !super::fonts().is_installed("Courier New") {
-        return;
-    }
     let settings = track_settings(15, true, &track_setting("useWord2013TrackBottomHyphenation", false));
     let Some([p1, p2]) = courier_lines(&settings, 50, TRACK_T) else { return };
     assert_eq!((p1.len(), p1.last().map(String::as_str)), (51, Some("The plain cart ran")), "{p1:?}");
@@ -224,9 +215,6 @@ fn compat_15_breaks_the_last_line_again_without_automatic_hyphenation() {
 
 #[test]
 fn a_word_without_proofing_isnt_hyphenated() {
-    if !super::fonts().is_installed("Courier New") {
-        return;
-    }
     // The break would follow letter 10; letter 12 is the first that doesn't fit.
     let first = |compat: i64, a: &str, b: &str| {
         let t = format!(
@@ -246,9 +234,6 @@ fn a_word_without_proofing_isnt_hyphenated() {
 
 /// The first page's lines of `t` in Courier New 10 pt, justified (`jc`) in compat 15 with the right indent `ind`.
 fn justified_lines(jc: &str, auto: bool, ind: u32, t: &str) -> Option<Vec<String>> {
-    if !super::fonts().is_installed("Courier New") {
-        return None;
-    }
     let ppr = format!(r#"<w:jc w:val="{jc}"/><w:ind w:right="{ind}"/>"#);
     let run = format!(r#"<w:r><w:t xml:space="preserve">{t}</w:t></w:r>"#);
     courier(&track_settings(15, auto, ""), &ppr, 20, ".rep1re1sen1ta1tive.", 0, &run).map(|[p1, _]| p1)
@@ -287,9 +272,6 @@ fn compat_15_a_line_at_the_limit_ending_at_an_optional_hyphen_isnt_counted() {
         "q".repeat(20),
         "y".repeat(18)
     );
-    if !super::fonts().is_installed("Courier New") {
-        return;
-    }
     let settings = track_settings(15, true, "").replace("<w:compat>", r#"<w:consecutiveHyphenLimit w:val="1"/><w:compat>"#);
     let Some([p1, _]) = courier_lines(&settings, 0, &t) else { return };
     assert_eq!(
@@ -302,9 +284,6 @@ fn compat_15_a_line_at_the_limit_ending_at_an_optional_hyphen_isnt_counted() {
 #[test]
 fn a_line_fits_text_up_to_its_width_rounded_to_layout_units() {
     // 25 Courier New glyphs at 20.5pt are 1259725 lu; the 6151 tw line is 1259724.8 lu, rounded 1259725.
-    if !super::fonts().is_installed("Courier New") {
-        return;
-    }
     let t = format!("<w:r><w:t>{}</w:t></w:r>", "x".repeat(40));
     let Some([p1, _]) = courier(&track_settings(15, false, ""), r#"<w:ind w:right="3209"/>"#, 41, "a1t", 0, &t) else { return };
     assert_eq!(p1[0].len(), 25, "{p1:?}");
@@ -314,9 +293,6 @@ fn a_line_fits_text_up_to_its_width_rounded_to_layout_units() {
 fn compat_15_a_word_broken_between_letters_at_a_page_end_goes_on_as_a_fragment() {
     // `pres` ends page 1 between letters, at a point whose hyphen doesn't fit: page 2 hyphenates `ident` alone,
     // which has no points.
-    if !super::fonts().is_installed("Courier New") {
-        return;
-    }
     let t = format!("<w:r><w:t>{}president</w:t></w:r>", "abcd ".repeat(50));
     let settings = track_settings(15, true, &track_setting("allowHyphenationAtTrackBottom", true));
     let Some([p1, p2]) = courier(&settings, r#"<w:ind w:right="8820"/>"#, 20, ".pres1i1dent.", 0, &t) else { return };

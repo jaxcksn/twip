@@ -258,7 +258,7 @@ fn tab_5_a_decimal_tab_aligns_the_point_not_a_comma() {
 
 #[test]
 fn line_14_the_extra_height_is_whole_font_units() {
-    let fonts = fonts();
+    let fonts = crate::font::Fonts::installed_recommended();
     if !fonts.is_installed("MS Mincho") {
         return;
     }

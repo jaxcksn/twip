@@ -12,7 +12,7 @@ public sealed class EventsTests
     public async Task AThrowingHandlerDoesNotStopTheOthers()
     {
         Native.Require();
-        await using var session = new EditorSession();
+        await using var session = Kit.Session();
         var after = 0;
         var faults = new List<FaultedEventArgs>();
         session.DocumentChanged += (_, _) => throw new InvalidOperationException("handler bug");
@@ -32,7 +32,7 @@ public sealed class EventsTests
     public async Task StateInAHandlerIsAlreadyAtTheEventsRevision()
     {
         Native.Require();
-        await using var session = new EditorSession();
+        await using var session = Kit.Session();
         var seen = new List<(long Record, long Snapshot, long State, bool EngineThread)>();
         session.DocumentChanged += (s, e) =>
             seen.Add((e.Record.Revision, e.Snapshot.DocumentRevision, ((EditorSession)s!).State.DocumentRevision, EngineThread.Instance.IsCurrent));
@@ -55,7 +55,7 @@ public sealed class EventsTests
     public async Task UnsubscribedHandlersAreNotCalled()
     {
         Native.Require();
-        await using var session = new EditorSession();
+        await using var session = Kit.Session();
         var calls = 0;
         void Count(object? sender, DocumentChangedEventArgs e) => calls++;
         session.DocumentChanged += Count;
@@ -72,7 +72,7 @@ public sealed class EventsTests
     public async Task DisposingInAHandlerStopsDispatch()
     {
         Native.Require();
-        var session = new EditorSession();
+        var session = Kit.Session();
         var events = 0;
         var faults = 0;
         session.Faulted += (_, _) => faults++;

@@ -61,13 +61,9 @@ pub(crate) fn par_map<T: Sync, R: Send>(items: &[T], f: impl Fn(&T) -> R + Sync)
 }
 
 pub fn fonts() -> &'static Fonts {
-    // The system's fonts are scanned once per process; each thread lays out with its own copy of that catalog, so
-    // threads share no font state.
-    static CATALOG: std::sync::OnceLock<crate::font::Catalog> = std::sync::OnceLock::new();
+    // One per thread over the test kit's shared catalog, so threads share no font memos.
     thread_local! {
-        static FONTS: &'static Fonts = Box::leak(Box::new(Fonts::with_catalog(std::sync::Arc::new(
-            CATALOG.get_or_init(|| (**Fonts::system_recommended().catalog()).clone()).clone(),
-        ))));
+        static FONTS: &'static Fonts = Box::leak(Box::new(Fonts::system_recommended()));
     }
     FONTS.with(|f| *f)
 }

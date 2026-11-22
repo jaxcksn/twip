@@ -61,7 +61,7 @@ fn symbol_page_text_is_unicode() {
 #[test]
 fn symbol_installed_fonts_draw_their_own_glyphs() {
     // Machine-local: Windows has Symbol and Wingdings.
-    let fonts = crate::editing::tests::fonts();
+    let fonts = &Fonts::installed_recommended();
     if !fonts.is_installed("Symbol") || !fonts.is_installed("Wingdings") {
         return;
     }

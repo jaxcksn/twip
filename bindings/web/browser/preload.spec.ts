@@ -29,9 +29,12 @@ test('a preloaded worker serves the first editor and leaves with it', async ({ p
 
 test('preload calls share one load', async ({ page }) => {
   await open(page);
-  const same = await page.evaluate(() => {
+  const same = await page.evaluate(async () => {
     const { preload } = (window as any).twip;
-    return preload({ execution: 'worker' }) === preload({ execution: 'worker' });
+    const [first, second] = [preload({ execution: 'worker' }), preload({ execution: 'worker' })];
+    // The load finishes before the page closes, so no request is cut off.
+    await first;
+    return first === second;
   });
   expect(same).toBe(true);
 });

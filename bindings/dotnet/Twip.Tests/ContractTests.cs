@@ -88,7 +88,7 @@ public sealed class ContractTests
 
         public async Task RunAsync()
         {
-            var fonts = script["fonts"]?.GetValue<string>() == "empty" ? FontLibrary.CreateEmpty() : null;
+            var fonts = script["fonts"]?.GetValue<string>() == "empty" ? FontLibrary.CreateEmpty() : Kit.Create();
             _session = new EditorSession(new EditorSessionOptions(Fonts: fonts));
             if (attached)
             {

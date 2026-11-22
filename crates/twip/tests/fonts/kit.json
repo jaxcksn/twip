@@ -1,0 +1,36 @@
+{
+  "files": [
+    "TwipTestBody-Regular.ttf",
+    "TwipTestBody-Bold.ttf",
+    "TwipTestBody-Italic.ttf",
+    "TwipTestBody-BoldItalic.ttf",
+    "TwipTestHeading-Regular.ttf",
+    "TwipTestHeading-Bold.ttf",
+    "TwipTestHeading-Italic.ttf",
+    "TwipTestHeading-BoldItalic.ttf",
+    "TwipTestSans-Regular.ttf",
+    "TwipTestSans-Bold.ttf",
+    "TwipTestSans-Italic.ttf",
+    "TwipTestSans-BoldItalic.ttf",
+    "TwipTestSerif-Regular.ttf",
+    "TwipTestSerif-Bold.ttf",
+    "TwipTestSerif-Italic.ttf",
+    "TwipTestSerif-BoldItalic.ttf",
+    "TwipTestMono-Regular.ttf",
+    "TwipTestMono-Bold.ttf",
+    "TwipTestMono-Italic.ttf",
+    "TwipTestMono-BoldItalic.ttf"
+  ],
+  "aliases": {
+    "Calibri": "Twip Test Body",
+    "Carlito": "Twip Test Body",
+    "Cambria": "Twip Test Heading",
+    "Caladea": "Twip Test Heading",
+    "Arial": "Twip Test Sans",
+    "Liberation Sans": "Twip Test Sans",
+    "Times New Roman": "Twip Test Serif",
+    "Liberation Serif": "Twip Test Serif",
+    "Courier New": "Twip Test Mono",
+    "Liberation Mono": "Twip Test Mono"
+  }
+}

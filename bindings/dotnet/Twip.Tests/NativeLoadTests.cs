@@ -19,7 +19,7 @@ public class NativeLoadTests
         {
             Assert.Skip("Windows with dxcompiler.dll beside the library (`moon run twip-capi:build` fetches it)");
         }
-        Assert.StartsWith("%PDF", System.Text.Encoding.Latin1.GetString(PdfConverter.Convert(File.ReadAllBytes(Native.Fixture("FX-TEXT.docx"))).Bytes[..4]));
+        Assert.StartsWith("%PDF", System.Text.Encoding.Latin1.GetString(PdfConverter.Convert(File.ReadAllBytes(Native.Fixture("FX-TEXT.docx")), Kit.PdfFonts).Bytes[..4]));
         var modules = Process.GetCurrentProcess().Modules.Cast<ProcessModule>().Select(m => m.ModuleName);
         Assert.Contains(modules, m => string.Equals(m, "dxcompiler.dll", StringComparison.OrdinalIgnoreCase));
     }

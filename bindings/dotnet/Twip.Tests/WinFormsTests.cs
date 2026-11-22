@@ -212,7 +212,7 @@ public sealed class WinFormsTests
     [Fact]
     public void RecreatingTheHandleKeepsTheDocumentAndSelection() => Ui.Run(async () =>
     {
-        await using var session = new EditorSession();
+        await using var session = Kit.Session();
         using var editor = new Recreatable(session) { Width = 800, Height = 600 };
         _ = editor.Handle;
         Ui.Type(editor, "Hello");
@@ -234,7 +234,7 @@ public sealed class WinFormsTests
     [Fact]
     public void DisposingAControlLeavesItsExternalSessionUsable() => Ui.Run(async () =>
     {
-        await using var session = new EditorSession();
+        await using var session = Kit.Session();
         using (var first = new DocumentEditor(session) { Width = 800, Height = 600 })
         {
             _ = first.Handle;

@@ -13,7 +13,7 @@ const fixtures = new URL('crates/twip/tests/fixtures/', root);
 
 interface Script {
   fixture?: string;
-  fonts?: 'system' | 'empty';
+  fonts?: 'kit' | 'empty';
   steps: ({ op: string } & Record<string, unknown>)[];
 }
 
@@ -69,7 +69,12 @@ async function runScript({ name, script, execution, runner }: { name: string; sc
     if (!response.ok) throw new Error(`no fixture ${file}`);
     return new Uint8Array(await response.arrayBuffer());
   };
-  if (script.fonts !== 'empty') await FontLibrary.default().add('/font.ttf');
+  // The test font kit (crates/twip/tests/fonts/kit.json), as every runner lays out with.
+  if (script.fonts !== 'empty') {
+    const kit = await (await fetch('/kit/kit.json')).json();
+    for (const file of kit.files) await FontLibrary.default().add(`/kit/${file}`);
+    FontLibrary.default().setAliases(kit.aliases);
+  }
 
   const container = document.createElement('div');
   container.style.cssText = 'width:800px;height:600px;';
