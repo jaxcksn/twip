@@ -21,7 +21,7 @@ mod draw;
 mod key;
 mod widths;
 
-pub use assemble::{cells_box, float_box, legacy_lead, nested_shift, outer_box};
+pub use assemble::{cells_box, float_box, legacy_lead, nested_shift, outer_box, row_borders};
 pub(super) use borders::{drawn, edge, edge_from, shadow, stroked, thick};
 pub(super) use clip::clip_stroke;
 pub use draw::{CellPart, DrawnRow, draw_row, draw_whole_row, frame_part, whole};
@@ -29,7 +29,7 @@ pub(super) use draw::{clip_box, clip_x};
 pub(crate) use key::same_shell;
 pub use key::{RowKey, TableKey};
 
-use assemble::{assemble, cell_edges, edge_add, place, row_borders, spacing_of, vertical_cell};
+use assemble::{assemble, cell_edges, edge_add, place, spacing_of, vertical_cell};
 use key::{TableProbe, table_bytes};
 use widths::{Fit, fit_inputs, grid_bounds, grid_columns, resolve_fit, twips};
 

@@ -1915,7 +1915,9 @@ impl Editor {
             }
             return Outcome::Unchanged("row end");
         };
-        let Some(t) = self.index.para(&self.doc, para).map(UnitText::of) else { return Outcome::Unchanged("no paragraph") };
+        let Some(t) = self.index.para(&self.doc, para).map(|q| UnitText::in_view(q, self.doc.review.view)) else {
+            return Outcome::Unchanged("no paragraph");
+        };
         let typing = |at| TypingRun { para, at, kind: if dir == Dir::Back { Typing::Backspace } else { Typing::Delete } };
         if dir == Dir::Back && off > Unit(0) {
             let from = if word { t.prev_word(off) } else { t.prev_grapheme(off) };
@@ -2154,12 +2156,17 @@ impl Editor {
             return Outcome::Moved;
         }
         if !extend
-            && matches!(by, MoveBy::Char)
             && !self.selection.is_collapsed()
-            && let Some((a, b)) = self.selection.ordered(&self.index)
+            && let Some((a, b)) = self.selection.ordered(&self.index).or_else(|| self.selection_edges())
         {
-            self.set_selection(Selection::Caret(if forward { b } else { a }));
-            return Outcome::Moved;
+            let edge = Selection::Caret(if forward { b } else { a });
+            if matches!(by, MoveBy::Char) {
+                self.set_selection(edge);
+                return Outcome::Moved;
+            }
+            if self.selection.focus().is_none() {
+                self.selection = edge;
+            }
         }
         let Some(focus) = self.selection.focus() else { return Outcome::Unchanged("no caret") };
         if matches!(by, MoveBy::Line | MoveBy::LineEdge | MoveBy::Screen | MoveBy::Page | MoveBy::ScreenEdge) {
@@ -2226,6 +2233,28 @@ impl Editor {
             _ => self.scroll_to_caret(fonts),
         }
         Outcome::Moved
+    }
+
+    /// The first and last text places of a cell range or an inline object.
+    fn selection_edges(&self) -> Option<(Position, Position)> {
+        match self.selection {
+            Selection::Object(selection::ObjectRef::Inline { para, offset }) => {
+                let story = self.index.para_slot(para).map_or(StoryId::Body, |s| self.index.story(s.container));
+                Some((Position::text(story, para, offset), Position::text(story, para, Unit(offset.0 + 1))))
+            }
+            Selection::Cells { table, anchor, focus, .. } => {
+                let t = self.index.table(&self.doc, table)?;
+                let g = table::Grid::of(t);
+                let at = |r: usize, c: usize| {
+                    let cell = g.cell_at(r, c)?;
+                    self.cell_content(table, r, cell)?.ordered(&self.index)
+                };
+                let (a, _) = at(anchor.row.min(focus.row), anchor.col.min(focus.col))?;
+                let (_, b) = at(anchor.row.max(focus.row), anchor.col.max(focus.col))?;
+                Some((a, b))
+            }
+            _ => None,
+        }
     }
 
     fn page_move(&mut self, by: MoveBy, forward: bool, focus: Position, fonts: &Fonts) -> Option<Position> {
@@ -2763,14 +2792,14 @@ impl Editor {
 
     fn word_span(&self, p: Position) -> (Position, Position) {
         let Some((para, off)) = p.para_offset() else { return (p, p) };
-        let Some(t) = self.index.para(&self.doc, para).map(UnitText::of) else { return (p, p) };
+        let Some(t) = self.index.para(&self.doc, para).map(|q| UnitText::in_view(q, self.doc.review.view)) else { return (p, p) };
         let (a, b) = t.word_at(off);
         (Position::text(p.story, para, a), Position::text(p.story, para, b))
     }
 
     fn sentence_span(&self, p: Position) -> (Position, Position) {
         let Some((para, off)) = p.para_offset() else { return (p, p) };
-        let Some(t) = self.index.para(&self.doc, para).map(UnitText::of) else { return (p, p) };
+        let Some(t) = self.index.para(&self.doc, para).map(|q| UnitText::in_view(q, self.doc.review.view)) else { return (p, p) };
         let (a, b) = t.sentence_at(off);
         (Position::text(p.story, para, a), Position::text(p.story, para, b))
     }

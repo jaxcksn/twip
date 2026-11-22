@@ -340,7 +340,14 @@ impl Editor {
             let mut with = Vec::new();
             let mut at = 0u32;
             let (mut word, mut sentence) = (true, true);
-            for i in &p.inlines {
+            let mut code = vec![0i32; p.inlines.len() + 1];
+            for f in crate::docx::fields::spans(&p.inlines) {
+                code[f.begin + 1] += 1;
+                code[f.code_end()] -= 1;
+            }
+            let mut in_code = 0;
+            for (k, i) in p.inlines.iter().enumerate() {
+                in_code += code[k];
                 let n = i.units() as u32;
                 let (s, e) = (at, at + n);
                 at = e;
@@ -357,7 +364,8 @@ impl Editor {
                     Inline::Text(text, run) => {
                         let (from, to_) = (a.0.max(s) - s, b.0.min(e) - s);
                         let part: String = text.chars().skip(from as usize).take((to_ - from) as usize).collect();
-                        with.push(Inline::Text(recase(&part, to, &mut word, &mut sentence), run.clone()));
+                        let part = if in_code > 0 { part } else { recase(&part, to, &mut word, &mut sentence) };
+                        with.push(Inline::Text(part, run.clone()));
                     }
                     other => {
                         word = true;

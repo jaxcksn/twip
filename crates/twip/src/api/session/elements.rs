@@ -290,26 +290,39 @@ impl Session {
     }
 
     /// The body (or an element's content) as blocks, `depth` levels of tables deep (all of them by default).
-    pub fn structure(&self, root: Option<ElementId>, depth: Option<u32>) -> Vec<Block> {
+    pub fn structure(&self, root: Option<ElementId>, depth: Option<u32>) -> Result<Vec<Block>, Error> {
         let depth = depth.unwrap_or(u32::MAX);
         let doc = self.editor.document();
         let body: Vec<&[crate::docx::Block]> = doc.sections.iter().map(|s| s.blocks.as_slice()).collect();
-        match root.and_then(|r| elements::parse_id(&r.0)) {
-            None => body.iter().flat_map(|b| blocks(b, depth)).collect(),
-            Some(crate::docx::ElementId::Control(c)) => {
+        let Some(root) = root else { return Ok(body.iter().flat_map(|b| blocks(b, depth)).collect()) };
+        let id = elements::parse_id(&root.0).ok_or_else(|| Error::invalid("not an element id"))?;
+        let missing = || Error::unavailable("no such element");
+        match id {
+            // A control's blocks, in its story
+            crate::docx::ElementId::Control(c) => {
+                use crate::editing::index::{Container, Loc};
+                let idx = self.editor.index();
+                let slot = idx.element(id).and_then(|locs| locs.iter().next()).and_then(|loc| match *loc {
+                    Loc::Para(p) => idx.para_slot(p),
+                    Loc::Table(t) | Loc::Row(t, _) | Loc::Cell(t, ..) => idx.table_slot(t),
+                });
+                let slot = slot.ok_or_else(missing)?;
                 let mut out = Vec::new();
-                body.iter().for_each(|b| carrying(b, c, &mut out));
-                blocks(&out, depth)
+                match idx.story(slot.container) {
+                    crate::editing::position::StoryId::Body => body.iter().for_each(|b| carrying(b, c, &mut out)),
+                    story => idx.blocks(doc, Container::Story(story)).into_iter().for_each(|b| carrying(b, c, &mut out)),
+                }
+                Ok(blocks(&out, depth))
             }
             // A field is inline: its paragraph.
-            Some(id) => self
+            id => self
                 .all_elements()
                 .iter()
                 .find(|e| e.id == id)
                 .and_then(|e| e.at)
                 .and_then(|p| self.editor.index().para(doc, p))
                 .map(|p| blocks(&[crate::docx::Block::Para(p.clone())], depth))
-                .unwrap_or_default(),
+                .ok_or_else(missing),
         }
     }
 
@@ -363,9 +376,32 @@ mod tests {
         let detail = s.element(fields[0].id.clone()).expect("one");
         assert_eq!(detail.code, fields[0].code);
         assert!(s.element(crate::api::value::ElementId("x1".into())).is_err());
-        assert!(!s.structure(None, Some(0)).is_empty());
+        assert!(!s.structure(None, Some(0)).expect("the body").is_empty());
         s.select_element(fields[0].id.clone(), true).expect("selects");
         assert!(s.data_parts(Some("urn:none"), None).is_empty());
+    }
+
+    #[test]
+    fn structure_of_a_root_is_that_elements_alone() {
+        use crate::api::command::{Command, InsertControl};
+        let mut engine = Engine::new(FontLibrary::system_recommended());
+        let id = engine.create_session(SessionOptions::default());
+        let s = engine.session(id).expect("a session");
+        s.open(&crate::editing::tests::blank_body(r#"<w:p><w:r><w:t>one</w:t></w:r></w:p><w:p><w:r><w:t>two</w:t></w:r></w:p>"#)).expect("opens");
+        assert_eq!(s.structure(None, None).expect("the body").len(), 2);
+        let code = |root: &str| s.structure(Some(crate::api::value::ElementId(root.into())), None).map(|_| ()).map_err(|e| e.code);
+        assert_eq!(code("zz"), Err(crate::api::error::ErrorCode::InvalidArgument), "an unparsable root is no element");
+        assert_eq!(code("c999"), Err(crate::api::error::ErrorCode::Unavailable), "a control the document doesn't have");
+        // A control in a header: its own blocks.
+        s.run(Command::EditHeader).expect("edits the header");
+        s.run(Command::InsertText("head".into())).expect("types");
+        s.run(Command::SelectAll).expect("selects");
+        let control: InsertControl = serde_json::from_value(serde_json::json!({ "kind": "richText", "wrapSelection": true })).expect("options");
+        s.run(Command::InsertControl(control)).expect("wraps it in a control");
+        let c = s.elements(&ElementFilter { kind: Some(ElementKind::RichText), ..ElementFilter::default() });
+        assert_eq!(c.len(), 1, "{c:?}");
+        let blocks = s.structure(Some(c[0].id.clone()), None).expect("the control");
+        assert!(matches!(blocks.as_slice(), [crate::api::services::Block::Paragraph { text_length: 4, .. }]), "{blocks:?}");
     }
 
     #[test]

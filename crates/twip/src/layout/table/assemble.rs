@@ -172,7 +172,8 @@ pub(super) fn edge_add(compat: Compat, t: &Table) -> (f64, f64) {
     }
 }
 
-pub(super) fn row_borders(t: &Table, ri: usize) -> &[Option<Border>; 6] {
+/// Row `ri`'s borders: its own exceptions (`w:tblPrEx`), else the table's.
+pub fn row_borders(t: &Table, ri: usize) -> &[Option<Border>; 6] {
     t.rows.get(ri).and_then(|r| r.borders.as_deref()).unwrap_or(&t.borders)
 }
 

@@ -59,9 +59,29 @@ pub fn hidden_codes(inlines: &[Inline]) -> Vec<(u32, u32)> {
         .collect()
 }
 
+/// The span in `spans` (as [`spans`] orders them) of the field beginning at inline `begin`.
+pub fn span_in(spans: &[FieldSpan], begin: usize) -> Option<FieldSpan> {
+    spans.binary_search_by_key(&begin, |s| s.begin).ok().map(|i| spans[i])
+}
+
 /// The span of the field beginning at inline `begin`.
 pub fn span_at(inlines: &[Inline], begin: usize) -> Option<FieldSpan> {
-    spans(inlines).into_iter().find(|s| s.begin == begin)
+    let Some(Inline::FieldBegin { id, .. }) = inlines.get(begin) else { return None };
+    let (mut nested, mut sep) = (0usize, None);
+    for (k, i) in inlines.iter().enumerate().skip(begin + 1) {
+        match i {
+            Inline::FieldBegin { id: o, .. } if o == id => nested += 1,
+            Inline::FieldSep { id: o, .. } if o == id && nested == 0 => {
+                sep.get_or_insert(k);
+            }
+            Inline::FieldEnd { id: o, .. } if o == id => match nested.checked_sub(1) {
+                Some(n) => nested = n,
+                None => return Some(FieldSpan { begin, sep, end: k }),
+            },
+            _ => {}
+        }
+    }
+    None
 }
 
 /// A field's own code text: the text from its begin to its separator, the fields nested in it left out.
@@ -92,13 +112,12 @@ fn code_where(inlines: &[Inline], s: FieldSpan, keep: impl Fn(&Run) -> bool) -> 
 /// A field's code text with each field nested in it as `value` gives it (by its begin), quoted so that it reads as
 /// one word; `None` when a nested field gets no value.
 pub fn code_with(inlines: &[Inline], s: FieldSpan, value: &dyn Fn(usize) -> Option<String>) -> Option<String> {
-    let inner = spans(inlines);
     let mut out = String::new();
     let mut k = s.begin + 1;
     while k < s.code_end() {
         match &inlines[k] {
             Inline::FieldBegin { .. } => {
-                if let Some(n) = inner.iter().find(|n| n.begin == k) {
+                if let Some(n) = span_at(inlines, k) {
                     out.push('"');
                     out.push_str(&value(k)?);
                     out.push('"');

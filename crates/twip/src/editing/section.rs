@@ -85,6 +85,16 @@ impl Editor {
         self.focus_section()
     }
 
+    /// The sections the selection covers, the focus's alone outside the body's text.
+    pub(super) fn selected_sections(&self) -> std::ops::RangeInclusive<usize> {
+        let one = self.focus_section();
+        let Some((a, b)) = self.selection.ordered(&self.index) else { return one..=one };
+        match (self.section_at(&a), self.section_at(&b)) {
+            (Some(x), Some(y)) => x.min(y)..=x.max(y),
+            _ => one..=one,
+        }
+    }
+
     /// Sets the page borders of the selection's section, or of every section.
     pub(super) fn set_page_borders(&mut self, c: crate::api::command::PageBordersChange, fonts: &Fonts) -> Outcome {
         use crate::api::command::{PageBorderDisplay, PageBorderOffset, PageBorderScope};
@@ -223,32 +233,31 @@ impl Editor {
     }
 
     pub(super) fn section_cmd(&mut self, c: SectionCmd, fonts: &Fonts) -> Outcome {
-        let section = self.focus_section();
-        let Some(s) = self.doc.sections.get(section) else { return Outcome::Unchanged("no section") };
-        let mut page = s.page();
-        let label = match c {
-            SectionCmd::Orientation(landscape) => {
-                if (page.page_w > page.page_h) != landscape {
-                    (page.page_w, page.page_h) = (page.page_h, page.page_w);
-                    (page.top, page.right, page.bottom, page.left) = (page.left, page.top, page.right, page.bottom);
-                }
-                "Orientation"
-            }
+        match c {
+            // The margins turn with the page, and back
+            SectionCmd::Orientation(landscape) => self.set_page(
+                "Orientation",
+                |p| {
+                    if p.page_w == p.page_h || (p.page_w > p.page_h) == landscape {
+                        return;
+                    }
+                    (p.page_w, p.page_h) = (p.page_h, p.page_w);
+                    (p.top, p.right, p.bottom, p.left) =
+                        if landscape { (p.left, p.top, p.right, p.bottom) } else { (p.right, p.bottom, p.left, p.top) };
+                },
+                fonts,
+            ),
             SectionCmd::Size(w, h) => {
-                let landscape = page.page_w > page.page_h;
-                (page.page_w, page.page_h) = if landscape { (w.max(h), w.min(h)) } else { (w.min(h), w.max(h)) };
-                "Size"
+                let size = |pw: f64, ph: f64| if pw > ph { (w.max(h), w.min(h)) } else { (w.min(h), w.max(h)) };
+                for section in self.selected_sections() {
+                    let Some(s) = self.doc.sections.get(section) else { continue };
+                    let (pw, ph) = size(s.page_w, s.page_h);
+                    if s.left + s.right + s.gutter >= pw || s.top.abs() + s.bottom.abs() >= ph {
+                        return Outcome::invalid("the margins must fit the page");
+                    }
+                }
+                self.set_page("Size", |p| (p.page_w, p.page_h) = size(p.page_w, p.page_h), fonts)
             }
-        };
-        if page == s.page() {
-            return Outcome::Unchanged("already so");
         }
-        let change = s.change.clone();
-        let mut tx = self.begin(label);
-        if self.step(&mut tx, Step::SectionPage { section, page: Box::new(page), change }).is_err() {
-            self.abort(tx);
-            return Outcome::Unchanged("no section");
-        }
-        self.commit(tx, None, fonts)
     }
 }

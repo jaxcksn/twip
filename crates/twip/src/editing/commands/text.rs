@@ -51,6 +51,7 @@ impl Editor {
         };
         let new = s.without_blocks();
         let mut after = s.page();
+        after.pg_start = None;
         after.break_kind = match kind {
             SectionBreakKind::NextPage => B::NextPage,
             SectionBreakKind::Continuous => B::Continuous,

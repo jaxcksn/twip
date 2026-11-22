@@ -1786,7 +1786,7 @@ impl Leader {
             Leader::None => None,
             Leader::Dot => Some('.'),
             Leader::Hyphen => Some('-'),
-            Leader::Underscore => Some('_'),
+            Leader::Underscore | Leader::Heavy => Some('_'),
             Leader::MiddleDot => Some('·'),
         }
     }

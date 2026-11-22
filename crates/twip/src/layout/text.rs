@@ -1808,18 +1808,18 @@ pub fn shape_space(
     for (k, inl) in para.inlines.iter().enumerate() {
         match inl {
             Inline::FieldBegin { kind: Some(kind), .. } => {
-                let code = spans.iter().find(|s| s.begin == k).map(|s| crate::docx::fields::code_text(&para.inlines, *s)).unwrap_or_default();
+                let code = crate::docx::fields::span_in(&spans, k).map(|s| crate::docx::fields::code_text(&para.inlines, s)).unwrap_or_default();
                 let chapter =
                     fields.chapters.as_ref().and_then(|c| c.get(&ParaId(para.id))).filter(|_| matches!(kind, FieldKind::Page | FieldKind::PgNum));
-                let value = match (kind, spans.iter().find(|s| s.begin == k)) {
+                let value = match (kind, crate::docx::fields::span_in(&spans, k)) {
                     // An `IF` on the values its nested fields have here (else its cached result).
-                    (FieldKind::If, Some(s)) => crate::docx::fields::code_with(&para.inlines, *s, &|b| {
-                        let (Inline::FieldBegin { kind, value, .. }, Some(s)) = (&para.inlines[b], spans.iter().find(|s| s.begin == b)) else {
+                    (FieldKind::If, Some(s)) => crate::docx::fields::code_with(&para.inlines, s, &|b| {
+                        let (Inline::FieldBegin { kind, value, .. }, Some(s)) = (&para.inlines[b], crate::docx::fields::span_in(&spans, b)) else {
                             return None;
                         };
                         // A field that isn't computed: its cached result.
-                        let Some(kind) = kind else { return Some(crate::docx::fields::result_text(&para.inlines, *s)) };
-                        fields.value(kind, crate::docx::fields::code_text(&para.inlines, *s).trim()).or_else(|| value.clone())
+                        let Some(kind) = kind else { return Some(crate::docx::fields::result_text(&para.inlines, s)) };
+                        fields.value(kind, crate::docx::fields::code_text(&para.inlines, s).trim()).or_else(|| value.clone())
                     })
                     .and_then(|c| crate::docx::fields::if_field(&crate::docx::fields::words(&c))),
                     // A NOTEREF: its note's number, as the reference shows it.

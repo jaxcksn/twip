@@ -5524,7 +5524,7 @@ fn object_xml(w: &str, i: &Inline) -> Option<String> {
             let leader = match t.leader {
                 Leader::Dot => "dot",
                 Leader::Hyphen => "hyphen",
-                Leader::Underscore => "underscore",
+                Leader::Underscore | Leader::Heavy => "underscore",
                 Leader::MiddleDot => "middleDot",
                 Leader::None => "none",
             };

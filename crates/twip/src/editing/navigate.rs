@@ -5,7 +5,7 @@ use std::rc::Rc;
 use crate::docx::{Block, Document, Table};
 use crate::layout::{ParaId, TableId, Unit};
 
-use super::geometry::{PageGeometry, Pages};
+use super::geometry::{PageGeometry, Pages, Stop};
 use super::index::{Container, DocIndex};
 use super::position::{Affinity, Place, Position, StoryId};
 use super::step::para_len;
@@ -27,7 +27,7 @@ pub struct LineAt {
 
 impl Nav<'_> {
     fn text(&self, para: ParaId) -> Option<UnitText> {
-        self.idx.para(self.doc, para).map(UnitText::of)
+        self.idx.para(self.doc, para).map(|p| UnitText::in_view(p, self.doc.review.view))
     }
 
     fn story_of_container(&self, c: Container) -> StoryId {
@@ -39,7 +39,7 @@ impl Nav<'_> {
     fn block_start(&self, story: StoryId, b: &Block) -> Option<Position> {
         match b {
             Block::Para(p) => Some(Position::text(story, ParaId(p.id), Unit(0))),
-            Block::Table(t) => self.cell_first(story, t, 0, self.first_cell(t, 0)?),
+            Block::Table(t) => self.row_start(story, t, 0),
         }
     }
 
@@ -50,17 +50,44 @@ impl Nav<'_> {
         }
     }
 
+    fn blocks_start(&self, story: StoryId, blocks: &[Block]) -> Option<Position> {
+        blocks.iter().find_map(|b| self.block_start(story, b))
+    }
+
+    fn blocks_end(&self, story: StoryId, blocks: &[Block]) -> Option<Position> {
+        blocks.iter().rev().find_map(|b| self.block_end(story, b))
+    }
+
     fn first_cell(&self, t: &Table, row: usize) -> Option<usize> {
         let g = Grid::of(t);
         (0..t.rows.get(row)?.cells.len()).find(|&c| !g.continues(row, c))
     }
 
+    /// The first place in `cells` of `row` holding text, its row end when none does.
+    fn first_in_row(&self, story: StoryId, t: &Table, row: usize, cells: std::ops::Range<usize>) -> Option<Position> {
+        let g = Grid::of(t);
+        let r = t.rows.get(row)?;
+        let found = cells.filter(|&c| c < r.cells.len() && !g.continues(row, c)).find_map(|c| self.cell_first(story, t, row, c));
+        Some(found.unwrap_or_else(|| Position::row_end(story, TableId(t.id), row)))
+    }
+
+    /// The last place in `cells` of `row` holding text.
+    fn last_in_row(&self, story: StoryId, t: &Table, row: usize, cells: std::ops::Range<usize>) -> Option<Position> {
+        let g = Grid::of(t);
+        let r = t.rows.get(row)?;
+        cells.rev().filter(|&c| c < r.cells.len() && !g.continues(row, c)).find_map(|c| self.cell_last(story, t, row, c))
+    }
+
+    fn row_start(&self, story: StoryId, t: &Table, row: usize) -> Option<Position> {
+        self.first_in_row(story, t, row, 0..t.rows.get(row)?.cells.len())
+    }
+
     fn cell_first(&self, story: StoryId, t: &Table, row: usize, cell: usize) -> Option<Position> {
-        t.rows.get(row)?.cells.get(cell)?.blocks.first().and_then(|b| self.block_start(story, b))
+        self.blocks_start(story, &t.rows.get(row)?.cells.get(cell)?.blocks)
     }
 
     fn cell_last(&self, story: StoryId, t: &Table, row: usize, cell: usize) -> Option<Position> {
-        t.rows.get(row)?.cells.get(cell)?.blocks.last().and_then(|b| self.block_end(story, b))
+        self.blocks_end(story, &t.rows.get(row)?.cells.get(cell)?.blocks)
     }
 
     fn section_beside(&self, c: Container, forward: bool) -> Option<Container> {
@@ -73,28 +100,21 @@ impl Nav<'_> {
     fn after(&self, container: Container, block: usize) -> Option<Position> {
         let story = self.story_of_container(container);
         let blocks = self.idx.blocks(self.doc, container)?;
-        if let Some(b) = blocks.get(block + 1) {
-            return self.block_start(story, b);
+        if let Some(p) = blocks.get(block + 1..).and_then(|rest| self.blocks_start(story, rest)) {
+            return Some(p);
         }
         let Container::Cell { table, row, cell } = container else {
-            let next = self.section_beside(container, true)?;
-            return self.idx.blocks(self.doc, next)?.first().and_then(|b| self.block_start(story, b));
+            let Container::Section(i) = container else { return None };
+            return self.doc.sections.get(i + 1..)?.iter().find_map(|s| self.blocks_start(story, &s.blocks));
         };
         let t = self.idx.table(self.doc, table)?;
-        let g = Grid::of(t);
-        match (cell + 1..t.rows[row].cells.len()).find(|&c| !g.continues(row, c)) {
-            Some(c) => self.cell_first(story, t, row, c),
-            None => Some(Position::row_end(story, table, row)),
-        }
+        self.first_in_row(story, t, row, cell + 1..t.rows.get(row)?.cells.len())
     }
 
     fn after_row(&self, story: StoryId, table: TableId, row: usize) -> Option<Position> {
         let t = self.idx.table(self.doc, table)?;
         if row + 1 < t.rows.len() {
-            return match self.first_cell(t, row + 1) {
-                Some(c) => self.cell_first(story, t, row + 1, c),
-                None => Some(Position::row_end(story, table, row + 1)),
-            };
+            return self.row_start(story, t, row + 1);
         }
         let s = self.idx.table_slot(table)?;
         self.after(s.container, s.block)
@@ -103,17 +123,16 @@ impl Nav<'_> {
     fn before(&self, container: Container, block: usize) -> Option<Position> {
         let story = self.story_of_container(container);
         let blocks = self.idx.blocks(self.doc, container)?;
-        if block > 0 {
-            return self.block_end(story, &blocks[block - 1]);
+        if let Some(p) = blocks.get(..block).and_then(|head| self.blocks_end(story, head)) {
+            return Some(p);
         }
         let Container::Cell { table, row, cell } = container else {
-            let prev = self.section_beside(container, false)?;
-            return self.idx.blocks(self.doc, prev)?.last().and_then(|b| self.block_end(story, b));
+            let Container::Section(i) = container else { return None };
+            return self.doc.sections.get(..i)?.iter().rev().find_map(|s| self.blocks_end(story, &s.blocks));
         };
         let t = self.idx.table(self.doc, table)?;
-        let g = Grid::of(t);
-        match (0..cell).rev().find(|&c| !g.continues(row, c)) {
-            Some(c) => self.cell_last(story, t, row, c),
+        match self.last_in_row(story, t, row, 0..cell) {
+            Some(p) => Some(p),
             None if row > 0 => Some(Position::row_end(story, table, row - 1)),
             None => {
                 let s = self.idx.table_slot(table)?;
@@ -124,9 +143,14 @@ impl Nav<'_> {
 
     fn before_row_end(&self, story: StoryId, table: TableId, row: usize) -> Option<Position> {
         let t = self.idx.table(self.doc, table)?;
-        let g = Grid::of(t);
-        let c = (0..t.rows.get(row)?.cells.len()).rev().find(|&c| !g.continues(row, c))?;
-        self.cell_last(story, t, row, c)
+        if let Some(p) = self.last_in_row(story, t, row, 0..t.rows.get(row)?.cells.len()) {
+            return Some(p);
+        }
+        if row > 0 {
+            return Some(Position::row_end(story, table, row - 1));
+        }
+        let s = self.idx.table_slot(table)?;
+        self.before(s.container, s.block)
     }
 
     // Logical movement
@@ -195,7 +219,7 @@ impl Nav<'_> {
         };
         let pick = |c: &Container| -> Option<Position> {
             let blocks = self.idx.blocks(self.doc, *c)?;
-            if end { blocks.last().and_then(|b| self.block_end(story, b)) } else { blocks.first().and_then(|b| self.block_start(story, b)) }
+            if end { self.blocks_end(story, blocks) } else { self.blocks_start(story, blocks) }
         };
         if end { roots.iter().rev().find_map(pick) } else { roots.iter().find_map(pick) }
     }
@@ -230,12 +254,22 @@ impl Nav<'_> {
     pub fn line_edge(&mut self, pos: Position, end: bool) -> Option<Position> {
         let at = self.line_of(pos)?;
         let l = &at.geo.lines[at.line];
-        let stop = if end { l.stops.last()? } else { l.stops.first()? };
-        let wraps = end && at.geo.lines.iter().any(|m| m.first_of(stop.para) == Some(stop.unit) && m.top > l.top);
-        Some(Position {
-            story: pos.story,
-            place: Place::Text { para: stop.para, offset: stop.unit, affinity: if wraps { Affinity::Upstream } else { Affinity::Downstream } },
-        })
+        let stop = *if end { l.stops.last()? } else { l.stops.first()? };
+        Some(self.at_stop(pos.story, at.page, at.line, stop))
+    }
+
+    /// The place `stop` of line `line` on `page` stands for, upstream when downstream would show it on another line.
+    fn at_stop(&mut self, story: StoryId, page: usize, line: usize, stop: Stop) -> Position {
+        let down = Position::text(story, stop.para, stop.unit);
+        if !stop.end {
+            return down;
+        }
+        match self.pages.line_showing(stop.para, stop.unit, Affinity::Downstream, page, self.idx) {
+            Some((p, _, i)) if p != page || i != line => {
+                Position { story, place: Place::Text { para: stop.para, offset: stop.unit, affinity: Affinity::Upstream } }
+            }
+            _ => down,
+        }
     }
 
     pub fn caret_x(&mut self, pos: Position) -> Option<f64> {
@@ -249,15 +283,11 @@ impl Nav<'_> {
         let page = if last { *pages.last()? } else { *pages.first()? };
         let geo = self.pages.page(page, self.idx)?;
         let line = if last { geo.lines_of(para).last() } else { geo.lines_of(para).next() };
-        let Some((_, line)) = line else {
+        let Some((i, line)) = line else {
             return geo.cells.iter().any(|c| c.closing.is_some_and(|(p, _)| p == para)).then(|| Position::text(story, para, Unit(0)));
         };
         let stop = line.nearest(x)?;
-        let wraps = stop.end && geo.lines.iter().any(|m| m.first_of(stop.para) == Some(stop.unit) && m.top > line.top);
-        Some(Position {
-            story,
-            place: Place::Text { para: stop.para, offset: stop.unit, affinity: if wraps { Affinity::Upstream } else { Affinity::Downstream } },
-        })
+        Some(self.at_stop(story, page, i, stop))
     }
 
     pub fn vertical(&mut self, pos: Position, x: f64, down: bool) -> Option<Position> {
@@ -271,14 +301,14 @@ impl Nav<'_> {
             let next = if down { same.get(k + 1) } else { k.checked_sub(1).and_then(|j| same.get(j)) };
             if let Some(&i) = next {
                 let stop = at.geo.lines[i].nearest(x)?;
-                return Some(Position::text(pos.story, stop.para, stop.unit));
+                return Some(self.at_stop(pos.story, at.page, i, stop));
             }
             let page = if down { Some(at.page + 1) } else { at.page.checked_sub(1) };
-            if let Some(g) = page.and_then(|page| self.pages.page(page, self.idx)) {
-                let lines: Vec<usize> = g.lines_of(para).map(|(i, _)| i).collect();
-                if let Some(&i) = if down { lines.first() } else { lines.last() } {
-                    let stop = g.lines[i].nearest(x)?;
-                    return Some(Position::text(pos.story, stop.para, stop.unit));
+            if let Some((page, g)) = page.and_then(|page| Some((page, self.pages.page(page, self.idx)?))) {
+                let line = if down { g.lines_of(para).next() } else { g.lines_of(para).last() };
+                if let Some((i, l)) = line {
+                    let stop = l.nearest(x)?;
+                    return Some(self.at_stop(pos.story, page, i, stop));
                 }
             }
         }
