@@ -155,15 +155,20 @@ impl Editor {
         })
     }
 
-    /// A part name for a new header or footer.
+    /// A part name for a new header or footer, beside the main part: one no story has, had when read, or the package
+    /// holds (a removed part's name names that part's relationship).
     pub(super) fn new_story_name(&self, footer: bool) -> String {
         let kind = if footer { "footer" } else { "header" };
-        let n = (1..)
-            .find(|n| {
-                !self.doc.stories.contains_key(&format!("word/header{n}.xml")) && !self.doc.stories.contains_key(&format!("word/footer{n}.xml"))
-            })
-            .unwrap_or(1);
-        format!("word/{kind}{n}.xml")
+        let src = self.doc.source.as_ref();
+        let dir = src.and_then(|s| s.main.rsplit_once('/')).map_or(String::new(), |(d, _)| format!("{d}/"));
+        let package = src.and_then(|s| zip::ZipArchive::new(std::io::Cursor::new(&s.package[..])).ok());
+        let taken = |name: &str| {
+            self.doc.stories.contains_key(name)
+                || src.is_some_and(|s| s.stories.contains_key(name))
+                || package.as_ref().is_some_and(|z| z.index_for_name(name).is_some())
+        };
+        let n = (1..).find(|n| !taken(&format!("{dir}header{n}.xml")) && !taken(&format!("{dir}footer{n}.xml"))).unwrap_or(1);
+        format!("{dir}{kind}{n}.xml")
     }
 
     /// The step that takes section `section`'s own header or footer `name` away: the part goes with it, unless another

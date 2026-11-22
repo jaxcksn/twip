@@ -54,7 +54,7 @@ pub fn related(package: &[u8], parts: &[(String, Vec<u8>)], main: &str, rel_type
 }
 
 /// A relationship target of `from` as a part name: absolute targets from the package root, others from `from`'s folder.
-fn resolve(from: &str, target: &str) -> String {
+pub fn resolve(from: &str, target: &str) -> String {
     if let Some(abs) = target.strip_prefix('/') {
         return abs.to_string();
     }

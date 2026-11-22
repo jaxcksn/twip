@@ -19,6 +19,8 @@ mod picture_controls;
 mod provisional;
 pub(crate) mod recorder;
 mod round_trips;
+mod saving;
+mod saving_objects;
 pub(crate) mod scenarios;
 mod sections;
 mod shapes;

@@ -18,6 +18,16 @@ pub const MC: &str = "http://schemas.openxmlformats.org/markup-compatibility/200
 // ponytail: a depth bound over recursive walkers; walk iteratively if real documents need deeper nesting.
 pub const MAX_DEPTH: usize = 96;
 
+/// Whether XML 1.0 can hold `c` at all (its `Char` production), escaped or not.
+pub fn is_char(c: char) -> bool {
+    matches!(c, '\t' | '\n' | '\r' | ' '..='\u{D7FF}' | '\u{E000}'..='\u{FFFD}' | '\u{10000}'..)
+}
+
+/// `s` without the characters XML can't hold, borrowed when it has none.
+pub fn legal(s: &str) -> std::borrow::Cow<'_, str> {
+    if s.chars().all(is_char) { std::borrow::Cow::Borrowed(s) } else { std::borrow::Cow::Owned(s.chars().filter(|&c| is_char(c)).collect()) }
+}
+
 /// Whether well-formed XML text nests elements deeper than `max`: start tags open a level, end tags close one, and
 /// comments, CDATA sections, processing instructions and declarations are skipped. Without a doctype no entity can
 /// add elements, so the text is the whole tree.
