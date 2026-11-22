@@ -6,9 +6,9 @@
     {
       "expect": {
         "revisions": [
-          "Insert Author A",
+          "RowInsert Author A",
           "TableProperty Author C",
-          "Delete Author B",
+          "RowDelete Author B",
           "TableProperty Author C"
         ],
         "tables": [
@@ -31,7 +31,7 @@
         },
         "revisions": [
           "TableProperty Author C",
-          "Delete Author B",
+          "RowDelete Author B",
           "TableProperty Author C"
         ],
         "tables": [
@@ -50,9 +50,9 @@
     {
       "expect": {
         "revisions": [
-          "Insert Author A",
+          "RowInsert Author A",
           "TableProperty Author C",
-          "Delete Author B",
+          "RowDelete Author B",
           "TableProperty Author C"
         ],
         "tables": [
@@ -75,7 +75,7 @@
         },
         "revisions": [
           "TableProperty Author C",
-          "Delete Author B",
+          "RowDelete Author B",
           "TableProperty Author C"
         ],
         "tables": [

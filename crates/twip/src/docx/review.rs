@@ -247,6 +247,13 @@ pub struct ParaChange {
     pub numbering_change: Raw,
 }
 
+impl ParaChange {
+    /// Whether it is a list's numbering change alone, without a `w:pPrChange`.
+    pub fn numbering_only(&self) -> bool {
+        self.previous_raw.0.is_none() && self.numbering_change.0.is_some()
+    }
+}
+
 /// `w:sectPrChange`: the section's page before the change.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SectionChange {

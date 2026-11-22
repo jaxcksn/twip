@@ -192,6 +192,7 @@ impl Editor {
                     let mut pr = Props::parse(p.style.direct.0.as_deref(), "pPr", &cx);
                     edit(&mut pr, &cx.w, old.as_ref());
                     let mut style = res.para_from_xml(pr.xml().as_deref(), None, &cx).style;
+                    style.change = p.style.change.clone();
                     if first.is_none() {
                         first = Some(style.frame.clone());
                     }
@@ -246,7 +247,6 @@ impl Editor {
                 p.src = None;
             }
         }
-        let first = blocks.iter().find_map(|b| if let Block::Para(p) = b { Some(ParaId(p.id)) } else { None });
         let mut tx = self.begin("Remove Frame");
         if self.step(&mut tx, Step::Restyle { para: anchor, inlines }).is_err()
             || self.step(&mut tx, Step::Blocks { container: slot.container, range: slot.block..slot.block, with: blocks }).is_err()
@@ -255,6 +255,10 @@ impl Editor {
             return Outcome::Unchanged("stale frame");
         }
         let story = self.index.story(slot.container);
+        let first = self.index.blocks(&self.doc, slot.container).and_then(|b| b.get(slot.block)).and_then(|b| match b {
+            Block::Para(p) => Some(ParaId(p.id)),
+            Block::Table(_) => None,
+        });
         if let Some(first) = first {
             self.selection = Selection::Caret(Position::text(story, first, Unit(0)));
         }

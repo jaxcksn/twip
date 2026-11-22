@@ -17,6 +17,8 @@ pub enum RevisionKind {
     Delete,
     MovedFrom,
     MovedTo,
+    RowInsert,
+    RowDelete,
     Property,
     ParagraphProperty,
     TableProperty,
@@ -33,6 +35,8 @@ impl RevisionKind {
             RevisionKind::Delete => "Delete",
             RevisionKind::MovedFrom => "MovedFrom",
             RevisionKind::MovedTo => "MovedTo",
+            RevisionKind::RowInsert => "RowInsert",
+            RevisionKind::RowDelete => "RowDelete",
             RevisionKind::Property => "Property",
             RevisionKind::ParagraphProperty => "ParagraphProperty",
             RevisionKind::TableProperty => "TableProperty",
@@ -55,15 +59,30 @@ pub struct Revision {
     pub date: Option<crate::docx::review::Timestamp>,
 }
 
+const CHANNELS: usize = 8;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Channel {
     Ins,
     Del,
+    Row,
     Fmt,
     Para,
     Table,
     Cell,
     Section,
+}
+
+/// What a block-level change is a change of.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(super) enum Spot {
+    Run,
+    Mark(ParaId),
+    Para(ParaId),
+    Row(TableId, usize),
+    Cell(TableId, usize, usize),
+    Table(TableId),
+    Section(usize),
 }
 
 #[derive(Clone, Debug)]
@@ -75,6 +94,7 @@ pub(super) struct Item {
     pub start: Position,
     pub end: Position,
     pub run: Option<(ParaId, Range<u32>)>,
+    pub spot: Spot,
     listed: bool,
     seq: usize,
 }
@@ -111,7 +131,7 @@ pub fn revisions(doc: &Document, idx: &DocIndex) -> Vec<Revision> {
 
 fn revisions_of(items: &[Item]) -> Vec<Revision> {
     let mut out: Vec<Revision> = Vec::new();
-    let mut open: [Option<(usize, usize)>; 7] = [None; 7];
+    let mut open: [Option<(usize, usize)>; CHANNELS] = [None; CHANNELS];
     for it in items.iter().filter(|i| i.listed) {
         let ch = it.channel as usize;
         let joins = open[ch].filter(|&(e, last)| {
@@ -145,12 +165,12 @@ fn revisions_of(items: &[Item]) -> Vec<Revision> {
 }
 
 pub(super) fn found(doc: &Document, idx: &DocIndex) -> Found {
-    let mut w = Walk { found: Found::default(), story: StoryId::Body, seq: [0; 7], boxes: Vec::new() };
-    for s in &doc.sections {
+    let mut w = Walk { found: Found::default(), story: StoryId::Body, seq: [0; CHANNELS], boxes: Vec::new(), rows: Vec::new() };
+    for (k, s) in doc.sections.iter().enumerate() {
         if let Some(c) = &s.change {
             let (start, end) = w.span(&s.blocks);
             w.seq[Channel::Section as usize] += 1;
-            w.push(Channel::Section, RevisionKind::SectionProperty, &c.mark, start, end, None, true);
+            w.push(Channel::Section, RevisionKind::SectionProperty, &c.mark, start, end, (None, Spot::Section(k)), true);
         }
         w.blocks(&s.blocks, false);
     }
@@ -193,8 +213,10 @@ pub(super) fn found(doc: &Document, idx: &DocIndex) -> Found {
 struct Walk<'a> {
     found: Found,
     story: StoryId,
-    seq: [usize; 7],
+    seq: [usize; CHANNELS],
     boxes: Vec<(FloatId, &'a [Block])>,
+    /// The marks of the inserted or deleted rows being walked: their contents' are the rows' revisions.
+    rows: Vec<RevisionId>,
 }
 
 impl<'a> Walk<'a> {
@@ -206,11 +228,13 @@ impl<'a> Walk<'a> {
         mark: &Rc<RevisionMark>,
         start: Position,
         end: Position,
-        run: Option<(ParaId, Range<u32>)>,
+        at: (Option<(ParaId, Range<u32>)>, Spot),
         listed: bool,
     ) {
         let seq = self.seq[channel as usize];
-        self.found.items.push(Item { channel, kind, mark: mark.clone(), story: self.story, start, end, run, listed, seq });
+        let (run, spot) = at;
+        let listed = listed && !(matches!(channel, Channel::Ins | Channel::Del) && self.rows.contains(&mark.id));
+        self.found.items.push(Item { channel, kind, mark: mark.clone(), story: self.story, start, end, run, spot, listed, seq });
     }
 
     fn at(&self, p: &Paragraph, u: u32) -> Position {
@@ -256,7 +280,7 @@ impl<'a> Walk<'a> {
         self.seq[Channel::Para as usize] += 1;
         if let Some(c) = &p.style.change {
             let (start, end) = (self.at(p, 0), self.at(p, len));
-            self.push(Channel::Para, RevisionKind::ParagraphProperty, &c.mark, start, end, None, c.previous_raw.0.is_some());
+            self.push(Channel::Para, RevisionKind::ParagraphProperty, &c.mark, start, end, (None, Spot::Para(ParaId(p.id))), !c.numbering_only());
         }
         let mut at = 0u32;
         for i in &p.inlines {
@@ -276,36 +300,36 @@ impl<'a> Walk<'a> {
             }
             if let Some(r) = i.run() {
                 let (start, end) = (self.at(p, at), self.at(p, at + n));
-                self.run(r, start, end, Some((ParaId(p.id), at..at + n)));
+                self.run(r, start, end, (Some((ParaId(p.id), at..at + n)), Spot::Run));
             }
             at += n;
         }
         if !(cell_end && p.mark.rev.is_empty()) {
             let end = next.map_or(self.at(p, len), |q| self.at(q, 0));
-            self.run(&p.mark, self.at(p, len), end, None);
+            self.run(&p.mark, self.at(p, len), end, (None, Spot::Mark(ParaId(p.id))));
         }
     }
 
-    fn run(&mut self, r: &Run, start: Position, end: Position, run: Option<(ParaId, Range<u32>)>) {
+    fn run(&mut self, r: &Run, start: Position, end: Position, at: (Option<(ParaId, Range<u32>)>, Spot)) {
         for ch in [Channel::Ins, Channel::Del, Channel::Fmt] {
             self.seq[ch as usize] += 1;
         }
         if let Some(m) = &r.rev.ins {
             let kind = if m.kind == MarkKind::MoveTo { RevisionKind::MovedTo } else { RevisionKind::Insert };
-            self.push(Channel::Ins, kind, m, start, end, run.clone(), true);
+            self.push(Channel::Ins, kind, m, start, end, at.clone(), true);
         }
         if let Some(m) = &r.rev.del {
             let kind = if m.kind == MarkKind::MoveFrom { RevisionKind::MovedFrom } else { RevisionKind::Delete };
-            self.push(Channel::Del, kind, m, start, end, run.clone(), true);
+            self.push(Channel::Del, kind, m, start, end, at.clone(), true);
         }
         if let Some(f) = &r.rev.fmt {
-            self.push(Channel::Fmt, RevisionKind::Property, &f.mark, start, end, run, true);
+            self.push(Channel::Fmt, RevisionKind::Property, &f.mark, start, end, at, true);
         }
     }
 
     fn table(&mut self, t: &'a Table) {
         let id = TableId(t.id);
-        for ch in [Channel::Para, Channel::Table, Channel::Cell] {
+        for ch in [Channel::Para, Channel::Table, Channel::Cell, Channel::Row] {
             self.seq[ch as usize] += 2;
         }
         let starts: Vec<Position> = t
@@ -322,7 +346,7 @@ impl<'a> Walk<'a> {
         if !t.rows.iter().any(props) && !table.is_empty() {
             self.seq[Channel::Table as usize] += 1;
             for m in table.drain(..) {
-                self.push(Channel::Table, RevisionKind::TableProperty, m, row_start(0), end, None, true);
+                self.push(Channel::Table, RevisionKind::TableProperty, m, row_start(0), end, (None, Spot::Table(id)), true);
             }
         }
         for (ri, r) in t.rows.iter().enumerate() {
@@ -330,14 +354,18 @@ impl<'a> Walk<'a> {
             for ch in [Channel::Ins, Channel::Del, Channel::Fmt] {
                 self.seq[ch as usize] += 1;
             }
+            self.seq[Channel::Row as usize] += 1;
+            let marked = self.rows.len();
             if let Some(m) = &r.rev.ins {
-                self.push(Channel::Ins, RevisionKind::Insert, m, rs, re, None, true);
+                self.push(Channel::Row, RevisionKind::RowInsert, m, rs, re, (None, Spot::Row(id, ri)), true);
+                self.rows.push(m.id);
             }
             if let Some(m) = &r.rev.del {
-                self.push(Channel::Del, RevisionKind::Delete, m, rs, re, None, true);
+                self.push(Channel::Row, RevisionKind::RowDelete, m, rs, re, (None, Spot::Row(id, ri)), true);
+                self.rows.push(m.id);
             }
             self.seq[Channel::Cell as usize] += 1;
-            for c in &r.cells {
+            for (ci, c) in r.cells.iter().enumerate() {
                 self.seq[Channel::Cell as usize] += 1;
                 if let Some((m, k)) = &c.rev.structural {
                     let kind = match k {
@@ -346,17 +374,19 @@ impl<'a> Walk<'a> {
                         CellMarkKind::Merge { .. } => RevisionKind::CellMerge,
                     };
                     let (cs, ce) = self.span(&c.blocks);
-                    self.push(Channel::Cell, kind, m, cs, ce, None, true);
+                    self.push(Channel::Cell, kind, m, cs, ce, (None, Spot::Cell(id, ri, ci)), true);
                 }
                 self.blocks(&c.blocks, true);
             }
+            self.rows.truncate(marked);
             self.seq[Channel::Table as usize] += 1;
             if props(r) {
-                let row = r.rev.change.iter().chain(r.rev.ex_change.iter()).map(|c| &c.mark);
-                let cells = r.cells.iter().filter_map(|c| c.rev.change.as_ref()).map(|c| &c.mark);
-                let marks: Vec<&Rc<RevisionMark>> = table.drain(..).chain(row).chain(cells).collect();
-                for m in marks {
-                    self.push(Channel::Table, RevisionKind::TableProperty, m, rs, re, None, true);
+                let own = table.drain(..).map(|m| (m, Spot::Table(id)));
+                let row = r.rev.change.iter().chain(r.rev.ex_change.iter()).map(|c| (&c.mark, Spot::Row(id, ri)));
+                let cells = r.cells.iter().enumerate().filter_map(|(ci, c)| Some((&c.rev.change.as_ref()?.mark, Spot::Cell(id, ri, ci))));
+                let marks: Vec<(&Rc<RevisionMark>, Spot)> = own.chain(row).chain(cells).collect();
+                for (m, spot) in marks {
+                    self.push(Channel::Table, RevisionKind::TableProperty, m, rs, re, (None, spot), true);
                 }
             }
         }

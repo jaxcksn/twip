@@ -369,7 +369,7 @@ impl Resolver {
     }
 
     /// `run` resolved again from its direct `w:rPr` over `base`, where it is: in a table of contents' result without the
-    /// Hyperlink character style, as the reader resolved it.
+    /// Hyperlink character style, as the reader resolved it, its review marks kept.
     pub fn rerun(&self, base: &RunProps, run: &RunStyle, cx: &Cx) -> Run {
         self.rerun_xml(base, run, run.direct.0.as_deref(), cx)
     }
@@ -518,7 +518,7 @@ mod tests {
                     assert_eq!(*p.mark, mark, "{what}: the mark of {:?}", p.id);
                     for i in &p.inlines {
                         if let Inline::Text(t, run) = i {
-                            assert_eq!(**run, with_rev(res.rerun(&r.base, run, cx), run), "{what}: run {t:?} of {:?}", p.id);
+                            assert_eq!(**run, *res.rerun(&r.base, run, cx), "{what}: run {t:?} of {:?}", p.id);
                             *checked += 1;
                         }
                     }

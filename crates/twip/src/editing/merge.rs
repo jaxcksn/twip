@@ -1679,6 +1679,10 @@ impl Editor {
             return Err(locked());
         }
         let mut tx = self.begin(if matches!(e, ElementId::Field(_)) { "Remove Field" } else { "Remove Content Control" });
+        // Control removal keeping its contents: untracked
+        if keep && matches!(e, ElementId::Control(_)) {
+            tx.tracked = false;
+        }
         let ok = match (e, w) {
             (ElementId::Field(_), Where::Inline { para, start, end, .. }) => {
                 self.step(&mut tx, Step::Text { para, range: start..end, with: Vec::new(), edges: Default::default() }).is_ok()
