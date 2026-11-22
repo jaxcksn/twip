@@ -6,7 +6,7 @@ use std::ops::Range;
 
 use roxmltree::Node;
 
-use super::model::{Control, ControlId, ControlKind, ControlProps, DataPart, Inline, Paragraph, Run};
+use super::model::{BreakKind, Control, ControlId, ControlKind, ControlProps, DataPart, Inline, Paragraph, Run};
 use super::write::props::esc;
 
 /// Steps an XPath may have; longer ones aren't evaluated.
@@ -285,6 +285,20 @@ pub fn stored(props: &ControlProps, text: &str) -> String {
     }
 }
 
+/// A control's text as inlines: its lines (`\n` or `\r\n` apart) with line breaks between them.
+pub fn text_inlines(text: &str, run: &Run) -> Vec<Inline> {
+    let mut out = Vec::new();
+    for (k, line) in text.split('\n').map(|l| l.strip_suffix('\r').unwrap_or(l)).enumerate() {
+        if k > 0 {
+            out.push(Inline::Break(BreakKind::Line, run.clone()));
+        }
+        if !line.is_empty() {
+            out.push(Inline::Text(line.to_string(), run.clone()));
+        }
+    }
+    out
+}
+
 /// A bound control inline in a paragraph: the inlines between its markers, its text and its binding.
 pub struct Span {
     pub control: ControlId,
@@ -316,7 +330,14 @@ pub fn spans(inlines: &[Inline], controls: &HashMap<ControlId, Control>) -> Vec<
                 let text = if ctl.props.showing_placeholder {
                     String::new()
                 } else {
-                    content.iter().filter_map(|i| if let Inline::Text(t, _) = i { Some(t.as_str()) } else { None }).collect()
+                    content
+                        .iter()
+                        .filter_map(|i| match i {
+                            Inline::Text(t, _) => Some(t.as_str()),
+                            Inline::Break(BreakKind::Line, _) => Some("\n"),
+                            _ => None,
+                        })
+                        .collect()
                 };
                 let run = content.iter().find_map(|i| if let Inline::Text(_, r) = i { Some(r.clone()) } else { None });
                 out.push(Span { control: c, inner, text, run, binding });
@@ -349,7 +370,7 @@ pub fn refresh(p: &mut Paragraph, controls: &mut HashMap<ControlId, Control>, pa
             continue;
         }
         let run = s.run.or_else(|| inlines[..s.inner.start].iter().rev().find_map(|i| i.run().cloned())).unwrap_or_else(|| p.mark.clone());
-        inlines.splice(s.inner, [Inline::Text(want, run)]);
+        inlines.splice(s.inner, text_inlines(&want, &run));
         ctl.props.showing_placeholder = false;
         changed = true;
     }

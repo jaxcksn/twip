@@ -1493,6 +1493,7 @@ impl Editor {
     }
 
     fn insert_text(&mut self, text: &str, fonts: &Fonts) -> Outcome {
+        let text = &*crate::docx::xml::legal(text);
         if text.is_empty() {
             return Outcome::Unchanged("empty text");
         }

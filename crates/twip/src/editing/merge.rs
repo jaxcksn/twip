@@ -766,7 +766,7 @@ impl Editor {
                         if start == end { p.inlines[*last..next].iter().filter(|i| !matches!(i, Inline::Text(..))).count() as u32 } else { 0 };
                     let edges = super::step::Edges { under, ..Default::default() };
                     let mut tx = self.begin(label);
-                    let with = if text.is_empty() { Vec::new() } else { vec![Inline::Text(text.replace('\n', "\u{b}"), run)] };
+                    let with = crate::docx::binding::text_inlines(&crate::docx::xml::legal(&text), &run);
                     if self.step(&mut tx, Step::Text { para: *para, range: *start..*end, with, edges }).is_err() {
                         self.abort(tx);
                         return Err(no_element());

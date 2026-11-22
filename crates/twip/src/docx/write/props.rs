@@ -396,8 +396,29 @@ fn attr_list(tag: &str) -> Vec<(String, String)> {
     out
 }
 
+/// `s` as an attribute value (or text): `& < > "` escaped, characters XML can't hold left out.
 pub fn esc(s: &str) -> String {
-    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+    escape(s, true)
+}
+
+/// `s` as element text: `& < >` escaped, characters XML can't hold left out.
+pub fn esc_text(s: &str) -> String {
+    escape(s, false)
+}
+
+fn escape(s: &str, quote: bool) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' if quote => out.push_str("&quot;"),
+            c if crate::docx::xml::is_char(c) => out.push(c),
+            _ => {}
+        }
+    }
+    out
 }
 
 #[cfg(test)]

@@ -178,10 +178,13 @@ pub(super) fn differs(was: &Float, now: &Float) -> bool {
     }
 }
 
-pub(super) fn apply(src: &str, mut edits: Vec<Edit>) -> String {
-    edits.sort_by_key(|(r, _)| std::cmp::Reverse(r.start));
+/// `src` with the edits made, from the end: of those at one place, a replacement before the insertions there, and
+/// insertions in the order given.
+pub(super) fn apply(src: &str, edits: Vec<Edit>) -> String {
+    let mut edits: Vec<(usize, Edit)> = edits.into_iter().enumerate().collect();
+    edits.sort_by_key(|(k, (r, _))| std::cmp::Reverse((r.start, r.end, *k)));
     let mut s = src.to_string();
-    for (r, with) in edits {
+    for (_, (r, with)) in edits {
         if r.end <= s.len() && r.start <= r.end {
             s.replace_range(r, &with);
         }
@@ -213,7 +216,7 @@ fn shape_edits(a: &Shape, b: &Shape, base: usize, text: &str, out: &mut Vec<Edit
             {
                 out.push((rel(g), geometry_xml(&y.geom)));
             }
-            props_edits(sp, (&x.fill, &y.fill), (&x.line, &y.line), (&x.effects, &y.effects), &rel, out);
+            props_edits(sp, (&x.fill, &y.fill), (&x.line, &y.line), (&x.effects, &y.effects), &rel, text, out);
             if x.body != y.body
                 && let Some(r) = &sp.body
             {
@@ -232,7 +235,7 @@ fn shape_edits(a: &Shape, b: &Shape, base: usize, text: &str, out: &mut Vec<Edit
             {
                 out.push((rel(f), blip_patch(t, &y.blip)));
             }
-            props_edits(sp, (&None, &None), (&x.line, &y.line), (&x.effects, &y.effects), &rel, out);
+            props_edits(sp, (&None, &None), (&x.line, &y.line), (&x.effects, &y.effects), &rel, text, out);
         }
         (ShapeKind::Group(x), ShapeKind::Group(y)) if x.children.len() == y.children.len() => {
             for (ca, cb) in x.children.iter().zip(&y.children) {
@@ -249,43 +252,41 @@ fn props_edits(
     (la, lb): (&Option<Line>, &Option<Line>),
     (ea, eb): (&Option<EffectList>, &Option<EffectList>),
     rel: &dyn Fn(&Range<usize>) -> Range<usize>,
+    text: &str,
     out: &mut Vec<Edit>,
 ) {
     let at = |r: &Option<Range<usize>>| r.as_ref().map(|r| rel(r).end);
-    let start_of_props = sp.sp_pr.as_ref().map(|r| rel(r).start);
-    let after = |rs: &[&Option<Range<usize>>]| rs.iter().find_map(|r| at(r)).or(sp.xfrm.as_ref().map(|r| rel(r).end));
+    // The properties' start tag: its range and whether it closes itself.
+    let open = sp.sp_pr.as_ref().map(rel).and_then(|r| {
+        let end = r.start + text.get(r.clone())?.find('>')? + 1;
+        Some((r.start..end, text[..end].ends_with("/>")))
+    });
+    let first = open.as_ref().filter(|(_, closed)| !closed).map(|(t, _)| t.end);
+    let after = |rs: &[&Option<Range<usize>>]| rs.iter().find_map(|r| at(r)).or(sp.xfrm.as_ref().map(|r| rel(r).end)).or(first);
+    // Children an empty `spPr` gains, in schema order: it is written open around them.
+    let mut kids = String::new();
+    let mut put = |el: &Option<Range<usize>>, before: &[&Option<Range<usize>>], xml: String, out: &mut Vec<Edit>| match el {
+        Some(r) => out.push((rel(r), xml)),
+        None => match after(before) {
+            Some(p) => out.push((p..p, xml)),
+            None => kids.push_str(&xml),
+        },
+    };
     if fa != fb {
-        let xml = fb.as_ref().map_or(String::new(), fill_xml);
-        match &sp.fill {
-            Some(r) => out.push((rel(r), xml)),
-            None => {
-                if let Some(p) = after(&[&sp.geom]).or(start_of_props) {
-                    out.push((p..p, xml));
-                }
-            }
-        }
+        put(&sp.fill, &[&sp.geom], fb.as_ref().map_or(String::new(), fill_xml), out);
     }
     if la != lb {
-        let xml = lb.as_ref().map_or(String::new(), line_xml);
-        match &sp.line {
-            Some(r) => out.push((rel(r), xml)),
-            None => {
-                if let Some(p) = after(&[&sp.fill, &sp.geom]) {
-                    out.push((p..p, xml));
-                }
-            }
-        }
+        put(&sp.line, &[&sp.fill, &sp.geom], lb.as_ref().map_or(String::new(), line_xml), out);
     }
     if ea != eb {
-        let xml = eb.as_ref().map_or(String::new(), effects_xml);
-        match &sp.effects {
-            Some(r) => out.push((rel(r), xml)),
-            None => {
-                if let Some(p) = after(&[&sp.line, &sp.fill, &sp.geom]) {
-                    out.push((p..p, xml));
-                }
-            }
-        }
+        put(&sp.effects, &[&sp.line, &sp.fill, &sp.geom], eb.as_ref().map_or(String::new(), effects_xml), out);
+    }
+    if !kids.is_empty()
+        && let Some((tag, true)) = open
+    {
+        let start = &text[tag.start..tag.end - 2];
+        let name = start[1..].split(|c: char| c.is_ascii_whitespace()).next().unwrap_or_default();
+        out.push((tag, format!("{}>{kids}</{name}>", start.trim_end())));
     }
 }
 

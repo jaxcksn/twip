@@ -32,9 +32,13 @@ pub(super) fn write(doc: &Document, src: &Source, parts: &mut Vec<(String, Vec<u
                 text.push_str(&part_xml_of("w:", b, n, &new_blocks_xml(&shell, &b.body, &doc.controls, &doc.people)?));
             }
             let xml = shell.replace("<w:docParts></w:docParts>", &format!("<w:docParts>{text}</w:docParts>"));
-            let name = "word/glossary/document.xml";
-            package::set(parts, name, g.map.to_glossary_xml(&xml).into_owned().into_bytes());
-            package::add_part(&src.package, parts, &src.main, name, GLOSSARY_TYPE, GLOSSARY_REL)?;
+            // Beside the main part.
+            let name = match src.main.rsplit_once('/') {
+                Some((dir, _)) => format!("{dir}/glossary/document.xml"),
+                None => "glossary/document.xml".to_string(),
+            };
+            package::set(parts, &name, g.map.to_glossary_xml(&xml).into_owned().into_bytes());
+            package::add_part(&src.package, parts, &src.main, &name, GLOSSARY_TYPE, GLOSSARY_REL)?;
         }
     }
     Ok(())
