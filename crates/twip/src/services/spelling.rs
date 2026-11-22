@@ -6,8 +6,8 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::rc::Rc;
 
-use crate::editing::Editor;
 use crate::editing::text::{OBJECT, Seen};
+use crate::editing::{EditMark, Editor};
 use crate::layout::{ParaId, Unit};
 
 /// A misspelled word in a paragraph (unit offsets); `repeated` marks a doubled word ("the the").
@@ -40,6 +40,13 @@ fn apostrophe(c: char) -> bool {
 
 fn normalize(w: &str) -> String {
     w.replace('\u{2019}', "'")
+}
+
+/// An address: a mail address, a URL or a `www.` name.
+fn address(token: &[char]) -> bool {
+    token.contains(&'@')
+        || token.windows(3).any(|w| w == [':', '/', '/'])
+        || token.len() >= 4 && token[..3].iter().all(|c| matches!(c, 'w' | 'W')) && token[3] == '.'
 }
 
 /// The defaults: words with digits and words in capitals are not checked.
@@ -117,7 +124,10 @@ impl Speller {
         // Characters that go on the grapheme before them (combining marks): part of its word.
         let extends: Vec<bool> = if key.is_ascii() { Vec::new() } else { continuations(&key, text.len()) };
         let extends = |i: usize| extends.get(i).copied().unwrap_or(false);
-        let (mut previous, mut previous_end): (Option<Vec<char>>, Option<usize>) = (None, None);
+        let (mut previous, mut previous_end): (Option<std::ops::Range<usize>>, Option<usize>) = (None, None);
+        // The token between spaces the last word was in: its end.
+        let mut token_end = 0;
+        let mut w = String::new();
         let mut i = 0;
         while i < text.len() {
             if !text[i].is_alphanumeric() {
@@ -131,29 +141,27 @@ impl Speller {
                 i += 1;
             }
             let word = &text[start..i];
-            // The token between spaces, to skip addresses ("www.example.com", "name@store.com").
-            let (mut ts, mut te) = (start, i);
-            while ts > 0 && !text[ts - 1].is_whitespace() {
-                ts -= 1;
-            }
-            while te < text.len() && !text[te].is_whitespace() {
-                te += 1;
-            }
-            let token: String = text[ts..te].iter().collect();
-            if token.contains('@') || token.contains("://") || token.to_lowercase().starts_with("www.") {
-                (previous, i) = (None, te);
-                continue;
+            // The token between spaces, to skip addresses ("www.example.com", "name@store.com"): looked at once.
+            if start >= token_end {
+                let ts = text[..start].iter().rposition(|c| c.is_whitespace()).map_or(0, |k| k + 1);
+                token_end = text[i..].iter().position(|c| c.is_whitespace()).map_or(text.len(), |k| i + k);
+                if address(&text[ts..token_end]) {
+                    (previous, i) = (None, token_end);
+                    continue;
+                }
             }
             let between = previous_end.is_some_and(|pe| start > pe && text[pe..start].iter().all(|&c| c == ' '));
-            let same =
-                previous.as_ref().is_some_and(|p| p.len() == word.len() && p.iter().zip(word).all(|(a, b)| a.to_lowercase().eq(b.to_lowercase())));
-            let w: String = word.iter().collect();
+            let same = previous
+                .as_ref()
+                .is_some_and(|p| p.len() == word.len() && text[p.clone()].iter().zip(word).all(|(a, b)| a.to_lowercase().eq(b.to_lowercase())));
+            w.clear();
+            w.extend(word);
             if between && same && word.iter().any(|c| c.is_alphabetic()) {
                 list.push(SpellError { start, len: word.len(), repeated: true });
             } else if !skip(word) && !self.known(&w) {
                 list.push(SpellError { start, len: word.len(), repeated: false });
             }
-            (previous, previous_end) = (Some(word.to_vec()), Some(i));
+            (previous, previous_end) = (Some(start..i), Some(i));
         }
         let mut cache = self.cache.borrow_mut();
         // shortcut: the whole cache goes when large; LRU if long sessions on huge documents thrash it.
@@ -270,10 +278,10 @@ pub struct Spellers {
 }
 
 /// The misspellings per paragraph of every story [`searched_paras`] lists (only paragraphs that have some), and the
-/// checking context and document revision they were counted at.
+/// checking context and edit mark they were counted at.
 #[derive(Default)]
 struct Tally {
-    at: Option<(u64, u64)>,
+    at: Option<(u64, EditMark)>,
     by_para: HashMap<ParaId, u32>,
     total: u32,
 }
@@ -391,6 +399,11 @@ impl Spellers {
         if !self.enabled {
             return None;
         }
+        Some(crate::prof::time("spelling:paragraph", || self.checked(e, para, default)))
+    }
+
+    /// [`Self::errors`], checking on.
+    fn checked(&self, e: &Editor, para: ParaId, default: &str) -> Rc<[SpellError]> {
         let text = check_text(e, para);
         let langs = Self::languages(e, para, default);
         let lang = |k: usize| text.units.get(k).and_then(|&u| langs.get(u as usize)).copied().unwrap_or(default);
@@ -398,7 +411,7 @@ impl Spellers {
         let cut = |k: usize| lang(k) != lang(k - 1) || text.breaks.binary_search(&k).is_ok();
         let len = text.chars.len();
         if !(1..len).any(cut) {
-            return Some(by_unit(self.speller(lang(0)).map_or_else(|| Rc::from([]), |sp| sp.errors(&text.chars)), &text));
+            return by_unit(self.speller(lang(0)).map_or_else(|| Rc::from([]), |sp| sp.errors(&text.chars)), &text);
         }
         let mut all = Vec::new();
         let mut a = 0;
@@ -410,7 +423,7 @@ impl Spellers {
             }
             a = b;
         }
-        Some(by_unit(all.into(), &text))
+        by_unit(all.into(), &text)
     }
 
     /// What a paragraph's misspellings depend on besides its own content.
@@ -425,55 +438,42 @@ impl Spellers {
         self.errors(e, para, default).map_or(0, |errs| errs.len() as u32)
     }
 
-    /// The misspellings in every story: counted again only when the document or what checking depends on changed in a
-    /// way [`Spellers::edited`] didn't follow.
+    /// The misspellings in every story: the paragraphs touched since the last count are checked again, all of them
+    /// when what checking depends on changed or the editor's log no longer reaches back.
     pub fn count(&mut self, e: &Editor, default: &str) -> u32 {
         if !self.enabled || self.by_language.is_empty() {
             return 0;
         }
-        let at = (self.context(e, default), e.revision());
-        if self.tally.at == Some(at) {
-            return self.tally.total;
-        }
-        let mut by_para = HashMap::new();
-        for p in searched_paras(e) {
-            let n = self.para_count(e, p, default);
-            if n > 0 {
-                by_para.insert(p, n);
-            }
-        }
-        self.tally = Tally { at: Some(at), total: by_para.values().sum(), by_para };
-        self.tally.total
-    }
-
-    /// After an edit that touched `paras`: counts those paragraphs again, so the next [`Spellers::count`] doesn't
-    /// count every story.
-    pub fn edited(&mut self, e: &Editor, paras: &[ParaId], default: &str) {
-        let Some((context, _)) = self.tally.at else { return };
-        if !self.enabled || context != self.context(e, default) {
-            self.tally.at = None;
-            return;
-        }
-        let (doc, index, sub_template) = (e.document(), e.index(), e.editing_sub_template());
+        let context = self.context(e, default);
+        let touched = self.tally.at.filter(|at| at.0 == context).and_then(|at| e.touched_since(at.1));
         let mut tally = std::mem::take(&mut self.tally);
-        for &p in paras {
-            tally.total -= tally.by_para.remove(&p).unwrap_or(0);
-            let n = if searched(e, p, sub_template) { self.para_count(e, p, default) } else { 0 };
-            if n > 0 {
-                tally.by_para.insert(p, n);
-                tally.total += n;
+        match touched {
+            Some(paras) => {
+                let sub_template = e.editing_sub_template();
+                let mut seen = HashSet::new();
+                for &p in paras.iter().filter(|p| seen.insert(**p)) {
+                    tally.total -= tally.by_para.remove(&p).unwrap_or(0);
+                    let n = if searched(e, p, sub_template) { self.para_count(e, p, default) } else { 0 };
+                    if n > 0 {
+                        tally.by_para.insert(p, n);
+                        tally.total += n;
+                    }
+                }
+            }
+            None => {
+                tally.by_para.clear();
+                for p in searched_paras(e) {
+                    let n = self.para_count(e, p, default);
+                    if n > 0 {
+                        tally.by_para.insert(p, n);
+                    }
+                }
+                tally.total = tally.by_para.values().sum();
             }
         }
-        // Paragraphs that are gone.
-        tally.by_para.retain(|&id, n| {
-            let keep = index.para(doc, id).is_some();
-            if !keep {
-                tally.total -= *n;
-            }
-            keep
-        });
-        tally.at = Some((context, e.revision()));
+        tally.at = Some((context, e.edit_mark()));
         self.tally = tally;
+        self.tally.total
     }
 
     /// Forgets the count: the document was replaced.

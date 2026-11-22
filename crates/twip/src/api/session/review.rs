@@ -296,14 +296,10 @@ impl Session {
     /// The events a committed transaction's review changes call for: `revisionsChanged`, `commentsChanged`.
     pub(super) fn review_events(&mut self, record: &TransactionRecord, revisions_before: u32) -> Vec<Event> {
         let s = &record.summary;
-        let doc = self.editor.document();
-        // The summary names the revisions a transaction touched; the count catches the rest. Comments are compared with
-        // the last seen too.
+        // The summary names the revisions a transaction touched; the count catches the rest. Comments change only
+        // through steps, which name them.
         let revisions = !s.revisions.is_empty() || self.state.review.revisions != revisions_before;
-        let comments = !s.comments.is_empty() || doc.comments != self.services.comments_seen;
-        if comments {
-            self.services.comments_seen = doc.comments.clone();
-        }
+        let comments = !s.comments.is_empty();
         let mut out = Vec::new();
         if revisions {
             out.push(Event::RevisionsChanged {});
@@ -355,12 +351,13 @@ pub(super) fn fill_state(s: &mut Session, state: &mut State) {
     let author = s.author.name.clone();
     r.protection = e.protection_state(&author);
     r.markup_view = e.document().review.view;
-    let revision = (e.revision(), e.index().flow);
+    let (marks, sub_template) = (e.revision_marks(), e.index().flow);
+    // With no revisions, only an edit of marks makes one.
     r.revisions = match s.services.revision_count {
-        Some((at, n)) if at == revision => n,
+        Some(c) if c.sub_template == sub_template && c.marks.0 == marks.0 && (c.n == 0 || c.marks.1 == marks.1) => c.n,
         _ => {
-            let n = index::revisions(e.document(), e.index()).len() as u32;
-            s.services.revision_count = Some((revision, n));
+            let n = crate::prof::time("review:revisions", || index::revisions(e.document(), e.index()).len() as u32);
+            s.services.revision_count = Some(crate::services::RevisionCount { marks, sub_template, n });
             n
         }
     };

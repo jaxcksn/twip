@@ -64,6 +64,7 @@ impl Editor {
         }
         self.doc.file_name = Some(name);
         if crate::docx::fields::show_file_name(&mut self.doc) {
+            self.changed_everywhere();
             self.relayout([None]);
         }
         Outcome::Moved

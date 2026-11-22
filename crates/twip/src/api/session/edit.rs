@@ -200,7 +200,6 @@ impl Session {
         let edited = !records.is_empty();
         let mut events: Vec<Event> = records.into_iter().map(Event::DocumentChanged).collect();
         if edited {
-            self.services.spelling.edited(&self.editor, &paras, &self.language);
             // An edit can name a family or face the document didn't have (a font applied, a paste).
             let (fonts, warning) = self.edited_fonts(paras, tables);
             events.extend(warning.map(Event::Warning).into_iter().chain(fonts));

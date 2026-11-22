@@ -1195,6 +1195,7 @@ impl Editor {
                 }
             }
         }
+        self.touched.note(fields.iter().map(|f| f.1));
         if !hints.is_empty() {
             self.relayout(hints);
         }
@@ -1565,6 +1566,7 @@ impl Editor {
                 self.expansions_stale = true;
             }
             hints.push(super::step::para_hint(&self.index, para, 0));
+            self.touched.note(std::iter::once(para));
         }
         if !hints.is_empty() {
             self.relayout(hints);

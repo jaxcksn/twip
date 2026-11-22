@@ -771,3 +771,28 @@ fn a_relative_size_from_the_other_axis_is_refused() {
     });
     assert!(matches!(c, Outcome::Changed(_)), "{c:?}");
 }
+
+#[test]
+fn typing_in_a_text_box_keeps_its_anchor_paragraphs_shaping() {
+    use super::super::commands::Command;
+    let rect = sp(0, 0, 150, 60, "rect", "", "FFFFFF");
+    let story = r#"<wps:txbx id="1"><w:txbxContent><w:p><w:r><w:t>Inside</w:t></w:r></w:p></w:txbxContent></wps:txbx><wps:bodyPr/>"#;
+    let boxed = rect.replace("<wps:bodyPr/>", story);
+    let words = "anchor words ".repeat(200);
+    let mut e = editor(&format!("<w:p><w:r><w:t>{words}</w:t></w:r>{}</w:p>", anchor(72, 300, 150, 60, 1, false, 1, &boxed)));
+    let inside = e.document().sections[0].blocks.iter().find_map(|b| match b {
+        crate::docx::Block::Para(p) => p.inlines.iter().find_map(|i| i.story().and_then(|(_, tb)| tb.blocks.first())),
+        _ => None,
+    });
+    let Some(crate::docx::Block::Para(inside)) = inside else { panic!("a text box paragraph") };
+    let inside = crate::layout::ParaId(inside.id);
+    e.select_range(inside, crate::layout::Unit(6), crate::layout::Unit(6), fonts());
+    let (shaped, entries) = (e.layout.cache().shaped.counts().1, e.layout.cache().shaped.len());
+    for _ in 0..20 {
+        e.execute(Command::InsertText("x".into()), fonts());
+    }
+    let (shaped, entries) = (e.layout.cache().shaped.counts().1 - shaped, e.layout.cache().shaped.len() - entries);
+    assert_eq!(box_text(&e).as_deref(), Some("Insidexxxxxxxxxxxxxxxxxxxx"));
+    assert!(shaped <= 20 && entries <= 20, "{shaped} paragraphs shaped and {entries} entries kept for 20 keystrokes in the box");
+    same_as_full(&mut e);
+}

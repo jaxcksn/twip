@@ -1049,6 +1049,9 @@ impl Editor {
         if back {
             fields::evaluate(&mut self.doc, crate::docx::now_local());
         }
+        if changed || back {
+            self.changed_everywhere();
+        }
         if changed {
             self.relayout(vec![None]);
         }

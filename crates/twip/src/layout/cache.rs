@@ -224,7 +224,28 @@ pub fn cached<K: CacheKey, V: PartialEq + Debug>(
     bytes: impl FnOnce(&V) -> usize,
     compute: impl FnOnce(&mut Memos) -> Result<V, Yield>,
 ) -> Result<Rc<V>, Yield> {
+    cached_refreshed(memos, select, probe, bytes, |_| None, compute)
+}
+
+/// As [`cached`], with `refresh` bringing a hit up to date (`None`: it is), the entry then replaced.
+pub fn cached_refreshed<K: CacheKey, V: PartialEq + Debug>(
+    memos: &mut Memos,
+    select: fn(&mut LayoutCache) -> &mut Boundary<K, V>,
+    probe: K::Probe<'_>,
+    bytes: impl FnOnce(&V) -> usize,
+    refresh: impl FnOnce(&V) -> Option<V>,
+    compute: impl FnOnce(&mut Memos) -> Result<V, Yield>,
+) -> Result<Rc<V>, Yield> {
     if let Some(found) = select(memos.cache).lookup(&probe) {
+        let found = match refresh(&found) {
+            Some(v) => {
+                let size = bytes(&v);
+                let v = Rc::new(v);
+                select(memos.cache).insert(&probe, v.clone(), size);
+                v
+            }
+            None => found,
+        };
         if verify_on() && !VERIFYING.get() {
             struct Reset;
             impl Drop for Reset {
