@@ -63,6 +63,55 @@ impl People {
     pub fn get(&self, id: AuthorId) -> Option<&Person> {
         self.persons.get(id.0 as usize)
     }
+
+    /// The authors a comment or a revision in `doc` names.
+    pub fn named(doc: &super::model::Document) -> std::collections::HashSet<AuthorId> {
+        fn run(r: &RunStyle, out: &mut std::collections::HashSet<AuthorId>) {
+            out.extend([&r.rev.ins, &r.rev.del].into_iter().flatten().map(|m| m.author));
+            out.extend(r.rev.fmt.as_ref().map(|f| f.mark.author));
+        }
+        fn blocks(bs: &[Block], out: &mut std::collections::HashSet<AuthorId>) {
+            for b in bs {
+                match b {
+                    Block::Para(p) => {
+                        run(&p.mark, out);
+                        out.extend(p.style.change.as_ref().map(|c| c.mark.author));
+                        for i in &p.inlines {
+                            if let Some(r) = i.run() {
+                                run(r, out);
+                            }
+                            if let Some((_, tb)) = i.story() {
+                                blocks(&tb.blocks, out);
+                            }
+                        }
+                    }
+                    Block::Table(t) => {
+                        out.extend(t.change.as_ref().map(|c| c.mark.author));
+                        out.extend(t.grid_change.as_ref().map(|c| c.mark.author));
+                        for r in &t.rows {
+                            out.extend([&r.rev.ins, &r.rev.del].into_iter().flatten().map(|m| m.author));
+                            out.extend([&r.rev.change, &r.rev.ex_change].into_iter().flatten().map(|c| c.mark.author));
+                            for c in &r.cells {
+                                out.extend(c.rev.structural.as_ref().map(|(m, _)| m.author));
+                                out.extend(c.rev.change.as_ref().map(|ch| ch.mark.author));
+                                blocks(&c.blocks, out);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        let mut out: std::collections::HashSet<AuthorId> = doc.comments.by_id.values().map(|c| c.author).collect();
+        for s in &doc.sections {
+            out.extend(s.change.as_ref().map(|c| c.mark.author));
+            blocks(&s.blocks, &mut out);
+        }
+        let others = doc.stories.values().chain(doc.footnotes.values()).chain(doc.endnotes.values()).chain(doc.glossary_bodies());
+        for b in others.chain(doc.comments.by_id.values().map(|c| &c.body)) {
+            blocks(b, &mut out);
+        }
+        out
+    }
 }
 
 /// A revision's or comment's `w:id`.

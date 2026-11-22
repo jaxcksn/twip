@@ -72,6 +72,8 @@ pub struct References {
 
 pub struct Surface {
     pub part: u32,
+    /// The section the sub-template was entered from: its page is the surface's.
+    pub section: usize,
     doc: Document,
     template: DocumentLayout,
     template_pages: Pages,
@@ -396,6 +398,16 @@ impl Editor {
         parts.iter().any(|b| b.state != crate::docx::PartState::Removed && self.sub_template_rules.iter().any(|r| r.category == b.category))
     }
 
+    /// Lays out everything again after a change outside the model (fonts, hyphenation patterns): the shown layout, the
+    /// expansions, and the main document's layout parked behind a sub-template.
+    pub(super) fn relayout_environment(&mut self) {
+        self.relayout([None]);
+        self.expansions_stale = true;
+        if let Some(s) = &mut self.surface {
+            s.template_touched = true;
+        }
+    }
+
     pub fn editing_sub_template(&self) -> Option<u32> {
         self.surface.as_ref().map(|s| s.part)
     }
@@ -408,9 +420,22 @@ impl Editor {
         std::mem::swap(&mut s.doc.sections[0].blocks, &mut part.body);
         std::mem::swap(&mut s.doc.images, &mut self.doc.images);
         std::mem::swap(&mut s.doc.controls, &mut self.doc.controls);
+        std::mem::swap(&mut s.doc.settings, &mut self.doc.settings);
+        std::mem::swap(&mut s.doc.hyphenation, &mut self.doc.hyphenation);
+        std::mem::swap(&mut s.doc.line_number_run, &mut self.doc.line_number_run);
         s.doc.resolver = self.doc.resolver.clone();
         s.doc.review = self.doc.review.clone();
+        s.doc.theme = self.doc.theme.clone();
+        s.doc.colour_map = self.doc.colour_map;
+        if let Some(entry) = self.doc.sections.get(s.section)
+            && entry.page() != s.doc.sections[0].page()
+        {
+            s.doc.sections[0].set_page(entry.page());
+        }
         let out = f(&mut self.layout, &s.doc);
+        std::mem::swap(&mut s.doc.line_number_run, &mut self.doc.line_number_run);
+        std::mem::swap(&mut s.doc.hyphenation, &mut self.doc.hyphenation);
+        std::mem::swap(&mut s.doc.settings, &mut self.doc.settings);
         std::mem::swap(&mut s.doc.controls, &mut self.doc.controls);
         std::mem::swap(&mut s.doc.images, &mut self.doc.images);
         if let Some(part) = self.doc.glossary.as_mut().and_then(|g| g.parts.get_mut(s.part as usize)) {
@@ -464,7 +489,8 @@ impl Editor {
         self.index.flow = Some(part);
         self.expansions = None;
         self.expansions_stale = true;
-        self.surface = Some(Surface { part, doc, template, template_pages, template_expansions, template_return, template_touched: false });
+        self.surface =
+            Some(Surface { part, section: si, doc, template, template_pages, template_expansions, template_return, template_touched: false });
         self.generation += 1;
         self.layout.edit(Revision(self.generation), None);
         self.history.break_typing();
@@ -705,12 +731,13 @@ impl Editor {
 
     pub(super) fn note_template_edits(&mut self, inverses: &[Step]) {
         let Some(part) = self.editing_sub_template() else { return };
-        let template = match elements::touched(inverses) {
-            elements::Touched::All => true,
-            elements::Touched::Paras(paras, _) => {
-                paras.iter().any(|&p| self.index.para_slot(p).is_none_or(|s| self.index.story(s.container) != StoryId::BuildingBlock(part)))
-            }
-        };
+        let template = changes_environment(inverses)
+            || match elements::touched(inverses) {
+                elements::Touched::All => true,
+                elements::Touched::Paras(paras, _) => {
+                    paras.iter().any(|&p| self.index.para_slot(p).is_none_or(|s| self.index.story(s.container) != StoryId::BuildingBlock(part)))
+                }
+            };
         if template && let Some(s) = &mut self.surface {
             s.template_touched = true;
         }
@@ -832,6 +859,9 @@ impl Editor {
         if self.sub_template_rules.is_empty() {
             return;
         }
+        if changes_environment(inverses) {
+            self.expansions_stale = true;
+        }
         let at: HashSet<ParaId> = self.references.by_field.values().map(|r| r.at).collect();
         let needed = match elements::touched(inverses) {
             elements::Touched::All => true,
@@ -850,6 +880,12 @@ impl Editor {
             self.rebuild_references();
         }
     }
+}
+
+/// Whether the steps change what every paragraph lays out with (the default tab stop, hyphenation, page settings)
+/// without touching one.
+fn changes_environment(steps: &[Step]) -> bool {
+    steps.iter().any(|s| matches!(s, Step::DefaultTab(_) | Step::Hyphenation(_) | Step::PageSettings(_)))
 }
 
 /// The kind a field with `code` has under the editor's settings: a sub-template reference; none, as a MERGEFIELD, for

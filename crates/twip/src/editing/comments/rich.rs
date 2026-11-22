@@ -78,7 +78,7 @@ impl RichText {
                     let run = res.run_from_xml(&para.base, rp.xml().as_deref(), cx);
                     match &r.link {
                         Some(address) => {
-                            let code = format!(" HYPERLINK \"{}\" ", address.replace('"', ""));
+                            let code = crate::docx::fields::link_code(address);
                             inlines.extend(crate::docx::fields::field_inlines(&code, &r.text, &run));
                         }
                         None => inlines.extend(text_inlines(&r.text, &run)),

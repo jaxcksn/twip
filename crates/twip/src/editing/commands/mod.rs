@@ -118,11 +118,18 @@ impl Editor {
     }
 
     fn execute_editable(&mut self, cmd: Command, fonts: &Fonts) -> Outcome {
-        let continues = matches!(cmd, Command::InsertText(_))
-            && self.selection.is_collapsed()
-            && self.caret().and_then(|p| p.para_offset()).is_some_and(|(p, u)| self.history.continues(p, u, Typing::Insert));
+        let typing = match &cmd {
+            Command::InsertText(_) | Command::InsertTab => Some(Typing::Insert),
+            Command::Delete(d) if d.unit != Some(crate::api::command::DeleteUnit::Word) => {
+                Some(if d.direction == crate::api::value::Direction::Backward { Typing::Backspace } else { Typing::Delete })
+            }
+            _ => None,
+        };
+        let continues = typing.is_some_and(|kind| {
+            self.selection.is_collapsed() && self.caret().and_then(|p| p.para_offset()).is_some_and(|(p, u)| self.history.continues(p, u, kind))
+        });
         // Typing anywhere but where the last typing left the caret starts an undo step, however the caret got there.
-        if matches!(cmd, Command::InsertText(_)) && !continues {
+        if typing.is_some() && !continues {
             self.history.break_typing();
         }
         let repeatable = match &cmd {
@@ -187,7 +194,7 @@ impl Editor {
             self.goal_x = None;
         }
         let typing = match &cmd {
-            Command::InsertText(_) => true,
+            Command::InsertText(_) | Command::InsertTab => true,
             Command::Delete(d) => d.unit != Some(DeleteUnit::Word),
             _ => false,
         };

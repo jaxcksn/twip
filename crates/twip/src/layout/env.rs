@@ -238,8 +238,16 @@ fn chains(doc: &Document) -> Rc<[Chain]> {
         .collect()
 }
 
+#[cfg(test)]
+thread_local! {
+    // Test hooks
+    pub(crate) static BUILT: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
 impl LayoutEnv {
     pub fn new(doc: &Document) -> LayoutEnv {
+        #[cfg(test)]
+        BUILT.set(BUILT.get() + 1);
         let s = &doc.settings;
         LayoutEnv {
             text: TextEnv::new(doc),

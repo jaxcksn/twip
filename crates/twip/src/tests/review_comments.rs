@@ -181,6 +181,21 @@ fn rich_bodies_round_trip() {
 }
 
 #[test]
+fn rich_link_addresses_keep_their_backslashes_and_quotes() {
+    let mut e = alpha();
+    select(&mut e, 6, 10);
+    let link = |address: &str| RichRun { text: "link".into(), link: Some(address.into()), ..RichRun::default() };
+    let body =
+        RichText { paragraphs: vec![RichParagraph { runs: vec![link(r"\\server\share\")] }, RichParagraph { runs: vec![link("say \"hi\"")] }] };
+    changed(e.add_comment(&body, "Author A", fonts()));
+    let c = e.document().comments.by_id.values().next().expect("the comment");
+    assert_eq!(RichText::from_blocks(&c.body), body);
+    let back = reread(&e);
+    let c = back.document().comments.by_id.values().next().expect("the comment");
+    assert_eq!(RichText::from_blocks(&c.body), body);
+}
+
+#[test]
 fn headers_take_no_new_comments() {
     let mut e = Editor::open(&fixture("FX-STORIES.docx"), fonts()).expect("opens");
     e.execute(Command::EditHeader, fonts());

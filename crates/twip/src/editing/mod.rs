@@ -261,6 +261,8 @@ struct Tx {
     replayed: Option<Transaction>,
     targets: step::Targets,
     pictures: bool,
+    /// A text step put in an inline holding a story (a text box, an inline shape's text).
+    boxes: bool,
     /// List definitions changed: every label is made again, not only those whose text changed.
     relabel: bool,
 }
@@ -471,14 +473,14 @@ impl Editor {
     }
 
     pub fn fonts_changed(&mut self) {
-        self.relayout([None]);
+        self.relayout_environment();
     }
 
     /// The hyphenation patterns automatic hyphenation uses.
     pub fn set_hyphenation(&mut self, h: Option<crate::layout::hyphenate::Hyphenation>) {
         if self.doc.hyphenation != h {
             self.doc.hyphenation = h;
-            self.relayout([None]);
+            self.relayout_environment();
         }
     }
 
@@ -810,6 +812,7 @@ impl Editor {
             replayed: None,
             targets: step::Targets::default(),
             pictures: false,
+            boxes: false,
             relabel: false,
         }
     }
@@ -844,12 +847,13 @@ impl Editor {
     }
 
     fn apply_step(&mut self, tx: &mut Tx, s: Step) -> Result<Map, StepError> {
-        if self.mode == Mode::ReadOnly {
+        if self.mode == Mode::ReadOnly && !matches!(tx.origin, Origin::Undo | Origin::Redo) {
             return Err(StepError::ReadOnly);
         }
         let added = if self.doc.undeletable.is_empty() { 0 } else { s.pictures_of(&self.doc.undeletable) };
         tx.targets.add(&s);
         tx.pictures |= moves_picture_controls(&s);
+        tx.boxes |= matches!(&s, Step::Text { with, .. } if with.iter().any(|i| i.story().is_some()));
         let a = s.apply(&mut self.doc, &mut self.index)?;
         if !self.doc.undeletable.is_empty() {
             tx.kept += added - a.inverse.pictures_of(&self.doc.undeletable);
@@ -881,6 +885,7 @@ impl Editor {
         if tx.undo.is_empty() {
             return Outcome::Unchanged("no change");
         }
+        self.repair_selection();
         crate::prof::time("edit:effects", || self.effects(&mut tx));
         if tx.replayed.is_none()
             && let Some(b) = &mut self.batch
@@ -893,6 +898,24 @@ impl Editor {
         }
         let label = tx.replayed.as_ref().map_or(Cow::Borrowed(tx.label), |done| done.label.clone());
         crate::prof::time("edit:finish", || self.finish(tx, label, typing, fonts))
+    }
+
+    /// Puts a selection whose paragraph the transaction removed at the start of its story, or of the body when the
+    /// story went too.
+    fn repair_selection(&mut self) {
+        let valid = |p: &Position| p.para_offset().is_none_or(|(para, u)| self.index.para(&self.doc, para).is_some_and(|q| u <= para_len(q)));
+        let s = self.selection;
+        let ok = match s {
+            Selection::Cells { table, .. } => self.index.table(&self.doc, table).is_some(),
+            Selection::Object(_) => true,
+            _ => s.focus().is_some_and(|p| valid(&p)) && s.anchor().is_none_or(|p| valid(&p)),
+        };
+        if ok {
+            return;
+        }
+        let story = s.focus().map_or(StoryId::Body, |p| p.story);
+        let edge = self.nav().story_edge(story, false).or_else(|| self.nav().story_edge(StoryId::Body, false));
+        self.selection = Selection::Caret(edge.unwrap_or(Position::text(StoryId::Body, ParaId(0), Unit(0))));
     }
 
     fn settle(&mut self, tx: &mut Tx) -> Result<(), &'static str> {
@@ -935,8 +958,8 @@ impl Editor {
         Ok(())
     }
 
-    /// Whether the blocks or rows the transaction put in nest tables deeper than [`MAX_TABLE_DEPTH`], counting the
-    /// cells they went into.
+    /// Whether the blocks, rows or text boxes the transaction put in nest deeper than [`MAX_TABLE_DEPTH`], counting
+    /// the cells and text boxes they went into.
     fn nests_too_deep(&self, tx: &Tx) -> bool {
         let cells = |rows: &[crate::docx::Row]| rows.iter().flat_map(|r| &r.cells).map(|c| table_depth(&c.blocks)).max().unwrap_or(0);
         tx.undo.iter().any(|s| match s {
@@ -945,14 +968,40 @@ impl Editor {
                 .index
                 .blocks(&self.doc, *container)
                 .and_then(|b| b.get(range.clone()))
-                .is_some_and(|b| self.index.chain(*container).len() + table_depth(b) > MAX_TABLE_DEPTH),
+                .is_some_and(|b| self.nesting(*container) + table_depth(b) > MAX_TABLE_DEPTH),
             Step::Rows { table, range, .. } => self.index.table_slot(*table).is_some_and(|slot| {
                 let Some(Block::Table(t)) = self.index.blocks(&self.doc, slot.container).and_then(|b| b.get(slot.block)) else { return false };
                 let rows = t.rows.get(range.clone()).unwrap_or_default();
-                self.index.chain(slot.container).len() + 1 + cells(rows) > MAX_TABLE_DEPTH
+                self.nesting(slot.container) + 1 + cells(rows) > MAX_TABLE_DEPTH
+            }),
+            Step::Text { para, .. } if tx.boxes => self.index.para_slot(*para).is_some_and(|slot| {
+                let Some(Block::Para(p)) = self.index.blocks(&self.doc, slot.container).and_then(|b| b.get(slot.block)) else { return false };
+                self.nesting(slot.container) + para_depth(p) > MAX_TABLE_DEPTH
             }),
             _ => false,
         })
+    }
+
+    /// How many levels hold the blocks of `container`: a table level for each cell, [`TEXT_BOX_LEVELS`] for each text
+    /// box.
+    fn nesting(&self, mut c: index::Container) -> usize {
+        let mut n = 0;
+        while n <= MAX_TABLE_DEPTH {
+            let up = match c {
+                index::Container::Cell { table, .. } => {
+                    n += 1;
+                    self.index.table_slot(table)
+                }
+                index::Container::Story(StoryId::TextBox(f)) => {
+                    n += TEXT_BOX_LEVELS;
+                    self.index.float_anchor(f).and_then(|p| self.index.para_slot(p))
+                }
+                _ => None,
+            };
+            let Some(slot) = up else { break };
+            c = slot.container;
+        }
+        n
     }
 
     fn effects(&mut self, tx: &mut Tx) {
@@ -1019,6 +1068,9 @@ impl Editor {
     fn undo(&mut self, undo: bool, fonts: &Fonts) -> Outcome {
         if self.batch.is_some() {
             return Outcome::Unchanged("in a batch");
+        }
+        if self.mode == Mode::ReadOnly {
+            return Outcome::Unchanged("read only");
         }
         let done = if undo { self.history.pop_undo() } else { self.history.pop_redo() };
         let Some(mut done) = done else { return Outcome::Unchanged(if undo { "nothing to undo" } else { "nothing to redo" }) };
@@ -1308,20 +1360,32 @@ impl Editor {
                 let len = para_len(self.index.para(&self.doc, pa).ok_or(StepError::Missing)?);
                 self.delete_text(tx, pa, oa..len)?;
                 if let Some(target) = moved_into {
-                    let inlines: Vec<Inline> =
-                        self.index.para(&self.doc, pa).map(|p| p.inlines.iter().filter(|i| i.units() > 0).cloned().collect()).unwrap_or_default();
-                    let n: u32 = inlines.iter().map(|i| i.units() as u32).sum();
-                    if !inlines.is_empty() {
-                        self.step(tx, Step::Text { para: target, range: Unit(0)..Unit(0), with: inlines, edges: Default::default() })?;
-                    }
-                    let slot = self.index.para_slot(pa).ok_or(StepError::Missing)?;
-                    self.step(tx, Step::Blocks { container: slot.container, range: slot.block..slot.block + 1, with: Vec::new() })?;
-                    tx.stale_paras.push(target);
+                    let n = self.move_para_into(tx, pa, target)?;
                     return Ok(Some(Position::text(story, target, Unit(n))));
                 }
                 Ok(Some(Position::text(story, pa, oa)))
             }
         }
+    }
+
+    /// Moves `para`'s content to the start of `target` and removes it; returns the units moved. Untracked, every
+    /// inline moves (anchored objects, bookmarks, comment and control edges); tracked, the deleted paragraph keeps
+    /// its markers and only its text is inserted.
+    fn move_para_into(&mut self, tx: &mut Tx, para: ParaId, target: ParaId) -> Result<u32, StepError> {
+        let p = self.index.para(&self.doc, para).ok_or(StepError::Missing)?;
+        let inlines: Vec<Inline> = if tx.tracked {
+            p.inlines.iter().filter(|i| i.units() > 0).cloned().collect()
+        } else {
+            p.inlines.iter().filter(|i| !matches!(i, Inline::Text(t, _) if t.is_empty())).cloned().collect()
+        };
+        let n: u32 = inlines.iter().map(|i| i.units() as u32).sum();
+        let slot = self.index.para_slot(para).ok_or(StepError::Missing)?;
+        self.step(tx, Step::Blocks { container: slot.container, range: slot.block..slot.block + 1, with: Vec::new() })?;
+        if !inlines.is_empty() {
+            self.step(tx, Step::Text { para: target, range: Unit(0)..Unit(0), with: inlines, edges: Default::default() })?;
+        }
+        tx.stale_paras.push(target);
+        Ok(n)
     }
 
     fn delete_text(&mut self, tx: &mut Tx, para: ParaId, range: std::ops::Range<Unit>) -> Result<(), StepError> {
@@ -1469,7 +1533,7 @@ impl Editor {
             if k > 0 {
                 let Some(second) = self.split_template(para) else { break };
                 let id = ParaId(second.id);
-                if self.step(&mut tx, Step::Split { para, at, second }).is_err() {
+                if self.step(&mut tx, Step::Split { para, at, second, kept: Vec::new() }).is_err() {
                     self.abort(tx);
                     return Outcome::Unchanged("split failed");
                 }
@@ -1538,7 +1602,7 @@ impl Editor {
             return Outcome::Unchanged("no paragraph");
         };
         let id = ParaId(second.id);
-        if self.step(&mut tx, Step::Split { para, at, second }).is_err()
+        if self.step(&mut tx, Step::Split { para, at, second, kept: Vec::new() }).is_err()
             || self
                 .step(
                     &mut tx,
@@ -1578,7 +1642,7 @@ impl Editor {
         let id = ParaId(second.id);
         let with = vec![Inline::Break(BreakKind::Page, run)];
         if self.step(&mut tx, Step::Text { para, range: at..at, with, edges: Default::default() }).is_err()
-            || self.step(&mut tx, Step::Split { para, at: Unit(at.0 + 1), second }).is_err()
+            || self.step(&mut tx, Step::Split { para, at: Unit(at.0 + 1), second, kept: Vec::new() }).is_err()
         {
             self.abort(tx);
             return Outcome::Unchanged("break failed");
@@ -1667,7 +1731,7 @@ impl Editor {
             tx.stale_paras.push(ParaId(second.id));
         }
         let id = ParaId(second.id);
-        if self.step(&mut tx, Step::Split { para, at, second }).is_err() {
+        if self.step(&mut tx, Step::Split { para, at, second, kept: Vec::new() }).is_err() {
             self.abort(tx);
             return Outcome::Unchanged("split failed");
         }
@@ -1686,6 +1750,11 @@ impl Editor {
     }
 
     fn insert_inlines(&mut self, make: impl Fn(Run) -> Vec<Inline>, label: &'static str, fonts: &Fonts) -> Outcome {
+        self.insert_inlines_typed(make, label, false, fonts)
+    }
+
+    /// `typing`: the insert joins the typing around it in one undo step.
+    fn insert_inlines_typed(&mut self, make: impl Fn(Run) -> Vec<Inline>, label: &'static str, typing: bool, fonts: &Fonts) -> Outcome {
         if self.refuse_expanded() || self.refuse_locked() {
             return Outcome::Unchanged("locked");
         }
@@ -1708,8 +1777,9 @@ impl Editor {
             self.abort(tx);
             return Outcome::Unchanged("insert failed");
         }
-        self.selection = Selection::Caret(Position::text(caret.story, para, Unit(at.0 + n)));
-        self.commit(tx, None, fonts)
+        let at = Unit(at.0 + n);
+        self.selection = Selection::Caret(Position::text(caret.story, para, at));
+        self.commit(tx, typing.then_some(TypingRun { para, at, kind: Typing::Insert }), fonts)
     }
 
     fn delete(&mut self, dir: Dir, word: bool, fonts: &Fonts) -> Outcome {
@@ -1869,24 +1939,13 @@ impl Editor {
                     else {
                         return Outcome::Unchanged("no first cell");
                     };
-                    let Some(inlines) =
-                        self.index.para(&self.doc, para).map(|p| p.inlines.iter().filter(|i| i.units() > 0).cloned().collect::<Vec<_>>())
-                    else {
-                        return Outcome::Unchanged("no paragraph");
+                    let n = match self.move_para_into(&mut tx, para, target) {
+                        Ok(n) => n,
+                        Err(_) => {
+                            self.abort(tx);
+                            return Outcome::Unchanged("move failed");
+                        }
                     };
-                    let n: u32 = inlines.iter().map(|i| i.units() as u32).sum();
-                    if (!inlines.is_empty()
-                        && self
-                            .step(&mut tx, Step::Text { para: target, range: Unit(0)..Unit(0), with: inlines, edges: Default::default() })
-                            .is_err())
-                        || self
-                            .step(&mut tx, Step::Blocks { container: slot.container, range: slot.block..slot.block + 1, with: Vec::new() })
-                            .is_err()
-                    {
-                        self.abort(tx);
-                        return Outcome::Unchanged("move failed");
-                    }
-                    tx.stale_paras.push(target);
                     self.selection = Selection::Caret(Position::text(caret.story, target, Unit(n)));
                     self.commit(tx, None, fonts)
                 }
@@ -3090,15 +3149,31 @@ impl Editor {
     }
 }
 
-/// The deepest table nesting an edit may make. The reader refuses parts nested deeper than
+/// The deepest nesting an edit may make, in table levels. The reader refuses parts nested deeper than
 /// [`crate::docx::xml::MAX_DEPTH`] elements, three a table level, so a document nested deeper would save but not open.
-// ponytail: counts table levels only; a text box in a cell costs more element levels than a table and isn't counted.
 const MAX_TABLE_DEPTH: usize = 30;
 
-/// How many tables deep blocks go: 0 for paragraphs, 1 for a table of paragraphs.
+/// The element levels a text box adds (`w:p`, `w:r`, `mc:AlternateContent`, `mc:Choice`, `w:drawing`, `wp:anchor`,
+/// `a:graphic`, `a:graphicData`, `wps:wsp`, `wps:txbx`, `w:txbxContent`), in table levels, rounded up.
+const TEXT_BOX_LEVELS: usize = 4;
+
+/// How many levels deep blocks go: 0 for paragraphs, 1 for a table of paragraphs, [`TEXT_BOX_LEVELS`] more for a text
+/// box.
 fn table_depth(blocks: &[Block]) -> usize {
     let cells = |t: &crate::docx::Table| t.rows.iter().flat_map(|r| &r.cells).map(|c| table_depth(&c.blocks)).max().unwrap_or(0);
-    blocks.iter().map(|b| if let Block::Table(t) = b { 1 + cells(t) } else { 0 }).max().unwrap_or(0)
+    blocks
+        .iter()
+        .map(|b| match b {
+            Block::Table(t) => 1 + cells(t),
+            Block::Para(p) => para_depth(p),
+        })
+        .max()
+        .unwrap_or(0)
+}
+
+/// How many levels deep a paragraph's text boxes go.
+fn para_depth(p: &Paragraph) -> usize {
+    p.inlines.iter().filter_map(Inline::story).map(|(_, tb)| TEXT_BOX_LEVELS + table_depth(&tb.blocks)).max().unwrap_or(0)
 }
 
 fn first_para_of(b: &Block) -> Option<ParaId> {

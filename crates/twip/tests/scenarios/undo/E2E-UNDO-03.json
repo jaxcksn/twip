@@ -1,6 +1,6 @@
 {
   "id": "E2E-UNDO-03",
-  "title": "Typing is one undo step; each Backspace is its own",
+  "title": "Typing is one undo step; consecutive Backspaces are another",
   "fixture": "FX-TEXT.docx",
   "methods": [
     "K",
@@ -32,7 +32,7 @@
     },
     {
       "expect": {
-        "undo_depth": 4,
+        "undo_depth": 2,
         "text": {
           "1": "Short paragraph. more words. And a sched"
         }
@@ -46,9 +46,9 @@
     },
     {
       "expect": {
-        "undo_depth": 3,
+        "undo_depth": 1,
         "text": {
-          "1": "Short paragraph. more words. And a schedu"
+          "1": "Short paragraph. more words. And a schedule"
         }
       }
     }

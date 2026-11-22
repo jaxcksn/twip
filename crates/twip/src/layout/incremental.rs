@@ -89,6 +89,7 @@ struct Extras {
     env: LayoutEnv,
     fonts: u64,
     endnote_order: Vec<i64>,
+    endnotes_sect_end: bool,
     body_fields: bool,
 }
 
@@ -97,25 +98,27 @@ fn props(s: &Section) -> Section {
 }
 
 impl Extras {
-    fn new(doc: &Document, fonts: &Fonts, endnote_order: &[i64]) -> Extras {
+    fn new(doc: &Document, fonts: &Fonts, endnote_order: &[i64], env: &LayoutEnv) -> Extras {
         Extras {
             sections: doc.sections.iter().map(props).collect(),
             stories: doc.stories.clone(),
             footnotes: doc.footnotes.clone(),
             endnotes: doc.endnotes.clone(),
             separators: doc.separators.clone(),
-            env: LayoutEnv::new(doc),
+            env: env.clone(),
             fonts: fonts.revision(),
             endnote_order: endnote_order.to_vec(),
+            endnotes_sect_end: doc.settings.endnotes_sect_end,
             body_fields: crate::docx::fields::page_dependent(doc),
         }
     }
 
-    fn same(&self, doc: &Document, fonts: &Fonts) -> bool {
+    fn same(&self, doc: &Document, fonts: &Fonts, env: &LayoutEnv) -> bool {
         self.fonts == fonts.revision()
+            && self.endnotes_sect_end == doc.settings.endnotes_sect_end
             && self.sections.len() == doc.sections.len()
             && self.sections.iter().zip(&doc.sections).all(|(a, b)| *a == props(b))
-            && self.env == LayoutEnv::new(doc)
+            && self.env == *env
             && self.stories == doc.stories
             && self.footnotes == doc.footnotes
             && self.endnotes == doc.endnotes
@@ -229,6 +232,7 @@ fn row_restart(
     doc: &Document,
     fonts: &Fonts,
     notes: &HashMap<(NoteKind, i64), String>,
+    env: &LayoutEnv,
     cache: &mut LayoutCache,
     memo: &mut super::flow::PassMemo,
     latest: Option<&LatestTable>,
@@ -246,19 +250,19 @@ fn row_restart(
     fn inside<'p>(pg: &'p PageRecord, span: &Span) -> Option<&'p super::record::BodyRecord> {
         pg.bodies.first().filter(|b| (b.token.section, b.token.flow.block) == (span.section, span.first) && b.start_table.is_some())
     }
-    let key = (span.section, span.first, 2u8, row);
+    let first_row = span.first_row.min(row);
+    let key = (span.section, span.first, 2u8, first_row);
     let p = base.iter().rposition(|pg| inside(pg, span).is_some_and(|b| start_key(&b.token) < key));
     let rec = p.or_else(|| base.iter().position(|pg| inside(pg, span).is_some()))?;
     let width = base[rec].bodies[0].space.columns[0].width;
-    let env = LayoutEnv::new(doc);
-    let ctx = LayoutCtx { fonts, env: &env, preview, expansions };
+    let ctx = LayoutCtx { fonts, env, preview, expansions };
     let fields = super::text::FieldValues::default();
     let story = super::story::StoryEnv { ctx, fields: &fields, notes };
     cache.store_tables = false;
     let mut meter = super::job::Meter::unlimited();
     let mut memos = Memos { cache, meter: &mut meter };
     let new = match latest.filter(|l| (l.0, l.1, l.2) == (span.section, span.first, width.to_bits())) {
-        Some(l) => super::table::relayout_rows(table, width, &story, prev, &l.3, span.first_row.min(row)..=row, &mut memos),
+        Some(l) => super::table::relayout_rows(table, width, &story, prev, &l.3, first_row..=row, &mut memos),
         None => super::table::layout(table, width, &story, prev, false, &mut memos),
     }
     .ok();
@@ -268,10 +272,10 @@ fn row_restart(
     memo.seed(table, width, new.clone());
     let p = p?;
     let old = base[p].bodies[0].start_table.as_ref()?;
-    if row < old.rows.iter().take_while(|r| r.header).count() {
+    if first_row < old.rows.iter().take_while(|r| r.header).count() {
         return None;
     }
-    old.keeps_rows_above(&new, row).then_some(p)
+    old.keeps_rows_above(&new, first_row).then_some(p)
 }
 
 fn start_key(t: &PageToken) -> (usize, usize, u8, usize) {
@@ -407,7 +411,7 @@ impl Reuse {
                 let Some(new) = run.memo.table(table, space.columns[0].width) else { continue };
                 let same = old.same_rows_from(&new, r)
                     && new.rows.get(r).is_some_and(|row| row.cells.iter().all(|c| c.v_merge != VMerge::Continue))
-                    && self.span.and_then(|s| s.row).is_some_and(|e| e >= new.rows.iter().take_while(|row| row.header).count())
+                    && self.span.filter(|s| s.row.is_some()).is_some_and(|s| s.first_row >= new.rows.iter().take_while(|row| row.header).count())
                     && old.rows.iter().take_while(|row| row.header).eq(new.rows.iter().take_while(|row| row.header));
                 if !same {
                     continue;
@@ -625,6 +629,7 @@ impl DocumentLayout {
 
     fn start(&mut self, doc: &Document, fonts: &Fonts) -> Running {
         let rev = self.revision;
+        let env = self.env(doc);
         let new_job = || LayoutJob::new(doc, rev);
         let full = |job, why: &'static str| {
             crate::prof::time(why, || ());
@@ -636,7 +641,7 @@ impl DocumentLayout {
         if self.acc.full {
             return full(new_job(), "full:asked");
         }
-        if !b.extras.same(doc, fonts) {
+        if !b.extras.same(doc, fonts, &env) {
             return full(new_job(), "full:extras");
         }
         let span = if self.acc.unknown {
@@ -695,6 +700,7 @@ impl DocumentLayout {
                         doc,
                         fonts,
                         &notes,
+                        &env,
                         &mut self.cache,
                         &mut job.run.memo,
                         latest,
@@ -896,6 +902,7 @@ impl DocumentLayout {
         let incremental = r.incremental;
         let span = r.span;
         let relaid = r.relaid.clone();
+        let env = self.env(doc);
         let endnotes = r.job.endnotes().to_vec();
         let note_numbers = r.job.note_numbers().clone();
         let notes = r.job.job_notes().clone();
@@ -916,8 +923,10 @@ impl DocumentLayout {
         let (extras, shadow, table) = match (incremental, self.baseline.take()) {
             (true, Some(mut b)) => {
                 if let Some(s) = span {
-                    let new: Vec<Option<Block>> = doc.sections[s.section].blocks[s.first..s.new_end].iter().map(shadow_of).collect();
-                    b.shadow[s.section].splice(s.first..s.old_end, new);
+                    let blocks = &doc.sections[s.section].blocks[s.first..s.new_end];
+                    // ponytail: stays set when the edit removed the last page-dependent field; a full job clears it.
+                    b.extras.body_fields |= crate::docx::fields::blocks_page_dependent(blocks);
+                    b.shadow[s.section].splice(s.first..s.old_end, blocks.iter().map(shadow_of));
                 }
                 let kept = b.table.and_then(|mut t| match span {
                     Some(s) if s.section == t.0 && t.1 >= s.old_end => {
@@ -929,7 +938,7 @@ impl DocumentLayout {
                 });
                 (b.extras, b.shadow, relaid.or(kept))
             }
-            _ => (Extras::new(doc, fonts, &endnotes), shadow(doc), None),
+            _ => (Extras::new(doc, fonts, &endnotes, &env), shadow(doc), None),
         };
         self.baseline = Some(Baseline { finished: Rc::new(finished), extras, shadow, note_numbers, notes, table });
         self.acc = Accumulated::default();

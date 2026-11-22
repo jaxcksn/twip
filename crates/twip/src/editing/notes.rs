@@ -294,9 +294,21 @@ impl Editor {
 
     pub(super) fn drop_orphan_notes(&mut self, tx: &mut Tx) {
         let mut gone = Vec::new();
+        let mut at = None;
+        let note = self.selection.focus().and_then(|p| match p.story {
+            StoryId::Footnote(id) => Some((NoteKind::Foot, id)),
+            StoryId::Endnote(id) => Some((NoteKind::End, id)),
+            _ => None,
+        });
         for s in &tx.undo {
             match s {
-                Step::Text { with, .. } => refs_inline(with, &mut gone),
+                Step::Text { para, range, with, .. } => {
+                    let n = gone.len();
+                    refs_inline(with, &mut gone);
+                    if note.is_some_and(|k| gone[n..].contains(&k)) {
+                        at = Some((*para, range.start));
+                    }
+                }
                 Step::Blocks { with, .. } => refs_in(with, &mut gone),
                 Step::Rows { with, .. } => with.iter().flat_map(|r| r.cells.iter()).for_each(|c| refs_in(&c.blocks, &mut gone)),
                 _ => {}
@@ -318,8 +330,11 @@ impl Editor {
                 NoteKind::Foot => self.doc.footnotes.contains_key(&id),
                 NoteKind::End => self.doc.endnotes.contains_key(&id),
             };
-            if exists && !left.contains(&(kind, id)) {
-                let _ = self.step(tx, Step::Note { kind, id, blocks: None });
+            if exists && !left.contains(&(kind, id)) && self.step(tx, Step::Note { kind, id, blocks: None }).is_ok() && note == Some((kind, id)) {
+                let story = at.and_then(|(p, _)| self.index.para_slot(p)).map(|s| self.index.story(s.container));
+                if let (Some(story), Some((para, u))) = (story, at) {
+                    self.selection = Selection::Caret(Position::text(story, para, u));
+                }
             }
         }
     }
@@ -366,6 +381,10 @@ impl Editor {
             match s {
                 Step::Text { with, .. } | Step::Restyle { inlines: with, .. } => inlines(with, &mut gone),
                 Step::Blocks { with, .. } => blocks(with, &mut gone),
+                Step::Split { second, .. } => {
+                    gone.extend(second.controls.iter().copied());
+                    inlines(&second.inlines, &mut gone);
+                }
                 Step::Rows { with, .. } => {
                     for r in with {
                         gone.extend(r.controls.iter().copied());

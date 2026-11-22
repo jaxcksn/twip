@@ -304,7 +304,7 @@ impl Editor {
         self.set_selection(Selection::Caret(Position::text(story, ParaId(first), Unit(0))));
         let Some(t) = tx else { return Outcome::Moved };
         let out = self.commit(t, None, fonts);
-        if matches!(out, Outcome::Changed(_)) {
+        if matches!(out, Outcome::Changed(_)) && self.batch.is_none() {
             self.provisional = Some(Provisional { story, tx: self.history.position() });
         }
         out

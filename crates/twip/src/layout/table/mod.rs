@@ -484,7 +484,7 @@ fn layout_shown(
     let near = |ri: usize| reuse.as_ref().is_some_and(|(_, rows)| ri + 1 >= *rows.start() && ri <= rows.end() + 1);
     let single = env.ctx.env.text.single_cell_borders;
     let edges = crate::prof::time("table:edges", || cell_edges(t, n, single, &|ri| reuse.as_ref().filter(|_| !near(ri)).map(|(o, _)| &o.rows[ri])));
-    let inputs = crate::prof::time("table:fit", || fit_inputs(t, env, memos, &edges, &|ri| kept(ri).map(|o| &o.fit[ri])))?;
+    let inputs: Rc<[FitRow]> = crate::prof::time("table:fit", || fit_inputs(t, env, memos, &edges, &|ri| kept(ri).map(|o| &o.fit[ri])))?.into();
     let Fit { cols, min_t, width, hard_t } = resolve_fit(t, text_w, env, None, nested, &inputs);
     let geo = if cols.len() == n { place(t, &cols, &edges) } else { cell_geometry(t, &cols, single) };
 
@@ -561,6 +561,7 @@ fn layout_shown(
         measure,
         cols: &cols,
         fit: (min_t, width, hard_t),
+        fit_rows: &inputs,
         cells: &stories,
         text: &env.ctx.env.text,
         fonts: env.ctx.fonts.revision(),
@@ -568,7 +569,7 @@ fn layout_shown(
     if !memos.cache.store_tables {
         return Ok(match memos.cache.tables.lookup(&probe) {
             Some(tb) => tb,
-            None => Rc::new(assemble(t, text_w, env, cols, &geo, &stories, &closings, inputs.into(), nested, memos)?),
+            None => Rc::new(assemble(t, text_w, env, cols, &geo, &stories, &closings, inputs.clone(), nested, memos)?),
         });
     }
     cached(
@@ -576,7 +577,7 @@ fn layout_shown(
         |c| &mut c.tables,
         probe,
         table_bytes,
-        |m| assemble(t, text_w, env, cols.clone(), &geo, &stories, &closings, inputs.into(), nested, m),
+        |m| assemble(t, text_w, env, cols.clone(), &geo, &stories, &closings, inputs.clone(), nested, m),
     )
 }
 

@@ -2291,18 +2291,18 @@ impl Reader {
     fn hyperlink_code(&self, e: Node) -> Option<String> {
         let address = e.attribute((R, "id")).and_then(|id| self.rels.get(id)).filter(|(kind, _)| kind == "hyperlink").map(|(_, t)| t.as_str());
         let anchor = attr(e, "anchor");
+        let quote = super::fields::quote;
         let mut code = String::from("HYPERLINK");
         if let Some(a) = address {
-            code += &format!(" \"{a}\"");
+            code += &format!(" {}", quote(a));
         }
         if let Some(a) = anchor {
-            code += &format!(" \\l \"{a}\"");
+            code += &format!(" \\l {}", quote(a));
         }
         // The ScreenTip and target frame, as the field's switches: a link rewritten as its field keeps them.
-        let quoted = |v: &str| v.replace('\\', "\\\\").replace('"', "\\\"");
         for (switch, name) in [("o", "tooltip"), ("t", "tgtFrame")] {
             if let Some(v) = attr(e, name) {
-                code += &format!(" \\{switch} \"{}\"", quoted(v));
+                code += &format!(" \\{switch} {}", quote(v));
             }
         }
         (address.is_some() || anchor.is_some()).then_some(code)
@@ -3525,5 +3525,34 @@ mod tests {
         assert_eq!(tw(super::vml_effect(Some(60.0), Some([2000.0, 0.0, 3440.0, 795.0])))[3], 30.0);
         assert_eq!(tw(super::vml_effect(None, Some([2002.0, 0.0, 3442.0, 800.0]))), [7.0, 0.0, 0.0, 0.0]);
         assert_eq!(super::vml_effect(Some(15.0), None), [0.0; 4]);
+    }
+
+    #[test]
+    fn a_hyperlinks_target_and_anchor_keep_their_backslashes() {
+        let rel = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+        let w = format!(r#"xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="{rel}""#);
+        let target = r"file:///\\server\share\a\";
+        let link = |id: &str| format!(r#"<w:p><w:hyperlink r:id="{id}" w:anchor="b\&quot;"><w:r><w:t>x</w:t></w:r></w:hyperlink></w:p>"#);
+        let doc = crate::layout::tests::package(&[
+            (
+                "[Content_Types].xml",
+                r#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+            ),
+            (
+                "_rels/.rels",
+                &format!(r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="{rel}/officeDocument" Target="word/document.xml"/></Relationships>"#),
+            ),
+            (
+                "word/_rels/document.xml.rels",
+                &format!(r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId9" Type="{rel}/hyperlink" Target="{target}" TargetMode="External"/></Relationships>"#),
+            ),
+            ("word/document.xml", &format!("<w:document {w}><w:body>{}</w:body></w:document>", link("rId9"))),
+        ])
+        .expect("reads");
+        let Some(crate::docx::Block::Para(p)) = doc.sections[0].blocks.first() else { panic!("a paragraph") };
+        let span = *crate::docx::fields::spans(&p.inlines).first().expect("the link's field");
+        let code = crate::docx::fields::parse(&crate::docx::fields::code_text(&p.inlines, span));
+        assert_eq!(code.args, [target]);
+        assert_eq!(code.switches.iter().find(|s| s.flag == 'l').and_then(|s| s.arg.as_deref()), Some("b\\\""));
     }
 }

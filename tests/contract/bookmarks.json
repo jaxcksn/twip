@@ -1,6 +1,7 @@
 {
   "name": "bookmarks",
   "fixture": "editor/FX-outline.docx",
+  "fonts": "kit",
   "steps": [
     { "op": "open" },
     { "op": "call", "method": "find.next", "args": [{ "text": "survey" }], "result": { "found": true } },

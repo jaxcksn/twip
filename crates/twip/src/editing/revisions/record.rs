@@ -63,7 +63,7 @@ impl Recording {
         match step {
             Step::Text { para, range, with, edges } => self.text(para, range, with, edges, doc, idx, ids),
             Step::Restyle { para, inlines } => self.restyle(para, inlines, doc, idx, ids),
-            Step::Split { para, at, second } => self.split(para, at, second, doc, idx, ids),
+            Step::Split { para, at, second, kept } => self.split(para, at, second, kept, doc, idx, ids),
             Step::Join { first, second } => self.join(first, second, doc, idx, ids),
             Step::Para { para, style, mark, list } => match idx.para(doc, para) {
                 Some(p) => {
@@ -161,7 +161,12 @@ impl Recording {
 
     fn deleted(&mut self, r: &Run, ids: &mut IdCounter) -> Option<Run> {
         let kind = if self.move_name.is_some() { MarkKind::MoveFrom } else { MarkKind::Delete };
-        if r.rev.del.as_ref().is_some_and(|m| m.author == self.author && m.kind == kind && m.move_name == self.move_name) {
+        // Deleted by this author, or a move end
+        if r.rev
+            .del
+            .as_ref()
+            .is_some_and(|m| (m.author == self.author && (m.kind == kind || m.kind == MarkKind::Delete)) || m.kind == MarkKind::MoveFrom)
+        {
             return None;
         }
         if let Some((_, n)) = self.deleted.get(&Rc::as_ptr(r)) {
@@ -522,13 +527,25 @@ impl Recording {
         vec![Step::Restyle { para, inlines }]
     }
 
-    fn split(&mut self, para: ParaId, at: Unit, mut second: Paragraph, doc: &Document, idx: &DocIndex, ids: &mut IdCounter) -> Vec<Step> {
-        let Some(p) = idx.para(doc, para).filter(|_| second.inlines.is_empty()) else { return vec![Step::Split { para, at, second }] };
+    #[allow(clippy::too_many_arguments, reason = "the step's fields, then the document")]
+    fn split(
+        &mut self,
+        para: ParaId,
+        at: Unit,
+        mut second: Paragraph,
+        kept: Vec<Inline>,
+        doc: &Document,
+        idx: &DocIndex,
+        ids: &mut IdCounter,
+    ) -> Vec<Step> {
+        let Some(p) = idx.para(doc, para).filter(|_| second.inlines.is_empty() && kept.is_empty()) else {
+            return vec![Step::Split { para, at, second, kept }];
+        };
         if second.mark.rev != p.mark.rev {
             second.mark = with_rev(&second.mark, p.mark.rev.clone());
         }
         let mark = with_rev(&p.mark, RunRevisions { ins: Some(self.ins_mark(ids)), del: None, fmt: None });
-        vec![Step::Split { para, at, second }, Step::Para { para, style: p.style.clone(), mark, list: p.list.clone() }]
+        vec![Step::Split { para, at, second, kept }, Step::Para { para, style: p.style.clone(), mark, list: p.list.clone() }]
     }
 
     fn join(&mut self, first: ParaId, second: ParaId, doc: &Document, idx: &DocIndex, ids: &mut IdCounter) -> Vec<Step> {
@@ -608,6 +625,9 @@ impl Recording {
         let mut notes = Vec::new();
         let mut rows = Vec::with_capacity(with.len().max(old.len()));
         let mut changed = grid.as_ref().is_some_and(|g| *g != t.grid);
+        // ponytail: a column edit isn't recorded (its cells go untracked), so a row it empties goes with it; cell marks
+        // would keep both until accepted.
+        let columns_go = grid.as_ref().is_some_and(|g| g.len() < t.grid.len());
         let mut next = 0;
         for (i, o) in old.iter().enumerate() {
             match matched.iter().position(|m| *m == Some(i)) {
@@ -621,6 +641,7 @@ impl Recording {
                     rows.push(r);
                     next = k + 1;
                 }
+                None if columns_go => changed = true,
                 None => {
                     changed = true;
                     if let Some(r) = self.del_row(o, true, ids, &mut notes) {

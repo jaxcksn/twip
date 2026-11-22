@@ -775,7 +775,7 @@ impl Editor {
             return Outcome::Unchanged("no paragraph");
         };
         let tail = ParaId(second.id);
-        if self.step(&mut tx, Step::Split { para, at, second }).is_err() {
+        if self.step(&mut tx, Step::Split { para, at, second, kept: Vec::new() }).is_err() {
             self.abort(tx);
             return Outcome::Unchanged("split failed");
         }
