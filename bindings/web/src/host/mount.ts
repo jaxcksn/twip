@@ -42,7 +42,10 @@ export async function mountHost(container: HTMLElement, s: Session, options: Mou
     const r = dom.canvas.getBoundingClientRect();
     return { ...rect, left: rect.left + r.left, top: rect.top + r.top };
   };
+  // Only these carry viewport points: reading the canvas rect for every event (states included) forces a layout.
+  const placed = new Set(['elementHover', 'elementSelect', 'contextMenu', 'gesture', 'tooltip', 'popoverRequested', 'rulerChanged']);
   s.adjust = (type, event) => {
+    if (!placed.has(type)) return event;
     const r = dom.canvas.getBoundingClientRect();
     const client = (p: ClientPoint) => ({ clientX: p.clientX + r.left, clientY: p.clientY + r.top });
     if ((type === 'elementHover' || type === 'elementSelect') && event) {
