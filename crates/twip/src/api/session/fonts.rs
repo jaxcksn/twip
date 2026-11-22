@@ -192,12 +192,18 @@ fn para_missing(p: &Paragraph, fonts: &Fonts) -> Missing {
     }
     for i in &p.inlines {
         let Inline::Text(text, run) = i else { continue };
+        // The run's face for the family last asked: a run's characters mostly use one of its families.
+        let mut memo: Option<(&str, Option<std::rc::Rc<crate::font::Face>>)> = None;
         for c in text.chars() {
             if c.is_whitespace() || c.is_control() || c == '\u{AD}' || c == '\u{2011}' {
                 continue;
             }
             let family = crate::layout::text::family_for(c, run);
-            let Some(face) = fonts.face(family, run.category(family), run.bold, run.italic) else { continue };
+            let face = match &memo {
+                Some((f, face)) if *f == family => face.clone(),
+                _ => memo.insert((family, fonts.face(family, run.category(family), run.bold, run.italic))).1.clone(),
+            };
+            let Some(face) = face else { continue };
             let drawn = match crate::layout::text::symbol_unicode(family, c) {
                 mapped if mapped != c && !face.family.eq_ignore_ascii_case(family) => mapped,
                 _ => c,
