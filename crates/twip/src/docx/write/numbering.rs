@@ -1,6 +1,6 @@
 //! The numbering part
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use super::super::model::Document;
 use super::super::package;
@@ -45,30 +45,38 @@ pub(super) fn numbering(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> R
     let dom = roxmltree::Document::parse(&xml).map_err(|e| e.to_string())?;
     let root = dom.root_element();
     let mut splices: Vec<Splice> = Vec::new();
-    let (mut seen_pics, mut seen_abstracts, mut seen_nums) = (HashSet::new(), HashSet::new(), HashSet::new());
-    let (mut first_abstract, mut first_num) = (None, None);
-    let mut each = |id: Option<i64>, now: &BTreeMap<i64, &str>, seen: &mut HashSet<i64>, range: std::ops::Range<usize>| {
-        let Some(id) = id else { return };
-        // A repeated id: the table holds the last one read, so the earlier ones are kept as they are.
-        if !seen.insert(id) {
-            return;
-        }
-        let was = &xml[range.clone()];
-        match now.get(&id) {
-            Some(raw) if *raw == was => {}
-            Some(raw) => splices.push((range, raw.to_string())),
-            None => splices.push((range, String::new())),
-        }
-    };
+    let tables = [&pics, &abstracts, &nums];
+    let (mut first_abstract, mut first_num, mut cleanup) = (None, None, None);
+    let mut found: Vec<(usize, i64, std::ops::Range<usize>)> = Vec::new();
     for c in root.children().filter(|c| c.is_element()) {
-        if is_w(c, "numPicBullet") {
-            each(int(attr(c, "numPicBulletId")), &pics, &mut seen_pics, c.range());
+        let (kind, id) = if is_w(c, "numPicBullet") {
+            (0, "numPicBulletId")
         } else if is_w(c, "abstractNum") {
             first_abstract.get_or_insert(c.range().start);
-            each(int(attr(c, "abstractNumId")), &abstracts, &mut seen_abstracts, c.range());
+            (1, "abstractNumId")
         } else if is_w(c, "num") {
             first_num.get_or_insert(c.range().start);
-            each(int(attr(c, "numId")), &nums, &mut seen_nums, c.range());
+            (2, "numId")
+        } else {
+            if is_w(c, "numIdMacAtCleanup") {
+                cleanup.get_or_insert(c.range().start);
+            }
+            continue;
+        };
+        if let Some(id) = int(attr(c, id)) {
+            found.push((kind, id, c.range()));
+        }
+    }
+    // A repeated id: the table holds the last one read, so the earlier ones are kept as they are.
+    let last: HashMap<(usize, i64), usize> = found.iter().enumerate().map(|(i, (kind, id, _))| ((*kind, *id), i)).collect();
+    let mut seen: [HashSet<i64>; 3] = Default::default();
+    for (i, (kind, id, range)) in found.iter().enumerate() {
+        seen[*kind].insert(*id);
+        match tables[*kind].get(id) {
+            Some(_) if last[&(*kind, *id)] != i => {}
+            Some(raw) if *raw == &xml[range.clone()] => {}
+            Some(raw) => splices.push((range.clone(), raw.to_string())),
+            None => splices.push((range.clone(), String::new())),
         }
     }
     // A self-closing root (`<w:numbering …/>`, a numbering part with no lists) is opened only when something goes in.
@@ -76,17 +84,19 @@ pub(super) fn numbering(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> R
     let empty = xml[open..end].ends_with("/>");
     let close = if empty { end } else { xml.rfind("</").ok_or("a numbering part without its end tag")? };
     let new = |now: &BTreeMap<i64, &str>, seen: &HashSet<i64>| -> String { now.iter().filter(|(k, _)| !seen.contains(k)).map(|(_, r)| *r).collect() };
-    let (new_pics, new_abstracts, new_nums) = (new(&pics, &seen_pics), new(&abstracts, &seen_abstracts), new(&nums, &seen_nums));
-    let abstracts_at = first_abstract.or(first_num).unwrap_or(close);
+    let (new_pics, new_abstracts, new_nums) = (new(&pics, &seen[0]), new(&abstracts, &seen[1]), new(&nums, &seen[2]));
+    // The `w:num`s end before a `w:numIdMacAtCleanup`.
+    let tail = cleanup.unwrap_or(close);
+    let abstracts_at = first_abstract.or(first_num).unwrap_or(tail);
     if !new_pics.is_empty() {
         splices.push((abstracts_at..abstracts_at, new_pics));
     }
     if !new_abstracts.is_empty() {
-        let at = first_num.unwrap_or(close);
+        let at = first_num.unwrap_or(tail);
         splices.push((at..at, new_abstracts));
     }
     if !new_nums.is_empty() {
-        splices.push((close..close, new_nums));
+        splices.push((tail..tail, new_nums));
     }
     // Its `/>` becomes `>`, and its end tag follows what is added (sorted after the additions at the same place).
     if empty && !splices.is_empty() {

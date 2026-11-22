@@ -601,6 +601,29 @@ impl Editor {
         self.edit_styles("Modify Style", |s| s.set_xml(now), fonts)
     }
 
+    /// The paragraphs in one of the styles `changed`, or with a run in one: its mark, its list label, a ruby's text
+    /// too.
+    pub(super) fn styled_paras(&self, changed: &[String]) -> Vec<crate::layout::ParaId> {
+        let default = self.doc.resolver.as_ref().and_then(|r| r.styles.default_paragraph.clone());
+        let changed: std::collections::HashSet<&str> = changed.iter().map(String::as_str).collect();
+        let uses = |id: Option<&str>| id.or(default.as_deref()).is_some_and(|id| changed.contains(id));
+        let styled = |r: &crate::docx::Run| r.style_id.as_deref().is_some_and(|s| changed.contains(s));
+        self.index
+            .para_ids()
+            .filter(|&p| {
+                self.index.para(&self.doc, p).is_some_and(|q| {
+                    uses(q.style.style_id.as_deref())
+                        || styled(&q.mark)
+                        || q.list.as_ref().is_some_and(|l| styled(&l.run))
+                        || q.inlines.iter().any(|i| {
+                            i.run().is_some_and(styled)
+                                || matches!(i, crate::docx::Inline::Ruby(r, _) if r.base.iter().chain(&r.text).any(|x| styled(&x.1)))
+                        })
+                })
+            })
+            .collect()
+    }
+
     /// Runs `edit` on the styles table as one undo step named `label`. Every paragraph, run and table whose style
     /// changed (the edit's answer) is formatted again from the new table; those naming a style it deleted name it no
     /// more.
@@ -618,6 +641,7 @@ impl Editor {
             Err(StyleEditError::Loop) => return Outcome::Refused(Error::invalid("a style can't be based on itself")),
             Err(StyleEditError::Malformed) => return Outcome::Refused(Error::invalid("not a style")),
         };
+        next.compute_style_links();
         let mut tx = self.begin(label);
         let added = self.doc.added_lists.clone();
         if self.step(&mut tx, Step::Resolver { resolver: Some(Rc::new(next)), added }).is_err() {
@@ -637,30 +661,11 @@ impl Editor {
             self.drop_style_refs(&mut tx, id, &res);
         }
         tx.tracked = tracked;
-        let default = self.doc.resolver.as_ref().and_then(|r| r.styles.default_paragraph.clone());
-        let changed: std::collections::HashSet<&str> = changed.iter().map(String::as_str).collect();
-        let uses = |id: Option<&str>| id.or(default.as_deref()).is_some_and(|id| changed.contains(id));
-        let styled = |r: &crate::docx::Run| r.style_id.as_deref().is_some_and(|s| changed.contains(s));
-        // A paragraph in a changed style, or holding a run in one: its mark, its list label, a ruby's text too.
-        let paras: Vec<_> = self
-            .index
-            .para_ids()
-            .filter(|&p| {
-                self.index.para(&self.doc, p).is_some_and(|q| {
-                    uses(q.style.style_id.as_deref())
-                        || styled(&q.mark)
-                        || q.list.as_ref().is_some_and(|l| styled(&l.run))
-                        || q.inlines.iter().any(|i| {
-                            i.run().is_some_and(styled)
-                                || matches!(i, crate::docx::Inline::Ruby(r, _) if r.base.iter().chain(&r.text).any(|x| styled(&x.1)))
-                        })
-                })
-            })
-            .collect();
+        let paras = self.styled_paras(&changed);
         let tables: Vec<_> = self
             .index
             .table_ids()
-            .filter(|&t| self.index.table(&self.doc, t).and_then(|t| t.style_id.as_deref()).is_some_and(|s| changed.contains(s)))
+            .filter(|&t| self.index.table(&self.doc, t).and_then(|t| t.style_id.as_deref()).is_some_and(|s| changed.iter().any(|c| c == s)))
             .collect();
         tx.stale_paras.extend(paras);
         tx.stale_tables.extend(tables);

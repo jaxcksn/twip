@@ -14,6 +14,7 @@ mod fuzz;
 mod history;
 mod into_tables;
 mod json;
+mod list_definitions;
 mod merge;
 mod page_background;
 mod perf;

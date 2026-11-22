@@ -89,7 +89,9 @@ impl Resolver {
         r
     }
 
-    fn compute_style_links(&mut self) {
+    /// The paragraph styles linked to list levels, from the definitions' `w:pStyle`s and the styles' own lists.
+    pub fn compute_style_links(&mut self) {
+        self.style_links.clear();
         for (a, abs) in &self.numbering.abstracts {
             for (i, l) in abs.levels.iter().enumerate() {
                 if let Some(ps) = l.as_ref().and_then(|l| l.pstyle.clone()) {
