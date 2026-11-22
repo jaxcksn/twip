@@ -280,19 +280,20 @@ pub struct StateFlags {
 impl Editor {
     pub fn format_state(&mut self) -> Option<FormatState> {
         let focus = self.selection.focus();
-        let cells = matches!(self.selection, Selection::Cells { .. }).then(|| self.selected_ranges().first().map(|r| r.0)).flatten();
-        let para_id = focus.and_then(|p| p.para_offset()).map(|(p, _)| p).or(cells).or_else(|| match self.selection {
+        let ranges: Vec<(ParaId, crate::layout::Unit, crate::layout::Unit)> =
+            if self.selection.is_collapsed() { Vec::new() } else { self.selected_ranges() };
+        let para_id = focus.and_then(|p| p.para_offset()).map(|(p, _)| p).or_else(|| match self.selection {
             Selection::Object(ObjectRef::Inline { para, .. }) => Some(para),
             Selection::Object(ObjectRef::Floating(f)) => self.index.float_anchor(f),
+            Selection::Cells { .. } => ranges.first().map(|r| r.0),
             _ => None,
         });
         let para = self.index.para(&self.doc, para_id?)?;
         let (mark, style) = (para.mark.clone(), para.style.clone());
         let list = self.para_list(para_id?);
         let caret_run = focus.and_then(|c| self.run_at(&c));
-        let ranges: Vec<(ParaId, crate::layout::Unit, crate::layout::Unit)> =
-            if self.selection.is_collapsed() { Vec::new() } else { self.selected_ranges().into_iter().take(2000).collect() };
-        let runs: Vec<Run> = ranges.iter().filter(|r| r.1 < r.2).flat_map(|&r| self.runs_in(r)).collect();
+        let mut runs: Vec<Run> = ranges.iter().filter(|r| r.1 < r.2).flat_map(|&r| self.runs_in(r)).collect();
+        runs.dedup_by(|a, b| Rc::ptr_eq(a, b));
         let run = runs.first().cloned().or(caret_run).unwrap_or(mark);
         let character = if runs.is_empty() { self::character(&[&run]) } else { self::character(&runs.iter().map(|r| &**r).collect::<Vec<_>>()) };
         let mut paras: Vec<ParaId> = ranges.iter().map(|r| r.0).collect();
@@ -300,8 +301,9 @@ impl Editor {
         if paras.is_empty() {
             paras.push(para_id?);
         }
-        let styles: Vec<(Rc<ParaStyle>, Option<bool>)> =
+        let mut styles: Vec<(Rc<ParaStyle>, Option<bool>)> =
             paras.iter().filter_map(|&p| Some((self.index.para(&self.doc, p)?.style.clone(), self.para_list(p)))).collect();
+        styles.dedup_by(|a, b| Rc::ptr_eq(&a.0, &b.0) && a.1 == b.1);
         let mut paragraph = self::paragraph(&styles.iter().map(|(s, l)| (&**s, *l)).collect::<Vec<_>>());
         paragraph.drop_cap = self.drop_cap().filter(|d| d.position != crate::api::command::DropCapPosition::None);
         let level = focus.and_then(|p| self.index.chain_of(&p).last().copied());
@@ -309,7 +311,12 @@ impl Editor {
             Selection::Cells { table, .. } => Some(table),
             _ => level.map(|l| l.table),
         };
-        let cell = level.filter(|l| Some(l.table) == table).map(|l| (l.row, l.cell));
+        let cell = match self.selection {
+            Selection::Cells { table, anchor, .. } => {
+                self.index.table(&self.doc, table).and_then(|t| super::table::Grid::of(t).cell_at(anchor.row, anchor.col)).map(|c| (anchor.row, c))
+            }
+            _ => level.filter(|l| Some(l.table) == table).map(|l| (l.row, l.cell)),
+        };
         let object = self.selected_object();
         let story = focus.map_or(self.editing(), |p| p.story);
         let section = para_id.and_then(|p| self.para_section(p)).unwrap_or(0);
@@ -418,6 +425,8 @@ impl Editor {
         use CommandId as C;
         let editable = !flags.read_only;
         let formatted = editable && f.is_some();
+        // Character formatting, which a floating object doesn't take
+        let chars = formatted && !matches!(self.selection, Selection::Object(ObjectRef::Floating(_)));
         let selected = !self.selection.is_collapsed();
         let in_table = f.is_some_and(|f| f.table.is_some());
         let story = f.map_or(StoryId::Body, |f| f.story);
@@ -426,6 +435,14 @@ impl Editor {
         let floating = matches!(object, Some(ObjectKind::Float | ObjectKind::TextBox));
         let shape = self.shape_info();
         let in_list = f.is_some_and(|f| f.list.is_some());
+        let styled = self.style_target.is_some();
+        let paras = if styled { Vec::new() } else { self.selected_paras() };
+        let listed = styled || paras.iter().any(|&p| self.index.para(&self.doc, p).is_some_and(|p| p.style.num.is_some_and(|(id, _)| id != 0)));
+        let framed = styled || self.frame_here().is_some();
+        let tab_stops = self.tab_stops_in(&paras);
+        let notes = self.takes_notes();
+        let commentable = self.takes_comments_here();
+        let section = self.focus_section();
         let header_footer = matches!(story, StoryId::HeaderFooter(_));
         let can_merge = matches!(self.selection, Selection::Cells { anchor, focus, .. } if anchor != focus);
         let link = self.link_here().is_some();
@@ -464,22 +481,22 @@ impl Editor {
                     };
                     (true, (None, Some(CommandValue::SelectionMode(mode))))
                 }
-                (C::SetBold, Some(f)) => (formatted, toggle(f.character.bold)),
-                (C::SetItalic, Some(f)) => (formatted, toggle(f.character.italic)),
-                (C::SetStrikethrough, Some(f)) => (formatted, toggle(f.character.strikethrough)),
-                (C::SetDoubleStrikethrough, Some(f)) => (formatted, toggle(f.character.double_strikethrough)),
-                (C::SetSubscript, Some(f)) => (formatted, toggle(f.character.subscript)),
-                (C::SetSuperscript, Some(f)) => (formatted, toggle(f.character.superscript)),
-                (C::SetSmallCaps, Some(f)) => (formatted, toggle(f.character.small_caps)),
-                (C::SetAllCaps, Some(f)) => (formatted, toggle(f.character.all_caps)),
-                (C::SetHidden, Some(f)) => (formatted, toggle(f.character.hidden)),
-                (C::SetUnderline, Some(f)) => (formatted, (None, Some(CommandValue::Underline(f.character.underline)))),
-                (C::SetFont, Some(f)) => (formatted, (None, Some(CommandValue::Text(f.character.font.clone())))),
-                (C::SetFontSize, Some(f)) => (formatted, (None, Some(CommandValue::Length(f.character.size)))),
-                (C::SetFontColor, Some(f)) => (formatted, (None, Some(CommandValue::Color(f.character.color)))),
-                (C::SetHighlight, Some(f)) => (formatted, (None, Some(CommandValue::Highlight(f.character.highlight)))),
-                (C::SetCharacterSpacing, Some(f)) => (formatted, (None, Some(CommandValue::Length(f.character.character_spacing)))),
-                (C::SetCharacterPosition, Some(f)) => (formatted, (None, Some(CommandValue::Length(f.character.position)))),
+                (C::SetBold, Some(f)) => (chars, toggle(f.character.bold)),
+                (C::SetItalic, Some(f)) => (chars, toggle(f.character.italic)),
+                (C::SetStrikethrough, Some(f)) => (chars, toggle(f.character.strikethrough)),
+                (C::SetDoubleStrikethrough, Some(f)) => (chars, toggle(f.character.double_strikethrough)),
+                (C::SetSubscript, Some(f)) => (chars, toggle(f.character.subscript)),
+                (C::SetSuperscript, Some(f)) => (chars, toggle(f.character.superscript)),
+                (C::SetSmallCaps, Some(f)) => (chars, toggle(f.character.small_caps)),
+                (C::SetAllCaps, Some(f)) => (chars, toggle(f.character.all_caps)),
+                (C::SetHidden, Some(f)) => (chars, toggle(f.character.hidden)),
+                (C::SetUnderline, Some(f)) => (chars, (None, Some(CommandValue::Underline(f.character.underline)))),
+                (C::SetFont, Some(f)) => (chars, (None, Some(CommandValue::Text(f.character.font.clone())))),
+                (C::SetFontSize, Some(f)) => (chars, (None, Some(CommandValue::Length(f.character.size)))),
+                (C::SetFontColor, Some(f)) => (chars, (None, Some(CommandValue::Color(f.character.color)))),
+                (C::SetHighlight, Some(f)) => (chars, (None, Some(CommandValue::Highlight(f.character.highlight)))),
+                (C::SetCharacterSpacing, Some(f)) => (chars, (None, Some(CommandValue::Length(f.character.character_spacing)))),
+                (C::SetCharacterPosition, Some(f)) => (chars, (None, Some(CommandValue::Length(f.character.position)))),
                 (
                     C::ApplyCharacterStyle
                     | C::SetTypography
@@ -487,10 +504,10 @@ impl Editor {
                     | C::SetCharacterEffects
                     | C::SetTextEffects
                     | C::SetUnderlineColor
-                    | C::SetOutline
-                    | C::SetParagraphTextDirection,
+                    | C::SetOutline,
                     Some(_),
-                ) => (formatted, (None, None)),
+                ) => (chars, (None, None)),
+                (C::SetParagraphTextDirection, Some(_)) => (formatted, (None, None)),
                 (C::ChangeCase, _) => (editable && selected, (None, None)),
                 (C::SetAlignment, Some(f)) => (formatted, (None, Some(CommandValue::Alignment(f.paragraph.alignment)))),
                 (C::SetLineSpacing, Some(f)) => (formatted, (None, Some(CommandValue::LineSpacing(f.paragraph.line_spacing)))),
@@ -605,6 +622,12 @@ impl Editor {
                     let on = self.doc.sections.get(f.section).is_some_and(|s| s.title_pg);
                     (editable, (Some(on), None))
                 }
+                (C::RestartNumbering | C::ContinueNumbering | C::SetNumberingValue | C::AdjustListIndents, _) => (editable && listed, (None, None)),
+                (C::SetFrame | C::RemoveFrame, _) => (editable && framed, (None, None)),
+                (C::ClearTabStops, _) => (editable && tab_stops, (None, None)),
+                (C::InsertFootnote | C::InsertEndnote | C::InsertNote, _) => (editable && notes, (None, None)),
+                (C::AddComment, _) => (editable && commentable, (None, None)),
+                (C::SetHeaderFooterLinked, _) => (editable && section > 0, (None, None)),
                 (_, None) if info.mutates => (false, (None, None)),
                 _ => (editable || !info.mutates, (None, None)),
             };
@@ -771,7 +794,7 @@ impl Editor {
                     crate::docx::ControlKind::Picture => ElementKind::Picture,
                     crate::docx::ControlKind::Checkbox { .. } => ElementKind::Checkbox,
                     crate::docx::ControlKind::Date { .. } => ElementKind::Date,
-                    crate::docx::ControlKind::DropDown if props.kind_xml.as_deref().is_some_and(|x| x.contains("comboBox")) => ElementKind::ComboBox,
+                    crate::docx::ControlKind::DropDown if props.combo_box() => ElementKind::ComboBox,
                     crate::docx::ControlKind::DropDown => ElementKind::DropDown,
                     crate::docx::ControlKind::Group => ElementKind::Group,
                     crate::docx::ControlKind::RepeatingSection => ElementKind::RepeatingSection,

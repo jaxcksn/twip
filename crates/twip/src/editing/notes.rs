@@ -120,12 +120,17 @@ impl Editor {
         out
     }
 
+    /// Whether a note's reference can go at the selection: only in the body.
+    pub(super) fn takes_notes(&self) -> bool {
+        self.selection.focus().map(|p| p.story) == Some(StoryId::Body)
+    }
+
     pub(super) fn insert_note(&mut self, kind: NoteKind, custom: Option<&str>, fonts: &Fonts) -> Outcome {
         if custom.is_some_and(|m| m.is_empty() || m.chars().count() > 10) {
             return Outcome::invalid("a custom mark is 1…10 characters");
         }
-        if self.selection.focus().map(|p| p.story) != Some(StoryId::Body) {
-            return Outcome::Unchanged("notes are inserted in the body");
+        if !self.takes_notes() {
+            return Outcome::unavailable("notes are inserted in the body");
         }
         let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
         let cx = self.cx();

@@ -103,6 +103,13 @@ test("without ClipboardItem, a copy is the selection's text from the state", asy
 test("the context menu's Paste reads the system clipboard", async ({ page }) => {
   await mount(page);
   await typed(page, 'x');
+  // Paste is offered once something was copied.
+  await page.evaluate(async () => {
+    const { commands } = (window as any).editor;
+    await commands.selectAll();
+    await commands.copy();
+    await commands.moveSelection({ by: 'document', direction: 'forward' });
+  });
   await page.evaluate(() => navigator.clipboard.writeText('menu'));
   await page.evaluate(async () => {
     const editor = (window as any).editor;

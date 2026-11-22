@@ -73,8 +73,8 @@ impl Session {
         self.state.commands.get(&id)
     }
 
-    /// The checks before any step runs, in order: what the engine doesn't do yet, read only, document protection,
-    /// availability in the current state, then the arguments.
+    /// The checks before any step runs, in order: what the engine doesn't do yet, read only, document protection, the
+    /// arguments, then availability in the current state.
     pub(super) fn check(&self, command: &Command) -> Result<(), Error> {
         self.check_where(command, true)
     }
@@ -90,17 +90,24 @@ impl Session {
         if self.read_only && info(id).is_some_and(|i| i.mutates) {
             return Err(Error::new(ErrorCode::ReadOnly, "the session is read only"));
         }
+        if here
+            && command.mutates()
+            && let Some(e) = self.editor.protection_refusal(command)
+        {
+            return Err(e);
+        }
+        self.validate(command)?;
         if here {
-            if command.mutates()
-                && let Some(e) = self.editor.protection_refusal(command)
-            {
-                return Err(e);
-            }
-            if self.state.commands.get(&id).is_some_and(|s| !s.enabled) {
+            // Paste: this editor's copy or another session's
+            let enabled = match command {
+                Command::Paste(_) => self.editor.clipboard().is_some() || self.shared.clipboard.borrow().is_some(),
+                _ => self.state.commands.get(&id).is_none_or(|s| s.enabled),
+            };
+            if !enabled {
                 return Err(Error::unavailable(format!("{} isn't available here", id_name(id))));
             }
         }
-        self.validate(command)
+        Ok(())
     }
 
     /// Bad ranges, counts, sizes, empty text and ids that don't exist.
@@ -132,7 +139,17 @@ impl Session {
                 Some(st) if st.kind == crate::docx::styles::StyleKind::Table => Ok(()),
                 _ => Err(Error::invalid(format!("no table style {}", s.0))),
             },
-            C::SetParagraphStyle(s) | C::SetTableStyle(s) | C::UpdateStyleToSelection(s) | C::DeleteStyle(s) => {
+            C::SetParagraphStyle(s) | C::SetTableStyle(s) => {
+                use crate::docx::styles::StyleKind as K;
+                let want = if matches!(command, C::SetTableStyle(_)) { K::Table } else { K::Paragraph };
+                match self.editor.document().resolver.as_ref().and_then(|r| r.styles.by_id.get(&s.0)) {
+                    Some(st) if st.kind == want => Ok(()),
+                    Some(_) => Err(Error::invalid(format!("{} isn't a {} style", s.0, if want == K::Table { "table" } else { "paragraph" }))),
+                    None if self.editor.built_in_for(command) => Ok(()),
+                    None => Err(Error::invalid(format!("no style {}", s.0))),
+                }
+            }
+            C::UpdateStyleToSelection(s) | C::DeleteStyle(s) => {
                 let built_in = !matches!(command, C::DeleteStyle(_)) && self.editor.built_in_for(command);
                 if built_in || self.editor.document().resolver.as_ref().is_some_and(|r| r.styles.by_id.contains_key(&s.0)) {
                     Ok(())
@@ -147,7 +164,27 @@ impl Session {
                 Ok(())
             }
             C::SetPaperSize(s) => within("the width", s.width.0, 36.0, MAX).and(within("the height", s.height.0, 36.0, MAX)),
-            C::SetColumns(c) => count("the columns", Some(c.count), 45).and(length("the spacing", c.spacing, 0.0, MAX)),
+            C::SetColumns(c) => {
+                count("the columns", Some(c.count), 45)?;
+                length("the spacing", c.spacing, 0.0, MAX)?;
+                let Some(widths) = &c.widths else { return Ok(()) };
+                if widths.len() != c.count as usize {
+                    return Err(Error::invalid("there is a width for each column"));
+                }
+                for w in widths {
+                    if !(w.width.0.is_finite() && w.width.0 > 0.0) {
+                        return Err(Error::invalid("a column's width must be more than 0"));
+                    }
+                    within("the space after a column", w.spacing.0, 0.0, MAX)?;
+                }
+                let page = &self.state.page;
+                let text = page.size.width.0 - page.margins.left.0 - page.margins.right.0;
+                let total: f64 = widths.iter().map(|w| w.width.0).sum::<f64>() + widths.iter().rev().skip(1).map(|w| w.spacing.0).sum::<f64>();
+                if text > 0.0 && total > text + 0.5 {
+                    return Err(Error::invalid("the columns are wider than the text"));
+                }
+                Ok(())
+            }
             C::SetHeaderFooterDistance(d) => length("the header distance", d.header, 0.0, MAX).and(length("the footer distance", d.footer, 0.0, MAX)),
             C::InsertTable(t) => count("the rows", Some(t.rows), 32767).and(count("the columns", Some(t.columns), 63)),
             C::InsertPicture(p) => picture(&p.data.0),
@@ -196,6 +233,8 @@ impl Session {
                 }
                 Ok(())
             }
+            C::MoveColumnBoundary(m) => within("the position", m.to.0, -MAX, MAX),
+            C::MoveTableColumnBoundary(b) | C::MoveTableRowBoundary(b) => within("the position", b.to.0, -MAX, MAX),
             C::SetRowHeight(crate::api::value::AutoOr::Value(h)) => within("the height", h.height.0, 0.0, MAX),
             C::SetColumnWidth(w) => within("the width", w.0, 1.0, MAX),
             C::SetTableWidth(TableWidth::Points { value }) => within("the width", value.0, 0.0, MAX),

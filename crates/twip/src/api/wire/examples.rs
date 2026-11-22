@@ -1570,7 +1570,7 @@ fn state() -> State {
             (CommandId::SetBold, CommandState { enabled: true, checked: None, value: Some(CommandValue::Toggle(Tri::Mixed)) }),
             (CommandId::Undo, CommandState { enabled: true, checked: None, value: Some(CommandValue::Text(Tri::Uniform("Bold".into()))) }),
         ]),
-        dialogs: crate::services::dialogs::availability(&State::default()),
+        dialogs: crate::services::dialogs::availability(&State::default(), Default::default()),
         history: HistoryState { can_undo: true, can_redo: false, undo_label: Some("Bold".into()), redo_label: None },
         pages: PagesState { count: 4, current: 2, complete: false },
         view: ViewState::default(),
@@ -2372,6 +2372,7 @@ fn session_options() -> SessionOptions {
             category: "Merge sub-templates".into(),
             gallery: None,
         }],
+        mac: true,
     }
 }
 

@@ -106,7 +106,7 @@ fn fingerprint(p: &Paragraph, open: &[CommentId], notes: usize, context: u64) ->
         std::mem::discriminant(i).hash(&mut h);
         i.units().hash(&mut h);
         if let Some(r) = i.run() {
-            (&r.lang, r.hidden, r.rev.ins.as_ref().map(|m| m.author), r.rev.del.as_ref().map(|m| m.author)).hash(&mut h);
+            (&r.lang, r.hidden, r.no_proof, r.rev.ins.as_ref().map(|m| m.author), r.rev.del.as_ref().map(|m| m.author)).hash(&mut h);
         }
         match i {
             Inline::Text(s, _) => s.hash(&mut h),

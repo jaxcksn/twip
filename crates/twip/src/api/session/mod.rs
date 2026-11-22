@@ -42,6 +42,8 @@ pub struct Session {
     mode: Mode,
     language: String,
     track_changes: bool,
+    /// The keys follow macOS.
+    mac: bool,
     /// The editor's settings for every document: the field settings from the options and the ones commands set since
     /// (each command's last, in [`setup_rank`] order), run on each document before its first layout is seen.
     field_setup: Vec<super::command::Command>,
@@ -137,6 +139,7 @@ impl Session {
             mode: options.mode,
             language: options.language,
             track_changes: options.track_changes,
+            mac: options.mac,
             field_setup,
             live_layout: true,
             control_labels: true,
@@ -192,6 +195,7 @@ impl Session {
         self.editor.set_mode(mode);
         self.editor.set_hyphenation(self.services.hyphenation.clone());
         (self.editor.live_layout, self.editor.control_labels) = (self.live_layout, self.control_labels);
+        self.editor.set_mac(self.mac);
         let fonts = self.fonts.fonts();
         for c in &self.field_setup {
             self.editor.execute(c.clone(), &fonts);
@@ -293,8 +297,14 @@ impl Session {
 }
 
 #[cfg(test)]
+mod argument_tests;
+#[cfg(test)]
+mod input_tests;
+#[cfg(test)]
 mod paste_and_replace;
 #[cfg(test)]
 mod protection_tests;
+#[cfg(test)]
+mod replace_tests;
 #[cfg(test)]
 mod tests;

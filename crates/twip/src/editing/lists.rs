@@ -202,7 +202,7 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
-    fn new_list(&mut self, tx: &mut Tx, bullet: bool) -> i64 {
+    pub(super) fn new_list(&mut self, tx: &mut Tx, bullet: bool) -> i64 {
         let Some(res) = self.doc.resolver.clone() else { return 0 };
         let abstract_id = res.numbering.abstracts.keys().copied().chain(self.doc.added_lists.iter().map(|l| l.abstract_id)).max().unwrap_or(-1) + 1;
         let num_id = res.numbering.nums.keys().copied().chain(self.doc.added_lists.iter().map(|l| l.num_id)).max().unwrap_or(0) + 1;

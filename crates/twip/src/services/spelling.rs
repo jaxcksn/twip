@@ -1,13 +1,13 @@
 //! Spell checking: Hunspell dictionaries through `spellbook`, one per language, the usual skipping rules, doubled
-//! words, and the session's ignored and the user's added words. A paragraph is checked in its runs' language, or the
-//! session's when they have none.
+//! words, and the session's ignored and the user's added words. Each run is checked in its language, or the
+//! session's when it has none.
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::rc::Rc;
 
 use crate::editing::Editor;
-use crate::editing::text::{OBJECT, UnitText};
+use crate::editing::text::{OBJECT, Seen};
 use crate::layout::{ParaId, Unit};
 
 /// A misspelled word in a paragraph (unit offsets); `repeated` marks a doubled word ("the the").
@@ -44,7 +44,7 @@ fn normalize(w: &str) -> String {
 
 /// The defaults: words with digits and words in capitals are not checked.
 fn skip(w: &[char]) -> bool {
-    w.iter().any(|c| c.is_numeric()) || w.len() > 1 && !w.iter().any(|c| c.is_lowercase())
+    w.iter().any(|c| c.is_numeric()) || w.len() > 1 && w.iter().any(|c| c.is_uppercase()) && !w.iter().any(|c| c.is_lowercase())
 }
 
 impl Speller {
@@ -107,7 +107,7 @@ impl Speller {
         out
     }
 
-    /// Misspellings in `text` (one character per unit, objects and hidden text as spaces).
+    /// Misspellings in `text`, by character.
     pub fn errors(&self, text: &[char]) -> Rc<[SpellError]> {
         let key: String = text.iter().collect();
         if let Some(hit) = self.cache.borrow().get(&key) {
@@ -180,28 +180,42 @@ fn continuations(text: &str, n: usize) -> Vec<bool> {
     out
 }
 
-/// A paragraph's text for checking: one character per unit, the text the markup view shows as is; hidden text,
-/// deleted text (in every view), tabs, breaks and objects as spaces.
-pub fn check_text(e: &Editor, para: ParaId) -> Vec<char> {
-    let Some(p) = e.index().para(e.document(), para) else { return Vec::new() };
+/// A paragraph's text for checking, as it reads: the text the markup view shows, fields as their results; hidden
+/// and deleted text (in every view) left out, so a word with a deletion inside reads whole. Tabs, breaks, objects and
+/// text marked Do not check spelling (`w:noProof`) read as line ends, which part words and aren't spaces.
+pub fn check_text(e: &Editor, para: ParaId) -> Seen {
+    let Some(p) = e.index().para(e.document(), para) else { return Seen::default() };
     let view = e.document().review.view;
-    let t = UnitText::masked(p, |rev| rev.del.is_some() || view.hides(rev));
-    // Text marked Do not check spelling (`w:noProof`) isn't checked.
-    let mut skip = Vec::with_capacity(t.text.len());
+    let mut t = Seen::of(p, |r| !(r.hidden || r.rev.del.is_some() || view.hides(&r.rev)), false);
+    let mut skip = Vec::with_capacity(t.units.last().map_or(0, |u| *u as usize + 1));
     for i in &p.inlines {
         skip.extend(std::iter::repeat_n(i.run().is_some_and(|r| r.no_proof), i.units()));
     }
-    t.text
-        .chars()
-        .enumerate()
-        .map(|(u, c)| {
-            if t.is_hidden(Unit(u as u32)) || skip.get(u).copied().unwrap_or(false) || matches!(c, '\t' | '\u{2028}' | '\u{c}' | OBJECT) {
-                ' '
-            } else {
-                c
-            }
+    for (c, u) in t.chars.iter_mut().zip(&t.units) {
+        if skip.get(*u as usize).copied().unwrap_or(false) || matches!(*c, '\t' | '\u{2028}' | '\u{c}' | OBJECT) {
+            *c = '\n';
+        }
+    }
+    t
+}
+
+/// `errors` (by character of `text`) by unit.
+fn by_unit(errors: Rc<[SpellError]>, text: &Seen) -> Rc<[SpellError]> {
+    if text.units.iter().enumerate().all(|(k, u)| *u as usize == k) {
+        return errors;
+    }
+    errors
+        .iter()
+        .map(|x| {
+            let (a, b) = text.units_of(x.start, x.end());
+            SpellError { start: a.0 as usize, len: (b.0 - a.0) as usize, ..*x }
         })
         .collect()
+}
+
+/// The word an error (by unit) is on, as it reads.
+fn word_of(e: &Editor, para: ParaId, x: &SpellError) -> String {
+    check_text(e, para).text_in(Unit(x.start as u32), Unit(x.end() as u32)).collect()
 }
 
 /// The selection's paragraph and unit range, when it is in one paragraph.
@@ -213,24 +227,24 @@ pub fn selected_range(e: &Editor) -> Option<(ParaId, usize, usize)> {
 
 /// The body's paragraph ids in document order, tables included.
 pub fn paras_in_order(e: &Editor) -> Vec<ParaId> {
-    fn walk(blocks: &[crate::docx::Block], out: &mut Vec<ParaId>) {
-        for b in blocks {
-            match b {
-                crate::docx::Block::Para(p) => out.push(ParaId(p.id)),
-                crate::docx::Block::Table(t) => t.rows.iter().flat_map(|r| r.cells.iter()).for_each(|c| walk(&c.blocks, out)),
-            }
-        }
+    e.story_paras(crate::editing::find::Stories::default())
+}
+
+/// The paragraph ids of every story the canvas edits, the body's first: what spelling and Find go through.
+pub fn searched_paras(e: &Editor) -> Vec<ParaId> {
+    e.story_paras(crate::editing::find::Stories::ALL)
+}
+
+/// Whether `para` is one [`searched_paras`] lists: the sub-template's being edited (its text boxes too), else the
+/// body's, the headers' and footers' and the notes'.
+fn searched(e: &Editor, para: ParaId, sub_template: Option<u32>) -> bool {
+    use crate::editing::position::StoryId;
+    let Some(slot) = e.index().para_slot(para) else { return false };
+    match (e.index().host(e.index().story(slot.container)), sub_template) {
+        (StoryId::BuildingBlock(k), Some(s)) => k == s,
+        (StoryId::Body | StoryId::HeaderFooter(_) | StoryId::Footnote(_) | StoryId::Endnote(_), None) => true,
+        _ => false,
     }
-    let mut out = Vec::new();
-    // While a sub-template is edited, its body; never a sub-template's body from the template.
-    if let Some(part) = e.editing_sub_template().and_then(|k| e.document().glossary.as_ref()?.parts.get(k as usize)) {
-        walk(&part.body, &mut out);
-        return out;
-    }
-    for s in &e.document().sections {
-        walk(&s.blocks, &mut out);
-    }
-    out
 }
 
 /// A misspelling found in the document: where, the error, the word and the language it was checked in.
@@ -255,8 +269,8 @@ pub struct Spellers {
     tally: Tally,
 }
 
-/// The body's misspellings per paragraph (only paragraphs that have some), and the checking context and document
-/// revision they were counted at.
+/// The misspellings per paragraph of every story [`searched_paras`] lists (only paragraphs that have some), and the
+/// checking context and document revision they were counted at.
 #[derive(Default)]
 struct Tally {
     at: Option<(u64, u64)>,
@@ -355,21 +369,48 @@ impl Spellers {
         self.speller(language).map(|s| s.suggest(word)).unwrap_or_default()
     }
 
-    /// The language `para` is checked in: its first run's that names one, else `default`.
-    pub fn language_of(e: &Editor, para: ParaId, default: &str) -> String {
-        let p = e.index().para(e.document(), para);
-        p.and_then(|p| p.inlines.iter().filter_map(|i| i.run()).map(|r| r.lang.as_str()).find(|l| !l.is_empty())).unwrap_or(default).to_string()
+    /// The language each unit of `para` is checked in: its run's, else `default`.
+    fn languages<'a>(e: &'a Editor, para: ParaId, default: &'a str) -> Vec<&'a str> {
+        let Some(p) = e.index().para(e.document(), para) else { return Vec::new() };
+        let mut out = Vec::new();
+        for i in &p.inlines {
+            let l = i.run().map(|r| r.lang.as_str()).filter(|l| !l.is_empty()).unwrap_or(default);
+            out.extend(std::iter::repeat_n(l, i.units()));
+        }
+        out
     }
 
-    /// The misspellings of `para` and the language they were checked in (none while checking is off or no dictionary
-    /// has its language).
-    pub fn errors(&self, e: &Editor, para: ParaId, default: &str) -> Option<(Rc<[SpellError]>, String)> {
+    /// The language unit `u` of `para` is checked in.
+    pub fn language_at(e: &Editor, para: ParaId, u: usize, default: &str) -> String {
+        Self::languages(e, para, default).get(u).copied().unwrap_or(default).to_string()
+    }
+
+    /// The misspellings of `para`, each stretch of it checked in its runs' language (none while checking is off;
+    /// a stretch no dictionary has the language of isn't checked).
+    pub fn errors(&self, e: &Editor, para: ParaId, default: &str) -> Option<Rc<[SpellError]>> {
         if !self.enabled {
             return None;
         }
-        let language = Self::language_of(e, para, default);
-        let sp = self.speller(&language)?;
-        Some((sp.errors(&check_text(e, para)), language))
+        let text = check_text(e, para);
+        let langs = Self::languages(e, para, default);
+        let lang = |k: usize| text.units.get(k).and_then(|&u| langs.get(u as usize)).copied().unwrap_or(default);
+        // A stretch ends where the language changes or a field marker sits, so no word takes part of a field.
+        let cut = |k: usize| lang(k) != lang(k - 1) || text.breaks.binary_search(&k).is_ok();
+        let len = text.chars.len();
+        if !(1..len).any(cut) {
+            return Some(by_unit(self.speller(lang(0)).map_or_else(|| Rc::from([]), |sp| sp.errors(&text.chars)), &text));
+        }
+        let mut all = Vec::new();
+        let mut a = 0;
+        while a < len {
+            let l = lang(a);
+            let b = (a + 1..len).find(|&k| cut(k)).unwrap_or(len);
+            if let Some(sp) = self.speller(l) {
+                all.extend(sp.errors(&text.chars[a..b]).iter().map(|x| SpellError { start: x.start + a, ..*x }));
+            }
+            a = b;
+        }
+        Some(by_unit(all.into(), &text))
     }
 
     /// What a paragraph's misspellings depend on besides its own content.
@@ -381,10 +422,10 @@ impl Spellers {
     }
 
     fn para_count(&self, e: &Editor, para: ParaId, default: &str) -> u32 {
-        self.errors(e, para, default).map_or(0, |(errs, _)| errs.len() as u32)
+        self.errors(e, para, default).map_or(0, |errs| errs.len() as u32)
     }
 
-    /// The misspellings in the body: counted again only when the document or what checking depends on changed in a
+    /// The misspellings in every story: counted again only when the document or what checking depends on changed in a
     /// way [`Spellers::edited`] didn't follow.
     pub fn count(&mut self, e: &Editor, default: &str) -> u32 {
         if !self.enabled || self.by_language.is_empty() {
@@ -395,7 +436,7 @@ impl Spellers {
             return self.tally.total;
         }
         let mut by_para = HashMap::new();
-        for p in paras_in_order(e) {
+        for p in searched_paras(e) {
             let n = self.para_count(e, p, default);
             if n > 0 {
                 by_para.insert(p, n);
@@ -406,20 +447,18 @@ impl Spellers {
     }
 
     /// After an edit that touched `paras`: counts those paragraphs again, so the next [`Spellers::count`] doesn't
-    /// count the whole body.
+    /// count every story.
     pub fn edited(&mut self, e: &Editor, paras: &[ParaId], default: &str) {
         let Some((context, _)) = self.tally.at else { return };
-        // While a sub-template is edited its body is counted whole: its paragraphs aren't the body story.
-        if !self.enabled || context != self.context(e, default) || e.editing_sub_template().is_some() {
+        if !self.enabled || context != self.context(e, default) {
             self.tally.at = None;
             return;
         }
-        let (doc, index) = (e.document(), e.index());
+        let (doc, index, sub_template) = (e.document(), e.index(), e.editing_sub_template());
         let mut tally = std::mem::take(&mut self.tally);
         for &p in paras {
             tally.total -= tally.by_para.remove(&p).unwrap_or(0);
-            let body = index.para_slot(p).is_some_and(|s| index.story(s.container) == crate::editing::position::StoryId::Body);
-            let n = if body { self.para_count(e, p, default) } else { 0 };
+            let n = if searched(e, p, sub_template) { self.para_count(e, p, default) } else { 0 };
             if n > 0 {
                 tally.by_para.insert(p, n);
                 tally.total += n;
@@ -445,24 +484,27 @@ impl Spellers {
     /// The misspelling the selection is on (within one paragraph).
     pub fn at_selection(&self, e: &Editor, default: &str) -> Option<Found> {
         let (para, a, b) = selected_range(e)?;
-        let (errs, language) = self.errors(e, para, default)?;
+        let errs = self.errors(e, para, default)?;
         let error = errs.iter().copied().find(|x| a >= x.start && a <= x.end() && b <= x.end())?;
-        let word = check_text(e, para)[error.start..error.end()].iter().collect();
+        let (word, language) = (word_of(e, para, &error), Self::language_at(e, para, error.start, default));
         Some(Found { para, error, word, language })
     }
 
     /// The first misspelling after the selection, wrapping round the document.
     pub fn next(&self, e: &Editor, default: &str) -> Option<Found> {
-        let order = paras_in_order(e);
+        let order = searched_paras(e);
         let n = order.len();
+        if n == 0 {
+            return None;
+        }
         let (from_para, from) =
             e.selection().ordered(e.index()).and_then(|(_, b)| b.para_offset()).map_or((order.first().copied(), 0), |(p, u)| (Some(p), u.0 as usize));
         let start = from_para.and_then(|p| order.iter().position(|q| *q == p)).unwrap_or(0);
         for k in 0..=n {
-            let para = order[(start + k) % n.max(1)];
-            let Some((errs, language)) = self.errors(e, para, default) else { continue };
+            let para = order[(start + k) % n];
+            let Some(errs) = self.errors(e, para, default) else { continue };
             if let Some(error) = errs.iter().copied().find(|x| k > 0 || x.start >= from) {
-                let word = check_text(e, para)[error.start..error.end()].iter().collect();
+                let (word, language) = (word_of(e, para, &error), Self::language_at(e, para, error.start, default));
                 return Some(Found { para, error, word, language });
             }
         }
@@ -478,7 +520,7 @@ impl Spellers {
         let caret = e.selection().is_collapsed().then(|| e.selection().focus().and_then(|p| p.para_offset())).flatten();
         let mut out = Vec::new();
         for para in e.paras_on(pages.clone()) {
-            let Some((errs, _)) = self.errors(e, para, default) else { continue };
+            let Some(errs) = self.errors(e, para, default) else { continue };
             for err in errs.iter() {
                 if caret == Some((para, Unit(err.end() as u32))) {
                     continue;

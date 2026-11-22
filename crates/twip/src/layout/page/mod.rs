@@ -111,7 +111,7 @@ pub fn story_ref_in(
 }
 
 pub fn columns(c: &Columns, geo: &BodyArea, top: f64) -> Vec<ColumnSpace> {
-    let n = c.num.max(1);
+    let n = c.num.clamp(1, Columns::MAX);
     let mut out = Vec::new();
     if c.equal || c.cols.is_empty() {
         let w = (geo.width - (n as f64 - 1.0) * c.space) / n as f64;
@@ -126,7 +126,7 @@ pub fn columns(c: &Columns, geo: &BodyArea, top: f64) -> Vec<ColumnSpace> {
         }
     } else {
         let mut x = geo.left;
-        for (w, sp) in &c.cols {
+        for (w, sp) in c.cols.iter().take(Columns::MAX) {
             out.push(ColumnSpace { x, width: *w, top: Lu::round_half_up(top), bottom: geo.bottom, balance: false });
             x += w + sp;
         }

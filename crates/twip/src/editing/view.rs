@@ -214,6 +214,8 @@ pub struct View {
     pub table: Option<TableHandles>,
     pub table_preview: Option<(usize, [f64; 4])>,
     pub correction: Option<CorrectionView>,
+    /// The IME composition showing, to underline.
+    pub composition: Vec<(usize, [f64; 4])>,
     pub cursor: super::input::Cursor,
     pub spelling: Vec<(usize, [f64; 4])>,
     pub drop: Option<CaretView>,

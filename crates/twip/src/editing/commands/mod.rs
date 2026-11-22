@@ -19,7 +19,7 @@ pub(crate) use character::underline_value;
 
 use crate::api::command::CommandId;
 
-pub(crate) const UNSUPPORTED: &[CommandId] = &[CommandId::MoveColumnBoundary, CommandId::MoveTableColumnBoundary, CommandId::MoveTableRowBoundary];
+pub(crate) const UNSUPPORTED: &[CommandId] = &[];
 
 pub use crate::api::command::Command;
 use crate::api::command::CommandResult;
@@ -121,9 +121,16 @@ impl Editor {
         if let Err(e) = bounds::bounds(&cmd) {
             return Outcome::Refused(e);
         }
+        let typed = match &cmd {
+            Command::InsertText(t) => t.chars().count(),
+            _ => 0,
+        };
+        let revision = self.revision();
         let out = self.execute_editable(cmd, fonts);
         self.pending_images.clear();
         self.settle_provisional(fonts);
+        // The correction mark stays through typing after it and caret moves onto it; anything else drops it.
+        self.follow_correction(typed, self.revision() != revision);
         out
     }
 
@@ -349,7 +356,7 @@ impl Editor {
             Command::SetPageColor(v) => self.set_page_color(v, fonts),
             Command::SetWatermark(w) => self.set_watermark(w, fonts),
             Command::RemoveWatermark => self.remove_watermark(fonts),
-            Command::MoveColumnBoundary(_) => Outcome::unsupported("moving a text column boundary"),
+            Command::MoveColumnBoundary(m) => self.move_column_boundary(m.column as usize, m.to.0, fonts),
             Command::EditHeader => self.edit_header_footer(None, false, fonts),
             Command::EditFooter => self.edit_header_footer(None, true, fonts),
             Command::CloseHeaderFooter => self.close_header_footer(),
@@ -412,7 +419,8 @@ impl Editor {
             Command::SetRowHeight(h) => self.set_row_height(h, fonts),
             Command::SetRowCanBreak(on) => self.set_row_can_break(on, fonts),
             Command::SetColumnWidth(w) => self.table_format(&super::table_format::TableFormat::ColumnWidth(w.0), fonts),
-            Command::MoveTableColumnBoundary(_) | Command::MoveTableRowBoundary(_) => Outcome::unsupported("moving a table boundary by command"),
+            Command::MoveTableColumnBoundary(b) => self.move_table_column_boundary(b.index as usize, b.to.0, fonts),
+            Command::MoveTableRowBoundary(b) => self.move_table_row_boundary(b.index as usize, b.to.0, fonts),
             Command::SetTableWidth(w) => self.set_table_width(w, fonts),
             Command::SetTableAlignment(a) => self.set_table_alignment(a, fonts),
             Command::SetTableIndent(i) => self.table_format(&super::table_format::TableFormat::TableIndent(i.0), fonts),

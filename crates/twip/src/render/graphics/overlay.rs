@@ -67,6 +67,10 @@ impl Graphics {
                 }
             }
         }
+        // The IME composition: a solid accent underline.
+        for (_, [x0, _, x1, y1]) in view.composition.iter().filter(|(pg, _)| *pg == i) {
+            rec.line((*x0, y1 - 0.5).into(), (*x1, y1 - 0.5).into(), &pen(1.0), page.accent.solid);
+        }
         // The correction just made: a dashed accent underline, and its options button (16 x 12 px) under it.
         if let Some(c) = &view.correction {
             let accent = page.accent.solid;

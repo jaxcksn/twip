@@ -579,6 +579,18 @@ impl Editor {
         self.repair_selection();
     }
 
+    /// The revision the selection is in (a caret before its end, or a range within it): its first mark's id, as
+    /// the revision list names it.
+    pub fn revision_here(&mut self) -> Option<crate::docx::review::RevisionId> {
+        let (a, b) = self.selection.ordered(&self.index)?;
+        let caret = a.same_place(&b);
+        let (list, _) = self.review_list.get(self.generation, &self.doc, &self.index);
+        let idx = &self.index;
+        list.iter()
+            .find(|r| r.story == a.story && idx.cmp(&r.start, &a).is_le() && idx.cmp(&b, &r.end).is_le() && (!caret || idx.cmp(&a, &r.end).is_lt()))
+            .and_then(|r| r.ids.first().copied())
+    }
+
     pub(in crate::editing) fn go_to_revision(&mut self, back: bool, fonts: &Fonts) -> Outcome {
         let here = self.selection.ordered(&self.index).map(|(a, _)| a).or_else(|| self.selection.focus());
         let caret = self.selection.is_collapsed();

@@ -30,8 +30,10 @@ impl Editor {
 
     pub fn pointer_input(&mut self, kind: PointerKind, x: f64, y: f64, clicks: u8, mods: Mods, fonts: &Fonts) {
         self.pointing = true;
+        let revision = self.revision();
         self.pointed(kind, x, y, clicks, mods, fonts);
         self.pointing = false;
+        self.follow_correction(0, self.revision() != revision);
     }
 
     fn pointed(&mut self, kind: PointerKind, x: f64, y: f64, clicks: u8, mods: Mods, fonts: &Fonts) {

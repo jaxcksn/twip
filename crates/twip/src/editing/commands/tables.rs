@@ -136,17 +136,19 @@ fn cell_borders(b: CellBorders) -> (Edges, Border) {
 }
 
 impl Editor {
+    /// The selection's first cell's margins: top, left, bottom, right.
+    pub fn cell_margins_here(&self) -> Option<[f64; 4]> {
+        let tg = self.table_target()?;
+        let t = self.index.table(&self.doc, tg.table)?;
+        let k = Grid::of(t).cell_at(tg.rows.0, tg.cols.0)?;
+        Some(t.rows.get(tg.rows.0)?.cells.get(k)?.margins)
+    }
+
     pub(in crate::editing) fn set_cell_margins(&mut self, m: CellMargins, fonts: &Fonts) -> Outcome {
-        let Some(tg) = self.table_target() else { return Outcome::unavailable("not in a table") };
-        let now = self
-            .index
-            .table(&self.doc, tg.table)
-            .and_then(|t| {
-                let g = Grid::of(t);
-                let k = g.cell_at(tg.rows.0, tg.cols.0)?;
-                Some(t.rows.get(tg.rows.0)?.cells.get(k)?.margins)
-            })
-            .unwrap_or([0.0, 5.4, 0.0, 5.4]);
+        if self.table_target().is_none() {
+            return Outcome::unavailable("not in a table");
+        }
+        let now = self.cell_margins_here().unwrap_or([0.0, 5.4, 0.0, 5.4]);
         let pick = |v: Option<crate::api::value::Points>, d: f64| v.map_or(d, |v| v.0);
         let margins = [pick(m.top, now[0]), pick(m.left, now[1]), pick(m.bottom, now[2]), pick(m.right, now[3])];
         self.table_format(&TableFormat::CellMargins(margins), fonts)

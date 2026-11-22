@@ -58,6 +58,9 @@ pub struct SessionOptions {
     pub application_field_types: Vec<String>,
     /// Which fields are sub-template references, as `setSubTemplateRules` sets them, from each open.
     pub sub_template_rules: Vec<ReferenceRule>,
+    /// The keys follow macOS: ⌘ with the arrows moves to the line's or the document's edge, ⌥ with them by word or
+    /// paragraph, and ⌥ with Backspace or Delete deletes a word.
+    pub mac: bool,
 }
 
 impl Default for SessionOptions {
@@ -72,6 +75,7 @@ impl Default for SessionOptions {
             field_labels: BTreeMap::new(),
             application_field_types: Vec::new(),
             sub_template_rules: Vec::new(),
+            mac: false,
         }
     }
 }

@@ -896,10 +896,10 @@ impl Editor {
         }
         // The image's own size, times the share of it a crop shows.
         let natural = |e: &Self, image: Option<usize>, shape: Option<&crate::drawing::Shape>| {
-            let (w, h, dx, dy) = image.and_then(|i| e.doc.images.get(i)).and_then(|b| crate::docx::image::image_info(b))?;
+            let (w, h) = e.natural_size(image)?;
             let [l, t, r, b] = shape.and_then(|s| s.pic()).map_or([0.0; 4], |p| p.blip.src.map(crate::drawing::units::Pct::fraction));
             let shown = |a: f64, b: f64| (1.0 - a - b).max(0.001);
-            Some((w * 72.0 / if dx > 1.0 { dx } else { 96.0 } * shown(l, r), h * 72.0 / if dy > 1.0 { dy } else { 96.0 } * shown(t, b)))
+            Some((w * shown(l, r), h * shown(t, b)))
         };
         match o {
             ObjectRef::Inline { para, offset } => {
@@ -959,6 +959,25 @@ impl Editor {
                 self.set_float(n, label, fonts)
             }
         }
+    }
+
+    /// An image's own size, points, at its resolution (96 dpi when it has none).
+    fn natural_size(&self, image: Option<usize>) -> Option<(f64, f64)> {
+        let (w, h, dx, dy) = image.and_then(|i| self.doc.images.get(i)).and_then(|b| crate::docx::image::image_info(b))?;
+        Some((w * 72.0 / if dx > 1.0 { dx } else { 96.0 }, h * 72.0 / if dy > 1.0 { dy } else { 96.0 }))
+    }
+
+    /// The selected picture's own size, points.
+    pub fn original_object_size(&self) -> Option<(f64, f64)> {
+        let image = match self.selection {
+            Selection::Object(ObjectRef::Inline { para, offset }) => match self.index.para(&self.doc, para).and_then(|p| inline_at(p, offset)) {
+                Some(Inline::Picture(pic, _)) => pic.image,
+                _ => None,
+            },
+            Selection::Object(ObjectRef::Floating(f)) => self.float_of(f)?.image,
+            _ => None,
+        };
+        self.natural_size(image)
     }
 
     pub(super) fn float_of(&self, f: FloatId) -> Option<&crate::docx::Float> {

@@ -12,6 +12,9 @@ use super::step::Step;
 use super::stories::reachable;
 use super::table::Grid;
 
+/// The longest row or column a resize makes, 22 in.
+const MAX: f64 = 1584.0;
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) enum Border {
     Column(usize),
@@ -53,6 +56,18 @@ impl BorderDrag {
             }
         }
     }
+}
+
+/// The caret's table as the rulers show it: see [`Editor::table_edges`].
+pub(crate) struct TableEdges {
+    pub page: usize,
+    pub table: TableId,
+    pub row: usize,
+    /// The caret's cell's text, left to right.
+    pub text: Option<[f64; 2]>,
+    pub columns: Vec<f64>,
+    /// Top to bottom; a row's bottom names the row and its top on the page.
+    pub rows: Vec<(f64, Option<(usize, f64)>)>,
 }
 
 impl Editor {
@@ -134,12 +149,117 @@ impl Editor {
         }
     }
 
+    /// The caret's table as the rulers show it on the caret's page: its row's cell boundaries (the grid's, from the
+    /// outer border's edge), the caret's cell's text span, and the rows' boundaries, each with the row it ends.
+    pub(crate) fn table_edges(&mut self) -> Option<TableEdges> {
+        let caret = self.caret_view()?;
+        let level = *self.index.chain_of(&self.selection.focus()?).last()?;
+        let geo = self.page_geometry(caret.page)?;
+        let t = self.index.table(&self.doc, level.table)?;
+        let margins = t.rows.get(level.row)?.cells.get(level.cell).map(|c| c.margins);
+        let text = geo
+            .cells
+            .iter()
+            .find(|g| g.chain.last() == Some(&(level.table, level.row, level.cell)))
+            .zip(margins)
+            .map(|(cell, m)| [cell.rect[0] + m[1], cell.rect[2] - m[3]]);
+        let mut cells: Vec<[f64; 4]> =
+            geo.cells.iter().filter(|g| g.chain.last().is_some_and(|k| (k.0, k.1) == (level.table, level.row))).map(|g| g.rect).collect();
+        cells.sort_by(|a, b| a[0].total_cmp(&b[0]));
+        // Cells are laid out from the left border's middle; the boundaries are the grid's, from its outer edge.
+        let border = t.rows.get(level.row).and_then(|r| r.cells.first()?.left.as_ref()).or(t.borders[1].as_ref());
+        let shift = -border.filter(|b| b.visible()).map_or(0.0, |b| b.width / 2.0);
+        let columns = cells.iter().map(|r| r[0]).chain(cells.last().map(|r| r[2])).map(|x| x + shift).collect();
+        let shown: Vec<&super::geometry::GRow> = geo.rows.iter().filter(|r| r.table == level.table).collect();
+        let mut rows: Vec<(f64, Option<(usize, f64)>)> =
+            shown.iter().flat_map(|r| [(r.rect[1], None), (r.rect[3], (!r.repeat).then_some((r.row, r.rect[1])))]).collect();
+        rows.sort_by(|a, b| a.0.total_cmp(&b.0).then(b.1.is_some().cmp(&a.1.is_some())));
+        rows.dedup_by(|a, b| (a.0 - b.0).abs() < 0.01);
+        Some(TableEdges { page: caret.page, table: level.table, row: level.row, text, columns, rows })
+    }
+
+    /// Moves boundary `index` of the caret's row (as [`TableEdges::columns`] counts them) to `to`: the columns either
+    /// side of it share the change, the outer edges widen or narrow the table, the left one moving its indent.
+    pub(super) fn move_table_column_boundary(&mut self, index: usize, to: f64, fonts: &Fonts) -> Outcome {
+        let Some(edges) = self.table_edges() else { return Outcome::unavailable("not in a table") };
+        let Some(&at) = edges.columns.get(index) else { return Outcome::invalid("no such column boundary") };
+        let Some(t) = self.index.table(&self.doc, edges.table) else { return Outcome::unavailable("not in a table") };
+        let g = Grid::of(t);
+        let Some(cells) = g.rows.get(edges.row) else { return Outcome::unavailable("not in a table") };
+        let k = match cells.get(index) {
+            Some(&(col, _, _)) => col,
+            None => cells.last().map_or(0, |&(col, span, _)| col + span.max(1)),
+        };
+        let (dx, first, indent) = (to - at, t.grid.first().copied().unwrap_or(0.0), t.ind);
+        let drag = |border, dx: f64| BorderDrag {
+            table: edges.table,
+            border,
+            start: (0.0, 0.0),
+            now: (dx, 0.0),
+            page: edges.page,
+            shift: true,
+            ctrl: false,
+            at,
+            row_top: 0.0,
+            row: edges.row,
+            span: [0.0, 0.0],
+            snapping: super::snap::Snapping::default(),
+        };
+        if dx.abs() < 1e-9 {
+            return Outcome::Unchanged("already there");
+        }
+        if k > 0 {
+            let shift = k == t.grid.len();
+            return self.apply_border_drag(BorderDrag { shift, ..drag(Border::Column(k), dx) }, fonts).unwrap_or(Outcome::Unchanged("stale table"));
+        }
+        // The left edge: the first column takes the change, the table's indent the move.
+        self.joined("Column Width", fonts, |e| {
+            let out = e.apply_border_drag(drag(Border::Column(1), -dx), fonts).unwrap_or(Outcome::Unchanged("stale table"));
+            let now = e.index.table(&e.doc, edges.table).and_then(|t| t.grid.first().copied()).unwrap_or(first);
+            if (now - first).abs() < 1e-9 {
+                return out;
+            }
+            e.execute(super::commands::Command::SetTableIndent(crate::api::value::Points(indent + first - now)), fonts)
+        })
+    }
+
+    /// Moves row boundary `index` of the caret's table on its page (as [`TableEdges::rows`] counts them) to `to`: the
+    /// row above it takes the height.
+    pub(super) fn move_table_row_boundary(&mut self, index: usize, to: f64, fonts: &Fonts) -> Outcome {
+        let Some(edges) = self.table_edges() else { return Outcome::unavailable("not in a table") };
+        let Some(&(at, ends)) = edges.rows.get(index) else { return Outcome::invalid("no such row boundary") };
+        let Some((row, top)) = ends else { return Outcome::invalid("the table's top edge doesn't move") };
+        if (to - at).abs() < 1e-9 {
+            return Outcome::Unchanged("already there");
+        }
+        let d = BorderDrag {
+            table: edges.table,
+            border: Border::Row(row),
+            start: (0.0, 0.0),
+            now: (0.0, to - at),
+            page: edges.page,
+            shift: false,
+            ctrl: false,
+            at,
+            row_top: top,
+            row,
+            span: [0.0, 0.0],
+            snapping: super::snap::Snapping::default(),
+        };
+        self.apply_border_drag(d, fonts).unwrap_or(Outcome::Unchanged("stale table"))
+    }
+
     pub(super) fn border_release(&mut self, fonts: &Fonts) -> Option<Outcome> {
         let d = self.border_drag.take()?;
         self.requests.push(Request::ReleasePointer);
         if d.now == d.start {
             return Some(Outcome::Unchanged("no drag"));
         }
+        self.apply_border_drag(d, fonts)
+    }
+
+    /// Resizes as a border drag ending where `d` is.
+    fn apply_border_drag(&mut self, d: BorderDrag, fonts: &Fonts) -> Option<Outcome> {
         let t = self.index.table(&self.doc, d.table)?;
         let old_sum: f64 = t.grid.iter().sum();
         let (n, sized) = (t.rows.len(), !matches!(t.width, Width::Auto | Width::Nil));
@@ -217,7 +337,8 @@ impl Editor {
                 let dx = d.now.0 - d.start.0;
                 let left = k - 1;
                 if d.shift && !d.ctrl || k == n {
-                    grid[left] += dx.max(min(left) - grid[left]);
+                    let grown = grid[left] + dx.max(min(left) - grid[left]);
+                    grid[left] = grown.min(MAX.max(grid[left]));
                 } else if d.ctrl {
                     let right: f64 = grid[k..].iter().sum();
                     let floor: f64 = (k..n).map(min).sum();
@@ -296,7 +417,7 @@ impl Editor {
                             geo.rows.iter().filter(|x| x.table == d.table && x.row == r && !x.repeat).map(|x| x.rect[3] - x.rect[1]).sum::<f64>();
                     }
                 }
-                let h = (before + d.guide()[1] - d.row_top).max(1.0);
+                let h = (before + d.guide()[1] - d.row_top).clamp(1.0, MAX);
                 let row = rows.get_mut(r)?;
                 let rule = match &row.height {
                     Some((_, rule)) if rule == "exact" => "exact",

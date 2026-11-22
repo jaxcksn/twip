@@ -993,6 +993,13 @@ impl ControlProps {
         Some(cat.filter(|c| !c.is_empty()))
     }
 
+    /// Whether a drop-down's kind element is `w:comboBox` (`w:dropDownList` otherwise).
+    pub fn combo_box(&self) -> bool {
+        let Some(x) = self.kind_xml.as_deref().and_then(|x| x.trim_start().strip_prefix('<')) else { return false };
+        let name = &x[..x.find(|c: char| c.is_whitespace() || c == '>' || c == '/').unwrap_or(x.len())];
+        name.rsplit(':').next() == Some("comboBox")
+    }
+
     /// `w:temporary`: the control goes when its content is edited, leaving the content.
     pub fn temporary(&self) -> bool {
         self.rest.iter().any(|(n, x)| n == "temporary" && !x.contains("val=\"0\"") && !x.contains("val=\"false\""))
@@ -1398,6 +1405,11 @@ pub struct Columns {
     pub num: usize,
     pub space: f64,
     pub separator: bool,
+}
+
+impl Columns {
+    /// The most text columns a section has, as in Word.
+    pub const MAX: usize = 45;
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]

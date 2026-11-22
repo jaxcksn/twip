@@ -23,6 +23,45 @@ pub(super) fn fill_state(s: &mut Session, state: &mut State) {
     state.spelling.misspellings = sp.count(&s.editor, &s.language);
 }
 
+/// `now`, where it differs from `was`.
+fn changed<T: PartialEq + Clone>(now: &Option<T>, was: &Option<T>) -> Option<T> {
+    if now != was { now.clone() } else { None }
+}
+
+/// The fields of Set Defaults that changed.
+fn defaults_changed(
+    now: &crate::api::command::DocumentDefaults,
+    was: &crate::api::command::DocumentDefaults,
+) -> crate::api::command::DocumentDefaults {
+    use crate::api::command::{DocumentDefaults, Indents, ParagraphSpacing};
+    let spacing = now.spacing.as_ref().map(|s| {
+        let w = was.spacing.clone().unwrap_or_default();
+        ParagraphSpacing {
+            before: changed(&s.before, &w.before),
+            after: changed(&s.after, &w.after),
+            contextual: changed(&s.contextual, &w.contextual),
+        }
+    });
+    let indents = now.indents.as_ref().map(|i| {
+        let w = was.indents.clone().unwrap_or_default();
+        Indents {
+            left: changed(&i.left, &w.left),
+            right: changed(&i.right, &w.right),
+            first_line: changed(&i.first_line, &w.first_line),
+            hanging: changed(&i.hanging, &w.hanging),
+            mirror: changed(&i.mirror, &w.mirror),
+        }
+    });
+    DocumentDefaults {
+        font: changed(&now.font, &was.font),
+        size: changed(&now.size, &was.size),
+        color: changed(&now.color, &was.color),
+        spacing: spacing.filter(|s| *s != ParagraphSpacing::default()),
+        line_spacing: changed(&now.line_spacing, &was.line_spacing),
+        indents: indents.filter(|i| *i != Indents::default()),
+    }
+}
+
 impl Session {
     /// The context menu for the selection, as the context-menu key would open it.
     pub fn context_menu(&mut self) -> ContextMenu {
@@ -47,9 +86,12 @@ impl Session {
                     .ok_or_else(|| Error::unavailable("no misspelling is selected"))?;
                 self.refuse_read_only()?;
                 // A doubled word goes with the space before it.
-                let text = crate::services::spelling::check_text(&self.editor, f.para);
                 let start =
-                    if with.is_empty() && f.error.start > 0 && text.get(f.error.start - 1) == Some(&' ') { f.error.start - 1 } else { f.error.start };
+                    if with.is_empty() && f.error.repeated && f.error.start > 0 && self.editor.space_at(f.para, Unit(f.error.start as u32 - 1)) {
+                        f.error.start - 1
+                    } else {
+                        f.error.start
+                    };
                 let edit = if with.is_empty() { deleting(Dir::Forward, false) } else { Command::InsertText(with) };
                 self.apply_with(Origin::Api, |e, fonts| {
                     e.joined("Spelling", fonts, |e| {
@@ -92,6 +134,8 @@ impl Session {
             DialogKind::Accessibility => cx.issues = dialogs::issues(self.editor.document()),
             DialogKind::Font => cx.fonts = self.fonts.families(),
             DialogKind::BordersShading => cx.in_table = self.editor.in_table(),
+            DialogKind::TableProperties => cx.cell_margins = self.editor.cell_margins_here(),
+            DialogKind::PictureSize => cx.original_size = self.editor.original_object_size(),
             _ => {}
         }
         cx
@@ -503,8 +547,9 @@ impl Session {
                         .then_some(crate::api::command::Command::SetStyleMeta(change))
                 })
                 .collect();
-            if v.defaults != self.document_defaults() {
-                commands.push(crate::api::command::Command::SetDocumentDefaults(v.defaults.clone()));
+            let defaults = defaults_changed(&v.defaults, &self.document_defaults());
+            if defaults != crate::api::command::DocumentDefaults::default() {
+                commands.push(crate::api::command::Command::SetDocumentDefaults(defaults));
             }
             return match commands.len() {
                 0 => Ok(Commit { record: None, value: None }),
@@ -548,6 +593,13 @@ impl Session {
         let mut parts = id.split(':');
         let num = |p: Option<&str>| p.and_then(|p| p.parse::<u64>().ok());
         let (para, a, b) = match (parts.next(), num(parts.next()), num(parts.next())) {
+            (Some("float"), Some(f), None) => {
+                let f = crate::layout::FloatId(f);
+                return match self.apply_with(Origin::Api, |e, _| e.select_float(f)) {
+                    Ok(_) if self.editor.selected_object().is_some() => Ok(()),
+                    _ => Err(Error::unavailable("the issue is gone")),
+                };
+            }
             (Some("picture"), Some(p), Some(u)) => (p, u, u + 1),
             (Some("table"), Some(p), None) => (p, 0, 0),
             _ => return Err(Error::invalid("not an accessibility issue id")),

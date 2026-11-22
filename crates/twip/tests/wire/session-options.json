@@ -22,6 +22,7 @@
       "MERGEFIELD Customer.Name": "Customer name"
     },
     "language": "en-GB",
+    "mac": true,
     "mode": "design",
     "readOnly": true,
     "subTemplateRules": [
@@ -40,6 +41,7 @@
     "dictionaries": [],
     "fieldLabels": {},
     "language": "en-US",
+    "mac": false,
     "mode": "editing",
     "readOnly": false,
     "subTemplateRules": [],

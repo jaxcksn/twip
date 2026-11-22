@@ -140,13 +140,6 @@ impl Editor {
 
     pub(super) fn block_text(&mut self) -> String {
         let pieces = self.block_pieces();
-        pieces
-            .iter()
-            .filter_map(|(_, _, para, a, b)| {
-                let p = self.index.para(&self.doc, *para)?;
-                Some(super::text::UnitText::of(p).text.chars().skip(a.0 as usize).take((b.0 - a.0) as usize).collect::<String>())
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
+        pieces.iter().map(|(_, _, para, a, b)| self.read_text(*para, *a, *b)).collect::<Vec<_>>().join("\n")
     }
 }

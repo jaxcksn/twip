@@ -10,6 +10,7 @@ pub mod clipboard;
 mod clipped;
 pub mod commands;
 pub mod comments;
+mod composition;
 mod drop_caps;
 mod element_feedback;
 pub mod elements;
@@ -24,6 +25,7 @@ pub mod geometry;
 pub(crate) mod gestures;
 mod goback;
 pub mod history;
+mod html;
 pub mod import;
 pub mod index;
 pub mod input;
@@ -114,6 +116,8 @@ pub struct Correction {
     pub para: ParaId,
     pub range: std::ops::Range<Unit>,
     pub from: String,
+    /// The text the correction put in `range`.
+    pub to: String,
     pub typed: usize,
 }
 
@@ -144,6 +148,7 @@ pub struct Editor {
     shape_insert: Option<shapes::ShapeInsert>,
     toggled_checkbox: Option<objects::ToggledCheckbox>,
     provisional: Option<stories::Provisional>,
+    composition: Option<composition::Composition>,
     border_drag: Option<resize::BorderDrag>,
     table_drag: Option<table_handles::TableDrag>,
     /// A pointer press, move or release is running: its edits are where the pointer is, so they don't scroll to the
@@ -327,6 +332,7 @@ impl Editor {
             shape_insert: None,
             toggled_checkbox: None,
             provisional: None,
+            composition: None,
             border_drag: None,
             table_drag: None,
             pointing: false,
@@ -626,6 +632,21 @@ impl Editor {
             self.scroll_to_caret(fonts);
         }
         Outcome::Moved
+    }
+
+    /// Selects a floating object.
+    pub fn select_float(&mut self, f: crate::layout::FloatId) -> Outcome {
+        if self.float_of(f).is_none() {
+            return Outcome::Unchanged("no such object");
+        }
+        self.history.break_typing();
+        self.set_selection(Selection::Object(selection::ObjectRef::Floating(f)));
+        Outcome::Moved
+    }
+
+    /// The keys follow macOS (see [`super::keymap::command`]).
+    pub fn set_mac(&mut self, mac: bool) {
+        self.mac = mac;
     }
 
     pub fn set_mode(&mut self, m: Mode) -> Outcome {
@@ -3018,6 +3039,7 @@ impl Editor {
             table,
             table_preview,
             correction: self.correction_view(visible_pages.clone()),
+            composition: self.composition_rects(visible_pages.clone()),
             marks,
             tooltip,
             regions: self.region_views(visible_pages.clone()),
@@ -3212,6 +3234,13 @@ impl Editor {
         self.selected_text_within(usize::MAX).unwrap_or_default()
     }
 
+    /// Units `a..b` of a paragraph as they read: what the markup view shows without hidden text, fields as their
+    /// results; breaks as line ends and objects as spaces.
+    pub(crate) fn read_text(&self, para: ParaId, a: Unit, b: Unit) -> String {
+        let Some(p) = self.index.para(&self.doc, para) else { return String::new() };
+        seen_text(p, self.doc.review.view).text_in(a, b).map(plain_char).collect()
+    }
+
     pub fn selected_text_within(&mut self, limit: usize) -> Option<String> {
         let (text, whole) = self.text_within(limit, &mut HashMap::new());
         whole.then_some(text)
@@ -3219,7 +3248,7 @@ impl Editor {
 
     /// The selection's text cut to its first `limit` characters, and whether that is all of it. `texts` holds the
     /// paragraphs' texts found so far, for selections in turn.
-    pub(super) fn text_within(&mut self, limit: usize, texts: &mut HashMap<ParaId, UnitText>) -> (String, bool) {
+    pub(super) fn text_within(&mut self, limit: usize, texts: &mut HashMap<ParaId, text::Seen>) -> (String, bool) {
         if let Selection::Block { .. } = self.selection {
             let mut t = self.block_text();
             return match t.char_indices().nth(limit) {
@@ -3239,30 +3268,26 @@ impl Editor {
             guard += 1;
             match p.para_offset() {
                 Some((para, off)) => {
-                    let t = match texts.entry(para) {
+                    let Some(len) = self.index.para(&self.doc, para).map(step::para_len) else { break };
+                    let seen = match texts.entry(para) {
                         std::collections::hash_map::Entry::Occupied(o) => o.into_mut(),
                         std::collections::hash_map::Entry::Vacant(v) => {
                             let Some(p) = self.index.para(&self.doc, para) else { break };
-                            v.insert(UnitText::of(p))
+                            v.insert(seen_text(p, self.doc.review.view))
                         }
                     };
                     let end = match b.para_offset() {
                         Some((pb, ob)) if pb == para => ob,
-                        _ => t.len(),
+                        _ => len,
                     };
-                    let piece = t.between(off, end);
-                    let take = piece.chars().count();
+                    let take = seen.text_in(off, end).count();
                     let room = limit - chars;
-                    out.extend(piece.chars().take(take.min(room)).map(|c| match c {
-                        '\u{2028}' => '\n',
-                        '\u{c}' | '\u{FFFC}' => ' ',
-                        c => c,
-                    }));
+                    out.extend(seen.text_in(off, end).take(take.min(room)).map(plain_char));
                     if take > room {
                         return (out, false);
                     }
                     chars += take;
-                    let at_end = Position::text(p.story, para, t.len());
+                    let at_end = Position::text(p.story, para, len);
                     let next = self.nav().right(at_end, false);
                     if next == at_end || self.index.cmp(&next, &b) == std::cmp::Ordering::Greater {
                         break;
@@ -3287,6 +3312,20 @@ impl Editor {
         }
         (out, true)
     }
+}
+
+/// A character of text as plain text: breaks as line ends, objects as spaces.
+pub(crate) fn plain_char(c: char) -> char {
+    match c {
+        '\u{2028}' => '\n',
+        '\u{c}' | text::OBJECT => ' ',
+        c => c,
+    }
+}
+
+/// A paragraph's text as it reads: what markup view `view` shows without hidden text, fields as their results.
+fn seen_text(p: &Paragraph, view: crate::docx::review::MarkupView) -> text::Seen {
+    text::Seen::of(p, |r| !r.hidden && !view.hides(&r.rev), true)
 }
 
 /// The deepest nesting an edit may make, in table levels. The reader refuses parts nested deeper than

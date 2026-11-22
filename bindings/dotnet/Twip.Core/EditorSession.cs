@@ -478,7 +478,7 @@ public sealed class EditorSession : IDisposable, IAsyncDisposable, ICallbackSink
         var engine = Engine;
         var options = WireJson.ToUtf8(new SessionOptionsWire(
             _options.Author ?? new Author(Environment.UserName), _options.ReadOnly, _options.Mode, _options.Language, _options.TrackChanges, _options.Dictionaries,
-            _options.FieldLabels, _options.ApplicationFieldTypes, _options.SubTemplateRules));
+            _options.FieldLabels, _options.ApplicationFieldTypes, _options.SubTemplateRules, _options.Mac));
         uint id;
         unsafe
         {

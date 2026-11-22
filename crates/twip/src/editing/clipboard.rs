@@ -275,11 +275,7 @@ fn plain(blocks: &[Block], out: &mut String) {
     for b in blocks {
         match b {
             Block::Para(p) => {
-                out.extend(super::text::UnitText::of(p).text.chars().map(|c| match c {
-                    '\u{2028}' => '\n',
-                    '\u{c}' | '\u{FFFC}' => ' ',
-                    c => c,
-                }));
+                out.extend(super::text::Seen::of(p, |r| !r.hidden, true).chars.into_iter().map(super::plain_char));
                 out.push('\n');
             }
             Block::Table(t) => {
@@ -491,6 +487,11 @@ impl Fragment {
 }
 
 impl Editor {
+    /// Whether a copy's clipboard request is still undelivered.
+    pub fn clipboard_requested(&self) -> bool {
+        self.requests.iter().any(|r| matches!(r, super::input::Request::Clipboard { .. }))
+    }
+
     pub fn take_clipboard_request(&mut self) -> bool {
         let n = self.requests.len();
         self.requests.retain(|r| !matches!(r, super::input::Request::Clipboard { .. }));

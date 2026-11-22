@@ -24,7 +24,7 @@ fn kind(e: &Element) -> ElementKind {
         ControlKind::Picture => ElementKind::Picture,
         ControlKind::Checkbox { .. } => ElementKind::Checkbox,
         ControlKind::Date { .. } => ElementKind::Date,
-        ControlKind::DropDown if p.kind_xml.as_deref().is_some_and(|x| x.contains("comboBox")) => ElementKind::ComboBox,
+        ControlKind::DropDown if p.combo_box() => ElementKind::ComboBox,
         ControlKind::DropDown => ElementKind::DropDown,
         ControlKind::Group => ElementKind::Group,
         ControlKind::RepeatingSection => ElementKind::RepeatingSection,

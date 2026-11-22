@@ -97,8 +97,7 @@ fn refusals_have_their_codes() {
     s.set_read_only(false);
     assert_eq!(s.run(Command::Undo).map_err(|e| e.code).err(), Some(ErrorCode::Unavailable));
     assert_eq!(s.run(Command::InsertText(String::new())).map_err(|e| e.code).err(), Some(ErrorCode::InvalidArgument));
-    let boundary = crate::api::command::BoundaryMove { index: 0, to: Points(72.0) };
-    assert_eq!(s.run(Command::MoveTableRowBoundary(boundary)).map_err(|e| e.code).err(), Some(ErrorCode::Unsupported));
+    assert_eq!(s.run(Command::PasteFormatting).map_err(|e| e.code).err(), Some(ErrorCode::Unavailable));
     assert_eq!(s.run(Command::SetFontSize(Points(-3.0))).map_err(|e| e.code).err(), Some(ErrorCode::InvalidArgument));
     assert_eq!(s.run(Command::MergeCells).map_err(|e| e.code).err(), Some(ErrorCode::Unavailable));
     assert_eq!(s.open(b"not a docx").map_err(|e| e.code).err(), Some(ErrorCode::ImportFailed));
@@ -455,7 +454,7 @@ fn copies_paste_formatted_in_any_session_and_as_text() {
     s.run(Command::SelectAll).expect("selects");
     assert_eq!(s.state().formatting.bold, Tri::Uniform(false), "as text");
     // Another engine's copy with the same token but other text is text.
-    s.paste(&crate::api::input::ClipboardData { text: "Other".into(), ..data.clone() }, false);
+    s.paste(&crate::api::input::ClipboardData { text: "Other".into(), html: None, ..data.clone() }, false);
     s.run(Command::SelectAll).expect("selects");
     assert_eq!(s.copy(false).map(|d| d.text), Some("Other".into()));
 }
@@ -2876,6 +2875,7 @@ fn the_frame_dialog_moves_a_frame_saves_it_and_removes_it() {
             .expect("a frame");
         let at = Position::text(StoryId::TextBox(crate::layout::FloatId(f)), crate::layout::ParaId(p), crate::layout::Unit(0));
         s.editor.set_caret_for_benchmark(crate::editing::selection::Selection::Caret(at));
+        s.changed(Vec::new());
     }
     into_frame(s);
     let values = |m: &crate::api::services::DialogModel| match &m.values {

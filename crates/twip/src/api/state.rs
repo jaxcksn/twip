@@ -1165,8 +1165,7 @@ pub(crate) struct Flags<'a> {
 }
 
 /// The state of `editor` now: one format state pass, and the command states from it.
-// shortcut: the revision at the caret, the revision count, misspellings and fonts stay at their defaults until their
-// services report them.
+// shortcut: the revision count, misspellings and fonts stay at their defaults until their services report them.
 pub(crate) fn build(editor: &mut crate::editing::Editor, flags: Flags<'_>) -> State {
     use crate::editing::position::StoryId;
     use crate::editing::selection::Selection;
@@ -1220,7 +1219,7 @@ pub(crate) fn build(editor: &mut crate::editing::Editor, flags: Flags<'_>) -> St
         context,
         link: editor.link_info(),
         comment: comment.clone(),
-        revision: None,
+        revision: editor.revision_here().map(crate::api::record::revision_id),
         header_footer: editor.header_footer_info(current),
     };
     let doc = editor.document();
@@ -1242,7 +1241,7 @@ pub(crate) fn build(editor: &mut crate::editing::Editor, flags: Flags<'_>) -> St
     let mut state = State {
         revision: editor.revision(),
         sequence: flags.sequence,
-        load: LoadState::Ready,
+        load: if pages.1 { LoadState::Ready } else { LoadState::LayingOut },
         mode: flags.mode,
         read_only: flags.read_only,
         // shortcut: changed since the last open or save, undo included; undoing back to the saved point clears it
@@ -1261,7 +1260,8 @@ pub(crate) fn build(editor: &mut crate::editing::Editor, flags: Flags<'_>) -> St
         spelling: SpellingState { language: flags.language.to_string(), ..SpellingState::default() },
         ..State::default()
     };
-    state.dialogs = crate::services::dialogs::availability(&state);
+    let reach = crate::services::dialogs::Reach { list: editor.selection_list().is_some(), frame: editor.frame_here().is_some() };
+    state.dialogs = crate::services::dialogs::availability(&state, reach);
     state
 }
 

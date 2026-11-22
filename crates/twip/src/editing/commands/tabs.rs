@@ -117,6 +117,15 @@ impl Editor {
         self.pages.page(i, &self.index)
     }
 
+    /// Whether `paras` (or the style edited) have tab stops of their own.
+    pub(in crate::editing) fn tab_stops_in(&mut self, paras: &[ParaId]) -> bool {
+        let own = |tabs: &[Tab]| tabs.iter().any(|t| t.kind != TabKind::Clear);
+        match self.style_tabs() {
+            Some((tabs, _)) => own(&tabs),
+            None => paras.iter().any(|&p| self.index.para(&self.doc, p).is_some_and(|p| own(&p.style.tabs))),
+        }
+    }
+
     fn edit_tabs(&mut self, label: &'static str, none: &str, edit: &dyn Fn(&mut Vec<Tab>) -> bool, fonts: &Fonts) -> Outcome {
         let mut own: HashMap<u64, Vec<Tab>> = HashMap::new();
         // The paragraphs and the tab stops they inherit: a style's own, from its base, when commands edit a style.
