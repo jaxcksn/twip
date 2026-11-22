@@ -585,6 +585,11 @@ impl Renderer {
             return Err(Error::Lost);
         }
         let (device, queue) = (&context.device, &context.queue);
+        if self.prepare.serve(res) {
+            self.images.clear();
+            self.image_bytes = 0;
+            self.sources.clear();
+        }
         self.prepare.frame(res, frame, (width, height));
         if !self.fits() {
             return Err(Error::TooLarge);

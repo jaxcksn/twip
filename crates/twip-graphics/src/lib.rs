@@ -38,3 +38,18 @@ pub struct Resources {
     /// The images pictures refer to.
     pub images: image::ImageRegistry,
 }
+
+impl Resources {
+    /// Which registries these are: font and image ids are theirs, so a renderer's caches keyed by them are for one
+    /// pair.
+    pub(crate) fn registries(&self) -> (u64, u64) {
+        (self.fonts.registry, self.images.registry)
+    }
+}
+
+/// A registry's own number, never 0.
+fn next_registry() -> u64 {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    NEXT.fetch_add(1, Ordering::Relaxed)
+}

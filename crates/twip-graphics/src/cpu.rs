@@ -256,6 +256,8 @@ pub struct Renderer {
     images: FastMap<ImageId, Decoded>,
     image_bytes: usize,
     image_budget: usize,
+    /// The registries the caches' font and image ids are from (see [`Resources`]).
+    registries: (u64, u64),
     clock: u64,
     /// The pixels of the layers open now, and of those the frame has filtered, and their budgets
     /// ([`MAX_LAYER_PIXELS`], [`MAX_FILTERED_PIXELS`]; tests lower them).
@@ -302,6 +304,7 @@ impl Renderer {
             images: FastMap::default(),
             image_bytes: 0,
             image_budget: 256 << 20,
+            registries: (0, 0),
             clock: 0,
             open_pixels: 0,
             filtered_pixels: 0,
@@ -320,6 +323,7 @@ impl Renderer {
 
     /// Draws `frame` into `target`.
     pub fn render(&mut self, target: &mut Target<'_>, resources: &Resources, frame: &Frame<'_>) {
+        self.serve(resources);
         self.clock += 1;
         self.filtered_pixels = 0;
         self.stats = Stats::default();
@@ -344,6 +348,7 @@ impl Renderer {
     #[cfg(feature = "pdf")]
     pub(crate) fn render_layer(&mut self, target: &mut Target<'_>, res: &Resources, lists: &Lists, at: usize, t: Transform) {
         let Some(&Cmd::PushLayer { layer }) = lists.cmds.get(at) else { return };
+        self.serve(res);
         self.clock += 1;
         self.filtered_pixels = 0;
         self.stats = Stats::default();
@@ -876,6 +881,22 @@ impl Renderer {
             mask.used = clock;
         }
         ck
+    }
+
+    /// Drops the caches keyed by font and image ids when `res` holds other registries than the last frame's: the same
+    /// ids name other faces and images there.
+    pub(crate) fn serve(&mut self, res: &Resources) {
+        // ponytail: one registry pair's caches at a time, so a renderer drawing two documents in alternate frames
+        // remakes every mask each frame; key the caches by registry too if a host ever does.
+        if self.registries == res.registries() {
+            return;
+        }
+        self.registries = res.registries();
+        self.glyphs.clear();
+        self.colour_masks.clear();
+        self.colour_bytes = 0;
+        self.images.clear();
+        self.image_bytes = 0;
     }
 
     /// After a frame: the caches trimmed, and the layer buffers kept for the next one dropped when together they hold

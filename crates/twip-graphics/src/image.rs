@@ -574,8 +574,9 @@ enum Entry {
 }
 
 /// The images pictures draw.
-#[derive(Default)]
 pub struct ImageRegistry {
+    /// This registry's own number: its ids are its own.
+    pub(crate) registry: u64,
     entries: Vec<(Entry, ImageInfo)>,
     /// Encoded images by their bytes' address, so registering one twice gives the same id. The entry holds the
     /// bytes, so the address isn't reused while the key is in the map.
@@ -585,6 +586,12 @@ pub struct ImageRegistry {
 impl fmt::Debug for ImageRegistry {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ImageRegistry").field("images", &self.entries.len()).finish()
+    }
+}
+
+impl Default for ImageRegistry {
+    fn default() -> Self {
+        ImageRegistry { registry: crate::next_registry(), entries: Vec::new(), known: FastMap::default() }
     }
 }
 
