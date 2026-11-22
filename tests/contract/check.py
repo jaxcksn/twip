@@ -51,8 +51,8 @@ def check(path, kinds, commands):
         errors.append(f"name {script.get('name')!r} isn't the file name {path.stem!r}")
     if "fixture" in script and not (FIXTURES / script["fixture"]).is_file():
         errors.append(f"no fixture {script['fixture']}")
-    if script.get("fonts", "system") not in ("system", "empty"):
-        errors.append(f"fonts {script['fonts']!r} isn't system or empty")
+    if script.get("fonts", "kit") not in ("kit", "empty"):
+        errors.append(f"fonts {script['fonts']!r} isn't kit or empty")
     saved = set()
 
     def command(c, where):

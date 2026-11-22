@@ -587,15 +587,8 @@ impl Editor {
                 None => Selection::Caret(Position::text(StoryId::Body, ParaId(0), Unit(0))),
             },
         };
-        let valid = |p: &Position| p.para_offset().is_none_or(|(para, u)| self.index.para(&self.doc, para).is_some_and(|q| u <= para_len(q)));
-        let ok = matches!(s, Selection::Cells { .. }) || s.focus().is_some_and(|p| valid(&p)) && s.anchor().is_none_or(|p| valid(&p));
-        self.selection = if ok {
-            s
-        } else {
-            let story = s.focus().map_or(StoryId::Body, |p| p.story);
-            let edge = self.nav().story_edge(story, false).or_else(|| self.nav().story_edge(StoryId::Body, false));
-            Selection::Caret(edge.unwrap_or(Position::text(StoryId::Body, ParaId(0), Unit(0))))
-        };
+        self.selection = s;
+        self.repair_selection();
     }
 
     pub(in crate::editing) fn go_to_revision(&mut self, back: bool, fonts: &Fonts) -> Outcome {

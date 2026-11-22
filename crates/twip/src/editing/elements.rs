@@ -273,17 +273,20 @@ pub fn enumerate(doc: &Document, idx: &DocIndex, filter: &Filter) -> Vec<Element
     for (story, blocks) in stories(doc, idx) {
         w.blocks(blocks, story, &[]);
     }
+    let boxes = |w: &mut Walk, k: &mut usize| {
+        while let Some(&(f, blocks)) = w.boxes.get(*k) {
+            w.blocks(blocks, StoryId::TextBox(f), &[]);
+            *k += 1;
+        }
+    };
     let mut k = 0;
-    while k < w.boxes.len() {
-        let (f, blocks) = w.boxes[k];
-        w.blocks(blocks, StoryId::TextBox(f), &[]);
-        k += 1;
-    }
-    for (k, part) in doc.glossary.iter().flat_map(|g| g.parts.iter().enumerate()) {
+    boxes(&mut w, &mut k);
+    for (i, part) in doc.glossary.iter().flat_map(|g| g.parts.iter().enumerate()) {
         if part.state != crate::docx::PartState::Removed {
-            w.blocks(&part.body, StoryId::BuildingBlock(k as u32), &[]);
+            w.blocks(&part.body, StoryId::BuildingBlock(i as u32), &[]);
         }
     }
+    boxes(&mut w, &mut k);
     w.out.into_iter().filter(|e| filter.keeps(e, idx)).collect()
 }
 

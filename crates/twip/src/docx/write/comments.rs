@@ -214,9 +214,28 @@ fn root_open(part: Part, xml: Option<&str>) -> (String, String) {
     (decl + &open, close)
 }
 
+/// The people the people part lists: those a comment or a revision names, and the others as read.
+fn listed(doc: &Document, read: &Document) -> People {
+    let as_read = |name: &str| read.people.persons.iter().find(|r| &*r.name == name);
+    if doc.people.persons.iter().all(|p| as_read(&p.name) == Some(p)) {
+        return doc.people.clone();
+    }
+    let named = People::named(doc);
+    let persons = doc
+        .people
+        .persons
+        .iter()
+        .enumerate()
+        .filter_map(|(i, p)| if named.contains(&crate::docx::review::AuthorId(i as u32)) { Some(p) } else { as_read(&p.name) })
+        .cloned()
+        .collect();
+    People { persons }
+}
+
 /// The comment and people parts whose content changed since reading (`read`: the document as read), written from the
 /// model into `parts`; new parts are added to the package.
 pub(super) fn save(doc: &Document, read: &Document, package: &[u8], main: &str, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
+    let listed = listed(doc, read);
     for part in Part::ALL {
         let existing = package::related(package, parts, main, part.rel_type())?;
         let xml = match &existing {
@@ -225,7 +244,7 @@ pub(super) fn save(doc: &Document, read: &Document, package: &[u8], main: &str, 
         };
         let (open, close) = root_open(part, xml.as_deref());
         let shell = format!("{open}{close}");
-        let now = part.children(&doc.comments, &doc.people, &shell)?;
+        let now = part.children(&doc.comments, if part == Part::People { &listed } else { &doc.people }, &shell)?;
         if now == part.children(&read.comments, &read.people, &shell)? || (existing.is_none() && now.is_empty()) {
             continue;
         }

@@ -311,8 +311,7 @@ impl Editor {
         let cell = level.filter(|l| Some(l.table) == table).map(|l| (l.row, l.cell));
         let object = self.selected_object();
         let story = focus.map_or(self.editing(), |p| p.story);
-        let section =
-            para_id.and_then(|p| self.index.para_slot(p)).and_then(|s| self.index.top_block(s.container, s.block)).map_or(0, |(sec, _, _)| sec);
+        let section = para_id.and_then(|p| self.para_section(p)).unwrap_or(0);
         Some(FormatState {
             run,
             character,
@@ -515,8 +514,17 @@ impl Editor {
                     | C::SetOrientation
                     | C::SetPaperSize
                     | C::SetColumns
+                    | C::MoveColumnBoundary
                     | C::SetHeaderFooterDistance
                     | C::SetDifferentFirstPage
+                    | C::SetPageNumbering
+                    | C::SetPageVerticalAlignment
+                    | C::SetLineNumbering
+                    | C::SetSectionBreakType
+                    | C::SetSectionTextDirection
+                    | C::SetPageBorders
+                    | C::SetHeaderFooterLinked
+                    | C::RemoveHeaderFooter
                     | C::InsertPageNumber,
                     _,
                 ) if self.editing_sub_template().is_some() => (false, (None, None)),

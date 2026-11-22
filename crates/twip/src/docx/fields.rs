@@ -321,6 +321,16 @@ const FIELD_NAMES: &str = "ADDRESSBLOCK ADVANCE ASK AUTHOR AUTONUM AUTONUMLGL AU
     PRIVATE QUOTE RD REF REVNUM SAVEDATE SECTION SECTIONPAGES SEQ SET SHAPE SKIPIF STYLEREF SUBJECT SYMBOL TA TC TEMPLATE \
     TIME TITLE TOA TOC USERADDRESS USERINITIALS USERNAME XE";
 
+/// A field argument quoted so that `parse` reads it back unchanged.
+pub(crate) fn quote(v: &str) -> String {
+    format!("\"{}\"", v.replace('\\', "\\\\").replace('"', "\\\""))
+}
+
+/// A `HYPERLINK` field code for an external address.
+pub(crate) fn link_code(address: &str) -> String {
+    format!(" HYPERLINK {} ", quote(address))
+}
+
 /// Parses a field code. An empty code gives an empty name.
 pub fn parse(code: &str) -> FieldCode {
     // Tokens: (text, quoted).
@@ -330,9 +340,8 @@ pub fn parse(code: &str) -> FieldCode {
     let mut chars = code.chars().peekable();
     while let Some(c) = chars.next() {
         match c {
-            '\\' if quoted && chars.peek() == Some(&'"') => {
-                cur.push('"');
-                chars.next();
+            '\\' if quoted && matches!(chars.peek(), Some('"' | '\\')) => {
+                cur.extend(chars.next());
             }
             '"' => {
                 if quoted {

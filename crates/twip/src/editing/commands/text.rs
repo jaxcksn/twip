@@ -58,7 +58,7 @@ impl Editor {
         let change = s.change.clone();
         let next = crate::layout::ParaId(second.id);
         let back = Box::new(SectionBack { blocks: block + 1, section: new, sources: 0, edited: true });
-        let ok = self.step(&mut tx, Step::Split { para, at: offset, second }).is_ok()
+        let ok = self.step(&mut tx, Step::Split { para, at: offset, second, kept: Vec::new() }).is_ok()
             && self.step(&mut tx, Step::SectionBreak { section, back: Some(back) }).is_ok()
             && self.step(&mut tx, Step::SectionPage { section: section + 1, page: Box::new(after), change }).is_ok();
         if !ok {
@@ -70,14 +70,16 @@ impl Editor {
     }
 
     pub(in crate::editing) fn tab(&mut self, fonts: &Fonts) -> Outcome {
-        self.insert_inline(Inline::Tab, "Typing", fonts)
+        self.insert_inlines_typed(|run| vec![Inline::Tab(run)], "Typing", true, fonts)
     }
 
     pub(in crate::editing) fn symbol(&mut self, s: InsertSymbol, fonts: &Fonts) -> Outcome {
         if let Some(font) = s.font.as_deref().filter(|f| !f.is_empty()) {
             self.pending_font(font);
         }
-        self.insert_text(&s.char.to_string(), fonts)
+        let out = self.insert_text(&s.char.to_string(), fonts);
+        self.history.break_typing();
+        out
     }
 
     pub(in crate::editing) fn delete_by(&mut self, d: DeleteOptions, fonts: &Fonts) -> Outcome {

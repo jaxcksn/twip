@@ -19,6 +19,7 @@ pub struct TableKey {
     measure: bool,
     cols: Vec<f64>,
     fit: (i64, i64, i64),
+    fit_rows: Rc<[super::FitRow]>,
     cells: Vec<Option<Rc<StoryLayout>>>,
     loose: Loose,
     text: TextEnv,
@@ -31,6 +32,7 @@ pub struct TableProbe<'a> {
     pub(super) measure: bool,
     pub(super) cols: &'a [f64],
     pub(super) fit: (i64, i64, i64),
+    pub(super) fit_rows: &'a Rc<[super::FitRow]>,
     pub(super) cells: &'a [Option<Rc<StoryLayout>>],
     pub(super) text: &'a TextEnv,
     pub(super) fonts: u64,
@@ -63,6 +65,7 @@ impl CacheKey for TableKey {
             && self.fonts == p.fonts
             && self.cols == p.cols
             && self.fit == p.fit
+            && (Rc::ptr_eq(&self.fit_rows, p.fit_rows) || *self.fit_rows == **p.fit_rows)
             && self.text == *p.text
             && self.cells.len() == p.cells.len()
             && self.cells.iter().zip(p.cells).all(|(a, b)| same_story(a, b))
@@ -77,6 +80,7 @@ impl CacheKey for TableKey {
             measure: p.measure,
             cols: p.cols.to_vec(),
             fit: p.fit,
+            fit_rows: p.fit_rows.clone(),
             cells: p.cells.to_vec(),
             loose: Loose::of(p.table, p.text),
             text: p.text.clone(),

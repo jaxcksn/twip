@@ -34,7 +34,17 @@ impl Editor {
         if matches!(at.story, StoryId::HeaderFooter(_)) {
             return None;
         }
-        at.para_offset().and_then(|(p, _)| self.index.para_slot(p)).and_then(|s| self.index.top_block(s.container, s.block)).map(|(sec, _, _)| sec)
+        self.para_section(at.para_offset()?.0)
+    }
+
+    /// The section a paragraph lays out in: in a sub-template being edited, the section it was entered from.
+    pub(super) fn para_section(&self, para: crate::layout::ParaId) -> Option<usize> {
+        let slot = self.index.para_slot(para)?;
+        let (section, _, _) = self.index.top_block(slot.container, slot.block)?;
+        match &self.surface {
+            Some(s) if self.index.story(slot.container) != StoryId::Body => Some(s.section),
+            _ => Some(section),
+        }
     }
 
     /// The selection's section's index.
@@ -45,22 +55,36 @@ impl Editor {
     /// Sets the page borders of the selection's section, or of every section.
     pub(super) fn set_page_borders(&mut self, c: crate::api::command::PageBordersChange, fonts: &Fonts) -> Outcome {
         use crate::api::command::{PageBorderDisplay, PageBorderOffset, PageBorderScope};
-        let sections: Vec<usize> = match c.apply_to {
-            PageBorderScope::WholeDocument => (0..self.doc.sections.len()).collect(),
-            PageBorderScope::ThisSection => vec![self.focus_section()],
-        };
+        let focus = self.focus_section();
+        let in_scope = |section: usize| c.apply_to == PageBorderScope::WholeDocument || section == focus;
         let cx = self.cx();
         let w = cx.w.clone();
         let mut tx = self.begin("Page Borders");
         let mut changed = false;
-        for section in sections {
-            let Some(s) = self.doc.sections.get(section) else { continue };
+        for section in 0..self.doc.sections.len() {
+            let s = &self.doc.sections[section];
             let mut page = s.page();
+            // Around the header and footer: a document setting, every section's borders following it.
+            if !in_scope(section) {
+                let Some(b) = page.page_borders.as_mut() else { continue };
+                b.surround_header = c.surround_header.unwrap_or(b.surround_header);
+                b.surround_footer = c.surround_footer.unwrap_or(b.surround_footer);
+                if page == s.page() {
+                    continue;
+                }
+                let change = s.change.clone();
+                if self.step(&mut tx, Step::SectionPage { section, page: Box::new(page), change }).is_err() {
+                    self.abort(tx);
+                    return Outcome::Unchanged("no section");
+                }
+                changed = true;
+                continue;
+            }
             let mut b = page.page_borders.clone().unwrap_or(crate::docx::PageBorders {
                 display: "allPages".into(),
                 offset_from_page: true,
-                surround_header: true,
-                surround_footer: true,
+                surround_header: !self.doc.settings.borders_do_not_surround_header,
+                surround_footer: !self.doc.settings.borders_do_not_surround_footer,
                 ..Default::default()
             });
             if let Some(o) = c.offset_from {
@@ -74,7 +98,6 @@ impl Editor {
                 }
                 .into();
             }
-            // Around the header and footer: a document setting, every section's borders following it.
             if let Some(on) = c.surround_header {
                 b.surround_header = on;
             }

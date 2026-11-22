@@ -29,6 +29,8 @@ pub enum Step {
         para: ParaId,
         at: Unit,
         second: Paragraph,
+        /// What `para` gets back once its tail is gone: the empty runs a join took from it.
+        kept: Vec<Inline>,
     },
     Join {
         first: ParaId,
@@ -542,6 +544,14 @@ fn splice(p: &mut Paragraph, range: Range<Unit>, edges: Edges, with: Vec<Inline>
         b += 1;
     }
     let b = b.max(a);
+    let empty = |i: &Inline| matches!(i, Inline::Text(t, _) if t.is_empty());
+    // Empty runs beside the edit, when the edit leaves units; otherwise the sole carrier stays
+    let units = |s: &[Inline]| s.iter().any(|i| i.units() > 0);
+    let (a, b) = if units(&with) || units(&p.inlines[..a]) || units(&p.inlines[b..]) {
+        (a - p.inlines[..a].iter().rev().take_while(|i| empty(i)).count(), b + p.inlines[b..].iter().take_while(|i| empty(i)).count())
+    } else {
+        (a, b)
+    };
     let removed: Vec<Inline> = p.inlines.splice(a..b, std::iter::empty()).collect();
     let mut at = a;
     let n = with.len();
@@ -600,15 +610,34 @@ fn units_of(inlines: &[Inline]) -> u32 {
     inlines.iter().map(Inline::units).sum::<usize>() as u32
 }
 
+/// The line numbers' run, from the styles now in place.
+fn refresh_line_number_run(doc: &mut Document) {
+    if let Some(res) = &doc.resolver {
+        doc.line_number_run = Some(crate::docx::line_number_run(res));
+    }
+}
+
 // Hints
 
+/// Whether the container's blocks are a section's as layout sees them: a section's, or the sub-template being edited.
+fn lays_out_as_section(idx: &DocIndex, container: Container) -> bool {
+    match container {
+        Container::Section(_) => true,
+        Container::Story(super::position::StoryId::BuildingBlock(k)) => idx.flow == Some(k),
+        _ => false,
+    }
+}
+
 fn hint_in(idx: &DocIndex, container: Container, block: usize, added: isize) -> Option<Change> {
-    let (section, b, row) = idx.top_block(container, block)?;
-    let flow = matches!(container, Container::Section(_))
-        || matches!(container, Container::Story(s) if idx.flow.is_some() && s == super::position::StoryId::BuildingBlock(idx.flow.unwrap_or_default()));
-    match (container, row) {
-        (_, None) if flow => Some(Change { section, first: b, old_end: b + 1, new_end: (b as isize + 1 + added) as usize, row: None }),
-        (_, row) => Some(Change { section, first: b, old_end: b + 1, new_end: b + 1, row }),
+    span_hint(idx, container, block, 1, (1 + added).max(0) as usize)
+}
+
+/// `old_len` blocks from `first` became `new_len`; outside a section, the top block holding them changed.
+fn span_hint(idx: &DocIndex, container: Container, first: usize, old_len: usize, new_len: usize) -> Option<Change> {
+    let (section, b, row) = idx.top_block(container, first)?;
+    match row {
+        None if lays_out_as_section(idx, container) => Some(Change { section, first: b, old_end: b + old_len, new_end: b + new_len, row: None }),
+        row => Some(Change { section, first: b, old_end: b + 1, new_end: b + 1, row }),
     }
 }
 
@@ -646,7 +675,7 @@ impl Step {
                     hint: para_hint(idx, para, 0),
                 })
             }
-            Step::Split { para, at, mut second } => {
+            Step::Split { para, at, mut second, kept } => {
                 let slot = idx.para_slot(para).ok_or(StepError::Missing)?;
                 let p = idx.para_mut(doc, para).ok_or(StepError::Missing)?;
                 let len = para_len(p);
@@ -674,6 +703,7 @@ impl Step {
                 } else {
                     second.inlines = tail;
                 }
+                p.inlines.extend(kept);
                 let second_id = ParaId(second.id);
                 let blocks = idx.blocks_mut(doc, slot.container).ok_or(StepError::Missing)?;
                 blocks.insert(slot.block + 1, Block::Para(second));
@@ -698,20 +728,11 @@ impl Step {
                     _ => return Err(StepError::Missing),
                 };
                 let at = para_len(p);
-                splice(p, at..at, Edges::default(), inlines);
+                let (kept, _) = splice(p, at..at, Edges::default(), inlines);
                 idx.replaced_blocks(doc, a.container, &[Block::Para(tail.clone())]);
                 idx.replaced_inlines(doc, first, &[]);
-                let hint = match a.container {
-                    Container::Section(_) => idx.top_block(a.container, a.block).map(|(section, f, _)| Change {
-                        section,
-                        first: f,
-                        old_end: f + 2,
-                        new_end: f + 1,
-                        row: None,
-                    }),
-                    _ => hint_in(idx, a.container, a.block, 0),
-                };
-                Ok(Applied { inverse: Step::Split { para: first, at, second: tail }, map: Map::Join { first, second, offset: at }, hint })
+                let hint = span_hint(idx, a.container, a.block, 2, 1);
+                Ok(Applied { inverse: Step::Split { para: first, at, second: tail, kept }, map: Map::Join { first, second, offset: at }, hint })
             }
             Step::Blocks { container, range, with } => {
                 let blocks = idx.blocks_mut(doc, container).ok_or(StepError::Missing)?;
@@ -725,16 +746,8 @@ impl Step {
                 removed.iter().filter(|b| !kept.contains(&block_id(b))).for_each(|b| ids(b, &mut paras, &mut tables));
                 idx.replaced_blocks(doc, container, &removed);
                 let fallback = first_position(doc, idx, container, range.start);
-                let hint = match container {
-                    Container::Section(_) => idx.top_block(container, range.start).map(|(section, f, _)| Change {
-                        section,
-                        first: f,
-                        old_end: f + range.len(),
-                        new_end: f + added,
-                        row: None,
-                    }),
-                    _ => hint_in(idx, container, 0, 0),
-                };
+                let first = if lays_out_as_section(idx, container) { range.start } else { 0 };
+                let hint = span_hint(idx, container, first, range.len(), added);
                 Ok(Applied {
                     inverse: Step::Blocks { container, range: range.start..range.start + added, with: removed },
                     map: Map::Removed { paras, tables, rows: None, fallback },
@@ -922,14 +935,13 @@ impl Step {
             Step::Resolver { resolver, added } => {
                 let resolver = std::mem::replace(&mut doc.resolver, resolver);
                 let added = std::mem::replace(&mut doc.added_lists, added);
+                refresh_line_number_run(doc);
                 Ok(Applied { inverse: Step::Resolver { resolver, added }, map: Map::Same, hint: None })
             }
             Step::Fonts { resolver, renames } => {
                 let resolver = std::mem::replace(&mut doc.resolver, resolver);
                 let renames = std::mem::replace(&mut doc.font_renames, renames);
-                if let Some(res) = &doc.resolver {
-                    doc.line_number_run = Some(crate::docx::line_number_run(res));
-                }
+                refresh_line_number_run(doc);
                 Ok(Applied { inverse: Step::Fonts { resolver, renames }, map: Map::Same, hint: None })
             }
             Step::DefaultTab(v) => {

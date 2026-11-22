@@ -100,6 +100,14 @@ impl Editor {
             return Outcome::Unchanged("table edit failed");
         }
         tx.stale_tables.push(table);
+        // Tracked: the same cell among the rows that stay
+        let caret_para = caret_para.filter(|p| self.index.para(&self.doc, *p).is_some()).or_else(|| {
+            let (r, c) = target?;
+            let deleted = tx.rec.as_ref().and_then(|rec| rec.marks().1).map(|m| m.id);
+            let t = self.index.table(&self.doc, table)?;
+            let mut kept = t.rows.iter().filter(|row| deleted.is_none() || row.rev.del.as_ref().map(|m| m.id) != deleted);
+            kept.nth(r)?.cells.get(c).and_then(|c| first_para(&c.blocks))
+        });
         if let Some(p) = caret_para {
             self.selection = Selection::Caret(Position::text(story, p, Unit(0)));
         }
@@ -608,7 +616,7 @@ impl Editor {
             slot.block + 1
         } else {
             let Some(second) = self.split_template(para) else { return Outcome::Unchanged("no paragraph") };
-            if self.step(&mut tx, Step::Split { para, at, second }).is_err() {
+            if self.step(&mut tx, Step::Split { para, at, second, kept: Vec::new() }).is_err() {
                 self.abort(tx);
                 return Outcome::Unchanged("split failed");
             }

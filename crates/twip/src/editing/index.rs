@@ -59,7 +59,8 @@ fn link_of(i: &Inline) -> Option<(u64, (u32, bool))> {
     }
 }
 
-fn story_of(i: &Inline) -> Option<(u64, Option<&TextBox>)> {
+/// The float or inline shape an inline is, by id, and its text when it has some.
+pub(super) fn story_of(i: &Inline) -> Option<(u64, Option<&TextBox>)> {
     match i {
         Inline::Float(f, _) => Some((f.id, f.text_box.as_ref())),
         Inline::Picture(p, _) => p.text.as_ref().map(|t| (t.id, Some(&t.text_box))),

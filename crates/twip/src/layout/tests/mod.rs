@@ -14,6 +14,7 @@ mod excluded;
 mod hf_frames;
 mod hyphenation;
 mod imports;
+mod incremental;
 mod metrics;
 mod notes;
 pub(crate) mod output;
