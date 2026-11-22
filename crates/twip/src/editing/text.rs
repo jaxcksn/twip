@@ -8,6 +8,94 @@ use crate::layout::Unit;
 
 pub const OBJECT: char = '\u{FFFC}';
 
+/// A paragraph's text as it reads: the runs `keep` takes, each field as it shows (its result, or its code in code
+/// view, with an evaluated field's value when `values`), tabs, breaks and objects as in [`UnitText`]; each character
+/// with the unit it reads at.
+#[derive(Default)]
+pub struct Seen {
+    /// The characters.
+    pub chars: Vec<char>,
+    /// The unit each character reads at.
+    pub units: Vec<u32>,
+    /// The character indices a field's begin, separator or end marker sits before, ascending: a range of
+    /// characters across one would edit part of a field.
+    pub breaks: Vec<usize>,
+}
+
+impl Seen {
+    /// The text of `p`: the runs `keep` takes, evaluated fields as their values when `values`.
+    pub fn of(p: &Paragraph, keep: impl Fn(&crate::docx::Run) -> bool, values: bool) -> Seen {
+        use crate::docx::fields::Shown;
+        let mut seen = Seen::default();
+        let mut at = 0u32;
+        for (i, shown) in p.inlines.iter().zip(crate::docx::fields::layout_shown(&p.inlines)) {
+            let n = i.units() as u32;
+            let marker = matches!(i, Inline::FieldBegin { .. } | Inline::FieldSep { .. } | Inline::FieldEnd { .. });
+            if marker {
+                seen.break_here();
+            }
+            if i.run().is_none_or(&keep) {
+                let mut push = |c: char, u: u32| {
+                    seen.chars.push(c);
+                    seen.units.push(u);
+                };
+                match (shown, i) {
+                    (Shown::Value(v), _) if values => v.chars().for_each(|c| push(c, at)),
+                    (Shown::Itself, Inline::Text(t, _)) => t.chars().zip(at..).for_each(|(c, u)| push(c, u)),
+                    (Shown::Itself, Inline::Tab(_) | Inline::PTab(..)) => push('\t', at),
+                    (Shown::Itself, Inline::Break(k, _)) => push(if k.is_line() { '\u{2028}' } else { '\u{c}' }, at),
+                    (Shown::Itself, Inline::Sym { ch, .. }) => push(*ch, at),
+                    (Shown::Itself, _) if n == 1 => push(OBJECT, at),
+                    _ => {}
+                }
+            }
+            if marker {
+                seen.break_here();
+            }
+            at += n;
+        }
+        seen
+    }
+
+    fn break_here(&mut self) {
+        let k = self.chars.len();
+        if k > 0 && self.breaks.last() != Some(&k) {
+            self.breaks.push(k);
+        }
+    }
+
+    /// Whether characters `a..b` cross a field marker.
+    pub fn crosses(&self, a: usize, b: usize) -> bool {
+        let k = self.breaks.partition_point(|&x| x <= a);
+        self.breaks.get(k).is_some_and(|&x| x < b)
+    }
+
+    /// The units characters `a..b` read at.
+    pub fn units_of(&self, a: usize, b: usize) -> (Unit, Unit) {
+        let start = self.units.get(a).copied().unwrap_or_else(|| self.units.last().map_or(0, |u| u + 1));
+        let end = b.checked_sub(1).and_then(|k| self.units.get(k)).map_or(start, |u| u + 1);
+        (Unit(start), Unit(end.max(start)))
+    }
+
+    /// The characters read in units `a..b`.
+    pub fn text_in(&self, a: Unit, b: Unit) -> impl Iterator<Item = char> + '_ {
+        self.chars.iter().zip(&self.units).filter(move |(_, u)| (a.0..b.0).contains(u)).map(|(c, _)| *c)
+    }
+
+    /// The grapheme boundaries between the characters, by character index (the text's end included).
+    pub fn boundaries(&self) -> Vec<bool> {
+        let text: String = self.chars.iter().collect();
+        let mut out = vec![false; self.chars.len() + 1];
+        let mut k = 0;
+        for g in text.graphemes(true) {
+            out[k] = true;
+            k += g.chars().count();
+        }
+        out[self.chars.len()] = true;
+        out
+    }
+}
+
 pub struct UnitText {
     pub text: String,
     bytes: Vec<usize>,

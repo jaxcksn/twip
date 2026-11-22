@@ -1539,11 +1539,13 @@ impl Reader {
             sec.gutter = g("gutter", 0.0);
         }
         if let Some(c) = child(s, "cols") {
-            let num = int(attr(c, "num")).unwrap_or(1).max(1) as usize;
+            let num = int(attr(c, "num")).unwrap_or(1).clamp(1, Columns::MAX as i64) as usize;
             let space = attr_twips(c, "space").unwrap_or(36.0);
             let equal = attr(c, "equalWidth").map(|v| on_off_str(Some(v))).unwrap_or(true);
-            let explicit: Vec<(f64, f64)> =
-                children(c, "col").map(|col| (attr_twips(col, "w").unwrap_or(0.0), attr_twips(col, "space").unwrap_or(0.0))).collect();
+            let explicit: Vec<(f64, f64)> = children(c, "col")
+                .take(Columns::MAX)
+                .map(|col| (attr_twips(col, "w").unwrap_or(0.0), attr_twips(col, "space").unwrap_or(0.0)))
+                .collect();
             sec.columns = Columns {
                 num: if !equal && !explicit.is_empty() { explicit.len() } else { num },
                 cols: if equal { Vec::new() } else { explicit },

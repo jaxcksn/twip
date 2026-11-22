@@ -70,7 +70,8 @@ pub fn window(e: &mut Editor, spelling: &Spellers, language: &str, read_only: bo
             if after >= AFTER {
                 break;
             }
-            after += p.inlines.iter().map(|i| i.units()).sum::<usize>();
+            // Its units and its mark
+            after += 1 + p.inlines.iter().map(|i| i.units()).sum::<usize>();
             ids.push(ParaId(p.id));
         }
         ids

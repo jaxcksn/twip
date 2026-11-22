@@ -215,7 +215,7 @@ impl<'a> Reading<'a> {
         let spans = para_marks(doc, p, view, open);
         let text = UnitText::of_view(p, view);
         let chars: Vec<char> = text.text.chars().collect();
-        let errors = spelling.errors(e, ParaId(p.id), language).map(|(errs, _)| errs).unwrap_or_default();
+        let errors = spelling.errors(e, ParaId(p.id), language).unwrap_or_default();
         let codes = crate::docx::fields::hidden_codes(&p.inlines);
         let n = chars.len();
         let mut flags = Vec::new();

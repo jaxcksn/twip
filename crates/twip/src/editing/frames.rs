@@ -138,7 +138,7 @@ pub fn frame_xml(w: &str, p: &FrameProperties, old: Option<&FramePr>) -> String 
 
 impl Editor {
     /// The frame the selection is in, or is.
-    pub(super) fn frame_here(&self) -> Option<FloatId> {
+    pub(crate) fn frame_here(&self) -> Option<FloatId> {
         let frame = |f: FloatId| self.float_of(f).is_some_and(crate::docx::Float::is_frame);
         if let Selection::Object(ObjectRef::Floating(f)) = self.selection
             && frame(f)

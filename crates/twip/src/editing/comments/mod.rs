@@ -249,6 +249,11 @@ impl Editor {
         Outcome::Unchanged(why)
     }
 
+    /// Whether a comment can go on the selection.
+    pub(in crate::editing) fn takes_comments_here(&self) -> bool {
+        self.selection.ordered(&self.index).is_some_and(|(a, _)| self.takes_comments(a.story))
+    }
+
     fn takes_comments(&self, story: StoryId) -> bool {
         match story {
             StoryId::Body => true,

@@ -417,9 +417,11 @@ impl Editor {
     }
 
     pub(super) fn selected_ranges(&mut self) -> Vec<(ParaId, Unit, Unit)> {
+        use super::selection::{ObjectRef, Selection};
         match self.selection {
-            super::selection::Selection::Block { .. } => return self.block_pieces().into_iter().map(|(_, _, p, a, b)| (p, a, b)).collect(),
-            super::selection::Selection::Cells { table, anchor, focus, .. } => return self.cell_ranges(table, anchor, focus),
+            Selection::Block { .. } => return self.block_pieces().into_iter().map(|(_, _, p, a, b)| (p, a, b)).collect(),
+            Selection::Cells { table, anchor, focus, .. } => return self.cell_ranges(table, anchor, focus),
+            Selection::Object(ObjectRef::Inline { para, offset }) => return vec![(para, offset, Unit(offset.0 + 1))],
             _ => {}
         }
         let Some((a, b)) = self.selection.ordered(&self.index) else { return Vec::new() };
@@ -483,10 +485,16 @@ impl Editor {
         out
     }
 
+    /// The selected paragraphs: those the selection covers, else the caret's, else the selected object's.
     pub(super) fn selected_paras(&mut self) -> Vec<ParaId> {
         let mut v: Vec<ParaId> = self.selected_ranges().into_iter().map(|r| r.0).collect();
         if v.is_empty() {
             v.extend(self.caret().and_then(|c| c.para_offset()).map(|(p, _)| p));
+        }
+        if v.is_empty()
+            && let super::selection::Selection::Object(super::selection::ObjectRef::Floating(f)) = self.selection
+        {
+            v.extend(self.index.float_anchor(f));
         }
         v.dedup();
         v

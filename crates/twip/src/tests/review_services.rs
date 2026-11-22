@@ -94,11 +94,12 @@ fn spelling_skips_hidden_and_deleted_text() {
                 .iter()
                 .flat_map(|i| match i {
                     Inline::Text(t, r) if !(r.hidden || r.rev.del.is_some() || view.hides(&r.rev)) => t.chars().collect::<Vec<_>>(),
-                    other => vec![' '; other.units()],
+                    _ => Vec::new(),
                 })
                 .collect();
             masked += p.inlines.iter().filter(|i| i.run().is_some_and(|r| r.rev.del.is_some() && i.units() > 0)).count();
-            assert_eq!(crate::services::spelling::check_text(ed, ParaId(p.id)), want, "{view:?}");
+            let text = crate::services::spelling::check_text(ed, ParaId(p.id));
+            assert_eq!(text.chars.iter().copied().filter(|&c| c != '\n').collect::<Vec<_>>(), want, "{view:?}");
         }
         assert!(masked > 0, "the fixture has deletions");
     }

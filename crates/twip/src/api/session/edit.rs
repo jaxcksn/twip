@@ -32,6 +32,9 @@ impl Session {
         if let Some(done) = self.run_view(&command) {
             return done;
         }
+        if matches!(command, Command::Paste(_)) {
+            self.adopt_held();
+        }
         let setup = super::setup_rank(&command).is_some().then(|| command.clone());
         let done = self.apply(command, Origin::Api)?;
         if let Some(c) = setup {
@@ -65,6 +68,9 @@ impl Session {
                 return Err(Error::invalid(format!("a batch can't hold {}", id_name(c.id()))));
             }
             self.check_where(c, k == 0)?;
+        }
+        if commands.iter().any(|c| matches!(c, Command::Paste(_))) {
+            self.adopt_held();
         }
         let setup: Vec<Command> = commands.iter().filter(|c| super::setup_rank(c).is_some()).cloned().collect();
         let done = self.apply_with(Origin::Api, |e, fonts| {
@@ -166,12 +172,13 @@ impl Session {
     }
 
     /// Runs an editor operation from `origin` (a command, or what the services drive: selecting a match, replacing
-    /// matches), then reports it: a record for each transaction it committed, the state rebuilt, the listener told.
+    /// matches), the composition showing taken out first, then reports it: a record for each transaction it committed, the state rebuilt, the listener told.
     pub(super) fn apply_with(
         &mut self,
         origin: Origin,
         op: impl FnOnce(&mut crate::editing::Editor, &crate::font::Fonts) -> Outcome,
     ) -> Result<Commit, Error> {
+        self.end_composition();
         self.sync_viewport();
         let before = self.editor.selection();
         let out = {

@@ -27,28 +27,29 @@ pub struct Services {
     pub revision_count: Option<((u64, Option<u32>), u32)>,
     /// The comments as `commentsChanged` last reported them.
     pub comments_seen: crate::docx::review::Comments,
-    /// The visible comments' anchors as `commentAnchors` last reported them.
+    /// The visible comments' anchors as `commentAnchors` last reported them (kept over an open, so the host hears
+    /// that the last document's are gone).
     pub anchors: Vec<crate::api::review::CommentAnchor>,
 }
 
 impl Services {
-    /// Adds a dictionary's spelling and hyphenation patterns.
+    /// Adds a dictionary's spelling and hyphenation patterns; when its spelling doesn't load, neither is added.
     pub fn add_dictionary(&mut self, d: &crate::api::engine::Dictionary) -> Result<(), String> {
+        if !(d.hyphenation.is_some() && d.aff.0.is_empty() && d.dic.0.is_empty()) {
+            self.spelling.add_dictionary(&d.language, &d.aff.0, &d.dic.0)?;
+        }
         if let Some(h) = &d.hyphenation {
             let patterns = crate::layout::hyphenate::Patterns::parse(&String::from_utf8_lossy(&h.0));
             self.hyphenation = Some(self.hyphenation.clone().unwrap_or_default().with(&d.language, patterns));
         }
-        if d.hyphenation.is_some() && d.aff.0.is_empty() && d.dic.0.is_empty() {
-            return Ok(());
-        }
-        self.spelling.add_dictionary(&d.language, &d.aff.0, &d.dic.0)
+        Ok(())
     }
 
-    /// Another document is open: what was reported about the last one goes.
+    /// Another document is open: what was reported about the last one goes, but for the anchors the host still
+    /// shows.
     pub fn document_replaced(&mut self, doc: &crate::docx::Document) {
         self.revision_count = None;
         self.comments_seen = doc.comments.clone();
-        self.anchors.clear();
         self.announcer = a11y::Announcer::default();
         self.tree_cache = a11y::TreeCache::default();
     }
@@ -66,33 +67,28 @@ pub fn para_pages(e: &mut crate::editing::Editor) -> std::collections::HashMap<c
 }
 
 /// The document's counts in the text the markup view shows (All markup counts the accepted text, its deletions left
-/// out): words, characters with and without spaces, paragraphs with text, and the body's laid-out lines and pages.
+/// out), fields as their results, in the body, text boxes and notes (as Word counts by default): words, characters
+/// with and without spaces, paragraphs with text, and the body's laid-out lines and pages.
 pub fn word_count(e: &mut crate::editing::Editor) -> crate::api::services::WordCount {
-    use crate::docx::Block;
     use crate::docx::review::MarkupView;
     let view = match e.document().review.view {
         MarkupView::All => MarkupView::Simple,
         v => v,
     };
     let mut n = crate::api::services::WordCount::default();
-    fn walk(blocks: &[Block], view: MarkupView, n: &mut crate::api::services::WordCount) {
-        for b in blocks {
-            match b {
-                Block::Para(p) => {
-                    let t = crate::editing::text::UnitText::of_view(p, view);
-                    // Hidden and masked units are spaces; objects aren't characters.
-                    let text: String = t.text.chars().filter(|&c| c != crate::editing::text::OBJECT).collect();
-                    let words = text.split_whitespace().count() as u32;
-                    n.words += words;
-                    n.paragraphs += u32::from(words > 0);
-                    n.characters += text.chars().filter(|c| !c.is_whitespace()).count() as u32;
-                    n.characters_with_spaces += text.trim_end().chars().filter(|c| !c.is_control() || *c == '\t').count() as u32;
-                }
-                Block::Table(t) => t.rows.iter().flat_map(|r| r.cells.iter()).for_each(|c| walk(&c.blocks, view, n)),
-            }
-        }
+    let (doc, index) = (e.document(), e.index());
+    let stories = crate::editing::find::Stories { boxes: true, notes: true, headers: false };
+    for para in e.story_paras(stories) {
+        let Some(p) = index.para(doc, para) else { continue };
+        let t = crate::editing::text::Seen::of(p, |r| !view.hides(&r.rev), true);
+        // Objects aren't characters.
+        let text: String = t.chars.into_iter().filter(|&c| c != crate::editing::text::OBJECT).collect();
+        let words = text.split_whitespace().count() as u32;
+        n.words += words;
+        n.paragraphs += u32::from(words > 0);
+        n.characters += text.chars().filter(|c| !c.is_whitespace()).count() as u32;
+        n.characters_with_spaces += text.trim_end().chars().filter(|c| !c.is_control() || *c == '\t').count() as u32;
     }
-    e.document().sections.iter().for_each(|s| walk(&s.blocks, view, &mut n));
     let pages = e.page_geometries();
     n.pages = e.snapshot().pages().len() as u32;
     n.lines = pages
@@ -104,8 +100,8 @@ pub fn word_count(e: &mut crate::editing::Editor) -> crate::api::services::WordC
     n
 }
 
-/// The body's headings in document order (tables included): paragraphs with an outline level, from their style or
-/// their own `w:outlineLvl`, that show text. A heading's id is its paragraph's, so it holds across edits elsewhere.
+/// The body's headings in document order (tables included): paragraphs with a heading level (as the reading tree
+/// gives it) that show text. A heading's id is its paragraph's, so it holds across edits elsewhere.
 pub fn headings(e: &mut crate::editing::Editor) -> Vec<crate::api::services::Heading> {
     let pages = para_pages(e);
     let (doc, index) = (e.document(), e.index());
@@ -113,9 +109,10 @@ pub fn headings(e: &mut crate::editing::Editor) -> Vec<crate::api::services::Hea
         .into_iter()
         .filter_map(|id| {
             let p = index.para(doc, id)?;
-            let level = p.style.outline_lvl.filter(|l| (0..9).contains(l))? as u32 + 1;
-            let t = crate::editing::text::UnitText::of_view(p, doc.review.view);
-            let text: String = t.text.chars().map(|c| if c.is_control() || c == crate::editing::text::OBJECT { ' ' } else { c }).collect();
+            let level = a11y::roles::heading_level(doc, p)?;
+            let view = doc.review.view;
+            let t = crate::editing::text::Seen::of(p, |r| !view.hides(&r.rev), true);
+            let text: String = t.chars.into_iter().map(|c| if c.is_control() || c == crate::editing::text::OBJECT { ' ' } else { c }).collect();
             let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
             (!text.is_empty()).then(|| crate::api::services::Heading {
                 id: crate::api::value::HeadingId(id.0.to_string()),

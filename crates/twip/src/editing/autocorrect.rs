@@ -460,12 +460,13 @@ impl Editor {
             self.selection = Selection::Caret(Position::text(caret.story, para, map(offset)));
         }
         let range = Unit(end.0.saturating_sub(chars.len() as u32))..end;
-        self.correction = Some(super::Correction { para, range, from: fix.from.clone(), typed: 0 });
+        let to = chars.iter().collect();
+        self.correction = Some(super::Correction { para, range, from: fix.from.clone(), to, typed: 0 });
         self.commit(tx, None, fonts)
     }
 
     pub fn correction_view(&mut self, pages: std::ops::Range<usize>) -> Option<super::view::CorrectionView> {
-        let c = self.correction.clone()?;
+        let c = self.correction()?.clone();
         let story = self.caret().map(|p| p.story)?;
         let rects = self.range_rects(Position::text(story, c.para, c.range.start), Position::text(story, c.para, c.range.end), pages);
         let near = self.caret().and_then(|p| p.para_offset()).is_some_and(|(p, at)| p == c.para && at >= c.range.start && at.0 <= c.range.end.0 + 1);
@@ -481,7 +482,7 @@ impl Editor {
         Some(super::view::CorrectionView { rects, button })
     }
 
-    pub fn follow_correction(&mut self, typed: usize, edited: bool) {
+    pub(super) fn follow_correction(&mut self, typed: usize, edited: bool) {
         let caret = self.caret().and_then(|p| p.para_offset());
         let Some(c) = &mut self.correction else { return };
         let from = if edited { c.range.end } else { c.range.start };
@@ -492,19 +493,27 @@ impl Editor {
         }
     }
 
+    /// The correction mark, while its range still holds the corrected text.
     pub fn correction(&self) -> Option<&super::Correction> {
-        self.correction.as_ref()
+        self.correction.as_ref().filter(|c| self.text_in(c).is_some_and(|t| t == c.to))
     }
 
-    pub fn correction_text(&self) -> Option<String> {
-        let c = self.correction.as_ref()?;
+    fn text_in(&self, c: &super::Correction) -> Option<String> {
         let p = self.index.para(&self.doc, c.para)?;
         let t = super::text::UnitText::of(p);
         Some(t.text.chars().skip(c.range.start.0 as usize).take((c.range.end.0 - c.range.start.0) as usize).collect())
     }
 
+    pub fn correction_text(&self) -> Option<String> {
+        self.correction().map(|c| c.to.clone())
+    }
+
     pub fn revert_correction(&mut self, fonts: &Fonts) -> Outcome {
-        let Some(c) = self.correction.take() else { return Outcome::Unchanged("no correction") };
+        if self.correction().is_none() {
+            self.correction = None;
+            return Outcome::unavailable("no correction");
+        }
+        let Some(c) = self.correction.take() else { return Outcome::unavailable("no correction") };
         if self.history.next_undo() == Some("AutoCorrect") && c.typed == 0 {
             return self.execute(super::commands::Command::Undo, fonts);
         }

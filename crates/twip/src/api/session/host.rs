@@ -472,6 +472,8 @@ impl Presentation {
         self.graphics.clear_images();
         self.graphics.retained.clear();
         self.sink.a11y = None;
+        self.leaders.clear();
+        self.ruler_hover = None;
     }
 
     /// The accessibility timer went off: the tree's changes since it was last sent go to the host.
@@ -562,6 +564,9 @@ pub(super) fn fill_state(s: &Session, state: &mut crate::api::state::State) {
         state.commands.insert(C::SetRulerTabType, CommandState { enabled: true, checked: None, value: Some(CommandValue::TabType(p.tab_selector)) });
         state.commands.insert(C::ShowTabStop, CommandState { enabled: stops, checked: None, value: None });
         state.commands.insert(C::ClosePopover, CommandState { enabled: true, checked: None, value: None });
+        if let Some(paste) = state.commands.get_mut(&C::Paste) {
+            paste.enabled &= s.editor.clipboard().is_some() || s.shared.clipboard.borrow().is_some();
+        }
         let corrected = s.editor.correction().is_some();
         for id in [C::RevertAutoCorrect, C::NeverAutoCorrect, C::ShowAutoCorrectOptions] {
             state.commands.insert(id, CommandState { enabled: corrected, checked: None, value: None });
@@ -816,9 +821,12 @@ impl Session {
     }
 
     /// Hands the attached host what changed for it: the editor's requests, the cursor, caret, tooltip and
-    /// accessibility tree. Without a host the editor's requests are dropped.
+    /// accessibility tree. Without a host the editor's requests are dropped (a copy still becomes the engine's clipboard).
     pub(super) fn deliver_requests(&mut self) {
         let requests = self.editor.take_requests();
+        // A copy is the engine's clipboard, host or not.
+        let held =
+            requests.iter().any(|r| matches!(r, Request::Clipboard { .. })).then(|| self.editor.clipboard().cloned()).flatten().map(|f| self.hold(f));
         if self.presentation.sink.deliver.is_none() {
             return;
         }
@@ -831,10 +839,7 @@ impl Session {
                 Request::ReleasePointer => out.push(HostRequest::Release),
                 // A keyboard copy: the engine's clipboard too, so a paste in any session keeps its formatting.
                 Request::Clipboard { text, html } => {
-                    let data = match self.editor.clipboard().cloned() {
-                        Some(f) => self.hold(f),
-                        None => ClipboardData { text, html, internal: None },
-                    };
+                    let data = held.clone().unwrap_or(ClipboardData { text, html, internal: None });
                     out.push(HostRequest::Clipboard { data });
                 }
                 Request::ScrollIntoView { page, rect: [x0, y0, x1, y1], at_top } => {

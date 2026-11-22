@@ -1,7 +1,6 @@
 //! Find and replace
 
-use crate::docx::review::MarkupView;
-use crate::docx::{Block, Paragraph};
+use crate::docx::Block;
 use crate::font::Fonts;
 use crate::layout::{ParaId, Unit};
 
@@ -9,27 +8,44 @@ use super::Editor;
 use super::commands::{Command, Outcome};
 use super::position::Position;
 use super::selection::{Granularity, Selection};
-use super::text::UnitText;
+use super::text::{Seen, UnitText};
 
 /// Where `needle` occurs in `hay`, without overlaps: `case`, exactly, else ignoring case; `whole`, only where no
 /// letter or digit touches either end. A match starts and ends on grapheme boundaries, and a combining mark is part of
 /// the letter it follows.
+#[cfg(test)]
 pub(crate) fn matches(hay: &[char], needle: &[char], case: bool, whole: bool) -> Vec<usize> {
+    scan(hay, needle, case, whole, || grapheme_starts(hay), |b, i, end| b[i] && b[end]).0
+}
+
+/// Where `needle` occurs in `hay`, without overlaps, at the ends `fits` takes (given the grapheme starts `bounds`
+/// makes, then a match's start and end): `case` and `whole` as for [`matches`]. The grapheme starts, when a match
+/// needed them.
+fn scan(
+    hay: &[char],
+    needle: &[char],
+    case: bool,
+    whole: bool,
+    bounds: impl FnOnce() -> Vec<bool>,
+    fits: impl Fn(&[bool], usize, usize) -> bool,
+) -> (Vec<usize>, Option<Vec<bool>>) {
     if needle.is_empty() || hay.len() < needle.len() {
-        return Vec::new();
+        return (Vec::new(), None);
     }
     let eq = |a: char, b: char| if case { a == b } else { a == b || a.to_lowercase().eq(b.to_lowercase()) };
+    let mut bounds = Some(bounds);
     let mut starts: Option<Vec<bool>> = None;
     let mut out = Vec::new();
     let mut i = 0;
     while i + needle.len() <= hay.len() {
         let end = i + needle.len();
         if hay[i..end].iter().zip(needle).all(|(a, b)| eq(*a, *b)) {
-            let b = starts.get_or_insert_with(|| grapheme_starts(hay));
+            let b = starts.get_or_insert_with(|| bounds.take().map_or_else(Vec::new, |f| f()));
             let word = |k: usize| hay[k].is_alphanumeric();
-            // The grapheme before the match, by its first character.
+            // The graphemes either side, by their first characters.
             let before = || (0..i).rev().find(|&k| b[k]).is_some_and(word);
-            if b[i] && b[end] && (!whole || (!(i > 0 && before()) && !(end < hay.len() && word(end)))) {
+            let after = || (end..hay.len()).find(|&k| b[k]).is_some_and(word);
+            if fits(b, i, end) && (!whole || (!(i > 0 && before()) && !after())) {
                 out.push(i);
                 i = end;
                 continue;
@@ -37,23 +53,11 @@ pub(crate) fn matches(hay: &[char], needle: &[char], case: bool, whole: bool) ->
         }
         i += 1;
     }
-    out
-}
-
-/// Where `needle` occurs in `p` as `view` shows it (see [`matches`]), leaving out the codes of fields that show their
-/// results: a match there would rewrite a link's target.
-pub(crate) fn para_matches(p: &Paragraph, view: MarkupView, needle: &[char], case: bool, whole: bool) -> Vec<usize> {
-    let chars: Vec<char> = UnitText::of_view(p, view).text.chars().collect();
-    let mut hits = matches(&chars, needle, case, whole);
-    let codes = crate::docx::fields::hidden_codes(&p.inlines);
-    if !codes.is_empty() {
-        let n = needle.len() as u32;
-        hits.retain(|&h| !codes.iter().any(|&(b, e)| h as u32 <= e && h as u32 + n > b));
-    }
-    hits
+    (out, starts)
 }
 
 /// Whether each character of `hay` starts a grapheme, then the end.
+#[cfg(test)]
 fn grapheme_starts(hay: &[char]) -> Vec<bool> {
     use unicode_segmentation::UnicodeSegmentation;
     let s: String = hay.iter().collect();
@@ -67,23 +71,111 @@ fn grapheme_starts(hay: &[char]) -> Vec<bool> {
     out
 }
 
+/// The matches of `needle` in a paragraph's text as it reads, as unit ranges: one inside a symbol's grapheme cluster
+/// (an emoji's skin tone) widened to the whole cluster, so a match always selects what it found; none inside a letter's
+/// (the accents on it make it another letter), and none across a field marker, so a replacement never takes part of a
+/// field.
+pub(crate) fn hits(seen: &Seen, needle: &[char], case: bool, whole: bool) -> Vec<(Unit, Unit)> {
+    let hay = &seen.chars;
+    // A unit inside a cluster whose base is a letter or digit: that letter's accents.
+    let fits = |b: &[bool], k: usize| b[k] || !(0..k).rev().find(|&j| b[j]).is_some_and(|j| hay[j].is_alphanumeric());
+    let (found, bounds) = scan(hay, needle, case, whole, || seen.boundaries(), |b, i, end| fits(b, i) && fits(b, end));
+    let Some(bounds) = bounds.filter(|_| !found.is_empty()) else { return Vec::new() };
+    let mut out: Vec<(Unit, Unit)> = Vec::with_capacity(found.len());
+    let mut last = 0;
+    for h in found {
+        let (mut a, mut b) = (h, h + needle.len());
+        while !bounds[a] {
+            a -= 1;
+        }
+        while !bounds[b] {
+            b += 1;
+        }
+        if a < last || seen.crosses(a, b) {
+            continue;
+        }
+        last = b;
+        out.push(seen.units_of(a, b));
+    }
+    out
+}
+
+/// The stories a walk of the document takes besides the body (or the sub-template being edited).
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct Stories {
+    /// The text boxes, after the story they are in.
+    pub boxes: bool,
+    /// Footnotes and endnotes.
+    pub notes: bool,
+    /// Headers and footers.
+    pub headers: bool,
+}
+
+impl Stories {
+    /// Every story the canvas edits: what Find, Replace and spelling go through.
+    pub const ALL: Stories = Stories { boxes: true, notes: true, headers: true };
+}
+
+/// The paragraph ids of `blocks` in order, tables included, with the text boxes they anchor.
+fn walk<'a>(blocks: &'a [Block], out: &mut Vec<ParaId>, boxes: &mut Vec<&'a [Block]>) {
+    for b in blocks {
+        match b {
+            Block::Para(p) => {
+                out.push(ParaId(p.id));
+                boxes.extend(p.inlines.iter().filter_map(|i| i.story()).map(|(_, tb)| tb.blocks.as_slice()));
+            }
+            // Nesting is bounded by the reader's XML depth.
+            Block::Table(t) => t.rows.iter().flat_map(|r| r.cells.iter()).for_each(|c| walk(&c.blocks, out, boxes)),
+        }
+    }
+}
+
 impl Editor {
     fn body_paras(&self) -> Vec<ParaId> {
-        fn walk(blocks: &[Block], out: &mut Vec<ParaId>) {
-            for b in blocks {
-                match b {
-                    Block::Para(p) => out.push(ParaId(p.id)),
-                    Block::Table(t) => t.rows.iter().flat_map(|r| r.cells.iter()).for_each(|c| walk(&c.blocks, out)),
-                }
-            }
-        }
+        self.story_paras(Stories::ALL)
+    }
+
+    /// The paragraph ids of the body (or the sub-template being edited) in document order, tables included, then
+    /// those of the stories `also` takes: the text boxes, the headers and footers in part order, the footnotes and the
+    /// endnotes in id order.
+    pub(crate) fn story_paras(&self, also: Stories) -> Vec<ParaId> {
         let mut out = Vec::new();
+        let mut boxes = Vec::new();
+        let take_boxes = |out: &mut Vec<ParaId>, boxes: &mut Vec<&[Block]>| {
+            let mut k = 0;
+            while also.boxes && k < boxes.len() {
+                let mut more = Vec::new();
+                walk(boxes[k], out, &mut more);
+                boxes.extend(more);
+                k += 1;
+            }
+            boxes.clear();
+        };
+        // While a sub-template is edited, its body; never a sub-template's body from the template.
         if let Some(part) = self.editing_sub_template().and_then(|k| self.doc.glossary.as_ref()?.parts.get(k as usize)) {
-            walk(&part.body, &mut out);
+            walk(&part.body, &mut out, &mut boxes);
+            take_boxes(&mut out, &mut boxes);
             return out;
         }
         for s in &self.doc.sections {
-            walk(&s.blocks, &mut out);
+            walk(&s.blocks, &mut out, &mut boxes);
+        }
+        take_boxes(&mut out, &mut boxes);
+        if also.headers {
+            for blocks in self.doc.stories.values() {
+                walk(blocks, &mut out, &mut boxes);
+                take_boxes(&mut out, &mut boxes);
+            }
+        }
+        if also.notes {
+            for notes in [&self.doc.footnotes, &self.doc.endnotes] {
+                let mut ids: Vec<&i64> = notes.keys().collect();
+                ids.sort_unstable();
+                for id in ids {
+                    walk(&notes[id], &mut out, &mut boxes);
+                    take_boxes(&mut out, &mut boxes);
+                }
+            }
         }
         out
     }
@@ -101,12 +193,22 @@ impl Editor {
         self.found.filter(|f| f.0 == self.selection).map(|f| (f.1, f.2, f.3))
     }
 
-    fn chars_of(&self, para: ParaId) -> Vec<char> {
-        self.index.para(&self.doc, para).map_or_else(Vec::new, |p| UnitText::of_view(p, self.doc.review.view).text.chars().collect())
+    /// Whether the unit at `u` is a space the markup view shows (not a tab, break, object, or hidden or deleted text).
+    pub fn space_at(&self, para: ParaId, u: Unit) -> bool {
+        let Some(p) = self.index.para(&self.doc, para) else { return false };
+        let view = self.doc.review.view;
+        let t = UnitText::masked(p, |rev| rev.del.is_some() || view.hides(rev));
+        !t.is_hidden(u) && t.char_at(u) == Some(' ')
     }
 
-    fn matches_in(&self, para: ParaId, needle: &[char], case: bool) -> Vec<usize> {
-        self.index.para(&self.doc, para).map_or_else(Vec::new, |p| para_matches(p, self.doc.review.view, needle, case, false))
+    /// A paragraph's text as Find reads it: what the markup view shows, fields as they show, values aside.
+    pub(crate) fn find_text(&self, para: ParaId) -> Seen {
+        let view = self.doc.review.view;
+        self.index.para(&self.doc, para).map_or_else(Seen::default, |p| Seen::of(p, |r| !view.hides(&r.rev), false))
+    }
+
+    fn unit_hits(&self, para: ParaId, needle: &[char], case: bool) -> Vec<(Unit, Unit)> {
+        hits(&self.find_text(para), needle, case, false)
     }
 
     pub fn find(&self, needle: &str, case: bool, back: bool) -> Option<(ParaId, Unit, Unit)> {
@@ -127,14 +229,14 @@ impl Editor {
         for k in 0..=n {
             let idx = if back { (start + n * 2 - k) % n } else { (start + k) % n };
             let p = order[idx];
-            let hits = self.matches_in(p, &needle, case);
+            let hits = self.unit_hits(p, &needle, case);
             let hit = if back {
-                hits.iter().rev().copied().find(|&h| k > 0 || p != from_para || h + needle.len() <= from.0 as usize)
+                hits.iter().rev().copied().find(|h| k > 0 || p != from_para || h.1 <= from)
             } else {
-                hits.iter().copied().find(|&h| k > 0 || p != from_para || h >= from.0 as usize)
+                hits.iter().copied().find(|h| k > 0 || p != from_para || h.0 >= from)
             };
-            if let Some(h) = hit {
-                return Some((p, Unit(h as u32), Unit((h + needle.len()) as u32)));
+            if let Some((a, b)) = hit {
+                return Some((p, a, b));
             }
         }
         None
@@ -142,27 +244,21 @@ impl Editor {
 
     pub fn count_matches(&self, needle: &str, case: bool) -> usize {
         let needle: Vec<char> = needle.chars().collect();
-        self.body_paras().into_iter().map(|p| self.matches_in(p, &needle, case).len()).sum()
+        self.body_paras().into_iter().map(|p| self.unit_hits(p, &needle, case).len()).sum()
     }
 
     pub fn selection_matches(&self, needle: &str, case: bool) -> bool {
         let Some((a, b)) = self.selection.ordered(&self.index) else { return false };
         let (Some((pa, ua)), Some((pb, ub))) = (a.para_offset(), b.para_offset()) else { return false };
         let needle: Vec<char> = needle.chars().collect();
-        pa == pb && (ub.0 - ua.0) as usize == needle.len() && matches(&self.chars_of(pa)[ua.0 as usize..ub.0 as usize], &needle, case, false) == [0]
+        pa == pb && self.unit_hits(pa, &needle, case).contains(&(ua, ub))
     }
 
     #[cfg(test)]
     pub(crate) fn replace_all(&mut self, find: &str, with: &str, case: bool, fonts: &Fonts) -> (usize, Outcome) {
         let needle: Vec<char> = find.chars().collect();
-        let hits: Vec<(ParaId, Unit, Unit)> = self
-            .body_paras()
-            .into_iter()
-            .flat_map(|para| {
-                let n = needle.len() as u32;
-                self.matches_in(para, &needle, case).into_iter().map(move |h| (para, Unit(h as u32), Unit(h as u32 + n)))
-            })
-            .collect();
+        let hits: Vec<(ParaId, Unit, Unit)> =
+            self.body_paras().into_iter().flat_map(|para| self.unit_hits(para, &needle, case).into_iter().map(move |(a, b)| (para, a, b))).collect();
         self.replace_hits("Replace All", &hits, with, true, fonts)
     }
 

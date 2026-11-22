@@ -1,15 +1,15 @@
-//! Find and replace over the body's paragraphs (tables included) in document order, on the text the markup view
-//! shows: text it hides matches nothing. Matches are unit ranges of one paragraph.
+//! Find and replace over every story's paragraphs (the body's first, tables included) in document order, on the
+//! text the markup view shows: text it hides, and field codes, match nothing. Matches are unit ranges of one
+//! paragraph.
 
 use crate::api::services::{FindMatch, FindQuery};
 use crate::api::value::MatchId;
 use crate::editing::Editor;
 use crate::editing::commands::Outcome;
-use crate::editing::text::UnitText;
 use crate::font::Fonts;
 use crate::layout::{ParaId, Unit};
 
-use super::spelling::paras_in_order;
+use super::spelling::searched_paras;
 
 /// A match: its paragraph and units `start..end`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -38,28 +38,22 @@ impl Hit {
     }
 }
 
-fn chars_of(e: &Editor, para: ParaId) -> Vec<char> {
-    e.index().para(e.document(), para).map_or_else(Vec::new, |p| UnitText::of_view(p, e.document().review.view).text.chars().collect())
-}
-
 fn hits_in(e: &Editor, para: ParaId, q: &FindQuery) -> Vec<Hit> {
     let needle: Vec<char> = q.text.chars().collect();
-    let n = needle.len() as u32;
-    let Some(p) = e.index().para(e.document(), para) else { return Vec::new() };
-    crate::editing::find::para_matches(p, e.document().review.view, &needle, q.match_case.unwrap_or(false), q.whole_words.unwrap_or(false))
+    crate::editing::find::hits(&e.find_text(para), &needle, q.match_case.unwrap_or(false), q.whole_words.unwrap_or(false))
         .into_iter()
-        .map(|h| Hit { para, start: h as u32, end: h as u32 + n })
+        .map(|(a, b)| Hit { para, start: a.0, end: b.0 })
         .collect()
 }
 
 /// Every match, in document order. A field showing its result is searched in its result only.
 pub fn all(e: &Editor, q: &FindQuery) -> Vec<Hit> {
-    paras_in_order(e).into_iter().flat_map(|p| hits_in(e, p, q)).collect()
+    searched_paras(e).into_iter().flat_map(|p| hits_in(e, p, q)).collect()
 }
 
 /// The next match after the selection (before it, `back`), wrapping round the document, and whether it wrapped.
 pub fn next(e: &Editor, q: &FindQuery, back: bool) -> Option<(Hit, bool)> {
-    let order = paras_in_order(e);
+    let order = searched_paras(e);
     if order.is_empty() || q.text.is_empty() {
         return None;
     }
@@ -107,9 +101,10 @@ pub fn at_selection(e: &Editor, q: &FindQuery) -> Option<Hit> {
 
 /// A match for a results list: up to 30 characters of context on each side, from its paragraph.
 pub fn describe(e: &Editor, h: Hit, page: u32) -> FindMatch {
-    let chars = chars_of(e, h.para);
+    let seen = e.find_text(h.para);
+    let chars = &seen.chars;
     let clean = |s: &[char]| s.iter().map(|&c| if c.is_control() || c == crate::editing::text::OBJECT { ' ' } else { c }).collect::<String>();
-    let (s, t) = (h.start as usize, (h.end as usize).min(chars.len()));
+    let (s, t) = (seen.units.partition_point(|&u| u < h.start), seen.units.partition_point(|&u| u < h.end));
     FindMatch {
         id: h.id(),
         before: clean(&chars[s.saturating_sub(30)..s]),

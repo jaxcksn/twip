@@ -241,7 +241,7 @@ fn attr_of(xml: &str, local: &str) -> Option<String> {
 
 impl Editor {
     /// The selection's list: its first list paragraph, `numId` and level.
-    pub(super) fn selection_list(&mut self) -> Option<(ParaId, i64, i64)> {
+    pub(crate) fn selection_list(&mut self) -> Option<(ParaId, i64, i64)> {
         self.selected_paras().into_iter().find_map(|para| {
             let (num, ilvl) = self.index.para(&self.doc, para)?.style.num.filter(|(id, _)| *id != 0)?;
             Some((para, num, ilvl))

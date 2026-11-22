@@ -98,6 +98,40 @@ impl Editor {
         )
     }
 
+    /// Moves the right edge of text column `column` of the caret's section to `to` (page points): the space after it
+    /// moves with it and the next column takes the change, each column keeping at least half an inch, as in Word.
+    pub(in crate::editing) fn move_column_boundary(&mut self, column: usize, to: f64, fonts: &Fonts) -> Outcome {
+        const MIN: f64 = 36.0;
+        let Some(s) = self.doc.sections.get(self.focus_section()) else { return Outcome::Unchanged("no section") };
+        let c = &s.columns;
+        let n = c.num.clamp(1, crate::docx::Columns::MAX);
+        if column + 1 >= n {
+            return Outcome::invalid("no such column boundary");
+        }
+        let left = s.left + if self.doc.settings.gutter_at_top { 0.0 } else { s.gutter };
+        let width = s.page_w - s.right - left;
+        let mut cols: Vec<(f64, f64)> =
+            if c.equal || c.cols.len() < n { vec![((width - c.space * (n - 1) as f64) / n as f64, c.space); n] } else { c.cols[..n].to_vec() };
+        let start = left + cols[..column].iter().map(|(w, sp)| w + sp).sum::<f64>();
+        let (w, next) = (cols[column].0, cols[column + 1].0);
+        if w + next < 2.0 * MIN {
+            return Outcome::unavailable("the columns are too narrow");
+        }
+        let dx = (to - start - w).clamp(MIN - w, next - MIN);
+        if dx.abs() < 1e-9 {
+            return Outcome::Unchanged("already there");
+        }
+        (cols[column].0, cols[column + 1].0) = (w + dx, next - dx);
+        self.set_page(
+            "Column Width",
+            |p| {
+                let space = p.columns.space;
+                p.columns = crate::docx::Columns { num: n, equal: false, cols: cols.clone(), space, separator: p.columns.separator };
+            },
+            fonts,
+        )
+    }
+
     pub(in crate::editing) fn set_page_numbering(&mut self, n: PageNumbering, fonts: &Fonts) -> Outcome {
         use crate::api::command::{ChapterSeparator, NumberFormat};
         if n.format.is_some_and(|f| matches!(f, NumberFormat::Bullet | NumberFormat::None)) {

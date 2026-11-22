@@ -2886,6 +2886,7 @@ export interface SessionOptions {
     fieldLabels?: Record<string, string>;
     fonts?: FontLibrary;
     language?: string;
+    mac?: boolean;
     mode?: 'editing' | 'design';
     readOnly?: boolean;
     subTemplateRules?: ReferenceRule[];

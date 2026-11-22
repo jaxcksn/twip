@@ -150,6 +150,12 @@ impl Session {
     /// After the document was replaced: the session's settings apply to it, the state starts over, and `events` (the
     /// read's warnings) follow, with the warning naming the families no font draws. Returns that warning.
     fn replaced(&mut self, mut events: Vec<crate::api::event::Event>) -> Option<Warning> {
+        if self.presentation.ruler_drag.take().is_some() {
+            self.request(super::HostRequest::Release);
+        }
+        if self.presentation.popover.take().is_some() {
+            events.push(crate::api::event::Event::PopoverClosed);
+        }
         self.presentation.clear();
         self.configure();
         let (fonts, warning) = self.fonts_opened();
