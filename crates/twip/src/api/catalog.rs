@@ -269,6 +269,8 @@ const ENTRIES: &[Entry] = {
         (C::MergeCells, "Merge Cells", G::Table, &[], &[], false, true, U::Step),
         (C::SplitCells, "Split Cells", G::Table, &[], &[], true, true, U::Step),
         (C::SplitTable, "Split Table", G::Table, &["Ctrl+Shift+Enter"], &["⇧⌘Enter"], false, true, U::Step),
+        (C::ConvertTextToTable, "Convert Text to Table", G::Table, &[], &[], true, true, U::Step),
+        (C::ConvertTableToText, "Convert Table to Text", G::Table, &[], &[], true, true, U::Step),
         (C::DistributeRows, "Distribute Rows", G::Table, &[], &[], false, true, U::Step),
         (C::DistributeColumns, "Distribute Columns", G::Table, &[], &[], false, true, U::Step),
         (C::MoveRows, "Move Rows", G::Table, &["Alt+Shift+Up", "Alt+Shift+Down"], &["⌥⇧Up", "⌥⇧Down"], true, true, U::Step),

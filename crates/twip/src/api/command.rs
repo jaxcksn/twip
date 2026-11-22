@@ -413,6 +413,12 @@ commands! {
     SplitCells(SplitCells),
     /// Splits the table above the selection. Undo: one step.
     SplitTable,
+    /// Converts the selected paragraphs to a table (Convert Text to Table): a row for each paragraph, its text split
+    /// into cells at the separator, the table as wide as the text. Undo: one step.
+    ConvertTextToTable(TextToTable),
+    /// Converts the selected rows, or the whole table, to text (Convert Table to Text): a paragraph for each row, its
+    /// cells' text joined by the separator; a nested table stays a table. Undo: one step.
+    ConvertTableToText(TableToText),
     /// Gives the selected rows equal heights. Undo: one step.
     DistributeRows,
     /// Gives the selected columns equal widths. Undo: one step.
@@ -2673,6 +2679,46 @@ pub struct SplitCells {
     /// Default: 1.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rows: Option<u32>,
+}
+
+/// `convertTextToTable`'s options.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TextToTable {
+    /// Where the text splits into cells.
+    pub separator: TextSeparator,
+    /// The one character to split at, with `other`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub character: Option<String>,
+    /// The number of columns (1…63): a paragraph with more pieces goes on over the next rows, a row with fewer is
+    /// filled with empty cells. Default: the most pieces a paragraph has (one, splitting at paragraphs).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub columns: Option<u32>,
+}
+
+/// `convertTableToText`'s options.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TableToText {
+    /// What separates the cells' text.
+    pub separator: TextSeparator,
+    /// The one character between cells, with `other`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub character: Option<String>,
+}
+
+/// What separates a table's cells in text.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TextSeparator {
+    /// Paragraph marks: a cell for each paragraph.
+    Paragraphs,
+    /// Tab characters.
+    Tabs,
+    /// Commas.
+    Commas,
+    /// Another character, given with the options.
+    Other,
 }
 
 /// Up or down.

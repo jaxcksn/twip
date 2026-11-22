@@ -387,6 +387,8 @@ impl Editor {
             Command::MergeCells => self.merge_cells(fonts),
             Command::SplitCells(s) => self.split_cells(s, fonts),
             Command::SplitTable => self.split_table(fonts),
+            Command::ConvertTextToTable(t) => self.convert_text_to_table(&t, fonts),
+            Command::ConvertTableToText(t) => self.convert_table_to_text(&t, fonts),
             Command::DistributeRows => self.distribute_rows(fonts),
             Command::DistributeColumns => self.distribute_columns(fonts),
             Command::MoveRows(d) => self.move_rows(d == crate::api::command::VerticalDirection::Up, fonts),

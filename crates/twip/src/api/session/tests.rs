@@ -48,6 +48,47 @@ fn bold_undo_redo_report_state_then_events() {
 }
 
 #[test]
+fn table_positions_are_validated_like_object_positions() {
+    use crate::api::command::TablePosition;
+    use crate::api::value::{HorizontalPosition, HorizontalReference, ObjectHorizontalAlignment, VerticalPosition, VerticalReference};
+    let (mut engine, _) = engine();
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    let at = |offset: f64, align: Option<ObjectHorizontalAlignment>| {
+        Command::SetTablePosition(Some(TablePosition {
+            horizontal: Some(HorizontalPosition { relative_to: HorizontalReference::Margin, align, offset: Some(Points(0.0)), percent: None }),
+            vertical: Some(VerticalPosition { relative_to: VerticalReference::Paragraph, align: None, offset: Some(Points(offset)), percent: None }),
+            wrap_distance: None,
+        }))
+    };
+    s.run(Command::InsertTable(crate::api::command::TableSize { rows: 1, columns: 1 })).expect("a table");
+    for bad in [at(1e300, None), at(f64::NAN, None), at(0.0, Some(ObjectHorizontalAlignment::Center))] {
+        assert_eq!(s.run(bad).map_err(|e| e.code).err(), Some(ErrorCode::InvalidArgument));
+    }
+    assert_ne!(s.run(at(36.0, None)).map_err(|e| e.code).err(), Some(ErrorCode::InvalidArgument));
+}
+
+#[test]
+fn table_conversion_separators_are_validated() {
+    let (mut engine, _) = engine();
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    s.run(Command::InsertTable(crate::api::command::TableSize { rows: 1, columns: 1 })).expect("a table");
+    let mut run = |j: serde_json::Value| s.run(serde_json::from_value(j).expect("a command")).map_err(|e| e.code).err();
+    for bad in [
+        serde_json::json!({"type":"convertTextToTable","separator":"other"}),
+        serde_json::json!({"type":"convertTextToTable","separator":"other","character":"ab"}),
+        serde_json::json!({"type":"convertTextToTable","separator":"other","character":"\n"}),
+        serde_json::json!({"type":"convertTextToTable","separator":"tabs","character":";"}),
+        serde_json::json!({"type":"convertTextToTable","separator":"tabs","columns":64}),
+        serde_json::json!({"type":"convertTableToText","separator":"other"}),
+    ] {
+        assert_eq!(run(bad.clone()), Some(ErrorCode::InvalidArgument), "{bad}");
+    }
+    assert_ne!(run(serde_json::json!({"type":"convertTextToTable","separator":"other","character":";"})), Some(ErrorCode::InvalidArgument));
+}
+
+#[test]
 fn refusals_have_their_codes() {
     let (mut engine, _) = engine();
     let id = engine.create_session(SessionOptions { read_only: true, ..SessionOptions::default() });

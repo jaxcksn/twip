@@ -523,4 +523,8 @@ public enum CommandId
     SetWatermark,
     /// <summary>Removes the document's watermark.</summary>
     RemoveWatermark,
+    /// <summary>Converts the selected paragraphs to a table.</summary>
+    ConvertTextToTable,
+    /// <summary>Converts the selected rows, or the whole table, to text.</summary>
+    ConvertTableToText,
 }

@@ -30,6 +30,11 @@ fn page() -> Editor {
         row(false),
         row(false)
     );
+    open(&table)
+}
+
+/// `table` between two paragraphs, laid out.
+fn open(table: &str) -> Editor {
     let body = format!("<w:p><w:r><w:t>Before</w:t></w:r></w:p>{table}<w:p><w:r><w:t>After the table.</w:t></w:r></w:p>");
     let bytes = crate::layout::tests::shapes::bytes(&body).expect("a package");
     let mut e = Editor::open(&bytes, fonts()).expect("opens");
@@ -230,6 +235,48 @@ fn a_table_resize_previews_its_box_and_size() {
     let label = format!("{:.2} × {:.2} in", (want[2] - want[0]) / 72.0, (want[3] - want[1]) / 72.0);
     let status = v.measures.iter().find_map(|(_, m)| if let Measure::Status { label, at, .. } = m { Some((label.clone(), at[1].0)) } else { None });
     assert_eq!(status, Some((label, want[3] + 10.0 * PX)));
+}
+
+/// A fixed table whose `w:tblGrid` has one column under rows of three cells.
+fn short_grid() -> Editor {
+    let cell = r#"<w:tc><w:tcPr><w:tcW w:w="1440" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>x</w:t></w:r></w:p></w:tc>"#.repeat(3);
+    open(&format!(
+        r#"<w:tbl><w:tblPr><w:tblW w:w="4320" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="1440"/></w:tblGrid><w:tr>{cell}</w:tr><w:tr>{cell}</w:tr></w:tbl>"#
+    ))
+}
+
+#[test]
+fn border_drags_on_a_short_grid_do_not_panic() {
+    let mut e = short_grid();
+    let d = Drawn::of(&mut e);
+    let last = d.rows[1];
+    drag(&mut e, (last[2] + 3.0 * PX, last[3] + 3.0 * PX), (72.0, 18.0), NONE, true);
+    assert_eq!(grid(&e, d.table).len(), 3, "the resize fills in the grid");
+    for k in 1..d.edges.len() {
+        let mut e = short_grid();
+        let d = Drawn::of(&mut e);
+        drag(&mut e, (d.edges[k], d.rows[0][1] + 6.0), (-9.0, 0.0), NONE, true);
+        assert_eq!(e.history.next_undo(), Some("Column Width"), "border {k}");
+        let mut e = short_grid();
+        e.set_selection(Selection::Cells {
+            table: d.table,
+            anchor: CellRef { row: 0, col: 0 },
+            focus: CellRef { row: 1, col: 2 },
+            shape: CellShape::Rect,
+        });
+        drag(&mut e, (d.edges[k], d.rows[0][1] + 6.0), (-9.0, 0.0), NONE, true);
+        assert_eq!(e.history.next_undo(), Some("Column Width"), "border {k} of a selection");
+    }
+    // A table growing out of a cell of a table with no grid
+    let inner = r#"<w:tbl><w:tblPr><w:tblW w:w="1440" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="1440"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="1440" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>in</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#;
+    let mut e = open(&format!(
+        r#"<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr><w:tblGrid/><w:tr><w:tc><w:tcPr><w:tcW w:w="2880" w:type="dxa"/></w:tcPr>{inner}<w:p><w:r><w:t>after</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#
+    ));
+    let geo = e.page_geometries().into_iter().find(|(p, _)| *p == 0).map(|(_, g)| g).expect("page 0");
+    let r = geo.rows.iter().find(|r| !r.outer.is_empty()).expect("the inner row").rect;
+    click(&mut e, r[0] + 4.0, r[1] + 4.0);
+    drag(&mut e, (r[2] + 3.0 * PX, r[3] + 3.0 * PX), (144.0, 0.0), NONE, true);
+    assert_eq!(e.history.next_undo(), Some("Resize Table"));
 }
 
 #[test]

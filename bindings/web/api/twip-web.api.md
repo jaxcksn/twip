@@ -348,6 +348,15 @@ export interface Commands {
     closeSubTemplate(): Promise<void>;
     continueNumbering(): Promise<void>;
     convertNotes(conversion: 'footnotesToEndnotes' | 'endnotesToFootnotes' | 'swap'): Promise<void>;
+    convertTableToText(options: {
+        separator: 'paragraphs' | 'tabs' | 'commas' | 'other';
+        character?: string;
+    }): Promise<void>;
+    convertTextToTable(options: {
+        separator: 'paragraphs' | 'tabs' | 'commas' | 'other';
+        character?: string;
+        columns?: number;
+    }): Promise<void>;
     copy(): Promise<void>;
     copyFormatting(): Promise<void>;
     createSubTemplate(options: {

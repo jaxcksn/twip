@@ -145,24 +145,12 @@ impl Editor {
         let (n, sized) = (t.rows.len(), !matches!(t.width, Width::Auto | Width::Nil));
         let mut rows = t.rows.clone();
         let cx = self.cx();
+        let grid_of = Grid::of(t);
+        let g = &grid_of;
         // Drawn column widths
-        let mut grid = t.grid.clone();
+        let mut grid = super::tables::full_grid(t, g.cols);
         if let Some(geo) = self.pages.page(d.page, &self.index) {
-            let mut xs: Vec<Option<f64>> = vec![None; grid.len() + 1];
-            for r in geo.rows.iter().filter(|r| r.table == d.table && !r.repeat) {
-                for &(x, k) in &r.edges {
-                    if let Some(slot) = xs.get_mut(k)
-                        && slot.is_none()
-                    {
-                        *slot = Some(x);
-                    }
-                }
-            }
-            for k in 0..grid.len() {
-                if let (Some(a), Some(b)) = (xs[k], xs[k + 1]) {
-                    grid[k] = ((b - a).max(0.0) * 20.0).round() / 20.0;
-                }
-            }
+            super::tables::drawn_grid(&geo, d.table, &mut grid);
         }
         let selected = match self.selection {
             super::selection::Selection::Cells { table, anchor, focus, .. } if table == d.table => {
@@ -173,7 +161,6 @@ impl Editor {
         match d.border {
             Border::Column(k) if k < grid.len() && selected.as_ref().is_some_and(|s| s.contains(&d.row)) => {
                 let sel = selected.unwrap_or(0..=0);
-                let g = Grid::of(t);
                 let x: f64 = grid[..k].iter().sum();
                 let total: f64 = grid.iter().sum();
                 let dx = d.now.0 - d.start.0;
@@ -214,8 +201,6 @@ impl Editor {
                 if k == 0 || k > n {
                     return Some(Outcome::Unchanged("not a column border"));
                 }
-                let grid_of = Grid::of(t);
-                let g = &grid_of;
                 let min = |c: usize| {
                     t.rows
                         .iter()
@@ -257,11 +242,11 @@ impl Editor {
             }
             Border::Handle => {
                 let total: f64 = grid.iter().sum();
-                let grid_of = Grid::of(t);
-                let g = &grid_of;
+                // A column with no width stays at none, whatever the scale.
                 let floor = grid
                     .iter()
                     .enumerate()
+                    .filter(|(_, w)| **w > 0.0)
                     .map(|(c, w)| {
                         let m = t
                             .rows
@@ -351,11 +336,11 @@ impl Editor {
             let g = Grid::of(&o);
             if let Some(&(col, span, _)) = g.rows.get(row).and_then(|r| r.get(cell)) {
                 let c = &o.rows[row].cells[cell];
-                let last = (col + span.max(1) - 1).min(o.grid.len().saturating_sub(1));
-                let have: f64 = o.grid[col..=last].iter().sum();
+                let mut og = super::tables::full_grid(&o, g.cols);
+                let last = col + span.max(1) - 1;
+                let have: f64 = og[col..=last].iter().sum();
                 let need = new_sum + c.margins[1] + c.margins[3] + 0.5;
                 if need > have + 1e-9 {
-                    let mut og = o.grid.clone();
                     let more = need - have;
                     og[last] += more;
                     if let Some(next) = og.get_mut(last + 1) {

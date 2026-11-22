@@ -1,6 +1,6 @@
 {
   "id": "E2E-TS-06",
-  "title": "Insert Table at a paragraph's end puts a new table after it; Delete Table removes it",
+  "title": "Insert Table at the end of a paragraph before a table puts a new table after it, with a paragraph between the tables; Delete Table removes it",
   "fixture": "FX-TBL-BASIC.docx",
   "methods": [
     "C",
@@ -30,7 +30,8 @@
         "text": {
           "12": "Paragraph between the first and second tables.",
           "13": "",
-          "19": "T2 R1 C1"
+          "19": "",
+          "20": "T2 R1 C1"
         },
         "tables": [
           {},
@@ -61,7 +62,8 @@
     {
       "expect": {
         "text": {
-          "13": "T2 R1 C1"
+          "13": "",
+          "14": "T2 R1 C1"
         },
         "tables": [
           {},

@@ -545,6 +545,7 @@ impl Editor {
                     | C::DeleteCells
                     | C::SplitCells
                     | C::SplitTable
+                    | C::ConvertTableToText
                     | C::DistributeRows
                     | C::DistributeColumns
                     | C::MoveRows

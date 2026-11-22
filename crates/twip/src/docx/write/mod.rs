@@ -2060,7 +2060,8 @@ impl<'a, 'i> Saver<'a, 'i> {
             && a.width == b.width
             && (a.cell_spacing, &a.alt) == (b.cell_spacing, &b.alt)
             && self.direct_shd(a) == self.direct_shd(b)
-            && (&a.style_id, a.look, a.jc, a.ind, a.ind_pct, a.floating) == (&b.style_id, b.look, b.jc, b.ind, b.ind_pct, b.floating);
+            && (&a.style_id, a.look, a.jc, a.ind, a.ind_pct, a.floating) == (&b.style_id, b.look, b.jc, b.ind, b.ind_pct, b.floating)
+            && (a.fixed, a.cell_spacing, &a.alt) == (b.fixed, b.cell_spacing, &b.alt);
         // Tables read as one (nothing between them) are written as one.
         let joined = a.src.as_ref().is_some_and(|r| self.tables.get(&r.start).is_some_and(|n| n.range().end != r.end));
         if !same_rows || joined {
@@ -2320,6 +2321,10 @@ impl<'a, 'i> Saver<'a, 'i> {
                                 _ => "left",
                             };
                             fix.push(("jc", format!("<{w}jc {w}val=\"{v}\"/>"), before("jc")));
+                        }
+                        if a.fixed != t.fixed {
+                            let v = if t.fixed { "fixed" } else { "autofit" };
+                            fix.push(("tblLayout", format!("<{w}tblLayout {w}type=\"{v}\"/>"), before("tblLayout")));
                         }
                         if a.cell_spacing != t.cell_spacing {
                             let tag = if t.cell_spacing > 0.0 { width(&w, "tblCellSpacing", &Width::Dxa(t.cell_spacing)) } else { String::new() };

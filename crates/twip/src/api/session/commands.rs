@@ -8,9 +8,34 @@ use crate::api::error::{Error, ErrorCode};
 use crate::api::record::Origin;
 use crate::api::services::Popover;
 use crate::api::state::CommandState;
-use crate::api::value::{CommentId, ElementId, TableWidth};
+use crate::api::value::{CommentId, ElementId, Points, TableWidth};
 
 use crate::editing::commands::bounds::{MAX, length, within};
+
+/// An object's or a table's place on each axis (aligned, and its offset): an offset within ±`MAX`, and not with an
+/// alignment.
+fn placed(axes: [Option<(bool, Option<Points>)>; 2]) -> Result<(), Error> {
+    for (aligned, offset) in axes.into_iter().flatten() {
+        if aligned && offset.is_some() {
+            return Err(Error::invalid("align and offset exclude each other"));
+        }
+        length("the offset", offset, -MAX, MAX)?;
+    }
+    Ok(())
+}
+
+/// A separator's character: one, not a paragraph or line break, given with `other` only.
+fn separator(kind: crate::api::command::TextSeparator, character: Option<&str>) -> Result<(), Error> {
+    use crate::api::command::TextSeparator;
+    let mut chars = character.map(str::chars);
+    let one = chars.as_mut().and_then(|c| c.next().filter(|_| c.next().is_none()));
+    match (kind, character, one) {
+        (TextSeparator::Other, _, Some(c)) if !c.is_control() && !matches!(c, '\u{2028}' | '\u{2029}') => Ok(()),
+        (TextSeparator::Other, ..) => Err(Error::invalid("the separator must be one character")),
+        (_, Some(_), _) => Err(Error::invalid("a character goes with the other separator only")),
+        _ => Ok(()),
+    }
+}
 
 fn count(what: &str, v: Option<u32>, hi: u32) -> Result<(), Error> {
     v.map_or(Ok(()), |v| within(what, f64::from(v), 1.0, f64::from(hi)))
@@ -163,6 +188,8 @@ impl Session {
             C::InsertRows(r) => count("the rows", r.count, 32767),
             C::InsertColumns(c) => count("the columns", c.count, 63),
             C::SplitCells(s) => count("the columns", Some(s.columns), 63).and(count("the rows", s.rows, 32767)),
+            C::ConvertTextToTable(t) => separator(t.separator, t.character.as_deref()).and(count("the columns", t.columns, 63)),
+            C::ConvertTableToText(t) => separator(t.separator, t.character.as_deref()),
             C::SetCellMargins(m) => {
                 for v in [m.top, m.bottom, m.left, m.right] {
                     length("the margin", v, 0.0, MAX)?;
@@ -203,14 +230,12 @@ impl Session {
                 if usize::from(a.index) < count { Ok(()) } else { Err(Error::invalid(format!("the shape has {count} adjust values"))) }
             }
             C::SetObjectPosition(p) => {
-                let axes = [p.horizontal.map(|h| (h.align.is_some(), h.offset)), p.vertical.map(|v| (v.align.is_some(), v.offset))];
-                for (aligned, offset) in axes.into_iter().flatten() {
-                    if aligned && offset.is_some() {
-                        return Err(Error::invalid("align and offset exclude each other"));
-                    }
-                    length("the offset", offset, -MAX, MAX)?;
-                }
-                Ok(())
+                placed([p.horizontal.map(|h| (h.align.is_some(), h.offset)), p.vertical.map(|v| (v.align.is_some(), v.offset))])
+            }
+            C::SetTablePosition(Some(p)) => {
+                placed([p.horizontal.map(|h| (h.align.is_some(), h.offset)), p.vertical.map(|v| (v.align.is_some(), v.offset))])?;
+                let d = p.wrap_distance.map(|d| [d.top, d.bottom, d.left, d.right]).unwrap_or_default();
+                d.into_iter().try_for_each(|v| within("the distance", v.0, 0.0, MAX))
             }
             C::SetObjectWrapOptions(w) => {
                 for v in [w.top, w.bottom, w.left, w.right] {
