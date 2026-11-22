@@ -210,7 +210,16 @@ impl Session {
             }
             C::SetTableCellSpacing(s) => length("the spacing", *s, 0.0, MAX),
             C::SetRowProperties(p) => length("the spacing", p.exceptions.as_ref().and_then(|x| x.cell_spacing), 0.0, MAX),
-            C::SetObjectSize(s) => length("the width", s.width, 1.0, MAX).and(length("the height", s.height, 1.0, MAX)),
+            C::SetObjectSize(s) => {
+                length("the width", s.width, 1.0, MAX)?;
+                length("the height", s.height, 1.0, MAX)?;
+                for r in [s.relative_width, s.relative_height] {
+                    if let Some(crate::api::value::NoneOr::Value(r)) = r {
+                        within("the relative size", r.percent, 1.0, 1000.0)?;
+                    }
+                }
+                Ok(())
+            }
             C::InsertShape(i) => length("the width", i.width, 0.0, MAX).and(length("the height", i.height, 0.0, MAX)),
             C::SetShapeFill(f) => f.to_model(&mut |data| crate::docx::image::image_info(data).map(|_| 0)).map(|_| ()).map_err(Error::invalid),
             C::SetShapeLine(l) => l.apply(None, &mut |_| Some(0)).map(|_| ()).map_err(Error::invalid),
@@ -230,7 +239,16 @@ impl Session {
                 if usize::from(a.index) < count { Ok(()) } else { Err(Error::invalid(format!("the shape has {count} adjust values"))) }
             }
             C::SetObjectPosition(p) => {
-                placed([p.horizontal.map(|h| (h.align.is_some(), h.offset)), p.vertical.map(|v| (v.align.is_some(), v.offset))])
+                placed([p.horizontal.map(|h| (h.align.is_some(), h.offset)), p.vertical.map(|v| (v.align.is_some(), v.offset))])?;
+                for (aligned, percent) in
+                    [p.horizontal.map(|h| (h.align.is_some(), h.percent)), p.vertical.map(|v| (v.align.is_some(), v.percent))].into_iter().flatten()
+                {
+                    if aligned && percent.is_some() {
+                        return Err(Error::invalid("align and percent exclude each other"));
+                    }
+                    percent.map_or(Ok(()), |v| within("the percent", v, -1000.0, 1000.0))?;
+                }
+                Ok(())
             }
             C::SetTablePosition(Some(p)) => {
                 placed([p.horizontal.map(|h| (h.align.is_some(), h.offset)), p.vertical.map(|v| (v.align.is_some(), v.offset))])?;

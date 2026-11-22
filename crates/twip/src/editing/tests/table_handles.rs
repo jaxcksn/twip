@@ -420,3 +420,77 @@ fn alt_moves_the_table_freely() {
     let now = Drawn::of(&mut e);
     assert!((now.left() - (d.left() + dx)).abs() < 0.06 && (now.top() - (d.top() + 100.0)).abs() < 0.06, "{:?} → {:?}", d.rows[0], now.rows[0]);
 }
+
+fn opened(body: &str) -> Editor {
+    let mut e = Editor::open(&crate::layout::tests::shapes::bytes(body).expect("a package"), fonts()).expect("opens");
+    e.complete(fonts());
+    e
+}
+
+/// A fixed table whose grid (`tblGrid`, possibly empty) lists fewer columns than its row of three cells reaches.
+fn short_grid_of(grid: &str) -> Editor {
+    let cell = r#"<w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>x</w:t></w:r></w:p></w:tc>"#;
+    opened(&format!(
+        r#"<w:p><w:r><w:t>Before</w:t></w:r></w:p><w:tbl><w:tblPr><w:tblW w:w="6000" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr>{grid}<w:tr>{cell}{cell}{cell}</w:tr></w:tbl><w:p><w:r><w:t>After</w:t></w:r></w:p>"#
+    ))
+}
+
+fn first_table(e: &Editor) -> &crate::docx::Table {
+    e.document().sections[0].blocks.iter().find_map(|b| if let crate::docx::Block::Table(t) = b { Some(t) } else { None }).expect("a table")
+}
+
+fn cell_widths(e: &Editor) -> Vec<f64> {
+    first_table(e)
+        .rows
+        .iter()
+        .flat_map(|r| r.cells.iter())
+        .map(|c| if let Some(crate::docx::props::Width::Dxa(v)) = c.width { v } else { 0.0 })
+        .collect()
+}
+
+#[test]
+fn a_column_border_drag_widens_a_grid_shorter_than_its_cells() {
+    let mut e = short_grid_of(r#"<w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid>"#);
+    let geo = e.page_geometries().into_iter().find(|(p, _)| *p == 0).map(|(_, g)| g).expect("page 0");
+    let row = geo.rows.iter().find(|r| !r.repeat).expect("a row");
+    let (x, _) = *row.edges.iter().find(|(_, k)| *k == 1).expect("edge 1");
+    drag(&mut e, (x, (row.rect[1] + row.rect[3]) / 2.0), (20.0, 0.0), ALT, true);
+    let widths = cell_widths(&e);
+    assert_eq!(widths.len(), 3);
+    assert!(widths.iter().all(|w| *w > 0.0), "{widths:?}");
+    assert_eq!(first_table(&e).grid.len(), 3, "the grid has a column for each cell");
+}
+
+#[test]
+fn the_resize_handle_scales_a_table_without_a_grid() {
+    let mut e = short_grid_of("");
+    let geo = e.page_geometries().into_iter().find(|(p, _)| *p == 0).map(|(_, g)| g).expect("page 0");
+    let row = geo.rows.iter().find(|r| !r.repeat).expect("a row");
+    let before = row.rect[2] - row.rect[0];
+    drag(&mut e, (row.rect[2] + 2.25, row.rect[3] + 2.25), (30.0, 10.0), NONE, true);
+    let widths = cell_widths(&e);
+    assert!(widths.iter().all(|w| *w > 0.0), "{widths:?}");
+    assert!((widths.iter().sum::<f64>() - before - 30.0).abs() < 1.0, "{widths:?} from {before}");
+}
+
+#[test]
+fn a_nested_table_grows_its_cell_in_a_grid_shorter_than_its_cells() {
+    let cell = |inner: &str| format!(r#"<w:tc><w:tcPr><w:tcW w:w="1500" w:type="dxa"/></w:tcPr>{inner}<w:p><w:r><w:t>x</w:t></w:r></w:p></w:tc>"#);
+    let nested = r#"<w:tbl><w:tblPr><w:tblW w:w="900" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="900"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="900" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>y</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#;
+    let mut e = opened(&format!(
+        r#"<w:p><w:r><w:t>Before</w:t></w:r></w:p><w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr><w:tblGrid><w:gridCol w:w="1500"/></w:tblGrid><w:tr>{}{}{}</w:tr></w:tbl><w:p><w:r><w:t>After</w:t></w:r></w:p>"#,
+        cell(""),
+        cell(""),
+        cell(nested)
+    ));
+    let geo = e.page_geometries().into_iter().find(|(p, _)| *p == 0).map(|(_, g)| g).expect("page 0");
+    let inner = geo.rows.iter().filter(|r| !r.repeat).min_by(|a, b| (a.rect[2] - a.rect[0]).total_cmp(&(b.rect[2] - b.rect[0]))).expect("a row");
+    let (table, from) = (inner.table, (inner.rect[2] + 2.25, inner.rect[3] + 2.25));
+    // The caret in the nested table shows its handle.
+    click(&mut e, (inner.rect[0] + inner.rect[2]) / 2.0, (inner.rect[1] + inner.rect[3]) / 2.0);
+    let was: f64 = grid(&e, table).iter().sum();
+    drag(&mut e, from, (60.0, 0.0), NONE, true);
+    let now: f64 = grid(&e, table).iter().sum();
+    assert!(now > was + 30.0, "the nested table grew: {was} → {now}");
+    assert_eq!(first_table(&e).grid.len(), 3, "the outer grid has a column for each cell");
+}

@@ -201,6 +201,59 @@ impl Shape {
         }
     }
 
+    /// A new picture of image `image`, `w` by `h`, stretched over its box.
+    pub fn picture(image: usize, w: Emu, h: Emu) -> Shape {
+        let blip = paint::BlipFill {
+            image: Some(image),
+            src: [units::Pct(0); 4],
+            mode: paint::BlipMode::Stretch([units::Pct(0); 4]),
+            adjust: Vec::new(),
+            rot_with_shape: true,
+        };
+        Shape {
+            nv: NonVisual { name: "Picture".into(), lock_aspect: true, ..NonVisual::default() },
+            xfrm: Xfrm { ext: [w, h], ..Xfrm::default() },
+            kind: ShapeKind::Pic(Box::new(PicShape {
+                geom: Geometry::Preset { preset: geom::Preset::Rect, adj: Vec::new() },
+                blip,
+                line: None,
+                effects: None,
+                kept_3d: false,
+            })),
+            spans: Spans::default(),
+        }
+    }
+
+    /// Moves every image index in the shape tree (blips, blip fills, line fills) up by `base`.
+    pub fn rebase_images(&mut self, base: usize) {
+        fn blip(b: &mut BlipFill, base: usize) {
+            b.image = b.image.map(|k| k + base);
+        }
+        fn fill(f: Option<&mut Fill>, base: usize) {
+            if let Some(Fill::Blip(b)) = f {
+                blip(b, base);
+            }
+        }
+        fn line(l: Option<&mut Line>, base: usize) {
+            fill(l.and_then(|l| l.fill.as_mut()), base);
+        }
+        match &mut self.kind {
+            ShapeKind::Sp(s) => {
+                fill(s.fill.as_mut(), base);
+                line(s.line.as_mut(), base);
+            }
+            ShapeKind::Pic(p) => {
+                blip(&mut p.blip, base);
+                line(p.line.as_mut(), base);
+            }
+            ShapeKind::Group(g) => {
+                fill(g.fill.as_mut(), base);
+                g.children.iter_mut().for_each(|c| c.rebase_images(base));
+            }
+            ShapeKind::Raw(_) => {}
+        }
+    }
+
     pub fn sp(&self) -> Option<&SpShape> {
         match &self.kind {
             ShapeKind::Sp(s) => Some(s),
@@ -346,7 +399,9 @@ impl GroupShape {
         ([px - w / 2.0, py - h / 2.0, px + w / 2.0, py + h / 2.0], r, c.xfrm.flip_h != flip_h, c.xfrm.flip_v != flip_v)
     }
 
-    pub fn fit_children(&mut self, xfrm: &mut Xfrm) -> [i64; 4] {
+    /// Grows the child box to take in every child, or with `tight` fits it to them, and `xfrm` with it: how far each
+    /// edge moved out (left, top, right, bottom).
+    pub fn fit_children(&mut self, xfrm: &mut Xfrm, tight: bool) -> [i64; 4] {
         let (mut lo, mut hi) = ([i64::MAX; 2], [i64::MIN; 2]);
         for c in &self.children {
             for a in 0..2 {
@@ -360,7 +415,7 @@ impl GroupShape {
         }
         for a in 0..2 {
             let (o, e) = (self.child_off[a].0, self.child_ext[a].0);
-            let (no, ne) = (lo[a].min(o), hi[a].max(o + e));
+            let (no, ne) = if tight { (lo[a], hi[a]) } else { (lo[a].min(o), hi[a].max(o + e)) };
             if (no, ne) == (o, o + e) {
                 continue;
             }

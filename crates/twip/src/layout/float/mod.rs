@@ -321,7 +321,7 @@ pub fn avoid(f: &mut Placed, placed: &[Placed], (lo, hi): (f64, f64), (top, bott
 }
 
 pub use fit::{intervals, next_edge, steps, strip, text_intervals};
-pub use position::{h_pos, page_clamp, sized, v_pos};
+pub use position::{h_offset_at, h_pos, page_clamp, sized, v_offset_at, v_pos};
 
 /// A floating table's distances from the text: none above or below one placed in the flow.
 pub fn table_dist(fp: &crate::docx::props::TablePos, in_flow: bool) -> [f64; 4] {

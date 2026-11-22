@@ -3651,3 +3651,86 @@ fn document_defaults_take_the_font_sizes_word_does() {
     let r = s.run(Command::SetDocumentDefaults(DocumentDefaults { size: Some(Points(1e30)), ..DocumentDefaults::default() }));
     assert_eq!(r.map_err(|e| e.code).err(), Some(ErrorCode::InvalidArgument));
 }
+
+/// A session showing one selected floating square, its viewport sized.
+fn selected_float(engine: &mut Engine) -> &mut crate::api::session::Session {
+    use crate::api::input::{Modifiers, Point, PointerButton, PointerKind};
+    use crate::layout::tests::shapes::{anchor, bytes, sp};
+    let shape = sp(0, 0, 100, 100, "rect", "", "0000FF");
+    let body = format!("<w:p><w:r><w:t>Text</w:t></w:r>{}</w:p>", anchor(200, 300, 100, 100, 1, false, 1, &shape));
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    s.open(&bytes(&body).expect("a package")).expect("opens");
+    s.host().attach(|_| {});
+    s.host().set_size(2000.0, 4000.0, 1.0);
+    let k = s.presentation.zoom() * 96.0 / 72.0;
+    let floats = crate::editing::inspect::inspect(&mut s.editor, "geometry", true)["geometry"]["floats"].as_array().cloned().unwrap_or_default();
+    let r: Vec<f64> = floats[0]["rect"].as_array().expect("a rect").iter().filter_map(serde_json::Value::as_f64).collect();
+    let at = Point { x: (r[0] + r[2]) / 2.0 * k, y: (r[1] + r[3]) / 2.0 * k };
+    s.pointer(PointerKind::Down, at, PointerButton::Primary, 1, Modifiers::default());
+    s.pointer(PointerKind::Up, at, PointerButton::Primary, 0, Modifiers::default());
+    s
+}
+
+#[test]
+fn a_position_percent_is_range_checked() {
+    use crate::api::command::ObjectPosition;
+    use crate::api::value::{HorizontalPosition, HorizontalReference, ObjectHorizontalAlignment};
+    let mut engine = Engine::new(FontLibrary::system());
+    let s = selected_float(&mut engine);
+    let position = |percent: f64, align: Option<ObjectHorizontalAlignment>| {
+        Command::SetObjectPosition(ObjectPosition {
+            horizontal: Some(HorizontalPosition { relative_to: HorizontalReference::Margin, align, offset: None, percent: Some(percent) }),
+            ..ObjectPosition::default()
+        })
+    };
+    for (c, why) in [
+        (position(1e300, None), "huge"),
+        (position(f64::NAN, None), "NaN"),
+        (position(2000.0, None), "past 1000"),
+        (position(10.0, Some(ObjectHorizontalAlignment::Center)), "align and percent"),
+    ] {
+        assert_eq!(s.run(c).err().map(|e| e.code), Some(ErrorCode::InvalidArgument), "{why}");
+    }
+    assert!(s.run(position(-50.0, None)).is_ok(), "in range");
+}
+
+#[test]
+fn a_relative_size_percent_is_range_checked() {
+    use crate::api::command::{ObjectSize, RelativeSize, RelativeSizeReference};
+    use crate::api::value::NoneOr;
+    let mut engine = Engine::new(FontLibrary::system());
+    let s = selected_float(&mut engine);
+    let size = |percent: f64| {
+        Command::SetObjectSize(ObjectSize {
+            relative_width: Some(NoneOr::Value(RelativeSize { percent, relative_to: RelativeSizeReference::default() })),
+            ..Default::default()
+        })
+    };
+    for (p, why) in [(1e300, "huge"), (0.0, "zero"), (f64::NAN, "NaN"), (2000.0, "past 1000")] {
+        assert_eq!(s.run(size(p)).err().map(|e| e.code), Some(ErrorCode::InvalidArgument), "{why}");
+    }
+    assert!(s.run(size(40.0)).is_ok(), "in range");
+}
+
+#[test]
+fn page_down_moves_one_screen_of_the_viewport() {
+    use crate::api::input::{Key, Modifiers};
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-LONG-50.docx");
+    let mut engine = Engine::new(FontLibrary::system());
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    s.open(&std::fs::read(path).expect("the fixture")).expect("opens");
+    s.host().attach(|_| {});
+    s.host().set_size(800.0, 600.0, 1.0);
+    s.run(Command::SetZoom(crate::api::command::Zoom::Percent(200.0))).expect("zooms");
+    let caret_y = |s: &mut crate::api::session::Session| {
+        let c = s.editor.caret_view().expect("a caret");
+        s.editor.stack().to_doc(c.page, c.x, c.top).expect("on the stack").1
+    };
+    let before = caret_y(s);
+    s.key(Key::PageDown, Modifiers::default());
+    let moved = caret_y(s) - before;
+    // 600 CSS px at 200% is 225 pt.
+    assert!((200.0..250.0).contains(&moved), "PageDown moved {moved} pt");
+}

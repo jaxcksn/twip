@@ -96,7 +96,9 @@ impl Editor {
                 if n.text_box.is_some() {
                     return Outcome::unavailable("not a picture");
                 }
-                let mut e = PicEdit { w: &mut n.w, h: &mut n.h, image: &mut n.image, shape: n.shape.as_deref_mut() };
+                // A quarter-turned float's box is the picture's own width and height swapped.
+                let (w, h) = if n.rot_swap { (&mut n.h, &mut n.w) } else { (&mut n.w, &mut n.h) };
+                let mut e = PicEdit { w, h, image: &mut n.image, shape: n.shape.as_deref_mut() };
                 if !edit(&mut e) {
                     return Outcome::Unchanged("already so");
                 }
@@ -179,11 +181,10 @@ impl Editor {
         let reference = a.relative_to.unwrap_or(if boxes.len() > 1 { R::SelectedObjects } else { R::Margin });
         let Some(geo) = self.pages.page(page, &self.index) else { return Outcome::Unchanged("not laid out") };
         let (pw, ph) = (geo.w, geo.h);
-        let section = self.snapshot().info().get(page).map_or(0, |i| i.section);
         let area = match reference {
             R::Page => [0.0, 0.0, pw, ph],
-            R::Margin => match self.doc.sections.get(section) {
-                Some(s) => [s.left, s.top, pw - s.right, ph - s.bottom],
+            R::Margin => match self.float_frames(page, None, false) {
+                Some((fr, _)) => [fr.margin[0], fr.margin[2], pw - fr.margin[1], ph - fr.margin[3]],
                 None => [0.0, 0.0, pw, ph],
             },
             R::SelectedObjects => boxes

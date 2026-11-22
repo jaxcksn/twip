@@ -128,7 +128,7 @@ pub(super) struct ShapeInsert {
     shift: bool,
 }
 
-fn rotate_to(n: &mut crate::docx::Float, child: &[u16], deg: f64, compat: i64) -> bool {
+pub(super) fn rotate_to(n: &mut crate::docx::Float, child: &[u16], deg: f64, compat: i64) -> bool {
     let deg = deg.rem_euclid(360.0);
     let Some(s) = n.shape.as_deref_mut().and_then(|s| s.at_mut(child)) else { return false };
     s.xfrm.rot = crate::drawing::units::Angle((deg * 60000.0).round() as i32 % crate::drawing::units::Angle::FULL);
@@ -172,11 +172,16 @@ fn move_child(n: &mut crate::docx::Float, path: &[u16], root: [f64; 4], by: [f64
     for p in n.parts.iter_mut().filter(|p| p.path.starts_with(path)) {
         p.rect = [p.rect[0] + rx, p.rect[1] + ry, p.rect[2] + rx, p.rect[3] + ry];
     }
+    refit(n, path, false)
+}
+
+/// Fits each group above `path` to its children, outermost last: grown to take them in, or `tight` about them.
+pub(super) fn refit(n: &mut crate::docx::Float, path: &[u16], tight: bool) -> Option<()> {
     for k in (0..path.len()).rev() {
         let s = n.shape.as_deref_mut()?.at_mut(&path[..k])?;
         let crate::drawing::ShapeKind::Group(g) = &mut s.kind else { return None };
         let off = s.xfrm.off;
-        let grow = g.fit_children(&mut s.xfrm);
+        let grow = g.fit_children(&mut s.xfrm, tight);
         if k == 0 {
             s.xfrm.off = off;
             let pt = |e: i64| e as f64 / 12700.0;
@@ -414,11 +419,13 @@ impl Editor {
         if matches!(caret.story, super::position::StoryId::TextBox(_)) {
             return Outcome::Unchanged("shapes don't go in text boxes");
         }
+        if matches!(caret.story, super::position::StoryId::Footnote(_) | super::position::StoryId::Endnote(_)) {
+            return Outcome::unavailable("floating objects don't go in notes");
+        }
         let (para, rect) = match at {
             Some((page, r)) => match self.anchor_at(page, caret_para, r[1]) {
                 Some((p, top)) => {
-                    let section = self.snapshot().info().get(page).map_or(0, |i| i.section);
-                    let left = self.doc.sections.get(section).map_or(72.0, |s| s.left);
+                    let left = self.float_frames(page, Some(p), true).map_or(72.0, |(fr, o)| o[0] + fr.column.0);
                     (p, [r[0] - left, r[1] - top, r[2] - r[0], r[3] - r[1]])
                 }
                 None => return Outcome::Unchanged("no paragraph there"),
@@ -459,7 +466,7 @@ impl Editor {
             allow_overlap: true,
             layout_in_cell: true,
             order: usize::MAX / 2,
-            z: u32::MAX,
+            z: self.front_z(),
             src: None,
             locked: false,
             frame_src: None,
@@ -733,21 +740,7 @@ impl Editor {
             }
             _ => {}
         }
-        let mut all: Vec<(u32, FloatId)> = Vec::new();
-        fn walk(blocks: &[crate::docx::Block], out: &mut Vec<(u32, FloatId)>) {
-            for b in blocks {
-                match b {
-                    crate::docx::Block::Para(p) => out.extend(p.inlines.iter().filter_map(|i| match i {
-                        crate::docx::Inline::Float(fl, _) => Some((fl.z, FloatId(fl.id))),
-                        _ => None,
-                    })),
-                    crate::docx::Block::Table(t) => t.rows.iter().flat_map(|r| &r.cells).for_each(|c| walk(&c.blocks, out)),
-                }
-            }
-        }
-        self.doc.sections.iter().for_each(|s| walk(&s.blocks, &mut all));
-        self.doc.stories.values().for_each(|b| walk(b, &mut all));
-        all.sort();
+        let all = self.stacking();
         let Some(i) = all.iter().position(|(_, g)| *g == f) else { return super::commands::Outcome::Unchanged("no float") };
         let z = all[i].0;
         let (max, min) = (all.last().map_or(z, |a| a.0), all.first().map_or(z, |a| a.0));
@@ -776,6 +769,34 @@ impl Editor {
     }
 }
 
+// Stacking order
+impl Editor {
+    /// Every float's z and id, back to front.
+    fn stacking(&self) -> Vec<(u32, FloatId)> {
+        fn walk(blocks: &[crate::docx::Block], out: &mut Vec<(u32, FloatId)>) {
+            for b in blocks {
+                match b {
+                    crate::docx::Block::Para(p) => out.extend(p.inlines.iter().filter_map(|i| match i {
+                        crate::docx::Inline::Float(fl, _) => Some((fl.z, FloatId(fl.id))),
+                        _ => None,
+                    })),
+                    crate::docx::Block::Table(t) => t.rows.iter().flat_map(|r| &r.cells).for_each(|c| walk(&c.blocks, out)),
+                }
+            }
+        }
+        let mut all = Vec::new();
+        self.doc.sections.iter().for_each(|s| walk(&s.blocks, &mut all));
+        self.doc.stories.values().for_each(|b| walk(b, &mut all));
+        all.sort();
+        all
+    }
+
+    /// The z a new float takes: in front of every other.
+    pub(super) fn front_z(&self) -> u32 {
+        self.stacking().last().map_or(0, |a| a.0.saturating_add(1))
+    }
+}
+
 // Group and ungroup
 impl Editor {
     fn replace_floats(
@@ -798,8 +819,12 @@ impl Editor {
         };
         self.begin_batch(Some(label.into()));
         let mut tx = self.begin(label);
-        let mut paras: Vec<crate::layout::ParaId> = ids.iter().filter_map(|f| self.index.float_anchor(*f)).collect();
-        paras.dedup();
+        let mut paras: Vec<crate::layout::ParaId> = Vec::with_capacity(ids.len());
+        for p in ids.iter().filter_map(|f| self.index.float_anchor(*f)) {
+            if !paras.contains(&p) {
+                paras.push(p);
+            }
+        }
         for (k, para) in paras.iter().enumerate() {
             let Some(p) = self.index.para(&self.doc, *para) else { continue };
             let mut inlines: Vec<Inline> =
@@ -920,26 +945,26 @@ impl Editor {
         let Some((_, r)) = self.float_box(g, fonts) else { return Outcome::Unchanged("not laid out") };
         let compat = self.doc.settings.compat_mode;
         let emu = |v: f64| Emu((v * 12700.0).round() as i64);
-        let map = |v: i64, axis: usize| {
-            let ext = gs.child_ext[axis].0.max(1) as f64;
-            let (lo, size) = if axis == 0 { (r[0], r[2] - r[0]) } else { (r[1], r[3] - r[1]) };
-            lo + (v - gs.child_off[axis].0) as f64 / ext * size
-        };
+        let Some(tree) = m.shape.as_deref() else { return Outcome::unavailable("not a group") };
+        // The group's own box, unswapped about its laid-out centre
+        let (cx, cy) = ((r[0] + r[2]) / 2.0, (r[1] + r[3]) / 2.0);
+        let (gw, gh) = if m.rot_swap { (r[3] - r[1], r[2] - r[0]) } else { (r[2] - r[0], r[3] - r[1]) };
+        let own = [cx - gw / 2.0, cy - gh / 2.0, cx + gw / 2.0, cy + gh / 2.0];
+        let [sx, sy] = gs.scale(own);
         let mut new = Vec::new();
         for (k, c) in gs.children.iter().enumerate() {
-            let rect = [
-                map(c.xfrm.off[0].0, 0),
-                map(c.xfrm.off[1].0, 1),
-                map(c.xfrm.off[0].0 + c.xfrm.ext[0].0, 0),
-                map(c.xfrm.off[1].0 + c.xfrm.ext[1].0, 1),
-            ];
+            let k = k as u16;
+            // Where the child is drawn: turned and mirrored with the group
+            let Some((rect, deg, flip_h, flip_v)) = tree.frame_at(own, &[k]) else { continue };
             let (w, h) = (rect[2] - rect[0], rect[3] - rect[1]);
             let mut s = c.clone();
             s.xfrm.off = [Emu(0), Emu(0)];
             s.xfrm.ext = [emu(w), emu(h)];
-            let k = k as u16;
+            (s.xfrm.flip_h, s.xfrm.flip_v) = (flip_h, flip_v);
             let text_box = m.parts.iter().find(|p| p.path == [k]).and_then(|p| p.text_box.clone());
-            let (dx, dy) = (rect[0] - r[0], rect[1] - r[1]);
+            // Its parts, from the group's unturned box to its own
+            let (dx, dy) =
+                ((c.xfrm.off[0] - gs.child_off[0]).to_pt() * sx + own[0] - r[0], (c.xfrm.off[1] - gs.child_off[1]).to_pt() * sy + own[1] - r[1]);
             let parts = m
                 .parts
                 .iter()
@@ -950,7 +975,6 @@ impl Editor {
                     ..p.clone()
                 })
                 .collect();
-            let deg = s.xfrm.rot.degrees();
             let mut n = crate::docx::Float {
                 id: crate::docx::next_para_id(),
                 w,

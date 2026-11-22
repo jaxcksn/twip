@@ -2695,3 +2695,29 @@ fn insert_and_save_take_a_wmf() {
     assert!(types.contains("Extension=\"wmf\"") && types.contains("image/x-wmf"), "{types}");
     assert!(crate::docx::read(&saved).expect("reopens").images.iter().any(|i| i == &data));
 }
+
+#[test]
+fn dropped_text_is_selected_from_the_insertion_point() {
+    use super::super::input::PointerKind;
+    let body = "<w:p><w:r><w:t>word </w:t></w:r></w:p><w:p><w:r><w:t>e\u{301}x</w:t></w:r></w:p>";
+    let mut e = super::super::Editor::open(&super::blank_body(body), fonts()).expect("opens");
+    e.complete(fonts());
+    let at = |e: &mut super::super::Editor, para: usize, u: u32, dx: f64| {
+        let id = super::para_id(e, para);
+        let g = e.page_geometries().into_iter().find(|(p, _)| *p == 0).map(|(_, g)| g).expect("page 0");
+        let l = g.lines.iter().find(|l| l.shows(id)).expect("a line");
+        let x = l.stops.iter().find(|s| s.para == id && s.unit == Unit(u)).expect("a stop").x;
+        e.stack().to_doc(0, x + dx, (l.top + l.bottom) / 2.0).expect("on the stack")
+    };
+    let first = super::para_id(&e, 0);
+    e.select_range(first, Unit(0), Unit(4), fonts());
+    // Onto the accent: between the base letter and its combining mark.
+    let (from, to) = (at(&mut e, 0, 2, 1.0), at(&mut e, 1, 1, 0.0));
+    let m = super::super::keymap::Mods::default();
+    e.pointer_input(PointerKind::Down, from.0, from.1, 1, m, fonts());
+    e.pointer_input(PointerKind::Move, to.0, to.1, 0, m, fonts());
+    e.pointer_input(PointerKind::Up, to.0, to.1, 0, m, fonts());
+    assert_eq!(texts(&e), ["", "word e\u{301}x"]);
+    let (a, b) = e.selection().ordered(e.index()).expect("a range");
+    assert_eq!((a.para_offset().map(|p| p.1), b.para_offset().map(|p| p.1)), (Some(Unit(0)), Some(Unit(4))), "{:?}", e.selection());
+}

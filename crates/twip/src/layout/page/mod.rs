@@ -31,13 +31,31 @@ pub struct PassInfo {
 }
 
 pub fn margins(s: &Section, ctx: &LayoutCtx, page_number: i64) -> (f64, f64, f64) {
+    let env = ctx.env;
+    let facing = Facing { mirror: env.mirror_margins, gutter_at_top: env.gutter_at_top, book_fold: env.book_fold };
+    margins_in(s, env.text.review.view, facing, page_number)
+}
+
+/// The document settings that place a page's gutter.
+#[derive(Clone, Copy, Debug)]
+pub struct Facing {
+    /// Mirrored margins: an even page swaps its left and right.
+    pub mirror: bool,
+    /// The gutter is above the top margin.
+    pub gutter_at_top: bool,
+    /// Book fold, reversed when `true`.
+    pub book_fold: Option<bool>,
+}
+
+/// Page `page_number`'s left, right and top margins in section `s` as `view` shows it, its gutter added.
+pub fn margins_in(s: &Section, view: MarkupView, facing: Facing, page_number: i64) -> (f64, f64, f64) {
     // A vertical section's gutter is on the right (the left on a mirrored even page), and so is a horizontal one's
     // with `w:rtlGutter`.
     let vertical = super::vertical::of_section(s.text_flow).is_some() || s.rtl_gutter;
-    let s = s.section_in(ctx.env.text.review.view);
+    let s = s.section_in(view);
     let (mut left, mut right, mut top) = (s.left, s.right, s.top);
     let odd = page_number % 2 == 1;
-    if let Some(rev) = ctx.env.book_fold {
+    if let Some(rev) = facing.book_fold {
         // Book fold: portrait pages drop the gutter; landscape ones mirror with it.
         if s.page_w > s.page_h {
             if odd != rev {
@@ -46,9 +64,9 @@ pub fn margins(s: &Section, ctx: &LayoutCtx, page_number: i64) -> (f64, f64, f64
                 right += s.gutter;
             }
         }
-    } else if ctx.env.gutter_at_top {
+    } else if facing.gutter_at_top {
         top += s.gutter;
-    } else if ctx.env.mirror_margins {
+    } else if facing.mirror {
         if odd {
             *(if vertical { &mut right } else { &mut left }) += s.gutter;
         } else {

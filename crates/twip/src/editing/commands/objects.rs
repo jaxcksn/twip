@@ -28,7 +28,9 @@ impl Editor {
         if s.relative_width.is_some() || s.relative_height.is_some() {
             return self.set_relative_size(w, h, [s.relative_width, s.relative_height], fonts);
         }
-        self.object_cmd(ObjectCmd::Size(w, h), fonts)
+        let given = [s.width.is_some(), s.height.is_some()];
+        let set = if aspect { [given[0] || given[1]; 2] } else { given };
+        self.object_cmd(ObjectCmd::Size(w, h, set), fonts)
     }
 
     /// A floating object's size, and its width and height as shares of boxes on the page.
