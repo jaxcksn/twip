@@ -1,13 +1,12 @@
 # CodSpeed: the benchmarks of crates/twip/benches and crates/twip-graphics/benches that aren't marked
 # `ignore = cfg!(codspeed_build)`, measured by CPU simulation (instruction and cache counts, which don't drift on a shared
-# runner), with a report on each pull request against main. Locally: `cargo codspeed build -p twip -p twip-graphics`,
-# then `cargo codspeed run` runs each once.
+# runner): measurements off a developer's machine, not a pull request gate. Each Rust change on main is measured; any
+# other branch by hand (Actions, CodSpeed, Run workflow). Locally: `cargo codspeed build -p twip -p twip-graphics`, then
+# `cargo codspeed run` runs each once.
 name: CodSpeed
 
-# Rust changes only, as the Sonar workflow.
+# Rust changes on main only, as the Sonar workflow.
 on:
-  pull_request:
-    paths: [crates/**, Cargo.toml, Cargo.lock, rust-toolchain.toml, .github/workflows/codspeed.yml]
   push:
     branches: [main]
     paths: [crates/**, Cargo.toml, Cargo.lock, rust-toolchain.toml, .github/workflows/codspeed.yml]

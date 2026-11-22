@@ -96,12 +96,12 @@ change touches (`cargo check`, `cargo nextest run -p twip <filter>`). Run `moon 
 benchmarks last, after everything else passes: `cargo bench -p twip [-- <filter>]` (Divan, `crates/twip/benches`).
 Compare their numbers with `main`'s on the same machine. Benchmarks lay out with the test font kit, as the tests do.
 
-CodSpeed (`.github/workflows/codspeed.yml`) runs a set of them on every Rust pull request and reports the change
-against `main`: the user-facing timings (opening, whole-document layout, reflow, keystrokes, frames, a table border
-drag, PDF conversion) and the renderer's main paths. A benchmark outside that set (a diagnostic, a niche feature, a
-thread-scaling or GPU one, which CPU simulation can't measure) is marked `ignore = cfg!(codspeed_build)`. Locally:
-`cargo install cargo-codspeed --version 6.1.0 --locked`, `cargo codspeed build -p twip -p twip-graphics`, then
-`cargo codspeed run` runs each once.
+CodSpeed (`.github/workflows/codspeed.yml`) measures a set of them by CPU simulation, for numbers that don't depend on
+your machine: each Rust change on `main`, and any branch by hand (Actions, CodSpeed, Run workflow). The set is the
+user-facing timings (opening, whole-document layout, reflow, keystrokes, frames, a table border drag, PDF conversion)
+and the renderer's main paths. A benchmark outside that set (a diagnostic, a niche feature, a thread-scaling or GPU one,
+which CPU simulation can't measure) is marked `ignore = cfg!(codspeed_build)`. Locally: `cargo install cargo-codspeed
+--version 6.1.0 --locked`, `cargo codspeed build -p twip -p twip-graphics`, then `cargo codspeed run` runs each once.
 
 The tasks: `root:hygiene` (planning ids, the CI plan), `root:format`, `root:lint` (clippy), `root:contract-scripts`;
 `twip:test` (the unit tests, including the wire fixture check, and the rust contract runner), `twip:fidelity-schema`
