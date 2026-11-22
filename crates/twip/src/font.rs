@@ -682,6 +682,11 @@ impl Fonts {
         self.set_settings(|s| s.character_fallback = families);
     }
 
+    /// The aliases, replacing earlier ones: each applies when its family isn't in the catalog.
+    pub fn set_aliases(&mut self, aliases: Vec<Alias>) {
+        self.set_settings(|s| s.aliases = aliases);
+    }
+
     /// Changes the settings, and drops everything resolved with the old ones.
     pub(crate) fn set_settings(&mut self, f: impl FnOnce(&mut FontSettings)) {
         f(&mut Arc::make_mut(&mut self.catalog).settings);

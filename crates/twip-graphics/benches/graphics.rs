@@ -163,7 +163,7 @@ fn glyph_mask_miss(b: Bencher) {
 }
 
 /// A line of 80 cached glyphs blitted at 11 pt, dpr 1. Budget: a few microseconds.
-#[divan::bench]
+#[divan::bench(ignore = cfg!(codspeed_build))]
 fn glyph_mask_hit(b: Bencher) {
     let text = Text::new();
     let glyphs = text.set(0, 11.0, 4.0, 600.0);
@@ -229,12 +229,12 @@ fn hairlines(b: Bencher, dpr: f64) {
     });
 }
 
-#[divan::bench]
+#[divan::bench(ignore = cfg!(codspeed_build))]
 fn hairlines_dpr1(b: Bencher) {
     hairlines(b, 1.0);
 }
 
-#[divan::bench]
+#[divan::bench(ignore = cfg!(codspeed_build))]
 fn hairlines_dpr2(b: Bencher) {
     hairlines(b, 2.0);
 }
@@ -253,7 +253,7 @@ fn image_downscaled(b: Bencher) {
 
 /// A text selection's highlight: a 1000 × 400 rect multiplied over the page, as the editor draws it on a light page.
 /// Budget: well inside a frame.
-#[divan::bench]
+#[divan::bench(ignore = cfg!(codspeed_build))]
 fn selection_multiply(b: Bencher) {
     use twip_graphics::paint::BlendMode;
     let mut rec = Recorder::new();
@@ -262,7 +262,7 @@ fn selection_multiply(b: Bencher) {
 }
 
 /// A 400 × 300 rect filled with a linear gradient. Budget: well inside a frame.
-#[divan::bench]
+#[divan::bench(ignore = cfg!(codspeed_build))]
 fn gradient_fill(b: Bencher) {
     use twip_graphics::paint::{Brush, Extend, Stop};
     let stops = [Stop { offset: 0.0, color: Color::rgb(0x44_72C4) }, Stop { offset: 1.0, color: Color::rgb(0xED_7D31) }];
@@ -306,7 +306,7 @@ fn blurred_layer(b: Bencher) {
 
 /// Recording a whole page into a reused recorder. Budget: well under a millisecond; a page is recorded only when its
 /// layout changes.
-#[divan::bench]
+#[divan::bench(ignore = cfg!(codspeed_build))]
 fn record_page(b: Bencher) {
     let text = Text::new();
     let lines = lines(&text);
@@ -317,7 +317,7 @@ fn record_page(b: Bencher) {
 
 /// Recording one line, what a keystroke re-records. Budget: a few microseconds (a keystroke's whole re-record and page
 /// re-assembly is at most 0.2 ms).
-#[divan::bench]
+#[divan::bench(ignore = cfg!(codspeed_build))]
 fn record_line(b: Bencher) {
     let text = Text::new();
     let glyphs = text.set(0, 11.0, 72.0, 540.0);
@@ -456,7 +456,7 @@ mod gpu {
 
     /// Scrolling two kept pages by whole pixels: no page is prepared again, each frame only places them. Budget:
     /// at most 0.5 ms of the renderer's CPU time.
-    #[divan::bench]
+    #[divan::bench(ignore = cfg!(codspeed_build))]
     fn gpu_prepare_scroll(b: Bencher) {
         let Some(ctx) = context() else { return };
         let text = Text::new();
@@ -471,7 +471,7 @@ mod gpu {
 
     /// A keystroke's frame: the page recorded again with one new line, its other lines kept. Budget: well under a
     /// millisecond (the line's preparation and the page's walk).
-    #[divan::bench]
+    #[divan::bench(ignore = cfg!(codspeed_build))]
     fn gpu_prepare_edit_one_line(b: Bencher) {
         let Some(ctx) = context() else { return };
         let text = Text::new();
@@ -492,7 +492,7 @@ mod gpu {
 
     /// A viewport-sized layer eroded (radius 30) then blurred (sigma 100), timed until the GPU finishes: what wide
     /// filters cost the GPU, which reads a few pixels per pixel for them. Budget: well inside a frame.
-    #[divan::bench]
+    #[divan::bench(ignore = cfg!(codspeed_build))]
     fn gpu_wide_filters(b: Bencher) {
         use twip_graphics::scene::{Filter, Layer};
         let Some(ctx) = context() else { return };
@@ -526,7 +526,7 @@ mod gpu {
 
     /// For comparison: the page prepared from nothing each frame (a new picture each time, its lines too). Budget:
     /// none; it is what keeping pictures saves.
-    #[divan::bench]
+    #[divan::bench(ignore = cfg!(codspeed_build))]
     fn gpu_prepare_page(b: Bencher) {
         let Some(ctx) = context() else { return };
         let text = Text::new();

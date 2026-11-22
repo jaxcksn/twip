@@ -16,16 +16,16 @@ fn settled(mut e: Editor, fonts: &Fonts) -> Editor {
     e
 }
 
-#[divan::bench(sample_count = 10)]
+#[divan::bench(ignore = cfg!(codspeed_build), sample_count = 10)]
 fn open(bencher: Bencher) {
-    let (fonts, bytes) = (Fonts::system(), super::fixture(DOC));
+    let (fonts, bytes) = (crate::fonts(), super::fixture(DOC));
     bencher.bench_local(|| settled(Editor::open(&bytes, &fonts).expect("the fixture opens"), &fonts));
 }
 
 /// A switch from All markup to `view`.
-#[divan::bench(args = [MarkupView::NoMarkup, MarkupView::Original], sample_count = 10, sample_size = 1)]
+#[divan::bench(ignore = cfg!(codspeed_build), args = [MarkupView::NoMarkup, MarkupView::Original], sample_count = 10, sample_size = 1)]
 fn view(bencher: Bencher, view: MarkupView) {
-    let fonts = Fonts::system();
+    let fonts = crate::fonts();
     let e = RefCell::new(settled(Editor::open(&super::fixture(DOC), &fonts).expect("the fixture opens"), &fonts));
     bencher
         .with_inputs(|| {
@@ -41,9 +41,9 @@ fn view(bencher: Bencher, view: MarkupView) {
 }
 
 /// Accept all (`true`) or reject all, on a freshly opened document each sample.
-#[divan::bench(args = [true, false], sample_count = 10, sample_size = 1)]
+#[divan::bench(ignore = cfg!(codspeed_build), args = [true, false], sample_count = 10, sample_size = 1)]
 fn resolve_all(bencher: Bencher, accept: bool) {
-    let (fonts, bytes) = (Fonts::system(), super::fixture(DOC));
+    let (fonts, bytes) = (crate::fonts(), super::fixture(DOC));
     bencher.with_inputs(|| settled(Editor::open(&bytes, &fonts).expect("the fixture opens"), &fonts)).bench_local_values(|mut e| {
         let all = twip::api::command::AuthorFilter::default();
         e.execute(if accept { Command::AcceptAllRevisions(all) } else { Command::RejectAllRevisions(all) }, &fonts);

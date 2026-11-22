@@ -49,8 +49,8 @@ skrifa = "~0.49"
 font-test-data = "0.10"
 # The scalar level, so tests can check every kernel gives the same bytes without SIMD (test builds only).
 fearless_simd = { version = "1.2.0", features = ["force_support_fallback"] }
-# Benchmarks, as Twip's engine has them.
-divan = "0.1.21"
+# Benchmarks, as Twip's engine has them (through CodSpeed's Divan layer).
+divan = { package = "codspeed-divan-compat", version = "6.1.0" }
 # Reading and writing the golden images (tests/golden.rs).
 png = "0.18.1"
 # Renders the PDF writer's output back to pixels, to compare with the CPU backend's (tests/pdf.rs).
@@ -70,3 +70,5 @@ pdf = ["dep:pdf-writer", "dep:miniz_oxide"]
 
 [lints.rust]
 unsafe_code = "forbid"
+# `cargo codspeed` builds with `codspeed_build`: the benchmarks outside the CodSpeed set are ignored in it.
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(codspeed_build)"] }

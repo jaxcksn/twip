@@ -5,7 +5,6 @@ use std::cell::{Cell, RefCell};
 
 use divan::Bencher;
 use twip::api::engine::{Engine, SessionId, SessionOptions};
-use twip::api::fonts::FontLibrary;
 use twip::api::input::{Key, Modifiers};
 
 const W: u32 = 1000;
@@ -13,7 +12,7 @@ const H: u32 = 800;
 
 /// The engine (it owns the session) and the session, focused and fully laid out, its first frame drawn.
 fn session(pixels: &mut [u8]) -> (Engine, SessionId) {
-    let mut engine = Engine::new(FontLibrary::system());
+    let mut engine = Engine::new(crate::library());
     let id = engine.create_session(SessionOptions::default());
     let s = engine.session(id).expect("the session was just created");
     s.open(&super::fixture("big.docx")).expect("the fixture opens");
@@ -72,9 +71,24 @@ fn typed(bencher: Bencher) {
         .bench_local_values(|()| s.borrow_mut().host().frame_rgba(&mut pixels.borrow_mut(), W, H).expect("a frame"));
 }
 
+/// Keystroke to display: a character typed on the first page and the frame that shows it, timed together; background
+/// layout drained between samples, untimed. Budget: under 8.3 ms, one 120 Hz frame.
+#[divan::bench(sample_size = 1)]
+fn keystroke(bencher: Bencher) {
+    let mut pixels = vec![0u8; (W * H * 4) as usize];
+    let (mut engine, id) = session(&mut pixels);
+    let s = engine.session(id).expect("the session");
+    let (s, pixels) = (RefCell::new(s), RefCell::new(pixels));
+    bencher.with_inputs(|| while s.borrow_mut().host().idle() {}).bench_local_values(|()| {
+        let mut s = s.borrow_mut();
+        s.text("a");
+        s.host().frame_rgba(&mut pixels.borrow_mut(), W, H).expect("a frame")
+    });
+}
+
 /// A selection extended a line with Shift+Down (the state and events it makes), then the frame after it; the
 /// selection collapses back to the start every 60 lines.
-#[divan::bench(args = ["input", "frame"], sample_size = 1)]
+#[divan::bench(ignore = cfg!(codspeed_build), args = ["input", "frame"], sample_size = 1)]
 fn select_line(bencher: Bencher, part: &str) {
     let mut pixels = vec![0u8; (W * H * 4) as usize];
     let (mut engine, id) = session(&mut pixels);

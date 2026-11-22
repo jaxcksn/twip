@@ -7,7 +7,6 @@ use std::cell::RefCell;
 use divan::Bencher;
 use twip::api::command::{Command, MoveSelection, MoveUnit};
 use twip::api::engine::{Engine, SessionId, SessionOptions};
-use twip::api::fonts::FontLibrary;
 use twip::api::input::{Modifiers, Point, PointerButton, PointerKind};
 use twip::api::services::FindQuery;
 use twip::api::value::{Direction, Order};
@@ -29,7 +28,7 @@ enum Border {
 /// The session on `name`, laid out with a frame drawn, and the place (client px) of a border: the column border left
 /// of the cell `1.3 value` (its text's start less the 5.4 pt cell margin), or the bottom border of that cell's row.
 fn session(name: &str, border: Border, pixels: &mut [u8]) -> (Engine, SessionId, Point) {
-    let mut engine = Engine::new(FontLibrary::system());
+    let mut engine = Engine::new(crate::library());
     let id = engine.create_session(SessionOptions::default());
     let s = engine.session(id).expect("the session was just created");
     s.open(&super::fixture(name)).expect("the fixture opens");
@@ -80,10 +79,10 @@ fn moving(bencher: Bencher, name: &str, border: Border) {
 /// alternating 10 and 30 px from the press, with the frame that shows it; snapping is on (the default), so each move
 /// also snaps against the 99 other shapes' edges and centres, the margins and the grid, and draws the guides and
 /// readouts. Budget: 16 ms per frame.
-#[divan::bench(sample_size = 1)]
+#[divan::bench(ignore = cfg!(codspeed_build), sample_size = 1)]
 fn shape_live(bencher: Bencher) {
     let mut pixels = vec![0u8; (W * H * 4) as usize];
-    let mut engine = Engine::new(FontLibrary::system());
+    let mut engine = Engine::new(crate::library());
     let id = engine.create_session(SessionOptions::default());
     let s = engine.session(id).expect("the session was just created");
     s.open(&super::shapes_doc()).expect("the document opens");
@@ -119,14 +118,14 @@ fn column_border(bencher: Bencher, name: &str) {
 }
 
 /// A row border's pointer move with its frame. Budget: p95 at most 2 ms of engine time.
-#[divan::bench(args = DOCS, sample_size = 1)]
+#[divan::bench(ignore = cfg!(codspeed_build), args = DOCS, sample_size = 1)]
 fn row_border(bencher: Bencher, name: &str) {
     moving(bencher, name, Border::Row);
 }
 
 /// A column border dragged 20 px (untimed), then released: the resize committed and laid out through the visible
 /// pages, with the frame that shows it. Undone between samples. Budget: p95 at most 8.3 ms, one frame.
-#[divan::bench(args = DOCS, sample_size = 1)]
+#[divan::bench(ignore = cfg!(codspeed_build), args = DOCS, sample_size = 1)]
 fn release(bencher: Bencher, name: &str) {
     let mut pixels = vec![0u8; (W * H * 4) as usize];
     let (mut engine, id, at) = session(name, Border::Column, &mut pixels);

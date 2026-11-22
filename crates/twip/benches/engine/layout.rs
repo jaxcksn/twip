@@ -5,7 +5,6 @@ use std::cell::RefCell;
 
 use divan::Bencher;
 use twip::internal::docx::{Block, Inline};
-use twip::internal::font::Fonts;
 use twip::internal::layout::cache::LayoutCache;
 use twip::internal::layout::ids::Revision;
 use twip::internal::layout::{Change, DocumentLayout, Target, layout, layout_with};
@@ -20,13 +19,13 @@ fn read(name: &str) -> twip::internal::docx::Document {
 /// A whole document from scratch. Budget: at least 25% below `main` at 4131d3b on the documents both lay out.
 #[divan::bench(args = ["big.docx", "docx-feature-showcase.docx", "editor/FX-LONG-50.docx", "editor/FX-LONG-100.docx"], sample_count = 20)]
 fn full(bencher: Bencher, name: &str) {
-    let (fonts, doc) = (Fonts::system(), read(name));
+    let (fonts, doc) = (crate::fonts(), read(name));
     bencher.bench_local(|| layout(&doc, &fonts));
 }
 
-#[divan::bench(args = DOCS, sample_count = 20)]
+#[divan::bench(ignore = cfg!(codspeed_build), args = DOCS, sample_count = 20)]
 fn cached(bencher: Bencher, name: &str) {
-    let (fonts, doc) = (Fonts::system(), read(name));
+    let (fonts, doc) = (crate::fonts(), read(name));
     let mut cache = LayoutCache::new();
     layout_with(&doc, &fonts, &mut cache);
     bencher.bench_local(|| layout_with(&doc, &fonts, &mut cache));
@@ -46,7 +45,7 @@ fn first_text(b: &mut Block) -> Option<&mut String> {
 /// A character inserted in the middle paragraph (untimed), then laid out incrementally with the editor's hint.
 #[divan::bench(args = DOCS, sample_size = 1)]
 fn keystroke(bencher: Bencher, name: &str) {
-    let (fonts, doc) = (Fonts::system(), RefCell::new(read(name)));
+    let (fonts, doc) = (crate::fonts(), RefCell::new(read(name)));
     let mut dl = DocumentLayout::new();
     let mut rev = 1;
     dl.edit(Revision(rev), None);
@@ -74,7 +73,7 @@ fn keystroke(bencher: Bencher, name: &str) {
 /// the copy is removed again between samples, untimed. Budget: under a quarter of `full` on the same document.
 #[divan::bench(sample_size = 1)]
 fn reflow(bencher: Bencher) {
-    let (fonts, doc) = (Fonts::system(), RefCell::new(read(LONG)));
+    let (fonts, doc) = (crate::fonts(), RefCell::new(read(LONG)));
     let mut dl = DocumentLayout::new();
     let mut rev = 1;
     dl.edit(Revision(rev), None);
@@ -104,7 +103,7 @@ fn reflow(bencher: Bencher) {
 /// Budget: the showcase 150 ms and FX-LONG-100 200 ms, the browser's start-up share included.
 #[divan::bench(args = ["docx-feature-showcase.docx", "editor/FX-LONG-100.docx"], sample_count = 20)]
 fn first_page(bencher: Bencher, name: &str) {
-    let (fonts, bytes) = (Fonts::system(), super::fixture(name));
+    let (fonts, bytes) = (crate::fonts(), super::fixture(name));
     bencher.bench_local(|| {
         let doc = twip::internal::docx::read(&bytes).expect("the fixture reads");
         let mut dl = DocumentLayout::new();
