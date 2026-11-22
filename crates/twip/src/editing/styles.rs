@@ -71,7 +71,8 @@ const TBL_STYLE_PR: &[&str] = &["pPr", "rPr", "tblPr", "trPr", "tcPr"];
 pub(super) fn edit_table_part(raw: &str, region: &str, child: &str, cx: &Cx, edit: impl FnOnce(&mut Props)) -> String {
     let w = &cx.w;
     let mut el = Props::parse(Some(raw), "style", cx);
-    let at = el.kids.iter().position(|(n, x)| n == "tblStylePr" && x.contains(&format!("type=\"{region}\"")));
+    let at =
+        el.kids.iter().position(|(n, x)| n == "tblStylePr" && cx.parse(x, |_, p| crate::docx::xml::attr(p, "type") == Some(region)) == Some(true));
     let blank = format!("<{w}tblStylePr {w}type=\"{region}\"><{w}pPr/></{w}tblStylePr>");
     let mut part = Props::parse(Some(at.map_or(blank.as_str(), |i| el.kids[i].1.as_str())), "tblStylePr", cx);
     part.reorder(TBL_STYLE_PR);
@@ -314,11 +315,11 @@ impl Editor {
         let sh = Shading { pattern: s.pattern.val(), color, fill };
         // No fill and a clear pattern: no shading of their own.
         let none = fill.is_none() && s.pattern == ShadingPattern::Clear;
-        let edit = |p: &mut Props, w: &str| {
+        let edit = |p: &mut Props, w: &str, inherited: Option<&crate::docx::props::Shd>| {
             if none {
                 p.remove("shd");
             } else {
-                let x = sh.xml(w, p.get("shd"));
+                let x = sh.xml(w, p.get("shd"), inherited);
                 p.set("shd", x);
             }
         };
@@ -337,12 +338,12 @@ impl Editor {
             };
             return self.format_style_part(part, &|p, cx, _, _| {
                 p.reorder(order);
-                edit(p, &cx.w);
+                edit(p, &cx.w, None);
             });
         }
         match s.target {
-            ShadingTarget::Paragraph => self.format_paras("Shading", &|p, cx, _| edit(p, &cx.w), fonts),
-            ShadingTarget::Text => self.format_runs("Shading", &|p, w, _| edit(p, w), fonts),
+            ShadingTarget::Paragraph => self.format_paras("Shading", &|p, cx, para| edit(p, &cx.w, para.style.shd.as_ref()), fonts),
+            ShadingTarget::Text => self.format_runs("Shading", &|p, w, run| edit(p, w, run.shd.as_ref()), fonts),
             ShadingTarget::Cell => self.table_format(&TableFormat::CellShading(sh.clone()), fonts),
             ShadingTarget::Table => self.table_format(&TableFormat::TableShading(sh.clone()), fonts),
         }
@@ -514,5 +515,19 @@ impl Editor {
         tx.stale_paras.extend(paras);
         tx.stale_tables.extend(tables);
         self.commit(tx, None, fonts)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_table_style_part_is_edited_in_place_however_its_type_is_quoted() {
+        let cx = Cx::of_xml(r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">"#);
+        let raw = r#"<w:style w:type="table" w:styleId="T"><w:name w:val="T"/><w:tblStylePr w:type='firstRow'><w:tcPr><w:noWrap/></w:tcPr></w:tblStylePr></w:style>"#;
+        let xml = edit_table_part(raw, "firstRow", "tcPr", &cx, |p| p.set("vAlign", r#"<w:vAlign w:val="center"/>"#.into()));
+        assert_eq!(xml.matches("<w:tblStylePr").count(), 1, "{xml}");
+        assert!(xml.contains(r#"<w:tcPr><w:noWrap/><w:vAlign w:val="center"/></w:tcPr>"#), "{xml}");
     }
 }

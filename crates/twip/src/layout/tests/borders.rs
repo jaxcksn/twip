@@ -355,6 +355,8 @@ fn reflected_text_keeps_the_clip_of_its_exact_row() {
         })
         .collect();
     assert!(!text.is_empty(), "the reflection holds the box's text");
-    let clips: Vec<[f64; 4]> = text.iter().flat_map(|t| t.0.iter()).filter_map(|(_, c)| *c).collect();
-    assert!(!clips.is_empty() && clips.iter().all(|c| c[3] - c[1] <= 10.0 + 1e-6), "{clips:?}");
+    // Every glyph the row holds.
+    let clips: Vec<Option<[f64; 4]>> =
+        text.iter().flat_map(|t| t.0.iter()).filter(|(i, _)| matches!(i, Item::Glyphs(g) if !g.glyphs.is_empty())).map(|(_, c)| *c).collect();
+    assert!(!clips.is_empty() && clips.iter().all(|c| c.is_some_and(|c| c[3] - c[1] <= 10.0 + 1e-6)), "{clips:?}");
 }

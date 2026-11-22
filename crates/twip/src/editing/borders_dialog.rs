@@ -93,7 +93,7 @@ impl Editor {
     }
 
     /// A cell's shading as written: its table style's for the cell's region, under its own.
-    fn cell_shd(&self, t: &crate::docx::Table, (r, k): (usize, usize), cell: &crate::docx::Cell) -> Option<crate::docx::props::Shd> {
+    pub(super) fn cell_shd(&self, t: &crate::docx::Table, (r, k): (usize, usize), cell: &crate::docx::Cell) -> Option<crate::docx::props::Shd> {
         let res = self.doc.resolver.as_ref();
         let flat = || cell.shading.map(|f| crate::docx::props::Shd { pattern: "clear".into(), color: None, fill: Some(f) });
         let Some(res) = res else { return flat() };

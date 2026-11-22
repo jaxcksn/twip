@@ -651,7 +651,7 @@ impl Editor {
                         if clear {
                             p.remove("shd");
                         } else {
-                            let x = sh.xml(&w, p.get("shd"));
+                            let x = sh.xml(&w, p.get("shd"), None);
                             p.set("shd", x);
                         }
                     });

@@ -1356,7 +1356,7 @@ pub enum ShadingPattern {
     ThinHorzCross,
     /// A light trellis. In the pattern color over the fill.
     ThinDiagCross,
-    /// A pattern the document names that isn't one of these: setting it keeps each one's pattern as written.
+    /// A pattern the document names that isn't one of these: setting it keeps each one's pattern as written: its own, else its style's.
     Other,
 }
 
@@ -1407,7 +1407,7 @@ impl ShadingPattern {
         ShadingPattern::ALL.iter().find(|(_, n)| *n == v).map_or(ShadingPattern::Other, |(p, _)| *p)
     }
 
-    /// The `w:val` it is written as; none for [`ShadingPattern::Other`], which keeps the one written.
+    /// The `w:val` it is written as; none for [`ShadingPattern::Other`], which keeps the one written (its own, else its style's).
     pub fn val(self) -> Option<&'static str> {
         ShadingPattern::ALL.iter().find(|(p, _)| *p == self).map(|(_, n)| *n)
     }

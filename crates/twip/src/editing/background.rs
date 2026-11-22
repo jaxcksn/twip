@@ -424,12 +424,14 @@ impl Editor {
     }
 }
 
-/// A linear gradient from a colour to its own shade or tint (Fill Effects' One colour) as Word makes it: the second
-/// colour the first's VML `darken` or `lighten`, the two blended as Word blends two colours, in the first's opacity.
+/// A linear gradient from a colour at its start to its own shade or tint at its end (Fill Effects' One colour) as Word
+/// makes it: the second colour the first's VML `darken` or `lighten`, the two blended as Word blends two colours, in
+/// the first's opacity.
 fn one_colour(f: Fill, palette: crate::drawing::paint::Palette) -> Fill {
     use crate::drawing::colour::{Colour, ColourMod};
+    use crate::drawing::units::Pct;
     let Fill::Gradient(mut g) = f else { return f };
-    let [(_, a), (_, b)] = g.stops.as_slice() else { return Fill::Gradient(g) };
+    let [(Pct(0), a), (Pct(100_000), b)] = g.stops.as_slice() else { return Fill::Gradient(g) };
     let derived = match b.mods.split_last() {
         Some((ColourMod::Shade(p), rest)) if b.base == a.base && rest == a.mods.as_slice() => Some((false, *p)),
         Some((ColourMod::Tint(p), rest)) if b.base == a.base && rest == a.mods.as_slice() => Some((true, *p)),

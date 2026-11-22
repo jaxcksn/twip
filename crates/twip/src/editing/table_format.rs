@@ -30,7 +30,8 @@ pub enum TableFormat {
     Alt(crate::api::command::TableAltText),
 }
 
-/// A `w:shd` to set: its pattern (`None`: the one written there, else clear), pattern colour and fill (`None`: auto).
+/// A `w:shd` to set: its pattern (`None`: the one written there, else the one its style gives, else clear), pattern
+/// colour and fill (`None`: auto).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Shading {
     pub pattern: Option<&'static str>,
@@ -44,15 +45,19 @@ impl Shading {
         Shading { pattern: Some("clear"), color: None, fill }
     }
 
-    /// What it reads as over `was`, the `w:shd` there.
-    pub fn shd(&self, was: Option<&str>) -> crate::docx::props::Shd {
-        let pattern = self.pattern.map(str::to_string).or_else(|| was.and_then(|x| crate::docx::write::props::attr_of(x, "val")));
+    /// What it reads as over `was`, the `w:shd` there, and `inherited`, the shading its style gives.
+    pub fn shd(&self, was: Option<&str>, inherited: Option<&crate::docx::props::Shd>) -> crate::docx::props::Shd {
+        let pattern = self
+            .pattern
+            .map(str::to_string)
+            .or_else(|| was.and_then(|x| crate::docx::write::props::attr_of(x, "val")))
+            .or_else(|| inherited.map(|s| s.pattern.clone()).filter(|p| p != "nil"));
         crate::docx::props::Shd { pattern: pattern.unwrap_or_else(|| "clear".into()), color: self.color, fill: self.fill }
     }
 
-    /// Its XML over `was`.
-    pub fn xml(&self, w: &str, was: Option<&str>) -> String {
-        shd_xml(w, &self.shd(was))
+    /// Its XML over `was` and `inherited`.
+    pub fn xml(&self, w: &str, was: Option<&str>, inherited: Option<&crate::docx::props::Shd>) -> String {
+        shd_xml(w, &self.shd(was, inherited))
     }
 }
 
@@ -221,7 +226,8 @@ impl Editor {
                             }
                             TableFormat::CellShading(sh) => {
                                 let p = crate::docx::write::props::Props::parse(cell.direct.0.as_deref(), "tcPr", &cx);
-                                let shd = sh.shd(p.get("shd"));
+                                let inherited = if sh.pattern.is_none() { self.cell_shd(t, (r, k), cell) } else { None };
+                                let shd = sh.shd(p.get("shd"), inherited.as_ref());
                                 (cell.shading, cell.hatch) = (shd.flat(), shd.hatch());
                                 set_direct(cell, "shd", shd_xml(&w, &shd));
                             }
@@ -385,7 +391,7 @@ impl Editor {
                 // Written as the table's own: its style's shading stays its style's.
                 let mut p = crate::docx::write::props::Props::parse(t.direct.0.as_deref(), "tblPr", &cx);
                 p.reorder(crate::docx::write::props::TBLPR);
-                let shd = sh.shd(p.get("shd"));
+                let shd = sh.shd(p.get("shd"), t.shd.as_ref());
                 p.set("shd", shd_xml(&w, &shd));
                 props.direct = crate::docx::Raw(Some(std::rc::Rc::from(p.xml().unwrap_or_default().as_str())));
                 props.shd = Some(shd);

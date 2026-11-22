@@ -136,3 +136,36 @@ fn the_page_border_tab_keeps_its_pen_in_a_table() {
     v.tab = BordersTab::PageBorder;
     assert_eq!(enabled(&v), [true; 3], "a page border's lines do");
 }
+
+#[test]
+fn a_fill_alone_keeps_the_pattern_the_style_gives() {
+    let package = package();
+    let read = |name: &str| crate::docx::package::read(&package, &[], name).expect("reads").expect("a part");
+    let styles = read("word/styles.xml")
+        .replace(r#"<w:shd w:val="clear" w:color="auto" w:fill="D9E2F3"/>"#, r#"<w:shd w:val="diagStripe" w:color="0000FF" w:fill="D9E2F3"/>"#)
+        .replace(
+            "</w:styles>",
+            r#"<w:style w:type="paragraph" w:styleId="Banded"><w:name w:val="Banded"/><w:pPr><w:shd w:val="thinHorzStripe" w:color="0000FF" w:fill="FFFFFF"/></w:pPr></w:style></w:styles>"#,
+        );
+    let doc = read("word/document.xml").replace("<w:p><w:r><w:t>between", r#"<w:p><w:pPr><w:pStyle w:val="Banded"/></w:pPr><w:r><w:t>between"#);
+    let package = crate::docx::write::repackage(
+        &package,
+        &[("word/styles.xml".into(), styles.into_bytes()), ("word/document.xml".into(), doc.into_bytes())],
+        zip::CompressionMethod::Deflated,
+    )
+    .expect("repackages");
+    let mut e = Editor::open(&package, fonts()).expect("opens");
+    let fill = |target| {
+        Command::SetShading(ShadingChange { target, fill: NoneOr::Value(Color(0x00B050)), pattern: ShadingPattern::Other, color: AutoOr::Auto })
+    };
+    for (para, target) in [(0, ShadingTarget::Cell), (4, ShadingTarget::Paragraph), (5, ShadingTarget::Table)] {
+        select(&mut e, para, para);
+        let out = e.execute(fill(target), fonts());
+        assert!(matches!(out, Outcome::Changed(_)), "{target:?}: {out:?}");
+    }
+    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let xml = crate::docx::package::read(&saved, &[], "word/document.xml").expect("reads").expect("document");
+    for pattern in ["horzStripe", "thinHorzStripe", "diagStripe"] {
+        assert!(xml.contains(&format!(r#"<w:shd w:val="{pattern}" w:color="auto" w:fill="00B050"/>"#)), "{pattern}: {xml}");
+    }
+}

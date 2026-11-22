@@ -456,6 +456,22 @@ fn a_page_gradient_s_focus_rectangle_and_one_colour_round_trip() {
 }
 
 #[test]
+fn a_page_gradient_to_its_own_shade_inside_the_page_keeps_its_stops() {
+    let mut e = Editor::open(&two_sections(), fonts()).expect("opens");
+    let blue = ColourValue::rgb(Color(0x2E75B6));
+    let darker = ColourValue { transforms: vec![ColourTransform { kind: TransformKind::Shade, value: 0.6 }], ..blue.clone() };
+    let stops = vec![GradientStop { position: 0.25, colour: blue }, GradientStop { position: 0.75, colour: darker }];
+    run(&mut e, Command::SetPageColor(FillValue::Gradient { kind: GradientShape::Linear, angle: Some(90.0), stops, focus: None }));
+    let positions = |e: &Editor| match e.page_formatting(0).background {
+        Some(FillValue::Gradient { stops, .. }) => stops.iter().map(|s| s.position).collect::<Vec<_>>(),
+        b => panic!("a gradient: {b:?}"),
+    };
+    assert_eq!(positions(&e), vec![0.25, 0.75]);
+    let saved = crate::docx::write::save(e.document()).expect("saves");
+    assert_eq!(positions(&Editor::open(&saved, fonts()).expect("reopens")), vec![0.25, 0.75], "{}", part(&saved, "word/document.xml"));
+}
+
+#[test]
 fn a_translucent_one_colour_page_gradient_keeps_its_opacity() {
     use crate::drawing::paint::Fill;
     for kind in [TransformKind::Alpha, TransformKind::AlphaMod] {

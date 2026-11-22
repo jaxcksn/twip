@@ -2092,6 +2092,7 @@ impl<'a, 'i> Saver<'a, 'i> {
         }
         out.push_str(&format!("</{w}tblGrid>"));
         let old_rows: Vec<&Row> = orig.map(|a| a.rows.iter().collect()).unwrap_or_default();
+        let first = node.map(|n| (n, self.direct_shd(t).is_some()));
         // Row- and cell-level controls (repeating sections and their items): opened and closed around maximal runs
         // of the rows (or a row's cells) they wrap.
         let mut open: Vec<ControlId> = Vec::new();
@@ -2120,7 +2121,7 @@ impl<'a, 'i> Saver<'a, 'i> {
                         self.container(&c.blocks, &d.blocks)?;
                     }
                     let mut inner = std::mem::replace(&mut self.splices, outer);
-                    inner.extend(self.row_fixes(n, k, row, node));
+                    inner.extend(self.row_fixes(n, k, row, first));
                     out.push_str(&self.spliced(n.range(), inner)?);
                 }
                 (_, n) => {
@@ -2129,7 +2130,7 @@ impl<'a, 'i> Saver<'a, 'i> {
                         None => (format!("<{w}tr>"), format!("</{w}tr>")),
                     };
                     out.push_str(&open);
-                    out.push_str(&self.row_props(n, kept, row, node));
+                    out.push_str(&self.row_props(n, kept, row, first));
                     let mut cells_open = Vec::new();
                     for c in &row.cells {
                         wrap(&mut out, &c.controls, &mut cells_open, self);
@@ -2190,7 +2191,7 @@ impl<'a, 'i> Saver<'a, 'i> {
 
     /// A rewritten row's `w:tblPrEx` and `w:trPr`: its source's (`n`, read as `was`) with its revisions as the model
     /// has them now, else written from the model.
-    fn row_props(&self, n: Option<Node>, was: Option<&Row>, row: &Row, table: Option<Node>) -> String {
+    fn row_props(&self, n: Option<Node>, was: Option<&Row>, row: &Row, table: Option<(Node, bool)>) -> String {
         let w = &self.w;
         let same = was.is_some_and(|k| k.rev == row.rev);
         let later = n.map(|n| self.later_table_ex(n, row, table)).unwrap_or_default();
@@ -2239,11 +2240,13 @@ impl<'a, 'i> Saver<'a, 'i> {
         out
     }
 
-    /// The exceptions a row of a later table read as one with the first (`table`, the one written) takes from its own
-    /// table, as (name, XML, the names before it): its alignment and cell margins, and its shading while the model
-    /// keeps it (its own, else its style's when the first has its own: written, or none written as auto).
-    fn later_table_ex(&self, n: Node, now: &Row, table: Option<Node>) -> Vec<(&'static str, String, &'static [&'static str])> {
-        let Some(own) = n.ancestors().skip(1).find(|a| is_w(*a, "tbl")).filter(|t| table.is_some_and(|f| f != *t)) else { return Vec::new() };
+    /// The exceptions a row of a later table read as one with the first (`table`, the one written, and whether it is
+    /// written with shading of its own) takes from its own table, as (name, XML, the names before it) in schema order:
+    /// its alignment and cell margins, and its shading while the model keeps it (its own, else its style's when the
+    /// first has its own: written, or none written as auto).
+    fn later_table_ex(&self, n: Node, now: &Row, table: Option<(Node, bool)>) -> Vec<(&'static str, String, &'static [&'static str])> {
+        let Some((first, first_own)) = table else { return Vec::new() };
+        let Some(own) = n.ancestors().skip(1).find(|a| is_w(*a, "tbl")).filter(|t| first != *t) else { return Vec::new() };
         let pr = child(own, "tblPr");
         let mut out: Vec<(&'static str, String, &'static [&'static str])> = ["jc", "tblCellMar"]
             .into_iter()
@@ -2252,7 +2255,6 @@ impl<'a, 'i> Saver<'a, 'i> {
             })
             .collect();
         if let Some((fill, hatch)) = now.table_shading {
-            let first_own = table.and_then(|t| child(t, "tblPr")).and_then(|p| child(p, "shd")).is_some();
             let tag = match pr.and_then(|p| child(p, "shd")) {
                 Some(c) => Some(self.xml[c.range()].to_string()),
                 None if first_own => {
@@ -2265,13 +2267,14 @@ impl<'a, 'i> Saver<'a, 'i> {
             };
             out.extend(tag.map(|t| ("shd", t, revisions::before(revisions::TBLPREX, "shd"))));
         }
+        out.sort_by_key(|(_, _, before)| before.len());
         out
     }
 
     /// A kept row's height and its cells' widths changed by a border drag, and its and its cells' revisions, patched
     /// into its source properties.
-    /// `table` is the table written (the first of tables read as one).
-    fn row_fixes(&self, n: Node, was: &Row, now: &Row, table: Option<Node>) -> Vec<Splice> {
+    /// `table` is the table written (the first of tables read as one) and whether it is written with shading of its own.
+    fn row_fixes(&self, n: Node, was: &Row, now: &Row, table: Option<(Node, bool)>) -> Vec<Splice> {
         let w = self.w.clone();
         let mut out = Vec::new();
         // A row of a later table read as one with the first: its own table's alignment and cell margins become its
@@ -5769,6 +5772,40 @@ mod tests {
             let row = &t.rows[1];
             let got = (row.shading, if want.0.is_some() { None } else { row.table_shading });
             assert_eq!(got, want, "{}", part_text(&saved, "word/document.xml"));
+        }
+    }
+
+    #[test]
+    fn a_joined_table_s_later_rows_stay_unshaded_under_shading_the_first_takes_since_reading() {
+        let body = format!("{}{}<w:p/>", one_cell("", "<w:tc>", "a"), one_cell("", "<w:tc>", "b"));
+        let mut doc = body_doc(&body);
+        let t = first_table(&mut doc);
+        assert_eq!(t.rows[1].table_shading, Some((None, None)));
+        t.direct = Raw(Some(Rc::from(r#"<w:tblPr><w:shd w:val="clear" w:color="auto" w:fill="00FF00"/></w:tblPr>"#)));
+        let saved = save(&doc).expect("saves");
+        let mut again = crate::docx::read_editable(&saved).expect("reads again");
+        let t = first_table(&mut again);
+        assert_eq!(t.rows[1].table_shading, Some((None, None)), "{}", part_text(&saved, "word/document.xml"));
+    }
+
+    #[test]
+    fn a_joined_table_s_later_rows_take_its_exceptions_in_schema_order() {
+        let shd = r#"<w:shd w:val="clear" w:color="auto" w:fill="0000FF"/>"#;
+        let mar = r#"<w:tblCellMar><w:left w:w="200" w:type="dxa"/></w:tblCellMar>"#;
+        for (tr, edit) in [("<w:tr>", false), ("<w:tr>", true), ("<w:tr><w:tblPrEx/>", false)] {
+            let later = one_cell(&format!("<w:jc w:val=\"center\"/>{shd}{mar}"), "<w:tc>", "b").replace("<w:tr>", tr);
+            let body = format!("{}{later}<w:p/>", one_cell(shd, "<w:tc>", "a"));
+            let mut doc = body_doc(&body);
+            let t = first_table(&mut doc);
+            if edit {
+                let cell = t.rows[1].cells[0].clone();
+                t.rows[1].cells.push(cell);
+            }
+            let saved = save(&doc).expect("saves");
+            let xml = part_text(&saved, "word/document.xml");
+            let ex = &xml[xml.find("<w:tblPrEx>").expect("exceptions")..xml.find("</w:tblPrEx>").unwrap()];
+            let at = |name: &str| ex.find(&format!("<w:{name}")).unwrap_or_else(|| panic!("{name} in {ex}"));
+            assert!(at("jc") < at("shd") && at("shd") < at("tblCellMar"), "{ex}");
         }
     }
 
