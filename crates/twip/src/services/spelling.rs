@@ -233,11 +233,28 @@ pub struct Spellers {
     pending: BTreeMap<String, Vec<String>>,
     /// Counts the dictionaries added: a replaced one can hold the same number of words and others.
     dictionaries: u64,
+    tally: Tally,
+}
+
+/// The body's misspellings per paragraph (only paragraphs that have some), and the checking context and document
+/// revision they were counted at.
+#[derive(Default)]
+struct Tally {
+    at: Option<(u64, u64)>,
+    by_para: HashMap<ParaId, u32>,
+    total: u32,
 }
 
 impl Default for Spellers {
     fn default() -> Spellers {
-        Spellers { by_language: BTreeMap::new(), enabled: true, ignored: Vec::new(), pending: BTreeMap::new(), dictionaries: 0 }
+        Spellers {
+            by_language: BTreeMap::new(),
+            enabled: true,
+            ignored: Vec::new(),
+            pending: BTreeMap::new(),
+            dictionaries: 0,
+            tally: Tally::default(),
+        }
     }
 }
 
@@ -336,14 +353,74 @@ impl Spellers {
         Some((sp.errors(&check_text(e, para)), language))
     }
 
-    /// The misspellings in the body.
-    // shortcut: every paragraph is checked per call (results are cached per paragraph text); count per changed
-    // paragraph if state builds show it on large documents.
-    pub fn count(&self, e: &Editor, default: &str) -> u32 {
+    /// What a paragraph's misspellings depend on besides its own content.
+    fn context(&self, e: &Editor, default: &str) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::hash::DefaultHasher::new();
+        (self.signature(), e.document().review.view, default, e.editing_sub_template()).hash(&mut h);
+        h.finish()
+    }
+
+    fn para_count(&self, e: &Editor, para: ParaId, default: &str) -> u32 {
+        self.errors(e, para, default).map_or(0, |(errs, _)| errs.len() as u32)
+    }
+
+    /// The misspellings in the body: counted again only when the document or what checking depends on changed in a
+    /// way [`Spellers::edited`] didn't follow.
+    pub fn count(&mut self, e: &Editor, default: &str) -> u32 {
         if !self.enabled || self.by_language.is_empty() {
             return 0;
         }
-        paras_in_order(e).into_iter().filter_map(|p| self.errors(e, p, default)).map(|(errs, _)| errs.len() as u32).sum()
+        let at = (self.context(e, default), e.revision());
+        if self.tally.at == Some(at) {
+            return self.tally.total;
+        }
+        let mut by_para = HashMap::new();
+        for p in paras_in_order(e) {
+            let n = self.para_count(e, p, default);
+            if n > 0 {
+                by_para.insert(p, n);
+            }
+        }
+        self.tally = Tally { at: Some(at), total: by_para.values().sum(), by_para };
+        self.tally.total
+    }
+
+    /// After an edit that touched `paras`: counts those paragraphs again, so the next [`Spellers::count`] doesn't
+    /// count the whole body.
+    pub fn edited(&mut self, e: &Editor, paras: &[ParaId], default: &str) {
+        let Some((context, _)) = self.tally.at else { return };
+        // While a sub-template is edited its body is counted whole: its paragraphs aren't the body story.
+        if !self.enabled || context != self.context(e, default) || e.editing_sub_template().is_some() {
+            self.tally.at = None;
+            return;
+        }
+        let (doc, index) = (e.document(), e.index());
+        let mut tally = std::mem::take(&mut self.tally);
+        for &p in paras {
+            tally.total -= tally.by_para.remove(&p).unwrap_or(0);
+            let body = index.para_slot(p).is_some_and(|s| index.story(s.container) == crate::editing::position::StoryId::Body);
+            let n = if body { self.para_count(e, p, default) } else { 0 };
+            if n > 0 {
+                tally.by_para.insert(p, n);
+                tally.total += n;
+            }
+        }
+        // Paragraphs that are gone.
+        tally.by_para.retain(|&id, n| {
+            let keep = index.para(doc, id).is_some();
+            if !keep {
+                tally.total -= *n;
+            }
+            keep
+        });
+        tally.at = Some((context, e.revision()));
+        self.tally = tally;
+    }
+
+    /// Forgets the count: the document was replaced.
+    pub fn forget(&mut self) {
+        self.tally = Tally::default();
     }
 
     /// The misspelling the selection is on (within one paragraph).

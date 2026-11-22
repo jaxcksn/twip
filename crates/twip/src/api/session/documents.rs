@@ -151,6 +151,7 @@ impl Session {
     /// read's warnings) follow, with the warning naming the families no font draws. Returns that warning.
     fn replaced(&mut self, mut events: Vec<crate::api::event::Event>) -> Option<Warning> {
         self.presentation.clear();
+        self.services.spelling.forget();
         self.configure();
         let (fonts, warning) = self.fonts_opened();
         events.extend(warning.iter().cloned().map(crate::api::event::Event::Warning));

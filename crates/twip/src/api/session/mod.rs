@@ -134,6 +134,7 @@ impl Session {
     #[cfg(test)]
     pub(crate) fn with_editor<R>(&mut self, f: impl FnOnce(&mut Editor) -> R) -> R {
         let out = f(&mut self.editor);
+        self.services.spelling.forget();
         self.changed(Vec::new());
         out
     }
