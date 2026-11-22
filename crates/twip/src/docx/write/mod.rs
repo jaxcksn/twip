@@ -5011,6 +5011,12 @@ const DRAWING_IDS: u32 = 0x4345_0000;
 /// holds a colon, which a relationship id (an `xsd:ID`) can't: no id a package was read with is taken for one.
 pub(crate) const NEW_IMAGE: &str = "twip:image:";
 
+/// `wp:effectExtent`'s attributes for extents of `e` points (left, top, right, bottom).
+fn effect_extent(e: [f64; 4]) -> String {
+    let [l, t, r, b] = e.map(|v| (v * 12700.0).round() as i64);
+    format!(r#"l="{l}" t="{t}" r="{r}" b="{b}""#)
+}
+
 impl Saver<'_, '_> {
     /// A float with no source (an inserted text box, or a picture float): its `w:drawing`, from the model. `None` for
     /// what the model can't write (a text box whose content can't be).
@@ -5021,6 +5027,7 @@ impl Saver<'_, '_> {
             let image = f.image.map_or(String::new(), |i| format!("{NEW_IMAGE}{i}"));
             return Some(super::watermark::vml(&m, &self.w, [f.w, f.h], spid, &image, &run.lang));
         }
+        let f = &*unswapped(f);
         const WP: &str = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
         const A: &str = "http://schemas.openxmlformats.org/drawingml/2006/main";
         const PIC: &str = "http://schemas.openxmlformats.org/drawingml/2006/picture";
@@ -5036,7 +5043,7 @@ impl Saver<'_, '_> {
             match (align, f.relative.pos[k]) {
                 (Some(a), _) => format!("<wp:{name} relativeFrom=\"{rel}\"><wp:align>{}</wp:align></wp:{name}>", props::esc(a)),
                 (None, Some(t)) => {
-                    format!(r#"<wp:{name} relativeFrom="{rel}"><wp14:{el} xmlns:wp14="{WP14}">{}</wp14:{el}></wp:{name}>"#, t * 100)
+                    format!(r#"<wp:{name} relativeFrom="{rel}"><wp14:{el} xmlns:wp14="{WP14}">{}</wp14:{el}></wp:{name}>"#, t.saturating_mul(100))
                 }
                 (None, None) => format!("<wp:{name} relativeFrom=\"{rel}\"><wp:posOffset>{}</wp:posOffset></wp:{name}>", emu(off)),
             }
@@ -5051,7 +5058,7 @@ impl Saver<'_, '_> {
                 Some(format!(
                     r#"<wp14:{el} xmlns:wp14="{WP14}" relativeFrom="{}"><wp14:{pct}>{}</wp14:{pct}></wp14:{el}>"#,
                     props::esc(from),
-                    t * 100
+                    t.saturating_mul(100)
                 ))
             })
             .collect();
@@ -5131,12 +5138,13 @@ impl Saver<'_, '_> {
             concat!(
                 r#"<{w}drawing><wp:anchor xmlns:wp="{wp}" distT="{dt}" distB="{db}" distL="{dl}" distR="{dr}" simplePos="0" relativeHeight="{id}" "#,
                 r#"behindDoc="{behind}" locked="{locked}" layoutInCell="{cell}" allowOverlap="{overlap}"><wp:simplePos x="0" y="0"/>{h}{v}"#,
-                r#"<wp:extent cx="{cx}" cy="{cy}"/><wp:effectExtent l="0" t="0" r="0" b="0"/>{wrap}<wp:docPr id="{id}" name="{kind} {id}"{descr}/>"#,
+                r#"<wp:extent cx="{cx}" cy="{cy}"/><wp:effectExtent {ee}/>{wrap}<wp:docPr id="{id}" name="{kind} {id}"{descr}/>"#,
                 r#"<wp:cNvGraphicFramePr>{locks}</wp:cNvGraphicFramePr><a:graphic xmlns:a="{a}">{graphic}</a:graphic>{sizes}</wp:anchor></{w}drawing>"#
             ),
             w = self.w,
             wp = WP,
             a = A,
+            ee = effect_extent(f.effect),
             dt = dt,
             db = db,
             dl = dl,
@@ -5220,7 +5228,7 @@ impl Saver<'_, '_> {
             return Some(self.new_doc_pr_ids(&x));
         }
         if let Inline::Picture(p, _) = i
-            && let Some(shape) = p.shape.as_deref().filter(|s| p.image.is_none() || s.pic().is_none())
+            && let Some(shape) = p.shape.as_deref().filter(|s| p.image.is_none() || s.pic().is_none_or(|q| q.blip.image.is_some()))
         {
             let id = self.ids.get();
             self.ids.set(id + 1);
@@ -5234,9 +5242,11 @@ impl Saver<'_, '_> {
             return Some(format!(
                 concat!(
                     r#"<{w}drawing><wp:inline xmlns:wp="{wp}" distT="0" distB="0" distL="0" distR="0"><wp:extent cx="{cx}" cy="{cy}"/>"#,
-                    r#"<wp:effectExtent l="0" t="0" r="0" b="0"/><wp:docPr id="{id}" name="{name} {id}"{descr}/><wp:cNvGraphicFramePr/>"#,
-                    r#"<a:graphic xmlns:a="{a}">{graphic}</a:graphic></wp:inline></{w}drawing>"#
+                    r#"<wp:effectExtent {ee}/><wp:docPr id="{id}" name="{name} {id}"{descr}/><wp:cNvGraphicFramePr>{locks}"#,
+                    r#"</wp:cNvGraphicFramePr><a:graphic xmlns:a="{a}">{graphic}</a:graphic></wp:inline></{w}drawing>"#
                 ),
+                locks = if p.lock_aspect { format!(r#"<a:graphicFrameLocks xmlns:a="{A}" noChangeAspect="1"/>"#) } else { String::new() },
+                ee = effect_extent(p.effect),
                 w = self.w,
                 wp = WP,
                 a = A,
@@ -5265,7 +5275,7 @@ impl Saver<'_, '_> {
             return Some(format!(
                 concat!(
                     r#"<{w}drawing><wp:inline xmlns:wp="{wp}" distT="0" distB="0" distL="0" distR="0"><wp:extent cx="{cx}" cy="{cy}"/>"#,
-                    r#"<wp:effectExtent l="0" t="0" r="0" b="0"/><wp:docPr id="{id}" name="Picture {id}"{descr}/><wp:cNvGraphicFramePr>"#,
+                    r#"<wp:effectExtent {ee}/><wp:docPr id="{id}" name="Picture {id}"{descr}/><wp:cNvGraphicFramePr>"#,
                     r#"<a:graphicFrameLocks xmlns:a="{a}" noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic xmlns:a="{a}">"#,
                     r#"<a:graphicData uri="{pic}"><pic:pic xmlns:pic="{pic}"><pic:nvPicPr><pic:cNvPr id="0" name="Picture {id}"/>"#,
                     r#"<pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip xmlns:r="{r}" r:embed="{new}{image}"/><a:stretch><a:fillRect/>"#,
@@ -5283,6 +5293,7 @@ impl Saver<'_, '_> {
                 id = id,
                 image = image,
                 descr = descr_attr(&p.alt),
+                ee = effect_extent(p.effect),
             ));
         }
         object_xml(&self.w, i)
@@ -5557,24 +5568,27 @@ struct Placement {
     relative: Option<(crate::docx::Relative, [f64; 2])>,
 }
 
+/// A float as its XML gives it: a quarter-turned float's box and offsets turned back.
+fn unswapped(f: &Float) -> std::borrow::Cow<'_, Float> {
+    if !f.rot_swap {
+        return std::borrow::Cow::Borrowed(f);
+    }
+    let mut f = f.clone();
+    let (w, h) = (f.w, f.h);
+    if f.h_align.is_none() {
+        f.h_offset -= (h - w) / 2.0;
+    }
+    if f.v_align.is_none() {
+        f.v_offset -= (w - h) / 2.0;
+    }
+    (f.w, f.h) = (h, w);
+    std::borrow::Cow::Owned(f)
+}
+
 impl Placement {
     fn changed(a: &Float, b: &Float) -> Option<Placement> {
         let ne = |x: f64, y: f64| (x - y).abs() > 1e-6;
-        let unswap = |f: &Float| {
-            let mut f = f.clone();
-            if f.rot_swap {
-                let (w, h) = (f.w, f.h);
-                if f.h_align.is_none() {
-                    f.h_offset -= (h - w) / 2.0;
-                }
-                if f.v_align.is_none() {
-                    f.v_offset -= (w - h) / 2.0;
-                }
-                (f.w, f.h) = (h, w);
-            }
-            f
-        };
-        let (a, b) = (&unswap(a), &unswap(b));
+        let (a, b) = (&*unswapped(a), &*unswapped(b));
         // An aligned position that became an offset is written as one.
         let pos = |(ra, aa, oa): (&String, &Option<String>, f64), (rb, ab, ob): (&String, &Option<String>, f64)| {
             (ra != rb || aa != ab || ab.is_none() && ne(oa, ob)).then(|| (rb.clone(), ab.clone(), ob))
@@ -5636,7 +5650,7 @@ impl Placement {
             const WP14: &str = "http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing";
             for (k, (name, el)) in [("positionH", "pctPosHOffset"), ("positionV", "pctPosVOffset")].into_iter().enumerate() {
                 match r.pos[k] {
-                    Some(t) => set_content(&mut s, name, |_| format!(r#"<wp14:{el} xmlns:wp14="{WP14}">{}</wp14:{el}>"#, t * 100)),
+                    Some(t) => set_content(&mut s, name, |_| format!(r#"<wp14:{el} xmlns:wp14="{WP14}">{}</wp14:{el}>"#, t.saturating_mul(100))),
                     None if s.contains(el) => set_content(&mut s, name, |p| format!("<{p}posOffset>{}</{p}posOffset>", emu(offsets[k]))),
                     None => {}
                 }
@@ -5655,7 +5669,7 @@ impl Placement {
                     Some(format!(
                         r#"<wp14:{el} xmlns:wp14="{WP14}" relativeFrom="{}"><wp14:{pct}>{}</wp14:{pct}></wp14:{el}>"#,
                         props::esc(from),
-                        t * 100
+                        t.saturating_mul(100)
                     ))
                 })
                 .collect();

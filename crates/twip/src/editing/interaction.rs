@@ -122,10 +122,19 @@ impl Editor {
         let mut placed: Option<(Position, Position)> = None;
         let paste = |e: &mut Self, placed: &mut Option<(Position, Position)>| {
             e.set_selection(Selection::Caret(drop));
-            let start = drop;
+            let start = e.selection.focus().unwrap_or(drop);
+            // The spaces a smart paste adds around the text aren't the text moved.
+            let spaces = match frag.blocks.as_slice() {
+                [Block::Para(p)] if frag.open_end => e.smart_spaces(&UnitText::of(p).text),
+                _ => (false, false),
+            };
+            let nudge = |p: Position, by: i32| match p.para_offset() {
+                Some((para, u)) => Position::text(p.story, para, Unit(u.0.saturating_add_signed(by))),
+                None => p,
+            };
             let ok = matches!(e.paste_fragment(&frag, fonts), Outcome::Changed(_));
             if ok && let Some(end) = e.selection.focus() {
-                *placed = Some((start, end));
+                *placed = Some((nudge(start, i32::from(spaces.0)), nudge(end, -i32::from(spaces.1))));
             }
             ok
         };
@@ -180,7 +189,7 @@ impl Editor {
         {
             self.selection = Selection::Object(super::selection::ObjectRef::Inline { para, offset });
         } else if let Some((s, t)) = placed {
-            self.selection = Selection::range(s, t, super::selection::Granularity::Char);
+            self.selection = self.normalize(Selection::range(s, t, super::selection::Granularity::Char));
         }
         Some(self.end_batch(true, fonts))
     }

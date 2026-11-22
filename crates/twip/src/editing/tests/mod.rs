@@ -20,6 +20,7 @@ mod into_tables;
 mod json;
 mod list_definitions;
 mod merge;
+mod objects;
 mod page_background;
 mod perf;
 mod picture_controls;

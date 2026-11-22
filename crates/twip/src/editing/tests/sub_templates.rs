@@ -804,3 +804,37 @@ fn a_sub_template_from_another_docx_takes_lists_of_its_own_and_no_notes() {
     assert!(used.iter().all(|n| !nums.contains(n) && res.numbering.nums.contains_key(n)), "{used:?} past {nums:?}");
     assert!(matches!(create(&mut e, "Notes", Some(fixture_bytes("FX-A11Y-STRUCTURE.docx"))), Outcome::Refused(_)));
 }
+
+fn picture_bytes(doc: &crate::docx::Document) -> Vec<Vec<u8>> {
+    let blip = |s: &Option<Box<crate::drawing::Shape>>| s.as_ref().and_then(|s| s.pic()).map(|p| p.blip.image);
+    let mut out = Vec::new();
+    for p in doc.sections.iter().flat_map(|s| &s.blocks).filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None }) {
+        for i in &p.inlines {
+            let (image, drawn) = match i {
+                Inline::Picture(pic, _) => (pic.image, blip(&pic.shape)),
+                Inline::Float(f, _) => (f.image, blip(&f.shape)),
+                _ => continue,
+            };
+            if let Some(drawn) = drawn {
+                assert_eq!(drawn, image, "the shape draws the picture's own image");
+            }
+            out.extend(image.map(|k| doc.images[k].clone()));
+        }
+    }
+    out
+}
+
+#[test]
+fn a_replaced_body_keeps_its_pictures_images() {
+    let path = |n: &str| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor").join(n);
+    let mut e = open("FX-EXACT-ROW.docx");
+    assert!(!e.document().images.is_empty(), "the template has an image of its own");
+    let docx = std::fs::read(path("FX-OBJ.docx")).unwrap();
+    let want = picture_bytes(&crate::docx::read_editable(&docx).unwrap());
+    assert!(!want.is_empty());
+    e.execute(Command::ReplaceBody(crate::api::command::ReplaceBody { from: crate::api::value::Bytes(docx) }), fonts());
+    picture_bytes(e.document());
+    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let again = Editor::open(&saved, fonts()).expect("reopens");
+    assert_eq!(picture_bytes(again.document()), want);
+}

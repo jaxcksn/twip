@@ -573,9 +573,8 @@ impl Editor {
                 (C::SetObjectSize | C::SetObjectWrap | C::SetAltText | C::DeleteObject, _) => (editable && object.is_some(), (None, None)),
                 (C::AlignObjects, _) => (editable && floating, (None, None)),
                 (C::SetFormFieldShading, _) => (editable, (Some(!self.doc.settings.no_form_shading), None)),
-                (C::SetPictureCrop | C::ChangePicture, _) => {
-                    (editable && matches!(object, Some(ObjectKind::Picture | ObjectKind::Float)), (None, None))
-                }
+                (C::SetPictureCrop, _) => (editable && shape.as_ref().is_some_and(|s| s.pic && s.child_path.is_empty()), (None, None)),
+                (C::ChangePicture, _) => (editable && matches!(object, Some(ObjectKind::Picture | ObjectKind::Float)), (None, None)),
                 (C::ResetObjectSize, _) => (editable && matches!(object, Some(ObjectKind::Picture | ObjectKind::Float)), (None, None)),
                 (C::SetAnchorLocked | C::SetObjectPosition | C::SetObjectWrapOptions, _) => (editable && floating, (None, None)),
                 (C::SetShapePreset | C::SetShapeAdjust | C::SetShapeText, _) => (editable && shape.as_ref().is_some_and(|s| s.sp), (None, None)),

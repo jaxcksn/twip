@@ -618,6 +618,18 @@ pub(super) fn fill_state(s: &Session, state: &mut crate::api::state::State) {
 }
 
 impl Session {
+    /// Hands the editor the part of the document the viewport shows, in document points, and the zoom.
+    pub(super) fn sync_viewport(&mut self) {
+        let p = &self.presentation;
+        let k = p.px_per_pt();
+        let mut v = crate::editing::input::Viewport { left: p.scroll.0 / k, top: p.scroll.1 / k, zoom: p.zoom, dpr: p.dpr, ..self.editor.viewport() };
+        // A host that hasn't sized the viewport keeps the editor's own size.
+        if p.width > 0.0 && p.height > 0.0 {
+            (v.width, v.height) = (p.width / k, p.height / k);
+        }
+        self.editor.set_viewport(v);
+    }
+
     /// Hands the editor the view options its drag feedback follows: the detail level, the object grid and the unit.
     pub(super) fn sync_view_settings(&mut self) {
         let p = &self.presentation;

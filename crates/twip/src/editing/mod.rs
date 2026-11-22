@@ -2776,6 +2776,17 @@ impl Editor {
 
     // Geometry for the view
 
+    /// The part of the document the host shows, in document points, and its zoom.
+    pub fn viewport(&self) -> Viewport {
+        self.viewport
+    }
+
+    /// Sets the part of the document the host shows: what a screen move pages by, and what pointer tolerances scale
+    /// with.
+    pub fn set_viewport(&mut self, v: Viewport) {
+        self.viewport = v;
+    }
+
     pub fn caret_view(&mut self) -> Option<CaretView> {
         let focus = self.selection.focus()?;
         self.caret_at(focus)

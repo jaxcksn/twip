@@ -82,16 +82,38 @@ pub struct Surface {
     template_touched: bool,
 }
 
-/// Blocks from another part or package, written afresh: their source XML dropped, their pictures' image indices
-/// moved up by `base`.
+/// Blocks from another part or package, written afresh: their source XML dropped, their pictures', floats' and
+/// shapes' image indices moved up by `base`, text boxes included.
 fn detach(blocks: &mut [Block], base: usize) {
+    let up = |k: &mut Option<usize>| *k = k.map(|k| k + base);
     for b in blocks {
         match b {
             Block::Para(p) => {
                 p.src = None;
                 for i in &mut p.inlines {
-                    if let Inline::Picture(pic, _) = i {
-                        pic.image = pic.image.map(|k| k + base);
+                    match i {
+                        Inline::Picture(pic, _) => {
+                            up(&mut pic.image);
+                            if let Some(s) = &mut pic.shape {
+                                s.rebase_images(base);
+                            }
+                        }
+                        Inline::Float(f, _) => {
+                            up(&mut f.image);
+                            if let Some(s) = &mut f.shape {
+                                s.rebase_images(base);
+                            }
+                            for part in &mut f.parts {
+                                up(&mut part.image);
+                                if let Some(tb) = &mut part.text_box {
+                                    detach(&mut tb.blocks, base);
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                    if let Some(tb) = i.story_mut() {
+                        detach(&mut tb.blocks, base);
                     }
                 }
             }

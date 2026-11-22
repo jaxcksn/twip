@@ -1950,15 +1950,16 @@ impl Editor {
             ControlKind::Picture => {
                 props.showing_placeholder = true;
                 self.pending_controls.push((id, Control::new(props)));
-                let image = Some(self.pending_image(placeholder_image.unwrap_or_else(|| PICTURE_PLACEHOLDER.to_vec())));
+                let image = self.pending_image(placeholder_image.unwrap_or_else(|| PICTURE_PLACEHOLDER.to_vec()));
+                let emu = crate::drawing::units::Emu::from_pt;
                 let picture = crate::docx::Picture {
                     w: size.0,
                     h: size.1,
-                    image,
+                    image: Some(image),
                     alt: "".into(),
                     lock_aspect: true,
                     effect: [0.0; 4],
-                    shape: None,
+                    shape: Some(Box::new(crate::drawing::Shape::picture(image, emu(size.0), emu(size.1)))),
                     text: None,
                     src: Default::default(),
                 };

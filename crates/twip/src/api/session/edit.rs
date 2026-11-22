@@ -172,6 +172,7 @@ impl Session {
         origin: Origin,
         op: impl FnOnce(&mut crate::editing::Editor, &crate::font::Fonts) -> Outcome,
     ) -> Result<Commit, Error> {
+        self.sync_viewport();
         let before = self.editor.selection();
         let out = {
             let fonts = self.fonts.fonts();

@@ -480,8 +480,6 @@ impl Session {
     }
 
     /// Pointer input to the editor's own gestures, recorded as the user's.
-    // shortcut: the editor's hit tolerances and auto-scroll assume 100% zoom; hand it the presentation's viewport
-    // when hits at other zooms need to be exact to the pixel.
     fn drive(&mut self, kind: PointerKind, x: f64, y: f64, clicks: u8, mods: Mods) {
         use crate::editing::input::PointerKind as K;
         let kind = match kind {

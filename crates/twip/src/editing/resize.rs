@@ -148,10 +148,8 @@ impl Editor {
         let grid_of = Grid::of(t);
         let g = &grid_of;
         // Drawn column widths
-        let mut grid = super::tables::full_grid(t, g.cols);
-        if let Some(geo) = self.pages.page(d.page, &self.index) {
-            super::tables::drawn_grid(&geo, d.table, &mut grid);
-        }
+        let geo = self.pages.page(d.page, &self.index);
+        let mut grid = drawn_grid(t, d.table, geo.as_deref(), g.cols);
         let selected = match self.selection {
             super::selection::Selection::Cells { table, anchor, focus, .. } if table == d.table => {
                 Some(anchor.row.min(focus.row)..=anchor.row.max(focus.row))
@@ -336,13 +334,15 @@ impl Editor {
             let g = Grid::of(&o);
             if let Some(&(col, span, _)) = g.rows.get(row).and_then(|r| r.get(cell)) {
                 let c = &o.rows[row].cells[cell];
-                let mut og = super::tables::full_grid(&o, g.cols);
-                let last = col + span.max(1) - 1;
-                let have: f64 = og[col..=last].iter().sum();
+                let mut og = drawn_grid(&o, outer, geo.as_deref(), g.cols);
+                let last = (col + span.max(1) - 1).min(og.len().saturating_sub(1));
+                let have: f64 = og.get(col..=last).map_or(0.0, |w| w.iter().sum());
                 let need = new_sum + c.margins[1] + c.margins[3] + 0.5;
-                if need > have + 1e-9 {
+                if need > have + 1e-9
+                    && let Some(w) = og.get_mut(last)
+                {
                     let more = need - have;
-                    og[last] += more;
+                    *w += more;
                     if let Some(next) = og.get_mut(last + 1) {
                         *next = (*next - more).max(c.margins[1] + c.margins[3] + 4.5);
                     }
@@ -361,6 +361,15 @@ impl Editor {
         }
         Some(self.commit(tx, None, fonts))
     }
+}
+
+/// `t`'s grid widened to the `cols` columns its rows reach, each column as wide as `geo` draws it.
+fn drawn_grid(t: &crate::docx::Table, id: TableId, geo: Option<&super::geometry::PageGeometry>, cols: usize) -> Vec<f64> {
+    let mut grid = super::tables::full_grid(t, cols);
+    if let Some(geo) = geo {
+        super::tables::drawn_grid(geo, id, &mut grid);
+    }
+    grid
 }
 
 fn within(dx: f64, lo: f64, hi: f64) -> f64 {
