@@ -667,6 +667,7 @@ impl Prepare {
         let clip = Clip { rect: [root.x0 * ONE, root.y0 * ONE, root.x1 * ONE, root.y1 * ONE], bounds: root, mask: None };
         // What was being written (the frame's passes, or the picture being kept that draws this one) waits.
         let outer = std::mem::take(&mut self.out);
+        let filtered = self.filtered_pixels;
         let parent = self.building.replace(Building::default());
         self.begin(None, root, false);
         let mut i = 0;
@@ -675,6 +676,8 @@ impl Prepare {
         let built = std::mem::replace(&mut self.building, parent).unwrap_or_default();
         let out = std::mem::replace(&mut self.out, outer);
         if built.failed {
+            // Drawn in the frame instead, its layers counted there.
+            self.filtered_pixels = filtered;
             return None;
         }
         let pages = |bits: u64, atlas: &Atlas| (0..64).filter(|p| bits >> p & 1 == 1).map(|p| (p, atlas.epoch(p))).collect();
@@ -1405,5 +1408,36 @@ fn blending(mode: BlendMode) -> Option<(Blend, u32)> {
         BlendMode::Clear => Some((Blend::Erase, 2)),
         BlendMode::Dst => None,
         mode => Some((Blend::General, mode.index() << 2)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cpu::Draw;
+    use crate::paint::Color;
+    use crate::scene::{Layer, Recorder};
+
+    /// A picture that can't be kept (its dashed rect would go solid) is drawn in the frame: its filtered layer is
+    /// counted once, as in a frame that didn't try to keep it.
+    #[test]
+    fn a_rejected_kept_picture_leaves_the_filter_budget_as_it_was() {
+        let mut rec = Recorder::new();
+        rec.push_layer(&Layer { filters: &[Filter::Blur { sigma: 2.0 }], ..Layer::default() });
+        rec.fill_rect(kurbo::Rect::new(0.0, 0.0, 16.0, 16.0), Color::BLACK);
+        rec.pop();
+        rec.fill_dashed_rect(kurbo::Rect::new(0.0, 20.0, 200_002.0, 21.0), &[1, 1], Color::BLACK);
+        let picture = rec.finish();
+        let res = Resources::default();
+        let draws = [Draw { picture: &picture, transform: kurbo::Affine::IDENTITY }];
+        let mut prepare = Prepare::new(8192);
+        let mut filtered = Vec::new();
+        for _ in 0..2 {
+            prepare.frame(&res, &Frame { clear: None, draws: &draws }, (64, 32));
+            filtered.push(prepare.filtered_pixels);
+        }
+        assert!(filtered[0] > 0);
+        assert_eq!(filtered[0], filtered[1], "drawn in the frame, then tried kept and drawn in the frame");
+        assert_eq!(prepare.memo.counts, (0, 0));
     }
 }

@@ -1,3 +1,6 @@
+// Copyright 2023 the Kurbo Authors
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 //! Dashing a path into kept scratch
 //!
 //! Kurbo's dash iterator (`kurbo::dash`, kurbo 0.13.1, MIT or Apache-2.0) step for step, in its default order (a

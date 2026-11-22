@@ -123,10 +123,7 @@ impl<S: Sink> Player<'_, S> {
             let at = ((y0 + y) as usize * w as usize + (x0 + x) as usize) * 4;
             px.get(at..at + 4).is_some_and(|p| p[..3] != [r, g, b] || p[3] == 0)
         };
-        let rects = region::runs(x1 - x0, y1 - y0, shown, |n| self.spend(n));
-        if !self.spend(rects.len()) {
-            return;
-        }
+        let Some(rects) = region::runs(x1 - x0, y1 - y0, shown, |n| self.spend(n)) else { return };
         // From the source's pixels into the unit square.
         let unit = Affine::scale_non_uniform(1.0 / s.src.width(), 1.0 / s.src.height())
             * Affine::translate((f64::from(x0) - s.src.x0, f64::from(y0) - s.src.y0));
@@ -140,16 +137,17 @@ impl<S: Sink> Player<'_, S> {
     }
 }
 
-/// A monochrome mask's set bits, `w` × `h` of them from `(x, y)` (rows top down), as rects in the unit square.
+/// A monochrome mask's set bits, `w` × `h` of them from `(x, y)` (rows top down), as rects in the unit square; `None`
+/// when `spend` stops it.
 pub(super) fn mask_rects(
     bits: &dyn Fn(u32, u32) -> bool,
     (x, y, w, h): (u32, u32, u32, u32),
     spend: &mut dyn FnMut(usize) -> bool,
-) -> Vec<kurbo::Rect> {
+) -> Option<Vec<kurbo::Rect>> {
     if w == 0 || h == 0 {
-        return Vec::new();
+        return Some(Vec::new());
     }
-    let rects = region::runs(w, h, |i, j| bits(x + i, y + j), spend);
+    let rects = region::runs(w, h, |i, j| bits(x + i, y + j), spend)?;
     let unit = Affine::scale_non_uniform(1.0 / f64::from(w), 1.0 / f64::from(h));
-    rects.into_iter().map(|r| unit.transform_rect_bbox(r)).collect()
+    Some(rects.into_iter().map(|r| unit.transform_rect_bbox(r)).collect())
 }

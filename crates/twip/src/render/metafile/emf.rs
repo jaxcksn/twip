@@ -880,8 +880,7 @@ fn mask<S: Sink>(p: &mut Player<'_, S>, r: Rec<'_>, at: DibAt, corner: Point, si
     if !p.spend_pixels(w, h) {
         return None;
     }
-    let rects = mask_rects(&bits, (x, y, w, h), &mut |n| p.spend(n));
-    p.spend(rects.len()).then_some(rects)
+    mask_rects(&bits, (x, y, w, h), &mut |n| p.spend(n))
 }
 
 /// UTF-16LE code units as code points; unpaired surrogates become U+FFFD.

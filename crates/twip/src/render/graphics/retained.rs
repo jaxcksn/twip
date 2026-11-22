@@ -49,7 +49,11 @@ pub fn drawing_key(page: &PageFragment) -> u64 {
                     for r in t.rows.iter() {
                         (r.rect.map(f64::to_bits), r.top.to_bits(), r.repeat).hash(h);
                         items(&r.background, h);
-                        r.cells.iter().for_each(|c| walk(&c.content, h));
+                        for c in r.cells.iter() {
+                            // The cell's clip
+                            (c.place.rect.map(f64::to_bits), c.place.clip.map(f64::to_bits)).hash(h);
+                            walk(&c.content, h);
+                        }
                         items(&r.borders, h);
                     }
                 }
@@ -210,7 +214,58 @@ impl Retained {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::layout::ids::FragmentId;
+    use crate::layout::fragment::{CellFragment, CellPlace, RowFragment, TableFragment};
+    use crate::layout::ids::{FragmentId, TableId};
+
+    /// Pages alike but for a cell's clip draw differently.
+    #[test]
+    fn a_cells_clip_is_part_of_the_drawing_key() {
+        let page = |clip: Option<f64>| {
+            let cell = CellFragment {
+                cell: 0,
+                content: Box::new([Child::Items(Box::new([Item::Gridline { line: [0.0, 0.0, 10.0, 30.0] }]))]),
+                place: CellPlace {
+                    index: 0,
+                    col: 0,
+                    span: 1,
+                    rect: [0.0, 0.0, 10.0, 30.0],
+                    clip,
+                    v_merge: crate::docx::VMerge::None,
+                    hidden: Box::new([]),
+                    closing: None,
+                },
+            };
+            let row = RowFragment {
+                row: 0,
+                rect: [0.0, 0.0, 10.0, 30.0],
+                top: 0.0,
+                edges: Box::new([]),
+                background: Box::new([]),
+                cells: Box::new([cell]),
+                borders: Box::new([]),
+                repeat: false,
+                changed: false,
+            };
+            let body = BoxFragment {
+                kind: BoxKind::Body,
+                id: None,
+                offset: (0.0, 0.0),
+                size: (100.0, 100.0),
+                children: Box::new([Child::Table(TableFragment { table: TableId(1), rows: Box::new([row]) })]),
+            };
+            PageFragment {
+                id: FragmentId::next(),
+                w: 100.0,
+                h: 100.0,
+                body_area: None,
+                children: Box::new([PageChild::Body(Rc::new(body))]),
+                borders: Box::new([]),
+            }
+        };
+        assert_eq!(drawing_key(&page(Some(20.0))), drawing_key(&page(Some(20.0))));
+        assert_ne!(drawing_key(&page(Some(20.0))), drawing_key(&page(Some(10.0))));
+        assert_ne!(drawing_key(&page(Some(20.0))), drawing_key(&page(None)));
+    }
 
     /// Recordings holding pictures with a changed colour past the bound go, least recently drawn first, a picture two
     /// of them hold counted once; the frame's own stay over it.

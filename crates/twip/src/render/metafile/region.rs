@@ -53,14 +53,15 @@ pub(super) fn combine(regions: &[&[Rect]], keep: impl Fn(u32) -> bool, mut spend
 }
 
 /// The rects where `bit(x, y)` holds in a `w` × `h` grid (rows top down): each row's runs, a run joined to the one
-/// above it when they match. `spend` is charged a unit a row and stops it when it returns false.
-pub(super) fn runs(w: u32, h: u32, bit: impl Fn(u32, u32) -> bool, mut spend: impl FnMut(usize) -> bool) -> Vec<Rect> {
+/// above it when they match. `spend` is charged a unit a row and a unit for each new rect before it is kept; `None`
+/// when it returns false.
+pub(super) fn runs(w: u32, h: u32, bit: impl Fn(u32, u32) -> bool, mut spend: impl FnMut(usize) -> bool) -> Option<Vec<Rect>> {
     let mut out: Vec<Rect> = Vec::new();
     // The rects the row above ended, by their index in `out`.
     let (mut above, mut here): (Vec<usize>, Vec<usize>) = (Vec::new(), Vec::new());
     for y in 0..h {
         if !spend(w as usize / 64 + 1) {
-            break;
+            return None;
         }
         here.clear();
         // The row above's runs are in order: a cursor through them finds a match.
@@ -85,6 +86,9 @@ pub(super) fn runs(w: u32, h: u32, bit: impl Fn(u32, u32) -> bool, mut spend: im
                     here.push(k);
                 }
                 None => {
+                    if !spend(1) {
+                        return None;
+                    }
                     here.push(out.len());
                     out.push(Rect::new(x0, f64::from(y), x1, f64::from(y + 1)));
                 }
@@ -92,7 +96,7 @@ pub(super) fn runs(w: u32, h: u32, bit: impl Fn(u32, u32) -> bool, mut spend: im
         }
         std::mem::swap(&mut above, &mut here);
     }
-    out
+    Some(out)
 }
 
 #[cfg(test)]
@@ -119,6 +123,28 @@ mod tests {
         // An L: two rows of four, then two rows of one.
         let bits = |x: u32, y: u32| y < 2 && x < 4 || x == 0;
         let rs = runs(6, 4, bits, |_| true);
-        assert_eq!(rs, [Rect::new(0.0, 0.0, 4.0, 2.0), Rect::new(0.0, 2.0, 1.0, 4.0)]);
+        assert_eq!(rs, Some(vec![Rect::new(0.0, 0.0, 4.0, 2.0), Rect::new(0.0, 2.0, 1.0, 4.0)]));
+    }
+
+    /// A checkerboard's rects are charged as they are made: a budget its rows fit in stops it.
+    #[test]
+    fn a_masks_rects_are_charged_before_they_are_kept() {
+        let checker = |x: u32, y: u32| (x + y).is_multiple_of(2);
+        let mut spent = 0;
+        let rs = runs(64, 64, checker, |n| {
+            spent += n;
+            true
+        });
+        assert_eq!(rs.map(|r| r.len()), Some(64 * 32));
+        assert_eq!(spent, 64 * 2 + 64 * 32, "a unit a row, a unit a rect");
+        let mut left: usize = 64 * 2 + 100;
+        let mut kept = 0;
+        let rs = runs(64, 64, checker, |n| {
+            kept += usize::from(n == 1);
+            left = left.saturating_sub(n);
+            left > 0
+        });
+        assert_eq!(rs, None);
+        assert!(kept < 64 * 32, "stopped before every rect was made");
     }
 }

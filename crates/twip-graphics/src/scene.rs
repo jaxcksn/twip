@@ -1061,6 +1061,9 @@ fn flat_caps(stroke: &kurbo::Stroke) -> Option<bool> {
 /// draws the stroke solid, where it would take time and memory without bound.
 const MAX_DASHES: f64 = 200_000.0;
 
+/// 2^53: integers up to it are exact as `f64`.
+const MAX_EXACT: f64 = (1u64 << f64::MANTISSA_DIGITS) as f64;
+
 /// A rect filled in dashes measured on the device ([`Recorder::fill_dashed_rect`]).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct Dashed {
@@ -1075,8 +1078,8 @@ pub(crate) struct Dashed {
 
 impl Dashed {
     /// Each dash under `t` (local units to device pixels) that reaches `view` (device pixels; under rotation or skew,
-    /// the whole rect), as a rect in local units. `false` when there would be more than [`MAX_DASHES`] or `t` is
-    /// degenerate: the rect is then drawn solid.
+    /// the whole rect), as a rect in local units. `false` when there would be more than [`MAX_DASHES`], the view is
+    /// more than [`MAX_EXACT`] pattern units along the rect, or `t` is degenerate: the rect is then drawn solid.
     pub(crate) fn each(&self, t: Transform, view: Rect, mut dash: impl FnMut(Rect)) -> bool {
         let r = self.rect;
         let along_x = r.x1 - r.x0 >= r.y1 - r.y0;
@@ -1102,10 +1105,11 @@ impl Dashed {
         if v1 <= v0 {
             return true;
         }
-        // The pattern's start: `phase` before the rect's.
-        let o = s0 - f64::from(self.phase);
+        // The pattern's start: `phase` (within a period) before the rect's.
+        let o = s0 - f64::from(self.phase).rem_euclid(period);
         let (k0, k1) = (((v0 - o) / period).floor(), ((v1 - o) / period).ceil());
-        if (k1 - k0) * pattern.len() as f64 > MAX_DASHES {
+        // Cycles' starts in pattern units, exact as `f64` and in `u64`.
+        if (k1 - k0) * pattern.len() as f64 > MAX_DASHES || k1 * f64::from(sum) > MAX_EXACT {
             return false;
         }
         for k in k0 as u64..k1 as u64 {
@@ -1339,6 +1343,26 @@ mod tests {
         assert_eq!(dashes(16.0)[0], (16.0, 32.0));
         // Starting 8 into a dash, the rest of it is drawn.
         assert_eq!(dashes(8.0)[0], (0.0, 8.0));
+    }
+
+    /// A phase many periods on dashes as the phase within a period does; cycles too far along the rect to place
+    /// exactly fill it.
+    #[test]
+    fn a_dashed_rects_cycles_stay_exact() {
+        let dashes = |r: kurbo::Rect, phase: f64| {
+            let mut rec = Recorder::new();
+            rec.fill_dashed_rect_from(r, &[1, 1], phase, RED);
+            let mut out = Vec::new();
+            let view = Rect { x0: 0.0, y0: 0.0, x1: 65536.0, y1: 1.0 };
+            let dashed = rec.lists.dashed[0].each(Transform::from_kurbo(kurbo::Affine::IDENTITY), view, |r| out.push((r.x0, r.x1)));
+            dashed.then_some(out)
+        };
+        let long = rect(0.0, 0.0, 65536.0, 1.0);
+        let whole = dashes(long, 0.0).expect("dashed");
+        assert_eq!(whole.len(), 32768);
+        assert_eq!(dashes(long, 2.0f64.powi(64)).as_ref(), Some(&whole));
+        assert_eq!(dashes(long, 2.0f64.powi(64) + 2.0f64.powi(41)).as_ref(), Some(&whole));
+        assert_eq!(dashes(rect(-(2.0f64.powi(64)), 0.0, 100.0, 1.0), 0.0), None);
     }
 
     #[test]
