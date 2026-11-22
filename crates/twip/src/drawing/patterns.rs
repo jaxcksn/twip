@@ -1,6 +1,7 @@
 //! Preset patterns
 
 use super::paint::PatternPreset;
+use crate::docx::props::Stripe;
 
 pub fn tile(p: PatternPreset) -> [u8; 8] {
     use PatternPreset::*;
@@ -62,6 +63,114 @@ pub fn tile(p: PatternPreset) -> [u8; 8] {
     }
 }
 
+/// A `w:shd` stripe's or cross's tile, as Word draws it.
+pub fn stripe(s: Stripe) -> [u8; 8] {
+    use Stripe::*;
+    match s {
+        Horz => [0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00],
+        Vert => [0xF0; 8],
+        ReverseDiag => [0xF0, 0x78, 0x3C, 0x1E, 0x0F, 0x87, 0xC3, 0xE1],
+        Diag => [0x0F, 0x1E, 0x3C, 0x78, 0xF0, 0xE1, 0xC3, 0x87],
+        HorzCross => [0xF0, 0xF0, 0xF0, 0xF0, 0x0F, 0x0F, 0x0F, 0x0F],
+        DiagCross => [0xFF, 0x7E, 0x3C, 0x7E, 0xFF, 0xE7, 0xC3, 0xE7],
+        ThinHorz => [0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+        ThinVert => [0xC0; 8],
+        ThinReverseDiag => [0xC0, 0x60, 0x30, 0x18, 0x0C, 0x06, 0x03, 0x81],
+        ThinDiag => [0x03, 0x06, 0x0C, 0x18, 0x30, 0x60, 0xC0, 0x81],
+        ThinHorzCross => [0xFF, 0xFF, 0xC0, 0xC0, 0xC0, 0xC0, 0xC0, 0xC0],
+        ThinDiagCross => [0xD8, 0x70, 0x70, 0xD8, 0x8D, 0x07, 0x07, 0x8D],
+    }
+}
+
+/// The patterns Word's Fill Effects offers, in its order, with the names it gives them (a VML pattern fill's
+/// `o:title`).
+pub const WORD: [(PatternPreset, &str); 48] = {
+    use PatternPreset::*;
+    [
+        (Pct5, "5%"),
+        (Pct10, "10%"),
+        (Pct20, "20%"),
+        (Pct25, "25%"),
+        (Pct30, "30%"),
+        (Pct40, "40%"),
+        (Pct50, "50%"),
+        (Pct60, "60%"),
+        (Pct70, "70%"),
+        (Pct75, "75%"),
+        (Pct80, "80%"),
+        (Pct90, "90%"),
+        (LtDnDiag, "Light downward diagonal"),
+        (LtUpDiag, "Light upward diagonal"),
+        (DkDnDiag, "Dark downward diagonal"),
+        (DkUpDiag, "Dark upward diagonal"),
+        (WdDnDiag, "Wide downward diagonal"),
+        (WdUpDiag, "Wide upward diagonal"),
+        (LtVert, "Light vertical"),
+        (LtHorz, "Light horizontal"),
+        (NarVert, "Narrow vertical"),
+        (NarHorz, "Narrow horizontal"),
+        (DkVert, "Dark vertical"),
+        (DkHorz, "Dark horizontal"),
+        (DashDnDiag, "Dashed downward diagonal"),
+        (DashUpDiag, "Dashed upward diagonal"),
+        (DashHorz, "Dashed horizontal"),
+        (DashVert, "Dashed vertical"),
+        (SmConfetti, "Small confetti"),
+        (LgConfetti, "Large confetti"),
+        (ZigZag, "Zig zag"),
+        (Wave, "Wave"),
+        (DiagBrick, "Diagonal brick"),
+        (HorzBrick, "Horizontal brick"),
+        (Weave, "Weave"),
+        (Plaid, "Plaid"),
+        (Divot, "Divot"),
+        (DotGrid, "Dotted grid"),
+        (DotDmnd, "Dotted diamond"),
+        (Shingle, "Shingle"),
+        (Trellis, "Trellis"),
+        (Sphere, "Sphere"),
+        (SmGrid, "Small grid"),
+        (LgGrid, "Large grid"),
+        (SmCheck, "Small checker board"),
+        (LgCheck, "Large checker board"),
+        (OpenDmnd, "Outlined diamond"),
+        (SolidDmnd, "Solid diamond"),
+    ]
+};
+
+/// A pattern's name in Word, or its ECMA-376 name for those Word's list leaves out.
+pub fn title(p: PatternPreset) -> &'static str {
+    WORD.iter().find(|(q, _)| *q == p).map_or(p.name(), |(_, n)| n)
+}
+
+/// The preset whose tile is `bits` (a set bit is the foreground), those Word offers first.
+pub fn of_tile(bits: [u8; 8]) -> Option<PatternPreset> {
+    WORD.iter().map(|(p, _)| *p).chain(PatternPreset::ALL.iter().copied()).find(|p| tile(*p) == bits)
+}
+
+/// The preset a pattern fill's tile picture draws: an opaque 8×8 picture in black and white, black its foreground
+/// (any other colours show blends of the pattern's two).
+pub fn of_picture(data: &[u8]) -> Option<PatternPreset> {
+    let (w, h, _, _) = crate::docx::image::image_info(data)?;
+    if (w, h) != (8.0, 8.0) {
+        return None;
+    }
+    let (_, _, px) = twip_graphics::image::pixels_straight(data).ok()?;
+    let px = px.as_chunks::<4>().0;
+    if px.len() != 64 {
+        return None;
+    }
+    let mut bits = [0u8; 8];
+    for (k, p) in px.iter().enumerate() {
+        match p {
+            [0, 0, 0, 255] => bits[k / 8] |= 0x80 >> (k % 8),
+            [255, 255, 255, 255] => {}
+            _ => return None,
+        }
+    }
+    of_tile(bits)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -75,5 +184,41 @@ mod tests {
         assert_eq!(ink(PatternPreset::Pct50), 32);
         assert_eq!(ink(PatternPreset::Pct25), 16);
         assert_eq!(ink(PatternPreset::Horz), 8);
+    }
+
+    #[test]
+    fn a_tile_names_its_preset_and_word_lists_each_once() {
+        for &p in PatternPreset::ALL {
+            let found = of_tile(tile(p)).expect("a preset");
+            assert_eq!(tile(found), tile(p));
+        }
+        assert_eq!(of_tile(tile(PatternPreset::LgGrid)), Some(PatternPreset::LgGrid), "Word's name for the shared tile");
+        let mut seen: Vec<PatternPreset> = WORD.iter().map(|(p, _)| *p).collect();
+        seen.dedup();
+        assert_eq!(seen.len(), 48);
+        assert_eq!(title(PatternPreset::WdUpDiag), "Wide upward diagonal");
+    }
+
+    #[test]
+    fn only_an_opaque_black_and_white_tile_is_a_preset() {
+        let png = |f: &dyn Fn(usize, bool) -> [u8; 4]| {
+            let bits = tile(PatternPreset::Pct50);
+            let rgba: Vec<u8> = (0..64).flat_map(|k| f(k, bits[k / 8] & (0x80 >> (k % 8)) != 0)).collect();
+            crate::render::svg::png(8, 8, &rgba)
+        };
+        assert_eq!(of_picture(&png(&|_, on| if on { [0, 0, 0, 255] } else { [255, 255, 255, 255] })), Some(PatternPreset::Pct50));
+        // Other colours, a third tone, or a clear pixel, is a picture.
+        assert_eq!(of_picture(&png(&|_, on| if on { [0, 0, 0xFF, 255] } else { [0xFF, 0xFF, 0, 255] })), None);
+        assert_eq!(
+            of_picture(&png(&|k, on| if on {
+                [0, 0, 0, 255]
+            } else if k == 1 {
+                [200, 200, 200, 255]
+            } else {
+                [255, 255, 255, 255]
+            })),
+            None
+        );
+        assert_eq!(of_picture(&png(&|k, on| if on { [0, 0, 0, 255] } else { [255, 255, 255, if k == 1 { 0 } else { 255 }] })), None);
     }
 }

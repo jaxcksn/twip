@@ -32,6 +32,46 @@ has at least 3:1 contrast against the page, except `selection`: the light blue o
 
 Under forced colours (web) or high contrast (WinForms) the editor uses the system's colours, until you set your own.
 
+## Text
+
+Glyphs are drawn from the font's outlines, the same way on the GPU, on the CPU and in every SDK, so a page looks the
+same wherever it is drawn.
+
+- **Hinted:** text upright or turned by a quarter, a half or three quarters (vertical sections, turned table cells)
+  at an even scale. Hinting is light: it snaps edges across the baseline to the pixel grid and keeps every glyph's
+  origin and advance, so line breaks are the same hinted or not and zoom never reflows a line. Along the baseline an
+  edge can still move by up to half a pixel, where the font's own hinting instructions move it.
+- **Not hinted:** text at any other angle, mirrored or stretched, synthetic italic, and colour glyphs (emoji).
+- **Positions:** glyphs land on quarter pixels along the baseline. For upright and quarter-turned text the baseline
+  itself sits on a whole pixel, hinted or not (skewed and stretched text too); at any other angle glyphs land on
+  quarter pixels both ways.
+- **Weight:** coverage goes through a gamma chosen by the text colour, so dark text on light and light text on dark
+  look the same weight. Glyphs more than 256 pixels per em are drawn from their outlines instead of a cached mask,
+  through the same gamma.
+
+Text decoration and effects draw as Word draws them: every underline style and colour, emboss, engrave, outline and
+shadow, and the Word 2010 text effects (glow, shadow, reflection, gradient or no fill, outline; `setTextEffects`).
+
+A PDF export embeds the fonts, and the viewer draws their glyphs its own way.
+
+## Pictures, shading and backgrounds
+
+- **Metafiles:** EMF and WMF pictures, and OLE object previews, draw as vectors at any zoom, not as a raster. EMF+ records
+  draw too, in dual EMF and EMF+ files and in EMF+-only files. JPEG XR (`.wdp`) pictures draw like any raster.
+  Double-byte text in metafiles isn't drawn.
+- **Picture effects:** set transparent colour, brightness, contrast, washout, grayscale, black and white, and
+  reflection. A linked picture draws its embedded copy when it has one, else a light placeholder frame: the engine
+  fetches nothing.
+- **Shading and borders:** every shading pattern (stripes and crosses as tiles that repeat on whole device pixels,
+  percentages flat) on text, paragraphs, cells and tables; shadowed borders and the wave, double wave and
+  dash-dot-stroked lines.
+- **Watermarks and page colour:** text and picture watermarks in the headers, and the page colour (a colour with a
+  theme tint or shade, a gradient, a pattern or a picture), draw on screen. A page colour shows only when the document
+  displays background shapes, as in Word.
+
+The same drawing is the source for the GPU, the CPU and PDF, and a regression gate compares them: pixel snapshots of
+a fixture corpus, the GPU against the CPU, and the PDF's text, structure and drawing commands.
+
 ## Web
 
 ```ts file=../../examples/web/rendering.ts

@@ -20,6 +20,104 @@ pub struct GlyphRun {
     pub chars: Box<[(char, f64, Option<Unit>)]>,
     pub colour: Option<u32>,
     pub para: Option<ParaId>,
+    /// How the glyphs paint when not filled in `colour` alone; `None` for ordinary text.
+    pub paint: Option<Rc<GlyphPaint>>,
+}
+
+/// A glyph run's paint: its fill, its glyphs' outline and offset copies drawn under it, and Word 2010's text effects.
+#[derive(Debug, PartialEq)]
+pub struct GlyphPaint {
+    pub fill: GlyphFill,
+    /// The outline's width in points and its colour.
+    pub outline: Option<(f64, u32)>,
+    /// Copies of the run drawn before it, each moved by (dx, dy) points, in a colour of its own.
+    pub under: Box<[(f64, f64, u32)]>,
+    /// The run's text effects, resolved; `None` without any.
+    pub effects: Option<Box<TextEffectPaint>>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum GlyphFill {
+    None,
+    Solid(u32),
+    /// A text fill (`w14:textFill`): a solid with its alpha, or a gradient across the run's box (its advance wide,
+    /// from the face's ascent to its descent).
+    Paint(Box<crate::drawing::paint::Paint>),
+}
+
+/// A run's text effects in points, degrees and colours: the outline stroked over the fill, and the shadow,
+/// reflection and glow drawn under it, in the run's box as [`GlyphFill::Paint`] has it.
+#[derive(Debug, PartialEq)]
+pub struct TextEffectPaint {
+    pub outline: Option<crate::drawing::paint::ResolvedLine>,
+    pub shadow: Option<crate::drawing::paint::ResolvedShadow>,
+    /// The glow's radius and colour.
+    pub glow: Option<(f64, crate::drawing::colour::Rgba)>,
+    pub reflection: Option<crate::drawing::paint::ResolvedReflection>,
+}
+
+fn hash_paint<H: std::hash::Hasher>(p: &crate::drawing::paint::Paint, h: &mut H) {
+    use crate::drawing::paint::Paint;
+    use std::hash::Hash;
+    std::mem::discriminant(p).hash(h);
+    match p {
+        Paint::Solid(c) => c.hash(h),
+        Paint::Gradient { stops, kind, tile, flip, rot_with_shape } => {
+            stops.iter().for_each(|(t, c)| (t.to_bits(), c).hash(h));
+            (kind, tile, flip, rot_with_shape).hash(h);
+        }
+        Paint::Pattern { preset, fg, bg } => (preset, fg, bg).hash(h),
+        Paint::Hatch { fg, bg, .. } => (fg, bg).hash(h),
+        Paint::None | Paint::Picture { .. } => {}
+    }
+}
+
+fn hash_bits<H: std::hash::Hasher>(v: &[f64], h: &mut H) {
+    use std::hash::Hash;
+    v.iter().for_each(|x| x.to_bits().hash(h));
+}
+
+impl std::hash::Hash for TextEffectPaint {
+    fn hash<H: std::hash::Hasher>(&self, h: &mut H) {
+        if let Some(l) = &self.outline {
+            1u8.hash(h);
+            hash_bits(&[l.width], h);
+            hash_paint(&l.paint, h);
+            (&l.dash, l.compound, l.cap, l.join, l.inset, l.head.is_some(), l.tail.is_some()).hash(h);
+        }
+        if let Some(s) = &self.shadow {
+            2u8.hash(h);
+            hash_bits(&[s.blur, s.dist, s.dir, s.scale[0], s.scale[1], s.skew[0], s.skew[1]], h);
+            (s.align, s.colour, s.rot_with_shape).hash(h);
+        }
+        if let Some((r, c)) = self.glow {
+            3u8.hash(h);
+            hash_bits(&[r], h);
+            c.hash(h);
+        }
+        if let Some(r) = &self.reflection {
+            4u8.hash(h);
+            let v = [r.blur, r.dist, r.dir, r.fade_dir, r.scale[0], r.scale[1], r.skew[0], r.skew[1], r.start.0, r.start.1, r.end.0, r.end.1];
+            hash_bits(&v, h);
+            (r.align, r.rot_with_shape).hash(h);
+        }
+    }
+}
+
+impl std::hash::Hash for GlyphPaint {
+    fn hash<H: std::hash::Hasher>(&self, h: &mut H) {
+        match &self.fill {
+            GlyphFill::None => 0u8.hash(h),
+            GlyphFill::Solid(c) => (1u8, c).hash(h),
+            GlyphFill::Paint(p) => {
+                2u8.hash(h);
+                hash_paint(p, h);
+            }
+        }
+        self.outline.map(|(w, c)| (w.to_bits(), c)).hash(h);
+        self.under.iter().for_each(|&(dx, dy, c)| (dx.to_bits(), dy.to_bits(), c).hash(h));
+        self.effects.hash(h);
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -31,9 +129,23 @@ pub struct ImageKey {
 #[derive(Clone, Debug)]
 pub enum Item {
     Glyphs(GlyphRun),
-    Rect { rect: [f64; 4], colour: u32 },
-    Image { rect: [f64; 4], key: ImageKey },
-    Gridline { line: [f64; 4] },
+    /// A filled rect; `snap`: aliased, its edges on whole device pixels (shading, so fills that meet leave no seam);
+    /// `dash`: a border line's dashes, along its longer side, starting `phase` points into the pattern.
+    Rect {
+        rect: [f64; 4],
+        colour: u32,
+        snap: bool,
+        dash: Dash,
+        phase: f32,
+    },
+    Image {
+        rect: [f64; 4],
+        key: ImageKey,
+        of: PictureOf,
+    },
+    Gridline {
+        line: [f64; 4],
+    },
     Shape(Rc<ShapeItem>),
     Turned(Rc<Turned>),
 }
@@ -52,7 +164,17 @@ pub struct Layer {
     pub order: usize,
 }
 
-#[derive(Debug, PartialEq)]
+/// The picture an image or shape item draws, in the model: an inline picture (its paragraph and unit) or a float.
+/// Drawing doesn't read it and the layout dump doesn't show it; a tagged PDF finds a figure's picture by it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum PictureOf {
+    #[default]
+    None,
+    Inline(ParaId, Unit),
+    Float(FloatId),
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct ShapeItem {
     pub rect: [f64; 4],
     pub rot: f64,
@@ -66,9 +188,68 @@ pub struct ShapeItem {
     pub float: u64,
     pub path: crate::drawing::ChildPath,
     pub picture: bool,
+    /// Its line is a document ink colour (a border or a check box), mapped by the appearance like a rect's.
+    pub ink: bool,
+    /// Drawn for text or a table (an underline's wave, a check box, a border's stroke), not an object: never hit,
+    /// selected, snapped to or taken for an inline picture.
+    pub decoration: bool,
+    /// Filled aliased, its edges on whole device pixels: shading, so fills that meet leave no seam.
+    pub snap: bool,
+    /// The page y below which an inline picture's reflection is clipped: the bottom of its paragraph, spacing after
+    /// included.
+    pub clip_bottom: Option<f64>,
+    /// The float holding the text of an inline text box, which `float` (0 for inline) doesn't name; 0 for none.
+    pub text_float: u64,
+    /// The text of a floated shape with a reflection, which the reflection holds: its glyphs, in the shape's frame.
+    pub text: Option<ShapeText>,
+    pub of: PictureOf,
+    /// A text path's glyphs, drawn in place of the geometry's outline (which stays the shape's box, for hits).
+    pub text_path: Option<Rc<TextPathItem>>,
+}
+
+/// The glyphs a shape's reflection holds, shared between the copies of the shape layout makes; equal when they are the
+/// same.
+#[derive(Clone, Debug)]
+pub struct ShapeText(pub Rc<[Clipped]>);
+
+/// An item with the box it is clipped to, if any.
+pub type Clipped = (Item, Option<[f64; 4]>);
+
+impl PartialEq for ShapeText {
+    fn eq(&self, other: &ShapeText) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+/// A text path's glyphs, drawn as their outlines stretched so that their ink fills `fit`.
+#[derive(Debug)]
+pub struct TextPathItem {
+    /// Runs of glyphs, each in one face: glyph ids with the x of each glyph's origin, in ems along one baseline.
+    pub runs: Box<[(Rc<Face>, Box<[(u32, f64)]>)]>,
+    /// The box the ink fills, in the shape's own box (from its top left).
+    pub fit: [f64; 4],
+}
+
+impl PartialEq for TextPathItem {
+    fn eq(&self, o: &TextPathItem) -> bool {
+        self.fit == o.fit && self.runs.len() == o.runs.len() && self.runs.iter().zip(&o.runs).all(|(a, b)| Rc::ptr_eq(&a.0, &b.0) && a.1 == b.1)
+    }
 }
 
 impl ShapeItem {
+    /// The bytes it holds: itself, its geometry's paths and its child path (a cache's estimate).
+    pub fn bytes(&self) -> usize {
+        use std::mem::size_of;
+        let g = &self.geom;
+        size_of::<ShapeItem>()
+            + size_of::<crate::drawing::geom::Geom>()
+            + g.paths
+                .iter()
+                .map(|p| size_of::<crate::drawing::geom::GeomPath>() + p.segs.len() * size_of::<crate::drawing::geom::Seg>())
+                .sum::<usize>()
+            + self.path.len() * size_of::<u16>()
+    }
+
     pub fn hit(&self, x: f64, y: f64, slop: f64) -> bool {
         use crate::drawing::paint::Paint;
         let stroked = !matches!(self.line.paint, Paint::None);
@@ -104,6 +285,11 @@ impl ShapeItem {
         [cx + dx * c - dy * s, cy + dx * s + dy * c]
     }
 
+    /// This shape with its reflection clipped at the page y `y`.
+    pub fn clipped_to(&self, y: f64) -> ShapeItem {
+        ShapeItem { clip_bottom: Some(y), ..self.moved(0.0, 0.0) }
+    }
+
     pub fn moved(&self, dx: f64, dy: f64) -> ShapeItem {
         let r = self.rect;
         ShapeItem {
@@ -119,13 +305,67 @@ impl ShapeItem {
             float: self.float,
             path: self.path.clone(),
             picture: self.picture,
+            ink: self.ink,
+            decoration: self.decoration,
+            snap: self.snap,
+            clip_bottom: self.clip_bottom.map(|y| y + dy),
+            text_float: self.text_float,
+            text: self.text.as_ref().map(|t| {
+                ShapeText(t.0.iter().map(|(i, c)| (translated(i, dx, dy), c.map(|c| [c[0] + dx, c[1] + dy, c[2] + dx, c[3] + dy]))).collect())
+            }),
+            of: self.of,
+            text_path: self.text_path.clone(),
+        }
+    }
+}
+
+/// A border line's dashes, drawn by the renderer in units of the line's width on whole device pixels, so they keep
+/// their size in pixels at any zoom as Word's do.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Dash {
+    #[default]
+    Solid,
+    Dotted,
+    Dashed,
+    DotDash,
+    DotDotDash,
+    DashSmallGap,
+}
+
+impl Dash {
+    /// An `ST_Border` style's dashes; solid for any other style.
+    pub fn of(style: &str) -> Dash {
+        match style {
+            "dotted" => Dash::Dotted,
+            "dashed" => Dash::Dashed,
+            "dotDash" => Dash::DotDash,
+            "dotDotDash" => Dash::DotDotDash,
+            "dashSmallGap" => Dash::DashSmallGap,
+            _ => Dash::Solid,
+        }
+    }
+
+    /// On and off lengths in line widths, as Word draws them on screen and in its PDFs; empty for solid.
+    pub fn pattern(self) -> &'static [u8] {
+        match self {
+            Dash::Solid => &[],
+            Dash::Dotted => &[1, 1],
+            Dash::Dashed => &[4, 4],
+            Dash::DotDash => &[7, 3, 3, 3],
+            Dash::DotDotDash => &[6, 2, 2, 2, 2, 2],
+            Dash::DashSmallGap => &[4, 1],
         }
     }
 }
 
 impl Item {
     pub fn rect(rect: [f64; 4], colour: u32) -> Item {
-        Item::Rect { rect, colour }
+        Item::Rect { rect, colour, snap: false, dash: Dash::Solid, phase: 0.0 }
+    }
+
+    /// Shading's flat fill: an aliased rect.
+    pub fn fill(rect: [f64; 4], colour: u32) -> Item {
+        Item::Rect { rect, colour, snap: true, dash: Dash::Solid, phase: 0.0 }
     }
 
     pub fn top(&self) -> f64 {
@@ -139,7 +379,7 @@ impl Item {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct LineFragment {
     pub items: Box<[Item]>,
     pub pitch: f64,
@@ -151,6 +391,22 @@ pub struct LineFragment {
     pub mark: Option<Unit>,
     pub texts: Box<[([f64; 4], crate::docx::Picture)]>,
     pub expansions: Box<[([f64; 4], Rc<super::expansion::Expansion>)]>,
+}
+
+impl LineFragment {
+    /// This line with the reflections of its inline pictures clipped `to` below its top, those that reach lower: the
+    /// bottom of the part of the paragraph on the page the line is placed on.
+    pub fn clipped(self: &Rc<Self>, to: f64) -> Rc<LineFragment> {
+        let lower = |i: &Item| matches!(i, Item::Shape(s) if s.clip_bottom.is_some_and(|c| c > to));
+        if !self.items.iter().any(lower) {
+            return Rc::clone(self);
+        }
+        let items = self.items.iter().map(|i| match i {
+            Item::Shape(s) if lower(i) => Item::Shape(Rc::new(s.clipped_to(to))),
+            other => other.clone(),
+        });
+        Rc::new(LineFragment { items: items.collect(), ..(**self).clone() })
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -319,9 +575,10 @@ pub fn translated(item: &Item, dx: f64, dy: f64) -> Item {
             chars: r.chars.iter().map(|&(c, x, u)| (c, x + dx, u)).collect(),
             colour: r.colour,
             para: r.para,
+            paint: r.paint.clone(),
         }),
-        Item::Rect { rect, colour } => Item::rect(r4(rect), *colour),
-        Item::Image { rect, key } => Item::Image { rect: r4(rect), key: *key },
+        Item::Rect { rect, colour, snap, dash, phase } => Item::Rect { rect: r4(rect), colour: *colour, snap: *snap, dash: *dash, phase: *phase },
+        Item::Image { rect, key, of } => Item::Image { rect: r4(rect), key: *key, of: *of },
         Item::Gridline { line } => Item::Gridline { line: r4(line) },
         Item::Shape(s) => Item::Shape(std::rc::Rc::new(s.moved(dx, dy))),
         Item::Turned(t) => Item::Turned(std::rc::Rc::new(super::fragment::Turned {

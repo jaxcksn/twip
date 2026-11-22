@@ -30,9 +30,13 @@ use crate::paint::Color;
 /// of on a software adapter), and WebGL 2's limits at the adapter's texture sizes.
 #[derive(Debug)]
 pub struct Context {
+    /// The wgpu instance.
     pub instance: wgpu::Instance,
+    /// The adapter.
     pub adapter: wgpu::Adapter,
+    /// The device.
     pub device: wgpu::Device,
+    /// The queue.
     pub queue: wgpu::Queue,
     lost: Arc<AtomicBool>,
     /// Called once, when the device is lost ([`Context::on_lost`]).
@@ -42,7 +46,9 @@ pub struct Context {
 /// Why there is no GPU context: no hardware adapter on any backend, or the device was refused.
 #[derive(Debug)]
 pub enum ContextError {
+    /// No hardware adapter.
     NoAdapter,
+    /// The device request failed.
     Device(wgpu::RequestDeviceError),
 }
 
@@ -188,7 +194,9 @@ impl Context {
 /// renderer is still usable; draw that frame on the CPU.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error {
+    /// The device was lost.
     Lost,
+    /// The frame needs more than the device has.
     TooLarge,
 }
 

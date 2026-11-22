@@ -3,3 +3,8 @@
 # CI reports every failing test, not only the first.
 [profile.ci]
 fail-fast = false
+
+# A metafile that never finishes playing is killed after three minutes, past what a counted render may take.
+[[profile.default.overrides]]
+filter = 'package(twip) & test(render::metafile::)'
+slow-timeout = { period = "60s", terminate-after = 3 }

@@ -1,0 +1,370 @@
+pages 1
+page 1 612 792
+  text Picture effects
+  text DrawingML: colour change, reflection, luminance
+  text     
+  text VML imagedata: gain and blacklevel, grayscale, bilevel
+  text       
+  text   
+  text A blip with only r:link, and one with r:link and r:embed
+  text   
+  image /X10 64x48 2d07a41ae9927700
+  image /X11 64x48 6564e5098954f28c
+  image /X2 64x48 masked f3cc103136423a57
+  form /X4
+    image /X3 510x390 masked 4d549099ab369715
+  image /X5 64x48 6564e5098954f28c
+  image /X6 64x48 4059223dc0c2b2a5
+  image /X7 64x48 596606bf61579cd3
+  image /X8 64x48 d6d7135ffbf06340
+  image /X9 64x48 d322f366573faafe
+  op 1 0 0 -1 0 792 cm
+  op /P << /MCID 0 >> BDC
+  op q
+  op 0 0 0 rg
+  op 0 0 0 RG
+  op 0.62 w
+  op 0 j
+  op BT
+  op 2 Tr
+  op 1 0 0 -1 72 100.32 Tm
+  op /F1 16 Tf
+  op [<007a> -1 <00ff> -1 <00d7> -1 <014c> -1 <0151> -1 <0140> -1 <00e1> -1 <03be> -1 <00e1> -1 <00f4> -1 <00f4> -1 <00e1> -1 <00d7> -1 <014c> -1 <0144>] TJ
+  op ET
+  op Q
+  op EMC
+  op /P << /MCID 1 >> BDC
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 118.01 Tm
+  op /F1 11 Tf
+  op [<0021> <0140> <00bd> <016a> <00ff> <011b> <00f5> <0059> <0053> <032b> <03be> <00d7> <0122> <0113> <0122> <0151> <0140> <03be> <00d7> <00fc> <00bd> <011b> <00f5> <00e1> <032a> <03be> <0140> <00e1> <00f4> <0113> <00e1> <00d7> <014c> 0 <00ff> <0122> <011b> <032a> <03be> 0 <0113> <0151> <011a> <00ff> <011b> 0 <00bd> <011b> <00d7> <00e1>] TJ
+  op ET
+  op Q
+  op EMC
+  op /P << /MCID 2 >> BDC
+  op q
+  op 1 0 0 1 72 130.46 cm
+  op q
+  op 0 86.4 m
+  op 115.2 86.4 l
+  op 115.2 0 l
+  op 0 0 l
+  op h
+  op W
+  op n
+  op q
+  op 0 0 115.2 86.4 re
+  op W
+  op n
+  op q
+  op 115.2 0 0 -86.4 0 86.4 cm
+  op /X2 Do
+  op Q
+  op Q
+  op Q
+  op Q
+  op EMC
+  op /Artifact BMC
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 187.2 216.86 Tm
+  op /F1 11 Tf
+  op [<03be> <03be>] TJ
+  op ET
+  op Q
+  op EMC
+  op /P << /MCID 3 >> BDC
+  op q
+  op 194.9 124.96 m
+  op 321.1 124.96 l
+  op 321.1 218.86 l
+  op 194.9 218.86 l
+  op h
+  op W
+  op n
+  op q
+  op /X4 Do
+  op Q
+  op Q
+  op q
+  op 1 0 0 1 200.4 130.46 cm
+  op q
+  op 0 86.4 m
+  op 115.2 86.4 l
+  op 115.2 0 l
+  op 0 0 l
+  op h
+  op W
+  op n
+  op q
+  op 0 0 115.2 86.4 re
+  op W
+  op n
+  op q
+  op 115.2 0 0 -86.4 0 86.4 cm
+  op /X5 Do
+  op Q
+  op Q
+  op Q
+  op Q
+  op EMC
+  op /Artifact BMC
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 315.6 216.86 Tm
+  op /F1 11 Tf
+  op [<03be> <03be>] TJ
+  op ET
+  op Q
+  op EMC
+  op /P << /MCID 4 >> BDC
+  op q
+  op 1 0 0 1 328.8 130.46 cm
+  op q
+  op 0 86.4 m
+  op 115.2 86.4 l
+  op 115.2 0 l
+  op 0 0 l
+  op h
+  op W
+  op n
+  op q
+  op 0 0 115.2 86.4 re
+  op W
+  op n
+  op q
+  op 115.2 0 0 -86.4 0 86.4 cm
+  op /X6 Do
+  op Q
+  op Q
+  op Q
+  op Q
+  op EMC
+  op /P << /MCID 5 >> BDC
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 230.08 Tm
+  op /F1 11 Tf
+  op [<00a1> <0059> <0053> <03be> <00ff> <011a> <00bd> <00f5> <00e1> <00dd> <00bd> <014c> <00bd> <032b> <03be> <00f5> <00bd> <00ff> <011b> <03be> <00bd> <011b> <00dd> <03be> <00d6> <0113> <00bd> <00d7> <0110> <0113> <00e1> <0169> <00e1> 0 <0113> <032a> <03be> <00f5> <0140> 0 <00bd> <0170> <0144> <00d7> <00bd> 0 <0113> <00e1> <032a> <03be> <00d6> 0 <00ff> <0113> <00e1> <0169> <00e1> 0 <0113>] TJ
+  op ET
+  op Q
+  op EMC
+  op /P << /MCID 6 >> BDC
+  op q
+  op 1 0 0 1 72 242.53 cm
+  op q
+  op 0 86.4 m
+  op 115.2 86.4 l
+  op 115.2 0 l
+  op 0 0 l
+  op h
+  op W
+  op n
+  op q
+  op 0 0 115.2 86.4 re
+  op W
+  op n
+  op q
+  op 115.2 0 0 -86.4 0 86.4 cm
+  op /X7 Do
+  op Q
+  op Q
+  op Q
+  op Q
+  op EMC
+  op /Artifact BMC
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 187.2 328.93 Tm
+  op /F1 11 Tf
+  op [<03be> <03be>] TJ
+  op ET
+  op Q
+  op EMC
+  op /P << /MCID 7 >> BDC
+  op q
+  op 1 0 0 1 200.4 242.53 cm
+  op q
+  op 0 86.4 m
+  op 115.2 86.4 l
+  op 115.2 0 l
+  op 0 0 l
+  op h
+  op W
+  op n
+  op q
+  op 0 0 115.2 86.4 re
+  op W
+  op n
+  op q
+  op 115.2 0 0 -86.4 0 86.4 cm
+  op /X8 Do
+  op Q
+  op Q
+  op Q
+  op Q
+  op EMC
+  op /Artifact BMC
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 315.6 328.93 Tm
+  op /F1 11 Tf
+  op [<03be> <03be>] TJ
+  op ET
+  op Q
+  op EMC
+  op /P << /MCID 8 >> BDC
+  op q
+  op 1 0 0 1 328.8 242.53 cm
+  op q
+  op 0 86.4 m
+  op 115.2 86.4 l
+  op 115.2 0 l
+  op 0 0 l
+  op h
+  op W
+  op n
+  op q
+  op 0 0 115.2 86.4 re
+  op W
+  op n
+  op q
+  op 115.2 0 0 -86.4 0 86.4 cm
+  op /X9 Do
+  op Q
+  op Q
+  op Q
+  op Q
+  op EMC
+  op /Artifact BMC
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 444 328.93 Tm
+  op /F1 11 Tf
+  op [<03be> <03be>] TJ
+  op ET
+  op Q
+  op EMC
+  op /P << /MCID 9 >> BDC
+  op q
+  op 1 0 0 1 72 328.93 cm
+  op q
+  op 0 86.4 m
+  op 115.2 86.4 l
+  op 115.2 0 l
+  op 0 0 l
+  op h
+  op W
+  op n
+  op q
+  op 0 0 115.2 86.4 re
+  op W
+  op n
+  op q
+  op 115.2 0 0 -86.4 0 86.4 cm
+  op /X10 Do
+  op Q
+  op Q
+  op Q
+  op Q
+  op EMC
+  op /Artifact BMC
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 187.2 415.33 Tm
+  op /F1 11 Tf
+  op [<03be> <03be>] TJ
+  op ET
+  op Q
+  op EMC
+  op /P << /MCID 10 >> BDC
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 428.55 Tm
+  op /F1 11 Tf
+  op [<0001> <03be> <00d6> <0113> <00ff> <013d> <03be> <016a> <00ff> <014c> <00fc> <03be> <0122> <011b> <0113> <0170> <03be> <0140> <032b> <0113> <00ff> <011b> <0110> <032a> <03be> <00bd> <011b> <00dd> <03be> <0122> <011b> <00e1> <03be> 0 <016a> <00ff> <014c> <00fc> <03be> 0 <0140> <032b> <0113> <00ff> <011b> 0 <0110> <03be> <00bd> <011b> <00dd> 0 <03be> <0140> <032b> <00e1> <011a> 0 <00d6> <00e1> <00dd>] TJ
+  op ET
+  op Q
+  op EMC
+  op /P << /MCID 11 >> BDC
+  op q
+  op 1 0 0 1 72 441 cm
+  op q
+  op 0.78 0.78 0.78 rg
+  op -0.38 -0.38 m
+  op 115.58 -0.38 l
+  op 115.58 86.78 l
+  op -0.38 86.78 l
+  op h
+  op 0.38 0.38 m
+  op 0.38 86.03 l
+  op 114.83 86.03 l
+  op 114.83 0.38 l
+  op h
+  op f
+  op Q
+  op Q
+  op EMC
+  op /Artifact BMC
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 187.2 527.4 Tm
+  op /F1 11 Tf
+  op [<03be> <03be>] TJ
+  op ET
+  op Q
+  op EMC
+  op /P << /MCID 12 >> BDC
+  op q
+  op 1 0 0 1 200.4 441 cm
+  op q
+  op 0 86.4 m
+  op 115.2 86.4 l
+  op 115.2 0 l
+  op 0 0 l
+  op h
+  op W
+  op n
+  op q
+  op 0 0 115.2 86.4 re
+  op W
+  op n
+  op q
+  op 115.2 0 0 -86.4 0 86.4 cm
+  op /X11 Do
+  op Q
+  op Q
+  op Q
+  op Q
+  op EMC
+structure
+  Document
+    H1
+    P
+    P
+      Figure
+      Figure
+      Figure
+    P
+    P
+      Figure
+      Figure
+      Figure
+      Figure
+    P
+    P
+      Figure
+      Figure
+outline
+  "Picture effects"

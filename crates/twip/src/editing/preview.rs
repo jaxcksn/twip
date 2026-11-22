@@ -66,6 +66,8 @@ impl Editor {
                 div: None,
                 borders: None,
                 shading: None,
+                hatch: None,
+                table_shading: None,
                 hidden: false,
                 vanished: false,
                 cell_spacing: None,
@@ -88,6 +90,7 @@ impl Editor {
                             bottom: tc.borders.bottom.clone(),
                             right: tc.borders.right.clone(),
                             shading: tc.shading.flatten(),
+                            hatch: tc.shd.as_ref().and_then(crate::docx::props::Shd::hatch),
                             margins: [0.0, 5.4, 0.0, 5.4],
                             v_align: tc.v_align.clone().unwrap_or_else(|| "top".into()),
                             text_direction: "lrTb".into(),
@@ -98,6 +101,7 @@ impl Editor {
                             direct: Default::default(),
                             blocks: vec![paragraph(Rc::new(para.style), run, t.to_string())],
                             controls: Vec::new(),
+                            ids: None,
                             rev: Default::default(),
                         }
                     })
@@ -121,6 +125,7 @@ impl Editor {
             borders: [b.top.clone(), b.left.clone(), b.bottom.clone(), b.right.clone(), b.inside_h.clone(), b.inside_v.clone()],
             fixed: true,
             cell_spacing: 0.0,
+            shd: whole.tbl.shd.clone(),
             look: Some(look),
             bands,
             alt: None,

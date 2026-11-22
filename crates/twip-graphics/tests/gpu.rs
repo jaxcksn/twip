@@ -87,6 +87,11 @@ fn rects() {
 }
 
 #[test]
+fn dashed_rects() {
+    same("dashed-rects", (256, 176), &common::scenes::dashed_rects(), &Resources::default());
+}
+
+#[test]
 fn rrects() {
     same("rrects", (128, 96), &common::scenes::rrects(), &Resources::default());
 }
@@ -129,10 +134,62 @@ fn text() {
 }
 
 #[test]
+fn stroked_text() {
+    let mut resources = Resources::default();
+    let picture = common::scenes::stroked_text(&mut resources);
+    same("stroked-text", (256, 200), &picture, &resources);
+}
+
+#[test]
+fn text_effects() {
+    let mut resources = Resources::default();
+    let picture = common::scenes::text_effects(&mut resources);
+    same("text-effects", (256, 200), &picture, &resources);
+}
+
+#[test]
+fn turned_text() {
+    let mut resources = Resources::default();
+    let picture = common::scenes::turned_text(&mut resources);
+    same("turned-text", (560, 400), &picture, &resources);
+}
+
+#[test]
 fn images() {
     let mut resources = Resources::default();
     let picture = common::scenes::images(&mut resources);
     same("images", (128, 144), &picture, &resources);
+}
+
+#[test]
+fn jpeg_xr() {
+    let mut resources = Resources::default();
+    let picture = common::scenes::jpeg_xr(&mut resources);
+    same("jpeg-xr", (128, 112), &picture, &resources);
+}
+
+#[test]
+fn pixel_tiles() {
+    let mut resources = Resources::default();
+    let picture = common::scenes::pixel_tiles(&mut resources);
+    same("pixel-tiles", (128, 96), &picture, &resources);
+}
+
+/// Pixel sampling snaps only repeating patterns: an image drawn so samples where the CPU does.
+#[test]
+fn pixel_sampled_images() {
+    use twip_graphics::kurbo::Rect;
+    use twip_graphics::paint::{ImagePaint, Sampling};
+    let mut resources = Resources::default();
+    let image = resources.images.add_pixels(2, 1, vec![255, 0, 0, 255, 0, 0, 255, 255]).expect("pixels");
+    let mut rec = Recorder::new();
+    for y in 0..24 {
+        for x in 0..24 {
+            let (x, y) = (f64::from(x), f64::from(y));
+            rec.image(image, None, Rect::new(x, y, x + 1.0, y + 1.0), &ImagePaint { sampling: Sampling::Pixel, ..ImagePaint::default() });
+        }
+    }
+    same("pixel-sampled-images", (24, 24), &rec.finish(), &resources);
 }
 
 #[test]
@@ -174,6 +231,11 @@ fn blend_modes() {
 }
 
 #[test]
+fn raster_ops() {
+    same("raster-ops", (162, 162), &common::scenes::raster_ops(), &Resources::default());
+}
+
+#[test]
 fn colour_glyphs() {
     let mut resources = Resources::default();
     let picture = common::scenes::colour_glyphs(&mut resources);
@@ -208,6 +270,73 @@ fn kept_pictures_draw_where_they_move() {
     // The first frame draws the parts itself; the second prepares them to be kept; the third, fourth and last draw them
     // again; the fifth, a fraction of a pixel over, draws them itself.
     assert_eq!(renderer.kept_counts(), (6, 18));
+}
+
+/// Glyph origins on a half pixel left of and above the target round as they do kept and moved by whole pixels as
+/// they do drawn in the frame, and as the CPU rounds them: the same partly visible picture drawn three times.
+#[test]
+fn kept_glyphs_on_a_half_pixel_round_alike() {
+    use twip_graphics::scene::{GlyphRun, Synthesis};
+    let Some(ctx) = context() else { return };
+    let mut resources = Resources::default();
+    let mono = common::scenes::Mono::new();
+    let font = resources.fonts.add(mono.data.clone(), 0, &[]).expect("the test face registers");
+    let glyphs = mono.set("gjpqy", 24.0, 0.0);
+    let mut rec = Recorder::new();
+    rec.glyphs(&resources.fonts, &GlyphRun { font, size: 24.0, baseline: 0.0, glyphs: &glyphs, synthesis: Synthesis::default() }, Color::BLACK);
+    let line = rec.finish();
+    rec.picture(&line, Affine::translate((-0.125, -0.5)));
+    let frame = rec.finish();
+    let size = (80, 16);
+    let mut renderer = Renderer::new(ctx, FORMAT);
+    for k in 0..3 {
+        let ours = gpu(ctx, &mut renderer, &frame, &resources, size, Affine::IDENTITY);
+        compare(&format!("kept-half-pixel-{k}"), size, &ours, &cpu(&frame, &resources, size, Affine::IDENTITY));
+    }
+    assert_eq!(renderer.kept_counts(), (2, 1), "the frame and its line prepared to be kept, then drawn kept");
+}
+
+/// A two-texel pixel tile whose origin falls on a half pixel left of the target keeps its phase kept as drawn in the
+/// frame, and as the CPU draws it.
+#[test]
+fn kept_pixel_tiles_on_a_half_pixel_keep_their_phase() {
+    use twip_graphics::paint::{Brush, Paint, Sampling};
+    let Some(ctx) = context() else { return };
+    let mut resources = Resources::default();
+    let tile = resources.images.add_pixels(2, 1, vec![255, 0, 0, 255, 0, 0, 255, 255]).expect("pixels");
+    let mut rec = Recorder::new();
+    let brush = Brush::Pattern { image: tile, transform: Affine::IDENTITY, sampling: Sampling::Pixel };
+    rec.fill_rect(common::scenes::rect(0.5, 0.0, 12.5, 4.0), Paint::new(brush));
+    let tiles = rec.finish();
+    rec.picture(&tiles, Affine::translate((-0.5, 0.0)));
+    let frame = rec.finish();
+    let size = (16, 4);
+    let mut renderer = Renderer::new(ctx, FORMAT);
+    for k in 0..3 {
+        let ours = gpu(ctx, &mut renderer, &frame, &resources, size, Affine::IDENTITY);
+        compare(&format!("kept-half-pixel-tile-{k}"), size, &ours, &cpu(&frame, &resources, size, Affine::IDENTITY));
+    }
+    assert_eq!(renderer.kept_counts(), (2, 1), "the frame and its tiles prepared to be kept, then drawn kept");
+}
+
+/// A dashed rect with more dashes than are drawn whole, only part of it in the target: kept, it would be solid, so it
+/// is drawn in the frame, its visible dashes as the CPU draws them.
+#[test]
+fn kept_pictures_keep_the_dashes_the_target_sees() {
+    let Some(ctx) = context() else { return };
+    let resources = Resources::default();
+    let mut rec = Recorder::new();
+    rec.fill_dashed_rect(common::scenes::rect(0.0, 0.0, 200_002.0, 1.0), &[1, 1], Color::BLACK);
+    let line = rec.finish();
+    rec.picture(&line, Affine::translate((0.0, 2.0)));
+    let frame = rec.finish();
+    let size = (128, 4);
+    let mut renderer = Renderer::new(ctx, FORMAT);
+    for k in 0..3 {
+        let ours = gpu(ctx, &mut renderer, &frame, &resources, size, Affine::IDENTITY);
+        compare(&format!("kept-long-dashes-{k}"), size, &ours, &cpu(&frame, &resources, size, Affine::IDENTITY));
+    }
+    assert_eq!(renderer.kept_counts(), (0, 0), "neither the frame nor its line kept");
 }
 
 /// A page of line pictures, kept: an edit makes a new page with one new line, and the page is prepared again from its

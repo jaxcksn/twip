@@ -1,6 +1,7 @@
 //! Host services as typed models: context menu, dialogs, find, spelling, navigation, styles, rulers and accessibility.
 
 pub mod a11y;
+mod background_dialogs;
 pub mod dialogs;
 pub mod find;
 pub mod lists;

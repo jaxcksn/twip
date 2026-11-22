@@ -4,7 +4,7 @@ use crate::api::command::{Command, Indents, ParagraphSpacing};
 use crate::api::error::Error;
 use crate::api::services::{StyleDialog, StyleDialogType, StyleOpen, TableStylePart};
 use crate::api::state::{CharacterFormatting, ParagraphFormatting, Tri};
-use crate::api::value::{AutoOr, Color, NoneOr, StyleId};
+use crate::api::value::{AutoOr, NoneOr, StyleId};
 use crate::docx::styles::{Style, StyleKind, Styles};
 use crate::docx::write::props::{Cx, Props, STYLE, esc};
 use crate::font::Fonts;
@@ -559,7 +559,7 @@ impl Editor {
         now: &crate::api::services::DialogValues,
     ) -> Result<StyleDialog, Error> {
         use crate::api::services::DialogValues;
-        use crate::docx::write::props::{TBLPR, TCPR, TRPR};
+        use crate::docx::write::props::{TBLPR, TC_BORDERS, TCPR, TRPR};
         let res = self.doc.resolver.clone().ok_or_else(|| Error::unavailable("no styles"))?;
         let cx = res.styles.cx();
         let w = cx.w.clone();
@@ -594,24 +594,49 @@ impl Editor {
                 let edges = |x: &crate::api::services::BordersShadingDialog| {
                     (x.top.clone(), x.left.clone(), x.bottom.clone(), x.right.clone(), x.between.clone(), x.inside_vertical.clone())
                 };
-                if edges(a) != edges(b) {
-                    let name = if region.is_some() { "tcBorders" } else { "tblBorders" };
-                    let xml = format!(
-                        "<{w}{name}>{}{}{}{}{}{}</{w}{name}>",
-                        line("top", &b.top),
-                        line("left", &b.left),
-                        line("bottom", &b.bottom),
-                        line("right", &b.right),
-                        line("insideH", &b.between),
-                        line("insideV", &b.inside_vertical)
-                    );
-                    raw = match region {
-                        Some(r) => super::styles::edit_table_part(&raw, r, "tcPr", &cx, |p| p.set("tcBorders", xml.clone())),
-                        None => root(&raw, "tblPr", TBLPR, &|p| p.set("tblBorders", xml.clone())),
-                    };
+                let edged = edges(a) != edges(b);
+                // A diagonal as set when it changed (nil once turned off), else as the style has it.
+                let cross = |side: &str, was: &Option<crate::api::command::Border>, now: &Option<crate::api::command::Border>| {
+                    (was != now).then(|| line(side, now))
+                };
+                let (down, up) = (cross("tl2br", &a.diagonal_down, &b.diagonal_down), cross("tr2bl", &a.diagonal_up, &b.diagonal_up));
+                let sides = [
+                    ("top", &b.top),
+                    ("left", &b.left),
+                    ("bottom", &b.bottom),
+                    ("right", &b.right),
+                    ("insideH", &b.between),
+                    ("insideV", &b.inside_vertical),
+                ];
+                if edged && region.is_none() {
+                    let xml = format!("<{w}tblBorders>{}</{w}tblBorders>", sides.iter().map(|(side, x)| line(side, x)).collect::<String>());
+                    raw = root(&raw, "tblPr", TBLPR, &|p| p.set("tblBorders", xml.clone()));
+                }
+                // A part's cells take the diagonals with their edges; the whole table's go in its cells' properties.
+                if (edged && region.is_some()) || down.is_some() || up.is_some() {
+                    raw = cell(&raw, &|p| {
+                        let mut bd = Props::parse(p.get("tcBorders"), "tcBorders", &cx);
+                        bd.reorder(TC_BORDERS);
+                        if edged && region.is_some() {
+                            for side in ["top", "start", "left", "bottom", "end", "right", "insideH", "insideV"] {
+                                bd.remove(side);
+                            }
+                            for (side, x) in &sides {
+                                bd.set(side, line(side, x));
+                            }
+                        }
+                        for (side, x) in [("tl2br", &down), ("tr2bl", &up)] {
+                            if let Some(x) = x {
+                                bd.set(side, x.clone());
+                            }
+                        }
+                        match bd.xml() {
+                            Some(x) => p.set("tcBorders", x),
+                            None => p.remove("tcBorders"),
+                        }
+                    });
                 }
                 if (a.fill, a.pattern, a.pattern_color) != (b.fill, b.pattern, b.pattern_color) {
-                    let hex = |c: Option<Color>| c.map_or("auto".to_string(), |c| format!("{:06X}", c.0));
                     let fill = match b.fill {
                         NoneOr::Value(c) => Some(c),
                         NoneOr::None => None,
@@ -621,8 +646,15 @@ impl Editor {
                         AutoOr::Auto => None,
                     };
                     let clear = fill.is_none() && b.pattern == crate::api::command::ShadingPattern::Clear;
-                    let shd = format!("<{w}shd {w}val=\"{}\" {w}color=\"{}\" {w}fill=\"{}\"/>", b.pattern.val(), hex(color), hex(fill));
-                    raw = cell(&raw, &|p| if clear { p.remove("shd") } else { p.set("shd", shd.clone()) });
+                    let sh = super::table_format::Shading { pattern: b.pattern.val(), color: color.map(|c| c.0), fill: fill.map(|c| c.0) };
+                    raw = cell(&raw, &|p| {
+                        if clear {
+                            p.remove("shd");
+                        } else {
+                            let x = sh.xml(&w, p.get("shd"), None);
+                            p.set("shd", x);
+                        }
+                    });
                 }
             }
             (DialogValues::TableProperties(a), DialogValues::TableProperties(b)) => {

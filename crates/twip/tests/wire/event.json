@@ -37,6 +37,7 @@
       "defineMultilevelList": true,
       "defineNumberFormat": true,
       "dropCap": true,
+      "fillEffects": true,
       "font": true,
       "frame": true,
       "hyperlink": true,
@@ -45,6 +46,7 @@
       "pageSetup": true,
       "paragraph": true,
       "pictureSize": false,
+      "printedWatermark": true,
       "setNumberingValue": true,
       "style": true,
       "tableProperties": false,
@@ -118,6 +120,7 @@
       "stylisticSet": 0,
       "subscript": false,
       "superscript": false,
+      "textEffects": {},
       "underline": "none",
       "underlineColor": "auto"
     },

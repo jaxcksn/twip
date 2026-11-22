@@ -104,6 +104,8 @@ pub struct RunProps {
     pub rtl: Option<bool>,
     /// `w:fitText`: the width to fit the text to (points) and its region id.
     pub fit_text: Option<(f64, i64)>,
+    /// The Word 2010 text effects this level sets.
+    pub effects: Option<std::rc::Rc<super::model::TextEffects>>,
 }
 
 fn font_ref(n: Node, name: &str) -> Option<FontRef> {
@@ -154,6 +156,8 @@ impl RunProps {
                         Some("tabular") => 8,
                         _ => 0,
                     });
+                } else if matches!(name, "textFill" | "textOutline" | "shadow" | "glow" | "reflection") {
+                    read_text_effect(e, std::rc::Rc::make_mut(p.effects.get_or_insert_with(Default::default)));
                 } else if name == "stylisticSets" {
                     let on = |s: &Node| !matches!(s.attribute((W14, "val")), Some("0" | "false" | "off"));
                     let ids = e.children().filter(|s| is(*s, W14, "styleSet") && on(s)).filter_map(|s| s.attribute((W14, "id"))?.parse::<u32>().ok());
@@ -284,6 +288,11 @@ impl RunProps {
             em,
             fit_text
         );
+        match (&mut self.effects, &o.effects) {
+            (_, None) => {}
+            (None, Some(e)) => self.effects = Some(e.clone()),
+            (Some(mine), Some(e)) => std::rc::Rc::make_mut(mine).merge(e),
+        }
         self.toggles = (self.toggles & !o.toggles_set) | (o.toggles & o.toggles_set);
         self.toggles_set |= o.toggles_set;
     }
@@ -310,6 +319,21 @@ impl RunProps {
 
     pub fn toggle(&self, bit: u16) -> bool {
         self.toggles & bit != 0
+    }
+}
+
+/// Reads a Word 2010 text effect element (`w14:textFill`, `w14:textOutline`, `w14:shadow`, `w14:glow`,
+/// `w14:reflection`) into `t`, with DrawingML's readers in the `w14` namespace.
+fn read_text_effect(e: Node, t: &mut super::model::TextEffects) {
+    use crate::drawing::colour::Ns;
+    use crate::drawing::paint::{Fill, Glow, Line, OuterShadow, Reflection};
+    match e.tag_name().name() {
+        "textFill" => t.fill = Fill::child_of_in(e, Ns::W14, &mut |_| None).or(t.fill.take()),
+        "textOutline" => t.outline = Some(Line::parse_in(e, Ns::W14, &mut |_| None)),
+        "shadow" => t.shadow = Some(OuterShadow::parse(e, Ns::W14)),
+        "glow" => t.glow = Some(Glow::parse(e, Ns::W14)),
+        "reflection" => t.reflection = Some(Reflection::parse(e, Ns::W14)),
+        _ => {}
     }
 }
 
@@ -353,25 +377,48 @@ impl Default for ThemeColours {
 
 impl ThemeColours {
     pub fn new(theme: &crate::drawing::theme::Theme, map: &crate::drawing::theme::ColourMap) -> ThemeColours {
-        use crate::drawing::colour::SchemeSlot::*;
-        let slots = [Dk1, Lt1, Dk2, Lt2, Accent(1), Accent(2), Accent(3), Accent(4), Accent(5), Accent(6), Hlink, FolHlink, Bg1, Tx1, Bg2, Tx2];
-        ThemeColours(slots.map(|s| {
+        ThemeColours(THEME_SLOTS.map(|s| {
             let c = theme.colour(map.map(s));
             (u32::from(c.r) << 16) | (u32::from(c.g) << 8) | u32::from(c.b)
         }))
     }
 
     pub fn colour(&self, e: Node, hex: &str, theme: &str, tint: &str, shade: &str) -> Option<u32> {
-        let Some(c) = attr(e, theme).and_then(|t| THEME_COLOUR_NAMES.iter().position(|n| *n == t)).map(|i| self.0[i]) else {
-            return color(attr(e, hex));
-        };
-        let byte = |a: &str| attr(e, a).and_then(|v| u8::from_str_radix(v, 16).ok()).map(|v| f64::from(v) / 255.0);
-        Some(match (byte(tint), byte(shade)) {
+        match theme_ref(e, theme, tint, shade) {
+            Some(r) => Some(self.resolve(r)),
+            None => color(attr(e, hex)),
+        }
+    }
+
+    /// A theme colour with its tint or shade applied.
+    pub fn resolve(&self, r: super::model::ThemeColourRef) -> u32 {
+        let k = THEME_SLOTS.iter().position(|s| *s == r.slot).unwrap_or(0);
+        let c = self.0[k];
+        let byte = |b: Option<u8>| b.map(|v| f64::from(v) / 255.0);
+        match (byte(r.tint), byte(r.shade)) {
             (Some(t), _) => with_luminance(c, |l| l * t + (1.0 - t)),
             (None, Some(s)) => with_luminance(c, |l| l * s),
             (None, None) => c,
-        })
+        }
     }
+}
+
+/// The slots of [`THEME_COLOUR_NAMES`], in its order.
+const THEME_SLOTS: [crate::drawing::colour::SchemeSlot; 16] = {
+    use crate::drawing::colour::SchemeSlot::*;
+    [Dk1, Lt1, Dk2, Lt2, Accent(1), Accent(2), Accent(3), Accent(4), Accent(5), Accent(6), Hlink, FolHlink, Bg1, Tx1, Bg2, Tx2]
+};
+
+/// The theme colour `e` names in its attribute `theme`, with its `tint` or `shade` byte.
+pub fn theme_ref(e: Node, theme: &str, tint: &str, shade: &str) -> Option<super::model::ThemeColourRef> {
+    let k = attr(e, theme).and_then(|t| THEME_COLOUR_NAMES.iter().position(|n| *n == t))?;
+    let byte = |a: &str| attr(e, a).and_then(|v| u8::from_str_radix(v, 16).ok());
+    Some(super::model::ThemeColourRef { slot: THEME_SLOTS[k], tint: byte(tint), shade: byte(shade) })
+}
+
+/// A theme slot's `w:themeColor` name.
+pub fn theme_name(slot: crate::drawing::colour::SchemeSlot) -> Option<&'static str> {
+    THEME_SLOTS.iter().position(|s| *s == slot).map(|k| THEME_COLOUR_NAMES[k])
 }
 
 /// `c` with its HSL luminance changed by `f`.
@@ -428,7 +475,6 @@ pub fn highlight(v: &str) -> Option<u32> {
     })
 }
 
-/// `w:shd` → the visible fill (patterns `pctNN` blend the pattern colour over the fill).
 /// A `w:shd` as written: its pattern (`w:val`), the pattern's color and the fill (none: automatic).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Shd {
@@ -445,26 +491,84 @@ impl Shd {
             fill: tc.colour(e, "fill", "themeFill", "themeFillTint", "themeFillShade"),
         }
     }
+
+    /// The flat colour it shows: the fill, the pattern colour when solid, a `pctNN` blend of the pattern colour over
+    /// the fill; nothing for `nil`. A stripe or cross shows its fill here and its [`Shd::hatch`] over it.
+    pub fn flat(&self) -> Option<u32> {
+        let p = self.pattern.as_str();
+        match p {
+            "nil" => None,
+            "solid" => Some(self.color.unwrap_or(0)),
+            _ if p.starts_with("pct") => {
+                let pct: u32 = p[3..].parse().ok().filter(|v| *v <= 100)?;
+                let (fg, bg) = (self.color.unwrap_or(0), self.fill.unwrap_or(0xFFFFFF));
+                let mix = |s: u32| {
+                    let (a, b) = ((fg >> s) & 255, (bg >> s) & 255);
+                    ((b as i64 + (a as i64 - b as i64) * pct as i64 / 100) as u32) << s
+                };
+                Some(mix(16) | mix(8) | mix(0))
+            }
+            _ => self.fill,
+        }
+    }
+
+    /// Its stripe or cross in the pattern colour (automatic: black), if it has one.
+    pub fn hatch(&self) -> Option<Hatch> {
+        Stripe::parse(&self.pattern).map(|stripe| Hatch { stripe, colour: self.color.unwrap_or(0) })
+    }
 }
 
 pub fn shading_fill(e: Node, tc: &ThemeColours) -> Option<u32> {
-    let fill = tc.colour(e, "fill", "themeFill", "themeFillTint", "themeFillShade");
-    let pattern = || tc.colour(e, "color", "themeColor", "themeTint", "themeShade");
-    match val(e) {
-        None | Some("clear" | "nil") => fill,
-        Some("solid") => Some(pattern().unwrap_or(0)),
-        Some(p) if p.starts_with("pct") => {
-            let pct: u32 = p[3..].parse().ok()?;
-            let fg = pattern().unwrap_or(0);
-            let bg = fill.unwrap_or(0xFFFFFF);
-            let mix = |s: u32| {
-                let (a, b) = ((fg >> s) & 255, (bg >> s) & 255);
-                ((b as i64 + (a as i64 - b as i64) * pct as i64 / 100) as u32) << s
-            };
-            Some(mix(16) | mix(8) | mix(0))
-        }
-        _ => fill,
+    Shd::parse(e, tc).flat()
+}
+
+/// The stripes and crosses of `w:shd`, drawn as an 8×8 tile in the pattern colour over the fill.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Stripe {
+    Horz,
+    Vert,
+    ReverseDiag,
+    Diag,
+    HorzCross,
+    DiagCross,
+    ThinHorz,
+    ThinVert,
+    ThinReverseDiag,
+    ThinDiag,
+    ThinHorzCross,
+    ThinDiagCross,
+}
+
+impl Stripe {
+    pub const ALL: [(Stripe, &'static str); 12] = [
+        (Stripe::Horz, "horzStripe"),
+        (Stripe::Vert, "vertStripe"),
+        (Stripe::ReverseDiag, "reverseDiagStripe"),
+        (Stripe::Diag, "diagStripe"),
+        (Stripe::HorzCross, "horzCross"),
+        (Stripe::DiagCross, "diagCross"),
+        (Stripe::ThinHorz, "thinHorzStripe"),
+        (Stripe::ThinVert, "thinVertStripe"),
+        (Stripe::ThinReverseDiag, "thinReverseDiagStripe"),
+        (Stripe::ThinDiag, "thinDiagStripe"),
+        (Stripe::ThinHorzCross, "thinHorzCross"),
+        (Stripe::ThinDiagCross, "thinDiagCross"),
+    ];
+
+    pub fn parse(v: &str) -> Option<Stripe> {
+        Stripe::ALL.iter().find(|(_, n)| *n == v).map(|(s, _)| *s)
     }
+
+    pub fn val(self) -> &'static str {
+        Stripe::ALL.iter().find(|(s, _)| *s == self).map_or("clear", |(_, n)| n)
+    }
+}
+
+/// A stripe or cross and its colour.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Hatch {
+    pub stripe: Stripe,
+    pub colour: u32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -991,6 +1095,8 @@ pub struct TblProps {
     pub col_band: Option<i64>,
     pub floating: Option<TablePos>,
     pub shading: Option<Option<u32>>,
+    /// The `w:shd` as written.
+    pub shd: Option<Shd>,
     pub bidi_visual: Option<bool>,
 }
 
@@ -1102,7 +1208,10 @@ impl TblProps {
                         f.never_overlap = val(c) == Some("never");
                     }
                 }
-                "shd" => p.shading = Some(shading_fill(c, tc)),
+                "shd" => {
+                    p.shading = Some(shading_fill(c, tc));
+                    p.shd = Some(Shd::parse(c, tc));
+                }
                 "tblLook" => {
                     let bit = |name: &str, mask: i64| match attr(c, name) {
                         Some(v) => on_off_str(Some(v)),
@@ -1127,7 +1236,7 @@ impl TblProps {
         macro_rules! take {
             ($($f:ident),*) => { $( if o.$f.is_some() { self.$f = o.$f.clone(); } )* };
         }
-        take!(style, width, jc, ind, fixed, look, cell_spacing, row_band, col_band, floating, shading, bidi_visual);
+        take!(style, width, jc, ind, fixed, look, cell_spacing, row_band, col_band, floating, shading, shd, bidi_visual);
         self.borders.merge(&o.borders);
         self.margins.merge(&o.margins);
     }
@@ -1258,6 +1367,26 @@ mod tests {
     }
 
     #[test]
+    fn shading_shows_its_fill_a_blend_or_nothing_and_stripes_their_hatch() {
+        let shd = |v: &str| super::Shd { pattern: v.into(), color: Some(0xFF0000), fill: Some(0x0000FF) };
+        assert_eq!(shd("nil").flat(), None, "nil draws nothing, whatever its fill");
+        assert_eq!(shd("clear").flat(), Some(0x0000FF));
+        assert_eq!(shd("solid").flat(), Some(0xFF0000));
+        assert_eq!(shd("pct50").flat(), Some(0x7F0080));
+        assert_eq!(shd("horzStripe").flat(), Some(0x0000FF), "a stripe's fill under it");
+        assert_eq!(shd("horzStripe").hatch(), Some(super::Hatch { stripe: super::Stripe::Horz, colour: 0xFF0000 }));
+        assert_eq!(shd("pct50").hatch(), None);
+        // Hostile percentages: none past 100 (each channel would spill into the next), and none that isn't a number.
+        for v in ["pct500", "pct4294967295", "pct-5", "pct", "pctx"] {
+            assert_eq!(shd(v).flat(), None, "{v}");
+        }
+        assert_eq!(shd("bogus").flat(), Some(0x0000FF), "an unknown pattern shows its fill");
+        for (s, v) in super::Stripe::ALL {
+            assert_eq!((super::Stripe::parse(v), s.val()), (Some(s), v));
+        }
+    }
+
+    #[test]
     fn the_nearest_style_in_a_chain_decides_a_toggle() {
         let rpr = |x: &str| {
             let xml = format!(r#"<w:rPr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">{x}</w:rPr>"#);
@@ -1271,5 +1400,58 @@ mod tests {
         assert!(para.toggle(toggle::B));
         para.merge_level(&RunProps::fold_chain([&on].into_iter()));
         assert!(!para.toggle(toggle::B));
+    }
+
+    fn w14_rpr(x: &str) -> RunProps {
+        let xml = format!(
+            r#"<w:rPr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml">{x}</w:rPr>"#
+        );
+        RunProps::parse(Some(roxmltree::Document::parse(&xml).unwrap().root_element()), &super::ThemeColours::default())
+    }
+
+    #[test]
+    fn text_effects_read_with_qualified_attributes_and_merge_one_at_a_time() {
+        use crate::drawing::colour::{ColourBase, ColourMod, SchemeSlot};
+        use crate::drawing::paint::{Fill, GradientKind};
+        use crate::drawing::units::{Angle, Emu, Pct};
+        let style = w14_rpr(
+            r#"<w14:glow w14:rad="101600"><w14:schemeClr w14:val="accent1"><w14:alpha w14:val="40000"/></w14:schemeClr></w14:glow><w14:textFill><w14:noFill/></w14:textFill>"#,
+        );
+        let direct = w14_rpr(
+            r#"<w14:textFill><w14:gradFill><w14:gsLst><w14:gs w14:pos="0"><w14:srgbClr w14:val="C00000"/></w14:gs><w14:gs w14:pos="100000"><w14:srgbClr w14:val="2E75B6"/></w14:gs></w14:gsLst><w14:lin w14:ang="5400000" w14:scaled="0"/></w14:gradFill></w14:textFill><w14:textOutline w14:w="9525" w14:cap="rnd"><w14:solidFill><w14:srgbClr w14:val="FF0000"/></w14:solidFill><w14:prstDash w14:val="dash"/><w14:bevel/></w14:textOutline><w14:reflection w14:stA="52000" w14:endPos="35000" w14:sy="-100000" w14:algn="bl"/>"#,
+        );
+        let e = RunProps::fold_chain([&style, &direct].into_iter()).effects.expect("effects");
+        let glow = e.glow.as_ref().expect("the style's glow");
+        assert_eq!(
+            (glow.radius, &glow.colour.base, &glow.colour.mods[..]),
+            (Emu(101600), &ColourBase::Scheme(SchemeSlot::Accent(1)), &[ColourMod::Alpha(Pct(40000))][..])
+        );
+        let Some(Fill::Gradient(g)) = &e.fill else { panic!("the direct gradient over the style's no fill: {:?}", e.fill) };
+        assert_eq!((g.stops.len(), g.kind), (2, GradientKind::Linear { angle: Angle(5_400_000), scaled: false }));
+        let o = e.outline.as_ref().expect("an outline");
+        assert_eq!((o.width, o.cap, o.join), (Some(Emu(9525)), Some(crate::drawing::paint::Cap::Round), Some(crate::drawing::paint::Join::Bevel)));
+        let r = e.reflection.as_ref().expect("a reflection");
+        // What it leaves out is Word 2010's default (MS-DOCX CT_Reflection): no fade turn, no horizontal scale.
+        assert_eq!((r.start_alpha, r.end_pos, r.sy, r.fade_dir, r.sx), (Pct(52000), Pct(35000), Pct(-100000), Angle(0), Pct(0)));
+        assert!(w14_rpr(r#"<w:b/>"#).effects.is_none(), "a run without effects has none");
+    }
+
+    #[test]
+    fn hostile_text_effects_are_bounded() {
+        let stops: String = (0..10_000).map(|i| format!(r#"<w14:gs w14:pos="{i}"><w14:srgbClr w14:val="FF0000"/></w14:gs>"#)).collect();
+        let mods: String = (0..10_000).map(|_| r#"<w14:lumMod w14:val="99000"/>"#).collect();
+        let r = w14_rpr(&format!(
+            r#"<w14:textFill><w14:gradFill><w14:gsLst>{stops}</w14:gsLst></w14:gradFill></w14:textFill><w14:glow w14:rad="99999999999"><w14:srgbClr w14:val="00FF00">{mods}</w14:srgbClr></w14:glow><w14:textOutline><w14:custDash><w14:ds w14:d="1" w14:sp="1"/></w14:custDash></w14:textOutline>"#
+        ));
+        let e = r.effects.expect("effects");
+        let Some(crate::drawing::paint::Fill::Gradient(g)) = &e.fill else { panic!("a gradient") };
+        assert_eq!(g.stops.len(), crate::drawing::paint::MAX_W14_STOPS);
+        assert_eq!(e.glow.as_ref().expect("a glow").colour.mods.len(), crate::drawing::colour::MAX_W14_MODS);
+        assert_eq!(e.outline.as_ref().expect("an outline").dash, None, "no custom dash in the w14 schema");
+        // The drawn glow is bounded as a shape's is.
+        let (t, m) = (crate::drawing::theme::Theme::default(), crate::drawing::theme::ColourMap::default());
+        let list = crate::drawing::paint::EffectList { glow: e.glow.clone(), ..Default::default() };
+        let fx = crate::drawing::paint::resolve_effects(Some(&list), None, crate::drawing::paint::Palette { theme: &t, map: &m });
+        assert_eq!(fx.glow.map(|g| g.0), Some(200.0));
     }
 }

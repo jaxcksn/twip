@@ -7,6 +7,7 @@ mod fidelity;
 mod ltb;
 mod merge_us1;
 mod merge_us5;
+mod pdf_tags;
 mod review_comments;
 mod review_equivalence;
 mod review_resolve;

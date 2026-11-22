@@ -1379,6 +1379,20 @@ fn an_inserted_picture_saves_with_its_image() {
 }
 
 #[test]
+fn an_inserted_jpeg_xr_picture_saves_as_a_wdp_part() {
+    let data = include_bytes!("../../../../twip-graphics/tests/images/alpha.jxr").to_vec();
+    let mut e = super::super::Editor::open(&super::blank_with("Text"), fonts()).expect("opens");
+    let out =
+        e.execute(Command::InsertPicture(crate::api::command::Picture { data: crate::api::value::Bytes(data.clone()), alt_text: None }), fonts());
+    assert!(matches!(out, super::super::Outcome::Changed(_)), "{out:?}");
+    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let types = crate::docx::package::read(&bytes, &[], "[Content_Types].xml").expect("reads").expect("content types");
+    assert!(types.contains(r#"Extension="wdp" ContentType="image/vnd.ms-photo""#), "{types}");
+    let again = super::super::Editor::open(&bytes, fonts()).expect("reopens");
+    assert!(again.document().images.contains(&data));
+}
+
+#[test]
 fn an_inserted_text_box_takes_typing_and_saves() {
     let mut e = open("FX-TEXT.docx");
     let before = body_floats(&e).len();
@@ -2657,4 +2671,27 @@ fn pasting_cut_notes_after_a_new_one_keeps_every_note() {
     notes.sort();
     assert_eq!(ids, notes, "each note has its own reference");
     assert_eq!(ids.len(), 3);
+}
+
+#[test]
+fn insert_and_save_take_a_wmf() {
+    // A placeable WMF of 100 units at 72 to the inch holding nothing but its end.
+    let mut data = 0x9AC6_CDD7u32.to_le_bytes().to_vec();
+    for v in [0i16, 0, 0, 100, 100] {
+        data.extend(v.to_le_bytes());
+    }
+    data.extend(72u16.to_le_bytes());
+    data.extend([0u8; 6]);
+    data.extend([1u16, 9, 0x300].iter().flat_map(|v| v.to_le_bytes()));
+    data.extend(12u32.to_le_bytes());
+    data.extend([0u8; 6]);
+    data.extend([3u32.to_le_bytes().as_slice(), &[0, 0]].concat());
+    let mut e = open("FX-STORIES.docx");
+    let out =
+        e.execute(Command::InsertPicture(crate::api::command::Picture { data: crate::api::value::Bytes(data.clone()), alt_text: None }), fonts());
+    assert!(matches!(out, super::super::Outcome::Changed(_)), "{out:?}");
+    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let types = crate::docx::package::read(&saved, &[], "[Content_Types].xml").expect("reads").expect("types");
+    assert!(types.contains("Extension=\"wmf\"") && types.contains("image/x-wmf"), "{types}");
+    assert!(crate::docx::read(&saved).expect("reopens").images.iter().any(|i| i == &data));
 }

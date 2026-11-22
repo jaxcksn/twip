@@ -232,7 +232,7 @@ impl Memo {
 }
 
 /// The picture being prepared to be kept: the kept and colour atlas pages its masks went on (bit per page), and whether
-/// a mask didn't fit (it is then prepared again in the frame instead).
+/// a mask didn't fit or a dashed rect went solid (it is then prepared again in the frame instead).
 #[derive(Debug, Default)]
 struct Building {
     pages: u64,
@@ -613,7 +613,8 @@ impl Prepare {
     }
 
     /// `picture` under `t` from its kept preparation, prepared now when there is none (or its masks have been evicted).
-    /// `false` when it can't be kept (a mask that didn't fit the kept atlas); it is then prepared in the frame.
+    /// `false` when it can't be kept (a mask that didn't fit the kept atlas, or a dashed rect too fine to dash whole);
+    /// it is then prepared in the frame.
     fn kept_picture(&mut self, res: &Resources, picture: &Picture, bounds: Rect, t: Transform) -> bool {
         let (ox, oy) = (t.e.floor(), t.f.floor());
         if !(ox.abs() < 1.0e7 && oy.abs() < 1.0e7) {
@@ -658,7 +659,7 @@ impl Prepare {
     }
 
     /// `picture` under `local` (a translation under a pixel) prepared to be kept: unclipped but by its own bounds, its
-    /// masks in the kept atlases. `None` when a mask didn't fit.
+    /// masks in the kept atlases. `None` when a mask didn't fit or a dashed rect went solid.
     fn prepare_kept(&mut self, res: &Resources, picture: &Picture, bounds: Rect, local: Transform) -> Option<Segment> {
         let b = pixel_bounds(local.map_rect(bounds));
         // Glyph ink reaches up to a pixel past the bounds.
@@ -666,6 +667,7 @@ impl Prepare {
         let clip = Clip { rect: [root.x0 * ONE, root.y0 * ONE, root.x1 * ONE, root.y1 * ONE], bounds: root, mask: None };
         // What was being written (the frame's passes, or the picture being kept that draws this one) waits.
         let outer = std::mem::take(&mut self.out);
+        let filtered = self.filtered_pixels;
         let parent = self.building.replace(Building::default());
         self.begin(None, root, false);
         let mut i = 0;
@@ -674,6 +676,8 @@ impl Prepare {
         let built = std::mem::replace(&mut self.building, parent).unwrap_or_default();
         let out = std::mem::replace(&mut self.out, outer);
         if built.failed {
+            // Drawn in the frame instead, its layers counted there.
+            self.filtered_pixels = filtered;
             return None;
         }
         let pages = |bits: u64, atlas: &Atlas| (0..64).filter(|p| bits >> p & 1 == 1).map(|p| (p, atlas.epoch(p))).collect();
@@ -699,6 +703,19 @@ impl Prepare {
             *i += 1;
             match cmd {
                 Cmd::SolidRect { rect, color, aa, blend } => self.rect(rect, t, &clip, &Paint::solid(color, blend, aa)),
+                Cmd::DashedRect { dashed } => {
+                    let d = lists.dashed[dashed as usize];
+                    let paint = Paint::solid(d.color, d.blend, d.aa);
+                    let b = clip.bounds;
+                    let view = Rect { x0: b.x0 as f32, y0: b.y0 as f32, x1: b.x1 as f32, y1: b.y1 as f32 };
+                    if !d.each(t, view, |r| self.rect(r, t, &clip, &paint)) {
+                        // Kept, the view is the picture's whole bounds: dashes the frame's view would draw go solid.
+                        if let Some(b) = &mut self.building {
+                            b.failed = true;
+                        }
+                        self.rect(d.rect, t, &clip, &paint);
+                    }
+                }
                 Cmd::Rect { rect, paint } => {
                     if let Some(p) = self.paint(res, lists, paint, t) {
                         self.rect(rect, t, &clip, &p);
@@ -728,6 +745,7 @@ impl Prepare {
                         self.path(&lists.verbs[path.verbs.range()], &lists.points[path.points.range()], t, &clip, &p, even_odd);
                     }
                 }
+                Cmd::Glyphs { run, .. } if lists.runs[run as usize].invisible => {}
                 Cmd::Glyphs { run, paint } => {
                     let color = match lists.paints[paint as usize].brush {
                         BrushRec::Solid(c) => Some(c),
@@ -967,6 +985,10 @@ impl Prepare {
         base: Paint,
     ) -> Option<Paint> {
         let levels = self.levels(res, id)?;
+        let inv = match sampling {
+            Sampling::Pixel if repeat => inv.inverse().map(|m| m.snap_tile(levels[0])).and_then(Transform::inverse).unwrap_or(inv),
+            _ => inv,
+        };
         let level = mip_index(levels.len(), inv, sampling);
         let (base_w, base_h) = levels[0];
         let (w, h) = levels[level];
@@ -1100,6 +1122,21 @@ impl Prepare {
     /// A path's coverage (clipped as the CPU backend clips it, by the non-zero or the even-odd rule) into the atlas, tile by
     /// tile, each tile one instance.
     fn path(&mut self, verbs: &[Verb], points: &[Point], t: Transform, clip: &Clip, paint: &Paint, even_odd: bool) {
+        self.path_through(verbs, points, t, clip, paint, even_odd, None);
+    }
+
+    /// [`Prepare::path`], its coverage through `gamma` when given (a glyph drawn as a path, as the CPU draws it).
+    #[allow(clippy::too_many_arguments, reason = "a path, its paint and its frame state")]
+    fn path_through(
+        &mut self,
+        verbs: &[Verb],
+        points: &[Point],
+        t: Transform,
+        clip: &Clip,
+        paint: &Paint,
+        even_odd: bool,
+        gamma: Option<&[u8; 256]>,
+    ) {
         let Some(first) = points.first() else { return };
         let first = t.map_point(*first);
         let (x0, y0, x1, y1) = points
@@ -1122,6 +1159,9 @@ impl Prepare {
                     atlas.row(slot, row, w).fill(0);
                 }
                 raster.fill(verbs, points, t, part, paint.aa, even_odd, |y, x, cov| {
+                    if let Some(table) = gamma {
+                        cov.iter_mut().for_each(|c| *c = table[*c as usize]);
+                    }
                     apply_clip(*level, clip, masks, y, x, cov);
                     let out = atlas.row(slot, (y - part.y0) as u32, w);
                     let at = (x - part.x0) as usize;
@@ -1165,7 +1205,10 @@ impl Prepare {
             return;
         }
         let style = Style { skew_x: run.synthesis.skew_x, bold: if run.synthesis.embolden { embolden_em(run.size) } else { 0.0 } };
+        let lum = color.map_or(4, |c| luminance_level(c.r, c.g, c.b, c.a));
         if max_scale(m) > 256.0 {
+            // Through the same mask gamma as a mask, as the CPU backend draws it.
+            let table = &crate::font::gamma_tables()[lum as usize];
             let em = kurbo::Affine::new([run.size as f64, 0.0, 0.0, run.size as f64, 0.0, 0.0]);
             for g in glyphs {
                 let (mut verbs, mut points) = (std::mem::take(&mut self.verbs), std::mem::take(&mut self.points));
@@ -1173,7 +1216,7 @@ impl Prepare {
                 points.clear();
                 let map = kurbo::Affine::translate((g.x as f64, run.baseline as f64)) * em;
                 match self.glyphs.outliner.glyph(fonts, run.font, g.id(), style, map, &mut verbs, &mut points) {
-                    Ok(true) => self.path(&verbs, &points, t, clip, &Paint { aa: true, ..*paint }, false),
+                    Ok(true) => self.path_through(&verbs, &points, t, clip, &Paint { aa: true, ..*paint }, false, Some(table)),
                     Ok(false) => {}
                     Err(()) => self.out.stats.failed_glyphs += 1,
                 }
@@ -1181,11 +1224,11 @@ impl Prepare {
             }
             return;
         }
-        let lum = color.map_or(4, |c| luminance_level(c.r, c.g, c.b, c.a));
         let matrix = m.map(|v| (v * 64.0).round() as i32);
         let key = GlyphKey { font: run.font, glyph: 0, matrix, bin: [0, 0], skew: style.skew_x.to_bits(), bold: style.bold.to_bits(), lum };
         let strike = self.glyphs.strike(key);
-        let axis_aligned = t.b == 0.0 && t.c == 0.0;
+        // The baseline's coordinate across the run, rounded: y when axis-aligned, x when turned a quarter.
+        let whole = (matrix[0] == 0 && matrix[3] == 0, matrix[1] == 0 && matrix[2] == 0);
         let inside = interior(clip);
         // A glyph whose origin is farther off the clip than any mask reaches draws nothing: no mask is made for it.
         let reach = crate::font::glyph_reach(max_scale(m), crate::font::OUTLINE_EMS);
@@ -1193,8 +1236,7 @@ impl Prepare {
         let (x0, y0, x1, y1) = (b.x0.saturating_sub(reach), b.y0.saturating_sub(reach), b.x1.saturating_add(reach), b.y1.saturating_add(reach));
         for g in glyphs {
             let o = t.map_point(Point { x: g.x, y: run.baseline });
-            let qx = (o.x * 4.0).round() as i32;
-            let qy = if axis_aligned { (o.y.round() as i32).saturating_mul(4) } else { (o.y * 4.0).round() as i32 };
+            let (qx, qy) = (crate::font::quarters(o.x, whole.0), crate::font::quarters(o.y, whole.1));
             let (ox, oy) = (qx.div_euclid(4), qy.div_euclid(4));
             if ox < x0 || ox >= x1 || oy < y0 || oy >= y1 {
                 continue;
@@ -1365,6 +1407,37 @@ fn blending(mode: BlendMode) -> Option<(Blend, u32)> {
         BlendMode::DstIn => Some((Blend::Erase, 1)),
         BlendMode::Clear => Some((Blend::Erase, 2)),
         BlendMode::Dst => None,
-        mode => Some((Blend::General, (mode as u32) << 2)),
+        mode => Some((Blend::General, mode.index() << 2)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cpu::Draw;
+    use crate::paint::Color;
+    use crate::scene::{Layer, Recorder};
+
+    /// A picture that can't be kept (its dashed rect would go solid) is drawn in the frame: its filtered layer is
+    /// counted once, as in a frame that didn't try to keep it.
+    #[test]
+    fn a_rejected_kept_picture_leaves_the_filter_budget_as_it_was() {
+        let mut rec = Recorder::new();
+        rec.push_layer(&Layer { filters: &[Filter::Blur { sigma: 2.0 }], ..Layer::default() });
+        rec.fill_rect(kurbo::Rect::new(0.0, 0.0, 16.0, 16.0), Color::BLACK);
+        rec.pop();
+        rec.fill_dashed_rect(kurbo::Rect::new(0.0, 20.0, 200_002.0, 21.0), &[1, 1], Color::BLACK);
+        let picture = rec.finish();
+        let res = Resources::default();
+        let draws = [Draw { picture: &picture, transform: kurbo::Affine::IDENTITY }];
+        let mut prepare = Prepare::new(8192);
+        let mut filtered = Vec::new();
+        for _ in 0..2 {
+            prepare.frame(&res, &Frame { clear: None, draws: &draws }, (64, 32));
+            filtered.push(prepare.filtered_pixels);
+        }
+        assert!(filtered[0] > 0);
+        assert_eq!(filtered[0], filtered[1], "drawn in the frame, then tried kept and drawn in the frame");
+        assert_eq!(prepare.memo.counts, (0, 0));
     }
 }

@@ -32,6 +32,8 @@ import type {
   PictureAdjustChange,
   Points,
   RevisionId,
+  TextEffectsChange,
+  Watermark,
   ShapeAdjust,
   ShapeInsert,
   ShapePreset,
@@ -118,6 +120,14 @@ export type BorderLineStyle =
   | 'thinThickSmallGap'
   | 'thickThinSmallGap'
   | 'thinThickThinSmallGap'
+  | 'dashSmallGap'
+  | 'dashDotStroked'
+  | 'thinThickMediumGap'
+  | 'thickThinMediumGap'
+  | 'thinThickThinMediumGap'
+  | 'thinThickLargeGap'
+  | 'thickThinLargeGap'
+  | 'thinThickThinLargeGap'
   | 'wave'
   | 'doubleWave'
   | 'threeDEmboss'
@@ -135,22 +145,51 @@ export interface BorderLine {
   color: Color | 'auto';
 }
 
-/** A shading pattern: clear (the fill only), solid (the pattern color), or a percentage of the pattern color over the fill. */
+/**
+ * A shading pattern (`ST_Shd`): none, clear (the fill only), solid (the pattern color), a percentage of the pattern
+ * color over the fill, or stripes and crosses of it over the fill. `other` is a pattern the document names that isn't
+ * listed: reading gives it, and setting it keeps each target's own pattern.
+ */
 export type ShadingPattern =
+  | 'nil'
   | 'clear'
   | 'solid'
   | 'pct5'
   | 'pct10'
+  | 'pct12'
+  | 'pct15'
   | 'pct20'
   | 'pct25'
   | 'pct30'
+  | 'pct35'
+  | 'pct37'
   | 'pct40'
+  | 'pct45'
   | 'pct50'
+  | 'pct55'
   | 'pct60'
+  | 'pct62'
+  | 'pct65'
   | 'pct70'
   | 'pct75'
   | 'pct80'
-  | 'pct90';
+  | 'pct85'
+  | 'pct87'
+  | 'pct90'
+  | 'pct95'
+  | 'horzStripe'
+  | 'vertStripe'
+  | 'reverseDiagStripe'
+  | 'diagStripe'
+  | 'horzCross'
+  | 'diagCross'
+  | 'thinHorzStripe'
+  | 'thinVertStripe'
+  | 'thinReverseDiagStripe'
+  | 'thinDiagStripe'
+  | 'thinHorzCross'
+  | 'thinDiagCross'
+  | 'other';
 
 /** Where a section starts. */
 export type SectionBreakKind = 'nextPage' | 'continuous' | 'evenPage' | 'oddPage' | 'nextColumn';
@@ -436,6 +475,11 @@ export interface Commands {
   setLanguage(language: Language): Promise<void>;
   /** Sets emboss, engrave, outline and shadow; what isn't given is kept. */
   setCharacterEffects(effects: CharacterEffects): Promise<void>;
+  /**
+   * Sets the text's fill, outline, shadow, glow and reflection: each one given replaces the text's own, `null` turns it
+   * off (over a style's too; a fill is only removed), and what isn't given is kept.
+   */
+  setTextEffects(change: TextEffectsChange): Promise<void>;
   /** Sets the underline's colour, or the text's (`'auto'`); underlined text only. */
   setUnderlineColor(color: Color | 'auto'): Promise<void>;
   /** Clears character formatting (Ctrl+Space). */
@@ -521,8 +565,8 @@ export interface Commands {
     /** A shadow on the bottom and right edges set here. */
     shadow?: boolean;
   }): Promise<void>;
-  /** Shades the selected paragraphs or text: the fill, and a pattern of `color` over it. `fill: 'none'` with a clear pattern removes the shading. */
-  setShading(options: { target: 'paragraph' | 'text' | 'cell'; fill: Color | 'none'; pattern?: ShadingPattern; color?: Color | 'auto' }): Promise<void>;
+  /** Shades the selected paragraphs, text, cells or tables (a table's shows around cells with spacing): the fill, and a pattern of `color` over it. `fill: 'none'` with a clear pattern removes the shading. */
+  setShading(options: { target: 'paragraph' | 'text' | 'cell' | 'table'; fill: Color | 'none'; pattern?: ShadingPattern; color?: Color | 'auto' }): Promise<void>;
   /** Sets or removes (`border: null`) the selected text's border: a box of one line, with a shadow or not. */
   setTextBorder(options: { border: BorderLine | null; shadow?: boolean }): Promise<void>;
   /**
@@ -544,6 +588,15 @@ export interface Commands {
     /** The borders go around the footer (every section's). */
     surroundFooter?: boolean;
   }): Promise<void>;
+  /**
+   * Sets the page colour of the document: no fill, a solid colour (a theme colour takes one tint or shade), a gradient,
+   * a pattern, or a picture (`tile` makes it a texture). A picture fill with an empty image keeps the page's own.
+   */
+  setPageColor(fill: FillValue): Promise<void>;
+  /** Sets the document's watermark, in every header: the text or the picture replaces the one there. */
+  setWatermark(watermark: Watermark): Promise<void>;
+  /** Removes the document's watermark. */
+  removeWatermark(): Promise<void>;
   /** Sets the properties of the frame the selection is in (`unavailable` outside a frame). */
   setFrame(properties: FrameProperties): Promise<void>;
   /** Removes the frame the selection is in: its paragraphs go back in the text, before the paragraph it was anchored to. */
@@ -653,7 +706,7 @@ export interface Commands {
   // Insert
   /** Inserts a table of 1 to 32767 rows and 1 to 63 columns. */
   insertTable(options: { rows: number; columns: number }): Promise<void>;
-  /** Inserts a picture (PNG, JPEG, GIF, BMP or TIFF). */
+  /** Inserts a picture (PNG, JPEG, GIF, BMP, TIFF, JPEG XR, SVG, EMF or WMF). */
   insertPicture(options: { data: Uint8Array; altText?: string }): Promise<void>;
   /** Inserts a text box. */
   insertTextBox(): Promise<void>;
@@ -1165,7 +1218,7 @@ export type OpArgs<K extends CommandId> = Parameters<Commands[K]> extends []
   ? {}
   : [Exclude<Parameters<Commands[K]>[0], undefined>] extends [string | number | boolean | null]
     ? { value: Exclude<Parameters<Commands[K]>[0], undefined> }
-    : [Exclude<Parameters<Commands[K]>[0], undefined>] extends [RichText | Uint8Array | FillValue | readonly unknown[]]
+    : [Exclude<Parameters<Commands[K]>[0], undefined>] extends [RichText | Uint8Array | FillValue | Watermark | readonly unknown[]]
       ? { value: Exclude<Parameters<Commands[K]>[0], undefined> }
       : [Exclude<Parameters<Commands[K]>[0], undefined>] extends [object]
         ? Exclude<Parameters<Commands[K]>[0], undefined>
@@ -1277,6 +1330,7 @@ const encodings: { [K in CommandId]: Encoding<K> } = {
   setTypography: 'spread',
   setLanguage: 'spread',
   setCharacterEffects: 'spread',
+  setTextEffects: 'spread',
   setUnderlineColor: 'value',
   clearFormatting: 'none',
   changeCase: 'value',
@@ -1304,6 +1358,9 @@ const encodings: { [K in CommandId]: Encoding<K> } = {
   setShading: 'spread',
   setTextBorder: 'spread',
   setPageBorders: 'spread',
+  setPageColor: 'value',
+  setWatermark: 'value',
+  removeWatermark: 'none',
   setFrame: 'spread',
   removeFrame: 'none',
   setDropCap: 'spread',

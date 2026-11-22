@@ -135,6 +135,7 @@ impl Resolver {
                 number_spacing: p.num_spacing.unwrap_or(0),
                 stylistic_sets: p.style_sets.unwrap_or(0),
             },
+            effects: p.effects.as_ref().and_then(TextEffects::shown),
             color: p.color.flatten(),
             highlight: p.highlight.flatten(),
             em: p.em.clone().filter(|e| e != "none"),

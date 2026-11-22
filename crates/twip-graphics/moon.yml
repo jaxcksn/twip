@@ -3,7 +3,9 @@ language: rust
 tags: [engine]
 
 tasks:
-  # Unit tests and the golden images, at every SIMD level.
+  # Unit tests, the golden images at every SIMD level, and the PDF writer against the CPU (tests/pdf.rs). The GPU
+  # comparison (tests/gpu.rs, `--features gpu`) runs locally only: Context::new takes hardware adapters, and the runners
+  # have none.
   test:
-    command: cargo nextest run -p twip-graphics
+    command: cargo nextest run -p twip-graphics --features pdf
     inputs: ['src/**/*', 'tests/**/*', 'benches/**/*', 'Cargo.toml']

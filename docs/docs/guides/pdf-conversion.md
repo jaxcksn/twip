@@ -7,7 +7,7 @@ sidebar_position: 14
 
 Twip converts DOCX to PDF without an editor: no session, no window, and no engine thread. Each conversion runs on the
 thread that starts it, and any number run at once, so a service can convert as many documents in parallel as it has
-cores. The PDF shows the final document, without revision marks or comments, laid out exactly as the editor's PDF
+cores. The PDF draws what the screen draws, vectors and effects included, except the page background and colour, which Word's own PDF leaves out. It shows the final document, without revision marks or comments, laid out exactly as the editor's PDF
 export lays it out.
 
 ## .NET
@@ -72,6 +72,21 @@ every SDK.
   `pdf-archival-claim-dropped`. Owner passwords and permission restrictions aren't supported.
 - **Keywords.** They go to the document properties readers show (the Info dictionary) and to the XMP metadata, in
   order, joined with commas. Blank entries are dropped.
+
+## Pictures
+
+EMF, WMF and EMF+ pictures export as vector drawing, not a raster; JPEG XR (`.wdp`) pictures export as images. Double-byte text in metafiles isn't drawn.
+
+## Accessibility
+
+PDFs are tagged for PDF/UA-1: headings (with their numbers), lists with their labels, tables with their header cells,
+links (linked pictures too), notes, text boxes, figures with their alternative text, and text in another language
+(`Lang`). Hyperlinks and cross-references are link annotations, and the headings make the outline. The output is checked
+with veraPDF. Headers, footers and decorative pictures are artifacts. A picture with no alternative text that isn't
+marked decorative is still a figure, without a description: the PDF keeps its tags but doesn't claim PDF/UA, and the
+export warns with `pdf-figure-without-alt`. Give it alternative text, or mark it decorative, for a conformant PDF. The
+title, outline and link descriptions come from the text as exported, so tracked deletions a conversion hides don't
+reach them.
 
 ## Fonts on a server
 

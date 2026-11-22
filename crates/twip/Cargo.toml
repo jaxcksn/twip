@@ -53,6 +53,11 @@ type_complexity = "allow"
 [dev-dependencies]
 # The benchmarks (benches/engine): `cargo bench -p twip`.
 divan = "0.1.21"
+# Reading the render gate's snapshots (render/graphics/output.rs); twip-graphics decodes PNG with it already.
+zune-png = "0.5.2"
+# Reading the PDF gate's exports back (pdf/output.rs): pages, text, structure and content streams. twip-graphics' PDF
+# tests render with the same family.
+hayro-interpret = { version = "0.9.0", default-features = false }
 
 # One benchmark binary.
 [[bench]]

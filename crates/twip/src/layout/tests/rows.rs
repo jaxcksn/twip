@@ -1356,7 +1356,7 @@ fn a_cells_bottom_border_runs_over_columns_the_row_below_leaves_out() {
         let doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
         let mut bars: Vec<[f64; 4]> = crate::layout::traverse::paint_items(&layout(&doc, &fonts()).pages()[0])
             .into_iter()
-            .filter_map(|i| if let Item::Rect { rect, colour: 0xFF0000 } = i { Some(rect) } else { None })
+            .filter_map(|i| if let Item::Rect { rect, colour: 0xFF0000, .. } = i { Some(rect) } else { None })
             .collect();
         bars.sort_by(|a, b| a[0].total_cmp(&b[0]));
         let len: f64 = bars.iter().map(|r| r[2] - r[0]).sum();

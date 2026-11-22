@@ -5,5 +5,7 @@
   "choice",
   "toggle",
   "color",
-  "list"
+  "list",
+  "effect",
+  "picture"
 ]

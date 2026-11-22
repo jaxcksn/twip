@@ -25,6 +25,8 @@ use crate::image::ImageId;
 use crate::paint::{BlendMode, Brush, ColorFilter, Extend, ImagePaint, Paint, PremulColor, Sampling, Stop};
 use crate::path::{self, Verb};
 
+mod dash;
+
 /// Strokes are expanded in local units, before any zoom. 0.01 is under 0.1 device pixel at Twip's largest scale
 /// (400% zoom at dpr 2, about 10.7 pixels per point).
 const STROKE_TOLERANCE: f64 = 0.01;
@@ -39,12 +41,15 @@ pub(crate) const MAX_DEPTH: u32 = 64;
 /// Twip's own layout (`GlyphRun::glyphs`), so recording it copies nothing but the narrowed values.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct GlyphRun<'a> {
+    /// The face.
     pub font: FontId,
     /// The em size, in local units.
     pub size: f64,
+    /// The y of the baseline, in local units.
     pub baseline: f64,
     /// (glyph id, x of the glyph's origin).
     pub glyphs: &'a [(u32, f64)],
+    /// The styles synthesised for the face.
     pub synthesis: Synthesis,
 }
 
@@ -60,8 +65,11 @@ pub struct Synthesis {
 /// What a clip keeps: drawing outside it is discarded until the matching [`Recorder::pop`]. Clips intersect.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Clip<'a> {
+    /// A rectangle.
     Rect {
+        /// The rectangle, in local units.
         rect: kurbo::Rect,
+        /// Whether its edges are anti-aliased.
         aa: bool,
     },
     /// The non-zero fill of a path, anti-aliased.
@@ -74,7 +82,9 @@ pub enum Clip<'a> {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum FillRule {
     #[default]
+    /// Non-zero winding.
     NonZero,
+    /// Even-odd winding.
     EvenOdd,
 }
 
@@ -83,7 +93,9 @@ pub enum FillRule {
 pub struct Layer<'a> {
     /// In `0.0..=1.0`.
     pub opacity: f32,
+    /// How the layer combines with what is under it.
     pub blend: BlendMode,
+    /// Colour filters applied to the layer, in order.
     pub color_filters: &'a [ColorFilter],
     /// Applied in order, in the layer's local units.
     pub filters: &'a [Filter],
@@ -101,10 +113,16 @@ impl Default for Layer<'_> {
 /// content).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Filter {
-    /// Gaussian blur with standard deviation `sigma`.
-    Blur { sigma: f32 },
+    /// Gaussian blur.
+    Blur {
+        /// The standard deviation.
+        sigma: f32,
+    },
     /// Morphological erosion: each pixel becomes the minimum within `radius`.
-    Erode { radius: f32 },
+    Erode {
+        /// The distance the minimum is taken over.
+        radius: f32,
+    },
 }
 
 /// The largest blur sigma or erode radius drawn, in device pixels (Skia's `kMAX_BLUR_SIGMA`): a layer's buffer grows by
@@ -135,11 +153,15 @@ struct Data {
     /// How deep its pictures and layers nest, itself counted (at most [`MAX_DEPTH`]).
     depth: u32,
     bounds: Option<Rect>,
+    /// Whether it, or a picture it places, carries characters (drawn or not), and invisible ones.
+    text: bool,
+    invisible: bool,
     bytes: usize,
     lists: Lists,
 }
 
 impl Picture {
+    /// The picture's identifier, unique among pictures.
     pub fn id(&self) -> PictureId {
         self.0.id
     }
@@ -162,6 +184,11 @@ impl Picture {
 
     pub(crate) fn lists(&self) -> &Lists {
         &self.0.lists
+    }
+
+    /// Whether it, or a picture it places, has an invisible run ([`Recorder::invisible_text`]).
+    pub(crate) fn has_invisible_text(&self) -> bool {
+        self.0.invisible
     }
 }
 
@@ -223,6 +250,10 @@ pub(crate) enum Cmd {
     EvenOddPath {
         path: PathSpan,
         paint: u32,
+    },
+    /// Index into `dashed`.
+    DashedRect {
+        dashed: u32,
     },
     /// Index into `frames`.
     Frame {
@@ -312,6 +343,9 @@ pub(crate) struct RunRec {
     /// in `clusters`: empty unless recorded with [`Recorder::glyphs_text`].
     pub text: Span,
     pub clusters: Span,
+    /// Only the characters, drawing nothing ([`Recorder::invisible_text`]): the screen skips the run, a PDF writes
+    /// it as invisible text.
+    pub invisible: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -369,6 +403,7 @@ pub(crate) struct Lists {
     pub rrects: Vec<(Rect, [f32; 4])>,
     /// A frame's outer rect and the hole inside it.
     pub frames: Vec<(Rect, Rect)>,
+    pub dashed: Vec<Dashed>,
     pub verbs: Vec<Verb>,
     pub points: Vec<Point>,
     pub runs: Vec<RunRec>,
@@ -384,6 +419,11 @@ pub(crate) struct Lists {
 }
 
 impl Lists {
+    /// Whether a run here, or in a picture placed here, is invisible.
+    pub(crate) fn has_invisible_text(&self) -> bool {
+        self.runs.iter().any(|r| r.invisible) || self.children.iter().any(Picture::has_invisible_text)
+    }
+
     fn bytes(&self) -> usize {
         fn size<T>(v: &[T]) -> usize {
             std::mem::size_of_val(v)
@@ -394,6 +434,7 @@ impl Lists {
             + size(&self.stops)
             + size(&self.rrects)
             + size(&self.frames)
+            + size(&self.dashed)
             + size(&self.verbs)
             + size(&self.points)
             + size(&self.runs)
@@ -417,6 +458,7 @@ impl Lists {
             stops,
             rrects,
             frames,
+            dashed,
             verbs,
             points,
             runs,
@@ -436,6 +478,7 @@ impl Lists {
         stops.clear();
         rrects.clear();
         frames.clear();
+        dashed.clear();
         verbs.clear();
         points.clear();
         runs.clear();
@@ -473,9 +516,17 @@ pub struct Recorder {
     bounds: Option<kurbo::Rect>,
     /// Kept between strokes so expanding one reuses the last one's buffers.
     stroker: kurbo::StrokeCtx,
+    /// Stroked text's scratch: a glyph's placed outline, and a contour's synthetic bold ring.
+    glyph: kurbo::BezPath,
+    ring: kurbo::StrokeCtx,
+    /// A dashed stroke made safe ([`safe_dashes`]), its pattern kept for the next, and the dashing's held-back elements.
+    dashes: kurbo::Stroke,
+    dash_stash: Vec<PathEl>,
     /// Layers open now, and the deepest nesting recorded so far ([`MAX_DEPTH`]).
     layers_open: u32,
     depth: u32,
+    /// Whether the picture carries characters so far.
+    text: bool,
 }
 
 impl Default for Recorder {
@@ -485,6 +536,7 @@ impl Default for Recorder {
 }
 
 impl Recorder {
+    /// An empty recorder.
     pub fn new() -> Recorder {
         Recorder {
             lists: Lists::default(),
@@ -493,11 +545,17 @@ impl Recorder {
             clip: None,
             bounds: None,
             stroker: kurbo::StrokeCtx::default(),
+            glyph: kurbo::BezPath::new(),
+            ring: kurbo::StrokeCtx::default(),
+            dashes: kurbo::Stroke::default(),
+            dash_stash: Vec::new(),
             layers_open: 0,
             depth: 1,
+            text: false,
         }
     }
 
+    /// Fills `rect` with `paint`.
     pub fn fill_rect<'p>(&mut self, rect: kurbo::Rect, paint: impl Into<Paint<'p>>) {
         let paint = paint.into();
         self.add_bounds(rect.abs());
@@ -522,6 +580,41 @@ impl Recorder {
         let rrect = self.lists.rrects.len() as u32;
         self.lists.rrects.push((Rect::from_kurbo(rect), radii));
         self.lists.cmds.push(Cmd::RRect { rrect, paint });
+    }
+
+    /// `rect` filled in dashes along its longer side, from its start: `pattern`'s on and off lengths (an even number of
+    /// them, at most eight) in units of the rect's thickness on the device, rounded down to whole device pixels and at
+    /// least one. Dashes keep their size in device pixels as the scale changes, as Word draws a border's at any zoom;
+    /// the PDF writer measures them on a 300 dpi device. A pattern that is empty, odd, longer or all zero, or a brush
+    /// other than a solid colour, fills the rect.
+    pub fn fill_dashed_rect<'p>(&mut self, rect: kurbo::Rect, pattern: &[u8], paint: impl Into<Paint<'p>>) {
+        self.fill_dashed_rect_from(rect, pattern, 0.0, paint);
+    }
+
+    /// [`Recorder::fill_dashed_rect`] for the stretch of a longer rect that starts `phase` local units along it: the
+    /// pattern carries on from there instead of starting over. A negative or non-finite `phase` is zero.
+    pub fn fill_dashed_rect_from<'p>(&mut self, rect: kurbo::Rect, pattern: &[u8], phase: f64, paint: impl Into<Paint<'p>>) {
+        let paint = paint.into();
+        let valid = pattern.len().is_multiple_of(2) && pattern.len() <= 8 && pattern.iter().any(|&l| l > 0);
+        let Brush::Solid(c) = paint.brush else { return self.fill_rect(rect, paint) };
+        if !valid {
+            return self.fill_rect(rect, paint);
+        }
+        let rect = rect.abs();
+        self.add_bounds(rect);
+        let mut lengths = [0; 8];
+        lengths[..pattern.len()].copy_from_slice(pattern);
+        let dashed = self.lists.dashed.len() as u32;
+        self.lists.dashed.push(Dashed {
+            rect: Rect::from_kurbo(rect),
+            color: c.premultiply(),
+            aa: paint.aa,
+            blend: paint.blend,
+            pattern: lengths,
+            len: pattern.len() as u8,
+            phase: if phase.is_finite() { phase.max(0.0) as f32 } else { 0.0 },
+        });
+        self.lists.cmds.push(Cmd::DashedRect { dashed });
     }
 
     /// The non-zero fill of a path.
@@ -553,15 +646,14 @@ impl Recorder {
         if stroke.width.is_nan() || stroke.width <= 0.0 {
             return;
         }
-        let paint = paint.into();
-        let safe;
-        let stroke = match safe_dashes(path, stroke) {
-            Some(s) => {
-                safe = s;
-                &safe
-            }
-            None => stroke,
-        };
+        let mut safe = std::mem::take(&mut self.dashes);
+        let changed = safe_dashes(path, stroke, &mut safe);
+        self.stroke_safe(path, if changed { &safe } else { stroke }, paint.into());
+        self.dashes = safe;
+    }
+
+    /// [`Recorder::stroke_path`], its dashes made safe.
+    fn stroke_safe(&mut self, path: &[PathEl], stroke: &kurbo::Stroke, paint: Paint<'_>) {
         if let Some((a, b)) = path::as_line(path)
             && (a.x == b.x || a.y == b.y)
             && let Some(square) = flat_caps(stroke)
@@ -597,8 +689,17 @@ impl Recorder {
             self.lists.cmds.push(Cmd::Frame { frame, paint });
             return;
         }
-        let mut stroker = std::mem::take(&mut self.stroker);
-        kurbo::stroke_with(path.iter().copied(), stroke, &kurbo::StrokeOpts::default(), STROKE_TOLERANCE, &mut stroker);
+        let (mut stroker, opts) = (std::mem::take(&mut self.stroker), kurbo::StrokeOpts::default());
+        if stroke.dash_pattern.is_empty() {
+            kurbo::stroke_with(path.iter().copied(), stroke, &opts, STROKE_TOLERANCE, &mut stroker);
+        } else {
+            let kurbo::Stroke { width, join, miter_limit, start_cap, end_cap, ref dash_pattern, dash_offset } = *stroke;
+            let solid = kurbo::Stroke { width, join, miter_limit, start_cap, end_cap, dash_pattern: Default::default(), dash_offset: 0.0 };
+            let mut stash = std::mem::take(&mut self.dash_stash);
+            let dashed = dash::dash(path.iter().copied(), dash_offset, dash_pattern, &mut stash);
+            kurbo::stroke_with(dashed, &solid, &opts, STROKE_TOLERANCE, &mut stroker);
+            self.dash_stash = stash;
+        }
         self.fill_path(stroker.output().elements(), paint);
         self.stroker = stroker;
     }
@@ -618,11 +719,23 @@ impl Recorder {
     /// its characters start at; one per glyph). A PDF's text extracts as them; the screen draws the glyphs alone.
     /// Clusters that don't match the glyphs, or fall outside `text`, are dropped (the text is kept, for the run).
     pub fn glyphs_text<'p>(&mut self, fonts: &FontRegistry, run: &GlyphRun<'_>, text: &str, clusters: &[u32], paint: impl Into<Paint<'p>>) {
+        self.run(fonts, run, text, clusters, paint.into(), false);
+    }
+
+    /// The characters `text` at a run's glyphs (clusters as [`Recorder::glyphs_text`] takes them), drawing nothing:
+    /// the text of glyphs drawn some other way, such as [`Recorder::stroke_glyphs`]. The screen skips it; a PDF writes
+    /// it as invisible text, so the characters extract, search and tag as the run's.
+    pub fn invisible_text(&mut self, fonts: &FontRegistry, run: &GlyphRun<'_>, text: &str, clusters: &[u32]) {
+        self.run(fonts, run, text, clusters, crate::paint::Color::BLACK.into(), true);
+    }
+
+    fn run(&mut self, fonts: &FontRegistry, run: &GlyphRun<'_>, text: &str, clusters: &[u32], paint: Paint<'_>, invisible: bool) {
         if run.glyphs.is_empty() || !(run.size > 0.0 && run.size.is_finite()) {
             return;
         }
         let start = self.lists.text.len();
         self.lists.text.push_str(text);
+        self.text |= !text.is_empty();
         let text_span = Span::since(self.lists.text.as_bytes(), start);
         let start = self.lists.clusters.len();
         if clusters.len() == run.glyphs.len() && clusters.iter().all(|&c| (c as usize) < text.len().max(1)) {
@@ -654,12 +767,62 @@ impl Recorder {
             synthesis: run.synthesis,
             text: text_span,
             clusters: cluster_span,
+            invisible,
         };
         let run = self.lists.runs.len() as u32;
         self.lists.runs.push(rec);
-        let paint = self.paint(paint.into());
+        let paint = self.paint(paint);
         self.lists.cmds.push(Cmd::Glyphs { run, paint });
     }
+    /// The outlines of a run's glyphs stroked with `stroke`: hollow text. Each glyph's outline is the edge its fill
+    /// would have (skewed for synthetic italic, grown by half synthetic bold's width), expanded into a fill as
+    /// [`Recorder::stroke_path`] expands any path, so every backend draws it as a path (and a PDF keeps no text for
+    /// it). Glyphs without an outline (spaces, colour and bitmap glyphs) draw nothing. `fonts` reads each face's
+    /// glyph outline once and keeps it.
+    pub fn stroke_glyphs<'p>(&mut self, fonts: &FontRegistry, run: &GlyphRun<'_>, stroke: &kurbo::Stroke, paint: impl Into<Paint<'p>>) {
+        if stroke.width.is_nan() || stroke.width <= 0.0 {
+            return;
+        }
+        self.glyph_outlines(fonts, run, paint.into(), Some(stroke));
+    }
+
+    /// A run's glyphs filled as paths: their outlines as [`Recorder::glyphs`] fills them, unhinted and without
+    /// characters, for drawing that is no text (a PDF extracts nothing from it). Glyphs without an outline draw nothing.
+    pub fn glyph_paths<'p>(&mut self, fonts: &FontRegistry, run: &GlyphRun<'_>, paint: impl Into<Paint<'p>>) {
+        self.glyph_outlines(fonts, run, paint.into(), None);
+    }
+
+    /// Each of a run's glyph outlines, placed, then stroked or (`stroke: None`) filled.
+    fn glyph_outlines(&mut self, fonts: &FontRegistry, run: &GlyphRun<'_>, paint: Paint<'_>, stroke: Option<&kurbo::Stroke>) {
+        if run.glyphs.is_empty() || !(run.size > 0.0 && run.size.is_finite()) {
+            return;
+        }
+        let style = Style { skew_x: run.synthesis.skew_x, bold: if run.synthesis.embolden { embolden_em(run.size as f32) } else { 0.0 } };
+        let (mut glyph, mut ring) = (std::mem::take(&mut self.glyph), std::mem::take(&mut self.ring));
+        fonts.outlines(run.font, run.glyphs.iter().map(|g| g.0), |k, outline| {
+            let map = Affine::translate((run.glyphs[k].1, run.baseline)) * Affine::scale(run.size) * style.skew();
+            glyph.truncate(0);
+            match stroke {
+                Some(stroke) => {
+                    if style.bold > 0.0 {
+                        bold_rings(outline, style, &mut ring, Ring::Edge, |els, _| glyph.extend(els.iter().map(|&e| map * e)));
+                    } else {
+                        glyph.extend(outline.iter().map(|e| map * e));
+                    }
+                    self.stroke_path(glyph.elements(), stroke, paint);
+                }
+                None => {
+                    glyph.extend(outline.iter().map(|e| map * e));
+                    if style.bold > 0.0 {
+                        bold_rings(outline, style, &mut ring, Ring::Whole, |els, reversed| push_mapped(&mut glyph, els, map, reversed));
+                    }
+                    self.fill_path(glyph.elements(), paint);
+                }
+            }
+        });
+        (self.glyph, self.ring) = (glyph, ring);
+    }
+
     /// `image`, or its `src` rect (in image pixels), drawn into `dst`.
     pub fn image(&mut self, image: ImageId, src: Option<kurbo::Rect>, dst: kurbo::Rect, paint: &ImagePaint<'_>) {
         self.add_bounds(dst.abs());
@@ -672,15 +835,22 @@ impl Recorder {
         self.lists.cmds.push(Cmd::Image { image });
     }
 
-    /// Places `picture`, mapped by `transform`. The picture is shared, not copied.
+    /// Places `picture`, mapped by `transform`. The picture is shared, not copied. One that draws nothing is placed
+    /// only for the characters it carries (a PDF's text).
     pub fn picture(&mut self, picture: &Picture, transform: Affine) {
-        let Some(bounds) = picture.bounds() else { return };
+        let bounds = picture.bounds();
+        if bounds.is_none() && !picture.0.text {
+            return;
+        }
         let depth = 1 + self.layers_open + picture.0.depth;
         if depth > MAX_DEPTH {
             return;
         }
         self.depth = self.depth.max(depth);
-        self.add_bounds(transform.transform_rect_bbox(bounds));
+        self.text |= picture.0.text;
+        if let Some(bounds) = bounds {
+            self.add_bounds(transform.transform_rect_bbox(bounds));
+        }
         let child = self.lists.children.len() as u32;
         self.lists.children.push(picture.clone());
         let transform = self.transform_index(transform);
@@ -695,6 +865,7 @@ impl Recorder {
         self.lists.cmds.push(Cmd::PushTransform { transform });
     }
 
+    /// Intersects the clip with `clip` until the matching [`Recorder::pop`].
     pub fn push_clip(&mut self, clip: Clip<'_>) {
         let (bounds, rec) = match clip {
             Clip::Rect { rect, aa } => (rect.abs(), ClipRec::Rect { rect: Rect::from_kurbo(rect), aa }),
@@ -713,6 +884,7 @@ impl Recorder {
         self.lists.cmds.push(Cmd::PushClip { clip });
     }
 
+    /// Starts a layer until the matching [`Recorder::pop`].
     pub fn push_layer(&mut self, layer: &Layer<'_>) {
         if 1 + self.layers_open + 1 > MAX_DEPTH {
             return self.push_transform(Affine::IDENTITY);
@@ -788,7 +960,9 @@ impl Recorder {
         let id = PictureId(NEXT.fetch_add(1, Ordering::Relaxed));
         let bytes = std::mem::size_of::<Data>() + lists.bytes();
         let depth = std::mem::replace(&mut self.depth, 1);
-        Picture(Arc::new(Data { id, depth, bounds, bytes, lists }))
+        let text = std::mem::take(&mut self.text);
+        let invisible = lists.has_invisible_text();
+        Picture(Arc::new(Data { id, depth, bounds, text, invisible, bytes, lists }))
     }
 
     fn paint(&mut self, paint: Paint<'_>) -> u32 {
@@ -887,22 +1061,188 @@ fn flat_caps(stroke: &kurbo::Stroke) -> Option<bool> {
 /// draws the stroke solid, where it would take time and memory without bound.
 const MAX_DASHES: f64 = 200_000.0;
 
-/// `stroke` made safe to dash, when it is dashed: solid when its pattern isn't valid (an entry negative or NaN, the sum
-/// 0 or past `f64`) or is too fine for `path`, else its offset within one period (kurbo walks the pattern to an offset
-/// entry by entry, so 1e300 never ends).
-fn safe_dashes(path: &[PathEl], stroke: &kurbo::Stroke) -> Option<kurbo::Stroke> {
-    let pattern = &stroke.dash_pattern;
-    if pattern.is_empty() {
-        return None;
+/// 2^53: integers up to it are exact as `f64`.
+const MAX_EXACT: f64 = (1u64 << f64::MANTISSA_DIGITS) as f64;
+
+/// A rect filled in dashes measured on the device ([`Recorder::fill_dashed_rect`]).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Dashed {
+    pub rect: Rect,
+    pub color: PremulColor,
+    pub aa: bool,
+    pub blend: BlendMode,
+    pattern: [u8; 8],
+    len: u8,
+    phase: f32,
+}
+
+impl Dashed {
+    /// Each dash under `t` (local units to device pixels) that reaches `view` (device pixels; under rotation or skew,
+    /// the whole rect), as a rect in local units. `false` when there would be more than [`MAX_DASHES`], the view is
+    /// more than [`MAX_EXACT`] pattern units along the rect, or `t` is degenerate: the rect is then drawn solid.
+    pub(crate) fn each(&self, t: Transform, view: Rect, mut dash: impl FnMut(Rect)) -> bool {
+        let r = self.rect;
+        let along_x = r.x1 - r.x0 >= r.y1 - r.y0;
+        let (ax, ay, cx, cy) = if along_x { (t.a, t.b, t.c, t.d) } else { (t.c, t.d, t.a, t.b) };
+        let (along, across) = (f64::from(ax).hypot(f64::from(ay)), f64::from(cx).hypot(f64::from(cy)));
+        let (s0, s1, thick) = if along_x { (r.x0, r.x1, r.y1 - r.y0) } else { (r.y0, r.y1, r.x1 - r.x0) };
+        let (s0, s1) = (f64::from(s0), f64::from(s1));
+        // A width on whole pixels but for `f32` rounding (6 points at 300 dpi: 24.999998) keeps them.
+        let unit = (f64::from(thick) * across + 1.0 / 256.0).floor().max(1.0) / along;
+        let pattern = &self.pattern[..self.len as usize];
+        let sum: u32 = pattern.iter().map(|&l| u32::from(l)).sum();
+        let period = unit * f64::from(sum);
+        if !period.is_finite() || period <= 0.0 {
+            return false;
+        }
+        // What of the rect the view sees, along it.
+        let (mut v0, mut v1) = (s0, s1);
+        if t.is_scale_translate() {
+            let (k, o, lo, hi) = if along_x { (t.a, t.e, view.x0, view.x1) } else { (t.d, t.f, view.y0, view.y1) };
+            let (a, b) = ((f64::from(lo) - f64::from(o)) / f64::from(k), (f64::from(hi) - f64::from(o)) / f64::from(k));
+            (v0, v1) = (v0.max(a.min(b)), v1.min(a.max(b)));
+        }
+        if v1 <= v0 {
+            return true;
+        }
+        // The pattern's start: `phase` (within a period) before the rect's.
+        let o = s0 - f64::from(self.phase).rem_euclid(period);
+        let (k0, k1) = (((v0 - o) / period).floor(), ((v1 - o) / period).ceil());
+        // Cycles' starts in pattern units, exact as `f64` and in `u64`.
+        if (k1 - k0) * pattern.len() as f64 > MAX_DASHES || k1 * f64::from(sum) > MAX_EXACT {
+            return false;
+        }
+        for k in k0 as u64..k1 as u64 {
+            let mut at = k * u64::from(sum);
+            for (i, &l) in pattern.iter().enumerate() {
+                let (from, to) = (o + at as f64 * unit, o + (at + u64::from(l)) as f64 * unit);
+                at += u64::from(l);
+                let (from, to) = (from.max(s0) as f32, to.min(s1) as f32);
+                if i % 2 == 0 && to > from {
+                    dash(if along_x { Rect { x0: from, x1: to, ..r } } else { Rect { y0: from, y1: to, ..r } });
+                }
+            }
+        }
+        true
     }
-    let sum: f64 = pattern.iter().sum();
-    let period = sum * if pattern.len() % 2 == 1 { 2.0 } else { 1.0 };
-    let valid = pattern.iter().all(|&d| d >= 0.0) && sum > 0.0 && period.is_finite();
+}
+
+/// What [`bold_rings`] passes on of each contour's synthetic bold ring.
+#[derive(Clone, Copy, PartialEq)]
+enum Ring {
+    /// The ring, wound as the glyph is: with the outline, its non-zero fill is the bold glyph.
+    Whole,
+    /// The ring's side away from the glyph's ink (an outer contour's outer side, a hole's inner side): the bold
+    /// glyph's edge.
+    Edge,
+}
+
+/// Each contour of `outline` (em units)'s synthetic bold ring, or its edge, passed to `each` a piece at a time, with
+/// whether it is to be reversed.
+fn bold_rings(outline: &kurbo::BezPath, style: Style, ring: &mut kurbo::StrokeCtx, what: Ring, mut each: impl FnMut(&[PathEl], bool)) {
+    use kurbo::Shape;
+    let glyph_sign = outline.area().signum();
+    let pen = style.pen();
+    for c in subpaths(outline.elements()) {
+        kurbo::stroke_with(c.iter().copied(), &pen, &kurbo::StrokeOpts::default(), 1e-3, ring);
+        let out = ring.output();
+        if what == Ring::Whole {
+            // Turned to wind as the glyph does: inside the glyph the two add up, outside the ring alone covers.
+            each(out.elements(), out.area().signum() != glyph_sign);
+            continue;
+        }
+        let outer = c.area().signum() == glyph_sign;
+        let by_size = |a: &&[PathEl], b: &&[PathEl]| a.area().abs().total_cmp(&b.area().abs());
+        let side = if outer { subpaths(out.elements()).max_by(by_size) } else { subpaths(out.elements()).min_by(by_size) };
+        if let Some(side) = side {
+            each(side, false);
+        }
+    }
+}
+
+/// Appends `els` mapped by `map` to `out`, each subpath reversed when `reversed` (as kurbo's `reverse_subpaths`, in
+/// place of a new path).
+fn push_mapped(out: &mut kurbo::BezPath, els: &[PathEl], map: Affine, reversed: bool) {
+    if !reversed {
+        return out.extend(els.iter().map(|&e| map * e));
+    }
+    let end = |e: &PathEl| match *e {
+        PathEl::MoveTo(p) | PathEl::LineTo(p) | PathEl::QuadTo(_, p) | PathEl::CurveTo(_, _, p) => Some(p),
+        PathEl::ClosePath => None,
+    };
+    for sub in subpaths(els) {
+        let closed = matches!(sub.last(), Some(PathEl::ClosePath));
+        let body = if closed { &sub[..sub.len() - 1] } else { sub };
+        let Some(last) = body.last().and_then(end) else { continue };
+        out.move_to(map * last);
+        for i in (1..body.len()).rev() {
+            let Some(to) = end(&body[i - 1]) else { continue };
+            match body[i] {
+                PathEl::LineTo(_) => out.line_to(map * to),
+                PathEl::QuadTo(c, _) => out.quad_to(map * c, map * to),
+                PathEl::CurveTo(c1, c2, _) => out.curve_to(map * c2, map * c1, map * to),
+                PathEl::MoveTo(_) | PathEl::ClosePath => {}
+            }
+        }
+        if closed {
+            out.close_path();
+        }
+    }
+}
+
+/// Appends a run's glyph outlines to `out`, placed and styled as [`Recorder::glyph_paths`] fills them (skewed for
+/// synthetic italic, grown for synthetic bold), in the run's local units: text drawn as a shape's own geometry, filled
+/// and stroked as any path. Glyphs without an outline add nothing. `ring`: scratch for synthetic bold, kept between
+/// runs.
+pub fn glyph_run_outline(fonts: &FontRegistry, run: &GlyphRun<'_>, out: &mut kurbo::BezPath, ring: &mut kurbo::StrokeCtx) {
+    if run.glyphs.is_empty() || !(run.size > 0.0 && run.size.is_finite()) {
+        return;
+    }
+    let style = Style { skew_x: run.synthesis.skew_x, bold: if run.synthesis.embolden { embolden_em(run.size as f32) } else { 0.0 } };
+    fonts.outlines(run.font, run.glyphs.iter().map(|g| g.0), |k, outline| {
+        let map = Affine::translate((run.glyphs[k].1, run.baseline)) * Affine::scale(run.size) * style.skew();
+        out.extend(outline.iter().map(|e| map * e));
+        if style.bold > 0.0 {
+            bold_rings(outline, style, ring, Ring::Whole, |els, reversed| push_mapped(out, els, map, reversed));
+        }
+    });
+}
+
+/// A path's subpaths, each from its `MoveTo`.
+fn subpaths(els: &[PathEl]) -> impl Iterator<Item = &[PathEl]> {
+    let mut start = 0;
+    std::iter::from_fn(move || {
+        if start >= els.len() {
+            return None;
+        }
+        let end = els[start + 1..].iter().position(|e| matches!(e, PathEl::MoveTo(_))).map_or(els.len(), |i| start + 1 + i);
+        let sub = &els[start..end];
+        start = end;
+        Some(sub)
+    })
+}
+
+/// `stroke` made safe to dash in `out`, when it is dashed (returning whether it is): solid when its pattern isn't
+/// valid (an entry negative or NaN, the sum 0 or past `f64`) or is too fine for `path`, else its offset within one
+/// period (kurbo walks the pattern to an offset entry by entry, so 1e300 never ends). `out`'s pattern keeps its memory.
+fn safe_dashes(path: &[PathEl], stroke: &kurbo::Stroke, out: &mut kurbo::Stroke) -> bool {
+    let kurbo::Stroke { width, join, miter_limit, start_cap, end_cap, ref dash_pattern, dash_offset } = *stroke;
+    if dash_pattern.is_empty() {
+        return false;
+    }
+    (out.width, out.join, out.miter_limit, out.start_cap, out.end_cap) = (width, join, miter_limit, start_cap, end_cap);
+    out.dash_pattern.clear();
+    let sum: f64 = dash_pattern.iter().sum();
+    let period = sum * if dash_pattern.len() % 2 == 1 { 2.0 } else { 1.0 };
+    let valid = dash_pattern.iter().all(|&d| d >= 0.0) && sum > 0.0 && period.is_finite();
     // The control polygon is at least as long as the path; NaN or infinity fails the test too.
-    if !(valid && polygon_length(path) / period * pattern.len() as f64 <= MAX_DASHES) {
-        return Some(kurbo::Stroke { dash_pattern: Default::default(), ..stroke.clone() });
+    if !(valid && polygon_length(path) / period * dash_pattern.len() as f64 <= MAX_DASHES) {
+        out.dash_offset = dash_offset;
+        return true;
     }
-    Some(kurbo::Stroke { dash_offset: stroke.dash_offset.rem_euclid(period), ..stroke.clone() })
+    out.dash_pattern.extend_from_slice(dash_pattern);
+    out.dash_offset = dash_offset.rem_euclid(period);
+    true
 }
 
 /// The length of `path`'s control polygon, closing segments included.
@@ -985,6 +1325,44 @@ mod tests {
 
     fn butt(width: f64) -> kurbo::Stroke {
         kurbo::Stroke::new(width).with_caps(Cap::Butt)
+    }
+
+    #[test]
+    fn a_dashed_rect_carries_its_pattern_on_from_its_phase() {
+        let dashes = |phase: f64| {
+            let mut rec = Recorder::new();
+            // Four device pixels thick, so a unit of four: dashes of 16 on and 16 off.
+            rec.fill_dashed_rect_from(rect(0.0, 0.0, 4.0, 100.0), &[4, 4], phase, RED);
+            let mut out = Vec::new();
+            let view = Rect { x0: -1.0e6, y0: -1.0e6, x1: 1.0e6, y1: 1.0e6 };
+            assert!(rec.lists.dashed[0].each(Transform::from_kurbo(kurbo::Affine::IDENTITY), view, |r| out.push((r.y0, r.y1))));
+            out
+        };
+        assert_eq!(dashes(0.0)[0], (0.0, 16.0));
+        // Starting 16 into the pattern, the rect opens in the gap: its first dash is 16 further on.
+        assert_eq!(dashes(16.0)[0], (16.0, 32.0));
+        // Starting 8 into a dash, the rest of it is drawn.
+        assert_eq!(dashes(8.0)[0], (0.0, 8.0));
+    }
+
+    /// A phase many periods on dashes as the phase within a period does; cycles too far along the rect to place
+    /// exactly fill it.
+    #[test]
+    fn a_dashed_rects_cycles_stay_exact() {
+        let dashes = |r: kurbo::Rect, phase: f64| {
+            let mut rec = Recorder::new();
+            rec.fill_dashed_rect_from(r, &[1, 1], phase, RED);
+            let mut out = Vec::new();
+            let view = Rect { x0: 0.0, y0: 0.0, x1: 65536.0, y1: 1.0 };
+            let dashed = rec.lists.dashed[0].each(Transform::from_kurbo(kurbo::Affine::IDENTITY), view, |r| out.push((r.x0, r.x1)));
+            dashed.then_some(out)
+        };
+        let long = rect(0.0, 0.0, 65536.0, 1.0);
+        let whole = dashes(long, 0.0).expect("dashed");
+        assert_eq!(whole.len(), 32768);
+        assert_eq!(dashes(long, 2.0f64.powi(64)).as_ref(), Some(&whole));
+        assert_eq!(dashes(long, 2.0f64.powi(64) + 2.0f64.powi(41)).as_ref(), Some(&whole));
+        assert_eq!(dashes(rect(-(2.0f64.powi(64)), 0.0, 100.0, 1.0), 0.0), None);
     }
 
     #[test]
@@ -1204,7 +1582,10 @@ mod tests {
         assert!(matches!(l.paints[0].brush, BrushRec::Linear { stops: Span { start: 0, len: 2 }, extend: Extend::Mirror, .. }));
         assert_eq!(l.stops, stops);
         let none = Span::default();
-        assert_eq!(l.runs[0], RunRec { font, size: 12.0, baseline: 100.0, glyphs: Span { start: 0, len: 2 }, synthesis, text: none, clusters: none });
+        assert_eq!(
+            l.runs[0],
+            RunRec { font, size: 12.0, baseline: 100.0, glyphs: Span { start: 0, len: 2 }, synthesis, text: none, clusters: none, invisible: false }
+        );
         assert_eq!(l.glyphs, [GlyphRec { raw: 36, x: 10.0 }, GlyphRec { raw: 72, x: 16.5 }]);
         assert_eq!(l.images[0].color_filters, Span { start: 0, len: 2 }, "filters are kept as a chain, in order");
         assert_eq!(l.color_filters[..2], filters);
@@ -1242,6 +1623,55 @@ mod tests {
     }
 
     #[test]
+    fn a_run_outline_is_the_path_glyph_paths_fill() {
+        use crate::cpu::{Draw, Format, Frame, Renderer, Target};
+        let mut resources = crate::Resources::default();
+        let mono: crate::font::FontData = Arc::new(include_bytes!("../tests/fonts/jetbrains-mono-500.ttf").to_vec());
+        let font = resources.fonts.add(mono, 0, &[]).expect("the test face registers");
+        let fonts = &resources.fonts;
+        let glyphs: Vec<(u32, f64)> = (0..6).map(|i| (i + 30, i as f64 * 12.0)).collect();
+        // Plain, each glyph's em outline placed at its origin and size, in order.
+        let run = GlyphRun { font, size: 20.0, baseline: 50.0, glyphs: &glyphs, synthesis: Synthesis::default() };
+        let mut outline = kurbo::BezPath::new();
+        glyph_run_outline(fonts, &run, &mut outline, &mut kurbo::StrokeCtx::default());
+        let mut want = kurbo::BezPath::new();
+        for &(g, x) in &glyphs {
+            let mut em = kurbo::BezPath::new();
+            assert!(fonts.em_outline(font, g, &mut em));
+            want.extend(em.iter().map(|e| Affine::translate((x, 50.0)) * Affine::scale(20.0) * e));
+        }
+        assert_eq!(outline, want);
+        // Synthetic bold and italic: the path covers the pixels glyph_paths does.
+        let draw = |picture: &Picture| {
+            let mut px = vec![0u8; 96 * 80 * 4];
+            let draws = [Draw { picture, transform: Affine::IDENTITY }];
+            let frame = Frame { clear: Some(Color::WHITE), draws: &draws };
+            Renderer::new().render(&mut Target::new(&mut px, 96, 80, 96 * 4, Format::Rgba8).expect("fits"), &resources, &frame);
+            px
+        };
+        let run = GlyphRun { synthesis: Synthesis { embolden: true, skew_x: -0.2 }, ..run };
+        let mut rec = Recorder::new();
+        rec.glyph_paths(fonts, &run, Color::BLACK);
+        let painted = rec.finish();
+        let mut outline = kurbo::BezPath::new();
+        glyph_run_outline(fonts, &run, &mut outline, &mut kurbo::StrokeCtx::default());
+        let mut rec = Recorder::new();
+        rec.fill_path(outline.elements(), Color::BLACK);
+        let filled = rec.finish();
+        assert!(outline.elements().len() > want.elements().len(), "the bold rings are added");
+        assert_eq!(filled.bounds(), painted.bounds());
+        assert!(draw(&filled) == draw(&painted), "the same pixels");
+        let mut none = kurbo::BezPath::new();
+        glyph_run_outline(
+            fonts,
+            &GlyphRun { font, size: f64::NAN, baseline: 0.0, glyphs: &glyphs, synthesis: Synthesis::default() },
+            &mut none,
+            &mut kurbo::StrokeCtx::default(),
+        );
+        assert!(none.is_empty());
+    }
+
+    #[test]
     fn a_reused_recorder_records_without_allocating() {
         let mut rec = Recorder::new();
         let mut fonts = FontRegistry::default();
@@ -1255,6 +1685,10 @@ mod tests {
                 rec.fill_rect(rect(0.0, y, 400.0, y + 1.0), RED);
                 let run = GlyphRun { font, size: 11.0, baseline: y + 11.0, glyphs: &glyphs, synthesis: Synthesis::default() };
                 rec.glyphs(&fonts, &run, Color::BLACK);
+                rec.stroke_glyphs(&fonts, &run, &kurbo::Stroke::new(0.5), RED);
+                let bold = GlyphRun { synthesis: Synthesis { embolden: true, skew_x: -0.2 }, ..run };
+                rec.stroke_glyphs(&fonts, &bold, &kurbo::Stroke::new(0.5), RED);
+                rec.glyph_paths(&fonts, &bold, RED);
                 rec.stroke_path(&curve, &kurbo::Stroke::new(1.0), RED);
                 rec.push_clip(Clip::Rect { rect: rect(0.0, y, 400.0, y + 14.0), aa: true });
                 rec.line((0.0, y).into(), (400.0, y).into(), &butt(0.5).with_dashes(0.0, [2.0, 2.0]), RED);
@@ -1270,5 +1704,25 @@ mod tests {
         let lists = 7;
         assert!(finishing.count_total <= lists + 1, "one allocation per non-empty list and one for the picture: {}", finishing.count_total);
         assert!(first.bytes() > 40 * 60 * std::mem::size_of::<GlyphRec>());
+        // Dashed glyph outlines, with patterns past the four entries a stroke keeps inline and within them.
+        let run = GlyphRun { font, size: 11.0, baseline: 11.0, glyphs: &glyphs, synthesis: Synthesis::default() };
+        let long = kurbo::Stroke::new(0.5).with_dashes(3.0, [1.0, 0.5, 2.0, 0.5, 0.25, 0.5]);
+        let short = kurbo::Stroke::new(0.5).with_dashes(3.0, [1.0, 0.5, 2.0, 0.5]);
+        rec.stroke_glyphs(&fonts, &run, &long, RED);
+        rec.stroke_glyphs(&fonts, &run, &short, RED);
+        let dashing = allocation_counter::measure(|| {
+            rec.stroke_glyphs(&fonts, &run, &long, RED);
+            rec.stroke_glyphs(&fonts, &run, &short, RED);
+        });
+        assert_eq!(dashing.count_total, 0, "dashing glyph outlines into a warm recorder");
+        // A bold run's outline, its scratch kept.
+        let bold = GlyphRun { font, size: 11.0, baseline: 11.0, glyphs: &glyphs, synthesis: Synthesis { embolden: true, skew_x: 0.0 } };
+        let (mut out, mut ring) = (kurbo::BezPath::new(), kurbo::StrokeCtx::default());
+        glyph_run_outline(&fonts, &bold, &mut out, &mut ring);
+        let outlining = allocation_counter::measure(|| {
+            out.truncate(0);
+            glyph_run_outline(&fonts, &bold, &mut out, &mut ring);
+        });
+        assert_eq!(outlining.count_total, 0, "outlining a bold run with kept scratch");
     }
 }

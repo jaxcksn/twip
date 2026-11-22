@@ -1,0 +1,20 @@
+[
+  {
+    "bold": true,
+    "color": "#C0C0C0",
+    "font": "Calibri",
+    "italic": false,
+    "kind": "text",
+    "language": "en-US",
+    "layout": "diagonal",
+    "size": 80.5,
+    "text": "CONFIDENTIAL",
+    "transparency": 50.0
+  },
+  {
+    "image": "iVBORw==",
+    "kind": "picture",
+    "scale": 150.0,
+    "washout": true
+  }
+]

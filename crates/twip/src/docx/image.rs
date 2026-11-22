@@ -1,10 +1,13 @@
 //! What an image file says about itself: its pixel size and resolution.
 
-/// Pixel size (orientation applied) and resolution of an image.
+/// Pixel size (orientation applied) and resolution of an image. A metafile's is its frame at 96 dpi.
 pub fn image_info(data: &[u8]) -> Option<(f64, f64, f64, f64)> {
+    if let Some(Vector::Emf(size) | Vector::Wmf(size)) = vector(data) {
+        return Some((size.0 * 96.0 / 72.0, size.1 * 96.0 / 72.0, 96.0, 96.0));
+    }
     // The probe's size already has the EXIF orientation applied: a quarter turn swaps it.
-    let info = twip_graphics::image::probe(data)?;
-    let (dx, dy) = dpi(data);
+    let (info, xr) = twip_graphics::image::probe_with_resolution(data)?;
+    let (dx, dy) = xr.unwrap_or_else(|| dpi(data));
     let (w, h) = (f64::from(info.width), f64::from(info.height));
     Some(if info.orientation >= 5 { (w, h, dy, dx) } else { (w, h, dx, dy) })
 }
@@ -56,16 +59,43 @@ pub fn is_svg(d: &[u8]) -> bool {
         let Some(end) = end else { return false };
         rest = r[end..].trim_start();
     }
-    rest.strip_prefix("<svg").is_some_and(|r| r.starts_with(|c: char| c.is_whitespace() || c == '>' || c == '/'))
+    // The root's local name, past any namespace prefix.
+    let Some(tag) = rest.strip_prefix('<') else { return false };
+    let name = tag.split(|c: char| c.is_whitespace() || c == '>' || c == '/').next().unwrap_or("");
+    name.len() < tag.len() && name.rsplit(':').next() == Some("svg")
 }
 
-/// MIME type and extension from the file signature (PNG, JPEG, GIF, BMP, TIFF, SVG).
+/// A picture drawn as vectors.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Vector {
+    Svg,
+    /// An EMF, with its frame's size in points.
+    Emf((f64, f64)),
+    /// A WMF, with its extent's size in points.
+    Wmf((f64, f64)),
+}
+
+/// Whether the bytes are a picture drawn as vectors: an SVG, or an EMF or a WMF with a frame.
+pub fn vector(d: &[u8]) -> Option<Vector> {
+    if let Some(h) = crate::render::metafile::emf::Header::read(d) {
+        return Some(Vector::Emf((h.size.width, h.size.height)));
+    }
+    if let Some(h) = crate::render::metafile::wmf::Header::read(d) {
+        return Some(Vector::Wmf((h.size.width, h.size.height)));
+    }
+    is_svg(d).then_some(Vector::Svg)
+}
+
+/// MIME type and extension from the file signature (PNG, JPEG, GIF, BMP, TIFF, JPEG XR, SVG, EMF, WMF).
 pub fn image_type(d: &[u8]) -> Option<(&'static str, &'static str)> {
     if d.len() < 4 {
         return None;
     }
-    if is_svg(d) {
-        return Some(("image/svg+xml", "svg"));
+    match vector(d) {
+        Some(Vector::Svg) => return Some(("image/svg+xml", "svg")),
+        Some(Vector::Emf(_)) => return Some(("image/x-emf", "emf")),
+        Some(Vector::Wmf(_)) => return Some(("image/x-wmf", "wmf")),
+        None => {}
     }
     Some(match d {
         [0x89, b'P', b'N', b'G', ..] => ("image/png", "png"),
@@ -73,6 +103,7 @@ pub fn image_type(d: &[u8]) -> Option<(&'static str, &'static str)> {
         [b'G', b'I', b'F', ..] => ("image/gif", "gif"),
         [b'B', b'M', ..] => ("image/bmp", "bmp"),
         [b'I', b'I', 42, _, ..] | [b'M', b'M', _, 42, ..] => ("image/tiff", "tiff"),
+        [b'I', b'I', 0xBC, _, ..] => ("image/vnd.ms-photo", "wdp"),
         _ => return None,
     })
 }
@@ -87,5 +118,24 @@ mod tests {
         let jpeg = include_bytes!("../../../twip-graphics/tests/images/rotated-6.jpg");
         assert_eq!(image_info(jpeg), Some((32.0, 48.0, 96.0, 96.0)));
         assert_eq!(image_info(b"\x89PNG\r\n\x1a\n not a png"), None);
+    }
+
+    #[test]
+    fn jpeg_xr_is_a_wdp_picture() {
+        let wdp = include_bytes!("../../../twip-graphics/tests/images/alpha.jxr");
+        assert_eq!(image_type(wdp), Some(("image/vnd.ms-photo", "wdp")));
+        assert_eq!(image_info(wdp), Some((170.0, 80.0, 96.0, 96.0)));
+        // Its WIDTH_RESOLUTION and HEIGHT_RESOLUTION entries (FLOAT values in the first directory) set to 300 and 150.
+        let mut d = wdp.to_vec();
+        let ifd = u32::from_le_bytes(d[4..8].try_into().unwrap()) as usize;
+        for e in 0..usize::from(u16::from_le_bytes([d[ifd], d[ifd + 1]])) {
+            let at = ifd + 2 + e * 12;
+            match u16::from_le_bytes([d[at], d[at + 1]]) {
+                0xBC82 => d[at + 8..at + 12].copy_from_slice(&300f32.to_le_bytes()),
+                0xBC83 => d[at + 8..at + 12].copy_from_slice(&150f32.to_le_bytes()),
+                _ => {}
+            }
+        }
+        assert_eq!(image_info(&d), Some((170.0, 80.0, 300.0, 150.0)));
     }
 }

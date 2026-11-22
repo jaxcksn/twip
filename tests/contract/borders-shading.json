@@ -12,6 +12,26 @@
     {"op": "command", "command": {"type": "setShading", "target": "paragraph", "fill": "none"}},
     {"op": "command", "command": {"type": "setTextBorder", "border": {"style": "double", "width": 0.75, "color": "#C00000"}, "shadow": true}},
     {"op": "command", "command": {"type": "setPageBorders", "top": {"style": "wave", "width": 0.75, "color": "auto"}, "bottom": null, "offsetFrom": "text", "display": "firstPage", "applyTo": "wholeDocument"}},
-    {"op": "call", "method": "dialogs.open", "args": ["bordersShading"], "result": {"values": {"pageSetting": "custom", "pageOffsetFrom": "text", "pageDisplay": "firstPage", "pageTop": {"style": "wave"}}}}
+    {"op": "call", "method": "dialogs.open", "args": ["bordersShading"], "result": {"values": {"pageSetting": "custom", "pageOffsetFrom": "text", "pageDisplay": "firstPage", "pageTop": {"style": "wave"}}}},
+    {"op": "command", "command": {"type": "setShading", "target": "paragraph", "fill": "#FFFF00", "pattern": "horzStripe", "color": "#C00000"}},
+    {"op": "command", "command": {"type": "setParagraphBorderLines", "top": {"style": "dashDotStroked", "width": 1.5, "color": "auto"}}},
+    {"op": "call", "method": "dialogs.open", "args": ["bordersShading"], "result": {"values": {"applyTo": "paragraph", "pattern": "horzStripe", "top": {"style": "dashDotStroked"}}}},
+    {"op": "command", "command": {"type": "setShading", "target": "paragraph", "fill": "#00B050", "pattern": "other"}},
+    {"op": "call", "method": "dialogs.open", "args": ["bordersShading"], "result": {"values": {"applyTo": "paragraph", "fill": "#00B050", "pattern": "horzStripe"}}},
+    {"op": "command", "command": {"type": "insertTable", "rows": 2, "columns": 2}},
+    {"op": "command", "command": {"type": "setCellBorders", "edges": "diagonalDown", "border": {"style": "dashed", "width": 1, "color": "auto"}}},
+    {"op": "command", "command": {"type": "setShading", "target": "cell", "fill": "#FFFF00", "pattern": "diagCross", "color": "#2E75B6"}},
+    {"op": "command", "command": {"type": "setShading", "target": "table", "fill": "#FFFFFF", "pattern": "pct25", "color": "#C00000"}},
+    {"op": "call", "method": "dialogs.open", "args": ["bordersShading"], "save": "tableShading", "result": {"values": {"applyTo": "paragraph"}}},
+    {"op": "call", "method": "@tableShading.update", "args": [{"applyTo": "cell"}], "save": "tableShading", "result": {"values": {"applyTo": "cell", "fill": "#FFFF00", "pattern": "diagCross", "patternColor": "#2E75B6", "diagonalDown": {"style": "dashed", "width": 1}, "diagonalUp": null}}},
+    {"op": "call", "method": "@tableShading.update", "args": [{"fill": "#DDEBF7", "pattern": "pct50"}], "save": "tableShading", "result": {"values": {"applyTo": "cell", "fill": "#DDEBF7", "pattern": "pct50"}}},
+    {"op": "call", "method": "@tableShading.apply"},
+    {"op": "call", "method": "dialogs.open", "args": ["bordersShading"], "save": "tableShading", "result": {"values": {"applyTo": "paragraph"}}},
+    {"op": "call", "method": "@tableShading.update", "args": [{"applyTo": "cell"}], "save": "tableShading", "result": {"values": {"fill": "#DDEBF7", "pattern": "pct50"}}},
+    {"op": "call", "method": "@tableShading.update", "args": [{"applyTo": "table"}], "save": "tableShading", "result": {"values": {"applyTo": "table", "fill": "#FFFFFF", "pattern": "pct25", "patternColor": "#C00000"}}},
+    {"op": "call", "method": "@tableShading.update", "args": [{"fill": "#FFF2CC", "pattern": "clear"}], "save": "tableShading", "result": {"values": {"applyTo": "table", "fill": "#FFF2CC", "pattern": "clear"}}},
+    {"op": "call", "method": "@tableShading.apply"},
+    {"op": "call", "method": "dialogs.open", "args": ["bordersShading"], "save": "tableShading", "result": {"values": {"applyTo": "paragraph"}}},
+    {"op": "call", "method": "@tableShading.update", "args": [{"applyTo": "table"}], "result": {"values": {"applyTo": "table", "fill": "#FFF2CC", "pattern": "clear"}}}
   ]
 }

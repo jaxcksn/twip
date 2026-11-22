@@ -1,0 +1,7 @@
+page 0 12240 15840
+  1440 2006 JPEG XR pictures
+  1440 2360 RGB, lossy 4:2:0 with both overlap levels; grey, lossy
+  1440 4314 RGBA: interleaved alpha, and premultiplied alpha in its own plane, on
+  1440 4627 a shaded paragraph
+  1440 6292 A PNG whose artistic effect keeps its source as a JPEG XR layer: the
+  1440 6606 PNG is drawn

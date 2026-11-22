@@ -152,6 +152,7 @@ fn sp(n: Node, ctx: &mut Ctx) -> Shape {
             text_box: nv_sp.is_some_and(|c| on(c.attribute("txBox"))),
             connector: named(n, "cNvCnPr").is_some(),
             kept_3d,
+            text_path: None,
         })),
         spans,
     }

@@ -1,0 +1,352 @@
+pages 2
+page 1 612 792
+  text 8 pt Sphinx of black quartz, judge my vow 0123456789
+  text 9 pt Sphinx of black quartz, judge my vow 0123456789
+  text 10 pt Sphinx of black quartz, judge my vow 0123456789
+  text 11 pt Sphinx of black quartz, judge my vow 0123456789
+  text 12 pt Sphinx of black quartz, judge my vow 0123456789
+  text 14 pt Sphinx of black quartz, judge my vow 0123456789
+  text 18 pt Sphinx of black quartz, judge my vow 
+  text 0123456789
+  text 24 pt Sphinx of black quartz, 
+  text judge my vow 0123456789
+  text 36 pt Rag & 08
+  text 48 pt Rag & 08
+  text 72 pt Rag 
+  text & 08
+  text Regular, bold, italic, bold italic.
+  op 1 0 0 -1 0 792 cm
+  op /P << /MCID 0 >> BDC
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 80.16 Tm
+  op /F1 8 Tf
+  op [<02dc> <03be> <013d> <014c> <03be> <0081> <013d> <00fc> <00ff> <011b> <016f> <03be> <0122> 0 <00f4> <03be> <00d6> <0113> <00bd> 0 <00d7> <0110> <03be> <013f> <0151> 0 <00bd> <0140> <014c> <0179> <032a> 0 <03be> <010d> <0151> <00dd> <00f5> 0 <00e1> <03be> <011a> <0170> <03be> 0 <0169> 0 <0122> 0 <016a> 0 <03be> 0 <02d4> 0 <02d5> 0 <02d6> 0 <02d7> 0 <02d8> 0 <02d9> 0 <02da> 0 <02db> 0 <02dc> 0 <02dd>] TJ
+  op ET
+  op Q
+  op EMC
+  op /P << /MCID 1 >> BDC
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 100.58 Tm
+  op /F1 9 Tf
+  op [<02dd> <03be> <013d> <014c> <03be> <0081> <013d> <00fc> <00ff> <011b> <016f> <03be> 0 <0122> <00f4> 0 <03be> <00d6> <0113> 0 <00bd> <00d7> 0 <0110> <03be> <013f> 0 <0151> <00bd> 0 <0140> <014c> <0179> 0 <032a> <03be> 0 <010d> <0151> <00dd> 0 <00f5> <00e1> 0 <03be> <011a> <0170> <03be> 0 <0169> <0122> <016a> <03be> <02d4> 0 <02d5> <02d6> <02d7> <02d8> <02d9> 0 <02da> <02db> <02dc> <02dd>] TJ
+  op ET
+  op Q
+  op EMC
+  op /P << /MCID 2 >> BDC
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 122.42 Tm
+  op /F1 10 Tf
+  op [<02d5> <02d4> <03be> <013d> <014c> <03be> <0081> <013d> <00fc> <00ff> <011b> <016f> <03be> <0122> <00f4> <03be> <00d6> <0113> <00bd> <00d7> <0110> <03be> <013f> <0151> <00bd> <0140> <014c> <0179> <032a> <03be> <010d> <0151> <00dd> <00f5> <00e1> <03be> <011a> <0170> <03be> <0169> <0122> <016a> <03be> <02d4> <02d5> <02d6> <02d7> <02d8> <02d9> <02da> <02db> <02dc> <02dd>] TJ
+  op ET
+  op Q
+  op EMC
+  op /P << /MCID 3 >> BDC
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 145.68 Tm
+  op /F1 11 Tf
+  op [<02d5> <02d5> <03be> <013d> <014c> <03be> <0081> <013d> <00fc> <00ff> <011b> <016f> <03be> <0122> <00f4> <03be> <00d6> <0113> <00bd> <00d7> <0110> <03be> <013f> <0151> <00bd> <0140> <014c> <0179> <032a> <03be> <010d> <0151> <00dd> 0 <00f5> <00e1> <03be> <011a> <0170> 0 <03be> <0169> <0122> <016a> <03be> 0 <02d4> <02d5> <02d6> <02d7> <02d8> 0 <02d9> <02da> <02db> <02dc> <02dd>] TJ
+  op ET
+  op Q
+  op EMC
+  op /P << /MCID 4 >> BDC
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 170.37 Tm
+  op /F1 12 Tf
+  op [<02d5> <02d6> <03be> <013d> <014c> <03be> <0081> <013d> <00fc> <00ff> <011b> <016f> <03be> 0 <0122> <00f4> <03be> <00d6> <0113> 0 <00bd> <00d7> <0110> <03be> <013f> 0 <0151> <00bd> <0140> 0 <014c> 0 <0179> 0 <032a> 0 <03be> 0 <010d> 0 <0151> 0 <00dd> 0 <00f5> 0 <00e1> 0 <03be> 0 <011a> 0 <0170> 0 <03be> 0 <0169> 0 <0122> 0 <016a> 0 <03be> 0 <02d4> 0 <02d5> 0 <02d6> 0 <02d7> 0 <02d8> 0 <02d9> 0 <02da> 0 <02db> 0 <02dc> 0 <02dd>] TJ
+  op ET
+  op Q
+  op EMC
+  op /P << /MCID 5 >> BDC
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 197.5 Tm
+  op /F1 14 Tf
+  op [<02d5> <02d8> <03be> <013d> <014c> <03be> <0081> <013d> <00fc> <00ff> <011b> <016f> <03be> <0122> <00f4> <03be> <00d6> <0113> <00bd> <00d7> <0110> <03be> <013f> 0 <0151> <00bd> <0140> <014c> <0179> 0 <032a> <03be> <010d> <0151> <00dd> 0 <00f5> <00e1> <03be> <011a> <0170> 0 <03be> <0169> <0122> <016a> <03be> 0 <02d4> <02d5> <02d6> <02d7> <02d8> 0 <02d9> <02da> <02db> <02dc> <02dd>] TJ
+  op ET
+  op Q
+  op EMC
+  op /P << /MCID 6 >> BDC
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 229.53 Tm
+  op /F1 18 Tf
+  op [<02d5> <02dc> <03be> <013d> <014c> <03be> <0081> <013d> <00fc> <00ff> <011b> <016f> <03be> <0122> <00f4> <03be> <00d6> <0113> <00bd> 0 <00d7> <0110> <03be> 0 <013f> <0151> 0 <00bd> <0140> <014c> 0 <0179> <032a> 0 <03be> <010d> <0151> 0 <00dd> <00f5> 0 <00e1> <03be> <011a> 0 <0170> <03be> 0 <0169> <0122> <016a> <03be>] TJ
+  op ET
+  op Q
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 255.17 Tm
+  op /F1 18 Tf
+  op [<02d4> <02d5> <02d6> <02d7> <02d8> <02d9> <02da> <02db> <02dc> <02dd>] TJ
+  op ET
+  op Q
+  op EMC
+  op /P << /MCID 7 >> BDC
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 294.93 Tm
+  op /F1 24 Tf
+  op [<02d6> <02d8> <03be> <013d> <014c> <03be> <0081> <013d> <00fc> <00ff> <011b> <016f> <03be> <0122> <00f4> <03be> <00d6> <0113> 0 <00bd> <00d7> <0110> <03be> <013f> 0 <0151> <00bd> <0140> <014c> <0179> 0 <032a> <03be>] TJ
+  op ET
+  op Q
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 329.12 Tm
+  op /F1 24 Tf
+  op [<010d> <0151> <00dd> <00f5> <00e1> <03be> <011a> <0170> <03be> <0169> <0122> <016a> <03be> <02d4> <02d5> <02d6> <02d7> <02d8> 0 <02d9> <02da> <02db> <02dc> <02dd>] TJ
+  op ET
+  op Q
+  op EMC
+  op /P << /MCID 8 >> BDC
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 383.55 Tm
+  op /F1 36 Tf
+  op [<02d7> <02da> <03be> <013d> <014c> <03be> <007d> <00bd> <00f5> <03be> <05b5> <03be> <02d4> <02dc>] TJ
+  op ET
+  op Q
+  op EMC
+  op /P << /MCID 9 >> BDC
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 455.07 Tm
+  op /F1 48 Tf
+  op [<02d8> <02dc> <03be> <013d> <014c> <03be> <007d> <00bd> <00f5> <03be> <05b5> <03be> <02d4> <02dc>] TJ
+  op ET
+  op Q
+  op EMC
+  op /P << /MCID 10 >> BDC
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 555.92 Tm
+  op /F1 72 Tf
+  op [<02db> <02d6> <03be> <013d> <014c> <03be> <007d> <00bd> <00f5> <03be>] TJ
+  op ET
+  op Q
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 658.49 Tm
+  op /F1 72 Tf
+  op [<05b5> <03be> <02d4> <02dc>] TJ
+  op ET
+  op Q
+  op EMC
+  op /P << /MCID 11 >> BDC
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 706.83 Tm
+  op /F1 11 Tf
+  op [<007d> <00e1> <00f5> <0151> <0113> <00bd> <0140> <032a> <03be>] TJ
+  op ET
+  op Q
+  op q
+  op 0 0 0 rg
+  op 0 0 0 RG
+  op 0.45 w
+  op 0 j
+  op BT
+  op 2 Tr
+  op 1 0 0 -1 131.4 706.83 Tm
+  op /F1 11 Tf
+  op [<00d6> -1 <0122> -1 <0113> -1 <00dd> -1 <032a> -1 <03be>] TJ
+  op ET
+  op Q
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0.2 -1 171.07 706.83 Tm
+  op /F1 11 Tf
+  op [<00ff> <014c> <00bd> <0113> <00ff> <00d7> <032a> <03be>] TJ
+  op ET
+  op Q
+  op q
+  op 0 0 0 rg
+  op 0 0 0 RG
+  op 0.45 w
+  op 0 j
+  op BT
+  op 2 Tr
+  op 1 0 0.2 -1 223.87 706.83 Tm
+  op /F1 11 Tf
+  op [<00d6> -1 <0122> -1 <0113> -1 <00dd> -1 <03be> -1 <00ff> -1 <014c> -1 <00bd> -1 <0113> -1 <00ff> -1 <00d7> -1 <0329>] TJ
+  op ET
+  op Q
+  op EMC
+page 2 612 792
+  text C00000 2E75B6 00B050 7030A0 FFC000 
+  text Turned run
+  text Beside the turned cell.
+  text End.
+  op 1 0 0 -1 0 792 cm
+  op /P << /MCID 0 >> BDC
+  op q
+  op 0.75 0 0 rg
+  op BT
+  op 1 0 0 -1 72 86.28 Tm
+  op /F1 14 Tf
+  op [<001b> <02d4> <02d4> <02d4> <02d4> <02d4> <03be>] TJ
+  op ET
+  op Q
+  op q
+  op 0.18 0.46 0.71 rg
+  op BT
+  op 1 0 0 -1 130.8 86.28 Tm
+  op /F1 14 Tf
+  op [<02d6> <0025> <02db> <02d9> <001a> <02da> <03be>] TJ
+  op ET
+  op Q
+  op q
+  op 0 0.69 0.31 rg
+  op BT
+  op 1 0 0 -1 189.6 86.28 Tm
+  op /F1 14 Tf
+  op [<02d4> <02d4> <001a> <02d4> <02d9> <02d4> <03be>] TJ
+  op ET
+  op Q
+  op q
+  op 0.44 0.19 0.63 rg
+  op BT
+  op 1 0 0 -1 248.4 86.28 Tm
+  op /F1 14 Tf
+  op [<02db> <02d4> 0 <02d7> <02d4> <0001> <02d4> <03be>] TJ
+  op ET
+  op Q
+  op q
+  op 1 0.75 0 rg
+  op BT
+  op 1 0 0 -1 307.2 86.28 Tm
+  op /F1 14 Tf
+  op [<0038> <0038> <001b> <02d4> <02d4> 0 <02d4> <03be>] TJ
+  op ET
+  op Q
+  op EMC
+  op /P << /MCID 1 >> BDC
+  op q
+  op 72.25 99.94 60 90 re
+  op W
+  op n
+  op q
+  op 0 -1 1 0 -22.79 267.59 cm
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 77.65 111.84 Tm
+  op /F1 11 Tf
+  op [<0089> <0151> <0140> <011b> <00e1> <00dd> <03be> <0140> <0151> <011b>] TJ
+  op ET
+  op Q
+  op Q
+  op Q
+  op EMC
+  op /P << /MCID 2 >> BDC
+  op q
+  op 132.25 99.94 150 90 re
+  op W
+  op n
+  op q
+  op /Span << /ActualText <42657369646520746865207475726e65642063656c6c2e> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 137.65 109.24 Tm
+  op /F2 11 Tf
+  op [<0002> <0002> <0002> <0002> <0002> 0 <0002> <0001> <0002> <0002> <0002> <0001> <0002> 0 <0002> <0002> <0002> <0002> <0002> 0 <0001> <0002> <0002> <0002> <0002> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op Q
+  op EMC
+  op /Artifact << /Type /Layout >> BDC
+  op q
+  op 0 0 0 rg
+  op 72 99.94 60.5 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 72 99.94 0.5 90 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 132 99.94 0.5 90 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 72 189.94 60.5 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 132 99.94 150.5 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 132 99.94 0.5 90 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 282 99.94 0.5 90 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 132 189.94 150.5 0.5 re
+  op f
+  op Q
+  op EMC
+  op /P << /MCID 3 >> BDC
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 201.66 Tm
+  op /F1 11 Tf
+  op [<0025> <011b> <00dd> <0329>] TJ
+  op ET
+  op Q
+  op EMC
+structure
+  Document
+    P
+    P
+    P
+    P
+    P
+    P
+    P
+    P
+    P
+    P
+    P
+    P
+    P
+    Table
+      TR
+        TD
+          P
+        TD
+          P
+    P
+outline

@@ -1,0 +1,10 @@
+page 0 12240 15840
+  1440 2006 Character effects
+  1440 2522 emboss white Plain  Bold  Colour  Underline  All
+  1440 3038 imprint white Plain  Bold  Colour  Underline  All
+  1440 3554 outline white Plain  Bold  Colour  Underline  All
+  1440 4070 shadow white Plain  Bold  Colour  Underline  All
+  1440 4586 emboss shaded Plain  Bold  Colour  Underline  All
+  1440 5101 imprint shaded Plain  Bold  Colour  Underline  All
+  1440 5617 outline shaded Plain  Bold  Colour  Underline  All
+  1440 6133 shadow shaded Plain  Bold  Colour  Underline  All

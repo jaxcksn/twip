@@ -673,6 +673,8 @@ pub struct CharacterFormatting {
     pub shadow: Tri<bool>,
     /// The underline's colour, or the text's (`auto`).
     pub underline_color: Tri<AutoOr<Color>>,
+    /// The text effects (fill, outline, shadow, glow and reflection), through the character style.
+    pub text_effects: Tri<crate::api::drawing::TextEffects>,
 }
 
 /// A paragraph's list.
@@ -866,6 +868,12 @@ pub struct PageFormatting {
     pub endnotes: NoteSettings,
     /// The footnote area's columns; 0 for the section's own.
     pub footnote_columns: u32,
+    /// The page colour (a solid fill), its gradient, pattern or picture, or `null` for none. A picture's image is empty.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub background: Option<crate::api::drawing::FillValue>,
+    /// The watermark the pages show, or `null`. A picture's image is empty.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub watermark: Option<crate::api::command::Watermark>,
 }
 
 /// A section's footnote or endnote settings.

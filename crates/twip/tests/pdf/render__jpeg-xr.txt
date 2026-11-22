@@ -1,0 +1,234 @@
+pages 1
+page 1 612 792
+  text JPEG XR pictures
+  text RGB, lossy 4:2:0 with both overlap levels; grey, lossy
+  text   
+  text RGBA: interleaved alpha, and premultiplied alpha in its own plane, on 
+  text a shaded paragraph
+  text   
+  text A PNG whose artistic effect keeps its source as a JPEG XR layer: the 
+  text PNG is drawn
+  image /X2 120x100 3d10cc0f67a6f091
+  image /X3 47x39 90a97e744701f59d
+  image /X4 170x80 masked 227d6ab00d563639
+  image /X5 170x80 masked 483b03bb5d0fe2e1
+  image /X6 64x48 6564e5098954f28c
+  op 1 0 0 -1 0 792 cm
+  op /P << /MCID 0 >> BDC
+  op q
+  op 0 0 0 rg
+  op 0 0 0 RG
+  op 0.62 w
+  op 0 j
+  op BT
+  op 2 Tr
+  op 1 0 0 -1 72 100.32 Tm
+  op /F1 16 Tf
+  op [<004f> -1 <007a> -1 <0025> -1 <0039> -1 <03be> -1 <00a7> -1 <007d> -1 <03be> -1 <013d> -1 <00ff> -1 <00d7> -1 <014c> -1 <0151> -1 <0140> -1 <00e1> -1 <0144>] TJ
+  op ET
+  op Q
+  op EMC
+  op /P << /MCID 1 >> BDC
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 118.01 Tm
+  op /F1 11 Tf
+  op [<007d> <0039> <001a> <032a> <03be> <0113> <0122> <0144> <0144> <0170> <03be> <02d8> <032b> <02d6> <032b> <02d4> <03be> <016a> <00ff> <014c> <00fc> <03be> <00d6> <0122> <014c> <00fc> <03be> <0122> <0169> <00e1> <0140> <0113> <00bd> 0 <013d> <03be> <0113> <00e1> <0169> 0 <00e1> <0113> <0144> <032c> <03be> 0 <00f5> <0140> <00e1> <0170> <032a> 0 <03be> <0113> <0122> <0144> <0144> 0 <0170>] TJ
+  op ET
+  op Q
+  op EMC
+  op /P << /MCID 2 >> BDC
+  op q
+  op 1 0 0 1 72 130.46 cm
+  op q
+  op 0 72 m
+  op 86.4 72 l
+  op 86.4 0 l
+  op 0 0 l
+  op h
+  op W
+  op n
+  op q
+  op 0 0 86.4 72 re
+  op W
+  op n
+  op q
+  op 86.4 0 0 -72 0 72 cm
+  op /X2 Do
+  op Q
+  op Q
+  op Q
+  op Q
+  op EMC
+  op /Artifact BMC
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 158.4 202.46 Tm
+  op /F1 11 Tf
+  op [<03be> <03be>] TJ
+  op ET
+  op Q
+  op EMC
+  op /P << /MCID 3 >> BDC
+  op q
+  op 1 0 0 1 171.6 146.3 cm
+  op q
+  op 0 56.16 m
+  op 67.68 56.16 l
+  op 67.68 0 l
+  op 0 0 l
+  op h
+  op W
+  op n
+  op q
+  op 0 0 67.68 56.16 re
+  op W
+  op n
+  op q
+  op 67.68 0 0 -56.16 0 56.16 cm
+  op /X3 Do
+  op Q
+  op Q
+  op Q
+  op Q
+  op EMC
+  op /P << /MCID 4 >> BDC
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 215.68 Tm
+  op /F1 11 Tf
+  op [<007d> <0039> <001a> <0001> <032b> <03be> <00ff> <011b> <014c> <00e1> <0140> <0113> <00e1> <00bd> <0169> <00e1> <00dd> <03be> <00bd> <0113> <013d> <00fc> <00bd> <032a> <03be> <00bd> <011b> <00dd> <03be> <013d> <0140> <00e1> <011a> 0 <0151> <0113> <014c> <00ff> <013d> 0 <0113> <00ff> <00e1> <00dd> <03be> 0 <00bd> <0113> <013d> <00fc> <00bd> 0 <03be> <00ff> <011b> <03be> <00ff> 0 <014c> <0144> <03be> <0122> <016a> 0 <011b> <03be> <013d> <0113> <00bd> 0 <011b> <00e1> <032a> <03be> <0122> 0 <011b> 0 <03be>] TJ
+  op ET
+  op Q
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 231.35 Tm
+  op /F1 11 Tf
+  op [<00bd> <03be> <0144> <00fc> <00bd> <00dd> <00e1> <00dd> <03be> <013d> <00bd> <0140> <00bd> <00f5> <0140> <00bd> <013d> <00fc>] TJ
+  op ET
+  op Q
+  op EMC
+  op /Artifact << /Type /Layout >> BDC
+  op q
+  op 0.63 0.77 0.91 rg
+  op 72 243.8 468 57.6 re
+  op f
+  op Q
+  op EMC
+  op /P << /MCID 5 >> BDC
+  op q
+  op 1 0 0 1 72 243.8 cm
+  op q
+  op 0 57.6 m
+  op 122.4 57.6 l
+  op 122.4 0 l
+  op 0 0 l
+  op h
+  op W
+  op n
+  op q
+  op 0 0 122.4 57.6 re
+  op W
+  op n
+  op q
+  op 122.4 0 0 -57.6 0 57.6 cm
+  op /X4 Do
+  op Q
+  op Q
+  op Q
+  op Q
+  op EMC
+  op /Artifact BMC
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 194.4 301.4 Tm
+  op /F1 11 Tf
+  op [<03be> <03be>] TJ
+  op ET
+  op Q
+  op EMC
+  op /P << /MCID 6 >> BDC
+  op q
+  op 1 0 0 1 207.6 243.8 cm
+  op q
+  op 0 57.6 m
+  op 122.4 57.6 l
+  op 122.4 0 l
+  op 0 0 l
+  op h
+  op W
+  op n
+  op q
+  op 0 0 122.4 57.6 re
+  op W
+  op n
+  op q
+  op 122.4 0 0 -57.6 0 57.6 cm
+  op /X5 Do
+  op Q
+  op Q
+  op Q
+  op Q
+  op EMC
+  op /P << /MCID 7 >> BDC
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 314.62 Tm
+  op /F1 11 Tf
+  op [<0001> <03be> <007a> <005a> <0039> <03be> <016a> <00fc> <0122> <0144> <00e1> <03be> <00bd> <0140> <014c> <00ff> <0144> <014c> <00ff> <00d7> <03be> <00e1> <00f4> <00f4> <00e1> <00d7> <014c> <03be> <0110> <00e1> <00e1> <013d> <0144> 0 <03be> <00ff> <014c> <0144> <03be> 0 <0144> <0122> <0151> <0140> <00d7> 0 <00e1> <03be> <00bd> <0144> <03be> 0 <00bd> <03be> <004f> <007a> <0025> 0 <0039> <03be> <00a7> <007d> <03be> 0 <0113> <00bd> <0170> <00e1> <0140> 0 <032b> <03be> <014c> <00fc> <00e1> 0 <03be>] TJ
+  op ET
+  op Q
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 330.29 Tm
+  op /F1 11 Tf
+  op [<007a> <005a> <0039> <03be> <00ff> <0144> <03be> <00dd> <0140> <00bd> <016a> <011b>] TJ
+  op ET
+  op Q
+  op EMC
+  op /P << /MCID 8 >> BDC
+  op q
+  op 1 0 0 1 72 342.74 cm
+  op q
+  op 0 43.2 m
+  op 57.6 43.2 l
+  op 57.6 0 l
+  op 0 0 l
+  op h
+  op W
+  op n
+  op q
+  op 0 0 57.6 43.2 re
+  op W
+  op n
+  op q
+  op 57.6 0 0 -43.2 0 43.2 cm
+  op /X6 Do
+  op Q
+  op Q
+  op Q
+  op Q
+  op EMC
+structure
+  Document
+    H1
+    P
+    P
+      Figure
+      Figure
+    P
+    P
+      Figure
+      Figure
+    P
+    P
+      Figure
+outline
+  "JPEG XR pictures"

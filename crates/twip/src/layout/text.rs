@@ -1608,16 +1608,17 @@ fn shapes_alike(a: &Run, b: &Run) -> bool {
         hidden,
         no_proof,
         underline,
-        underline_color: _,
-        emboss: _,
-        imprint: _,
-        outline: _,
-        shadow: _,
+        underline_color,
+        emboss,
+        imprint,
+        outline,
+        shadow,
         typography: _,
+        effects,
         color,
         highlight,
         shading,
-        shd: _,
+        shd,
         border,
         vert_align,
         position,
@@ -1654,9 +1655,16 @@ fn shapes_alike(a: &Run, b: &Run) -> bool {
             && *hidden == b.hidden
             && *no_proof == b.no_proof
             && *underline == b.underline
+            && *underline_color == b.underline_color
+            && *emboss == b.emboss
+            && *imprint == b.imprint
+            && *outline == b.outline
+            && *shadow == b.shadow
+            && *effects == b.effects
             && *color == b.color
             && *highlight == b.highlight
             && *shading == b.shading
+            && shd.as_ref().and_then(crate::docx::props::Shd::hatch) == b.shd.as_ref().and_then(crate::docx::props::Shd::hatch)
             && *border == b.border
             && *vert_align == b.vert_align
             && *position == b.position

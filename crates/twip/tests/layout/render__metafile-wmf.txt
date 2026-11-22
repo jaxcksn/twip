@@ -1,0 +1,9 @@
+page 0 12240 15840
+  1440 1616 Shapes, pens, hatches and polygons
+  1440 4351 Map modes, a window and a clipped group
+  1440 7086 Text
+  1440 9101 Bitmaps
+  1440 11835 Regions, a pattern brush and a palette
+page 1 12240 15840
+  1440 4673 A file without a placeable header
+  1440 6688 The shapes, cropped

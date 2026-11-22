@@ -557,9 +557,11 @@ public abstract record FillValue
     /// <param name="Kind">Its shape.</param>
     /// <param name="Stops">Two or more stops.</param>
     /// <param name="Angle">A linear gradient's direction in degrees (0: left to right).</param>
+    /// <param name="Focus">Where a path gradient starts: the fractions (0 to 1) of the shape's left, top, right and bottom edges it is inset from; null is the centre.</param>
     public sealed record Gradient(
         GradientShape Kind, IReadOnlyList<GradientStop> Stops,
-        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? Angle = null) : FillValue;
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? Angle = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<double>? Focus = null) : FillValue;
 
     /// <summary>A two-colour pattern.</summary>
     /// <param name="Preset">The ECMA-376 pattern name, such as <c>pct50</c> or <c>dkDnDiag</c>.</param>
@@ -687,6 +689,111 @@ public sealed record EffectsValue(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Glow? Glow = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? SoftEdge = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Blur = null);
+
+/// <summary>Which way a text watermark runs.</summary>
+public enum WatermarkLayout
+{
+    /// <summary>Diagonally up the page.</summary>
+    Diagonal,
+    /// <summary>Across the page.</summary>
+    Horizontal,
+}
+
+/// <summary>A watermark: text or a picture.</summary>
+[JsonPolymorphic(TypeDiscriminatorPropertyName = "kind")]
+[JsonDerivedType(typeof(TextWatermark), "text")]
+[JsonDerivedType(typeof(PictureWatermark), "picture")]
+public abstract record Watermark
+{
+    private protected Watermark() { }
+}
+
+/// <summary>A text watermark; what is null is Word's default (the theme's body font, the document's language, automatic size, silver, 50% transparent, diagonal).</summary>
+/// <param name="Text">The text.</param>
+/// <param name="Font">The font; null is the theme's body font.</param>
+/// <param name="Size">The size, 1 to 1584 pt (1 is 1 pt); null is automatic: as large as fits the page.</param>
+/// <param name="Color">The colour.</param>
+/// <param name="Transparency">Percent, 0 (opaque) to 100.</param>
+/// <param name="Layout">Diagonal or horizontal.</param>
+/// <param name="Bold">Bold.</param>
+/// <param name="Italic">Italic.</param>
+/// <param name="Language">The text's language (a BCP 47 tag such as <c>en-US</c>); null is the document's.</param>
+public sealed record TextWatermark(
+    string Text,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Font = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Size = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ColorValue? Color = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? Transparency = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] WatermarkLayout? Layout = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Bold = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Italic = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Language = null) : Watermark;
+
+/// <summary>A picture watermark.</summary>
+/// <param name="Image">The image (PNG, JPEG, GIF, BMP, TIFF, JPEG XR, SVG, EMF or WMF); empty keeps the current watermark's, and is empty in the state.</param>
+/// <param name="Scale">Percent of the picture's own size; null fits it to the margins.</param>
+/// <param name="Washout">Washed out, as Word's default is.</param>
+public sealed record PictureWatermark(
+    ReadOnlyMemory<byte> Image,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? Scale = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Washout = null) : Watermark;
+
+/// <summary>A text outline: an outline without arrowheads.</summary>
+/// <param name="Width">The width, 0 to 1584 pt.</param>
+/// <param name="Fill"><see cref="FillValue.None"/>, <see cref="FillValue.Solid"/> or <see cref="FillValue.Gradient"/>.</param>
+/// <param name="Dash">The ECMA-376 dash name, such as <c>solid</c>, <c>dash</c> or <c>sysDot</c>.</param>
+/// <param name="Compound">Single or several lines.</param>
+/// <param name="Cap">The ends of its dashes.</param>
+/// <param name="Join">The joins.</param>
+public sealed record TextOutline(Length Width, FillValue Fill, string Dash, LineCompound Compound, LineCap Cap, LineJoin Join);
+
+/// <summary>A text shadow.</summary>
+/// <param name="Color">Its colour, with its transparency as an <see cref="ColorTransformKind.Alpha"/> transform.</param>
+/// <param name="Size">Its size against the text's, percent, 1 to 200.</param>
+/// <param name="Blur">How far it blurs, 0 to 100 pt.</param>
+/// <param name="Distance">How far from the text, 0 to 200 pt.</param>
+/// <param name="Direction">Which way, in degrees clockwise from the right.</param>
+public sealed record TextShadow([property: JsonPropertyName("colour")] ShapeColor Color, double Size, Length Blur, Length Distance, double Direction);
+
+/// <summary>A text reflection: the text mirrored below its baseline, fading out.</summary>
+/// <param name="Transparency">Its transparency where it starts, percent, 0 to 100.</param>
+/// <param name="Size">How much of the text it shows before it has faded out, percent, 0 to 100.</param>
+/// <param name="Blur">How far it blurs, 0 to 100 pt.</param>
+/// <param name="Distance">How far below the text, 0 to 100 pt.</param>
+public sealed record TextReflection(double Transparency, double Size, Length Blur, Length Distance);
+
+/// <summary>Text effects as written; each one null is not set.</summary>
+/// <param name="Fill">The letters' fill in place of the font colour: none (hollow), solid or gradient.</param>
+/// <param name="Outline">The letters' outline.</param>
+/// <param name="Shadow">A shadow behind the letters.</param>
+/// <param name="Glow">A glow around the letters.</param>
+/// <param name="Reflection">A reflection under the letters.</param>
+public sealed record TextEffects(
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] FillValue? Fill = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TextOutline? Outline = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TextShadow? Shadow = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Glow? Glow = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TextReflection? Reflection = null);
+
+/// <summary>A Font dialog text effect: none of the text's own, or its settings.</summary>
+/// <typeparam name="T">The effect's value type.</typeparam>
+public readonly record struct NoneOr<T>
+{
+    private NoneOr(bool none, T value) => (IsNone, Value) = (none, value);
+
+    /// <summary>None of the text's own.</summary>
+    public static NoneOr<T> None => new(true, default!);
+
+    /// <summary>The effect's settings.</summary>
+    /// <param name="value">The effect.</param>
+    public static NoneOr<T> Of(T value) => new(false, value);
+
+    /// <summary>Whether the text has none of its own.</summary>
+    public bool IsNone { get; }
+
+    /// <summary>The effect, unless <see cref="IsNone"/>.</summary>
+    public T Value { get; }
+}
 
 /// <summary>Where text sits in a shape vertically.</summary>
 public enum TextAnchor

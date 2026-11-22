@@ -1,0 +1,135 @@
+page 0 12240 15840
+  1440 2006 Borders
+  1680 2550 single
+  1680 3164 thick
+  1680 3837 double
+  1680 4510 dotted
+  1680 5124 dashed
+  1680 5737 dotDash
+  1680 6351 dotDotDash
+  1680 7084 triple
+  1680 7847 thinThickSmallGap
+  1680 8521 thickThinSmallGap
+  1680 9224 thinThickThinSmallGap
+  1680 9928 thinThickMediumGap
+  1680 10601 thickThinMediumGap
+  1680 11304 thinThickThinMediumGap
+  1680 12023 thinThickLargeGap
+  1680 12726 thickThinLargeGap
+  1680 13474 thinThickThinLargeGap
+  1680 14163 wave
+page 1 12240 15840
+  1680 1759 doubleWave
+  1680 2358 dashSmallGap
+  1680 3001 dashDotStroked
+  1680 3675 threeDEmboss
+  1680 4348 threeDEngrave
+  1680 4991 outset
+  1680 5605 inset
+  1680 6328 Paragraph box with shadow
+  1440 6982 Text border with shadow shadowed run and a plain one plain run
+  1440 7352 Table cell borders, one line style per cell
+  2005 8035 single
+  3847 8035 thick
+  5563 8035 double
+  7343 8035 dotted
+  9115 8035 dashed
+  1939 8709 dotDash
+  3517 8709 dotDotDash
+  5563 8709 triple
+  7144 8709 thinThick
+  7211 9022 SmallGap
+  8917 8709 thickThin
+  8983 9022 SmallGap
+  1807 9695 thinThick
+  1807 10009 ThinSmall
+  2203 10322 Gap
+  3517 9695 thinThickM
+  3649 10009 ediumGap
+  5299 9695 thickThinM
+  5431 10009 ediumGap
+  7144 9695 thinThick
+  7144 10009 ThinMediu
+  7474 10322 mGap
+  8917 9695 thinThick
+  8983 10009 LargeGap
+  1807 10966 thickThin
+  1873 11279 LargeGap
+  3583 10966 thinThick
+  3583 11279 ThinLarge
+  3979 11592 Gap
+  5694 10966 wave
+  7144 10966 doubleWav
+  7673 11279 e
+  8851 10966 dashSmallG
+  9379 11279 ap
+  1807 12206 dashDotSt
+  2071 12519 roked
+  3517 12206 threeDEmbo
+  4045 12519 ss
+  5299 12206 threeDEngr
+  5761 12519 ave
+  7343 12206 outset
+  9181 12206 inset
+  1440 13013 tblBorders wave
+  1578 13546 one
+  3978 13546 two
+  1578 14079 three
+  3978 14079 four
+  cell 1455 7601 3287 8274
+  cell 3287 7601 5066 8274
+  cell 5066 7601 6851 8274
+  cell 6851 7601 8626 8274
+  cell 8626 7601 10455 8274
+  cell 1455 8274 3287 9321
+  cell 3287 8274 5066 9321
+  cell 5066 8274 6851 9321
+  cell 6851 8274 8626 9321
+  cell 8626 8274 10455 9321
+  cell 1455 9321 3287 10561
+  cell 3287 9321 5066 10561
+  cell 5066 9321 6851 10561
+  cell 6851 9321 8626 10561
+  cell 8626 9321 10455 10561
+  cell 1455 10561 3287 11861
+  cell 3287 10561 5066 11861
+  cell 5066 10561 6851 11861
+  cell 6851 10561 8626 11861
+  cell 8626 10561 10455 11861
+  cell 1455 11861 3287 12788
+  cell 3287 11861 5066 12788
+  cell 5066 11861 6851 12788
+  cell 6851 11861 8626 12788
+  cell 8626 11861 10455 12788
+  cell 1470 13262 3870 13795
+  cell 3870 13262 6270 13795
+  cell 1470 13795 3870 14328
+  cell 3870 13795 6270 14328
+page 2 12240 15840
+  1440 1664 tblBorders doubleWave
+  1601 2243 one
+  4001 2243 two
+  1601 2821 three
+  4001 2821 four
+  1440 3400 tblBorders dashDotStroked
+  1578 3933 one
+  3978 3933 two
+  1578 4466 three
+  3978 4466 four
+  1440 5000 tblBorders dashSmallGap
+  1563 5503 one
+  3963 5503 two
+  1563 6007 three
+  3963 6007 four
+  cell 1493 1913 3893 2492
+  cell 3893 1913 6293 2492
+  cell 1493 2492 3893 3070
+  cell 3893 2492 6293 3070
+  cell 1470 3649 3870 4182
+  cell 3870 3649 6270 4182
+  cell 1470 4182 3870 4715
+  cell 3870 4182 6270 4715
+  cell 1455 5249 3855 5752
+  cell 3855 5249 6255 5752
+  cell 1455 5752 3855 6255
+  cell 3855 5752 6255 6255

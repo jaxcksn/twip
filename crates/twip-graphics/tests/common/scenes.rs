@@ -210,7 +210,7 @@ pub fn blends() -> Picture {
 /// The test face (a JetBrains Mono subset, OFL, from Twip's chrome fonts) and the glyphs and origins of `s` set at
 /// `size` from `x`, by its advances, as Twip's layout hands runs over.
 pub struct Mono {
-    data: std::sync::Arc<Vec<u8>>,
+    pub data: std::sync::Arc<Vec<u8>>,
 }
 
 impl Mono {
@@ -277,6 +277,165 @@ pub fn text(resources: &mut Resources) -> Picture {
     rec.finish()
 }
 
+/// Stroked glyph outlines (hollow text): at several sizes and widths, synthetic bold and italic, a colour and a
+/// translucent ink, dashed, turned, over a dark band, around the same glyphs filled as paths, and a glyph without ink
+/// (a space) and one the face lacks. Each stroked run carries its characters as invisible text.
+pub fn stroked_text(resources: &mut Resources) -> Picture {
+    use twip_graphics::scene::{GlyphRun, Synthesis};
+    let mono = Mono::new();
+    let font = resources.fonts.add(mono.data.clone(), 0, &[]).expect("the test face registers");
+    let fonts = &resources.fonts;
+    let mut rec = Recorder::new();
+    let run = |rec: &mut Recorder, s: &str, size: f64, x: f64, baseline: f64, synthesis: Synthesis, stroke: &Stroke, c: Color| {
+        let glyphs = mono.set(s, size, x);
+        let run = GlyphRun { font, size, baseline, glyphs: &glyphs, synthesis };
+        rec.stroke_glyphs(fonts, &run, stroke, c);
+        // The run's characters, invisible: nothing more draws, on screen or in a PDF.
+        let clusters: Vec<u32> = (0..s.len() as u32).collect();
+        rec.invisible_text(fonts, &run, s, &clusters);
+    };
+    let plain = Synthesis::default();
+    let mut y = 6.0;
+    for (size, w) in [(11.0, 0.5), (16.0, 0.5), (24.0, 0.75), (40.0, 1.5)] {
+        run(&mut rec, "Ag o", size, 4.0, y + size * 0.8, plain, &Stroke::new(w), INK);
+        y += size * 1.15;
+    }
+    let thin = Stroke::new(0.6);
+    run(&mut rec, "Bold", 18.0, 140.0, 22.0, Synthesis { embolden: true, skew_x: 0.0 }, &thin, INK);
+    run(&mut rec, "Italic", 18.0, 140.0, 44.0, Synthesis { embolden: false, skew_x: -0.2 }, &thin, RED);
+    run(&mut rec, "Both", 18.0, 140.0, 66.0, Synthesis { embolden: true, skew_x: -0.2 }, &thin, BLUE.with_alpha(140));
+    run(&mut rec, "Dash", 18.0, 140.0, 88.0, plain, &Stroke::new(0.8).with_dashes(0.0, [2.0, 1.5]), GREEN);
+    rec.fill_rect(rect(136.0, 94.0, 256.0, 118.0), INK);
+    run(&mut rec, "On ink", 18.0, 140.0, 112.0, plain, &thin, Color::WHITE);
+    rec.push_transform(Affine::rotate_about(-0.3, kurbo::Point::new(190.0, 150.0)));
+    run(&mut rec, "Turned", 20.0, 150.0, 156.0, plain, &thin, INK);
+    rec.pop();
+    let glyphs = mono.set("Path", 18.0, 4.0);
+    let bold = GlyphRun { font, size: 18.0, baseline: 190.0, glyphs: &glyphs, synthesis: Synthesis { embolden: true, skew_x: -0.2 } };
+    rec.glyph_paths(fonts, &bold, BLUE);
+    rec.stroke_glyphs(fonts, &bold, &thin, INK);
+    let lacked = [(u32::MAX, 140.0), (mono.set(" ", 18.0, 0.0)[0].0, 160.0)];
+    rec.stroke_glyphs(fonts, &GlyphRun { font, size: 18.0, baseline: 190.0, glyphs: &lacked, synthesis: plain }, &thin, INK);
+    rec.finish()
+}
+
+/// Glyphs painted as text effects draw them: filled with linear and radial gradients (as text, and as paths), stroked
+/// with a gradient, a blurred translucent copy under them (a shadow), a blurred grown copy (a glow), and a flipped
+/// copy faded by a destination-in gradient (a reflection), plain and synthetic bold and italic, and turned.
+pub fn text_effects(resources: &mut Resources) -> Picture {
+    use twip_graphics::paint::{Brush, Extend, Stop};
+    use twip_graphics::scene::{Filter, GlyphRun, Layer, Synthesis};
+    let mono = Mono::new();
+    let font = resources.fonts.add(mono.data.clone(), 0, &[]).expect("the test face registers");
+    let fonts = &resources.fonts;
+    let mut rec = Recorder::new();
+    let stops = [Stop { offset: 0.0, color: RED }, Stop { offset: 1.0, color: BLUE }];
+    let down = |y0: f64, y1: f64| {
+        Paint::new(Brush::Linear {
+            start: (0.0, y0).into(),
+            end: (0.0, y1).into(),
+            stops: &stops,
+            extend: Extend::Clamp,
+            transform: Affine::IDENTITY,
+        })
+    };
+    let plain = Synthesis::default();
+    let glyphs = mono.set("Grad", 28.0, 6.0);
+    let run = GlyphRun { font, size: 28.0, baseline: 30.0, glyphs: &glyphs, synthesis: plain };
+    rec.glyphs(fonts, &run, down(8.0, 36.0));
+    let glyphs = mono.set("Path", 28.0, 130.0);
+    let run = GlyphRun { font, size: 28.0, baseline: 30.0, glyphs: &glyphs, synthesis: Synthesis { embolden: true, skew_x: -0.2 } };
+    rec.glyph_paths(fonts, &run, down(8.0, 36.0));
+    let glyphs = mono.set("Ring", 28.0, 6.0);
+    let run = GlyphRun { font, size: 28.0, baseline: 66.0, glyphs: &glyphs, synthesis: plain };
+    let radial = Brush::Radial {
+        start: (40.0, 56.0).into(),
+        start_radius: 0.0,
+        end: (40.0, 56.0).into(),
+        end_radius: 36.0,
+        stops: &stops,
+        extend: Extend::Clamp,
+        transform: Affine::IDENTITY,
+    };
+    rec.glyphs(fonts, &run, Paint::new(radial));
+    let glyphs = mono.set("Line", 28.0, 130.0);
+    let run = GlyphRun { font, size: 28.0, baseline: 66.0, glyphs: &glyphs, synthesis: plain };
+    rec.glyphs(fonts, &run, Color::WHITE);
+    rec.stroke_glyphs(fonts, &run, &Stroke::new(1.5).with_join(Join::Round), down(44.0, 72.0));
+    // A shadow: blurred, at the shadow colour's alpha, under the text.
+    let glyphs = mono.set("Shade", 26.0, 6.0);
+    let run = GlyphRun { font, size: 26.0, baseline: 104.0, glyphs: &glyphs, synthesis: plain };
+    rec.push_layer(&Layer { opacity: 0.6, filters: &[Filter::Blur { sigma: 1.5 }], ..Layer::default() });
+    rec.push_transform(Affine::translate((2.5, 2.5)));
+    rec.glyphs(fonts, &run, INK);
+    rec.pop();
+    rec.pop();
+    rec.glyphs(fonts, &run, INK);
+    // A glow: the glyphs filled and stroked wide, blurred.
+    let glyphs = mono.set("Glow", 26.0, 136.0);
+    let run = GlyphRun { font, size: 26.0, baseline: 104.0, glyphs: &glyphs, synthesis: plain };
+    rec.push_layer(&Layer { opacity: 0.5, filters: &[Filter::Blur { sigma: 2.0 }], ..Layer::default() });
+    rec.glyph_paths(fonts, &run, BLUE);
+    rec.stroke_glyphs(fonts, &run, &Stroke::new(4.0).with_join(Join::Round), BLUE);
+    rec.pop();
+    rec.glyphs(fonts, &run, INK);
+    // A reflection: the glyphs flipped about their baseline, faded down from half alpha.
+    let glyphs = mono.set("Mirror", 26.0, 6.0);
+    let run = GlyphRun { font, size: 26.0, baseline: 150.0, glyphs: &glyphs, synthesis: plain };
+    rec.glyphs(fonts, &run, down(128.0, 156.0));
+    let fade = [Stop { offset: 0.0, color: Color::BLACK.with_alpha(128) }, Stop { offset: 1.0, color: Color::TRANSPARENT }];
+    let area = rect(0.0, 150.0, 140.0, 172.0);
+    rec.push_layer(&Layer { filters: &[Filter::Blur { sigma: 0.5 }], bounds: Some(area), ..Layer::default() });
+    rec.push_transform(Affine::translate((0.0, 300.0)) * Affine::scale_non_uniform(1.0, -1.0));
+    rec.glyphs(fonts, &run, down(128.0, 156.0));
+    rec.pop();
+    rec.push_layer(&Layer { blend: BlendMode::DstIn, ..Layer::default() });
+    let mask =
+        Brush::Linear { start: (0.0, 150.0).into(), end: (0.0, 162.0).into(), stops: &fade, extend: Extend::Clamp, transform: Affine::IDENTITY };
+    rec.fill_rect(area, Paint::new(mask));
+    rec.pop();
+    rec.pop();
+    // A gradient under a turn: the paint turns with the glyphs.
+    rec.push_transform(Affine::rotate_about(-0.3, kurbo::Point::new(200.0, 150.0)));
+    let glyphs = mono.set("Turn", 24.0, 160.0);
+    let run = GlyphRun { font, size: 24.0, baseline: 160.0, glyphs: &glyphs, synthesis: plain };
+    rec.glyphs(fonts, &run, down(140.0, 166.0));
+    rec.pop();
+    rec.finish()
+}
+
+/// Hinted text off the upright: runs turned a quarter, a half and three quarters (as vertical sections and turned
+/// cells draw them) at subpixel origins, against a run at 30 degrees (unhinted); and a glyph either side of the
+/// largest em drawn from a mask (250 px, a mask, and 262 px, its outline as a path), black and white on black.
+pub fn turned_text(resources: &mut Resources) -> Picture {
+    use twip_graphics::scene::{GlyphRun, Synthesis};
+    let mono = Mono::new();
+    let font = resources.fonts.add(mono.data.clone(), 0, &[]).expect("the test face registers");
+    let fonts = &resources.fonts;
+    let mut rec = Recorder::new();
+    let run = |rec: &mut Recorder, s: &str, size: f64, x: f64, baseline: f64, c: Color| {
+        let glyphs = mono.set(s, size, x);
+        rec.glyphs(fonts, &GlyphRun { font, size, baseline, glyphs: &glyphs, synthesis: Synthesis::default() }, c);
+    };
+    let quarter = std::f64::consts::FRAC_PI_2;
+    for (i, size) in [9.0, 11.0, 14.0].into_iter().enumerate() {
+        let (x, y) = (8.3 + i as f64 * 18.0, 14.2 + i as f64 * 20.0);
+        for (turn, at) in [(quarter, (x, 8.0)), (-quarter, (x + 64.0, 150.0)), (2.0 * quarter, (350.0, y))] {
+            rec.push_transform(Affine::translate(at) * Affine::rotate(turn));
+            run(&mut rec, "Hinted 0.5 Eg", size, 0.0, 0.0, INK);
+            rec.pop();
+        }
+        rec.push_transform(Affine::translate((150.0 + i as f64 * 70.0, 85.0)) * Affine::rotate(0.52));
+        run(&mut rec, "Angled 0.5", size, 0.0, 0.0, INK);
+        rec.pop();
+    }
+    rec.fill_rect(rect(280.0, 160.0, 560.0, 400.0), INK);
+    for (size, x, c) in [(250.0, -20.0, INK), (262.0, 110.0, INK), (250.0, 270.0, Color::WHITE), (262.0, 400.0, Color::WHITE)] {
+        run(&mut rec, "l", size, x, 380.0, c);
+    }
+    rec.finish()
+}
+
 pub fn image(resources: &mut Resources, bytes: &'static [u8]) -> twip_graphics::image::ImageId {
     resources.images.add(std::sync::Arc::new(bytes)).expect("the test image registers")
 }
@@ -325,6 +484,83 @@ pub fn images(resources: &mut Resources) -> Picture {
     rec.image(png, None, rect(60.0, 100.0, 72.0, 112.0), &nearest);
     rec.image(ico, None, rect(60.0, 116.0, 72.0, 128.0), &nearest);
     rec.image(wbmp, None, rect(112.0, 100.0, 124.0, 112.0), &nearest);
+    rec.finish()
+}
+
+/// JPEG XR pictures made by jxrlib: 4:2:0 lossy RGB with both overlap levels, lossy grey, and RGBA with interleaved and
+/// with separate, premultiplied alpha, both over a checkerboard so their transparency shows.
+pub fn jpeg_xr(resources: &mut Resources) -> Picture {
+    let rgb = image(resources, include_bytes!("../images/rgb-420.jxr"));
+    let gray = image(resources, include_bytes!("../images/gray.jxr"));
+    let alpha = image(resources, include_bytes!("../images/alpha.jxr"));
+    let premultiplied = image(resources, include_bytes!("../images/premultiplied.jxr"));
+    let linear = twip_graphics::paint::ImagePaint::default();
+    let mut rec = Recorder::new();
+    for y in 0..6 {
+        for x in 0..16 {
+            if (x + y) % 2 == 0 {
+                let (x, y) = (x as f64 * 8.0, 64.0 + y as f64 * 8.0);
+                rec.fill_rect(rect(x, y, x + 8.0, y + 8.0), Color::rgb(0xA0_C4E8));
+            }
+        }
+    }
+    rec.image(rgb, None, rect(4.0, 4.0, 64.0, 54.0), &linear);
+    rec.image(gray, None, rect(72.0, 4.0, 119.0, 43.0), &linear);
+    rec.image(alpha, None, rect(0.0, 66.0, 64.0, 96.0), &linear);
+    rec.image(premultiplied, None, rect(64.0, 66.0, 128.0, 96.0), &linear);
+    rec.finish()
+}
+
+/// Pixel tiles: an 8 × 8 one-pixel stripe tile drawn at fractional scales below one device pixel a texel (nearest
+/// drops and doubles stripes) and at two above, under a fractional offset; snapped, a texel a pixel at every scale;
+/// and rotated (left as nearest).
+pub fn pixel_tiles(resources: &mut Resources) -> Picture {
+    use twip_graphics::paint::{Brush, Sampling};
+    let bits = [0xC0u8, 0xC0, 0xC0, 0xC0, 0xC0, 0xC0, 0xC0, 0x81];
+    let px: Vec<u8> =
+        bits.iter().flat_map(|row| (0..8).flat_map(move |i| if row & (0x80 >> i) != 0 { [192, 0, 0, 255] } else { [255, 255, 0, 255] })).collect();
+    let tile = resources.images.add_pixels(8, 8, px).expect("pixels");
+    let mut rec = Recorder::new();
+    let row = |rec: &mut Recorder, y: f64, sampling: Sampling| {
+        for (k, scale) in [0.32, 0.41, 0.77, 1.6, 2.3].into_iter().enumerate() {
+            let x = 4.0 + k as f64 * 24.0;
+            let transform = Affine::translate((x + 0.3, y + 0.6)) * Affine::scale(scale);
+            rec.fill_rect(rect(x, y, x + 20.0, y + 20.0), Paint::new(Brush::Pattern { image: tile, transform, sampling }));
+        }
+    };
+    row(&mut rec, 4.0, Sampling::Nearest);
+    row(&mut rec, 28.0, Sampling::Pixel);
+    rec.push_transform(Affine::rotate_about(0.4, kurbo::Point::new(64.0, 70.0)));
+    let transform = Affine::translate((44.0, 56.0)) * Affine::scale(0.77);
+    rec.fill_rect(rect(44.0, 56.0, 84.0, 84.0), Paint::new(Brush::Pattern { image: tile, transform, sampling: Sampling::Pixel }));
+    rec.pop();
+    rec.finish()
+}
+
+/// Word's five border dash patterns measured on the device, on lines 0.4, 1 and 3 units thick, at a scale of 1, 0.5
+/// and 2 (a thin line's dashes stay their size in pixels, a thick one's scale with it); then vertical ones, a
+/// fractional start, and a turned one.
+pub fn dashed_rects() -> Picture {
+    const PATTERNS: [&[u8]; 5] = [&[1, 1], &[4, 4], &[7, 3, 3, 3], &[6, 2, 2, 2, 2, 2], &[4, 1]];
+    let mut rec = Recorder::new();
+    for (y, scale) in [(4.0, 1.0), (40.0, 0.5), (62.0, 2.0)] {
+        rec.push_transform(Affine::translate((0.0, y)) * Affine::scale(scale));
+        for (i, pattern) in PATTERNS.into_iter().enumerate() {
+            for (j, thick) in [0.4, 1.0, 3.0].into_iter().enumerate() {
+                let (x, y) = (4.0 + j as f64 * 40.0, i as f64 * 6.0);
+                rec.fill_dashed_rect(rect(x, y, x + 36.0, y + thick), pattern, INK);
+            }
+        }
+        rec.pop();
+    }
+    for (k, (thick, pattern)) in [(1.0, PATTERNS[1]), (3.0, PATTERNS[2]), (2.0, PATTERNS[4])].into_iter().enumerate() {
+        let x = 4.0 + k as f64 * 8.0;
+        rec.fill_dashed_rect(rect(x, 132.0, x + thick, 172.0), pattern, BLUE);
+    }
+    rec.fill_dashed_rect(rect(40.3, 134.6, 100.0, 136.6), PATTERNS[1], RED);
+    rec.push_transform(Affine::rotate_about(0.3, kurbo::Point::new(150.0, 150.0)));
+    rec.fill_dashed_rect(rect(110.0, 150.0, 190.0, 152.0), PATTERNS[2], GREEN);
+    rec.pop();
     rec.finish()
 }
 
@@ -473,6 +709,25 @@ pub fn blend_modes() -> Picture {
         rec.fill_path(kurbo::Circle::new((x + 12.0, y + 12.0), 10.0).to_path(0.01).elements(), Color::rgb(0xF0_8020));
         rec.fill_rect(rect(x + 10.0, y + 10.0, x + 30.0, y + 30.0), Paint { blend: mode, ..BLUE.with_alpha(170).into() });
         rec.pop();
+    }
+    rec.finish()
+}
+
+/// The sixteen GDI raster operations, one a tile: an anti-aliased disc and a half-transparent square, each over a
+/// destination of four colours whose bits differ, on white.
+pub fn raster_ops() -> Picture {
+    let mut rec = Recorder::new();
+    // An opaque ground: what the operations read between the tiles too.
+    rec.fill_rect(rect(0.0, 0.0, 162.0, 162.0), Color::WHITE);
+    for op in 0..16u8 {
+        let (x, y) = (f64::from(op % 4) * 40.0 + 2.0, f64::from(op / 4) * 40.0 + 2.0);
+        for (k, c) in [0x00_0000, 0xFF_FFFF, 0x5A_A50F, 0xC3_3C96].into_iter().enumerate() {
+            let k = k as f64;
+            rec.fill_rect(rect(x, y + k * 9.0, x + 36.0, y + k * 9.0 + 9.0), Color::rgb(c));
+        }
+        let paint = |c: Color| Paint { blend: BlendMode::Raster(op), ..c.into() };
+        rec.fill_path(kurbo::Circle::new((x + 12.0, y + 12.0), 9.5).to_path(0.01).elements(), paint(Color::rgb(0xF0_8020)));
+        rec.fill_rect(rect(x + 18.0, y + 18.0, x + 34.0, y + 34.0), paint(BLUE.with_alpha(170)));
     }
     rec.finish()
 }

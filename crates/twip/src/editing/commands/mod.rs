@@ -13,6 +13,8 @@ pub(in crate::editing) mod tabs;
 mod text;
 
 pub(crate) use character::highlight_value;
+#[cfg(test)]
+pub(crate) use character::underline_value;
 
 use crate::api::command::CommandId;
 
@@ -245,6 +247,7 @@ impl Editor {
             Command::SetTypography(t) => self.set_typography(t, fonts),
             Command::SetLanguage(l) => self.set_language(l, fonts),
             Command::SetCharacterEffects(e) => self.set_character_effects(e, fonts),
+            Command::SetTextEffects(e) => self.set_text_effects(e, fonts),
             Command::SetUnderlineColor(c) => self.set_underline_color(c, fonts),
             Command::ClearFormatting => self.format(&super::format::Format::ClearFormatting, fonts),
             Command::ChangeCase(to) => self.change_case(to, fonts),
@@ -319,6 +322,9 @@ impl Editor {
             Command::SetHeaderFooterLinked(l) => self.set_header_footer_linked(l, fonts),
             Command::RemoveHeaderFooter(h) => self.remove_header_footer(h, fonts),
             Command::InsertAlignmentTab(t) => self.insert_alignment_tab(t, fonts),
+            Command::SetPageColor(v) => self.set_page_color(v, fonts),
+            Command::SetWatermark(w) => self.set_watermark(w, fonts),
+            Command::RemoveWatermark => self.remove_watermark(fonts),
             Command::MoveColumnBoundary(_) => Outcome::unsupported("moving a text column boundary"),
             Command::EditHeader => self.edit_header_footer(None, false, fonts),
             Command::EditFooter => self.edit_header_footer(None, true, fonts),
@@ -367,7 +373,9 @@ impl Editor {
             Command::MoveRows(d) => self.move_rows(d == crate::api::command::VerticalDirection::Up, fonts),
             Command::AutoFitColumns(to) => self.auto_fit_columns(to, fonts),
             Command::SetCellAlignment(a) => self.set_cell_alignment(a, fonts),
-            Command::SetCellShading(c) => self.table_format(&super::table_format::TableFormat::CellShading(c.map(|c| c.0)), fonts),
+            Command::SetCellShading(c) => {
+                self.table_format(&super::table_format::TableFormat::CellShading(super::table_format::Shading::fill(c.map(|c| c.0))), fonts)
+            }
             Command::SetCellBorders(b) => self.set_cell_borders(b, fonts),
             Command::SetCellMargins(m) => self.set_cell_margins(m, fonts),
             Command::SetCellProperties(p) => self.table_format(&super::table_format::TableFormat::CellProps(p), fonts),

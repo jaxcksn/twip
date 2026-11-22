@@ -163,14 +163,18 @@ function deepFreeze<T>(value: T): T {
   return value;
 }
 
-/** The state in the SDK's shape: a picture fill's image, base64 as the engine sends it, as bytes. */
+/** The state in the SDK's shape: a picture's image, base64 as the engine sends it, as bytes. */
 function fromWireState(state: EditorState): EditorState {
   const shape = state.selection.object?.shape;
-  for (const fill of shape ? [Object.values(shape.fill)[0], Object.values(shape.line)[0]?.fill] : []) {
+  const page = state.page;
+  const fills = [...(shape ? [Object.values(shape.fill)[0], Object.values(shape.line)[0]?.fill] : []), page.background];
+  for (const fill of fills) {
     if (fill?.type === 'picture' && typeof fill.image === 'string') {
       fill.image = Uint8Array.from(atob(fill.image), (c) => c.charCodeAt(0));
     }
   }
+  const mark = page.watermark;
+  if (mark?.kind === 'picture' && typeof mark.image === 'string') mark.image = Uint8Array.from(atob(mark.image), (c) => c.charCodeAt(0));
   return state;
 }
 

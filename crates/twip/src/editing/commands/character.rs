@@ -1,8 +1,11 @@
 //! Character formatting
 
 use crate::api::command::{CaseChange, CharacterEffects, Language, Ligatures, NumberForm, NumberSpacing, Typography};
+use crate::api::drawing::TextEffectsChange;
 use crate::api::value::{AutoOr, Color, HighlightColor, Points, StyleId, UnderlineStyle};
 use crate::docx::Inline;
+use crate::docx::RunStyle;
+use crate::docx::write::props::Props;
 use crate::font::Fonts;
 
 use super::Outcome;
@@ -46,6 +49,15 @@ pub(crate) fn underline_value(style: UnderlineStyle) -> &'static str {
         UnderlineStyle::Dash => "dash",
         UnderlineStyle::DotDash => "dotDash",
         UnderlineStyle::Wave => "wave",
+        UnderlineStyle::DottedHeavy => "dottedHeavy",
+        UnderlineStyle::DashedHeavy => "dashedHeavy",
+        UnderlineStyle::DashLong => "dashLong",
+        UnderlineStyle::DashLongHeavy => "dashLongHeavy",
+        UnderlineStyle::DashDotHeavy => "dashDotHeavy",
+        UnderlineStyle::DotDotDash => "dotDotDash",
+        UnderlineStyle::DashDotDotHeavy => "dashDotDotHeavy",
+        UnderlineStyle::WavyHeavy => "wavyHeavy",
+        UnderlineStyle::WavyDouble => "wavyDouble",
     }
 }
 
@@ -182,6 +194,81 @@ impl Editor {
                 if let Some(on) = t.contextual_alternates {
                     p.set("w14:cntxtAlts", cx.w14("cntxtAlts", &[("val", if on { "1" } else { "0" })], ""));
                 }
+            },
+            fonts,
+        )
+    }
+
+    pub(in crate::editing) fn set_text_effects(&mut self, change: TextEffectsChange, fonts: &Fonts) -> Outcome {
+        use crate::api::drawing::EffectEdit;
+        use crate::docx::write::drawing as xml;
+        let e = match change.to_model() {
+            Ok(e) => e,
+            Err(why) => return Outcome::invalid(&why),
+        };
+        // The part the w14 elements go in declares their namespace or not: the styles part when a style is formatted.
+        let cx = match (&self.style_target, &self.doc.resolver) {
+            (Some(_), Some(r)) => r.styles.cx(),
+            _ => self.cx(),
+        };
+        // Turned off over a style's: Word's own forms of no effect.
+        let off = |key: &str| -> String {
+            let zeros = |names: &[&'static str]| names.iter().map(|&n| (n, "0")).chain([("algn", "none")]).collect::<Vec<_>>();
+            let black = "<{w14}srgbClr {w14}val=\"000000\"/>";
+            match key {
+                "w14:glow" => cx.w14("glow", &[("rad", "0")], black),
+                "w14:shadow" => cx.w14("shadow", &zeros(&["blurRad", "dist", "dir", "sx", "sy", "kx", "ky"]), black),
+                "w14:reflection" => {
+                    cx.w14("reflection", &zeros(&["blurRad", "stA", "stPos", "endA", "endPos", "dist", "dir", "fadeDir", "sx", "sy", "kx", "ky"]), "")
+                }
+                _ => cx.w14("textOutline", &[], "<{w14}noFill/>"),
+            }
+        };
+        let shows = |r: &RunStyle, key: &str| {
+            r.effects.as_deref().is_some_and(|e| match key {
+                "w14:glow" => e.glow.is_some(),
+                "w14:shadow" => e.shadow.is_some(),
+                "w14:reflection" => e.reflection.is_some(),
+                _ => e.outline.is_some(),
+            })
+        };
+        let removed = [
+            ("w14:glow", e.glow.is_remove()),
+            ("w14:shadow", e.shadow.is_remove()),
+            ("w14:reflection", e.reflection.is_remove()),
+            ("w14:textOutline", e.outline.is_remove()),
+        ];
+        fn put<T>(p: &mut Props, key: &str, edit: &EffectEdit<T>, xml: impl FnOnce(&T) -> String) {
+            match edit {
+                EffectEdit::Keep => {}
+                EffectEdit::Remove => p.remove(key),
+                EffectEdit::Set(v) => p.set(key, xml(v)),
+            }
+        }
+        self.format_runs_settled(
+            "Text Effects",
+            &|p, _, run| {
+                // Shown without an element of the text's own, an effect is its style's: removing it turns it off.
+                let inherited = removed.map(|(k, r)| r && p.get(k).is_none() && shows(run, k));
+                put(p, "w14:glow", &e.glow, |g| xml::text_glow_xml(&cx, g));
+                put(p, "w14:shadow", &e.shadow, |s| xml::text_shadow_xml(&cx, s));
+                put(p, "w14:reflection", &e.reflection, |r| xml::text_reflection_xml(&cx, r));
+                put(p, "w14:textOutline", &e.outline, |l| xml::text_outline_xml(&cx, l));
+                put(p, "w14:textFill", &e.fill, |f| xml::text_fill_xml(&cx, f));
+                for ((k, _), on) in removed.iter().zip(inherited) {
+                    if on {
+                        p.set(k, off(k));
+                    }
+                }
+            },
+            // Removed and still shown: the style under the run gives it, and the run turns it off.
+            &|p, _, run| {
+                let mut changed = false;
+                for (key, _) in removed.iter().filter(|(k, r)| *r && shows(run, k)) {
+                    p.set(key, off(key));
+                    changed = true;
+                }
+                changed
             },
             fonts,
         )

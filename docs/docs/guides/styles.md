@@ -53,7 +53,7 @@ A table style (`type: 'table'`) formats the parts of a table. `tablePart` choose
 emphasis, color and alignment values, and the part's `fill`, `cellAlignment` and `border` (one line on every edge),
 show and set that part's formatting. `rowBand` and `columnBand` are the rows and columns in each band. Its Format
 menu's Borders and Shading edits the part's cells (`applyTo: 'cell'`): their edges, inside lines (`between`,
-`insideVertical`) and shading. Table Properties sets its alignment, indent, cell margins, row breaking and cell
+`insideVertical`), diagonals (`diagonalDown`, `diagonalUp`) and shading. Table Properties sets its alignment, indent, cell margins, row breaking and cell
 alignment, and Banding its band sizes. The preview
 (`dialogs.preview`) is a 5 by 5 sample table with every part on. Applying a changed table style lays out every table
 that uses it. A new one applies to the selected table.

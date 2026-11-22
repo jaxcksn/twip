@@ -1,0 +1,63 @@
+pages 1
+page 1 612 792
+  text 2.8 Format by type
+  text «Date» «Cost_Amount»
+  op 1 0 0 -1 0 792 cm
+  op /P << /MCID 0 >> BDC
+  op q
+  op /Span << /ActualText <322e3820466f726d61742062792074797065> >> BDC
+  op 0 0 0 rg
+  op 0 0 0 RG
+  op 0.62 w
+  op 0 j
+  op BT
+  op 2 Tr
+  op 1 0 0 -1 72 96.8 Tm
+  op /F1 16 Tf
+  op [<0002> -1 <0002> -1 <0002> -1 <0001> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0001> -1 <0002> -1 <0002> -1 <0001> -1 <0002> -1 <0002> -1 <0002> -1 <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 1 >> BDC
+  op q
+  op /Span << /ActualText <feff00ab004400610074006500bb002000ab0043006f00730074005f0041006d006f0075006e007400bb> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 110.07 Tm
+  op /F1 11 Tf
+  op [-500 <0002> <0002> <0002> <0002> -500 <0001> -500 <0002> <0002> <0002> <0002> 0 <0002> <0002> <0002> <0002> <0002> 0 <0002> <0002>] TJ
+  op ET
+  op q
+  op 0 0 0 rg
+  op 72.55 110.07 m
+  op 72.55 102.37 l
+  op 76.95 102.37 l
+  op 76.95 110.07 l
+  op h
+  op 102.25 110.07 m
+  op 102.25 102.37 l
+  op 106.65 102.37 l
+  op 106.65 110.07 l
+  op h
+  op 110.5 110.07 m
+  op 110.5 102.37 l
+  op 114.9 102.37 l
+  op 114.9 110.07 l
+  op h
+  op 182.55 110.07 m
+  op 182.55 102.37 l
+  op 186.95 102.37 l
+  op 186.95 110.07 l
+  op h
+  op f
+  op Q
+  op EMC
+  op Q
+  op EMC
+structure
+  Document
+    H1
+    P
+outline
+  "2.8 Format by type"

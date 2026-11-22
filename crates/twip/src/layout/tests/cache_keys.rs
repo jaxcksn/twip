@@ -31,6 +31,7 @@ fn omitted_key_is_caught() {
                 env: env.text.clone(),
                 fit: false,
                 letter_break: false,
+                shade_gap: 0.0,
             };
             break_lines(&shaped, p, &space, &fonts, &mut memos).expect("unlimited");
         }

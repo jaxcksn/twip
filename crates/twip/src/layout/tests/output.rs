@@ -9,13 +9,17 @@ use crate::layout::fragment::{BoxKind, Child, Item, PageChild};
 use crate::layout::layout;
 use crate::layout::traverse::paint;
 
-fn bundled_fonts() -> Fonts {
+/// The gates' fonts: the stand-ins (single-box glyphs) as the generic families, and JetBrains Mono under its own name,
+/// for the fixtures that show real glyphs.
+pub(crate) fn bundled_fonts() -> Fonts {
     let mut fonts = Fonts::default();
     let mut families = Vec::new();
     for file in ["stand-in-sans.ttf", "stand-in-serif.ttf", "stand-in-mono.ttf", "stand-in-cjk.ttf"] {
         let bytes = std::fs::read(root().join("fixtures/editor/fonts").join(file)).expect("stand-in font");
         families.extend(fonts.add_bytes(bytes).expect("stand-in font").into_iter().map(|f| f.family));
     }
+    let mono = std::fs::read(crate_dir().join("../twip-graphics/tests/fonts/jetbrains-mono-500.ttf")).expect("JetBrains Mono");
+    fonts.add_bytes(mono).expect("JetBrains Mono");
     let family = |prefix: &str| families.iter().find(|f| f.starts_with(prefix)).cloned();
     let (sans, serif, mono, cjk) = (family("Stand-in Sans"), family("Stand-in Serif"), family("Stand-in Mono"), family("Stand-in CJK"));
     fonts.set_settings(|s| {
@@ -30,18 +34,18 @@ fn bundled_fonts() -> Fonts {
 
 /// The crate's folder: `TWIP_ROOT` when set (the WebAssembly run, which sees the workspace at a path of its runner's),
 /// else where it is.
-fn crate_dir() -> PathBuf {
+pub(crate) fn crate_dir() -> PathBuf {
     std::env::var_os("TWIP_ROOT").map_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")), PathBuf::from)
 }
 
 /// The crate's `tests` folder.
-fn root() -> PathBuf {
+pub(crate) fn root() -> PathBuf {
     crate_dir().join("tests")
 }
 
 /// The entries of `dir`. Node's WASI on Windows can't list a folder: there its runner passes every file under the crate
 /// folder it shows in `TWIP_FILES` (a path a line), and a folder's entries come from that.
-fn entries(dir: &Path) -> Vec<PathBuf> {
+pub(crate) fn entries(dir: &Path) -> Vec<PathBuf> {
     if let Ok(r) = std::fs::read_dir(dir) {
         return r.flatten().map(|e| e.path()).collect();
     }
@@ -51,7 +55,7 @@ fn entries(dir: &Path) -> Vec<PathBuf> {
     kids.into_iter().collect()
 }
 
-fn fixtures(dir: &Path, out: &mut Vec<PathBuf>) {
+pub(crate) fn fixtures(dir: &Path, out: &mut Vec<PathBuf>) {
     let mut entries = entries(dir);
     entries.sort();
     for p in entries {
@@ -61,6 +65,25 @@ fn fixtures(dir: &Path, out: &mut Vec<PathBuf>) {
             out.push(p);
         }
     }
+}
+
+/// Every fixture read as the layout gate reads it (DATE/TIME fields at its instant, its hyphenation patterns), by
+/// snapshot stem: the path under `fixtures` with `__` for its separators, without `.docx`.
+pub(crate) fn corpus() -> Vec<(String, crate::docx::Document)> {
+    let patterns = std::fs::read_to_string(root().join("fixtures/layout/hyph-en-US.dic")).expect("hyphenation patterns");
+    let hyphenation = crate::layout::hyphenate::Hyphenation::default().with("en-US", crate::layout::hyphenate::Patterns::parse(&patterns));
+    let mut paths = Vec::new();
+    fixtures(&root().join("fixtures"), &mut paths);
+    let mut out = Vec::new();
+    for path in &paths {
+        let Some(mut d) = std::fs::read(path).ok().and_then(|b| crate::docx::read_at(&b, 1_794_225_600).ok()) else { continue };
+        d.hyphenation = Some(hyphenation.clone());
+        let rel = path.strip_prefix(root().join("fixtures")).unwrap().to_string_lossy().replace(['\\', '/'], "__");
+        let name = rel.trim_end_matches(".docx").to_owned();
+        assert!(!out.iter().any(|(n, _)| *n == name), "two fixtures flatten to the snapshot name `{name}`: rename one");
+        out.push((name, d));
+    }
+    out
 }
 
 /// Each float's rectangle and each table cell's, in page space, in tree order.
@@ -209,7 +232,7 @@ fn page_svg(header: &str, want: &[&str], got: &[&str]) -> String {
     s + "</svg>\n"
 }
 
-fn escape(s: &str) -> String {
+pub(crate) fn escape(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
 }
 

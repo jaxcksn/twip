@@ -1,0 +1,209 @@
+pages 1
+page 1 612 792
+  text FX-CHECKBOXES
+  text ☐ Unchecked item
+  text ☒ Checked item
+  text Task in a cell
+  text ☐ cell box
+  text ☐ Locked item
+  text ☐ Custom faces
+  text After the checkboxes.
+  op 1 0 0 -1 0 792 cm
+  op /P << /MCID 0 >> BDC
+  op q
+  op /Span << /ActualText <46582d434845434b424f584553> >> BDC
+  op 0 0 0 rg
+  op 0 0 0 RG
+  op 0.62 w
+  op 0 j
+  op BT
+  op 2 Tr
+  op 1 0 0 -1 72 96.8 Tm
+  op /F1 16 Tf
+  op [<0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 1 >> BDC
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 111.48 Tm
+  op /F2 11 Tf
+  op [<0013>] TJ
+  op ET
+  op Q
+  op q
+  op /Span << /ActualText <20556e636865636b6564206974656d> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 81.86 111.48 Tm
+  op /F1 11 Tf
+  op [<0001> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0001> <0002> <0002> <0002> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 2 >> BDC
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 133.3 Tm
+  op /F2 11 Tf
+  op [<0015>] TJ
+  op ET
+  op Q
+  op q
+  op /Span << /ActualText <20436865636b6564206974656d> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 81.86 133.3 Tm
+  op /F1 11 Tf
+  op [<0001> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0001> <0002> 0 <0002> <0002> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 3 >> BDC
+  op q
+  op /Span << /ActualText <5461736b20696e20612063656c6c> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 77.65 154.2 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002> <0002> <0001> <0002> <0002> <0001> <0002> <0001> <0002> <0002> <0002> 0 <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 4 >> BDC
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 311.65 155.61 Tm
+  op /F2 11 Tf
+  op [<0013>] TJ
+  op ET
+  op Q
+  op q
+  op /Span << /ActualText <2063656c6c20626f78> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 321.51 155.61 Tm
+  op /F1 11 Tf
+  op [<0001> <0002> 0 <0002> 0 <0002> 0 <0002> 0 <0001> <0002> 0 <0002> 0 <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /Artifact << /Type /Layout >> BDC
+  op q
+  op 0 0 0 rg
+  op 72 144.9 234.5 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 72 144.9 0.5 22.32 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 306 144.9 0.5 22.32 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 72 167.22 234.5 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 306 144.9 234.5 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 306 144.9 0.5 22.32 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 540 144.9 0.5 22.32 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 306 167.22 234.5 0.5 re
+  op f
+  op Q
+  op EMC
+  op /P << /MCID 5 >> BDC
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 177.93 Tm
+  op /F2 11 Tf
+  op [<0013>] TJ
+  op ET
+  op Q
+  op q
+  op /Span << /ActualText <204c6f636b6564206974656d> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 81.86 177.93 Tm
+  op /F1 11 Tf
+  op [<0001> <0002> <0002> <0002> <0002> <0002> <0002> <0001> <0002> <0002> 0 <0002> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 6 >> BDC
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 199.75 Tm
+  op /F2 11 Tf
+  op [<0013>] TJ
+  op ET
+  op Q
+  op q
+  op /Span << /ActualText <20437573746f6d206661636573> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 81.86 199.75 Tm
+  op /F1 11 Tf
+  op [<0001> <0002> <0002> <0002> <0002> <0002> <0002> <0001> <0002> <0002> 0 <0002> <0002> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 7 >> BDC
+  op q
+  op /Span << /ActualText <41667465722074686520636865636b626f7865732e> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 220.16 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002> <0002> <0002> <0001> <0002> <0002> <0002> <0001> <0002> <0002> <0002> <0002> <0002> 0 <0002> <0002> <0002> <0002> <0002> 0 <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+structure
+  Document
+    H1
+    P
+    P
+    Table
+      TR
+        TD
+          P
+        TD
+          P
+    P
+    P
+    P
+outline
+  "FX-CHECKBOXES"

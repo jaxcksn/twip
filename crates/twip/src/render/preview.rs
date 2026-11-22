@@ -10,9 +10,12 @@ use super::graphics::Graphics;
 use crate::layout::fragment::Item;
 
 /// Items drawn into a `width` x `height` px picture at `scale` device pixels per px, as PNG: on the page's colour in
-/// `appearance`, scaled down to fit the height when `fit` (a gallery tile), centred vertically then.
+/// `appearance`, scaled down to fit the height when `fit` (a gallery tile), centred vertically then. Metafile text
+/// draws with `fonts`.
+#[allow(clippy::too_many_arguments, reason = "the items, their pictures and fonts, and the tile's size and look")]
 pub fn png(
     items: &[Item],
+    fonts: &crate::font::Fonts,
     content_height: f64,
     images: &[Vec<u8>],
     (width, height, scale): (f64, f64, f64),
@@ -29,6 +32,7 @@ pub fn png(
         t = t * Affine::translate((0.0, (height_pt - content_height * k) / 2.0)) * Affine::scale(k);
     }
     let mut g = Graphics::default();
+    g.set_fonts(fonts);
     let mut rec = Recorder::new();
     rec.push_transform(t);
     for item in items {

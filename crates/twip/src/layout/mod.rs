@@ -19,6 +19,7 @@ pub mod node;
 pub mod page;
 pub mod paragraph;
 pub mod record;
+pub mod shade;
 pub mod snapshot;
 pub mod space;
 pub mod story;

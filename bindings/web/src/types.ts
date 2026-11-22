@@ -128,7 +128,8 @@ export interface Warning {
     | 'duplicate-building-block'
     | 'sub-template-cycle'
     | 'sub-template-too-deep'
-    | 'sub-template-near-match';
+    | 'sub-template-near-match'
+    | 'pdf-figure-without-alt';
   /** A readable description. */
   message: string;
   /** How many times it occurred. */
@@ -453,12 +454,14 @@ export interface GradientStop {
 /**
  * A fill: none, one colour, a gradient of two or more stops (a linear one's `angle`, 0 left to right), a two-colour
  * pattern by its ECMA-376 name (`'pct50'`, `'dkDnDiag'`), a picture (PNG, JPEG, GIF, BMP; tiled at its own size, or
- * stretched), or `fromStyle`: the style reference's fill, no explicit one.
+ * stretched), or `fromStyle`: the style reference's fill, no explicit one. A gradient's `focus` is where it starts, as
+ * the fractions (0 to 1) of the shape's left, top, right and bottom edges it is inset from (`path` gradients; default
+ * the centre).
  */
 export type FillValue =
   | { type: 'none' }
   | { type: 'solid'; colour: ColourValue }
-  | { type: 'gradient'; kind: GradientShape; angle?: Degrees; stops: GradientStop[] }
+  | { type: 'gradient'; kind: GradientShape; angle?: Degrees; stops: GradientStop[]; focus?: [number, number, number, number] }
   | { type: 'pattern'; preset: string; foreground: ColourValue; background: ColourValue }
   | { type: 'picture'; image: Uint8Array; tile?: boolean }
   | { type: 'fromStyle' };
@@ -579,6 +582,121 @@ export interface EffectsChange {
   /** The whole shape blurred by this radius. */
   blur?: Points | null;
 }
+
+/** A text outline: an outline without arrowheads. */
+export interface TextOutline {
+  /** The width, 0 to 1584. */
+  width: Points;
+  /** `none`, `solid` or `gradient`. */
+  fill: FillValue;
+  /** The ECMA-376 dash name (`'solid'`, `'dash'`, `'sysDot'`…). */
+  dash: string;
+  /** Single or several lines. */
+  compound: Compound;
+  /** The ends of its dashes. */
+  cap: LineCap;
+  /** The joins. */
+  join: LineJoin;
+}
+
+/** A text shadow. */
+export interface TextShadow {
+  /** Its colour, with its transparency as an `alpha` transform. */
+  colour: ColourValue;
+  /** Its size against the text's, percent, 1 to 200. */
+  size: number;
+  /** How far it blurs, 0 to 100. */
+  blur: Points;
+  /** How far from the text, 0 to 200. */
+  distance: Points;
+  /** Which way, clockwise from the right. */
+  direction: Degrees;
+}
+
+/** A text reflection: the text mirrored below its baseline, fading out. */
+export interface TextReflection {
+  /** Its transparency where it starts, percent, 0 to 100. */
+  transparency: number;
+  /** How much of the text it shows before it has faded out, percent, 0 to 100. */
+  size: number;
+  /** How far it blurs, 0 to 100. */
+  blur: Points;
+  /** How far below the text, 0 to 100. */
+  distance: Points;
+}
+
+/** Text effects as written; each one absent is not set. */
+export interface TextEffects {
+  /** The letters' fill in place of the font colour: `none` (hollow), `solid` or `gradient`. */
+  fill?: FillValue;
+  /** The letters' outline. */
+  outline?: TextOutline;
+  /** A shadow behind the letters. */
+  shadow?: TextShadow;
+  /** A glow around the letters. */
+  glow?: Glow;
+  /** A reflection under the letters. */
+  reflection?: TextReflection;
+}
+
+/**
+ * `setTextEffects`' change: each effect given replaces the text's own, `null` turns it off (over a style's too; a fill
+ * is only removed, so a style's fill shows), what isn't given is kept.
+ */
+export interface TextEffectsChange {
+  /** The letters' fill: `none` (hollow), `solid` or `gradient` of two to ten stops. */
+  fill?: FillValue | null;
+  /** The letters' outline. */
+  outline?: TextOutline | null;
+  /** A shadow behind the letters. */
+  shadow?: TextShadow | null;
+  /** A glow around the letters, 0 to 150 pt. */
+  glow?: Glow | null;
+  /** A reflection under the letters. */
+  reflection?: TextReflection | null;
+}
+
+/** Which way a text watermark runs. */
+export type WatermarkLayout = 'diagonal' | 'horizontal';
+
+/** A text watermark; what isn't given is Word's default (the theme's body font, the document's language, automatic size, silver, 50% transparent, diagonal). */
+export interface TextWatermark {
+  /** Marks a text watermark. */
+  kind: 'text';
+  /** The text. */
+  text: string;
+  /** The font; absent is the theme's body font. */
+  font?: string;
+  /** The text's language (a BCP 47 tag such as `en-US`); absent is the document's. */
+  language?: string;
+  /** The size in points, 1 to 1584 (1 is 1 pt); absent is automatic: as large as fits the page. */
+  size?: Points;
+  /** The colour. */
+  color?: Color;
+  /** Percent, 0 (opaque) to 100. */
+  transparency?: number;
+  /** Diagonal or horizontal. */
+  layout?: WatermarkLayout;
+  /** Bold. */
+  bold?: boolean;
+  /** Italic. */
+  italic?: boolean;
+}
+
+/** A picture watermark. */
+export interface PictureWatermark {
+  /** Marks a picture watermark. */
+  kind: 'picture';
+  /** The image (PNG, JPEG, GIF, BMP, TIFF, JPEG XR, SVG, EMF or WMF); empty keeps the current watermark's, and is empty in the state. */
+  image: Uint8Array;
+  /** Percent of the picture's own size; absent fits it to the margins. */
+  scale?: number;
+  /** Washed out, as Word's default is. */
+  washout?: boolean;
+}
+
+/** A watermark: text, or a picture. */
+export type Watermark = TextWatermark | PictureWatermark;
 
 /** Where text sits in a shape vertically. */
 export type TextAnchor = 'top' | 'middle' | 'bottom';

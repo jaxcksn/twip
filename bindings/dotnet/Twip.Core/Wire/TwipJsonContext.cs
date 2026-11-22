@@ -65,6 +65,11 @@ namespace Twip.Wire;
         typeof(CamelEnum<ShadingTarget>),
         typeof(CamelEnum<ShadingPattern>),
         typeof(CamelEnum<DropCapPosition>),
+        typeof(CamelEnum<WatermarkLayout>),
+        typeof(CamelEnum<WatermarkKind>),
+        typeof(CamelEnum<FillEffectsTab>),
+        typeof(CamelEnum<GradientColors>),
+        typeof(CamelEnum<ShadingStyle>),
         typeof(CamelEnum<FrameWrap>),
         typeof(CamelEnum<FrameWidthRule>),
         typeof(CamelEnum<FrameHeightRule>),
@@ -164,6 +169,21 @@ namespace Twip.Wire;
         typeof(EffectChangeConverter<Shadow>),
         typeof(EffectChangeConverter<Glow>),
         typeof(EffectChangeConverter<Length>),
+        typeof(EffectChangeConverter<FillValue>),
+        typeof(EffectChangeConverter<TextOutline>),
+        typeof(EffectChangeConverter<TextShadow>),
+        typeof(EffectChangeConverter<TextReflection>),
+        typeof(NoneOrConverter<FillValue>),
+        typeof(NoneOrConverter<TextOutline>),
+        typeof(NoneOrConverter<TextShadow>),
+        typeof(NoneOrConverter<TextReflection>),
+        typeof(NoneOrConverter<Glow>),
+        typeof(FormatValueConverter<TextEffects>),
+        typeof(FormatValueConverter<NoneOr<FillValue>>),
+        typeof(FormatValueConverter<NoneOr<TextOutline>>),
+        typeof(FormatValueConverter<NoneOr<TextShadow>>),
+        typeof(FormatValueConverter<NoneOr<TextReflection>>),
+        typeof(FormatValueConverter<NoneOr<Glow>>),
         typeof(FormatValueConverter<bool>),
         typeof(FormatValueConverter<string>),
         typeof(FormatValueConverter<Length>),
@@ -471,6 +491,11 @@ namespace Twip.Wire;
 [JsonSerializable(typeof(ParagraphBorderLines))]
 [JsonSerializable(typeof(ShadingOptions))]
 [JsonSerializable(typeof(FrameProperties))]
+[JsonSerializable(typeof(Watermark))]
+[JsonSerializable(typeof(TextWatermark))]
+[JsonSerializable(typeof(PictureWatermark))]
+[JsonSerializable(typeof(PrintedWatermarkDialogValues))]
+[JsonSerializable(typeof(FillEffectsDialogValues))]
 [JsonSerializable(typeof(DropCap))]
 [JsonSerializable(typeof(DropCapDialogValues))]
 [JsonSerializable(typeof(ManagedStyle))]
@@ -698,6 +723,11 @@ namespace Twip.Wire;
 [JsonSerializable(typeof(Arrowhead))]
 [JsonSerializable(typeof(ColorTransform))]
 [JsonSerializable(typeof(EffectsChange))]
+[JsonSerializable(typeof(TextEffectsChange))]
+[JsonSerializable(typeof(TextEffects))]
+[JsonSerializable(typeof(TextOutline))]
+[JsonSerializable(typeof(TextShadow))]
+[JsonSerializable(typeof(TextReflection))]
 [JsonSerializable(typeof(EffectsValue))]
 [JsonSerializable(typeof(FillState))]
 [JsonSerializable(typeof(FillValue))]

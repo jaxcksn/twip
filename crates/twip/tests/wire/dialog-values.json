@@ -76,10 +76,48 @@
     "underline": "none"
   },
   {
+    "applyTo": "table",
+    "between": null,
+    "bottom": null,
+    "color": "#2F5496",
+    "diagonalDown": null,
+    "diagonalUp": null,
+    "fill": "none",
+    "insideVertical": null,
+    "kind": "bordersShading",
+    "left": null,
+    "pageApplyTo": "thisSection",
+    "pageBottom": null,
+    "pageDisplay": "firstPage",
+    "pageLeft": null,
+    "pageOffsetFrom": "text",
+    "pageRight": null,
+    "pageSetting": "box",
+    "pageTop": {
+      "color": "auto",
+      "style": "dashDotStroked",
+      "width": 0.5
+    },
+    "pattern": "diagStripe",
+    "patternColor": "auto",
+    "right": null,
+    "setting": "shadow",
+    "style": "double",
+    "tab": "shading",
+    "top": {
+      "color": "#2F5496",
+      "style": "double",
+      "width": 0.75
+    },
+    "width": 0.75
+  },
+  {
     "applyTo": "paragraph",
     "between": null,
     "bottom": null,
     "color": "#2F5496",
+    "diagonalDown": null,
+    "diagonalUp": null,
     "fill": "none",
     "insideVertical": null,
     "kind": "bordersShading",
@@ -238,6 +276,11 @@
     "stylisticSet": 3,
     "subscript": false,
     "superscript": false,
+    "textFill": "none",
+    "textGlow": "none",
+    "textOutline": "none",
+    "textReflection": "none",
+    "textShadow": "none",
     "underline": "wave",
     "underlineColor": "#FF0000"
   },
@@ -377,5 +420,51 @@
       }
     ],
     "kind": "accessibility"
+  },
+  {
+    "bold": false,
+    "color": "#C0C0C0",
+    "font": "Calibri",
+    "italic": true,
+    "kind": "printedWatermark",
+    "language": "en-US",
+    "layout": "diagonal",
+    "picture": "",
+    "scale": 150.0,
+    "size": 80.5,
+    "text": "DRAFT",
+    "transparency": 50.0,
+    "washout": true,
+    "watermark": "text"
+  },
+  {
+    "background": {
+      "rgb": "#FFFFFF"
+    },
+    "color1": {
+      "rgb": "#1F4E79"
+    },
+    "color2": {
+      "theme": "accent1",
+      "transforms": [
+        {
+          "kind": "lumMod",
+          "value": 0.75
+        }
+      ]
+    },
+    "colors": "two",
+    "foreground": {
+      "rgb": "#000000"
+    },
+    "kind": "fillEffects",
+    "lightness": 0.5,
+    "pattern": "dkDnDiag",
+    "picture": "iVBORw==",
+    "preset": "earlySunset",
+    "shading": "fromCorner",
+    "tab": "gradient",
+    "texture": "iVBORw==",
+    "variant": 2
   }
 ]

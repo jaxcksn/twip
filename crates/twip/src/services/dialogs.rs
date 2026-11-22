@@ -15,7 +15,7 @@ use crate::api::services::{
     PictureSizeDialog, SpecialIndent, StyleDialog, StyleDialogType, TablePropertiesDialog, TabsAction, TabsDialog,
 };
 use crate::api::state::{State, Tri};
-use crate::api::value::{Orientation, Points};
+use crate::api::value::{NoneOr, Orientation, Points};
 
 /// What a dialog shows besides the state: the selected text, the document's accessibility issues and the font
 /// families.
@@ -26,6 +26,8 @@ pub struct Context {
     pub fonts: Vec<String>,
     /// The document's shown bookmarks, in document order.
     pub bookmarks: Vec<String>,
+    /// The selection is in a table: Borders and Shading applies to its cells or the table too.
+    pub in_table: bool,
 }
 
 /// The error for a dialog whose object the selection doesn't have.
@@ -34,7 +36,7 @@ fn unavailable(what: &str) -> Error {
 }
 
 /// Every dialog, in the state's order.
-const KINDS: [DialogKind; 22] = [
+const KINDS: [DialogKind; 24] = [
     DialogKind::Font,
     DialogKind::Paragraph,
     DialogKind::PageSetup,
@@ -57,6 +59,8 @@ const KINDS: [DialogKind; 22] = [
     DialogKind::SetNumberingValue,
     DialogKind::AdjustListIndents,
     DialogKind::BulletsNumbering,
+    DialogKind::PrintedWatermark,
+    DialogKind::FillEffects,
 ];
 
 /// Whether [`open`] opens `kind` on this state: the table and object dialogs need their table or object.
@@ -114,6 +118,11 @@ pub fn values(kind: DialogKind, state: &State, cx: &Context) -> Result<DialogVal
             number_form: f.number_form,
             stylistic_set: f.stylistic_set,
             contextual_alternates: f.contextual_alternates,
+            text_fill: effect(&f.text_effects, |e| e.fill.clone()),
+            text_outline: effect(&f.text_effects, |e| e.outline.clone()),
+            text_shadow: effect(&f.text_effects, |e| e.shadow.clone()),
+            text_reflection: effect(&f.text_effects, |e| e.reflection.clone()),
+            text_glow: effect(&f.text_effects, |e| e.glow.clone()),
         }),
         DialogKind::Paragraph => {
             let i = &p.indents;
@@ -267,6 +276,8 @@ pub fn values(kind: DialogKind, state: &State, cx: &Context) -> Result<DialogVal
         DialogKind::SetNumberingValue => return Err(Error::invalid("the list dialogs open through the session")),
         DialogKind::AdjustListIndents => return Err(Error::invalid("the list dialogs open through the session")),
         DialogKind::BulletsNumbering => return Err(Error::invalid("the list dialogs open through the session")),
+        DialogKind::PrintedWatermark => DialogValues::PrintedWatermark(super::background_dialogs::watermark_values(state)),
+        DialogKind::FillEffects => DialogValues::FillEffects(super::background_dialogs::fill_effects_values(state)),
     })
 }
 
@@ -294,40 +305,67 @@ fn kind_of(v: &DialogValues) -> DialogKind {
         DialogValues::SetNumberingValue(_) => DialogKind::SetNumberingValue,
         DialogValues::AdjustListIndents(_) => DialogKind::AdjustListIndents,
         DialogValues::BulletsNumbering(_) => DialogKind::BulletsNumbering,
+        DialogValues::PrintedWatermark(_) => DialogKind::PrintedWatermark,
+        DialogValues::FillEffects(_) => DialogKind::FillEffects,
     }
 }
 
 /// A field: its label, kind, and whether it can be edited.
-fn field(label: &str, kind: FieldKind) -> FieldInfo {
+pub(super) fn field(label: &str, kind: FieldKind) -> FieldInfo {
     FieldInfo { label: label.into(), enabled: true, kind, ..FieldInfo::default() }
 }
 
-fn number(label: &str, kind: FieldKind, min: f64, max: f64, step: f64) -> FieldInfo {
+pub(super) fn number(label: &str, kind: FieldKind, min: f64, max: f64, step: f64) -> FieldInfo {
     FieldInfo { min: Some(min), max: Some(max), step: Some(step), ..field(label, kind) }
 }
 
-fn choice(label: &str, options: &[(&str, &str)]) -> FieldInfo {
+pub(super) fn choice(label: &str, options: &[(&str, &str)]) -> FieldInfo {
     let options = options.iter().map(|(value, label)| ChoiceOption { value: value.to_string(), label: label.to_string() }).collect();
     FieldInfo { options: Some(options), ..field(label, FieldKind::Choice) }
 }
 
-fn off(mut f: FieldInfo) -> FieldInfo {
+pub(super) fn off(mut f: FieldInfo) -> FieldInfo {
     f.enabled = false;
     f
 }
 
-const UNDERLINES: [(&str, &str); 10] = [
+const UNDERLINES: [(&str, &str); 18] = [
     ("none", "(none)"),
     ("single", "Single"),
     ("words", "Words only"),
     ("double", "Double"),
     ("thick", "Thick"),
     ("dotted", "Dotted"),
+    ("dottedHeavy", "Dotted heavy"),
     ("dash", "Dash"),
+    ("dashedHeavy", "Dash heavy"),
+    ("dashLong", "Long dash"),
+    ("dashLongHeavy", "Long dash heavy"),
     ("dotDash", "Dot dash"),
+    ("dashDotHeavy", "Dot dash heavy"),
     ("dotDotDash", "Dot dot dash"),
+    ("dashDotDotHeavy", "Dot dot dash heavy"),
     ("wave", "Wave"),
+    ("wavyHeavy", "Wave heavy"),
+    ("wavyDouble", "Double wave"),
 ];
+
+/// One of the selection's text effects, `none` where the text has none of its own.
+fn effect<T>(e: &Tri<crate::api::drawing::TextEffects>, f: impl Fn(&crate::api::drawing::TextEffects) -> Option<T>) -> Tri<NoneOr<Box<T>>> {
+    match e {
+        Tri::Uniform(e) => Tri::Uniform(f(e).map_or(NoneOr::None, |v| NoneOr::Value(Box::new(v)))),
+        Tri::Mixed => Tri::Mixed,
+        Tri::Unavailable => Tri::Unavailable,
+    }
+}
+
+/// A text effect as `setTextEffects` takes it: `null` removes the text's own.
+fn own<T>(v: NoneOr<Box<T>>) -> Option<T> {
+    match v {
+        NoneOr::None => None,
+        NoneOr::Value(x) => Some(*x),
+    }
+}
 
 /// The fields of a dialog with these values: labels, ranges and choices, and which can be edited now.
 fn fields(values: &DialogValues, cx: &Context) -> BTreeMap<String, FieldInfo> {
@@ -377,6 +415,11 @@ fn fields(values: &DialogValues, cx: &Context) -> BTreeMap<String, FieldInfo> {
             ("numberForm", choice("Number forms", &[("default", "Default"), ("lining", "Lining"), ("oldStyle", "Old-style")])),
             ("stylisticSet", number("Stylistic sets", FieldKind::Number, 0.0, 20.0, 1.0)),
             ("contextualAlternates", field("Use Contextual Alternates", FieldKind::Toggle)),
+            ("textFill", field("Text Fill", FieldKind::Effect)),
+            ("textOutline", field("Text Outline", FieldKind::Effect)),
+            ("textShadow", field("Shadow", FieldKind::Effect)),
+            ("textReflection", field("Reflection", FieldKind::Effect)),
+            ("textGlow", field("Glow", FieldKind::Effect)),
         ],
         DialogValues::Paragraph(v) => {
             let special = !matches!(v.special, Tri::Uniform(SpecialIndent::None));
@@ -569,7 +612,7 @@ fn fields(values: &DialogValues, cx: &Context) -> BTreeMap<String, FieldInfo> {
             ("description", off(field("Description", FieldKind::Text))),
             ("defaults", field("Set Defaults", FieldKind::List)),
         ],
-        DialogValues::BordersShading(v) => borders_fields(v),
+        DialogValues::BordersShading(v) => borders_fields(v, cx.in_table),
         DialogValues::Frame(v) => frame_fields(v),
         DialogValues::Banding(_) => vec![
             ("rowBand", number("Rows in each band", FieldKind::Number, 1.0, 99.0, 1.0)),
@@ -639,6 +682,8 @@ fn fields(values: &DialogValues, cx: &Context) -> BTreeMap<String, FieldInfo> {
             ("gallery", choice("Gallery", &[("bullet", "Bullets"), ("numbering", "Numbering"), ("multilevel", "Multilevel")])),
             ("entry", field("List", FieldKind::Choice)),
         ],
+        DialogValues::PrintedWatermark(v) => super::background_dialogs::watermark_fields(v),
+        DialogValues::FillEffects(v) => super::background_dialogs::fill_effects_fields(v),
     };
     list.into_iter().map(|(k, v)| (k.to_string(), v)).collect()
 }
@@ -662,9 +707,10 @@ pub fn manage_styles_model(v: crate::api::services::ManageStylesDialog) -> Dialo
 }
 
 /// Borders and Shading's model for its values.
-pub fn borders_shading_model(v: BordersShadingDialog) -> DialogModel {
+/// Borders and Shading's model; `in_table`: the selection is in a table (a style's never is).
+pub fn borders_shading_model(v: BordersShadingDialog, in_table: bool) -> DialogModel {
     let values = DialogValues::BordersShading(v);
-    DialogModel { kind: DialogKind::BordersShading, fields: fields(&values, &Context::default()), values, on_style: None }
+    DialogModel { kind: DialogKind::BordersShading, fields: fields(&values, &Context { in_table, ..Context::default() }), values, on_style: None }
 }
 
 /// The Frame dialog's model for its values.
@@ -741,9 +787,10 @@ pub fn formats_a_style(kind: DialogKind) -> bool {
     )
 }
 
-const BORDER_STYLES: [(&str, &str); 17] = [
+const BORDER_STYLES: [(&str, &str); 25] = [
     ("single", "Single"),
     ("dotted", "Dotted"),
+    ("dashSmallGap", "Dashed (small gaps)"),
     ("dashed", "Dashed"),
     ("dotDash", "Dot dash"),
     ("dotDotDash", "Dot dot dash"),
@@ -753,35 +800,71 @@ const BORDER_STYLES: [(&str, &str); 17] = [
     ("thinThickSmallGap", "Thin thick"),
     ("thickThinSmallGap", "Thick thin"),
     ("thinThickThinSmallGap", "Thin thick thin"),
+    ("thinThickMediumGap", "Thin thick (medium gap)"),
+    ("thickThinMediumGap", "Thick thin (medium gap)"),
+    ("thinThickThinMediumGap", "Thin thick thin (medium gap)"),
+    ("thinThickLargeGap", "Thin thick (large gap)"),
+    ("thickThinLargeGap", "Thick thin (large gap)"),
+    ("thinThickThinLargeGap", "Thin thick thin (large gap)"),
     ("wave", "Wave"),
     ("doubleWave", "Double wave"),
+    ("dashDotStroked", "Dash dot stroked"),
     ("threeDEmboss", "3-D emboss"),
     ("threeDEngrave", "3-D engrave"),
     ("outset", "Outset"),
     ("inset", "Inset"),
 ];
 
-const PATTERNS: [(&str, &str); 14] = [
+/// Word's shading styles, in its order.
+const PATTERNS: [(&str, &str); 37] = [
     ("clear", "Clear"),
     ("solid", "Solid (100%)"),
     ("pct5", "5%"),
     ("pct10", "10%"),
+    ("pct12", "12.5%"),
+    ("pct15", "15%"),
     ("pct20", "20%"),
     ("pct25", "25%"),
     ("pct30", "30%"),
+    ("pct35", "35%"),
+    ("pct37", "37.5%"),
     ("pct40", "40%"),
+    ("pct45", "45%"),
     ("pct50", "50%"),
+    ("pct55", "55%"),
     ("pct60", "60%"),
+    ("pct62", "62.5%"),
+    ("pct65", "65%"),
     ("pct70", "70%"),
     ("pct75", "75%"),
     ("pct80", "80%"),
+    ("pct85", "85%"),
+    ("pct87", "87.5%"),
     ("pct90", "90%"),
+    ("pct95", "95%"),
+    ("horzStripe", "Dk Horizontal"),
+    ("vertStripe", "Dk Vertical"),
+    ("reverseDiagStripe", "Dk Dwn Diagonal"),
+    ("diagStripe", "Dk Up Diagonal"),
+    ("horzCross", "Dk Grid"),
+    ("diagCross", "Dk Trellis"),
+    ("thinHorzStripe", "Lt Horizontal"),
+    ("thinVertStripe", "Lt Vertical"),
+    ("thinReverseDiagStripe", "Lt Dwn Diagonal"),
+    ("thinDiagStripe", "Lt Up Diagonal"),
+    ("thinHorzCross", "Lt Grid"),
+    ("thinDiagCross", "Lt Trellis"),
 ];
 
 /// Borders and Shading's fields: text has a box only (no custom edges), and the pattern color needs a pattern.
-fn borders_fields(v: &BordersShadingDialog) -> Vec<(&'static str, FieldInfo)> {
+fn borders_fields(v: &BordersShadingDialog, in_table: bool) -> Vec<(&'static str, FieldInfo)> {
     let para = v.apply_to != ShadingTarget::Text;
-    let on = |f: FieldInfo, yes: bool| if yes { f } else { off(f) };
+    // Applied to the selection's cells or table, only the shading is set: no command sets one edge of a cell block
+    // apart from the others (setCellBorders' none removes them all, diagonals too), nor a table's own borders.
+    let lines = !(in_table && matches!(v.apply_to, ShadingTarget::Cell | ShadingTarget::Table));
+    let on = |f: FieldInfo, yes: bool| if yes && lines { f } else { off(f) };
+    // The pen is shared with the Page Border tab, whose lines don't depend on the table.
+    let pen = |f: FieldInfo| if lines || v.tab == crate::api::services::BordersTab::PageBorder { f } else { off(f) };
     let settings: &[(&str, &str)] = if para {
         &[("none", "None"), ("box", "Box"), ("shadow", "Shadow"), ("custom", "Custom")]
     } else {
@@ -800,10 +883,10 @@ fn borders_fields(v: &BordersShadingDialog) -> Vec<(&'static str, FieldInfo)> {
             choice("Apply to", &[("allPages", "All pages"), ("firstPage", "First page only"), ("notFirstPage", "All except first page")]),
         ),
         ("pageApplyTo", choice("Sections", &[("wholeDocument", "Whole document"), ("thisSection", "This section")])),
-        ("setting", choice("Setting", settings)),
-        ("style", choice("Style", &BORDER_STYLES)),
-        ("color", field("Color", FieldKind::Color)),
-        ("width", number("Width", FieldKind::Length, 0.25, 6.0, 0.25)),
+        ("setting", on(choice("Setting", settings), true)),
+        ("style", pen(choice("Style", &BORDER_STYLES))),
+        ("color", pen(field("Color", FieldKind::Color))),
+        ("width", pen(number("Width", FieldKind::Length, 0.25, 6.0, 0.25))),
         ("top", on(field("Top", FieldKind::Toggle), para)),
         ("bottom", on(field("Bottom", FieldKind::Toggle), para)),
         ("left", on(field("Left", FieldKind::Toggle), para)),
@@ -811,22 +894,29 @@ fn borders_fields(v: &BordersShadingDialog) -> Vec<(&'static str, FieldInfo)> {
         (
             "between",
             on(
-                field(if v.apply_to == ShadingTarget::Cell { "Inside horizontal" } else { "Between" }, FieldKind::Toggle),
+                field(
+                    if matches!(v.apply_to, ShadingTarget::Cell | ShadingTarget::Table) { "Inside horizontal" } else { "Between" },
+                    FieldKind::Toggle,
+                ),
                 v.apply_to != ShadingTarget::Text,
             ),
         ),
-        ("insideVertical", on(field("Inside vertical", FieldKind::Toggle), v.apply_to == ShadingTarget::Cell)),
+        ("insideVertical", on(field("Inside vertical", FieldKind::Toggle), matches!(v.apply_to, ShadingTarget::Cell | ShadingTarget::Table))),
+        ("diagonalDown", on(field("Diagonal down", FieldKind::Toggle), v.apply_to == ShadingTarget::Cell)),
+        ("diagonalUp", on(field("Diagonal up", FieldKind::Toggle), v.apply_to == ShadingTarget::Cell)),
         (
             "applyTo",
-            if v.apply_to == ShadingTarget::Cell {
+            if v.apply_to == ShadingTarget::Cell && !in_table {
                 off(choice("Apply to", &[("cell", "Cell")]))
+            } else if in_table {
+                choice("Apply to", &[("text", "Text"), ("paragraph", "Paragraph"), ("cell", "Cell"), ("table", "Table")])
             } else {
-                choice("Apply to", &[("paragraph", "Paragraph"), ("text", "Text")])
+                choice("Apply to", &[("text", "Text"), ("paragraph", "Paragraph")])
             },
         ),
         ("fill", field("Fill", FieldKind::Color)),
         ("pattern", choice("Style", &PATTERNS)),
-        ("patternColor", on(field("Color", FieldKind::Color), v.pattern != ShadingPattern::Clear)),
+        ("patternColor", if v.pattern != ShadingPattern::Clear { field("Color", FieldKind::Color) } else { off(field("Color", FieldKind::Color)) }),
     ]
 }
 
@@ -845,8 +935,11 @@ pub fn page_border_setting(v: &BordersShadingDialog, shadow: bool) -> BorderSett
     }
 }
 
-/// The setting edges make: none, a box of one line (with a shadow if it had one), or custom.
+/// The setting edges make: none, a box of one line (with a shadow if it had one), or custom (a diagonal too).
 pub fn border_setting(v: &BordersShadingDialog, shadow: bool) -> BorderSetting {
+    if v.diagonal_down.is_some() || v.diagonal_up.is_some() {
+        return BorderSetting::Custom;
+    }
     match (&v.top, &v.bottom, &v.left, &v.right, &v.between, &v.inside_vertical) {
         (None, None, None, None, None, None) => BorderSetting::None,
         (Some(t), Some(b), Some(l), Some(r), None, None) if t == b && b == l && l == r => {
@@ -1013,9 +1106,10 @@ pub fn update(model: &DialogModel, values: DialogValues, cx: &Context) -> Result
                 if v.setting != BorderSetting::Custom {
                     (v.top, v.bottom, v.left, v.right, v.between, v.inside_vertical) =
                         (boxed.clone(), boxed.clone(), boxed.clone(), boxed, None, None);
+                    (v.diagonal_down, v.diagonal_up) = (None, None);
                 }
-            } else if (&v.top, &v.bottom, &v.left, &v.right, &v.between, &v.inside_vertical)
-                != (&was.top, &was.bottom, &was.left, &was.right, &was.between, &was.inside_vertical)
+            } else if (&v.top, &v.bottom, &v.left, &v.right, &v.between, &v.inside_vertical, &v.diagonal_down, &v.diagonal_up)
+                != (&was.top, &was.bottom, &was.left, &was.right, &was.between, &was.inside_vertical, &was.diagonal_down, &was.diagonal_up)
             {
                 v.setting = border_setting(&v, was.setting == BorderSetting::Shadow);
             }
@@ -1209,6 +1303,17 @@ pub fn commands(values: &DialogValues, state: &State, cx: &Context) -> Result<Ve
             check(typography.stylistic_set.is_none_or(|s| s <= 20), "stylistic set is 0 to 20")?;
             if typography != crate::api::command::Typography::default() {
                 out.push(Command::SetTypography(typography));
+            }
+            let effects = crate::api::drawing::TextEffectsChange {
+                fill: set(&v.text_fill, &n.text_fill).map(own),
+                outline: set(&v.text_outline, &n.text_outline).map(own),
+                shadow: set(&v.text_shadow, &n.text_shadow).map(own),
+                glow: set(&v.text_glow, &n.text_glow).map(own),
+                reflection: set(&v.text_reflection, &n.text_reflection).map(own),
+            };
+            if effects != crate::api::drawing::TextEffectsChange::default() {
+                effects.to_model().map_err(|why| Error::invalid(&why))?;
+                out.push(Command::SetTextEffects(effects));
             }
         }
         (DialogValues::Paragraph(v), DialogValues::Paragraph(n)) => {
@@ -1433,6 +1538,8 @@ pub fn commands(values: &DialogValues, state: &State, cx: &Context) -> Result<Ve
                 out.push(Command::SetDefaultTabStop(v.default_stop));
             }
         }
+        (DialogValues::PrintedWatermark(v), DialogValues::PrintedWatermark(n)) => out.extend(super::background_dialogs::watermark_commands(v, n)?),
+        (DialogValues::FillEffects(v), DialogValues::FillEffects(n)) => out.extend(super::background_dialogs::fill_effects_commands(v, n)?),
         // The accessibility check lists issues and applies nothing.
         _ => {}
     }
@@ -1465,6 +1572,8 @@ pub fn label(kind: DialogKind) -> &'static str {
         DialogKind::SetNumberingValue => "Set Numbering Value",
         DialogKind::AdjustListIndents => "Adjust List Indents",
         DialogKind::BulletsNumbering => "Bullets and Numbering",
+        DialogKind::PrintedWatermark => "Watermark",
+        DialogKind::FillEffects => "Fill Effects",
     }
 }
 
@@ -1578,6 +1687,26 @@ mod tests {
         let mut v = font(&m);
         v.size = Tri::Uniform(Points(0.0));
         assert!(commands(&DialogValues::Font(v), &state, &cx).is_err(), "out of range");
+    }
+
+    #[test]
+    fn font_sets_only_the_text_effects_changed() {
+        use crate::api::drawing::{ColourValue, Glow, TextEffects, TextEffectsChange, TextReflection};
+        let mut state = font_state();
+        let reflection = TextReflection { transparency: 50.0, size: 35.0, blur: Points(0.5), distance: Points(0.0) };
+        state.formatting.text_effects = Tri::Uniform(TextEffects { reflection: Some(reflection), ..TextEffects::default() });
+        let cx = Context::default();
+        let m = open(DialogKind::Font, &state, &cx).expect("opens");
+        assert_eq!(m.fields["textGlow"].kind, FieldKind::Effect);
+        let mut v = font(&m);
+        assert!(matches!(v.text_reflection, Tri::Uniform(NoneOr::Value(_))) && v.text_glow == Tri::Uniform(NoneOr::None));
+        let glow = Glow { colour: ColourValue::rgb(crate::api::value::Color(0xFF_0000)), radius: Points(5.0) };
+        (v.text_glow, v.text_reflection) = (Tri::Uniform(NoneOr::Value(Box::new(glow.clone()))), Tri::Uniform(NoneOr::None));
+        let out = commands(&DialogValues::Font(v.clone()), &state, &cx).expect("valid");
+        let want = TextEffectsChange { glow: Some(Some(glow)), reflection: Some(None), ..TextEffectsChange::default() };
+        assert_eq!(out, [Command::SetTextEffects(want)]);
+        v.text_glow = Tri::Uniform(NoneOr::Value(Box::new(Glow { colour: ColourValue::default(), radius: Points(5.0) })));
+        assert!(commands(&DialogValues::Font(v), &state, &cx).is_err(), "a colour needs a base");
     }
 
     #[test]

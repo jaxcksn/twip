@@ -3,13 +3,31 @@
 use super::shapes::bytes;
 use crate::layout::fragment::Item;
 
+/// A page's stroked border paths: their rects.
+fn strokes(body: &str, page: usize) -> Vec<[f64; 4]> {
+    let doc = crate::docx::read(&bytes(body).expect("a package")).expect("reads");
+    let snap = crate::layout::layout(&doc, &super::fonts());
+    crate::layout::traverse::paint_items(&snap.pages()[page])
+        .into_iter()
+        .filter_map(|i| match i {
+            Item::Shape(s) if s.ink => Some(s.rect),
+            _ => None,
+        })
+        .collect()
+}
+
 fn rects(body: &str) -> Vec<([f64; 4], u32)> {
     let doc = crate::docx::read(&bytes(body).expect("a package")).expect("reads");
     let snap = crate::layout::layout(&doc, &super::fonts());
     crate::layout::traverse::paint_items(&snap.pages()[0])
         .into_iter()
         .filter_map(|i| match i {
-            Item::Rect { rect, colour } => Some((rect, colour)),
+            Item::Rect { rect, colour, .. } => Some((rect, colour)),
+            // Paragraph shading, a filled decoration.
+            Item::Shape(s) => match s.fill {
+                crate::drawing::paint::Paint::Solid(c) if s.decoration => Some((s.rect, u32::from(c.r) << 16 | u32::from(c.g) << 8 | u32::from(c.b))),
+                _ => None,
+            },
             _ => None,
         })
         .collect()
@@ -63,8 +81,16 @@ fn paragraph_borders_draw_their_style() {
     assert_eq!(count("double"), 2);
     assert_eq!(count("triple"), 3);
     assert_eq!(count("thinThickSmallGap"), 2);
-    assert!(count("dotted") > 10, "dots");
-    assert!(count("wave") > 10, "a wave");
+    let doc = crate::docx::read(&bytes(&para("dotted")).expect("a package")).expect("reads");
+    let items = crate::layout::traverse::paint_items(&crate::layout::layout(&doc, &super::fonts()).pages()[0]);
+    let dotted = items.iter().filter(|i| matches!(i, Item::Rect { dash: crate::layout::fragment::Dash::Dotted, .. })).count();
+    assert_eq!(dotted, 1, "one dotted rect, its dots drawn on device pixels");
+    assert_eq!(count("wave"), 0, "a wave is a stroked path, not rects");
+    let strokes = |style: &str| strokes(&para(style), 0).len();
+    assert_eq!(strokes("wave"), 1, "a wave is one stroked path");
+    assert_eq!(strokes("doubleWave"), 1);
+    assert_eq!(strokes("dashDotStroked"), 1);
+    assert_eq!(strokes("single"), 0);
 }
 
 fn page_rects(sect: &str, paras: usize) -> Vec<Vec<([f64; 4], u32)>> {
@@ -85,7 +111,7 @@ fn page_rects(sect: &str, paras: usize) -> Vec<Vec<([f64; 4], u32)>> {
             crate::layout::traverse::paint_items(p)
                 .into_iter()
                 .filter_map(|i| match i {
-                    Item::Rect { rect, colour } if colour == 0x7030A0 => Some((rect, colour)),
+                    Item::Rect { rect, colour, .. } if colour == 0x7030A0 => Some((rect, colour)),
                     _ => None,
                 })
                 .collect()
@@ -165,4 +191,172 @@ fn a_zero_size_border_draws_a_hairline_that_takes_no_space() {
             assert_eq!(red(&body(sz)), red(&body(one)), "{sz:?} draws as sz 1");
         }
     }
+}
+
+fn overlapping(a: &[f64; 4], b: &[f64; 4]) -> bool {
+    a[0] < b[2] - 0.01 && b[0] < a[2] - 0.01 && a[1] < b[3] - 0.01 && b[1] < a[3] - 0.01
+}
+
+#[test]
+fn a_wave_bordered_table_split_across_pages_draws_each_edge_once() {
+    let rows: String = (0..90)
+        .map(|i| format!(r#"<w:tr><w:tc><w:tcPr><w:tcW w:w="4000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>row {i}</w:t></w:r></w:p></w:tc></w:tr>"#))
+        .collect();
+    let wave = |sz: u32| format!(r#"w:val="wave" w:sz="{sz}" w:space="0" w:color="1F4E79""#);
+    let body = format!(
+        r#"<w:tbl><w:tblPr><w:tblW w:w="4000" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblBorders><w:top {0}/><w:bottom {1}/><w:insideH {0}/></w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid>{rows}</w:tbl><w:p/>"#,
+        wave(12),
+        wave(24)
+    );
+    let doc = crate::docx::read(&bytes(&body).expect("a package")).expect("reads");
+    let snap = crate::layout::layout(&doc, &super::fonts());
+    assert!(snap.pages().len() > 1, "the table splits");
+    for (n, page) in snap.pages().iter().enumerate() {
+        let wide: Vec<[f64; 4]> = crate::layout::traverse::paint_items(page)
+            .into_iter()
+            .filter_map(|i| match i {
+                Item::Shape(s) if s.ink && s.rect[2] - s.rect[0] > 100.0 => Some(s.rect),
+                _ => None,
+            })
+            .collect();
+        assert!(!wide.is_empty(), "page {n} has wave edges");
+        for (i, a) in wide.iter().enumerate() {
+            for b in &wide[i + 1..] {
+                assert!(!overlapping(a, b), "page {n}: {a:?} and {b:?} are drawn over each other");
+            }
+        }
+    }
+}
+
+#[test]
+fn wave_edges_are_clipped_with_their_cell() {
+    let wave = r#"w:val="wave" w:sz="12" w:space="0" w:color="1F4E79""#;
+    let edges = format!(r#"<w:left {wave}/><w:right {wave}/><w:top {wave}/><w:bottom {wave}/>"#);
+    let single = r#"w:val="single" w:sz="4" w:space="0" w:color="000000""#;
+    let cell = |inner: &str| {
+        format!(
+            r#"<w:tbl><w:tblPr><w:tblW w:w="3000" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblBorders><w:left {single}/><w:right {single}/></w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr>{inner}</w:tc></w:tr></w:tbl><w:p/>"#
+        )
+    };
+    let spilling = format!(r#"<w:p><w:pPr><w:pBdr>{edges}</w:pBdr><w:ind w:left="-1440" w:right="-1440"/></w:pPr><w:r><w:t>text</w:t></w:r></w:p>"#);
+    let nested = format!(
+        r#"<w:tbl><w:tblPr><w:tblW w:w="6000" w:type="dxa"/><w:tblInd w:w="-1440" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblBorders>{edges}</w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="6000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="6000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>in</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#
+    );
+    // The cell's clip opens with the text before the nested table.
+    let nested = format!(r#"<w:p><w:r><w:t>lead</w:t></w:r></w:p>{nested}"#);
+    for (what, inner) in [("a paragraph", spilling), ("a nested table", nested)] {
+        // The cell's sides: the table's black left and right borders.
+        let sides: Vec<[f64; 4]> = rects(&cell(&inner)).into_iter().filter(|(r, c)| *c == 0 && r[3] - r[1] > 5.0).map(|(r, _)| r).collect();
+        let (left, right) = (sides.iter().map(|r| r[0]).fold(f64::MAX, f64::min), sides.iter().map(|r| r[2]).fold(f64::MIN, f64::max));
+        assert!(right - left > 100.0, "{what}: the cell's sides are found: {sides:?}");
+        let found = strokes(&cell(&inner), 0);
+        assert!(!found.is_empty(), "{what} draws wave edges");
+        for r in &found {
+            assert!(r[0] >= left - 0.5 && r[2] <= right + 0.5, "{what}: {r:?} runs outside its cell, {left} to {right}");
+        }
+    }
+}
+
+/// The point where a stroked border's path starts or ends, on the page.
+fn stroke_end(s: &crate::layout::fragment::ShapeItem, last: bool) -> [f64; 2] {
+    use crate::drawing::geom::Seg;
+    let segs = &s.geom.paths[0].segs;
+    let p = match if last { segs.last() } else { segs.first() }.expect("a path") {
+        Seg::Move(p) | Seg::Line(p) => *p,
+        other => panic!("{other:?}"),
+    };
+    [s.rect[0] + p[0], s.rect[1] + p[1]]
+}
+
+#[test]
+fn a_wave_border_runs_on_from_line_to_line() {
+    // A 3 pt wave is 2.5 pt per half period; 14 pt lines end partway through one.
+    let wave = r#"w:val="wave" w:sz="12" w:space="0" w:color="1F4E79""#;
+    let body = format!(
+        r#"<w:p><w:pPr><w:pBdr><w:left {wave}/><w:right {wave}/></w:pBdr></w:pPr><w:r><w:t>one</w:t><w:br/><w:t>two</w:t><w:br/><w:t>three</w:t><w:br/><w:t>four</w:t></w:r></w:p>"#
+    );
+    let doc = crate::docx::read(&bytes(&body).expect("a package")).expect("reads");
+    let snap = crate::layout::layout(&doc, &super::fonts());
+    let mut sides: Vec<std::rc::Rc<crate::layout::fragment::ShapeItem>> = crate::layout::traverse::paint_items(&snap.pages()[0])
+        .into_iter()
+        .filter_map(|i| match i {
+            Item::Shape(s) if s.ink && s.rect[2] - s.rect[0] < 10.0 && s.rect[0] < 200.0 => Some(s),
+            _ => None,
+        })
+        .collect();
+    sides.sort_by(|a, b| a.rect[1].total_cmp(&b.rect[1]));
+    assert!(sides.len() >= 4, "a left side on each line: {}", sides.len());
+    for pair in sides.windows(2) {
+        let (end, start) = (stroke_end(&pair[0], true), stroke_end(&pair[1], false));
+        assert!((end[1] - start[1]).abs() < 0.01, "the lines meet: {end:?} {start:?}");
+        assert!((end[0] - start[0]).abs() < 0.01, "the wave goes on across the break: {end:?} {start:?}");
+    }
+}
+
+#[test]
+fn a_dashed_border_runs_on_from_line_to_line() {
+    let dashed = r#"w:val="dashed" w:sz="12" w:space="0" w:color="1F4E79""#;
+    let body = format!(
+        r#"<w:p><w:pPr><w:pBdr><w:left {dashed}/></w:pBdr></w:pPr><w:r><w:t>one</w:t><w:br/><w:t>two</w:t><w:br/><w:t>three</w:t></w:r></w:p>"#
+    );
+    let doc = crate::docx::read(&bytes(&body).expect("a package")).expect("reads");
+    let snap = crate::layout::layout(&doc, &super::fonts());
+    let mut sides: Vec<([f64; 4], f32)> = crate::layout::traverse::paint_items(&snap.pages()[0])
+        .into_iter()
+        .filter_map(|i| match i {
+            Item::Rect { rect, phase, dash: crate::layout::fragment::Dash::Dashed, .. } if rect[0] < 200.0 => Some((rect, phase)),
+            _ => None,
+        })
+        .collect();
+    sides.sort_by(|a, b| a.0[1].total_cmp(&b.0[1]));
+    assert_eq!(sides.len(), 3, "a left side on each line");
+    for (rect, phase) in &sides {
+        let top = rect[1] - sides[0].0[1];
+        assert!((f64::from(*phase) - top).abs() < 0.01, "the dashes carry on from the line above: {phase} at {top}");
+    }
+}
+
+#[test]
+fn a_float_in_an_exact_row_is_clipped_to_the_cell() {
+    let float = r#"<w:r><w:drawing><wp:anchor xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="1" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV><wp:extent cx="254000" cy="1016000"/><wp:wrapNone/><wp:docPr id="1" name="Box"/><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:wsp xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:spPr><a:prstGeom prst="rect"/><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill></wps:spPr><wps:bodyPr/></wps:wsp></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#;
+    let body = format!(
+        r#"<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="5000"/></w:tblGrid><w:tr><w:trPr><w:trHeight w:val="200" w:hRule="exact"/></w:trPr><w:tc><w:tcPr><w:tcW w:w="5000" w:type="dxa"/></w:tcPr><w:p>{float}</w:p></w:tc></w:tr></w:tbl><w:p/>"#
+    );
+    let doc = crate::docx::read(&bytes(&body).expect("a package")).expect("reads");
+    let snap = crate::layout::layout(&doc, &super::fonts());
+    let mut inked = Vec::new();
+    crate::layout::traverse::paint(&snap.pages()[0], &mut |p| {
+        if p.float.is_some() && matches!(p.item, Item::Shape(_)) {
+            inked.push(p.clip);
+        }
+    });
+    assert!(!inked.is_empty(), "the float draws");
+    for clip in inked {
+        let clip = clip.expect("clipped to the cell");
+        assert!(clip[3] - clip[1] <= 10.0 + 1e-6, "the row is 10 pt: {clip:?}");
+    }
+}
+
+#[test]
+fn reflected_text_keeps_the_clip_of_its_exact_row() {
+    // A 12 pt line in a 10 pt exact row, in a reflected text box: its glyphs cross the row's bottom.
+    let row = r#"<w:tbl><w:tblPr><w:tblW w:w="2000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:trPr><w:trHeight w:val="200" w:hRule="exact"/></w:trPr><w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="exact"/></w:pPr><w:r><w:t>Tall</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#;
+    let float = format!(
+        r#"<w:p><w:r><w:drawing><wp:anchor xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="1" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV><wp:extent cx="1905000" cy="1270000"/><wp:wrapNone/><wp:docPr id="1" name="Box"/><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:wsp xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:spPr><a:prstGeom prst="rect"/><a:effectLst><a:reflection blurRad="0" stA="50000" endA="0" endPos="100000" dir="5400000" sy="-100000" algn="bl" rotWithShape="0"/></a:effectLst></wps:spPr><wps:txbx><w:txbxContent>{row}</w:txbxContent></wps:txbx><wps:bodyPr lIns="0" tIns="0" rIns="0" bIns="0"/></wps:wsp></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r></w:p>"#
+    );
+    let doc = crate::docx::read(&bytes(&float).expect("a package")).expect("reads");
+    let snap = crate::layout::layout(&doc, &super::fonts());
+    let items = crate::layout::traverse::paint_items(&snap.pages()[0]);
+    let text: Vec<_> = items
+        .iter()
+        .filter_map(|i| match i {
+            Item::Shape(s) => s.text.as_ref(),
+            _ => None,
+        })
+        .collect();
+    assert!(!text.is_empty(), "the reflection holds the box's text");
+    // Every glyph the row holds.
+    let clips: Vec<Option<[f64; 4]>> =
+        text.iter().flat_map(|t| t.0.iter()).filter(|(i, _)| matches!(i, Item::Glyphs(g) if !g.glyphs.is_empty())).map(|(_, c)| *c).collect();
+    assert!(!clips.is_empty() && clips.iter().all(|c| c.is_some_and(|c| c[3] - c[1] <= 10.0 + 1e-6)), "{clips:?}");
 }

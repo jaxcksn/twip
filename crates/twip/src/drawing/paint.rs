@@ -2,7 +2,7 @@
 
 use roxmltree::Node;
 
-use super::colour::{Colour, Rgba};
+use super::colour::{Colour, Ns, Rgba};
 use super::theme::{ColourMap, Theme};
 use super::units::{Angle, Emu, Pct};
 use crate::docx::xml::A;
@@ -14,24 +14,44 @@ fn a_child<'a, 'i>(n: Node<'a, 'i>, name: &str) -> Option<Node<'a, 'i>> {
 }
 
 fn pct_attr(n: Node, k: &str) -> Option<Pct> {
-    n.attribute(k).and_then(Pct::parse)
+    pct_in(Ns::A, n, k)
 }
 
 fn emu_attr(n: Node, k: &str) -> Option<Emu> {
-    n.attribute(k).and_then(Emu::parse)
-}
-
-fn angle_attr(n: Node, k: &str) -> Option<Angle> {
-    n.attribute(k).and_then(Angle::parse)
+    emu_in(Ns::A, n, k)
 }
 
 fn bool_attr(n: Node, k: &str) -> Option<bool> {
-    n.attribute(k).map(|v| matches!(v, "1" | "true"))
+    bool_in(Ns::A, n, k)
+}
+
+fn pct_in(ns: Ns, n: Node, k: &str) -> Option<Pct> {
+    ns.attr(n, k).and_then(Pct::parse)
+}
+
+fn emu_in(ns: Ns, n: Node, k: &str) -> Option<Emu> {
+    ns.attr(n, k).and_then(Emu::parse)
+}
+
+fn angle_in(ns: Ns, n: Node, k: &str) -> Option<Angle> {
+    ns.attr(n, k).and_then(Angle::parse)
+}
+
+fn bool_in(ns: Ns, n: Node, k: &str) -> Option<bool> {
+    ns.attr(n, k).map(|v| matches!(v, "1" | "true"))
 }
 
 fn rel_rect(n: Option<Node>) -> [Pct; 4] {
-    n.map_or([Pct(0); 4], |n| ["l", "t", "r", "b"].map(|k| pct_attr(n, k).unwrap_or_default()))
+    rel_rect_in(Ns::A, n)
 }
+
+fn rel_rect_in(ns: Ns, n: Option<Node>) -> [Pct; 4] {
+    n.map_or([Pct(0); 4], |n| ["l", "t", "r", "b"].map(|k| pct_in(ns, n, k).unwrap_or_default()))
+}
+
+/// The most gradient stops a `w14:` fill keeps: Word's dialog holds ten, and a run's stops are resolved for every line
+/// it is drawn on.
+pub const MAX_W14_STOPS: usize = 32;
 
 // Fills
 
@@ -45,20 +65,20 @@ pub enum Fill {
     Group,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum GradientPath {
     Circle,
     Rect,
     Shape,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Hash)]
 pub enum GradientKind {
     Linear { angle: Angle, scaled: bool },
     Path { path: GradientPath, focus: [Pct; 4] },
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum TileFlip {
     #[default]
     None,
@@ -103,10 +123,12 @@ pub enum BlipAdjust {
     },
     BiLevel(Pct),
     Duotone([Colour; 2]),
-    /// Set Transparent Colour (`a:clrChange`): `from` is drawn as `to`.
+    /// Set Transparent Colour (`a:clrChange`): `from` is drawn as `to`. With `use_a` (`useA`, on by default) alpha
+    /// counts in the match and the result; without it the pixel keeps its own alpha.
     ClrChange {
         from: Colour,
         to: Colour,
+        use_a: bool,
     },
 }
 
@@ -149,7 +171,7 @@ impl BlipFill {
                         let c = |name: &str| {
                             e.children().find(|c| c.tag_name().name() == name)?.children().filter(Node::is_element).find_map(Colour::parse)
                         };
-                        BlipAdjust::ClrChange { from: c("clrFrom")?, to: c("clrTo")? }
+                        BlipAdjust::ClrChange { from: c("clrFrom")?, to: c("clrTo")?, use_a: !matches!(e.attribute("useA"), Some("0" | "false")) }
                     }
                     _ => return None,
                 })
@@ -183,40 +205,52 @@ impl Fill {
     }
 
     pub fn parse_with(n: Node, image: ImageLookup) -> Option<Fill> {
-        if n.tag_name().namespace() != Some(A) {
+        Fill::parse_in(n, Ns::A, image)
+    }
+
+    /// [`Fill::parse_with`] in `ns`. Word 2010's text fills are no fill, a solid and a gradient, the gradient's stops
+    /// at most [`MAX_W14_STOPS`].
+    pub fn parse_in(n: Node, ns: Ns, image: ImageLookup) -> Option<Fill> {
+        if n.tag_name().namespace() != Some(ns.uri()) {
             return None;
         }
         Some(match n.tag_name().name() {
             "noFill" => Fill::None,
-            "solidFill" => Fill::Solid(Colour::child_of(n).unwrap_or_else(|| Colour::srgb(0))),
+            "solidFill" => Fill::Solid(Colour::child_of_in(n, ns).unwrap_or_else(|| Colour::srgb(0))),
+            // Word 2010's gradient without its stops is solid black.
+            "gradFill" if ns == Ns::W14 && ns.child(n, "gsLst").is_none() => Fill::Solid(Colour::srgb(0)),
             "gradFill" => {
-                let stops = a_child(n, "gsLst")
+                let most = if ns == Ns::W14 { MAX_W14_STOPS } else { usize::MAX };
+                let stops = ns
+                    .child(n, "gsLst")
                     .into_iter()
                     .flat_map(|l| l.children().filter(Node::is_element))
-                    .filter_map(|gs| Some((pct_attr(gs, "pos").unwrap_or_default(), Colour::child_of(gs)?)))
+                    .filter_map(|gs| Some((pct_in(ns, gs, "pos").unwrap_or_default(), Colour::child_of_in(gs, ns)?)))
+                    .take(most)
                     .collect();
-                let kind = if let Some(p) = a_child(n, "path") {
-                    let path = match p.attribute("path") {
+                let kind = if let Some(p) = ns.child(n, "path") {
+                    let path = match ns.attr(p, "path") {
                         Some("rect") => GradientPath::Rect,
                         Some("shape") => GradientPath::Shape,
                         _ => GradientPath::Circle,
                     };
-                    GradientKind::Path { path, focus: rel_rect(a_child(p, "fillToRect")) }
+                    GradientKind::Path { path, focus: rel_rect_in(ns, ns.child(p, "fillToRect")) }
                 } else {
-                    let lin = a_child(n, "lin");
+                    let lin = ns.child(n, "lin");
                     GradientKind::Linear {
-                        angle: lin.and_then(|l| angle_attr(l, "ang")).unwrap_or_default(),
-                        scaled: lin.and_then(|l| bool_attr(l, "scaled")).unwrap_or(false),
+                        angle: lin.and_then(|l| angle_in(ns, l, "ang")).unwrap_or_default(),
+                        scaled: lin.and_then(|l| bool_in(ns, l, "scaled")).unwrap_or(false),
                     }
                 };
                 Fill::Gradient(Gradient {
                     stops,
                     kind,
-                    tile: rel_rect(a_child(n, "tileRect")),
-                    flip: TileFlip::parse(n.attribute("flip")),
-                    rot_with_shape: bool_attr(n, "rotWithShape").unwrap_or(true),
+                    tile: rel_rect_in(ns, ns.child(n, "tileRect")),
+                    flip: TileFlip::parse(ns.attr(n, "flip")),
+                    rot_with_shape: bool_in(ns, n, "rotWithShape").unwrap_or(true),
                 })
             }
+            _ if ns == Ns::W14 => return None,
             "pattFill" => {
                 let c = |k: &str| a_child(n, k).and_then(Colour::child_of);
                 Fill::Pattern {
@@ -232,7 +266,11 @@ impl Fill {
     }
 
     pub fn child_of(n: Node, image: ImageLookup) -> Option<Fill> {
-        n.children().filter(Node::is_element).find_map(|c| Fill::parse_with(c, image))
+        Fill::child_of_in(n, Ns::A, image)
+    }
+
+    pub fn child_of_in(n: Node, ns: Ns, image: ImageLookup) -> Option<Fill> {
+        n.children().filter(Node::is_element).find_map(|c| Fill::parse_in(c, ns, image))
     }
 }
 
@@ -276,17 +314,26 @@ impl RectAlign {
     fn parse_opt(v: Option<&str>) -> Option<RectAlign> {
         v.and_then(RectAlign::parse)
     }
+
+    /// An alignment in `ns`, `dflt` when absent: Word 2010's `none` (its default) is about the box's origin, its top
+    /// left.
+    fn parse_in(ns: Ns, v: Option<&str>, dflt: RectAlign) -> RectAlign {
+        match (ns, v) {
+            (Ns::W14, None | Some("none")) => RectAlign::Tl,
+            _ => RectAlign::parse_opt(v).unwrap_or(dflt),
+        }
+    }
 }
 
 // Lines
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Hash)]
 pub enum Dash {
     Preset(PresetDash),
     Custom(Vec<(Pct, Pct)>),
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum Compound {
     #[default]
     Single,
@@ -296,14 +343,14 @@ pub enum Compound {
     Triple,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Cap {
     Round,
     Square,
     Flat,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Hash)]
 pub enum Join {
     Round,
     Bevel,
@@ -372,8 +419,14 @@ impl Line {
     }
 
     pub fn parse_with(n: Node, image: ImageLookup) -> Line {
-        let dash = a_child(n, "prstDash").and_then(|d| d.attribute("val")).and_then(PresetDash::parse).map(Dash::Preset).or_else(|| {
-            a_child(n, "custDash").map(|c| {
+        Line::parse_in(n, Ns::A, image)
+    }
+
+    /// [`Line::parse_with`] in `ns`. Word 2010's text outline has no custom dash and no line ends.
+    pub fn parse_in(n: Node, ns: Ns, image: ImageLookup) -> Line {
+        let a = ns == Ns::A;
+        let dash = ns.child(n, "prstDash").and_then(|d| ns.attr(d, "val")).and_then(PresetDash::parse).map(Dash::Preset).or_else(|| {
+            a_child(n, "custDash").filter(|_| a).map(|c| {
                 Dash::Custom(
                     c.children()
                         .filter(|d| d.is_element())
@@ -382,33 +435,33 @@ impl Line {
                 )
             })
         });
-        let join = if a_child(n, "round").is_some() {
+        let join = if ns.child(n, "round").is_some() {
             Some(Join::Round)
-        } else if a_child(n, "bevel").is_some() {
+        } else if ns.child(n, "bevel").is_some() {
             Some(Join::Bevel)
         } else {
-            a_child(n, "miter").map(|m| Join::Miter(pct_attr(m, "lim").unwrap_or(Pct(800_000))))
+            ns.child(n, "miter").map(|m| Join::Miter(pct_in(ns, m, "lim").unwrap_or(Pct(800_000))))
         };
         Line {
-            width: emu_attr(n, "w"),
-            fill: Fill::child_of(n, image),
+            width: emu_in(ns, n, "w"),
+            fill: Fill::child_of_in(n, ns, image),
             dash,
-            compound: n.attribute("cmpd").map(|v| match v {
+            compound: ns.attr(n, "cmpd").map(|v| match v {
                 "dbl" => Compound::Double,
                 "thickThin" => Compound::ThickThin,
                 "thinThick" => Compound::ThinThick,
                 "tri" => Compound::Triple,
                 _ => Compound::Single,
             }),
-            cap: n.attribute("cap").map(|v| match v {
+            cap: ns.attr(n, "cap").map(|v| match v {
                 "rnd" => Cap::Round,
                 "sq" => Cap::Square,
                 _ => Cap::Flat,
             }),
             join,
-            inset: n.attribute("algn").map(|v| v == "in"),
-            head: LineEnd::parse(a_child(n, "headEnd")),
-            tail: LineEnd::parse(a_child(n, "tailEnd")),
+            inset: ns.attr(n, "algn").map(|v| v == "in"),
+            head: LineEnd::parse(a_child(n, "headEnd").filter(|_| a)),
+            tail: LineEnd::parse(a_child(n, "tailEnd").filter(|_| a)),
         }
     }
 
@@ -465,6 +518,26 @@ pub struct Glow {
     pub colour: Colour,
 }
 
+/// A reflection (`a:reflection`): the shape's copy, scaled and skewed about `align`, moved `dist` along `dir`, blurred and
+/// faded from `start_alpha` at `start_pos` to `end_alpha` at `end_pos` along `fade_dir`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Reflection {
+    pub blur: Emu,
+    pub dist: Emu,
+    pub dir: Angle,
+    pub fade_dir: Angle,
+    pub sx: Pct,
+    pub sy: Pct,
+    pub kx: Angle,
+    pub ky: Angle,
+    pub align: RectAlign,
+    pub start_alpha: Pct,
+    pub start_pos: Pct,
+    pub end_alpha: Pct,
+    pub end_pos: Pct,
+    pub rot_with_shape: bool,
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct EffectList {
     pub outer: Option<OuterShadow>,
@@ -473,39 +546,88 @@ pub struct EffectList {
     pub glow: Option<Glow>,
     pub soft_edge: Option<Emu>,
     pub blur: Option<Emu>,
+    pub reflection: Option<Reflection>,
     pub kept: bool,
+}
+
+impl OuterShadow {
+    /// An `a:outerShdw` or a `w14:shadow`, with its schema's defaults (Word 2010's: no scale, no alignment).
+    pub fn parse(c: Node, ns: Ns) -> OuterShadow {
+        let emu = |k: &str| emu_in(ns, c, k).unwrap_or_default();
+        let ang = |k: &str| angle_in(ns, c, k).unwrap_or_default();
+        let w14 = ns == Ns::W14;
+        let scale = if w14 { Pct(0) } else { Pct::ONE };
+        OuterShadow {
+            blur: emu("blurRad"),
+            dist: emu("dist"),
+            dir: ang("dir"),
+            sx: pct_in(ns, c, "sx").unwrap_or(scale),
+            sy: pct_in(ns, c, "sy").unwrap_or(scale),
+            kx: ang("kx"),
+            ky: ang("ky"),
+            align: RectAlign::parse_in(ns, ns.attr(c, "algn"), RectAlign::B),
+            colour: Colour::child_of_in(c, ns).unwrap_or_else(|| Colour::srgb(0)),
+            rot_with_shape: bool_in(ns, c, "rotWithShape").unwrap_or(true),
+        }
+    }
+}
+
+impl Glow {
+    /// An `a:glow` or a `w14:glow`.
+    pub fn parse(c: Node, ns: Ns) -> Glow {
+        Glow { radius: emu_in(ns, c, "rad").unwrap_or_default(), colour: Colour::child_of_in(c, ns).unwrap_or_else(|| Colour::srgb(0)) }
+    }
+}
+
+impl Reflection {
+    /// An `a:reflection` or a `w14:reflection`, with its schema's defaults (Word 2010's are all zero, aligned to
+    /// nothing).
+    pub fn parse(c: Node, ns: Ns) -> Reflection {
+        let emu = |k: &str| emu_in(ns, c, k).unwrap_or_default();
+        let ang = |k: &str| angle_in(ns, c, k).unwrap_or_default();
+        let w14 = ns == Ns::W14;
+        let pct = |k: &str, d: i32| pct_in(ns, c, k).unwrap_or(Pct(if w14 { 0 } else { d }));
+        Reflection {
+            blur: emu("blurRad"),
+            dist: emu("dist"),
+            dir: ang("dir"),
+            fade_dir: angle_in(ns, c, "fadeDir").unwrap_or(Angle(if w14 { 0 } else { 5_400_000 })),
+            sx: pct("sx", 100_000),
+            sy: pct("sy", 100_000),
+            kx: ang("kx"),
+            ky: ang("ky"),
+            align: RectAlign::parse_in(ns, ns.attr(c, "algn"), RectAlign::B),
+            start_alpha: pct("stA", 100_000),
+            start_pos: pct("stPos", 0),
+            end_alpha: pct("endA", 0),
+            end_pos: pct("endPos", 100_000),
+            rot_with_shape: bool_in(ns, c, "rotWithShape").unwrap_or(true),
+        }
+    }
 }
 
 impl EffectList {
     pub fn parse(n: Node) -> EffectList {
         let mut e = EffectList::default();
         for c in n.children().filter(Node::is_element) {
+            if c.tag_name().namespace() != Some(Ns::A.uri()) {
+                e.kept = true;
+                continue;
+            }
             let colour = || Colour::child_of(c).unwrap_or_else(|| Colour::srgb(0));
             let emu = |k: &str| emu_attr(c, k).unwrap_or_default();
-            let ang = |k: &str| angle_attr(c, k).unwrap_or_default();
+            let ang = |k: &str| angle_in(Ns::A, c, k).unwrap_or_default();
             match c.tag_name().name() {
-                "outerShdw" => {
-                    e.outer = Some(OuterShadow {
-                        blur: emu("blurRad"),
-                        dist: emu("dist"),
-                        dir: ang("dir"),
-                        sx: pct_attr(c, "sx").unwrap_or(Pct::ONE),
-                        sy: pct_attr(c, "sy").unwrap_or(Pct::ONE),
-                        kx: ang("kx"),
-                        ky: ang("ky"),
-                        align: RectAlign::parse_opt(c.attribute("algn")).unwrap_or(RectAlign::B),
-                        colour: colour(),
-                        rot_with_shape: bool_attr(c, "rotWithShape").unwrap_or(true),
-                    })
-                }
+                "outerShdw" => e.outer = Some(OuterShadow::parse(c, Ns::A)),
                 "innerShdw" => e.inner = Some(InnerShadow { blur: emu("blurRad"), dist: emu("dist"), dir: ang("dir"), colour: colour() }),
                 "prstShdw" => {
                     let preset = c.attribute("prst").and_then(|p| p.strip_prefix("shdw")?.parse().ok()).filter(|n| (1..=20).contains(n)).unwrap_or(1);
                     e.preset = Some(PresetShadow { preset, dist: emu("dist"), dir: ang("dir"), colour: colour() })
                 }
-                "glow" => e.glow = Some(Glow { radius: emu("rad"), colour: colour() }),
+                "glow" => e.glow = Some(Glow::parse(c, Ns::A)),
                 "softEdge" => e.soft_edge = Some(emu("rad")),
                 "blur" => e.blur = Some(emu("rad")),
+                "reflection" => e.reflection = Some(Reflection::parse(c, Ns::A)),
                 _ => e.kept = true,
             }
         }
@@ -519,6 +641,7 @@ impl EffectList {
             && self.glow.is_none()
             && self.soft_edge.is_none()
             && self.blur.is_none()
+            && self.reflection.is_none()
     }
 }
 
@@ -557,18 +680,50 @@ impl Palette<'_> {
 pub enum ResolvedBlipAdjust {
     Alpha(f64),
     Grayscale,
-    Lum { bright: f64, contrast: f64 },
+    Lum {
+        bright: f64,
+        contrast: f64,
+    },
     BiLevel(f64),
     Duotone([Rgba; 2]),
+    /// Pixels within one level of `from` in every channel (alpha too, with `use_a`) are drawn as `to`, keeping their
+    /// own alpha without `use_a`.
+    ClrChange {
+        from: Rgba,
+        to: Rgba,
+        use_a: bool,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Paint {
     None,
     Solid(Rgba),
-    Gradient { stops: Vec<(f64, Rgba)>, kind: GradientKind, tile: [Pct; 4], flip: TileFlip, rot_with_shape: bool },
-    Pattern { preset: PatternPreset, fg: Rgba, bg: Rgba },
-    Picture { image: Option<usize>, src: [Pct; 4], mode: BlipMode, adjust: Vec<ResolvedBlipAdjust>, rot_with_shape: bool },
+    Gradient {
+        stops: Vec<(f64, Rgba)>,
+        kind: GradientKind,
+        tile: [Pct; 4],
+        flip: TileFlip,
+        rot_with_shape: bool,
+    },
+    Pattern {
+        preset: PatternPreset,
+        fg: Rgba,
+        bg: Rgba,
+    },
+    /// A `w:shd` stripe or cross: Word's tile, a 300 dpi pixel a bit, from a pixel above and left of the shape.
+    Hatch {
+        stripe: crate::docx::props::Stripe,
+        fg: Rgba,
+        bg: Rgba,
+    },
+    Picture {
+        image: Option<usize>,
+        src: [Pct; 4],
+        mode: BlipMode,
+        adjust: Vec<ResolvedBlipAdjust>,
+        rot_with_shape: bool,
+    },
 }
 
 impl Paint {
@@ -594,16 +749,15 @@ pub fn paint(f: &Fill, p: Palette, ph: Option<Rgba>, group: &Paint) -> Paint {
             adjust: b
                 .adjust
                 .iter()
-                .filter_map(|a| {
-                    Some(match a {
-                        BlipAdjust::AlphaModFix(v) => ResolvedBlipAdjust::Alpha(v.fraction().clamp(0.0, 1.0)),
-                        BlipAdjust::Grayscale => ResolvedBlipAdjust::Grayscale,
-                        BlipAdjust::Lum { bright, contrast } => ResolvedBlipAdjust::Lum { bright: bright.fraction(), contrast: contrast.fraction() },
-                        BlipAdjust::BiLevel(t) => ResolvedBlipAdjust::BiLevel(t.fraction()),
-                        BlipAdjust::Duotone([a, b]) => ResolvedBlipAdjust::Duotone([p.colour(a, ph), p.colour(b, ph)]),
-                        // Drawn in phase 3.
-                        BlipAdjust::ClrChange { .. } => return None,
-                    })
+                .map(|a| match a {
+                    BlipAdjust::AlphaModFix(v) => ResolvedBlipAdjust::Alpha(v.fraction().clamp(0.0, 1.0)),
+                    BlipAdjust::Grayscale => ResolvedBlipAdjust::Grayscale,
+                    BlipAdjust::Lum { bright, contrast } => ResolvedBlipAdjust::Lum { bright: bright.fraction(), contrast: contrast.fraction() },
+                    BlipAdjust::BiLevel(t) => ResolvedBlipAdjust::BiLevel(t.fraction()),
+                    BlipAdjust::Duotone([a, b]) => ResolvedBlipAdjust::Duotone([p.colour(a, ph), p.colour(b, ph)]),
+                    BlipAdjust::ClrChange { from, to, use_a } => {
+                        ResolvedBlipAdjust::ClrChange { from: p.colour(from, ph), to: p.colour(to, ph), use_a: *use_a }
+                    }
                 })
                 .collect(),
             rot_with_shape: b.rot_with_shape,
@@ -693,6 +847,22 @@ pub struct ResolvedEffects {
     pub glow: Option<(f64, Rgba)>,
     pub soft_edge: Option<f64>,
     pub blur: Option<f64>,
+    pub reflection: Option<ResolvedReflection>,
+}
+
+/// A reflection in points, degrees and fractions.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ResolvedReflection {
+    pub blur: f64,
+    pub dist: f64,
+    pub dir: f64,
+    pub fade_dir: f64,
+    pub scale: [f64; 2],
+    pub skew: [f64; 2],
+    pub align: RectAlign,
+    pub start: (f64, f64),
+    pub end: (f64, f64),
+    pub rot_with_shape: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -709,8 +879,26 @@ pub struct ResolvedShadow {
 
 impl ResolvedEffects {
     pub fn is_empty(&self) -> bool {
-        self.outer.is_none() && self.inner.is_none() && self.glow.is_none() && self.soft_edge.is_none() && self.blur.is_none()
+        self.outer.is_none()
+            && self.inner.is_none()
+            && self.glow.is_none()
+            && self.soft_edge.is_none()
+            && self.blur.is_none()
+            && self.reflection.is_none()
     }
+}
+
+/// The largest blur, glow or soft-edge radius, and shadow or reflection distance, drawn, in points. Word's dialogs stop
+/// at 200 pt for a shadow's distance and 150 pt for a glow's radius; a file asking for more is drawn at this, so the
+/// layers an effect draws in stay bounded.
+const MAX_EFFECT_PT: f64 = 200.0;
+
+fn radius(e: Emu) -> f64 {
+    e.to_pt().clamp(0.0, MAX_EFFECT_PT)
+}
+
+fn offset(e: Emu) -> f64 {
+    e.to_pt().clamp(-MAX_EFFECT_PT, MAX_EFFECT_PT)
 }
 
 pub fn resolve_effects(own: Option<&EffectList>, style: Option<&StyleRefs>, p: Palette) -> ResolvedEffects {
@@ -724,8 +912,8 @@ pub fn resolve_effects(own: Option<&EffectList>, style: Option<&StyleRefs>, p: P
     };
     let Some(e) = list else { return ResolvedEffects::default() };
     let outer = e.outer.as_ref().map(|s| ResolvedShadow {
-        blur: s.blur.to_pt(),
-        dist: s.dist.to_pt(),
+        blur: radius(s.blur),
+        dist: offset(s.dist),
         dir: s.dir.degrees(),
         scale: [s.sx.fraction(), s.sy.fraction()],
         skew: [s.kx.degrees(), s.ky.degrees()],
@@ -737,8 +925,8 @@ pub fn resolve_effects(own: Option<&EffectList>, style: Option<&StyleRefs>, p: P
     ResolvedEffects {
         outer,
         inner: e.inner.as_ref().map(|s| ResolvedShadow {
-            blur: s.blur.to_pt(),
-            dist: s.dist.to_pt(),
+            blur: radius(s.blur),
+            dist: offset(s.dist),
             dir: s.dir.degrees(),
             scale: [1.0, 1.0],
             skew: [0.0, 0.0],
@@ -746,16 +934,28 @@ pub fn resolve_effects(own: Option<&EffectList>, style: Option<&StyleRefs>, p: P
             colour: p.colour(&s.colour, ph),
             rot_with_shape: true,
         }),
-        glow: e.glow.as_ref().map(|g| (g.radius.to_pt(), p.colour(&g.colour, ph))),
-        soft_edge: e.soft_edge.map(Emu::to_pt),
-        blur: e.blur.map(Emu::to_pt),
+        glow: e.glow.as_ref().map(|g| (radius(g.radius), p.colour(&g.colour, ph))),
+        soft_edge: e.soft_edge.map(radius),
+        blur: e.blur.map(radius),
+        reflection: e.reflection.as_ref().map(|r| ResolvedReflection {
+            blur: radius(r.blur),
+            dist: offset(r.dist),
+            dir: r.dir.degrees(),
+            fade_dir: r.fade_dir.degrees(),
+            scale: [r.sx.fraction(), r.sy.fraction()],
+            skew: [r.kx.degrees(), r.ky.degrees()],
+            align: r.align,
+            start: (r.start_pos.fraction().clamp(0.0, 1.0), r.start_alpha.fraction().clamp(0.0, 1.0)),
+            end: (r.end_pos.fraction().clamp(0.0, 1.0), r.end_alpha.fraction().clamp(0.0, 1.0)),
+            rot_with_shape: r.rot_with_shape,
+        }),
     }
 }
 
 fn preset_shadow(s: &PresetShadow, colour: Rgba) -> ResolvedShadow {
     ResolvedShadow {
         blur: 0.0,
-        dist: s.dist.to_pt(),
+        dist: offset(s.dist),
         dir: s.dir.degrees(),
         scale: [1.0, 1.0],
         skew: [0.0, 0.0],
@@ -814,11 +1014,70 @@ mod tests {
     #[test]
     fn effect_lists_note_what_is_not_drawn() {
         let x = node_xml(
-            r#"<a:effectLst><a:outerShdw blurRad="50800" dist="38100" dir="2700000"><a:srgbClr val="000000"/></a:outerShdw><a:reflection/></a:effectLst>"#,
+            r#"<a:effectLst><a:outerShdw blurRad="50800" dist="38100" dir="2700000"><a:srgbClr val="000000"/></a:outerShdw><a:fillOverlay blend="over"/></a:effectLst>"#,
         );
         let d = roxmltree::Document::parse(&x).unwrap();
         let e = EffectList::parse(d.root_element().first_element_child().unwrap());
         assert!(e.kept);
         assert_eq!(e.outer.as_ref().map(|s| (s.blur, s.dist)), Some((Emu(50800), Emu(38100))));
+    }
+
+    #[test]
+    fn a_reflection_reads_with_the_schema_defaults_and_resolves() {
+        let x = node_xml(
+            r#"<a:effectLst><a:reflection blurRad="6350" stA="50000" endA="300" endPos="35000" dir="5400000" sy="-100000" algn="bl" rotWithShape="0"/><a:reflection/></a:effectLst>"#,
+        );
+        let d = roxmltree::Document::parse(&x).unwrap();
+        let list = d.root_element().first_element_child().unwrap();
+        let e = EffectList::parse(list);
+        assert!(!e.kept && !e.is_empty(), "a reflection is drawn, not kept");
+        let r = e.reflection.as_ref().expect("the last reflection");
+        assert_eq!(
+            (r.start_alpha, r.end_alpha, r.end_pos, r.fade_dir, r.sy, r.align, r.rot_with_shape),
+            (Pct(100_000), Pct(0), Pct(100_000), Angle(5_400_000), Pct(100_000), RectAlign::B, true)
+        );
+        let one = EffectList::parse(roxmltree::Document::parse(&node_xml(r#"<a:effectLst><a:reflection blurRad="6350" stA="50000" endA="300" endPos="35000" dir="5400000" sy="-100000" algn="bl" rotWithShape="0"/></a:effectLst>"#)).unwrap().root_element().first_element_child().unwrap());
+        let (t, m) = (Theme::default(), ColourMap::default());
+        let resolved = resolve_effects(Some(&one), None, Palette { theme: &t, map: &m }).reflection.expect("resolved");
+        assert_eq!((resolved.blur, resolved.scale, resolved.start, resolved.rot_with_shape), (0.5, [1.0, -1.0], (0.0, 0.5), false));
+        assert_eq!(resolved.end, (0.35, 0.003));
+    }
+
+    #[test]
+    fn word_2010_effects_take_their_own_schema_defaults() {
+        let w14 = crate::drawing::colour::Ns::W14.uri();
+        let x = format!(
+            r#"<r xmlns:w14="{w14}"><w14:shadow w14:blurRad="12700"><w14:srgbClr w14:val="000000"/></w14:shadow><w14:reflection w14:stPos="0" w14:sy="-100000"/><w14:gradFill/><w14:gradFill><w14:gsLst><w14:gs w14:pos="0"><w14:srgbClr w14:val="FF0000"/></w14:gs></w14:gsLst></w14:gradFill></r>"#
+        );
+        let d = roxmltree::Document::parse(&x).unwrap();
+        let [shadow, reflection, bare, listed] = d.root_element().children().filter(Node::is_element).collect::<Vec<_>>()[..] else { panic!() };
+        let s = OuterShadow::parse(shadow, Ns::W14);
+        assert_eq!((s.sx, s.sy, s.align, s.blur), (Pct(0), Pct(0), RectAlign::Tl, Emu(12700)));
+        let r = Reflection::parse(reflection, Ns::W14);
+        assert_eq!((r.start_alpha, r.end_pos, r.fade_dir, r.sx, r.sy, r.align), (Pct(0), Pct(0), Angle(0), Pct(0), Pct(-100_000), RectAlign::Tl));
+        assert_eq!(Fill::parse_in(bare, Ns::W14, &mut |_| None), Some(Fill::Solid(Colour::srgb(0))), "no stops: solid black");
+        assert!(matches!(Fill::parse_in(listed, Ns::W14, &mut |_| None), Some(Fill::Gradient(g)) if g.stops.len() == 1));
+        // DrawingML's defaults stay its own, and a foreign effect is kept, not drawn.
+        let a = node_xml(r#"<a:effectLst><a:outerShdw/><x:reflection xmlns:x="urn:x"/></a:effectLst>"#);
+        let d = roxmltree::Document::parse(&a).unwrap();
+        let e = EffectList::parse(d.root_element().first_element_child().unwrap());
+        assert_eq!(e.outer.as_ref().map(|s| (s.sx, s.align)), Some((Pct::ONE, RectAlign::B)));
+        assert!(e.kept && e.reflection.is_none());
+    }
+
+    #[test]
+    fn absurd_effect_sizes_resolve_to_the_clamp() {
+        let x = node_xml(
+            r#"<a:effectLst><a:outerShdw blurRad="9000000000000" dist="-9000000000000"><a:srgbClr val="000000"/></a:outerShdw><a:innerShdw blurRad="9000000000000" dist="9000000000000"><a:srgbClr val="000000"/></a:innerShdw><a:glow rad="9000000000000"><a:srgbClr val="00FF00"/></a:glow><a:softEdge rad="9000000000000"/><a:blur rad="9000000000000"/><a:reflection blurRad="9000000000000" dist="9000000000000"/></a:effectLst>"#,
+        );
+        let d = roxmltree::Document::parse(&x).unwrap();
+        let e = EffectList::parse(d.root_element().first_element_child().unwrap());
+        let (t, m) = (Theme::default(), ColourMap::default());
+        let r = resolve_effects(Some(&e), None, Palette { theme: &t, map: &m });
+        let (outer, inner, refl) = (r.outer.unwrap(), r.inner.unwrap(), r.reflection.unwrap());
+        assert_eq!((outer.blur, outer.dist), (MAX_EFFECT_PT, -MAX_EFFECT_PT));
+        assert_eq!((inner.blur, inner.dist), (MAX_EFFECT_PT, MAX_EFFECT_PT));
+        assert_eq!((refl.blur, refl.dist), (MAX_EFFECT_PT, MAX_EFFECT_PT));
+        assert_eq!((r.glow.map(|g| g.0), r.soft_edge, r.blur), (Some(MAX_EFFECT_PT), Some(MAX_EFFECT_PT), Some(MAX_EFFECT_PT)));
     }
 }

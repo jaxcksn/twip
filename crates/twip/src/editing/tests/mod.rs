@@ -11,6 +11,7 @@ mod field_shading;
 mod fuzz;
 mod json;
 mod merge;
+mod page_background;
 mod perf;
 mod picture_controls;
 mod provisional;
@@ -22,6 +23,7 @@ mod snap;
 mod steps;
 mod styles;
 mod sub_templates;
+mod table_dialogs;
 mod table_handles;
 mod transactions;
 

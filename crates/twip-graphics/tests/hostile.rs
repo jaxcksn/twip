@@ -76,6 +76,22 @@ fn dash_patterns_that_never_end_or_never_stop() {
     }
 }
 
+/// Device-measured dashes on a line far longer than the target, straight (only the dashes in view are walked) and
+/// turned (too many to walk: drawn solid), and on a line under a scale that collapses it.
+#[test]
+fn device_dashes_along_lines_without_end() {
+    for transform in [Affine::IDENTITY, Affine::rotate(0.3), Affine::scale_non_uniform(1e-30, 1.0)] {
+        let start = Instant::now();
+        let mut rec = Recorder::new();
+        rec.push_transform(transform);
+        rec.fill_dashed_rect(Rect::new(-1.0e12, 10.0, 1.0e12, 11.0), &[1, 1], Color::BLACK);
+        rec.fill_dashed_rect(Rect::new(10.0, -1.0e12, 11.0, 1.0e12), &[1, 1], Color::BLACK);
+        rec.pop();
+        draw(&Resources::default(), &rec.finish(), (64, 64));
+        assert!(start.elapsed() < Duration::from_secs(5), "{transform:?}");
+    }
+}
+
 #[test]
 fn nesting_too_deep_to_walk() {
     let mut rec = Recorder::new();
@@ -99,7 +115,7 @@ fn nesting_too_deep_to_walk() {
 mod pdf {
     use super::*;
     use twip_graphics::paint::{BlendMode, Paint};
-    use twip_graphics::pdf::{ArtifactKind, Element, Heading, Info, Kind, Mark, Page, write};
+    use twip_graphics::pdf::{ArtifactKind, Element, Heading, Info, Kind, Mark, Node, Page, write};
 
     /// `pages` written well inside the time a quadratic loop over them would take.
     fn writes(resources: &Resources, pages: &[Page], structure: &[Element], outline: &[Heading]) {
@@ -117,7 +133,13 @@ mod pdf {
     #[test]
     fn fifty_thousand_headings() {
         let (n, square) = (50_000, square());
-        let page = Page { width: 10.0, height: 10.0, parts: (0..n).map(|c| (Mark::Content(c), square.clone())).collect() };
+        let page = Page {
+            width: 10.0,
+            height: 10.0,
+            parts: (0..n).map(|c| (Mark::Content(c), square.clone())).collect(),
+            links: Vec::new(),
+            destinations: Vec::new(),
+        };
         let headings: Vec<Heading> = (0..n).map(|c| Heading { level: 1 + (c % 2) as u8, content: c, title: "h".into() }).collect();
         writes(&Resources::default(), &[page], &[], &headings);
     }
@@ -131,18 +153,42 @@ mod pdf {
         let run = GlyphRun { font, size: 10.0, baseline: 10.0, glyphs: &glyphs, synthesis: Synthesis::default() };
         let mut rec = Recorder::new();
         rec.glyphs_text(&resources.fonts, &run, "a", &vec![0; glyphs.len()], Color::BLACK);
-        writes(&resources, &[Page { width: 600.0, height: 20.0, parts: vec![(Mark::Artifact(ArtifactKind::Other), rec.finish())] }], &[], &[]);
+        writes(
+            &resources,
+            &[Page {
+                width: 600.0,
+                height: 20.0,
+                parts: vec![(Mark::Artifact(ArtifactKind::Other), rec.finish())],
+                links: Vec::new(),
+                destinations: Vec::new(),
+            }],
+            &[],
+            &[],
+        );
+    }
+
+    #[test]
+    fn a_hundred_thousand_link_annotations_and_destinations() {
+        use twip_graphics::pdf::{Destination, Link, LinkTarget};
+        let n = 100_000;
+        let links = (0..n)
+            .map(|i| Link { link: i % 3, rect: Rect::new(0.0, 0.0, 1.0, 1.0), target: LinkTarget::Named("a".into()), description: String::new() })
+            .collect();
+        let destinations = (0..n).map(|i| Destination { name: format!("d{}", i % 1000), at: twip_graphics::kurbo::Point::ZERO }).collect();
+        let page = Page { width: 10.0, height: 10.0, parts: vec![(Mark::Content(0), square())], links, destinations };
+        let link = |l| Node::Element(Element::new(Kind::Link, vec![Node::Annotation(l)]));
+        writes(&Resources::default(), &[page], &[Element::new(Kind::Paragraph, vec![Node::Content(0), link(0), link(1), link(2)])], &[]);
     }
 
     #[test]
     fn a_structure_tree_too_deep_to_walk() {
-        let mut e = Element { kind: Kind::Paragraph, content: Some(0), kids: Vec::new() };
+        let mut e = Element::new(Kind::Paragraph, vec![Node::Content(0)]);
         for _ in 0..100_000 {
-            e = Element { kind: Kind::List, content: None, kids: vec![e] };
+            e = Element::new(Kind::List(twip_graphics::pdf::Numbering::None), vec![Node::Element(e)]);
         }
         writes(
             &Resources::default(),
-            &[Page { width: 10.0, height: 10.0, parts: vec![(Mark::Content(0), square())] }],
+            &[Page { width: 10.0, height: 10.0, parts: vec![(Mark::Content(0), square())], links: Vec::new(), destinations: Vec::new() }],
             std::slice::from_ref(&e),
             &[],
         );
@@ -161,7 +207,13 @@ mod pdf {
         }
         writes(
             &Resources::default(),
-            &[Page { width: 10.0, height: 10.0, parts: vec![(Mark::Artifact(ArtifactKind::Other), rec.finish())] }],
+            &[Page {
+                width: 10.0,
+                height: 10.0,
+                parts: vec![(Mark::Artifact(ArtifactKind::Other), rec.finish())],
+                links: Vec::new(),
+                destinations: Vec::new(),
+            }],
             &[],
             &[],
         );

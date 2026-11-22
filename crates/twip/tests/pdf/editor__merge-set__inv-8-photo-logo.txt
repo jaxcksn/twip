@@ -1,0 +1,103 @@
+pages 1
+page 1 612 792
+  text 8, 3.4 Photo and logo
+  text Recipient photo: 
+  text Store logo: 
+  image /X2 64x48 b1ac61f3702cb236
+  image /X3 64x48 b1ac61f3702cb236
+  op 1 0 0 -1 0 792 cm
+  op /P << /MCID 0 >> BDC
+  op q
+  op /Span << /ActualText <382c20332e342050686f746f20616e64206c6f676f> >> BDC
+  op 0 0 0 rg
+  op 0 0 0 RG
+  op 0.62 w
+  op 0 j
+  op BT
+  op 2 Tr
+  op 1 0 0 -1 72 96.8 Tm
+  op /F1 16 Tf
+  op [<0002> -1 <0002> -1 <0001> -1 <0002> -1 <0002> -1 <0002> -1 <0001> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0001> -1 <0002> -1 <0002> -1 <0002> -1 <0001> -1 <0002> -1 <0002> -1 <0002> -1 <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 1 >> BDC
+  op q
+  op /Span << /ActualText <526563697069656e742070686f746f3a20> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 137.27 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0001> <0002> <0002> <0002> <0002> 0 <0002> <0002> <0001>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 2 >> BDC
+  op q
+  op 1 0 0 1 168.25 101.27 cm
+  op q
+  op 0 36 m
+  op 108 36 l
+  op 108 0 l
+  op 0 0 l
+  op h
+  op W
+  op n
+  op q
+  op 0 0 108 36 re
+  op W
+  op n
+  op q
+  op 108 0 0 -36 0 36 cm
+  op /X2 Do
+  op Q
+  op Q
+  op Q
+  op Q
+  op EMC
+  op /P << /MCID 3 >> BDC
+  op q
+  op /Span << /ActualText <53746f7265206c6f676f3a20> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 184.34 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002> <0002> <0002> <0001> <0002> <0002> <0002> <0002> <0002> <0001>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 4 >> BDC
+  op q
+  op 1 0 0 1 138 148.34 cm
+  op q
+  op 0 36 m
+  op 108 36 l
+  op 108 0 l
+  op 0 0 l
+  op h
+  op W
+  op n
+  op q
+  op 0 0 108 36 re
+  op W
+  op n
+  op q
+  op 108 0 0 -36 0 36 cm
+  op /X3 Do
+  op Q
+  op Q
+  op Q
+  op Q
+  op EMC
+structure
+  Document
+    H1
+    P
+      Figure
+    P
+      Figure
+outline
+  "8, 3.4 Photo and logo"

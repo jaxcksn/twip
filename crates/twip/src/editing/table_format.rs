@@ -11,7 +11,8 @@ use super::table::Grid;
 #[derive(Clone, Debug, PartialEq)]
 pub enum TableFormat {
     CellAlign(String),
-    CellShading(Option<u32>),
+    CellShading(Shading),
+    TableShading(Shading),
     CellBorders(Edges, Border),
     CellMargins([f64; 4]),
     HeaderRow(bool),
@@ -27,6 +28,43 @@ pub enum TableFormat {
     RowProps { hidden: Option<bool>, exceptions: Option<RowEx> },
     CellSpacing(f64),
     Alt(crate::api::command::TableAltText),
+}
+
+/// A `w:shd` to set: its pattern (`None`: the one written there, else the one its style gives, else clear), pattern
+/// colour and fill (`None`: auto).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Shading {
+    pub pattern: Option<&'static str>,
+    pub color: Option<u32>,
+    pub fill: Option<u32>,
+}
+
+impl Shading {
+    /// A fill (or none) alone.
+    pub fn fill(fill: Option<u32>) -> Shading {
+        Shading { pattern: Some("clear"), color: None, fill }
+    }
+
+    /// What it reads as over `was`, the `w:shd` there, and `inherited`, the shading its style gives.
+    pub fn shd(&self, was: Option<&str>, inherited: Option<&crate::docx::props::Shd>) -> crate::docx::props::Shd {
+        let pattern = self
+            .pattern
+            .map(str::to_string)
+            .or_else(|| was.and_then(|x| crate::docx::write::props::attr_of(x, "val")))
+            .or_else(|| inherited.map(|s| s.pattern.clone()).filter(|p| p != "nil"));
+        crate::docx::props::Shd { pattern: pattern.unwrap_or_else(|| "clear".into()), color: self.color, fill: self.fill }
+    }
+
+    /// Its XML over `was` and `inherited`.
+    pub fn xml(&self, w: &str, was: Option<&str>, inherited: Option<&crate::docx::props::Shd>) -> String {
+        shd_xml(w, &self.shd(was, inherited))
+    }
+}
+
+/// A `w:shd` element.
+pub fn shd_xml(w: &str, s: &crate::docx::props::Shd) -> String {
+    let hex = |c: Option<u32>| c.map_or("auto".to_string(), |c| format!("{c:06X}"));
+    format!("<{w}shd {w}val=\"{}\" {w}color=\"{}\" {w}fill=\"{}\"/>", crate::docx::write::props::esc(&s.pattern), hex(s.color), hex(s.fill))
 }
 
 /// Row exceptions to set: `reset` drops the rows' own first.
@@ -104,7 +142,7 @@ fn set_exceptions(row: &mut crate::docx::Row, ex: &RowEx, table: &[Option<Border
     // CT_TblPrEx's children are CT_TblPr's, in its order.
     p.reorder(crate::docx::write::props::TBLPR);
     if ex.reset {
-        (row.shading, row.cell_spacing, row.borders) = (None, None, None);
+        (row.shading, row.hatch, row.cell_spacing, row.borders) = (None, None, None, None);
     }
     if let Some(j) = ex.jc {
         let v = match j {
@@ -123,6 +161,7 @@ fn set_exceptions(row: &mut crate::docx::Row, ex: &RowEx, table: &[Option<Border
     if let Some(fill) = ex.shading {
         p.set("shd", format!("<{w}shd {w}val=\"clear\" {w}color=\"auto\" {w}fill=\"{fill:06X}\"/>"));
         row.shading = Some(fill);
+        row.hatch = None;
     }
     if let Some((edges, b)) = &ex.borders {
         let mut now = row.borders.as_deref().cloned().unwrap_or_else(|| table.clone());
@@ -185,10 +224,12 @@ impl Editor {
                                 cell.v_align = v.clone();
                                 set_direct(cell, "vAlign", format!("<{w}vAlign {w}val=\"{}\"/>", crate::docx::write::props::esc(v)));
                             }
-                            TableFormat::CellShading(fill) => {
-                                cell.shading = *fill;
-                                let f = fill.map_or("auto".to_string(), |f| format!("{f:06X}"));
-                                set_direct(cell, "shd", format!("<{w}shd {w}val=\"clear\" {w}color=\"auto\" {w}fill=\"{f}\"/>"));
+                            TableFormat::CellShading(sh) => {
+                                let p = crate::docx::write::props::Props::parse(cell.direct.0.as_deref(), "tcPr", &cx);
+                                let inherited = if sh.pattern.is_none() { self.cell_shd(t, (r, k), cell) } else { None };
+                                let shd = sh.shd(p.get("shd"), inherited.as_ref());
+                                (cell.shading, cell.hatch) = (shd.flat(), shd.hatch());
+                                set_direct(cell, "shd", shd_xml(&w, &shd));
                             }
                             TableFormat::CellMargins(m) => {
                                 cell.margins = *m;
@@ -346,6 +387,17 @@ impl Editor {
                     }
                 }
             }
+            TableFormat::TableShading(sh) => {
+                // Written as the table's own: its style's shading stays its style's.
+                let mut p = crate::docx::write::props::Props::parse(t.direct.0.as_deref(), "tblPr", &cx);
+                p.reorder(crate::docx::write::props::TBLPR);
+                let shd = sh.shd(p.get("shd"), t.shd.as_ref());
+                p.set("shd", shd_xml(&w, &shd));
+                props.direct = crate::docx::Raw(Some(std::rc::Rc::from(p.xml().unwrap_or_default().as_str())));
+                props.shd = Some(shd);
+                // The whole table takes it, rows read from tables joined to it too.
+                rows.iter_mut().for_each(|r| r.table_shading = None);
+            }
             &TableFormat::CellSpacing(v) => props.cell_spacing = ((v.max(0.0)) * 20.0).round() / 20.0,
             TableFormat::Alt(a) => {
                 let mut alt = t.alt.as_deref().cloned().unwrap_or_default();
@@ -409,6 +461,7 @@ impl Editor {
                     let b = &tbl.borders;
                     props.borders = [b.top.clone(), b.left.clone(), b.bottom.clone(), b.right.clone(), b.inside_h.clone(), b.inside_v.clone()];
                     props.bands = (tbl.row_band.unwrap_or(0), tbl.col_band.unwrap_or(0));
+                    props.shd = tbl.shd.clone().filter(|s| s.flat().is_some() || s.hatch().is_some());
                     if direct.look.is_none() && props.look.is_none() {
                         props.look = tbl.look;
                     }
@@ -429,7 +482,7 @@ impl Editor {
             a.direct.0 == b.direct.0 && a.exceptions.0 == b.exceptions.0 && a.cells.iter().zip(&b.cells).all(|(c, d)| c.direct.0 == d.direct.0)
         });
         let rows_changed = rows != t.rows || !same_raw || grid.is_some();
-        let props_changed = props != TableProps::of(t);
+        let props_changed = props != TableProps::of(t) || props.direct.0 != t.direct.0;
         if !rows_changed && !props_changed {
             return Outcome::Unchanged("already so");
         }

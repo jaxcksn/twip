@@ -52,14 +52,23 @@ pub fn span_at(inlines: &[Inline], begin: usize) -> Option<FieldSpan> {
 
 /// A field's own code text: the text from its begin to its separator, the fields nested in it left out.
 pub fn code_text(inlines: &[Inline], s: FieldSpan) -> String {
+    code_where(inlines, s, |_| true)
+}
+
+/// [`code_text`] as `view` shows it: without the revisions the view hides.
+pub fn code_text_in(inlines: &[Inline], s: FieldSpan, view: super::review::MarkupView) -> String {
+    code_where(inlines, s, |r| !view.hides(&r.rev))
+}
+
+fn code_where(inlines: &[Inline], s: FieldSpan, keep: impl Fn(&Run) -> bool) -> String {
     let mut depth = 0usize;
     let mut out = String::new();
     for i in &inlines[s.begin + 1..s.code_end()] {
         match i {
             Inline::FieldBegin { .. } => depth += 1,
             Inline::FieldEnd { .. } => depth = depth.saturating_sub(1),
-            Inline::Text(t, _) if depth == 0 => out.push_str(t),
-            Inline::Tab(_) | Inline::PTab(..) if depth == 0 => out.push('\t'),
+            Inline::Text(t, r) if depth == 0 && keep(r) => out.push_str(t),
+            Inline::Tab(_) | Inline::PTab(..) if depth == 0 && i.run().is_none_or(&keep) => out.push('\t'),
             _ => {}
         }
     }
@@ -169,16 +178,26 @@ pub enum Shown {
 
 /// How results show each of `inlines`.
 pub fn shown(inlines: &[Inline]) -> Vec<Shown> {
-    show(inlines, false)
+    show(inlines, false, &|_| true)
 }
 
 /// How layout shows each of `inlines`: each field in its view. Showing its code, a field's begin
 /// and end markers are its braces and its result isn't drawn; showing its result, an empty one shows its label.
 pub fn layout_shown(inlines: &[Inline]) -> Vec<Shown> {
-    show(inlines, true)
+    show(inlines, true, &|_| true)
 }
 
-fn show(inlines: &[Inline], views: bool) -> Vec<Shown> {
+/// How deep evaluated fields without a value show their results' own fields: below that, such a field shows nothing.
+/// A document nests fields with flat begin and end marks, so the depth is the file's to choose.
+const MAX_SHOWN_DEPTH: usize = 32;
+
+/// How each of `inlines` shows; an evaluated field without a value shows the runs of its result that `keep` takes.
+fn show(inlines: &[Inline], views: bool, keep: &dyn Fn(&Run) -> bool) -> Vec<Shown> {
+    show_at(inlines, views, keep, 0)
+}
+
+/// [`show`] `depth` results down.
+fn show_at(inlines: &[Inline], views: bool, keep: &dyn Fn(&Run) -> bool, depth: usize) -> Vec<Shown> {
     let mut out = vec![Shown::Itself; inlines.len()];
     for s in spans(inlines) {
         // Outer fields come first: a field inside a part that isn't drawn isn't drawn either.
@@ -200,7 +219,10 @@ fn show(inlines: &[Inline], views: bool) -> Vec<Shown> {
         if kind.is_some() {
             not(&mut out, s.code_end()..=s.end);
             if visible {
-                out[s.begin] = Shown::Value(value.clone().unwrap_or_else(|| result_text(inlines, s)));
+                out[s.begin] = Shown::Value(value.clone().unwrap_or_else(|| match s.sep {
+                    Some(sep) if depth < MAX_SHOWN_DEPTH => visible_at(&inlines[sep + 1..s.end], keep, depth + 1),
+                    _ => String::new(),
+                }));
             }
         } else if let (true, true, Some(l)) = (views, visible, label)
             && s.sep.is_none_or(|sep| sep + 1 == s.end)
@@ -212,13 +234,32 @@ fn show(inlines: &[Inline], views: bool) -> Vec<Shown> {
 }
 
 /// The text of `inlines` as results show it: codes left out, an evaluated field as its value (or its result).
-fn visible(inlines: &[Inline]) -> String {
+pub fn visible(inlines: &[Inline]) -> String {
+    visible_where(inlines, &|_| true)
+}
+
+/// [`visible`] as `view` draws it: without hidden text and the revisions the view hides.
+pub fn visible_in(inlines: &[Inline], view: super::review::MarkupView) -> String {
+    visible_where(inlines, &|r| !r.hidden && !view.hides(&r.rev))
+}
+
+/// [`visible`] of the inlines whose runs `keep` takes.
+fn visible_where(inlines: &[Inline], keep: &dyn Fn(&Run) -> bool) -> String {
+    visible_at(inlines, keep, 0)
+}
+
+/// [`visible_where`] `depth` results down.
+fn visible_at(inlines: &[Inline], keep: &dyn Fn(&Run) -> bool, depth: usize) -> String {
     let mut out = String::new();
-    for (i, s) in inlines.iter().zip(shown(inlines)) {
+    for (i, s) in inlines.iter().zip(show_at(inlines, false, keep, depth)) {
+        if i.run().is_some_and(|r| !keep(r)) {
+            continue;
+        }
         match (s, i) {
             (Shown::Value(v), _) => out.push_str(&v),
             (Shown::Itself, Inline::Text(t, _)) => out.push_str(t),
             (Shown::Itself, Inline::Tab(_) | Inline::PTab(..)) => out.push('\t'),
+            (Shown::Itself, Inline::Sym { ch, .. }) => out.push(*ch),
             _ => {}
         }
     }
@@ -1378,5 +1419,87 @@ mod tests {
         assert_eq!(code_text(&v, s[1]), " MERGEFIELD A ");
         assert_eq!(result_text(&v, s[0]), "y");
         assert_eq!(visible(&v), "x y z");
+        // A symbol shows as its character; one in a field's code doesn't.
+        let sym = || Inline::Sym { ch: '\u{F0E0}', font: "Wingdings".into(), run: run.clone(), control: None };
+        let link = vec![b(3), t(" HYPERLINK \"https://example.com\" "), sym(), sep(3), sym(), end(3)];
+        assert_eq!(result_text(&link, spans(&link)[0]), "\u{F0E0}");
+        assert_eq!(visible(&link), "\u{F0E0}");
+    }
+
+    #[test]
+    fn deeply_nested_unvalued_fields_show_within_bounded_depth() {
+        let doc = crate::docx::read(&crate::docx::blank::blank_docx()).expect("the blank document reads");
+        let Some(Block::Para(p)) = doc.sections[0].blocks.first() else { panic!("a paragraph") };
+        let run = p.mark.clone();
+        let n = 4_000u64;
+        let mut v = Vec::with_capacity(n as usize * 4 + 1);
+        for id in 0..n {
+            v.push(Inline::FieldBegin {
+                id: FieldId(id),
+                kind: Some(FieldKind::Page),
+                lock: false,
+                dirty: false,
+                view: FieldView::Result,
+                label: None,
+                value: None,
+                form: None,
+                run: run.clone(),
+            });
+            v.push(Inline::FieldSep { id: FieldId(id), run: run.clone() });
+        }
+        v.push(Inline::Text("deep".into(), run.clone()));
+        v.extend((0..n).rev().map(|id| Inline::FieldEnd { id: FieldId(id), run: run.clone() }));
+        // Each field's result is the next one: past the depth bound the innermost text no longer shows.
+        assert_eq!(visible(&v), "");
+        let shallow: Vec<Inline> = v[2 * (n as usize) - 4..2 * (n as usize) + 3].to_vec();
+        assert_eq!(visible(&shallow), "deep");
+    }
+
+    #[test]
+    fn visible_in_leaves_out_an_evaluated_fields_excluded_result() {
+        use crate::docx::model::RunStyle;
+        use crate::docx::review::{AuthorId, MarkKind, MarkupView, RevisionId, RevisionMark, RunRevisions};
+        use std::rc::Rc;
+        let doc = crate::docx::read(&crate::docx::blank::blank_docx()).expect("the blank document reads");
+        let Some(Block::Para(p)) = doc.sections[0].blocks.first() else { panic!("a paragraph") };
+        let run = p.mark.clone();
+        let hidden = Rc::new(RunStyle { hidden: true, ..(*run).clone() });
+        let mark = Rc::new(RevisionMark { id: RevisionId(1), author: AuthorId(0), date: None, kind: MarkKind::Delete, move_name: None });
+        let deleted = Rc::new(RunStyle { rev: RunRevisions { del: Some(mark), ..Default::default() }, ..(*run).clone() });
+        let b = |id| Inline::FieldBegin {
+            id: FieldId(id),
+            kind: Some(FieldKind::Page),
+            lock: false,
+            dirty: false,
+            view: FieldView::Result,
+            label: None,
+            value: None,
+            form: None,
+            run: run.clone(),
+        };
+        let t = |s: &str, r: &Run| Inline::Text(s.into(), r.clone());
+        let sep = |id| Inline::FieldSep { id: FieldId(id), run: run.clone() };
+        let end = |id| Inline::FieldEnd { id: FieldId(id), run: run.clone() };
+        // "a {PAGE}1<del>secret</del><hidden>quiet</hidden>{PAGE}2<del>nested</del>{/PAGE}{/PAGE} z"
+        let v = vec![
+            t("a ", &run),
+            b(1),
+            t(" PAGE ", &run),
+            sep(1),
+            t("1", &run),
+            t("secret", &deleted),
+            t("quiet", &hidden),
+            b(2),
+            t(" PAGE ", &run),
+            sep(2),
+            t("2", &run),
+            t("nested", &deleted),
+            end(2),
+            end(1),
+            t(" z", &run),
+        ];
+        assert_eq!(visible(&v), "a 1secretquiet2nested z");
+        assert_eq!(visible_in(&v, MarkupView::NoMarkup), "a 12 z");
+        assert_eq!(visible_in(&v, MarkupView::All), "a 1secret2nested z");
     }
 }

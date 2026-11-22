@@ -386,6 +386,25 @@ public abstract partial record EditorOperation
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation SetDropCap(DropCap dropCap) => Op(CommandId.SetDropCap, Arg.Flatten(dropCap));
 
+    /// <summary>Sets the text's fill, outline, shadow, glow and reflection; each is kept, removed or set.</summary>
+    /// <param name="change">The change.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetTextEffects(TextEffectsChange change) => Op(CommandId.SetTextEffects, Arg.Flatten(change));
+
+    /// <summary>Sets the document's page colour; <see cref="FillValue.None"/> removes it.</summary>
+    /// <param name="fill">None, a solid colour, a gradient, a pattern or a picture (tiled, a texture).</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetPageColor(FillValue fill) => Op(CommandId.SetPageColor, new Arg("value", Node(fill)));
+
+    /// <summary>Sets the document's watermark, in every header.</summary>
+    /// <param name="watermark">The text or picture watermark.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation SetWatermark(Watermark watermark) => Op(CommandId.SetWatermark, new Arg("value", Node(watermark)));
+
+    /// <summary>Removes the document's watermark.</summary>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation RemoveWatermark() => Op(CommandId.RemoveWatermark);
+
     /// <summary>Defines the selection's list levels.</summary>
     /// <param name="definition">The levels and what they apply to.</param>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
@@ -584,7 +603,7 @@ public abstract partial record EditorOperation
     public static EditorOperation InsertTable(int rows, int columns) => Op(CommandId.InsertTable, new Arg("rows", Node(rows)), new Arg("columns", Node(columns)));
 
     /// <summary>Inserts a picture at the selection.</summary>
-    /// <param name="data">The image (PNG, JPEG, GIF, BMP or TIFF).</param>
+    /// <param name="data">The image (PNG, JPEG, GIF, BMP, TIFF, JPEG XR, SVG, EMF or WMF).</param>
     /// <param name="altText">The alternative text.</param>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation InsertPicture(ReadOnlyMemory<byte> data, string? altText = null) => Op(CommandId.InsertPicture, new Arg("data", Node(data)), new Arg("altText", altText is { } altText_ ? Node(altText_) : null, Optional: true));
@@ -976,7 +995,7 @@ public abstract partial record EditorOperation
     public static EditorOperation SetPictureCrop(PictureCrop crop) => Op(CommandId.SetPictureCrop, Arg.Flatten(crop));
 
     /// <summary>Replaces the selected picture's image, keeping its width, effects and place; its height follows the new image and the crop is cleared.</summary>
-    /// <param name="data">The image: PNG, JPEG, GIF, BMP or TIFF.</param>
+    /// <param name="data">The image: PNG, JPEG, GIF, BMP, TIFF, JPEG XR, SVG, EMF or WMF.</param>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation ChangePicture(ReadOnlyMemory<byte> data) => Op(CommandId.ChangePicture, new Arg("value", Node(data)));
 

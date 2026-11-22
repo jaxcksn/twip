@@ -189,6 +189,56 @@
     "type": "setCharacterEffects"
   },
   {
+    "fill": {
+      "colour": {
+        "theme": "accent1",
+        "transforms": [
+          {
+            "kind": "lumMod",
+            "value": 0.75
+          }
+        ]
+      },
+      "type": "solid"
+    },
+    "glow": {
+      "colour": {
+        "theme": "accent1",
+        "transforms": [
+          {
+            "kind": "lumMod",
+            "value": 0.75
+          }
+        ]
+      },
+      "radius": 5.5
+    },
+    "outline": {
+      "cap": "flat",
+      "compound": "single",
+      "dash": "dash",
+      "fill": {
+        "colour": {
+          "rgb": "#1F4E79"
+        },
+        "type": "solid"
+      },
+      "join": "round",
+      "width": 0.75
+    },
+    "reflection": null,
+    "shadow": {
+      "blur": 4.5,
+      "colour": {
+        "rgb": "#000000"
+      },
+      "direction": 45.5,
+      "distance": 3.5,
+      "size": 100.0
+    },
+    "type": "setTextEffects"
+  },
+  {
     "type": "setUnderlineColor",
     "value": "#C00000"
   },
@@ -358,6 +408,13 @@
       "width": 1.5
     },
     "type": "setParagraphBorderLines"
+  },
+  {
+    "color": "#2E75B6",
+    "fill": "#FFF2CC",
+    "pattern": "thinDiagCross",
+    "target": "table",
+    "type": "setShading"
   },
   {
     "color": "auto",
@@ -573,6 +630,32 @@
     "leader": "dots",
     "relativeTo": "margin",
     "type": "insertAlignmentTab"
+  },
+  {
+    "type": "setPageColor",
+    "value": {
+      "colour": {
+        "theme": "accent1",
+        "transforms": [
+          {
+            "kind": "lumMod",
+            "value": 0.75
+          }
+        ]
+      },
+      "type": "solid"
+    }
+  },
+  {
+    "type": "setWatermark",
+    "value": {
+      "kind": "text",
+      "layout": "horizontal",
+      "text": "DRAFT"
+    }
+  },
+  {
+    "type": "removeWatermark"
   },
   {
     "columns": 2,

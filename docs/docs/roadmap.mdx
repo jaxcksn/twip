@@ -20,7 +20,7 @@ you. The work between them runs in four phases, in this order:
   items={[
     { n: '01', title: 'Layout', href: '#layout', range: '1.1 – 1.11', blurb: 'Every line and page breaks where it should, and stays there.', done: true },
     { n: '02', title: 'DOCX fidelity', href: '#docx', range: '2.1 – 2.14', blurb: 'Everything in the file is read, kept and settable.', done: true },
-    { n: '03', title: 'Rendering', href: '#rendering', range: '3.1 – 3.10', blurb: 'Everything in the model is drawn.' },
+    { n: '03', title: 'Rendering', href: '#rendering', range: '3.1 – 3.10', blurb: 'Everything in the model is drawn.', done: true },
     { n: '04', title: 'Editor and platform', href: '#editor', range: '4.1 – 4.13', blurb: 'The workflows, packages and API freeze.' },
   ]}
 />
@@ -382,6 +382,12 @@ save as read. The [fidelity guide](guides/fidelity) lists every element and the 
 
 Everything in the model is drawn, on screen and in PDF, and looks as it does in Word.
 
+:::tip Complete
+
+Phase 3 is done: every chunk below has landed, and the render gate (3.1) guards it. Left out on purpose: 3-D text effects are kept on save and drawn flat; Fill Effects textures are pictures you supply, as Word's built-in ones can't ship; Apply to Cell or Table in Borders and Shading sets shading only; double-byte text (Shift-JIS, Korean, Chinese) in metafiles is not drawn; and a linked picture draws its embedded copy, or a placeholder, because nothing is fetched.
+
+:::
+
 :::info Done when
 
 - Every construct in the model has a drawing, on screen and in PDF.
@@ -389,7 +395,7 @@ Everything in the model is drawn, on screen and in PDF, and looks as it does in 
 
 :::
 
-<Chunk id="3.1" title="Render regression gate" gate deps={['1.1']}>
+<Chunk id="3.1" title="Render regression gate" gate deps={['1.1']} done>
 
 **Goal:** a drawing change can't land unnoticed.
 
@@ -400,7 +406,7 @@ Everything in the model is drawn, on screen and in PDF, and looks as it does in 
 
 </Chunk>
 
-<Chunk id="3.2" title="Metafiles: WMF and EMF" deps={['3.1']}>
+<Chunk id="3.2" title="Metafiles: WMF and EMF" deps={['3.1']} done>
 
 **Goal:** Office's default format for pasted charts, logos and signatures draws.
 
@@ -409,7 +415,7 @@ Everything in the model is drawn, on screen and in PDF, and looks as it does in 
 
 </Chunk>
 
-<Chunk id="3.3" title="Metafiles: EMF+ and JPEG XR" deps={['3.2']}>
+<Chunk id="3.3" title="Metafiles: EMF+ and JPEG XR" deps={['3.2']} done>
 
 **Goal:** the newer metafile records and the HD Photo format.
 
@@ -418,7 +424,7 @@ Everything in the model is drawn, on screen and in PDF, and looks as it does in 
 
 </Chunk>
 
-<Chunk id="3.4" title="Underlines and character effects" deps={['3.1', '2.4']}>
+<Chunk id="3.4" title="Underlines and character effects" deps={['3.1', '2.4']} done>
 
 **Goal:** every text decoration draws as Word draws it.
 
@@ -428,7 +434,7 @@ Everything in the model is drawn, on screen and in PDF, and looks as it does in 
 
 </Chunk>
 
-<Chunk id="3.5" title="Text effects" deps={['3.4']}>
+<Chunk id="3.5" title="Text effects" deps={['3.4']} done>
 
 **Goal:** Word 2010 text effects.
 
@@ -438,7 +444,7 @@ Everything in the model is drawn, on screen and in PDF, and looks as it does in 
 
 </Chunk>
 
-<Chunk id="3.6" title="Shading and borders" deps={['3.1']}>
+<Chunk id="3.6" title="Shading and borders" deps={['3.1']} done>
 
 **Goal:** every shading pattern and border line draws.
 
@@ -449,7 +455,7 @@ Everything in the model is drawn, on screen and in PDF, and looks as it does in 
 
 </Chunk>
 
-<Chunk id="3.7" title="Watermarks and page colour" deps={['3.1']}>
+<Chunk id="3.7" title="Watermarks and page colour" deps={['3.1']} done>
 
 **Goal:** DRAFT and CONFIDENTIAL watermarks and page colours appear, and can be set.
 
@@ -461,18 +467,19 @@ Everything in the model is drawn, on screen and in PDF, and looks as it does in 
 
 </Chunk>
 
-<Chunk id="3.8" title="Picture effects" deps={['3.1', '2.10']}>
+<Chunk id="3.8" title="Picture effects" deps={['3.1', '2.10']} done>
 
 **Goal:** the remaining picture adjustments draw.
 
 - Set Transparent Colour (`a:clrChange`).
 - VML picture brightness and contrast (`gain`, `blacklevel`) everywhere, not only in watermarks.
 - `a:reflection`.
-- Linked pictures.
+- Linked pictures: a blip with only `r:link` draws its placeholder frame on purpose, as Twip does not fetch the file;
+  one that also has `r:embed` draws the embedded copy.
 
 </Chunk>
 
-<Chunk id="3.9" title="Glyph quality" deps={['3.1']}>
+<Chunk id="3.9" title="Glyph quality" deps={['3.1']} done>
 
 **Goal:** sharper text, with layout unchanged.
 
@@ -481,7 +488,7 @@ Everything in the model is drawn, on screen and in PDF, and looks as it does in 
 
 </Chunk>
 
-<Chunk id="3.10" title="Accessible, linked PDF" deps={['2.9']}>
+<Chunk id="3.10" title="Accessible, linked PDF" deps={['2.9']} done>
 
 **Goal:** PDF output that's clickable and passes accessibility checks.
 

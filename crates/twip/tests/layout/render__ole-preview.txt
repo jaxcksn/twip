@@ -1,0 +1,8 @@
+page 0 12240 15840
+  1440 1616 An EMF preview, at its frame's size
+  1440 4351 A WMF preview, at its frame's size
+  1440 7086 An EMF preview in a square shape
+  1440 9821 A WMF preview in a smaller shape
+  1440 11475 A WMF preview in a taller shape
+page 1 12240 15840
+  1440 4673 A PNG preview

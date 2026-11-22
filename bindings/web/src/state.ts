@@ -19,7 +19,7 @@ import type { DialogKind } from './services/dialogs.js';
 import type { ControlKind, ReferenceRule } from './services/elements.js';
 import type { RulerModel, RulerUnit, TabSelector } from './services/ruler.js';
 import type { ChromeTheme, CursorOverride, DocumentAppearance, FieldShading, MeasureDetail, ObjectGrid, ThemeColors } from './services/view.js';
-import type { Color, CommentId, Degrees, ElementId, Points, RevisionId, ShapeState, StyleId } from './types.js';
+import type { Color, CommentId, Degrees, ElementId, FillValue, Points, RevisionId, ShapeState, StyleId, TextEffects, Watermark } from './types.js';
 
 /** An on/off value over the selection: `'mixed'` where it differs, `null` where it doesn't apply. */
 export type Tri = boolean | 'mixed' | null;
@@ -605,6 +605,8 @@ export interface CharacterFormatting {
   shadow: Tri;
   /** The underline's colour, or the text's (`'auto'`). */
   underlineColor: Mixed<Color | 'auto'>;
+  /** The text effects (fill, outline, shadow, glow and reflection), through the character style. */
+  textEffects: Mixed<TextEffects>;
 }
 
 /** The selection's paragraph formatting. */
@@ -697,6 +699,10 @@ export interface PageFormatting {
   endnotes: NoteSettings;
   /** The footnote area's columns; 0 for the section's own. */
   footnoteColumns: number;
+  /** The page colour, gradient, pattern or picture (its image empty), or absent for none. */
+  background?: FillValue;
+  /** The watermark the pages show (a picture's image empty), or absent. */
+  watermark?: Watermark;
 }
 
 /** View settings. */
@@ -835,7 +841,7 @@ export type MarkupView = 'all' | 'simple' | 'noMarkup' | 'original';
 export type LineSpacing = { rule: 'multiple'; lines: number } | { rule: 'exact' | 'atLeast'; size: Points };
 
 /** An underline style. */
-export type UnderlineStyle = 'none' | 'single' | 'words' | 'double' | 'thick' | 'dotted' | 'dash' | 'dotDash' | 'wave';
+export type UnderlineStyle = 'none' | 'single' | 'words' | 'double' | 'thick' | 'dotted' | 'dash' | 'dotDash' | 'wave' | 'dottedHeavy' | 'dashedHeavy' | 'dashLong' | 'dashLongHeavy' | 'dashDotHeavy' | 'dotDotDash' | 'dashDotDotHeavy' | 'wavyHeavy' | 'wavyDouble';
 
 /** A highlight colour. */
 export type HighlightColor =

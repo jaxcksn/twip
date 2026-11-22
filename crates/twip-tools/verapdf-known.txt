@@ -1,0 +1,4 @@
+# PDF/UA-1 failures the source documents cause, not the export: a PDF, the rules it fails (clause-test, veraPDF's
+# numbering) and why. verapdf.sh fails when a PDF listed here passes (take its line out) or fails another rule.
+docx-feature-showcase.pdf 5-1,7.3-1 its pictures have no alternative text and aren't marked decorative, so the export doesn't claim PDF/UA
+objects.pdf 5-1,7.3-1 its pictures have no alternative text and aren't marked decorative, so the export doesn't claim PDF/UA

@@ -140,6 +140,7 @@ fn shell(t: &Table) -> Table {
         borders,
         fixed,
         cell_spacing,
+        shd,
         look,
         bands,
         floating,
@@ -170,6 +171,8 @@ fn shell(t: &Table) -> Table {
                 div,
                 borders,
                 shading,
+                hatch,
+                table_shading,
                 hidden: _,
                 vanished,
                 cell_spacing: row_spacing,
@@ -194,6 +197,7 @@ fn shell(t: &Table) -> Table {
                         bottom,
                         right,
                         shading,
+                        hatch,
                         margins,
                         v_align,
                         text_direction,
@@ -205,6 +209,7 @@ fn shell(t: &Table) -> Table {
                         direct: _,
                         controls: _,
                         rev,
+                        ids: _,
                     } = c;
                     Cell {
                         width: *width,
@@ -215,6 +220,7 @@ fn shell(t: &Table) -> Table {
                         bottom: bottom.clone(),
                         right: right.clone(),
                         shading: *shading,
+                        hatch: *hatch,
                         margins: *margins,
                         v_align: v_align.clone(),
                         text_direction: text_direction.clone(),
@@ -226,6 +232,7 @@ fn shell(t: &Table) -> Table {
                         direct: Default::default(),
                         controls: Vec::new(),
                         rev: rev.clone(),
+                        ids: None,
                     }
                 })
                 .collect();
@@ -242,6 +249,8 @@ fn shell(t: &Table) -> Table {
                 div: div.clone(),
                 borders: borders.clone(),
                 shading: *shading,
+                hatch: *hatch,
+                table_shading: *table_shading,
                 hidden: false,
                 vanished: *vanished,
                 cell_spacing: *row_spacing,
@@ -267,6 +276,7 @@ fn shell(t: &Table) -> Table {
         borders: borders.clone(),
         fixed: *fixed,
         cell_spacing: *cell_spacing,
+        shd: shd.clone(),
         look: *look,
         bands: *bands,
         alt: None,
@@ -295,6 +305,7 @@ pub(crate) fn same_shell(s: &Table, t: &Table) -> bool {
         borders,
         fixed,
         cell_spacing,
+        shd,
         look,
         bands,
         floating,
@@ -319,6 +330,7 @@ pub(crate) fn same_shell(s: &Table, t: &Table) -> bool {
         && *borders == t.borders
         && *fixed == t.fixed
         && *cell_spacing == t.cell_spacing
+        && *shd == t.shd
         && *look == t.look
         && *bands == t.bands
         && *floating == t.floating
@@ -342,6 +354,8 @@ pub(crate) fn same_shell(s: &Table, t: &Table) -> bool {
                 div,
                 borders,
                 shading,
+                hatch,
+                table_shading,
                 hidden: _,
                 vanished,
                 cell_spacing: row_spacing,
@@ -366,6 +380,8 @@ pub(crate) fn same_shell(s: &Table, t: &Table) -> bool {
                 && *div == q.div
                 && *borders == q.borders
                 && *shading == q.shading
+                && *hatch == q.hatch
+                && *table_shading == q.table_shading
                 && *vanished == q.vanished
                 && *row_spacing == q.cell_spacing
                 && *run == q.run
@@ -382,6 +398,7 @@ pub(crate) fn same_shell(s: &Table, t: &Table) -> bool {
                         bottom,
                         right,
                         shading,
+                        hatch,
                         margins,
                         v_align,
                         text_direction,
@@ -393,6 +410,7 @@ pub(crate) fn same_shell(s: &Table, t: &Table) -> bool {
                         direct: _,
                         controls: _,
                         rev,
+                        ids: _,
                     } = c;
                     *width == d.width
                         && *span == d.span
@@ -402,6 +420,7 @@ pub(crate) fn same_shell(s: &Table, t: &Table) -> bool {
                         && *bottom == d.bottom
                         && *right == d.right
                         && *shading == d.shading
+                        && *hatch == d.hatch
                         && *margins == d.margins
                         && *v_align == d.v_align
                         && *text_direction == d.text_direction
@@ -443,6 +462,9 @@ pub struct RowProbe<'a> {
 
 fn same_row(a: &RowBox, b: &RowBox) -> bool {
     a.top_border == b.top_border
+        && a.shade == b.shade
+        && a.ground == b.ground
+        && a.spacing == b.spacing
         && a.changed == b.changed
         && a.exact == b.exact
         && a.gap_top == b.gap_top
@@ -458,7 +480,8 @@ fn same_row(a: &RowBox, b: &RowBox) -> bool {
                 && x.v_merge == y.v_merge
                 && (x.col, x.span, x.index) == (y.col, y.span, y.index)
                 && x.edges == y.edges
-                && x.shading == y.shading
+                && x.diagonals == y.diagonals
+                && x.shade == y.shade
                 && x.closing == y.closing
         })
 }

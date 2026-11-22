@@ -1,0 +1,8 @@
+page 0 12240 15840
+  1440 1616 A dual file: shapes, pens, caps and curves
+  1440 4351 Brushes, EMF+ only
+  1440 7086 Transforms, a container, clips and a region
+  1440 9821 Text
+  1440 12195 Pens, a hotkey and a copy under a clip
+page 1 12240 15840
+  1440 1616 Images, and plain records after a GetDC

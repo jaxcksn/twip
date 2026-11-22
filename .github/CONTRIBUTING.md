@@ -180,6 +180,14 @@ The code is the documentation. A comment in the engine names a part of the code 
   changes the snapshots needs the `layout-change` label; the `layout-label` check blocks the merge without it. The
   release workflow lists every pull request with the label under **Layout changes** in the next release's changelog
   entry, by its title: say there what moves.
+  Two more snapshot sets sit beside it, laid out with the same fonts (the stand-ins, and JetBrains Mono for the
+  fixtures under `tests/fixtures/render/`, which show real glyphs). `crates/twip/tests/render` holds pages 1 and 2 of
+  every fixture (every page of those under `fixtures/render/`) drawn on the CPU at 96 dpi; a page fails when more than
+  1 in 5000 of its pixels differ by more than 2 in a channel, or its size changes, and the failure writes before, after
+  and diff images to `target/render-diff/index.html` (CI: the `render-diff-<os>` artifact). `crates/twip/tests/pdf`
+  holds each fixture's PDF export read back: pages and sizes, text, structure tree, outline, annotations and the first
+  two pages' drawing operators. Rewrite them with `TWIP_WRITE_RENDER=1 cargo nextest run -p twip --lib render_output`
+  and `TWIP_WRITE_PDF=1 cargo nextest run -p twip --lib pdf_output`, and look at what changed before committing.
 - History is linear. No merge commits. Rebase on the target branch instead of merging it in.
 - New behaviour needs a test. Layout changes need a fidelity check (see the harness docs).
 

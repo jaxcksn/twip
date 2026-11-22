@@ -1,0 +1,122 @@
+pages 1
+page 1 612 792
+  text start no id
+  text an end with no start
+  text no author kept
+  text anchored
+  text orphan 
+  op 1 0 0 -1 0 792 cm
+  op /P << /MCID 0 >> BDC
+  op q
+  op /Span << /ActualText <737461727420> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 80.8 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002> <0002> <0002> <0001>] TJ
+  op ET
+  op EMC
+  op Q
+  op q
+  op /Span << /ActualText <6e6f206964> >> BDC
+  op 0.82 0.2 0.22 rg
+  op BT
+  op 1 0 0 -1 105 80.8 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0001> <0002> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /Artifact << /Type /Layout >> BDC
+  op q
+  op 0.82 0.2 0.22 rg
+  op 105 81.63 26.95 0.55 re
+  op f
+  op Q
+  op EMC
+  op /P << /MCID 1 >> BDC
+  op q
+  op /Span << /ActualText <616e20656e642077697468206e6f207374617274> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 100.67 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0001> <0002> <0002> <0002> <0001> <0002> <0002> <0002> <0002> <0001> <0002> <0002> <0001> <0002> <0002> 0 <0002> <0002> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 2 >> BDC
+  op q
+  op /Span << /ActualText <6e6f20617574686f72> >> BDC
+  op 0 0.47 0.83 rg
+  op BT
+  op 1 0 0 -1 72 120.54 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0001> <0002> <0002> <0002> <0002> <0002> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op q
+  op /Span << /ActualText <206b657074> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 123.15 120.54 Tm
+  op /F1 11 Tf
+  op [<0001> <0002> <0002> <0002> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /Artifact << /Type /Layout >> BDC
+  op q
+  op 0 0.47 0.83 rg
+  op 72 117.52 51.15 0.55 re
+  op f
+  op Q
+  op EMC
+  op /P << /MCID 3 >> BDC
+  op q
+  op /Span << /ActualText <616e63686f726564> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 140.41 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002> <0002> <0002> <0002> <0002> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 4 >> BDC
+  op q
+  op /Span << /ActualText <6f727068616e20> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 160.28 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002> <0002> <0002> <0002> <0001>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /Artifact << /Type /Layout >> BDC
+  op q
+  op 0 0 0 rg
+  op 36 72 0.72 19.87 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 36 111.74 0.72 19.87 re
+  op f
+  op Q
+  op EMC
+structure
+  Document
+    P
+    P
+    P
+    P
+    P
+outline

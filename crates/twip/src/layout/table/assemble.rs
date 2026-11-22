@@ -403,6 +403,7 @@ pub(super) fn assemble(
     // Compat ≤ 14: the edge under a repeated header row is resolved between the last header row and the page's first
     // row, as an inside edge.
     let header = t.rows.iter().take_while(|r| r.header).count().checked_sub(1).filter(|_| compat == Compat::Legacy);
+    let table_shade = crate::layout::shade::Shade::of(t.shd.as_ref());
     for ((ri, r), cells_geo) in t.rows.iter().enumerate().zip(geo) {
         let row_s = spacing_of(t, ri);
         let own_or = |own: &Option<Border>, table: &Option<Border>| conflict((own.as_ref().or(table.as_ref()), own.is_some()), (None, false));
@@ -420,7 +421,7 @@ pub(super) fn assemble(
         let mut cells = Vec::new();
         for g in cells_geo {
             let c = &r.cells[g.ci];
-            let shading = tint(review, r, c);
+            let shade = tint(review, r, c);
             let units = stories.next().cloned().flatten().unwrap_or_default();
             let content_h = units.height;
             let unaligned = compat == Compat::Legacy && env.ctx.env.text.do_not_vert_align_cell_with_sp && holds_float(c);
@@ -442,7 +443,8 @@ pub(super) fn assemble(
                 span: g.span,
                 edges: g.edges.clone(),
                 cut: Rc::new([own_or(&c.top, &row_borders(t, ri)[0]), own_or(&c.bottom, &row_borders(t, ri)[2]), under_header(c, g.col)]),
-                shading,
+                diagonals: c.diagonals.clone().filter(|d| d.iter().flatten().any(Border::visible)),
+                shade,
                 below: 0.0,
                 index: g.ci,
                 closing: closings.next().copied().flatten(),
@@ -568,7 +570,8 @@ pub(super) fn assemble(
             lead,
             trail,
             div_boxes: r.div.as_ref().map_or_else(|| Rc::from([]), |d| d.boxes.clone()),
-            shading: r.shading.filter(|_| row_s.is_some_and(|s| s > 0.0)),
+            ground: r.table_shading.map_or(table_shade, |(fill, hatch)| crate::layout::shade::Shade { fill, hatch }),
+            shade: crate::layout::shade::Shade { fill: r.shading, hatch: r.hatch },
             spacing: row_s,
             closes,
             fit_border,
@@ -838,15 +841,16 @@ fn turn_cell(
     Ok(())
 }
 
-fn tint(review: &ReviewView, r: &Row, c: &Cell) -> Option<u32> {
+/// A cell's shading, or a tracked inserted or deleted cell's (or row's) author colour over its fill.
+fn tint(review: &ReviewView, r: &Row, c: &Cell) -> crate::layout::shade::Shade {
     let cell =
         c.rev.structural.as_ref().filter(|(_, k)| matches!(k, crate::docx::review::CellMarkKind::Insert | crate::docx::review::CellMarkKind::Delete));
     let Some(m) = cell.map(|(m, _)| m).or(r.rev.del.as_ref()).or(r.rev.ins.as_ref()).filter(|_| review.view == MarkupView::All) else {
-        return c.shading;
+        return crate::layout::shade::Shade { fill: c.shading, hatch: c.hatch };
     };
     let (a, b) = (review.palette.color(m.author), c.shading.unwrap_or(0xFFFFFF));
     let mix = |s: u32| ((((a >> s) & 0xFF) + 3 * ((b >> s) & 0xFF)) / 4) << s;
-    Some(mix(16) | mix(8) | mix(0))
+    crate::layout::shade::Shade { fill: Some(mix(16) | mix(8) | mix(0)), hatch: None }
 }
 
 #[cfg(test)]

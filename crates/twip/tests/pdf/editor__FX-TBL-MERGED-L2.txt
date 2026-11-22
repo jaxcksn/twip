@@ -1,0 +1,1326 @@
+pages 1
+page 1 612 792
+  text FX-TBL-MERGED
+  text Col 1Col 2Col 3Col 4Col 5Col 6
+  text Span 2Span 211
+  text Vertical 
+  text merge over 
+  text 3 rows
+  text 1Span 31
+  text Span 2 + vertical merge 
+  text over 2 rows
+  text 111
+  text 1Span 2
+  text gridBefore 
+  text 1 / 
+  text gridAfter 1
+  text 111
+  text gridBefore 211
+  text gridAfter 311
+  text Span 3, taller: Notice claim team 
+  text export staff newsletter review matter 
+  text presenter advisor account served. 
+  text Savings pilot receipt corporate 
+  text requirement standard fact that 
+  text products distribution filed 
+  text logistics. Chapter plan regional 
+  text maintenance accessibility tax.
+  text Span 3
+  text Span 6
+  text Paragraph after the table.
+  text Paragraph after the wrapper table.
+  op 1 0 0 -1 0 792 cm
+  op /P << /MCID 0 >> BDC
+  op q
+  op /Span << /ActualText <46582d54424c2d4d4552474544> >> BDC
+  op 0 0 0 rg
+  op 0 0 0 RG
+  op 0.62 w
+  op 0 j
+  op BT
+  op 2 Tr
+  op 1 0 0 -1 72 96.8 Tm
+  op /F1 16 Tf
+  op [<0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 1 >> BDC
+  op q
+  op /Span << /ActualText <436f6c2031> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 83.3 111.07 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002> <0001> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 2 >> BDC
+  op q
+  op /Span << /ActualText <436f6c2032> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 159.5 111.07 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002> 0 <0001> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 3 >> BDC
+  op q
+  op /Span << /ActualText <436f6c2033> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 235.7 111.07 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002> <0001> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 4 >> BDC
+  op q
+  op /Span << /ActualText <436f6c2034> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 311.9 111.07 Tm
+  op /F1 11 Tf
+  op [<0002> 0 <0002> 0 <0002> 0 <0001> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 5 >> BDC
+  op q
+  op /Span << /ActualText <436f6c2035> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 388.1 111.07 Tm
+  op /F1 11 Tf
+  op [<0002> 0 <0002> 0 <0002> 0 <0001> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 6 >> BDC
+  op q
+  op /Span << /ActualText <436f6c2036> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 464.3 111.07 Tm
+  op /F1 11 Tf
+  op [<0002> 0 <0002> 0 <0002> 0 <0001> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /Artifact << /Type /Layout >> BDC
+  op q
+  op 0 0 0 rg
+  op 77.65 101.77 76.7 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 77.65 101.77 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 153.85 101.77 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 153.85 101.77 76.7 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 153.85 101.77 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 230.05 101.77 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 230.05 101.77 76.7 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 230.05 101.77 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 306.25 101.77 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 306.25 101.77 76.7 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 306.25 101.77 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 382.45 101.77 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 382.45 101.77 76.7 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 382.45 101.77 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 458.65 101.77 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 458.65 101.77 76.7 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 458.65 101.77 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 534.85 101.77 0.5 20.37 re
+  op f
+  op Q
+  op EMC
+  op /P << /MCID 7 >> BDC
+  op q
+  op /Span << /ActualText <5370616e2032> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 83.3 131.44 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002> <0002> <0001> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 8 >> BDC
+  op q
+  op /Span << /ActualText <5370616e2032> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 235.7 131.44 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002> <0002> 0 <0001> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 9 >> BDC
+  op q
+  op /Span << /ActualText <31> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 388.1 131.44 Tm
+  op /F1 11 Tf
+  op [<0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 10 >> BDC
+  op q
+  op /Span << /ActualText <31> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 464.3 131.44 Tm
+  op /F1 11 Tf
+  op [<0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /Artifact << /Type /Layout >> BDC
+  op q
+  op 0 0 0 rg
+  op 77.65 122.14 152.9 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 77.65 122.14 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 230.05 122.14 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 230.05 122.14 152.9 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 230.05 122.14 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 382.45 122.14 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 382.45 122.14 76.7 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 382.45 122.14 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 458.65 122.14 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 458.65 122.14 76.7 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 458.65 122.14 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 534.85 122.14 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 153.85 122.14 76.7 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 306.25 122.14 76.7 0.5 re
+  op f
+  op Q
+  op EMC
+  op /P << /MCID 11 >> BDC
+  op q
+  op /Span << /ActualText <566572746963616c20> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 83.3 151.81 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0001>] TJ
+  op ET
+  op EMC
+  op Q
+  op q
+  op /Span << /ActualText <6d65726765206f76657220> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 83.3 163.68 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002> <0002> <0002> <0001> <0002> <0002> <0002> <0002> <0001>] TJ
+  op ET
+  op EMC
+  op Q
+  op q
+  op /Span << /ActualText <3320726f7773> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 83.3 175.55 Tm
+  op /F1 11 Tf
+  op [<0002> <0001> <0002> <0002> <0002> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 12 >> BDC
+  op q
+  op /Span << /ActualText <31> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 159.5 151.81 Tm
+  op /F1 11 Tf
+  op [<0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 13 >> BDC
+  op q
+  op /Span << /ActualText <5370616e2033> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 235.7 151.81 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002> <0002> 0 <0001> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 14 >> BDC
+  op q
+  op /Span << /ActualText <31> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 464.3 151.81 Tm
+  op /F1 11 Tf
+  op [<0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /Artifact << /Type /Layout >> BDC
+  op q
+  op 0 0 0 rg
+  op 77.65 142.51 76.7 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 77.65 142.51 0.5 61.11 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 153.85 142.51 0.5 61.11 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 153.85 142.51 76.7 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 153.85 142.51 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 230.05 142.51 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 230.05 142.51 229.1 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 230.05 142.51 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 458.65 142.51 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 458.65 142.51 76.7 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 458.65 142.51 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 534.85 142.51 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 382.45 142.51 76.7 0.5 re
+  op f
+  op Q
+  op EMC
+  op /P << /MCID 15 >> BDC
+  op q
+  op /Span << /ActualText <5370616e2032202b20766572746963616c206d6572676520> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 159.5 172.18 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002> 0 <0002> <0001> <0002> <0001> <0002> <0001> <0002> <0002> 0 <0002> <0002> <0002> <0002> <0002> 0 <0002> <0001> <0002> <0002> 0 <0002> 0 <0002> 0 <0002> 0 <0001>] TJ
+  op ET
+  op EMC
+  op Q
+  op q
+  op /Span << /ActualText <6f766572203220726f7773> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 159.5 184.05 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002> 0 <0002> <0001> <0002> <0001> <0002> <0002> <0002> 0 <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 16 >> BDC
+  op q
+  op /Span << /ActualText <31> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 311.9 172.18 Tm
+  op /F1 11 Tf
+  op [<0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 17 >> BDC
+  op q
+  op /Span << /ActualText <31> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 388.1 172.18 Tm
+  op /F1 11 Tf
+  op [<0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 18 >> BDC
+  op q
+  op /Span << /ActualText <31> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 464.3 172.18 Tm
+  op /F1 11 Tf
+  op [<0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /Artifact << /Type /Layout >> BDC
+  op q
+  op 0 0 0 rg
+  op 77.65 162.88 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 153.85 162.88 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 153.85 162.88 152.9 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 153.85 162.88 0.5 40.74 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 306.25 162.88 0.5 40.74 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 306.25 162.88 76.7 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 306.25 162.88 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 382.45 162.88 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 382.45 162.88 76.7 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 382.45 162.88 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 458.65 162.88 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 458.65 162.88 76.7 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 458.65 162.88 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 534.85 162.88 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 230.05 162.88 229.1 0.5 re
+  op f
+  op Q
+  op EMC
+  op /P << /MCID 19 >> BDC
+  op q
+  op /Span << /ActualText <31> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 311.9 192.55 Tm
+  op /F1 11 Tf
+  op [<0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 20 >> BDC
+  op q
+  op /Span << /ActualText <5370616e2032> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 388.1 192.55 Tm
+  op /F1 11 Tf
+  op [<0002> 0 <0002> 0 <0002> 0 <0002> 0 <0001> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /Artifact << /Type /Layout >> BDC
+  op q
+  op 0 0 0 rg
+  op 77.65 183.25 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 153.85 183.25 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 153.85 183.25 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 306.25 183.25 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 306.25 183.25 76.7 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 306.25 183.25 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 382.45 183.25 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 382.45 183.25 152.9 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 382.45 183.25 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 534.85 183.25 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 458.65 183.25 76.7 0.5 re
+  op f
+  op Q
+  op EMC
+  op /P << /MCID 21 >> BDC
+  op q
+  op /Span << /ActualText <677269644265666f726520> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 159.5 212.92 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002> 0 <0002> <0002> <0002> <0002> <0002> 0 <0002> <0002> <0001>] TJ
+  op ET
+  op EMC
+  op Q
+  op q
+  op /Span << /ActualText <31202f20> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 159.5 224.79 Tm
+  op /F1 11 Tf
+  op [<0002> <0001> <0002> <0001>] TJ
+  op ET
+  op EMC
+  op Q
+  op q
+  op /Span << /ActualText <6772696441667465722031> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 159.5 236.66 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002> 0 <0002> <0002> <0002> <0002> <0002> 0 <0002> <0001> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 22 >> BDC
+  op q
+  op /Span << /ActualText <31> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 235.7 212.92 Tm
+  op /F1 11 Tf
+  op [<0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 23 >> BDC
+  op q
+  op /Span << /ActualText <31> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 311.9 212.92 Tm
+  op /F1 11 Tf
+  op [<0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 24 >> BDC
+  op q
+  op /Span << /ActualText <31> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 388.1 212.92 Tm
+  op /F1 11 Tf
+  op [<0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /Artifact << /Type /Layout >> BDC
+  op q
+  op 0 0 0 rg
+  op 153.85 203.62 76.7 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 153.85 203.62 0.5 44.11 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 230.05 203.62 0.5 44.11 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 230.05 203.62 76.7 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 230.05 203.62 0.5 44.11 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 306.25 203.62 0.5 44.11 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 306.25 203.62 76.7 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 306.25 203.62 0.5 44.11 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 382.45 203.62 0.5 44.11 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 382.45 203.62 76.7 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 382.45 203.62 0.5 44.11 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 458.65 203.62 0.5 44.11 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 77.65 203.62 76.7 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 458.9 203.62 76.45 0.5 re
+  op f
+  op Q
+  op EMC
+  op /P << /MCID 25 >> BDC
+  op q
+  op /Span << /ActualText <677269644265666f72652032> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 235.7 257.03 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002> <0002> 0 <0002> 0 <0002> 0 <0002> 0 <0002> 0 <0002> 0 <0002> 0 <0001> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 26 >> BDC
+  op q
+  op /Span << /ActualText <31> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 388.1 257.03 Tm
+  op /F1 11 Tf
+  op [<0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 27 >> BDC
+  op q
+  op /Span << /ActualText <31> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 464.3 257.03 Tm
+  op /F1 11 Tf
+  op [<0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /Artifact << /Type /Layout >> BDC
+  op q
+  op 0 0 0 rg
+  op 230.05 247.73 152.9 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 230.05 247.73 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 382.45 247.73 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 382.45 247.73 76.7 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 382.45 247.73 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 458.65 247.73 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 458.65 247.73 76.7 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 458.65 247.73 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 534.85 247.73 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 153.85 247.73 76.7 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 306.25 247.73 76.7 0.5 re
+  op f
+  op Q
+  op EMC
+  op /P << /MCID 28 >> BDC
+  op q
+  op /Span << /ActualText <6772696441667465722033> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 83.3 277.4 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0001> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 29 >> BDC
+  op q
+  op /Span << /ActualText <31> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 159.5 277.4 Tm
+  op /F1 11 Tf
+  op [<0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 30 >> BDC
+  op q
+  op /Span << /ActualText <31> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 235.7 277.4 Tm
+  op /F1 11 Tf
+  op [<0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /Artifact << /Type /Layout >> BDC
+  op q
+  op 0 0 0 rg
+  op 77.65 268.1 76.7 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 77.65 268.1 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 153.85 268.1 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 153.85 268.1 76.7 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 153.85 268.1 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 230.05 268.1 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 230.05 268.1 76.7 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 230.05 268.1 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 306.25 268.1 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 306.5 268.1 76.45 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 382.45 268.1 76.7 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 458.65 268.1 76.7 0.5 re
+  op f
+  op Q
+  op EMC
+  op /P << /MCID 31 >> BDC
+  op q
+  op /Span << /ActualText <5370616e20332c2074616c6c65723a204e6f7469636520636c61696d207465616d20> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 83.3 297.78 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002> <0002> <0001> <0002> <0002> <0001> <0002> <0002> <0002> <0002> <0002> <0002> 0 <0002> <0001> <0002> <0002> <0002> <0002> 0 <0002> <0002> <0001> <0002> <0002> <0002> 0 <0002> <0002> <0001> <0002> <0002> <0002> 0 <0002> 0 <0001>] TJ
+  op ET
+  op EMC
+  op Q
+  op q
+  op /Span << /ActualText <6578706f7274207374616666206e6577736c657474657220726576696577206d617474657220> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 83.3 309.65 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002> <0002> <0002> <0002> <0001> <0002> <0002> <0002> <0002> <0002> <0001> <0002> 0 <0002> <0002> <0002> <0002> <0002> 0 <0002> <0002> <0002> <0002> <0001> <0002> 0 <0002> <0002> <0002> <0002> <0002> 0 <0001> <0002> 0 <0002> 0 <0002> 0 <0002> 0 <0002> 0 <0002> 0 <0001>] TJ
+  op ET
+  op EMC
+  op Q
+  op q
+  op /Span << /ActualText <70726573656e7465722061647669736f72206163636f756e74207365727665642e20> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 83.3 321.52 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0001> <0002> <0002> <0002> 0 <0002> <0002> <0002> <0002> <0001> <0002> 0 <0002> <0002> <0002> <0002> <0002> 0 <0002> <0001> <0002> <0002> <0002> <0002> 0 <0002> 0 <0002> 0 <0002> 0 <0001>] TJ
+  op ET
+  op EMC
+  op Q
+  op q
+  op /Span << /ActualText <536176696e67732070696c6f74207265636569707420636f72706f7261746520> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 83.3 333.39 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002> <0002> <0002> <0002> <0002> <0001> <0002> <0002> <0002> <0002> <0002> 0 <0001> <0002> <0002> <0002> <0002> <0002> 0 <0002> <0002> <0001> <0002> <0002> <0002> 0 <0002> <0002> <0002> <0002> <0002> 0 <0002> 0 <0001>] TJ
+  op ET
+  op EMC
+  op Q
+  op q
+  op /Span << /ActualText <726571756972656d656e74207374616e646172642066616374207468617420> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 83.3 345.26 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0001> <0002> 0 <0002> <0002> <0002> <0002> <0002> 0 <0002> <0002> <0001> <0002> <0002> <0002> 0 <0002> <0001> <0002> <0002> <0002> <0002> 0 <0001>] TJ
+  op ET
+  op EMC
+  op Q
+  op q
+  op /Span << /ActualText <70726f647563747320646973747269627574696f6e2066696c656420> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 83.3 357.13 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0001> <0002> <0002> <0002> <0002> 0 <0002> <0002> <0002> <0002> <0002> 0 <0002> <0002> <0002> <0001> <0002> <0002> 0 <0002> <0002> <0002> <0001>] TJ
+  op ET
+  op EMC
+  op Q
+  op q
+  op /Span << /ActualText <6c6f676973746963732e204368617074657220706c616e20726567696f6e616c20> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 83.3 369 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0001> <0002> <0002> 0 <0002> <0002> <0002> <0002> <0002> 0 <0001> <0002> <0002> <0002> <0002> <0001> <0002> 0 <0002> <0002> <0002> <0002> <0002> 0 <0002> 0 <0002> 0 <0001>] TJ
+  op ET
+  op EMC
+  op Q
+  op q
+  op /Span << /ActualText <6d61696e74656e616e6365206163636573736962696c697479207461782e> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 83.3 380.87 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0001> <0002> 0 <0002> <0002> <0002> <0002> <0002> 0 <0002> <0002> <0002> <0002> <0002> 0 <0002> <0002> <0001> <0002> <0002> <0002> 0 <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 32 >> BDC
+  op q
+  op /Span << /ActualText <5370616e2033> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 311.9 297.78 Tm
+  op /F1 11 Tf
+  op [<0002> 0 <0002> 0 <0002> 0 <0002> 0 <0001> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /Artifact << /Type /Layout >> BDC
+  op q
+  op 0 0 0 rg
+  op 77.65 288.48 229.1 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 77.65 288.48 0.5 103.47 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 306.25 288.48 0.5 103.47 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 306.25 288.48 229.1 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 306.25 288.48 0.5 103.47 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 534.85 288.48 0.5 103.47 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 153.85 288.48 76.7 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 230.05 288.48 76.7 0.5 re
+  op f
+  op Q
+  op EMC
+  op /P << /MCID 33 >> BDC
+  op q
+  op /Span << /ActualText <5370616e2036> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 83.3 401.24 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002> <0002> <0001> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /Artifact << /Type /Layout >> BDC
+  op q
+  op 0 0 0 rg
+  op 77.65 391.94 457.7 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 77.65 391.94 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 534.85 391.94 0.5 20.37 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 77.65 412.31 457.7 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 306.25 391.94 229.1 0.5 re
+  op f
+  op Q
+  op EMC
+  op /P << /MCID 34 >> BDC
+  op q
+  op /Span << /ActualText <50617261677261706820616674657220746865207461626c652e> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 77.65 421.61 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0001> <0002> 0 <0002> <0002> <0002> <0002> <0001> <0002> 0 <0002> <0002> <0001> <0002> <0002> <0002> 0 <0002> <0002> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /Artifact << /Type /Layout >> BDC
+  op q
+  op 0 0 0 rg
+  op 72 101.27 457.7 0.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 72 101.27 0.5 331.42 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 529.2 101.27 0.5 331.42 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 72 432.68 457.7 0.5 re
+  op f
+  op Q
+  op EMC
+  op /P << /MCID 35 >> BDC
+  op q
+  op /Span << /ActualText <506172616772617068206166746572207468652077726170706572207461626c652e> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 441.98 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0001> <0002> <0002> <0002> <0002> 0 <0002> <0001> <0002> <0002> <0002> <0001> <0002> 0 <0002> <0002> <0002> <0002> <0002> 0 <0002> <0001> <0002> <0002> <0002> <0002> 0 <0002> 0 <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+structure
+  Document
+    H1
+    Table
+      TR
+        TD
+          Table
+            TR
+              TD
+                P
+              TD
+                P
+              TD
+                P
+              TD
+                P
+              TD
+                P
+              TD
+                P
+            TR
+              TD ColSpan=2
+                P
+              TD ColSpan=2
+                P
+              TD
+                P
+              TD
+                P
+            TR
+              TD RowSpan=3
+                P
+              TD
+                P
+              TD ColSpan=3
+                P
+              TD
+                P
+            TR
+              TD RowSpan=2 ColSpan=2
+                P
+              TD
+                P
+              TD
+                P
+              TD
+                P
+            TR
+              TD
+                P
+              TD ColSpan=2
+                P
+            TR
+              TD
+              TD
+                P
+              TD
+                P
+              TD
+                P
+              TD
+                P
+              TD
+            TR
+              TD ColSpan=2
+              TD ColSpan=2
+                P
+              TD
+                P
+              TD
+                P
+            TR
+              TD
+                P
+              TD
+                P
+              TD
+                P
+              TD ColSpan=3
+            TR
+              TD ColSpan=3
+                P
+              TD ColSpan=3
+                P
+            TR
+              TD ColSpan=6
+                P
+          P
+    P
+outline
+  "FX-TBL-MERGED"

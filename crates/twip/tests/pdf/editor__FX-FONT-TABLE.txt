@@ -1,0 +1,266 @@
+pages 1
+page 1 612 792
+  text Garamond text.
+  text Garamond bold text.
+  text Consolas text.
+  text Mystery Sans text.
+  text Zzyzx Unknown text.
+  text •A Symbol bullet.
+  text ▪A Wingdings bullet.
+  text CJK: 漢 end.
+  text Shared: “quoted” § 10° → end.
+  op 1 0 0 -1 0 792 cm
+  op /P << /MCID 0 >> BDC
+  op q
+  op /Span << /ActualText <476172616d6f6e6420746578742e> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 80.8 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0001> <0002> <0002> <0002> <0002> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 1 >> BDC
+  op q
+  op /Span << /ActualText <476172616d6f6e6420626f6c6420746578742e> >> BDC
+  op 0 0 0 rg
+  op 0 0 0 RG
+  op 0.45 w
+  op 0 j
+  op BT
+  op 2 Tr
+  op 1 0 0 -1 72 100.67 Tm
+  op /F1 11 Tf
+  op [<0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0001> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0001> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 2 >> BDC
+  op q
+  op /Span << /ActualText <436f6e736f6c617320746578742e> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 120.54 Tm
+  op /F2 11 Tf
+  op [<0002> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0001> <0002> <0002> <0002> <0002> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 3 >> BDC
+  op q
+  op /Span << /ActualText <4d7973746572792053616e7320746578742e> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 140.41 Tm
+  op /F3 11 Tf
+  op [<0002> <0002> <0002> <0002> <0002> <0002> <0002> <0001> <0002> <0002> <0002> <0002> <0001> <0002> <0002> 0 <0002> <0002> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 4 >> BDC
+  op q
+  op /Span << /ActualText <5a7a797a7820556e6b6e6f776e20746578742e> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 160.28 Tm
+  op /F3 11 Tf
+  op [<0002> <0002> <0002> <0002> <0002> <0001> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0001> <0002> 0 <0002> <0002> <0002> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 5 >> BDC
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 90 181.56 Tm
+  op /F4 11 Tf
+  op [<0005>] TJ
+  op ET
+  op Q
+  op EMC
+  op /P << /MCID 6 >> BDC
+  op q
+  op /Span << /ActualText <412053796d626f6c2062756c6c65742e> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 108 181.56 Tm
+  op /F3 11 Tf
+  op [<0002> <0001> <0002> <0002> <0002> <0002> <0002> <0002> <0001> <0002> 0 <0002> <0002> <0002> <0002> <0002> 0 <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 7 >> BDC
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 90 194.85 Tm
+  op /F4 11 Tf
+  op [<000c>] TJ
+  op ET
+  op Q
+  op EMC
+  op /P << /MCID 8 >> BDC
+  op q
+  op /Span << /ActualText <412057696e6764696e67732062756c6c65742e> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 108 194.85 Tm
+  op /F3 11 Tf
+  op [<0002> <0001> <0002> <0002> <0002> <0002> <0002> <0002> <0002> 0 <0002> <0002> <0001> <0002> <0002> <0002> 0 <0002> <0002> <0002> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 9 >> BDC
+  op q
+  op /Span << /ActualText <434a4b3a20> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 214.72 Tm
+  op /F3 11 Tf
+  op [<0002> <0002> <0002> <0002> <0001>] TJ
+  op ET
+  op EMC
+  op Q
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 98.95 214.72 Tm
+  op /F5 11 Tf
+  op [<0002>] TJ
+  op ET
+  op Q
+  op q
+  op /Span << /ActualText <20656e642e> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 109.95 214.72 Tm
+  op /F3 11 Tf
+  op [<0001> <0002> <0002> <0002> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 10 >> BDC
+  op q
+  op /Span << /ActualText <5368617265643a20> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 236.87 Tm
+  op /F3 11 Tf
+  op [<0002> <0002> <0002> <0002> <0002> <0002> <0002> <0001>] TJ
+  op ET
+  op EMC
+  op Q
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 117.1 236.87 Tm
+  op /T6 11 Tf
+  op [<00>] TJ
+  op ET
+  op Q
+  op q
+  op /Span << /ActualText <71756f746564> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 128.1 236.87 Tm
+  op /F3 11 Tf
+  op [<0002> 0 <0002> <0002> <0002> <0002> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 164.4 236.87 Tm
+  op /T6 11 Tf
+  op [<01>] TJ
+  op ET
+  op Q
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 175.4 236.87 Tm
+  op /F3 11 Tf
+  op [<0001>] TJ
+  op ET
+  op Q
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 178.15 236.87 Tm
+  op /T6 11 Tf
+  op [<02>] TJ
+  op ET
+  op Q
+  op q
+  op /Span << /ActualText <203130> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 189.15 236.87 Tm
+  op /F3 11 Tf
+  op [<0001> <0002> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 204 236.87 Tm
+  op /T6 11 Tf
+  op [<03>] TJ
+  op ET
+  op Q
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 215 236.87 Tm
+  op /F3 11 Tf
+  op [<0001>] TJ
+  op ET
+  op Q
+  op q
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 217.75 236.87 Tm
+  op /T6 11 Tf
+  op [<04>] TJ
+  op ET
+  op Q
+  op q
+  op /Span << /ActualText <20656e642e> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 228.75 236.87 Tm
+  op /F3 11 Tf
+  op [<0001> <0002> <0002> <0002> 0 <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+structure
+  Document
+    P
+    P
+    P
+    P
+    P
+    L ListNumbering=/Disc
+      LI
+        Lbl
+        LBody
+    L ListNumbering=/Disc
+      LI
+        Lbl
+        LBody
+    P
+    P
+outline

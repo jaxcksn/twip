@@ -84,6 +84,15 @@ fn underline_of(r: &RunStyle) -> UnderlineStyle {
         Some("dash") => UnderlineStyle::Dash,
         Some("dotDash") => UnderlineStyle::DotDash,
         Some("wave") => UnderlineStyle::Wave,
+        Some("dottedHeavy") => UnderlineStyle::DottedHeavy,
+        Some("dashedHeavy") => UnderlineStyle::DashedHeavy,
+        Some("dashLong") => UnderlineStyle::DashLong,
+        Some("dashLongHeavy") => UnderlineStyle::DashLongHeavy,
+        Some("dashDotHeavy") => UnderlineStyle::DashDotHeavy,
+        Some("dotDotDash") => UnderlineStyle::DotDotDash,
+        Some("dashDotDotHeavy") => UnderlineStyle::DashDotDotHeavy,
+        Some("wavyHeavy") => UnderlineStyle::WavyHeavy,
+        Some("wavyDouble") => UnderlineStyle::WavyDouble,
         Some(_) => UnderlineStyle::Single,
     }
 }
@@ -180,6 +189,7 @@ pub(super) fn character(runs: &[&RunStyle]) -> CharacterFormatting {
         outline: tri(&|r| r.outline),
         shadow: tri(&|r| r.shadow),
         underline_color: fold(runs.iter().map(|r| r.underline_color.map_or(AutoOr::Auto, |c| AutoOr::Value(Color(c))))),
+        text_effects: fold(runs.iter().map(|r| r.effects.as_deref().map(crate::api::drawing::TextEffects::of).unwrap_or_default())),
     }
 }
 
@@ -473,6 +483,7 @@ impl Editor {
                     | C::SetTypography
                     | C::SetLanguage
                     | C::SetCharacterEffects
+                    | C::SetTextEffects
                     | C::SetUnderlineColor
                     | C::SetOutline
                     | C::SetParagraphTextDirection,
@@ -887,6 +898,8 @@ impl Editor {
                 NumberFormat::LowerRoman,
             ),
             footnote_columns: s.footnote_columns,
+            background: self.background_state(),
+            watermark: self.watermark_state(section),
         }
     }
 }
@@ -942,4 +955,27 @@ fn control_info(p: &crate::docx::ControlProps) -> crate::api::state::ControlInfo
         _ => {}
     }
     info
+}
+
+#[cfg(test)]
+mod underline_tests {
+    use super::*;
+
+    #[test]
+    fn every_underline_style_reads_back_as_itself() {
+        let all: Vec<UnderlineStyle> = serde_json::from_str(
+            r#"["none","single","words","double","thick","dotted","dottedHeavy","dash","dashedHeavy","dashLong","dashLongHeavy",
+                "dotDash","dashDotHeavy","dotDotDash","dashDotDotHeavy","wave","wavyHeavy","wavyDouble"]"#,
+        )
+        .expect("every w:u value is a style");
+        let doc = crate::docx::read(include_bytes!("../../tests/fixtures/render/underlines.docx")).expect("reads");
+        let Some(crate::docx::Block::Para(p)) = doc.sections[0].blocks.first() else { panic!("a paragraph") };
+        let base = p.inlines.iter().find_map(crate::docx::Inline::run).expect("a run");
+        for u in all {
+            let value = serde_json::to_value(u).expect("serialises");
+            let r = RunStyle { underline: value.as_str().filter(|v| *v != "none").map(str::to_string), ..(**base).clone() };
+            assert_eq!(underline_of(&r), u, "{value}");
+            assert_eq!(crate::editing::commands::underline_value(u), value.as_str().expect("a string"));
+        }
+    }
 }

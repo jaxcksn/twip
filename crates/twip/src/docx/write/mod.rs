@@ -17,11 +17,11 @@ use std::rc::Rc;
 use roxmltree::Node;
 
 use super::review::{CommentId, People, RangeKind, RangeMark, RevisionMark, SectionChange};
-use super::xml::{MC, W, attr, child, is, is_w};
+use super::xml::{MC, W, W14, attr, child, is, is_w};
 use super::*;
 
 mod comments;
-mod drawing;
+pub(crate) mod drawing;
 mod fonts;
 mod glossary;
 mod numbering;
@@ -93,6 +93,7 @@ pub fn edited_parts(doc: &Document) -> Result<Vec<(String, Vec<u8>)>, String> {
     filled_placeholders(doc, &mut parts)?;
     review_parts(doc, &mut parts)?;
     settings_part(doc, &mut parts)?;
+    page_background(doc, &mut parts)?;
     add_images(&src.package, &doc.images, &mut parts)?;
     data_parts(doc, &mut parts)?;
     property_parts(doc, &mut parts)?;
@@ -302,6 +303,9 @@ fn settings_part(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(
     if tw(read.hyphenation_zone) != tw(now.hyphenation_zone) {
         set_setting(&mut out, "hyphenationZone", Some(format!("<{w}hyphenationZone {w}val=\"{}\"/>", tw(now.hyphenation_zone))))?;
     }
+    if read.display_background_shape != now.display_background_shape {
+        set_setting(&mut out, "displayBackgroundShape", now.display_background_shape.then(|| format!("<{w}displayBackgroundShape/>")))?;
+    }
     if read.do_not_hyphenate_caps != now.do_not_hyphenate_caps {
         set_setting(&mut out, "doNotHyphenateCaps", now.do_not_hyphenate_caps.then(|| format!("<{w}doNotHyphenateCaps/>")))?;
     }
@@ -374,6 +378,226 @@ fn settings_part(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(
     };
     package::set(parts, &name, out.into_bytes());
     Ok(())
+}
+
+/// The main part's `w:background` when the page background changed since reading: the model's colour, and its fill.
+/// The fill's markup as read is kept when it still reads as the model's fill under the new colour (a gradient or
+/// pattern that names no colour of its own takes the page's); else the fill is written from the model, as Word writes
+/// it. An untouched background keeps its markup.
+fn page_background(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
+    let src = doc.source.as_ref().ok_or("the document was not read for editing")?;
+    if src.page_background.0 == doc.page_colour && src.page_background.1 == doc.page_fill && src.page_theme == doc.page_colour_theme {
+        return Ok(());
+    }
+    let mut xml = match parts.iter().find(|(n, _)| *n == src.main) {
+        Some((_, b)) => String::from_utf8(b.clone()).map_err(|e| e.to_string())?,
+        None => src.xml.clone(),
+    };
+    let dom = roxmltree::Document::parse(&xml).map_err(|e| e.to_string())?;
+    let root = dom.root_element();
+    let prefix = |ns: &str| root.lookup_prefix(ns).filter(|p| !p.is_empty()).map(str::to_string);
+    let w = prefix(W).map_or(String::new(), |p| format!("{p}:"));
+    let old = root.children().find(|c| is_w(*c, "background"));
+    // The picture the markup names: the one it was read with.
+    let image = match &src.page_background.1 {
+        Some(crate::drawing::paint::Fill::Blip(b)) => b.image,
+        _ => None,
+    };
+    let kept = old
+        .filter(|b| doc.page_fill.is_some() && crate::drawing::vml::background_fill(*b, doc.page_colour, &mut |_| image) == doc.page_fill)
+        .and_then(|b| b.children().find(|c| c.is_element() && c.tag_name().name() == "background" && c.tag_name().namespace() == Some(VML)))
+        .map(|v| xml[v.range()].to_string());
+    // The prefixes the kept markup has from its `w:background` and not from the root, declared on the new one.
+    let mut local: String = match (&kept, old) {
+        (Some(_), Some(b)) => b
+            .namespaces()
+            .filter(|n| root.lookup_namespace_uri(n.name()) != Some(n.uri()))
+            .filter_map(|n| match n.name() {
+                Some(p) => Some(format!(r#" xmlns:{p}="{}""#, props::esc(n.uri()))),
+                None => (!w.is_empty()).then(|| format!(r#" xmlns="{}""#, props::esc(n.uri()))),
+            })
+            .collect(),
+        _ => String::new(),
+    };
+    // The prefix the new `w:background` takes: one still WordprocessingML's under those declarations.
+    let w = match (&kept, old) {
+        (Some(_), Some(b)) if !w.is_empty() && b.lookup_namespace_uri(Some(&w[..w.len() - 1])) != Some(W) => {
+            match b.namespaces().find_map(|n| n.name().filter(|_| n.uri() == W)) {
+                Some(p) => format!("{p}:"),
+                None => {
+                    let free = (1..).map(|k| format!("w{k}")).find(|p| b.lookup_namespace_uri(Some(p)).is_none()).unwrap_or_default();
+                    local.push_str(&format!(r#" xmlns:{free}="{W}""#));
+                    format!("{free}:")
+                }
+            }
+        }
+        _ => w,
+    };
+    let at = match old {
+        Some(b) => b.range(),
+        None => {
+            let body = root.children().find(|c| is_w(*c, "body")).ok_or("no body")?;
+            body.range().start..body.range().start
+        }
+    };
+    // The VML, Office and relationship prefixes the root declares; those it lacks declared on it, by a prefix it leaves
+    // free.
+    let mut declare = String::new();
+    let mut named = |ns: &str, want: &str| match prefix(ns) {
+        Some(p) => p,
+        None => {
+            let free = std::iter::once(want.to_string())
+                .chain((1..).map(|k| format!("{want}{k}")))
+                .find(|p| root.lookup_namespace_uri(Some(p)).is_none())
+                .unwrap_or_default();
+            declare.push_str(&format!(r#" xmlns:{free}="{ns}""#));
+            free
+        }
+    };
+    let palette = crate::drawing::paint::Palette { theme: &doc.theme, map: &doc.colour_map };
+    // A preset pattern's tile, a picture beside the main part as Word writes one.
+    let tile = match (&kept, &doc.page_fill) {
+        (None, Some(crate::drawing::paint::Fill::Pattern { preset, .. })) => Some(pattern_tile(src, parts, *preset)?),
+        _ => None,
+    };
+    let fill = match kept {
+        Some(k) => Some(k),
+        None => match &doc.page_fill {
+            Some(f) => {
+                let ns = [named(VML, "v"), named(O, "o"), named(R, "r")];
+                vml_background(f, palette, &ns, tile.as_deref())
+            }
+            None => None,
+        },
+    };
+    let root_open = root.range().start + xml[root.range()].find(|c: char| c.is_whitespace() || c == '>').unwrap_or(0);
+    drop(dom);
+    let el = match (doc.page_colour, fill) {
+        (None, None) => String::new(),
+        (colour, fill) => {
+            let mut c = format!("{w}color=\"{:06X}\"", colour.unwrap_or(0xFF_FFFF));
+            if let Some(t) = doc.page_colour_theme
+                && let Some(name) = crate::docx::props::theme_name(t.slot)
+            {
+                c.push_str(&format!(" {w}themeColor=\"{name}\""));
+                for (attr, b) in [("themeTint", t.tint), ("themeShade", t.shade)] {
+                    if let Some(b) = b {
+                        c.push_str(&format!(" {w}{attr}=\"{b:02X}\""));
+                    }
+                }
+            }
+            match fill {
+                Some(f) => format!("<{w}background {c}{local}>{f}</{w}background>"),
+                None => format!("<{w}background {c}/>"),
+            }
+        }
+    };
+    xml.replace_range(at, &el);
+    xml.insert_str(root_open, &declare);
+    package::set(parts, &src.main, xml.into_bytes());
+    Ok(())
+}
+
+const VML: &str = "urn:schemas-microsoft-com:vml";
+const O: &str = "urn:schemas-microsoft-com:office:office";
+const R: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+
+/// A preset pattern's tile as a PNG part beside the main part (its set bits black, the rest white), and its
+/// relationship's id: what a VML pattern fill names.
+fn pattern_tile(
+    src: &crate::docx::Source,
+    parts: &mut Vec<(String, Vec<u8>)>,
+    preset: crate::drawing::paint::PatternPreset,
+) -> Result<String, String> {
+    let bits = crate::drawing::patterns::tile(preset);
+    let rgba: Vec<u8> = (0..64).flat_map(|k| if bits[k / 8] & (0x80 >> (k % 8)) != 0 { [0, 0, 0, 255] } else { [255, 255, 255, 255] }).collect();
+    let png = crate::render::svg::png(8, 8, &rgba);
+    let dir = src.main.rsplit_once('/').map_or(String::new(), |(d, _)| format!("{d}/"));
+    let taken = |n: &str| parts.iter().any(|(m, _)| m == n) || package::read(&src.package, &[], n).ok().flatten().is_some();
+    let name = (1..).map(|k| format!("{dir}media/pattern{k}.png")).find(|n| !taken(n)).unwrap_or_default();
+    let rid = package::add_part(&src.package, parts, &src.main, &name, "image/png", IMAGE_REL)?;
+    package::set(parts, &name, png);
+    Ok(rid)
+}
+
+const IMAGE_REL: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image";
+
+/// A page fill as a `v:background` (prefixes `[v, o, r]`), as Word writes one: its gradient, its picture tiled,
+/// stretched or as a two-colour pattern, or a preset pattern from its tile picture (`tile`, its relationship). `None`
+/// for a fill VML has no page form of.
+fn vml_background(
+    f: &crate::drawing::paint::Fill,
+    palette: crate::drawing::paint::Palette,
+    [v, o, r]: &[String; 3],
+    tile: Option<&str>,
+) -> Option<String> {
+    use crate::drawing::paint::{BlipAdjust, BlipMode, Fill, GradientKind, TileFlip};
+    let hex = |c: &crate::drawing::colour::Colour| {
+        let c = c.resolve(palette.theme, palette.map, None);
+        (format!("#{:02x}{:02x}{:02x}", c.r, c.g, c.b), f64::from(c.a) / 255.0)
+    };
+    let opacity = |name: &str, a: f64| if a < 1.0 { format!(r#" {name}="{}""#, (a * 1000.0).round() / 1000.0) } else { String::new() };
+    let fill = match f {
+        Fill::Gradient(g) if g.stops.len() >= 2 => {
+            let (radial, angle) = match g.kind {
+                GradientKind::Linear { angle, .. } => (false, (270.0 - angle.0 as f64 / 60000.0).rem_euclid(360.0)),
+                GradientKind::Path { .. } => (true, 0.0),
+            };
+            // A radial gradient is read from the outside in.
+            let stops: Vec<(f64, String, f64)> = if radial {
+                g.stops.iter().rev().map(|(p, c)| (1.0 - p.fraction(), hex(c).0, hex(c).1)).collect()
+            } else {
+                g.stops.iter().map(|(p, c)| (p.fraction(), hex(c).0, hex(c).1)).collect()
+            };
+            let (first, last) = (&stops[0], &stops[stops.len() - 1]);
+            // Two colours as Word blends them are written as the two; any other stops as a list.
+            let two = crate::drawing::vml::is_two_colour(g);
+            let colors = if two {
+                String::new()
+            } else {
+                let list: Vec<String> = stops.iter().map(|(p, c, _)| format!("{} {c}", (p * 100000.0).round() / 100000.0)).collect();
+                format!(r#" colors="{}""#, list.join(";"))
+            };
+            let mirrored = g.flip != TileFlip::None && g.tile != [crate::drawing::units::Pct(0); 4];
+            let kind = if radial { "gradientRadial" } else { "gradient" };
+            let mut focus = if mirrored { r#" focus="50%""#.to_string() } else { String::new() };
+            if let GradientKind::Path { focus: at, .. } = g.kind {
+                let f = |p: crate::drawing::units::Pct| (p.fraction() * 100_000.0).round() / 100_000.0;
+                let size = |a: crate::drawing::units::Pct, b: crate::drawing::units::Pct| {
+                    ((1.0 - a.fraction() - b.fraction()).max(0.0) * 100_000.0).round() / 100_000.0
+                };
+                focus.push_str(&format!(r#" focusposition="{},{}" focussize="{},{}""#, f(at[0]), f(at[1]), size(at[0], at[2]), size(at[1], at[3])));
+            }
+            let (o1, o2) = (opacity("opacity", first.2), opacity(&format!("{o}:opacity2"), last.2));
+            // One colour darkened or lightened is written as the fill's own, as Word writes it.
+            let rgb = |c: &crate::drawing::colour::Colour| c.resolve(palette.theme, palette.map, None).to_rgb();
+            let color2 = match two.then(|| crate::drawing::vml::shade_of(rgb(&g.stops[0].1), rgb(&g.stops[g.stops.len() - 1].1))).flatten() {
+                Some((light, n)) => format!("fill {}({n})", if light { "lighten" } else { "darken" }),
+                None => last.1.clone(),
+            };
+            let angle = (angle * 100_000.0).round() / 100_000.0;
+            format!(r#"<{v}:fill type="{kind}" color="{}" color2="{color2}"{colors} angle="{angle}"{focus}{o1}{o2}/>"#, first.1)
+        }
+        Fill::Blip(b) => {
+            let image = b.image?;
+            let (kind, colours) = match (&b.mode, b.adjust.iter().find_map(|a| if let BlipAdjust::Duotone(d) = a { Some(d) } else { None })) {
+                (BlipMode::Tile { .. }, Some([fg, bg])) => ("pattern", format!(r#" color2="{}" color="{}""#, hex(fg).0, hex(bg).0)),
+                (BlipMode::Tile { .. }, None) => ("tile", String::new()),
+                (BlipMode::Stretch(_), _) => ("frame", String::new()),
+            };
+            format!(r#"<{v}:fill {r}:id="{NEW_IMAGE}{image}"{colours} type="{kind}"/>"#)
+        }
+        Fill::Pattern { preset, fg, bg } => {
+            let title = props::esc(crate::drawing::patterns::title(*preset));
+            let (fg, bg) = (hex(fg).0, hex(bg).0);
+            return Some(format!(
+                r#"<{v}:background id="_x0000_s1025" {o}:bwmode="white" fillcolor="{bg}" {o}:targetscreensize="1024,768"><{v}:fill {r}:id="{}" {o}:title="{title}" color2="{fg}" type="pattern"/></{v}:background>"#,
+                tile?
+            ));
+        }
+        _ => return None,
+    };
+    Some(format!(r#"<{v}:background id="_x0000_s1025" {o}:bwmode="white" {o}:targetscreensize="1024,768">{fill}</{v}:background>"#))
 }
 
 /// Replaces, removes (`el` of `None`) or adds the settings child `name`, where the schema puts it.
@@ -1563,6 +1787,11 @@ impl<'a, 'i> Saver<'a, 'i> {
         self.paragraphs(q, p, at)
     }
 
+    /// A table's own `w:shd` as written in its `w:tblPr` (not its style's).
+    fn direct_shd(&self, t: &Table) -> Option<String> {
+        Props::parse(t.direct.0.as_deref(), "tblPr", &self.cx).get("shd").map(str::to_string)
+    }
+
     fn table(&mut self, a: &Table, b: &Table) -> Result<(), String> {
         let same_rows = a.rows.len() == b.rows.len()
             && a.rows.iter().zip(&b.rows).all(|(x, y)| {
@@ -1574,14 +1803,19 @@ impl<'a, 'i> Saver<'a, 'i> {
                     && x.header == y.header
                     && (x.grid_before, x.grid_after) == (y.grid_before, y.grid_after)
                     && x.rev == y.rev
-                    && x.cells
-                        .iter()
-                        .zip(&y.cells)
-                        .all(|(c, d)| c.width == d.width && c.span == d.span && c.direct.0 == d.direct.0 && c.v_merge == d.v_merge && c.rev == d.rev)
+                    && x.cells.iter().zip(&y.cells).all(|(c, d)| {
+                        c.width == d.width
+                            && c.span == d.span
+                            && c.direct.0 == d.direct.0
+                            && c.v_merge == d.v_merge
+                            && c.rev == d.rev
+                            && c.ids == d.ids
+                    })
             })
             && a.grid == b.grid
             && (&a.change, &a.grid_change) == (&b.change, &b.grid_change)
             && a.width == b.width
+            && self.direct_shd(a) == self.direct_shd(b)
             && (&a.style_id, a.look, a.jc, a.ind, a.ind_pct, a.floating) == (&b.style_id, b.look, b.jc, b.ind, b.ind_pct, b.floating);
         // Tables read as one (nothing between them) are written as one.
         let joined = a.src.as_ref().is_some_and(|r| self.tables.get(&r.start).is_some_and(|n| n.range().end != r.end));
@@ -1771,17 +2005,17 @@ impl<'a, 'i> Saver<'a, 'i> {
                     (Some(p), Some(a)) => {
                         const ORDER: &[&str] = &["tblStyle", "tblpPr", "tblOverlap", "bidiVisual", "tblStyleRowBandSize", "tblStyleColBandSize", "tblW", "jc", "tblCellSpacing", "tblInd", "tblBorders", "shd", "tblLayout", "tblCellMar", "tblLook", "tblCaption", "tblDescription", "tblPrChange"];
                         let before = |name: &str| &ORDER[..ORDER.iter().position(|n| *n == name).unwrap_or(0)];
-                        let mut fix = Vec::new();
+                        let mut fix: Vec<(&str, String, &[&str])> = Vec::new();
                         if a.style_id != t.style_id {
                             let tag = t.style_id.as_ref().map_or(String::new(), |id| format!("<{w}tblStyle {w}val=\"{}\"/>", props::esc(id)));
-                            fix.push(self.set_child(p, "tblStyle", tag, before("tblStyle")));
+                            fix.push(("tblStyle", tag, before("tblStyle")));
                         }
                         if a.floating != t.floating {
                             let (pos, overlap) = tblp_pr(&w, t.floating.as_ref());
-                            fix.extend(self.set_children(p, vec![("tblpPr", pos, before("tblpPr")), ("tblOverlap", overlap, before("tblOverlap"))]));
+                            fix.extend([("tblpPr", pos, before("tblpPr")), ("tblOverlap", overlap, before("tblOverlap"))]);
                         }
                         if a.width != t.width {
-                            fix.push(self.set_child(p, "tblW", width(&w, "tblW", &t.width), before("tblW")));
+                            fix.push(("tblW", width(&w, "tblW", &t.width), before("tblW")));
                         }
                         if a.jc != t.jc {
                             let v = match t.jc {
@@ -1789,25 +2023,27 @@ impl<'a, 'i> Saver<'a, 'i> {
                                 Jc::Right => "right",
                                 _ => "left",
                             };
-                            fix.push(self.set_child(p, "jc", format!("<{w}jc {w}val=\"{v}\"/>"), before("jc")));
+                            fix.push(("jc", format!("<{w}jc {w}val=\"{v}\"/>"), before("jc")));
                         }
                         if a.cell_spacing != t.cell_spacing {
                             let tag = if t.cell_spacing > 0.0 { width(&w, "tblCellSpacing", &Width::Dxa(t.cell_spacing)) } else { String::new() };
-                            fix.push(self.set_child(p, "tblCellSpacing", tag, before("tblCellSpacing")));
+                            fix.push(("tblCellSpacing", tag, before("tblCellSpacing")));
+                        }
+                        // The table's own shading; its style's stays the style's.
+                        let own = self.direct_shd(t);
+                        if self.direct_shd(a) != own {
+                            fix.push(("shd", own.unwrap_or_default(), before("shd")));
                         }
                         if a.alt != t.alt {
                             let (title, description) = t.alt.as_deref().map_or(("", ""), |a| (a.title.as_str(), a.description.as_str()));
                             let tag = |name: &str, v: &str| if v.is_empty() { String::new() } else { format!("<{w}{name} {w}val=\"{}\"/>", props::esc(v)) };
-                            fix.extend(self.set_children(
-                                p,
-                                vec![
-                                    ("tblCaption", tag("tblCaption", title), before("tblCaption")),
-                                    ("tblDescription", tag("tblDescription", description), before("tblDescription")),
-                                ],
-                            ));
+                            fix.extend([
+                                ("tblCaption", tag("tblCaption", title), before("tblCaption")),
+                                ("tblDescription", tag("tblDescription", description), before("tblDescription")),
+                            ]);
                         }
                         if (a.ind, a.ind_pct) != (t.ind, t.ind_pct) {
-                            fix.push(self.set_child(p, "tblInd", format!("<{w}tblInd {w}w=\"{}\" {w}type=\"dxa\"/>", twips(t.ind)), before("tblInd")));
+                            fix.push(("tblInd", format!("<{w}tblInd {w}w=\"{}\" {w}type=\"dxa\"/>", twips(t.ind)), before("tblInd")));
                         }
                         if a.look != t.look
                             && let Some(l) = t.look
@@ -1824,22 +2060,26 @@ impl<'a, 'i> Saver<'a, 'i> {
                                 on(l.no_h_band),
                                 on(l.no_v_band)
                             );
-                            fix.push(self.set_child(p, "tblLook", tag, before("tblLook")));
+                            fix.push(("tblLook", tag, before("tblLook")));
                         }
                         if a.change != t.change {
                             let tag = t.change.as_ref().map_or(String::new(), |c| revisions::table_change(&w, "tblPrChange", "tblPr", c, self.people));
-                            fix.push(self.set_child(p, "tblPrChange", tag, before("tblPrChange")));
+                            fix.push(("tblPrChange", tag, before("tblPrChange")));
                         }
+                        // One rewrite of them all: a self-closing `w:tblPr` is rewritten whole, in schema order.
+                        fix.sort_by_key(|(name, _, _)| before(name).len());
+                        let fix = self.set_children(p, fix);
                         if fix.is_empty() { self.xml[p.range()].to_string() } else { self.spliced(p.range(), fix)? }
                     }
                     (Some(p), None) => self.xml[p.range()].to_string(),
-                    (None, _) => tbl_pr(&w, t, self.people),
+                    (None, _) => tbl_pr(&w, t, self.direct_shd(t).as_deref(), self.people),
                 });
                 close
             }
             None => {
                 out.push_str(&format!("<{w}tbl>"));
-                out.push_str(&tbl_pr(&w, t, self.people));
+                let shd = self.direct_shd(t);
+                out.push_str(&tbl_pr(&w, t, shd.as_deref(), self.people));
                 format!("</{w}tbl>")
             }
         };
@@ -1852,6 +2092,7 @@ impl<'a, 'i> Saver<'a, 'i> {
         }
         out.push_str(&format!("</{w}tblGrid>"));
         let old_rows: Vec<&Row> = orig.map(|a| a.rows.iter().collect()).unwrap_or_default();
+        let first = node.map(|n| (n, self.direct_shd(t).is_some()));
         // Row- and cell-level controls (repeating sections and their items): opened and closed around maximal runs
         // of the rows (or a row's cells) they wrap.
         let mut open: Vec<ControlId> = Vec::new();
@@ -1880,7 +2121,7 @@ impl<'a, 'i> Saver<'a, 'i> {
                         self.container(&c.blocks, &d.blocks)?;
                     }
                     let mut inner = std::mem::replace(&mut self.splices, outer);
-                    inner.extend(self.row_fixes(n, k, row, node));
+                    inner.extend(self.row_fixes(n, k, row, first));
                     out.push_str(&self.spliced(n.range(), inner)?);
                 }
                 (_, n) => {
@@ -1889,11 +2130,12 @@ impl<'a, 'i> Saver<'a, 'i> {
                         None => (format!("<{w}tr>"), format!("</{w}tr>")),
                     };
                     out.push_str(&open);
-                    out.push_str(&self.row_props(n, kept, row));
+                    out.push_str(&self.row_props(n, kept, row, first));
                     let mut cells_open = Vec::new();
                     for c in &row.cells {
                         wrap(&mut out, &c.controls, &mut cells_open, self);
-                        out.push_str(&format!("<{w}tc>{}", tc_pr(&w, c, self.people, &self.cx)));
+                        let id = c.ids.as_ref().and_then(|i| i.id.as_deref()).map(|id| format!(" {w}id=\"{}\"", props::esc(id))).unwrap_or_default();
+                        out.push_str(&format!("<{w}tc{id}>{}", tc_pr(&w, c, self.people, &self.cx)));
                         out.push_str(&self.blocks_xml(orig, &c.blocks)?);
                         out.push_str(&format!("</{w}tc>"));
                     }
@@ -1949,9 +2191,10 @@ impl<'a, 'i> Saver<'a, 'i> {
 
     /// A rewritten row's `w:tblPrEx` and `w:trPr`: its source's (`n`, read as `was`) with its revisions as the model
     /// has them now, else written from the model.
-    fn row_props(&self, n: Option<Node>, was: Option<&Row>, row: &Row) -> String {
+    fn row_props(&self, n: Option<Node>, was: Option<&Row>, row: &Row, table: Option<(Node, bool)>) -> String {
         let w = &self.w;
         let same = was.is_some_and(|k| k.rev == row.rev);
+        let later = n.map(|n| self.later_table_ex(n, row, table)).unwrap_or_default();
         // A row rewritten from the model (its cells changed) patches the properties it was read with.
         let src = |name: &str| {
             n.and_then(|n| child(n, name)).map(|p| &self.xml[p.range()]).or(if name == "trPr" {
@@ -1962,10 +2205,15 @@ impl<'a, 'i> Saver<'a, 'i> {
         };
         let mut out = String::new();
         match src("tblPrEx") {
-            Some(x) if same => out.push_str(x),
+            Some(x) if same && later.is_empty() => out.push_str(x),
             x => {
                 let mut p = Props::parse(x, "tblPrEx", &self.cx);
                 p.reorder(revisions::TBLPREX);
+                for (name, tag, _) in later {
+                    if p.get(name).is_none() {
+                        p.set(name, tag);
+                    }
+                }
                 p.remove("tblPrExChange");
                 let change = revisions::ex_change(w, &row.rev, self.people);
                 if !change.is_empty() {
@@ -1992,24 +2240,48 @@ impl<'a, 'i> Saver<'a, 'i> {
         out
     }
 
+    /// The exceptions a row of a later table read as one with the first (`table`, the one written, and whether it is
+    /// written with shading of its own) takes from its own table, as (name, XML, the names before it) in schema order:
+    /// its alignment and cell margins, and its shading while the model keeps it (its own, else its style's when the
+    /// first has its own: written, or none written as auto).
+    fn later_table_ex(&self, n: Node, now: &Row, table: Option<(Node, bool)>) -> Vec<(&'static str, String, &'static [&'static str])> {
+        let Some((first, first_own)) = table else { return Vec::new() };
+        let Some(own) = n.ancestors().skip(1).find(|a| is_w(*a, "tbl")).filter(|t| first != *t) else { return Vec::new() };
+        let pr = child(own, "tblPr");
+        let mut out: Vec<(&'static str, String, &'static [&'static str])> = ["jc", "tblCellMar"]
+            .into_iter()
+            .filter_map(|name| {
+                Some((name, self.xml[pr.and_then(|p| child(p, name))?.range()].to_string(), revisions::before(revisions::TBLPREX, name)))
+            })
+            .collect();
+        if let Some((fill, hatch)) = now.table_shading {
+            let tag = match pr.and_then(|p| child(p, "shd")) {
+                Some(c) => Some(self.xml[c.range()].to_string()),
+                None if first_own => {
+                    let w = &self.w;
+                    let hex = |c: Option<u32>| c.map_or("auto".to_string(), |c| format!("{c:06X}"));
+                    let pattern = hatch.map_or("clear", |h| h.stripe.val());
+                    Some(format!("<{w}shd {w}val=\"{pattern}\" {w}color=\"{}\" {w}fill=\"{}\"/>", hex(hatch.map(|h| h.colour)), hex(fill)))
+                }
+                None => None,
+            };
+            out.extend(tag.map(|t| ("shd", t, revisions::before(revisions::TBLPREX, "shd"))));
+        }
+        out.sort_by_key(|(_, _, before)| before.len());
+        out
+    }
+
     /// A kept row's height and its cells' widths changed by a border drag, and its and its cells' revisions, patched
     /// into its source properties.
-    /// `table` is the table written (the first of tables read as one).
-    fn row_fixes(&self, n: Node, was: &Row, now: &Row, table: Option<Node>) -> Vec<Splice> {
+    /// `table` is the table written (the first of tables read as one) and whether it is written with shading of its own.
+    fn row_fixes(&self, n: Node, was: &Row, now: &Row, table: Option<(Node, bool)>) -> Vec<Splice> {
         let w = self.w.clone();
         let mut out = Vec::new();
         // A row of a later table read as one with the first: its own table's alignment and cell margins become its
         // exceptions (the row's own win).
-        let own = n.ancestors().skip(1).find(|a| is_w(*a, "tbl")).filter(|t| table.is_some_and(|f| f != *t));
         let ex = child(n, "tblPrEx");
-        let mut later: Vec<(&str, String, &[&str])> = Vec::new();
-        for name in ["jc", "tblCellMar"] {
-            if let Some(c) = own.and_then(|t| child(t, "tblPr")).and_then(|p| child(p, name))
-                && ex.is_none_or(|e| child(e, name).is_none())
-            {
-                later.push((name, self.xml[c.range()].to_string(), revisions::before(revisions::TBLPREX, name)));
-            }
-        }
+        let mut later = self.later_table_ex(n, now, table);
+        later.retain(|(name, _, _)| ex.is_none_or(|e| child(e, name).is_none()));
         // The table exceptions' tracked change.
         let change = if was.rev.ex_change != now.rev.ex_change { Some(revisions::ex_change(&w, &now.rev, self.people)) } else { None };
         match ex {
@@ -2037,9 +2309,7 @@ impl<'a, 'i> Saver<'a, 'i> {
                 }
             }
             Some(p) => {
-                if let Some(tag) = change {
-                    out.push(self.set_child(p, "tblPrExChange", tag, revisions::before(revisions::TBLPREX, "tblPrExChange")));
-                }
+                later.extend(change.map(|tag| ("tblPrExChange", tag, revisions::before(revisions::TBLPREX, "tblPrExChange"))));
                 out.extend(self.set_children(p, later));
             }
             None => {
@@ -2122,10 +2392,24 @@ impl<'a, 'i> Saver<'a, 'i> {
                 // Shading and vertical alignment that table formatting set as direct properties (resolved values that
                 // a style region gives aren't written).
                 let (da, db) = (Props::parse(a.direct.0.as_deref(), "tcPr", &self.cx), Props::parse(b.direct.0.as_deref(), "tcPr", &self.cx));
-                for name in ["tcBorders", "shd", "noWrap", "tcMar", "textDirection", "tcFitText", "vAlign", "hideMark", "headers"] {
+                for name in ["tcBorders", "shd", "noWrap", "tcMar", "textDirection", "tcFitText", "vAlign", "hideMark"] {
                     if da.get(name) != db.get(name) {
                         fix.push((name, db.get(name).unwrap_or("").to_string(), revisions::before(revisions::TCPR, name)));
                     }
+                }
+                // Its header cells, and its own id (`w:tc/@w:id`).
+                fn headers(c: &Cell) -> &[String] {
+                    c.ids.as_ref().map_or(&[][..], |i| i.headers.as_slice())
+                }
+                if headers(a) != headers(b) {
+                    fix.push(("headers", header_refs(&w, b).unwrap_or_default(), revisions::before(revisions::TCPR, "headers")));
+                }
+                let id = |c: &Cell| c.ids.as_ref().and_then(|i| i.id.clone());
+                if id(a) != id(b) {
+                    let (start, at) = (tc.range().start, self.open_end(*tc));
+                    let open = self.without_attrs(*tc, &self.xml[start..at], &[(Some(W), "id"), (None, "id")]);
+                    let attr = id(b).map(|v| format!(" {w}id=\"{}\"", props::esc(&v))).unwrap_or_default();
+                    out.push((start..at, format!("{}{attr}>", open.trim_end_matches('>'))));
                 }
                 // The cell's insertion, deletion or merge, and its property change.
                 if a.rev != b.rev {
@@ -2168,7 +2452,7 @@ impl<'a, 'i> Saver<'a, 'i> {
             // A pasted copy (a new id) is found by where it was read from, and gets drawing ids of its own.
             let copied = f.src.as_ref().and_then(|s| self.float_src.values().find(|(r, _)| r == s)).filter(|_| !self.float_src.contains_key(&f.id));
             let Some((r, was)) = self.float_src.get(&f.id).or(copied) else {
-                if let Some(x) = self.new_float_xml(f) {
+                if let Some(x) = self.new_float_xml(f, run) {
                     push(&x);
                 }
                 continue;
@@ -2362,6 +2646,21 @@ impl<'a, 'i> Saver<'a, 'i> {
             at = n.end;
         }
         out.push_str(&self.xml[at..r.end]);
+        out
+    }
+
+    /// `open`, element `n`'s start tag as written (or as [`Saver::tags`] opens it), without its attributes `names`
+    /// (namespace and local name), each with the space before it.
+    fn without_attrs(&self, n: Node, open: &str, names: &[(Option<&str>, &str)]) -> String {
+        let base = n.range().start;
+        let mut out = open.to_string();
+        let gone: Vec<Range<usize>> = n.attributes().filter(|a| names.contains(&(a.namespace(), a.name()))).map(|a| a.range()).collect();
+        for r in gone.iter().rev() {
+            let from = self.xml[..r.start].trim_end().len();
+            if r.end - base <= out.len() {
+                out.replace_range(from - base..r.end - base, "");
+            }
+        }
         out
     }
 
@@ -3150,7 +3449,7 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                     Some(k) => {
                         let (mut open, close) = s.tags(nodes[k]);
                         if std::mem::replace(&mut used[k], true) {
-                            open = strip_attr(&strip_attr(&open, "paraId"), "textId");
+                            open = s.without_attrs(nodes[k], &open, &[(Some(W14), "paraId"), (Some(W14), "textId")]);
                         }
                         let ppr = match by_style {
                             Some(k) if Rc::ptr_eq(&qs[k].mark, &p.mark) => s.ppr(nodes[k], sect),
@@ -4159,7 +4458,13 @@ pub(crate) const NEW_IMAGE: &str = "rIdCeImg";
 impl Saver<'_, '_> {
     /// A float with no source (an inserted text box, or a picture float): its `w:drawing`, from the model. `None` for
     /// what the model can't write (a text box whose content can't be).
-    fn new_float_xml(&self, f: &Float) -> Option<String> {
+    fn new_float_xml(&self, f: &Float, run: &Run) -> Option<String> {
+        // A watermark is written as Word writes one, so Word's Watermark dialog finds it.
+        if let Some(m) = super::watermark::of(f) {
+            let spid = f.shape.as_ref().map_or(0, |s| s.nv.id).max(2049);
+            let image = f.image.map_or(String::new(), |i| format!("{NEW_IMAGE}{i}"));
+            return Some(super::watermark::vml(&m, &self.w, [f.w, f.h], spid, &image, &run.lang));
+        }
         const WP: &str = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
         const A: &str = "http://schemas.openxmlformats.org/drawingml/2006/main";
         const PIC: &str = "http://schemas.openxmlformats.org/drawingml/2006/picture";
@@ -4448,8 +4753,15 @@ fn add_images(package: &[u8], images: &[Vec<u8>], parts: &mut Vec<(String, Vec<u
         .collect();
     for name in names {
         let xml = String::from_utf8(parts.iter().find(|(n, _)| *n == name).map(|p| p.1.clone()).unwrap_or_default()).map_err(|e| e.to_string())?;
-        let mut used: Vec<usize> =
-            xml.match_indices(NEW_IMAGE).filter_map(|(k, _)| xml[k + NEW_IMAGE.len()..].split('"').next()?.parse().ok()).collect();
+        // The images its relationship attributes name (`r:embed`, `r:id`, `o:relid`), not text that looks like one.
+        let mut used: Vec<usize> = {
+            let dom = roxmltree::Document::parse(&xml).map_err(|e| e.to_string())?;
+            dom.descendants()
+                .flat_map(|n| n.attributes())
+                .filter(|a| a.namespace() == Some(R) || a.namespace() == Some(O) && a.name() == "relid")
+                .filter_map(|a| a.value().strip_prefix(NEW_IMAGE)?.parse().ok())
+                .collect()
+        };
         used.sort_unstable();
         used.dedup();
         let (dir, file) = name.rsplit_once('/').unwrap_or(("", &name));
@@ -5027,7 +5339,7 @@ fn shading(w: &str, fill: Option<u32>) -> String {
 
 /// A table's `w:tblPr` from the model (its resolved properties written as direct ones, its tracked change last), in
 /// CT_TblPr order.
-fn tbl_pr(w: &str, t: &Table, people: &People) -> String {
+fn tbl_pr(w: &str, t: &Table, shd: Option<&str>, people: &People) -> String {
     let mut s = format!("<{w}tblPr>");
     if let Some(id) = &t.style_id {
         s.push_str(&format!("<{w}tblStyle {w}val=\"{}\"/>", props::esc(id)));
@@ -5058,6 +5370,9 @@ fn tbl_pr(w: &str, t: &Table, people: &People) -> String {
             s.push_str(&border(w, name, b));
         }
         s.push_str(&format!("</{w}tblBorders>"));
+    }
+    if let Some(shd) = shd {
+        s.push_str(shd);
     }
     if t.fixed {
         s.push_str(&format!("<{w}tblLayout {w}type=\"fixed\"/>"));
@@ -5143,6 +5458,14 @@ fn tc_pr(w: &str, c: &Cell, people: &People, cx: &Cx) -> String {
         }
         // A Word 97 horizontal merge is read as a span.
         p.remove("hMerge");
+        // The header cells as read, unless the model's differ from what the reader took of them.
+        let read = p.get("headers").and_then(|x| cx.parse(x, |_, el| crate::docx::header_list(el))).unwrap_or_default();
+        if read != c.ids.as_ref().map_or(&[][..], |i| i.headers.as_slice()) {
+            match header_refs(w, c) {
+                Some(x) => p.set("headers", x),
+                None => p.remove("headers"),
+            }
+        }
         match c.v_merge {
             VMerge::Restart => p.set("vMerge", format!("<{w}vMerge {w}val=\"restart\"/>")),
             VMerge::Continue => p.set("vMerge", format!("<{w}vMerge/>")),
@@ -5203,6 +5526,7 @@ fn tc_pr(w: &str, c: &Cell, people: &People, cx: &Cx) -> String {
     if c.hide_mark {
         s.push_str(&format!("<{w}hideMark/>"));
     }
+    s.push_str(&header_refs(w, c).unwrap_or_default());
     for (_, tag) in revisions::cell_marks(w, &c.rev, people) {
         s.push_str(&tag);
     }
@@ -5210,12 +5534,23 @@ fn tc_pr(w: &str, c: &Cell, people: &People, cx: &Cx) -> String {
     s
 }
 
-/// A start tag without the attribute `*:name="..."`.
+/// A cell's `w:headers`: the header cells it lists, when it lists any.
+fn header_refs(w: &str, c: &Cell) -> Option<String> {
+    let ids = c.ids.as_ref().filter(|i| !i.headers.is_empty())?;
+    let list: String = ids.headers.iter().map(|h| format!("<{w}header {w}val=\"{}\"/>", props::esc(h))).collect();
+    Some(format!("<{w}headers>{list}</{w}headers>"))
+}
+
+/// A start tag without its attribute `*:name` (either quote), for markup not parsed (a made comment paragraph's).
 fn strip_attr(tag: &str, name: &str) -> String {
-    let pat = format!(":{name}=\"");
+    let pat = format!(":{name}=");
     let Some(at) = tag.find(&pat) else { return tag.to_string() };
     let start = tag[..at].rfind(char::is_whitespace).unwrap_or(at);
-    let end = tag[at + pat.len()..].find('"').map_or(tag.len(), |e| at + pat.len() + e + 1);
+    let value = at + pat.len();
+    let end = match tag[value..].chars().next() {
+        Some(q @ ('"' | '\'')) => tag[value + 1..].find(q).map_or(tag.len(), |e| value + 1 + e + 1),
+        _ => return tag.to_string(),
+    };
     format!("{}{}", &tag[..start], &tag[end..])
 }
 
@@ -5297,6 +5632,286 @@ mod tests {
         assert_eq!(kept, "hel world");
         assert_eq!(diff(&k("abc"), &k("")), vec![None; 3]);
         assert_eq!(strip_attr(r#"<w:p w14:paraId="1A" w:rsidR="00"><"#, "paraId"), r#"<w:p w:rsidR="00"><"#);
+        assert_eq!(strip_attr(r#"<w:p w14:paraId='1"A' w:rsidR="00"><"#, "paraId"), r#"<w:p w:rsidR="00"><"#);
+    }
+
+    fn render_fixture(name: &str) -> (Vec<u8>, Document) {
+        let bytes = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/render").join(name)).expect("fixture");
+        let doc = crate::docx::read_editable(&bytes).expect("reads");
+        (bytes, doc)
+    }
+
+    fn part_text(package: &[u8], name: &str) -> String {
+        let mut z = zip::ZipArchive::new(Cursor::new(package)).expect("a package");
+        let mut s = String::new();
+        std::io::Read::read_to_string(&mut z.by_name(name).expect("the part"), &mut s).expect("text");
+        s
+    }
+
+    #[test]
+    fn an_untouched_page_background_keeps_its_markup_and_a_changed_one_is_written() {
+        let (bytes, mut doc) = render_fixture("page-pattern.docx");
+        assert_eq!(save(&doc).expect("saves"), bytes, "untouched");
+        // A new colour: the fill as read is kept, the theme attributes go with the old colour.
+        let was = part_text(&bytes, "word/document.xml");
+        let fill = &was[was.find("<v:background").unwrap()..was.find("</v:background>").unwrap() + 15];
+        doc.page_colour = Some(0x12_3456);
+        doc.settings.display_background_shape = false;
+        let saved = save(&doc).expect("saves");
+        let xml = part_text(&saved, "word/document.xml");
+        assert!(xml.contains(&format!(r#"<w:background w:color="123456">{fill}</w:background>"#)), "{xml}");
+        assert!(!part_text(&saved, "word/settings.xml").contains("displayBackgroundShape"));
+        let again = crate::docx::read(&saved).expect("reads again");
+        assert_eq!((again.page_colour, again.page_fill == doc.page_fill, again.settings.display_background_shape), (Some(0x12_3456), true, false));
+        // No colour and no fill: no background.
+        doc.page_colour = None;
+        doc.page_fill = None;
+        let xml = part_text(&save(&doc).expect("saves"), "word/document.xml");
+        assert!(!xml.contains("<w:background"), "{xml}");
+    }
+
+    #[test]
+    fn a_fill_that_takes_the_page_colour_is_written_from_the_model_when_the_colour_changes() {
+        // The gradient names no first colour: it starts from the page's white.
+        let (_, mut doc) = render_fixture("page-gradient.docx");
+        let fill = doc.page_fill.clone();
+        doc.page_colour = Some(0x12_3456);
+        let saved = save(&doc).expect("saves");
+        let xml = part_text(&saved, "word/document.xml");
+        let el = &xml[xml.find("<w:background").unwrap()..xml.find("</w:background>").unwrap()];
+        assert!(!el.contains("xmlns") && !el.contains("opacity"), "as Word writes it: {el}");
+        let again = crate::docx::read(&saved).expect("reads again");
+        assert_eq!((again.page_colour, &again.page_fill), (Some(0x12_3456), &fill), "the fill as the model held it");
+    }
+
+    #[test]
+    fn a_fill_on_a_part_without_vml_declares_its_namespaces_on_the_root() {
+        let (bytes, _) = render_fixture("page-colour.docx");
+        let xml = part_text(&bytes, "word/document.xml");
+        let bare =
+            xml.replace(r#" xmlns:v="urn:schemas-microsoft-com:vml""#, "").replace(r#" xmlns:o="urn:schemas-microsoft-com:office:office""#, "");
+        assert!(!bare.contains("xmlns:v="));
+        let package = repackage(&bytes, &[("word/document.xml".into(), bare.into_bytes())], zip::CompressionMethod::Deflated).expect("repackages");
+        let mut doc = crate::docx::read_editable(&package).expect("reads");
+        doc.page_fill = render_fixture("page-gradient.docx").1.page_fill;
+        let saved = save(&doc).expect("saves");
+        let again = crate::docx::read(&saved).expect("reads again");
+        assert_eq!(again.page_fill, doc.page_fill);
+        let xml = part_text(&saved, "word/document.xml");
+        let root = &xml[xml.find("<w:document").unwrap()..];
+        assert!(root[..root.find('>').unwrap()].contains(r#"xmlns:v="urn:schemas-microsoft-com:vml""#), "{xml}");
+    }
+
+    #[test]
+    fn a_page_background_made_since_reading_is_written_in_its_model_form() {
+        use crate::drawing::paint::Fill;
+        // A gradient on a page that had none, its colour, shown.
+        let (_, mut doc) = render_fixture("watermark-text.docx");
+        let (_, gradient) = render_fixture("page-gradient.docx");
+        doc.page_colour = Some(0xFF_FFFF);
+        doc.page_fill = gradient.page_fill.clone();
+        doc.settings.display_background_shape = true;
+        let saved = save(&doc).expect("saves");
+        let xml = part_text(&saved, "word/document.xml");
+        let el = &xml[xml.find("<w:background").unwrap()..xml.find("</w:background>").unwrap()];
+        assert!(
+            el.starts_with(r#"<w:background w:color="FFFFFF"><v:background id="_x0000_s1025" o:bwmode="white""#) && !el.contains("xmlns"),
+            "{el}"
+        );
+        let again = crate::docx::read(&saved).expect("reads again");
+        assert_eq!((again.page_colour, again.settings.display_background_shape), (Some(0xFF_FFFF), true));
+        let (Some(Fill::Gradient(a)), Some(Fill::Gradient(b))) = (&again.page_fill, &gradient.page_fill) else { panic!("{:?}", again.page_fill) };
+        assert_eq!((a.kind, a.tile, a.flip), (b.kind, b.tile, b.flip));
+        assert_eq!(a.stops.len(), b.stops.len());
+        // A tiled picture: the image goes with the part.
+        let (_, picture) = render_fixture("page-picture.docx");
+        let mut doc = render_fixture("watermark-text.docx").1;
+        doc.images = picture.images.clone();
+        doc.page_fill = picture.page_fill.clone();
+        let saved = save(&doc).expect("saves");
+        let again = crate::docx::read(&saved).expect("reads again");
+        let Some(Fill::Blip(b)) = &again.page_fill else { panic!("{:?}", again.page_fill) };
+        assert_eq!(again.images[b.image.expect("its picture")], picture.images[0]);
+    }
+
+    /// A blank document's body as `body`, read for editing.
+    fn body_doc(body: &str) -> Document {
+        crate::docx::read_editable(&crate::editing::tests::blank_body(body)).expect("reads")
+    }
+
+    fn first_table(doc: &mut Document) -> &mut Table {
+        doc.sections[0].blocks.iter_mut().find_map(|b| if let Block::Table(t) = b { Some(t) } else { None }).expect("a table")
+    }
+
+    /// A one-cell table, its `w:tblPr` children `pr` and its cell's start tag `tc`.
+    fn one_cell(pr: &str, tc: &str, text: &str) -> String {
+        format!(
+            r#"<w:tbl><w:tblPr><w:tblW w:w="2000" w:type="dxa"/>{pr}</w:tblPr><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:tr>{tc}<w:tcPr><w:tcW w:w="2000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>{text}</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#
+        )
+    }
+
+    fn edit_first_cell(t: &mut Table) {
+        let Block::Para(p) = &mut t.rows[0].cells[0].blocks[0] else { panic!("a paragraph") };
+        let Some(Inline::Text(s, _)) = p.inlines.iter_mut().find(|i| matches!(i, Inline::Text(..))) else { panic!("text") };
+        s.push_str(" more");
+    }
+
+    #[test]
+    fn a_joined_table_keeps_each_part_s_shading_when_written_as_one() {
+        let shd = |fill: &str| format!(r#"<w:shd w:val="clear" w:color="auto" w:fill="{fill}"/>"#);
+        for (later, want) in [(shd("0000FF"), (Some(0x00_00FF), None)), (String::new(), (None, Some((None, None))))] {
+            let body = format!("{}{}<w:p/>", one_cell(&shd("FF0000"), "<w:tc>", "a"), one_cell(&later, "<w:tc>", "b"));
+            let mut doc = body_doc(&body);
+            let t = first_table(&mut doc);
+            assert_eq!(t.rows.len(), 2, "read as one");
+            edit_first_cell(t);
+            let saved = save(&doc).expect("saves");
+            let mut again = crate::docx::read_editable(&saved).expect("reads again");
+            let t = first_table(&mut again);
+            assert_eq!(t.rows[0].shading, None);
+            let row = &t.rows[1];
+            let got = (row.shading, if want.0.is_some() { None } else { row.table_shading });
+            assert_eq!(got, want, "{}", part_text(&saved, "word/document.xml"));
+        }
+    }
+
+    #[test]
+    fn a_joined_table_s_later_rows_stay_unshaded_under_shading_the_first_takes_since_reading() {
+        let body = format!("{}{}<w:p/>", one_cell("", "<w:tc>", "a"), one_cell("", "<w:tc>", "b"));
+        let mut doc = body_doc(&body);
+        let t = first_table(&mut doc);
+        assert_eq!(t.rows[1].table_shading, Some((None, None)));
+        t.direct = Raw(Some(Rc::from(r#"<w:tblPr><w:shd w:val="clear" w:color="auto" w:fill="00FF00"/></w:tblPr>"#)));
+        let saved = save(&doc).expect("saves");
+        let mut again = crate::docx::read_editable(&saved).expect("reads again");
+        let t = first_table(&mut again);
+        assert_eq!(t.rows[1].table_shading, Some((None, None)), "{}", part_text(&saved, "word/document.xml"));
+    }
+
+    #[test]
+    fn a_joined_table_s_later_rows_take_its_exceptions_in_schema_order() {
+        let shd = r#"<w:shd w:val="clear" w:color="auto" w:fill="0000FF"/>"#;
+        let mar = r#"<w:tblCellMar><w:left w:w="200" w:type="dxa"/></w:tblCellMar>"#;
+        for (tr, edit) in [("<w:tr>", false), ("<w:tr>", true), ("<w:tr><w:tblPrEx/>", false)] {
+            let later = one_cell(&format!("<w:jc w:val=\"center\"/>{shd}{mar}"), "<w:tc>", "b").replace("<w:tr>", tr);
+            let body = format!("{}{later}<w:p/>", one_cell(shd, "<w:tc>", "a"));
+            let mut doc = body_doc(&body);
+            let t = first_table(&mut doc);
+            if edit {
+                let cell = t.rows[1].cells[0].clone();
+                t.rows[1].cells.push(cell);
+            }
+            let saved = save(&doc).expect("saves");
+            let xml = part_text(&saved, "word/document.xml");
+            let ex = &xml[xml.find("<w:tblPrEx>").expect("exceptions")..xml.find("</w:tblPrEx>").unwrap()];
+            let at = |name: &str| ex.find(&format!("<w:{name}")).unwrap_or_else(|| panic!("{name} in {ex}"));
+            assert!(at("jc") < at("shd") && at("shd") < at("tblCellMar"), "{ex}");
+        }
+    }
+
+    #[test]
+    fn a_table_s_width_and_shading_change_together_in_a_self_closing_tbl_pr() {
+        let body = r#"<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:tc><w:p/></w:tc></w:tr></w:tbl><w:p/>"#;
+        let mut doc = body_doc(body);
+        let t = first_table(&mut doc);
+        t.width = Width::Dxa(144.0);
+        t.direct = Raw(Some(Rc::from(r#"<w:tblPr><w:shd w:val="clear" w:color="auto" w:fill="00FF00"/></w:tblPr>"#)));
+        let saved = save(&doc).expect("saves");
+        let xml = part_text(&saved, "word/document.xml");
+        assert!(
+            xml.contains(r#"<w:tblPr><w:tblW w:w="2880" w:type="dxa"/><w:shd w:val="clear" w:color="auto" w:fill="00FF00"/></w:tblPr>"#),
+            "{xml}"
+        );
+    }
+
+    #[test]
+    fn a_cell_s_id_alone_changing_is_written_over_its_own_however_quoted() {
+        let body = format!("{}<w:p/>", one_cell("", "<w:tc w:id='old'>", "a"));
+        for id in [Some("new"), None] {
+            let mut doc = body_doc(&body);
+            let cell = &mut first_table(&mut doc).rows[0].cells[0];
+            assert_eq!(cell.ids.as_ref().and_then(|i| i.id.as_deref()), Some("old"));
+            cell.ids = id.map(|v| Rc::new(crate::docx::CellIds { id: Some(v.into()), headers: Vec::new() }));
+            let saved = save(&doc).expect("saves");
+            let xml = part_text(&saved, "word/document.xml");
+            roxmltree::Document::parse(&xml).expect("well formed");
+            let mut again = crate::docx::read_editable(&saved).expect("reads again");
+            let ids = first_table(&mut again).rows[0].cells[0].ids.clone();
+            assert_eq!(ids.and_then(|i| i.id.clone()).as_deref(), id, "{xml}");
+        }
+    }
+
+    #[test]
+    fn a_page_fill_takes_a_free_prefix_and_kept_markup_keeps_its_own() {
+        use crate::drawing::paint::Fill;
+        // The root's `v` is another namespace's: the fill's VML takes a free prefix.
+        let (bytes, _) = render_fixture("page-colour.docx");
+        let xml = part_text(&bytes, "word/document.xml").replace(r#"xmlns:v="urn:schemas-microsoft-com:vml""#, r#"xmlns:v="urn:example:other""#);
+        let package = repackage(&bytes, &[("word/document.xml".into(), xml.into_bytes())], zip::CompressionMethod::Deflated).expect("repackages");
+        let mut doc = crate::docx::read_editable(&package).expect("reads");
+        doc.page_fill = render_fixture("page-gradient.docx").1.page_fill;
+        let saved = save(&doc).expect("saves");
+        let out = part_text(&saved, "word/document.xml");
+        roxmltree::Document::parse(&out).expect("well formed");
+        assert!(out.contains(r#"xmlns:v1="urn:schemas-microsoft-com:vml""#) && out.contains("<v1:background"), "{out}");
+        assert_eq!(crate::docx::read(&saved).expect("reads again").page_fill, doc.page_fill);
+        // VML declared on the `w:background` alone: a colour change keeps the fill, and its declaration.
+        let (bytes, read) = render_fixture("page-picture.docx");
+        let xml = part_text(&bytes, "word/document.xml");
+        let decl = r#" xmlns:v="urn:schemas-microsoft-com:vml""#;
+        let local = xml.replacen(decl, "", 1).replacen("<w:background ", &format!("<w:background{decl} "), 1);
+        assert!(!local[..local.find("<w:body").unwrap()].contains(&format!("<w:document{decl}")));
+        let package = repackage(&bytes, &[("word/document.xml".into(), local.into_bytes())], zip::CompressionMethod::Deflated).expect("repackages");
+        let mut doc = crate::docx::read_editable(&package).expect("reads");
+        assert!(matches!(doc.page_fill, Some(Fill::Blip(_))), "{:?}", doc.page_fill);
+        doc.page_colour = read.page_colour.map(|c| c ^ 0x10);
+        let saved = save(&doc).expect("saves");
+        let out = part_text(&saved, "word/document.xml");
+        roxmltree::Document::parse(&out).expect("well formed");
+        assert!(out.contains(&format!("<w:background w:color=\"FFFFEF\"{decl}><v:background")), "{out}");
+        assert_eq!(crate::docx::read(&saved).expect("reads again").page_fill, doc.page_fill);
+    }
+
+    #[test]
+    fn a_kept_page_fill_s_local_declarations_leave_the_background_wordprocessingml() {
+        use crate::drawing::paint::Fill;
+        let (bytes, read) = render_fixture("page-picture.docx");
+        let xml = part_text(&bytes, "word/document.xml");
+        let open = r#"<w:background w:color="FFFFFF">"#;
+        assert!(xml.contains(open));
+        for (tag, attrs) in [("x:background", format!(r#"xmlns:x="{W}" x:color"#)), ("background", format!(r#"xmlns="{W}" color"#))] {
+            let local = xml.replacen(open, &format!(r#"<{tag} xmlns:w="urn:example:other" {attrs}="FFFFFF">"#), 1).replacen(
+                "</w:background>",
+                &format!("</{tag}>"),
+                1,
+            );
+            let package =
+                repackage(&bytes, &[("word/document.xml".into(), local.into_bytes())], zip::CompressionMethod::Deflated).expect("repackages");
+            let mut doc = crate::docx::read_editable(&package).expect("reads");
+            assert!(matches!(doc.page_fill, Some(Fill::Blip(_))), "{:?}", doc.page_fill);
+            doc.page_colour = read.page_colour.map(|c| c ^ 0x10);
+            let saved = save(&doc).expect("saves");
+            let out = part_text(&saved, "word/document.xml");
+            roxmltree::Document::parse(&out).expect("well formed");
+            assert!(out.contains(r#"xmlns:w="urn:example:other""#), "{out}");
+            let again = crate::docx::read(&saved).expect("reads again");
+            assert_eq!((again.page_colour, &again.page_fill), (doc.page_colour, &doc.page_fill), "{out}");
+        }
+    }
+
+    #[test]
+    fn a_replaced_tiled_picture_is_written_with_its_new_image() {
+        use crate::drawing::paint::Fill;
+        let (_, mut doc) = render_fixture("page-picture.docx");
+        let Some(Fill::Blip(mut b)) = doc.page_fill.clone() else { panic!("{:?}", doc.page_fill) };
+        let png = crate::render::svg::png(2, 2, &[0, 128, 255, 255].repeat(4));
+        doc.images.push(png.clone());
+        b.image = Some(doc.images.len() - 1);
+        doc.page_fill = Some(Fill::Blip(b));
+        let saved = save(&doc).expect("saves");
+        let again = crate::docx::read(&saved).expect("reads again");
+        let Some(Fill::Blip(b)) = &again.page_fill else { panic!("{:?}", again.page_fill) };
+        assert_eq!(again.images[b.image.expect("its picture")], png);
     }
 
     #[test]

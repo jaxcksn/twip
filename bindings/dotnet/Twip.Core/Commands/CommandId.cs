@@ -515,4 +515,12 @@ public enum CommandId
     SetFileName,
     /// <summary>Sets the selection's paragraph's drop cap.</summary>
     SetDropCap,
+    /// <summary>Sets the text's fill, outline, shadow, glow and reflection.</summary>
+    SetTextEffects,
+    /// <summary>Sets the document's page colour: none, a colour, a gradient, a pattern or a picture.</summary>
+    SetPageColor,
+    /// <summary>Sets the document's watermark, text or picture, in every header.</summary>
+    SetWatermark,
+    /// <summary>Removes the document's watermark.</summary>
+    RemoveWatermark,
 }

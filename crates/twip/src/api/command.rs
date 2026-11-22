@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use super::drawing::{
     Arrange, Degrees, EffectsChange, FillValue, FlipAxis, LineChange, PictureAdjustChange, ShapeAdjust, ShapeInsert, ShapePreset, ShapeTextChange,
+    TextEffectsChange,
 };
 use super::review::{Body, MarkupView};
 use super::services::TabSelector;
@@ -163,6 +164,10 @@ commands! {
     SetLanguage(Language),
     /// Emboss, engrave, outline and shadow; what isn't given is kept. Undo: one step.
     SetCharacterEffects(CharacterEffects),
+    /// Text effects: the letters' fill, outline, shadow, glow and reflection. Each one given replaces the text's own,
+    /// `null` turns it off (over a style's too; a fill is only removed, so a style's fill shows), what isn't given is
+    /// kept. Undo: one step.
+    SetTextEffects(TextEffectsChange),
     /// The underline's colour, or the text's (`auto`); underlined text only. Undo: one step.
     SetUnderlineColor(#[serde(with = "value")] AutoOr<Color>),
     /// Removes direct character formatting. Undo: one step.
@@ -320,10 +325,21 @@ commands! {
     /// A tab to a place set from the margin or the indent, not from the tab stops (Insert Alignment Tab). Undo: one step.
     InsertAlignmentTab(AlignmentTab),
 
+    // Page background
+    /// The page colour: `none`, a colour (a theme colour, with a tint or shade, stays one), or a gradient, two-colour
+    /// pattern or picture (Fill Effects); a picture without its image keeps the page's. It shows on screen; Word prints
+    /// and exports it only by option. Undo: one step.
+    SetPageColor(#[serde(with = "value")] FillValue),
+    /// A text or picture watermark behind every page's text, in place of the one there is: in every header of every
+    /// section (a section with none gets one), as Word writes it, so Word's Watermark dialog edits it. Undo: one step.
+    SetWatermark(#[serde(with = "value")] Watermark),
+    /// Takes the watermark out of every header. Undo: one step.
+    RemoveWatermark,
+
     // Insert
     /// A table (1…32767 rows, 1…63 columns). Undo: one step.
     InsertTable(TableSize),
-    /// A picture (PNG, JPEG, GIF, BMP, TIFF). Undo: one step.
+    /// A picture (PNG, JPEG, GIF, BMP, TIFF, JPEG XR, SVG, EMF or WMF). Undo: one step.
     InsertPicture(Picture),
     /// A text box. Undo: one step.
     InsertTextBox,
@@ -487,7 +503,7 @@ commands! {
     /// Crops the selected picture, inline or floating, by fractions of its image from each edge (0…1; negative values
     /// pad it): its box follows the part shown, at the scale it is drawn. Undo: one step.
     SetPictureCrop(PictureCrop),
-    /// Replaces the selected picture's image (PNG, JPEG, GIF, BMP or TIFF), keeping its width, effects and place; its
+    /// Replaces the selected picture's image (PNG, JPEG, GIF, BMP, TIFF, JPEG XR, SVG, EMF or WMF), keeping its width, effects and place; its
     /// height follows the new image and the crop is cleared. Undo: one step.
     ChangePicture(#[serde(with = "value")] Bytes),
     /// The selected objects' rotation (0…360°, clockwise). Undo: one step.
@@ -680,6 +696,74 @@ pub struct HeaderFooterSlot {
     pub kind: crate::api::state::HeaderFooterKind,
     /// Which pages it is for.
     pub pages: crate::api::state::HeaderFooterType,
+}
+
+/// A watermark: text, or a picture.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
+pub enum Watermark {
+    /// Text drawn as one stretched line.
+    Text(TextWatermark),
+    /// A picture.
+    Picture(PictureWatermark),
+}
+
+/// A text watermark (Printed Watermark's Text watermark). Unset fields take Word's defaults.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TextWatermark {
+    /// The text (1…1024 characters, on one line).
+    pub text: String,
+    /// The font family; by default the theme's body font (what Word's Printed Watermark starts with).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub font: Option<String>,
+    /// The text's language (a BCP 47 tag, `en-US`), as Word's Language box sets it; by default the document's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    /// The font size (1…1584 pt; 1 pt is 1 pt); `null` for Auto: as large as fits the page's text area.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<Points>,
+    /// The colour; silver (`#C0C0C0`) by default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<Color>,
+    /// How transparent, percent (0 opaque … 100); 50 by default (Word's Semitransparent).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transparency: Option<f64>,
+    /// Diagonal (the default) or horizontal.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layout: Option<WatermarkLayout>,
+    /// Bold.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bold: Option<bool>,
+    /// Italic.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub italic: Option<bool>,
+}
+
+/// How a text watermark lies on the page.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum WatermarkLayout {
+    /// Rising from the bottom left to the top right (turned 315°).
+    #[default]
+    Diagonal,
+    /// Level.
+    Horizontal,
+}
+
+/// A picture watermark (Printed Watermark's Picture watermark).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PictureWatermark {
+    /// The image (PNG, JPEG, GIF, BMP, TIFF, JPEG XR, SVG, EMF or WMF); empty keeps the picture watermark's own, and is empty
+    /// in the state.
+    pub image: Bytes,
+    /// Its size as a percentage of its own (1…5000); `null` for Auto: as large as fits the page's text area.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scale: Option<f64>,
+    /// Washed out (lightened, low contrast) so text over it reads; on by default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub washout: Option<bool>,
 }
 
 /// `insertAlignmentTab`'s options.
@@ -1184,87 +1268,148 @@ pub enum ShadingTarget {
     Paragraph,
     /// The selected text.
     Text,
-    /// A table style part's cells (from the style dialog's Format > Border).
+    /// The selected cells, or a table style part's cells (from the style dialog's Format > Border).
     Cell,
+    /// The selected tables (`w:tblPr/w:shd`): shows around their cells where they have cell spacing.
+    Table,
 }
 
-/// A shading pattern: clear (the fill only), solid (the pattern color), or a percentage of the pattern color over the
-/// fill.
+/// A shading pattern (`ST_Shd`): clear (the fill only), solid (the pattern color), a percentage of the pattern color
+/// over the fill, or stripes and crosses of it over the fill.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ShadingPattern {
+    /// No shading (`nil`).
+    Nil,
     /// The fill only.
     #[default]
     Clear,
     /// The pattern color only.
     Solid,
-    /// 5%.
+    /// 5% of the pattern color over the fill.
     Pct5,
-    /// 10%.
+    /// 10% of the pattern color over the fill.
     Pct10,
-    /// 20%.
+    /// 12.5% of the pattern color over the fill.
+    Pct12,
+    /// 15% of the pattern color over the fill.
+    Pct15,
+    /// 20% of the pattern color over the fill.
     Pct20,
-    /// 25%.
+    /// 25% of the pattern color over the fill.
     Pct25,
-    /// 30%.
+    /// 30% of the pattern color over the fill.
     Pct30,
-    /// 40%.
+    /// 35% of the pattern color over the fill.
+    Pct35,
+    /// 37.5% of the pattern color over the fill.
+    Pct37,
+    /// 40% of the pattern color over the fill.
     Pct40,
-    /// 50%.
+    /// 45% of the pattern color over the fill.
+    Pct45,
+    /// 50% of the pattern color over the fill.
     Pct50,
-    /// 60%.
+    /// 55% of the pattern color over the fill.
+    Pct55,
+    /// 60% of the pattern color over the fill.
     Pct60,
-    /// 70%.
+    /// 62.5% of the pattern color over the fill.
+    Pct62,
+    /// 65% of the pattern color over the fill.
+    Pct65,
+    /// 70% of the pattern color over the fill.
     Pct70,
-    /// 75%.
+    /// 75% of the pattern color over the fill.
     Pct75,
-    /// 80%.
+    /// 80% of the pattern color over the fill.
     Pct80,
-    /// 90%.
+    /// 85% of the pattern color over the fill.
+    Pct85,
+    /// 87.5% of the pattern color over the fill.
+    Pct87,
+    /// 90% of the pattern color over the fill.
     Pct90,
+    /// 95% of the pattern color over the fill.
+    Pct95,
+    /// Dark horizontal stripes. In the pattern color over the fill.
+    HorzStripe,
+    /// Dark vertical stripes. In the pattern color over the fill.
+    VertStripe,
+    /// Dark down-diagonal stripes. In the pattern color over the fill.
+    ReverseDiagStripe,
+    /// Dark up-diagonal stripes. In the pattern color over the fill.
+    DiagStripe,
+    /// A dark grid. In the pattern color over the fill.
+    HorzCross,
+    /// A dark trellis. In the pattern color over the fill.
+    DiagCross,
+    /// Light horizontal stripes. In the pattern color over the fill.
+    ThinHorzStripe,
+    /// Light vertical stripes. In the pattern color over the fill.
+    ThinVertStripe,
+    /// Light down-diagonal stripes. In the pattern color over the fill.
+    ThinReverseDiagStripe,
+    /// Light up-diagonal stripes. In the pattern color over the fill.
+    ThinDiagStripe,
+    /// A light grid. In the pattern color over the fill.
+    ThinHorzCross,
+    /// A light trellis. In the pattern color over the fill.
+    ThinDiagCross,
+    /// A pattern the document names that isn't one of these: setting it keeps each one's pattern as written: its own, else its style's.
+    Other,
 }
 
 impl ShadingPattern {
-    const ALL: [ShadingPattern; 14] = [
-        ShadingPattern::Clear,
-        ShadingPattern::Solid,
-        ShadingPattern::Pct5,
-        ShadingPattern::Pct10,
-        ShadingPattern::Pct20,
-        ShadingPattern::Pct25,
-        ShadingPattern::Pct30,
-        ShadingPattern::Pct40,
-        ShadingPattern::Pct50,
-        ShadingPattern::Pct60,
-        ShadingPattern::Pct70,
-        ShadingPattern::Pct75,
-        ShadingPattern::Pct80,
-        ShadingPattern::Pct90,
+    const ALL: [(ShadingPattern, &'static str); 38] = [
+        (ShadingPattern::Nil, "nil"),
+        (ShadingPattern::Clear, "clear"),
+        (ShadingPattern::Solid, "solid"),
+        (ShadingPattern::Pct5, "pct5"),
+        (ShadingPattern::Pct10, "pct10"),
+        (ShadingPattern::Pct12, "pct12"),
+        (ShadingPattern::Pct15, "pct15"),
+        (ShadingPattern::Pct20, "pct20"),
+        (ShadingPattern::Pct25, "pct25"),
+        (ShadingPattern::Pct30, "pct30"),
+        (ShadingPattern::Pct35, "pct35"),
+        (ShadingPattern::Pct37, "pct37"),
+        (ShadingPattern::Pct40, "pct40"),
+        (ShadingPattern::Pct45, "pct45"),
+        (ShadingPattern::Pct50, "pct50"),
+        (ShadingPattern::Pct55, "pct55"),
+        (ShadingPattern::Pct60, "pct60"),
+        (ShadingPattern::Pct62, "pct62"),
+        (ShadingPattern::Pct65, "pct65"),
+        (ShadingPattern::Pct70, "pct70"),
+        (ShadingPattern::Pct75, "pct75"),
+        (ShadingPattern::Pct80, "pct80"),
+        (ShadingPattern::Pct85, "pct85"),
+        (ShadingPattern::Pct87, "pct87"),
+        (ShadingPattern::Pct90, "pct90"),
+        (ShadingPattern::Pct95, "pct95"),
+        (ShadingPattern::HorzStripe, "horzStripe"),
+        (ShadingPattern::VertStripe, "vertStripe"),
+        (ShadingPattern::ReverseDiagStripe, "reverseDiagStripe"),
+        (ShadingPattern::DiagStripe, "diagStripe"),
+        (ShadingPattern::HorzCross, "horzCross"),
+        (ShadingPattern::DiagCross, "diagCross"),
+        (ShadingPattern::ThinHorzStripe, "thinHorzStripe"),
+        (ShadingPattern::ThinVertStripe, "thinVertStripe"),
+        (ShadingPattern::ThinReverseDiagStripe, "thinReverseDiagStripe"),
+        (ShadingPattern::ThinDiagStripe, "thinDiagStripe"),
+        (ShadingPattern::ThinHorzCross, "thinHorzCross"),
+        (ShadingPattern::ThinDiagCross, "thinDiagCross"),
     ];
 
-    /// The pattern a `w:val` names; clear for those not offered.
+    /// The pattern a `w:val` names; [`ShadingPattern::Other`] for one that isn't an `ST_Shd` value.
     pub fn of_val(v: &str) -> ShadingPattern {
-        ShadingPattern::ALL.into_iter().find(|p| p.val() == v).unwrap_or_default()
+        ShadingPattern::ALL.iter().find(|(_, n)| *n == v).map_or(ShadingPattern::Other, |(p, _)| *p)
     }
 
-    /// The `w:val` it is written as.
-    pub fn val(self) -> &'static str {
-        match self {
-            ShadingPattern::Clear => "clear",
-            ShadingPattern::Solid => "solid",
-            ShadingPattern::Pct5 => "pct5",
-            ShadingPattern::Pct10 => "pct10",
-            ShadingPattern::Pct20 => "pct20",
-            ShadingPattern::Pct25 => "pct25",
-            ShadingPattern::Pct30 => "pct30",
-            ShadingPattern::Pct40 => "pct40",
-            ShadingPattern::Pct50 => "pct50",
-            ShadingPattern::Pct60 => "pct60",
-            ShadingPattern::Pct70 => "pct70",
-            ShadingPattern::Pct75 => "pct75",
-            ShadingPattern::Pct80 => "pct80",
-            ShadingPattern::Pct90 => "pct90",
-        }
+    /// The `w:val` it is written as; none for [`ShadingPattern::Other`], which keeps the one written (its own, else its style's).
+    pub fn val(self) -> Option<&'static str> {
+        ShadingPattern::ALL.iter().find(|(p, _)| *p == self).map(|(_, n)| *n)
     }
 }
 
@@ -2620,6 +2765,22 @@ pub enum BorderStyle {
     Outset,
     /// Inset.
     Inset,
+    /// Dashes with small gaps.
+    DashSmallGap,
+    /// Stroked dashes and dots.
+    DashDotStroked,
+    /// A thin line and a thick one, a medium gap apart.
+    ThinThickMediumGap,
+    /// A thick line and a thin one, a medium gap apart.
+    ThickThinMediumGap,
+    /// Thin, thick, thin, medium gaps apart.
+    ThinThickThinMediumGap,
+    /// A thin line and a thick one, a large gap apart.
+    ThinThickLargeGap,
+    /// A thick line and a thin one, a large gap apart.
+    ThickThinLargeGap,
+    /// Thin, thick, thin, large gaps apart.
+    ThinThickThinLargeGap,
 }
 
 impl BorderStyle {
@@ -2643,6 +2804,14 @@ impl BorderStyle {
             BorderStyle::ThreeDEngrave => "threeDEngrave",
             BorderStyle::Outset => "outset",
             BorderStyle::Inset => "inset",
+            BorderStyle::DashSmallGap => "dashSmallGap",
+            BorderStyle::DashDotStroked => "dashDotStroked",
+            BorderStyle::ThinThickMediumGap => "thinThickMediumGap",
+            BorderStyle::ThickThinMediumGap => "thickThinMediumGap",
+            BorderStyle::ThinThickThinMediumGap => "thinThickThinMediumGap",
+            BorderStyle::ThinThickLargeGap => "thinThickLargeGap",
+            BorderStyle::ThickThinLargeGap => "thickThinLargeGap",
+            BorderStyle::ThinThickThinLargeGap => "thinThickThinLargeGap",
         }
     }
 
@@ -2665,6 +2834,14 @@ impl BorderStyle {
             BorderStyle::ThreeDEngrave,
             BorderStyle::Outset,
             BorderStyle::Inset,
+            BorderStyle::DashSmallGap,
+            BorderStyle::DashDotStroked,
+            BorderStyle::ThinThickMediumGap,
+            BorderStyle::ThickThinMediumGap,
+            BorderStyle::ThinThickThinMediumGap,
+            BorderStyle::ThinThickLargeGap,
+            BorderStyle::ThickThinLargeGap,
+            BorderStyle::ThinThickThinLargeGap,
         ]
         .into_iter()
         .find(|s| s.val() == v)
@@ -3585,7 +3762,7 @@ mod tests {
         assert_eq!(none, Command::SetHighlight(None));
     }
 
-    /// The command set's wire fixture: one op per variant.
+    /// The command set's wire fixture: at least one op per variant.
     fn fixture() -> Vec<serde_json::Value> {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/wire/command.json");
         serde_json::from_str(&std::fs::read_to_string(path).expect("the command fixture")).expect("JSON")
@@ -3602,7 +3779,10 @@ mod tests {
             assert_eq!(command.id(), *id);
             assert_eq!(serde_json::to_value(&command).expect("serializes")["type"], name);
         }
-        assert_eq!(ops.len(), CommandId::ALL.len(), "one op per variant");
+        // A variant may have several ops (examples of its distinct shapes); each one is a command.
+        for op in &ops {
+            serde_json::from_value::<Command>(op.clone()).unwrap_or_else(|e| panic!("{op}: {e}"));
+        }
     }
 
     #[test]

@@ -1,0 +1,120 @@
+pages 1
+page 1 612 792
+  text Images and links
+  text A broken picture: 
+  text Visit the example site for more.
+  text Type here.
+  annot Subtype /Link Rect [105 614.66 195.2 625.66] Contents <746865206578616d706c652073697465> A << /Type /Action /S /URI /URI <68747470733a2f2f6578616d706c652e636f6d2f> >>
+  op 1 0 0 -1 0 792 cm
+  op /P << /MCID 0 >> BDC
+  op q
+  op /Span << /ActualText <496d6167657320616e64206c696e6b73> >> BDC
+  op 0 0 0 rg
+  op 0 0 0 RG
+  op 0.62 w
+  op 0 j
+  op BT
+  op 2 Tr
+  op 1 0 0 -1 72 96.8 Tm
+  op /F1 16 Tf
+  op [<0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0001> -1 <0002> -1 <0002> -1 <0002> -1 <0001> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 1 >> BDC
+  op q
+  op /Span << /ActualText <412062726f6b656e20706963747572653a20> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 155.27 Tm
+  op /F1 11 Tf
+  op [<0002> <0001> <0002> <0002> <0002> <0002> <0002> <0002> <0001> <0002> <0002> <0002> <0002> <0002> <0002> 0 <0002> <0002> <0001>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 2 >> BDC
+  op q
+  op 1 0 0 1 171 101.27 cm
+  op q
+  op 0.78 0.78 0.78 rg
+  op -0.38 -0.38 m
+  op 72.38 -0.38 l
+  op 72.38 54.38 l
+  op -0.38 54.38 l
+  op h
+  op 0.38 0.38 m
+  op 0.38 53.62 l
+  op 71.62 53.62 l
+  op 71.62 0.38 l
+  op h
+  op f
+  op Q
+  op Q
+  op EMC
+  op /P << /MCID 3 >> BDC
+  op q
+  op /Span << /ActualText <566973697420> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 175.14 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002> <0002> <0002> <0001>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 4 >> BDC
+  op q
+  op /Span << /ActualText <746865206578616d706c652073697465> >> BDC
+  op 0.02 0.39 0.76 rg
+  op BT
+  op 1 0 0 -1 105 175.14 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002> <0001> <0002> <0002> <0002> <0002> <0002> 0 <0002> <0002> <0001> <0002> <0002> <0002> 0 <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 5 >> BDC
+  op q
+  op /Span << /ActualText <20666f72206d6f72652e> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 195.2 175.14 Tm
+  op /F1 11 Tf
+  op [<0001> <0002> <0002> <0002> <0001> <0002> 0 <0002> <0002> <0002> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /Artifact << /Type /Layout >> BDC
+  op q
+  op 0.02 0.39 0.76 rg
+  op 105 175.96 90.2 0.55 re
+  op f
+  op Q
+  op EMC
+  op /P << /MCID 6 >> BDC
+  op q
+  op /Span << /ActualText <5479706520686572652e> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 195.01 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002> <0002> <0001> <0002> <0002> <0002> <0002> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+structure
+  Document
+    H1
+    P
+      Figure
+    P
+      Link
+    P
+outline
+  "Images and links"

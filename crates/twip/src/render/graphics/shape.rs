@@ -9,22 +9,27 @@ use std::rc::Rc;
 
 use twip_graphics::kurbo::{self, Affine, BezPath, ParamCurve, ParamCurveArclen, ParamCurveDeriv, PathEl, PathSeg, Shape};
 use twip_graphics::paint::{BlendMode, Brush, Color, ColorFilter, Extend, ImagePaint, Paint, Sampling, Stop};
-use twip_graphics::scene::{Clip, Filter, Layer, Recorder};
+use twip_graphics::scene::{Clip, Filter, GlyphRun, Layer, Recorder, Synthesis, glyph_run_outline};
 
 use super::{Graphics, blended, pen, rect_path};
-use crate::drawing::colour::{Rgba, linear_to_srgb, srgb_to_linear};
+use crate::drawing::colour::{Rgba, TWO_STOP_BLEND, linear_to_srgb, srgb_to_linear};
 use crate::drawing::geom::{Geom, PathFill, Seg};
 use crate::drawing::paint::{
     BlipMode, Cap, Compound, Dash, GradientKind, GradientPath, Join, Paint as Fill, PresetDash, RectAlign, ResolvedBlipAdjust, ResolvedLine,
-    ResolvedShadow, TileFlip,
+    ResolvedReflection, ResolvedShadow, TileFlip,
 };
-use crate::drawing::units::Pct;
-use crate::layout::fragment::{ImageKey, ShapeItem};
+use crate::drawing::units::{Emu, Pct};
+use crate::layout::fragment::{ImageKey, ShapeItem, TextPathItem};
 
-/// Shapes' outlines as paths, by geometry (the entry holds the geometry, so its address isn't reused).
+/// A hatch tile's bit in a PDF, points: a pixel of Word's 300 dpi PDFs. On screen a bit is a device pixel.
+const HATCH_BIT: f64 = 0.24;
+
+/// Shapes' outlines as paths, by geometry, and text paths' by their glyphs (each entry holds its key, so its address
+/// isn't reused).
 #[derive(Default)]
 pub(super) struct Paths {
     paths: HashMap<usize, (Rc<Geom>, Rc<Vec<BezPath>>)>,
+    text: HashMap<usize, (Rc<TextPathItem>, Rc<Vec<BezPath>>)>,
 }
 
 impl Paths {
@@ -85,6 +90,29 @@ fn is_rect(path: &BezPath) -> bool {
     (0..4).all(|i| axis(pts[i], pts[(i + 1) % 4])) && (pts[0].x == pts[1].x) != (pts[1].x == pts[2].x)
 }
 
+/// Where a tiled picture's first tile is and its size, in the shape's box `size` (points): the picture's own size
+/// (`natural`, pixels at 96 dpi) scaled, placed by the alignment and moved by the offset.
+fn tile_place(natural: (f64, f64), (tx, ty, sx, sy, align): (Emu, Emu, Pct, Pct, RectAlign), size: [f64; 2]) -> (f64, f64, f64, f64) {
+    let (tw, th) = (natural.0 * 0.75 * sx.fraction(), natural.1 * 0.75 * sy.fraction());
+    let at = |a: u8, room: f64, tile: f64| match a {
+        0 => 0.0,
+        1 => (room - tile) / 2.0,
+        _ => room - tile,
+    };
+    let (c, r) = match align {
+        RectAlign::Tl => (0, 0),
+        RectAlign::T => (1, 0),
+        RectAlign::Tr => (2, 0),
+        RectAlign::L => (0, 1),
+        RectAlign::Ctr => (1, 1),
+        RectAlign::R => (2, 1),
+        RectAlign::Bl => (0, 2),
+        RectAlign::B => (1, 2),
+        RectAlign::Br => (2, 2),
+    };
+    (at(c, size[0], tw) + tx.to_pt(), at(r, size[1], th) + ty.to_pt(), tw, th)
+}
+
 fn colour(c: Rgba) -> Color {
     Color::rgba(c.r, c.g, c.b, c.a)
 }
@@ -107,15 +135,21 @@ fn reach(s: &ShapeItem, m: Affine) -> kurbo::Rect {
     let shadow =
         |sh: &Option<ResolvedShadow>| sh.as_ref().map_or(0.0, |sh| sh.dist * sh.scale[0].abs().max(sh.scale[1].abs()).max(1.0) + 3.0 * sh.blur);
     let pad = s.line.width + shadow(&e.outer) + e.glow.map_or(0.0, |g| 3.0 * g.0) + 3.0 * e.blur.unwrap_or(0.0) + e.soft_edge.unwrap_or(0.0) + 4.0;
-    let b = m.transform_rect_bbox(kurbo::Rect::new(0.0, 0.0, x1 - x0, y1 - y0));
+    let mut b = m.transform_rect_bbox(kurbo::Rect::new(0.0, 0.0, x1 - x0, y1 - y0));
+    let mut pad = pad;
+    if let Some(r) = &e.reflection {
+        let size = [x1 - x0, y1 - y0];
+        b = b.union(reflection_matrix(m, size, r).transform_rect_bbox(kurbo::Rect::new(0.0, 0.0, size[0], size[1])));
+        pad += 3.0 * r.blur;
+    }
     let grow = pad + if e.outer.is_some() { b.width().max(b.height()) } else { 0.0 };
     b.inflate(grow, grow)
 }
 
-/// A shadow's own transform about its alignment point in `b`: skew, then scale.
-fn align_matrix(b: [f64; 4], sh: &ResolvedShadow) -> Affine {
+/// The alignment point of `align` in the box `b`.
+fn pivot(b: [f64; 4], align: RectAlign) -> (f64, f64) {
     let (xm, ym) = ((b[0] + b[2]) / 2.0, (b[1] + b[3]) / 2.0);
-    let (ax, ay) = match sh.align {
+    match align {
         RectAlign::Tl => (b[0], b[1]),
         RectAlign::T => (xm, b[1]),
         RectAlign::Tr => (b[2], b[1]),
@@ -125,7 +159,12 @@ fn align_matrix(b: [f64; 4], sh: &ResolvedShadow) -> Affine {
         RectAlign::Bl => (b[0], b[3]),
         RectAlign::B => (xm, b[3]),
         RectAlign::Br => (b[2], b[3]),
-    };
+    }
+}
+
+/// A shadow's own transform about its alignment point in `b`: skew, then scale.
+pub(super) fn align_matrix(b: [f64; 4], sh: &ResolvedShadow) -> Affine {
+    let (ax, ay) = pivot(b, sh.align);
     let (kx, ky) = (sh.skew[0].to_radians().tan(), sh.skew[1].to_radians().tan());
     Affine::translate((ax, ay))
         * Affine::new([1.0, ky, kx, 1.0, 0.0, 0.0])
@@ -133,8 +172,70 @@ fn align_matrix(b: [f64; 4], sh: &ResolvedShadow) -> Affine {
         * Affine::translate((-ax, -ay))
 }
 
+/// A reflection's transform from the box of `size` (the shape's, placed by `m`) to the page: skewed, then scaled about
+/// its alignment point, then moved `dist` along `dir`. The point and the move are the shape's own when it turns with
+/// the shape, else the page's.
+fn reflection_matrix(m: Affine, size: [f64; 2], r: &ResolvedReflection) -> Affine {
+    let (dx, dy) = (r.dist * r.dir.to_radians().cos(), r.dist * r.dir.to_radians().sin());
+    let about = |b: [f64; 4]| {
+        let (ax, ay) = pivot(b, r.align);
+        let (kx, ky) = (r.skew[0].to_radians().tan(), r.skew[1].to_radians().tan());
+        Affine::translate((ax, ay))
+            * Affine::scale_non_uniform(r.scale[0], r.scale[1])
+            * Affine::new([1.0, ky, kx, 1.0, 0.0, 0.0])
+            * Affine::translate((-ax, -ay))
+    };
+    if r.rot_with_shape {
+        m * Affine::translate((dx, dy)) * about([0.0, 0.0, size[0], size[1]])
+    } else {
+        let b = m.transform_rect_bbox(kurbo::Rect::new(0.0, 0.0, size[0], size[1]));
+        Affine::translate((dx, dy)) * about([b.x0, b.y0, b.x1, b.y1]) * m
+    }
+}
+
+/// Draws a reflection of what `draw` records in a box of `size`, placed by `m` (as the shape's own drawing is):
+/// the copy under `r`'s transform, blurred, and faded by a gradient alpha along its fade direction, which turns and
+/// flips with the shape when the reflection does. A shape's reflection and a text run's use it alike.
+pub(super) fn reflect(rec: &mut Recorder, m: Affine, size: [f64; 2], r: &ResolvedReflection, draw: &mut dyn FnMut(&mut Recorder)) {
+    let t = reflection_matrix(m, size, r);
+    let bbox = t.transform_rect_bbox(kurbo::Rect::new(0.0, 0.0, size[0], size[1]));
+    let (fx, fy) = (r.fade_dir.to_radians().cos(), r.fade_dir.to_radians().sin());
+    let [a, b, c, d, ..] = m.as_coeffs();
+    let (dx, dy) = if r.rot_with_shape { (a * fx + c * fy, b * fx + d * fy) } else { (fx, fy) };
+    let n = dx.hypot(dy).max(f64::EPSILON);
+    let (dx, dy) = (dx / n, dy / n);
+    let len = bbox.width() * dx.abs() + bbox.height() * dy.abs();
+    if len <= 0.0 || !len.is_finite() {
+        return;
+    }
+    let c = bbox.center();
+    let (start, end) = (kurbo::Point::new(c.x - dx * len / 2.0, c.y - dy * len / 2.0), kurbo::Point::new(c.x + dx * len / 2.0, c.y + dy * len / 2.0));
+    // The fade holds its start alpha before its start and its end alpha after its end.
+    let ((p0, a0), (p1, a1)) = if r.start.0 <= r.end.0 { (r.start, r.end) } else { (r.end, r.start) };
+    let at = |p: f64, a: f64| Stop { offset: p as f32, color: Color::rgba(0, 0, 0, (a * 255.0).round() as u8) };
+    let mut stops = [at(0.0, a0); 4];
+    let mut n = 0;
+    for (p, a, keep) in [(0.0, a0, p0 > 0.0), (p0, a0, true), (p1, a1, true), (1.0, a1, p1 < 1.0)] {
+        if keep {
+            stops[n] = at(p, a);
+            n += 1;
+        }
+    }
+    let sigma = sigma(r.blur);
+    let filters = [Filter::Blur { sigma }];
+    let bounds = bbox.inflate(f64::from(sigma) * 3.0 + 2.0, f64::from(sigma) * 3.0 + 2.0);
+    rec.push_layer(&Layer { filters: if sigma > 0.0 { &filters } else { &[] }, bounds: Some(bounds), ..Layer::default() });
+    rec.push_transform(t);
+    draw(rec);
+    rec.pop();
+    rec.push_layer(&Layer { blend: BlendMode::DstIn, ..Layer::default() });
+    rec.fill_rect(bounds, Paint::new(Brush::Linear { start, end, stops: &stops[..n], extend: Extend::Clamp, transform: Affine::IDENTITY }));
+    rec.pop();
+    rec.pop();
+}
+
 /// A layer that blurs what is drawn in it by `sigma` (none at 0).
-fn blur_layer(rec: &mut Recorder, sigma: f32, opacity: f32, bounds: Option<kurbo::Rect>) {
+pub(super) fn blur_layer(rec: &mut Recorder, sigma: f32, opacity: f32, bounds: Option<kurbo::Rect>) {
     let filters = [Filter::Blur { sigma }];
     rec.push_layer(&Layer { opacity, filters: if sigma > 0.0 { &filters } else { &[] }, bounds, ..Layer::default() });
 }
@@ -149,10 +250,14 @@ fn picture_adjust(adjust: &[ResolvedBlipAdjust]) -> (Vec<ColorFilter>, f32) {
             ResolvedBlipAdjust::Alpha(v) => alpha *= *v as f32,
             ResolvedBlipAdjust::Grayscale => filters.push(ColorFilter::Matrix(gray)),
             ResolvedBlipAdjust::Lum { bright, contrast } => {
-                let k = if *contrast > 0.0 { 1.0 / (1.0 - contrast.min(0.999)) } else { 1.0 + contrast } as f32;
-                let o = (0.5 - 0.5 * f64::from(k) + bright) as f32;
+                // Contrast scales about mid grey; brightness adds to it, scaled by the same slope's share of the range left.
+                let k = if *contrast > 0.0 { 1.0 / (1.0 - contrast.min(0.999)) } else { (1.0 + contrast).max(0.0) };
+                let o = (0.5 * (1.0 - k) + bright * (0.5 + 0.5 * k)) as f32;
+                let k = k as f32;
                 filters.push(ColorFilter::Matrix([k, 0.0, 0.0, 0.0, o, 0.0, k, 0.0, 0.0, o, 0.0, 0.0, k, 0.0, o, 0.0, 0.0, 0.0, 1.0, 0.0]));
             }
+            // Drawn on the image's pixels.
+            ResolvedBlipAdjust::ClrChange { .. } => {}
             ResolvedBlipAdjust::BiLevel(t) => {
                 let table: [u8; 256] = std::array::from_fn(|i| if i as f64 / 255.0 >= *t { 255 } else { 0 });
                 filters.push(ColorFilter::Matrix(gray));
@@ -171,9 +276,20 @@ fn picture_adjust(adjust: &[ResolvedBlipAdjust]) -> (Vec<ColorFilter>, f32) {
     (filters, alpha.clamp(0.0, 1.0))
 }
 
+/// A layer drawing a vector picture with its adjustments (as [`picture_adjust`] makes them; a colour change, which
+/// works on pixels, has none) and their opacity; whether one was pushed.
+fn adjusted(rec: &mut Recorder, adjust: &[ResolvedBlipAdjust]) -> bool {
+    let (filters, alpha) = picture_adjust(adjust);
+    let layered = !filters.is_empty() || alpha < 1.0;
+    if layered {
+        rec.push_layer(&Layer { opacity: alpha, color_filters: &filters, ..Layer::default() });
+    }
+    layered
+}
+
 /// A line's pen at width `w`: its caps, join and dashes. A capped dash's dashes are one width shorter and its gaps one
 /// width longer, since the caps grow each dash by half a width at either end.
-fn line_pen(line: &ResolvedLine, w: f64) -> kurbo::Stroke {
+pub(super) fn line_pen(line: &ResolvedLine, w: f64) -> kurbo::Stroke {
     let cap = match line.cap {
         Cap::Round => kurbo::Cap::Round,
         Cap::Square => kurbo::Cap::Square,
@@ -233,8 +349,8 @@ fn contours(path: &BezPath) -> Vec<(Vec<PathSeg>, f64)> {
             PathEl::ClosePath => continue,
         };
         at = seg.end();
-        if let Some((segs, len)) = out.last_mut() {
-            *len += seg.arclen(1e-4);
+        if let (Some((segs, len)), Some(accuracy)) = (out.last_mut(), crate::render::arclen_accuracy(&seg, 1e-4)) {
+            *len += seg.arclen(accuracy);
             segs.push(seg);
         }
     }
@@ -247,13 +363,14 @@ fn segment(segs: &[PathSeg], from: f64, to: f64, out: &mut BezPath) {
     let mut acc = 0.0;
     let mut started = false;
     for seg in segs {
-        let len = seg.arclen(1e-4);
+        let Some(accuracy) = crate::render::arclen_accuracy(seg, 1e-4) else { continue };
+        let len = seg.arclen(accuracy);
         let (a, b) = ((from - acc).max(0.0), (to - acc).min(len));
         acc += len;
         if b <= a || len <= 0.0 {
             continue;
         }
-        let t = |d: f64| if d >= len { 1.0 } else { seg.inv_arclen(d, 1e-4) };
+        let t = |d: f64| if d >= len { 1.0 } else { seg.inv_arclen(d, accuracy) };
         let part = seg.subsegment(t(a)..t(b));
         if !started {
             out.move_to(part.start());
@@ -278,7 +395,67 @@ fn direction(seg: &PathSeg, t: f64) -> kurbo::Vec2 {
 }
 
 impl Graphics {
+    /// The shape's outlines, one per geometry path: its geometry's, or for a text path its glyphs stretched to their
+    /// box (the geometry then has the one path).
+    fn outlines(&mut self, s: &ShapeItem) -> Rc<Vec<BezPath>> {
+        let Some(t) = &s.text_path else { return self.paths.get(&s.geom) };
+        let key = Rc::as_ptr(t) as usize;
+        if let Some((_, p)) = self.paths.text.get(&key) {
+            return Rc::clone(p);
+        }
+        if self.paths.text.len() > 256 {
+            self.paths.text.clear();
+        }
+        let p = Rc::new(vec![self.text_outline(t)]);
+        self.paths.text.insert(key, (Rc::clone(t), Rc::clone(&p)));
+        p
+    }
+
+    /// A text path's glyph outlines (synthetic styles applied), stretched so that their ink fills its box.
+    fn text_outline(&mut self, t: &TextPathItem) -> BezPath {
+        let [x0, y0, x1, y1] = t.fit;
+        let mut out = BezPath::new();
+        if !(x1 > x0 && y1 > y0) {
+            return out;
+        }
+        // Outlined at about the size they are drawn, for synthetic bold's width.
+        let size = y1 - y0;
+        let mut placed = Vec::new();
+        let mut ring = kurbo::StrokeCtx::default();
+        for (face, glyphs) in t.runs.iter() {
+            let Some(font) = self.font(face) else { continue };
+            placed.clear();
+            placed.extend(glyphs.iter().map(|&(g, x)| (g, x * size)));
+            let synthesis = Synthesis { embolden: face.sim_bold, skew_x: if face.sim_italic { -0.2 } else { 0.0 } };
+            glyph_run_outline(&self.res.fonts, &GlyphRun { font, size, baseline: 0.0, glyphs: &placed, synthesis }, &mut out, &mut ring);
+        }
+        let b = out.bounding_box();
+        if !(b.width() > 0.0 && b.height() > 0.0) {
+            return BezPath::new();
+        }
+        out.apply_affine(
+            Affine::translate((x0, y0))
+                * Affine::scale_non_uniform((x1 - x0) / b.width(), (y1 - y0) / b.height())
+                * Affine::translate((-b.x0, -b.y0)),
+        );
+        out
+    }
+
+    /// The page background's fill over a `size` page (in its points), when it has one: drawn as a shape's fill is.
+    pub(super) fn page_fill(&mut self, rec: &mut Recorder, r: &super::Renderer, size: [f64; 2], images: &[Vec<u8>]) {
+        let Some(fill) = r.page_fill() else { return };
+        let mut page = BezPath::new();
+        rect_path(kurbo::Rect::new(0.0, 0.0, size[0], size[1])).into_iter().for_each(|e| page.push(e));
+        self.fill(rec, &page, fill, PathFill::Norm, size, 0.0, [0.0, 0.0], images);
+    }
+
     pub(super) fn shape(&mut self, rec: &mut Recorder, s: &ShapeItem, images: &[Vec<u8>]) {
+        self.shape_with_text(rec, s, images, None);
+    }
+
+    /// [`Graphics::shape`], its reflection holding what `text` draws too (given the transform from the page to the
+    /// shape's own box): a shape's text is reflected with it.
+    pub(super) fn shape_with_text(&mut self, rec: &mut Recorder, s: &ShapeItem, images: &[Vec<u8>], mut text: Option<ReflectedText>) {
         let [x0, y0, x1, y1] = s.rect;
         let m = shape_matrix(s);
         let e = &s.effects;
@@ -291,6 +468,22 @@ impl Graphics {
         if let Some(sh) = &e.outer {
             self.outer_shadow(rec, s, m, sh, soft, area);
         }
+        if let Some(r) = &e.reflection {
+            // An inline picture's reflection ends where its paragraph does.
+            let clip = s.clip_bottom.map(|y| kurbo::Rect::new(area.x0, area.y0, area.x1, y.clamp(area.y0, area.y1)));
+            if let Some(c) = clip {
+                rec.push_clip(Clip::Path(&rect_path(c)));
+            }
+            reflect(rec, m, [x1 - x0, y1 - y0], r, &mut |rec| {
+                self.body(rec, s, images);
+                if let (Some(text), Some(back)) = (text.as_mut(), m.inverse().into()) {
+                    text(self, rec, back);
+                }
+            });
+            if clip.is_some() {
+                rec.pop();
+            }
+        }
         if soft.is_some() {
             rec.push_layer(&Layer { bounds: Some(area), ..Layer::default() });
         }
@@ -298,20 +491,7 @@ impl Graphics {
             self.glow(rec, s, m, r, c);
         }
         rec.push_transform(m);
-        let paths = self.paths.get(&s.geom);
-        let line = if s.picture { ResolvedLine { width: s.line.width * 2.0, ..s.line.clone() } } else { s.line.clone() };
-        let (size, origin) = ([x1 - x0, y1 - y0], [x0, y0]);
-        for (gp, p) in s.geom.paths.iter().zip(paths.iter()) {
-            if gp.stroke && s.picture {
-                self.stroke(rec, p, &line, size, s.rot, origin, images);
-            }
-            if gp.fill != PathFill::None {
-                self.fill(rec, p, &s.fill, gp.fill, size, s.rot, origin, images);
-            }
-            if gp.stroke && !s.picture {
-                self.stroke(rec, p, &line, size, s.rot, origin, images);
-            }
-        }
+        self.body(rec, s, images);
         if let Some(sh) = &e.inner {
             self.inner_shadow(rec, s, sh);
         }
@@ -325,10 +505,31 @@ impl Graphics {
         }
     }
 
+    /// The shape's fill and line in its own box.
+    fn body(&mut self, rec: &mut Recorder, s: &ShapeItem, images: &[Vec<u8>]) {
+        let [x0, y0, x1, y1] = s.rect;
+        let paths = self.outlines(s);
+        let line = if s.picture { ResolvedLine { width: s.line.width * 2.0, ..s.line.clone() } } else { s.line.clone() };
+        let (size, origin) = ([x1 - x0, y1 - y0], [x0, y0]);
+        for (gp, p) in s.geom.paths.iter().zip(paths.iter()) {
+            if gp.stroke && s.picture {
+                self.stroke(rec, p, &line, size, s.rot, origin, images);
+            }
+            if gp.fill != PathFill::None && s.snap {
+                self.shade(rec, p, &s.fill, false);
+            } else if gp.fill != PathFill::None {
+                self.fill(rec, p, &s.fill, gp.fill, size, s.rot, origin, images);
+            }
+            if gp.stroke && !s.picture {
+                self.stroke(rec, p, &line, size, s.rot, origin, images);
+            }
+        }
+    }
+
     /// The shape's filled and stroked parts in `c`, each blurred by `sigma` on its own when it is over 0 (as a
     /// mask-filtered paint blurs each draw).
     fn silhouette(&mut self, rec: &mut Recorder, s: &ShapeItem, c: Color, sigma: f32) {
-        let paths = self.paths.get(&s.geom);
+        let paths = self.outlines(s);
         let one = |rec: &mut Recorder, draw: &dyn Fn(&mut Recorder, Color)| {
             if sigma > 0.0 {
                 blur_layer(rec, sigma, f32::from(c.a) / 255.0, None);
@@ -384,7 +585,7 @@ impl Graphics {
 
     fn glow(&mut self, rec: &mut Recorder, s: &ShapeItem, m: Affine, r: f64, c: Rgba) {
         rec.push_transform(m);
-        let paths = self.paths.get(&s.geom);
+        let paths = self.outlines(s);
         let c = colour(c);
         for (gp, p) in s.geom.paths.iter().zip(paths.iter()) {
             let filled = gp.fill != PathFill::None && !s.fill.is_none();
@@ -408,7 +609,7 @@ impl Graphics {
     /// The shadow inside the shape: a ring (the shape's box, grown, less the shape) moved against the shadow's
     /// direction, blurred, and kept inside the shape. In the shape's own box.
     fn inner_shadow(&mut self, rec: &mut Recorder, s: &ShapeItem, sh: &ResolvedShadow) {
-        let paths = self.paths.get(&s.geom);
+        let paths = self.outlines(s);
         let inside: Vec<&BezPath> = s.geom.paths.iter().zip(paths.iter()).filter(|(gp, _)| gp.fill != PathFill::None).map(|(_, p)| p).collect();
         if inside.is_empty() || s.fill.is_none() {
             return;
@@ -441,15 +642,101 @@ impl Graphics {
         self.silhouette(rec, s, Color::BLACK, 0.0);
         let w = r * SOFT_ERODE * 2.0 + if s.line.paint.is_none() { 0.0 } else { s.line.width };
         let clear = pen(w).with_join(kurbo::Join::Round);
-        for p in self.paths.get(&s.geom).iter() {
+        for p in self.outlines(s).iter() {
             rec.stroke_path(p.elements(), &clear, blended(Color::BLACK, BlendMode::Clear));
         }
         rec.pop();
         rec.pop();
     }
 
+    /// The picture `key` names with its pixels within one level of `from` in every channel (alpha too, with `use_a`)
+    /// drawn as `to` (without `use_a`, in the pixel's own alpha), made on first use: the decoded pixels changed in place
+    /// and handed to the registry, so a large picture costs what drawing it does (twip-graphics reads at most 2^28
+    /// pixels). A picture that doesn't decode is the picture as it is. They are kept by the registry's id of the
+    /// picture, which no other document's picture shares, and dropped to [`RECOLOUR_MAX_BYTES`] between frames by
+    /// [`Graphics::trim_recoloured`].
+    pub(super) fn recoloured(
+        &mut self,
+        key: ImageKey,
+        from: Rgba,
+        to: Rgba,
+        use_a: bool,
+        images: &[Vec<u8>],
+    ) -> Option<twip_graphics::image::ImageId> {
+        let base = self.image(key, images)?;
+        let info = self.res.images.info(base)?;
+        let k = (base, [from.r, from.g, from.b, from.a], [to.r, to.g, to.b, to.a], use_a);
+        let frame = self.frames;
+        if let Some(r) = self.recoloured.get_mut(&k) {
+            r.last = frame;
+            if let Some(id) = r.id {
+                self.recolour_log.push(id);
+            }
+            return r.id.or(Some(base));
+        }
+        self.recolour_decodes += 1;
+        let made =
+            key.index.and_then(|i| images.get(i)).and_then(|bytes| twip_graphics::image::pixels_straight(bytes).ok()).and_then(|(w, h, mut px)| {
+                let near = |a: u8, b: u8| a.abs_diff(b) <= 1;
+                for p in px.as_chunks_mut::<4>().0 {
+                    let seen = if use_a { near(p[3], from.a) } else { p[3] != 0 };
+                    if seen && near(p[0], from.r) && near(p[1], from.g) && near(p[2], from.b) {
+                        let a = if use_a { to.a } else { p[3] };
+                        p.copy_from_slice(&[to.r, to.g, to.b, a]);
+                    }
+                }
+                self.res.images.add_pixels(w, h, px).ok()
+            });
+        let bytes = if made.is_some() { u64::from(info.width) * u64::from(info.height) * 4 } else { 0 };
+        self.recoloured_bytes += bytes;
+        self.recolour_log.extend(made);
+        self.recoloured.insert(k, Recoloured { id: made, bytes, last: frame });
+        made.or(Some(base))
+    }
+
+    /// Starts a frame: pictures with a changed colour past `max` bytes are dropped, the ones neither drawn in the frame
+    /// before nor held by a page recording kept for later first. What is in use is never dropped, so a view of more than
+    /// `max` bytes keeps them all and decodes nothing again.
+    pub(super) fn trim_recoloured(&mut self, max: u64) {
+        self.frames += 1;
+        self.recolour_log.clear();
+        if self.recoloured_bytes <= max {
+            return;
+        }
+        let held: std::collections::HashSet<_> = self.retained.pinned().collect();
+        let frame = self.frames;
+        let res = &mut self.res;
+        let mut bytes = self.recoloured_bytes;
+        self.recoloured.retain(|_, r| {
+            let Some(id) = r.id else { return false };
+            if bytes <= max || r.last + 1 >= frame || held.contains(&id) {
+                return true;
+            }
+            res.images.remove(id);
+            bytes -= r.bytes;
+            false
+        });
+        self.recoloured_bytes = bytes;
+    }
+
+    /// Shading's fill; `aa` false: aliased as Word draws it, so fills meeting at a fractional pixel (spaced rows, a
+    /// hatch beside a fill) share the pixel instead of each covering part of it, which leaves a pale seam. A hatch's
+    /// bits are device pixels, as Word draws them at any zoom, so its stripes stay visible zoomed out.
+    fn shade(&mut self, rec: &mut Recorder, path: &BezPath, fill: &Fill, aa: bool) {
+        let paint = match fill {
+            Fill::Solid(c) => Paint::from(colour(*c)),
+            Fill::Hatch { stripe, fg, bg } => {
+                let Some(image) = self.tile(crate::drawing::patterns::stripe(*stripe), *fg, *bg) else { return };
+                let transform = Affine::scale(HATCH_BIT) * Affine::translate((-1.0, -1.0));
+                Paint::new(Brush::Pattern { image, transform, sampling: Sampling::Pixel })
+            }
+            _ => return,
+        };
+        rec.fill_path(path.elements(), Paint { aa, ..paint });
+    }
+
     /// The 8×8 tile of a pattern fill, registered on first use.
-    fn tile(&mut self, bits: [u8; 8], fg: Rgba, bg: Rgba) -> Option<twip_graphics::image::ImageId> {
+    pub(super) fn tile(&mut self, bits: [u8; 8], fg: Rgba, bg: Rgba) -> Option<twip_graphics::image::ImageId> {
         let key = (bits, [fg.r, fg.g, fg.b, fg.a], [bg.r, bg.g, bg.b, bg.a]);
         let res = &mut self.res;
         *self.tiles.entry(key).or_insert_with(|| {
@@ -490,20 +777,53 @@ impl Graphics {
                     rec.fill_path(path.elements(), Paint::new(Brush::Pattern { image, transform, sampling: Sampling::Nearest }));
                 }
             }
-            Fill::Picture { image, mode: BlipMode::Stretch(f), .. }
-                if image.and_then(|i| images.get(i)).is_some_and(|b| crate::docx::image::is_svg(b)) =>
+            Fill::Hatch { .. } => self.shade(rec, path, fill, true),
+            Fill::Picture { image, src, mode: BlipMode::Stretch(f), adjust, .. }
+                if image.and_then(|i| images.get(i)).is_some_and(|b| crate::docx::image::vector(b).is_some()) =>
             {
-                // An SVG: its viewport is the box the stretch fills, clipped to the shape.
-                let bytes = image.and_then(|i| images.get(i)).map_or(&[][..], Vec::as_slice);
+                // A vector picture: the box the stretch fills, the crop cut from it, clipped to the shape.
                 let f = f.map(|v| v.fraction());
                 let (w, h) = (size[0], size[1]);
+                let dst = kurbo::Rect::new(f[0] * w, f[1] * h, w - f[2] * w, h - f[3] * h);
                 rec.push_clip(Clip::Path(path.elements()));
-                super::svg::draw(rec, bytes, kurbo::Rect::new(f[0] * w, f[1] * h, w - f[2] * w, h - f[3] * h));
+                let layered = adjusted(rec, adjust);
+                self.vector(rec, ImageKey { index: *image, generation: 0 }, images, dst, src.map(|v| v.fraction()));
+                if layered {
+                    rec.pop();
+                }
+                rec.pop();
+            }
+            Fill::Picture { image, src, mode: BlipMode::Tile { tx, ty, sx, sy, flip, align }, adjust, .. }
+                if image.and_then(|i| images.get(i)).is_some_and(|b| crate::docx::image::vector(b).is_some()) =>
+            {
+                // A vector picture tiled: at its own size (an SVG without one fills the box), each tile its picture.
+                let bytes = image.and_then(|i| images.get(i)).map_or(&[][..], Vec::as_slice);
+                let natural = match crate::docx::image::vector(bytes) {
+                    Some(crate::docx::image::Vector::Emf(s) | crate::docx::image::Vector::Wmf(s)) => Some((s.0 / 0.75, s.1 / 0.75)),
+                    _ => crate::render::svg::natural_size(bytes),
+                };
+                let (iw, ih) = natural.unwrap_or((size[0] / 0.75, size[1] / 0.75));
+                let (ox, oy, tw, th) = tile_place((iw, ih), (*tx, *ty, *sx, *sy, *align), size);
+                let key = ImageKey { index: *image, generation: 0 };
+                rec.push_clip(Clip::Path(path.elements()));
+                let layered = adjusted(rec, adjust);
+                self.vector_tiles(rec, key, images, (ox, oy, tw, th), src.map(|v| v.fraction()), *flip, path.bounding_box());
+                if layered {
+                    rec.pop();
+                }
                 rec.pop();
             }
             Fill::Picture { image, src, mode: blip, adjust, .. } => {
                 let (filters, alpha) = picture_adjust(adjust);
-                let id = self.image(ImageKey { index: *image, generation: 0 }, images);
+                let key = ImageKey { index: *image, generation: 0 };
+                let change = adjust.iter().find_map(|a| match a {
+                    ResolvedBlipAdjust::ClrChange { from, to, use_a } => Some((*from, *to, *use_a)),
+                    _ => None,
+                });
+                let id = match change {
+                    Some((from, to, use_a)) => self.recoloured(key, from, to, use_a, images),
+                    None => self.image(key, images),
+                };
                 let Some((id, info)) = id.and_then(|id| Some((id, self.res.images.info(id)?))) else {
                     // A picture without an image twip-graphics reads: a light frame, a CSS pixel wide at 100%.
                     rec.stroke_path(path.elements(), &pen(0.75), Paint { aa: false, ..Paint::from(Color::rgb(0xC8_C8C8)) });
@@ -514,29 +834,7 @@ impl Graphics {
                 let fr = match blip {
                     BlipMode::Stretch(f) => [f[0].fraction(), f[1].fraction(), f[2].fraction(), f[3].fraction()],
                     BlipMode::Tile { tx, ty, sx, sy, align, .. } => {
-                        let (tw, th) = (iw * 0.75 * sx.fraction(), ih * 0.75 * sy.fraction());
-                        let col = |a: u8| match a {
-                            0 => 0.0,
-                            1 => (size[0] - tw) / 2.0,
-                            _ => size[0] - tw,
-                        };
-                        let row = |a: u8| match a {
-                            0 => 0.0,
-                            1 => (size[1] - th) / 2.0,
-                            _ => size[1] - th,
-                        };
-                        let (c, r) = match align {
-                            RectAlign::Tl => (0, 0),
-                            RectAlign::T => (1, 0),
-                            RectAlign::Tr => (2, 0),
-                            RectAlign::L => (0, 1),
-                            RectAlign::Ctr => (1, 1),
-                            RectAlign::R => (2, 1),
-                            RectAlign::Bl => (0, 2),
-                            RectAlign::B => (1, 2),
-                            RectAlign::Br => (2, 2),
-                        };
-                        let (ox, oy) = (col(c) + tx.to_pt(), row(r) + ty.to_pt());
+                        let (ox, oy, tw, th) = tile_place((iw, ih), (*tx, *ty, *sx, *sy, *align), size);
                         let transform = Affine::translate((ox, oy)) * Affine::scale_non_uniform(tw / iw, th / ih);
                         // A pattern brush has no colour filters: the layer carries them, and the opacity.
                         let layered = !filters.is_empty() || alpha < 1.0;
@@ -578,7 +876,16 @@ impl Graphics {
     }
 
     #[allow(clippy::too_many_arguments, reason = "the line, the path it strokes, and the shape's box and turn")]
-    fn stroke(&mut self, rec: &mut Recorder, path: &BezPath, line: &ResolvedLine, size: [f64; 2], rot: f64, origin: [f64; 2], images: &[Vec<u8>]) {
+    pub(super) fn stroke(
+        &mut self,
+        rec: &mut Recorder,
+        path: &BezPath,
+        line: &ResolvedLine,
+        size: [f64; 2],
+        rot: f64,
+        origin: [f64; 2],
+        images: &[Vec<u8>],
+    ) {
         if line.paint.is_none() {
             return;
         }
@@ -645,31 +952,30 @@ impl Graphics {
     }
 }
 
-/// The 49 stops a gradient is sampled at, as twip-graphics stops.
-fn stops(stops: &[(f64, Rgba)]) -> Vec<Stop> {
+/// The 49 stops a gradient is sampled at, as twip-graphics stops, into `out`.
+fn sample_stops(stops: &[(f64, Rgba)], out: &mut Vec<Stop>) {
     let n = 48;
-    (0..=n).map(|i| i as f64 / n as f64).map(|t| Stop { offset: t as f32, color: colour(gradient_at(stops, t)) }).collect()
+    out.clear();
+    out.extend((0..=n).map(|i| i as f64 / n as f64).map(|t| Stop { offset: t as f32, color: colour(gradient_at(stops, t)) }));
 }
 
-fn gradient(
-    rec: &mut Recorder,
-    path: &BezPath,
+/// Calls `fill` with a linear or circular gradient's paint over a box of `size` that `to_box` places (its brush
+/// mapped there); a rectangular or shape path gradient is no single paint, and `fill` isn't called.
+pub(super) fn gradient_brush(
     stop_list: &[(f64, Rgba)],
     kind: GradientKind,
     size: [f64; 2],
     rot: f64,
     (tile, flip): (&[Pct; 4], TileFlip),
+    to_box: Affine,
+    samples: &mut Vec<Stop>,
+    fill: &mut dyn FnMut(Paint<'_>),
 ) {
     let [w, h] = size;
     let t = tile.map(|p| p.fraction());
     let (tx0, ty0, tx1, ty1) = (w * t[0], h * t[1], w * (1.0 - t[2]), h * (1.0 - t[3]));
     let (cx, cy) = (w / 2.0, h / 2.0);
-    let kind = match kind {
-        GradientKind::Path { path: GradientPath::Shape, focus } if is_rect(path) => GradientKind::Path { path: GradientPath::Rect, focus },
-        k => k,
-    };
-    let back = if rot != 0.0 { Affine::rotate_about((-rot).to_radians(), kurbo::Point::new(cx, cy)) } else { Affine::IDENTITY };
-    let samples = stops(stop_list);
+    let back = to_box * if rot != 0.0 { Affine::rotate_about((-rot).to_radians(), kurbo::Point::new(cx, cy)) } else { Affine::IDENTITY };
     let extend = if t == [0.0; 4] {
         Extend::Clamp
     } else if flip == TileFlip::None {
@@ -679,6 +985,7 @@ fn gradient(
     };
     match kind {
         GradientKind::Linear { angle, scaled } => {
+            sample_stops(stop_list, samples);
             let a = angle.radians();
             let (mut dx, mut dy) = (a.cos(), a.sin());
             if scaled {
@@ -690,13 +997,39 @@ fn gradient(
             let len = tw * dx.abs() + th * dy.abs();
             let start = (tcx - dx * len / 2.0, tcy - dy * len / 2.0).into();
             let end = (tcx + dx * len / 2.0, tcy + dy * len / 2.0).into();
-            rec.fill_path(path.elements(), Paint::new(Brush::Linear { start, end, stops: &samples, extend, transform: back }));
+            fill(Paint::new(Brush::Linear { start, end, stops: samples, extend, transform: back }));
         }
         GradientKind::Path { path: GradientPath::Circle, .. } => {
+            sample_stops(stop_list, samples);
             let r = cx.hypot(cy).max(f64::EPSILON);
             let c = (cx, cy).into();
-            let brush = Brush::Radial { start: c, start_radius: 0.0, end: c, end_radius: r, stops: &samples, extend, transform: back };
-            rec.fill_path(path.elements(), Paint::new(brush));
+            fill(Paint::new(Brush::Radial { start: c, start_radius: 0.0, end: c, end_radius: r, stops: samples, extend, transform: back }));
+        }
+        GradientKind::Path { .. } => {}
+    }
+}
+
+pub(super) fn gradient(
+    rec: &mut Recorder,
+    path: &BezPath,
+    stop_list: &[(f64, Rgba)],
+    kind: GradientKind,
+    size: [f64; 2],
+    rot: f64,
+    (tile, flip): (&[Pct; 4], TileFlip),
+) {
+    let [w, h] = size;
+    let (cx, cy) = (w / 2.0, h / 2.0);
+    let kind = match kind {
+        GradientKind::Path { path: GradientPath::Shape, focus } if is_rect(path) => GradientKind::Path { path: GradientPath::Rect, focus },
+        k => k,
+    };
+    match kind {
+        GradientKind::Linear { .. } | GradientKind::Path { path: GradientPath::Circle, .. } => {
+            let mut samples = Vec::new();
+            gradient_brush(stop_list, kind, size, rot, (tile, flip), Affine::IDENTITY, &mut samples, &mut |paint| {
+                rec.fill_path(path.elements(), paint)
+            });
         }
         GradientKind::Path { path: kind @ (GradientPath::Rect | GradientPath::Shape), focus } => {
             let fr = match kind {
@@ -780,13 +1113,28 @@ fn with_ends(path: &BezPath, line: &ResolvedLine) -> Vec<BezPath> {
     regions
 }
 
-fn sigma(radius: f64) -> f32 {
+pub(super) fn sigma(radius: f64) -> f32 {
     (radius * SIGMA_PER_RADIUS) as f32
 }
 
+/// A picture with a changed colour: its registry id (none when it didn't decode), its pixels' bytes and the frame it was
+/// last drawn in.
+pub(super) struct Recoloured {
+    pub id: Option<twip_graphics::image::ImageId>,
+    pub bytes: u64,
+    pub last: u64,
+}
+
+/// What draws a shape's text into its reflection: the graphics, the recording and the transform from the page to the
+/// shape's own box.
+pub(super) type ReflectedText<'a> = &'a mut dyn FnMut(&mut Graphics, &mut Recorder, Affine);
+
+/// The most bytes of pictures with a changed colour kept between frames.
+pub(super) const RECOLOUR_MAX_BYTES: u64 = 256 << 20;
+
 const SIGMA_PER_RADIUS: f64 = 0.5;
-const GLOW_GROW: f64 = 0.5;
-const GLOW_SOFT: f64 = 0.5;
+pub(super) const GLOW_GROW: f64 = 0.5;
+pub(super) const GLOW_SOFT: f64 = 0.5;
 const SOFT_ERODE: f64 = 0.85;
 const SOFT_FADE: f64 = 0.64;
 
@@ -801,9 +1149,6 @@ fn shaded(c: Rgba, mode: PathFill) -> Rgba {
     let f = |v: u8| (f64::from(v) * k + 255.0 * white).round() as u8;
     Rgba { r: f(c.r), g: f(c.g), b: f(c.b), a: c.a }
 }
-
-const TWO_STOP_BLEND: [f64; 17] =
-    [0.0, 0.018, 0.0472, 0.0843, 0.1404, 0.209, 0.2927, 0.3873, 0.4934, 0.5922, 0.6913, 0.778, 0.8485, 0.9054, 0.949, 0.9779, 1.0];
 
 fn gradient_at(stops: &[(f64, Rgba)], t: f64) -> Rgba {
     let (Some(first), Some(last)) = (stops.first(), stops.last()) else { return Rgba::default() };
@@ -883,5 +1228,20 @@ mod tests {
         let three = gradient_at(&[(0.0, Rgba::rgb(0x000000)), (0.5, Rgba::rgb(0x808080)), (1.0, Rgba::rgb(0xFFFFFF))], 0.25);
         assert_eq!(three.r, 64);
         assert_eq!(gradient_at(&[(0.2, a), (0.8, b)], 0.0), a);
+    }
+
+    #[test]
+    fn line_ends_on_a_shape_of_absurd_extent_finish() {
+        use crate::drawing::paint::{EndKind, EndSize, LineEnd};
+        let end = Some(LineEnd { kind: EndKind::Arrow, width: EndSize::Medium, length: EndSize::Medium });
+        let line = ResolvedLine { width: 1.0, head: end, tail: end, ..ResolvedLine::none() };
+        let start = std::time::Instant::now();
+        for s in [1e11, 1e18, 1e30, 1e300, f64::MAX] {
+            let mut path = BezPath::new();
+            path.move_to((0.0, 0.0));
+            path.curve_to((s, s), (-s, s), (0.0, 1.0));
+            with_ends(&path, &line);
+        }
+        assert!(start.elapsed() < std::time::Duration::from_secs(5), "took {:?}", start.elapsed());
     }
 }

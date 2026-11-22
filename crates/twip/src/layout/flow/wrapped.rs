@@ -10,7 +10,7 @@ use crate::layout::fragment::{Child, ParaFragment, PlacedLine};
 use crate::layout::ids::ParaId;
 use crate::layout::job::{Memos, Yield};
 use crate::layout::join::piece_para;
-use crate::layout::line::{Frame, Line, LineOrigin, ParaLines, apply_borders, band, border_key, breaks_only, draw_line, top_border_extra};
+use crate::layout::line::{Below, Frame, Line, LineOrigin, ParaLines, apply_borders, band, border_key, breaks_only, draw_line, top_border_extra};
 use crate::layout::paragraph::{gap, lines_to_take, space_after, space_before};
 use crate::layout::space::{ColumnSpace, ParaSpace};
 use crate::layout::story::StoryEnv;
@@ -154,7 +154,7 @@ impl<'d> PageFill<'d, '_> {
         }
         let letter_break = !first_part && carry.letter_break;
         let env = self.ctx.env.text.clone();
-        let space = ParaSpace { width: col.width, start: pb.from, borders: (None, None), x0: col.x, env, fit: false, letter_break };
+        let space = ParaSpace { width: col.width, start: pb.from, borders: (None, None), x0: col.x, env, fit: false, letter_break, shade_gap: 0.0 };
         let frame = Frame::new(&space);
         let sp: &ShapedPara = &pb.shaped;
         let pieces = pb.pieces();
@@ -232,10 +232,16 @@ impl<'d> PageFill<'d, '_> {
             }
             return self.place_plain(p, pb, cur, col, memos);
         }
-        if border_key(style).is_some() || style.shading.is_some() || !style.div_boxes.is_empty() {
+        if border_key(style).is_some()
+            || style.shading.is_some()
+            || style.shd.as_ref().is_some_and(|s| s.hatch().is_some())
+            || !style.div_boxes.is_empty()
+        {
             let mut firsts: Vec<Line> = bands.iter().map(|(_, segs)| segs[0].clone()).collect();
+            let tops: Vec<f64> = bands.iter().map(|(y, _)| *y).collect();
             let next = if s >= n { pb.borders.1.clone() } else { border_key(style) };
-            apply_borders(&mut firsts, style, pb.borders.0.as_deref(), next.as_deref(), col.width, first_part, first_part, s >= n);
+            let gap = if s >= n { pb.shade_gap } else { 0.0 };
+            apply_borders(&mut firsts, style, pb.borders.0.as_deref(), next.as_deref(), col.width, first_part, first_part, s >= n, gap, &tops);
             for ((_, segs), l) in bands.iter_mut().zip(firsts) {
                 segs[0] = l;
             }
@@ -1175,10 +1181,15 @@ impl<'d> PageFill<'d, '_> {
             ul_trail_space: self.ctx.env.text.ul_trail_space,
             palette: crate::drawing::paint::Palette { theme: &self.ctx.env.text.theme, map: &self.ctx.env.text.colour_map },
             backdrop: self.ctx.env.text.backdrop,
+            page_colour: self.ctx.env.text.page_colour,
+            html_auto_spacing: !self.ctx.env.text.do_not_use_html_paragraph_auto_spacing,
+            below: Below::To(0.0),
         };
+        let bottom = bands[take - 1].0 + bands[take - 1].1[0].pitch;
         let mut lines = Vec::new();
         let mut numbers = Vec::new();
         for (bt, segs) in &bands[..take] {
+            let origin = LineOrigin { below: Below::To(bottom - bt), ..origin };
             for l in segs {
                 lines.push(PlacedLine { x: 0.0, y: *bt, line: Rc::new(draw_line(&origin, l, p, self.ctx.fonts)) });
                 if matches!(l.hard, Some(Kind::PageBreak | Kind::ColumnBreak)) {
@@ -1187,6 +1198,11 @@ impl<'d> PageFill<'d, '_> {
             }
             self.line_number(carry, style, col, bt + segs[0].baseline, &mut numbers);
             end_y = bt + segs[0].pitch;
+        }
+        if take < nb || s < n {
+            for l in &mut lines {
+                l.line = l.line.clipped(end_y - l.y);
+            }
         }
         out.push(Child::Para(ParaFragment { para: anchor, lines: lines.into_boxed_slice(), line_numbers: numbers.into_boxed_slice() }));
         *y = end_y;

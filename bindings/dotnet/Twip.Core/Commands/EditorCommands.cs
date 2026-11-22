@@ -482,6 +482,29 @@ public sealed class EditorCommands
     /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
     public Task SetDropCapAsync(DropCap dropCap, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetDropCap(dropCap), ct);
 
+    /// <summary>Sets the text's fill, outline, shadow, glow and reflection: each is kept (the default), removed (over a style's too; a fill is only removed) or set.</summary>
+    /// <param name="change">The change.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SetTextEffectsAsync(TextEffectsChange change, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetTextEffects(change), ct);
+
+    /// <summary>Sets the document's page colour; <see cref="FillValue.None"/> removes it. A picture fill with an empty image keeps the page's own.</summary>
+    /// <param name="fill">None, a solid colour (a theme colour takes one tint or shade), a gradient, a pattern or a picture (tiled, a texture).</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SetPageColorAsync(FillValue fill, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetPageColor(fill), ct);
+
+    /// <summary>Sets the document's watermark, in every header; the text or picture replaces the one there.</summary>
+    /// <param name="watermark">The text or picture watermark.</param>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task SetWatermarkAsync(Watermark watermark, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetWatermark(watermark), ct);
+
+    /// <summary>Removes the document's watermark.</summary>
+    /// <param name="ct">Cancels the command before it runs.</param>
+    /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
+    public Task RemoveWatermarkAsync(CancellationToken ct = default) => _session.RunAsync(EditorOperation.RemoveWatermark(), ct);
+
     /// <summary>Defines the selection's list levels for its whole list, from this paragraph on, or for the selected paragraphs; outside a list, makes a new one.</summary>
     /// <param name="definition">The levels and what they apply to.</param>
     /// <param name="ct">Cancels the command before it runs.</param>
@@ -716,7 +739,7 @@ public sealed class EditorCommands
     public Task InsertTableAsync(int rows, int columns, CancellationToken ct = default) => _session.RunAsync(EditorOperation.InsertTable(rows, columns), ct);
 
     /// <summary>Inserts a picture at the selection.</summary>
-    /// <param name="data">The image (PNG, JPEG, GIF, BMP or TIFF).</param>
+    /// <param name="data">The image (PNG, JPEG, GIF, BMP, TIFF, JPEG XR, SVG, EMF or WMF).</param>
     /// <param name="altText">The alternative text.</param>
     /// <param name="ct">Cancels the command before it runs.</param>
     /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
@@ -1182,7 +1205,7 @@ public sealed class EditorCommands
     public Task SetPictureCropAsync(PictureCrop crop, CancellationToken ct = default) => _session.RunAsync(EditorOperation.SetPictureCrop(crop), ct);
 
     /// <summary>Replaces the selected picture's image, keeping its width, effects and place; its height follows the new image and the crop is cleared.</summary>
-    /// <param name="data">The image: PNG, JPEG, GIF, BMP or TIFF.</param>
+    /// <param name="data">The image: PNG, JPEG, GIF, BMP, TIFF, JPEG XR, SVG, EMF or WMF.</param>
     /// <param name="ct">Cancels the command before it runs.</param>
     /// <returns>Completes when the change has committed and <see cref="EditorSession.State"/> is at its revision.</returns>
     public Task ChangePictureAsync(ReadOnlyMemory<byte> data, CancellationToken ct = default) => _session.RunAsync(EditorOperation.ChangePicture(data), ct);

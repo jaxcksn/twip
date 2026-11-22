@@ -132,6 +132,28 @@ pub enum Step {
     Protection(Option<Box<crate::docx::review::Protection>>),
     /// The document's properties and variables.
     Info(Box<(crate::docx::properties::Properties, Vec<(String, String)>)>),
+    /// The page background.
+    PageBackground(Box<PageBackground>),
+}
+
+/// The page background: its colour, the theme colour that is, its fill over it, and whether it shows.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PageBackground {
+    pub colour: Option<u32>,
+    pub theme: Option<crate::docx::ThemeColourRef>,
+    pub fill: Option<crate::drawing::paint::Fill>,
+    pub shown: bool,
+}
+
+impl PageBackground {
+    pub fn of(doc: &Document) -> PageBackground {
+        PageBackground {
+            colour: doc.page_colour,
+            theme: doc.page_colour_theme,
+            fill: doc.page_fill.clone(),
+            shown: doc.settings.display_background_shape,
+        }
+    }
 }
 
 /// The document's page settings: odd and even headers, how pages pair, the gutter's place, and the page borders
@@ -193,7 +215,11 @@ pub struct TableProps {
     pub bands: (i64, i64),
     pub floating: Option<crate::docx::props::TablePos>,
     pub cell_spacing: f64,
+    /// The table's shading, its own over its style's.
+    pub shd: Option<crate::docx::props::Shd>,
     pub alt: Option<Rc<crate::docx::TableAlt>>,
+    /// Its `w:tblPr` as written, its own shading in it.
+    pub direct: crate::docx::Raw,
 }
 
 impl Step {
@@ -372,7 +398,9 @@ impl TableProps {
             bands: t.bands,
             floating: t.floating,
             cell_spacing: t.cell_spacing,
+            shd: t.shd.clone(),
             alt: t.alt.clone(),
+            direct: t.direct.clone(),
         }
     }
 }
@@ -932,6 +960,13 @@ impl Step {
                 let old = std::mem::replace(&mut doc.settings.default_table_style, id);
                 Ok(Applied { inverse: Step::DefaultTableStyle(old), map: Map::Same, hint: None })
             }
+            Step::PageBackground(b) => {
+                let old = PageBackground::of(doc);
+                let PageBackground { colour, theme, fill, shown } = *b;
+                (doc.page_colour, doc.page_colour_theme, doc.page_fill) = (colour, theme, fill);
+                doc.settings.display_background_shape = shown;
+                Ok(Applied { inverse: Step::PageBackground(Box::new(old)), map: Map::Same, hint: None })
+            }
             Step::PageSettings(p) => {
                 let old = PageSettings::of(&doc.settings);
                 let s = &mut doc.settings;
@@ -994,7 +1029,7 @@ impl Step {
             Step::TableProps { table, props } => {
                 let t = idx.table_mut(doc, table).ok_or(StepError::Missing)?;
                 let old = TableProps::of(t);
-                (t.style_id, t.look, t.width, t.jc, t.ind, t.ind_pct, t.borders, t.bands, t.floating, t.cell_spacing, t.alt) = (
+                (t.style_id, t.look, t.width, t.jc, t.ind, t.ind_pct, t.borders, t.bands, t.floating, t.cell_spacing, t.shd, t.alt, t.direct) = (
                     props.style_id,
                     props.look,
                     props.width,
@@ -1005,7 +1040,9 @@ impl Step {
                     props.bands,
                     props.floating,
                     props.cell_spacing,
+                    props.shd,
                     props.alt,
+                    props.direct,
                 );
                 let slot = idx.table_slot(table).ok_or(StepError::Missing)?;
                 let hint = idx.top_block(slot.container, slot.block).map(|(section, b, row)| Change {

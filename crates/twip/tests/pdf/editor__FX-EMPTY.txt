@@ -1,0 +1,8 @@
+pages 1
+page 1 612 792
+  op 1 0 0 -1 0 792 cm
+  op /Artifact BMC
+  op EMC
+structure
+  Document
+outline

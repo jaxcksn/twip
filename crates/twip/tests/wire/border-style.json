@@ -15,5 +15,13 @@
   "threeDEmboss",
   "threeDEngrave",
   "outset",
-  "inset"
+  "inset",
+  "dashSmallGap",
+  "dashDotStroked",
+  "thinThickMediumGap",
+  "thickThinMediumGap",
+  "thinThickThinMediumGap",
+  "thinThickLargeGap",
+  "thickThinLargeGap",
+  "thinThickThinLargeGap"
 ]

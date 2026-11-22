@@ -1,0 +1,93 @@
+pages 1
+page 1 612 792
+  text 11.2 Headers, footers, sections
+  text «Last_Name»
+  text «Name»
+  text Page 1
+  op 1 0 0 -1 0 792 cm
+  op /P << /MCID 0 >> BDC
+  op q
+  op /Span << /ActualText <31312e3220486561646572732c20666f6f746572732c2073656374696f6e73> >> BDC
+  op 0 0 0 rg
+  op 0 0 0 RG
+  op 0.62 w
+  op 0 j
+  op BT
+  op 2 Tr
+  op 1 0 0 -1 72 96.8 Tm
+  op /F1 16 Tf
+  op [<0002> -1 <0002> -1 <0002> -1 <0002> -1 <0001> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0001> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0001> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 1 >> BDC
+  op q
+  op /Span << /ActualText <feff00ab004c006100730074005f004e0061006d006500bb> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 110.07 Tm
+  op /F1 11 Tf
+  op [-500 <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0002>] TJ
+  op ET
+  op q
+  op 0 0 0 rg
+  op 72.55 110.07 m
+  op 72.55 102.37 l
+  op 76.95 102.37 l
+  op 76.95 110.07 l
+  op h
+  op 132.5 110.07 m
+  op 132.5 102.37 l
+  op 136.9 102.37 l
+  op 136.9 110.07 l
+  op h
+  op f
+  op Q
+  op EMC
+  op Q
+  op EMC
+  op /Artifact << /Type /Pagination /Subtype /Header >> BDC
+  op q
+  op /Span << /ActualText <feff00ab004e0061006d006500bb> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 44.8 Tm
+  op /F1 11 Tf
+  op [-500 <0002> <0002> <0002> <0002>] TJ
+  op ET
+  op q
+  op 0 0 0 rg
+  op 72.55 44.8 m
+  op 72.55 37.1 l
+  op 76.95 37.1 l
+  op 76.95 44.8 l
+  op h
+  op 102.25 44.8 m
+  op 102.25 37.1 l
+  op 106.65 37.1 l
+  op 106.65 44.8 l
+  op h
+  op f
+  op Q
+  op EMC
+  op Q
+  op EMC
+  op /Artifact << /Type /Pagination /Subtype /Footer >> BDC
+  op q
+  op /Span << /ActualText <506167652031> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 744.93 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002> <0002> <0001> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+structure
+  Document
+    H1
+    P
+outline
+  "11.2 Headers, footers, sections"

@@ -3,6 +3,8 @@
 //! pixels and then rendered on the CPU. The colours, theme and appearance come from
 //! [`super::Renderer`].
 
+#[cfg(test)]
+mod output;
 mod overlay;
 pub mod retained;
 pub mod ruler;
@@ -10,6 +12,7 @@ mod shape;
 pub(crate) mod svg;
 #[cfg(test)]
 mod tests;
+mod text_effects;
 
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -21,18 +24,26 @@ use twip_graphics::font::{FontData, FontId};
 use twip_graphics::image::{ImageData, ImageId};
 use twip_graphics::kurbo::{self, Affine, PathEl, Shape};
 use twip_graphics::paint::{BlendMode, Color, ImagePaint, Paint};
-use twip_graphics::scene::{Clip, GlyphRun, Recorder, Synthesis};
+use twip_graphics::scene::{Clip, GlyphRun, Picture, Recorder, Synthesis};
 
 use super::{ChromeFace, Frame, Renderer};
 use crate::editing::view::View;
 use crate::font::Face;
-use crate::layout::fragment::{ImageKey, Item};
-use crate::layout::traverse::paint;
+use crate::layout::fragment::Clipped;
+use crate::layout::fragment::{Dash, ImageKey, Item};
+use crate::layout::ids::FloatId;
+use crate::layout::traverse::{paint, paint_float_clipped};
 
 /// The twip-graphics side of a presentation: the fonts and images registered with it, the CPU renderer, the retained
 /// page pictures, and the frame being recorded. Its memory is kept between frames.
 #[derive(Default)]
 pub struct Graphics {
+    /// Text effects' scratch: a gradient's stops as the appearance shows them, their samples, a run's outlines and
+    /// their synthetic bold.
+    fx_stops: Vec<(f64, crate::drawing::colour::Rgba)>,
+    fx_samples: Vec<twip_graphics::paint::Stop>,
+    fx_path: kurbo::BezPath,
+    fx_ring: kurbo::StrokeCtx,
     res: Resources,
     cpu: cpu::Renderer,
     /// Registered faces, by the face file's address, index and instance.
@@ -41,8 +52,27 @@ pub struct Graphics {
     fallback: Option<Rc<Face>>,
     /// The document's pictures, by key; `None` for one that isn't an image twip-graphics reads.
     images: HashMap<ImageKey, Option<ImageId>>,
+    /// The document's metafiles recorded as pictures in their frames' points, with the frames' sizes, by key; `None`
+    /// for one that doesn't read. The bitmaps they draw are registered in `metafile_images`.
+    metafiles: HashMap<ImageKey, Option<(Picture, kurbo::Size)>>,
+    metafile_images: Vec<ImageId>,
+    /// Tiled vector pictures' tiles recorded, by picture, tile size and crop (as bits); `None` for one that doesn't
+    /// draw.
+    vector_tiles: HashMap<(ImageKey, [u64; 6]), Option<Picture>>,
+    /// Tiled vector pictures drawn as pixels, by picture, tile size and crop (as bits) and flip.
+    vector_patterns: HashMap<(ImageKey, [u64; 6], u8), (ImageId, u32, u32)>,
+    /// The faces metafile text draws with.
+    lookup: Option<crate::font::Fonts>,
     /// 8×8 pattern fills' tiles: the bits, then the foreground and background colours.
     tiles: HashMap<([u8; 8], [u8; 4], [u8; 4]), Option<ImageId>>,
+    /// Pictures with a colour changed (`a:clrChange`), by picture, the colour and what it becomes.
+    recoloured: HashMap<(ImageId, [u8; 4], [u8; 4], bool), shape::Recoloured>,
+    recoloured_bytes: u64,
+    /// The frame being recorded, and the pictures with a changed colour drawn since a page recording began.
+    frames: u64,
+    recolour_log: Vec<ImageId>,
+    /// Pictures decoded to change a colour.
+    recolour_decodes: u64,
     paths: shape::Paths,
     pub retained: retained::Retained,
     /// This frame's drawing, in device pixels.
@@ -57,9 +87,34 @@ pub struct Graphics {
     pub with_text: bool,
 }
 
+/// A shape whose line is document ink (a border, a check box) with that colour taken through the appearance, as a rect's is.
+fn ink_shape(r: &Renderer, s: &crate::layout::fragment::ShapeItem) -> crate::layout::fragment::ShapeItem {
+    use crate::drawing::paint::Paint;
+    let map = |c: &mut crate::drawing::colour::Rgba| {
+        let rgb = r.appearance.map(u32::from(c.r) << 16 | u32::from(c.g) << 8 | u32::from(c.b));
+        (c.r, c.g, c.b) = ((rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8);
+    };
+    let mut mapped = s.clone();
+    if let Paint::Solid(c) = &mut mapped.line.paint {
+        map(c);
+    }
+    match &mut mapped.fill {
+        Paint::Solid(c) => map(c),
+        Paint::Hatch { fg, bg, .. } => {
+            map(fg);
+            map(bg);
+        }
+        _ => {}
+    }
+    mapped
+}
+
 fn rect([x0, y0, x1, y1]: [f64; 4]) -> kurbo::Rect {
     kurbo::Rect::new(x0, y0, x1, y1)
 }
+
+/// The most tiles a tiled vector picture places one by one.
+const MAX_TILES: usize = 4096;
 
 /// A rect's outline, clockwise from its top left.
 fn rect_path(r: kurbo::Rect) -> [PathEl; 5] {
@@ -105,14 +160,209 @@ fn measure(face: &Face, text: &str, size: f64) -> f64 {
 impl Graphics {
     /// Forgets the document's pictures (a new document), their bytes too: a long session opens many documents.
     pub fn clear_images(&mut self) {
-        for id in self.images.drain().filter_map(|(_, id)| id) {
+        for id in self.images.drain().filter_map(|(_, id)| id).chain(self.recoloured.drain().filter_map(|(_, r)| r.id)) {
             self.res.images.remove(id);
+        }
+        self.recoloured_bytes = 0;
+        self.forget_metafiles();
+    }
+
+    /// The faces metafile text draws with: `fonts`'. When they change, metafiles are recorded again.
+    pub fn set_fonts(&mut self, fonts: &crate::font::Fonts) {
+        if self.lookup.as_ref().map(crate::font::Fonts::revision) != Some(fonts.revision()) {
+            self.lookup = Some(fonts.fork());
+            self.forget_metafiles();
+            self.retained.clear();
+        }
+    }
+
+    fn forget_metafiles(&mut self) {
+        self.metafiles.clear();
+        self.vector_tiles.clear();
+        self.vector_patterns.clear();
+        for id in self.metafile_images.drain(..) {
+            self.res.images.remove(id);
+        }
+    }
+
+    /// The metafile `key` as a picture in its frame's points, recorded on first use, with the frame's size.
+    fn metafile(&mut self, key: ImageKey, bytes: &[u8]) -> Option<(Picture, kurbo::Size)> {
+        if let Some(m) = self.metafiles.get(&key) {
+            return m.clone();
+        }
+        let size = crate::render::metafile::size(bytes);
+        let mut rec = Recorder::new();
+        let drawn = size.filter(|_| crate::render::metafile::play(&mut svg::Recording::new(&mut rec, Some(self)), bytes));
+        let m = drawn.map(|size| (rec.finish(), size));
+        self.metafiles.insert(key, m.clone());
+        m
+    }
+
+    /// A vector picture tiled across `area` (the shape's box, in its space): the first tile at (`x`, `y`), `w` × `h`
+    /// each, the crop cut from each, every other one mirrored as `flip` says. The tile is recorded once and placed
+    /// tile by tile; past [`MAX_TILES`] tiles (each then under a sixty-fourth of the area across) it is drawn once,
+    /// with its mirrored neighbours, into pixels at four a point, and repeated as a pattern.
+    #[allow(clippy::too_many_arguments, reason = "the picture, the tiling and the area it covers")]
+    fn vector_tiles(
+        &mut self,
+        rec: &mut Recorder,
+        key: ImageKey,
+        images: &[Vec<u8>],
+        (x, y, w, h): (f64, f64, f64, f64),
+        crop: [f64; 4],
+        flip: crate::drawing::paint::TileFlip,
+        area: kurbo::Rect,
+    ) {
+        use crate::drawing::paint::TileFlip;
+        if !(w > 1e-6 && h > 1e-6 && w.is_finite() && h.is_finite()) {
+            return;
+        }
+        let size = [w, h, crop[0], crop[1], crop[2], crop[3]].map(f64::to_bits);
+        let tile = match self.vector_tiles.get(&(key, size)) {
+            Some(t) => t.clone(),
+            None => {
+                let mut tile = Recorder::new();
+                let drawn = self.vector(&mut tile, key, images, kurbo::Rect::new(0.0, 0.0, w, h), crop);
+                let t = drawn.then(|| tile.finish());
+                self.vector_tiles.insert((key, size), t.clone());
+                t
+            }
+        };
+        let Some(tile) = tile else { return };
+        // Tile (i, j)'s transform: mirrored across its middle on the odd columns or rows `flip` names.
+        let place = |i: i64, j: i64| {
+            let (fx, fy) = match flip {
+                TileFlip::X => (i % 2 != 0, false),
+                TileFlip::Y => (false, j % 2 != 0),
+                TileFlip::Xy => (i % 2 != 0, j % 2 != 0),
+                TileFlip::None => (false, false),
+            };
+            let mirror =
+                Affine::new([if fx { -1.0 } else { 1.0 }, 0.0, 0.0, if fy { -1.0 } else { 1.0 }, if fx { w } else { 0.0 }, if fy { h } else { 0.0 }]);
+            Affine::translate((x + i as f64 * w, y + j as f64 * h)) * mirror
+        };
+        let (i0, i1) = (((area.x0 - x) / w).floor(), ((area.x1 - x) / w).ceil());
+        let (j0, j1) = (((area.y0 - y) / h).floor(), ((area.y1 - y) / h).ceil());
+        if !(i1 > i0 && j1 > j0) {
+            return;
+        }
+        if (i1 - i0) * (j1 - j0) <= MAX_TILES as f64 {
+            for j in j0 as i64..j1 as i64 {
+                for i in i0 as i64..i1 as i64 {
+                    rec.picture(&tile, place(i, j));
+                }
+            }
+            return;
+        }
+        // ponytail: past MAX_TILES tiles the fill is pixels, a raster pattern in PDF too: placing each would make the
+        // backends draw without bound (a tile can be a hundredth of a point). A mesh of tiles in one picture, placed
+        // once per row, would keep it vector while bounding the commands, not the drawing.
+        let cache = (key, size, flip as u8);
+        if let Some(&pattern) = self.vector_patterns.get(&cache) {
+            return Self::pattern_fill(rec, pattern, area, (x, y, w, h));
+        }
+        // Two tiles by two: one period of every flip.
+        let k = (4.0f64).min(256.0 / w.max(h));
+        let (pw, ph) = (((2.0 * w * k).ceil() as u32).max(1), ((2.0 * h * k).ceil() as u32).max(1));
+        let mut mosaic = Recorder::new();
+        mosaic.push_transform(Affine::scale(k));
+        for (i, j) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+            mosaic.picture(&tile, Affine::translate((-x, -y)) * place(i, j));
+        }
+        mosaic.pop();
+        let mosaic = mosaic.finish();
+        let mut px = vec![0u8; pw as usize * ph as usize * 4];
+        let Ok(mut target) = Target::new(&mut px, pw, ph, pw as usize * 4, twip_graphics::cpu::Format::Rgba8) else { return };
+        let draws = [Draw { picture: &mosaic, transform: Affine::IDENTITY }];
+        self.cpu.render(&mut target, &self.res, &cpu::Frame { clear: Some(Color::TRANSPARENT), draws: &draws });
+        // The registry takes straight colour.
+        for p in px.as_chunks_mut::<4>().0 {
+            let a = u32::from(p[3]);
+            if a != 0 && a != 255 {
+                for c in &mut p[..3] {
+                    *c = ((u32::from(*c) * 255 + a / 2) / a).min(255) as u8;
+                }
+            }
+        }
+        let Ok(image) = self.res.images.add_pixels(pw, ph, px) else { return };
+        self.metafile_images.push(image);
+        self.vector_patterns.insert(cache, (image, pw, ph));
+        Self::pattern_fill(rec, (image, pw, ph), area, (x, y, w, h));
+    }
+
+    /// `area` filled with `image` (`pw` × `ph` pixels), a two-by-two mosaic of `w` × `h` tiles, repeated from (`x`,
+    /// `y`).
+    fn pattern_fill(rec: &mut Recorder, (image, pw, ph): (ImageId, u32, u32), area: kurbo::Rect, (x, y, w, h): (f64, f64, f64, f64)) {
+        let transform = Affine::translate((x, y)) * Affine::scale_non_uniform(2.0 * w / f64::from(pw), 2.0 * h / f64::from(ph));
+        let paint = Paint::new(twip_graphics::paint::Brush::Pattern { image, transform, sampling: twip_graphics::paint::Sampling::Linear });
+        rec.fill_rect(area, paint);
+    }
+
+    /// Tests: the metafile `bytes` drawn on the CPU over white into `w` × `h` pixels, its text in `fonts`: RGBA.
+    #[cfg(test)]
+    pub(crate) fn metafile_pixels(bytes: &[u8], w: u32, h: u32, fonts: Option<&crate::font::Fonts>) -> Option<Vec<[u8; 4]>> {
+        let mut g = Graphics::default();
+        if let Some(f) = fonts {
+            g.set_fonts(f);
+        }
+        let mut rec = Recorder::new();
+        let key = ImageKey { index: Some(0), generation: 0 };
+        let images = [bytes.to_vec()];
+        if !g.vector(&mut rec, key, &images, kurbo::Rect::new(0.0, 0.0, f64::from(w), f64::from(h)), [0.0; 4]) {
+            return None;
+        }
+        let picture = rec.finish();
+        let mut px = vec![0u8; w as usize * h as usize * 4];
+        let mut target = Target::new(&mut px, w, h, w as usize * 4, twip_graphics::cpu::Format::Rgba8).ok()?;
+        g.render_picture(&mut target, &picture, Affine::IDENTITY, Color::WHITE);
+        Some(px.as_chunks::<4>().0.to_vec())
+    }
+
+    /// Draws the picture `key` as vectors when it is an SVG or a metafile: the part `crop` leaves (the fractions cut
+    /// off its left, top, right and bottom) filling `dst`, clipped to it. False when it is neither, or doesn't read.
+    fn vector(&mut self, rec: &mut Recorder, key: ImageKey, images: &[Vec<u8>], dst: kurbo::Rect, crop: [f64; 4]) -> bool {
+        let Some(bytes) = key.index.and_then(|i| images.get(i)) else { return false };
+        let Some(kind) = crate::docx::image::vector(bytes) else { return false };
+        let (kw, kh) = (1.0 - crop[0] - crop[2], 1.0 - crop[1] - crop[3]);
+        if !(kw > 1e-9 && kh > 1e-9) {
+            return true;
+        }
+        // The whole picture's box, the cropped part of which is `dst`.
+        let (fw, fh) = (dst.width() / kw, dst.height() / kh);
+        let full = kurbo::Rect::new(dst.x0 - crop[0] * fw, dst.y0 - crop[1] * fh, dst.x0 - crop[0] * fw + fw, dst.y0 - crop[1] * fh + fh);
+        match kind {
+            crate::docx::image::Vector::Svg => {
+                let cropped = crop != [0.0; 4];
+                if cropped {
+                    rec.push_clip(Clip::Rect { rect: dst, aa: true });
+                }
+                let drawn = svg::draw(rec, bytes, full);
+                if cropped {
+                    rec.pop();
+                }
+                drawn
+            }
+            crate::docx::image::Vector::Emf(_) | crate::docx::image::Vector::Wmf(_) => {
+                let Some((picture, size)) = self.metafile(key, bytes) else { return false };
+                // Clipped to the box only when it draws outside it: a clip edge on a fill's edge anti-aliases it twice.
+                let frame = kurbo::Rect::new(0.0, 0.0, size.width, size.height).inflate(size.width * 1e-6, size.height * 1e-6);
+                let inside = crop == [0.0; 4] && picture.bounds().is_some_and(|b| frame.contains_rect(b));
+                if !inside {
+                    rec.push_clip(Clip::Rect { rect: dst, aa: true });
+                }
+                rec.picture(&picture, Affine::translate((full.x0, full.y0)) * Affine::scale_non_uniform(fw / size.width, fh / size.height));
+                if !inside {
+                    rec.pop();
+                }
+                true
+            }
         }
     }
 
     /// Records a frame: the visible pages, then the view's overlays over them, in device pixels. What the host draws
     /// over it goes into [`Graphics::frame`]; [`Graphics::present`] renders it.
     pub fn draw(&mut self, r: &Renderer, view: &View, images: &[Vec<u8>], f: &Frame) {
+        self.trim_recoloured(shape::RECOLOUR_MAX_BYTES);
         let mut rec = std::mem::take(&mut self.frame);
         let k = f.px_per_pt;
         // The desk: the viewport outside the papers, which cover the rest. Each paper is taken a device pixel smaller
@@ -137,8 +387,12 @@ impl Graphics {
             rec.fill_rect(p, paper);
             rec.push_transform(Affine::translate((p.x0, p.y0)) * Affine::scale(k));
             if r.retain && !r.direct {
-                let inputs = retained::Inputs { gridlines: r.gridlines, appearance: r.appearance };
-                let picture = kept.picture(page, inputs, |content| self.page(content, r, page, images));
+                let inputs = retained::Inputs { gridlines: r.gridlines, appearance: r.appearance, page_fill: r.page_fill_generation() };
+                let picture = kept.picture(page, inputs, |content| {
+                    self.recolour_log.clear();
+                    self.page(content, r, page, images);
+                    std::mem::take(&mut self.recolour_log)
+                });
                 rec.picture(&picture, Affine::IDENTITY);
             } else {
                 self.page(&mut rec, r, page, images);
@@ -148,7 +402,8 @@ impl Graphics {
             rec.pop();
         }
         if r.retain {
-            kept.trim();
+            let images = &self.res.images;
+            kept.trim(|id| images.info(id).map_or(0, |i| u64::from(i.width) * u64::from(i.height) * 4), shape::RECOLOUR_MAX_BYTES);
         }
         self.retained = kept;
         self.frame = rec;
@@ -201,9 +456,82 @@ impl Graphics {
         draw(&self.res, &cpu::Frame { clear: self.clear, draws: &draws }, &mut self.cpu)
     }
 
-    /// PDF export: one page item recorded into `rec`, in the page's points.
+    /// One item recorded into `rec`, in the points it is in.
     pub fn record_item(&mut self, rec: &mut Recorder, r: &Renderer, item: &Item, images: &[Vec<u8>]) {
         self.item(rec, r, false, item, images);
+    }
+
+    /// [`Graphics::record_item`] for an item of `page` in the page's points, which holds the text of an inline shape's
+    /// text box: PDF export.
+    pub fn record_page_item(
+        &mut self,
+        rec: &mut Recorder,
+        r: &Renderer,
+        page: &crate::layout::fragment::PageFragment,
+        item: &Item,
+        images: &[Vec<u8>],
+    ) {
+        if let Item::Shape(s) = item
+            && self.inline_reflection(rec, r, false, s, page, (0.0, 0.0), images)
+        {
+            return;
+        }
+        self.item(rec, r, false, item, images);
+    }
+
+    /// A reflected inline shape drawn with the text of its text box, which the page holds in a float of its own (`shift`
+    /// takes that text to the shape's frame); false when the shape isn't one.
+    fn inline_reflection(
+        &mut self,
+        rec: &mut Recorder,
+        r: &Renderer,
+        own: bool,
+        s: &crate::layout::fragment::ShapeItem,
+        page: &crate::layout::fragment::PageFragment,
+        shift: (f64, f64),
+        images: &[Vec<u8>],
+    ) -> bool {
+        if s.text_float == 0 || s.picture || s.effects.reflection.is_none() {
+            return false;
+        }
+        let text: Vec<Clipped> =
+            paint_float_clipped(page, FloatId(s.text_float)).into_iter().filter(|(i, _)| matches!(i, Item::Glyphs(_) | Item::Turned(_))).collect();
+        self.reflecting(rec, r, own, s, &text, shift, images);
+        true
+    }
+
+    /// A shape drawn with `text` (in the page's frame, moved by `shift` into the shape's) in its reflection. The text is
+    /// drawn as shapes, not as text: its own copy is the only one a PDF can select.
+    fn reflecting(
+        &mut self,
+        rec: &mut Recorder,
+        r: &Renderer,
+        own: bool,
+        s: &crate::layout::fragment::ShapeItem,
+        text: &[Clipped],
+        shift: (f64, f64),
+        images: &[Vec<u8>],
+    ) {
+        self.shape_with_text(
+            rec,
+            s,
+            images,
+            Some(&mut |g, rec, back| {
+                let with_text = std::mem::replace(&mut g.with_text, false);
+                rec.push_transform(back * Affine::translate(shift));
+                for (item, clip) in text {
+                    if let Some(c) = clip {
+                        rec.push_clip(Clip::Rect { rect: rect(*c), aa: true });
+                    }
+                    g.item(rec, r, own, item, images);
+                    if clip.is_some() {
+                        rec.pop();
+                    }
+                }
+                rec.pop();
+                g.with_text = with_text;
+            }),
+        );
     }
 
     /// The fonts and images recorded pictures draw with.
@@ -215,6 +543,7 @@ impl Graphics {
     #[doc(hidden)]
     pub fn page_picture(&mut self, r: &Renderer, page: &crate::layout::fragment::PageFragment, images: &[Vec<u8>]) -> twip_graphics::scene::Picture {
         let mut rec = Recorder::new();
+        self.recolour_log.clear();
         self.page(&mut rec, r, page, images);
         rec.finish()
     }
@@ -232,22 +561,35 @@ impl Graphics {
     }
 
     /// Records `page`'s content (in its points) into `rec`. Items are recorded where layout keeps them, under a
-    /// translation to their place: no item is copied.
+    /// translation to their place (and their clip): no item is copied.
     fn page(&mut self, rec: &mut Recorder, r: &Renderer, page: &crate::layout::fragment::PageFragment, images: &[Vec<u8>]) {
-        let mut at: Option<(f64, f64)> = None;
-        paint(page, &mut |p| {
-            if at != Some((p.dx, p.dy)) {
-                if at.is_some() {
+        self.page_fill(rec, r, [page.w, page.h], images);
+        let mut at: Option<(f64, f64, Option<[f64; 4]>)> = None;
+        let close = |rec: &mut Recorder, at: Option<(f64, f64, Option<[f64; 4]>)>| {
+            if let Some((_, _, clip)) = at {
+                rec.pop();
+                if clip.is_some() {
                     rec.pop();
                 }
+            }
+        };
+        paint(page, &mut |p| {
+            if at != Some((p.dx, p.dy, p.clip)) {
+                close(rec, at);
+                if let Some(c) = p.clip {
+                    rec.push_clip(Clip::Rect { rect: rect(c), aa: true });
+                }
                 rec.push_transform(Affine::translate((p.dx, p.dy)));
-                at = Some((p.dx, p.dy));
+                at = Some((p.dx, p.dy, p.clip));
+            }
+            if let Item::Shape(s) = p.item
+                && self.inline_reflection(rec, r, p.own_colours, s, page, (-p.dx, -p.dy), images)
+            {
+                return;
             }
             self.item(rec, r, p.own_colours, p.item, images);
         });
-        if at.is_some() {
-            rec.pop();
-        }
+        close(rec, at);
     }
 
     /// The registry's id for `face`, registered on first use.
@@ -289,7 +631,12 @@ impl Graphics {
     fn item(&mut self, rec: &mut Recorder, r: &Renderer, own: bool, item: &Item, images: &[Vec<u8>]) {
         let ink = |c: u32| r.ink_for(own, c);
         match item {
-            Item::Rect { rect: rc, colour } => rec.fill_rect(rect(*rc), ink(*colour)),
+            Item::Rect { rect: rc, colour, snap: false, dash: Dash::Solid, .. } => rec.fill_rect(rect(*rc), ink(*colour)),
+            Item::Rect { rect: rc, colour, snap: true, dash: Dash::Solid, .. } => rec.fill_rect(rect(*rc), aliased(ink(*colour))),
+            Item::Rect { rect: rc, colour, snap, dash, phase } => {
+                let paint = if *snap { aliased(ink(*colour)) } else { Paint::from(ink(*colour)) };
+                rec.fill_dashed_rect_from(rect(*rc), dash.pattern(), f64::from(*phase), paint);
+            }
             Item::Glyphs(g) => {
                 if g.glyphs.is_empty() {
                     return;
@@ -300,18 +647,25 @@ impl Graphics {
                 }
                 let synthesis = Synthesis { embolden: g.face.sim_bold, skew_x: if g.face.sim_italic { -0.2 } else { 0.0 } };
                 let run = GlyphRun { font, size: g.size, baseline: g.baseline, glyphs: &g.glyphs, synthesis };
-                if self.with_text {
-                    let text: String = g.chars.iter().map(|c| c.0).collect();
-                    let clusters = clusters(g).unwrap_or_default();
-                    rec.glyphs_text(&self.res.fonts, &run, &text, &clusters, ink(g.colour.unwrap_or(0)));
-                } else {
-                    rec.glyphs(&self.res.fonts, &run, ink(g.colour.unwrap_or(0)));
+                match g.paint.as_deref() {
+                    Some(p) => self.painted_run(rec, g, &run, p, &ink),
+                    None if self.with_text => {
+                        let text = run_text(g);
+                        let clusters = clusters(g).unwrap_or_default();
+                        rec.glyphs_text(&self.res.fonts, &run, &text, &clusters, ink(g.colour.unwrap_or(0)));
+                    }
+                    None => rec.glyphs(&self.res.fonts, &run, ink(g.colour.unwrap_or(0))),
                 }
             }
             Item::Gridline { line: [x0, y0, x1, y1] } => {
                 if r.gridlines {
                     rec.line((*x0, *y0).into(), (*x1, *y1).into(), &dashed(0.75, 2.25, 1.5), ink(0x9D_C3E6));
                 }
+            }
+            Item::Shape(s) if s.ink && !own && !r.appearance.is_identity() => self.shape(rec, &ink_shape(r, s), images),
+            Item::Shape(s) if s.effects.reflection.is_some() && !s.picture && s.text.is_some() => {
+                let text = s.text.as_ref().map_or(&[][..], |t| &t.0[..]);
+                self.reflecting(rec, r, own, s, text, (0.0, 0.0), images);
             }
             Item::Shape(s) => self.shape(rec, s, images),
             Item::Turned(t) => {
@@ -321,16 +675,14 @@ impl Graphics {
                 }
                 rec.pop();
             }
-            Item::Image { rect: rc, key } => {
-                if let Some(bytes) = key.index.and_then(|i| images.get(i)).filter(|b| crate::docx::image::is_svg(b))
-                    && svg::draw(rec, bytes, rect(*rc))
-                {
+            Item::Image { rect: rc, key, .. } => {
+                if self.vector(rec, *key, images, rect(*rc), [0.0; 4]) {
                     return;
                 }
                 match self.image(*key, images) {
                     Some(id) => rec.image(id, None, rect(*rc), &ImagePaint::default()),
-                    // A picture that isn't an image twip-graphics reads (EMF, WMF), or a placeholder without data: a
-                    // light frame, a CSS pixel wide at 100%.
+                    // A picture that isn't an image twip-graphics reads (WMF), or a placeholder without data: a light
+                    // frame, a CSS pixel wide at 100%.
                     None => rec.stroke_path(&rect_path(rect(*rc)), &pen(0.75), aliased(ink(0xC8_C8C8))),
                 }
             }
@@ -427,13 +779,10 @@ fn blended(c: Color, blend: BlendMode) -> Paint<'static> {
     Paint { blend, ..Paint::from(c) }
 }
 
-/// Each glyph's cluster (a UTF-8 offset into the run's characters). Characters of a piece share the piece's origin,
-/// so the glyphs from one origin to the next are that piece's: one cluster per character when the counts match, else
-/// one cluster for the piece.
-pub(crate) fn clusters(r: &crate::layout::fragment::GlyphRun) -> Option<Vec<u32>> {
-    if r.glyphs.is_empty() || r.chars.is_empty() {
-        return None;
-    }
+/// A run's pieces, `(origin, first character, characters)` (its characters share their piece's origin), and each
+/// glyph's piece: the glyphs from one origin to the next are that piece's. `None` when the origins or the glyphs go
+/// back.
+pub(crate) fn glyph_pieces(r: &crate::layout::fragment::GlyphRun) -> Option<(Vec<(f64, usize, usize)>, Vec<usize>)> {
     let mut pieces: Vec<(f64, usize, usize)> = Vec::new();
     for (i, &(_, x, _)) in r.chars.iter().enumerate() {
         match pieces.last_mut() {
@@ -442,15 +791,40 @@ pub(crate) fn clusters(r: &crate::layout::fragment::GlyphRun) -> Option<Vec<u32>
             _ => pieces.push((x, i, 1)),
         }
     }
+    let piece_of: Vec<usize> = r.glyphs.iter().map(|g| pieces.partition_point(|p| p.0 <= g.1 + 1e-6).saturating_sub(1)).collect();
+    if piece_of.windows(2).any(|w| w[1] < w[0]) {
+        return None;
+    }
+    Some((pieces, piece_of))
+}
+
+/// A run's characters as a PDF's text: the hyphen a line break adds (after the run's text, of no unit) is a soft
+/// hyphen, PDF's mark for one, so the word reads whole.
+pub(crate) fn run_text(r: &crate::layout::fragment::GlyphRun) -> String {
+    let added = match &r.chars[..] {
+        [.., before, last] => last.0 == '-' && last.2.is_none() && before.2.is_some(),
+        _ => false,
+    };
+    let mut text: String = r.chars.iter().map(|c| c.0).collect();
+    if added {
+        text.pop();
+        text.push('\u{AD}');
+    }
+    text
+}
+
+/// Each glyph's cluster (a UTF-8 offset into the run's characters): one cluster per character when a piece's glyph
+/// and character counts match ([`glyph_pieces`]), else one cluster for the piece.
+pub(crate) fn clusters(r: &crate::layout::fragment::GlyphRun) -> Option<Vec<u32>> {
+    if r.glyphs.is_empty() || r.chars.is_empty() {
+        return None;
+    }
+    let (pieces, piece_of) = glyph_pieces(r)?;
     let mut byte = Vec::with_capacity(r.chars.len());
     let mut at = 0u32;
     for &(c, _, _) in r.chars.iter() {
         byte.push(at);
         at += c.len_utf8() as u32;
-    }
-    let piece_of: Vec<usize> = r.glyphs.iter().map(|g| pieces.partition_point(|p| p.0 <= g.1 + 1e-6).saturating_sub(1)).collect();
-    if piece_of.windows(2).any(|w| w[1] < w[0]) {
-        return None;
     }
     let mut count = vec![0usize; pieces.len()];
     for &p in &piece_of {
@@ -468,4 +842,48 @@ pub(crate) fn clusters(r: &crate::layout::fragment::GlyphRun) -> Option<Vec<u32>
             })
             .collect(),
     )
+}
+
+#[cfg(test)]
+mod ink_tests {
+    use super::*;
+    use crate::render::appearance::{Appearance, PageMode};
+
+    #[test]
+    fn a_stroked_border_takes_the_appearance_like_a_rect() {
+        use crate::drawing::{
+            colour::Rgba,
+            geom::Geom,
+            paint::{Paint, ResolvedEffects, ResolvedLine},
+        };
+        let geom = Geom { paths: vec![], text_rect: [0.0; 4], handles: vec![], cxn: vec![] };
+        let line = ResolvedLine { width: 1.0, paint: Paint::Solid(Rgba { r: 0, g: 0, b: 0, a: 255 }), ..ResolvedLine::none() };
+        let s = crate::layout::fragment::ShapeItem {
+            rect: [0.0; 4],
+            rot: 0.0,
+            flip_h: false,
+            flip_v: false,
+            geom: std::rc::Rc::new(geom),
+            fill: Paint::None,
+            line,
+            effects: ResolvedEffects::default(),
+            behind: false,
+            float: 0,
+            path: Vec::new(),
+            picture: false,
+            ink: true,
+            decoration: true,
+            snap: false,
+            clip_bottom: None,
+            text_float: 0,
+            text: None,
+            of: Default::default(),
+            text_path: None,
+        };
+        let r = Renderer { appearance: Appearance::Dark { page: PageMode::Dark }, ..Renderer::default() };
+        let want = r.appearance.map(0x000000);
+        assert_ne!(want, 0x000000, "black is lightened on the dark page");
+        let Paint::Solid(c) = ink_shape(&r, &s).line.paint else { panic!() };
+        assert_eq!(u32::from(c.r) << 16 | u32::from(c.g) << 8 | u32::from(c.b), want);
+    }
 }

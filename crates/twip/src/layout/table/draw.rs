@@ -13,7 +13,8 @@ use crate::layout::story::StoryUnit;
 use crate::layout::units::EPS;
 
 use super::{
-    CellBox, INK_SLACK, RowBox, TableLayout, assemble::gap, borders::bw, borders::edge, borders::thick, ink_top, key::RowProbe, source_units,
+    CellBox, INK_SLACK, RowBox, TableLayout, assemble::gap, borders::bw, borders::diagonal, borders::edge, borders::thick, ink_top, key::RowProbe,
+    source_units,
 };
 
 // Row drawing
@@ -66,6 +67,12 @@ fn unaligned_floats(children: &Rc<[Child]>, off: f64, fixed: &[u64]) -> Option<R
     Some(children.iter().map(up).collect())
 }
 
+/// A dashed rect's phase once cut from `old` to `new`: the pattern stays where it was.
+fn cut_phase(old: &[f64; 4], new: &[f64; 4], phase: f32) -> f32 {
+    let along_x = old[2] - old[0] >= old[3] - old[1];
+    phase + (if along_x { new[0] - old[0] } else { new[1] - old[1] }) as f32
+}
+
 pub(in crate::layout) fn clip_x(children: &Rc<[Child]>, lo: f64, hi: f64, bottom: f64) -> Option<Rc<[Child]>> {
     clip_box(children, lo, hi, f64::NEG_INFINITY, bottom)
 }
@@ -98,6 +105,7 @@ fn clip_cut(children: &Rc<[Child]>, lo: f64, hi: f64, top: f64, bottom: f64, bor
         l.line.items.iter().any(|i| match i {
             Item::Glyphs(r) => r.glyphs.iter().any(|g| !inside(r, g, l.x, l.y)),
             Item::Rect { rect, .. } => l.x + rect[0] < lo - EPS || l.x + rect[2] > hi + EPS,
+            Item::Shape(s) => s.ink && (l.x + s.rect[0] < lo - EPS || l.x + s.rect[2] > hi + EPS),
             _ => false,
         })
     };
@@ -123,9 +131,13 @@ fn clip_cut(children: &Rc<[Child]>, lo: f64, hi: f64, top: f64, bottom: f64, bor
                             r.chars.iter().copied().filter(|ch| ch.1 >= from - EPS && ch.1 <= to + EPS && !dropped(ch.1)).collect();
                         (!glyphs.is_empty() || r.glyphs.is_empty()).then(|| Item::Glyphs(GlyphRun { glyphs, chars, ..r.clone() }))
                     }
-                    Item::Rect { rect, colour } => {
+                    Item::Rect { rect, colour, snap, dash, phase } => {
                         let (x0, x1) = (rect[0].max(lo - dx), rect[2].min(hi - dx));
-                        (x1 > x0).then_some(Item::rect([x0, rect[1], x1, rect[3]], *colour))
+                        let cut = [x0, rect[1], x1, rect[3]];
+                        (x1 > x0).then_some(Item::Rect { rect: cut, colour: *colour, snap: *snap, dash: *dash, phase: cut_phase(rect, &cut, *phase) })
+                    }
+                    Item::Shape(s) if s.ink => {
+                        super::clip_stroke(s, [lo - dx, f64::NEG_INFINITY, hi - dx, f64::INFINITY]).map(|s| Item::Shape(Rc::new(s)))
                     }
                     other => Some(other.clone()),
                 })
@@ -165,12 +177,25 @@ fn clip_nested(c: &Child, lo: f64, hi: f64, top: f64, bottom: f64, borders: bool
                     items
                         .iter()
                         .filter_map(|i| match i {
-                            Item::Rect { rect, colour } => {
+                            Item::Rect { rect, colour, snap, dash, phase } => {
                                 let r = [rect[0].max(lo), rect[1].max(top), rect[2].min(hi), rect[3].min(bottom)];
                                 if r != *rect {
                                     any = true;
                                 }
-                                (r[2] > r[0] && r[3] > r[1]).then_some(Item::rect(r, *colour))
+                                (r[2] > r[0] && r[3] > r[1]).then_some(Item::Rect {
+                                    rect: r,
+                                    colour: *colour,
+                                    snap: *snap,
+                                    dash: *dash,
+                                    phase: cut_phase(rect, &r, *phase),
+                                })
+                            }
+                            Item::Shape(s) if s.ink => {
+                                let cut = super::clip_stroke(s, [lo, top, hi, bottom]);
+                                if cut.as_ref().is_none_or(|c| !Rc::ptr_eq(&c.geom, &s.geom)) {
+                                    any = true;
+                                }
+                                cut.map(|c| Item::Shape(Rc::new(c)))
                             }
                             other => Some(other.clone()),
                         })
@@ -247,7 +272,10 @@ pub fn frame_part(tb: &TableLayout, frag: &mut RowFragment, left: f64, open: Opt
             }
         }
         let same = |a: &Item, b: &Item| match (a, b) {
-            (Item::Rect { rect: r, colour: c }, Item::Rect { rect: q, colour: d }) => c == d && r.iter().zip(q).all(|(x, y)| (x - y).abs() < EPS),
+            (Item::Rect { rect: r, colour: c, dash: e, .. }, Item::Rect { rect: q, colour: d, dash: f, .. }) => {
+                c == d && e == f && r.iter().zip(q).all(|(x, y)| (x - y).abs() < EPS)
+            }
+            (Item::Shape(a), Item::Shape(b)) => a == b,
             _ => false,
         };
         let mut borders = std::mem::take(&mut frag.borders).into_vec();
@@ -301,7 +329,7 @@ pub fn draw_row(tb: &TableLayout, ri: usize, left: f64, top: f64, height: f64, p
     let (outer_top, outer_bottom) = (top, top + height);
     let (top, height) = (top + lead, height - lead - trail);
     let x0 = left + tb.x0;
-    let (mut background, mut cells, mut borders) = (Vec::new(), Vec::new(), Vec::new());
+    let (mut background, mut cells, mut borders, mut diagonals) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
     let mut edges: Vec<(f64, usize)> = Vec::new();
     let mut rect = [x0, top, x0, top + height];
     if let (Some(mut first), Some(mut end)) = (row.cells.first(), row.cells.last()) {
@@ -323,8 +351,13 @@ pub fn draw_row(tb: &TableLayout, ri: usize, left: f64, top: f64, height: f64, p
         }
         rect = [x0 + first.x, top, x0 + end.x + end.w, top + height];
     }
-    if let Some(fill) = row.shading {
-        background.push(Item::rect(rect, fill));
+    // The table's shading, then the row's exceptions', show around spaced cells only.
+    if let Some(s) = row.spacing.filter(|s| *s > 0.0)
+        && !(row.ground.is_none() && row.shade.is_none())
+    {
+        let boxes: Vec<[f64; 4]> = row.cells.iter().map(|c| spaced_box(tb, row, ri, c, s, x0, (top, height))).collect();
+        row.ground.draw_around(&mut background, rect, &boxes);
+        row.shade.draw_around(&mut background, rect, &boxes);
     }
     let below_margin = row.cells.iter().map(|c| c.margins[2]).fold(0.0, f64::max);
     for (k, c) in row.cells.iter().enumerate() {
@@ -405,14 +438,25 @@ pub fn draw_row(tb: &TableLayout, ri: usize, left: f64, top: f64, height: f64, p
             closing,
         };
         cells.push(CellFragment { cell: k, content: content.into_boxed_slice(), place });
-        if let Some(spacing) = row.spacing {
-            spaced_cell_frame(tb, row, ri, c, spacing, x0, (top, height), &mut background, &mut borders);
-            continue;
+        // A cell's diagonals: in a spaced cell between its frame's inner edges; else across the grid lines, from under
+        // its top border to the row's (a merged region's) bottom.
+        let diagonal_box = if let Some(spacing) = row.spacing {
+            let [bx0, by0, bx1, by1] = spaced_cell_frame(tb, row, ri, c, spacing, x0, (top, height), &mut background, &mut borders);
+            [bx0 + bw(el), by0 + bw(et), bx1 - bw(er), by1 - bw(eb)]
+        } else {
+            let r = [x0 + c.x, top, x0 + c.x + c.w, top + height];
+            c.shade.draw(&mut background, r, r);
+            cell_borders(tb, row, c, x0, (top, height), last_of_table, &mut borders);
+            [r[0], top + bw(et), r[2], r[3]]
+        };
+        // Diagonals, unmirrored right to left
+        if let Some(d) = c.diagonals.as_deref().filter(|_| c.v_merge != VMerge::Continue) {
+            for (b, up) in d.iter().zip([false, true]) {
+                if let Some(b) = b.as_ref().filter(|b| b.visible()) {
+                    diagonal(&mut diagonals, diagonal_box, up, b);
+                }
+            }
         }
-        if let Some(fill) = c.shading {
-            background.push(Item::rect([x0 + c.x, top, x0 + c.x + c.w, top + height], fill));
-        }
-        cell_borders(tb, row, c, x0, (top, height), last_of_table, &mut borders);
     }
     for (a, b, s) in &row.seams {
         edge(&mut borders, [x0 + a, top, x0 + b, top + thick(s)], true, false, s);
@@ -424,6 +468,8 @@ pub fn draw_row(tb: &TableLayout, ri: usize, left: f64, top: f64, height: f64, p
     if whole && !row.div_boxes.is_empty() {
         division_boxes(row, rect, (top, height), (outer_top, outer_bottom), &mut borders);
     }
+    // Over the borders, as Word draws them.
+    borders.append(&mut diagonals);
     RowFragment {
         row: ri,
         rect,
@@ -449,18 +495,10 @@ fn spaced_cell_frame(
     (top, height): (f64, f64),
     background: &mut Vec<Item>,
     borders: &mut Vec<Item>,
-) {
-    let ncols = tb.cols.len();
-    let (mut lo, mut ro) = (c.col == 0, c.col + c.span >= ncols);
-    if tb.rtl {
-        (lo, ro) = (ro, lo);
-    }
-    let bx0 = x0 + c.x + gap(spacing, lo);
-    let bx1 = x0 + c.x + c.w - gap(spacing, ro);
-    let (by0, by1) = (top + row.gap_top, top + height - gap(spacing, tb.is_last(ri)));
-    if let Some(fill) = c.shading {
-        background.push(Item::rect([bx0, by0, bx1, by1], fill));
-    }
+) -> [f64; 4] {
+    let frame = spaced_box(tb, row, ri, c, spacing, x0, (top, height));
+    let [bx0, by0, bx1, by1] = frame;
+    c.shade.draw(background, frame, frame);
     let [t, l, b, r] = drawn_edges(tb, c);
     let vis = |e: &'_ Option<Border>| e.as_ref().filter(|b| b.visible()).map(|b| (thick(b), b.clone()));
     if let Some((w, e)) = vis(t) {
@@ -475,6 +513,16 @@ fn spaced_cell_frame(
     if let Some((w, e)) = vis(r) {
         edge(borders, [bx1 - w, by0, bx1, by1], false, true, &e);
     }
+    frame
+}
+
+/// A spaced cell's border box.
+fn spaced_box(tb: &TableLayout, row: &RowBox, ri: usize, c: &CellBox, spacing: f64, x0: f64, (top, height): (f64, f64)) -> [f64; 4] {
+    let (mut lo, mut ro) = (c.col == 0, c.col + c.span >= tb.cols.len());
+    if tb.rtl {
+        (lo, ro) = (ro, lo);
+    }
+    [x0 + c.x + gap(spacing, lo), top + row.gap_top, x0 + c.x + c.w - gap(spacing, ro), top + height - gap(spacing, tb.is_last(ri))]
 }
 
 // A cell's borders and gridlines

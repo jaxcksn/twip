@@ -42,6 +42,8 @@ pub struct RunStyle {
     /// The OpenType features as set, whatever the compatibility mode makes of them ([`RunStyle::ligatures`] and
     /// [`RunStyle::figures`] are what layout applies).
     pub typography: Typography,
+    /// Word 2010's text effects through the style chain; `None` without any.
+    pub effects: Option<Rc<TextEffects>>,
     pub color: Option<u32>,
     pub highlight: Option<u32>,
     pub shading: Option<u32>,
@@ -103,6 +105,62 @@ pub struct Typography {
     pub number_spacing: u32,
     /// Bit n − 1 for stylistic set n.
     pub stylistic_sets: u32,
+}
+
+/// A run's Word 2010 text effects (`w14:textFill`, `w14:textOutline`, `w14:shadow`, `w14:glow`, `w14:reflection`),
+/// each as DrawingML reads it. Each is set or not on its own, and a style chain's levels override one at a time.
+/// `w14:scene3d` and `w14:props3d` stay in the source XML: they are kept, and drawn flat.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct TextEffects {
+    /// The letters' fill in place of the text colour: none, a solid or a gradient.
+    pub fill: Option<crate::drawing::paint::Fill>,
+    pub outline: Option<crate::drawing::paint::Line>,
+    pub shadow: Option<crate::drawing::paint::OuterShadow>,
+    pub glow: Option<crate::drawing::paint::Glow>,
+    pub reflection: Option<crate::drawing::paint::Reflection>,
+}
+
+impl TextEffects {
+    pub fn is_empty(&self) -> bool {
+        *self == TextEffects::default()
+    }
+
+    /// The effects that show: without those written as off (a glow of no radius, a shadow or reflection of no size,
+    /// an outline with no fill), which is how a run turns off its style's. `None` when none shows.
+    pub fn shown(e: &Rc<TextEffects>) -> Option<Rc<TextEffects>> {
+        use crate::drawing::paint::Fill;
+        let glow = e.glow.as_ref().is_some_and(|g| g.radius.0 == 0);
+        let shadow = e.shadow.as_ref().is_some_and(|s| s.sx.0 == 0 || s.sy.0 == 0);
+        let reflection = e.reflection.as_ref().is_some_and(|r| r.sx.0 == 0 || r.sy.0 == 0);
+        let outline = e.outline.as_ref().is_some_and(|l| matches!(l.fill, None | Some(Fill::None)));
+        let shown = if glow || shadow || reflection || outline {
+            let mut s = (**e).clone();
+            if glow {
+                s.glow = None;
+            }
+            if shadow {
+                s.shadow = None;
+            }
+            if reflection {
+                s.reflection = None;
+            }
+            if outline {
+                s.outline = None;
+            }
+            Rc::new(s)
+        } else {
+            e.clone()
+        };
+        (!shown.is_empty()).then_some(shown)
+    }
+
+    /// Each effect `o` sets, over this one's.
+    pub fn merge(&mut self, o: &TextEffects) {
+        macro_rules! take {
+            ($($f:ident),*) => { $( if o.$f.is_some() { self.$f = o.$f.clone(); } )* };
+        }
+        take!(fill, outline, shadow, glow, reflection);
+    }
 }
 
 /// Source XML carried for saving (a run's `w:rPr`, a paragraph's `w:pPr`). Never part of equality: formatting
@@ -756,6 +814,10 @@ pub struct Source {
     pub controls: HashMap<ControlId, Control>,
     /// The glossary part as read, when the package has one.
     pub glossary: Option<GlossarySource>,
+    /// The page background's colour and fill as read.
+    pub page_background: (Option<u32>, Option<crate::drawing::paint::Fill>),
+    /// The page background colour's theme colour as read.
+    pub page_theme: Option<ThemeColourRef>,
 }
 
 /// The glossary part as read: its name and XML, and each building block's `w:docPart` byte range in that XML with
@@ -1043,6 +1105,8 @@ pub struct Cell {
     pub bottom: Option<Border>,
     pub right: Option<Border>,
     pub shading: Option<u32>,
+    /// The shading's stripe or cross, drawn over [`Cell::shading`].
+    pub hatch: Option<super::props::Hatch>,
     pub margins: [f64; 4],
     pub v_align: String,
     pub text_direction: String,
@@ -1060,6 +1124,16 @@ pub struct Cell {
     pub controls: Vec<ControlId>,
     /// Tracked insertion, deletion or merge of the cell, and a tracked change of its properties.
     pub rev: CellRevisions,
+    /// Its identifier and the header cells it is under, by theirs (`w:tc/@w:id`, `tcPr/w:headers`).
+    pub ids: Option<Rc<CellIds>>,
+}
+
+/// A table cell's identifier (`w:tc/@w:id`) and the identifiers of the header cells that head it
+/// (`tcPr/w:headers/w:header/@w:val`).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct CellIds {
+    pub id: Option<String>,
+    pub headers: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1080,6 +1154,11 @@ pub struct Row {
     pub borders: Option<Rc<[Option<Border>; 6]>>,
     /// The row's exception shading (`w:tblPrEx/w:shd`).
     pub shading: Option<u32>,
+    /// Its stripe or cross, drawn over [`Row::shading`].
+    pub hatch: Option<super::props::Hatch>,
+    /// A row read from a later table joined to this one (nothing between them): that table's shading, fill and
+    /// hatch, in place of [`Table::shd`]; none for a row whose exceptions' shading has no colour.
+    pub table_shading: Option<(Option<u32>, Option<super::props::Hatch>)>,
     /// The row-end mark is hidden (`trPr/w:hidden`).
     pub hidden: bool,
     /// Every character of the row, its row-end mark included, is hidden.
@@ -1126,6 +1205,8 @@ pub struct Table {
     pub borders: [Option<Border>; 6],
     pub fixed: bool,
     pub cell_spacing: f64,
+    /// The table's shading (`w:tblPr/w:shd`, its own or its style's), drawn around spaced cells.
+    pub shd: Option<super::props::Shd>,
     pub look: Option<Look>,
     pub bands: (i64, i64),
     /// The alternative text's title and description (`w:tblCaption`, `w:tblDescription`).
@@ -1435,6 +1516,27 @@ pub struct Settings {
     pub protection: Option<Protection>,
     /// `w:revisionView` as written, kept for saving.
     pub revision_view_raw: Raw,
+    /// `w:displayBackgroundShape`: the page background shows (Word shows none without it).
+    pub display_background_shape: bool,
+}
+
+/// A theme colour a WordprocessingML colour names (`w:themeColor`), lightened (`w:themeTint`) or darkened
+/// (`w:themeShade`) by a byte: the fraction of the colour's luminance kept.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ThemeColourRef {
+    pub slot: crate::drawing::colour::SchemeSlot,
+    pub tint: Option<u8>,
+    pub shade: Option<u8>,
+}
+
+impl Document {
+    /// The page background as it shows: its colour and fill, both `None` when Word doesn't display it.
+    pub fn shown_background(&self) -> (Option<u32>, Option<&crate::drawing::paint::Fill>) {
+        match self.settings.display_background_shape {
+            true => (self.page_colour, self.page_fill.as_ref()),
+            false => (None, None),
+        }
+    }
 }
 
 impl Settings {
@@ -1460,7 +1562,12 @@ pub struct Document {
     pub sections: Vec<Section>,
     pub theme: Rc<crate::drawing::theme::Theme>,
     pub colour_map: crate::drawing::theme::ColourMap,
+    /// The page background's colour (`w:background`), a theme colour's tint or shade applied.
     pub page_colour: Option<u32>,
+    /// The page background's fill over its colour (`v:background`): a gradient, pattern or picture.
+    pub page_fill: Option<crate::drawing::paint::Fill>,
+    /// The theme colour `page_colour` is, when it is one.
+    pub page_colour_theme: Option<ThemeColourRef>,
     /// Headers and footers by part name, in name order (the editor addresses them by place in it).
     pub stories: std::collections::BTreeMap<String, Vec<Block>>,
     pub footnotes: HashMap<i64, Vec<Block>>,

@@ -2,6 +2,7 @@
 //! review marks both report (insertions, deletions and commented ranges, and their authors) are found here.
 
 mod announce;
+pub(crate) mod roles;
 mod tree;
 mod window;
 
@@ -205,12 +206,9 @@ impl<'a> Reading<'a> {
             m.marks.push(AccessibleMark::Misspelling);
         }
         let lang = self.langs.get(u as usize).copied().unwrap_or("");
-        m.lang = Some(lang.to_string()).filter(|l| !l.is_empty() && !l.eq_ignore_ascii_case(self.doc_lang));
+        m.lang = roles::other_language(lang, self.doc_lang).map(str::to_string);
         m
     }
 }
 
-/// The document's language: its defaults', else `language`.
-pub(super) fn document_language(doc: &Document, language: &str) -> String {
-    doc.resolver.as_ref().and_then(|r| r.styles.doc_rpr.lang.clone()).filter(|l| !l.is_empty()).unwrap_or_else(|| language.to_string())
-}
+pub(super) use roles::document_language;

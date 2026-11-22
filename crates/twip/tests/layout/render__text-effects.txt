@@ -1,0 +1,12 @@
+page 0 12240 15840
+  1440 2006 Text effects
+  1440 2705 glow direct   glow style
+  1440 3571 shadow direct   shadow style
+  1440 4438 reflection direct   reflection style
+  1440 5305 outline direct   outline style
+  1440 6172 fill-solid direct   fill-solid style
+  1440 7039 fill-gradient direct   fill-gradient
+  1440 7665 style
+  1440 8532 fill-none direct   fill-none style
+  1440 9399 scene3d direct   scene3d style
+  1440 10266 all direct   all style

@@ -1,0 +1,192 @@
+pages 1
+page 1 612 792
+  text FX-TBL-NOBORDER
+  text A table without borders:
+  text R1 C1R1 C2R1 C3
+  text R2 C1R2 C2R2 C3
+  text R3 C1R3 C2R3 C3
+  text After the table.
+  op 1 0 0 -1 0 792 cm
+  op /P << /MCID 0 >> BDC
+  op q
+  op /Span << /ActualText <46582d54424c2d4e4f424f52444552> >> BDC
+  op 0 0 0 rg
+  op 0 0 0 RG
+  op 0.62 w
+  op 0 j
+  op BT
+  op 2 Tr
+  op 1 0 0 -1 72 96.8 Tm
+  op /F1 16 Tf
+  op [<0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002> -1 <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 1 >> BDC
+  op q
+  op /Span << /ActualText <41207461626c6520776974686f757420626f72646572733a> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 110.07 Tm
+  op /F1 11 Tf
+  op [<0002> <0001> <0002> <0002> <0002> <0002> <0002> <0001> <0002> <0002> <0002> <0002> <0002> <0002> <0002> 0 <0001> <0002> <0002> <0002> <0002> <0002> 0 <0002> <0002> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 2 >> BDC
+  op q
+  op /Span << /ActualText <5231204331> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 77.4 129.94 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0001> <0002> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 3 >> BDC
+  op q
+  op /Span << /ActualText <5231204332> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 233.4 129.94 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0001> <0002> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 4 >> BDC
+  op q
+  op /Span << /ActualText <5231204333> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 389.4 129.94 Tm
+  op /F1 11 Tf
+  op [<0002> 0 <0002> 0 <0001> <0002> 0 <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /Artifact << /Type /Layout >> BDC
+  op EMC
+  op /P << /MCID 5 >> BDC
+  op q
+  op /Span << /ActualText <5232204331> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 77.4 149.81 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0001> <0002> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 6 >> BDC
+  op q
+  op /Span << /ActualText <5232204332> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 233.4 149.81 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0001> <0002> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 7 >> BDC
+  op q
+  op /Span << /ActualText <5232204333> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 389.4 149.81 Tm
+  op /F1 11 Tf
+  op [<0002> 0 <0002> 0 <0001> <0002> 0 <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /Artifact << /Type /Layout >> BDC
+  op EMC
+  op /P << /MCID 8 >> BDC
+  op q
+  op /Span << /ActualText <5233204331> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 77.4 169.68 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0001> <0002> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 9 >> BDC
+  op q
+  op /Span << /ActualText <5233204332> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 233.4 169.68 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0001> <0002> <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /P << /MCID 10 >> BDC
+  op q
+  op /Span << /ActualText <5233204333> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 389.4 169.68 Tm
+  op /F1 11 Tf
+  op [<0002> 0 <0002> 0 <0001> <0002> 0 <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+  op /Artifact << /Type /Layout >> BDC
+  op EMC
+  op /P << /MCID 11 >> BDC
+  op q
+  op /Span << /ActualText <416674657220746865207461626c652e> >> BDC
+  op 0 0 0 rg
+  op BT
+  op 1 0 0 -1 72 189.55 Tm
+  op /F1 11 Tf
+  op [<0002> <0002> <0002> <0002> <0002> <0001> <0002> <0002> <0002> <0001> <0002> <0002> <0002> <0002> <0002> 0 <0002>] TJ
+  op ET
+  op EMC
+  op Q
+  op EMC
+structure
+  Document
+    H1
+    P
+    Table
+      TR
+        TD
+          P
+        TD
+          P
+        TD
+          P
+      TR
+        TD
+          P
+        TD
+          P
+        TD
+          P
+      TR
+        TD
+          P
+        TD
+          P
+        TD
+          P
+    P
+outline
+  "FX-TBL-NOBORDER"

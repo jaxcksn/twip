@@ -33,7 +33,7 @@ fn text(what: &str, v: &str) -> Result<(), Error> {
 fn picture(data: &[u8]) -> Result<(), Error> {
     match crate::docx::image::image_type(data) {
         Some(_) => Ok(()),
-        None => Err(Error::invalid("the data isn't a PNG, JPEG, GIF, BMP or TIFF picture")),
+        None => Err(Error::invalid("the data isn't a PNG, JPEG, GIF, BMP, TIFF, JPEG XR, SVG, EMF or WMF picture")),
     }
 }
 

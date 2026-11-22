@@ -39,6 +39,7 @@ pub fn formats_a_style(c: &Command) -> bool {
             | Command::SetTypography(_)
             | Command::SetLanguage(_)
             | Command::SetCharacterEffects(_)
+            | Command::SetTextEffects(_)
             | Command::SetUnderlineColor(_)
             | Command::SetAlignment(_)
             | Command::SetLineSpacing(_)
@@ -70,7 +71,8 @@ const TBL_STYLE_PR: &[&str] = &["pPr", "rPr", "tblPr", "trPr", "tcPr"];
 pub(super) fn edit_table_part(raw: &str, region: &str, child: &str, cx: &Cx, edit: impl FnOnce(&mut Props)) -> String {
     let w = &cx.w;
     let mut el = Props::parse(Some(raw), "style", cx);
-    let at = el.kids.iter().position(|(n, x)| n == "tblStylePr" && x.contains(&format!("type=\"{region}\"")));
+    let at =
+        el.kids.iter().position(|(n, x)| n == "tblStylePr" && cx.parse(x, |_, p| crate::docx::xml::attr(p, "type") == Some(region)) == Some(true));
     let blank = format!("<{w}tblStylePr {w}type=\"{region}\"><{w}pPr/></{w}tblStylePr>");
     let mut part = Props::parse(Some(at.map_or(blank.as_str(), |i| el.kids[i].1.as_str())), "tblStylePr", cx);
     part.reorder(TBL_STYLE_PR);
@@ -297,49 +299,53 @@ impl Editor {
         )
     }
 
-    /// Sets the shading of the selected paragraphs or text.
+    /// Sets the shading of the selected paragraphs, text, cells or tables.
     pub(super) fn set_shading(&mut self, s: crate::api::command::ShadingChange, fonts: &Fonts) -> Outcome {
-        use crate::api::command::ShadingTarget;
+        use super::table_format::{Shading, TableFormat};
+        use crate::api::command::{ShadingPattern, ShadingTarget};
         use crate::api::value::{AutoOr, NoneOr};
-        let xml = |w: &str| match s.fill {
-            NoneOr::None if s.pattern == crate::api::command::ShadingPattern::Clear => None,
-            fill => {
-                let fill = match fill {
-                    NoneOr::Value(c) => format!("{:06X}", c.0),
-                    NoneOr::None => "auto".to_string(),
-                };
-                let color = match s.color {
-                    AutoOr::Auto => "auto".to_string(),
-                    AutoOr::Value(c) => format!("{:06X}", c.0),
-                };
-                Some(format!("<{w}shd {w}val=\"{}\" {w}color=\"{color}\" {w}fill=\"{fill}\"/>", s.pattern.val()))
+        let fill = match s.fill {
+            NoneOr::Value(c) => Some(c.0),
+            NoneOr::None => None,
+        };
+        let color = match s.color {
+            AutoOr::Auto => None,
+            AutoOr::Value(c) => Some(c.0),
+        };
+        let sh = Shading { pattern: s.pattern.val(), color, fill };
+        // No fill and a clear pattern: no shading of their own.
+        let none = fill.is_none() && s.pattern == ShadingPattern::Clear;
+        let edit = |p: &mut Props, w: &str, inherited: Option<&crate::docx::props::Shd>| {
+            if none {
+                p.remove("shd");
+            } else {
+                let x = sh.xml(w, p.get("shd"), inherited);
+                p.set("shd", x);
             }
         };
-        match s.target {
-            ShadingTarget::Paragraph => self.format_paras(
-                "Shading",
-                &|p, cx, _| match xml(&cx.w) {
-                    Some(x) => p.set("shd", x),
-                    None => p.remove("shd"),
-                },
-                fonts,
-            ),
-            ShadingTarget::Text => self.format_runs(
-                "Shading",
-                &|p, w, _| match xml(w) {
-                    Some(x) => p.set("shd", x),
-                    None => p.remove("shd"),
-                },
-                fonts,
-            ),
-            // The selected cells: their fill (cell shading has no pattern here).
-            ShadingTarget::Cell => {
-                let fill = match s.fill {
-                    NoneOr::Value(c) => Some(c),
-                    NoneOr::None => None,
-                };
-                self.execute(Command::SetCellShading(fill), fonts)
+        // A table style's shading goes in its cells' or its table's properties; no other style has them, and the
+        // document's tables stay as they are.
+        if let Some(raw) = &self.style_target
+            && matches!(s.target, ShadingTarget::Cell | ShadingTarget::Table)
+        {
+            let cx = self.doc.resolver.as_ref().map(|r| r.styles.cx());
+            if !cx.and_then(|cx| cx.parse(raw, |_, n| crate::docx::xml::attr(n, "type") == Some("table"))).unwrap_or(false) {
+                return Outcome::Refused(Error::invalid("only a table style has cell or table shading"));
             }
+            let (part, order) = match s.target {
+                ShadingTarget::Cell => ("tcPr", crate::docx::write::props::TCPR),
+                _ => ("tblPr", crate::docx::write::props::TBLPR),
+            };
+            return self.format_style_part(part, &|p, cx, _, _| {
+                p.reorder(order);
+                edit(p, &cx.w, None);
+            });
+        }
+        match s.target {
+            ShadingTarget::Paragraph => self.format_paras("Shading", &|p, cx, para| edit(p, &cx.w, para.style.shd.as_ref()), fonts),
+            ShadingTarget::Text => self.format_runs("Shading", &|p, w, run| edit(p, w, run.shd.as_ref()), fonts),
+            ShadingTarget::Cell => self.table_format(&TableFormat::CellShading(sh.clone()), fonts),
+            ShadingTarget::Table => self.table_format(&TableFormat::TableShading(sh.clone()), fonts),
         }
     }
 
@@ -509,5 +515,19 @@ impl Editor {
         tx.stale_paras.extend(paras);
         tx.stale_tables.extend(tables);
         self.commit(tx, None, fonts)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_table_style_part_is_edited_in_place_however_its_type_is_quoted() {
+        let cx = Cx::of_xml(r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">"#);
+        let raw = r#"<w:style w:type="table" w:styleId="T"><w:name w:val="T"/><w:tblStylePr w:type='firstRow'><w:tcPr><w:noWrap/></w:tcPr></w:tblStylePr></w:style>"#;
+        let xml = edit_table_part(raw, "firstRow", "tcPr", &cx, |p| p.set("vAlign", r#"<w:vAlign w:val="center"/>"#.into()));
+        assert_eq!(xml.matches("<w:tblStylePr").count(), 1, "{xml}");
+        assert!(xml.contains(r#"<w:tcPr><w:noWrap/><w:vAlign w:val="center"/></w:tcPr>"#), "{xml}");
     }
 }

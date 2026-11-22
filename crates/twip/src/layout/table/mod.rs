@@ -16,12 +16,14 @@ use super::story::{CellEnds, NestedRow, StoryEnv, StoryLayout, StoryUnit};
 
 mod assemble;
 mod borders;
+mod clip;
 mod draw;
 mod key;
 mod widths;
 
 pub use assemble::{cells_box, float_box, legacy_lead, nested_shift, outer_box};
-pub(super) use borders::{drawn, edge, thick};
+pub(super) use borders::{drawn, edge, edge_from, shadow, stroked, thick};
+pub(super) use clip::clip_stroke;
 pub use draw::{CellPart, DrawnRow, draw_row, draw_whole_row, frame_part, whole};
 pub(super) use draw::{clip_box, clip_x};
 pub(crate) use key::same_shell;
@@ -50,7 +52,9 @@ pub struct CellBox {
     /// The top and bottom edges where a part of the table starts or ends on a page (the cell's own, else the table's
     /// top and bottom), and the top edge under a repeated header row.
     pub cut: Rc<[Option<Border>; 3]>,
-    pub shading: Option<u32>,
+    /// The diagonals drawn, top left to bottom right and top right to bottom left.
+    pub diagonals: Option<Rc<[Option<Border>; 2]>>,
+    pub shade: crate::layout::shade::Shade,
     pub below: f64,
     pub index: usize,
     pub closing: Option<(ParaId, f64)>,
@@ -81,7 +85,9 @@ pub struct RowBox {
     pub lead: f64,
     pub trail: f64,
     pub div_boxes: Rc<[crate::docx::model::DivBox]>,
-    pub shading: Option<u32>,
+    /// The shading of the table the row is in, then the row's exceptions', drawn around its spaced cells.
+    pub ground: crate::layout::shade::Shade,
+    pub shade: crate::layout::shade::Shade,
     /// The row's cell spacing; its cells are framed when it has one.
     pub spacing: Option<f64>,
     /// The next row is framed: the row draws its own bottom border.
@@ -432,7 +438,8 @@ impl ViewTable {
                     lead: 0.0,
                     trail: 0.0,
                     div_boxes: Rc::from([]),
-                    shading: None,
+                    ground: Default::default(),
+                    shade: Default::default(),
                     spacing: None,
                     closes: false,
                     fit_border: 0.0,

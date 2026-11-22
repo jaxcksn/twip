@@ -32,7 +32,17 @@ impl<'d> PageFill<'d, '_> {
             18.0
         };
         if let Some(run) = &self.ctx.env.line_number_run {
-            let label = draw_label(&n.to_string(), run, col.x - dist, baseline, self.ctx.fonts);
+            let label = draw_label(
+                &n.to_string(),
+                run,
+                col.x - dist,
+                baseline,
+                (
+                    self.ctx.env.text.page_colour,
+                    crate::drawing::paint::Palette { theme: &self.ctx.env.text.theme, map: &self.ctx.env.text.colour_map },
+                ),
+                self.ctx.fonts,
+            );
             if !label.is_empty() {
                 out.push(label.into_boxed_slice());
             }
@@ -143,6 +153,7 @@ impl<'d> PageFill<'d, '_> {
                     env,
                     fit: false,
                     letter_break: false,
+                    shade_gap: pb.shade_gap,
                 };
                 Some(break_lines(&pb.shaped, p, &space, self.ctx.fonts, memos)?)
             }
@@ -163,6 +174,12 @@ impl<'d> PageFill<'d, '_> {
             yy += l.pitch;
             if matches!(l.hard, Some(Kind::PageBreak | Kind::ColumnBreak)) {
                 stop_kind = l.hard;
+            }
+        }
+        if take < n {
+            // The paragraph goes on elsewhere: an inline picture's reflection stops where this part does.
+            for l in &mut lines {
+                l.line = l.line.clipped(yy - l.y);
             }
         }
         out.push(Child::Para(ParaFragment { para: para_id(p), lines: lines.into_boxed_slice(), line_numbers: numbers.into_boxed_slice() }));

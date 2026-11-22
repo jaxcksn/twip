@@ -1,12 +1,12 @@
 //! Images: what a file says about itself (format, pixel size, EXIF orientation), decoding (PNG, JPEG, GIF's first frame,
-//! BMP, ICO, WBMP) into premultiplied RGBA8 with the orientation applied, the mip chain image draws sample from, and the
+//! BMP, ICO, WBMP, JPEG XR) into premultiplied RGBA8 with the orientation applied, the mip chain image draws sample from, and the
 //! registry pictures name images by.
 //!
 //! Twip's document reader uses [`probe`] too, in place of `SkCodec`. Decoding is lazy: the registry keeps the encoded
 //! bytes, and each renderer decodes an image the first time it draws it, into its own cache.
 //!
-//! Decoders: `zune-png`, `zune-jpeg`, `zune-bmp` and `gif`; ICO (largest entry, PNG or BMP DIB with its AND mask) and
-//! WBMP are read here. EXIF orientation is read from a JPEG's APP1 segment (the TIFF tag 0x0112, as Skia's `SkExif`).
+//! Decoders: `zune-png`, `zune-jpeg`, `zune-bmp`, `gif` and `jpeg-xr`; ICO (largest entry, PNG or BMP DIB with its AND
+//! mask) and WBMP are read here. EXIF orientation is read from a JPEG's APP1 segment (the TIFF tag 0x0112, as Skia's `SkExif`).
 //! An image over 2^28 pixels, or any decoder error, gives no image rather than a panic or unbounded memory.
 
 use std::fmt;
@@ -30,20 +30,32 @@ pub type ImageData = Arc<dyn AsRef<[u8]> + Send + Sync>;
 const MAX_PIXELS: u64 = 1 << 28;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+/// An image file format.
 pub enum ImageFormat {
+    /// PNG.
     Png,
+    /// JPEG.
     Jpeg,
+    /// GIF (its first frame).
     Gif,
+    /// BMP.
     Bmp,
+    /// ICO.
     Ico,
+    /// WBMP.
     Wbmp,
+    /// JPEG XR (HD Photo).
+    JpegXr,
 }
 
 /// What an image file says about itself: its format and its pixel size with the EXIF orientation applied.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct ImageInfo {
+    /// The file's format.
     pub format: ImageFormat,
+    /// The width in pixels.
     pub width: u32,
+    /// The height in pixels.
     pub height: u32,
     /// EXIF orientation, 1 (as stored) to 8.
     pub orientation: u8,
@@ -88,6 +100,7 @@ fn format(d: &[u8]) -> Option<ImageFormat> {
         [b'G', b'I', b'F', b'8', ..] => ImageFormat::Gif,
         [b'B', b'M', ..] => ImageFormat::Bmp,
         [0, 0, 1, 0, ..] => ImageFormat::Ico,
+        [0x49, 0x49, 0xBC, ..] => ImageFormat::JpegXr,
         // WBMP type 0: no magic, just a zero type and a zero header byte, then the size.
         [0, 0, ..] => ImageFormat::Wbmp,
         _ => return None,
@@ -96,7 +109,13 @@ fn format(d: &[u8]) -> Option<ImageFormat> {
 
 /// What `bytes` say about themselves, reading headers only; `None` when they aren't a supported image.
 pub fn probe(bytes: &[u8]) -> Option<ImageInfo> {
+    probe_with_resolution(bytes).map(|(info, _)| info)
+}
+
+/// [`probe`], and the resolution a JPEG XR file states (pixels per inch), from one parse of the headers.
+pub fn probe_with_resolution(bytes: &[u8]) -> Option<(ImageInfo, Option<(f64, f64)>)> {
     let format = format(bytes)?;
+    let mut resolution = None;
     let (w, h, orientation) = match format {
         ImageFormat::Png => {
             let mut d = zune_png::PngDecoder::new(ZCursor::new(bytes));
@@ -128,20 +147,54 @@ pub fn probe(bytes: &[u8]) -> Option<ImageInfo> {
             let (w, h, _) = wbmp_header(bytes)?;
             (w, h, 1)
         }
+        ImageFormat::JpegXr => {
+            let i = jpeg_xr::probe_with(bytes, &xr_limits()).ok()?;
+            resolution = i.resolution.map(|(x, y)| (f64::from(x), f64::from(y)));
+            (i.width, i.height, i.orientation)
+        }
     };
     if w == 0 || h == 0 {
         return None;
     }
     let (width, height) = if orientation >= 5 { (h, w) } else { (w, h) };
-    Some(ImageInfo { format, width, height, orientation })
+    Some((ImageInfo { format, width, height, orientation }, resolution))
 }
 
 /// Decodes `bytes` into premultiplied RGBA8, orientation applied.
 pub(crate) fn decode(bytes: &[u8]) -> Result<Pixmap, ImageError> {
+    let (mut p, premultiplied) = decode_rgba(bytes)?;
+    if !premultiplied {
+        premultiply(&mut p.data);
+    }
+    Ok(p)
+}
+
+/// [`pixels`] with straight (unpremultiplied) colour: width, height and `width × height × 4` bytes.
+pub fn pixels_straight(bytes: &[u8]) -> Result<(u32, u32, Vec<u8>), ImageError> {
+    let (mut p, premultiplied) = decode_rgba(bytes)?;
+    if premultiplied {
+        unpremultiply(&mut p.data);
+    }
+    Ok((p.width, p.height, p.data))
+}
+
+/// The decoder's work cap: 4 bytes a coded sample held while it works, 256 MiB, which wasm32 can spare (RGB up to
+/// about 22 million pixels).
+fn xr_limits() -> jpeg_xr::Limits {
+    jpeg_xr::Limits { max_pixels: MAX_PIXELS, ..jpeg_xr::Limits::default() }
+}
+
+/// RGBA8 with the orientation applied, and whether its colour is premultiplied (as a JPEG XR file may store it).
+fn decode_rgba(bytes: &[u8]) -> Result<(Pixmap, bool), ImageError> {
+    // A JPEG XR file is parsed once, by its decode, which bounds a hostile header before it allocates.
+    if format(bytes) == Some(ImageFormat::JpegXr) {
+        return decode_xr(bytes);
+    }
     let info = probe(bytes).ok_or_else(|| error("not a supported image"))?;
     fits(info.width, info.height)?;
     let options = DecoderOptions::default().set_max_width(1 << 16).set_max_height(1 << 16);
-    let straight = match info.format {
+    let premultiplied = false;
+    let pixels = match info.format {
         ImageFormat::Png => png(bytes, options)?,
         ImageFormat::Jpeg => {
             let options = options.jpeg_set_out_colorspace(ColorSpace::RGBA);
@@ -154,14 +207,38 @@ pub(crate) fn decode(bytes: &[u8]) -> Result<Pixmap, ImageError> {
         ImageFormat::Bmp => bmp(bytes, options)?,
         ImageFormat::Ico => ico(bytes, options)?,
         ImageFormat::Wbmp => wbmp(bytes)?,
+        ImageFormat::JpegXr => unreachable!("decoded above"),
     };
-    let mut p = orient(straight, info.orientation);
-    premultiply(&mut p.data);
-    Ok(p)
+    Ok((orient(pixels, info.orientation), premultiplied))
+}
+
+fn decode_xr(bytes: &[u8]) -> Result<(Pixmap, bool), ImageError> {
+    let mut i = jpeg_xr::decode_rgba8(bytes, &xr_limits()).map_err(error)?;
+    let premultiplied = i.premultiplied;
+    if premultiplied {
+        // Lossy coding can put colour above its alpha, which premultiplied pixels never have.
+        for p in i.data.as_chunks_mut::<4>().0 {
+            let a = p[3];
+            for c in &mut p[..3] {
+                *c = (*c).min(a);
+            }
+        }
+    }
+    let (w, h) = if i.orientation >= 5 { (i.height, i.width) } else { (i.width, i.height) };
+    fits(w, h)?;
+    let pixmap = orient(Pixmap { width: i.width, height: i.height, data: i.data }, i.orientation);
+    Ok((pixmap, premultiplied))
+}
+
+/// `bytes` decoded (orientation applied): width, height and premultiplied RGBA8 pixels, rows packed. Fails for bytes
+/// that aren't a supported image, or one over [`fits`]' limit.
+pub fn pixels(bytes: &[u8]) -> Result<(u32, u32, Vec<u8>), ImageError> {
+    let p = decode(bytes)?;
+    Ok((p.width, p.height, p.data))
 }
 
 /// Whether `width × height` is at most [`MAX_PIXELS`], checked before a decoder allocates for it.
-pub(crate) fn fits(width: u32, height: u32) -> Result<(), ImageError> {
+pub fn fits(width: u32, height: u32) -> Result<(), ImageError> {
     if width as u64 * height as u64 > MAX_PIXELS {
         return Err(error(format_args!("{width}×{height} pixels is more than an image may have")));
     }
@@ -395,6 +472,18 @@ fn orient(p: Pixmap, o: u8) -> Pixmap {
     Pixmap { width: ow, height: oh, data }
 }
 
+/// Straight colour from premultiplied.
+fn unpremultiply(data: &mut [u8]) {
+    for p in data.as_chunks_mut::<4>().0 {
+        let a = u16::from(p[3]);
+        if a != 255 {
+            for c in &mut p[..3] {
+                *c = (u16::from(*c) * 255 + a / 2).checked_div(a).unwrap_or(0) as u8;
+            }
+        }
+    }
+}
+
 fn premultiply(data: &mut [u8]) {
     for p in data.as_chunks_mut::<4>().0 {
         let a = p[3];
@@ -526,6 +615,7 @@ impl ImageRegistry {
         Ok(id)
     }
 
+    /// What the registered image `id` says about itself, or `None` if it is not registered or was removed.
     pub fn info(&self, id: ImageId) -> Option<ImageInfo> {
         self.entries.get(id.0 as usize).filter(|e| !matches!(e.0, Entry::Removed)).map(|e| e.1)
     }
@@ -675,6 +765,39 @@ mod tests {
         }
         // A WBMP claiming 2^14 × 2^15 pixels with no data.
         assert!(decode(&[0, 0, 0x81, 0x80, 0x00, 0x82, 0x80, 0x00]).is_err());
+    }
+
+    #[test]
+    fn jpeg_xr_decodes_and_fails_safely() {
+        let rgba = include_bytes!("../tests/images/alpha.jxr");
+        let info = probe(rgba).expect("a JPEG XR image");
+        assert_eq!((info.format, info.width, info.height, info.orientation), (ImageFormat::JpegXr, 170, 80, 1));
+        let p = decode(rgba).expect("decodes");
+        assert_eq!((p.width, p.height, p.data.len()), (170, 80, 170 * 80 * 4));
+        // Premultiplied in the file: drawn as stored, colour lossy coding put above alpha clamped to it, and straight
+        // on request.
+        let pre = include_bytes!("../tests/images/premultiplied-lossy.jxr");
+        let raw = jpeg_xr::decode_rgba8(pre, &jpeg_xr::Limits::default()).expect("decodes").data;
+        assert!(raw.as_chunks::<4>().0.iter().any(|p| p[0] > p[3]), "the lossy file overshoots somewhere");
+        let (_, _, straight) = pixels_straight(pre).expect("decodes");
+        let drawn = decode(pre).expect("decodes").data;
+        assert!(drawn.as_chunks::<4>().0.iter().all(|p| p[0] <= p[3] && p[1] <= p[3] && p[2] <= p[3]));
+        let (straight, drawn) = (straight.as_chunks::<4>().0, drawn.as_chunks::<4>().0);
+        assert!(drawn.iter().any(|d| d[3] > 0 && d[3] < 255 && d[..3].iter().any(|&c| c > 0)), "a partly transparent colour");
+        let unpremultiplied =
+            |c: u8, a: u8| if a == 255 { c } else { (u16::from(c) * 255 + u16::from(a) / 2).checked_div(u16::from(a)).unwrap_or(0) as u8 };
+        assert!(straight.iter().zip(drawn).all(|(s, d)| s[3] == d[3] && (0..3).all(|c| s[c] == unpremultiplied(d[c], d[3]))));
+        // Tiles cut short, and tile offsets left pointing past the end of the file.
+        let tiles = include_bytes!("../tests/images/tiles.jxr");
+        assert!(decode(tiles).is_ok());
+        for len in (0..tiles.len()).step_by(97) {
+            assert!(decode(&tiles[..len]).is_err(), "{len} bytes");
+        }
+        // A codestream claiming 65536 × 65536 pixels (its 16-bit width and height fields all ones).
+        let mut huge = include_bytes!("../tests/images/gray.jxr").to_vec();
+        let at = huge.windows(8).position(|w| w == b"WMPHOTO\0").expect("a codestream") + 12;
+        huge[at..at + 4].fill(0xFF);
+        assert!(decode(&huge).is_err());
     }
 
     /// An ICO of one entry holding `data`.

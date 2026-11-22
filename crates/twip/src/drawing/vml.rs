@@ -10,7 +10,7 @@ use super::paint::{self, Fill, Line};
 use super::read::Ctx;
 use super::text::{BodyProps, TextDirection, VAnchor};
 use super::units::{Angle, Emu, Pct};
-use super::{GroupShape, NonVisual, PicShape, Shape, ShapeKind, ShapeText, SpShape, Spans, Xfrm};
+use super::{GroupShape, NonVisual, PicShape, Shape, ShapeKind, ShapeText, SpShape, Spans, TextPath, Xfrm};
 
 const V: &str = "urn:schemas-microsoft-com:vml";
 const O: &str = "urn:schemas-microsoft-com:office:office";
@@ -227,50 +227,120 @@ fn on(v: Option<&str>, dflt: bool) -> bool {
     }
 }
 
+/// A picture's `v:imagedata` colour controls as DrawingML adjustments. `gain` is the contrast slope (1 is none) and
+/// `blacklevel` half the brightness, so Word's washout (`gain` 0.3, `blacklevel` 0.35) is DrawingML's (contrast −70%,
+/// brightness +70%): a slope `k` at or under 1 is contrast `k − 1`, above 1 it is `1 − 1/k`.
+fn imagedata_adjust(d: Node) -> Vec<paint::BlipAdjust> {
+    let value = |k: &str| d.attribute(k).and_then(fraction).filter(|v| v.is_finite());
+    let mut out = Vec::new();
+    let (gain, black) = (value("gain").unwrap_or(1.0).max(0.0), value("blacklevel").unwrap_or(0.0));
+    if gain != 1.0 || black != 0.0 {
+        let contrast = if gain <= 1.0 { gain - 1.0 } else { 1.0 - 1.0 / gain };
+        out.push(paint::BlipAdjust::Lum { bright: Pct::from_fraction((2.0 * black).clamp(-1.0, 1.0)), contrast: Pct::from_fraction(contrast) });
+    }
+    if on(d.attribute("grayscale"), false) {
+        out.push(paint::BlipAdjust::Grayscale);
+    }
+    if on(d.attribute("bilevel"), false) {
+        out.push(paint::BlipAdjust::BiLevel(Pct(50000)));
+    }
+    out
+}
+
+/// A `w:background`'s `v:background` fill over the page colour `page` (its first colour when it names none): its
+/// gradient, pattern or picture; `None` for a plain colour, which the page colour is.
+pub fn background_fill(background: Node, page: Option<u32>, image: &mut dyn FnMut(&str) -> Option<usize>) -> Option<Fill> {
+    let el = background.children().find(|c| is(*c, V, "background"))?;
+    child(el, "fill")?;
+    match fill_over(el, Colour::srgb(page.unwrap_or(0xFF_FFFF)), image) {
+        Fill::None | Fill::Solid(_) => None,
+        f => Some(f),
+    }
+}
+
 fn fill(el: Node, image: &mut dyn FnMut(&str) -> Option<usize>) -> Fill {
+    fill_over(el, Colour::srgb(0xFF_FFFF), image)
+}
+
+/// `el`'s fill, its first colour `dflt` when it names none.
+fn fill_over(el: Node, dflt: Colour, image: &mut dyn FnMut(&str) -> Option<usize>) -> Fill {
     let f = child(el, "fill");
     if !on(f.and_then(|f| f.attribute("on")).or(el.attribute("filled")), true) {
         return Fill::None;
     }
-    let base = f.and_then(|f| f.attribute("color")).or(el.attribute("fillcolor")).and_then(colour).unwrap_or_else(|| Colour::srgb(0xFFFFFF));
+    let base = f.and_then(|f| f.attribute("color")).or(el.attribute("fillcolor")).and_then(colour).unwrap_or(dflt);
     let opacity = f.and_then(|f| f.attribute("opacity")).and_then(fraction);
     let solid = Fill::Solid(with_alpha(base.clone(), opacity));
     let Some(f) = f else { return solid };
-    let color2 = f.attribute("color2").and_then(colour).unwrap_or_else(|| Colour::srgb(0xFFFFFF));
+    let color2 = f.attribute("color2").and_then(|v| derived(v, &base).or_else(|| colour(v))).unwrap_or_else(|| Colour::srgb(0xFFFFFF));
     let opacity2 = f.attribute((O, "opacity2")).or(f.attribute("opacity2")).and_then(fraction);
     let pct = |v: f64| Pct((v * 100000.0).round() as i32);
     match f.attribute("type").unwrap_or("solid") {
         t @ ("gradient" | "gradientRadial") => {
             let (c1, c2) = (with_alpha(base, opacity), with_alpha(color2, opacity2));
-            let mut stops: Vec<(Pct, Colour)> = f
+            let mut list: Vec<(f64, Colour)> = f
                 .attribute("colors")
                 .map(|cs| {
                     cs.split(';')
+                        .take(MAX_COLOURS)
                         .filter_map(|e| {
                             let (p, c) = e.trim().split_once(' ')?;
-                            Some((pct(fraction(p)?.clamp(0.0, 1.0)), colour(c)?))
+                            Some((fraction(p)?.clamp(0.0, 1.0), colour(c)?))
                         })
                         .collect()
                 })
                 .unwrap_or_default();
-            if stops.len() < 2 {
-                let focus = f.attribute("focus").and_then(fraction).unwrap_or(0.0);
-                stops = if focus.abs() < 0.25 {
-                    vec![(Pct(0), c1), (Pct(100000), c2)]
-                } else if focus.abs() > 0.75 {
-                    vec![(Pct(0), c2), (Pct(100000), c1)]
-                } else if focus > 0.0 {
-                    vec![(Pct(0), c1.clone()), (Pct(50000), c2), (Pct(100000), c1)]
-                } else {
-                    vec![(Pct(0), c2.clone()), (Pct(50000), c1), (Pct(100000), c2)]
-                };
+            let two = list.len() < 2;
+            if two {
+                list = vec![(0.0, c1), (1.0, c2)];
             }
+            // Word turns a negative angle half a turn, and its focus with it (measured).
+            let a = f.attribute("angle").and_then(degrees).filter(|a| a.is_finite()).unwrap_or(0.0);
+            let focus = f.attribute("focus").and_then(fraction).filter(|v| v.is_finite()).unwrap_or(0.0).clamp(-1.0, 1.0);
+            let (a, focus) = if a < 0.0 { (a + 180.0, -focus) } else { (a, focus) };
+            // Angle 0 runs from the first colour at the bottom up to the last, and it turns counterclockwise, from corner
+            // to corner of the box.
+            let theta = (270.0 - a).rem_euclid(360.0);
+            let linear = paint::GradientKind::Linear { angle: Angle((theta * 60000.0).round() as i32), scaled: true };
+            if t == "gradient" && two {
+                let near = |v: f64| (focus.abs() - v).abs() < 1e-9;
+                let (first, second) = if focus >= 0.0 { (&list[0].1, &list[1].1) } else { (&list[1].1, &list[0].1) };
+                if near(0.0) || near(1.0) {
+                    let (from, to) = if near(0.0) { (&list[0].1, &list[1].1) } else { (&list[1].1, &list[0].1) };
+                    let stops = two_colour(from, to);
+                    return Fill::Gradient(paint::Gradient {
+                        stops,
+                        kind: linear,
+                        tile: [Pct(0); 4],
+                        flip: paint::TileFlip::None,
+                        rot_with_shape: true,
+                    });
+                }
+                if near(0.5) {
+                    // Out and back: the half the gradient starts in, mirrored over the other.
+                    let (dx, dy) = (theta.to_radians().cos(), theta.to_radians().sin());
+                    let half = |d: f64| if d > 1e-9 { Pct(50000) } else { Pct(0) };
+                    let tile = [half(-dx), half(-dy), half(dx), half(dy)];
+                    let stops = two_colour(first, second);
+                    return Fill::Gradient(paint::Gradient { stops, kind: linear, tile, flip: paint::TileFlip::Xy, rot_with_shape: true });
+                }
+            }
+            let mut stops = focus_stops(&list, focus);
             let kind = if t == "gradientRadial" {
                 stops = stops.into_iter().rev().map(|(p, c)| (Pct(100000 - p.0), c)).collect();
-                paint::GradientKind::Path { path: paint::GradientPath::Rect, focus: [Pct(50000); 4] }
+                // Where it starts, and the size of that: the centre unless placed (an empty number is 0).
+                let pair = |k: &str| -> Option<[f64; 2]> {
+                    let v = f.attribute(k)?;
+                    let mut it = v.split(',').map(|v| if v.trim().is_empty() { Some(0.0) } else { fraction(v.trim()).filter(|v| v.is_finite()) });
+                    let x = it.next()??;
+                    Some([x, it.next().unwrap_or(Some(0.0))?].map(|v| v.clamp(0.0, 1.0)))
+                };
+                let [x, y] = pair("focusposition").unwrap_or([0.5, 0.5]);
+                let [w, h] = pair("focussize").unwrap_or([0.0, 0.0]);
+                let focus = [pct(x), pct(y), pct((1.0 - x - w).max(0.0)), pct((1.0 - y - h).max(0.0))];
+                paint::GradientKind::Path { path: paint::GradientPath::Rect, focus }
             } else {
-                let a = f.attribute("angle").and_then(|v| v.parse::<f64>().ok()).unwrap_or(0.0);
-                paint::GradientKind::Linear { angle: Angle(((a + 180.0).rem_euclid(360.0) * 60000.0).round() as i32), scaled: false }
+                linear
             };
             Fill::Gradient(paint::Gradient { stops, kind, tile: [Pct(0); 4], flip: paint::TileFlip::None, rot_with_shape: true })
         }
@@ -278,11 +348,12 @@ fn fill(el: Node, image: &mut dyn FnMut(&str) -> Option<usize>) -> Fill {
             let img = f.attribute((R, "id")).or(f.attribute((O, "relid"))).and_then(&mut *image);
             let mut adjust = Vec::new();
             if t == "pattern" {
-                adjust.push(paint::BlipAdjust::Duotone([base.clone(), color2.clone()]));
+                // The pattern's black is the second colour (its foreground), its white the first.
+                adjust.push(paint::BlipAdjust::Duotone([color2.clone(), base.clone()]));
             }
-            let scale = if t == "pattern" { Pct(133333) } else { Pct(100000) };
             let mode = if t != "frame" {
-                paint::BlipMode::Tile { tx: Emu(0), ty: Emu(0), sx: scale, sy: scale, flip: paint::TileFlip::None, align: paint::RectAlign::Tl }
+                let one = Pct(100000);
+                paint::BlipMode::Tile { tx: Emu(0), ty: Emu(0), sx: one, sy: one, flip: paint::TileFlip::None, align: paint::RectAlign::Tl }
             } else {
                 paint::BlipMode::Stretch([Pct(0); 4])
             };
@@ -293,6 +364,107 @@ fn fill(el: Node, image: &mut dyn FnMut(&str) -> Option<usize>) -> Fill {
         }
         _ => solid,
     }
+}
+
+/// A colour of the fill's own (`fill`, `fill darken(n)`, `fill lighten(n)`: a one-colour gradient's second colour).
+fn derived(v: &str, base: &Colour) -> Option<Colour> {
+    let rest = v.trim().strip_prefix("fill")?.trim();
+    let super::colour::ColourBase::Srgb(rgb) = base.base else { return None };
+    if rest.is_empty() {
+        return Some(Colour::srgb(rgb));
+    }
+    let (op, n) = rest.split_once('(')?;
+    let n = n.trim_end_matches(')').trim().parse::<f64>().ok().filter(|n| n.is_finite())?.clamp(0.0, 255.0).round() as u8;
+    Some(Colour::srgb(match op.trim() {
+        "darken" => darken(rgb, n),
+        "lighten" => lighten(rgb, n),
+        _ => return None,
+    }))
+}
+
+/// VML's `darken(n)`: each channel scaled by `n`/255.
+pub fn darken(c: u32, n: u8) -> u32 {
+    [16, 8, 0].iter().map(|s| ((((c >> s) & 0xFF) * u32::from(n) + 127) / 255) << s).sum()
+}
+
+/// VML's `lighten(n)`: each channel's distance from white scaled by `n`/255.
+pub fn lighten(c: u32, n: u8) -> u32 {
+    0xFF_FFFF - darken(0xFF_FFFF - c, n)
+}
+
+/// The `darken(n)` (`false`) or `lighten(n)` (`true`) that makes `to` of `from`, when one does.
+pub fn shade_of(from: u32, to: u32) -> Option<(bool, u8)> {
+    (0..=255u8).rev().find_map(|n| {
+        if darken(from, n) == to {
+            Some((false, n))
+        } else if lighten(from, n) == to {
+            Some((true, n))
+        } else {
+            None
+        }
+    })
+}
+
+/// A two-colour gradient's stops as Word draws one: each channel runs from its lower value to its higher along the
+/// two-stop blend, gamma encoded, whichever way it runs (measured), so the blend is the same for every pair.
+pub(crate) fn two_colour(from: &Colour, to: &Colour) -> Vec<(Pct, Colour)> {
+    use super::colour::{ColourBase, TWO_STOP_BLEND, linear_to_srgb};
+    let parts = |c: &Colour| {
+        let v = match c.base {
+            ColourBase::Srgb(v) => v,
+            _ => 0,
+        };
+        let alpha = c.mods.iter().fold(1.0, |a: f64, m| match m {
+            ColourMod::Alpha(p) => p.fraction().clamp(0.0, 1.0),
+            ColourMod::AlphaOff(p) => (a + p.fraction()).clamp(0.0, 1.0),
+            ColourMod::AlphaMod(p) => (a * p.fraction()).clamp(0.0, 1.0),
+            _ => a,
+        });
+        ([16, 8, 0].map(|s| f64::from((v >> s) & 0xFF)), alpha)
+    };
+    let ((a, aa), (b, ba)) = (parts(from), parts(to));
+    (0..=16)
+        .map(|k| {
+            let (up, down) = (linear_to_srgb(TWO_STOP_BLEND[k]), 1.0 - linear_to_srgb(TWO_STOP_BLEND[16 - k]));
+            let ch = |i: usize| {
+                let e = if b[i] >= a[i] { up } else { down };
+                ((a[i] + (b[i] - a[i]) * e).round().clamp(0.0, 255.0) as u32) << (16 - 8 * i)
+            };
+            let c = Colour::srgb(ch(0) | ch(1) | ch(2));
+            let alpha = aa + (ba - aa) * k as f64 / 16.0;
+            (Pct(k as i32 * 100000 / 16), if alpha < 1.0 { with_alpha(c, Some(alpha)) } else { c })
+        })
+        .collect()
+}
+
+/// Whether a page gradient is two colours as Word blends them, which VML writes as its two colours and opacities.
+pub(crate) fn is_two_colour(g: &paint::Gradient) -> bool {
+    matches!(g.kind, paint::GradientKind::Linear { .. })
+        && matches!((g.stops.first(), g.stops.last()), (Some(a), Some(b)) if g.stops == two_colour(&a.1, &b.1))
+}
+
+/// The most `colors` entries a gradient reads.
+const MAX_COLOURS: usize = 64;
+
+/// A gradient's stops from its colours (`list`, positions from 0 to 1) and its `focus`: from 0 to 1, the colours run
+/// up to `1 - focus` and back; from 0 to -1, back up to `-focus` and on. So 0 is the colours as listed, 1 (or -1)
+/// reversed, 0.5 out and back, and -0.5 back and out.
+fn focus_stops(list: &[(f64, Colour)], focus: f64) -> Vec<(Pct, Colour)> {
+    let pct = |v: f64| Pct((v.clamp(0.0, 1.0) * 100000.0).round() as i32);
+    let at = if focus >= 0.0 { 1.0 - focus } else { -focus };
+    let forward = list.iter().map(|(p, c)| (p * at, c));
+    let back = list.iter().rev().map(|(p, c)| (at + (1.0 - p) * (1.0 - at), c));
+    let back_first = list.iter().rev().map(|(p, c)| ((1.0 - p) * at, c));
+    let then = list.iter().map(|(p, c)| (at + p * (1.0 - at), c));
+    let all: Vec<(f64, &Colour)> = match (focus >= 0.0, at > 0.0, at < 1.0) {
+        (true, true, true) => forward.chain(back).collect(),
+        (true, true, false) => forward.collect(),
+        (true, false, _) => back.collect(),
+        (false, true, true) => back_first.chain(then).collect(),
+        (false, true, false) => back_first.collect(),
+        (false, false, _) => then.collect(),
+    };
+    all.into_iter().map(|(p, c)| (pct(p), c.clone())).collect()
 }
 
 fn stroke(el: Node) -> Line {
@@ -882,7 +1054,7 @@ fn element(el: Node, ctx: &mut Ctx) -> Option<Shape> {
                     image: img,
                     src: [crop("cropleft"), crop("croptop"), crop("cropright"), crop("cropbottom")],
                     mode: paint::BlipMode::Stretch([Pct(0); 4]),
-                    adjust: Vec::new(),
+                    adjust: data.map_or_else(Vec::new, imagedata_adjust),
                     rot_with_shape: true,
                 };
                 let line = (on(el.attribute("stroked"), false) || child(el, "stroke").is_some()).then(|| stroke(el));
@@ -1006,7 +1178,8 @@ fn finish(el: Node, st: &Style, geom: Geometry, rect: Option<[f64; 4]>, image: &
         text_box: text,
         chain: None,
         connector: false,
-        kept_3d: child(el, "textpath").is_some() || el.children().any(|c| is(c, O, "extrusion")),
+        kept_3d: el.children().any(|c| is(c, O, "extrusion")),
+        text_path: text_path(el),
     };
     Some(Shape {
         nv: NonVisual {
@@ -1019,6 +1192,50 @@ fn finish(el: Node, st: &Style, geom: Geometry, rect: Option<[f64; 4]>, image: &
         kind: ShapeKind::Sp(Box::new(sp)),
         spans: Spans::default(),
     })
+}
+
+/// The most characters of a text path's string that are read.
+const MAX_TEXT_PATH: usize = 1024;
+
+/// The shape's `v:textpath`, its attributes falling back to its shapetype's; `None` when it isn't on.
+fn text_path(el: Node) -> Option<Box<TextPath>> {
+    let own = child(el, "textpath");
+    let typed = shapetype(el).and_then(|t| child(t, "textpath"));
+    let attr = |k: &str| own.and_then(|n| n.attribute(k)).or_else(|| typed.and_then(|n| n.attribute(k)));
+    if !on(attr("on"), false) {
+        return None;
+    }
+    let mut tp = TextPath {
+        string: attr("string").unwrap_or("").chars().take(MAX_TEXT_PATH).collect(),
+        family: "Arial".into(),
+        size: 36.0,
+        fit_shape: on(attr("fitshape"), false),
+        fit_path: on(attr("fitpath"), false),
+        trim: on(attr("trim"), false),
+        ..TextPath::default()
+    };
+    // The shapetype's style, then the shape's over it.
+    for css in [typed, own].into_iter().flatten().filter_map(|n| n.attribute("style")) {
+        for decl in css.split(';') {
+            let Some((k, v)) = decl.split_once(':') else { continue };
+            let v = v.trim();
+            match k.trim().to_ascii_lowercase().as_str() {
+                "font-family" => {
+                    let first = v.split(',').next().unwrap_or("").trim().trim_matches(['"', '\'']).trim();
+                    if !first.is_empty() {
+                        tp.family = first.chars().take(64).collect();
+                    }
+                }
+                "font-size" => tp.size = length(v).filter(|s| s.is_finite() && *s > 0.0).map_or(tp.size, |s| s.min(1584.0)),
+                "font-weight" => {
+                    tp.bold = v.eq_ignore_ascii_case("bold") || v.eq_ignore_ascii_case("bolder") || v.parse::<u32>().is_ok_and(|w| w >= 600)
+                }
+                "font-style" => tp.italic = v.eq_ignore_ascii_case("italic") || v.eq_ignore_ascii_case("oblique"),
+                _ => {}
+            }
+        }
+    }
+    Some(Box::new(tp))
 }
 
 fn xfrm(st: &Style, rect: Option<[f64; 4]>) -> Xfrm {
@@ -1069,6 +1286,185 @@ pub fn read<'a, 'i>(pict: Node<'a, 'i>, ctx: &mut Ctx) -> Option<VmlObject<'a, '
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn imagedata(attrs: &str) -> Vec<paint::BlipAdjust> {
+        let xml = format!(r#"<v:imagedata xmlns:v="urn:schemas-microsoft-com:vml" {attrs}/>"#);
+        imagedata_adjust(roxmltree::Document::parse(&xml).unwrap().root_element())
+    }
+
+    #[test]
+    fn imagedata_gain_and_blacklevel_are_contrast_and_brightness() {
+        let lum = |bright, contrast| paint::BlipAdjust::Lum { bright: Pct(bright), contrast: Pct(contrast) };
+        assert_eq!(imagedata(""), []);
+        assert_eq!(imagedata(r#"gain="65536f" blacklevel="0""#), [], "the identity pair is no adjustment");
+        // Word's washout is DrawingML's: brightness +70%, contrast -70%.
+        let washout = &imagedata(r#"gain="19661f" blacklevel="22938f""#)[0];
+        let paint::BlipAdjust::Lum { bright, contrast } = washout else { panic!("{washout:?}") };
+        assert!((bright.0 - 70_000).abs() < 20 && (contrast.0 + 70_000).abs() < 20, "{washout:?}");
+        // A slope over 1 is contrast 1 - 1/k; a slope under, k - 1.
+        assert_eq!(imagedata(r#"gain="131072f""#), [lum(0, 50_000)]);
+        assert_eq!(imagedata(r#"gain="32768f" blacklevel="-6554f""#)[0], lum(-20_001, -50_000));
+        assert_eq!(imagedata(r#"grayscale="t" bilevel="t""#), [paint::BlipAdjust::Grayscale, paint::BlipAdjust::BiLevel(Pct(50_000))]);
+        assert_eq!(imagedata(r#"grayscale="f""#), []);
+    }
+
+    #[test]
+    fn hostile_imagedata_controls_stay_finite() {
+        for attrs in [
+            r#"gain="nan""#,
+            r#"gain="inf" blacklevel="-inf""#,
+            r#"gain="1e308f" blacklevel="1e308""#,
+            r#"gain="-5""#,
+            r#"blacklevel="99999999999f""#,
+        ] {
+            for a in imagedata(attrs) {
+                if let paint::BlipAdjust::Lum { bright, contrast } = a {
+                    assert!((-100_000..=100_000).contains(&bright.0) && (-100_000..=100_000).contains(&contrast.0), "{attrs}");
+                }
+            }
+        }
+    }
+
+    struct NoImages;
+
+    impl super::super::read::Source for NoImages {
+        fn image(&mut self, _: &str) -> Option<usize> {
+            None
+        }
+
+        fn diagram(&mut self, _: &str) -> Option<Shape> {
+            None
+        }
+    }
+
+    fn pict(inner: &str) -> Shape {
+        let xml =
+            format!(r#"<w:pict xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:v="{V}" xmlns:o="{O}">{inner}</w:pict>"#);
+        let doc = roxmltree::Document::parse(&xml).unwrap();
+        let mut ctx = Ctx { source: &mut NoImages, unknown_presets: Vec::new() };
+        read(doc.root_element(), &mut ctx).expect("a shape").shape
+    }
+
+    const WATERMARK_TYPE: &str = r#"<v:shapetype id="_x0000_t136" coordsize="21600,21600" o:spt="136" adj="10800" path="m@7,l@8,m@5,21600l@6,21600e"><v:path textpathok="t"/><v:textpath on="t" fitshape="t"/></v:shapetype>"#;
+
+    #[test]
+    fn a_text_path_reads_its_string_font_and_fitting() {
+        let s = pict(&format!(
+            r##"{WATERMARK_TYPE}<v:shape type="#_x0000_t136" style="width:468pt;height:117pt;rotation:315" fillcolor="silver" stroked="f"><v:fill opacity=".5"/><v:textpath style="font-family:&quot;Calibri&quot;;font-size:1pt;font-weight:bold;font-style:italic" string="DRAFT" trim="t"/></v:shape>"##
+        ));
+        let sp = s.sp().unwrap();
+        let tp = sp.text_path.as_deref().expect("a text path");
+        assert_eq!((tp.string.as_str(), tp.family.as_str(), tp.size), ("DRAFT", "Calibri", 1.0));
+        assert!(tp.bold && tp.italic && tp.fit_shape && tp.trim && !tp.fit_path);
+        assert!(!sp.kept_3d, "a text path is not 3-D");
+        assert_eq!(s.xfrm.rot, Angle(315 * 60000));
+        // Turned off on the shape, it is no text path.
+        let off = pict(&format!(
+            r##"{WATERMARK_TYPE}<v:shape type="#_x0000_t136" style="width:10pt;height:10pt"><v:textpath on="f" string="X"/></v:shape>"##
+        ));
+        assert!(off.sp().unwrap().text_path.is_none());
+        let plain = pict(r#"<v:rect style="width:10pt;height:10pt"/>"#);
+        assert!(plain.sp().unwrap().text_path.is_none());
+    }
+
+    #[test]
+    fn a_hostile_text_path_is_bounded() {
+        let long = "W".repeat(100_000);
+        let s = pict(&format!(
+            r##"{WATERMARK_TYPE}<v:shape type="#_x0000_t136" style="width:10pt;height:10pt"><v:textpath style="font-family:'{long}';font-size:1e300pt" string="{long}"/></v:shape>"##
+        ));
+        let tp = s.sp().unwrap().text_path.clone().unwrap();
+        assert_eq!(tp.string.chars().count(), MAX_TEXT_PATH);
+        assert_eq!(tp.family.chars().count(), 64);
+        assert!(tp.size.is_finite() && tp.size <= 1584.0);
+        for size in ["nan", "-4pt", "0"] {
+            let s = pict(&format!(r##"{WATERMARK_TYPE}<v:shape type="#_x0000_t136"><v:textpath style="font-size:{size}" string="X"/></v:shape>"##));
+            assert_eq!(s.sp().unwrap().text_path.as_ref().unwrap().size, 36.0, "{size}");
+        }
+    }
+
+    fn gradient(fill: &str) -> paint::Gradient {
+        let xml = format!(r##"<v:rect xmlns:v="{V}" xmlns:o="{O}" fillcolor="#ff0000"><v:fill type="gradient" color2="#0000ff" {fill}/></v:rect>"##);
+        match super::fill(roxmltree::Document::parse(&xml).unwrap().root_element(), &mut |_| None) {
+            Fill::Gradient(g) => g,
+            f => panic!("{f:?}"),
+        }
+    }
+
+    fn linear(g: &paint::Gradient) -> f64 {
+        let paint::GradientKind::Linear { angle, scaled: true } = g.kind else { panic!("{:?}", g.kind) };
+        angle.0 as f64 / 60000.0
+    }
+
+    #[test]
+    fn vml_gradients_turn_and_focus_as_word_draws_them() {
+        let red = Colour::srgb(0xFF_0000);
+        let blue = Colour::srgb(0x00_00FF);
+        // Angle 0 runs up from the first colour; angles turn counterclockwise.
+        let g = gradient(r#"angle="0""#);
+        assert_eq!(linear(&g), 270.0);
+        assert_eq!((g.stops.len(), &g.stops[0].1, &g.stops[16].1), (17, &red, &blue));
+        assert_eq!(linear(&gradient(r#"angle="90""#)), 180.0);
+        assert_eq!(linear(&gradient(r#"angle="45""#)), 225.0);
+        // Full focus reverses the colours; a negative angle is half a turn on with its focus reversed.
+        assert_eq!(gradient(r#"focus="100%""#).stops[0].1, blue);
+        let g = gradient(r#"angle="-45" focus="50%""#);
+        assert_eq!(linear(&g), 135.0);
+        assert_eq!((&g.stops[0].1, &g.stops[16].1, g.flip), (&blue, &red, paint::TileFlip::Xy));
+        // Out and back: the first half of the box along the gradient's way (up and to the left), mirrored.
+        assert_eq!(g.tile, [Pct(50000), Pct(0), Pct(0), Pct(50000)]);
+        // Each channel blends the same way between any two colours: halfway is 73% of the way up from its low end.
+        let mid = |c: &Colour| match c.base {
+            super::super::colour::ColourBase::Srgb(v) => v,
+            _ => panic!(),
+        };
+        assert_eq!(mid(&gradient("").stops[8].1), 0xBA_00BA);
+        // A list of colours is drawn as listed, focus reversing it.
+        let g = gradient(r#"colors="0 #ff0000;.5 #00ff00;1 #0000ff" focus="100%""#);
+        assert_eq!(g.stops.iter().map(|(p, c)| (p.0, mid(c))).collect::<Vec<_>>(), [(0, 0xFF), (50000, 0xFF00), (100000, 0xFF_0000)]);
+        let g = gradient(r#"colors="0 #ff0000;1 #0000ff" focus="50%""#);
+        assert_eq!(g.stops.iter().map(|(p, _)| p.0).collect::<Vec<_>>(), [0, 50000, 50000, 100000]);
+    }
+
+    #[test]
+    fn hostile_vml_gradients_are_bounded() {
+        let many = (0..10_000).map(|i| format!("{} #00ff00", i as f64 / 10_000.0)).collect::<Vec<_>>().join(";");
+        assert!(gradient(&format!(r#"colors="{many}""#)).stops.len() <= 2 * MAX_COLOURS);
+        for attrs in [r#"angle="nan" focus="inf""#, r#"angle="1e308" focus="-1e308""#, r#"angle="-1e308fd""#] {
+            let g = gradient(attrs);
+            assert!((0.0..360.0).contains(&linear(&g)), "{attrs}");
+            assert!(g.stops.iter().all(|(p, _)| (0..=100000).contains(&p.0)), "{attrs}");
+        }
+    }
+
+    #[test]
+    fn a_pattern_fill_draws_its_black_in_the_second_colour() {
+        let xml =
+            format!(r##"<v:rect xmlns:v="{V}" xmlns:r="{R}" fillcolor="#2e75b6"><v:fill type="pattern" r:id="rId1" color2="#ffe699"/></v:rect>"##);
+        let Fill::Blip(b) = super::fill(roxmltree::Document::parse(&xml).unwrap().root_element(), &mut |_| Some(0)) else { panic!() };
+        assert_eq!(b.adjust[0], paint::BlipAdjust::Duotone([Colour::srgb(0xFF_E699), Colour::srgb(0x2E_75B6)]));
+        let paint::BlipMode::Tile { sx, sy, .. } = b.mode else { panic!() };
+        assert_eq!((sx, sy), (Pct(100000), Pct(100000)), "a tile pixel to a pixel, as a picture tile");
+    }
+
+    #[test]
+    fn a_page_background_fill_is_its_gradient_pattern_or_picture() {
+        let read = |inner: &str| {
+            let xml = format!(
+                r#"<w:background xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:v="{V}" w:color="00FF00">{inner}</w:background>"#
+            );
+            background_fill(roxmltree::Document::parse(&xml).unwrap().root_element(), Some(0x00_FF00), &mut |_| Some(2))
+        };
+        assert_eq!(read(""), None);
+        assert_eq!(read(r#"<v:background fillcolor="red"/>"#), None, "a colour alone is the page colour");
+        assert_eq!(read(r#"<v:background><v:fill type="solid"/></v:background>"#), None);
+        let Some(Fill::Gradient(g)) = read(r#"<v:background><v:fill type="gradient" color2="black"/></v:background>"#) else { panic!() };
+        assert_eq!(g.stops[0].1, Colour::srgb(0x00_FF00), "the page colour is its first colour");
+        assert!(matches!(
+            read(r#"<v:background><v:fill type="tile" r:id="rId9" xmlns:r="{R}"/></v:background>"#.replace("{R}", R).as_str()),
+            Some(Fill::Blip(_))
+        ));
+    }
 
     #[test]
     fn lengths_fractions_and_colours() {

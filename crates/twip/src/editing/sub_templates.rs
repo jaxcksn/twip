@@ -568,14 +568,12 @@ impl Editor {
             self.close_sub_template_to(None);
         }
         let Some((body, controls)) = self.imported_body(bytes) else { return Outcome::Refused(crate::api::error::Error::invalid("not a DOCX")) };
-        let mut steps: Vec<Step> = controls.into_iter().map(|(id, c)| Step::Control { id, control: Some(c) }).collect();
-        steps.extend((1..self.doc.sections.len()).map(|_| Step::SectionBreak { section: 0, back: None }));
         let mut tx = self.begin("Replace Body");
-        for s in steps {
-            if self.step(&mut tx, s).is_err() {
-                self.abort(tx);
-                return Outcome::Refused(crate::api::error::Error::invalid("the body changed meanwhile"));
-            }
+        let ok = controls.into_iter().all(|(id, c)| self.step(&mut tx, Step::Control { id, control: Some(c) }).is_ok())
+            && (1..self.doc.sections.len()).all(|_| self.merge_section(&mut tx, 0).is_ok());
+        if !ok {
+            self.abort(tx);
+            return Outcome::Refused(crate::api::error::Error::invalid("the body changed meanwhile"));
         }
         let range = 0..self.doc.sections[0].blocks.len();
         if self.step(&mut tx, Step::Blocks { container: Container::Section(0), range, with: body }).is_err() {

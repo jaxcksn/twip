@@ -189,7 +189,7 @@ pub fn page_text(snapshot: &Snapshot, doc: &Document) -> String {
                 for it in placed.line.items.iter() {
                     let rect = match it {
                         Item::Image { rect, .. } => rect,
-                        Item::Shape(s) if s.float == 0 => &s.rect,
+                        Item::Shape(s) if s.float == 0 && !s.decoration => &s.rect,
                         _ => continue,
                     };
                     if placed.line.atoms.iter().any(|a| !a.brk && (a.x0 - rect[0]).abs() < 0.01) {
@@ -241,7 +241,7 @@ pub fn page_text(snapshot: &Snapshot, doc: &Document) -> String {
                     .unwrap();
                 }
                 Item::Rect { rect: b, colour: c, .. } => writeln!(s, "R {} {} {} {} {c:06x}", f(b[0]), f(b[1]), f(b[2]), f(b[3])).unwrap(),
-                Item::Image { rect: b, key } => {
+                Item::Image { rect: b, key, .. } => {
                     writeln!(s, "I {} {} {} {} {}", f(b[0]), f(b[1]), f(b[2]), f(b[3]), key.index.map_or(-1, |i| i as isize)).unwrap()
                 }
                 Item::Gridline { line: b } => writeln!(s, "L {} {} {} {}", f(b[0]), f(b[1]), f(b[2]), f(b[3])).unwrap(),

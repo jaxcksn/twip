@@ -307,7 +307,7 @@ impl PageGeometry {
             .iter()
             .filter_map(|it| match it {
                 Item::Image { rect, .. } => Some(*rect),
-                Item::Shape(s) => Some(s.rect),
+                Item::Shape(s) if !s.decoration => Some(s.rect),
                 _ => None,
             })
             .filter_map(|r| {

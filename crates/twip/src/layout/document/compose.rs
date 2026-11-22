@@ -210,12 +210,22 @@ fn page_borders(pg: &PageRecord) -> Box<[crate::layout::fragment::Item]> {
     }
     if let Some(t) = line(&b.bottom) {
         crate::layout::table::edge(&mut out, [*x0, y1 - crate::layout::table::thick(&t), *x1, *y1], true, true, &t);
+        crate::layout::table::shadow(
+            &mut out,
+            [*x0, y1 - crate::layout::table::thick(&t), *x1, *y1],
+            true,
+            true,
+            &t,
+            line(&b.left).is_some(),
+            line(&b.right).is_some(),
+        );
     }
     if let Some(l) = line(&b.left) {
         crate::layout::table::edge(&mut out, [*x0, *y0, x0 + lw, *y1], false, false, &l);
     }
     if let Some(r) = line(&b.right) {
         crate::layout::table::edge(&mut out, [x1 - rw, *y0, *x1, *y1], false, true, &r);
+        crate::layout::table::shadow(&mut out, [x1 - rw, *y0, *x1, *y1], false, true, &r, line(&b.top).is_some(), false);
     }
     out.into_boxed_slice()
 }

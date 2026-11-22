@@ -206,33 +206,6 @@ fn raw(n: Node) -> Rc<str> {
     format!("{}{extra}{}", &text[..at], &text[at..]).into()
 }
 
-// shortcut: `w:themeTint` and `w:themeShade` are not applied to a theme page colour.
-fn page_colour(b: Node, theme: &crate::drawing::theme::Theme, map: &crate::drawing::theme::ColourMap) -> Option<u32> {
-    use crate::drawing::colour::SchemeSlot::*;
-    let slot = attr(b, "themeColor").and_then(|t| {
-        Some(match t {
-            "dark1" => Dk1,
-            "light1" => Lt1,
-            "dark2" => Dk2,
-            "light2" => Lt2,
-            "background1" => Bg1,
-            "text1" => Tx1,
-            "background2" => Bg2,
-            "text2" => Tx2,
-            "hyperlink" => Hlink,
-            "followedHyperlink" => FolHlink,
-            a => Accent(a.strip_prefix("accent")?.parse().ok().filter(|n| (1..=6).contains(n))?),
-        })
-    });
-    match slot {
-        Some(s) => {
-            let c = theme.colour(map.map(s));
-            Some((u32::from(c.r) << 16) | (u32::from(c.g) << 8) | u32::from(c.b))
-        }
-        None => color(attr(b, "color")),
-    }
-}
-
 /// The run line numbers draw with: the document defaults and the LineNumber character style.
 pub(crate) fn line_number_run(res: &Resolver) -> super::model::Run {
     let mut rp = res.styles.doc_rpr.clone();
@@ -371,7 +344,12 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
     {
         let dom = roxmltree::Document::parse(&xml).map_err(|e| e.to_string())?;
         let body = child(dom.root_element(), "body").ok_or("no body")?;
-        doc.page_colour = child(dom.root_element(), "background").and_then(|b| page_colour(b, &drawing_theme, &colour_map));
+        if let Some(b) = child(dom.root_element(), "background") {
+            doc.page_colour = colours.colour(b, "color", "themeColor", "themeTint", "themeShade");
+            doc.page_colour_theme = crate::docx::props::theme_ref(b, "themeColor", "themeTint", "themeShade");
+            let mut src = DrawingSource { reader: &mut r, pkg: &mut pkg };
+            doc.page_fill = crate::drawing::vml::background_fill(b, doc.page_colour, &mut |rid| crate::drawing::read::Source::image(&mut src, rid));
+        }
         r.record = editable;
         doc.sections = r.read_body(body, &mut pkg);
         shift_connector_text(&mut doc.sections);
@@ -554,6 +532,8 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
             endnotes,
             controls,
             glossary: glossary_src,
+            page_background: (doc.page_colour, doc.page_fill.clone()),
+            page_theme: doc.page_colour_theme,
         }));
     }
     Ok(doc)
@@ -845,6 +825,7 @@ pub(crate) fn read_settings(xml: Option<&str>) -> Settings {
     s.book_fold = (rev || flag(root, "bookFoldPrinting").unwrap_or(false)).then_some(rev);
     s.strict_kinsoku = flag(root, "strictFirstAndLastChars").unwrap_or(false);
     s.auto_hyphenation = flag(root, "autoHyphenation").unwrap_or(false);
+    s.display_background_shape = flag(root, "displayBackgroundShape").unwrap_or(false);
     s.do_not_hyphenate_caps = flag(root, "doNotHyphenateCaps").unwrap_or(false);
     s.borders_do_not_surround_header = flag(root, "bordersDoNotSurroundHeader").unwrap_or(false);
     s.borders_do_not_surround_footer = flag(root, "bordersDoNotSurroundFooter").unwrap_or(false);
@@ -2928,11 +2909,19 @@ impl Reader {
             trp.merge(&TrProps::parse(child(*rn, "trPr")));
             let mut ex = TblProps::parse(child(*rn, "tblPrEx"), &self.res.styles.colours);
             // A later table's rows keep its own alignment and cell margins as their exceptions.
+            let mut table_shading = None;
             if row_table[ri] > 0 {
                 let own = TblProps::parse(child(ts[row_table[ri]], "tblPr"), &self.res.styles.colours);
+                // Its own shading over its style's, which joined tables share (Word shows the style's under one without).
+                let shd = own.shd.as_ref().or(style_region.tbl.shd.as_ref());
+                table_shading = Some((shd.and_then(Shd::flat), shd.and_then(Shd::hatch)));
                 let mut later = TblProps { jc: own.jc, margins: own.margins, ..Default::default() };
                 later.merge(&ex);
                 ex = later;
+            }
+            // The row's own shading in place of its table's: one of no colour shows none.
+            if ex.shd.as_ref().is_some_and(|s| s.flat().is_none()) {
+                table_shading = Some((None, None));
             }
             trp.jc = trp.jc.or(ex.jc);
             // Every row's alignment, or none when they differ.
@@ -2962,6 +2951,7 @@ impl Reader {
             }
             rows.push(self.row(*rn, &trp, &ex, &tbl, &row_tbl, &style_region, cells, row_controls.clone()));
             if let Some(r) = rows.last_mut() {
+                r.table_shading = table_shading;
                 bound_spans(r);
             }
         }
@@ -3009,6 +2999,7 @@ impl Reader {
             borders: [b.top.clone(), b.left.clone(), b.bottom.clone(), b.right.clone(), b.inside_h.clone(), b.inside_v.clone()],
             fixed: tbl.fixed.unwrap_or(false),
             cell_spacing: tbl.cell_spacing.unwrap_or(0.0),
+            shd: tbl.shd.clone().filter(|s| s.flat().is_some() || s.hatch().is_some()),
             look: direct.look,
             bands: (row_band, col_band),
             alt: {
@@ -3050,6 +3041,7 @@ impl Reader {
             bottom: bv(&tcp.borders.bottom),
             right: bv(&tcp.borders.right),
             shading: tcp.shading.flatten(),
+            hatch: tcp.shd.as_ref().and_then(Shd::hatch),
             margins: cell_margins(&tcp, tm, unset),
             v_align: tcp.v_align.clone().unwrap_or_else(|| "top".into()),
             text_direction: tcp.text_direction.clone().unwrap_or_else(|| "lrTb".into()),
@@ -3062,6 +3054,7 @@ impl Reader {
             blocks,
             controls,
             rev,
+            ids: cell_ids(cn, tc_pr),
         }
     }
 
@@ -3106,6 +3099,8 @@ impl Reader {
                 .and_then(|n| int(val(n)))
                 .map(|id| Rc::new(RowDiv { id, shift: 0.0, lead: 0.0, trail: 0.0, boxes: Rc::from([]) })),
             shading: ex.shading.flatten(),
+            hatch: ex.shd.as_ref().and_then(Shd::hatch),
+            table_shading: None,
             cell_spacing: trp.cell_spacing.or(ex.cell_spacing).map(|s| s.max(0.0)),
             run: (ex.fixed == Some(true) && tbl.fixed != Some(true)).then(|| ex.width.or(tbl.width).unwrap_or(Width::Auto)),
             nudge: None,
@@ -3488,6 +3483,21 @@ fn vml_effect(pen: Option<f64>, rect: Option<[f64; 4]>) -> [f64; 4] {
     }
     .map(|v| v * 15.0);
     [l - bounds[0], t - bounds[1], bounds[2] - r, bounds[3] - b].map(|e| e.max(0.0) / 20.0)
+}
+
+/// The header cells a cell lists, at most this many are read (a write keeps the others as read).
+pub(crate) const MAX_CELL_HEADERS: usize = 1024;
+
+/// The header cells a `w:headers` lists, at most [`MAX_CELL_HEADERS`].
+pub(crate) fn header_list(headers: Node) -> Vec<String> {
+    children(headers, "header").filter_map(|h| val(h).map(str::trim).filter(|v| !v.is_empty()).map(str::to_string)).take(MAX_CELL_HEADERS).collect()
+}
+
+/// A cell's identifier (`w:tc/@w:id`) and its header cells' (`tcPr/w:headers`), when it has either.
+fn cell_ids(tc: Node, tc_pr: Option<Node>) -> Option<Rc<crate::docx::CellIds>> {
+    let id = attr(tc, "id").map(str::trim).filter(|v| !v.is_empty()).map(str::to_string);
+    let headers = tc_pr.and_then(|p| child(p, "headers")).map(header_list).unwrap_or_default();
+    (id.is_some() || !headers.is_empty()).then(|| Rc::new(crate::docx::CellIds { id, headers }))
 }
 
 #[cfg(test)]

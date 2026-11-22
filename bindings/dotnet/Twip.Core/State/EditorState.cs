@@ -788,6 +788,9 @@ public sealed record CharacterFormatting
 
     /// <summary>The underline's colour, or the text's (<see cref="ColorValue.Auto"/>).</summary>
     public FormatValue<ColorValue> UnderlineColor { get; init; }
+
+    /// <summary>The text effects (fill, outline, shadow, glow and reflection), through the character style.</summary>
+    public FormatValue<TextEffects> TextEffects { get; init; }
 }
 
 /// <summary>The selected paragraphs' formatting.</summary>
@@ -955,6 +958,14 @@ public sealed record PageFormatting
 
     /// <summary>The footnote area's columns; 0 for the section's own.</summary>
     public int FootnoteColumns { get; init; }
+
+    /// <summary>The page colour, gradient, pattern or picture (its image empty), or null for none.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public FillValue? Background { get; init; }
+
+    /// <summary>The watermark the pages show (a picture's image empty), or null.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Watermark? Watermark { get; init; }
 }
 
 /// <summary>A section's footnote or endnote settings.</summary>

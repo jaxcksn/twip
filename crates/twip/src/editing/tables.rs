@@ -25,6 +25,7 @@ pub(super) fn empty_cell(like: &Cell) -> Cell {
     let mut c = like.clone();
     c.v_merge = VMerge::None;
     c.controls = Vec::new();
+    c.ids = None;
     let Some(p) = like.blocks.iter().rev().find_map(|b| if let Block::Para(p) = b { Some(p) } else { None }) else { return c };
     c.blocks = vec![Block::Para(Paragraph {
         style: p.style.clone(),
@@ -523,6 +524,7 @@ impl Editor {
             bottom: None,
             right: None,
             shading: None,
+            hatch: None,
             margins: [0.0, 5.4, 0.0, 5.4],
             v_align: "top".into(),
             text_direction: "lrTb".into(),
@@ -534,6 +536,7 @@ impl Editor {
             blocks: vec![Block::Para(cell_para())],
             controls: Vec::new(),
             rev: Default::default(),
+            ids: None,
         };
         let w = (width / ncols as f64 * 20.0).floor() / 20.0;
         let table = Table {
@@ -551,6 +554,7 @@ impl Editor {
             },
             fixed: false,
             cell_spacing: 0.0,
+            shd: None,
             look: None,
             bands: (0, 0),
             alt: None,
@@ -571,6 +575,8 @@ impl Editor {
                     div: None,
                     borders: None,
                     shading: None,
+                    hatch: None,
+                    table_shading: None,
                     hidden: false,
                     vanished: false,
                     cell_spacing: None,

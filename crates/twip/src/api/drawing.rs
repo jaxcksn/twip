@@ -116,7 +116,7 @@ impl ThemeColour {
         }
     }
 
-    fn of(s: SchemeSlot) -> Option<ThemeColour> {
+    pub(crate) fn of(s: SchemeSlot) -> Option<ThemeColour> {
         Some(match s {
             SchemeSlot::Tx1 | SchemeSlot::Dk1 => ThemeColour::Text1,
             SchemeSlot::Bg1 | SchemeSlot::Lt1 => ThemeColour::Background1,
@@ -309,6 +309,10 @@ pub enum FillValue {
         angle: Option<Degrees>,
         /// Two or more stops.
         stops: Vec<GradientStop>,
+        /// Where a radial, rectangular or path gradient starts: the rectangle inset from the box's left, top, right and
+        /// bottom by these fractions (`[0, 0, 1, 1]` its top left corner, `[0.5; 4]` its centre, the default).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        focus: Option<[f64; 4]>,
     },
     /// A two-colour pattern.
     Pattern {
@@ -339,12 +343,12 @@ impl FillValue {
         Ok(Some(match self {
             FillValue::None => Fill::None,
             FillValue::Solid { colour } => Fill::Solid(colour.to_model()?),
-            FillValue::Gradient { kind, angle, stops } => {
+            FillValue::Gradient { kind, angle, stops, focus } => {
                 if stops.len() < 2 {
                     return Err("a gradient has two or more stops".into());
                 }
                 let stops = stops.iter().map(|s| Ok((pct(s.position.clamp(0.0, 1.0)), s.colour.to_model()?))).collect::<Result<_, String>>()?;
-                let half = [Pct(50000); 4];
+                let half = focus.unwrap_or([0.5; 4]).map(|v| pct(if v.is_finite() { v.clamp(0.0, 1.0) } else { 0.5 }));
                 let kind = match kind {
                     GradientShape::Linear => {
                         paint::GradientKind::Linear { angle: Angle((angle.unwrap_or(0.0).rem_euclid(360.0) * 60000.0).round() as i32), scaled: false }
@@ -393,8 +397,12 @@ impl FillValue {
                     paint::GradientKind::Path { path: paint::GradientPath::Rect, .. } => (GradientShape::Rectangular, None),
                     paint::GradientKind::Path { path: paint::GradientPath::Shape, .. } => (GradientShape::Path, None),
                 };
+                let focus = match g.kind {
+                    paint::GradientKind::Path { focus, .. } if focus != [Pct(50000); 4] => Some(focus.map(|p| p.fraction())),
+                    _ => None,
+                };
                 let stops = g.stops.iter().map(|(p, x)| GradientStop { position: f64::from(p.0) / 100000.0, colour: c(x) }).collect();
-                FillValue::Gradient { kind, angle, stops }
+                FillValue::Gradient { kind, angle, stops, focus }
             }
             Fill::Pattern { preset, fg, bg } => FillValue::Pattern { preset: preset.name().into(), foreground: c(fg), background: c(bg) },
             Fill::Blip(b) => FillValue::Picture {
@@ -1066,7 +1074,7 @@ impl PictureAdjustChange {
             if let crate::api::value::NoneOr::Value(c) = t {
                 let mut to = crate::drawing::colour::Colour::srgb(c.0);
                 to.mods.push(crate::drawing::colour::ColourMod::Alpha(Pct(0)));
-                out.push(A::ClrChange { from: crate::drawing::colour::Colour::srgb(c.0), to });
+                out.push(A::ClrChange { from: crate::drawing::colour::Colour::srgb(c.0), to, use_a: true });
             }
         }
         Ok(out)
@@ -1161,6 +1169,280 @@ pub struct ShapeState {
     pub effects: EffectsValue,
     /// The text body; `null` for pictures and groups.
     pub text: Option<ShapeTextState>,
+}
+
+/// A text outline (`w14:textOutline`): an outline without arrowheads.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TextOutline {
+    /// The width (0…1584 pt).
+    pub width: Points,
+    /// `none`, `solid` or `gradient`.
+    pub fill: FillValue,
+    /// The ECMA-376 dash name (`"solid"`, `"dash"`, `"sysDot"`…).
+    pub dash: String,
+    /// Single or several lines.
+    pub compound: Compound,
+    /// The ends of its dashes.
+    pub cap: LineCap,
+    /// The joins.
+    pub join: LineJoin,
+}
+
+/// A text shadow (`w14:shadow`).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TextShadow {
+    /// Its colour (with its transparency as an `alpha` transform).
+    pub colour: ColourValue,
+    /// Its size against the text's, percent (1…200).
+    pub size: f64,
+    /// How far it blurs (0…100 pt).
+    pub blur: Points,
+    /// How far from the text (0…200 pt).
+    pub distance: Points,
+    /// Which way, clockwise from the right.
+    pub direction: Degrees,
+}
+
+/// A text reflection (`w14:reflection`): the text mirrored below its baseline, fading out.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TextReflection {
+    /// Its transparency where it starts, percent (0…100).
+    pub transparency: f64,
+    /// How much of the text it shows before it has faded out, percent (0…100).
+    pub size: f64,
+    /// How far it blurs (0…100 pt).
+    pub blur: Points,
+    /// How far below the text (0…100 pt).
+    pub distance: Points,
+}
+
+/// Text effects (the Font dialog's Text Effects): each one absent is not set.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TextEffects {
+    /// The letters' fill in place of the font colour: `none` (hollow), `solid` or `gradient`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fill: Option<FillValue>,
+    /// The letters' outline.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outline: Option<TextOutline>,
+    /// A shadow behind the letters.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shadow: Option<TextShadow>,
+    /// A glow around the letters.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub glow: Option<Glow>,
+    /// A reflection under the letters.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reflection: Option<TextReflection>,
+}
+
+/// `setTextEffects`' change: each effect given replaces the text's own, what isn't given is kept, and `null` turns an
+/// effect off: the text's own is removed, and where a style still gives the text a glow, shadow, reflection or
+/// outline, the text gets that effect switched off over it (a glow of no radius, a shadow or reflection of no size,
+/// an outline of no fill, as Word writes them). A fill is only removed: a style's fill then shows.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TextEffectsChange {
+    /// The letters' fill: `none` (hollow), `solid` or `gradient` (two to ten stops).
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "crate::api::wire::nullable")]
+    pub fill: Option<Option<FillValue>>,
+    /// The letters' outline.
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "crate::api::wire::nullable")]
+    pub outline: Option<Option<TextOutline>>,
+    /// A shadow behind the letters.
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "crate::api::wire::nullable")]
+    pub shadow: Option<Option<TextShadow>>,
+    /// A glow around the letters (0…150 pt).
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "crate::api::wire::nullable")]
+    pub glow: Option<Option<Glow>>,
+    /// A reflection under the letters.
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "crate::api::wire::nullable")]
+    pub reflection: Option<Option<TextReflection>>,
+}
+
+/// The colour changes Word 2010's text effects have (`w14:` colours carry no others).
+fn w14_colour(c: &ColourValue) -> Result<Colour, String> {
+    if c.transforms.iter().any(|t| matches!(t.kind, TransformKind::HueOff | TransformKind::AlphaMod)) {
+        return Err("a text effect's colour has no hueOff or alphaMod transform".into());
+    }
+    c.to_model()
+}
+
+fn w14_fill(f: &FillValue) -> Result<Fill, String> {
+    let checked = |c: &ColourValue| w14_colour(c).map(drop);
+    match f {
+        FillValue::None => {}
+        FillValue::Solid { colour } => checked(colour)?,
+        FillValue::Gradient { stops, .. } => {
+            if !(2..=10).contains(&stops.len()) {
+                return Err("a text gradient has two to ten stops".into());
+            }
+            stops.iter().try_for_each(|s| checked(&s.colour))?;
+        }
+        _ => return Err("a text fill is none, solid or a gradient".into()),
+    }
+    Ok(f.to_model(&mut |_| None)?.unwrap_or(Fill::None))
+}
+
+fn within(v: f64, lo: f64, hi: f64, what: &str) -> Result<(), String> {
+    if (lo..=hi).contains(&v) { Ok(()) } else { Err(format!("{what} is {lo} to {hi}")) }
+}
+
+fn pct_of(percent: f64) -> Pct {
+    Pct((percent * 1000.0).round() as i32)
+}
+
+impl TextOutline {
+    fn to_model(&self) -> Result<paint::Line, String> {
+        within(self.width.0, 0.0, 1584.0, "an outline's width (pt)")?;
+        let change = LineChange {
+            width: Some(self.width),
+            fill: Some(FillValue::None),
+            dash: Some(self.dash.clone()),
+            compound: Some(self.compound),
+            cap: Some(self.cap),
+            join: Some(self.join),
+            ends: None,
+        };
+        let mut l = change.apply(None, &mut |_| None)?.unwrap_or_default();
+        l.fill = Some(w14_fill(&self.fill)?);
+        l.inset = Some(false);
+        Ok(l)
+    }
+
+    fn of(l: &paint::Line) -> TextOutline {
+        let v = LineValue::of(l, None, &[]);
+        let fill = if v.fill == FillValue::FromStyle { FillValue::None } else { v.fill };
+        TextOutline { width: v.width, fill, dash: v.dash, compound: v.compound, cap: v.cap, join: v.join }
+    }
+}
+
+impl TextShadow {
+    fn to_model(&self) -> Result<paint::OuterShadow, String> {
+        within(self.size, 1.0, 200.0, "a shadow's size (percent)")?;
+        within(self.blur.0, 0.0, 100.0, "a shadow's blur (pt)")?;
+        within(self.distance.0, 0.0, 200.0, "a shadow's distance (pt)")?;
+        Ok(paint::OuterShadow {
+            blur: emu(self.blur),
+            dist: emu(self.distance),
+            dir: angle(self.direction),
+            sx: pct_of(self.size),
+            sy: pct_of(self.size),
+            kx: Angle(0),
+            ky: Angle(0),
+            align: paint::RectAlign::Tl,
+            colour: w14_colour(&self.colour)?,
+            rot_with_shape: true,
+        })
+    }
+
+    fn of(s: &paint::OuterShadow) -> TextShadow {
+        TextShadow {
+            colour: ColourValue::of(&s.colour, None),
+            size: f64::from(s.sx.0) / 1000.0,
+            blur: points(s.blur),
+            distance: points(s.dist),
+            direction: s.dir.degrees(),
+        }
+    }
+}
+
+impl TextReflection {
+    fn to_model(&self) -> Result<paint::Reflection, String> {
+        within(self.transparency, 0.0, 100.0, "a reflection's transparency (percent)")?;
+        within(self.size, 0.0, 100.0, "a reflection's size (percent)")?;
+        within(self.blur.0, 0.0, 100.0, "a reflection's blur (pt)")?;
+        within(self.distance.0, 0.0, 100.0, "a reflection's distance (pt)")?;
+        // Word's reflections: flipped about the bottom, faded straight down to almost clear.
+        Ok(paint::Reflection {
+            blur: emu(self.blur),
+            dist: emu(self.distance),
+            dir: Angle(5_400_000),
+            fade_dir: Angle(5_400_000),
+            sx: Pct(100_000),
+            sy: Pct(-100_000),
+            kx: Angle(0),
+            ky: Angle(0),
+            align: paint::RectAlign::Bl,
+            start_alpha: pct_of(100.0 - self.transparency),
+            start_pos: Pct(0),
+            end_alpha: Pct(300),
+            end_pos: pct_of(self.size),
+            rot_with_shape: false,
+        })
+    }
+
+    fn of(r: &paint::Reflection) -> TextReflection {
+        TextReflection {
+            transparency: 100.0 - f64::from(r.start_alpha.0) / 1000.0,
+            size: f64::from(r.end_pos.0) / 1000.0,
+            blur: points(r.blur),
+            distance: points(r.dist),
+        }
+    }
+}
+
+impl TextEffects {
+    /// A run's effects as written.
+    pub(crate) fn of(e: &crate::docx::model::TextEffects) -> TextEffects {
+        TextEffects {
+            fill: e.fill.as_ref().map(|f| FillValue::of(f, None, &[])),
+            outline: e.outline.as_ref().map(TextOutline::of),
+            shadow: e.shadow.as_ref().map(TextShadow::of),
+            glow: e.glow.as_ref().map(|g| Glow { colour: ColourValue::of(&g.colour, None), radius: points(g.radius) }),
+            reflection: e.reflection.as_ref().map(TextReflection::of),
+        }
+    }
+}
+
+/// One effect of a [`TextEffectsChange`] in the model: left alone, removed, or set.
+pub(crate) enum EffectEdit<T> {
+    Keep,
+    Remove,
+    Set(T),
+}
+
+impl<T> EffectEdit<T> {
+    pub(crate) fn is_remove(&self) -> bool {
+        matches!(self, EffectEdit::Remove)
+    }
+}
+
+/// A [`TextEffectsChange`] in the model, checked.
+pub(crate) struct TextEffectsEdit {
+    pub fill: EffectEdit<Fill>,
+    pub outline: EffectEdit<paint::Line>,
+    pub shadow: EffectEdit<paint::OuterShadow>,
+    pub glow: EffectEdit<paint::Glow>,
+    pub reflection: EffectEdit<paint::Reflection>,
+}
+
+fn edit<A, T>(v: &Option<Option<A>>, f: impl FnOnce(&A) -> Result<T, String>) -> Result<EffectEdit<T>, String> {
+    Ok(match v {
+        None => EffectEdit::Keep,
+        Some(None) => EffectEdit::Remove,
+        Some(Some(a)) => EffectEdit::Set(f(a)?),
+    })
+}
+
+impl TextEffectsChange {
+    /// The change in the model; errors name a bad value.
+    pub(crate) fn to_model(&self) -> Result<TextEffectsEdit, String> {
+        Ok(TextEffectsEdit {
+            fill: edit(&self.fill, w14_fill)?,
+            outline: edit(&self.outline, TextOutline::to_model)?,
+            shadow: edit(&self.shadow, TextShadow::to_model)?,
+            glow: edit(&self.glow, |g| {
+                within(g.radius.0, 0.0, 150.0, "a glow's size (pt)")?;
+                Ok(paint::Glow { radius: emu(g.radius), colour: w14_colour(&g.colour)? })
+            })?,
+            reflection: edit(&self.reflection, TextReflection::to_model)?,
+        })
+    }
 }
 
 /// A group of the shape gallery.

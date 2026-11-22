@@ -91,6 +91,21 @@ internal sealed class EffectChangeConverter<T> : JsonConverter<EffectChange<T>>
     private static JsonTypeInfo<T> Info(JsonSerializerOptions options) => (JsonTypeInfo<T>)options.GetTypeInfo(typeof(T));
 }
 
+/// <summary><c>T | 'none'</c>.</summary>
+internal sealed class NoneOrConverter<T> : JsonConverter<NoneOr<T>>
+{
+    public override NoneOr<T> Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
+        reader.TokenType == JsonTokenType.String && reader.ValueTextEquals("none") ? NoneOr<T>.None : NoneOr<T>.Of(JsonSerializer.Deserialize(ref reader, Info(options))!);
+
+    public override void Write(Utf8JsonWriter writer, NoneOr<T> value, JsonSerializerOptions options)
+    {
+        if (value.IsNone) writer.WriteStringValue("none");
+        else JsonSerializer.Serialize(writer, value.Value, Info(options));
+    }
+
+    private static JsonTypeInfo<T> Info(JsonSerializerOptions options) => (JsonTypeInfo<T>)options.GetTypeInfo(typeof(T));
+}
+
 /// <summary>Enums travel camelCase (<c>setBold</c>, <c>noMarkup</c>).</summary>
 internal sealed class CamelEnum<T>() : JsonStringEnumConverter<T>(JsonNamingPolicy.CamelCase, allowIntegerValues: false) where T : struct, Enum;
 
@@ -619,6 +634,8 @@ internal sealed class DialogValuesConverter : JsonConverter<DialogValues>
             DialogKind.SetNumberingValue => ctx.SetNumberingValueDialogValues,
             DialogKind.AdjustListIndents => ctx.AdjustListIndentsDialogValues,
             DialogKind.BulletsNumbering => ctx.BulletsNumberingDialogValues,
+            DialogKind.PrintedWatermark => ctx.PrintedWatermarkDialogValues,
+            DialogKind.FillEffects => ctx.FillEffectsDialogValues,
             _ => throw new JsonException($"no values for the {kind} dialog"),
         };
     }

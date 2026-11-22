@@ -297,7 +297,8 @@ pub fn fixtures() -> Vec<Fixture> {
         fixture!("selection-summary", SelectionSummary, vec![selection()]),
         fixture!("character-formatting", CharacterFormatting, vec![character()]),
         fixture!("paragraph-formatting", ParagraphFormatting, vec![paragraph()]),
-        fixture!("page-formatting", PageFormatting, vec![page()]),
+        fixture!("page-formatting", PageFormatting, vec![page(), page_background()]),
+        fixture!("watermark", crate::api::command::Watermark, watermarks()),
         fixture!("view-state", ViewState, vec![ViewState::default()]),
         fixture!(
             "chrome-theme",
@@ -706,6 +707,7 @@ fn commands() -> Vec<Command> {
         }),
         Command::SetLanguage(Language { language: Some("en-GB".into()), no_proof: Some(true) }),
         Command::SetCharacterEffects(CharacterEffects { emboss: Some(true), engrave: None, outline: Some(false), shadow: None }),
+        Command::SetTextEffects(text_effects_change()),
         Command::SetUnderlineColor(AutoOr::Value(Color(0xC00000))),
         Command::ClearFormatting,
         Command::ChangeCase(CaseChange::Title),
@@ -791,6 +793,12 @@ fn commands() -> Vec<Command> {
             right: Some(None),
             between: Some(None),
             shadow: Some(false),
+        }),
+        Command::SetShading(ShadingChange {
+            target: ShadingTarget::Table,
+            fill: NoneOr::Value(Color(0xFFF2CC)),
+            pattern: ShadingPattern::ThinDiagCross,
+            color: AutoOr::Value(Color(0x2E75B6)),
         }),
         Command::SetShading(ShadingChange {
             target: ShadingTarget::Text,
@@ -898,6 +906,13 @@ fn commands() -> Vec<Command> {
             relative_to: AlignmentTabBase::Margin,
             leader: Some(TabLeader::Dots),
         }),
+        Command::SetPageColor(dr::FillValue::Solid { colour: theme_colour() }),
+        Command::SetWatermark(crate::api::command::Watermark::Text(crate::api::command::TextWatermark {
+            text: "DRAFT".into(),
+            layout: Some(crate::api::command::WatermarkLayout::Horizontal),
+            ..Default::default()
+        })),
+        Command::RemoveWatermark,
         Command::InsertTable(TableSize { rows: 3, columns: 2 }),
         Command::InsertPicture(Picture { data: picture_bytes(), alt_text: Some("Company logo".into()) }),
         Command::InsertTextBox,
@@ -1415,6 +1430,7 @@ fn character() -> CharacterFormatting {
         outline: Tri::Uniform(true),
         shadow: Tri::Uniform(false),
         underline_color: Tri::Uniform(AutoOr::Auto),
+        text_effects: Tri::Uniform(Default::default()),
     }
 }
 
@@ -1487,7 +1503,32 @@ fn page() -> PageFormatting {
         footnotes: NoteSettings { position: NotePosition::BeneathText, format: NumberFormat::Decimal, start: 1, restart: NoteRestart::EachPage },
         endnotes: NoteSettings::default(),
         footnote_columns: 2,
+        background: None,
+        watermark: None,
     }
+}
+
+/// A page with a page colour and a picture watermark.
+fn page_background() -> PageFormatting {
+    PageFormatting { background: Some(dr::FillValue::Solid { colour: theme_colour() }), watermark: Some(watermarks().remove(1)), ..page() }
+}
+
+fn watermarks() -> Vec<crate::api::command::Watermark> {
+    use crate::api::command::{PictureWatermark, TextWatermark, Watermark, WatermarkLayout};
+    vec![
+        Watermark::Text(TextWatermark {
+            text: "CONFIDENTIAL".into(),
+            font: Some("Calibri".into()),
+            language: Some("en-US".into()),
+            size: Some(Points(80.5)),
+            color: Some(Color(0xC0C0C0)),
+            transparency: Some(50.0),
+            layout: Some(WatermarkLayout::Diagonal),
+            bold: Some(true),
+            italic: Some(false),
+        }),
+        Watermark::Picture(PictureWatermark { image: picture_bytes(), scale: Some(150.0), washout: Some(true) }),
+    ]
 }
 
 fn review_state() -> ReviewState {
@@ -1708,6 +1749,35 @@ fn dialog_values() -> Vec<DialogValues> {
             right: None,
             between: None,
             inside_vertical: None,
+            diagonal_down: None,
+            diagonal_up: None,
+            apply_to: ShadingTarget::Table,
+            fill: NoneOr::None,
+            pattern: ShadingPattern::DiagStripe,
+            pattern_color: AutoOr::Auto,
+            page_setting: BorderSetting::Box,
+            page_top: Some(Border { style: BorderStyle::DashDotStroked, width: Points(0.5), color: AutoOr::Auto }),
+            page_bottom: None,
+            page_left: None,
+            page_right: None,
+            page_offset_from: PageBorderOffset::Text,
+            page_display: PageBorderDisplay::FirstPage,
+            page_apply_to: PageBorderScope::ThisSection,
+        }),
+        DialogValues::BordersShading(BordersShadingDialog {
+            tab: BordersTab::Shading,
+            setting: BorderSetting::Shadow,
+            style: BorderStyle::Double,
+            color: AutoOr::Value(Color(0x2F5496)),
+            width: Points(0.75),
+            top: Some(Border { style: BorderStyle::Double, width: Points(0.75), color: AutoOr::Value(Color(0x2F5496)) }),
+            bottom: None,
+            left: None,
+            right: None,
+            between: None,
+            inside_vertical: None,
+            diagonal_down: None,
+            diagonal_up: None,
             apply_to: ShadingTarget::Paragraph,
             fill: NoneOr::None,
             pattern: ShadingPattern::Solid,
@@ -1821,6 +1891,11 @@ fn dialog_values() -> Vec<DialogValues> {
             number_form: Tri::Uniform(NumberForm::OldStyle),
             stylistic_set: Tri::Uniform(3),
             contextual_alternates: Tri::Uniform(true),
+            text_fill: Tri::Uniform(NoneOr::None),
+            text_outline: Tri::Uniform(NoneOr::None),
+            text_shadow: Tri::Uniform(NoneOr::None),
+            text_reflection: Tri::Uniform(NoneOr::None),
+            text_glow: Tri::Uniform(NoneOr::None),
         }),
         DialogValues::Paragraph(ParagraphDialog {
             alignment: Tri::Uniform(Alignment::Right),
@@ -1905,6 +1980,36 @@ fn dialog_values() -> Vec<DialogValues> {
         }),
         DialogValues::Accessibility(AccessibilityDialog {
             issues: vec![AccessibilityIssue { id: "alt-1".into(), text: "Picture 1 has no alt text".into(), tip: false }],
+        }),
+        DialogValues::PrintedWatermark(PrintedWatermarkDialog {
+            watermark: WatermarkKind::Text,
+            picture: Bytes::default(),
+            scale: Some(150.0),
+            washout: true,
+            text: "DRAFT".into(),
+            font: "Calibri".into(),
+            language: "en-US".into(),
+            size: Some(Points(80.5)),
+            color: Color(0xC0C0C0),
+            transparency: 50.0,
+            layout: crate::api::command::WatermarkLayout::Diagonal,
+            bold: false,
+            italic: true,
+        }),
+        DialogValues::FillEffects(FillEffectsDialog {
+            tab: FillEffectsTab::Gradient,
+            colors: GradientColors::Two,
+            color1: dr::ColourValue::rgb(Color(0x1F4E79)),
+            color2: theme_colour(),
+            lightness: 0.5,
+            preset: "earlySunset".into(),
+            shading: ShadingStyle::FromCorner,
+            variant: 2,
+            texture: picture_bytes(),
+            pattern: "dkDnDiag".into(),
+            foreground: dr::ColourValue::rgb(Color(0x000000)),
+            background: dr::ColourValue::rgb(Color(0xFFFFFF)),
+            picture: picture_bytes(),
         }),
     ]
 }
@@ -2348,6 +2453,16 @@ fn fills() -> Vec<dr::FillValue> {
                 dr::GradientStop { position: 0.0, colour: theme_colour() },
                 dr::GradientStop { position: 1.0, colour: dr::ColourValue::rgb(Color(0xFFFFFF)) },
             ],
+            focus: None,
+        },
+        dr::FillValue::Gradient {
+            kind: dr::GradientShape::Rectangular,
+            angle: None,
+            stops: vec![
+                dr::GradientStop { position: 0.0, colour: theme_colour() },
+                dr::GradientStop { position: 1.0, colour: dr::ColourValue::rgb(Color(0xFFFFFF)) },
+            ],
+            focus: Some([1.0, 0.0, 0.0, 1.0]),
         },
         dr::FillValue::Pattern { preset: "dkDnDiag".into(), foreground: theme_colour(), background: dr::ColourValue::rgb(Color(0xFFFFFF)) },
         dr::FillValue::Picture { image: picture_bytes(), tile: Some(true) },
@@ -2389,6 +2504,29 @@ fn glow() -> dr::Glow {
 
 fn effects() -> dr::EffectsValue {
     dr::EffectsValue { outer_shadow: Some(shadow()), glow: Some(glow()), soft_edge: Some(Points(2.5)), ..Default::default() }
+}
+
+fn text_effects_change() -> dr::TextEffectsChange {
+    dr::TextEffectsChange {
+        fill: Some(Some(dr::FillValue::Solid { colour: theme_colour() })),
+        outline: Some(Some(dr::TextOutline {
+            width: Points(0.75),
+            fill: dr::FillValue::Solid { colour: dr::ColourValue::rgb(Color(0x1F4E79)) },
+            dash: "dash".into(),
+            compound: dr::Compound::Single,
+            cap: dr::LineCap::Flat,
+            join: dr::LineJoin::Round,
+        })),
+        shadow: Some(Some(dr::TextShadow {
+            colour: dr::ColourValue::rgb(Color(0x000000)),
+            size: 100.0,
+            blur: Points(4.5),
+            distance: Points(3.5),
+            direction: 45.5,
+        })),
+        glow: Some(Some(glow())),
+        reflection: Some(None),
+    }
 }
 
 fn effects_change() -> dr::EffectsChange {
@@ -2443,13 +2581,56 @@ mod tests {
 
     #[test]
     fn every_command_has_an_example() {
-        let ids: Vec<CommandId> = commands().iter().map(Command::id).collect();
-        assert_eq!(ids, CommandId::ALL, "the command examples follow the command set, one each");
+        let mut ids: Vec<CommandId> = commands().iter().map(Command::id).collect();
+        // A command may have several examples, side by side.
+        ids.dedup();
+        assert_eq!(ids, CommandId::ALL, "the command examples follow the command set");
     }
 
     #[test]
     fn fixture_names_are_unique() {
         let names: Vec<&str> = fixtures().iter().map(|f| f.name).collect();
         assert!(names.windows(2).all(|w| w[0] < w[1]), "{names:?}");
+    }
+}
+
+#[cfg(test)]
+mod tag_tests {
+    use serde::de::{MapAccess, Visitor};
+    use serde::{Deserialize, Deserializer};
+
+    /// The top-level keys of a JSON object, duplicates kept.
+    struct Keys(Vec<String>);
+
+    impl<'de> Deserialize<'de> for Keys {
+        fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+            struct V;
+            impl<'de> Visitor<'de> for V {
+                type Value = Keys;
+                fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                    f.write_str("an object")
+                }
+                fn visit_map<A: MapAccess<'de>>(self, mut m: A) -> Result<Keys, A::Error> {
+                    let mut keys = Vec::new();
+                    while let Some((k, _)) = m.next_entry::<String, serde::de::IgnoredAny>()? {
+                        keys.push(k);
+                    }
+                    Ok(Keys(keys))
+                }
+            }
+            d.deserialize_map(V)
+        }
+    }
+
+    /// A dialog's field can't share the name of the `kind` tag: it would be written twice and the tag lost.
+    #[test]
+    fn every_dialog_values_variant_serialises_with_its_own_tag() {
+        for v in super::dialog_values() {
+            let text = serde_json::to_string(&v).expect("serialises");
+            let keys = serde_json::from_str::<Keys>(&text).expect("an object").0;
+            assert_eq!(keys.iter().filter(|k| *k == "kind").count(), 1, "{text}");
+            let back: crate::api::services::DialogValues = serde_json::from_str(&text).expect("reads back");
+            assert_eq!(back, v);
+        }
     }
 }

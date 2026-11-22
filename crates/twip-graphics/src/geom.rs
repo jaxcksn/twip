@@ -99,6 +99,19 @@ impl Transform {
         corners.iter().fold(empty, |b, p| Rect { x0: b.x0.min(p.x), y0: b.y0.min(p.y), x1: b.x1.max(p.x), y1: b.y1.max(p.y) })
     }
 
+    /// `self` (tile to device pixels) with each texel of a tile of `size` texels one device pixel, from a pixel
+    /// ([`crate::paint::Sampling::Pixel`]), its direction kept; unchanged under rotation or skew. The origin sits a
+    /// quarter of a pixel past the pixel, so no pixel centre falls on a texel edge: every backend picks the same texel.
+    /// A half pixel rounds up, so moving the transform by whole pixels moves the tile by as many. A transform that
+    /// isn't invertible stays so.
+    pub fn snap_tile(self, size: (u32, u32)) -> Transform {
+        if !self.is_scale_translate() || size.0 == 0 || size.1 == 0 || self.inverse().is_none() {
+            return self;
+        }
+        let snap = |v: f32| (v + 0.5).floor() + 0.25;
+        Transform { a: 1f32.copysign(self.a), d: 1f32.copysign(self.d), e: snap(self.e), f: snap(self.f), ..self }
+    }
+
     /// Whether axis-aligned rects stay axis-aligned rects: no rotation and no skew.
     pub fn is_scale_translate(self) -> bool {
         self.b == 0.0 && self.c == 0.0
@@ -108,6 +121,40 @@ impl Transform {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_snapped_tile_has_a_texel_a_pixel_and_no_centre_meets_a_texel_edge() {
+        // 0.32 px a texel at 96 dpi, or 4 at 400% zoom: one either way, an 8-texel tile 8 px.
+        for k in [0.32, 4.0] {
+            let t = Transform { a: k, b: 0.0, c: 0.0, d: -k, e: 10.3, f: 4.6 }.snap_tile((8, 8));
+            assert_eq!((t.a, t.d, t.e.floor(), t.f.floor()), (1.0, -1.0, 10.0, 5.0));
+            let inv = t.inverse().expect("invertible");
+            for k in 0..48 {
+                let u = inv.map_point(Point { x: k as f32 + 0.5, y: 0.0 }).x;
+                assert!((u - u.round()).abs() > 0.05, "pixel {k} centre at texel {u}");
+            }
+            let texel = |k: i32| inv.map_point(Point { x: k as f32 + 0.5, y: 0.0 }).x.floor().rem_euclid(8.0);
+            assert!((0..40).all(|k| texel(k) == texel(k + 8)), "an 8 px pitch");
+        }
+        let turned = Transform { a: 0.3, b: 0.1, c: -0.1, d: 0.3, e: 1.0, f: 1.0 };
+        assert_eq!(turned.snap_tile((8, 8)), turned, "rotation is left alone");
+        for (a, d) in [(0.0, 1.0), (1.0, 0.0), (f32::NAN, 1.0)] {
+            let flat = Transform { a, b: 0.0, c: 0.0, d, e: 1.0, f: 1.0 };
+            assert!(flat.snap_tile((8, 8)).inverse().is_none(), "a collapsed tile stays collapsed: {a} {d}");
+        }
+    }
+
+    #[test]
+    fn a_snapped_tile_moves_with_whole_pixels() {
+        for (e, f) in [(-0.5, 0.5), (-1.5, -2.5), (0.3, -0.7), (2.5, 3.5)] {
+            let t = Transform { a: 1.0, b: 0.0, c: 0.0, d: 1.0, e, f };
+            for n in [-3.0, -1.0, 1.0, 4.0] {
+                let moved = Transform { e: e + n, f: f + n, ..t }.snap_tile((2, 1));
+                let snapped = t.snap_tile((2, 1));
+                assert_eq!((moved.e, moved.f), (snapped.e + n, snapped.f + n), "{e} {f} moved {n}");
+            }
+        }
+    }
 
     #[test]
     fn transforms_keep_kurbos_coefficient_order() {

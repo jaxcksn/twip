@@ -60,7 +60,7 @@ Chunk numbers are [roadmap](../roadmap#docx) chunks.
 | Fields | `w:fldChar`, `w:fldSimple`, `w:instrText` | API (`insertField`, `setField`, `updateFields`; the engine computes the document property and variable fields). FILENAME (the name `setFileName` gives), NOTEREF (its note's number, as layout numbers it), LISTNUM (`NumberDefault`, `OutlineDefault`, `LegalDefault`), AUTONUM, `=` formulas (functions, table references, LEFT/ABOVE, bookmarks, `\#` pictures) and DATE and TIME in the host's time zone, in en-US names |
 | Field data | `w:fldData` | Application (binary data Word keeps for a field) |
 | Legacy form fields | `w:ffData`, `w:name`, `w:enabled`, `w:calcOnExit`, `w:entryMacro`, `w:exitMacro`, `w:helpText`, `w:statusText`, `w:checkBox`, `w:size`, `w:sizeAuto`, `w:default`, `w:checked`, `w:ddList`, `w:result`, `w:listEntry`, `w:textInput`, `w:type`, `w:maxLength`, `w:format` | API (`insertFormField`, `setFormField`, `fillFormField`; the selection's field in `selection.context[].form`); check box and drop-down drawn. Macros (`w:entryMacro`, `w:exitMacro`) are kept and settable, never run |
-| Form field shading | `w:doNotShadeFormData` | API (`setFormFieldShading`); drawing the shading is in phase 3 |
+| Form field shading | `w:doNotShadeFormData` | API (`setFormFieldShading`); legacy form fields are shaded grey on screen, whatever the field shading option, and never in print or PDF |
 | Document variables | `w:docVars`, `w:docVar` | API (`setDocumentVariable`, `documentProperties`; DOCVARIABLE shows them) |
 
 ## Character formatting
@@ -69,19 +69,19 @@ Chunk numbers are [roadmap](../roadmap#docx) chunks.
 |---|---|---|
 | Fonts and size | `w:rFonts`, `w:sz` | API |
 | Bold, italic, caps, strike | `w:b`, `w:i`, `w:caps`, `w:smallCaps`, `w:strike`, `w:dstrike` | API |
-| Colour, highlight, shading, border | `w:color`, `w:highlight`, `w:shd`, `w:bdr` | API |
+| Colour, highlight, shading, border | `w:color`, `w:highlight`, `w:shd`, `w:bdr` | API; every shading pattern draws (stripes and crosses as Word's 12 tiles, which repeat on whole device pixels, and percentages as a flat blend), in PDF too |
 | Position, spacing, super- and subscript | `w:position`, `w:spacing`, `w:vertAlign` | API |
 | Hidden text | `w:vanish` | API |
-| Underline | `w:u` | API (style and colour) |
+| Underline | `w:u` | API (style and colour); every style drawn as Word draws it: dotted, dashed, long-dashed and dot-dash forms with Word's dash lengths, heavy forms twice as thick, waves (single, heavy, double) as curves, in the underline's own colour |
 | Character style | `w:rStyle` | API (`applyCharacterStyle`, a linked style's character half too) |
 | Scale and kerning | `w:w`, `w:kern` | API (`setTypography`) |
-| Effects | `w:emboss`, `w:imprint`, `w:outline`, `w:shadow` | API (`setCharacterEffects`); drawn in 3.4 |
+| Effects | `w:emboss`, `w:imprint`, `w:outline`, `w:shadow` | API (`setCharacterEffects`); drawn as Word draws them: emboss and engrave as light and dark copies under the text, outline as hollow glyphs, shadow as a grey copy down and right, over the run's underline too. Outlined runs keep their text in a PDF, as invisible text under the outlines |
 | Do not check spelling | `w:noProof` | API (`setLanguage`); spell checking skips it |
 | Language | `w:lang` | API (`setLanguage`; the East Asian and complex-script languages after 1.0) |
 | Fit text | `w:fitText` | Laid out; Word sets it with the Asian layout tools, after 1.0 |
 | OpenType features | `w14:ligatures`, `w14:numForm`, `w14:numSpacing`, `w14:stylisticSets`, `w14:styleSet`, `w14:cntxtAlts` | API (`setTypography`) |
-| Text effects | `w14:glow`, `w14:shadow`, `w14:reflection`, `w14:textOutline`, `w14:textFill`, `w14:scene3d`, `w14:props3d` | Kept; Model and API with their drawing, 3.5 |
-| Text effect colours and lines | `w14:solidFill`, `w14:gradFill`, `w14:noFill`, `w14:gsLst`, `w14:gs`, `w14:lin`, `w14:path`, `w14:fillToRect`, `w14:srgbClr`, `w14:schemeClr`, `w14:alpha`, `w14:tint`, `w14:shade`, `w14:hueMod`, `w14:sat`, `w14:satMod`, `w14:satOff`, `w14:lum`, `w14:lumMod`, `w14:lumOff`, `w14:prstDash`, `w14:round`, `w14:bevel`, `w14:miter`, `w14:camera`, `w14:lightRig`, `w14:rot`, `w14:bevelT`, `w14:bevelB`, `w14:extrusionClr`, `w14:contourClr` | Kept; part of text effects, 3.5 |
+| Text effects | `w14:glow`, `w14:shadow`, `w14:reflection`, `w14:textOutline`, `w14:textFill`, `w14:scene3d`, `w14:props3d` | API (`setTextEffects`, the Font dialog's text effects), through character styles too; drawn as Word draws them: a text fill (solid, gradient or none) as the letters' paint, the outline as their stroke, the shadow and glow as blurred copies under them, the reflection as a flipped copy faded by a gradient. Gradient-filled runs keep their text in a PDF. `w14:scene3d` and `w14:props3d` are kept and drawn flat |
+| Text effect colours and lines | `w14:solidFill`, `w14:gradFill`, `w14:noFill`, `w14:gsLst`, `w14:gs`, `w14:lin`, `w14:path`, `w14:fillToRect`, `w14:srgbClr`, `w14:schemeClr`, `w14:alpha`, `w14:tint`, `w14:shade`, `w14:hueMod`, `w14:sat`, `w14:satMod`, `w14:satOff`, `w14:lum`, `w14:lumMod`, `w14:lumOff`, `w14:prstDash`, `w14:round`, `w14:bevel`, `w14:miter`, `w14:camera`, `w14:lightRig`, `w14:rot`, `w14:bevelT`, `w14:bevelB`, `w14:extrusionClr`, `w14:contourClr` | API (`setTextEffects`), with their effect; the 3-D elements kept |
 | Text animation (Word 97) | `w:effect` | Kept: Word 2007 and later neither show nor set it |
 | Hidden in web view | `w:webHidden` | Kept: only Web Layout hides it |
 | Style separator | `w:specVanish` | Laid out; kept (Word sets it from the paragraph mark's Style Separator command, 4.1) |
@@ -94,7 +94,7 @@ Chunk numbers are [roadmap](../roadmap#docx) chunks.
 |---|---|---|
 | Style, alignment, indents, spacing | `w:pStyle`, `w:jc`, `w:ind`, `w:spacing` | API |
 | Pagination | `w:keepNext`, `w:keepLines`, `w:pageBreakBefore`, `w:widowControl` | API |
-| Borders and shading | `w:pBdr`, `w:top`, `w:left`, `w:bottom`, `w:right`, `w:between`, `w:bar`, `w:start`, `w:end`, `w:shd` | API |
+| Borders and shading | `w:pBdr`, `w:top`, `w:left`, `w:bottom`, `w:right`, `w:between`, `w:bar`, `w:start`, `w:end`, `w:shd` | API; every shading pattern and border style draws: shadowed borders (a black shadow below and right), `wave` and `doubleWave` as stroked zigzags and `dashDotStroked` as slanted strokes, all in Word's fixed-size bands. Layout reserves the border's width for those three, so a thin one reads nearly straight |
 | Tabs | `w:tabs`, `w:tab` | API |
 | Lists | `w:numPr`, `w:ilvl`, `w:numId` | API |
 | Frames and drop caps | `w:framePr`, `w:suppressOverlap` | API (`setFrame`, `removeFrame`; `setDropCap` and the Drop Cap dialog make, change and remove a drop cap, saved as a framed paragraph before its own) |
@@ -145,7 +145,7 @@ Chunk numbers are [roadmap](../roadmap#docx) chunks.
 
 | Construct | Elements | Status |
 |---|---|---|
-| Tables, rows, cells | `w:tbl`, `w:tblPr`, `w:tblGrid`, `w:gridCol`, `w:tr`, `w:trPr`, `w:tc`, `w:tcPr` | API |
+| Tables, rows, cells | `w:tbl`, `w:tblPr`, `w:tblGrid`, `w:gridCol`, `w:tr`, `w:trPr`, `w:tc`, `w:tcPr` | API; shading layers as Word layers it, a cell's over its row exception's over the table's (own or its style's). A table's and row's shading fills only around cells, so it shows with cell spacing |
 | Table properties | `w:tblStyle`, `w:tblW`, `w:tblInd`, `w:tblBorders`, `w:tblCellMar`, `w:tblLook`, `w:tblLayout`, `w:tblpPr`, `w:tblOverlap` | API |
 | Cell spacing | `w:tblCellSpacing` | API (`setTableCellSpacing` and Table Properties; a row's own through `setRowProperties`) |
 | Alt text | `w:tblCaption`, `w:tblDescription` | API (`setTableAltText`, Table Properties' Alt Text tab) |
@@ -155,9 +155,9 @@ Chunk numbers are [roadmap](../roadmap#docx) chunks.
 | Row exceptions | `w:tblPrEx` | API (`setRowProperties`: alignment, cell spacing, shading and borders); the width, indent, layout, margins and look a row overrides are laid out |
 | Cell properties | `w:tcW`, `w:gridSpan`, `w:vMerge`, `w:tcBorders`, `w:insideH`, `w:insideV`, `w:tcMar` | API (`setCellProperties` sets the preferred width in points or percent) |
 | Horizontal merge (Word 97) | `w:hMerge` | Laid out as a span; a rewritten row writes it as `w:gridSpan` |
-| Diagonal borders | `w:tl2br`, `w:tr2bl` | API (`setCellBorders` with `diagonalDown`, `diagonalUp`); drawn in 3.6 |
+| Diagonal borders | `w:tl2br`, `w:tr2bl` | API (`setCellBorders` with `diagonalDown`, `diagonalUp`); drawn |
 | Cell text | `w:noWrap`, `w:tcFitText`, `w:hideMark` | API (`setCellProperties`; wrapping and fitting in Table Properties too) |
-| Header cells | `w:headers` | Kept with its cell as read: Word's schema doesn't have it, so the API doesn't write it |
+| Header cells | `w:headers` | Read with the cell's `w:id`: a PDF export lists them as the cell's headers (PDF/UA `Headers`). Kept with its cell: Word's schema doesn't have it, so the API doesn't write it |
 | Default table style | `w:defaultTableStyle` | API (`setDefaultTableStyle`, Set as Default; new tables take it) |
 | Right-to-left tables | `w:bidiVisual` | After 1.0 |
 
@@ -219,7 +219,7 @@ Word 2010 and later remove custom XML markup when they open a document, so it is
 | ActiveX controls | `w:control` | Kept, drawn from its preview picture, moved with its text |
 | Imported content | `w:altChunk`, `w:altChunkPr`, `w:matchSrc` | Kept between unedited blocks, as an opaque block. Drawing it is deferred with HTML paste |
 | Subdocuments | `w:subDoc` | Kept as an opaque node, reported as unsupported content. Drawing them is in the backlog |
-| Page background | `w:background`, `w:displayBackgroundShape` | Page colour in 3.7 |
+| Page background | `w:background`, `v:background`, `w:displayBackgroundShape` | Drawn on screen: the colour (a theme colour with its tint or shade), and a gradient, pattern or tiled picture over it, as Word draws them; nothing without `w:displayBackgroundShape`, as in Word. Not in PDF export, as Word's own PDF leaves it out. API (`setPageColor`: a colour, a theme colour with its tint or shade, or Fill Effects' gradient, pattern, texture or picture; the Fill Effects dialog); kept as read until changed, then written from the model as Word writes it, a pattern with its tile picture |
 
 ## Building blocks
 
@@ -270,11 +270,16 @@ Word 2010 and later remove custom XML markup when they open a document, so it is
 |---|---|
 | Inline and floating pictures, shapes, text boxes, groups, canvases | API (`changePicture` replaces a picture's image; `alignObjects` aligns and distributes floating objects) |
 | Crop (`a:srcRect`) | API (`setPictureCrop`, and Crop from in the Picture Size dialog; inline and floating; kept when a picture is rewritten). Crop handles are not in 1.0 |
-| Linked pictures (`r:link`) | Kept through every edit, moved and pasted with its text, and drawn empty: fetching the picture is not in 1.0 |
-| Set transparent colour (`a:clrChange`) | API (`setPictureAdjust`'s `transparentColor`); drawn in phase 3 |
+| Picture formats | PNG, JPEG, GIF, BMP, JPEG XR (the `.wdp` parts Office writes; 8-bit grey, RGB and RGBA, decoded by the separate `jpeg-xr` crate) and SVG; EMF and WMF drawn as vectors on screen and in PDF (shapes, pens and dashes, clips, regions, text in the document's fonts, bitmaps, gradients; EMF+ records too, in dual EMF and EMF+ files and in EMF+-only files, with path gradients exact; OLE object previews in either format draw at the object's size). Double-byte character sets (Shift-JIS, Korean, Chinese) in metafile text are not drawn |
+| Linked pictures (`r:link`) | Kept through every edit, moved and pasted with its text. A picture with only a link draws a light placeholder frame, on purpose: Twip does not fetch the file. One with `r:embed` too draws its embedded copy |
+| Set transparent colour (`a:clrChange`) | API (`setPictureAdjust`'s `transparentColor`); drawn: pixels within one level of the colour in every channel become the new colour |
+| Picture brightness, contrast and washout (`a:lum`, VML `gain` and `blacklevel`), grayscale, black and white (`v:imagedata@grayscale`, `@bilevel`) | Drawn |
+| Reflection (`a:reflection`) | Drawn under pictures and shapes; kept and written back with the other effects. An inline picture's reflection stops at the bottom of its paragraph, as in Word; blur, glow, soft-edge and shadow radii and distances are drawn up to 200 pt |
 | Relative size and position (`wp14:sizeRelH`, `wp14:pctPosHOffset`, ...) | API (`setObjectSize`'s `relativeWidth` and `relativeHeight`, `setObjectPosition`'s `percent`) |
 | Text box columns and autofit (`wps:bodyPr@numCol`, `a:normAutofit`) | API (`setShapeText`'s `columns` and `shrinkText` autofit); the text is laid out in one column for now |
 | A shape's VML fallback (`mc:Fallback`) | Kept, moved with the shape; a shape edited in Twip is saved without it (Word 2010 and later read the shape; see Not planned on the roadmap) |
 | Alternate content (`mc:AlternateContent`, `Requires`) | Laid out: the first choice whose namespaces the engine reads, else the fallback |
 | Charts (`c:chart`) | Not in 1.0 |
 | SmartArt, WordArt | Drawn from their fallback; editing in the backlog |
+| Text watermarks and VML WordArt (`v:textpath`) | Drawn: the string's glyph outlines stretched to the shape's box (less 7.2 pt across and 3.6 pt down unless `trim`), in its fill, line, opacity and rotation, as Word draws them; a text path without `fitshape` draws nothing, as in Word. Text paths other than plain text draw unwarped (WordArt warps are not in 1.0). In PDF the text is paths, as in Word's |
+| Watermarks (`PowerPlusWaterMarkObject`, `WordPictureWatermark` shapes in headers) | API (`setWatermark`, `removeWatermark`, the Printed Watermark dialog): text with its font, language, size, colour, transparency (percent) and layout, or a picture with its scale and washout, in every header of every section (a section without one gets one), written as Word writes it so Word's Watermark dialog edits it |
