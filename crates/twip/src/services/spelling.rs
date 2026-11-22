@@ -6,8 +6,9 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::rc::Rc;
 
-use crate::editing::Editor;
+use crate::docx::review::MarkupView;
 use crate::editing::text::{OBJECT, Seen};
+use crate::editing::{EditMark, Editor};
 use crate::layout::{ParaId, Unit};
 
 /// A misspelled word in a paragraph (unit offsets); `repeated` marks a doubled word ("the the").
@@ -40,6 +41,13 @@ fn apostrophe(c: char) -> bool {
 
 fn normalize(w: &str) -> String {
     w.replace('\u{2019}', "'")
+}
+
+/// An address: a mail address, a URL or a `www.` name.
+fn address(token: &[char]) -> bool {
+    token.contains(&'@')
+        || token.windows(3).any(|w| w == [':', '/', '/'])
+        || token.len() >= 4 && token[..3].iter().all(|c| matches!(c, 'w' | 'W')) && token[3] == '.'
 }
 
 /// The defaults: words with digits and words in capitals are not checked.
@@ -117,7 +125,10 @@ impl Speller {
         // Characters that go on the grapheme before them (combining marks): part of its word.
         let extends: Vec<bool> = if key.is_ascii() { Vec::new() } else { continuations(&key, text.len()) };
         let extends = |i: usize| extends.get(i).copied().unwrap_or(false);
-        let (mut previous, mut previous_end): (Option<Vec<char>>, Option<usize>) = (None, None);
+        let (mut previous, mut previous_end): (Option<std::ops::Range<usize>>, Option<usize>) = (None, None);
+        // The token between spaces the last word was in: its end.
+        let mut token_end = 0;
+        let mut w = String::new();
         let mut i = 0;
         while i < text.len() {
             if !text[i].is_alphanumeric() {
@@ -131,29 +142,27 @@ impl Speller {
                 i += 1;
             }
             let word = &text[start..i];
-            // The token between spaces, to skip addresses ("www.example.com", "name@store.com").
-            let (mut ts, mut te) = (start, i);
-            while ts > 0 && !text[ts - 1].is_whitespace() {
-                ts -= 1;
-            }
-            while te < text.len() && !text[te].is_whitespace() {
-                te += 1;
-            }
-            let token: String = text[ts..te].iter().collect();
-            if token.contains('@') || token.contains("://") || token.to_lowercase().starts_with("www.") {
-                (previous, i) = (None, te);
-                continue;
+            // The token between spaces, to skip addresses ("www.example.com", "name@store.com"): looked at once.
+            if start >= token_end {
+                let ts = text[..start].iter().rposition(|c| c.is_whitespace()).map_or(0, |k| k + 1);
+                token_end = text[i..].iter().position(|c| c.is_whitespace()).map_or(text.len(), |k| i + k);
+                if address(&text[ts..token_end]) {
+                    (previous, i) = (None, token_end);
+                    continue;
+                }
             }
             let between = previous_end.is_some_and(|pe| start > pe && text[pe..start].iter().all(|&c| c == ' '));
-            let same =
-                previous.as_ref().is_some_and(|p| p.len() == word.len() && p.iter().zip(word).all(|(a, b)| a.to_lowercase().eq(b.to_lowercase())));
-            let w: String = word.iter().collect();
+            let same = previous
+                .as_ref()
+                .is_some_and(|p| p.len() == word.len() && text[p.clone()].iter().zip(word).all(|(a, b)| a.to_lowercase().eq(b.to_lowercase())));
+            w.clear();
+            w.extend(word);
             if between && same && word.iter().any(|c| c.is_alphabetic()) {
                 list.push(SpellError { start, len: word.len(), repeated: true });
             } else if !skip(word) && !self.known(&w) {
                 list.push(SpellError { start, len: word.len(), repeated: false });
             }
-            (previous, previous_end) = (Some(word.to_vec()), Some(i));
+            (previous, previous_end) = (Some(start..i), Some(i));
         }
         let mut cache = self.cache.borrow_mut();
         // shortcut: the whole cache goes when large; LRU if long sessions on huge documents thrash it.
@@ -235,6 +244,18 @@ pub fn searched_paras(e: &Editor) -> Vec<ParaId> {
     e.story_paras(crate::editing::find::Stories::ALL)
 }
 
+/// Whether `para` is one [`searched_paras`] lists: the sub-template's being edited (its text boxes too), else the
+/// body's, the headers' and footers' and the notes'.
+fn searched(e: &Editor, para: ParaId, sub_template: Option<u32>) -> bool {
+    use crate::editing::position::StoryId;
+    let Some(slot) = e.index().para_slot(para) else { return false };
+    match (e.index().host(e.index().story(slot.container)), sub_template) {
+        (StoryId::BuildingBlock(k), Some(s)) => k == s,
+        (StoryId::Body | StoryId::HeaderFooter(_) | StoryId::Footnote(_) | StoryId::Endnote(_), None) => true,
+        _ => false,
+    }
+}
+
 /// A misspelling found in the document: where, the error, the word and the language it was checked in.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Found {
@@ -254,11 +275,32 @@ pub struct Spellers {
     pending: BTreeMap<String, Vec<String>>,
     /// Counts the dictionaries added: a replaced one can hold the same number of words and others.
     dictionaries: u64,
+    tally: RefCell<Tally>,
+}
+
+/// The body's misspellings by paragraph as of an edit mark, for what was checked under `signature`, `language`,
+/// `view` and `sub_template`.
+#[derive(Default)]
+struct Tally {
+    mark: EditMark,
+    signature: u64,
+    language: String,
+    view: MarkupView,
+    sub_template: Option<u32>,
+    by_para: HashMap<ParaId, u32>,
+    total: u32,
 }
 
 impl Default for Spellers {
     fn default() -> Spellers {
-        Spellers { by_language: BTreeMap::new(), enabled: true, ignored: Vec::new(), pending: BTreeMap::new(), dictionaries: 0 }
+        Spellers {
+            by_language: BTreeMap::new(),
+            enabled: true,
+            ignored: Vec::new(),
+            pending: BTreeMap::new(),
+            dictionaries: 0,
+            tally: RefCell::default(),
+        }
     }
 }
 
@@ -362,6 +404,11 @@ impl Spellers {
         if !self.enabled {
             return None;
         }
+        Some(crate::prof::time("spelling:paragraph", || self.checked(e, para, default)))
+    }
+
+    /// [`Self::errors`], checking on.
+    fn checked(&self, e: &Editor, para: ParaId, default: &str) -> Rc<[SpellError]> {
         let text = check_text(e, para);
         let langs = Self::languages(e, para, default);
         let lang = |k: usize| text.units.get(k).and_then(|&u| langs.get(u as usize)).copied().unwrap_or(default);
@@ -369,7 +416,7 @@ impl Spellers {
         let cut = |k: usize| lang(k) != lang(k - 1) || text.breaks.binary_search(&k).is_ok();
         let len = text.chars.len();
         if !(1..len).any(cut) {
-            return Some(by_unit(self.speller(lang(0)).map_or_else(|| Rc::from([]), |sp| sp.errors(&text.chars)), &text));
+            return by_unit(self.speller(lang(0)).map_or_else(|| Rc::from([]), |sp| sp.errors(&text.chars)), &text);
         }
         let mut all = Vec::new();
         let mut a = 0;
@@ -381,17 +428,47 @@ impl Spellers {
             }
             a = b;
         }
-        Some(by_unit(all.into(), &text))
+        by_unit(all.into(), &text)
     }
 
-    /// The misspellings in every story.
-    // shortcut: every paragraph is checked per call (results are cached per paragraph text); count per changed
-    // paragraph if state builds show it on large documents.
+    /// The misspellings in every story: the paragraphs touched since the last count are checked again.
     pub fn count(&self, e: &Editor, default: &str) -> u32 {
         if !self.enabled || self.by_language.is_empty() {
             return 0;
         }
-        searched_paras(e).into_iter().filter_map(|p| self.errors(e, p, default)).map(|errs| errs.len() as u32).sum()
+        let (signature, view, sub_template) = (self.signature(), e.document().review.view, e.editing_sub_template());
+        let mut t = self.tally.borrow_mut();
+        let same = t.signature == signature && t.language == default && t.view == view && t.sub_template == sub_template;
+        match e.touched_since(t.mark).filter(|_| same) {
+            Some(paras) => {
+                let mut seen = HashSet::new();
+                for &p in paras.iter().filter(|p| seen.insert(**p)) {
+                    let old = t.by_para.remove(&p).unwrap_or(0);
+                    t.total -= old;
+                    if searched(e, p, sub_template)
+                        && let Some(errs) = self.errors(e, p, default)
+                    {
+                        t.by_para.insert(p, errs.len() as u32);
+                        t.total += errs.len() as u32;
+                    }
+                }
+            }
+            None => {
+                t.by_para.clear();
+                for p in searched_paras(e) {
+                    if let Some(errs) = self.errors(e, p, default) {
+                        t.by_para.insert(p, errs.len() as u32);
+                    }
+                }
+                t.total = t.by_para.values().sum();
+                (t.signature, t.view, t.sub_template) = (signature, view, sub_template);
+                if t.language != default {
+                    t.language = default.to_string();
+                }
+            }
+        }
+        t.mark = e.edit_mark();
+        t.total
     }
 
     /// The misspelling the selection is on (within one paragraph).

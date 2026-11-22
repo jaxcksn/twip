@@ -199,7 +199,7 @@ impl Session {
         for c in &self.field_setup {
             self.editor.execute(c.clone(), &fonts);
         }
-        self.services.document_replaced(self.editor.document());
+        self.services.document_replaced();
         self.editor.set_author(&self.author.name, self.author.identity.clone());
         if self.track_changes {
             self.editor.set_tracking(true);
@@ -226,7 +226,7 @@ impl Session {
         self.emit(Event::StateChanged(self.state.clone()));
         for e in events {
             let review = match &e {
-                Event::DocumentChanged(record) => self.review_events(record, revisions),
+                Event::DocumentChanged(record) => crate::prof::time("session:review", || self.review_events(record, revisions)),
                 _ => Vec::new(),
             };
             self.emit(e);

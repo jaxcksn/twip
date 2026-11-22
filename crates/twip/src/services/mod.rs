@@ -23,10 +23,8 @@ pub struct Services {
     pub said: Vec<(crate::api::services::AnnouncementKind, String)>,
     /// The kinds of announcements the application turned off.
     pub silenced: Vec<crate::api::services::AnnouncementKind>,
-    /// The revision count at a document revision, with the sub-template then edited.
-    pub revision_count: Option<((u64, Option<u32>), u32)>,
-    /// The comments as `commentsChanged` last reported them.
-    pub comments_seen: crate::docx::review::Comments,
+    /// The revision count as last counted.
+    pub revision_count: Option<RevisionCount>,
     /// The visible comments' anchors as `commentAnchors` last reported them (kept over an open, so the host hears
     /// that the last document's are gone).
     pub anchors: Vec<crate::api::review::CommentAnchor>,
@@ -47,12 +45,22 @@ impl Services {
 
     /// Another document is open: what was reported about the last one goes, but for the anchors the host still
     /// shows.
-    pub fn document_replaced(&mut self, doc: &crate::docx::Document) {
+    pub fn document_replaced(&mut self) {
         self.revision_count = None;
-        self.comments_seen = doc.comments.clone();
         self.announcer = a11y::Announcer::default();
         self.tree_cache = a11y::TreeCache::default();
     }
+}
+
+/// The revision count, and when it was counted.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RevisionCount {
+    /// The marks' generations ([`crate::editing::Editor::revision_marks`]).
+    pub marks: (u64, u64),
+    /// The sub-template being edited.
+    pub sub_template: Option<u32>,
+    /// The count.
+    pub n: u32,
 }
 
 /// The page (from 1) each laid-out paragraph starts on. Pages not laid out yet aren't looked at.

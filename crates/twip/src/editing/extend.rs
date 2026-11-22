@@ -103,7 +103,9 @@ impl Editor {
         let mut out = Vec::new();
         let mut inside = false;
         let n = self.nav().pages.len();
-        'pages: for page in 0..n {
+        // From the page before the earlier end's: a position at a line's end also starts the next line.
+        let first = [anchor, focus].into_iter().filter_map(|p| self.nav().line_of(p).map(|l| l.page)).min().unwrap_or(0);
+        'pages: for page in first.saturating_sub(1)..n {
             let Some(geo) = self.pages.page(page, &self.index) else { continue };
             let parts = geo
                 .lines
@@ -138,8 +140,35 @@ impl Editor {
         out
     }
 
-    pub(super) fn block_text(&mut self) -> String {
+    /// The block's text, a line a piece, cut to its first `limit` characters, and whether that is all of it. Each
+    /// paragraph is read once.
+    pub(super) fn block_text(&mut self, limit: usize) -> (String, bool) {
         let pieces = self.block_pieces();
-        pieces.iter().map(|(_, _, para, a, b)| self.read_text(*para, *a, *b)).collect::<Vec<_>>().join("\n")
+        let view = self.doc.review.view;
+        let (mut out, mut chars, mut first) = (String::new(), 0usize, true);
+        let mut cur: Option<(crate::layout::ParaId, super::text::Seen)> = None;
+        for &(_, _, para, a, b) in &pieces {
+            if !matches!(&cur, Some((p, _)) if *p == para) {
+                let Some(p) = self.index.para(&self.doc, para) else { continue };
+                cur = Some((para, crate::prof::time("block:paragraph", || super::seen_text(p, view))));
+            }
+            let Some((_, seen)) = &cur else { continue };
+            let (lo, hi) = (seen.units.partition_point(|&u| u < a.0), seen.units.partition_point(|&u| u < b.0));
+            if !first {
+                if chars == limit {
+                    return (out, false);
+                }
+                out.push('\n');
+                chars += 1;
+            }
+            first = false;
+            let take = (hi - lo).min(limit - chars);
+            out.extend(seen.chars[lo..lo + take].iter().copied().map(super::plain_char));
+            chars += take;
+            if take < hi - lo {
+                return (out, false);
+            }
+        }
+        (out, true)
     }
 }

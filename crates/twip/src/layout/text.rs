@@ -9,7 +9,7 @@ use crate::docx::props::VertAlign;
 use crate::docx::review::{MarkupView, run_in};
 use crate::font::{Face, Fonts, Glyph};
 
-use super::cache::{CacheKey, cached};
+use super::cache::{CacheKey, cached_refreshed};
 use super::env::TextEnv;
 use super::ids::{ParaId, Unit};
 use super::job::{Memos, Yield};
@@ -132,7 +132,7 @@ pub struct Piece {
     pub natural: Option<f64>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ShapedPara {
     pub pieces: Box<[Piece]>,
     pub styles: Box<[PieceStyle]>,
@@ -1712,8 +1712,10 @@ impl CacheKey for ShapeKey {
         h.finish()
     }
 
+    /// Text box stories aren't compared: shaping only carries them, and a hit gets the paragraph's
+    /// ([`with_stories_of`]).
     fn matches(&self, p: &ShapeProbe) -> bool {
-        self.fonts == p.fonts && self.space == *p.space && same_para(&self.para, p.para)
+        self.fonts == p.fonts && self.space == *p.space && same_shaping(&self.para, p.para)
     }
 
     fn from_probe(p: &ShapeProbe) -> ShapeKey {
@@ -1721,7 +1723,22 @@ impl CacheKey for ShapeKey {
     }
 }
 
+/// [`same_para`] but for the stories of floats and inline shapes.
+fn same_shaping(a: &Paragraph, b: &Paragraph) -> bool {
+    let inline = |x: &Inline, y: &Inline| match (x, y) {
+        (Inline::Float(f, r), Inline::Float(g, s)) => r == s && f.same_but_story(g),
+        (Inline::Picture(f, r), Inline::Picture(g, s)) => r == s && f.same_but_story(g),
+        _ => x == y,
+    };
+    a.inlines.len() == b.inlines.len() && same_props(a, b) && a.inlines.iter().zip(&b.inlines).all(|(x, y)| inline(x, y))
+}
+
 pub fn same_para(a: &Paragraph, b: &Paragraph) -> bool {
+    same_props(a, b) && a.inlines == b.inlines
+}
+
+/// The identity, style, mark and list label shaping reads.
+fn same_props(a: &Paragraph, b: &Paragraph) -> bool {
     let run = |x: &Run, y: &Run| Rc::ptr_eq(x, y) || **x == **y;
     a.id == b.id
         && (Rc::ptr_eq(&a.style, &b.style) || *a.style == *b.style)
@@ -1733,12 +1750,66 @@ pub fn same_para(a: &Paragraph, b: &Paragraph) -> bool {
             }
             _ => false,
         }
-        && a.inlines == b.inlines
 }
 
 pub fn shape(para: &Paragraph, space: &ShapeSpace, fonts: &Fonts, memos: &mut Memos) -> Result<Rc<ShapedPara>, Yield> {
     let probe = ShapeProbe { para, space, fonts: fonts.revision() };
-    cached(memos, |c| &mut c.shaped, probe, ShapedPara::bytes, |m| shape_uncached(para, space, fonts, m))
+    let bytes = |s: &ShapedPara| s.bytes() + key_bytes(&para.inlines);
+    let refresh = |s: &ShapedPara| with_stories_of(s, para, space);
+    cached_refreshed(memos, |c| &mut c.shaped, probe, bytes, refresh, |m| shape_uncached(para, space, fonts, m))
+}
+
+/// About what a key's copy of `inlines` holds, text box stories included.
+fn key_bytes(inlines: &[Inline]) -> usize {
+    fn blocks(b: &[Block]) -> usize {
+        b.iter()
+            .map(|b| match b {
+                Block::Para(p) => key_bytes(&p.inlines),
+                Block::Table(t) => t.rows.iter().flat_map(|r| &r.cells).map(|c| blocks(&c.blocks)).sum(),
+            })
+            .sum()
+    }
+    inlines
+        .iter()
+        .map(|i| {
+            let own = match i {
+                Inline::Text(t, _) => t.len(),
+                _ => 0,
+            };
+            std::mem::size_of::<Inline>() + own + i.story().map_or(0, |(_, tb)| blocks(&tb.blocks))
+        })
+        .sum()
+}
+
+/// `shaped` with the text box stories its objects carry as `para` has them; `None` when they are.
+fn with_stories_of(shaped: &ShapedPara, para: &Paragraph, space: &ShapeSpace) -> Option<ShapedPara> {
+    let stories: Vec<(u64, &TextBox, &Inline)> = para.inlines.iter().filter_map(|i| i.story().map(|(id, tb)| (id, tb, i))).collect();
+    let mut next = 0;
+    let mut find = |id: u64| {
+        let k = stories[next..].iter().position(|s| s.0 == id)? + next;
+        next = k + 1;
+        Some(stories[k])
+    };
+    let mut objects: Option<Vec<Object>> = None;
+    for (k, o) in shaped.objects.iter().enumerate() {
+        let fresh = match o {
+            Object::Float(f) if f.text_box.is_some() && !space.float.as_ref().is_some_and(|p| p.id == f.id) => match find(f.id) {
+                Some((_, tb, Inline::Float(g, _))) if f.text_box.as_ref() != Some(tb) => Some(Object::Float(Rc::new((**g).clone()))),
+                _ => None,
+            },
+            Object::Picture(pic) => pic.text.as_ref().and_then(|t| match find(t.id) {
+                Some((id, tb, _)) if t.text_box != *tb => {
+                    Some(Object::Picture(Picture { text: Some(Box::new(InlineText { id, text_box: tb.clone() })), ..pic.clone() }))
+                }
+                _ => None,
+            }),
+            _ => None,
+        };
+        if let Some(fresh) = fresh {
+            objects.get_or_insert_with(|| shaped.objects.to_vec())[k] = fresh;
+        }
+    }
+    Some(ShapedPara { objects: objects?.into(), ..shaped.clone() })
 }
 
 pub fn shape_uncached(para: &Paragraph, space: &ShapeSpace, fonts: &Fonts, memos: &mut Memos) -> Result<ShapedPara, Yield> {

@@ -39,7 +39,18 @@ pub enum CommentCmd {
 #[derive(Clone, Debug, Default)]
 pub(super) struct State {
     chosen: Option<(CommentId, Selection)>,
-    ranges: Option<(u64, Rc<Vec<ThreadRange>>)>,
+    known: Option<Known>,
+}
+
+/// The comment marks, the paragraphs they are in and the thread ranges they make, as of an edit mark and a count of
+/// comment edits.
+#[derive(Clone, Debug, Default)]
+struct Known {
+    mark: super::EditMark,
+    comments: u64,
+    marks: HashMap<CommentId, Marks>,
+    by_para: HashMap<ParaId, Vec<CommentId>>,
+    ranges: Rc<Vec<ThreadRange>>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -294,22 +305,58 @@ impl Editor {
             return out;
         }
         for para in self.index.para_ids() {
-            let Some(p) = self.index.para(&self.doc, para) else { continue };
-            let mut at = 0u32;
-            for (k, i) in p.inlines.iter().enumerate() {
-                if let Some((id, kind)) = marker(i) {
-                    let m = Some(Mark { para, inline: k, unit: Unit(at) });
-                    let e = out.entry(id).or_default();
-                    match kind {
-                        Which::Start => e.start = m,
-                        Which::End => e.end = m,
-                        Which::Reference => e.reference = m,
-                    }
-                }
-                at += i.units() as u32;
-            }
+            self.para_marks(para, &mut out);
         }
         out
+    }
+
+    /// Adds the marks in `para` to `out`; whether it has any.
+    fn para_marks(&self, para: ParaId, out: &mut HashMap<CommentId, Marks>) -> bool {
+        let Some(p) = self.index.para(&self.doc, para) else { return false };
+        let mut at = 0u32;
+        let mut any = false;
+        for (k, i) in p.inlines.iter().enumerate() {
+            if let Some((id, kind)) = marker(i) {
+                let m = Some(Mark { para, inline: k, unit: Unit(at) });
+                let e = out.entry(id).or_default();
+                match kind {
+                    Which::Start => e.start = m,
+                    Which::End => e.end = m,
+                    Which::Reference => e.reference = m,
+                }
+                any = true;
+            }
+            at += i.units() as u32;
+        }
+        any
+    }
+
+    /// The comment marks known before, with those in the paragraphs touched since read again; `None` when the touched
+    /// paragraphs are no longer known. Whether any mark moved, came or went.
+    fn update_marks(&self, known: &mut Known) -> Option<bool> {
+        let touched = self.touched.since(known.mark)?;
+        let mut seen = std::collections::HashSet::new();
+        let mut moved = false;
+        for &p in touched.iter().filter(|p| seen.insert(**p)) {
+            for id in known.by_para.remove(&p).unwrap_or_default() {
+                let Some(m) = known.marks.get_mut(&id) else { continue };
+                for slot in [&mut m.start, &mut m.end, &mut m.reference] {
+                    if slot.is_some_and(|x| x.para == p) {
+                        *slot = None;
+                    }
+                }
+                if m.start.is_none() && m.end.is_none() && m.reference.is_none() {
+                    known.marks.remove(&id);
+                }
+                moved = true;
+            }
+            if self.para_marks(p, &mut known.marks) {
+                let ids = self.index.para(&self.doc, p).into_iter().flat_map(|q| q.inlines.iter().filter_map(marker)).map(|(id, _)| id);
+                known.by_para.insert(p, ids.collect());
+                moved = true;
+            }
+        }
+        Some(moved)
     }
 
     fn mark_position(&self, m: Mark) -> Option<Position> {
@@ -329,27 +376,43 @@ impl Editor {
         if a.story == b.story { self.index.cmp(a, b) } else { rank(a.story).cmp(&rank(b.story)) }
     }
 
+    /// The threads' ranges in story order: kept while edits touch no paragraph with comment marks and no comment.
     fn thread_ranges(&mut self) -> Rc<Vec<ThreadRange>> {
-        if let Some((rev, r)) = &self.comments.ranges
-            && *rev == self.generation
-        {
-            return r.clone();
+        if self.doc.comments.by_id.is_empty() {
+            self.comments.known = None;
+            return Rc::default();
         }
-        let marks = self.comment_marks();
-        let mut v: Vec<ThreadRange> = self
-            .doc
-            .comments
-            .threads()
-            .into_iter()
-            .filter_map(|(root, _)| {
-                let m = marks.get(&root)?;
-                Some(ThreadRange { root, start: self.mark_position(m.start?)?, end: self.mark_position(m.end?)? })
-            })
-            .collect();
-        v.sort_by(|a, b| self.story_order(&a.start, &b.start));
-        let v = Rc::new(v);
-        self.comments.ranges = Some((self.generation, v.clone()));
-        v
+        let mut known = self.comments.known.take().unwrap_or_default();
+        let moved = self.update_marks(&mut known).unwrap_or_else(|| {
+            known.marks = self.comment_marks();
+            known.by_para.clear();
+            for (&id, m) in &known.marks {
+                for at in [m.start, m.end, m.reference].into_iter().flatten() {
+                    known.by_para.entry(at.para).or_default().push(id);
+                }
+            }
+            true
+        });
+        if moved || known.comments != self.comment_edits {
+            known.ranges = crate::prof::time("comments:ranges", || {
+                let mut v: Vec<ThreadRange> = self
+                    .doc
+                    .comments
+                    .threads()
+                    .into_iter()
+                    .filter_map(|(root, _)| {
+                        let m = known.marks.get(&root)?;
+                        Some(ThreadRange { root, start: self.mark_position(m.start?)?, end: self.mark_position(m.end?)? })
+                    })
+                    .collect();
+                v.sort_by(|a, b| self.story_order(&a.start, &b.start));
+                Rc::new(v)
+            });
+        }
+        (known.mark, known.comments) = (self.touched.mark(), self.comment_edits);
+        let ranges = known.ranges.clone();
+        self.comments.known = Some(known);
+        ranges
     }
 
     pub(in crate::editing) fn comment_range(&mut self, id: CommentId) -> Option<(Position, Position)> {

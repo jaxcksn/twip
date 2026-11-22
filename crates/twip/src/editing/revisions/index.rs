@@ -125,6 +125,11 @@ impl List {
     }
 }
 
+/// Whether `p` holds a revision mark: on a run, on its mark or on its properties.
+pub fn holds_marks(p: &Paragraph) -> bool {
+    p.style.change.is_some() || !p.mark.rev.is_empty() || p.inlines.iter().filter_map(Inline::run).any(|r| !r.rev.is_empty())
+}
+
 pub fn revisions(doc: &Document, idx: &DocIndex) -> Vec<Revision> {
     revisions_of(&found(doc, idx).items)
 }

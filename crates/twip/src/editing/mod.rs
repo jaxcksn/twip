@@ -71,6 +71,7 @@ pub mod table_format;
 mod table_handles;
 pub mod tables;
 pub mod text;
+mod touched;
 pub mod view;
 
 #[cfg(test)]
@@ -98,6 +99,7 @@ use position::{Affinity, Place, Position, StoryId};
 use selection::{Granularity, Selection};
 use step::{Map, Step, StepError, para_len, run_of};
 use text::UnitText;
+pub use touched::EditMark;
 use view::{CaretView, PageStack, SelectionView, View};
 
 pub const IDLE_BUDGET: Duration = Duration::from_millis(4);
@@ -193,6 +195,12 @@ pub struct Editor {
     drop: Option<Position>,
     field_labels: HashMap<String, String>,
     sub_template_rules: Vec<sub_templates::Rule>,
+    touched: touched::Touched,
+    /// Counts the transactions that touched revision marks, tables, sections or sub-templates, and those that
+    /// touched paragraphs that hold marks, are in cells or went.
+    revision_marks: (u64, u64),
+    /// Counts the transactions that touched comments or their marks.
+    comment_edits: u64,
     /// The application's field types, upper case.
     application_field_types: Vec<String>,
     /// Tag prefixes whose picture controls keep their pictures.
@@ -365,6 +373,9 @@ impl Editor {
             pending_images: Vec::new(),
             editable_cache: Default::default(),
             perm_generation: 0,
+            touched: touched::Touched::new(),
+            revision_marks: (0, 0),
+            comment_edits: 0,
             drop: None,
             field_labels: HashMap::new(),
             sub_template_rules: Vec::new(),
@@ -426,6 +437,24 @@ impl Editor {
         self.revision
     }
 
+    /// Where the log of touched paragraphs is now.
+    pub fn edit_mark(&self) -> EditMark {
+        self.touched.mark()
+    }
+
+    /// The paragraphs edited, or whose text was otherwise changed, since `mark` (repeats included); `None` when the
+    /// log no longer reaches back to it.
+    pub fn touched_since(&self, mark: EditMark) -> Option<&[ParaId]> {
+        self.touched.since(mark)
+    }
+
+    /// Two counts: the first changes whenever a transaction touches revision marks, tables, sections or
+    /// sub-templates (until then, a document without revisions has none); the second whenever one touches what can
+    /// join or part revisions, paragraphs that hold marks, are in cells or went (until then, the revisions are as many).
+    pub fn revision_marks(&self) -> (u64, u64) {
+        self.revision_marks
+    }
+
     pub fn seq_applied(&self) -> u64 {
         self.seq
     }
@@ -459,6 +488,12 @@ impl Editor {
         Rc::make_mut(&mut self.doc.review.palette).chosen.insert(author, color);
         self.relayout_review();
         Outcome::Moved
+    }
+
+    /// The document changed outside steps, anywhere: what was worked out from the edits so far starts again.
+    fn changed_everywhere(&mut self) {
+        self.touched.everything();
+        self.revision_marks.0 += 1;
     }
 
     fn relayout_review(&mut self) {
@@ -1066,6 +1101,25 @@ impl Editor {
     fn effects(&mut self, tx: &mut Tx) {
         let hints: Vec<Option<Change>> = tx.hints.iter().zip(&tx.undo).filter(|(_, s)| s.lays_out()).map(|(h, _)| *h).collect();
         crate::prof::time("edit:relayout", || self.relayout(hints));
+        self.touched.note(tx.targets.paras.iter().copied());
+        // Table, row and cell marks, and a section's or sub-template's, aren't in the targets.
+        if !tx.targets.revisions.is_empty()
+            || !tx.targets.tables.is_empty()
+            || tx.undo.iter().any(|s| matches!(s, Step::SectionBreak { .. } | Step::BuildingBlock { .. }))
+        {
+            self.revision_marks.0 += 1;
+        }
+        // A paragraph outside cells without marks parts the marks around it, edited or not.
+        let regroups = tx.targets.paras.iter().any(|&p| match self.index.para_slot(p) {
+            Some(s) => matches!(s.container, Container::Cell { .. }) || self.index.para(&self.doc, p).is_some_and(revisions::index::holds_marks),
+            None => true,
+        });
+        if regroups {
+            self.revision_marks.1 += 1;
+        }
+        if !tx.targets.comments.is_empty() {
+            self.comment_edits += 1;
+        }
         let maps = std::mem::take(&mut tx.maps);
         self.map_marks(&maps);
         if !matches!(tx.origin, Origin::Undo | Origin::Redo) {
@@ -3234,6 +3288,7 @@ impl Editor {
 
     /// Units `a..b` of a paragraph as they read: what the markup view shows without hidden text, fields as their
     /// results; breaks as line ends and objects as spaces.
+    #[cfg(test)]
     pub(crate) fn read_text(&self, para: ParaId, a: Unit, b: Unit) -> String {
         let Some(p) = self.index.para(&self.doc, para) else { return String::new() };
         seen_text(p, self.doc.review.view).text_in(a, b).map(plain_char).collect()
@@ -3248,14 +3303,7 @@ impl Editor {
     /// paragraphs' texts found so far, for selections in turn.
     pub(super) fn text_within(&mut self, limit: usize, texts: &mut HashMap<ParaId, text::Seen>) -> (String, bool) {
         if let Selection::Block { .. } = self.selection {
-            let mut t = self.block_text();
-            return match t.char_indices().nth(limit) {
-                Some((k, _)) => {
-                    t.truncate(k);
-                    (t, false)
-                }
-                None => (t, true),
-            };
+            return self.block_text(limit);
         }
         let Some((a, b)) = self.selection.ordered(&self.index) else { return (String::new(), true) };
         let mut out = String::new();

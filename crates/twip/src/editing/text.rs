@@ -96,6 +96,24 @@ impl Seen {
     }
 }
 
+/// The characters a paragraph's units stand for, one a unit.
+pub fn unit_chars(p: &Paragraph) -> impl Iterator<Item = char> + '_ {
+    p.inlines.iter().flat_map(inline_chars)
+}
+
+fn inline_chars(i: &Inline) -> impl Iterator<Item = char> + '_ {
+    let (text, one) = match i {
+        Inline::Text(s, _) => (s.as_str(), None),
+        Inline::Tab(_) | Inline::PTab(..) => ("", Some('\t')),
+        Inline::Break(k, _) if k.is_line() => ("", Some('\u{2028}')),
+        Inline::Break(..) => ("", Some('\u{c}')),
+        Inline::Sym { ch, .. } => ("", Some(*ch)),
+        i if i.units() == 1 => ("", Some(OBJECT)),
+        _ => ("", None),
+    };
+    text.chars().chain(one)
+}
+
 pub struct UnitText {
     pub text: String,
     bytes: Vec<usize>,
@@ -134,15 +152,7 @@ impl UnitText {
                 hidden.push(h);
                 text.push(if blank { ' ' } else { c });
             };
-            match i {
-                Inline::Text(s, _) => s.chars().for_each(|c| push(c, &mut text)),
-                Inline::Tab(_) | Inline::PTab(..) => push('\t', &mut text),
-                Inline::Break(k, _) if k.is_line() => push('\u{2028}', &mut text),
-                Inline::Break(..) => push('\u{c}', &mut text),
-                Inline::Sym { ch, .. } => push(*ch, &mut text),
-                i if i.units() == 1 => push(OBJECT, &mut text),
-                _ => {}
-            }
+            inline_chars(i).for_each(|c| push(c, &mut text));
         }
         bytes.push(text.len());
         let mut atoms: Vec<(Unit, Unit)> = Vec::new();
@@ -258,32 +268,41 @@ impl UnitText {
         if self.is_boundary(u) { u } else { self.prev_raw(u) }
     }
 
+    /// The words, spaces and other pieces in order; a field shown as its result is one piece.
     fn words(&self) -> Vec<(Unit, Unit, Class)> {
-        let mut out = Vec::new();
+        let mut out = Vec::with_capacity(self.atoms.len());
+        let mut atoms = self.atoms.iter().copied().peekable();
+        let mut atom: Option<(Unit, Unit)> = None;
+        let mut push = |mut w: (Unit, Unit, Class), out: &mut Vec<(Unit, Unit, Class)>| {
+            while let Some(a) = atoms.next_if(|a| a.0 <= w.0) {
+                out.push((a.0, a.1, Class::Other));
+                atom = Some(a);
+            }
+            if !atom.is_some_and(|(a, b)| a <= w.0 && w.1 <= b) {
+                // Hidden text reads as space.
+                if w.0 < w.1 && (w.0.0..w.1.0).all(|u| self.is_hidden(Unit(u))) {
+                    w.2 = Class::Space;
+                }
+                out.push(w);
+            }
+        };
         for (b, w) in self.text.split_word_bound_indices() {
-            let chars: Vec<(usize, char)> = w.char_indices().collect();
             let mut start = 0;
-            for k in 1..chars.len().saturating_sub(1) {
-                let (i, c) = chars[k];
-                if matches!(c, '.' | ':') && chars[k - 1].1.is_alphabetic() && chars[k + 1].1.is_alphabetic() {
+            let mut chars = w.char_indices().peekable();
+            let mut prev: Option<char> = None;
+            while let Some((i, c)) = chars.next() {
+                let next = chars.peek().map(|n| n.1);
+                if matches!(c, '.' | ':') && prev.is_some_and(char::is_alphabetic) && next.is_some_and(char::is_alphabetic) {
                     for (x, y) in [(start, i), (i, i + c.len_utf8())] {
-                        out.push((self.unit_at_byte(b + x), self.unit_at_byte(b + y), class(&w[x..y])));
+                        push((self.unit_at_byte(b + x), self.unit_at_byte(b + y), class(&w[x..y])), &mut out);
                     }
                     start = i + c.len_utf8();
                 }
+                prev = Some(c);
             }
-            out.push((self.unit_at_byte(b + start), self.unit_at_byte(b + w.len()), class(&w[start..])));
+            push((self.unit_at_byte(b + start), self.unit_at_byte(b + w.len()), class(&w[start..])), &mut out);
         }
-        for w in &mut out {
-            if w.0 < w.1 && (w.0.0..w.1.0).all(|u| self.is_hidden(Unit(u))) {
-                w.2 = Class::Space;
-            }
-        }
-        for &(a, b) in &self.atoms {
-            out.retain(|w| !(a <= w.0 && w.1 <= b));
-            let k = out.partition_point(|w| w.0 < a);
-            out.insert(k, (a, b, Class::Other));
-        }
+        out.extend(atoms.map(|(a, b)| (a, b, Class::Other)));
         out
     }
 

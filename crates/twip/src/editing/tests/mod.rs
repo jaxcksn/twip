@@ -11,6 +11,7 @@ mod content_controls;
 mod cursors;
 mod custom_lists;
 mod depth;
+mod edit_cost;
 mod empty_stories;
 mod field_control_edits;
 mod field_shading;

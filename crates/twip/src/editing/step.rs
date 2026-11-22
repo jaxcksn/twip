@@ -698,6 +698,7 @@ impl Step {
                     return Err(StepError::OutOfRange);
                 }
                 let added = units_of(&with);
+                let indexed = super::index::indexes(&with);
                 let marker = |i: &&Inline| i.units() == 0 && !matches!(i, Inline::Text(..));
                 let lead = with.iter().take_while(marker).count();
                 let trail = if lead == with.len() { 0 } else { with.iter().rev().take_while(marker).count() };
@@ -705,7 +706,7 @@ impl Step {
                 let parts = shift_parts(p, &range, added, edges.parts.as_deref());
                 let under = if added == 0 { after } else { 0 };
                 let new_end = Unit(range.start.0 + added);
-                idx.replaced_inlines(doc, para, &removed);
+                idx.replaced_inlines(doc, para, &removed, indexed);
                 Ok(Applied {
                     inverse: Step::Text {
                         para,
@@ -763,16 +764,18 @@ impl Step {
                     return Err(StepError::OutOfRange);
                 }
                 let blocks = idx.blocks_mut(doc, a.container).ok_or(StepError::Missing)?;
-                let Block::Para(tail) = blocks.remove(b.block) else { return Err(StepError::Missing) };
-                let inlines = tail.inlines.clone();
+                let tail = blocks.remove(b.block);
+                let Block::Para(t) = &tail else { return Err(StepError::Missing) };
+                let (inlines, indexed) = (t.inlines.clone(), super::index::indexes(&t.inlines));
                 let p = match blocks.get_mut(a.block) {
                     Some(Block::Para(p)) => p,
                     _ => return Err(StepError::Missing),
                 };
                 let at = para_len(p);
                 let (kept, _) = splice(p, at..at, &Edges::default(), inlines);
-                idx.replaced_blocks(doc, a.container, &[Block::Para(tail.clone())]);
-                idx.replaced_inlines(doc, first, &[]);
+                idx.replaced_blocks(doc, a.container, std::slice::from_ref(&tail));
+                idx.replaced_inlines(doc, first, &[], indexed);
+                let Block::Para(tail) = tail else { return Err(StepError::Missing) };
                 let hint = span_hint(idx, a.container, a.block, 2, 1);
                 Ok(Applied { inverse: Step::Split { para: first, at, second: tail, kept }, map: Map::Join { first, second, offset: at }, hint })
             }
@@ -801,8 +804,9 @@ impl Step {
                 if units_of(&inlines) != units_of(&p.inlines) {
                     return Err(StepError::OutOfRange);
                 }
+                let indexed = super::index::indexes(&inlines);
                 let old = std::mem::replace(&mut p.inlines, inlines);
-                idx.replaced_inlines(doc, para, &old);
+                idx.replaced_inlines(doc, para, &old, indexed);
                 Ok(Applied { inverse: Step::Restyle { para, inlines: old }, map: Map::Same, hint: para_hint(idx, para, 0) })
             }
             Step::Para { para, style, mark, list } => {
@@ -1141,7 +1145,7 @@ impl Step {
                     r.cells.iter().flat_map(|c| c.blocks.iter()).for_each(|b| ids(b, &mut paras, &mut tables));
                 }
                 paras.retain(|p| !kept.contains(p));
-                idx.replaced_rows(doc, table, &removed);
+                idx.replaced_rows(doc, table, range.start, added, &removed);
                 let slot = idx.table_slot(table).ok_or(StepError::Missing)?;
                 let fallback = first_position(doc, idx, slot.container, slot.block);
                 let hint = idx.top_block(slot.container, slot.block).map(|(section, b, row)| Change {
