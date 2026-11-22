@@ -345,6 +345,15 @@ impl Props {
             .and_then(|x| cx.parse(x, |text, el| attr_list(&text[el.range().start..el.first_child().map_or(el.range().end, |c| c.range().start)])))
             .unwrap_or_default();
         for (name, value) in set {
+            // Its value in characters or lines, which Word takes over it
+            let units = match (local, *name) {
+                ("ind", "left" | "start" | "right" | "end" | "firstLine" | "hanging") => Some("Chars"),
+                ("spacing", "before" | "after") => Some("Lines"),
+                _ => None,
+            };
+            if let Some(units) = units {
+                attrs.retain(|(q, _)| q.rsplit(':').next().and_then(|l| l.strip_prefix(*name)) != Some(units));
+            }
             let at = attrs.iter().position(|(q, _)| q.rsplit(':').next() == Some(name));
             match (at, value) {
                 (Some(i), Some(v)) => attrs[i].1 = esc(v),
@@ -357,6 +366,21 @@ impl Props {
         }
         let a: String = attrs.iter().map(|(q, v)| format!(" {q}=\"{v}\"")).collect();
         self.set(local, format!("<{w}{local}{a}/>"));
+    }
+
+    /// Sets attribute `local` (in whatever prefix it has, else the element's) of the element itself.
+    pub fn set_own(&mut self, local: &str, value: &str) {
+        let name: String = self.open.trim_start_matches('<').chars().take_while(|c| !c.is_whitespace() && *c != '>' && *c != '/').collect();
+        let mut attrs = attr_list(&self.open);
+        match attrs.iter_mut().find(|(q, _)| q.rsplit(':').next() == Some(local)) {
+            Some(a) => a.1 = esc(value),
+            None => {
+                let prefix = name.rsplit_once(':').map_or(String::new(), |(p, _)| format!("{p}:"));
+                attrs.push((format!("{prefix}{local}"), esc(value)));
+            }
+        }
+        let a: String = attrs.iter().map(|(q, v)| format!(" {q}=\"{v}\"")).collect();
+        self.open = format!("<{name}{a}>");
     }
 
     /// The element, or nothing when it has no properties left.

@@ -135,7 +135,8 @@ fn custom_props(dom: &roxmltree::Document) -> Vec<(String, Value, std::ops::Rang
         let value = match v.tag_name().name() {
             "bool" => Value::Bool(matches!(t.as_str(), "true" | "1")),
             "i1" | "i2" | "i4" | "i8" | "int" | "ui1" | "ui2" | "ui4" | "ui8" | "uint" | "r4" | "r8" | "decimal" => {
-                t.parse().map_or(Value::Text(t), Value::Number)
+                // `INF` and `NaN` as their text: a number is finite.
+                t.parse().ok().filter(|n: &f64| n.is_finite()).map_or(Value::Text(t), Value::Number)
             }
             "filetime" | "date" => Value::Date(t),
             _ => Value::Text(t),
@@ -324,5 +325,14 @@ mod tests {
         q.custom[1].1 = Value::Text("Beta".into());
         let xml = custom_xml(Some(custom), &q);
         assert!(xml.contains(r#"pid="2" name="Tags"><vt:vector"#) && xml.contains("<vt:lpwstr>Beta</vt:lpwstr>"), "{xml}");
+    }
+
+    #[test]
+    fn a_number_that_isnt_finite_reads_as_its_text_and_writes_back_as_read() {
+        let custom = r#"<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/custom-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"><property fmtid="{D5CDD505-2E9C-101B-9397-08002B2CF9AE}" pid="2" name="N"><vt:r8>NaN</vt:r8></property></Properties>"#;
+        let p = read(None, None, Some(custom));
+        assert_eq!(p.custom, vec![("N".to_string(), Value::Text("NaN".into()))]);
+        assert_eq!(p, read(None, None, Some(custom)), "the same read twice is equal");
+        assert!(custom_xml(Some(custom), &p).contains("<vt:r8>NaN</vt:r8>"));
     }
 }

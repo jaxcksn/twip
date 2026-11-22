@@ -123,6 +123,8 @@ pub struct Editor {
     selection: Selection,
     goal_x: Option<f64>,
     pending: Option<Run>,
+    /// The format painter's formatting: a run's `w:rPr`, and a paragraph's `w:pPr` when it took the paragraph's too.
+    painter: Option<(Option<String>, Option<Option<String>>)>,
     correction: Option<Correction>,
     drag: Option<Drag>,
     pages: Pages,
@@ -299,6 +301,7 @@ impl Editor {
             selection: Selection::Caret(Position::text(StoryId::Body, ParaId(0), Unit(0))),
             goal_x: None,
             pending: None,
+            painter: None,
             correction: None,
             drag: None,
             pages: Pages::default(),
@@ -954,8 +957,10 @@ impl Editor {
         }
         self.drop_orphan_controls(tx);
         self.drop_orphan_comments(tx);
-        tx.tracked = tracked;
+        // Formatting a style or a list level gives isn't a tracked change of the paragraphs in it.
+        tx.tracked = false;
         crate::prof::time("edit:reresolve", || self.reresolve_stale(tx));
+        tx.tracked = tracked;
         if tx.kept < 0 {
             return Err("a content control that can't be deleted");
         }

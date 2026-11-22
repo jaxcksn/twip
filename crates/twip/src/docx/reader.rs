@@ -1364,7 +1364,9 @@ impl Reader {
         }
         let r = self.res.paragraph(&ParaProps::default(), None);
         let mark = self.run_style(&self.run_props(&r.base, None));
-        let src = self.record.then(|| Rc::new(ParaSrc { ranges: vec![at], segs: Vec::new(), simple: Vec::new(), lossy: false, closing: true }));
+        let src = self
+            .record
+            .then(|| Rc::new(ParaSrc { ranges: vec![at], segs: Vec::new(), simple: Vec::new(), lossy: false, closing: true, joined: Vec::new() }));
         blocks.push(Block::Para(Paragraph {
             style: Rc::new(r.style),
             mark,
@@ -1714,7 +1716,7 @@ impl Reader {
         self.para_no = outer_para;
         let (segs, lossy, simple) =
             (std::mem::replace(&mut self.segs, outer.0), std::mem::replace(&mut self.lossy, outer.1), std::mem::replace(&mut self.simple, outer.2));
-        let src = self.record.then(|| Rc::new(ParaSrc { ranges: vec![n.range()], segs, simple, lossy, closing: false }));
+        let src = self.record.then(|| Rc::new(ParaSrc { ranges: vec![n.range()], segs, simple, lossy, closing: false, joined: Vec::new() }));
         let para = Paragraph { style: para_style, mark: mark.clone(), list, inlines, src, id: next_para_id(), div: None, controls: Vec::new() };
 
         let spec = self.pending_spec.take();
@@ -1726,29 +1728,7 @@ impl Reader {
             // character (a line starting at a vanished mark is the mark's).
             Some(mut prev) => {
                 let at = prev.inlines.iter().map(Inline::units).sum::<usize>() as u32;
-                let mut style = (*para.style).clone();
-                let first = &prev.style;
-                // An empty paragraph before the mark gives nothing, except in compat 15 with `w:specVanish`: its
-                // alignment and indents (the first of a chain of them).
-                if let (0, Some(s)) = (at, &spec) {
-                    (style.ind_left, style.ind_right, style.ind_first, style.jc) = (s.ind_left, s.ind_right, s.ind_first, s.jc);
-                }
-                if at > 0 {
-                    (style.ind_left, style.ind_right, style.ind_first, style.jc) = (first.ind_left, first.ind_right, first.ind_first, first.jc);
-                    (style.space_before, style.before_auto) = (first.space_before, first.before_auto);
-                    style.tabs = first.tabs.clone();
-                    if self.res.styles.compat == Compat::Legacy {
-                        style.joined = first.joined.iter().cloned().chain([(at, para.style.clone())]).collect();
-                    }
-                    (style.border_top, style.border_bottom, style.border_left, style.border_right, style.border_between) = (
-                        first.border_top.clone(),
-                        first.border_bottom.clone(),
-                        first.border_left.clone(),
-                        first.border_right.clone(),
-                        first.border_between.clone(),
-                    );
-                    (style.shading, style.shd) = (first.shading, first.shd.clone());
-                }
+                let style = super::resolve::joined_style(&prev.style, &para.style, at, spec.as_deref(), self.res.styles.compat == Compat::Legacy);
                 prev.inlines.extend(para.inlines);
                 let src = match (prev.src, para.src) {
                     (Some(a), Some(b)) => Some(Rc::new(ParaSrc {
@@ -1757,6 +1737,7 @@ impl Reader {
                         simple: [a.simple.clone(), b.simple.clone()].concat(),
                         lossy: a.lossy || b.lossy,
                         closing: false,
+                        joined: [a.joined.clone(), b.joined.clone()].concat(),
                     })),
                     (a, b) => a.or(b),
                 };
@@ -1778,6 +1759,10 @@ impl Reader {
             let empty = para.inlines.iter().map(Inline::units).sum::<usize>() == 0;
             if spec_vanish && empty && self.res.styles.compat == Compat::Generic {
                 self.pending_spec = Some(spec.unwrap_or_else(|| para.style.clone()));
+            }
+            let end = para.inlines.iter().map(Inline::units).sum::<usize>() as u32;
+            if let Some(src) = para.src.as_mut().and_then(Rc::get_mut) {
+                src.joined.push(JoinedPart { end, ppr: para.style.direct.clone(), spec_vanish });
             }
             para.mark = mark;
             self.pending_hidden = Some(para);
@@ -3060,8 +3045,7 @@ impl Reader {
         let tc_pr = child(cn, "tcPr");
         let mut tcp = base.clone();
         tcp.merge(&TcProps::parse(tc_pr, &self.res.styles.colours));
-        let bv = |b: &Option<Border>| b.clone();
-        Cell {
+        let mut c = Cell {
             width: tcp.width,
             span: tcp.grid_span.unwrap_or(1).max(1) as usize,
             v_merge: match tcp.v_merge {
@@ -3069,26 +3053,27 @@ impl Reader {
                 Some(false) => VMerge::Continue,
                 None => VMerge::None,
             },
-            top: bv(&tcp.borders.top),
-            left: bv(&tcp.borders.left),
-            bottom: bv(&tcp.borders.bottom),
-            right: bv(&tcp.borders.right),
-            shading: tcp.shading.flatten(),
-            hatch: tcp.shd.as_ref().and_then(Shd::hatch),
-            margins: cell_margins(&tcp, tm, unset),
-            v_align: tcp.v_align.clone().unwrap_or_else(|| "top".into()),
-            text_direction: tcp.text_direction.clone().unwrap_or_else(|| "lrTb".into()),
-            no_wrap: tcp.no_wrap.unwrap_or(false),
-            fit_text: tcp.fit_text.unwrap_or(false),
+            top: None,
+            left: None,
+            bottom: None,
+            right: None,
+            shading: None,
+            hatch: None,
+            margins: [0.0; 4],
+            v_align: String::new(),
+            text_direction: String::new(),
+            no_wrap: false,
+            fit_text: false,
             hide_mark: tc_pr.and_then(|p| child(p, "hideMark")).is_some_and(|n| !matches!(attr(n, "val"), Some("0" | "false" | "off"))),
-            diagonals: (tcp.borders.tl2br.is_some() || tcp.borders.tr2bl.is_some())
-                .then(|| Rc::new([tcp.borders.tl2br.clone(), tcp.borders.tr2bl.clone()])),
+            diagonals: None,
             direct: Raw(tc_pr.map(|n| Rc::from(&n.document().input_text()[n.range()]))),
             blocks,
             controls,
             rev,
             ids: cell_ids(cn, tc_pr),
-        }
+        };
+        style_cell(&mut c, &tcp, tm, unset);
+        c
     }
 
     /// A table row: its properties `trp` and exceptions `ex` over the table's `tbl` (`row_tbl` with the exceptions),
@@ -3284,6 +3269,21 @@ fn merged_grid(grids: &[Vec<f64>], rows: &mut [Row], row_table: &[usize], moves:
         r.grid_after = at(k, c + r.grid_after) - end;
     }
     all.windows(2).map(|w| (w[1] - w[0]) as f64 / 20.0).collect()
+}
+
+/// A cell's properties a table style can give, from `tcp` (its own over its region's) and the cell margins `tm` its
+/// row has (`unset` for a side neither sets).
+pub(crate) fn style_cell(c: &mut Cell, tcp: &TcProps, tm: &Margins, unset: f64) {
+    let b = &tcp.borders;
+    (c.top, c.left, c.bottom, c.right) = (b.top.clone(), b.left.clone(), b.bottom.clone(), b.right.clone());
+    c.shading = tcp.shading.flatten();
+    c.hatch = tcp.shd.as_ref().and_then(Shd::hatch);
+    c.margins = cell_margins(tcp, tm, unset);
+    c.v_align = tcp.v_align.clone().unwrap_or_else(|| "top".into());
+    c.text_direction = tcp.text_direction.clone().unwrap_or_else(|| "lrTb".into());
+    c.no_wrap = tcp.no_wrap.unwrap_or(false);
+    c.fit_text = tcp.fit_text.unwrap_or(false);
+    c.diagonals = (b.tl2br.is_some() || b.tr2bl.is_some()).then(|| Rc::new([b.tl2br.clone(), b.tr2bl.clone()]));
 }
 
 fn cell_margins(tcp: &TcProps, tm: &Margins, unset: f64) -> [f64; 4] {

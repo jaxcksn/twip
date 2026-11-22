@@ -280,7 +280,8 @@ pub struct StateFlags {
 impl Editor {
     pub fn format_state(&mut self) -> Option<FormatState> {
         let focus = self.selection.focus();
-        let para_id = focus.and_then(|p| p.para_offset()).map(|(p, _)| p).or_else(|| match self.selection {
+        let cells = matches!(self.selection, Selection::Cells { .. }).then(|| self.selected_ranges().first().map(|r| r.0)).flatten();
+        let para_id = focus.and_then(|p| p.para_offset()).map(|(p, _)| p).or(cells).or_else(|| match self.selection {
             Selection::Object(ObjectRef::Inline { para, .. }) => Some(para),
             Selection::Object(ObjectRef::Floating(f)) => self.index.float_anchor(f),
             _ => None,
@@ -444,6 +445,8 @@ impl Editor {
                 (C::Cut, _) => (editable && selected, (None, None)),
                 (C::Copy, _) => (selected, (None, None)),
                 (C::Paste, _) => (editable, (None, None)),
+                (C::CopyFormatting, _) => (f.is_some(), (None, None)),
+                (C::PasteFormatting, _) => (formatted && self.painter.is_some(), (None, None)),
                 (C::Undo, _) => {
                     (editable && undo_label.is_some(), (None, Some(CommandValue::Text(undo_label.clone().map_or(Tri::Unavailable, Tri::Uniform)))))
                 }

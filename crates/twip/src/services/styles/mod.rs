@@ -97,6 +97,49 @@ pub fn list(doc: &Document, kind: Option<StyleType>, glossary: bool) -> Vec<Styl
             })
         })
         .collect();
+    // The gallery's built-in styles the document doesn't define yet: applying one adds it.
+    let cx = styles.cx();
+    for b in builtin::BUILT_IN.iter().filter(|b| b.quick && !styles.by_id.contains_key(b.id)) {
+        let t = match b.kind {
+            StyleKind::Paragraph => StyleType::Paragraph,
+            StyleKind::Character => StyleType::Character,
+            StyleKind::Table => StyleType::Table,
+            StyleKind::Numbering => StyleType::List,
+        };
+        if kind.is_some_and(|k| k != t) {
+            continue;
+        }
+        let Some(s) = styles.style_from_xml(&builtin::definition(b, &cx.w)) else { continue };
+        let mut base = styles.doc_rpr.clone();
+        base.merge_level(&styles.chain_rpr(s.based_on.as_deref()));
+        base.merge_level(&s.base.rpr);
+        let run = r.run_style(&r.run_props(&base, &RunProps::default()));
+        out.push(StyleInfo {
+            id: StyleId(b.id.to_string()),
+            name: if b.name.chars().any(char::is_uppercase) { b.name.to_string() } else { title_case(b.name) },
+            kind: t,
+            built_in: true,
+            quick: true,
+            priority: b.priority,
+            hidden: false,
+            based_on: s.based_on.clone().filter(|x| styles.by_id.contains_key(x)).map(StyleId),
+            preview: StylePreview {
+                font: run.ascii.clone(),
+                size: Points(run.size),
+                bold: run.bold,
+                italic: run.italic,
+                color: run.color.map_or(AutoOr::Auto, |c| AutoOr::Value(Color(c))),
+            },
+            aliases: Vec::new(),
+            link: None,
+            visibility: match (b.semi_hidden, b.unhide_when_used) {
+                (true, true) => StyleVisibility::HideUntilUsed,
+                (true, false) => StyleVisibility::Hide,
+                (false, _) => StyleVisibility::Show,
+            },
+            locked: false,
+        });
+    }
     out.sort_by(|a, b| (a.priority, &a.name).cmp(&(b.priority, &b.name)));
     out
 }

@@ -523,6 +523,7 @@ pub fn restricts_formatting(id: CommandId) -> bool {
                 | C::AdjustListIndents
                 | C::SetCellShading
                 | C::SetCellBorders
+                | C::PasteFormatting
         )
 }
 

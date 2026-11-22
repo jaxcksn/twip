@@ -781,7 +781,7 @@ pub fn next_para_id() -> u64 {
 }
 
 /// A body paragraph's place in the main part's XML ([`Source::xml`] byte offsets), for lossless saving.
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ParaSrc {
     pub ranges: Vec<std::ops::Range<usize>>,
     /// The elements that produced its units, in order, with how many units each did: `w:t`, `w:tab`, a drawing, a
@@ -794,6 +794,19 @@ pub struct ParaSrc {
     /// Made by the reader to close a story that ends without a paragraph: no element, `ranges[0]` is where its XML
     /// goes, an empty range before the story's end tag or the story's whole element when it is written empty.
     pub closing: bool,
+    /// The paragraphs a vanished mark joined onto this one's start, in order (the last of [`Self::ranges`] is its own).
+    pub joined: Vec<JoinedPart>,
+}
+
+/// A paragraph joined onto the next one's start through its vanished mark, as read.
+#[derive(Clone, Debug, PartialEq)]
+pub struct JoinedPart {
+    /// The unit its content ends at in the joined paragraph.
+    pub end: u32,
+    /// Its `w:pPr` as written.
+    pub ppr: Raw,
+    /// Its mark is a style separator (`w:specVanish`).
+    pub spec_vanish: bool,
 }
 
 /// The package an editable document was read from ([`super::read_editable`]).

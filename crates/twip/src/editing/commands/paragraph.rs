@@ -118,6 +118,7 @@ impl Editor {
             Some(s) if s.kind == crate::docx::styles::StyleKind::Character => {
                 return Outcome::invalid("a character style; applyCharacterStyle applies it");
             }
+            Some(s) if s.kind != crate::docx::styles::StyleKind::Paragraph => return Outcome::invalid("not a paragraph style"),
             Some(_) => {}
         }
         self.format(&Format::ParaStyle(id.0), fonts)

@@ -197,7 +197,7 @@ impl Editor {
                     }
                     style.frame = None;
                     style.in_frame = true;
-                    p.style = Rc::new(style);
+                    p.style = Rc::new(res.para_again(&p.style, style, None, &cx));
                     Block::Para(p)
                 }
                 b => b,

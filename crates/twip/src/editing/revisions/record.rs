@@ -80,11 +80,6 @@ impl Recording {
                 out.push(Step::TableProps { table, props });
                 out
             }
-            Step::TableWidth { table, width } => {
-                let mut out: Vec<Step> = self.table_change(table, false, doc, idx, ids).into_iter().collect();
-                out.push(Step::TableWidth { table, width });
-                out
-            }
             Step::Note { kind, id, blocks: Some(b) } if note(doc, kind, id).is_none() => {
                 vec![Step::Note { kind, id, blocks: Some(self.ins_blocks(b, ids)) }]
             }
@@ -752,10 +747,7 @@ fn run(i: &Inline) -> Option<&Run> {
 }
 
 fn with_run(i: &Inline, r: Run) -> Inline {
-    match i {
-        Inline::Float(f, _) => Inline::Float(f.clone(), r),
-        other => super::super::format::with_run(other, &r),
-    }
+    super::super::format::with_run(i, &r)
 }
 
 fn with_rev(r: &Run, rev: RunRevisions) -> Run {

@@ -8,6 +8,7 @@ use std::rc::Rc;
 use super::model::*;
 use super::numbering::{Level, Numbering};
 use super::props::*;
+use super::review::{FormatChange, ParaChange, RunRevisions};
 use super::styles::{Region, Styles, ThemeFonts};
 use super::write::props::Cx;
 
@@ -50,6 +51,35 @@ pub(crate) fn div_chain(divs: &HashMap<i64, Division>, id: Option<i64>) -> Vec<i
         at = divs.get(&i).and_then(|d| d.parent);
     }
     out
+}
+
+/// The style of `later` joined onto `first`, the paragraph before it (`at` units long) whose mark is vanished: the
+/// first one's indents, alignment, tabs and space before (unless it is empty), the first one's borders and shading,
+/// the last one's other properties. An empty first paragraph gives nothing but a style separator's (`spec`, in compat
+/// 15) alignment and indents. In compat ≤ 14 (`legacy`) each later line takes its indents, alignment, tabs, borders and
+/// shading from the paragraph of its first character, so `joined` keeps the later one's own.
+pub fn joined_style(first: &ParaStyle, later: &Rc<ParaStyle>, at: u32, spec: Option<&ParaStyle>, legacy: bool) -> ParaStyle {
+    let mut style = (**later).clone();
+    if let (0, Some(s)) = (at, spec) {
+        (style.ind_left, style.ind_right, style.ind_first, style.jc) = (s.ind_left, s.ind_right, s.ind_first, s.jc);
+    }
+    if at > 0 {
+        (style.ind_left, style.ind_right, style.ind_first, style.jc) = (first.ind_left, first.ind_right, first.ind_first, first.jc);
+        (style.space_before, style.before_auto) = (first.space_before, first.before_auto);
+        style.tabs = first.tabs.clone();
+        if legacy {
+            style.joined = first.joined.iter().cloned().chain([(at, later.clone())]).collect();
+        }
+        (style.border_top, style.border_bottom, style.border_left, style.border_right, style.border_between) = (
+            first.border_top.clone(),
+            first.border_bottom.clone(),
+            first.border_left.clone(),
+            first.border_right.clone(),
+            first.border_between.clone(),
+        );
+        (style.shading, style.shd) = (first.shading, first.shd.clone());
+    }
+    style
 }
 
 impl Resolver {
@@ -339,7 +369,13 @@ impl Resolver {
     /// `run` resolved again from its direct `w:rPr` over `base`, where it is: in a table of contents' result without the
     /// Hyperlink character style, as the reader resolved it.
     pub fn rerun(&self, base: &RunProps, run: &RunStyle, cx: &Cx) -> Run {
-        let rpr = run.direct.0.as_deref();
+        self.rerun_xml(base, run, run.direct.0.as_deref(), cx)
+    }
+
+    /// `rpr` resolved over `base` in `run`'s place, as reading gives a run with that `w:rPr` there: in a table of
+    /// contents' result without the Hyperlink character style, and with `run`'s revisions (a format change's previous
+    /// properties resolved again over `base`).
+    pub fn rerun_xml(&self, base: &RunProps, run: &RunStyle, rpr: Option<&str>, cx: &Cx) -> Run {
         let mut direct = rpr.and_then(|x| cx.parse(x, |_, el| RunProps::parse(Some(el), &self.styles.colours))).unwrap_or_default();
         if run.toc && direct.style.as_deref() == Some("Hyperlink") {
             direct.style = None;
@@ -347,7 +383,34 @@ impl Resolver {
         let mut s = (*self.run_style(&self.run_props(base, &direct))).clone();
         s.direct = Raw(rpr.map(Rc::from));
         s.toc = run.toc;
+        s.rev = RunRevisions {
+            ins: run.rev.ins.clone(),
+            del: run.rev.del.clone(),
+            fmt: run.rev.fmt.as_ref().map(|f| {
+                let previous = self.run_from_xml(base, f.previous_raw.0.as_deref(), cx);
+                if previous == f.previous { f.clone() } else { Rc::new(FormatChange { previous, ..(**f).clone() }) }
+            }),
+        };
         Rc::new(s)
+    }
+
+    /// `again`, a paragraph's properties resolved again in `region`, with what reading gave `was` beyond them: its
+    /// tracked property change (the previous properties resolved again too) and its place in a frame.
+    pub fn para_again(&self, was: &ParaStyle, mut again: ParaStyle, region: Option<&Region>, cx: &Cx) -> ParaStyle {
+        if was.in_frame {
+            (again.frame, again.in_frame) = (None, true);
+        }
+        again.change = was.change.as_ref().map(|c| {
+            let mut previous = match (&c.previous_raw.0, &c.numbering_change.0) {
+                (None, Some(_)) => ParaStyle { change: None, ..again.clone() },
+                (raw, _) => self.para_from_xml(raw.as_deref(), region, cx).style,
+            };
+            if was.in_frame {
+                (previous.frame, previous.in_frame) = (None, true);
+            }
+            if previous == *c.previous { c.clone() } else { Rc::new(ParaChange { previous: Rc::new(previous), ..(**c).clone() }) }
+        });
+        again
     }
 
     /// A paragraph resolved from its direct `w:pPr` as written, in `region` when it is in a cell.

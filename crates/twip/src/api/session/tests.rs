@@ -56,7 +56,8 @@ fn refusals_have_their_codes() {
     s.set_read_only(false);
     assert_eq!(s.run(Command::Undo).map_err(|e| e.code).err(), Some(ErrorCode::Unavailable));
     assert_eq!(s.run(Command::InsertText(String::new())).map_err(|e| e.code).err(), Some(ErrorCode::InvalidArgument));
-    assert_eq!(s.run(Command::CopyFormatting).map_err(|e| e.code).err(), Some(ErrorCode::Unsupported));
+    let boundary = crate::api::command::BoundaryMove { index: 0, to: Points(72.0) };
+    assert_eq!(s.run(Command::MoveTableRowBoundary(boundary)).map_err(|e| e.code).err(), Some(ErrorCode::Unsupported));
     assert_eq!(s.run(Command::SetFontSize(Points(-3.0))).map_err(|e| e.code).err(), Some(ErrorCode::InvalidArgument));
     assert_eq!(s.run(Command::MergeCells).map_err(|e| e.code).err(), Some(ErrorCode::Unavailable));
     assert_eq!(s.open(b"not a docx").map_err(|e| e.code).err(), Some(ErrorCode::ImportFailed));
@@ -3564,4 +3565,27 @@ fn the_page_fill_effects_dialog_makes_word_s_gradients_and_patterns() {
     assert!(matches!(fill(s, texture), FillValue::Picture { tile: Some(true), .. }));
     let stretched = FillEffectsPatch { tab: Some(FillEffectsTab::Picture), ..Default::default() };
     assert!(matches!(fill(s, stretched), FillValue::Picture { tile: Some(false), .. }), "the page's picture, kept");
+}
+
+#[test]
+fn a_custom_number_property_is_a_finite_number() {
+    use crate::api::command::{CustomProperty, CustomPropertyKind, DocumentPropertiesChange};
+    let (mut engine, _) = engine();
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    for value in ["inf", "-infinity", "NaN", "1e999"] {
+        let custom = vec![CustomProperty { name: "n".into(), kind: CustomPropertyKind::Number, value: value.into() }];
+        let r = s.run(Command::SetDocumentProperties(DocumentPropertiesChange { custom: Some(custom), ..Default::default() }));
+        assert_eq!(r.map_err(|e| e.code).err(), Some(ErrorCode::InvalidArgument), "{value}");
+    }
+}
+
+#[test]
+fn document_defaults_take_the_font_sizes_word_does() {
+    use crate::api::command::DocumentDefaults;
+    let (mut engine, _) = engine();
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    let r = s.run(Command::SetDocumentDefaults(DocumentDefaults { size: Some(Points(1e30)), ..DocumentDefaults::default() }));
+    assert_eq!(r.map_err(|e| e.code).err(), Some(ErrorCode::InvalidArgument));
 }

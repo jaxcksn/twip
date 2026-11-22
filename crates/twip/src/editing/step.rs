@@ -10,11 +10,14 @@ use crate::layout::{Change, ParaId, TableId, Unit};
 use super::index::{Container, DocIndex};
 use super::position::{Place, Position};
 
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Edges {
     pub lead: u32,
     pub trail: u32,
     pub under: u32,
+    /// The ends of the paragraphs a vanished mark joined onto the paragraph's start ([`crate::docx::JoinedPart`])
+    /// once applied, when they aren't where the splice moves them: an undone splice's.
+    pub parts: Option<Rc<[u32]>>,
 }
 
 #[derive(Clone, Debug)]
@@ -56,10 +59,6 @@ pub enum Step {
     Restyle {
         para: ParaId,
         inlines: Vec<Inline>,
-    },
-    TableWidth {
-        table: TableId,
-        width: crate::docx::props::Width,
     },
     ImageData {
         index: usize,
@@ -214,6 +213,7 @@ pub struct TableProps {
     pub ind: f64,
     pub ind_pct: Option<f64>,
     pub borders: [Option<crate::docx::props::Border>; 6],
+    pub fixed: bool,
     pub bands: (i64, i64),
     pub floating: Option<crate::docx::props::TablePos>,
     pub cell_spacing: f64,
@@ -301,7 +301,7 @@ impl Targets {
                 self.run(mark);
                 self.revisions.extend(style.change.as_ref().map(|c| c.mark.id));
             }
-            Step::TableWidth { table, .. } | Step::TableProps { table, .. } => {
+            Step::TableProps { table, .. } => {
                 self.tables.insert(*table);
             }
             Step::HeaderPart { blocks: Some(b), .. } | Step::Note { blocks: Some(b), .. } => self.blocks(b),
@@ -397,6 +397,7 @@ impl TableProps {
             ind: t.ind,
             ind_pct: t.ind_pct,
             borders: t.borders.clone(),
+            fixed: t.fixed,
             bands: t.bands,
             floating: t.floating,
             cell_spacing: t.cell_spacing,
@@ -521,7 +522,28 @@ fn cut(inlines: &mut Vec<Inline>, u: Unit, after_markers: bool) -> usize {
     inlines.len()
 }
 
-fn splice(p: &mut Paragraph, range: Range<Unit>, edges: Edges, with: Vec<Inline>) -> (Vec<Inline>, u32) {
+/// Moves the ends of the paragraphs a vanished mark joined onto `p`'s start past a splice of `range` with `added`
+/// units, or to `exact`: their ends before, when that moved them.
+fn shift_parts(p: &mut Paragraph, range: &Range<Unit>, added: u32, exact: Option<&[u32]>) -> Option<Rc<[u32]>> {
+    let src = p.src.as_mut().filter(|s| !s.joined.is_empty())?;
+    let (start, end) = (range.start.0, range.end.0);
+    let exact = exact.filter(|e| e.len() == src.joined.len());
+    let moved = |k: usize, at: u32| match exact {
+        Some(e) => e[k],
+        None if at > start => at.max(end) - end + start + added,
+        None => at,
+    };
+    if src.joined.iter().enumerate().all(|(k, j)| moved(k, j.end) == j.end) {
+        return None;
+    }
+    let before = src.joined.iter().map(|j| j.end).collect();
+    for (k, j) in Rc::make_mut(src).joined.iter_mut().enumerate() {
+        j.end = moved(k, j.end);
+    }
+    Some(before)
+}
+
+fn splice(p: &mut Paragraph, range: Range<Unit>, edges: &Edges, with: Vec<Inline>) -> (Vec<Inline>, u32) {
     let back = |inlines: &[Inline], mut k: usize, mut n: u32| {
         while n > 0 && k > 0 {
             k -= 1;
@@ -660,7 +682,8 @@ impl Step {
                 let marker = |i: &&Inline| i.units() == 0 && !matches!(i, Inline::Text(..));
                 let lead = with.iter().take_while(marker).count();
                 let trail = if lead == with.len() { 0 } else { with.iter().rev().take_while(marker).count() };
-                let (removed, after) = splice(p, range.clone(), edges, with);
+                let (removed, after) = splice(p, range.clone(), &edges, with);
+                let parts = shift_parts(p, &range, added, edges.parts.as_deref());
                 let under = if added == 0 { after } else { 0 };
                 let new_end = Unit(range.start.0 + added);
                 idx.replaced_inlines(doc, para, &removed);
@@ -669,7 +692,7 @@ impl Step {
                         para,
                         range: range.start..new_end,
                         with: removed,
-                        edges: Edges { lead: lead as u32, trail: trail as u32, under },
+                        edges: Edges { lead: lead as u32, trail: trail as u32, under, parts },
                     },
                     map: Map::Text { para, start: range.start, old_end: range.end, new_end },
                     hint: para_hint(idx, para, 0),
@@ -728,7 +751,7 @@ impl Step {
                     _ => return Err(StepError::Missing),
                 };
                 let at = para_len(p);
-                let (kept, _) = splice(p, at..at, Edges::default(), inlines);
+                let (kept, _) = splice(p, at..at, &Edges::default(), inlines);
                 idx.replaced_blocks(doc, a.container, &[Block::Para(tail.clone())]);
                 idx.replaced_inlines(doc, first, &[]);
                 let hint = span_hint(idx, a.container, a.block, 2, 1);
@@ -801,19 +824,6 @@ impl Step {
                     map: Map::Removed { paras, tables, rows: None, fallback: None },
                     hint: None,
                 })
-            }
-            Step::TableWidth { table, width } => {
-                let t = idx.table_mut(doc, table).ok_or(StepError::Missing)?;
-                let old = std::mem::replace(&mut t.width, width);
-                let slot = idx.table_slot(table).ok_or(StepError::Missing)?;
-                let hint = idx.top_block(slot.container, slot.block).map(|(section, b, row)| Change {
-                    section,
-                    first: b,
-                    old_end: b + 1,
-                    new_end: b + 1,
-                    row,
-                });
-                Ok(Applied { inverse: Step::TableWidth { table, width: old }, map: Map::Same, hint })
             }
             Step::ImageData { index, data, filled } => {
                 let slot = doc.images.get_mut(index).ok_or(StepError::Missing)?;
@@ -1041,7 +1051,22 @@ impl Step {
             Step::TableProps { table, props } => {
                 let t = idx.table_mut(doc, table).ok_or(StepError::Missing)?;
                 let old = TableProps::of(t);
-                (t.style_id, t.look, t.width, t.jc, t.ind, t.ind_pct, t.borders, t.bands, t.floating, t.cell_spacing, t.shd, t.alt, t.direct) = (
+                (
+                    t.style_id,
+                    t.look,
+                    t.width,
+                    t.jc,
+                    t.ind,
+                    t.ind_pct,
+                    t.borders,
+                    t.fixed,
+                    t.bands,
+                    t.floating,
+                    t.cell_spacing,
+                    t.shd,
+                    t.alt,
+                    t.direct,
+                ) = (
                     props.style_id,
                     props.look,
                     props.width,
@@ -1049,6 +1074,7 @@ impl Step {
                     props.ind,
                     props.ind_pct,
                     props.borders,
+                    props.fixed,
                     props.bands,
                     props.floating,
                     props.cell_spacing,

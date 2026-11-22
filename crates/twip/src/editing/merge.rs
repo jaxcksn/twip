@@ -391,6 +391,65 @@ impl Editor {
         any
     }
 
+    /// Field `f`'s code with the argument `pick` names (from the code as parsed) set to `value`, written as an argument
+    /// is; the rest of the code as it was.
+    pub(super) fn set_code_arg(
+        &mut self,
+        tx: &mut super::Tx,
+        f: FieldId,
+        pick: impl Fn(&crate::docx::fields::FieldCode) -> Option<usize>,
+        value: &str,
+    ) -> bool {
+        let Some(Where::Inline { para, first, last, .. }) = self.locate(ElementId::Field(f)) else { return false };
+        let Some(p) = self.index.para(&self.doc, para).cloned() else { return false };
+        let Some(s) = crate::docx::fields::span_at(&p.inlines, first).filter(|s| s.end == last) else { return false };
+        // The code's own pieces: each inline and where its text starts
+        let mut code = String::new();
+        let mut pieces: Vec<(usize, usize)> = Vec::new();
+        let mut depth = 0;
+        for k in first + 1..s.code_end() {
+            match &p.inlines[k] {
+                Inline::FieldBegin { .. } => depth += 1,
+                Inline::FieldEnd { .. } => depth -= 1,
+                Inline::Text(t, _) if depth == 0 => {
+                    pieces.push((k, code.len()));
+                    code.push_str(t);
+                }
+                Inline::Tab(_) | Inline::PTab(..) if depth == 0 => {
+                    pieces.push((k, code.len()));
+                    code.push('\t');
+                }
+                _ => {}
+            }
+        }
+        let mut spans = Vec::new();
+        let parsed = crate::docx::fields::parse_spans(&code, Some(&mut spans));
+        let Some(span) = pick(&parsed).and_then(|i| spans.get(i).cloned()) else { return false };
+        let ends: Vec<usize> = pieces.iter().skip(1).map(|p| p.1).chain([code.len()]).collect();
+        let over: Vec<(usize, usize, usize)> =
+            pieces.iter().zip(ends).filter(|&(&(_, at), end)| at < span.end && end > span.start).map(|(&(k, at), end)| (k, at, end)).collect();
+        let mut any = false;
+        for (j, &(k, at, end)) in over.iter().enumerate().rev() {
+            let mut t = code[at..span.start.max(at)].to_string();
+            if j == 0 {
+                t.push_str(value);
+            }
+            t.push_str(&code[span.end.min(end)..end]);
+            let start = units_before(&p.inlines, k);
+            let range = Unit(start)..Unit(start + p.inlines[k].units() as u32);
+            let with = match (&p.inlines[k], t.is_empty()) {
+                (_, true) => Vec::new(),
+                (Inline::Text(_, run), false) => vec![Inline::Text(t, run.clone())],
+                (other, false) => vec![other.clone()],
+            };
+            any |= self.step(tx, Step::Text { para, range, with, edges: Default::default() }).is_ok();
+        }
+        if any {
+            self.refresh_field_kinds(tx, para);
+        }
+        any
+    }
+
     fn with_items<'l>(&self, c: ControlId, lists: impl Iterator<Item = &'l Vec<ControlId>>) -> Vec<ControlId> {
         let mut gone = vec![c];
         if self.doc.controls.get(&c).is_some_and(|k| k.props.kind == ControlKind::RepeatingSection) {

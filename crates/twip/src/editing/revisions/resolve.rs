@@ -105,15 +105,6 @@ fn decide(r: &Run, accept: bool, take: impl Fn(&RevisionMark) -> bool) -> Option
     Some((remove, Rc::new(s)))
 }
 
-fn with_run(i: &Inline, run: &Run) -> Inline {
-    match i {
-        Inline::Float(f, _) => Inline::Float(f.clone(), run.clone()),
-        Inline::CommentRef { id, .. } => Inline::CommentRef { id: *id, run: run.clone() },
-        Inline::Separator { continuation, full, .. } => Inline::Separator { continuation: *continuation, full: *full, run: run.clone() },
-        other => super::super::format::with_run(other, run),
-    }
-}
-
 fn resolve_inlines(p: &Paragraph, pick: &Pick, accept: bool) -> Option<(Vec<Inline>, Vec<Range<u32>>)> {
     let inside = pick.inside.as_ref().map(|i| i.get(&ParaId(p.id)).cloned());
     let cuts: Vec<u32> = inside.clone().flatten().map(|r| vec![r.start, r.end]).unwrap_or_default();
@@ -164,7 +155,7 @@ fn resolve_inlines(p: &Paragraph, pick: &Pick, accept: bool) -> Option<(Vec<Inli
                     match (float, remove) {
                         (true, true) => {}
                         (false, true) if n > 0 => out.push((piece, true)),
-                        _ => out.push((with_run(&piece, &run), false)),
+                        _ => out.push((super::super::format::with_run(&piece, &run), false)),
                     }
                 }
             }
@@ -488,8 +479,18 @@ impl Editor {
             }
             if let Some(c) = r.rev.change.clone().filter(|c| picked(&c.mark)) {
                 r.rev.change = None;
-                if !accept && let Some(p) = &c.previous {
-                    p.restore_row(&mut r);
+                if !accept {
+                    if let Some(p) = &c.previous {
+                        p.restore_row(&mut r);
+                    }
+                    // Its properties as written before, its own revisions kept
+                    let now = crate::docx::write::props::Props::parse(r.direct.0.as_deref(), "trPr", &cx);
+                    let mut was = crate::docx::write::props::Props::parse(c.previous_raw.0.as_deref(), "trPr", &cx);
+                    for (name, xml) in now.kids.iter().filter(|(n, _)| matches!(n.as_str(), "ins" | "del")) {
+                        was.set(name, xml.clone());
+                    }
+                    r.direct = Raw(was.xml().map(|x| Rc::from(x.as_str())));
+                    restyle = true;
                 }
             }
             if r.rev.ex_change.as_ref().is_some_and(|c| picked(&c.mark)) {

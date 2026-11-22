@@ -99,7 +99,7 @@ impl Editor {
             self.abort(tx);
             return Outcome::Unchanged("caret at a row end");
         };
-        let (Some(run), Some(base)) = (self.run_at(&caret), self.run_base(para, &res, &cx)) else {
+        let (Some(run), Some(base)) = (self.run_at(&caret), self.run_base(para, offset, &res, &cx)) else {
             self.abort(tx);
             return Outcome::Unchanged("no paragraph");
         };
