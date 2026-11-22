@@ -108,6 +108,9 @@ fn an_empty_font_set_fails_to_draw() {
 fn converts_fixtures_in_parallel() {
     let fonts = FontSet::system();
     let fixtures = fixtures();
+    // A DATE field shows the day the document is read, so the runs only compare within one day.
+    let day = || crate::docx::now_local().div_euclid(86_400);
+    let started = day();
     let sequential: Vec<Vec<u8>> =
         fixtures.iter().map(|(_, b)| undated(convert(b, &fonts, &PdfOptions::default()).expect("converts").bytes)).collect();
     let parallel: Vec<Vec<u8>> = std::thread::scope(|s| {
@@ -129,8 +132,11 @@ fn converts_fixtures_in_parallel() {
         all.sort_by_key(|r| r.0);
         all.into_iter().map(|r| r.1).collect()
     });
+    if day() != started {
+        return;
+    }
     for ((name, _), (a, b)) in fixtures.iter().zip(sequential.iter().zip(&parallel)) {
-        assert!(a == b, "{name}: a conversion on another thread differs");
+        assert!(a == b, "{name}: a conversion on another thread differs {}", first_difference(a, b));
     }
 }
 
