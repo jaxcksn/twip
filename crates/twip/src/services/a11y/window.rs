@@ -75,7 +75,15 @@ pub fn window(e: &mut Editor, spelling: &Spellers, language: &str, read_only: bo
         }
         ids
     };
-    let starts: Vec<Vec<Unit>> = ids.iter().map(|&p| e.line_starts(p)).collect();
+    let starts: Vec<Vec<Unit>> = ids
+        .iter()
+        .map(|&p| {
+            let mut s = e.line_starts(p);
+            s.sort_unstable();
+            s.dedup();
+            s
+        })
+        .collect();
     let all = !e.selection().is_collapsed() && e.selects_story();
     let read_only = read_only || !e.caret_editable();
 
@@ -97,8 +105,13 @@ pub fn window(e: &mut Editor, spelling: &Spellers, language: &str, read_only: bo
         let mut lines = vec![WindowLine::default()];
         let mut map = Vec::new();
         let mut last = None;
+        // The next line start, walked with the units.
+        let mut next = 0;
         for u in 0..r.len() {
-            if u > 0 && starts.contains(&Unit(u)) && lines.last().is_some_and(|l| !l.segments.is_empty()) {
+            while starts.get(next).is_some_and(|s| s.0 < u) {
+                next += 1;
+            }
+            if u > 0 && starts.get(next) == Some(&Unit(u)) && lines.last().is_some_and(|l| !l.segments.is_empty()) {
                 lines.push(WindowLine::default());
                 last = None;
             }

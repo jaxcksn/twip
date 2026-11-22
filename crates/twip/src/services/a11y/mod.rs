@@ -12,7 +12,7 @@ pub use tree::diff;
 pub use tree::{TreeCache, tree, tree_with};
 pub use window::{Window, window};
 
-use std::rc::Rc;
+use std::collections::HashMap;
 
 use crate::api::services::AccessibleMark;
 use crate::docx::review::{AuthorId, CommentId, MarkupView, RangeKind};
@@ -21,10 +21,10 @@ use crate::editing::Editor;
 use crate::editing::text::{OBJECT, UnitText};
 use crate::layout::{ParaId, Unit};
 
-use super::spelling::{SpellError, Spellers};
+use super::spelling::Spellers;
 
 /// What a review mark says its text is.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ReviewKind {
     Insertion,
     Deletion,
@@ -52,7 +52,7 @@ impl ReviewKind {
 }
 
 /// An insertion, a deletion or a commented range, and whose it is.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct ReviewMark {
     pub kind: ReviewKind,
     pub author: AuthorId,
@@ -66,6 +66,8 @@ pub(super) type MarkSpan = (u32, u32, ReviewMark);
 pub(super) fn para_marks(doc: &Document, p: &Paragraph, view: MarkupView, open: &mut Vec<CommentId>) -> Vec<MarkSpan> {
     let mut spans: Vec<MarkSpan> = Vec::new();
     let mut at = 0u32;
+    // The spans ending where the next run starts (the last run's): only they go on over it.
+    let (mut live, mut now): (HashMap<ReviewMark, usize>, HashMap<ReviewMark, usize>) = (HashMap::new(), HashMap::new());
     for i in &p.inlines {
         match i {
             Inline::Range(m) if m.kind == RangeKind::CommentStart => open.push(CommentId(m.id)),
@@ -73,9 +75,13 @@ pub(super) fn para_marks(doc: &Document, p: &Paragraph, view: MarkupView, open: 
             _ => {}
         }
         let n = i.units() as u32;
+        if n == 0 {
+            continue;
+        }
         let rev = i.run().map(|r| &r.rev);
-        if n == 0 || rev.is_some_and(|r| view.hides(r)) {
+        if rev.is_some_and(|r| view.hides(r)) {
             at += n;
+            live.clear();
             continue;
         }
         let revs = rev
@@ -83,13 +89,22 @@ pub(super) fn para_marks(doc: &Document, p: &Paragraph, view: MarkupView, open: 
             .flat_map(|r| [r.ins.as_ref().map(|m| (ReviewKind::Insertion, m.author)), r.del.as_ref().map(|m| (ReviewKind::Deletion, m.author))]);
         let comments =
             open.iter().filter_map(|c| doc.comments.by_id.get(&doc.comments.root(*c))).map(|c| Some((ReviewKind::Comment(c.id), c.author)));
+        now.clear();
         for (kind, author) in revs.chain(comments).flatten() {
             let mark = ReviewMark { kind, author };
-            match spans.iter_mut().rev().find(|s| s.2 == mark && s.1 == at) {
-                Some(s) => s.1 = at + n,
-                None => spans.push((at, at + n, mark)),
-            }
+            let k = match live.get(&mark) {
+                Some(&k) => {
+                    spans[k].1 = at + n;
+                    k
+                }
+                None => {
+                    spans.push((at, at + n, mark));
+                    spans.len() - 1
+                }
+            };
+            now.insert(mark, k);
         }
+        std::mem::swap(&mut live, &mut now);
         at += n;
     }
     spans
@@ -138,14 +153,50 @@ pub(super) struct TextMarks {
 pub(super) struct Reading<'a> {
     doc: &'a Document,
     spans: Vec<MarkSpan>,
-    errors: Rc<[SpellError]>,
     text: UnitText,
     chars: Vec<char>,
     /// The run language of each unit.
     langs: Vec<&'a str>,
-    /// The units a field showing its result has its code in.
-    codes: Vec<(u32, u32)>,
+    /// Each unit's [`CODE`] and [`MISSPELT`] flags (empty: none has one).
+    flags: Vec<u8>,
+    /// Each unit's insertion and deletion spans, by place in `spans` (empty: none has one).
+    revs: Vec<[u32; 2]>,
+    /// Each unit's first comment span (empty: none is in one).
+    comments: Vec<u32>,
     doc_lang: &'a str,
+}
+
+/// No span.
+const NONE: u32 = u32::MAX;
+/// A unit of a field's code (the field shows its result).
+const CODE: u8 = 1;
+/// A unit of a misspelt word.
+const MISSPELT: u8 = 2;
+
+/// For each of `len` units, the first of `ranges` (place, start, end) holding it, or [`NONE`]: each unit is set once,
+/// so overlapping ranges cost their units once, not once each.
+pub(super) fn first_cover(len: usize, ranges: impl Iterator<Item = (u32, u32, u32)>) -> Vec<u32> {
+    let mut out = vec![NONE; len];
+    // The first unit at or after each that isn't set yet.
+    let mut next: Vec<u32> = (0..=len as u32).collect();
+    fn find(next: &mut [u32], mut i: u32) -> u32 {
+        while next[i as usize] != i {
+            let up = next[next[i as usize] as usize];
+            next[i as usize] = up;
+            i = up;
+        }
+        i
+    }
+    for (k, a, b) in ranges {
+        let b = b.min(len as u32);
+        let mut u = find(&mut next, a.min(len as u32));
+        while u < b {
+            out[u as usize] = k;
+            next[u as usize] = u + 1;
+            u = find(&mut next, u + 1);
+        }
+    }
+    out
 }
 
 impl<'a> Reading<'a> {
@@ -165,15 +216,47 @@ impl<'a> Reading<'a> {
         let text = UnitText::of_view(p, view);
         let chars: Vec<char> = text.text.chars().collect();
         let errors = spelling.errors(e, ParaId(p.id), language).map(|(errs, _)| errs).unwrap_or_default();
-        let starts: Vec<u32> = p.inlines.iter().scan(0u32, |at, i| Some(std::mem::replace(at, *at + i.units() as u32))).collect();
-        let at = |k: usize| starts.get(k).copied().unwrap_or(chars.len() as u32);
-        let codes = crate::docx::fields::spans(&p.inlines)
-            .iter()
-            .filter(|s| !matches!(p.inlines[s.begin], Inline::FieldBegin { view: crate::docx::FieldView::Code, .. }))
-            .map(|s| (at(s.begin), at(s.code_end())))
-            .collect();
+        let codes = crate::docx::fields::hidden_codes(&p.inlines);
+        let n = chars.len();
+        let mut flags = Vec::new();
+        if !codes.is_empty() || !errors.is_empty() {
+            flags = vec![0u8; n];
+            // Code ranges (their ends included) by how many are open at each unit.
+            let mut depth = vec![0i32; n + 1];
+            for &(b, e) in &codes {
+                depth[(b as usize).min(n)] += 1;
+                depth[(e as usize + 1).min(n)] -= 1;
+            }
+            let mut open = 0;
+            for (u, f) in flags.iter_mut().enumerate() {
+                open += depth[u];
+                if open > 0 {
+                    *f |= CODE;
+                }
+            }
+            for x in errors.iter() {
+                flags[x.start.min(n)..x.end().min(n)].iter_mut().for_each(|f| *f |= MISSPELT);
+            }
+        }
+        let mut revs = Vec::new();
+        if spans.iter().any(|s| !matches!(s.2.kind, ReviewKind::Comment(_))) {
+            revs = vec![[NONE; 2]; n];
+            for (k, s) in spans.iter().enumerate().filter(|(_, s)| !matches!(s.2.kind, ReviewKind::Comment(_))) {
+                for slot in &mut revs[(s.0 as usize).min(n)..(s.1 as usize).min(n)] {
+                    // A unit is in one insertion and one deletion at most.
+                    if let Some(free) = slot.iter_mut().find(|x| **x == NONE) {
+                        *free = k as u32;
+                    }
+                }
+            }
+        }
+        let comments = if spans.iter().any(|s| matches!(s.2.kind, ReviewKind::Comment(_))) {
+            first_cover(n, spans.iter().enumerate().filter(|(_, s)| matches!(s.2.kind, ReviewKind::Comment(_))).map(|(k, s)| (k as u32, s.0, s.1)))
+        } else {
+            Vec::new()
+        };
         let langs = p.inlines.iter().flat_map(|i| std::iter::repeat_n(i.run().map_or("", |r| r.lang.as_str()), i.units())).collect();
-        Reading { doc, spans, errors, text, chars, langs, codes, doc_lang }
+        Reading { doc, spans, text, chars, langs, flags, revs, comments, doc_lang }
     }
 
     /// The paragraph's units.
@@ -184,7 +267,7 @@ impl<'a> Reading<'a> {
     /// The character read at unit `u`: none for a hidden unit, an object or a field's code.
     pub(super) fn char(&self, u: u32) -> Option<char> {
         let c = *self.chars.get(u as usize)?;
-        if c == OBJECT || self.text.is_hidden(Unit(u)) || self.codes.iter().any(|&(b, e)| b <= u && u <= e) {
+        if c == OBJECT || self.text.is_hidden(Unit(u)) || self.flags.get(u as usize).is_some_and(|f| f & CODE != 0) {
             return None;
         }
         Some(if matches!(c, '\u{2028}' | '\u{c}') { '\n' } else { c })
@@ -193,16 +276,18 @@ impl<'a> Reading<'a> {
     /// What unit `u` is to a reader.
     pub(super) fn marks(&self, u: u32) -> TextMarks {
         let mut m = TextMarks::default();
-        for s in self.spans.iter().filter(|s| s.0 <= u && u < s.1) {
-            match s.2.kind {
-                ReviewKind::Comment(c) => m.comment = m.comment.or(Some(c)),
-                kind => {
-                    m.marks.extend(kind.mark());
-                    m.author.get_or_insert_with(|| author(self.doc, s.2.author).to_string());
-                }
-            }
+        let mut revs = self.revs.get(u as usize).copied().unwrap_or([NONE; 2]);
+        revs.sort_unstable();
+        for s in revs.iter().filter(|&&k| k != NONE).map(|&k| &self.spans[k as usize]) {
+            m.marks.extend(s.2.kind.mark());
+            m.author.get_or_insert_with(|| author(self.doc, s.2.author).to_string());
         }
-        if self.errors.iter().any(|x| x.start <= u as usize && (u as usize) < x.end()) {
+        if let Some(&k) = self.comments.get(u as usize).filter(|&&k| k != NONE)
+            && let ReviewKind::Comment(c) = self.spans[k as usize].2.kind
+        {
+            m.comment = Some(c);
+        }
+        if self.flags.get(u as usize).is_some_and(|f| f & MISSPELT != 0) {
             m.marks.push(AccessibleMark::Misspelling);
         }
         let lang = self.langs.get(u as usize).copied().unwrap_or("");

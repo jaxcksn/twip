@@ -439,6 +439,12 @@ impl Builder<'_> {
             .filter(|s| crate::docx::fields::parse(&crate::docx::fields::code_text(&p.inlines, *s)).name.eq_ignore_ascii_case("HYPERLINK"))
             .map(|s| (at(s.begin), at(s.end)))
             .collect();
+        // Each unit's first link (their ends included).
+        let link_at = if links.is_empty() {
+            Vec::new()
+        } else {
+            super::first_cover(r.len() as usize, links.iter().enumerate().map(|(k, &(b, e))| (k as u32, b, e.saturating_add(1))))
+        };
 
         let mut out: Vec<AccessibleNode> = Vec::new();
         let mut floats = Vec::new();
@@ -492,7 +498,7 @@ impl Builder<'_> {
                 _ => {
                     for u in starts[k]..starts[k] + inline.units() as u32 {
                         let Some(c) = r.char(u) else { continue };
-                        let a = Attrs { text: r.marks(u), link: links.iter().position(|&(b, e)| b <= u && u <= e) };
+                        let a = Attrs { text: r.marks(u), link: link_at.get(u as usize).filter(|&&k| k != u32::MAX).map(|&k| k as usize) };
                         match &mut run {
                             Some((same, text)) if *same == a => text.push(c),
                             _ => {

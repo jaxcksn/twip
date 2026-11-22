@@ -24,6 +24,7 @@ pub mod geometry;
 pub(crate) mod gestures;
 mod goback;
 pub mod history;
+pub mod import;
 pub mod index;
 pub mod input;
 #[cfg(any(test, feature = "inspect", not(target_family = "wasm")))]
@@ -165,6 +166,10 @@ pub struct Editor {
     last_maps: Vec<step::Map>,
     text_drag: Option<interaction::TextDrag>,
     clipboard: Option<clipboard::Fragment>,
+    /// The document's identity among those open: what tells a fragment copied from it from one copied elsewhere.
+    key: u64,
+    /// The find match selected last, with the selection that selected it.
+    found: Option<(Selection, ParaId, Unit, Unit)>,
     tab_stop: Option<(Selection, TableId, (usize, usize))>,
     mode: Mode,
     pub live_layout: bool,
@@ -387,6 +392,8 @@ impl Editor {
             #[cfg(test)]
             track_work: 0,
             clipboard: None,
+            key: import::next_key(),
+            found: None,
         };
         e.saved.1 = e.doc.settings.track_revisions;
         e.elems = elements::by_id(&e.doc, &e.index);
@@ -3166,10 +3173,7 @@ impl Editor {
     }
 
     pub fn copy(&mut self) -> Option<clipboard::Fragment> {
-        let mut f = self.copy_fragment()?.accepted();
-        clipboard::drop_unpaired(&mut f.blocks);
-        clipboard::drop_partial(&mut f.blocks, &self.index);
-        f.controls = clipboard::controls_of(&f.blocks, &self.doc);
+        let f = self.clip()?;
         self.requests.push(Request::Clipboard { text: f.text(), html: Some(f.html()) });
         self.clipboard = Some(f.clone());
         Some(f)

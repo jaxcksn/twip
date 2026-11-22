@@ -272,7 +272,24 @@ impl Editor {
         caret: (usize, usize),
         fonts: &Fonts,
     ) -> Outcome {
-        let Some(t) = self.index.table(&self.doc, table) else { return Outcome::Unchanged("no table") };
+        let tx = self.begin(label);
+        self.rebuild_in(tx, table, rows, grid, caret, fonts)
+    }
+
+    /// [`Editor::rebuild`] in `tx`, begun with the steps the rows need first.
+    pub(super) fn rebuild_in(
+        &mut self,
+        mut tx: super::Tx,
+        table: TableId,
+        rows: Vec<Row>,
+        grid: Vec<f64>,
+        caret: (usize, usize),
+        fonts: &Fonts,
+    ) -> Outcome {
+        let Some(t) = self.index.table(&self.doc, table) else {
+            self.abort(tx);
+            return Outcome::Unchanged("no table");
+        };
         let n = t.rows.len();
         let mut rows = rows;
         tidy_merges(&mut rows);
@@ -283,7 +300,6 @@ impl Editor {
             g.cell_at(r, caret.1).or_else(|| rows.get(r).map(|x| x.cells.len().saturating_sub(1))).map(|c| g.merge_start(r, c))
         };
         let caret_para = target.and_then(|(r, c)| rows.get(r)?.cells.get(c).and_then(|c| first_para(&c.blocks)));
-        let mut tx = self.begin(label);
         if self.step(&mut tx, Step::Rows { table, range: 0..n, with: rows, grid: Some(grid) }).is_err() {
             self.abort(tx);
             return Outcome::Unchanged("table edit failed");

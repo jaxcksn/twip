@@ -114,6 +114,9 @@ impl Speller {
             return hit.clone();
         }
         let mut list = Vec::new();
+        // Characters that go on the grapheme before them (combining marks): part of its word.
+        let extends: Vec<bool> = if key.is_ascii() { Vec::new() } else { continuations(&key, text.len()) };
+        let extends = |i: usize| extends.get(i).copied().unwrap_or(false);
         let (mut previous, mut previous_end): (Option<Vec<char>>, Option<usize>) = (None, None);
         let mut i = 0;
         while i < text.len() {
@@ -122,7 +125,9 @@ impl Speller {
                 continue;
             }
             let start = i;
-            while i < text.len() && (text[i].is_alphanumeric() || apostrophe(text[i]) && text.get(i + 1).is_some_and(|c| c.is_alphabetic())) {
+            while i < text.len()
+                && (text[i].is_alphanumeric() || extends(i) || apostrophe(text[i]) && text.get(i + 1).is_some_and(|c| c.is_alphabetic()))
+            {
                 i += 1;
             }
             let word = &text[start..i];
@@ -159,6 +164,20 @@ impl Speller {
         cache.insert(key, list.clone());
         list
     }
+}
+
+/// Whether each of the `n` characters of `text` goes on the grapheme before it.
+fn continuations(text: &str, n: usize) -> Vec<bool> {
+    use unicode_segmentation::UnicodeSegmentation;
+    let mut out = vec![true; n];
+    let mut k = 0;
+    for g in text.graphemes(true) {
+        if let Some(x) = out.get_mut(k) {
+            *x = false;
+        }
+        k += g.chars().count();
+    }
+    out
 }
 
 /// A paragraph's text for checking: one character per unit, the text the markup view shows as is; hidden text,

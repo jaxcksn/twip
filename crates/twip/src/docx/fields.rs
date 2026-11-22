@@ -45,6 +45,20 @@ pub fn spans(inlines: &[Inline]) -> Vec<FieldSpan> {
     out
 }
 
+/// The unit ranges, ends included, of the codes (begin to separator) of `inlines`' fields that show their results.
+pub fn hidden_codes(inlines: &[Inline]) -> Vec<(u32, u32)> {
+    let spans = spans(inlines);
+    if spans.is_empty() {
+        return Vec::new();
+    }
+    let starts: Vec<u32> = inlines.iter().scan(0u32, |at, i| Some(std::mem::replace(at, *at + i.units() as u32))).collect();
+    spans
+        .iter()
+        .filter(|s| !matches!(inlines[s.begin], Inline::FieldBegin { view: FieldView::Code, .. }))
+        .map(|s| (starts[s.begin], starts[s.code_end()]))
+        .collect()
+}
+
 /// The span of the field beginning at inline `begin`.
 pub fn span_at(inlines: &[Inline], begin: usize) -> Option<FieldSpan> {
     spans(inlines).into_iter().find(|s| s.begin == begin)

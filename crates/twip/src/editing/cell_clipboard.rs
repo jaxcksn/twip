@@ -48,23 +48,12 @@ impl Editor {
         let whole_table = whole_rows && r0 == 0 && r1 + 1 >= t.rows.len();
         let sub =
             Table { grid: super::tables::full_grid(t, g.cols)[c0..=c1].to_vec(), rows, src: None, id: crate::docx::next_para_id(), ..t.clone() };
-        Some(Fragment {
-            id,
-            blocks: vec![Block::Table(sub)],
-            open_end: false,
-            cells: Some(CellCopy { whole_rows, whole_table }),
-            controls: Default::default(),
-            refs: Default::default(),
-        })
+        Some(Fragment { id, blocks: vec![Block::Table(sub)], cells: Some(CellCopy { whole_rows, whole_table }), ..Default::default() })
     }
 
     pub(super) fn paste_cells(&mut self, f: &Fragment, fonts: &Fonts) -> Option<Outcome> {
         let copy = f.cells?;
         let Some(Block::Table(src)) = f.blocks.first() else { return None };
-        let mut stripped = vec![Block::Table(src.clone())];
-        super::clipboard::adopt(&mut stripped, &Default::default());
-        super::clipboard::strip_controls(&mut stripped);
-        let Some(Block::Table(src)) = stripped.first() else { return None };
         let wide = |grid: &[f64]| -> Vec<f64> { grid.iter().chain(src.grid.iter().skip(grid.len())).copied().collect() };
         if copy.whole_rows
             && !matches!(self.selection, Selection::Cells { .. })
@@ -75,13 +64,10 @@ impl Editor {
         {
             let (id, mut rows, grid) = (crate::layout::TableId(t.id), t.rows.clone(), t.grid.clone());
             let at = rows.len();
-            rows.extend(src.rows.iter().map(|r| {
-                let mut r = r.clone();
-                r.src = None;
-                r.cells.iter_mut().for_each(|c| c.blocks = c.blocks.iter().map(fresh).collect());
-                r
-            }));
-            return Some(self.rebuild("Paste Rows", id, rows, wide(&grid), (at, 0), fonts));
+            let mut tx = self.begin("Paste Rows");
+            let new = self.take_rows(&mut tx, src, f, &rows, at);
+            rows.extend(new);
+            return Some(self.rebuild_in(tx, id, rows, wide(&grid), (at, 0), fonts));
         }
         let tg = self.table_target()?;
         let block = matches!(self.selection, Selection::Cells { .. });
@@ -92,7 +78,8 @@ impl Editor {
         let t = self.index.table(&self.doc, tg.table)?.clone();
         let g = Grid::of(&t);
         let mut rows = t.rows.clone();
-        let fresh_cells = |r: usize, j: usize| -> Option<Vec<Block>> {
+        // A source cell's content as a fresh copy (the block repeats over a larger target).
+        let tile = |r: usize, j: usize| -> Option<Vec<Block>> {
             let row = &src.rows[r % src.rows.len().max(1)];
             row.cells.get(j % row.cells.len().max(1)).map(|c| c.blocks.iter().map(fresh).collect())
         };
@@ -100,16 +87,8 @@ impl Editor {
         let at_row_start = !block && self.selection.focus().is_some_and(|p| p.para_offset().is_some_and(|(_, o)| o.0 == 0)) && tg.cols.0 == 0;
         let over_rows = matches!(self.selection, Selection::Cells { shape: CellShape::Rows, .. });
         if copy.whole_rows && (at_row_start || over_rows) {
-            let new: Vec<Row> = src
-                .rows
-                .iter()
-                .map(|r| {
-                    let mut r = r.clone();
-                    r.src = None;
-                    r.cells.iter_mut().for_each(|c| c.blocks = c.blocks.iter().map(fresh).collect());
-                    r
-                })
-                .collect();
+            let mut tx = self.begin("Paste Rows");
+            let new = self.take_rows(&mut tx, src, f, &rows, tg.rows.0);
             let (at, n) = (tg.rows.0, new.len());
             rows.splice(at..at, new);
             // A merged cell the rows land in splits around them: its part below starts again.
@@ -123,19 +102,23 @@ impl Editor {
                     }
                 }
             }
-            return Some(self.rebuild("Paste Rows", tg.table, rows, wide(&t.grid), (tg.rows.0, 0), fonts));
+            return Some(self.rebuild_in(tx, tg.table, rows, wide(&t.grid), (tg.rows.0, 0), fonts));
         }
+        let mut tx = self.begin("Paste Cells");
+        let mut taken = super::clipboard::Taken::default();
         if block && single {
             // One selected cell
-            let k = g.cell_at(tg.rows.0, tg.cols.0)?;
-            let mut sub = src.clone();
-            sub.id = crate::docx::next_para_id();
-            let Block::Table(sub) = fresh(&Block::Table(sub)) else { return None };
+            let Some(k) = g.cell_at(tg.rows.0, tg.cols.0) else {
+                self.abort(tx);
+                return None;
+            };
+            let mut sub = vec![fresh(&Block::Table(src.clone()))];
+            self.take_in(&mut tx, &mut sub, f, &mut taken);
             let cell = &mut rows[tg.rows.0].cells[k];
             let closing = empty_cell(cell).blocks;
-            cell.blocks.push(Block::Table(sub));
+            cell.blocks.extend(sub);
             cell.blocks.extend(closing);
-            return Some(self.rebuild("Paste Cells", tg.table, rows, t.grid.clone(), (tg.rows.0, tg.cols.0), fonts));
+            return Some(self.rebuild_in(tx, tg.table, rows, t.grid.clone(), (tg.rows.0, tg.cols.0), fonts));
         }
         if block {
             // Cell block
@@ -144,19 +127,27 @@ impl Editor {
                     .filter(|&k| g.rows[r].get(k).is_some_and(|&(c, s, _)| c + s.max(1) > tg.cols.0 && c <= tg.cols.1))
                     .collect();
                 for (j, k) in ks.into_iter().enumerate() {
-                    if let Some(b) = fresh_cells(i, j) {
+                    if let Some(mut b) = tile(i, j) {
+                        self.take_in(&mut tx, &mut b, f, &mut taken);
                         rows[r].cells[k].blocks = b;
                     }
                 }
             }
-            return Some(self.rebuild("Paste Cells", tg.table, rows, t.grid.clone(), (tg.rows.0, tg.cols.0), fonts));
+            return Some(self.rebuild_in(tx, tg.table, rows, t.grid.clone(), (tg.rows.0, tg.cols.0), fonts));
         }
         // Caret in a cell
-        let k0 = g.cell_at(tg.rows.0, tg.cols.0)?;
+        let Some(k0) = g.cell_at(tg.rows.0, tg.cols.0) else {
+            self.abort(tx);
+            return None;
+        };
+        let n = rows.len();
         for i in 0..src.rows.len() {
             let r = tg.rows.0 + i;
             if r >= rows.len() {
-                let mut add = rows.last()?.clone();
+                let Some(mut add) = rows.last().cloned() else {
+                    self.abort(tx);
+                    return None;
+                };
                 add.src = None;
                 add.rev = Default::default();
                 add.cells.iter_mut().for_each(|c| *c = empty_cell(c));
@@ -165,12 +156,65 @@ impl Editor {
             for j in 0..src.rows[i].cells.len() {
                 let k = if i == 0 { k0 + j } else { g.cell_at(r.min(t.rows.len() - 1), tg.cols.0).unwrap_or(0) + j };
                 if k < rows[r].cells.len()
-                    && let Some(b) = fresh_cells(i, j)
+                    && let Some(mut b) = tile(i, j)
                 {
+                    self.take_in(&mut tx, &mut b, f, &mut taken);
                     rows[r].cells[k].blocks = b;
                 }
             }
         }
-        Some(self.rebuild("Paste Cells", tg.table, rows, t.grid.clone(), (tg.rows.0, tg.cols.0), fonts))
+        // Rows added below the table are new rows of it, each its own repeating item, as Insert Rows makes them.
+        if rows.len() > n {
+            self.fresh_items(&mut rows[n..], &[]);
+        }
+        Some(self.rebuild_in(tx, tg.table, rows, t.grid.clone(), (tg.rows.0, tg.cols.0), fonts))
+    }
+
+    /// Pasted rows for `rows` (the table's, before the paste) at `at`, in `tx`: fresh copies made this document's, in
+    /// the controls the rows on both sides share. Between two rows of a repeating section a row is an item of it: a
+    /// copied item keeps its item, not its section, and a row that isn't one becomes a new item.
+    fn take_rows(&mut self, tx: &mut super::Tx, src: &Table, f: &Fragment, rows: &[Row], at: usize) -> Vec<Row> {
+        use crate::docx::{ControlId, ControlKind};
+        let inside: Vec<ControlId> = match (at.checked_sub(1).and_then(|k| rows.get(k)), rows.get(at)) {
+            (Some(a), Some(b)) => a.controls.iter().copied().filter(|c| b.controls.contains(c)).collect(),
+            _ => Vec::new(),
+        };
+        let is = |defs: &std::collections::HashMap<ControlId, crate::docx::Control>, c: &ControlId, kind: ControlKind| {
+            defs.get(c).is_some_and(|k| k.props.kind == kind)
+        };
+        let in_section = inside.iter().any(|c| is(&self.doc.controls, c, ControlKind::RepeatingSection));
+        let in_item = inside.iter().any(|c| is(&self.doc.controls, c, ControlKind::RepeatingItem));
+        let copied: Vec<Row> = src
+            .rows
+            .iter()
+            .map(|r| {
+                let mut r = r.clone();
+                if in_section && let Some(k) = r.controls.iter().position(|c| is(&f.controls, c, ControlKind::RepeatingItem)) {
+                    r.controls.drain(..k + usize::from(in_item));
+                }
+                r
+            })
+            .collect();
+        let mut blocks = vec![fresh(&Block::Table(Table { rows: copied, controls: Vec::new(), ..src.clone() }))];
+        self.take_in(tx, &mut blocks, f, &mut super::clipboard::Taken::default());
+        let Some(Block::Table(t)) = blocks.pop() else { return Vec::new() };
+        let neighbour = at
+            .checked_sub(1)
+            .and_then(|k| rows.get(k))
+            .and_then(|r| r.controls.iter().copied().find(|c| !inside.contains(c) && is(&self.doc.controls, c, ControlKind::RepeatingItem)));
+        let mut new = t.rows;
+        for r in &mut new {
+            let item = r.controls.iter().any(|c| is(&self.doc.controls, c, ControlKind::RepeatingItem));
+            r.controls.splice(0..0, inside.iter().copied());
+            if in_section
+                && !in_item
+                && !item
+                && let Some(n) = neighbour
+            {
+                r.controls.insert(inside.len(), n);
+                self.fresh_items(std::slice::from_mut(r), &inside);
+            }
+        }
+        new
     }
 }

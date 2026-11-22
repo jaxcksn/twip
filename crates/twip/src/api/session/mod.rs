@@ -293,6 +293,8 @@ impl Session {
 }
 
 #[cfg(test)]
+mod paste_and_replace;
+#[cfg(test)]
 mod protection_tests;
 #[cfg(test)]
 mod tests;

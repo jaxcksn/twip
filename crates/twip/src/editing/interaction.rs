@@ -113,9 +113,9 @@ impl Editor {
             restore(self);
             return Some(Outcome::Unchanged("dropped on the selection"));
         }
-        let mut frag = self.copy_fragment()?;
-        // Whole controls dragged go with their properties, as copied ones do.
-        frag.controls = super::clipboard::controls_of(&frag.blocks, &self.doc);
+        // What a drop pastes is what Copy takes.
+        let mut frag = self.clip()?;
+        frag.moved = !d.copy;
         let sel = self.selection;
         let moving = !d.copy && self.tracking() && self.moves_whole();
         let mut marks = (Vec::new(), Vec::new());
