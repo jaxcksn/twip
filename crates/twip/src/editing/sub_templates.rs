@@ -15,7 +15,7 @@ use super::commands::Outcome;
 use super::elements;
 use super::geometry::Pages;
 use super::index::{Container, DocIndex};
-use super::position::StoryId;
+use super::position::{Position, StoryId};
 use super::selection::Selection;
 use super::step::Step;
 
@@ -794,26 +794,27 @@ impl Editor {
 
     pub(super) fn refuse_expanded(&mut self) -> bool {
         let Some((a, b)) = self.selection.ordered(&self.index) else { return false };
-        let (Some((pa, ua)), Some((pb, ub))) = (a.para_offset(), b.para_offset()) else { return false };
-        if pa != pb || ua == ub {
-            return false;
-        }
-        let shown = self.references.by_field.iter().find(|(f, r)| r.at == pa && r.resolution == Resolution::Resolved && !self.collapsed.contains(f));
-        let Some((&field, r)) = shown else { return false };
-        let Some(p) = self.index.para(&self.doc, pa) else { return false };
-        let starts: Vec<u32> = p.inlines.iter().scan(0u32, |at, i| Some(std::mem::replace(at, *at + i.units() as u32))).collect();
-        let Some(s) = fields::spans(&p.inlines).into_iter().find(|s| matches!(p.inlines[s.begin], Inline::FieldBegin { id, .. } if id == field))
-        else {
-            return false;
-        };
-        let (lo, hi) = (starts[s.begin], starts[s.end] + 1);
-        if ub.0 <= lo || ua.0 >= hi {
-            return false;
-        }
-        let name = r.part.and_then(|k| self.doc.glossary.as_ref()?.parts.get(k as usize)).map(|b| b.name.clone());
+        let Some(field) = self.expanded_in(&a, &b) else { return false };
+        let part = self.references.by_field.get(&field).and_then(|r| r.part);
+        let name = part.and_then(|k| self.doc.glossary.as_ref()?.parts.get(k as usize)).map(|b| b.name.clone());
         self.refused = Some("sub-template");
         self.events.push(super::input::Notice::Refused { sub_template: name, element: Some(ElementId::Field(field)) });
         true
+    }
+
+    /// The shown, resolved sub-template reference `a..b` edits, whose body is read only.
+    pub(super) fn expanded_in(&self, a: &Position, b: &Position) -> Option<FieldId> {
+        let (Some((pa, ua)), Some((pb, ub))) = (a.para_offset(), b.para_offset()) else { return None };
+        if pa != pb || ua == ub {
+            return None;
+        }
+        let shown = self.references.by_field.iter().find(|(f, r)| r.at == pa && r.resolution == Resolution::Resolved && !self.collapsed.contains(f));
+        let (&field, _) = shown?;
+        let p = self.index.para(&self.doc, pa)?;
+        let starts: Vec<u32> = p.inlines.iter().scan(0u32, |at, i| Some(std::mem::replace(at, *at + i.units() as u32))).collect();
+        let s = fields::spans(&p.inlines).into_iter().find(|s| matches!(p.inlines[s.begin], Inline::FieldBegin { id, .. } if id == field))?;
+        let (lo, hi) = (starts[s.begin], starts[s.end] + 1);
+        (ub.0 > lo && ua.0 < hi).then_some(field)
     }
 
     fn rebuild_references(&mut self) {

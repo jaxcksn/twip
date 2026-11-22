@@ -1518,17 +1518,22 @@ impl HostSurface<'_> {
         s.editor.set_drop(None, &s.fonts.fonts());
     }
 
-    /// Runs `command` at the drop point, as one transaction: the caret goes there first. Fails `unavailable` where
-    /// text can't go in.
+    /// Runs `command` at the drop point, as one transaction: the caret goes there first, and document protection is
+    /// checked there. Fails `unavailable` where text can't go in; a refused drop leaves the selection as it was.
     pub fn drop(&mut self, at: Point, command: Command) -> Result<Commit, Error> {
         let (x, y) = self.doc_point(at);
-        self.session.check(&command)?;
+        self.session.check_where(&command, false)?;
         self.session.apply_with(Origin::User, |e, fonts| {
             e.set_drop(None, fonts);
             let place = e.hit_test(x, y, fonts).filter(|h| h.2).and_then(|h| h.0.para_offset());
             let Some((para, offset)) = place else { return Outcome::Refused(Error::unavailable("nothing can be dropped here")) };
+            let before = e.selection();
             e.select_range(para, offset, offset, fonts);
-            e.execute(command, fonts)
+            let out = e.execute(command, fonts);
+            if matches!(out, Outcome::Refused(_)) {
+                e.restore_selection(before);
+            }
+            out
         })
     }
 

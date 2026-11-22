@@ -49,6 +49,7 @@ pub struct History {
     budget: usize,
     bytes: usize,
     ids: u64,
+    /// The position of the last step dropped, by eviction or [`History::fence`].
     evicted: u64,
 }
 
@@ -139,6 +140,15 @@ impl History {
 
     pub fn position(&self) -> u64 {
         self.undo.back().map_or(self.evicted, |t| t.id)
+    }
+
+    /// Drops every undo and redo step: nothing done so far can be undone. The position stays.
+    pub fn fence(&mut self) {
+        self.evicted = self.position();
+        self.undo.clear();
+        self.redo.clear();
+        self.typing = None;
+        self.bytes = 0;
     }
 }
 

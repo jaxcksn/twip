@@ -111,6 +111,11 @@ impl Editor {
         if self.mode == super::Mode::ReadOnly && cmd.mutates() {
             return self.refuse_read_only();
         }
+        if cmd.mutates()
+            && let Some(e) = self.protection_refusal(&cmd)
+        {
+            return Outcome::Refused(e);
+        }
         let out = self.execute_editable(cmd, fonts);
         self.pending_images.clear();
         self.settle_provisional(fonts);

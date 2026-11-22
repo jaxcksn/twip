@@ -58,9 +58,16 @@ impl Session {
         self.state.commands.get(&id)
     }
 
-    /// The checks before any step runs, in order: what the engine doesn't do yet, read only, availability in the
-    /// current state, then the arguments.
+    /// The checks before any step runs, in order: what the engine doesn't do yet, read only, document protection,
+    /// availability in the current state, then the arguments.
     pub(super) fn check(&self, command: &Command) -> Result<(), Error> {
+        self.check_where(command, true)
+    }
+
+    /// [`Session::check`]; `here`: also what depends on where the command runs (document protection, availability),
+    /// for a command that runs at the selection as it is now. The editor checks the protection again as each command
+    /// runs.
+    pub(super) fn check_where(&self, command: &Command, here: bool) -> Result<(), Error> {
         let id = command.id();
         if crate::editing::commands::UNSUPPORTED.contains(&id) {
             return Err(Error::unsupported(&id_name(id)));
@@ -68,35 +75,15 @@ impl Session {
         if self.read_only && info(id).is_some_and(|i| i.mutates) {
             return Err(Error::new(ErrorCode::ReadOnly, "the session is read only"));
         }
-        // Formatting protection: only unlocked styles, and no direct formatting.
-        let doc = self.editor.document();
-        if doc.settings.protection.as_ref().is_some_and(|p| p.limits_formatting()) {
-            let locked = |s: &crate::api::value::StyleId| doc.resolver.as_ref().and_then(|r| r.styles.get(&s.0)).is_some_and(|st| st.meta.locked);
-            match command {
-                Command::SetParagraphStyle(s) if locked(s) => return Err(Error::new(ErrorCode::NotAllowed, "the style is restricted")),
-                c if crate::editing::formats_a_style(c) => return Err(Error::new(ErrorCode::NotAllowed, "formatting is restricted")),
-                _ => {}
+        if here {
+            if command.mutates()
+                && let Some(e) = self.editor.protection_refusal(command)
+            {
+                return Err(e);
             }
-        }
-        // Restrict Editing: what the protection allows, and any change in a range the author may edit.
-        if let Some(p) = doc.settings.protection.as_ref()
-            && info(id).is_some_and(|i| i.mutates)
-            && !crate::editing::protection::allows(p, id)
-        {
-            use crate::docx::review::ProtectionKind as K;
-            use crate::editing::protection::edits_selection;
-            let ranges =
-                matches!(p.edit, K::ReadOnly | K::Comments) && edits_selection(id, false) && self.editor.in_editable_range(&self.author.name);
-            let in_form = p.edit == K::Forms
-                && matches!(command, Command::InsertText(_) | Command::Delete(_) | Command::PasteText(_))
-                && self.editor.in_form_field();
-            let open_section = p.edit == K::Forms && edits_selection(id, true) && self.editor.in_unprotected_section();
-            if !ranges && !in_form && !open_section {
-                return Err(Error::new(ErrorCode::NotAllowed, "the document is protected"));
+            if self.state.commands.get(&id).is_some_and(|s| !s.enabled) {
+                return Err(Error::unavailable(format!("{} isn't available here", id_name(id))));
             }
-        }
-        if self.state.commands.get(&id).is_some_and(|s| !s.enabled) {
-            return Err(Error::unavailable(format!("{} isn't available here", id_name(id))));
         }
         self.validate(command)
     }
@@ -413,10 +400,10 @@ impl Session {
                     self.cursor_overrides.clone_from(o);
                 }
                 if let Some(l) = v.live_layout {
-                    self.editor.live_layout = l;
+                    (self.live_layout, self.editor.live_layout) = (l, l);
                 }
                 if let Some(c) = v.control_labels {
-                    self.editor.control_labels = c;
+                    (self.control_labels, self.editor.control_labels) = (c, c);
                 }
                 let p = &mut self.presentation;
                 if let Some(t) = v.theme {

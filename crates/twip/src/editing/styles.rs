@@ -16,50 +16,56 @@ use super::step::Step;
 
 /// The commands [`Editor::format_style`] runs on a style: character and paragraph formatting.
 pub fn formats_a_style(c: &Command) -> bool {
+    formats_a_style_id(c.id())
+}
+
+/// Whether [`formats_a_style`] takes the commands `id` names.
+pub fn formats_a_style_id(id: crate::api::command::CommandId) -> bool {
+    use crate::api::command::CommandId as C;
     matches!(
-        c,
-        Command::SetBold(_)
-            | Command::SetItalic(_)
-            | Command::SetUnderline(_)
-            | Command::SetStrikethrough(_)
-            | Command::SetDoubleStrikethrough(_)
-            | Command::SetSuperscript(_)
-            | Command::SetSubscript(_)
-            | Command::SetSmallCaps(_)
-            | Command::SetAllCaps(_)
-            | Command::SetHidden(_)
-            | Command::SetFont(_)
-            | Command::SetFontSize(_)
-            | Command::GrowFont
-            | Command::ShrinkFont
-            | Command::SetFontColor(_)
-            | Command::SetHighlight(_)
-            | Command::SetCharacterSpacing(_)
-            | Command::SetCharacterPosition(_)
-            | Command::SetTypography(_)
-            | Command::SetLanguage(_)
-            | Command::SetCharacterEffects(_)
-            | Command::SetTextEffects(_)
-            | Command::SetUnderlineColor(_)
-            | Command::SetAlignment(_)
-            | Command::SetLineSpacing(_)
-            | Command::SetParagraphSpacing(_)
-            | Command::SetIndents(_)
-            | Command::IncreaseIndent
-            | Command::DecreaseIndent
-            | Command::SetParagraphFlow(_)
-            | Command::SetOutline(_)
-            | Command::SetParagraphTextDirection(_)
-            | Command::SetParagraphBorders(_)
-            | Command::SetParagraphShading(_)
-            | Command::SetParagraphBorderLines(_)
-            | Command::SetShading(_)
-            | Command::SetTextBorder(_)
-            | Command::SetFrame(_)
-            | Command::RemoveFrame
-            | Command::AddTabStop(_)
-            | Command::DeleteTabStop(_)
-            | Command::ClearTabStops
+        id,
+        C::SetBold
+            | C::SetItalic
+            | C::SetUnderline
+            | C::SetStrikethrough
+            | C::SetDoubleStrikethrough
+            | C::SetSuperscript
+            | C::SetSubscript
+            | C::SetSmallCaps
+            | C::SetAllCaps
+            | C::SetHidden
+            | C::SetFont
+            | C::SetFontSize
+            | C::GrowFont
+            | C::ShrinkFont
+            | C::SetFontColor
+            | C::SetHighlight
+            | C::SetCharacterSpacing
+            | C::SetCharacterPosition
+            | C::SetTypography
+            | C::SetLanguage
+            | C::SetCharacterEffects
+            | C::SetTextEffects
+            | C::SetUnderlineColor
+            | C::SetAlignment
+            | C::SetLineSpacing
+            | C::SetParagraphSpacing
+            | C::SetIndents
+            | C::IncreaseIndent
+            | C::DecreaseIndent
+            | C::SetParagraphFlow
+            | C::SetOutline
+            | C::SetParagraphTextDirection
+            | C::SetParagraphBorders
+            | C::SetParagraphShading
+            | C::SetParagraphBorderLines
+            | C::SetShading
+            | C::SetTextBorder
+            | C::SetFrame
+            | C::RemoveFrame
+            | C::AddTabStop
+            | C::DeleteTabStop
+            | C::ClearTabStops
     )
 }
 

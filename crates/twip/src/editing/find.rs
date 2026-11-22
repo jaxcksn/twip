@@ -1,12 +1,13 @@
 //! Find and replace
 
-use crate::docx::{Block, Inline};
+use crate::docx::Block;
 use crate::font::Fonts;
 use crate::layout::{ParaId, Unit};
 
 use super::Editor;
-use super::commands::Outcome;
-use super::step::Step;
+use super::commands::{Command, Outcome};
+use super::position::Position;
+use super::selection::{Granularity, Selection};
 use super::text::UnitText;
 
 fn matches(hay: &[char], needle: &[char], case: bool) -> Vec<usize> {
@@ -94,40 +95,84 @@ impl Editor {
         pa == pb && (ub.0 - ua.0) as usize == needle.len() && matches(&self.chars_of(pa)[ua.0 as usize..ub.0 as usize], &needle, case) == [0]
     }
 
+    #[cfg(test)]
     pub(crate) fn replace_all(&mut self, find: &str, with: &str, case: bool, fonts: &Fonts) -> (usize, Outcome) {
         let needle: Vec<char> = find.chars().collect();
-        let mut tx = self.begin("Replace All");
-        let mut count = 0;
-        for para in self.body_paras() {
-            let hits = matches(&self.chars_of(para), &needle, case);
-            for &h in hits.iter().rev() {
-                let Some(p) = self.index.para(&self.doc, para) else { continue };
-                let mut at = 0usize;
-                let run = p.inlines.iter().find_map(|i| {
-                    let n = i.units();
-                    let r = (at + n > h && n > 0).then(|| i.run().cloned()).flatten();
-                    at += n;
-                    r
-                });
-                let Some(run) = run.or_else(|| Some(p.mark.clone())) else { continue };
-                let inl = if with.is_empty() { Vec::new() } else { vec![Inline::Text(with.to_string(), run)] };
-                let range = Unit(h as u32)..Unit((h + needle.len()) as u32);
-                if self.step(&mut tx, Step::Text { para, range, with: inl, edges: Default::default() }).is_err() {
+        let hits: Vec<(ParaId, Unit, Unit)> = self
+            .body_paras()
+            .into_iter()
+            .flat_map(|para| {
+                let n = needle.len() as u32;
+                matches(&self.chars_of(para), &needle, case).into_iter().map(move |h| (para, Unit(h as u32), Unit(h as u32 + n)))
+            })
+            .collect();
+        self.replace_hits("Replace All", &hits, with, true, fonts)
+    }
+
+    /// Replaces `hits` (a paragraph's units `start..end` each, in document order) with `with` as one transaction, last
+    /// to first so earlier offsets hold. Each is replaced as typing over it would be: where document protection, a
+    /// locked control or a shown sub-template keeps the text, it stays. How many it replaced; refused when protection
+    /// kept every one. `stay`: the caret goes back to where the selection started, else it follows the first.
+    pub(crate) fn replace_hits(
+        &mut self,
+        label: &'static str,
+        hits: &[(ParaId, Unit, Unit)],
+        with: &str,
+        stay: bool,
+        fonts: &Fonts,
+    ) -> (usize, Outcome) {
+        let before = self.selection;
+        let edit =
+            if with.is_empty() { super::commands::deleting(super::commands::Dir::Forward, false) } else { Command::InsertText(with.to_string()) };
+        self.pending = None;
+        let mut tx = self.begin(label);
+        let (mut count, mut protected, mut caret) = (0, None, None);
+        for &(para, a, b) in hits.iter().rev() {
+            let Some(slot) = self.index.para_slot(para) else { continue };
+            let story = self.index.story(slot.container);
+            let len = self.index.para(&self.doc, para).map_or(Unit(0), super::step::para_len);
+            if b.0 > len.0 || a >= b {
+                continue;
+            }
+            let (pa, pb) = (Position::text(story, para, a), Position::text(story, para, b));
+            self.selection = Selection::range(pa, pb, Granularity::Char);
+            if let Some(e) = self.protection_refusal(&edit) {
+                protected.get_or_insert(e);
+                continue;
+            }
+            if self.locked_edit(&pa, &pb) || self.expanded_in(&pa, &pb).is_some() {
+                continue;
+            }
+            let done = if with.is_empty() {
+                self.delete_range_joining(&mut tx, false).map_err(|_| "stale match").and_then(|p| p.ok_or("no caret"))
+            } else {
+                self.type_into(&mut tx, with).map(|(p, _)| p)
+            };
+            match done {
+                Ok(p) => {
+                    count += 1;
+                    caret = Some(p);
+                }
+                Err(_) => {
+                    self.selection = before;
                     self.abort(tx);
                     return (0, Outcome::Unchanged("replace failed"));
                 }
-                count += 1;
             }
         }
         if count == 0 {
+            self.selection = before;
             self.abort(tx);
-            return (0, Outcome::Unchanged("no matches"));
+            return (0, protected.map_or(Outcome::Unchanged("no matches"), Outcome::Refused));
         }
-        if let Some((a, _)) = self.selection.ordered(&self.index)
-            && let Some((p, u)) = a.para_offset()
-        {
-            let len = self.index.para(&self.doc, p).map_or(Unit(0), super::step::para_len);
-            self.selection = self.normalize(super::selection::Selection::Caret(super::position::Position::text(a.story, p, Unit(u.0.min(len.0)))));
+        let start = before.ordered(&self.index).map(|(a, _)| a).and_then(|a| {
+            let (p, u) = a.para_offset()?;
+            let len = super::step::para_len(self.index.para(&self.doc, p)?);
+            Some(Position::text(a.story, p, Unit(u.0.min(len.0))))
+        });
+        let at = if stay { start.or(caret) } else { caret };
+        if let Some(p) = at {
+            self.selection = self.normalize(Selection::Caret(p));
         }
         (count, self.commit(tx, None, fonts))
     }

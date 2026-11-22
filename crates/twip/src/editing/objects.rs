@@ -383,7 +383,7 @@ impl Editor {
             Selection::Object(o @ ObjectRef::Inline { para, offset }) => self.inline_box(&geo, para, offset).map(|r| (o, r, 0.0)),
             _ => None,
         }
-        .filter(|(o, ..)| !self.object_fixed(*o))?;
+        .filter(|(o, ..)| !self.object_fixed(*o) && !self.gesture_kept(crate::api::command::CommandId::SetObjectSize))?;
         let [x0, y0, x1, y1] = rect;
         let (cx, cy) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
         let (ux, uy) = turned((px - cx, py - cy), -rot);
@@ -433,15 +433,18 @@ impl Editor {
             self.activate_picture_control();
             self.click_activated = self.selected_picture_control();
         }
+        let kept = self.gesture_kept(crate::api::command::CommandId::SetObjectPosition);
         if let Selection::Object(obj @ ObjectRef::Floating(f)) = s
             && self.selected_child().is_some()
             && !self.object_fixed(obj)
+            && !kept
         {
             self.child_move_press(f, page, px, py);
             return true;
         }
         if let Selection::Object(obj @ ObjectRef::Floating(f)) = s
             && !self.object_fixed(obj)
+            && !kept
             && let Some((rect, rot)) = self.float_frame(f, page)
         {
             let swap = self.float_of(f).is_some_and(|fl| fl.rot_swap);
@@ -1381,6 +1384,9 @@ impl Editor {
             return None;
         }
         let p = self.checkbox_at(x, y, fonts)?;
+        if self.protection_refuses_at(crate::api::command::CommandId::SetCheckbox, &p, &p).is_some() {
+            return None;
+        }
         let (para, u) = p.para_offset()?;
         let Some(Inline::Sym { control: Some(c), .. }) = self.index.para(&self.doc, para).and_then(|q| inline_at(q, u)) else { return None };
         self.doc.controls.get(c).is_some_and(|k| k.props.lock.editable()).then_some(p)
@@ -1423,6 +1429,11 @@ impl Editor {
         let Some(crate::docx::ControlKind::Checkbox { checked, unchecked }) = self.doc.controls.get(&c).map(|c| c.props.kind.clone()) else {
             return Outcome::Unchanged("no checkbox");
         };
+        if !self.editable(&p) {
+            self.refused = Some("locked");
+            self.events.push(super::input::Notice::Refused { sub_template: None, element: Some(crate::docx::ElementId::Control(c)) });
+            return Outcome::Unchanged("locked");
+        }
         let face = if ch == checked { unchecked } else { checked };
         let mut tx = self.begin("Checkbox");
         if self

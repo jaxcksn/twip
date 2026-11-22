@@ -22,6 +22,9 @@ impl Editor {
         if self.style_target.is_some() {
             return Outcome::unavailable("not in a style");
         }
+        if self.refuse_expanded() || self.refuse_locked() {
+            return Outcome::Unchanged("locked");
+        }
         let mut tx = self.begin("Section Break");
         let caret = match self.delete_range(&mut tx) {
             Ok(Some(p)) => p,
@@ -74,11 +77,14 @@ impl Editor {
     }
 
     pub(in crate::editing) fn symbol(&mut self, s: InsertSymbol, fonts: &Fonts) -> Outcome {
+        // The font is the symbol's alone: typing after it goes on as before.
+        let was = self.pending.clone();
         if let Some(font) = s.font.as_deref().filter(|f| !f.is_empty()) {
             self.pending_font(font);
         }
         let out = self.insert_text(&s.char.to_string(), fonts);
         self.history.break_typing();
+        self.pending = was;
         out
     }
 

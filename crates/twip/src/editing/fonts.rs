@@ -70,7 +70,7 @@ impl Editor {
         if self.selection.is_collapsed() {
             return Outcome::Unchanged("no selection");
         }
-        if self.refuse_locked() {
+        if self.refuse_locked_content() {
             return Outcome::Unchanged("locked");
         }
         let cx = self.cx();

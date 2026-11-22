@@ -342,6 +342,10 @@ impl Editor {
         {
             let label = if bullet { "Automatic Bullets" } else { "Automatic Numbering" };
             let n = Unit(before.len() as u32);
+            let (pa, pb) = (Position::text(caret.story, para, Unit(0)), Position::text(caret.story, para, n));
+            if self.kept(crate::api::command::CommandId::InsertText, &pa, &pb) || self.kept(crate::api::command::CommandId::SetList, &pa, &pb) {
+                return Outcome::Unchanged("the marker is kept");
+            }
             return self.joined(label, fonts, |e| {
                 let mut tx = e.begin(label);
                 if e.step(&mut tx, Step::Text { para, range: Unit(0)..n, with: Vec::new(), edges: Default::default() }).is_err() {
@@ -356,6 +360,9 @@ impl Editor {
         let cell_start = self.index.para_slot(para).is_some_and(|s| matches!(s.container, super::index::Container::Cell { .. }) && s.block == 0);
         let Some(fix) = correction(&before, trigger, cell_start, ac) else { return Outcome::Unchanged("nothing to correct") };
         let (a, b) = (Unit(fix.range.start as u32), Unit(fix.range.end as u32));
+        if self.kept(crate::api::command::CommandId::InsertText, &Position::text(caret.story, para, a), &Position::text(caret.story, para, b)) {
+            return Outcome::Unchanged("the text is kept");
+        }
         let Some(run) = self.run_at(&Position::text(caret.story, para, Unit(a.0 + 1))) else { return Outcome::Unchanged("no run") };
         if fix.with == fix.from
             && let Some(s) = &fix.superscript

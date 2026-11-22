@@ -209,6 +209,9 @@ const SETTLE: f64 = 4.0;
 impl Editor {
     pub(super) fn shape_press(&mut self, x: f64, y: f64) -> bool {
         let Some((f, handle, frame)) = self.shape_handle_at(x, y) else { return false };
+        if self.gesture_kept(crate::api::command::CommandId::SetShapeAdjust) {
+            return false;
+        }
         let Some((_, px, py)) = self.stack().page_at(x, y) else { return false };
         let child = self.selected_child().map(<[u16]>::to_vec).unwrap_or_default();
         let Some(item) = self.selected_shape(f, frame.page).or_else(|| self.group_item(f, frame.page)) else { return false };
@@ -508,7 +511,9 @@ impl Editor {
                     (w, h) = (m * w.signum(), m * h.signum());
                 }
                 let r = [a[0].min(a[0] + w), a[1].min(a[1] + h), a[0].max(a[0] + w), a[1].max(a[1] + h)];
-                self.insert_shape(s.kind, Some((page, r)), fonts);
+                if !self.gesture_kept(crate::api::command::CommandId::InsertShape) {
+                    self.insert_shape(s.kind, Some((page, r)), fonts);
+                }
                 return true;
             }
             K::Cancel => {

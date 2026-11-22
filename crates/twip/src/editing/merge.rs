@@ -199,6 +199,9 @@ impl Editor {
     }
 
     pub(super) fn editable(&self, p: &Position) -> bool {
+        if self.doc.controls.values().any(|k| matches!(k.props.kind, ControlKind::Group)) && self.in_group(p, p) {
+            return false;
+        }
         elements::context(&self.doc, &self.index, &Selection::Caret(*p)).iter().all(|(e, _)| {
             let ElementId::Control(c) = e else { return true };
             if self.doc.controls.get(c).is_none_or(|k| k.props.lock.editable()) {
@@ -858,13 +861,20 @@ impl Editor {
 
     // Locks
     pub(super) fn locked_edit(&self, a: &Position, b: &Position) -> bool {
+        self.locks(a, b, true)
+    }
+
+    fn locks(&self, a: &Position, b: &Position, deletes: bool) -> bool {
+        if self.doc.controls.values().any(|k| matches!(k.props.kind, ControlKind::Group)) && self.in_group(a, b) {
+            return true;
+        }
         let ends = |p: ParaId| self.index.para(&self.doc, p).map_or(&[][..], |q| &q.controls[..]);
         let (pa, pb) = (a.para_offset().map(|(p, _)| p), b.para_offset().map(|(p, _)| p));
         // `whole`: a paragraph between the ends, deleted with its block controls unless one also holds an end.
         let check_with = |para: ParaId, x: u32, y: u32, whole: bool| -> bool {
             let Some(p) = self.index.para(&self.doc, para) else { return false };
             let held = |c: &ControlId| [pa, pb].into_iter().flatten().any(|e| ends(e).contains(c));
-            let refused = |c: &ControlId, lock: crate::docx::Lock| if whole && !held(c) { !lock.deletable() } else { !lock.editable() };
+            let refused = |c: &ControlId, lock: crate::docx::Lock| if deletes && whole && !held(c) { !lock.deletable() } else { !lock.editable() };
             if p.controls.iter().any(|c| self.doc.controls.get(c).is_some_and(|k| refused(c, k.props.lock))) {
                 return true;
             }
@@ -880,7 +890,7 @@ impl Editor {
                             if let Some(lock) = self.doc.controls.get(c).map(|k| k.props.lock) {
                                 let refused = if x == y {
                                     (start <= x && x < end || start == end && x == start) && !lock.editable()
-                                } else if x <= start && end <= y {
+                                } else if deletes && x <= start && end <= y {
                                     !lock.deletable()
                                 } else {
                                     x < end && y > start && !lock.editable()
@@ -913,9 +923,46 @@ impl Editor {
             || self.index.para_ids().filter(|&p| inside(p)).any(|p| check_with(p, 0, len(p), true))
     }
 
+    /// Whether `a..b` edits a group control's own content, which only the controls nested in it let change: a group
+    /// around an end that the edit doesn't take whole, unless both ends are in the same control nested in it.
+    pub(super) fn in_group(&self, a: &Position, b: &Position) -> bool {
+        let collapsed = a == b;
+        let is_group = |c: &ControlId| self.doc.controls.get(c).is_some_and(|k| matches!(k.props.kind, ControlKind::Group));
+        // The controls around `p`, innermost first, past the inline ones a caret is at the end of
+        let around = |p: &Position| -> Vec<(ControlId, Option<(Position, Position)>)> {
+            elements::context(&self.doc, &self.index, &Selection::Caret(*p))
+                .into_iter()
+                .filter_map(|(e, _)| {
+                    let ElementId::Control(c) = e else { return None };
+                    let at = self.locate(e);
+                    let range = at.as_ref().and_then(|w| self.element_range(w));
+                    let after = collapsed && matches!(at, Some(Where::Inline { .. })) && range.is_some_and(|(_, end)| end == *p);
+                    (!after).then_some((c, range))
+                })
+                .collect()
+        };
+        let whole =
+            |r: &Option<(Position, Position)>| !collapsed && r.is_some_and(|(s, e)| self.index.cmp(a, &s).is_le() && self.index.cmp(&e, b).is_le());
+        let at_a = around(a);
+        let at_b = if collapsed { Vec::new() } else { around(b) };
+        let inner_b = if collapsed { at_a.first() } else { at_b.first() };
+        let nested = matches!((at_a.first(), inner_b), (Some((x, _)), Some((y, _))) if x == y && !is_group(x));
+        !nested && at_a.iter().chain(&at_b).any(|(c, r)| is_group(c) && !whole(r))
+    }
+
     pub(super) fn refuse_locked(&mut self) -> bool {
+        self.refuse_lock(true)
+    }
+
+    /// [`Editor::refuse_locked`] for an edit that changes content in place and deletes nothing (formatting, case):
+    /// only a lock on the content refuses it.
+    pub(super) fn refuse_locked_content(&mut self) -> bool {
+        self.refuse_lock(false)
+    }
+
+    fn refuse_lock(&mut self, deletes: bool) -> bool {
         let Some((a, b)) = self.selection.ordered(&self.index) else { return false };
-        if self.locked_edit(&a, &b) {
+        if self.locks(&a, &b, deletes) {
             self.refused = Some("locked");
             self.events.push(super::input::Notice::Refused { sub_template: None, element: None });
             return true;

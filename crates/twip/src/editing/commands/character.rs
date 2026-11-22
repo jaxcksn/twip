@@ -330,6 +330,9 @@ impl Editor {
         if self.selection.is_collapsed() {
             return Outcome::unavailable("nothing selected");
         }
+        if self.refuse_expanded() || self.refuse_locked_content() {
+            return Outcome::Unchanged("locked");
+        }
         let ranges: Vec<_> = self.selected_ranges().into_iter().filter(|r| r.1 < r.2).collect();
         let mut tx = self.begin("Change Case");
         for (para, a, b) in ranges {

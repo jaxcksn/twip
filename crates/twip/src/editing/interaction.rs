@@ -48,6 +48,22 @@ impl Editor {
     pub(super) fn text_drag_release(&mut self, fonts: &Fonts) -> Option<Outcome> {
         let d = self.text_drag.take()?;
         self.requests.push(Request::ReleasePointer);
+        // Drag source and drop place
+        if d.moved
+            && let Some(drop) = d.drop
+        {
+            let source = match self.selection {
+                Selection::Object(super::selection::ObjectRef::Inline { para, offset }) => {
+                    Some((Position::text(d.press.story, para, offset), Position::text(d.press.story, para, Unit(offset.0 + 1))))
+                }
+                s => s.ordered(&self.index),
+            };
+            use crate::api::command::CommandId as C;
+            let taken = !d.copy && source.is_none_or(|(a, b)| self.kept(C::Delete, &a, &b));
+            if taken || !self.editable(&drop) || self.kept(C::Paste, &drop, &drop) {
+                return Some(Outcome::Unchanged("kept"));
+            }
+        }
         // A picture that is all of a picture control moves with its control.
         if let (Selection::Object(super::selection::ObjectRef::Inline { para, offset }), true, false, Some(drop)) =
             (self.selection, d.moved, d.copy, d.drop)
@@ -79,6 +95,7 @@ impl Editor {
             return Some(Outcome::Unchanged("no drop place"));
         };
         let Some((a, b)) = self.selection.ordered(&self.index) else { return Some(Outcome::Unchanged("no selection")) };
+        // Where the story dropped in is hosted: a text box's float, a note's reference.
         let in_box = match drop.story {
             super::position::StoryId::TextBox(f) => self.index.float_anchor(f).and_then(|para| {
                 let p = self.index.para(&self.doc, para)?;
@@ -87,6 +104,8 @@ impl Editor {
                 let story = self.index.para_slot(para).map(|s| self.index.story(s.container))?;
                 Some(Position::text(story, para, crate::layout::Unit(u)))
             }),
+            super::position::StoryId::Footnote(id) => self.note_reference(crate::docx::NoteKind::Foot, id),
+            super::position::StoryId::Endnote(id) => self.note_reference(crate::docx::NoteKind::End, id),
             _ => None,
         };
         let inside = |p: &Position| self.index.cmp(&a, p) != std::cmp::Ordering::Greater && self.index.cmp(p, &b) != std::cmp::Ordering::Greater;
@@ -139,15 +158,16 @@ impl Editor {
             ok
         };
         self.begin_batch(Some(if d.copy { "Copy" } else { "Move" }.into()));
+        // Paste and delete, together or not at all
         #[allow(clippy::if_same_then_else, reason = "the order differs: each call moves what the other one sees")]
-        let steps = if d.copy {
-            paste(self, &mut placed) as usize
+        let done = if d.copy {
+            paste(self, &mut placed)
         } else if after {
-            paste(self, &mut placed) as usize + delete(self, &mut placed) as usize
+            paste(self, &mut placed) && delete(self, &mut placed)
         } else {
-            delete(self, &mut placed) as usize + paste(self, &mut placed) as usize
+            delete(self, &mut placed) && paste(self, &mut placed)
         };
-        if steps == 0 {
+        if !done {
             self.end_batch(false, fonts);
             restore(self);
             return Some(Outcome::Unchanged("nothing dropped"));
