@@ -12,7 +12,10 @@ export interface Frames {
   readonly info: FrameInfo;
   /** Draws a frame at the next animation frame. */
   request(): void;
-  /** Resolves once a frame was drawn after this call; at once while the editor has no size or the page is hidden. */
+  /**
+   * Resolves once a frame started after this call was drawn; at once while the editor has no size or the page is
+   * hidden, and when the editor is destroyed. While the canvas can't draw (its GPU device is being replaced), it waits.
+   */
   drawn(): Promise<void>;
 }
 
@@ -24,9 +27,14 @@ export async function startFrames(s: Session, dom: Dom, ledger: Ledger, report: 
   let cancel: (() => void) | undefined;
   let busy = false;
   let again = false;
-  const waiting: (() => void)[] = [];
-  const settle = () => {
-    for (const resolve of waiting.splice(0)) resolve();
+  /** Frames started so far. */
+  let started = 0;
+  /** What waits for a frame started after `after` frames (one in flight when it asked may show what came before). */
+  let waiting: { after: number; resolve: () => void }[] = [];
+  const settle = (all = false) => {
+    const done = waiting.filter((w) => all || w.after < started);
+    waiting = waiting.filter((w) => !done.includes(w));
+    for (const w of done) w.resolve();
   };
 
   const draw = () => {
@@ -36,18 +44,26 @@ export async function startFrames(s: Session, dom: Dom, ledger: Ledger, report: 
       return;
     }
     const { width, height, dpr } = surface;
-    if (!width || !height) return settle();
+    if (!width || !height) return settle(true);
     busy = true;
+    started++;
     s.frame(Math.round(width * dpr), Math.round(height * dpr))
-      .then((drawn) => {
-        if (drawn) {
-          info = drawn;
-          onFrame(drawn);
-        }
-      }, report)
+      .then(
+        (drawn) => {
+          // A frame that drew nothing (a lost GPU device being replaced) leaves its waiters for the next.
+          if (drawn) {
+            info = drawn;
+            onFrame(drawn);
+            settle();
+          }
+        },
+        (e: unknown) => {
+          settle();
+          report(e);
+        },
+      )
       .finally(() => {
         busy = false;
-        settle();
         if (again) {
           again = false;
           request();
@@ -83,12 +99,12 @@ export async function startFrames(s: Session, dom: Dom, ledger: Ledger, report: 
   ledger.observe(new IntersectionObserver((entries) => entries.some((e) => e.isIntersecting) && resize())).observe(dom.scroller);
   // A hidden page draws no animation frames: what waits for one doesn't wait for the page to show.
   const page = dom.scroller.ownerDocument;
-  ledger.listen(page, 'visibilitychange', () => (page.hidden ? settle() : request()));
+  ledger.listen(page, 'visibilitychange', () => (page.hidden ? settle(true) : request()));
   const onMessage = (message: Message) => {
     if (message.kind === Kind.RequestFrame) request();
   };
   s.hostListeners.add(onMessage);
-  s.disposers.push(() => s.hostListeners.delete(onMessage));
+  s.disposers.push(() => s.hostListeners.delete(onMessage), () => settle(true));
   resize();
 
   return {
@@ -99,7 +115,7 @@ export async function startFrames(s: Session, dom: Dom, ledger: Ledger, report: 
     drawn: () => {
       if (!surface.width || !surface.height || page.hidden || s.destroyed) return Promise.resolve();
       request();
-      return new Promise((resolve) => waiting.push(resolve));
+      return new Promise((resolve) => waiting.push({ after: started, resolve }));
     },
   };
 }

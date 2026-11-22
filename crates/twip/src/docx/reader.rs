@@ -68,9 +68,10 @@ impl Package {
     /// A part's text, refused (none) when its elements nest deeper than [`MAX_DEPTH`].
     fn read_str(&mut self, path: &str) -> Option<String> {
         let b = self.read(path)?;
-        let s = String::from_utf8(b).ok()?;
-        let s = s.trim_start_matches('\u{feff}');
-        (!too_deep(s, MAX_DEPTH)).then(|| s.to_string())
+        let mut s = String::from_utf8(b).ok()?;
+        let bom = s.len() - s.trim_start_matches('\u{feff}').len();
+        s.drain(..bom);
+        (!too_deep(&s, MAX_DEPTH)).then_some(s)
     }
 
     /// Relationships of a part: id → (type suffix, absolute target).
@@ -3320,26 +3321,29 @@ fn strip_ranges(blocks: &mut [Block], gone: &[(RangeKind, i64)]) {
 /// Keeps new ids past every `w:id` (revisions, comments and ranges share them), `w14:paraId` and
 /// `w16cid:durableId` in a part's XML. Other attributes named `id` only push new ids further on.
 fn seed_ids(xml: &str, ids: &mut IdCounter) {
-    let values = |name: &'static str| {
-        xml.match_indices(name).filter_map(move |(at, _)| {
-            // The attribute's whole local name: `w:id`, not `rsid`.
-            if !xml[..at].ends_with([':', ' ', '\t', '\n', '\r']) {
-                return None;
-            }
-            let rest = xml[at + name.len()..].trim_start().strip_prefix('=')?.trim_start();
-            let quote = rest.chars().next().filter(|q| matches!(q, '"' | '\''))?;
-            let v = &rest[1..];
-            v.find(quote).map(|end| &v[..end])
-        })
-    };
-    for v in values("id") {
-        if let Ok(id) = v.trim().parse::<i64>() {
-            ids.saw_revision(id);
+    let b = xml.as_bytes();
+    // Each `=` with the attribute name before it: `w:id`, not `rsid`.
+    for (eq, _) in xml.match_indices('=') {
+        let end = b[..eq].iter().rposition(|c| !c.is_ascii_whitespace()).map_or(0, |k| k + 1);
+        let start = b[..end].iter().rposition(|c| !c.is_ascii_alphanumeric()).map_or(0, |k| k + 1);
+        if start == 0 || !matches!(b[start - 1], b':' | b' ' | b'\t' | b'\n' | b'\r') {
+            continue;
         }
-    }
-    for v in values("paraId").chain(values("durableId")) {
-        if let Ok(id) = u32::from_str_radix(v.trim(), 16) {
-            ids.saw_para(id);
+        let para = match &b[start..end] {
+            b"id" => false,
+            b"paraId" | b"durableId" => true,
+            _ => continue,
+        };
+        let rest = xml[eq + 1..].trim_start();
+        let Some(quote) = rest.chars().next().filter(|q| matches!(q, '"' | '\'')) else { continue };
+        let v = &rest[1..];
+        let Some(v) = v.find(quote).map(|end| v[..end].trim()) else { continue };
+        if para {
+            if let Ok(id) = u32::from_str_radix(v, 16) {
+                ids.saw_para(id);
+            }
+        } else if let Ok(id) = v.parse::<i64>() {
+            ids.saw_revision(id);
         }
     }
 }
@@ -3502,6 +3506,15 @@ fn cell_ids(tc: Node, tc_pr: Option<Node>) -> Option<Rc<crate::docx::CellIds>> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn ids_are_seeded_from_whole_attribute_names() {
+        let mut ids = super::IdCounter::default();
+        let xml = r#"<w:ins w:id = '41' w:rsid="99"><w:p w14:paraId="0000001F" w16cid:durableId="7FFFFFFE x"/><w:c id="7"/></w:ins>"#;
+        super::seed_ids(xml, &mut ids);
+        assert_eq!(ids.next_revision_id(), 42, "w:id with spaces and single quotes; not rsid");
+        assert_eq!(ids.next_para_id(), 0x20, "paraId; a durableId that isn't hex is skipped");
+    }
+
     #[test]
     fn a_vml_shapes_effect_extents_reach_its_lines_pixel_bounds() {
         let tw = |e: [f64; 4]| e.map(|v| (v * 20.0 * 1000.0).round() / 1000.0);

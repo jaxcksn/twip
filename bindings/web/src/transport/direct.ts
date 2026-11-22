@@ -59,6 +59,9 @@ export class DirectTransport implements Transport {
   #pending: Message[] = [];
   readonly #listeners = new Map<number, Set<(message: Message) => void>>();
   readonly #timers = new Map<number, Set<ReturnType<typeof setTimeout>>>();
+  /** Zero-delay timers, fired from a message port: nested `setTimeout`s wait at least 4 ms in browsers. */
+  #yields: { session: number; timer: number }[] = [];
+  #port: MessagePort | undefined;
   readonly #canvases = new Map<number, Canvas>();
   /** The engine's WebGPU device, started on the first canvas: whether there is one. */
   #gpu: Promise<boolean> | undefined;
@@ -102,6 +105,7 @@ export class DirectTransport implements Transport {
     return this.#enqueue(() => {
       for (const t of this.#timers.get(session) ?? []) clearTimeout(t);
       this.#timers.delete(session);
+      this.#yields = this.#yields.filter((y) => y.session !== session);
       this.#canvases.delete(session);
       this.#m._twip_session_free(this.#engine, session);
     }).finally(() => this.#listeners.delete(session));
@@ -350,6 +354,11 @@ export class DirectTransport implements Transport {
   }
 
   #arm(session: number, { timer, ms }: { timer: number; ms: number }): void {
+    if (ms <= 0 && typeof MessageChannel === 'function') {
+      this.#yields.push({ session, timer });
+      (this.#port ??= this.#yieldPort()).postMessage(null);
+      return;
+    }
     let set = this.#timers.get(session);
     if (!set) this.#timers.set(session, (set = new Set()));
     const handle = setTimeout(() => {
@@ -357,6 +366,17 @@ export class DirectTransport implements Transport {
       this.#enqueue(() => this.#m._twip_timer_fired(this.#engine, session, timer)).catch(() => {});
     }, ms);
     set.add(handle);
+  }
+
+  #yieldPort(): MessagePort {
+    const channel = new MessageChannel();
+    channel.port1.onmessage = () => {
+      const y = this.#yields.shift();
+      if (y) this.#enqueue(() => this.#m._twip_timer_fired(this.#engine, y.session, y.timer)).catch(() => {});
+    };
+    // Node: a listening port would keep the process alive.
+    (channel.port1 as { unref?: () => void }).unref?.();
+    return channel.port2;
   }
 
   #failure(e: unknown): EditorError {

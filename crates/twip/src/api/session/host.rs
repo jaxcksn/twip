@@ -121,6 +121,9 @@ fn a11y_key(e: &crate::editing::Editor) -> u64 {
 /// How long after a change the accessibility tree's changes go: edits within it go together.
 const A11Y_MS: u32 = 250;
 
+/// How often background layout sends a state while the pages it adds are past the screen.
+const PAGES_MS: std::time::Duration = std::time::Duration::from_millis(100);
+
 /// What a host keeps about the frame it drew: the document's size and the caret, for scrollbars and the IME.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -346,6 +349,8 @@ pub(super) struct Presentation {
     timers: Vec<(u32, u32)>,
     /// Something visible changed with no new state (a blink phase): the host should draw a frame.
     frame_wanted: bool,
+    /// When background layout last sent a state.
+    pages_said: Option<crate::clock::Instant>,
     pub(super) blink: super::blink::Blink,
     /// The selection the blink last restarted for.
     blink_selection: Option<crate::editing::selection::Selection>,
@@ -390,6 +395,7 @@ impl Default for Presentation {
             verify_failures: 0,
             timers: Vec::new(),
             frame_wanted: false,
+            pages_said: None,
             blink: super::blink::Blink::default(),
             blink_selection: None,
             serial: NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
@@ -467,11 +473,16 @@ impl Presentation {
         self.frame_wanted |= step.frame;
     }
 
-    /// Forgets what the last document's frames cached.
+    /// Forgets what the last document's frames cached. An attached host gets the new document's accessibility tree on
+    /// the accessibility timer, so building it doesn't hold up the open and the first frame.
     pub(super) fn clear(&mut self) {
         self.graphics.clear_images();
         self.graphics.retained.clear();
         self.sink.a11y = None;
+        if self.sink.deliver.is_some() && !self.sink.a11y_armed {
+            self.sink.a11y_armed = true;
+            self.timers.push((A11Y_TIMER, A11Y_MS));
+        }
     }
 
     /// The accessibility timer went off: the tree's changes since it was last sent go to the host.
@@ -873,7 +884,7 @@ impl Session {
         s.tooltip.clone_from(&tooltip);
         let revision = a11y_key(&self.editor);
         match &self.presentation.sink.a11y {
-            None => {
+            None if !self.presentation.sink.a11y_armed => {
                 let tree = self.accessible_tree();
                 out.push(HostRequest::A11y { update: crate::api::services::A11yUpdate::Full(Box::new(tree.clone())) });
                 self.presentation.sink.a11y = Some((tree, revision));
@@ -884,7 +895,7 @@ impl Session {
                 self.presentation.sink.a11y_armed = true;
                 self.presentation.timers.push((A11Y_TIMER, A11Y_MS));
             }
-            Some(_) => {}
+            _ => {}
         }
         if tooltip_changed {
             self.emit(Event::Tooltip(tooltip));
@@ -1363,14 +1374,23 @@ impl HostSurface<'_> {
     }
 
     /// Background layout for one slice of a few milliseconds: true while more is pending. When the slice changes
-    /// `pages.count` or `pages.complete`, a new state goes out (same revision). The SDKs run it on the engine's
+    /// `pages.count` or `pages.complete`, a new state goes out (same revision): at once for pages that can be on
+    /// screen and for the end of layout, at most every 100 ms for pages past it. The SDKs run it on the engine's
     /// timers; a host of `twip::api` calls it when it has nothing else to do, until it returns false.
     pub fn idle(&mut self) -> bool {
         let s = &mut *self.session;
         s.editor.idle(&s.fonts.fonts());
         let (count, complete) = crate::api::state::pages(&s.editor);
-        if (count, complete) != (s.state.pages.count, s.state.pages.complete) {
-            s.changed(Vec::new());
+        let sent = s.state.pages.count;
+        if (count, complete) != (sent, s.state.pages.complete) {
+            // Pages past the screen only lengthen the scroll range: a state for them at most every PAGES_MS. Pages
+            // that can show and the end of layout go at once.
+            let now = crate::clock::Instant::now();
+            let showing = s.pages_on_screen().end as u32 >= sent;
+            if complete || showing || s.presentation.pages_said.is_none_or(|t| now.duration_since(t) >= PAGES_MS) {
+                s.presentation.pages_said = Some(now);
+                s.changed(Vec::new());
+            }
         }
         !complete
     }

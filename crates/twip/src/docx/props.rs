@@ -109,7 +109,12 @@ pub struct RunProps {
 }
 
 fn font_ref(n: Node, name: &str) -> Option<FontRef> {
-    let theme = attr(n, &format!("{name}Theme")).or_else(|| if name == "cs" { attr(n, "cstheme") } else { None });
+    let theme = match name {
+        "ascii" => attr(n, "asciiTheme"),
+        "hAnsi" => attr(n, "hAnsiTheme"),
+        "eastAsia" => attr(n, "eastAsiaTheme"),
+        _ => attr(n, "csTheme").or_else(|| attr(n, "cstheme")),
+    };
     if let Some(t) = theme {
         return Some(FontRef::Theme(t.to_string()));
     }

@@ -18,7 +18,7 @@ use crate::services::{dialogs, find, menu};
 
 /// The spelling and review values of the state, which the services keep.
 pub(super) fn fill_state(s: &mut Session, state: &mut State) {
-    let sp = &s.services.spelling;
+    let sp = &mut s.services.spelling;
     state.spelling.enabled = sp.enabled;
     state.spelling.misspellings = sp.count(&s.editor, &s.language);
 }
@@ -851,6 +851,35 @@ mod tests {
         assert_eq!((s.state().spelling.misspellings, s.state().revision), (0, revision + 1));
         s.spelling().set_enabled(false);
         assert!(!s.state().spelling.enabled);
+    }
+
+    #[test]
+    fn the_misspelling_count_follows_edits_as_a_recount_would() {
+        use crate::api::command::Command;
+        let (mut engine, id, _) = open("editor/FX-services.docx");
+        let s = engine.session(id).expect("a session");
+        let (aff, dic) = (fixture("dictionaries/en_US.aff"), fixture("dictionaries/en_US.dic"));
+        s.spelling().add_dictionary(Dictionary { language: "en-US".into(), aff: Bytes(aff), dic: Bytes(dic), hyphenation: None }).expect("loads");
+        let recount = |s: &mut crate::api::session::Session| {
+            s.with_editor(|_| ());
+            s.state().spelling.misspellings
+        };
+        let start = s.state().spelling.misspellings;
+        let steps = [
+            Command::InsertText("zorblyx ".into()),
+            Command::InsertParagraph,
+            Command::InsertText("quuxle the the".into()),
+            Command::Undo,
+            Command::SelectAll,
+            Command::InsertText("fine words".into()),
+            Command::Undo,
+        ];
+        for c in steps {
+            s.run(c.clone()).expect("runs");
+            let counted = s.state().spelling.misspellings;
+            assert_eq!(counted, recount(s), "after {c:?}");
+        }
+        assert_eq!(s.state().spelling.misspellings, start + 1, "the undo brought the first text back");
     }
 
     #[test]

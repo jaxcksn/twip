@@ -86,11 +86,13 @@ pub struct Boundary<K, V> {
     hits: u64,
     misses: u64,
     added: usize,
+    /// Every entry's bytes.
+    total: usize,
 }
 
 impl<K: CacheKey, V> Boundary<K, V> {
     pub fn new(name: &'static str) -> Boundary<K, V> {
-        Boundary { name, buckets: Buckets::default(), generation: 0, hits: 0, misses: 0, added: 0 }
+        Boundary { name, buckets: Buckets::default(), generation: 0, hits: 0, misses: 0, added: 0, total: 0 }
     }
 
     fn evictable_by_generation(&self, by_generation: &mut std::collections::BTreeMap<u64, usize>) {
@@ -102,17 +104,18 @@ impl<K: CacheKey, V> Boundary<K, V> {
     }
 
     fn evict(&mut self, cutoff: u64, more: &mut usize) {
+        let total = &mut self.total;
         let mut gone = |e: &Entry<K, V>| {
             if Rc::strong_count(&e.value) != 1 || e.used > cutoff {
                 return false;
             }
-            if e.used < cutoff {
-                return true;
+            if e.used >= cutoff {
+                if *more == 0 {
+                    return false;
+                }
+                *more = more.saturating_sub(e.bytes);
             }
-            if *more == 0 {
-                return false;
-            }
-            *more = more.saturating_sub(e.bytes);
+            *total -= e.bytes;
             true
         };
         self.buckets.retain(|_, slot| match slot {
@@ -146,16 +149,19 @@ impl<K: CacheKey, V> Boundary<K, V> {
         match self.buckets.entry(K::bucket(probe)) {
             Bucket::Vacant(v) => {
                 self.added += bytes;
+                self.total += bytes;
                 v.insert(Slot::One(Entry { key: K::from_probe(probe), value, used: generation, bytes }));
             }
             Bucket::Occupied(mut o) => match o.get_mut().entries_mut().iter_mut().find(|e| e.key.matches(probe)) {
                 Some(e) => {
+                    self.total = self.total - e.bytes + bytes;
                     e.value = value;
                     e.used = generation;
                     e.bytes = bytes;
                 }
                 None => {
                     self.added += bytes;
+                    self.total += bytes;
                     o.get_mut().push(Entry { key: K::from_probe(probe), value, used: generation, bytes });
                 }
             },
@@ -339,14 +345,22 @@ impl LayoutCache {
 
     pub fn enforce_budget(&mut self) {
         for _ in 0..6 {
-            let before = self.len();
-            if self.evict_once() || self.len() == before {
+            let before = self.total();
+            if self.evict_once() || self.total() == before {
                 return;
             }
         }
     }
 
+    fn total(&self) -> usize {
+        self.shaped.total + self.lines.total + self.cell_widths.total + self.stories.total + self.tables.total + self.rows.total
+    }
+
     fn evict_once(&mut self) -> bool {
+        let total = self.total();
+        if total <= self.budget {
+            return true;
+        }
         let mut by_generation = std::collections::BTreeMap::new();
         self.shaped.evictable_by_generation(&mut by_generation);
         self.lines.evictable_by_generation(&mut by_generation);
@@ -354,8 +368,7 @@ impl LayoutCache {
         self.stories.evictable_by_generation(&mut by_generation);
         self.tables.evictable_by_generation(&mut by_generation);
         self.rows.evictable_by_generation(&mut by_generation);
-        let total: usize = self.report().iter().map(|r| r.2 + r.3).sum();
-        if total <= self.budget || by_generation.is_empty() {
+        if by_generation.is_empty() {
             return true;
         }
         let mut excess = total - self.budget;

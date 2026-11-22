@@ -428,6 +428,7 @@ fn background_layout_grows_the_page_count_in_new_states() {
     let states: Vec<_> = events.borrow().iter().filter_map(|e| if let Event::StateChanged(s) = e { Some(s.clone()) } else { None }).collect();
     assert!(!states.is_empty() && states.iter().all(|st| st.revision == revision), "the same revision");
     assert!(states.windows(2).all(|w| w[0].sequence < w[1].sequence && w[0].pages != w[1].pages), "a state per change only");
+    assert_eq!(states.last().map(|st| &st.pages), Some(&pages), "the end of layout always goes out");
     assert!(!s.host().idle(), "nothing left");
 }
 
@@ -1195,6 +1196,29 @@ fn the_accessibility_tree_goes_whole_then_as_throttled_changes() {
     // The next edit arms it again.
     s.run(Command::InsertText("!".into())).expect("types");
     assert_eq!(s.host().take_timers().iter().filter(|t| t.0 == 3).count(), 1);
+}
+
+#[test]
+fn an_opened_documents_accessibility_tree_goes_on_the_timer() {
+    use crate::api::services::A11yUpdate;
+    use crate::api::session::HostRequest;
+    let (mut engine, _) = engine();
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    let updates = Rc::new(RefCell::new(Vec::new()));
+    let sink = updates.clone();
+    s.host().attach(move |r| {
+        if let HostRequest::A11y { update } = r {
+            sink.borrow_mut().push(update);
+        }
+    });
+    updates.borrow_mut().clear();
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-outline.docx");
+    s.open(&std::fs::read(path).expect("the fixture")).expect("opens");
+    assert!(updates.borrow().is_empty(), "not before the first frame");
+    assert_eq!(s.host().take_timers().iter().filter(|t| t.0 == 3).count(), 1);
+    s.host().timer_fired(3);
+    assert!(matches!(updates.borrow()[..], [A11yUpdate::Full(_)]), "the whole tree, once");
 }
 
 #[test]
