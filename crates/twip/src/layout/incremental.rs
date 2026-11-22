@@ -511,6 +511,8 @@ pub struct DocumentLayout {
     frames: HashMap<FragmentId, Frame>,
     preview: Option<Rc<super::Preview>>,
     expansions: Option<Rc<super::expansion::Expansions>>,
+    /// The environment for the document since the last edit.
+    env: Option<Rc<LayoutEnv>>,
 }
 
 type Frame = (Rc<PageFragment>, PageMeta, [Option<HfRecord>; 2]);
@@ -536,7 +538,12 @@ impl DocumentLayout {
             frames: HashMap::new(),
             preview: None,
             expansions: None,
+            env: None,
         }
+    }
+
+    fn env(&mut self, doc: &Document) -> Rc<LayoutEnv> {
+        self.env.get_or_insert_with(|| Rc::new(LayoutEnv::new(doc))).clone()
     }
 
     pub fn snapshot(&self) -> Rc<Snapshot> {
@@ -579,6 +586,7 @@ impl DocumentLayout {
         self.revision = revision;
         self.job = None;
         self.current = false;
+        self.env = None;
         let Some(c) = hint else {
             self.acc.unknown = true;
             return;
@@ -746,7 +754,7 @@ impl DocumentLayout {
             let r = crate::prof::time("layout:start", || self.start(doc, fonts));
             self.job = Some(r);
         }
-        let env = LayoutEnv::new(doc);
+        let env = self.env(doc);
         let ctx = LayoutCtx { fonts, env: &env, preview: self.preview.as_deref(), expansions: self.expansions.as_deref() };
         let running = self.job.as_mut().expect("started above");
         let before = running.job.committed().len();
@@ -768,7 +776,7 @@ impl DocumentLayout {
         match step {
             Step::Done => self.complete_job(doc, fonts),
             Step::Yielded if progressed => {
-                let env = LayoutEnv::new(doc);
+                let env = self.env(doc);
                 let ctx = LayoutCtx { fonts, env: &env, preview: self.preview.as_deref(), expansions: self.expansions.as_deref() };
                 let shown = self.published.pages().len();
                 if let Some(running) = self.job.as_mut() {
