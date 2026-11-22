@@ -122,15 +122,34 @@ function texts(e: HTMLElement): Text[] {
   return out;
 }
 
-/** The DOM place of a window place. */
+/** Whether a surrogate pair starts at UTF-16 offset `i` of `s`: one character. */
+const pairAt = (s: string, i: number) => (s.charCodeAt(i) & 0xfc00) === 0xd800 && (s.charCodeAt(i + 1) & 0xfc00) === 0xdc00;
+
+/** How many characters (code points, as the engine counts) `s` has. */
+function codePoints(s: string): number {
+  let n = 0;
+  for (let i = 0; i < s.length; i += pairAt(s, i) ? 2 : 1) n++;
+  return n;
+}
+
+/** The UTF-16 offset in `s` after its first `points` characters, and how many of those are past its end. */
+function utf16(s: string, points: number): { offset: number; left: number } {
+  let i = 0;
+  let left = points;
+  for (; left > 0 && i < s.length; left--) i += pairAt(s, i) ? 2 : 1;
+  return { offset: i, left };
+}
+
+/** The DOM place of a window place: its offset counts characters, the DOM's UTF-16 code units. */
 function domPoint(paragraphs: HTMLElement[], p: WindowPoint): { node: Node; offset: number } | undefined {
   const e = paragraphs[p.paragraph];
   if (!e) return undefined;
   let left = p.offset;
   const nodes = texts(e);
   for (const t of nodes) {
-    if (left <= t.length) return { node: t, offset: left };
-    left -= t.length;
+    const at = utf16(t.data, left);
+    if (at.left === 0) return { node: t, offset: at.offset };
+    left = at.left;
   }
   const last = nodes.at(-1);
   // An empty paragraph: before its `<br>`, after its label.
@@ -142,12 +161,12 @@ function windowPoint(paragraphs: HTMLElement[], node: Node, offset: number): Win
   const k = paragraphs.findIndex((e) => e.contains(node));
   const e = paragraphs[k];
   if (!e) return undefined;
-  // The text from the paragraph's start to the place, without the label (always first).
+  // The text from the paragraph's start to the place, without the label (always first), in characters.
   const r = document.createRange();
   r.setStart(e, 0);
   r.setEnd(node, offset);
   const label = e.querySelector('[data-twip-label]')?.textContent?.length ?? 0;
-  return { paragraph: k, offset: Math.max(0, r.toString().length - label) };
+  return { paragraph: k, offset: codePoints(r.toString().slice(label)) };
 }
 
 const same = (a: WindowPoint | undefined, b: WindowPoint | undefined) => a?.paragraph === b?.paragraph && a?.offset === b?.offset;

@@ -674,7 +674,7 @@ impl Editor {
         if !matches!(blocks.last(), Some(Block::Para(_))) {
             blocks.extend(empty_para(&self.doc, &self.cx()).map(Block::Para));
         }
-        let refs = super::clipboard::refs_in(&read, &blocks);
+        let refs = super::clipboard::refs_of(&read, &blocks);
         let numbering = read.resolver.as_ref().map(|r| r.numbering.clone()).unwrap_or_default();
         Some(Imported { blocks, controls: std::mem::take(&mut read.controls).into_iter().collect(), refs, numbering })
     }
@@ -702,7 +702,7 @@ impl Editor {
             im.refs.comments.clear();
         }
         self.import_lists(tx, im)?;
-        let stories = if glossary { Vec::new() } else { self.paste_refs(tx, &mut im.blocks, &im.refs) };
+        let stories = if glossary { Vec::new() } else { self.paste_refs(tx, &mut im.blocks, &im.refs, None) };
         tx.relabel = true;
         Ok((stories.into_iter().collect(), paras))
     }
