@@ -519,6 +519,8 @@ pub(super) struct Prepare {
     /// Images decoded and waiting to be uploaded; the renderer takes them.
     pub pending: Vec<(ImageId, Mips)>,
     pub known: Known,
+    /// The registries the caches' font and image ids are from (see [`Resources`]).
+    registries: (u64, u64),
 }
 
 /// A colour filter row's texels: the kind, then a matrix (its four rows of four, then the offsets) or a table (256
@@ -551,7 +553,28 @@ impl Prepare {
             filtered_pixels: 0,
             pending: Vec::new(),
             known: Known::default(),
+            registries: (0, 0),
         }
+    }
+
+    /// Drops what is kept by font and image ids (glyph masks, colour glyphs, kept pictures, known images) when `res`
+    /// holds other registries than the last frame's: the same ids name other faces and images there. `true` when it
+    /// did, so the renderer drops its images too.
+    pub fn serve(&mut self, res: &Resources) -> bool {
+        if self.registries == res.registries() {
+            return false;
+        }
+        self.registries = res.registries();
+        self.glyphs.clear();
+        self.cpu.serve(res);
+        self.kept = Atlas::new(PAGE, 1, KEPT_PAGES);
+        self.colour = Atlas::new(PAGE, 4, COLOUR_PAGES);
+        self.placed.clear();
+        self.placed_colour.clear();
+        self.pruned = (0, 0);
+        self.memo = Memo::default();
+        self.known.clear();
+        true
     }
 
     /// Builds `frame`'s instances for a `width × height` target.

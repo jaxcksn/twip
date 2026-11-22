@@ -339,6 +339,47 @@ fn kept_pictures_keep_the_dashes_the_target_sees() {
     assert_eq!(renderer.kept_counts(), (0, 0), "neither the frame nor its line kept");
 }
 
+/// One renderer drawing two documents in turn, each with resources of its own: the same glyph and image ids name
+/// another face (JetBrains Mono, then Ahem's boxes) and another image, and each document draws its own, as a fresh
+/// CPU renderer does. The CPU renderer kept across them draws them alike too.
+#[test]
+fn renderers_keep_documents_resources_apart() {
+    use twip_graphics::font::FontData;
+    use twip_graphics::paint::ImagePaint;
+    use twip_graphics::scene::{GlyphRun, Synthesis};
+    let document = |face: FontData, rgb: u32| {
+        let mut resources = Resources::default();
+        let font = resources.fonts.add(face, 0, &[]).expect("the test face registers");
+        let [r, g, b] = [(rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8];
+        let image = resources.images.add_pixels(2, 2, [r, g, b, 255].repeat(4)).expect("pixels");
+        let glyphs: Vec<(u32, f64)> = (1..20).map(|g| (g, 4.0 + f64::from(g - 1) * 16.0)).collect();
+        let mut rec = Recorder::new();
+        rec.glyphs(&resources.fonts, &GlyphRun { font, size: 20.0, baseline: 24.0, glyphs: &glyphs, synthesis: Synthesis::default() }, Color::BLACK);
+        rec.image(image, None, common::scenes::rect(4.0, 32.0, 36.0, 44.0), &ImagePaint::default());
+        (resources, rec.finish())
+    };
+    let documents = [document(common::scenes::Mono::new().data, 0xD0_2020), document(std::sync::Arc::new(font_test_data::AHEM), 0x20_40D0)];
+    let size = (320, 48);
+    let mut kept = CpuRenderer::new();
+    for (i, (resources, picture)) in documents.iter().enumerate() {
+        let (w, h) = size;
+        let mut px = vec![0u8; (w * h * 4) as usize];
+        let mut target = Target::new(&mut px, w, h, w as usize * 4, Format::Rgba8).expect("a buffer that fits");
+        let draws = [Draw { picture, transform: Affine::IDENTITY }];
+        kept.render(&mut target, resources, &Frame { clear: Some(Color::WHITE), draws: &draws });
+        assert!(px == cpu(picture, resources, size, Affine::IDENTITY), "document {i} drawn by a kept CPU renderer");
+    }
+    let Some(ctx) = context() else { return };
+    let mut renderer = Renderer::new(ctx, FORMAT);
+    // Each document drawn three times: in the frame, then prepared to be kept, then kept.
+    for (i, (resources, picture)) in documents.iter().enumerate() {
+        for k in 0..3 {
+            let ours = gpu(ctx, &mut renderer, picture, resources, size, Affine::IDENTITY);
+            compare(&format!("two-documents-{i}-{k}"), size, &ours, &cpu(picture, resources, size, Affine::IDENTITY));
+        }
+    }
+}
+
 /// A page of line pictures, kept: an edit makes a new page with one new line, and the page is prepared again from its
 /// unchanged lines' kept preparations and the new line's.
 #[test]

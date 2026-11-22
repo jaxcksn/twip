@@ -218,6 +218,7 @@ fn gpu_pages_match_the_cpu() {
     };
     let fonts = bundled_fonts();
     let (mut failures, mut drawn) = (Vec::new(), 0);
+    let mut gpu = Gpu::new(&ctx, wgpu::TextureFormat::Rgba8Unorm);
     for (name, d) in corpus() {
         let pages = match name.as_str() {
             "docx-feature-showcase" => 1,
@@ -227,8 +228,7 @@ fn gpu_pages_match_the_cpu() {
         let snap = crate::layout::layout(&d, &fonts);
         let mut r = Renderer::default();
         r.set_page_background(&d);
-        // One GPU renderer per document's resources.
-        let (mut g, mut gpu) = (Graphics::default(), Gpu::new(&ctx, wgpu::TextureFormat::Rgba8Unorm));
+        let mut g = Graphics::default();
         g.set_fonts(&fonts);
         for ((i, page), (k, zoom)) in snap.pages().iter().take(pages).enumerate().flat_map(|p| scales(&name).map(move |s| (p, s))) {
             let cpu = draw(&mut g, &r, page, &d.images, k);

@@ -83,8 +83,9 @@ pub(crate) type Variation = ([u8; 4], f32);
 type FaceKey = (usize, u32, Vec<([u8; 4], u32)>);
 
 /// The faces pictures draw with.
-#[derive(Default)]
 pub struct FontRegistry {
+    /// This registry's own number: its ids are its own.
+    pub(crate) registry: u64,
     faces: Vec<Face>,
     /// Faces by what they were registered with, so registering a face twice gives the same id.
     known: HashMap<FaceKey, FontId>,
@@ -100,6 +101,18 @@ pub struct FontRegistry {
 impl fmt::Debug for FontRegistry {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("FontRegistry").field("faces", &self.faces.len()).finish()
+    }
+}
+
+impl Default for FontRegistry {
+    fn default() -> Self {
+        FontRegistry {
+            registry: crate::next_registry(),
+            faces: Vec::new(),
+            known: HashMap::new(),
+            boxes: Mutex::default(),
+            outlines: Mutex::default(),
+        }
     }
 }
 
@@ -635,6 +648,14 @@ impl GlyphCache {
         });
         mask.used = clock;
         mask
+    }
+
+    /// Drops every mask and hinting instance: they were another registry's faces'.
+    pub fn clear(&mut self) {
+        self.strikes.clear();
+        self.strike_ids.clear();
+        self.hinters.clear();
+        self.bytes = 0;
     }
 
     /// Drops the least recently used masks while the cache is over its budget (after a frame), down to half of it.
