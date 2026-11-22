@@ -23,8 +23,8 @@ pub struct Services {
     pub said: Vec<(crate::api::services::AnnouncementKind, String)>,
     /// The kinds of announcements the application turned off.
     pub silenced: Vec<crate::api::services::AnnouncementKind>,
-    /// The revision count at a document revision.
-    pub revision_count: Option<(u64, u32)>,
+    /// The revision count at a document revision, with the sub-template then edited.
+    pub revision_count: Option<((u64, Option<u32>), u32)>,
     /// The comments as `commentsChanged` last reported them.
     pub comments_seen: crate::docx::review::Comments,
     /// The visible comments' anchors as `commentAnchors` last reported them.

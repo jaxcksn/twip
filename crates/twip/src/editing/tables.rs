@@ -292,9 +292,9 @@ impl Editor {
         // Tracked: the same cell among the rows that stay
         let caret_para = caret_para.filter(|p| self.index.para(&self.doc, *p).is_some()).or_else(|| {
             let (r, c) = target?;
-            let deleted = tx.rec.as_ref().and_then(|rec| rec.marks().1).map(|m| m.id);
+            let deleted: Vec<_> = tx.rec.as_ref().map(|rec| rec.marks().1.iter().map(|m| m.id).collect()).unwrap_or_default();
             let t = self.index.table(&self.doc, table)?;
-            let mut kept = t.rows.iter().filter(|row| deleted.is_none() || row.rev.del.as_ref().map(|m| m.id) != deleted);
+            let mut kept = t.rows.iter().filter(|row| !row.rev.del.as_ref().is_some_and(|m| deleted.contains(&m.id)));
             kept.nth(r)?.cells.get(c).and_then(|c| first_para(&c.blocks))
         });
         if let Some(p) = caret_para {

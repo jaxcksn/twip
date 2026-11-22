@@ -82,7 +82,7 @@ fn revision_colour(r: &RunStyle, review: &ReviewView) -> Option<u32> {
 fn line_changed(o: &LineOrigin, line: &Line, src: &Paragraph) -> bool {
     let view = o.review.view;
     let last = line.end >= o.pieces().len();
-    if src.style.change.as_ref().is_some_and(|c| c.previous_raw.0.is_some()) || (last && !src.mark.rev.is_empty()) {
+    if src.style.change.as_ref().is_some_and(|c| !c.numbering_only()) || (last && !src.mark.rev.is_empty()) {
         return true;
     }
     if !src.inlines.iter().any(|i| i.run().is_some_and(|r| !r.rev.is_empty())) {

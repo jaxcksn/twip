@@ -13,8 +13,9 @@ use crate::editing::Editor;
 use crate::editing::commands::{Command, Outcome};
 use crate::editing::integrity;
 use crate::editing::position::{Position, StoryId};
-use crate::editing::revisions::index::revisions;
+use crate::editing::revisions::index::{RevisionKind, revisions};
 use crate::editing::revisions::resolve::Scope;
+use crate::editing::selection::{CellRef, CellShape, Granularity, Selection};
 use crate::editing::tests::fonts;
 use crate::layout::{ParaId, Unit};
 
@@ -317,6 +318,15 @@ fn at_offset(doc: &Document, offset: u64) -> Option<Position> {
     None
 }
 
+/// A kind's name as the reference application reports it: a row's insertion or deletion as its text's.
+fn reference_kind(kind: RevisionKind) -> &'static str {
+    match kind {
+        RevisionKind::RowInsert => "Insert",
+        RevisionKind::RowDelete => "Delete",
+        k => k.name(),
+    }
+}
+
 #[test]
 fn resolving_gives_the_recorded_results() {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/scenarios/review/expected");
@@ -354,7 +364,7 @@ fn resolving_gives_the_recorded_results() {
                 let r = list.get(k.wrapping_sub(1)).unwrap_or_else(|| panic!("{name}: no revision {k} of {}", list.len()));
                 let want = case["revision"]["type"].as_str().unwrap_or("").trim_start_matches("wdRevision").to_string();
                 assert_eq!(
-                    (r.kind.name(), author(e.document(), r.author)),
+                    (reference_kind(r.kind), author(e.document(), r.author)),
                     (want.as_str(), case["revision"]["author"].clone()),
                     "{name}: revision {k}"
                 );
@@ -390,7 +400,7 @@ fn resolving_gives_the_recorded_results() {
         let left: Vec<(String, Value)> = revisions(doc, e.index())
             .into_iter()
             .filter(|r| r.story == StoryId::Body && r.kind.name() != "SectionProperty")
-            .map(|r| (format!("wdRevision{}", r.kind.name()), author(doc, r.author)))
+            .map(|r| (format!("wdRevision{}", reference_kind(r.kind)), author(doc, r.author)))
             .collect();
         let want_left: Vec<(String, Value)> = case["result"]["revisions"]
             .as_array()
@@ -406,4 +416,89 @@ fn resolving_gives_the_recorded_results() {
         checked += 1;
     }
     assert!(checked >= 40, "only {checked} recorded results compared");
+}
+
+// ---------------- selections ----------------
+
+fn tracked(bytes: &[u8]) -> Editor {
+    let mut e = Editor::open(bytes, fonts()).expect("opens");
+    e.set_author("Author A", None);
+    assert!(e.set_tracking(true));
+    e
+}
+
+fn body_paras(e: &Editor) -> Vec<Paragraph> {
+    fn walk(blocks: &[Block], out: &mut Vec<Paragraph>) {
+        for b in blocks {
+            match b {
+                Block::Para(p) => out.push(p.clone()),
+                Block::Table(t) => t.rows.iter().flat_map(|r| &r.cells).for_each(|c| walk(&c.blocks, out)),
+            }
+        }
+    }
+    let mut out = Vec::new();
+    e.document().sections.iter().for_each(|s| walk(&s.blocks, &mut out));
+    out
+}
+
+fn at(e: &Editor, n: usize, u: u32) -> Position {
+    Position::text(StoryId::Body, crate::editing::tests::para_id(e, n), Unit(u))
+}
+
+fn grid(rows: usize) -> Vec<u8> {
+    let tc = |t: String| format!(r#"<w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:tc>"#);
+    let rows: String = (0..rows).map(|r| format!("<w:tr>{}</w:tr>", (0..3).map(|c| tc(format!("r{r}c{c}"))).collect::<String>())).collect();
+    crate::editing::tests::blank_body(&format!(
+        r#"<w:tbl><w:tblPr><w:tblW w:w="6000" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/></w:tblGrid>{rows}</w:tbl><w:p><w:r><w:t>After</w:t></w:r></w:p>"#
+    ))
+}
+
+fn table(e: &Editor) -> Table {
+    e.document().sections[0].blocks.iter().find_map(|b| if let Block::Table(t) = b { Some(t.clone()) } else { None }).expect("a table")
+}
+
+#[test]
+fn rejecting_in_a_selection_resolves_only_the_paragraph_marks_it_touches() {
+    let mut e = tracked(&crate::editing::tests::blank_with(""));
+    e.set_caret_for_benchmark(Selection::Caret(at(&e, 0, 0)));
+    e.execute(Command::PasteText("one\ntwo\nthree\nfour".into()), fonts());
+    assert_eq!(body_paras(&e).len(), 4);
+    let (a, b) = (at(&e, 1, 1), at(&e, 2, 1));
+    e.set_caret_for_benchmark(Selection::range(a, b, Granularity::Char));
+    resolve(&mut e, false, Scope::Selection);
+    let marks: Vec<bool> = body_paras(&e).iter().map(|p| p.mark.rev.ins.is_some()).collect();
+    assert_eq!(marks, [true, true, false], "only the mark after the second paragraph is rejected");
+}
+
+#[test]
+fn rejecting_in_one_inserted_row_keeps_the_rows_inserted_with_it() {
+    use crate::api::command::{InsertRows, VerticalSide};
+    let mut e = tracked(&grid(1));
+    e.set_caret_for_benchmark(Selection::Caret(at(&e, 0, 0)));
+    let rows = InsertRows { side: VerticalSide::Below, count: Some(3) };
+    assert!(matches!(e.execute(Command::InsertRows(rows), fonts()), Outcome::Changed(_)));
+    assert_eq!(table(&e).rows.len(), 4);
+    let (id, one) = (crate::layout::TableId(table(&e).id), CellRef { row: 2, col: 0 });
+    e.set_caret_for_benchmark(Selection::Cells { table: id, anchor: one, focus: one, shape: CellShape::Rect });
+    resolve(&mut e, false, Scope::Selection);
+    let inserted: Vec<bool> = table(&e).rows.iter().map(|r| r.rev.ins.is_some()).collect();
+    assert_eq!(inserted, [false, true, true], "the row with the caret goes");
+}
+
+#[test]
+fn accepting_in_a_column_of_cells_leaves_the_other_columns() {
+    let mut e = tracked(&grid(3));
+    for n in 0..9 {
+        e.set_caret_for_benchmark(Selection::Caret(at(&e, n, 0)));
+        e.execute(Command::InsertText("+".into()), fonts());
+    }
+    let marked = |e: &Editor| -> Vec<bool> {
+        body_paras(e).iter().take(9).map(|p| p.inlines.iter().filter_map(|i| i.run()).any(|r| r.rev.ins.is_some())).collect()
+    };
+    assert_eq!(marked(&e), [true; 9]);
+    let id = crate::layout::TableId(table(&e).id);
+    let cell = |row, col| CellRef { row, col };
+    e.set_caret_for_benchmark(Selection::Cells { table: id, anchor: cell(0, 1), focus: cell(2, 1), shape: CellShape::Columns });
+    resolve(&mut e, true, Scope::Selection);
+    assert_eq!(marked(&e), [true, false, true, true, false, true, true, false, true]);
 }

@@ -37,8 +37,8 @@ impl Editor {
             self.smart_cut();
         }
         let out = self.delete(Dir::Back, false, fonts);
-        self.cut_move = match (&out, &self.clipboard, &self.recorded.1) {
-            (Outcome::Changed(_), Some(f), Some(m)) if moving => Some((f.id, m.clone())),
+        self.cut_move = match (&out, &self.clipboard) {
+            (Outcome::Changed(_), Some(f)) if moving && !self.recorded.1.is_empty() => Some((f.id, self.recorded.1.clone())),
             _ => None,
         };
         out

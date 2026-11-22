@@ -1,6 +1,6 @@
 //! Text drag and drop
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use crate::docx::review::{MarkKind, RangeKind, RangeMark, RevisionId, RevisionMark, RunRevisions};
@@ -118,7 +118,7 @@ impl Editor {
         frag.controls = super::clipboard::controls_of(&frag.blocks, &self.doc);
         let sel = self.selection;
         let moving = !d.copy && self.tracking() && self.moves_whole();
-        let mut marks = (None, None);
+        let mut marks = (Vec::new(), Vec::new());
         let mut placed: Option<(Position, Position)> = None;
         let paste = |e: &mut Self, placed: &mut Option<(Position, Position)>| {
             e.set_selection(Selection::Caret(drop));
@@ -172,8 +172,8 @@ impl Editor {
             restore(self);
             return Some(Outcome::Unchanged("nothing dropped"));
         }
-        if moving && let (Some(to), Some(from)) = &marks {
-            self.record_move(to, from, fonts);
+        if moving && !marks.0.is_empty() && !marks.1.is_empty() {
+            self.record_move(&marks.0, &marks.1, fonts);
         }
         if object.is_some()
             && let Some((para, offset)) = placed.and_then(|(s, _)| s.para_offset())
@@ -190,7 +190,10 @@ impl Editor {
         if id != f.id || !matches!(out, Outcome::Changed(_)) {
             return;
         }
-        let Some(to) = self.recorded.0.clone() else { return };
+        let to = self.recorded.0.clone();
+        if to.is_empty() {
+            return;
+        }
         let sel = self.selection;
         self.record_move(&to, &from, fonts);
         self.selection = sel;
@@ -209,17 +212,20 @@ impl Editor {
         whole && self.selected_ranges().into_iter().all(|(para, s, e)| self.index.para(&self.doc, para).is_some_and(|p| !has_revisions(p, s, e)))
     }
 
-    pub(super) fn record_move(&mut self, to: &Rc<RevisionMark>, from: &Rc<RevisionMark>, fonts: &Fonts) -> bool {
+    pub(super) fn record_move(&mut self, to: &[Rc<RevisionMark>], from: &[Rc<RevisionMark>], fonts: &Fonts) -> bool {
+        let (Some(to_first), Some(from_first)) = (to.first(), from.first()) else { return false };
         let id = self.doc.review_ids.next_revision_id();
         let name: Rc<str> = format!("move{id}").into();
         let mark = |m: &RevisionMark, kind: MarkKind, id: i64| {
             Rc::new(RevisionMark { id: RevisionId(id), kind, move_name: Some(name.clone()), ..m.clone() })
         };
-        let to_mark = mark(to, MarkKind::MoveTo, id);
-        let from_mark = mark(from, MarkKind::MoveFrom, self.doc.review_ids.next_revision_id());
+        let to_mark = mark(to_first, MarkKind::MoveTo, id);
+        let from_mark = mark(from_first, MarkKind::MoveFrom, self.doc.review_ids.next_revision_id());
+        let set = |of: &[Rc<RevisionMark>]| of.iter().map(Rc::as_ptr).collect::<HashSet<_>>();
+        let (to, from) = (set(to), set(from));
         let remap = |r: &Run| -> Option<Run> {
-            let ins = r.rev.ins.as_ref().filter(|m| Rc::ptr_eq(m, to)).map(|_| to_mark.clone());
-            let del = r.rev.del.as_ref().filter(|m| Rc::ptr_eq(m, from)).map(|_| from_mark.clone());
+            let ins = r.rev.ins.as_ref().filter(|m| to.contains(&Rc::as_ptr(m))).map(|_| to_mark.clone());
+            let del = r.rev.del.as_ref().filter(|m| from.contains(&Rc::as_ptr(m))).map(|_| from_mark.clone());
             if ins.is_none() && del.is_none() {
                 return None;
             }

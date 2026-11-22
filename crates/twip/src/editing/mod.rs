@@ -218,8 +218,8 @@ pub struct Editor {
     author: (Rc<str>, Option<crate::docx::review::Identity>),
     author_id: Option<crate::docx::review::AuthorId>,
     move_name: Option<Rc<str>>,
-    recorded: (Option<Rc<crate::docx::review::RevisionMark>>, Option<Rc<crate::docx::review::RevisionMark>>),
-    cut_move: Option<(u64, Rc<crate::docx::review::RevisionMark>)>,
+    recorded: (Vec<Rc<crate::docx::review::RevisionMark>>, Vec<Rc<crate::docx::review::RevisionMark>>),
+    cut_move: Option<(u64, Vec<Rc<crate::docx::review::RevisionMark>>)>,
     #[cfg(test)]
     pub(crate) track_work: usize,
 }
@@ -380,7 +380,7 @@ impl Editor {
             author: ("Author".into(), None),
             author_id: None,
             move_name: None,
-            recorded: (None, None),
+            recorded: (Vec::new(), Vec::new()),
             cut_move: None,
             #[cfg(test)]
             track_work: 0,
@@ -1862,7 +1862,7 @@ impl Editor {
         } else if self.refuse_locked() {
             return Outcome::Unchanged("locked");
         }
-        let mut tx = self.begin(if dir == Dir::Back { "Backspace" } else { revisions::record::DELETE });
+        let mut tx = self.begin(if dir == Dir::Back { "Backspace" } else { "Delete" });
         if !self.selection.is_collapsed() {
             let caret = match self.delete_range_joining(&mut tx, false) {
                 Ok(Some(p)) => p,

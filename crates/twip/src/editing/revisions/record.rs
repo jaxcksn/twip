@@ -10,7 +10,7 @@ use crate::docx::review::{
     SectionChange, TableChange, Timestamp,
 };
 use crate::docx::{Block, Cell, Document, Inline, NoteKind, ParaStyle, Paragraph, Raw, Row, Run, RunStyle, Section, SectionPage};
-use crate::layout::{ParaId, TableId, Unit};
+use crate::layout::{FloatId, ParaId, TableId, Unit};
 
 use super::super::index::DocIndex;
 use super::super::step::{Edges, Step, para_len};
@@ -18,9 +18,6 @@ use super::super::step::{Edges, Step, para_len};
 // Transactions the recorder tracks by their label: the producers begin them with these.
 pub(in crate::editing) const MERGE_CELLS: &str = "Merge Cells";
 pub(in crate::editing) const SPLIT_CELLS: &str = "Split Cells";
-pub(in crate::editing) const INSERT_SHAPE: &str = "Insert Shape";
-pub(in crate::editing) const INSERT_TEXT_BOX: &str = "Insert Text Box";
-pub(in crate::editing) const DELETE: &str = "Delete";
 pub(in crate::editing) const INSERT_COLUMNS: &str = "Insert Columns";
 pub(in crate::editing) const DELETE_COLUMNS: &str = "Delete Columns";
 
@@ -30,19 +27,26 @@ const UNTRACKED_TABLE_EDITS: [&str; 2] = [MERGE_CELLS, SPLIT_CELLS];
 // Delete Cells as a change of the table's properties.
 const CELL_EDITS: [&str; 2] = [INSERT_COLUMNS, DELETE_COLUMNS];
 
-const FLOAT_INSERTS: [&str; 2] = [INSERT_SHAPE, INSERT_TEXT_BOX];
-
 pub struct Recording {
     pub author: AuthorId,
     pub time: Timestamp,
     pub move_name: Option<Rc<str>>,
     label: &'static str,
+    /// The step's marks: each step's edits are a revision of their own.
     ins: Option<Rc<RevisionMark>>,
     del: Option<Rc<RevisionMark>>,
     fmt: Option<Rc<RevisionMark>>,
+    /// Every insertion and deletion mark the transaction made, the insertions also by address.
+    inserts: Vec<Rc<RevisionMark>>,
+    deletes: Vec<Rc<RevisionMark>>,
+    made: HashSet<*const RevisionMark>,
     inserted: HashMap<*const RunStyle, (Run, Run)>,
     deleted: HashMap<*const RunStyle, (Run, Run)>,
     formatted: HashMap<(*const RunStyle, *const RunStyle, bool), (Run, Run, Run)>,
+    /// The floats this transaction took out of a paragraph and kept there marked deleted, by float id.
+    gone_floats: HashMap<u64, ParaId>,
+    /// The floats this transaction put in a paragraph while still in another: moving there.
+    arriving: HashSet<u64>,
 }
 
 impl Recording {
@@ -55,17 +59,27 @@ impl Recording {
             ins: None,
             del: None,
             fmt: None,
+            inserts: Vec::new(),
+            deletes: Vec::new(),
+            made: HashSet::new(),
             inserted: HashMap::new(),
             deleted: HashMap::new(),
             formatted: HashMap::new(),
+            gone_floats: HashMap::new(),
+            arriving: HashSet::new(),
         }
     }
 
-    pub fn marks(&self) -> (Option<Rc<RevisionMark>>, Option<Rc<RevisionMark>>) {
-        (self.ins.clone(), self.del.clone())
+    /// The insertion and deletion marks the transaction made.
+    pub fn marks(&self) -> (Vec<Rc<RevisionMark>>, Vec<Rc<RevisionMark>>) {
+        (self.inserts.clone(), self.deletes.clone())
     }
 
     pub fn record(&mut self, step: Step, doc: &Document, idx: &DocIndex, ids: &mut IdCounter) -> Vec<Step> {
+        (self.ins, self.del, self.fmt) = (None, None, None);
+        self.inserted.clear();
+        self.deleted.clear();
+        self.formatted.clear();
         match step {
             Step::Text { para, range, with, edges } => self.text(para, range, with, edges, doc, idx, ids),
             Step::Restyle { para, inlines } => self.restyle(para, inlines, doc, idx, ids),
@@ -119,6 +133,8 @@ impl Recording {
         }
         let m = self.mark(ids, if self.move_name.is_some() { MarkKind::MoveTo } else { MarkKind::Insert });
         self.ins = Some(m.clone());
+        self.made.insert(Rc::as_ptr(&m));
+        self.inserts.push(m.clone());
         m
     }
 
@@ -128,6 +144,7 @@ impl Recording {
         }
         let m = self.mark(ids, if self.move_name.is_some() { MarkKind::MoveFrom } else { MarkKind::Delete });
         self.del = Some(m.clone());
+        self.deletes.push(m.clone());
         m
     }
 
@@ -140,12 +157,20 @@ impl Recording {
         m
     }
 
+    fn made_here(&self, m: &Option<Rc<RevisionMark>>) -> bool {
+        m.as_ref().is_some_and(|m| self.made.contains(&Rc::as_ptr(m)))
+    }
+
+    fn new_here_row(&self, r: &Row) -> bool {
+        self.made_here(&r.rev.ins)
+    }
+
     fn own_insertion(&self, r: &RunStyle) -> bool {
         r.rev.del.is_none() && r.rev.ins.as_ref().is_some_and(|m| m.author == self.author && m.kind == MarkKind::Insert)
     }
 
     fn new_here(&self, r: &RunStyle) -> bool {
-        matches!((&r.rev.ins, &self.ins), (Some(a), Some(b)) if Rc::ptr_eq(a, b))
+        self.made_here(&r.rev.ins)
     }
 
     fn inserted(&mut self, r: &Run, ids: &mut IdCounter) -> Run {
@@ -498,23 +523,8 @@ impl Recording {
         let float_id = |i: &Inline| if let Inline::Float(f, _) = i { Some(f.id) } else { None };
         let had: HashSet<u64> = p.inlines.iter().filter_map(float_id).collect();
         let has: HashSet<u64> = inlines.iter().filter_map(float_id).collect();
-        if FLOAT_INSERTS.contains(&self.label) && !has.is_subset(&had) {
-            let inlines =
-                inlines.into_iter().map(|i| if float_id(&i).is_some_and(|f| !had.contains(&f)) { self.ins_inline(i, ids) } else { i }).collect();
-            return vec![Step::Restyle { para, inlines }];
-        }
-        if self.label == DELETE && !had.is_subset(&has) {
-            let mut out = inlines;
-            for (k, i) in p.inlines.iter().enumerate() {
-                if let Inline::Float(f, r) = i
-                    && !has.contains(&f.id)
-                    && !self.own_insertion(r)
-                {
-                    let d = self.deleted(r, ids).unwrap_or_else(|| r.clone());
-                    out.insert(k.min(out.len()), Inline::Float(f.clone(), d));
-                }
-            }
-            return vec![Step::Restyle { para, inlines: out }];
+        if had != has {
+            return self.floats_changed(para, p, inlines, &had, &has, doc, idx, ids);
         }
         if content(&p.inlines) == content(&inlines) {
             let inlines = self.formatted(&p.inlines, inlines, false, ids);
@@ -526,6 +536,58 @@ impl Recording {
             return Vec::new();
         }
         vec![Step::Restyle { para, inlines }]
+    }
+
+    /// A restyle that puts floats in or takes them out: one that is new is inserted, one taken out is kept marked
+    /// deleted (unless it is the author's own insertion), and one moving between paragraphs (taken out of one and put
+    /// in another in either order) is neither, its deleted copy removed.
+    #[allow(clippy::too_many_arguments, reason = "the step's fields, then the document")]
+    fn floats_changed(
+        &mut self,
+        para: ParaId,
+        p: &Paragraph,
+        inlines: Vec<Inline>,
+        had: &HashSet<u64>,
+        has: &HashSet<u64>,
+        doc: &Document,
+        idx: &DocIndex,
+        ids: &mut IdCounter,
+    ) -> Vec<Step> {
+        let mut out = Vec::new();
+        let mut moved: HashSet<u64> = HashSet::new();
+        for f in has.difference(had) {
+            if let Some(from) = self.gone_floats.remove(f) {
+                moved.insert(*f);
+                if let Some(q) = idx.para(doc, from) {
+                    let left: Vec<Inline> = q.inlines.iter().filter(|i| !matches!(i, Inline::Float(x, _) if x.id == *f)).cloned().collect();
+                    out.push(Step::Restyle { para: from, inlines: left });
+                }
+            } else if idx.float_anchor(FloatId(*f)).is_some_and(|a| a != para) {
+                moved.insert(*f);
+                self.arriving.insert(*f);
+            }
+        }
+        let float_id = |i: &Inline| if let Inline::Float(f, _) = i { Some(f.id) } else { None };
+        let mut with: Vec<Inline> = inlines
+            .into_iter()
+            .map(|i| match float_id(&i) {
+                Some(f) if !had.contains(&f) && !moved.contains(&f) => self.ins_inline(i, ids),
+                _ => i,
+            })
+            .collect();
+        for (k, i) in p.inlines.iter().enumerate() {
+            if let Inline::Float(f, r) = i
+                && !has.contains(&f.id)
+                && !self.own_insertion(r)
+                && !self.arriving.remove(&f.id)
+            {
+                let d = self.deleted(r, ids).unwrap_or_else(|| r.clone());
+                with.insert(k.min(with.len()), Inline::Float(f.clone(), d));
+                self.gone_floats.insert(f.id, para);
+            }
+        }
+        out.push(Step::Restyle { para, inlines: with });
+        out
     }
 
     #[allow(clippy::too_many_arguments, reason = "the step's fields, then the document")]
@@ -581,6 +643,8 @@ impl Recording {
     ) -> Vec<Step> {
         let old = idx.blocks(doc, container).and_then(|b| b.get(range.clone()));
         let Some(old) = old.filter(|o| !o.is_empty()) else {
+            // Copies of blocks still indexed where they stay deleted (a removed frame's paragraphs)
+            let with = with.into_iter().map(|b| if indexed(idx, &b) { super::super::clipboard::fresh(&b) } else { b }).collect();
             let with = self.ins_blocks(with, ids);
             return vec![Step::Blocks { container, range, with }];
         };
@@ -692,8 +756,12 @@ impl Recording {
         if retain {
             (r.grid_before, r.grid_after, r.w_before, r.w_after) = (o.grid_before, o.grid_after, o.w_before, o.w_after);
         }
-        let props = (o.height.clone(), o.cant_split, o.header, o.grid_before, o.grid_after, o.w_before, o.w_after)
-            != (r.height.clone(), r.cant_split, r.header, r.grid_before, r.grid_after, r.w_before, r.w_after);
+        let props = (o.height.clone(), o.cant_split, o.header) != (r.height.clone(), r.cant_split, r.header);
+        if props && r.rev.change.is_none() && !self.new_here_row(o) {
+            let previous = PreviousProps::Row { height: o.height.clone(), cant_split: o.cant_split, header: o.header };
+            r.rev.change = Some(Rc::new(TableChange { mark: self.fmt_mark(ids), previous_raw: o.direct.clone(), previous: Some(previous) }));
+        }
+        let skips = (o.grid_before, o.grid_after, o.w_before, o.w_after) != (r.grid_before, r.grid_after, r.w_before, r.w_after);
         if o.cells.len() != n.cells.len() {
             let Some(pairs) = pairs else { return (r, true) };
             let mut cells = Vec::with_capacity(pairs.len());
@@ -717,15 +785,33 @@ impl Recording {
             r.cells = cells;
             return (r, true);
         }
-        let mut changed = props;
+        let mut changed = skips;
+        let fresh = self.new_here_row(o);
         for (c, oc) in r.cells.iter_mut().zip(&o.cells) {
             if retain {
                 (c.span, c.width) = (oc.span, oc.width);
             }
-            let looks = |x: &crate::docx::Cell| {
-                (x.width, x.span, x.v_merge, x.top.clone(), x.left.clone(), x.bottom.clone(), x.right.clone(), x.shading, x.margins)
-            };
-            changed |= looks(c) != looks(oc) || (&c.v_align, &c.text_direction, c.no_wrap) != (&oc.v_align, &oc.text_direction, oc.no_wrap);
+            let looks =
+                |x: &crate::docx::Cell| (x.width, x.top.clone(), x.left.clone(), x.bottom.clone(), x.right.clone(), x.shading, x.margins, x.no_wrap);
+            let restyled = looks(c) != looks(oc) || (&c.v_align, &c.text_direction) != (&oc.v_align, &oc.text_direction);
+            if restyled && c.rev.change.is_none() && !fresh {
+                let b = [oc.top.clone(), oc.left.clone(), oc.bottom.clone(), oc.right.clone()];
+                let previous = PreviousProps::Cell {
+                    width: oc.width,
+                    borders: b,
+                    shading: oc.shading,
+                    margins: oc.margins,
+                    v_align: oc.v_align.clone(),
+                    text_direction: oc.text_direction.clone(),
+                    no_wrap: oc.no_wrap,
+                };
+                c.rev.change = Some(Rc::new(TableChange { mark: self.fmt_mark(ids), previous_raw: oc.direct.clone(), previous: Some(previous) }));
+            }
+            if c.v_merge != oc.v_merge && c.rev.structural.is_none() && !fresh {
+                let kind = CellMarkKind::Merge { v_merge: Some(c.v_merge), v_merge_orig: Some(oc.v_merge) };
+                c.rev.structural = Some((self.fmt_mark(ids), kind));
+            }
+            changed |= c.span != oc.span;
             if c.blocks.iter().map(block_id).ne(oc.blocks.iter().map(block_id)) {
                 changed = true;
                 c.blocks = self.moved_in(&oc.blocks, &c.blocks, ids, notes);
@@ -887,6 +973,13 @@ fn content(v: &[Inline]) -> Vec<(Discriminant<Inline>, String)> {
     out
 }
 
+fn indexed(idx: &DocIndex, b: &Block) -> bool {
+    match b {
+        Block::Para(p) => idx.para_slot(ParaId(p.id)).is_some(),
+        Block::Table(t) => idx.table_slot(TableId(t.id)).is_some(),
+    }
+}
+
 fn block_id(b: &Block) -> u64 {
     match b {
         Block::Para(p) => p.id,
@@ -954,13 +1047,15 @@ fn note(doc: &Document, kind: NoteKind, id: i64) -> Option<&Vec<Block>> {
 
 #[cfg(test)]
 mod tests {
-    use crate::docx::Block;
+    use crate::api::value::{Alignment, ObjectWrap};
+    use crate::docx::{Block, Inline, Paragraph, Table, VMerge};
     use crate::editing::Editor;
     use crate::editing::commands::{Command, Dir, Outcome};
     use crate::editing::position::{Position, StoryId};
-    use crate::editing::selection::{Granularity, Selection};
-    use crate::editing::tests::{blank_with, fonts, open, para_id, texts};
-    use crate::layout::Unit;
+    use crate::editing::revisions::index::revisions;
+    use crate::editing::selection::{Granularity, ObjectRef, Selection};
+    use crate::editing::tests::{blank_body, blank_with, fonts, open, para_id, texts};
+    use crate::layout::{FloatId, ParaId, Unit};
 
     fn tracked(bytes: &[u8]) -> Editor {
         let mut e = Editor::open(bytes, fonts()).expect("opens");
@@ -1042,5 +1137,239 @@ mod tests {
         assert!(!e.set_tracking(false));
         assert!(matches!(e.execute(Command::SetTrackChanges(false), fonts()), Outcome::Refused(err) if err.message == "tracking locked"));
         assert!(e.tracking());
+    }
+
+    fn paras(blocks: &[Block], out: &mut Vec<Paragraph>) {
+        for b in blocks {
+            match b {
+                Block::Para(p) => out.push(p.clone()),
+                Block::Table(t) => t.rows.iter().flat_map(|r| &r.cells).for_each(|c| paras(&c.blocks, out)),
+            }
+        }
+    }
+
+    fn all_paras(e: &Editor) -> Vec<Paragraph> {
+        let mut out = Vec::new();
+        e.document().sections.iter().for_each(|s| paras(&s.blocks, &mut out));
+        out
+    }
+
+    fn kinds(e: &Editor) -> Vec<&'static str> {
+        revisions(e.document(), e.index()).iter().map(|r| r.kind.name()).collect()
+    }
+
+    /// The runs of the first paragraph marked inserted, and those marked deleted.
+    fn marked(e: &Editor) -> (usize, usize) {
+        let p = &all_paras(e)[0];
+        let runs = || p.inlines.iter().filter_map(|i| i.run());
+        (runs().filter(|r| r.rev.ins.is_some()).count(), runs().filter(|r| r.rev.del.is_some()).count())
+    }
+
+    fn inserted_and_deleted() -> Editor {
+        let mut e = tracked(&blank_with("Alpha beta."));
+        select(&mut e, 6, 6);
+        e.execute(Command::InsertText("new ".into()), fonts());
+        select(&mut e, 10, 14);
+        e.execute(crate::editing::tests::del(Dir::Back, false), fonts());
+        e
+    }
+
+    #[test]
+    fn an_untracked_paragraph_format_keeps_the_paragraphs_revisions() {
+        let mut e = inserted_and_deleted();
+        let before = marked(&e);
+        assert!(before.0 > 0 && before.1 > 0, "{before:?}");
+        e.execute(Command::SetAlignment(Alignment::Right), fonts());
+        assert!(all_paras(&e)[0].style.change.is_some(), "the tracked alignment is recorded");
+        assert!(e.set_tracking(false));
+        select(&mut e, 2, 2);
+        assert!(matches!(e.execute(Command::SetAlignment(Alignment::Center), fonts()), Outcome::Changed(_)));
+        assert_eq!(marked(&e), before, "the insertion and deletion stay");
+        assert!(all_paras(&e)[0].style.change.is_some(), "the paragraph change stays");
+    }
+
+    #[test]
+    fn untracked_bold_on_inserted_text_keeps_it_inserted() {
+        let mut e = inserted_and_deleted();
+        assert!(e.set_tracking(false));
+        select(&mut e, 6, 9);
+        e.execute(Command::SetBold(true), fonts());
+        let p = &all_paras(&e)[0];
+        let new = p.inlines.iter().find_map(|i| if let Inline::Text(t, r) = i { (t == "new").then_some(r) } else { None });
+        assert!(new.is_some_and(|r| r.bold && r.rev.ins.is_some()), "{:?}", p.inlines);
+    }
+
+    #[test]
+    fn an_untracked_join_keeps_the_joined_texts_revisions() {
+        let mut e = tracked(&blank_with("Alpha beta.\nGamma."));
+        select(&mut e, 6, 6);
+        e.execute(Command::InsertText("new ".into()), fonts());
+        assert!(e.set_tracking(false));
+        let at = Position::text(StoryId::Body, para_id(&e, 1), Unit(0));
+        e.set_caret_for_benchmark(Selection::Caret(at));
+        e.execute(crate::editing::tests::del(Dir::Back, false), fonts());
+        assert_eq!(texts(&e), ["Alpha new beta.Gamma."]);
+        assert_eq!(marked(&e).0, 1, "the insertion stays");
+    }
+
+    #[test]
+    fn editing_a_style_while_tracking_records_no_revision() {
+        let mut e = open("FX-STYLES.docx");
+        e.complete(fonts());
+        let h1 = e.document().resolver.as_ref().expect("styles").styles.get("Heading1").expect("Heading 1").raw.clone();
+        let bigger = h1.replace("<w:sz w:val=\"32\"/>", "<w:sz w:val=\"40\"/>").replace("<w:b/>", "<w:b/><w:color w:val=\"C00000\"/>");
+        assert_ne!(bigger, h1, "the style changes");
+        e.set_author("Author A", None);
+        assert!(e.set_tracking(true));
+        assert!(matches!(e.edit_styles("Modify Style", |s| s.set_xml(bigger), fonts()), Outcome::Changed(_)));
+        assert_eq!(kinds(&e), Vec::<&str>::new());
+    }
+
+    #[test]
+    fn a_tracked_paragraph_change_of_a_paragraph_without_properties_is_listed() {
+        let mut e = open("FX-EMPTY.docx");
+        e.execute(Command::InsertText("First para.".into()), fonts());
+        e.set_author("Author A", None);
+        assert!(e.set_tracking(true));
+        e.execute(Command::SetAlignment(Alignment::Center), fonts());
+        assert_eq!(kinds(&e), ["ParagraphProperty"]);
+    }
+
+    fn pictures_and_floats(e: &Editor) -> (usize, usize) {
+        let all = all_paras(e);
+        let count = |f: fn(&Inline) -> bool| all.iter().flat_map(|p| &p.inlines).filter(|i| f(i)).count();
+        (count(|i| matches!(i, Inline::Picture(..))), count(|i| matches!(i, Inline::Float(..))))
+    }
+
+    #[test]
+    fn rejecting_a_tracked_wrap_in_line_gives_back_the_floating_picture() {
+        let mut e = open("FX-OBJ.docx");
+        let id = all_paras(&e).iter().flat_map(|p| p.inlines.clone()).find_map(|i| if let Inline::Float(f, _) = i { Some(f.id) } else { None });
+        let was = pictures_and_floats(&e);
+        e.set_author("Author A", None);
+        assert!(e.set_tracking(true));
+        e.set_caret_for_benchmark(Selection::Object(ObjectRef::Floating(FloatId(id.expect("a float")))));
+        assert!(matches!(e.execute(Command::SetObjectWrap(ObjectWrap::Inline), fonts()), Outcome::Changed(_)));
+        e.execute(Command::RejectAllRevisions(Default::default()), fonts());
+        assert_eq!(pictures_and_floats(&e), was);
+    }
+
+    #[test]
+    fn rejecting_a_tracked_wrap_square_gives_back_the_inline_picture() {
+        let mut r = crate::editing::tests::scenarios::Run::open("FX-OBJ-LOCK.docx", "tracked-wrap-square");
+        let was = pictures_and_floats(&r.e);
+        r.e.set_author("Author A", None);
+        assert!(r.e.set_tracking(true));
+        r.step(&serde_json::json!({ "click": { "picture": 0 } }));
+        assert!(matches!(r.e.execute(Command::SetObjectWrap(ObjectWrap::Square), fonts()), Outcome::Changed(_)));
+        r.e.execute(Command::RejectAllRevisions(Default::default()), fonts());
+        assert_eq!(pictures_and_floats(&r.e), was);
+    }
+
+    fn all_text(e: &Editor) -> String {
+        fn go(blocks: &[Block], s: &mut String) {
+            for p in blocks.iter().filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None }) {
+                for i in &p.inlines {
+                    match i {
+                        Inline::Text(t, _) => s.push_str(t),
+                        Inline::Float(f, _) => f.text_box.iter().for_each(|tb| go(&tb.blocks, s)),
+                        _ => {}
+                    }
+                }
+            }
+        }
+        let mut s = String::new();
+        e.document().sections.iter().for_each(|sec| go(&sec.blocks, &mut s));
+        s
+    }
+
+    #[test]
+    fn rejecting_a_tracked_frame_removal_gives_back_the_frame() {
+        let frame = r#"<w:p><w:pPr><w:framePr w:w="2400" w:h="600" w:hRule="exact" w:wrap="around" w:vAnchor="text" w:hAnchor="margin" w:x="2000" w:y="100"/></w:pPr><w:r><w:t>Framed text</w:t></w:r></w:p><w:p><w:r><w:t>Body text</w:t></w:r></w:p>"#;
+        let mut e = tracked(&blank_body(frame));
+        e.complete(fonts());
+        let before = all_text(&e);
+        let float = all_paras(&e).iter().flat_map(|p| p.inlines.clone()).find_map(|i| if let Inline::Float(f, _) = i { Some(f) } else { None });
+        let f = float.expect("the frame is a float");
+        let inner = f.text_box.as_ref().and_then(|t| t.blocks.iter().find_map(|b| if let Block::Para(p) = b { Some(p.id) } else { None }));
+        let at = Position::text(StoryId::TextBox(FloatId(f.id)), ParaId(inner.expect("a paragraph in the frame")), Unit(0));
+        e.set_caret_for_benchmark(Selection::Caret(at));
+        assert!(matches!(e.execute(Command::RemoveFrame, fonts()), Outcome::Changed(_)));
+        assert_eq!(pictures_and_floats(&e).1, 1, "the frame stays, marked deleted");
+        e.execute(Command::RejectAllRevisions(Default::default()), fonts());
+        assert_eq!((all_text(&e), pictures_and_floats(&e).1), (before, 1));
+    }
+
+    fn drop_cap(position: crate::api::command::DropCapPosition) -> Command {
+        Command::SetDropCap(crate::api::command::DropCap { position, font: None, lines: None, distance: None })
+    }
+
+    #[test]
+    fn rejecting_a_tracked_drop_cap_removal_gives_back_the_drop_cap() {
+        use crate::api::command::DropCapPosition;
+        let mut e = Editor::open(&blank_with("Once upon a time."), fonts()).expect("opens");
+        select(&mut e, 2, 2);
+        assert!(matches!(e.execute(drop_cap(DropCapPosition::Dropped), fonts()), Outcome::Changed(_)));
+        let before = (all_text(&e), pictures_and_floats(&e).1);
+        assert_eq!(before.1, 1, "the drop cap is a float");
+        e.set_author("Author A", None);
+        assert!(e.set_tracking(true));
+        assert!(matches!(e.execute(drop_cap(DropCapPosition::None), fonts()), Outcome::Changed(_)));
+        e.execute(Command::RejectAllRevisions(Default::default()), fonts());
+        assert_eq!((all_text(&e), pictures_and_floats(&e).1), before);
+    }
+
+    fn table(rows: &[String]) -> Vec<u8> {
+        let rows: String = rows.iter().map(|r| format!("<w:tr>{r}</w:tr>")).collect();
+        blank_body(&format!(
+            r#"<w:tbl><w:tblPr><w:tblW w:w="6000" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/></w:tblGrid>{rows}</w:tbl><w:p><w:r><w:t>After</w:t></w:r></w:p>"#
+        ))
+    }
+
+    fn tc(text: &str, pr: &str) -> String {
+        format!(r#"<w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/>{pr}</w:tcPr><w:p><w:r><w:t>{text}</w:t></w:r></w:p></w:tc>"#)
+    }
+
+    fn first_table(e: &Editor) -> Table {
+        e.document().sections[0].blocks.iter().find_map(|b| if let Block::Table(t) = b { Some(t.clone()) } else { None }).expect("a table")
+    }
+
+    #[test]
+    fn rejecting_tracked_cell_shading_gives_back_the_cells_look() {
+        let row: String = (0..3).map(|i| tc(&format!("c{i}"), "")).collect();
+        let mut e = tracked(&table(&[row.clone(), row]));
+        let was = first_table(&e).rows[0].cells[0].clone();
+        select(&mut e, 0, 0);
+        assert!(matches!(e.execute(Command::SetCellShading(crate::api::value::Color::parse("#D9D9D9")), fonts()), Outcome::Changed(_)));
+        assert!(first_table(&e).rows[0].cells[0].shading.is_some());
+        assert_eq!(kinds(&e), ["TableProperty"]);
+        e.execute(Command::RejectAllRevisions(Default::default()), fonts());
+        let now = &first_table(&e).rows[0].cells[0];
+        assert_eq!((now.shading, &now.direct), (was.shading, &was.direct));
+    }
+
+    #[test]
+    fn rejecting_a_tracked_row_deletion_gives_back_its_vertical_merge() {
+        let r0 = tc("a", r#"<w:vMerge w:val="restart"/>"#) + &tc("b", "") + &tc("c", "");
+        let r1 = tc("", "<w:vMerge/>") + &tc("e", "") + &tc("f", "");
+        let r2: String = (0..3).map(|i| tc(&format!("g{i}"), "")).collect();
+        let mut e = tracked(&table(&[r0, r1, r2]));
+        select(&mut e, 0, 0);
+        assert!(matches!(e.execute(Command::DeleteRows, fonts()), Outcome::Changed(_)));
+        e.execute(Command::RejectAllRevisions(Default::default()), fonts());
+        let merges: Vec<VMerge> = first_table(&e).rows.iter().map(|r| r.cells[0].v_merge).collect();
+        assert_eq!(merges, [VMerge::Restart, VMerge::Continue, VMerge::None]);
+    }
+
+    #[test]
+    fn removing_an_inline_control_while_tracking_keeps_its_text() {
+        let sdt = r#"<w:p><w:r><w:t xml:space="preserve">Pre </w:t></w:r><w:sdt><w:sdtPr><w:id w:val="77"/><w:text/></w:sdtPr><w:sdtContent><w:r><w:t>abc</w:t></w:r></w:sdtContent></w:sdt><w:r><w:t xml:space="preserve"> post</w:t></w:r></w:p>"#;
+        let mut e = tracked(&blank_body(sdt));
+        let control = |e: &Editor| all_paras(e)[0].inlines.iter().find_map(|i| if let Inline::ControlStart(c) = i { Some(*c) } else { None });
+        let id = crate::editing::merge::api_id(crate::docx::ElementId::Control(control(&e).expect("an inline control")));
+        let remove = crate::api::command::RemoveControl { id, keep_content: Some(true) };
+        assert!(matches!(e.execute(Command::RemoveControl(remove), fonts()), Outcome::Changed(_)));
+        assert_eq!((control(&e), texts(&e)), (None, vec!["Pre abc post".to_string()]));
+        assert_eq!(kinds(&e), Vec::<&str>::new());
     }
 }

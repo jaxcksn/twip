@@ -75,20 +75,37 @@ fn format_names(before: &RunStyle, after: &RunStyle) -> Vec<&'static str> {
     out
 }
 
+/// Every story's blocks: the body, headers and footers, notes, the sub-template being edited (`flow`), then the text
+/// boxes in them.
+fn each_story<'d>(doc: &'d Document, flow: Option<u32>, mut f: impl FnMut(&'d [Block], &mut Vec<&'d [Block]>)) {
+    let flow = flow.and_then(|k| doc.glossary.as_ref()?.parts.get(k as usize)).map(|p| p.body.as_slice());
+    let mut boxes: Vec<&[Block]> = Vec::new();
+    let stories = doc.sections.iter().map(|s| s.blocks.as_slice()).chain(doc.stories.values().map(Vec::as_slice));
+    for blocks in stories.chain(doc.footnotes.values().chain(doc.endnotes.values()).map(Vec::as_slice)).chain(flow) {
+        f(blocks, &mut boxes);
+    }
+    let mut k = 0;
+    while let Some(&blocks) = boxes.get(k) {
+        f(blocks, &mut boxes);
+        k += 1;
+    }
+}
+
 impl Marks {
-    fn of(doc: &Document) -> Marks {
+    fn of(doc: &Document, flow: Option<u32>) -> Marks {
         let mut m = Marks::default();
-        doc.sections.iter().for_each(|s| m.blocks(&s.blocks));
-        doc.stories.values().for_each(|b| m.blocks(b));
-        doc.footnotes.values().chain(doc.endnotes.values()).for_each(|b| m.blocks(b));
+        each_story(doc, flow, |b, boxes| m.blocks(b, boxes));
         m
     }
 
-    fn blocks(&mut self, list: &[Block]) {
+    fn blocks<'d>(&mut self, list: &'d [Block], boxes: &mut Vec<&'d [Block]>) {
         for b in list {
             match b {
                 Block::Para(p) => {
                     for i in &p.inlines {
+                        if let Some((_, tb)) = i.story() {
+                            boxes.push(&tb.blocks);
+                        }
                         let Some(r) = i.run() else { continue };
                         let text = match i {
                             Inline::Text(s, _) => s.as_str(),
@@ -120,7 +137,7 @@ impl Marks {
                         }
                     }
                 }
-                Block::Table(t) => t.rows.iter().flat_map(|r| &r.cells).for_each(|c| self.blocks(&c.blocks)),
+                Block::Table(t) => t.rows.iter().flat_map(|r| &r.cells).for_each(|c| self.blocks(&c.blocks, boxes)),
             }
         }
     }
@@ -158,12 +175,15 @@ fn rich_text(r: &rich::RichText) -> RichText {
 }
 
 /// The paragraph each comment's range starts in, by comment id.
-fn comment_starts(doc: &Document) -> HashMap<i64, crate::layout::ParaId> {
-    fn walk(list: &[Block], out: &mut HashMap<i64, crate::layout::ParaId>) {
+fn comment_starts(doc: &Document, flow: Option<u32>) -> HashMap<i64, crate::layout::ParaId> {
+    fn walk<'d>(list: &'d [Block], out: &mut HashMap<i64, crate::layout::ParaId>, boxes: &mut Vec<&'d [Block]>) {
         for b in list {
             match b {
                 Block::Para(p) => {
                     for i in &p.inlines {
+                        if let Some((_, tb)) = i.story() {
+                            boxes.push(&tb.blocks);
+                        }
                         if let Inline::Range(m) = i
                             && m.kind == crate::docx::review::RangeKind::CommentStart
                         {
@@ -171,13 +191,12 @@ fn comment_starts(doc: &Document) -> HashMap<i64, crate::layout::ParaId> {
                         }
                     }
                 }
-                Block::Table(t) => t.rows.iter().flat_map(|r| &r.cells).for_each(|c| walk(&c.blocks, out)),
+                Block::Table(t) => t.rows.iter().flat_map(|r| &r.cells).for_each(|c| walk(&c.blocks, out, boxes)),
             }
         }
     }
     let mut out = HashMap::new();
-    doc.sections.iter().for_each(|s| walk(&s.blocks, &mut out));
-    doc.stories.values().chain(doc.footnotes.values()).chain(doc.endnotes.values()).for_each(|b| walk(b, &mut out));
+    each_story(doc, flow, |b, boxes| walk(b, &mut out, boxes));
     out
 }
 
@@ -189,7 +208,7 @@ impl Session {
         let e = &self.editor;
         let doc = e.document();
         let list = index::revisions(doc, e.index());
-        let marks = Marks::of(doc);
+        let marks = Marks::of(doc, e.index().flow);
         let first_id = |r: &index::Revision| revision_id(r.ids.first().copied().unwrap_or(crate::docx::review::RevisionId(0)));
         list.iter()
             .map(|r| {
@@ -198,6 +217,8 @@ impl Session {
                     Kind::Delete => (RevisionKind::Deletion, Marks::text(&marks.deleted, &r.ids), "Deleted".to_string()),
                     Kind::MovedTo => (RevisionKind::MoveTo, Marks::text(&marks.inserted, &r.ids), "Moved".to_string()),
                     Kind::MovedFrom => (RevisionKind::MoveFrom, Marks::text(&marks.deleted, &r.ids), "Moved".to_string()),
+                    Kind::RowInsert => (RevisionKind::RowInsertion, Marks::text(&marks.inserted, &r.ids), "Inserted Row".to_string()),
+                    Kind::RowDelete => (RevisionKind::RowDeletion, Marks::text(&marks.deleted, &r.ids), "Deleted Row".to_string()),
                     Kind::Property => {
                         let mut names: Vec<&str> = Vec::new();
                         for n in r.ids.iter().filter_map(|id| marks.formatted.get(&id.0)).flatten() {
@@ -242,7 +263,7 @@ impl Session {
         let pages = crate::services::para_pages(&mut self.editor);
         let threads = self.editor.comment_threads();
         let doc = self.editor.document();
-        let starts = comment_starts(doc);
+        let starts = comment_starts(doc, self.editor.index().flow);
         let comment = |id: crate::docx::review::CommentId| {
             let c = doc.comments.by_id.get(&id)?;
             let body = rich::RichText::from_blocks(&c.body);
@@ -334,7 +355,7 @@ pub(super) fn fill_state(s: &mut Session, state: &mut State) {
     let author = s.author.name.clone();
     r.protection = e.protection_state(&author);
     r.markup_view = e.document().review.view;
-    let revision = e.revision();
+    let revision = (e.revision(), e.index().flow);
     r.revisions = match s.services.revision_count {
         Some((at, n)) if at == revision => n,
         _ => {
@@ -352,14 +373,17 @@ mod tests {
     use std::cell::RefCell;
     use std::rc::Rc;
 
-    use crate::api::command::{AuthorFilter, Command, CommandResult, CommentReply, CommentResolve};
+    use crate::api::command::{AuthorFilter, Command, CommandResult, CommentReply, CommentResolve, InsertRows, VerticalSide};
     use crate::api::engine::{Engine, SessionOptions};
     use crate::api::event::Event;
     use crate::api::fonts::FontLibrary;
     use crate::api::record::Author;
     use crate::api::review::{Body, RevisionKind};
     use crate::api::services::FindQuery;
-    use crate::api::value::Order;
+    use crate::api::value::{Order, Story};
+    use crate::editing::position::{Position, StoryId};
+    use crate::editing::selection::Selection;
+    use crate::layout::Unit;
 
     type Events = Rc<RefCell<Vec<Event>>>;
 
@@ -416,5 +440,83 @@ mod tests {
         assert_eq!(s.state().review.comments, 1);
         s.run(Command::DeleteComment(root)).expect("deletes");
         assert_eq!((s.state().review.comments, s.state().review.active_comment.clone()), (0, None));
+    }
+
+    fn tracked(bytes: &[u8]) -> (Engine, crate::api::engine::SessionId) {
+        let mut engine = Engine::new(FontLibrary::system_recommended());
+        let id = engine.create_session(SessionOptions::default());
+        let s = engine.session(id).expect("a session");
+        s.open(bytes).expect("opens");
+        s.set_author(Author { name: "Ada".into(), ..Author::default() });
+        s.run(Command::SetTrackChanges(true)).expect("tracks");
+        (engine, id)
+    }
+
+    #[test]
+    fn each_replacement_is_a_revision_of_its_own() {
+        let (mut engine, id) = tracked(&crate::editing::tests::blank_with("Alpha beta gamma beta."));
+        let s = engine.session(id).expect("a session");
+        let q = FindQuery { text: "beta".into(), ..FindQuery::default() };
+        assert_eq!(s.replace_all(&q, "BETA").expect("replaces"), 2);
+        let list = s.revisions();
+        let kinds: Vec<_> = list.iter().map(|r| (r.kind, r.text.as_str())).collect();
+        let (ins, del) = (RevisionKind::Insertion, RevisionKind::Deletion);
+        assert_eq!(kinds, [(del, "beta"), (ins, "BETA"), (del, "beta"), (ins, "BETA")]);
+        let ids: std::collections::HashSet<_> = list.iter().map(|r| r.id.clone()).collect();
+        assert_eq!(ids.len(), 4, "the ids are distinct");
+        s.run(Command::AcceptRevision(list[1].id.clone())).expect("accepts");
+        let left: Vec<_> = s.revisions().iter().map(|r| r.kind).collect();
+        assert_eq!(left, [del, del, ins], "the other insertion stays");
+    }
+
+    #[test]
+    fn a_tracked_row_insertion_is_a_row_insertion() {
+        let tc = |t: &str| format!(r#"<w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:tc>"#);
+        let row = format!("<w:tr>{}{}</w:tr>", tc("a"), tc("b"));
+        let (mut engine, id) = tracked(&crate::editing::tests::blank_body(&format!(
+            r#"<w:tbl><w:tblPr><w:tblW w:w="4000" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/></w:tblGrid>{row}{row}</w:tbl><w:p><w:r><w:t>After</w:t></w:r></w:p>"#
+        )));
+        let s = engine.session(id).expect("a session");
+        let p = Position::text(StoryId::Body, crate::editing::tests::para_id(&s.editor, 0), Unit(0));
+        s.editor.set_caret_for_benchmark(Selection::Caret(p));
+        s.run(Command::InsertRows(InsertRows { side: VerticalSide::Below, count: Some(1) })).expect("inserts");
+        let kinds: Vec<_> = s.revisions().iter().map(|r| r.kind).collect();
+        assert!(kinds.contains(&RevisionKind::RowInsertion) && !kinds.contains(&RevisionKind::Insertion), "{kinds:?}");
+    }
+
+    #[test]
+    fn a_text_box_revision_reports_its_text() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/review/FX-REVIEW-STORIES.docx");
+        let mut engine = Engine::new(FontLibrary::system_recommended());
+        let id = engine.create_session(SessionOptions::default());
+        let s = engine.session(id).expect("a session");
+        s.open(&std::fs::read(path).expect("fixture")).expect("opens");
+        let boxed: Vec<_> = s.revisions().into_iter().filter(|r| r.story == Story::TextBox).collect();
+        assert!(!boxed.is_empty(), "the fixture has a revision in a text box");
+        assert!(boxed.iter().all(|r| !r.text.is_empty() || r.kind == RevisionKind::Formatting), "{boxed:?}");
+    }
+
+    #[test]
+    fn the_revision_count_follows_the_edited_sub_template() {
+        use crate::api::command::{ReferenceRule, SubTemplateRules};
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-SUBTEMPLATES.docx");
+        let mut engine = Engine::new(FontLibrary::system_recommended());
+        let id = engine.create_session(SessionOptions::default());
+        let s = engine.session(id).expect("a session");
+        s.open(&std::fs::read(path).expect("fixture")).expect("opens");
+        s.set_author(Author { name: "Ada".into(), ..Author::default() });
+        let rule = ReferenceRule { field_type: "SUBTEMPLATE".into(), argument: None, category: "Sub-templates".into(), gallery: None };
+        s.run(Command::SetSubTemplateRules(SubTemplateRules { rules: vec![rule] })).expect("sets the rules");
+        let name = || crate::api::command::SubTemplateName { name: "Violation".into(), category: None };
+        s.run(Command::EditSubTemplate(name())).expect("edits");
+        s.run(Command::SetTrackChanges(true)).expect("tracks");
+        s.run(Command::InsertText("x".into())).expect("types");
+        let inside = s.revisions().len();
+        assert!(inside > 0, "a tracked insertion in the sub-template");
+        assert_eq!(s.state().review.revisions as usize, inside);
+        s.run(Command::CloseSubTemplate).expect("closes");
+        assert_eq!(s.state().review.revisions as usize, s.revisions().len(), "after leaving");
+        s.run(Command::EditSubTemplate(name())).expect("edits");
+        assert_eq!(s.state().review.revisions as usize, inside, "back inside");
     }
 }
