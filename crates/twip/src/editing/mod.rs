@@ -3100,10 +3100,23 @@ impl Editor {
     }
 
     pub fn selected_text_within(&mut self, limit: usize) -> Option<String> {
+        let (text, whole) = self.selected_text_upto(limit);
+        whole.then_some(text)
+    }
+
+    /// The selection's text cut to its first `limit` characters, and whether that is all of it.
+    pub fn selected_text_upto(&mut self, limit: usize) -> (String, bool) {
         if let Selection::Block { .. } = self.selection {
-            return Some(self.block_text()).filter(|t| t.chars().count() <= limit);
+            let mut t = self.block_text();
+            return match t.char_indices().nth(limit) {
+                Some((k, _)) => {
+                    t.truncate(k);
+                    (t, false)
+                }
+                None => (t, true),
+            };
         }
-        let Some((a, b)) = self.selection.ordered(&self.index) else { return Some(String::new()) };
+        let Some((a, b)) = self.selection.ordered(&self.index) else { return (String::new(), true) };
         let mut out = String::new();
         let mut chars = 0usize;
         let mut p = a;
@@ -3118,22 +3131,27 @@ impl Editor {
                         _ => t.len(),
                     };
                     let take = end.0.saturating_sub(off.0) as usize;
-                    chars += take + 1;
-                    if chars > limit.saturating_add(1) {
-                        return None;
-                    }
-                    out.extend(t.text.chars().skip(off.0 as usize).take(take).map(|c| match c {
+                    let room = limit - chars;
+                    out.extend(t.text.chars().skip(off.0 as usize).take(take.min(room)).map(|c| match c {
                         '\u{2028}' => '\n',
                         '\u{c}' | '\u{FFFC}' => ' ',
                         c => c,
                     }));
+                    if take > room {
+                        return (out, false);
+                    }
+                    chars += take;
                     let at_end = Position::text(p.story, para, t.len());
                     let next = self.nav().right(at_end, false);
                     if next == at_end || self.index.cmp(&next, &b) == std::cmp::Ordering::Greater {
                         break;
                     }
                     if next.para_offset().is_some() {
+                        if chars == limit {
+                            return (out, false);
+                        }
                         out.push('\n');
+                        chars += 1;
                     }
                     p = next;
                 }
@@ -3146,7 +3164,7 @@ impl Editor {
                 }
             }
         }
-        Some(out).filter(|t| t.chars().count() <= limit)
+        (out, true)
     }
 }
 

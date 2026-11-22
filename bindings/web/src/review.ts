@@ -71,7 +71,7 @@ export interface CommentThread {
   id: CommentId;
   /** Resolved. */
   done: boolean;
-  /** The commented text. */
+  /** The commented text, cut to its first 1,000 characters. */
   anchorText: string;
   /** The page it starts on. */
   page: number;

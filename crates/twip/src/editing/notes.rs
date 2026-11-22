@@ -31,13 +31,39 @@ pub(super) fn refs_in(blocks: &[Block], out: &mut Vec<(NoteKind, i64)>) {
 
 fn refs_inline(inlines: &[Inline], out: &mut Vec<(NoteKind, i64)>) {
     for i in inlines {
-        if let Inline::NoteRef { kind, id, .. } = i {
-            out.push((*kind, *id));
+        match i {
+            Inline::NoteRef { kind, id, .. } => out.push((*kind, *id)),
+            i => {
+                if let Some((_, tb)) = i.story() {
+                    refs_in(&tb.blocks, out);
+                }
+            }
         }
     }
 }
 
 impl Editor {
+    /// A number above every note of `kind` and every reference to one, so a new note answers no reference read
+    /// without its note.
+    fn free_note_id(&self, kind: NoteKind) -> i64 {
+        let notes = match kind {
+            NoteKind::Foot => &self.doc.footnotes,
+            NoteKind::End => &self.doc.endnotes,
+        };
+        let mut max = notes.keys().copied().max().unwrap_or(0).max(0);
+        for pid in self.index.para_ids() {
+            let Some(p) = self.index.para(&self.doc, pid) else { continue };
+            for i in &p.inlines {
+                if let Inline::NoteRef { kind: k, id, .. } = i
+                    && *k == kind
+                {
+                    max = max.max(*id);
+                }
+            }
+        }
+        max + 1
+    }
+
     pub(super) fn insert_note(&mut self, kind: NoteKind, custom: Option<&str>, fonts: &Fonts) -> Outcome {
         if custom.is_some_and(|m| m.is_empty() || m.chars().count() > 10) {
             return Outcome::invalid("a custom mark is 1…10 characters");
@@ -60,11 +86,7 @@ impl Editor {
                 p.set("vertAlign", format!("<{w}vertAlign {w}val=\"superscript\"/>"));
             }
         };
-        let notes = match kind {
-            NoteKind::Foot => &self.doc.footnotes,
-            NoteKind::End => &self.doc.endnotes,
-        };
-        let id = notes.keys().copied().max().unwrap_or(0).max(0) + 1;
+        let id = self.free_note_id(kind);
         let mut tx = self.begin(if kind == NoteKind::Foot { "Insert Footnote" } else { "Insert Endnote" });
         let caret = match self.delete_range(&mut tx) {
             Ok(Some(p)) => self.past_row_end(p),
@@ -220,7 +242,7 @@ impl Editor {
         let mut moves = Vec::new();
         for &from in kinds {
             let to = other(from);
-            let first = notes(self, to).keys().copied().max().unwrap_or(0).max(0) + 1;
+            let first = self.free_note_id(to);
             // In their order, so the numbers keep it.
             let mut from_notes: Vec<(i64, Vec<Block>)> = notes(self, from).into_iter().filter(|(id, _)| *id > 0).collect();
             from_notes.sort_by_key(|(id, _)| *id);
@@ -311,6 +333,7 @@ impl Editor {
                 }
                 Step::Blocks { with, .. } => refs_in(with, &mut gone),
                 Step::Rows { with, .. } => with.iter().flat_map(|r| r.cells.iter()).for_each(|c| refs_in(&c.blocks, &mut gone)),
+                Step::Restyle { inlines, .. } => refs_inline(inlines, &mut gone),
                 _ => {}
             }
         }
@@ -322,7 +345,7 @@ impl Editor {
         let mut left = Vec::new();
         for pid in self.index.para_ids() {
             if let Some(p) = self.index.para(&self.doc, pid) {
-                refs_inline(&p.inlines, &mut left);
+                left.extend(p.inlines.iter().filter_map(|i| if let Inline::NoteRef { kind, id, .. } = i { Some((*kind, *id)) } else { None }));
             }
         }
         for (kind, id) in gone {
