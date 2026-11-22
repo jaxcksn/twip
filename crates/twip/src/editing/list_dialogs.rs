@@ -28,10 +28,12 @@ impl Editor {
     /// The number of a list paragraph, counted as the labels are.
     fn list_value(&self, para: crate::layout::ParaId) -> Option<u32> {
         let res = self.doc.resolver.as_ref()?;
+        let cx = self.cx();
         let mut counters = crate::docx::numbering::Counters::default();
-        for (p, num, ilvl) in self.list_paras() {
+        for (p, uncounted) in super::lists::numbered_paras(&self.doc, &self.index) {
+            let Some((num, ilvl)) = super::lists::counted(res, p, uncounted, &cx) else { continue };
             counters.next(&res.numbering, &res.styles, num, ilvl);
-            if p == para {
+            if p.id == para.0 {
                 return counters.value(&res.numbering, &res.styles, num, ilvl).map(|v| v.max(0) as u32);
             }
         }
@@ -165,7 +167,7 @@ impl Editor {
         let out = self.edit_numbering(
             "Define List",
             |n, cx, colours| {
-                n.set_abstract_xml(super::list_defs::abstract_xml(abstract_id, None, &levels, None, &[], cx), colours)?;
+                n.set_abstract_xml(super::list_defs::abstract_xml(abstract_id, None, &levels, None, &[], &[], cx), colours)?;
                 let w = &cx.w;
                 n.set_num_xml(format!("<{w}num {w}numId=\"{num_id}\"><{w}abstractNumId {w}val=\"{abstract_id}\"/></{w}num>"), colours)?;
                 Some(())
@@ -193,7 +195,8 @@ impl Editor {
                 self.edit_numbering(
                     "Modify Style",
                     |n, cx, colours| {
-                        n.set_abstract_xml(super::list_defs::abstract_xml(abstract_id, old.as_deref(), &levels, None, &[], cx), colours).map(|_| ())
+                        n.set_abstract_xml(super::list_defs::abstract_xml(abstract_id, old.as_deref(), &levels, None, &[], &[], cx), colours)
+                            .map(|_| ())
                     },
                     &[],
                     false,
@@ -206,7 +209,7 @@ impl Editor {
                 let out = self.edit_numbering(
                     "New Style",
                     |n, cx, colours| {
-                        let mut a = super::list_defs::abstract_xml(abstract_id, None, &levels, None, &[], cx);
+                        let mut a = super::list_defs::abstract_xml(abstract_id, None, &levels, None, &[], &[], cx);
                         // The definition is the style's: a w:styleLink after its multiLevelType.
                         let link = format!("<{w}styleLink {w}val=\"{}\"/>", esc(&style_id));
                         if let Some(at) = a.find(&format!("<{w}lvl ")) {

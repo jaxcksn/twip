@@ -1077,7 +1077,7 @@ impl Editor {
             let text =
                 self.selection.focus().and_then(|p| p.para_offset()).and_then(|(p, _)| self.index.para(&self.doc, p)).map(|p| UnitText::of(p).text);
             assert!(v.is_empty(), "integrity: {v:?} ({:?} in {text:?})", self.selection);
-            let labels = self.labels_changed(false);
+            let labels = self.labels_changed(|_| true);
             assert!(labels.is_empty(), "integrity: 9 list labels: {} differ from a fresh numbering, first {:?}", labels.len(), labels.first());
         }
         if let Some(p) = self.caret() {

@@ -2,7 +2,7 @@
 //! left out), and their levels as the API shows them.
 
 use crate::api::command::{FollowNumber, LevelAlignment, ListLevel, NumberFormat};
-use crate::api::value::Points;
+use crate::api::value::{Points, StyleId};
 
 /// A library level: its `w:numFmt`, `w:lvlText`, `w:lvlJc`, indents (twips; a negative hanging indent is a first
 /// line one), tab, font, `w:suff`, linked style (by name), legal flag and `w:lvlRestart`.
@@ -20,8 +20,7 @@ pub struct L {
     pub restart: Option<i64>,
 }
 
-/// An entry's levels as the API shows them. Linked styles are left out.
-// shortcut: an entry that names heading styles doesn't link them when it applies.
+/// An entry's levels as the API shows them, a linked style by its built-in id.
 pub fn levels(entry: &[L]) -> Vec<ListLevel> {
     let pt = |t: i64| Points(t as f64 / 20.0);
     entry
@@ -45,7 +44,7 @@ pub fn levels(entry: &[L]) -> Vec<ListLevel> {
             text_indent: pt(l.left),
             restart_after: l.restart.map(|r| r.clamp(0, 9) as u8),
             legal: l.legal,
-            linked_style: None,
+            linked_style: l.style.and_then(crate::services::styles::builtin::built_in).map(|b| StyleId(b.id.to_string())),
             font: l.font.map(str::to_string),
             picture: None,
         })
