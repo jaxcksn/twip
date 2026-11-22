@@ -4,7 +4,7 @@
 use crate::api::services::{FindMatch, FindQuery};
 use crate::api::value::MatchId;
 use crate::editing::Editor;
-use crate::editing::commands::{Command, Dir, Outcome, deleting};
+use crate::editing::commands::Outcome;
 use crate::editing::text::UnitText;
 use crate::font::Fonts;
 use crate::layout::{ParaId, Unit};
@@ -128,19 +128,11 @@ pub fn describe(e: &Editor, h: Hit, page: u32) -> FindMatch {
     }
 }
 
-/// Replaces `hits` with `with`, last to first so earlier offsets hold, as one undo step.
-pub fn replace(e: &mut Editor, hits: &[Hit], with: &str, fonts: &Fonts) -> Outcome {
-    e.joined("Replace", fonts, |e| {
-        let mut out = Outcome::Unchanged("no match");
-        for h in hits.iter().rev() {
-            h.select(e, fonts);
-            let edit = if with.is_empty() { deleting(Dir::Forward, false) } else { Command::InsertText(with.to_string()) };
-            if let o @ Outcome::Changed(_) = e.execute(edit, fonts) {
-                out = o;
-            }
-        }
-        out
-    })
+/// Replaces `hits` with `with` as one undo step ([`Editor::replace_hits`]): how many. `all`: Replace All, which leaves
+/// the caret where it was; else the caret follows the replacement.
+pub fn replace(e: &mut Editor, hits: &[Hit], with: &str, all: bool, fonts: &Fonts) -> (usize, Outcome) {
+    let hits: Vec<(ParaId, Unit, Unit)> = hits.iter().map(|h| (h.para, Unit(h.start), Unit(h.end))).collect();
+    e.replace_hits(if all { "Replace All" } else { "Replace" }, &hits, with, all, fonts)
 }
 
 #[cfg(test)]

@@ -579,12 +579,15 @@ impl Session {
         if self.check(&text).is_err() {
             return;
         }
+        // Text-only fallback
+        let formatted = Command::Paste(PasteOptions::default());
+        let held = held.filter(|_| self.editor.protection_refusal(&formatted).is_none());
         let command = match held {
             Some((from, f)) => {
                 if from != self.id || self.editor.clipboard_id() != Some(f.id) {
                     self.editor.adopt_clipboard(f);
                 }
-                Command::Paste(PasteOptions::default())
+                formatted
             }
             // shortcut: there is no HTML import, so HTML from elsewhere pastes as its text in the insertion point's
             // formatting; a converter from HTML to a fragment would paste it formatted.

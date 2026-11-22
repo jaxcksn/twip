@@ -32,13 +32,19 @@ impl Session {
         if let Some(done) = self.run_view(&command) {
             return done;
         }
-        self.apply(command, Origin::Api)
+        let setup = super::setup_rank(&command).is_some().then(|| command.clone());
+        let done = self.apply(command, Origin::Api)?;
+        if let Some(c) = setup {
+            self.remember_setup(c);
+        }
+        Ok(done)
     }
 
     /// Runs `commands` as one transaction and one undo step, labelled `label` (else its first command's): all of
-    /// them, or none when one fails. Every command is checked before any runs.
+    /// them, or none when one fails. Every command's arguments are checked before any runs; what depends on where a
+    /// command runs (document protection, availability) is checked as it runs, after the commands before it.
     pub fn batch(&mut self, commands: Vec<Command>, label: Option<String>) -> Result<Commit, Error> {
-        for c in &commands {
+        for (k, c) in commands.iter().enumerate() {
             // A batch is edits: undo, redo and view settings aren't part of a transaction.
             if matches!(
                 c,
@@ -58,9 +64,10 @@ impl Session {
             ) {
                 return Err(Error::invalid(format!("a batch can't hold {}", id_name(c.id()))));
             }
-            self.check(c)?;
+            self.check_where(c, k == 0)?;
         }
-        self.apply_with(Origin::Api, |e, fonts| {
+        let setup: Vec<Command> = commands.iter().filter(|c| super::setup_rank(c).is_some()).cloned().collect();
+        let done = self.apply_with(Origin::Api, |e, fonts| {
             e.begin_batch(label.map(Cow::Owned));
             for c in commands {
                 if let refused @ Outcome::Refused(_) = e.execute(c, fonts) {
@@ -69,7 +76,9 @@ impl Session {
                 }
             }
             e.end_batch(true, fonts)
-        })
+        })?;
+        setup.into_iter().for_each(|c| self.remember_setup(c));
+        Ok(done)
     }
 
     /// Runs a command, then rebuilds the state and reports the change. Input runs here with [`Origin::User`].
@@ -203,6 +212,7 @@ impl Session {
     pub fn set_author(&mut self, author: Author) {
         self.editor.set_author(&author.name, author.identity.clone());
         self.author = author;
+        self.changed(Vec::new());
     }
 
     /// Read only on or off, with no reopen: a read-only session refuses every command that changes the document.

@@ -74,6 +74,13 @@ impl Session {
         if self.read_only { Err(Error::new(ErrorCode::ReadOnly, "the session is read only")) } else { Ok(()) }
     }
 
+    /// An edit that isn't a command's but would be command `id`'s: refused as `id` would be in a read-only session or
+    /// a protected document.
+    fn refuse_edit(&self, id: crate::api::command::CommandId) -> Result<(), Error> {
+        self.refuse_read_only()?;
+        self.editor.protection_refuses(id).map_or(Ok(()), Err)
+    }
+
     /// What dialogs read besides the state.
     fn dialog_context(&mut self, kind: DialogKind) -> dialogs::Context {
         let mut cx = dialogs::Context::default();
@@ -413,7 +420,7 @@ impl Session {
                     match continues {
                         Some(n) => Some(n),
                         None => {
-                            self.refuse_read_only()?;
+                            self.refuse_edit(crate::api::command::CommandId::SetListDefinition)?;
                             let mut made = 0;
                             self.apply_with(crate::api::record::Origin::Api, |e, fonts| {
                                 let (out, n) = e.add_list(&levels, fonts);
@@ -522,7 +529,8 @@ impl Session {
             };
         }
         if let crate::api::services::DialogValues::Style(v) = model.values {
-            self.refuse_read_only()?;
+            // Style dialog
+            self.refuse_edit(crate::api::command::CommandId::UpdateStyleToSelection)?;
             return self.apply_with(crate::api::record::Origin::Api, |e, fonts| e.style_dialog_apply(v, fonts));
         }
         let cx = self.dialog_context(model.kind);
@@ -580,26 +588,26 @@ impl Session {
     pub fn replace(&mut self, query: &FindQuery, with: &str) -> Result<FindResult, Error> {
         if let Some(hit) = find::at_selection(&self.editor, query) {
             self.refuse_read_only()?;
-            self.apply_with(Origin::Api, |e, fonts| find::replace(e, &[hit], with, fonts))?;
+            self.apply_with(Origin::Api, |e, fonts| find::replace(e, &[hit], with, false, fonts).1)?;
         }
         Ok(self.find(query, Order::Next))
     }
 
-    /// Replaces every match as one transaction; how many.
+    /// Replaces every match as one transaction; how many. A match that document protection, a locked control or a
+    /// sub-template's body keeps isn't replaced; when protection keeps every one, the replace is refused.
     pub fn replace_all(&mut self, query: &FindQuery, with: &str) -> Result<u32, Error> {
         let hits = find::all(&self.editor, query);
         if hits.is_empty() {
             return Ok(0);
         }
         self.refuse_read_only()?;
-        let (whole, case) = (query.whole_words.unwrap_or(false), query.match_case.unwrap_or(false));
-        self.apply_with(
-            Origin::Api,
-            |e, fonts| {
-                if whole { find::replace(e, &hits, with, fonts) } else { e.replace_all(&query.text, with, case, fonts).1 }
-            },
-        )?;
-        Ok(hits.len() as u32)
+        let mut count = 0;
+        self.apply_with(Origin::Api, |e, fonts| {
+            let (n, out) = find::replace(e, &hits, with, true, fonts);
+            count = n;
+            out
+        })?;
+        Ok(u32::try_from(count).unwrap_or(u32::MAX))
     }
 
     /// Spell checking: dictionaries, ignored and added words, suggestions.

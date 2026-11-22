@@ -372,7 +372,7 @@ impl Editor {
         true
     }
 
-    fn note_reference(&self, kind: NoteKind, id: i64) -> Option<Position> {
+    pub(super) fn note_reference(&self, kind: NoteKind, id: i64) -> Option<Position> {
         self.index.para_ids().find_map(|pid| {
             let p = self.index.para(&self.doc, pid)?;
             let mut at = 0u32;

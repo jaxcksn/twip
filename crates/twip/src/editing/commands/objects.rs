@@ -12,6 +12,11 @@ use crate::editing::selection::Selection;
 impl Editor {
     pub(in crate::editing) fn set_object_size(&mut self, s: ObjectSize, fonts: &Fonts) -> Outcome {
         let Some(o) = self.selected_object() else { return Outcome::unavailable("no object selected") };
+        if let Selection::Object(obj) = self.selection
+            && self.object_fixed(obj)
+        {
+            return Outcome::Unchanged("fixed size");
+        }
         let (w0, h0) = (o.width, o.height);
         let aspect = s.lock_aspect.unwrap_or(false) && w0 > 0.0 && h0 > 0.0;
         let (w, h) = match (s.width.map(|v| v.0), s.height.map(|v| v.0)) {

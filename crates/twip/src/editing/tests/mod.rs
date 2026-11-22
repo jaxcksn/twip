@@ -17,6 +17,7 @@ mod merge;
 mod page_background;
 mod perf;
 mod picture_controls;
+mod protection;
 mod provisional;
 pub(crate) mod recorder;
 mod round_trips;

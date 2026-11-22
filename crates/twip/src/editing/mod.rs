@@ -173,8 +173,10 @@ pub struct Editor {
     made: Option<crate::api::command::CommandResult>,
     pending_controls: Vec<(crate::docx::ControlId, crate::docx::Control)>,
     pending_images: Vec<Vec<u8>>,
-    /// The editable ranges as of a revision ([`Editor::editable_ranges`]).
-    editable_cache: std::cell::RefCell<Option<(u64, Rc<Vec<(Option<String>, Position, Position)>>)>>,
+    /// The editable ranges as of a [`Editor::perm_generation`] ([`Editor::editable_ranges`]).
+    editable_cache: std::cell::RefCell<Option<(u64, Rc<protection::EditableRanges>)>>,
+    /// Counts the steps that can have changed the editable ranges.
+    perm_generation: u64,
     drop: Option<Position>,
     field_labels: HashMap<String, String>,
     sub_template_rules: Vec<sub_templates::Rule>,
@@ -345,6 +347,7 @@ impl Editor {
             pending_controls: Vec::new(),
             pending_images: Vec::new(),
             editable_cache: Default::default(),
+            perm_generation: 0,
             drop: None,
             field_labels: HashMap::new(),
             sub_template_rules: Vec::new(),
@@ -498,6 +501,11 @@ impl Editor {
 
     pub fn stack(&self) -> PageStack {
         PageStack::of(&self.layout.snapshot())
+    }
+
+    /// Puts back a selection [`Editor::selection`] gave, as it was before an edit that was refused.
+    pub fn restore_selection(&mut self, s: Selection) {
+        self.set_selection(s);
     }
 
     pub fn set_caret_for_benchmark(&mut self, s: Selection) {
@@ -852,7 +860,13 @@ impl Editor {
         tx.targets.add(&s);
         tx.pictures |= moves_picture_controls(&s);
         tx.boxes |= matches!(&s, Step::Text { with, .. } if with.iter().any(|i| i.story().is_some()));
+        // Editable ranges, once found
+        let cached = self.editable_cache.get_mut().is_some();
+        let perms = cached && self.moves_perms(&s);
         let a = s.apply(&mut self.doc, &mut self.index)?;
+        if perms || (cached && self.moves_perms(&a.inverse)) {
+            self.perm_generation += 1;
+        }
         if !self.doc.undeletable.is_empty() {
             tx.kept += added - a.inverse.pictures_of(&self.doc.undeletable);
         }
@@ -867,6 +881,7 @@ impl Editor {
     fn abort(&mut self, tx: Tx) {
         self.pending_controls.clear();
         self.pending_images.clear();
+        self.perm_generation += 1;
         for s in tx.undo.into_iter().rev() {
             let _ = s.apply(&mut self.doc, &mut self.index);
         }
@@ -1025,6 +1040,9 @@ impl Editor {
         self.revision += 1;
         let undo = std::mem::take(&mut tx.undo);
         let bytes = undo.iter().map(history::step_bytes).sum();
+        // Enforcing protection fences the history
+        let enforces = self.enforced_protection().is_some()
+            && undo.iter().any(|s| matches!(s, Step::Protection(was) if !was.as_ref().is_some_and(|p| p.enforced)));
         match tx.replayed.take() {
             Some(done) if tx.origin == Origin::Undo => self.history.push_redo(Transaction { undo, bytes, ..done }),
             Some(done) => self.history.push_undo_keep_redo(Transaction { undo, bytes, ..done }),
@@ -1032,6 +1050,9 @@ impl Editor {
                 let after = self.record();
                 self.history.record(Transaction { undo, before: tx.before, after, label: label.clone(), bytes, id: 0 }, typing);
             }
+        }
+        if enforces {
+            self.history.fence();
         }
         self.commits.push(Committed { revision: self.revision, origin: tx.origin, label, targets: tx.targets });
         self.after_edit(before, fonts);
@@ -1509,32 +1530,42 @@ impl Editor {
             return Outcome::Unchanged("locked");
         }
         let mut tx = self.begin("Typing");
-        let caret = match self.delete_range(&mut tx) {
-            Ok(Some(p)) => p,
-            Ok(None) => return Outcome::Unchanged("no caret"),
-            Err(_) => {
-                self.abort(tx);
-                return Outcome::Unchanged("stale selection");
+        match self.type_into(&mut tx, text) {
+            Ok((caret, single)) => {
+                self.selection = Selection::Caret(caret);
+                let typing = caret.para_offset().filter(|_| single).map(|(para, at)| TypingRun { para, at, kind: Typing::Insert });
+                self.commit(tx, typing, fonts)
             }
+            Err(why) => {
+                if why != "no caret" {
+                    self.abort(tx);
+                }
+                Outcome::Unchanged(why)
+            }
+        }
+    }
+
+    /// Types `text` over the selection in `tx`: the selection goes, then the text, a paragraph for each line and a tab
+    /// for each tab character. Where the caret ends, and whether the text was one line; on an error, `tx` is to be
+    /// aborted (except "no caret", where nothing changed).
+    fn type_into(&mut self, tx: &mut Tx, text: &str) -> Result<(Position, bool), &'static str> {
+        let caret = match self.delete_range(tx) {
+            Ok(Some(p)) => p,
+            Ok(None) => return Err("no caret"),
+            Err(_) => return Err("stale selection"),
         };
         let caret = self.past_row_end(caret);
-        let Place::Text { para, offset, .. } = caret.place else {
-            self.abort(tx);
-            return Outcome::Unchanged("caret at a row end");
-        };
-        let Some(run) = self.run_at(&caret) else {
-            self.abort(tx);
-            return Outcome::Unchanged("no paragraph");
-        };
+        let Place::Text { para, offset, .. } = caret.place else { return Err("caret at a row end") };
+        let Some(run) = self.run_at(&caret) else { return Err("no paragraph") };
         let (mut para, mut at) = (para, offset);
-        let lines: Vec<&str> = text.split('\n').map(|l| l.strip_suffix('\r').unwrap_or(l)).collect();
-        for (k, line) in lines.iter().enumerate() {
+        let mut single = true;
+        for (k, line) in text.split('\n').map(|l| l.strip_suffix('\r').unwrap_or(l)).enumerate() {
             if k > 0 {
+                single = false;
                 let Some(second) = self.split_template(para) else { break };
                 let id = ParaId(second.id);
-                if self.step(&mut tx, Step::Split { para, at, second, kept: Vec::new() }).is_err() {
-                    self.abort(tx);
-                    return Outcome::Unchanged("split failed");
+                if self.step(tx, Step::Split { para, at, second, kept: Vec::new() }).is_err() {
+                    return Err("split failed");
                 }
                 para = id;
                 at = Unit(0);
@@ -1549,17 +1580,13 @@ impl Editor {
                 }
             }
             let n: u32 = inlines.iter().map(|i| i.units() as u32).sum();
-            if n > 0 && self.step(&mut tx, Step::Text { para, range: at..at, with: inlines, edges: Default::default() }).is_err() {
-                self.abort(tx);
-                return Outcome::Unchanged("insert failed");
+            if n > 0 && self.step(tx, Step::Text { para, range: at..at, with: inlines, edges: Default::default() }).is_err() {
+                return Err("insert failed");
             }
             at = Unit(at.0 + n);
         }
         let at = self.index.para(&self.doc, para).map(UnitText::of).map_or(at, |t| if t.is_boundary(at) { at } else { t.next_grapheme(at) });
-        self.selection = Selection::Caret(Position::text(caret.story, para, at));
-        let single = lines.len() == 1;
-        let typing = single.then_some(TypingRun { para, at, kind: Typing::Insert });
-        self.commit(tx, typing, fonts)
+        Ok((Position::text(caret.story, para, at), single))
     }
 
     fn past_row_end(&mut self, mut p: Position) -> Position {
@@ -1577,6 +1604,9 @@ impl Editor {
     }
 
     fn column_break(&mut self, fonts: &Fonts) -> Outcome {
+        if self.refuse_expanded() || self.refuse_locked() {
+            return Outcome::Unchanged("locked");
+        }
         let at_start = self.selection.is_collapsed()
             && self.caret().and_then(|c| c.para_offset()).is_some_and(|(p, off)| {
                 off == Unit(0) || self.index.para(&self.doc, p).is_some_and(|q| UnitText::of(q).text.chars().nth(off.0 as usize - 1) == Some('\u{c}'))
@@ -1670,6 +1700,9 @@ impl Editor {
         }
         if self.mode != Mode::Design && self.activate_picture_control() {
             return Outcome::Unchanged("picture control activated");
+        }
+        if self.refuse_expanded() || self.refuse_locked() {
+            return Outcome::Unchanged("locked");
         }
         if let Some(o) = self.list_enter(fonts) {
             return o;
@@ -1981,7 +2014,12 @@ impl Editor {
         match next {
             Some(&(r, c)) => self.select_cell(table, r, c),
             None if back => Outcome::Unchanged("first cell"),
+            // Past the last cell: a new row
+            None if self.mode == Mode::ReadOnly => self.refuse_read_only(),
             None => {
+                if let Some(e) = self.protection_refuses(crate::api::command::CommandId::InsertRows) {
+                    return Outcome::Refused(e);
+                }
                 let last = t.rows.len() - 1;
                 self.add_row(table, last, story, fonts)
             }
@@ -2332,7 +2370,9 @@ impl Editor {
                 {
                     self.border_drag = None;
                     self.history.break_typing();
-                    self.auto_fit_column(table, k - 1, fonts);
+                    if !self.table_gesture_kept(table, crate::api::command::CommandId::AutoFitColumns) {
+                        self.auto_fit_column(table, k - 1, fonts);
+                    }
                     return;
                 }
                 if clicks < 2 && self.border_press(x, y, mods.shift, mods.ctrl, fonts) {
@@ -2352,19 +2392,19 @@ impl Editor {
                                 shape: selection::CellShape::Table,
                             });
                             self.drag = None;
-                            if self.mode != Mode::ReadOnly {
+                            if !self.table_gesture_kept(t, crate::api::command::CommandId::SetTablePosition) {
                                 self.table_press(t, x, y);
                             }
                             return;
                         }
                         geometry::Zone::InsertColumn(t, k) => {
-                            if self.mode != Mode::ReadOnly {
+                            if !self.table_gesture_kept(t, crate::api::command::CommandId::InsertColumns) {
                                 self.insert_column_at(t, k, fonts);
                             }
                             return;
                         }
                         geometry::Zone::InsertRow(t, k) => {
-                            if self.mode != Mode::ReadOnly {
+                            if !self.table_gesture_kept(t, crate::api::command::CommandId::InsertRows) {
                                 self.insert_row_at(t, k, fonts);
                             }
                             return;

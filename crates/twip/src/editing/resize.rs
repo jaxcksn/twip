@@ -58,6 +58,9 @@ impl BorderDrag {
 impl Editor {
     pub(super) fn border_press(&mut self, x: f64, y: f64, shift: bool, ctrl: bool, fonts: &Fonts) -> bool {
         let Some((page, table, border, at, row_top, span, row)) = self.border_at(x, y, fonts) else { return false };
+        if self.table_gesture_kept(table, crate::api::command::CommandId::SetColumnWidth) {
+            return false;
+        }
         self.drag = None;
         let snapping = super::snap::Snapping::On;
         self.border_drag = Some(BorderDrag { table, border, start: (x, y), now: (x, y), page, shift, ctrl, at, row_top, span, row, snapping });

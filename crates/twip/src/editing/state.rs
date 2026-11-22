@@ -607,6 +607,10 @@ impl Editor {
             };
             out.insert(id, CommandState { enabled, checked, value });
         }
+        // What document protection refuses here.
+        if let Some(refuses) = self.protection_gate() {
+            out.iter_mut().filter(|(id, s)| s.enabled && refuses(**id)).for_each(|(_, s)| s.enabled = false);
+        }
         out
     }
 

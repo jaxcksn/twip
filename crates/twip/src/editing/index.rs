@@ -385,7 +385,7 @@ impl DocIndex {
         }
     }
 
-    fn order_key(&self, pos: &Position) -> Vec<usize> {
+    pub(super) fn order_key(&self, pos: &Position) -> Vec<usize> {
         match pos.place {
             Place::Text { para, offset, .. } => match self.para_slot(para) {
                 Some(s) => {

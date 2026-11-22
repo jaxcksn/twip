@@ -127,7 +127,7 @@ const ENTRIES: &[Entry] = {
         (C::SelectAll, "Select All", G::Selection, &["Ctrl+A"], &["⌘A"], false, false, U::View),
         (C::Select, "Select", G::Selection, &[], &[], true, false, U::View),
         (C::MoveSelection, "Move Selection", G::Selection, &[], &[], true, false, U::View),
-        (C::MoveToCell, "Next Cell", G::Selection, &["Tab", "Shift+Tab"], &["Tab", "⇧Tab"], true, true, U::Step),
+        (C::MoveToCell, "Next Cell", G::Selection, &["Tab", "Shift+Tab"], &["Tab", "⇧Tab"], true, false, U::Step),
         (C::SetSelectionMode, "Selection Mode", G::Selection, &["F8", "Ctrl+Shift+F8"], &["F8", "⇧⌘F8"], true, false, U::View),
         (C::GoBack, "Go Back", G::Selection, &["Shift+F5"], &["⇧F5"], false, false, U::View),
         (C::Escape, "Escape", G::Selection, &["Esc"], &["Esc"], false, false, U::View),

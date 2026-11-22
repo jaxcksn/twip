@@ -310,6 +310,9 @@ impl Editor {
         if self.style_target.is_some() {
             return self.format_style_part("rPr", &|p, cx, _, run| edit(p, &cx.w, run));
         }
+        if self.refuse_expanded() || self.refuse_locked_content() {
+            return Outcome::Unchanged("locked");
+        }
         let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
         let cx = self.cx();
         let w = cx.w.clone();
@@ -404,6 +407,9 @@ impl Editor {
         edit: &dyn Fn(&mut Props, &Cx, &crate::docx::Paragraph),
         fonts: &Fonts,
     ) -> Outcome {
+        if self.refuse_expanded() || self.refuse_locked_content() {
+            return Outcome::Unchanged("locked");
+        }
         let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
         let cx = self.cx();
         let paras = self.selected_paras();
