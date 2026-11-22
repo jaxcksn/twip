@@ -81,11 +81,11 @@ const ARIAL_12: &str = r#"<w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:eastAsiaTh
 
 #[test]
 fn spaces_after_a_tab_squeeze_a_word_in() {
-    let p =
-        r#"<w:p><w:r><w:tab/><w:t>You are ordered to appear at a hearing on Monday, April 4, 2025 at 10:00 am with your papers.</w:t></w:r></w:p>"#;
-    if !fonts().is_installed("Arial") {
+    if !super::installed(&["Arial"]) {
         return;
     }
+    let p =
+        r#"<w:p><w:r><w:tab/><w:t>You are ordered to appear at a hearing on Monday, April 4, 2025 at 10:00 am with your papers.</w:t></w:r></w:p>"#;
     let Some(l) = lines("", ARIAL_12, p) else { return };
     assert!(l[0].1.ends_with("am with"), "{l:?}");
 }
@@ -93,7 +93,7 @@ fn spaces_after_a_tab_squeeze_a_word_in() {
 #[test]
 fn squeezed_spaces_shrink_against_their_own_font_not_the_east_asian_one() {
     let p = r#"<w:p><w:r><w:t>decorum warrant with status arrest court their which its be business trial for notice records entered is</w:t></w:r></w:p>"#;
-    if !fonts().is_installed("Arial") || !fonts().is_installed("MS Mincho") {
+    if !super::installed(&["Arial", "MS Mincho"]) {
         return;
     }
     let rpr = r#"<w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:eastAsia="MS Mincho"/><w:sz w:val="24"/>"#;
@@ -730,9 +730,6 @@ fn compat_14_wp_justification_lets_a_justified_line_run_past_its_edge() {
 
 #[test]
 fn compat_14_word97_line_breaks_size_a_named_east_asian_runs_glyphs_at_a_1000_unit_em() {
-    if !fonts().is_installed("Courier New") {
-        return;
-    }
     let p = format!("<w:p><w:r><w:t>{}</w:t></w:r></w:p>", "xxxxx ".repeat(30));
     let c14 = r#"<w:compat>{}<w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="14"/></w:compat>"#;
     let words = |opt: &str, ea: &str| {
@@ -1623,7 +1620,7 @@ fn a_right_vertical_rubys_base_narrows_to_no_advance_at_most() {
 
 #[test]
 fn a_right_vertical_rubys_kana_stand_upright() {
-    if !fonts().is_installed("MS Mincho") {
+    if !super::installed(&["MS Mincho"]) {
         return;
     }
     let body = ruby("rightVertical", 0, "あい", "MM")
@@ -1873,7 +1870,7 @@ fn compat_14_distributed_spaces_grow_to_the_average_width_first() {
     let (letter_gap, words_gap) = (x[1] - x[0] - a, x[2] - x[1] - a - space);
     assert!((words_gap - 2.0 * letter_gap - (avg - space)).abs() < 0.01, "{x:?}");
     // With the spaces balanced and an East Asian run font, half an em.
-    if !fonts().is_installed("MS Mincho") {
+    if !super::installed(&["MS Mincho"]) {
         return;
     }
     let rpr = r#"<w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:eastAsia="MS Mincho"/><w:sz w:val="22"/>"#;
@@ -1887,9 +1884,6 @@ fn compat_14_distributed_spaces_grow_to_the_average_width_first() {
 
 #[test]
 fn wp_justification_squeezes_fixed_pitch_lines_by_every_advance() {
-    if !fonts().is_installed("Courier New") {
-        return;
-    }
     let wp = r#"<w:compat><w:wpJustification/><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="12"/></w:compat>"#;
     let text = format!("a{}  bbb", "  a".repeat(22));
     let body = format!(
@@ -2100,7 +2094,7 @@ fn opentype_number_features_apply_in_compat_15_or_when_enabled() {
 
 #[test]
 fn east_asian_breaking_rules_apply_from_compat_14_or_with_apply_breaking_rules() {
-    if !fonts().is_installed("MS Mincho") {
+    if !super::installed(&["MS Mincho"]) {
         return;
     }
     let rpr = SZ_11;
@@ -2127,7 +2121,7 @@ const MINCHO_JA: &str = r#"<w:rPr><w:rFonts w:ascii="MS Mincho" w:hAnsi="MS Minc
 /// The line lengths, in characters without trailing spaces, of one paragraph of `runs` in a 41-character MS Mincho
 /// 11 pt column, compat 14.
 fn mincho_lines(rpr: &str, runs: &str) -> Option<Vec<usize>> {
-    if !fonts().is_installed("MS Mincho") {
+    if !super::installed(&["MS Mincho"]) {
         return None;
     }
     let c14 = r#"<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="14"/></w:compat>"#;
@@ -2218,7 +2212,7 @@ fn punctuation_hangs_in_east_asian_paragraphs() {
 
 /// Each character's x (twips) on the first page of distributed MS Mincho paragraphs of `texts` in a 9020 tw column.
 fn distributed_xs(settings: &str, ppr: &str, texts: &[&str]) -> Option<Vec<(char, f64)>> {
-    if !fonts().is_installed("MS Mincho") {
+    if !super::installed(&["MS Mincho"]) {
         return None;
     }
     let body: String = texts
@@ -2265,7 +2259,7 @@ fn a_distributed_line_spreads_its_characters_and_spaces_east_asian_text_from_lat
 
 #[test]
 fn top_line_punct_takes_the_left_half_off_an_opening_bracket_at_a_line_start() {
-    if !fonts().is_installed("MS Mincho") {
+    if !super::installed(&["MS Mincho"]) {
         return;
     }
     let first = |rpr: &str, ppr: &str, text: &str| {
@@ -3301,9 +3295,6 @@ fn form_field(ff: &str, code: &str) -> String {
 
 #[test]
 fn a_check_box_is_wide_and_tall_and_the_word_after_it_breaks_away() {
-    if !fonts().is_installed("Arial") {
-        return;
-    }
     let cb = form_field(r#"<w:checkBox><w:size w:val="24"/><w:default w:val="0"/></w:checkBox>"#, "FORMCHECKBOX");
     let p = format!(r#"<w:p><w:r><w:t>{}</w:t></w:r>{cb}<w:r><w:t>yyyy</w:t></w:r></w:p>"#, "x".repeat(79));
     let Some(l) = baselines("", ARIAL_11, &p) else { return };
@@ -3316,9 +3307,6 @@ fn a_check_box_is_wide_and_tall_and_the_word_after_it_breaks_away() {
 
 #[test]
 fn a_drop_down_shows_its_selected_entry_in_its_codes_run() {
-    if !fonts().is_installed("Arial") {
-        return;
-    }
     let dd = form_field(r#"<w:ddList><w:result w:val="1"/><w:listEntry w:val="Alpha"/><w:listEntry w:val="Bravo"/></w:ddList>"#, "FORMDROPDOWN");
     let p = format!(r#"<w:p><w:r><w:t>xxxxx</w:t></w:r>{dd}<w:r><w:t>xxxxx</w:t></w:r></w:p>"#);
     let Some(l) = lines("", ARIAL_11, &p) else { return };

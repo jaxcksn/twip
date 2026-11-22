@@ -45,8 +45,8 @@ public sealed class PdfConverterTests : IDisposable
     {
         Native.Require();
         var inputs = Enumerable.Range(0, 16).Select(i => File.ReadAllBytes(Native.Fixture(Documents[i % Documents.Length]))).ToArray();
-        var sequential = inputs.Select(d => PdfConverter.Convert(d)).ToArray();
-        var concurrent = await Task.WhenAll(inputs.Select(d => PdfConverter.ConvertAsync(d, ct: Ct)));
+        var sequential = inputs.Select(d => PdfConverter.Convert(d, Kit.PdfFonts)).ToArray();
+        var concurrent = await Task.WhenAll(inputs.Select(d => PdfConverter.ConvertAsync(d, Kit.PdfFonts, ct: Ct)));
         for (var i = 0; i < inputs.Length; i++)
         {
             Assert.StartsWith("%PDF", Latin1(concurrent[i].Bytes), StringComparison.Ordinal);
@@ -61,7 +61,7 @@ public sealed class PdfConverterTests : IDisposable
         Native.Require();
         var valid = File.ReadAllBytes(Native.Fixture("FX-TEXT.docx"));
         var corrupt = valid.Take(valid.Length / 2).ToArray();
-        var tasks = new[] { valid, corrupt, valid }.Select(d => PdfConverter.ConvertAsync(d, ct: Ct)).ToArray();
+        var tasks = new[] { valid, corrupt, valid }.Select(d => PdfConverter.ConvertAsync(d, Kit.PdfFonts, ct: Ct)).ToArray();
         await Assert.ThrowsAnyAsync<Exception>(() => Task.WhenAll(tasks));
         Assert.True(tasks[0].Status == TaskStatus.RanToCompletion && tasks[2].Status == TaskStatus.RanToCompletion);
         var error = Assert.IsType<EditorException>(tasks[1].Exception!.InnerException);
@@ -75,7 +75,7 @@ public sealed class PdfConverterTests : IDisposable
         var output = Path.Combine(_dir, "cancelled.pdf");
         using var cancel = new CancellationTokenSource();
         cancel.Cancel();
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => PdfConverter.ConvertAsync(Native.Fixture("FX-TEXT.docx"), output, ct: cancel.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => PdfConverter.ConvertAsync(Native.Fixture("FX-TEXT.docx"), output, Kit.PdfFonts, ct: cancel.Token));
         Assert.False(File.Exists(output));
         Assert.Empty(Directory.EnumerateFiles(_dir));
     }
@@ -84,7 +84,7 @@ public sealed class PdfConverterTests : IDisposable
     public async Task DisposingAFontSetDuringConversionsIsSafe()
     {
         Native.Require();
-        var fonts = PdfFontSet.Create(new PdfFontSetOptions { IncludeSystemFonts = true });
+        var fonts = PdfFontSet.Create(Kit.PdfOptions);
         var docx = File.ReadAllBytes(Native.Fixture("FX-TEXT.docx"));
         var running = Enumerable.Range(0, 4).Select(_ => PdfConverter.ConvertAsync(docx, fonts, ct: Ct)).ToArray();
         fonts.Dispose();
@@ -109,7 +109,7 @@ public sealed class PdfConverterTests : IDisposable
     [Fact]
     public void AnEmptyPasswordIsRejectedBeforeConverting()
     {
-        Assert.Throws<ArgumentException>(() => PdfConverter.Convert([1, 2, 3], options: new PdfOptions { OpenPassword = "" }));
+        Assert.Throws<ArgumentException>(() => PdfConverter.Convert([1, 2, 3], Kit.PdfFonts, new PdfOptions { OpenPassword = "" }));
         Assert.DoesNotContain("secret", new PdfOptions { OpenPassword = "secret" }.ToString(), StringComparison.Ordinal);
     }
 

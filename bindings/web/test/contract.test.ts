@@ -7,6 +7,7 @@ import { isMainThread, parentPort, Worker, workerData } from 'node:worker_thread
 import { EditorError, FontLibrary, HeadlessEditor, type Commands, type ExportOptions, type Op, type TwipEvents } from '../dist/index.js';
 import { fromOp } from '../dist/commands.js';
 import { encodeEvent } from '../dist/transport/protocol.js';
+import { addKit } from './kit.ts';
 
 const RUNNER = 'web-main';
 const root = new URL('../../../', import.meta.url);
@@ -18,7 +19,7 @@ type Step = { op: string } & Record<string, unknown>;
 interface Script {
   name?: string;
   fixture?: string;
-  fonts?: 'system' | 'empty';
+  fonts?: 'kit' | 'empty';
   steps: Step[];
 }
 
@@ -357,6 +358,8 @@ if (!isMainThread) {
   );
 } else test(`contract scripts (${RUNNER})`, { skip: files.length ? false : `no scripts in ${scripts.pathname}` }, async (t) => {
   if (!existsSync(engine)) throw new Error(`${RUNNER}: dist/twip-wasm.js is missing: build the engine (moon run twip-wasm:build), then this package`);
+  // The scripts on this thread share the page's library: the test font kit, as every runner lays out with.
+  await addKit(FontLibrary.default());
   for (const file of files) {
     const script = JSON.parse(readFileSync(new URL(file, scripts), 'utf8')) as Script;
     const name = file.replace(/\.json$/, '');

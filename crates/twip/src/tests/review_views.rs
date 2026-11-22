@@ -285,7 +285,7 @@ fn change_bars_match_the_expected_export() {
     assert_eq!(got.len(), want.len(), "bars: {got:?}, expected {want:?}");
     for (g, w) in got.iter().zip(&want) {
         assert!((g[0] - w[0]).abs() < 0.13, "bar x {} expected {}", g[0], w[0]);
-        // Line heights differ with the fonts installed: the extents are compared loosely.
+        // Word drew the bars with its own fonts, not the test kit: the extents are compared loosely.
         assert!((g[1] - w[1]).abs() < 3.0 && (g[3] - w[2]).abs() < 3.0, "bar {g:?} expected {w:?}");
     }
 }

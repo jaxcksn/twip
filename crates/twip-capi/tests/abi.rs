@@ -28,6 +28,20 @@ impl Fixture {
         Fixture::with(br#"{"fonts":"empty"}"#)
     }
 
+    /// An engine with the test font kit (`crates/twip/tests/fonts/kit.json`), added through the ABI.
+    fn kit() -> Fixture {
+        let f = Fixture::new();
+        let (files, aliases) = kit();
+        for file in files {
+            let (bytes, mut out) = (std::fs::read(&file).expect("a test kit font"), TwipBuf { ptr: std::ptr::null_mut(), len: 0 });
+            // SAFETY: a live engine, the font valid for its length, and an output buffer.
+            assert_eq!(unsafe { twip_font_add(f.engine, bytes.as_ptr(), bytes.len(), &mut out) }, 0, "{}", take(&mut out));
+            take(&mut out);
+        }
+        assert_eq!(f.call(0, Method::FontSetAliases, aliases).0, 0);
+        f
+    }
+
     fn with(options: &[u8]) -> Fixture {
         let log: Box<Log> = Box::default();
         let ctx = &*log as *const Log as *mut c_void;
@@ -215,9 +229,21 @@ fn a_panic_faults_the_engine() {
     assert_eq!(unsafe { twip_session_new(f.engine, std::ptr::null(), 0) }, 0);
 }
 
-/// A font set built through the ABI from the system's fonts.
-fn system_fonts() -> *mut engine::pdf::FontSet {
-    let (opts, mut set, mut faces) = (br#"{"includeSystemFonts":true}"#, std::ptr::null_mut(), TwipBuf { ptr: std::ptr::null_mut(), len: 0 });
+/// The test font kit's files and aliases (`[{ from, to }]`), as `crates/twip/tests/fonts/kit.json` lists them.
+fn kit() -> (Vec<String>, Value) {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../twip/tests/fonts");
+    let kit: Value = serde_json::from_slice(&std::fs::read(dir.join("kit.json")).expect("kit.json")).expect("kit.json");
+    let files =
+        kit["files"].as_array().expect("kit.json files").iter().map(|f| dir.join(f.as_str().expect("a file name")).to_string_lossy().into_owned());
+    let aliases = kit["aliases"].as_object().expect("kit.json aliases").iter().map(|(from, to)| json!({ "from": from, "to": to })).collect();
+    (files.collect(), aliases)
+}
+
+/// A font set built through the ABI from the test font kit.
+fn kit_fonts() -> *mut engine::pdf::FontSet {
+    let (files, aliases) = kit();
+    let opts = json!({ "fontFiles": files, "aliases": aliases }).to_string();
+    let (mut set, mut faces) = (std::ptr::null_mut(), TwipBuf { ptr: std::ptr::null_mut(), len: 0 });
     // SAFETY: options valid for their length, no font bytes, two outputs.
     let status = unsafe { pdf::twip_pdf_fonts_new(opts.as_ptr(), opts.len(), std::ptr::null(), std::ptr::null(), 0, &mut set, &mut faces) };
     assert_eq!(status, 0, "{}", take(&mut faces));
@@ -228,7 +254,7 @@ fn system_fonts() -> *mut engine::pdf::FontSet {
 #[test]
 fn conversions_run_on_many_threads_with_one_font_set() {
     let docx = include_bytes!("../../twip/tests/fixtures/text-basics.docx");
-    let fonts = system_fonts() as usize;
+    let fonts = kit_fonts() as usize;
     let results: Vec<(i32, Vec<u8>, Value)> = std::thread::scope(|s| {
         let jobs: Vec<_> = (0..4)
             .map(|_| {
@@ -342,7 +368,7 @@ fn requests(log: Vec<(u32, u32, Value)>) -> Vec<Value> {
 #[test]
 fn a_shown_session_gets_host_requests() {
     // Text lays out with fonts: with none, there is no caret to report.
-    let f = Fixture::with(br#"{"fonts":"system"}"#);
+    let f = Fixture::kit();
     let s = f.session();
     f.call(s, Method::Run, json!({ "type": "insertText", "value": "Hidden" }));
     assert!(requests(f.take_log()).is_empty(), "no surface, no requests");

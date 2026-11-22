@@ -35,7 +35,7 @@ public sealed class ServicesTests
     public async Task TheEngineReadsTheRequest(string member)
     {
         Native.Require();
-        await using var session = new EditorSession();
+        await using var session = Kit.Session();
         await session.Commands.InsertTextAsync("teh total", Ct);
         try
         {
@@ -51,7 +51,7 @@ public sealed class ServicesTests
     public void ADialogUpdateSendsOnlyTheChangedFields()
     {
         var model = Wire("dialog-model").Deserialize(TwipJsonContext.Default.DialogModel)!; // insertTable, 2 rows, 5 columns
-        var dialog = new DialogSession<InsertTableDialogValues>(new EditorSession(), model);
+        var dialog = new DialogSession<InsertTableDialogValues>(Kit.Session(), model);
         Assert.Equal("""{"kind":"insertTable","rows":3}""", dialog.Patch(dialog.Values with { Rows = 3 }).ToJsonString());
         Assert.Equal("""{"kind":"insertTable"}""", dialog.Patch(dialog.Values).ToJsonString());
     }
@@ -60,7 +60,7 @@ public sealed class ServicesTests
     public async Task ABadRequestIsCaught()
     {
         Native.Require();
-        await using var session = new EditorSession();
+        await using var session = Kit.Session();
         var e = await Assert.ThrowsAsync<EditorException>(() => session.CallAsync(Method.Find, """{"query":{"text":"a"},"direction":"sideways"}"""u8.ToArray(), Ct));
         Assert.Equal(EditorErrorCode.InvalidArgument, e.Code);
         Assert.Contains("bad request", e.Message, StringComparison.Ordinal);
@@ -123,7 +123,7 @@ public sealed class ServicesTests
     public void BalloonsStackWithoutOverlap()
     {
         static CommentAnchor At(double lineTop) => new(new CommentId("c"), 1, false, false, default, default, lineTop, lineTop + 10, 0);
-        var review = new EditorSession().Review;
+        var review = Kit.Session().Review;
         Assert.Equal([10.0, 64.0, 200.0], review.StackBalloons([At(10), At(20), At(200)], [50, 30, 10], 4));
         Assert.Empty(review.StackBalloons([], []));
 
@@ -145,7 +145,7 @@ public sealed class ServicesTests
         var anchors = c["anchors"].Deserialize(TwipJsonContext.Default.IReadOnlyListCommentAnchor)!;
         var heights = c["heights"]!.AsArray().Select(h => h!.GetValue<double>()).ToList();
         var gap = c["gap"]?.GetValue<double>() ?? 8;
-        var tops = new EditorSession().Review.StackBalloons(anchors, heights, gap);
+        var tops = Kit.Session().Review.StackBalloons(anchors, heights, gap);
         Assert.True(c["tops"]!.AsArray().Select(t => t!.GetValue<double>()).SequenceEqual(tops), $"{c["name"]}: got [{string.Join(", ", tops)}]");
     }
 }

@@ -501,7 +501,7 @@ fn east_asian_glyphs_stand_upright_where_the_flow_keeps_them_so() {
 
 #[test]
 fn an_upright_glyphs_em_box_takes_the_base_middle_and_its_vertical_origin() {
-    let fonts = fonts();
+    let fonts = crate::font::Fonts::installed_recommended();
     let Some(yu) = fonts.face("Yu Gothic", None, false, false).filter(|f| f.family == "Yu Gothic") else { return };
     // Ideographic baseline −246, Roman 0, upem 2048: the em box middle 778 units up, not the win metrics' 699.
     assert_eq!(yu.em_middle, 778.0);

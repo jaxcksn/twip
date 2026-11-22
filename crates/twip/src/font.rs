@@ -582,7 +582,17 @@ impl Fonts {
     }
 
     /// The operating system's installed fonts, plus Office's cloud font folder (where Aptos and friends are installed).
+    /// In the engine's own tests, the test font kit instead.
     pub fn system() -> Fonts {
+        #[cfg(test)]
+        let fonts = recommended::kit();
+        #[cfg(not(test))]
+        let fonts = Fonts::installed();
+        fonts
+    }
+
+    /// The fonts installed on this machine: what [`Fonts::system`] is outside tests.
+    pub(crate) fn installed() -> Fonts {
         let mut f = Fonts::default();
         if let Ok(win) = std::env::var("WINDIR") {
             f.add_dir(&format!("{win}\\Fonts"), false);
@@ -984,7 +994,9 @@ pub(crate) fn shipped(data: &[u8], name: &str) -> Option<Rc<Face>> {
 /// family's metric-compatible stand-ins a machine has.
 #[cfg(test)]
 pub(crate) mod recommended {
-    use super::{Alias, AliasTarget, Fonts};
+    use std::sync::{Arc, OnceLock};
+
+    use super::{Alias, AliasTarget, Catalog, Fonts};
 
     /// Aliases for office families that are often missing, to installed or metric-compatible open families.
     pub const ALIASES: &[(&str, &str)] = &[
@@ -1030,11 +1042,42 @@ pub(crate) mod recommended {
         "DejaVu Sans",
     ];
 
-    /// `fonts` with these settings.
+    fn aliases(pairs: &[(&str, &str)]) -> impl Iterator<Item = Alias> {
+        pairs.iter().map(|&(from, to)| Alias { from: from.into(), bold: None, italic: None, to: AliasTarget::Family(to.into()) })
+    }
+
+    /// The test font kit (`tests/fonts`, made by `crates/twip-tools/scripts/make-test-fonts.py`) as `kit.json` lists
+    /// it, the file every test runner reads: its faces, the first the last resort for a family nothing resolves, and
+    /// aliases from the families they're metric-compatible with. What [`Fonts::system`] is in tests, so layout is the
+    /// same on every machine.
+    pub fn kit() -> Fonts {
+        static CATALOG: OnceLock<Arc<Catalog>> = OnceLock::new();
+        let catalog = CATALOG.get_or_init(|| {
+            // The WebAssembly run sees the crate at TWIP_ROOT.
+            let root = std::env::var_os("TWIP_ROOT").map_or_else(|| env!("CARGO_MANIFEST_DIR").into(), std::path::PathBuf::from);
+            let dir = root.join("tests/fonts");
+            let kit: serde_json::Value = serde_json::from_slice(&std::fs::read(dir.join("kit.json")).expect("kit.json")).expect("kit.json");
+            let mut fonts = Fonts::default();
+            for file in kit["files"].as_array().expect("kit.json files") {
+                let path = dir.join(file.as_str().expect("a file name"));
+                fonts.add_bytes(std::fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))).expect("a test kit font");
+            }
+            let pairs: Vec<(&str, &str)> = kit["aliases"]
+                .as_object()
+                .expect("kit.json aliases")
+                .iter()
+                .map(|(from, to)| (from.as_str(), to.as_str().expect("a family")))
+                .collect();
+            fonts.set_settings(|s| s.aliases = aliases(&pairs).collect());
+            Arc::clone(fonts.catalog())
+        });
+        Fonts::with_catalog(Arc::clone(catalog))
+    }
+
+    /// `fonts` with these settings, after the aliases it has.
     pub fn apply(fonts: &mut Fonts) {
         fonts.set_settings(|s| {
-            s.aliases =
-                ALIASES.iter().map(|&(from, to)| Alias { from: from.into(), bold: None, italic: None, to: AliasTarget::Family(to.into()) }).collect();
+            s.aliases.extend(aliases(ALIASES));
             s.character_fallback = CHARACTER_FALLBACK.iter().map(|f| f.to_string()).collect();
         });
     }
@@ -1045,6 +1088,18 @@ pub(crate) mod recommended {
             let mut fonts = Fonts::system();
             apply(&mut fonts);
             fonts
+        }
+
+        /// The fonts installed on this machine with the recommended settings, for the tests that check a real
+        /// family's own metrics.
+        pub(crate) fn installed_recommended() -> Fonts {
+            static CATALOG: OnceLock<Arc<Catalog>> = OnceLock::new();
+            let catalog = CATALOG.get_or_init(|| {
+                let mut fonts = Fonts::installed();
+                apply(&mut fonts);
+                Arc::clone(fonts.catalog())
+            });
+            Fonts::with_catalog(Arc::clone(catalog))
         }
     }
 }

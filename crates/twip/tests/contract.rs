@@ -104,11 +104,26 @@ fn command_of(id: &str, args: &[Value]) -> Result<Command, String> {
     parse(&op)
 }
 
+/// The test font kit `crates/twip/tests/fonts/kit.json` lists, its faces and aliases: what every runner lays a
+/// script out with unless it asks for no fonts.
+fn kit() -> FontLibrary {
+    let dir = root().join("crates/twip/tests/fonts");
+    let kit: Value = serde_json::from_slice(&std::fs::read(dir.join("kit.json")).expect("kit.json")).expect("kit.json");
+    let fonts = FontLibrary::empty();
+    for file in kit["files"].as_array().expect("kit.json files") {
+        let path = dir.join(file.as_str().expect("a file name"));
+        fonts.add(&std::fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))).expect("a test kit font");
+    }
+    let aliases = kit["aliases"].as_object().expect("kit.json aliases").iter().map(|(from, to)| json!({ "from": from, "to": to }));
+    fonts.set_aliases(serde_json::from_value(Value::Array(aliases.collect())).expect("aliases"));
+    fonts
+}
+
 impl Runner {
     fn new(script: &Value) -> Runner {
         let fonts = match script["fonts"].as_str() {
             Some("empty") => FontLibrary::empty(),
-            _ => FontLibrary::system(),
+            _ => kit(),
         };
         let mut engine = Engine::new(fonts);
         let events = Rc::new(RefCell::new(Vec::new()));

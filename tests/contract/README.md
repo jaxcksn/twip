@@ -39,7 +39,7 @@ deletes its script's line. `check.py` checks that every listed name is a script 
 {
   "name": "bold-then-undo",
   "fixture": "text-basics.docx",
-  "fonts": "system",
+  "fonts": "kit",
   "steps": [
     { "op": "open" },
     { "op": "command", "command": { "type": "selectAll" } },
@@ -52,7 +52,9 @@ deletes its script's line. `check.py` checks that every listed name is a script 
 ```
 
 - `fixture` names a file relative to `crates/twip/tests/fixtures/`. Without one, the session starts blank.
-- `fonts` is `"system"` (the default) or `"empty"`: an empty font library, for scripts that need no font.
+- `fonts` is `"kit"` (the default) or `"empty"`. The kit is the test font kit `crates/twip/tests/fonts/kit.json`
+  lists, its faces and aliases, so every runner lays out with the same fonts; `"empty"` is an empty font library, for
+  scripts that need no font.
 - Commands are the batch op shape of `@twip/web`: the command id as `type`, and a single argument as `value`.
 - State and event values are the camelCase wire shapes of `twip::api`.
 

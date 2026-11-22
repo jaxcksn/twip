@@ -21,7 +21,7 @@ public sealed class SessionTests : IDisposable
     public async Task OpensEditsAndSavesBeforeAnyHostExists()
     {
         Native.Require();
-        await using var session = new EditorSession();
+        await using var session = Kit.Session();
         await session.OpenAsync(Native.Fixture("FX-TEXT.docx"), Ct);
         var opened = session.State.DocumentRevision;
         await session.Commands.InsertTextAsync("Hello", Ct);
@@ -32,7 +32,7 @@ public sealed class SessionTests : IDisposable
         Assert.Equal(session.State.DocumentRevision, saved.Revision);
         Assert.True(IsZip(await File.ReadAllBytesAsync(path, Ct)));
 
-        await using var again = new EditorSession();
+        await using var again = Kit.Session();
         await again.OpenAsync(path, Ct);
         var pdf = Path.Combine(_dir, "out.pdf");
         await again.ExportPdfAsync(pdf, ct: Ct);
@@ -43,7 +43,7 @@ public sealed class SessionTests : IDisposable
     public async Task CallerStreamsStayOpenAndPathsAreReleased()
     {
         Native.Require();
-        await using var session = new EditorSession();
+        await using var session = Kit.Session();
         using (var input = File.OpenRead(Native.Fixture("FX-TEXT.docx")))
         {
             await session.OpenAsync(input, Ct);
@@ -68,7 +68,7 @@ public sealed class SessionTests : IDisposable
     public async Task AFailedPathSaveLeavesTheOldFile()
     {
         Native.Require();
-        await using var session = new EditorSession();
+        await using var session = Kit.Session();
         await session.Commands.InsertTextAsync("new", Ct);
         var path = Path.Combine(_dir, "doc.docx");
         await File.WriteAllTextAsync(path, "old", Ct);
@@ -104,7 +104,7 @@ public sealed class SessionTests : IDisposable
     public async Task CancellingAnOpenKeepsTheDocument()
     {
         Native.Require();
-        await using var session = new EditorSession();
+        await using var session = Kit.Session();
         await session.Commands.InsertTextAsync("keep", Ct);
         var before = session.State;
 
@@ -120,7 +120,7 @@ public sealed class SessionTests : IDisposable
     public async Task EditsDuringASaveStayModified()
     {
         Native.Require();
-        await using var session = new EditorSession();
+        await using var session = Kit.Session();
         await session.Commands.InsertTextAsync("a", Ct);
         // The save captures this revision; the edit queued behind it comes after.
         var save = session.SaveAsync(new MemoryStream(), Ct);
@@ -138,7 +138,7 @@ public sealed class SessionTests : IDisposable
     public async Task DisposeFailsQueuedWorkAndDisposeAsyncWaits()
     {
         Native.Require();
-        var session = new EditorSession();
+        var session = Kit.Session();
         await session.Commands.InsertTextAsync("a", Ct);
         session.Dispose();
         session.Dispose();
@@ -151,7 +151,7 @@ public sealed class SessionTests : IDisposable
     public async Task SettingsApplyWithoutAReopen()
     {
         Native.Require();
-        await using var session = new EditorSession();
+        await using var session = Kit.Session();
         await session.Commands.InsertTextAsync("a", Ct);
         var revision = session.State.DocumentRevision;
 
@@ -179,7 +179,7 @@ public sealed class SessionTests : IDisposable
     public async Task BatchesCommitOnce()
     {
         Native.Require();
-        await using var session = new EditorSession();
+        await using var session = Kit.Session();
         var records = new List<TransactionRecord>();
         session.DocumentChanged += (_, e) => records.Add(e.Record);
         await session.BatchAsync([EditorOperation.InsertText("a"), EditorOperation.SelectAll(), EditorOperation.SetBold(true)], "Bold a", Ct);
@@ -194,7 +194,7 @@ public sealed class SessionTests : IDisposable
     public async Task TheCatalogListsEveryCommand()
     {
         Native.Require();
-        await using var session = new EditorSession();
+        await using var session = Kit.Session();
         Assert.Contains(session.Catalog, c => c.Id == CommandId.SetBold && c.Mutates);
         Assert.Equal(Enum.GetValues<CommandId>().Order(), session.Catalog.Select(c => c.Id).Order());
     }
@@ -203,7 +203,7 @@ public sealed class SessionTests : IDisposable
     public async Task TheShapeGalleryHasWordsGroups()
     {
         Native.Require();
-        await using var session = new EditorSession();
+        await using var session = Kit.Session();
         Assert.Equal(8, session.ShapeGallery.Count);
         Assert.Contains(session.ShapeGallery, g => g.Label == "Basic Shapes" && g.Presets.Contains(new ShapePreset("ellipse")));
     }
@@ -212,7 +212,7 @@ public sealed class SessionTests : IDisposable
     public async Task TheViewSettingsReachTheState()
     {
         Native.Require();
-        await using var session = new EditorSession();
+        await using var session = Kit.Session();
         await session.SetThemeAsync(ChromeTheme.Dark);
         await session.SetAppearanceAsync(DocumentAppearance.DarkWithLightPage);
         await session.SetDetailAsync(MeasureDetail.Quiet);
@@ -239,7 +239,7 @@ public sealed class SessionTests : IDisposable
     public async Task TheTabTypePickerIsRequestedAnsweredAndClosed()
     {
         Native.Require();
-        await using var session = new EditorSession();
+        await using var session = Kit.Session();
         var requested = new TaskCompletionSource<Popover>(TaskCreationOptions.RunContinuationsAsynchronously);
         session.PopoverRequested += (_, e) => requested.TrySetResult(e.Popover);
         var closed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -267,7 +267,7 @@ public sealed class SessionTests : IDisposable
     public async Task AutoCorrectSettingsReachTheState()
     {
         Native.Require();
-        await using var session = new EditorSession();
+        await using var session = Kit.Session();
         Assert.True(session.State.AutoCorrect.SmartQuotes);
         await session.Commands.SetAutoCorrectAsync(new AutoCorrectChange(SmartQuotes: false, Never: ["teh"]), Ct);
         Assert.False(session.State.AutoCorrect.SmartQuotes);

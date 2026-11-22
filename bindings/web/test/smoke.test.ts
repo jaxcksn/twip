@@ -1,15 +1,15 @@
 // The package as an application imports it in Node (its `node` export condition), with no DOM: a headless editor
 // opens, runs commands, reads state, receives events and exports.
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { EditorError, FontLibrary, HeadlessEditor, type TransactionRecord } from '@twip/web';
 import { toOp } from '../dist/commands.js';
+import { addKit } from './kit.ts';
 
 test('a headless editor in Node', async () => {
-  // Node has no system fonts for the engine: give it one, if this machine has one.
-  const font = ['C:/Windows/Fonts/calibri.ttf', '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'].find(existsSync);
-  if (font) await FontLibrary.default().add(readFileSync(font));
+  // Node has no system fonts for the engine: give it the test font kit.
+  await addKit(FontLibrary.default());
 
   const editor = await HeadlessEditor.create();
   const changes: TransactionRecord[] = [];

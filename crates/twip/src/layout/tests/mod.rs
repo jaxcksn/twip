@@ -60,8 +60,26 @@ pub fn doc(path: &Path) -> Option<Document> {
     crate::docx::read_at(&std::fs::read(path).ok()?, 1_794_096_000).ok()
 }
 
+thread_local! {
+    /// Whether [`fonts`] is the machine's installed fonts, for the rest of the test: each test runs on its own thread.
+    static INSTALLED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// The fonts layout tests use: the test font kit, or the machine's installed fonts once [`installed`] has said yes.
 pub fn fonts() -> Fonts {
-    Fonts::system_recommended()
+    if INSTALLED.get() { Fonts::installed_recommended() } else { Fonts::system_recommended() }
+}
+
+/// For the tests of a real family's own metrics: whether the machine has every one of `families`, and if so
+/// [`fonts`] is its installed fonts for the rest of the test. They run where the families are installed (Windows).
+pub fn installed(families: &[&str]) -> bool {
+    let fonts = Fonts::installed_recommended();
+    if let Some(missing) = families.iter().find(|f| !fonts.is_installed(f)) {
+        eprintln!("skipped: {missing} isn't installed");
+        return false;
+    }
+    INSTALLED.set(true);
+    true
 }
 
 pub fn gate_set(features: &[&str]) -> Vec<(PathBuf, Document)> {

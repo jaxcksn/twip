@@ -32,7 +32,7 @@ public sealed class HostingTests
     public async Task AttachAndDetachKeepTheDocumentSelectionAndHistory()
     {
         Native.Require();
-        await using var session = new EditorSession();
+        await using var session = Kit.Session();
         await session.Commands.InsertTextAsync("Hello", Ct);
         await session.Commands.SelectAllAsync(Ct);
 
@@ -60,7 +60,7 @@ public sealed class HostingTests
     public async Task ASecondAttachIsRejected()
     {
         Native.Require();
-        await using var session = new EditorSession();
+        await using var session = Kit.Session();
         using var host = session.Attach(new TestHostAdapter());
         var error = Assert.Throws<EditorException>(() => session.Attach(new TestHostAdapter()));
         Assert.Equal(EditorErrorCode.Unavailable, error.Code);
@@ -71,7 +71,7 @@ public sealed class HostingTests
     public async Task EventsArriveOnTheDispatcherWhenAttachedAndOnTheExecutorWhenNot()
     {
         Native.Require();
-        await using var session = new EditorSession();
+        await using var session = Kit.Session();
         var adapter = new TestHostAdapter();
 
         async Task<bool> OnUiThreadAsync()
@@ -100,7 +100,7 @@ public sealed class HostingTests
     public async Task OperationsFromEightThreadsRunInSubmissionOrder()
     {
         Native.Require();
-        await using var session = new EditorSession();
+        await using var session = Kit.Session();
         using var host = session.Attach(new TestHostAdapter());
         var gate = new object();
         var submitted = new List<string>();
@@ -128,7 +128,7 @@ public sealed class HostingTests
     public async Task DisposeWithPendingWorkNeitherDeadlocksNorCallsBack()
     {
         Native.Require();
-        var session = new EditorSession();
+        var session = Kit.Session();
         var adapter = new TestHostAdapter();
         var host = session.Attach(adapter);
         host.OnResize(800, 600, 96);
@@ -154,7 +154,7 @@ public sealed class HostingTests
     public async Task ACopyPastesBackWithItsFormatting()
     {
         Native.Require();
-        await using var session = new EditorSession();
+        await using var session = Kit.Session();
         var adapter = new TestHostAdapter();
         using var host = session.Attach(adapter);
         host.OnResize(800, 600, 96);
@@ -179,7 +179,7 @@ public sealed class HostingTests
     public async Task ScrollRequestsAndPresentationSettingsReachTheAdapterAndEngine()
     {
         Native.Require();
-        await using var session = new EditorSession();
+        await using var session = Kit.Session();
         var adapter = new TestHostAdapter();
         using var host = session.Attach(adapter);
         host.OnResize(800, 300, 96);

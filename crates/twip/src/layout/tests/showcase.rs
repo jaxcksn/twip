@@ -53,9 +53,7 @@ fn find<'a>(g: &'a [Glyphs], page: usize, starts: &str) -> &'a Glyphs {
 
 #[test]
 fn showcase_matches_word() {
-    let installed = fonts().families();
-    if let Some(missing) = ["Calibri Light", "Segoe UI", "Georgia", "Consolas"].into_iter().find(|f| !installed.iter().any(|i| i == f)) {
-        eprintln!("showcase skipped: {missing} isn't installed");
+    if !super::installed(&["Calibri Light", "Segoe UI", "Georgia", "Consolas"]) {
         return;
     }
     let Some((pages, g, rects)) = layout() else { return };

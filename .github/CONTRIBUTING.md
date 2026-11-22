@@ -190,6 +190,13 @@ The code is the documentation. A comment in the engine names a part of the code 
   and `TWIP_WRITE_PDF=1 cargo nextest run -p twip --lib pdf_output`, and look at what changed before committing.
 - History is linear. No merge commits. Rebase on the target branch instead of merging it in.
 - New behaviour needs a test. Layout changes need a fidelity check (see the harness docs).
+- Tests lay out with the test font kit, so results don't depend on the machine: `crates/twip/tests/fonts`
+  (Carlito, Caladea and Liberation, subset and renamed by `crates/twip-tools/scripts/make-test-fonts.py`), whose
+  `kit.json` lists the faces and the aliases from Calibri, Cambria, Arial, Times New Roman and Courier New to them.
+  Under `cfg(test)`, `Fonts::system()` is the kit; the contract runners, the ABI tests and the web and .NET suites
+  load it from `kit.json` (.NET: `Kit.Session()`, `Kit.PdfFonts`; web: `test/kit.ts`, and `/kit/` in the browser).
+  A test of a real family's own metrics starts with `if !super::installed(&["MS Mincho"]) { return; }`
+  (`layout::tests`): it lays out with the machine's fonts where the family is installed and skips elsewhere.
 
 ## Releases
 
