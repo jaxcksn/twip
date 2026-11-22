@@ -9,7 +9,7 @@
   <br />
   <br />
 
-  A high-fidelity docx layout, editing, and rendering engine.  
+  A high-fidelity layout, editing, and rendering engine for paginated documents.  
   Written in Rust 🦀. Built for the browser, desktop, and server.
 
   <a href="https://github.com/jaxcksn/twip/actions/workflows/ci.yml"><img src="https://flat.badgen.net/github/checks/jaxcksn/twip/main?label=build&icon=github" alt="Build"></a>
@@ -35,10 +35,7 @@ It isn't trying to be another word processor. Traditional word processors are ge
 
 Twip handles the difficult parts of a sophisticated paginated document editor—document structure, precise pagination, text shaping, selection, editing, and rendering—without prescribing the application around them. You bring your own interface, build your own workflows, and own the majority of the experience.
 
-> [!WARNING]
-> Twip is in early development. Its API surface is evolving toward a smaller, more extensible, and less opinionated foundation. Application-level concerns such as dialogs, context menus, and tooltips are intentionally being reworked to be less prescriptive. Some of the helpers may remain, but they won't define how your application should behave.
-
-Twip's document model is tied heavily to OOXML and its rich set of document capabilities and compatibility layers. Over time, the model will evolve toward a format-independent representation informed by both OOXML and ODF. The goal isn't to reproduce every feature of Word or LibreOffice. It's to provide a flexible, extensible document foundation capable of supporting complex, specialized use cases without inheriting the constraints of any particular word processor.
+Right now, Twip works with OOXML (docx) as it's format, but the long term goal is to introduce an independent document model that is compatible with most of the capabilities of OOXML, but without it's exact semantics and structure so other paginated document formats (like ODT) or a custom binary format are easy to support. The goal is to provide a flexible, extensible document foundation capable of supporting complex, specialized use cases without inheriting the constraints of any particular word processor.
 
 <br />
 
@@ -224,8 +221,7 @@ More complete examples live in [`docs/examples`](docs/examples) and [`crates/twi
 
 ## Under the hood
 
-Twip reads a DOCX into a document model, lays it out into pages and draws those pages with it's rendering engine (twip-graphics). Editing commands change the model, and the layout follows.
-
+Twip reads a OOXML into a document model, lays it out into pages and draws those pages with it's rendering engine (twip-graphics). Editing commands change the model, and the layout follows.
 
 ```mermaid
 flowchart LR
