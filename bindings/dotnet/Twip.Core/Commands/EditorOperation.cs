@@ -1211,7 +1211,7 @@ public abstract partial record EditorOperation
     /// <summary>Writes a custom XML data part.</summary>
     /// <param name="namespace">The part's namespace.</param>
     /// <param name="xml">The XML (well-formed).</param>
-    /// <param name="itemId">The part's item id, when several share the namespace.</param>
+    /// <param name="itemId">The part's item id, when several share the namespace: a GUID, matched without case or braces.</param>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation WriteDataPart(string @namespace, string xml, string? itemId = null) => Op(CommandId.WriteDataPart, new Arg("namespace", Node(@namespace)), new Arg("xml", Node(xml)), new Arg("itemId", itemId is { } itemId_ ? Node(itemId_) : null, Optional: true));
 

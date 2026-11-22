@@ -67,6 +67,12 @@ pub(super) fn link(read: Vec<Comment>, extended: Option<&str>, ids: Option<&str>
         }
         out.by_id.insert(c.id, c);
     }
+    // Replies one level deep, as Word has them
+    let roots = out.roots();
+    for c in out.by_id.values_mut() {
+        let root = roots[&c.id];
+        c.parent = (root != c.id).then_some(root);
+    }
     out
 }
 
@@ -104,6 +110,21 @@ mod tests {
         assert!(b.extensible.0.as_deref().is_some_and(|x| x.starts_with("<e:commentExtensible")));
         // Broken parts give nothing, not an error.
         assert_eq!(link(vec![comment(1, 0xA)], Some("<oops"), None, None).by_id[&CommentId(1)].parent, None);
+    }
+
+    #[test]
+    fn reply_chains_and_cycles_are_read_one_level_deep() {
+        let ex = |pairs: &[(u32, u32)]| {
+            let entries: String =
+                pairs.iter().map(|(p, parent)| format!(r#"<w15:commentEx w15:paraId="{p:08X}" w15:paraIdParent="{parent:08X}"/>"#)).collect();
+            format!(r#"<w15:commentsEx xmlns:w15="x">{entries}</w15:commentsEx>"#)
+        };
+        let chain = link(vec![comment(1, 0xA), comment(2, 0xB), comment(3, 0xC)], Some(&ex(&[(0xB, 0xA), (0xC, 0xB)])), None, None);
+        let parents: Vec<_> = (1..=3).map(|i| chain.by_id[&CommentId(i)].parent).collect();
+        assert_eq!(parents, vec![None, Some(CommentId(1)), Some(CommentId(1))]);
+        let cycle = link(vec![comment(1, 0xA), comment(2, 0xB)], Some(&ex(&[(0xA, 0xB), (0xB, 0xA)])), None, None);
+        let parents: Vec<_> = (1..=2).map(|i| cycle.by_id[&CommentId(i)].parent).collect();
+        assert_eq!(parents, vec![None, Some(CommentId(1))], "a cycle's lowest id starts the thread");
     }
 
     #[test]

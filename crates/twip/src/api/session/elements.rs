@@ -328,7 +328,9 @@ impl Session {
             .document()
             .data_parts
             .iter()
-            .filter(|d| namespace.is_none_or(|n| d.namespace.as_deref() == Some(n)) && item_id.is_none_or(|i| d.item_id.eq_ignore_ascii_case(i)))
+            .filter(|d| {
+                namespace.is_none_or(|n| d.namespace.as_deref() == Some(n)) && item_id.is_none_or(|i| crate::docx::binding::same_item(&d.item_id, i))
+            })
             .map(|d| DataPart { namespace: d.namespace.clone(), item_id: d.item_id.clone(), xml: d.xml.clone() })
             .collect()
     }

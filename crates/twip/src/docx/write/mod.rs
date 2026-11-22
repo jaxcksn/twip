@@ -878,7 +878,7 @@ fn data_parts(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), 
         let decl = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>";
         let props_xml = format!(
             "{decl}<ds:datastoreItem ds:itemID=\"{}\" xmlns:ds=\"http://schemas.openxmlformats.org/officeDocument/2006/customXml\"><ds:schemaRefs/></ds:datastoreItem>",
-            p.item_id
+            props::esc(&p.item_id)
         );
         let item_rels_xml = format!(
             "{decl}<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXmlProps\" Target=\"itemProps{}.xml\"/></Relationships>",
@@ -3399,8 +3399,11 @@ fn unit_keys(i: &Inline, out: &mut Vec<(u64, char)>) {
             // By what the object is, not its formatting: reformatting keeps it.
             std::mem::discriminant(other).hash(&mut h);
             match other {
-                // By its image: a resized picture is kept, its size patched (`Emit::seg`).
-                Inline::Picture(p, _) => p.image.hash(&mut h),
+                // By its drawing as read, else its image: a resized or refilled picture is kept, patched (`Emit::seg`).
+                Inline::Picture(p, _) => match &p.src.0 {
+                    Some(src) => (Rc::as_ptr(src) as *const u8 as usize).hash(&mut h),
+                    None => p.image.hash(&mut h),
+                },
                 Inline::NoteRef { kind, id, .. } => (*kind as u8, id).hash(&mut h),
                 // A checkbox by its control: toggling keeps it (its face is patched, `Emit::seg`).
                 Inline::Sym { control: Some(c), .. } => c.hash(&mut h),
@@ -4398,7 +4401,7 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                     if let Some(size) = resized(self, i).filter(|_| Rc::as_ptr(&run) == self.orig[i].run) {
                         let p = Placement { size: Some((size.0, size.1)), alt: Some(size.2.to_string()), ..Placement::default() };
                         let src = self.src(range.clone());
-                        let x = if drawing::is_vml(&src) { drawing::vml_size(&src, size.0, size.1) } else { p.apply(&src) };
+                        let x = picture_patched(&src, p, self.orig[i].size.as_ref().and_then(|s| s.4), size.4);
                         self.flush();
                         self.open_to(self.stack.len());
                         self.out.push_str(&x);
@@ -4434,7 +4437,7 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                             }
                         }
                         let src = self.s.src_text(range.clone());
-                        let x = if drawing::is_vml(&src) { drawing::vml_size(&src, size.0, size.1) } else { p.apply(&src) };
+                        let x = picture_patched(&src, p, self.orig[i].size.as_ref().and_then(|s| s.4), size.4);
                         self.pend.push_str(&x);
                     } else {
                         self.add(to, None, Some(range.clone()))
@@ -4969,10 +4972,32 @@ fn checkbox_xml(src: &str, face: char) -> String {
 }
 
 /// An inline picture's size, alternative text and shape tree.
-type PicState = (f64, f64, Rc<str>, Option<Box<crate::drawing::Shape>>);
+type PicState = (f64, f64, Rc<str>, Option<Box<crate::drawing::Shape>>, Option<usize>);
 
 fn picture_size(i: &Inline) -> Option<PicState> {
-    if let Inline::Picture(p, _) = i { Some((p.w, p.h, p.alt.clone(), p.shape.clone())) } else { None }
+    if let Inline::Picture(p, _) = i { Some((p.w, p.h, p.alt.clone(), p.shape.clone(), p.image)) } else { None }
+}
+
+/// A kept picture's drawing (`src`) as it is now: its extents, alternative text and, when it shows another image
+/// than it was read with, a blip naming that image.
+fn picture_patched(src: &str, p: Placement, was: Option<usize>, now: Option<usize>) -> String {
+    let image = now.filter(|_| now != was);
+    if drawing::is_vml(src) {
+        let (w, h) = p.size.unwrap_or_default();
+        let x = drawing::vml_size(src, w, h);
+        return match (image, find_tag(&x, "imagedata", 0)) {
+            (Some(k), Some((start, end))) => match x[start..end].find(":id=\"") {
+                Some(a) => {
+                    let v0 = start + a + 5;
+                    let v1 = x[v0..end].find('"').map_or(end, |e| v0 + e);
+                    format!("{}{NEW_IMAGE}{k}{}", &x[..v0], &x[v1..])
+                }
+                None => x,
+            },
+            _ => x,
+        };
+    }
+    Placement { blip: image, ..p }.apply(src)
 }
 
 /// Marks [`Saver::object_xml`] content written between runs, not in one.

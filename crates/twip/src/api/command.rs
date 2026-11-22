@@ -3603,7 +3603,7 @@ pub struct ActivatePictureControl {
 pub struct WriteDataPart {
     /// The part's root namespace.
     pub namespace: String,
-    /// The part's item id, where several share the namespace.
+    /// The part's item id, where several share the namespace: a GUID, matched without case or braces.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub item_id: Option<String>,
     /// The part's XML (well-formed).

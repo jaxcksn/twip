@@ -111,21 +111,19 @@ fn each_inline(blocks: &mut [Block], f: &mut dyn FnMut(&mut Inline)) {
     }
 }
 
-/// The markers on the edges of `a..b` (bookmarks', editing permissions' and, with `comments`, comments' starts, ends and
-/// references) whose partner is in it too: they belong to the range, as Word moves a bookmark whose text is selected.
-pub(super) fn bound_markers(p: &Paragraph, a: Unit, b: Unit, comments: bool) -> Vec<usize> {
+#[derive(PartialEq)]
+enum Key<'a> {
+    Bookmark(&'a str),
+    Perm(i64),
+    Comment(i64),
+}
+
+/// The paragraph's bookmark, editing permission and (with `comments`) comment markers: inline index, units before,
+/// key, and whether it starts its range.
+fn range_markers(p: &Paragraph, comments: bool) -> Vec<(usize, u32, Key<'_>, bool)> {
     use crate::docx::review::RangeKind;
-    #[derive(PartialEq)]
-    enum Key<'a> {
-        Bookmark(&'a str),
-        Perm(i64),
-        Comment(i64),
-    }
-    if a >= b {
-        return Vec::new();
-    }
     let mut at = 0u32;
-    let mut marks: Vec<(usize, u32, Key, bool)> = Vec::new();
+    let mut marks = Vec::new();
     for (k, i) in p.inlines.iter().enumerate() {
         let m = match i {
             Inline::Bookmark(n) => Some(n.strip_prefix('/').map_or((Key::Bookmark(n), true), |n| (Key::Bookmark(n), false))),
@@ -140,6 +138,16 @@ pub(super) fn bound_markers(p: &Paragraph, a: Unit, b: Unit, comments: bool) -> 
         }
         at += i.units() as u32;
     }
+    marks
+}
+
+/// The markers on the edges of `a..b` (bookmarks', editing permissions' and, with `comments`, comments' starts, ends and
+/// references) whose partner is in it too: they belong to the range, as Word moves a bookmark whose text is selected.
+pub(super) fn bound_markers(p: &Paragraph, a: Unit, b: Unit, comments: bool) -> Vec<usize> {
+    if a >= b {
+        return Vec::new();
+    }
+    let marks = range_markers(p, comments);
     let within = |x: u32| a.0 <= x && x <= b.0;
     marks
         .iter()
@@ -149,6 +157,18 @@ pub(super) fn bound_markers(p: &Paragraph, a: Unit, b: Unit, comments: bool) -> 
                 && marks.iter().any(|(_, _, k, s)| k == key && s != start)
         })
         .map(|m| m.0)
+        .collect()
+}
+
+/// The units of the bookmark and editing permission markers inside `a..b` whose partner isn't in it: deleting the
+/// range keeps them at its edge, so the range they mark shrinks.
+pub(super) fn severed_markers(p: &Paragraph, a: Unit, b: Unit) -> Vec<u32> {
+    let marks = range_markers(p, false);
+    let within = |x: u32| a.0 <= x && x <= b.0;
+    marks
+        .iter()
+        .filter(|(_, u, key, start)| a.0 < *u && *u < b.0 && !marks.iter().any(|(_, v, k, s)| k == key && s != start && within(*v)))
+        .map(|m| m.1)
         .collect()
 }
 

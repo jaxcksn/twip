@@ -116,9 +116,10 @@ impl RichText {
     }
 }
 
-fn text_inlines(text: &str, run: &Run) -> Vec<Inline> {
+/// Text in `run`: its line ends as line breaks, its tabs as tabs.
+pub(in crate::editing) fn text_inlines(text: &str, run: &Run) -> Vec<Inline> {
     let mut out = Vec::new();
-    for (k, line) in text.split('\n').enumerate() {
+    for (k, line) in text.split('\n').map(|l| l.strip_suffix('\r').unwrap_or(l)).enumerate() {
         if k > 0 {
             out.push(Inline::Break(BreakKind::Line, run.clone()));
         }
