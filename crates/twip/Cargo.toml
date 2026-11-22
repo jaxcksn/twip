@@ -45,14 +45,19 @@ prof = []
 
 # Style lints the codebase doesn't follow on purpose: index loops over parallel arrays, long parameter lists in the
 # layout passes (each step's state stays explicit), and nested tuple types in caches.
+# `cargo codspeed` builds with `codspeed_build`: the benchmarks outside the CodSpeed set are ignored in it.
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(codspeed_build)"] }
+
 [lints.clippy]
 needless_range_loop = "allow"
 too_many_arguments = "allow"
 type_complexity = "allow"
 
 [dev-dependencies]
-# The benchmarks (benches/engine): `cargo bench -p twip`.
-divan = "0.1.21"
+# The benchmarks (benches/engine): `cargo bench -p twip`. Divan through CodSpeed's layer, which is Divan in a plain
+# `cargo bench` and CodSpeed's measurement in `cargo codspeed`.
+divan = { package = "codspeed-divan-compat", version = "6.1.0" }
 # Reading the render gate's snapshots (render/graphics/output.rs); twip-graphics decodes PNG with it already.
 zune-png = "0.5.2"
 # Reading the PDF gate's exports back (pdf/output.rs): pages, text, structure and content streams. twip-graphics' PDF

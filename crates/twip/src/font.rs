@@ -682,6 +682,11 @@ impl Fonts {
         self.set_settings(|s| s.character_fallback = families);
     }
 
+    /// The aliases, replacing earlier ones: each applies when its family isn't in the catalog.
+    pub fn set_aliases(&mut self, aliases: Vec<Alias>) {
+        self.set_settings(|s| s.aliases = aliases);
+    }
+
     /// Changes the settings, and drops everything resolved with the old ones.
     pub(crate) fn set_settings(&mut self, f: impl FnOnce(&mut FontSettings)) {
         f(&mut Arc::make_mut(&mut self.catalog).settings);
@@ -1068,7 +1073,7 @@ pub(crate) mod recommended {
                 .iter()
                 .map(|(from, to)| (from.as_str(), to.as_str().expect("a family")))
                 .collect();
-            fonts.set_settings(|s| s.aliases = aliases(&pairs).collect());
+            fonts.set_aliases(aliases(&pairs).collect());
             Arc::clone(fonts.catalog())
         });
         Fonts::with_catalog(Arc::clone(catalog))
@@ -1542,7 +1547,7 @@ mod tests {
     #[test]
     fn an_alias_applies_only_when_the_family_is_missing() {
         let mut f = three();
-        f.set_settings(|s| s.aliases = vec![alias("Arial", "Stand-in Sans"), alias("Stand-in Serif", "Stand-in Sans")]);
+        f.set_aliases(vec![alias("Arial", "Stand-in Sans"), alias("Stand-in Serif", "Stand-in Sans")]);
         assert_eq!(drawn(&f, "ARIAL", false), (Some("Stand-in Sans".into()), Resolution::Alias));
         assert_eq!(drawn(&f, "Stand-in Serif", false), (Some("Stand-in Serif".into()), Resolution::Itself));
         assert!(f.resolves("arial", false, false));
@@ -1551,15 +1556,15 @@ mod tests {
     #[test]
     fn alias_chains_resolve_stop_at_cycles_and_follow_at_most_eight_hops() {
         let mut f = three();
-        f.set_settings(|s| s.aliases = vec![alias("A", "B"), alias("B", "Stand-in Sans")]);
+        f.set_aliases(vec![alias("A", "B"), alias("B", "Stand-in Sans")]);
         let r = f.resolve("A", None, false, false);
         assert_eq!((r.family.as_deref(), r.by, r.tried), (Some("Stand-in Sans"), Resolution::Alias, vec!["B".into(), "Stand-in Sans".into()]));
 
-        f.set_settings(|s| s.aliases = vec![alias("A", "B"), alias("B", "A")]);
+        f.set_aliases(vec![alias("A", "B"), alias("B", "A")]);
         assert_eq!(drawn(&f, "A", false), (Some("Stand-in Serif".into()), Resolution::LastResort));
 
         let chain: Vec<Alias> = (0..9).map(|k| alias(&format!("F{k}"), &format!("F{}", k + 1))).chain([alias("F9", "Stand-in Sans")]).collect();
-        f.set_settings(|s| s.aliases = chain);
+        f.set_aliases(chain);
         assert_eq!(drawn(&f, "F2", false), (Some("Stand-in Sans".into()), Resolution::Alias), "8 hops reach it");
         assert_eq!(drawn(&f, "F0", false).1, Resolution::LastResort, "10 hops don't");
     }

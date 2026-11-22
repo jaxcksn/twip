@@ -12,7 +12,9 @@ mod review;
 
 use std::fmt::Write as _;
 
+use twip::api::fonts::{Alias, AliasTarget, FontLibrary};
 use twip::internal::docx::Block;
+use twip::internal::font::Fonts;
 use twip::internal::layout::ParaId;
 
 #[global_allocator]
@@ -22,7 +24,6 @@ fn main() {
     divan::main();
 }
 
-/// A fixture's bytes, by its path under `tests/fixtures`.
 /// A Letter page of body text with 100 theme-styled shapes of mixed presets in a 10 x 10 grid over it, page
 /// relative: one in five wraps square, one in ten has text, one in ten a shadow and a glow. The first is anchored at
 /// the first paragraph's start (column and paragraph, offset 0), 90 x 60 pt, no wrapping: a drag's target.
@@ -94,9 +95,48 @@ fn shapes_doc() -> Vec<u8> {
     z.finish().expect("a package").into_inner()
 }
 
+/// A fixture's bytes, by its path under `tests/fixtures`.
 fn fixture(name: &str) -> Vec<u8> {
     let path = format!("{}/tests/fixtures/{name}", env!("CARGO_MANIFEST_DIR"));
     std::fs::read(&path).unwrap_or_else(|e| panic!("{path}: {e}"))
+}
+
+/// The test font kit `tests/fonts/kit.json` lists: its faces' bytes and its aliases. Benchmarks lay out with it, as
+/// the tests do, so their numbers are the same work on every machine.
+fn kit() -> (Vec<Vec<u8>>, Vec<Alias>) {
+    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts");
+    let read = |file: &str| std::fs::read(format!("{dir}/{file}")).unwrap_or_else(|e| panic!("{dir}/{file}: {e}"));
+    let kit: serde_json::Value = serde_json::from_slice(&read("kit.json")).expect("kit.json");
+    let faces = kit["files"].as_array().expect("kit.json files").iter().map(|f| read(f.as_str().expect("a file name"))).collect();
+    let aliases = kit["aliases"]
+        .as_object()
+        .expect("kit.json aliases")
+        .iter()
+        .map(|(from, to)| Alias { from: from.clone(), bold: None, italic: None, to: AliasTarget::Family(to.as_str().expect("a family").into()) })
+        .collect();
+    (faces, aliases)
+}
+
+/// The kit as the engine's fonts.
+fn fonts() -> Fonts {
+    let (faces, aliases) = kit();
+    let mut fonts = Fonts::default();
+    for face in faces {
+        fonts.add_bytes(face).expect("a kit font");
+    }
+    fonts.set_aliases(aliases);
+    fonts
+}
+
+/// The kit as an API font library.
+fn library() -> FontLibrary {
+    let (faces, aliases) = kit();
+    let library = FontLibrary::empty();
+    for face in &faces {
+        library.add(face).expect("a kit font");
+    }
+    library.set_aliases(aliases);
+    library
 }
 
 /// With `--features prof`, a diagnostic run: the stage times and the reuse report of a benchmark's timed parts,

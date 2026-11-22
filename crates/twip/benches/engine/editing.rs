@@ -58,7 +58,7 @@ impl Input {
 
 /// One input at a random place in a text paragraph of `big.docx`, with tracked changes on or off.
 fn at_random_places(bencher: Bencher, input: Input, tracking: bool) {
-    let fonts = Fonts::system();
+    let fonts = crate::fonts();
     let mut e = open("big.docx", &fonts);
     assert!(e.set_tracking(tracking), "tracking can be switched in big.docx");
     let paras = text_paras(&e);
@@ -98,9 +98,9 @@ fn typing_tracked(bencher: Bencher) {
 /// Typing at the end of a top-level paragraph and of the most deeply nested cell's (depth 7), the last keystroke
 /// undone between samples so the paragraph keeps its length: what differs is depth. Budget: depth 7 at most 1.5
 /// times depth 1.
-#[divan::bench(args = ["shallowest", "deepest"], sample_size = 1)]
+#[divan::bench(ignore = cfg!(codspeed_build), args = ["shallowest", "deepest"], sample_size = 1)]
 fn typing_nested(bencher: Bencher, which: &str) {
-    let fonts = Fonts::system();
+    let fonts = crate::fonts();
     let e = open("editor/FX-NEST-DEEP7.docx", &fonts);
     let mut paras = Vec::new();
     e.document().sections.iter().for_each(|s| super::paragraphs(&s.blocks, 0, &mut paras));
@@ -152,6 +152,7 @@ fn places(doc: &twip::internal::docx::Document, place: &str) -> Vec<(ParaId, u32
 /// the keystroke undone between samples so the paragraph keeps its length. Budget: p95 at most 1 ms, max at most
 /// 3 ms.
 #[divan::bench(
+    ignore = cfg!(codspeed_build),
     args = ["showcase/body", "showcase/cell", "showcase/float", "showcase/columns", "FX-OBJ/float", "FX-LONG-50/body", "FX-LONG-50/cell"],
     sample_size = 1
 )]
@@ -161,7 +162,7 @@ fn typing_in(bencher: Bencher, at: &str) {
         "showcase" => "docx-feature-showcase.docx".to_string(),
         n => format!("editor/{n}.docx"),
     };
-    let fonts = Fonts::system();
+    let fonts = crate::fonts();
     let e = open(&file, &fonts);
     let found = places(e.document(), place);
     let &(para, len) = found.get(found.len() / 2).unwrap_or_else(|| panic!("{at}: no such paragraph"));
@@ -190,8 +191,7 @@ fn typing_in(bencher: Bencher, at: &str) {
 fn typing_api(bencher: Bencher) {
     use twip::api::engine::{Engine, SessionOptions};
     use twip::api::event::Event;
-    use twip::api::fonts::FontLibrary;
-    let mut engine = Engine::new(FontLibrary::system());
+    let mut engine = Engine::new(crate::library());
     engine.set_listener(|_, event| {
         let json = match event {
             Event::StateChanged(state) => serde_json::to_vec(state),
@@ -212,9 +212,9 @@ fn typing_api(bencher: Bencher) {
 
 /// Typing in the first paragraph of a page with 100 theme-styled shapes (`shapes_doc`: mixed presets, some with
 /// text, shadows and glows, some wrapping). Budget: within the spread of `typing_api`.
-#[divan::bench(sample_size = 1)]
+#[divan::bench(ignore = cfg!(codspeed_build), sample_size = 1)]
 fn typing_shapes(bencher: Bencher) {
-    let fonts = Fonts::system();
+    let fonts = crate::fonts();
     let mut e = Editor::open(&super::shapes_doc(), &fonts).expect("the document opens");
     e.complete(&fonts);
     let (para, len) = text_paras(&e)[0];
@@ -232,7 +232,6 @@ mod merge {
     use divan::Bencher;
     use twip::internal::editing::commands::Command;
     use twip::internal::editing::elements::{self, Filter};
-    use twip::internal::font::Fonts;
 
     use super::{Rng, caret, open, text_paras};
 
@@ -243,27 +242,27 @@ mod merge {
     }
 
     /// The element list. Budget: under 200 ms.
-    #[divan::bench(sample_count = 20)]
+    #[divan::bench(ignore = cfg!(codspeed_build), sample_count = 20)]
     fn elements(bencher: Bencher) {
-        let fonts = Fonts::system();
+        let fonts = crate::fonts();
         let e = open(DOC, &fonts);
         bencher.bench_local(|| elements::enumerate(e.document(), e.index(), &Filter::default()));
     }
 
     /// A frame's field shading, every field shaded, over the first two pages. Budget: under 1 ms.
-    #[divan::bench(sample_count = 20)]
+    #[divan::bench(ignore = cfg!(codspeed_build), sample_count = 20)]
     fn field_shading(bencher: Bencher) {
         use twip::api::services::FieldShading;
-        let fonts = Fonts::system();
+        let fonts = crate::fonts();
         let e = RefCell::new(open(DOC, &fonts));
         bencher.bench_local(|| e.borrow_mut().field_shading(0..2, FieldShading::Always));
     }
 
     /// A rename over every reference in the largest `MERGEFIELD Group.`, undone between samples. Budget: under
     /// 500 ms, one undo step.
-    #[divan::bench(sample_count = 20, sample_size = 1)]
+    #[divan::bench(ignore = cfg!(codspeed_build), sample_count = 20, sample_size = 1)]
     fn rename(bencher: Bencher) {
-        let fonts = Fonts::system();
+        let fonts = crate::fonts();
         let e = open(DOC, &fonts);
         let fields = elements::enumerate(e.document(), e.index(), &Filter { kind: Some("field".into()), ..Filter::default() });
         let mut groups = std::collections::BTreeMap::<String, usize>::new();
@@ -290,9 +289,9 @@ mod merge {
     }
 
     /// A field inserted at a random place. Budget: under 100 ms.
-    #[divan::bench(sample_size = 1)]
+    #[divan::bench(ignore = cfg!(codspeed_build), sample_size = 1)]
     fn insert_field(bencher: Bencher) {
-        let fonts = Fonts::system();
+        let fonts = crate::fonts();
         let e = open(DOC, &fonts);
         let paras = text_paras(&e);
         let (e, mut rng) = (RefCell::new(e), Rng(0x2545_f491_4f6c_dd1d));
@@ -347,9 +346,9 @@ mod sub_templates {
 
     /// Into Violation, one keystroke there, and back to the template, its 20 references laid out again. Budget: under
     /// 100 ms each way on this machine.
-    #[divan::bench(sample_count = 20, sample_size = 1)]
+    #[divan::bench(ignore = cfg!(codspeed_build), sample_count = 20, sample_size = 1)]
     fn switch(bencher: Bencher) {
-        let fonts = Fonts::system();
+        let fonts = crate::fonts();
         let mut e = twenty(&fonts);
         bencher.bench_local(|| {
             e.execute(violation(), &fonts);
@@ -361,9 +360,9 @@ mod sub_templates {
 
     /// Typing in Violation's body while it is referenced 20 times. Budget: within `typing_*`'s, since the template
     /// lays its references out again only when it shows.
-    #[divan::bench(sample_size = 1)]
+    #[divan::bench(ignore = cfg!(codspeed_build), sample_size = 1)]
     fn type_in_body_20_refs(bencher: Bencher) {
-        let fonts = Fonts::system();
+        let fonts = crate::fonts();
         let mut e = twenty(&fonts);
         e.execute(violation(), &fonts);
         e.complete(&fonts);
@@ -380,7 +379,6 @@ mod a11y {
 
     use divan::Bencher;
     use twip::internal::editing::commands::Command;
-    use twip::internal::font::Fonts;
     use twip::internal::services::a11y;
     use twip::internal::services::spelling::Spellers;
 
@@ -398,9 +396,9 @@ mod a11y {
     }
 
     /// The caret window at a paragraph in the middle of the document. Budget: under 0.2 ms.
-    #[divan::bench(sample_size = 1)]
+    #[divan::bench(ignore = cfg!(codspeed_build), sample_size = 1)]
     fn caret_window(bencher: Bencher) {
-        let fonts = Fonts::system();
+        let fonts = crate::fonts();
         let mut e = open(DOC, &fonts);
         let paras = text_paras(&e);
         caret(&mut e, paras[paras.len() / 2].0, 3);
@@ -411,9 +409,9 @@ mod a11y {
     /// After a keystroke, the tree built (reusing the paragraphs that didn't change) and compared with the one sent
     /// before it: what the throttled update does.
     /// Budget: under 5 ms.
-    #[divan::bench(sample_size = 1)]
+    #[divan::bench(ignore = cfg!(codspeed_build), sample_size = 1)]
     fn tree_patch(bencher: Bencher) {
-        let fonts = Fonts::system();
+        let fonts = crate::fonts();
         let mut e = open(DOC, &fonts);
         let paras = text_paras(&e);
         caret(&mut e, paras[paras.len() / 2].0, 3);
