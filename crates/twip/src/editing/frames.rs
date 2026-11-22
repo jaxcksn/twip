@@ -230,7 +230,8 @@ impl Editor {
         out
     }
 
-    /// Removes the frame: its paragraphs, without their `w:framePr`, go before the paragraph it was anchored to.
+    /// Removes the frame: its paragraphs, without their `w:framePr`, go where they were beside the paragraph it was
+    /// anchored to.
     pub(super) fn remove_frame(&mut self, fonts: &Fonts) -> Outcome {
         if self.style_target.is_some() {
             return self.format_style_part("pPr", &|p, _, _, _| p.remove("framePr"));
@@ -240,7 +241,20 @@ impl Editor {
         let Some(anchor) = self.index.float_anchor(f) else { return Outcome::Unchanged("no anchor") };
         let Some(slot) = self.index.para_slot(anchor) else { return Outcome::Unchanged("no anchor") };
         let Some(p) = self.index.para(&self.doc, anchor) else { return Outcome::Unchanged("no anchor") };
-        let inlines: Vec<Inline> = p.inlines.iter().filter(|i| !matches!(i, Inline::Float(fl, _) if FloatId(fl.id) == f)).cloned().collect();
+        let is_it = |i: &Inline| matches!(i, Inline::Float(fl, _) if FloatId(fl.id) == f);
+        let Some((k, frame_src)) = p.inlines.iter().enumerate().find_map(|(k, i)| match i {
+            Inline::Float(fl, _) if FloatId(fl.id) == f => Some((k, fl.frame_src.as_ref())),
+            _ => None,
+        }) else {
+            return Outcome::Unchanged("no anchor");
+        };
+        // Anchored after the paragraph: read before a table or the end
+        let after = match (frame_src, p.src.as_ref().and_then(|s| s.ranges.first())) {
+            (Some(r), Some(at)) => r.start > at.start,
+            _ => p.inlines[..k].iter().any(|i| i.units() > 0),
+        };
+        let inlines: Vec<Inline> = p.inlines.iter().filter(|i| !is_it(i)).cloned().collect();
+        let at = slot.block + usize::from(after);
         // The paragraphs are written as new ones: their source is the frame's, which goes.
         for b in &mut blocks {
             if let Block::Para(p) = b {
@@ -249,7 +263,7 @@ impl Editor {
         }
         let mut tx = self.begin("Remove Frame");
         if self.step(&mut tx, Step::Restyle { para: anchor, inlines }).is_err()
-            || self.step(&mut tx, Step::Blocks { container: slot.container, range: slot.block..slot.block, with: blocks }).is_err()
+            || self.step(&mut tx, Step::Blocks { container: slot.container, range: at..at, with: blocks }).is_err()
         {
             self.abort(tx);
             return Outcome::Unchanged("stale frame");

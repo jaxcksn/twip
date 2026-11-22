@@ -856,24 +856,23 @@ impl Step {
             }
             Step::HeaderPart { name, section, footer, slot, blocks } => {
                 let sec = doc.sections.get_mut(section).ok_or(StepError::Missing)?;
-                // Its `w:sectPr` loses the reference of a header it no longer has.
-                doc.edited_sections.insert(section);
                 let refs = if footer { &mut sec.footers } else { &mut sec.headers };
                 let r = refs.get_mut(slot).ok_or(StepError::OutOfRange)?;
                 match blocks {
+                    Some(_) if r.is_some() || doc.stories.contains_key(&name) => return Err(StepError::OutOfRange),
+                    None if r.as_deref() != Some(name.as_str()) || !doc.stories.contains_key(&name) => return Err(StepError::Missing),
+                    _ => {}
+                }
+                // Its `w:sectPr` loses the reference of a header it no longer has.
+                doc.edited_sections.insert(section);
+                match blocks {
                     Some(b) => {
-                        if r.is_some() || doc.stories.contains_key(&name) {
-                            return Err(StepError::OutOfRange);
-                        }
                         *r = Some(name.clone());
                         doc.stories.insert(name.clone(), b);
                         idx.added_part(doc, &name);
                         Ok(Applied { inverse: Step::HeaderPart { name, section, footer, slot, blocks: None }, map: Map::Same, hint: None })
                     }
                     None => {
-                        if r.as_deref() != Some(name.as_str()) {
-                            return Err(StepError::Missing);
-                        }
                         *r = None;
                         let b = doc.stories.remove(&name).ok_or(StepError::Missing)?;
                         idx.removed_part(&b);

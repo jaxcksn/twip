@@ -4,8 +4,11 @@ use crate::font::Fonts;
 
 use super::Editor;
 use super::commands::Outcome;
+use super::index::Slot;
 use super::position::StoryId;
+use super::selection::{ObjectRef, Selection};
 use super::step::Step;
+use crate::docx::NoteKind;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum SectionCmd {
@@ -15,18 +18,48 @@ pub enum SectionCmd {
 
 impl Editor {
     pub(super) fn focus_section(&self) -> usize {
-        let Some(focus) = self.selection.focus() else { return 0 };
-        match focus.story {
-            StoryId::HeaderFooter(k) => {
-                let name = self.index.part_name(k);
-                self.doc
-                    .sections
-                    .iter()
-                    .position(|s| s.headers.iter().chain(s.footers.iter()).flatten().any(|n| Some(n.as_str()) == name))
-                    .unwrap_or(0)
-            }
-            _ => self.section_at(&focus).unwrap_or(0),
+        let slot = match self.selection {
+            Selection::Cells { table, .. } => self.index.table_slot(table),
+            Selection::Object(ObjectRef::Inline { para, .. }) => self.index.para_slot(para),
+            Selection::Object(ObjectRef::Floating(f)) => self.index.float_anchor(f).and_then(|p| self.index.para_slot(p)),
+            _ => self.selection.focus().and_then(|p| p.para_offset()).and_then(|(p, _)| self.index.para_slot(p)),
+        };
+        slot.and_then(|s| self.slot_section(s)).unwrap_or(0)
+    }
+
+    /// The section a block is in: a note's is its reference's, a header's or footer's the shown page's, and in a
+    /// sub-template being edited, the section it was entered from.
+    fn slot_section(&self, s: Slot) -> Option<usize> {
+        if let Some((sec, ..)) = self.index.top_block(s.container, s.block) {
+            return Some(match &self.surface {
+                Some(shown) if self.index.story(s.container) != StoryId::Body => shown.section,
+                _ => sec,
+            });
         }
+        let (kind, id) = match self.index.host(self.index.story(s.container)) {
+            StoryId::HeaderFooter(k) => return self.part_section(k),
+            StoryId::Footnote(id) => (NoteKind::Foot, id),
+            StoryId::Endnote(id) => (NoteKind::End, id),
+            _ => return None,
+        };
+        let (at, _) = self.note_reference(kind, id)?;
+        let s = self.index.para_slot(at.para_offset()?.0)?;
+        self.index.top_block(s.container, s.block).map(|(sec, ..)| sec)
+    }
+
+    /// The section header or footer part `k` is edited for: the shown page's when that page shows it, else the first
+    /// that refers to it.
+    fn part_section(&self, k: u32) -> Option<usize> {
+        let name = self.index.part_name(k)?;
+        let sections = &self.doc.sections;
+        if let Some(i) = self.snapshot().info().get(self.near).filter(|i| i.section < sections.len()) {
+            let shown =
+                |footer| crate::layout::page::story_ref(sections, self.doc.settings.even_and_odd, i.section, i.section_page, i.number, footer).1;
+            if [false, true].into_iter().any(|footer| shown(footer).is_some_and(|n| n == name)) {
+                return Some(i.section);
+            }
+        }
+        sections.iter().position(|s| s.headers.iter().chain(s.footers.iter()).flatten().any(|n| n == name))
     }
 
     /// The section a position in the body is in.

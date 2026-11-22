@@ -104,8 +104,8 @@ impl Editor {
                 let story = self.index.para_slot(para).map(|s| self.index.story(s.container))?;
                 Some(Position::text(story, para, crate::layout::Unit(u)))
             }),
-            super::position::StoryId::Footnote(id) => self.note_reference(crate::docx::NoteKind::Foot, id),
-            super::position::StoryId::Endnote(id) => self.note_reference(crate::docx::NoteKind::End, id),
+            super::position::StoryId::Footnote(id) => self.note_reference(crate::docx::NoteKind::Foot, id).map(|(at, _)| at),
+            super::position::StoryId::Endnote(id) => self.note_reference(crate::docx::NoteKind::End, id).map(|(at, _)| at),
             _ => None,
         };
         let inside = |p: &Position| self.index.cmp(&a, p) != std::cmp::Ordering::Greater && self.index.cmp(p, &b) != std::cmp::Ordering::Greater;
