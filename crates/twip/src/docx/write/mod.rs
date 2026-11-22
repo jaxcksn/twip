@@ -1530,11 +1530,9 @@ fn notes_xml(
     }
     if !text.is_empty() {
         let r = root.range();
-        let el = &xml[r.clone()];
-        if let Some(open) = el.strip_suffix("/>") {
+        if let Some(el) = filled(&xml[r.clone()], &text) {
             // An empty, self-closing part root: opened and closed around the new notes.
-            let name = el[1..].split(|c: char| c.is_whitespace() || c == '/' || c == '>').next().unwrap_or("");
-            splices.push((r.clone(), format!("{open}>{text}</{name}>")));
+            splices.push((r.clone(), el));
         } else {
             let close = xml[..r.end].rfind("</").ok_or("a notes part without its end tag")?;
             splices.push((close..close, text));
@@ -1655,6 +1653,27 @@ fn boxes<'d>(orig: &[&'d [Block]], now: &[&'d [Block]]) -> Vec<(&'d [Block], &'d
 struct SectionEdits {
     dropped: Vec<Range<usize>>,
     made: HashMap<u64, String>,
+}
+
+/// Self-closing element `el` opened and closed around `text`; `None` when `el` isn't self-closing.
+fn filled(el: &str, text: &str) -> Option<String> {
+    let open = el.strip_suffix("/>")?;
+    let name = el.get(1..)?.split(|c: char| c.is_whitespace() || c == '/' || c == '>').next()?;
+    Some(format!("{open}>{text}</{name}>"))
+}
+
+/// Takes the paragraphs the reader made to close their story out of `qs`, with the place of the last
+/// ([`ParaSrc::closing`]).
+fn take_closing(qs: &mut Vec<&Paragraph>) -> Option<Range<usize>> {
+    let mut at = None;
+    qs.retain(|q| match q.src.as_deref() {
+        Some(s) if s.closing => {
+            at = s.ranges.first().cloned();
+            false
+        }
+        _ => true,
+    });
+    at
 }
 
 /// The main part's XML after the edits; `None` when nothing changed.
@@ -2075,7 +2094,8 @@ impl<'a, 'i> Saver<'a, 'i> {
         }
         if p.iter().any(|b| matches!(b, Block::Table(_))) {
             self.gone_marks(&qs, p);
-            return self.with_new_tables(&qs, p, at);
+            let closing = take_closing(&mut qs);
+            return self.with_new_tables(&qs, p, at, closing);
         }
         let ps: Vec<&Paragraph> = p.iter().filter_map(|b| if let Block::Para(x) = b { Some(x) } else { None }).collect();
         if qs.is_empty() && ps.is_empty() {
@@ -2104,6 +2124,7 @@ impl<'a, 'i> Saver<'a, 'i> {
                 }
             }
         }
+        let closing = take_closing(&mut qs);
         let srcs: Vec<&ParaSrc> = qs.iter().map(|x| x.src.as_deref().ok_or("a paragraph without its source")).collect::<Result<_, _>>()?;
         if ps.is_empty() {
             // Every paragraph of the group went (with the blocks around them).
@@ -2151,10 +2172,7 @@ impl<'a, 'i> Saver<'a, 'i> {
                     self.splices.push((r.clone(), String::new()));
                 }
             }
-            None => {
-                let at = at.ok_or("nowhere to put new paragraphs")?;
-                self.splices.push((at..at, text));
-            }
+            None => self.put(closing, at, text, "nowhere to put new paragraphs")?,
         }
         Ok(())
     }
@@ -2196,10 +2214,27 @@ impl<'a, 'i> Saver<'a, 'i> {
         self.splices.extend(gone);
     }
 
+    /// `text` where a group without source paragraphs goes: in place of its closing paragraph, else at `at`.
+    fn put(&mut self, closing: Option<Range<usize>>, at: Option<usize>, text: String, none: &str) -> Result<(), String> {
+        let splice = match closing {
+            Some(r) if !r.is_empty() => {
+                let el = &self.xml[r.clone()];
+                (r, filled(el, &text).ok_or("a closing paragraph's story without its tags")?)
+            }
+            Some(r) => (r, text),
+            None => {
+                let at = at.ok_or(none)?;
+                (at..at, text)
+            }
+        };
+        self.splices.push(splice);
+        Ok(())
+    }
+
     /// A paragraph group with new tables among its paragraphs: each run of paragraphs is written with the source
     /// paragraphs it continues (deleted ones with the first run), each table from the model.
     // shortcut: a section break in the group goes with the run its source paragraph went to, which may not be the last.
-    fn with_new_tables(&mut self, qs: &[&Paragraph], p: &[Block], at: Option<usize>) -> Result<(), String> {
+    fn with_new_tables(&mut self, qs: &[&Paragraph], p: &[Block], at: Option<usize>, closing: Option<Range<usize>>) -> Result<(), String> {
         let mut runs: Vec<Vec<&Paragraph>> = vec![Vec::new()];
         for b in p {
             match b {
@@ -2244,10 +2279,7 @@ impl<'a, 'i> Saver<'a, 'i> {
                     self.splices.push((r, String::new()));
                 }
             }
-            None => {
-                let at = at.ok_or("nowhere to put new blocks")?;
-                self.splices.push((at..at, text));
-            }
+            None => self.put(closing, at, text, "nowhere to put new blocks")?,
         }
         Ok(())
     }

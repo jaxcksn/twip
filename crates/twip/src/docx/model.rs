@@ -791,6 +791,9 @@ pub struct ParaSrc {
     pub simple: Vec<(usize, Vec<(std::ops::Range<usize>, usize)>)>,
     /// Content that can't be mapped back (a field whose runs don't share a parent): edits rewrite it from the model.
     pub lossy: bool,
+    /// Made by the reader to close a story that ends without a paragraph: no element, `ranges[0]` is where its XML
+    /// goes, an empty range before the story's end tag or the story's whole element when it is written empty.
+    pub closing: bool,
 }
 
 /// The package an editable document was read from ([`super::read_editable`]).

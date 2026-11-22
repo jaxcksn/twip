@@ -392,17 +392,21 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
             let id = int(attr(n, "id")).unwrap_or(0);
             r.note_id = id;
             r.in_endnotes = tag == "endnote";
-            let mut blocks = r.read_blocks(n, &mut pkg, None);
+            let separator = attr(n, "type").filter(|t| matches!(*t, "separator" | "continuationSeparator" | "continuationNotice"));
+            let mut blocks = match separator {
+                Some(_) => r.read_blocks(n, &mut pkg, None),
+                None => r.read_story_blocks(n, &mut pkg),
+            };
             r.close_ranges(&mut blocks);
             note_floats(&mut blocks);
-            match attr(n, "type") {
+            match separator {
                 // A separator story counts only when the settings list it: else the built-in one is used.
-                Some(t @ ("separator" | "continuationSeparator" | "continuationNotice")) => {
+                Some(t) => {
                     if r.settings.listed_notes.contains(&format!("{tag}:{id}")) {
                         doc.separators.insert(format!("{tag}:{t}"), blocks);
                     }
                 }
-                _ => {
+                None => {
                     map.insert(id, blocks);
                 }
             }
@@ -679,6 +683,16 @@ fn shift_connector_text(sections: &mut [Section]) {
             None => {}
         })
     });
+}
+
+/// Where a paragraph closing story element `n` goes: before its end tag, or the whole element when it has none.
+fn story_end(n: Node) -> std::ops::Range<usize> {
+    let r = n.range();
+    // An attribute value holds no `<`, so the last `</` is the element's own end tag.
+    match n.document().input_text()[r.clone()].rfind("</") {
+        Some(k) => r.start + k..r.start + k,
+        None => r,
+    }
 }
 
 /// Marks a note's drawings: a note has no floats, its anchors are laid out inline.
@@ -1028,7 +1042,7 @@ impl Reader {
         let saved = (self.part.clone(), self.rels.clone());
         self.enter_part(path, pkg);
         let root = pick(dom.root_element())?;
-        let mut blocks = self.read_blocks(root, pkg, None);
+        let mut blocks = self.read_story_blocks(root, pkg);
         self.close_ranges(&mut blocks);
         (self.part, self.rels) = saved;
         Some(blocks)
@@ -1047,7 +1061,7 @@ impl Reader {
             {
                 p.initials = initials.clone();
             }
-            let mut body = self.read_blocks(c, pkg, None);
+            let mut body = self.read_story_blocks(c, pkg);
             self.close_ranges(&mut body);
             let last = c.descendants().rfind(|d| is_w(*d, "p"));
             let para_id = last.and_then(|p| super::comments::hex(p.attribute((W14, "paraId")))).unwrap_or_else(|| self.ids.next_para_id());
@@ -1330,22 +1344,8 @@ impl Reader {
         if let Some(p) = self.pending_hidden.take() {
             blocks.push(Block::Para(p));
         }
-        // A body that ends with a table ends with an empty paragraph after it.
-        if matches!(blocks.last(), Some(Block::Table(_))) {
-            let r = self.res.paragraph(&ParaProps::default(), None);
-            let mark = self.run_style(&self.run_props(&r.base, None));
-            let id = next_para_id();
-            blocks.push(Block::Para(Paragraph {
-                style: Rc::new(r.style),
-                mark,
-                list: None,
-                inlines: Vec::new(),
-                src: None,
-                id,
-                div: None,
-                controls: Vec::new(),
-            }));
-        }
+        let at = last.map_or_else(|| story_end(body), |s| s.range().start..s.range().start);
+        self.close_story(&mut blocks, at);
         sec.blocks = blocks;
         sections.push(sec);
         // Ranges pair across the body's sections.
@@ -1354,6 +1354,34 @@ impl Reader {
             strip_ranges(&mut s.blocks, &open);
         }
         sections
+    }
+
+    /// A story that doesn't end with a paragraph (empty, or ending with a table) ends with an empty one, its source
+    /// `at` ([`ParaSrc::closing`]).
+    fn close_story(&mut self, blocks: &mut Vec<Block>, at: std::ops::Range<usize>) {
+        if matches!(blocks.last(), Some(Block::Para(_))) {
+            return;
+        }
+        let r = self.res.paragraph(&ParaProps::default(), None);
+        let mark = self.run_style(&self.run_props(&r.base, None));
+        let src = self.record.then(|| Rc::new(ParaSrc { ranges: vec![at], segs: Vec::new(), simple: Vec::new(), lossy: false, closing: true }));
+        blocks.push(Block::Para(Paragraph {
+            style: Rc::new(r.style),
+            mark,
+            list: None,
+            inlines: Vec::new(),
+            src,
+            id: next_para_id(),
+            div: None,
+            controls: Vec::new(),
+        }));
+    }
+
+    /// [`Reader::read_blocks`] of a story's element, closed by [`Reader::close_story`].
+    fn read_story_blocks(&mut self, container: Node, pkg: &mut Package) -> Vec<Block> {
+        let mut blocks = self.read_blocks(container, pkg, None);
+        self.close_story(&mut blocks, story_end(container));
+        blocks
     }
 
     fn read_blocks(&mut self, container: Node, pkg: &mut Package, table: Option<&TableCtx>) -> Vec<Block> {
@@ -1395,7 +1423,11 @@ impl Reader {
                     run.push(m);
                     i += 1;
                 }
-                out.push((Some(Block::Table(self.read_table(&run, pkg))), None));
+                let t = self.read_table(&run, pkg);
+                // A table without rows holds nothing.
+                if !t.rows.is_empty() {
+                    out.push((Some(Block::Table(t)), None));
+                }
             } else if is_w(n, "sdt") || is_w(n, "customXml") {
                 let content = if is_w(n, "sdt") { child(n, "sdtContent") } else { Some(n) };
                 if let Some(c) = content {
@@ -1682,7 +1714,7 @@ impl Reader {
         self.para_no = outer_para;
         let (segs, lossy, simple) =
             (std::mem::replace(&mut self.segs, outer.0), std::mem::replace(&mut self.lossy, outer.1), std::mem::replace(&mut self.simple, outer.2));
-        let src = self.record.then(|| Rc::new(ParaSrc { ranges: vec![n.range()], segs, simple, lossy }));
+        let src = self.record.then(|| Rc::new(ParaSrc { ranges: vec![n.range()], segs, simple, lossy, closing: false }));
         let para = Paragraph { style: para_style, mark: mark.clone(), list, inlines, src, id: next_para_id(), div: None, controls: Vec::new() };
 
         let spec = self.pending_spec.take();
@@ -1724,6 +1756,7 @@ impl Reader {
                         segs: [a.segs.clone(), b.segs.clone()].concat(),
                         simple: [a.simple.clone(), b.simple.clone()].concat(),
                         lossy: a.lossy || b.lossy,
+                        closing: false,
                     })),
                     (a, b) => a.or(b),
                 };
@@ -2447,7 +2480,7 @@ impl Reader {
         let alt: Rc<str> = v.alt.as_str().into();
         let text_box = v.textbox.map(|(t, insets, v_anchor, auto_fit)| {
             let saved = (std::mem::take(&mut self.fields), std::mem::take(&mut self.wrap));
-            let blocks = self.read_blocks(t, pkg, None);
+            let blocks = self.read_story_blocks(t, pkg);
             (self.fields, self.wrap) = saved;
             let outline = shape
                 .sp()
@@ -2773,7 +2806,7 @@ impl Reader {
         let auto_fit = body.is_some_and(|b| b.children().any(|c| is(c, A, "spAutoFit")));
         // A text box is its own content: the anchor's fields and revision wrappers don't reach into it.
         let saved = (std::mem::take(&mut self.fields), std::mem::take(&mut self.wrap));
-        let blocks = self.read_blocks(t, pkg, None);
+        let blocks = self.read_story_blocks(t, pkg);
         (self.fields, self.wrap) = saved;
         let v_anchor = match body.and_then(|b| b.attribute("anchor")) {
             Some("ctr") => 1,

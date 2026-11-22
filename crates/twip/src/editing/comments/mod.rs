@@ -353,14 +353,18 @@ impl Editor {
         let active = self.active_comment();
         let ranges = self.thread_ranges();
         let mut threads = self.doc.comments.threads();
-        let at = |id: CommentId| ranges.iter().position(|r| r.root == id).unwrap_or(usize::MAX);
-        threads.sort_by_key(|(root, _)| at(*root));
+        let mut by_root: std::collections::HashMap<CommentId, usize> = std::collections::HashMap::with_capacity(ranges.len());
+        for (k, r) in ranges.iter().enumerate() {
+            by_root.entry(r.root).or_insert(k);
+        }
+        threads.sort_by_key(|(root, _)| by_root.get(root).copied().unwrap_or(usize::MAX));
         threads
             .into_iter()
             .map(|(root, replies)| {
-                let scope = ranges.iter().find(|r| r.root == root).map(|r| {
+                let scope = by_root.get(&root).map(|&k| {
+                    let r = &ranges[k];
                     let kept = std::mem::replace(&mut self.selection, Selection::range(r.start, r.end, Granularity::Char));
-                    let text = self.selected_text();
+                    let (text, _) = self.selected_text_upto(crate::api::review::ANCHOR_TEXT_LIMIT);
                     self.selection = kept;
                     text
                 });

@@ -317,10 +317,18 @@ impl Editor {
         use crate::drawing::{ShapeKind, ShapeText};
         let floats = self.selected_floats();
         let (&[f], None) = (&floats[..], self.selected_child()) else { return false };
-        let Some(mut n) = self.float_of(f).cloned() else { return false };
-        if n.text_box.is_some() {
-            return false;
+        let Some(n) = self.float_of(f) else { return false };
+        // An empty box takes typing as a shape without text does.
+        if let Some(tb) = &n.text_box {
+            let [crate::docx::Block::Para(p)] = &tb.blocks[..] else { return false };
+            if !p.inlines.is_empty() {
+                return false;
+            }
+            let at = super::position::Position::text(super::position::StoryId::TextBox(f), crate::layout::ParaId(p.id), crate::layout::Unit(0));
+            self.set_selection(super::selection::Selection::Caret(at));
+            return true;
         }
+        let mut n = n.clone();
         let Some(shape) = n.shape.as_deref_mut() else { return false };
         let (w, h) = (shape.xfrm.ext[0], shape.xfrm.ext[1]);
         let ShapeKind::Sp(sp) = &mut shape.kind else { return false };

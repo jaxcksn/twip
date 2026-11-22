@@ -7,6 +7,7 @@ mod checkboxes;
 mod cursors;
 mod custom_lists;
 mod depth;
+mod empty_stories;
 mod field_shading;
 mod fuzz;
 mod history;

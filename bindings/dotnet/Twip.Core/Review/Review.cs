@@ -123,7 +123,7 @@ public sealed record RevisionInfo(
 /// <summary>A comment thread.</summary>
 /// <param name="Id">The thread: its first comment's id.</param>
 /// <param name="Done">Whether it is resolved.</param>
-/// <param name="AnchorText">The commented text.</param>
+/// <param name="AnchorText">The commented text, cut to its first 1,000 characters.</param>
 /// <param name="Page">The page.</param>
 /// <param name="Comments">The first comment, then the replies.</param>
 public sealed record CommentThread(CommentId Id, bool Done, string AnchorText, int Page, IReadOnlyList<Comment> Comments);
