@@ -474,6 +474,24 @@ impl Map {
 
 // Inlines by units
 
+/// The markers at unit `u` of `p` from the first one `first` takes on: what an insertion there goes before (`Edges`'s
+/// `under`; empty text isn't counted).
+pub fn markers_from(p: &Paragraph, u: Unit, first: impl Fn(&Inline) -> bool) -> u32 {
+    let (mut at, mut n, mut seen) = (0u32, 0, false);
+    for i in &p.inlines {
+        let w = i.units() as u32;
+        if at > u.0 || (at == u.0 && w > 0) {
+            break;
+        }
+        if at == u.0 && !matches!(i, Inline::Text(..)) {
+            seen |= first(i);
+            n += u32::from(seen);
+        }
+        at += w;
+    }
+    n
+}
+
 pub fn para_len(p: &Paragraph) -> Unit {
     Unit(p.inlines.iter().map(Inline::units).sum::<usize>() as u32)
 }

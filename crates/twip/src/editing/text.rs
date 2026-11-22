@@ -93,6 +93,12 @@ impl UnitText {
         self.bytes[(u.0 as usize).min(self.bytes.len() - 1)]
     }
 
+    /// The text of units `a..b`.
+    pub fn between(&self, a: Unit, b: Unit) -> &str {
+        let (a, b) = (self.byte(a), self.byte(b));
+        &self.text[a..b.max(a)]
+    }
+
     pub fn char_at(&self, u: Unit) -> Option<char> {
         let b = self.byte(u);
         self.text[b..].chars().next()

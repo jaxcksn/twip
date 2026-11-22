@@ -270,6 +270,8 @@ struct Tx {
     boxes: bool,
     /// List definitions changed: every label is made again, not only those whose text changed.
     relabel: bool,
+    /// The control whose placeholder the selection replaces: its paragraph and unit, where what is put in goes inside it.
+    placeholder: Option<(ParaId, Unit, crate::docx::ControlId)>,
 }
 
 struct Batch {
@@ -824,6 +826,7 @@ impl Editor {
             pictures: false,
             boxes: false,
             relabel: false,
+            placeholder: None,
         }
     }
 
@@ -837,6 +840,8 @@ impl Editor {
         {
             return Err(StepError::OutOfRange);
         }
+        let s = self.inside_editable_end(s);
+        let s = self.inside_placeholder(tx, s);
         if !tx.tracked {
             return self.apply_step(tx, s);
         }
@@ -953,7 +958,14 @@ impl Editor {
         }
         self.drop_orphan_notes(tx);
         if tx.replayed.is_none() {
+            if let Some((para, _, c)) = tx.placeholder.take() {
+                if self.left_empty(tx, para, c) {
+                    return Err("a placeholder");
+                }
+                self.placeholder_off(tx, c);
+            }
             self.drop_temporary_controls(tx);
+            self.sync_dates(tx);
             self.sync_bindings(tx);
         }
         self.drop_orphan_controls(tx);
@@ -1046,9 +1058,9 @@ impl Editor {
         self.revision += 1;
         let undo = std::mem::take(&mut tx.undo);
         let bytes = undo.iter().map(history::step_bytes).sum();
-        // Enforcing protection fences the history
-        let enforces = self.enforced_protection().is_some()
-            && undo.iter().any(|s| matches!(s, Step::Protection(was) if !was.as_ref().is_some_and(|p| p.enforced)));
+        // Starting or stopping enforced protection fences the history
+        let enforced = self.enforced_protection().is_some();
+        let enforces = undo.iter().any(|s| matches!(s, Step::Protection(was) if was.as_ref().is_some_and(|p| p.enforced) != enforced));
         match tx.replayed.take() {
             Some(done) if tx.origin == Origin::Undo => self.history.push_redo(Transaction { undo, bytes, ..done }),
             Some(done) => self.history.push_undo_keep_redo(Transaction { undo, bytes, ..done }),
@@ -1189,6 +1201,7 @@ impl Editor {
     }
 
     fn delete_range_joining(&mut self, tx: &mut Tx, join: bool) -> Result<Option<Position>, StepError> {
+        self.take_placeholder(tx)?;
         let end = self.selection.ordered(&self.index).map(|(_, b)| b).filter(|_| tx.tracked && matches!(self.selection, Selection::Text { .. }));
         let from = tx.maps.len();
         let at = self.delete_range_untracked(tx, join)?;
@@ -1245,6 +1258,7 @@ impl Editor {
         if a.same_place(&b) {
             return Ok(Some(a));
         }
+        self.remove_comments_within(tx, a, b)?;
         let section_of = |e: &Editor, p: &Position| {
             let s = match p.place {
                 Place::Text { para, .. } => e.index.para_slot(para)?,
@@ -1443,6 +1457,7 @@ impl Editor {
         }
         let (comment_cuts, emptied) = comments::deletion_cuts(p, a, b);
         cuts.extend(comment_cuts);
+        cuts.extend(clipboard::severed_markers(p, range.start, range.end));
         cuts.sort();
         cuts.dedup();
         if !emptied.is_empty() {
@@ -1824,6 +1839,13 @@ impl Editor {
     fn delete(&mut self, dir: Dir, word: bool, fonts: &Fonts) -> Outcome {
         if let Some(o) = self.delete_object(fonts) {
             return o;
+        }
+        // A placeholder deleted shows again
+        // Backspace at its start
+        if let Some((_, at, _, s, _)) = self.placeholder_here()
+            && !(dir == Dir::Back && self.selection.is_collapsed() && at.para_offset().is_some_and(|(_, u)| u.0 == s))
+        {
+            return Outcome::Unchanged("a placeholder");
         }
         if let Some(o) = self.delete_cells(dir == Dir::Forward, fonts) {
             return o;
@@ -3145,12 +3167,13 @@ impl Editor {
     }
 
     pub fn selected_text_within(&mut self, limit: usize) -> Option<String> {
-        let (text, whole) = self.selected_text_upto(limit);
+        let (text, whole) = self.text_within(limit, &mut HashMap::new());
         whole.then_some(text)
     }
 
-    /// The selection's text cut to its first `limit` characters, and whether that is all of it.
-    pub fn selected_text_upto(&mut self, limit: usize) -> (String, bool) {
+    /// The selection's text cut to its first `limit` characters, and whether that is all of it. `texts` holds the
+    /// paragraphs' texts found so far, for selections in turn.
+    pub(super) fn text_within(&mut self, limit: usize, texts: &mut HashMap<ParaId, UnitText>) -> (String, bool) {
         if let Selection::Block { .. } = self.selection {
             let mut t = self.block_text();
             return match t.char_indices().nth(limit) {
@@ -3170,14 +3193,21 @@ impl Editor {
             guard += 1;
             match p.para_offset() {
                 Some((para, off)) => {
-                    let Some(t) = self.index.para(&self.doc, para).map(UnitText::of) else { break };
+                    let t = match texts.entry(para) {
+                        std::collections::hash_map::Entry::Occupied(o) => o.into_mut(),
+                        std::collections::hash_map::Entry::Vacant(v) => {
+                            let Some(p) = self.index.para(&self.doc, para) else { break };
+                            v.insert(UnitText::of(p))
+                        }
+                    };
                     let end = match b.para_offset() {
                         Some((pb, ob)) if pb == para => ob,
                         _ => t.len(),
                     };
-                    let take = end.0.saturating_sub(off.0) as usize;
+                    let piece = t.between(off, end);
+                    let take = piece.chars().count();
                     let room = limit - chars;
-                    out.extend(t.text.chars().skip(off.0 as usize).take(take.min(room)).map(|c| match c {
+                    out.extend(piece.chars().take(take.min(room)).map(|c| match c {
                         '\u{2028}' => '\n',
                         '\u{c}' | '\u{FFFC}' => ' ',
                         c => c,

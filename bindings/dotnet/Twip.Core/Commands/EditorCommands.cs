@@ -1470,7 +1470,7 @@ public sealed class EditorCommands
     /// <summary>Writes a custom XML data part.</summary>
     /// <param name="namespace">The part's namespace.</param>
     /// <param name="xml">The XML (well-formed).</param>
-    /// <param name="itemId">The part's item id, when several share the namespace.</param>
+    /// <param name="itemId">The part's item id, when several share the namespace: a GUID, matched without case or braces.</param>
     /// <param name="ct">Cancels the command before it runs.</param>
     /// <returns>The part's item id, once the change has committed.</returns>
     public Task<string> WriteDataPartAsync(string @namespace, string xml, string? itemId = null, CancellationToken ct = default) => _session.RunAsync(EditorOperation.WriteDataPart(@namespace, xml, itemId), CommitValue.ItemId, ct);

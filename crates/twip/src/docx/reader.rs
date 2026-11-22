@@ -490,8 +490,14 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
     // Bound controls show their data.
     if !doc.data_parts.is_empty() {
         let (controls, parts) = (&mut doc.controls, super::binding::Parts::new(&doc.data_parts));
+        let cx = super::write::props::Cx::of_xml(&xml);
+        let res = &r.res;
+        let resolve = |p: &Paragraph, rpr: &str| {
+            let base = res.para_from_xml(p.style.direct.0.as_deref(), None, &cx).base;
+            Some(res.run_from_xml(&base, Some(rpr), &cx))
+        };
         let mut show = |p: &mut Paragraph| {
-            super::binding::refresh(p, controls, &parts);
+            super::binding::refresh(p, controls, &parts, &resolve);
         };
         for s in &mut doc.sections {
             super::fields::paras(&mut s.blocks, &mut show);

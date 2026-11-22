@@ -252,18 +252,22 @@ fn visible_where(inlines: &[Inline], keep: &dyn Fn(&Run) -> bool) -> String {
 fn visible_at(inlines: &[Inline], keep: &dyn Fn(&Run) -> bool, depth: usize) -> String {
     let mut out = String::new();
     for (i, s) in inlines.iter().zip(show_at(inlines, false, keep, depth)) {
-        if i.run().is_some_and(|r| !keep(r)) {
-            continue;
-        }
-        match (s, i) {
-            (Shown::Value(v), _) => out.push_str(&v),
-            (Shown::Itself, Inline::Text(t, _)) => out.push_str(t),
-            (Shown::Itself, Inline::Tab(_) | Inline::PTab(..)) => out.push('\t'),
-            (Shown::Itself, Inline::Sym { ch, .. }) => out.push(*ch),
-            _ => {}
+        if i.run().is_none_or(keep) {
+            push_shown(&mut out, s, i);
         }
     }
     out
+}
+
+/// Inline `i`'s text, shown as `s`, onto `out`.
+fn push_shown(out: &mut String, s: Shown, i: &Inline) {
+    match (s, i) {
+        (Shown::Value(v), _) => out.push_str(&v),
+        (Shown::Itself, Inline::Text(t, _)) => out.push_str(t),
+        (Shown::Itself, Inline::Tab(_) | Inline::PTab(..)) => out.push('\t'),
+        (Shown::Itself, Inline::Sym { ch, .. }) => out.push(*ch),
+        _ => {}
+    }
 }
 
 /// A new field's inlines: begin, its code, separator, its display text, end, all in `run`.
@@ -636,8 +640,29 @@ pub fn evaluate(doc: &mut Document, now: i64) {
     let variables = doc.settings.variables.clone();
     let resolver = doc.resolver.clone();
     let styles = resolver.as_deref().map(|r| &r.styles);
-    // Bookmark texts (to the bookmark's end, at most the end of its paragraph; codes left out) and every paragraph's
-    // style and text, in order.
+    // The bookmarks fields read (REF, NOTEREF, a bookmark's own name, a formula's names), without case: only theirs
+    // are found.
+    let mut wanted: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for s in &mut doc.sections {
+        paras(&mut s.blocks, &mut |p| {
+            for sp in spans(&p.inlines) {
+                match &p.inlines[sp.begin] {
+                    Inline::FieldBegin { kind: Some(FieldKind::Ref(n) | FieldKind::Bookmark(n) | FieldKind::NoteRef(n, _)), .. } => {
+                        wanted.insert(n.to_ascii_lowercase());
+                    }
+                    Inline::FieldBegin { kind: Some(FieldKind::Formula), .. } => {
+                        let code = code_text(&p.inlines, sp);
+                        wanted
+                            .extend(code.split(|c: char| !(c.is_alphanumeric() || c == '_')).filter(|w| !w.is_empty()).map(str::to_ascii_lowercase));
+                    }
+                    _ => {}
+                }
+            }
+        });
+    }
+    // Every bookmark's name, without case; the texts of those fields read (to the bookmark's end, at most the end of
+    // its paragraph; codes left out) and every paragraph's style and text, in order.
+    let mut names: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut marks: HashMap<String, String> = HashMap::new();
     // Each bookmark's first shown run, and its paragraph's style formatting.
     let mut sources: HashMap<String, (Run, Run)> = HashMap::new();
@@ -646,33 +671,16 @@ pub fn evaluate(doc: &mut Document, now: i64) {
     let mut notes: HashMap<String, (NoteKind, i64)> = HashMap::new();
     for s in &mut doc.sections {
         paras(&mut s.blocks, &mut |p| {
-            for (k, i) in p.inlines.iter().enumerate() {
-                if let Inline::Bookmark(name) = i
-                    && !name.starts_with('/')
-                {
-                    // A bookmark starting in a field's code starts at that field's result.
-                    let start = spans(&p.inlines).iter().rfind(|s| s.begin < k && k < s.code_end()).map_or(k, |s| s.code_end() + 1);
-                    let end = format!("/{name}");
-                    let stop = p.inlines[start.min(p.inlines.len())..]
-                        .iter()
-                        .position(|i| matches!(i, Inline::Bookmark(n) if *n == end))
-                        .map_or(p.inlines.len(), |e| start + e);
-                    let part = &p.inlines[start.min(stop)..stop];
-                    marks.entry(name.clone()).or_insert_with(|| visible(part));
-                    if let Some(n) = part.iter().find_map(|i| if let Inline::NoteRef { kind, id, .. } = i { Some((*kind, *id)) } else { None }) {
-                        notes.entry(name.to_ascii_lowercase()).or_insert(n);
-                    }
-                    let first = part.iter().zip(shown(part)).find_map(|(i, s)| match (i, s) {
-                        (Inline::Text(_, r), Shown::Itself) if !r.hidden => Some(r.clone()),
-                        _ => None,
-                    });
-                    if let (Some(r), Some(first)) = (resolver.as_deref(), first) {
-                        let mut base = r.styles.doc_rpr.clone();
-                        base.merge_level(&r.styles.chain_rpr(r.styles.paragraph_style(p.style.style_id.as_deref())));
-                        sources.entry(name.clone()).or_insert((first, r.run_style(&base)));
-                    }
+            bookmark_texts(p, &wanted, &mut names, &mut marks, &mut |name, first, note| {
+                if let Some(n) = note {
+                    notes.entry(name.to_string()).or_insert(n);
                 }
-            }
+                if let (Some(r), Some(first)) = (resolver.as_deref(), first) {
+                    let mut base = r.styles.doc_rpr.clone();
+                    base.merge_level(&r.styles.chain_rpr(r.styles.paragraph_style(p.style.style_id.as_deref())));
+                    sources.entry(name.to_string()).or_insert((first.clone(), r.run_style(&base)));
+                }
+            });
             order.push(style_hits(p));
         });
     }
@@ -709,18 +717,16 @@ pub fn evaluate(doc: &mut Document, now: i64) {
                     }
                     // Word's result for a bookmark the document doesn't have.
                     FieldKind::Ref(name) => {
-                        if let Some((src, src_style)) = sources.get(name) {
+                        let name = name.to_ascii_lowercase();
+                        if let Some((src, src_style)) = sources.get(&name) {
                             *run = with_direct(run, src, src_style);
                         }
-                        Some(marks.get(name).cloned().unwrap_or_else(|| "Error! Reference source not found.".into()))
+                        Some(marks.get(&name).cloned().unwrap_or_else(|| "Error! Reference source not found.".into()))
                     }
                     FieldKind::Bookmark(_) if !cached_empty => None,
-                    FieldKind::Bookmark(name) => Some(
-                        marks
-                            .iter()
-                            .find(|(k, _)| k.eq_ignore_ascii_case(name))
-                            .map_or_else(|| "Error! Bookmark not defined.".into(), |(_, t)| t.clone()),
-                    ),
+                    FieldKind::Bookmark(name) => {
+                        Some(marks.get(&name.to_ascii_lowercase()).cloned().unwrap_or_else(|| "Error! Bookmark not defined.".into()))
+                    }
                     // One with nested fields is evaluated at layout, on their values there.
                     FieldKind::If if nested => None,
                     FieldKind::If => if_field(&w),
@@ -751,7 +757,7 @@ pub fn evaluate(doc: &mut Document, now: i64) {
                     _ => None,
                 };
                 // A PAGEREF to a bookmark the document doesn't have shows its error text at layout.
-                let page_error = matches!(&*kind, FieldKind::PageRef(n) if !marks.contains_key(n));
+                let page_error = matches!(&*kind, FieldKind::PageRef(n) if !names.contains(&n.to_ascii_lowercase()));
                 if page_error && let Some(e) = &error_run {
                     *run = e.clone();
                 }
@@ -787,6 +793,123 @@ pub fn evaluate(doc: &mut Document, now: i64) {
     }
 }
 
+/// How much of a bookmark's text a field shows, in bytes.
+const MAX_BOOKMARK_TEXT: usize = 1 << 16;
+
+/// Paragraph `p`'s bookmarks: each name (without case) into `names`, and for each first start of a name in `wanted`,
+/// its text into `marks` and to `found` its first shown run and note reference: from its start (one in a field's code
+/// starts at that field's result) to its end, at most the end of the paragraph.
+fn bookmark_texts(
+    p: &Paragraph,
+    wanted: &std::collections::HashSet<String>,
+    names: &mut std::collections::HashSet<String>,
+    marks: &mut HashMap<String, String>,
+    found: &mut dyn FnMut(&str, Option<&Run>, Option<(NoteKind, i64)>),
+) {
+    if !p.inlines.iter().any(|i| matches!(i, Inline::Bookmark(_))) {
+        return;
+    }
+    let mut whole: Option<Whole> = None;
+    let mut ends: Option<HashMap<&str, Vec<usize>>> = None;
+    // Inlines the bookmarks cutting a field read on their own: linear in the paragraph
+    let mut budget = 16 * p.inlines.len() + 4096;
+    for (k, i) in p.inlines.iter().enumerate() {
+        let Inline::Bookmark(name) = i else { continue };
+        if name.starts_with('/') {
+            continue;
+        }
+        let key = name.to_ascii_lowercase();
+        names.insert(key.clone());
+        if !wanted.contains(&key) || marks.contains_key(&key) {
+            continue;
+        }
+        let whole = whole.get_or_insert_with(|| Whole::of(&p.inlines));
+        let start = whole.fields.iter().rfind(|s| s.begin < k && k < s.code_end()).map_or(k, |s| s.code_end() + 1);
+        let ends = ends.get_or_insert_with(|| {
+            let mut m: HashMap<&str, Vec<usize>> = HashMap::new();
+            for (e, i) in p.inlines.iter().enumerate() {
+                if let Inline::Bookmark(n) = i
+                    && let Some(n) = n.strip_prefix('/')
+                {
+                    m.entry(n).or_default().push(e);
+                }
+            }
+            m
+        });
+        let stop = ends.get(name.as_str()).and_then(|v| v.get(v.partition_point(|&e| e < start)).copied()).unwrap_or(p.inlines.len());
+        let start = start.min(stop);
+        let part = &p.inlines[start..stop];
+        let after = |v: &[usize]| v.get(v.partition_point(|&x| x < start)).copied().filter(|&x| x < stop);
+        let note = after(&whole.notes).and_then(|x| if let Inline::NoteRef { kind, id, .. } = &p.inlines[x] { Some((*kind, *id)) } else { None });
+        let cuts = !(whole.clean[start] && whole.clean[stop]);
+        let (mut text, first) = if cuts && budget >= part.len() {
+            budget -= part.len();
+            let first = part.iter().zip(shown(part)).find_map(|(i, s)| match (i, s) {
+                (Inline::Text(_, r), Shown::Itself) if !r.hidden => Some(r),
+                _ => None,
+            });
+            (visible(part), first)
+        } else {
+            // Past the budget: the whole paragraph
+            let text = &whole.text[whole.at[start]..whole.at[stop]];
+            (text[..floor_char(text, MAX_BOOKMARK_TEXT)].to_string(), after(&whole.firsts).and_then(|x| p.inlines[x].run()))
+        };
+        text.truncate(floor_char(&text, MAX_BOOKMARK_TEXT));
+        marks.insert(key.clone(), text);
+        found(&key, first, note);
+    }
+}
+
+/// The largest char boundary of `s` at most `n`.
+fn floor_char(s: &str, n: usize) -> usize {
+    (0..=n.min(s.len())).rev().find(|&k| s.is_char_boundary(k)).unwrap_or(0)
+}
+
+/// A paragraph's fields and its text as [`visible`] shows it: where each inline's text starts in it, whether each
+/// place between inlines is outside every field (a slice between two such places shows as that part of the text), its
+/// note references and its shown text that isn't hidden.
+struct Whole {
+    fields: Vec<FieldSpan>,
+    text: String,
+    at: Vec<usize>,
+    clean: Vec<bool>,
+    notes: Vec<usize>,
+    firsts: Vec<usize>,
+}
+
+impl Whole {
+    fn of(inlines: &[Inline]) -> Whole {
+        let fields = spans(inlines);
+        let mut text = String::new();
+        let mut at = Vec::with_capacity(inlines.len() + 1);
+        let (mut notes, mut firsts) = (Vec::new(), Vec::new());
+        for (k, (i, s)) in inlines.iter().zip(show_at(inlines, false, &|_| true, 0)).enumerate() {
+            at.push(text.len());
+            match (i, &s) {
+                (Inline::NoteRef { .. }, _) => notes.push(k),
+                (Inline::Text(_, r), Shown::Itself) if !r.hidden => firsts.push(k),
+                _ => {}
+            }
+            push_shown(&mut text, s, i);
+        }
+        at.push(text.len());
+        let mut across = vec![0i32; inlines.len() + 1];
+        for s in &fields {
+            across[s.begin + 1] += 1;
+            across[s.end + 1] -= 1;
+        }
+        let mut open = 0;
+        let clean = across
+            .iter()
+            .map(|d| {
+                open += d;
+                open == 0
+            })
+            .collect();
+        Whole { fields, text, at, clean, notes, firsts }
+    }
+}
+
 /// Every date block's date at `now`, in its picture: the user locale's names (en-US), whatever the run's language; at
 /// most 40 characters.
 fn date_blocks(doc: &mut Document, now: i64) {
@@ -817,8 +940,7 @@ pub fn rekind(doc: &mut Document, want: &dyn Fn(&FieldCode) -> Option<FieldKind>
             let code = parse(&code_text(&p.inlines, s));
             let Inline::FieldBegin { kind, value, lock, .. } = &mut p.inlines[s.begin] else { continue };
             let want = want(&code);
-            // A legacy form field's kind comes from its form data, not its code; `w:pgNum`'s from its element.
-            if *lock || *kind == want || matches!(kind, Some(FieldKind::CheckBox { .. } | FieldKind::DropDown | FieldKind::PgNum)) {
+            if *lock || *kind == want || kind.as_ref().is_some_and(FieldKind::is_not_from_code) {
                 continue;
             }
             back |= want.is_some() && want != Some(FieldKind::SubTemplate);
@@ -988,7 +1110,7 @@ fn formula_values(
                     let code = code_text(&p.inlines, sp);
                     let expr = code.trim_start().trim_start_matches('=');
                     let expr = expr.split('\\').next().unwrap_or_default();
-                    let bookmark = |n: &str| marks.iter().find(|(k, _)| k.eq_ignore_ascii_case(n)).map(|(_, v)| v.clone());
+                    let bookmark = |n: &str| marks.get(&n.to_ascii_lowercase()).cloned();
                     let env = formula::Env { decimal, list, table, bookmark: &bookmark };
                     let pic = parse(&code).switches.into_iter().find(|s| s.flag == '#').and_then(|s| s.arg);
                     let v = match formula::evaluate(expr, &env) {
@@ -1026,6 +1148,93 @@ fn formula_values(
     }
 }
 
+const MONTHS: [&str; 12] = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const DAYS: [&str; 7] = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+/// A date shown in date picture `picture` (as [`date_text`] writes it), in seconds since 1970 UTC: `None` for text the
+/// picture doesn't read, or a picture without a year, month and day.
+// shortcut: English month and day names, as `date` writes them.
+pub(crate) fn parse_date_text(picture: &str, text: &str) -> Option<i64> {
+    let pic: Vec<char> = picture.chars().collect();
+    let txt: Vec<char> = text.trim().chars().collect();
+    let (mut k, mut at) = (0, 0);
+    let (mut y, mut mo, mut d, mut h, mut mi, mut s, mut pm) = (None, None, None, 0, 0, 0, None);
+    let digits = |at: &mut usize, most: usize| -> Option<i64> {
+        let n = txt[*at..].iter().take(most).take_while(|c| c.is_ascii_digit()).count();
+        let v = txt[*at..*at + n].iter().collect::<String>().parse().ok()?;
+        *at += n;
+        Some(v)
+    };
+    let name = |at: &mut usize, names: &[&str], short: bool| -> Option<usize> {
+        let found = names.iter().enumerate().find_map(|(k, n)| {
+            let n: Vec<char> = if short { n.chars().take(3).collect() } else { n.chars().collect() };
+            let hit = txt.len() >= *at + n.len() && txt[*at..*at + n.len()].iter().zip(&n).all(|(a, b)| a.eq_ignore_ascii_case(b));
+            hit.then_some((k, n.len()))
+        })?;
+        *at += found.1;
+        Some(found.0)
+    };
+    while k < pic.len() {
+        let c = pic[k];
+        if c == '\'' {
+            let lit: Vec<char> = pic[k + 1..].iter().take_while(|&&x| x != '\'').copied().collect();
+            k += lit.len() + 2;
+            for l in lit {
+                (txt.get(at)? == &l).then_some(())?;
+                at += 1;
+            }
+            continue;
+        }
+        if pic[k..].iter().take(5).collect::<String>().eq_ignore_ascii_case("am/pm") {
+            let half: String = txt.get(at..at + 2)?.iter().collect();
+            pm = Some(match half.to_ascii_uppercase().as_str() {
+                "AM" => false,
+                "PM" => true,
+                _ => return None,
+            });
+            (k, at) = (k + 5, at + 2);
+            continue;
+        }
+        let n = pic[k..].iter().take_while(|&&x| x == c).count();
+        match (c, n) {
+            ('y', 3..) => y = Some(digits(&mut at, 4)?),
+            ('y', _) => y = Some(digits(&mut at, 2).map(|v| v + if v < 30 { 2000 } else { 1900 })?),
+            ('M', 4..) => mo = Some(name(&mut at, &MONTHS, false)? as i64 + 1),
+            ('M', 3) => mo = Some(name(&mut at, &MONTHS, true)? as i64 + 1),
+            ('M', _) => mo = Some(digits(&mut at, 2)?),
+            ('d', 4..) => _ = name(&mut at, &DAYS, false)?,
+            ('d', 3) => _ = name(&mut at, &DAYS, true)?,
+            ('d', _) => d = Some(digits(&mut at, 2)?),
+            ('H' | 'h', _) => h = digits(&mut at, 2)?,
+            ('m', _) => mi = digits(&mut at, 2)?,
+            ('s', _) => s = digits(&mut at, 2)?,
+            (c, _) if c.is_whitespace() => {
+                while txt.get(at).is_some_and(|c| c.is_whitespace()) {
+                    at += 1;
+                }
+            }
+            _ => {
+                for _ in 0..n {
+                    txt.get(at).filter(|t| t.eq_ignore_ascii_case(&c))?;
+                    at += 1;
+                }
+            }
+        }
+        k += n;
+    }
+    let (y, mo, d) = (y?, mo?, d?);
+    let leap = (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
+    let days = [31, if leap { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    if at != txt.len() || !(1..=12).contains(&mo) || d < 1 || d > days[(mo - 1) as usize] || h > 23 || mi > 59 || s > 59 {
+        return None;
+    }
+    let h = match pm {
+        Some(pm) if h <= 12 => h % 12 + if pm { 12 } else { 0 },
+        _ => h,
+    };
+    Some(super::review::days_from_civil(y, mo, d) * 86_400 + h * 3600 + mi * 60 + s)
+}
+
 /// `secs` in a date picture (`M/d/yyyy`).
 pub(crate) fn date_text(picture: &str, secs: i64) -> String {
     date(&format!("\\@ \"{picture}\""), secs)
@@ -1047,9 +1256,6 @@ fn date(code: &str, secs: i64) -> String {
     let y = yoe + era * 400 + i64::from(m <= 2);
     let wd = (days + 4).rem_euclid(7) as usize; // 1970-01-01 was a Thursday
     let (hh, mi, ss) = (sod / 3600, sod / 60 % 60, sod % 60);
-    const MONTHS: [&str; 12] =
-        ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-    const DAYS: [&str; 7] = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
     let pic = code.split("\\@").nth(1).map(|p| words(p).into_iter().next().unwrap_or_default()).unwrap_or_else(|| "M/d/yyyy".into());
     let mut out = String::new();
     let chars: Vec<char> = pic.chars().collect();
@@ -1126,8 +1332,14 @@ pub(crate) fn format_field(value: &str, code: &str, default: Option<&str>) -> St
     }
     if let Some(pic) = code.split("\\#").nth(1) {
         let pic = pic.trim().trim_matches('"');
-        let zeros = pic.chars().filter(|c| *c == '0').count();
-        return format!("{n:0zeros$}");
+        let zeros = pic.bytes().filter(|c| *c == b'0').count();
+        let (sign, digits) = (if n < 0 { "-" } else { "" }, n.unsigned_abs().to_string());
+        let pad = zeros.saturating_sub(sign.len() + digits.len());
+        let mut out = String::with_capacity(sign.len() + pad + digits.len());
+        out.push_str(sign);
+        out.extend(std::iter::repeat_n('0', pad));
+        out.push_str(&digits);
+        return out;
     }
     let text = match fmt.or(default) {
         Some("cardinalTextLower") => crate::docx::numbering::cardinal(n),

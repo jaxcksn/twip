@@ -32,6 +32,11 @@ fn perm(i: &Inline) -> Option<(bool, String, Option<String>)> {
     Some((start, attr("id")?, who))
 }
 
+/// `who` (a `w:edGrp` or `w:ed`) lets `author` edit.
+fn may(who: &Option<String>, author: &str) -> bool {
+    who.as_deref().is_some_and(|w| w.eq_ignore_ascii_case("everyone") || w.eq_ignore_ascii_case(author))
+}
+
 fn api_kind(k: ProtectionKind) -> Kind {
     match k {
         ProtectionKind::None => Kind::None,
@@ -124,14 +129,54 @@ impl Editor {
         if ranges.ranges.is_empty() {
             return false;
         }
-        let may = |w: &Option<String>| w.as_deref().is_some_and(|w| w.eq_ignore_ascii_case("everyone") || w.eq_ignore_ascii_case(author));
         let (ka, kb) = (self.index.order_key(a), self.index.order_key(b));
-        ranges.ranges.iter().zip(&ranges.keys).any(|((w, ..), (s, e))| may(w) && *s <= ka && kb <= *e)
+        ranges.ranges.iter().zip(&ranges.keys).any(|((w, ..), (s, e))| may(w, author) && *s <= ka && kb <= *e)
     }
 
     /// The selection is in a range `author` may edit.
     pub fn in_editable_range(&self, author: &str) -> bool {
         self.selection.ordered(&self.index).is_some_and(|(a, b)| self.in_editable_range_at(&a, &b, author))
+    }
+
+    /// Under enforced protection, text put in at the end of a range the author may edit goes before its `w:permEnd`
+    /// (the end is in the range), unless a range they may edit starts after that end.
+    pub(super) fn inside_editable_end(&self, s: Step) -> Step {
+        let Step::Text { para, range, with, edges } = s else { return s };
+        let enforced = self.doc.settings.protection.as_ref().is_some_and(|p| p.enforced && p.edit != ProtectionKind::None);
+        let inserts = range.start == range.end && edges == Edges::default() && with.iter().any(|i| i.units() > 0);
+        let under = (enforced && inserts).then(|| self.index.para(&self.doc, para)).flatten().and_then(|p| self.under_editable_end(p, range.start));
+        Step::Text { para, range, with, edges: Edges { under: under.unwrap_or(edges.under), ..edges } }
+    }
+
+    /// How many of the markers at unit `u` of `p` text put in there goes before: those from the first `w:permEnd` of a
+    /// range the author may edit; `None` when a range they may edit starts after it.
+    fn under_editable_end(&self, p: &crate::docx::Paragraph, u: Unit) -> Option<u32> {
+        let author: &str = &self.author.0;
+        let (mut at, mut under, mut seen) = (0u32, 0u32, false);
+        for i in &p.inlines {
+            let w = i.units() as u32;
+            if at > u.0 || (at == u.0 && w > 0) {
+                break;
+            }
+            if at == u.0 && !matches!(i, Inline::Text(..)) {
+                match perm(i) {
+                    Some((false, id, _)) if !seen => seen = may(&self.range_who(&id), author),
+                    Some((true, _, who)) if seen && may(&who, author) => return None,
+                    _ => {}
+                }
+                under += u32::from(seen);
+            }
+            at += w;
+        }
+        Some(under)
+    }
+
+    /// Who may edit range `id`: its `w:permStart`'s `w:edGrp` or `w:ed`. Not from [`Self::editable_ranges`], which is
+    /// found once per revision and a transaction's steps move.
+    fn range_who(&self, id: &str) -> Option<String> {
+        self.paras_in_order().into_iter().find_map(|para| {
+            self.index.para(&self.doc, para)?.inlines.iter().find_map(|i| perm(i).filter(|(start, o, _)| *start && o == id).and_then(|(.., w)| w))
+        })
     }
 
     /// `a` and `b` are in the same legacy form field or content control.

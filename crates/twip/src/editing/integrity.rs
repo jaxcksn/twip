@@ -353,8 +353,7 @@ fn elements(doc: &Document, idx: &DocIndex, out: &mut Vec<Violation>) {
                     for s in crate::docx::fields::spans(&p.inlines) {
                         if let Inline::FieldBegin { kind, .. } = &p.inlines[s.begin]
                             && *kind != Some(crate::docx::FieldKind::SubTemplate)
-                            // A legacy form field's kind is from its form data, `w:pgNum`'s from its element.
-                            && !matches!(kind, Some(crate::docx::FieldKind::CheckBox { .. } | crate::docx::FieldKind::DropDown | crate::docx::FieldKind::PgNum))
+                            && !kind.as_ref().is_some_and(crate::docx::FieldKind::is_not_from_code)
                             // None: a locked field, or one of the application's types.
                             && kind.is_some()
                             && *kind != crate::docx::fields::kind_at(&p.inlines, s)

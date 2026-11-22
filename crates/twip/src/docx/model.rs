@@ -421,6 +421,14 @@ pub enum FieldKind {
     Formula,
 }
 
+impl FieldKind {
+    /// Whether the kind is not its code's: a legacy form field's comes from its form data, `w:pgNum`'s from its
+    /// element.
+    pub fn is_not_from_code(&self) -> bool {
+        matches!(self, FieldKind::CheckBox { .. } | FieldKind::DropDown | FieldKind::PgNum)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Picture {
     pub w: f64,

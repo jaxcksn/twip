@@ -3,7 +3,7 @@
 //! paragraphs, sections, tables, rows and cells, each with the properties before the change. Comment and move ranges
 //! are zero-unit inline markers; comments and their threads live in [`Comments`].
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::rc::Rc;
 
 use super::model::{Block, Cell, ParaStyle, Paragraph, Raw, Row, Run, RunStyle, Section, SectionPage, Table, VMerge};
@@ -430,14 +430,16 @@ pub struct Comments {
 impl Comments {
     /// Each thread's first comment, then its replies, by date then id.
     pub fn threads(&self) -> Vec<(CommentId, Vec<CommentId>)> {
+        let roots = self.roots();
         let mut replies: HashMap<CommentId, Vec<&Comment>> = HashMap::new();
         for c in self.by_id.values() {
-            if let Some(p) = c.parent.filter(|p| self.by_id.contains_key(p)) {
-                replies.entry(self.root(p)).or_default().push(c);
+            if roots[&c.id] != c.id {
+                replies.entry(roots[&c.id]).or_default().push(c);
             }
         }
-        let roots = self.by_id.values().filter(|c| c.parent.is_none_or(|p| !self.by_id.contains_key(&p)));
-        roots
+        self.by_id
+            .values()
+            .filter(|c| roots[&c.id] == c.id)
             .map(|r| {
                 let mut rs = replies.remove(&r.id).unwrap_or_default();
                 rs.sort_by(|a, b| a.date.as_ref().and_then(|d| d.utc).cmp(&b.date.as_ref().and_then(|d| d.utc)).then(a.id.cmp(&b.id)));
@@ -446,22 +448,56 @@ impl Comments {
             .collect()
     }
 
-    /// The first comment of the thread holding `id` (cycles stop at the first repeat).
     /// How many threads there are, as [`Self::threads`] has them, without building them.
     pub fn thread_count(&self) -> usize {
-        self.by_id.values().filter(|c| c.parent.is_none_or(|p| !self.by_id.contains_key(&p))).count()
+        self.roots().iter().filter(|(c, r)| c == r).count()
     }
 
+    /// The first comment of the thread holding `id`.
     pub fn root(&self, id: CommentId) -> CommentId {
-        let (mut at, mut seen) = (id, Vec::new());
-        while let Some(p) = self.by_id.get(&at).and_then(|c| c.parent).filter(|p| self.by_id.contains_key(p)) {
-            if seen.contains(&p) {
-                break;
+        self.walk_up(id, &HashMap::new(), &mut Vec::new(), &mut HashSet::new())
+    }
+
+    /// Each comment's thread's first comment, in one pass over the reply links: a cycle's first comment is its
+    /// lowest id.
+    pub fn roots(&self) -> HashMap<CommentId, CommentId> {
+        let mut roots = HashMap::with_capacity(self.by_id.len());
+        let (mut path, mut on_path) = (Vec::new(), HashSet::new());
+        for &id in self.by_id.keys() {
+            if roots.contains_key(&id) {
+                continue;
             }
-            seen.push(at);
-            at = p;
+            let root = self.walk_up(id, &roots, &mut path, &mut on_path);
+            roots.extend(path.drain(..).map(|c| (c, root)));
+            on_path.clear();
         }
-        at
+        roots
+    }
+
+    /// Follows reply links from `id` to a comment without a parent, one in `known`, or around a cycle; `path` holds
+    /// the comments passed.
+    fn walk_up(
+        &self,
+        id: CommentId,
+        known: &HashMap<CommentId, CommentId>,
+        path: &mut Vec<CommentId>,
+        on_path: &mut HashSet<CommentId>,
+    ) -> CommentId {
+        let mut at = id;
+        loop {
+            if let Some(&r) = known.get(&at) {
+                return r;
+            }
+            if !on_path.insert(at) {
+                let from = path.iter().position(|c| *c == at).unwrap_or(0);
+                return path[from..].iter().copied().min().unwrap_or(at);
+            }
+            path.push(at);
+            match self.by_id.get(&at).and_then(|c| c.parent).filter(|p| self.by_id.contains_key(p)) {
+                Some(p) => at = p,
+                None => return at,
+            }
+        }
     }
 }
 
