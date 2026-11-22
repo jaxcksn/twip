@@ -1211,6 +1211,7 @@ impl Editor {
         for (footer, refs) in [(false, &s.headers), (true, &s.footers)] {
             for (slot, name) in refs.iter().enumerate() {
                 if let Some(name) = name
+                    && self.doc.stories.contains_key(name)
                     && !elsewhere(name)
                     && !own.iter().any(|(n, ..)| n == name)
                 {

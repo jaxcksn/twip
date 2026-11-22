@@ -30,6 +30,7 @@ mod sections;
 mod shapes;
 mod snap;
 mod steps;
+mod stories;
 mod stories_and_steps;
 mod style_model;
 mod styles;

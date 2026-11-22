@@ -107,6 +107,27 @@ fn refusals_have_their_codes() {
 }
 
 #[test]
+fn frame_lengths_are_checked() {
+    use crate::api::command::{FrameHeightRule, FrameProperties, FrameWidthRule};
+    let (mut engine, _) = engine();
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    let exact = |width: f64| FrameProperties { width_rule: FrameWidthRule::Exactly, width: Points(width), ..FrameProperties::default() };
+    for bad in [
+        exact(f64::INFINITY),
+        exact(f64::NAN),
+        exact(1e12),
+        FrameProperties { height_rule: FrameHeightRule::AtLeast, height: Points(-5.0), ..FrameProperties::default() },
+        FrameProperties { horizontal_distance: Points(-1.0), ..FrameProperties::default() },
+        FrameProperties { vertical: Points(f64::NEG_INFINITY), ..FrameProperties::default() },
+    ] {
+        assert_eq!(s.run(Command::SetFrame(bad.clone())).map_err(|e| e.code).err(), Some(ErrorCode::InvalidArgument), "{bad:?}");
+    }
+    // Not in a frame: the lengths pass and the command is unavailable.
+    assert_eq!(s.run(Command::SetFrame(exact(144.0))).map_err(|e| e.code).err(), Some(ErrorCode::Unavailable));
+}
+
+#[test]
 fn export_captures_the_revision_and_clears_modified() {
     let (mut engine, _) = engine();
     let id = engine.create_session(SessionOptions::default());

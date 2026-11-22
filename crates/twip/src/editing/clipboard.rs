@@ -438,12 +438,20 @@ impl Editor {
         // Every note's new id first, then the references renumbered once: renumbering one at a time would catch
         // references an earlier note was just given.
         let mut to_ids: HashMap<(NoteKind, i64), i64> = HashMap::new();
+        let pasted: std::collections::HashSet<(NoteKind, i64)> = refs.notes.iter().map(|n| (n.0, n.1)).collect();
+        let mut lo = [1; 2];
         for &(kind, id, _) in &refs.notes {
             let notes = if kind == NoteKind::Foot { &self.doc.footnotes } else { &self.doc.endnotes };
             let taken = |n: i64, map: &HashMap<(NoteKind, i64), i64>| notes.contains_key(&n) || map.iter().any(|(k, v)| k.0 == kind && *v == n);
             let to = if taken(id, &to_ids) {
                 let used = map_max(&to_ids, kind).max(notes.keys().copied().max().unwrap_or(0));
-                used.max(refs.notes.iter().filter(|n| n.0 == kind).map(|n| n.1).max().unwrap_or(0)) + 1
+                let used = used.max(refs.notes.iter().filter(|n| n.0 == kind).map(|n| n.1).max().unwrap_or(0));
+                let k = usize::from(kind == NoteKind::End);
+                let to = super::notes::free_note_id(used, lo[k], |n| taken(n, &to_ids) || pasted.contains(&(kind, n)));
+                if to <= used {
+                    lo[k] = to + 1;
+                }
+                to
             } else {
                 id
             };

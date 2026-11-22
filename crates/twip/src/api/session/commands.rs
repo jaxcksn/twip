@@ -237,6 +237,24 @@ impl Session {
                 let d = p.wrap_distance.map(|d| [d.top, d.bottom, d.left, d.right]).unwrap_or_default();
                 d.into_iter().try_for_each(|v| within("the distance", v.0, 0.0, MAX))
             }
+            C::SetFrame(f) => {
+                use crate::api::command::{FrameHeightRule, FrameWidthRule};
+                if f.width_rule == FrameWidthRule::Exactly {
+                    within("the width", f.width.0, 0.0, MAX)?;
+                }
+                if f.height_rule != FrameHeightRule::Auto {
+                    within("the height", f.height.0, 0.0, MAX)?;
+                }
+                within("the distance", f.horizontal_distance.0, 0.0, MAX)?;
+                within("the distance", f.vertical_distance.0, 0.0, MAX)?;
+                if f.horizontal_align.is_none() {
+                    within("the position", f.horizontal.0, -MAX, MAX)?;
+                }
+                if f.vertical_align.is_none() {
+                    within("the position", f.vertical.0, -MAX, MAX)?;
+                }
+                Ok(())
+            }
             C::SetObjectWrapOptions(w) => {
                 for v in [w.top, w.bottom, w.left, w.right] {
                     length("the distance", v, 0.0, MAX)?;
