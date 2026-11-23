@@ -164,7 +164,7 @@ fn controls_in_text_boxes_in_building_blocks_are_listed() {
 }
 
 #[test]
-fn a_table_in_a_text_box_in_a_deep_cell_is_refused_when_it_would_not_reopen() {
+fn a_table_in_a_text_box_in_a_deep_cell_is_refused_for_its_depth() {
     use crate::docx::Table;
     let doc = read("FX-NEST-2.docx");
     let Some(Block::Table(outer)) = doc.sections[0].blocks.iter().find(|b| matches!(b, Block::Table(_))).cloned() else { panic!("a table") };
@@ -193,9 +193,9 @@ fn a_table_in_a_text_box_in_a_deep_cell_is_refused_when_it_would_not_reopen() {
     f.text_box.as_mut().expect("box").blocks = vec![Block::Para(boxed)];
     let fid = FloatId(f.id);
     let reopens = |d: &Document| crate::docx::write::save(d).ok().is_some_and(|b| Editor::open(&b, fonts()).is_ok());
-    let build = |depth: usize| {
+    let build = |depth: usize, f: &crate::docx::Float| {
         let mut inner = para("deep");
-        inner.inlines.push(Inline::Float(f.clone(), run.clone()));
+        inner.inlines.push(Inline::Float(Box::new(f.clone()), run.clone()));
         let mut t = one_cell(vec![Block::Para(inner)]);
         for _ in 1..depth {
             t = one_cell(vec![Block::Para(para("l")), Block::Table(t), Block::Para(para(""))]);
@@ -204,12 +204,21 @@ fn a_table_in_a_text_box_in_a_deep_cell_is_refused_when_it_would_not_reopen() {
         d.sections[0].blocks = vec![Block::Para(para("Before.")), Block::Table(t), Block::Para(para("After."))];
         d
     };
-    let depth = (1..=29).rev().find(|&n| reopens(&build(n))).expect("some depth reopens");
-    let mut e = Editor::with_document(build(depth), fonts());
-    e.complete(fonts());
-    e.set_caret_for_benchmark(Selection::Caret(Position::text(StoryId::TextBox(fid), ParaId(boxed_id), Unit(0))));
-    let out = e.execute(Command::InsertTable(crate::api::command::TableSize { rows: 1, columns: 1 }), fonts());
-    assert!(!matches!(out, Outcome::Changed(_)) || reopens(e.document()), "an accepted edit saves a document that reopens (depth {depth})");
+    let depth = (1..=29).rev().find(|&n| reopens(&build(n, &f))).expect("some depth reopens");
+    assert!(depth > 1, "a shallow and a deep case: {depth}");
+    let insert = Command::InsertTable(crate::api::command::TableSize { rows: 1, columns: 1 });
+    for (depth, accepts) in [(1, true), (depth, false)] {
+        let mut e = Editor::with_document(build(depth, &f), fonts());
+        e.complete(fonts());
+        e.set_caret_for_benchmark(Selection::Caret(Position::text(StoryId::TextBox(fid), ParaId(boxed_id), Unit(0))));
+        let out = e.execute(insert.clone(), fonts());
+        if accepts {
+            assert!(matches!(out, Outcome::Changed(_)), "depth {depth}: {out:?}");
+        } else {
+            assert!(matches!(out, Outcome::Unchanged(why) if why.starts_with("tables nested deeper")), "depth {depth}: {out:?}");
+        }
+        assert!(reopens(e.document()), "depth {depth}: the document reopens");
+    }
 }
 
 #[test]

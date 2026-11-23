@@ -65,6 +65,49 @@ fn shown(begin: &mut Inline) {
     }
 }
 
+/// Where form field `f`'s span is in `inlines`.
+fn form_span(inlines: &[Inline], f: FieldId) -> Option<crate::docx::fields::FieldSpan> {
+    crate::docx::fields::spans(inlines).into_iter().find(|s| matches!(&inlines[s.begin], Inline::FieldBegin { id, .. } if *id == f))
+}
+
+/// The positions of form field `f`'s bookmark `name` in its paragraph's `inlines`: a start and the end after it, the
+/// pair overlapping the field.
+fn owned_bookmark(inlines: &[Inline], f: FieldId, name: &str) -> Option<(usize, usize)> {
+    if name.is_empty() {
+        return None;
+    }
+    let s = form_span(inlines, f)?;
+    let named = |i: &Inline, end: bool| {
+        let Inline::Bookmark(n) = i else { return false };
+        n.strip_prefix('/').map_or(!end && n.eq_ignore_ascii_case(name), |n| end && n.eq_ignore_ascii_case(name))
+    };
+    let start = inlines[..s.end].iter().rposition(|i| named(i, false))?;
+    let end = start + 1 + inlines[start + 1..].iter().position(|i| named(i, true))?;
+    (end > s.begin).then_some((start, end))
+}
+
+/// Renames form field `f`'s bookmark (`owned`, its positions in `inlines`) to `new`: a field without one gets one
+/// around it, and an empty name removes it.
+fn rename_form_bookmark(f: FieldId, inlines: &mut Vec<Inline>, owned: Option<(usize, usize)>, new: &str) {
+    match owned {
+        Some((start, end)) if new.is_empty() => {
+            inlines.remove(end);
+            inlines.remove(start);
+        }
+        Some((start, end)) => {
+            inlines[start] = Inline::Bookmark(new.to_string());
+            inlines[end] = Inline::Bookmark(format!("/{new}"));
+        }
+        None if new.is_empty() => {}
+        None => {
+            if let Some(s) = form_span(inlines, f) {
+                inlines.insert(s.end + 1, Inline::Bookmark(format!("/{new}")));
+                inlines.insert(s.begin, Inline::Bookmark(new.to_string()));
+            }
+        }
+    }
+}
+
 impl Editor {
     /// The form field `id` names, else the one at the selection: its id and paragraph.
     fn form_field(&self, id: Option<&crate::api::value::ElementId>) -> Option<(FieldId, ParaId)> {
@@ -97,73 +140,37 @@ impl Editor {
         let (old, new) = (form.data.name.clone(), data.name.clone());
         Rc::make_mut(form).data = data;
         shown(begin);
-        let renames = if old == new {
-            Vec::new()
-        } else {
-            if let Err(why) = self.form_name_free(f, &old, &new) {
+        if old != new {
+            let owned = owned_bookmark(&inlines, f, &old);
+            if let Err(why) = self.form_name_free(f, owned.map(|_| old.as_str()), &new) {
                 return Outcome::invalid(why);
             }
-            self.rename_form_bookmark(f, para, &mut inlines, &old, &new)
-        };
+            rename_form_bookmark(f, &mut inlines, owned, &new);
+        }
         let mut tx = self.begin(label);
-        let steps = renames.into_iter().map(|(para, inlines)| Step::Restyle { para, inlines }).chain([Step::Restyle { para, inlines }]);
-        for s in steps {
-            if self.step(&mut tx, s).is_err() {
-                self.abort(tx);
-                return Outcome::Unchanged("stale field");
-            }
+        if self.step(&mut tx, Step::Restyle { para, inlines }).is_err() {
+            self.abort(tx);
+            return Outcome::Unchanged("stale field");
         }
         self.commit(tx, None, fonts)
     }
 
-    /// Whether `new` can name form field `f` (now `old`): no other form field has it, nor a bookmark but its own.
-    fn form_name_free(&self, f: FieldId, old: &str, new: &str) -> Result<(), &'static str> {
+    /// Whether `new` can name form field `f`: no other form field has it, nor a bookmark but its own (`own`).
+    fn form_name_free(&self, f: FieldId, own: Option<&str>, new: &str) -> Result<(), &'static str> {
         for p in self.index.para_ids().filter_map(|para| self.index.para(&self.doc, para)) {
             for i in &p.inlines {
                 match i {
                     Inline::FieldBegin { id, form: Some(form), .. } if *id != f && form.data.name.eq_ignore_ascii_case(new) => {
                         return Err("another form field has the name");
                     }
-                    Inline::Bookmark(n) if n.eq_ignore_ascii_case(new) && !n.eq_ignore_ascii_case(old) => return Err("a bookmark has the name"),
+                    Inline::Bookmark(n) if n.eq_ignore_ascii_case(new) && !own.is_some_and(|o| n.eq_ignore_ascii_case(o)) => {
+                        return Err("a bookmark has the name");
+                    }
                     _ => {}
                 }
             }
         }
         Ok(())
-    }
-
-    /// Renames form field `f`'s bookmark from `old` to `new`, in `inlines` (paragraph `para`'s, the field's) and the
-    /// returned paragraphs; a field without one gets one around it.
-    fn rename_form_bookmark(&self, f: FieldId, para: ParaId, inlines: &mut Vec<Inline>, old: &str, new: &str) -> Vec<(ParaId, Vec<Inline>)> {
-        let rename = |i: &mut Inline| {
-            let Inline::Bookmark(n) = i else { return false };
-            let (end, name) = n.strip_prefix('/').map_or((false, n.as_str()), |n| (true, n));
-            if old.is_empty() || !name.eq_ignore_ascii_case(old) {
-                return false;
-            }
-            *n = if end { format!("/{new}") } else { new.to_string() };
-            true
-        };
-        let mut found = inlines.iter_mut().fold(false, |found, i| rename(i) | found);
-        let mut out = Vec::new();
-        for other in self.index.para_ids().filter(|p| *p != para) {
-            let Some(p) = self.index.para(&self.doc, other) else { continue };
-            if !p.inlines.iter().any(|i| matches!(i, Inline::Bookmark(n) if n.trim_start_matches('/').eq_ignore_ascii_case(old))) {
-                continue;
-            }
-            let mut v = p.inlines.clone();
-            found |= v.iter_mut().fold(false, |found, i| rename(i) | found);
-            out.push((other, v));
-        }
-        if !found
-            && !new.is_empty()
-            && let Some(s) =
-                crate::docx::fields::spans(inlines).into_iter().find(|s| matches!(&inlines[s.begin], Inline::FieldBegin { id, .. } if *id == f))
-        {
-            inlines.insert(s.end + 1, Inline::Bookmark(format!("/{new}")));
-            inlines.insert(s.begin, Inline::Bookmark(new.to_string()));
-        }
-        out
     }
 
     pub(in crate::editing) fn insert_form_field(&mut self, t: FormFieldType, fonts: &Fonts) -> Outcome {

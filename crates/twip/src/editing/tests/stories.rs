@@ -234,6 +234,19 @@ fn edit_header_replaces_a_reference_to_a_missing_part() {
 }
 
 #[test]
+fn a_new_header_leaves_another_sections_missing_part_its_name() {
+    let body = format!("{}{}<w:sectPr>{HEADER_REF}{SEC}</w:sectPr>", sect_p("One", HEADER_REF), p("Two"));
+    let mut e = package(&body, Some(None));
+    let missing = Some("word/header1.xml");
+    assert!(e.document().sections.iter().all(|s| s.headers[0].as_deref() == missing), "both refer to the missing part");
+    let out = e.execute(Command::EditHeader, fonts());
+    assert!(in_header(&e), "{out:?}");
+    let name = e.document().sections[0].headers[0].clone().expect("a header");
+    assert_ne!(Some(name.as_str()), missing, "a new part's own name");
+    assert_eq!(e.document().sections[1].headers[0].as_deref(), missing, "the other section keeps its reference");
+}
+
+#[test]
 fn remove_header_over_a_missing_part_gives_an_empty_one() {
     let mut e = package(&format!("{}<w:sectPr>{HEADER_REF}{SEC}</w:sectPr>", p("One")), Some(None));
     let before = e.document().sections[0].headers.clone();
@@ -324,6 +337,46 @@ fn converted_notes_take_the_other_kinds_styles() {
 }
 
 #[test]
+fn converting_a_note_restyles_its_cells_and_a_single_quoted_reference() {
+    let mut e = open("FX-TEXT.docx");
+    e.complete(fonts());
+    let body = para_id(&e, 1);
+    caret(&mut e, StoryId::Body, body, 3);
+    e.execute(Command::InsertFootnote, fonts());
+    let Some(Block::Para(note)) = e.doc.footnotes[&1].first().cloned() else { panic!("a note paragraph") };
+    let grid = Editor::open(&super::blank_body(&table("x")), fonts()).expect("opens");
+    let Some(Block::Table(mut t)) = grid.document().sections[0].blocks.iter().find(|b| matches!(b, Block::Table(_))).cloned() else {
+        panic!("a table")
+    };
+    t.rows[0].cells[0].blocks = vec![Block::Para(crate::docx::Paragraph { id: crate::docx::next_para_id(), ..note })];
+    e.doc.footnotes.get_mut(&1).expect("note 1").push(Block::Table(t));
+    let Some(Block::Para(q)) = e.doc.sections[0].blocks.iter_mut().find(|b| matches!(b, Block::Para(q) if q.id == body.0)) else {
+        panic!("no paragraph")
+    };
+    for i in &mut q.inlines {
+        if let Inline::NoteRef { run, .. } = i {
+            let mut r = (**run).clone();
+            r.direct = crate::docx::Raw(Some(r#"<w:rPr><w:rStyle w:val='FootnoteReference'/></w:rPr>"#.into()));
+            *run = std::rc::Rc::new(r);
+        }
+    }
+    e.index = super::super::index::DocIndex::build_with_parts(&e.doc, e.index.parts());
+    e.execute(Command::ConvertNotes(json(serde_json::json!("footnotesToEndnotes"))), fonts());
+    let blocks = e.document().endnotes.values().next().expect("an endnote");
+    let Some(Block::Table(t)) = blocks.iter().find(|b| matches!(b, Block::Table(_))) else { panic!("the note's table") };
+    let Some(Block::Para(cell)) = t.rows[0].cells[0].blocks.first() else { panic!("the cell's paragraph") };
+    assert_eq!(cell.style.style_id.as_deref(), Some("EndnoteText"), "the cell's paragraph");
+    assert!(cell.inlines.iter().any(|i| matches!(i, Inline::NoteMark(crate::docx::NoteKind::End, ..))), "the cell's mark");
+    let reference = e.index().para(e.document(), body).and_then(|p| {
+        p.inlines.iter().find_map(|i| match i {
+            Inline::NoteRef { run, .. } => Some(run.clone()),
+            _ => None,
+        })
+    });
+    assert!(reference.is_some_and(|r| r.direct.0.as_deref().is_some_and(|x| x.contains("EndnoteReference"))), "the reference's run");
+}
+
+#[test]
 fn a_note_id_at_the_limit_does_not_overflow() {
     let mut e = open("FX-TEXT.docx");
     e.complete(fonts());
@@ -401,4 +454,61 @@ fn remove_frame_keeps_a_frame_read_after_its_anchor_after_it() {
     let t = texts(&e);
     let (a, framed) = (t.iter().position(|x| x == "AAA"), t.iter().position(|x| x == "FRAMED"));
     assert!(a.is_some() && framed.is_some() && a < framed, "{t:?}");
+}
+
+fn frame_p(y: u32, t: &str) -> String {
+    format!(
+        r#"<w:p><w:pPr><w:framePr w:w="2000" w:wrap="around" w:vAnchor="page" w:hAnchor="page" w:x="100" w:y="{y}"/></w:pPr><w:r><w:t>{t}</w:t></w:r><w:r><w:br w:type="page"/></w:r><w:r><w:t>{t}2</w:t></w:r></w:p>"#
+    )
+}
+
+/// The ids of the frames anchored in the body, in their anchors' order.
+fn frames(e: &Editor) -> Vec<FloatId> {
+    e.document().sections[0]
+        .blocks
+        .iter()
+        .filter_map(|b| if let Block::Para(q) = b { Some(q) } else { None })
+        .flat_map(|q| q.inlines.iter())
+        .filter_map(|i| if let Inline::Float(f, _) = i { Some(FloatId(f.id)) } else { None })
+        .collect()
+}
+
+fn remove_frame(e: &mut Editor, f: FloatId) {
+    e.set_caret_for_benchmark(Selection::Object(ObjectRef::Floating(f)));
+    assert!(matches!(e.execute(Command::RemoveFrame, fonts()), Outcome::Changed(_)));
+}
+
+#[test]
+fn removed_frames_sharing_an_anchor_keep_their_order() {
+    let after = format!("{}{}{}{}<w:sectPr>{SEC}</w:sectPr>", p("AAA"), frame_p(2000, "ONE"), frame_p(4000, "TWO"), table("Cell"));
+    let before = format!("{}{}{}{}<w:sectPr>{SEC}</w:sectPr>", p("AAA"), frame_p(2000, "ONE"), frame_p(4000, "TWO"), p("BBB"));
+    for (body, want) in [(&after, ["AAA", "ONE", "TWO"]), (&before, ["ONE", "TWO", "BBB"])] {
+        for reverse in [false, true] {
+            let mut e = package(body, None);
+            let mut fs = frames(&e);
+            assert_eq!(fs.len(), 2, "two frames");
+            if reverse {
+                fs.reverse();
+            }
+            for f in fs {
+                remove_frame(&mut e, f);
+            }
+            let t: Vec<String> = texts(&e).into_iter().filter(|t| want.iter().any(|w| t.starts_with(w))).collect();
+            assert_eq!(t.iter().map(|t| &t[..3]).collect::<Vec<_>>(), want, "reverse {reverse}: {t:?}");
+        }
+    }
+}
+
+#[test]
+fn a_removed_frames_paragraphs_join_the_flow_with_the_caret_in_them() {
+    let body = format!("{}{}{}<w:sectPr>{SEC}</w:sectPr>", p("AAA"), frame_p(2000, "ONE"), table("Cell"));
+    let mut e = package(&body, None);
+    let f = frames(&e)[0];
+    remove_frame(&mut e, f);
+    let (para, _) = e.selection().focus().and_then(|f| f.para_offset()).expect("a caret");
+    let q = e.index().para(e.document(), para).expect("its paragraph");
+    assert!(UnitText::of(q).text.starts_with("ONE"), "{:?}", UnitText::of(q).text);
+    assert!(!q.style.in_frame, "out of the frame");
+    e.complete(fonts());
+    assert!(e.snapshot().pages().len() >= 2, "its page break breaks the page");
 }

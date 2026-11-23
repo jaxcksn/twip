@@ -125,6 +125,28 @@ fn renaming_a_form_field_renames_its_bookmark() {
 }
 
 #[test]
+fn renaming_a_form_field_leaves_another_bookmark_of_its_name() {
+    let field = r#"<w:p><w:r><w:fldChar w:fldCharType="begin"><w:ffData><w:name w:val="Text1"/><w:enabled/><w:textInput/></w:ffData></w:fldChar></w:r><w:r><w:instrText xml:space="preserve"> FORMTEXT </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>abc</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>"#;
+    let other =
+        r#"<w:p><w:r><w:t>x </w:t></w:r><w:bookmarkStart w:id="7" w:name="Text1"/><w:r><w:t>other</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p>"#;
+    let mut e = Editor::open(&blank_body(&format!("{field}{other}")), fonts()).expect("opens");
+    let f = e.document().sections[0]
+        .blocks
+        .iter()
+        .filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None })
+        .flat_map(|p| p.inlines.iter())
+        .find_map(|i| if let Inline::FieldBegin { id, form: Some(_), .. } = i { Some(*id) } else { None })
+        .expect("a form field");
+    let id = Some(super::super::merge::api_id(crate::docx::ElementId::Field(f)));
+    let out = e.execute(Command::SetFormField(FormFieldChange { id, name: Some("Customer".into()), ..Default::default() }), fonts());
+    assert!(matches!(out, super::super::commands::Outcome::Changed(_)), "{out:?}");
+    let other = e.bookmark("Text1").expect("the other bookmark stays");
+    assert_eq!(other.start.para, para_id(&e, 1), "where it was");
+    let own = e.bookmark("Customer").expect("the field's own bookmark");
+    assert_eq!((own.start.para, own.start.unit), (para_id(&e, 0), Unit(0)), "around the field");
+}
+
+#[test]
 fn a_form_fields_name_is_unique() {
     with_session(None, |s| {
         s.run(Command::InsertFormField(FormFieldType::Text)).expect("inserts");

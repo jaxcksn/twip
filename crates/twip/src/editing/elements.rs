@@ -249,39 +249,38 @@ fn clip(s: String) -> String {
     if s.chars().count() <= DISPLAY { s } else { s.chars().take(DISPLAY).collect() }
 }
 
-fn cell_text(blocks: &[Block]) -> String {
+/// The paragraphs' text joined by `sep`, its first `DISPLAY` characters.
+fn joined<'a>(paras: impl Iterator<Item = &'a crate::docx::Paragraph>, sep: char) -> String {
     let mut out = String::new();
-    for (k, p) in blocks.iter().filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None }).enumerate() {
-        if out.len() > DISPLAY {
+    let mut left = DISPLAY;
+    for (k, p) in paras.enumerate() {
+        if k > 0 {
+            out.push(sep);
+            left -= 1;
+        }
+        let text = crate::docx::fields::text(p);
+        let n = text.chars().count();
+        if n >= left {
+            out.extend(text.chars().take(left));
             break;
         }
-        if k > 0 {
-            out.push(' ');
-        }
-        out.push_str(&crate::docx::fields::text(p));
+        out.push_str(&text);
+        left -= n;
     }
-    clip(out)
+    out
+}
+
+fn cell_text(blocks: &[Block]) -> String {
+    joined(blocks.iter().filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None }), ' ')
 }
 
 fn member_text(blocks: &[Block], c: crate::docx::ControlId) -> String {
-    let mut out = String::new();
-    let mut first = true;
-    for b in blocks {
-        match b {
-            Block::Para(p) if p.controls.contains(&c) => {
-                if !std::mem::take(&mut first) {
-                    out.push('\n');
-                }
-                out.push_str(&crate::docx::fields::text(p));
-            }
-            Block::Table(t) if t.controls.contains(&c) => {}
-            _ => break,
-        }
-        if out.len() > DISPLAY {
-            break;
-        }
-    }
-    clip(out)
+    let members = blocks.iter().map_while(|b| match b {
+        Block::Para(p) if p.controls.contains(&c) => Some(Some(p)),
+        Block::Table(t) if t.controls.contains(&c) => Some(None),
+        _ => None,
+    });
+    joined(members.flatten(), '\n')
 }
 
 pub fn enumerate(doc: &Document, idx: &DocIndex, filter: &Filter) -> Vec<Element> {

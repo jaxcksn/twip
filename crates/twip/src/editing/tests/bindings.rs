@@ -218,6 +218,24 @@ fn filling_a_bound_date_writes_its_date() {
 }
 
 #[test]
+fn a_tracked_replacement_in_a_date_reads_only_its_current_text() {
+    let date = r#"<w:date w:fullDate="2026-01-01T00:00:00Z"><w:dateFormat w:val="M/d/yyyy"/><w:lid w:val="en-US"/><w:storeMappedDataAs w:val="dateTime"/><w:calendar w:val="gregorian"/></w:date>"#;
+    for track in [false, true] {
+        let mut e = with_controls(&sdt("C", 5, date, "<w:r><w:t>1/1/2026</w:t></w:r>"));
+        let c = control(&e, "C").0;
+        if track {
+            e.execute(Command::SetTrackChanges(true), fonts());
+        }
+        let para = super::para_id(&e, 0);
+        let at = |u| super::super::position::Position::text(super::super::position::StoryId::Body, para, crate::layout::Unit(u));
+        e.selection = super::super::selection::Selection::range(at(7), at(8), super::super::selection::Granularity::Char);
+        run(&mut e, Command::InsertText("2".into()));
+        let xml = e.document().controls[&c].props.kind_xml.clone().unwrap_or_default();
+        assert!(xml.contains(r#"w:fullDate="2026-02-01T00:00:00Z""#), "tracked {track}: {xml}");
+    }
+}
+
+#[test]
 fn typing_beside_a_date_keeps_its_date() {
     let date = r#"<w:date w:fullDate="2025-03-05T00:00:00Z"><w:dateFormat w:val="d MMMM yyyy"/><w:lid w:val="fr-FR"/><w:storeMappedDataAs w:val="dateTime"/><w:calendar w:val="gregorian"/></w:date>"#;
     let mut e = with_controls(&sdt("C", 5, date, "<w:r><w:t>5 mars 2025</w:t></w:r>"));

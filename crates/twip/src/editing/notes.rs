@@ -43,7 +43,7 @@ fn note_styles(kind: NoteKind) -> (&'static str, &'static str) {
 fn restyled_ref(res: &Resolver, cx: &Cx, base: &RunProps, run: &Run, from: NoteKind, to: NoteKind) -> Option<Run> {
     let (old, new) = (note_styles(from).0, note_styles(to).0);
     let mut p = Props::parse(run.direct.0.as_deref(), "rPr", cx);
-    if !p.get("rStyle").is_some_and(|s| s.contains(&format!("\"{old}\""))) {
+    if p.get("rStyle").and_then(|s| crate::docx::write::props::attr_of(s, "val")).as_deref() != Some(old) {
         return None;
     }
     let w = &cx.w;
@@ -87,6 +87,16 @@ pub(super) fn free_note_id(max: i64, lo: i64, taken: impl Fn(i64) -> bool) -> i6
     match max.max(0).checked_add(1).filter(|&n| n <= i64::from(i32::MAX)) {
         Some(n) => n,
         None => (lo.max(1)..).find(|&n| !taken(n)).unwrap_or(1),
+    }
+}
+
+/// Each paragraph of `blocks`, its tables' cells' included.
+fn each_para(blocks: &mut [Block], f: &mut dyn FnMut(&mut Paragraph)) {
+    for b in blocks {
+        match b {
+            Block::Para(p) => f(p),
+            Block::Table(t) => t.rows.iter_mut().flat_map(|r| r.cells.iter_mut()).for_each(|c| each_para(&mut c.blocks, f)),
+        }
     }
 }
 
@@ -349,19 +359,17 @@ impl Editor {
         }
         for (from, _, to_id, mut body) in moves {
             let to = other(from);
-            for b in &mut body {
-                if let Block::Para(p) = b {
-                    for i in &mut p.inlines {
-                        if let Inline::NoteMark(k, n, _) = i {
-                            (*k, *n) = (to, to_id);
-                        }
-                    }
-                    // Its other runs: re-resolved on settle
-                    if res.as_ref().is_some_and(|res| restyle_note_para(res, &cx, p, from, to)) {
-                        tx.stale_paras.push(ParaId(p.id));
+            each_para(&mut body, &mut |p| {
+                for i in &mut p.inlines {
+                    if let Inline::NoteMark(k, n, _) = i {
+                        (*k, *n) = (to, to_id);
                     }
                 }
-            }
+                // Its other runs: re-resolved on settle
+                if res.as_ref().is_some_and(|res| restyle_note_para(res, &cx, p, from, to)) {
+                    tx.stale_paras.push(ParaId(p.id));
+                }
+            });
             if self.step(&mut tx, Step::Note { kind: to, id: to_id, blocks: Some(body) }).is_err() {
                 self.abort(tx);
                 return Outcome::Unchanged("a note can't move");

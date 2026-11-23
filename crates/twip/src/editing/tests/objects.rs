@@ -152,6 +152,46 @@ fn a_dragged_size_replaces_a_relative_one() {
 }
 
 #[test]
+fn resizing_an_aligned_float_keeps_its_fixed_edges() {
+    for (align, fixed) in [("right", false), ("center", false), ("left", true)] {
+        let mut e = placed(&format!(r#"<wp:positionH relativeFrom="margin"><wp:align>{align}</wp:align></wp:positionH>"#));
+        let f = FloatId(all_floats(&e)[0]);
+        let (page, r) = e.float_box(f, fonts()).expect("drawn");
+        let out = e.place_float(f, page, r, [r[0], r[1], r[2] + 30.0, r[3]], "Resize Object", fonts());
+        assert!(changed(&out), "{out:?}");
+        let after = drawn(&mut e)[0].0;
+        assert_eq!((after[0], after[2] - after[0]), ((r[0] * 10.0).round() as i64, 1300), "{align}: {r:?} → {after:?}");
+        let n = e.float_of(f).expect("the float");
+        assert_eq!(n.h_align.is_some(), fixed, "{align}: {:?}", n.h_align);
+    }
+}
+
+#[test]
+fn moving_a_column_float_in_a_continuous_section_uses_its_columns() {
+    let s = sp(0, 0, 100, 100, "rect", "", "0000FF");
+    let a = anchor(72, 300, 100, 100, 1, false, 1, &s).replace(
+        r#"<wp:positionH relativeFrom="page"><wp:posOffset>914400</wp:posOffset></wp:positionH>"#,
+        r#"<wp:positionH relativeFrom="column"><wp:align>center</wp:align></wp:positionH>"#,
+    );
+    let first = r#"<w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:pPr><w:r><w:t>One</w:t></w:r></w:p>"#;
+    let body = format!(r#"{first}<w:p><w:r><w:t>Two</w:t></w:r><w:r><w:br w:type="column"/></w:r></w:p><w:p><w:r><w:t>Three</w:t></w:r>{a}</w:p>"#);
+    let b = with_document(&bytes(&body).expect("a package"), |d| {
+        d.replace("<w:sectPr><w:pgSz", r#"<w:sectPr><w:type w:val="continuous"/><w:cols w:num="2" w:space="720"/><w:pgSz"#)
+    });
+    let mut e = Editor::open(&b, fonts()).expect("opens");
+    e.complete(fonts());
+    assert_eq!(e.document().sections.len(), 2);
+    assert_eq!(e.snapshot().pages().len(), 1, "one page");
+    let f = FloatId(all_floats(&e)[0]);
+    let (page, r) = e.float_box(f, fonts()).expect("drawn");
+    assert!(r[0] > 306.0, "in the second column: {r:?}");
+    let out = e.place_float(f, page, r, [r[0] + 10.0, r[1], r[2] + 10.0, r[3]], "Move Object", fonts());
+    assert!(changed(&out), "{out:?}");
+    let after = drawn(&mut e)[0].0;
+    assert!((after[0] - (r[0] * 10.0).round() as i64 - 100).abs() <= 5, "moved by 10pt: {r:?} → {after:?}");
+}
+
+#[test]
 fn grouping_floats_anchored_a_b_a_makes_one_group() {
     let r = |x, y, id| anchor(x, y, 60, 60, id, false, id, &sp(0, 0, 60, 60, "rect", "", "FF0000"));
     let body = format!("<w:p><w:r><w:t>A</w:t></w:r>{}{}</w:p><w:p><w:r><w:t>B</w:t></w:r>{}</w:p>", r(72, 300, 1), r(72, 450, 3), r(300, 300, 2));
@@ -224,6 +264,51 @@ fn delete_removes_every_selected_float_in_one_step() {
     assert_eq!(all_floats(&e).len(), 0);
     e.execute(Command::Undo, fonts());
     assert_eq!(all_floats(&e).len(), 2, "one undo restores both");
+}
+
+#[test]
+fn deleting_selected_floats_needs_each_anchor_editable() {
+    use crate::api::command::{DeleteOptions, DocumentProtection, ProtectionKind};
+    let a = anchor(100, 300, 100, 100, 1, false, 5, &sp(0, 0, 100, 100, "rect", "", "FF0000"));
+    let b = anchor(260, 340, 100, 60, 2, false, 6, &sp(0, 0, 100, 60, "ellipse", "", "00FF00"));
+    let open = |x: &str| format!(r#"<w:p><w:permStart w:id="1" w:edGrp="everyone"/><w:r><w:t>In</w:t></w:r>{x}<w:permEnd w:id="1"/></w:p>"#);
+    let apart = format!("{}<w:p><w:r><w:t>Out</w:t></w:r>{b}</w:p>", open(&a));
+    let together = open(&format!("{a}{b}"));
+    let delete = Command::Delete(DeleteOptions { direction: crate::api::value::Direction::Forward, unit: None });
+    // Object commands stay refused in an editable range; the text Delete deletes what's selected there.
+    for (body, deletes, commands) in [(&apart, false, vec![Command::DeleteObject, delete.clone()]), (&together, true, vec![delete])] {
+        for command in commands {
+            let mut e = editor(body);
+            let read_only = DocumentProtection { kind: Some(ProtectionKind::ReadOnly), enforce: Some(true), ..Default::default() };
+            assert!(changed(&e.execute(Command::SetDocumentProtection(read_only), fonts())));
+            let fs: Vec<FloatId> = all_floats(&e).into_iter().map(FloatId).collect();
+            e.set_selection(Selection::Object(ObjectRef::Floating(fs[0])));
+            e.object_also = Some((fs[0], vec![fs[1]]));
+            let out = e.execute(command.clone(), fonts());
+            assert_eq!(changed(&out), deletes, "{command:?}: {out:?}");
+            assert_eq!(all_floats(&e).len(), if deletes { 0 } else { 2 }, "{command:?}");
+            if deletes {
+                e.execute(Command::Undo, fonts());
+                assert_eq!(all_floats(&e).len(), 2, "one undo restores both");
+            }
+        }
+    }
+}
+
+#[test]
+fn deleting_a_stale_group_child_keeps_the_group() {
+    let group = format!(
+        r#"<wpg:wgp><wpg:cNvGrpSpPr/><wpg:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{w}" cy="{w}"/><a:chOff x="0" y="0"/><a:chExt cx="{w}" cy="{w}"/></a:xfrm></wpg:grpSpPr>{}</wpg:wgp>"#,
+        sp(0, 0, 80, 80, "rect", "", "0000FF"),
+        w = 80 * PT,
+    );
+    let mut e = editor(&format!("<w:p><w:r><w:t>Text</w:t></w:r>{}</w:p>", anchor(72, 300, 80, 80, 1, false, 1, &group)));
+    let f = FloatId(all_floats(&e)[0]);
+    select(&mut e, f.0);
+    e.object_child = Some((f, vec![1]));
+    let out = e.execute(Command::DeleteObject, fonts());
+    assert!(!changed(&out), "{out:?}");
+    assert_eq!(all_floats(&e), vec![f.0], "the group stays");
 }
 
 #[test]
@@ -328,6 +413,11 @@ fn an_inserted_picture_can_be_marked_decorative() {
 
 /// A section with a half-inch gutter.
 fn with_gutter(src: &[u8]) -> Vec<u8> {
+    with_document(src, |d| d.replace(r#"w:gutter="0""#, r#"w:gutter="720""#))
+}
+
+/// The package with its main part edited.
+fn with_document(src: &[u8], edit: impl Fn(String) -> String) -> Vec<u8> {
     use std::io::{Read, Write};
     let mut z = zip::ZipArchive::new(std::io::Cursor::new(src)).unwrap();
     let mut out = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
@@ -337,7 +427,7 @@ fn with_gutter(src: &[u8]) -> Vec<u8> {
         let mut data = Vec::new();
         f.read_to_end(&mut data).unwrap();
         if name == "word/document.xml" {
-            data = String::from_utf8(data).unwrap().replace(r#"w:gutter="0""#, r#"w:gutter="720""#).into_bytes();
+            data = edit(String::from_utf8(data).unwrap()).into_bytes();
         }
         out.start_file(name, zip::write::SimpleFileOptions::default()).unwrap();
         out.write_all(&data).unwrap();

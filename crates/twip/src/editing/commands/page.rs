@@ -15,8 +15,19 @@ use crate::editing::step::{PageSettings, Step};
 impl Editor {
     /// Edits the page setup of each of the selection's sections, in one transaction.
     pub(in crate::editing) fn set_page(&mut self, label: &'static str, edit: impl Fn(&mut SectionPage), fonts: &Fonts) -> Outcome {
+        self.set_sections_page(label, self.selected_sections(), edit, fonts)
+    }
+
+    /// Edits the page setup of each of `sections`, in one transaction.
+    fn set_sections_page(
+        &mut self,
+        label: &'static str,
+        sections: impl Iterator<Item = usize>,
+        edit: impl Fn(&mut SectionPage),
+        fonts: &Fonts,
+    ) -> Outcome {
         let mut tx = None;
-        for section in self.selected_sections() {
+        for section in sections {
             let Some(s) = self.doc.sections.get(section) else { continue };
             let mut page = s.page();
             edit(&mut page);
@@ -41,12 +52,12 @@ impl Editor {
     pub(in crate::editing) fn set_margins(&mut self, m: Margins, fonts: &Fonts) -> Outcome {
         for section in self.selected_sections() {
             let Some(s) = self.doc.sections.get(section) else { continue };
-            let wide = m.left.map_or(s.left, |v| v.0) + m.right.map_or(s.right, |v| v.0) + m.gutter.map_or(s.gutter, |v| v.0);
-            if wide >= s.page_w {
-                return Outcome::invalid("left + right + gutter must be less than the page width");
+            let (gw, gh) = self.gutter_axes(m.gutter.map_or(s.gutter, |v| v.0), s.page_w, s.page_h);
+            if m.left.map_or(s.left, |v| v.0) + m.right.map_or(s.right, |v| v.0) + gw >= s.page_w {
+                return Outcome::invalid("left + right and a side gutter must be less than the page width");
             }
-            if m.top.map_or(s.top, |v| v.0).abs() + m.bottom.map_or(s.bottom, |v| v.0).abs() >= s.page_h {
-                return Outcome::invalid("top + bottom must be less than the page height");
+            if m.top.map_or(s.top, |v| v.0).abs() + m.bottom.map_or(s.bottom, |v| v.0).abs() + gh >= s.page_h {
+                return Outcome::invalid("top + bottom and a top gutter must be less than the page height");
             }
         }
         self.set_page(
@@ -105,13 +116,14 @@ impl Editor {
     /// moves with it and the next column takes the change, each column keeping at least half an inch, as in Word.
     pub(in crate::editing) fn move_column_boundary(&mut self, column: usize, to: f64, fonts: &Fonts) -> Outcome {
         const MIN: f64 = 36.0;
-        let Some(s) = self.doc.sections.get(self.focus_section()) else { return Outcome::Unchanged("no section") };
+        let section = self.focus_section();
+        let Some(s) = self.doc.sections.get(section) else { return Outcome::Unchanged("no section") };
         let c = &s.columns;
         let n = c.num.clamp(1, crate::docx::Columns::MAX);
         if column + 1 >= n {
             return Outcome::invalid("no such column boundary");
         }
-        let left = s.left + if self.doc.settings.gutter_at_top { 0.0 } else { s.gutter };
+        let left = s.left + self.gutter_axes(s.gutter, s.page_w, s.page_h).0;
         let width = s.page_w - s.right - left;
         let mut cols: Vec<(f64, f64)> =
             if c.equal || c.cols.len() < n { vec![((width - c.space * (n - 1) as f64) / n as f64, c.space); n] } else { c.cols[..n].to_vec() };
@@ -125,8 +137,9 @@ impl Editor {
             return Outcome::Unchanged("already there");
         }
         (cols[column].0, cols[column + 1].0) = (w + dx, next - dx);
-        self.set_page(
+        self.set_sections_page(
             "Column Width",
+            std::iter::once(section),
             |p| {
                 let space = p.columns.space;
                 p.columns = crate::docx::Columns { num: n, equal: false, cols: cols.clone(), space, separator: p.columns.separator };

@@ -329,7 +329,7 @@ impl Editor {
         // An empty box takes typing as a shape without text does.
         if let Some(tb) = &n.text_box {
             let [crate::docx::Block::Para(p)] = &tb.blocks[..] else { return false };
-            if !p.inlines.is_empty() {
+            if p.inlines.iter().any(|i| !matches!(i, crate::docx::Inline::Text(t, _) if t.is_empty())) {
                 return false;
             }
             let at = super::position::Position::text(super::position::StoryId::TextBox(f), crate::layout::ParaId(p.id), crate::layout::Unit(0));
@@ -771,29 +771,37 @@ impl Editor {
 
 // Stacking order
 impl Editor {
-    /// Every float's z and id, back to front.
-    fn stacking(&self) -> Vec<(u32, FloatId)> {
-        fn walk(blocks: &[crate::docx::Block], out: &mut Vec<(u32, FloatId)>) {
+    /// Each float's z and id, in document order.
+    fn each_float(&self, f: &mut dyn FnMut(u32, FloatId)) {
+        fn walk(blocks: &[crate::docx::Block], f: &mut dyn FnMut(u32, FloatId)) {
             for b in blocks {
                 match b {
-                    crate::docx::Block::Para(p) => out.extend(p.inlines.iter().filter_map(|i| match i {
-                        crate::docx::Inline::Float(fl, _) => Some((fl.z, FloatId(fl.id))),
-                        _ => None,
-                    })),
-                    crate::docx::Block::Table(t) => t.rows.iter().flat_map(|r| &r.cells).for_each(|c| walk(&c.blocks, out)),
+                    crate::docx::Block::Para(p) => p.inlines.iter().for_each(|i| {
+                        if let crate::docx::Inline::Float(fl, _) = i {
+                            f(fl.z, FloatId(fl.id));
+                        }
+                    }),
+                    crate::docx::Block::Table(t) => t.rows.iter().flat_map(|r| &r.cells).for_each(|c| walk(&c.blocks, f)),
                 }
             }
         }
+        self.doc.sections.iter().for_each(|s| walk(&s.blocks, f));
+        self.doc.stories.values().for_each(|b| walk(b, f));
+    }
+
+    /// Every float's z and id, back to front.
+    fn stacking(&self) -> Vec<(u32, FloatId)> {
         let mut all = Vec::new();
-        self.doc.sections.iter().for_each(|s| walk(&s.blocks, &mut all));
-        self.doc.stories.values().for_each(|b| walk(b, &mut all));
+        self.each_float(&mut |z, id| all.push((z, id)));
         all.sort();
         all
     }
 
     /// The z a new float takes: in front of every other.
     pub(super) fn front_z(&self) -> u32 {
-        self.stacking().last().map_or(0, |a| a.0.saturating_add(1))
+        let mut front = None;
+        self.each_float(&mut |z, _| front = front.max(Some(z)));
+        front.map_or(0, |z: u32| z.saturating_add(1))
     }
 }
 

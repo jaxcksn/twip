@@ -174,8 +174,9 @@ impl Editor {
         }
     }
 
-    /// The frame's paragraphs with their `w:framePr` edited, and the first one's new `w:framePr`.
-    fn frame_paras(&self, f: FloatId, edit: &dyn Fn(&mut Props, &str, Option<&FramePr>)) -> Option<(Vec<Block>, Option<FramePr>)> {
+    /// The frame's paragraphs with their `w:framePr` edited, and the first one's new `w:framePr`; `framed`: whether
+    /// they stay in the frame.
+    fn frame_paras(&self, f: FloatId, framed: bool, edit: &dyn Fn(&mut Props, &str, Option<&FramePr>)) -> Option<(Vec<Block>, Option<FramePr>)> {
         let res = self.doc.resolver.clone()?;
         let cx = self.cx();
         let mut first = None;
@@ -192,13 +193,13 @@ impl Editor {
                     let mut pr = Props::parse(p.style.direct.0.as_deref(), "pPr", &cx);
                     edit(&mut pr, &cx.w, old.as_ref());
                     let mut style = res.para_from_xml(pr.xml().as_deref(), None, &cx).style;
-                    style.change = p.style.change.clone();
+                    let frame = style.frame.take();
                     if first.is_none() {
-                        first = Some(style.frame.clone());
+                        first = Some(frame);
                     }
-                    style.frame = None;
-                    style.in_frame = true;
-                    p.style = Rc::new(res.para_again(&p.style, style, None, &cx));
+                    let mut again = res.para_again(&p.style, style, None, &cx);
+                    again.in_frame = framed;
+                    p.style = Rc::new(again);
                     Block::Para(p)
                 }
                 b => b,
@@ -213,7 +214,7 @@ impl Editor {
             return self.format_style_part("pPr", &|p, cx, para, _| p.set("framePr", frame_xml(&cx.w, &props, para.style.frame.as_ref())));
         }
         let Some(f) = self.frame_here() else { return Outcome::unavailable("the selection isn't in a frame") };
-        let Some((blocks, Some(fr))) = self.frame_paras(f, &|p, w, old| p.set("framePr", frame_xml(w, &props, old))) else {
+        let Some((blocks, Some(fr))) = self.frame_paras(f, true, &|p, w, old| p.set("framePr", frame_xml(w, &props, old))) else {
             return Outcome::Unchanged("no frame");
         };
         let Some(mut n) = self.float_of(f).cloned() else { return Outcome::Unchanged("no frame") };
@@ -237,7 +238,7 @@ impl Editor {
             return self.format_style_part("pPr", &|p, _, _, _| p.remove("framePr"));
         }
         let Some(f) = self.frame_here() else { return Outcome::unavailable("the selection isn't in a frame") };
-        let Some((mut blocks, _)) = self.frame_paras(f, &|p, _, _| p.remove("framePr")) else { return Outcome::Unchanged("no frame") };
+        let Some((mut blocks, _)) = self.frame_paras(f, false, &|p, _, _| p.remove("framePr")) else { return Outcome::Unchanged("no frame") };
         let Some(anchor) = self.index.float_anchor(f) else { return Outcome::Unchanged("no anchor") };
         let Some(slot) = self.index.para_slot(anchor) else { return Outcome::Unchanged("no anchor") };
         let Some(p) = self.index.para(&self.doc, anchor) else { return Outcome::Unchanged("no anchor") };
@@ -254,7 +255,20 @@ impl Editor {
             _ => p.inlines[..k].iter().any(|i| i.units() > 0),
         };
         let inlines: Vec<Inline> = p.inlines.iter().filter(|i| !is_it(i)).cloned().collect();
-        let at = slot.block + usize::from(after);
+        let Some(first) = blocks.iter().find_map(|b| if let Block::Para(p) = b { Some(p.id) } else { None }) else {
+            return Outcome::Unchanged("no frame");
+        };
+        // Frames sharing the anchor, removed before: their paragraphs, numbered as read, stay on their side of this
+        // one's. Paragraphs made since reading are numbered after every read one.
+        // shortcut: a tracked removal inserts copies, numbered as new, so a frame removed after it goes beside the
+        // anchor; the model keeps no other record of where restored paragraphs came from.
+        let between = |b: &Block, lo: u64, hi: u64| matches!(b, Block::Para(q) if lo < q.id && q.id < hi);
+        let around = self.index.blocks(&self.doc, slot.container).map_or(&[][..], Vec::as_slice);
+        let at = if after {
+            slot.block + 1 + around.iter().skip(slot.block + 1).take_while(|b| between(b, anchor.0, first)).count()
+        } else {
+            slot.block - around[..slot.block.min(around.len())].iter().rev().take_while(|b| between(b, first, anchor.0)).count()
+        };
         // The paragraphs are written as new ones: their source is the frame's, which goes.
         for b in &mut blocks {
             if let Block::Para(p) = b {
@@ -268,13 +282,16 @@ impl Editor {
             self.abort(tx);
             return Outcome::Unchanged("stale frame");
         }
+        // The caret in the first paragraph inserted (tracked, a copy of the frame's)
         let story = self.index.story(slot.container);
-        let first = self.index.blocks(&self.doc, slot.container).and_then(|b| b.get(slot.block)).and_then(|b| match b {
-            Block::Para(p) => Some(ParaId(p.id)),
-            Block::Table(_) => None,
+        let restored = self.index.blocks(&self.doc, slot.container).and_then(|b| {
+            b.get(at..)?.iter().find_map(|b| match b {
+                Block::Para(p) => Some(ParaId(p.id)),
+                Block::Table(_) => None,
+            })
         });
-        if let Some(first) = first {
-            self.selection = Selection::Caret(Position::text(story, first, Unit(0)));
+        if let Some(para) = restored {
+            self.selection = Selection::Caret(Position::text(story, para, Unit(0)));
         }
         self.commit(tx, None, fonts)
     }

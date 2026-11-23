@@ -229,14 +229,38 @@ fn wrapping_a_selection_at_an_inline_controls_edge_nests_it() {
         let g = ctl(&e, |c| c.props.kind == ControlKind::Group);
         let Some(Block::Para(q)) = e.document().sections[0].blocks.first() else { panic!("a paragraph") };
         let at = |x: ControlId, start: bool| {
-            q.inlines.iter().position(|i| match i {
-                crate::docx::Inline::ControlStart(c) if start => *c == x,
-                crate::docx::Inline::ControlEnd(c) if !start => *c == x,
-                _ => false,
-            })
+            q.inlines
+                .iter()
+                .position(|i| match i {
+                    crate::docx::Inline::ControlStart(c) if start => *c == x,
+                    crate::docx::Inline::ControlEnd(c) if !start => *c == x,
+                    _ => false,
+                })
+                .unwrap_or_else(|| panic!("{from}..{to}: no {} of {x:?}", if start { "start" } else { "end" }))
         };
         assert!(at(g, true) < at(n, true) && at(n, false) < at(g, false), "{from}..{to}: the group holds the control");
     }
+}
+
+#[test]
+fn a_controls_preview_takes_its_characters_up_to_the_limit() {
+    let long = "é".repeat(101);
+    let paras = format!(r#"<w:p><w:r><w:t>{long}</w:t></w:r></w:p><w:p><w:r><w:t>tail</w:t></w:r></w:p>"#);
+    let sdt = |tag: &str, id: u32, content: &str| {
+        format!(r#"<w:sdt><w:sdtPr><w:tag w:val="{tag}"/><w:id w:val="{id}"/></w:sdtPr><w:sdtContent>{content}</w:sdtContent></w:sdt>"#)
+    };
+    let cell = format!(r#"<w:tc><w:tcPr><w:tcW w:w="4000" w:type="dxa"/></w:tcPr>{paras}</w:tc>"#);
+    let table = format!(r#"<w:tbl><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr>{}</w:tr></w:tbl><w:p/>"#, sdt("Cell", 6, &cell));
+    let e = Editor::open(&blank_body(&format!("{}{table}", sdt("Block", 5, &paras))), fonts()).expect("opens");
+    let all = crate::editing::elements::enumerate(e.document(), e.index(), &Default::default());
+    let shown = |tag: &str| {
+        all.iter()
+            .find(|x| x.props.as_ref().is_some_and(|p| p.tag.as_deref() == Some(tag)))
+            .map(|x| x.display.clone())
+            .unwrap_or_else(|| panic!("no {tag}"))
+    };
+    assert_eq!(shown("Block"), format!("{long}\ntail"));
+    assert_eq!(shown("Cell"), format!("{long} tail"));
 }
 
 fn table_body() -> String {

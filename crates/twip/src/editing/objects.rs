@@ -241,6 +241,11 @@ impl Editor {
         let Some(mut n) = self.float_of(f).cloned() else { return Outcome::Unchanged("no float") };
         let only =
             |n: &crate::docx::Float, parent: &[u16]| n.shape.as_deref().and_then(|s| s.at(parent)?.group()).is_some_and(|g| g.children.len() <= 1);
+        let Some((&leaf, leaf_parent)) = path.split_last() else { return self.remove_floats(&[f], fonts) };
+        let leaves = n.shape.as_deref().and_then(|s| s.at(leaf_parent)?.group()).map_or(0, |g| g.children.len());
+        if usize::from(leaf) >= leaves {
+            return Outcome::Unchanged("no such shape");
+        }
         let mut path = path;
         while let Some((_, parent)) = path.split_last()
             && only(&n, parent)
@@ -1383,7 +1388,9 @@ impl Editor {
         use crate::layout::page::{Facing, columns, margins_in};
         let snap = self.snapshot();
         let info = snap.info().get(page)?;
-        let sec = self.doc.sections.get(info.section)?;
+        // A body anchor's own section, which a continuous break can start on a page another section started
+        let body = anchor.filter(|a| self.index.para_slot(*a).is_some_and(|s| self.index.story(s.container) == StoryId::Body));
+        let sec = self.doc.sections.get(body.and_then(|a| self.para_section(a)).unwrap_or(info.section))?;
         let set = &self.doc.settings;
         let facing = Facing { mirror: set.mirror_margins, gutter_at_top: set.gutter_at_top, book_fold: set.book_fold };
         let (left, right, top) = margins_in(sec, self.doc.review.view, facing, info.number);
@@ -1445,7 +1452,14 @@ impl Editor {
         let anchor_top = self.pages.page(page, &self.index).and_then(|g| g.lines_of(anchor).map(|(_, l)| l.top).reduce(f64::min));
         let mut fl = self.float_of(f)?.clone();
         let twips = |v: f64| (v * 20.0).trunc() / 20.0;
-        let moved = [(new[0] - old[0]).abs() > 1e-9, (new[1] - old[1]).abs() > 1e-9];
+        let (w, h) = (new[2] - new[0], new[3] - new[1]);
+        let sized = [(w - (old[2] - old[0])).abs() > 1e-9, (h - (old[3] - old[1])).abs() > 1e-9];
+        // An alignment its size moves (right, centre, inside, outside) goes to an offset when the size changes
+        let by_size = |a: &Option<String>, start: &str| a.as_deref().is_some_and(|a| a != start);
+        let moved = [
+            (new[0] - old[0]).abs() > 1e-9 || sized[0] && by_size(&fl.h_align, "left"),
+            (new[1] - old[1]).abs() > 1e-9 || sized[1] && by_size(&fl.v_align, "top"),
+        ];
         // An aligned or percentage place goes to an offset from its reference where the float now is.
         let placed = [fl.h_align.is_some() || fl.relative.pos[0].is_some(), fl.v_align.is_some() || fl.relative.pos[1].is_some()];
         let frames = if moved[0] && placed[0] || moved[1] && placed[1] {
@@ -1458,8 +1472,6 @@ impl Editor {
             let x = |f: &crate::docx::Float| crate::layout::float::h_pos(f, fr);
             crate::layout::float::sized(&fl, fr).as_ref().map_or_else(|| x(&fl), x) + new[0] - old[0]
         });
-        let (w, h) = (new[2] - new[0], new[3] - new[1]);
-        let sized = [(w - (old[2] - old[0])).abs() > 1e-9, (h - (old[3] - old[1])).abs() > 1e-9];
         if sized.contains(&true) {
             fl.w = w;
             fl.h = h;

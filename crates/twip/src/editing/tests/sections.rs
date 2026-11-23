@@ -266,7 +266,7 @@ mod page_setup {
     use super::super::super::Editor;
     use super::super::super::commands::{Command, Outcome};
     use super::super::{blank_body, blank_with, fonts, open, para_id};
-    use crate::api::command::{ColumnWidth, Columns, Margins, PaperSize, SectionBreakKind};
+    use crate::api::command::{ColumnBoundaryMove, ColumnWidth, Columns, Margins, PaperSize, SectionBreakKind};
     use crate::api::value::{Orientation, Points};
     use crate::layout::Unit;
 
@@ -330,6 +330,21 @@ mod page_setup {
     }
 
     #[test]
+    fn a_column_boundary_moves_in_the_carets_section_only() {
+        let mut e = open("FX-SECTIONS.docx");
+        e.complete(fonts());
+        run(&mut e, Command::SelectAll);
+        run(&mut e, Command::SetColumns(Columns { count: 2, spacing: None, separator: None, widths: None }));
+        let focus = e.focus_section();
+        let s = &e.document().sections[focus];
+        let to = s.left + s.gutter + 120.0;
+        assert!(changed(&run(&mut e, Command::MoveColumnBoundary(ColumnBoundaryMove { column: 0, to: Points(to) }))));
+        for (i, s) in e.document().sections.iter().enumerate() {
+            assert_eq!(s.columns.equal, i != focus, "section {i} of {}", e.document().sections.len());
+        }
+    }
+
+    #[test]
     fn columns_take_one_width_each() {
         let mut e = blank();
         let w = |width| ColumnWidth { width: Points(width), spacing: Points(10.0) };
@@ -352,6 +367,26 @@ mod page_setup {
         assert!(!changed(&out), "a page narrower than its margins: {out:?}");
         let s = &e.document().sections[0];
         assert!(s.page_w - s.left - s.right - s.gutter > 0.0, "{} wide, margins {} {}", s.page_w, s.left, s.right);
+    }
+
+    #[test]
+    fn a_top_gutter_takes_from_the_page_height() {
+        use crate::api::command::MultiplePages;
+        let pt = |v| Some(Points(v));
+        let margins = |side, ends, gutter| Margins { left: pt(side), right: pt(side), top: pt(ends), bottom: pt(ends), gutter: pt(gutter) };
+        let small = Command::SetPaperSize(PaperSize { width: Points(200.0), height: Points(300.0) });
+        for (m, fits) in [(margins(60.0, 100.0, 90.0), true), (margins(50.0, 120.0, 70.0), false)] {
+            let mut e = blank();
+            assert!(changed(&run(&mut e, Command::SetMultiplePages(MultiplePages { mode: None, gutter_at_top: Some(true) }))));
+            assert!(changed(&run(&mut e, Command::SetMargins(m))));
+            let out = run(&mut e, small.clone());
+            assert_eq!(changed(&out), fits, "{out:?}");
+        }
+        let mut e = blank();
+        assert!(changed(&run(&mut e, Command::SetMultiplePages(MultiplePages { mode: None, gutter_at_top: Some(true) }))));
+        assert!(changed(&run(&mut e, Command::SetMargins(margins(300.0, 72.0, 20.0)))), "a top gutter leaves the width");
+        let out = run(&mut e, Command::SetMargins(margins(72.0, 380.0, 40.0)));
+        assert!(!changed(&out), "but takes from the height: {out:?}");
     }
 
     #[test]

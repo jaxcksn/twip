@@ -155,16 +155,20 @@ impl Editor {
         })
     }
 
-    /// A part name for a new header or footer, beside the main part: one no story has, had when read, or the package
-    /// holds (a removed part's name names that part's relationship).
+    /// A part name for a new header or footer, beside the main part: one no story has, had when read, a section
+    /// refers to (a part that didn't load), or the package holds (a removed part's name names that part's
+    /// relationship).
     pub(super) fn new_story_name(&self, footer: bool) -> String {
         let kind = if footer { "footer" } else { "header" };
         let src = self.doc.source.as_ref();
         let dir = src.and_then(|s| s.main.rsplit_once('/')).map_or(String::new(), |(d, _)| format!("{d}/"));
         let package = src.and_then(|s| zip::ZipArchive::new(std::io::Cursor::new(&s.package[..])).ok());
+        let referred: std::collections::HashSet<&str> =
+            self.doc.sections.iter().flat_map(|s| s.headers.iter().chain(s.footers.iter())).flatten().map(String::as_str).collect();
         let taken = |name: &str| {
             self.doc.stories.contains_key(name)
                 || src.is_some_and(|s| s.stories.contains_key(name))
+                || referred.contains(name)
                 || package.as_ref().is_some_and(|z| z.index_for_name(name).is_some())
         };
         let n = (1..).find(|n| !taken(&format!("{dir}header{n}.xml")) && !taken(&format!("{dir}footer{n}.xml"))).unwrap_or(1);

@@ -229,8 +229,19 @@ impl Editor {
         }
     }
 
+    /// [`Editor::openings`] of the selection; of floats selected together, those every one's anchor has.
     fn selection_openings(&self) -> Openings {
-        self.selection_span().map_or_else(Openings::default, |(a, b)| self.openings(&a, &b))
+        let at = self.selection_span().map_or_else(Openings::default, |(a, b)| self.openings(&a, &b));
+        self.selected_floats().into_iter().skip(1).fold(at, |at, f| {
+            let o = self.float_point(f).map_or_else(Openings::default, |p| self.openings(&p, &p));
+            Openings { range: at.range && o.range, form: at.form && o.form, section: at.section && o.section }
+        })
+    }
+
+    /// Where float `f` is anchored.
+    fn float_point(&self, f: crate::layout::FloatId) -> Option<Position> {
+        let para = self.index.float_anchor(f)?;
+        Some(Position::text(self.index.story(self.index.para_slot(para)?.container), para, Unit(0)))
     }
 
     /// Where an edit of the selection falls: its ends, a selected object's anchor, selected cells' table.
@@ -239,7 +250,7 @@ impl Editor {
         let at = |para: ParaId, u: Unit| self.index.para_slot(para).map(|s| Position::text(self.index.story(s.container), para, u));
         let p = match self.selection {
             Selection::Object(ObjectRef::Inline { para, offset }) => at(para, offset)?,
-            Selection::Object(ObjectRef::Floating(f)) => at(self.index.float_anchor(f)?, Unit(0))?,
+            Selection::Object(ObjectRef::Floating(f)) => self.float_point(f)?,
             Selection::Cells { table, .. } => self.table_point(table)?,
             s => return s.ordered(&self.index),
         };

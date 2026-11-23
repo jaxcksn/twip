@@ -62,6 +62,17 @@ impl Editor {
         sections.iter().position(|s| s.headers.iter().chain(s.footers.iter()).flatten().any(|n| n == name))
     }
 
+    /// A section's `gutter` on a `pw` × `ph` page, where layout puts it: its share of the width and of the height.
+    pub(super) fn gutter_axes(&self, gutter: f64, pw: f64, ph: f64) -> (f64, f64) {
+        let set = &self.doc.settings;
+        match set.book_fold {
+            // Portrait book fold pages drop it
+            Some(_) => (if pw > ph { gutter } else { 0.0 }, 0.0),
+            None if set.gutter_at_top => (0.0, gutter),
+            None => (gutter, 0.0),
+        }
+    }
+
     /// The section a position in the body is in.
     pub(super) fn section_at(&self, at: &super::position::Position) -> Option<usize> {
         if matches!(at.story, StoryId::HeaderFooter(_)) {
@@ -252,7 +263,8 @@ impl Editor {
                 for section in self.selected_sections() {
                     let Some(s) = self.doc.sections.get(section) else { continue };
                     let (pw, ph) = size(s.page_w, s.page_h);
-                    if s.left + s.right + s.gutter >= pw || s.top.abs() + s.bottom.abs() >= ph {
+                    let (gw, gh) = self.gutter_axes(s.gutter, pw, ph);
+                    if s.left + s.right + gw >= pw || s.top.abs() + s.bottom.abs() + gh >= ph {
                         return Outcome::invalid("the margins must fit the page");
                     }
                 }

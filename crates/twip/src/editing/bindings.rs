@@ -128,8 +128,13 @@ impl Editor {
                             continue;
                         }
                         let Some(ctl) = self.doc.controls.get(&c).filter(|x| !x.props.showing_placeholder) else { continue };
-                        let text: String =
-                            p.inlines[start + 1..k].iter().filter_map(|i| if let Inline::Text(t, _) = i { Some(t.as_str()) } else { None }).collect();
+                        let text: String = p.inlines[start + 1..k]
+                            .iter()
+                            .filter_map(|i| match i {
+                                Inline::Text(t, r) if r.rev.del.is_none() => Some(t.as_str()),
+                                _ => None,
+                            })
+                            .collect();
                         if let Some(xml) = binding::with_full_date(&ctl.props, &text, &w) {
                             let mut ctl = ctl.clone();
                             ctl.props.kind_xml = Some(xml);

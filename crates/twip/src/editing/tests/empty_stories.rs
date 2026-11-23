@@ -191,6 +191,32 @@ fn typing_into_a_selected_empty_text_box_fills_it() {
 }
 
 #[test]
+fn typing_into_a_selected_emptied_text_box_fills_it() {
+    let body = format!("<w:p><w:r><w:t>Text</w:t></w:r>{}</w:p>", anchored_box("<w:txbxContent><w:p><w:r><w:t>x</w:t></w:r></w:p></w:txbxContent>"));
+    let mut e = open(&build(&body, "", &[]));
+    let f = FloatId(floats(&e.document().sections[0].blocks)[0].id);
+    let para = floats(&e.document().sections[0].blocks)[0].text_box.as_ref().and_then(|t| t.blocks.first()).map(|b| match b {
+        crate::docx::Block::Para(p) => crate::layout::ParaId(p.id),
+        crate::docx::Block::Table(_) => panic!("a paragraph"),
+    });
+    let para = para.expect("the box's paragraph");
+    e.selection = Selection::Caret(Position::text(StoryId::TextBox(f), para, Unit(1)));
+    assert!(matches!(e.execute(Command::InsertParagraph, fonts()), Outcome::Changed(_)));
+    e.selection = Selection::Caret(Position::text(StoryId::TextBox(f), para, Unit(0)));
+    for _ in 0..2 {
+        assert!(matches!(e.execute(Command::Delete(DeleteOptions { direction: Direction::Forward, unit: None }), fonts()), Outcome::Changed(_)));
+    }
+    let tb = floats(&e.document().sections[0].blocks)[0].text_box.clone().expect("a text box");
+    let [Block::Para(p)] = &tb.blocks[..] else { panic!("one paragraph: {:?}", tb.blocks.len()) };
+    assert!(!p.inlines.is_empty() && p.inlines.iter().all(|i| matches!(i, Inline::Text(t, _) if t.is_empty())), "{:?}", p.inlines);
+    e.selection = Selection::Object(ObjectRef::Floating(f));
+    let out = e.execute(Command::InsertText("in".into()), fonts());
+    assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
+    let box_text = |e: &Editor| text_of(&floats(&e.document().sections[0].blocks)[0].text_box.as_ref().expect("a text box").blocks);
+    assert_eq!((box_text(&e), texts(&e)), ("in".to_string(), vec!["Text".to_string()]));
+}
+
+#[test]
 fn comment_anchor_text_is_cut_to_its_limit() {
     use crate::api::review::ANCHOR_TEXT_LIMIT;
     const N: usize = 60;

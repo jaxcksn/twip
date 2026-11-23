@@ -244,12 +244,12 @@ impl Editor {
         }
     }
 
-    /// Whether a picture outside inlines `range` of `para` shows image `image`.
+    /// Whether an inline outside inlines `range` of `para` shows image `image`.
     pub(super) fn image_shown_elsewhere(&self, image: usize, para: ParaId, range: std::ops::Range<usize>) -> bool {
         self.index
             .para_ids()
             .filter_map(|q| Some((q, self.index.para(&self.doc, q)?)))
-            .any(|(q, p)| p.inlines.iter().enumerate().any(|(k, i)| picture_image(i) == Some(image) && !(q == para && range.contains(&k))))
+            .any(|(q, p)| p.inlines.iter().enumerate().any(|(k, i)| shows_image(i, image) && !(q == para && range.contains(&k))))
     }
 
     /// Fills control `c`'s pictures (inlines `range` of `para`) showing `image` with `data` as an image of their own,
@@ -271,10 +271,16 @@ impl Editor {
         for i in &mut inlines[range] {
             if picture_image(i) == Some(image) {
                 fit(i, size);
-                match i {
-                    Inline::Picture(p, _) => p.image = Some(k),
-                    Inline::Float(f, _) => f.image = Some(k),
-                    _ => {}
+                let (pi, shape) = match i {
+                    Inline::Picture(p, _) => (&mut p.image, &mut p.shape),
+                    Inline::Float(f, _) => (&mut f.image, &mut f.shape),
+                    _ => continue,
+                };
+                *pi = Some(k);
+                if let Some(crate::drawing::ShapeKind::Pic(p)) = shape.as_deref_mut().map(|s| &mut s.kind)
+                    && p.blip.image == Some(image)
+                {
+                    p.blip.image = Some(k);
                 }
             }
         }
@@ -353,10 +359,34 @@ pub(super) fn picture_image(i: &Inline) -> Option<usize> {
     }
 }
 
-/// Fits a picture's box to an image of `size` (points), keeping the box's smaller scale.
+/// Whether inline `i` shows image `image`: as a picture, a float's group part, or a picture or fill of its shape.
+fn shows_image(i: &Inline, image: usize) -> bool {
+    use crate::drawing::paint::Fill;
+    use crate::drawing::{Shape, ShapeKind};
+    let fill = |f: Option<&Fill>| matches!(f, Some(Fill::Blip(b)) if b.image == Some(image));
+    fn shape(s: &Shape, fill: &dyn Fn(Option<&Fill>) -> bool, image: usize) -> bool {
+        match &s.kind {
+            ShapeKind::Sp(sp) => fill(sp.fill.as_ref()) || fill(sp.line.as_ref().and_then(|l| l.fill.as_ref())),
+            ShapeKind::Pic(p) => p.blip.image == Some(image) || fill(p.line.as_ref().and_then(|l| l.fill.as_ref())),
+            ShapeKind::Group(g) => fill(g.fill.as_ref()) || g.children.iter().any(|c| shape(c, fill, image)),
+            ShapeKind::Raw(_) => false,
+        }
+    }
+    match i {
+        Inline::Picture(p, _) => p.image == Some(image) || p.shape.as_deref().is_some_and(|s| shape(s, &fill, image)),
+        Inline::Float(f, _) => {
+            f.image == Some(image) || f.parts.iter().any(|p| p.image == Some(image)) || f.shape.as_deref().is_some_and(|s| shape(s, &fill, image))
+        }
+        _ => false,
+    }
+}
+
+/// Fits a picture's box to an image of `size` (points), keeping the box's smaller scale; a quarter-turned float's box
+/// is the picture's own width and height swapped.
 fn fit(i: &mut Inline, (iw, ih): (f64, f64)) {
     let (w, h) = match i {
         Inline::Picture(p, _) => (&mut p.w, &mut p.h),
+        Inline::Float(f, _) if f.rot_swap => (&mut f.h, &mut f.w),
         Inline::Float(f, _) => (&mut f.w, &mut f.h),
         _ => return,
     };
