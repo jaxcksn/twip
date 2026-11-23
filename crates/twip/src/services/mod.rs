@@ -78,19 +78,59 @@ pub fn para_pages(e: &mut crate::editing::Editor) -> std::collections::HashMap<c
 /// out), fields as their results, in the body, text boxes and notes (as Word counts by default): words, characters
 /// with and without spaces, paragraphs with text, and the body's laid-out lines and pages.
 pub fn word_count(e: &mut crate::editing::Editor) -> crate::api::services::WordCount {
+    word_count_in(e, WordCountScope::default())
+}
+
+/// What a word count counts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct WordCountScope {
+    /// The selection's text, when there is a selection (else the document's): its lines are the laid-out body lines
+    /// it covers part of, and the pages are the document's.
+    pub selection: bool,
+    /// Text boxes, footnotes and endnotes count as well as the body (Word's Include textboxes, footnotes and
+    /// endnotes, on by default).
+    pub boxes_and_notes: bool,
+}
+
+impl Default for WordCountScope {
+    fn default() -> WordCountScope {
+        WordCountScope { selection: false, boxes_and_notes: true }
+    }
+}
+
+/// The counts [`word_count`] gives, over `scope`.
+pub fn word_count_in(e: &mut crate::editing::Editor, scope: WordCountScope) -> crate::api::services::WordCount {
     use crate::docx::review::MarkupView;
+    use crate::editing::position::StoryId;
     let view = match e.document().review.view {
         MarkupView::All => MarkupView::Simple,
         v => v,
     };
+    let ranges = if scope.selection && !e.selection().is_collapsed() { e.selected_ranges() } else { Vec::new() };
+    let whole = ranges.is_empty();
+    let stories = crate::editing::find::Stories { boxes: scope.boxes_and_notes, notes: scope.boxes_and_notes, headers: false };
+    let paras: Vec<(crate::layout::ParaId, u32, u32)> = if whole {
+        e.story_paras(stories).into_iter().map(|p| (p, 0, u32::MAX)).collect()
+    } else {
+        ranges.iter().map(|&(p, a, b)| (p, a.0, b.0)).collect()
+    };
     let mut n = crate::api::services::WordCount::default();
     let (doc, index) = (e.document(), e.index());
-    let stories = crate::editing::find::Stories { boxes: true, notes: true, headers: false };
-    for para in e.story_paras(stories) {
+    let counted = |story: StoryId| match story {
+        StoryId::Body => true,
+        StoryId::TextBox(_) | StoryId::Footnote(_) | StoryId::Endnote(_) => scope.boxes_and_notes,
+        _ => false,
+    };
+    let mut text = String::new();
+    for &(para, a, b) in &paras {
         let Some(p) = index.para(doc, para) else { continue };
+        if !whole && !index.para_slot(para).is_some_and(|s| counted(index.story(s.container))) {
+            continue;
+        }
         let t = crate::editing::text::Seen::of(p, |r| !view.hides(&r.rev), true);
         // Objects aren't characters.
-        let text: String = t.chars.into_iter().filter(|&c| c != crate::editing::text::OBJECT).collect();
+        text.clear();
+        text.extend(t.chars.iter().zip(&t.units).filter(|&(&c, &u)| c != crate::editing::text::OBJECT && (a..b).contains(&u)).map(|(c, _)| *c));
         let words = text.split_whitespace().count() as u32;
         n.words += words;
         n.paragraphs += u32::from(words > 0);
@@ -99,11 +139,23 @@ pub fn word_count(e: &mut crate::editing::Editor) -> crate::api::services::WordC
     }
     let pages = e.page_geometries();
     n.pages = e.snapshot().pages().len() as u32;
+    // Ranges by paragraph, so each line looks up only its own paragraphs' ranges.
+    let mut by_para = ranges;
+    by_para.sort_unstable_by_key(|&(p, a, _)| (p, a));
+    let covers = |l: &crate::editing::geometry::GLine| {
+        whole
+            || l.paras.iter().any(|&p| {
+                let from = by_para.partition_point(|r| r.0 < p);
+                by_para[from..]
+                    .iter()
+                    .take_while(|r| r.0 == p)
+                    .any(|&(_, a, b)| l.first_of(p).is_none_or(|start| start.0 < b.0.max(a.0 + 1)) && l.last_of(p).is_none_or(|end| end.0 >= a.0))
+            })
+    };
     n.lines = pages
         .iter()
-        .flat_map(|(_, g)| {
-            g.lines.iter().filter(|l| !l.repeat && g.stories.get(l.story).is_some_and(|s| s.story == crate::editing::position::StoryId::Body))
-        })
+        .flat_map(|(_, g)| g.lines.iter().filter(|l| !l.repeat && g.stories.get(l.story).is_some_and(|s| s.story == StoryId::Body)))
+        .filter(|l| covers(l))
         .count() as u32;
     n
 }

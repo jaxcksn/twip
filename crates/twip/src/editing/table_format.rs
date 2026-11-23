@@ -132,18 +132,20 @@ fn own_xml(f: &TableFormat, props: &mut TableProps, rows: &mut [crate::docx::Row
     }
 }
 
+use super::theme::WordColour;
+
 /// A `w:shd` to set: its pattern (`None`: the one written there, else the one its style gives, else clear), pattern
 /// colour and fill (`None`: auto).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Shading {
     pub pattern: Option<&'static str>,
-    pub color: Option<u32>,
-    pub fill: Option<u32>,
+    pub color: Option<WordColour>,
+    pub fill: Option<WordColour>,
 }
 
 impl Shading {
     /// A fill (or none) alone.
-    pub fn fill(fill: Option<u32>) -> Shading {
+    pub fn fill(fill: Option<WordColour>) -> Shading {
         Shading { pattern: Some("clear"), color: None, fill }
     }
 
@@ -154,7 +156,13 @@ impl Shading {
             .map(str::to_string)
             .or_else(|| was.and_then(|x| crate::docx::write::props::attr_of(x, "val")))
             .or_else(|| inherited.map(|s| s.pattern.clone()).filter(|p| p != "nil"));
-        crate::docx::props::Shd { pattern: pattern.unwrap_or_else(|| "clear".into()), color: self.color, fill: self.fill }
+        crate::docx::props::Shd {
+            pattern: pattern.unwrap_or_else(|| "clear".into()),
+            color: self.color.map(|c| c.rgb),
+            fill: self.fill.map(|c| c.rgb),
+            color_theme: self.color.and_then(|c| c.theme),
+            fill_theme: self.fill.and_then(|c| c.theme),
+        }
     }
 
     /// Its XML over `was` and `inherited`.
@@ -165,8 +173,11 @@ impl Shading {
 
 /// A `w:shd` element.
 pub fn shd_xml(w: &str, s: &crate::docx::props::Shd) -> String {
-    let hex = |c: Option<u32>| c.map_or("auto".to_string(), |c| format!("{c:06X}"));
-    format!("<{w}shd {w}val=\"{}\" {w}color=\"{}\" {w}fill=\"{}\"/>", crate::docx::write::props::esc(&s.pattern), hex(s.color), hex(s.fill))
+    use super::commands::{THEME_COLOR, THEME_FILL, colour_attrs};
+    let c = |rgb: Option<u32>, theme| rgb.map(|rgb| WordColour { rgb, theme });
+    let tag = format!("<{w}shd {w}val=\"{}\"/>", crate::docx::write::props::esc(&s.pattern));
+    let tag = colour_attrs(&tag, w, "color", THEME_COLOR, c(s.color, s.color_theme));
+    colour_attrs(&tag, w, "fill", THEME_FILL, c(s.fill, s.fill_theme))
 }
 
 /// Row exceptions to set: `reset` drops the rows' own first.
@@ -175,7 +186,7 @@ pub struct RowEx {
     pub reset: bool,
     pub jc: Option<Jc>,
     pub cell_spacing: Option<f64>,
-    pub shading: Option<u32>,
+    pub shading: Option<WordColour>,
     pub borders: Option<(Edges, Border)>,
 }
 
@@ -196,20 +207,21 @@ pub enum Edges {
 }
 
 fn nil() -> Border {
-    Border { style: "nil".into(), width: 0.0, space: 0.0, shadow: false, color: None }
+    Border { style: "nil".into(), width: 0.0, space: 0.0, shadow: false, color: None, color_theme: None }
 }
 
 fn border_xml(w: &str, name: &str, b: &Border) -> String {
     if !b.visible() {
         return format!("<{w}{name} {w}val=\"nil\"/>");
     }
-    let color = b.color.map_or("auto".to_string(), |c| format!("{c:06X}"));
-    format!(
-        "<{w}{name} {w}val=\"{}\" {w}sz=\"{}\" {w}space=\"{}\" {w}color=\"{color}\"/>",
+    let tag = format!(
+        "<{w}{name} {w}val=\"{}\" {w}sz=\"{}\" {w}space=\"{}\"/>",
         crate::docx::write::props::esc(&b.style),
         (b.width * 8.0).round() as i64,
         b.space.round() as i64
-    )
+    );
+    let c = b.color.map(|rgb| WordColour { rgb, theme: b.color_theme });
+    super::commands::colour_attrs(&tag, w, "color", super::commands::THEME_COLOR, c)
 }
 
 /// A cell's `w:tcBorders` as written, with the sides in `sides` (bits: top, left, bottom, right, then the two
@@ -276,8 +288,8 @@ fn set_exceptions(row: &mut crate::docx::Row, ex: &RowEx, table: &[Option<Border
         row.cell_spacing = Some(s);
     }
     if let Some(fill) = ex.shading {
-        p.set("shd", format!("<{w}shd {w}val=\"clear\" {w}color=\"auto\" {w}fill=\"{fill:06X}\"/>"));
-        row.shading = Some(fill);
+        p.set("shd", Shading { pattern: Some("clear"), color: None, fill: Some(fill) }.xml(w, None, None));
+        row.shading = Some(fill.rgb);
         row.hatch = None;
     }
     if let Some((edges, b)) = &ex.borders {

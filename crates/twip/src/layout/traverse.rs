@@ -209,8 +209,13 @@ pub fn paint_lines<'a>(
         }
     };
     let mut lines = Lines { n: 0, placed };
-    for item in page.borders.iter() {
-        visible(Placed { dx: 0.0, dy: 0.0, item, line: 0, own_colours: false, float: None, clip: None });
+    let borders = |visible: &mut dyn FnMut(Placed<'a>)| {
+        for item in page.borders.iter() {
+            visible(Placed { dx: 0.0, dy: 0.0, item, line: 0, own_colours: false, float: None, clip: None });
+        }
+    };
+    if page.borders_behind {
+        borders(&mut visible);
     }
     let bodies = || page.children.iter().filter_map(|c| if let PageChild::Body(b) = c { Some(&**b) } else { None });
     let neither = |k: &BoxKind| is_float(k) || is_notes(k);
@@ -259,6 +264,9 @@ pub fn paint_lines<'a>(
             backgrounds(&b.children, b.offset.0, b.offset.1, &behind, &mut visible);
             flow(&b.children, b.offset.0, b.offset.1, &behind, &mut lines, &mut visible);
         }
+    }
+    if !page.borders_behind {
+        borders(&mut visible);
     }
 }
 
@@ -907,6 +915,7 @@ mod tests {
             h: 792.0,
             body_area: Some((72.0, 720.0)),
             borders: Box::new([]),
+            borders_behind: false,
             children: Box::new([
                 PageChild::Body(Rc::new(body.finish(BoxKind::Body, (0.0, 0.0), (612.0, 792.0)))),
                 PageChild::Header(header.finish(BoxKind::Header { story: "header1.xml".into() }, (0.0, 36.0), (612.0, 12.0))),
@@ -982,6 +991,7 @@ mod tests {
             body_area: None,
             children: Box::new([PageChild::Body(Rc::new(body.finish(BoxKind::Body, (0.0, 0.0), (612.0, 792.0))))]),
             borders: Box::new([]),
+            borders_behind: false,
         };
         assert_eq!(paint_items(&page).len(), 1);
         assert_eq!(excluded(&page).len(), 1);

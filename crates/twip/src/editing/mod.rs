@@ -56,6 +56,7 @@ pub mod position;
 mod preview;
 mod properties;
 pub mod protection;
+pub mod readback;
 mod resize;
 pub mod revisions;
 pub mod section;
@@ -77,6 +78,7 @@ pub mod table_format;
 mod table_handles;
 pub mod tables;
 pub mod text;
+pub mod theme;
 mod touched;
 pub mod view;
 mod wrap_points;
@@ -198,6 +200,10 @@ pub struct Editor {
     /// A pointer press, move or release is running: its edits are where the pointer is, so they don't scroll to the
     /// caret.
     pointing: bool,
+    /// Edits leave the caret's page unlaid until the last of several undone or redone in one go.
+    deferring: bool,
+    /// The sections section commands act on, over the selection's.
+    section_scope: Option<std::ops::RangeInclusive<usize>>,
     table_hover: Option<view::TableHover>,
     zone_drag: Option<(TableId, selection::CellRef, selection::CellShape)>,
     cursor: input::Cursor,
@@ -418,6 +424,8 @@ impl Editor {
             table_preview: Vec::new(),
             table_drag: None,
             pointing: false,
+            deferring: false,
+            section_scope: None,
             table_hover: None,
             zone_drag: None,
             cursor: input::Cursor::Text,
@@ -1427,7 +1435,7 @@ impl Editor {
             let labels = self.labels_changed(|_| true);
             assert!(labels.is_empty(), "integrity: 9 list labels: {} differ from a fresh numbering, first {:?}", labels.len(), labels.first());
         }
-        if let Some(p) = self.caret() {
+        if let Some(p) = self.caret().filter(|_| !self.deferring) {
             self.ensure(&p, fonts);
             if !self.pointing && before.focus() != Some(p) {
                 self.scroll_to_caret(fonts);
@@ -1442,6 +1450,36 @@ impl Editor {
             return Outcome::Unchanged("read only");
         }
         self.step_history(undo, fonts)
+    }
+
+    /// Undoes (or redoes) the last `count` actions in one go: the Undo and Redo lists' choice of an action takes back
+    /// (or does again) it and everything after it. Changed when at least one was.
+    pub fn undo_many(&mut self, undo: bool, count: usize, fonts: &Fonts) -> Outcome {
+        let available = if undo { self.history.undo_depth() } else { self.history.redo_depth() };
+        let count = count.min(available);
+        if count <= 1 {
+            return self.undo(undo, fonts);
+        }
+        let before = self.selection;
+        self.deferring = true;
+        let mut out = Outcome::Unchanged(if undo { "nothing to undo" } else { "nothing to redo" });
+        for k in 0..count {
+            self.deferring = k + 1 < count;
+            match self.undo(undo, fonts) {
+                o @ Outcome::Changed(_) => out = o,
+                o => {
+                    if !matches!(out, Outcome::Changed(_)) {
+                        out = o;
+                    }
+                    break;
+                }
+            }
+        }
+        if self.deferring {
+            self.deferring = false;
+            self.after_edit(before, fonts);
+        }
+        out
     }
 
     /// Takes back transaction `tx`, the last one, unrecorded: an edit that was only ever provisional, whatever the

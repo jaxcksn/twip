@@ -544,7 +544,7 @@ mod tests {
 
     #[test]
     fn a_dotted_border_is_one_dotted_rect() {
-        let b = Border { style: "dotted".into(), width: 1.0, space: 0.0, shadow: false, color: None };
+        let b = Border { style: "dotted".into(), width: 1.0, space: 0.0, shadow: false, color: None, color_theme: None };
         let mut out = Vec::new();
         edge(&mut out, [0.0, 0.0, 9.0, 1.0], true, false, &b);
         assert!(matches!(out[..], [Item::Rect { rect: [0.0, 0.0, 9.0, 1.0], dash: Dash::Dotted, .. }]));
@@ -568,7 +568,7 @@ mod tests {
     }
 
     fn edge_of(style: &str, far: bool, horizontal: bool, len: f64) -> Vec<Item> {
-        let b = Border { style: style.into(), width: 1.0, space: 0.0, shadow: false, color: Some(0x336699) };
+        let b = Border { style: style.into(), width: 1.0, space: 0.0, shadow: false, color: Some(0x336699), color_theme: None };
         let t = thick(&b);
         let mut out = Vec::new();
         edge(&mut out, if horizontal { [0.0, 0.0, len, t] } else { [0.0, 0.0, t, len] }, horizontal, far, &b);
@@ -628,7 +628,7 @@ mod tests {
             }
         }
         for (style, band) in [("wave", WAVE_HEIGHT + WAVE_STROKE), ("doubleWave", 2.0 * WAVE_HEIGHT + WAVE_STROKE), ("dashDotStroked", HATCH_BAND)] {
-            let b = Border { style: style.into(), width: 1.0, space: 0.0, shadow: false, color: Some(0) };
+            let b = Border { style: style.into(), width: 1.0, space: 0.0, shadow: false, color: Some(0), color_theme: None };
             let mut out = Vec::new();
             edge(&mut out, [0.0, 0.0, 40.0, 8.0], true, false, &b);
             let [Item::Shape(s)] = out.as_slice() else { panic!() };
@@ -644,7 +644,7 @@ mod tests {
 
     #[test]
     fn a_shadow_is_black_below_and_right_of_far_edges_only() {
-        let b = Border { style: "single".into(), width: 1.5, space: 0.0, shadow: true, color: Some(0x336699) };
+        let b = Border { style: "single".into(), width: 1.5, space: 0.0, shadow: true, color: Some(0x336699), color_theme: None };
         let mut out = Vec::new();
         shadow(&mut out, [0.0, 10.0, 50.0, 11.5], true, true, &b, true, true);
         shadow(&mut out, [48.5, 0.0, 50.0, 11.5], false, true, &b, true, false);
@@ -664,7 +664,7 @@ mod tests {
 
     #[test]
     fn a_diagonal_is_one_line_as_word_draws_it() {
-        let b = |style: &str| Border { style: style.into(), width: 1.5, space: 0.0, shadow: false, color: Some(0x336699) };
+        let b = |style: &str| Border { style: style.into(), width: 1.5, space: 0.0, shadow: false, color: Some(0x336699), color_theme: None };
         let draw = |style: &str, rect: [f64; 4], up: bool| {
             let mut out = Vec::new();
             diagonal(&mut out, rect, up, &b(style));
@@ -699,7 +699,7 @@ mod tests {
             let Item::Shape(s) = &out[0] else { panic!() };
             assert!(s.geom.paths[0].segs.len() <= 2 * 2 * MAX_SEGMENTS as usize + 8, "{style}");
         }
-        let b = Border { style: "dotted".into(), width: 0.25, space: 0.0, shadow: false, color: None };
+        let b = Border { style: "dotted".into(), width: 0.25, space: 0.0, shadow: false, color: None, color_theme: None };
         let mut out = Vec::new();
         edge(&mut out, [0.0, 0.0, 1e9, 0.25], true, false, &b);
         assert!(out.len() <= MAX_SEGMENTS as usize + 1);
@@ -708,7 +708,7 @@ mod tests {
 
     #[test]
     fn a_3d_border_is_three_lines_in_light_middle_and_dark() {
-        let b = |style: &str| Border { style: style.into(), width: 1.0, space: 0.0, shadow: false, color: Some(0) };
+        let b = |style: &str| Border { style: style.into(), width: 1.0, space: 0.0, shadow: false, color: Some(0), color_theme: None };
         let drawn = |style: &str| {
             let mut out = Vec::new();
             edge(&mut out, [0.0, 0.0, 10.0, 2.5], true, false, &b(style));

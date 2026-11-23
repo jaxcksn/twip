@@ -129,3 +129,27 @@ fn a_symbol_is_its_own_step() {
     e.execute(Command::Undo, fonts());
     assert_eq!(texts(&e).concat(), "\u{a9}");
 }
+
+#[test]
+fn the_undo_list_undoes_back_to_the_action_chosen_and_redo_does_them_again() {
+    let mut e = Editor::open(&blank_with("x"), fonts()).expect("opens");
+    e.complete(fonts());
+    e.execute(Command::SelectAll, fonts());
+    e.execute(Command::SetBold(true), fonts());
+    e.execute(Command::SetItalic(true), fonts());
+    e.execute(Command::SetUnderline(crate::api::value::UnderlineStyle::Single), fonts());
+    let labels: Vec<&str> = e.history().undo_labels().collect();
+    assert_eq!(labels.len(), 3);
+    assert_eq!(labels[0], e.history().next_undo().unwrap(), "the most recent first");
+    let shown = |e: &mut Editor| {
+        let c = e.format_state().expect("a state").character;
+        (c.bold, c.italic)
+    };
+    assert!(matches!(e.undo_many(true, 2, fonts()), Outcome::Changed(_)));
+    assert_eq!(e.history().redo_depth(), 2);
+    assert_eq!(shown(&mut e), (crate::api::state::Tri::Uniform(true), crate::api::state::Tri::Uniform(false)));
+    assert_eq!(e.history().redo_labels().collect::<Vec<_>>().len(), 2);
+    assert!(matches!(e.undo_many(false, 9, fonts()), Outcome::Changed(_)), "more than there are redoes them all");
+    assert_eq!((e.history().undo_depth(), e.history().redo_depth()), (3, 0));
+    assert!(matches!(e.undo_many(false, 1, fonts()), Outcome::Unchanged(_)));
+}

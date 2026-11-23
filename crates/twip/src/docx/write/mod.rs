@@ -5012,7 +5012,21 @@ fn place(
 
 /// [`Emit::group`], or nothing for no paragraphs (the sources' text is deleted).
 fn emit(s: &Saver, qs: &[&Paragraph], srcs: &[&ParaSrc], ps: &[&Paragraph]) -> Result<String, String> {
-    if ps.is_empty() { Ok(String::new()) } else { Emit::group(s, qs, srcs, ps) }
+    if ps.is_empty() {
+        return Ok(String::new());
+    }
+    // Frames made since reading: their paragraphs, each with its `w:framePr`, go before the paragraph they anchor at.
+    let mut out: String = ps
+        .iter()
+        .flat_map(|p| p.inlines.iter())
+        .filter_map(|i| match i {
+            Inline::Float(f, _) if f.frame_src.is_none() && f.is_frame() => f.text_box.as_ref(),
+            _ => None,
+        })
+        .map(|tb| s.nested_blocks(&tb.blocks))
+        .collect::<Result<_, _>>()?;
+    out.push_str(&Emit::group(s, qs, srcs, ps)?);
+    Ok(out)
 }
 
 fn same_src(a: &Option<Rc<Range<usize>>>, b: &Option<Rc<Range<usize>>>) -> bool {

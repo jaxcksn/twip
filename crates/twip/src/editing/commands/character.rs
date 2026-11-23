@@ -1,11 +1,11 @@
 //! Character formatting
 
 use crate::api::command::{CaseChange, CharacterEffects, Language, Ligatures, NumberForm, NumberSpacing, Typography};
-use crate::api::drawing::TextEffectsChange;
+use crate::api::drawing::{ColourValue, TextEffectsChange};
 use crate::api::value::{AutoOr, Color, HighlightColor, Points, StyleId, UnderlineStyle};
 use crate::docx::Inline;
-use crate::docx::RunStyle;
 use crate::docx::write::props::Props;
+use crate::docx::{RunStyle, ThemeFont};
 use crate::font::Fonts;
 use crate::layout::Unit;
 
@@ -28,7 +28,7 @@ fn strip(tag: &str, name: &str) -> String {
 }
 
 /// `tag` (one start tag or empty element) with the attribute `name` set.
-fn with_attr(tag: &str, name: &str, value: &str) -> String {
+pub(crate) fn with_attr(tag: &str, name: &str, value: &str) -> String {
     let v = crate::docx::write::props::esc(value);
     if let Some(k) = tag.find(&format!(" {name}=\"")) {
         let from = k + name.len() + 3;
@@ -37,6 +37,83 @@ fn with_attr(tag: &str, name: &str, value: &str) -> String {
     }
     let at = tag.rfind("/>").or_else(|| tag.rfind('>')).unwrap_or(tag.len());
     format!("{} {name}=\"{v}\"{}", &tag[..at], &tag[at..])
+}
+
+/// `w14:ligatures` values by their bits: 1 standard, 2 contextual, 4 historical, 8 discretionary.
+const LIGATURES: [&str; 16] = [
+    "none",
+    "standard",
+    "contextual",
+    "standardContextual",
+    "historical",
+    "standardHistorical",
+    "contextualHistorical",
+    "standardContextualHistorical",
+    "discretional",
+    "standardDiscretional",
+    "contextualDiscretional",
+    "standardContextualDiscretional",
+    "historicalDiscretional",
+    "standardHistoricalDiscretional",
+    "contextualHistoricalDiscretional",
+    "all",
+];
+
+/// OpenType ligatures, each kind on or off.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct LigatureFlags {
+    /// Standard ligatures (`liga`).
+    pub standard: bool,
+    /// Contextual ligatures (`clig`).
+    pub contextual: bool,
+    /// Historical ligatures (`hlig`).
+    pub historical: bool,
+    /// Discretionary ligatures (`dlig`).
+    pub discretionary: bool,
+}
+
+impl LigatureFlags {
+    /// As `w14:ligatures` bits.
+    pub fn bits(self) -> u8 {
+        u8::from(self.standard) | u8::from(self.contextual) << 1 | u8::from(self.historical) << 2 | u8::from(self.discretionary) << 3
+    }
+
+    /// From `w14:ligatures` bits.
+    pub fn of(bits: u8) -> LigatureFlags {
+        LigatureFlags { standard: bits & 1 != 0, contextual: bits & 2 != 0, historical: bits & 4 != 0, discretionary: bits & 8 != 0 }
+    }
+}
+
+/// OpenType settings beyond [`Typography`]'s: each set, or kept (`None`).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct OpenTypeChange {
+    /// The ligatures, each kind on or off; over `Typography::ligatures`.
+    pub ligatures: Option<LigatureFlags>,
+    /// The stylistic sets on, each 1 to 20 (none: off); over `Typography::stylistic_set`.
+    pub stylistic_sets: Option<Vec<u8>>,
+}
+
+/// The attributes a colour's theme colour, tint and shade are written in.
+pub(crate) const THEME_COLOR: [&str; 3] = ["themeColor", "themeTint", "themeShade"];
+/// The attributes a shading fill's theme colour, tint and shade are written in.
+pub(crate) const THEME_FILL: [&str; 3] = ["themeFill", "themeFillTint", "themeFillShade"];
+
+/// `tag` with colour `c` (none: `auto`) in its attribute `hex` and its theme colour in `names` (each of which `tag` is
+/// without).
+pub(crate) fn colour_attrs(tag: &str, w: &str, hex: &str, names: [&str; 3], c: Option<crate::editing::theme::WordColour>) -> String {
+    let Some(c) = c else { return with_attr(tag, &format!("{w}{hex}"), "auto") };
+    let mut t = with_attr(tag, &format!("{w}{hex}"), &format!("{:06X}", c.rgb));
+    if let Some(r) = c.theme
+        && let Some(name) = crate::docx::props::theme_name(r.slot)
+    {
+        t = with_attr(&t, &format!("{w}{}", names[0]), name);
+        for (b, n) in [(r.tint, names[1]), (r.shade, names[2])] {
+            if let Some(b) = b {
+                t = with_attr(&t, &format!("{w}{n}"), &format!("{b:02X}"));
+            }
+        }
+    }
+    t
 }
 
 pub(crate) fn underline_value(style: UnderlineStyle) -> &'static str {
@@ -82,6 +159,14 @@ pub(crate) fn highlight_value(c: HighlightColor) -> &'static str {
     }
 }
 
+/// An RGB colour as a colour value.
+pub(crate) fn rgb_value(c: AutoOr<Color>) -> AutoOr<ColourValue> {
+    match c {
+        AutoOr::Auto => AutoOr::Auto,
+        AutoOr::Value(c) => AutoOr::Value(ColourValue::rgb(c)),
+    }
+}
+
 impl Editor {
     pub(in crate::editing) fn set_toggle(&mut self, t: Toggle, on: bool, fonts: &Fonts) -> Outcome {
         self.format(&Format::Set(t, on), fonts)
@@ -97,9 +182,17 @@ impl Editor {
     }
 
     pub(in crate::editing) fn set_font_color(&mut self, c: AutoOr<Color>, fonts: &Fonts) -> Outcome {
+        self.set_font_colour(rgb_value(c), fonts)
+    }
+
+    /// Sets the text's colour: an RGB colour, a theme colour with a tint or shade, or automatic.
+    pub fn set_font_colour(&mut self, c: AutoOr<ColourValue>, fonts: &Fonts) -> Outcome {
         let c = match c {
             AutoOr::Auto => None,
-            AutoOr::Value(c) => Some(c.0),
+            AutoOr::Value(c) => match self.word_colour(&c) {
+                Ok(c) => Some(c),
+                Err(why) => return Outcome::invalid(&why),
+            },
         };
         self.format(&Format::FontColor(c), fonts)
     }
@@ -146,6 +239,17 @@ impl Editor {
     }
 
     pub(in crate::editing) fn set_typography(&mut self, t: Typography, fonts: &Fonts) -> Outcome {
+        self.set_typography_with(t, &OpenTypeChange::default(), fonts)
+    }
+
+    /// Sets the text's typography and, in the same step, its OpenType ligature flags and stylistic sets (each set, or
+    /// kept).
+    pub fn set_typography_with(&mut self, t: Typography, more: &OpenTypeChange, fonts: &Fonts) -> Outcome {
+        if let Some(sets) = &more.stylistic_sets
+            && sets.iter().any(|n| !(1..=20).contains(n))
+        {
+            return Outcome::invalid("a stylistic set is 1…20");
+        }
         // The part the w14 elements go in declares their namespace or not: the styles part when a style is formatted.
         let cx = match (&self.style_target, &self.doc.resolver) {
             (Some(_), Some(r)) => r.styles.cx(),
@@ -161,15 +265,15 @@ impl Editor {
                 if let Some(k) = t.kerning {
                     p.set("kern", format!("<{w}kern {w}val=\"{}\"/>", (k.0 * 2.0).round() as i64));
                 }
-                if let Some(l) = t.ligatures {
-                    let v = match l {
-                        Ligatures::None => "none",
-                        Ligatures::Standard => "standard",
-                        Ligatures::StandardContextual => "standardContextual",
-                        Ligatures::HistoricalDiscretional => "historicalDiscretional",
-                        Ligatures::All => "all",
-                    };
-                    p.set("w14:ligatures", cx.w14("ligatures", &[("val", v)], ""));
+                let preset = t.ligatures.map(|l| match l {
+                    Ligatures::None => 0,
+                    Ligatures::Standard => 1,
+                    Ligatures::StandardContextual => 3,
+                    Ligatures::HistoricalDiscretional => 12,
+                    Ligatures::All => 15,
+                });
+                if let Some(bits) = more.ligatures.map(LigatureFlags::bits).or(preset) {
+                    p.set("w14:ligatures", cx.w14("ligatures", &[("val", LIGATURES[usize::from(bits)])], ""));
                 }
                 if let Some(n) = t.number_spacing {
                     let v = match n {
@@ -187,10 +291,16 @@ impl Editor {
                     };
                     p.set("w14:numForm", cx.w14("numForm", &[("val", v)], ""));
                 }
-                match t.stylistic_set {
-                    Some(0) => p.remove("w14:stylisticSets"),
-                    Some(n) => p.set("w14:stylisticSets", cx.w14("stylisticSets", &[], &format!("<{{w14}}styleSet {{w14}}id=\"{n}\"/>"))),
-                    None => {}
+                let sets = more.stylistic_sets.clone().or_else(|| t.stylistic_set.map(|n| if n == 0 { Vec::new() } else { vec![n] }));
+                if let Some(mut sets) = sets {
+                    sets.sort_unstable();
+                    sets.dedup();
+                    if sets.is_empty() {
+                        p.remove("w14:stylisticSets");
+                    } else {
+                        let inner: String = sets.iter().map(|n| format!("<{{w14}}styleSet {{w14}}id=\"{n}\"/>")).collect();
+                        p.set("w14:stylisticSets", cx.w14("stylisticSets", &[], &inner));
+                    }
                 }
                 if let Some(on) = t.contextual_alternates {
                     p.set("w14:cntxtAlts", cx.w14("cntxtAlts", &[("val", if on { "1" } else { "0" })], ""));
@@ -198,6 +308,80 @@ impl Editor {
             },
             fonts,
         )
+    }
+
+    /// Sets the text's font to the theme's heading or body font (`+Headings`, `+Body`): it follows the theme.
+    pub fn set_theme_font(&mut self, f: ThemeFont, fonts: &Fonts) -> Outcome {
+        let v = match f {
+            ThemeFont::Major => "majorHAnsi",
+            ThemeFont::Minor => "minorHAnsi",
+        };
+        self.format_runs(
+            "Font",
+            &|p, w, _| {
+                let now = p.get("rFonts").map_or_else(|| format!("<{w}rFonts/>"), str::to_string);
+                let now = ["ascii", "hAnsi", "asciiTheme", "hAnsiTheme"].iter().fold(now, |t, a| strip(&t, &format!("{w}{a}")));
+                let now = with_attr(&now, &format!("{w}asciiTheme"), v);
+                p.set("rFonts", with_attr(&now, &format!("{w}hAnsiTheme"), v));
+            },
+            fonts,
+        )
+    }
+
+    /// Fits the selected text to `width` (Fit Text), or, `None`, lets it take its own width again. A caret in fitted
+    /// text acts on its whole region, which it selects.
+    pub fn set_fit_text(&mut self, width: Option<Points>, fonts: &Fonts) -> Outcome {
+        if let Some(w) = width
+            && !(w.0.is_finite() && w.0 > 0.0 && w.0 <= super::bounds::MAX)
+        {
+            return Outcome::invalid("the width must be more than 0 and at most 1584");
+        }
+        if self.selection.is_collapsed() {
+            let Some(r) = self.fit_region_at_caret() else { return Outcome::unavailable("nothing selected") };
+            self.selection = r;
+        }
+        let ranges = self.selected_ranges();
+        // A region id no fitted text in these paragraphs has, so the region doesn't run into another.
+        let mut used: Vec<i64> = Vec::new();
+        for &(para, _, _) in &ranges {
+            let Some(p) = self.index.para(&self.doc, para) else { continue };
+            used.extend(p.inlines.iter().filter_map(|i| i.run()?.fit_text.map(|f| f.1)));
+        }
+        used.sort_unstable();
+        used.dedup();
+        let id = (1..).find(|n| used.binary_search(n).is_err()).unwrap_or(1);
+        let tw = width.map(|w| (w.0 * 20.0).round() as i64);
+        self.format_runs(
+            "Fit Text",
+            &|p, w, _| match tw {
+                Some(tw) => p.set("fitText", format!("<{w}fitText {w}val=\"{tw}\" {w}id=\"{id}\"/>")),
+                None => p.remove("fitText"),
+            },
+            fonts,
+        )
+    }
+
+    /// The fitted region a collapsed caret is in, as a selection of it.
+    fn fit_region_at_caret(&mut self) -> Option<crate::editing::selection::Selection> {
+        let caret = self.caret()?;
+        let (para, at) = caret.para_offset()?;
+        let p = self.index.para(&self.doc, para)?;
+        let mut spans: Vec<(u32, u32, Option<i64>)> = Vec::new();
+        let mut u = 0u32;
+        for i in &p.inlines {
+            let n = i.units() as u32;
+            if n > 0 {
+                let id = i.run().and_then(|r| r.fit_text.map(|f| f.1));
+                match spans.last_mut() {
+                    Some(last) if last.2 == id && last.1 == u => last.1 = u + n,
+                    _ => spans.push((u, u + n, id)),
+                }
+            }
+            u += n;
+        }
+        let &(a, b, _) = spans.iter().find(|s| s.2.is_some() && s.0 <= at.0 && at.0 <= s.1)?;
+        let pos = |x: u32| crate::editing::position::Position::text(caret.story, para, crate::layout::Unit(x));
+        Some(crate::editing::selection::Selection::range(pos(a), pos(b), crate::editing::selection::Granularity::Char))
     }
 
     pub(in crate::editing) fn set_text_effects(&mut self, change: TextEffectsChange, fonts: &Fonts) -> Outcome {
@@ -310,18 +494,26 @@ impl Editor {
     }
 
     pub(in crate::editing) fn set_underline_color(&mut self, c: AutoOr<Color>, fonts: &Fonts) -> Outcome {
+        self.set_underline_colour(rgb_value(c), fonts)
+    }
+
+    /// Sets the underline's colour: an RGB colour, a theme colour with a tint or shade, or automatic (the text's).
+    pub fn set_underline_colour(&mut self, c: AutoOr<ColourValue>, fonts: &Fonts) -> Outcome {
+        let c = match c {
+            AutoOr::Auto => None,
+            AutoOr::Value(c) => match self.word_colour(&c) {
+                Ok(c) => Some(c),
+                Err(why) => return Outcome::invalid(&why),
+            },
+        };
         self.format_runs(
             "Underline Color",
             &|p, w, run| {
                 // Only underlined text has an underline colour: its underline written with it.
                 let Some(u) = run.underline.as_deref() else { return };
                 let now = p.get("u").map_or_else(|| format!("<{w}u {w}val=\"{u}\"/>"), str::to_string);
-                let now = ["themeColor", "themeTint", "themeShade"].iter().fold(now, |t, a| strip(&t, &format!("{w}{a}")));
-                let hex = match c {
-                    AutoOr::Auto => "auto".to_string(),
-                    AutoOr::Value(c) => format!("{:06X}", c.0),
-                };
-                p.set("u", with_attr(&now, &format!("{w}color"), &hex));
+                let now = THEME_COLOR.iter().fold(now, |t, a| strip(&t, &format!("{w}{a}")));
+                p.set("u", colour_attrs(&now, w, "color", THEME_COLOR, c));
             },
             fonts,
         )

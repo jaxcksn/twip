@@ -548,8 +548,10 @@ pub struct PageFragment {
     pub h: f64,
     pub body_area: Option<(f64, f64)>,
     pub children: Box<[PageChild]>,
-    /// The page's borders, drawn before its stories.
+    /// The page's borders, drawn after its stories (before them when `borders_behind`).
     pub borders: Box<[Item]>,
+    /// The borders are behind the stories.
+    pub borders_behind: bool,
 }
 
 #[derive(Clone, Debug)]
