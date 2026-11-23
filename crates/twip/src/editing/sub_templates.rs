@@ -1048,12 +1048,18 @@ impl Editor {
 
     pub(super) fn refuse_expanded(&mut self) -> bool {
         let Some((a, b)) = self.selection.ordered(&self.index) else { return false };
-        self.refuse_expanded_in(&a, &b)
+        let field = self.expanded_in(&a, &b).or_else(|| self.other_ranges().iter().find_map(|(a, b)| self.expanded_in(a, b)));
+        self.refuse_field(field)
     }
 
     /// [`Editor::refuse_expanded`] for `a..b` rather than the selection.
     pub(super) fn refuse_expanded_in(&mut self, a: &Position, b: &Position) -> bool {
-        let Some(field) = self.expanded_in(a, b) else { return false };
+        let field = self.expanded_in(a, b);
+        self.refuse_field(field)
+    }
+
+    fn refuse_field(&mut self, field: Option<FieldId>) -> bool {
+        let Some(field) = field else { return false };
         let part = self.references.by_field.get(&field).and_then(|r| r.part);
         let name = part.and_then(|k| self.doc.glossary.as_ref()?.parts.get(k as usize)).map(|b| b.name.clone());
         self.refused = Some("sub-template");

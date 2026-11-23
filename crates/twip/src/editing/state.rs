@@ -460,7 +460,8 @@ impl Editor {
         let link = self.link_here().is_some();
         let comments = !self.doc.comments.by_id.is_empty();
         let back = !self.edit_marks.is_empty();
-        let repeat = f.is_some_and(|f| f.can_redo) || self.repeat.is_some();
+        let repeat =
+            f.is_some_and(|f| f.can_redo) || self.repeat.as_ref().is_some_and(|c| !(self.is_discontiguous() && super::multi::single_only(c.id())));
         let tracking = self.tracking();
         let locked = self.doc.settings.protection.as_ref().is_some_and(|p| p.forces_tracking());
         let (undo_label, redo_label) = (self.history.next_undo().map(str::to_string), self.history.next_redo().map(str::to_string));
@@ -644,6 +645,17 @@ impl Editor {
                 _ => (editable || !info.mutates, (None, None)),
             };
             out.insert(id, CommandState { enabled, checked, value });
+        }
+        // A discontiguous selection
+        if self.is_discontiguous() {
+            let cells = editable && self.any_piece_in_table();
+            for (id, s) in out.iter_mut() {
+                if super::multi::single_only(*id) {
+                    s.enabled = false;
+                } else if super::multi::formats_cells(*id) {
+                    s.enabled = cells;
+                }
+            }
         }
         // What document protection refuses here.
         if let Some(refuses) = self.protection_gate() {

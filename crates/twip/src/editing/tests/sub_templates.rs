@@ -960,3 +960,22 @@ fn a_replaced_body_brings_the_lists_of_its_group_shapes_text() {
     let saved = crate::docx::write::save(e.document()).expect("saves");
     assert_eq!(formats(&crate::docx::read_editable(&saved).expect("reads again")), ["upperRoman"], "its own list, as saved");
 }
+
+#[test]
+fn a_range_on_a_shown_body_keeps_every_range_from_formatting() {
+    let (mut e, reference) = expanded();
+    click_line(&mut e, reference, 1);
+    let (a, b) = e.selection().ordered(e.index()).expect("the reference field");
+    let after = body_block(&e, 0, 2);
+    let story = a.story;
+    let free = (super::super::position::Position::text(story, after, Unit(0)), super::super::position::Position::text(story, after, Unit(2)));
+    e.select_ranges(&[(a, b), free]);
+    assert!(e.is_discontiguous());
+    let before = e.document().sections[0].blocks.clone();
+    let out = e.execute(Command::SetBold(true), fonts());
+    assert!(!matches!(out, super::super::commands::Outcome::Changed(_)), "{out:?}");
+    assert_eq!(e.document().sections[0].blocks, before, "neither range formatted");
+    let out = e.execute(Command::InsertText("x".into()), fonts());
+    assert!(matches!(out, super::super::commands::Outcome::Changed(_)), "typing replaces the free range alone: {out:?}");
+    assert_eq!(e.document().sections[0].blocks[1], before[1], "the reference is kept");
+}

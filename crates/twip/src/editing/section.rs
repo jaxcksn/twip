@@ -96,14 +96,26 @@ impl Editor {
         self.focus_section()
     }
 
-    /// The sections the selection covers, the focus's alone outside the body's text.
-    pub(super) fn selected_sections(&self) -> std::ops::RangeInclusive<usize> {
+    /// The sections the selection covers, every range's and block of cells' of a discontiguous one, in order; the
+    /// focus's alone outside the body's text.
+    pub(super) fn selected_sections(&self) -> Vec<usize> {
         let one = self.focus_section();
-        let Some((a, b)) = self.selection.ordered(&self.index) else { return one..=one };
-        match (self.section_at(&a), self.section_at(&b)) {
-            (Some(x), Some(y)) => x.min(y)..=x.max(y),
-            _ => one..=one,
+        let own = self.selection.ordered(&self.index);
+        let blocks = if self.is_discontiguous() { self.cell_blocks() } else { Vec::new() };
+        let cells = blocks.iter().filter_map(|c| self.cells_start(c)).map(|p| (p, p));
+        let mut out: Vec<usize> = Vec::new();
+        for (a, b) in self.other_ranges().iter().copied().chain(own).chain(cells) {
+            match (self.section_at(&a), self.section_at(&b)) {
+                (Some(x), Some(y)) => out.extend(x.min(y)..=x.max(y)),
+                _ => out.push(one),
+            }
         }
+        out.sort_unstable();
+        out.dedup();
+        if out.is_empty() {
+            out.push(one);
+        }
+        out
     }
 
     /// Sets the page borders of the selection's section, or of every section.

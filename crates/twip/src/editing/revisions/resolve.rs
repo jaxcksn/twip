@@ -45,7 +45,8 @@ struct Pick {
     who: Who,
     /// In a selection: the block-level changes it touches, where they are.
     blocks: Option<HashSet<(Spot, RevisionId)>>,
-    inside: Option<HashMap<ParaId, Range<u32>>>,
+    /// In a selection: the parts of each paragraph with run marks it covers, in order, apart from each other.
+    inside: Option<HashMap<ParaId, Vec<Range<u32>>>>,
     /// In a selection: the run marks of each paragraph a row insertion or deletion it takes holds, by their id.
     tied: HashMap<ParaId, HashSet<RevisionId>>,
     moves: HashSet<Rc<str>>,
@@ -108,9 +109,10 @@ fn decide(r: &Run, accept: bool, take: impl Fn(&RevisionMark) -> bool) -> Option
 }
 
 fn resolve_inlines(p: &Paragraph, pick: &Pick, accept: bool) -> Option<(Vec<Inline>, Vec<Range<u32>>)> {
-    let inside = pick.inside.as_ref().map(|i| i.get(&ParaId(p.id)).cloned());
+    let inside = pick.inside.as_ref().map(|i| i.get(&ParaId(p.id)));
     let tied = pick.tied.get(&ParaId(p.id));
-    let cuts: Vec<u32> = inside.clone().flatten().map(|r| vec![r.start, r.end]).unwrap_or_default();
+    let mut cuts: Vec<u32> = inside.flatten().into_iter().flatten().flat_map(|r| [r.start, r.end]).collect();
+    cuts.dedup();
     let mut cache: HashMap<(*const RunStyle, bool), Option<(bool, Run)>> = HashMap::new();
     let mut out: Vec<(Inline, bool)> = Vec::with_capacity(p.inlines.len());
     let (mut at, mut changed) = (0u32, false);
@@ -147,7 +149,7 @@ fn resolve_inlines(p: &Paragraph, pick: &Pick, accept: bool) -> Option<(Vec<Inli
             let in_range = match &inside {
                 None => true,
                 Some(None) => false,
-                Some(Some(x)) => x.start <= at && at + n <= x.end,
+                Some(Some(x)) => x.iter().any(|x| x.start <= at && at + n <= x.end),
             };
             let take = |m: &RevisionMark| pick.run(m, in_range) || tied.is_some_and(|t| t.contains(&m.id));
             let d = cache.entry((Rc::as_ptr(r), in_range)).or_insert_with(|| decide(r, accept, take)).clone();
@@ -286,6 +288,33 @@ impl Editor {
                 };
                 p.with_moves(&f, |it| picked.contains(&it.mark.id))
             }
+            Scope::Selection if self.is_discontiguous() => {
+                let pieces = self.pieces();
+                let idx = &self.index;
+                let ranges: Vec<(Position, Position)> = pieces.iter().filter_map(|s| s.ordered(idx)).collect();
+                let blocks: Vec<CellsPick> = pieces.iter().filter_map(|s| CellsPick::of(&self.doc, idx, s)).collect();
+                // The ranges from the first ending after a place
+                let from = |a: &Position| ranges.partition_point(|r| idx.cmp(&r.1, a).is_le());
+                let touches = |it: &Item| {
+                    ranges.get(from(&it.start)).is_some_and(|r| it.story == r.0.story && idx.cmp(&r.0, &it.end).is_lt())
+                        || blocks.iter().any(|b| b.touches(idx, it))
+                };
+                let covers = |p: ParaId| {
+                    let q = idx.para(&self.doc, p)?;
+                    let story = idx.story(idx.para_slot(p)?.container);
+                    let (p0, p1) = (Position::text(story, p, Unit(0)), Position::text(story, p, para_len(q)));
+                    if blocks.iter().any(|b| b.inside(idx, &p0)) {
+                        return Some(std::iter::once(0..para_len(q).0).collect());
+                    }
+                    let v: Vec<Range<u32>> = ranges[from(&p0)..]
+                        .iter()
+                        .take_while(|r| idx.cmp(&r.0, &p1).is_lt())
+                        .filter_map(|r| covered(&self.doc, idx, r.0, r.1, p))
+                        .collect();
+                    (!v.is_empty()).then_some(v)
+                };
+                self.place_pick(&f, touches, covers)
+            }
             Scope::Selection => match self.selection {
                 Selection::Caret(c) => {
                     let list = revisions(&self.doc, &self.index);
@@ -297,30 +326,17 @@ impl Editor {
                     let (s, e) = self.selection.ordered(&self.index)?;
                     let idx = &self.index;
                     let touches = |it: &Item| it.story == s.story && idx.cmp(&it.start, &e).is_lt() && idx.cmp(&s, &it.end).is_lt();
-                    self.place_pick(&f, touches, |p| covered(&self.doc, idx, s, e, p))
+                    self.place_pick(&f, touches, |p| covered(&self.doc, idx, s, e, p).map(|r| vec![r]))
                 }
-                Selection::Cells { table, anchor, focus, .. } => {
-                    let t = self.index.table(&self.doc, table)?;
-                    let g = crate::docx::grid::Grid::of(t);
-                    let (rows, cols) = (anchor.row.min(focus.row)..=anchor.row.max(focus.row), anchor.col.min(focus.col)..=anchor.col.max(focus.col));
-                    let chosen = |row: usize, cell: usize| {
-                        rows.contains(&row)
-                            && g.rows.get(row).and_then(|r| r.get(cell)).is_some_and(|&(c, n, _)| c <= *cols.end() && c + n.max(1) > *cols.start())
-                    };
+                Selection::Cells { .. } => {
+                    let b = CellsPick::of(&self.doc, &self.index, &self.selection)?;
                     let idx = &self.index;
-                    let inside = |pos: &Position| idx.chain_of(pos).iter().any(|l| l.table == table && chosen(l.row, l.cell));
-                    let touches = |it: &Item| match it.spot {
-                        Spot::Row(x, row) if x == table => rows.contains(&row),
-                        Spot::Table(x) if x == table => true,
-                        Spot::Cell(x, row, cell) if x == table => chosen(row, cell),
-                        _ => inside(&it.start),
-                    };
                     let whole = |p: ParaId| {
                         let q = idx.para(&self.doc, p)?;
                         let story = idx.story(idx.para_slot(p)?.container);
-                        inside(&Position::text(story, p, Unit(0))).then(|| 0..para_len(q).0)
+                        b.inside(idx, &Position::text(story, p, Unit(0))).then(|| std::iter::once(0..para_len(q).0).collect())
                     };
-                    self.place_pick(&f, touches, whole)
+                    self.place_pick(&f, |it| b.touches(idx, it), whole)
                 }
                 Selection::Object(_) | Selection::Block { .. } => return None,
             },
@@ -329,11 +345,11 @@ impl Editor {
     }
 
     /// The pick of the changes `touches` takes, the text of each paragraph `covered` gives.
-    fn place_pick(&self, f: &Found, touches: impl Fn(&Item) -> bool, covered: impl Fn(ParaId) -> Option<Range<u32>>) -> Pick {
+    fn place_pick(&self, f: &Found, touches: impl Fn(&Item) -> bool, covered: impl Fn(ParaId) -> Option<Vec<Range<u32>>>) -> Pick {
         let mut blocks: HashSet<(Spot, RevisionId)> =
             f.items.iter().filter(|it| it.run.is_none() && touches(it)).map(|it| (it.spot, it.mark.id)).collect();
         let paras: HashSet<ParaId> = f.items.iter().filter_map(|it| it.run.as_ref().map(|r| r.0)).collect();
-        let inside: HashMap<ParaId, Range<u32>> = paras.into_iter().filter_map(|p| Some((p, covered(p)?))).collect();
+        let inside: HashMap<ParaId, Vec<Range<u32>>> = paras.into_iter().filter_map(|p| Some((p, covered(p)?))).collect();
         // A row inserted or deleted goes or stays whole: the same revision's marks anywhere in its cells with it.
         let rows: HashSet<(TableId, usize, RevisionId)> = f
             .items
@@ -652,6 +668,41 @@ impl Editor {
 /// The innermost revision in `list` holding `a..b`, its ends included.
 fn holding<'l>(list: &'l [Revision], idx: &DocIndex, a: Position, b: Position) -> Option<&'l Revision> {
     list.iter().rfind(|r| r.story == a.story && idx.cmp(&r.start, &a).is_le() && idx.cmp(&b, &r.end).is_le())
+}
+
+/// A block of selected cells, as Accept and Reject in the selection take it.
+struct CellsPick {
+    table: TableId,
+    rows: std::ops::RangeInclusive<usize>,
+    cols: std::ops::RangeInclusive<usize>,
+    grid: crate::docx::grid::Grid,
+}
+
+impl CellsPick {
+    fn of(doc: &Document, idx: &DocIndex, s: &Selection) -> Option<CellsPick> {
+        let Selection::Cells { table, anchor, focus, .. } = *s else { return None };
+        let grid = crate::docx::grid::Grid::of(idx.table(doc, table)?);
+        let (rows, cols) = (anchor.row.min(focus.row)..=anchor.row.max(focus.row), anchor.col.min(focus.col)..=anchor.col.max(focus.col));
+        Some(CellsPick { table, rows, cols, grid })
+    }
+
+    fn chosen(&self, row: usize, cell: usize) -> bool {
+        self.rows.contains(&row)
+            && self.grid.rows.get(row).and_then(|r| r.get(cell)).is_some_and(|&(c, n, _)| c <= *self.cols.end() && c + n.max(1) > *self.cols.start())
+    }
+
+    fn inside(&self, idx: &DocIndex, pos: &Position) -> bool {
+        idx.chain_of(pos).iter().any(|l| l.table == self.table && self.chosen(l.row, l.cell))
+    }
+
+    fn touches(&self, idx: &DocIndex, it: &Item) -> bool {
+        match it.spot {
+            Spot::Row(x, row) if x == self.table => self.rows.contains(&row),
+            Spot::Table(x) if x == self.table => true,
+            Spot::Cell(x, row, cell) if x == self.table => self.chosen(row, cell),
+            _ => self.inside(idx, &it.start),
+        }
+    }
 }
 
 fn covered(doc: &Document, idx: &DocIndex, s: Position, e: Position, para: ParaId) -> Option<Range<u32>> {

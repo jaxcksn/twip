@@ -422,6 +422,9 @@ impl Editor {
 
     pub(super) fn selected_ranges(&mut self) -> Vec<(ParaId, Unit, Unit)> {
         use super::selection::{ObjectRef, Selection};
+        if self.is_discontiguous() {
+            return self.multi_pieces();
+        }
         match self.selection {
             Selection::Block { .. } => return self.block_pieces().into_iter().map(|(_, _, p, a, b)| (p, a, b)).collect(),
             Selection::Cells { table, anchor, focus, .. } => return self.cell_ranges(table, anchor, focus),
@@ -669,6 +672,9 @@ impl Editor {
     /// end after its last mark otherwise); in selected cells, every one. A column block holds none.
     pub(super) fn selected_marks(&mut self, ranges: &[(ParaId, Unit, Unit)]) -> Vec<ParaId> {
         use super::selection::Selection;
+        if self.is_discontiguous() {
+            return self.multi_marks();
+        }
         match self.selection {
             Selection::Block { .. } => return Vec::new(),
             Selection::Cells { .. } => return ranges.iter().map(|r| r.0).collect(),

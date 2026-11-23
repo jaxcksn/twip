@@ -209,7 +209,7 @@ impl Run {
         }
     }
 
-    fn point(&mut self, t: &Value, dx: f64, dy: f64) -> (f64, f64) {
+    pub(crate) fn point(&mut self, t: &Value, dx: f64, dy: f64) -> (f64, f64) {
         let k = 0.75 / self.zoom;
         let (dx, dy) = (
             dx + t["dx"].as_f64().unwrap_or(0.0) + t["dx_px"].as_f64().unwrap_or(0.0) * k,

@@ -15,7 +15,7 @@ use crate::editing::step::{PageSettings, Step};
 impl Editor {
     /// Edits the page setup of each of the selection's sections, in one transaction.
     pub(in crate::editing) fn set_page(&mut self, label: &'static str, edit: impl Fn(&mut SectionPage), fonts: &Fonts) -> Outcome {
-        self.set_sections_page(label, self.selected_sections(), edit, fonts)
+        self.set_sections_page(label, self.selected_sections().into_iter(), edit, fonts)
     }
 
     /// Edits the page setup of each of `sections`, in one transaction.

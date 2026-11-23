@@ -22,7 +22,7 @@ impl Editor {
         if self.style_target.is_some() {
             return Outcome::unavailable("not in a style");
         }
-        if self.refuse_expanded() || self.refuse_locked() {
+        if self.refuse_replacing() {
             return Outcome::Unchanged("locked");
         }
         let mut tx = self.begin("Section Break");

@@ -108,6 +108,7 @@ fn repeats(c: &Command) -> bool {
 
 impl Editor {
     pub fn execute(&mut self, cmd: Command, fonts: &Fonts) -> Outcome {
+        self.sync_multi();
         self.made = None;
         self.refused = None;
         if self.mode == super::Mode::ReadOnly && cmd.mutates() {
@@ -123,6 +124,9 @@ impl Editor {
         }
         if let Err(e) = bounds::bounds(&cmd) {
             return Outcome::Refused(e);
+        }
+        if self.is_discontiguous() && super::multi::single_only(cmd.id()) {
+            return Outcome::unavailable("not available for multiple selections");
         }
         let typed = match &cmd {
             Command::InsertText(t) => t.chars().count(),
