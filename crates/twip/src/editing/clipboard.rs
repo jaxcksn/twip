@@ -750,7 +750,7 @@ impl Editor {
                 NoteKind::End => super::position::StoryId::Endnote(to),
             });
         }
-        let mut next = self.doc.comments.by_id.keys().map(|c| c.0).max().unwrap_or(0) + 1;
+        let mut next = self.doc.comments.by_id.keys().chain(refs.comments.iter().map(|c| &c.id)).map(|c| c.0).max().unwrap_or(0) + 1;
         let mut map: HashMap<CommentId, CommentId> = HashMap::new();
         for c in &refs.comments {
             let to = if self.doc.comments.by_id.contains_key(&c.id) || map.values().any(|v| *v == c.id) {

@@ -267,6 +267,35 @@ fn a_comment_pasted_in_another_document_keeps_its_author() {
     assert!(names.contains(&"Alice".to_string()) && names.contains(&"Bob".to_string()), "{names:?}");
 }
 
+#[test]
+fn pasted_comments_never_take_an_id_a_later_one_keeps() {
+    let mut a = Editor::open(&blank_with("one two"), fonts()).unwrap();
+    let p = para_id(&a, 0);
+    for (from, to, text) in [(0, 3, "first"), (4, 7, "second")] {
+        a.select_range(p, Unit(from), Unit(to), fonts());
+        a.execute(Command::AddComment(Body::Text(text.into())), fonts());
+    }
+    a.select_range(p, Unit(0), Unit(7), fonts());
+    let mut frag = a.copy().expect("a fragment");
+    assert_eq!(frag.refs.comments.len(), 2, "both comments go with the copy");
+    frag.refs.comments.reverse();
+    let mut b = Editor::open(&blank_with("Target"), fonts()).unwrap();
+    let q = para_id(&b, 0);
+    b.select_range(q, Unit(0), Unit(6), fonts());
+    b.execute(Command::AddComment(Body::Text("mine".into())), fonts());
+    let taken = *b.document().comments.by_id.keys().next().expect("the target's comment");
+    assert!(frag.refs.comments.iter().any(|c| c.id == taken), "one pasted comment collides with the target's");
+    b.select_range(q, Unit(6), Unit(6), fonts());
+    b.paste_fragment(&frag, fonts());
+    let d = b.document();
+    let text = |c: &crate::docx::review::Comment| -> String {
+        c.body.iter().filter_map(|b| if let Block::Para(p) = b { Some(super::super::text::UnitText::of(p).text) } else { None }).collect()
+    };
+    let mut bodies: Vec<String> = d.comments.by_id.values().map(text).collect();
+    bodies.sort();
+    assert_eq!(bodies, ["first", "mine", "second"], "each comment keeps its own id and text");
+}
+
 /// Per row, the (kind, id) of each control the row is in.
 fn row_controls(e: &Editor) -> Vec<Vec<(String, crate::docx::ControlId)>> {
     let d = e.document();
