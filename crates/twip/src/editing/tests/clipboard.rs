@@ -669,27 +669,32 @@ fn a_copy_drops_a_paragraph_of_deleted_text_before_a_table() {
 
 #[test]
 fn a_cell_block_pasted_from_another_document_takes_each_cells_note_once() {
-    let (rows, cols) = (64, 63);
-    let mut a = ed(&table_xml(rows, cols, &t("x")));
-    rect(&mut a, 0, 0, rows - 1, cols - 1, CellShape::Rect);
-    let mut f = a.copy().expect("copies");
-    let Some(Block::Table(src)) = f.blocks.first_mut() else { panic!("a table") };
-    let mut id = 0;
-    for cell in src.rows.iter_mut().flat_map(|r| r.cells.iter_mut()) {
-        let Some(Block::Para(p)) = cell.blocks.first_mut() else { panic!("a paragraph") };
-        id += 1;
-        let run = p.mark.clone();
-        p.inlines.push(Inline::NoteRef { kind: crate::docx::NoteKind::Foot, id, custom: false, run });
-        let body = vec![Block::Para(p.clone())];
-        f.refs.notes.push((crate::docx::NoteKind::Foot, id, body));
+    fn time(rows: usize, cols: usize) -> std::time::Duration {
+        let mut a = ed(&table_xml(rows, cols, &t("x")));
+        rect(&mut a, 0, 0, rows - 1, cols - 1, CellShape::Rect);
+        let mut f = a.copy().expect("copies");
+        let Some(Block::Table(src)) = f.blocks.first_mut() else { panic!("a table") };
+        let mut id = 0;
+        for cell in src.rows.iter_mut().flat_map(|r| r.cells.iter_mut()) {
+            let Some(Block::Para(p)) = cell.blocks.first_mut() else { panic!("a paragraph") };
+            id += 1;
+            let run = p.mark.clone();
+            p.inlines.push(Inline::NoteRef { kind: crate::docx::NoteKind::Foot, id, custom: false, run });
+            let body = vec![Block::Para(p.clone())];
+            f.refs.notes.push((crate::docx::NoteKind::Foot, id, body));
+        }
+        let mut b = ed(&table_xml(rows, cols, &t("y")));
+        rect(&mut b, 0, 0, rows - 1, cols - 1, CellShape::Rect);
+        let start = std::time::Instant::now();
+        b.paste_fragment(&f, fonts());
+        let took = start.elapsed();
+        let (n, _) = refs(&b);
+        assert_eq!(n.len(), rows * cols, "one reference a cell");
+        assert_eq!(b.document().footnotes.len(), rows * cols, "one note each");
+        took
     }
-    let mut b = ed(&table_xml(rows, cols, &t("y")));
-    rect(&mut b, 0, 0, rows - 1, cols - 1, CellShape::Rect);
-    let start = std::time::Instant::now();
-    b.paste_fragment(&f, fonts());
-    let took = start.elapsed();
-    let (n, _) = refs(&b);
-    assert_eq!(n.len(), rows * cols, "one reference a cell");
-    assert_eq!(b.document().footnotes.len(), rows * cols, "one note each");
-    assert!(took < std::time::Duration::from_secs(5), "pasted in {took:?}");
+    let small = (0..2).map(|_| time(16, 16)).min().unwrap_or_default();
+    let large = (0..2).map(|_| time(32, 32)).min().unwrap_or_default();
+    // 4x the cells should cost about 4x; quadratic is about 16x.
+    assert!(large < small * 10 + std::time::Duration::from_millis(50), "{small:?} for 256 cells, {large:?} for 1024");
 }

@@ -13,5 +13,6 @@ slow-timeout = { period = "60s", terminate-after = 3 }
 [[profile.default.overrides]]
 filter = '''package(twip) & (test(=editing::tests::text_units::the_caret_window_costs_in_line_with_its_paragraph)
     | test(=editing::tests::fields::references_to_many_long_bookmarks_are_found_in_linear_time)
-    | test(=editing::tests::protection::editable_ranges_match_in_linear_time))'''
+    | test(=editing::tests::protection::editable_ranges_match_in_linear_time)
+    | test(=editing::tests::clipboard::a_cell_block_pasted_from_another_document_takes_each_cells_note_once))'''
 threads-required = "num-test-threads"
