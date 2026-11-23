@@ -20,12 +20,17 @@ pub(in crate::editing) const MERGE_CELLS: &str = "Merge Cells";
 pub(in crate::editing) const SPLIT_CELLS: &str = "Split Cells";
 pub(in crate::editing) const INSERT_COLUMNS: &str = "Insert Columns";
 pub(in crate::editing) const DELETE_COLUMNS: &str = "Delete Columns";
+pub(in crate::editing) const INSERT_CELLS: &str = "Insert Cells";
+pub(in crate::editing) const DRAW_TABLE: &str = "Draw Table";
 
-const UNTRACKED_TABLE_EDITS: [&str; 2] = [MERGE_CELLS, SPLIT_CELLS];
+const UNTRACKED_TABLE_EDITS: [&str; 3] = [MERGE_CELLS, SPLIT_CELLS, DRAW_TABLE];
 
 // Edits whose cells are tracked as inserted or deleted cells: accepting them gives the untracked edit. Word tracks
 // Delete Cells as a change of the table's properties.
-const CELL_EDITS: [&str; 2] = [INSERT_COLUMNS, DELETE_COLUMNS];
+const CELL_EDITS: [&str; 3] = [INSERT_COLUMNS, DELETE_COLUMNS, INSERT_CELLS];
+
+// Edits whose rows stay in place, matched by position: content moving between them is tracked as moved out and in.
+const ROWS_IN_PLACE: [&str; 1] = [INSERT_CELLS];
 
 pub struct Recording {
     pub author: AuthorId,
@@ -675,14 +680,26 @@ impl Recording {
         let Some((t, old)) = t.and_then(|t| Some((t, t.rows.get(range.clone())?))).filter(|_| !UNTRACKED_TABLE_EDITS.contains(&self.label)) else {
             return vec![Step::Rows { table, range, with, grid }];
         };
-        let keys: Vec<HashSet<u64>> = old.iter().map(row_paras).collect();
-        let matched: Vec<Option<usize>> = with
-            .iter()
-            .map(|r| {
-                let k = row_paras(r);
-                keys.iter().position(|o| !o.is_disjoint(&k))
-            })
-            .collect();
+        let in_place = ROWS_IN_PLACE.contains(&self.label);
+        // Rows added in place take content moved from rows that keep it, marked deleted: theirs is a copy.
+        let added = |n: &Row| {
+            let mut r = n.clone();
+            if in_place {
+                r.cells.iter_mut().for_each(|c| c.blocks = c.blocks.iter().map(super::super::clipboard::fresh).collect());
+            }
+            r
+        };
+        let matched: Vec<Option<usize>> = if in_place {
+            (0..with.len()).map(|i| (i < old.len()).then_some(i)).collect()
+        } else {
+            let keys: Vec<HashSet<u64>> = old.iter().map(row_paras).collect();
+            with.iter()
+                .map(|r| {
+                    let k = row_paras(r);
+                    keys.iter().position(|o| !o.is_disjoint(&k))
+                })
+                .collect()
+        };
         let order: Vec<usize> = matched.iter().flatten().copied().collect();
         if order.windows(2).any(|w| w[0] >= w[1]) {
             return vec![Step::Rows { table, range, with, grid }];
@@ -713,7 +730,7 @@ impl Recording {
             match kept[i] {
                 Some(k) => {
                     for n in &with[next..k] {
-                        rows.push(self.ins_row(n.clone(), ids));
+                        rows.push(self.ins_row(added(n), ids));
                         changed = true;
                     }
                     let mut lost_own = Vec::new();
@@ -733,7 +750,7 @@ impl Recording {
             }
         }
         for n in &with[next..] {
-            rows.push(self.ins_row(n.clone(), ids));
+            rows.push(self.ins_row(added(n), ids));
             changed = true;
         }
         // Rejecting inserted cells drops their columns again.

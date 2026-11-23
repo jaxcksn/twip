@@ -992,3 +992,61 @@ fn deleting_columns_with_ones_own_inserted_column_removes_it_outright() {
     e.resolve_revisions(true, &Scope::All, fonts());
     assert_eq!(spans(&e), vec![vec![1]], "accepting deletes both");
 }
+
+fn text_to_table(sep: &str) -> crate::api::command::TextToTable {
+    serde_json::from_value(serde_json::json!({ "separator": sep })).expect("options")
+}
+
+#[test]
+fn text_to_table_sizes_its_columns_as_its_autofit_says() {
+    use crate::docx::props::Width;
+    use crate::editing::table_convert::ConvertFit;
+    let wide = "<w:p><w:r><w:t>a</w:t><w:tab/><w:t>a much longer piece of text here</w:t></w:r></w:p>";
+    let mut e = open_xml(&format!("{wide}{END}"));
+    select_paras(&mut e, 0, 0);
+    assert_eq!(e.text_to_table_size(&text_to_table("tabs")), Some((1, 2)));
+    assert!(matches!(e.convert_text_to_table_fit(&text_to_table("tabs"), ConvertFit::Fixed(Some(90.0)), fonts()), Outcome::Changed(_)));
+    assert_eq!((table(&e).grid.clone(), table(&e).width), (vec![90.0, 90.0], Width::Auto));
+    e.execute(Command::Undo, fonts());
+    select_paras(&mut e, 0, 0);
+    assert!(matches!(e.convert_text_to_table_fit(&text_to_table("tabs"), ConvertFit::Window, fonts()), Outcome::Changed(_)));
+    assert_eq!(table(&e).width, Width::Pct(1.0));
+    e.execute(Command::Undo, fonts());
+    select_paras(&mut e, 0, 0);
+    assert!(matches!(e.convert_text_to_table_fit(&text_to_table("tabs"), ConvertFit::Contents, fonts()), Outcome::Changed(_)));
+    let g = table(&e).grid.clone();
+    assert!(g[0] < g[1], "fitted to contents: {g:?}");
+    e.execute(Command::Undo, fonts());
+    assert!(!body_shape(&e)[0].starts_with("table"), "one undo step");
+    select_paras(&mut e, 0, 0);
+    assert!(matches!(e.convert_text_to_table_fit(&text_to_table("tabs"), ConvertFit::Fixed(Some(0.0)), fonts()), Outcome::Refused(_)));
+}
+
+#[test]
+fn text_to_table_previews_its_rows_and_columns() {
+    let mut e = open_xml(&format!("{TABBED}{END}"));
+    select_paras(&mut e, 0, 2);
+    assert_eq!(e.text_to_table_size(&text_to_table("tabs")), Some((3, 2)));
+    assert_eq!(e.text_to_table_size(&text_to_table("paragraphs")), Some((3, 1)));
+    let two: crate::api::command::TextToTable = serde_json::from_value(serde_json::json!({"separator":"paragraphs","columns":2})).unwrap();
+    assert_eq!(e.text_to_table_size(&two), Some((2, 2)));
+}
+
+#[test]
+fn table_to_text_converts_nested_tables_when_asked() {
+    let inner = "<w:tbl><w:tblPr><w:tblW w:w=\"0\" w:type=\"auto\"/></w:tblPr><w:tblGrid><w:gridCol w:w=\"700\"/><w:gridCol w:w=\"700\"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>x</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>y</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>";
+    let body = format!(
+        "<w:tbl><w:tblPr><w:tblW w:w=\"0\" w:type=\"auto\"/></w:tblPr><w:tblGrid><w:gridCol w:w=\"1440\"/><w:gridCol w:w=\"1440\"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc><w:tc>{inner}</w:tc></w:tr></w:tbl>{END}"
+    );
+    let o: crate::api::command::TableToText = serde_json::from_value(serde_json::json!({"separator":"tabs"})).unwrap();
+    let mut e = open_xml(&body);
+    let first = para_id(&e, 0);
+    e.set_selection(Selection::Caret(crate::editing::position::Position::text(crate::editing::position::StoryId::Body, first, Unit(0))));
+    assert!(matches!(e.convert_table_to_text_nested(&o, false, fonts()), Outcome::Changed(_)));
+    assert!(body_shape(&e).iter().any(|s| s.starts_with("table")), "kept: {:?}", body_shape(&e));
+    e.execute(Command::Undo, fonts());
+    e.set_selection(Selection::Caret(crate::editing::position::Position::text(crate::editing::position::StoryId::Body, first, Unit(0))));
+    assert!(matches!(e.convert_table_to_text_nested(&o, true, fonts()), Outcome::Changed(_)));
+    assert!(!body_shape(&e).iter().any(|s| s.starts_with("table")), "flattened: {:?}", body_shape(&e));
+    assert!(texts(&e).contains(&"x\ty".to_string()), "{:?}", texts(&e));
+}

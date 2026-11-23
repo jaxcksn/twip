@@ -45,6 +45,8 @@ pub enum TableFormat {
     CellSpacing(f64),
     /// The table's own rows and columns in each style band (`None` keeps one, `Some(None)` leaves it to the style).
     Bands(Option<Option<u32>>, Option<Option<u32>>),
+    /// The table's default cell margins: top, left, bottom, right.
+    TableCellMargins([f64; 4]),
     Alt(crate::api::command::TableAltText),
     /// AutoFit to the window or to fixed widths: the layout, the table's width and its columns' widths.
     Fit {
@@ -99,6 +101,12 @@ fn set_own(props: &mut TableProps, name: &str, xml: String, cx: &crate::docx::wr
 pub(super) fn set_width(props: &mut TableProps, width: Width, cx: &crate::docx::write::props::Cx) {
     props.width = width;
     set_own(props, "tblW", width_xml(&cx.w, "tblW", &width), cx);
+}
+
+/// `ind` (points) as the table's indent on the model and in its `w:tblPr`.
+pub(super) fn set_indent(props: &mut TableProps, ind: f64, cx: &crate::docx::write::props::Cx) {
+    (props.ind, props.ind_pct, props.ind_set) = ((ind * 20.0).round() / 20.0, None, true);
+    set_own(props, "tblInd", width_xml(&cx.w, "tblInd", &Width::Dxa(props.ind)), cx);
 }
 
 /// What table formatting `f` set on the model, written into the table's `w:tblPr` (`props`) and the `w:trPr` of its
@@ -201,7 +209,9 @@ pub struct RowEx {
     pub reset: bool,
     pub jc: Option<Jc>,
     pub cell_spacing: Option<f64>,
-    pub shading: Option<WordColour>,
+    /// The rows' indent from the table's left edge.
+    pub ind: Option<f64>,
+    pub shading: Option<Shading>,
     pub borders: Option<(Edges, Border)>,
 }
 
@@ -269,6 +279,37 @@ fn tc_borders(cx: &crate::docx::write::props::Cx, cell: &crate::docx::Cell, side
     p.xml().unwrap_or_default()
 }
 
+// A cell's sides, as [`set_cell_sides`] takes them
+pub(super) const TOP: u8 = 1;
+pub(super) const LEFT: u8 = 2;
+pub(super) const BOTTOM: u8 = 4;
+pub(super) const RIGHT: u8 = 8;
+pub(super) const DIAGONAL_DOWN: u8 = 16;
+pub(super) const DIAGONAL_UP: u8 = 32;
+
+/// Sets a cell's `sides` to `b`, in the model and in its `w:tcBorders`.
+pub(super) fn set_cell_sides(cell: &mut crate::docx::Cell, sides: u8, b: &Border, cx: &crate::docx::write::props::Cx) {
+    for (i, side) in [&mut cell.top, &mut cell.left, &mut cell.bottom, &mut cell.right].into_iter().enumerate() {
+        if sides & (1 << i) != 0 {
+            *side = Some(b.clone());
+        }
+    }
+    if sides & (DIAGONAL_DOWN | DIAGONAL_UP) != 0 {
+        let mut d = cell.diagonals.as_deref().cloned().unwrap_or_default();
+        for (k, line) in d.iter_mut().enumerate() {
+            if sides & (DIAGONAL_DOWN << k) != 0 {
+                *line = Some(b.clone());
+            }
+        }
+        cell.diagonals = Some(std::rc::Rc::new(d));
+    }
+    let xml = tc_borders(cx, cell, sides);
+    let mut p = crate::docx::write::props::Props::parse(cell.direct.0.as_deref(), "tcPr", cx);
+    p.set("tcBorders", xml);
+    let w = &cx.w;
+    cell.direct = crate::docx::Raw(Some(std::rc::Rc::from(p.xml().unwrap_or_else(|| format!("<{w}tcPr/>")).as_str())));
+}
+
 /// Every character of the row is hidden: with its end mark, the row hides.
 fn row_text_hidden(row: &crate::docx::Row) -> bool {
     row.cells.iter().all(|c| {
@@ -280,13 +321,14 @@ fn row_text_hidden(row: &crate::docx::Row) -> bool {
 }
 
 /// Sets a row's exceptions (`w:tblPrEx`) and what the model reads from them.
-fn set_exceptions(row: &mut crate::docx::Row, ex: &RowEx, table: &[Option<Border>; 6], cx: &crate::docx::write::props::Cx) {
+fn set_exceptions(row: &mut crate::docx::Row, ex: &RowEx, t: &crate::docx::Table, cx: &crate::docx::write::props::Cx) {
+    let table = &t.borders;
     let w = &cx.w;
     let mut p = crate::docx::write::props::Props::parse(if ex.reset { None } else { row.exceptions.0.as_deref() }, "tblPrEx", cx);
     // CT_TblPrEx's children are CT_TblPr's, in its order.
     p.reorder(crate::docx::write::props::TBLPR);
     if ex.reset {
-        (row.shading, row.hatch, row.cell_spacing, row.borders) = (None, None, None, None);
+        (row.shading, row.hatch, row.cell_spacing, row.borders, row.ind, row.run) = (None, None, None, None, None, None);
     }
     if let Some(j) = ex.jc {
         let v = match j {
@@ -302,10 +344,18 @@ fn set_exceptions(row: &mut crate::docx::Row, ex: &RowEx, table: &[Option<Border
         p.set("tblCellSpacing", format!("<{w}tblCellSpacing {w}w=\"{}\" {w}type=\"dxa\"/>", (s * 20.0).round() as i64));
         row.cell_spacing = Some(s);
     }
-    if let Some(fill) = ex.shading {
-        p.set("shd", Shading { pattern: Some("clear"), color: None, fill: Some(fill) }.xml(w, None, None));
-        row.shading = Some(fill.rgb);
-        row.hatch = None;
+    // A row's own indent: the row starts a layout run of its own (fixed, at its width), as Word reads one.
+    if let Some(i) = ex.ind.filter(|_| !t.fixed) {
+        let i = (i * 20.0).round() / 20.0;
+        p.set("tblInd", format!("<{w}tblInd {w}w=\"{}\" {w}type=\"dxa\"/>", (i * 20.0).round() as i64));
+        p.set("tblLayout", format!("<{w}tblLayout {w}type=\"fixed\"/>"));
+        row.ind = Some(i);
+        row.run = row.run.or(Some(t.width));
+    }
+    if let Some(sh) = &ex.shading {
+        let shd = sh.shd(p.get("shd"), None);
+        p.set("shd", shd_xml(w, &shd));
+        (row.shading, row.hatch) = (shd.flat(), shd.hatch());
     }
     if let Some((edges, b)) = &ex.borders {
         let mut now = row.borders.as_deref().cloned().unwrap_or_else(|| table.clone());
@@ -606,7 +656,7 @@ impl Editor {
                         row.vanished = h && row_text_hidden(row);
                     }
                     if let Some(ex) = exceptions {
-                        set_exceptions(row, ex, &t.borders, &cx);
+                        set_exceptions(row, ex, t, &cx);
                     }
                 }
             }
@@ -620,6 +670,19 @@ impl Editor {
                 props.shd = Some(shd);
                 // The whole table takes it, rows read from tables joined to it too.
                 rows.iter_mut().for_each(|r| r.table_shading = None);
+            }
+            TableFormat::TableCellMargins(m) => {
+                let tw = |v: f64| (v * 20.0).round() as i64;
+                let side = |n: &str, v: f64| format!("<{w}{n} {w}w=\"{}\" {w}type=\"dxa\"/>", tw(v));
+                let xml = format!(
+                    "<{w}tblCellMar>{}{}{}{}</{w}tblCellMar>",
+                    side("top", m[0]),
+                    side("left", m[1]),
+                    side("bottom", m[2]),
+                    side("right", m[3])
+                );
+                set_own(&mut props, "tblCellMar", xml, &cx);
+                restyle = true;
             }
             &TableFormat::CellSpacing(v) => {
                 props.cell_spacing = ((v.max(0.0)) * 20.0).round() / 20.0;

@@ -183,7 +183,7 @@ impl Editor {
             if py < r.rect[1] || py > r.rect[3] {
                 return None;
             }
-            let &(ex, k) = r.edges.iter().filter(|(_, k)| *k > 0).find(|(ex, _)| (px - ex).abs() <= tol)?;
+            let &(ex, k) = r.edges.iter().find(|(ex, _)| (px - ex).abs() <= tol)?;
             Some((r.table, Border::Column(k), ex, r.rect[1], table_span(r.table), r.row, r.turn))
         });
         // Row borders
@@ -490,6 +490,8 @@ impl Editor {
             }
             _ => None,
         };
+        // How far the left edge moves right
+        let mut moved = 0.0;
         match d.border {
             Border::Column(k) if k < grid.len() && selected.as_ref().is_some_and(|s| s.contains(&d.row)) => {
                 let sel = selected.unwrap_or(0..=0);
@@ -503,16 +505,29 @@ impl Editor {
                         let (col, span, _) = g.rows[r][i];
                         b.push(grid[..(col + span).min(grid.len())].iter().sum());
                     }
+                    let inner = if k == 0 { 0..b.len().min(1) } else { 1..b.len().saturating_sub(1) };
                     if sel.contains(&r)
-                        && let Some(j) = (1..b.len().saturating_sub(1)).find(|&j| (b[j] - x).abs() < 0.01)
+                        && b.len() > 1
+                        && let Some(j) = inner.into_iter().find(|&j| (b[j] - x).abs() < 0.01)
                     {
                         let m = |i: usize| row.cells.get(i).map_or(4.5, |c| c.margins[1] + c.margins[3] + 4.5);
-                        let (lo, hi) = (b[j - 1] + m(j - 1), b[j + 1] - m(j));
+                        let lo = if j == 0 { b[0] - MAX } else { b[j - 1] + m(j - 1) };
+                        let hi = b[j + 1] - m(j);
                         if lo <= hi {
                             b[j] = (b[j] + dx).clamp(lo, hi);
                         }
                     }
                     bounds.push(b);
+                }
+                // The left edge: the rows from the leftmost one's start, the table moving by it.
+                let mut total = total;
+                if k == 0 {
+                    let from = bounds.iter().filter_map(|b| b.first().copied()).fold(f64::INFINITY, f64::min);
+                    if from.is_finite() {
+                        bounds.iter_mut().flatten().for_each(|v| *v -= from);
+                        total -= from;
+                        moved = from;
+                    }
                 }
                 let mut all: Vec<f64> = bounds.iter().flatten().copied().chain([0.0, total]).collect();
                 all.sort_by(f64::total_cmp);
@@ -527,6 +542,27 @@ impl Editor {
                     }
                     row.grid_after = grid.len().saturating_sub(at(*b.last().unwrap_or(&total)));
                 }
+            }
+            Border::Column(0) => {
+                let min = t
+                    .rows
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(r, row)| {
+                        g.cell_at(r, 0).filter(|&i| g.rows[r][i].0 == 0).map(|i| row.cells[i].margins[1] + row.cells[i].margins[3])
+                    })
+                    .fold(0.0, f64::max)
+                    + 4.5;
+                let dx = d.delta().0.min(grid[0] - min).max(grid[0] - MAX.max(grid[0]));
+                grid[0] -= dx;
+                for (r, row) in rows.iter_mut().enumerate() {
+                    for (i, cell) in row.cells.iter_mut().enumerate() {
+                        if let Some(&(col, span, _)) = g.rows[r].get(i) {
+                            cell.width = Some(Width::Dxa(grid[col..(col + span).min(grid.len())].iter().sum()));
+                        }
+                    }
+                }
+                moved = dx;
             }
             Border::Column(k) => {
                 let n = grid.len();
@@ -621,12 +657,41 @@ impl Editor {
             }
             Border::Row(_) => return Err(STALE),
         }
+        // The left edge's move: an inline table's indent takes it, a positioned one's place.
+        let (mut indent_by, mut floating) = (0.0, None);
+        if moved != 0.0 {
+            match t.floating {
+                None if t.jc == crate::docx::props::Jc::Left => indent_by = moved,
+                Some(mut pos) if pos.x_align().is_none_or(|a| a == crate::docx::props::Jc::Left) => {
+                    pos.x = if pos.x_align().is_some() { moved } else { pos.x + moved };
+                    pos.x_spec = None;
+                    // Not one of the alignments `tblpX` codes
+                    if matches!((pos.x * 20.0).round() as i64, 0 | -4 | -8 | -12 | -16) && pos.x != 0.0 {
+                        pos.x -= 0.05;
+                    }
+                    floating = Some(pos);
+                }
+                _ => {}
+            }
+        }
         let new_sum: f64 = grid.iter().sum();
         let label = if d.border == Border::Handle { "Resize Table" } else { "Column Width" };
         let mut steps = vec![Step::Rows { table: d.table, range: 0..n, with: rows, grid: Some(grid) }];
-        if (new_sum - old_sum).abs() > 1e-9 && sized {
+        let resized = (new_sum - old_sum).abs() > 1e-9 && sized;
+        if resized || indent_by != 0.0 || floating.is_some() {
             let mut props = super::step::TableProps::of(t);
-            super::table_format::set_width(&mut props, Width::Dxa(new_sum), &cx);
+            if floating.is_some() {
+                props.floating = floating;
+            }
+            if resized {
+                super::table_format::set_width(&mut props, Width::Dxa(new_sum), &cx);
+            }
+            if indent_by != 0.0 {
+                let compat = self.doc.resolver.as_ref().map_or(crate::docx::Compat::Generic, |r| r.styles.compat);
+                let nested = self.index.table_slot(d.table).is_some_and(|s| matches!(s.container, Container::Cell { .. }));
+                let from = if nested { t.ind } else { crate::layout::table::placed_indent(t, compat) };
+                super::table_format::set_indent(&mut props, from + indent_by, &cx);
+            }
             steps.push(Step::TableProps { table: d.table, props });
         }
         if new_sum > old_sum + 1e-9

@@ -296,6 +296,25 @@ impl Editor {
         refusal(p, id, || self.table_point(t).map_or_else(Openings::default, |at| self.openings(&at, &at))).is_some()
     }
 
+    /// Why a tool's edit of table `t`, command `id`'s, is refused where it lands (the table under the pointer, not the
+    /// selection): read only, document protection there or a locked control around it.
+    pub(super) fn table_edit_refusal(&self, t: crate::layout::TableId, id: CommandId) -> Option<Error> {
+        match self.table_point(t) {
+            Some(at) => self.edit_refusal_at(id, &at),
+            None if self.mode == super::Mode::ReadOnly => Some(Error::new(ErrorCode::ReadOnly, "the document is read only")),
+            None => refusal(self.enforced_protection()?, id, Openings::default),
+        }
+    }
+
+    /// Why an edit, command `id`'s, at `at`, which isn't the selection, is refused: read only, document protection
+    /// there or a locked control.
+    pub(super) fn edit_refusal_at(&self, id: CommandId, at: &Position) -> Option<Error> {
+        if self.mode == super::Mode::ReadOnly {
+            return Some(Error::new(ErrorCode::ReadOnly, "the document is read only"));
+        }
+        self.protection_refuses_at(id, at, at).or_else(|| (self.kept(id, at, at) || !self.editable(at)).then(|| Error::unavailable("locked")))
+    }
+
     /// The protection, when it's enforced.
     pub(super) fn enforced_protection(&self) -> Option<&Protection> {
         self.doc.settings.protection.as_ref().filter(|p| p.enforced)

@@ -170,7 +170,7 @@ impl Editor {
             return found(G::LinkActivate, GestureTarget::Menu(MenuTarget::Link { address }));
         }
         match self.border_at(x, y, fonts) {
-            Some((_, _, resize::Border::Column(k), ..)) if clicks == 2 && k > 0 => {
+            Some((_, _, resize::Border::Column(_), ..)) if clicks == 2 => {
                 return found(G::TableBorderDoubleClick, area(AreaKind::TableBorder));
             }
             Some(_) if clicks < 2 => return None,

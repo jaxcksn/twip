@@ -222,7 +222,7 @@ pub(super) fn drawn_grid(geo: &super::geometry::PageGeometry, table: TableId, gr
 }
 
 /// The cells of the vertical merge starting at `(r, k)`: it and the continuations under it.
-fn merge_chain(g: &Grid, r: usize, k: usize) -> Vec<(usize, usize)> {
+pub(super) fn merge_chain(g: &Grid, r: usize, k: usize) -> Vec<(usize, usize)> {
     let c = g.rows[r][k].0;
     std::iter::once((r, k))
         .chain((r + 1..g.rows.len()).map_while(|rr| {
@@ -1463,7 +1463,7 @@ impl Editor {
         self.end_batch(true, fonts)
     }
 
-    fn set_floating(&mut self, table: TableId, floating: Option<TablePos>, fonts: &Fonts) -> Outcome {
+    pub(super) fn set_floating(&mut self, table: TableId, floating: Option<TablePos>, fonts: &Fonts) -> Outcome {
         let Some(t) = self.index.table(&self.doc, table) else { return Outcome::Unchanged("no table") };
         let mut props = super::step::TableProps::of(t);
         if props.floating == floating {
