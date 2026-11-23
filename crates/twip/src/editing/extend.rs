@@ -140,7 +140,7 @@ impl Editor {
         }
     }
 
-    pub(super) fn block_pieces(&mut self) -> Vec<(usize, [f64; 4], ParaId, Unit, Unit)> {
+    pub(super) fn block_pieces(&mut self) -> Vec<(usize, super::view::Band, ParaId, Unit, Unit)> {
         let Selection::Block { anchor, focus } = self.selection else { return Vec::new() };
         let (Some(ax), Some(fx)) = (self.nav().caret_x(anchor), self.nav().caret_x(focus)) else { return Vec::new() };
         let (x0, x1) = (ax.min(fx), ax.max(fx));
@@ -173,7 +173,7 @@ impl Editor {
                     if let (Some(lo), Some(hi)) = (lo, hi)
                         && lo.unit < hi.unit
                     {
-                        out.push((page, [lo.x, l.top, hi.x, l.bottom], para, lo.unit, hi.unit));
+                        out.push((page, l.strip(lo.x, hi.x), para, lo.unit, hi.unit));
                     }
                 }
                 let both = hits[0] && hits[1];

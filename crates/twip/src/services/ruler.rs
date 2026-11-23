@@ -49,6 +49,35 @@ fn columns(s: &Section, left: f64, right: f64) -> Vec<Span> {
         .collect()
 }
 
+/// A vertical section's text area as its rulers show it: where its lines run down the page (`lines`, from the top
+/// margin to the bottom one, which the line's indents and tab stops are along) and its text columns across the page
+/// in the order its lines stack (right to left, or left to right for lines stacked from the left), each from its
+/// left edge to its right on the page.
+#[derive(Clone, Debug, PartialEq)]
+pub struct VerticalText {
+    /// Where the lines run down the page.
+    pub lines: Span,
+    /// The text columns across the page, in stacking order.
+    pub columns: Vec<Span>,
+}
+
+/// [`VerticalText`] for section `s` (`gutter_at_top` as the document's settings say), `None` when its lines run
+/// across the page.
+pub fn vertical_text(s: &Section, gutter_at_top: bool) -> Option<VerticalText> {
+    let v = crate::layout::vertical::of_section(s.text_flow)?;
+    let left = s.left + if gutter_at_top { 0.0 } else { s.gutter };
+    let lines = Span { start: Points(s.top), end: Points(s.page_h - s.bottom) };
+    let columns = match v.flow {
+        crate::layout::vertical::Flow::DownEast => columns(s, left, s.page_w - s.right),
+        // Columns from the right margin
+        _ => columns(s, s.right, s.page_w - left)
+            .into_iter()
+            .map(|c| Span { start: Points(s.page_w - c.end.0), end: Points(s.page_w - c.start.0) })
+            .collect(),
+    };
+    Some(VerticalText { lines, columns })
+}
+
 /// The ruler model for the selection, in `section`: its page, the text area around the caret (the margins, its
 /// text column, or its cell), the first selected paragraph's indents and stops, and the caret's table on its page.
 pub fn model(e: &mut Editor, section: usize) -> RulerModel {
@@ -494,6 +523,34 @@ mod tests {
             vertical: RulerAxis { origin: 30.0, scale: 1.0 },
             ..RulerView::default()
         }
+    }
+
+    #[test]
+    fn a_vertical_sections_lines_run_down_its_rulers_and_its_columns_stack_from_the_right() {
+        let fonts = crate::font::Fonts::system_recommended();
+        let e = Editor::open(&crate::docx::blank::blank_docx(), &fonts).expect("opens");
+        let mut s = Section {
+            page_w: 612.0,
+            page_h: 792.0,
+            left: 72.0,
+            right: 90.0,
+            top: 54.0,
+            bottom: 36.0,
+            gutter: 0.0,
+            ..e.document().sections[0].clone()
+        };
+        assert_eq!(vertical_text(&s, false), None, "horizontal");
+        s.text_flow = 1;
+        s.columns.num = 2;
+        s.columns.equal = true;
+        s.columns.space = 36.0;
+        let v = vertical_text(&s, false).expect("tbRl");
+        assert_eq!(v.lines, Span { start: Points(54.0), end: Points(756.0) });
+        let w = (612.0 - 72.0 - 90.0 - 36.0) / 2.0;
+        assert_eq!(v.columns, vec![Span { start: Points(522.0 - w), end: Points(522.0) }, Span { start: Points(72.0), end: Points(72.0 + w) }]);
+        s.text_flow = 5;
+        let v = vertical_text(&s, false).expect("tbLrV");
+        assert_eq!(v.columns[0], Span { start: Points(72.0), end: Points(72.0 + w) }, "stacked from the left");
     }
 
     #[test]

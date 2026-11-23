@@ -490,11 +490,25 @@ pub enum BoxKind {
     Body,
     Column,
     Notes,
-    Note { kind: NoteKind, id: i64 },
+    Note {
+        kind: NoteKind,
+        id: i64,
+    },
     Separator,
-    Float { anchor: ParaId, float: FloatId, rect: [f64; 4], layer: Layer },
-    Header { story: String },
-    Footer { story: String },
+    Float {
+        anchor: ParaId,
+        float: FloatId,
+        rect: [f64; 4],
+        layer: Layer,
+    },
+    Header {
+        story: String,
+    },
+    Footer {
+        story: String,
+    },
+    /// A vertical section's body, drawn turned: its children are laid out unturned, their items already turned.
+    Turned(super::vertical::Turning),
 }
 
 #[derive(Clone, Debug)]
@@ -502,9 +516,20 @@ pub enum Child {
     Box(BoxFragment),
     Para(ParaFragment),
     Table(TableFragment),
-    Line { para: Option<ParaId>, placed: PlacedLine },
+    Line {
+        para: Option<ParaId>,
+        placed: PlacedLine,
+    },
     Items(Box<[Item]>),
-    Group { offset: (f64, f64), children: Rc<[Child]> },
+    Group {
+        offset: (f64, f64),
+        children: Rc<[Child]>,
+    },
+    /// Items that draw text turned, and that text's lines as laid out (never drawn).
+    Turned {
+        items: Box<[Item]>,
+        text: Rc<[super::vertical::Unturned]>,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -635,6 +660,15 @@ pub(super) fn child_down(c: &Child, shift: &dyn Fn(f64) -> f64) -> Child {
             Child::Items(items.iter().map(|i| item_down(i, shift(i.top() + if matches!(i, Item::Glyphs(_)) { 0.0 } else { EPS }))).collect())
         }
         Child::Group { offset, children } => Child::Group { offset: (offset.0, offset.1 + shift(offset.1 + EPS)), children: children.clone() },
+        Child::Turned { items, text } => {
+            let dy = |i: &Item| shift(i.top() + if matches!(i, Item::Glyphs(_)) { 0.0 } else { EPS });
+            // Each line with its own item
+            let moved = |k: usize| items.get(k).or(items.first()).map_or(0.0, dy);
+            Child::Turned {
+                items: items.iter().map(|i| item_down(i, dy(i))).collect(),
+                text: text.iter().enumerate().map(|(k, u)| super::vertical::Unturned { turn: u.turn.shifted(0.0, moved(k)), ..u.clone() }).collect(),
+            }
+        }
         Child::Box(b) => {
             let mut b = b.clone();
             b.children = b.children.iter().map(|x| child_down(x, shift)).collect();

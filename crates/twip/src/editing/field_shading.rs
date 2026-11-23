@@ -31,7 +31,7 @@ fn outermost_fields(inlines: &[Inline]) -> Vec<(Unit, Unit, bool)> {
 impl Editor {
     /// The rectangles to shade on `pages`, one per line part of each shaded field's shown text, in page points. Legacy
     /// form fields are shaded whatever `mode`, unless the document turns that off.
-    pub fn field_shading(&mut self, pages: std::ops::Range<usize>, mode: FieldShading) -> Vec<(usize, [f64; 4])> {
+    pub fn field_shading(&mut self, pages: std::ops::Range<usize>, mode: FieldShading) -> Vec<(usize, super::view::Band)> {
         let forms = !self.doc.settings.no_form_shading;
         let selected = match (mode, self.selection.focus()) {
             (FieldShading::WhenSelected, Some(focus)) => {
@@ -75,7 +75,7 @@ impl Editor {
                         }
                         let (Some(x0), Some(x1)) = (l.x_of(para, from), l.x_of(para, to)) else { continue };
                         if x1 > x0 + 0.01 {
-                            out.push((page, [x0, l.top, x1, l.bottom]));
+                            out.push((page, l.strip(x0, x1)));
                         }
                     }
                 }

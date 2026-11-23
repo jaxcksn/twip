@@ -58,7 +58,7 @@ pub fn drawing_key(page: &PageFragment) -> u64 {
                     }
                 }
                 Child::Line { placed, .. } => (6u8, Rc::as_ptr(&placed.line) as usize, placed.x.to_bits(), placed.y.to_bits()).hash(h),
-                Child::Items(i) => {
+                Child::Items(i) | Child::Turned { items: i, .. } => {
                     7u8.hash(h);
                     items(i, h);
                 }

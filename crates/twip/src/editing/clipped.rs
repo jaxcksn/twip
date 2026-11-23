@@ -24,10 +24,11 @@ impl Editor {
         Some(Position::text(p.story, para, if end { b } else { a }))
     }
 
-    pub(super) fn clipped_x(&mut self, p: Position) -> Option<f64> {
+    /// The page point a line move from `p`, hidden in a clipped cell, keeps to: just inside the cell's start.
+    pub(super) fn clipped_x(&mut self, p: Position) -> Option<[f64; 2]> {
         let (_, _, page, chain) = self.clipped_at(p)?;
         let geo = self.pages.page(page, &self.index)?;
-        geo.cells.iter().find(|c| c.chain == chain).map(|c| c.rect[0] + 1.0)
+        geo.cells.iter().find(|c| c.chain == chain).map(|c| c.turn.at([c.rect[0] + 1.0, (c.rect[1] + c.rect[3]) / 2.0]))
     }
 
     fn clipped_at(&mut self, p: Position) -> Option<(Hidden, usize, usize, std::rc::Rc<[super::geometry::CellKey]>)> {
@@ -46,10 +47,11 @@ impl Editor {
         None
     }
 
-    pub(super) fn clipped_vertical(&mut self, focus: Position, x: f64, down: bool) -> Option<Position> {
+    pub(super) fn clipped_vertical(&mut self, focus: Position, goal: [f64; 2], down: bool) -> Option<Position> {
         let at = |para, unit| Position::text(focus.story, para, unit);
         if let Some((hidden, k, page, chain)) = self.clipped_at(focus) {
             let geo = self.pages.page(page, &self.index)?;
+            let x = geo.cells.iter().find(|c| c.chain == chain).map_or(goal[0], |c| c.turn.back(goal)[0]);
             let next = if down { hidden[k + 1..].iter().find(|h| h.0 != hidden[k].0) } else { hidden[..k].iter().rev().find(|h| h.0 != hidden[k].0) };
             if let Some(&(para, a, _)) = next {
                 return Some(at(para, a));
@@ -74,6 +76,7 @@ impl Editor {
         }
         let line = self.nav().line_of(focus)?;
         let l = &line.geo.lines[line.line];
+        let x = l.local(goal)[0];
         if !down {
             let story = line.geo.stories[l.story].story;
             let cell = line

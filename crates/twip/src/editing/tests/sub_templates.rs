@@ -979,3 +979,20 @@ fn a_range_on_a_shown_body_keeps_every_range_from_formatting() {
     assert!(matches!(out, super::super::commands::Outcome::Changed(_)), "typing replaces the free range alone: {out:?}");
     assert_eq!(e.document().sections[0].blocks[1], before[1], "the reference is kept");
 }
+
+#[test]
+fn a_shown_body_in_a_tbrl_section_is_hit_and_outlined_where_it_is_drawn() {
+    let (mut e, reference) = expanded();
+    e.execute(Command::SetSectionTextDirection(crate::api::command::TextFlow::TbRl), fonts());
+    e.complete(fonts());
+    let field = e.expansions.as_ref().and_then(|x| x.paras.get(&reference)).map(|x| x.field).expect("shown");
+    let (pg, g) = e.page_geometries().into_iter().find(|(_, g)| g.lines.iter().any(|l| l.shows(reference))).expect("a page");
+    let l = g.lines.iter().find(|l| l.shows(reference)).expect("a line");
+    assert_eq!(l.dir(), super::super::geometry::LineDir::Down);
+    let band = l.band(l.x0(), l.x1());
+    let rects = e.expansion_rects(field, pg..pg + 1);
+    let &(_, r) = rects.first().expect("outlined");
+    assert!(r[0] >= band[0] - 0.5 && r[2] <= band[2] + 0.5 && r[3] - r[1] > r[2] - r[0], "down the line's band: {r:?} in {band:?}");
+    let (x, y) = e.stack().to_doc(pg, (r[0] + r[2]) / 2.0, (r[1] + r[3]) / 2.0).expect("on the stack");
+    assert_eq!(e.expansion_at(x, y).map(|h| h.0), Some(field), "hit where it is drawn");
+}

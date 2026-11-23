@@ -357,8 +357,8 @@ pub fn inspect(e: &mut Editor, what: &str, settled: bool) -> Value {
                 for &para in l.paras.iter() {
                     let stops: Vec<_> = l.stops.iter().filter(|s| s.para == para).collect();
                     let (Some(first), Some(last)) = (stops.first(), stops.last()) else { continue };
-                    let (x0, y0) = to(first.x, l.top);
-                    let (x1, y1) = to(last.x, l.bottom);
+                    let [r0, r1, r2, r3] = l.band(first.x, last.x);
+                    let ((x0, y0), (x1, y1)) = (to(r0, r1), to(r2, r3));
                     lines.push(json!({
                         "page": page, "story": story(g.stories[l.story].story, &o), "para": o.paras.get(&para),
                         "first": first.unit.0, "last": last.unit.0, "rect": [x0, y0, x1, y1], "repeat": l.repeat,
@@ -367,8 +367,8 @@ pub fn inspect(e: &mut Editor, what: &str, settled: bool) -> Value {
                 }
             }
             for c in &g.cells {
-                let (x0, y0) = to(c.rect[0], c.rect[1]);
-                let (x1, y1) = to(c.rect[2], c.rect[3]);
+                let r = c.page_rect();
+                let ((x0, y0), (x1, y1)) = (to(r[0], r[1]), to(r[2], r[3]));
                 let last = c.chain.last().copied();
                 cells.push(json!({
                     "page": page, "table": last.and_then(|k| o.tables.get(&k.0)), "row": last.map(|k| k.1), "cell": last.map(|k| k.2),

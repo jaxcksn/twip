@@ -233,7 +233,7 @@ impl Editor {
         use crate::api::command::{DeleteUnit, MoveUnit};
         let vertical = matches!(&cmd, Command::MoveSelection(m) if matches!(m.by, MoveUnit::Line | MoveUnit::Screen));
         if !vertical {
-            self.goal_x = None;
+            self.goal = None;
         }
         let typing = match &cmd {
             Command::InsertText(_) | Command::InsertTab => true,

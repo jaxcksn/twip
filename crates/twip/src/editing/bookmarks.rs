@@ -200,7 +200,7 @@ impl Editor {
                         if let Some(end) = marker(i).filter(|(n, _)| !n.starts_with('_')).map(|(_, end)| end) {
                             let kind = if end { MarkKind::BookmarkEnd } else { MarkKind::BookmarkStart };
                             if let Some(s) = line.stops.iter().find(|s| s.para == para && s.unit.0 == unit) {
-                                out.push(FormattingMark { page, kind, at: [s.x, line.top, s.x, line.bottom] });
+                                out.push(FormattingMark { page, kind, at: line.strip(s.x, s.x) });
                             }
                         }
                         unit += i.units() as u32;

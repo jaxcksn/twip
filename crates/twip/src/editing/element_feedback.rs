@@ -62,6 +62,6 @@ impl Editor {
     /// An element's boxes on `pages`, one per line part, in page points.
     pub fn element_rects(&mut self, e: ElementId, pages: std::ops::Range<usize>) -> Vec<(usize, [f64; 4])> {
         let Some((a, b)) = self.locate(e).and_then(|w| self.element_range(&w)) else { return Vec::new() };
-        self.range_rects(a, b, pages)
+        self.range_rects(a, b, pages).into_iter().map(|(page, r)| (page, r.page())).collect()
     }
 }

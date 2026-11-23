@@ -159,7 +159,8 @@ pub struct Editor {
     index: DocIndex,
     history: History,
     selection: Selection,
-    goal_x: Option<f64>,
+    /// The page point line moves keep to: each line reads its place along it from the point.
+    goal: Option<[f64; 2]>,
     pending: Option<Run>,
     /// The format painter's formatting: a run's `w:rPr`, and a paragraph's `w:pPr` when it took the paragraph's too.
     painter: Option<(Option<String>, Option<Option<String>>)>,
@@ -388,7 +389,7 @@ impl Editor {
             index,
             history: History::default(),
             selection: Selection::Caret(Position::text(StoryId::Body, ParaId(0), Unit(0))),
-            goal_x: None,
+            goal: None,
             pending: None,
             painter: None,
             painter_claim: None,
@@ -772,7 +773,7 @@ impl Editor {
 
     pub fn set_caret_for_benchmark(&mut self, s: Selection) {
         self.history.break_typing();
-        self.goal_x = None;
+        self.goal = None;
         self.selection = s;
     }
 
@@ -1085,7 +1086,7 @@ impl Editor {
             .cells
             .iter()
             .filter(|c| c.chain.last().is_some_and(|k| k.0 == table))
-            .min_by(|a, b| dist(&a.rect, px, py).total_cmp(&dist(&b.rect, px, py)))?;
+            .min_by(|a, b| dist(&a.page_rect(), px, py).total_cmp(&dist(&b.page_rect(), px, py)))?;
         let &(_, row, _) = c.chain.last()?;
         Some((row, c.col))
     }
@@ -2552,22 +2553,22 @@ impl Editor {
             MoveBy::ColumnEdge => self.nav().table_edge(focus, false, forward),
             MoveBy::LineEdge => self.nav().line_edge(focus, forward).or_else(|| self.clipped_line_edge(focus, forward)),
             MoveBy::Line => {
-                let x = match self.goal_x {
-                    Some(x) => x,
+                let goal = match self.goal {
+                    Some(g) => g,
                     None => {
-                        let x = match self.nav().caret_x(focus) {
-                            Some(x) => x,
-                            None => self.clipped_x(focus).unwrap_or(0.0),
+                        let g = match self.nav().caret_point(focus) {
+                            Some(g) => g,
+                            None => self.clipped_x(focus).unwrap_or([0.0; 2]),
                         };
-                        self.goal_x = Some(x);
-                        x
+                        self.goal = Some(g);
+                        g
                     }
                 };
-                match self.clipped_vertical(focus, x, forward) {
+                match self.clipped_vertical(focus, goal, forward) {
                     Some(t) => Some(t),
                     None => {
-                        let t = self.nav().vertical(focus, x, forward);
-                        t.or_else(|| self.cross_vertical(focus, x, forward, fonts)).or_else(|| self.nav().story_edge(focus.story, forward))
+                        let t = self.nav().vertical(focus, goal, forward);
+                        t.or_else(|| self.cross_vertical(focus, goal, forward, fonts)).or_else(|| self.nav().story_edge(focus.story, forward))
                     }
                 }
             }
@@ -2578,7 +2579,7 @@ impl Editor {
             self.selection = was;
             return Outcome::Unchanged("no place to move to");
         };
-        let goal = self.goal_x;
+        let goal = self.goal;
         let s = if extend {
             let anchor = self.selection.anchor().unwrap_or(focus);
             match self.drag_across_cells(anchor, target, false) {
@@ -2590,7 +2591,7 @@ impl Editor {
         };
         self.set_selection(s);
         if matches!(by, MoveBy::Line | MoveBy::Screen) {
-            self.goal_x = goal;
+            self.goal = goal;
         }
         self.ensure(&target, fonts);
         match self.caret_view() {
@@ -2629,7 +2630,7 @@ impl Editor {
         let stack = self.stack();
         let caret = self.caret_view()?;
         let (cx, cy) = stack.to_doc(caret.page, caret.x, caret.top)?;
-        let x = *self.goal_x.get_or_insert(caret.x);
+        let x = self.goal.get_or_insert([caret.x, (caret.top + caret.bottom) / 2.0])[0];
         let (tx, ty) = match by {
             MoveBy::Screen => {
                 let dy = if forward { self.viewport.height } else { -self.viewport.height };
@@ -2688,7 +2689,9 @@ impl Editor {
         self.ensure_page(page, fonts);
         let geo = self.pages.page(page, &self.index)?;
         let section = self.snapshot().info().get(page).map_or(0, |i| i.section);
-        let left = self.doc.sections.get(section).map_or(72.0, |s| s.left) - 1.5 / self.viewport.zoom.max(0.1);
+        // Lines' start margin
+        let start = |s: &crate::docx::Section| if crate::layout::vertical::of_section(s.text_flow).is_some() { s.top } else { s.left };
+        let left = self.doc.sections.get(section).map_or(72.0, start) - 1.5 / self.viewport.zoom.max(0.1);
         let i = geo.selection_bar(px, py, left, &|s| stories::reachable(ctx, s) && !matches!(s, StoryId::BuildingBlock(_)))?;
         self.near = page;
         self.line_span_of(&geo, i)
@@ -2764,7 +2767,7 @@ impl Editor {
             PointerKind::Down if self.move_to_press(x, y, fonts) => {}
             PointerKind::Down => {
                 let mods = if self.modes.extend > 0 && clicks == 1 { keymap::Mods { shift: true, ..mods } } else { mods };
-                self.goal_x = None;
+                self.goal = None;
                 self.history.break_typing();
                 if !mods.shift && self.wrap_points_press(x, y, mods.ctrl, fonts) {
                     return;
@@ -3288,6 +3291,13 @@ impl Editor {
         self.caret_at(focus)
     }
 
+    /// How the arrow keys move from the selection's focus: along its line's text flow.
+    pub fn caret_arrows(&mut self) -> Option<keymap::Arrows> {
+        let focus = self.selection.focus()?;
+        let at = self.nav().line_of(focus)?;
+        keymap::Arrows::of(at.geo.lines[at.line].axes)
+    }
+
     fn caret_at(&mut self, focus: Position) -> Option<CaretView> {
         let (para, unit) = focus.para_offset()?;
         let affinity = focus.affinity();
@@ -3298,13 +3308,13 @@ impl Editor {
             let l = &geo.lines[i];
             let x = l.x_of(para, unit)?;
             self.near = page;
-            return Some(CaretView { page, x, top: l.top, bottom: l.bottom });
+            return Some(CaretView::of(page, geometry::CaretRect::turned(l.turn, x, l.top, l.bottom)));
         }
         for page in self.pages.pages_of(para, near, &self.index) {
             let geo = self.pages.page(page, &self.index)?;
             if let Some(c) = geo.caret(para, unit, affinity) {
                 self.near = page;
-                return Some(CaretView { page, x: c.x, top: c.top, bottom: c.bottom });
+                return Some(CaretView::of(page, c));
             }
         }
         None
@@ -3312,14 +3322,14 @@ impl Editor {
 
     fn scroll_to_caret(&mut self, _fonts: &Fonts) {
         if let Some(c) = self.caret_view() {
-            self.requests.push(Request::ScrollIntoView { page: c.page, rect: [c.x, c.top, c.x + 1.0, c.bottom], at_top: false });
+            self.requests.push(Request::ScrollIntoView { page: c.page, rect: c.rect(), at_top: false });
         }
     }
 
     /// After a jump (a link, a bookmark, a page): the caret's line at the top of the view, as Word puts it.
     fn jump_to_caret(&mut self) {
         if let Some(c) = self.caret_view() {
-            self.requests.push(Request::ScrollIntoView { page: c.page, rect: [c.x, c.top, c.x + 1.0, c.bottom], at_top: true });
+            self.requests.push(Request::ScrollIntoView { page: c.page, rect: c.rect(), at_top: true });
         }
     }
 
@@ -3328,7 +3338,8 @@ impl Editor {
         let mut out = view::SelectionBounds::default();
         match self.selection_view(pages) {
             SelectionView::None => {}
-            SelectionView::Text(r) | SelectionView::Cells(r) => out.rects = r,
+            SelectionView::Text(r) => out.rects = r.into_iter().map(|(page, b)| (page, b.page())).collect(),
+            SelectionView::Cells(r) => out.rects = r,
             SelectionView::Object(f, _) => out.frames = f,
         }
         let boxes = out.rects.iter().copied().chain(out.frames.iter().map(|f| (f.page, f.turned_box())));
@@ -3362,7 +3373,7 @@ impl Editor {
                         }
                     }
                     selection::ObjectRef::Inline { para, offset } => {
-                        out.extend(self.inline_box(&geo, para, offset).map(|rect| view::Outline { page, rect, rot: 0.0 }))
+                        out.extend(self.inline_frame(&geo, para, offset).map(|(rect, rot)| view::Outline { page, rect, rot }))
                     }
                 }
             }
@@ -3398,14 +3409,14 @@ impl Editor {
             for c in &geo.cells {
                 let Some(&(t, row, _)) = c.chain.last() else { continue };
                 if t == table && (r0..=r1).contains(&row) && c.col <= c1 && c.col + c.span.max(1) > c0 {
-                    out.push((page, c.rect));
+                    out.push((page, c.page_rect()));
                 }
             }
         }
         out
     }
 
-    pub(super) fn range_rects(&mut self, a: Position, b: Position, pages: std::ops::Range<usize>) -> Vec<(usize, [f64; 4])> {
+    pub(super) fn range_rects(&mut self, a: Position, b: Position, pages: std::ops::Range<usize>) -> Vec<(usize, view::Band)> {
         let mut out = Vec::new();
         for page in pages {
             let Some(geo) = self.pages.page(page, &self.index) else { continue };
@@ -3426,7 +3437,7 @@ impl Editor {
                 let shown_end = l.stops.last().is_some_and(|s| s.end && s.para == para);
                 let mark = if hi == ll && self.index.cmp(&last, &b) == std::cmp::Ordering::Less && shown_end { 4.0 } else { 0.0 };
                 if x1 + mark > x0 + 0.01 {
-                    out.push((page, [x0, l.top, x1 + mark, l.bottom]));
+                    out.push((page, l.strip(x0, x1 + mark)));
                 }
             }
         }
@@ -3443,14 +3454,14 @@ impl Editor {
                 let locked = self.selected_object().and_then(|o| o.locked) == Some(true);
                 let moving = self.object_drag.filter(|d| d.handle.is_none() && d.now != d.start && !locked);
                 let to = moving.and_then(|d| {
-                    let (para, _) = self.anchor_at(d.over, self.index.float_anchor(f)?, d.on_over(d.placed(d.rect(false)))[1])?;
+                    let (para, ..) = self.anchor_at(d.over, self.index.float_anchor(f)?, d.on_over(d.placed(d.rect(false))))?;
                     Some((d.over, para))
                 });
                 let at = |e: &mut Self, page: usize, para: ParaId| {
                     let geo = e.pages.page(page, &e.index)?;
-                    let top = geo.lines.iter().find(|l| l.span_of(para).is_some())?.top;
+                    let first = geo.lines.iter().find(|l| l.span_of(para).is_some())?;
                     let x = geo.lines.iter().filter_map(|l| l.span_of(para).map(|(x0, _)| x0)).fold(f64::MAX, f64::min);
-                    Some((page, [x, top]))
+                    Some((page, first.page(x, first.top)))
                 };
                 match to {
                     Some((page, para)) => at(self, page, para),
@@ -3495,7 +3506,7 @@ impl Editor {
             selection,
             story,
             fade,
-            guide: self.border_drag.as_ref().map(|d| (d.page, d.guide())),
+            guide: self.border_drag.as_ref().map(|d| (d.page, d.page_guide())),
             anchor: anchor.filter(|_| self.mark_options.all || self.mark_options.anchors),
             ghost,
             shapes: self.shape_frames(visible_pages.clone()),
@@ -3531,9 +3542,8 @@ impl Editor {
     pub fn selection_contains(&mut self, x: f64, y: f64) -> bool {
         let Some((page, px, py)) = self.stack().page_at(x, y) else { return false };
         match self.selection_view(page..page + 1) {
-            SelectionView::Text(r) | SelectionView::Cells(r) => {
-                r.iter().any(|(p, [x0, y0, x1, y1])| *p == page && px >= *x0 && px <= *x1 && py >= *y0 && py <= *y1)
-            }
+            SelectionView::Text(r) => r.iter().any(|(p, b)| *p == page && b.contains(px, py)),
+            SelectionView::Cells(r) => r.iter().any(|(p, [x0, y0, x1, y1])| *p == page && px >= *x0 && px <= *x1 && py >= *y0 && py <= *y1),
             SelectionView::Object(r, _) => r.iter().any(|o| {
                 let [x0, y0, x1, y1] = o.rect;
                 let (cx, cy) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
@@ -3574,8 +3584,11 @@ impl Editor {
                         }
                     };
                     let stops: Vec<&geometry::Stop> = line.stops.iter().filter(|s| s.para == para).collect();
-                    let (top, bottom) = (line.top, line.bottom);
-                    let right = geo.stories[line.story].rect[2];
+                    let right = if line.turn == crate::layout::vertical::Turn::NONE {
+                        geo.stories[line.story].rect[2]
+                    } else {
+                        line.turn.inverse().rect([0.0, 0.0, geo.w, geo.h])[2]
+                    };
                     for (k, a) in stops.iter().enumerate() {
                         // Break at a line's end
                         let b = match stops.get(k + 1) {
@@ -3584,7 +3597,7 @@ impl Editor {
                             None if matches!(text.char_at(a.unit), Some('\u{c}' | '\u{2028}')) => geometry::Stop { x: a.x, ..**a },
                             None => continue,
                         };
-                        let mut mark = |kind, x0: f64, x1: f64| out.push(FormattingMark { page, kind, at: [x0, top, x1, bottom] });
+                        let mut mark = |kind, x0: f64, x1: f64| out.push(FormattingMark { page, kind, at: line.strip(x0, x1) });
                         if o.shows_hidden_text() && text.is_hidden(a.unit) {
                             mark(MarkKind::Hidden, a.x, b.x);
                         }
@@ -3612,7 +3625,7 @@ impl Editor {
                     if let Some(last) = stops.last().filter(|s| s.unit != text.len() && self.doc.review.show_hidden && o.shows_hidden_text())
                         && self.index.para(&self.doc, para).is_some_and(|q| shown_join_at(q, last.unit))
                     {
-                        out.push(FormattingMark { page, kind: MarkKind::HiddenParagraph, at: [last.x, top, last.x, bottom] });
+                        out.push(FormattingMark { page, kind: MarkKind::HiddenParagraph, at: line.strip(last.x, last.x) });
                     }
                     // Paragraph mark after a closing break
                     let after_break = stops.last().filter(|s| s.unit.0 + 1 == text.len().0 && text.char_at(s.unit) == Some('\u{c}'));
@@ -3638,13 +3651,13 @@ impl Editor {
                         }
                         _ => MarkKind::Paragraph,
                     };
-                    out.push(FormattingMark { page, kind, at: [end, top, end, bottom] });
+                    out.push(FormattingMark { page, kind, at: line.strip(end, end) });
                     if let Some(index::Container::Section(k)) = slot.map(|s| s.container)
                         && sections.contains(&k)
                         && slot.is_some_and(|s| s.block + 1 == self.doc.sections[k].blocks.len())
                         && let Some(next) = self.doc.sections.get(k + 1)
                     {
-                        out.push(FormattingMark { page, kind: MarkKind::SectionBreak(next.break_kind), at: [end, top, right.max(end), bottom] });
+                        out.push(FormattingMark { page, kind: MarkKind::SectionBreak(next.break_kind), at: line.strip(end, right.max(end)) });
                     }
                 }
             }
@@ -3661,7 +3674,11 @@ impl Editor {
                 }
                 for r in geo.rows.iter().filter(|r| !r.repeat) {
                     if let Some(&(top, bottom)) = first.get(&(r.table, r.row)) {
-                        out.push(FormattingMark { page, kind: MarkKind::RowEnd, at: [r.rect[2], top, r.rect[2], bottom] });
+                        out.push(FormattingMark {
+                            page,
+                            kind: MarkKind::RowEnd,
+                            at: view::Band { rect: [r.rect[2], top, r.rect[2], bottom], turn: r.turn },
+                        });
                     }
                 }
             }
@@ -3684,7 +3701,7 @@ impl Editor {
                 }
             }
             if let Some(geo) = self.pages.page(page, &self.index) {
-                out.extend(geo.cells.iter().map(|c| (page, c.rect)));
+                out.extend(geo.cells.iter().map(|c| (page, c.page_rect())));
             }
         }
         out
@@ -3694,7 +3711,7 @@ impl Editor {
         let mut out = Vec::new();
         for page in pages {
             if let Some(geo) = self.pages.page(page, &self.index) {
-                out.extend(geo.cells.iter().map(|c| (page, c.rect)));
+                out.extend(geo.cells.iter().map(|c| (page, c.page_rect())));
             }
         }
         out
@@ -3713,7 +3730,7 @@ impl Editor {
         out
     }
 
-    pub fn unit_rects(&mut self, para: ParaId, a: Unit, b: Unit, pages: std::ops::Range<usize>) -> Vec<(usize, [f64; 4])> {
+    pub fn unit_rects(&mut self, para: ParaId, a: Unit, b: Unit, pages: std::ops::Range<usize>) -> Vec<(usize, view::Band)> {
         let mut out = Vec::new();
         for page in pages {
             let Some(geo) = self.pages.page(page, &self.index) else { continue };
@@ -3724,7 +3741,7 @@ impl Editor {
                     continue;
                 }
                 if let (Some(x0), Some(x1)) = (l.x_of(para, lo), l.x_of(para, hi)) {
-                    out.push((page, [x0.min(x1), l.top, x0.max(x1), l.bottom]));
+                    out.push((page, l.strip(x0.min(x1), x0.max(x1))));
                 }
             }
         }

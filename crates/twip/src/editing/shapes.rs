@@ -427,8 +427,9 @@ impl Editor {
             return Outcome::unavailable("floating objects don't go in notes");
         }
         let (para, rect) = match at {
-            Some((page, r)) => match self.anchor_at(page, caret_para, r[1]) {
-                Some((p, top)) => {
+            Some((page, r)) => match self.anchor_at(page, caret_para, r) {
+                Some((p, top, region)) => {
+                    let r = region.inverse().rect(r);
                     let left = self.float_frames(page, Some(p), true).map_or(72.0, |(fr, o)| o[0] + fr.column.0);
                     (p, [r[0] - left, r[1] - top, r[2] - r[0], r[3] - r[1]])
                 }

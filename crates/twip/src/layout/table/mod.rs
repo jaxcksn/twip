@@ -715,7 +715,7 @@ fn source_units(children: &[Child], out: &mut Vec<(ParaId, Unit, Unit)>) {
             Child::Box(b) if !matches!(b.kind, BoxKind::Float { .. }) => source_units(&b.children, out),
             Child::Box(_) => {}
             Child::Table(t) => t.rows.iter().flat_map(|r| r.cells.iter()).for_each(|cell| source_units(&cell.content, out)),
-            Child::Items(_) => {}
+            Child::Items(_) | Child::Turned { .. } => {}
         }
     }
 }

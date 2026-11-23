@@ -111,7 +111,7 @@ fn joined_paragraphs_share_their_line_for_editing() {
     assert_eq!(hit(end.x + 1.0), Some((b, Unit(0))), "just past the join");
     assert_eq!(hit(end.x - 1.0), Some((a, Unit(len))), "just before the join");
     let rects = e.range_rects(Position::text(StoryId::Body, a, Unit(len - 3)), Position::text(StoryId::Body, b, Unit(3)), *page..*page + 1);
-    let on_line: Vec<[f64; 4]> = rects.iter().map(|r| r.1).filter(|r| r[1] >= l.top - 0.01 && r[3] <= l.bottom + 0.01).collect();
+    let on_line: Vec<[f64; 4]> = rects.iter().map(|r| r.1.page()).filter(|r| r[1] >= l.top - 0.01 && r[3] <= l.bottom + 0.01).collect();
     assert_eq!(on_line.len(), 2, "one band per paragraph: {on_line:?}");
     assert!((on_line[0][2] - on_line[1][0]).abs() < 0.01, "the bands meet at the join, with no mark between: {on_line:?}");
 }

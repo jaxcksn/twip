@@ -730,23 +730,27 @@ impl Editor {
         let story = self.index.para_slot(c.para).map(|s| self.index.story(s.container))?;
         let (a, b) = (Position::text(story, c.para, c.range.start), Position::text(story, c.para, c.range.end));
         // A border or an indent changes no text: its mark is where the paragraph starts.
-        let rects = if c.range.is_empty() {
-            self.caret_at(a).map(|v| vec![(v.page, [v.x, v.top, v.x + 1.0, v.bottom])]).unwrap_or_default()
+        let bands = if c.range.is_empty() {
+            self.caret_at(a).map(|v| vec![(v.page, super::view::Band::upright(v.rect()))]).unwrap_or_default()
         } else {
             self.range_rects(a, b, pages)
         };
         let near = matches!(c.kind, super::CorrectionKind::BorderLine { .. })
             || self.caret().and_then(|p| p.para_offset()).is_some_and(|(p, at)| p == c.para && at >= c.range.start && at.0 <= c.range.end.0 + 1);
+        // Options button
         let button = near
             .then(|| {
-                rects.last().map(|&(page, r)| {
+                bands.last().map(|&(page, b)| {
                     let (w, h) = (12.0, 9.0);
-                    let mid = (rects.iter().filter(|(pg, _)| *pg == page).map(|(_, r)| r[0]).fold(f64::MAX, f64::min) + r[2]) / 2.0;
-                    (page, [mid - w / 2.0, r[3] + 0.75, mid + w / 2.0, r[3] + 0.75 + h])
+                    let start = bands.iter().filter(|(pg, o)| *pg == page && o.turn == b.turn).map(|(_, o)| o.rect[0]).fold(f64::MAX, f64::min);
+                    let [x, y] = b.turn.at([(start + b.rect[2]) / 2.0, b.rect[3]]);
+                    let y = y + 0.75;
+                    (page, [x - w / 2.0, y, x + w / 2.0, y + h])
                 })
             })
             .flatten();
-        Some(super::view::CorrectionView { rects, button })
+        let rects = bands.iter().map(|&(page, b)| (page, b.page())).collect();
+        Some(super::view::CorrectionView { rects, bands, button })
     }
 
     pub(super) fn follow_correction(&mut self, typed: usize, edited: bool) {

@@ -568,9 +568,9 @@ impl Spellers {
         None
     }
 
-    /// The misspellings on `pages` to underline: (page, [x0, top, x1, bottom]). The word being typed isn't flagged
+    /// The misspellings on `pages` to underline: each word's band on its page. The word being typed isn't flagged
     /// until the caret leaves it.
-    pub fn squiggles(&self, e: &mut Editor, pages: std::ops::Range<usize>, default: &str) -> Vec<(usize, [f64; 4])> {
+    pub fn squiggles(&self, e: &mut Editor, pages: std::ops::Range<usize>, default: &str) -> Vec<(usize, crate::editing::view::Band)> {
         if !self.enabled || self.by_language.is_empty() {
             return Vec::new();
         }

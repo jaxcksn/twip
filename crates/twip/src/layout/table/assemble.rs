@@ -821,14 +821,16 @@ fn turn_cell(
         Flow::Up => (l - g.cx, g.w - g.cx - r),
         Flow::DownEast => (f64::NEG_INFINITY, f64::INFINITY),
     };
-    let items = crate::layout::vertical::turned_in(&story.units, v, [0.0, 0.0, g.cw, len], across, first, bottom);
+    let rect = [0.0, 0.0, g.cw, len];
+    let items = crate::layout::vertical::turned_in(&story.units, v, rect, across, first, bottom);
+    let text = crate::layout::vertical::unturned(&story.units, v, rect, across, crate::layout::vertical::Turn::NONE);
     let unit = StoryUnit {
         top: 0.0,
         height: 0.0,
         below: 0.0,
         after: 0.0,
         hold: 0.0,
-        content: Rc::from([Child::Items(items.into())]),
+        content: Rc::from([Child::Turned { items: items.into(), text }]),
         block: 0,
         from: 0,
         widow: false,

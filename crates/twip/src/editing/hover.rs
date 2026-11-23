@@ -93,7 +93,7 @@ impl Editor {
         }
         let p = self.hit_laid_out(x, y)?;
         let under = |e: &mut Editor, a: Position, b: Position| {
-            e.range_rects(a, b, page..page + 1).into_iter().map(|(_, r)| r).find(|r| r[0] <= hx && hx <= r[2] && r[1] <= hy && hy <= r[3])
+            e.range_rects(a, b, page..page + 1).into_iter().map(|(_, r)| r).find(|r| r.contains(hx, hy)).map(|r| r.page())
         };
         if let Some(link) = self.link_at(p) {
             let (a, b) = self.locate(crate::docx::ElementId::Field(link.field)).and_then(|w| self.element_range(&w))?;
