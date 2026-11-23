@@ -162,7 +162,34 @@ fn a_symbol_leaves_no_typing_font() {
     e.set_caret_for_benchmark(Selection::Caret(Position::text(StoryId::Body, p, Unit(2))));
     let out = e.execute(Command::InsertSymbol(InsertSymbol { char: '\u{B7}', font: Some("Symbol".into()) }), fonts());
     assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
-    assert!(e.pending.is_none(), "the symbol's font is the typing font");
+    assert!(e.pending.as_ref().is_none_or(|r| r.ascii != "Symbol"), "the symbol's font is the typing font");
+    e.execute(Command::InsertText("q".into()), fonts());
+    let p = e.index().para(e.document(), p).expect("the paragraph");
+    let fonts_of = |c: char| {
+        p.inlines.iter().find_map(|i| match i {
+            Inline::Text(t, r) if t.contains(c) => Some(r.ascii.clone()),
+            _ => None,
+        })
+    };
+    assert_eq!(fonts_of('\u{B7}').as_deref(), Some("Symbol"));
+    assert_eq!(fonts_of('q'), fonts_of('t'), "typing after the symbol goes on in the text's font");
+}
+
+#[test]
+fn repeat_is_refused_what_protection_refuses() {
+    let mut e = lay(&format!("<w:p>{}</w:p>", run("text")));
+    select(&mut e, 0, 0, 2);
+    assert!(matches!(e.execute(Command::SetBold(true), fonts()), Outcome::Changed(_)));
+    let formatting = DocumentProtection { kind: Some(ProtectionKind::None), formatting: Some(true), enforce: Some(true), ..Default::default() };
+    assert!(matches!(e.execute(Command::SetDocumentProtection(formatting), fonts()), Outcome::Changed(_)));
+    select(&mut e, 0, 2, 4);
+    assert!(refused(&e.execute(Command::SetBold(true), fonts())), "formatting is restricted");
+    assert!(refused(&e.execute(Command::Repeat, fonts())), "so is repeating it");
+    let bold = e.document().sections[0].blocks.iter().any(|b| match b {
+        crate::docx::Block::Para(p) => p.inlines.iter().any(|i| matches!(i, Inline::Text(t, r) if t.contains('x') && r.bold)),
+        crate::docx::Block::Table(_) => false,
+    });
+    assert!(!bold, "the text stays as it was");
 }
 
 #[test]

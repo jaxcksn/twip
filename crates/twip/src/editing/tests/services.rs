@@ -338,6 +338,15 @@ fn each_run_is_spelled_in_its_language() {
 }
 
 #[test]
+fn a_language_tag_in_another_case_is_the_same_language() {
+    let body = "<w:p><w:r><w:rPr><w:lang w:val=\"en-US\"/></w:rPr><w:t>hel</w:t></w:r><w:r><w:rPr><w:lang w:val=\"en-us\"/></w:rPr><w:t>lo</w:t></w:r></w:p>";
+    with_session(&package(body, "", ""), |s| {
+        s.spelling().add_dictionary(dictionary("en-US", &["hello"])).expect("loads");
+        assert_eq!(s.state().spelling.misspellings, 0, "one word, checked whole");
+    });
+}
+
+#[test]
 fn table_properties_start_from_the_cells_margins() {
     let body = "<w:tbl><w:tblPr><w:tblW w:w=\"0\" w:type=\"auto\"/><w:tblCellMar><w:left w:w=\"0\" w:type=\"dxa\"/><w:right w:w=\"200\" w:type=\"dxa\"/></w:tblCellMar></w:tblPr><w:tblGrid><w:gridCol w:w=\"4000\"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>";
     with_session(&package(body, "", ""), |s| {

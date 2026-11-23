@@ -95,6 +95,57 @@ fn typing_between_two_editable_ranges_goes_in_the_one_the_author_may_edit() {
     });
 }
 
+#[test]
+fn typing_where_an_empty_range_follows_a_ranges_end_stays_in_a_range() {
+    let read_only = DocumentProtection { kind: Some(ProtectionKind::ReadOnly), enforce: Some(true), ..Default::default() };
+    let p = r#"<w:p><w:permStart w:id="1" w:edGrp="everyone"/><w:r><w:t>ab</w:t></w:r><w:permEnd w:id="1"/><w:permStart w:id="2" w:edGrp="everyone"/><w:permEnd w:id="2"/></w:p>"#;
+    with_session(Some(blank_body(p)), |s| {
+        s.run(Command::SetDocumentProtection(read_only)).expect("protects");
+        s.with_editor(|e| e.selection = Selection::Caret(at(e, 0, 2)));
+        s.run(Command::InsertText("x".into())).expect("types at the ends");
+        s.run(Command::InsertText("y".into())).expect("types again");
+        s.with_editor(|e| assert_eq!(texts(e), vec!["abxy".to_string()]));
+    });
+}
+
+fn protected(body: &str) -> Editor {
+    let mut e = Editor::open(&blank_body(body), fonts()).expect("opens");
+    e.complete(fonts());
+    let read_only = DocumentProtection { kind: Some(ProtectionKind::ReadOnly), enforce: Some(true), ..Default::default() };
+    e.execute(Command::SetDocumentProtection(read_only), fonts());
+    e
+}
+
+fn forward() -> Command {
+    Command::Delete(DeleteOptions { direction: Direction::Forward, unit: None })
+}
+
+#[test]
+fn delete_at_a_ranges_end_cant_join_the_next_sections_paragraph() {
+    let sec = r#"<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr>"#;
+    let body = format!(
+        r#"<w:p><w:pPr>{sec}</w:pPr><w:permStart w:id="1" w:edGrp="everyone"/><w:r><w:t>abc</w:t></w:r><w:permEnd w:id="1"/></w:p><w:p><w:r><w:t>def</w:t></w:r></w:p>"#
+    );
+    let mut e = protected(&body);
+    assert_eq!(e.document().sections.len(), 2);
+    e.selection = Selection::Caret(at(&e, 0, 3));
+    e.execute(forward(), fonts());
+    assert_eq!(e.document().sections.len(), 2, "the section break stays");
+    assert_eq!(texts(&e), vec!["abc".to_string(), "def".to_string()]);
+}
+
+#[test]
+fn delete_before_a_hidden_deletion_cant_take_the_protected_text_after_it() {
+    let del = r#"<w:del w:id="9" w:author="B" w:date="2020-01-01T00:00:00Z"><w:r><w:delText>c</w:delText></w:r></w:del>"#;
+    let body =
+        format!(r#"<w:p><w:permStart w:id="1" w:edGrp="everyone"/><w:r><w:t>ab</w:t></w:r>{del}<w:permEnd w:id="1"/><w:r><w:t>d</w:t></w:r></w:p>"#);
+    let mut e = protected(&body);
+    e.doc.review.view = crate::docx::review::MarkupView::NoMarkup;
+    e.selection = Selection::Caret(at(&e, 0, 2));
+    e.execute(forward(), fonts());
+    assert!(texts(&e)[0].ends_with('d'), "{:?}", texts(&e));
+}
+
 fn delete(e: &mut Editor, a: u32, b: u32) {
     e.selection = Selection::range(at(e, 0, a), at(e, 0, b), Granularity::Char);
     e.execute(Command::Delete(DeleteOptions { direction: Direction::Forward, unit: None }), fonts());

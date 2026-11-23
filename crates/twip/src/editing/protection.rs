@@ -1,4 +1,4 @@
-//! Document protection: Restrict Editing, editable ranges and the gate every edit passes
+//! Document protection: Restrict Editing and editable ranges
 
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -139,20 +139,24 @@ impl Editor {
     }
 
     /// Under enforced protection, text put in at the end of a range the author may edit goes before its `w:permEnd`
-    /// (the end is in the range), unless a range they may edit starts after that end.
+    /// (the end is in the range), unless a range they may edit starts after that end: then after its start, and
+    /// before its end too when it ends there.
     pub(super) fn inside_editable_end(&self, s: Step) -> Step {
         let Step::Text { para, range, with, edges } = s else { return s };
         let enforced = self.doc.settings.protection.as_ref().is_some_and(|p| p.enforced && p.edit != ProtectionKind::None);
         let inserts = range.start == range.end && edges == Edges::default() && with.iter().any(|i| i.units() > 0);
-        let under = (enforced && inserts).then(|| self.index.para(&self.doc, para)).flatten().and_then(|p| self.under_editable_end(p, range.start));
+        let under = (enforced && inserts).then(|| self.index.para(&self.doc, para)).flatten().map(|p| self.under_editable_end(p, range.start));
         Step::Text { para, range, with, edges: Edges { under: under.unwrap_or(edges.under), ..edges } }
     }
 
-    /// How many of the markers at unit `u` of `p` text put in there goes before: those from the first `w:permEnd` of a
-    /// range the author may edit; `None` when a range they may edit starts after it.
-    fn under_editable_end(&self, p: &crate::docx::Paragraph, u: Unit) -> Option<u32> {
+    /// How many of the markers at unit `u` of `p` text put in there goes before: the last place among them inside a
+    /// range the author may edit (before the first `w:permEnd` of one, after a `w:permStart` of one, before the
+    /// `w:permEnd` of a range started there).
+    fn under_editable_end(&self, p: &crate::docx::Paragraph, u: Unit) -> u32 {
         let author: &str = &self.author.0;
-        let (mut at, mut under, mut seen) = (0u32, 0u32, false);
+        let (mut at, mut markers) = (0u32, 0u32);
+        let mut inside: Option<u32> = None;
+        let mut started: Option<String> = None;
         for i in &p.inlines {
             let w = i.units() as u32;
             if at > u.0 || (at == u.0 && w > 0) {
@@ -160,15 +164,19 @@ impl Editor {
             }
             if at == u.0 && !matches!(i, Inline::Text(..)) {
                 match perm(i) {
-                    Some((false, id, _)) if !seen => seen = may(&self.range_who(&id), author),
-                    Some((true, _, who)) if seen && may(&who, author) => return None,
+                    Some((false, id, _)) if started.as_deref() == Some(id.as_str()) => inside = Some(markers),
+                    Some((false, id, _)) if inside.is_none() && may(&self.range_who(&id), author) => inside = Some(markers),
+                    Some((true, id, who)) if may(&who, author) => {
+                        inside = Some(markers + 1);
+                        started = Some(id);
+                    }
                     _ => {}
                 }
-                under += u32::from(seen);
+                markers += 1;
             }
             at += w;
         }
-        Some(under)
+        inside.map_or(0, |k| markers - k)
     }
 
     /// Who may edit range `id`: its `w:permStart`'s `w:edGrp` or `w:ed`. Not from [`Self::editable_ranges`], which is
@@ -312,25 +320,44 @@ impl Editor {
         Some(move |id| refusal(p, id, || at).is_some())
     }
 
-    /// What a delete at the caret removes: the grapheme or word beside it, or the paragraph mark it joins across.
+    /// What a delete at the caret removes, as [`Editor::delete`] finds it: the grapheme or word beside it in the
+    /// markup view, or the paragraph mark it joins across, into the section beside or a table's first cell.
     fn delete_span(&self, d: &DeleteOptions) -> Option<(Position, Position)> {
+        use crate::docx::Block;
         let caret = self.selection.focus()?;
         let Some((para, u)) = caret.para_offset() else { return Some((caret, caret)) };
         let p = self.index.para(&self.doc, para)?;
-        let t = super::text::UnitText::of(p);
+        let t = super::text::UnitText::in_view(p, self.doc.review.view);
         let word = d.unit == Some(DeleteUnit::Word);
         let slot = self.index.para_slot(para)?;
-        let blocks = self.index.blocks(&self.doc, slot.container);
-        let beside = |k: Option<usize>| match k.and_then(|k| blocks?.get(k)) {
-            Some(crate::docx::Block::Para(q)) => Some((ParaId(q.id), super::step::para_len(q))),
+        let blocks = self.index.blocks(&self.doc, slot.container).map_or(&[][..], Vec::as_slice);
+        let section = match slot.container {
+            super::index::Container::Section(k) => Some(k),
             _ => None,
         };
         let at = |para, u| Position::text(caret.story, para, u);
         Some(match d.direction {
             Direction::Backward if u > Unit(0) => (at(para, if word { t.prev_word(u) } else { t.prev_grapheme(u) }), caret),
-            Direction::Backward => beside(slot.block.checked_sub(1)).map_or((caret, caret), |(q, len)| (at(q, len), caret)),
+            Direction::Backward => {
+                let before = match slot.block.checked_sub(1) {
+                    Some(k) => blocks.get(k),
+                    None => section.and_then(|k| self.doc.sections.get(k.checked_sub(1)?)?.blocks.last()),
+                };
+                match before {
+                    Some(Block::Para(q)) => (at(ParaId(q.id), super::step::para_len(q)), caret),
+                    _ => (caret, caret),
+                }
+            }
             Direction::Forward if u < t.len() => (caret, at(para, if word { t.next_word(u) } else { t.next_grapheme(u) })),
-            Direction::Forward => beside(Some(slot.block + 1)).map_or((caret, caret), |(q, _)| (caret, at(q, Unit(0)))),
+            Direction::Forward => {
+                let after = blocks.get(slot.block + 1).or_else(|| section.and_then(|k| self.doc.sections.get(k + 1)?.blocks.first()));
+                let first = |t: &crate::docx::Table| t.rows.first()?.cells.first()?.blocks.iter().find_map(super::first_para_of);
+                match after {
+                    Some(Block::Para(q)) => (caret, at(ParaId(q.id), Unit(0))),
+                    Some(Block::Table(t)) => first(t).map_or((caret, caret), |q| (caret, at(q, Unit(0)))),
+                    None => (caret, caret),
+                }
+            }
         })
     }
 

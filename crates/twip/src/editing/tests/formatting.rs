@@ -306,6 +306,35 @@ fn the_format_painter_gives_text_another_runs_formatting_in_place_of_its_own() {
 }
 
 #[test]
+fn the_format_painter_takes_part_of_a_paragraphs_style_formatting() {
+    let styles = concat!(
+        r#"<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>"#,
+        r#"<w:style w:type="paragraph" w:styleId="Strong"><w:name w:val="Strong Para"/><w:basedOn w:val="Normal"/><w:rPr><w:b/></w:rPr></w:style>"#,
+        r#"<w:style w:type="paragraph" w:styleId="Head"><w:name w:val="Head"/><w:link w:val="HeadChar"/><w:rPr><w:i/></w:rPr></w:style>"#,
+        r#"<w:style w:type="character" w:styleId="HeadChar"><w:name w:val="Head Char"/><w:link w:val="Head"/><w:rPr><w:i/></w:rPr></w:style>"#,
+    );
+    let body = r#"<w:p><w:pPr><w:pStyle w:val="Strong"/></w:pPr><w:r><w:t>bold</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Head"/></w:pPr><w:r><w:t>head</w:t></w:r></w:p><w:p><w:r><w:t>plain</w:t></w:r></w:p>"#;
+    let mut e = super::style_model::open_pkg(&super::style_model::pkg(styles, body));
+    let ids = texts_ids(&e);
+    let paint = |e: &mut Editor, from: usize| {
+        e.selection = Selection::range(
+            Position::text(StoryId::Body, ids[from], Unit(0)),
+            Position::text(StoryId::Body, ids[from], Unit(2)),
+            Default::default(),
+        );
+        e.execute(C::CopyFormatting, fonts());
+        e.selection =
+            Selection::range(Position::text(StoryId::Body, ids[2], Unit(0)), Position::text(StoryId::Body, ids[2], Unit(5)), Default::default());
+        e.execute(C::PasteFormatting, fonts());
+    };
+    paint(&mut e, 0);
+    assert_eq!(text_runs(&e, 2), vec![("plain".into(), true, false, None)], "bold from the style");
+    paint(&mut e, 1);
+    assert_eq!(text_runs(&e, 2), vec![("plain".into(), false, true, None)], "the linked character style");
+    assert!(doc_xml(&e).contains(r#"<w:rStyle w:val="HeadChar"/>"#));
+}
+
+#[test]
 fn the_format_painter_takes_a_whole_paragraphs_formatting_too() {
     let mut e = edit(
         r#"<w:p><w:pPr><w:jc w:val="center"/><w:spacing w:after="480"/></w:pPr><w:r><w:t>one</w:t></w:r></w:p><w:p><w:r><w:t>two</w:t></w:r></w:p><w:p><w:r><w:t>three</w:t></w:r></w:p>"#,
@@ -319,4 +348,14 @@ fn the_format_painter_takes_a_whole_paragraphs_formatting_too() {
     let p = e.index().para(e.document(), ids[2]).expect("para");
     assert_eq!((p.style.jc, p.style.space_after), (crate::docx::props::Jc::Center, 24.0));
     assert!(doc_xml(&e).matches("<w:jc w:val=\"center\"/>").count() == 2);
+}
+
+#[test]
+fn a_built_in_style_not_applied_is_not_added() {
+    let mut e = edit("<w:p><w:r><w:t>one two</w:t></w:r></w:p>");
+    let undo = e.history().undo_depth();
+    let out = e.execute(C::SetTableStyle(crate::api::value::StyleId("TableGrid1".into())), fonts());
+    assert!(matches!(out, super::super::commands::Outcome::Unchanged(_)), "{out:?}");
+    assert!(!e.document().resolver.as_ref().expect("styles").styles.by_id.contains_key("TableGrid1"), "not in a table");
+    assert_eq!(e.history().undo_depth(), undo);
 }

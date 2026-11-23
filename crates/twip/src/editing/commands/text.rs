@@ -80,12 +80,14 @@ impl Editor {
     pub(in crate::editing) fn symbol(&mut self, s: InsertSymbol, fonts: &Fonts) -> Outcome {
         // The font is the symbol's alone: typing after it goes on as before.
         let was = self.pending.clone();
-        if let Some(font) = s.font.as_deref().filter(|f| !f.is_empty()) {
+        let font = s.font.as_deref().filter(|f| !f.is_empty());
+        let before = font.and(self.selection.ordered(&self.index)).and_then(|(a, _)| self.run_at(&a));
+        if let Some(font) = font {
             self.pending_font(font);
         }
         let out = self.insert_text(&s.char.to_string(), fonts);
         self.history.break_typing();
-        self.pending = was;
+        self.pending = if matches!(out, Outcome::Changed(_)) { was.or(before) } else { was };
         out
     }
 

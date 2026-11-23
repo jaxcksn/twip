@@ -126,3 +126,22 @@ fn find_para(doc: &Document, text: &str) -> u64 {
     }
     doc.sections.iter().find_map(|s| walk(&s.blocks, text)).expect("paragraph")
 }
+
+#[test]
+fn a_groups_text_boxes_count_towards_the_nesting() {
+    use crate::docx::{GroupPart, Inline, TextBox};
+    let doc = deep_document();
+    let Some(Block::Table(t)) = doc.sections[0].blocks.iter().find(|b| matches!(b, Block::Table(_))).cloned() else { panic!("a table") };
+    let Some(Block::Para(mut p)) = doc.sections[0].blocks.first().cloned() else { panic!("a paragraph") };
+    let e = open("FX-OBJ.docx");
+    let float = e.document().sections.iter().flat_map(|s| &s.blocks).find_map(|b| match b {
+        Block::Para(q) => q.inlines.iter().find_map(|i| if let Inline::Float(f, r) = i { Some((f.clone(), r.clone())) } else { None }),
+        Block::Table(_) => None,
+    });
+    let (mut f, run) = float.expect("a float");
+    f.text_box = None;
+    let text_box = TextBox { blocks: vec![Block::Table(t)], insets: [0.0; 4], outline: 0.0, auto_fit: false, v_anchor: 0, flow: 0 };
+    f.parts = vec![GroupPart { rect: [0.0; 4], image: None, text_box: Some(text_box), path: Vec::new() }];
+    p.inlines = vec![Inline::Float(f, run)];
+    assert_eq!(super::super::para_depth(&p), super::super::TEXT_BOX_LEVELS + DEPTH);
+}

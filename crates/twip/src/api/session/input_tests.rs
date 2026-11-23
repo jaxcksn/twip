@@ -63,6 +63,35 @@ fn a_cancelled_composition_leaves_the_text_as_it_was() {
     assert!(!s.state().history.can_redo, "nothing to redo");
 }
 
+#[test]
+fn a_composition_cancelled_after_read_only_comes_on_still_goes() {
+    let mut engine = Engine::new(FontLibrary::system_recommended());
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    s.run(Command::InsertText("ab".into())).expect("types");
+    s.composition(CompositionPhase::Update, "n", 1);
+    assert_eq!(text(s), "abn");
+    s.set_read_only(true);
+    s.composition(CompositionPhase::End, "", 0);
+    assert_eq!(text(s), "ab", "the composition is taken out");
+}
+
+#[test]
+fn a_cancelled_composition_keeps_what_can_be_redone() {
+    let mut engine = Engine::new(FontLibrary::system_recommended());
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    s.run(Command::InsertText("ab".into())).expect("types");
+    s.run(Command::Undo).expect("undoes");
+    s.composition(CompositionPhase::Update, "n", 1);
+    s.composition(CompositionPhase::Update, "ni", 2);
+    s.composition(CompositionPhase::End, "", 0);
+    assert_eq!(text(s), "");
+    assert!(s.state().history.can_redo, "the typing can be redone");
+    s.run(Command::Redo).expect("redoes");
+    assert_eq!(text(s), "ab");
+}
+
 fn caret(s: &mut Session) -> Option<u32> {
     s.with_editor(|e| e.selection().focus().and_then(|p| p.para_offset()).map(|(_, u)| u.0))
 }

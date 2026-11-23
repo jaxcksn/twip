@@ -17,7 +17,7 @@ const HEADER_REF: &str = r#"<w:headerReference w:type="default" r:id="rIdH"/>"#;
 
 /// A blank package with `body` as the document; `header` relates `header1.xml` as rIdH, the part itself only when
 /// `Some(Some(xml))`.
-fn package(body: &str, header: Option<Option<&str>>) -> Editor {
+pub(super) fn package(body: &str, header: Option<Option<&str>>) -> Editor {
     let blank = crate::docx::blank::blank_docx();
     let read = |name: &str| crate::docx::package::read(&blank, &[], name).expect("reads").expect(name);
     let document = format!(r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document {NS}><w:body>{body}</w:body></w:document>"#);
@@ -159,6 +159,20 @@ fn unlinking_an_inherited_header_copies_it_into_the_page_section() {
     let own = e.document().sections[2].headers[0].clone();
     let Some(StoryId::HeaderFooter(k)) = story(&e) else { panic!("{:?}", e.selection()) };
     assert_eq!(e.index().part_name(k).map(str::to_string), own, "the caret follows into the copy");
+}
+
+#[test]
+fn different_first_page_shows_the_shown_pages_section_in_a_shared_header() {
+    let first = format!("<w:p><w:pPr><w:sectPr>{HEADER_REF}{SEC}<w:titlePg/></w:sectPr></w:pPr><w:r><w:t>One</w:t></w:r></w:p>");
+    let mut e = package(&format!("{first}{}<w:sectPr>{SEC}</w:sectPr>", p("Two")), Some(Some(HEADER)));
+    e.edit_header_footer(Some(1), false, fonts());
+    assert!(in_header(&e));
+    let f = e.format_state();
+    let checked =
+        e.command_states(f.as_ref(), super::super::state::StateFlags { read_only: false })[&Command::SetDifferentFirstPage(true).id()].checked;
+    assert_eq!(checked, Some(false), "the second section's, which the command changes");
+    e.execute(Command::SetDifferentFirstPage(true), fonts());
+    assert!(e.document().sections[1].title_pg);
 }
 
 // Headers and footers going away under the caret

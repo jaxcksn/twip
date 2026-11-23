@@ -41,6 +41,24 @@ fn set_columns_checks_its_widths() {
 }
 
 #[test]
+fn set_columns_fits_the_text_where_it_runs() {
+    use crate::api::command::{Margins, MultiplePages};
+    let w = |width| ColumnWidth { width: Points(width), spacing: Points(0.0) };
+    let cols = |width| Command::SetColumns(Columns { count: 2, spacing: None, separator: None, widths: Some(vec![w(width), w(width)]) });
+    let (mut engine, id) = setup();
+    let s = engine.session(id).unwrap();
+    let clear = Margins { left: Some(Points(0.0)), right: Some(Points(0.0)), ..Default::default() };
+    s.batch(vec![Command::SetMargins(clear), cols(250.0)], None).expect("columns that fit the margins the batch sets");
+    let (mut engine, id) = setup();
+    let s = engine.session(id).unwrap();
+    s.run(Command::SetMargins(Margins { left: Some(Points(72.0)), right: Some(Points(72.0)), gutter: Some(Points(36.0)), ..Default::default() }))
+        .expect("a gutter");
+    assert_eq!(code(s.run(cols(225.0))), Some(ErrorCode::InvalidArgument), "the gutter takes from the text");
+    s.run(Command::SetMultiplePages(MultiplePages { mode: None, gutter_at_top: Some(true) })).expect("the gutter at the top");
+    s.run(cols(225.0)).expect("the gutter at the top leaves the width");
+}
+
+#[test]
 fn a_drop_down_with_an_item_named_combo_box_stays_a_drop_down() {
     let (mut engine, id) = setup();
     let s = engine.session(id).unwrap();

@@ -138,11 +138,16 @@ impl Editor {
         // A built-in style the document doesn't define yet joins it first, in the same undo step.
         if let Some(b) = self.built_in_named(&cmd) {
             let label = crate::api::catalog::info(cmd.id()).map_or("Style", |i| i.label.as_str());
-            return self.joined(label, fonts, |e| match e.add_built_in(b, fonts) {
+            let pending = self.pending.clone();
+            self.begin_batch(Some(label.into()));
+            let out = match self.add_built_in(b, fonts) {
                 o @ Outcome::Refused(_) => o,
-                _ if e.built_in_named(&cmd).is_some() => Outcome::Unchanged("the style couldn't be added"),
-                _ => e.execute_editable(cmd, fonts),
-            });
+                _ if self.built_in_named(&cmd).is_some() => Outcome::Unchanged("the style couldn't be added"),
+                _ => self.execute_editable(cmd, fonts),
+            };
+            let applied = matches!(out, Outcome::Changed(_) | Outcome::Moved) || self.pending != pending;
+            let end = self.end_batch(applied, fonts);
+            return if matches!(end, Outcome::Changed(_)) { end } else { out };
         }
         let typing = match &cmd {
             Command::InsertText(_) | Command::InsertTab => Some(Typing::Insert),

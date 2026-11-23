@@ -273,14 +273,16 @@ impl UnitText {
         let mut out = Vec::with_capacity(self.atoms.len());
         let mut atoms = self.atoms.iter().copied().peekable();
         let mut atom: Option<(Unit, Unit)> = None;
+        // Hidden text reads as space.
+        let hidden = |a: Unit, b: Unit| a < b && (a.0..b.0).all(|u| self.is_hidden(Unit(u)));
+        let piece = |(a, b): (Unit, Unit)| (a, b, if hidden(a, b) { Class::Space } else { Class::Other });
         let mut push = |mut w: (Unit, Unit, Class), out: &mut Vec<(Unit, Unit, Class)>| {
             while let Some(a) = atoms.next_if(|a| a.0 <= w.0) {
-                out.push((a.0, a.1, Class::Other));
+                out.push(piece(a));
                 atom = Some(a);
             }
             if !atom.is_some_and(|(a, b)| a <= w.0 && w.1 <= b) {
-                // Hidden text reads as space.
-                if w.0 < w.1 && (w.0.0..w.1.0).all(|u| self.is_hidden(Unit(u))) {
+                if hidden(w.0, w.1) {
                     w.2 = Class::Space;
                 }
                 out.push(w);
@@ -302,7 +304,7 @@ impl UnitText {
             }
             push((self.unit_at_byte(b + start), self.unit_at_byte(b + w.len()), class(&w[start..])), &mut out);
         }
-        out.extend(atoms.map(|(a, b)| (a, b, Class::Other)));
+        out.extend(atoms.map(piece));
         out
     }
 
@@ -417,6 +419,17 @@ mod tests {
         assert_eq!(t.prev_word(Unit(13)), Unit(11));
         assert_eq!(t.prev_word(Unit(8)), Unit(6));
         assert_eq!(t.prev_word(Unit(6)), Unit(0));
+    }
+
+    #[test]
+    fn a_wholly_hidden_field_reads_as_space() {
+        let mut t = ut("a xyz b");
+        t.atoms = vec![(Unit(2), Unit(5))];
+        (2..5).for_each(|u| t.hidden[u] = true);
+        assert_eq!(t.next_word(Unit(0)), Unit(6));
+        assert_eq!(t.prev_word(Unit(6)), Unit(0));
+        t.hidden[3] = false;
+        assert_eq!(t.next_word(Unit(0)), Unit(2), "a field partly shown is a word");
     }
 
     #[test]

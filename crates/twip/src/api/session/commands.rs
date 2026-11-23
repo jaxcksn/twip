@@ -177,12 +177,6 @@ impl Session {
                     }
                     within("the space after a column", w.spacing.0, 0.0, MAX)?;
                 }
-                let page = &self.state.page;
-                let text = page.size.width.0 - page.margins.left.0 - page.margins.right.0;
-                let total: f64 = widths.iter().map(|w| w.width.0).sum::<f64>() + widths.iter().rev().skip(1).map(|w| w.spacing.0).sum::<f64>();
-                if text > 0.0 && total > text + 0.5 {
-                    return Err(Error::invalid("the columns are wider than the text"));
-                }
                 Ok(())
             }
             C::SetHeaderFooterDistance(d) => length("the header distance", d.header, 0.0, MAX).and(length("the footer distance", d.footer, 0.0, MAX)),

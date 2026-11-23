@@ -68,7 +68,10 @@ impl Editor {
             return self.undo(false, fonts);
         }
         match self.repeat.clone() {
-            Some(c) => self.run(c, fonts),
+            Some(c) => match self.protection_refusal(&c) {
+                Some(e) => Outcome::Refused(e),
+                None => self.run(c, fonts),
+            },
             None => Outcome::Unchanged("nothing to repeat"),
         }
     }

@@ -408,7 +408,7 @@ impl Spellers {
         let langs = Self::languages(e, para, default);
         let lang = |k: usize| text.units.get(k).and_then(|&u| langs.get(u as usize)).copied().unwrap_or(default);
         // A stretch ends where the language changes or a field marker sits, so no word takes part of a field.
-        let cut = |k: usize| lang(k) != lang(k - 1) || text.breaks.binary_search(&k).is_ok();
+        let cut = |k: usize| !lang(k).eq_ignore_ascii_case(lang(k - 1)) || text.breaks.binary_search(&k).is_ok();
         let len = text.chars.len();
         if !(1..len).any(cut) {
             return by_unit(self.speller(lang(0)).map_or_else(|| Rc::from([]), |sp| sp.errors(&text.chars)), &text);

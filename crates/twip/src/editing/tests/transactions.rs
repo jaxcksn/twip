@@ -200,3 +200,21 @@ fn a_context_menu_action_records_revisions() {
     e.execute(Command::InsertTab, fonts());
     assert!(tracked(&e) > 0);
 }
+
+#[test]
+fn an_aborted_transaction_puts_the_selection_back() {
+    use super::super::position::{Position, StoryId};
+    use super::super::selection::Selection;
+    let mut e = open("FX-TBL-BASIC.docx");
+    let p = texts(&e).iter().position(|t| t == "T2 R3 C3").expect("cell");
+    let para = super::para_id(&e, p);
+    e.set_caret_for_benchmark(Selection::Caret(Position::text(StoryId::Body, para, crate::layout::Unit(2))));
+    e.execute(Command::Select(crate::api::command::SelectUnit::Row), fonts());
+    let cells = e.selection();
+    assert!(matches!(cells, Selection::Cells { .. }));
+    let mut tx = e.begin("Typing");
+    e.delete_range(&mut tx).expect("deletes");
+    assert_ne!(e.selection(), cells, "the deletion leaves a caret");
+    e.abort(tx);
+    assert_eq!(e.selection(), cells);
+}

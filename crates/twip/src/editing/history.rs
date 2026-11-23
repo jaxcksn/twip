@@ -113,6 +113,14 @@ impl History {
         self.redo.push(tx);
     }
 
+    pub fn take_redo(&mut self) -> Vec<Transaction> {
+        std::mem::take(&mut self.redo)
+    }
+
+    pub fn put_redo(&mut self, redo: Vec<Transaction>) {
+        self.redo = redo;
+    }
+
     pub fn push_undo_keep_redo(&mut self, tx: Transaction) {
         self.bytes += tx.bytes;
         self.undo.push_back(tx);
@@ -185,7 +193,11 @@ pub fn step_bytes(s: &Step) -> usize {
         | Step::Info(_)
         | Step::Protection(_)
         | Step::SectionBreak { .. } => 32,
-        Step::Resolver { resolver, .. } | Step::Fonts { resolver, .. } => 32 + resolver.as_deref().map_or(0, resolver_bytes),
+        Step::Resolver { resolver, added } => {
+            32 + resolver.as_deref().map_or(0, resolver_bytes)
+                + added.iter().map(|a| std::mem::size_of::<crate::docx::AddedList>() + a.abstract_xml.len()).sum::<usize>()
+        }
+        Step::Fonts { resolver, .. } => 32 + resolver.as_deref().map_or(0, resolver_bytes),
         Step::PageBackground(_) => 64,
         Step::ImageData { data, .. } => 32 + data.len(),
         Step::AddImage { data, .. } => 32 + data.as_ref().map_or(0, Vec::len),
@@ -211,4 +223,10 @@ fn resolver_bytes(r: &Resolver) -> usize {
     let nums = n.nums.values().map(|m| size_of::<Num>() + m.raw.len() + m.level_overrides.len() * size_of::<NumLevel>()).sum::<usize>();
     let bullets = n.pic_bullets.values().map(|b| 64 + b.raw.len()).sum::<usize>();
     size_of::<Resolver>() + styles + abstracts + nums + bullets + n.root.len() + r.style_links.len() * 48
+}
+
+#[test]
+fn added_lists_count_towards_the_budget() {
+    let list = crate::docx::AddedList { abstract_id: 1, num_id: 1, abstract_xml: "x".repeat(10_000) };
+    assert!(step_bytes(&Step::Resolver { resolver: None, added: vec![list] }) > 10_000);
 }

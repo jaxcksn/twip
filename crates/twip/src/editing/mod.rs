@@ -953,6 +953,7 @@ impl Editor {
     }
 
     fn abort(&mut self, tx: Tx) {
+        self.selection = tx.before.selection;
         self.pending_controls.clear();
         self.pending_images.clear();
         self.perm_generation += 1;
@@ -965,7 +966,6 @@ impl Editor {
         if tx.replayed.is_none()
             && let Err(why) = crate::prof::time("edit:settle", || self.settle(&mut tx))
         {
-            self.selection = tx.before.selection;
             self.abort(tx);
             return Outcome::Unchanged(why);
         }
@@ -1187,11 +1187,25 @@ impl Editor {
     }
 
     fn undo(&mut self, undo: bool, fonts: &Fonts) -> Outcome {
-        if self.batch.is_some() {
-            return Outcome::Unchanged("in a batch");
-        }
         if self.mode == Mode::ReadOnly {
             return Outcome::Unchanged("read only");
+        }
+        self.step_history(undo, fonts)
+    }
+
+    /// Takes back transaction `tx`, the last one, unrecorded: an edit that was only ever provisional, whatever the
+    /// mode is now. Whether it did.
+    fn retract(&mut self, tx: u64, fonts: &Fonts) -> bool {
+        let done = self.history.position() == tx && matches!(self.step_history(true, fonts), Outcome::Changed(_));
+        if done {
+            self.history.pop_redo();
+        }
+        done
+    }
+
+    fn step_history(&mut self, undo: bool, fonts: &Fonts) -> Outcome {
+        if self.batch.is_some() {
+            return Outcome::Unchanged("in a batch");
         }
         let done = if undo { self.history.pop_undo() } else { self.history.pop_redo() };
         let Some(mut done) = done else { return Outcome::Unchanged(if undo { "nothing to undo" } else { "nothing to redo" }) };
@@ -2214,6 +2228,7 @@ impl Editor {
 
     fn move_caret(&mut self, by: MoveBy, dir: Dir, extend: bool, fonts: &Fonts) -> Outcome {
         let forward = dir == Dir::Forward;
+        let was = self.selection;
         if extend
             && let Selection::Cells { table, anchor, focus, shape: selection::CellShape::Rect } = self.selection
             && matches!(by, MoveBy::Line | MoveBy::Char)
@@ -2284,7 +2299,10 @@ impl Editor {
             MoveBy::Screen | MoveBy::Page if matches!(focus.story, StoryId::HeaderFooter(_)) => self.page_header_footer(focus, forward, fonts),
             MoveBy::Screen | MoveBy::Page | MoveBy::ScreenEdge => self.page_move(by, forward, focus, fonts),
         };
-        let Some(target) = target else { return Outcome::Unchanged("no place to move to") };
+        let Some(target) = target else {
+            self.selection = was;
+            return Outcome::Unchanged("no place to move to");
+        };
         let goal = self.goal_x;
         let s = if extend {
             let anchor = self.selection.anchor().unwrap_or(focus);
@@ -3328,17 +3346,18 @@ impl Editor {
                         Some((pb, ob)) if pb == para => ob,
                         _ => len,
                     };
-                    let take = seen.text_in(off, end).count();
-                    let room = limit - chars;
-                    out.extend(seen.text_in(off, end).take(take.min(room)).map(plain_char));
-                    if take > room {
+                    let mut text = seen.text_in(off, end);
+                    let mut take = 0;
+                    out.extend(text.by_ref().take(limit - chars).inspect(|_| take += 1).map(plain_char));
+                    if text.next().is_some() {
                         return (out, false);
                     }
                     chars += take;
                     let at_end = Position::text(p.story, para, len);
                     let next = self.nav().right(at_end, false);
                     if next == at_end || self.index.cmp(&next, &b) == std::cmp::Ordering::Greater {
-                        break;
+                        let reached = b.para_offset().is_some_and(|(pb, _)| pb == para);
+                        return (out, reached || next != at_end);
                     }
                     if next.para_offset().is_some() {
                         if chars == limit {
@@ -3358,7 +3377,7 @@ impl Editor {
                 }
             }
         }
-        (out, true)
+        (out, self.index.cmp(&p, &b) != std::cmp::Ordering::Less)
     }
 }
 
@@ -3398,9 +3417,20 @@ fn table_depth(blocks: &[Block]) -> usize {
         .unwrap_or(0)
 }
 
-/// How many levels deep a paragraph's text boxes go.
+/// How many levels deep a paragraph's text boxes go, a group's parts' included.
 fn para_depth(p: &Paragraph) -> usize {
-    p.inlines.iter().filter_map(Inline::story).map(|(_, tb)| TEXT_BOX_LEVELS + table_depth(&tb.blocks)).max().unwrap_or(0)
+    fn parts(i: &Inline) -> &[crate::docx::GroupPart] {
+        match i {
+            Inline::Float(f, _) => &f.parts,
+            _ => &[],
+        }
+    }
+    p.inlines
+        .iter()
+        .flat_map(|i| i.story().map(|(_, tb)| tb).into_iter().chain(parts(i).iter().filter_map(|g| g.text_box.as_ref())))
+        .map(|tb| TEXT_BOX_LEVELS + table_depth(&tb.blocks))
+        .max()
+        .unwrap_or(0)
 }
 
 fn first_para_of(b: &Block) -> Option<ParaId> {

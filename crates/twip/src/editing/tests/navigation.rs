@@ -109,6 +109,21 @@ fn an_arrow_with_an_inline_picture_selected_steps_off_it() {
 }
 
 #[test]
+fn page_down_with_nowhere_to_go_keeps_an_object_selected() {
+    let data = open("FX-OBJ.docx").document().images.last().cloned().expect("an image");
+    let sec = r#"<w:sectPr><w:headerReference w:type="default" r:id="rIdH"/><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr>"#;
+    let mut e = super::stories::package(&format!("<w:p><w:r><w:t>body</w:t></w:r></w:p>{sec}"), Some(Some("<w:p><w:r><w:t>head</w:t></w:r></w:p>")));
+    e.edit_header_footer(Some(0), false, fonts());
+    let picture = Command::InsertPicture(crate::api::command::Picture { data: crate::api::value::Bytes(data), alt_text: None });
+    e.execute(picture, fonts());
+    let object = e.selection();
+    assert!(matches!(object, Selection::Object(_)), "{object:?}");
+    let out = e.execute(mv(MoveBy::Page, Dir::Forward, false), fonts());
+    assert!(matches!(out, super::super::commands::Outcome::Unchanged(_)), "the only page: {out:?}");
+    assert_eq!(e.selection(), object, "the picture stays selected");
+}
+
+#[test]
 fn movement_skips_text_the_markup_view_hides() {
     let body = r#"<w:p><w:r><w:t xml:space="preserve">a </w:t></w:r><w:del w:id="1" w:author="A" w:date="2024-01-01T00:00:00Z"><w:r><w:delText xml:space="preserve">deleted </w:delText></w:r></w:del><w:r><w:t>b</w:t></w:r></w:p>"#;
     let mut e = Editor::open(&blank_body(body), fonts()).expect("opens");

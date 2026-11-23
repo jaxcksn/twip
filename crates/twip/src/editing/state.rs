@@ -319,7 +319,7 @@ impl Editor {
         };
         let object = self.selected_object();
         let story = focus.map_or(self.editing(), |p| p.story);
-        let section = para_id.and_then(|p| self.para_section(p)).unwrap_or(0);
+        let section = self.focus_section();
         Some(FormatState {
             run,
             character,

@@ -595,8 +595,9 @@ impl Session {
         let (para, a, b) = match (parts.next(), num(parts.next()), num(parts.next())) {
             (Some("float"), Some(f), None) => {
                 let f = crate::layout::FloatId(f);
+                let selected = crate::editing::selection::Selection::Object(crate::editing::selection::ObjectRef::Floating(f));
                 return match self.apply_with(Origin::Api, |e, _| e.select_float(f)) {
-                    Ok(_) if self.editor.selected_object().is_some() => Ok(()),
+                    Ok(_) if self.editor.selection() == selected => Ok(()),
                     _ => Err(Error::unavailable("the issue is gone")),
                 };
             }
@@ -995,6 +996,16 @@ mod tests {
         assert_eq!(h1.based_on.as_ref().map(|b| b.0.as_str()), Some("Normal"));
         assert!(styles.iter().all(|s| s.kind == StyleType::Paragraph));
         assert!(s.styles(None).len() > styles.len());
+    }
+
+    #[test]
+    fn a_gone_floats_issue_is_unavailable() {
+        let (mut engine, id, _) = open("editor/FX-OBJ.docx");
+        let s = engine.session(id).expect("a session");
+        let issues = s.with_editor(|e| crate::services::dialogs::issues(e.document()));
+        let float = issues.iter().find(|i| i.id.starts_with("float:")).expect("a floating picture without alt text");
+        s.select_accessibility_issue(&float.id).expect("selects it");
+        assert!(s.select_accessibility_issue(&format!("float:{}", u64::MAX)).is_err(), "another float stays selected");
     }
 
     #[test]

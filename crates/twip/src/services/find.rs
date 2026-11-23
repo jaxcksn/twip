@@ -96,7 +96,9 @@ pub fn at_selection(e: &Editor, q: &FindQuery) -> Option<Hit> {
     }
     let (a, b) = e.selection().ordered(e.index())?;
     let ((pa, ua), (pb, ub)) = (a.para_offset()?, b.para_offset()?);
-    (pa == pb).then(|| hits_in(e, pa, q).into_iter().find(|h| (h.start, h.end) == (ua.0, ub.0))).flatten()
+    let needle: Vec<char> = q.text.chars().collect();
+    let (case, whole) = (q.match_case.unwrap_or(false), q.whole_words.unwrap_or(false));
+    (pa == pb && crate::editing::find::hit_at(&e.find_text(pa), &needle, case, whole, ua, ub)).then_some(Hit { para: pa, start: ua.0, end: ub.0 })
 }
 
 /// A match for a results list: up to 30 characters of context on each side, from its paragraph.

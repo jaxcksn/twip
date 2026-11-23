@@ -15,37 +15,89 @@ use super::text::{Seen, UnitText};
 /// the letter it follows.
 #[cfg(test)]
 pub(crate) fn matches(hay: &[char], needle: &[char], case: bool, whole: bool) -> Vec<usize> {
-    scan(hay, needle, case, whole, || grapheme_starts(hay), |b, i, end| b[i] && b[end]).0
+    scan(hay, needle, case, whole, || grapheme_starts(hay), |c, i, end| c.starts(i) && c.starts(end)).0
 }
 
-/// Where `needle` occurs in `hay`, without overlaps, at the ends `fits` takes (given the grapheme starts `bounds`
-/// makes, then a match's start and end): `case` and `whole` as for [`matches`]. The grapheme starts, when a match
-/// needed them.
+/// A text's grapheme clusters by character index, its end included: where the cluster a character is in starts, and
+/// the first cluster start at or after it.
+struct Clusters {
+    start: Vec<u32>,
+    next: Vec<u32>,
+}
+
+impl Clusters {
+    /// From whether each character starts a grapheme, then the end, which does.
+    fn of(starts: &[bool]) -> Clusters {
+        let mut start = Vec::with_capacity(starts.len());
+        let mut at = 0u32;
+        for (k, &s) in starts.iter().enumerate() {
+            if s {
+                at = k as u32;
+            }
+            start.push(at);
+        }
+        let mut next = vec![0u32; starts.len()];
+        let mut at = starts.len().saturating_sub(1) as u32;
+        for (k, &s) in starts.iter().enumerate().rev() {
+            if s {
+                at = k as u32;
+            }
+            next[k] = at;
+        }
+        Clusters { start, next }
+    }
+
+    fn starts(&self, k: usize) -> bool {
+        self.start[k] as usize == k
+    }
+
+    fn start(&self, k: usize) -> usize {
+        self.start[k] as usize
+    }
+
+    fn next(&self, k: usize) -> usize {
+        self.next[k] as usize
+    }
+}
+
+/// Whether `needle` is at character `i` of `hay`: `case`, exactly, else ignoring case.
+fn same_at(hay: &[char], needle: &[char], case: bool, i: usize) -> bool {
+    let eq = |a: char, b: char| if case { a == b } else { a == b || a.to_lowercase().eq(b.to_lowercase()) };
+    hay.get(i..i + needle.len()).is_some_and(|h| h.iter().zip(needle).all(|(a, b)| eq(*a, *b)))
+}
+
+/// Whether a match at characters `i..end` of `hay` has the ends `fits` takes and, `whole`, no letter or digit in the
+/// graphemes either side.
+fn fits_at(hay: &[char], whole: bool, c: &Clusters, fits: &impl Fn(&Clusters, usize, usize) -> bool, i: usize, end: usize) -> bool {
+    let word = |k: usize| hay[k].is_alphanumeric();
+    let before = || i > 0 && word(c.start(i - 1));
+    let after = || c.next(end) < hay.len() && word(c.next(end));
+    fits(c, i, end) && (!whole || (!before() && !after()))
+}
+
+/// Where `needle` occurs in `hay`, without overlaps, at the ends `fits` takes (given the clusters of the grapheme
+/// starts `bounds` makes, then a match's start and end): `case` and `whole` as for [`matches`]. The clusters, when a
+/// match needed them.
 fn scan(
     hay: &[char],
     needle: &[char],
     case: bool,
     whole: bool,
     bounds: impl FnOnce() -> Vec<bool>,
-    fits: impl Fn(&[bool], usize, usize) -> bool,
-) -> (Vec<usize>, Option<Vec<bool>>) {
+    fits: impl Fn(&Clusters, usize, usize) -> bool,
+) -> (Vec<usize>, Option<Clusters>) {
     if needle.is_empty() || hay.len() < needle.len() {
         return (Vec::new(), None);
     }
-    let eq = |a: char, b: char| if case { a == b } else { a == b || a.to_lowercase().eq(b.to_lowercase()) };
     let mut bounds = Some(bounds);
-    let mut starts: Option<Vec<bool>> = None;
+    let mut clusters: Option<Clusters> = None;
     let mut out = Vec::new();
     let mut i = 0;
     while i + needle.len() <= hay.len() {
         let end = i + needle.len();
-        if hay[i..end].iter().zip(needle).all(|(a, b)| eq(*a, *b)) {
-            let b = starts.get_or_insert_with(|| bounds.take().map_or_else(Vec::new, |f| f()));
-            let word = |k: usize| hay[k].is_alphanumeric();
-            // The graphemes either side, by their first characters.
-            let before = || (0..i).rev().find(|&k| b[k]).is_some_and(word);
-            let after = || (end..hay.len()).find(|&k| b[k]).is_some_and(word);
-            if fits(b, i, end) && (!whole || (!(i > 0 && before()) && !after())) {
+        if same_at(hay, needle, case, i) {
+            let c = clusters.get_or_insert_with(|| Clusters::of(&bounds.take().map_or_else(Vec::new, |f| f())));
+            if fits_at(hay, whole, c, &fits, i, end) {
                 out.push(i);
                 i = end;
                 continue;
@@ -53,7 +105,7 @@ fn scan(
         }
         i += 1;
     }
-    (out, starts)
+    (out, clusters)
 }
 
 /// Whether each character of `hay` starts a grapheme, then the end.
@@ -71,33 +123,48 @@ fn grapheme_starts(hay: &[char]) -> Vec<bool> {
     out
 }
 
+/// The ends a match in a paragraph's text takes: none inside a letter's cluster (the accents on it make it another
+/// letter), and none across a field marker once widened to whole clusters.
+fn paragraph_fits(seen: &Seen) -> impl Fn(&Clusters, usize, usize) -> bool + '_ {
+    let hay = &seen.chars;
+    let fits = move |c: &Clusters, k: usize| c.starts(k) || !hay[c.start(k)].is_alphanumeric();
+    move |c, i, end| fits(c, i) && fits(c, end) && !seen.crosses(c.start(i), c.next(end))
+}
+
 /// The matches of `needle` in a paragraph's text as it reads, as unit ranges: one inside a symbol's grapheme cluster
 /// (an emoji's skin tone) widened to the whole cluster, so a match always selects what it found; none inside a letter's
 /// (the accents on it make it another letter), and none across a field marker, so a replacement never takes part of a
 /// field.
 pub(crate) fn hits(seen: &Seen, needle: &[char], case: bool, whole: bool) -> Vec<(Unit, Unit)> {
-    let hay = &seen.chars;
-    // A unit inside a cluster whose base is a letter or digit: that letter's accents.
-    let fits = |b: &[bool], k: usize| b[k] || !(0..k).rev().find(|&j| b[j]).is_some_and(|j| hay[j].is_alphanumeric());
-    let (found, bounds) = scan(hay, needle, case, whole, || seen.boundaries(), |b, i, end| fits(b, i) && fits(b, end));
-    let Some(bounds) = bounds.filter(|_| !found.is_empty()) else { return Vec::new() };
+    let (found, clusters) = scan(&seen.chars, needle, case, whole, || seen.boundaries(), paragraph_fits(seen));
+    let Some(c) = clusters.filter(|_| !found.is_empty()) else { return Vec::new() };
     let mut out: Vec<(Unit, Unit)> = Vec::with_capacity(found.len());
     let mut last = 0;
     for h in found {
-        let (mut a, mut b) = (h, h + needle.len());
-        while !bounds[a] {
-            a -= 1;
-        }
-        while !bounds[b] {
-            b += 1;
-        }
-        if a < last || seen.crosses(a, b) {
+        let (a, b) = (c.start(h), c.next(h + needle.len()));
+        if a < last {
             continue;
         }
         last = b;
         out.push(seen.units_of(a, b));
     }
     out
+}
+
+/// Whether units `a..b` of a paragraph's text hold a match of `needle` as [`hits`] finds them, whatever match before
+/// it overlaps.
+pub(crate) fn hit_at(seen: &Seen, needle: &[char], case: bool, whole: bool, a: Unit, b: Unit) -> bool {
+    let hay = &seen.chars;
+    let (from, to) = (seen.units.partition_point(|&u| u < a.0), seen.units.partition_point(|&u| u < b.0));
+    if needle.is_empty() || to < from + needle.len() {
+        return false;
+    }
+    let c = Clusters::of(&seen.boundaries());
+    let fits = paragraph_fits(seen);
+    (from..=to - needle.len()).any(|i| {
+        let end = i + needle.len();
+        same_at(hay, needle, case, i) && fits_at(hay, whole, &c, &fits, i, end) && seen.units_of(c.start(i), c.next(end)) == (a, b)
+    })
 }
 
 /// The stories a walk of the document takes besides the body (or the sub-template being edited).
@@ -251,7 +318,7 @@ impl Editor {
         let Some((a, b)) = self.selection.ordered(&self.index) else { return false };
         let (Some((pa, ua)), Some((pb, ub))) = (a.para_offset(), b.para_offset()) else { return false };
         let needle: Vec<char> = needle.chars().collect();
-        pa == pb && self.unit_hits(pa, &needle, case).contains(&(ua, ub))
+        pa == pb && hit_at(&self.find_text(pa), &needle, case, false, ua, ub)
     }
 
     #[cfg(test)]
@@ -307,14 +374,12 @@ impl Editor {
                     caret = Some(p);
                 }
                 Err(_) => {
-                    self.selection = before;
                     self.abort(tx);
                     return (0, Outcome::Unchanged("replace failed"));
                 }
             }
         }
         if count == 0 {
-            self.selection = before;
             self.abort(tx);
             return (0, protected.map_or(Outcome::Unchanged("no matches"), Outcome::Refused));
         }

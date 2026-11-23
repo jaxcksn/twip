@@ -411,11 +411,14 @@ impl Editor {
         let strip = |x: Option<&str>, part: &str, drop: &[&str]| {
             let mut props = Props::parse(x, part, &cx);
             props.kids.retain(|(n, _)| !drop.contains(&n.as_str()));
-            props.xml()
+            props
         };
-        let rpr = strip(run.as_ref().and_then(|r| r.direct.0.as_deref()), "rPr", &["ins", "del", "moveFrom", "moveTo", "rPrChange"]);
-        let ppr = whole.then(|| strip(p.style.direct.0.as_deref(), "pPr", &["sectPr", "rPr", "pPrChange"]));
-        self.painter = Some((rpr, ppr));
+        let mut rpr = strip(run.as_ref().and_then(|r| r.direct.0.as_deref()), "rPr", &["ins", "del", "moveFrom", "moveTo", "rPrChange"]);
+        if !whole && rpr.get("rStyle").is_none() {
+            paragraph_style_rpr(&res.styles, p.style.style_id.as_deref(), &mut rpr, &cx);
+        }
+        let ppr = whole.then(|| strip(p.style.direct.0.as_deref(), "pPr", &["sectPr", "rPr", "pPrChange"]).xml());
+        self.painter = Some((rpr.xml(), ppr));
         Outcome::Moved
     }
 
@@ -473,6 +476,28 @@ impl Editor {
                 fonts,
             )
         })
+    }
+}
+
+/// Paragraph style `style`'s character formatting under the direct formatting `rpr`: its linked character style, else
+/// the run properties of it and its bases.
+fn paragraph_style_rpr(styles: &crate::docx::styles::Styles, style: Option<&str>, rpr: &mut Props, cx: &crate::docx::write::props::Cx) {
+    use crate::docx::styles::StyleKind;
+    let style = styles.paragraph_style(style);
+    let linked = style.and_then(|id| styles.get(id)?.link.as_deref()).filter(|l| styles.get(l).is_some_and(|c| c.kind == StyleKind::Character));
+    if let Some(l) = linked {
+        let w = &cx.w;
+        rpr.set("rStyle", format!("<{w}rStyle {w}val=\"{}\"/>", crate::docx::write::props::esc(l)));
+        return;
+    }
+    let direct: Vec<String> = rpr.kids.iter().map(|(n, _)| n.clone()).collect();
+    for s in styles.chain(style) {
+        let Some(own) = Props::parse(Some(&s.raw), "style", cx).get("rPr").map(str::to_string) else { continue };
+        for (n, x) in Props::parse(Some(&own), "rPr", cx).kids {
+            if !direct.contains(&n) && !matches!(n.as_str(), "rStyle" | "rPrChange") {
+                rpr.set(&n, x);
+            }
+        }
     }
 }
 

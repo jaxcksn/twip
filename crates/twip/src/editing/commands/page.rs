@@ -79,9 +79,12 @@ impl Editor {
                 return Outcome::invalid("a column's width is positive and its spacing not negative");
             }
             let total: f64 = cols.iter().map(|c| c.0).sum::<f64>() + cols[..num - 1].iter().map(|c| c.1).sum::<f64>();
+            let set = &self.doc.settings;
+            let facing = crate::layout::page::Facing { mirror: set.mirror_margins, gutter_at_top: set.gutter_at_top, book_fold: set.book_fold };
             for section in self.selected_sections() {
                 let Some(s) = self.doc.sections.get(section) else { continue };
-                if total > s.page_w - s.left - s.right - s.gutter + 0.5 {
+                let (left, right, _) = crate::layout::page::margins_in(s, crate::docx::review::MarkupView::All, facing, 1);
+                if total > s.page_w - left - right + 0.5 {
                     return Outcome::invalid("the columns are wider than the text");
                 }
             }

@@ -2,7 +2,7 @@
 
 use std::rc::Rc;
 
-use crate::docx::{Block, Document, Table};
+use crate::docx::{Block, Document, Table, VMerge};
 use crate::layout::{ParaId, TableId, Unit};
 
 use super::geometry::{PageGeometry, Pages, Stop};
@@ -59,23 +59,20 @@ impl Nav<'_> {
     }
 
     fn first_cell(&self, t: &Table, row: usize) -> Option<usize> {
-        let g = Grid::of(t);
-        (0..t.rows.get(row)?.cells.len()).find(|&c| !g.continues(row, c))
+        t.rows.get(row)?.cells.iter().position(|c| c.v_merge != VMerge::Continue)
     }
 
     /// The first place in `cells` of `row` holding text, its row end when none does.
     fn first_in_row(&self, story: StoryId, t: &Table, row: usize, cells: std::ops::Range<usize>) -> Option<Position> {
-        let g = Grid::of(t);
         let r = t.rows.get(row)?;
-        let found = cells.filter(|&c| c < r.cells.len() && !g.continues(row, c)).find_map(|c| self.cell_first(story, t, row, c));
+        let found = cells.filter(|&c| r.cells.get(c).is_some_and(|c| c.v_merge != VMerge::Continue)).find_map(|c| self.cell_first(story, t, row, c));
         Some(found.unwrap_or_else(|| Position::row_end(story, TableId(t.id), row)))
     }
 
     /// The last place in `cells` of `row` holding text.
     fn last_in_row(&self, story: StoryId, t: &Table, row: usize, cells: std::ops::Range<usize>) -> Option<Position> {
-        let g = Grid::of(t);
         let r = t.rows.get(row)?;
-        cells.rev().filter(|&c| c < r.cells.len() && !g.continues(row, c)).find_map(|c| self.cell_last(story, t, row, c))
+        cells.rev().filter(|&c| r.cells.get(c).is_some_and(|c| c.v_merge != VMerge::Continue)).find_map(|c| self.cell_last(story, t, row, c))
     }
 
     fn row_start(&self, story: StoryId, t: &Table, row: usize) -> Option<Position> {
