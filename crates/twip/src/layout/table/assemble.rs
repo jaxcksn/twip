@@ -115,6 +115,20 @@ pub fn legacy_lead(t: &Table) -> f64 {
     lw / 2.0 + edge_gap(t, lw, lmar)
 }
 
+/// The indent that places a left-aligned top-level table where it is drawn: its own, else in compat ≤ 14 (where an
+/// unset indent isn't pulled left) the gap before its column edge.
+pub fn placed_indent(t: &Table, compat: Compat) -> f64 {
+    if t.ind_set || compat != Compat::Legacy {
+        return placed_ind(t);
+    }
+    let (lw, lmar) = t
+        .rows
+        .first()
+        .and_then(|r| r.cells.first())
+        .map_or((space_h(&t.borders[1]), 0.0), |c| (space_h(candidate(Some(&c.left), &t.borders[1])), c.margins[1]));
+    edge_gap(t, lw, lmar)
+}
+
 fn rtl(t: &Table) -> bool {
     t.bidi_visual && t.floating.is_none()
 }

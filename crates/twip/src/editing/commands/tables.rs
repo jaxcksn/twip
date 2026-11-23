@@ -112,6 +112,15 @@ impl Editor {
     }
 
     fn row_ex(&self, x: &RowExceptionsEdit) -> Result<crate::editing::table_format::RowEx, String> {
+        if let Some(i) = x.indent {
+            if !(i.0.is_finite() && (-1584.0..=1584.0).contains(&i.0)) {
+                return Err("a row's indent is -1584…1584 pt".into());
+            }
+            let fixed = self.table_target().and_then(|tg| self.index.table(&self.doc, tg.table)).is_some_and(|t| t.fixed);
+            if fixed {
+                return Err("a fixed-width table's rows take the table's indent".into());
+            }
+        }
         Ok(crate::editing::table_format::RowEx {
             reset: x.reset,
             jc: x.alignment.map(|a| match a {
@@ -120,9 +129,20 @@ impl Editor {
                 _ => Jc::Left,
             }),
             cell_spacing: x.cell_spacing.map(|s| s.0),
-            shading: x.shading.as_ref().map(|c| self.word_colour(c)).transpose()?,
+            ind: x.indent.map(|i| i.0),
+            shading: x.shading.as_ref().map(|s| self.shading_of(s)).transpose()?,
             borders: x.borders.as_ref().map(|(edges, line)| self.border_lines(*edges, line.as_ref())).transpose()?,
         })
+    }
+
+    /// A shading value as the `w:shd` to write, its colours in this document.
+    fn shading_of(&self, s: &crate::editing::readback::ShadingValue) -> Result<crate::editing::table_format::Shading, String> {
+        let fill = match &s.fill {
+            crate::api::value::NoneOr::Value(c) => Some(self.word_colour(c)?),
+            crate::api::value::NoneOr::None => None,
+        };
+        let color = crate::editing::readback::word_colour_or_auto(self, &s.color)?;
+        Ok(crate::editing::table_format::Shading { pattern: s.pattern.val(), color, fill })
     }
 
     pub(in crate::editing) fn set_default_table_style(&mut self, id: Option<String>, fonts: &Fonts) -> Outcome {
@@ -146,7 +166,8 @@ impl Editor {
                 _ => Jc::Left,
             }),
             cell_spacing: x.cell_spacing.map(|s| s.0),
-            shading: x.shading.map(|c| crate::editing::theme::WordColour::rgb(c.0)),
+            ind: None,
+            shading: x.shading.map(|c| crate::editing::table_format::Shading::fill(Some(crate::editing::theme::WordColour::rgb(c.0)))),
             borders: x.borders.map(cell_borders),
         });
         self.table_format(&TableFormat::RowProps { hidden: p.hidden, exceptions }, fonts)
@@ -282,8 +303,10 @@ pub struct RowExceptionsEdit {
     pub alignment: Option<HorizontalAlignment>,
     /// The space between the rows' cells, 0 to 1584 pt.
     pub cell_spacing: Option<crate::api::value::Points>,
-    /// The rows' fill.
-    pub shading: Option<crate::api::drawing::ColourValue>,
+    /// The rows' indent from the table's left edge, -1584 to 1584 pt.
+    pub indent: Option<crate::api::value::Points>,
+    /// The rows' shading: fill, pattern and pattern colour.
+    pub shading: Option<crate::editing::readback::ShadingValue>,
     /// The table borders on the rows' edges and their line (`None`: a ½ pt single automatic line).
     pub borders: Option<(BorderEdges, Option<crate::editing::readback::BorderLine>)>,
 }

@@ -278,7 +278,11 @@ fn row_exceptions_take_theme_colours() {
     );
     first(&mut e);
     let x = RowExceptionsEdit {
-        shading: Some(accent(ThemeColour::Accent2, TransformKind::Shade, 191.0 / 255.0)),
+        shading: Some(crate::editing::readback::ShadingValue {
+            fill: crate::api::value::NoneOr::Value(accent(ThemeColour::Accent2, TransformKind::Shade, 191.0 / 255.0)),
+            pattern: crate::api::command::ShadingPattern::Clear,
+            color: AutoOr::Auto,
+        }),
         borders: Some((crate::api::command::BorderEdges::Outside, Some(line(AutoOr::Value(ColourValue::theme(ThemeColour::Accent4)), 0.0, false)))),
         ..RowExceptionsEdit::default()
     };

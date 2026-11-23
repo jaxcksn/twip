@@ -77,10 +77,12 @@ pub mod text_links;
 pub use styles::formats_a_style;
 pub mod sub_templates;
 pub use crate::docx::grid as table;
-mod table_cells;
-mod table_convert;
+pub mod table_cells;
+pub mod table_convert;
+pub mod table_draw;
 pub mod table_format;
 mod table_handles;
+pub mod table_readback;
 pub mod tables;
 pub mod text;
 pub mod theme;
@@ -209,6 +211,8 @@ pub struct Editor {
     provisional: Option<stories::Provisional>,
     composition: Option<composition::Composition>,
     border_drag: Option<resize::BorderDrag>,
+    /// The line the Draw Table pen draws.
+    table_pen: crate::docx::props::Border,
     /// Tables laid out as a live drag would leave them, in place of the model's.
     table_preview: Vec<resize::Provisional>,
     table_drag: Option<table_handles::TableDrag>,
@@ -448,6 +452,7 @@ impl Editor {
             provisional: None,
             composition: None,
             border_drag: None,
+            table_pen: table_draw::default_pen(),
             table_preview: Vec::new(),
             table_drag: None,
             pointing: false,
@@ -2890,12 +2895,11 @@ impl Editor {
                 }
                 if clicks == 2
                     && let Some((_, table, resize::Border::Column(k), ..)) = self.border_at(x, y, fonts)
-                    && k > 0
                 {
                     self.border_cancel();
                     self.history.break_typing();
                     if !self.table_gesture_kept(table, crate::api::command::CommandId::AutoFitColumns) {
-                        self.auto_fit_column(table, k - 1, fonts);
+                        self.auto_fit_column(table, k.saturating_sub(1), fonts);
                     }
                     return;
                 }

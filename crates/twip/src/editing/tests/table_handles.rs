@@ -837,3 +837,71 @@ fn a_text_box_tables_hint_has_no_row_of_the_anchors_blocks() {
     let hint = super::super::step::table_hint(&e.index, id, Some(1)).expect("a hint");
     assert_eq!(hint.row, None, "row 1 of the box's table is not a row of the anchor's block");
 }
+
+#[test]
+fn the_left_outer_border_drags_the_first_column_and_the_indent() {
+    let mut e = page();
+    let d = Drawn::of(&mut e);
+    let from = (d.edges[0], (d.rows[1][1] + d.rows[1][3]) / 2.0);
+    assert!(matches!(hover(&mut e, from.0, from.1), Some(TableHover { zone: Some(TableZone::Border(0)), .. })), "the left edge is a border");
+    drag(&mut e, from, (36.0, 0.0), ALT, true);
+    let t = e.index().table(e.document(), d.table).expect("the table");
+    assert_eq!(
+        (t.grid.clone(), t.ind),
+        (vec![36.0, 90.0, 108.0], 36.5),
+        "the indent from where the edge was drawn (compat 14: an unset indent sits its cell margin right)"
+    );
+    let after = Drawn::of(&mut e);
+    assert!((after.edges[0] - (d.edges[0] + 36.0)).abs() < 0.1 && (after.edges[1] - d.edges[1]).abs() < 0.1, "{:?} {:?}", d.edges, after.edges);
+    e.execute(crate::editing::commands::Command::Undo, fonts());
+    let t = e.index().table(e.document(), d.table).expect("the table");
+    assert_eq!((t.grid.clone(), t.ind), (vec![72.0, 90.0, 108.0], 0.0), "one undo step");
+}
+
+#[test]
+fn a_positioned_tables_left_border_drag_moves_the_table() {
+    let cell = |w: u32| format!(r#"<w:tc><w:tcPr><w:tcW w:w="{w}" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>x</w:t></w:r></w:p></w:tc>"#);
+    let row = format!("<w:tr>{}{}</w:tr>", cell(1440), cell(1800));
+    let mut e = open(&format!(
+        r#"<w:tbl><w:tblPr><w:tblpPr w:horzAnchor="page" w:vertAnchor="page" w:tblpX="2880" w:tblpY="2880"/><w:tblW w:w="3240" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="1440"/><w:gridCol w:w="1800"/></w:tblGrid>{row}{row}</w:tbl>"#
+    ));
+    let d = Drawn::of(&mut e);
+    drag(&mut e, (d.edges[0], (d.rows[1][1] + d.rows[1][3]) / 2.0), (36.0, 0.0), ALT, true);
+    let t = e.index().table(e.document(), d.table).expect("the table");
+    assert_eq!((t.grid.clone(), t.floating.map(|p| p.x)), (vec![36.0, 90.0], Some(180.0)));
+    let after = Drawn::of(&mut e);
+    assert!((after.edges[0] - (d.edges[0] + 36.0)).abs() < 0.1 && (after.edges[1] - d.edges[1]).abs() < 0.1, "{:?} {:?}", d.edges, after.edges);
+}
+
+#[test]
+fn the_left_border_drag_moves_only_the_selected_rows() {
+    let mut e = page();
+    let d = Drawn::of(&mut e);
+    e.set_selection(Selection::Cells {
+        table: d.table,
+        anchor: CellRef { row: 1, col: 0 },
+        focus: CellRef { row: 1, col: 0 },
+        shape: CellShape::Rect,
+    });
+    drag(&mut e, (d.edges[0], (d.rows[1][1] + d.rows[1][3]) / 2.0), (36.0, 0.0), ALT, true);
+    let t = e.index().table(e.document(), d.table).expect("the table");
+    assert_eq!((t.rows[1].grid_before, t.rows[0].grid_before, t.ind), (1, 0, 0.0), "only row 2 starts further in");
+    let geo = e.page_geometries().into_iter().find(|(p, _)| *p == 0).map(|(_, g)| g).expect("page 0");
+    let first =
+        |r: usize| geo.cells.iter().filter(|c| c.chain.last().is_some_and(|k| k.1 == r && k.2 == 0)).map(|c| c.rect[0]).next().expect("a cell");
+    assert!((first(1) - first(2) - 36.0).abs() < 0.6, "{} {}", first(1), first(2));
+    // Moved left: the other rows keep their place, the table's indent moving out.
+    let mut e = page();
+    let d = Drawn::of(&mut e);
+    e.set_selection(Selection::Cells {
+        table: d.table,
+        anchor: CellRef { row: 2, col: 0 },
+        focus: CellRef { row: 2, col: 0 },
+        shape: CellShape::Rect,
+    });
+    drag(&mut e, (d.edges[0], (d.rows[2][1] + d.rows[2][3]) / 2.0), (-18.0, 0.0), ALT, true);
+    let t = e.index().table(e.document(), d.table).expect("the table");
+    assert_eq!((t.rows[1].grid_before, t.rows[2].grid_before), (1, 0));
+    let after = Drawn::of(&mut e);
+    assert!((after.rows[1][0] - d.rows[1][0]).abs() < 0.6, "{:?} {:?}", d.rows[1], after.rows[1]);
+}

@@ -59,6 +59,7 @@ mod sub_templates;
 mod table_dialogs;
 mod table_handles;
 mod table_structure;
+mod table_tools;
 mod text_units;
 mod tracked_structure;
 mod transactions;

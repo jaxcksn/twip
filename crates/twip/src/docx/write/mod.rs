@@ -2093,6 +2093,11 @@ impl<'a, 'i> Saver<'a, 'i> {
         self.paragraphs(q, p, at)
     }
 
+    /// The table's own default cell margins, as its properties hold them.
+    fn direct_cell_margins(&self, t: &Table) -> Option<String> {
+        Props::parse(t.direct.0.as_deref(), "tblPr", &self.cx).get("tblCellMar").map(str::to_string)
+    }
+
     /// A table's own `w:shd` as written in its `w:tblPr` (not its style's).
     fn direct_shd(&self, t: &Table) -> Option<String> {
         Props::parse(t.direct.0.as_deref(), "tblPr", &self.cx).get("shd").map(str::to_string)
@@ -2130,6 +2135,7 @@ impl<'a, 'i> Saver<'a, 'i> {
             && a.width == b.width
             && (a.cell_spacing, &a.alt) == (b.cell_spacing, &b.alt)
             && self.direct_shd(a) == self.direct_shd(b)
+            && self.direct_cell_margins(a) == self.direct_cell_margins(b)
             && (&a.style_id, a.look, a.jc, a.ind, a.ind_pct, a.floating) == (&b.style_id, b.look, b.jc, b.ind, b.ind_pct, b.floating)
             && (a.fixed, a.cell_spacing, &a.alt) == (b.fixed, b.cell_spacing, &b.alt);
         // Tables read as one (nothing between them) are written as one.
@@ -2411,6 +2417,11 @@ impl<'a, 'i> Saver<'a, 'i> {
                                 fix.push((name, now[k].clone().unwrap_or_default(), before(name)));
                             }
                         }
+                        // The table's own default cell margins, as its properties hold them.
+                        let (was, now) = (self.direct_cell_margins(a), self.direct_cell_margins(t));
+                        if was != now {
+                            fix.push(("tblCellMar", now.unwrap_or_default(), before("tblCellMar")));
+                        }
                         if a.alt != t.alt {
                             let (title, description) = t.alt.as_deref().map_or(("", ""), |a| (a.title.as_str(), a.description.as_str()));
                             let tag = |name: &str, v: &str| if v.is_empty() { String::new() } else { format!("<{w}{name} {w}val=\"{}\"/>", props::esc(v)) };
@@ -2449,14 +2460,14 @@ impl<'a, 'i> Saver<'a, 'i> {
                         if fix.is_empty() { self.xml[p.range()].to_string() } else { self.spliced(p.range(), fix)? }
                     }
                     (Some(p), None) => self.xml[p.range()].to_string(),
-                    (None, _) => tbl_pr(&w, t, self.direct_shd(t).as_deref(), &self.direct_bands(t), self.people),
+                    (None, _) => tbl_pr(&w, t, self.direct_shd(t).as_deref(), &self.direct_bands(t), self.direct_cell_margins(t).as_deref(), self.people),
                 });
                 close
             }
             None => {
                 out.push_str(&format!("<{w}tbl>"));
                 let shd = self.direct_shd(t);
-                out.push_str(&tbl_pr(&w, t, shd.as_deref(), &self.direct_bands(t), self.people));
+                out.push_str(&tbl_pr(&w, t, shd.as_deref(), &self.direct_bands(t), self.direct_cell_margins(t).as_deref(), self.people));
                 format!("</{w}tbl>")
             }
         };
@@ -6266,7 +6277,7 @@ fn shading(w: &str, fill: Option<u32>) -> String {
 
 /// A table's `w:tblPr` from the model (its resolved properties written as direct ones, its tracked change last), in
 /// CT_TblPr order.
-fn tbl_pr(w: &str, t: &Table, shd: Option<&str>, bands: &[Option<String>; 2], people: &People) -> String {
+fn tbl_pr(w: &str, t: &Table, shd: Option<&str>, bands: &[Option<String>; 2], cell_mar: Option<&str>, people: &People) -> String {
     let mut s = format!("<{w}tblPr>");
     if let Some(id) = &t.style_id {
         s.push_str(&format!("<{w}tblStyle {w}val=\"{}\"/>", props::esc(id)));
@@ -6306,6 +6317,9 @@ fn tbl_pr(w: &str, t: &Table, shd: Option<&str>, bands: &[Option<String>; 2], pe
     }
     if t.fixed {
         s.push_str(&format!("<{w}tblLayout {w}type=\"fixed\"/>"));
+    }
+    if let Some(x) = cell_mar {
+        s.push_str(x);
     }
     if let Some(l) = t.look {
         let bit = |on: bool| if on { 1 } else { 0 };

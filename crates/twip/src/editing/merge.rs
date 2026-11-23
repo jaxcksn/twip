@@ -1110,7 +1110,7 @@ impl Editor {
 
     /// Whether a lock refuses the edit of selection `s` (cells, a block, an object, a discontiguous selection): each
     /// paragraph piece it covers.
-    fn pieces_lock(&mut self, s: super::selection::Selection, deletes: bool) -> bool {
+    pub(super) fn pieces_lock(&mut self, s: super::selection::Selection, deletes: bool) -> bool {
         let was = std::mem::replace(&mut self.selection, s);
         let pieces = self.selected_ranges();
         self.selection = was;
